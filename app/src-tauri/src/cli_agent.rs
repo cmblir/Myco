@@ -13,6 +13,18 @@
 //     prompt on stdin; the final agent message lands in <tmpfile> (stdout
 //     carries the progress log). workspace-write scopes writes to the cwd;
 //     --skip-git-repo-check because vaults usually aren't git repos.
+//
+// SECURITY (ingest of untrusted raw/ content): like the claude bridge, ingest
+// feeds untrusted source text to these agents. The two CLIs differ in blast
+// radius and we pick the safest level each one offers headlessly:
+//   - codex `-s workspace-write` is a real sandbox: writes are confined to the
+//     cwd (the vault) and network is restricted, so a prompt-injection payload
+//     cannot escape the vault or phone home. This is the level ingest needs (it
+//     must write wiki/) — `read-only` would break ingest — so it is left as-is.
+//   - gemini `--approval-mode yolo` auto-approves ALL tool use (incl. shell),
+//     which is broader than we'd like; gemini-cli currently offers no headless
+//     "edit-only" approval mode that wouldn't hang on a shell prompt. Until it
+//     does, prefer codex or the claude bridge for ingesting untrusted sources.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
