@@ -1,0 +1,52 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Obsidian
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/plugins/
+.trash/
+
+# Build artifacts
+query-log.jsonl
+__pycache__/
+*.pyc
+
+# MCP server local venv
+mcp-server/.venv/
+mcp-server/__pycache__/
+
+# docs capture local venv (Pillow fallback for demo.gif when ffmpeg is unavailable)
+docs/.venv/
+
+# Claude Code
+.claude/
+
+# Memex vault cache (link graph SQLite, etc.)
+.memex/
+
+# Local dev scratch
+commits.tsv
+
+# Playwright MCP scratch output
+.playwright-mcp/
+
+# --- Personal LLM-wiki vault content (kept local, never shipped to the public repo) ---
+# The maintainer dogfoods Memex on a private vault that lives in this repo. Its raw
+# sources and the wiki pages generated from them (often derived from third-party
+# material) stay on disk for local use but are NOT tracked. Only the small self-made
+# sample below ships, so a fresh checkout still has something to ingest and render.
+/raw/*
+/wiki/*
+/ingest-reports/*
+# ...but DO ship the structure + the self-made sample:
+!/raw/.gitkeep
+!/raw/assets/
+!/raw/getting-started.md
+!/wiki/.gitkeep
+!/wiki/index.md
+!/wiki/log.md
+!/wiki/memex.md
+!/wiki/source-getting-started.md
+!/ingest-reports/.gitkeep

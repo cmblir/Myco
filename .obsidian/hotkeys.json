@@ -1,0 +1,5 @@
+{
+  "app:download-attachments": [
+    { "modifiers": ["Mod", "Shift"], "key": "D" }
+  ]
+}

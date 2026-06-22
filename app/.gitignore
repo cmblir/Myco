@@ -1,0 +1,31 @@
+# Frontend
+node_modules/
+dist/
+dist-ssr/
+.vite/
+*.local
+*.tsbuildinfo
+vite.config.js
+vite.config.d.ts
+
+# Tauri / Rust
+src-tauri/target/
+src-tauri/Cargo.lock.bak
+src-tauri/gen/
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

@@ -1,0 +1,82 @@
+name: ci
+
+# Fast correctness gate on every push/PR to main: lint, typecheck, and the full
+# Rust + frontend test suites. The heavy installer build stays in release.yml
+# (tag-only). Without this, the 64 Rust tests and the frontend suite never ran
+# automatically and a broken test could merge unnoticed.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Supersede in-flight runs on the same ref so a quick succession of pushes does
+# not pile up CI minutes.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - run: npm ci
+      - name: lint
+        run: npm run lint
+      - name: typecheck
+        run: npx tsc -b
+      - name: unit tests
+        run: npm test
+
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: format check
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: tests
+        run: cargo test
+
+  # Compiles + runs the cfg(windows) CLI-resolution code and tests, which never
+  # build on Linux. webview2 is preinstalled on windows-latest.
+  rust-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app/src-tauri
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+      - name: tests
+        run: cargo test

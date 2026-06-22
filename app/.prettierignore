@@ -1,0 +1,8 @@
+dist/
+node_modules/
+src-tauri/target/
+src-tauri/gen/
+*.tsbuildinfo
+package-lock.json
+vite.config.js
+vite.config.d.ts

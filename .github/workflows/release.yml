@@ -1,0 +1,80 @@
+name: release
+
+# Build the Tauri desktop app on real macOS + Windows runners and publish the
+# installers to a GitHub Release. Triggered by pushing a version tag (e.g.
+# v0.1.0). macOS produces a universal .dmg (Apple Silicon + Intel); Windows
+# produces an NSIS .exe — the two bundle targets declared in tauri.conf.json.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write # tauri-action creates the release + uploads assets
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: "macos-latest" # universal dmg for Apple Silicon + Intel
+            args: "--target universal-apple-darwin"
+          - platform: "windows-latest" # NSIS .exe installer
+            args: ""
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Both mac targets are only needed for the universal build, so gate
+          # them on the macOS runner to keep the Windows job lean.
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: install frontend dependencies
+        run: npm ci
+        working-directory: app
+
+      # Pinned to an exact release of tauri-action (no moving v0/v1 tag exists).
+      - uses: tauri-apps/tauri-action@action-v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # --- Code signing scaffold — INACTIVE until these repo secrets exist.
+          # Unset secrets resolve to empty strings, so tauri-action skips signing
+          # and the build stays unsigned (exactly today's behaviour). Add the
+          # secrets in repo Settings → Secrets and variables → Actions to switch
+          # signing on. Full setup (incl. the Windows tauri.conf.json signCommand
+          # that the AZURE_* vars require) is in docs/SIGNING.md.
+          # macOS — Developer ID signing + Apple ID notarization:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # Windows — Azure Trusted Signing (no-op without a signCommand in
+          # tauri.conf.json; see docs/SIGNING.md):
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+        with:
+          projectPath: app # the Tauri app lives in app/, not the repo root
+          tagName: ${{ github.ref_name }}
+          releaseName: "Memex ${{ github.ref_name }}"
+          releaseBody: >
+            Memex — a cross-platform desktop wiki for plain markdown vaults.
+
+            Download the installer for your OS below.
+            macOS: universal .dmg (Apple Silicon + Intel).
+            Windows: NSIS .exe installer.
+            Both are unsigned for v0.1 — on first launch macOS Gatekeeper and
+            Windows SmartScreen will warn; see the README for how to allow it.
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}

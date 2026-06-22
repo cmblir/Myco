@@ -1,0 +1,151 @@
+import { describe, expect, it } from "vitest";
+import type { Adjacency, FileNode } from "./ipc";
+import {
+  collectFolders,
+  computeAllowed,
+  countAllNodes,
+  flattenMarkdown,
+  inFolder,
+  seededUnit,
+  stem,
+} from "./graphData";
+
+const ROOT = "/vault";
+const emptyFilters = {
+  tagFilter: null as string | null,
+  folderFilter: null as string | null,
+  vaultRoot: ROOT,
+  search: "",
+  existingOnly: false,
+  showOrphans: true,
+};
+
+function adj(partial: Partial<Adjacency>): Adjacency {
+  return {
+    forward: {},
+    backward: {},
+    unresolved: {},
+    tags: {},
+    ...partial,
+  };
+}
+
+describe("stem", () => {
+  it("strips directory and extension", () => {
+    expect(stem("/vault/sub/note.md")).toBe("note");
+    expect(stem("note.md")).toBe("note");
+    expect(stem("note")).toBe("note");
+  });
+
+  it("keeps interior dots, ignores leading dot", () => {
+    expect(stem("a.b.md")).toBe("a.b");
+    expect(stem("/x/.hidden")).toBe(".hidden");
+  });
+});
+
+describe("inFolder", () => {
+  it("matches direct and tolerates trailing slash on root", () => {
+    expect(inFolder("/vault", "/vault/sub/x.md", "sub")).toBe(true);
+    expect(inFolder("/vault/", "/vault/sub/x.md", "sub")).toBe(true);
+  });
+
+  it("rejects files outside the folder or root", () => {
+    expect(inFolder("/vault", "/vault/x.md", "sub")).toBe(false);
+    expect(inFolder("/vault", "/other/sub/x.md", "sub")).toBe(false);
+  });
+});
+
+describe("computeAllowed", () => {
+  const a = "/vault/a.md";
+  const b = "/vault/b.md";
+  const orphan = "/vault/orphan.md";
+
+  it("keeps orphans when showOrphans is true", () => {
+    const out = computeAllowed(
+      adj({ forward: { [a]: [b] } }),
+      [a, b, orphan],
+      emptyFilters,
+    );
+    expect(out).toEqual(new Set([a, b, orphan]));
+  });
+
+  it("drops edge-less nodes when showOrphans is false", () => {
+    const out = computeAllowed(
+      adj({ forward: { [a]: [b] } }),
+      [a, b, orphan],
+      { ...emptyFilters, showOrphans: false },
+    );
+    expect(out).toEqual(new Set([a, b]));
+  });
+
+  it("existingOnly drops unresolved ghost targets", () => {
+    const out = computeAllowed(
+      adj({ forward: { [a]: ["ghost"] } }),
+      [a],
+      { ...emptyFilters, existingOnly: true },
+    );
+    expect(out).toEqual(new Set([a]));
+  });
+
+  it("search filters by stem substring", () => {
+    const out = computeAllowed(adj({}), [a, b], {
+      ...emptyFilters,
+      search: "a",
+    });
+    expect(out).toEqual(new Set([a]));
+  });
+
+  it("tagFilter keeps only tagged nodes", () => {
+    const out = computeAllowed(adj({ tags: { [a]: ["x"] } }), [a, b], {
+      ...emptyFilters,
+      tagFilter: "x",
+    });
+    expect(out).toEqual(new Set([a]));
+  });
+});
+
+describe("flattenMarkdown / countAllNodes / collectFolders", () => {
+  const tree: FileNode[] = [
+    { kind: "file", name: "a.md", path: "/vault/a.md" },
+    { kind: "file", name: "img.png", path: "/vault/img.png" },
+    {
+      kind: "directory",
+      name: "sub",
+      path: "/vault/sub",
+      children: [{ kind: "file", name: "c.md", path: "/vault/sub/c.md" }],
+    },
+  ];
+
+  it("flattenMarkdown returns only .md paths, recursively", () => {
+    expect(flattenMarkdown(tree)).toEqual(["/vault/a.md", "/vault/sub/c.md"]);
+  });
+
+  it("countAllNodes unions sources, targets, and tagged paths", () => {
+    const a = adj({ forward: { "/vault/a.md": ["/vault/b.md"] }, tags: { "/vault/c.md": ["t"] } });
+    expect(countAllNodes(a)).toBe(3);
+    expect(countAllNodes(null)).toBe(0);
+  });
+
+  it("collectFolders lists top-level subfolders under the root", () => {
+    const a = adj({ forward: { "/vault/sub/c.md": [], "/vault/top.md": [] } });
+    expect(collectFolders(ROOT, a)).toEqual(["sub"]);
+  });
+});
+
+describe("seededUnit", () => {
+  it("is deterministic for the same (id, salt)", () => {
+    expect(seededUnit("node-1", 0)).toBe(seededUnit("node-1", 0));
+  });
+
+  it("stays within [0, 1)", () => {
+    for (const id of ["a", "b", "longer-id", "x".repeat(50)]) {
+      const v = seededUnit(id, 3);
+      expect(v).toBeGreaterThanOrEqual(0);
+      expect(v).toBeLessThan(1);
+    }
+  });
+
+  it("different salts give independent streams", () => {
+    expect(seededUnit("node-1", 0)).not.toBe(seededUnit("node-1", 7));
+  });
+});

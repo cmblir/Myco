@@ -1,0 +1,49 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Memex",
+  "version": "0.1.0",
+  "identifier": "dev.cmblir.memex",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Memex",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 500,
+        "resizable": true,
+        "center": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' ipc: http://ipc.localhost http://localhost:11434 http://127.0.0.1:11434; img-src 'self' asset: http://asset.localhost https: data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; worker-src 'self' blob:"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "nsis"],
+    "resources": {
+      "../../mcp-server/memex_mcp.py": "mcp-server/memex_mcp.py",
+      "../../mcp-server/project_registry.py": "mcp-server/project_registry.py",
+      "../../mcp-server/requirements.txt": "mcp-server/requirements.txt"
+    },
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "category": "Productivity",
+    "shortDescription": "Desktop wiki for plain markdown vaults",
+    "longDescription": "Memex is a cross-platform desktop wiki app for plain markdown vaults. Edit, link, and visualize a graph of your notes with native performance."
+  }
+}
