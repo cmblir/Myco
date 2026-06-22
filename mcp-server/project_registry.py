@@ -154,6 +154,31 @@ def make_slug(title: str) -> str:
     return s
 
 
+def _validate_slug(slug: str) -> str:
+    """Reject a registry slug that could escape PROJECTS_DIR.
+
+    Defense-in-depth: make_slug already strips traversal when a project is
+    created, but a hand-edited or imported projects.json must not be able to
+    relocate a project root outside projects/ via `..`, a path separator, or an
+    absolute path. Fails closed (raises) rather than building an out-of-tree path.
+    """
+    s = (slug or "").strip()
+    if (
+        not s
+        or "/" in s
+        or "\\" in s
+        or ".." in s
+        or s.startswith(".")
+        or "\x00" in s
+    ):
+        raise ValueError(f"invalid project slug: {slug!r}")
+    root = (PROJECTS_DIR / s).resolve()
+    base = PROJECTS_DIR.resolve()
+    if root != base and base not in root.parents:
+        raise ValueError(f"project slug escapes projects/: {slug!r}")
+    return s
+
+
 # ─── 프로젝트 설정 파일 (model 등) ───
 
 def _load_project_settings(settings_path: Path) -> dict:
@@ -194,7 +219,7 @@ def _legacy_project() -> Project:
 
 
 def _entry_to_project(entry: dict) -> Project:
-    slug = entry["slug"]
+    slug = _validate_slug(entry["slug"])
     root = PROJECTS_DIR / slug
     settings = _load_project_settings(root / ".settings.json")
     # model 우선순위: .settings.json > registry entry > default
@@ -242,7 +267,15 @@ def is_protected_raw(path: Path | str) -> bool:
 
 def list_projects() -> list[Project]:
     reg = _load_registry()
-    return [_entry_to_project(e) for e in reg.get("projects", [])]
+    out: list[Project] = []
+    for e in reg.get("projects", []):
+        try:
+            out.append(_entry_to_project(e))
+        except (ValueError, KeyError):
+            # Skip a malformed or unsafe registry entry rather than aborting the
+            # whole listing or building an out-of-tree path.
+            continue
+    return out
 
 
 def get_active_slug() -> str | None:

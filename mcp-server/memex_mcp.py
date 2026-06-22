@@ -129,6 +129,20 @@ def _safe_wiki_path(proj, filename: str) -> Path:
     return target
 
 
+def _safe_wiki_dir(proj, folder: str) -> Path:
+    """Resolve a folder under wiki_dir and reject path traversal.
+
+    A caller-supplied `folder` (e.g. on list_pages / create_page) must never
+    escape wiki/ via `..` or an absolute path — otherwise it could read or write
+    arbitrary directories on disk.
+    """
+    base = proj.wiki_dir.resolve()
+    target = (proj.wiki_dir / folder).resolve() if folder else base
+    if base != target and base not in target.parents:
+        raise ValueError(f"folder escapes wiki/: {folder}")
+    return target
+
+
 def _today() -> str:
     return datetime.now().strftime("%Y-%m-%d")
 
@@ -245,7 +259,10 @@ def list_pages(
         limit: Cap on number of pages returned (default 200).
     """
     proj = _resolve(project)
-    base = proj.wiki_dir / folder if folder else proj.wiki_dir
+    try:
+        base = _safe_wiki_dir(proj, folder)
+    except ValueError as e:
+        return {"project": proj.slug, "pages": [], "truncated": False, "error": str(e)}
     if not base.exists():
         return {"project": proj.slug, "pages": [], "truncated": False}
     items: list[dict] = []
@@ -481,7 +498,10 @@ def create_page(
     proj = _resolve(project)
     proj.wiki_dir.mkdir(parents=True, exist_ok=True)
     slug = project_registry.make_slug(title)
-    base = proj.wiki_dir / folder if folder else proj.wiki_dir
+    try:
+        base = _safe_wiki_dir(proj, folder)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     base.mkdir(parents=True, exist_ok=True)
     target = base / f"{slug}.md"
     n = 2
