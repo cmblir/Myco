@@ -6,6 +6,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Security audit hardening
+
+A full multi-agent security review of the codebase produced these fixes (each
+finding was adversarially re-verified against the source):
+
+- **Ingest no longer pre-authorizes the agent's `Bash` tool.** The Claude CLI
+  ingest reads untrusted `raw/` source content in non-interactive `--print`
+  mode, so the default tool set is now `Read,Write,Edit,Glob,Grep` — a
+  prompt-injection payload in a source can no longer reach a shell.
+  `MEMEX_CLAUDE_TOOLS` still overrides it.
+- **PDF / spreadsheet parsing is isolated in a child process.** pdf-extract and
+  calamine run on untrusted bytes under `panic = "abort"`; a parser panic/OOM
+  used to crash the whole app. `read_external_text` now parses via
+  `memex --extract-text <path>`, so a crash/timeout becomes a normal error. The
+  extracted output is capped and the cell walk bounded (xlsx zip-bomb defence).
+- **`read_file` rejects pathologically deep YAML frontmatter** before parsing
+  (and `pod_to_json` caps recursion), so adversarial nesting can't overflow the
+  stack; large files are size-guarded.
+- **HTTP provider clients no longer follow redirects** (the `x-api-key` /
+  `x-goog-api-key` headers can't be replayed to another host), and a
+  `MEMEX_*_URL` override now requires https except for loopback hosts, so a
+  plaintext-http override can't leak a key in cleartext.
+- **The read-only vault scanners** (`list_files`, `file_mtimes`,
+  `read_vault_context`, `build_link_graph`, `scan_provenance`, `git_log`) are
+  confined to the open vault root like the mutating commands, and skip files
+  over 2 MB.
+- **MCP `create_page` / `list_pages` confine the `folder` argument** and the
+  project registry validates each `slug`, so neither can escape `wiki/` or
+  `projects/` via `..` / an absolute path.
+- **CSP `img-src` no longer allows bare `https:`**, so a vault note can't beacon
+  to a remote host on render (local/embedded/vault images still load).
+- **The autosave flush on navigation** compares against a component-local
+  baseline, so a rename/interleaved open can't drop keystrokes typed in the
+  debounce window.
+- Provenance coverage no longer counts footnote-definition lines as claims (it
+  was inflating every page toward 100%).
+- CI now runs `cargo audit` + `npm audit` (shipped deps) and Dependabot watches
+  cargo/npm/actions; markdown-it bumped to 14.2.0 (smartquotes-DoS advisory).
+
 ### Security & robustness
 
 - **Content-Security-Policy is now enabled** (was `null`). The policy restricts
