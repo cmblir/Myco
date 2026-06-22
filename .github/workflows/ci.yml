@@ -65,6 +65,31 @@ jobs:
       - name: tests
         run: cargo test
 
+  # Dependency-advisory alarm: surfaces a RUSTSEC / npm advisory against any
+  # (transitive) dependency — e.g. the PDF/spreadsheet parsers (lopdf, zip,
+  # quick-xml) or reqwest — instead of relying on a manual lockfile bump. Runs
+  # as its own job so an advisory shows up without blocking the test gate.
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit (Rust advisories)
+        working-directory: app/src-tauri
+        run: cargo audit
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+      # Only the SHIPPED (production) dependencies gate the build; dev-only
+      # build-toolchain advisories are tracked by Dependabot instead of blocking
+      # the alarm on tooling that never reaches a user.
+      - name: npm audit (shipped JS advisories)
+        working-directory: app
+        run: npm audit --omit=dev --audit-level=high
+
   # Compiles + runs the cfg(windows) CLI-resolution code and tests, which never
   # build on Linux. webview2 is preinstalled on windows-latest.
   rust-windows:

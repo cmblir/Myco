@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Rust crates (the Tauri backend) — surfaces advisories/updates for the
+  # untrusted-input parsers (pdf-extract, calamine) and the rest of the tree.
+  - package-ecosystem: cargo
+    directory: /app/src-tauri
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # Frontend JS dependencies.
+  - package-ecosystem: npm
+    directory: /app
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  # The CI/release GitHub Actions themselves.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
