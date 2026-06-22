@@ -135,9 +135,18 @@ fn not_found() -> McpRegInfo {
 }
 
 fn desktop_json(python: &str, script: &str, vault: &str) -> String {
-    format!(
-        "{{\n  \"mcpServers\": {{\n    \"memex\": {{\n      \"command\": \"{python}\",\n      \"args\": [\"{script}\"],\n      \"env\": {{ \"MEMEX_PROJECT_ROOT\": \"{vault}\" }}\n    }}\n  }}\n}}"
-    )
+    // Build via serde_json so a path containing a quote or backslash is escaped
+    // correctly instead of producing malformed JSON the user would paste.
+    let value = serde_json::json!({
+        "mcpServers": {
+            "memex": {
+                "command": python,
+                "args": [script],
+                "env": { "MEMEX_PROJECT_ROOT": vault }
+            }
+        }
+    });
+    serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
 }
 
 /// Registration info for exposing `vault_path` via the bundled MCP server.

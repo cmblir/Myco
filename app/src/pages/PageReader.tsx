@@ -65,7 +65,13 @@ function SamplePage({ id }: { id: string }): JSX.Element {
             {cm[1]}
           </span>
         );
+      // Escape HTML before the inline-markdown substitutions so this stays safe
+      // even if it is ever pointed at non-static content (today it only renders
+      // the bundled SAMPLE constant).
       const html = part
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
         .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
         .replace(/`([^`]+)`/g, "<code>$1</code>")
         .replace(/_([^_]+)_/g, "<i>$1</i>");
@@ -137,6 +143,11 @@ function VaultPage({ path }: { path: string; t: Strings }): JSX.Element {
   // reseeding on every activeFile change would let a self-initiated save (which
   // updates activeFile.raw) clobber keystrokes typed during that save.
   const seededPathRef = useRef<string | null>(null);
+  // The on-disk baseline we last seeded/persisted for THIS file. The unmount
+  // flush compares the draft against this component-local value (not the global
+  // activeFile, which a rename/interleaved openFile can move off this path before
+  // we flush) so unsaved keystrokes are never dropped on navigation.
+  const seededRawRef = useRef("");
 
   // Re-open when the vault finishes loading too: on a cold launch / deep-link
   // straight to a page route, App's auto-restore runs openVault (which resets
@@ -153,6 +164,7 @@ function VaultPage({ path }: { path: string; t: Strings }): JSX.Element {
       // `content`, so editing + autosave round-trips the frontmatter losslessly.
       setDraft(activeFile.raw);
       draftRef.current = activeFile.raw;
+      seededRawRef.current = activeFile.raw;
     }
   }, [activeFile?.path, activeFile?.raw, path]);
 
@@ -163,12 +175,13 @@ function VaultPage({ path }: { path: string; t: Strings }): JSX.Element {
         saveTimerRef.current = null;
       }
       // Flush unsaved edits on navigation/unmount regardless of the timer state.
-      // Read the freshest store value: if the draft differs from what's on disk
-      // there are genuinely-unsaved keystrokes (e.g. typed during an in-flight
-      // save that cleared the timer), so persist them instead of dropping them.
-      const af = useVaultStore.getState().activeFile;
-      if (af?.path === path && draftRef.current !== af.raw) {
+      // Compare the draft against the component-local baseline (seededRawRef),
+      // NOT the global activeFile: a rename / delete / interleaved openFile can
+      // move activeFile off this path before this cleanup runs, and gating on it
+      // would silently drop the pending keystrokes for this file.
+      if (draftRef.current !== seededRawRef.current) {
         void saveFile(path, draftRef.current);
+        seededRawRef.current = draftRef.current;
       }
     },
     [path, saveFile],
@@ -179,6 +192,7 @@ function VaultPage({ path }: { path: string; t: Strings }): JSX.Element {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null;
+      seededRawRef.current = c;
       void saveFile(path, c);
     }, AUTOSAVE_MS);
   }
@@ -188,6 +202,7 @@ function VaultPage({ path }: { path: string; t: Strings }): JSX.Element {
       clearTimeout(saveTimerRef.current);
       saveTimerRef.current = null;
     }
+    seededRawRef.current = c;
     void saveFile(path, c);
   }
 
