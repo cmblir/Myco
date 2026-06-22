@@ -19,6 +19,7 @@ import { STRINGS } from "./lib/i18n";
 import { useUIStore } from "./stores/uiStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { getLastVaultPath, useVaultStore } from "./stores/vaultStore";
+import { useAutoIngestScheduler } from "./lib/autoIngest";
 import { useIngestStore } from "./stores/ingestStore";
 import { ipc } from "./lib/ipc";
 
@@ -39,12 +40,20 @@ export default function App(): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
   const openVault = useVaultStore((s) => s.openVault);
   const loadSettings = useSettingsStore((s) => s.load);
+  const settings = useSettingsStore((s) => s.settings);
 
   const t = STRINGS[lang] ?? STRINGS.en;
 
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
+
+  // Scheduled auto-ingest of the vault's _inbox/ while the app is open.
+  useAutoIngestScheduler(
+    settings?.auto_ingest_enabled ?? false,
+    settings?.auto_ingest_interval_min ?? 60,
+    currentVault?.path,
+  );
 
   // Auto-refresh the file tree + link graph so EXTERNAL changes (edits in
   // Obsidian/Finder, files written outside in-app operations) appear without a

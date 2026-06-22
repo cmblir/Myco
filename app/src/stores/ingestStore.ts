@@ -182,6 +182,15 @@ export const useIngestStore = create<IngestState>((set, get) => ({
           throw new Error(res.stderr.trim() || `claude exit ${res.status}`);
         }
         out = res.stdout.trim();
+      } else if (settings.ingest_provider === "memex-pro") {
+        // Memex Pro: the proxy runs a cheap model server-side and returns the
+        // wiki file operations, which Rust applies (confined). The raw source
+        // was already written above; this fills in the wiki pages. No tool
+        // stream — stage UI only.
+        const result = await ipc.memexProIngest(slug, finalTitle, body.trim());
+        out = `${result.summary}\n\n(${result.applied} wiki file${
+          result.applied === 1 ? "" : "s"
+        } updated via Memex Pro)`;
       } else {
         // Other providers (gemini/codex CLIs, HTTP APIs, ollama) have no
         // tool-event stream; blocking call, stage UI only.

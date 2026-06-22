@@ -9,6 +9,7 @@ pub mod extract;
 pub mod git_log;
 pub mod index;
 pub mod mcp_server;
+pub mod memex_pro;
 pub mod ollama;
 pub mod parser;
 pub mod provenance;
@@ -47,6 +48,7 @@ pub fn run() {
             commands::agent_check,
             commands::agent_run,
             commands::scan_provenance,
+            commands::memex_pro_ingest,
             commands::set_provider_key,
             commands::delete_provider_key,
             commands::has_provider_key,

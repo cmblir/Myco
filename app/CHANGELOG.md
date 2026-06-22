@@ -131,6 +131,15 @@ finding was adversarially re-verified against the source):
 
 ### Added
 
+- **Memex Pro provider** (Settings → Connections): a managed ingest option that
+  runs a cheap model server-side and applies the returned wiki pages locally —
+  no API key or CLI needed. Configure a proxy URL + license key; the
+  `memex_pro_ingest` command POSTs the vault snapshot and applies the returned
+  file operations through the confined `write_file`.
+- **In-app auto-ingest toggle** (Settings → Model): while Memex is open, it
+  periodically ingests sources dropped into the vault's `_inbox/` via the
+  selected provider (a configurable interval). Complements the headless cron
+  daemon; both watch the same `_inbox/`.
 - **Scheduled auto-ingest** (`automation/autoingest.py`): drop sources into the
   vault's `_inbox/` and they're ingested into the wiki automatically on a
   schedule (cron / launchd), using your own `claude` CLI. New `raw/<slug>.md`

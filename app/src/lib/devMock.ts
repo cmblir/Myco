@@ -138,11 +138,14 @@ function provenance() {
 }
 
 const SETTINGS = {
-  providers: { anthropic_api: false, openai_api: false, google_api: false, ollama: false, openrouter: false },
+  providers: { anthropic_api: false, openai_api: false, google_api: false, ollama: false, openrouter: false, memex_pro: false },
   query_provider: "anthropic-cli",
   query_model: "claude-sonnet-4-6",
   ingest_provider: "anthropic-cli",
   ingest_model: "claude-sonnet-4-6",
+  memex_pro_url: "",
+  auto_ingest_enabled: false,
+  auto_ingest_interval_min: 60,
 };
 
 const bySlug = new Map(NODES.map((d) => [d.s, d]));
@@ -184,6 +187,12 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(provenance());
     case "get_settings":
       return Promise.resolve(SETTINGS);
+    case "memex_pro_ingest":
+      return Promise.resolve({
+        summary: `(dev mock) ingested ${String(args.slug ?? "source")}`,
+        applied: 2,
+        paths: ["wiki/source-mock.md", "wiki/index.md"],
+      });
     case "claude_check":
       return Promise.resolve({ installed: true, version: "claude 1.0.0", path: "/usr/local/bin/claude" });
     case "agent_check":

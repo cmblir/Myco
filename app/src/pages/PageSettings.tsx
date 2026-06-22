@@ -100,6 +100,15 @@ export const PROVIDERS: ProviderDef[] = [
     desc: "One key for many providers (useful for model comparison).",
     catalog: [],
   },
+  {
+    id: "memex-pro",
+    flag: "memex_pro",
+    name: "Memex Pro",
+    kind: "api",
+    needsKey: true,
+    desc: "Unlimited ingest on a managed model — no API key or CLI needed. Enter your proxy URL and license key.",
+    catalog: ["gemini-2.5-flash", "claude-haiku-4-5"],
+  },
 ];
 
 export default function PageSettings({ t }: { t: Strings }): JSX.Element {
@@ -289,6 +298,92 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
           void update({ ingest_provider: provider, ingest_model: model })
         }
       />
+      <AutoIngestSetting t={t} settings={settings} update={update} />
+    </div>
+  );
+}
+
+// While the app is open, periodically ingest pending _inbox/ sources via the
+// selected provider. Complements the headless cron daemon.
+function AutoIngestSetting({
+  t,
+  settings,
+  update,
+}: {
+  t: Strings;
+  settings: MemexSettings;
+  update: (patch: Partial<MemexSettings>) => Promise<void> | void;
+}): JSX.Element {
+  const enabled = settings.auto_ingest_enabled;
+  const interval = settings.auto_ingest_interval_min;
+  return (
+    <div className="card">
+      <div
+        className="row"
+        style={{ justifyContent: "space-between", alignItems: "flex-start" }}
+      >
+        <div style={{ paddingRight: 16 }}>
+          <div style={{ fontWeight: 600 }}>{t.s_autoingest_title}</div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+            {t.s_autoingest_desc}
+          </div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={enabled}
+          aria-label={t.s_autoingest_title}
+          onClick={() => void update({ auto_ingest_enabled: !enabled })}
+          style={{
+            width: 44,
+            height: 24,
+            borderRadius: 12,
+            border: "1px solid var(--line)",
+            background: enabled ? "var(--ink)" : "var(--bg-soft)",
+            position: "relative",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 2,
+              left: enabled ? 22 : 2,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: enabled ? "var(--bg)" : "var(--ink-3)",
+              transition: "left 150ms",
+            }}
+          />
+        </button>
+      </div>
+      {enabled ? (
+        <div
+          className="row"
+          style={{ marginTop: 12, gap: 8, alignItems: "center" }}
+        >
+          <label style={{ fontSize: 13 }}>{t.s_autoingest_interval}</label>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            value={interval}
+            onChange={(e) =>
+              void update({
+                auto_ingest_interval_min: Math.max(
+                  1,
+                  Number(e.target.value) || 60,
+                ),
+              })
+            }
+            style={{ width: 90 }}
+          />
+          <span className="muted" style={{ fontSize: 13 }}>
+            min
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -396,6 +491,152 @@ function ModelPicker({
           {error}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// Memex Pro is configured with a proxy URL + license key (not a single API key),
+// so it gets a dedicated card instead of the generic key-only flow.
+function MemexProCard({
+  t,
+  def,
+  connected,
+  settings,
+  update,
+  setProviderConnected,
+}: {
+  t: Strings;
+  def: ProviderDef;
+  connected: boolean;
+  settings: MemexSettings | null;
+  update: (patch: Partial<MemexSettings>) => Promise<void> | void;
+  setProviderConnected: (
+    flag: keyof MemexSettings["providers"],
+    on: boolean,
+  ) => Promise<void> | void;
+}): JSX.Element {
+  const [url, setUrl] = useState(settings?.memex_pro_url ?? "");
+  const [keyVal, setKeyVal] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function save(): Promise<void> {
+    if (!url.trim()) {
+      window.alert("Enter the Memex Pro proxy URL");
+      return;
+    }
+    setBusy(true);
+    try {
+      await update({ memex_pro_url: url.trim() });
+      if (keyVal.trim()) await ipc.setProviderKey("memex-pro", keyVal.trim());
+      await setProviderConnected("memex_pro", true);
+      setKeyVal("");
+    } catch (e) {
+      window.alert(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function disconnect(): Promise<void> {
+    setBusy(true);
+    try {
+      await ipc.deleteProviderKey("memex-pro");
+      await setProviderConnected("memex_pro", false);
+    } catch (e) {
+      window.alert(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="card"
+      style={{
+        display: "grid",
+        gridTemplateColumns: "auto 1fr",
+        gap: 14,
+        alignItems: "flex-start",
+        padding: 14,
+      }}
+    >
+      <span
+        style={{
+          width: 36,
+          height: 36,
+          borderRadius: 8,
+          background: "var(--bg-soft)",
+          border: "1px solid var(--line)",
+          display: "grid",
+          placeItems: "center",
+          color: "var(--ink-2)",
+        }}
+      >
+        <ProviderGlyph id={def.id} size={18} />
+      </span>
+      <div>
+        <div className="row" style={{ gap: 8, marginBottom: 4 }}>
+          <span style={{ fontWeight: 600 }}>{def.name}</span>
+          <span className="chip" style={{ background: "var(--bg-soft)" }}>
+            {def.kind}
+          </span>
+          {connected ? (
+            <span
+              className="chip"
+              style={{
+                background: "rgba(22,163,74,0.1)",
+                color: "var(--c-entity)",
+              }}
+            >
+              ● {t.s_provider_connected}
+            </span>
+          ) : (
+            <span className="chip">○ {t.s_provider_disconnected}</span>
+          )}
+        </div>
+        <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
+          {def.desc}
+        </div>
+        <div className="field" style={{ marginBottom: 8 }}>
+          <label>{t.s_memexpro_url}</label>
+          <input
+            className="input"
+            placeholder="https://memex-proxy.<you>.workers.dev"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}
+          />
+        </div>
+        <div className="field" style={{ marginBottom: 12 }}>
+          <label>{t.s_memexpro_key}</label>
+          <input
+            className="input"
+            type="password"
+            placeholder="memex.…"
+            value={keyVal}
+            onChange={(e) => setKeyVal(e.target.value)}
+            style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}
+          />
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => void save()}
+            disabled={busy || !url.trim()}
+          >
+            {t.s_provider_connect}
+          </button>
+          {connected ? (
+            <button
+              className="btn"
+              onClick={() => void disconnect()}
+              disabled={busy}
+            >
+              {t.s_provider_disconnect}
+            </button>
+          ) : null}
+        </div>
+      </div>
     </div>
   );
 }
@@ -539,6 +780,19 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
               ? cliStatus?.installed
               : agentStatus[p.id]?.installed
             : undefined;
+          if (p.id === "memex-pro") {
+            return (
+              <MemexProCard
+                key={p.id}
+                t={t}
+                def={p}
+                connected={connected}
+                settings={settings ?? null}
+                update={update}
+                setProviderConnected={setProviderConnected}
+              />
+            );
+          }
           if (p.id === "ollama") {
             return (
               <div

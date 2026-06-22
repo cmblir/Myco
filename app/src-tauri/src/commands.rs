@@ -308,6 +308,30 @@ pub fn scan_provenance(
     provenance::scan_provenance(&vault_path)
 }
 
+/// Memex Pro ingest: send the open vault's snapshot + this source to the
+/// configured proxy and apply the wiki file operations it returns (confined to
+/// the vault). The proxy URL comes from settings; the license key from the
+/// keychain ("memex-pro").
+#[tauri::command]
+pub async fn memex_pro_ingest(
+    state: tauri::State<'_, VaultRoot>,
+    slug: String,
+    title: String,
+    text: String,
+) -> Result<crate::memex_pro::MemexProResult, String> {
+    let root = require_root(&state)?;
+    // VaultRoot is Send + Sync, so holding State across the await keeps the
+    // future Send; we just need the owned root before the network call.
+    let s = settings::load();
+    let url = s.memex_pro_url.trim().to_string();
+    if url.is_empty() {
+        return Err("Memex Pro proxy URL is not configured (Settings → Connections)".into());
+    }
+    let key = secrets::get_key("memex-pro")?
+        .ok_or_else(|| "Memex Pro license key is not set".to_string())?;
+    crate::memex_pro::ingest(&root, &url, &key, &slug, &title, &text).await
+}
+
 #[tauri::command]
 pub fn set_provider_key(provider_id: String, key: String) -> Result<(), String> {
     secrets::set_key(&provider_id, &key)

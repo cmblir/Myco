@@ -18,6 +18,15 @@ pub struct Settings {
     pub ingest_provider: String,
     #[serde(default = "default_ingest_model")]
     pub ingest_model: String,
+    /// Memex Pro proxy base URL (the subscription ingest endpoint). Empty until
+    /// the user configures it; the license key lives in the keychain.
+    #[serde(default)]
+    pub memex_pro_url: String,
+    /// While the app is open, periodically ingest pending `_inbox/` sources.
+    #[serde(default)]
+    pub auto_ingest_enabled: bool,
+    #[serde(default = "default_auto_ingest_interval")]
+    pub auto_ingest_interval_min: u32,
 }
 
 impl Default for Settings {
@@ -28,6 +37,9 @@ impl Default for Settings {
             query_model: default_query_model(),
             ingest_provider: default_ingest_provider(),
             ingest_model: default_ingest_model(),
+            memex_pro_url: String::new(),
+            auto_ingest_enabled: false,
+            auto_ingest_interval_min: default_auto_ingest_interval(),
         }
     }
 }
@@ -53,6 +65,8 @@ pub struct ProviderFlags {
     pub ollama: bool,
     #[serde(default)]
     pub openrouter: bool,
+    #[serde(default)]
+    pub memex_pro: bool,
 }
 
 impl Default for ProviderFlags {
@@ -66,6 +80,7 @@ impl Default for ProviderFlags {
             google_api: false,
             ollama: false,
             openrouter: false,
+            memex_pro: false,
         }
     }
 }
@@ -88,6 +103,9 @@ fn default_ingest_provider() -> String {
 fn default_ingest_model() -> String {
     // Cheapest CLI alias — ingest is high-volume, so default to Haiku.
     "haiku".to_string()
+}
+fn default_auto_ingest_interval() -> u32 {
+    60
 }
 
 fn settings_dir() -> Result<PathBuf, String> {

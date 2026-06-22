@@ -98,11 +98,23 @@ export interface MemexSettings {
     google_api: boolean;
     ollama: boolean;
     openrouter: boolean;
+    memex_pro: boolean;
   };
   query_provider: string;
   query_model: string;
   ingest_provider: string;
   ingest_model: string;
+  /** Memex Pro proxy base URL (the subscription ingest endpoint). */
+  memex_pro_url: string;
+  /** Periodically ingest pending _inbox/ sources while the app is open. */
+  auto_ingest_enabled: boolean;
+  auto_ingest_interval_min: number;
+}
+
+export interface MemexProResult {
+  summary: string;
+  applied: number;
+  paths: string[];
 }
 
 export interface ChatRequest {
@@ -206,6 +218,8 @@ export const ipc = {
     invoke<ClaudeResult>("agent_run", { provider, model, prompt, cwd }),
   scanProvenance: (vaultPath: string) =>
     invoke<ProvenanceRow[]>("scan_provenance", { vaultPath }),
+  memexProIngest: (slug: string, title: string, text: string) =>
+    invoke<MemexProResult>("memex_pro_ingest", { slug, title, text }),
   setProviderKey: (providerId: string, key: string) =>
     invoke<null>("set_provider_key", { providerId, key }),
   deleteProviderKey: (providerId: string) =>
