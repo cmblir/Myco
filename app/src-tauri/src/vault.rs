@@ -440,8 +440,23 @@ pub fn read_file(path: &str) -> Result<FileContent, String> {
     if !resolved.is_file() {
         return Err(format!("not a file: {path}"));
     }
+    // Guard against a pathologically large file (e.g. a multi-GB or adversarial
+    // doc synced into the vault) being slurped + frontmatter-parsed into memory.
+    // 16 MB is far beyond any real markdown note.
+    if let Ok(meta) = std::fs::metadata(&resolved) {
+        if meta.len() > 16 * 1024 * 1024 {
+            return Err(format!(
+                "file too large to open: {} bytes (limit 16 MB)",
+                meta.len()
+            ));
+        }
+    }
     let raw = std::fs::read_to_string(&resolved).map_err(|e| format!("read failed: {e}"))?;
-    let (frontmatter, content) =
+    let (frontmatter, content) = if frontmatter_too_deep(&raw) {
+        // Adversarially deep frontmatter could overflow the YAML parser's stack;
+        // refuse to parse it and treat the file as having no frontmatter.
+        (serde_json::Value::Null, raw.clone())
+    } else {
         match gray_matter::Matter::<gray_matter::engine::YAML>::new().parse(&raw) {
             Ok(parsed) => {
                 let fm = parsed
@@ -451,7 +466,8 @@ pub fn read_file(path: &str) -> Result<FileContent, String> {
                 (fm, parsed.content)
             }
             Err(_) => (serde_json::Value::Null, raw.clone()),
-        };
+        }
+    };
     Ok(FileContent {
         path: resolved.to_string_lossy().into_owned(),
         raw,
@@ -461,19 +477,66 @@ pub fn read_file(path: &str) -> Result<FileContent, String> {
 }
 
 fn pod_to_json(pod: gray_matter::Pod) -> serde_json::Value {
+    pod_to_json_depth(pod, 0)
+}
+
+// Frontmatter is untrusted (a synced/shared note could carry adversarial YAML).
+// Cap recursion so deeply-nested arrays/maps collapse to Null instead of
+// overflowing the stack on read_file.
+const MAX_FM_DEPTH: usize = 64;
+
+// Pre-parse guard: reject frontmatter whose nesting is pathologically deep BEFORE
+// handing it to the YAML parser, so adversarial input (e.g. `[[[[…` thousands
+// deep, or absurd indentation) can't overflow the parser's own stack. Scans only
+// the leading `---`-fenced block; a cheap byte walk, no allocation.
+fn frontmatter_too_deep(raw: &str) -> bool {
+    if !raw.starts_with("---") {
+        return false;
+    }
+    let mut flow_depth: i32 = 0;
+    let mut max_flow: i32 = 0;
+    let mut max_indent: usize = 0;
+    for line in raw.lines().skip(1) {
+        if line.trim_end() == "---" {
+            break; // end of the frontmatter block
+        }
+        let indent = line.len() - line.trim_start().len();
+        max_indent = max_indent.max(indent);
+        for b in line.bytes() {
+            match b {
+                b'[' | b'{' => {
+                    flow_depth += 1;
+                    max_flow = max_flow.max(flow_depth);
+                }
+                b']' | b'}' => flow_depth -= 1,
+                _ => {}
+            }
+        }
+    }
+    max_flow as usize > MAX_FM_DEPTH || max_indent > MAX_FM_DEPTH * 2
+}
+
+fn pod_to_json_depth(pod: gray_matter::Pod, depth: usize) -> serde_json::Value {
     use gray_matter::Pod;
     use serde_json::{Map, Number, Value};
+    if depth >= MAX_FM_DEPTH {
+        return Value::Null;
+    }
     match pod {
         Pod::Null => Value::Null,
         Pod::String(s) => Value::String(s),
         Pod::Boolean(b) => Value::Bool(b),
         Pod::Integer(i) => Value::Number(Number::from(i)),
         Pod::Float(f) => Number::from_f64(f).map_or(Value::Null, Value::Number),
-        Pod::Array(arr) => Value::Array(arr.into_iter().map(pod_to_json).collect()),
+        Pod::Array(arr) => Value::Array(
+            arr.into_iter()
+                .map(|p| pod_to_json_depth(p, depth + 1))
+                .collect(),
+        ),
         Pod::Hash(map) => {
             let mut out = Map::new();
             for (k, v) in map {
-                out.insert(k, pod_to_json(v));
+                out.insert(k, pod_to_json_depth(v, depth + 1));
             }
             Value::Object(out)
         }
@@ -981,6 +1044,25 @@ mod tests {
         let fc = read_file(p.to_str().unwrap()).unwrap();
         assert_eq!(fc.content, "no frontmatter here");
         assert!(fc.frontmatter.is_null());
+    }
+
+    #[test]
+    fn read_file_refuses_pathologically_deep_frontmatter() {
+        // A synced/shared note with adversarially deep YAML must not overflow the
+        // stack. The pre-parse guard skips it (Null frontmatter) and the body is
+        // returned intact — read_file returns Ok, no panic/abort.
+        let dir = temp_vault("deep-fm");
+        let p = dir.join("deep.md");
+        let depth = 5_000;
+        let nested = format!("{}x{}", "[".repeat(depth), "]".repeat(depth));
+        fs::write(&p, format!("---\nkey: {nested}\n---\n# Body\n")).unwrap();
+        let fc = read_file(p.to_str().unwrap()).unwrap();
+        assert!(fc.frontmatter.is_null(), "deep frontmatter must be skipped");
+        assert!(fc.raw.contains("# Body"));
+        // A normal shallow frontmatter is still parsed.
+        assert!(!frontmatter_too_deep(
+            "---\ntitle: Hi\ntags:\n  - a\n---\nbody"
+        ));
     }
 
     #[test]

@@ -36,6 +36,21 @@ fn require_root(state: &tauri::State<VaultRoot>) -> Result<PathBuf, String> {
     state.get().ok_or_else(|| "no vault is open".to_string())
 }
 
+/// Confine a frontend-supplied scan root/path to the open vault. The read-only
+/// scanners below take a path argument (historical), so this asserts it resolves
+/// to — or inside — the open vault root, matching the confinement the mutating
+/// commands already enforce and the VaultRoot doc-comment's promise.
+fn confine_root(state: &tauri::State<VaultRoot>, arg: &str) -> Result<String, String> {
+    let root = require_root(state)?;
+    let resolved = std::path::Path::new(arg)
+        .canonicalize()
+        .map_err(|e| format!("canonicalize failed for {arg}: {e}"))?;
+    if !resolved.starts_with(&root) {
+        return Err("path is outside the open vault".into());
+    }
+    Ok(resolved.to_string_lossy().into_owned())
+}
+
 #[tauri::command]
 pub fn open_vault(state: tauri::State<VaultRoot>, path: String) -> Result<VaultMeta, String> {
     let meta = vault::open_vault(&path)?;
@@ -54,12 +69,17 @@ pub fn ensure_default_vault() -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn list_files(root: String) -> Result<Vec<FileNode>, String> {
+pub fn list_files(state: tauri::State<VaultRoot>, root: String) -> Result<Vec<FileNode>, String> {
+    let root = confine_root(&state, &root)?;
     vault::list_files(&root)
 }
 
 #[tauri::command]
-pub fn file_mtimes(root: String) -> Result<Vec<(String, i64)>, String> {
+pub fn file_mtimes(
+    state: tauri::State<VaultRoot>,
+    root: String,
+) -> Result<Vec<(String, i64)>, String> {
+    let root = confine_root(&state, &root)?;
     vault::file_mtimes(&root)
 }
 
@@ -74,7 +94,12 @@ pub fn read_file(state: tauri::State<VaultRoot>, path: String) -> Result<FileCon
 /// so non-tool LLM providers can answer queries / run lint against real vault
 /// content (the Claude CLI reads files itself and does not use this).
 #[tauri::command]
-pub fn read_vault_context(root: String, max_bytes: usize) -> Result<String, String> {
+pub fn read_vault_context(
+    state: tauri::State<VaultRoot>,
+    root: String,
+    max_bytes: usize,
+) -> Result<String, String> {
+    let root = confine_root(&state, &root)?;
     vault::read_vault_context(&root, max_bytes)
 }
 
@@ -90,11 +115,13 @@ pub fn write_file(
 }
 
 /// Extract a dropped/picked file's text for ingest (not restricted to inside the
-/// vault). PDF and spreadsheets (xlsx/xls/ods) are parsed to text; CSV and other
-/// text-like files are read as-is. Refuses files larger than 25 MB.
+/// vault — it's an external import). PDF and spreadsheets (xlsx/xls/ods) are
+/// parsed to text; CSV and other text-like files are read as-is. Refuses files
+/// larger than 25 MB. Parsing runs in an isolated child process so a hostile file
+/// that crashes the parser can't take down the app.
 #[tauri::command]
 pub fn read_external_text(path: String) -> Result<String, String> {
-    crate::extract::extract_text(&path)
+    crate::extract::extract_text_isolated(&path)
 }
 
 #[tauri::command]
@@ -167,7 +194,8 @@ pub fn parse_links(state: tauri::State<VaultRoot>, path: String) -> Result<Vec<S
 }
 
 #[tauri::command]
-pub fn build_link_graph(root: String) -> Result<Adjacency, String> {
+pub fn build_link_graph(state: tauri::State<VaultRoot>, root: String) -> Result<Adjacency, String> {
+    let root = confine_root(&state, &root)?;
     index::build_link_graph(&root)
 }
 
@@ -184,7 +212,12 @@ pub fn search_vault(
 }
 
 #[tauri::command]
-pub fn git_log(vault_path: String, limit: Option<usize>) -> Result<Vec<Commit>, String> {
+pub fn git_log(
+    state: tauri::State<VaultRoot>,
+    vault_path: String,
+    limit: Option<usize>,
+) -> Result<Vec<Commit>, String> {
+    let vault_path = confine_root(&state, &vault_path)?;
     git_log::git_log(&vault_path, limit.unwrap_or(50))
 }
 
@@ -267,7 +300,11 @@ pub async fn agent_run(
 }
 
 #[tauri::command]
-pub fn scan_provenance(vault_path: String) -> Result<Vec<ProvenanceRow>, String> {
+pub fn scan_provenance(
+    state: tauri::State<VaultRoot>,
+    vault_path: String,
+) -> Result<Vec<ProvenanceRow>, String> {
+    let vault_path = confine_root(&state, &vault_path)?;
     provenance::scan_provenance(&vault_path)
 }
 

@@ -25,6 +25,11 @@ pub fn scan_provenance(vault_path: &str) -> Result<Vec<ProvenanceRow>, String> {
     let files = collect_markdown(&root).map_err(|e| format!("walk failed: {e}"))?;
     let mut rows = Vec::with_capacity(files.len());
     for file in &files {
+        // Skip files larger than 2 MB so a single pathological file can't dominate
+        // the whole-vault provenance scan (matches search_vault's cap).
+        if std::fs::metadata(file).map(|m| m.len()).unwrap_or(0) > 2 * 1024 * 1024 {
+            continue;
+        }
         let raw = match std::fs::read_to_string(file) {
             Ok(s) => s,
             Err(_) => continue,
@@ -111,8 +116,26 @@ fn is_non_claim_line(trimmed: &str) -> bool {
         || trimmed.starts_with("---")
         || trimmed.starts_with("***")
         || trimmed.starts_with("![")
+        || is_footnote_definition(trimmed)
         || is_ordered_list_item(trimmed)
         || is_table_row(trimmed)
+}
+
+// A footnote DEFINITION line — `[^id]: ...` — is structural metadata (it declares
+// where a citation points), not a prose claim. The schema mandates one such line
+// per source at the bottom of every page, e.g. `[^src-x]: [[source-x]]`. Without
+// this exclusion each definition counts as BOTH a claim (total) and a cited claim
+// (it contains `[^src-`), inflating coverage toward 100% and hiding the exact
+// under-cited pages the Provenance view exists to surface.
+fn is_footnote_definition(s: &str) -> bool {
+    let Some(rest) = s.strip_prefix("[^") else {
+        return false;
+    };
+    match rest.find(']') {
+        // `[^label]:` — the label must close with `]` immediately followed by `:`.
+        Some(close) => rest[close + 1..].starts_with(':'),
+        None => false,
+    }
 }
 
 fn is_ordered_list_item(s: &str) -> bool {
@@ -195,5 +218,32 @@ mod tests {
         let text = "1. step one\n+ a bullet\n|a|b|\n|---|---|\n| c | d |\nReal claim.\n";
         let (_, total) = count_claims(text);
         assert_eq!(total, 1);
+    }
+
+    #[test]
+    fn footnote_definitions_are_not_counted_as_claims() {
+        // A page with one cited prose claim plus two footnote-definition lines:
+        // only the prose claim must count, and it is cited.
+        let text = "A claim with cite[^src-a].\n\n[^src-a]: [[source-a]]\n[^src-b]: [[source-b]]\n";
+        let (cited, total) = count_claims(text);
+        assert_eq!(total, 1, "footnote definitions must not inflate total");
+        assert_eq!(cited, 1);
+
+        // A page whose only `[^src-` occurrences are definitions has zero claims.
+        let defs_only = "# Title\n\n[^src-a]: [[source-a]]\n";
+        let (cited2, total2) = count_claims(defs_only);
+        assert_eq!(total2, 0);
+        assert_eq!(cited2, 0);
+    }
+
+    #[test]
+    fn footnote_definition_detection() {
+        assert!(is_footnote_definition("[^src-x]: [[source-x]]"));
+        assert!(is_footnote_definition("[^1]: a note"));
+        // A reference (not a definition) inside prose is still a claim.
+        assert!(!is_footnote_definition(
+            "A sentence ending in a cite[^src-x]."
+        ));
+        assert!(!is_footnote_definition("[not a footnote]"));
     }
 }

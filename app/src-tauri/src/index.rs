@@ -25,6 +25,12 @@ pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
 
     let mut adj = Adjacency::default();
     for file in &sources {
+        // Skip pathologically large files so one file can't dominate a full-vault
+        // scan (matches the 2 MB cap search_vault uses). A failed metadata read
+        // (len 0) falls through to read_to_string, preserving its error behaviour.
+        if std::fs::metadata(file).map(|m| m.len()).unwrap_or(0) > 2 * 1024 * 1024 {
+            continue;
+        }
         let raw = std::fs::read_to_string(file).map_err(|e| format!("read {file:?}: {e}"))?;
         ingest_links(file, &raw, &names, &mut adj);
         ingest_tags(file, &raw, &mut adj);

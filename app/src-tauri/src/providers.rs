@@ -79,15 +79,31 @@ async fn send_with_retry(
     build().send().await
 }
 
-// Resolve a base URL from an env override, but only honor the override when it is
-// an http(s) URL. A non-http override (file://, gopher://, an arbitrary host, etc.)
-// is an SSRF-shaped hazard, so we ignore it and fall back to the hardcoded default.
-// The wiremock tests set MEMEX_*_URL to "http://127.0.0.1:PORT/..." which passes.
+// Resolve a base URL from an env override, but only honor a SAFE override and
+// fall back to the hardcoded default otherwise. An https override is accepted
+// for any host; a plaintext http override is accepted ONLY for a loopback host
+// (the local Ollama daemon and the wiremock test server). This blocks both the
+// SSRF-shaped hazard of a non-http scheme (file://, gopher://, …) and the
+// cleartext-exfiltration hazard of `http://attacker/...` carrying an API key.
 fn http_url_or(default_url: &str, env_key: &str) -> String {
     match std::env::var(env_key) {
-        Ok(value) if value.starts_with("http://") || value.starts_with("https://") => value,
+        Ok(value) if override_allowed(&value) => value,
         _ => default_url.to_string(),
     }
+}
+
+// https anywhere; plaintext http only to a loopback host. Keyed vendor endpoints
+// must therefore stay https, while the legitimate local-only endpoints
+// (Ollama at 127.0.0.1, the wiremock test server) keep working.
+fn override_allowed(value: &str) -> bool {
+    if let Some(rest) = value.strip_prefix("https://") {
+        return !rest.is_empty();
+    }
+    if let Some(rest) = value.strip_prefix("http://") {
+        let host = rest.split(['/', ':']).next().unwrap_or("");
+        return matches!(host, "localhost" | "127.0.0.1" | "::1" | "[::1]");
+    }
+    false
 }
 
 // Endpoints. Production URLs that can be overridden via env for tests.
@@ -164,6 +180,10 @@ pub async fn chat_complete(
 ) -> Result<ChatResponse, String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+        // Vendor chat POSTs never legitimately 3xx-redirect; following one could
+        // resend the x-api-key / x-goog-api-key custom header (not on reqwest's
+        // cross-host strip-list) to another host. Refuse to follow redirects.
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("http client: {e}"))?;
     match req.provider_id.as_str() {
@@ -181,6 +201,7 @@ pub async fn list_models(
 ) -> Result<Vec<String>, String> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(15))
+        .redirect(reqwest::redirect::Policy::none())
         .build()
         .map_err(|e| format!("http client: {e}"))?;
     match provider_id {
@@ -725,12 +746,21 @@ mod tests {
 
     #[test]
     fn http_url_or_accepts_and_rejects_overrides() {
-        // http(s) overrides are honored.
-        std::env::set_var(KEY, "http://127.0.0.1:8080/v1/chat");
-        assert_eq!(http_url_or(DEFAULT, KEY), "http://127.0.0.1:8080/v1/chat");
-
+        // https override to any host is honored.
         std::env::set_var(KEY, "https://api.example.com/v1");
         assert_eq!(http_url_or(DEFAULT, KEY), "https://api.example.com/v1");
+
+        // Plaintext http is honored ONLY for a loopback host (local Ollama /
+        // wiremock test server).
+        std::env::set_var(KEY, "http://127.0.0.1:8080/v1/chat");
+        assert_eq!(http_url_or(DEFAULT, KEY), "http://127.0.0.1:8080/v1/chat");
+        std::env::set_var(KEY, "http://localhost:11434/api");
+        assert_eq!(http_url_or(DEFAULT, KEY), "http://localhost:11434/api");
+
+        // Plaintext http to a NON-loopback host is rejected (it would leak an API
+        // key in cleartext) and falls back to the default.
+        std::env::set_var(KEY, "http://attacker.example.com/v1");
+        assert_eq!(http_url_or(DEFAULT, KEY), DEFAULT);
 
         // Non-http(s) overrides are rejected and fall back to the default.
         std::env::set_var(KEY, "file:///etc/passwd");

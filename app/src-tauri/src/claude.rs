@@ -79,12 +79,15 @@ pub fn run_prompt(prompt: &str, cwd: &str, model: Option<&str>) -> Result<CliRes
     // --print so the CLI exits after producing output (non-interactive).
     // --allowedTools so Claude can actually edit the vault Memex spawned
     // it on — without this, every Write/Edit in an ingest workflow gets
-    // silently denied in --print mode. The user installed Memex with the
-    // intent of letting it maintain the vault, so we pre-authorize the
-    // tools that the Ingest / Lint prompts need. MEMEX_CLAUDE_TOOLS env
-    // var overrides if a user wants a tighter set.
+    // silently denied in --print mode. We pre-authorize only the tools the
+    // Ingest / Lint workflow needs to maintain markdown: Read/Write/Edit/
+    // Glob/Grep. Bash is deliberately EXCLUDED from the default: ingest feeds
+    // UNTRUSTED raw/ source content to the agent in non-interactive --print
+    // mode (no human approval prompt), so a prompt-injection payload hidden in
+    // a source must not be able to reach a shell. A user who genuinely needs a
+    // different (or wider) set can override via the MEMEX_CLAUDE_TOOLS env var.
     let allowed = std::env::var("MEMEX_CLAUDE_TOOLS")
-        .unwrap_or_else(|_| "Read,Write,Edit,Glob,Grep,Bash".to_string());
+        .unwrap_or_else(|_| "Read,Write,Edit,Glob,Grep".to_string());
     let mut cmd = Command::new(&path);
     cmd.arg("--print").arg("--allowedTools").arg(&allowed);
     // --model selects the model for this run (alias like "haiku"/"sonnet"/"opus"
@@ -243,8 +246,10 @@ where
     if !dir.is_dir() {
         return Err(format!("cwd is not a directory: {cwd}"));
     }
+    // Same default-tool policy as run_prompt: no Bash on untrusted ingest
+    // content (overridable via MEMEX_CLAUDE_TOOLS).
     let allowed = std::env::var("MEMEX_CLAUDE_TOOLS")
-        .unwrap_or_else(|_| "Read,Write,Edit,Glob,Grep,Bash".to_string());
+        .unwrap_or_else(|_| "Read,Write,Edit,Glob,Grep".to_string());
     // --verbose is required by the CLI when combining --print with
     // --output-format stream-json.
     let mut cmd = Command::new(&path);
