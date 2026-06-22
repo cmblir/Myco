@@ -59,7 +59,10 @@ mcp = FastMCP(
         "Then use the read tools (list_pages, read_page, search) to browse "
         "and the write tools (add_raw_source, create_page, update_page) to "
         "maintain. Never modify files under any raw/ directory; raw is "
-        "immutable. Commit groups of related changes with git_commit."
+        "immutable. Commit groups of related changes with git_commit. "
+        "To auto-ingest a backlog: call list_inbox, then for each pending file "
+        "read_inbox_source -> create/update wiki pages with [^src-*] citations "
+        "-> archive_inbox_source. Repeat until the inbox is empty."
     ),
 )
 
@@ -140,6 +143,16 @@ def _safe_wiki_dir(proj, folder: str) -> Path:
     target = (proj.wiki_dir / folder).resolve() if folder else base
     if base != target and base not in target.parents:
         raise ValueError(f"folder escapes wiki/: {folder}")
+    return target
+
+
+def _safe_inbox_path(proj, filename: str) -> Path | None:
+    """Resolve a filename inside the project's _inbox/ and reject path traversal.
+    Returns None if the resolved path escapes _inbox/."""
+    inbox = (proj.root / "_inbox").resolve()
+    target = (proj.root / "_inbox" / filename).resolve()
+    if inbox != target and inbox not in target.parents:
+        return None
     return target
 
 
@@ -658,6 +671,79 @@ def git_commit(message: str, project: str = "") -> dict:
         "hash": log.stdout.strip(),
         "files": files,
     }
+
+
+# ─── tools: inbox / auto-ingest ──────────────────────────────────────────────
+
+
+@mcp.tool()
+def list_inbox(project: str = "") -> dict:
+    """List source files waiting in the vault's _inbox/ (pending auto-ingest).
+
+    To ingest continuously from a terminal: call list_inbox, then for each
+    file read_inbox_source -> create/update the wiki pages with citations ->
+    archive_inbox_source. Repeat until the inbox is empty.
+    """
+    proj = _resolve(project)
+    inbox = proj.root / "_inbox"
+    out: list[dict] = []
+    if inbox.is_dir():
+        for f in sorted(inbox.iterdir()):
+            if f.is_file() and not f.name.startswith("."):
+                out.append({"filename": f.name, "size_bytes": f.stat().st_size})
+    return {"project": proj.slug, "inbox": out, "count": len(out)}
+
+
+@mcp.tool()
+def read_inbox_source(filename: str, project: str = "") -> dict:
+    """Read one pending _inbox/ source so you can ingest it into the wiki."""
+    proj = _resolve(project)
+    target = _safe_inbox_path(proj, filename)
+    if target is None or not target.is_file():
+        return {"ok": False, "error": f"not found in inbox: {filename}"}
+    return {
+        "ok": True,
+        "project": proj.slug,
+        "filename": target.name,
+        "content": target.read_text("utf-8", errors="replace"),
+        "src_slug": f"src-{project_registry.make_slug(target.stem)}",
+    }
+
+
+@mcp.tool()
+def archive_inbox_source(filename: str, project: str = "") -> dict:
+    """Archive a pending source AFTER you have ingested it.
+
+    Copies the source text into a NEW raw/<slug>.md (raw/ is immutable — never
+    overwritten) and moves the original into _inbox/.archived/ so it is not lost
+    and won't be ingested again. Call this only once the wiki pages, citations,
+    index.md and log.md for this source are written.
+    """
+    proj = _resolve(project)
+    target = _safe_inbox_path(proj, filename)
+    if target is None or not target.is_file():
+        return {"ok": False, "error": f"not found in inbox: {filename}"}
+
+    proj.raw_dir.mkdir(parents=True, exist_ok=True)
+    slug = project_registry.make_slug(target.stem)
+    raw_path = proj.raw_dir / f"{slug}.md"
+    n = 2
+    while raw_path.exists():
+        raw_path = proj.raw_dir / f"{slug}-{n}.md"
+        n += 1
+    raw_path.write_text(target.read_text("utf-8", errors="replace"), encoding="utf-8")
+
+    archive = target.parent / ".archived"
+    archive.mkdir(exist_ok=True)
+    dest = archive / target.name
+    m = 2
+    while dest.exists():
+        dest = archive / f"{target.stem}-{m}{target.suffix}"
+        m += 1
+    target.rename(dest)
+
+    raw_rel = _rel_to_repo(raw_path)
+    return {"ok": True, "project": proj.slug, "raw_path": raw_rel, "archived": dest.name, "src_slug": f"src-{raw_path.stem}"}
 
 
 # ─── entry point ─────────────────────────────────────────────────────────────

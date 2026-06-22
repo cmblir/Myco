@@ -131,6 +131,16 @@ finding was adversarially re-verified against the source):
 
 ### Added
 
+- **Scheduled auto-ingest** (`automation/autoingest.py`): drop sources into the
+  vault's `_inbox/` and they're ingested into the wiki automatically on a
+  schedule (cron / launchd), using your own `claude` CLI. New `raw/<slug>.md`
+  files are created (raw/ stays immutable), originals are archived to
+  `_inbox/.archived/`, and each pass is logged. The ingest agent runs without
+  `Bash` since inbox content is untrusted.
+- **MCP inbox tools** (`list_inbox`, `read_inbox_source`, `archive_inbox_source`):
+  a terminal-connected Claude can continuously ingest the `_inbox/` backlog using
+  its own read/write tools — read a pending source, write the wiki pages with
+  citations, then archive it.
 - **Choose the Claude CLI model** (Settings → Model): the CLI run now passes
   `--model`, so ingest/query can run on a cheaper model. Defaults to Haiku for
   ingest (high volume) and Sonnet for query.
