@@ -126,6 +126,91 @@ pub async fn ingest(
     })
 }
 
+// ---- account login --------------------------------------------------------
+
+#[derive(Deserialize)]
+struct LoginLicense {
+    key: String,
+    #[serde(default)]
+    exp: i64,
+}
+
+#[derive(Deserialize)]
+struct LoginAccount {
+    #[serde(default)]
+    email: String,
+    #[serde(default)]
+    license: Option<LoginLicense>,
+}
+
+#[derive(Deserialize)]
+struct LoginResponse {
+    #[serde(default)]
+    account: Option<LoginAccount>,
+    #[serde(default)]
+    error: Option<String>,
+}
+
+/// Outcome of a Memex Pro account login. `license_key` is the access key fetched
+/// for the account (None when the account has no active access granted yet).
+#[derive(Debug, Clone, Serialize)]
+pub struct LoginOutcome {
+    pub email: String,
+    /// True when a usable license key was obtained (account has active access).
+    pub connected: bool,
+    pub license_key: Option<String>,
+    pub exp: i64,
+}
+
+/// Log in to the Memex Pro proxy with the account created on the website and
+/// fetch its access key. The app then uses that key for ingest — the user never
+/// copies a key by hand.
+pub async fn login(proxy_url: &str, email: &str, password: &str) -> Result<LoginOutcome, String> {
+    let url = format!("{}/auth/login", proxy_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(30))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+    let resp = client
+        .post(&url)
+        .json(&serde_json::json!({ "email": email, "password": password }))
+        .send()
+        .await
+        .map_err(|e| format!("Memex Pro login failed: {e}"))?;
+    let status = resp.status();
+    let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
+    let parsed: LoginResponse =
+        serde_json::from_slice(&bytes).map_err(|e| format!("Memex Pro login parse: {e}"))?;
+    if !status.is_success() {
+        return Err(parsed
+            .error
+            .unwrap_or_else(|| format!("Memex Pro login {status}")));
+    }
+    let account = parsed
+        .account
+        .ok_or_else(|| "no account in login response".to_string())?;
+    let resolved_email = if account.email.is_empty() {
+        email.to_string()
+    } else {
+        account.email
+    };
+    Ok(match account.license {
+        Some(l) => LoginOutcome {
+            email: resolved_email,
+            connected: true,
+            license_key: Some(l.key),
+            exp: l.exp,
+        },
+        None => LoginOutcome {
+            email: resolved_email,
+            connected: false,
+            license_key: None,
+            exp: 0,
+        },
+    })
+}
+
 /// Join a proxy-returned, vault-root-relative path under `root`, rejecting any
 /// path that could escape the vault (absolute, backslash, or `..` segment).
 fn safe_join(root: &Path, rel: &str) -> Result<PathBuf, String> {

@@ -133,9 +133,11 @@ finding was adversarially re-verified against the source):
 
 - **Memex Pro provider** (Settings → Connections): a managed ingest option that
   runs a cheap model server-side and applies the returned wiki pages locally —
-  no API key or CLI needed. Configure a proxy URL + license key; the
-  `memex_pro_ingest` command POSTs the vault snapshot and applies the returned
-  file operations through the confined `write_file`.
+  no API key or CLI needed. You **sign in with your Memex Pro account** (the one
+  created on the website); the app fetches and stores the account's access key
+  automatically — no key to copy by hand. The `memex_pro_ingest` command then
+  POSTs the vault snapshot and applies the returned file operations through the
+  confined `write_file`; `memex_pro_login` / `memex_pro_logout` manage the session.
 - **In-app auto-ingest toggle** (Settings → Model): while Memex is open, it
   periodically ingests sources dropped into the vault's `_inbox/` via the
   selected provider (a configurable interval). Complements the headless cron

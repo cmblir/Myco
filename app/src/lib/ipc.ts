@@ -106,6 +106,8 @@ export interface MemexSettings {
   ingest_model: string;
   /** Memex Pro proxy base URL (the subscription ingest endpoint). */
   memex_pro_url: string;
+  /** The Memex Pro account email the app is logged in as (display only). */
+  memex_pro_email: string;
   /** Periodically ingest pending _inbox/ sources while the app is open. */
   auto_ingest_enabled: boolean;
   auto_ingest_interval_min: number;
@@ -115,6 +117,12 @@ export interface MemexProResult {
   summary: string;
   applied: number;
   paths: string[];
+}
+
+export interface MemexProLogin {
+  email: string;
+  /** True when the account has active access (a usable key was stored). */
+  connected: boolean;
 }
 
 export interface ChatRequest {
@@ -220,6 +228,9 @@ export const ipc = {
     invoke<ProvenanceRow[]>("scan_provenance", { vaultPath }),
   memexProIngest: (slug: string, title: string, text: string) =>
     invoke<MemexProResult>("memex_pro_ingest", { slug, title, text }),
+  memexProLogin: (email: string, password: string) =>
+    invoke<MemexProLogin>("memex_pro_login", { email, password }),
+  memexProLogout: () => invoke<null>("memex_pro_logout"),
   setProviderKey: (providerId: string, key: string) =>
     invoke<null>("set_provider_key", { providerId, key }),
   deleteProviderKey: (providerId: string) =>

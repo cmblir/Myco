@@ -144,6 +144,7 @@ const SETTINGS = {
   ingest_provider: "anthropic-cli",
   ingest_model: "claude-sonnet-4-6",
   memex_pro_url: "",
+  memex_pro_email: "",
   auto_ingest_enabled: false,
   auto_ingest_interval_min: 60,
 };
@@ -193,6 +194,14 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         applied: 2,
         paths: ["wiki/source-mock.md", "wiki/index.md"],
       });
+    case "memex_pro_login":
+      SETTINGS.memex_pro_email = String(args.email ?? "");
+      SETTINGS.providers.memex_pro = true;
+      return Promise.resolve({ email: String(args.email ?? ""), connected: true });
+    case "memex_pro_logout":
+      SETTINGS.memex_pro_email = "";
+      SETTINGS.providers.memex_pro = false;
+      return Promise.resolve(null);
     case "claude_check":
       return Promise.resolve({ installed: true, version: "claude 1.0.0", path: "/usr/local/bin/claude" });
     case "agent_check":

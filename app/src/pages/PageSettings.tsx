@@ -106,7 +106,7 @@ export const PROVIDERS: ProviderDef[] = [
     name: "Memex Pro",
     kind: "api",
     needsKey: true,
-    desc: "Unlimited ingest on a managed model — no API key or CLI needed. Enter your proxy URL and license key.",
+    desc: "Unlimited ingest on a managed model — no API key or CLI needed. Sign in with your Memex Pro account.",
     catalog: ["gemini-2.5-flash", "claude-haiku-4-5"],
   },
 ];
@@ -495,55 +495,65 @@ function ModelPicker({
   );
 }
 
-// Memex Pro is configured with a proxy URL + license key (not a single API key),
-// so it gets a dedicated card instead of the generic key-only flow.
+// Memex Pro signs in with the account created on the website (email + password);
+// the app fetches and stores the account's access key automatically — the user
+// never copies a key by hand. Settings is the single source of truth for the
+// logged-in email + connection flag (the Rust login command persists both).
 function MemexProCard({
   t,
   def,
-  connected,
   settings,
-  update,
-  setProviderConnected,
 }: {
   t: Strings;
   def: ProviderDef;
-  connected: boolean;
   settings: MemexSettings | null;
-  update: (patch: Partial<MemexSettings>) => Promise<void> | void;
-  setProviderConnected: (
-    flag: keyof MemexSettings["providers"],
-    on: boolean,
-  ) => Promise<void> | void;
 }): JSX.Element {
+  const update = useSettingsStore((s) => s.update);
+  const reload = useSettingsStore((s) => s.load);
+  const loggedInEmail = (settings?.memex_pro_email ?? "").trim();
+  const loggedIn = loggedInEmail.length > 0;
+  const hasAccess = settings?.providers.memex_pro === true;
   const [url, setUrl] = useState(settings?.memex_pro_url ?? "");
-  const [keyVal, setKeyVal] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  async function save(): Promise<void> {
+  async function logIn(): Promise<void> {
     if (!url.trim()) {
-      window.alert("Enter the Memex Pro proxy URL");
+      setError(t.s_memexpro_url);
+      return;
+    }
+    if (!email.trim() || !password) {
+      setError(`${t.s_memexpro_email} · ${t.s_memexpro_password}`);
       return;
     }
     setBusy(true);
+    setError(null);
     try {
+      // Persist the URL first — the Rust login command reads it from settings.
       await update({ memex_pro_url: url.trim() });
-      if (keyVal.trim()) await ipc.setProviderKey("memex-pro", keyVal.trim());
-      await setProviderConnected("memex_pro", true);
-      setKeyVal("");
+      const res = await ipc.memexProLogin(email.trim(), password);
+      await reload(); // pull the email + connection flag the command persisted
+      setPassword("");
+      if (!res.connected) setError(t.s_memexpro_noaccess);
     } catch (e) {
-      window.alert(String(e));
+      setError(String(e));
     } finally {
       setBusy(false);
     }
   }
 
-  async function disconnect(): Promise<void> {
+  async function logOut(): Promise<void> {
     setBusy(true);
     try {
-      await ipc.deleteProviderKey("memex-pro");
-      await setProviderConnected("memex_pro", false);
+      await ipc.memexProLogout();
+      await reload();
+      setEmail("");
+      setPassword("");
+      setError(null);
     } catch (e) {
-      window.alert(String(e));
+      setError(String(e));
     } finally {
       setBusy(false);
     }
@@ -580,7 +590,7 @@ function MemexProCard({
           <span className="chip" style={{ background: "var(--bg-soft)" }}>
             {def.kind}
           </span>
-          {connected ? (
+          {hasAccess ? (
             <span
               className="chip"
               style={{
@@ -590,6 +600,13 @@ function MemexProCard({
             >
               ● {t.s_provider_connected}
             </span>
+          ) : loggedIn ? (
+            <span
+              className="chip"
+              style={{ background: "rgba(217,119,6,0.12)", color: "#d97706" }}
+            >
+              ○ {t.s_memexpro_noaccess}
+            </span>
           ) : (
             <span className="chip">○ {t.s_provider_disconnected}</span>
           )}
@@ -597,45 +614,70 @@ function MemexProCard({
         <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
           {def.desc}
         </div>
-        <div className="field" style={{ marginBottom: 8 }}>
-          <label>{t.s_memexpro_url}</label>
-          <input
-            className="input"
-            placeholder="https://memex-proxy.<you>.workers.dev"
-            value={url}
-            onChange={(e) => setUrl(e.target.value)}
-            style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}
-          />
-        </div>
-        <div className="field" style={{ marginBottom: 12 }}>
-          <label>{t.s_memexpro_key}</label>
-          <input
-            className="input"
-            type="password"
-            placeholder="memex.…"
-            value={keyVal}
-            onChange={(e) => setKeyVal(e.target.value)}
-            style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}
-          />
-        </div>
-        <div className="row" style={{ gap: 8 }}>
-          <button
-            className="btn btn-primary"
-            onClick={() => void save()}
-            disabled={busy || !url.trim()}
-          >
-            {t.s_provider_connect}
-          </button>
-          {connected ? (
+        {loggedIn ? (
+          <div className="row" style={{ gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 13 }}>
+              {t.s_memexpro_loggedin} <strong>{loggedInEmail}</strong>
+            </span>
             <button
               className="btn"
-              onClick={() => void disconnect()}
+              style={{ marginLeft: "auto" }}
+              onClick={() => void logOut()}
               disabled={busy}
             >
-              {t.s_provider_disconnect}
+              {t.s_memexpro_logout}
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : (
+          <>
+            <div className="field" style={{ marginBottom: 8 }}>
+              <label>{t.s_memexpro_url}</label>
+              <input
+                className="input"
+                placeholder="https://memex-proxy.<you>.workers.dev"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}
+              />
+            </div>
+            <div className="field" style={{ marginBottom: 8 }}>
+              <label>{t.s_memexpro_email}</label>
+              <input
+                className="input"
+                type="email"
+                autoComplete="email"
+                placeholder="you@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="field" style={{ marginBottom: 12 }}>
+              <label>{t.s_memexpro_password}</label>
+              <input
+                className="input"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void logIn();
+                }}
+              />
+            </div>
+            <button
+              className="btn btn-primary"
+              onClick={() => void logIn()}
+              disabled={busy || !url.trim() || !email.trim() || !password}
+            >
+              {t.s_memexpro_login}
+            </button>
+          </>
+        )}
+        {error ? (
+          <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>
+            {error}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -782,15 +824,7 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
             : undefined;
           if (p.id === "memex-pro") {
             return (
-              <MemexProCard
-                key={p.id}
-                t={t}
-                def={p}
-                connected={connected}
-                settings={settings ?? null}
-                update={update}
-                setProviderConnected={setProviderConnected}
-              />
+              <MemexProCard key={p.id} t={t} def={p} settings={settings ?? null} />
             );
           }
           if (p.id === "ollama") {

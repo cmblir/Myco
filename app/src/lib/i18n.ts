@@ -163,6 +163,12 @@ export interface Strings {
   s_provider_cli_missing: string;
   s_memexpro_url: string;
   s_memexpro_key: string;
+  s_memexpro_email: string;
+  s_memexpro_password: string;
+  s_memexpro_login: string;
+  s_memexpro_logout: string;
+  s_memexpro_loggedin: string;
+  s_memexpro_noaccess: string;
   s_autoingest_title: string;
   s_autoingest_desc: string;
   s_autoingest_interval: string;
@@ -380,8 +386,14 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_connected: "Connected",
     s_provider_disconnected: "Not connected",
     s_provider_cli_missing: "CLI not installed",
-    s_memexpro_url: "Proxy URL",
+    s_memexpro_url: "Service URL",
     s_memexpro_key: "License key",
+    s_memexpro_email: "Email",
+    s_memexpro_password: "Password",
+    s_memexpro_login: "Log in",
+    s_memexpro_logout: "Log out",
+    s_memexpro_loggedin: "Logged in as",
+    s_memexpro_noaccess: "No active access yet",
     s_autoingest_title: "Auto-ingest inbox",
     s_autoingest_desc:
       "While Memex is open, periodically ingest sources you drop into the vault's _inbox/ folder.",
@@ -601,8 +613,14 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_connected: "연결됨",
     s_provider_disconnected: "미연결",
     s_provider_cli_missing: "CLI 설치 안 됨",
-    s_memexpro_url: "프록시 URL",
+    s_memexpro_url: "서비스 URL",
     s_memexpro_key: "라이선스 키",
+    s_memexpro_email: "이메일",
+    s_memexpro_password: "비밀번호",
+    s_memexpro_login: "로그인",
+    s_memexpro_logout: "로그아웃",
+    s_memexpro_loggedin: "로그인:",
+    s_memexpro_noaccess: "활성 구독 없음",
     s_autoingest_title: "인박스 자동 인게스트",
     s_autoingest_desc:
       "Memex가 켜져 있는 동안 vault의 _inbox/ 폴더에 넣은 소스를 주기적으로 인게스트합니다.",
@@ -822,8 +840,14 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_connected: "接続済み",
     s_provider_disconnected: "未接続",
     s_provider_cli_missing: "CLI 未インストール",
-    s_memexpro_url: "プロキシ URL",
+    s_memexpro_url: "サービス URL",
     s_memexpro_key: "ライセンスキー",
+    s_memexpro_email: "メール",
+    s_memexpro_password: "パスワード",
+    s_memexpro_login: "ログイン",
+    s_memexpro_logout: "ログアウト",
+    s_memexpro_loggedin: "ログイン中:",
+    s_memexpro_noaccess: "有効なアクセスなし",
     s_autoingest_title: "受信トレイ自動取り込み",
     s_autoingest_desc:
       "Memexを開いている間、vaultの_inbox/フォルダに入れたソースを定期的に取り込みます。",

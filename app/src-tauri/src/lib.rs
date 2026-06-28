@@ -49,6 +49,8 @@ pub fn run() {
             commands::agent_run,
             commands::scan_provenance,
             commands::memex_pro_ingest,
+            commands::memex_pro_login,
+            commands::memex_pro_logout,
             commands::set_provider_key,
             commands::delete_provider_key,
             commands::has_provider_key,

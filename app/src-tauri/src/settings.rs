@@ -22,6 +22,10 @@ pub struct Settings {
     /// the user configures it; the license key lives in the keychain.
     #[serde(default)]
     pub memex_pro_url: String,
+    /// The Memex Pro account email the app is logged in as (for display only;
+    /// the access key lives in the keychain). Empty when logged out.
+    #[serde(default)]
+    pub memex_pro_email: String,
     /// While the app is open, periodically ingest pending `_inbox/` sources.
     #[serde(default)]
     pub auto_ingest_enabled: bool,
@@ -38,6 +42,7 @@ impl Default for Settings {
             ingest_provider: default_ingest_provider(),
             ingest_model: default_ingest_model(),
             memex_pro_url: String::new(),
+            memex_pro_email: String::new(),
             auto_ingest_enabled: false,
             auto_ingest_interval_min: default_auto_ingest_interval(),
         }
