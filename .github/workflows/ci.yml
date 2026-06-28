@@ -79,7 +79,13 @@ jobs:
           tool: cargo-audit
       - name: cargo audit (Rust advisories)
         working-directory: app/src-tauri
-        run: cargo audit
+        # RUSTSEC-2026-0187 (lopdf stack overflow via deeply nested PDF objects)
+        # is mitigated architecturally: PDF parsing runs in an isolated child
+        # process (extract.rs `extract_text_isolated`), so a parser stack
+        # overflow crashes only that child and returns a clean error — it cannot
+        # take down the app. pdf-extract 0.10.0 pins lopdf ^0.38, so the crate
+        # can't be bumped until a newer pdf-extract ships; remove this ignore then.
+        run: cargo audit --ignore RUSTSEC-2026-0187
       - uses: actions/setup-node@v4
         with:
           node-version: lts/*
