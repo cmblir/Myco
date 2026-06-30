@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### 3D graph — cosmic-web rendering
+
+The long-running graph layout churn is settled: the force-directed layout stays
+(node position encodes link structure) and the procedural spiral-galaxy spec is
+superseded. See `app/docs/specs/2026-06-27-cosmic-web-graph.md`.
+
+- **Background starfield is enabled.** The faint multi-shell parallax field gives
+  the cosmic-web depth (previously built but disabled).
+- **Hub-incident edges render as fat glowing filaments.** A bounded
+  `LineSegments2` overlay (capped by combined endpoint degree) draws luminous
+  strands between community cores on top of the thin edge mesh; they brighten on
+  hover and vanish for timelapse-hidden nodes. The cap keeps fat lines — heavier
+  than 1px lines — from blowing up the frame on dense vaults.
+
 ### Security audit hardening
 
 A full multi-agent security review of the codebase produced these fixes (each

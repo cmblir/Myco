@@ -19,6 +19,9 @@ import {
   CSS2DRenderer,
   CSS2DObject,
 } from "three/examples/jsm/renderers/CSS2DRenderer.js";
+import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import type { VaultGraph } from "./graphData";
 import type { GraphTheme } from "./graphTheme";
 import type { GraphSettings } from "./graphSettings";
@@ -45,10 +48,25 @@ const EDGE_BASE = 0.32; // default per-end brightness
 const EDGE_HI = 1.15; // incident edges on hover (pop)
 const EDGE_DIM = 0.06; // non-incident edges on hover (fade, not vanish)
 
-// Reference look is a clean neural mesh on a calm void — gas + background star
-// dots muddy it. Kept wired but off; flip to re-enable.
+// Reference look is a clean neural mesh on a calm void. The faint parallax
+// starfield gives the cosmic-web depth cosmic-refs.md asks for; the dim graded
+// shells (buildStarfield) read as deep-field stars, not confetti. Flip to off
+// for the bare-void look.
 const SHOW_NEBULA = true;
-const SHOW_STARFIELD = false;
+const SHOW_STARFIELD = true;
+
+// Bright "filament" overlay: hub-incident edges rendered as wide additive
+// glowing strands (LineSegments2) on top of the thin 1px edge mesh, so the
+// cosmic web reads as luminous threads between galaxy cores. Bounded to the
+// hub-incident subset (capped at FILAMENT_MAX by combined endpoint degree) —
+// fat lines are far heavier than LineBasicMaterial, so the cap is what keeps a
+// dense vault from blowing up the frame. Flip to off to drop the overlay.
+const SHOW_FILAMENTS = true;
+const FILAMENT_MAX = 1200; // cap on glowing strands (perf)
+const FILAMENT_WIDTH = 2.4; // screen px (LineMaterial, worldUnits=false)
+const FILAMENT_BASE = 0.9; // brighter than thin edges → catches bloom as a strand
+const FILAMENT_HI = 1.6; // incident on hover (pop)
+const FILAMENT_DIM = 0.12; // non-incident on hover (fade)
 
 export interface GraphSceneCallbacks {
   onNodeClick(id: string): void;
@@ -184,6 +202,13 @@ export class GraphScene {
   // the node position buffer by these integer indices — no graphology lookups,
   // no hex-colour parsing per edge per tick (the dominant 10k-node settle cost).
   private edgeEndIdx: Int32Array = new Int32Array(0);
+
+  // Fat glowing filament overlay (hub-incident edges). Null when disabled or
+  // when the graph has no hubs (edgeless / tiny vault).
+  private filaments: LineSegments2 | null = null;
+  private filamentGeom: LineSegmentsGeometry | null = null;
+  private filamentMat: LineMaterial | null = null;
+  private filamentEdges: number[] = []; // indices into edgePairs that get the glow
 
   // Direction arrowheads (one instanced cone per edge, at the target end). The
   // graph is undirected; direction follows edge insertion order, matching the
@@ -407,6 +432,9 @@ export class GraphScene {
     this.edges = new THREE.LineSegments(this.edgeGeom, this.edgeMat);
     this.edges.frustumCulled = false;
     this.scene.add(this.edges);
+
+    // --- fat glowing filament overlay (hub-incident edges) ---
+    if (SHOW_FILAMENTS) this.buildFilaments();
 
     // --- direction arrowheads (instanced cones, one per edge) ---
     this.arrowGeom = new THREE.ConeGeometry(2.2, 7, 10); // points +Y; oriented per-edge
@@ -639,6 +667,9 @@ export class GraphScene {
     }
     pos.needsUpdate = true;
     col.needsUpdate = true;
+    // Filaments mirror the thin-edge brightness (hover/timelapse), so refresh
+    // them whenever the edge style is rewritten.
+    if (this.filaments) this.updateFilaments();
   }
 
   // Orient one cone per edge at the target end, pointing source→target. Scaled
@@ -746,6 +777,103 @@ export class GraphScene {
     this.edgeEndIdx = idx;
   }
 
+  // Combined endpoint degree of an edge — the ranking key when capping the
+  // filament set to FILAMENT_MAX (keep the strands between the busiest nodes).
+  private edgeDeg(e: number): number {
+    const [s, t] = this.edgePairs[e];
+    return (
+      this.graph.getNodeAttribute(s, "deg") +
+      this.graph.getNodeAttribute(t, "deg")
+    );
+  }
+
+  // Build the fat-line filament overlay over hub-incident edges. Membership is
+  // static per build (recomputed in rebuild()); positions/colours are refreshed
+  // by updateFilaments() on every tick + style change. Capped by combined
+  // endpoint degree so a super-hub can't push the fat-line count past budget.
+  private buildFilaments(): void {
+    const idx: number[] = [];
+    for (let e = 0; e < this.edgePairs.length; e++) {
+      const [s, t] = this.edgePairs[e];
+      if (
+        this.graph.getNodeAttribute(s, "isHub") ||
+        this.graph.getNodeAttribute(t, "isHub")
+      ) {
+        idx.push(e);
+      }
+    }
+    if (idx.length > FILAMENT_MAX) {
+      idx.sort((a, b) => this.edgeDeg(b) - this.edgeDeg(a));
+      idx.length = FILAMENT_MAX;
+    }
+    this.filamentEdges = idx;
+    if (idx.length === 0) return; // no hubs (edgeless / tiny vault) → no overlay
+
+    this.filamentGeom = new LineSegmentsGeometry();
+    this.filamentGeom.setPositions(new Float32Array(idx.length * 6));
+    this.filamentGeom.setColors(new Float32Array(idx.length * 6));
+    this.filamentMat = new LineMaterial({
+      vertexColors: true,
+      transparent: true,
+      linewidth: FILAMENT_WIDTH, // screen px (worldUnits defaults to false)
+      depthTest: false,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    const w = Math.max(1, this.container.clientWidth);
+    const h = Math.max(1, this.container.clientHeight);
+    this.filamentMat.resolution.set(w, h);
+    this.filaments = new LineSegments2(this.filamentGeom, this.filamentMat);
+    this.filaments.frustumCulled = false;
+    this.filaments.renderOrder = 1; // over the thin edge mesh, under the pulses
+    this.scene.add(this.filaments);
+    this.updateFilaments();
+  }
+
+  // Refresh filament endpoint positions + per-end colours from the live graph.
+  // Mirrors writeEdges() brightness logic (hover focus + timelapse hide) but on
+  // the bounded hub-incident subset, so it is cheap to run every tick.
+  private updateFilaments(): void {
+    if (!this.filaments || !this.filamentGeom) return;
+    const n = this.filamentEdges.length;
+    const pos = new Float32Array(n * 6);
+    const col = new Float32Array(n * 6);
+    const { hoveredNode, neighbors } = this.style;
+    const cs = new THREE.Color();
+    const ct = new THREE.Color();
+    for (let i = 0; i < n; i++) {
+      const [s, t] = this.edgePairs[this.filamentEdges[i]];
+      const sa = this.graph.getNodeAttributes(s);
+      const ta = this.graph.getNodeAttributes(t);
+      const o = i * 6;
+      pos[o] = sa.x;
+      pos[o + 1] = sa.y;
+      pos[o + 2] = sa.z;
+      pos[o + 3] = ta.x;
+      pos[o + 4] = ta.y;
+      pos[o + 5] = ta.z;
+      let f = FILAMENT_BASE;
+      if (hoveredNode) {
+        const incident =
+          s === hoveredNode ||
+          t === hoveredNode ||
+          !!(neighbors && neighbors.has(s) && neighbors.has(t));
+        f = incident ? FILAMENT_HI : FILAMENT_DIM;
+      }
+      if (sa.hidden || ta.hidden) f = 0; // timelapse-hidden ⇒ vanish
+      cs.set(sa.color);
+      ct.set(ta.color);
+      col[o] = cs.r * f;
+      col[o + 1] = cs.g * f;
+      col[o + 2] = cs.b * f;
+      col[o + 3] = ct.r * f;
+      col[o + 4] = ct.g * f;
+      col[o + 5] = ct.b * f;
+    }
+    this.filamentGeom.setPositions(pos);
+    this.filamentGeom.setColors(col);
+  }
+
   // Per-tick HOT path: update ONLY positions (node + edge endpoints). Colours,
   // sizes, alpha and intensity never change while the sim merely moves nodes, so
   // rewriting them every tick (with a hex-colour parse per node AND per edge end)
@@ -782,6 +910,7 @@ export class GraphScene {
 
   syncPositions(): void {
     this.writePositions();
+    if (this.filaments) this.updateFilaments();
     if (this.arrows.visible) this.writeArrows();
     // Galaxies drift while the sim runs; refresh the gas every 12th tick (the
     // centroid recompute is O(nodes) but visually stable, so per-frame is waste).
@@ -824,6 +953,7 @@ export class GraphScene {
     }
     epos.needsUpdate = true;
 
+    if (this.filaments) this.updateFilaments();
     if (this.arrows.visible) this.writeArrows();
     if ((this.nebulaTick = (this.nebulaTick + 1) % 12) === 0) this.nebula.update();
   }
@@ -870,6 +1000,18 @@ export class GraphScene {
     this.edgeGeom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 6), 3));
     this.edges.geometry = this.edgeGeom;
     oldEdgeGeom.dispose();
+
+    // Filaments: hub membership can change after live-ingest growth — drop the
+    // old overlay and rebuild it over the new edge set.
+    if (this.filaments) {
+      this.scene.remove(this.filaments);
+      this.filamentGeom?.dispose();
+      this.filamentMat?.dispose();
+      this.filaments = null;
+      this.filamentGeom = null;
+      this.filamentMat = null;
+    }
+    if (SHOW_FILAMENTS) this.buildFilaments();
 
     // Arrows: instance count is fixed at allocation, so rebuild for the new
     // edge count (reusing the shared cone geometry + material).
@@ -1059,6 +1201,9 @@ export class GraphScene {
     this.nodeMat.dispose();
     this.edgeGeom.dispose();
     this.edgeMat.dispose();
+    if (this.filaments) this.scene.remove(this.filaments);
+    this.filamentGeom?.dispose();
+    this.filamentMat?.dispose();
     this.arrows.dispose();
     this.arrowGeom.dispose();
     this.arrowMat.dispose();
@@ -1093,6 +1238,8 @@ export class GraphScene {
     this.bloom.setSize(w, h);
     this.labelRenderer.setSize(w, h);
     this.nodeMat.uniforms.u_sizeScale.value = this.sizeScale(h);
+    // Fat lines are screen-space — they need the drawing-buffer resolution.
+    this.filamentMat?.resolution.set(w, h);
   };
 
   private pickNode(clientX: number, clientY: number): string | null {
