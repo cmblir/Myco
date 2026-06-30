@@ -117,6 +117,17 @@ export interface Strings {
   gr_empty_post: string;
   gr_timelapse_play: string;
   gr_timelapse_pause: string;
+  // Graph node inspector (optional — components fall back to English).
+  gr_insp_type?: string;
+  gr_insp_confidence?: string;
+  gr_insp_status?: string;
+  gr_insp_connections?: string;
+  gr_insp_links_out?: string;
+  gr_insp_backlinks?: string;
+  gr_insp_tags?: string;
+  gr_insp_open?: string;
+  gr_insp_unresolved?: string;
+  gr_insp_none?: string;
   h_title: string;
   h_lede: string;
   h_created: string;
@@ -333,6 +344,16 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_empty_post: " to see the graph grow.",
     gr_timelapse_play: "Play timelapse",
     gr_timelapse_pause: "Pause timelapse",
+    gr_insp_type: "Type",
+    gr_insp_confidence: "Confidence",
+    gr_insp_status: "Status",
+    gr_insp_connections: "Connections",
+    gr_insp_links_out: "Links",
+    gr_insp_backlinks: "Backlinks",
+    gr_insp_tags: "Tags",
+    gr_insp_open: "Open in reader",
+    gr_insp_unresolved: "Unresolved note (no file yet)",
+    gr_insp_none: "—",
     h_title: "History",
     h_lede:
       "Every ingest files a WHY report. Browse what each run created and changed, newest first.",
@@ -560,6 +581,16 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_empty_post: " 를 추가하면 그래프가 자랍니다.",
     gr_timelapse_play: "타임랩스 재생",
     gr_timelapse_pause: "타임랩스 일시정지",
+    gr_insp_type: "유형",
+    gr_insp_confidence: "신뢰도",
+    gr_insp_status: "상태",
+    gr_insp_connections: "연결 수",
+    gr_insp_links_out: "나가는 링크",
+    gr_insp_backlinks: "백링크",
+    gr_insp_tags: "태그",
+    gr_insp_open: "리더에서 열기",
+    gr_insp_unresolved: "미해결 노트 (파일 없음)",
+    gr_insp_none: "—",
     h_title: "히스토리",
     h_lede:
       "모든 가져오기는 WHY 보고서를 남깁니다. 각 실행이 무엇을 만들고 바꿨는지 최신순으로 봅니다.",

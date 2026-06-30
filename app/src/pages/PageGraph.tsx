@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import GraphControls from "../components/GraphControls";
+import GraphInspector from "../components/GraphInspector";
 import {
   DEFAULT_GRAPH_SETTINGS,
   loadGraphSettings,
@@ -80,6 +81,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     loadGraphSettings(),
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Clicked node → open the inspector panel (instead of navigating away).
+  const [selected, setSelected] = useState<string | null>(null);
   const [tlPlaying, setTlPlaying] = useState(false);
   // Bumped on webglcontextrestored to force a clean scene rebuild (WKWebView
   // drops the GL context on backgrounding; three.js does not auto-restore the
@@ -168,6 +171,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
 
     // Reset transient style for the fresh scene.
     hoverRef.current = { node: null, neighbors: null };
+    setSelected(null);
 
     let killed = false;
     let userTookOver = false;
@@ -187,7 +191,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
 
     const scene = new GraphScene(container, graph, theme, s, {
       onNodeClick: (id) => {
-        if (!killed) setRoute(`page:${id}`);
+        if (!killed) setSelected(id);
       },
       onNodeHover: (id) => {
         if (id) highlight(id);
@@ -667,6 +671,20 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 </code>
                 {t.gr_empty_post ?? " to see the graph grow."}
               </p>
+            ) : null}
+            {selected && adjacency ? (
+              <GraphInspector
+                t={t}
+                nodeId={selected}
+                adjacency={adjacency}
+                graph={graphRef.current}
+                onSelect={(id) => {
+                  setSelected(id);
+                  sceneRef.current?.focusNode(id);
+                }}
+                onOpen={(id) => setRoute(`page:${id}`)}
+                onClose={() => setSelected(null)}
+              />
             ) : null}
           </div>
           <GraphControls

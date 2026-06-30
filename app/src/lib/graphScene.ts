@@ -1158,6 +1158,24 @@ export class GraphScene {
     this.controls.update();
   }
 
+  // Frame the camera on a single node — used by the inspector / search-to-focus
+  // to fly to a star. Like fit() but centred on one node at a close distance.
+  focusNode(id: string): void {
+    if (!this.graph.hasNode(id)) return;
+    const a = this.graph.getNodeAttributes(id);
+    this.controls.target.set(a.x, a.y, a.z);
+    const fovRad = (this.camera.fov * Math.PI) / 180;
+    const r = Math.max(a.size * NODE_RADIUS * 4, 60);
+    const dist = (r * 1.5) / Math.tan(fovRad / 2) + 40;
+    const dir = this.tmpVec.copy(this.camera.position).sub(this.controls.target);
+    if (dir.lengthSq() < 1) dir.set(0.3, 0.15, 1);
+    dir.setLength(
+      THREE.MathUtils.clamp(dist, this.controls.minDistance, this.controls.maxDistance),
+    );
+    this.camera.position.copy(this.controls.target).add(dir);
+    this.controls.update();
+  }
+
   start(): void {
     if (this.raf != null) return;
     this.lastFrame = performance.now();
