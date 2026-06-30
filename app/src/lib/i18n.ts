@@ -129,6 +129,12 @@ export interface Strings {
   gr_insp_unresolved?: string;
   gr_insp_none?: string;
   gr_find_ph?: string;
+  gr_insp_path_start?: string;
+  gr_insp_path_anchor?: string;
+  gr_insp_path_clear?: string;
+  gr_insp_path?: string;
+  gr_insp_path_none?: string;
+  gr_insp_hops?: string;
   h_title: string;
   h_lede: string;
   h_created: string;
@@ -356,6 +362,12 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_insp_unresolved: "Unresolved note (no file yet)",
     gr_insp_none: "—",
     gr_find_ph: "Find a note…",
+    gr_insp_path_start: "Set as path start",
+    gr_insp_path_anchor: "Path start",
+    gr_insp_path_clear: "clear",
+    gr_insp_path: "Path",
+    gr_insp_path_none: "No path to this node",
+    gr_insp_hops: "hops",
     h_title: "History",
     h_lede:
       "Every ingest files a WHY report. Browse what each run created and changed, newest first.",
@@ -594,6 +606,12 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_insp_unresolved: "미해결 노트 (파일 없음)",
     gr_insp_none: "—",
     gr_find_ph: "노트 찾기…",
+    gr_insp_path_start: "경로 시작점으로",
+    gr_insp_path_anchor: "경로 시작점",
+    gr_insp_path_clear: "지우기",
+    gr_insp_path: "경로",
+    gr_insp_path_none: "이 노드까지 경로 없음",
+    gr_insp_hops: "홉",
     h_title: "히스토리",
     h_lede:
       "모든 가져오기는 WHY 보고서를 남깁니다. 각 실행이 무엇을 만들고 바꿨는지 최신순으로 봅니다.",

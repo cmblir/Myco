@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Adjacency, FileNode } from "./ipc";
 import {
+  buildGraph,
   collectFolders,
   computeAllowed,
   countAllNodes,
   flattenMarkdown,
   inFolder,
   seededUnit,
+  shortestPath,
   stem,
 } from "./graphData";
 
@@ -129,6 +131,39 @@ describe("flattenMarkdown / countAllNodes / collectFolders", () => {
   it("collectFolders lists top-level subfolders under the root", () => {
     const a = adj({ forward: { "/vault/sub/c.md": [], "/vault/top.md": [] } });
     expect(collectFolders(ROOT, a)).toEqual(["sub"]);
+  });
+});
+
+describe("shortestPath", () => {
+  const opts = {
+    nodeSize: 1,
+    starDim: "#000000",
+    edgeColor: "#000000",
+    showGhosts: false,
+  };
+  const a = "/vault/a.md";
+  const b = "/vault/b.md";
+  const c = "/vault/c.md";
+  const d = "/vault/d.md";
+
+  it("finds an unweighted path and handles a === b", () => {
+    const g = buildGraph(
+      adj({ forward: { [a]: [b], [b]: [c] } }),
+      new Set([a, b, c]),
+      opts,
+    );
+    expect(shortestPath(g, a, c)).toEqual([a, b, c]);
+    expect(shortestPath(g, a, a)).toEqual([a]);
+  });
+
+  it("returns null for disconnected or missing nodes", () => {
+    const g = buildGraph(
+      adj({ forward: { [a]: [b] } }),
+      new Set([a, b, d]),
+      opts,
+    );
+    expect(shortestPath(g, a, d)).toBeNull();
+    expect(shortestPath(g, a, "/vault/nope.md")).toBeNull();
   });
 });
 

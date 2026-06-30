@@ -491,3 +491,40 @@ export function buildGraph(
   });
   return g;
 }
+
+// Unweighted shortest path between two nodes (BFS) on the undirected graph.
+// Returns the inclusive id sequence [a, …, b], [a] when a === b, or null when
+// the nodes are missing or disconnected. Used by the graph's path-highlight.
+export function shortestPath(
+  g: VaultGraph,
+  a: string,
+  b: string,
+): string[] | null {
+  if (!g.hasNode(a) || !g.hasNode(b)) return null;
+  if (a === b) return [a];
+  const prev = new Map<string, string>();
+  const seen = new Set<string>([a]);
+  const queue: string[] = [a];
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    if (cur === b) break;
+    for (const n of g.neighbors(cur)) {
+      if (seen.has(n)) continue;
+      seen.add(n);
+      prev.set(n, cur);
+      queue.push(n);
+    }
+  }
+  if (!seen.has(b)) return null;
+  const path: string[] = [b];
+  let cur = b;
+  while (cur !== a) {
+    const p = prev.get(cur);
+    if (p == null) return null;
+    path.push(p);
+    cur = p;
+  }
+  path.reverse();
+  return path;
+}

@@ -24,6 +24,7 @@ import {
   computeAllowed,
   countAllNodes,
   flattenMarkdown,
+  shortestPath,
   stem,
   type VaultGraph,
 } from "../lib/graphData";
@@ -85,6 +86,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const [selected, setSelected] = useState<string | null>(null);
   // Search-to-focus query (toolbar) — jumps the camera to a node by name.
   const [find, setFind] = useState("");
+  // Shortest-path: a pinned start node + the computed path to the selected node.
+  const [pathAnchor, setPathAnchor] = useState<string | null>(null);
+  const [path, setPath] = useState<string[] | null>(null);
   const [tlPlaying, setTlPlaying] = useState(false);
   // Bumped on webglcontextrestored to force a clean scene rebuild (WKWebView
   // drops the GL context on backgrounding; three.js does not auto-restore the
@@ -174,6 +178,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // Reset transient style for the fresh scene.
     hoverRef.current = { node: null, neighbors: null };
     setSelected(null);
+    setPathAnchor(null);
+    setPath(null);
 
     let killed = false;
     let userTookOver = false;
@@ -623,6 +629,31 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     }
   };
 
+  // Shortest-path highlight: when a start node is pinned and another node is
+  // selected, BFS the path and light it up through the hover-highlight machinery
+  // (anchor as "hovered", the whole path as its "neighbours").
+  useEffect(() => {
+    const g = graphRef.current;
+    if (
+      !g ||
+      !pathAnchor ||
+      !selected ||
+      pathAnchor === selected ||
+      !g.hasNode(pathAnchor) ||
+      !g.hasNode(selected)
+    ) {
+      setPath(null);
+      return;
+    }
+    const p = shortestPath(g, pathAnchor, selected);
+    setPath(p);
+    if (p && p.length > 1) {
+      hoverRef.current = { node: pathAnchor, neighbors: new Set(p) };
+      pushStyle();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathAnchor, selected]);
+
   const totalNodes = countAllNodes(adjacency);
 
   return (
@@ -719,6 +750,15 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 nodeId={selected}
                 adjacency={adjacency}
                 graph={graphRef.current}
+                pathAnchor={pathAnchor}
+                path={path}
+                onSetAnchor={(id) => setPathAnchor(id)}
+                onClearAnchor={() => {
+                  setPathAnchor(null);
+                  setPath(null);
+                  hoverRef.current = { node: null, neighbors: null };
+                  pushStyle();
+                }}
                 onSelect={(id) => {
                   setSelected(id);
                   sceneRef.current?.focusNode(id);

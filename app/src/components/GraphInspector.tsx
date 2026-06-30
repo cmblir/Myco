@@ -25,6 +25,10 @@ export default function GraphInspector({
   nodeId,
   adjacency,
   graph,
+  pathAnchor,
+  path,
+  onSetAnchor,
+  onClearAnchor,
   onSelect,
   onOpen,
   onClose,
@@ -33,6 +37,12 @@ export default function GraphInspector({
   nodeId: string;
   adjacency: Adjacency;
   graph: VaultGraph | null;
+  /** Node pinned as the shortest-path start, if any. */
+  pathAnchor: string | null;
+  /** Computed shortest path from the anchor to this node (null = none). */
+  path: string[] | null;
+  onSetAnchor: (id: string) => void;
+  onClearAnchor: () => void;
   /** Select another node (re-inspect + fly camera to it). */
   onSelect: (id: string) => void;
   /** Open the node in the full reader. */
@@ -162,6 +172,58 @@ export default function GraphInspector({
           <span className="muted">({backlinks.length})</span>
         </h4>
         {linkList(backlinks)}
+      </div>
+
+      <div className="graph-insp__section">
+        {pathAnchor === nodeId ? (
+          <button
+            type="button"
+            className="graph-insp__pathbtn is-anchor"
+            onClick={onClearAnchor}
+          >
+            {t.gr_insp_path_anchor ?? "Path start"} ✓ · {t.gr_insp_path_clear ?? "clear"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="graph-insp__pathbtn"
+            onClick={() => onSetAnchor(nodeId)}
+          >
+            {t.gr_insp_path_start ?? "Set as path start"}
+          </button>
+        )}
+        {pathAnchor && pathAnchor !== nodeId ? (
+          <div className="graph-insp__pathresult">
+            <h4>
+              {t.gr_insp_path ?? "Path"}{" "}
+              {path ? (
+                <span className="muted">
+                  ({path.length - 1} {t.gr_insp_hops ?? "hops"})
+                </span>
+              ) : null}
+            </h4>
+            {path ? (
+              <ul className="graph-insp__links">
+                {path.map((id) => (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      className="graph-insp__link"
+                      title={id}
+                      onClick={() => onSelect(id)}
+                    >
+                      {stem(id)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="graph-insp__empty">
+                {t.gr_insp_path_none ?? "No path to this node"}
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
 
       {!isGhost ? (
