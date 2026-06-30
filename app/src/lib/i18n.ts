@@ -135,6 +135,16 @@ export interface Strings {
   gr_insp_path?: string;
   gr_insp_path_none?: string;
   gr_insp_hops?: string;
+  gr_gaps_title?: string;
+  gr_gaps_btn?: string;
+  gr_gap_missing?: string;
+  gr_gap_orphans?: string;
+  gr_gap_undercited?: string;
+  gr_gap_lowconf?: string;
+  gr_gap_disputed?: string;
+  gr_gap_islands?: string;
+  gr_gap_none?: string;
+  gr_gap_more?: string;
   h_title: string;
   h_lede: string;
   h_created: string;
@@ -368,6 +378,16 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_insp_path: "Path",
     gr_insp_path_none: "No path to this node",
     gr_insp_hops: "hops",
+    gr_gaps_title: "Gaps",
+    gr_gaps_btn: "Gap analysis",
+    gr_gap_missing: "Missing pages",
+    gr_gap_orphans: "Orphans",
+    gr_gap_undercited: "Under-cited",
+    gr_gap_lowconf: "Low confidence",
+    gr_gap_disputed: "Disputed",
+    gr_gap_islands: "Disconnected",
+    gr_gap_none: "No gaps found",
+    gr_gap_more: "more",
     h_title: "History",
     h_lede:
       "Every ingest files a WHY report. Browse what each run created and changed, newest first.",
@@ -612,6 +632,16 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_insp_path: "경로",
     gr_insp_path_none: "이 노드까지 경로 없음",
     gr_insp_hops: "홉",
+    gr_gaps_title: "갭",
+    gr_gaps_btn: "갭 분석",
+    gr_gap_missing: "없는 페이지",
+    gr_gap_orphans: "고립 노드",
+    gr_gap_undercited: "인용 부족",
+    gr_gap_lowconf: "낮은 신뢰도",
+    gr_gap_disputed: "논쟁",
+    gr_gap_islands: "끊긴 클러스터",
+    gr_gap_none: "갭 없음",
+    gr_gap_more: "더",
     h_title: "히스토리",
     h_lede:
       "모든 가져오기는 WHY 보고서를 남깁니다. 각 실행이 무엇을 만들고 바꿨는지 최신순으로 봅니다.",

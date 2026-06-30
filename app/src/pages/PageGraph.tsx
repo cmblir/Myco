@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import GraphControls from "../components/GraphControls";
 import GraphInspector from "../components/GraphInspector";
+import GraphGaps from "../components/GraphGaps";
 import {
   DEFAULT_GRAPH_SETTINGS,
   loadGraphSettings,
@@ -28,6 +29,7 @@ import {
   stem,
   type VaultGraph,
 } from "../lib/graphData";
+import { analyzeGaps, gapCount } from "../lib/graphGaps";
 import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
 import { readTheme } from "../lib/graphTheme";
 import { GraphScene, type SceneStyleState } from "../lib/graphScene";
@@ -89,6 +91,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   // Shortest-path: a pinned start node + the computed path to the selected node.
   const [pathAnchor, setPathAnchor] = useState<string | null>(null);
   const [path, setPath] = useState<string[] | null>(null);
+  // Gap-analysis panel (orphans / missing / under-cited / disconnected …).
+  const [gapsOpen, setGapsOpen] = useState(false);
   const [tlPlaying, setTlPlaying] = useState(false);
   // Bumped on webglcontextrestored to force a clean scene rebuild (WKWebView
   // drops the GL context on backgrounding; three.js does not auto-restore the
@@ -126,6 +130,14 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   // Every markdown file — including link-less ones, which render as Obsidian's
   // free-floating "orphan" stars.
   const allFiles = useMemo(() => flattenMarkdown(fileTree), [fileTree]);
+
+  // Gap report over the live graph. counts/glEpoch change on every rebuild /
+  // live-ingest growth / context restore, so it re-derives when the graph does.
+  const gapReport = useMemo(() => {
+    const g = graphRef.current;
+    return g && g.order > 0 ? analyzeGaps(g) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [counts, glEpoch]);
 
   // Fetch mtimes whenever the vault changes — drives the timelapse reveal order
   // (oldest file first, so the graph grows in creation order).
@@ -713,6 +725,32 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
           <ZoomButtons sceneRef={sceneRef} />
           <button
             type="button"
+            className="graph-toolbar__btn graph-toolbar__btn--badged"
+            onClick={() => setGapsOpen((v) => !v)}
+            aria-pressed={gapsOpen}
+            aria-label={t.gr_gaps_btn ?? "Gap analysis"}
+            title={t.gr_gaps_btn ?? "Gap analysis"}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            {gapReport && gapCount(gapReport) > 0 ? (
+              <span className="graph-toolbar__badge">{gapCount(gapReport)}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
             className="graph-toolbar__btn"
             onClick={() => setDrawerOpen((v) => !v)}
             aria-pressed={drawerOpen}
@@ -765,6 +803,17 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 }}
                 onOpen={(id) => setRoute(`page:${id}`)}
                 onClose={() => setSelected(null)}
+              />
+            ) : null}
+            {gapsOpen && gapReport ? (
+              <GraphGaps
+                t={t}
+                report={gapReport}
+                onSelect={(id) => {
+                  setSelected(id);
+                  sceneRef.current?.focusNode(id);
+                }}
+                onClose={() => setGapsOpen(false)}
               />
             ) : null}
           </div>
