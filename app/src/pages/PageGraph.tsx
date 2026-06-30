@@ -83,6 +83,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const [drawerOpen, setDrawerOpen] = useState(false);
   // Clicked node → open the inspector panel (instead of navigating away).
   const [selected, setSelected] = useState<string | null>(null);
+  // Search-to-focus query (toolbar) — jumps the camera to a node by name.
+  const [find, setFind] = useState("");
   const [tlPlaying, setTlPlaying] = useState(false);
   // Bumped on webglcontextrestored to force a clean scene rebuild (WKWebView
   // drops the GL context on backgrounding; three.js does not auto-restore the
@@ -593,6 +595,34 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     };
   }, []);
 
+  // Search-to-focus: fly the camera to the best-matching node and open its
+  // inspector. Distinct from the drawer's filter search (which subsets the
+  // graph); this leaves the graph intact and just frames + selects a star.
+  const focusFind = (q: string): void => {
+    const g = graphRef.current;
+    const scene = sceneRef.current;
+    const needle = q.trim().toLowerCase();
+    if (!g || !scene || !needle) return;
+    let best: string | null = null;
+    let bestScore = 0;
+    let bestLen = Infinity;
+    g.forEachNode((id) => {
+      const s = stem(id).toLowerCase();
+      const score =
+        s === needle ? 3 : s.startsWith(needle) ? 2 : s.includes(needle) ? 1 : 0;
+      if (score === 0) return;
+      if (score > bestScore || (score === bestScore && s.length < bestLen)) {
+        best = id;
+        bestScore = score;
+        bestLen = s.length;
+      }
+    });
+    if (best) {
+      setSelected(best);
+      scene.focusNode(best);
+    }
+  };
+
   const totalNodes = countAllNodes(adjacency);
 
   return (
@@ -610,6 +640,17 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
           <span className="graph-stat">
             {counts.edges} {t.gr_edge_count}
           </span>
+          <input
+            className="graph-find"
+            type="search"
+            value={find}
+            placeholder={t.gr_find_ph ?? "Find a note…"}
+            aria-label={t.gr_find_ph ?? "Find a note"}
+            onChange={(e) => setFind(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") focusFind(find);
+            }}
+          />
           <div className="graph-toolbar__spacer" />
           <button
             type="button"

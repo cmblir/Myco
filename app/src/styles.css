@@ -1427,6 +1427,23 @@ hr {
 .graph-insp__open {
   margin-top: auto;
 }
+/* Toolbar search-to-focus input (jumps the camera to a node by name). */
+.graph-find {
+  height: 28px;
+  width: 160px;
+  max-width: 40vw;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-elev);
+  color: var(--ink);
+  font-size: 13px;
+}
+.graph-find:focus {
+  outline: none;
+  border-color: var(--ink-3);
+}
 .graph-empty {
   position: absolute;
   inset: 0;
