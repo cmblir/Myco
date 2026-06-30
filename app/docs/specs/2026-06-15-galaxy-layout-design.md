@@ -1,10 +1,19 @@
 # Galaxy Layout — Design Spec
 
 - **Date:** 2026-06-15
-- **Status:** approved (design), pending implementation plan
+- **Status:** superseded
+- **Superseded by:** [[2026-06-27-cosmic-web-graph]]
 - **Scope:** Replace the force-directed 3D graph layout with a deterministic
   procedural spiral-galaxy placement, so the universe graph actually reads as a
   galaxy (flat disk, bright bulge core, log-spiral arms, sparse halo).
+
+> [!warning] Superseded — never implemented
+> This procedural-spiral direction was approved but never built (no
+> `galaxyLayout.ts` exists; `createSim` remained force-based). It was reversed on
+> 2026-06-27: a node+edge graph is intrinsically cosmic-web-shaped, so the
+> force layout is kept and only the rendering is improved. See
+> [[2026-06-27-cosmic-web-graph]]. `graphSim.ts` is the canonical layout and must
+> NOT be deleted. Retained below for historical context only.
 
 ## Problem
 
