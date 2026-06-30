@@ -86,7 +86,32 @@ function buildAdjacency() {
       (backward[pathOf(tgt)] ||= []).push(pathOf(d.s));
     }
   }
-  return { forward, backward, unresolved: {}, tags };
+  // Demo frontmatter meta so the Phase 2 visual encoding (confidence→brightness,
+  // source_count→glow, disputed→amber tint) is visible in ?mock mode.
+  const lowConf = new Set([
+    "interpretability",
+    "planning",
+    "reasoning",
+    "compute-budget",
+  ]);
+  const disputed = new Set(["scaling-laws", "dpo"]);
+  const meta: Record<
+    string,
+    { type: string; confidence: string; status: string; sourceCount: number }
+  > = {};
+  for (const d of NODES) {
+    meta[pathOf(d.s)] = {
+      type: d.t,
+      confidence: lowConf.has(d.s)
+        ? "low"
+        : d.t === "entity"
+          ? "medium"
+          : "high",
+      status: disputed.has(d.s) ? "disputed" : "active",
+      sourceCount: Math.min(5, d.l.length),
+    };
+  }
+  return { forward, backward, unresolved: {}, tags, meta };
 }
 
 function body(d: Node): string {

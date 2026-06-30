@@ -29,11 +29,21 @@ export interface FileContent {
   frontmatter: unknown;
 }
 
+/** Per-node wiki frontmatter the graph encodes visually (from index.rs). */
+export interface NodeMeta {
+  type?: string;
+  confidence?: string;
+  status?: string;
+  sourceCount?: number;
+}
+
 export interface Adjacency {
   forward: Record<string, string[]>;
   backward: Record<string, string[]>;
   unresolved: Record<string, string[]>;
   tags: Record<string, string[]>;
+  /** Keyed by the same absolute path as `forward`. Absent for older backends. */
+  meta?: Record<string, NodeMeta>;
 }
 
 export interface GitCommit {

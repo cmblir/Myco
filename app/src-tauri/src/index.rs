@@ -13,6 +13,35 @@ pub struct Adjacency {
     pub backward: BTreeMap<String, Vec<String>>,
     pub unresolved: BTreeMap<String, Vec<String>>,
     pub tags: BTreeMap<String, Vec<String>>,
+    /// Per-node wiki frontmatter the graph encodes visually (type / confidence /
+    /// status / source_count). Keyed by the same absolute file path as `forward`.
+    /// Only files that declare at least one of these fields appear here.
+    pub meta: BTreeMap<String, NodeMeta>,
+}
+
+/// Subset of a page's YAML frontmatter the graph view encodes into the node's
+/// appearance (brightness from confidence, glow from source_count, a warning
+/// tint for disputed/superseded). Serialised camelCase to match the TS DTO.
+#[derive(Debug, Clone, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeMeta {
+    #[serde(rename = "type", skip_serializing_if = "Option::is_none")]
+    pub node_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source_count: Option<u32>,
+}
+
+impl NodeMeta {
+    fn is_empty(&self) -> bool {
+        self.node_type.is_none()
+            && self.confidence.is_none()
+            && self.status.is_none()
+            && self.source_count.is_none()
+    }
 }
 
 pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
@@ -33,7 +62,7 @@ pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
         }
         let raw = std::fs::read_to_string(file).map_err(|e| format!("read {file:?}: {e}"))?;
         ingest_links(file, &raw, &names, &mut adj);
-        ingest_tags(file, &raw, &mut adj);
+        ingest_frontmatter(file, &raw, &mut adj);
     }
 
     Ok(adj)
@@ -139,7 +168,9 @@ fn ingest_links(file: &Path, text: &str, names: &HashMap<String, PathBuf>, adj: 
     }
 }
 
-fn ingest_tags(file: &Path, text: &str, adj: &mut Adjacency) {
+// Parse a file's YAML frontmatter ONCE and fill both the tag list and the
+// visual-encoding meta (type / confidence / status / source_count).
+fn ingest_frontmatter(file: &Path, text: &str, adj: &mut Adjacency) {
     let parsed = match gray_matter::Matter::<gray_matter::engine::YAML>::new().parse(text) {
         Ok(p) => p,
         Err(_) => return,
@@ -147,13 +178,38 @@ fn ingest_tags(file: &Path, text: &str, adj: &mut Adjacency) {
     let Some(data) = parsed.data else {
         return;
     };
-    let Some(tags) = extract_tags(&data) else {
-        return;
-    };
-    if tags.is_empty() {
-        return;
+    let key = file.to_string_lossy().into_owned();
+    if let Some(tags) = extract_tags(&data) {
+        if !tags.is_empty() {
+            adj.tags.insert(key.clone(), tags);
+        }
     }
-    adj.tags.insert(file.to_string_lossy().into_owned(), tags);
+    let meta = extract_meta(&data);
+    if !meta.is_empty() {
+        adj.meta.insert(key, meta);
+    }
+}
+
+fn extract_meta(pod: &gray_matter::Pod) -> NodeMeta {
+    use gray_matter::Pod;
+    let mut m = NodeMeta::default();
+    let Pod::Hash(map) = pod else { return m };
+    let get_str = |k: &str| -> Option<String> {
+        match map.get(k) {
+            Some(Pod::String(s)) if !s.trim().is_empty() => Some(s.trim().to_string()),
+            _ => None,
+        }
+    };
+    m.node_type = get_str("type");
+    m.confidence = get_str("confidence");
+    m.status = get_str("status");
+    m.source_count = match map.get("source_count") {
+        Some(Pod::Integer(n)) => u32::try_from(*n).ok(),
+        Some(Pod::Float(f)) if *f >= 0.0 => Some(*f as u32),
+        Some(Pod::String(s)) => s.trim().parse::<u32>().ok(),
+        _ => None,
+    };
+    m
 }
 
 fn extract_tags(pod: &gray_matter::Pod) -> Option<Vec<String>> {
@@ -244,5 +300,36 @@ mod tests {
         // Data.base resolves by full name; Other resolves after stripping #Section.
         assert_eq!(adj.forward.get(&src).map(Vec::len), Some(2));
         assert!(adj.unresolved.is_empty());
+    }
+
+    #[test]
+    fn extracts_frontmatter_meta() {
+        let dir = temp_vault("meta");
+        fs::write(
+            dir.join("a.md"),
+            "---\ntype: concept\nconfidence: high\nstatus: disputed\nsource_count: 3\n---\nbody [[b]]",
+        )
+        .unwrap();
+        fs::write(dir.join("b.md"), "x").unwrap();
+        let adj = build_link_graph(dir.to_str().unwrap()).unwrap();
+        let key = dir
+            .join("a.md")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let m = adj.meta.get(&key).expect("meta present");
+        assert_eq!(m.node_type.as_deref(), Some("concept"));
+        assert_eq!(m.confidence.as_deref(), Some("high"));
+        assert_eq!(m.status.as_deref(), Some("disputed"));
+        assert_eq!(m.source_count, Some(3));
+        // A file with no frontmatter meta produces no entry.
+        let bkey = dir
+            .join("b.md")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        assert!(adj.meta.get(&bkey).is_none());
     }
 }

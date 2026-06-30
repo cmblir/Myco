@@ -303,6 +303,18 @@ function rgbToHex(r: number, g: number, b: number): string {
   return `#${h(r)}${h(g)}${h(b)}`;
 }
 
+// Blend two #rrggbb colours: t=0 → a, t=1 → b. Used for the disputed warning tint.
+function mixHex(a: string, b: string, t: number): string {
+  const ca = hexToRgb01(a);
+  const cb = hexToRgb01(b);
+  if (!ca || !cb) return a;
+  return rgbToHex(
+    ca.r + (cb.r - ca.r) * t,
+    ca.g + (cb.g - ca.g) * t,
+    ca.b + (cb.b - ca.b) * t,
+  );
+}
+
 // Multiply a star's temperature tint into its community hue, keeping the hue
 // dominant (so communities stay distinguishable). Non-hex colours (the dim
 // field-star fallback) pass through untouched.
@@ -335,6 +347,12 @@ export interface GraphNodeAttrs {
   isHub: boolean; // highest-degree node of its community → galaxy core
   intensity: number; // HDR brightness boost (>1 only for top hubs) for bloom
   hidden?: boolean;
+  // Phase 2 — wiki frontmatter encoded into the star's appearance.
+  baseAlpha?: number; // confidence → brightness (1 = full; <1 dims low-confidence)
+  nodeType?: string; // frontmatter `type` (concept/entity/technique/...)
+  confidence?: string;
+  status?: string;
+  sourceCount?: number;
 }
 export interface GraphEdgeAttrs {
   color: string;
@@ -440,5 +458,36 @@ export function buildGraph(
   // Colour by community hue + star temperature; store community id + hub flag
   // (needs the degree normalisation above, so it runs AFTER the size pass).
   colorByCommunity(g, maxDeg);
+
+  // --- Phase 2: encode wiki frontmatter into the star's appearance ---
+  // confidence → brightness (low = fainter star), source_count → extra glow
+  // (well-cited pages bloom a touch more), disputed/superseded → a warning amber
+  // tint over the community hue so contested pages stand out. Runs after colour +
+  // intensity are set so it modulates them. Nodes without meta keep their values.
+  const meta = adjacency.meta ?? {};
+  g.forEachNode((id) => {
+    const m = meta[id];
+    if (!m) return;
+    if (m.confidence) {
+      const a =
+        m.confidence === "low" ? 0.55 : m.confidence === "medium" ? 0.8 : 1;
+      g.setNodeAttribute(id, "baseAlpha", a);
+      g.setNodeAttribute(id, "confidence", m.confidence);
+    }
+    if (m.sourceCount != null && m.sourceCount > 0) {
+      const boost = Math.min(0.5, m.sourceCount * 0.08);
+      const cur = g.getNodeAttribute(id, "intensity");
+      g.setNodeAttribute(id, "intensity", Math.min(2.4, cur + boost));
+      g.setNodeAttribute(id, "sourceCount", m.sourceCount);
+    }
+    if (m.status) {
+      g.setNodeAttribute(id, "status", m.status);
+      if (m.status === "disputed" || m.status === "superseded") {
+        const c = g.getNodeAttribute(id, "color");
+        g.setNodeAttribute(id, "color", mixHex(c, "#ff9e3d", 0.55));
+      }
+    }
+    if (m.type) g.setNodeAttribute(id, "nodeType", m.type);
+  });
   return g;
 }

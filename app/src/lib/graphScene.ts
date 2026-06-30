@@ -601,7 +601,8 @@ export class GraphScene {
       // base colour from community palette
       c.set(a.color);
       let size = a.size;
-      let alpha = a.hidden ? 0 : 1;
+      // baseAlpha carries the confidence encoding (low-confidence stars dimmer).
+      let alpha = a.hidden ? 0 : (a.baseAlpha ?? 1);
       let inten = a.intensity;
 
       // live-ingest tint overrides colour
