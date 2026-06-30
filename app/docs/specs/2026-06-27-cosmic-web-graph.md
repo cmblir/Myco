@@ -45,7 +45,8 @@ refers to the dev-only `bigGraph.ts` hero render, not the shipped graph. So:
 
 ## Phase 1 — cosmic-web rendering gaps (quick wins)
 
-Implemented now.
+**Done** — `0f9d02a` (fat glowing filament overlay on hub-incident edges + the
+parallax starfield enabled).
 
 | Gap | Before | Change | File |
 |-----|--------|--------|------|
@@ -62,7 +63,10 @@ mitigation for the high-density-line performance issue.
 
 ## Phase 2 — metadata encoding (the "rich" payoff)
 
-Not in this pass; specced for follow-up.
+**Done** — `5c78b29`. The backend exposes per-node frontmatter
+(`index.rs` `Adjacency.meta`) and the graph encodes it: confidence → star
+brightness, `source_count` → glow, disputed/superseded → amber tint. Filters by
+metadata are still open (future).
 
 - Backend exposes per-node frontmatter (`type`/`confidence`/`status`/`source_count`)
   + citation coverage (`provenance.rs`) alongside the adjacency the graph already
@@ -76,15 +80,19 @@ Not in this pass; specced for follow-up.
 
 ## Phase 3 — developer-grade interaction
 
-Not in this pass; specced for follow-up.
-
-- **Node inspector panel** — extend `NodePreview.tsx`: backlinks, outlinks,
-  frontmatter, citation coverage, provenance.
-- **Search-to-focus + shortest path** between two notes (via `CommandBar`, ⌘K).
-- **Semantic zoom** — progressive label disclosure beyond the current top-12
-  (`graphScene.ts` `computeLabelable`).
-- **Gap analysis** — orphans, under-cited claims, disconnected clusters surfaced
-  as ingest suggestions (InfraNodus pattern, fed by Memex's own citation data).
+- **Node inspector panel** — **done** `35bb039`. A side panel: frontmatter
+  (type/confidence/status badges), connections, outlinks, backlinks, tags;
+  link rows fly the camera to the target; "Open in reader" keeps navigation.
+- **Search-to-focus** — **done** `4623c30`. Toolbar search flies the camera to
+  the best-matching node and opens its inspector.
+- **Shortest path** — **done** `0f2621b`. Pin a path start in the inspector,
+  select another node → BFS path highlights via the hover machinery + lists with
+  a hop count.
+- **Semantic zoom** — **done** `f64bb13`. Label candidate pool grows with zoom
+  (top-degree first, bounded), so more notes name themselves as you push in.
+- **Gap analysis** — **open (Phase 4)**: orphans, under-cited claims, disconnected
+  clusters surfaced as ingest suggestions (InfraNodus pattern, fed by Memex's own
+  citation/provenance data).
 
 ## Performance ceiling (honest)
 
