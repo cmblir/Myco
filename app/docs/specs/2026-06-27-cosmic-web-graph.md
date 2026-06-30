@@ -90,9 +90,11 @@ metadata are still open (future).
   a hop count.
 - **Semantic zoom** — **done** `f64bb13`. Label candidate pool grows with zoom
   (top-degree first, bounded), so more notes name themselves as you push in.
-- **Gap analysis** — **open (Phase 4)**: orphans, under-cited claims, disconnected
-  clusters surfaced as ingest suggestions (InfraNodus pattern, fed by Memex's own
-  citation/provenance data).
+- **Gap analysis** — **done** `733203d` (Phase 4). A panel buckets missing pages,
+  orphans, under-cited, low-confidence, disputed, and disconnected islands; each
+  row flies to the node + inspects. Reads graph structure + Phase 2 meta. Future:
+  wire `provenance.rs` citation coverage for a sharper under-cited signal, and
+  feed the gaps back as ingest suggestions.
 
 ## Performance ceiling (honest)
 
