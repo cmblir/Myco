@@ -34,6 +34,12 @@ const NODE_RADIUS = 3.4;
 const GLOW_SCALE = 3.2;
 const PICK_BASE_PX = 14;
 
+// Semantic zoom label budget: at the framed (zoomed-out) distance only the top
+// LABEL_MIN hubs may label; zooming in grows the candidate pool up to LABEL_MAX
+// (top-degree first). Capped so updateLabels only ever visits a tiny set/frame.
+const LABEL_MIN = 12;
+const LABEL_MAX = 64;
+
 // Edges carry the "neural mesh": each end is tinted by its node's community
 // colour (intra-cluster edges glow the cluster hue, inter-cluster edges gradient
 // between the two), and the additive sum of a dense cluster's many edges builds
@@ -224,9 +230,12 @@ export class GraphScene {
   private pulse: PulseLayer; // signals flowing along edges (alive/communication)
   private lastFrame = 0; // performance.now() of the previous animation frame
   private labels = new Map<string, CSS2DObject>();
-  // Ids allowed to label at rest (hubs + global top-N); everything else stays
-  // label-silent so the cosmos isn't covered in date-stamp clutter.
-  private labelable = new Set<string>();
+  // Degree-ranked label candidates (top LABEL_MAX). Semantic zoom slices this by
+  // camera distance so more labels surface as you zoom in; everything else stays
+  // label-silent so the cosmos isn't covered in date-stamp clutter. framedDist
+  // is the fit() distance used as the zoom reference.
+  private labelRank: string[] = [];
+  private framedDist = 0;
   // Per-frame label bookkeeping so updateLabels touches only the ≤13 candidate
   // labels (labelable + hovered) instead of looping all 10k nodes every frame.
   private shownLabels = new Set<string>();
@@ -511,16 +520,12 @@ export class GraphScene {
   // rebuild so live-ingest newcomers can label. Deterministic (deg desc, id
   // tiebreak). Everything else still labels on hover.
   private computeLabelable(): void {
-    this.labelable.clear();
-    const TOP_N = 12;
     const byDeg = [...this.nodeIds].sort((a, b) => {
       const da = this.graph.getNodeAttribute(a, "deg");
       const db = this.graph.getNodeAttribute(b, "deg");
       return db - da || (a < b ? -1 : 1);
     });
-    for (let i = 0; i < Math.min(TOP_N, byDeg.length); i++) {
-      this.labelable.add(byDeg[i]);
-    }
+    this.labelRank = byDeg.slice(0, LABEL_MAX);
   }
 
   // Deterministic 0..1 LCG stream (no Math.random — keeps the cosmos identical
@@ -727,9 +732,19 @@ export class GraphScene {
     // a label, so build that tiny candidate set and visit ONLY it — visiting all
     // 10k nodes every frame just to leave 9988 of them invisible is pure waste
     // (and every obj.position.set dirties a matrix three.js then re-walks).
+    // Semantic zoom: the closer the camera is than the framed distance, the more
+    // top-degree labels become candidates (bounded by LABEL_MAX). The size-gate
+    // below still hides any candidate too small on screen, so this only ever
+    // *adds* labels as you push in — and visits at most LABEL_MAX+1 nodes.
+    const camDist = this.camera.position.distanceTo(this.controls.target);
+    const ratio = this.framedDist > 0 ? camDist / this.framedDist : 1;
+    const grown = Math.round(LABEL_MIN * Math.pow(1 / Math.max(0.15, ratio), 1.3));
+    const budget = Math.max(LABEL_MIN, Math.min(LABEL_MAX, grown));
     const candidates = this.labelCandidates;
     candidates.clear();
-    for (const id of this.labelable) candidates.add(id);
+    for (let i = 0; i < budget && i < this.labelRank.length; i++) {
+      candidates.add(this.labelRank[i]);
+    }
     if (hoveredNode) candidates.add(hoveredNode);
 
     // Hide any label shown last frame that is no longer a candidate.
@@ -1150,6 +1165,7 @@ export class GraphScene {
     this.controls.target.set(cx, cy, cz);
     const fovRad = (this.camera.fov * Math.PI) / 180;
     const dist = (r * 1.5) / Math.tan(fovRad / 2) + 60;
+    this.framedDist = dist; // zoom reference for semantic-zoom label budget
     const dir = this.tmpVec
       .copy(this.camera.position)
       .sub(this.controls.target);
