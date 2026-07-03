@@ -9,7 +9,9 @@
 import * as THREE from "three";
 import { seededUnit, type VaultGraph } from "./graphData";
 
-const MAX_PULSES = 520; // cap so dense vaults stay lively but not noisy / slow
+// Motion budget: 140 moving additive sparks suffice to imply "alive" without
+// reading as fireworks (was 520 — itself a firework grammar).
+const MAX_PULSES = 140;
 const SPEED_MIN = 0.12; // edge fractions per second
 const SPEED_VAR = 0.33;
 
@@ -21,7 +23,7 @@ varying vec3 v_color;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = clamp(a_psize * u_pixelRatio, 1.5, 22.0);
+  gl_PointSize = clamp(a_psize * u_pixelRatio, 1.5, 14.0);
   v_color = a_pcolor;
 }
 `;

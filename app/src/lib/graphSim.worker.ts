@@ -142,10 +142,19 @@ function build(
     const base = cur.linkForce / (1 + Math.min(sN, tN));
     return cur.clusterForce > 0 && !sameComm(l) ? base * INTER_LINK_STR_MUL : base;
   };
+  // Deterministic per-edge distance jitter (0.7×..1.3×). A uniform intra-
+  // community distance settles every leaf onto ONE equal-radius shell around
+  // its hub — the "dandelion/starburst" silhouette. The jitter spreads leaves
+  // into a cloud instead; seeded from the edge ids so reloads are identical.
+  const edgeJitter = (l: SimLink): number => {
+    const a = typeof l.source === "object" ? l.source.id : String(l.source);
+    const b = typeof l.target === "object" ? l.target.id : String(l.target);
+    return 0.7 + 0.6 * seededUnit(`${a}|${b}`, 21);
+  };
   const linkDist = (l: SimLink): number =>
     cur.clusterForce > 0 && !sameComm(l)
       ? cur.linkDistance * INTER_LINK_DIST_MUL
-      : cur.linkDistance;
+      : cur.linkDistance * edgeJitter(l);
   const centerOf = (g: GraphSettings): number =>
     Math.max(0.005, g.centerForce * CENTER_SCALE);
   const gravityOf =

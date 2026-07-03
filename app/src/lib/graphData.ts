@@ -449,11 +449,12 @@ export function buildGraph(
     // Compressed size hierarchy (sqrt-ish): a hub is ~3.5× a leaf, not 5×+, so a
     // super-hub (an index/MOC linking everything) never balloons over the mesh.
     g.setNodeAttribute(id, "size", (0.9 + Math.pow(dn, 0.6) * 2.2) * o.nodeSize * jit);
-    // HDR intensity with a HARD CAP: every node carries a faint baseline glow
-    // (neural look), only the top ~quarter cross the bloom threshold (≈1.6), and
-    // even the #1 hub is capped at 2.2 — so "index" gently glows instead of
-    // detonating into a white puff that swallows the screen.
-    g.setNodeAttribute(id, "intensity", Math.min(2.2, 0.35 + Math.pow(dn, 1.4) * 2.2));
+    // HDR intensity with a HARD CAP and a steep exponent: only the top ~10% of
+    // hubs cross the bloom gate; everything else carries a faint baseline glow.
+    // Brightness beyond that is earned by DENSITY (many faint stars overlapping
+    // in a nucleus), not by individual HDR — additive overlap sums past any
+    // per-sprite cap, so per-sprite HDR stays low (calm-cosmic-web spec).
+    g.setNodeAttribute(id, "intensity", Math.min(1.7, 0.22 + Math.pow(dn, 1.8) * 1.5));
   });
   // Colour by community hue + star temperature; store community id + hub flag
   // (needs the degree normalisation above, so it runs AFTER the size pass).
@@ -475,9 +476,9 @@ export function buildGraph(
       g.setNodeAttribute(id, "confidence", m.confidence);
     }
     if (m.sourceCount != null && m.sourceCount > 0) {
-      const boost = Math.min(0.5, m.sourceCount * 0.08);
+      const boost = Math.min(0.3, m.sourceCount * 0.05);
       const cur = g.getNodeAttribute(id, "intensity");
-      g.setNodeAttribute(id, "intensity", Math.min(2.4, cur + boost));
+      g.setNodeAttribute(id, "intensity", Math.min(1.8, cur + boost));
       g.setNodeAttribute(id, "sourceCount", m.sourceCount);
     }
     if (m.status) {

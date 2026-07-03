@@ -50,7 +50,7 @@ const LABEL_MAX = 64;
 // carry the light and the web only hints the weave between lobes — the galaxy/
 // brain reads as points of light threaded on a faint mesh, not a glowing blob.
 const EDGE_OPACITY = 0.2; // base material opacity (× linkThickness)
-const EDGE_BASE = 0.32; // default per-end brightness
+const EDGE_BASE = 0.22; // default per-end brightness (edges are tissue, not light)
 const EDGE_HI = 1.15; // incident edges on hover (pop)
 const EDGE_DIM = 0.06; // non-incident edges on hover (fade, not vanish)
 
@@ -61,13 +61,14 @@ const EDGE_DIM = 0.06; // non-incident edges on hover (fade, not vanish)
 const SHOW_NEBULA = true;
 const SHOW_STARFIELD = true;
 
-// Bright "filament" overlay: hub-incident edges rendered as wide additive
-// glowing strands (LineSegments2) on top of the thin 1px edge mesh, so the
-// cosmic web reads as luminous threads between galaxy cores. Bounded to the
-// hub-incident subset (capped at FILAMENT_MAX by combined endpoint degree) —
-// fat lines are far heavier than LineBasicMaterial, so the cap is what keeps a
-// dense vault from blowing up the frame. Flip to off to drop the overlay.
-const SHOW_FILAMENTS = true;
+// Fat filament overlay (LineSegments2 over hub-incident edges). OFF as an
+// always-on layer: in a hub-and-spoke community nearly every edge is
+// hub-incident, so the overlay painted whole clusters as bright additive
+// spokes whose summed luminance blew past the bloom threshold at the core —
+// the "firework" look (specs/2026-07-03-graph-calm-cosmic-web.md). The
+// infrastructure stays for Phase 3, where filaments return as a rare
+// focus/path-only layer (hover incidents + shortestPath results).
+const SHOW_FILAMENTS = false;
 const FILAMENT_MAX = 1200; // cap on glowing strands (perf)
 const FILAMENT_WIDTH = 2.4; // screen px (LineMaterial, worldUnits=false)
 const FILAMENT_BASE = 0.9; // brighter than thin edges → catches bloom as a strand
@@ -137,11 +138,12 @@ void main() {
   float dist = max(1.0, -mv.z);
   gl_PointSize = a_size * ${NODE_RADIUS.toFixed(1)} * ${GLOW_SCALE.toFixed(1)} * u_sizeScale * u_pixelRatio / dist;
   gl_PointSize *= (1.0 + a_intensity * 0.35); // hub cores a touch larger
-  // Gentle breathing — each star pulses on its own phase so the field looks alive.
-  gl_PointSize *= 1.0 + 0.07 * sin(u_time * 1.3 + position.x * 0.03 + position.y * 0.021);
-  // Floor at 1.3 (was 4.0) so distant field stars are true pinpricks, not
-  // uniform confetti; cap at 340 (hardware clips ~64 anyway, but cores bloom).
-  gl_PointSize = clamp(gl_PointSize, 1.3, 340.0);
+  // Gentle breathing — slow and subtle (motion budget: idle motion must not
+  // grab the eye).
+  gl_PointSize *= 1.0 + 0.025 * sin(u_time * 0.6 + position.x * 0.03 + position.y * 0.021);
+  // Floor at 1.3 so distant field stars are true pinpricks, not uniform
+  // confetti; cap at 180 so a near hub can't fill the viewport with one sprite.
+  gl_PointSize = clamp(gl_PointSize, 1.3, 180.0);
   gl_Position = projectionMatrix * mv;
   v_color = a_color;
   v_alpha = a_alpha;
@@ -169,10 +171,12 @@ void main() {
   vec3 base = v_color * (0.65 + 0.35 * v_fade);
   // HDR core boost MULTIPLIES the star's own colour (not neutral white), so a
   // blue-white core stays blue-white and an amber field star stays amber.
-  vec3 col = base + base * core * (0.25 + v_int * 1.4);
-  // Only a thin white-hot pinpoint at the very centre of the hottest hubs,
-  // capped low so core COLOUR survives instead of washing to pure white.
-  col = mix(col, vec3(1.0), core * clamp(v_int * 0.28, 0.0, 0.45));
+  // Peak ≈ base×2.7 (was ×4.6): additive overlap in a dense nucleus sums past
+  // any per-sprite cap, so per-sprite HDR stays low — density earns brightness.
+  vec3 col = base + base * core * (0.2 + v_int * 0.9);
+  // Minimal white mix: ACES already rolls bright cores toward white, so the
+  // shader must not force it — hubs stay hot in their OWN hue.
+  col = mix(col, vec3(1.0), core * clamp(v_int * 0.22, 0.0, 0.28));
   gl_FragColor = vec4(col, a);
 }
 `;
@@ -291,7 +295,7 @@ export class GraphScene {
     // shells fade in instead of being fogged out).
     // Light fog for depth, but thin enough that the whole graph stays visible
     // when zoomed all the way out (a denser fog faded large vaults to black).
-    this.scene.fog = new THREE.FogExp2(sceneBg.getHex(), dark ? 0.00005 : 0.00004);
+    this.scene.fog = new THREE.FogExp2(sceneBg.getHex(), dark ? 0.00012 : 0.00004);
 
     // far plane large enough to hold a wide, fully-zoomed-out layout.
     this.camera = new THREE.PerspectiveCamera(58, w / h, 0.5, 40000);
@@ -333,7 +337,7 @@ export class GraphScene {
     this.controls.minDistance = 8; // closer zoom-in
     this.controls.maxDistance = 30000; // far zoom-out for large / spread-out vaults
     this.controls.autoRotate = !this.reducedMotion;
-    this.controls.autoRotateSpeed = 0.35;
+    this.controls.autoRotateSpeed = 0.12; // premium idle motion is slow
 
     // Bloom — deep-space glow. The high-pass runs on the LINEAR (un-tone-mapped)
     // composer buffer, where lone field stars peak at luminance ~1.16; a dark
@@ -353,17 +357,19 @@ export class GraphScene {
     this.composer.setPixelRatio(pr);
     this.composer.setSize(w, h);
     this.composer.addPass(new RenderPass(this.scene, this.camera));
-    // Bloom runs on the LINEAR HDR buffer. Only a_intensity-boosted hub cores
-    // climb above the threshold (field stars peak ~1.25), so ONLY cores + dense
-    // additive clumps bloom into galaxy centres — the field stays crisp.
+    // Bloom runs on the LINEAR HDR buffer. Calibrated for ADDITIVE SUMMING, not
+    // single sprites: two overlapping field stars already reach ~2.3, so the
+    // dark threshold sits at 1.9 (gates pair-overlaps; only true hub cores and
+    // dense nuclei bloom). Modest strength + a wider radius read as soft
+    // atmospheric glow instead of a hard white disc.
     // Strength is brightness-INDEPENDENT: exposure already scales the whole image
     // via OutputPass, so double-multiplying would blow the glow into a wash.
-    this.baseBloom = dark ? 0.9 : 0.25;
+    this.baseBloom = dark ? 0.45 : 0.25;
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(w, h),
       this.baseBloom,
-      0.4, // radius (tight — cores, not haze)
-      dark ? 1.6 : 0.7, // threshold above the field-star ceiling
+      0.7, // radius (soft atmospheric halo, not a hard ring)
+      dark ? 1.9 : 0.7, // threshold above the additive pair-overlap ceiling
     );
     this.composer.addPass(this.bloom);
     // OutputPass MUST be last: it re-applies renderer.toneMapping (ACES) +
@@ -547,9 +553,11 @@ export class GraphScene {
     const group = new THREE.Group();
     const shells = dark
       ? [
-          { count: 900, r0: 2400, r1: 3000, size: 2.0, color: 0xbcc6e0, op: 0.5 },
-          { count: 1100, r0: 3600, r1: 4600, size: 1.4, color: 0x8f9ec4, op: 0.34 },
-          { count: 1400, r0: 5200, r1: 6400, size: 1.0, color: 0x6b7aa6, op: 0.22 },
+          // Background must never compete with foreground (luminance budget) —
+          // dimmer than the dim edges so the hierarchy stays nodes > edges > sky.
+          { count: 900, r0: 2400, r1: 3000, size: 1.6, color: 0xbcc6e0, op: 0.3 },
+          { count: 1100, r0: 3600, r1: 4600, size: 1.4, color: 0x8f9ec4, op: 0.2 },
+          { count: 1400, r0: 5200, r1: 6400, size: 1.0, color: 0x6b7aa6, op: 0.12 },
         ]
       : [
           { count: 700, r0: 2400, r1: 3000, size: 1.5, color: 0xc6cee0, op: 0.28 },
@@ -1084,10 +1092,12 @@ export class GraphScene {
     const sceneBg = dark ? new THREE.Color(0x05060d) : bg;
     this.scene.background = sceneBg;
     (this.scene.fog as THREE.FogExp2).color.copy(sceneBg);
-    this.baseBloom = dark ? 0.9 : 0.25;
+    // Must mirror the constructor's calm calibration (duplicated constants —
+    // keep in sync; Phase 1 extracts a single helper).
+    this.baseBloom = dark ? 0.45 : 0.25;
     this.bloom.strength = this.baseBloom; // brightness drives exposure, not bloom
-    this.bloom.threshold = dark ? 1.6 : 0.7;
-    this.bloom.radius = 0.4;
+    this.bloom.threshold = dark ? 1.9 : 0.7;
+    this.bloom.radius = 0.7;
     this.nodeMat.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
     this.nodeMat.needsUpdate = true;
     this.edgeMat.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;

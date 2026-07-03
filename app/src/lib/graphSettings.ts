@@ -49,7 +49,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   textFadeThreshold: 1.1,
   nodeSize: 1,
   linkThickness: 1,
-  brightness: 1,
+  brightness: 0.85, // exposure headroom: the void stays black, only emitters survive
   // GALAXY/BRAIN defaults: range-capped LOCAL repulsion (no global outward
   // pressure → no firework spikes) + firm centre gravity collapse the vault into
   // ONE cohesive luminous mass, while community clustering contracts each Louvain
@@ -66,10 +66,10 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   clusterForce: 0.5,
 };
 
-// v24: galaxy/brain defaults (capped local repulsion + clusterForce 0.5 + tight
-// links). Bumping the key drops stale persisted slider positions so the new
-// cohesive-galaxy defaults apply instead of the old neural-mesh ones.
-const KEY = "memex.graph.settings.v24";
+// v25: calm-cosmic-web calibration (exposure 0.85, filaments off, bloom
+// threshold-first). Bumping the key drops stale persisted slider positions so
+// the recalibrated defaults apply instead of the old firework-era ones.
+const KEY = "memex.graph.settings.v25";
 
 export function loadGraphSettings(): GraphSettings {
   try {
