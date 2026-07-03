@@ -88,7 +88,7 @@ export const PROVIDERS: ProviderDef[] = [
     name: "Built-in (offline)",
     kind: "local",
     needsKey: false,
-    desc: "HyperCLOVA X SEED 0.5B bundled inside the app. Works offline with zero setup — good for classification and light queries; use a cloud provider for high-quality ingest.",
+    desc: "Powered by HyperCLOVA X — SEED 0.5B bundled inside the app. Works offline with zero setup; good for classification and light queries, use a cloud provider for high-quality ingest. Model © NAVER Corp., HyperCLOVA X SEED Model License.",
     catalog: ["seed-0.5b"],
   },
   {

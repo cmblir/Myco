@@ -1,0 +1,25 @@
+//! E2E check for the embedded local model: loads the bundled GGUF through the
+//! app's own local_llm module and runs a KO classification + a short query.
+//! Run: cargo run --example test_local_llm --release
+use std::path::PathBuf;
+
+fn main() {
+    let model = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models/seed-0.5b-q4_k_m.gguf");
+    println!("loading {} …", model.display());
+    let llm = memex_lib::local_llm::LocalLlm::load(&model).expect("load");
+
+    let t0 = std::time::Instant::now();
+    let label = llm
+        .classify("어텐션 메커니즘은 트랜스포머에서 토큰 간 관계를 계산하는 기법이다.")
+        .expect("classify");
+    println!("CLASSIFY(ko) -> {label}  ({:.1}s)", t0.elapsed().as_secs_f32());
+    assert!(memex_lib::local_llm::WIKI_TYPES.contains(&label.as_str()));
+
+    let t1 = std::time::Instant::now();
+    let out = llm
+        .generate("User: 한 문장으로 답해. 위키란 무엇인가?\n\nAssistant:", 80)
+        .expect("generate");
+    println!("QUERY(ko) -> {out:?}  ({:.1}s)", t1.elapsed().as_secs_f32());
+    assert!(!out.trim().is_empty());
+    println!("OK");
+}

@@ -107,5 +107,11 @@ chat.ts                      `builtin` in the non-tool provider path (query /
   if it fights us, fall back to llama-cpp-rs (accepts a C++ build).
 - **Release build cost** — a transformer/inference crate + `lto` may slow builds
   and interact with `panic="abort"`; validate in Phase 0.
-- **License hygiene** — ship only Apache/permissive weights; EXAONE (NC) and
-  jina-v3 (CC-BY-NC) must never enter a shipped build.
+- **License hygiene** — ship only permissive weights; EXAONE (NC) and jina-v3
+  (CC-BY-NC) must never enter a shipped build.
+  **VERIFIED (2026-07-03):** the HyperCLOVA X SEED Model License Agreement
+  explicitly permits reproduction/distribution of the weights (§3.1) and
+  commercial use below 10M MAU / non-competing (§4). Obligations honoured:
+  the verbatim license ships next to the weights
+  (`models/LICENSE-hyperclovax-seed.txt`, bundled resource), the provider card
+  shows "Powered by HyperCLOVA X" + the NAVER copyright notice.
