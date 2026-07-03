@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Embedded local model (built-in offline provider)
+
+The app now ships with a model inside: **HyperCLOVA X SEED 0.5B** (Q4 GGUF,
+412 MB, git-lfs) runs in-process via llama.cpp (`llama-cpp-2`, Metal on Apple
+silicon) — no Ollama install, no API key, works offline. Registered as the
+always-on **Built-in (offline)** provider: Query/Lint route to it with inlined
+vault context; a `local_classify` command post-validates note types against the
+wiki enum. Chosen over Qwen2.5-0.5B after a spike (Qwen leaked Chinese
+characters into Korean output); factual accuracy is limited at 0.5B, so
+high-quality ingest stays on the cloud/CLI providers. License verified: the
+HyperCLOVA X SEED Model License permits redistribution; the verbatim license
+ships next to the weights and the provider card shows "Powered by
+HyperCLOVA X". Installer grows accordingly (~3.6 MB → ~420 MB).
+
 ### 3D graph — cosmic-web rendering
 
 The long-running graph layout churn is settled: the force-directed layout stays

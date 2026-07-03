@@ -20,6 +20,10 @@ together yourself:
   (no API key; they use your existing subscriptions, like the `claude`
   CLI). Pick a different model for ingest vs ask;
   keys live in your OS keychain.
+- **A built-in offline model** — HyperCLOVA X SEED 0.5B ships inside the
+  app and runs in-process (llama.cpp, Metal on Apple silicon). Zero setup,
+  no key, works offline — for classification and light queries; use a
+  cloud provider for high-quality ingest.
 - **A vault you own** — everything is plain markdown on disk. Open the
   folder in Finder, in Obsidian, in Vim — Memex never locks your data.
 
@@ -57,6 +61,7 @@ Settings → Account.
 
 Settings → Connections lets you connect any combination of:
 
+- **Built-in (offline)** — Powered by HyperCLOVA X. SEED 0.5B bundled in the app, in-process llama.cpp — no install, no key, offline. Model © NAVER Corp., HyperCLOVA X SEED Model License (text ships with the app).
 - **Claude Code (CLI)** — uses your Pro/Max subscription. No key needed; just have `claude` on PATH.
 - **Anthropic API** — direct `/v1/messages`. Key from console.anthropic.com.
 - **OpenAI API** — `/v1/chat/completions`. Live model list fetched from `/v1/models`.

@@ -205,6 +205,7 @@ Six sub-tabs:
 - **Account** — current vault path; **Change…** to point at any folder.
 - **Model** — separate provider+model dropdowns for **Query** and **Ingest**. Switch a task to a different provider without losing connections to others.
 - **Connections** — connect/disconnect any of:
+  - **Built-in (offline)** — Powered by HyperCLOVA X. SEED 0.5B ships inside the app (in-process llama.cpp, Metal on Apple silicon). No install, no key, works offline — classification and light queries; pick a cloud provider for high-quality ingest. Model © NAVER Corp., HyperCLOVA X SEED Model License.
   - **Claude Code (CLI)** — uses your Pro/Max subscription. No key required, just `claude` on PATH.
   - **Anthropic API** — direct `/v1/messages`.
   - **OpenAI API** — `/v1/chat/completions`. Live model list via `/v1/models`.
