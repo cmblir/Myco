@@ -8,6 +8,14 @@
 //! single `LocalLlm` is loaded into Tauri state at startup and reused; each call
 //! spins up a fresh context (cheap) off the shared model.
 //!
+//! Prompts go through the model's own chat template (from the GGUF) so the
+//! instruct tuning actually engages — feeding raw "User:/Assistant:" text made
+//! the base LM continue the transcript with fake turns and thinking-style
+//! artifacts. Tokenized prompts are truncated to fit the context window
+//! (keeping the tail, where the question lives) and the batch is sized to the
+//! prompt — a fixed 512 batch overflowed ("Insufficient Space of 512") the
+//! moment vault context was inlined.
+//!
 //! Classification uses greedy decoding + a short token cap + post-validation
 //! against the label set, NOT a GBNF grammar: the grammar sampler crashes in the
 //! vendored llama.cpp of llama-cpp-2 0.1.150 (`GGML_ASSERT(!stacks.empty())`,
@@ -20,7 +28,7 @@ use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
-use llama_cpp_2::model::{AddBos, LlamaModel, Special};
+use llama_cpp_2::model::{AddBos, LlamaChatMessage, LlamaChatTemplate, LlamaModel};
 use llama_cpp_2::sampling::LlamaSampler;
 
 /// The wiki page types the classifier maps a note to (matches the frontmatter
@@ -30,11 +38,16 @@ pub const WIKI_TYPES: [&str; 5] =
 
 const CTX_TOKENS: u32 = 4096;
 const CLASSIFY_MAX_TOKENS: i32 = 6;
+// Belt-and-braces stops for the no-template fallback path, where the base LM
+// may start inventing new dialogue turns.
+const STOP_MARKERS: [&str; 4] = ["\nUser:", "\nAssistant:", "\nQ:", "\n질문:"];
 
 pub struct LocalLlm {
     // The backend guard must outlive the model; drop deinits llama.cpp.
     backend: LlamaBackend,
     model: LlamaModel,
+    // The GGUF's own chat template (None if the file ships without one).
+    template: Option<LlamaChatTemplate>,
 }
 
 impl LocalLlm {
@@ -44,11 +57,52 @@ impl LocalLlm {
         let model =
             LlamaModel::load_from_file(&backend, model_path, &LlamaModelParams::default())
                 .map_err(|e| format!("load model {}: {e}", model_path.display()))?;
-        Ok(Self { backend, model })
+        let template = model.chat_template(None).ok();
+        Ok(Self {
+            backend,
+            model,
+            template,
+        })
     }
 
-    /// Greedy decode `prompt` for up to `max_tokens`, returning the text.
-    fn run(&self, prompt: &str, max_tokens: i32) -> Result<String, String> {
+    /// Render (system, user) through the model's chat template, falling back to
+    /// a plain concatenation when the GGUF has none. Returns the prompt text
+    /// and whether a BOS still needs to be added at tokenization (the template
+    /// already embeds its own special tokens).
+    fn format_chat(&self, system: &str, user: &str) -> (String, AddBos) {
+        if let Some(tmpl) = &self.template {
+            let msgs: Vec<LlamaChatMessage> = [("system", system), ("user", user)]
+                .into_iter()
+                .filter(|(_, c)| !c.is_empty())
+                .filter_map(|(r, c)| LlamaChatMessage::new(r.into(), c.into()).ok())
+                .collect();
+            if !msgs.is_empty() {
+                if let Ok(p) = self.model.apply_chat_template(tmpl, &msgs, true) {
+                    return (p, AddBos::Never);
+                }
+            }
+        }
+        let joined = if system.is_empty() {
+            format!("{user}\n\nAnswer:")
+        } else {
+            format!("{system}\n\n{user}\n\nAnswer:")
+        };
+        (joined, AddBos::Always)
+    }
+
+    /// Greedy-decode up to `max_tokens` for a (system, user) chat turn.
+    fn run(&self, system: &str, user: &str, max_tokens: i32) -> Result<String, String> {
+        let (prompt, add_bos) = self.format_chat(system, user);
+        self.run_prompt(&prompt, add_bos, max_tokens)
+    }
+
+    /// Core greedy loop over an already-formatted prompt.
+    fn run_prompt(
+        &self,
+        prompt: &str,
+        add_bos: AddBos,
+        max_tokens: i32,
+    ) -> Result<String, String> {
         let n_ctx = NonZeroU32::new(CTX_TOKENS).ok_or("invalid ctx size")?;
         let ctx_params = LlamaContextParams::default().with_n_ctx(Some(n_ctx));
         let mut ctx = self
@@ -56,34 +110,66 @@ impl LocalLlm {
             .new_context(&self.backend, ctx_params)
             .map_err(|e| format!("new_context: {e}"))?;
 
-        let tokens = self
+        let mut tokens = self
             .model
-            .str_to_token(prompt, AddBos::Always)
+            .str_to_token(&prompt, add_bos)
             .map_err(|e| format!("tokenize: {e}"))?;
 
-        let mut batch = LlamaBatch::new(512, 1);
-        let last = tokens.len() as i32 - 1;
-        for (i, tok) in (0i32..).zip(tokens.iter()) {
-            batch
-                .add(*tok, i, &[0], i == last)
-                .map_err(|e| format!("batch.add: {e}"))?;
+        // Fit prompt + generation inside the context window. Drop from the
+        // FRONT: the instruction/question sits at the end of the prompt, the
+        // (inlined vault) context at the front is the expendable part.
+        let budget = CTX_TOKENS as usize - max_tokens.max(1) as usize - 8;
+        if tokens.len() > budget {
+            tokens.drain(..tokens.len() - budget);
         }
-        ctx.decode(&mut batch).map_err(|e| format!("decode prompt: {e}"))?;
+        if tokens.is_empty() {
+            return Err("empty prompt".into());
+        }
+
+        // Chunked prefill: the context's n_batch is 512 (llama-cpp-2 exposes no
+        // setter), so a long prompt must be decoded in ≤512-token chunks —
+        // one oversized decode trips GGML_ASSERT(n_tokens_all <= cparams.n_batch),
+        // and a fixed one-shot batch was the "Insufficient Space of 512" crash.
+        const PREFILL_CHUNK: usize = 512;
+        let mut batch = LlamaBatch::new(PREFILL_CHUNK, 1);
+        let total = tokens.len();
+        let mut pos: i32 = 0;
+        for chunk in tokens.chunks(PREFILL_CHUNK) {
+            batch.clear();
+            let chunk_end = pos as usize + chunk.len();
+            for (j, tok) in chunk.iter().enumerate() {
+                let wants_logits = chunk_end == total && j == chunk.len() - 1;
+                batch
+                    .add(*tok, pos, &[0], wants_logits)
+                    .map_err(|e| format!("batch.add: {e}"))?;
+                pos += 1;
+            }
+            ctx.decode(&mut batch).map_err(|e| format!("decode prompt: {e}"))?;
+        }
 
         let mut sampler = LlamaSampler::chain_simple([LlamaSampler::greedy()]);
+        // Streaming UTF-8 decoder: a Hangul codepoint can span two tokens, so
+        // per-token independent decoding clipped bytes ("위키는" → "위는").
+        let mut decoder = encoding_rs::UTF_8.new_decoder();
         let mut out = String::new();
-        let mut n_cur = batch.n_tokens();
-        for _ in 0..max_tokens {
+        // Continue positions after the FULL prompt (batch.n_tokens() would only
+        // count the last prefill chunk).
+        let mut n_cur = total as i32;
+        'gen: for _ in 0..max_tokens {
             let token = sampler.sample(&ctx, batch.n_tokens() - 1);
             sampler.accept(token);
             if self.model.is_eog_token(token) {
                 break;
             }
-            // TODO(korean): token_to_str decodes per-token and can split a
-            // multi-byte Hangul token; switch to byte accumulation + one decode
-            // for clean Korean query output. ASCII labels (classify) are fine.
-            if let Ok(piece) = self.model.token_to_str(token, Special::Tokenize) {
+            if let Ok(piece) = self.model.token_to_piece(token, &mut decoder, false, None) {
                 out.push_str(&piece);
+                // Fallback-path guard: cut fake dialogue turns.
+                for m in STOP_MARKERS {
+                    if let Some(i) = out.find(m) {
+                        out.truncate(i);
+                        break 'gen;
+                    }
+                }
             }
             batch.clear();
             batch
@@ -92,17 +178,19 @@ impl LocalLlm {
             ctx.decode(&mut batch).map_err(|e| format!("decode gen: {e}"))?;
             n_cur += 1;
         }
-        Ok(out)
+        Ok(out.trim().to_string())
     }
 
     /// Classify a note into one of [`WIKI_TYPES`]. The output is validated
-    /// against the label set (longest match wins).
+    /// against the label set (longest match wins). Uses a RAW completion prompt
+    /// (no chat template): the "Type:" cue reliably elicits a bare label, while
+    /// the chat path made the model answer conversationally / echo the note.
     pub fn classify(&self, note: &str) -> Result<String, String> {
         let prompt = format!(
             "You are a wiki classifier. Reply with exactly one of: {}.\nNote: {note}\nType:",
             WIKI_TYPES.join(", ")
         );
-        let raw = self.run(&prompt, CLASSIFY_MAX_TOKENS)?;
+        let raw = self.run_prompt(&prompt, AddBos::Always, CLASSIFY_MAX_TOKENS)?;
         let low = raw.to_lowercase();
         let mut best: Option<&str> = None;
         for t in WIKI_TYPES {
@@ -114,9 +202,13 @@ impl LocalLlm {
             .ok_or_else(|| format!("no known label in model output: {raw:?}"))
     }
 
-    /// Free-form, language-matched generation. The caller should inline vault
-    /// context for grounding; facts are unreliable at 0.5B.
+    /// Free-form, language-matched generation. `prompt` is the user turn (the
+    /// caller may prepend inlined vault context); facts are unreliable at 0.5B.
     pub fn generate(&self, prompt: &str, max_tokens: i32) -> Result<String, String> {
-        self.run(prompt, max_tokens.clamp(1, 512))
+        self.run(
+            "You are Memex's built-in assistant. Answer briefly, in the same language as the question.",
+            prompt,
+            max_tokens.clamp(1, 512),
+        )
     }
 }

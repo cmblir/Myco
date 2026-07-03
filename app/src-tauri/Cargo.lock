@@ -2251,6 +2251,7 @@ name = "memex"
 version = "0.1.0"
 dependencies = [
  "calamine",
+ "encoding_rs",
  "gray_matter",
  "keyring",
  "llama-cpp-2",

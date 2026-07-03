@@ -27,6 +27,9 @@ const TOOL_CAPABLE_PROVIDERS = new Set(["anthropic-cli"]);
 
 // How much vault markdown to inline (in bytes/chars) for non-tool providers.
 const VAULT_CONTEXT_BUDGET = 80_000;
+// The embedded 0.5B model only has a 4k-token window — keep its inline slice
+// small so the question (at the end) always survives backend truncation.
+const LOCAL_CONTEXT_BUDGET = 6_000;
 
 /** Whether the given provider can read/write vault files via tools. */
 export function providerSupportsVaultTools(provider: string): boolean {
@@ -76,9 +79,13 @@ export async function complete(args: CompleteArgs): Promise<string> {
 
   // Read-only task (query / lint): inline the vault content so the model can
   // actually answer from it. If reading fails, fall back to the bare prompt.
+  // The embedded model has a 4k-token context window, so its budget is far
+  // smaller than the cloud providers' (excess is truncated backend-side too).
+  const isBuiltin = provider === "builtin-local";
   let messages = args.messages;
   try {
-    const ctx = await ipc.readVaultContext(args.cwd, VAULT_CONTEXT_BUDGET);
+    const budget = isBuiltin ? LOCAL_CONTEXT_BUDGET : VAULT_CONTEXT_BUDGET;
+    const ctx = await ipc.readVaultContext(args.cwd, budget);
     if (ctx.trim()) {
       messages = withVaultContext(messages, ctx);
     }
@@ -86,20 +93,17 @@ export async function complete(args: CompleteArgs): Promise<string> {
     /* proceed without inlined context rather than blocking the request */
   }
 
-  // Embedded model (bundled SEED 0.5B): in-process, offline, no key. It takes a
-  // single prompt, so flatten the turns the same way the CLIs do. Light tasks
-  // only — facts are weak at 0.5B; heavy ingest is already rejected above.
-  if (provider === "builtin-local") {
-    const flat = messages
-      .map((m) =>
-        m.role === "system"
-          ? m.content
-          : m.role === "assistant"
-            ? `Assistant: ${m.content}`
-            : `User: ${m.content}`,
-      )
+  // Embedded model (bundled SEED 0.5B): in-process, offline, no key. The
+  // backend applies the model's own chat template, so pass plain content —
+  // no "User:/Assistant:" role markers (they made the base LM continue the
+  // transcript with fake turns). Light tasks only; ingest is rejected above.
+  if (isBuiltin) {
+    const system = messages.find((m) => m.role === "system")?.content ?? "";
+    const user = messages
+      .filter((m) => m.role !== "system")
+      .map((m) => m.content)
       .join("\n\n");
-    const out = await ipc.localQuery(`${flat}\n\nAssistant:`, 512);
+    const out = await ipc.localQuery(system ? `${system}\n\n${user}` : user, 512);
     return out.trim();
   }
 

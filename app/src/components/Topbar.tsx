@@ -10,7 +10,6 @@ import { useVaultStore } from "../stores/vaultStore";
 import { useIngestStore } from "../stores/ingestStore";
 import { useLintStore } from "../stores/lintStore";
 import { ipc } from "../lib/ipc";
-import type { ClaudeStatus } from "../lib/ipc";
 import { formatTicker } from "../lib/time";
 
 export default function Topbar({ t }: { t: Strings }): JSX.Element {
@@ -20,14 +19,6 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const setLang = useUIStore((s) => s.setLang);
   const currentVault = useVaultStore((s) => s.currentVault);
-  const [claude, setClaude] = useState<ClaudeStatus | null>(null);
-
-  useEffect(() => {
-    ipc
-      .claudeCheck()
-      .then(setClaude)
-      .catch(() => undefined);
-  }, []);
 
   const projectName = currentVault?.name ?? t.app_name;
   const { crumb, icon } = breadcrumbFor(route, projectName, t);
@@ -60,22 +51,7 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
           ⌘K
         </span>
       </button>
-      <span
-        className="pill"
-        title={
-          claude?.installed
-            ? `claude CLI ${claude.version ?? ""} (${claude.path})`
-            : "claude CLI not detected on PATH"
-        }
-      >
-        <span
-          className="dot"
-          style={{
-            background: claude?.installed ? "#16a34a" : "var(--ink-4)",
-          }}
-        ></span>
-        <span>claude {claude?.installed ? "ready" : "offline"}</span>
-      </span>
+      <ModelChip />
       <select
         className="pill"
         value={lang}
@@ -87,6 +63,67 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
         <option value="ja">日本語</option>
       </select>
     </div>
+  );
+}
+
+// Availability of the ACTIVE query model (not just the Claude CLI): shows the
+// provider + a green/grey dot. builtin-local ships in the app (always ready);
+// CLI/daemon providers get a live probe; API providers count as ready when
+// enabled (their key lives in the keychain — no cheap liveness check).
+function ModelChip(): JSX.Element | null {
+  const [label, setLabel] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  const [detail, setDetail] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        const s = await ipc.getSettings();
+        const provider = s.query_provider;
+        const model = s.query_model;
+        let ok: boolean;
+        let name: string;
+        if (provider === "builtin-local") {
+          name = "local";
+          ok = true; // bundled in the app binary
+        } else if (provider === "anthropic-cli") {
+          name = "claude";
+          ok = (await ipc.claudeCheck()).installed;
+        } else if (provider === "ollama") {
+          name = "ollama";
+          ok = (await ipc.ollamaStatus()).daemon_running;
+        } else {
+          name = provider.replace(/-(api|cli)$/, "");
+          ok =
+            (s.providers as Record<string, boolean>)[
+              provider.replace(/-/g, "_")
+            ] === true;
+        }
+        if (!alive) return;
+        setLabel(name);
+        setReady(ok);
+        setDetail(`${provider} · ${model || "(default)"}`);
+      } catch {
+        /* leave the chip hidden if settings can't load */
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!label) return null;
+  return (
+    <span className="pill" title={detail}>
+      <span
+        className="dot"
+        style={{ background: ready ? "#16a34a" : "var(--ink-4)" }}
+      ></span>
+      <span>
+        {label} {ready ? "ready" : "offline"}
+      </span>
+    </span>
   );
 }
 

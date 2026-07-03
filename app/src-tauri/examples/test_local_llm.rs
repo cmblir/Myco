@@ -17,9 +17,23 @@ fn main() {
 
     let t1 = std::time::Instant::now();
     let out = llm
-        .generate("User: 한 문장으로 답해. 위키란 무엇인가?\n\nAssistant:", 80)
+        .generate("한 문장으로 답해. 위키란 무엇인가?", 80)
         .expect("generate");
     println!("QUERY(ko) -> {out:?}  ({:.1}s)", t1.elapsed().as_secs_f32());
     assert!(!out.trim().is_empty());
+
+    // Regression: a prompt far beyond 512 tokens (inlined vault context) used
+    // to crash with "batch.add: Insufficient Space of 512".
+    let filler = "지식 그래프는 노트 사이의 연결을 보여준다. ".repeat(400);
+    let long_prompt = format!("{filler}\n\n위 내용과 관련해 한 문장으로: 위키의 장점은?");
+    let t2 = std::time::Instant::now();
+    let out2 = llm.generate(&long_prompt, 60).expect("long-context generate");
+    println!(
+        "LONG(ctx≈{} chars) -> {:?}  ({:.1}s)",
+        long_prompt.len(),
+        out2,
+        t2.elapsed().as_secs_f32()
+    );
+    assert!(!out2.trim().is_empty());
     println!("OK");
 }

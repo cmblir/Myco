@@ -548,6 +548,10 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  /* Never wrap button labels mid-word (Korean "질문하기" broke to two lines
+     in tight flex rows) — the row should flex, not the label. */
+  white-space: nowrap;
+  flex-shrink: 0;
   padding: 7px 12px;
   border-radius: var(--r-md);
   border: 1px solid var(--line);

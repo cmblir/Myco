@@ -30,6 +30,8 @@ pdf-extract = "0.10.0"
 # daemon, no Python. Metal is on by default on macOS. Vendors + compiles
 # llama.cpp at build time (adds ~5 min to a clean release build).
 llama-cpp-2 = "0.1.150"
+# Streaming UTF-8 decode for llama token pieces (Hangul spans token boundaries).
+encoding_rs = "0.8"
 
 [dev-dependencies]
 wiremock = "0.6"
