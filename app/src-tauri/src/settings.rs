@@ -72,6 +72,9 @@ pub struct ProviderFlags {
     pub openrouter: bool,
     #[serde(default)]
     pub memex_pro: bool,
+    // Embedded model ships inside the app — zero setup, so on by default.
+    #[serde(default = "default_true")]
+    pub builtin_local: bool,
 }
 
 impl Default for ProviderFlags {
@@ -86,6 +89,7 @@ impl Default for ProviderFlags {
             ollama: false,
             openrouter: false,
             memex_pro: false,
+            builtin_local: true,
         }
     }
 }

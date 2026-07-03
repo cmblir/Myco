@@ -26,6 +26,10 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 calamine = "0.30.1"
 pdf-extract = "0.10.0"
+# Embedded local model (bundled SEED 0.5B GGUF). Pure in-process inference — no
+# daemon, no Python. Metal is on by default on macOS. Vendors + compiles
+# llama.cpp at build time (adds ~5 min to a clean release build).
+llama-cpp-2 = "0.1.150"
 
 [dev-dependencies]
 wiremock = "0.6"

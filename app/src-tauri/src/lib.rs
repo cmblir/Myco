@@ -8,6 +8,7 @@ mod commands;
 pub mod extract;
 pub mod git_log;
 pub mod index;
+pub mod local_llm;
 pub mod mcp_server;
 pub mod memex_pro;
 pub mod ollama;
@@ -24,6 +25,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         // Confinement root for filesystem commands; populated on open_vault.
         .manage(commands::VaultRoot::default())
+        // Embedded local model — lazily loaded on first local_* command.
+        .manage(commands::LocalLlmState::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
             commands::ensure_default_vault,
@@ -64,6 +67,8 @@ pub fn run() {
             commands::mcp_registration_info,
             commands::mcp_install,
             commands::mcp_register,
+            commands::local_classify,
+            commands::local_query,
         ])
         .setup(|_app| Ok(()))
         .build(tauri::generate_context!())

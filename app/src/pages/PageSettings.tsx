@@ -83,6 +83,15 @@ export const PROVIDERS: ProviderDef[] = [
     catalog: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"],
   },
   {
+    id: "builtin-local",
+    flag: "builtin_local",
+    name: "Built-in (offline)",
+    kind: "local",
+    needsKey: false,
+    desc: "HyperCLOVA X SEED 0.5B bundled inside the app. Works offline with zero setup — good for classification and light queries; use a cloud provider for high-quality ingest.",
+    catalog: ["seed-0.5b"],
+  },
+  {
     id: "ollama",
     flag: "ollama",
     name: "Ollama (local)",

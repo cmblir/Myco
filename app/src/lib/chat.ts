@@ -86,6 +86,23 @@ export async function complete(args: CompleteArgs): Promise<string> {
     /* proceed without inlined context rather than blocking the request */
   }
 
+  // Embedded model (bundled SEED 0.5B): in-process, offline, no key. It takes a
+  // single prompt, so flatten the turns the same way the CLIs do. Light tasks
+  // only — facts are weak at 0.5B; heavy ingest is already rejected above.
+  if (provider === "builtin-local") {
+    const flat = messages
+      .map((m) =>
+        m.role === "system"
+          ? m.content
+          : m.role === "assistant"
+            ? `Assistant: ${m.content}`
+            : `User: ${m.content}`,
+      )
+      .join("\n\n");
+    const out = await ipc.localQuery(`${flat}\n\nAssistant:`, 512);
+    return out.trim();
+  }
+
   const res = await ipc.chatComplete({
     provider_id: provider,
     model,

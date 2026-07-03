@@ -109,6 +109,8 @@ export interface MemexSettings {
     ollama: boolean;
     openrouter: boolean;
     memex_pro: boolean;
+    /** Embedded model (bundled GGUF) — ships in the app, on by default. */
+    builtin_local: boolean;
   };
   query_provider: string;
   query_model: string;
@@ -263,4 +265,9 @@ export const ipc = {
     invoke<string>("mcp_install", { vaultPath }),
   mcpRegister: (vaultPath: string) =>
     invoke<string>("mcp_register", { vaultPath }),
+  // Embedded local model (bundled SEED 0.5B) — offline, no key. First call
+  // lazily loads the weights, so it can take a few extra seconds.
+  localClassify: (note: string) => invoke<string>("local_classify", { note }),
+  localQuery: (prompt: string, maxTokens?: number) =>
+    invoke<string>("local_query", { prompt, maxTokens }),
 };

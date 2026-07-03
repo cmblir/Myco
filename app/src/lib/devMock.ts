@@ -163,7 +163,7 @@ function provenance() {
 }
 
 const SETTINGS = {
-  providers: { anthropic_api: false, openai_api: false, google_api: false, ollama: false, openrouter: false, memex_pro: false },
+  providers: { anthropic_api: false, openai_api: false, google_api: false, ollama: false, openrouter: false, memex_pro: false, builtin_local: true },
   query_provider: "anthropic-cli",
   query_model: "claude-sonnet-4-6",
   ingest_provider: "anthropic-cli",
@@ -223,6 +223,12 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       SETTINGS.memex_pro_email = String(args.email ?? "");
       SETTINGS.providers.memex_pro = true;
       return Promise.resolve({ email: String(args.email ?? ""), connected: true });
+    case "local_classify":
+      return Promise.resolve("concept");
+    case "local_query":
+      return Promise.resolve(
+        "(mock) local model reply — the real app runs the bundled SEED 0.5B here.",
+      );
     case "memex_pro_logout":
       SETTINGS.memex_pro_email = "";
       SETTINGS.providers.memex_pro = false;

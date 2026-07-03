@@ -260,7 +260,8 @@ export type ProviderId =
   | "google-api"
   | "ollama"
   | "openrouter"
-  | "memex-pro";
+  | "memex-pro"
+  | "builtin-local";
 
 export function ProviderGlyph({
   id,
@@ -288,6 +289,14 @@ export function ProviderGlyph({
       return (
         <svg {...common}>
           <path d="M12 2l2.6 6 6.4.5-4.9 4.2 1.5 6.3L12 15.8 6.4 19l1.5-6.3L3 8.5 9.4 8z" />
+        </svg>
+      );
+    case "builtin-local":
+      // Chip glyph — the model lives inside the app binary.
+      return (
+        <svg {...stroke}>
+          <rect x="7" y="7" width="10" height="10" rx="1.5" />
+          <path d="M10 7V4M14 7V4M10 20v-3M14 20v-3M7 10H4M7 14H4M20 10h-3M20 14h-3" />
         </svg>
       );
     case "anthropic-cli":

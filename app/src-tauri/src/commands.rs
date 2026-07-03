@@ -6,6 +6,7 @@ use crate::claude::{self, CliResult, CliStatus};
 use crate::cli_agent;
 use crate::git_log::{self, Commit};
 use crate::index::{self, Adjacency};
+use crate::local_llm::LocalLlm;
 use crate::mcp_server::{self, McpRegInfo};
 use crate::ollama::{self, OllamaStatus};
 use crate::parser;
@@ -15,7 +16,8 @@ use crate::secrets;
 use crate::settings::{self, Settings};
 use crate::vault::{self, FileContent, FileNode, SearchHit, VaultMeta};
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
+use tauri::Manager;
 
 /// Canonical root of the currently-open vault. Set on `open_vault` and used to
 /// confine every filesystem command, so the frontend cannot read/write/delete
@@ -34,6 +36,79 @@ impl VaultRoot {
 
 fn require_root(state: &tauri::State<VaultRoot>) -> Result<PathBuf, String> {
     state.get().ok_or_else(|| "no vault is open".to_string())
+}
+
+/// Lazily-loaded embedded model (bundled SEED 0.5B GGUF). `None` until the
+/// first local_* command; the 412 MB weights must not tax startup or RAM when
+/// the feature is unused. Arc so inference can run on a blocking thread.
+#[derive(Default, Clone)]
+pub struct LocalLlmState(Arc<Mutex<Option<LocalLlm>>>);
+
+/// Bundled model path: the packaged resource dir, falling back to the source
+/// tree in dev (`cargo tauri dev` may run before resources are staged).
+fn local_model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    const REL: &str = "models/seed-0.5b-q4_k_m.gguf";
+    if let Ok(res) = app.path().resource_dir() {
+        let p = res.join(REL);
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(REL);
+    if dev.is_file() {
+        return Ok(dev);
+    }
+    Err("bundled model not found (models/seed-0.5b-q4_k_m.gguf)".into())
+}
+
+/// Run `f` against the lazily-loaded local model on a blocking thread —
+/// inference takes seconds and must not stall the async runtime.
+async fn with_local_llm<T, F>(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LocalLlmState>,
+    f: F,
+) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: FnOnce(&LocalLlm) -> Result<T, String> + Send + 'static,
+{
+    let cell = state.0.clone();
+    let path = local_model_path(&app)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
+        if guard.is_none() {
+            *guard = Some(LocalLlm::load(&path)?);
+        }
+        f(guard.as_ref().expect("just loaded"))
+    })
+    .await
+    .map_err(|e| format!("local model task failed: {e}"))?
+}
+
+/// Classify a note into a wiki page type with the embedded model. Offline,
+/// no key; output is post-validated against the type enum.
+#[tauri::command]
+pub async fn local_classify(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LocalLlmState>,
+    note: String,
+) -> Result<String, String> {
+    with_local_llm(app, state, move |llm| llm.classify(&note)).await
+}
+
+/// Light free-form generation with the embedded model. The caller inlines any
+/// vault context; factual accuracy is limited at 0.5B (paid tiers for ingest).
+#[tauri::command]
+pub async fn local_query(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, LocalLlmState>,
+    prompt: String,
+    max_tokens: Option<i32>,
+) -> Result<String, String> {
+    with_local_llm(app, state, move |llm| {
+        llm.generate(&prompt, max_tokens.unwrap_or(256))
+    })
+    .await
 }
 
 /// Confine a frontend-supplied scan root/path to the open vault. The read-only
