@@ -90,18 +90,23 @@ impl LocalLlm {
         (joined, AddBos::Always)
     }
 
-    /// Greedy-decode up to `max_tokens` for a (system, user) chat turn.
+    /// Decode up to `max_tokens` for a (system, user) chat turn (sampled).
     fn run(&self, system: &str, user: &str, max_tokens: i32) -> Result<String, String> {
         let (prompt, add_bos) = self.format_chat(system, user);
-        self.run_prompt(&prompt, add_bos, max_tokens)
+        self.run_prompt(&prompt, add_bos, max_tokens, true)
     }
 
-    /// Core greedy loop over an already-formatted prompt.
+    /// Core decode loop over an already-formatted prompt. `sampled` picks the
+    /// generation sampler: repetition penalty + low temperature for free-form
+    /// text (pure greedy sends a 0.5B model into degenerate sentence loops —
+    /// the same line repeated until the token cap); classification stays pure
+    /// greedy (single-word output, determinism preferred).
     fn run_prompt(
         &self,
         prompt: &str,
         add_bos: AddBos,
         max_tokens: i32,
+        sampled: bool,
     ) -> Result<String, String> {
         let n_ctx = NonZeroU32::new(CTX_TOKENS).ok_or("invalid ctx size")?;
         let ctx_params = LlamaContextParams::default().with_n_ctx(Some(n_ctx));
@@ -147,7 +152,19 @@ impl LocalLlm {
             ctx.decode(&mut batch).map_err(|e| format!("decode prompt: {e}"))?;
         }
 
-        let mut sampler = LlamaSampler::chain_simple([LlamaSampler::greedy()]);
+        let mut sampler = if sampled {
+            LlamaSampler::chain_simple([
+                // Standard llama.cpp anti-repetition: penalize the last 64
+                // tokens; then low-temperature nucleus-ish sampling. Fixed seed
+                // keeps runs reproducible.
+                LlamaSampler::penalties(64, 1.15, 0.0, 0.0),
+                LlamaSampler::temp(0.4),
+                LlamaSampler::min_p(0.05, 1),
+                LlamaSampler::dist(42),
+            ])
+        } else {
+            LlamaSampler::chain_simple([LlamaSampler::greedy()])
+        };
         // Streaming UTF-8 decoder: a Hangul codepoint can span two tokens, so
         // per-token independent decoding clipped bytes ("위키는" → "위는").
         let mut decoder = encoding_rs::UTF_8.new_decoder();
@@ -167,6 +184,19 @@ impl LocalLlm {
                 for m in STOP_MARKERS {
                     if let Some(i) = out.find(m) {
                         out.truncate(i);
+                        break 'gen;
+                    }
+                }
+                // Degenerate-loop guard (belt to the penalty sampler's braces):
+                // if the trailing 24 chars already appeared ≥2 more times, the
+                // model is looping one sentence — cut at the first occurrence.
+                if out.chars().count() > 120 {
+                    let tail: String =
+                        out.chars().rev().take(24).collect::<Vec<_>>().into_iter().rev().collect();
+                    if !tail.trim().is_empty() && out.matches(&tail).count() >= 3 {
+                        if let Some(i) = out.find(&tail) {
+                            out.truncate(i + tail.len());
+                        }
                         break 'gen;
                     }
                 }
@@ -190,7 +220,7 @@ impl LocalLlm {
             "You are a wiki classifier. Reply with exactly one of: {}.\nNote: {note}\nType:",
             WIKI_TYPES.join(", ")
         );
-        let raw = self.run_prompt(&prompt, AddBos::Always, CLASSIFY_MAX_TOKENS)?;
+        let raw = self.run_prompt(&prompt, AddBos::Always, CLASSIFY_MAX_TOKENS, false)?;
         let low = raw.to_lowercase();
         let mut best: Option<&str> = None;
         for t in WIKI_TYPES {

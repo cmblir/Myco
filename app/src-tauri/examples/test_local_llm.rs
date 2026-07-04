@@ -22,6 +22,18 @@ fn main() {
     println!("QUERY(ko) -> {out:?}  ({:.1}s)", t1.elapsed().as_secs_f32());
     assert!(!out.trim().is_empty());
 
+    // Repro of the degenerate-repetition report: vault-ish context + a vague
+    // meta question used to loop one sentence until the token cap.
+    let ctx = "## log.md\n2026-07-01 ingest | Attention Is All You Need\n2026-07-02 query | RLHF 정리\n2026-07-03 ingest | Scaling Laws\n";
+    let t3 = std::time::Instant::now();
+    let rep = llm
+        .generate(&format!("{ctx}\n내가 최근한 일이 뭐야?"), 320)
+        .expect("repetition repro");
+    println!("REPRO -> {rep:?}  ({:.1}s)", t3.elapsed().as_secs_f32());
+    // A degenerate loop repeats one clause many times; assert it doesn't.
+    let tail: String = rep.chars().rev().take(24).collect::<Vec<_>>().into_iter().rev().collect();
+    assert!(tail.trim().is_empty() || rep.matches(&tail).count() < 3, "looping output");
+
     // Regression: a prompt far beyond 512 tokens (inlined vault context) used
     // to crash with "batch.add: Insufficient Space of 512".
     let filler = "지식 그래프는 노트 사이의 연결을 보여준다. ".repeat(400);

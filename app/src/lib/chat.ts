@@ -103,7 +103,8 @@ export async function complete(args: CompleteArgs): Promise<string> {
       .filter((m) => m.role !== "system")
       .map((m) => m.content)
       .join("\n\n");
-    const out = await ipc.localQuery(system ? `${system}\n\n${user}` : user, 512);
+    // 320 tokens ≈ a short paragraph — less runway for a 0.5B model to ramble.
+    const out = await ipc.localQuery(system ? `${system}\n\n${user}` : user, 320);
     return out.trim();
   }
 
