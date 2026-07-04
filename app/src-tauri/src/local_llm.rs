@@ -152,6 +152,13 @@ impl LocalLlm {
             ctx.decode(&mut batch).map_err(|e| format!("decode prompt: {e}"))?;
         }
 
+        // NOTE: llama-cpp-2's token_to_piece decodes into a String whose
+        // capacity is only the CURRENT token's byte length; when the previous
+        // token buffered an incomplete UTF-8 sequence, the combined output
+        // overflows that capacity and encoding_rs silently drops the rest —
+        // the reported "확인�습니" replacement chars. We therefore take raw
+        // bytes (token_to_piece_bytes) and do our own incremental UTF-8
+        // assembly: append, flush the valid prefix, keep the split tail.
         let mut sampler = if sampled {
             LlamaSampler::chain_simple([
                 // Standard llama.cpp anti-repetition: penalize the last 64
@@ -165,9 +172,9 @@ impl LocalLlm {
         } else {
             LlamaSampler::chain_simple([LlamaSampler::greedy()])
         };
-        // Streaming UTF-8 decoder: a Hangul codepoint can span two tokens, so
-        // per-token independent decoding clipped bytes ("위키는" → "위는").
-        let mut decoder = encoding_rs::UTF_8.new_decoder();
+        // Incremental UTF-8 assembly: a Hangul codepoint can span two tokens.
+        // `pending` holds the split tail bytes until the codepoint completes.
+        let mut pending: Vec<u8> = Vec::new();
         let mut out = String::new();
         // Continue positions after the FULL prompt (batch.n_tokens() would only
         // count the last prefill chunk).
@@ -178,8 +185,27 @@ impl LocalLlm {
             if self.model.is_eog_token(token) {
                 break;
             }
-            if let Ok(piece) = self.model.token_to_piece(token, &mut decoder, false, None) {
-                out.push_str(&piece);
+            let bytes = match self.model.token_to_piece_bytes(token, 32, false, None) {
+                Ok(b) => b,
+                // Negative size = required buffer; retry once at that size.
+                Err(llama_cpp_2::TokenToStringError::InsufficientBufferSpace(i)) => self
+                    .model
+                    .token_to_piece_bytes(token, i.unsigned_abs() as usize, false, None)
+                    .map_err(|e| format!("token bytes: {e}"))?,
+                Err(e) => return Err(format!("token bytes: {e}")),
+            };
+            {
+                pending.extend_from_slice(&bytes);
+                let valid = match std::str::from_utf8(&pending) {
+                    Ok(_) => pending.len(),
+                    Err(e) => e.valid_up_to(),
+                };
+                if valid > 0 {
+                    out.push_str(
+                        std::str::from_utf8(&pending[..valid]).expect("validated prefix"),
+                    );
+                    pending.drain(..valid);
+                }
                 // Fallback-path guard: cut fake dialogue turns.
                 for m in STOP_MARKERS {
                     if let Some(i) = out.find(m) {
