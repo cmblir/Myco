@@ -1563,6 +1563,21 @@ hr {
   line-height: 15px;
   text-align: center;
 }
+/* Query "thinking" visualization — dark mini-cosmos while the model runs. */
+.thinking-galaxy {
+  border-radius: 8px;
+  background:
+    radial-gradient(ellipse at center, rgba(120, 150, 220, 0.06), transparent 70%),
+    #0a0c14;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+.thinking-galaxy__label {
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--ink-3);
+  border-top: 1px solid var(--line-soft);
+}
 .graph-empty {
   position: absolute;
   inset: 0;

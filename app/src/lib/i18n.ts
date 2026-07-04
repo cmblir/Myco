@@ -145,6 +145,7 @@ export interface Strings {
   gr_gap_islands?: string;
   gr_gap_none?: string;
   gr_gap_more?: string;
+  q_thinking?: string;
   h_title: string;
   h_lede: string;
   h_created: string;
@@ -388,6 +389,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_gap_islands: "Disconnected",
     gr_gap_none: "No gaps found",
     gr_gap_more: "more",
+    q_thinking: "searching the wiki…",
     h_title: "History",
     h_lede:
       "Every ingest files a WHY report. Browse what each run created and changed, newest first.",
@@ -642,6 +644,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_gap_islands: "끊긴 클러스터",
     gr_gap_none: "갭 없음",
     gr_gap_more: "더",
+    q_thinking: "위키를 탐색하는 중…",
     h_title: "히스토리",
     h_lede:
       "모든 가져오기는 WHY 보고서를 남깁니다. 각 실행이 무엇을 만들고 바꿨는지 최신순으로 봅니다.",

@@ -14,6 +14,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { complete } from "../lib/chat";
 import { flattenMarkdown, stem } from "../lib/graphData";
 import Viewer from "../components/Viewer";
+import ThinkingGalaxy from "../components/ThinkingGalaxy";
 import MiniGalaxy from "../components/MiniGalaxy";
 import type { GalaxyLink, GalaxyNode } from "../components/MiniGalaxy";
 import NodePreview from "../components/NodePreview";
@@ -63,6 +64,17 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
     for (const p of flattenMarkdown(fileTree)) map.set(stem(p).toLowerCase(), p);
     return map;
   }, [fileTree]);
+
+  // Random sample of real page names for the thinking animation — the pulses
+  // light up actual vault pages, so the wait reads as "searching your wiki".
+  const thinkingPages = useMemo(() => {
+    const all = [...stemMap.keys()];
+    for (let i = all.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [all[i], all[j]] = [all[j], all[i]];
+    }
+    return all.slice(0, 18);
+  }, [stemMap]);
 
   const openByStem = (target: string): void => {
     const abs = stemMap.get(target.toLowerCase());
@@ -179,7 +191,10 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
               ) : turn.a ? (
                 <Viewer content={turn.a} onLinkClick={openByStem} />
               ) : (
-                <p className="muted">▌ thinking…</p>
+                <ThinkingGalaxy
+                  pages={thinkingPages}
+                  label={t.q_thinking ?? "searching the wiki…"}
+                />
               )}
             </div>
             {turn.a ? (
