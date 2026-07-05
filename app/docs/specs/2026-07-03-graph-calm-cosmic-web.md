@@ -1,7 +1,10 @@
 # Graph Visual & UX Overhaul — "Calm Cosmic Web"
 
 - **Date:** 2026-07-03
-- **Status:** approved (design), Phase 0 pending visual A/B verification
+- **Status:** Phase 0 ✅ (2026-07-03) · Phase 1 ✅ (2026-07-06, A/B on mock
+  vault, dark theme) · Phase 2 partial (B1 legend + isolation, hover focus) ·
+  Phase 3 open. Light theme stays washed out — pre-existing (verified by
+  stash A/B against the pre-Phase-1 tree), needs its own calibration pass.
 - **Extends:** [[2026-06-27-cosmic-web-graph]] (keeps its architecture; fixes its look)
 - **Trigger:** real-vault screenshot review — the graph reads as **fireworks**
   (blown-white hub cores, equal-length colored spokes radiating from every
@@ -88,6 +91,8 @@ blending summing luminance across overlapping primitives.**
   sag so spoke bundles read organic; add length-based alpha falloff
   (cosmos.gl `linkVisibilityDistanceRange` port). Hot-path cost: +6 floats per
   edge in `writePositions`/`applyPositions` — **profile at 10 k before/after**.
+  *Measured (2026-07-06, node microbench of the exact loop): 0.069 → 0.295
+  ms/tick @ 10 k edges, +0.23 ms = 1.8 % of a 60 fps frame — accepted.*
   Phase 3: filaments reborn as a **focus-only layer** — hover/selection
   incidents (width 2.0, base 0.7, cap 200) and `shortestPath()` results.
   Filaments read as filaments because they are *rare and faint*.
@@ -153,8 +158,8 @@ blending summing luminance across overlapping primitives.**
 
 | Phase | Scope | Files |
 |---|---|---|
-| **0** (today) | constants table above | graphScene, graphData, graphSettings, graphSim.worker, pulseLayer |
-| **1** (2–3 d) | midpoint-split edges (fade+sag) + length falloff shader, degree-based distances, 6-hue palette, dynamic fog + z-desat, log node sizes, luminance clamp, clusterForce 0.35 | graphScene, graphData, graphSim.worker |
+| **0** ✅ | constants table above | graphScene, graphData, graphSettings, graphSim.worker, pulseLayer |
+| **1** ✅ | midpoint-split edges (fade+sag) + length falloff, degree-based distances, 6-hue palette, dynamic fog + z-desat, log node sizes, luminance clamp, clusterForce 0.35 (settings v26) | graphScene, graphData, graphSim.worker, graphSettings |
 | **2** (3–4 d) | legend, cluster labels v1, focus modes + selection stack, control presets, five states, motion toggle | GraphControls, PageGraph, new GraphLegend/clusterLabels, graphSettings |
 | **3** (~1 w) | selective bloom, back-halo, filament=focus/path layer, path mode, interaction LOD, LLM cluster labels | graphScene, new bloomComposite, pulseLayer, nebulaLayer |
 

@@ -151,10 +151,18 @@ function build(
     const b = typeof l.target === "object" ? l.target.id : String(l.target);
     return 0.7 + 0.6 * seededUnit(`${a}|${b}`, 21);
   };
+  // Degree-based distance (calm-cosmic-web spec A3): hub–hub bridges stretch
+  // long, leaf links stay short — spokes stop terminating on one shell and the
+  // busy trunks get room, dissolving the starburst silhouette.
+  const degMul = (l: SimLink): number => {
+    const sD = typeof l.source === "object" ? l.source.deg : 1;
+    const tD = typeof l.target === "object" ? l.target.deg : 1;
+    return 1 + 0.18 * Math.log2(1 + Math.min(sD, tD));
+  };
   const linkDist = (l: SimLink): number =>
-    cur.clusterForce > 0 && !sameComm(l)
+    (cur.clusterForce > 0 && !sameComm(l)
       ? cur.linkDistance * INTER_LINK_DIST_MUL
-      : cur.linkDistance * edgeJitter(l);
+      : cur.linkDistance * edgeJitter(l)) * degMul(l);
   const centerOf = (g: GraphSettings): number =>
     Math.max(0.005, g.centerForce * CENTER_SCALE);
   const gravityOf =

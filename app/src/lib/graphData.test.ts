@@ -167,6 +167,74 @@ describe("shortestPath", () => {
   });
 });
 
+describe("calm-cosmic-web node encoding", () => {
+  const opts = {
+    nodeSize: 1,
+    starDim: "#000000",
+    edgeColor: "#000000",
+    showGhosts: false,
+  };
+
+  // Channel spread of a #rrggbb colour — saturated community hues spread wide
+  // (>0.25), the neutral field-star base stays narrow (<0.25) even after the
+  // per-star kelvin tint.
+  function spread(hex: string): number {
+    const n = parseInt(hex.slice(1), 16);
+    const ch = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+    return (Math.max(...ch) - Math.min(...ch)) / 255;
+  }
+
+  // 8 disjoint triangles → 8 Louvain communities of 3 nodes each.
+  function eightCommunities(): ReturnType<typeof buildGraph> {
+    const forward: Record<string, string[]> = {};
+    const allowed = new Set<string>();
+    for (let c = 0; c < 8; c++) {
+      const ids = [0, 1, 2].map((k) => `/vault/c${c}-n${k}.md`);
+      forward[ids[0]] = [ids[1], ids[2]];
+      forward[ids[1]] = [ids[2]];
+      for (const id of ids) allowed.add(id);
+    }
+    return buildGraph(adj({ forward }), allowed, opts);
+  }
+
+  it("only the 6 largest communities get saturated hues; the rest go neutral", () => {
+    const g = eightCommunities();
+    const saturatedComms = new Set<number>();
+    const neutralComms = new Set<number>();
+    g.forEachNode((id) => {
+      const comm = g.getNodeAttribute(id, "community");
+      const color = g.getNodeAttribute(id, "color");
+      (spread(color) > 0.25 ? saturatedComms : neutralComms).add(comm);
+    });
+    expect(saturatedComms.size).toBe(6);
+    expect(neutralComms.size).toBe(2);
+    // No community is both — neutral communities are wholly neutral.
+    for (const c of neutralComms) expect(saturatedComms.has(c)).toBe(false);
+  });
+
+  it("node size follows the log-degree scale (hub ≈ 2.9× leaf, pre-jitter)", () => {
+    const a = "/vault/a.md";
+    const b = "/vault/b.md";
+    const c = "/vault/c.md";
+    const g = buildGraph(
+      adj({ forward: { [b]: [a, c] } }),
+      new Set([a, b, c]),
+      opts,
+    );
+    const size = (id: string, deg: number, maxDeg: number): number =>
+      (0.85 + (1.6 * Math.log2(1 + deg)) / Math.log2(1 + maxDeg)) *
+      (1 + (seededUnit(id, 1) - 0.5) * 0.36);
+    expect(g.getNodeAttribute(b, "size")).toBeCloseTo(size(b, 2, 2), 6);
+    expect(g.getNodeAttribute(a, "size")).toBeCloseTo(size(a, 1, 2), 6);
+  });
+
+  it("edgeless graph keeps sizes finite (no 0/0 from the log scale)", () => {
+    const a = "/vault/only.md";
+    const g = buildGraph(adj({}), new Set([a]), opts);
+    expect(Number.isFinite(g.getNodeAttribute(a, "size"))).toBe(true);
+  });
+});
+
 describe("seededUnit", () => {
   it("is deterministic for the same (id, salt)", () => {
     expect(seededUnit("node-1", 0)).toBe(seededUnit("node-1", 0));

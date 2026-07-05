@@ -13,19 +13,17 @@ const FIELD_STAR = "#9aa6c2";
 
 // Cosmic palette — soft-bright hues on black so each connected community reads
 // as its own coloured star cluster / nebula region within the galaxy.
+// Colour budget (calm-cosmic-web spec A5): ≤6 saturated hues at once. Only the
+// 6 largest communities earn a hue; every other community goes neutral field-
+// star grey + kelvin variation — the Millennium-render grammar (most matter is
+// neutral, a few regions coloured). The in-canvas legend explains the 6.
 const PALETTE = [
   "#6fb3ff",
-  "#b58cff",
   "#5fe0c0",
-  "#ff9ec4",
   "#ffd27a",
-  "#8affc1",
+  "#b58cff",
+  "#ff9ec4",
   "#ff9e6d",
-  "#9ab0ff",
-  "#7fe1ff",
-  "#c9a0ff",
-  "#ffb38a",
-  "#a0ffd6",
 ];
 
 // Colour nodes by connected community (Louvain): each community of 3+ nodes
@@ -52,7 +50,10 @@ function colorByCommunity(graph: VaultGraph, maxDeg: number): void {
     .sort((a, b) => b[1] - a[1])
     .map(([c]) => c);
   const colorOf = new Map<number, string>();
-  ranked.forEach((c, i) => colorOf.set(c, PALETTE[i % PALETTE.length]));
+  // No wrap-around: communities ranked past the palette stay hue-less and fall
+  // through to the neutral FIELD_STAR base below (they keep their community id
+  // for clustering — only the colour goes neutral).
+  ranked.slice(0, PALETTE.length).forEach((c, i) => colorOf.set(c, PALETTE[i]));
   const sized = new Set(ranked);
   // Highest-degree node of each sized community = its galaxy core.
   const hubOf = new Map<number, { id: string; deg: number }>();
@@ -446,9 +447,13 @@ export function buildGraph(
     const dn = maxDeg > 0 ? deg / maxDeg : 0;
     const jit = 1 + (seededUnit(id, 1) - 0.5) * 0.36; // ±18% per-star size jitter
     g.setNodeAttribute(id, "deg", deg);
-    // Compressed size hierarchy (sqrt-ish): a hub is ~3.5× a leaf, not 5×+, so a
-    // super-hub (an index/MOC linking everything) never balloons over the mesh.
-    g.setNodeAttribute(id, "size", (0.9 + Math.pow(dn, 0.6) * 2.2) * o.nodeSize * jit);
+    // Log-degree size scale (calm-cosmic-web spec A6): hub ≈ 2.9× leaf (was
+    // ~3.5×). Log compresses the top so a super-hub (an index/MOC linking
+    // everything) never balloons over the mesh, while low degrees still step
+    // visibly. maxDeg 0 (edgeless vault) would be 0/0 → plain base size.
+    const logSize =
+      maxDeg > 0 ? 0.85 + (1.6 * Math.log2(1 + deg)) / Math.log2(1 + maxDeg) : 0.85;
+    g.setNodeAttribute(id, "size", logSize * o.nodeSize * jit);
     // HDR intensity with a HARD CAP and a steep exponent: only the top ~10% of
     // hubs cross the bloom gate; everything else carries a faint baseline glow.
     // Brightness beyond that is earned by DENSITY (many faint stars overlapping

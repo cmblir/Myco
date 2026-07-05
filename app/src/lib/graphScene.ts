@@ -22,7 +22,7 @@ import {
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import type { VaultGraph } from "./graphData";
+import { seededUnit, type VaultGraph } from "./graphData";
 import type { GraphTheme } from "./graphTheme";
 import type { GraphSettings } from "./graphSettings";
 import { NebulaLayer } from "./nebulaLayer";
@@ -53,6 +53,25 @@ const EDGE_OPACITY = 0.2; // base material opacity (× linkThickness)
 const EDGE_BASE = 0.22; // default per-end brightness (edges are tissue, not light)
 const EDGE_HI = 1.15; // incident edges on hover (pop)
 const EDGE_DIM = 0.05; // non-incident edges on hover (fade, not vanish)
+// Structure is grey; signal is nodes (calm-cosmic-web spec A2): default edges
+// are pulled halfway toward a neutral slate so the mesh reads as connective
+// tissue and the community hues live in the stars.
+const EDGE_NEUTRAL = new THREE.Color("#8b93a8");
+const EDGE_GREY_MIX = 0.5;
+// Midpoint-split edge treatment (spec A2, Holten-style): each edge renders as
+// TWO segments s→m, m→t so alpha can peak at the middle and fade at the ends —
+// N spokes converging on a hub no longer sum to a bright disc at the core.
+const EDGE_END_FADE = 0.45; // endpoint brightness × (mid stays ×1.0)
+// The midpoint also sags ~5% of the edge length along a deterministic per-edge
+// perpendicular, so spoke bundles read organic instead of ruler-straight.
+const EDGE_SAG = 0.05;
+// Length-based alpha falloff (cosmos.gl linkVisibilityDistanceRange port):
+// short intra-cluster links render solid; long stretched links fade toward a
+// floor so the void between lobes isn't crossed by bright ruler lines.
+// Thresholds scale with the linkDistance setting (they're layout-relative).
+const EDGE_LEN_FADE_START = 2.5; // × linkDistance — full brightness below this
+const EDGE_LEN_FADE_END = 8; // × linkDistance — floor brightness above this
+const EDGE_LEN_FADE_MIN = 0.25;
 
 // Reference look is a clean neural mesh on a calm void. The faint parallax
 // starfield gives the cosmic-web depth cosmic-refs.md asks for; the dim graded
@@ -148,9 +167,9 @@ void main() {
   v_color = a_color;
   v_alpha = a_alpha;
   v_int = a_intensity;
-  // Nearer stars brighter; distant ones fade into the fog. Floor at 0.25 so the
+  // Nearer stars brighter; distant ones fade into the fog. Floor at 0.18 so the
   // far field never fully vanishes.
-  v_fade = clamp((u_fogFar - dist) / max(1.0, u_fogFar - u_fogNear), 0.25, 1.0);
+  v_fade = clamp((u_fogFar - dist) / max(1.0, u_fogFar - u_fogNear), 0.18, 1.0);
 }
 `;
 
@@ -177,6 +196,14 @@ void main() {
   // Minimal white mix: ACES already rolls bright cores toward white, so the
   // shader must not force it — hubs stay hot in their OWN hue.
   col = mix(col, vec3(1.0), core * clamp(v_int * 0.22, 0.0, 0.28));
+  // Depth desaturation: distant stars drift toward grey as well as dim, the
+  // atmospheric-perspective cue additive blending otherwise erases.
+  float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
+  col = mix(vec3(luma), col, 0.4 + 0.6 * v_fade);
+  // Pre-tonemap luminance clamp: caps each sprite's additive CONTRIBUTION at
+  // 3.0, so an N-sprite overlap sums to at most 3N instead of unbounded HDR —
+  // the structural backstop the per-intensity caps alone can't give.
+  col = min(col, vec3(3.0));
   gl_FragColor = vec4(col, a);
 }
 `;
@@ -212,6 +239,14 @@ export class GraphScene {
   // the node position buffer by these integer indices — no graphology lookups,
   // no hex-colour parsing per edge per tick (the dominant 10k-node settle cost).
   private edgeEndIdx: Int32Array = new Int32Array(0);
+  // Midpoint-split support, all sized per edge and rebuilt with edgeEndIdx:
+  // deterministic sag direction (random unit vector, 3 floats) + magnitude,
+  // and the style-derived endpoint colours (s rgb, t rgb — grey-mixed and
+  // focus-factored by writeEdges). The per-tick path multiplies the cached
+  // colours by the live length falloff instead of re-deriving style.
+  private edgeSagDir: Float32Array = new Float32Array(0);
+  private edgeSagMag: Float32Array = new Float32Array(0);
+  private edgeBaseCol: Float32Array = new Float32Array(0);
 
   // Fat glowing filament overlay (hub-incident edges). Null when disabled or
   // when the graph has no hubs (edgeless / tiny vault).
@@ -291,10 +326,8 @@ export class GraphScene {
     // no busy dot grid — the mesh reads better on a calm void).
     const sceneBg = dark ? new THREE.Color(0x05060d) : bg;
     this.scene.background = sceneBg;
-    // Graded atmospheric depth (lower than the old 0.00065 so far parallax star
-    // shells fade in instead of being fogged out).
-    // Light fog for depth, but thin enough that the whole graph stays visible
-    // when zoomed all the way out (a denser fog faded large vaults to black).
+    // Placeholder density only — fit() re-derives it from the framed distance
+    // (0.55/framedDist) so the haze ratio is stable at any vault size.
     this.scene.fog = new THREE.FogExp2(sceneBg.getHex(), dark ? 0.00012 : 0.00004);
 
     // far plane large enough to hold a wide, fully-zoomed-out layout.
@@ -427,13 +460,14 @@ export class GraphScene {
     this.edgePairs = graph.mapEdges((_e, _a, s, t) => [s, t] as [string, string]);
     this.buildEdgeIndex();
     this.edgeGeom = new THREE.BufferGeometry();
+    // 4 vertices per edge (two segments s→m, m→t) for the midpoint split.
     this.edgeGeom.setAttribute(
       "position",
-      new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 6), 3),
+      new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 12), 3),
     );
     this.edgeGeom.setAttribute(
       "color",
-      new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 6), 3),
+      new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 12), 3),
     );
     this.edgeMat = new THREE.LineBasicMaterial({
       vertexColors: true,
@@ -650,23 +684,23 @@ export class GraphScene {
     intn.needsUpdate = true;
   }
 
+  // Rebuild the endpoint-colour cache from style (community hue pulled halfway
+  // to neutral grey, hover focus factor, timelapse hide), then re-derive the
+  // vertex buffers. Style changes are rare; the per-tick paths reuse the cache.
   private writeEdges(): void {
-    const pos = this.edgeGeom.getAttribute("position") as THREE.BufferAttribute;
-    const col = this.edgeGeom.getAttribute("color") as THREE.BufferAttribute;
     const { hoveredNode, neighbors } = this.style;
+    const base = this.edgeBaseCol;
     const cs = new THREE.Color(); // reused per edge (no per-edge allocation)
     const ct = new THREE.Color();
     for (let i = 0; i < this.edgePairs.length; i++) {
       const [s, t] = this.edgePairs[i];
       const sa = this.graph.getNodeAttributes(s);
       const ta = this.graph.getNodeAttributes(t);
-      pos.setXYZ(i * 2, sa.x, sa.y, sa.z);
-      pos.setXYZ(i * 2 + 1, ta.x, ta.y, ta.z);
-      // Each end takes its node's community colour → the cluster's edges glow its
-      // hue and inter-cluster edges gradient between the two ends (the neural
-      // mesh look). A brightness factor handles hover focus + timelapse hide.
-      cs.set(sa.color);
-      ct.set(ta.color);
+      // Each end takes its node's community colour, greyed halfway (structure
+      // is grey; signal is nodes) → inter-cluster edges still gradient between
+      // their ends. A brightness factor handles hover focus + timelapse hide.
+      cs.set(sa.color).lerp(EDGE_NEUTRAL, EDGE_GREY_MIX);
+      ct.set(ta.color).lerp(EDGE_NEUTRAL, EDGE_GREY_MIX);
       let f = EDGE_BASE;
       if (hoveredNode) {
         const incident =
@@ -676,11 +710,15 @@ export class GraphScene {
         f = incident ? EDGE_HI : EDGE_DIM;
       }
       if (sa.hidden || ta.hidden) f = 0; // timelapse-hidden ⇒ vanish
-      col.setXYZ(i * 2, cs.r * f, cs.g * f, cs.b * f);
-      col.setXYZ(i * 2 + 1, ct.r * f, ct.g * f, ct.b * f);
+      const o = i * 6;
+      base[o] = cs.r * f;
+      base[o + 1] = cs.g * f;
+      base[o + 2] = cs.b * f;
+      base[o + 3] = ct.r * f;
+      base[o + 4] = ct.g * f;
+      base[o + 5] = ct.b * f;
     }
-    pos.needsUpdate = true;
-    col.needsUpdate = true;
+    this.writeEdgeGeometry();
     // Filaments mirror the thin-edge brightness (hover/timelapse), so refresh
     // them whenever the edge style is rewritten.
     if (this.filaments) this.updateFilaments();
@@ -789,16 +827,132 @@ export class GraphScene {
 
   // ---- public API ----
 
-  // Resolve [srcIdx, tgtIdx] per edge from the current idIndex. Cheap; run once
-  // on build/rebuild so the per-tick path can copy endpoint positions by index.
+  // Resolve [srcIdx, tgtIdx] per edge from the current idIndex, plus the
+  // deterministic per-edge sag vector/magnitude and the endpoint-colour cache.
+  // Cheap; run once on build/rebuild so the per-tick path can copy endpoint
+  // positions by index.
   private buildEdgeIndex(): void {
-    const idx = new Int32Array(this.edgePairs.length * 2);
-    for (let e = 0; e < this.edgePairs.length; e++) {
+    const nEdges = this.edgePairs.length;
+    const idx = new Int32Array(nEdges * 2);
+    const sagDir = new Float32Array(nEdges * 3);
+    const sagMag = new Float32Array(nEdges);
+    for (let e = 0; e < nEdges; e++) {
       const [s, t] = this.edgePairs[e];
       idx[e * 2] = this.idIndex.get(s) ?? 0;
       idx[e * 2 + 1] = this.idIndex.get(t) ?? 0;
+      // Seeded random unit vector — crossed with the live edge direction each
+      // tick to get a stable perpendicular, so the sag doesn't swim as the sim
+      // settles and is identical across reloads.
+      const key = `${s}|${t}`;
+      const theta = seededUnit(key, 31) * Math.PI * 2;
+      const phi = Math.acos(2 * seededUnit(key, 32) - 1);
+      const sinPhi = Math.sin(phi);
+      sagDir[e * 3] = Math.cos(theta) * sinPhi;
+      sagDir[e * 3 + 1] = Math.sin(theta) * sinPhi;
+      sagDir[e * 3 + 2] = Math.cos(phi);
+      sagMag[e] = EDGE_SAG * (0.7 + 0.6 * seededUnit(key, 33)); // ~5% ± 30%
     }
     this.edgeEndIdx = idx;
+    this.edgeSagDir = sagDir;
+    this.edgeSagMag = sagMag;
+    this.edgeBaseCol = new Float32Array(nEdges * 6);
+  }
+
+  // Derive the edge vertex buffers (4 verts/edge: s, mid, mid, t) from the
+  // node position buffer + the endpoint-colour cache. The ONLY writer of edge
+  // geometry — shared by the per-tick paths and writeEdges. Per edge it adds
+  // the midpoint (+6 position floats), the sag offset, and the length falloff;
+  // profiled at 10k edges (see calm-cosmic-web spec A2).
+  private writeEdgeGeometry(): void {
+    const nArr = (this.nodeGeom.getAttribute("position") as THREE.BufferAttribute)
+      .array as Float32Array;
+    const epos = this.edgeGeom.getAttribute("position") as THREE.BufferAttribute;
+    const ecol = this.edgeGeom.getAttribute("color") as THREE.BufferAttribute;
+    const pArr = epos.array as Float32Array;
+    const cArr = ecol.array as Float32Array;
+    const idx = this.edgeEndIdx;
+    const sagDir = this.edgeSagDir;
+    const sagMag = this.edgeSagMag;
+    const base = this.edgeBaseCol;
+    const fadeStart = this.settings.linkDistance * EDGE_LEN_FADE_START;
+    const fadeEnd = this.settings.linkDistance * EDGE_LEN_FADE_END;
+    const fadeSpan = Math.max(1e-6, fadeEnd - fadeStart);
+    for (let e = 0; e < this.edgePairs.length; e++) {
+      const s = idx[e * 2] * 3;
+      const t = idx[e * 2 + 1] * 3;
+      const sx = nArr[s];
+      const sy = nArr[s + 1];
+      const sz = nArr[s + 2];
+      const tx = nArr[t];
+      const ty = nArr[t + 1];
+      const tz = nArr[t + 2];
+      const dx = tx - sx;
+      const dy = ty - sy;
+      const dz = tz - sz;
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      // midpoint + perpendicular sag (perp = normalize(dir × sagDir) × ~5% len)
+      let mx = (sx + tx) * 0.5;
+      let my = (sy + ty) * 0.5;
+      let mz = (sz + tz) * 0.5;
+      const rx = sagDir[e * 3];
+      const ry = sagDir[e * 3 + 1];
+      const rz = sagDir[e * 3 + 2];
+      const px = dy * rz - dz * ry;
+      const py = dz * rx - dx * rz;
+      const pz = dx * ry - dy * rx;
+      const pLen = Math.sqrt(px * px + py * py + pz * pz);
+      if (pLen > 1e-6) {
+        const k = (sagMag[e] * len) / pLen;
+        mx += px * k;
+        my += py * k;
+        mz += pz * k;
+      }
+      const po = e * 12;
+      pArr[po] = sx;
+      pArr[po + 1] = sy;
+      pArr[po + 2] = sz;
+      pArr[po + 3] = mx;
+      pArr[po + 4] = my;
+      pArr[po + 5] = mz;
+      pArr[po + 6] = mx;
+      pArr[po + 7] = my;
+      pArr[po + 8] = mz;
+      pArr[po + 9] = tx;
+      pArr[po + 10] = ty;
+      pArr[po + 11] = tz;
+      // length falloff × cached endpoint colours; ends ×EDGE_END_FADE, mid ×1
+      const lf =
+        len <= fadeStart
+          ? 1
+          : len >= fadeEnd
+            ? EDGE_LEN_FADE_MIN
+            : 1 - (1 - EDGE_LEN_FADE_MIN) * ((len - fadeStart) / fadeSpan);
+      const bo = e * 6;
+      const sr = base[bo] * lf;
+      const sg = base[bo + 1] * lf;
+      const sb = base[bo + 2] * lf;
+      const tr = base[bo + 3] * lf;
+      const tg = base[bo + 4] * lf;
+      const tb = base[bo + 5] * lf;
+      const mr = (sr + tr) * 0.5;
+      const mg = (sg + tg) * 0.5;
+      const mb = (sb + tb) * 0.5;
+      const co = e * 12;
+      cArr[co] = sr * EDGE_END_FADE;
+      cArr[co + 1] = sg * EDGE_END_FADE;
+      cArr[co + 2] = sb * EDGE_END_FADE;
+      cArr[co + 3] = mr;
+      cArr[co + 4] = mg;
+      cArr[co + 5] = mb;
+      cArr[co + 6] = mr;
+      cArr[co + 7] = mg;
+      cArr[co + 8] = mb;
+      cArr[co + 9] = tr * EDGE_END_FADE;
+      cArr[co + 10] = tg * EDGE_END_FADE;
+      cArr[co + 11] = tb * EDGE_END_FADE;
+    }
+    epos.needsUpdate = true;
+    ecol.needsUpdate = true;
   }
 
   // Combined endpoint degree of an edge — the ranking key when capping the
@@ -898,11 +1052,12 @@ export class GraphScene {
     this.filamentGeom.setColors(col);
   }
 
-  // Per-tick HOT path: update ONLY positions (node + edge endpoints). Colours,
-  // sizes, alpha and intensity never change while the sim merely moves nodes, so
-  // rewriting them every tick (with a hex-colour parse per node AND per edge end)
-  // was the dominant 10k-node settle cost. Edge endpoints are copied straight out
-  // of the node position buffer by integer index — zero graphology access.
+  // Per-tick HOT path: update node positions, then re-derive the edge vertex
+  // buffers (midpoint/sag/length-falloff) from them via the cached endpoint
+  // colours. Node colours/sizes/alpha/intensity never change while the sim
+  // merely moves nodes, so the expensive style derivation (graphology reads +
+  // hex parses) stays out of the tick; the edge pass is pure float arithmetic
+  // over typed arrays.
   private writePositions(): void {
     const npos = this.nodeGeom.getAttribute("position") as THREE.BufferAttribute;
     const nArr = npos.array as Float32Array;
@@ -914,22 +1069,7 @@ export class GraphScene {
       nArr[o + 2] = a.z;
     }
     npos.needsUpdate = true;
-
-    const epos = this.edgeGeom.getAttribute("position") as THREE.BufferAttribute;
-    const eArr = epos.array as Float32Array;
-    const idx = this.edgeEndIdx;
-    for (let e = 0; e < this.edgePairs.length; e++) {
-      const s = idx[e * 2] * 3;
-      const t = idx[e * 2 + 1] * 3;
-      const o = e * 6;
-      eArr[o] = nArr[s];
-      eArr[o + 1] = nArr[s + 1];
-      eArr[o + 2] = nArr[s + 2];
-      eArr[o + 3] = nArr[t];
-      eArr[o + 4] = nArr[t + 1];
-      eArr[o + 5] = nArr[t + 2];
-    }
-    epos.needsUpdate = true;
+    this.writeEdgeGeometry();
   }
 
   syncPositions(): void {
@@ -961,21 +1101,7 @@ export class GraphScene {
       a.z = pos[o + 2];
     }
 
-    const epos = this.edgeGeom.getAttribute("position") as THREE.BufferAttribute;
-    const eArr = epos.array as Float32Array;
-    const idx = this.edgeEndIdx;
-    for (let e = 0; e < this.edgePairs.length; e++) {
-      const sOff = idx[e * 2] * 3;
-      const tOff = idx[e * 2 + 1] * 3;
-      const o = e * 6;
-      eArr[o] = nArr[sOff];
-      eArr[o + 1] = nArr[sOff + 1];
-      eArr[o + 2] = nArr[sOff + 2];
-      eArr[o + 3] = nArr[tOff];
-      eArr[o + 4] = nArr[tOff + 1];
-      eArr[o + 5] = nArr[tOff + 2];
-    }
-    epos.needsUpdate = true;
+    this.writeEdgeGeometry();
 
     if (this.filaments) this.updateFilaments();
     if (this.arrows.visible) this.writeArrows();
@@ -1020,8 +1146,8 @@ export class GraphScene {
     this.buildEdgeIndex();
     const oldEdgeGeom = this.edgeGeom;
     this.edgeGeom = new THREE.BufferGeometry();
-    this.edgeGeom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 6), 3));
-    this.edgeGeom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 6), 3));
+    this.edgeGeom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 12), 3));
+    this.edgeGeom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 12), 3));
     this.edges.geometry = this.edgeGeom;
     oldEdgeGeom.dispose();
 
@@ -1126,6 +1252,9 @@ export class GraphScene {
     // Direction arrows: toggle visibility; re-place (also picks up linkThickness).
     this.arrows.visible = settings.arrows;
     if (settings.arrows) this.writeArrows();
+    // Length-falloff thresholds scale with linkDistance — re-derive so a slider
+    // move updates edge brightness even before the sim posts its next tick.
+    this.writeEdgeGeometry();
   }
 
   zoomIn(): void {
@@ -1176,6 +1305,13 @@ export class GraphScene {
     const fovRad = (this.camera.fov * Math.PI) / 180;
     const dist = (r * 1.5) / Math.tan(fovRad / 2) + 60;
     this.framedDist = dist; // zoom reference for semantic-zoom label budget
+    // Dynamic depth cues (calm-cosmic-web spec A4): fixed fog constants are a
+    // no-op on a big vault and fog out a small one. Deriving them from the
+    // framed distance keeps the near/far RATIO stable at any vault size — the
+    // back of the graph always sits in haze, the front always reads crisp.
+    this.nodeMat.uniforms.u_fogNear.value = 0.35 * dist;
+    this.nodeMat.uniforms.u_fogFar.value = 1.7 * dist;
+    (this.scene.fog as THREE.FogExp2).density = 0.55 / dist;
     const dir = this.tmpVec
       .copy(this.camera.position)
       .sub(this.controls.target);

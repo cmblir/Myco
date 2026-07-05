@@ -61,15 +61,16 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   linkForce: 0.45, // → soft springs (strong springs reel nodes into clumps)
   linkDistance: 45, // → short edges → compact nuclei, not a wide spoke-ring
   // mesh↔galaxy knob: 0 = homogeneous Obsidian-style web; >0 contracts Louvain
-  // communities into coloured nuclei. 0.5 = distinct lobes that stay packed +
-  // threaded as one galaxy (the cap + cohesion keep them from flying apart).
-  clusterForce: 0.5,
+  // communities into coloured nuclei. 0.35 = distinct lobes threaded as one
+  // galaxy; 0.5 compressed the nuclei so hard the spokes read purely radial —
+  // half the starburst look (calm-cosmic-web spec A3).
+  clusterForce: 0.35,
 };
 
-// v25: calm-cosmic-web calibration (exposure 0.85, filaments off, bloom
-// threshold-first). Bumping the key drops stale persisted slider positions so
+// v26: calm-cosmic-web Phase 1 (clusterForce 0.35, degree-based link distances,
+// log node sizes). Bumping the key drops stale persisted slider positions so
 // the recalibrated defaults apply instead of the old firework-era ones.
-const KEY = "memex.graph.settings.v25";
+const KEY = "memex.graph.settings.v26";
 
 export function loadGraphSettings(): GraphSettings {
   try {
