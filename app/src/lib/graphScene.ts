@@ -52,7 +52,7 @@ const LABEL_MAX = 64;
 const EDGE_OPACITY = 0.2; // base material opacity (× linkThickness)
 const EDGE_BASE = 0.22; // default per-end brightness (edges are tissue, not light)
 const EDGE_HI = 1.15; // incident edges on hover (pop)
-const EDGE_DIM = 0.06; // non-incident edges on hover (fade, not vanish)
+const EDGE_DIM = 0.05; // non-incident edges on hover (fade, not vanish)
 
 // Reference look is a clean neural mesh on a calm void. The faint parallax
 // starfield gives the cosmic-web depth cosmic-refs.md asks for; the dim graded
@@ -626,13 +626,13 @@ export class GraphScene {
       }
 
       // hover neighbourhood: hovered + neighbours pop (full alpha + bloom); the
-      // rest stay VISIBLE for context (own colour, just faded + no bloom) instead
-      // of vanishing — so the cosmos and the camera orbit stay legible.
+      // rest sink to a faint context layer (0.15 — the old 0.5 was too timid to
+      // read as focus) but stay visible so the cosmos and orbit remain legible.
       if (hoveredNode && neighbors) {
         if (id === hoveredNode || neighbors.has(id)) {
           // keep full colour / alpha / intensity
         } else {
-          alpha = a.hidden ? 0 : 0.5;
+          alpha = a.hidden ? 0 : 0.15;
           inten = 0; // non-neighbours must not bloom
         }
       }

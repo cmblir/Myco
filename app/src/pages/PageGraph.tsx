@@ -12,6 +12,7 @@ import type { JSX } from "react";
 import GraphControls from "../components/GraphControls";
 import GraphInspector from "../components/GraphInspector";
 import GraphGaps from "../components/GraphGaps";
+import GraphLegend, { type LegendCommunity } from "../components/GraphLegend";
 import {
   DEFAULT_GRAPH_SETTINGS,
   loadGraphSettings,
@@ -139,6 +140,63 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [counts, glEpoch]);
 
+  // Legend: top-6 communities by size — color from their hub, name from their
+  // top-degree member. Re-derives with the graph (counts proxies rebuilds).
+  const legendCommunities = useMemo<LegendCommunity[]>(() => {
+    const g = graphRef.current;
+    if (!g || g.order === 0) return [];
+    const acc = new Map<
+      number,
+      { count: number; color: string; label: string; topDeg: number }
+    >();
+    g.forEachNode((id, a) => {
+      if (a.community < 0) return;
+      let e = acc.get(a.community);
+      if (!e) {
+        e = { count: 0, color: a.color, label: stem(id), topDeg: -1 };
+        acc.set(a.community, e);
+      }
+      e.count += 1;
+      if (a.deg > e.topDeg) {
+        e.topDeg = a.deg;
+        e.label = stem(id);
+        e.color = a.color;
+      }
+    });
+    return [...acc.entries()]
+      .map(([cm, e]) => ({ cm, color: e.color, label: e.label, count: e.count }))
+      .sort((x, y) => y.count - x.count)
+      .slice(0, 6);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [counts, glEpoch]);
+
+  // Community isolation (legend swatch click): reuses the hover-highlight
+  // machinery — members act as the "neighbourhood", everything else sinks to
+  // the faint context layer. A later hover simply overwrites it (acceptable).
+  const [isolated, setIsolated] = useState<number | null>(null);
+  const isolateCommunity = (cm: number | null): void => {
+    setIsolated(cm);
+    const g = graphRef.current;
+    if (!g) return;
+    if (cm == null) {
+      hoverRef.current = { node: null, neighbors: null };
+      pushStyle();
+      return;
+    }
+    const members = new Set<string>();
+    let hub: string | null = null;
+    g.forEachNode((id, a) => {
+      if (a.community === cm) {
+        members.add(id);
+        if (a.isHub) hub = id;
+      }
+    });
+    const anchor = hub ?? members.values().next().value ?? null;
+    if (!anchor) return;
+    hoverRef.current = { node: anchor, neighbors: members };
+    pushStyle();
+  };
+
   // Fetch mtimes whenever the vault changes — drives the timelapse reveal order
   // (oldest file first, so the graph grows in creation order).
   useEffect(() => {
@@ -192,6 +250,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     setSelected(null);
     setPathAnchor(null);
     setPath(null);
+    setIsolated(null);
 
     let killed = false;
     let userTookOver = false;
@@ -805,6 +864,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 onClose={() => setSelected(null)}
               />
             ) : null}
+            <GraphLegend
+              t={t}
+              communities={legendCommunities}
+              isolated={isolated}
+              onIsolate={isolateCommunity}
+            />
             {gapsOpen && gapReport ? (
               <GraphGaps
                 t={t}

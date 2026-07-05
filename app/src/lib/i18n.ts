@@ -146,6 +146,10 @@ export interface Strings {
   gr_gap_none?: string;
   gr_gap_more?: string;
   q_thinking?: string;
+  gr_key_size?: string;
+  gr_key_dim?: string;
+  gr_key_amber?: string;
+  gr_key_neutral?: string;
   h_title: string;
   h_lede: string;
   h_created: string;
@@ -390,6 +394,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_gap_none: "No gaps found",
     gr_gap_more: "more",
     q_thinking: "searching the wiki…",
+    gr_key_size: "size = links",
+    gr_key_dim: "faint = low confidence",
+    gr_key_amber: "amber = disputed",
+    gr_key_neutral: "grey = unclassified",
     h_title: "History",
     h_lede:
       "Every ingest files a WHY report. Browse what each run created and changed, newest first.",
@@ -645,6 +653,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_gap_none: "갭 없음",
     gr_gap_more: "더",
     q_thinking: "위키를 탐색하는 중…",
+    gr_key_size: "크기 = 링크 수",
+    gr_key_dim: "흐림 = 낮은 신뢰도",
+    gr_key_amber: "호박색 = 논쟁 중",
+    gr_key_neutral: "회청 = 미분류",
     h_title: "히스토리",
     h_lede:
       "모든 가져오기는 WHY 보고서를 남깁니다. 각 실행이 무엇을 만들고 바꿨는지 최신순으로 봅니다.",
