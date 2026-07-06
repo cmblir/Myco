@@ -72,3 +72,14 @@ created: 2026-04-23
   `projects/karpathy-llm/` 해석 확인. MP-07(구 API 스코핑)은 대상 부재로 무의미.
 - 부수 수정: project_registry의 MEMEX_PROJECT_ROOT env가 active-vault에 밀려
   무시되던 우선순위 버그 수정 (env가 1순위).
+
+---
+
+## [2026-07-07] MP-10 해소 — 프로젝트별 독립 Obsidian vault (Q-2 = 옵션 B)
+
+- 사용자 결정: 루트 단일 vault 유지 + **프로젝트별 독립 vault 등록도 허용** (옵션 A+B 병행).
+- 구현: MCP `register_vault(project)` — `projects/<slug>/.obsidian/` 스캐폴드 +
+  registry `independent_vault:true`. Obsidian "Open folder as vault"로 개별 오픈.
+  전역 obsidian.json은 건드리지 않음 (사용자가 직접 폴더 오픈).
+- `list_projects`가 `independent_vault` 플래그 노출. 루트 전체 vault도 그대로 동작.
+- karpathy-llm을 독립 vault로 등록(데모). 앱 Settings 버튼은 후속(선택).

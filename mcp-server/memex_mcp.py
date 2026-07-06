@@ -198,6 +198,7 @@ def list_projects() -> dict:
             "model": p.model,
             "wiki_dir": _rel_to_repo(p.wiki_dir),
             "raw_dir": _rel_to_repo(p.raw_dir),
+            "independent_vault": p.independent_vault,
         })
     legacy_info: dict | None = None
     if project_registry.LEGACY_WIKI.exists():
@@ -1143,6 +1144,29 @@ def append_changelog(entry: str, section: str = "Changed", project: str = "") ->
     path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return {"ok": True, "project": proj.slug,
             "changelog": str(path.relative_to(REPO_ROOT)), "section": sec}
+
+
+@mcp.tool()
+def register_vault(project: str = "") -> dict:
+    """Make a project openable as its OWN standalone Obsidian vault (MP-10):
+    scaffolds projects/<slug>/.obsidian/ and flags the registry entry. Then in
+    Obsidian use 'Open folder as vault' → the project folder. Does not touch
+    Obsidian's global config. The repo root stays a valid vault too, so you can
+    work either whole-repo or per-project.
+    """
+    proj = _resolve(project)
+    if proj.is_legacy or not proj.slug:
+        return {"ok": False, "error": "legacy project has no slug to register"}
+    try:
+        obs = project_registry.scaffold_independent_vault(proj.slug)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    return {
+        "ok": True,
+        "project": proj.slug,
+        "obsidian_dir": str(obs.relative_to(REPO_ROOT)),
+        "open_as": str(proj.root.relative_to(REPO_ROOT)),
+    }
 
 
 @mcp.tool()

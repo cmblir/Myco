@@ -107,6 +107,10 @@ class Project:
     created: str = ""
     last_used: str = ""
     template: str = ""
+    # MP-10: True when this project has been scaffolded as its own standalone
+    # Obsidian vault (its root holds an .obsidian/ dir), so it can be opened
+    # independently via Obsidian's "Open folder as vault".
+    independent_vault: bool = False
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -246,7 +250,37 @@ def _entry_to_project(entry: dict) -> Project:
         created=entry.get("created", ""),
         last_used=entry.get("last_used", ""),
         template=entry.get("template", ""),
+        # Reflect the on-disk truth (an .obsidian/ dir), OR-ed with the registry
+        # flag, so a hand-scaffolded vault is still recognised.
+        independent_vault=bool(entry.get("independent_vault"))
+        or (root / ".obsidian").is_dir(),
     )
+
+
+def scaffold_independent_vault(slug: str) -> Path:
+    """Make projects/<slug>/ a standalone Obsidian vault (MP-10): create a
+    minimal .obsidian/ config so Obsidian can 'Open folder as vault', and set
+    the registry entry's independent_vault flag. Returns the .obsidian path.
+    Idempotent. Does NOT touch Obsidian's global config — the user opens the
+    folder themselves.
+    """
+    slug = _validate_slug(slug)
+    root = PROJECTS_DIR / slug
+    if not root.is_dir():
+        raise ValueError(f"project root missing: {slug}")
+    obs = root / ".obsidian"
+    obs.mkdir(parents=True, exist_ok=True)
+    app_json = obs / "app.json"
+    if not app_json.exists():
+        # Minimal, Obsidian fills the rest on first open.
+        app_json.write_text('{\n  "attachmentFolderPath": "raw/assets"\n}\n', "utf-8")
+    reg = _load_registry()
+    for e in reg.get("projects", []):
+        if e.get("slug") == slug:
+            e["independent_vault"] = True
+            _save_registry(reg)
+            break
+    return obs
 
 
 def all_raw_dirs() -> list[Path]:
