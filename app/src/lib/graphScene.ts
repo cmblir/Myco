@@ -51,14 +51,22 @@ const LABEL_MAX = 64;
 // wash and drowns the star colours. Kept dim so the bright NODES (and hub cores)
 // carry the light and the web only hints the weave between lobes — the galaxy/
 // brain reads as points of light threaded on a faint mesh, not a glowing blob.
-const EDGE_OPACITY = 0.2; // base material opacity (× linkThickness)
-const EDGE_BASE = 0.22; // default per-end brightness (edges are tissue, not light)
+// Edge material opacity and per-end brightness — theme-branched. Light theme
+// paints edges over near-white paper with NormalBlending, so the mesh needs a
+// darker neutral, higher opacity, and higher per-end brightness to read as
+// connective tissue instead of vanishing.
+const EDGE_OPACITY_DARK = 0.2;
+const EDGE_OPACITY_LIGHT = 0.55;
+const EDGE_BASE_DARK = 0.22; // per-end brightness (edges are tissue, not light)
+const EDGE_BASE_LIGHT = 0.55;
 const EDGE_HI = 1.15; // incident edges on hover (pop)
 const EDGE_DIM = 0.05; // non-incident edges on hover (fade, not vanish)
 // Structure is grey; signal is nodes (calm-cosmic-web spec A2): default edges
-// are pulled halfway toward a neutral slate so the mesh reads as connective
-// tissue and the community hues live in the stars.
-const EDGE_NEUTRAL = new THREE.Color("#8b93a8");
+// are pulled halfway toward a neutral so the mesh reads as connective tissue
+// and the community hues live in the stars. Dark theme: cool mid-grey. Light
+// theme: dark slate so the neutral half doesn't disappear into #fafaf9.
+const EDGE_NEUTRAL_DARK = new THREE.Color("#8b93a8");
+const EDGE_NEUTRAL_LIGHT = new THREE.Color("#2c3446");
 const EDGE_GREY_MIX = 0.5;
 // Midpoint-split edge treatment (spec A2, Holten-style): each edge renders as
 // TWO segments s→m, m→t so alpha can peak at the middle and fade at the ends —
@@ -207,10 +215,12 @@ uniform float u_sizeScale;
 uniform float u_fogNear;
 uniform float u_fogFar;
 uniform float u_time;
+uniform float u_darkTheme; // 1 on dark background, 0 on light
 varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
 varying float v_int;
+varying float v_dark;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   float dist = max(1.0, -mv.z);
@@ -226,6 +236,7 @@ void main() {
   v_color = a_color;
   v_alpha = a_alpha;
   v_int = a_intensity;
+  v_dark = u_darkTheme;
   // Nearer stars brighter; distant ones fade into the fog. Floor at 0.18 so the
   // far field never fully vanishes.
   v_fade = clamp((u_fogFar - dist) / max(1.0, u_fogFar - u_fogNear), 0.18, 1.0);
@@ -238,23 +249,29 @@ varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
 varying float v_int;
+varying float v_dark;
 void main() {
   float d = length(gl_PointCoord - vec2(0.5)) * 2.0;
   float core = 1.0 - smoothstep(0.30, 0.45, d);  // solid bright centre
   float glow = pow(max(0.0, 1.0 - d), 2.2);        // soft halo to the edge
-  float a = max(core, glow * 0.6) * v_alpha * v_fade;
+  // Alpha profile per theme:
+  //   dark:  additive blending sums over the void — a low halo alpha is fine.
+  //   light: NormalBlending over near-white paper — the halo needs a higher
+  //          alpha to tint the dst at all, otherwise stars evaporate.
+  float aDark = max(core, glow * 0.6);
+  float aLight = max(core, glow * 0.85);
+  float a = mix(aLight, aDark, v_dark) * v_alpha * v_fade;
   if (a < 0.004) discard;
-  // Hub cores get an HDR boost (v_int>1) so UnrealBloom catches only them, and
-  // a white-hot push toward their centre; field stars keep their hue.
   vec3 base = v_color * (0.65 + 0.35 * v_fade);
-  // HDR core boost MULTIPLIES the star's own colour (not neutral white), so a
-  // blue-white core stays blue-white and an amber field star stays amber.
-  // Peak ≈ base×2.7 (was ×4.6): additive overlap in a dense nucleus sums past
-  // any per-sprite cap, so per-sprite HDR stays low — density earns brightness.
-  vec3 col = base + base * core * (0.2 + v_int * 0.9);
-  // Minimal white mix: ACES already rolls bright cores toward white, so the
-  // shader must not force it — hubs stay hot in their OWN hue.
-  col = mix(col, vec3(1.0), core * clamp(v_int * 0.22, 0.0, 0.28));
+  // Core inflection differs by theme. Dark: additive brighten toward hue + a
+  // touch of white (glowing star on void). Light: DARKEN the core (NormalBlend
+  // over near-white bg needs a strong-hued or near-black centre to read).
+  vec3 lift = base * core * (0.2 + v_int * 0.9);
+  vec3 colDark = base + lift;
+  colDark = mix(colDark, vec3(1.0), core * clamp(v_int * 0.22, 0.0, 0.28));
+  vec3 colLight = base - lift * 0.7;
+  colLight = mix(colLight, vec3(0.0), core * clamp(v_int * 0.35, 0.0, 0.5));
+  vec3 col = mix(colLight, colDark, v_dark);
   // Depth desaturation: distant stars drift toward grey as well as dim, the
   // atmospheric-perspective cue additive blending otherwise erases.
   float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
@@ -263,6 +280,9 @@ void main() {
   // 3.0, so an N-sprite overlap sums to at most 3N instead of unbounded HDR —
   // the structural backstop the per-intensity caps alone can't give.
   col = min(col, vec3(3.0));
+  // Light-theme values may have gone below zero from the darkening branch —
+  // clamp so NormalBlending doesn't get negative source values.
+  col = max(col, vec3(0.0));
   gl_FragColor = vec4(col, a);
 }
 `;
@@ -286,6 +306,11 @@ export class GraphScene {
   private finalComposer?: EffectComposer;
   private mixPass?: ShaderPass;
   private selective = false;
+  // Live theme darkness (ctor + applyTheme). On light the bloom pass renders
+  // BLACK (points hidden) so the additive mix is a no-op — bloom is a dark-
+  // theme effect; on light nothing may bloom (threshold sits above LDR) and
+  // summing the sprites twice would fade the dark-core stars.
+  private darkTheme = true;
   private bloom: UnrealBloomPass;
   private baseBloom = 1.2; // theme-derived bloom strength before brightness scaling
   private labelRenderer: CSS2DRenderer;
@@ -317,6 +342,12 @@ export class GraphScene {
   // edgeEndIdx. Lets a shortest-path node sequence resolve to strand indices
   // without an O(edges) scan per hop.
   private edgeKey = new Map<string, number>();
+  // Theme-branched edge look. Set in the constructor and by applyTheme; the
+  // hot writeEdgeGeometry uses `edgeBaseBrightness` via the cached base
+  // colours, so the values must match writeEdges' current dark/light choice.
+  private edgeNeutral: THREE.Color = EDGE_NEUTRAL_DARK;
+  private edgeOpacity = EDGE_OPACITY_DARK;
+  private edgeBaseBrightness = EDGE_BASE_DARK;
 
   // Fat glowing filament overlay — the Phase 3 focus/path layer (spec A2). A
   // fixed FILAMENT_CAP-slot buffer, allocated once; each style change fills the
@@ -407,6 +438,7 @@ export class GraphScene {
 
     const bg = parseRGBA(theme.bg).color;
     const dark = bg.getHSL({ h: 0, s: 0, l: 0 }).l < 0.5;
+    this.darkTheme = dark;
     // Soft near-black with a faint blue cast (space, not a harsh flat black, and
     // no busy dot grid — the mesh reads better on a calm void).
     const sceneBg = dark ? new THREE.Color(0x05060d) : bg;
@@ -498,7 +530,11 @@ export class GraphScene {
       new THREE.Vector2(w, h),
       this.baseBloom,
       0.7, // radius (soft atmospheric halo, not a hard ring)
-      dark ? 1.9 : 0.7, // threshold above the additive pair-overlap ceiling
+      // Dark: above the additive pair-overlap ceiling. Light: above the LDR
+      // ceiling (1.0) — the near-white background sits at ~0.96 luminance, so
+      // any threshold below it bloomed the ENTIRE frame into the wash that
+      // made the light theme unreadable; only HDR node cores may bloom.
+      dark ? 1.9 : 1.05,
     );
 
     if (this.selective) {
@@ -574,6 +610,7 @@ export class GraphScene {
         u_fogNear: { value: 200 },
         u_fogFar: { value: 2600 },
         u_time: { value: 0 },
+        u_darkTheme: { value: dark ? 1 : 0 },
       },
       vertexShader: NODE_VERT,
       fragmentShader: NODE_FRAG,
@@ -605,10 +642,15 @@ export class GraphScene {
       "color",
       new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 12), 3),
     );
+    // Pick the theme-branched edge look up front so both the material and the
+    // vertex-colour derivation (writeEdges) draw from the same values.
+    this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
+    this.edgeOpacity = dark ? EDGE_OPACITY_DARK : EDGE_OPACITY_LIGHT;
+    this.edgeBaseBrightness = dark ? EDGE_BASE_DARK : EDGE_BASE_LIGHT;
     this.edgeMat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: Math.min(1, EDGE_OPACITY * settings.linkThickness),
+      opacity: Math.min(1, this.edgeOpacity * settings.linkThickness),
       depthWrite: false,
       // Additive on dark (colored edges glow + sum into the mesh); normal on
       // light (additive would wash saturated edges to white over a near-white bg).
@@ -852,9 +894,9 @@ export class GraphScene {
       // Each end takes its node's community colour, greyed halfway (structure
       // is grey; signal is nodes) → inter-cluster edges still gradient between
       // their ends. A brightness factor handles hover focus + timelapse hide.
-      cs.set(sa.color).lerp(EDGE_NEUTRAL, EDGE_GREY_MIX);
-      ct.set(ta.color).lerp(EDGE_NEUTRAL, EDGE_GREY_MIX);
-      let f = EDGE_BASE;
+      cs.set(sa.color).lerp(this.edgeNeutral, EDGE_GREY_MIX);
+      ct.set(ta.color).lerp(this.edgeNeutral, EDGE_GREY_MIX);
+      let f = this.edgeBaseBrightness;
       if (focus && !(focus.has(s) && focus.has(t))) {
         // Edge leaves the focus set → near-invisible context, hover ignored.
         f = FOCUS_EDGE_DIM;
@@ -1408,6 +1450,7 @@ export class GraphScene {
     this.theme = theme;
     const bg = parseRGBA(theme.bg).color;
     const dark = bg.getHSL({ h: 0, s: 0, l: 0 }).l < 0.5;
+    this.darkTheme = dark;
     const sceneBg = dark ? new THREE.Color(0x05060d) : bg;
     this.scene.background = sceneBg;
     (this.scene.fog as THREE.FogExp2).color.copy(sceneBg);
@@ -1415,15 +1458,20 @@ export class GraphScene {
     // keep in sync; Phase 1 extracts a single helper).
     this.baseBloom = dark ? 0.45 : 0.25;
     this.bloom.strength = this.baseBloom; // brightness drives exposure, not bloom
-    this.bloom.threshold = dark ? 1.9 : 0.7;
+    this.bloom.threshold = dark ? 1.9 : 1.05; // light: above the LDR bg (see ctor)
     this.bloom.radius = 0.7;
     this.nodeMat.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
+    this.nodeMat.uniforms.u_darkTheme.value = dark ? 1 : 0;
     this.nodeMat.needsUpdate = true;
     this.edgeMat.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
     this.edgeMat.needsUpdate = true;
     this.pulse.setDark(dark);
     this.nebula.setDark(dark && SHOW_NEBULA);
-    this.edgeMat.opacity = Math.min(1, EDGE_OPACITY * this.settings.linkThickness);
+    // Light theme legibility (edges pulled to dark slate + higher opacity/base).
+    this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
+    this.edgeOpacity = dark ? EDGE_OPACITY_DARK : EDGE_OPACITY_LIGHT;
+    this.edgeBaseBrightness = dark ? EDGE_BASE_DARK : EDGE_BASE_LIGHT;
+    this.edgeMat.opacity = Math.min(1, this.edgeOpacity * this.settings.linkThickness);
     this.arrowMat.color.copy(parseRGBA(theme.edgeHi).color);
     for (const obj of this.labels.values()) {
       (obj.element as HTMLElement).style.color = theme.ink;
@@ -1435,7 +1483,7 @@ export class GraphScene {
 
   applySettings(settings: GraphSettings): void {
     this.settings = settings;
-    this.edgeMat.opacity = Math.min(1, EDGE_OPACITY * settings.linkThickness);
+    this.edgeMat.opacity = Math.min(1, this.edgeOpacity * settings.linkThickness);
     // Brightness: overall exposure + bloom glow intensity.
     // Brightness drives overall EXPOSURE only (applied by OutputPass at the end).
     // Bloom strength stays fixed so raising brightness lifts the whole image
@@ -1600,11 +1648,22 @@ export class GraphScene {
   private render(): void {
     if (this.selective && this.bloomComposer && this.finalComposer) {
       const camMask = this.camera.layers.mask;
-      // Bloom pass: restrict the camera to layer 1 (nodes only). Background /
-      // fog still draw (the RenderPass clears with them) but neither can bloom.
+      // Bloom pass: restrict the camera to layer 1 (nodes only) AND drop the
+      // scene background — the mix pass ADDS this whole texture onto the final
+      // render, so any background here would be summed twice (invisible on the
+      // near-black dark theme, but on light it doubled the near-white bg into
+      // a blown-out frame).
+      const bg = this.scene.background;
+      this.scene.background = null;
       this.camera.layers.set(BLOOM_LAYER);
+      // Light theme: bloom pass renders BLACK (see darkTheme docs) so the mix
+      // adds nothing and stars are drawn exactly once.
+      const showPoints = this.points.visible;
+      if (!this.darkTheme) this.points.visible = false;
       this.bloomComposer.render();
+      this.points.visible = showPoints;
       this.camera.layers.mask = camMask; // restore (default: layer 0)
+      this.scene.background = bg;
       this.finalComposer.render();
     } else {
       this.composer.render();

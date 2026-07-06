@@ -1713,6 +1713,14 @@ hr {
 .graph-cluster-label.is-visible {
   opacity: 0.85;
 }
+/* Light theme: the community hues are calibrated for the dark void — darken
+   them for paper and swap the dark halo for a light one so the caps read. */
+:root:not([data-theme="dark"]) .graph-cluster-label {
+  filter: brightness(0.45) saturate(1.6);
+  text-shadow:
+    0 0 4px rgba(255, 255, 255, 0.9),
+    0 0 10px rgba(255, 255, 255, 0.65);
+}
 @media (prefers-reduced-motion: reduce) {
   .graph-cluster-label {
     transition: none;
