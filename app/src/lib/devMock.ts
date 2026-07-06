@@ -70,6 +70,41 @@ const NODES: Node[] = [
   { s: "analysis-rlhf-vs-dpo", t: "analysis", n: "RLHF vs. DPO", l: ["rlhf", "dpo", "alignment"] },
 ];
 
+// ?mock=1&stress=N grows the sample vault to ~N synthetic notes (community-
+// structured: hubs, leaves, intra-links, sparse inter-community bridges) for
+// perf work — verifying the >5k perf gate and measuring fps at 10k. DEV-only
+// like the rest of this file. Deterministic: no Math.random.
+function synthNodes(target: number): Node[] {
+  const out: Node[] = [];
+  const perComm = 40; // ~1 hub + 39 members per community
+  const comms = Math.max(1, Math.ceil(target / perComm));
+  for (let c = 0; c < comms; c++) {
+    const hub = `stress-c${c}-hub`;
+    const members: string[] = [];
+    for (let m = 1; m < perComm && out.length + comms < target + comms; m++) {
+      const slug = `stress-c${c}-n${m}`;
+      members.push(slug);
+      // Each member links its hub + a previous member (chain) → hub-and-spoke
+      // with local structure, like a real wiki cluster.
+      const links = [hub];
+      if (m > 1) links.push(`stress-c${c}-n${m - 1}`);
+      out.push({ s: slug, t: "concept", n: slug, l: links });
+    }
+    // Hub: links a few members + bridges to the previous two hubs.
+    const hubLinks = members.slice(0, 5);
+    if (c > 0) hubLinks.push(`stress-c${c - 1}-hub`);
+    if (c > 1) hubLinks.push(`stress-c${c - 2}-hub`);
+    out.push({ s: hub, t: "concept", n: hub, l: hubLinks });
+  }
+  return out;
+}
+{
+  const stress = Number(
+    new URLSearchParams(location.search).get("stress") ?? 0,
+  );
+  if (stress > 0) NODES.push(...synthNodes(stress));
+}
+
 const VAULT = "/Memex";
 const SLUGS = new Set(NODES.map((d) => d.s));
 const pathOf = (s: string): string => `${VAULT}/wiki/${s}.md`;

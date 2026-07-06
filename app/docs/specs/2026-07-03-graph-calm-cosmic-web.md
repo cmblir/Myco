@@ -171,6 +171,15 @@ blending summing luminance across overlapping primitives.**
 | **2** ✅ | legend, cluster labels v1, focus modes + selection stack, control presets, five states, motion toggle (Cmd-click path mode → Phase 3) | GraphControls, PageGraph, new GraphLegend/clusterLabels, graphSettings |
 | **3** ✅ | selective bloom (perf-gated), back-halo, filament focus/path layer, Cmd-click path mode, interaction LOD (LLM cluster labels deferred as a separate feature) | graphScene, nebulaLayer, new clusterLabels, PageGraph |
 
+**Perf measurement (2026-07-06, `scripts/graph-perf.mjs` on
+`?mock=1&stress=N`, headless Chromium/SwiftShader — software GL, so fps are
+RELATIVE only):** 356 nodes → 7.4 fps · 8 055 → 6.6 · 10 055 → 5.6; settle
+reveal 5–6 s at every size; zero page errors. A 28× node increase costs 24 %
+of frame rate — the pipeline is not CPU-bound. The >5 k perf gate verified
+live (banner + ambient layers off + single-bloom path at 8 k/10 k). The 60 fps
+@10 k criterion still needs a REAL-GPU run (`npm run dev`, then
+`node scripts/graph-perf.mjs 10000` with a headed browser).
+
 **Per-phase exit criteria (same-vault A/B screenshots):** (1) hub cores retain
 hue (not white discs); (2) no starburst silhouettes; (3) ≥ 75 % of frame in
 shadow (histogram); (4) 60 fps at 10 k nodes (profiled, recorded).
