@@ -4,7 +4,7 @@
 
 import pytest
 
-from memex_mcp import extract_links, lint_page_text, parse_fm
+from memex_mcp import extract_links, lint_page_text, parse_fm, scan_secrets
 from project_registry import _validate_slug, make_slug
 
 
@@ -70,6 +70,25 @@ def test_validate_slug_rejects_traversal(bad):
 
 def test_validate_slug_accepts_normal():
     assert _validate_slug("karpathy-llm") == "karpathy-llm"
+
+
+# ─── scan_secrets (SEC-03) ───────────────────────────────────────────────────
+
+
+def test_scan_secrets_detects_common_token_shapes():
+    text = (
+        "aws AKIAIOSFODNN7EXAMPLE and openai sk-abcdefghijklmnopqrstuv123 "
+        "and gh ghp_" + "a" * 36 + "\n-----BEGIN RSA PRIVATE KEY-----\n"
+    )
+    hits = scan_secrets(text)
+    assert "AWS access key" in hits
+    assert "OpenAI/Anthropic-style API key" in hits
+    assert "GitHub token" in hits
+    assert "Private key block" in hits
+
+
+def test_scan_secrets_ignores_prose():
+    assert scan_secrets("Discussing api keys and passwords in general.") == []
 
 
 # ─── lint_page_text (GOV-02) ─────────────────────────────────────────────────

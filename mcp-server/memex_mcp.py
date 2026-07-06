@@ -73,6 +73,22 @@ FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 WIKILINK_RE = re.compile(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]")
 WORD_RE = re.compile(r"[\w가-힣]+")
 
+# Secret patterns (SEC-03): high-signal token shapes only — generic "password="
+# style matches would drown real hits in prose false positives.
+SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
+    ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("OpenAI/Anthropic-style API key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
+    ("GitHub token", re.compile(r"\b(?:ghp|gho|ghu|ghs)_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{22,}\b")),
+    ("Slack token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b")),
+    ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
+    ("Private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+]
+
+
+def scan_secrets(text: str) -> list[str]:
+    """Names of secret patterns found in `text` (SEC-03). Pure; empty = clean."""
+    return [name for name, pat in SECRET_PATTERNS if pat.search(text)]
+
 
 def parse_fm(text: str) -> tuple[dict, str]:
     """Parse YAML-ish frontmatter, returning (meta, body).
@@ -328,20 +344,11 @@ def read_page(filename: str, project: str = "") -> dict:
     }
 
 
-@mcp.tool()
-def search(query: str, top_k: int = 10, project: str = "") -> dict:
-    """TF-IDF search across wiki pages. Returns ranked snippets.
-
-    Args:
-        query: Search query (Korean and English supported).
-        top_k: Number of results (default 10).
-        project: Project slug (empty = active/legacy).
-    """
-    proj = _resolve(project)
-    q_tokens = WORD_RE.findall(query.lower())
+def _search_wiki(proj, q_tokens: list[str], top_k: int) -> list[dict]:
+    """TF-IDF over one project's wiki. Shared by search()'s single- and
+    all-project modes."""
     if not q_tokens or not proj.wiki_dir.exists():
-        return {"project": proj.slug, "results": []}
-
+        return []
     docs: dict[str, dict] = {}
     for md in proj.wiki_dir.rglob("*.md"):
         rel = str(md.relative_to(proj.wiki_dir))
@@ -351,7 +358,7 @@ def search(query: str, top_k: int = 10, project: str = "") -> dict:
         if tokens:
             docs[rel] = {"tokens": tokens, "body": body}
     if not docs:
-        return {"project": proj.slug, "results": []}
+        return []
 
     df: dict[str, int] = {}
     for d in docs.values():
@@ -372,9 +379,8 @@ def search(query: str, top_k: int = 10, project: str = "") -> dict:
             scores.append((path, score))
 
     scores.sort(key=lambda x: -x[1])
-    top = scores[: max(1, top_k)]
     results: list[dict] = []
-    for path, sc in top:
+    for path, sc in scores[: max(1, top_k)]:
         body = docs[path]["body"]
         snippet = ""
         low = body.lower()
@@ -386,7 +392,46 @@ def search(query: str, top_k: int = 10, project: str = "") -> dict:
                 snippet = body[start:end].replace("\n", " ")
                 break
         results.append({"filename": path, "score": round(sc, 4), "snippet": snippet})
-    return {"project": proj.slug, "results": results}
+    return results
+
+
+@mcp.tool()
+def search(
+    query: str, top_k: int = 10, project: str = "", all_projects: bool = False
+) -> dict:
+    """TF-IDF search across wiki pages. Returns ranked snippets.
+
+    Args:
+        query: Search query (Korean and English supported).
+        top_k: Number of results (default 10; per project in all-projects mode).
+        project: Project slug (empty = active/legacy).
+        all_projects: Search EVERY registered project (plus legacy). Each hit
+            carries its `project`; scores are per-corpus TF-IDF, so treat the
+            merged order as approximate across projects.
+    """
+    q_tokens = WORD_RE.findall(query.lower())
+    if not all_projects:
+        proj = _resolve(project)
+        return {"project": proj.slug, "results": _search_wiki(proj, q_tokens, top_k)}
+
+    merged: list[dict] = []
+    seen_roots: set[str] = set()
+    # Registered projects plus the legacy root (when it still has a wiki) —
+    # list_projects() alone omits legacy, dedup below handles overlap.
+    candidates = list(project_registry.list_projects())
+    legacy = project_registry._legacy_project()
+    if legacy.wiki_dir.exists():
+        candidates.append(legacy)
+    for proj in candidates:
+        root = str(proj.wiki_dir)
+        if root in seen_roots:
+            continue
+        seen_roots.add(root)
+        for hit in _search_wiki(proj, q_tokens, top_k):
+            hit["project"] = proj.slug
+            merged.append(hit)
+    merged.sort(key=lambda h: -h["score"])
+    return {"all_projects": True, "results": merged}
 
 
 @mcp.tool()
@@ -475,12 +520,21 @@ def add_raw_source(filename: str, content: str, project: str = "") -> dict:
         return {"ok": False, "error": f"raw/ file exists (immutable): {filename}"}
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
-    return {
+    out = {
         "ok": True,
         "project": proj.slug,
         "raw_path": str(target.relative_to(REPO_ROOT)),
         "src_slug": f"src-{target.stem}",
     }
+    # SEC-03: warn (not block — the operator may be archiving deliberately)
+    # when the source text looks like it contains live credentials.
+    hits = scan_secrets(content)
+    if hits:
+        out["secret_warning"] = (
+            "possible secrets detected: " + ", ".join(hits) + " — raw/ is "
+            "immutable and committed to git; redact and re-add if unintended."
+        )
+    return out
 
 
 @mcp.tool()
