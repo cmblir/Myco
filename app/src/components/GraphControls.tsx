@@ -5,7 +5,12 @@
 
 import type { JSX } from "react";
 import { useState } from "react";
-import type { GraphSettings } from "../lib/graphSettings";
+import {
+  LAYOUT_PRESETS,
+  matchPreset,
+  type GraphSettings,
+  type LayoutPresetKey,
+} from "../lib/graphSettings";
 import type { Strings } from "../lib/i18n";
 
 interface Props {
@@ -37,6 +42,9 @@ export default function GraphControls({
     filters: true,
     display: true,
     forces: true,
+    // Raw force sliders are an expert affordance — collapsed by default; the
+    // preset chips cover the common cases (spec B4).
+    advanced: false,
   });
 
   const toggle = (k: string): void =>
@@ -213,12 +221,18 @@ export default function GraphControls({
           onChange={(v) => onChange({ linkThickness: v })}
         />
         <Slider
-          label={t.gr_brightness ?? "Brightness"}
+          label={t.gr_glow ?? "Glow"}
           value={settings.brightness}
-          min={0.2}
-          max={2.5}
+          min={0.4}
+          max={1.6}
           step={0.05}
           onChange={(v) => onChange({ brightness: v })}
+        />
+        <Toggle
+          label={t.gr_motion ?? "Ambient motion"}
+          hint={t.gr_motion_hint ?? "Auto-rotate, pulses, breathing"}
+          value={settings.ambientMotion}
+          onChange={(v) => onChange({ ambientMotion: v })}
         />
         <button
           type="button"
@@ -237,47 +251,76 @@ export default function GraphControls({
         open={openSections.forces}
         onToggle={() => toggle("forces")}
       >
-        {/* Slider ranges match Obsidian's panel one-for-one. */}
-        <Slider
-          label={t.gr_center_force ?? "Center force"}
-          value={settings.centerForce}
-          min={0}
-          max={1}
-          step={0.01}
-          onChange={(v) => onChange({ centerForce: v })}
-        />
-        <Slider
-          label={t.gr_repel_force ?? "Repel force"}
-          value={settings.repelForce}
-          min={0}
-          max={50}
-          step={0.5}
-          onChange={(v) => onChange({ repelForce: v })}
-        />
-        <Slider
-          label={t.gr_link_force ?? "Link force"}
-          value={settings.linkForce}
-          min={0}
-          max={1}
-          step={0.01}
-          onChange={(v) => onChange({ linkForce: v })}
-        />
-        <Slider
-          label={t.gr_link_distance ?? "Link distance"}
-          value={settings.linkDistance}
-          min={30}
-          max={500}
-          step={5}
-          onChange={(v) => onChange({ linkDistance: v })}
-        />
-        <Slider
-          label={t.gr_cluster_force ?? "Cluster force"}
-          value={settings.clusterForce}
-          min={0}
-          max={1}
-          step={0.01}
-          onChange={(v) => onChange({ clusterForce: v })}
-        />
+        <div className="graph-field">
+          <span className="graph-field__label">{t.gr_preset ?? "Layout"}</span>
+          <div className="graph-chips">
+            {(
+              [
+                ["galaxy", t.gr_preset_galaxy ?? "Galaxy"],
+                ["loose", t.gr_preset_loose ?? "Loose web"],
+                ["dense", t.gr_preset_dense ?? "Dense"],
+              ] as [LayoutPresetKey, string][]
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`graph-chip${
+                  matchPreset(settings) === key ? " graph-chip--active" : ""
+                }`}
+                onClick={() => onChange({ ...LAYOUT_PRESETS[key] })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Section
+          title={t.gr_advanced ?? "Advanced"}
+          open={openSections.advanced}
+          onToggle={() => toggle("advanced")}
+        >
+          {/* Slider ranges match Obsidian's panel one-for-one. */}
+          <Slider
+            label={t.gr_center_force ?? "Center force"}
+            value={settings.centerForce}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(v) => onChange({ centerForce: v })}
+          />
+          <Slider
+            label={t.gr_repel_force ?? "Repel force"}
+            value={settings.repelForce}
+            min={0}
+            max={50}
+            step={0.5}
+            onChange={(v) => onChange({ repelForce: v })}
+          />
+          <Slider
+            label={t.gr_link_force ?? "Link force"}
+            value={settings.linkForce}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(v) => onChange({ linkForce: v })}
+          />
+          <Slider
+            label={t.gr_link_distance ?? "Link distance"}
+            value={settings.linkDistance}
+            min={30}
+            max={500}
+            step={5}
+            onChange={(v) => onChange({ linkDistance: v })}
+          />
+          <Slider
+            label={t.gr_cluster_force ?? "Cluster force"}
+            value={settings.clusterForce}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(v) => onChange({ clusterForce: v })}
+          />
+        </Section>
       </Section>
     </aside>
   );

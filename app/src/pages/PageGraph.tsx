@@ -53,6 +53,37 @@ interface IngestGlow {
   pulseScale: number;
 }
 
+// Focus stack (spec B3 — "focus modes with an exit"): every isolation is a
+// frame the user can pop back out of with Esc / a void-click / a breadcrumb.
+// Node clicks push 1-hop frames (double-click upgrades to 2-hop); a legend
+// swatch pushes a community frame.
+interface FocusFrame {
+  kind: "node" | "community";
+  /** breadcrumb text — note stem or community label */
+  label: string;
+  members: Set<string>;
+  /** node frames: the focused node */
+  id?: string;
+  hops?: 1 | 2;
+  /** community frames: the Louvain community id */
+  cm?: number;
+}
+
+// Double-click window for upgrading a node frame to 2 hops.
+const DBL_MS = 350;
+
+// Members of the n-hop neighbourhood around a node (inclusive).
+function hopSet(g: VaultGraph, id: string, hops: 1 | 2): Set<string> {
+  const members = new Set<string>([id]);
+  for (const n of g.neighbors(id)) members.add(n);
+  if (hops === 2) {
+    for (const n of [...members]) {
+      for (const m of g.neighbors(n)) members.add(m);
+    }
+  }
+  return members;
+}
+
 export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const adjacency = useVaultStore((s) => s.adjacency);
   const fileTree = useVaultStore((s) => s.fileTree);
@@ -80,6 +111,11 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     pulseScale: 1,
   });
   const pulseRafRef = useRef<number | null>(null);
+  // Focus stack — state drives the breadcrumbs; the ref feeds pushStyle (a
+  // stable closure) with the top frame's member set.
+  const [focusStack, setFocusStack] = useState<FocusFrame[]>([]);
+  const focusRef = useRef<Set<string> | null>(null);
+  const lastClickRef = useRef<{ id: string; at: number } | null>(null);
 
   const [settings, setSettings] = useState<GraphSettings>(() =>
     loadGraphSettings(),
@@ -99,6 +135,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   // drops the GL context on backgrounding; three.js does not auto-restore the
   // composer/render targets, so we tear down and rebuild a fresh GraphScene).
   const [glEpoch, setGlEpoch] = useState(0);
+  // Error state (spec B5): the GL context died and the browser has not (yet)
+  // restored it — show a toast with a manual rebuild escape hatch.
+  const [ctxLost, setCtxLost] = useState(false);
   const [counts, setCounts] = useState<{ nodes: number; edges: number }>({
     nodes: 0,
     edges: 0,
@@ -112,6 +151,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     const state: SceneStyleState = {
       hoveredNode: hoverRef.current.node,
       neighbors: hoverRef.current.neighbors,
+      focus: focusRef.current,
       tints: ingestGlowRef.current.tint,
       pulseId: ingestGlowRef.current.pulseId,
       pulseScale: ingestGlowRef.current.pulseScale,
@@ -170,32 +210,100 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [counts, glEpoch]);
 
-  // Community isolation (legend swatch click): reuses the hover-highlight
-  // machinery — members act as the "neighbourhood", everything else sinks to
-  // the faint context layer. A later hover simply overwrites it (acceptable).
-  const [isolated, setIsolated] = useState<number | null>(null);
-  const isolateCommunity = (cm: number | null): void => {
-    setIsolated(cm);
+  // --- Focus stack operations. stackRef is the source of truth (the scene's
+  // callbacks are stable closures, so React state alone would go stale);
+  // applyStack is the single writer keeping ref, UI state and scene in sync.
+  // Refs updated via applyStack only. ---
+  const stackRef = useRef<FocusFrame[]>([]);
+  const applyStack = useRef((next: FocusFrame[]) => {
+    stackRef.current = next;
+    focusRef.current =
+      next.length > 0 ? next[next.length - 1].members : null;
+    setFocusStack(next);
+    pushStyle();
+  }).current;
+  // Pop one level; retarget the inspector at the frame that becomes top.
+  const popFrame = useRef(() => {
+    const prev = stackRef.current;
+    if (prev.length === 0) return false;
+    const next = prev.slice(0, -1);
+    applyStack(next);
+    const top = next[next.length - 1];
+    setSelected(top?.kind === "node" ? (top.id ?? null) : null);
+    return true;
+  }).current;
+  // Breadcrumb click — truncate the stack to that frame.
+  const popTo = (index: number): void => {
+    const next = stackRef.current.slice(0, index + 1);
+    applyStack(next);
+    const top = next[next.length - 1];
+    setSelected(top?.kind === "node" ? (top.id ?? null) : null);
+  };
+
+  // Node click = push a 1-hop focus frame (+ inspector); a second click on the
+  // same node within DBL_MS upgrades it to 2 hops (spec B3).
+  const handleNodeClick = useRef((id: string) => {
     const g = graphRef.current;
-    if (!g) return;
+    if (!g || !g.hasNode(id)) return;
+    const now = performance.now();
+    const dbl =
+      lastClickRef.current?.id === id && now - lastClickRef.current.at < DBL_MS;
+    lastClickRef.current = { id, at: now };
+    setSelected(id);
+    const prev = stackRef.current;
+    const top = prev[prev.length - 1];
+    if (top?.kind === "node" && top.id === id) {
+      if (dbl && top.hops === 1) {
+        applyStack([
+          ...prev.slice(0, -1),
+          { kind: "node", id, hops: 2, label: stem(id), members: hopSet(g, id, 2) },
+        ]);
+      }
+      return; // same node again (no upgrade) — keep the frame as-is
+    }
+    applyStack([
+      ...prev,
+      { kind: "node", id, hops: 1, label: stem(id), members: hopSet(g, id, 1) },
+    ]);
+  }).current;
+
+  // Community isolation (legend swatch click) = a community focus frame.
+  // Clicking the active swatch again releases it.
+  const isolated =
+    focusStack.length > 0 && focusStack[focusStack.length - 1].kind === "community"
+      ? (focusStack[focusStack.length - 1].cm ?? null)
+      : null;
+  const isolateCommunity = (cm: number | null): void => {
     if (cm == null) {
-      hoverRef.current = { node: null, neighbors: null };
-      pushStyle();
+      if (isolated != null) popFrame();
       return;
     }
+    const g = graphRef.current;
+    if (!g) return;
     const members = new Set<string>();
-    let hub: string | null = null;
     g.forEachNode((id, a) => {
-      if (a.community === cm) {
-        members.add(id);
-        if (a.isHub) hub = id;
-      }
+      if (a.community === cm) members.add(id);
     });
-    const anchor = hub ?? members.values().next().value ?? null;
-    if (!anchor) return;
-    hoverRef.current = { node: anchor, neighbors: members };
-    pushStyle();
+    if (members.size === 0) return;
+    const label =
+      legendCommunities.find((c) => c.cm === cm)?.label ?? `#${cm}`;
+    applyStack([
+      ...stackRef.current,
+      { kind: "community", cm, label, members },
+    ]);
   };
+
+  // Esc pops one focus level (ignored while typing in an input).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape") return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (popFrame()) e.stopPropagation();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [popFrame]);
 
   // Fetch mtimes whenever the vault changes — drives the timelapse reveal order
   // (oldest file first, so the graph grows in creation order).
@@ -250,7 +358,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     setSelected(null);
     setPathAnchor(null);
     setPath(null);
-    setIsolated(null);
+    applyStack([]);
+    lastClickRef.current = null;
 
     let killed = false;
     let userTookOver = false;
@@ -270,7 +379,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
 
     const scene = new GraphScene(container, graph, theme, s, {
       onNodeClick: (id) => {
-        if (!killed) setSelected(id);
+        if (!killed) handleNodeClick(id);
+      },
+      onVoidClick: () => {
+        if (!killed) popFrame();
       },
       onNodeHover: (id) => {
         if (id) highlight(id);
@@ -300,7 +412,13 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         // Reheat so the released star and its neighbours ease back to rest.
         simRef.current?.reheat(0.2); // lighter reheat → shorter post-drag settle
       },
-      onContextRestored: () => setGlEpoch((n) => n + 1),
+      onContextLost: () => {
+        if (!killed) setCtxLost(true);
+      },
+      onContextRestored: () => {
+        setCtxLost(false);
+        setGlEpoch((n) => n + 1);
+      },
     });
     sceneRef.current = scene;
     scene.start();
@@ -406,6 +524,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.textFadeThreshold,
     settings.arrows,
     settings.brightness,
+    settings.ambientMotion,
   ]);
 
   // Theme toggle — recolour the scene. Re-read AFTER the app's theme effect has
@@ -742,6 +861,40 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
           <span className="graph-stat">
             {counts.edges} {t.gr_edge_count}
           </span>
+          {focusStack.length > 0 ? (
+            <nav
+              className="graph-crumbs"
+              aria-label={t.gr_focus_trail ?? "Focus trail"}
+            >
+              {focusStack.map((f, i) => (
+                <button
+                  key={`${f.kind}-${f.id ?? f.cm}-${i}`}
+                  type="button"
+                  className={`graph-chip${
+                    i === focusStack.length - 1 ? " graph-chip--active" : ""
+                  }`}
+                  title={
+                    i === focusStack.length - 1
+                      ? (t.gr_focus_esc ?? "Esc / click the void to step out")
+                      : undefined
+                  }
+                  onClick={() => popTo(i)}
+                >
+                  {f.label}
+                  {f.kind === "node" && f.hops === 2 ? " ⁺²" : ""}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="graph-chip graph-chip--exit"
+                onClick={() => popFrame()}
+                aria-label={t.gr_focus_esc ?? "Step out (Esc)"}
+                title={t.gr_focus_esc ?? "Step out (Esc)"}
+              >
+                ×
+              </button>
+            </nav>
+          ) : null}
           <input
             className="graph-find"
             type="search"
@@ -831,6 +984,34 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         <div className="graph-body">
           <div className="graph-canvas-wrap">
             <div ref={containerRef} className="graph-canvas" />
+            {/* Loading state: visible until .graph-ready lands on the canvas
+                (adjacent-sibling CSS — no extra React state). */}
+            {counts.nodes > 0 ? (
+              <p className="muted graph-loading-tip" aria-hidden="true">
+                {t.gr_loading ?? "aligning constellations…"}
+              </p>
+            ) : null}
+            {ctxLost ? (
+              <div className="graph-toast" role="alert">
+                <span>{t.gr_ctx_lost ?? "Graphics context was lost."}</span>
+                <button
+                  type="button"
+                  className="graph-toolbar__btn"
+                  onClick={() => {
+                    setCtxLost(false);
+                    setGlEpoch((n) => n + 1);
+                  }}
+                >
+                  {t.gr_retry ?? "Rebuild"}
+                </button>
+              </div>
+            ) : null}
+            {counts.nodes > 5000 ? (
+              <p className="muted graph-perf-banner">
+                {t.gr_perf_mode ??
+                  "Performance mode — ambient layers off for large graphs"}
+              </p>
+            ) : null}
             {totalNodes === 0 ? (
               <p className="muted graph-empty">
                 {t.gr_empty_pre ??

@@ -1692,6 +1692,75 @@ hr {
     0 0 6px rgba(0, 0, 0, 0.6);
   user-select: none;
 }
+/* Community names at rest ("terrain names" of the reverse semantic zoom).
+   Colour comes inline from the community hue; the fade is CSS so show/hide is
+   a cheap class toggle from clusterLabels.ts. */
+.graph-cluster-label {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 480ms ease;
+  text-shadow:
+    0 0 4px rgba(0, 0, 0, 0.9),
+    0 0 10px rgba(0, 0, 0, 0.65);
+  user-select: none;
+  pointer-events: none;
+}
+.graph-cluster-label.is-visible {
+  opacity: 0.85;
+}
+@media (prefers-reduced-motion: reduce) {
+  .graph-cluster-label {
+    transition: none;
+  }
+}
+/* Five-states overlays (calm-cosmic-web spec B5) ------------------------- */
+/* Loading: shows while the layout settles; .graph-ready on the canvas (the
+   existing reveal signal) fades it away — pure CSS, no extra state. */
+.graph-loading-tip {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 400ms ease;
+}
+.graph-canvas.graph-ready ~ .graph-loading-tip {
+  opacity: 0;
+}
+/* Error: GL context lost — toast + manual rebuild. */
+.graph-toast {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  font-size: 12px;
+  z-index: 5;
+}
+/* Perf: ambient layers were dropped for a very large graph. */
+.graph-perf-banner {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  margin: 0;
+  font-size: 11px;
+  pointer-events: none;
+}
+
 /* Suspense fallback while the 3D graph chunk loads — matches the deep-space wrap. */
 .graph-loading {
   flex: 1;
@@ -1877,6 +1946,25 @@ hr {
   background: var(--ink);
   color: var(--bg);
   border-color: var(--ink);
+}
+/* Focus-stack breadcrumb trail in the graph toolbar (spec B3): one chip per
+   focus level, "×" steps out one level (same as Esc / void-click). */
+.graph-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+.graph-crumbs .graph-chip {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-chip--exit {
+  padding: 2px 6px;
+  line-height: 1;
 }
 
 .graph-toggle {

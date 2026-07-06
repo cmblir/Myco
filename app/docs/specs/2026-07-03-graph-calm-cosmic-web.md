@@ -2,9 +2,12 @@
 
 - **Date:** 2026-07-03
 - **Status:** Phase 0 ✅ (2026-07-03) · Phase 1 ✅ (2026-07-06, A/B on mock
-  vault, dark theme) · Phase 2 partial (B1 legend + isolation, hover focus) ·
-  Phase 3 open. Light theme stays washed out — pre-existing (verified by
-  stash A/B against the pre-Phase-1 tree), needs its own calibration pass.
+  vault, dark theme) · Phase 2 ✅ (2026-07-06 — B2 cluster labels, B3 focus
+  stack + Esc/void-click/breadcrumbs, B4 presets/Glow/ambient-motion +
+  A7 rotate-pause, B5 loading/error/perf states; Cmd-click shortest-path
+  deferred to the Phase 3 filament layer) · Phase 3 open. Light theme stays
+  washed out — pre-existing (verified by stash A/B against the pre-Phase-1
+  tree), needs its own calibration pass.
 - **Extends:** [[2026-06-27-cosmic-web-graph]] (keeps its architecture; fixes its look)
 - **Trigger:** real-vault screenshot review — the graph reads as **fireworks**
   (blown-white hub cores, equal-length colored spokes radiating from every
@@ -160,7 +163,7 @@ blending summing luminance across overlapping primitives.**
 |---|---|---|
 | **0** ✅ | constants table above | graphScene, graphData, graphSettings, graphSim.worker, pulseLayer |
 | **1** ✅ | midpoint-split edges (fade+sag) + length falloff, degree-based distances, 6-hue palette, dynamic fog + z-desat, log node sizes, luminance clamp, clusterForce 0.35 (settings v26) | graphScene, graphData, graphSim.worker, graphSettings |
-| **2** (3–4 d) | legend, cluster labels v1, focus modes + selection stack, control presets, five states, motion toggle | GraphControls, PageGraph, new GraphLegend/clusterLabels, graphSettings |
+| **2** ✅ | legend, cluster labels v1, focus modes + selection stack, control presets, five states, motion toggle (Cmd-click path mode → Phase 3) | GraphControls, PageGraph, new GraphLegend/clusterLabels, graphSettings |
 | **3** (~1 w) | selective bloom, back-halo, filament=focus/path layer, path mode, interaction LOD, LLM cluster labels | graphScene, new bloomComposite, pulseLayer, nebulaLayer |
 
 **Per-phase exit criteria (same-vault A/B screenshots):** (1) hub cores retain

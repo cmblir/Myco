@@ -27,6 +27,7 @@ import type { GraphTheme } from "./graphTheme";
 import type { GraphSettings } from "./graphSettings";
 import { NebulaLayer } from "./nebulaLayer";
 import { PulseLayer } from "./pulseLayer";
+import { ClusterLabels } from "./clusterLabels";
 
 // World radius (in sim units) per unit of node `size`, and how far the halo
 // extends past the core — mirrors the old GLOW_SCALE 2.6 intent in 3D.
@@ -100,6 +101,10 @@ export interface GraphSceneCallbacks {
   onDragStart(id: string): void;
   onDrag(id: string, x: number, y: number, z: number): void;
   onDragEnd(id: string): void;
+  /** Click on empty space (no node, no orbit drag) — focus-stack exit. */
+  onVoidClick(): void;
+  /** WebGL context died (WKWebView backgrounding etc.) — show the error state. */
+  onContextLost(): void;
   onContextRestored(): void;
 }
 
@@ -107,6 +112,10 @@ export interface GraphSceneCallbacks {
 export interface SceneStyleState {
   hoveredNode: string | null;
   neighbors: Set<string> | null;
+  // Focus isolation (click 1-hop / 2-hop, legend community): members keep full
+  // style, everything else sinks to a near-invisible context layer — deeper
+  // than the hover dim, and it HOLDS until popped (spec B3).
+  focus: Set<string> | null;
   tints: Map<string, boolean>; // id → written (true) vs only read (false)
   pulseId: string | null;
   pulseScale: number;
@@ -115,10 +124,25 @@ export interface SceneStyleState {
 const EMPTY_STYLE: SceneStyleState = {
   hoveredNode: null,
   neighbors: null,
+  focus: null,
   tints: new Map(),
   pulseId: null,
   pulseScale: 1,
 };
+
+// Focus-isolation context layer: non-members at 0.08 alpha (hover's soft dim is
+// 0.15 — focus is a held state, so it cuts deeper), their edges near-invisible.
+const FOCUS_NODE_DIM = 0.08;
+const FOCUS_EDGE_DIM = 0.03;
+
+// Idle time after the last orbit/zoom before auto-rotate resumes (spec A7).
+const ROTATE_IDLE_MS = 8000;
+
+// Above this node count the scene builds in performance mode (spec B5):
+// 1 starfield shell instead of 3, no nebula, no pulses — the ambient layers
+// are the first spend to cut, the graph itself stays untouched. Decided at
+// build time; live-ingest growth past the line applies on the next rebuild.
+const PERF_LOD_NODES = 5000;
 
 const INGEST_WRITE = new THREE.Color("#ffd27a");
 const INGEST_READ = new THREE.Color("#7fe1ff");
@@ -267,6 +291,7 @@ export class GraphScene {
   private nebula: NebulaLayer;
   private nebulaTick = 0; // throttle nebula centroid recompute (every Nth tick)
   private pulse: PulseLayer; // signals flowing along edges (alive/communication)
+  private clusterLabels: ClusterLabels; // community names at rest (reverse semantic zoom)
   private lastFrame = 0; // performance.now() of the previous animation frame
   private labels = new Map<string, CSS2DObject>();
   // Degree-ranked label candidates (top LABEL_MAX). Semantic zoom slices this by
@@ -284,6 +309,11 @@ export class GraphScene {
   private raf: number | null = null;
   private resizeObs: ResizeObserver;
   private reducedMotion: boolean;
+  // Auto-rotate yields to the user (spec A7): any orbit/zoom pauses it, and it
+  // resumes only after ROTATE_IDLE_MS without interaction.
+  private rotateResumeTimer: ReturnType<typeof setTimeout> | null = null;
+  // Build-time performance mode for very large vaults (spec B5).
+  private perfLod = false;
 
   // pointer / drag state
   private dragId: string | null = null;
@@ -369,8 +399,11 @@ export class GraphScene {
     this.controls.zoomSpeed = 0.9;
     this.controls.minDistance = 8; // closer zoom-in
     this.controls.maxDistance = 30000; // far zoom-out for large / spread-out vaults
-    this.controls.autoRotate = !this.reducedMotion;
+    this.controls.autoRotate = this.ambientOn();
     this.controls.autoRotateSpeed = 0.12; // premium idle motion is slow
+    // Interaction pauses the idle rotation; it eases back after 8 s of quiet.
+    this.controls.addEventListener("start", this.onControlsStart);
+    this.controls.addEventListener("end", this.onControlsEnd);
 
     // Bloom — deep-space glow. The high-pass runs on the LINEAR (un-tone-mapped)
     // composer buffer, where lone field stars peak at luminance ~1.16; a dark
@@ -414,6 +447,8 @@ export class GraphScene {
     this.nodeIds = graph.nodes();
     this.nodeIds.forEach((id, i) => this.idIndex.set(id, i));
     const n = this.nodeIds.length;
+    // Performance mode (spec B5): big vaults drop the ambient layers.
+    this.perfLod = n > PERF_LOD_NODES;
     this.nodeGeom = new THREE.BufferGeometry();
     this.nodeGeom.setAttribute(
       "position",
@@ -509,12 +544,21 @@ export class GraphScene {
     if (SHOW_STARFIELD) this.scene.add(this.starfield);
 
     // --- nebula/dust (faint additive gas over the biggest galaxies) ---
-    this.nebula = new NebulaLayer(this.graph, this.nodeIds, dark && SHOW_NEBULA);
+    this.nebula = new NebulaLayer(
+      this.graph,
+      this.nodeIds,
+      dark && SHOW_NEBULA && !this.perfLod,
+    );
     this.scene.add(this.nebula.group);
 
     // --- pulses (signals flowing along the edges, so the graph reads as alive) ---
     this.pulse = new PulseLayer(this.graph, this.edgePairs, pr, dark);
+    this.pulse.points.visible = !this.perfLod;
     this.scene.add(this.pulse.points);
+
+    // --- cluster auto-labels (community names while zoomed out) ---
+    this.clusterLabels = new ClusterLabels(this.graph);
+    this.scene.add(this.clusterLabels.group);
 
     // --- label allow-set (declutter) ---
     this.computeLabelable();
@@ -585,7 +629,7 @@ export class GraphScene {
   // additive HDR node shader) guarantees these never bloom — depth cue only.
   private buildStarfield(dark: boolean): THREE.Group {
     const group = new THREE.Group();
-    const shells = dark
+    let shells = dark
       ? [
           // Background must never compete with foreground (luminance budget) —
           // dimmer than the dim edges so the hierarchy stays nodes > edges > sky.
@@ -598,6 +642,8 @@ export class GraphScene {
           { count: 900, r0: 3600, r1: 4600, size: 1.1, color: 0xb2bcd2, op: 0.18 },
           { count: 1100, r0: 5200, r1: 6400, size: 0.8, color: 0xa6b0c8, op: 0.12 },
         ];
+    // Performance mode keeps only the mid shell — one draw call of depth cue.
+    if (this.perfLod) shells = [shells[1]];
     let seed = 1; // global stream cursor so shells don't share point positions
     for (const s of shells) {
       const pos = new Float32Array(s.count * 3);
@@ -637,7 +683,8 @@ export class GraphScene {
     const siz = this.nodeGeom.getAttribute("a_size") as THREE.BufferAttribute;
     const alp = this.nodeGeom.getAttribute("a_alpha") as THREE.BufferAttribute;
     const intn = this.nodeGeom.getAttribute("a_intensity") as THREE.BufferAttribute;
-    const { hoveredNode, neighbors, tints, pulseId, pulseScale } = this.style;
+    const { hoveredNode, neighbors, focus, tints, pulseId, pulseScale } =
+      this.style;
     const c = new THREE.Color();
 
     for (let i = 0; i < this.nodeIds.length; i++) {
@@ -659,10 +706,16 @@ export class GraphScene {
         if (pulseId === id) size = a.size * pulseScale;
       }
 
-      // hover neighbourhood: hovered + neighbours pop (full alpha + bloom); the
-      // rest sink to a faint context layer (0.15 — the old 0.5 was too timid to
-      // read as focus) but stay visible so the cosmos and orbit remain legible.
-      if (hoveredNode && neighbors) {
+      // Focus isolation outranks hover: non-members sink to the deep context
+      // layer no matter what; hover only differentiates WITHIN the members.
+      if (focus && !focus.has(id)) {
+        alpha = a.hidden ? 0 : FOCUS_NODE_DIM;
+        inten = 0; // outside the focus must not bloom
+      } else if (hoveredNode && neighbors) {
+        // hover neighbourhood: hovered + neighbours pop (full alpha + bloom);
+        // the rest sink to a faint context layer (0.15 — the old 0.5 was too
+        // timid to read as focus) but stay visible so the cosmos and orbit
+        // remain legible.
         if (id === hoveredNode || neighbors.has(id)) {
           // keep full colour / alpha / intensity
         } else {
@@ -670,7 +723,6 @@ export class GraphScene {
           inten = 0; // non-neighbours must not bloom
         }
       }
-
 
       col.setXYZ(i, c.r, c.g, c.b);
       siz.setX(i, size);
@@ -688,7 +740,7 @@ export class GraphScene {
   // to neutral grey, hover focus factor, timelapse hide), then re-derive the
   // vertex buffers. Style changes are rare; the per-tick paths reuse the cache.
   private writeEdges(): void {
-    const { hoveredNode, neighbors } = this.style;
+    const { hoveredNode, neighbors, focus } = this.style;
     const base = this.edgeBaseCol;
     const cs = new THREE.Color(); // reused per edge (no per-edge allocation)
     const ct = new THREE.Color();
@@ -702,7 +754,10 @@ export class GraphScene {
       cs.set(sa.color).lerp(EDGE_NEUTRAL, EDGE_GREY_MIX);
       ct.set(ta.color).lerp(EDGE_NEUTRAL, EDGE_GREY_MIX);
       let f = EDGE_BASE;
-      if (hoveredNode) {
+      if (focus && !(focus.has(s) && focus.has(t))) {
+        // Edge leaves the focus set → near-invisible context, hover ignored.
+        f = FOCUS_EDGE_DIM;
+      } else if (hoveredNode) {
         const incident =
           s === hoveredNode ||
           t === hoveredNode ||
@@ -784,6 +839,9 @@ export class GraphScene {
     // *adds* labels as you push in — and visits at most LABEL_MAX+1 nodes.
     const camDist = this.camera.position.distanceTo(this.controls.target);
     const ratio = this.framedDist > 0 ? camDist / this.framedDist : 1;
+    // Reverse semantic zoom: community names show while zoomed out and hand
+    // over to per-node labels as the camera pushes in.
+    this.clusterLabels.setZoomRatio(ratio);
     const grown = Math.round(LABEL_MIN * Math.pow(1 / Math.max(0.15, ratio), 1.3));
     const budget = Math.max(LABEL_MIN, Math.min(LABEL_MAX, grown));
     const candidates = this.labelCandidates;
@@ -1076,9 +1134,13 @@ export class GraphScene {
     this.writePositions();
     if (this.filaments) this.updateFilaments();
     if (this.arrows.visible) this.writeArrows();
-    // Galaxies drift while the sim runs; refresh the gas every 12th tick (the
-    // centroid recompute is O(nodes) but visually stable, so per-frame is waste).
-    if ((this.nebulaTick = (this.nebulaTick + 1) % 12) === 0) this.nebula.update();
+    // Galaxies drift while the sim runs; refresh the gas + cluster-label
+    // centroids every 12th tick (the recompute is O(nodes) but visually
+    // stable, so per-frame is waste).
+    if ((this.nebulaTick = (this.nebulaTick + 1) % 12) === 0) {
+      this.nebula.update();
+      this.clusterLabels.update();
+    }
   }
 
   // Off-thread sim path: apply a position array posted by the sim worker (node
@@ -1105,7 +1167,10 @@ export class GraphScene {
 
     if (this.filaments) this.updateFilaments();
     if (this.arrows.visible) this.writeArrows();
-    if ((this.nebulaTick = (this.nebulaTick + 1) % 12) === 0) this.nebula.update();
+    if ((this.nebulaTick = (this.nebulaTick + 1) % 12) === 0) {
+      this.nebula.update();
+      this.clusterLabels.update();
+    }
   }
 
   // Full attribute refresh (colour/size/alpha/intensity + edge colour). Call when
@@ -1114,6 +1179,8 @@ export class GraphScene {
   refreshStyle(): void {
     this.writeNodes();
     this.writeEdges();
+    // timelapse `hidden` flips affect which cluster labels are alive
+    this.clusterLabels.update();
   }
 
   setStyleState(s: SceneStyleState): void {
@@ -1203,6 +1270,8 @@ export class GraphScene {
     this.nebula.setNodeIds(this.nodeIds);
     // Pulses: re-snapshot the (changed) edge set so signals ride new links.
     this.pulse.setEdges(this.edgePairs);
+    // Cluster labels: communities may have grown/changed after live ingest.
+    this.clusterLabels.rebuild();
     // Re-derive the label allow-set so live-ingest newcomers / new hubs can label.
     this.computeLabelable();
 
@@ -1252,10 +1321,41 @@ export class GraphScene {
     // Direction arrows: toggle visibility; re-place (also picks up linkThickness).
     this.arrows.visible = settings.arrows;
     if (settings.arrows) this.writeArrows();
+    // Ambient motion (one switch for auto-rotate / pulses / breathing). The
+    // pulse layer is hidden rather than disposed so re-enabling is instant.
+    this.controls.autoRotate = this.ambientOn();
+    this.pulse.points.visible = this.ambientOn() && !this.perfLod;
+    if (this.rotateResumeTimer != null && !this.ambientOn()) {
+      clearTimeout(this.rotateResumeTimer);
+      this.rotateResumeTimer = null;
+    }
     // Length-falloff thresholds scale with linkDistance — re-derive so a slider
     // move updates edge brightness even before the sim posts its next tick.
     this.writeEdgeGeometry();
   }
+
+  // All idle motion (auto-rotate, pulses, breathing) honours BOTH the OS
+  // reduced-motion preference and the user's "Ambient motion" toggle.
+  private ambientOn(): boolean {
+    return !this.reducedMotion && this.settings.ambientMotion;
+  }
+
+  // Auto-rotate pauses the moment the user orbits/zooms and resumes only after
+  // a quiet ROTATE_IDLE_MS — idle ambience must never fight the hand (spec A7).
+  private onControlsStart = (): void => {
+    if (this.rotateResumeTimer != null) {
+      clearTimeout(this.rotateResumeTimer);
+      this.rotateResumeTimer = null;
+    }
+    this.controls.autoRotate = false;
+  };
+  private onControlsEnd = (): void => {
+    if (this.rotateResumeTimer != null) clearTimeout(this.rotateResumeTimer);
+    this.rotateResumeTimer = setTimeout(() => {
+      this.rotateResumeTimer = null;
+      this.controls.autoRotate = this.ambientOn();
+    }, ROTATE_IDLE_MS);
+  };
 
   zoomIn(): void {
     this.dollyBy(0.8);
@@ -1349,8 +1449,10 @@ export class GraphScene {
       this.controls.update();
       // One coalesced hover pick per frame (not one per pointermove event).
       this.processPick();
-      // Life: signals flow along edges + stars breathe. Frozen for reduced-motion.
-      if (!this.reducedMotion) {
+      // Life: signals flow along edges + stars breathe. Frozen for
+      // reduced-motion and by the "Ambient motion" toggle (one switch for all
+      // idle motion — spec B4).
+      if (this.ambientOn()) {
         this.pulse.update(dt);
         this.nodeMat.uniforms.u_time.value += dt;
       }
@@ -1372,6 +1474,9 @@ export class GraphScene {
     window.removeEventListener("pointerup", this.onPointerUp);
     el.removeEventListener("webglcontextlost", this.onCtxLost);
     el.removeEventListener("webglcontextrestored", this.onCtxRestored);
+    if (this.rotateResumeTimer != null) clearTimeout(this.rotateResumeTimer);
+    this.controls.removeEventListener("start", this.onControlsStart);
+    this.controls.removeEventListener("end", this.onControlsEnd);
     this.controls.dispose();
     for (const obj of this.labels.values()) {
       obj.element.remove();
@@ -1398,6 +1503,8 @@ export class GraphScene {
     this.scene.remove(this.nebula.group);
     this.pulse.dispose();
     this.scene.remove(this.pulse.points);
+    this.clusterLabels.dispose();
+    this.scene.remove(this.clusterLabels.group);
     this.bloom.dispose();
     this.composer.renderTarget1.dispose();
     this.composer.renderTarget2.dispose();
@@ -1524,14 +1631,23 @@ export class GraphScene {
         Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) > 3;
       this.cb.onDragEnd(id);
       if (!moved) this.cb.onNodeClick(id);
-      this.dragId = null;
-      this.dragMoved = false;
+    } else if (
+      this.downAt != null &&
+      e.target === this.renderer.domElement &&
+      Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) <= 3
+    ) {
+      // Stationary click on empty space (no node hit, no orbit) — the focus
+      // stack's "step out" gesture.
+      this.cb.onVoidClick();
     }
+    this.dragId = null;
+    this.dragMoved = false;
     this.downAt = null;
   };
 
   private onCtxLost = (e: Event): void => {
     e.preventDefault();
+    this.cb.onContextLost();
   };
   private onCtxRestored = (): void => {
     this.cb.onContextRestored();

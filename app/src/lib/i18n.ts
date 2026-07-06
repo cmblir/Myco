@@ -150,6 +150,20 @@ export interface Strings {
   gr_key_dim?: string;
   gr_key_amber?: string;
   gr_key_neutral?: string;
+  gr_focus_trail?: string;
+  gr_focus_esc?: string;
+  gr_preset?: string;
+  gr_preset_galaxy?: string;
+  gr_preset_loose?: string;
+  gr_preset_dense?: string;
+  gr_glow?: string;
+  gr_motion?: string;
+  gr_motion_hint?: string;
+  gr_advanced?: string;
+  gr_loading?: string;
+  gr_ctx_lost?: string;
+  gr_retry?: string;
+  gr_perf_mode?: string;
   h_title: string;
   h_lede: string;
   h_created: string;
@@ -398,6 +412,20 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_key_dim: "faint = low confidence",
     gr_key_amber: "amber = disputed",
     gr_key_neutral: "grey = unclassified",
+    gr_focus_trail: "Focus trail",
+    gr_focus_esc: "Step out (Esc / click the void)",
+    gr_preset: "Layout",
+    gr_preset_galaxy: "Galaxy",
+    gr_preset_loose: "Loose web",
+    gr_preset_dense: "Dense",
+    gr_glow: "Glow",
+    gr_motion: "Ambient motion",
+    gr_motion_hint: "Auto-rotate, pulses, breathing",
+    gr_advanced: "Advanced",
+    gr_loading: "aligning constellations…",
+    gr_ctx_lost: "Graphics context was lost.",
+    gr_retry: "Rebuild",
+    gr_perf_mode: "Performance mode — ambient layers off for large graphs",
     h_title: "History",
     h_lede:
       "Every ingest files a WHY report. Browse what each run created and changed, newest first.",
@@ -657,6 +685,20 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_key_dim: "흐림 = 낮은 신뢰도",
     gr_key_amber: "호박색 = 논쟁 중",
     gr_key_neutral: "회청 = 미분류",
+    gr_focus_trail: "포커스 경로",
+    gr_focus_esc: "한 단계 나가기 (Esc / 빈 공간 클릭)",
+    gr_preset: "레이아웃",
+    gr_preset_galaxy: "은하",
+    gr_preset_loose: "느슨한 웹",
+    gr_preset_dense: "조밀",
+    gr_glow: "글로우",
+    gr_motion: "잔잔한 움직임",
+    gr_motion_hint: "자동 회전·펄스·깜빡임",
+    gr_advanced: "고급",
+    gr_loading: "별자리를 정렬하는 중…",
+    gr_ctx_lost: "그래픽 컨텍스트가 끊어졌습니다.",
+    gr_retry: "다시 그리기",
+    gr_perf_mode: "성능 모드 — 큰 그래프에서는 배경 효과를 끕니다",
     h_title: "히스토리",
     h_lede:
       "모든 가져오기는 WHY 보고서를 남깁니다. 각 실행이 무엇을 만들고 바꿨는지 최신순으로 봅니다.",

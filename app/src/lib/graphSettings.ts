@@ -20,7 +20,10 @@ export interface GraphSettings {
   textFadeThreshold: number; // zoom level at which labels appear (0.1..3)
   nodeSize: number; // multiplier 0.5..3
   linkThickness: number; // 0.3..3
-  brightness: number; // 0.2..2.5 — scene exposure + bloom strength (light intensity)
+  brightness: number; // "Glow" slider, 0.4..1.6 — scene exposure (light intensity)
+  // One switch for ALL idle motion (auto-rotate, edge pulses, star breathing) —
+  // the spec's motion budget gives ambience a single opt-out instead of three.
+  ambientMotion: boolean;
 
   // Forces — names and ranges mirror Obsidian's `ForceOptions`.
   centerForce: number; // 0..1 — center pull strength (Obsidian: centerStrength)
@@ -50,6 +53,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   nodeSize: 1,
   linkThickness: 1,
   brightness: 0.85, // exposure headroom: the void stays black, only emitters survive
+  ambientMotion: true,
   // GALAXY/BRAIN defaults: range-capped LOCAL repulsion (no global outward
   // pressure → no firework spikes) + firm centre gravity collapse the vault into
   // ONE cohesive luminous mass, while community clustering contracts each Louvain
@@ -70,7 +74,64 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
 // v26: calm-cosmic-web Phase 1 (clusterForce 0.35, degree-based link distances,
 // log node sizes). Bumping the key drops stale persisted slider positions so
 // the recalibrated defaults apply instead of the old firework-era ones.
+// (ambientMotion arrived later without a bump — loadGraphSettings back-fills
+// missing fields from defaults, so additive fields never need one.)
 const KEY = "memex.graph.settings.v26";
+
+// Layout presets (spec B4): three curated force profiles replace slider
+// twiddling for most users; the raw sliders live on under "Advanced". Each is a
+// FULL force tuple so applying one always lands on a known-good layout.
+export type LayoutPresetKey = "galaxy" | "loose" | "dense";
+export const LAYOUT_PRESETS: Record<
+  LayoutPresetKey,
+  Pick<
+    GraphSettings,
+    "centerForce" | "repelForce" | "linkForce" | "linkDistance" | "clusterForce"
+  >
+> = {
+  // The tuned default.
+  galaxy: {
+    centerForce: DEFAULT_GRAPH_SETTINGS.centerForce,
+    repelForce: DEFAULT_GRAPH_SETTINGS.repelForce,
+    linkForce: DEFAULT_GRAPH_SETTINGS.linkForce,
+    linkDistance: DEFAULT_GRAPH_SETTINGS.linkDistance,
+    clusterForce: DEFAULT_GRAPH_SETTINGS.clusterForce,
+  },
+  // Airy, Obsidian-ish web — clusters barely gathered, long links.
+  loose: {
+    centerForce: DEFAULT_GRAPH_SETTINGS.centerForce,
+    repelForce: DEFAULT_GRAPH_SETTINGS.repelForce,
+    linkForce: DEFAULT_GRAPH_SETTINGS.linkForce,
+    linkDistance: 70,
+    clusterForce: 0.15,
+  },
+  // Tight nuclei, short links — the pre-Phase-1 compressed look.
+  dense: {
+    centerForce: DEFAULT_GRAPH_SETTINGS.centerForce,
+    repelForce: DEFAULT_GRAPH_SETTINGS.repelForce,
+    linkForce: DEFAULT_GRAPH_SETTINGS.linkForce,
+    linkDistance: 34,
+    clusterForce: 0.5,
+  },
+};
+
+// Which preset (if any) the current force values correspond to — drives the
+// active state on the preset chips.
+export function matchPreset(s: GraphSettings): LayoutPresetKey | null {
+  for (const key of Object.keys(LAYOUT_PRESETS) as LayoutPresetKey[]) {
+    const p = LAYOUT_PRESETS[key];
+    if (
+      s.centerForce === p.centerForce &&
+      s.repelForce === p.repelForce &&
+      s.linkForce === p.linkForce &&
+      s.linkDistance === p.linkDistance &&
+      s.clusterForce === p.clusterForce
+    ) {
+      return key;
+    }
+  }
+  return null;
+}
 
 export function loadGraphSettings(): GraphSettings {
   try {
