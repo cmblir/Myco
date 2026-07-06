@@ -7,12 +7,12 @@
   A7 rotate-pause, B5 loading/error/perf states; Cmd-click shortest-path
   deferred to the Phase 3 filament layer) · Phase 3 ✅ (2026-07-06 — B6
   interaction LOD, A2 filament focus/path layer + Cmd-click shortest path,
-  A4 back-halo, A1 selective bloom with a >5k perf gate). Two follow-ups
-  remain: (1) LLM cluster labels (v2) — deferred; needs a backend IPC and is
-  nondeterministic, and the v1 top-degree name already ships as its permanent
-  fallback, so it's a separate feature rather than part of this look overhaul.
-  (2) Light theme stays washed out — pre-existing (verified by stash A/B
-  against the pre-Phase-1 tree), needs its own calibration pass.
+  A4 back-halo, A1 selective bloom with a >5k perf gate). Follow-ups also
+  shipped (2026-07-06): light-theme calibration (bloom threshold above the LDR
+  bg, per-theme node shading, dark-slate edges), the >5k perf-gate
+  verification + fps sweep (see Perf measurement below), and LLM cluster
+  labels v2 (clusterTopics.ts — bundled local model, member-set cache,
+  hard-sanitized, v1 top-degree name as the permanent fallback).
 - **Extends:** [[2026-06-27-cosmic-web-graph]] (keeps its architecture; fixes its look)
 - **Trigger:** real-vault screenshot review — the graph reads as **fireworks**
   (blown-white hub cores, equal-length colored spokes radiating from every

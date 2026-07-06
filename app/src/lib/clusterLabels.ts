@@ -7,12 +7,18 @@
 // identical to the legend, so the two never disagree. (v2, LLM topic summaries,
 // is a later phase; this name stays the fallback.)
 //
+// v2 (LLM topics): after the fallback renders, resolveClusterTopic() asks the
+// bundled local model for a 1-3 word topic (cached by member set, serialized,
+// heavily sanitized) and upgrades the text in place when it arrives. The
+// fallback never waits on it and survives every failure mode.
+//
 // Same lifecycle contract as the other scene helpers (NebulaLayer, PulseLayer):
 // construct → add `group` to the scene → update() on (throttled) ticks +
 // setZoomRatio() per frame → rebuild() after live-ingest growth → dispose().
 import * as THREE from "three";
 import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { stem, type VaultGraph } from "./graphData";
+import { resolveClusterTopic } from "./clusterTopics";
 
 const MAX_LABELS = 6; // matches the legend's top-6 communities
 const MIN_MEMBERS = 3;
@@ -64,6 +70,17 @@ export class ClusterLabels {
       obj.visible = false;
       this.group.add(obj);
       this.labels.push({ obj, el, memberIds: ids });
+      // v2: upgrade to an LLM topic when (if ever) one resolves. `el` keeps
+      // the closure alive; if this label set was rebuilt/disposed meanwhile
+      // the detached element updates harmlessly.
+      const byDeg = [...ids].sort(
+        (a, b) =>
+          this.graph.getNodeAttribute(b, "deg") -
+          this.graph.getNodeAttribute(a, "deg"),
+      );
+      void resolveClusterTopic(ids, byDeg).then((topic) => {
+        if (topic) el.textContent = topic;
+      });
     }
     this.update();
   }
