@@ -126,8 +126,17 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   // Search-to-focus query (toolbar) — jumps the camera to a node by name.
   const [find, setFind] = useState("");
   // Shortest-path: a pinned start node + the computed path to the selected node.
+  // Refs shadow the state so the scene's stable click closure reads current
+  // values (spec B3 Cmd-click path mode); pushStyle reads pathRef for the
+  // filament layer.
   const [pathAnchor, setPathAnchor] = useState<string | null>(null);
   const [path, setPath] = useState<string[] | null>(null);
+  const pathAnchorRef = useRef<string | null>(null);
+  const pathRef = useRef<string[] | null>(null);
+  const setAnchor = (v: string | null): void => {
+    pathAnchorRef.current = v;
+    setPathAnchor(v);
+  };
   // Gap-analysis panel (orphans / missing / under-cited / disconnected …).
   const [gapsOpen, setGapsOpen] = useState(false);
   const [tlPlaying, setTlPlaying] = useState(false);
@@ -152,6 +161,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       hoveredNode: hoverRef.current.node,
       neighbors: hoverRef.current.neighbors,
       focus: focusRef.current,
+      pathNodes: pathRef.current,
       tints: ingestGlowRef.current.tint,
       pulseId: ingestGlowRef.current.pulseId,
       pulseScale: ingestGlowRef.current.pulseScale,
@@ -240,11 +250,35 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     setSelected(top?.kind === "node" ? (top.id ?? null) : null);
   };
 
-  // Node click = push a 1-hop focus frame (+ inspector); a second click on the
-  // same node within DBL_MS upgrades it to 2 hops (spec B3).
-  const handleNodeClick = useRef((id: string) => {
+  // Node click. Cmd/Ctrl-click drives shortest-path mode (spec B3): the first
+  // marks the start anchor, the next picks the end (the path useEffect then
+  // computes it and lights the filament layer); re-Cmd-clicking the anchor
+  // releases it. A plain click pushes a focus frame + opens the inspector; a
+  // second plain click on the same node within DBL_MS upgrades 1-hop → 2-hop.
+  const handleNodeClick = useRef((id: string, additive: boolean) => {
     const g = graphRef.current;
     if (!g || !g.hasNode(id)) return;
+    if (additive) {
+      const anchor = pathAnchorRef.current;
+      if (anchor == null || anchor === id) {
+        // set the start anchor, or release it if it's the same node
+        setAnchor(anchor === id ? null : id);
+        if (anchor === id) {
+          pathRef.current = null;
+          setPath(null);
+          pushStyle();
+        }
+      } else {
+        setSelected(id); // end node → path useEffect resolves the route
+      }
+      return;
+    }
+    // A plain click abandons any in-progress path.
+    if (pathAnchorRef.current != null || pathRef.current != null) {
+      setAnchor(null);
+      pathRef.current = null;
+      setPath(null);
+    }
     const now = performance.now();
     const dbl =
       lastClickRef.current?.id === id && now - lastClickRef.current.at < DBL_MS;
@@ -356,7 +390,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // Reset transient style for the fresh scene.
     hoverRef.current = { node: null, neighbors: null };
     setSelected(null);
-    setPathAnchor(null);
+    setAnchor(null);
+    pathRef.current = null;
     setPath(null);
     applyStack([]);
     lastClickRef.current = null;
@@ -378,8 +413,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     let draggedSim: SimNode | undefined;
 
     const scene = new GraphScene(container, graph, theme, s, {
-      onNodeClick: (id) => {
-        if (!killed) handleNodeClick(id);
+      onNodeClick: (id, additive) => {
+        if (!killed) handleNodeClick(id, additive);
       },
       onVoidClick: () => {
         if (!killed) popFrame();
@@ -819,9 +854,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     }
   };
 
-  // Shortest-path highlight: when a start node is pinned and another node is
-  // selected, BFS the path and light it up through the hover-highlight machinery
-  // (anchor as "hovered", the whole path as its "neighbours").
+  // Shortest-path: when a start node is pinned and another is selected, BFS the
+  // route and light it on the filament layer (spec B3) via pathRef → pushStyle.
   useEffect(() => {
     const g = graphRef.current;
     if (
@@ -832,15 +866,17 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       !g.hasNode(pathAnchor) ||
       !g.hasNode(selected)
     ) {
-      setPath(null);
+      if (pathRef.current) {
+        pathRef.current = null;
+        setPath(null);
+        pushStyle();
+      }
       return;
     }
     const p = shortestPath(g, pathAnchor, selected);
+    pathRef.current = p;
     setPath(p);
-    if (p && p.length > 1) {
-      hoverRef.current = { node: pathAnchor, neighbors: new Set(p) };
-      pushStyle();
-    }
+    pushStyle();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathAnchor, selected]);
 
@@ -1030,11 +1066,11 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 graph={graphRef.current}
                 pathAnchor={pathAnchor}
                 path={path}
-                onSetAnchor={(id) => setPathAnchor(id)}
+                onSetAnchor={(id) => setAnchor(id)}
                 onClearAnchor={() => {
-                  setPathAnchor(null);
+                  setAnchor(null);
+                  pathRef.current = null;
                   setPath(null);
-                  hoverRef.current = { node: null, neighbors: null };
                   pushStyle();
                 }}
                 onSelect={(id) => {

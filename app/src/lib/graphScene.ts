@@ -81,22 +81,20 @@ const EDGE_LEN_FADE_MIN = 0.25;
 const SHOW_NEBULA = true;
 const SHOW_STARFIELD = true;
 
-// Fat filament overlay (LineSegments2 over hub-incident edges). OFF as an
-// always-on layer: in a hub-and-spoke community nearly every edge is
-// hub-incident, so the overlay painted whole clusters as bright additive
-// spokes whose summed luminance blew past the bloom threshold at the core —
-// the "firework" look (specs/2026-07-03-graph-calm-cosmic-web.md). The
-// infrastructure stays for Phase 3, where filaments return as a rare
-// focus/path-only layer (hover incidents + shortestPath results).
-const SHOW_FILAMENTS = false;
-const FILAMENT_MAX = 1200; // cap on glowing strands (perf)
-const FILAMENT_WIDTH = 2.4; // screen px (LineMaterial, worldUnits=false)
-const FILAMENT_BASE = 0.9; // brighter than thin edges → catches bloom as a strand
-const FILAMENT_HI = 1.6; // incident on hover (pop)
-const FILAMENT_DIM = 0.12; // non-incident on hover (fade)
+// Fat filament overlay (LineSegments2). Phase 3 (spec A2) revival: NOT an
+// always-on layer over every hub-incident edge — that was the "firework" look
+// (whole clusters painted as bright additive spokes summing past the bloom
+// threshold). Filaments now light ONLY the current focus subgraph: the hovered
+// node's incident edges and a Cmd-click shortest path. They read as filaments
+// precisely because they are rare and few — capped hard at FILAMENT_CAP.
+const FILAMENT_CAP = 200; // max strands lit at once (a focus set is small)
+const FILAMENT_WIDTH = 2.0; // screen px (LineMaterial, worldUnits=false)
+const FILAMENT_BASE = 0.7; // per-end brightness of a lit strand
+const FILAMENT_PATH = 1.0; // shortest-path strands pop brightest
 
 export interface GraphSceneCallbacks {
-  onNodeClick(id: string): void;
+  /** additive = Cmd/Ctrl held → shortest-path gesture (spec B3), not a plain click. */
+  onNodeClick(id: string, additive: boolean): void;
   onNodeHover(id: string | null): void;
   onDragStart(id: string): void;
   onDrag(id: string, x: number, y: number, z: number): void;
@@ -116,6 +114,9 @@ export interface SceneStyleState {
   // style, everything else sinks to a near-invisible context layer — deeper
   // than the hover dim, and it HOLDS until popped (spec B3).
   focus: Set<string> | null;
+  // Ordered shortest-path node sequence (Cmd-click, spec B3). Its consecutive
+  // pairs light as the brightest filament strands. Null when no path is active.
+  pathNodes: string[] | null;
   tints: Map<string, boolean>; // id → written (true) vs only read (false)
   pulseId: string | null;
   pulseScale: number;
@@ -125,6 +126,7 @@ const EMPTY_STYLE: SceneStyleState = {
   hoveredNode: null,
   neighbors: null,
   focus: null,
+  pathNodes: null,
   tints: new Map(),
   pulseId: null,
   pulseScale: 1,
@@ -277,13 +279,23 @@ export class GraphScene {
   private edgeSagDir: Float32Array = new Float32Array(0);
   private edgeSagMag: Float32Array = new Float32Array(0);
   private edgeBaseCol: Float32Array = new Float32Array(0);
+  // Undirected edge lookup "a|b" (and "b|a") → edgePairs index, built with
+  // edgeEndIdx. Lets a shortest-path node sequence resolve to strand indices
+  // without an O(edges) scan per hop.
+  private edgeKey = new Map<string, number>();
 
-  // Fat glowing filament overlay (hub-incident edges). Null when disabled or
-  // when the graph has no hubs (edgeless / tiny vault).
+  // Fat glowing filament overlay — the Phase 3 focus/path layer (spec A2). A
+  // fixed FILAMENT_CAP-slot buffer, allocated once; each style change fills the
+  // active focus strands (hover incidents + shortest path) and sets the draw
+  // count via geometry.instanceCount. Always present but usually draws zero.
   private filaments: LineSegments2 | null = null;
   private filamentGeom: LineSegmentsGeometry | null = null;
   private filamentMat: LineMaterial | null = null;
-  private filamentEdges: number[] = []; // indices into edgePairs that get the glow
+  // Slot i (< filamentCount) lights edgePairs[filamentEdges[i]]; isPath[i] marks
+  // shortest-path strands (brighter). filamentCount ≤ FILAMENT_CAP.
+  private filamentEdges = new Int32Array(FILAMENT_CAP);
+  private filamentIsPath = new Uint8Array(FILAMENT_CAP);
+  private filamentCount = 0;
 
   // Direction arrowheads (one instanced cone per edge, at the target end). The
   // graph is undirected; direction follows edge insertion order, matching the
@@ -526,8 +538,8 @@ export class GraphScene {
     this.edges.frustumCulled = false;
     this.scene.add(this.edges);
 
-    // --- fat glowing filament overlay (hub-incident edges) ---
-    if (SHOW_FILAMENTS) this.buildFilaments();
+    // --- filament focus/path layer (lit only on hover / shortest path) ---
+    this.buildFilaments();
 
     // --- direction arrowheads (instanced cones, one per edge) ---
     this.arrowGeom = new THREE.ConeGeometry(2.2, 7, 10); // points +Y; oriented per-edge
@@ -783,9 +795,12 @@ export class GraphScene {
       base[o + 5] = ct.b * f;
     }
     this.writeEdgeGeometry();
-    // Filaments mirror the thin-edge brightness (hover/timelapse), so refresh
-    // them whenever the edge style is rewritten.
-    if (this.filaments) this.updateFilaments();
+    // Recompute which strands the focus/path layer lights (style just changed),
+    // then paint them. The per-tick path only repaints; it never re-selects.
+    if (this.filaments) {
+      this.refreshFilamentTargets();
+      this.updateFilaments();
+    }
   }
 
   // Orient one cone per edge at the target end, pointing source→target. Scaled
@@ -916,10 +931,14 @@ export class GraphScene {
     const idx = new Int32Array(nEdges * 2);
     const sagDir = new Float32Array(nEdges * 3);
     const sagMag = new Float32Array(nEdges);
+    this.edgeKey.clear();
     for (let e = 0; e < nEdges; e++) {
       const [s, t] = this.edgePairs[e];
       idx[e * 2] = this.idIndex.get(s) ?? 0;
       idx[e * 2 + 1] = this.idIndex.get(t) ?? 0;
+      // Undirected lookup for the filament focus/path layer.
+      this.edgeKey.set(`${s}|${t}`, e);
+      this.edgeKey.set(`${t}|${s}`, e);
       // Seeded random unit vector — crossed with the live edge direction each
       // tick to get a stable perpendicular, so the sag doesn't swim as the sim
       // settles and is identical across reloads.
@@ -1035,41 +1054,13 @@ export class GraphScene {
     ecol.needsUpdate = true;
   }
 
-  // Combined endpoint degree of an edge — the ranking key when capping the
-  // filament set to FILAMENT_MAX (keep the strands between the busiest nodes).
-  private edgeDeg(e: number): number {
-    const [s, t] = this.edgePairs[e];
-    return (
-      this.graph.getNodeAttribute(s, "deg") +
-      this.graph.getNodeAttribute(t, "deg")
-    );
-  }
-
-  // Build the fat-line filament overlay over hub-incident edges. Membership is
-  // static per build (recomputed in rebuild()); positions/colours are refreshed
-  // by updateFilaments() on every tick + style change. Capped by combined
-  // endpoint degree so a super-hub can't push the fat-line count past budget.
+  // Build the focus/path filament layer once with a fixed FILAMENT_CAP-slot
+  // buffer (spec A2). Draws zero strands until a hover / shortest path lights
+  // some; the pool is never reallocated, only refilled + re-counted.
   private buildFilaments(): void {
-    const idx: number[] = [];
-    for (let e = 0; e < this.edgePairs.length; e++) {
-      const [s, t] = this.edgePairs[e];
-      if (
-        this.graph.getNodeAttribute(s, "isHub") ||
-        this.graph.getNodeAttribute(t, "isHub")
-      ) {
-        idx.push(e);
-      }
-    }
-    if (idx.length > FILAMENT_MAX) {
-      idx.sort((a, b) => this.edgeDeg(b) - this.edgeDeg(a));
-      idx.length = FILAMENT_MAX;
-    }
-    this.filamentEdges = idx;
-    if (idx.length === 0) return; // no hubs (edgeless / tiny vault) → no overlay
-
     this.filamentGeom = new LineSegmentsGeometry();
-    this.filamentGeom.setPositions(new Float32Array(idx.length * 6));
-    this.filamentGeom.setColors(new Float32Array(idx.length * 6));
+    this.filamentGeom.setPositions(new Float32Array(FILAMENT_CAP * 6));
+    this.filamentGeom.setColors(new Float32Array(FILAMENT_CAP * 6));
     this.filamentMat = new LineMaterial({
       vertexColors: true,
       transparent: true,
@@ -1084,19 +1075,52 @@ export class GraphScene {
     this.filaments = new LineSegments2(this.filamentGeom, this.filamentMat);
     this.filaments.frustumCulled = false;
     this.filaments.renderOrder = 1; // over the thin edge mesh, under the pulses
+    this.filamentCount = 0;
+    this.filamentGeom.instanceCount = 0;
     this.scene.add(this.filaments);
-    this.updateFilaments();
   }
 
-  // Refresh filament endpoint positions + per-end colours from the live graph.
-  // Mirrors writeEdges() brightness logic (hover focus + timelapse hide) but on
-  // the bounded hub-incident subset, so it is cheap to run every tick.
+  // Choose which strands are lit from the current style: the shortest path
+  // (Cmd-click) first — brightest — then the hovered node's incident edges.
+  // Deduped and capped. Cheap: bounded by FILAMENT_CAP + the hovered node's
+  // degree, both small. Call on any style change; updateFilaments then paints
+  // the chosen strands each tick.
+  private refreshFilamentTargets(): void {
+    const { hoveredNode, pathNodes } = this.style;
+    let n = 0;
+    const seen = new Set<number>();
+    const add = (e: number | undefined, isPath: boolean): void => {
+      if (e == null || n >= FILAMENT_CAP || seen.has(e)) return;
+      seen.add(e);
+      this.filamentEdges[n] = e;
+      this.filamentIsPath[n] = isPath ? 1 : 0;
+      n++;
+    };
+    if (pathNodes && pathNodes.length > 1) {
+      for (let i = 0; i + 1 < pathNodes.length; i++) {
+        add(this.edgeKey.get(`${pathNodes[i]}|${pathNodes[i + 1]}`), true);
+      }
+    }
+    if (hoveredNode && this.graph.hasNode(hoveredNode)) {
+      for (const nb of this.graph.neighbors(hoveredNode)) {
+        add(this.edgeKey.get(`${hoveredNode}|${nb}`), false);
+      }
+    }
+    this.filamentCount = n;
+  }
+
+  // Paint the chosen strands from live positions. Path strands pop brightest;
+  // hover incidents sit a notch lower; timelapse-hidden endpoints vanish. Draw
+  // count = filamentCount (0 → nothing renders).
   private updateFilaments(): void {
     if (!this.filaments || !this.filamentGeom) return;
-    const n = this.filamentEdges.length;
+    const n = this.filamentCount;
+    if (n === 0) {
+      this.filamentGeom.instanceCount = 0;
+      return;
+    }
     const pos = new Float32Array(n * 6);
     const col = new Float32Array(n * 6);
-    const { hoveredNode, neighbors } = this.style;
     const cs = new THREE.Color();
     const ct = new THREE.Color();
     for (let i = 0; i < n; i++) {
@@ -1110,15 +1134,12 @@ export class GraphScene {
       pos[o + 3] = ta.x;
       pos[o + 4] = ta.y;
       pos[o + 5] = ta.z;
-      let f = FILAMENT_BASE;
-      if (hoveredNode) {
-        const incident =
-          s === hoveredNode ||
-          t === hoveredNode ||
-          !!(neighbors && neighbors.has(s) && neighbors.has(t));
-        f = incident ? FILAMENT_HI : FILAMENT_DIM;
-      }
-      if (sa.hidden || ta.hidden) f = 0; // timelapse-hidden ⇒ vanish
+      const f =
+        sa.hidden || ta.hidden
+          ? 0
+          : this.filamentIsPath[i]
+            ? FILAMENT_PATH
+            : FILAMENT_BASE;
       cs.set(sa.color);
       ct.set(ta.color);
       col[o] = cs.r * f;
@@ -1130,6 +1151,7 @@ export class GraphScene {
     }
     this.filamentGeom.setPositions(pos);
     this.filamentGeom.setColors(col);
+    this.filamentGeom.instanceCount = n;
   }
 
   // Per-tick HOT path: update node positions, then re-derive the edge vertex
@@ -1240,8 +1262,8 @@ export class GraphScene {
     this.edges.geometry = this.edgeGeom;
     oldEdgeGeom.dispose();
 
-    // Filaments: hub membership can change after live-ingest growth — drop the
-    // old overlay and rebuild it over the new edge set.
+    // Filaments: drop the old focus/path layer and rebuild over the new edge
+    // set (edgeKey / edgePairs indices changed).
     if (this.filaments) {
       this.scene.remove(this.filaments);
       this.filamentGeom?.dispose();
@@ -1250,7 +1272,7 @@ export class GraphScene {
       this.filamentGeom = null;
       this.filamentMat = null;
     }
-    if (SHOW_FILAMENTS) this.buildFilaments();
+    this.buildFilaments();
 
     // Arrows: instance count is fixed at allocation, so rebuild for the new
     // edge count (reusing the shared cone geometry + material).
@@ -1688,7 +1710,7 @@ export class GraphScene {
         Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) > 3;
       this.cb.onDragEnd(id);
       this.endInteraction();
-      if (!moved) this.cb.onNodeClick(id);
+      if (!moved) this.cb.onNodeClick(id, e.metaKey || e.ctrlKey);
     } else if (
       this.downAt != null &&
       e.target === this.renderer.domElement &&
