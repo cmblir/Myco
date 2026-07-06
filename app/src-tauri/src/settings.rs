@@ -31,6 +31,12 @@ pub struct Settings {
     pub auto_ingest_enabled: bool,
     #[serde(default = "default_auto_ingest_interval")]
     pub auto_ingest_interval_min: u32,
+    /// While the app is open, periodically run a read-only reflect pass that
+    /// proposes wiki improvements (see reflectStore.ts). Writes nothing.
+    #[serde(default)]
+    pub auto_reflect_enabled: bool,
+    #[serde(default = "default_auto_reflect_interval")]
+    pub auto_reflect_interval_min: u32,
 }
 
 impl Default for Settings {
@@ -45,6 +51,8 @@ impl Default for Settings {
             memex_pro_email: String::new(),
             auto_ingest_enabled: false,
             auto_ingest_interval_min: default_auto_ingest_interval(),
+            auto_reflect_enabled: false,
+            auto_reflect_interval_min: default_auto_reflect_interval(),
         }
     }
 }
@@ -115,6 +123,11 @@ fn default_ingest_model() -> String {
 }
 fn default_auto_ingest_interval() -> u32 {
     60
+}
+fn default_auto_reflect_interval() -> u32 {
+    // Reflect is a heavier full-vault pass than a single inbox ingest, so it
+    // defaults to a longer cadence.
+    180
 }
 
 fn settings_dir() -> Result<PathBuf, String> {

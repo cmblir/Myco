@@ -16,6 +16,7 @@ export interface Strings {
   nav_graph: string;
   nav_history: string;
   nav_provenance: string;
+  nav_tags: string;
   nav_settings: string;
   folder__root: string;
   folder_sources: string;
@@ -307,6 +308,16 @@ export interface Strings {
   // Overview / History empty states.
   ov_no_git?: string;
   h_open_vault?: string;
+  // Tags page (FEAT-03).
+  tg_title: string;
+  tg_lede: string;
+  tg_empty: string;
+  // Reflect suggestions panel (FEAT-06).
+  rf_title: string;
+  rf_lede: string;
+  rf_run: string;
+  rf_running: string;
+  rf_empty: string;
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -324,6 +335,7 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_graph: "Graph",
     nav_history: "History",
     nav_provenance: "Provenance",
+    nav_tags: "Tags",
     nav_settings: "Settings",
     folder__root: "Root",
     folder_sources: "Sources",
@@ -621,6 +633,17 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_zoom_in: "Zoom in",
     ov_no_git: "No git history yet.",
     h_open_vault: "Open a vault to see history.",
+    tg_title: "Tags",
+    tg_lede:
+      "Every tag across your vault's frontmatter. Pick a tag to see the pages carrying it, then jump straight to a page.",
+    tg_empty:
+      "No tags yet — add a `tags:` list to a page's frontmatter and they'll gather here.",
+    rf_title: "Reflect suggestions",
+    rf_lede:
+      "Claude's read-only pass over the vault: orphans to link, stale pages, and missing cross-references.",
+    rf_run: "Reflect",
+    rf_running: "Reflecting…",
+    rf_empty: "No suggestions — the vault looks well-connected.",
   },
   ko: {
     app_name: "Memex",
@@ -636,6 +659,7 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_graph: "그래프",
     nav_history: "히스토리",
     nav_provenance: "출처",
+    nav_tags: "태그",
     nav_settings: "설정",
     folder__root: "루트",
     folder_sources: "소스",
@@ -933,6 +957,17 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_zoom_in: "확대",
     ov_no_git: "아직 git 히스토리가 없습니다.",
     h_open_vault: "히스토리를 보려면 vault를 여세요.",
+    tg_title: "태그",
+    tg_lede:
+      "vault의 프론트매터에 있는 모든 태그입니다. 태그를 고르면 그 태그가 달린 페이지가 보이고, 페이지로 바로 이동할 수 있습니다.",
+    tg_empty:
+      "아직 태그가 없습니다 — 페이지 프론트매터에 `tags:` 목록을 추가하면 여기에 모입니다.",
+    rf_title: "Reflect 제안",
+    rf_lede:
+      "Claude가 vault를 읽기 전용으로 훑어 제안합니다: 연결할 고립 노드, 오래된 페이지, 빠진 교차 참조.",
+    rf_run: "Reflect 실행",
+    rf_running: "분석 중…",
+    rf_empty: "제안이 없습니다 — vault가 잘 연결되어 있습니다.",
   },
   ja: {
     app_name: "Memex",
@@ -948,6 +983,7 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_graph: "グラフ",
     nav_history: "履歴",
     nav_provenance: "出典",
+    nav_tags: "タグ",
     nav_settings: "設定",
     folder__root: "ルート",
     folder_sources: "ソース",
@@ -1199,5 +1235,16 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_zoom_in: "ズームイン",
     ov_no_git: "まだ git 履歴がありません。",
     h_open_vault: "履歴を見るには vault を開いてください。",
+    tg_title: "タグ",
+    tg_lede:
+      "vault のフロントマターにあるすべてのタグ。タグを選ぶとそのタグが付いたページが表示され、ページへ直接移動できます。",
+    tg_empty:
+      "まだタグがありません — ページのフロントマターに `tags:` を追加すると、ここに集まります。",
+    rf_title: "Reflect の提案",
+    rf_lede:
+      "Claude が vault を読み取り専用でざっと確認します: リンクすべき孤立ノード、古いページ、欠けた相互参照。",
+    rf_run: "Reflect 実行",
+    rf_running: "分析中…",
+    rf_empty: "提案はありません — vault は十分につながっています。",
   },
 };

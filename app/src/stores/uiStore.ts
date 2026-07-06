@@ -19,6 +19,7 @@ export type RouteId =
   | "graph"
   | "history"
   | "provenance"
+  | "tags"
   | "settings"
   | `page:${string}`;
 

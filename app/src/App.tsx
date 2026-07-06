@@ -15,11 +15,13 @@ import PageHistory from "./pages/PageHistory";
 import PageProvenance from "./pages/PageProvenance";
 import PageSettings from "./pages/PageSettings";
 import PageReader from "./pages/PageReader";
+import PageTags from "./pages/PageTags";
 import { STRINGS } from "./lib/i18n";
 import { useUIStore } from "./stores/uiStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { getLastVaultPath, useVaultStore } from "./stores/vaultStore";
 import { useAutoIngestScheduler } from "./lib/autoIngest";
+import { useAutoReflectScheduler } from "./lib/autoReflect";
 import { useIngestStore } from "./stores/ingestStore";
 import { ipc } from "./lib/ipc";
 
@@ -52,6 +54,13 @@ export default function App(): JSX.Element {
   useAutoIngestScheduler(
     settings?.auto_ingest_enabled ?? false,
     settings?.auto_ingest_interval_min ?? 60,
+    currentVault?.path,
+  );
+
+  // Scheduled read-only reflect pass while the app is open (FEAT-06).
+  useAutoReflectScheduler(
+    settings?.auto_reflect_enabled ?? false,
+    settings?.auto_reflect_interval_min ?? 180,
     currentVault?.path,
   );
 
@@ -225,6 +234,7 @@ export default function App(): JSX.Element {
     );
   else if (route === "history") body = <PageHistory t={t} />;
   else if (route === "provenance") body = <PageProvenance t={t} />;
+  else if (route === "tags") body = <PageTags t={t} />;
   else if (route === "settings") body = <PageSettings t={t} />;
   else if (route.startsWith("page:"))
     body = <PageReader t={t} pageRoute={route.slice(5)} />;

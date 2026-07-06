@@ -6,6 +6,7 @@ import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
+import { useReflectStore } from "../stores/reflectStore";
 import { ipc } from "../lib/ipc";
 import type { FileNode, GitCommit } from "../lib/ipc";
 
@@ -157,7 +158,93 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
           ))
         )}
       </div>
+
+      <ReflectPanel t={t} />
     </div>
+  );
+}
+
+// Read-only reflect pass (FEAT-06): a manual trigger plus a home for the
+// suggestions the scheduler (or this button) produces. Shares reflectStore, so
+// a run kicked here or by the scheduler shows up wherever the panel renders.
+function ReflectPanel({ t }: { t: Strings }): JSX.Element {
+  const currentVault = useVaultStore((s) => s.currentVault);
+  const stage = useReflectStore((s) => s.stage);
+  const suggestions = useReflectStore((s) => s.suggestions);
+  const report = useReflectStore((s) => s.report);
+  const runReflect = useReflectStore((s) => s.runReflect);
+  const dismiss = useReflectStore((s) => s.dismiss);
+  const running = stage === "running";
+
+  return (
+    <section
+      className="card"
+      style={{ marginTop: 24, padding: 16, background: "var(--bg-soft)" }}
+    >
+      <div
+        className="row"
+        style={{ justifyContent: "space-between", marginBottom: 8, gap: 8 }}
+      >
+        <div className="section-title" style={{ fontSize: 14 }}>
+          {t.rf_title}
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <button
+            className="btn"
+            onClick={() => void runReflect()}
+            disabled={!currentVault || running}
+          >
+            <Icon name="sparkles" size={14} />{" "}
+            {running ? t.rf_running : t.rf_run}
+          </button>
+          {stage === "done" || stage === "error" ? (
+            <button type="button" className="btn-ghost btn" onClick={dismiss}>
+              <Icon name="x" size={12} /> {t.p_dismiss ?? "dismiss"}
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <p className="muted" style={{ fontSize: 12.5, margin: "0 0 8px" }}>
+        {t.rf_lede}
+      </p>
+      {running ? (
+        <div
+          className="row muted"
+          style={{ gap: 8, fontSize: 12.5, alignItems: "center" }}
+        >
+          <span className="ingest-chip-spinner" /> {t.rf_running}
+        </div>
+      ) : null}
+      {stage === "done" ? (
+        suggestions.length > 0 ? (
+          <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 13 }}>
+            {suggestions.map((s, i) => (
+              <li key={i} style={{ marginBottom: 4 }}>
+                {s}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted" style={{ fontSize: 12.5, margin: 0 }}>
+            {t.rf_empty}
+          </p>
+        )
+      ) : null}
+      {stage === "error" && report ? (
+        <pre
+          style={{
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+            fontFamily: "var(--font-mono)",
+            fontSize: 12.5,
+            margin: "4px 0 0",
+            color: "#dc2626",
+          }}
+        >
+          {report}
+        </pre>
+      ) : null}
+    </section>
   );
 }
 
