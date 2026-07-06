@@ -50,3 +50,6 @@ commits.tsv
 !/wiki/memex.md
 !/wiki/source-getting-started.md
 !/ingest-reports/.gitkeep
+
+# Node (stray npx artifacts — the app manages its own under app/)
+node_modules/
