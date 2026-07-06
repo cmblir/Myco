@@ -9,7 +9,6 @@ use crate::index::{self, Adjacency};
 use crate::local_llm::LocalLlm;
 use crate::mcp_server::{self, McpRegInfo};
 use crate::ollama::{self, OllamaStatus};
-use crate::parser;
 use crate::provenance::{self, ProvenanceRow};
 use crate::providers::{self, ChatRequest, ChatResponse};
 use crate::secrets;
@@ -262,13 +261,6 @@ pub fn rename_path(
 }
 
 #[tauri::command]
-pub fn parse_links(state: tauri::State<VaultRoot>, path: String) -> Result<Vec<String>, String> {
-    let root = require_root(&state)?;
-    let p = vault::confine_path(&root, &path)?;
-    parser::parse_links(&p.to_string_lossy())
-}
-
-#[tauri::command]
 pub fn build_link_graph(state: tauri::State<VaultRoot>, root: String) -> Result<Adjacency, String> {
     let root = confine_root(&state, &root)?;
     index::build_link_graph(&root)
@@ -455,11 +447,6 @@ pub fn set_provider_key(provider_id: String, key: String) -> Result<(), String> 
 #[tauri::command]
 pub fn delete_provider_key(provider_id: String) -> Result<(), String> {
     secrets::delete_key(&provider_id)
-}
-
-#[tauri::command]
-pub fn has_provider_key(provider_id: String) -> Result<bool, String> {
-    Ok(secrets::get_key(&provider_id)?.is_some())
 }
 
 #[tauri::command]

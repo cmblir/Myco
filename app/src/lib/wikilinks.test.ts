@@ -1,51 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  escapeHtml,
-  findWikilinks,
-  matchWikilinkAt,
-  parseWikilink,
-} from "./wikilinks";
-
-describe("parseWikilink", () => {
-  it("parses a bare target", () => {
-    expect(parseWikilink("[[transformer]]")).toEqual({
-      target: "transformer",
-      display: "transformer",
-    });
-  });
-
-  it("parses target|display and trims whitespace", () => {
-    expect(parseWikilink("[[ scaling-laws | Scaling Laws ]]")).toEqual({
-      target: "scaling-laws",
-      display: "Scaling Laws",
-    });
-  });
-
-  it("returns null for non-links", () => {
-    expect(parseWikilink("just text")).toBeNull();
-    expect(parseWikilink("[[]]")).toBeNull();
-  });
-
-  it("does not match a target containing a stray ]", () => {
-    // Mirrors the Rust parser: `[[a]b]]` is not a valid link.
-    expect(parseWikilink("[[a]b]]")).toBeNull();
-  });
-});
-
-describe("findWikilinks", () => {
-  it("extracts every link in order", () => {
-    const links = findWikilinks("see [[a]] and [[b|B]] plus [[c]]");
-    expect(links).toEqual([
-      { target: "a", display: "a" },
-      { target: "b", display: "B" },
-      { target: "c", display: "c" },
-    ]);
-  });
-
-  it("ignores newline-spanning candidates", () => {
-    expect(findWikilinks("[[a\nb]]")).toEqual([]);
-  });
-});
+import { escapeHtml, matchWikilinkAt } from "./wikilinks";
 
 describe("matchWikilinkAt", () => {
   it("matches a bare target anchored at pos", () => {

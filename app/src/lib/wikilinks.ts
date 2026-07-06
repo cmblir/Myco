@@ -12,17 +12,15 @@ export interface MatchedWikilink extends ParsedWikilink {
   end: number;
 }
 
-const WIKILINK_RE = /\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/g;
-
 const WIKILINK_AT_RE = /^\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]/;
 
 /**
  * Canonical anchored matcher. Attempts to match a wikilink that begins exactly
- * at `pos` in `src`, using the same semantics as {@link parseWikilink} and the
- * Rust parser: the inner text may not contain `]` or a newline, so `[[a]b]]`
- * yields no match. Returns the parsed link plus the offset just past the
- * closing `]]`, or `null` if no link starts at `pos`. Shared so the markdown
- * renderer and the graph agree on what constitutes a link.
+ * at `pos` in `src`, using the same semantics as the Rust parser: the inner
+ * text may not contain `]` or a newline, so `[[a]b]]` yields no match. Returns
+ * the parsed link plus the offset just past the closing `]]`, or `null` if no
+ * link starts at `pos`. Shared so the markdown renderer and the graph agree on
+ * what constitutes a link.
  */
 export function matchWikilinkAt(
   src: string,
@@ -37,24 +35,6 @@ export function matchWikilinkAt(
     display: (match[2] ?? target).trim(),
     end: pos + match[0].length,
   };
-}
-
-export function parseWikilink(token: string): ParsedWikilink | null {
-  const match = /^\[\[([^\]\n|]+?)(?:\|([^\]\n]+?))?\]\]$/.exec(token);
-  if (!match) return null;
-  const target = match[1].trim();
-  if (!target) return null;
-  return { target, display: (match[2] ?? target).trim() };
-}
-
-export function findWikilinks(input: string): ParsedWikilink[] {
-  const out: ParsedWikilink[] = [];
-  for (const match of input.matchAll(WIKILINK_RE)) {
-    const target = match[1].trim();
-    if (!target) continue;
-    out.push({ target, display: (match[2] ?? target).trim() });
-  }
-  return out;
 }
 
 export function escapeHtml(input: string): string {

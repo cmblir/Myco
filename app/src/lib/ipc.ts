@@ -180,7 +180,6 @@ export const ipc = {
     invoke<null>("write_file", { path, content }),
   readExternalText: (path: string) =>
     invoke<string>("read_external_text", { path }),
-  parseLinks: (path: string) => invoke<string[]>("parse_links", { path }),
   buildLinkGraph: (root: string) =>
     invoke<Adjacency>("build_link_graph", { root }),
   searchVault: (query: string, limit?: number) =>
@@ -247,8 +246,6 @@ export const ipc = {
     invoke<null>("set_provider_key", { providerId, key }),
   deleteProviderKey: (providerId: string) =>
     invoke<null>("delete_provider_key", { providerId }),
-  hasProviderKey: (providerId: string) =>
-    invoke<boolean>("has_provider_key", { providerId }),
   getSettings: () => invoke<MemexSettings>("get_settings"),
   setSettings: (value: MemexSettings) =>
     invoke<null>("set_settings", { value }),
