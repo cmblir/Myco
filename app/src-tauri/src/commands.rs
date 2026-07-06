@@ -198,6 +198,21 @@ pub fn read_external_text(path: String) -> Result<String, String> {
     crate::extract::extract_text_isolated(&path)
 }
 
+/// Persist a streamed Claude run transcript to `<vault>/runs/<name>` (opt-in,
+/// best-effort). `vault_path` is confined to the open vault root, mirroring the
+/// other write commands; `name` must be a bare file name.
+#[tauri::command]
+pub fn write_run_log(
+    state: tauri::State<VaultRoot>,
+    vault_path: String,
+    name: String,
+    content: String,
+) -> Result<(), String> {
+    let root = require_root(&state)?;
+    let vault = vault::confine_parent(&root, &vault_path)?;
+    vault::write_run_log(&vault, &name, &content)
+}
+
 #[tauri::command]
 pub fn create_file(
     state: tauri::State<VaultRoot>,

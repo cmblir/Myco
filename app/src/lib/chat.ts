@@ -10,6 +10,7 @@
 //     instead of answering blind.
 
 import { ipc } from "./ipc";
+import { getBudgetThreshold, overBudget, recordUsage } from "./budget";
 
 export interface SimpleMessage {
   role: "system" | "user" | "assistant";
@@ -108,11 +109,26 @@ export async function complete(args: CompleteArgs): Promise<string> {
     return out.trim();
   }
 
+  // Paid HTTP provider: stop before spending if this month's estimated cost has
+  // already crossed the configured threshold. CLI/builtin paths returned above
+  // (they're free/local) and are never guarded.
+  if (overBudget()) {
+    throw new Error(
+      `Monthly usage budget of $${getBudgetThreshold().toFixed(2)} reached. ` +
+        `Raise the threshold in settings or wait for the next cycle before ` +
+        `running more paid requests.`,
+    );
+  }
   const res = await ipc.chatComplete({
     provider_id: provider,
     model,
     messages,
   });
+  // Thread the token usage into the cumulative tracker (null for providers that
+  // don't report it, e.g. ollama).
+  if (res.usage) {
+    recordUsage(model, res.usage.input_tokens, res.usage.output_tokens);
+  }
   return res.content.trim();
 }
 

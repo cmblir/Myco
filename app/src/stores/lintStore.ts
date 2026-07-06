@@ -12,6 +12,7 @@ import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { complete } from "../lib/chat";
 import { ipc, type ClaudeStreamPayload } from "../lib/ipc";
+import { log } from "../lib/log";
 import { useVaultStore } from "./vaultStore";
 
 const LINT_PROMPT = `Run the wiki lint checklist from CLAUDE.md against the current vault:
@@ -133,7 +134,20 @@ async function runStreaming(
     if (res.status !== 0) {
       throw new Error(res.stderr.trim() || `claude exit ${res.status}`);
     }
-    return res.stdout.trim() || streamed.trim();
+    const out = res.stdout.trim() || streamed.trim();
+    // Opt-in persistence: write the finished transcript to runs/. Best-effort —
+    // a log-write failure must never break the lint run.
+    const name = `${new Date().toISOString().slice(0, 10)}-${runId}.log`;
+    try {
+      await ipc.writeRunLog(cwd, name, out);
+      log.info("run_log.written", { feature: "lint", path: `runs/${name}` });
+    } catch (err) {
+      log.warn("run_log.write_failed", {
+        feature: "lint",
+        error: String(err),
+      });
+    }
+    return out;
   } finally {
     unlisten();
   }

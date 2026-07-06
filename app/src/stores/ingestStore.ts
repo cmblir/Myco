@@ -13,6 +13,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ipc } from "../lib/ipc";
 import type { Adjacency, ClaudeStreamPayload } from "../lib/ipc";
 import { complete } from "../lib/chat";
+import { log } from "../lib/log";
 import { useVaultStore } from "./vaultStore";
 
 export type IngestStage =
@@ -182,6 +183,9 @@ export const useIngestStore = create<IngestState>((set, get) => ({
           throw new Error(res.stderr.trim() || `claude exit ${res.status}`);
         }
         out = res.stdout.trim();
+        // Opt-in persistence: the streamed run accumulated a transcript in
+        // `events` — write it to runs/ alongside the final output.
+        await persistRunTranscript(vault.path, runId, out);
       } else if (settings.ingest_provider === "memex-pro") {
         // Memex Pro: the proxy runs a cheap model server-side and returns the
         // wiki file operations, which Rust applies (confined). The raw source
@@ -284,6 +288,32 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       seen: true,
     }),
 }));
+
+// Persist a finished streamed run to runs/<date>-<id>.log (opt-in, best effort).
+// Reconstructs the transcript from the accumulated stream events plus the final
+// model output. Never throws — a log-write failure must not fail the run.
+async function persistRunTranscript(
+  vaultPath: string,
+  runId: string,
+  finalOutput: string,
+): Promise<void> {
+  const events = useIngestStore.getState().events;
+  const streamed = events
+    .map((e) => e.text ?? (e.tool ? `[${e.tool}] ${e.detail ?? ""}` : ""))
+    .filter(Boolean)
+    .join("");
+  const transcript = `${streamed}\n\n${finalOutput}`.trim();
+  const name = `${new Date().toISOString().slice(0, 10)}-${runId}.log`;
+  try {
+    await ipc.writeRunLog(vaultPath, name, transcript);
+    log.info("run_log.written", { feature: "ingest", path: `runs/${name}` });
+  } catch (err) {
+    log.warn("run_log.write_failed", {
+      feature: "ingest",
+      error: String(err),
+    });
+  }
+}
 
 // --- claude-stream listener (scoped to an active run) ---------------------
 //

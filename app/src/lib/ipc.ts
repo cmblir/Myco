@@ -178,6 +178,8 @@ export const ipc = {
     invoke<string>("read_vault_context", { root, maxBytes }),
   writeFile: (path: string, content: string) =>
     invoke<null>("write_file", { path, content }),
+  writeRunLog: (vaultPath: string, name: string, content: string) =>
+    invoke<null>("write_run_log", { vaultPath, name, content }),
   readExternalText: (path: string) =>
     invoke<string>("read_external_text", { path }),
   buildLinkGraph: (root: string) =>

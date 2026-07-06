@@ -557,6 +557,20 @@ pub fn create_file(parent: &str, name: &str) -> Result<String, String> {
     Ok(target.to_string_lossy().into_owned())
 }
 
+/// Persist a completed run transcript to `<vault>/runs/<name>`, creating the
+/// runs/ directory if absent. `name` must be a bare file name (no path
+/// separators) so the write can't escape runs/. Overwrites an existing file of
+/// the same name. Best-effort feature — the caller swallows failures.
+pub fn write_run_log(vault: &Path, name: &str, content: &str) -> Result<(), String> {
+    validate_name(name)?;
+    let runs = vault.join("runs");
+    if !runs.exists() {
+        std::fs::create_dir_all(&runs).map_err(|e| format!("mkdir runs failed: {e}"))?;
+    }
+    let target = runs.join(name);
+    std::fs::write(&target, content).map_err(|e| format!("write run log failed: {e}"))
+}
+
 pub fn create_folder(parent: &str, name: &str) -> Result<String, String> {
     validate_name(name)?;
     let parent_path = Path::new(parent);
