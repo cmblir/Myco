@@ -13,20 +13,25 @@
 // graph each update (galaxies drift as the sim runs); the call is throttled by
 // the caller, and is O(nodes) which is negligible at ~1800.
 import * as THREE from "three";
-import { seededUnit, type VaultGraph } from "./graphData";
+import type { VaultGraph } from "./graphData";
 
 const MAX_COMMUNITY_SPRITES = 8; // biggest galaxies get a tinted cloud
 const MIN_MEMBERS = 6; // ignore tiny communities (no visible gas)
-const GLOBAL_SPRITES = 4; // faint deep-field filler clouds
-const MAX_SPRITES = MAX_COMMUNITY_SPRITES + GLOBAL_SPRITES;
+// Phase 3 (spec A4): the 4 scattered global filler clouds are replaced by ONE
+// large back-halo gradient behind the whole graph (GitHub-Globe back-glow
+// grammar) — a single soft dome of light instead of clumps that competed with
+// the community clouds for the eye.
+const MAX_SPRITES = MAX_COMMUNITY_SPRITES + 1; // + the back-halo
 
 const COMMUNITY_OPACITY = 0.05;
-const GLOBAL_OPACITY = 0.035;
 const SIZE_MUL = 2.6; // sprite world-size = communityRadius * SIZE_MUL
 const SIZE_MIN = 600;
 const SIZE_MAX = 2600;
-const GLOBAL_SIZE = 3200;
-const GLOBAL_SHELL = 1400; // global clouds scattered within this radius of origin
+// Back-halo: sized to the graph's spread (fit() reference), floored so a tiny
+// vault still gets a dome. Very low opacity so it reads as depth, not fog.
+const HALO_OPACITY = 0.05;
+const HALO_SIZE_MUL = 3.2; // × graph radius
+const HALO_SIZE_MIN = 3600;
 
 // 256px radial gradient: soft core fading to nothing with a pow falloff so the
 // edge has no visible disc/ring. Alpha only (white); the sprite material colour
@@ -145,28 +150,51 @@ export class NebulaLayer {
       mat.opacity = COMMUNITY_OPACITY;
       sp.visible = true;
     }
-    // Global filler clouds — deterministic positions, cool neutral tint, so the
-    // deep field isn't a flat void even where no galaxy sits.
-    for (let g = 0; g < GLOBAL_SPRITES && s < MAX_SPRITES; g++, s++) {
-      const sp = this.sprites[s];
-      const mat = this.materials[s];
-      const id = `nebula-global-${g}`;
-      const theta = seededUnit(id, 30) * Math.PI * 2;
-      const phi = Math.acos(2 * seededUnit(id, 31) - 1);
-      const r = GLOBAL_SHELL * (0.3 + 0.7 * seededUnit(id, 32));
-      const sinPhi = Math.sin(phi);
-      sp.position.set(
-        Math.cos(theta) * r * sinPhi,
-        Math.sin(theta) * r * sinPhi,
-        Math.cos(phi) * r,
-      );
-      sp.scale.set(GLOBAL_SIZE, GLOBAL_SIZE, 1);
+    // One back-halo: a single large soft dome centred on the graph's mean
+    // position, cool neutral, giving the deep field a back-glow instead of the
+    // former scattered clumps (spec A4). Its size tracks the graph's spread.
+    {
+      const sp = this.sprites[MAX_SPRITES - 1];
+      const mat = this.materials[MAX_SPRITES - 1];
+      const { cx, cy, cz, radius } = this.meanAndRadius();
+      const size = Math.max(HALO_SIZE_MIN, radius * HALO_SIZE_MUL);
+      sp.position.set(cx, cy, cz);
+      sp.scale.set(size, size, 1);
       mat.color.setRGB(0.42, 0.5, 0.72); // faint cool dust
-      mat.opacity = GLOBAL_OPACITY;
+      mat.opacity = HALO_OPACITY;
       sp.visible = true;
     }
-    // Hide any leftover sprites (fewer communities than the pool).
-    for (; s < MAX_SPRITES; s++) this.sprites[s].visible = false;
+    // Hide any leftover community sprites (fewer communities than the pool);
+    // stop before the last slot, which is the back-halo just placed.
+    for (; s < MAX_SPRITES - 1; s++) this.sprites[s].visible = false;
+  }
+
+  // Mean position + mean radius of all visible nodes — the back-halo's centre
+  // and scale reference. One O(nodes) pass; the caller throttles update().
+  private meanAndRadius(): { cx: number; cy: number; cz: number; radius: number } {
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    let n = 0;
+    for (const id of this.nodeIds) {
+      const a = this.graph.getNodeAttributes(id);
+      if (a.hidden) continue;
+      cx += a.x;
+      cy += a.y;
+      cz += a.z;
+      n++;
+    }
+    if (n === 0) return { cx: 0, cy: 0, cz: 0, radius: 0 };
+    cx /= n;
+    cy /= n;
+    cz /= n;
+    let rsum = 0;
+    for (const id of this.nodeIds) {
+      const a = this.graph.getNodeAttributes(id);
+      if (a.hidden) continue;
+      rsum += Math.hypot(a.x - cx, a.y - cy, a.z - cz);
+    }
+    return { cx, cy, cz, radius: rsum / n };
   }
 
   // Reuse a cached THREE.Color for a given tint string instead of allocating a
