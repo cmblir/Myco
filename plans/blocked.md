@@ -56,3 +56,19 @@ created: 2026-04-23
 - **[Q-4] 프로젝트 삭제 정책**
   - 즉시 영구 삭제 vs trash/<slug>-<timestamp>/ 이동
   - 기본값은 trash 권장 (되돌릴 수 있음)
+
+---
+
+## [2026-07-06] BLOCK-MP-04 해소 — 실행 완료
+
+- Q-1: 사용자 결정 = **옵션 A (단일 repo)**. Q-3/Q-4는 이미 코드 기본값으로
+  구현되어 결정 불요 (make_slug + _validate_slug, .trash soft delete).
+  Q-2(Obsidian vault 스코프)는 MP-10에만 영향 — 옵션 A(루트 단일 vault) 유지.
+- 이동 완료: wiki/, raw/, ingest-reports/, reflect-reports/, query-log.jsonl,
+  CLAUDE.md → `projects/karpathy-llm/`. 루트에 얇은 CLAUDE.md 재생성.
+- `projects.json`: karpathy-llm 등록 + active.
+- 체크리스트의 "대시보드 서버 재시작 / /api/* 스모크"는 사라진 구 아키텍처 —
+  현 대응물인 MCP로 스모크: list_projects/stats/read_page/lint_citations 모두
+  `projects/karpathy-llm/` 해석 확인. MP-07(구 API 스코핑)은 대상 부재로 무의미.
+- 부수 수정: project_registry의 MEMEX_PROJECT_ROOT env가 active-vault에 밀려
+  무시되던 우선순위 버그 수정 (env가 1순위).

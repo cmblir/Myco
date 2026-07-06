@@ -1,5 +1,15 @@
 {
   "version": 1,
-  "active": null,
-  "projects": []
+  "active": "karpathy-llm",
+  "projects": [
+    {
+      "slug": "karpathy-llm",
+      "title": "Karpathy LLM Wiki",
+      "description": "LLM knowledge wiki migrated from the legacy single-vault layout (MP-04).",
+      "model": "default",
+      "created": "2026-07-06",
+      "last_used": "2026-07-06",
+      "template": ""
+    }
+  ]
 }

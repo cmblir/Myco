@@ -59,12 +59,16 @@ def _active_vault() -> Path | None:
 
 
 def _resolve_project_root() -> Path:
-    av = _active_vault()  # 1. follow the app's current vault
-    if av:
-        return av.resolve()
-    env = os.environ.get("MEMEX_PROJECT_ROOT")  # 2. explicit override
+    # 1. explicit override wins — an operator setting MEMEX_PROJECT_ROOT means
+    #    "this vault", regardless of which vault the desktop app has open.
+    #    (It used to lose to active-vault, which made the env var a silent no-op
+    #    whenever the app had ever been launched.)
+    env = os.environ.get("MEMEX_PROJECT_ROOT")
     if env:
         return Path(env).resolve()
+    av = _active_vault()  # 2. follow the app's current vault
+    if av:
+        return av.resolve()
     return Path(__file__).resolve().parent.parent  # 3. checkout fallback
 
 

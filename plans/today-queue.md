@@ -29,7 +29,7 @@ owner: yoo
 
 ---
 
-## [MP-04] 기존 콘텐츠 → `projects/karpathy-llm/` 마이그레이션 🚨 BLOCKED
+## ~~[MP-04] 기존 콘텐츠 → `projects/karpathy-llm/` 마이그레이션~~ ✅ 완료 (2026-07-06)
 - 위험도: high → 자율모드 금지 (§21.8). 사용자 승인 필요.
 - `plans/blocked.md` [BLOCK-MP-04] 참조
 - 영향 범위: 루트 디렉터리 대규모 이동
