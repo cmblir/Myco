@@ -15,6 +15,7 @@ import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
+import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import {
   CSS2DRenderer,
   CSS2DObject,
@@ -150,7 +151,33 @@ const LOD_RESTORE_MS = 150;
 // 1 starfield shell instead of 3, no nebula, no pulses — the ambient layers
 // are the first spend to cut, the graph itself stays untouched. Decided at
 // build time; live-ingest growth past the line applies on the next rebuild.
+// It also drops selective bloom back to a single bloom pass (spec A1 perf gate).
 const PERF_LOD_NODES = 5000;
+
+// Selective bloom (spec A1): only the node layer blooms, so edges / pulses /
+// filaments / starfield / labels are structurally bloom-proof — no additive
+// edge sum can ever cross the threshold. Nodes render on BLOOM_LAYER (plus the
+// default layer 0); the bloom composer renders layer 1 alone, the final
+// composer renders everything and additively mixes the bloom texture back in.
+const BLOOM_LAYER = 1;
+
+// Additive composite of the base HDR render + the (nodes-only) bloom texture,
+// run before the ACES OutputPass so tone-mapping still sees the summed HDR.
+const MIX_VERT = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+const MIX_FRAG = /* glsl */ `
+uniform sampler2D baseTexture;
+uniform sampler2D bloomTexture;
+varying vec2 vUv;
+void main() {
+  gl_FragColor = texture2D(baseTexture, vUv) + texture2D(bloomTexture, vUv);
+}
+`;
 
 const INGEST_WRITE = new THREE.Color("#ffd27a");
 const INGEST_READ = new THREE.Color("#7fe1ff");
@@ -251,7 +278,14 @@ export class GraphScene {
   private scene = new THREE.Scene();
   private camera: THREE.PerspectiveCamera;
   private controls: OrbitControls;
-  private composer: EffectComposer;
+  // Post-processing. Single-composer path (perfLod) uses `composer`; the
+  // selective-bloom path uses bloomComposer (nodes only) + finalComposer
+  // (everything + mix). Exactly one path is live per scene, chosen by `selective`.
+  private composer!: EffectComposer;
+  private bloomComposer?: EffectComposer;
+  private finalComposer?: EffectComposer;
+  private mixPass?: ShaderPass;
+  private selective = false;
   private bloom: UnrealBloomPass;
   private baseBloom = 1.2; // theme-derived bloom strength before brightness scaling
   private labelRenderer: CSS2DRenderer;
@@ -435,15 +469,23 @@ export class GraphScene {
     // survive into the bloom high-pass instead of clamping to white (the
     // "uniform white puff" root cause). v0.184 defaults to HalfFloatType, but we
     // pass it explicitly so a future upgrade can't silently drop us to 8-bit LDR.
-    const hdrTarget = new THREE.WebGLRenderTarget(
-      Math.max(1, Math.floor(w * pr)),
-      Math.max(1, Math.floor(h * pr)),
-      { type: THREE.HalfFloatType },
-    );
-    this.composer = new EffectComposer(this.renderer, hdrTarget);
-    this.composer.setPixelRatio(pr);
-    this.composer.setSize(w, h);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
+    // Performance mode (spec B5) — decided before the post-processing graph so
+    // the bloom pipeline can pick its cheaper path. Big vaults also drop the
+    // ambient layers below.
+    this.perfLod = graph.order > PERF_LOD_NODES;
+    // Selective bloom (spec A1) everywhere but the perf-gated large-vault path,
+    // where the doubled render passes aren't worth it — there a single bloom
+    // pass over the whole scene is used (edges bloom too, but at 5k+ nodes the
+    // node glow dominates anyway and the frame budget matters more).
+    this.selective = !this.perfLod;
+    // Fresh HDR (half-float) target per composer so values >1 survive the bloom
+    // high-pass instead of clamping to white.
+    const mkHdrTarget = (): THREE.WebGLRenderTarget =>
+      new THREE.WebGLRenderTarget(
+        Math.max(1, Math.floor(w * pr)),
+        Math.max(1, Math.floor(h * pr)),
+        { type: THREE.HalfFloatType },
+      );
     // Bloom runs on the LINEAR HDR buffer. Calibrated for ADDITIVE SUMMING, not
     // single sprites: two overlapping field stars already reach ~2.3, so the
     // dark threshold sits at 1.9 (gates pair-overlaps; only true hub cores and
@@ -458,18 +500,52 @@ export class GraphScene {
       0.7, // radius (soft atmospheric halo, not a hard ring)
       dark ? 1.9 : 0.7, // threshold above the additive pair-overlap ceiling
     );
-    this.composer.addPass(this.bloom);
-    // OutputPass MUST be last: it re-applies renderer.toneMapping (ACES) +
-    // toneMappingExposure + sRGB on the final HDR buffer. Without it the HDR
-    // range is never compressed and bright pixels clamp to flat white.
-    this.composer.addPass(new OutputPass());
+
+    if (this.selective) {
+      // Pass 1: render ONLY the node layer, bloom it. renderToScreen off — the
+      // result stays a linear HDR texture the mix pass reads.
+      this.bloomComposer = new EffectComposer(this.renderer, mkHdrTarget());
+      this.bloomComposer.renderToScreen = false;
+      this.bloomComposer.setPixelRatio(pr);
+      this.bloomComposer.setSize(w, h);
+      this.bloomComposer.addPass(new RenderPass(this.scene, this.camera));
+      this.bloomComposer.addPass(this.bloom);
+      // Pass 2: render the WHOLE scene, add the nodes-only bloom back in, then
+      // tone-map. Edges/pulses/filaments/starfield never entered the bloom, so
+      // no additive edge sum can bloom (spec A1: edges are structurally proof).
+      this.finalComposer = new EffectComposer(this.renderer, mkHdrTarget());
+      this.finalComposer.setPixelRatio(pr);
+      this.finalComposer.setSize(w, h);
+      this.finalComposer.addPass(new RenderPass(this.scene, this.camera));
+      this.mixPass = new ShaderPass(
+        new THREE.ShaderMaterial({
+          uniforms: {
+            baseTexture: { value: null },
+            bloomTexture: { value: this.bloomComposer.renderTarget2.texture },
+          },
+          vertexShader: MIX_VERT,
+          fragmentShader: MIX_FRAG,
+        }),
+        "baseTexture",
+      );
+      this.finalComposer.addPass(this.mixPass);
+      // OutputPass MUST be last: ACES tone-map + exposure + sRGB on the summed HDR.
+      this.finalComposer.addPass(new OutputPass());
+    } else {
+      this.composer = new EffectComposer(this.renderer, mkHdrTarget());
+      this.composer.setPixelRatio(pr);
+      this.composer.setSize(w, h);
+      this.composer.addPass(new RenderPass(this.scene, this.camera));
+      this.composer.addPass(this.bloom);
+      // OutputPass MUST be last: it re-applies renderer.toneMapping (ACES) +
+      // toneMappingExposure + sRGB on the final HDR buffer.
+      this.composer.addPass(new OutputPass());
+    }
 
     // --- nodes ---
     this.nodeIds = graph.nodes();
     this.nodeIds.forEach((id, i) => this.idIndex.set(id, i));
     const n = this.nodeIds.length;
-    // Performance mode (spec B5): big vaults drop the ambient layers.
-    this.perfLod = n > PERF_LOD_NODES;
     this.nodeGeom = new THREE.BufferGeometry();
     this.nodeGeom.setAttribute(
       "position",
@@ -510,6 +586,10 @@ export class GraphScene {
     });
     this.points = new THREE.Points(this.nodeGeom, this.nodeMat);
     this.points.frustumCulled = false;
+    // Nodes live on BOTH the default layer (final render) and the bloom layer
+    // (selective bloom pass renders layer 1 alone). Harmless in the single-pass
+    // path, where the camera never restricts to layer 1.
+    if (this.selective) this.points.layers.enable(BLOOM_LAYER);
     this.scene.add(this.points);
 
     // --- edges ---
@@ -1514,6 +1594,23 @@ export class GraphScene {
     this.controls.update();
   }
 
+  // One frame of the post-processing graph. Selective path: nodes-only bloom
+  // pass into a texture, then a full-scene pass that mixes the bloom back in
+  // before ACES tone-mapping (spec A1). Single path: legacy full-scene bloom.
+  private render(): void {
+    if (this.selective && this.bloomComposer && this.finalComposer) {
+      const camMask = this.camera.layers.mask;
+      // Bloom pass: restrict the camera to layer 1 (nodes only). Background /
+      // fog still draw (the RenderPass clears with them) but neither can bloom.
+      this.camera.layers.set(BLOOM_LAYER);
+      this.bloomComposer.render();
+      this.camera.layers.mask = camMask; // restore (default: layer 0)
+      this.finalComposer.render();
+    } else {
+      this.composer.render();
+    }
+  }
+
   start(): void {
     if (this.raf != null) return;
     this.lastFrame = performance.now();
@@ -1532,7 +1629,7 @@ export class GraphScene {
         this.nodeMat.uniforms.u_time.value += dt;
       }
       this.updateLabels();
-      this.composer.render();
+      this.render();
       this.labelRenderer.render(this.scene, this.camera);
       this.raf = requestAnimationFrame(loop);
     };
@@ -1582,9 +1679,19 @@ export class GraphScene {
     this.clusterLabels.dispose();
     this.scene.remove(this.clusterLabels.group);
     this.bloom.dispose();
-    this.composer.renderTarget1.dispose();
-    this.composer.renderTarget2.dispose();
-    this.composer.dispose();
+    if (this.selective) {
+      this.bloomComposer?.renderTarget1.dispose();
+      this.bloomComposer?.renderTarget2.dispose();
+      this.bloomComposer?.dispose();
+      this.finalComposer?.renderTarget1.dispose();
+      this.finalComposer?.renderTarget2.dispose();
+      this.finalComposer?.dispose();
+      this.mixPass?.material.dispose();
+    } else {
+      this.composer.renderTarget1.dispose();
+      this.composer.renderTarget2.dispose();
+      this.composer.dispose();
+    }
     this.renderer.dispose();
     el.remove();
     this.labelRenderer.domElement.remove();
@@ -1598,7 +1705,12 @@ export class GraphScene {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
-    this.composer.setSize(w, h);
+    if (this.selective) {
+      this.bloomComposer?.setSize(w, h);
+      this.finalComposer?.setSize(w, h);
+    } else {
+      this.composer.setSize(w, h);
+    }
     this.bloom.setSize(w, h);
     this.labelRenderer.setSize(w, h);
     this.nodeMat.uniforms.u_sizeScale.value = this.sizeScale(h);
