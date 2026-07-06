@@ -318,6 +318,23 @@ export interface Strings {
   rf_run: string;
   rf_running: string;
   rf_empty: string;
+  // First-run onboarding wizard (UX-01) — optional; components fall back to EN.
+  ob_title?: string;
+  ob_skip?: string;
+  ob_back?: string;
+  ob_next?: string;
+  ob_finish?: string;
+  ob_vault_linked?: string;
+  ob_vault_none?: string;
+  ob_s1_title?: string;
+  ob_s1_body?: string;
+  ob_s1_action?: string;
+  ob_s2_title?: string;
+  ob_s2_body?: string;
+  ob_s2_action?: string;
+  ob_s3_title?: string;
+  ob_s3_body?: string;
+  ob_s3_action?: string;
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -644,6 +661,25 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_run: "Reflect",
     rf_running: "Reflecting…",
     rf_empty: "No suggestions — the vault looks well-connected.",
+    ob_title: "Welcome to Memex",
+    ob_skip: "Skip",
+    ob_back: "Back",
+    ob_next: "Next",
+    ob_finish: "Done",
+    ob_vault_linked: "Linked",
+    ob_vault_none: "No vault linked yet",
+    ob_s1_title: "Create or open a project",
+    ob_s1_body:
+      "Memex keeps every page as plain markdown in a folder you control. Open an existing folder, or keep the default vault Memex just created for you.",
+    ob_s1_action: "Open a folder…",
+    ob_s2_title: "Add your first source",
+    ob_s2_body:
+      "Drop a file, paste a URL, or write a note. Memex reads it, extracts entities and concepts, and weaves a cited page into your graph.",
+    ob_s2_action: "Go to Ingest",
+    ob_s3_title: "Ask a question",
+    ob_s3_body:
+      "Ask the wiki anything. Memex answers from your pages first and reaches into raw sources only when needed — every claim ships with a citation.",
+    ob_s3_action: "Go to Ask",
   },
   ko: {
     app_name: "Memex",
@@ -968,6 +1004,25 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_run: "Reflect 실행",
     rf_running: "분석 중…",
     rf_empty: "제안이 없습니다 — vault가 잘 연결되어 있습니다.",
+    ob_title: "Memex에 오신 것을 환영합니다",
+    ob_skip: "건너뛰기",
+    ob_back: "이전",
+    ob_next: "다음",
+    ob_finish: "완료",
+    ob_vault_linked: "연결됨",
+    ob_vault_none: "아직 연결된 vault가 없습니다",
+    ob_s1_title: "프로젝트 만들기 또는 열기",
+    ob_s1_body:
+      "Memex는 모든 페이지를 당신이 관리하는 폴더에 마크다운으로 보관합니다. 기존 폴더를 열거나, 방금 만들어진 기본 vault를 그대로 사용하세요.",
+    ob_s1_action: "폴더 열기…",
+    ob_s2_title: "첫 소스 추가하기",
+    ob_s2_body:
+      "파일을 드롭하거나 URL을 붙여넣거나 메모를 쓰세요. Memex가 읽고, 엔티티와 개념을 추출해 인용이 달린 페이지를 그래프에 엮습니다.",
+    ob_s2_action: "가져오기로 이동",
+    ob_s3_title: "질문하기",
+    ob_s3_body:
+      "위키에 무엇이든 물어보세요. Memex는 먼저 당신의 페이지에서 답하고 필요할 때만 원본으로 들어갑니다 — 모든 주장에는 인용이 따라옵니다.",
+    ob_s3_action: "질문으로 이동",
   },
   ja: {
     app_name: "Memex",
@@ -1246,5 +1301,24 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_run: "Reflect 実行",
     rf_running: "分析中…",
     rf_empty: "提案はありません — vault は十分につながっています。",
+    ob_title: "Memex へようこそ",
+    ob_skip: "スキップ",
+    ob_back: "戻る",
+    ob_next: "次へ",
+    ob_finish: "完了",
+    ob_vault_linked: "接続済み",
+    ob_vault_none: "まだ vault が接続されていません",
+    ob_s1_title: "プロジェクトを作成 / 開く",
+    ob_s1_body:
+      "Memex はすべてのページを、あなたが管理するフォルダにマークダウンで保存します。既存のフォルダを開くか、作成された既定の vault をそのまま使ってください。",
+    ob_s1_action: "フォルダを開く…",
+    ob_s2_title: "最初のソースを追加",
+    ob_s2_body:
+      "ファイルをドロップ、URL を貼り付け、あるいはメモを書く。Memex が読み、エンティティと概念を抽出し、出典付きのページをグラフに織り込みます。",
+    ob_s2_action: "取り込みへ",
+    ob_s3_title: "質問する",
+    ob_s3_body:
+      "ウィキに何でも聞いてください。Memex はまずあなたのページから答え、必要なときだけ原本に降ります — すべての主張に出典が付きます。",
+    ob_s3_action: "質問へ",
   },
 };

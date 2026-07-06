@@ -1185,6 +1185,92 @@ hr {
   color: white !important;
 }
 
+/* First-run onboarding wizard (UX-01). Reuses the modal shell; adds a stepper
+   and a centred step body. */
+.onboarding {
+  width: min(92vw, 460px);
+  max-width: 460px;
+}
+.ob-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.ob-eyebrow {
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+.ob-skip {
+  border: none;
+  background: transparent;
+  color: var(--ink-4);
+  font-size: 0.8rem;
+  padding: 6px 8px;
+  border-radius: var(--r);
+}
+.ob-skip:hover {
+  background: var(--bg-hover);
+  color: var(--ink-2);
+}
+.ob-dots {
+  display: flex;
+  gap: 6px;
+  margin: 10px 0 6px;
+}
+.ob-dot {
+  width: 26px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--line-strong);
+  transition: background 0.15s;
+}
+.ob-dot.active {
+  background: var(--ink);
+}
+.ob-body {
+  text-align: center;
+  padding: 12px 4px 4px;
+}
+.ob-icon {
+  width: 48px;
+  height: 48px;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  color: var(--ink);
+}
+.ob-step-title {
+  font-size: 1.1rem;
+  margin: 0 0 8px;
+  color: var(--ink);
+}
+.ob-step-body {
+  color: var(--ink-3);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0 auto 16px;
+  max-width: 340px;
+}
+.ob-vault-note {
+  font-size: 0.78rem;
+  color: var(--ink-4);
+  margin: 10px 0 0;
+}
+.ob-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 18px;
+}
+
 /* CodeMirror in editor view */
 .cm-editor {
   height: 100%;
@@ -2455,9 +2541,14 @@ hr {
     min-width: 0;
   }
   /* Keep the topbar on one fixed-height row; let it scroll internally rather
-     than widen the page when its controls don't fit a phone width. */
+     than widen the page when its controls don't fit a phone width. Respect the
+     notch/safe-area so the bar clears the status area on phones. */
   .topbar {
     overflow-x: auto;
+    height: calc(var(--top-h) + env(safe-area-inset-top));
+    padding-top: env(safe-area-inset-top);
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(12px, env(safe-area-inset-right));
   }
   .topbar > * {
     flex-shrink: 0;
@@ -2531,5 +2622,46 @@ hr {
   /* Overview stats: 2 columns instead of a fixed 4 that overflow a phone. */
   .stat-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Touch targets ≥44px (§6). Sidebar nav rows and toolbar buttons get a
+     comfortable tap height/width on narrow viewports. */
+  .nav-item,
+  .nav-leaf,
+  .qbtn {
+    min-height: 44px;
+  }
+  .icon-btn,
+  .ngl-add {
+    min-width: 44px;
+    min-height: 44px;
+    align-items: center;
+    justify-content: center;
+  }
+}
+
+/* Phones ≈320–375px. Tighten padding further, drop to single-column stats,
+   and stop the fixed-min-width modals from overflowing a 320px viewport. */
+@media (max-width: 375px) {
+  .workspace {
+    padding: 0 12px 56px;
+  }
+  .workspace-wide {
+    padding: 0 12px 40px;
+  }
+  .page-title {
+    font-size: 30px;
+  }
+  .stat-strip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Modals declare min-width:360px on desktop, which would force a horizontal
+     scrollbar at 320px — release it and let them fit the viewport. */
+  .memex-modal {
+    min-width: 0;
+    width: calc(100vw - 24px);
+  }
+  .ob-actions {
+    flex-wrap: wrap;
   }
 }

@@ -5,6 +5,7 @@ import Topbar from "./components/Topbar";
 import CommandBar from "./components/CommandBar";
 import DialogHost from "./components/DialogHost";
 import ErrorBoundary from "./components/ErrorBoundary";
+import OnboardingWizard from "./components/OnboardingWizard";
 import PageOverview from "./pages/PageOverview";
 import PageIngest from "./pages/PageIngest";
 import PageQuery from "./pages/PageQuery";
@@ -24,6 +25,21 @@ import { useAutoIngestScheduler } from "./lib/autoIngest";
 import { useAutoReflectScheduler } from "./lib/autoReflect";
 import { useIngestStore } from "./stores/ingestStore";
 import { ipc } from "./lib/ipc";
+import type { FileNode } from "./lib/ipc";
+
+const ONBOARDED_KEY = "memex.onboarded";
+
+function countPages(nodes: FileNode[]): number {
+  let n = 0;
+  for (const node of nodes) {
+    if (node.kind === "file") {
+      if (node.name.endsWith(".md")) n++;
+    } else {
+      n += countPages(node.children);
+    }
+  }
+  return n;
+}
 
 // Matches the seeded accent in uiStore. While it's the active value we let the
 // [data-theme] stylesheet own --accent instead of overriding it inline.
@@ -40,11 +56,35 @@ export default function App(): JSX.Element {
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const setSidebarCollapsed = useUIStore((s) => s.setSidebarCollapsed);
   const currentVault = useVaultStore((s) => s.currentVault);
+  const fileTree = useVaultStore((s) => s.fileTree);
   const openVault = useVaultStore((s) => s.openVault);
   const loadSettings = useSettingsStore((s) => s.load);
   const settings = useSettingsStore((s) => s.settings);
 
   const t = STRINGS[lang] ?? STRINGS.en;
+
+  // First-run onboarding (UX-01). Persist a dismissible flag so the wizard
+  // never reappears once completed or skipped. `bootDone` gates the overlay so
+  // it can't flash during the initial async vault-open below.
+  const [onboarded, setOnboarded] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(ONBOARDED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  const [bootDone, setBootDone] = useState(false);
+  function completeOnboarding(): void {
+    try {
+      localStorage.setItem(ONBOARDED_KEY, "1");
+    } catch {
+      /* localStorage unavailable */
+    }
+    setOnboarded(true);
+  }
+  // Genuine first run: nothing opened, or an empty vault (no markdown pages).
+  const firstRun =
+    bootDone && !onboarded && (!currentVault || countPages(fileTree) === 0);
 
   useEffect(() => {
     void loadSettings();
@@ -191,30 +231,39 @@ export default function App(): JSX.Element {
   // saved path no longer exists, fall through to the default so the
   // app is never stuck without a vault.
   useEffect(() => {
-    if (currentVault) return;
+    if (currentVault) {
+      setBootDone(true);
+      return;
+    }
     void (async () => {
-      // Dev-only escape hatch — `?vault=/some/path` lets us point the
-      // app at an arbitrary directory for quick visual testing.
-      const urlVault = new URLSearchParams(window.location.search).get(
-        "vault",
-      );
-      if (urlVault) {
-        await openVault(urlVault);
-        if (useVaultStore.getState().currentVault) return;
-      }
-      let defaultVault: string | null = null;
       try {
-        defaultVault = await ipc.ensureDefaultVault();
-      } catch {
-        /* keep going — user may have a different vault saved */
-      }
-      const last = getLastVaultPath();
-      if (last) {
-        await openVault(last);
-        if (useVaultStore.getState().currentVault) return;
-      }
-      if (defaultVault) {
-        await openVault(defaultVault);
+        // Dev-only escape hatch — `?vault=/some/path` lets us point the
+        // app at an arbitrary directory for quick visual testing.
+        const urlVault = new URLSearchParams(window.location.search).get(
+          "vault",
+        );
+        if (urlVault) {
+          await openVault(urlVault);
+          if (useVaultStore.getState().currentVault) return;
+        }
+        let defaultVault: string | null = null;
+        try {
+          defaultVault = await ipc.ensureDefaultVault();
+        } catch {
+          /* keep going — user may have a different vault saved */
+        }
+        const last = getLastVaultPath();
+        if (last) {
+          await openVault(last);
+          if (useVaultStore.getState().currentVault) return;
+        }
+        if (defaultVault) {
+          await openVault(defaultVault);
+        }
+      } finally {
+        // Whatever the outcome, the initial vault-open attempt has settled —
+        // now it's safe to evaluate first-run for the onboarding overlay.
+        setBootDone(true);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -257,6 +306,9 @@ export default function App(): JSX.Element {
       </main>
       <CommandBar t={t} />
       <DialogHost />
+      {firstRun ? (
+        <OnboardingWizard t={t} onClose={completeOnboarding} />
+      ) : null}
     </div>
   );
 }
