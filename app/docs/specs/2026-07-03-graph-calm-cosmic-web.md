@@ -5,9 +5,14 @@
   vault, dark theme) · Phase 2 ✅ (2026-07-06 — B2 cluster labels, B3 focus
   stack + Esc/void-click/breadcrumbs, B4 presets/Glow/ambient-motion +
   A7 rotate-pause, B5 loading/error/perf states; Cmd-click shortest-path
-  deferred to the Phase 3 filament layer) · Phase 3 open. Light theme stays
-  washed out — pre-existing (verified by stash A/B against the pre-Phase-1
-  tree), needs its own calibration pass.
+  deferred to the Phase 3 filament layer) · Phase 3 ✅ (2026-07-06 — B6
+  interaction LOD, A2 filament focus/path layer + Cmd-click shortest path,
+  A4 back-halo, A1 selective bloom with a >5k perf gate). Two follow-ups
+  remain: (1) LLM cluster labels (v2) — deferred; needs a backend IPC and is
+  nondeterministic, and the v1 top-degree name already ships as its permanent
+  fallback, so it's a separate feature rather than part of this look overhaul.
+  (2) Light theme stays washed out — pre-existing (verified by stash A/B
+  against the pre-Phase-1 tree), needs its own calibration pass.
 - **Extends:** [[2026-06-27-cosmic-web-graph]] (keeps its architecture; fixes its look)
 - **Trigger:** real-vault screenshot review — the graph reads as **fireworks**
   (blown-white hub cores, equal-length colored spokes radiating from every
@@ -164,7 +169,7 @@ blending summing luminance across overlapping primitives.**
 | **0** ✅ | constants table above | graphScene, graphData, graphSettings, graphSim.worker, pulseLayer |
 | **1** ✅ | midpoint-split edges (fade+sag) + length falloff, degree-based distances, 6-hue palette, dynamic fog + z-desat, log node sizes, luminance clamp, clusterForce 0.35 (settings v26) | graphScene, graphData, graphSim.worker, graphSettings |
 | **2** ✅ | legend, cluster labels v1, focus modes + selection stack, control presets, five states, motion toggle (Cmd-click path mode → Phase 3) | GraphControls, PageGraph, new GraphLegend/clusterLabels, graphSettings |
-| **3** (~1 w) | selective bloom, back-halo, filament=focus/path layer, path mode, interaction LOD, LLM cluster labels | graphScene, new bloomComposite, pulseLayer, nebulaLayer |
+| **3** ✅ | selective bloom (perf-gated), back-halo, filament focus/path layer, Cmd-click path mode, interaction LOD (LLM cluster labels deferred as a separate feature) | graphScene, nebulaLayer, new clusterLabels, PageGraph |
 
 **Per-phase exit criteria (same-vault A/B screenshots):** (1) hub cores retain
 hue (not white discs); (2) no starburst silhouettes; (3) ≥ 75 % of frame in
