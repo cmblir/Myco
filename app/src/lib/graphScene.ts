@@ -138,6 +138,12 @@ const FOCUS_EDGE_DIM = 0.03;
 // Idle time after the last orbit/zoom before auto-rotate resumes (spec A7).
 const ROTATE_IDLE_MS = 8000;
 
+// Interaction LOD (spec B6): during an orbit/drag the moving overlays (pulses,
+// labels, arrows) are hidden so the frame is just the two static draw calls
+// (nodes + edges); they ease back this many ms after the gesture ends. Thin
+// edges stay up throughout — they cost one draw call and anchor the motion.
+const LOD_RESTORE_MS = 150;
+
 // Above this node count the scene builds in performance mode (spec B5):
 // 1 starfield shell instead of 3, no nebula, no pulses — the ambient layers
 // are the first spend to cut, the graph itself stays untouched. Decided at
@@ -312,6 +318,9 @@ export class GraphScene {
   // Auto-rotate yields to the user (spec A7): any orbit/zoom pauses it, and it
   // resumes only after ROTATE_IDLE_MS without interaction.
   private rotateResumeTimer: ReturnType<typeof setTimeout> | null = null;
+  // Interaction LOD (spec B6): true while orbiting/dragging — overlays hidden.
+  private interacting = false;
+  private lodRestoreTimer: ReturnType<typeof setTimeout> | null = null;
   // Build-time performance mode for very large vaults (spec B5).
   private perfLod = false;
 
@@ -824,6 +833,19 @@ export class GraphScene {
   }
 
   private updateLabels(): void {
+    // Interaction LOD (spec B6): during an orbit/drag drop every per-node label
+    // (hidden this frame, restored when the gesture's debounce lapses) so the
+    // CSS2D layer isn't reflowing 10k transforms mid-motion.
+    if (this.interacting) {
+      if (this.shownLabels.size > 0) {
+        for (const id of this.shownLabels) {
+          const obj = this.labels.get(id);
+          if (obj) obj.visible = false;
+        }
+        this.shownLabels.clear();
+      }
+      return;
+    }
     const h = Math.max(1, this.container.clientHeight);
     const scale = this.sizeScale(h);
     const threshold = Math.max(1, 5 + (this.settings.textFadeThreshold - 1.1) * 6);
@@ -1348,6 +1370,7 @@ export class GraphScene {
       this.rotateResumeTimer = null;
     }
     this.controls.autoRotate = false;
+    this.beginInteraction();
   };
   private onControlsEnd = (): void => {
     if (this.rotateResumeTimer != null) clearTimeout(this.rotateResumeTimer);
@@ -1355,7 +1378,37 @@ export class GraphScene {
       this.rotateResumeTimer = null;
       this.controls.autoRotate = this.ambientOn();
     }, ROTATE_IDLE_MS);
+    this.endInteraction();
   };
+
+  // --- Interaction LOD (spec B6). Enter immediately (a gesture just started);
+  // leave after a short debounce so a continuous orbit doesn't strobe the
+  // overlays back on between frames. ---
+  private beginInteraction(): void {
+    if (this.lodRestoreTimer != null) {
+      clearTimeout(this.lodRestoreTimer);
+      this.lodRestoreTimer = null;
+    }
+    if (this.interacting) return;
+    this.interacting = true;
+    // Pulses + arrows are objects — hide them outright. Labels are gated inside
+    // updateLabels (it skips its work while interacting). Thin edges stay up.
+    this.pulse.points.visible = false;
+    this.arrows.visible = false;
+    this.clusterLabels.group.visible = false;
+  }
+  private endInteraction(): void {
+    if (this.lodRestoreTimer != null) clearTimeout(this.lodRestoreTimer);
+    this.lodRestoreTimer = setTimeout(() => {
+      this.lodRestoreTimer = null;
+      this.interacting = false;
+      // Restore to each layer's real state (perf mode / ambient toggle / arrows
+      // setting), not blindly to visible.
+      this.pulse.points.visible = this.ambientOn() && !this.perfLod;
+      this.arrows.visible = this.settings.arrows;
+      this.clusterLabels.group.visible = true;
+    }, LOD_RESTORE_MS);
+  }
 
   zoomIn(): void {
     this.dollyBy(0.8);
@@ -1452,7 +1505,7 @@ export class GraphScene {
       // Life: signals flow along edges + stars breathe. Frozen for
       // reduced-motion and by the "Ambient motion" toggle (one switch for all
       // idle motion — spec B4).
-      if (this.ambientOn()) {
+      if (this.ambientOn() && !this.interacting) {
         this.pulse.update(dt);
         this.nodeMat.uniforms.u_time.value += dt;
       }
@@ -1475,6 +1528,7 @@ export class GraphScene {
     el.removeEventListener("webglcontextlost", this.onCtxLost);
     el.removeEventListener("webglcontextrestored", this.onCtxRestored);
     if (this.rotateResumeTimer != null) clearTimeout(this.rotateResumeTimer);
+    if (this.lodRestoreTimer != null) clearTimeout(this.lodRestoreTimer);
     this.controls.removeEventListener("start", this.onControlsStart);
     this.controls.removeEventListener("end", this.onControlsEnd);
     this.controls.dispose();
@@ -1612,6 +1666,9 @@ export class GraphScene {
       this.dragId = id;
       this.dragMoved = false;
       this.controls.enabled = false; // don't orbit while dragging a star
+      // A drag never fires OrbitControls' start/end, so drive the LOD directly
+      // (spec B6: overlays drop during a node drag too).
+      this.beginInteraction();
       this.cb.onDragStart(id);
     } else if (this.hoverId) {
       // starting a camera orbit on empty space — drop the hover highlight so the
@@ -1630,6 +1687,7 @@ export class GraphScene {
         this.downAt != null &&
         Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) > 3;
       this.cb.onDragEnd(id);
+      this.endInteraction();
       if (!moved) this.cb.onNodeClick(id);
     } else if (
       this.downAt != null &&

@@ -160,6 +160,8 @@ function main(): void {
     onDragStart: noop,
     onDrag: noop,
     onDragEnd: noop,
+    onVoidClick: noop,
+    onContextLost: noop,
     onContextRestored: noop,
   });
   // The sim runs in a worker now; each tick posts a position array we hand
