@@ -176,9 +176,12 @@ blending summing luminance across overlapping primitives.**
 RELATIVE only):** 356 nodes → 7.4 fps · 8 055 → 6.6 · 10 055 → 5.6; settle
 reveal 5–6 s at every size; zero page errors. A 28× node increase costs 24 %
 of frame rate — the pipeline is not CPU-bound. The >5 k perf gate verified
-live (banner + ambient layers off + single-bloom path at 8 k/10 k). The 60 fps
-@10 k criterion still needs a REAL-GPU run (`npm run dev`, then
-`node scripts/graph-perf.mjs 10000` with a headed browser).
+live (banner + ambient layers off + single-bloom path at 8 k/10 k).
+
+**Real-GPU run (2026-07-06, `--headed`, Apple Silicon):** 55 nodes → 60.2 fps
+· 5 556 → 59.9 · **10 055 → 59.1 fps** — the 60 fps @10 k exit criterion is
+met (rAF is vsync-capped at 60; 59.1 ≈ 1.5 % dropped frames). ✅ All exit
+criteria closed.
 
 **Per-phase exit criteria (same-vault A/B screenshots):** (1) hub cores retain
 hue (not white discs); (2) no starburst silhouettes; (3) ≥ 75 % of frame in

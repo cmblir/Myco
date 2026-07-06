@@ -1,13 +1,15 @@
-// Headless perf probe for the Memex graph (calm-cosmic-web exit criteria).
-// Usage: node graph-perf.mjs [stressN]
+// Perf probe for the Memex graph (calm-cosmic-web exit criteria).
+// Usage: node graph-perf.mjs [stressN] [--headed]
 // Loads ?mock=1&stress=N#/graph, waits for the settle, verifies the perf-gate
-// UI, then samples fps over 5s via rAF.
+// UI, then samples fps over 5s via rAF. Headless runs on SwiftShader
+// (software GL — fps are relative only); pass --headed for real-GPU numbers.
 import { chromium } from "playwright";
 
-const stress = process.argv[2] ?? "8000";
+const headed = process.argv.includes("--headed");
+const stress = process.argv.find((a) => /^\d+$/.test(a)) ?? "8000";
 const url = `http://localhost:5173/?mock=1&stress=${stress}#/graph`;
 
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: !headed });
 const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const errors = [];
 page.on("pageerror", (e) => errors.push(`pageerror: ${e.message}`));
