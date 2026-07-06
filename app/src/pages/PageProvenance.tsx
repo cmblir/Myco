@@ -21,6 +21,7 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
   // Lint runs live in lintStore so navigating away doesn't lose them.
   const lintStage = useLintStore((s) => s.stage);
   const lintReport = useLintStore((s) => s.report);
+  const lintProgress = useLintStore((s) => s.progress);
   const runLint = useLintStore((s) => s.runLint);
   const dismissLint = useLintStore((s) => s.dismiss);
   const markLintSeen = useLintStore((s) => s.markSeen);
@@ -101,6 +102,24 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
             >
               <span className="ingest-chip-spinner" /> {t.p_lint_running}
             </div>
+          ) : null}
+          {/* Stage 7: stream the report as it arrives (Claude CLI runs only;
+              other providers show the spinner until the batch result lands). */}
+          {lintBusy && lintProgress ? (
+            <pre
+              style={{
+                whiteSpace: "pre-wrap",
+                wordBreak: "break-word",
+                fontFamily: "var(--font-mono)",
+                fontSize: 12.5,
+                margin: "8px 0 0",
+                maxHeight: 400,
+                overflow: "auto",
+                opacity: 0.85,
+              }}
+            >
+              {lintProgress}
+            </pre>
           ) : null}
           {lintReport ? (
             <pre

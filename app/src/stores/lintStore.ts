@@ -2,9 +2,16 @@
 // navigating to other pages (same pattern as ingestStore). The Topbar shows
 // a chip while it runs and after it finishes until the user revisits the
 // Provenance page.
+//
+// Stage 7: when the provider is the Claude CLI the run STREAMS — `progress`
+// accumulates claude-stream text/tool events live so Provenance can show the
+// report growing instead of a bare spinner. Other providers keep the blocking
+// complete() path (the stream events are Claude-CLI-specific).
 
 import { create } from "zustand";
+import { listen } from "@tauri-apps/api/event";
 import { complete } from "../lib/chat";
+import { ipc, type ClaudeStreamPayload } from "../lib/ipc";
 import { useVaultStore } from "./vaultStore";
 
 const LINT_PROMPT = `Run the wiki lint checklist from CLAUDE.md against the current vault:
@@ -24,6 +31,8 @@ export type LintStage = "idle" | "running" | "done" | "error";
 interface LintState {
   stage: LintStage;
   report: string | null;
+  /** Live output while a streaming run is in flight (Claude CLI only). */
+  progress: string;
   startedAt: number | null;
   finishedAt: number | null;
   /** false after a run finishes until the user revisits Provenance. */
@@ -36,6 +45,7 @@ interface LintState {
 export const useLintStore = create<LintState>((set, get) => ({
   stage: "idle",
   report: null,
+  progress: "",
   startedAt: null,
   finishedAt: null,
   seen: true,
@@ -46,16 +56,23 @@ export const useLintStore = create<LintState>((set, get) => ({
     set({
       stage: "running",
       report: null,
+      progress: "",
       startedAt: Date.now(),
       finishedAt: null,
       seen: true,
     });
     try {
-      const out = await complete({
-        task: "query",
-        cwd: vault.path,
-        messages: [{ role: "user", content: LINT_PROMPT }],
-      });
+      const settings = await ipc.getSettings();
+      const out =
+        settings.query_provider === "anthropic-cli"
+          ? await runStreaming(vault.path, settings.query_model, (chunk) =>
+              set((s) => ({ progress: s.progress + chunk })),
+            )
+          : await complete({
+              task: "query",
+              cwd: vault.path,
+              messages: [{ role: "user", content: LINT_PROMPT }],
+            });
       set({
         stage: "done",
         report: out || "(no output)",
@@ -78,8 +95,46 @@ export const useLintStore = create<LintState>((set, get) => ({
     set({
       stage: "idle",
       report: null,
+      progress: "",
       startedAt: null,
       finishedAt: null,
       seen: true,
     }),
 }));
+
+// Streamed Claude CLI run: subscribe to claude-stream for the duration of this
+// run only (unlistened in finally — same lifecycle rule as ingestStore's
+// listener), append text chunks via onChunk, and return the final report.
+// Falls back to the accumulated stream text if the CLI prints nothing after
+// the result event.
+async function runStreaming(
+  cwd: string,
+  model: string,
+  onChunk: (text: string) => void,
+): Promise<string> {
+  const runId = crypto.randomUUID();
+  let streamed = "";
+  const unlisten = await listen<ClaudeStreamPayload>("claude-stream", (e) => {
+    if (e.payload.run_id !== runId) return;
+    if (e.payload.kind === "text" && e.payload.text) {
+      streamed += e.payload.text;
+      onChunk(e.payload.text);
+    } else if (e.payload.kind === "tool" && e.payload.tool) {
+      onChunk(`\n[${e.payload.tool}] ${e.payload.detail ?? ""}\n`);
+    }
+  });
+  try {
+    const res = await ipc.claudeRunStream(
+      runId,
+      LINT_PROMPT,
+      cwd,
+      model || undefined,
+    );
+    if (res.status !== 0) {
+      throw new Error(res.stderr.trim() || `claude exit ${res.status}`);
+    }
+    return res.stdout.trim() || streamed.trim();
+  } finally {
+    unlisten();
+  }
+}
