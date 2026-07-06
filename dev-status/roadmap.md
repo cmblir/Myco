@@ -100,12 +100,12 @@ Recently migrated from sigma.js 2D to a full 3D cosmic graph: custom glow shader
 
 *Status: done*
 
-In-app facilities to register the standalone Python MCP server (14 stdio wiki tools, FastMCP) with local Claude clients. Backend deliberately does NOT host MCP; it resolves paths, runs install.sh to build the venv, builds the `claude mcp add` command + Desktop config JSON, and exposes IPC + a Settings panel with copy/install/register and full i18n. Unit-tested path logic; end-to-end registration is manual-acceptance only.
+In-app facilities to register the standalone Python MCP server (19 stdio wiki tools, FastMCP) with local Claude clients. Backend deliberately does NOT host MCP; it resolves paths, runs install.sh to build the venv, builds the `claude mcp add` command + Desktop config JSON, and exposes IPC + a Settings panel with copy/install/register and full i18n. Unit-tested path logic; end-to-end registration is manual-acceptance only.
 
 **Features:**
 - MCP server module (resolve/install/register)
 - MCP IPC commands
-- Python MCP server (14 tools)
+- Python MCP server (19 tools)
 - MCP Settings panel UI
 - MCP i18n (12 keys, 3 langs)
 

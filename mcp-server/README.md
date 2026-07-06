@@ -6,7 +6,7 @@ maintain the wiki directly, alongside the Memex desktop app.
 
 ## What it gives Claude
 
-14 tools, all scoped to this repository's wiki and raw/ directories.
+19 tools, all scoped to this repository's wiki and raw/ directories.
 
 | Tool | Purpose |
 |---|---|
@@ -24,6 +24,11 @@ maintain the wiki directly, alongside the Memex desktop app.
 | `update_page` | Overwrite an existing wiki page. |
 | `create_folder` | Create a folder under wiki/. |
 | `git_commit` | Stage wiki/, raw/, ingest-reports/ and commit. |
+| `list_inbox` | List pending sources in _inbox/. |
+| `read_inbox_source` | Read one pending _inbox/ source for ingestion. |
+| `archive_inbox_source` | Copy an ingested source to raw/ and archive the original. |
+| `lint_citations` | Local structural/citation lint of every page — regex only, no LLM. |
+| `preview_page_update` | Unified diff of what update_page would write; touches nothing. |
 
 The server **never** modifies anything under `raw/` after the file is first
 written. `update_page` and `create_folder` validate the resolved path is
@@ -64,7 +69,7 @@ Verify:
 claude mcp list
 ```
 
-Inside any Claude Code session you should now see `memex` listed and the 14
+Inside any Claude Code session you should now see `memex` listed and the 19
 tools available. Try:
 
 > Use `memex` to list pages of type `concept` in this wiki.
@@ -101,7 +106,7 @@ Add `memex` under `mcpServers` (replace the absolute paths with what
 ```
 
 If the file already has other MCP servers, just add the `memex` entry
-inside the existing `mcpServers` block. Restart Claude Desktop. The 14
+inside the existing `mcpServers` block. Restart Claude Desktop. The 19
 tools appear under the plug icon.
 
 ## Use chat content as wiki sources

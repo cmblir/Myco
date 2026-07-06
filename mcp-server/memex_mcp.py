@@ -15,6 +15,7 @@ Design notes
 
 from __future__ import annotations
 
+import difflib
 import json
 import math
 import re
@@ -744,6 +745,118 @@ def archive_inbox_source(filename: str, project: str = "") -> dict:
 
     raw_rel = _rel_to_repo(raw_path)
     return {"ok": True, "project": proj.slug, "raw_path": raw_rel, "archived": dest.name, "src_slug": f"src-{raw_path.stem}"}
+
+
+# ─── local lint (no LLM) ─────────────────────────────────────────────────────
+
+VALID_TYPES = {"concept", "technique", "entity", "source-summary", "analysis"}
+# Meta/scaffold pages the schema does not govern — index, log and any page
+# declaring a meta type. Content types stay strictly validated.
+LINT_SKIP_NAMES = {"index.md", "log.md"}
+LINT_META_TYPES = {"overview", "meta"}
+FOOTNOTE_REF_RE = re.compile(r"\[\^(src-[\w-]+)\](?!:)")
+FOOTNOTE_DEF_RE = re.compile(r"^\[\^(src-[\w-]+)\]:", re.MULTILINE)
+
+
+def lint_page_text(text: str) -> list[str]:
+    """Structural + citation lint of ONE wiki page (pure, regex-only — the
+    CLAUDE.md lint checklist items that need no judgement, so no LLM call).
+    Returns human-readable problem strings; empty = clean.
+    """
+    problems: list[str] = []
+    meta, body = parse_fm(text)
+    if not meta:
+        problems.append("missing frontmatter")
+        return problems  # everything below reads meta
+
+    ptype = meta.get("type")
+    if ptype in LINT_META_TYPES:
+        return []  # meta/scaffold page — schema does not apply
+    if not ptype:
+        problems.append("missing `type`")
+    elif ptype not in VALID_TYPES:
+        problems.append(f"invalid `type`: {ptype}")
+
+    status = meta.get("status")
+    if status == "superseded" and not meta.get("superseded_by"):
+        problems.append("status=superseded without `superseded_by`")
+    if status == "disputed" and "## Disputed" not in body:
+        problems.append("status=disputed without a `## Disputed` section")
+
+    refs = set(FOOTNOTE_REF_RE.findall(body))
+    defs = set(FOOTNOTE_DEF_RE.findall(body))
+    for r in sorted(refs - defs):
+        problems.append(f"citation [^{r}] has no definition")
+    for d in sorted(defs - refs):
+        problems.append(f"footnote [^{d}] defined but never referenced")
+
+    sc = meta.get("source_count")
+    if sc is not None and refs:
+        try:
+            if int(str(sc)) != len(refs):
+                problems.append(
+                    f"source_count={sc} but {len(refs)} distinct citations"
+                )
+        except ValueError:
+            problems.append(f"source_count is not a number: {sc!r}")
+    return problems
+
+
+@mcp.tool()
+def lint_citations(project: str = "") -> dict:
+    """Local structural/citation lint over every wiki page — no LLM, instant.
+
+    Checks: frontmatter presence, valid `type`, superseded/disputed contract,
+    undefined or unused [^src-*] footnotes, source_count vs actual citations.
+    Use before/after an ingest for a fast consistency pass; the full LLM lint
+    remains the deep option.
+    """
+    proj = _resolve(project)
+    pages = [
+        p
+        for p in sorted(proj.wiki_dir.rglob("*.md"))
+        if p.name not in LINT_SKIP_NAMES
+    ]
+    report: dict[str, list[str]] = {}
+    total = 0
+    for p in pages:
+        problems = lint_page_text(p.read_text("utf-8", errors="replace"))
+        if problems:
+            report[_rel_to_repo(p)] = problems
+            total += len(problems)
+    return {
+        "ok": True,
+        "project": proj.slug,
+        "pages_checked": len(pages),
+        "pages_with_problems": len(report),
+        "problems_total": total,
+        "report": report,
+    }
+
+
+@mcp.tool()
+def preview_page_update(filename: str, content: str, project: str = "") -> dict:
+    """Unified diff of what update_page WOULD write — changes nothing on disk.
+
+    Use to confirm an edit before applying it (especially bulk/ingest edits):
+    call this, inspect the diff, then call update_page with the same content.
+    """
+    proj = _resolve(project)
+    target = _safe_wiki_path(proj, filename)
+    if not target.is_file():
+        return {"ok": False, "error": f"not found: {filename}"}
+    old = target.read_text("utf-8", errors="replace")
+    if old == content:
+        return {"ok": True, "project": proj.slug, "changed": False, "diff": ""}
+    diff = "".join(
+        difflib.unified_diff(
+            old.splitlines(keepends=True),
+            content.splitlines(keepends=True),
+            fromfile=f"a/{filename}",
+            tofile=f"b/{filename}",
+        )
+    )
+    return {"ok": True, "project": proj.slug, "changed": True, "diff": diff}
 
 
 # ─── entry point ─────────────────────────────────────────────────────────────
