@@ -8,16 +8,23 @@ created: 2026-04-23
 멀티 프로젝트 전환과 별개로 현재 구현을 돌아보며 식별된 개선 후보.
 우선순위는 사용자가 결정.
 
-> **[2026-07-06 트리아지]** 이 백로그는 구 dashboard `server.py` 시절 작성 —
-> 현 아키텍처(Tauri 앱 + MCP 서버)와 대조한 결과:
-> - **완료**: GOV-02(lint_citations), FEAT-07(preview_page_update),
->   SEC-02(delete confirm+trash), DX-01(pytest 22), SEC-03(add_raw_source
->   시크릿 경고), FEAT-01(search all_projects)
-> - **Obsolete** (대상 서버 소멸): OPS-01, OPS-05, DX-02, DX-03, SEC-01
-> - **앱에 이미 존재**: UX-02(⌘K CommandBar), UX-04(테마 3종),
->   FEAT-04(파일 업로드), FEAT-05(PageHistory — blame 뷰는 아님)
-> - **잔여 (유효)**: OPS-02~04, FEAT-02/03/06/08, GOV-01/03/04, DX-04,
->   UX-01/03
+> **[2026-07-06 트리아지 → 2026-07-07 전부 구현]** 이 백로그는 구 dashboard
+> `server.py` 시절 작성 — 현 아키텍처(Tauri 앱 + MCP 서버) 기준으로 유효 항목
+> 전부 구현 완료:
+> - **MCP 도구로 완료**: GOV-01(contradictions), GOV-02(lint_citations),
+>   GOV-03(trust_report), GOV-04(append_changelog), FEAT-01(search
+>   all_projects), FEAT-02(resolve_cross_links), FEAT-07(preview_page_update),
+>   FEAT-08(translation_report), OPS-04(export_project), SEC-02(delete
+>   confirm+trash), SEC-03(add_raw_source 시크릿 경고), DX-01(pytest 27)
+> - **앱으로 완료**: OPS-02(runs/ 로그 영속), OPS-03(예산 가드), DX-04(JSON
+>   로깅), FEAT-03(태그 브라우저), FEAT-06(auto-reflect), UX-01(온보딩 마법사),
+>   UX-03(모바일 레이아웃)
+> - **이미 존재**: UX-02(⌘K), UX-04(테마 3종), FEAT-04(파일 업로드),
+>   FEAT-05(PageHistory)
+> - **Obsolete** (구 dashboard 서버 소멸): OPS-01, OPS-05, DX-02, DX-03, SEC-01
+>
+> 잔여 유효 항목 없음. 남은 후속(선택): 예산 임계값/reflect 스케줄 Settings UI
+> 토글, native E2E(tauri-driver), PageSettings 프로바이더 설명문 i18n.
 
 ---
 
