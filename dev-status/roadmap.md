@@ -109,30 +109,28 @@ In-app facilities to register the standalone Python MCP server (19 stdio wiki to
 - MCP Settings panel UI
 - MCP i18n (12 keys, 3 langs)
 
-## 7. 🚧 Provenance & Wiki Quality (lint)
+## 7. ✅ Provenance & Wiki Quality (lint)
 
-*Status: in-progress*
+*Status: done (2026-07-06/07)*
 
-Citation-coverage tooling: backend provenance scanner counts claims vs citations and sorts by ratio; PageProvenance shows per-file coverage bars with a threshold slider; lintStore runs a LINT_PROMPT query (frontmatter/citations/connections/freshness) via the Claude CLI and renders a markdown report. Functional but lint output is not streamed (spinner only), and scanProvenance may be inconsistently wired from the UI per the IPC analysis.
+Citation-coverage tooling: backend provenance scanner counts claims vs citations and sorts by ratio; PageProvenance shows per-file coverage bars with a threshold slider; lintStore runs a LINT_PROMPT query (frontmatter/citations/connections/freshness). The Claude CLI path now STREAMS — lintStore drives claudeRunStream and PageProvenance renders the report growing live instead of a spinner (other providers keep the batch path). A no-LLM regex lint (`lint_citations`) also ships on the MCP side for an instant consistency pass.
 
 **Features:**
 - Provenance scanner (Rust)
-- PageProvenance (coverage lint UI)
-- lintStore (LINT_PROMPT pipeline)
+- PageProvenance (coverage lint UI) + live streamed report
+- lintStore (LINT_PROMPT pipeline, streaming)
+- Local regex lint (MCP `lint_citations`)
 - chat.ts unified dispatcher
 
-## 8. 🚧 Polish, Wiring Cleanup & Test Hardening
+## 8. ✅ Polish, Wiring Cleanup & Test Hardening
 
-*Status: in-progress*
+*Status: done (2026-07-06/07)*
 
-Remaining work: wire (or remove) the unconnected IPC commands and dead utility exports; finish timelapse play/pause UI plumbing; replace SamplePage's duplicate markdown parser; add HTTP/CLI-agent streaming; i18n-ify remaining hardcoded English labels; add an error boundary; and add automated integration/E2E tests for streaming-cancel, keychain, CLI spawning, MCP registration, and rendered 3D-graph verification.
+Dead IPC surface removed end to end (parseLinks/hasProviderKey TS+Rust, parseWikilink/findWikilinks); the "unwired" list was mostly stale — gitLog/scanProvenance/listProviderModels/mcpRegistrationInfo were already wired, and the global error boundary already existed (main.tsx/App.tsx). Remaining hardcoded English labels moved into i18n (41 keys × en/ko/ja, 15 files; PageSettings provider blurbs left as a noted follow-up). A Playwright route-smoke (`npm run test:e2e`) drives every workspace/tools route in ?mock mode and asserts no page/console error; graph render + large-vault perf are covered by `npm run perf`. Full native E2E (keychain, CLI spawning, MCP registration) is deferred — it needs tauri-driver/WebDriver against the packaged binary, out of proportion to the payoff for now.
 
 **Features:**
-- Unwired/stub IPC commands (gitLog/scanProvenance/listProviderModels/mcpRegistrationInfo/parseLinks/hasProviderKey)
-- Dead exports (parseWikilink/findWikilinks)
-- Timelapse play/pause UI plumbing
-- SamplePage duplicate parser cleanup
-- HTTP/CLI streaming
-- Hardcoded English labels → i18n
-- Global error boundary
-- Integration/E2E test coverage
+- Dead IPC/exports removed (Stage 8 audit)
+- Hardcoded English labels → i18n (41 keys)
+- Playwright route-smoke + perf probe (`test:e2e` / `perf`)
+- Global error boundary (pre-existing, verified)
+- Deferred: native E2E (keychain/CLI/MCP via tauri-driver), SamplePage parser dedupe, HTTP/CLI-agent streaming beyond lint

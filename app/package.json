@@ -12,6 +12,8 @@
     "tauri": "tauri",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:e2e": "node scripts/route-smoke.mjs",
+    "perf": "node scripts/graph-perf.mjs",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html,json}\"",
     "format:check": "prettier --check \"src/**/*.{ts,tsx,css,html,json}\""
