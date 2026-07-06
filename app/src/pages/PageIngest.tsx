@@ -283,10 +283,10 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
             </div>
 
             <div className="field">
-              <label>Title</label>
+              <label>{t.ing_title_label ?? "Title"}</label>
               <input
                 className="input"
-                placeholder="e.g. Byte Pair Encoding"
+                placeholder={t.ing_title_ph ?? "e.g. Byte Pair Encoding"}
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
               />
@@ -336,18 +336,21 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
                   title={t.ing_step_read}
                   active={false}
                   done={stage === "done"}
+                  t={t}
                 />
                 <StepRow
                   idx={2}
                   title={t.ing_step_claude}
                   active={false}
                   done={stage === "done"}
+                  t={t}
                 />
                 <StepRow
                   idx={3}
                   title={t.ing_step_refresh}
                   active={false}
                   done={stage === "done"}
+                  t={t}
                 />
               </div>
             </div>
@@ -387,11 +390,13 @@ function StepRow({
   title,
   active,
   done,
+  t,
 }: {
   idx: number;
   title: string;
   active: boolean;
   done: boolean;
+  t: Strings;
 }): JSX.Element {
   return (
     <div className={"step " + (done ? "done" : active ? "active" : "")}>
@@ -400,7 +405,9 @@ function StepRow({
       </div>
       <div className="step-body">
         <div className="step-title">{title}</div>
-        {active ? <div className="step-sub">working…</div> : null}
+        {active ? (
+          <div className="step-sub">{t.ing_working ?? "working…"}</div>
+        ) : null}
       </div>
     </div>
   );

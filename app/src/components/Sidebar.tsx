@@ -76,7 +76,7 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
           <span>{t.quick_search}</span>
           <span className="qkbd">⌘K</span>
         </button>
-        <DailyNoteButton vaultPath={currentVault?.path ?? ""} />
+        <DailyNoteButton vaultPath={currentVault?.path ?? ""} t={t} />
         <button
           className={"qbtn" + (route === "ingest" ? " active" : "")}
           onClick={() => setRoute("ingest")}
@@ -129,7 +129,7 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
         <div className="nav-group">
           <div className="nav-group-label">
             <span>{t.nav_pages}</span>
-            <NewPageButton parentDir={currentVault?.path ?? ""} />
+            <NewPageButton parentDir={currentVault?.path ?? ""} t={t} />
           </div>
           {fileTree.length === 0 ? (
             <div className="muted" style={{ padding: "8px", fontSize: 12.5 }}>
@@ -172,7 +172,9 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
         </div>
       </div>
 
-      {menu ? <ContextMenu menu={menu} onClose={() => setMenu(null)} /> : null}
+      {menu ? (
+        <ContextMenu menu={menu} onClose={() => setMenu(null)} t={t} />
+      ) : null}
     </aside>
   );
 }
@@ -287,12 +289,18 @@ function DirectoryRow({
   );
 }
 
-function NewPageButton({ parentDir }: { parentDir: string }): JSX.Element {
+function NewPageButton({
+  parentDir,
+  t,
+}: {
+  parentDir: string;
+  t: Strings;
+}): JSX.Element {
   const createFile = useVaultStore((s) => s.createFile);
   return (
     <button
       className="ngl-add"
-      title="New note in vault root"
+      title={t.sb_new_note_root ?? "New note in vault root"}
       disabled={!parentDir}
       onClick={async (e) => {
         e.stopPropagation();
@@ -315,9 +323,11 @@ function NewPageButton({ parentDir }: { parentDir: string }): JSX.Element {
 function ContextMenu({
   menu,
   onClose,
+  t,
 }: {
   menu: ContextMenuState;
   onClose: () => void;
+  t: Strings;
 }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
   const createFile = useVaultStore((s) => s.createFile);
@@ -373,7 +383,10 @@ function ContextMenu({
     const target = menu.node;
     onClose();
     const ok = await confirmAction({
-      title: `Delete ${target.kind === "directory" ? "folder" : "file"}?`,
+      title:
+        target.kind === "directory"
+          ? (t.sb_delete_folder_q ?? "Delete folder?")
+          : (t.sb_delete_file_q ?? "Delete file?"),
       message: `"${target.name}" will be permanently removed.`,
       danger: true,
     });
@@ -390,12 +403,12 @@ function ContextMenu({
     >
       <li>
         <button type="button" onClick={() => void handleNewFile()}>
-          New note
+          {t.sb_new_note ?? "New note"}
         </button>
       </li>
       <li>
         <button type="button" onClick={() => void handleNewFolder()}>
-          New folder
+          {t.sb_new_folder ?? "New folder"}
         </button>
       </li>
       {menu.node !== "vault" ? (
@@ -403,7 +416,7 @@ function ContextMenu({
           <li className="memex-menu__sep" />
           <li>
             <button type="button" onClick={() => void handleRename()}>
-              Rename…
+              {t.sb_rename ?? "Rename…"}
             </button>
           </li>
           <li>
@@ -412,7 +425,7 @@ function ContextMenu({
               className="memex-menu__danger"
               onClick={() => void handleDelete()}
             >
-              Delete
+              {t.dlg_delete}
             </button>
           </li>
         </>
@@ -425,7 +438,13 @@ function stripExt(name: string): string {
   return name.replace(/\.md$/i, "");
 }
 
-function DailyNoteButton({ vaultPath }: { vaultPath: string }): JSX.Element {
+function DailyNoteButton({
+  vaultPath,
+  t,
+}: {
+  vaultPath: string;
+  t: Strings;
+}): JSX.Element {
   const setRoute = useUIStore((s) => s.setRoute);
 
   async function handle(): Promise<void> {
@@ -463,7 +482,7 @@ function DailyNoteButton({ vaultPath }: { vaultPath: string }): JSX.Element {
       <span className="qicon">
         <Icon name="page" />
       </span>
-      <span>Today&apos;s note</span>
+      <span>{t.sb_today_note ?? "Today's note"}</span>
     </button>
   );
 }

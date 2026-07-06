@@ -3,13 +3,16 @@
 
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
+import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 
 export default function BacklinksPanel({
   filePath,
+  t,
 }: {
   filePath: string;
+  t: Strings;
 }): JSX.Element | null {
   const adjacency = useVaultStore((s) => s.adjacency);
   const setRoute = useUIStore((s) => s.setRoute);
@@ -26,7 +29,7 @@ export default function BacklinksPanel({
           Backlinks
         </div>
         <div className="muted" style={{ fontSize: 13 }}>
-          No notes link here yet.
+          {t.rd_backlinks_empty ?? "No notes link here yet."}
         </div>
       </section>
     );

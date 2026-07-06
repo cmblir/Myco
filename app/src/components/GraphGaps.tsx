@@ -49,8 +49,8 @@ export default function GraphGaps({
           type="button"
           className="icon-btn"
           onClick={onClose}
-          aria-label="Close"
-          title="Close"
+          aria-label={t.ui_close ?? "Close"}
+          title={t.ui_close ?? "Close"}
         >
           <Icon name="x" size={13} />
         </button>

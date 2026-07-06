@@ -970,7 +970,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               </svg>
             )}
           </button>
-          <ZoomButtons sceneRef={sceneRef} />
+          <ZoomButtons sceneRef={sceneRef} t={t} />
           <button
             type="button"
             className="graph-toolbar__btn graph-toolbar__btn--badged"
@@ -1119,8 +1119,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
 
 function ZoomButtons({
   sceneRef,
+  t,
 }: {
   sceneRef: React.MutableRefObject<GraphScene | null>;
+  t: Strings;
 }): JSX.Element {
   return (
     <div style={{ display: "flex", gap: 4 }}>
@@ -1128,7 +1130,7 @@ function ZoomButtons({
         type="button"
         className="graph-toolbar__btn"
         onClick={() => sceneRef.current?.zoomOut()}
-        aria-label="Zoom out"
+        aria-label={t.gr_zoom_out ?? "Zoom out"}
       >
         −
       </button>
@@ -1136,7 +1138,7 @@ function ZoomButtons({
         type="button"
         className="graph-toolbar__btn"
         onClick={() => sceneRef.current?.fit()}
-        aria-label="Fit"
+        aria-label={t.gr_fit ?? "Fit"}
       >
         fit
       </button>
@@ -1144,7 +1146,7 @@ function ZoomButtons({
         type="button"
         className="graph-toolbar__btn"
         onClick={() => sceneRef.current?.zoomIn()}
-        aria-label="Zoom in"
+        aria-label={t.gr_zoom_in ?? "Zoom in"}
       >
         +
       </button>

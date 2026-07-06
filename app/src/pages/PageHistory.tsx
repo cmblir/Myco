@@ -97,7 +97,7 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
       </header>
 
       {!currentVault ? (
-        <p className="muted">Open a vault to see history.</p>
+        <p className="muted">{t.h_open_vault ?? "Open a vault to see history."}</p>
       ) : reports.length === 0 ? (
         <div
           className="card-flat"

@@ -168,7 +168,9 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       </div>
       {settings ? (
         <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-          via {settings.query_provider} · {settings.query_model}
+          {(t.q_via ?? "via {provider} · {model}")
+            .replace("{provider}", settings.query_provider)
+            .replace("{model}", settings.query_model)}
         </div>
       ) : null}
 
@@ -181,7 +183,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                   className="tb-dot"
                   style={{ background: "var(--ink)" }}
                 ></span>
-                you
+                {t.q_you ?? "you"}
               </span>
               <span style={{ fontWeight: 500 }}>{turn.q}</span>
             </div>

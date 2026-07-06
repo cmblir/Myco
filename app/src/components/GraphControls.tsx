@@ -72,7 +72,7 @@ export default function GraphControls({
   }
 
   return (
-    <aside className="graph-drawer" aria-label="Graph settings">
+    <aside className="graph-drawer" aria-label={t.gr_settings ?? "Graph settings"}>
       <header className="graph-drawer__head">
         <span className="graph-drawer__title">
           {t.gr_settings ?? "Graph settings"}
@@ -90,7 +90,7 @@ export default function GraphControls({
             type="button"
             className="graph-drawer__btn graph-drawer__btn--icon"
             onClick={onToggle}
-            aria-label="Close"
+            aria-label={t.ui_close ?? "Close"}
           >
             ×
           </button>

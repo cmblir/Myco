@@ -24,12 +24,12 @@ export default function PageReader({
   pageRoute: string;
 }): JSX.Element {
   if (pageRoute.startsWith("sample/")) {
-    return <SamplePage id={pageRoute.slice(7)} />;
+    return <SamplePage id={pageRoute.slice(7)} t={t} />;
   }
   return <VaultPage key={pageRoute} path={pageRoute} t={t} />;
 }
 
-function SamplePage({ id }: { id: string }): JSX.Element {
+function SamplePage({ id, t }: { id: string; t: Strings }): JSX.Element {
   const setRoute = useUIStore((s) => s.setRoute);
   const p = SAMPLE.pages.find((x) => x.id === id) ?? SAMPLE.pages[0];
   const md =
@@ -88,7 +88,10 @@ function SamplePage({ id }: { id: string }): JSX.Element {
             {p.type}
           </span>
           <span className="muted" style={{ fontSize: 12.5 }}>
-            updated {p.updated} · {p.words} words · {p.links} links
+            {(t.rd_meta ?? "updated {date} · {words} words · {links} links")
+              .replace("{date}", p.updated)
+              .replace("{words}", String(p.words))
+              .replace("{links}", String(p.links))}
           </span>
         </div>
         <h1 className="page-title">{p.title}</h1>
@@ -122,7 +125,7 @@ function SamplePage({ id }: { id: string }): JSX.Element {
   );
 }
 
-function VaultPage({ path }: { path: string; t: Strings }): JSX.Element {
+function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const openFile = useVaultStore((s) => s.openFile);
   const activeFile = useVaultStore((s) => s.activeFile);
   const currentVaultPath = useVaultStore((s) => s.currentVault?.path);
@@ -243,19 +246,19 @@ function VaultPage({ path }: { path: string; t: Strings }): JSX.Element {
               className={mode === "source" ? "active" : ""}
               onClick={() => setMode("source")}
             >
-              <Icon name="edit" size={12} /> Source
+              <Icon name="edit" size={12} /> {t.rd_source ?? "Source"}
             </button>
             <button
               className={mode === "split" ? "active" : ""}
               onClick={() => setMode("split")}
             >
-              <Icon name="sidebar" size={12} /> Split
+              <Icon name="sidebar" size={12} /> {t.rd_split ?? "Split"}
             </button>
             <button
               className={mode === "preview" ? "active" : ""}
               onClick={() => setMode("preview")}
             >
-              <Icon name="eye" size={12} /> Preview
+              <Icon name="eye" size={12} /> {t.rd_preview ?? "Preview"}
             </button>
           </div>
         </div>
@@ -311,7 +314,7 @@ function VaultPage({ path }: { path: string; t: Strings }): JSX.Element {
           </div>
         ) : null}
       </section>
-      <BacklinksPanel filePath={path} />
+      <BacklinksPanel filePath={path} t={t} />
     </div>
   );
 }

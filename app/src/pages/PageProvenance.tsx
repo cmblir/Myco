@@ -62,7 +62,8 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
             onClick={() => void runLint()}
             disabled={!currentVault || lintBusy}
           >
-            <Icon name="check" size={14} /> {lintBusy ? "Linting…" : "Run lint"}
+            <Icon name="check" size={14} />{" "}
+            {lintBusy ? (t.p_linting ?? "Linting…") : (t.p_lint_run ?? "Run lint")}
           </button>
         </div>
       </header>
@@ -81,7 +82,7 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
             style={{ justifyContent: "space-between", marginBottom: 8 }}
           >
             <div className="section-title" style={{ fontSize: 14 }}>
-              Lint report
+              {t.p_lint_report ?? "Lint report"}
             </div>
             {!lintBusy ? (
               <button
@@ -89,7 +90,7 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
                 className="btn-ghost btn"
                 onClick={dismissLint}
               >
-                <Icon name="x" size={12} /> dismiss
+                <Icon name="x" size={12} /> {t.p_dismiss ?? "dismiss"}
               </button>
             ) : null}
           </div>
@@ -120,15 +121,17 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
       ) : null}
 
       {!currentVault ? (
-        <p className="muted">Open a vault to scan provenance.</p>
+        <p className="muted">{t.p_open_vault ?? "Open a vault to scan provenance."}</p>
       ) : loading ? (
-        <p className="muted">Scanning vault…</p>
+        <p className="muted">{t.p_scanning ?? "Scanning vault…"}</p>
       ) : error ? (
         <div className="card-flat" style={{ color: "#dc2626" }}>
           {error}
         </div>
       ) : !rows || rows.length === 0 ? (
-        <p className="muted">No claim-bearing notes yet — add some prose.</p>
+        <p className="muted">
+          {t.p_empty ?? "No claim-bearing notes yet — add some prose."}
+        </p>
       ) : (
         <>
           <div
@@ -172,7 +175,7 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
                   letterSpacing: "0.04em",
                 }}
               >
-                Overall
+                {t.p_overall ?? "Overall"}
               </div>
               <div style={{ fontSize: 22, fontWeight: 600, marginTop: 2 }}>
                 {totals.total > 0
@@ -183,7 +186,7 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
                   className="muted"
                   style={{ fontSize: 13, fontWeight: 400, marginLeft: 8 }}
                 >
-                  {totals.cited} / {totals.total} claims cited
+                  {totals.cited} / {totals.total} {t.p_claims_cited ?? "claims cited"}
                 </span>
               </div>
             </div>
@@ -191,7 +194,7 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
 
           <div className="section-head">
             <div className="section-title" style={{ fontSize: 14 }}>
-              Pages, by claim coverage
+              {t.p_pages_by_coverage ?? "Pages, by claim coverage"}
             </div>
           </div>
           <div className="list">

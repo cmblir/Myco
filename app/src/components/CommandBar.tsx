@@ -151,7 +151,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
         </div>
         <div className="cmd-list" ref={listRef}>
           {filtered.length === 0 && contentHits.length === 0 ? (
-            <div className="cmd-row muted">No results</div>
+            <div className="cmd-row muted">{t.cb_no_results ?? "No results"}</div>
           ) : null}
           {filtered.map((r, i) => (
             <button
@@ -168,12 +168,16 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
               <Icon name={iconFor(r)} size={13} />
               <span>{r.label}</span>
               <span className="cr-tag">
-                {r.type === "nav" ? "page" : "file"}
+                {r.type === "nav"
+                  ? (t.cb_tag_page ?? "page")
+                  : (t.cb_tag_file ?? "file")}
               </span>
             </button>
           ))}
           {contentHits.length > 0 ? (
-            <div className="cmd-group-label">In page contents</div>
+            <div className="cmd-group-label">
+              {t.cb_in_contents ?? "In page contents"}
+            </div>
           ) : null}
           {contentHits.map((h, i) => (
             <button

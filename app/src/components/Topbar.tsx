@@ -28,7 +28,7 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
       <button
         className="icon-btn"
         onClick={toggleSidebar}
-        title="Toggle sidebar (⌘B)"
+        title={t.tb_toggle_sidebar ?? "Toggle sidebar (⌘B)"}
       >
         <Icon name="sidebar" />
       </button>
@@ -193,7 +193,7 @@ function LintChip({ t }: { t: Strings }): JSX.Element | null {
         title={t.p_lint_running}
       >
         <span className="ingest-chip-spinner" />
-        <span>Lint</span>
+        <span>{t.tb_lint ?? "Lint"}</span>
       </button>
     );
   }

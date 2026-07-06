@@ -258,6 +258,55 @@ export interface Strings {
   ol_pull_failed: string;
   ol_pull_ready: string;
   ol_dismiss: string;
+  // Shared UI (optional — components fall back to English).
+  ui_close?: string;
+  // Provenance page.
+  p_lint_run?: string;
+  p_linting?: string;
+  p_lint_report?: string;
+  p_dismiss?: string;
+  p_open_vault?: string;
+  p_scanning?: string;
+  p_empty?: string;
+  p_overall?: string;
+  p_claims_cited?: string;
+  p_pages_by_coverage?: string;
+  // Reader page.
+  rd_meta?: string;
+  rd_source?: string;
+  rd_split?: string;
+  rd_preview?: string;
+  rd_backlinks_empty?: string;
+  // Ingest page.
+  ing_title_label?: string;
+  ing_title_ph?: string;
+  ing_working?: string;
+  // Query page.
+  q_via?: string;
+  q_you?: string;
+  // Sidebar.
+  sb_new_note?: string;
+  sb_new_folder?: string;
+  sb_rename?: string;
+  sb_today_note?: string;
+  sb_new_note_root?: string;
+  sb_delete_folder_q?: string;
+  sb_delete_file_q?: string;
+  // Command bar.
+  cb_no_results?: string;
+  cb_tag_page?: string;
+  cb_tag_file?: string;
+  cb_in_contents?: string;
+  // Topbar.
+  tb_lint?: string;
+  tb_toggle_sidebar?: string;
+  // Graph toolbar.
+  gr_zoom_out?: string;
+  gr_fit?: string;
+  gr_zoom_in?: string;
+  // Overview / History empty states.
+  ov_no_git?: string;
+  h_open_vault?: string;
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -533,6 +582,45 @@ export const STRINGS: Record<Lang, Strings> = {
     ol_pull_failed: "failed",
     ol_pull_ready: "ready",
     ol_dismiss: "dismiss",
+    ui_close: "Close",
+    p_lint_run: "Run lint",
+    p_linting: "Linting…",
+    p_lint_report: "Lint report",
+    p_dismiss: "dismiss",
+    p_open_vault: "Open a vault to scan provenance.",
+    p_scanning: "Scanning vault…",
+    p_empty: "No claim-bearing notes yet — add some prose.",
+    p_overall: "Overall",
+    p_claims_cited: "claims cited",
+    p_pages_by_coverage: "Pages, by claim coverage",
+    rd_meta: "updated {date} · {words} words · {links} links",
+    rd_source: "Source",
+    rd_split: "Split",
+    rd_preview: "Preview",
+    rd_backlinks_empty: "No notes link here yet.",
+    ing_title_label: "Title",
+    ing_title_ph: "e.g. Byte Pair Encoding",
+    ing_working: "working…",
+    q_via: "via {provider} · {model}",
+    q_you: "you",
+    sb_new_note: "New note",
+    sb_new_folder: "New folder",
+    sb_rename: "Rename…",
+    sb_today_note: "Today's note",
+    sb_new_note_root: "New note in vault root",
+    sb_delete_folder_q: "Delete folder?",
+    sb_delete_file_q: "Delete file?",
+    cb_no_results: "No results",
+    cb_tag_page: "page",
+    cb_tag_file: "file",
+    cb_in_contents: "In page contents",
+    tb_lint: "Lint",
+    tb_toggle_sidebar: "Toggle sidebar (⌘B)",
+    gr_zoom_out: "Zoom out",
+    gr_fit: "Fit",
+    gr_zoom_in: "Zoom in",
+    ov_no_git: "No git history yet.",
+    h_open_vault: "Open a vault to see history.",
   },
   ko: {
     app_name: "Memex",
@@ -806,6 +894,45 @@ export const STRINGS: Record<Lang, Strings> = {
     ol_pull_failed: "실패",
     ol_pull_ready: "준비됨",
     ol_dismiss: "닫기",
+    ui_close: "닫기",
+    p_lint_run: "린트 실행",
+    p_linting: "린트 중…",
+    p_lint_report: "린트 보고서",
+    p_dismiss: "닫기",
+    p_open_vault: "출처를 스캔하려면 vault를 여세요.",
+    p_scanning: "vault 스캔 중…",
+    p_empty: "아직 주장이 담긴 노트가 없습니다 — 본문을 추가해 보세요.",
+    p_overall: "전체",
+    p_claims_cited: "주장 인용됨",
+    p_pages_by_coverage: "페이지별 인용 커버리지",
+    rd_meta: "{date} 업데이트 · 단어 {words} · 링크 {links}",
+    rd_source: "소스",
+    rd_split: "분할",
+    rd_preview: "미리보기",
+    rd_backlinks_empty: "아직 여기로 연결된 노트가 없습니다.",
+    ing_title_label: "제목",
+    ing_title_ph: "예: Byte Pair Encoding",
+    ing_working: "작업 중…",
+    q_via: "{provider} · {model} 사용",
+    q_you: "나",
+    sb_new_note: "새 노트",
+    sb_new_folder: "새 폴더",
+    sb_rename: "이름 바꾸기…",
+    sb_today_note: "오늘의 노트",
+    sb_new_note_root: "vault 루트에 새 노트",
+    sb_delete_folder_q: "폴더를 삭제할까요?",
+    sb_delete_file_q: "파일을 삭제할까요?",
+    cb_no_results: "결과 없음",
+    cb_tag_page: "페이지",
+    cb_tag_file: "파일",
+    cb_in_contents: "페이지 본문에서",
+    tb_lint: "린트",
+    tb_toggle_sidebar: "사이드바 토글 (⌘B)",
+    gr_zoom_out: "축소",
+    gr_fit: "맞춤",
+    gr_zoom_in: "확대",
+    ov_no_git: "아직 git 히스토리가 없습니다.",
+    h_open_vault: "히스토리를 보려면 vault를 여세요.",
   },
   ja: {
     app_name: "Memex",
@@ -1033,5 +1160,44 @@ export const STRINGS: Record<Lang, Strings> = {
     ol_pull_failed: "失敗",
     ol_pull_ready: "準備完了",
     ol_dismiss: "閉じる",
+    ui_close: "閉じる",
+    p_lint_run: "リント実行",
+    p_linting: "リント中…",
+    p_lint_report: "リントレポート",
+    p_dismiss: "閉じる",
+    p_open_vault: "出典をスキャンするには vault を開いてください。",
+    p_scanning: "vault をスキャン中…",
+    p_empty: "まだ主張を含むノートがありません — 本文を追加してください。",
+    p_overall: "全体",
+    p_claims_cited: "件の主張が引用済み",
+    p_pages_by_coverage: "ページ別の引用カバレッジ",
+    rd_meta: "{date} 更新 · {words} 語 · リンク {links}",
+    rd_source: "ソース",
+    rd_split: "分割",
+    rd_preview: "プレビュー",
+    rd_backlinks_empty: "まだここにリンクするノートはありません。",
+    ing_title_label: "タイトル",
+    ing_title_ph: "例: Byte Pair Encoding",
+    ing_working: "処理中…",
+    q_via: "{provider} · {model} を使用",
+    q_you: "あなた",
+    sb_new_note: "新規ノート",
+    sb_new_folder: "新規フォルダ",
+    sb_rename: "名前を変更…",
+    sb_today_note: "今日のノート",
+    sb_new_note_root: "vault ルートに新規ノート",
+    sb_delete_folder_q: "フォルダを削除しますか?",
+    sb_delete_file_q: "ファイルを削除しますか?",
+    cb_no_results: "結果なし",
+    cb_tag_page: "ページ",
+    cb_tag_file: "ファイル",
+    cb_in_contents: "ページ本文内",
+    tb_lint: "リント",
+    tb_toggle_sidebar: "サイドバー切替 (⌘B)",
+    gr_zoom_out: "ズームアウト",
+    gr_fit: "全体表示",
+    gr_zoom_in: "ズームイン",
+    ov_no_git: "まだ git 履歴がありません。",
+    h_open_vault: "履歴を見るには vault を開いてください。",
   },
 };

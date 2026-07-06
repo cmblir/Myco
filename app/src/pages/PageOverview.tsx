@@ -138,7 +138,7 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
       <div className="list">
         {recent.length === 0 ? (
           <p className="muted" style={{ padding: "10px 6px" }}>
-            No git history yet.
+            {t.ov_no_git ?? "No git history yet."}
           </p>
         ) : (
           recent.map((c) => (
