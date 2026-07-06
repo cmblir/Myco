@@ -6,7 +6,7 @@ maintain the wiki directly, alongside the Memex desktop app.
 
 ## What it gives Claude
 
-19 tools, all scoped to this repository's wiki and raw/ directories.
+25 tools, all scoped to this repository's wiki and raw/ directories.
 
 | Tool | Purpose |
 |---|---|
@@ -29,6 +29,12 @@ maintain the wiki directly, alongside the Memex desktop app.
 | `archive_inbox_source` | Copy an ingested source to raw/ and archive the original. |
 | `lint_citations` | Local structural/citation lint of every page — regex only, no LLM. |
 | `preview_page_update` | Unified diff of what update_page would write; touches nothing. |
+| `trust_report` | Source-trust audit: source_type → trust weight, suggested vs declared confidence (GOV-03). |
+| `contradictions` | Structural contradiction scan: disputed pages + active→superseded links (GOV-01), no LLM. |
+| `resolve_cross_links` | Resolve a page's `[[slug::page]]` cross-project links (FEAT-02). |
+| `translation_report` | KO/EN `translation_of` relation audit — dangling / non-reciprocal twins (FEAT-08). |
+| `append_changelog` | Append to the project CHANGELOG.md (Keep a Changelog, GOV-04). |
+| `export_project` | Zip a project's vault to projects/.backups/ (OPS-04). |
 
 The server **never** modifies anything under `raw/` after the file is first
 written. `update_page` and `create_folder` validate the resolved path is
@@ -69,7 +75,7 @@ Verify:
 claude mcp list
 ```
 
-Inside any Claude Code session you should now see `memex` listed and the 19
+Inside any Claude Code session you should now see `memex` listed and the 25
 tools available. Try:
 
 > Use `memex` to list pages of type `concept` in this wiki.
@@ -106,7 +112,7 @@ Add `memex` under `mcpServers` (replace the absolute paths with what
 ```
 
 If the file already has other MCP servers, just add the `memex` entry
-inside the existing `mcpServers` block. Restart Claude Desktop. The 19
+inside the existing `mcpServers` block. Restart Claude Desktop. The 25
 tools appear under the plug icon.
 
 ## Use chat content as wiki sources

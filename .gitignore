@@ -53,3 +53,6 @@ commits.tsv
 
 # Node (stray npx artifacts — the app manages its own under app/)
 node_modules/
+
+# Project backups (export_project output)
+projects/.backups/

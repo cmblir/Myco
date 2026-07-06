@@ -58,7 +58,7 @@ Memex ships as a native desktop app. A second surface exists for programmatic ac
 | Surface | What it is | When to use |
 |---|---|---|
 | **Memex desktop app** (`app/`) | Tauri 2 + React. Ships as a `.dmg` / `.exe`. Bundles its own vault, talks to any of 5 LLM providers (CLI + 4 HTTP APIs + Ollama). | **Default. Use this.** |
-| **MCP server** (`mcp-server/`) | 19 tools exposed via the Model Context Protocol. | Drive Memex from Claude Desktop / Claude Code / any MCP client. |
+| **MCP server** (`mcp-server/`) | 25 tools exposed via the Model Context Protocol. | Drive Memex from Claude Desktop / Claude Code / any MCP client. |
 
 Both share the same vault layout (`raw/ wiki/ daily/ ingest-reports/`) and never lock your data. Plain markdown on disk, always.
 
@@ -374,7 +374,7 @@ app/                       Memex desktop app (Tauri 2 + React)
   src-tauri/                 Rust shell + IPC
   README.md                  Desktop app docs
   PLAN.md / PROGRESS.md      Build history
-mcp-server/                MCP server (19 tools)
+mcp-server/                MCP server (25 tools)
   memex_mcp.py
   project_registry.py        Multi-project resolver
   install.sh

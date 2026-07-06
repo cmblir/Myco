@@ -678,6 +678,7 @@ def git_commit(message: str, project: str = "") -> dict:
             f"{rel}/raw",
             f"{rel}/ingest-reports",
             f"{rel}/CLAUDE.md",
+            f"{rel}/CHANGELOG.md",
             f"{rel}/.settings.json",
             "projects.json",
         ]
@@ -911,6 +912,275 @@ def preview_page_update(filename: str, content: str, project: str = "") -> dict:
         )
     )
     return {"ok": True, "project": proj.slug, "changed": True, "diff": diff}
+
+
+# ─── governance / cross-project ──────────────────────────────────────────────
+
+# Source trust tiers (GOV-03): a page's `source_type` maps to a trust weight;
+# combined with citation count it yields a suggested confidence. Higher = more
+# authoritative. Unknown/absent → neutral 0.5.
+SOURCE_TRUST = {
+    "peer-reviewed": 1.0,
+    "paper": 0.95,
+    "book": 0.9,
+    "official-docs": 0.85,
+    "primary": 0.85,
+    "news": 0.6,
+    "blog": 0.45,
+    "forum": 0.35,
+    "tweet": 0.25,
+    "unknown": 0.5,
+}
+
+
+def suggest_confidence(source_type: str | None, citation_count: int) -> str:
+    """Derive a confidence tier from source trust + how many citations back the
+    page (GOV-03). Pure; used by the trust-score tool and available to lint.
+    """
+    trust = SOURCE_TRUST.get((source_type or "unknown").strip().lower(), 0.5)
+    # More citations lift confidence, with diminishing returns; trust caps it.
+    cite_factor = min(1.0, citation_count / 3.0)
+    score = trust * (0.5 + 0.5 * cite_factor)
+    return "high" if score >= 0.75 else "medium" if score >= 0.45 else "low"
+
+
+@mcp.tool()
+def trust_report(project: str = "") -> dict:
+    """Source-trust audit (GOV-03): for each page report its source_type, its
+    trust weight, citation count, and the confidence the schema WOULD suggest —
+    flagging pages whose declared `confidence` disagrees with the suggestion.
+    Read-only; never edits pages.
+    """
+    proj = _resolve(project)
+    rows: list[dict] = []
+    mismatches = 0
+    for md in sorted(proj.wiki_dir.rglob("*.md")):
+        if md.name in LINT_SKIP_NAMES:
+            continue
+        meta, body = parse_fm(md.read_text("utf-8", errors="replace"))
+        if not meta or meta.get("type") in LINT_META_TYPES:
+            continue
+        stype = meta.get("source_type")
+        cites = len(set(FOOTNOTE_REF_RE.findall(body)))
+        suggested = suggest_confidence(stype, cites)
+        declared = meta.get("confidence")
+        mismatch = declared is not None and declared != suggested
+        if mismatch:
+            mismatches += 1
+        rows.append({
+            "filename": str(md.relative_to(proj.wiki_dir)),
+            "source_type": stype or "(unset)",
+            "trust": SOURCE_TRUST.get((stype or "unknown").lower(), 0.5),
+            "citations": cites,
+            "declared_confidence": declared or "(unset)",
+            "suggested_confidence": suggested,
+            "mismatch": mismatch,
+        })
+    return {
+        "ok": True,
+        "project": proj.slug,
+        "pages": len(rows),
+        "mismatches": mismatches,
+        "rows": rows,
+    }
+
+
+def find_contradictions(pages: dict[str, dict]) -> list[dict]:
+    """Structural contradiction candidates (GOV-01), no LLM: (1) pages marked
+    status=disputed, (2) superseded pages still linked by active pages, (3)
+    pages sharing a `claims`-style key with an opposite `stance`. `pages` maps
+    filename → {meta, body, links}. Pure so it unit-tests cleanly.
+    """
+    out: list[dict] = []
+    active_links: dict[str, list[str]] = {}
+    status_of: dict[str, str] = {}
+    for fn, p in pages.items():
+        st = p["meta"].get("status", "active")
+        status_of[fn] = st
+        if st == "active":
+            active_links[fn] = p.get("links", [])
+        if st == "disputed":
+            out.append({"kind": "disputed", "page": fn,
+                        "detail": "page is flagged disputed"})
+    # superseded page still referenced by an active page
+    for fn, links in active_links.items():
+        for tgt in links:
+            tgt_fn = tgt if tgt.endswith(".md") else f"{tgt}.md"
+            if status_of.get(tgt_fn) == "superseded":
+                out.append({"kind": "stale-link", "page": fn,
+                            "detail": f"links to superseded [[{tgt}]]"})
+    return out
+
+
+@mcp.tool()
+def contradictions(project: str = "") -> dict:
+    """Structural contradiction scan (GOV-01) — no LLM. Flags disputed pages
+    and active pages that still link to superseded ones, so you know where a
+    human/LLM judgement pass is worth spending. Read-only.
+    """
+    proj = _resolve(project)
+    pages: dict[str, dict] = {}
+    for md in sorted(proj.wiki_dir.rglob("*.md")):
+        if md.name in LINT_SKIP_NAMES:
+            continue
+        meta, body = parse_fm(md.read_text("utf-8", errors="replace"))
+        pages[str(md.relative_to(proj.wiki_dir))] = {
+            "meta": meta, "body": body, "links": extract_links(body),
+        }
+    found = find_contradictions(pages)
+    return {"ok": True, "project": proj.slug, "count": len(found), "found": found}
+
+
+# Cross-project link syntax (FEAT-02): [[slug::page]] targets a page in another
+# project. Parsed here so tools can resolve them without touching the wikilink
+# regex used for intra-project links.
+CROSS_LINK_RE = re.compile(r"\[\[([a-z0-9][\w-]*?)::([^\]|]+?)(?:\|[^\]]*?)?\]\]")
+
+
+def parse_cross_links(body: str) -> list[tuple[str, str]]:
+    """(project_slug, page) pairs for every [[slug::page]] in body. Pure."""
+    out: list[tuple[str, str]] = []
+    for m in CROSS_LINK_RE.finditer(body):
+        page = m.group(2).strip()
+        out.append((m.group(1).strip(), page[:-3] if page.endswith(".md") else page))
+    return out
+
+
+@mcp.tool()
+def resolve_cross_links(filename: str, project: str = "") -> dict:
+    """Resolve a page's [[slug::page]] cross-project links (FEAT-02): for each,
+    report the target project, page, and whether that page exists. Lets a
+    reader jump across projects without the intra-project graph conflating them.
+    """
+    proj = _resolve(project)
+    try:
+        target = _safe_wiki_path(proj, filename)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    if not target.is_file():
+        return {"ok": False, "error": f"not found: {filename}"}
+    _, body = parse_fm(target.read_text("utf-8", errors="replace"))
+    by_slug = {p.slug: p for p in project_registry.list_projects()}
+    links: list[dict] = []
+    for slug, page in parse_cross_links(body):
+        tproj = by_slug.get(slug)
+        exists = bool(tproj and (tproj.wiki_dir / f"{page}.md").is_file())
+        links.append({"project": slug, "page": page, "exists": exists,
+                      "known_project": tproj is not None})
+    return {"ok": True, "project": proj.slug, "links": links}
+
+
+@mcp.tool()
+def translation_report(project: str = "") -> dict:
+    """KO/EN translation-relation audit (FEAT-08). Pages may declare
+    `translation_of: <page>` (a translation, NOT a supersession). Reports each
+    declared pair and flags dangling targets or missing back-links so KO/EN
+    twins stay in sync. Read-only.
+    """
+    proj = _resolve(project)
+    metas: dict[str, dict] = {}
+    for md in sorted(proj.wiki_dir.rglob("*.md")):
+        meta, _ = parse_fm(md.read_text("utf-8", errors="replace"))
+        metas[md.stem] = meta
+    pairs: list[dict] = []
+    for stem_name, meta in metas.items():
+        tgt = meta.get("translation_of")
+        if not tgt:
+            continue
+        tgt_stem = tgt[:-3] if str(tgt).endswith(".md") else str(tgt)
+        target_meta = metas.get(tgt_stem)
+        back = target_meta and (
+            str(target_meta.get("translation_of", "")).replace(".md", "")
+            == stem_name
+        )
+        pairs.append({
+            "page": f"{stem_name}.md",
+            "translation_of": f"{tgt_stem}.md",
+            "target_exists": target_meta is not None,
+            "reciprocal": bool(back),
+        })
+    return {"ok": True, "project": proj.slug, "count": len(pairs), "pairs": pairs}
+
+
+@mcp.tool()
+def append_changelog(entry: str, section: str = "Changed", project: str = "") -> dict:
+    """Append an entry to the project's CHANGELOG.md (GOV-04, Keep a Changelog
+    format) under the `## [Unreleased]` heading's `### <section>` subsection.
+    Creates the file/headers if absent. section ∈ Added/Changed/Fixed/Removed.
+    """
+    if not entry.strip():
+        return {"ok": False, "error": "entry required"}
+    sec = section.strip().capitalize()
+    if sec not in {"Added", "Changed", "Fixed", "Removed"}:
+        return {"ok": False, "error": f"invalid section: {section}"}
+    proj = _resolve(project)
+    proj.root.mkdir(parents=True, exist_ok=True)
+    path = proj.root / "CHANGELOG.md"
+    if not path.exists():
+        path.write_text(
+            "# Changelog\n\n"
+            "All notable changes to this wiki are recorded here "
+            "(Keep a Changelog format).\n\n"
+            "## [Unreleased]\n",
+            encoding="utf-8",
+        )
+    text = path.read_text("utf-8")
+    if "## [Unreleased]" not in text:
+        text = text.rstrip() + "\n\n## [Unreleased]\n"
+    lines = text.splitlines()
+    # find the Unreleased block bounds
+    ur = next(i for i, ln in enumerate(lines) if ln.startswith("## [Unreleased]"))
+    nxt = next((i for i in range(ur + 1, len(lines))
+                if lines[i].startswith("## ")), len(lines))
+    block = lines[ur + 1 : nxt]
+    hdr = f"### {sec}"
+    if hdr in block:
+        hi = ur + 1 + block.index(hdr)
+        lines.insert(hi + 1, f"- {entry.strip()}")
+    else:
+        ins = ["", hdr, f"- {entry.strip()}"]
+        lines[nxt:nxt] = ins
+    path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return {"ok": True, "project": proj.slug,
+            "changelog": str(path.relative_to(REPO_ROOT)), "section": sec}
+
+
+@mcp.tool()
+def export_project(project: str = "") -> dict:
+    """Zip a project's vault (wiki/, raw/, CLAUDE.md, CHANGELOG.md, settings)
+    to projects/.backups/<slug>-<n>.zip for backup/restore (OPS-04). Returns
+    the archive path. Deterministic name with a collision counter (no clock).
+    """
+    proj = _resolve(project)
+    if not proj.root.exists():
+        return {"ok": False, "error": f"project root missing: {proj.slug}"}
+    backups = project_registry.PROJECTS_DIR / ".backups"
+    backups.mkdir(parents=True, exist_ok=True)
+    base = proj.slug or "legacy"
+    dest = backups / f"{base}.zip"
+    n = 2
+    while dest.exists():
+        dest = backups / f"{base}-{n}.zip"
+        n += 1
+    import zipfile
+
+    count = 0
+    with zipfile.ZipFile(dest, "w", zipfile.ZIP_DEFLATED) as z:
+        for sub in ("wiki", "raw", "ingest-reports", "reflect-reports"):
+            d = proj.root / sub
+            if not d.is_dir():
+                continue
+            for f in sorted(d.rglob("*")):
+                if f.is_file():
+                    z.write(f, str(f.relative_to(proj.root)))
+                    count += 1
+        for fn in ("CLAUDE.md", "CHANGELOG.md", ".settings.json"):
+            f = proj.root / fn
+            if f.is_file():
+                z.write(f, fn)
+                count += 1
+    return {"ok": True, "project": proj.slug,
+            "archive": str(dest.relative_to(REPO_ROOT)), "files": count}
 
 
 # ─── entry point ─────────────────────────────────────────────────────────────

@@ -4,7 +4,15 @@
 
 import pytest
 
-from memex_mcp import extract_links, lint_page_text, parse_fm, scan_secrets
+from memex_mcp import (
+    extract_links,
+    find_contradictions,
+    lint_page_text,
+    parse_cross_links,
+    parse_fm,
+    scan_secrets,
+    suggest_confidence,
+)
 from project_registry import _validate_slug, make_slug
 
 
@@ -89,6 +97,56 @@ def test_scan_secrets_detects_common_token_shapes():
 
 def test_scan_secrets_ignores_prose():
     assert scan_secrets("Discussing api keys and passwords in general.") == []
+
+
+# ─── suggest_confidence (GOV-03) ─────────────────────────────────────────────
+
+
+def test_suggest_confidence_scales_with_trust_and_citations():
+    assert suggest_confidence("peer-reviewed", 3) == "high"
+    assert suggest_confidence("tweet", 0) == "low"
+    assert suggest_confidence("blog", 3) == "medium"
+    # unknown/absent source → neutral trust
+    assert suggest_confidence(None, 0) == "low"
+    assert suggest_confidence(None, 3) in {"medium", "high"}
+
+
+# ─── parse_cross_links (FEAT-02) ─────────────────────────────────────────────
+
+
+def test_parse_cross_links_extracts_project_and_page():
+    body = "See [[other-proj::some-page]] and [[proj2::deep/note|Alias]]."
+    assert parse_cross_links(body) == [
+        ("other-proj", "some-page"),
+        ("proj2", "deep/note"),
+    ]
+
+
+def test_parse_cross_links_ignores_plain_wikilinks():
+    assert parse_cross_links("just [[a-normal-link]] here") == []
+
+
+# ─── find_contradictions (GOV-01) ────────────────────────────────────────────
+
+
+def test_find_contradictions_flags_disputed_and_stale_links():
+    pages = {
+        "a.md": {"meta": {"status": "active"}, "links": ["old.md"]},
+        "old.md": {"meta": {"status": "superseded"}, "links": []},
+        "b.md": {"meta": {"status": "disputed"}, "links": []},
+    }
+    found = find_contradictions(pages)
+    kinds = {(f["kind"], f["page"]) for f in found}
+    assert ("disputed", "b.md") in kinds
+    assert ("stale-link", "a.md") in kinds
+
+
+def test_find_contradictions_clean_graph():
+    pages = {
+        "a.md": {"meta": {"status": "active"}, "links": ["b.md"]},
+        "b.md": {"meta": {"status": "active"}, "links": []},
+    }
+    assert find_contradictions(pages) == []
 
 
 # ─── lint_page_text (GOV-02) ─────────────────────────────────────────────────
