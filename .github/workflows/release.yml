@@ -51,24 +51,13 @@ jobs:
           # fail to compile. Pin 10.15 so the C++ has std::filesystem; matches
           # bundle.macOS.minimumSystemVersion. No-op on the Windows runner.
           MACOSX_DEPLOYMENT_TARGET: "10.15"
-          # --- Code signing scaffold — INACTIVE until these repo secrets exist.
-          # Unset secrets resolve to empty strings, so tauri-action skips signing
-          # and the build stays unsigned (exactly today's behaviour). Add the
-          # secrets in repo Settings → Secrets and variables → Actions to switch
-          # signing on. Full setup (incl. the Windows tauri.conf.json signCommand
-          # that the AZURE_* vars require) is in docs/SIGNING.md.
-          # macOS — Developer ID signing + Apple ID notarization:
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          # Windows — Azure Trusted Signing (no-op without a signCommand in
-          # tauri.conf.json; see docs/SIGNING.md):
-          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
-          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
-          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          # Code signing is OFF for v0.1 (unsigned .dmg / .exe — see the release
+          # body + README Gatekeeper/SmartScreen note). The APPLE_* signing env
+          # vars are deliberately NOT passed: an unset secret resolves to an
+          # EMPTY string, and tauri-action treats a present-but-empty
+          # APPLE_CERTIFICATE as "sign" and runs `security import` with no data,
+          # which fails the whole macOS bundle. To enable signing later, add the
+          # secrets and restore the APPLE_* / AZURE_* env block per docs/SIGNING.md.
         with:
           projectPath: app # the Tauri app lives in app/, not the repo root
           tagName: ${{ github.ref_name }}
