@@ -301,6 +301,7 @@ export interface Strings {
   // Topbar.
   tb_lint?: string;
   tb_toggle_sidebar?: string;
+  tb_model_picker?: string;
   // Graph toolbar.
   gr_zoom_out?: string;
   gr_fit?: string;
@@ -670,6 +671,7 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_in_contents: "In page contents",
     tb_lint: "Lint",
     tb_toggle_sidebar: "Toggle sidebar (⌘B)",
+    tb_model_picker: "Switch query model",
     gr_zoom_out: "Zoom out",
     gr_fit: "Fit",
     gr_zoom_in: "Zoom in",
@@ -1045,6 +1047,7 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_in_contents: "페이지 본문에서",
     tb_lint: "린트",
     tb_toggle_sidebar: "사이드바 토글 (⌘B)",
+    tb_model_picker: "질문 모델 변경",
     gr_zoom_out: "축소",
     gr_fit: "맞춤",
     gr_zoom_in: "확대",
@@ -1374,6 +1377,7 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_in_contents: "ページ本文内",
     tb_lint: "リント",
     tb_toggle_sidebar: "サイドバー切替 (⌘B)",
+    tb_model_picker: "質問用モデルを変更",
     gr_zoom_out: "ズームアウト",
     gr_fit: "全体表示",
     gr_zoom_in: "ズームイン",

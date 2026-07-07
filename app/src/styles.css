@@ -507,6 +507,27 @@ select {
   padding: 1px 4px;
 }
 
+/* Topbar model picker: chip + anchored popover panel. */
+.model-chip-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.model-chip-wrap .pill {
+  cursor: pointer;
+}
+.model-chip-pop {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  width: min(340px, 90vw);
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r);
+  background: var(--bg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+}
+
 /* Workspace */
 .workspace {
   padding: 0 80px 96px;
@@ -2521,6 +2542,30 @@ hr {
 /* Mobile sidebar backdrop — hidden on desktop; the breakpoint below shows it. */
 .sidebar-scrim {
   display: none;
+}
+
+/* ============================================================
+   Responsive topbar. Between full desktop width and the <=768px phone rule the
+   flat flex row would overflow and clip the right-most chip, so collapse the
+   least-essential controls progressively: at <=1024px the search pill drops its
+   text (icon + kbd only); at <=900px the breadcrumb truncates. The status/model
+   chips keep their dot + label. Verified at 1280 / 1024 / 900 / 768 / 375.
+   ============================================================ */
+@media (max-width: 1024px) {
+  .pill-search .pill-label {
+    display: none;
+  }
+}
+@media (max-width: 900px) {
+  .breadcrumb {
+    min-width: 0;
+    overflow: hidden;
+  }
+  .breadcrumb b {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 /* ============================================================

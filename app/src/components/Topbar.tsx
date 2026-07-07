@@ -1,6 +1,6 @@
 // Topbar — breadcrumb + meta + language switch.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { IconName } from "../lib/icons";
@@ -9,6 +9,9 @@ import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useIngestStore } from "../stores/ingestStore";
 import { useLintStore } from "../stores/lintStore";
+import { useSettingsStore } from "../stores/settingsStore";
+import { useEnabledProviders } from "../lib/providers";
+import ModelSelect from "./ModelSelect";
 import { ipc } from "../lib/ipc";
 import { formatTicker } from "../lib/time";
 
@@ -44,14 +47,14 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
       <div className="topbar-spacer" />
       <IngestChip t={t} />
       <LintChip t={t} />
-      <button className="pill" onClick={toggleCmd}>
+      <button className="pill pill-search" onClick={toggleCmd}>
         <Icon name="search" size={14} />
-        <span>{t.ph_search}</span>
+        <span className="pill-label">{t.ph_search}</span>
         <span className="kbd" style={{ marginLeft: 4 }}>
           ⌘K
         </span>
       </button>
-      <ModelChip />
+      <ModelChip t={t} />
       <select
         className="pill"
         value={lang}
@@ -66,64 +69,116 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
   );
 }
 
-// Availability of the ACTIVE query model (not just the Claude CLI): shows the
-// provider + a green/grey dot. builtin-local ships in the app (always ready);
-// CLI/daemon providers get a live probe; API providers count as ready when
-// enabled (their key lives in the keychain — no cheap liveness check).
-function ModelChip(): JSX.Element | null {
-  const [label, setLabel] = useState<string | null>(null);
+// Interactive picker for the ACTIVE query model (not just the Claude CLI): a
+// pill showing the provider + a green/grey ready dot that opens a popover to
+// switch provider/model. Reads/writes settingsStore.query_provider|query_model,
+// so the choice persists to disk and stays in sync with Settings → Model.
+// Readiness: builtin-local ships in the app (always ready); CLI/daemon providers
+// get a live probe; API providers count as ready when enabled (their key lives
+// in the keychain — no cheap liveness check).
+function ModelChip({ t }: { t: Strings }): JSX.Element | null {
+  const settings = useSettingsStore((s) => s.settings);
+  const update = useSettingsStore((s) => s.update);
+  const providers = useEnabledProviders();
   const [ready, setReady] = useState(false);
-  const [detail, setDetail] = useState("");
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
 
+  const provider = settings?.query_provider ?? "";
+  const model = settings?.query_model ?? "";
+
+  const label =
+    provider === "builtin-local"
+      ? "local"
+      : provider === "anthropic-cli"
+        ? "claude"
+        : provider === "ollama"
+          ? "ollama"
+          : provider.replace(/-(api|cli)$/, "");
+
+  // Re-probe readiness whenever the query provider changes.
   useEffect(() => {
+    if (!settings || !provider) return;
     let alive = true;
     (async () => {
       try {
-        const s = await ipc.getSettings();
-        const provider = s.query_provider;
-        const model = s.query_model;
         let ok: boolean;
-        let name: string;
         if (provider === "builtin-local") {
-          name = "local";
           ok = true; // bundled in the app binary
         } else if (provider === "anthropic-cli") {
-          name = "claude";
           ok = (await ipc.claudeCheck()).installed;
         } else if (provider === "ollama") {
-          name = "ollama";
           ok = (await ipc.ollamaStatus()).daemon_running;
         } else {
-          name = provider.replace(/-(api|cli)$/, "");
           ok =
-            (s.providers as Record<string, boolean>)[
+            (settings.providers as Record<string, boolean>)[
               provider.replace(/-/g, "_")
             ] === true;
         }
-        if (!alive) return;
-        setLabel(name);
-        setReady(ok);
-        setDetail(`${provider} · ${model || "(default)"}`);
+        if (alive) setReady(ok);
       } catch {
-        /* leave the chip hidden if settings can't load */
+        if (alive) setReady(false);
       }
     })();
     return () => {
       alive = false;
     };
-  }, []);
+  }, [provider, settings]);
 
-  if (!label) return null;
+  // Close the popover on outside-click / Escape.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node))
+        setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (!settings) return null;
+
   return (
-    <span className="pill" title={detail}>
-      <span
-        className="dot"
-        style={{ background: ready ? "#16a34a" : "var(--ink-4)" }}
-      ></span>
-      <span>
-        {label} {ready ? "ready" : "offline"}
-      </span>
-    </span>
+    <div className="model-chip-wrap" ref={wrapRef}>
+      <button
+        className="pill"
+        onClick={() => setOpen((v) => !v)}
+        title={`${provider} · ${model || "(default)"}`}
+        aria-label={t.tb_model_picker ?? "Switch query model"}
+        aria-expanded={open}
+      >
+        <span
+          className="dot"
+          style={{ background: ready ? "#16a34a" : "var(--ink-4)" }}
+        ></span>
+        <span className="pill-label">
+          {label} {ready ? "ready" : "offline"}
+        </span>
+        <Icon name="chevD" size={12} />
+      </button>
+      {open ? (
+        <div className="model-chip-pop">
+          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
+            {t.s_model_query}
+          </div>
+          <ModelSelect
+            providers={providers}
+            provider={provider}
+            model={model}
+            onPick={(p, m) =>
+              void update({ query_provider: p, query_model: m })
+            }
+          />
+        </div>
+      ) : null}
+    </div>
   );
 }
 
