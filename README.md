@@ -33,9 +33,9 @@ Your knowledge compounds — in plain markdown you own.
 
 <br />
 
-<img src="docs/screenshots/hero-mesh.png" width="100%" alt="Memex knowledge graph — a ~10,000-note vault rendered as a 3D neural mesh of glowing, community-colored stars" />
+<img src="docs/screenshots/hero-mesh.png" width="100%" alt="Memex knowledge graph — a vault rendered as a 3D cosmic web of glowing, community-colored stars with named clusters" />
 
-<sub><em>A real Memex render — ~10,000 notes as a 3D neural mesh. Every note a glowing star, every <code>[[wikilink]]</code> a filament, each community its own colour with a faint dust halo.</em></sub>
+<sub><em>The Graph view — a "calm cosmic web". Every note is a star sized by its links, each community its own hue with an auto-named cluster label, <code>[[wikilinks]]</code> are faint grey connective tissue, and only true hubs bloom. This is the seeded ~50-note starter vault you get on first launch.</em></sub>
 
 </div>
 
@@ -58,7 +58,7 @@ Memex ships as a native desktop app. A second surface exists for programmatic ac
 | Surface | What it is | When to use |
 |---|---|---|
 | **Memex desktop app** (`app/`) | Tauri 2 + React. Ships as a `.dmg` / `.exe`. Bundles its own vault, talks to any of 5 LLM providers (CLI + 4 HTTP APIs + Ollama). | **Default. Use this.** |
-| **MCP server** (`mcp-server/`) | 25 tools exposed via the Model Context Protocol. | Drive Memex from Claude Desktop / Claude Code / any MCP client. |
+| **MCP server** (`mcp-server/`) | 26 tools exposed via the Model Context Protocol. | Drive Memex from Claude Desktop / Claude Code / any MCP client. |
 
 Both share the same vault layout (`raw/ wiki/ daily/ ingest-reports/`) and never lock your data. Plain markdown on disk, always.
 
@@ -119,9 +119,9 @@ bash mcp-server/install.sh    # MCP server for Claude Desktop/Code
 ## Screenshots
 
 <p align="center">
-<img src="docs/screenshots/mesh.gif" width="100%" alt="The Memex 3D neural-mesh graph slowly auto-orbiting — glowing community-colored stars, wikilink filaments and faint dust haze" />
+<img src="docs/screenshots/mesh.gif" width="100%" alt="The Memex 3D cosmic-web graph slowly auto-orbiting — glowing community-colored stars, cluster labels and faint grey wikilink tissue" />
 <br/>
-<sub><em>The Graph view rendering a ~10,000-note vault as a 3D neural mesh — glowing community-colored stars, <code>[[wikilink]]</code> filaments and faint cosmic-dust haze, idling on a slow auto-orbit. Grab any star and the d3-force-3d sim re-heats; its neighbours follow and spring back on release.</em></sub>
+<sub><em>The Graph view idling on a slow auto-orbit — community-colored stars, auto-named cluster labels, faint grey <code>[[wikilink]]</code> tissue and cosmic-dust haze. Grab any star and the d3-force-3d sim re-heats; its neighbours follow and spring back on release.</em></sub>
 </p>
 
 <br/>
@@ -137,15 +137,23 @@ bash mcp-server/install.sh    # MCP server for Claude Desktop/Code
 </tr>
 <tr>
 <td width="50%"><img src="docs/screenshots/reader.png" alt="Reader — CodeMirror source, live markdown preview, backlinks" /></td>
-<td width="50%"><img src="docs/screenshots/settings.png" alt="Settings — per-task provider + model pickers" /></td>
+<td width="50%"><img src="docs/screenshots/tags.png" alt="Tags — every page grouped by its frontmatter tags, click a tag to filter" /></td>
 </tr>
 <tr>
 <td align="center"><sub><strong>Reader</strong> — source / split / preview + backlinks</sub></td>
-<td align="center"><sub><strong>Settings</strong> — separate Query / Ingest models</sub></td>
+<td align="center"><sub><strong>Tags</strong> — browse the vault by frontmatter tag</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/settings.png" alt="Settings — per-task provider + model pickers, cost budget, auto-reflect" /></td>
+<td width="50%"></td>
+</tr>
+<tr>
+<td align="center"><sub><strong>Settings</strong> — separate Query / Ingest models, cost budget, auto-reflect</sub></td>
+<td></td>
 </tr>
 </table>
 
-> Captured from the app running on a seeded sample vault. A fresh install ships
+> Captured from the app on its seeded starter vault. A fresh install ships
 > ~50 interconnected starter notes (an LLM knowledge map), so the Graph looks
 > like this on day one — delete them anytime.
 
@@ -153,7 +161,7 @@ bash mcp-server/install.sh    # MCP server for Claude Desktop/Code
 
 ## The desktop app
 
-Seven routes in the left sidebar. Cmd/Ctrl-K opens the command palette, Cmd/Ctrl-B toggles the sidebar.
+Eight routes in the left sidebar. Cmd/Ctrl-K opens the command palette, Cmd/Ctrl-B toggles the sidebar. On first launch a 3-step onboarding wizard walks you through opening a vault → adding a source → asking a question; the whole app is responsive down to 320px (the sidebar goes off-canvas on narrow screens).
 
 ### Overview
 
@@ -172,21 +180,23 @@ A chat surface that answers questions about your wiki. The active **query model*
 
 ### Graph
 
-Full vault link graph rendered as a **3D neural mesh** with **three.js** (WebGL) over a **d3-force-3d** layout — the same force family Obsidian uses (`forceLink` + `forceManyBody` + `forceX/Y/Z` + collision), with each link's strength normalised by node degree. By default there is **no community-clustering force** (exactly Obsidian's model), so notes spread into one even, organic web rather than a few clumps. Nodes are glowing stars, edges are `[[wikilinks]]` drawn as faint community-colored filaments, and a faint **cosmic-dust haze** hangs around each dense cluster. Node glow is power-law and **hard-capped**, so even an `index`/MOC that links to everything stays a bright star instead of a white blob. **Every note is shown, including link-less orphans**, and unresolved links to not-yet-written notes appear as dim **ghost nodes** — just like Obsidian (toggle *Show orphans* / *Existing files only* in the drawer).
+Full vault link graph rendered as a **3D "calm cosmic web"** with **three.js** (WebGL) over a **d3-force-3d** layout — the same force family Obsidian uses (`forceLink` + `forceManyBody` + `forceX/Y/Z` + collision), with each link's strength normalised by node degree and a light community-clustering force that gathers each Louvain community into its own softly-lit region. The design rule is *brightness is earned by density*: 80–90% of the frame stays dark void, node size follows a log-degree scale, and **only true hub cores bloom** (selective bloom — edges, pulses, starfield and labels are structurally bloom-proof, so a dense cluster never washes out to white). Edges are `[[wikilinks]]` drawn as faint **grey connective tissue** (structure is grey; signal is the colored stars). **Every note is shown, including link-less orphans**, and unresolved links appear as dim **ghost nodes** — just like Obsidian (toggle *Show orphans* / *Existing files only*).
 
-Link resolution matches Obsidian: `[[note]]`, `[[note|alias]]`, `[[note#heading]]`, `![[embeds]]`, and links to non-`.md` files such as Obsidian **Bases** (`[[Table.base]]`) all resolve, so the graph reflects your real link web instead of dropping half of it.
+The six largest communities get a hue from a curated 6-color palette (the rest stay neutral), each with an **auto-named cluster label** floating at its centroid when you're zoomed out — a reverse semantic zoom that hands off to per-node labels as you push in. Labels default to the community's top-degree note; the bundled offline model upgrades them to a short topic name in the background (cached, with the note-name as a permanent fallback). An in-canvas **legend** (bottom-left) lists the top communities and the size/dim/amber/grey encodings; click a swatch to isolate that community.
 
-**Drag to orbit** the camera and scroll to zoom (now far enough out to frame even a large, spread vault); the mesh idles with a slow auto-rotate. **Grab a star and the simulation re-heats** — its neighbours follow in 3D and it springs back on release. Glowing nodes (UnrealBloom), depth fog and signal **pulses travelling along the edges** sell the alive, deep-space look, and a **Brightness** slider tunes the glow. The file tree and graph **auto-refresh** when files change outside the app (edits in Obsidian/Finder, or a finished ingest).
+Link resolution matches Obsidian: `[[note]]`, `[[note|alias]]`, `[[note#heading]]`, `![[embeds]]`, and links to non-`.md` files such as Obsidian **Bases** (`[[Table.base]]`) all resolve.
 
-A right-side settings drawer (gear icon) mirrors Obsidian's panel:
+**Drag to orbit** the camera and scroll to zoom; the mesh idles with a slow auto-rotate that pauses while you interact and resumes after a few seconds. **Grab a star and the simulation re-heats** — its neighbours follow in 3D and it springs back on release. **Click a node** to isolate its 1-hop neighbourhood (double-click for 2 hops); each isolation pushes onto a focus stack you pop with **Esc**, a click on empty space, or the breadcrumb chips. **Cmd/Ctrl-click a second node** to light the shortest path between two notes as bright filaments. The file tree and graph **auto-refresh** when files change outside the app. At 60 fps up to ~10k nodes; past 5k it drops into a performance mode (ambient layers off) with a banner.
+
+A right-side settings drawer (gear icon):
 
 - **Filters** — live search by filename, tag chips, folder dropdown, toggles for *Show orphans* and *Existing files only*.
-- **Display** — *Arrows*, *Text fade threshold*, *Node size*, *Link thickness*, *Brightness*, and a **▶ Play timelapse** button.
-- **Forces** — *Center force*, *Repel force*, *Link force*, *Link distance*, and *Cluster force* (0 = even neural mesh ↔ higher = communities contract into separated "galaxies"). Each slider drives a real d3-force-3d parameter.
+- **Display** — *Arrows*, *Text fade threshold*, *Node size*, *Link thickness*, a **Glow** slider, an **Ambient motion** toggle (one switch for auto-rotate + pulses + breathing), and a **▶ Play timelapse** button.
+- **Layout** — three presets (**Galaxy** / **Loose web** / **Dense**) cover the common cases; the raw d3-force sliders (*Center / Repel / Link / Link distance / Cluster force*) live under an **Advanced** accordion.
 
-**Timelapse** (toolbar ▶ or the drawer button) reveals notes oldest-to-newest by file mtime at their settled positions — edges appear as each note connects up, so you watch the graph build itself in the order you actually wrote it. It's a pure reveal (no physics), so it stays smooth on any vault size, and the camera holds steady on the whole graph.
+**Timelapse** (toolbar ▶ or the drawer button) reveals notes oldest-to-newest by file mtime at their settled positions — edges appear as each note connects up, so you watch the graph build itself in the order you actually wrote it.
 
-Hover any node to spotlight its 1-hop neighbourhood (the rest dims). Click to open the file. Zoom and pan are smooth (mouse wheel + drag-background); the toolbar offers zoom-in / fit / zoom-out. Drawer state and every slider position persist to localStorage.
+Drawer state and every slider position persist to localStorage. Both light and dark themes are calibrated; on light the stars darken to legible ink rather than blooming out.
 
 ### History
 
@@ -196,14 +206,18 @@ Reads `git log` from the vault directory and renders each commit with subject, h
 
 Per-page **citation coverage** — total claim lines vs cited claim lines. Sortable by lowest coverage, with a slider threshold that flags pages below target.
 
-**Run lint** sends the CLAUDE.md lint checklist (structure / citation / connection / freshness) to the active query model and renders the Markdown report inline.
+**Run lint** sends the CLAUDE.md lint checklist (structure / citation / connection / freshness) to the active query model. On the Claude CLI it **streams the report live** as it's written rather than spinning until done. (The MCP server also ships a no-LLM `lint_citations` for an instant regex pass.)
+
+### Tags
+
+Every page grouped by its frontmatter `tags` — a count-weighted tag cloud; click a tag to filter the page list, click a page to open it.
 
 ### Settings
 
 Six sub-tabs:
 
-- **Account** — current vault path; **Change…** to point at any folder.
-- **Model** — separate provider+model dropdowns for **Query** and **Ingest**. Switch a task to a different provider without losing connections to others.
+- **Account** — current vault path; **Change…** to point at any folder, and **Make this an independent Obsidian vault** (scaffolds an `.obsidian/` so the folder opens standalone in Obsidian).
+- **Model** — separate provider+model dropdowns for **Query** and **Ingest**, a monthly **cost budget** (threshold + current-month spend, per model; over-budget HTTP calls are blocked), an **auto-ingest** toggle for the `_inbox/` folder, and an **auto-reflect** toggle that periodically asks for wiki-improvement suggestions.
 - **Connections** — connect/disconnect any of:
   - **Built-in (offline)** — Powered by HyperCLOVA X. SEED 0.5B ships inside the app (in-process llama.cpp, Metal on Apple silicon). No install, no key, works offline — classification and light queries; pick a cloud provider for high-quality ingest. Model © NAVER Corp., HyperCLOVA X SEED Model License.
   - **Claude Code (CLI)** — uses your Pro/Max subscription. No key required, just `claude` on PATH.
@@ -273,11 +287,15 @@ bash mcp-server/install.sh
 
 Creates `mcp-server/.venv` with the `mcp` SDK and prints the absolute paths you'll paste into your client config.
 
-The 14 exposed tools:
+The 26 exposed tools:
 
-| Read-only | Mutating |
+| Group | Tools |
 |---|---|
-| `list_projects` `list_pages` `read_page` `search` `folder_tree` `stats` `recent_log` `list_raw_sources` `get_instructions` | `add_raw_source` `create_page` `update_page` `create_folder` `git_commit` |
+| **Read** | `list_projects` `get_instructions` `stats` `list_pages` `read_page` `search` (with `all_projects`) `folder_tree` `recent_log` `list_raw_sources` |
+| **Write** | `add_raw_source` (warns on detected secrets) `create_page` `update_page` `create_folder` `git_commit` |
+| **Inbox** | `list_inbox` `read_inbox_source` `archive_inbox_source` |
+| **Quality (no-LLM)** | `lint_citations` `preview_page_update` `trust_report` `contradictions` `translation_report` |
+| **Governance / multi-project** | `resolve_cross_links` (`[[slug::page]]`) `append_changelog` `export_project` `register_vault` |
 
 #### Step 2 — Pick your client
 
@@ -362,7 +380,9 @@ Templates scaffold `wiki/` subfolders at creation time:
 | `reading-log` | `sources authors ideas quotes reviews` |
 | `personal-notes` | `daily topics people projects` |
 
-The desktop app currently focuses on a single vault. To switch vaults, use Settings → Account → Change.
+Any project can also be registered as its **own standalone Obsidian vault** (`register_vault` / the Settings button scaffolds an `.obsidian/`), so you can open the whole repo as one vault *or* each project folder independently.
+
+The desktop app focuses on a single open vault at a time. To switch vaults, use Settings → Account → Change.
 
 ---
 
@@ -374,19 +394,17 @@ app/                       Memex desktop app (Tauri 2 + React)
   src-tauri/                 Rust shell + IPC
   README.md                  Desktop app docs
   PLAN.md / PROGRESS.md      Build history
-mcp-server/                MCP server (25 tools)
+mcp-server/                MCP server (26 tools)
   memex_mcp.py
   project_registry.py        Multi-project resolver
   install.sh
 CLAUDE.md                  Root common schema
-projects/                  Per-project vaults (MCP)
-  <slug>/
-    CLAUDE.md
-    .settings.json
+projects/                  Per-project vaults
+  karpathy-llm/              Default project (migrated from the old root layout)
+    CLAUDE.md  .settings.json
     wiki/  raw/  ingest-reports/
-projects.json              Active project + registry (MCP)
+projects.json              Active project + registry
 templates/                 Project templates
-raw/ wiki/ ...             Legacy single-project mode (still supported)
 ```
 
 ---
