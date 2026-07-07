@@ -5,7 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { Icon, ProviderGlyph } from "../lib/icons";
-import type { IconName, ProviderId } from "../lib/icons";
+import type { IconName } from "../lib/icons";
 import type { Lang, Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import type { Theme } from "../stores/uiStore";
@@ -13,6 +13,9 @@ import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { ipc } from "../lib/ipc";
 import type { McpRegInfo, MemexSettings, OllamaStatus } from "../lib/ipc";
+import { PROVIDERS, providerDesc, useEnabledProviders } from "../lib/providers";
+import type { ProviderDef } from "../lib/providers";
+import ModelSelect from "../components/ModelSelect";
 import OllamaSetup from "../components/OllamaSetup";
 import {
   getBudgetThreshold,
@@ -20,130 +23,6 @@ import {
   setBudgetThreshold,
   DEFAULT_MONTHLY_THRESHOLD_USD,
 } from "../lib/budget";
-
-export interface ProviderDef {
-  id: ProviderId;
-  flag: keyof MemexSettings["providers"]; // connection gate — picker shows connected only
-  name: string;
-  kind: "cli" | "api" | "local";
-  needsKey: boolean;
-  desc: string;
-  catalog?: string[]; // fallback model list when API list fails
-}
-
-export const PROVIDERS: ProviderDef[] = [
-  {
-    id: "anthropic-cli",
-    flag: "anthropic_cli",
-    name: "Claude Code (CLI)",
-    kind: "cli",
-    needsKey: false,
-    desc: "Use your Claude Pro / Max subscription via the local `claude` CLI. No API key needed.",
-    // Aliases passed to `claude --model`; the CLI resolves each to its latest
-    // version. Haiku first so high-volume ingest defaults to the cheapest model.
-    catalog: ["haiku", "sonnet", "opus"],
-  },
-  {
-    id: "gemini-cli",
-    flag: "gemini_cli",
-    name: "Gemini CLI",
-    kind: "cli",
-    needsKey: false,
-    desc: "Use your Google subscription via the local `gemini` CLI. No API key needed.",
-    catalog: ["(default)", "gemini-2.5-pro", "gemini-2.5-flash"],
-  },
-  {
-    id: "codex-cli",
-    flag: "codex_cli",
-    name: "Codex CLI",
-    kind: "cli",
-    needsKey: false,
-    desc: "Use your OpenAI subscription via the local `codex` CLI. No API key needed.",
-    catalog: ["(default)"],
-  },
-  {
-    id: "anthropic-api",
-    flag: "anthropic_api",
-    name: "Anthropic API",
-    kind: "api",
-    needsKey: true,
-    desc: "Direct calls to api.anthropic.com. Key from console.anthropic.com.",
-    catalog: ["claude-sonnet-4-6", "claude-opus-4-8", "claude-haiku-4-5"],
-  },
-  {
-    id: "openai-api",
-    flag: "openai_api",
-    name: "OpenAI API",
-    kind: "api",
-    needsKey: true,
-    desc: "GPT-5 family via api.openai.com.",
-    catalog: ["gpt-5.4-mini", "gpt-5.4-nano"],
-  },
-  {
-    id: "google-api",
-    flag: "google_api",
-    name: "Google AI",
-    kind: "api",
-    needsKey: true,
-    desc: "Gemini family via generativelanguage.googleapis.com.",
-    catalog: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"],
-  },
-  {
-    id: "builtin-local",
-    flag: "builtin_local",
-    name: "Built-in (offline)",
-    kind: "local",
-    needsKey: false,
-    desc: "Powered by HyperCLOVA X — SEED 0.5B bundled inside the app. Works offline with zero setup; good for classification and light queries, use a cloud provider for high-quality ingest. Model © NAVER Corp., HyperCLOVA X SEED Model License.",
-    catalog: ["seed-0.5b"],
-  },
-  {
-    id: "ollama",
-    flag: "ollama",
-    name: "Ollama (local)",
-    kind: "local",
-    needsKey: false,
-    desc: "Run open-source models locally. Auto-detects http://localhost:11434.",
-    catalog: [],
-  },
-  {
-    id: "openrouter",
-    flag: "openrouter",
-    name: "OpenRouter",
-    kind: "api",
-    needsKey: true,
-    desc: "One key for many providers (useful for model comparison).",
-    catalog: [],
-  },
-  {
-    id: "memex-pro",
-    flag: "memex_pro",
-    name: "Memex Pro",
-    kind: "api",
-    needsKey: true,
-    desc: "Unlimited ingest on a managed model — no API key or CLI needed. Sign in with your Memex Pro account.",
-    catalog: ["gemini-2.5-flash", "claude-haiku-4-5"],
-  },
-];
-
-// i18n key per provider for its blurb; the English `desc:` above is the fallback.
-const PROVIDER_DESC_KEYS: Record<ProviderId, keyof Strings> = {
-  "anthropic-cli": "s_provider_desc_anthropic_cli",
-  "gemini-cli": "s_provider_desc_gemini_cli",
-  "codex-cli": "s_provider_desc_codex_cli",
-  "anthropic-api": "s_provider_desc_anthropic_api",
-  "openai-api": "s_provider_desc_openai_api",
-  "google-api": "s_provider_desc_google_api",
-  "builtin-local": "s_provider_desc_builtin_local",
-  ollama: "s_provider_desc_ollama",
-  openrouter: "s_provider_desc_openrouter",
-  "memex-pro": "s_provider_desc_memex_pro",
-};
-
-/** Localised provider blurb, falling back to the English `desc:` on the def. */
-function providerDesc(t: Strings, def: ProviderDef): string {
-  return t[PROVIDER_DESC_KEYS[def.id]] ?? def.desc;
-}
 
 export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
@@ -300,37 +179,6 @@ function SettingsAccount({ t }: { t: Strings }): JSX.Element {
       </div>
     </div>
   );
-}
-
-function useEnabledProviders(): ProviderDef[] {
-  const settings = useSettingsStore((s) => s.settings);
-  // Ollama is selectable whenever the daemon is live with models installed —
-  // not only after a model was pulled from inside Memex. This keeps the Model
-  // tab consistent with the "connected" chip on the Providers tab.
-  const [ollamaLive, setOllamaLive] = useState(false);
-  useEffect(() => {
-    let alive = true;
-    ipc
-      .ollamaStatus()
-      .then((s) => {
-        if (alive) setOllamaLive(s.daemon_running && s.models.length > 0);
-      })
-      .catch(() => undefined);
-    return () => {
-      alive = false;
-    };
-  }, []);
-  return useMemo(() => {
-    if (!settings) return [PROVIDERS[0]];
-    // Connected providers only — disconnected ones must not appear in the
-    // model picker. Ollama is shown when its daemon is detected live, even
-    // before the user explicitly connects it.
-    return PROVIDERS.filter((p) => {
-      if (p.id === "ollama")
-        return ollamaLive || settings.providers.ollama === true;
-      return settings.providers[p.flag] === true;
-    });
-  }, [settings, ollamaLive]);
 }
 
 function SettingsModel({ t }: { t: Strings }): JSX.Element {
@@ -644,45 +492,6 @@ function ModelPicker({
   model: string;
   onPick: (provider: string, model: string) => void;
 }): JSX.Element {
-  const def = providers.find((p) => p.id === provider) ?? providers[0];
-  const [models, setModels] = useState<string[]>(def?.catalog ?? []);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  // If the currently selected provider got disconnected, fall back to the
-  // first connected one (and persist it) so settings never point at a
-  // provider the picker can't show.
-  useEffect(() => {
-    if (providers.length > 0 && !providers.some((p) => p.id === provider)) {
-      const first = providers[0];
-      onPick(first.id, first.catalog?.[0] ?? "");
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providers, provider]);
-
-  useEffect(() => {
-    if (!def) return;
-    setModels(def.catalog ?? []);
-    setError(null);
-    // Try live list (ollama, openai, openrouter).
-    if (
-      def.id === "ollama" ||
-      def.id === "openai-api" ||
-      def.id === "openrouter"
-    ) {
-      setBusy(true);
-      ipc
-        .listProviderModels(def.id)
-        .then((arr) => {
-          if (arr.length > 0) setModels(arr);
-        })
-        .catch((e: unknown) => setError(String(e)))
-        .finally(() => setBusy(false));
-    }
-  }, [def]);
-
-  if (!def) return <div className="muted">No providers connected.</div>;
-
   return (
     <div className="card">
       <div className="row" style={{ marginBottom: 12 }}>
@@ -691,49 +500,12 @@ function ModelPicker({
           {provider} · {model}
         </span>
       </div>
-      <div className="row" style={{ gap: 12 }}>
-        <select
-          className="select"
-          value={provider}
-          onChange={(e) => {
-            const next = providers.find((p) => p.id === e.target.value);
-            if (next) onPick(next.id, next.catalog?.[0] ?? model);
-          }}
-          style={{ flex: 1 }}
-        >
-          {providers.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <select
-          className="select"
-          value={model}
-          onChange={(e) => onPick(provider, e.target.value)}
-          style={{ flex: 2 }}
-        >
-          {models.length === 0 ? (
-            <option value={model}>{model || "(no models)"}</option>
-          ) : (
-            models.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))
-          )}
-        </select>
-      </div>
-      {busy ? (
-        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-          fetching model list…
-        </div>
-      ) : null}
-      {error ? (
-        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>
-          {error}
-        </div>
-      ) : null}
+      <ModelSelect
+        providers={providers}
+        provider={provider}
+        model={model}
+        onPick={onPick}
+      />
     </div>
   );
 }
