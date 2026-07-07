@@ -24,6 +24,13 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The bundled SEED model (models/*.gguf, ~412 MB) is stored in Git
+          # LFS. Without this the runner checks out only the ~130-byte LFS
+          # pointer, and tauri bundles THAT — producing a ~10 MB installer whose
+          # offline model is a text stub. Pull the real object so the shipped
+          # app's builtin model actually works.
+          lfs: true
 
       - name: setup node
         uses: actions/setup-node@v4
