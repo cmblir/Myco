@@ -28,6 +28,7 @@ import type { GraphTheme } from "./graphTheme";
 import type { GraphSettings } from "./graphSettings";
 import { NebulaLayer } from "./nebulaLayer";
 import { PulseLayer } from "./pulseLayer";
+import { TracePulse } from "./tracePulse";
 import { ClusterLabels } from "./clusterLabels";
 
 // World radius (in sim units) per unit of node `size`, and how far the halo
@@ -368,12 +369,15 @@ export class GraphScene {
   private arrows: THREE.InstancedMesh;
   private arrowGeom: THREE.ConeGeometry;
   private arrowMat: THREE.MeshBasicMaterial;
+  // Tint for arrows whose source node has no colour attr (theme highlight).
+  private arrowFallback = new THREE.Color(0xffffff);
 
   // Multi-shell parallax background (2-3 Points layers in one Group) for depth.
   private starfield: THREE.Group;
   private nebula: NebulaLayer;
   private nebulaTick = 0; // throttle nebula centroid recompute (every Nth tick)
   private pulse: PulseLayer; // signals flowing along edges (alive/communication)
+  private tracePulse: TracePulse; // interactive start→end path trace comet
   private clusterLabels: ClusterLabels; // community names at rest (reverse semantic zoom)
   private lastFrame = 0; // performance.now() of the previous animation frame
   private labels = new Map<string, CSS2DObject>();
@@ -664,20 +668,25 @@ export class GraphScene {
     this.buildFilaments();
 
     // --- direction arrowheads (instanced cones, one per edge) ---
-    this.arrowGeom = new THREE.ConeGeometry(2.2, 7, 10); // points +Y; oriented per-edge
+    // Small cone (well under a node's world radius) tinted per-instance with the
+    // SOURCE node's colour; white material base so instanceColor shows true.
+    // NormalBlending (not additive) so colours read as their hue, not white glow.
+    this.arrowGeom = new THREE.ConeGeometry(0.5, 1.6, 8); // points +Y; oriented per-edge
     this.arrowMat = new THREE.MeshBasicMaterial({
-      color: parseRGBA(theme.edgeHi).color,
+      color: 0xffffff,
       transparent: true,
-      opacity: 0.85,
+      opacity: 0.9,
       depthWrite: false,
-      blending: THREE.AdditiveBlending,
+      blending: THREE.NormalBlending,
     });
-    this.arrows = new THREE.InstancedMesh(
-      this.arrowGeom,
-      this.arrowMat,
-      Math.max(1, this.edgePairs.length),
-    );
+    this.arrowFallback = parseRGBA(theme.edgeHi).color;
+    const arrowCount = Math.max(1, this.edgePairs.length);
+    this.arrows = new THREE.InstancedMesh(this.arrowGeom, this.arrowMat, arrowCount);
     this.arrows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.arrows.instanceColor = new THREE.InstancedBufferAttribute(
+      new Float32Array(arrowCount * 3).fill(1),
+      3,
+    );
     this.arrows.frustumCulled = false;
     this.arrows.visible = settings.arrows;
     this.scene.add(this.arrows);
@@ -698,6 +707,11 @@ export class GraphScene {
     this.pulse = new PulseLayer(this.graph, this.edgePairs, pr, dark);
     this.pulse.points.visible = !this.perfLod;
     this.scene.add(this.pulse.points);
+
+    // --- trace comet (interactive start→end path traversal accent) ---
+    this.tracePulse = new TracePulse(this.graph, pr, dark);
+    if (this.selective) this.tracePulse.points.layers.enable(BLOOM_LAYER);
+    this.scene.add(this.tracePulse.points);
 
     // --- cluster auto-labels (community names while zoomed out) ---
     this.clusterLabels = new ClusterLabels(this.graph);
@@ -926,10 +940,12 @@ export class GraphScene {
   }
 
   // Orient one cone per edge at the target end, pointing source→target. Scaled
-  // by linkThickness so that slider also controls arrow size. Hidden endpoints
-  // (timelapse) collapse the instance to zero scale.
+  // by arrowSize (× linkThickness so a thicker link keeps a proportional head)
+  // and tinted with the SOURCE node's colour. Hidden endpoints (timelapse)
+  // collapse the instance to zero scale.
   private writeArrows(): void {
     const lt = this.settings.linkThickness;
+    const asz = this.settings.arrowSize * lt;
     const up = new THREE.Vector3(0, 1, 0);
     const sPos = new THREE.Vector3();
     const tPos = new THREE.Vector3();
@@ -938,11 +954,16 @@ export class GraphScene {
     const pos = new THREE.Vector3();
     const scl = new THREE.Vector3();
     const m = new THREE.Matrix4();
+    const col = new THREE.Color();
     const ZERO = new THREE.Vector3(0, 0, 0);
     for (let i = 0; i < this.edgePairs.length; i++) {
       const [s, t] = this.edgePairs[i];
       const a = this.graph.getNodeAttributes(s);
       const b = this.graph.getNodeAttributes(t);
+      // Tint by the source node's colour (fallback: theme highlight).
+      if (a.color) col.set(a.color);
+      else col.copy(this.arrowFallback);
+      this.arrows.setColorAt(i, col);
       tPos.set(b.x, b.y, b.z);
       if (a.hidden || b.hidden) {
         m.compose(tPos, q.identity(), ZERO);
@@ -962,11 +983,12 @@ export class GraphScene {
       // Sit the cone just outside the target star, pointing into it.
       const back = b.size * NODE_RADIUS + 3.5 * lt;
       pos.copy(tPos).addScaledVector(dir, -back);
-      scl.set(lt, lt, lt);
+      scl.set(asz, asz, asz);
       m.compose(pos, q, scl);
       this.arrows.setMatrixAt(i, m);
     }
     this.arrows.instanceMatrix.needsUpdate = true;
+    if (this.arrows.instanceColor) this.arrows.instanceColor.needsUpdate = true;
   }
 
   private updateLabels(): void {
@@ -1401,12 +1423,13 @@ export class GraphScene {
     const oldArrows = this.arrows;
     this.scene.remove(oldArrows);
     oldArrows.dispose();
-    this.arrows = new THREE.InstancedMesh(
-      this.arrowGeom,
-      this.arrowMat,
-      Math.max(1, this.edgePairs.length),
-    );
+    const arrowCount2 = Math.max(1, this.edgePairs.length);
+    this.arrows = new THREE.InstancedMesh(this.arrowGeom, this.arrowMat, arrowCount2);
     this.arrows.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.arrows.instanceColor = new THREE.InstancedBufferAttribute(
+      new Float32Array(arrowCount2 * 3).fill(1),
+      3,
+    );
     this.arrows.frustumCulled = false;
     this.arrows.visible = this.settings.arrows;
     this.scene.add(this.arrows);
@@ -1436,6 +1459,8 @@ export class GraphScene {
     this.nebula.setNodeIds(this.nodeIds);
     // Pulses: re-snapshot the (changed) edge set so signals ride new links.
     this.pulse.setEdges(this.edgePairs);
+    // Trace: the node set changed under it — clear; React re-pushes if still valid.
+    this.tracePulse.setPath(null);
     // Cluster labels: communities may have grown/changed after live ingest.
     this.clusterLabels.rebuild();
     // Re-derive the label allow-set so live-ingest newcomers / new hubs can label.
@@ -1466,19 +1491,29 @@ export class GraphScene {
     this.edgeMat.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
     this.edgeMat.needsUpdate = true;
     this.pulse.setDark(dark);
+    this.tracePulse.setDark(dark);
     this.nebula.setDark(dark && SHOW_NEBULA);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
     this.edgeOpacity = dark ? EDGE_OPACITY_DARK : EDGE_OPACITY_LIGHT;
     this.edgeBaseBrightness = dark ? EDGE_BASE_DARK : EDGE_BASE_LIGHT;
     this.edgeMat.opacity = Math.min(1, this.edgeOpacity * this.settings.linkThickness);
-    this.arrowMat.color.copy(parseRGBA(theme.edgeHi).color);
+    // Arrows are tinted per-instance by source-node colour; only the no-colour
+    // fallback tracks the theme. writeArrows() below repaints instance colours.
+    this.arrowFallback = parseRGBA(theme.edgeHi).color;
     for (const obj of this.labels.values()) {
       (obj.element as HTMLElement).style.color = theme.ink;
     }
     this.writeNodes();
     this.writeEdges();
     if (this.arrows.visible) this.writeArrows();
+  }
+
+  /** Start (or clear with null) an interactive trace along an ordered node
+   * sequence. The static path is lit by the filament layer via pushStyle; this
+   * drives the moving comet accent. */
+  setTrace(path: string[] | null): void {
+    this.tracePulse.setPath(path);
   }
 
   applySettings(settings: GraphSettings): void {
@@ -1687,6 +1722,9 @@ export class GraphScene {
         this.pulse.update(dt);
         this.nodeMat.uniforms.u_time.value += dt;
       }
+      // Trace comet animates regardless of the ambient-motion toggle — it's an
+      // explicit interaction, not idle ambience. No-ops when no trace is active.
+      this.tracePulse.update(dt);
       this.updateLabels();
       this.render();
       this.labelRenderer.render(this.scene, this.camera);
@@ -1735,6 +1773,8 @@ export class GraphScene {
     this.scene.remove(this.nebula.group);
     this.pulse.dispose();
     this.scene.remove(this.pulse.points);
+    this.tracePulse.dispose();
+    this.scene.remove(this.tracePulse.points);
     this.clusterLabels.dispose();
     this.scene.remove(this.clusterLabels.group);
     this.bloom.dispose();
