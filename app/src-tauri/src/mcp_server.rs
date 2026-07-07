@@ -260,4 +260,38 @@ mod tests {
         assert!(j.contains("/r/mcp-server/memex_mcp.py"));
         assert!(j.contains("\"MEMEX_PROJECT_ROOT\": \"/Users/me/Vault\""));
     }
+
+    #[test]
+    fn desktop_json_escapes_paths_with_special_chars() {
+        // A vault path containing a quote/backslash must be JSON-escaped, not
+        // produce malformed JSON the user would paste into their config.
+        let j = desktop_json("/py", "/s.py", r#"/Users/me/My "Vault"\dir"#);
+        let parsed: serde_json::Value = serde_json::from_str(&j).expect("must be valid JSON");
+        assert_eq!(
+            parsed["mcpServers"]["memex"]["env"]["MEMEX_PROJECT_ROOT"],
+            r#"/Users/me/My "Vault"\dir"#
+        );
+    }
+
+    #[test]
+    fn py_minor_parses_a_present_interpreter() {
+        // py_minor spawns `<path> --version` and parses "Python 3.x.y". We can't
+        // assume a specific interpreter exists on every host, so we probe common
+        // names and only assert the PARSE result when one is found: a real
+        // python3 must report major==3. Absence is fine (None) — nothing to
+        // mis-parse — so the test never flakes on a python-less host.
+        for name in ["python3", "python3.13", "python3.12", "python3.11", "python3.10"] {
+            if let Some((major, minor)) = py_minor(name) {
+                assert_eq!(major, 3, "{name} reported an unexpected major version");
+                // is_310_plus must agree with the raw (major, minor) it parses.
+                assert_eq!(
+                    is_310_plus(name),
+                    major > 3 || (major == 3 && minor >= 10),
+                    "{name}: is_310_plus disagrees with parsed version {major}.{minor}"
+                );
+                return;
+            }
+        }
+        // No python on this host: py_minor correctly returned None throughout.
+    }
 }
