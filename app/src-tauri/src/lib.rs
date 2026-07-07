@@ -36,6 +36,7 @@ pub fn run() {
             commands::read_vault_context,
             commands::write_file,
             commands::write_run_log,
+            commands::scaffold_obsidian_vault,
             commands::read_external_text,
             commands::create_file,
             commands::create_folder,

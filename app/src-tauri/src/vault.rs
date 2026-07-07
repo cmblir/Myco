@@ -571,6 +571,23 @@ pub fn write_run_log(vault: &Path, name: &str, content: &str) -> Result<(), Stri
     std::fs::write(&target, content).map_err(|e| format!("write run log failed: {e}"))
 }
 
+/// Scaffold a minimal Obsidian config inside `vault` so it opens directly as an
+/// Obsidian vault. Idempotent: creates `.obsidian/` when missing and writes
+/// `app.json` only when absent, leaving any existing user config untouched.
+/// Returns the `.obsidian` directory path.
+pub fn scaffold_obsidian_vault(vault: &Path) -> Result<String, String> {
+    let dir = vault.join(".obsidian");
+    if !dir.exists() {
+        std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir .obsidian failed: {e}"))?;
+    }
+    let app_json = dir.join("app.json");
+    if !app_json.exists() {
+        std::fs::write(&app_json, "{\"attachmentFolderPath\":\"raw/assets\"}")
+            .map_err(|e| format!("write app.json failed: {e}"))?;
+    }
+    Ok(dir.to_string_lossy().into_owned())
+}
+
 pub fn create_folder(parent: &str, name: &str) -> Result<String, String> {
     validate_name(name)?;
     let parent_path = Path::new(parent);

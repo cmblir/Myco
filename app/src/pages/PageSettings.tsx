@@ -14,6 +14,12 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { ipc } from "../lib/ipc";
 import type { McpRegInfo, MemexSettings, OllamaStatus } from "../lib/ipc";
 import OllamaSetup from "../components/OllamaSetup";
+import {
+  getBudgetThreshold,
+  getUsage,
+  setBudgetThreshold,
+  DEFAULT_MONTHLY_THRESHOLD_USD,
+} from "../lib/budget";
 
 export interface ProviderDef {
   id: ProviderId;
@@ -120,6 +126,25 @@ export const PROVIDERS: ProviderDef[] = [
   },
 ];
 
+// i18n key per provider for its blurb; the English `desc:` above is the fallback.
+const PROVIDER_DESC_KEYS: Record<ProviderId, keyof Strings> = {
+  "anthropic-cli": "s_provider_desc_anthropic_cli",
+  "gemini-cli": "s_provider_desc_gemini_cli",
+  "codex-cli": "s_provider_desc_codex_cli",
+  "anthropic-api": "s_provider_desc_anthropic_api",
+  "openai-api": "s_provider_desc_openai_api",
+  "google-api": "s_provider_desc_google_api",
+  "builtin-local": "s_provider_desc_builtin_local",
+  ollama: "s_provider_desc_ollama",
+  openrouter: "s_provider_desc_openrouter",
+  "memex-pro": "s_provider_desc_memex_pro",
+};
+
+/** Localised provider blurb, falling back to the English `desc:` on the def. */
+function providerDesc(t: Strings, def: ProviderDef): string {
+  return t[PROVIDER_DESC_KEYS[def.id]] ?? def.desc;
+}
+
 export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const setLang = useUIStore((s) => s.setLang);
@@ -189,6 +214,27 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
 function SettingsAccount({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
   const openVault = useVaultStore((s) => s.openVault);
+  // Independent Obsidian vault (MP-10). The scaffold command is idempotent, so
+  // after a successful run we treat the vault as registered regardless of
+  // whether .obsidian already existed (we infer readiness from the result).
+  const [vaultReady, setVaultReady] = useState(false);
+  const [vaultBusy, setVaultBusy] = useState(false);
+  const [vaultError, setVaultError] = useState<string | null>(null);
+
+  async function registerVault(): Promise<void> {
+    if (!currentVault) return;
+    setVaultBusy(true);
+    setVaultError(null);
+    try {
+      await ipc.scaffoldObsidianVault(currentVault.path);
+      setVaultReady(true);
+    } catch (e) {
+      setVaultError(String(e));
+    } finally {
+      setVaultBusy(false);
+    }
+  }
+
   return (
     <div className="col" style={{ gap: 20 }}>
       <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>
@@ -235,6 +281,21 @@ function SettingsAccount({ t }: { t: Strings }): JSX.Element {
           >
             Change…
           </button>
+        </div>
+        <div className="row" style={{ marginTop: 10, gap: 10, alignItems: "center" }}>
+          <button
+            className="btn"
+            onClick={() => void registerVault()}
+            disabled={!currentVault || vaultBusy || vaultReady}
+          >
+            {vaultReady
+              ? `✓ ${t.s_vault_registered ?? "Obsidian vault ready"}`
+              : (t.s_vault_register ??
+                "Make this an independent Obsidian vault")}
+          </button>
+          {vaultError ? (
+            <span style={{ color: "#dc2626", fontSize: 12 }}>{vaultError}</span>
+          ) : null}
         </div>
       </div>
     </div>
@@ -308,6 +369,179 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
         }
       />
       <AutoIngestSetting t={t} settings={settings} update={update} />
+      <AutoReflectSetting t={t} settings={settings} update={update} />
+      <BudgetSetting t={t} />
+    </div>
+  );
+}
+
+// Monthly spend guard (OPS-03): a configurable USD threshold plus a read-only
+// view of the current month's estimated cost and per-model breakdown. Budget
+// state is localStorage-backed and synchronous (see lib/budget.ts).
+function BudgetSetting({ t }: { t: Strings }): JSX.Element {
+  const [threshold, setThreshold] = useState<number>(getBudgetThreshold());
+  // getUsage() reads localStorage synchronously; snapshot it once per render.
+  const usage = useMemo(() => getUsage(), []);
+  const fmt = (n: number): string => `$${n.toFixed(2)}`;
+
+  return (
+    <div className="card">
+      <div style={{ fontWeight: 600 }}>
+        {t.s_budget_title ?? "Monthly spend guard"}
+      </div>
+      <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+        {t.s_budget_desc ??
+          "Estimated spend across paid API providers this month. A rough tripwire, not billing — set a threshold to get warned before you cross it."}
+      </div>
+      <div
+        className="row"
+        style={{ marginTop: 12, gap: 8, alignItems: "center" }}
+      >
+        <label style={{ fontSize: 13 }}>
+          {t.s_budget_threshold ?? "Monthly limit (USD)"}
+        </label>
+        <input
+          className="input"
+          type="number"
+          min={0}
+          step={1}
+          value={threshold}
+          onChange={(e) => {
+            const next = Math.max(
+              0,
+              Number(e.target.value) || DEFAULT_MONTHLY_THRESHOLD_USD,
+            );
+            setThreshold(next);
+            setBudgetThreshold(next);
+          }}
+          style={{ width: 110 }}
+        />
+      </div>
+      <div style={{ marginTop: 14 }}>
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <span style={{ fontSize: 13, fontWeight: 500 }}>
+            {t.s_budget_usage ?? "This month"}
+          </span>
+          <span style={{ fontSize: 13, fontWeight: 600 }}>
+            {t.s_budget_total ?? "Total"} {fmt(usage.totalUsd)} /{" "}
+            {fmt(threshold)}
+          </span>
+        </div>
+        {usage.entries.length === 0 ? (
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 8 }}>
+            {t.s_budget_empty ?? "No paid-API usage tracked yet this month."}
+          </div>
+        ) : (
+          <div className="col" style={{ gap: 4, marginTop: 8 }}>
+            {usage.entries.map((e) => (
+              <div
+                key={e.model}
+                className="row"
+                style={{
+                  justifyContent: "space-between",
+                  fontSize: 12.5,
+                  color: "var(--ink-2)",
+                }}
+              >
+                <span style={{ fontFamily: "var(--font-mono)" }}>
+                  {e.model}
+                </span>
+                <span>{fmt(e.costUsd)}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Auto-reflect (FEAT-06): mirrors the auto-ingest toggle exactly — a switch on
+// settings.auto_reflect_enabled plus an interval input, persisted via `update`.
+function AutoReflectSetting({
+  t,
+  settings,
+  update,
+}: {
+  t: Strings;
+  settings: MemexSettings;
+  update: (patch: Partial<MemexSettings>) => Promise<void> | void;
+}): JSX.Element {
+  const enabled = settings.auto_reflect_enabled;
+  const interval = settings.auto_reflect_interval_min;
+  return (
+    <div className="card">
+      <div
+        className="row"
+        style={{ justifyContent: "space-between", alignItems: "flex-start" }}
+      >
+        <div style={{ paddingRight: 16 }}>
+          <div style={{ fontWeight: 600 }}>
+            {t.s_autoreflect_title ?? "Auto-reflect"}
+          </div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+            {t.s_autoreflect_desc ??
+              "While Memex is open, periodically run a read-only reflect pass to surface orphans, stale pages, and missing links."}
+          </div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={enabled}
+          aria-label={t.s_autoreflect_title ?? "Auto-reflect"}
+          onClick={() => void update({ auto_reflect_enabled: !enabled })}
+          style={{
+            width: 44,
+            height: 24,
+            borderRadius: 12,
+            border: "1px solid var(--line)",
+            background: enabled ? "var(--ink)" : "var(--bg-soft)",
+            position: "relative",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 2,
+              left: enabled ? 22 : 2,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: enabled ? "var(--bg)" : "var(--ink-3)",
+              transition: "left 150ms",
+            }}
+          />
+        </button>
+      </div>
+      {enabled ? (
+        <div
+          className="row"
+          style={{ marginTop: 12, gap: 8, alignItems: "center" }}
+        >
+          <label style={{ fontSize: 13 }}>
+            {t.s_autoreflect_interval ?? "Every"}
+          </label>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            value={interval}
+            onChange={(e) =>
+              void update({
+                auto_reflect_interval_min: Math.max(
+                  1,
+                  Number(e.target.value) || 60,
+                ),
+              })
+            }
+            style={{ width: 90 }}
+          />
+          <span className="muted" style={{ fontSize: 13 }}>
+            min
+          </span>
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -621,7 +855,7 @@ function MemexProCard({
           )}
         </div>
         <div className="muted" style={{ fontSize: 13, marginBottom: 12 }}>
-          {def.desc}
+          {providerDesc(t, def)}
         </div>
         {loggedIn ? (
           <div className="row" style={{ gap: 8, alignItems: "center" }}>
@@ -877,7 +1111,7 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
                     className="muted"
                     style={{ fontSize: 13, marginBottom: 12 }}
                   >
-                    {p.desc}
+                    {providerDesc(t, p)}
                   </div>
                   {ollamaStatus ? (
                     <OllamaSetup
@@ -967,7 +1201,7 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
                   ) : null}
                 </div>
                 <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
-                  {p.desc}
+                  {providerDesc(t, p)}
                 </div>
                 {keyInputOpen === p.id ? (
                   <div className="row" style={{ marginTop: 10, gap: 8 }}>

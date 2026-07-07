@@ -335,6 +335,31 @@ export interface Strings {
   ob_s3_title?: string;
   ob_s3_body?: string;
   ob_s3_action?: string;
+  // Budget guard (OPS-03) — optional; components fall back to English.
+  s_budget_title?: string;
+  s_budget_desc?: string;
+  s_budget_threshold?: string;
+  s_budget_usage?: string;
+  s_budget_total?: string;
+  s_budget_empty?: string;
+  // Auto-reflect (FEAT-06) — optional; components fall back to English.
+  s_autoreflect_title?: string;
+  s_autoreflect_desc?: string;
+  s_autoreflect_interval?: string;
+  // Independent Obsidian vault (MP-10) — optional; fall back to English.
+  s_vault_register?: string;
+  s_vault_registered?: string;
+  // Provider blurbs (Task 2) — optional; fall back to the English `desc:`.
+  s_provider_desc_anthropic_cli?: string;
+  s_provider_desc_gemini_cli?: string;
+  s_provider_desc_codex_cli?: string;
+  s_provider_desc_anthropic_api?: string;
+  s_provider_desc_openai_api?: string;
+  s_provider_desc_google_api?: string;
+  s_provider_desc_builtin_local?: string;
+  s_provider_desc_ollama?: string;
+  s_provider_desc_openrouter?: string;
+  s_provider_desc_memex_pro?: string;
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -680,6 +705,38 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_s3_body:
       "Ask the wiki anything. Memex answers from your pages first and reaches into raw sources only when needed — every claim ships with a citation.",
     ob_s3_action: "Go to Ask",
+    s_budget_title: "Monthly spend guard",
+    s_budget_desc:
+      "Estimated spend across paid API providers this month. A rough tripwire, not billing — set a threshold to get warned before you cross it.",
+    s_budget_threshold: "Monthly limit (USD)",
+    s_budget_usage: "This month",
+    s_budget_total: "Total",
+    s_budget_empty: "No paid-API usage tracked yet this month.",
+    s_autoreflect_title: "Auto-reflect",
+    s_autoreflect_desc:
+      "While Memex is open, periodically run a read-only reflect pass to surface orphans, stale pages, and missing links.",
+    s_autoreflect_interval: "Every",
+    s_vault_register: "Make this an independent Obsidian vault",
+    s_vault_registered: "Obsidian vault ready",
+    s_provider_desc_anthropic_cli:
+      "Use your Claude Pro / Max subscription via the local `claude` CLI. No API key needed.",
+    s_provider_desc_gemini_cli:
+      "Use your Google subscription via the local `gemini` CLI. No API key needed.",
+    s_provider_desc_codex_cli:
+      "Use your OpenAI subscription via the local `codex` CLI. No API key needed.",
+    s_provider_desc_anthropic_api:
+      "Direct calls to api.anthropic.com. Key from console.anthropic.com.",
+    s_provider_desc_openai_api: "GPT-5 family via api.openai.com.",
+    s_provider_desc_google_api:
+      "Gemini family via generativelanguage.googleapis.com.",
+    s_provider_desc_builtin_local:
+      "Powered by HyperCLOVA X — SEED 0.5B bundled inside the app. Works offline with zero setup; good for classification and light queries, use a cloud provider for high-quality ingest. Model © NAVER Corp., HyperCLOVA X SEED Model License.",
+    s_provider_desc_ollama:
+      "Run open-source models locally. Auto-detects http://localhost:11434.",
+    s_provider_desc_openrouter:
+      "One key for many providers (useful for model comparison).",
+    s_provider_desc_memex_pro:
+      "Unlimited ingest on a managed model — no API key or CLI needed. Sign in with your Memex Pro account.",
   },
   ko: {
     app_name: "Memex",
@@ -1023,6 +1080,38 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_s3_body:
       "위키에 무엇이든 물어보세요. Memex는 먼저 당신의 페이지에서 답하고 필요할 때만 원본으로 들어갑니다 — 모든 주장에는 인용이 따라옵니다.",
     ob_s3_action: "질문으로 이동",
+    s_budget_title: "월 지출 가드",
+    s_budget_desc:
+      "이번 달 유료 API 제공자에서의 예상 지출입니다. 정확한 청구가 아닌 대략적 경보로, 임계값을 설정하면 초과 전에 경고합니다.",
+    s_budget_threshold: "월 한도 (USD)",
+    s_budget_usage: "이번 달",
+    s_budget_total: "합계",
+    s_budget_empty: "이번 달 추적된 유료 API 사용량이 없습니다.",
+    s_autoreflect_title: "자동 Reflect",
+    s_autoreflect_desc:
+      "Memex가 켜져 있는 동안 읽기 전용 Reflect를 주기적으로 실행해 고립 노드·오래된 페이지·빠진 링크를 찾아냅니다.",
+    s_autoreflect_interval: "주기",
+    s_vault_register: "독립 Obsidian 볼트로 만들기",
+    s_vault_registered: "Obsidian 볼트 준비됨",
+    s_provider_desc_anthropic_cli:
+      "로컬 `claude` CLI로 Claude Pro / Max 구독을 사용합니다. API 키가 필요 없습니다.",
+    s_provider_desc_gemini_cli:
+      "로컬 `gemini` CLI로 Google 구독을 사용합니다. API 키가 필요 없습니다.",
+    s_provider_desc_codex_cli:
+      "로컬 `codex` CLI로 OpenAI 구독을 사용합니다. API 키가 필요 없습니다.",
+    s_provider_desc_anthropic_api:
+      "api.anthropic.com에 직접 호출합니다. 키는 console.anthropic.com에서 발급합니다.",
+    s_provider_desc_openai_api: "api.openai.com을 통한 GPT-5 계열.",
+    s_provider_desc_google_api:
+      "generativelanguage.googleapis.com을 통한 Gemini 계열.",
+    s_provider_desc_builtin_local:
+      "HyperCLOVA X 기반 — 앱에 내장된 SEED 0.5B. 설치 없이 오프라인으로 동작하며, 분류·가벼운 질문에 적합합니다. 고품질 ingest에는 클라우드 제공자를 사용하세요. 모델 © NAVER Corp., HyperCLOVA X SEED Model License.",
+    s_provider_desc_ollama:
+      "오픈소스 모델을 로컬에서 실행합니다. http://localhost:11434를 자동 감지합니다.",
+    s_provider_desc_openrouter:
+      "하나의 키로 여러 제공자 사용 (모델 비교에 유용).",
+    s_provider_desc_memex_pro:
+      "관리형 모델로 무제한 ingest — API 키나 CLI가 필요 없습니다. Memex Pro 계정으로 로그인하세요.",
   },
   ja: {
     app_name: "Memex",
@@ -1320,5 +1409,37 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_s3_body:
       "ウィキに何でも聞いてください。Memex はまずあなたのページから答え、必要なときだけ原本に降ります — すべての主張に出典が付きます。",
     ob_s3_action: "質問へ",
+    s_budget_title: "月間支出ガード",
+    s_budget_desc:
+      "今月の有料 API プロバイダーでの推定支出です。正確な請求ではなくおおまかな警報 — しきい値を設定すると超過前に警告します。",
+    s_budget_threshold: "月間上限 (USD)",
+    s_budget_usage: "今月",
+    s_budget_total: "合計",
+    s_budget_empty: "今月はまだ有料 API の使用量が記録されていません。",
+    s_autoreflect_title: "自動リフレクト",
+    s_autoreflect_desc:
+      "Memex を開いている間、読み取り専用のリフレクトを定期的に実行し、孤立ノード・古いページ・欠けたリンクを洗い出します。",
+    s_autoreflect_interval: "間隔",
+    s_vault_register: "独立した Obsidian ボルトにする",
+    s_vault_registered: "Obsidian ボルト準備完了",
+    s_provider_desc_anthropic_cli:
+      "ローカルの `claude` CLI で Claude Pro / Max サブスクリプションを使用します。API キー不要。",
+    s_provider_desc_gemini_cli:
+      "ローカルの `gemini` CLI で Google サブスクリプションを使用します。API キー不要。",
+    s_provider_desc_codex_cli:
+      "ローカルの `codex` CLI で OpenAI サブスクリプションを使用します。API キー不要。",
+    s_provider_desc_anthropic_api:
+      "api.anthropic.com に直接呼び出します。キーは console.anthropic.com から取得。",
+    s_provider_desc_openai_api: "api.openai.com 経由の GPT-5 ファミリー。",
+    s_provider_desc_google_api:
+      "generativelanguage.googleapis.com 経由の Gemini ファミリー。",
+    s_provider_desc_builtin_local:
+      "HyperCLOVA X 搭載 — アプリに同梱された SEED 0.5B。セットアップ不要でオフライン動作、分類や軽い質問に最適です。高品質な取り込みにはクラウドプロバイダーを使用してください。Model © NAVER Corp., HyperCLOVA X SEED Model License.",
+    s_provider_desc_ollama:
+      "オープンソースモデルをローカルで実行します。http://localhost:11434 を自動検出。",
+    s_provider_desc_openrouter:
+      "1 つのキーで多数のプロバイダーを利用（モデル比較に便利）。",
+    s_provider_desc_memex_pro:
+      "マネージドモデルで無制限の取り込み — API キーや CLI は不要。Memex Pro アカウントでサインインしてください。",
   },
 };

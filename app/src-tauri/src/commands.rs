@@ -213,6 +213,19 @@ pub fn write_run_log(
     vault::write_run_log(&vault, &name, &content)
 }
 
+/// Scaffold `<vault>/.obsidian/app.json` so the open vault can be opened
+/// directly in Obsidian. `vault_path` is confined to the open vault root like
+/// the other write commands; the write is idempotent. Returns the `.obsidian`
+/// directory path.
+#[tauri::command]
+pub fn scaffold_obsidian_vault(
+    state: tauri::State<VaultRoot>,
+    vault_path: String,
+) -> Result<String, String> {
+    let vault = confine_root(&state, &vault_path)?;
+    vault::scaffold_obsidian_vault(std::path::Path::new(&vault))
+}
+
 #[tauri::command]
 pub fn create_file(
     state: tauri::State<VaultRoot>,
