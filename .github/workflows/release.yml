@@ -45,6 +45,12 @@ jobs:
       - uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # The bundled SEED model (llama-cpp-sys-2 → ggml) compiles C++17
+          # std::filesystem, which is "unavailable before macOS 10.15". Tauri's
+          # default deployment target (10.13) made the universal-darwin build
+          # fail to compile. Pin 10.15 so the C++ has std::filesystem; matches
+          # bundle.macOS.minimumSystemVersion. No-op on the Windows runner.
+          MACOSX_DEPLOYMENT_TARGET: "10.15"
           # --- Code signing scaffold — INACTIVE until these repo secrets exist.
           # Unset secrets resolve to empty strings, so tauri-action skips signing
           # and the build stays unsigned (exactly today's behaviour). Add the

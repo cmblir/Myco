@@ -30,6 +30,9 @@
   "bundle": {
     "active": true,
     "targets": ["dmg", "nsis"],
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
     "resources": {
       "../../mcp-server/memex_mcp.py": "mcp-server/memex_mcp.py",
       "../../mcp-server/project_registry.py": "mcp-server/project_registry.py",
