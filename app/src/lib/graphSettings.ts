@@ -17,6 +17,7 @@ export interface GraphSettings {
 
   // Display
   arrows: boolean;
+  arrowSize: number; // arrowhead cone scale, 0.1..1.5 — kept well under node size
   textFadeThreshold: number; // zoom level at which labels appear (0.1..3)
   nodeSize: number; // multiplier 0.5..3
   linkThickness: number; // 0.3..3
@@ -49,6 +50,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   tagFilter: null,
   folderFilter: null,
   arrows: false,
+  arrowSize: 0.35, // small — arrowheads are accents, never planet-sized
   textFadeThreshold: 1.1,
   nodeSize: 1,
   linkThickness: 1,

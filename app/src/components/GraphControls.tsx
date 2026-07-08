@@ -24,6 +24,8 @@ interface Props {
   folders: string[];
   tlPlaying: boolean;
   onTimelapse: () => void;
+  traceMode: boolean;
+  onTraceMode: (on: boolean) => void;
 }
 
 export default function GraphControls({
@@ -37,6 +39,8 @@ export default function GraphControls({
   folders,
   tlPlaying,
   onTimelapse,
+  traceMode,
+  onTraceMode,
 }: Props): JSX.Element {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     filters: true,
@@ -195,6 +199,22 @@ export default function GraphControls({
           hint={t.gr_arrows_hint ?? "Show direction on each link"}
           value={settings.arrows}
           onChange={(v) => onChange({ arrows: v })}
+        />
+        {settings.arrows ? (
+          <Slider
+            label={t.gr_arrow_size ?? "Arrow size"}
+            value={settings.arrowSize}
+            min={0.1}
+            max={1.5}
+            step={0.05}
+            onChange={(v) => onChange({ arrowSize: v })}
+          />
+        ) : null}
+        <Toggle
+          label={t.gr_trace ?? "Trace path"}
+          hint={t.gr_trace_hint ?? "Click a start node, then an end node"}
+          value={traceMode}
+          onChange={onTraceMode}
         />
         <Slider
           label={t.gr_text_fade ?? "Text fade threshold"}

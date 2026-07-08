@@ -104,6 +104,9 @@ export interface Strings {
   gr_existing_only_hint: string;
   gr_arrows: string;
   gr_arrows_hint: string;
+  gr_arrow_size: string;
+  gr_trace: string;
+  gr_trace_hint: string;
   gr_text_fade: string;
   gr_node_size: string;
   gr_link_thickness: string;
@@ -470,6 +473,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_existing_only_hint: "Hide unresolved [[wikilinks]]",
     gr_arrows: "Arrows",
     gr_arrows_hint: "Show direction on each link",
+    gr_arrow_size: "Arrow size",
+    gr_trace: "Trace path",
+    gr_trace_hint: "Click a start node, then an end node",
     gr_text_fade: "Text fade threshold",
     gr_node_size: "Node size",
     gr_link_thickness: "Link thickness",
@@ -846,6 +852,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_existing_only_hint: "미해결 [[위키링크]] 숨김",
     gr_arrows: "화살표",
     gr_arrows_hint: "각 링크에 방향 표시",
+    gr_arrow_size: "화살표 크기",
+    gr_trace: "경로 추적",
+    gr_trace_hint: "시작 노드를 누른 뒤 끝 노드를 누르세요",
     gr_text_fade: "라벨 페이드 임계",
     gr_node_size: "노드 크기",
     gr_link_thickness: "링크 두께",
@@ -1222,6 +1231,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_existing_only_hint: "未解決の [[wikilinks]] を非表示",
     gr_arrows: "矢印",
     gr_arrows_hint: "各リンクに方向を表示",
+    gr_arrow_size: "矢印サイズ",
+    gr_trace: "経路トレース",
+    gr_trace_hint: "開始ノードをクリックし、次に終了ノードをクリック",
     gr_text_fade: "ラベルフェード閾値",
     gr_node_size: "ノードサイズ",
     gr_link_thickness: "リンク太さ",

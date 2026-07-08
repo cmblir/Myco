@@ -137,6 +137,23 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     pathAnchorRef.current = v;
     setPathAnchor(v);
   };
+  // Trace mode (spec): while on, a plain click picks the path start then end
+  // (no focus frame), and the route animates. Ref mirrors state for the
+  // once-created click handler closure.
+  const [traceMode, setTraceMode] = useState(false);
+  const traceModeRef = useRef(false);
+  const toggleTrace = (on: boolean): void => {
+    traceModeRef.current = on;
+    setTraceMode(on);
+    // Leaving trace mode clears any in-progress route + the comet.
+    if (!on) {
+      setAnchor(null);
+      pathRef.current = null;
+      setPath(null);
+      setSelected(null);
+      sceneRef.current?.setTrace(null);
+    }
+  };
   // Gap-analysis panel (orphans / missing / under-cited / disconnected …).
   const [gapsOpen, setGapsOpen] = useState(false);
   const [tlPlaying, setTlPlaying] = useState(false);
@@ -258,7 +275,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const handleNodeClick = useRef((id: string, additive: boolean) => {
     const g = graphRef.current;
     if (!g || !g.hasNode(id)) return;
-    if (additive) {
+    // Trace mode turns a plain click into path start/end picking (same flow as
+    // Cmd/Ctrl-click), suppressing the focus-frame push.
+    if (additive || traceModeRef.current) {
       const anchor = pathAnchorRef.current;
       if (anchor == null || anchor === id) {
         // set the start anchor, or release it if it's the same node
@@ -558,6 +577,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.linkThickness,
     settings.textFadeThreshold,
     settings.arrows,
+    settings.arrowSize,
     settings.brightness,
     settings.ambientMotion,
   ]);
@@ -870,6 +890,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         pathRef.current = null;
         setPath(null);
         pushStyle();
+        sceneRef.current?.setTrace(null);
       }
       return;
     }
@@ -877,6 +898,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     pathRef.current = p;
     setPath(p);
     pushStyle();
+    // Animate the traversal comet along the resolved route (null path = clear).
+    sceneRef.current?.setTrace(p);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathAnchor, selected]);
 
@@ -1110,6 +1133,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             folders={folders}
             tlPlaying={tlPlaying}
             onTimelapse={tlPlaying ? pauseTimelapse : startTimelapse}
+            traceMode={traceMode}
+            onTraceMode={toggleTrace}
           />
         </div>
       </div>
