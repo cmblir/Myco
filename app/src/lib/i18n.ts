@@ -109,6 +109,9 @@ export interface Strings {
   gr_trace_hint: string;
   gr_spaceship: string;
   gr_spaceship_hint: string;
+  gr_spaceship_exit: string;
+  gr_close: string;
+  gr_open: string;
   gr_text_fade: string;
   gr_node_size: string;
   gr_link_thickness: string;
@@ -479,7 +482,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_trace: "Trace path",
     gr_trace_hint: "Click a start node, then an end node",
     gr_spaceship: "Spaceship",
-    gr_spaceship_hint: "WASD fly · drag to steer · click a node to dock · Esc exit",
+    gr_spaceship_hint: "WASD fly · drag to steer · click a node for info · Esc exit",
+    gr_spaceship_exit: "Exit",
+    gr_close: "Close",
+    gr_open: "Open page",
     gr_text_fade: "Text fade threshold",
     gr_node_size: "Node size",
     gr_link_thickness: "Link thickness",
@@ -860,7 +866,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_trace: "경로 추적",
     gr_trace_hint: "시작 노드를 누른 뒤 끝 노드를 누르세요",
     gr_spaceship: "우주선 비행",
-    gr_spaceship_hint: "WASD 이동 · 드래그로 방향 · 노드 클릭해 도킹 · Esc 종료",
+    gr_spaceship_hint: "WASD 이동 · 드래그로 방향 · 노드 클릭해 정보 · Esc 종료",
+    gr_spaceship_exit: "나가기",
+    gr_close: "닫기",
+    gr_open: "페이지 열기",
     gr_text_fade: "라벨 페이드 임계",
     gr_node_size: "노드 크기",
     gr_link_thickness: "링크 두께",
@@ -1241,7 +1250,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_trace: "経路トレース",
     gr_trace_hint: "開始ノードをクリックし、次に終了ノードをクリック",
     gr_spaceship: "宇宙船",
-    gr_spaceship_hint: "WASDで飛行 · ドラッグで方向 · ノードをクリックでドッキング · Escで終了",
+    gr_spaceship_hint: "WASDで飛行 · ドラッグで方向 · ノードをクリックで情報 · Escで終了",
+    gr_spaceship_exit: "終了",
+    gr_close: "閉じる",
+    gr_open: "ページを開く",
     gr_text_fade: "ラベルフェード閾値",
     gr_node_size: "ノードサイズ",
     gr_link_thickness: "リンク太さ",

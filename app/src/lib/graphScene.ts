@@ -11,7 +11,7 @@
 // reuse the app font via CSS2DRenderer with sigma's hub-first size threshold.
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
-import { FlyControls } from "three/examples/jsm/controls/FlyControls.js";
+import { ShipController } from "./shipController";
 import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
@@ -385,14 +385,11 @@ export class GraphScene {
   private pulse: PulseLayer; // signals flowing along edges (alive/communication)
   private tracePulse: TracePulse; // interactive start→end path trace comet
   private dust: DustLayer; // motes orbiting nodes, shown in spaceship fly mode
-  // Spaceship free-fly (FlyControls) + docking. flyControls exists only while
-  // flying (created on enter, disposed on exit) so its key listeners never leak.
-  private flyControls: FlyControls | null = null;
+  // Immersive spaceship mode: a procedural ship + third-person chase rig. Its
+  // listeners live only while enabled, so nothing leaks into inputs / orbit.
+  private ship!: ShipController;
   private flyMode = false;
   private baseFlySpeed = 600;
-  private shiftBoost = false;
-  // Docking: while flying, click a node to ease into a slow orbit around it.
-  private dock: { id: string; r: number; ang: number } | null = null;
   private clusterLabels: ClusterLabels; // community names at rest (reverse semantic zoom)
   private lastFrame = 0; // performance.now() of the previous animation frame
   private labels = new Map<string, CSS2DObject>();
@@ -711,11 +708,10 @@ export class GraphScene {
     if (SHOW_STARFIELD) this.scene.add(this.starfield);
 
     // --- nebula/dust (faint additive gas over the biggest galaxies) ---
-    this.nebula = new NebulaLayer(
-      this.graph,
-      this.nodeIds,
-      dark && SHOW_NEBULA && !this.perfLod,
-    );
+    // Nebula is just ~9 sprites (8 community clouds + 1 halo), so it's cheap even
+    // on a 10k-node vault — enable it regardless of perf-LOD so community colours
+    // still read on large graphs (matches applyTheme, which omits the perfLod gate).
+    this.nebula = new NebulaLayer(this.graph, this.nodeIds, dark && SHOW_NEBULA);
     this.scene.add(this.nebula.group);
 
     // --- pulses (signals flowing along the edges, so the graph reads as alive) ---
@@ -731,6 +727,14 @@ export class GraphScene {
     // --- dust motes (orbit nodes; only shown while piloting the spaceship) ---
     this.dust = new DustLayer(this.graph, this.nodeIds, pr, dark);
     this.scene.add(this.dust.points);
+
+    // --- spaceship (immersive third-person flight; enabled via setFlyMode) ---
+    this.ship = new ShipController(
+      this.camera,
+      this.renderer.domElement,
+      this.scene,
+      this.baseFlySpeed,
+    );
 
     // --- cluster auto-labels (community names while zoomed out) ---
     this.clusterLabels = new ClusterLabels(this.graph);
@@ -1510,9 +1514,8 @@ export class GraphScene {
     this.pulse.setEdges(this.edgePairs);
     // Trace: the node set changed under it — clear; React re-pushes if still valid.
     this.tracePulse.setPath(null);
-    // Dust: re-seed for the new node set; clear any dock referencing a gone node.
+    // Dust: re-seed for the new node set.
     this.dust.seed(this.nodeIds);
-    this.dock = null;
     // Cluster labels: communities may have grown/changed after live ingest.
     this.clusterLabels.rebuild();
     // Re-derive the label allow-set so live-ingest newcomers / new hubs can label.
@@ -1570,36 +1573,26 @@ export class GraphScene {
     this.tracePulse.setPath(path);
   }
 
-  /** Enter/leave spaceship free-fly mode. ON: FlyControls take the camera (6DOF,
-   * drag-to-steer), OrbitControls + idle rotation pause, and dust motes appear.
-   * OFF: dispose FlyControls (releases its key listeners), restore OrbitControls
-   * at the current camera position, hide dust, undock. */
+  /** Enter/leave immersive spaceship mode. ON: the ShipController takes the
+   * camera (third-person chase, WASD/mouse steer), OrbitControls + idle rotation
+   * pause, and dust motes appear. OFF: release the ship, restore OrbitControls at
+   * the current camera position, hide dust. */
   setFlyMode(on: boolean): void {
     if (on === this.flyMode) return;
     this.flyMode = on;
-    this.dock = null;
     if (on) {
       this.controls.enabled = false;
       this.controls.autoRotate = false;
-      const fc = new FlyControls(this.camera, this.renderer.domElement);
-      fc.movementSpeed = this.baseFlySpeed;
-      fc.rollSpeed = 0.6;
-      fc.dragToLook = true; // hold-drag to steer — no pointer lock
-      fc.autoForward = false;
-      this.flyControls = fc;
+      this.ship.enable();
       this.dust.setVisible(true);
-      window.addEventListener("keydown", this.onFlyKey);
-      window.addEventListener("keyup", this.onFlyKey);
     } else {
-      this.flyControls?.dispose();
-      this.flyControls = null;
+      this.ship.disable();
       this.dust.setVisible(false);
-      window.removeEventListener("keydown", this.onFlyKey);
-      window.removeEventListener("keyup", this.onFlyKey);
       // Re-seat OrbitControls: pivot a sensible distance ahead of the camera's
       // current heading so orbiting resumes around what the pilot was facing.
       const fwd = this.tmpVec.set(0, 0, -1).applyQuaternion(this.camera.quaternion);
       this.controls.target.copy(this.camera.position).addScaledVector(fwd, 300);
+      this.camera.up.set(0, 1, 0);
       this.controls.enabled = true;
       this.controls.autoRotate = this.ambientOn();
       this.controls.update();
@@ -1608,25 +1601,6 @@ export class GraphScene {
 
   isFlying(): boolean {
     return this.flyMode;
-  }
-
-  // Shift = flight boost (×3). FlyControls reads movementSpeed each update.
-  private onFlyKey = (e: KeyboardEvent): void => {
-    if (e.key !== "Shift") return;
-    this.shiftBoost = e.type === "keydown";
-    if (this.flyControls) {
-      this.flyControls.movementSpeed = this.baseFlySpeed * (this.shiftBoost ? 3 : 1);
-    }
-  };
-
-  /** Dock (settle) into a slow orbit around a node — the game-like "land on a
-   * star". A plain click in fly mode calls this; clicking empty space undocks. */
-  private dockNode(id: string): void {
-    if (!this.graph.hasNode(id)) return;
-    const a = this.graph.getNodeAttributes(id);
-    const r = Math.max(a.size * NODE_RADIUS * 5, 50);
-    const ang = Math.atan2(this.camera.position.z - a.z, this.camera.position.x - a.x);
-    this.dock = { id, r, ang };
   }
 
   applySettings(settings: GraphSettings): void {
@@ -1821,28 +1795,6 @@ export class GraphScene {
     }
   }
 
-  // Per-frame spaceship update: either drive FlyControls, or, when docked, ease
-  // into and hold a slow orbit around the target node.
-  private updateFly(dt: number): void {
-    if (this.dock) {
-      if (!this.graph.hasNode(this.dock.id)) {
-        this.dock = null;
-      } else {
-        const a = this.graph.getNodeAttributes(this.dock.id);
-        this.dock.ang += 0.25 * dt; // slow orbit
-        const r = this.dock.r;
-        this.tmpVec.set(
-          a.x + Math.cos(this.dock.ang) * r,
-          a.y + r * 0.25,
-          a.z + Math.sin(this.dock.ang) * r,
-        );
-        this.camera.position.lerp(this.tmpVec, Math.min(1, 3 * dt)); // ease approach
-        this.camera.lookAt(a.x, a.y, a.z);
-        return;
-      }
-    }
-    this.flyControls?.update(dt);
-  }
 
   start(): void {
     if (this.raf != null) return;
@@ -1852,7 +1804,7 @@ export class GraphScene {
       const dt = Math.min(0.1, (now - this.lastFrame) / 1000); // clamp tab-refocus jumps
       this.lastFrame = now;
       if (this.flyMode) {
-        this.updateFly(dt);
+        this.ship.update(dt);
       } else {
         this.controls.update();
       }
@@ -1895,10 +1847,7 @@ export class GraphScene {
     if (this.rotateResumeTimer != null) clearTimeout(this.rotateResumeTimer);
     if (this.lodRestoreTimer != null) clearTimeout(this.lodRestoreTimer);
     // Spaceship: drop fly controls + their global key listeners, hide dust.
-    window.removeEventListener("keydown", this.onFlyKey);
-    window.removeEventListener("keyup", this.onFlyKey);
-    this.flyControls?.dispose();
-    this.flyControls = null;
+    this.ship.dispose();
     this.controls.removeEventListener("start", this.onControlsStart);
     this.controls.removeEventListener("end", this.onControlsEnd);
     this.controls.dispose();
@@ -2017,7 +1966,7 @@ export class GraphScene {
   }
 
   private onPointerMove = (e: PointerEvent): void => {
-    if (this.flyMode) return; // FlyControls owns drag-to-steer; no hover/drag
+    if (this.flyMode) return; // the ship owns drag-to-steer; no hover/drag
     if (this.dragId) {
       this.dragMoved = true;
       const a = this.graph.getNodeAttributes(this.dragId);
@@ -2051,7 +2000,7 @@ export class GraphScene {
   private onPointerDown = (e: PointerEvent): void => {
     if (e.button !== 0) return;
     this.downAt = { x: e.clientX, y: e.clientY };
-    if (this.flyMode) return; // no node-drag while flying; FlyControls steers
+    if (this.flyMode) return; // no node-drag while flying; the ship steers
     const id = this.pickNode(e.clientX, e.clientY);
     if (id) {
       this.dragId = id;
@@ -2071,15 +2020,15 @@ export class GraphScene {
 
   private onPointerUp = (e: PointerEvent): void => {
     if (this.flyMode) {
-      // A stationary click docks onto the node under the cursor; a click on
-      // empty space undocks. Drags are steering, so ignore them.
+      // A stationary click selects the node under the cursor → its info opens in
+      // the ship HUD; a click on empty space clears it. Drags are steering.
       const still =
         this.downAt != null &&
         Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) <= 3;
       if (still && e.target === this.renderer.domElement) {
         const hit = this.pickNode(e.clientX, e.clientY);
-        if (hit) this.dockNode(hit);
-        else this.dock = null;
+        if (hit) this.cb.onNodeClick(hit, false);
+        else this.cb.onVoidClick();
       }
       this.downAt = null;
       return;

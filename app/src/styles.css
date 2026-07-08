@@ -535,8 +535,14 @@ select {
   margin: 0 auto;
 }
 .workspace-wide {
-  padding: 0 40px 64px;
+  padding: 0 40px;
   max-width: none;
+  /* Graph page fills the viewport (minus the topbar) and never overflows main,
+     so no page scrollbar appears — arrow keys can't scroll it while flying. */
+  height: calc(100vh - var(--top-h));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .page-head {
   padding: 56px 0 16px;
@@ -1316,6 +1322,12 @@ hr {
   border-radius: var(--r-md);
   overflow: hidden;
   position: relative;
+  /* Fill the remaining page height below the header; the canvas body flexes. */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 16px;
 }
 .graph-toolbar {
   display: flex;
@@ -1364,8 +1376,8 @@ hr {
 .graph-body {
   display: flex;
   position: relative;
-  height: calc(100vh - 280px);
-  min-height: 540px;
+  flex: 1;
+  min-height: 0;
 }
 .graph-canvas-wrap {
   flex: 1;
@@ -1399,6 +1411,144 @@ hr {
 }
 .graph-canvas.graph-ready {
   opacity: 1;
+}
+
+/* ============================================================
+   Spaceship mode: the graph goes app-fullscreen (covers sidebar, header, and
+   settings chrome) so the flight reads as an immersive cockpit. The ship HUD
+   (exit, controls legend, node info) floats over the canvas.
+   ============================================================ */
+.workspace-wide.graph-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  height: 100vh;
+  padding: 0;
+  background: #05060d;
+}
+.graph-fullscreen .page-head,
+.graph-fullscreen .graph-toolbar,
+.graph-fullscreen .graph-drawer,
+.graph-fullscreen .graph-drawer-toggle,
+.graph-fullscreen .graph-legend,
+.graph-fullscreen .graph-inspector {
+  display: none; /* the ShipHud is the only panel in immersive mode */
+}
+.graph-fullscreen .graph-shell {
+  border: 0;
+  border-radius: 0;
+  margin-bottom: 0;
+}
+
+.ship-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none; /* children opt back in */
+}
+.ship-hud__exit,
+.ship-hud__panel {
+  pointer-events: auto;
+}
+.ship-hud__exit {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: rgba(10, 12, 20, 0.7);
+  color: var(--ink);
+  font-size: 13px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.ship-hud__exit:hover {
+  background: rgba(30, 34, 48, 0.8);
+}
+.ship-hud__legend {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--ink-3);
+  font-size: 12.5px;
+  background: rgba(10, 12, 20, 0.55);
+  padding: 6px 14px;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+}
+.ship-hud__panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: min(300px, 34vw);
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: rgba(10, 12, 20, 0.82);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.ship-hud__panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ship-hud__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+.ship-hud__title {
+  font-weight: 600;
+  font-size: 15px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ship-hud__close {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  cursor: pointer;
+  font-size: 13px;
+}
+.ship-hud__meta {
+  color: var(--ink-3);
+  font-size: 12.5px;
+  margin: 6px 0 10px;
+}
+.ship-hud__neighbors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+.ship-hud__chip {
+  font-size: 11.5px;
+  color: var(--ink-2);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 8px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ship-hud__open {
+  width: 100%;
+  padding: 7px;
+  border-radius: var(--r);
+  border: 1px solid var(--line);
+  background: var(--ink);
+  color: var(--bg);
+  font-size: 13px;
+  cursor: pointer;
 }
 @media (prefers-reduced-motion: reduce) {
   .graph-canvas {

@@ -224,7 +224,7 @@ export default function GraphControls({
           label={t.gr_spaceship ?? "Spaceship"}
           hint={
             t.gr_spaceship_hint ??
-            "WASD fly · drag to steer · click a node to dock · Esc exit"
+            "WASD fly · drag to steer · click a node for info · Esc exit"
           }
           value={flyMode}
           onChange={onFlyMode}

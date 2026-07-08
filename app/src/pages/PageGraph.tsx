@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import GraphControls from "../components/GraphControls";
 import GraphInspector from "../components/GraphInspector";
+import ShipHud from "../components/ShipHud";
 import GraphGaps from "../components/GraphGaps";
 import GraphLegend, { type LegendCommunity } from "../components/GraphLegend";
 import {
@@ -285,6 +286,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const handleNodeClick = useRef((id: string, additive: boolean) => {
     const g = graphRef.current;
     if (!g || !g.hasNode(id)) return;
+    // Spaceship mode: a click just opens the node's info in the ship HUD — no
+    // focus frame, no trace, no camera jump (the pilot keeps flying).
+    if (flyModeRef.current) {
+      setSelected(id);
+      return;
+    }
     // Trace mode turns a plain click into path start/end picking (same flow as
     // Cmd/Ctrl-click), suppressing the focus-frame push.
     if (additive || traceModeRef.current) {
@@ -446,7 +453,11 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         if (!killed) handleNodeClick(id, additive);
       },
       onVoidClick: () => {
-        if (!killed) popFrame();
+        if (killed) return;
+        // In spaceship mode a void click just closes the HUD; otherwise it's the
+        // focus-stack "step out" gesture.
+        if (flyModeRef.current) setSelected(null);
+        else popFrame();
       },
       onNodeHover: (id) => {
         if (id) highlight(id);
@@ -946,8 +957,25 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
 
   const totalNodes = countAllNodes(adjacency);
 
+  // Node info for the spaceship HUD (title, colour, link count, neighbours).
+  const flyNode = useMemo(() => {
+    if (!flyMode || !selected) return null;
+    const g = graphRef.current;
+    if (!g || !g.hasNode(selected)) return null;
+    const a = g.getNodeAttributes(selected);
+    return {
+      id: selected,
+      title: stem(selected),
+      color: a.color ?? "#9aa6c2",
+      degree: g.degree(selected),
+      neighbors: g.neighbors(selected).slice(0, 10).map(stem),
+    };
+  }, [flyMode, selected]);
+
   return (
-    <div className="workspace workspace-wide">
+    <div
+      className={`workspace workspace-wide${flyMode ? " graph-fullscreen" : ""}`}
+    >
       <header className="page-head">
         <div className="page-eyebrow">{t.nav_graph}</div>
         <h1 className="page-title">{t.gr_title}</h1>
@@ -1179,6 +1207,15 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             flyMode={flyMode}
             onFlyMode={toggleFly}
           />
+          {flyMode ? (
+            <ShipHud
+              t={t}
+              node={flyNode}
+              onClose={() => setSelected(null)}
+              onOpen={(id) => setRoute(`page:${id}`)}
+              onExit={() => toggleFly(false)}
+            />
+          ) : null}
         </div>
       </div>
     </div>
