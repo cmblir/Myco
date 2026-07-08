@@ -1308,9 +1308,21 @@ hr {
 }
 .cm-content {
   padding: 1rem 0;
+  caret-color: var(--ink); /* CodeMirror's default caret is black — invisible on dark */
 }
 .cm-focused {
   outline: none !important;
+}
+/* The blink caret is a separate element whose colour comes from border-left;
+   the CM default is black, so force it to the theme ink for both themes. */
+.cm-editor .cm-cursor,
+.cm-editor .cm-dropCursor {
+  border-left-color: var(--ink);
+}
+/* Selection highlight legible on the dark canvas. */
+.cm-editor .cm-selectionBackground,
+.cm-editor.cm-focused .cm-selectionBackground {
+  background: var(--bg-hover);
 }
 
 /* ============================================================

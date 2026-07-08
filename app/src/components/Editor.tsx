@@ -60,6 +60,16 @@ export default function Editor({
         ]),
         markdown(),
         EditorView.lineWrapping,
+        // CodeMirror's default caret is black — invisible on the dark theme. A
+        // theme extension wins over CM's injected base styles (a plain stylesheet
+        // rule loses to them), so set the caret + cursor to the theme ink here.
+        EditorView.theme({
+          "&": { color: "var(--ink)" },
+          ".cm-content": { caretColor: "var(--ink)" },
+          ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--ink)" },
+          "&.cm-focused .cm-selectionBackground, .cm-selectionBackground":
+            { background: "var(--bg-hover)" },
+        }),
         autocompletion({ override: [wikilinkCompletion] }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {

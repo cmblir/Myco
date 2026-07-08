@@ -74,9 +74,31 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while running Memex")
         .run(|_app, event| {
-            // Reap any in-flight claude children so they don't outlive the app.
-            if let tauri::RunEvent::Exit = event {
-                claude::cancel_all();
+            // The embedded llama.cpp/ggml Metal backend aborts inside its C++
+            // static destructors during process teardown. On macOS, quitting goes
+            // AppKit `-[NSApplication terminate:]` → `exit()` → `__cxa_finalize`,
+            // which runs those destructors and aborts — so every quit popped a
+            // "Memex quit unexpectedly" dialog. RunEvent::Exit fires only after the
+            // run loop returns, which never happens (AppKit calls exit() itself),
+            // so we intercept at ExitRequested (emitted from applicationShould-
+            // Terminate, BEFORE AppKit's exit()) and terminate immediately with
+            // _exit(), which skips atexit / C++ static destructors entirely.
+            //
+            // Safe here: all app state is persisted incrementally (settings.json,
+            // vault markdown), so there is nothing that needs those finalizers.
+            if matches!(
+                event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                claude::cancel_all(); // reap in-flight claude children
+                // SAFETY: _exit simply ends the process; no Rust state needs
+                // unwinding, and it is async-signal-safe.
+                unsafe {
+                    extern "C" {
+                        fn _exit(code: i32) -> !;
+                    }
+                    _exit(0)
+                }
             }
         });
 }
