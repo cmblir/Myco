@@ -23,13 +23,13 @@ const MIN_MEMBERS = 6; // ignore tiny communities (no visible gas)
 // the community clouds for the eye.
 const MAX_SPRITES = MAX_COMMUNITY_SPRITES + 1; // + the back-halo
 
-const COMMUNITY_OPACITY = 0.05;
+const COMMUNITY_OPACITY = 0.12; // stronger tinted clouds so community colours read
 const SIZE_MUL = 2.6; // sprite world-size = communityRadius * SIZE_MUL
 const SIZE_MIN = 600;
 const SIZE_MAX = 2600;
 // Back-halo: sized to the graph's spread (fit() reference), floored so a tiny
 // vault still gets a dome. Very low opacity so it reads as depth, not fog.
-const HALO_OPACITY = 0.05;
+const HALO_OPACITY = 0.1;
 const HALO_SIZE_MUL = 3.2; // × graph radius
 const HALO_SIZE_MIN = 3600;
 

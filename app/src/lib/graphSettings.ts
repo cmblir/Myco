@@ -50,11 +50,11 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   tagFilter: null,
   folderFilter: null,
   arrows: false,
-  arrowSize: 0.35, // small — arrowheads are accents, never planet-sized
+  arrowSize: 1, // arrowhead/flying-ship scale (bumped from 0.35 on request)
   textFadeThreshold: 1.1,
   nodeSize: 1,
   linkThickness: 1,
-  brightness: 0.85, // exposure headroom: the void stays black, only emitters survive
+  brightness: 0.9, // exposure headroom: the void stays black, only emitters survive
   ambientMotion: true,
   // GALAXY/BRAIN defaults: range-capped LOCAL repulsion (no global outward
   // pressure → no firework spikes) + firm centre gravity collapse the vault into

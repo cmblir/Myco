@@ -26,6 +26,8 @@ interface Props {
   onTimelapse: () => void;
   traceMode: boolean;
   onTraceMode: (on: boolean) => void;
+  flyMode: boolean;
+  onFlyMode: (on: boolean) => void;
 }
 
 export default function GraphControls({
@@ -41,6 +43,8 @@ export default function GraphControls({
   onTimelapse,
   traceMode,
   onTraceMode,
+  flyMode,
+  onFlyMode,
 }: Props): JSX.Element {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     filters: true,
@@ -205,7 +209,7 @@ export default function GraphControls({
             label={t.gr_arrow_size ?? "Arrow size"}
             value={settings.arrowSize}
             min={0.1}
-            max={1.5}
+            max={3}
             step={0.05}
             onChange={(v) => onChange({ arrowSize: v })}
           />
@@ -215,6 +219,15 @@ export default function GraphControls({
           hint={t.gr_trace_hint ?? "Click a start node, then an end node"}
           value={traceMode}
           onChange={onTraceMode}
+        />
+        <Toggle
+          label={t.gr_spaceship ?? "Spaceship"}
+          hint={
+            t.gr_spaceship_hint ??
+            "WASD fly · drag to steer · click a node to dock · Esc exit"
+          }
+          value={flyMode}
+          onChange={onFlyMode}
         />
         <Slider
           label={t.gr_text_fade ?? "Text fade threshold"}

@@ -154,6 +154,16 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       sceneRef.current?.setTrace(null);
     }
   };
+  // Spaceship free-fly mode (transient). Ref mirrors state for the window
+  // keydown closure. Toggling clears any active trace (they share the camera).
+  const [flyMode, setFlyMode] = useState(false);
+  const flyModeRef = useRef(false);
+  const toggleFly = (on: boolean): void => {
+    flyModeRef.current = on;
+    setFlyMode(on);
+    sceneRef.current?.setFlyMode(on);
+    if (on && traceModeRef.current) toggleTrace(false);
+  };
   // Gap-analysis panel (orphans / missing / under-cited / disconnected …).
   const [gapsOpen, setGapsOpen] = useState(false);
   const [tlPlaying, setTlPlaying] = useState(false);
@@ -593,6 +603,37 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       window.clearTimeout(safety);
     };
   }, [uiTheme]);
+
+  // Spaceship keyboard: F toggles fly mode, Esc exits. Ignored while typing in an
+  // input so the search box still accepts "f"/Escape. Registered once; reads live
+  // state via refs.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const el = document.activeElement as HTMLElement | null;
+      const typing =
+        !!el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.isContentEditable);
+      if (typing) return;
+      if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        toggleFly(!flyModeRef.current);
+      } else if (e.key === "Escape" && flyModeRef.current) {
+        e.preventDefault();
+        toggleFly(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Re-apply fly mode after a scene rebuild (GL restore / data change) so the
+  // fresh scene resumes flying instead of snapping back to orbit.
+  useEffect(() => {
+    if (flyModeRef.current) sceneRef.current?.setFlyMode(true);
+  }, [glEpoch]);
 
   // Live-ingest glow — mirror ingestStore's touched files into the style ref
   // and pulse the newest touch. Subscribes once; every change is a cheap scene
@@ -1135,6 +1176,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             onTimelapse={tlPlaying ? pauseTimelapse : startTimelapse}
             traceMode={traceMode}
             onTraceMode={toggleTrace}
+            flyMode={flyMode}
+            onFlyMode={toggleFly}
           />
         </div>
       </div>
