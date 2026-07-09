@@ -312,6 +312,7 @@ export interface Strings {
   cb_tag_page?: string;
   cb_tag_file?: string;
   cb_in_contents?: string;
+  cb_semantic?: string;
   // Topbar.
   tb_lint?: string;
   tb_toggle_sidebar?: string;
@@ -697,6 +698,7 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_tag_page: "page",
     cb_tag_file: "file",
     cb_in_contents: "In page contents",
+    cb_semantic: "Related (semantic)",
     tb_lint: "Lint",
     tb_toggle_sidebar: "Toggle sidebar (⌘B)",
     tb_model_picker: "Switch query model",
@@ -1087,6 +1089,7 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_tag_page: "페이지",
     cb_tag_file: "파일",
     cb_in_contents: "페이지 본문에서",
+    cb_semantic: "관련 (의미)",
     tb_lint: "린트",
     tb_toggle_sidebar: "사이드바 토글 (⌘B)",
     tb_model_picker: "질문 모델 변경",
@@ -1431,6 +1434,7 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_tag_page: "ページ",
     cb_tag_file: "ファイル",
     cb_in_contents: "ページ本文内",
+    cb_semantic: "関連（意味）",
     tb_lint: "リント",
     tb_toggle_sidebar: "サイドバー切替 (⌘B)",
     tb_model_picker: "質問用モデルを変更",

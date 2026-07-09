@@ -9,7 +9,7 @@ import { useUIStore } from "../stores/uiStore";
 import type { RouteId } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { ipc } from "../lib/ipc";
-import type { FileNode, SearchHit } from "../lib/ipc";
+import type { FileNode, SearchHit, VecHit } from "../lib/ipc";
 
 interface CmdEntry {
   type: "nav" | "page";
@@ -26,6 +26,8 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   const listRef = useRef<HTMLDivElement | null>(null);
   const [q, setQ] = useState("");
   const [contentHits, setContentHits] = useState<SearchHit[]>([]);
+  // Semantic (embedding) hits — meaning matches even when the exact words differ.
+  const [semanticHits, setSemanticHits] = useState<VecHit[]>([]);
   // Index into the combined result list (filtered entries first, then
   // contentHits). Keyboard arrows move it; Enter activates the selected row.
   const [selected, setSelected] = useState(0);
@@ -46,6 +48,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
     const needle = q.trim();
     if (needle.length < 2) {
       setContentHits([]);
+      setSemanticHits([]);
       return;
     }
     let cancelled = false;
@@ -57,6 +60,15 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
         })
         .catch(() => {
           if (!cancelled) setContentHits([]);
+        });
+      // Semantic hits run in parallel; empty when no index is built (quiet fail).
+      ipc
+        .semanticSearch(needle, 6, "builtin-local", "")
+        .then((hits) => {
+          if (!cancelled) setSemanticHits(hits);
+        })
+        .catch(() => {
+          if (!cancelled) setSemanticHits([]);
         });
     }, 160);
     return () => {
@@ -90,7 +102,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
 
   // The two rendered groups form a single navigable list: nav/file entries
   // first, then full-text content hits.
-  const total = filtered.length + contentHits.length;
+  const total = filtered.length + contentHits.length + semanticHits.length;
   const active = total > 0 ? Math.min(selected, total - 1) : 0;
 
   function go(entry: CmdEntry): void {
@@ -106,9 +118,12 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
     if (index < filtered.length) {
       const entry = filtered[index];
       if (entry) go(entry);
-    } else {
+    } else if (index < filtered.length + contentHits.length) {
       const hit = contentHits[index - filtered.length];
       if (hit) goPath(hit.path);
+    } else {
+      const hit = semanticHits[index - filtered.length - contentHits.length];
+      if (hit) goPath(hit.page);
     }
   }
   // Move the selection and scroll the newly-active row into view. Uses the
@@ -150,7 +165,9 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
           <span className="kbd">esc</span>
         </div>
         <div className="cmd-list" ref={listRef}>
-          {filtered.length === 0 && contentHits.length === 0 ? (
+          {filtered.length === 0 &&
+          contentHits.length === 0 &&
+          semanticHits.length === 0 ? (
             <div className="cmd-row muted">{t.cb_no_results ?? "No results"}</div>
           ) : null}
           {filtered.map((r, i) => (
@@ -201,6 +218,31 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
               <span className="cr-tag">L{h.line}</span>
             </button>
           ))}
+          {semanticHits.length > 0 ? (
+            <div className="cmd-group-label">
+              {t.cb_semantic ?? "Related (semantic)"}
+            </div>
+          ) : null}
+          {semanticHits.map((h, i) => {
+            const idx = filtered.length + contentHits.length + i;
+            return (
+              <button
+                key={`sem-${h.page}`}
+                className={`cmd-row${active === idx ? " active" : ""}`}
+                onClick={() => goPath(h.page)}
+                style={{
+                  width: "100%",
+                  background: "transparent",
+                  border: 0,
+                  textAlign: "left",
+                }}
+              >
+                <Icon name="sparkles" size={13} />
+                <span>{h.stem}</span>
+                <span className="cr-tag">{(h.score * 100).toFixed(0)}%</span>
+              </button>
+            );
+          })}
         </div>
       </div>
     </div>
