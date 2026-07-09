@@ -71,6 +71,10 @@ pub fn run() {
             commands::mcp_register,
             commands::local_classify,
             commands::local_query,
+            commands::reindex_embeddings,
+            commands::semantic_search,
+            commands::related_pages,
+            commands::embeddings_status,
         ])
         .setup(|_app| Ok(()))
         .build(tauri::generate_context!())

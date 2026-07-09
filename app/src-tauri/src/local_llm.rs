@@ -25,6 +25,7 @@ use std::num::NonZeroU32;
 use std::path::Path;
 
 use llama_cpp_2::context::params::LlamaContextParams;
+use llama_cpp_2::context::params::LlamaPoolingType;
 use llama_cpp_2::llama_backend::LlamaBackend;
 use llama_cpp_2::llama_batch::LlamaBatch;
 use llama_cpp_2::model::params::LlamaModelParams;
@@ -258,6 +259,59 @@ impl LocalLlm {
             .ok_or_else(|| format!("no known label in model output: {raw:?}"))
     }
 
+    /// Embed texts with the bundled model in embeddings mode (mean-pooled,
+    /// L2-normalized). Offline, no key — reuses the already-loaded SEED weights.
+    /// One fresh context per text (pooled output is read per sequence). Quality
+    /// trails a dedicated embed model but needs zero extra assets.
+    pub fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+        const EMBED_CTX: u32 = 2048;
+        let n_ctx = NonZeroU32::new(EMBED_CTX).ok_or("invalid embed ctx")?;
+        let mut out = Vec::with_capacity(texts.len());
+        for text in texts {
+            let ctx_params = LlamaContextParams::default()
+                .with_n_ctx(Some(n_ctx))
+                .with_embeddings(true)
+                .with_pooling_type(LlamaPoolingType::Mean);
+            let mut ctx = self
+                .model
+                .new_context(&self.backend, ctx_params)
+                .map_err(|e| format!("embed new_context: {e}"))?;
+            let mut tokens = self
+                .model
+                .str_to_token(text, AddBos::Always)
+                .map_err(|e| format!("embed tokenize: {e}"))?;
+            let cap = EMBED_CTX as usize - 8;
+            if tokens.len() > cap {
+                tokens.truncate(cap);
+            }
+            if tokens.is_empty() {
+                out.push(Vec::new());
+                continue;
+            }
+            let mut batch = LlamaBatch::new(512, 1);
+            let mut pos: i32 = 0;
+            for chunk in tokens.chunks(512) {
+                batch.clear();
+                for tok in chunk {
+                    // Mark output on every token; Mean pooling averages the
+                    // sequence's token embeddings into one vector.
+                    batch
+                        .add(*tok, pos, &[0], true)
+                        .map_err(|e| format!("embed batch.add: {e}"))?;
+                    pos += 1;
+                }
+                ctx.decode(&mut batch).map_err(|e| format!("embed decode: {e}"))?;
+            }
+            let emb = ctx
+                .embeddings_seq_ith(0)
+                .map_err(|e| format!("embeddings_seq_ith: {e}"))?;
+            let mut v = emb.to_vec();
+            crate::embeddings::normalize(&mut v);
+            out.push(v);
+        }
+        Ok(out)
+    }
+
     /// Free-form, language-matched generation. `prompt` is the user turn (the
     /// caller may prepend inlined vault context); facts are unreliable at 0.5B.
     pub fn generate(&self, prompt: &str, max_tokens: i32) -> Result<String, String> {
@@ -266,5 +320,42 @@ impl LocalLlm {
             prompt,
             max_tokens.clamp(1, 512),
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn cos(a: &[f32], b: &[f32]) -> f32 {
+        crate::embeddings::cosine(a, b)
+    }
+
+    // E2E: load the bundled SEED model and embed. Ignored by default (loads a
+    // 412 MB model, ~seconds). Run with: cargo test --lib -- --ignored embed
+    #[test]
+    #[ignore]
+    fn seed_embeddings_are_meaningful() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("models/seed-0.5b-q4_k_m.gguf");
+        let llm = LocalLlm::load(&path).expect("load seed model");
+        let v = llm
+            .embed(&[
+                "a domestic cat".to_string(),
+                "a pet dog".to_string(),
+                "a diesel truck engine".to_string(),
+            ])
+            .expect("embed");
+        assert_eq!(v.len(), 3);
+        assert!(!v[0].is_empty(), "embedding must be non-empty");
+        assert_eq!(v[0].len(), v[1].len(), "consistent dimension");
+        // cat should be closer to dog than to truck engine.
+        let cat_dog = cos(&v[0], &v[1]);
+        let cat_truck = cos(&v[0], &v[2]);
+        assert!(
+            cat_dog > cat_truck,
+            "cat~dog ({cat_dog}) should exceed cat~truck ({cat_truck})"
+        );
     }
 }

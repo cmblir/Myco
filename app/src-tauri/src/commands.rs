@@ -593,6 +593,150 @@ pub async fn mcp_register(app: tauri::AppHandle, vault_path: String) -> Result<S
         .map_err(|e| format!("join failed: {e}"))?
 }
 
+// ---------------------------------------------------------------------------
+// Semantic layer (Feature 1): embed vault pages into an on-disk vector index and
+// serve semantic search / related-pages. Embedding runs offline via the bundled
+// SEED model ("builtin-local") or an "ollama" provider; more providers later.
+// ---------------------------------------------------------------------------
+
+use crate::embeddings;
+use crate::vector_index::{Hit as VecHit, VectorStore};
+
+/// Embed a batch of texts with the chosen provider.
+async fn embed_texts(
+    app: tauri::AppHandle,
+    llm: tauri::State<'_, LocalLlmState>,
+    provider: &str,
+    model: &str,
+    texts: Vec<String>,
+) -> Result<Vec<Vec<f32>>, String> {
+    match provider {
+        "" | "builtin-local" => {
+            with_local_llm(app, llm, move |m| m.embed(&texts)).await
+        }
+        "ollama" => {
+            let m = if model.is_empty() { "nomic-embed-text" } else { model };
+            embeddings::embed_ollama("http://localhost:11434", m, &texts).await
+        }
+        other => Err(format!("unsupported embedding provider: {other}")),
+    }
+}
+
+/// Collect `wiki/**/*.md` pages as (relpath, stem, content).
+fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String, String)> {
+    fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, String, String)>) {
+        let Ok(entries) = std::fs::read_dir(dir) else { return };
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                walk(&p, root, out);
+            } else if p.extension().and_then(|x| x.to_str()) == Some("md") {
+                if let Ok(content) = std::fs::read_to_string(&p) {
+                    let rel = p.strip_prefix(root).unwrap_or(&p).to_string_lossy().replace('\\', "/");
+                    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                    out.push((rel, stem, content));
+                }
+            }
+        }
+    }
+    let mut out = Vec::new();
+    walk(&root.join("wiki"), root, &mut out);
+    out
+}
+
+/// (Re)build the embedding index for the open vault. Skips pages whose chunk set
+/// is unchanged (content hashes match). Returns the number of indexed pages.
+#[tauri::command]
+pub async fn reindex_embeddings(
+    app: tauri::AppHandle,
+    vault: tauri::State<'_, VaultRoot>,
+    llm: tauri::State<'_, LocalLlmState>,
+    provider: String,
+    model: String,
+) -> Result<usize, String> {
+    let root = require_root(&vault)?;
+    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    let mut store = VectorStore::load(&index_path);
+    let model_id = format!("{provider}:{model}");
+    store.ensure_model(&model_id);
+
+    let pages = collect_wiki_pages(&root);
+    let mut present = std::collections::HashSet::new();
+    for (rel, stem, content) in &pages {
+        present.insert(rel.clone());
+        let chunks = embeddings::chunk_page(content);
+        if chunks.is_empty() {
+            continue;
+        }
+        let hashes: Vec<u64> = chunks.iter().map(|c| embeddings::content_hash(c)).collect();
+        if store.hashes_for(rel) == hashes {
+            continue; // unchanged — skip re-embedding
+        }
+        let vecs = embed_texts(app.clone(), llm.clone(), &provider, &model, chunks).await?;
+        let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
+        store.upsert_page(rel, stem, entries);
+    }
+    store.prune(&present);
+    store.save(&index_path)?;
+    Ok(store.indexed_pages())
+}
+
+/// Semantic search: embed the query, return top-`k` chunk hits from the index.
+#[tauri::command]
+pub async fn semantic_search(
+    app: tauri::AppHandle,
+    vault: tauri::State<'_, VaultRoot>,
+    llm: tauri::State<'_, LocalLlmState>,
+    query: String,
+    k: usize,
+    provider: String,
+    model: String,
+) -> Result<Vec<VecHit>, String> {
+    let root = require_root(&vault)?;
+    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    let store = VectorStore::load(&index_path);
+    if store.records.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut q = embed_texts(app, llm, &provider, &model, vec![query]).await?;
+    let qv = q.pop().unwrap_or_default();
+    Ok(store.search(&qv, k.clamp(1, 50)))
+}
+
+/// Pages most semantically similar to `page` (no embedding call — uses stored
+/// vectors), for the Reader related-notes panel and graph similarity edges.
+#[tauri::command]
+pub fn related_pages(
+    vault: tauri::State<'_, VaultRoot>,
+    page: String,
+    k: usize,
+) -> Result<Vec<VecHit>, String> {
+    let root = require_root(&vault)?;
+    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    let store = VectorStore::load(&index_path);
+    Ok(store.related(&page, k.clamp(1, 50)))
+}
+
+#[derive(serde::Serialize)]
+pub struct EmbeddingsStatus {
+    pub indexed_pages: usize,
+    pub model: String,
+}
+
+/// Index health for the Settings panel.
+#[tauri::command]
+pub fn embeddings_status(
+    vault: tauri::State<'_, VaultRoot>,
+) -> Result<EmbeddingsStatus, String> {
+    let root = require_root(&vault)?;
+    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    let store = VectorStore::load(&index_path);
+    Ok(EmbeddingsStatus {
+        indexed_pages: store.indexed_pages(),
+        model: store.model,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::external_target_allowed;
