@@ -17,6 +17,7 @@ export interface Strings {
   nav_history: string;
   nav_provenance: string;
   nav_tags: string;
+  nav_study: string;
   nav_settings: string;
   folder__root: string;
   folder_sources: string;
@@ -296,6 +297,44 @@ export interface Strings {
   rd_preview?: string;
   rd_backlinks_empty?: string;
   rd_related?: string;
+  rd_make_cards?: string;
+  rd_making?: string;
+  rd_cards_none?: string;
+  rd_cards_made?: string;
+  rd_open_study?: string;
+  // Study page (Feature 3).
+  st_title?: string;
+  st_lede?: string;
+  st_no_decks?: string;
+  st_generate_hint?: string;
+  st_browse_pages?: string;
+  st_refresh?: string;
+  st_total?: string;
+  st_due?: string;
+  st_no_due?: string;
+  st_all_decks?: string;
+  st_review?: string;
+  st_quiz?: string;
+  st_loading?: string;
+  st_progress?: string;
+  st_source?: string;
+  st_flip?: string;
+  st_grade_again?: string;
+  st_grade_hard?: string;
+  st_grade_good?: string;
+  st_grade_easy?: string;
+  st_all_done?: string;
+  st_done_sub?: string;
+  st_quiz_needs_cards?: string;
+  st_quiz_intro?: string;
+  st_quiz_empty?: string;
+  st_gen_quiz?: string;
+  st_generating?: string;
+  st_quiz_done?: string;
+  st_quiz_score?: string;
+  st_correct?: string;
+  st_wrong?: string;
+  st_next?: string;
   // Ingest page.
   ing_title_label?: string;
   ing_title_ph?: string;
@@ -398,6 +437,7 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_history: "History",
     nav_provenance: "Provenance",
     nav_tags: "Tags",
+    nav_study: "Study",
     nav_settings: "Settings",
     folder__root: "Root",
     folder_sources: "Sources",
@@ -690,6 +730,45 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_preview: "Preview",
     rd_backlinks_empty: "No notes link here yet.",
     rd_related: "Related",
+    rd_make_cards: "Make cards",
+    rd_making: "Generating…",
+    rd_cards_none: "No cards generated.",
+    rd_cards_made: "{n} cards added",
+    rd_open_study: "Open study",
+    st_title: "Study",
+    st_lede:
+      "Review your knowledge with spaced-repetition flashcards and quizzes generated from your pages.",
+    st_no_decks: "No decks yet",
+    st_generate_hint:
+      "Open a page and choose “Make cards” to generate a deck from it.",
+    st_browse_pages: "Browse pages",
+    st_refresh: "Refresh",
+    st_total: "{n} cards",
+    st_due: "{n} due",
+    st_no_due: "All caught up",
+    st_all_decks: "All decks",
+    st_review: "Review",
+    st_quiz: "Quiz",
+    st_loading: "Loading…",
+    st_progress: "{done} / {total}",
+    st_source: "Source",
+    st_flip: "Show answer",
+    st_grade_again: "Again",
+    st_grade_hard: "Hard",
+    st_grade_good: "Good",
+    st_grade_easy: "Easy",
+    st_all_done: "All done",
+    st_done_sub: "Reviewed {n} cards.",
+    st_quiz_needs_cards: "Add cards to this deck first to take a quiz.",
+    st_quiz_intro: "Generate a multiple-choice quiz from this deck's cards.",
+    st_quiz_empty: "The model didn't return any questions. Try again.",
+    st_gen_quiz: "Generate quiz",
+    st_generating: "Generating…",
+    st_quiz_done: "Quiz complete",
+    st_quiz_score: "Score: {score} / {total}",
+    st_correct: "Correct",
+    st_wrong: "Not quite",
+    st_next: "Next",
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
@@ -793,6 +872,7 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_history: "히스토리",
     nav_provenance: "출처",
     nav_tags: "태그",
+    nav_study: "학습",
     nav_settings: "설정",
     folder__root: "루트",
     folder_sources: "소스",
@@ -1085,6 +1165,44 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_preview: "미리보기",
     rd_backlinks_empty: "아직 여기로 연결된 노트가 없습니다.",
     rd_related: "관련 노트",
+    rd_make_cards: "카드 만들기",
+    rd_making: "생성 중…",
+    rd_cards_none: "생성된 카드가 없습니다.",
+    rd_cards_made: "카드 {n}개 추가됨",
+    rd_open_study: "학습 열기",
+    st_title: "학습",
+    st_lede:
+      "페이지에서 생성한 간격 반복 플래시카드와 퀴즈로 지식을 복습하세요.",
+    st_no_decks: "덱이 없습니다",
+    st_generate_hint: "페이지를 열고 “카드 만들기”를 선택해 덱을 생성하세요.",
+    st_browse_pages: "페이지 보기",
+    st_refresh: "새로고침",
+    st_total: "카드 {n}개",
+    st_due: "복습 {n}개",
+    st_no_due: "모두 완료",
+    st_all_decks: "모든 덱",
+    st_review: "복습",
+    st_quiz: "퀴즈",
+    st_loading: "불러오는 중…",
+    st_progress: "{done} / {total}",
+    st_source: "출처",
+    st_flip: "정답 보기",
+    st_grade_again: "다시",
+    st_grade_hard: "어려움",
+    st_grade_good: "보통",
+    st_grade_easy: "쉬움",
+    st_all_done: "모두 완료",
+    st_done_sub: "카드 {n}개를 복습했습니다.",
+    st_quiz_needs_cards: "퀴즈를 보려면 먼저 이 덱에 카드를 추가하세요.",
+    st_quiz_intro: "이 덱의 카드로 객관식 퀴즈를 생성합니다.",
+    st_quiz_empty: "모델이 문제를 반환하지 않았습니다. 다시 시도하세요.",
+    st_gen_quiz: "퀴즈 생성",
+    st_generating: "생성 중…",
+    st_quiz_done: "퀴즈 완료",
+    st_quiz_score: "점수: {score} / {total}",
+    st_correct: "정답",
+    st_wrong: "오답",
+    st_next: "다음",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
@@ -1188,6 +1306,7 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_history: "履歴",
     nav_provenance: "出典",
     nav_tags: "タグ",
+    nav_study: "学習",
     nav_settings: "設定",
     folder__root: "ルート",
     folder_sources: "ソース",
@@ -1434,6 +1553,45 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_preview: "プレビュー",
     rd_backlinks_empty: "まだここにリンクするノートはありません。",
     rd_related: "関連ノート",
+    rd_make_cards: "カード作成",
+    rd_making: "生成中…",
+    rd_cards_none: "生成されたカードがありません。",
+    rd_cards_made: "カードを{n}枚追加しました",
+    rd_open_study: "学習を開く",
+    st_title: "学習",
+    st_lede:
+      "ページから生成した間隔反復フラッシュカードとクイズで知識を復習しましょう。",
+    st_no_decks: "デッキがありません",
+    st_generate_hint: "ページを開いて「カード作成」を選ぶとデッキを生成できます。",
+    st_browse_pages: "ページを見る",
+    st_refresh: "更新",
+    st_total: "{n}枚",
+    st_due: "{n}枚復習",
+    st_no_due: "すべて完了",
+    st_all_decks: "すべてのデッキ",
+    st_review: "復習",
+    st_quiz: "クイズ",
+    st_loading: "読み込み中…",
+    st_progress: "{done} / {total}",
+    st_source: "出典",
+    st_flip: "答えを表示",
+    st_grade_again: "もう一度",
+    st_grade_hard: "難しい",
+    st_grade_good: "普通",
+    st_grade_easy: "簡単",
+    st_all_done: "完了",
+    st_done_sub: "{n}枚のカードを復習しました。",
+    st_quiz_needs_cards:
+      "クイズを行うには、まずこのデッキにカードを追加してください。",
+    st_quiz_intro: "このデッキのカードから選択式クイズを生成します。",
+    st_quiz_empty: "モデルが問題を返しませんでした。もう一度お試しください。",
+    st_gen_quiz: "クイズを生成",
+    st_generating: "生成中…",
+    st_quiz_done: "クイズ完了",
+    st_quiz_score: "スコア: {score} / {total}",
+    st_correct: "正解",
+    st_wrong: "不正解",
+    st_next: "次へ",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",

@@ -2,12 +2,13 @@
 // tree recursively (Obsidian-style); each folder is collapsible and remembers
 // its state per absolute path.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { JSX, MouseEvent } from "react";
 import { Icon, MemexMark } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
+import { useStudyStore } from "../stores/studyStore";
 import { ipc } from "../lib/ipc";
 import type { FileNode } from "../lib/ipc";
 import { promptText, confirmAction } from "../stores/dialogStore";
@@ -26,7 +27,15 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   const fileTree = useVaultStore((s) => s.fileTree);
   const currentVault = useVaultStore((s) => s.currentVault);
   const openVault = useVaultStore((s) => s.openVault);
+  const dueTotal = useStudyStore((s) => s.dueTotal);
+  const refreshStudy = useStudyStore((s) => s.refresh);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+
+  // Keep the sidebar due badge current: refresh when the vault's files change
+  // (a review or generation rewrites cards/<deck>.md, which refreshes the tree).
+  useEffect(() => {
+    void refreshStudy();
+  }, [refreshStudy, fileTree]);
 
   async function pickVault(): Promise<void> {
     const path = await ipc.pickDirectory();
@@ -130,6 +139,13 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
             active={route === "tags"}
             onClick={() => setRoute("tags")}
           />
+          <NavItem
+            label={t.nav_study}
+            icon="sparkles"
+            active={route === "study"}
+            onClick={() => setRoute("study")}
+            badge={dueTotal > 0 ? String(dueTotal) : undefined}
+          />
         </div>
 
         <div className="nav-group">
@@ -190,11 +206,13 @@ function NavItem({
   icon,
   active,
   onClick,
+  badge,
 }: {
   label: string;
   icon: Parameters<typeof Icon>[0]["name"];
   active: boolean;
   onClick: () => void;
+  badge?: string;
 }): JSX.Element {
   return (
     <button
@@ -206,6 +224,7 @@ function NavItem({
         <Icon name={icon} size={15} />
       </span>
       <span className="ni-text">{label}</span>
+      {badge ? <span className="nav-badge">{badge}</span> : null}
     </button>
   );
 }

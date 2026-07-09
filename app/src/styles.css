@@ -2872,3 +2872,94 @@ hr {
     flex-wrap: wrap;
   }
 }
+
+/* Study (Feature 3) — decks, review cards, quiz */
+.deck-row {
+  transition: background 0.12s, border-color 0.12s;
+}
+.deck-row:hover {
+  background: var(--bg-hover);
+  border-color: var(--line-strong);
+}
+.study-due-pill {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.study-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.study-front {
+  font-size: 19px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+.study-back {
+  font-size: 16px;
+  line-height: 1.5;
+}
+.study-sep {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 16px 0;
+}
+.study-src {
+  font-size: 12.5px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.study-grades {
+  flex-wrap: wrap;
+}
+.study-grades .btn {
+  flex: 1;
+  min-width: 88px;
+  justify-content: center;
+}
+.grade-again:hover {
+  border-color: #dc2626;
+  color: #dc2626;
+}
+.grade-hard:hover {
+  border-color: #d97706;
+  color: #d97706;
+}
+.grade-good:hover {
+  border-color: #16a34a;
+  color: #16a34a;
+}
+.grade-easy:hover {
+  border-color: #2563eb;
+  color: #2563eb;
+}
+.study-flip {
+  align-self: flex-start;
+}
+.quiz-choice {
+  width: 100%;
+}
+.quiz-correct {
+  border-color: #16a34a;
+  background: rgba(22, 163, 74, 0.1);
+  color: #16a34a;
+}
+.quiz-wrong {
+  border-color: #dc2626;
+  background: rgba(220, 38, 38, 0.1);
+  color: #dc2626;
+}
+.nav-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}

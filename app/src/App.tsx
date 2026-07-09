@@ -17,6 +17,7 @@ import PageProvenance from "./pages/PageProvenance";
 import PageSettings from "./pages/PageSettings";
 import PageReader from "./pages/PageReader";
 import PageTags from "./pages/PageTags";
+import PageStudy from "./pages/PageStudy";
 import { STRINGS } from "./lib/i18n";
 import { useUIStore } from "./stores/uiStore";
 import { useSettingsStore } from "./stores/settingsStore";
@@ -284,6 +285,7 @@ export default function App(): JSX.Element {
   else if (route === "history") body = <PageHistory t={t} />;
   else if (route === "provenance") body = <PageProvenance t={t} />;
   else if (route === "tags") body = <PageTags t={t} />;
+  else if (route === "study") body = <PageStudy t={t} />;
   else if (route === "settings") body = <PageSettings t={t} />;
   else if (route.startsWith("page:"))
     body = <PageReader t={t} pageRoute={route.slice(5)} />;

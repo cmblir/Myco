@@ -20,6 +20,7 @@ export type RouteId =
   | "history"
   | "provenance"
   | "tags"
+  | "study"
   | "settings"
   | `page:${string}`;
 

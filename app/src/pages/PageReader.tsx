@@ -10,6 +10,9 @@ import { ipc } from "../lib/ipc";
 import { SAMPLE } from "../lib/sample";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
+import { useStudyStore } from "../stores/studyStore";
+import { generateCards } from "../lib/study";
+import { addCards, deckSlug } from "../lib/cardStore";
 import Editor from "../components/Editor";
 import Viewer from "../components/Viewer";
 import BacklinksPanel from "../components/BacklinksPanel";
@@ -137,6 +140,8 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const setRoute = useUIStore((s) => s.setRoute);
   const [mode, setMode] = useState<"preview" | "source" | "split">("split");
   const [draft, setDraft] = useState("");
+  const [cardBusy, setCardBusy] = useState(false);
+  const [cardMsg, setCardMsg] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Latest editor text, so the unmount cleanup can flush edits made inside the
   // debounce window. We compare it against the store's on-disk `raw` rather than
@@ -210,6 +215,33 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     void saveFile(path, c);
   }
 
+  async function makeCards(): Promise<void> {
+    if (!currentVaultPath || !activeFile || cardBusy) return;
+    const stem = (path.split(/[\\/]/).pop() ?? path).replace(/\.md$/i, "");
+    const deck = deckSlug(stem);
+    setCardBusy(true);
+    setCardMsg(null);
+    try {
+      // Generate from the current on-disk body (frontmatter stripped) so the
+      // cards are grounded in the page's prose and citations.
+      const cards = await generateCards(currentVaultPath, activeFile.content, 8);
+      if (cards.length === 0) {
+        setCardMsg(t.rd_cards_none ?? "No cards generated.");
+        return;
+      }
+      const { added } = await addCards(currentVaultPath, deck, cards);
+      await refreshTree();
+      await useStudyStore.getState().refresh();
+      setCardMsg(
+        (t.rd_cards_made ?? "{n} cards added").replace("{n}", String(added)),
+      );
+    } catch (err) {
+      setCardMsg(String(err));
+    } finally {
+      setCardBusy(false);
+    }
+  }
+
   if (!activeFile || activeFile.path !== path) {
     return (
       <div className="workspace">
@@ -242,6 +274,17 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
           >
             {path}
           </span>
+          <button
+            className="btn btn-ghost"
+            onClick={() => void makeCards()}
+            disabled={cardBusy}
+            title={t.rd_make_cards ?? "Make cards"}
+          >
+            <Icon name="sparkles" size={13} />{" "}
+            {cardBusy
+              ? (t.rd_making ?? "Generating…")
+              : (t.rd_make_cards ?? "Make cards")}
+          </button>
           <div className="segmented">
             <button
               className={mode === "source" ? "active" : ""}
@@ -264,6 +307,20 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
           </div>
         </div>
         <h1 className="page-title">{fileName.replace(/\.md$/i, "")}</h1>
+        {cardMsg ? (
+          <div className="row" style={{ gap: 10, marginTop: 6 }}>
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              {cardMsg}
+            </span>
+            <button
+              className="btn btn-ghost"
+              style={{ fontSize: 12.5 }}
+              onClick={() => setRoute("study")}
+            >
+              {t.rd_open_study ?? "Open study"} →
+            </button>
+          </div>
+        ) : null}
       </header>
       <section
         style={{

@@ -109,6 +109,48 @@ const VAULT = "/Memex";
 const SLUGS = new Set(NODES.map((d) => d.s));
 const pathOf = (s: string): string => `${VAULT}/wiki/${s}.md`;
 
+// Feature 3 (study) — a mutable in-memory card store so the review flow can
+// grade → write → re-read and see due counts drop. Seeded with a deck of due
+// cards (two scheduled in the past + one brand-new) so PageStudy has content.
+const mockDecks = new Map<string, string>([
+  [
+    `${VAULT}/cards/transformers.md`,
+    [
+      "What is self-attention? ?? Each token attends to every other token in the sequence.",
+      "<!--SR:!2024-01-01|2.5000|5.0000|1|0|2024-01-01|[^src-attention-is-all-you-need]-->",
+      "",
+      "What does multi-head attention add? ?? Several attention subspaces computed in parallel, then concatenated.",
+      "<!--SR:!2024-01-01|2.5000|5.0000|1|0|2024-01-01|[[embeddings]]-->",
+      "",
+      "What is positional encoding for? ?? Injecting token-order information that attention alone lacks.",
+      "",
+    ].join("\n"),
+  ],
+]);
+const isCardsPath = (p: string): boolean => p.startsWith(`${VAULT}/cards/`);
+
+// Mock LLM output for study generation. claude_run is the CLI provider path; we
+// branch on the prompt so card/quiz generation returns valid JSON while ordinary
+// queries still get a plain answer.
+function mockClaudeRun(prompt: string): { stdout: string; stderr: string; status: number } {
+  const p = prompt.toLowerCase();
+  let stdout: string;
+  if (p.includes("flashcard")) {
+    stdout = JSON.stringify([
+      { front: "Mock card A?", back: "Answer A.", sourceRef: "[^src-attention-is-all-you-need]" },
+      { front: "Mock card B?", back: "Answer B.", sourceRef: "[[embeddings]]" },
+    ]);
+  } else if (p.includes("multiple-choice")) {
+    stdout = JSON.stringify([
+      { question: "Mock Q1?", choices: ["Right", "Wrong 1", "Wrong 2"], answer: 0, sourceRef: "[^src-1]", explanation: "The first option is correct." },
+      { question: "Mock Q2?", choices: ["Wrong", "Right"], answer: 1, sourceRef: "", explanation: "The second option is correct." },
+    ]);
+  } else {
+    stdout = "(mock) Claude CLI reply — the real app shells `claude --print` here.";
+  }
+  return { stdout, stderr: "", status: 0 };
+}
+
 function buildAdjacency() {
   const forward: Record<string, string[]> = {};
   const backward: Record<string, string[]> = {};
@@ -173,9 +215,15 @@ function fileTree() {
     { kind: "file", name: "log.md", path: `${VAULT}/wiki/log.md` },
     ...NODES.map((d) => ({ kind: "file", name: `${d.s}.md`, path: pathOf(d.s) })),
   ];
+  const cardsChildren = [...mockDecks.keys()].map((p) => ({
+    kind: "file" as const,
+    name: p.split("/").pop() ?? "deck.md",
+    path: p,
+  }));
   return [
     { kind: "file", name: "CLAUDE.md", path: `${VAULT}/CLAUDE.md` },
     { kind: "file", name: "welcome.md", path: `${VAULT}/welcome.md` },
+    { kind: "directory", name: "cards", path: `${VAULT}/cards`, children: cardsChildren },
     { kind: "directory", name: "daily", path: `${VAULT}/daily`, children: [] },
     { kind: "directory", name: "ingest-reports", path: `${VAULT}/ingest-reports`, children: [] },
     { kind: "directory", name: "raw", path: `${VAULT}/raw`, children: [] },
@@ -286,8 +334,14 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         { hash: "e4f5a6b", date: "2024-02-20", subject: "ingest: scaling laws", created: 30, modified: 3 },
         { hash: "0c1d2e3", date: "2024-02-10", subject: "init: wiki bootstrap", created: 120, modified: 0 },
       ]);
+    case "claude_run":
+      return Promise.resolve(mockClaudeRun(String(args.prompt ?? "")));
     case "read_file": {
       const p = String(args.path ?? "");
+      if (isCardsPath(p)) {
+        const raw = mockDecks.get(p) ?? "";
+        return Promise.resolve({ path: p, raw, content: raw, frontmatter: null });
+      }
       const slug = p.split("/").pop()?.replace(/\.md$/, "") ?? "";
       const d = bySlug.get(slug);
       if (d) {
@@ -366,7 +420,11 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         links.slice(0, k).map((s, i) => ({ page: `wiki/${s}.md`, stem: s, section: 0, score: 0.85 - i * 0.05 })),
       );
     }
-    case "write_file":
+    case "write_file": {
+      const p = String(args.path ?? "");
+      if (isCardsPath(p)) mockDecks.set(p, String(args.content ?? ""));
+      return Promise.resolve(null);
+    }
     case "set_settings":
     case "set_provider_key":
     case "delete_provider_key":
