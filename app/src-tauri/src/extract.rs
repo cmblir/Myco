@@ -159,9 +159,93 @@ pub fn extract_text(path: &str) -> Result<String, String> {
     match ext.as_str() {
         "pdf" => extract_pdf(p),
         "xlsx" | "xls" | "xlsm" | "xlsb" | "ods" => extract_spreadsheet(p),
+        "docx" => extract_docx(p),
+        "pptx" => extract_pptx(p),
         // csv/tsv and every text-like format: read straight through.
         _ => fs::read_to_string(p).map_err(|e| format!("read failed: {e}")),
     }
+}
+
+/// Minimal XML entity unescape for extracted OOXML text runs.
+fn unescape_xml(s: &str) -> String {
+    s.replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+}
+
+/// Pull the text inside every `<tag …>…</tag>` run (e.g. Word `<w:t>` or
+/// PowerPoint `<a:t>`). OOXML wraps each visible text span in one of these, so
+/// concatenating them recovers the document body without a full XML parser.
+fn ooxml_runs(xml: &str, open_prefix: &str, close: &str) -> String {
+    let mut out = String::new();
+    let mut rest = xml;
+    while let Some(i) = rest.find(open_prefix) {
+        rest = &rest[i + open_prefix.len()..];
+        let Some(gt) = rest.find('>') else { break };
+        rest = &rest[gt + 1..];
+        let Some(end) = rest.find(close) else { break };
+        out.push_str(&unescape_xml(&rest[..end]));
+        out.push(' ');
+        rest = &rest[end + close.len()..];
+    }
+    out
+}
+
+/// Cap + trim helper shared by the OOXML extractors.
+fn finish_text(s: &str, empty_msg: &str) -> Result<String, String> {
+    let t = s.trim();
+    if t.is_empty() {
+        return Err(empty_msg.into());
+    }
+    if t.len() > MAX_OUTPUT_BYTES {
+        let cut = truncate_on_boundary(t, MAX_OUTPUT_BYTES);
+        return Ok(format!("{cut}\n…(truncated: document exceeds the extraction limit)…"));
+    }
+    Ok(t.to_string())
+}
+
+/// Word .docx — a zip whose `word/document.xml` holds the body as `<w:t>` runs.
+fn extract_docx(p: &Path) -> Result<String, String> {
+    let file = fs::File::open(p).map_err(|e| format!("open docx: {e}"))?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("docx not a zip: {e}"))?;
+    let mut xml = String::new();
+    {
+        use std::io::Read;
+        let mut entry = zip
+            .by_name("word/document.xml")
+            .map_err(|_| "docx missing word/document.xml".to_string())?;
+        entry.read_to_string(&mut xml).map_err(|e| format!("read docx xml: {e}"))?;
+    }
+    finish_text(&ooxml_runs(&xml, "<w:t", "</w:t>"), "no text found in the .docx")
+}
+
+/// PowerPoint .pptx — text lives in `ppt/slides/slideN.xml` as `<a:t>` runs.
+fn extract_pptx(p: &Path) -> Result<String, String> {
+    use std::io::Read;
+    let file = fs::File::open(p).map_err(|e| format!("open pptx: {e}"))?;
+    let mut zip = zip::ZipArchive::new(file).map_err(|e| format!("pptx not a zip: {e}"))?;
+    // Collect slide entry names first (borrow of `zip` ends before we read).
+    let mut slides: Vec<String> = (0..zip.len())
+        .filter_map(|i| zip.by_index(i).ok().map(|e| e.name().to_string()))
+        .filter(|n| n.starts_with("ppt/slides/slide") && n.ends_with(".xml"))
+        .collect();
+    slides.sort(); // slide1, slide2, … (lexical is fine for typical decks)
+    let mut out = String::new();
+    for name in slides {
+        let mut xml = String::new();
+        if let Ok(mut e) = zip.by_name(&name) {
+            if e.read_to_string(&mut xml).is_ok() {
+                let txt = ooxml_runs(&xml, "<a:t", "</a:t>");
+                if !txt.trim().is_empty() {
+                    out.push_str(txt.trim());
+                    out.push_str("\n\n");
+                }
+            }
+        }
+    }
+    finish_text(&out, "no text found in the .pptx")
 }
 
 fn extract_pdf(p: &Path) -> Result<String, String> {
@@ -291,5 +375,46 @@ mod tests {
         let mut slice = &data[..];
         let out = read_capped(&mut slice, 100).unwrap();
         assert_eq!(out.len(), 100);
+    }
+
+    #[test]
+    fn ooxml_runs_extracts_and_unescapes() {
+        let xml = r#"<w:p><w:r><w:t>Hello</w:t></w:r><w:r><w:t xml:space="preserve"> A&amp;B</w:t></w:r></w:p>"#;
+        let out = ooxml_runs(xml, "<w:t", "</w:t>");
+        assert!(out.contains("Hello"));
+        assert!(out.contains("A&B"), "entities unescaped: {out}");
+    }
+
+    // Build a minimal OOXML zip (one entry) and confirm the extractor reads it.
+    fn ooxml_zip(name: &str, entry: &str, xml: &str) -> std::path::PathBuf {
+        let p =
+            std::env::temp_dir().join(format!("memex-extract-{}-{name}", std::process::id()));
+        let f = fs::File::create(&p).unwrap();
+        let mut zw = zip::ZipWriter::new(f);
+        let opts: zip::write::SimpleFileOptions =
+            zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        zw.start_file(entry, opts).unwrap();
+        zw.write_all(xml.as_bytes()).unwrap();
+        zw.finish().unwrap();
+        p
+    }
+
+    #[test]
+    fn extracts_docx_body() {
+        let xml = "<w:document><w:body><w:p><w:r><w:t>Quarterly report body</w:t></w:r></w:p></w:body></w:document>";
+        let p = ooxml_zip("d.docx", "word/document.xml", xml);
+        let out = extract_text(p.to_str().unwrap()).unwrap();
+        assert!(out.contains("Quarterly report body"), "got: {out}");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn extracts_pptx_slide_text() {
+        let xml = "<p:sld><p:cSld><p:spTree><a:t>Slide one title</a:t><a:t>bullet point</a:t></p:spTree></p:cSld></p:sld>";
+        let p = ooxml_zip("s.pptx", "ppt/slides/slide1.xml", xml);
+        let out = extract_text(p.to_str().unwrap()).unwrap();
+        assert!(out.contains("Slide one title"), "got: {out}");
+        assert!(out.contains("bullet point"));
+        let _ = fs::remove_file(&p);
     }
 }

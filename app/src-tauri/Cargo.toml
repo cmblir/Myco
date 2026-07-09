@@ -30,6 +30,7 @@ pdf-extract = "0.10.0"
 # daemon, no Python. Metal is on by default on macOS. Vendors + compiles
 # llama.cpp at build time (adds ~5 min to a clean release build).
 llama-cpp-2 = "0.1.150"
+zip = { version = "4.2.0", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 wiremock = "0.6"

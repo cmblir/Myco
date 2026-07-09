@@ -254,6 +254,8 @@ export const ipc = {
             "xlsx",
             "xls",
             "ods",
+            "docx",
+            "pptx",
           ],
         },
       ],
