@@ -219,6 +219,57 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
       <AutoIngestSetting t={t} settings={settings} update={update} />
       <AutoReflectSetting t={t} settings={settings} update={update} />
       <BudgetSetting t={t} />
+      <EmbeddingsSetting t={t} />
+    </div>
+  );
+}
+
+// Semantic layer (Feature 1): index health + a manual reindex. Embeddings run
+// offline via the bundled SEED model. Powers semantic search, related notes,
+// and graph similarity edges.
+function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
+  const [status, setStatus] = useState<{ indexed_pages: number; model: string } | null>(
+    null,
+  );
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const refresh = (): void => {
+    ipc.embeddingsStatus().then(setStatus).catch(() => setStatus(null));
+  };
+  useEffect(refresh, []);
+
+  const reindex = async (): Promise<void> => {
+    setBusy(true);
+    setErr(null);
+    try {
+      await ipc.reindexEmbeddings("builtin-local", "");
+      refresh();
+    } catch (e) {
+      setErr(String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="card">
+      <div className="row" style={{ marginBottom: 8 }}>
+        <div style={{ fontWeight: 600 }}>{t.s_embeddings ?? "Semantic search"}</div>
+        <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
+          {status ? `${status.indexed_pages} ${t.s_embeddings_indexed ?? "pages indexed"}` : "—"}
+        </span>
+      </div>
+      <p className="muted" style={{ margin: "0 0 12px", fontSize: 13 }}>
+        {t.s_embeddings_lede ??
+          "Build an on-device embedding index for semantic search, related notes, and graph similarity. Runs offline."}
+      </p>
+      <button className="btn" onClick={() => void reindex()} disabled={busy}>
+        {busy ? (t.s_embeddings_indexing ?? "Indexing…") : (t.s_embeddings_reindex ?? "Reindex now")}
+      </button>
+      {err ? (
+        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{err}</div>
+      ) : null}
     </div>
   );
 }

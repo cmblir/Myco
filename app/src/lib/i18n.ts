@@ -190,6 +190,11 @@ export interface Strings {
   s_account: string;
   s_workspace: string;
   s_model: string;
+  s_embeddings?: string;
+  s_embeddings_lede?: string;
+  s_embeddings_indexed?: string;
+  s_embeddings_reindex?: string;
+  s_embeddings_indexing?: string;
   s_providers: string;
   s_mcp: string;
   s_appearance: string;
@@ -286,6 +291,7 @@ export interface Strings {
   rd_split?: string;
   rd_preview?: string;
   rd_backlinks_empty?: string;
+  rd_related?: string;
   // Ingest page.
   ing_title_label?: string;
   ing_title_ph?: string;
@@ -566,6 +572,11 @@ export const STRINGS: Record<Lang, Strings> = {
     s_account: "Account",
     s_workspace: "Workspace",
     s_model: "Model",
+    s_embeddings: "Semantic search",
+    s_embeddings_lede: "Build an on-device embedding index for semantic search, related notes, and graph similarity. Runs offline.",
+    s_embeddings_indexed: "pages indexed",
+    s_embeddings_reindex: "Reindex now",
+    s_embeddings_indexing: "Indexing…",
     s_providers: "Connections",
     s_appearance: "Appearance",
     s_lang: "Language",
@@ -669,6 +680,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_split: "Split",
     rd_preview: "Preview",
     rd_backlinks_empty: "No notes link here yet.",
+    rd_related: "Related",
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
@@ -950,6 +962,11 @@ export const STRINGS: Record<Lang, Strings> = {
     s_account: "계정",
     s_workspace: "워크스페이스",
     s_model: "모델",
+    s_embeddings: "의미 검색",
+    s_embeddings_lede: "의미 검색·관련 노트·그래프 유사도를 위한 온디바이스 임베딩 인덱스를 만듭니다. 오프라인 동작.",
+    s_embeddings_indexed: "페이지 인덱싱됨",
+    s_embeddings_reindex: "지금 재인덱스",
+    s_embeddings_indexing: "인덱싱 중…",
     s_providers: "연결",
     s_appearance: "테마",
     s_lang: "언어",
@@ -1053,6 +1070,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_split: "분할",
     rd_preview: "미리보기",
     rd_backlinks_empty: "아직 여기로 연결된 노트가 없습니다.",
+    rd_related: "관련 노트",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
@@ -1288,6 +1306,11 @@ export const STRINGS: Record<Lang, Strings> = {
     s_account: "アカウント",
     s_workspace: "ワークスペース",
     s_model: "モデル",
+    s_embeddings: "セマンティック検索",
+    s_embeddings_lede: "セマンティック検索・関連ノート・グラフ類似度のためのオンデバイス埋め込みインデックスを構築します。オフラインで動作。",
+    s_embeddings_indexed: "ページをインデックス済み",
+    s_embeddings_reindex: "今すぐ再インデックス",
+    s_embeddings_indexing: "インデックス中…",
     s_providers: "接続",
     s_appearance: "外観",
     s_lang: "言語",
@@ -1391,6 +1414,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_split: "分割",
     rd_preview: "プレビュー",
     rd_backlinks_empty: "まだここにリンクするノートはありません。",
+    rd_related: "関連ノート",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",

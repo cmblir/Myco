@@ -13,6 +13,7 @@ import { useVaultStore } from "../stores/vaultStore";
 import Editor from "../components/Editor";
 import Viewer from "../components/Viewer";
 import BacklinksPanel from "../components/BacklinksPanel";
+import RelatedPanel from "../components/RelatedPanel";
 
 const AUTOSAVE_MS = 2000;
 
@@ -315,6 +316,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
         ) : null}
       </section>
       <BacklinksPanel filePath={path} t={t} />
+      <RelatedPanel filePath={path} t={t} />
     </div>
   );
 }

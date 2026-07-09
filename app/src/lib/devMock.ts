@@ -307,6 +307,37 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       const slug = p.split("/").pop()?.replace(/\.md$/, "") ?? "";
       return Promise.resolve(bySlug.get(slug)?.l ?? []);
     }
+    // Semantic layer (Feature 1) — mock the embedding index with the sample graph:
+    // "similarity" stands in as a node's declared links + a couple of siblings.
+    case "reindex_embeddings":
+      return Promise.resolve(NODES.length);
+    case "embeddings_status":
+      return Promise.resolve({ indexed_pages: NODES.length, model: "builtin-local:seed" });
+    case "semantic_search": {
+      const q = String(args.query ?? "").toLowerCase();
+      const k = Number(args.k ?? 8);
+      const hits = NODES.filter(
+        (d) => d.n.toLowerCase().includes(q) || body(d).toLowerCase().includes(q),
+      )
+        .slice(0, k)
+        .map((d, i) => ({ page: `wiki/${d.s}.md`, stem: d.s, section: 0, score: 0.9 - i * 0.05 }));
+      // Always return something so the UI path is exercised even on no keyword match.
+      if (hits.length === 0 && NODES.length) {
+        return Promise.resolve(
+          NODES.slice(0, k).map((d, i) => ({ page: `wiki/${d.s}.md`, stem: d.s, section: 0, score: 0.6 - i * 0.05 })),
+        );
+      }
+      return Promise.resolve(hits);
+    }
+    case "related_pages": {
+      const page = String(args.page ?? "");
+      const slug = page.split("/").pop()?.replace(/\.md$/, "") ?? "";
+      const k = Number(args.k ?? 8);
+      const links = bySlug.get(slug)?.l ?? [];
+      return Promise.resolve(
+        links.slice(0, k).map((s, i) => ({ page: `wiki/${s}.md`, stem: s, section: 0, score: 0.85 - i * 0.05 })),
+      );
+    }
     case "write_file":
     case "set_settings":
     case "set_provider_key":

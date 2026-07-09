@@ -98,6 +98,19 @@ export interface SearchHit {
   snippet: string;
 }
 
+/** A semantic (embedding) search hit. `page` is the vault-relative path. */
+export interface VecHit {
+  page: string;
+  stem: string;
+  section: number;
+  score: number;
+}
+
+export interface EmbeddingsStatus {
+  indexed_pages: number;
+  model: string;
+}
+
 export interface MemexSettings {
   providers: {
     anthropic_cli: boolean;
@@ -191,6 +204,15 @@ export const ipc = {
     invoke<Adjacency>("build_link_graph", { root }),
   searchVault: (query: string, limit?: number) =>
     invoke<SearchHit[]>("search_vault", { query, limit }),
+  // Semantic layer (Feature 1): embedding index over wiki pages.
+  reindexEmbeddings: (provider: string, model: string) =>
+    invoke<number>("reindex_embeddings", { provider, model }),
+  semanticSearch: (query: string, k: number, provider: string, model: string) =>
+    invoke<VecHit[]>("semantic_search", { query, k, provider, model }),
+  relatedPages: (page: string, k: number) =>
+    invoke<VecHit[]>("related_pages", { page, k }),
+  embeddingsStatus: () =>
+    invoke<EmbeddingsStatus>("embeddings_status", {}),
   createFile: (parent: string, name: string) =>
     invoke<string>("create_file", { parent, name }),
   createFolder: (parent: string, name: string) =>
