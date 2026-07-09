@@ -5,6 +5,7 @@
 pub mod claude;
 pub mod cli_agent;
 mod commands;
+pub mod embeddings;
 pub mod extract;
 pub mod git_log;
 pub mod index;
@@ -19,6 +20,7 @@ pub mod sample_vault;
 pub mod secrets;
 pub mod settings;
 pub mod vault;
+pub mod vector_index;
 
 pub fn run() {
     tauri::Builder::default()

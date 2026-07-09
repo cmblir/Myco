@@ -130,7 +130,7 @@ fn default_auto_reflect_interval() -> u32 {
     180
 }
 
-fn settings_dir() -> Result<PathBuf, String> {
+pub fn settings_dir() -> Result<PathBuf, String> {
     let base = if let Ok(p) = std::env::var("MEMEX_DATA_DIR") {
         PathBuf::from(p)
     } else if cfg!(target_os = "macos") {
