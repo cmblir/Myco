@@ -42,6 +42,8 @@ export interface Strings {
   ing_drop: string;
   ing_drop_or: string;
   ing_browse: string;
+  ing_yt_fetch?: string;
+  ing_yt_fetching?: string;
   ing_paste_url_ph: string;
   ing_or_paste: string;
   ing_paste_ph: string;
@@ -423,6 +425,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_drop: "Drop a file here",
     ing_drop_or: "or paste a URL",
     ing_browse: "Browse files…",
+    ing_yt_fetch: "Fetch YouTube transcript",
+    ing_yt_fetching: "Fetching transcript…",
     ing_paste_url_ph: "https://example.com/paper.pdf",
     ing_or_paste: "Or paste raw text",
     ing_paste_ph: "Paste an article, transcript, your own notes…",
@@ -816,6 +820,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_drop: "여기에 파일 드롭",
     ing_drop_or: "또는 URL 붙여넣기",
     ing_browse: "파일 선택…",
+    ing_yt_fetch: "YouTube 자막 가져오기",
+    ing_yt_fetching: "자막 가져오는 중…",
     ing_paste_url_ph: "https://example.com/paper.pdf",
     ing_or_paste: "또는 원문 붙여넣기",
     ing_paste_ph: "아티클·트랜스크립트·메모를 붙여 넣으세요…",
@@ -1209,6 +1215,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_drop: "ここにファイルをドロップ",
     ing_drop_or: "または URL を貼り付け",
     ing_browse: "ファイルを選択…",
+    ing_yt_fetch: "YouTube字幕を取得",
+    ing_yt_fetching: "字幕を取得中…",
     ing_paste_url_ph: "https://example.com/paper.pdf",
     ing_or_paste: "原文を貼り付け",
     ing_paste_ph: "記事・トランスクリプト・メモを貼り付けてください…",

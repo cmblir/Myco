@@ -21,6 +21,7 @@ pub mod secrets;
 pub mod settings;
 pub mod vault;
 pub mod vector_index;
+pub mod youtube;
 
 pub fn run() {
     tauri::Builder::default()
@@ -76,6 +77,7 @@ pub fn run() {
             commands::related_pages,
             commands::embeddings_status,
             commands::semantic_edges,
+            commands::fetch_youtube_transcript,
         ])
         .setup(|_app| Ok(()))
         .build(tauri::generate_context!())

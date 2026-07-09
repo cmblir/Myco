@@ -780,6 +780,14 @@ pub fn embeddings_status(
     })
 }
 
+/// Fetch a YouTube video's caption transcript as plain text (Feature 2). No key;
+/// best-effort scrape of the caption track. Errors clearly when captions are
+/// absent. The caller ingests the returned text like any pasted source.
+#[tauri::command]
+pub async fn fetch_youtube_transcript(url: String) -> Result<String, String> {
+    crate::youtube::fetch_transcript(&url).await
+}
+
 #[cfg(test)]
 mod tests {
     use super::external_target_allowed;

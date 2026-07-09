@@ -22,6 +22,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   const [over, setOver] = useState(false);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
+  const [ytBusy, setYtBusy] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
   const stage = useIngestStore((s) => s.stage);
   const events = useIngestStore((s) => s.events);
@@ -103,6 +104,21 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
     setTitle("");
     setBody("");
     setDropError(null);
+  }
+
+  // Pull a YouTube video's captions into the body so it ingests like any source.
+  async function loadYoutube(): Promise<void> {
+    setDropError(null);
+    setYtBusy(true);
+    try {
+      const txt = await ipc.fetchYoutubeTranscript(body.trim());
+      setBody(txt);
+      setTitle((prev) => prev || "YouTube transcript");
+    } catch (err) {
+      setDropError(`Transcript failed: ${String(err)}`);
+    } finally {
+      setYtBusy(false);
+    }
   }
 
   async function browseAndLoad(): Promise<void> {
@@ -301,6 +317,18 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
               />
+              {looksLikeYoutube(body) ? (
+                <button
+                  className="btn"
+                  style={{ marginTop: 8 }}
+                  disabled={ytBusy}
+                  onClick={() => void loadYoutube()}
+                >
+                  {ytBusy
+                    ? (t.ing_yt_fetching ?? "Fetching transcript…")
+                    : (t.ing_yt_fetch ?? "Fetch YouTube transcript")}
+                </button>
+              ) : null}
             </div>
 
             <div className="row">
@@ -411,4 +439,11 @@ function StepRow({
       </div>
     </div>
   );
+}
+
+// A single pasted YouTube link (not a long body that merely mentions one).
+function looksLikeYoutube(s: string): boolean {
+  const t = s.trim();
+  if (t.includes("\n") || t.length > 200) return false;
+  return t.includes("youtube.com/watch") || t.includes("youtu.be/") || t.includes("youtube.com/shorts");
 }

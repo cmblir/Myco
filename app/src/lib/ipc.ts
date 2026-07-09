@@ -207,6 +207,8 @@ export const ipc = {
     invoke<string>("scaffold_obsidian_vault", { vaultPath }),
   readExternalText: (path: string) =>
     invoke<string>("read_external_text", { path }),
+  fetchYoutubeTranscript: (url: string) =>
+    invoke<string>("fetch_youtube_transcript", { url }),
   buildLinkGraph: (root: string) =>
     invoke<Adjacency>("build_link_graph", { root }),
   searchVault: (query: string, limit?: number) =>

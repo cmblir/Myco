@@ -329,6 +329,11 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       }
       return Promise.resolve(hits);
     }
+    case "fetch_youtube_transcript":
+      return Promise.resolve(
+        "hello and welcome to this talk\ntoday we cover transformers and attention\n" +
+          "the key idea is scaled dot-product attention\nthanks for watching",
+      );
     case "semantic_edges": {
       // Emit similarity edges between nodes that are NOT already wikilinked, so
       // the overlay adds new edges (mirrors the real dedup vs the wiki graph).
