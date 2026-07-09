@@ -329,6 +329,29 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       }
       return Promise.resolve(hits);
     }
+    case "semantic_edges": {
+      // Emit similarity edges between nodes that are NOT already wikilinked, so
+      // the overlay adds new edges (mirrors the real dedup vs the wiki graph).
+      const seen = new Set<string>();
+      const edges: { source: string; target: string; score: number }[] = [];
+      for (let i = 0; i < NODES.length; i++) {
+        const d = NODES[i];
+        const linked = new Set(d.l);
+        let added = 0;
+        for (let j = 1; j <= NODES.length && added < 2; j++) {
+          const other = NODES[(i + j * 3) % NODES.length];
+          if (other.s === d.s || linked.has(other.s)) continue;
+          const a = pathOf(d.s);
+          const b = pathOf(other.s);
+          const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          edges.push({ source: a, target: b, score: 0.75 });
+          added++;
+        }
+      }
+      return Promise.resolve(edges);
+    }
     case "related_pages": {
       const page = String(args.page ?? "");
       const slug = page.split("/").pop()?.replace(/\.md$/, "") ?? "";

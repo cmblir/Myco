@@ -75,6 +75,7 @@ pub fn run() {
             commands::semantic_search,
             commands::related_pages,
             commands::embeddings_status,
+            commands::semantic_edges,
         ])
         .setup(|_app| Ok(()))
         .build(tauri::generate_context!())

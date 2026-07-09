@@ -18,6 +18,7 @@ export interface GraphSettings {
   // Display
   arrows: boolean;
   arrowSize: number; // arrowhead cone scale, 0.1..1.5 — kept well under node size
+  semanticEdges: boolean; // overlay embedding-similarity edges (dim, dashed)
   textFadeThreshold: number; // zoom level at which labels appear (0.1..3)
   nodeSize: number; // multiplier 0.5..3
   linkThickness: number; // 0.3..3
@@ -51,6 +52,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   folderFilter: null,
   arrows: false,
   arrowSize: 1, // arrowhead/flying-ship scale (bumped from 0.35 on request)
+  semanticEdges: false,
   textFadeThreshold: 1.1,
   nodeSize: 1,
   linkThickness: 1,

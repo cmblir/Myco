@@ -215,6 +215,12 @@ export default function GraphControls({
           />
         ) : null}
         <Toggle
+          label={t.gr_semantic_edges ?? "Semantic links"}
+          hint={t.gr_semantic_edges_hint ?? "Overlay dim edges between similar notes"}
+          value={settings.semanticEdges}
+          onChange={(v) => onChange({ semanticEdges: v })}
+        />
+        <Toggle
           label={t.gr_trace ?? "Trace path"}
           hint={t.gr_trace_hint ?? "Click a start node, then an end node"}
           value={traceMode}

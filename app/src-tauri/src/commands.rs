@@ -718,6 +718,49 @@ pub fn related_pages(
 }
 
 #[derive(serde::Serialize)]
+pub struct SemanticEdge {
+    pub source: String, // absolute page path (matches graph node ids)
+    pub target: String,
+    pub score: f32,
+}
+
+/// Top-`k` semantic-similarity edges across the vault, for the graph's
+/// "semantic links" overlay. Absolute page paths so they align with the
+/// wikilink graph's node ids. Undirected pairs are de-duplicated.
+#[tauri::command]
+pub fn semantic_edges(
+    vault: tauri::State<'_, VaultRoot>,
+    k: usize,
+) -> Result<Vec<SemanticEdge>, String> {
+    let root = require_root(&vault)?;
+    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    let store = VectorStore::load(&index_path);
+    let abs = |rel: &str| root.join(rel).to_string_lossy().into_owned();
+    let pages: std::collections::HashSet<String> =
+        store.records.iter().map(|r| r.page.clone()).collect();
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for page in &pages {
+        for hit in store.related(page, k.clamp(1, 10)) {
+            // Undirected de-dup: order the pair lexically.
+            let (a, b) = if page.as_str() < hit.page.as_str() {
+                (page.clone(), hit.page.clone())
+            } else {
+                (hit.page.clone(), page.clone())
+            };
+            if seen.insert(format!("{a}|{b}")) {
+                out.push(SemanticEdge {
+                    source: abs(&a),
+                    target: abs(&b),
+                    score: hit.score,
+                });
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[derive(serde::Serialize)]
 pub struct EmbeddingsStatus {
     pub indexed_pages: usize,
     pub model: String,

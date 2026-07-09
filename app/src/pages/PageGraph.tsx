@@ -40,7 +40,7 @@ import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useIngestStore } from "../stores/ingestStore";
 import { ipc } from "../lib/ipc";
-import type { Adjacency } from "../lib/ipc";
+import type { Adjacency, SemEdge } from "../lib/ipc";
 
 // Live-ingest node tints — pages the in-flight run wrote glow gold, pages it
 // only read glow ice blue. Both sit inside the cosmic palette so they read as
@@ -159,6 +159,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   // keydown closure. Toggling clears any active trace (they share the camera).
   const [flyMode, setFlyMode] = useState(false);
   const flyModeRef = useRef(false);
+  // Semantic-similarity overlay edges, fetched on demand. A ref (read at build
+  // time) + a glEpoch bump avoids a build-deps ordering race with the fetch.
+  const semEdgesRef = useRef<SemEdge[]>([]);
   const toggleFly = (on: boolean): void => {
     flyModeRef.current = on;
     setFlyMode(on);
@@ -418,6 +421,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       edgeColor: theme.edge,
       // existingOnly hides non-existent files → also hide ghost link targets.
       showGhosts: !s.existingOnly,
+      semanticEdges: s.semanticEdges ? semEdgesRef.current : undefined,
     });
     graphRef.current = graph;
     setCounts({ nodes: graph.order, edges: graph.size });
@@ -645,6 +649,30 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   useEffect(() => {
     if (flyModeRef.current) sceneRef.current?.setFlyMode(true);
   }, [glEpoch]);
+
+  // Semantic overlay edges: fetch (or clear) when the toggle flips, then force a
+  // graph rebuild so buildGraph picks them up from the ref.
+  useEffect(() => {
+    let killed = false;
+    if (!settings.semanticEdges) {
+      semEdgesRef.current = [];
+      setGlEpoch((e) => e + 1);
+      return;
+    }
+    ipc
+      .semanticEdges(4)
+      .then((edges) => {
+        if (killed) return;
+        semEdgesRef.current = edges;
+        setGlEpoch((e) => e + 1);
+      })
+      .catch(() => {
+        if (!killed) semEdgesRef.current = [];
+      });
+    return () => {
+      killed = true;
+    };
+  }, [settings.semanticEdges]);
 
   // Live-ingest glow — mirror ingestStore's touched files into the style ref
   // and pulse the newest touch. Subscribes once; every change is a cheap scene

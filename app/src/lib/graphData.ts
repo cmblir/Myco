@@ -213,6 +213,9 @@ export interface BuildGraphOpts {
   // Render unresolved [[links]] (targets with no file) as dim "ghost" nodes,
   // like Obsidian. Off when existingOnly hides non-existent files.
   showGhosts: boolean;
+  // Optional embedding-similarity edges (absolute page paths) to overlay; only
+  // pairs whose endpoints both exist and aren't already wikilinked are added.
+  semanticEdges?: { source: string; target: string; score: number }[];
 }
 
 
@@ -358,6 +361,7 @@ export interface GraphNodeAttrs {
 export interface GraphEdgeAttrs {
   color: string;
   size: number;
+  kind?: "semantic"; // embedding-similarity overlay edge (dim); absent = wikilink
 }
 export type VaultGraph = Graph<GraphNodeAttrs, GraphEdgeAttrs>;
 
@@ -495,6 +499,24 @@ export function buildGraph(
     }
     if (m.type) g.setNodeAttribute(id, "nodeType", m.type);
   });
+
+  // Semantic-similarity overlay edges (dim). Only between existing nodes not
+  // already joined by a wikilink, so the overlay adds signal, not duplicates.
+  if (o.semanticEdges) {
+    for (const e of o.semanticEdges) {
+      if (
+        g.hasNode(e.source) &&
+        g.hasNode(e.target) &&
+        !g.hasEdge(e.source, e.target)
+      ) {
+        g.addEdge(e.source, e.target, {
+          color: "rgba(150,130,220,0.28)",
+          size: 0.4,
+          kind: "semantic",
+        });
+      }
+    }
+  }
   return g;
 }
 

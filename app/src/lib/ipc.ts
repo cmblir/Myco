@@ -111,6 +111,13 @@ export interface EmbeddingsStatus {
   model: string;
 }
 
+/** A semantic-similarity edge for the graph overlay (absolute page paths). */
+export interface SemEdge {
+  source: string;
+  target: string;
+  score: number;
+}
+
 export interface MemexSettings {
   providers: {
     anthropic_cli: boolean;
@@ -213,6 +220,8 @@ export const ipc = {
     invoke<VecHit[]>("related_pages", { page, k }),
   embeddingsStatus: () =>
     invoke<EmbeddingsStatus>("embeddings_status", {}),
+  semanticEdges: (k: number) =>
+    invoke<SemEdge[]>("semantic_edges", { k }),
   createFile: (parent: string, name: string) =>
     invoke<string>("create_file", { parent, name }),
   createFolder: (parent: string, name: string) =>

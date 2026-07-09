@@ -86,7 +86,15 @@ export async function complete(args: CompleteArgs): Promise<string> {
   let messages = args.messages;
   try {
     const budget = isBuiltin ? LOCAL_CONTEXT_BUDGET : VAULT_CONTEXT_BUDGET;
-    const ctx = await ipc.readVaultContext(args.cwd, budget);
+    // Prefer semantic top-K retrieval (only the most relevant pages) when an
+    // embedding index exists — far better than dumping the whole vault, and the
+    // only thing that fits the builtin model's tiny window. Fall back to the
+    // whole-vault concat when the index is empty or retrieval fails.
+    const question = lastUserContent(args.messages);
+    let ctx = question ? await semanticContext(args.cwd, question, budget) : "";
+    if (!ctx.trim()) {
+      ctx = await ipc.readVaultContext(args.cwd, budget);
+    }
     if (ctx.trim()) {
       messages = withVaultContext(messages, ctx);
     }
@@ -130,6 +138,47 @@ export async function complete(args: CompleteArgs): Promise<string> {
     recordUsage(model, res.usage.input_tokens, res.usage.output_tokens);
   }
   return res.content.trim();
+}
+
+/** Last user message text — the retrieval query. */
+function lastUserContent(messages: SimpleMessage[]): string {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i].role === "user") return messages[i].content;
+  }
+  return "";
+}
+
+/** Semantic retrieval: embed the question, pull the top-matching pages from the
+ * embedding index, and assemble their bodies (bounded by `budget`) with citeable
+ * [[stem]] headers. Returns "" when no index exists so the caller can fall back
+ * to the whole-vault concat. */
+async function semanticContext(
+  cwd: string,
+  question: string,
+  budget: number,
+): Promise<string> {
+  const status = await ipc.embeddingsStatus().catch(() => null);
+  if (!status || status.indexed_pages === 0) return "";
+  const hits = await ipc
+    .semanticSearch(question, 12, "builtin-local", "")
+    .catch(() => []);
+  if (hits.length === 0) return "";
+  const seen = new Set<string>();
+  const parts: string[] = [];
+  let used = 0;
+  for (const h of hits) {
+    if (seen.has(h.page)) continue;
+    seen.add(h.page);
+    const abs = h.page.startsWith("/") ? h.page : `${cwd}/${h.page}`;
+    const file = await ipc.readFile(abs).catch(() => null);
+    const text = file?.content?.trim();
+    if (!text) continue;
+    const block = `===== [[${h.stem}]] =====\n${text}`;
+    if (used + block.length > budget && parts.length > 0) break;
+    parts.push(block);
+    used += block.length;
+  }
+  return parts.join("\n\n");
 }
 
 // Merge the vault content into the single system message (providers like
