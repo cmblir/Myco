@@ -31,6 +31,7 @@
     "@sigma/utils": "^3.0.0",
     "@tauri-apps/api": "2.11.0",
     "@tauri-apps/plugin-dialog": "2.7.1",
+    "@tauri-apps/plugin-notification": "^2.3.3",
     "codemirror": "6.0.2",
     "d3-force": "^3.0.0",
     "d3-force-3d": "^3.0.6",

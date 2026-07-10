@@ -6,6 +6,7 @@
 import { create } from "zustand";
 import { ipc, type Schedule } from "../lib/ipc";
 import { runDigest } from "../lib/digests";
+import { notify } from "../lib/notify";
 import { useVaultStore } from "./vaultStore";
 
 /** Seconds implied by a cadence — mirrors Rust schedules::interval_secs. */
@@ -83,6 +84,13 @@ export const useScheduleStore = create<ScheduleState>((set, get) => ({
       const schedules = await ipc.upsertSchedule(vaultPath, stamped);
       set({ schedules, runningId: null, lastDigestPath: path });
       void useVaultStore.getState().refreshTree();
+      // Opt-in native notification when the schedule requests it.
+      if (s.notify) {
+        void notify(
+          `Digest ready — ${s.title}`,
+          `A new ${s.kind} digest was written to your vault.`,
+        );
+      }
       return path;
     } catch (err) {
       set({ error: String(err), runningId: null });

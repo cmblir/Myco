@@ -816,6 +816,9 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
         .catch(() => undefined);
     }
     refreshOllama();
+    // Mount-only probe of installed CLIs/daemons; refreshOllama is stable enough
+    // that re-running on its identity would just re-probe on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function saveKey(providerId: string): Promise<void> {

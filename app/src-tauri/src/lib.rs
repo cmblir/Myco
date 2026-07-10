@@ -29,6 +29,7 @@ pub mod youtube;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         // Confinement root for filesystem commands; populated on open_vault.
         .manage(commands::VaultRoot::default())
         // Embedded local model — lazily loaded on first local_* command.
