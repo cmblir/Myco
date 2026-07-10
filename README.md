@@ -161,7 +161,7 @@ bash mcp-server/install.sh    # MCP server for Claude Desktop/Code
 
 ## The desktop app
 
-Eight routes in the left sidebar. Cmd/Ctrl-K opens the command palette, Cmd/Ctrl-B toggles the sidebar. On first launch a 3-step onboarding wizard walks you through opening a vault → adding a source → asking a question; the whole app is responsive down to 320px (the sidebar goes off-canvas on narrow screens).
+Routes in the left sidebar — Overview, Graph, History, Provenance, Tags, **Study**, **Schedules**, Settings, plus Ingest and Ask. Cmd/Ctrl-K opens the command palette (with semantic hits), Cmd/Ctrl-B toggles the sidebar. On first launch a 3-step onboarding wizard walks you through opening a vault → adding a source → asking a question; the whole app is responsive down to 320px (the sidebar goes off-canvas on narrow screens).
 
 ### Overview
 
@@ -174,9 +174,15 @@ Vault stats (file count, resolved wikilinks, ratio), recent git activity, jump-b
 3. Claude reads the source, finds affected wiki pages, writes citations, creates/updates `wiki/source-<slug>.md`, appends `wiki/log.md`, and files an `ingest-reports/<datetime>-<slug>.md` with the WHY.
 4. The tree and graph refresh.
 
+**Inputs are multimodal** — PDFs, plain text, Office documents (`.docx` / `.pptx`), spreadsheets (`.xlsx` / `.xls` / `.ods`), and **YouTube URLs** (the transcript is fetched from the watch page) are all reduced to markdown before step 1. A **local embedding index** (bundled SEED model, or an opt-in provider) is built over the wiki so Ask retrieves the most relevant pages, the command palette surfaces semantic hits, and each page gets a **Related notes** panel; reindex from Settings.
+
 ### Ask
 
-A chat surface that answers questions about your wiki. The active **query model** runs from the vault root with a preamble nudging it to use Read/Grep tools on `wiki/` first, falling back to `raw/`. Conversation history is preserved per session.
+A chat surface that answers questions about your wiki. The active **query model** runs from the vault root with a preamble nudging it to use Read/Grep tools on `wiki/` first, falling back to `raw/`. Conversation history is preserved per session; non-tool providers get the top-K semantically-retrieved pages inlined so they answer from real content.
+
+**Agent mode** (an Ask/Agent toggle) turns a tool-capable provider (Anthropic API or an OpenAI-compatible provider) into an autonomous researcher: it plans and calls read tools over the vault — search, read pages, traverse links, provenance — streaming a collapsible step trace, then answers with citations. Optional **write tools** (create/update page) are confirmed per call and never touch `raw/`; reusable **task-agent presets** save as portable `agents/<slug>.md` files.
+
+**Audio overview** turns an answer's cited pages (or a Reader page + neighbours) into a grounded two-host spoken "deep dive" — a cited dialogue saved to `audio/` and played back offline through the OS voices (Web Speech API, no bundled engine).
 
 ### Graph
 
@@ -212,6 +218,14 @@ Per-page **citation coverage** — total claim lines vs cited claim lines. Sorta
 
 Every page grouped by its frontmatter `tags` — a count-weighted tag cloud; click a tag to filter the page list, click a page to open it.
 
+### Study
+
+Active recall over your wiki. **"Make cards"** on any page generates flashcards with the LLM stack (offline with the bundled model); they're saved as plain markdown in `cards/<deck>.md` — Obsidian-`spaced-repetition` syntax with an **FSRS** scheduling trailer, so review state round-trips losslessly. The Study route reviews due cards (front → reveal → grade Again/Hard/Good/Easy → the FSRS scheduler advances the interval → saved to disk) and runs generated multiple-choice quizzes. A sidebar badge shows how many cards are due.
+
+### Schedules
+
+Recurring, unattended digests. Define a schedule — a free **query**, a **"what changed"** summary (folds in `git log`), a **staleness** sweep (orphans / under-cited / contradictions), or a **topic** tracker — on a cadence (daily / weekly / monthly / every N hours). While the app is open an in-app timer fires due schedules; each writes a plain-markdown note into `digests/` with source citations. **Run now** triggers one on demand and links you to the latest digest. (App-closed runs via launchd/cron, and native notifications, are planned follow-ups.)
+
 ### Settings
 
 Six sub-tabs:
@@ -240,7 +254,9 @@ Click a file in the sidebar → opens with three modes:
 - **Preview** — markdown-it render with wikilinks as live buttons.
 - **Split** — both side by side, edits propagate to the preview live.
 
-A **Backlinks** panel at the bottom lists every note that links here.
+A **Backlinks** panel at the bottom lists every note that links here, a **Related notes** panel lists the nearest pages by embedding similarity, and header actions let you **Make cards** (Study) or generate an **Audio overview** from this page and its neighbours.
+
+Opening a **`raw/` PDF** shows an in-app **pdf.js** viewer (bundled worker, no network): select text → **Highlight & cite** mints a colour-coded highlight and inserts a `[[pdf::<stem>#p<page>:<id>]]` pinpoint link into your note. Highlights persist in an external sidecar (`wiki/.annotations/<stem>.json`) so `raw/` stays immutable; clicking a pinpoint link opens the PDF at that spot, and clicking a highlight jumps to the citing note.
 
 Right-click any tree node for **New note / New folder / Rename / Delete**. Cmd-K jumps to any file by stem name.
 
@@ -258,6 +274,10 @@ Right-click any tree node for **New note / New folder / Rename / Delete**. Cmd-K
      │                   Frontmatter schema (CLAUDE.md per vault).
      ├─ daily/           Daily notes (Today's note button).
      ├─ ingest-reports/  WHY each ingest decided what it decided.
+     ├─ cards/           Flashcard decks (Study) — markdown + FSRS state.
+     ├─ audio/           Audio-overview transcripts.
+     ├─ agents/          Saved task-agent presets.
+     ├─ digests/         Scheduled digest notes.
      └─ CLAUDE.md        Maintenance rules Memex seeds on first launch.
      ▼
    Memex desktop + Obsidian (optional) + your shell / git client
