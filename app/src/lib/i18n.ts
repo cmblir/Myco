@@ -357,6 +357,20 @@ export interface Strings {
   ag_declined?: string;
   ag_stopped_limit?: string;
   ag_unsupported?: string;
+  // Audio overview (Feature 5).
+  rd_audio?: string;
+  au_title?: string;
+  au_close?: string;
+  au_generating?: string;
+  au_play?: string;
+  au_pause?: string;
+  au_stop?: string;
+  au_turns?: string;
+  au_open_transcript?: string;
+  au_no_tts?: string;
+  au_host?: string;
+  au_guest?: string;
+  au_play_from?: string;
   // Ingest page.
   ing_title_label?: string;
   ing_title_ph?: string;
@@ -814,6 +828,19 @@ export const STRINGS: Record<Lang, Strings> = {
     ag_stopped_limit: "Stopped at the step limit — partial answer.",
     ag_unsupported:
       "Agent mode needs the Anthropic API or an OpenAI-compatible provider. Current: {provider}.",
+    rd_audio: "Audio overview",
+    au_title: "Audio overview",
+    au_close: "Close",
+    au_generating: "Writing the dialogue…",
+    au_play: "Play",
+    au_pause: "Pause",
+    au_stop: "Stop",
+    au_turns: "{n} turns",
+    au_open_transcript: "Open transcript",
+    au_no_tts: "Speech synthesis unavailable — transcript only.",
+    au_host: "Host",
+    au_guest: "Guest",
+    au_play_from: "Play from here",
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
@@ -1271,6 +1298,19 @@ export const STRINGS: Record<Lang, Strings> = {
     ag_stopped_limit: "단계 한도에서 중지됨 — 부분 답변입니다.",
     ag_unsupported:
       "에이전트 모드에는 Anthropic API 또는 OpenAI 호환 제공자가 필요합니다. 현재: {provider}.",
+    rd_audio: "오디오 개요",
+    au_title: "오디오 개요",
+    au_close: "닫기",
+    au_generating: "대화 작성 중…",
+    au_play: "재생",
+    au_pause: "일시정지",
+    au_stop: "정지",
+    au_turns: "{n}개 대화",
+    au_open_transcript: "대본 열기",
+    au_no_tts: "음성 합성을 사용할 수 없음 — 대본만 표시합니다.",
+    au_host: "진행자",
+    au_guest: "게스트",
+    au_play_from: "여기부터 재생",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
@@ -1683,6 +1723,19 @@ export const STRINGS: Record<Lang, Strings> = {
     ag_stopped_limit: "ステップ上限で停止 — 部分的な回答です。",
     ag_unsupported:
       "エージェントモードには Anthropic API または OpenAI 互換プロバイダーが必要です。現在: {provider}。",
+    rd_audio: "音声概要",
+    au_title: "音声概要",
+    au_close: "閉じる",
+    au_generating: "対話を作成中…",
+    au_play: "再生",
+    au_pause: "一時停止",
+    au_stop: "停止",
+    au_turns: "{n}ターン",
+    au_open_transcript: "文字起こしを開く",
+    au_no_tts: "音声合成を利用できません — 文字起こしのみ表示します。",
+    au_host: "ホスト",
+    au_guest: "ゲスト",
+    au_play_from: "ここから再生",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",

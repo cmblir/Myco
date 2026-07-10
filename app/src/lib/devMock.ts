@@ -152,6 +152,13 @@ function mockClaudeRun(prompt: string): { stdout: string; stderr: string; status
       { question: "Mock Q1?", choices: ["Right", "Wrong 1", "Wrong 2"], answer: 0, sourceRef: "[^src-1]", explanation: "The first option is correct." },
       { question: "Mock Q2?", choices: ["Wrong", "Right"], answer: 1, sourceRef: "", explanation: "The second option is correct." },
     ]);
+  } else if (p.includes("dialogue") || p.includes("two-host")) {
+    stdout = JSON.stringify([
+      { speaker: "A", text: "Welcome — today we dig into attention.", cites: ["[[attention-mechanism]]"] },
+      { speaker: "B", text: "Right. At its core it's a weighted sum over value vectors.", cites: ["[[attention-mechanism]]"] },
+      { speaker: "A", text: "And multi-head attention runs several of these in parallel.", cites: ["[[multi-head-attention]]"] },
+      { speaker: "B", text: "Exactly, then concatenates the results. That's the key idea.", cites: [] },
+    ]);
   } else {
     stdout = "(mock) Claude CLI reply — the real app shells `claude --print` here.";
   }
@@ -230,6 +237,7 @@ function fileTree() {
   return [
     { kind: "file", name: "CLAUDE.md", path: `${VAULT}/CLAUDE.md` },
     { kind: "file", name: "welcome.md", path: `${VAULT}/welcome.md` },
+    { kind: "directory", name: "audio", path: `${VAULT}/audio`, children: [] },
     { kind: "directory", name: "cards", path: `${VAULT}/cards`, children: cardsChildren },
     { kind: "directory", name: "daily", path: `${VAULT}/daily`, children: [] },
     { kind: "directory", name: "ingest-reports", path: `${VAULT}/ingest-reports`, children: [] },

@@ -15,6 +15,8 @@ import { complete } from "../lib/chat";
 import { flattenMarkdown, stem } from "../lib/graphData";
 import Viewer from "../components/Viewer";
 import AgentPanel from "../components/AgentPanel";
+import AudioOverviewPanel from "../components/AudioOverviewPanel";
+import { useAudioStore } from "../stores/audioStore";
 import ThinkingGalaxy from "../components/ThinkingGalaxy";
 import MiniGalaxy from "../components/MiniGalaxy";
 import type { GalaxyLink, GalaxyNode } from "../components/MiniGalaxy";
@@ -238,6 +240,8 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
         ))}
         <div ref={endRef} />
       </div>
+
+      <AudioOverviewPanel t={t} />
     </div>
   );
 }
@@ -261,6 +265,8 @@ function AnswerGalaxy({
   onOpen: (absPath: string) => void;
 }): JSX.Element | null {
   const [selected, setSelected] = useState<string | null>(null);
+  const genAudio = useAudioStore((s) => s.generate);
+  const audioBusy = useAudioStore((s) => s.generating);
 
   const nodes = useMemo<GalaxyNode[]>(() => {
     const out: GalaxyNode[] = [];
@@ -293,8 +299,24 @@ function AnswerGalaxy({
 
   return (
     <div style={{ marginTop: 12 }}>
-      <div className="section-title" style={{ fontSize: 13, marginBottom: 4 }}>
-        {t.q_sources_used} · {nodes.length}
+      <div
+        className="row"
+        style={{ justifyContent: "space-between", marginBottom: 4 }}
+      >
+        <div className="section-title" style={{ fontSize: 13 }}>
+          {t.q_sources_used} · {nodes.length}
+        </div>
+        <button
+          className="btn btn-ghost"
+          style={{ fontSize: 12.5 }}
+          disabled={audioBusy}
+          onClick={() =>
+            void genAudio(question, nodes.map((n) => n.id))
+          }
+        >
+          <Icon name="spark" size={12} />{" "}
+          {audioBusy ? (t.au_generating ?? "…") : (t.au_title ?? "Audio overview")}
+        </button>
       </div>
       <MiniGalaxy
         nodes={nodes}

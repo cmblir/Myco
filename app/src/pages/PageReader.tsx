@@ -11,9 +11,11 @@ import { SAMPLE } from "../lib/sample";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useStudyStore } from "../stores/studyStore";
+import { useAudioStore } from "../stores/audioStore";
 import { generateCards } from "../lib/study";
 import { addCards, deckSlug } from "../lib/cardStore";
 import Editor from "../components/Editor";
+import AudioOverviewPanel from "../components/AudioOverviewPanel";
 import Viewer from "../components/Viewer";
 import BacklinksPanel from "../components/BacklinksPanel";
 import RelatedPanel from "../components/RelatedPanel";
@@ -132,7 +134,10 @@ function SamplePage({ id, t }: { id: string; t: Strings }): JSX.Element {
 function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const openFile = useVaultStore((s) => s.openFile);
   const activeFile = useVaultStore((s) => s.activeFile);
+  const adjacency = useVaultStore((s) => s.adjacency);
   const currentVaultPath = useVaultStore((s) => s.currentVault?.path);
+  const genAudio = useAudioStore((s) => s.generate);
+  const audioBusy = useAudioStore((s) => s.generating);
   const saveFile = useVaultStore((s) => s.saveFile);
   const resolveWikilink = useVaultStore((s) => s.resolveWikilink);
   const refreshTree = useVaultStore((s) => s.refreshTree);
@@ -242,6 +247,20 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     }
   }
 
+  function makeAudio(): void {
+    if (!currentVaultPath || audioBusy) return;
+    const stem = (path.split(/[\\/]/).pop() ?? path).replace(/\.md$/i, "");
+    // This page + its immediate wikilink neighbours (out + in), deduped.
+    const neighbours = [
+      ...(adjacency?.forward[path] ?? []),
+      ...(adjacency?.backward[path] ?? []),
+    ];
+    const pages = [path, ...neighbours].filter(
+      (p, i, arr) => arr.indexOf(p) === i,
+    ).slice(0, 8);
+    void genAudio(stem, pages);
+  }
+
   if (!activeFile || activeFile.path !== path) {
     return (
       <div className="workspace">
@@ -256,7 +275,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   return (
     <div className="workspace">
       <header className="page-head" style={{ paddingTop: 40 }}>
-        <div className="row" style={{ marginBottom: 16, gap: 12 }}>
+        <div className="row" style={{ marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
           <span className="typebadge">
             <span className="tb-dot t-overview"></span>
             file
@@ -269,6 +288,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
               textOverflow: "ellipsis",
               whiteSpace: "nowrap",
               flex: 1,
+              minWidth: 0,
             }}
             title={path}
           >
@@ -284,6 +304,15 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
             {cardBusy
               ? (t.rd_making ?? "Generating…")
               : (t.rd_make_cards ?? "Make cards")}
+          </button>
+          <button
+            className="btn btn-ghost"
+            onClick={makeAudio}
+            disabled={audioBusy}
+            title={t.rd_audio ?? "Audio overview"}
+          >
+            <Icon name="spark" size={13} />{" "}
+            {audioBusy ? (t.au_generating ?? "…") : (t.rd_audio ?? "Audio overview")}
           </button>
           <div className="segmented">
             <button
@@ -374,6 +403,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       </section>
       <BacklinksPanel filePath={path} t={t} />
       <RelatedPanel filePath={path} t={t} />
+      <AudioOverviewPanel t={t} />
     </div>
   );
 }

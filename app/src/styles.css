@@ -3063,3 +3063,68 @@ hr {
   align-items: center;
   gap: 5px;
 }
+
+/* Audio overview (Feature 5) */
+.audio-panel .au-generating {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.au-transcript {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.au-turn {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: var(--r-md);
+  line-height: 1.5;
+}
+.au-turn.active {
+  background: var(--accent-soft);
+}
+.au-turn-play {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+.au-speaker {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+.au-speaker-A {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.au-speaker-B {
+  background: var(--bg-hover);
+  color: var(--ink-2);
+}
+.au-turn-text {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.au-cite {
+  display: inline;
+  background: transparent;
+  border: 0;
+  padding: 0 0 0 6px;
+  color: var(--accent);
+  font-size: 12px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}

@@ -15,6 +15,7 @@
     "test:e2e": "node scripts/route-smoke.mjs",
     "test:e2e:study": "node scripts/study-smoke.mjs",
     "test:e2e:agent": "node scripts/agent-smoke.mjs",
+    "test:e2e:audio": "node scripts/audio-smoke.mjs",
     "perf": "node scripts/graph-perf.mjs",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html,json}\"",
