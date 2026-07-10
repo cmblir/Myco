@@ -20,7 +20,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -121,11 +123,36 @@ def digest_path(vault: Path, sched: dict, date_iso: str) -> Path:
     return vault / out_dir / f"{day}-{slugify(sched.get('title', 'digest'))}.md"
 
 
+def resolve_claude() -> str | None:
+    """Locate the claude CLI robustly. launchd/cron give a stripped PATH that
+    usually lacks ~/.local/bin, Homebrew, etc., so we augment PATH with the
+    common install dirs (and honor MEMEX_CLAUDE_PATH) before probing — mirroring
+    the desktop app's Rust PATH-augmentation."""
+    override = os.environ.get("MEMEX_CLAUDE_PATH")
+    if override and Path(override).is_file():
+        return override
+    home = os.path.expanduser("~")
+    extra = [
+        f"{home}/.local/bin",
+        f"{home}/.claude/local",
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+    ]
+    path = os.environ.get("PATH", "")
+    os.environ["PATH"] = os.pathsep.join([*extra, *path.split(os.pathsep)])
+    return shutil.which("claude")
+
+
 def default_run_claude(
     vault: Path, prompt: str, tools: str, timeout: int
 ) -> "tuple[int, str, str]":
+    claude = resolve_claude()
+    if not claude:
+        return (127, "", "claude CLI not found (set MEMEX_CLAUDE_PATH or add it to PATH)")
     proc = subprocess.run(
-        ["claude", "--print", "--allowedTools", tools],
+        [claude, "--print", "--allowedTools", tools],
         input=f"{SYSTEM}\n\n{prompt}",
         cwd=str(vault),
         capture_output=True,

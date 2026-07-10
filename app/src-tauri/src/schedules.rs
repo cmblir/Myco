@@ -133,12 +133,28 @@ pub fn launch_label(id: &str) -> String {
     format!("dev.cmblir.memex.digest.{safe}")
 }
 
-/// Build a LaunchAgent plist XML. Pure, so its shape is unit-testable.
-pub fn plist_xml(label: &str, program_args: &[String], interval_secs: i64, log_path: &str) -> String {
+/// Build a LaunchAgent plist XML. Pure, so its shape is unit-testable. When
+/// `path_env` is non-empty it is set as the job's PATH — launchd gives a
+/// stripped environment, so without this the runner can't find `claude`/tools.
+pub fn plist_xml(
+    label: &str,
+    program_args: &[String],
+    interval_secs: i64,
+    log_path: &str,
+    path_env: &str,
+) -> String {
     let args: String = program_args
         .iter()
         .map(|a| format!("    <string>{}</string>\n", xml_escape(a)))
         .collect();
+    let env_block = if path_env.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "  <key>EnvironmentVariables</key>\n  <dict>\n    <key>PATH</key><string>{}</string>\n  </dict>\n",
+            xml_escape(path_env)
+        )
+    };
     format!(
         r#"<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -150,7 +166,7 @@ pub fn plist_xml(label: &str, program_args: &[String], interval_secs: i64, log_p
 {args}  </array>
   <key>StartInterval</key><integer>{interval_secs}</integer>
   <key>RunAtLoad</key><false/>
-  <key>StandardOutPath</key><string>{log}</string>
+{env_block}  <key>StandardOutPath</key><string>{log}</string>
   <key>StandardErrorPath</key><string>{log}</string>
 </dict>
 </plist>
@@ -158,6 +174,7 @@ pub fn plist_xml(label: &str, program_args: &[String], interval_secs: i64, log_p
         label = xml_escape(label),
         args = args,
         interval_secs = interval_secs,
+        env_block = env_block,
         log = xml_escape(log_path),
     )
 }
@@ -166,6 +183,25 @@ fn xml_escape(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+/// PATH to hand the launchd job: common install dirs (where claude/python/git
+/// live) prepended to the inherited PATH, since launchd strips it down.
+#[cfg(target_os = "macos")]
+fn path_env() -> String {
+    let home = std::env::var("HOME").unwrap_or_default();
+    let mut dirs = vec![
+        format!("{home}/.local/bin"),
+        format!("{home}/.claude/local"),
+        "/opt/homebrew/bin".to_string(),
+        "/usr/local/bin".to_string(),
+        "/usr/bin".to_string(),
+        "/bin".to_string(),
+    ];
+    if let Ok(p) = std::env::var("PATH") {
+        dirs.push(p);
+    }
+    dirs.join(":")
 }
 
 #[cfg(target_os = "macos")]
@@ -206,7 +242,7 @@ pub fn install_background(
         "--schedule".to_string(),
         id.to_string(),
     ];
-    let xml = plist_xml(&label, &args, interval_secs, &log.to_string_lossy());
+    let xml = plist_xml(&label, &args, interval_secs, &log.to_string_lossy(), &path_env());
     std::fs::write(&plist, xml.as_bytes()).map_err(|e| format!("write plist: {e}"))?;
     // Reload: unload any prior version, then load with -w (persist across logins).
     let _ = Command::new("launchctl").arg("unload").arg(&plist).output();
@@ -319,7 +355,8 @@ mod tests {
             "--vault".to_string(),
             "/v & co".to_string(),
         ];
-        let xml = plist_xml("dev.cmblir.memex.digest.s1", &args, 86400, "/v/.memex/d.log");
+        let xml = plist_xml("dev.cmblir.memex.digest.s1", &args, 86400, "/v/.memex/d.log", "/usr/bin:/bin");
+        assert!(xml.contains("<key>PATH</key><string>/usr/bin:/bin</string>"));
         assert!(xml.contains("<key>Label</key><string>dev.cmblir.memex.digest.s1</string>"));
         assert!(xml.contains("<integer>86400</integer>"));
         assert!(xml.contains("<string>/res/automation/digest.py</string>"));
