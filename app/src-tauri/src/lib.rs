@@ -37,6 +37,7 @@ pub fn run() {
             commands::list_files,
             commands::file_mtimes,
             commands::read_file,
+            commands::read_raw_bytes,
             commands::read_vault_context,
             commands::write_file,
             commands::write_run_log,

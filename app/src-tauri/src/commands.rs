@@ -164,6 +164,21 @@ pub fn read_file(state: tauri::State<VaultRoot>, path: String) -> Result<FileCon
     vault::read_file(&p.to_string_lossy())
 }
 
+/// Serve the raw bytes of a source file under the vault's `raw/` tree, for the
+/// in-app PDF viewer (Feature 6). Path-confined to `raw/` (rejects `../` and any
+/// path outside it) and size-capped, so it can neither escape the vault nor OOM
+/// the app. Returns raw bytes (JS receives an ArrayBuffer) — never a file:// URL.
+#[tauri::command]
+pub fn read_raw_bytes(
+    state: tauri::State<VaultRoot>,
+    relpath: String,
+) -> Result<tauri::ipc::Response, String> {
+    const MAX_PDF_BYTES: u64 = 100 * 1024 * 1024;
+    let root = require_root(&state)?;
+    let bytes = vault::read_confined_raw(&root, &relpath, MAX_PDF_BYTES)?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
 /// Concatenate vault markdown (CLAUDE.md + wiki/ + raw/) up to `max_bytes`,
 /// so non-tool LLM providers can answer queries / run lint against real vault
 /// content (the Claude CLI reads files itself and does not use this).

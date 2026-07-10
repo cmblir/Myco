@@ -433,6 +433,32 @@ pub struct FileContent {
     pub frontmatter: serde_json::Value,
 }
 
+/// Read the bytes of a source file confined to the vault's `raw/` tree
+/// (Feature 6 PDF viewer). Rejects paths outside the vault or outside `raw/`,
+/// and files larger than `max`. Pure over `root` so it is unit-testable.
+pub fn read_confined_raw(root: &Path, relpath: &str, max: u64) -> Result<Vec<u8>, String> {
+    let abs = if Path::new(relpath).is_absolute() {
+        relpath.to_string()
+    } else {
+        root.join(relpath).to_string_lossy().into_owned()
+    };
+    let confined = confine_path(root, &abs)?;
+    let in_raw = confined
+        .strip_prefix(root)
+        .ok()
+        .and_then(|rel| rel.components().next())
+        .map(|c| c.as_os_str() == "raw")
+        .unwrap_or(false);
+    if !in_raw {
+        return Err("read_raw_bytes only serves files under raw/".into());
+    }
+    let meta = std::fs::metadata(&confined).map_err(|e| format!("stat failed: {e}"))?;
+    if meta.len() > max {
+        return Err("file is too large to open in the viewer".into());
+    }
+    std::fs::read(&confined).map_err(|e| format!("read failed: {e}"))
+}
+
 pub fn read_file(path: &str) -> Result<FileContent, String> {
     let resolved = Path::new(path)
         .canonicalize()
@@ -888,6 +914,28 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn read_confined_raw_serves_raw_and_rejects_escapes() {
+        let dir = temp_vault("rawbytes");
+        let root = dir.canonicalize().unwrap();
+        fs::create_dir_all(root.join("raw")).unwrap();
+        fs::create_dir_all(root.join("wiki")).unwrap();
+        fs::write(root.join("raw/doc.pdf"), b"%PDF-1.4 bytes").unwrap();
+        fs::write(root.join("wiki/note.md"), b"secret").unwrap();
+
+        // Serves a file under raw/.
+        let bytes = read_confined_raw(&root, "raw/doc.pdf", 1_000).unwrap();
+        assert_eq!(bytes, b"%PDF-1.4 bytes");
+
+        // Rejects a file outside raw/ (e.g. wiki/) even though it's in the vault.
+        assert!(read_confined_raw(&root, "wiki/note.md", 1_000).is_err());
+        // Rejects a traversal escape.
+        assert!(read_confined_raw(&root, "raw/../wiki/note.md", 1_000).is_err());
+        // Rejects a file over the size cap.
+        assert!(read_confined_raw(&root, "raw/doc.pdf", 4).is_err());
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]

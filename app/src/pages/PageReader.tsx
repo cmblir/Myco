@@ -16,6 +16,9 @@ import { generateCards } from "../lib/study";
 import { addCards, deckSlug } from "../lib/cardStore";
 import Editor from "../components/Editor";
 import AudioOverviewPanel from "../components/AudioOverviewPanel";
+import PdfViewer from "../components/PdfViewer";
+import { usePdfStore } from "../stores/pdfStore";
+import { parsePdfTarget } from "../lib/wikilinks";
 import Viewer from "../components/Viewer";
 import BacklinksPanel from "../components/BacklinksPanel";
 import RelatedPanel from "../components/RelatedPanel";
@@ -32,7 +35,31 @@ export default function PageReader({
   if (pageRoute.startsWith("sample/")) {
     return <SamplePage id={pageRoute.slice(7)} t={t} />;
   }
+  if (/\.pdf$/i.test(pageRoute)) {
+    return <PdfPage key={pageRoute} path={pageRoute} t={t} />;
+  }
   return <VaultPage key={pageRoute} path={pageRoute} t={t} />;
+}
+
+// Opening a raw PDF directly (from the sidebar tree) shows the viewer full-width
+// with no citing note. [[pdf::…]] link clicks inside a note open it with the
+// note attached (see VaultPage).
+function PdfPage({ path, t }: { path: string; t: Strings }): JSX.Element {
+  const vaultPath = useVaultStore((s) => s.currentVault?.path);
+  const openPdf = usePdfStore((s) => s.openPdf);
+  useEffect(() => {
+    if (!vaultPath) return;
+    const relpath = path.startsWith(vaultPath + "/")
+      ? path.slice(vaultPath.length + 1)
+      : path;
+    const stem = (path.split(/[\\/]/).pop() ?? path).replace(/\.pdf$/i, "");
+    openPdf({ relpath, stem, citingNote: null }, 1);
+  }, [path, vaultPath, openPdf]);
+  return (
+    <div className="workspace">
+      <PdfViewer t={t} />
+    </div>
+  );
 }
 
 function SamplePage({ id, t }: { id: string; t: Strings }): JSX.Element {
@@ -377,6 +404,20 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
             <Viewer
               content={draft}
               onLinkClick={(target) => {
+                // Pinpoint PDF link → open the viewer at the page/anchor.
+                const pdf = parsePdfTarget(target);
+                if (pdf && currentVaultPath) {
+                  usePdfStore.getState().openPdf(
+                    {
+                      relpath: `raw/${pdf.stem}.pdf`,
+                      stem: pdf.stem,
+                      citingNote: path,
+                    },
+                    pdf.page,
+                    pdf.anchorId,
+                  );
+                  return;
+                }
                 const resolved = resolveWikilink(target);
                 if (resolved) {
                   setRoute(`page:${resolved}`);
@@ -404,6 +445,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       <BacklinksPanel filePath={path} t={t} />
       <RelatedPanel filePath={path} t={t} />
       <AudioOverviewPanel t={t} />
+      <PdfViewer t={t} />
     </div>
   );
 }

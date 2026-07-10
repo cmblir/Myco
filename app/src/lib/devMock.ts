@@ -136,6 +136,38 @@ const mockDecks = new Map<string, string>([
 ]);
 const isCardsPath = (p: string): boolean => p.startsWith(`${VAULT}/cards/`);
 
+// Feature 6 (PDF annotation) — a seeded raw PDF + a sidecar highlight so the
+// viewer, highlight overlay, and click-through are exercisable in ?mock. The
+// bytes are a real minimal one-page PDF (generated with a correct xref) so
+// pdf.js renders it in the browser.
+const MOCK_PDF_STEM = "attention-is-all-you-need";
+const MOCK_PDF_B64 =
+  "JVBERi0xLjQKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFI+PgplbmRvYmoKMiAwIG9iago8PC9UeXBlL1BhZ2VzL0tpZHNbMyAwIFJdL0NvdW50IDE+PgplbmRvYmoKMyAwIG9iago8PC9UeXBlL1BhZ2UvUGFyZW50IDIgMCBSL01lZGlhQm94WzAgMCAzMDAgMjAwXS9Db250ZW50cyA0IDAgUi9SZXNvdXJjZXM8PC9Gb250PDwvRjEgNSAwIFI+Pj4+Pj4KZW5kb2JqCjQgMCBvYmoKPDwvTGVuZ3RoIDQ2Pj4Kc3RyZWFtCkJUIC9GMSAyMCBUZiA0MCAxMjAgVGQgKEhlbGxvIE1lbWV4IFBERikgVGogRVQKZW5kc3RyZWFtCmVuZG9iago1IDAgb2JqCjw8L1R5cGUvRm9udC9TdWJ0eXBlL1R5cGUxL0Jhc2VGb250L0hlbHZldGljYT4+CmVuZG9iagp4cmVmCjAgNgowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMDkgMDAwMDAgbiAKMDAwMDAwMDA1NCAwMDAwMCBuIAowMDAwMDAwMTA1IDAwMDAwIG4gCjAwMDAwMDAyMTcgMDAwMDAgbiAKMDAwMDAwMDMxMSAwMDAwMCBuIAp0cmFpbGVyCjw8L1NpemUgNi9Sb290IDEgMCBSPj4Kc3RhcnR4cmVmCjM3NAolJUVPRg==";
+const MOCK_PDF_PATH = `${VAULT}/raw/${MOCK_PDF_STEM}.pdf`;
+const MOCK_PDF_LINK_NOTE = `${VAULT}/wiki/pdf-demo.md`;
+const MOCK_ANNOTATIONS_PATH = `${VAULT}/wiki/.annotations/${MOCK_PDF_STEM}.json`;
+const MOCK_SIDECAR = JSON.stringify({
+  source: `raw/${MOCK_PDF_STEM}.pdf`,
+  anchors: [
+    {
+      id: "seed1",
+      page: 1,
+      quads: [{ x: 0.12, y: 0.42, w: 0.5, h: 0.06 }],
+      text: "Hello Memex PDF",
+      color: "#ffd54f",
+      note: `${VAULT}/wiki/attention-mechanism.md`,
+      created: "2026-07-10T00:00:00Z",
+    },
+  ],
+});
+
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
 // Mock LLM output for study generation. claude_run is the CLI provider path; we
 // branch on the prompt so card/quiz generation returns valid JSON while ordinary
 // queries still get a plain answer.
@@ -227,6 +259,7 @@ function fileTree() {
   const wikiChildren = [
     { kind: "file", name: "index.md", path: `${VAULT}/wiki/index.md` },
     { kind: "file", name: "log.md", path: `${VAULT}/wiki/log.md` },
+    { kind: "file", name: "pdf-demo.md", path: MOCK_PDF_LINK_NOTE },
     ...NODES.map((d) => ({ kind: "file", name: `${d.s}.md`, path: pathOf(d.s) })),
   ];
   const cardsChildren = [...mockDecks.keys()].map((p) => ({
@@ -241,7 +274,9 @@ function fileTree() {
     { kind: "directory", name: "cards", path: `${VAULT}/cards`, children: cardsChildren },
     { kind: "directory", name: "daily", path: `${VAULT}/daily`, children: [] },
     { kind: "directory", name: "ingest-reports", path: `${VAULT}/ingest-reports`, children: [] },
-    { kind: "directory", name: "raw", path: `${VAULT}/raw`, children: [] },
+    { kind: "directory", name: "raw", path: `${VAULT}/raw`, children: [
+      { kind: "file", name: `${MOCK_PDF_STEM}.pdf`, path: MOCK_PDF_PATH },
+    ] },
     { kind: "directory", name: "wiki", path: `${VAULT}/wiki`, children: wikiChildren },
   ];
 }
@@ -438,11 +473,22 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       ]);
     case "claude_run":
       return Promise.resolve(mockClaudeRun(String(args.prompt ?? "")));
+    case "read_raw_bytes":
+      // Serve the seeded PDF bytes for any raw/*.pdf (real Rust confines to raw/).
+      return Promise.resolve(b64ToBytes(MOCK_PDF_B64).buffer);
     case "read_file": {
       const p = String(args.path ?? "");
       if (isCardsPath(p)) {
         const raw = mockDecks.get(p) ?? "";
         return Promise.resolve({ path: p, raw, content: raw, frontmatter: null });
+      }
+      if (p === MOCK_ANNOTATIONS_PATH) {
+        return Promise.resolve({ path: p, raw: MOCK_SIDECAR, content: MOCK_SIDECAR, frontmatter: null });
+      }
+      if (p === MOCK_PDF_LINK_NOTE) {
+        const body =
+          `# PDF demo\n\nSee the source: [[pdf::${MOCK_PDF_STEM}#p1:seed1|Hello Memex PDF]].\n`;
+        return Promise.resolve({ path: p, raw: body, content: body, frontmatter: null });
       }
       const slug = p.split("/").pop()?.replace(/\.md$/, "") ?? "";
       const d = bySlug.get(slug);

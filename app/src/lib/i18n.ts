@@ -371,6 +371,12 @@ export interface Strings {
   au_host?: string;
   au_guest?: string;
   au_play_from?: string;
+  // PDF viewer (Feature 6).
+  pdf_page?: string;
+  pdf_close?: string;
+  pdf_loading?: string;
+  pdf_error?: string;
+  pdf_highlight_cite?: string;
   // Ingest page.
   ing_title_label?: string;
   ing_title_ph?: string;
@@ -841,6 +847,11 @@ export const STRINGS: Record<Lang, Strings> = {
     au_host: "Host",
     au_guest: "Guest",
     au_play_from: "Play from here",
+    pdf_page: "p. {n} / {total}",
+    pdf_close: "Close",
+    pdf_loading: "Loading PDF…",
+    pdf_error: "Could not open this PDF.",
+    pdf_highlight_cite: "Highlight & cite",
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
@@ -1311,6 +1322,11 @@ export const STRINGS: Record<Lang, Strings> = {
     au_host: "진행자",
     au_guest: "게스트",
     au_play_from: "여기부터 재생",
+    pdf_page: "p. {n} / {total}",
+    pdf_close: "닫기",
+    pdf_loading: "PDF 불러오는 중…",
+    pdf_error: "이 PDF를 열 수 없습니다.",
+    pdf_highlight_cite: "하이라이트 & 인용",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
@@ -1736,6 +1752,11 @@ export const STRINGS: Record<Lang, Strings> = {
     au_host: "ホスト",
     au_guest: "ゲスト",
     au_play_from: "ここから再生",
+    pdf_page: "p. {n} / {total}",
+    pdf_close: "閉じる",
+    pdf_loading: "PDF を読み込み中…",
+    pdf_error: "この PDF を開けませんでした。",
+    pdf_highlight_cite: "ハイライトして引用",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",

@@ -240,6 +240,9 @@ export const ipc = {
   fileMtimes: (root: string) =>
     invoke<[string, number][]>("file_mtimes", { root }),
   readFile: (path: string) => invoke<FileContent>("read_file", { path }),
+  /** Raw bytes of a `raw/`-confined source file (PDF viewer, Feature 6). */
+  readRawBytes: (relpath: string) =>
+    invoke<ArrayBuffer>("read_raw_bytes", { relpath }),
   readVaultContext: (root: string, maxBytes: number) =>
     invoke<string>("read_vault_context", { root, maxBytes }),
   writeFile: (path: string, content: string) =>
