@@ -160,6 +160,49 @@ export interface MemexProLogin {
   connected: boolean;
 }
 
+// --- In-app agent (Feature 4) ---
+
+/** A tool the agent may call (mirrors Rust agent_tools::ToolDescriptor). */
+export interface AgentToolDescriptor {
+  name: string;
+  description: string;
+  input_schema: unknown;
+  /** True for vault-mutating tools that require per-call user confirmation. */
+  write: boolean;
+}
+
+/** One tool call the model wants executed. */
+export interface AgentToolCall {
+  id: string;
+  name: string;
+  input: Record<string, unknown>;
+}
+
+/** A provider-neutral agent transcript turn sent to `agent_chat`. */
+export interface AgentMessage {
+  role: "system" | "user" | "assistant" | "tool";
+  content?: string;
+  tool_calls?: AgentToolCall[];
+  tool_call_id?: string;
+}
+
+export interface AgentChatRequest {
+  provider_id: string;
+  model: string;
+  system?: string;
+  messages: AgentMessage[];
+  tools: AgentToolDescriptor[];
+  max_tokens?: number;
+}
+
+/** The model's reply: final `text`, or `tool_calls` the loop must satisfy. */
+export interface AgentTurn {
+  text: string;
+  tool_calls: AgentToolCall[];
+  usage: { input_tokens: number; output_tokens: number } | null;
+  stop: string;
+}
+
 export interface ChatRequest {
   provider_id: string;
   model: string;
@@ -293,6 +336,13 @@ export const ipc = {
     invoke<null>("set_settings", { value }),
   chatComplete: (request: ChatRequest) =>
     invoke<ChatResponse>("chat_complete", { request }),
+  // In-app agent (Feature 4).
+  agentToolsSchema: () =>
+    invoke<AgentToolDescriptor[]>("agent_tools_schema", {}),
+  agentToolCall: (name: string, args: Record<string, unknown>, allowWrite: boolean) =>
+    invoke<unknown>("agent_tool_call", { name, args, allowWrite }),
+  agentChat: (request: AgentChatRequest) =>
+    invoke<AgentTurn>("agent_chat", { request }),
   listProviderModels: (providerId: string) =>
     invoke<string[]>("list_provider_models", { providerId }),
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),
