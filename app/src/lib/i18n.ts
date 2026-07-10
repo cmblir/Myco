@@ -335,6 +335,28 @@ export interface Strings {
   st_correct?: string;
   st_wrong?: string;
   st_next?: string;
+  // Agent mode (Feature 4).
+  q_mode?: string;
+  q_mode_ask?: string;
+  q_mode_agent?: string;
+  ag_lede?: string;
+  ag_preset?: string;
+  ag_preset_none?: string;
+  ag_new_preset?: string;
+  ag_preset_name?: string;
+  ag_preset_prompt?: string;
+  ag_preset_prompt_hint?: string;
+  ag_allow_write?: string;
+  ag_write_hint?: string;
+  ag_ph?: string;
+  ag_run?: string;
+  ag_stop?: string;
+  ag_task?: string;
+  ag_steps?: string;
+  ag_working?: string;
+  ag_declined?: string;
+  ag_stopped_limit?: string;
+  ag_unsupported?: string;
   // Ingest page.
   ing_title_label?: string;
   ing_title_ph?: string;
@@ -769,6 +791,29 @@ export const STRINGS: Record<Lang, Strings> = {
     st_correct: "Correct",
     st_wrong: "Not quite",
     st_next: "Next",
+    q_mode: "Mode",
+    q_mode_ask: "Ask",
+    q_mode_agent: "Agent",
+    ag_lede:
+      "Give the agent a multi-step task. It plans, searches your wiki, reads and links pages, and answers with citations.",
+    ag_preset: "Task agent",
+    ag_preset_none: "Default",
+    ag_new_preset: "New agent",
+    ag_preset_name: "Name",
+    ag_preset_prompt: "System prompt",
+    ag_preset_prompt_hint: "What should this agent do?",
+    ag_allow_write: "Allow writes",
+    ag_write_hint: "Let the agent create/update pages (confirmed per write)",
+    ag_ph: "Give the agent a multi-step task…",
+    ag_run: "Run",
+    ag_stop: "Stop",
+    ag_task: "task",
+    ag_steps: "{n} steps",
+    ag_working: "working",
+    ag_declined: "declined",
+    ag_stopped_limit: "Stopped at the step limit — partial answer.",
+    ag_unsupported:
+      "Agent mode needs the Anthropic API or an OpenAI-compatible provider. Current: {provider}.",
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
@@ -1203,6 +1248,29 @@ export const STRINGS: Record<Lang, Strings> = {
     st_correct: "정답",
     st_wrong: "오답",
     st_next: "다음",
+    q_mode: "모드",
+    q_mode_ask: "질문",
+    q_mode_agent: "에이전트",
+    ag_lede:
+      "에이전트에게 여러 단계의 작업을 맡기세요. 계획을 세우고 위키를 검색·열람·연결한 뒤 출처와 함께 답합니다.",
+    ag_preset: "작업 에이전트",
+    ag_preset_none: "기본",
+    ag_new_preset: "새 에이전트",
+    ag_preset_name: "이름",
+    ag_preset_prompt: "시스템 프롬프트",
+    ag_preset_prompt_hint: "이 에이전트가 할 일은?",
+    ag_allow_write: "쓰기 허용",
+    ag_write_hint: "에이전트가 페이지를 생성/수정하도록 허용(쓰기마다 확인)",
+    ag_ph: "에이전트에게 여러 단계 작업을 지시하세요…",
+    ag_run: "실행",
+    ag_stop: "중지",
+    ag_task: "작업",
+    ag_steps: "{n}단계",
+    ag_working: "작업 중",
+    ag_declined: "거부됨",
+    ag_stopped_limit: "단계 한도에서 중지됨 — 부분 답변입니다.",
+    ag_unsupported:
+      "에이전트 모드에는 Anthropic API 또는 OpenAI 호환 제공자가 필요합니다. 현재: {provider}.",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
@@ -1592,6 +1660,29 @@ export const STRINGS: Record<Lang, Strings> = {
     st_correct: "正解",
     st_wrong: "不正解",
     st_next: "次へ",
+    q_mode: "モード",
+    q_mode_ask: "質問",
+    q_mode_agent: "エージェント",
+    ag_lede:
+      "エージェントに複数ステップのタスクを任せましょう。計画し、ウィキを検索・閲覧・リンクして、出典付きで回答します。",
+    ag_preset: "タスクエージェント",
+    ag_preset_none: "デフォルト",
+    ag_new_preset: "新規エージェント",
+    ag_preset_name: "名前",
+    ag_preset_prompt: "システムプロンプト",
+    ag_preset_prompt_hint: "このエージェントの役割は？",
+    ag_allow_write: "書き込みを許可",
+    ag_write_hint: "エージェントによるページの作成/更新を許可（書き込みごとに確認）",
+    ag_ph: "エージェントに複数ステップのタスクを指示…",
+    ag_run: "実行",
+    ag_stop: "停止",
+    ag_task: "タスク",
+    ag_steps: "{n}ステップ",
+    ag_working: "実行中",
+    ag_declined: "拒否",
+    ag_stopped_limit: "ステップ上限で停止 — 部分的な回答です。",
+    ag_unsupported:
+      "エージェントモードには Anthropic API または OpenAI 互換プロバイダーが必要です。現在: {provider}。",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",

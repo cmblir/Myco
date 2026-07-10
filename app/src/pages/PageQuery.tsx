@@ -14,6 +14,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { complete } from "../lib/chat";
 import { flattenMarkdown, stem } from "../lib/graphData";
 import Viewer from "../components/Viewer";
+import AgentPanel from "../components/AgentPanel";
 import ThinkingGalaxy from "../components/ThinkingGalaxy";
 import MiniGalaxy from "../components/MiniGalaxy";
 import type { GalaxyLink, GalaxyNode } from "../components/MiniGalaxy";
@@ -52,6 +53,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const adjacency = useVaultStore((s) => s.adjacency);
   const setRoute = useUIStore((s) => s.setRoute);
   const settings = useSettingsStore((s) => s.settings);
+  const [mode, setMode] = useState<"ask" | "agent">("ask");
   const [q, setQ] = useState("");
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
@@ -131,16 +133,36 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   return (
     <div className="workspace">
       <header className="page-head">
-        <div className="page-eyebrow">{t.nav_query}</div>
-        <h1 className="page-title">{t.q_title}</h1>
-        <p className="page-lede">{t.q_lede}</p>
+        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div className="page-eyebrow">{t.nav_query}</div>
+            <h1 className="page-title">{t.q_title}</h1>
+          </div>
+          <div className="segmented" role="tablist" aria-label={t.q_mode ?? "Mode"}>
+            <button
+              className={mode === "ask" ? "active" : ""}
+              onClick={() => setMode("ask")}
+            >
+              <Icon name="msg" size={12} /> {t.q_mode_ask ?? "Ask"}
+            </button>
+            <button
+              className={mode === "agent" ? "active" : ""}
+              onClick={() => setMode("agent")}
+            >
+              <Icon name="terminal" size={12} /> {t.q_mode_agent ?? "Agent"}
+            </button>
+          </div>
+        </div>
+        <p className="page-lede">{mode === "agent" ? (t.ag_lede ?? t.q_lede) : t.q_lede}</p>
       </header>
+
+      {mode === "agent" ? <AgentPanel t={t} /> : null}
 
       <div
         className="card"
         style={{
           padding: 14,
-          display: "flex",
+          display: mode === "agent" ? "none" : "flex",
           gap: 8,
           alignItems: "center",
           marginTop: 8,
@@ -166,7 +188,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
           {busy ? "…" : t.q_send}
         </button>
       </div>
-      {settings ? (
+      {settings && mode === "ask" ? (
         <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
           {(t.q_via ?? "via {provider} · {model}")
             .replace("{provider}", settings.query_provider)
@@ -174,7 +196,10 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
         </div>
       ) : null}
 
-      <div className="col" style={{ marginTop: 24, gap: 16 }}>
+      <div
+        className="col"
+        style={{ marginTop: 24, gap: 16, display: mode === "agent" ? "none" : "flex" }}
+      >
         {turns.map((turn, i) => (
           <div key={i} className="card">
             <div className="row" style={{ marginBottom: 10 }}>

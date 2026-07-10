@@ -109,6 +109,13 @@ const VAULT = "/Memex";
 const SLUGS = new Set(NODES.map((d) => d.s));
 const pathOf = (s: string): string => `${VAULT}/wiki/${s}.md`;
 
+// ?mock=1&agent=1 flips the active query provider to an HTTP tool-capable one so
+// the in-app agent loop (Feature 4) can be exercised end-to-end in the browser
+// (the CLI provider tool-loops natively and isn't driven by agentLoop). Scoped
+// to the flag so ordinary ?mock runs (query/study) keep the CLI provider.
+const AGENT_MODE =
+  new URLSearchParams(location.search).get("agent") === "1";
+
 // Feature 3 (study) — a mutable in-memory card store so the review flow can
 // grade → write → re-read and see due counts drop. Seeded with a deck of due
 // cards (two scheduled in the past + one brand-new) so PageStudy has content.
@@ -261,6 +268,83 @@ const SETTINGS = {
 
 const bySlug = new Map(NODES.map((d) => [d.s, d]));
 
+// ---- In-app agent (Feature 4) mock ----------------------------------------
+const MOCK_AGENT_TOOLS = [
+  { name: "search_vault", description: "Search the wiki", input_schema: { type: "object" }, write: false },
+  { name: "read_page", description: "Read a page", input_schema: { type: "object" }, write: false },
+  { name: "create_page", description: "Create a page", input_schema: { type: "object" }, write: true },
+];
+
+function mockAgentToolCall(_cmd: string, args: Record<string, unknown>): unknown {
+  const name = String(args.name ?? "");
+  const a = (args.args ?? {}) as Record<string, unknown>;
+  switch (name) {
+    case "search_vault": {
+      const q = String(a.query ?? "").toLowerCase();
+      const hits = NODES.filter((d) => d.n.toLowerCase().includes(q) || d.s.includes(q))
+        .slice(0, 5)
+        .map((d) => ({ path: pathOf(d.s), name: `${d.s}.md`, line: 1, snippet: d.n }));
+      return { hits: hits.length ? hits : [{ path: pathOf(NODES[0].s), name: `${NODES[0].s}.md`, line: 1, snippet: NODES[0].n }] };
+    }
+    case "read_page": {
+      const slug = String(a.path ?? "").split("/").pop()?.replace(/\.md$/, "") ?? "";
+      const d = bySlug.get(slug) ?? NODES[0];
+      return { path: pathOf(d.s), content: `# ${d.n}\n\n${body(d)}` };
+    }
+    case "create_page":
+      return { written: String(a.path ?? "wiki/new.md"), bytes: String(a.content ?? "").length };
+    default:
+      return { ok: true };
+  }
+}
+
+// Deterministic scripted loop: first turn → call search_vault; if writes are
+// offered and the task asks to write → call create_page; otherwise → final
+// cited answer. Drives agentLoop through ≥1 tool step in ?mock.
+function mockAgentChat(args: Record<string, unknown>): unknown {
+  const req = (args.request ?? {}) as {
+    messages?: { role: string }[];
+    tools?: { name: string; write?: boolean }[];
+  };
+  const messages = req.messages ?? [];
+  const tools = req.tools ?? [];
+  const usage = { input_tokens: 50, output_tokens: 20 };
+  const toolResults = messages.filter((m) => m.role === "tool").length;
+  const userText = messages.find((m) => m.role === "user") as
+    | { content?: string }
+    | undefined;
+  const wantsWrite = /write|create|draft|note|page/i.test(userText?.content ?? "");
+  const hasWriteTool = tools.some((t) => t.name === "create_page");
+
+  if (tools.length === 0) {
+    return { text: "Partial answer at the step limit.", tool_calls: [], usage, stop: "stop" };
+  }
+  if (toolResults === 0) {
+    return {
+      text: "",
+      tool_calls: [{ id: "call_1", name: "search_vault", input: { query: "attention" } }],
+      usage,
+      stop: "tool_use",
+    };
+  }
+  if (toolResults === 1 && wantsWrite && hasWriteTool) {
+    return {
+      text: "",
+      tool_calls: [
+        { id: "call_2", name: "create_page", input: { path: "wiki/agent-summary.md", content: "# Summary\n\nDraft." } },
+      ],
+      usage,
+      stop: "tool_use",
+    };
+  }
+  return {
+    text: "Based on the wiki, attention is a weighted sum over value vectors [[attention-mechanism]].",
+    tool_calls: [],
+    usage,
+    stop: "stop",
+  };
+}
+
 function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<unknown> {
   switch (cmd) {
     case "ensure_default_vault":
@@ -297,7 +381,17 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "scan_provenance":
       return Promise.resolve(provenance());
     case "get_settings":
-      return Promise.resolve(SETTINGS);
+      return Promise.resolve(
+        AGENT_MODE
+          ? { ...SETTINGS, query_provider: "anthropic-api", query_model: "claude-sonnet-4-6" }
+          : SETTINGS,
+      );
+    case "agent_tools_schema":
+      return Promise.resolve(MOCK_AGENT_TOOLS);
+    case "agent_tool_call":
+      return Promise.resolve(mockAgentToolCall(cmd, args));
+    case "agent_chat":
+      return Promise.resolve(mockAgentChat(args));
     case "memex_pro_ingest":
       return Promise.resolve({
         summary: `(dev mock) ingested ${String(args.slug ?? "source")}`,

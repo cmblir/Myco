@@ -2963,3 +2963,103 @@ hr {
   background: var(--accent-soft);
   color: var(--accent);
 }
+
+/* Agent mode (Feature 4) */
+.agent-unsupported {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+}
+.agent-write-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.agent-trace {
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+  margin-top: 6px;
+}
+.agent-trace-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: 0;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.agent-spinner {
+  color: var(--accent);
+  animation: agent-pulse 1s ease-in-out infinite;
+  margin-left: 4px;
+}
+@keyframes agent-pulse {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-spinner { animation: none; }
+}
+.agent-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0 10px 8px;
+}
+.agent-step {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line-soft);
+  font-size: 12.5px;
+  /* Long tool results must never widen the page (global UI rule). */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.agent-step-tool {
+  font-family: var(--mono, monospace);
+  color: var(--accent);
+  font-size: 12px;
+  flex: 0 0 auto;
+}
+.agent-step-args {
+  font-size: 12px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.agent-step-result {
+  flex: 1 1 100%;
+  min-width: 0;
+  /* Clamp to two lines so a huge JSON blob can't blow out the trace height. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.agent-step.has-error .agent-step-tool {
+  color: #dc2626;
+}
+.agent-step-err {
+  color: #dc2626;
+}
+.agent-step-declined {
+  color: #d97706;
+  font-size: 12px;
+}
+.agent-limit {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
