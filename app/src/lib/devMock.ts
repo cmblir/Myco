@@ -440,6 +440,12 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       mockSchedules = mockSchedules.filter((x) => x.id !== id);
       return Promise.resolve([...mockSchedules]);
     }
+    case "install_background_schedule":
+      return Promise.resolve(
+        args.on
+          ? "(mock) background schedule installed"
+          : "(mock) background schedule removed",
+      );
     case "get_settings":
       return Promise.resolve(
         AGENT_MODE

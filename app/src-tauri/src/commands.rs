@@ -589,6 +589,52 @@ pub fn delete_schedule(
     crate::schedules::delete(std::path::Path::new(&root), &id)
 }
 
+/// The bundled digest runner script (falls back to the repo path in dev).
+fn digest_script_path(app: &tauri::AppHandle) -> Result<String, String> {
+    const REL: &str = "automation/digest.py";
+    if let Ok(res) = app.path().resource_dir() {
+        let p = res.join(REL);
+        if p.is_file() {
+            return Ok(p.to_string_lossy().into_owned());
+        }
+    }
+    // Dev: repo root is two levels up from src-tauri.
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("../..")
+        .join(REL);
+    if dev.is_file() {
+        return Ok(dev.to_string_lossy().into_owned());
+    }
+    Err("digest runner (automation/digest.py) not found".into())
+}
+
+/// Install or remove a launchd LaunchAgent that runs a schedule's digest while
+/// the app is closed (macOS, opt-in). `on=false` removes it.
+#[tauri::command]
+pub fn install_background_schedule(
+    app: tauri::AppHandle,
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    id: String,
+    on: bool,
+) -> Result<String, String> {
+    let root = confine_root(&state, &vault)?;
+    let root_path = std::path::Path::new(&root);
+    if on {
+        let sched = crate::schedules::load(root_path)
+            .into_iter()
+            .find(|s| s.id == id)
+            .ok_or_else(|| format!("schedule not found: {id}"))?;
+        let interval = crate::schedules::interval_secs(&sched.cadence);
+        let python = claude::locate_bin("python3", "MEMEX_PYTHON_PATH")
+            .ok_or("python3 not found on PATH (needed for background schedules)")?;
+        let script = digest_script_path(&app)?;
+        crate::schedules::install_background(root_path, &python, &script, &id, interval, true)
+    } else {
+        crate::schedules::install_background(root_path, "", "", &id, 0, false)
+    }
+}
+
 // ---- In-app agent (Feature 4) ----
 
 /// The agent tool schemas the model may call (read tools + gated write tools).

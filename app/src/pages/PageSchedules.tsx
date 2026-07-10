@@ -11,6 +11,7 @@ import type { Strings } from "../lib/i18n";
 import { useVaultStore } from "../stores/vaultStore";
 import { useUIStore } from "../stores/uiStore";
 import { useScheduleStore } from "../stores/scheduleStore";
+import { ipc } from "../lib/ipc";
 import type { Schedule, ScheduleKind } from "../lib/ipc";
 
 const KINDS: ScheduleKind[] = ["query", "changed", "stale", "topic"];
@@ -45,10 +46,24 @@ export default function PageSchedules({ t }: { t: Strings }): JSX.Element {
   const setRoute = useUIStore((s) => s.setRoute);
 
   const [draft, setDraft] = useState<Schedule | null>(null);
+  const [bgOn, setBgOn] = useState<Record<string, boolean>>({});
+  const [bgMsg, setBgMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (vaultPath) void load(vaultPath);
   }, [vaultPath, load]);
+
+  async function toggleBackground(s: Schedule): Promise<void> {
+    if (!vaultPath) return;
+    const next = !bgOn[s.id];
+    try {
+      const msg = await ipc.installBackgroundSchedule(vaultPath, s.id, next);
+      setBgOn((m) => ({ ...m, [s.id]: next }));
+      setBgMsg(msg);
+    } catch (err) {
+      setBgMsg(String(err));
+    }
+  }
 
   async function save(): Promise<void> {
     if (!vaultPath || !draft || !draft.title.trim()) return;
@@ -72,6 +87,9 @@ export default function PageSchedules({ t }: { t: Strings }): JSX.Element {
       </header>
 
       {error ? <p style={{ color: "#dc2626", fontSize: 13 }}>{error}</p> : null}
+      {bgMsg ? (
+        <p className="muted schedule-bgmsg" style={{ fontSize: 12.5 }}>{bgMsg}</p>
+      ) : null}
 
       {draft ? (
         <ScheduleForm
@@ -111,6 +129,15 @@ export default function PageSchedules({ t }: { t: Strings }): JSX.Element {
                   onClick={() => vaultPath && void runNow(vaultPath, s)}
                 >
                   {runningId === s.id ? (t.sc_running ?? "Running…") : (t.sc_run_now ?? "Run now")}
+                </button>
+                <button
+                  className="btn btn-ghost schedule-bg"
+                  onClick={() => void toggleBackground(s)}
+                  title={t.sc_bg_hint ?? "Run this schedule even when the app is closed (macOS launchd)"}
+                >
+                  {bgOn[s.id]
+                    ? (t.sc_bg_remove ?? "Remove background")
+                    : (t.sc_bg_install ?? "Run in background")}
                 </button>
                 <button className="btn btn-ghost" onClick={() => setDraft(s)}>
                   {t.sc_edit ?? "Edit"}

@@ -400,6 +400,9 @@ export interface Strings {
   sc_f_notify_hint?: string;
   sc_f_save?: string;
   sc_f_cancel?: string;
+  sc_bg_install?: string;
+  sc_bg_remove?: string;
+  sc_bg_hint?: string;
   // Ingest page.
   ing_title_label?: string;
   ing_title_ph?: string;
@@ -897,6 +900,9 @@ export const STRINGS: Record<Lang, Strings> = {
     sc_f_notify_hint: "Native notification when a run finishes (opt-in)",
     sc_f_save: "Save",
     sc_f_cancel: "Cancel",
+    sc_bg_install: "Run in background",
+    sc_bg_remove: "Remove background",
+    sc_bg_hint: "Run this schedule even when the app is closed (macOS launchd)",
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
@@ -1394,6 +1400,9 @@ export const STRINGS: Record<Lang, Strings> = {
     sc_f_notify_hint: "실행 완료 시 네이티브 알림(옵트인)",
     sc_f_save: "저장",
     sc_f_cancel: "취소",
+    sc_bg_install: "백그라운드 실행",
+    sc_bg_remove: "백그라운드 해제",
+    sc_bg_hint: "앱이 닫혀 있어도 이 스케줄을 실행 (macOS launchd)",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
@@ -1846,6 +1855,9 @@ export const STRINGS: Record<Lang, Strings> = {
     sc_f_notify_hint: "実行完了時にネイティブ通知（オプトイン）",
     sc_f_save: "保存",
     sc_f_cancel: "キャンセル",
+    sc_bg_install: "バックグラウンド実行",
+    sc_bg_remove: "バックグラウンド解除",
+    sc_bg_hint: "アプリが閉じていてもこのスケジュールを実行 (macOS launchd)",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",

@@ -62,6 +62,14 @@ check(
 );
 check("run had no errors", errors.length === beforeErr, errors.slice(beforeErr).join(" | "));
 
+// Background install toggle (mocked launchd) — click, expect a status line.
+await page.locator(".schedule-bg").first().click();
+await page.waitForTimeout(300);
+check(
+  "background toggle shows status",
+  /background schedule/i.test(await page.locator(".workspace").innerText()),
+);
+
 // Open the digest note in the reader.
 await page.locator(".btn", { hasText: "Open digest" }).first().click();
 await page.waitForSelector(".page-title", { timeout: 10_000 });

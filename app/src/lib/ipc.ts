@@ -397,6 +397,9 @@ export const ipc = {
     invoke<Schedule[]>("upsert_schedule", { vault, schedule }),
   deleteSchedule: (vault: string, id: string) =>
     invoke<Schedule[]>("delete_schedule", { vault, id }),
+  /** Install/remove a launchd LaunchAgent for app-closed digest runs (macOS). */
+  installBackgroundSchedule: (vault: string, id: string, on: boolean) =>
+    invoke<string>("install_background_schedule", { vault, id, on }),
   listProviderModels: (providerId: string) =>
     invoke<string[]>("list_provider_models", { providerId }),
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),

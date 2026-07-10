@@ -92,6 +92,7 @@ pub fn run() {
             commands::list_schedules,
             commands::upsert_schedule,
             commands::delete_schedule,
+            commands::install_background_schedule,
         ])
         .setup(|_app| Ok(()))
         .build(tauri::generate_context!())

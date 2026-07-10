@@ -117,6 +117,126 @@ pub fn delete(root: &Path, id: &str) -> Result<Vec<Schedule>, String> {
     Ok(list)
 }
 
+// ---- macOS launchd background install (Feature 7, opt-in) ----------------
+//
+// Installing a background schedule writes a LaunchAgent plist that runs the
+// Python digest runner on the cadence interval, so digests fire even when the
+// app is closed. Gated behind an explicit UI opt-in. macOS only for now.
+
+/// The LaunchAgent label for a schedule (stable, so re-install replaces).
+pub fn launch_label(id: &str) -> String {
+    // Sanitize the id into a reverse-DNS-safe label component.
+    let safe: String = id
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    format!("dev.cmblir.memex.digest.{safe}")
+}
+
+/// Build a LaunchAgent plist XML. Pure, so its shape is unit-testable.
+pub fn plist_xml(label: &str, program_args: &[String], interval_secs: i64, log_path: &str) -> String {
+    let args: String = program_args
+        .iter()
+        .map(|a| format!("    <string>{}</string>\n", xml_escape(a)))
+        .collect();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>{label}</string>
+  <key>ProgramArguments</key>
+  <array>
+{args}  </array>
+  <key>StartInterval</key><integer>{interval_secs}</integer>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>{log}</string>
+  <key>StandardErrorPath</key><string>{log}</string>
+</dict>
+</plist>
+"#,
+        label = xml_escape(label),
+        args = args,
+        interval_secs = interval_secs,
+        log = xml_escape(log_path),
+    )
+}
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+#[cfg(target_os = "macos")]
+fn launch_agents_dir() -> Result<std::path::PathBuf, String> {
+    let home = std::env::var("HOME").map_err(|_| "HOME not set".to_string())?;
+    Ok(std::path::PathBuf::from(home).join("Library/LaunchAgents"))
+}
+
+/// Install (or remove) the LaunchAgent for a schedule. `on=false` unloads +
+/// deletes the plist. Returns a human-readable status line.
+#[cfg(target_os = "macos")]
+pub fn install_background(
+    root: &Path,
+    python: &str,
+    script: &str,
+    id: &str,
+    interval_secs: i64,
+    on: bool,
+) -> Result<String, String> {
+    use std::process::Command;
+    let label = launch_label(id);
+    let dir = launch_agents_dir()?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create LaunchAgents dir: {e}"))?;
+    let plist = dir.join(format!("{label}.plist"));
+
+    if !on {
+        let _ = Command::new("launchctl").arg("unload").arg("-w").arg(&plist).output();
+        let _ = std::fs::remove_file(&plist);
+        return Ok(format!("background schedule removed ({label})"));
+    }
+
+    let log = root.join(".memex").join(format!("digest-{id}.log"));
+    let args = vec![
+        python.to_string(),
+        script.to_string(),
+        "--vault".to_string(),
+        root.to_string_lossy().into_owned(),
+        "--schedule".to_string(),
+        id.to_string(),
+    ];
+    let xml = plist_xml(&label, &args, interval_secs, &log.to_string_lossy());
+    std::fs::write(&plist, xml.as_bytes()).map_err(|e| format!("write plist: {e}"))?;
+    // Reload: unload any prior version, then load with -w (persist across logins).
+    let _ = Command::new("launchctl").arg("unload").arg(&plist).output();
+    let out = Command::new("launchctl")
+        .arg("load")
+        .arg("-w")
+        .arg(&plist)
+        .output()
+        .map_err(|e| format!("launchctl load: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "launchctl load failed: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(format!("background schedule installed ({label}, every {interval_secs}s)"))
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn install_background(
+    _root: &Path,
+    _python: &str,
+    _script: &str,
+    _id: &str,
+    _interval_secs: i64,
+    _on: bool,
+) -> Result<String, String> {
+    Err("background schedules are only supported on macOS for now".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -183,6 +303,29 @@ mod tests {
         assert_eq!(back.len(), 2);
         assert_eq!(back[0].title, "Weekly review");
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn launch_label_is_dns_safe() {
+        assert_eq!(launch_label("sch-abc123"), "dev.cmblir.memex.digest.sch-abc123");
+        assert_eq!(launch_label("a/b c"), "dev.cmblir.memex.digest.a-b-c");
+    }
+
+    #[test]
+    fn plist_xml_embeds_args_interval_and_escapes() {
+        let args = vec![
+            "/usr/bin/python3".to_string(),
+            "/res/automation/digest.py".to_string(),
+            "--vault".to_string(),
+            "/v & co".to_string(),
+        ];
+        let xml = plist_xml("dev.cmblir.memex.digest.s1", &args, 86400, "/v/.memex/d.log");
+        assert!(xml.contains("<key>Label</key><string>dev.cmblir.memex.digest.s1</string>"));
+        assert!(xml.contains("<integer>86400</integer>"));
+        assert!(xml.contains("<string>/res/automation/digest.py</string>"));
+        // & in an arg must be XML-escaped, not raw.
+        assert!(xml.contains("/v &amp; co"));
+        assert!(xml.contains("<false/>")); // RunAtLoad off
     }
 
     #[test]
