@@ -2,6 +2,7 @@
 // plugins. Domain logic lives in dedicated modules and stays testable without
 // the Tauri runtime.
 
+pub mod agent_tools;
 pub mod claude;
 pub mod cli_agent;
 mod commands;
@@ -63,6 +64,9 @@ pub fn run() {
             commands::get_settings,
             commands::set_settings,
             commands::chat_complete,
+            commands::agent_tools_schema,
+            commands::agent_tool_call,
+            commands::agent_chat,
             commands::list_provider_models,
             commands::ollama_status,
             commands::ollama_install_url,

@@ -497,6 +497,37 @@ pub async fn chat_complete(request: ChatRequest) -> Result<ChatResponse, String>
     providers::chat_complete(request, key).await
 }
 
+// ---- In-app agent (Feature 4) ----
+
+/// The agent tool schemas the model may call (read tools + gated write tools).
+#[tauri::command]
+pub fn agent_tools_schema() -> Vec<crate::agent_tools::ToolDescriptor> {
+    crate::agent_tools::descriptors()
+}
+
+/// Execute one agent tool call against the open vault. `allow_write` is set by
+/// the frontend only after the user confirms a write; the registry re-checks it
+/// and always refuses `raw/`.
+#[tauri::command]
+pub fn agent_tool_call(
+    state: tauri::State<VaultRoot>,
+    name: String,
+    args: serde_json::Value,
+    allow_write: bool,
+) -> Result<serde_json::Value, String> {
+    let root = require_root(&state)?;
+    crate::agent_tools::dispatch(&root.to_string_lossy(), &name, &args, allow_write)
+}
+
+/// One tool-calling turn for the in-app agent loop (HTTP providers only).
+#[tauri::command]
+pub async fn agent_chat(
+    request: providers::AgentChatRequest,
+) -> Result<providers::AgentTurn, String> {
+    let key = secrets::get_key(&request.provider_id)?;
+    providers::agent_chat(request, key).await
+}
+
 #[tauri::command]
 pub async fn list_provider_models(provider_id: String) -> Result<Vec<String>, String> {
     let key = if provider_id == "ollama" {
