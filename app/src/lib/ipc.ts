@@ -203,6 +203,26 @@ export interface AgentTurn {
   stop: string;
 }
 
+// --- Recurring schedules (Feature 7) ---
+
+export type ScheduleKind = "query" | "changed" | "stale" | "topic";
+
+export interface Schedule {
+  id: string;
+  title: string;
+  kind: ScheduleKind;
+  prompt: string;
+  /** "daily" | "weekly[:dow]" | "monthly[:dom]" | "every:<n>h". */
+  cadence: string;
+  output_dir: string;
+  provider: string;
+  model: string;
+  notify: boolean;
+  /** Epoch seconds of the last successful run, or null if never run. */
+  last_run: number | null;
+  enabled: boolean;
+}
+
 export interface ChatRequest {
   provider_id: string;
   model: string;
@@ -346,6 +366,13 @@ export const ipc = {
     invoke<unknown>("agent_tool_call", { name, args, allowWrite }),
   agentChat: (request: AgentChatRequest) =>
     invoke<AgentTurn>("agent_chat", { request }),
+  // Recurring schedules (Feature 7).
+  listSchedules: (vault: string) =>
+    invoke<Schedule[]>("list_schedules", { vault }),
+  upsertSchedule: (vault: string, schedule: Schedule) =>
+    invoke<Schedule[]>("upsert_schedule", { vault, schedule }),
+  deleteSchedule: (vault: string, id: string) =>
+    invoke<Schedule[]>("delete_schedule", { vault, id }),
   listProviderModels: (providerId: string) =>
     invoke<string[]>("list_provider_models", { providerId }),
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),

@@ -18,6 +18,7 @@ export interface Strings {
   nav_provenance: string;
   nav_tags: string;
   nav_study: string;
+  nav_schedules: string;
   nav_settings: string;
   folder__root: string;
   folder_sources: string;
@@ -377,6 +378,28 @@ export interface Strings {
   pdf_loading?: string;
   pdf_error?: string;
   pdf_highlight_cite?: string;
+  // Schedules (Feature 7).
+  sc_title?: string;
+  sc_lede?: string;
+  sc_new?: string;
+  sc_empty?: string;
+  sc_run_now?: string;
+  sc_running?: string;
+  sc_edit?: string;
+  sc_last_run?: string;
+  sc_never?: string;
+  sc_done?: string;
+  sc_open?: string;
+  sc_f_title?: string;
+  sc_f_kind?: string;
+  sc_f_cadence?: string;
+  sc_f_prompt?: string;
+  sc_f_topic?: string;
+  sc_f_enabled?: string;
+  sc_f_notify?: string;
+  sc_f_notify_hint?: string;
+  sc_f_save?: string;
+  sc_f_cancel?: string;
   // Ingest page.
   ing_title_label?: string;
   ing_title_ph?: string;
@@ -480,6 +503,7 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_provenance: "Provenance",
     nav_tags: "Tags",
     nav_study: "Study",
+    nav_schedules: "Schedules",
     nav_settings: "Settings",
     folder__root: "Root",
     folder_sources: "Sources",
@@ -852,6 +876,27 @@ export const STRINGS: Record<Lang, Strings> = {
     pdf_loading: "Loading PDF…",
     pdf_error: "Could not open this PDF.",
     pdf_highlight_cite: "Highlight & cite",
+    sc_title: "Schedules",
+    sc_lede: "Recurring digests written into your vault while the app is open.",
+    sc_new: "New schedule",
+    sc_empty: "No schedules yet.",
+    sc_run_now: "Run now",
+    sc_running: "Running…",
+    sc_edit: "Edit",
+    sc_last_run: "last run {t}",
+    sc_never: "never run",
+    sc_done: "Digest written.",
+    sc_open: "Open digest",
+    sc_f_title: "Title (e.g. Weekly review)",
+    sc_f_kind: "Kind",
+    sc_f_cadence: "Cadence",
+    sc_f_prompt: "Prompt to run over the wiki",
+    sc_f_topic: "Topic to track",
+    sc_f_enabled: "Enabled",
+    sc_f_notify: "Notify",
+    sc_f_notify_hint: "Native notification when a run finishes (opt-in)",
+    sc_f_save: "Save",
+    sc_f_cancel: "Cancel",
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
@@ -956,6 +1001,7 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_provenance: "출처",
     nav_tags: "태그",
     nav_study: "학습",
+    nav_schedules: "스케줄",
     nav_settings: "설정",
     folder__root: "루트",
     folder_sources: "소스",
@@ -1327,6 +1373,27 @@ export const STRINGS: Record<Lang, Strings> = {
     pdf_loading: "PDF 불러오는 중…",
     pdf_error: "이 PDF를 열 수 없습니다.",
     pdf_highlight_cite: "하이라이트 & 인용",
+    sc_title: "스케줄",
+    sc_lede: "앱이 열려 있는 동안 볼트에 정기 다이제스트를 작성합니다.",
+    sc_new: "새 스케줄",
+    sc_empty: "아직 스케줄이 없습니다.",
+    sc_run_now: "지금 실행",
+    sc_running: "실행 중…",
+    sc_edit: "편집",
+    sc_last_run: "마지막 실행 {t}",
+    sc_never: "실행된 적 없음",
+    sc_done: "다이제스트 작성됨.",
+    sc_open: "다이제스트 열기",
+    sc_f_title: "제목 (예: 주간 리뷰)",
+    sc_f_kind: "종류",
+    sc_f_cadence: "주기",
+    sc_f_prompt: "위키에 실행할 프롬프트",
+    sc_f_topic: "추적할 주제",
+    sc_f_enabled: "사용",
+    sc_f_notify: "알림",
+    sc_f_notify_hint: "실행 완료 시 네이티브 알림(옵트인)",
+    sc_f_save: "저장",
+    sc_f_cancel: "취소",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
@@ -1431,6 +1498,7 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_provenance: "出典",
     nav_tags: "タグ",
     nav_study: "学習",
+    nav_schedules: "スケジュール",
     nav_settings: "設定",
     folder__root: "ルート",
     folder_sources: "ソース",
@@ -1757,6 +1825,27 @@ export const STRINGS: Record<Lang, Strings> = {
     pdf_loading: "PDF を読み込み中…",
     pdf_error: "この PDF を開けませんでした。",
     pdf_highlight_cite: "ハイライトして引用",
+    sc_title: "スケジュール",
+    sc_lede: "アプリが開いている間、ボルトに定期ダイジェストを書き込みます。",
+    sc_new: "新規スケジュール",
+    sc_empty: "スケジュールはまだありません。",
+    sc_run_now: "今すぐ実行",
+    sc_running: "実行中…",
+    sc_edit: "編集",
+    sc_last_run: "最終実行 {t}",
+    sc_never: "未実行",
+    sc_done: "ダイジェストを書き込みました。",
+    sc_open: "ダイジェストを開く",
+    sc_f_title: "タイトル（例: 週次レビュー）",
+    sc_f_kind: "種類",
+    sc_f_cadence: "頻度",
+    sc_f_prompt: "ウィキに実行するプロンプト",
+    sc_f_topic: "追跡するトピック",
+    sc_f_enabled: "有効",
+    sc_f_notify: "通知",
+    sc_f_notify_hint: "実行完了時にネイティブ通知（オプトイン）",
+    sc_f_save: "保存",
+    sc_f_cancel: "キャンセル",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",

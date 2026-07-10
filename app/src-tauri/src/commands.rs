@@ -512,6 +512,37 @@ pub async fn chat_complete(request: ChatRequest) -> Result<ChatResponse, String>
     providers::chat_complete(request, key).await
 }
 
+// ---- Recurring schedules (Feature 7) ----
+
+#[tauri::command]
+pub fn list_schedules(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+) -> Result<Vec<crate::schedules::Schedule>, String> {
+    let root = confine_root(&state, &vault)?;
+    Ok(crate::schedules::load(std::path::Path::new(&root)))
+}
+
+#[tauri::command]
+pub fn upsert_schedule(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    schedule: crate::schedules::Schedule,
+) -> Result<Vec<crate::schedules::Schedule>, String> {
+    let root = confine_root(&state, &vault)?;
+    crate::schedules::upsert(std::path::Path::new(&root), schedule)
+}
+
+#[tauri::command]
+pub fn delete_schedule(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    id: String,
+) -> Result<Vec<crate::schedules::Schedule>, String> {
+    let root = confine_root(&state, &vault)?;
+    crate::schedules::delete(std::path::Path::new(&root), &id)
+}
+
 // ---- In-app agent (Feature 4) ----
 
 /// The agent tool schemas the model may call (read tools + gated write tools).

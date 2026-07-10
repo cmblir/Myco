@@ -174,6 +174,12 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
         <div className="nav-group">
           <div className="nav-group-label">{t.nav_tools}</div>
           <NavItem
+            label={t.nav_schedules}
+            icon="history"
+            active={route === "schedules"}
+            onClick={() => setRoute("schedules")}
+          />
+          <NavItem
             label={t.nav_settings}
             icon="settings"
             active={route === "settings"}

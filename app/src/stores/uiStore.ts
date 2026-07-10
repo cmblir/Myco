@@ -21,6 +21,7 @@ export type RouteId =
   | "provenance"
   | "tags"
   | "study"
+  | "schedules"
   | "settings"
   | `page:${string}`;
 

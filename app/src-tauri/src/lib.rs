@@ -18,6 +18,7 @@ pub mod parser;
 pub mod provenance;
 pub mod providers;
 pub mod sample_vault;
+pub mod schedules;
 pub mod secrets;
 pub mod settings;
 pub mod vault;
@@ -83,6 +84,9 @@ pub fn run() {
             commands::embeddings_status,
             commands::semantic_edges,
             commands::fetch_youtube_transcript,
+            commands::list_schedules,
+            commands::upsert_schedule,
+            commands::delete_schedule,
         ])
         .setup(|_app| Ok(()))
         .build(tauri::generate_context!())

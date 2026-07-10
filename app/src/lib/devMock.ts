@@ -161,6 +161,9 @@ const MOCK_SIDECAR = JSON.stringify({
   ],
 });
 
+// Feature 7 — in-memory schedules so the Schedules route + Run now work in mock.
+let mockSchedules: { id: string }[] = [];
+
 function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
@@ -423,6 +426,20 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     }
     case "scan_provenance":
       return Promise.resolve(provenance());
+    case "list_schedules":
+      return Promise.resolve(mockSchedules);
+    case "upsert_schedule": {
+      const s = args.schedule as { id: string };
+      const i = mockSchedules.findIndex((x) => x.id === s.id);
+      if (i >= 0) mockSchedules[i] = s;
+      else mockSchedules.push(s);
+      return Promise.resolve([...mockSchedules]);
+    }
+    case "delete_schedule": {
+      const id = String(args.id ?? "");
+      mockSchedules = mockSchedules.filter((x) => x.id !== id);
+      return Promise.resolve([...mockSchedules]);
+    }
     case "get_settings":
       return Promise.resolve(
         AGENT_MODE

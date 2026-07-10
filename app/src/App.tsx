@@ -18,12 +18,14 @@ import PageSettings from "./pages/PageSettings";
 import PageReader from "./pages/PageReader";
 import PageTags from "./pages/PageTags";
 import PageStudy from "./pages/PageStudy";
+import PageSchedules from "./pages/PageSchedules";
 import { STRINGS } from "./lib/i18n";
 import { useUIStore } from "./stores/uiStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { getLastVaultPath, useVaultStore } from "./stores/vaultStore";
 import { useAutoIngestScheduler } from "./lib/autoIngest";
 import { useAutoReflectScheduler } from "./lib/autoReflect";
+import { useScheduleTimer } from "./lib/scheduleTimer";
 import { useIngestStore } from "./stores/ingestStore";
 import { ipc } from "./lib/ipc";
 import type { FileNode } from "./lib/ipc";
@@ -104,6 +106,9 @@ export default function App(): JSX.Element {
     settings?.auto_reflect_interval_min ?? 180,
     currentVault?.path,
   );
+
+  // Recurring digest schedules while the app is open (Feature 7).
+  useScheduleTimer(currentVault?.path);
 
   // Auto-refresh the file tree + link graph so EXTERNAL changes (edits in
   // Obsidian/Finder, files written outside in-app operations) appear without a
@@ -286,6 +291,7 @@ export default function App(): JSX.Element {
   else if (route === "provenance") body = <PageProvenance t={t} />;
   else if (route === "tags") body = <PageTags t={t} />;
   else if (route === "study") body = <PageStudy t={t} />;
+  else if (route === "schedules") body = <PageSchedules t={t} />;
   else if (route === "settings") body = <PageSettings t={t} />;
   else if (route.startsWith("page:"))
     body = <PageReader t={t} pageRoute={route.slice(5)} />;
