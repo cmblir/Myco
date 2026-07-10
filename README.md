@@ -174,7 +174,7 @@ Vault stats (file count, resolved wikilinks, ratio), recent git activity, jump-b
 3. Claude reads the source, finds affected wiki pages, writes citations, creates/updates `wiki/source-<slug>.md`, appends `wiki/log.md`, and files an `ingest-reports/<datetime>-<slug>.md` with the WHY.
 4. The tree and graph refresh.
 
-**Inputs are multimodal** — PDFs, plain text, Office documents (`.docx` / `.pptx`), spreadsheets (`.xlsx` / `.xls` / `.ods`), and **YouTube URLs** (the transcript is fetched from the watch page) are all reduced to markdown before step 1. A **local embedding index** (bundled SEED model, or an opt-in provider) is built over the wiki so Ask retrieves the most relevant pages, the command palette surfaces semantic hits, and each page gets a **Related notes** panel; reindex from Settings.
+**Inputs are multimodal** — PDFs, plain text, Office documents (`.docx` / `.pptx`), spreadsheets (`.xlsx` / `.xls` / `.ods`), **images** (described by a vision provider — Anthropic / OpenAI / Google API), **audio & video** (transcribed by an installed `whisper` CLI — openai-whisper or whisper.cpp; no model is bundled), and **YouTube URLs** (the transcript is fetched from the watch page) are all reduced to markdown before step 1. A **local embedding index** (bundled SEED model, or an opt-in provider) is built over the wiki so Ask retrieves the most relevant pages, the command palette surfaces semantic hits, and each page gets a **Related notes** panel; reindex from Settings.
 
 ### Ask
 
