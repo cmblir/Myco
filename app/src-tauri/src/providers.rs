@@ -1056,6 +1056,187 @@ async fn agent_chat_openai(
     Ok(parse_openai_agent_turn(&v))
 }
 
+// ================= Vision: describe an image (Feature 2) ==================
+//
+// One-shot "describe this image" over the vision-capable HTTP providers, so an
+// image dropped into Ingest becomes text the normal pipeline can wiki-ify. Pure
+// body builders + parsers (cargo-tested without a key); the live call needs an
+// API key. CLI/Ollama/builtin providers are rejected explicitly.
+
+/// Minimal standard-base64 encoder (no external crate).
+pub fn b64_encode(bytes: &[u8]) -> String {
+    const T: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let b = [
+            chunk[0],
+            *chunk.get(1).unwrap_or(&0),
+            *chunk.get(2).unwrap_or(&0),
+        ];
+        let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
+        out.push(T[((n >> 18) & 63) as usize] as char);
+        out.push(T[((n >> 12) & 63) as usize] as char);
+        out.push(if chunk.len() > 1 { T[((n >> 6) & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+    }
+    out
+}
+
+/// Guess an image media type from a file extension.
+pub fn image_media_type(ext: &str) -> &'static str {
+    match ext.to_ascii_lowercase().as_str() {
+        "png" => "image/png",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        _ => "image/jpeg",
+    }
+}
+
+pub fn build_anthropic_vision_body(
+    model: &str,
+    media_type: &str,
+    data_b64: &str,
+    prompt: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "model": model,
+        "max_tokens": 1024,
+        "messages": [{
+            "role": "user",
+            "content": [
+                { "type": "image", "source": { "type": "base64", "media_type": media_type, "data": data_b64 } },
+                { "type": "text", "text": prompt },
+            ],
+        }],
+    })
+}
+
+pub fn build_openai_vision_body(
+    model: &str,
+    media_type: &str,
+    data_b64: &str,
+    prompt: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "model": model,
+        "max_tokens": 1024,
+        "messages": [{
+            "role": "user",
+            "content": [
+                { "type": "text", "text": prompt },
+                { "type": "image_url", "image_url": { "url": format!("data:{media_type};base64,{data_b64}") } },
+            ],
+        }],
+    })
+}
+
+pub fn build_google_vision_body(
+    media_type: &str,
+    data_b64: &str,
+    prompt: &str,
+) -> serde_json::Value {
+    serde_json::json!({
+        "contents": [{
+            "parts": [
+                { "inline_data": { "mime_type": media_type, "data": data_b64 } },
+                { "text": prompt },
+            ],
+        }],
+    })
+}
+
+pub async fn describe_image(
+    provider_id: &str,
+    model: &str,
+    image_bytes: &[u8],
+    media_type: &str,
+    prompt: &str,
+    api_key: Option<String>,
+) -> Result<String, String> {
+    let data = b64_encode(image_bytes);
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(DEFAULT_TIMEOUT_SECS))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| format!("http client: {e}"))?;
+    match provider_id {
+        "anthropic-api" => {
+            let key = api_key.ok_or_else(|| "missing Anthropic API key".to_string())?;
+            let body = build_anthropic_vision_body(model, media_type, &data, prompt);
+            let url = url_anthropic();
+            let resp = send_with_retry(|| {
+                client
+                    .post(&url)
+                    .header("x-api-key", &key)
+                    .header("anthropic-version", "2023-06-01")
+                    .header("content-type", "application/json")
+                    .json(&body)
+            })
+            .await
+            .map_err(|e| format!("anthropic request: {e}"))?;
+            let status = resp.status();
+            let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
+            if !status.is_success() {
+                return Err(format!("anthropic {}: {}", status, String::from_utf8_lossy(&bytes)));
+            }
+            let v: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            Ok(v.get("content")
+                .and_then(|c| c.as_array())
+                .map(|blocks| {
+                    blocks
+                        .iter()
+                        .filter_map(|b| b.get("text").and_then(|t| t.as_str()))
+                        .collect::<Vec<_>>()
+                        .join("")
+                })
+                .unwrap_or_default())
+        }
+        "openai-api" => {
+            let key = api_key.ok_or_else(|| "missing OpenAI API key".to_string())?;
+            let body = build_openai_vision_body(model, media_type, &data, prompt);
+            let url = url_openai();
+            let resp = send_with_retry(|| client.post(&url).bearer_auth(&key).json(&body))
+                .await
+                .map_err(|e| format!("openai request: {e}"))?;
+            let status = resp.status();
+            let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
+            if !status.is_success() {
+                return Err(format!("openai {}: {}", status, String::from_utf8_lossy(&bytes)));
+            }
+            let v: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            Ok(v.pointer("/choices/0/message/content").and_then(|c| c.as_str()).unwrap_or("").to_string())
+        }
+        "google-api" => {
+            let key = api_key.ok_or_else(|| "missing Google API key".to_string())?;
+            let body = build_google_vision_body(media_type, &data, prompt);
+            let url = url_google(model);
+            let resp = send_with_retry(|| client.post(&url).header("x-goog-api-key", &key).json(&body))
+                .await
+                .map_err(|e| format!("gemini request: {e}"))?;
+            let status = resp.status();
+            let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
+            if !status.is_success() {
+                return Err(format!("gemini {}: {}", status, String::from_utf8_lossy(&bytes)));
+            }
+            let v: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
+            Ok(v.pointer("/candidates/0/content/parts")
+                .and_then(|p| p.as_array())
+                .map(|parts| {
+                    parts
+                        .iter()
+                        .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+                        .collect::<Vec<_>>()
+                        .join("")
+                })
+                .unwrap_or_default())
+        }
+        other => Err(format!(
+            "image ingest needs a vision-capable provider (Anthropic API, OpenAI API, \
+             or Google AI). '{other}' can't describe images — pick one under Settings → Model."
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::http_url_or;
@@ -1222,5 +1403,47 @@ mod tests {
         let turn = parse_openai_agent_turn(&v);
         assert_eq!(turn.text, "the answer is 42");
         assert!(turn.tool_calls.is_empty());
+    }
+
+    use super::{
+        b64_encode, build_anthropic_vision_body, build_google_vision_body,
+        build_openai_vision_body, image_media_type,
+    };
+
+    #[test]
+    fn b64_encode_matches_known_vectors() {
+        assert_eq!(b64_encode(b""), "");
+        assert_eq!(b64_encode(b"f"), "Zg==");
+        assert_eq!(b64_encode(b"fo"), "Zm8=");
+        assert_eq!(b64_encode(b"foo"), "Zm9v");
+        assert_eq!(b64_encode(b"foob"), "Zm9vYg==");
+        assert_eq!(b64_encode(b"hello"), "aGVsbG8=");
+    }
+
+    #[test]
+    fn image_media_type_from_ext() {
+        assert_eq!(image_media_type("PNG"), "image/png");
+        assert_eq!(image_media_type("webp"), "image/webp");
+        assert_eq!(image_media_type("jpg"), "image/jpeg");
+        assert_eq!(image_media_type("jpeg"), "image/jpeg");
+    }
+
+    #[test]
+    fn vision_bodies_shape_per_provider() {
+        let a = build_anthropic_vision_body("m", "image/png", "AAA", "describe");
+        assert_eq!(a["messages"][0]["content"][0]["type"], "image");
+        assert_eq!(a["messages"][0]["content"][0]["source"]["media_type"], "image/png");
+        assert_eq!(a["messages"][0]["content"][1]["text"], "describe");
+
+        let o = build_openai_vision_body("m", "image/jpeg", "BBB", "describe");
+        assert_eq!(o["messages"][0]["content"][1]["type"], "image_url");
+        assert_eq!(
+            o["messages"][0]["content"][1]["image_url"]["url"],
+            "data:image/jpeg;base64,BBB"
+        );
+
+        let g = build_google_vision_body("image/gif", "CCC", "describe");
+        assert_eq!(g["contents"][0]["parts"][0]["inline_data"]["mime_type"], "image/gif");
+        assert_eq!(g["contents"][0]["parts"][1]["text"], "describe");
     }
 }

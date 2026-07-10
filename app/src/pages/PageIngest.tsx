@@ -10,6 +10,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
+import { sourceTextFor } from "../lib/mediaIngest";
 import { formatElapsed } from "../lib/time";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
@@ -78,7 +79,11 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
           const base = first.split(/[\\/]/).pop() ?? "";
           setTitle((prev) => prev || base.replace(/\.[^.]+$/, ""));
           try {
-            const text = await ipc.readExternalText(first);
+            const s = useSettingsStore.getState().settings;
+            const text = await sourceTextFor(first, {
+              provider: s?.query_provider ?? "",
+              model: s?.query_model ?? "",
+            });
             setBody(text);
           } catch (err) {
             setDropError(`Could not read ${first}: ${String(err)}`);
@@ -134,7 +139,10 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
     const base = path.split(/[\\/]/).pop() ?? "";
     setTitle((prev) => prev || base.replace(/\.[^.]+$/, ""));
     try {
-      const text = await ipc.readExternalText(path);
+      const text = await sourceTextFor(path, {
+        provider: settings?.query_provider ?? "",
+        model: settings?.query_model ?? "",
+      });
       setBody(text);
     } catch (err) {
       setDropError(`Could not read ${path}: ${String(err)}`);

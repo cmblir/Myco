@@ -275,6 +275,14 @@ export const ipc = {
     invoke<string>("read_external_text", { path }),
   fetchYoutubeTranscript: (url: string) =>
     invoke<string>("fetch_youtube_transcript", { url }),
+  /** Describe an image with a vision provider (Feature 2 image ingest). */
+  describeImage: (provider: string, model: string, path: string, prompt: string) =>
+    invoke<string>("describe_image", { provider, model, path, prompt }),
+  /** Transcribe an audio/video file via an installed whisper CLI (Feature 2). */
+  transcribeMedia: (path: string) =>
+    invoke<string>("transcribe_media", { path }),
+  /** Whether a whisper-family CLI is on PATH (gates the media-ingest button). */
+  whisperCheck: () => invoke<ClaudeStatus>("whisper_check"),
   buildLinkGraph: (root: string) =>
     invoke<Adjacency>("build_link_graph", { root }),
   searchVault: (query: string, limit?: number) =>
@@ -324,6 +332,22 @@ export const ipc = {
             "ods",
             "docx",
             "pptx",
+            // Images (vision ingest) + audio/video (whisper) — Feature 2.
+            "png",
+            "jpg",
+            "jpeg",
+            "gif",
+            "webp",
+            "mp3",
+            "m4a",
+            "wav",
+            "flac",
+            "ogg",
+            "aac",
+            "mp4",
+            "mov",
+            "webm",
+            "mkv",
           ],
         },
       ],

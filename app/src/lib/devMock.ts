@@ -548,6 +548,17 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       }
       return Promise.resolve(hits);
     }
+    case "describe_image":
+      return Promise.resolve(
+        "(mock) Image description: a labeled diagram of the transformer architecture — " +
+          "encoder/decoder stacks, multi-head attention blocks, and positional encodings.",
+      );
+    case "whisper_check":
+      return Promise.resolve({ installed: true, version: "whisper 1.0", path: "/usr/local/bin/whisper" });
+    case "transcribe_media":
+      return Promise.resolve(
+        "(mock) Transcript: today we cover attention and how scaled dot-product attention works.",
+      );
     case "fetch_youtube_transcript":
       return Promise.resolve(
         "hello and welcome to this talk\ntoday we cover transformers and attention\n" +

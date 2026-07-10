@@ -23,6 +23,7 @@ pub mod secrets;
 pub mod settings;
 pub mod vault;
 pub mod vector_index;
+pub mod whisper;
 pub mod youtube;
 
 pub fn run() {
@@ -44,6 +45,9 @@ pub fn run() {
             commands::write_run_log,
             commands::scaffold_obsidian_vault,
             commands::read_external_text,
+            commands::describe_image,
+            commands::whisper_check,
+            commands::transcribe_media,
             commands::create_file,
             commands::create_folder,
             commands::delete_path,

@@ -203,6 +203,52 @@ pub fn write_file(
     vault::write_file(&p.to_string_lossy(), &content)
 }
 
+/// Describe an image with a vision-capable provider (Feature 2 image ingest),
+/// turning a dropped image into text the ingest pipeline can wiki-ify. Not
+/// vault-confined (it's an external import, like read_external_text); size-
+/// capped. The API key stays server-side (keychain).
+#[tauri::command]
+pub async fn describe_image(
+    provider: String,
+    model: String,
+    path: String,
+    prompt: String,
+) -> Result<String, String> {
+    const MAX_IMAGE_BYTES: u64 = 20 * 1024 * 1024;
+    let p = std::path::Path::new(&path);
+    if !p.is_file() {
+        return Err(format!("not a file: {path}"));
+    }
+    let meta = std::fs::metadata(p).map_err(|e| format!("stat failed: {e}"))?;
+    if meta.len() > MAX_IMAGE_BYTES {
+        return Err("image is too large (limit 20 MB)".into());
+    }
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let media_type = providers::image_media_type(&ext);
+    let bytes = std::fs::read(p).map_err(|e| format!("read failed: {e}"))?;
+    let key = secrets::get_key(&provider)?;
+    providers::describe_image(&provider, &model, &bytes, media_type, &prompt, key).await
+}
+
+/// Whether a whisper CLI is installed (gates the media-ingest affordance).
+#[tauri::command]
+pub fn whisper_check() -> CliStatus {
+    crate::whisper::check()
+}
+
+/// Transcribe an audio/video file with an installed whisper CLI (Feature 2).
+/// Runs off the async pool so the long transcription doesn't block the UI.
+#[tauri::command]
+pub async fn transcribe_media(path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || crate::whisper::transcribe(&path))
+        .await
+        .map_err(|e| format!("transcription task failed: {e}"))?
+}
+
 /// Extract a dropped/picked file's text for ingest (not restricted to inside the
 /// vault — it's an external import). PDF and spreadsheets (xlsx/xls/ods) are
 /// parsed to text; CSV and other text-like files are read as-is. Refuses files
