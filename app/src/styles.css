@@ -920,7 +920,10 @@ select {
 }
 
 .muted {
-  color: var(--ink-4);
+  /* --ink-4 (#9b9a93) is only ~2.8:1 on the light background — below WCAG AA.
+     --ink-3 (#6f6e69) is ~5.2:1 (AA pass) and still reads as muted; in dark
+     theme --ink-3 is a legible light grey. */
+  color: var(--ink-3);
 }
 .divider {
   height: 1px;
