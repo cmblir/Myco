@@ -190,8 +190,11 @@ function withVaultContext(
 ): SimpleMessage[] {
   const block =
     `Below is the current content of the user's Memex vault (markdown files). ` +
-    `Answer using only this content and cite pages as [[page-stem]]; if the ` +
-    `answer is not in the vault, say so.\n\n${ctx}`;
+    `Answer the question using ONLY the content below. Do NOT use outside ` +
+    `knowledge, and do NOT invent pages, files, facts, or events. If the answer ` +
+    `is not present in the content below, reply that you could not find it in ` +
+    `the wiki (in the user's language) — do not guess. Cite pages you use as ` +
+    `[[page-stem]].\n\n${ctx}`;
   const sysIdx = messages.findIndex((m) => m.role === "system");
   if (sysIdx >= 0) {
     return messages.map((m, i) =>

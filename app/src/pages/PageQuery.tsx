@@ -12,6 +12,8 @@ import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { complete } from "../lib/chat";
+import { ipc } from "../lib/ipc";
+import { isActivityQuery, formatActivityAnswer } from "../lib/queryIntent";
 import { flattenMarkdown, stem } from "../lib/graphData";
 import Viewer from "../components/Viewer";
 import AgentPanel from "../components/AgentPanel";
@@ -54,6 +56,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const fileTree = useVaultStore((s) => s.fileTree);
   const adjacency = useVaultStore((s) => s.adjacency);
   const setRoute = useUIStore((s) => s.setRoute);
+  const lang = useUIStore((s) => s.lang);
   const settings = useSettingsStore((s) => s.settings);
   const [mode, setMode] = useState<"ask" | "agent">("ask");
   const [q, setQ] = useState("");
@@ -96,6 +99,25 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
     setBusy(true);
     const pending: ChatTurn = { q: question, a: "" };
     setTurns((prev) => [...prev, pending]);
+
+    // "What did I do recently / what changed" is a git-history question, not a
+    // wiki-content one — answering it from git_log is factual, whereas sending
+    // it to the (small, offline) model made it confabulate. Route it directly.
+    if (isActivityQuery(question)) {
+      try {
+        const commits = await ipc.gitLog(currentVault.path, 20).catch(() => []);
+        const answer = formatActivityAnswer(commits, lang);
+        setTurns((prev) =>
+          prev.map((turn, i) =>
+            i === prev.length - 1 ? { ...turn, a: answer } : turn,
+          ),
+        );
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     try {
       const content = await complete({
         task: "query",
@@ -195,6 +217,20 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
           {(t.q_via ?? "via {provider} · {model}")
             .replace("{provider}", settings.query_provider)
             .replace("{model}", settings.query_model)}
+        </div>
+      ) : null}
+      {settings?.query_provider === "builtin-local" && mode === "ask" ? (
+        <div className="q-builtin-note muted" style={{ fontSize: 12, marginTop: 4 }}>
+          <Icon name="info" size={12} />{" "}
+          {t.q_builtin_note ??
+            "The built-in offline model is small and can be inaccurate. For reliable answers, pick Claude or another provider."}{" "}
+          <button
+            className="btn btn-ghost"
+            style={{ fontSize: 12, padding: "2px 8px" }}
+            onClick={() => setRoute("settings")}
+          >
+            {t.q_open_model_settings ?? "Model settings"} →
+          </button>
         </div>
       ) : null}
 

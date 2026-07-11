@@ -409,6 +409,8 @@ export interface Strings {
   ing_working?: string;
   // Query page.
   q_via?: string;
+  q_builtin_note?: string;
+  q_open_model_settings?: string;
   q_you?: string;
   // Sidebar.
   sb_new_note?: string;
@@ -907,6 +909,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
     q_via: "via {provider} · {model}",
+    q_builtin_note:
+      "The built-in offline model is small and can be inaccurate. For reliable answers, pick Claude or another provider.",
+    q_open_model_settings: "Model settings",
     q_you: "you",
     sb_new_note: "New note",
     sb_new_folder: "New folder",
@@ -1407,6 +1412,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
     q_via: "{provider} · {model} 사용",
+    q_builtin_note:
+      "내장 오프라인 모델은 작아서 부정확할 수 있습니다. 정확한 답변은 Claude 등 다른 프로바이더를 선택하세요.",
+    q_open_model_settings: "모델 설정",
     q_you: "나",
     sb_new_note: "새 노트",
     sb_new_folder: "새 폴더",
@@ -1862,6 +1870,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",
     q_via: "{provider} · {model} を使用",
+    q_builtin_note:
+      "内蔵のオフラインモデルは小さく不正確な場合があります。正確な回答には Claude など他のプロバイダーを選んでください。",
+    q_open_model_settings: "モデル設定",
     q_you: "あなた",
     sb_new_note: "新規ノート",
     sb_new_folder: "新規フォルダ",
