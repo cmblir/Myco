@@ -23,7 +23,12 @@
   --ink: #181715;
   --ink-2: #37352f;
   --ink-3: #6f6e69;
-  --ink-4: #9b9a93;
+  /* --ink-4 is the "secondary text" tone used by nav-group labels, .kbd,
+     .stat-sub, .meta, proj-meta, etc. The old #9b9a93 was only ~2.6–2.8:1 on
+     the light backgrounds — below WCAG AA (4.5:1) for this small (11–12px)
+     text. Darkened to ~5:1 so all of it is legible; it still reads as muted
+     against the near-black --ink. (Dark theme overrides --ink-4 separately.) */
+  --ink-4: #6b6a64;
   --ink-5: #cfcdc5;
 
   --accent: #181715;
