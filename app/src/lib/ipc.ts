@@ -411,7 +411,7 @@ export const ipc = {
     invoke<string>("mcp_install", { vaultPath }),
   mcpRegister: (vaultPath: string) =>
     invoke<string>("mcp_register", { vaultPath }),
-  // Embedded local model (bundled SEED 0.5B) — offline, no key. First call
+  // Embedded local model (bundled Gemma 3 1B) — offline, no key. First call
   // lazily loads the weights, so it can take a few extra seconds.
   localClassify: (note: string) => invoke<string>("local_classify", { note }),
   localQuery: (prompt: string, maxTokens?: number) =>

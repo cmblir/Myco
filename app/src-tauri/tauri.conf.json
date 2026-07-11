@@ -38,8 +38,8 @@
       "../../mcp-server/project_registry.py": "mcp-server/project_registry.py",
       "../../mcp-server/requirements.txt": "mcp-server/requirements.txt",
       "../../automation/digest.py": "automation/digest.py",
-      "models/seed-0.5b-q4_k_m.gguf": "models/seed-0.5b-q4_k_m.gguf",
-      "models/LICENSE-hyperclovax-seed.txt": "models/LICENSE-hyperclovax-seed.txt"
+      "models/gemma-3-1b-it-q4_k_m.gguf": "models/gemma-3-1b-it-q4_k_m.gguf",
+      "models/LICENSE-gemma.txt": "models/LICENSE-gemma.txt"
     },
     "icon": [
       "icons/32x32.png",

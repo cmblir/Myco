@@ -37,8 +37,8 @@ fn require_root(state: &tauri::State<VaultRoot>) -> Result<PathBuf, String> {
     state.get().ok_or_else(|| "no vault is open".to_string())
 }
 
-/// Lazily-loaded embedded model (bundled SEED 0.5B GGUF). `None` until the
-/// first local_* command; the 412 MB weights must not tax startup or RAM when
+/// Lazily-loaded embedded model (bundled Gemma 3 1B GGUF). `None` until the
+/// first local_* command; the 769 MB weights must not tax startup or RAM when
 /// the feature is unused. Arc so inference can run on a blocking thread.
 #[derive(Default, Clone)]
 pub struct LocalLlmState(Arc<Mutex<Option<LocalLlm>>>);
@@ -46,7 +46,7 @@ pub struct LocalLlmState(Arc<Mutex<Option<LocalLlm>>>);
 /// Bundled model path: the packaged resource dir, falling back to the source
 /// tree in dev (`cargo tauri dev` may run before resources are staged).
 fn local_model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    const REL: &str = "models/seed-0.5b-q4_k_m.gguf";
+    const REL: &str = "models/gemma-3-1b-it-q4_k_m.gguf";
     if let Ok(res) = app.path().resource_dir() {
         let p = res.join(REL);
         if p.is_file() {
@@ -57,7 +57,7 @@ fn local_model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     if dev.is_file() {
         return Ok(dev);
     }
-    Err("bundled model not found (models/seed-0.5b-q4_k_m.gguf)".into())
+    Err("bundled model not found (models/gemma-3-1b-it-q4_k_m.gguf)".into())
 }
 
 /// Run `f` against the lazily-loaded local model on a blocking thread —
@@ -765,7 +765,7 @@ pub async fn mcp_register(app: tauri::AppHandle, vault_path: String) -> Result<S
 // ---------------------------------------------------------------------------
 // Semantic layer (Feature 1): embed vault pages into an on-disk vector index and
 // serve semantic search / related-pages. Embedding runs offline via the bundled
-// SEED model ("builtin-local") or an "ollama" provider; more providers later.
+// Gemma model ("builtin-local") or an "ollama" provider; more providers later.
 // ---------------------------------------------------------------------------
 
 use crate::embeddings;
@@ -865,6 +865,13 @@ pub async fn semantic_search(
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
     let store = VectorStore::load(&index_path);
     if store.records.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Stale-index guard: after an embedding-model change (e.g. the bundled
+    // model swap) the stored vectors live in a different space than the query
+    // embedding — return empty (reads as "reindex needed") instead of cosining
+    // across incompatible spaces.
+    if store.model != format!("{provider}:{model}") {
         return Ok(Vec::new());
     }
     let mut q = embed_texts(app, llm, &provider, &model, vec![query]).await?;

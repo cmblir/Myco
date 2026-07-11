@@ -20,7 +20,7 @@ together yourself:
   (no API key; they use your existing subscriptions, like the `claude`
   CLI). Pick a different model for ingest vs ask;
   keys live in your OS keychain.
-- **A built-in offline model** — HyperCLOVA X SEED 0.5B ships inside the
+- **A built-in offline model** — Gemma 3 1B ships inside the
   app and runs in-process (llama.cpp, Metal on Apple silicon). Zero setup,
   no key, works offline — for classification and light queries; use a
   cloud provider for high-quality ingest.
@@ -50,7 +50,7 @@ Settings → Account.
 | | |
 | --- | --- |
 | Ingest | Drop a file or paste raw text → Memex writes `raw/<slug>.md` → invokes the active model with the ingest workflow → Claude reads, summarises, extracts entities/concepts, cross-links existing pages, writes a `wiki/source-<slug>.md` summary, updates `index.md` + `log.md`, and files a WHY report in `ingest-reports/`. **Multimodal inputs:** PDF, plain text, Office documents (`.docx` / `.pptx`, parsed from OOXML), spreadsheets (`.xlsx` / `.xls` / `.ods`), **images** (described via a vision provider), **audio/video** (transcribed by an installed `whisper` CLI — none bundled), and **YouTube URLs** (transcript fetched from the watch page) all reduce to markdown before ingest |
-| Semantic search | A local embedding index over the wiki (bundled SEED model by default, or an opt-in provider) powers meaning-based lookup: the command palette (`⌘K`) surfaces semantic hits, Ask retrieves the top-K relevant pages instead of dumping the whole vault, and the Graph can overlay similarity edges. Reindex from Settings; the index is a plain rebuildable file under the app-data dir |
+| Semantic search | A local embedding index over the wiki (bundled Gemma model by default, or an opt-in provider) powers meaning-based lookup: the command palette (`⌘K`) surfaces semantic hits, Ask retrieves the top-K relevant pages instead of dumping the whole vault, and the Graph can overlay similarity edges. Reindex from Settings; the index is a plain rebuildable file under the app-data dir |
 | Related notes | Every page shows a "Related" panel — the nearest pages by embedding similarity, even when they aren't wikilinked |
 | Live ingest progress | With the Claude CLI provider, the run streams in real time (`--output-format stream-json`): a mission-control panel shows the current action, an interactive mini-galaxy of pages touched so far (live d3-force physics — new pages born at the hub, real wikilink edges, drag to tow, hover for path, click for an in-place markdown preview with an open-in-reader button), a scrolling activity feed, read/write counters and elapsed time — plus a **Cancel** button that kills the run. The run lives in a global store, so navigating away doesn't lose it; a Topbar chip keeps showing a spinner + elapsed (click to jump back), then flips to done/failed until you revisit the page. On the Graph page, nodes the run touches glow live — written pages gold, read pages ice blue, newest touch pulsing — and brand-new pages are born into the galaxy mid-run: each write triggers a debounced link rescan whose diff is injected into the live physics, so new stars bud off their neighbours and settle in real time. The tint persists after the run so you can see what changed. When the run finishes, the mission-control panel stays up as the result view — mini galaxy, feed and counters intact — until you start another ingest |
 | Ask | Question your wiki; the model answers with citations to vault pages. Answers render as markdown with clickable `[[wikilinks]]`, and every cited page appears in an interactive mini galaxy under the answer (drag, hover, click for an in-place preview) |
@@ -73,7 +73,7 @@ Settings → Account.
 
 Settings → Connections lets you connect any combination of:
 
-- **Built-in (offline)** — Powered by HyperCLOVA X. SEED 0.5B bundled in the app, in-process llama.cpp — no install, no key, offline. Model © NAVER Corp., HyperCLOVA X SEED Model License (text ships with the app).
+- **Built-in (offline)** — Gemma 3 1B bundled in the app, in-process llama.cpp — no install, no key, offline. Model © Google, provided under the Gemma Terms of Use (text ships with the app).
 - **Claude Code (CLI)** — uses your Pro/Max subscription. No key needed; just have `claude` on PATH.
 - **Anthropic API** — direct `/v1/messages`. Key from console.anthropic.com.
 - **OpenAI API** — `/v1/chat/completions`. Live model list fetched from `/v1/models`.

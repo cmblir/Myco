@@ -1,8 +1,9 @@
 //! Embedded local model — in-process llama.cpp inference over the bundled
-//! HyperCLOVA X SEED 0.5B GGUF. No daemon, no API key, no Python: this is the
-//! zero-setup, offline provider for CLASSIFICATION (note type) and light,
-//! language-matched QUERY. It is a 0.5B model — fluent Korean/English but weak
-//! on facts — so high-quality ingest stays on the paid providers.
+//! Gemma 3 1B GGUF (instruction-tuned, Q4_K_M). No daemon, no API key, no
+//! Python: this is the zero-setup, offline provider for CLASSIFICATION (note
+//! type) and light, language-matched QUERY. It is a 1B model — solidly
+//! multilingual but still weak on facts — so high-quality ingest stays on the
+//! paid providers.
 //!
 //! `LlamaBackend::init()` is process-global and must run exactly once, so a
 //! single `LocalLlm` is loaded into Tauri state at startup and reused; each call
@@ -19,7 +20,7 @@
 //! Classification uses greedy decoding + a short token cap + post-validation
 //! against the label set, NOT a GBNF grammar: the grammar sampler crashes in the
 //! vendored llama.cpp of llama-cpp-2 0.1.150 (`GGML_ASSERT(!stacks.empty())`,
-//! upstream PR #17869). SEED emits clean labels, so post-match is reliable.
+//! upstream PR #17869). The model emits clean labels, so post-match is reliable.
 
 use std::num::NonZeroU32;
 use std::path::Path;
@@ -260,7 +261,7 @@ impl LocalLlm {
     }
 
     /// Embed texts with the bundled model in embeddings mode (mean-pooled,
-    /// L2-normalized). Offline, no key — reuses the already-loaded SEED weights.
+    /// L2-normalized). Offline, no key — reuses the already-loaded Gemma weights.
     /// One fresh context per text (pooled output is read per sequence). Quality
     /// trails a dedicated embed model but needs zero extra assets.
     pub fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
@@ -332,14 +333,14 @@ mod tests {
         crate::embeddings::cosine(a, b)
     }
 
-    // E2E: load the bundled SEED model and embed. Ignored by default (loads a
-    // 412 MB model, ~seconds). Run with: cargo test --lib -- --ignored embed
+    // E2E: load the bundled Gemma model and embed. Ignored by default (loads a
+    // 769 MB model, ~seconds). Run with: cargo test --lib -- --ignored embed
     #[test]
     #[ignore]
-    fn seed_embeddings_are_meaningful() {
+    fn builtin_embeddings_are_meaningful() {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("models/seed-0.5b-q4_k_m.gguf");
-        let llm = LocalLlm::load(&path).expect("load seed model");
+            .join("models/gemma-3-1b-it-q4_k_m.gguf");
+        let llm = LocalLlm::load(&path).expect("load gemma model");
         let v = llm
             .embed(&[
                 "a domestic cat".to_string(),

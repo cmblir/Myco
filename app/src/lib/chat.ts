@@ -10,6 +10,7 @@
 //     instead of answering blind.
 
 import { ipc } from "./ipc";
+import { BUILTIN_MODEL } from "./providers";
 import { getBudgetThreshold, overBudget, recordUsage } from "./budget";
 
 export interface SimpleMessage {
@@ -102,7 +103,7 @@ export async function complete(args: CompleteArgs): Promise<string> {
     /* proceed without inlined context rather than blocking the request */
   }
 
-  // Embedded model (bundled SEED 0.5B): in-process, offline, no key. The
+  // Embedded model (bundled Gemma 3 1B): in-process, offline, no key. The
   // backend applies the model's own chat template, so pass plain content —
   // no "User:/Assistant:" role markers (they made the base LM continue the
   // transcript with fake turns). Light tasks only; ingest is rejected above.
@@ -160,7 +161,7 @@ async function semanticContext(
   const status = await ipc.embeddingsStatus().catch(() => null);
   if (!status || status.indexed_pages === 0) return "";
   const hits = await ipc
-    .semanticSearch(question, 12, "builtin-local", "")
+    .semanticSearch(question, 12, "builtin-local", BUILTIN_MODEL)
     .catch(() => []);
   if (hits.length === 0) return "";
   const seen = new Set<string>();

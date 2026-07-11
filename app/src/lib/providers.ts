@@ -10,6 +10,11 @@ import type { MemexSettings } from "./ipc";
 import { ipc } from "./ipc";
 import { useSettingsStore } from "../stores/settingsStore";
 
+// The bundled offline model's catalog id. Also used as the embedding-model
+// key ("builtin-local:<id>") so a bundled-model swap invalidates stale vector
+// indexes (see semantic_search's stale-index guard on the Rust side).
+export const BUILTIN_MODEL = "gemma-3-1b";
+
 export interface ProviderDef {
   id: ProviderId;
   flag: keyof MemexSettings["providers"]; // connection gate — picker shows connected only
@@ -83,8 +88,8 @@ export const PROVIDERS: ProviderDef[] = [
     name: "Built-in (offline)",
     kind: "local",
     needsKey: false,
-    desc: "Powered by HyperCLOVA X — SEED 0.5B bundled inside the app. Works offline with zero setup; good for classification and light queries, use a cloud provider for high-quality ingest. Model © NAVER Corp., HyperCLOVA X SEED Model License.",
-    catalog: ["seed-0.5b"],
+    desc: "Gemma 3 1B bundled inside the app. Works offline with zero setup; good for classification and light queries, use a cloud provider for high-quality ingest. Model © Google, provided under the Gemma Terms of Use (text ships with the app).",
+    catalog: [BUILTIN_MODEL],
   },
   {
     id: "ollama",

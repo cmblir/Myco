@@ -13,7 +13,7 @@ import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { ipc } from "../lib/ipc";
 import type { McpRegInfo, MemexSettings, OllamaStatus } from "../lib/ipc";
-import { PROVIDERS, providerDesc, useEnabledProviders } from "../lib/providers";
+import { BUILTIN_MODEL, PROVIDERS, providerDesc, useEnabledProviders } from "../lib/providers";
 import type { ProviderDef } from "../lib/providers";
 import ModelSelect from "../components/ModelSelect";
 import OllamaSetup from "../components/OllamaSetup";
@@ -225,7 +225,7 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
 }
 
 // Semantic layer (Feature 1): index health + a manual reindex. Embeddings run
-// offline via the bundled SEED model. Powers semantic search, related notes,
+// offline via the bundled Gemma model. Powers semantic search, related notes,
 // and graph similarity edges.
 function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
   const [status, setStatus] = useState<{ indexed_pages: number; model: string } | null>(
@@ -243,7 +243,7 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
     setBusy(true);
     setErr(null);
     try {
-      await ipc.reindexEmbeddings("builtin-local", "");
+      await ipc.reindexEmbeddings("builtin-local", BUILTIN_MODEL);
       refresh();
     } catch (e) {
       setErr(String(e));

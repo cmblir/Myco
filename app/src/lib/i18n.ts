@@ -922,7 +922,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_working: "working…",
     q_via: "via {provider} · {model}",
     q_builtin_note:
-      "The built-in offline model is small and can be inaccurate. For better offline answers, run a larger model via Ollama (e.g. Gemma 3); for the most reliable answers, use Claude.",
+      "The built-in offline model (Gemma 3 1B) is compact and can be inaccurate. For better offline answers, run a larger model via Ollama (e.g. gemma3:4b); for the most reliable answers, use Claude.",
     q_open_model_settings: "Model settings",
     q_you: "you",
     sb_new_note: "New note",
@@ -1000,7 +1000,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_google_api:
       "Gemini family via generativelanguage.googleapis.com.",
     s_provider_desc_builtin_local:
-      "Powered by HyperCLOVA X — SEED 0.5B bundled inside the app. Works offline with zero setup; good for classification and light queries, use a cloud provider for high-quality ingest. Model © NAVER Corp., HyperCLOVA X SEED Model License.",
+      "Gemma 3 1B bundled inside the app. Works offline with zero setup; good for classification and light queries, use a cloud provider for high-quality ingest. Model © Google, provided under the Gemma Terms of Use (text ships with the app).",
     s_provider_desc_ollama:
       "Run open-source models locally. Auto-detects http://localhost:11434.",
     s_provider_desc_openrouter:
@@ -1431,7 +1431,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_working: "작업 중…",
     q_via: "{provider} · {model} 사용",
     q_builtin_note:
-      "내장 오프라인 모델은 작아서 부정확할 수 있습니다. 오프라인이라면 Ollama로 더 큰 모델(예: Gemma 3)을 돌려보고, 가장 정확한 답변은 Claude를 쓰세요.",
+      "내장 오프라인 모델(Gemma 3 1B)은 작아서 부정확할 수 있습니다. 오프라인이라면 Ollama로 더 큰 모델(예: gemma3:4b)을 돌려보고, 가장 정확한 답변은 Claude를 쓰세요.",
     q_open_model_settings: "모델 설정",
     q_you: "나",
     sb_new_note: "새 노트",
@@ -1509,7 +1509,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_google_api:
       "generativelanguage.googleapis.com을 통한 Gemini 계열.",
     s_provider_desc_builtin_local:
-      "HyperCLOVA X 기반 — 앱에 내장된 SEED 0.5B. 설치 없이 오프라인으로 동작하며, 분류·가벼운 질문에 적합합니다. 고품질 ingest에는 클라우드 제공자를 사용하세요. 모델 © NAVER Corp., HyperCLOVA X SEED Model License.",
+      "앱에 내장된 Gemma 3 1B. 설치 없이 오프라인으로 동작하며, 분류·가벼운 질문에 적합합니다. 고품질 ingest에는 클라우드 제공자를 사용하세요. 모델 © Google, Gemma Terms of Use 적용(전문 동봉).",
     s_provider_desc_ollama:
       "오픈소스 모델을 로컬에서 실행합니다. http://localhost:11434를 자동 감지합니다.",
     s_provider_desc_openrouter:
@@ -1895,7 +1895,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_working: "処理中…",
     q_via: "{provider} · {model} を使用",
     q_builtin_note:
-      "内蔵のオフラインモデルは小さく不正確な場合があります。オフラインなら Ollama で大きめのモデル（例: Gemma 3）を、最も正確な回答には Claude をお使いください。",
+      "内蔵のオフラインモデル（Gemma 3 1B）は小さく不正確な場合があります。オフラインなら Ollama で大きめのモデル（例: gemma3:4b）を、最も正確な回答には Claude をお使いください。",
     q_open_model_settings: "モデル設定",
     q_you: "あなた",
     sb_new_note: "新規ノート",
@@ -1973,7 +1973,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_google_api:
       "generativelanguage.googleapis.com 経由の Gemini ファミリー。",
     s_provider_desc_builtin_local:
-      "HyperCLOVA X 搭載 — アプリに同梱された SEED 0.5B。セットアップ不要でオフライン動作、分類や軽い質問に最適です。高品質な取り込みにはクラウドプロバイダーを使用してください。Model © NAVER Corp., HyperCLOVA X SEED Model License.",
+      "アプリに同梱された Gemma 3 1B。セットアップ不要でオフライン動作、分類や軽い質問に最適です。高品質な取り込みにはクラウドプロバイダーを使用してください。Model © Google, Gemma Terms of Use 適用（全文同梱）。",
     s_provider_desc_ollama:
       "オープンソースモデルをローカルで実行します。http://localhost:11434 を自動検出。",
     s_provider_desc_openrouter:

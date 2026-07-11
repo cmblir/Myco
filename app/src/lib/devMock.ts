@@ -472,7 +472,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve("concept");
     case "local_query":
       return Promise.resolve(
-        "(mock) local model reply — the real app runs the bundled SEED 0.5B here.",
+        "(mock) local model reply — the real app runs the bundled Gemma 3 1B here.",
       );
     case "memex_pro_logout":
       SETTINGS.memex_pro_email = "";

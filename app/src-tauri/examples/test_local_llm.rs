@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 fn main() {
-    let model = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models/seed-0.5b-q4_k_m.gguf");
+    let model = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models/gemma-3-1b-it-q4_k_m.gguf");
     println!("loading {} …", model.display());
     let llm = memex_lib::local_llm::LocalLlm::load(&model).expect("load");
 
