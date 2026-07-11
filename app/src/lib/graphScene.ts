@@ -33,6 +33,9 @@ import { PulseLayer } from "./pulseLayer";
 import { TracePulse } from "./tracePulse";
 import { DustLayer } from "./dustLayer";
 import { ClusterLabels } from "./clusterLabels";
+import { WaveLayer } from "./waveLayer";
+import { SupernovaFx } from "./supernovaFx";
+import { planWave } from "./activationWave";
 
 // World radius (in sim units) per unit of node `size`, and how far the halo
 // extends past the core — mirrors the old GLOW_SCALE 2.6 intent in 3D.
@@ -386,6 +389,8 @@ export class GraphScene {
   private pulse: PulseLayer; // signals flowing along edges (alive/communication)
   private tracePulse: TracePulse; // interactive start→end path trace comet
   private dust: DustLayer; // motes orbiting nodes, shown in spaceship fly mode
+  private wave: WaveLayer; // click-triggered neural activation ripple
+  private nova: SupernovaFx; // selection shockwave at the clicked star
   // Immersive spaceship mode: a procedural ship + third-person chase rig. Its
   // listeners live only while enabled, so nothing leaks into inputs / orbit.
   private ship!: ShipController;
@@ -737,6 +742,20 @@ export class GraphScene {
     // --- dust motes (orbit nodes; only shown while piloting the spaceship) ---
     this.dust = new DustLayer(this.graph, this.nodeIds, pr, dark);
     this.scene.add(this.dust.points);
+
+    // --- activation wave + supernova (click-triggered, explicit interaction) ---
+    this.wave = new WaveLayer(this.graph, pr, dark);
+    this.wave.setSizeScale(this.sizeScale(h));
+    this.scene.add(this.wave.sparks);
+    this.scene.add(this.wave.flashes);
+    this.nova = new SupernovaFx(pr, dark);
+    this.nova.setSizeScale(this.sizeScale(h));
+    // Flashes + shockwave may bloom (they're node-scale light events).
+    if (this.selective) {
+      this.wave.flashes.layers.enable(BLOOM_LAYER);
+      this.nova.points.layers.enable(BLOOM_LAYER);
+    }
+    this.scene.add(this.nova.points);
 
     // --- spaceship (immersive third-person flight; enabled via setFlyMode) ---
     this.ship = new ShipController(
@@ -1576,6 +1595,8 @@ export class GraphScene {
     this.pulse.setDark(dark);
     this.tracePulse.setDark(dark);
     this.dust.setDark(dark);
+    this.wave.setDark(dark);
+    this.nova.setDark(dark);
     this.nebula.setDark(SHOW_NEBULA && amb.nebula);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
@@ -1598,6 +1619,17 @@ export class GraphScene {
    * drives the moving comet accent. */
   setTrace(path: string[] | null): void {
     this.tracePulse.setPath(path);
+  }
+
+  /** Selection impulse: detonate a supernova at the node and ripple a neural
+   * activation wave outward through its BFS rings. An explicit interaction
+   * accent (like the trace comet), so it runs regardless of the ambient-motion
+   * toggle — but honours the OS reduced-motion preference. */
+  impulse(id: string): void {
+    if (this.reducedMotion || !this.graph.hasNode(id)) return;
+    const a = this.graph.getNodeAttributes(id);
+    this.nova.trigger(a.x, a.y, a.z, a.size, a.color);
+    this.wave.setPlan(planWave((n) => this.graph.neighbors(n), id));
   }
 
   /** Enter/leave immersive spaceship mode. ON: the ShipController takes the
@@ -1852,6 +1884,9 @@ export class GraphScene {
       // Trace comet animates regardless of the ambient-motion toggle — it's an
       // explicit interaction, not idle ambience. No-ops when no trace is active.
       this.tracePulse.update(dt);
+      // Same for the click impulse (wave + supernova) — explicit accents.
+      this.wave.update(dt);
+      this.nova.update(dt);
       this.dust.update(dt);
       this.updateLabels();
       this.render();
@@ -1907,6 +1942,11 @@ export class GraphScene {
     this.scene.remove(this.tracePulse.points);
     this.dust.dispose();
     this.scene.remove(this.dust.points);
+    this.wave.dispose();
+    this.scene.remove(this.wave.sparks);
+    this.scene.remove(this.wave.flashes);
+    this.nova.dispose();
+    this.scene.remove(this.nova.points);
     this.clusterLabels.dispose();
     this.scene.remove(this.clusterLabels.group);
     this.bloom.dispose();
@@ -1945,6 +1985,8 @@ export class GraphScene {
     this.bloom.setSize(w, h);
     this.labelRenderer.setSize(w, h);
     this.nodeMat.uniforms.u_sizeScale.value = this.sizeScale(h);
+    this.wave.setSizeScale(this.sizeScale(h));
+    this.nova.setSizeScale(this.sizeScale(h));
     // Fat lines are screen-space — they need the drawing-buffer resolution.
     this.filamentMat?.resolution.set(w, h);
   };

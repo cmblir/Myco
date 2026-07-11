@@ -323,6 +323,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       lastClickRef.current?.id === id && now - lastClickRef.current.at < DBL_MS;
     lastClickRef.current = { id, at: now };
     setSelected(id);
+    // Selection impulse: supernova + neural activation ripple from the star.
+    sceneRef.current?.impulse(id);
     const prev = stackRef.current;
     const top = prev[prev.length - 1];
     if (top?.kind === "node" && top.id === id) {
