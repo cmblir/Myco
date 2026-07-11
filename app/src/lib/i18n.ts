@@ -910,7 +910,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_working: "working…",
     q_via: "via {provider} · {model}",
     q_builtin_note:
-      "The built-in offline model is small and can be inaccurate. For reliable answers, pick Claude or another provider.",
+      "The built-in offline model is small and can be inaccurate. For better offline answers, run a larger model via Ollama (e.g. Gemma 3); for the most reliable answers, use Claude.",
     q_open_model_settings: "Model settings",
     q_you: "you",
     sb_new_note: "New note",
@@ -1413,7 +1413,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_working: "작업 중…",
     q_via: "{provider} · {model} 사용",
     q_builtin_note:
-      "내장 오프라인 모델은 작아서 부정확할 수 있습니다. 정확한 답변은 Claude 등 다른 프로바이더를 선택하세요.",
+      "내장 오프라인 모델은 작아서 부정확할 수 있습니다. 오프라인이라면 Ollama로 더 큰 모델(예: Gemma 3)을 돌려보고, 가장 정확한 답변은 Claude를 쓰세요.",
     q_open_model_settings: "모델 설정",
     q_you: "나",
     sb_new_note: "새 노트",
@@ -1871,7 +1871,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_working: "処理中…",
     q_via: "{provider} · {model} を使用",
     q_builtin_note:
-      "内蔵のオフラインモデルは小さく不正確な場合があります。正確な回答には Claude など他のプロバイダーを選んでください。",
+      "内蔵のオフラインモデルは小さく不正確な場合があります。オフラインなら Ollama で大きめのモデル（例: Gemma 3）を、最も正確な回答には Claude をお使いください。",
     q_open_model_settings: "モデル設定",
     q_you: "あなた",
     sb_new_note: "新規ノート",
