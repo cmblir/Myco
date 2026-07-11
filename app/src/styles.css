@@ -1499,6 +1499,14 @@ hr {
   backdrop-filter: blur(6px);
   white-space: nowrap;
 }
+.ship-hud__speed {
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin-right: 10px;
+  padding-right: 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.18);
+}
 .ship-hud__panel {
   position: absolute;
   top: 16px;

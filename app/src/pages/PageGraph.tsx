@@ -168,6 +168,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     sceneRef.current?.setFlyMode(on);
     if (on && traceModeRef.current) toggleTrace(false);
   };
+  // HUD speed readout, polled at a low rate while flying.
+  const [shipSpeed, setShipSpeed] = useState(0);
   // Gap-analysis panel (orphans / missing / under-cited / disconnected …).
   const [gapsOpen, setGapsOpen] = useState(false);
   const [tlPlaying, setTlPlaying] = useState(false);
@@ -658,6 +660,16 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   useEffect(() => {
     if (flyModeRef.current) sceneRef.current?.setFlyMode(true);
   }, [glEpoch]);
+
+  // HUD speed: poll the ship a few times a second while flying (cheap read;
+  // state churn stays out of the render loop).
+  useEffect(() => {
+    if (!flyMode) return;
+    const timer = window.setInterval(() => {
+      setShipSpeed(sceneRef.current?.shipSpeed() ?? 0);
+    }, 150);
+    return () => window.clearInterval(timer);
+  }, [flyMode]);
 
   // Semantic overlay edges: fetch (or clear) when the toggle flips, then force a
   // graph rebuild so buildGraph picks them up from the ref.
@@ -1248,6 +1260,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             <ShipHud
               t={t}
               node={flyNode}
+              speed={shipSpeed}
               onClose={() => setSelected(null)}
               onOpen={(id) => setRoute(`page:${id}`)}
               onExit={() => toggleFly(false)}

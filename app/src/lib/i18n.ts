@@ -121,6 +121,7 @@ export interface Strings {
   gr_spaceship: string;
   gr_spaceship_hint: string;
   gr_spaceship_exit: string;
+  gr_speed?: string;
   gr_close: string;
   gr_open: string;
   gr_text_fade: string;
@@ -620,6 +621,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_spaceship: "Spaceship",
     gr_spaceship_hint: "WASD fly · drag to steer · click a node for info · Esc exit",
     gr_spaceship_exit: "Exit",
+    gr_speed: "Speed",
     gr_close: "Close",
     gr_open: "Open page",
     gr_text_fade: "Text fade threshold",
@@ -1129,6 +1131,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_spaceship: "우주선 비행",
     gr_spaceship_hint: "WASD 이동 · 드래그로 방향 · 노드 클릭해 정보 · Esc 종료",
     gr_spaceship_exit: "나가기",
+    gr_speed: "속도",
     gr_close: "닫기",
     gr_open: "페이지 열기",
     gr_text_fade: "라벨 페이드 임계",
@@ -1637,6 +1640,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_spaceship: "宇宙船",
     gr_spaceship_hint: "WASDで飛行 · ドラッグで方向 · ノードをクリックで情報 · Escで終了",
     gr_spaceship_exit: "終了",
+    gr_speed: "速度",
     gr_close: "閉じる",
     gr_open: "ページを開く",
     gr_text_fade: "ラベルフェード閾値",

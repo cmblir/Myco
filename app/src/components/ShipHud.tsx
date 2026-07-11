@@ -15,12 +15,15 @@ export interface ShipHudNode {
 export default function ShipHud({
   t,
   node,
+  speed,
   onClose,
   onOpen,
   onExit,
 }: {
   t: Strings;
   node: ShipHudNode | null;
+  /** current flight speed in world units/s (rounded for display) */
+  speed?: number;
   onClose: () => void;
   onOpen: (id: string) => void;
   onExit: () => void;
@@ -37,6 +40,11 @@ export default function ShipHud({
       </button>
 
       <div className="ship-hud__legend">
+        {speed !== undefined ? (
+          <span className="ship-hud__speed">
+            {t.gr_speed ?? "Speed"} {Math.round(speed)}
+          </span>
+        ) : null}
         {t.gr_spaceship_hint ??
           "WASD fly · drag to steer · click a node · Esc exit"}
       </div>

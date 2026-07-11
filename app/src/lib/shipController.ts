@@ -1,27 +1,59 @@
 // Spaceship controller — an immersive third-person flight rig for the graph.
-// A small procedural ship sits in front of the camera; WASD/RF thrust, Q/E roll,
-// and mouse-drag steer the ship's heading, and the camera chases from behind and
-// slightly above. The world (nodes) flows past — a Google-Earth / game feel.
+// The hull is a real CC0 spaceship model (Quaternius, src/assets/spaceship.glb)
+// loaded at runtime, with the old procedural primitives kept as an instant
+// fallback until (or in case) the GLB fails. Flight is inertial (shipPhysics):
+// WASD/R/F thrust accelerates, drag glides the ship out when keys lift, Shift
+// boosts, and the hull banks into turns like an aircraft. The engine glow
+// swells with throttle and a particle trail streams from the tail under
+// thrust. Q/E roll, arrows or mouse-drag steer, camera chases from behind.
 //
-// Self-contained: the ship is built from three.js primitives (no external asset).
-// Listeners live only while enabled, so keys never leak into inputs / orbit mode.
+// Listeners live only while enabled, so keys never leak into inputs / orbit.
 import * as THREE from "three";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import shipUrl from "../assets/spaceship.glb?url";
+import { FLIGHT, speedOf, stepBank, stepVelocity } from "./shipPhysics";
+
+// Normalised hull size: the GLB is uniform-scaled so its longest dimension
+// lands here (world units) — matches the old primitive ship's presence.
+const SHIP_SIZE = 5.2;
+// Engine tail in ship-local space (behind and slightly above centre, +Z aft).
+const TAIL = new THREE.Vector3(0, 0.25, 2.6);
+
+// Thruster trail: a small pooled Points cloud streaming aft under thrust.
+const TRAIL_MAX = 90;
+const TRAIL_LIFE = 0.55; // seconds
+const TRAIL_COLOR = new THREE.Color("#7fd0ff");
 
 export class ShipController {
   readonly ship: THREE.Group;
+  private body: THREE.Group; // banks + bobs; hull mesh lives inside
+  private engineGlow: THREE.Points;
+  private glowMat: THREE.PointsMaterial;
   private camera: THREE.PerspectiveCamera;
   private dom: HTMLElement;
   private scene: THREE.Scene;
   private enabled = false;
-  private speed: number;
   private keys = new Set<string>();
   private dragging = false;
   private lastX = 0;
   private lastY = 0;
   private bob = 0;
+  // Inertial flight state (shipPhysics integrates it).
+  private vel = { x: 0, y: 0, z: 0 };
+  private bank = 0;
+  private yawRate = 0; // smoothed rad/s, feeds the visual bank
+  private yawAccum = 0; // yaw applied since the last update()
+  // Thruster trail pool (ring buffer; dead particles have life ≤ 0).
+  private trail: THREE.Points;
+  private trailGeom: THREE.BufferGeometry;
+  private trailMat: THREE.ShaderMaterial;
+  private trailVel = new Float32Array(TRAIL_MAX * 3);
+  private trailLife = new Float32Array(TRAIL_MAX);
+  private trailCursor = 0;
   // scratch
   private q = new THREE.Quaternion();
   private v = new THREE.Vector3();
+  private v2 = new THREE.Vector3();
   private camOffset = new THREE.Vector3(0, 2.4, 17); // behind (+Z) and above the ship
   private lookAhead = new THREE.Vector3(0, 2, -40); // look out past the ship into the graph
 
@@ -29,15 +61,99 @@ export class ShipController {
     camera: THREE.PerspectiveCamera,
     dom: HTMLElement,
     scene: THREE.Scene,
-    speed = 600,
+    _speed = 600, // legacy tuning knob; flight now comes from shipPhysics.FLIGHT
   ) {
     this.camera = camera;
     this.dom = dom;
     this.scene = scene;
-    this.speed = speed;
-    this.ship = buildShip();
+    this.ship = new THREE.Group();
+    this.body = new THREE.Group();
+    this.ship.add(this.body);
+    this.body.add(buildFallbackHull());
+    const { points, mat } = buildEngineGlow();
+    this.engineGlow = points;
+    this.glowMat = mat;
+    this.ship.add(this.engineGlow);
     this.ship.visible = false;
     scene.add(this.ship);
+    this.loadHull();
+
+    // Thruster trail lives in WORLD space (particles stay behind as the ship
+    // moves on), so it's a scene child, not a ship child.
+    this.trailGeom = new THREE.BufferGeometry();
+    this.trailGeom.setAttribute(
+      "position",
+      new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 3), 3),
+    );
+    this.trailGeom.setAttribute(
+      "a_pcolor",
+      new THREE.BufferAttribute(new Float32Array(TRAIL_MAX * 3), 3),
+    );
+    // window guard: unit tests construct the controller in a node env.
+    const pr =
+      typeof window !== "undefined" ? Math.min(window.devicePixelRatio || 1, 2) : 1;
+    this.trailMat = new THREE.ShaderMaterial({
+      uniforms: { u_pixelRatio: { value: pr } },
+      vertexShader: /* glsl */ `
+attribute vec3 a_pcolor;
+uniform float u_pixelRatio;
+varying vec3 v_color;
+void main() {
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  gl_PointSize = clamp(140.0 * u_pixelRatio / max(1.0, -mv.z), 1.5, 9.0);
+  v_color = a_pcolor;
+}
+`,
+      fragmentShader: /* glsl */ `
+precision mediump float;
+varying vec3 v_color;
+void main() {
+  float d = length(gl_PointCoord - vec2(0.5)) * 2.0;
+  float a = pow(max(0.0, 1.0 - d), 1.8);
+  if (a < 0.02) discard;
+  gl_FragColor = vec4(v_color, a);
+}
+`,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    });
+    this.trail = new THREE.Points(this.trailGeom, this.trailMat);
+    this.trail.frustumCulled = false;
+    this.trail.visible = false;
+    scene.add(this.trail);
+  }
+
+  // Swap the placeholder primitives for the bundled GLB. The model's nose
+  // points +Z, so it's flipped to the rig's forward (−Z) and uniform-scaled to
+  // SHIP_SIZE. Failures just keep the fallback hull — flying still works.
+  private loadHull(): void {
+    // Browser only: GLTFLoader fetches a root-relative URL (and decodes
+    // textures via DOM APIs), neither of which exists in the node test env —
+    // there the procedural fallback hull simply stays.
+    if (typeof document === "undefined") return;
+    new GLTFLoader().load(
+      shipUrl,
+      (gltf) => {
+        const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const dims = box.getSize(new THREE.Vector3());
+        const scale = SHIP_SIZE / Math.max(dims.x, dims.y, dims.z, 1e-6);
+        const centre = box.getCenter(new THREE.Vector3());
+        model.position.sub(centre); // recentre on the flight origin
+        const wrap = new THREE.Group();
+        wrap.add(model);
+        wrap.scale.setScalar(scale);
+        wrap.rotation.y = Math.PI; // GLB nose +Z → rig forward −Z
+        this.body.clear();
+        this.body.add(wrap);
+      },
+      undefined,
+      () => {
+        /* keep the procedural fallback hull */
+      },
+    );
   }
 
   enable(): void {
@@ -49,6 +165,11 @@ export class ShipController {
     this.ship.position.copy(this.camera.position).addScaledVector(fwd, 30);
     this.ship.quaternion.copy(this.camera.quaternion);
     this.ship.visible = true;
+    this.trail.visible = true;
+    this.vel = { x: 0, y: 0, z: 0 };
+    this.bank = 0;
+    this.yawRate = 0;
+    this.trailLife.fill(0);
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     this.dom.addEventListener("pointerdown", this.onDown);
@@ -61,6 +182,7 @@ export class ShipController {
     if (!this.enabled) return;
     this.enabled = false;
     this.ship.visible = false;
+    this.trail.visible = false;
     this.keys.clear();
     this.dragging = false;
     window.removeEventListener("keydown", this.onKeyDown);
@@ -72,6 +194,11 @@ export class ShipController {
 
   isEnabled(): boolean {
     return this.enabled;
+  }
+
+  /** Current flight speed in world units/s (for the HUD readout). */
+  getSpeed(): number {
+    return speedOf(this.vel);
   }
 
   private isTyping(): boolean {
@@ -116,45 +243,105 @@ export class ShipController {
     this.lastX = e.clientX;
     this.lastY = e.clientY;
     // Yaw around the ship's local up, pitch around its local right.
-    this.rotateLocal(0, 1, 0, -dx * 0.004);
-    this.rotateLocal(1, 0, 0, -dy * 0.004);
+    this.rotateLocal(0, 1, 0, -dx * 0.004, true);
+    this.rotateLocal(1, 0, 0, -dy * 0.004, false);
   };
   private onUp = (): void => {
     this.dragging = false;
   };
 
-  private rotateLocal(ax: number, ay: number, az: number, rad: number): void {
+  private rotateLocal(ax: number, ay: number, az: number, rad: number, isYaw = false): void {
     this.q.setFromAxisAngle(this.v.set(ax, ay, az), rad);
     this.ship.quaternion.multiply(this.q);
+    if (isYaw) this.yawAccum += rad; // feeds the visual bank
   }
 
   update(dt: number): void {
-    if (!this.enabled) return;
-    const boost = this.keys.has("shift") ? 3 : 1;
-    const step = this.speed * boost * dt;
+    if (!this.enabled || dt <= 0) return;
     const k = this.keys;
-    // Thrust along the ship's local axes.
-    if (k.has("w")) this.moveLocal(0, 0, -1, step);
-    if (k.has("s")) this.moveLocal(0, 0, 1, step);
-    if (k.has("a")) this.moveLocal(-1, 0, 0, step);
-    if (k.has("d")) this.moveLocal(1, 0, 0, step);
-    if (k.has("r") || k.has(" ")) this.moveLocal(0, 1, 0, step);
-    if (k.has("f")) this.moveLocal(0, -1, 0, step);
-    // Roll + keyboard yaw/pitch (arrows) for no-mouse steering.
-    if (k.has("q")) this.rotateLocal(0, 0, 1, 1.2 * dt);
-    if (k.has("e")) this.rotateLocal(0, 0, 1, -1.2 * dt);
-    if (k.has("arrowleft")) this.rotateLocal(0, 1, 0, 1.2 * dt);
-    if (k.has("arrowright")) this.rotateLocal(0, 1, 0, -1.2 * dt);
-    if (k.has("arrowup")) this.rotateLocal(1, 0, 0, 1.2 * dt);
-    if (k.has("arrowdown")) this.rotateLocal(1, 0, 0, -1.2 * dt);
+    // Steering: roll + keyboard yaw/pitch (arrows) for no-mouse flying.
+    if (k.has("q")) this.rotateLocal(0, 0, 1, 1.2 * dt, false);
+    if (k.has("e")) this.rotateLocal(0, 0, 1, -1.2 * dt, false);
+    if (k.has("arrowleft")) this.rotateLocal(0, 1, 0, 1.2 * dt, true);
+    if (k.has("arrowright")) this.rotateLocal(0, 1, 0, -1.2 * dt, true);
+    if (k.has("arrowup")) this.rotateLocal(1, 0, 0, 1.2 * dt, false);
+    if (k.has("arrowdown")) this.rotateLocal(1, 0, 0, -1.2 * dt, false);
+
+    // Thrust: sum the local axes, rotate to world, integrate with inertia.
+    const t = this.v2.set(0, 0, 0);
+    if (k.has("w")) t.z -= 1;
+    if (k.has("s")) t.z += 1;
+    if (k.has("a")) t.x -= 1;
+    if (k.has("d")) t.x += 1;
+    if (k.has("r") || k.has(" ")) t.y += 1;
+    if (k.has("f")) t.y -= 1;
+    const thrusting = t.lengthSq() > 0;
+    if (thrusting) t.normalize().applyQuaternion(this.ship.quaternion);
+    this.vel = stepVelocity(this.vel, t, k.has("shift"), dt);
+    this.ship.position.x += this.vel.x * dt;
+    this.ship.position.y += this.vel.y * dt;
+    this.ship.position.z += this.vel.z * dt;
+
+    // Visual bank: smooth the yaw input into a rate, roll the hull into it.
+    this.yawRate += ((this.yawAccum / dt) - this.yawRate) * Math.min(1, dt * 10);
+    this.yawAccum = 0;
+    this.bank = stepBank(this.bank, this.yawRate, dt);
+    this.body.rotation.z = this.bank;
+
+    // Engine: glow swells with throttle; the trail streams while thrusting.
+    const throttle = Math.min(1, this.getSpeed() / FLIGHT.maxSpeed);
+    this.glowMat.opacity = 0.35 + 0.6 * throttle;
+    this.glowMat.size = 18 + 16 * throttle;
+    this.updateTrail(dt, thrusting, throttle);
+
     // Idle bob so a stationary ship still feels alive.
     this.bob += dt;
     this.syncCamera(false);
   }
 
-  private moveLocal(x: number, y: number, z: number, dist: number): void {
-    this.v.set(x, y, z).applyQuaternion(this.ship.quaternion).multiplyScalar(dist);
-    this.ship.position.add(this.v);
+  // Spawn/advance the aft particle stream. Particles live in world space with
+  // a kick opposite the ship's heading plus a little jitter, fading over
+  // TRAIL_LIFE. Zero-alloc: fixed ring buffer, colours encode the fade.
+  private updateTrail(dt: number, thrusting: boolean, throttle: number): void {
+    const pos = this.trailGeom.getAttribute("position") as THREE.BufferAttribute;
+    const col = this.trailGeom.getAttribute("a_pcolor") as THREE.BufferAttribute;
+    if (thrusting) {
+      const tail = this.v.copy(TAIL).applyQuaternion(this.ship.quaternion).add(this.ship.position);
+      const aft = this.v2.set(0, 0, 1).applyQuaternion(this.ship.quaternion);
+      const spawn = 2 + Math.round(throttle * 2);
+      for (let s = 0; s < spawn; s++) {
+        const i = this.trailCursor;
+        this.trailCursor = (this.trailCursor + 1) % TRAIL_MAX;
+        pos.setXYZ(
+          i,
+          tail.x + (Math.random() - 0.5) * 0.5,
+          tail.y + (Math.random() - 0.5) * 0.5,
+          tail.z + (Math.random() - 0.5) * 0.5,
+        );
+        const kick = 60 + 90 * throttle;
+        this.trailVel[i * 3] = aft.x * kick + (Math.random() - 0.5) * 14;
+        this.trailVel[i * 3 + 1] = aft.y * kick + (Math.random() - 0.5) * 14;
+        this.trailVel[i * 3 + 2] = aft.z * kick + (Math.random() - 0.5) * 14;
+        this.trailLife[i] = TRAIL_LIFE;
+      }
+    }
+    for (let i = 0; i < TRAIL_MAX; i++) {
+      if (this.trailLife[i] <= 0) {
+        col.setXYZ(i, 0, 0, 0); // additive black = invisible
+        continue;
+      }
+      this.trailLife[i] -= dt;
+      pos.setXYZ(
+        i,
+        pos.getX(i) + this.trailVel[i * 3] * dt,
+        pos.getY(i) + this.trailVel[i * 3 + 1] * dt,
+        pos.getZ(i) + this.trailVel[i * 3 + 2] * dt,
+      );
+      const f = Math.max(0, this.trailLife[i] / TRAIL_LIFE);
+      col.setXYZ(i, TRAIL_COLOR.r * f, TRAIL_COLOR.g * f, TRAIL_COLOR.b * f);
+    }
+    pos.needsUpdate = true;
+    col.needsUpdate = true;
   }
 
   // Place the camera behind + above the ship, looking ahead of it. `snap` places
@@ -166,8 +353,8 @@ export class ShipController {
     const look = this.lookAhead.clone().applyQuaternion(this.ship.quaternion).add(this.ship.position);
     this.camera.up.set(0, 1, 0).applyQuaternion(this.ship.quaternion);
     this.camera.lookAt(look);
-    // Gentle idle bob on the ship mesh (does not affect flight path).
-    this.ship.children[0].position.y = Math.sin(this.bob * 1.5) * 0.12;
+    // Gentle idle bob on the hull (does not affect flight path or banking).
+    this.body.position.y = Math.sin(this.bob * 1.5) * 0.12;
   }
 
   dispose(): void {
@@ -182,49 +369,53 @@ export class ShipController {
         else mat.dispose();
       }
     });
+    this.scene.remove(this.trail);
+    this.trailGeom.dispose();
+    this.trailMat.dispose();
   }
 }
 
-// A small stylised ship: a body group (fuselage + wings + cockpit) that can bob,
-// plus a glowing engine at the tail. Points forward along -Z.
-function buildShip(): THREE.Group {
-  const group = new THREE.Group();
-  const body = new THREE.Group();
-
+// The old stylised primitive ship — instant to build, shown until the GLB
+// lands (and kept if it never does). Points forward along -Z.
+function buildFallbackHull(): THREE.Group {
+  const hull = new THREE.Group();
   const metal = new THREE.MeshBasicMaterial({ color: 0xcfd6e6 });
   const accent = new THREE.MeshBasicMaterial({ color: 0x6f8cff });
 
   // Fuselage: cone tip toward -Z.
   const fus = new THREE.Mesh(new THREE.ConeGeometry(0.6, 3, 12), metal);
   fus.rotation.x = -Math.PI / 2;
-  body.add(fus);
+  hull.add(fus);
 
   // Wings: two flat wedges.
-  const wingGeom = new THREE.BoxGeometry(2.6, 0.12, 0.9);
-  const wing = new THREE.Mesh(wingGeom, accent);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(2.6, 0.12, 0.9), accent);
   wing.position.z = 0.6;
-  body.add(wing);
+  hull.add(wing);
 
   // Cockpit bump.
   const cockpit = new THREE.Mesh(new THREE.SphereGeometry(0.34, 12, 8), accent);
   cockpit.position.set(0, 0.22, -0.4);
-  body.add(cockpit);
+  hull.add(cockpit);
 
-  group.add(body);
+  return hull;
+}
 
-  // Engine glow: an additive sprite-ish point at the tail (+Z).
-  const glowGeom = new THREE.BufferGeometry();
-  glowGeom.setAttribute("position", new THREE.BufferAttribute(new Float32Array([0, 0, 1.7]), 3));
-  const glowMat = new THREE.PointsMaterial({
+// Engine glow: an additive sprite-ish point at the tail (+Z). Opacity/size are
+// throttle-driven in update().
+function buildEngineGlow(): { points: THREE.Points; mat: THREE.PointsMaterial } {
+  const geom = new THREE.BufferGeometry();
+  geom.setAttribute(
+    "position",
+    new THREE.BufferAttribute(new Float32Array([TAIL.x, TAIL.y, TAIL.z]), 3),
+  );
+  const mat = new THREE.PointsMaterial({
     color: 0x7fd0ff,
-    size: 26,
+    size: 22,
     sizeAttenuation: false,
     transparent: true,
     opacity: 0.9,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
-  group.add(new THREE.Points(glowGeom, glowMat));
-
-  return group;
+  return { points: new THREE.Points(geom, mat), mat };
 }

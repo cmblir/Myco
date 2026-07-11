@@ -1710,6 +1710,11 @@ export class GraphScene {
     return this.flyMode;
   }
 
+  /** Current ship speed (world units/s) for the fly-mode HUD readout. */
+  shipSpeed(): number {
+    return this.ship.getSpeed();
+  }
+
   applySettings(settings: GraphSettings): void {
     this.settings = settings;
     this.edgeMat.opacity = Math.min(1, this.edgeOpacity * settings.linkThickness);
