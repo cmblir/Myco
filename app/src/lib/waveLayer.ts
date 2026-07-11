@@ -89,6 +89,7 @@ export class WaveLayer {
   private graph: VaultGraph;
   private plan: WavePlan | null = null;
   private t = 0;
+  private intensity = 1;
   private c = new THREE.Color();
 
   constructor(graph: VaultGraph, pr: number, dark: boolean) {
@@ -142,10 +143,12 @@ export class WaveLayer {
     return this.plan != null;
   }
 
-  // Arm a new wave (replacing any running one) or clear with null.
-  setPlan(plan: WavePlan | null): void {
+  // Arm a new wave (replacing any running one) or clear with null. `intensity`
+  // scales all alphas — 1 for the click impulse, dimmer for idle synapse fires.
+  setPlan(plan: WavePlan | null, intensity = 1): void {
     this.plan = plan;
     this.t = 0;
+    this.intensity = intensity;
     if (!plan) {
       this.sparkGeom.setDrawRange(0, 0);
       this.flashGeom.setDrawRange(0, 0);
@@ -203,7 +206,7 @@ export class WaveLayer {
       // the next ring's colour), fading in/out at the endpoints.
       this.c.set(ta.color);
       sCol.setXYZ(i, this.c.r, this.c.g, this.c.b);
-      sAlp.setX(i, Math.sin(Math.PI * p));
+      sAlp.setX(i, Math.sin(Math.PI * p) * this.intensity);
     }
     sPos.needsUpdate = true;
     sCol.needsUpdate = true;
@@ -228,7 +231,7 @@ export class WaveLayer {
       fPos.setXYZ(i, a.x, a.y, a.z);
       this.c.set(a.color);
       fCol.setXYZ(i, this.c.r, this.c.g, this.c.b);
-      fAlp.setX(i, k * 0.85);
+      fAlp.setX(i, k * 0.85 * this.intensity);
       // Swell with the flash: halo grows from node-glow size to ×1.5.
       fSiz.setX(i, a.size * FLASH_WORLD * (0.7 + 0.5 * k));
     }

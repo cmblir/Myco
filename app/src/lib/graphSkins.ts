@@ -49,22 +49,24 @@ export function skinTheme(skin: Exclude<GraphSkinKey, "auto">): GraphTheme {
 }
 
 // Which ambient background layers a skin shows. `dark` matters only for
-// "auto", where the layers keep their theme-derived behaviour.
+// "auto", where the layers keep their theme-derived behaviour. Meteors are a
+// galaxy-skin signature — the other skins stay calm.
 export interface SkinAmbience {
   starfield: boolean;
   nebula: boolean;
+  meteors: boolean;
 }
 
 export function skinAmbience(skin: GraphSkinKey, dark: boolean): SkinAmbience {
   switch (skin) {
     case "black":
-      return { starfield: false, nebula: false };
+      return { starfield: false, nebula: false, meteors: false };
     case "white":
-      return { starfield: false, nebula: false };
+      return { starfield: false, nebula: false, meteors: false };
     case "galaxy":
-      return { starfield: true, nebula: true };
+      return { starfield: true, nebula: true, meteors: true };
     default:
       // Pre-skin behaviour: starfield on both themes, nebula dark-only.
-      return { starfield: true, nebula: dark };
+      return { starfield: true, nebula: dark, meteors: false };
   }
 }

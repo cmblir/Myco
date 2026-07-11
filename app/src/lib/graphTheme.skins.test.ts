@@ -32,17 +32,37 @@ describe("skinTheme (fixed skins)", () => {
 
 describe("skinAmbience", () => {
   it("black and white strip the ambient layers", () => {
-    expect(skinAmbience("black", true)).toEqual({ starfield: false, nebula: false });
-    expect(skinAmbience("white", false)).toEqual({ starfield: false, nebula: false });
+    expect(skinAmbience("black", true)).toEqual({
+      starfield: false,
+      nebula: false,
+      meteors: false,
+    });
+    expect(skinAmbience("white", false)).toEqual({
+      starfield: false,
+      nebula: false,
+      meteors: false,
+    });
   });
 
-  it("galaxy shows starfield and nebula regardless of app darkness", () => {
-    expect(skinAmbience("galaxy", false)).toEqual({ starfield: true, nebula: true });
+  it("galaxy shows the full ambience regardless of app darkness", () => {
+    expect(skinAmbience("galaxy", false)).toEqual({
+      starfield: true,
+      nebula: true,
+      meteors: true,
+    });
   });
 
   it("auto keeps the pre-skin behaviour (starfield always, nebula dark-only)", () => {
-    expect(skinAmbience("auto", true)).toEqual({ starfield: true, nebula: true });
-    expect(skinAmbience("auto", false)).toEqual({ starfield: true, nebula: false });
+    expect(skinAmbience("auto", true)).toEqual({
+      starfield: true,
+      nebula: true,
+      meteors: false,
+    });
+    expect(skinAmbience("auto", false)).toEqual({
+      starfield: true,
+      nebula: false,
+      meteors: false,
+    });
   });
 });
 

@@ -36,6 +36,15 @@ import { ClusterLabels } from "./clusterLabels";
 import { WaveLayer } from "./waveLayer";
 import { SupernovaFx } from "./supernovaFx";
 import { planWave } from "./activationWave";
+import { MeteorLayer } from "./meteorLayer";
+import {
+  pickByDegree,
+  synapseDelay,
+  SYNAPSE_INTENSITY,
+  SYNAPSE_MAX_DEPTH,
+  SYNAPSE_MAX_EDGES,
+  SYNAPSE_MAX_NODES,
+} from "./synapseFire";
 
 // World radius (in sim units) per unit of node `size`, and how far the halo
 // extends past the core — mirrors the old GLOW_SCALE 2.6 intent in 3D.
@@ -391,6 +400,10 @@ export class GraphScene {
   private dust: DustLayer; // motes orbiting nodes, shown in spaceship fly mode
   private wave: WaveLayer; // click-triggered neural activation ripple
   private nova: SupernovaFx; // selection shockwave at the clicked star
+  private meteor: MeteorLayer; // shooting stars across the galaxy-skin sky
+  private synapse: WaveLayer; // idle spontaneous micro-firings (dim ripples)
+  private synapseTimer = 3; // seconds until the next idle firing
+  private synapseCount = 0; // deterministic RNG stream cursor
   // Immersive spaceship mode: a procedural ship + third-person chase rig. Its
   // listeners live only while enabled, so nothing leaks into inputs / orbit.
   private ship!: ShipController;
@@ -756,6 +769,15 @@ export class GraphScene {
       this.nova.points.layers.enable(BLOOM_LAYER);
     }
     this.scene.add(this.nova.points);
+
+    // --- idle synapse firing (dim spontaneous ripples) + meteors (galaxy sky) ---
+    this.synapse = new WaveLayer(this.graph, pr, dark);
+    this.synapse.setSizeScale(this.sizeScale(h));
+    this.scene.add(this.synapse.sparks);
+    this.scene.add(this.synapse.flashes);
+    this.meteor = new MeteorLayer();
+    this.meteor.lines.visible = amb.meteors && !this.perfLod;
+    this.scene.add(this.meteor.lines);
 
     // --- spaceship (immersive third-person flight; enabled via setFlyMode) ---
     this.ship = new ShipController(
@@ -1597,6 +1619,8 @@ export class GraphScene {
     this.dust.setDark(dark);
     this.wave.setDark(dark);
     this.nova.setDark(dark);
+    this.synapse.setDark(dark);
+    this.meteor.lines.visible = amb.meteors && !this.perfLod;
     this.nebula.setDark(SHOW_NEBULA && amb.nebula);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
@@ -1630,6 +1654,30 @@ export class GraphScene {
     const a = this.graph.getNodeAttributes(id);
     this.nova.trigger(a.x, a.y, a.z, a.size, a.color);
     this.wave.setPlan(planWave((n) => this.graph.neighbors(n), id));
+  }
+
+  // One idle synapse firing: a degree-weighted random node ripples a small dim
+  // wave (1–2 hops). Deterministic (starRand over a counter) so idle activity
+  // replays identically. Skipped while a previous ripple is still running.
+  private fireSynapse(): void {
+    this.synapseTimer = synapseDelay(GraphScene.starRand(1000 + this.synapseCount * 3));
+    const rand = GraphScene.starRand(2000 + this.synapseCount * 7);
+    this.synapseCount++;
+    if (this.synapse.isActive()) return;
+    const id = pickByDegree(
+      this.nodeIds,
+      (n) => this.graph.getNodeAttribute(n, "deg") ?? 0,
+      rand,
+    );
+    if (!id || this.graph.getNodeAttribute(id, "hidden")) return;
+    this.synapse.setPlan(
+      planWave((n) => this.graph.neighbors(n), id, {
+        maxDepth: SYNAPSE_MAX_DEPTH,
+        maxNodes: SYNAPSE_MAX_NODES,
+        maxEdges: SYNAPSE_MAX_EDGES,
+      }),
+      SYNAPSE_INTENSITY,
+    );
   }
 
   /** Enter/leave immersive spaceship mode. ON: the ShipController takes the
@@ -1877,6 +1925,14 @@ export class GraphScene {
         // Round pulses only when the flying-arrow fleet isn't the signal layer.
         if (!this.settings.arrows) this.pulse.update(dt);
         this.nodeMat.uniforms.u_time.value += dt;
+        // Meteors cross the galaxy-skin sky (visibility gates the skin/perf).
+        if (this.meteor.lines.visible) this.meteor.update(dt);
+        // Spontaneous synapse firings keep the idle brain alive. Perf mode
+        // drops them with the other ambient layers.
+        if (!this.perfLod) {
+          this.synapseTimer -= dt;
+          if (this.synapseTimer <= 0) this.fireSynapse();
+        }
       }
       // Flying arrows: the fleet streams source→target whenever arrows are on
       // (an explicit toggle, so it runs even with ambient motion off).
@@ -1884,9 +1940,11 @@ export class GraphScene {
       // Trace comet animates regardless of the ambient-motion toggle — it's an
       // explicit interaction, not idle ambience. No-ops when no trace is active.
       this.tracePulse.update(dt);
-      // Same for the click impulse (wave + supernova) — explicit accents.
+      // Same for the click impulse (wave + supernova) — explicit accents. The
+      // synapse ripple also finishes its run even if ambience pauses mid-wave.
       this.wave.update(dt);
       this.nova.update(dt);
+      this.synapse.update(dt);
       this.dust.update(dt);
       this.updateLabels();
       this.render();
@@ -1947,6 +2005,11 @@ export class GraphScene {
     this.scene.remove(this.wave.flashes);
     this.nova.dispose();
     this.scene.remove(this.nova.points);
+    this.synapse.dispose();
+    this.scene.remove(this.synapse.sparks);
+    this.scene.remove(this.synapse.flashes);
+    this.meteor.dispose();
+    this.scene.remove(this.meteor.lines);
     this.clusterLabels.dispose();
     this.scene.remove(this.clusterLabels.group);
     this.bloom.dispose();
@@ -1987,6 +2050,7 @@ export class GraphScene {
     this.nodeMat.uniforms.u_sizeScale.value = this.sizeScale(h);
     this.wave.setSizeScale(this.sizeScale(h));
     this.nova.setSizeScale(this.sizeScale(h));
+    this.synapse.setSizeScale(this.sizeScale(h));
     // Fat lines are screen-space — they need the drawing-buffer resolution.
     this.filamentMat?.resolution.set(w, h);
   };
