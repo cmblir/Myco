@@ -7,6 +7,9 @@
 //   - github.com/ElsaTam/obsidian-extended-graph (default values)
 //   - github.com/ycnmhd/obsidian-graph-presets (slider ranges)
 
+// Kept here (not graphTheme.ts) so this module stays DOM-free and testable.
+export type GraphSkinKey = "auto" | "black" | "white" | "galaxy";
+
 export interface GraphSettings {
   // Filters
   search: string;
@@ -16,6 +19,9 @@ export interface GraphSettings {
   folderFilter: string | null;
 
   // Display
+  // Graph-only color mode, independent of the app theme. "auto" follows the
+  // app theme (the pre-skin behaviour); the fixed skins pin the palette.
+  skin: GraphSkinKey;
   arrows: boolean;
   arrowSize: number; // arrowhead cone scale, 0.1..1.5 — kept well under node size
   semanticEdges: boolean; // overlay embedding-similarity edges (dim, dashed)
@@ -50,6 +56,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   existingOnly: false,
   tagFilter: null,
   folderFilter: null,
+  skin: "auto",
   arrows: false,
   arrowSize: 1, // arrowhead/flying-ship scale (bumped from 0.35 on request)
   semanticEdges: false,

@@ -9,6 +9,7 @@ import {
   LAYOUT_PRESETS,
   matchPreset,
   type GraphSettings,
+  type GraphSkinKey,
   type LayoutPresetKey,
 } from "../lib/graphSettings";
 import type { Strings } from "../lib/i18n";
@@ -198,6 +199,33 @@ export default function GraphControls({
         open={openSections.display}
         onToggle={() => toggle("display")}
       >
+        <div className="graph-field">
+          <span className="graph-field__label">
+            {t.gr_skin ?? "Color mode"}
+          </span>
+          <div className="graph-chips">
+            {(
+              [
+                ["auto", t.gr_skin_auto ?? "App theme"],
+                ["black", t.gr_skin_black ?? "Black"],
+                ["white", t.gr_skin_white ?? "White"],
+                ["galaxy", t.gr_skin_galaxy ?? "Galaxy"],
+              ] as [GraphSkinKey, string][]
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`graph-chip${
+                  settings.skin === key ? " graph-chip--active" : ""
+                }`}
+                aria-pressed={settings.skin === key}
+                onClick={() => onChange({ skin: key })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <Toggle
           label={t.gr_arrows ?? "Arrows"}
           hint={t.gr_arrows_hint ?? "Show direction on each link"}

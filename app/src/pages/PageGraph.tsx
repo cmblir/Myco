@@ -33,7 +33,7 @@ import {
 } from "../lib/graphData";
 import { analyzeGaps, gapCount } from "../lib/graphGaps";
 import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
-import { readTheme } from "../lib/graphTheme";
+import { makeTheme } from "../lib/graphTheme";
 import { GraphScene, type SceneStyleState } from "../lib/graphScene";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
@@ -405,7 +405,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     const container = containerRef.current;
     if (!container || !adjacency) return;
     const s = settingsRef.current;
-    const theme = readTheme();
+    const theme = makeTheme(s.skin);
 
     const allowed = computeAllowed(adjacency, allFiles, {
       tagFilter: s.tagFilter,
@@ -607,17 +607,24 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.ambientMotion,
   ]);
 
-  // Theme toggle — recolour the scene. Re-read AFTER the app's theme effect has
-  // flipped --bg (rAF + a slow-start safety timeout).
+  // Theme/skin toggle — recolour the scene. Re-read AFTER the app's theme
+  // effect has flipped --bg (rAF + a slow-start safety timeout). A skin change
+  // rides the same path: sync the scene's settings first (the starfield/nebula
+  // gates read settings.skin), then apply the resolved palette.
   useEffect(() => {
-    const apply = (): void => sceneRef.current?.applyTheme(readTheme());
+    const apply = (): void => {
+      const sc = sceneRef.current;
+      if (!sc) return;
+      sc.applySettings(settingsRef.current);
+      sc.applyTheme(makeTheme(settingsRef.current.skin));
+    };
     const raf = requestAnimationFrame(apply);
     const safety = window.setTimeout(apply, 300);
     return () => {
       cancelAnimationFrame(raf);
       window.clearTimeout(safety);
     };
-  }, [uiTheme]);
+  }, [uiTheme, settings.skin]);
 
   // Spaceship keyboard: F toggles fly mode, Esc exits. Ignored while typing in an
   // input so the search box still accepts "f"/Escape. Registered once; reads live
@@ -734,7 +741,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       const ing = useIngestStore.getState();
       if (!sim || !g || !scene || !vault || ing.vaultPath !== vault) return;
       const s = settingsRef.current;
-      const theme = readTheme();
+      const theme = makeTheme(s.skin);
       const files = flattenMarkdown(useVaultStore.getState().fileTree);
       const allowed = computeAllowed(adj, files, {
         tagFilter: s.tagFilter,

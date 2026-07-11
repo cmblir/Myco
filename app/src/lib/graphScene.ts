@@ -26,6 +26,7 @@ import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeome
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { seededUnit, type VaultGraph } from "./graphData";
 import type { GraphTheme } from "./graphTheme";
+import { skinAmbience } from "./graphSkins";
 import type { GraphSettings } from "./graphSettings";
 import { NebulaLayer } from "./nebulaLayer";
 import { PulseLayer } from "./pulseLayer";
@@ -456,8 +457,13 @@ export class GraphScene {
     const dark = bg.getHSL({ h: 0, s: 0, l: 0 }).l < 0.5;
     this.darkTheme = dark;
     // Soft near-black with a faint blue cast (space, not a harsh flat black, and
-    // no busy dot grid — the mesh reads better on a calm void).
-    const sceneBg = dark ? new THREE.Color(0x05060d) : bg;
+    // no busy dot grid — the mesh reads better on a calm void). Fixed skins
+    // (black / white / galaxy) pin the background via theme.sceneBg instead.
+    const sceneBg = theme.sceneBg
+      ? new THREE.Color(theme.sceneBg)
+      : dark
+        ? new THREE.Color(0x05060d)
+        : bg;
     this.scene.background = sceneBg;
     // Placeholder density only — fit() re-derives it from the framed distance
     // (0.55/framedDist) so the haze ratio is stable at any vault size.
@@ -703,15 +709,19 @@ export class GraphScene {
     this.arrows.visible = settings.arrows;
     this.scene.add(this.arrows);
 
-    // --- starfield (distant, dim, multi-shell parallax depth) — off by default ---
-    this.starfield = SHOW_STARFIELD ? this.buildStarfield(dark) : new THREE.Group();
-    if (SHOW_STARFIELD) this.scene.add(this.starfield);
+    // --- starfield (distant, dim, multi-shell parallax depth) ---
+    // Built regardless, gated by visibility so a skin switch (black ⇄ galaxy)
+    // toggles it live without a scene rebuild.
+    const amb = skinAmbience(settings.skin, dark);
+    this.starfield = this.buildStarfield(dark);
+    this.starfield.visible = SHOW_STARFIELD && amb.starfield;
+    this.scene.add(this.starfield);
 
     // --- nebula/dust (faint additive gas over the biggest galaxies) ---
     // Nebula is just ~9 sprites (8 community clouds + 1 halo), so it's cheap even
     // on a 10k-node vault — enable it regardless of perf-LOD so community colours
     // still read on large graphs (matches applyTheme, which omits the perfLod gate).
-    this.nebula = new NebulaLayer(this.graph, this.nodeIds, dark && SHOW_NEBULA);
+    this.nebula = new NebulaLayer(this.graph, this.nodeIds, SHOW_NEBULA && amb.nebula);
     this.scene.add(this.nebula.group);
 
     // --- pulses (signals flowing along the edges, so the graph reads as alive) ---
@@ -1532,9 +1542,26 @@ export class GraphScene {
     const bg = parseRGBA(theme.bg).color;
     const dark = bg.getHSL({ h: 0, s: 0, l: 0 }).l < 0.5;
     this.darkTheme = dark;
-    const sceneBg = dark ? new THREE.Color(0x05060d) : bg;
+    const sceneBg = theme.sceneBg
+      ? new THREE.Color(theme.sceneBg)
+      : dark
+        ? new THREE.Color(0x05060d)
+        : bg;
     this.scene.background = sceneBg;
     (this.scene.fog as THREE.FogExp2).color.copy(sceneBg);
+    // Starfield shells are colour-baked per dark/light at build time, and the
+    // active skin decides whether they show at all — rebuild them so a theme or
+    // skin change (this method is called for both) lands live.
+    const amb = skinAmbience(this.settings.skin, dark);
+    this.scene.remove(this.starfield);
+    for (const child of this.starfield.children) {
+      const p = child as THREE.Points;
+      (p.geometry as THREE.BufferGeometry).dispose();
+      (p.material as THREE.Material).dispose();
+    }
+    this.starfield = this.buildStarfield(dark);
+    this.starfield.visible = SHOW_STARFIELD && amb.starfield;
+    this.scene.add(this.starfield);
     // Must mirror the constructor's calm calibration (duplicated constants —
     // keep in sync; Phase 1 extracts a single helper).
     this.baseBloom = dark ? 0.45 : 0.25;
@@ -1549,7 +1576,7 @@ export class GraphScene {
     this.pulse.setDark(dark);
     this.tracePulse.setDark(dark);
     this.dust.setDark(dark);
-    this.nebula.setDark(dark && SHOW_NEBULA);
+    this.nebula.setDark(SHOW_NEBULA && amb.nebula);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
     this.edgeOpacity = dark ? EDGE_OPACITY_DARK : EDGE_OPACITY_LIGHT;

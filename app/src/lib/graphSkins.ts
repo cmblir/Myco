@@ -1,0 +1,70 @@
+// Graph skins (independent of the app theme) — the fixed palettes and the
+// per-skin ambience gates. DOM-free (graphTheme.ts pulls sigma, which needs a
+// browser) so this stays unit-testable in the node vitest environment.
+// "auto" is resolved in graphTheme.makeTheme via readTheme(); the fixed skins
+// pin a palette so the graph can stay a black void / white paper / starry
+// galaxy no matter which app theme is active. Palettes mirror readTheme's
+// dark/light values so every downstream dark-vs-light branch (blending, bloom,
+// edge neutrals) behaves identically — only the background + ambience differ.
+import type { GraphTheme } from "./graphTheme";
+import type { GraphSkinKey } from "./graphSettings";
+
+const SKIN_DARK_BASE: Omit<GraphTheme, "bg"> = {
+  ink: "#e6e8eb",
+  node: "#c8c8c8",
+  starDim: "#565b64",
+  gxCore: "#ffe9c4",
+  gxArm: "#cdd7f0",
+  gxHalo: "#5d6c92",
+  edge: "rgba(170,185,215,0.10)",
+  edgeHi: "rgba(190,205,240,0.9)",
+  accent: "#7aa7ff",
+};
+
+const SKIN_THEMES: Record<Exclude<GraphSkinKey, "auto">, GraphTheme> = {
+  // True-black void: the dark look with the starfield/nebula stripped (see
+  // skinAmbience) and the background pinned to #000000.
+  black: { ...SKIN_DARK_BASE, bg: "#000000", sceneBg: "#000000" },
+  // Clean paper: the light palette without the depth-cue star shells.
+  white: {
+    bg: "#ffffff",
+    sceneBg: "#ffffff",
+    ink: "#111418",
+    node: "#3a3f47",
+    starDim: "#9aa0a8",
+    gxCore: "#7a5a1f",
+    gxArm: "#3a4664",
+    gxHalo: "#8a93ac",
+    edge: "rgba(40,50,70,0.10)",
+    edgeHi: "rgba(30,40,60,0.8)",
+    accent: "#3b82f6",
+  },
+  // Deep space: dark palette + the full ambience (3 star shells, nebula).
+  galaxy: { ...SKIN_DARK_BASE, bg: "#05060d", sceneBg: "#05060d" },
+};
+
+// Resolve a FIXED skin to a fresh palette copy (scene code mutates themes).
+export function skinTheme(skin: Exclude<GraphSkinKey, "auto">): GraphTheme {
+  return { ...SKIN_THEMES[skin] };
+}
+
+// Which ambient background layers a skin shows. `dark` matters only for
+// "auto", where the layers keep their theme-derived behaviour.
+export interface SkinAmbience {
+  starfield: boolean;
+  nebula: boolean;
+}
+
+export function skinAmbience(skin: GraphSkinKey, dark: boolean): SkinAmbience {
+  switch (skin) {
+    case "black":
+      return { starfield: false, nebula: false };
+    case "white":
+      return { starfield: false, nebula: false };
+    case "galaxy":
+      return { starfield: true, nebula: true };
+    default:
+      // Pre-skin behaviour: starfield on both themes, nebula dark-only.
+      return { starfield: true, nebula: dark };
+  }
+}

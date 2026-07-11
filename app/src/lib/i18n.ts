@@ -106,6 +106,11 @@ export interface Strings {
   gr_show_orphans_hint: string;
   gr_existing_only: string;
   gr_existing_only_hint: string;
+  gr_skin?: string;
+  gr_skin_auto?: string;
+  gr_skin_black?: string;
+  gr_skin_white?: string;
+  gr_skin_galaxy?: string;
   gr_arrows: string;
   gr_arrows_hint: string;
   gr_arrow_size: string;
@@ -600,6 +605,11 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_show_orphans_hint: "Nodes with no links",
     gr_existing_only: "Existing files only",
     gr_existing_only_hint: "Hide unresolved [[wikilinks]]",
+    gr_skin: "Color mode",
+    gr_skin_auto: "App theme",
+    gr_skin_black: "Black",
+    gr_skin_white: "White",
+    gr_skin_galaxy: "Galaxy",
     gr_arrows: "Arrows",
     gr_arrows_hint: "Show direction on each link",
     gr_arrow_size: "Arrow size",
@@ -1104,6 +1114,11 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_show_orphans_hint: "연결이 없는 노드",
     gr_existing_only: "존재하는 파일만",
     gr_existing_only_hint: "미해결 [[위키링크]] 숨김",
+    gr_skin: "색상 모드",
+    gr_skin_auto: "앱 테마",
+    gr_skin_black: "블랙",
+    gr_skin_white: "화이트",
+    gr_skin_galaxy: "은하계",
     gr_arrows: "화살표",
     gr_arrows_hint: "각 링크에 방향 표시",
     gr_arrow_size: "화살표 크기",
@@ -1607,6 +1622,11 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_show_orphans_hint: "リンクなしのノード",
     gr_existing_only: "既存ファイルのみ",
     gr_existing_only_hint: "未解決の [[wikilinks]] を非表示",
+    gr_skin: "カラーモード",
+    gr_skin_auto: "アプリテーマ",
+    gr_skin_black: "ブラック",
+    gr_skin_white: "ホワイト",
+    gr_skin_galaxy: "ギャラクシー",
     gr_arrows: "矢印",
     gr_arrows_hint: "各リンクに方向を表示",
     gr_arrow_size: "矢印サイズ",

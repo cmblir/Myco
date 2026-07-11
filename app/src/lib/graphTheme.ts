@@ -2,11 +2,16 @@
 // and the sigma Settings derived from theme + the user's display sliders.
 import type { Settings } from "sigma/settings";
 import { drawDiscNodeLabel } from "sigma/rendering";
-import type { GraphSettings } from "./graphSettings";
+import type { GraphSettings, GraphSkinKey } from "./graphSettings";
+import { skinTheme } from "./graphSkins";
 import NodeGlowProgram from "./graphNodeGlow";
 
 export interface GraphTheme {
   bg: string;
+  // Exact scene-background override. When set, GraphScene paints this verbatim
+  // instead of its soft near-black default — the "black" skin needs a true
+  // #000000 void and "galaxy" pins the deep-space blue regardless of app theme.
+  sceneBg?: string;
   node: string;
   // Fallback dim star colour for nodes outside a sized community.
   starDim: string;
@@ -61,6 +66,12 @@ export function readTheme(): GraphTheme {
     accent:
       cs.getPropertyValue("--accent").trim() || (dark ? "#7aa7ff" : "#3b82f6"),
   };
+}
+
+// Resolve the active skin to a palette. "auto" reads the live CSS variables;
+// fixed skins return their pinned palette (see graphSkins.ts — DOM-free).
+export function makeTheme(skin: GraphSkinKey): GraphTheme {
+  return skin === "auto" ? readTheme() : skinTheme(skin);
 }
 
 // textFadeThreshold (0.1..3, default 1.1) → labelRenderedSizeThreshold. sigma
