@@ -240,6 +240,7 @@ attribute float a_size;
 attribute vec3 a_color;
 attribute float a_alpha;
 attribute float a_intensity;
+attribute float a_kind; // stellar class: 0 main, 1 dwarf, 2 giant, 3 neutron
 uniform float u_pixelRatio;
 uniform float u_sizeScale;
 uniform float u_fogNear;
@@ -251,14 +252,22 @@ varying float v_alpha;
 varying float v_fade;
 varying float v_int;
 varying float v_dark;
+varying float v_kind;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   float dist = max(1.0, -mv.z);
   gl_PointSize = a_size * ${NODE_RADIUS.toFixed(1)} * ${GLOW_SCALE.toFixed(1)} * u_sizeScale * u_pixelRatio / dist;
   gl_PointSize *= (1.0 + a_intensity * 0.35); // hub cores a touch larger
+  // Stellar class scales the sprite: giants swell, dwarfs/neutrons shrink.
+  v_kind = floor(a_kind + 0.5);
+  if (v_kind > 2.5) gl_PointSize *= 0.55;
+  else if (v_kind > 1.5) gl_PointSize *= 1.5;
+  else if (v_kind > 0.5) gl_PointSize *= 0.72;
   // Gentle breathing — slow and subtle (motion budget: idle motion must not
-  // grab the eye).
-  gl_PointSize *= 1.0 + 0.025 * sin(u_time * 0.6 + position.x * 0.03 + position.y * 0.021);
+  // grab the eye). Neutron stars pulse fast and a little deeper (pulsar wink).
+  float bAmp = v_kind > 2.5 ? 0.07 : 0.025;
+  float bFreq = v_kind > 2.5 ? 3.4 : 0.6;
+  gl_PointSize *= 1.0 + bAmp * sin(u_time * bFreq + position.x * 0.03 + position.y * 0.021);
   // Floor at 1.3 so distant field stars are true pinpricks, not uniform
   // confetti; cap at 180 so a near hub can't fill the viewport with one sprite.
   gl_PointSize = clamp(gl_PointSize, 1.3, 180.0);
@@ -280,19 +289,47 @@ varying float v_alpha;
 varying float v_fade;
 varying float v_int;
 varying float v_dark;
+varying float v_kind;
 void main() {
-  float d = length(gl_PointCoord - vec2(0.5)) * 2.0;
-  float core = 1.0 - smoothstep(0.30, 0.45, d);  // solid bright centre
-  float glow = pow(max(0.0, 1.0 - d), 2.2);        // soft halo to the edge
+  vec2 pc = gl_PointCoord - vec2(0.5);
+  float d = length(pc) * 2.0;
+  // Stellar-class light profiles — the sky must read as a POPULATION, not a
+  // wall of identical glows.
+  float core;
+  float glow;
+  float spikes = 0.0;
+  if (v_kind > 2.5) {
+    // Neutron star: piercing pinpoint, hardly any halo, diffraction spikes.
+    core = 1.0 - smoothstep(0.10, 0.22, d);
+    glow = pow(max(0.0, 1.0 - d), 5.0) * 0.5;
+    float fall = max(0.0, 1.0 - d);
+    spikes = ((1.0 - smoothstep(0.0, 0.05, abs(pc.y))) +
+              (1.0 - smoothstep(0.0, 0.05, abs(pc.x)))) * fall * fall * 0.7;
+  } else if (v_kind > 1.5) {
+    // Red giant: a big soft diffuse ball, no hard centre.
+    core = (1.0 - smoothstep(0.0, 0.75, d)) * 0.55;
+    glow = pow(max(0.0, 1.0 - d), 1.4);
+  } else if (v_kind > 0.5) {
+    // Dwarf: small dense core, thin halo — most of the quiet population.
+    core = 1.0 - smoothstep(0.18, 0.30, d);
+    glow = pow(max(0.0, 1.0 - d), 3.2) * 0.35;
+  } else {
+    // Main sequence (the original glow star).
+    core = 1.0 - smoothstep(0.30, 0.45, d);
+    glow = pow(max(0.0, 1.0 - d), 2.2);
+  }
   // Alpha profile per theme:
   //   dark:  additive blending sums over the void — a low halo alpha is fine.
   //   light: NormalBlending over near-white paper — the halo needs a higher
   //          alpha to tint the dst at all, otherwise stars evaporate.
-  float aDark = max(core, glow * 0.6);
-  float aLight = max(core, glow * 0.85);
+  float aDark = max(core, glow * 0.6) + spikes;
+  float aLight = max(core, glow * 0.85) + spikes;
   float a = mix(aLight, aDark, v_dark) * v_alpha * v_fade;
   if (a < 0.004) discard;
   vec3 base = v_color * (0.65 + 0.35 * v_fade);
+  // Class tints: giants burn warm, neutrons burn white-hot.
+  if (v_kind > 2.5) base = mix(base, vec3(0.92, 0.96, 1.0), 0.65);
+  else if (v_kind > 1.5) base *= vec3(1.22, 0.88, 0.66);
   // Core inflection differs by theme. Dark: additive brighten toward hue + a
   // touch of white (glowing star on void). Light: DARKEN the core (NormalBlend
   // over near-white bg needs a strong-hued or near-black centre to read).
@@ -661,6 +698,10 @@ export class GraphScene {
       "a_intensity",
       new THREE.BufferAttribute(new Float32Array(n), 1),
     );
+    this.nodeGeom.setAttribute(
+      "a_kind",
+      new THREE.BufferAttribute(new Float32Array(n), 1),
+    );
     this.nodeMat = new THREE.ShaderMaterial({
       uniforms: {
         u_pixelRatio: { value: pr },
@@ -945,6 +986,7 @@ export class GraphScene {
     const siz = this.nodeGeom.getAttribute("a_size") as THREE.BufferAttribute;
     const alp = this.nodeGeom.getAttribute("a_alpha") as THREE.BufferAttribute;
     const intn = this.nodeGeom.getAttribute("a_intensity") as THREE.BufferAttribute;
+    const kind = this.nodeGeom.getAttribute("a_kind") as THREE.BufferAttribute;
     const { hoveredNode, neighbors, focus, tints, pulseId, pulseScale } =
       this.style;
     const c = new THREE.Color();
@@ -990,12 +1032,14 @@ export class GraphScene {
       siz.setX(i, size);
       alp.setX(i, alpha);
       intn.setX(i, a.hidden ? 0 : inten); // hidden cores must not bloom
+      kind.setX(i, a.starKind ?? 0);
     }
     pos.needsUpdate = true;
     col.needsUpdate = true;
     siz.needsUpdate = true;
     alp.needsUpdate = true;
     intn.needsUpdate = true;
+    kind.needsUpdate = true;
   }
 
   // Rebuild the endpoint-colour cache from style (community hue pulled halfway
@@ -1670,6 +1714,7 @@ export class GraphScene {
     this.nodeGeom.setAttribute("a_size", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.nodeGeom.setAttribute("a_alpha", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.nodeGeom.setAttribute("a_intensity", new THREE.BufferAttribute(new Float32Array(n), 1));
+    this.nodeGeom.setAttribute("a_kind", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.points.geometry = this.nodeGeom;
     oldNodeGeom.dispose();
 

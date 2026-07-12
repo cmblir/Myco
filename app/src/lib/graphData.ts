@@ -417,6 +417,11 @@ export interface GraphNodeAttrs {
   community: number; // Louvain community id (≥3 nodes); -1 = field star / orphan
   isHub: boolean; // highest-degree node of its community → galaxy core
   intensity: number; // HDR brightness boost (>1 only for top hubs) for bloom
+  // Stellar class (shader branch): 0 main-sequence glow, 1 dwarf (small, dim,
+  // sharp), 2 red giant (big soft warm halo), 3 neutron (tiny, piercing white,
+  // diffraction spikes). Seeded per note so the sky isn't a wall of identical
+  // glows; top hubs always stay blazing main-sequence.
+  starKind?: number;
   hidden?: boolean;
   // Phase 2 — wiki frontmatter encoded into the star's appearance.
   baseAlpha?: number; // confidence → brightness (1 = full; <1 dims low-confidence)
@@ -431,6 +436,19 @@ export interface GraphEdgeAttrs {
   kind?: "semantic"; // embedding-similarity overlay edge (dim); absent = wikilink
 }
 export type VaultGraph = Graph<GraphNodeAttrs, GraphEdgeAttrs>;
+
+// Stellar classification — deterministic per note. Top hubs stay blazing
+// main-sequence stars; orphans skew toward quiet dwarfs; the rest mix so the
+// sky reads like a real population instead of uniform glow.
+export function starKindOf(id: string, deg: number, dn: number): number {
+  if (dn > 0.75) return 0; // top hubs: blazing main-sequence
+  const r = seededUnit(id, 5);
+  if (deg === 0) return r < 0.6 ? 1 : 0; // orphans: mostly quiet dwarfs
+  if (r < 0.5) return 0; // main sequence
+  if (r < 0.7) return 1; // dwarf
+  if (r < 0.88) return 2; // red giant
+  return 3; // neutron star
+}
 
 export function buildGraph(
   adjacency: Adjacency,
@@ -533,6 +551,7 @@ export function buildGraph(
     // in a nucleus), not by individual HDR — additive overlap sums past any
     // per-sprite cap, so per-sprite HDR stays low (calm-cosmic-web spec).
     g.setNodeAttribute(id, "intensity", Math.min(1.7, 0.22 + Math.pow(dn, 1.8) * 1.5));
+    g.setNodeAttribute(id, "starKind", starKindOf(id, deg, dn));
   });
   // Colour by community hue + star temperature; store community id + hub flag
   // (needs the degree normalisation above, so it runs AFTER the size pass).

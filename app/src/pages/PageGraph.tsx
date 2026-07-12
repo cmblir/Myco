@@ -28,6 +28,7 @@ import {
   countAllNodes,
   flattenMarkdown,
   shortestPath,
+  starKindOf,
   stem,
   type VaultGraph,
 } from "../lib/graphData";
@@ -853,6 +854,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         g.mergeNodeAttributes(id, {
           deg,
           size: Math.max(1, Math.min(5, 1 + Math.sqrt(deg) * 0.7)) * s.nodeSize,
+          starKind: starKindOf(id, deg, 0),
         });
       }
       syncSwirl(); // liveAdd reheats — adopt swirled positions first

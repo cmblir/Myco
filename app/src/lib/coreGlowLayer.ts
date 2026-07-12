@@ -16,13 +16,17 @@ uniform float u_sizeScale;
 uniform float u_time;
 varying vec3 v_color;
 varying float v_pulse;
+varying float v_near;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   float dist = max(1.0, -mv.z);
   gl_Position = projectionMatrix * mv;
   // Slow breathing, per-core phase offset so the cluster doesn't blink in step.
   v_pulse = 0.85 + 0.15 * sin(u_time * 0.35 + a_phase);
-  gl_PointSize = clamp(a_wsize * v_pulse * u_sizeScale * u_pixelRatio / dist, 6.0, 480.0);
+  gl_PointSize = clamp(a_wsize * v_pulse * u_sizeScale * u_pixelRatio / dist, 6.0, 300.0);
+  // Near fade: flying INTO a bulge dissolves it (a diffuse glow has no
+  // surface) instead of filling the screen with a giant amber planet.
+  v_near = smoothstep(a_wsize * 1.1, a_wsize * 2.6, dist);
   v_color = a_pcolor;
 }
 `;
@@ -31,12 +35,13 @@ const CORE_FRAG = /* glsl */ `
 precision mediump float;
 varying vec3 v_color;
 varying float v_pulse;
+varying float v_near;
 void main() {
   float d = length(gl_PointCoord - vec2(0.5)) * 2.0;
   // Bright warm bulge + a wide soft halo (two-lobe falloff).
   float bulge = pow(max(0.0, 1.0 - d * 2.2), 2.0);
   float halo = pow(max(0.0, 1.0 - d), 3.0) * 0.35;
-  float a = (bulge + halo) * 0.55 * v_pulse;
+  float a = (bulge + halo) * 0.34 * v_pulse * v_near;
   if (a < 0.01) discard;
   // Whiten the very centre like a dense stellar bulge.
   vec3 col = mix(v_color, vec3(1.0, 0.97, 0.9), bulge * 0.6);
