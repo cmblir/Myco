@@ -14,15 +14,21 @@ import shipUrl from "../assets/spaceship.glb?url";
 import { FLIGHT, speedOf, stepBank, stepVelocity } from "./shipPhysics";
 
 // Normalised hull size: the GLB is uniform-scaled so its longest dimension
-// lands here (world units) — matches the old primitive ship's presence.
-const SHIP_SIZE = 5.2;
-// Engine tail in ship-local space (behind and slightly above centre, +Z aft).
-const TAIL = new THREE.Vector3(0, 0.25, 2.6);
+// lands here (world units). 5.2 read as a speck from the chase distance —
+// 7 fills the frame like a piloted craft without blocking the view ahead.
+const SHIP_SIZE = 10;
+// Engine tail in ship-local space (+Z aft). Past the hull's rear (~4.4 at
+// SHIP_SIZE 10) so the glow doesn't bleed through the fuselage mid-body.
+const TAIL = new THREE.Vector3(0, 0.3, 4.8);
 
 // Thruster trail: a small pooled Points cloud streaming aft under thrust.
 const TRAIL_MAX = 90;
 const TRAIL_LIFE = 0.55; // seconds
-const TRAIL_COLOR = new THREE.Color("#7fd0ff");
+// Theme-branched exhaust colours: ice glow summed additively on dark, deep
+// blue drawn normally on light (additive light-blue vanishes on white paper).
+const TRAIL_COLOR_DARK = new THREE.Color("#7fd0ff");
+const TRAIL_COLOR_LIGHT = new THREE.Color("#2b5fa8");
+const WHITE = new THREE.Color(1, 1, 1);
 
 export class ShipController {
   readonly ship: THREE.Group;
@@ -43,6 +49,7 @@ export class ShipController {
   private bank = 0;
   private yawRate = 0; // smoothed rad/s, feeds the visual bank
   private yawAccum = 0; // yaw applied since the last update()
+  private dark = true; // theme branch (hull tint, exhaust blending)
   // Thruster trail pool (ring buffer; dead particles have life ≤ 0).
   private trail: THREE.Points;
   private trailGeom: THREE.BufferGeometry;
@@ -54,7 +61,9 @@ export class ShipController {
   private q = new THREE.Quaternion();
   private v = new THREE.Vector3();
   private v2 = new THREE.Vector3();
-  private camOffset = new THREE.Vector3(0, 2.4, 17); // behind (+Z) and above the ship
+  // Behind (+Z) and above the ship — high enough that the flat wings read as
+  // a shape instead of an edge-on line.
+  private camOffset = new THREE.Vector3(0, 3.2, 13);
   private lookAhead = new THREE.Vector3(0, 2, -40); // look out past the ship into the graph
 
   constructor(
@@ -137,6 +146,27 @@ void main() {
       shipUrl,
       (gltf) => {
         const model = gltf.scene;
+        // The scene has NO lights (everything else is shader/Basic material),
+        // so the GLB's PBR materials render pitch black. Swap each for an
+        // unlit MeshBasicMaterial keeping the albedo colour/texture.
+        model.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          const convert = (m: THREE.Material): THREE.Material => {
+            const std = m as THREE.MeshStandardMaterial;
+            const flat = new THREE.MeshBasicMaterial({
+              color: std.color ? std.color.clone() : new THREE.Color(0xcfd6e6),
+              map: std.map ?? null,
+              vertexColors: std.vertexColors ?? false,
+            });
+            flat.userData.baseColor = flat.color.clone();
+            m.dispose();
+            return flat;
+          };
+          mesh.material = Array.isArray(mesh.material)
+            ? mesh.material.map(convert)
+            : convert(mesh.material);
+        });
         const box = new THREE.Box3().setFromObject(model);
         const dims = box.getSize(new THREE.Vector3());
         const scale = SHIP_SIZE / Math.max(dims.x, dims.y, dims.z, 1e-6);
@@ -148,6 +178,7 @@ void main() {
         wrap.rotation.y = Math.PI; // GLB nose +Z → rig forward −Z
         this.body.clear();
         this.body.add(wrap);
+        this.applyHullTint();
       },
       undefined,
       () => {
@@ -199,6 +230,34 @@ void main() {
   /** Current flight speed in world units/s (for the HUD readout). */
   getSpeed(): number {
     return speedOf(this.vel);
+  }
+
+  /** Theme branch: on light backgrounds the pale hull washes out and additive
+   * exhaust vanishes — darken the hull and draw the glow/trail normally. */
+  setDark(dark: boolean): void {
+    this.dark = dark;
+    this.applyHullTint();
+    const blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
+    this.glowMat.blending = blending;
+    this.glowMat.color.set(dark ? 0x7fd0ff : 0x2b5fa8);
+    this.glowMat.needsUpdate = true;
+    this.trailMat.blending = blending;
+    this.trailMat.needsUpdate = true;
+  }
+
+  private applyHullTint(): void {
+    const k = this.dark ? 1 : 0.45; // slate silhouette on paper
+    this.body.traverse((o) => {
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh) return;
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        const basic = m as THREE.MeshBasicMaterial;
+        if (!basic.color) continue;
+        const base = (basic.userData.baseColor ??= basic.color.clone());
+        basic.color.copy(base).multiplyScalar(k);
+      }
+    });
   }
 
   private isTyping(): boolean {
@@ -338,7 +397,20 @@ void main() {
         pos.getZ(i) + this.trailVel[i * 3 + 2] * dt,
       );
       const f = Math.max(0, this.trailLife[i] / TRAIL_LIFE);
-      col.setXYZ(i, TRAIL_COLOR.r * f, TRAIL_COLOR.g * f, TRAIL_COLOR.b * f);
+      // Dark: additive → scale toward black. Light: normal blending over a
+      // near-white bg → fade toward white instead, so dying particles vanish
+      // into the paper rather than turning into black specks.
+      const base = this.dark ? TRAIL_COLOR_DARK : TRAIL_COLOR_LIGHT;
+      if (this.dark) {
+        col.setXYZ(i, base.r * f, base.g * f, base.b * f);
+      } else {
+        col.setXYZ(
+          i,
+          WHITE.r + (base.r - WHITE.r) * f,
+          WHITE.g + (base.g - WHITE.g) * f,
+          WHITE.b + (base.b - WHITE.b) * f,
+        );
+      }
     }
     pos.needsUpdate = true;
     col.needsUpdate = true;
@@ -348,8 +420,10 @@ void main() {
   // it exactly; otherwise it eases for a smooth chase.
   private syncCamera(snap: boolean): void {
     const targetPos = this.v.copy(this.camOffset).applyQuaternion(this.ship.quaternion).add(this.ship.position);
+    // 0.15 lagged so far behind at cruise speed that the ship shrank to a
+    // speck — 0.25 keeps the chase smooth but the hull framed.
     if (snap) this.camera.position.copy(targetPos);
-    else this.camera.position.lerp(targetPos, 0.15);
+    else this.camera.position.lerp(targetPos, 0.25);
     const look = this.lookAhead.clone().applyQuaternion(this.ship.quaternion).add(this.ship.position);
     this.camera.up.set(0, 1, 0).applyQuaternion(this.ship.quaternion);
     this.camera.lookAt(look);
@@ -400,8 +474,9 @@ function buildFallbackHull(): THREE.Group {
   return hull;
 }
 
-// Engine glow: an additive sprite-ish point at the tail (+Z). Opacity/size are
-// throttle-driven in update().
+// Engine glow: an additive point at the tail (+Z). Opacity/size are
+// throttle-driven in update(). A radial-gradient sprite texture rounds the
+// point off — an untextured PointsMaterial draws a hard SQUARE.
 function buildEngineGlow(): { points: THREE.Points; mat: THREE.PointsMaterial } {
   const geom = new THREE.BufferGeometry();
   geom.setAttribute(
@@ -417,5 +492,22 @@ function buildEngineGlow(): { points: THREE.Points; mat: THREE.PointsMaterial } 
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   });
+  // Canvas is a DOM API — the node test env just keeps the plain point.
+  if (typeof document !== "undefined") {
+    const c = document.createElement("canvas");
+    c.width = c.height = 64;
+    const ctx = c.getContext("2d");
+    if (ctx) {
+      const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+      g.addColorStop(0, "rgba(255,255,255,1)");
+      g.addColorStop(0.35, "rgba(255,255,255,0.55)");
+      g.addColorStop(1, "rgba(255,255,255,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, 64, 64);
+      mat.map = new THREE.CanvasTexture(c);
+      mat.alphaTest = 0.01;
+      mat.needsUpdate = true;
+    }
+  }
   return { points: new THREE.Points(geom, mat), mat };
 }

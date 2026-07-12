@@ -786,6 +786,7 @@ export class GraphScene {
       this.scene,
       this.baseFlySpeed,
     );
+    this.ship.setDark(dark);
 
     // --- cluster auto-labels (community names while zoomed out) ---
     this.clusterLabels = new ClusterLabels(this.graph);
@@ -1620,6 +1621,7 @@ export class GraphScene {
     this.wave.setDark(dark);
     this.nova.setDark(dark);
     this.synapse.setDark(dark);
+    this.ship.setDark(dark);
     this.meteor.lines.visible = amb.meteors && !this.perfLod;
     this.nebula.setDark(SHOW_NEBULA && amb.nebula);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).

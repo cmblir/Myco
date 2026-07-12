@@ -27,10 +27,13 @@ export interface FlightTuning {
 }
 
 export const FLIGHT: FlightTuning = {
-  accel: 2200,
-  drag: 2.4, // terminal ≈ 2200/2.4 ≈ 917 — just under the cap
-  maxSpeed: 950,
-  boost: 2.6,
+  // Tuned against the layout scale (linkDistance 45, framed vault ≈ 1-2k
+  // units): cruising crosses a cluster in seconds, not the whole vault —
+  // the first cut (950 cap) flew past everything before it registered.
+  accel: 900,
+  drag: 2.6, // terminal ≈ 900/2.6 ≈ 346 — just under the cap
+  maxSpeed: 360,
+  boost: 2.5,
   bankMax: 0.55,
   bankRate: 6,
 };
