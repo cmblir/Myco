@@ -518,12 +518,14 @@ export function buildGraph(
     const dn = maxDeg > 0 ? deg / maxDeg : 0;
     const jit = 1 + (seededUnit(id, 1) - 0.5) * 0.36; // ±18% per-star size jitter
     g.setNodeAttribute(id, "deg", deg);
-    // Log-degree size scale (calm-cosmic-web spec A6): hub ≈ 2.9× leaf (was
-    // ~3.5×). Log compresses the top so a super-hub (an index/MOC linking
-    // everything) never balloons over the mesh, while low degrees still step
-    // visibly. maxDeg 0 (edgeless vault) would be 0/0 → plain base size.
+    // Log-degree size scale with a super-linear top: true hubs — the entry
+    // points that fan out into many children — read clearly LARGE (≈3.8× a
+    // leaf), while the ^1.25 keeps mid-degree stars modest so the hierarchy
+    // stays legible. maxDeg 0 (edgeless vault) would be 0/0 → plain base size.
     const logSize =
-      maxDeg > 0 ? 0.85 + (1.6 * Math.log2(1 + deg)) / Math.log2(1 + maxDeg) : 0.85;
+      maxDeg > 0
+        ? 0.85 + 2.5 * Math.pow(Math.log2(1 + deg) / Math.log2(1 + maxDeg), 1.25)
+        : 0.85;
     g.setNodeAttribute(id, "size", logSize * o.nodeSize * jit);
     // HDR intensity with a HARD CAP and a steep exponent: only the top ~10% of
     // hubs cross the bloom gate; everything else carries a faint baseline glow.

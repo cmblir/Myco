@@ -40,6 +40,7 @@ import { planWave } from "./activationWave";
 import { MeteorLayer } from "./meteorLayer";
 import { CoreGlowLayer } from "./coreGlowLayer";
 import { CosmicEvents } from "./cosmicEvents";
+import { GalacticBandLayer } from "./galacticBandLayer";
 import {
   pickByDegree,
   synapseDelay,
@@ -416,6 +417,7 @@ export class GraphScene {
   private meteor: MeteorLayer; // shooting stars across the galaxy-skin sky
   private coreGlow: CoreGlowLayer; // Andromeda-style bulge per galaxy
   private cosmic: CosmicEvents; // rare black-hole / wormhole events
+  private band: GalacticBandLayer; // decorative Milky-Way dust stripe
   private coreGlowTick = 0; // throttle centroid refresh
   private synapse: WaveLayer; // idle spontaneous micro-firings (dim ripples)
   private synapseTimer = 3; // seconds until the next idle firing
@@ -802,6 +804,9 @@ export class GraphScene {
     this.cosmic = new CosmicEvents(pr);
     this.cosmic.setSizeScale(this.sizeScale(h));
     this.scene.add(this.cosmic.group);
+    this.band = new GalacticBandLayer();
+    this.band.group.visible = dark && !this.perfLod;
+    this.scene.add(this.band.group);
 
     // --- spaceship (immersive third-person flight; enabled via setFlyMode) ---
     this.ship = new ShipController(
@@ -1467,7 +1472,11 @@ export class GraphScene {
     if (linked.length === 0) return hosts;
     for (const id of this.nodeIds) {
       const a = this.graph.getNodeAttributes(id);
-      if (a.deg > 0) continue;
+      // Moons are UNAFFILIATED orphans only. A link-less note that belongs to
+      // a folder galaxy must stay in ITS galaxy — capturing it toward the
+      // nearest linked star (usually the big neighbouring galaxy) visibly
+      // dragged whole link-less folders into the biggest mass.
+      if (a.deg > 0 || a.community >= 0) continue;
       let best = linked[0].id;
       let bd = Infinity;
       for (const h of linked) {
@@ -1531,7 +1540,7 @@ export class GraphScene {
       // Capture: ease the orbit radius toward a few host radii.
       const target =
         h.size * NODE_RADIUS * (MOON_RADIUS_MIN + MOON_RADIUS_VAR * seededUnit(id, 62));
-      const eased = dist + (target - dist) * Math.min(1, dt * 0.6);
+      const eased = dist + (target - dist) * Math.min(1, dt * 0.25);
       this.rotVec
         .applyAxisAngle(this.rotAxis, MOON_SPEED * dt)
         .multiplyScalar(eased / dist);
@@ -1794,6 +1803,7 @@ export class GraphScene {
     this.ship.setDark(dark);
     this.meteor.lines.visible = amb.meteors && !this.perfLod;
     this.coreGlow.setEnabled(dark && !this.perfLod);
+    this.band.group.visible = dark && !this.perfLod;
     this.nebula.setDark(SHOW_NEBULA && amb.nebula);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
@@ -2121,6 +2131,8 @@ export class GraphScene {
         if (this.darkTheme && !this.perfLod) {
           this.cosmic.update(dt, () => this.galaxyCentres());
         }
+        // The Milky-Way band wheels imperceptibly.
+        if (this.band.group.visible) this.band.update(dt);
         // Spontaneous synapse firings keep the idle brain alive. Perf mode
         // drops them with the other ambient layers.
         if (!this.perfLod) {
@@ -2208,6 +2220,8 @@ export class GraphScene {
     this.scene.remove(this.coreGlow.points);
     this.cosmic.dispose();
     this.scene.remove(this.cosmic.group);
+    this.band.dispose();
+    this.scene.remove(this.band.group);
     this.clusterLabels.dispose();
     this.scene.remove(this.clusterLabels.group);
     this.bloom.dispose();

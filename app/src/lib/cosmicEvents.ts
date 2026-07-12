@@ -9,6 +9,9 @@ import * as THREE from "three";
 
 const EVENT_GAP_MIN = 40; // seconds between events
 const EVENT_GAP_VAR = 80;
+// Scheduling/placement use Math.random ON PURPOSE — events should genuinely
+// surprise (a different sky every session); only the per-spark constants stay
+// seeded so a running event animates coherently.
 const BH_DUR = 10; // black hole lifetime
 const WH_DUR = 8; // wormhole lifetime
 const SPARKS = 64; // shared particle pool size
@@ -181,7 +184,7 @@ export class CosmicEvents {
     this.sparks.visible = false;
     this.group.add(this.sparks);
 
-    this.nextIn = EVENT_GAP_MIN + evSeed(0, 1) * EVENT_GAP_VAR;
+    this.nextIn = EVENT_GAP_MIN + Math.random() * EVENT_GAP_VAR;
   }
 
   setSizeScale(s: number): void {
@@ -207,7 +210,7 @@ export class CosmicEvents {
       this.coreA.visible = false;
       this.coreB.visible = false;
       this.sparks.visible = false;
-      this.nextIn = EVENT_GAP_MIN + evSeed(this.count, 1) * EVENT_GAP_VAR;
+      this.nextIn = EVENT_GAP_MIN + Math.random() * EVENT_GAP_VAR;
       return;
     }
     const life = this.t / this.dur;
@@ -226,32 +229,32 @@ export class CosmicEvents {
       return;
     }
     this.count++;
-    const s = (salt: number): number => evSeed(this.count, salt);
-    this.kind = centres.length > 1 && s(2) < 0.5 ? "wormhole" : "blackhole";
+    const s = (): number => Math.random();
+    this.kind = centres.length > 1 && s() < 0.5 ? "wormhole" : "blackhole";
     this.active = true;
     this.t = 0;
     this.dur = this.kind === "blackhole" ? BH_DUR : WH_DUR;
 
-    const gi = Math.floor(s(3) * centres.length) % centres.length;
+    const gi = Math.floor(s() * centres.length) % centres.length;
     const ga = centres[gi];
     // Off to the side of the galaxy, not in its core — an event you notice
     // happening NEAR the stars, eating at the edge.
-    const off = ga.r * (1.1 + 0.5 * s(4));
-    const theta = s(5) * Math.PI * 2;
+    const off = ga.r * (1.1 + 0.5 * s());
+    const theta = s() * Math.PI * 2;
     this.posA.set(
       ga.x + Math.cos(theta) * off,
-      ga.y + (s(6) - 0.5) * ga.r * 0.6,
+      ga.y + (s() - 0.5) * ga.r * 0.6,
       ga.z + Math.sin(theta) * off,
     );
     const scale = Math.max(70, ga.r * 0.9);
     this.setupCore(this.coreA, this.matA, this.posA, scale);
     if (this.kind === "wormhole") {
-      const gj = (gi + 1 + Math.floor(s(7) * (centres.length - 1))) % centres.length;
+      const gj = (gi + 1 + Math.floor(s() * (centres.length - 1))) % centres.length;
       const gb = centres[gj];
-      const theta2 = s(8) * Math.PI * 2;
+      const theta2 = s() * Math.PI * 2;
       this.posB.set(
         gb.x + Math.cos(theta2) * gb.r * 1.2,
-        gb.y + (s(9) - 0.5) * gb.r * 0.6,
+        gb.y + (s() - 0.5) * gb.r * 0.6,
         gb.z + Math.sin(theta2) * gb.r * 1.2,
       );
       this.setupCore(this.coreB, this.matB, this.posB, Math.max(55, gb.r * 0.7));

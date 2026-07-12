@@ -212,7 +212,7 @@ describe("calm-cosmic-web node encoding", () => {
     for (const c of neutralComms) expect(saturatedComms.has(c)).toBe(false);
   });
 
-  it("node size follows the log-degree scale (hub ≈ 2.9× leaf, pre-jitter)", () => {
+  it("node size follows the super-linear log-degree scale (hubs pop)", () => {
     const a = "/vault/a.md";
     const b = "/vault/b.md";
     const c = "/vault/c.md";
@@ -222,7 +222,7 @@ describe("calm-cosmic-web node encoding", () => {
       opts,
     );
     const size = (id: string, deg: number, maxDeg: number): number =>
-      (0.85 + (1.6 * Math.log2(1 + deg)) / Math.log2(1 + maxDeg)) *
+      (0.85 + 2.5 * Math.pow(Math.log2(1 + deg) / Math.log2(1 + maxDeg), 1.25)) *
       (1 + (seededUnit(id, 1) - 0.5) * 0.36);
     expect(g.getNodeAttribute(b, "size")).toBeCloseTo(size(b, 2, 2), 6);
     expect(g.getNodeAttribute(a, "size")).toBeCloseTo(size(a, 1, 2), 6);
