@@ -454,7 +454,7 @@ export class GraphScene {
   private meteor: MeteorLayer; // shooting stars across the galaxy-skin sky
   private coreGlow: CoreGlowLayer; // Andromeda-style bulge per galaxy
   private cosmic: CosmicEvents; // rare black-hole / wormhole events
-  private band: GalacticBandLayer; // decorative Milky-Way dust stripe
+  private band: GalacticBandLayer; // dust bands hugging each large galaxy
   private coreGlowTick = 0; // throttle centroid refresh
   private synapse: WaveLayer; // idle spontaneous micro-firings (dim ripples)
   private synapseTimer = 3; // seconds until the next idle firing
@@ -845,9 +845,10 @@ export class GraphScene {
     this.cosmic = new CosmicEvents(pr);
     this.cosmic.setSizeScale(this.sizeScale(h));
     this.scene.add(this.cosmic.group);
-    this.band = new GalacticBandLayer();
-    this.band.group.visible = dark && !this.perfLod;
-    this.scene.add(this.band.group);
+    this.band = new GalacticBandLayer(this.graph, this.nodeIds, pr);
+    this.band.setSizeScale(this.sizeScale(h));
+    this.band.points.visible = dark && !this.perfLod;
+    this.scene.add(this.band.points);
 
     // --- spaceship (immersive third-person flight; enabled via setFlyMode) ---
     this.ship = new ShipController(
@@ -1796,6 +1797,7 @@ export class GraphScene {
     // core bulges re-derive their groups.
     this.moonHosts = null;
     this.coreGlow.setNodeIds(this.nodeIds);
+    this.band.setNodeIds(this.nodeIds);
 
     this.writeNodes();
     this.writeEdges();
@@ -1848,7 +1850,7 @@ export class GraphScene {
     this.ship.setDark(dark);
     this.meteor.lines.visible = amb.meteors && !this.perfLod;
     this.coreGlow.setEnabled(dark && !this.perfLod);
-    this.band.group.visible = dark && !this.perfLod;
+    this.band.points.visible = dark && !this.perfLod;
     this.nebula.setDark(SHOW_NEBULA && amb.nebula);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
@@ -2176,8 +2178,8 @@ export class GraphScene {
         if (this.darkTheme && !this.perfLod) {
           this.cosmic.update(dt, () => this.galaxyCentres());
         }
-        // The Milky-Way band wheels imperceptibly.
-        if (this.band.group.visible) this.band.update(dt);
+        // Each large galaxy's dust band wheels with it.
+        if (this.band.points.visible) this.band.update(dt);
         // Spontaneous synapse firings keep the idle brain alive. Perf mode
         // drops them with the other ambient layers.
         if (!this.perfLod) {
@@ -2266,7 +2268,7 @@ export class GraphScene {
     this.cosmic.dispose();
     this.scene.remove(this.cosmic.group);
     this.band.dispose();
-    this.scene.remove(this.band.group);
+    this.scene.remove(this.band.points);
     this.clusterLabels.dispose();
     this.scene.remove(this.clusterLabels.group);
     this.bloom.dispose();
@@ -2310,6 +2312,7 @@ export class GraphScene {
     this.synapse.setSizeScale(this.sizeScale(h));
     this.coreGlow.setSizeScale(this.sizeScale(h));
     this.cosmic.setSizeScale(this.sizeScale(h));
+    this.band.setSizeScale(this.sizeScale(h));
     // Fat lines are screen-space — they need the drawing-buffer resolution.
     this.filamentMat?.resolution.set(w, h);
   };
