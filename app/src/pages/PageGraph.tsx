@@ -193,9 +193,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const syncSwirl = useRef(() => {
     const sc = sceneRef.current;
     const sm = simRef.current;
-    if (sc && sm && settingsRef.current.folderGalaxies) {
-      sm.syncBack(sc.snapshotPositions());
-    }
+    // Galaxy swirl AND orphan-moon orbits both move rendered positions.
+    if (sc && sm) sm.syncBack(sc.snapshotPositions());
   }).current;
 
   // Compose hover + ingest state into the scene's style and push it.

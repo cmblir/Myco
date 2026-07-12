@@ -24,7 +24,12 @@ import {
   type Force,
 } from "d3-force-3d";
 import type { GraphSettings } from "./graphSettings";
-import { galaxyAnchors, type GalaxyAnchor } from "./galaxyLayout";
+import {
+  galaxyAnchors,
+  galaxyNormal,
+  galaxySizeBoost,
+  type GalaxyAnchor,
+} from "./galaxyLayout";
 
 // Deterministic RNG — copied from graphData so the worker bundle doesn't pull in
 // graphology. Must stay identical to graphData's so timelapse spawn jitter matches.
@@ -94,6 +99,9 @@ const CHARGE_RANGE_MUL = 3.2;
 const ANCHOR_SCALE = 0.06;
 const ANCHOR_HUB_MUL = 2.5;
 const GALAXY_GRAVITY_MUL = 0.35;
+// Disc flattening: pull members onto their galaxy's tilted disc plane — the
+// squash that turns a ball of stars into something Andromeda-shaped.
+const FLATTEN_SCALE = 0.14;
 // In the worker the tick loop yields 0ms — it isn't the UI thread, so the only
 // reason to yield is to let queued messages (drag/setFixed) run between ticks.
 const WORKER_YIELD_MS = 0;
@@ -183,12 +191,19 @@ function build(
       return g.folderGalaxies ? base * GALAXY_GRAVITY_MUL : base;
     };
 
-  // --- folder-galaxies anchor force -----------------------------------------
-  // One anchor per group on a wide ring (galaxyLayout); every member is pulled
-  // toward its anchor, hubs hardest, so groups settle as separate galaxies.
+  // --- folder-galaxies anchor + disc force -----------------------------------
+  // One anchor per group on a wide shell (galaxyLayout); every member is
+  // pulled toward its anchor (hubs hardest) AND flattened onto the group's
+  // seeded tilted disc plane, so groups settle as separate disc galaxies.
+  // sizeBoost (intra-link density) feeds the cluster force's orbit ring —
+  // densely interlinked folders swell into bigger galaxies.
   const anchors = new Map<number, GalaxyAnchor>();
+  const normals = new Map<number, GalaxyAnchor>();
+  const sizeBoost = new Map<number, number>();
   const computeAnchors = (): void => {
     anchors.clear();
+    normals.clear();
+    sizeBoost.clear();
     if (!cur.folderGalaxies) return;
     const counts = new Map<number, number>();
     for (const n of nodes) {
@@ -196,15 +211,27 @@ function build(
     }
     const comms = [...counts.keys()].sort((a, b) => a - b);
     if (comms.length < 2) return;
+    const intra = new Map<number, number>();
+    for (const l of links) {
+      if (sameComm(l)) {
+        const c = (l.source as SimNode).community;
+        intra.set(c, (intra.get(c) ?? 0) + 1);
+      }
+    }
     const maxCount = Math.max(...counts.values());
     const pts = galaxyAnchors(comms.length, cur.linkDistance, maxCount);
-    comms.forEach((c, i) => anchors.set(c, pts[i]));
+    comms.forEach((c, i) => {
+      anchors.set(c, pts[i]);
+      normals.set(c, galaxyNormal(c));
+      sizeBoost.set(c, galaxySizeBoost(counts.get(c) ?? 1, intra.get(c) ?? 0));
+    });
   };
   const galaxyForce = (): Force<SimNode, SimLink> => {
     let ns: SimNode[] = [];
     const force: Force<SimNode, SimLink> = (alpha) => {
       if (anchors.size === 0) return;
       const k = ANCHOR_SCALE * alpha;
+      const kf = FLATTEN_SCALE * alpha;
       for (const n of ns) {
         if (n.fx != null) continue;
         const a = anchors.get(n.community);
@@ -213,6 +240,15 @@ function build(
         n.vx = (n.vx ?? 0) + (a.x - n.x) * k * m;
         n.vy = (n.vy ?? 0) + (a.y - n.y) * k * m;
         n.vz = (n.vz ?? 0) + (a.z - n.z) * k * m;
+        // Disc flattening: cancel the offset along the galaxy's spin axis.
+        const nm = normals.get(n.community);
+        if (nm) {
+          const dot =
+            (n.x - a.x) * nm.x + (n.y - a.y) * nm.y + (n.z - a.z) * nm.z;
+          n.vx -= nm.x * dot * kf;
+          n.vy -= nm.y * dot * kf;
+          n.vz -= nm.z * dot * kf;
+        }
       }
     };
     force.initialize = (init: SimNode[]): void => {
@@ -320,7 +356,11 @@ function build(
           dist = 1;
         }
         const count = cn.get(n.community) ?? 1;
-        const ringR = cur.linkDistance * (ORBIT_BASE + ORBIT_GROW * Math.sqrt(count));
+        // Galaxy mode: densely interlinked groups swell (galaxySizeBoost).
+        const ringR =
+          cur.linkDistance *
+          (ORBIT_BASE + ORBIT_GROW * Math.sqrt(count)) *
+          (sizeBoost.get(n.community) ?? 1);
         const rTarget = ringR * n.rJitter;
         const corr = (rTarget - dist) * k;
         n.vx = (n.vx ?? 0) + (dx / dist) * corr;

@@ -27,6 +27,7 @@ import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import { seededUnit, type VaultGraph } from "./graphData";
 import type { GraphTheme } from "./graphTheme";
 import { skinAmbience } from "./graphSkins";
+import { galaxyNormal } from "./galaxyLayout";
 import type { GraphSettings } from "./graphSettings";
 import { NebulaLayer } from "./nebulaLayer";
 import { PulseLayer } from "./pulseLayer";
@@ -37,6 +38,8 @@ import { WaveLayer } from "./waveLayer";
 import { SupernovaFx } from "./supernovaFx";
 import { planWave } from "./activationWave";
 import { MeteorLayer } from "./meteorLayer";
+import { CoreGlowLayer } from "./coreGlowLayer";
+import { CosmicEvents } from "./cosmicEvents";
 import {
   pickByDegree,
   synapseDelay,
@@ -172,9 +175,14 @@ const ROTATE_IDLE_MS = 8000;
 const LOD_RESTORE_MS = 150;
 
 // Idle galaxy swirl (folder-galaxies mode): each galaxy slowly rotates about
-// its own centroid, alternating direction per group — the "several living
-// galaxies" motion. Rad/s; deliberately slower than the camera auto-rotate.
+// its own seeded disc axis, alternating direction per group — the "several
+// living galaxies" motion. Rad/s; deliberately slower than the camera rotate.
 const SWIRL_SPEED = 0.05;
+// Orphan "moons": isolated notes orbit their nearest linked star, visibly
+// faster than the galactic swirl, and ease onto a close orbit radius.
+const MOON_SPEED = 0.35;
+const MOON_RADIUS_MIN = 4; // × host node's world radius
+const MOON_RADIUS_VAR = 4;
 
 // Above this node count the scene builds in performance mode (spec B5):
 // 1 starfield shell instead of 3, no nebula, no pulses — the ambient layers
@@ -406,6 +414,9 @@ export class GraphScene {
   private wave: WaveLayer; // click-triggered neural activation ripple
   private nova: SupernovaFx; // selection shockwave at the clicked star
   private meteor: MeteorLayer; // shooting stars across the galaxy-skin sky
+  private coreGlow: CoreGlowLayer; // Andromeda-style bulge per galaxy
+  private cosmic: CosmicEvents; // rare black-hole / wormhole events
+  private coreGlowTick = 0; // throttle centroid refresh
   private synapse: WaveLayer; // idle spontaneous micro-firings (dim ripples)
   private synapseTimer = 3; // seconds until the next idle firing
   private synapseCount = 0; // deterministic RNG stream cursor
@@ -783,6 +794,14 @@ export class GraphScene {
     this.meteor = new MeteorLayer();
     this.meteor.lines.visible = amb.meteors && !this.perfLod;
     this.scene.add(this.meteor.lines);
+
+    // --- galactic core bulges + rare cosmic events (dark themes only) ---
+    this.coreGlow = new CoreGlowLayer(this.graph, this.nodeIds, pr, dark && !this.perfLod);
+    this.coreGlow.setSizeScale(this.sizeScale(h));
+    this.scene.add(this.coreGlow.points);
+    this.cosmic = new CosmicEvents(pr);
+    this.cosmic.setSizeScale(this.sizeScale(h));
+    this.scene.add(this.cosmic.group);
 
     // --- spaceship (immersive third-person flight; enabled via setFlyMode) ---
     this.ship = new ShipController(
@@ -1426,40 +1445,133 @@ export class GraphScene {
     this.writeEdgeGeometry();
   }
 
-  // Rotate every galaxy's members about their group centroid (y-axis), then
-  // push the moved positions through the normal per-tick path. Mutates the
-  // graph attributes directly (the applyPositions precedent): while the sim is
+  // Rotate every galaxy's members about their group centroid around the
+  // galaxy's seeded disc axis (matching the worker's disc flattening), and
+  // orbit orphan "moons" around their nearest linked star. Mutates the graph
+  // attributes directly (the applyPositions precedent): while the sim is
   // running its next tick simply overwrites this, and at rest the swirl owns
   // the motion. The worker's copy catches up via syncBack before any reheat.
+  private moonHosts: Map<string, string> | null = null;
+  private rotAxis = new THREE.Vector3();
+  private rotVec = new THREE.Vector3();
+
+  // Nearest linked star for every isolated note — computed lazily once per
+  // build (O(orphans × nodes), both small on the vaults this gate allows).
+  private computeMoonHosts(): Map<string, string> {
+    const hosts = new Map<string, string>();
+    const linked: { id: string; x: number; y: number; z: number }[] = [];
+    for (const id of this.nodeIds) {
+      const a = this.graph.getNodeAttributes(id);
+      if (a.deg > 0 && !a.hidden) linked.push({ id, x: a.x, y: a.y, z: a.z });
+    }
+    if (linked.length === 0) return hosts;
+    for (const id of this.nodeIds) {
+      const a = this.graph.getNodeAttributes(id);
+      if (a.deg > 0) continue;
+      let best = linked[0].id;
+      let bd = Infinity;
+      for (const h of linked) {
+        const d =
+          (h.x - a.x) * (h.x - a.x) +
+          (h.y - a.y) * (h.y - a.y) +
+          (h.z - a.z) * (h.z - a.z);
+        if (d < bd) {
+          bd = d;
+          best = h.id;
+        }
+      }
+      hosts.set(id, best);
+    }
+    return hosts;
+  }
+
   private swirlTick(dt: number): void {
     const cx = new Map<number, number>();
+    const cy = new Map<number, number>();
     const cz = new Map<number, number>();
     const cn = new Map<number, number>();
     for (const id of this.nodeIds) {
       const a = this.graph.getNodeAttributes(id);
       if (a.community < 0) continue;
       cx.set(a.community, (cx.get(a.community) ?? 0) + a.x);
+      cy.set(a.community, (cy.get(a.community) ?? 0) + a.y);
       cz.set(a.community, (cz.get(a.community) ?? 0) + a.z);
       cn.set(a.community, (cn.get(a.community) ?? 0) + 1);
     }
-    if (cn.size === 0) return;
-    const base = SWIRL_SPEED * dt;
+    const base = this.settings.folderGalaxies ? SWIRL_SPEED * dt : 0;
     for (const id of this.nodeIds) {
+      if (base === 0) break; // galaxy spin off — moons below still run
       const a = this.graph.getNodeAttributes(id);
       const c = a.community;
       if (c < 0) continue;
       const n = cn.get(c)!;
-      const mx = cx.get(c)! / n;
-      const mz = cz.get(c)! / n;
+      const nm = galaxyNormal(c); // same seeded axis the worker flattens onto
       const delta = c % 2 === 0 ? base : -base; // alternate spin per galaxy
-      const cos = Math.cos(delta);
-      const sin = Math.sin(delta);
-      const dx = a.x - mx;
-      const dz = a.z - mz;
-      a.x = mx + dx * cos - dz * sin;
-      a.z = mz + dx * sin + dz * cos;
+      this.rotAxis.set(nm.x, nm.y, nm.z);
+      this.rotVec
+        .set(a.x - cx.get(c)! / n, a.y - cy.get(c)! / n, a.z - cz.get(c)! / n)
+        .applyAxisAngle(this.rotAxis, delta);
+      a.x = cx.get(c)! / n + this.rotVec.x;
+      a.y = cy.get(c)! / n + this.rotVec.y;
+      a.z = cz.get(c)! / n + this.rotVec.z;
+    }
+
+    // Orphan moons: orbit the nearest linked star on a seeded tilted plane,
+    // easing onto a close ring so far-flung orphans get "captured".
+    if (!this.moonHosts) this.moonHosts = this.computeMoonHosts();
+    for (const [id, hostId] of this.moonHosts) {
+      if (!this.graph.hasNode(id) || !this.graph.hasNode(hostId)) continue;
+      const a = this.graph.getNodeAttributes(id);
+      const h = this.graph.getNodeAttributes(hostId);
+      if (a.hidden || h.hidden) continue;
+      const tilt = galaxyNormal(Math.floor(seededUnit(id, 61) * 1e6));
+      this.rotAxis.set(tilt.x, tilt.y, tilt.z);
+      this.rotVec.set(a.x - h.x, a.y - h.y, a.z - h.z);
+      const dist = this.rotVec.length() || 1;
+      // Capture: ease the orbit radius toward a few host radii.
+      const target =
+        h.size * NODE_RADIUS * (MOON_RADIUS_MIN + MOON_RADIUS_VAR * seededUnit(id, 62));
+      const eased = dist + (target - dist) * Math.min(1, dt * 0.6);
+      this.rotVec
+        .applyAxisAngle(this.rotAxis, MOON_SPEED * dt)
+        .multiplyScalar(eased / dist);
+      a.x = h.x + this.rotVec.x;
+      a.y = h.y + this.rotVec.y;
+      a.z = h.z + this.rotVec.z;
     }
     this.syncPositions();
+  }
+
+  // Live galaxy centres + rough radii — where cosmic events may open. Called
+  // only when an event actually triggers (every 40-120 s), so O(n) is fine.
+  private galaxyCentres(): { x: number; y: number; z: number; r: number }[] {
+    const cx = new Map<number, number>();
+    const cy = new Map<number, number>();
+    const cz = new Map<number, number>();
+    const cn = new Map<number, number>();
+    for (const id of this.nodeIds) {
+      const a = this.graph.getNodeAttributes(id);
+      if (a.community < 0 || a.hidden) continue;
+      cx.set(a.community, (cx.get(a.community) ?? 0) + a.x);
+      cy.set(a.community, (cy.get(a.community) ?? 0) + a.y);
+      cz.set(a.community, (cz.get(a.community) ?? 0) + a.z);
+      cn.set(a.community, (cn.get(a.community) ?? 0) + 1);
+    }
+    const out: { x: number; y: number; z: number; r: number }[] = [];
+    const rr = new Map<number, number>();
+    for (const id of this.nodeIds) {
+      const a = this.graph.getNodeAttributes(id);
+      const c = a.community;
+      if (c < 0 || a.hidden) continue;
+      const n = cn.get(c)!;
+      const d = Math.hypot(a.x - cx.get(c)! / n, a.y - cy.get(c)! / n, a.z - cz.get(c)! / n);
+      rr.set(c, Math.max(rr.get(c) ?? 0, d));
+    }
+    for (const [c, n] of cn) {
+      if (n < 3) continue;
+      out.push({ x: cx.get(c)! / n, y: cy.get(c)! / n, z: cz.get(c)! / n, r: rr.get(c) ?? 40 });
+    }
+    return out;
   }
 
   /** Current node positions (nodeIds order) — the worker syncBack payload. */
@@ -1626,6 +1738,10 @@ export class GraphScene {
     this.clusterLabels.rebuild();
     // Re-derive the label allow-set so live-ingest newcomers / new hubs can label.
     this.computeLabelable();
+    // Node set changed — orphan moons re-pick their hosts lazily, and the
+    // core bulges re-derive their groups.
+    this.moonHosts = null;
+    this.coreGlow.setNodeIds(this.nodeIds);
 
     this.writeNodes();
     this.writeEdges();
@@ -1677,6 +1793,7 @@ export class GraphScene {
     this.synapse.setDark(dark);
     this.ship.setDark(dark);
     this.meteor.lines.visible = amb.meteors && !this.perfLod;
+    this.coreGlow.setEnabled(dark && !this.perfLod);
     this.nebula.setDark(SHOW_NEBULA && amb.nebula);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
@@ -1988,10 +2105,21 @@ export class GraphScene {
         this.nodeMat.uniforms.u_time.value += dt;
         // Meteors cross the galaxy-skin sky (visibility gates the skin/perf).
         if (this.meteor.lines.visible) this.meteor.update(dt);
-        // Idle galaxy swirl: each folder-galaxy slowly rotates in place. The
-        // O(n + edges) rewrite is the perf-LOD's problem, so big vaults skip it.
-        if (this.settings.folderGalaxies && !this.perfLod && this.dragId == null) {
+        // Idle galaxy swirl + orphan moons. The O(n + edges) rewrite is the
+        // perf-LOD's problem, so big vaults skip it.
+        if (!this.perfLod && this.dragId == null) {
           this.swirlTick(dt);
+        }
+        // Galactic core bulges pulse; centroids refresh at a slow cadence.
+        if (this.coreGlow.points.visible) {
+          this.coreGlow.update(dt);
+          if ((this.coreGlowTick = (this.coreGlowTick + 1) % 30) === 0) {
+            this.coreGlow.refresh();
+          }
+        }
+        // Rare black-hole / wormhole events, near live galaxy centres.
+        if (this.darkTheme && !this.perfLod) {
+          this.cosmic.update(dt, () => this.galaxyCentres());
         }
         // Spontaneous synapse firings keep the idle brain alive. Perf mode
         // drops them with the other ambient layers.
@@ -2076,6 +2204,10 @@ export class GraphScene {
     this.scene.remove(this.synapse.flashes);
     this.meteor.dispose();
     this.scene.remove(this.meteor.lines);
+    this.coreGlow.dispose();
+    this.scene.remove(this.coreGlow.points);
+    this.cosmic.dispose();
+    this.scene.remove(this.cosmic.group);
     this.clusterLabels.dispose();
     this.scene.remove(this.clusterLabels.group);
     this.bloom.dispose();
@@ -2117,6 +2249,8 @@ export class GraphScene {
     this.wave.setSizeScale(this.sizeScale(h));
     this.nova.setSizeScale(this.sizeScale(h));
     this.synapse.setSizeScale(this.sizeScale(h));
+    this.coreGlow.setSizeScale(this.sizeScale(h));
+    this.cosmic.setSizeScale(this.sizeScale(h));
     // Fat lines are screen-space — they need the drawing-buffer resolution.
     this.filamentMat?.resolution.set(w, h);
   };
