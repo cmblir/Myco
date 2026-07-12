@@ -26,25 +26,88 @@ const PALETTE = [
   "#ff9e6d",
 ];
 
-// Colour nodes by connected community (Louvain): each community of 3+ nodes
-// gets a distinct palette hue (tinted by star temperature); orphans and tiny
-// groups stay dim field stars. Also records the community id and the
-// highest-degree node per community (the galaxy core "hub") so the layout can
-// clump each community into a galaxy and the renderer can bloom its core.
-function colorByCommunity(graph: VaultGraph, maxDeg: number): void {
+// Group nodes by their parent folder (relative to the vault root) — the
+// "folder galaxies" layout unit. Ghost nodes adopt their first real
+// neighbour's folder. Returns a louvain-shaped Record (unassigned → -1), or
+// null when fewer than two folders have ≥3 members (a flat vault) — callers
+// then fall back to Louvain communities.
+export function folderGroups(
+  ids: string[],
+  vaultRoot: string,
+  neighborsOf: (id: string) => string[],
+): Record<string, number> | null {
+  const root = vaultRoot.replace(/[\\/]+$/, "");
+  const keyOf = (id: string): string | null => {
+    if (id.startsWith("ghost:")) return null;
+    let rel = root && id.startsWith(root) ? id.slice(root.length) : id;
+    rel = rel.replace(/^[\\/]+/, "");
+    const parts = rel.split(/[\\/]/);
+    parts.pop(); // file name
+    return parts.length > 0 ? parts.join("/") : ".";
+  };
+  const keys = new Map<string, string>();
+  for (const id of ids) {
+    const k = keyOf(id);
+    if (k != null) keys.set(id, k);
+  }
+  // Ghosts sit in whatever folder first links to them.
+  for (const id of ids) {
+    if (keys.has(id)) continue;
+    for (const nb of neighborsOf(id)) {
+      const k = keys.get(nb);
+      if (k != null) {
+        keys.set(id, k);
+        break;
+      }
+    }
+  }
+  const sizes = new Map<string, number>();
+  for (const k of keys.values()) sizes.set(k, (sizes.get(k) ?? 0) + 1);
+  const sized = [...sizes.entries()]
+    .filter(([, n]) => n >= 3)
+    .sort((a, b) => b[1] - a[1])
+    .map(([k]) => k);
+  if (sized.length < 2) return null;
+  const idx = new Map(sized.map((k, i) => [k, i]));
+  const out: Record<string, number> = {};
+  for (const id of ids) {
+    const k = keys.get(id);
+    out[id] = (k != null ? idx.get(k) : undefined) ?? -1;
+  }
+  return out;
+}
+
+// Colour nodes by group: folder galaxies when `override` is given, otherwise
+// connected community (Louvain). Each group of 3+ nodes gets a distinct
+// palette hue (tinted by star temperature); orphans and tiny groups stay dim
+// field stars. Also records the community id and the highest-degree node per
+// group (the galaxy core "hub") so the layout can clump each group into a
+// galaxy and the renderer can bloom its core.
+function colorByCommunity(
+  graph: VaultGraph,
+  maxDeg: number,
+  override?: Record<string, number> | null,
+): void {
   let comm: Record<string, number>;
-  try {
-    comm = louvain(graph) as Record<string, number>;
-  } catch {
-    // Edgeless graph — no communities. Keep dim but ensure fields are defined.
-    graph.forEachNode((id) => {
-      graph.setNodeAttribute(id, "community", -1);
-      graph.setNodeAttribute(id, "isHub", false);
-    });
-    return;
+  if (override) {
+    comm = override;
+  } else {
+    try {
+      comm = louvain(graph) as Record<string, number>;
+    } catch {
+      // Edgeless graph — no communities. Keep dim but ensure fields are defined.
+      graph.forEachNode((id) => {
+        graph.setNodeAttribute(id, "community", -1);
+        graph.setNodeAttribute(id, "isHub", false);
+      });
+      return;
+    }
   }
   const size = new Map<number, number>();
-  for (const id in comm) size.set(comm[id], (size.get(comm[id]) ?? 0) + 1);
+  for (const id in comm) {
+    // Folder overrides mark unassigned nodes -1 — they must not rank.
+    if (comm[id] >= 0) size.set(comm[id], (size.get(comm[id]) ?? 0) + 1);
+  }
   const ranked = [...size.entries()]
     .filter(([, n]) => n >= 3)
     .sort((a, b) => b[1] - a[1])
@@ -216,6 +279,10 @@ export interface BuildGraphOpts {
   // Optional embedding-similarity edges (absolute page paths) to overlay; only
   // pairs whose endpoints both exist and aren't already wikilinked are added.
   semanticEdges?: { source: string; target: string; score: number }[];
+  // Folder galaxies (multi-galaxy layout): group nodes by parent folder under
+  // vaultRoot instead of Louvain communities. Needs vaultRoot to relativise.
+  folderGalaxies?: boolean;
+  vaultRoot?: string;
 }
 
 
@@ -467,7 +534,14 @@ export function buildGraph(
   });
   // Colour by community hue + star temperature; store community id + hub flag
   // (needs the degree normalisation above, so it runs AFTER the size pass).
-  colorByCommunity(g, maxDeg);
+  // Folder galaxies: group by parent folder when the vault has real folder
+  // structure; a flat vault falls back to Louvain (null override) — the sim's
+  // anchor ring still spreads those communities into separate galaxies.
+  const groups =
+    o.folderGalaxies && o.vaultRoot
+      ? folderGroups(g.nodes(), o.vaultRoot, (id) => g.neighbors(id))
+      : null;
+  colorByCommunity(g, maxDeg, groups);
 
   // --- Phase 2: encode wiki frontmatter into the star's appearance ---
   // confidence → brightness (low = fainter star), source_count → extra glow

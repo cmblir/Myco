@@ -14,12 +14,12 @@ import shipUrl from "../assets/spaceship.glb?url";
 import { FLIGHT, speedOf, stepBank, stepVelocity } from "./shipPhysics";
 
 // Normalised hull size: the GLB is uniform-scaled so its longest dimension
-// lands here (world units). 5.2 read as a speck from the chase distance —
-// 7 fills the frame like a piloted craft without blocking the view ahead.
-const SHIP_SIZE = 10;
-// Engine tail in ship-local space (+Z aft). Past the hull's rear (~4.4 at
-// SHIP_SIZE 10) so the glow doesn't bleed through the fuselage mid-body.
-const TAIL = new THREE.Vector3(0, 0.3, 4.8);
+// lands here (world units). 10 filled half the screen at rest — 6 with the
+// raised chase camera reads as a piloted craft that doesn't block the view.
+const SHIP_SIZE = 6;
+// Engine tail in ship-local space (+Z aft). Past the hull's rear (~2.7 at
+// SHIP_SIZE 6) so the glow doesn't bleed through the fuselage mid-body.
+const TAIL = new THREE.Vector3(0, 0.3, 3);
 
 // Thruster trail: a small pooled Points cloud streaming aft under thrust.
 const TRAIL_MAX = 90;
@@ -61,9 +61,9 @@ export class ShipController {
   private q = new THREE.Quaternion();
   private v = new THREE.Vector3();
   private v2 = new THREE.Vector3();
-  // Behind (+Z) and above the ship — high enough that the flat wings read as
-  // a shape instead of an edge-on line.
-  private camOffset = new THREE.Vector3(0, 3.2, 13);
+  // Behind (+Z) and above the ship — high enough to look DOWN on the hull so
+  // the wings read as a shape instead of an edge-on line.
+  private camOffset = new THREE.Vector3(0, 4.2, 15);
   private lookAhead = new THREE.Vector3(0, 2, -40); // look out past the ship into the graph
 
   constructor(
@@ -83,6 +83,16 @@ export class ShipController {
     this.engineGlow = points;
     this.glowMat = mat;
     this.ship.add(this.engineGlow);
+    // Ship-local lighting: the rest of the scene is unlit (shader/Basic
+    // materials ignore lights), so these exist purely to shade the PBR hull —
+    // a key from upper-rear for contours plus a soft ambient fill. They ride
+    // the ship group, so hiding the ship hides them too.
+    const key = new THREE.DirectionalLight(0xffffff, 2.4);
+    key.position.set(4, 8, 6);
+    key.target.position.set(0, 0, -2);
+    this.ship.add(key);
+    this.ship.add(key.target);
+    this.ship.add(new THREE.AmbientLight(0x9fb0d0, 1.2));
     this.ship.visible = false;
     scene.add(this.ship);
     this.loadHull();
@@ -146,26 +156,18 @@ void main() {
       shipUrl,
       (gltf) => {
         const model = gltf.scene;
-        // The scene has NO lights (everything else is shader/Basic material),
-        // so the GLB's PBR materials render pitch black. Swap each for an
-        // unlit MeshBasicMaterial keeping the albedo colour/texture.
+        // Keep the GLB's PBR materials — the ship carries its own lights (see
+        // the constructor), so the hull gets real shading/contours instead of
+        // the flat unlit silhouette a MeshBasicMaterial conversion produced.
+        // Only remember each material's albedo for the theme tint.
         model.traverse((o) => {
           const mesh = o as THREE.Mesh;
           if (!mesh.isMesh) return;
-          const convert = (m: THREE.Material): THREE.Material => {
+          const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          for (const m of mats) {
             const std = m as THREE.MeshStandardMaterial;
-            const flat = new THREE.MeshBasicMaterial({
-              color: std.color ? std.color.clone() : new THREE.Color(0xcfd6e6),
-              map: std.map ?? null,
-              vertexColors: std.vertexColors ?? false,
-            });
-            flat.userData.baseColor = flat.color.clone();
-            m.dispose();
-            return flat;
-          };
-          mesh.material = Array.isArray(mesh.material)
-            ? mesh.material.map(convert)
-            : convert(mesh.material);
+            if (std.color) std.userData.baseColor = std.color.clone();
+          }
         });
         const box = new THREE.Box3().setFromObject(model);
         const dims = box.getSize(new THREE.Vector3());
@@ -453,8 +455,9 @@ void main() {
 // lands (and kept if it never does). Points forward along -Z.
 function buildFallbackHull(): THREE.Group {
   const hull = new THREE.Group();
-  const metal = new THREE.MeshBasicMaterial({ color: 0xcfd6e6 });
-  const accent = new THREE.MeshBasicMaterial({ color: 0x6f8cff });
+  // Standard (lit) like the GLB, so the ship-local lights shade it too.
+  const metal = new THREE.MeshStandardMaterial({ color: 0xcfd6e6, roughness: 0.6, metalness: 0.2 });
+  const accent = new THREE.MeshStandardMaterial({ color: 0x6f8cff, roughness: 0.5, metalness: 0.2 });
 
   // Fuselage: cone tip toward -Z.
   const fus = new THREE.Mesh(new THREE.ConeGeometry(0.6, 3, 12), metal);

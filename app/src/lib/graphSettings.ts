@@ -22,6 +22,11 @@ export interface GraphSettings {
   // Graph-only color mode, independent of the app theme. "auto" follows the
   // app theme (the pre-skin behaviour); the fixed skins pin the palette.
   skin: GraphSkinKey;
+  // Multi-galaxy layout: group notes by folder (falling back to Louvain
+  // communities on flat vaults) and pull each group to its own anchor on a
+  // wide ring, with a slow per-galaxy idle rotation — several living galaxies
+  // instead of one central mass.
+  folderGalaxies: boolean;
   arrows: boolean;
   arrowSize: number; // arrowhead cone scale, 0.1..1.5 — kept well under node size
   semanticEdges: boolean; // overlay embedding-similarity edges (dim, dashed)
@@ -57,6 +62,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   tagFilter: null,
   folderFilter: null,
   skin: "auto",
+  folderGalaxies: true,
   arrows: false,
   arrowSize: 1, // arrowhead/flying-ship scale (bumped from 0.35 on request)
   semanticEdges: false,

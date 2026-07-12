@@ -44,6 +44,10 @@ export interface GraphSim {
   timelapseReveal(ids: string[]): void;
   timelapseSettle(): void;
   liveAdd(newIds: string[], newEdges: [string, string][]): void;
+  /** Adopt main-thread positions (node order) — call before a reheat when the
+   * scene's idle galaxy swirl has rotated the rendered layout, so the worker's
+   * copy doesn't snap everything back. Transfers the buffer. */
+  syncBack(positions: Float32Array): void;
   stop(): void;
 }
 
@@ -163,6 +167,9 @@ export function createSim(
         nodes.push(makeView(idx, id));
       }
       worker.postMessage({ type: "liveAdd", nodes: payload, edges: newEdges });
+    },
+    syncBack(positions) {
+      worker.postMessage({ type: "syncBack", positions }, [positions.buffer]);
     },
     stop() {
       worker.postMessage({ type: "stop" });

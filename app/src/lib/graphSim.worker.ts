@@ -24,6 +24,7 @@ import {
   type Force,
 } from "d3-force-3d";
 import type { GraphSettings } from "./graphSettings";
+import { galaxyAnchors, type GalaxyAnchor } from "./galaxyLayout";
 
 // Deterministic RNG — copied from graphData so the worker bundle doesn't pull in
 // graphology. Must stay identical to graphData's so timelapse spawn jitter matches.
@@ -88,6 +89,11 @@ const INTER_LINK_STR_MUL = 0.45;
 const CLUSTERED_GRAVITY_MUL = 0.15;
 const ORPHAN_GRAVITY_MUL = 0.04;
 const CHARGE_RANGE_MUL = 3.2;
+// Folder-galaxies mode: pull each group toward its own ring anchor (multi-
+// galaxy separation) and relax the global gravity so the ring can breathe.
+const ANCHOR_SCALE = 0.06;
+const ANCHOR_HUB_MUL = 2.5;
+const GALAXY_GRAVITY_MUL = 0.35;
 // In the worker the tick loop yields 0ms — it isn't the UI thread, so the only
 // reason to yield is to let queued messages (drag/setFixed) run between ticks.
 const WORKER_YIELD_MS = 0;
@@ -167,10 +173,53 @@ function build(
     Math.max(0.005, g.centerForce * CENTER_SCALE);
   const gravityOf =
     (g: GraphSettings) =>
-    (n: SimNode): number =>
-      g.clusterForce > 0
-        ? centerOf(g) * (n.community >= 0 ? CLUSTERED_GRAVITY_MUL : ORPHAN_GRAVITY_MUL)
-        : centerOf(g);
+    (n: SimNode): number => {
+      const base =
+        g.clusterForce > 0
+          ? centerOf(g) * (n.community >= 0 ? CLUSTERED_GRAVITY_MUL : ORPHAN_GRAVITY_MUL)
+          : centerOf(g);
+      // Anchors carry the layout in galaxy mode — keep only a whisper of
+      // global gravity so the ring doesn't collapse back into one mass.
+      return g.folderGalaxies ? base * GALAXY_GRAVITY_MUL : base;
+    };
+
+  // --- folder-galaxies anchor force -----------------------------------------
+  // One anchor per group on a wide ring (galaxyLayout); every member is pulled
+  // toward its anchor, hubs hardest, so groups settle as separate galaxies.
+  const anchors = new Map<number, GalaxyAnchor>();
+  const computeAnchors = (): void => {
+    anchors.clear();
+    if (!cur.folderGalaxies) return;
+    const counts = new Map<number, number>();
+    for (const n of nodes) {
+      if (n.community >= 0) counts.set(n.community, (counts.get(n.community) ?? 0) + 1);
+    }
+    const comms = [...counts.keys()].sort((a, b) => a - b);
+    if (comms.length < 2) return;
+    const maxCount = Math.max(...counts.values());
+    const pts = galaxyAnchors(comms.length, cur.linkDistance, maxCount);
+    comms.forEach((c, i) => anchors.set(c, pts[i]));
+  };
+  const galaxyForce = (): Force<SimNode, SimLink> => {
+    let ns: SimNode[] = [];
+    const force: Force<SimNode, SimLink> = (alpha) => {
+      if (anchors.size === 0) return;
+      const k = ANCHOR_SCALE * alpha;
+      for (const n of ns) {
+        if (n.fx != null) continue;
+        const a = anchors.get(n.community);
+        if (!a) continue;
+        const m = n.isHub ? ANCHOR_HUB_MUL : 1;
+        n.vx = (n.vx ?? 0) + (a.x - n.x) * k * m;
+        n.vy = (n.vy ?? 0) + (a.y - n.y) * k * m;
+        n.vz = (n.vz ?? 0) + (a.z - n.z) * k * m;
+      }
+    };
+    force.initialize = (init: SimNode[]): void => {
+      ns = init;
+    };
+    return force;
+  };
 
   const linkF = forceLink<SimNode, SimLink>(links)
     .id((d) => d.id)
@@ -298,6 +347,7 @@ function build(
         .iterations(1),
     )
     .force("cluster", clusterForce())
+    .force("galaxy", galaxyForce())
     .alpha(1)
     .alphaDecay(0.028)
     .alphaMin(SIM_ALPHA_MIN)
@@ -346,6 +396,8 @@ function build(
   };
   kick();
 
+  computeAnchors();
+
   return {
     nodes,
     byId,
@@ -364,6 +416,7 @@ function build(
       xF.strength(gravityOf(next));
       yF.strength(gravityOf(next));
       zF.strength(gravityOf(next));
+      computeAnchors(); // toggle / linkDistance moved the ring
       if (tlActive) {
         sim.alpha(Math.max(sim.alpha(), 0.3));
       } else {
@@ -457,6 +510,7 @@ function build(
         }
       }
       linkF.links(tlActive ? activeLinks : links);
+      computeAnchors(); // group counts changed
       sim
         .nodes(tlActive ?? nodes)
         .alpha(Math.max(sim.alpha(), 0.5))
@@ -480,6 +534,10 @@ type InMsg =
   | { type: "timelapseReveal"; ids: string[] }
   | { type: "timelapseSettle" }
   | { type: "liveAdd"; nodes: NodeInit[]; edges: [string, string][] }
+  // Adopt main-thread positions (node order) — the scene's idle galaxy swirl
+  // rotates the rendered layout, so before any reheat the worker's copy must
+  // catch up or every node would snap back to its pre-swirl position.
+  | { type: "syncBack"; positions: Float32Array }
   | { type: "stop" };
 
 self.onmessage = (e: MessageEvent<InMsg>): void => {
@@ -510,6 +568,18 @@ self.onmessage = (e: MessageEvent<InMsg>): void => {
     case "liveAdd":
       state?.liveAdd(msg.nodes, msg.edges);
       break;
+    case "syncBack": {
+      const ns = state?.nodes ?? [];
+      const p = msg.positions;
+      for (let i = 0; i < ns.length && i * 3 + 2 < p.length; i++) {
+        const n = ns[i];
+        if (n.fx != null) continue; // pinned (dragged) nodes keep their pin
+        n.x = p[i * 3];
+        n.y = p[i * 3 + 1];
+        n.z = p[i * 3 + 2];
+      }
+      break;
+    }
     case "stop":
       state?.stop();
       state = null;

@@ -1,0 +1,112 @@
+// Multi-galaxy layout geometry + folder grouping (pure logic).
+import { describe, expect, it } from "vitest";
+import { galaxyAnchors, galaxyRingRadius } from "./galaxyLayout";
+import { folderGroups } from "./graphData";
+
+describe("galaxyAnchors", () => {
+  it("returns the origin for a single galaxy and [] for none", () => {
+    expect(galaxyAnchors(0, 45, 10)).toEqual([]);
+    expect(galaxyAnchors(1, 45, 10)).toEqual([{ x: 0, y: 0, z: 0 }]);
+  });
+
+  it("spreads G galaxies on a flattened shell of the computed radius", () => {
+    const anchors = galaxyAnchors(5, 45, 30);
+    const r = galaxyRingRadius(5, 45, 30);
+    expect(anchors).toHaveLength(5);
+    for (const a of anchors) {
+      const d = Math.hypot(a.x, a.y, a.z);
+      expect(d).toBeGreaterThan(r * 0.5);
+      expect(d).toBeLessThanOrEqual(r * 1.01);
+      expect(Math.abs(a.y)).toBeLessThanOrEqual(r * 0.56); // oblate
+    }
+    // Every anchor pair sits farther apart than a group's own orbit ring —
+    // galaxies must not overlap.
+    const groupR = 45 * (0.35 + 0.07 * Math.sqrt(30));
+    for (let i = 0; i < anchors.length; i++) {
+      for (let j = i + 1; j < anchors.length; j++) {
+        const d = Math.hypot(
+          anchors[i].x - anchors[j].x,
+          anchors[i].y - anchors[j].y,
+          anchors[i].z - anchors[j].z,
+        );
+        expect(d).toBeGreaterThan(groupR * 2);
+      }
+    }
+  });
+
+  it("ring radius grows with galaxy count and group size", () => {
+    expect(galaxyRingRadius(8, 45, 30)).toBeGreaterThan(galaxyRingRadius(3, 45, 30));
+    expect(galaxyRingRadius(3, 45, 200)).toBeGreaterThan(galaxyRingRadius(3, 45, 10));
+  });
+});
+
+describe("folderGroups", () => {
+  const ROOT = "/vault";
+  const noNb = (): string[] => [];
+
+  it("groups by parent folder relative to the vault root", () => {
+    const ids = [
+      "/vault/wiki/a.md",
+      "/vault/wiki/b.md",
+      "/vault/wiki/c.md",
+      "/vault/raw/x.md",
+      "/vault/raw/y.md",
+      "/vault/raw/z.md",
+    ];
+    const g = folderGroups(ids, ROOT, noNb)!;
+    expect(g).not.toBeNull();
+    expect(g["/vault/wiki/a.md"]).toBe(g["/vault/wiki/b.md"]);
+    expect(g["/vault/raw/x.md"]).toBe(g["/vault/raw/y.md"]);
+    expect(g["/vault/wiki/a.md"]).not.toBe(g["/vault/raw/x.md"]);
+  });
+
+  it("returns null for a flat vault (fewer than two sized folders)", () => {
+    const ids = ["/vault/wiki/a.md", "/vault/wiki/b.md", "/vault/wiki/c.md"];
+    expect(folderGroups(ids, ROOT, noNb)).toBeNull();
+  });
+
+  it("marks tiny folders (<3 members) as field stars (-1)", () => {
+    const ids = [
+      "/vault/wiki/a.md",
+      "/vault/wiki/b.md",
+      "/vault/wiki/c.md",
+      "/vault/raw/x.md",
+      "/vault/raw/y.md",
+      "/vault/raw/z.md",
+      "/vault/misc/only.md",
+    ];
+    const g = folderGroups(ids, ROOT, noNb)!;
+    expect(g["/vault/misc/only.md"]).toBe(-1);
+  });
+
+  it("ghost nodes adopt their first real neighbour's folder", () => {
+    const ids = [
+      "/vault/wiki/a.md",
+      "/vault/wiki/b.md",
+      "/vault/wiki/c.md",
+      "/vault/raw/x.md",
+      "/vault/raw/y.md",
+      "/vault/raw/z.md",
+      "ghost:missing",
+    ];
+    const nb = (id: string): string[] =>
+      id === "ghost:missing" ? ["/vault/raw/x.md"] : [];
+    const g = folderGroups(ids, ROOT, nb)!;
+    expect(g["ghost:missing"]).toBe(g["/vault/raw/x.md"]);
+  });
+
+  it("bigger folders rank first (stable palette order)", () => {
+    const ids = [
+      "/vault/a/1.md",
+      "/vault/a/2.md",
+      "/vault/a/3.md",
+      "/vault/b/1.md",
+      "/vault/b/2.md",
+      "/vault/b/3.md",
+      "/vault/b/4.md",
+    ];
+    const g = folderGroups(ids, ROOT, noNb)!;
+    expect(g["/vault/b/1.md"]).toBe(0); // b has 4 members → rank 0
+    expect(g["/vault/a/1.md"]).toBe(1);
+  });
+});

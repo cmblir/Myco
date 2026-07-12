@@ -186,6 +186,18 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   });
   settingsRef.current = settings;
 
+  // The idle galaxy swirl rotates the RENDERED layout on the main thread; the
+  // worker's node copies don't see it. Before anything reheats the sim (drag,
+  // force sliders, live growth) push the current positions across so nodes
+  // don't snap back to their pre-swirl spots.
+  const syncSwirl = useRef(() => {
+    const sc = sceneRef.current;
+    const sm = simRef.current;
+    if (sc && sm && settingsRef.current.folderGalaxies) {
+      sm.syncBack(sc.snapshotPositions());
+    }
+  }).current;
+
   // Compose hover + ingest state into the scene's style and push it.
   const pushStyle = useRef(() => {
     const scene = sceneRef.current;
@@ -426,6 +438,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       // existingOnly hides non-existent files → also hide ghost link targets.
       showGhosts: !s.existingOnly,
       semanticEdges: s.semanticEdges ? semEdgesRef.current : undefined,
+      folderGalaxies: s.folderGalaxies,
+      vaultRoot: currentVault?.path ?? "",
     });
     graphRef.current = graph;
     setCounts({ nodes: graph.order, edges: graph.size });
@@ -472,6 +486,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         else clearHighlight();
       },
       onDragStart: (id) => {
+        syncSwirl(); // adopt swirled positions before the pin + reheat
         draggedSim = simRef.current?.nodes.find((n) => n.id === id);
         highlight(id);
         if (draggedSim) {
@@ -583,12 +598,15 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.existingOnly,
     settings.showOrphans,
     settings.nodeSize,
+    settings.folderGalaxies,
     glEpoch,
   ]);
 
   // Force sliders — re-tune the running sim in place (no rebuild), then ease.
   useEffect(() => {
-    simRef.current?.update(settings);
+    if (!simRef.current) return;
+    syncSwirl(); // the update reheats — adopt swirled positions first
+    simRef.current.update(settings);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     settings.centerForce,
@@ -838,6 +856,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
           size: Math.max(1, Math.min(5, 1 + Math.sqrt(deg) * 0.7)) * s.nodeSize,
         });
       }
+      syncSwirl(); // liveAdd reheats — adopt swirled positions first
       sim.liveAdd([...newIdSet], addedEdges);
       scene.rebuild();
       pushStyle();

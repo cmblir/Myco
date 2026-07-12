@@ -227,6 +227,15 @@ export default function GraphControls({
           </div>
         </div>
         <Toggle
+          label={t.gr_galaxies ?? "Folder galaxies"}
+          hint={
+            t.gr_galaxies_hint ??
+            "Split the vault into one slowly rotating galaxy per folder"
+          }
+          value={settings.folderGalaxies}
+          onChange={(v) => onChange({ folderGalaxies: v })}
+        />
+        <Toggle
           label={t.gr_arrows ?? "Arrows"}
           hint={t.gr_arrows_hint ?? "Show direction on each link"}
           value={settings.arrows}

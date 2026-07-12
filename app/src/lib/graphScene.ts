@@ -171,6 +171,11 @@ const ROTATE_IDLE_MS = 8000;
 // edges stay up throughout — they cost one draw call and anchor the motion.
 const LOD_RESTORE_MS = 150;
 
+// Idle galaxy swirl (folder-galaxies mode): each galaxy slowly rotates about
+// its own centroid, alternating direction per group — the "several living
+// galaxies" motion. Rad/s; deliberately slower than the camera auto-rotate.
+const SWIRL_SPEED = 0.05;
+
 // Above this node count the scene builds in performance mode (spec B5):
 // 1 starfield shell instead of 3, no nebula, no pulses — the ambient layers
 // are the first spend to cut, the graph itself stays untouched. Decided at
@@ -1421,6 +1426,55 @@ export class GraphScene {
     this.writeEdgeGeometry();
   }
 
+  // Rotate every galaxy's members about their group centroid (y-axis), then
+  // push the moved positions through the normal per-tick path. Mutates the
+  // graph attributes directly (the applyPositions precedent): while the sim is
+  // running its next tick simply overwrites this, and at rest the swirl owns
+  // the motion. The worker's copy catches up via syncBack before any reheat.
+  private swirlTick(dt: number): void {
+    const cx = new Map<number, number>();
+    const cz = new Map<number, number>();
+    const cn = new Map<number, number>();
+    for (const id of this.nodeIds) {
+      const a = this.graph.getNodeAttributes(id);
+      if (a.community < 0) continue;
+      cx.set(a.community, (cx.get(a.community) ?? 0) + a.x);
+      cz.set(a.community, (cz.get(a.community) ?? 0) + a.z);
+      cn.set(a.community, (cn.get(a.community) ?? 0) + 1);
+    }
+    if (cn.size === 0) return;
+    const base = SWIRL_SPEED * dt;
+    for (const id of this.nodeIds) {
+      const a = this.graph.getNodeAttributes(id);
+      const c = a.community;
+      if (c < 0) continue;
+      const n = cn.get(c)!;
+      const mx = cx.get(c)! / n;
+      const mz = cz.get(c)! / n;
+      const delta = c % 2 === 0 ? base : -base; // alternate spin per galaxy
+      const cos = Math.cos(delta);
+      const sin = Math.sin(delta);
+      const dx = a.x - mx;
+      const dz = a.z - mz;
+      a.x = mx + dx * cos - dz * sin;
+      a.z = mz + dx * sin + dz * cos;
+    }
+    this.syncPositions();
+  }
+
+  /** Current node positions (nodeIds order) — the worker syncBack payload. */
+  snapshotPositions(): Float32Array {
+    const out = new Float32Array(this.nodeIds.length * 3);
+    for (let i = 0; i < this.nodeIds.length; i++) {
+      const a = this.graph.getNodeAttributes(this.nodeIds[i]);
+      const o = i * 3;
+      out[o] = a.x;
+      out[o + 1] = a.y;
+      out[o + 2] = a.z;
+    }
+    return out;
+  }
+
   syncPositions(): void {
     this.writePositions();
     if (this.filaments) this.updateFilaments();
@@ -1934,6 +1988,11 @@ export class GraphScene {
         this.nodeMat.uniforms.u_time.value += dt;
         // Meteors cross the galaxy-skin sky (visibility gates the skin/perf).
         if (this.meteor.lines.visible) this.meteor.update(dt);
+        // Idle galaxy swirl: each folder-galaxy slowly rotates in place. The
+        // O(n + edges) rewrite is the perf-LOD's problem, so big vaults skip it.
+        if (this.settings.folderGalaxies && !this.perfLod && this.dragId == null) {
+          this.swirlTick(dt);
+        }
         // Spontaneous synapse firings keep the idle brain alive. Perf mode
         // drops them with the other ambient layers.
         if (!this.perfLod) {
