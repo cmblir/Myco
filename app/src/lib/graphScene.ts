@@ -280,9 +280,12 @@ void main() {
   float bAmp = v_kind > 2.5 ? 0.07 : 0.025;
   float bFreq = v_kind > 2.5 ? 3.4 : 0.6;
   gl_PointSize *= 1.0 + bAmp * sin(u_time * bFreq + position.x * 0.03 + position.y * 0.021);
-  // Floor at 1.3 so distant field stars are true pinpricks, not uniform
-  // confetti; cap at 180 so a near hub can't fill the viewport with one sprite.
-  gl_PointSize = clamp(gl_PointSize, 1.3, 180.0);
+  // Light bg (NormalBlending, no additive self-brightening): bump sprite size so
+  // the dark stars have enough AREA to read on paper. Dark bg stays as-is.
+  gl_PointSize *= mix(1.5, 1.0, u_darkTheme);
+  // Floor so distant field stars are true pinpricks (higher on light so they
+  // don't vanish); cap so a near hub can't fill the viewport with one sprite.
+  gl_PointSize = clamp(gl_PointSize, mix(2.4, 1.3, u_darkTheme), 180.0);
   gl_Position = projectionMatrix * mv;
   v_color = a_color;
   v_alpha = a_alpha;
@@ -338,6 +341,9 @@ void main() {
   float aDark = max(core, glow * 0.6) + spikes;
   float aLight = max(core, glow * 0.85) + spikes;
   float a = mix(aLight, aDark, v_dark) * v_alpha * v_fade * u_lodFade;
+  // Light bg: punch up node alpha so the dark stars actually tint the near-white
+  // paper (NormalBlend over #fafaf9 needs real opacity or stars evaporate).
+  a = mix(min(1.0, a * 1.7), a, v_dark);
   if (a < 0.004) discard;
   vec3 base = v_color * (0.65 + 0.35 * v_fade);
   // Class tints: giants burn warm, neutrons burn white-hot.

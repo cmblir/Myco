@@ -80,7 +80,7 @@ export function galaxyAnchors(
 // clusters) occupies a WIDE field with its clusters spread into separate lobes,
 // not a cramped ball. Small galaxies stay compact.
 export function galaxyFootprint(count: number, linkDistance: number): number {
-  return linkDistance * (0.4 + 0.15 * Math.sqrt(Math.max(1, count)));
+  return linkDistance * (0.5 + 0.22 * Math.sqrt(Math.max(1, count)));
 }
 
 // Size-aware galaxy centres: fibonacci-sphere DIRECTIONS (flattened on y) at a

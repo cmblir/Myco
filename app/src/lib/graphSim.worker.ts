@@ -99,14 +99,18 @@ const INTER_LINK_STR_MUL = 0.45;
 const CLUSTERED_GRAVITY_MUL = 0.15;
 const ORPHAN_GRAVITY_MUL = 0.04;
 const CHARGE_RANGE_MUL = 3.2;
-// Folder-galaxies mode: pull each group toward its own ring anchor (multi-
-// galaxy separation) and relax the global gravity so the ring can breathe.
-const ANCHOR_SCALE = 0.06;
+// Folder-galaxies mode: pull each group FIRMLY toward its own anchor. Must be
+// strong enough that folder separation is the STABLE equilibrium — a weak pull
+// only held the seeded start, and any reheat (drag / slider) let gravity+charge
+// collapse every galaxy back into one ball that never recovered.
+const ANCHOR_SCALE = 0.28;
 const ANCHOR_HUB_MUL = 2.5;
-// Whisper of global gravity in galaxy mode. Kept LOW: with galaxies flung far
-// from the origin, any real pull-to-origin stretches each star cluster into a
-// comet tail pointing at the centre. Anchors carry the layout instead.
-const GALAXY_GRAVITY_MUL = 0.08;
+// Barely-there global gravity in galaxy mode. The strong anchor pull carries
+// the layout; this is only a safety floor so a tiny vault with no anchors (< 2
+// communities) still stays centred instead of drifting apart. Kept far below
+// the anchor scale so it can't drag separated galaxies back into one ball on a
+// reheat (the bug when gravity was 0.35 against a weak 0.06 anchor).
+const GALAXY_GRAVITY_MUL = 0.05;
 // Disc flattening: pull members onto their galaxy's tilted disc plane — the
 // squash that turns a ball of stars into something Andromeda-shaped.
 const FLATTEN_SCALE = 0.14;
