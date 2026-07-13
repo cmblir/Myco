@@ -100,29 +100,51 @@ export function galaxyAnchorsBySize(
   if (G === 1) return [{ x: 0, y: 0, z: 0 }];
   const foots = counts.map((c) => galaxyFootprint(c, linkDistance));
   const maxFoot = Math.max(...foots);
-  const sumFoot = foots.reduce((s, f) => s + f, 0);
-  // Shell sized so footprints separate but the whole cluster still fits the
-  // view: ~half the summed footprints plus one maxFoot pad. (Flinging galaxies
-  // far apart made the fit zoom out until every node was sub-pixel.)
-  // Shell radius: big enough that galaxies sit as clearly separate CIRCLES with
-  // real void between them (a big central circle + smaller ones around it). Keyed
-  // to the biggest footprint (so the dominant folder clears its neighbours) plus
-  // a term that grows with galaxy count so many folders still fan out.
-  const baseR = Math.max(linkDistance * 3, maxFoot * 1.3 + sumFoot * 0.15);
-  const golden = Math.PI * (3 - Math.sqrt(5));
-  const out: GalaxyAnchor[] = [];
-  for (let g = 0; g < G; g++) {
-    const y = 1 - (2 * (g + 0.5)) / G; // -1..1 band
-    const rh = Math.sqrt(Math.max(0, 1 - y * y));
-    const angle = golden * g;
-    const wobble = 0.9 + 0.2 * galaxySeed(g, 7);
-    // Bigger galaxies pushed a touch farther out; still separated by footprints.
-    const rg = (baseR + foots[g] * 0.4) * wobble;
-    out.push({
-      x: Math.cos(angle) * rh * rg,
-      y: y * rg * 0.55, // oblate
-      z: Math.sin(angle) * rh * rg,
-    });
+  // IRREGULAR packing, not a fibonacci shell. A fibonacci sphere spreads points
+  // as EVENLY as possible → the smooth round ball the user rejected. Instead
+  // place galaxies one by one (biggest first, anchoring near the centre) at a
+  // SEEDED-RANDOM direction, growing the radius only until the footprint clears
+  // every already-placed galaxy. Random directions clump unevenly — some sides
+  // crowd, others leave voids — and the greedy radial packing varies depth, so
+  // the ensemble reads as a lumpy, organic cluster of galaxies. Deterministic
+  // (galaxySeed, fixed size-order) so reloads are identical.
+  const order = counts.map((_, i) => i).sort((a, b) => foots[b] - foots[a] || a - b);
+  const placed: { x: number; y: number; z: number; foot: number }[] = [];
+  const out: GalaxyAnchor[] = new Array(G);
+  const step = Math.max(1, maxFoot * 0.35);
+  for (const g of order) {
+    // Seeded random direction on a gently y-flattened sphere (a cloud, not a
+    // coin, not an even lattice).
+    const theta = galaxySeed(g, 41) * Math.PI * 2;
+    const phi = Math.acos(2 * galaxySeed(g, 42) - 1);
+    const sp = Math.sin(phi);
+    let dx = Math.cos(theta) * sp;
+    let dy = Math.cos(phi) * 0.55;
+    let dz = Math.sin(theta) * sp;
+    const dl = Math.hypot(dx, dy, dz) || 1;
+    dx /= dl;
+    dy /= dl;
+    dz /= dl;
+    // Push out from the origin until clear of every placed galaxy. 0.72 lets
+    // neighbours touch a little so clumps read as organic lobes, not spaced pips.
+    let r = 0;
+    for (let iter = 0; iter < 400; iter++) {
+      let ok = true;
+      for (const p of placed) {
+        const ex = dx * r - p.x;
+        const ey = dy * r - p.y;
+        const ez = dz * r - p.z;
+        if (Math.hypot(ex, ey, ez) < (foots[g] + p.foot) * 0.72) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) break;
+      r += step;
+    }
+    const a = { x: dx * r, y: dy * r, z: dz * r };
+    placed.push({ ...a, foot: foots[g] });
+    out[g] = a; // caller indexes anchors by galaxy-id order
   }
   return out;
 }
@@ -148,7 +170,11 @@ export function clusterAnchors(
     const yb = 1 - (2 * (i + 0.5)) / count; // -1..1 latitude
     const rh = Math.sqrt(Math.max(0, 1 - yb * yb));
     const angle = phase + golden * i;
-    const rr = footprint * (0.35 + 0.65 * (i / (count - 1))); // spiral outward
+    // Spiral outward, but jitter each cluster's radius (seeded) so the puffs
+    // sit at irregular distances instead of on a clean nested-shell — the
+    // galaxy interior reads lumpy too, not a tidy mini-sphere.
+    const jit = 0.7 + 0.6 * galaxySeed(galaxyIdx * 97 + i, 23);
+    const rr = footprint * (0.35 + 0.65 * (i / (count - 1))) * jit;
     out.push({
       x: center.x + Math.cos(angle) * rh * rr,
       y: center.y + yb * rr * 0.6, // oblate — flatter than a sphere, still 3D

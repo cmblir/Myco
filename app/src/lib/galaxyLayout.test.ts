@@ -66,9 +66,33 @@ describe("galaxyAnchorsBySize", () => {
     expect(galaxyAnchorsBySize([5, 5, 5], 45)).toHaveLength(3);
   });
 
-  it("flings a bigger galaxy farther from the origin than a small one", () => {
+  it("anchors the biggest galaxy at the origin, packs the rest around it", () => {
     const a = galaxyAnchorsBySize([200, 9984], 45);
-    expect(dist(a[1])).toBeGreaterThan(dist(a[0]));
+    // Biggest (index 1) is placed first → sits at the origin; the small one is
+    // pushed out to clear it.
+    expect(dist(a[1])).toBeCloseTo(0, 6);
+    expect(dist(a[0])).toBeGreaterThan(0);
+  });
+
+  it("scatters irregularly — not an even shell (high radius variance)", () => {
+    const counts = [80, 60, 50, 40, 30, 25, 20, 15];
+    const a = galaxyAnchorsBySize(counts, 45);
+    const radii = a.map(dist);
+    const mean = radii.reduce((s, r) => s + r, 0) / radii.length;
+    const variance =
+      radii.reduce((s, r) => s + (r - mean) ** 2, 0) / radii.length;
+    // A uniform shell would have ~zero variance; irregular packing spreads it.
+    expect(Math.sqrt(variance) / mean).toBeGreaterThan(0.15);
+  });
+
+  it("keeps galaxies from fully overlapping (loose packing)", () => {
+    const a = galaxyAnchorsBySize([50, 50, 50, 50], 45);
+    for (let i = 0; i < a.length; i++) {
+      for (let j = i + 1; j < a.length; j++) {
+        const d = Math.hypot(a[i].x - a[j].x, a[i].y - a[j].y, a[i].z - a[j].z);
+        expect(d).toBeGreaterThan(0);
+      }
+    }
   });
 
   it("is deterministic", () => {
@@ -90,7 +114,8 @@ describe("clusterAnchors", () => {
     expect(pts).toHaveLength(5);
     for (const p of pts) {
       const d = Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z);
-      expect(d).toBeLessThanOrEqual(40 * 1.05);
+      // footprint × spiral(≤1) × jitter(≤1.3) — allow the jitter headroom.
+      expect(d).toBeLessThanOrEqual(40 * 1.3 * 1.05);
     }
     const keys = new Set(
       pts.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}`),
