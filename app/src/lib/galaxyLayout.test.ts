@@ -1,10 +1,7 @@
 // Multi-galaxy layout geometry + folder grouping (pure logic).
 import { describe, expect, it } from "vitest";
 import {
-  clusterAnchors,
   galaxyAnchors,
-  galaxyAnchorsBySize,
-  galaxyFootprint,
   galaxyNormal,
   galaxyRingRadius,
   galaxySizeBoost,
@@ -47,67 +44,6 @@ describe("galaxyAnchors", () => {
   it("ring radius grows with galaxy count and group size", () => {
     expect(galaxyRingRadius(8, 45, 30)).toBeGreaterThan(galaxyRingRadius(3, 45, 30));
     expect(galaxyRingRadius(3, 45, 200)).toBeGreaterThan(galaxyRingRadius(3, 45, 10));
-  });
-});
-
-describe("galaxyFootprint", () => {
-  it("grows with node count", () => {
-    expect(galaxyFootprint(1000, 45)).toBeGreaterThan(galaxyFootprint(50, 45));
-  });
-});
-
-describe("galaxyAnchorsBySize", () => {
-  const dist = (p: { x: number; y: number; z: number }): number =>
-    Math.hypot(p.x, p.y, p.z);
-
-  it("returns one anchor per galaxy; origin for one, [] for none", () => {
-    expect(galaxyAnchorsBySize([], 45)).toEqual([]);
-    expect(galaxyAnchorsBySize([5], 45)).toEqual([{ x: 0, y: 0, z: 0 }]);
-    expect(galaxyAnchorsBySize([5, 5, 5], 45)).toHaveLength(3);
-  });
-
-  it("flings a bigger galaxy farther from the origin than a small one", () => {
-    const a = galaxyAnchorsBySize([200, 9984], 45);
-    expect(dist(a[1])).toBeGreaterThan(dist(a[0]));
-  });
-
-  it("is deterministic", () => {
-    expect(galaxyAnchorsBySize([10, 20, 30], 45)).toEqual(
-      galaxyAnchorsBySize([10, 20, 30], 45),
-    );
-  });
-});
-
-describe("clusterAnchors", () => {
-  const center = { x: 100, y: 0, z: -50 };
-
-  it("returns the centre for a single-cluster galaxy", () => {
-    expect(clusterAnchors(center, 40, 1, 0)).toEqual([{ ...center }]);
-  });
-
-  it("fans N clusters within the galaxy footprint, all distinct in 3D", () => {
-    const pts = clusterAnchors(center, 40, 5, 2);
-    expect(pts).toHaveLength(5);
-    for (const p of pts) {
-      const d = Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z);
-      expect(d).toBeLessThanOrEqual(40 * 1.05);
-    }
-    const keys = new Set(
-      pts.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}`),
-    );
-    expect(keys.size).toBe(5);
-  });
-
-  it("spreads clusters off a single plane (not a flat line)", () => {
-    const pts = clusterAnchors(center, 40, 8, 1);
-    const ys = new Set(pts.map((p) => p.y.toFixed(2)));
-    expect(ys.size).toBeGreaterThan(1); // varies in y → not coplanar
-  });
-
-  it("is deterministic", () => {
-    expect(clusterAnchors(center, 40, 4, 1)).toEqual(
-      clusterAnchors(center, 40, 4, 1),
-    );
   });
 });
 
