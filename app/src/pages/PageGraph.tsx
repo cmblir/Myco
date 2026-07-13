@@ -29,6 +29,7 @@ import {
   countAllNodes,
   flattenMarkdown,
   type LegendGalaxy,
+  recolorGraph,
   shortestPath,
   starKindOf,
   stem,
@@ -621,8 +622,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.showOrphans,
     settings.nodeSize,
     settings.folderGalaxies,
-    lightBg,
     glEpoch,
+    // NOTE: lightBg is intentionally NOT here — a light/dark flip recolours the
+    // existing graph in place (see the theme effect) instead of rebuilding the
+    // whole sim, which would reflow the layout and jitter on every skin switch.
   ]);
 
   // Force sliders — re-tune the running sim in place (no rebuild), then ease.
@@ -660,6 +663,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     const apply = (): void => {
       const sc = sceneRef.current;
       if (!sc) return;
+      // Recolour the graph in place for the resolved light/dark background, then
+      // applyTheme's writeNodes pushes the new colours — no sim rebuild/jitter.
+      const g = graphRef.current;
+      if (g) recolorGraph(g, isLightBackground(makeTheme(settingsRef.current.skin)));
       sc.applySettings(settingsRef.current);
       sc.applyTheme(makeTheme(settingsRef.current.skin));
     };

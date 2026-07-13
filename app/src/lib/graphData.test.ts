@@ -11,6 +11,7 @@ import {
   flattenMarkdown,
   folderGroups,
   inFolder,
+  recolorGraph,
   seededUnit,
   shortestPath,
   stem,
@@ -36,10 +37,6 @@ function hueOf(hex: string): number {
   else if (mx === g) h = (b - r) / d + 2;
   else h = (r - g) / d + 4;
   return ((h * 60) % 360 + 360) % 360;
-}
-function hueDist(a: string, b: string): number {
-  const d = Math.abs(hueOf(a) - hueOf(b)) % 360;
-  return Math.min(d, 360 - d);
 }
 
 const ROOT = "/vault";
@@ -425,47 +422,23 @@ describe("folderGroups (hierarchical galaxies)", () => {
   });
 });
 
-describe("communityPalette (base hue per galaxy, shades per cluster)", () => {
-  it("gives same-galaxy clusters one hue family, different galaxies different hues", () => {
-    // clusters 0,1 → galaxy 0; clusters 2,3 → galaxy 1
-    const gOf = new Map([
-      [0, 0],
-      [1, 0],
-      [2, 1],
-      [3, 1],
-    ]);
-    const pal = communityPalette([0, 1, 2, 3], gOf, false);
-    // Two clusters of the same galaxy stay in one hue family (close hue).
-    expect(hueDist(pal.get(0)!, pal.get(1)!)).toBeLessThan(20);
-    expect(hueDist(pal.get(2)!, pal.get(3)!)).toBeLessThan(20);
-    // Different galaxies read as clearly different hues.
-    expect(hueDist(pal.get(0)!, pal.get(2)!)).toBeGreaterThan(30);
-  });
-
-  it("varies lightness between clusters of the same galaxy (shades)", () => {
-    const gOf = new Map([
-      [0, 0],
-      [1, 0],
-    ]);
-    const pal = communityPalette([0, 1], gOf, false);
-    expect(lightness(pal.get(0)!)).not.toBeCloseTo(lightness(pal.get(1)!), 2);
+describe("communityPalette (distinct hue per cluster)", () => {
+  it("gives every cluster its own distinct hue", () => {
+    const ids = [0, 1, 2, 3, 4, 5, 6, 7];
+    const pal = communityPalette(ids, false);
+    const hues = ids.map((c) => hueOf(pal.get(c)!));
+    for (let i = 0; i < hues.length; i++)
+      for (let j = i + 1; j < hues.length; j++) {
+        const d = Math.abs(hues[i] - hues[j]) % 360;
+        expect(Math.min(d, 360 - d)).toBeGreaterThan(10);
+      }
   });
 
   it("produces dark colours on a light background", () => {
-    const gOf = new Map([
-      [0, 0],
-      [1, 1],
-    ]);
-    const dark = communityPalette([0, 1], gOf, false);
-    const light = communityPalette([0, 1], gOf, true);
+    const dark = communityPalette([0, 1], false);
+    const light = communityPalette([0, 1], true);
     expect(lightness(light.get(0)!)).toBeLessThan(0.5);
     expect(lightness(dark.get(0)!)).toBeGreaterThan(0.55);
-  });
-
-  it("falls back to distinct per-cluster hues when there is no galaxy map", () => {
-    const pal = communityPalette([0, 1, 2], null, false);
-    expect(hueDist(pal.get(0)!, pal.get(1)!)).toBeGreaterThan(20);
-    expect(hueDist(pal.get(1)!, pal.get(2)!)).toBeGreaterThan(20);
   });
 });
 
@@ -546,6 +519,34 @@ describe("buildLegend (galaxy → cluster hierarchy)", () => {
     ];
     const leg = buildLegend(nodes, "/v");
     expect(leg[0].count).toBe(3);
+  });
+});
+
+describe("recolorGraph (in-place light/dark recolour)", () => {
+  const opts = {
+    nodeSize: 1,
+    starDim: "#000000",
+    edgeColor: "#000000",
+    showGhosts: false,
+  };
+
+  it("darkens node colours for a light background, structure intact", () => {
+    // One triangle → a single sized community, coloured on the dark palette.
+    const a = "/vault/n0.md";
+    const b = "/vault/n1.md";
+    const c = "/vault/n2.md";
+    const g = buildGraph(
+      adj({ forward: { [a]: [b, c], [b]: [c] } }),
+      new Set([a, b, c]),
+      opts, // lightBg defaults false → dark palette
+    );
+    const before = g.getNodeAttribute(a, "color");
+    const comm = g.getNodeAttribute(a, "community");
+    expect(comm).toBeGreaterThanOrEqual(0);
+    recolorGraph(g, true);
+    const after = g.getNodeAttribute(a, "color");
+    expect(lightness(after)).toBeLessThan(lightness(before)); // dark on paper
+    expect(g.getNodeAttribute(a, "community")).toBe(comm); // no re-clustering
   });
 });
 
