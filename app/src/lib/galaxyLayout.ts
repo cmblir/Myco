@@ -80,10 +80,10 @@ export function galaxyAnchors(
 // clusters) occupies a WIDE field with its clusters spread into separate lobes,
 // not a cramped ball. Small galaxies stay compact.
 export function galaxyFootprint(count: number, linkDistance: number): number {
-  // A galaxy's disc radius — kept TIGHT so a folder reads as a dense circle, not
-  // a sparse cloud. Separation between galaxies comes from the shell radius, not
-  // from bloating each footprint.
-  return linkDistance * (0.3 + 0.12 * Math.sqrt(Math.max(1, count)));
+  // A galaxy's disc radius — big enough that its cluster puffs spread across a
+  // filled circle with gaps (the dandelion-field look), not crowd into one blob.
+  // Separation between galaxies comes from the shell radius on top of this.
+  return linkDistance * (0.4 + 0.2 * Math.sqrt(Math.max(1, count)));
 }
 
 // Size-aware galaxy centres: fibonacci-sphere DIRECTIONS (flattened on y) at a
