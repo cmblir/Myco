@@ -191,8 +191,9 @@ export class GalaxyImposterLayer {
       pos.setXYZ(i, cx.get(cm)! / n, cy.get(cm)! / n, cz.get(cm)! / n);
       c3.set(hue.get(cm) ?? "#8fa6d8");
       col.setXYZ(i, c3.r, c3.g, c3.b);
-      // Disc spans ~3.4× the star RMS radius so arms reach past the stars.
-      siz.setX(i, R * 3.4);
+      // Disc spans ~4.6× the star RMS radius so the galaxy reads as a sizable
+      // luminous disc from across the void, not a faint dot.
+      siz.setX(i, R * 4.6);
       // Tilt-derived seed so the arm phase matches the galaxy's disc identity.
       const nm = galaxyNormal(cm);
       seed.setX(i, (Math.abs(nm.x) + Math.abs(nm.z) * 1.7 + cm * 0.13) % 1);

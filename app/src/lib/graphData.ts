@@ -43,7 +43,11 @@ export function folderGroups(
     rel = rel.replace(/^[\\/]+/, "");
     const parts = rel.split(/[\\/]/);
     parts.pop(); // file name
-    return parts.length > 0 ? parts.join("/") : ".";
+    // Group by the TOP-LEVEL folder only, so `wiki/a` and `wiki/b` are one
+    // galaxy ("wiki") with sub-folders as internal structure — the user model
+    // is "each top-level folder is its own far-apart galaxy". Root-level files
+    // share the "." group.
+    return parts.length > 0 ? parts[0] : ".";
   };
   const keys = new Map<string, string>();
   for (const id of ids) {

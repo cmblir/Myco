@@ -46,6 +46,7 @@ import {
   cosmicScale,
   imposterAlpha,
   nodeLodAlpha,
+  zoomFromScreenSize,
   zoomLevel,
   type CosmicScale,
 } from "./cosmicLod";
@@ -475,6 +476,10 @@ export class GraphScene {
   private lastScale: CosmicScale | null = null;
   private onScale: ((s: CosmicScale) => void) | null = null;
   private imposterTick = 0;
+  private imposterTick2 = 0;
+  // Cached galaxy centroids for the LOD blend (recomputed on a cadence, not
+  // every frame — O(n) is wasteful per-frame at 10k nodes).
+  private lodCents: Map<number, { x: number; y: number; z: number; r: number }> | null = null;
   private coreGlowTick = 0; // throttle centroid refresh
   private synapse: WaveLayer; // idle spontaneous micro-firings (dim ripples)
   private synapseTimer = 3; // seconds until the next idle firing
@@ -1659,36 +1664,52 @@ export class GraphScene {
       if (this.imposter.points.visible) this.imposter.points.visible = false;
       return;
     }
-    const camDist = this.flyMode
+    // Galaxy centroids drift slowly — recompute on a cadence, reuse between.
+    if (!this.lodCents || (this.imposterTick = (this.imposterTick + 1) % 15) === 0) {
+      this.lodCents = this.galaxyCentresById();
+    }
+    const cents = this.lodCents;
+    const vh = Math.max(1, this.container.clientHeight);
+    const sc = this.sizeScale(vh);
+    // Zoom from the largest galaxy's on-screen size: a galaxy filling the view
+    // resolves into stars (zoom 0); when every galaxy is a small dot you're out
+    // in the cluster and they read as discs (zoom 1). Flying = always inside.
+    // Falls back to framed-distance when there are no galaxy groups.
+    let maxFrac = 0;
+    for (const c of cents.values()) {
+      const d = Math.max(1, this.camera.position.distanceTo(this.tmpVec.set(c.x, c.y, c.z)));
+      maxFrac = Math.max(maxFrac, (c.r * 2 * sc) / d / vh);
+    }
+    const zoom = this.flyMode
       ? 0
-      : this.camera.position.distanceTo(this.controls.target);
-    const zoom = this.flyMode ? 0 : zoomLevel(camDist, this.framedDist);
-    const nodeFade = nodeLodAlpha(zoom);
+      : cents.size > 0
+        ? zoomFromScreenSize(maxFrac)
+        : zoomLevel(this.camera.position.distanceTo(this.controls.target), this.framedDist);
+    // Ease the fade so crossing a threshold never strobes (kills flicker).
+    const targetFade = nodeLodAlpha(zoom);
+    const cur = this.nodeMat.uniforms.u_lodFade.value as number;
+    const nodeFade = cur + (targetFade - cur) * Math.min(1, dt * 6);
     this.nodeMat.uniforms.u_lodFade.value = nodeFade;
     // Fully zoomed in → hide the imposter layer outright so its big sprites
     // don't run fragment shaders (pure overdraw) behind the node cloud.
-    const impVisible = zoom > 0.02;
+    const impVisible = nodeFade < 0.985;
     if (this.imposter.points.visible !== impVisible) {
       this.imposter.points.visible = impVisible;
     }
     if (!impVisible) return;
     this.imposter.update(dt);
-    // Refresh imposter geometry (centroids/radii) on a slow cadence.
-    if ((this.imposterTick = (this.imposterTick + 1) % 20) === 0) {
+    if ((this.imposterTick2 = (this.imposterTick2 + 1) % 15) === 0) {
       this.imposter.refresh();
     }
     // Edges + core bulges ride with the nodes so the far view is just discs.
     this.edgeMat.opacity =
       Math.min(1, this.edgeOpacity * this.settings.linkThickness) * nodeFade;
     // Per-galaxy imposter alpha: global zoom × local on-screen-size override.
-    const h = Math.max(1, this.container.clientHeight);
-    const scale = this.sizeScale(h);
-    const cents = this.galaxyCentresById();
     this.imposter.setAlphas((cm) => {
       const c = cents.get(cm);
       if (!c) return zoom; // no live centroid — follow global zoom
       const dist = Math.max(1, this.camera.position.distanceTo(this.tmpVec.set(c.x, c.y, c.z)));
-      const screenFrac = ((c.r * 2 * scale) / dist) / h; // galaxy diameter / viewport
+      const screenFrac = ((c.r * 2 * sc) / dist) / vh; // galaxy diameter / viewport
       return imposterAlpha(zoom, screenFrac);
     });
     // Scale-band HUD notification (star / system / galaxy / cluster).

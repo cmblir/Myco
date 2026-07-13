@@ -34,9 +34,17 @@ export function galaxyRingRadius(
   linkDistance: number,
   maxGroup: number,
 ): number {
+  // Each top-level folder is its OWN galaxy in its own pocket of deep space —
+  // you should have to zoom out to see them all at once. The shell radius is
+  // therefore several times the largest galaxy's own radius, so neighbours sit
+  // far across the void rather than merging into one mass.
   const groupR =
     linkDistance * (GALAXY_ORBIT_BASE + GALAXY_ORBIT_GROW * Math.sqrt(Math.max(1, maxGroup)));
-  return linkDistance * (2.6 + 1.9 * Math.sqrt(Math.max(1, count))) + groupR * 2.4;
+  // Clear void between galaxies (top-level-folder grouping already stops
+  // sub-folders from spawning adjacent mini-galaxies), but tight enough that
+  // the framed vault still reads as a node graph by default — over-separation
+  // shrank every galaxy to an unreadable speck.
+  return linkDistance * (2.4 + 1.7 * Math.sqrt(Math.max(1, count))) + groupR * 2.6;
 }
 
 // Anchor points for `count` galaxies: a fibonacci-sphere distribution

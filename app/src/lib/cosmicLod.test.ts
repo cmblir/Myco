@@ -4,6 +4,7 @@ import {
   cosmicScale,
   imposterAlpha,
   nodeLodAlpha,
+  zoomFromScreenSize,
   zoomLevel,
 } from "./cosmicLod";
 
@@ -60,5 +61,17 @@ describe("cosmicScale", () => {
     expect(cosmicScale(0.9, true)).toBe("cluster");
     // A single galaxy never becomes a "cluster".
     expect(cosmicScale(0.9, false)).toBe("galaxy");
+  });
+});
+
+describe("zoomFromScreenSize", () => {
+  it("is 0 when a galaxy fills the view, 1 only when all are small dots", () => {
+    expect(zoomFromScreenSize(0.3)).toBe(0);   // fills view → stars
+    expect(zoomFromScreenSize(0.22)).toBe(0);
+    expect(zoomFromScreenSize(0.06)).toBe(1);  // tiny dot → discs
+    expect(zoomFromScreenSize(0.01)).toBe(1);
+    const mid = zoomFromScreenSize(0.14);      // midpoint of 0.06..0.22
+    expect(mid).toBeGreaterThan(0.4);
+    expect(mid).toBeLessThan(0.6);
   });
 });

@@ -17,6 +17,34 @@ export function zoomLevel(camDist: number, framedDist: number): number {
   return Math.min(1, Math.max(0, (camDist - near) / Math.max(1e-6, far - near)));
 }
 
+// Proximity LOD for far-apart galaxies: what matters is how close the camera
+// is to the NEAREST galaxy relative to that galaxy's radius, not the whole
+// vault's framed size. Within ~2.5 radii you're "inside" a galaxy → its stars
+// resolve (zoom 0). Past ~6 radii of every galaxy you're in the void between
+// them → they read as discs (zoom 1). This makes "fly to a galaxy = see nodes,
+// pull back = see galaxies" work no matter how far apart the galaxies sit.
+export function zoomFromProximity(minDistOverRadius: number): number {
+  const near = 2.5;
+  const far = 6.0;
+  return Math.min(1, Math.max(0, (minDistOverRadius - near) / (far - near)));
+}
+
+// Screen-size LOD: the most intuitive driver for far-apart galaxies — when a
+// galaxy fills a good chunk of the viewport you're looking AT it, so its stars
+// resolve (zoom 0); when every galaxy is a small dot on screen you're out in
+// the cluster, so they read as discs (zoom 1). `maxScreenFrac` is the largest
+// galaxy's on-screen diameter as a fraction of viewport height.
+export function zoomFromScreenSize(maxScreenFrac: number): number {
+  // Bias strongly toward showing STARS: only when every galaxy has shrunk to a
+  // small dot (≤6% of the view) do the discs fully take over. A galaxy still
+  // ~22%+ of the view keeps its stars. This guarantees the default framed view
+  // is the node graph, never an empty field of faint discs.
+  const discs = 0.06;
+  const nodes = 0.22;
+  const t = (maxScreenFrac - discs) / (nodes - discs);
+  return 1 - Math.min(1, Math.max(0, t)); // big on screen → zoom 0 (stars)
+}
+
 // Node cloud opacity: full when close, gone when far (imposters take over).
 export function nodeLodAlpha(zoom01: number): number {
   return 1 - zoom01;
