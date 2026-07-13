@@ -1623,20 +1623,20 @@ export class GraphScene {
     const cn = new Map<number, number>();
     for (const id of this.nodeIds) {
       const a = this.graph.getNodeAttributes(id);
-      // Spin per GALAXY (top-level folder), not per cluster, so a galaxy's
-      // sub-cluster lobes rotate together as one disc — matching the worker,
-      // which flattens the whole galaxy onto galaxyNormal(galaxy).
-      if (a.galaxy < 0) continue;
-      cx.set(a.galaxy, (cx.get(a.galaxy) ?? 0) + a.x);
-      cy.set(a.galaxy, (cy.get(a.galaxy) ?? 0) + a.y);
-      cz.set(a.galaxy, (cz.get(a.galaxy) ?? 0) + a.z);
-      cn.set(a.galaxy, (cn.get(a.galaxy) ?? 0) + 1);
+      // Spin per CLUSTER (community), each about its own seeded disc axis —
+      // matching the worker, which now packs every cluster as its own clump
+      // and flattens it onto galaxyNormal(community).
+      if (a.community < 0) continue;
+      cx.set(a.community, (cx.get(a.community) ?? 0) + a.x);
+      cy.set(a.community, (cy.get(a.community) ?? 0) + a.y);
+      cz.set(a.community, (cz.get(a.community) ?? 0) + a.z);
+      cn.set(a.community, (cn.get(a.community) ?? 0) + 1);
     }
     const base = this.settings.folderGalaxies ? SWIRL_SPEED * dt : 0;
     for (const id of this.nodeIds) {
       if (base === 0) break; // galaxy spin off — moons below still run
       const a = this.graph.getNodeAttributes(id);
-      const c = a.galaxy;
+      const c = a.community;
       if (c < 0) continue;
       const n = cn.get(c)!;
       const nm = galaxyNormal(c); // same seeded axis the worker flattens onto

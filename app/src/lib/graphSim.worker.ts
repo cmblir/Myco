@@ -26,9 +26,7 @@ import {
 import type { GraphSettings } from "./graphSettings";
 import { bigGraphDecay } from "./simCooling";
 import {
-  clusterAnchors,
   galaxyAnchorsBySize,
-  galaxyFootprint,
   galaxyNormal,
   galaxySizeBoost,
   type GalaxyAnchor,
@@ -234,15 +232,9 @@ function build(
     if (!cur.folderGalaxies) return;
     // Count nodes per cluster and per galaxy; remember each cluster's galaxy.
     const clusterCount = new Map<number, number>();
-    const galaxyCount = new Map<number, number>();
-    const galaxyOfCluster = new Map<number, number>();
     for (const n of nodes) {
       if (n.community < 0) continue;
       clusterCount.set(n.community, (clusterCount.get(n.community) ?? 0) + 1);
-      if (n.galaxy >= 0) {
-        galaxyCount.set(n.galaxy, (galaxyCount.get(n.galaxy) ?? 0) + 1);
-        galaxyOfCluster.set(n.community, n.galaxy);
-      }
     }
     if (clusterCount.size < 2) return;
     const intra = new Map<number, number>();
@@ -252,38 +244,25 @@ function build(
         intra.set(c, (intra.get(c) ?? 0) + 1);
       }
     }
-    // Galaxy centres, size-spaced: a bigger galaxy is flung farther out.
-    const galaxyIds = [...galaxyCount.keys()].sort((a, b) => a - b);
-    const counts = galaxyIds.map((g) => galaxyCount.get(g)!);
+    // Pack EVERY sized topic cluster as its OWN separated clump, spaced by its
+    // node count with real void between (irregular greedy packing, biggest
+    // first). The old two-level scheme fanned a folder's clusters inside ONE
+    // galaxy footprint — fine when folders were balanced, but a vault where one
+    // folder holds ~90% of the notes crammed 60+ clusters into a single small
+    // sphere → the whole thing read as one dense ball with the community
+    // colours all mixed together. Per-cluster packing makes every topic a
+    // distinct coloured puff with gaps. (Folders still group the LEGEND; only
+    // the spatial layout changed.) Each clump gets its own tilted disc plane.
+    const clusterIds = [...clusterCount.keys()].sort(
+      (a, b) => (clusterCount.get(b) ?? 0) - (clusterCount.get(a) ?? 0) || a - b,
+    );
+    const counts = clusterIds.map((c) => clusterCount.get(c)!);
     const centers = galaxyAnchorsBySize(counts, cur.linkDistance);
-    const galaxyCenter = new Map<number, GalaxyAnchor>();
-    galaxyIds.forEach((g, i) => galaxyCenter.set(g, centers[i]));
-    // Each galaxy's clusters fan out (in 3D) within its footprint as separate
-    // lobes so a folder reads as a disc of distinct-coloured clumps sized by
-    // node count, NOT one collapsed point. The whole galaxy shares one disc
-    // plane so it flattens as a single galaxy. Inter-galaxy links are near-zero
-    // (linkStrength) so folders stay separate circles.
-    const byGalaxy = new Map<number, number[]>();
-    for (const c of clusterCount.keys()) {
-      const g = galaxyOfCluster.get(c) ?? -1;
-      let arr = byGalaxy.get(g);
-      if (!arr) byGalaxy.set(g, (arr = []));
-      arr.push(c);
-    }
-    for (const [g, cs] of byGalaxy) {
-      cs.sort(
-        (a, b) => (clusterCount.get(b) ?? 0) - (clusterCount.get(a) ?? 0) || a - b,
-      );
-      const center = galaxyCenter.get(g) ?? { x: 0, y: 0, z: 0 };
-      const footprint = galaxyFootprint(galaxyCount.get(g) ?? 1, cur.linkDistance);
-      const mini = clusterAnchors(center, footprint, cs.length, g >= 0 ? g : 0);
-      const normal = galaxyNormal(g >= 0 ? g : 0);
-      cs.forEach((c, i) => {
-        anchors.set(c, mini[i]);
-        normals.set(c, normal);
-        sizeBoost.set(c, galaxySizeBoost(clusterCount.get(c) ?? 1, intra.get(c) ?? 0));
-      });
-    }
+    clusterIds.forEach((c, i) => {
+      anchors.set(c, centers[i]);
+      normals.set(c, galaxyNormal(c));
+      sizeBoost.set(c, galaxySizeBoost(clusterCount.get(c) ?? 1, intra.get(c) ?? 0));
+    });
   };
   const galaxyForce = (): Force<SimNode, SimLink> => {
     let ns: SimNode[] = [];
