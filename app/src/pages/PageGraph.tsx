@@ -860,6 +860,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
           size: Math.max(1, s.nodeSize),
           color: theme.starDim,
           community: -1, // field star until the next colorByCommunity rebuild
+          galaxy: -1, // assigned on the next folderGroups rebuild
           isHub: false,
           intensity: 0,
         });
