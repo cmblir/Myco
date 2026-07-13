@@ -89,16 +89,20 @@ const REPEL_SCALE = 9;
 const CENTER_SCALE = 0.13;
 const CLUSTER_SCALE = 0.18;
 const HUB_PIN = 3;
-// Tighter per-cluster orbit ring → each topic cluster reads as a compact CIRCLE
-// (dandelion puff) so, spread across the galaxy footprint, the puffs sit apart
-// with dark gaps instead of bleeding into one diffuse mass.
-const ORBIT_BASE = 0.22;
-const ORBIT_GROW = 0.045;
+// Per-cluster orbit ring — leaves radiate from their hub on visible spokes (the
+// dandelion/firework look), tuned so each cluster reads as a distinct starburst.
+const ORBIT_BASE = 0.32;
+const ORBIT_GROW = 0.06;
 const DUST_PULL = 0.18;
 const BIGBANG_BURST = 22;
 const SIM_ALPHA_MIN = 0.005;
 const INTER_LINK_DIST_MUL = 1.8;
-const INTER_LINK_STR_MUL = 0.45;
+// Links between DIFFERENT clusters attract almost not at all, so every cluster
+// floats to its OWN anchor as a distinct dandelion regardless of how densely the
+// vault cross-links them. Without this, inter-cluster links reel a connected
+// folder into one central mush (the "뭉침"); the links still render as faint
+// threads between the separated clusters.
+const INTER_LINK_STR_MUL = 0.02;
 // Links BETWEEN top-level folders (galaxies) barely attract — otherwise the
 // link force drags every folder into one merged ball and the anchors can't hold
 // them apart (why a real, cross-linked vault collapsed into one blob while a
