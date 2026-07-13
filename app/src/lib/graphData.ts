@@ -26,6 +26,29 @@ const PALETTE = [
   "#ff9e6d",
 ];
 
+// Distinct soft-bright hue for the (rank)th group beyond the curated palette:
+// golden-angle spacing so consecutive galaxies never share a colour, at a
+// fixed saturation/lightness tuned to read on the dark void like the palette.
+function generatedHue(rank: number): string {
+  const h = (rank * 137.508) % 360; // golden angle
+  return hslToHex(h, 0.62, 0.68);
+}
+
+function hslToHex(h: number, s: number, l: number): string {
+  const c = (1 - Math.abs(2 * l - 1)) * s;
+  const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - c / 2;
+  const [r, g, b] =
+    h < 60 ? [c, x, 0] :
+    h < 120 ? [x, c, 0] :
+    h < 180 ? [0, c, x] :
+    h < 240 ? [0, x, c] :
+    h < 300 ? [x, 0, c] : [c, 0, x];
+  const to = (v: number): string =>
+    Math.round((v + m) * 255).toString(16).padStart(2, "0");
+  return `#${to(r)}${to(g)}${to(b)}`;
+}
+
 // Group nodes by their parent folder (relative to the vault root) — the
 // "folder galaxies" layout unit. Ghost nodes adopt their first real
 // neighbour's folder. Returns a louvain-shaped Record (unassigned → -1), or
@@ -43,11 +66,11 @@ export function folderGroups(
     rel = rel.replace(/^[\\/]+/, "");
     const parts = rel.split(/[\\/]/);
     parts.pop(); // file name
-    // Group by the TOP-LEVEL folder only, so `wiki/a` and `wiki/b` are one
-    // galaxy ("wiki") with sub-folders as internal structure — the user model
-    // is "each top-level folder is its own far-apart galaxy". Root-level files
-    // share the "." group.
-    return parts.length > 0 ? parts[0] : ".";
+    // Group by the full sub-folder path so EVERY distinct folder is its own
+    // galaxy with its own colour + legend entry (the vault root may itself be a
+    // deep folder like ~/Documents, so top-level-only collapsed everything into
+    // one blob). Root-level files share the "." group.
+    return parts.length > 0 ? parts.join("/") : ".";
   };
   const keys = new Map<string, string>();
   for (const id of ids) {
@@ -117,10 +140,12 @@ function colorByCommunity(
     .sort((a, b) => b[1] - a[1])
     .map(([c]) => c);
   const colorOf = new Map<number, string>();
-  // No wrap-around: communities ranked past the palette stay hue-less and fall
-  // through to the neutral FIELD_STAR base below (they keep their community id
-  // for clustering — only the colour goes neutral).
-  ranked.slice(0, PALETTE.length).forEach((c, i) => colorOf.set(c, PALETTE[i]));
+  // EVERY sized group (folder) gets its OWN distinct colour so each galaxy — and
+  // its legend row — reads separately. The first few use the curated palette;
+  // the rest are generated on the golden angle so even a vault with dozens of
+  // folders never collapses two galaxies into the same hue (the old ≤6-then-grey
+  // budget made most folders an indistinguishable grey blob).
+  ranked.forEach((c, i) => colorOf.set(c, i < PALETTE.length ? PALETTE[i] : generatedHue(i)));
   const sized = new Set(ranked);
   // Highest-degree node of each sized community = its galaxy core.
   const hubOf = new Map<number, { id: string; deg: number }>();

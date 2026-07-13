@@ -40,11 +40,11 @@ export function galaxyRingRadius(
   // far across the void rather than merging into one mass.
   const groupR =
     linkDistance * (GALAXY_ORBIT_BASE + GALAXY_ORBIT_GROW * Math.sqrt(Math.max(1, maxGroup)));
-  // Clear void between galaxies (top-level-folder grouping already stops
-  // sub-folders from spawning adjacent mini-galaxies), but tight enough that
-  // the framed vault still reads as a node graph by default — over-separation
-  // shrank every galaxy to an unreadable speck.
-  return linkDistance * (2.4 + 1.7 * Math.sqrt(Math.max(1, count))) + groupR * 2.6;
+  // Wide void between galaxies so each folder is a clearly separate island in
+  // space (no imposter discs to shrink into any more — the real node clusters
+  // are always shown, so generous separation just reads as "zoom out to survey
+  // the whole vault").
+  return linkDistance * (5 + 3.5 * Math.sqrt(Math.max(1, count))) + groupR * 5;
 }
 
 // Anchor points for `count` galaxies: a fibonacci-sphere distribution

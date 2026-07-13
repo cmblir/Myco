@@ -864,23 +864,20 @@ export class GraphScene {
     this.meteor.lines.visible = amb.meteors && !this.perfLod;
     this.scene.add(this.meteor.lines);
 
-    // --- galactic core bulges + rare cosmic events (dark themes only) ---
-    this.coreGlow = new CoreGlowLayer(this.graph, this.nodeIds, pr, dark && !this.perfLod);
-    this.coreGlow.setSizeScale(this.sizeScale(h));
+    // Painted "galaxy" adornments (procedural spiral imposters, core bulges,
+    // dust bands) are DISABLED by request — the real node clusters are the
+    // galaxies; nothing is faked on top. Constructed but never enabled so the
+    // rest of the wiring (rebuild/resize/dispose) stays uniform.
+    this.coreGlow = new CoreGlowLayer(this.graph, this.nodeIds, pr, false);
     this.scene.add(this.coreGlow.points);
     this.cosmic = new CosmicEvents(pr);
     this.cosmic.setSizeScale(this.sizeScale(h));
     this.scene.add(this.cosmic.group);
     this.band = new GalacticBandLayer(this.graph, this.nodeIds, pr);
-    this.band.setSizeScale(this.sizeScale(h));
-    this.band.points.visible = dark && !this.perfLod;
+    this.band.points.visible = false;
     this.scene.add(this.band.points);
-    // Galaxy imposters: the far end of the cosmic LOD. Enabled even in perf
-    // mode (they're one cheap draw call) — they're what a 10k-node vault
-    // resolves into when zoomed out, instead of a white blob.
     this.imposter = new GalaxyImposterLayer(this.graph, this.nodeIds, pr, false);
-    this.imposterEnabled = dark;
-    this.imposter.setSizeScale(this.sizeScale(h));
+    this.imposterEnabled = false; // never paint spiral discs
     this.scene.add(this.imposter.points);
 
     // --- spaceship (immersive third-person flight; enabled via setFlyMode) ---
@@ -1987,9 +1984,10 @@ export class GraphScene {
     this.synapse.setDark(dark);
     this.ship.setDark(dark);
     this.meteor.lines.visible = amb.meteors && !this.perfLod;
-    this.coreGlow.setEnabled(dark && !this.perfLod);
-    this.band.points.visible = dark && !this.perfLod;
-    this.imposterEnabled = dark;
+    // Painted galaxy adornments stay off across theme changes (see ctor).
+    this.coreGlow.setEnabled(false);
+    this.band.points.visible = false;
+    this.imposterEnabled = false;
     this.nebula.setDark(SHOW_NEBULA && amb.nebula);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;

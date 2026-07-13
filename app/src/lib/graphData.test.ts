@@ -197,19 +197,21 @@ describe("calm-cosmic-web node encoding", () => {
     return buildGraph(adj({ forward }), allowed, opts);
   }
 
-  it("only the 6 largest communities get saturated hues; the rest go neutral", () => {
+  it("every sized community gets its OWN distinct saturated hue", () => {
     const g = eightCommunities();
-    const saturatedComms = new Set<number>();
-    const neutralComms = new Set<number>();
+    const byComm = new Map<number, string>();
     g.forEachNode((id) => {
       const comm = g.getNodeAttribute(id, "community");
-      const color = g.getNodeAttribute(id, "color");
-      (spread(color) > 0.25 ? saturatedComms : neutralComms).add(comm);
+      if (comm >= 0) byComm.set(comm, g.getNodeAttribute(id, "color"));
     });
-    expect(saturatedComms.size).toBe(6);
-    expect(neutralComms.size).toBe(2);
-    // No community is both — neutral communities are wholly neutral.
-    for (const c of neutralComms) expect(saturatedComms.has(c)).toBe(false);
+    // All 8 folders are sized (≥3) → 8 communities, each coloured (not grey).
+    expect(byComm.size).toBe(8);
+    for (const color of byComm.values()) {
+      expect(spread(color)).toBeGreaterThan(0.1); // has hue, not neutral grey
+    }
+    // Hues are distinct per galaxy — no two communities share a colour.
+    const hubHues = [...byComm.values()];
+    expect(new Set(hubHues).size).toBe(hubHues.length);
   });
 
   it("node size follows the super-linear log-degree scale (hubs pop)", () => {
