@@ -200,7 +200,60 @@ function mockClaudeRun(prompt: string): { stdout: string; stderr: string; status
   return { stdout, stderr: "", status: 0 };
 }
 
+// Perf harness: `?mock=1&big=N` generates a synthetic vault of ~N nodes spread
+// across a dozen folders with a power-law-ish link structure, so the cosmic
+// graph can be profiled at real scale (the curated NODES set is ~57). Purely a
+// dev affordance — gated on the URL param, never reached in a packaged build.
+function bigCount(): number {
+  if (typeof window === "undefined") return 0;
+  const v = new URLSearchParams(window.location.search).get("big");
+  if (v == null) return 0;
+  return Math.min(20000, Math.max(0, parseInt(v, 10) || 3000));
+}
+function bigRand(n: number): number {
+  let x = (n * 1664525 + 1013904223) >>> 0;
+  x ^= x >>> 15;
+  x = Math.imul(x, 2246822519) >>> 0;
+  x ^= x >>> 13;
+  return (x >>> 0) / 4294967296;
+}
+export function bigPath(i: number): string {
+  const folders = [
+    "neural-networks", "data-science", "keyboard-hobby", "spain-tech",
+    "deep-learning", "alignment", "distillation", "rag", "quantization",
+    "activation", "topics", "misc",
+  ];
+  const f = folders[i % folders.length];
+  return `${VAULT}/${f}/note-${i}.md`;
+}
+function buildBigAdjacency(n: number) {
+  const forward: Record<string, string[]> = {};
+  const backward: Record<string, string[]> = {};
+  const tags: Record<string, string[]> = {};
+  // A handful of hubs per folder; most notes link to a hub + a couple of peers.
+  for (let i = 0; i < n; i++) {
+    const src = bigPath(i);
+    tags[src] = ["concept"];
+    const links: string[] = [];
+    const folderStart = i - (i % 12); // rough hub within the same slice
+    const hub = folderStart + (folderStart % 7); // deterministic hub target
+    if (hub !== i && hub < n) links.push(bigPath(hub));
+    const peers = 1 + Math.floor(bigRand(i) * 3);
+    for (let k = 0; k < peers; k++) {
+      const t = Math.floor(bigRand(i * 31 + k) * n);
+      if (t !== i) links.push(bigPath(t));
+    }
+    if (links.length) {
+      forward[src] = links;
+      for (const t of links) (backward[t] ||= []).push(src);
+    }
+  }
+  return { forward, backward, unresolved: {}, tags, meta: {} };
+}
+
 function buildAdjacency() {
+  const big = bigCount();
+  if (big > 0) return buildBigAdjacency(big);
   const forward: Record<string, string[]> = {};
   const backward: Record<string, string[]> = {};
   const tags: Record<string, string[]> = {};
@@ -259,6 +312,27 @@ function frontmatter(d: Node): Record<string, unknown> {
 }
 
 function fileTree() {
+  // Perf harness: mirror the synthetic big vault as a flat folder set so the
+  // graph builder sees every generated note.
+  const big = bigCount();
+  if (big > 0) {
+    const byFolder = new Map<string, { kind: "file"; name: string; path: string }[]>();
+    for (let i = 0; i < big; i++) {
+      const p = bigPath(i);
+      const folder = p.slice(0, p.lastIndexOf("/"));
+      (byFolder.get(folder) ?? byFolder.set(folder, []).get(folder)!).push({
+        kind: "file",
+        name: p.split("/").pop()!,
+        path: p,
+      });
+    }
+    return [...byFolder.entries()].map(([path, children]) => ({
+      kind: "directory" as const,
+      name: path.split("/").pop()!,
+      path,
+      children,
+    }));
+  }
   const wikiChildren = [
     { kind: "file", name: "index.md", path: `${VAULT}/wiki/index.md` },
     { kind: "file", name: "log.md", path: `${VAULT}/wiki/log.md` },

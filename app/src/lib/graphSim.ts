@@ -116,6 +116,17 @@ export function createSim(
   const nodes: SimNode[] = ids.map((id, i) => makeView(i, id));
   let count = ids.length;
 
+  // Coalesce worker ticks to at most ONE onTick per animation frame. The
+  // worker ticks as fast as it can (setTimeout 0) and floods position
+  // messages; applying every one on the main thread — each an O(n)+O(edges)
+  // buffer rewrite — saturated the main thread and dropped a 10k-node vault to
+  // ~2fps during the (long) settle. Storing the latest buffer and flushing it
+  // once per rAF decouples worker tick rate from main-thread cost.
+  let flushPending = false;
+  const flush = (): void => {
+    flushPending = false;
+    onTick(latest);
+  };
   worker.onmessage = (
     e: MessageEvent<
       { type: "tick"; positions: Float32Array } | { type: "settle" }
@@ -124,8 +135,13 @@ export function createSim(
     const m = e.data;
     if (m.type === "tick") {
       latest = m.positions;
-      onTick(latest);
+      if (!flushPending) {
+        flushPending = true;
+        requestAnimationFrame(flush);
+      }
     } else if (m.type === "settle") {
+      // Apply the final resting positions immediately so the last frame is exact.
+      onTick(latest);
       settleCb?.();
     }
   };

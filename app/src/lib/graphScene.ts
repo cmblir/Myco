@@ -469,6 +469,7 @@ export class GraphScene {
   private cosmic: CosmicEvents; // rare black-hole / wormhole events
   private band: GalacticBandLayer; // dust bands hugging each large galaxy
   private imposter: GalaxyImposterLayer; // far-LOD spiral-galaxy discs
+  private imposterEnabled = false; // dark-theme gate (LOD then controls visibility)
   // Cosmic-scale LOD state (see cosmicLod). onScale fires when the camera
   // crosses a scale band (star → system → galaxy → cluster) for the HUD.
   private lastScale: CosmicScale | null = null;
@@ -872,7 +873,8 @@ export class GraphScene {
     // Galaxy imposters: the far end of the cosmic LOD. Enabled even in perf
     // mode (they're one cheap draw call) — they're what a 10k-node vault
     // resolves into when zoomed out, instead of a white blob.
-    this.imposter = new GalaxyImposterLayer(this.graph, this.nodeIds, pr, dark);
+    this.imposter = new GalaxyImposterLayer(this.graph, this.nodeIds, pr, false);
+    this.imposterEnabled = dark;
     this.imposter.setSizeScale(this.sizeScale(h));
     this.scene.add(this.imposter.points);
 
@@ -1649,17 +1651,13 @@ export class GraphScene {
   // fades edges / core glow with the nodes so the far view is pure discs.
   // Flying = always fully "near" (you're among the stars).
   private updateLod(dt: number): void {
-    this.imposter.update(dt);
-    if (!this.imposter.points.visible) {
+    if (!this.imposterEnabled) {
       // Imposters off (light skin) — nodes always full, nothing to blend.
       if (this.nodeMat.uniforms.u_lodFade.value !== 1) {
         this.nodeMat.uniforms.u_lodFade.value = 1;
       }
+      if (this.imposter.points.visible) this.imposter.points.visible = false;
       return;
-    }
-    // Refresh imposter geometry (centroids/radii) on a slow cadence.
-    if ((this.imposterTick = (this.imposterTick + 1) % 20) === 0) {
-      this.imposter.refresh();
     }
     const camDist = this.flyMode
       ? 0
@@ -1667,6 +1665,18 @@ export class GraphScene {
     const zoom = this.flyMode ? 0 : zoomLevel(camDist, this.framedDist);
     const nodeFade = nodeLodAlpha(zoom);
     this.nodeMat.uniforms.u_lodFade.value = nodeFade;
+    // Fully zoomed in → hide the imposter layer outright so its big sprites
+    // don't run fragment shaders (pure overdraw) behind the node cloud.
+    const impVisible = zoom > 0.02;
+    if (this.imposter.points.visible !== impVisible) {
+      this.imposter.points.visible = impVisible;
+    }
+    if (!impVisible) return;
+    this.imposter.update(dt);
+    // Refresh imposter geometry (centroids/radii) on a slow cadence.
+    if ((this.imposterTick = (this.imposterTick + 1) % 20) === 0) {
+      this.imposter.refresh();
+    }
     // Edges + core bulges ride with the nodes so the far view is just discs.
     this.edgeMat.opacity =
       Math.min(1, this.edgeOpacity * this.settings.linkThickness) * nodeFade;
@@ -1958,7 +1968,7 @@ export class GraphScene {
     this.meteor.lines.visible = amb.meteors && !this.perfLod;
     this.coreGlow.setEnabled(dark && !this.perfLod);
     this.band.points.visible = dark && !this.perfLod;
-    this.imposter.setEnabled(dark);
+    this.imposterEnabled = dark;
     this.nebula.setDark(SHOW_NEBULA && amb.nebula);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
@@ -2258,8 +2268,6 @@ export class GraphScene {
       } else {
         this.controls.update();
       }
-      // Cosmic-scale LOD: cross-fade the node cloud ↔ galaxy imposters by how
-      // far the camera sits from what it's looking at. Every frame, cheap.
       this.updateLod(dt);
       // One coalesced hover pick per frame (not one per pointermove event).
       // Suppressed while flying (drag = steer, not hover).

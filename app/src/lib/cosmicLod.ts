@@ -5,14 +5,15 @@
 
 export type CosmicScale = "cluster" | "galaxy" | "system" | "star";
 
-// zoom01: 0 = dived all the way in, 1 = whole vault framed (or further out).
-// Mapped from camera distance so the transition is smooth and symmetric.
+// zoom01: 0 = the framed graph (or closer), 1 = pulled far back into deep
+// space. The DEFAULT view (camera at the fit distance) must sit at 0 so the
+// actual node graph is what loads — imposters are a pull-BACK effect, not the
+// resting state. Nodes stay full out to 1.4× the framed distance; galaxies
+// take over by 3× — between is the cross-fade band.
 export function zoomLevel(camDist: number, framedDist: number): number {
   if (framedDist <= 0) return 0;
-  // Nodes are fully in by 0.32× the framed distance, imposters fully in by
-  // 0.85× — between is the cross-fade band.
-  const near = framedDist * 0.32;
-  const far = framedDist * 0.85;
+  const near = framedDist * 1.4;
+  const far = framedDist * 3.0;
   return Math.min(1, Math.max(0, (camDist - near) / Math.max(1e-6, far - near)));
 }
 

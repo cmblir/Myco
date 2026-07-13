@@ -8,12 +8,18 @@ import {
 } from "./cosmicLod";
 
 describe("zoomLevel", () => {
-  it("is 0 dived in, 1 framed out, ramping between", () => {
+  it("keeps the framed (default) view on NODES, not imposters", () => {
     const F = 1000;
-    expect(zoomLevel(F * 0.2, F)).toBe(0); // well inside → full nodes
-    expect(zoomLevel(F * 0.85, F)).toBe(1); // framed → full imposters
-    expect(zoomLevel(F * 2, F)).toBe(1); // further out clamps
-    const mid = zoomLevel(F * 0.585, F); // midpoint of the 0.32..0.85 band
+    expect(zoomLevel(F, F)).toBe(0); // default fit distance → full nodes
+    expect(zoomLevel(F * 1.4, F)).toBe(0); // still nodes just past framed
+    expect(zoomLevel(F * 0.5, F)).toBe(0); // zoomed in → nodes
+  });
+
+  it("ramps to imposters only when pulled well back", () => {
+    const F = 1000;
+    expect(zoomLevel(F * 3, F)).toBe(1); // far out → full imposters
+    expect(zoomLevel(F * 5, F)).toBe(1); // further clamps
+    const mid = zoomLevel(F * 2.2, F); // midpoint of the 1.4..3.0 band
     expect(mid).toBeGreaterThan(0.4);
     expect(mid).toBeLessThan(0.6);
   });

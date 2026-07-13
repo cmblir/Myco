@@ -415,11 +415,24 @@ function build(
     ]);
   };
 
+  // Throttle position posts to ~30Hz. The worker ticks as fast as it can so
+  // the physics converges quickly, but posting a 120KB Float32Array on EVERY
+  // tick floods the main-thread event loop with hundreds of messages/sec,
+  // starving requestAnimationFrame — a 10k-node vault dropped to ~2fps during
+  // the settle even though each frame's actual work was cheap. Posting at most
+  // every POST_INTERVAL_MS keeps the display fed without drowning it.
+  const POST_INTERVAL_MS = 33;
+  let lastPost = 0;
   const drive = (): void => {
     driverTimer = null;
     sim.tick();
-    postPositions();
-    if (sim.alpha() < SIM_ALPHA_MIN) {
+    const settled = sim.alpha() < SIM_ALPHA_MIN;
+    const nowMs = performance.now();
+    if (settled || nowMs - lastPost >= POST_INTERVAL_MS) {
+      postPositions();
+      lastPost = nowMs;
+    }
+    if (settled) {
       (self as unknown as Worker).postMessage({ type: "settle" });
       return;
     }
