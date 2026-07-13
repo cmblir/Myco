@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { Adjacency, FileNode } from "./ipc";
 import {
   buildGraph,
+  buildLegend,
   collectFolders,
   communityPalette,
   computeAllowed,
@@ -442,6 +443,86 @@ describe("communityPalette (base hue per galaxy, shades per cluster)", () => {
     const pal = communityPalette([0, 1, 2], null, false);
     expect(hueDist(pal.get(0)!, pal.get(1)!)).toBeGreaterThan(20);
     expect(hueDist(pal.get(1)!, pal.get(2)!)).toBeGreaterThan(20);
+  });
+});
+
+describe("buildLegend (galaxy → cluster hierarchy)", () => {
+  const N = (
+    id: string,
+    community: number,
+    galaxy: number,
+    deg: number,
+    color = "#abcdef",
+  ) => ({ id, community, galaxy, color, deg });
+
+  it("groups clusters under their galaxy with the top-folder label", () => {
+    const nodes = [
+      N("/v/demo/wiki/quantization.md", 0, 0, 50, "#111111"),
+      N("/v/demo/wiki/quantization-1.md", 0, 0, 1, "#111111"),
+      N("/v/demo/wiki/quantization-2.md", 0, 0, 1, "#111111"),
+      N("/v/demo/wiki/gan.md", 1, 0, 40, "#222222"),
+      N("/v/demo/wiki/gan-1.md", 1, 0, 1, "#222222"),
+      N("/v/demo/wiki/gan-2.md", 1, 0, 1, "#222222"),
+    ];
+    const leg = buildLegend(nodes, "/v");
+    expect(leg).toHaveLength(1);
+    expect(leg[0].label).toBe("demo");
+    expect(leg[0].count).toBe(6);
+    expect(leg[0].clusters.map((c) => c.label).sort()).toEqual([
+      "gan",
+      "quantization",
+    ]);
+  });
+
+  it("caps clusters per galaxy and reports the remainder", () => {
+    const nodes = [];
+    for (let c = 0; c < 8; c++)
+      for (let k = 0; k < 3; k++)
+        nodes.push(N(`/v/demo/wiki/t${c}-${k}.md`, c, 0, k === 0 ? 10 : 1));
+    const leg = buildLegend(nodes, "/v", { maxClusters: 6 });
+    expect(leg[0].clusters).toHaveLength(6);
+    expect(leg[0].more).toBe(2);
+  });
+
+  it("orders galaxies by total size, biggest first", () => {
+    const nodes = [
+      N("/v/small/x/a.md", 0, 0, 3),
+      N("/v/small/x/b.md", 0, 0, 1),
+      N("/v/small/x/c.md", 0, 0, 1),
+      N("/v/big/y/d.md", 1, 1, 3),
+      N("/v/big/y/e.md", 1, 1, 1),
+      N("/v/big/y/f.md", 1, 1, 1),
+      N("/v/big/y/g.md", 1, 1, 1),
+    ];
+    const leg = buildLegend(nodes, "/v");
+    expect(leg[0].label).toBe("big");
+    expect(leg[1].label).toBe("small");
+  });
+
+  it("returns a headerless galaxy (-1) for the non-folder (Louvain) mode", () => {
+    const nodes = [
+      N("/v/a.md", 0, -1, 5),
+      N("/v/b.md", 0, -1, 1),
+      N("/v/c.md", 0, -1, 1),
+      N("/v/d.md", 1, -1, 5),
+      N("/v/e.md", 1, -1, 1),
+      N("/v/f.md", 1, -1, 1),
+    ];
+    const leg = buildLegend(nodes, "/v");
+    expect(leg).toHaveLength(1);
+    expect(leg[0].g).toBe(-1);
+    expect(leg[0].clusters).toHaveLength(2);
+  });
+
+  it("ignores field stars (community < 0)", () => {
+    const nodes = [
+      N("/v/demo/a.md", 0, 0, 5),
+      N("/v/demo/b.md", 0, 0, 1),
+      N("/v/demo/c.md", 0, 0, 1),
+      N("/v/demo/d.md", -1, -1, 0),
+    ];
+    const leg = buildLegend(nodes, "/v");
+    expect(leg[0].count).toBe(3);
   });
 });
 

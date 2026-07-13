@@ -178,6 +178,7 @@ export interface Strings {
   gr_key_dim?: string;
   gr_key_amber?: string;
   gr_key_neutral?: string;
+  gr_more?: string; // legend: "+{n} more" clusters beyond the shown cap
   gr_focus_trail?: string;
   gr_focus_esc?: string;
   gr_preset?: string;
@@ -687,6 +688,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_key_dim: "faint = low confidence",
     gr_key_amber: "amber = disputed",
     gr_key_neutral: "grey = unclassified",
+    gr_more: "+{n} more",
     gr_focus_trail: "Focus trail",
     gr_focus_esc: "Step out (Esc / click the void)",
     gr_preset: "Layout",
@@ -1207,6 +1209,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_key_dim: "흐림 = 낮은 신뢰도",
     gr_key_amber: "호박색 = 논쟁 중",
     gr_key_neutral: "회청 = 미분류",
+    gr_more: "+{n}개 더",
     gr_focus_trail: "포커스 경로",
     gr_focus_esc: "한 단계 나가기 (Esc / 빈 공간 클릭)",
     gr_preset: "레이아웃",

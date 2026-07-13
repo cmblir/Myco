@@ -13,7 +13,7 @@ import GraphControls from "../components/GraphControls";
 import GraphInspector from "../components/GraphInspector";
 import ShipHud from "../components/ShipHud";
 import GraphGaps from "../components/GraphGaps";
-import GraphLegend, { type LegendCommunity } from "../components/GraphLegend";
+import GraphLegend from "../components/GraphLegend";
 import {
   DEFAULT_GRAPH_SETTINGS,
   loadGraphSettings,
@@ -22,11 +22,13 @@ import {
 } from "../lib/graphSettings";
 import {
   buildGraph,
+  buildLegend,
   collectFolders,
   collectTags,
   computeAllowed,
   countAllNodes,
   flattenMarkdown,
+  type LegendGalaxy,
   shortestPath,
   starKindOf,
   stem,
@@ -238,35 +240,31 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [counts, glEpoch]);
 
-  // Legend: top-6 communities by size — color from their hub, name from their
-  // top-degree member. Re-derives with the graph (counts proxies rebuilds).
-  const legendCommunities = useMemo<LegendCommunity[]>(() => {
+  // Legend: two-level galaxy → cluster hierarchy. Galaxy = top-level folder
+  // (header); clusters = the coloured sub-groups within it (folder or Louvain
+  // topic). Re-derives with the graph (counts proxies rebuilds).
+  const legendGalaxies = useMemo<LegendGalaxy[]>(() => {
     const g = graphRef.current;
     if (!g || g.order === 0) return [];
-    const acc = new Map<
-      number,
-      { count: number; color: string; label: string; topDeg: number }
-    >();
+    const rows: {
+      id: string;
+      community: number;
+      galaxy: number;
+      color: string;
+      deg: number;
+    }[] = [];
     g.forEachNode((id, a) => {
-      if (a.community < 0) return;
-      let e = acc.get(a.community);
-      if (!e) {
-        e = { count: 0, color: a.color, label: stem(id), topDeg: -1 };
-        acc.set(a.community, e);
-      }
-      e.count += 1;
-      if (a.deg > e.topDeg) {
-        e.topDeg = a.deg;
-        e.label = stem(id);
-        e.color = a.color;
-      }
+      rows.push({
+        id,
+        community: a.community,
+        galaxy: a.galaxy,
+        color: a.color,
+        deg: a.deg,
+      });
     });
-    return [...acc.entries()]
-      .map(([cm, e]) => ({ cm, color: e.color, label: e.label, count: e.count }))
-      .sort((x, y) => y.count - x.count)
-      .slice(0, 6);
+    return buildLegend(rows, currentVault?.path ?? "");
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [counts, glEpoch]);
+  }, [counts, glEpoch, currentVault?.path]);
 
   // --- Focus stack operations. stackRef is the source of truth (the scene's
   // callbacks are stable closures, so React state alone would go stale);
@@ -378,7 +376,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     });
     if (members.size === 0) return;
     const label =
-      legendCommunities.find((c) => c.cm === cm)?.label ?? `#${cm}`;
+      legendGalaxies
+        .flatMap((gg) => gg.clusters)
+        .find((c) => c.cm === cm)?.label ?? `#${cm}`;
     applyStack([
       ...stackRef.current,
       { kind: "community", cm, label, members },
@@ -1260,7 +1260,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             ) : null}
             <GraphLegend
               t={t}
-              communities={legendCommunities}
+              galaxies={legendGalaxies}
               isolated={isolated}
               onIsolate={isolateCommunity}
             />
