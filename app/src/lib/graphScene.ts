@@ -85,9 +85,12 @@ const LABEL_MAX = 64;
 // darker neutral, higher opacity, and higher per-end brightness to read as
 // connective tissue instead of vanishing.
 const EDGE_OPACITY_DARK = 0.2;
-const EDGE_OPACITY_LIGHT = 0.55;
+// Light bg uses NormalBlending (not additive), so thousands of overlapping
+// star-spoke edges STACK into an opaque grey wash that buries the nodes. Keep
+// the per-edge alpha low so a dense hub-and-spoke vault stays readable on paper.
+const EDGE_OPACITY_LIGHT = 0.16;
 const EDGE_BASE_DARK = 0.22; // per-end brightness (edges are tissue, not light)
-const EDGE_BASE_LIGHT = 0.55;
+const EDGE_BASE_LIGHT = 0.4;
 const EDGE_HI = 1.15; // incident edges on hover (pop)
 const EDGE_DIM = 0.05; // non-incident edges on hover (fade, not vanish)
 // Structure is grey; signal is nodes (calm-cosmic-web spec A2): default edges
