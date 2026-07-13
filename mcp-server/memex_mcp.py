@@ -6,8 +6,10 @@ or any MCP client) can read, search, and maintain the wiki directly.
 
 Design notes
 ------------
-- Standalone: this file is the only entry point. It runs over stdio so it is
-  registered with `claude mcp add memex -- python <abs path>/memex_mcp.py`.
+- Standalone: this file is the only entry point. Two transports (see `main`):
+  a standalone SSE server (`--sse`, the recommended Obsidian-style setup —
+  `claude mcp add --transport sse memex http://localhost:22360/sse`) or stdio
+  (default; Claude spawns it per session).
 - Uses the sibling `project_registry` module (no side effects) to resolve the
   project layout (legacy or multi-project under `projects/<slug>/`).
 - raw/ is immutable: `add_raw_source` refuses to overwrite. wiki/ is writable.
@@ -1210,9 +1212,63 @@ def export_project(project: str = "") -> dict:
 # ─── entry point ─────────────────────────────────────────────────────────────
 
 
+DEFAULT_SSE_PORT = 22360  # matches the Obsidian Local REST API MCP convention
+
+
 def main() -> None:
-    """Run over stdio (default). Used by `claude mcp add memex -- ...`."""
-    mcp.run()
+    """Run the MCP server.
+
+    Two transports:
+
+    - **stdio** (default) — Claude spawns the process per session:
+        claude mcp add memex -- python <abs path>/memex_mcp.py
+
+    - **sse** — run ONCE as a standalone HTTP server, then point Claude at it
+      (the Obsidian style, far simpler to manage):
+        python memex_mcp.py --sse            # serves http://127.0.0.1:22360/sse
+        claude mcp add --transport sse memex http://localhost:22360/sse
+
+    Flags/env: --sse (or MEMEX_MCP_TRANSPORT=sse), --port/-p (MEMEX_MCP_PORT),
+    --host (MEMEX_MCP_HOST). Env vars are the fallback for each flag.
+    """
+    import argparse
+    import os
+
+    parser = argparse.ArgumentParser(prog="memex_mcp", add_help=True)
+    parser.add_argument(
+        "--sse",
+        action="store_true",
+        default=os.environ.get("MEMEX_MCP_TRANSPORT", "").lower() == "sse",
+        help="serve over HTTP/SSE instead of stdio",
+    )
+    parser.add_argument(
+        "--host",
+        default=os.environ.get("MEMEX_MCP_HOST", "127.0.0.1"),
+        help="SSE bind host (default 127.0.0.1)",
+    )
+    parser.add_argument(
+        "-p", "--port",
+        type=int,
+        default=int(os.environ.get("MEMEX_MCP_PORT", DEFAULT_SSE_PORT)),
+        help=f"SSE port (default {DEFAULT_SSE_PORT})",
+    )
+    args = parser.parse_args()
+
+    if args.sse:
+        mcp.settings.host = args.host
+        mcp.settings.port = args.port
+        # Startup banner on stderr (stdout must stay clean for stdio clients;
+        # here it's just informational for the operator running the server).
+        sys.stderr.write(
+            f"memex-mcp: serving over SSE at http://{args.host}:{args.port}"
+            f"{mcp.settings.sse_path}\n"
+            f"  register: claude mcp add --transport sse memex "
+            f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}{mcp.settings.sse_path}\n"
+        )
+        sys.stderr.flush()
+        mcp.run(transport="sse")
+    else:
+        mcp.run()
 
 
 if __name__ == "__main__":

@@ -32,27 +32,35 @@ pip install --quiet -r "${HERE}/requirements.txt"
 
 ENTRY="${VENV}/bin/python"
 SCRIPT="${HERE}/memex_mcp.py"
+PORT="${MEMEX_MCP_PORT:-22360}"
 
 echo
 echo "[memex-mcp] installed."
 echo
-echo "Register with Claude Code (user scope, available in every session):"
+echo "════════════════════════════════════════════════════════════════════"
+echo " Recommended: run as a standalone SSE server (Obsidian style)"
+echo "════════════════════════════════════════════════════════════════════"
 echo
-echo "  claude mcp add --scope user memex -- \"${ENTRY}\" \"${SCRIPT}\""
+echo "1. Start the server (leave it running):"
 echo
-echo "Or project scope (only when CWD is inside this repo):"
+echo "     bash ${HERE}/serve.sh"
 echo
-echo "  claude mcp add --scope project memex -- \"${ENTRY}\" \"${SCRIPT}\""
+echo "2. Register it with Claude Code — ONE line, no paths:"
 echo
-echo "For Claude Desktop, add this to claude_desktop_config.json:"
+echo "     claude mcp add --transport sse memex http://localhost:${PORT}/sse"
+echo
+echo "   For Claude Desktop, add to claude_desktop_config.json:"
 cat <<JSON
-  {
-    "mcpServers": {
-      "memex": {
-        "command": "${ENTRY}",
-        "args": ["${SCRIPT}"]
-      }
-    }
-  }
+     {
+       "mcpServers": {
+         "memex": { "url": "http://localhost:${PORT}/sse" }
+       }
+     }
 JSON
+echo
+echo "────────────────────────────────────────────────────────────────────"
+echo " Alternative: stdio (Claude spawns the process per session)"
+echo "────────────────────────────────────────────────────────────────────"
+echo
+echo "     claude mcp add --scope user memex -- \"${ENTRY}\" \"${SCRIPT}\""
 echo

@@ -319,12 +319,21 @@ The 26 exposed tools:
 
 #### Step 2 — Pick your client
 
-**Claude Code (terminal CLI):**
+**Claude Code (terminal CLI) — recommended: SSE server (Obsidian style).**
+Start the server once and connect over a URL — no per-session subprocess, no
+absolute paths:
+
+```bash
+bash mcp-server/serve.sh              # serves http://127.0.0.1:22360/sse
+claude mcp add --transport sse memex http://localhost:22360/sse
+claude mcp list                       # memex should appear
+```
+
+Or stdio (Claude spawns it per session):
 
 ```bash
 claude mcp add --scope user memex \
   -- "$PWD/mcp-server/.venv/bin/python" "$PWD/mcp-server/memex_mcp.py"
-claude mcp list                       # memex should appear
 ```
 
 **Claude Desktop:**

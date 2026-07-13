@@ -40,80 +40,62 @@ The server **never** modifies anything under `raw/` after the file is first
 written. `update_page` and `create_folder` validate the resolved path is
 inside `wiki/`.
 
-## Install
+## Install & run (SSE server — recommended)
 
-Requires Python 3.10+. The MCP SDK (`mcp` on PyPI) is installed into a local
-virtualenv so it does not pollute the rest of the Memex repo (which keeps a
-zero-pip-deps core).
+Requires Python 3.10+. The MCP SDK is installed into a local virtualenv so it
+doesn't pollute the rest of the Memex repo (which keeps a zero-pip-deps core).
 
-```bash
-bash mcp-server/install.sh
-```
-
-The script prints the exact `claude mcp add` command to register the server
-in user scope (so it is available in every Claude Code session) or project
-scope.
-
-### Manual install
+Run Memex as a standalone HTTP/SSE server — start it once, leave it running,
+and every client connects over a URL (the Obsidian Local REST API style). No
+per-session subprocess, no absolute paths in the client config.
 
 ```bash
-python3 -m venv mcp-server/.venv
-source mcp-server/.venv/bin/activate
-pip install -r mcp-server/requirements.txt
+bash mcp-server/serve.sh          # bootstraps the venv, serves http://127.0.0.1:22360/sse
 ```
 
-## Register with Claude Code
+Register it with Claude Code — **one line, no paths**:
 
 ```bash
-claude mcp add --scope user memex \
-  -- "$PWD/mcp-server/.venv/bin/python" "$PWD/mcp-server/memex_mcp.py"
+claude mcp add --transport sse memex http://localhost:22360/sse
 ```
 
-Verify:
-
-```bash
-claude mcp list
-```
-
-Inside any Claude Code session you should now see `memex` listed and the 25
-tools available. Try:
+That's it. `claude mcp list` should show `memex`; the tools are available in
+every session while the server is running. Try:
 
 > Use `memex` to list pages of type `concept` in this wiki.
 
-## Register with Claude Desktop
+Custom port: `bash mcp-server/serve.sh --port 9001` then register with the
+matching URL. The server binds `127.0.0.1` (localhost only) by default; set
+`--host 0.0.0.0` to expose it on the network.
 
-Note: `claude.ai` (web) does **not** support local stdio MCP servers; it
-only accepts remote HTTP/SSE Connectors. Use the desktop app for a local
-Memex vault.
+### Claude Desktop / claude.ai
 
-**Quit Claude Desktop fully before editing the config** — Cmd+Q on macOS,
-or right-click the Dock icon → Quit. Closing the window alone leaves the
-background process running and your edits get overwritten on shutdown.
-
-Open the config file:
-
-| OS | Path |
-|---|---|
-| macOS | `~/Library/Application Support/Claude/claude_desktop_config.json` |
-| Windows | `%APPDATA%\Claude\claude_desktop_config.json` |
-
-Add `memex` under `mcpServers` (replace the absolute paths with what
-`install.sh` printed):
+An SSE server is a remote-style HTTP connector, so it works with Claude
+Desktop **and** claude.ai (web) — unlike a stdio server. Point the client at
+the URL:
 
 ```json
 {
   "mcpServers": {
-    "memex": {
-      "command": "/Users/<you>/Memex/mcp-server/.venv/bin/python",
-      "args": ["/Users/<you>/Memex/mcp-server/memex_mcp.py"]
-    }
+    "memex": { "url": "http://localhost:22360/sse" }
   }
 }
 ```
 
-If the file already has other MCP servers, just add the `memex` entry
-inside the existing `mcpServers` block. Restart Claude Desktop. The 25
-tools appear under the plug icon.
+(claude.ai reaches `localhost` only if the server is on the same machine and
+exposed appropriately; for the desktop app the localhost URL just works.)
+
+## Alternative: stdio (per-session subprocess)
+
+If you'd rather Claude spawn the process itself instead of running a server:
+
+```bash
+bash mcp-server/install.sh   # prints the exact command for your checkout
+# → claude mcp add --scope user memex -- "<venv>/bin/python" "<repo>/mcp-server/memex_mcp.py"
+```
+
+The same file serves both transports; `--sse` selects the server, the default
+is stdio.
 
 ## Use chat content as wiki sources
 
