@@ -320,6 +320,14 @@ export default function GraphControls({
             ? (t.gr_timelapse_pause ?? "Pause timelapse")
             : (t.gr_timelapse_play ?? "Play timelapse")}
         </button>
+        <Slider
+          label={t.gr_tl_speed ?? "Timelapse speed"}
+          value={settings.tlSpeed}
+          min={0.25}
+          max={4}
+          step={0.25}
+          onChange={(v) => onChange({ tlSpeed: v })}
+        />
       </Section>
 
       <Section

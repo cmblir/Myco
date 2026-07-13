@@ -113,6 +113,7 @@ export interface Strings {
   gr_skin_galaxy?: string;
   gr_galaxies?: string;
   gr_galaxies_hint?: string;
+  gr_tl_speed?: string;
   gr_arrows: string;
   gr_arrows_hint: string;
   gr_arrow_size: string;
@@ -615,6 +616,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_skin_galaxy: "Galaxy",
     gr_galaxies: "Folder galaxies",
     gr_galaxies_hint: "Split the vault into one slowly rotating galaxy per folder",
+    gr_tl_speed: "Timelapse speed",
     gr_arrows: "Arrows",
     gr_arrows_hint: "Show direction on each link",
     gr_arrow_size: "Arrow size",
@@ -1127,6 +1129,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_skin_galaxy: "은하계",
     gr_galaxies: "폴더 은하계",
     gr_galaxies_hint: "폴더마다 하나씩, 천천히 자전하는 은하계로 분리",
+    gr_tl_speed: "타임랩스 속도",
     gr_arrows: "화살표",
     gr_arrows_hint: "각 링크에 방향 표시",
     gr_arrow_size: "화살표 크기",
@@ -1638,6 +1641,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_skin_galaxy: "ギャラクシー",
     gr_galaxies: "フォルダー銀河",
     gr_galaxies_hint: "フォルダーごとにゆっくり自転する銀河へ分割",
+    gr_tl_speed: "タイムラプス速度",
     gr_arrows: "矢印",
     gr_arrows_hint: "各リンクに方向を表示",
     gr_arrow_size: "矢印サイズ",

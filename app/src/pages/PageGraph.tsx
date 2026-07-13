@@ -911,7 +911,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     setTlPlaying(true);
 
     let next = 0;
-    const start = performance.now();
+    // Progress accumulates per-frame scaled by the LIVE speed setting, so the
+    // slider works mid-replay (an elapsed-time mapping would jump).
+    let progress = 0;
+    let last = performance.now();
     const step = (): void => {
       const sc = sceneRef.current;
       const sm = simRef.current;
@@ -920,11 +923,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         tlRafRef.current = null;
         return;
       }
-      const now = performance.now() - start;
-      const want = Math.min(
-        order.length,
-        Math.ceil((now / REVEAL_MS) * order.length),
-      );
+      const now = performance.now();
+      progress += ((now - last) * (settingsRef.current.tlSpeed || 1)) / REVEAL_MS;
+      last = now;
+      const want = Math.min(order.length, Math.ceil(progress * order.length));
       if (want > next) {
         const batch = order.slice(next, want);
         for (const id of batch) g.setNodeAttribute(id, "hidden", false);

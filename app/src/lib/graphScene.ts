@@ -405,6 +405,10 @@ export class GraphScene {
   private edgeSagDir: Float32Array = new Float32Array(0);
   private edgeSagMag: Float32Array = new Float32Array(0);
   private edgeBaseCol: Float32Array = new Float32Array(0);
+  // 1 = an endpoint is timelapse-hidden → collapse the edge's geometry.
+  // Colour-only hiding (×0 = black) is additive-blind: on LIGHT themes black
+  // edges DRAW over the near-white paper, so a "hidden" web stayed visible.
+  private edgeHiddenArr: Uint8Array = new Uint8Array(0);
   // Undirected edge lookup "a|b" (and "b|a") → edgePairs index, built with
   // edgeEndIdx. Lets a shortest-path node sequence resolve to strand indices
   // without an O(edges) scan per hop.
@@ -1072,6 +1076,7 @@ export class GraphScene {
         f = incident ? EDGE_HI : EDGE_DIM;
       }
       if (sa.hidden || ta.hidden) f = 0; // timelapse-hidden ⇒ vanish
+      this.edgeHiddenArr[i] = sa.hidden || ta.hidden ? 1 : 0;
       const o = i * 6;
       base[o] = cs.r * f;
       base[o + 1] = cs.g * f;
@@ -1276,6 +1281,7 @@ export class GraphScene {
     this.edgeSagDir = sagDir;
     this.edgeSagMag = sagMag;
     this.edgeBaseCol = new Float32Array(nEdges * 6);
+    this.edgeHiddenArr = new Uint8Array(nEdges);
   }
 
   // Derive the edge vertex buffers (4 verts/edge: s, mid, mid, t) from the
@@ -1297,12 +1303,27 @@ export class GraphScene {
     const fadeStart = this.settings.linkDistance * EDGE_LEN_FADE_START;
     const fadeEnd = this.settings.linkDistance * EDGE_LEN_FADE_END;
     const fadeSpan = Math.max(1e-6, fadeEnd - fadeStart);
+    const hiddenArr = this.edgeHiddenArr;
     for (let e = 0; e < this.edgePairs.length; e++) {
       const s = idx[e * 2] * 3;
       const t = idx[e * 2 + 1] * 3;
       const sx = nArr[s];
       const sy = nArr[s + 1];
       const sz = nArr[s + 2];
+      if (hiddenArr[e]) {
+        // Zero-length segments rasterise to nothing under ANY blending mode.
+        const po0 = e * 12;
+        const co0 = e * 12;
+        for (let k = 0; k < 4; k++) {
+          pArr[po0 + k * 3] = sx;
+          pArr[po0 + k * 3 + 1] = sy;
+          pArr[po0 + k * 3 + 2] = sz;
+          cArr[co0 + k * 3] = 0;
+          cArr[co0 + k * 3 + 1] = 0;
+          cArr[co0 + k * 3 + 2] = 0;
+        }
+        continue;
+      }
       const tx = nArr[t];
       const ty = nArr[t + 1];
       const tz = nArr[t + 2];

@@ -125,7 +125,10 @@ export class PulseLayer {
       const sa = this.graph.getNodeAttributes(s);
       const ta = this.graph.getNodeAttributes(t);
       if (sa.hidden || ta.hidden) {
-        col.setXYZ(i, 0, 0, 0); // additive black ⇒ invisible while hidden
+        // Park it far outside the frustum — black colour alone only hides
+        // under additive blending; on light themes it drew as a dark dot.
+        pos.setXYZ(i, 1e8, 1e8, 1e8);
+        col.setXYZ(i, 0, 0, 0);
         continue;
       }
       pos.setXYZ(

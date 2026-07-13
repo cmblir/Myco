@@ -40,7 +40,9 @@ void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   float dist = max(1.0, -mv.z);
   gl_Position = projectionMatrix * mv;
-  gl_PointSize = clamp(1.6 * u_sizeScale * u_pixelRatio / dist, 0.8, 3.2);
+  // Big soft sprites that overlap into one continuous milky haze — the band
+  // must read as a faint white GLOW, not a scatter of hard pixels.
+  gl_PointSize = clamp(7.0 * u_sizeScale * u_pixelRatio / dist, 2.0, 26.0);
   v_alpha = a_alpha;
 }
 `;
@@ -50,9 +52,10 @@ precision mediump float;
 varying float v_alpha;
 void main() {
   float d = length(gl_PointCoord - vec2(0.5)) * 2.0;
-  float a = (1.0 - smoothstep(0.2, 1.0, d)) * v_alpha;
-  if (a < 0.02) discard;
-  gl_FragColor = vec4(vec3(0.82, 0.87, 0.96), a);
+  // Pure gaussian-ish falloff, no core — each grain is a puff of white light.
+  float a = pow(max(0.0, 1.0 - d), 2.4) * v_alpha;
+  if (a < 0.012) discard;
+  gl_FragColor = vec4(vec3(1.0, 0.99, 0.96), a);
 }
 `;
 
@@ -197,9 +200,10 @@ export class GalacticBandLayer {
         my + u.y * cs + v.y * sn + nm.y * off,
         mz + u.z * cs + v.z * sn + nm.z * off,
       );
-      // Outer grains fade — the band dissolves into the void.
+      // Outer grains fade — the band dissolves into the void. Kept faint:
+      // many overlapping puffs sum additively into the soft white ribbon.
       const edge = (g.radius01 - RADIUS_LO) / (RADIUS_HI - RADIUS_LO);
-      alp.setX(i, 0.32 * (1 - edge * 0.75));
+      alp.setX(i, 0.16 * (1 - edge * 0.75));
     }
     pos.needsUpdate = true;
     alp.needsUpdate = true;

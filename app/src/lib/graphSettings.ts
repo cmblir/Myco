@@ -37,6 +37,9 @@ export interface GraphSettings {
   // One switch for ALL idle motion (auto-rotate, edge pulses, star breathing) —
   // the spec's motion budget gives ambience a single opt-out instead of three.
   ambientMotion: boolean;
+  // Timelapse playback speed multiplier (0.25×..4×). Read live each frame, so
+  // dragging the slider mid-replay speeds the assembly up or down in place.
+  tlSpeed: number;
 
   // Forces — names and ranges mirror Obsidian's `ForceOptions`.
   centerForce: number; // 0..1 — center pull strength (Obsidian: centerStrength)
@@ -71,6 +74,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   linkThickness: 1,
   brightness: 0.9, // exposure headroom: the void stays black, only emitters survive
   ambientMotion: true,
+  tlSpeed: 1,
   // GALAXY/BRAIN defaults: range-capped LOCAL repulsion (no global outward
   // pressure → no firework spikes) + firm centre gravity collapse the vault into
   // ONE cohesive luminous mass, while community clustering contracts each Louvain
