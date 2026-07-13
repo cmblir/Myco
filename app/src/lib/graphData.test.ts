@@ -3,8 +3,10 @@ import type { Adjacency, FileNode } from "./ipc";
 import {
   buildGraph,
   collectFolders,
+  communityPalette,
   computeAllowed,
   countAllNodes,
+  fieldStar,
   flattenMarkdown,
   folderGroups,
   inFolder,
@@ -12,6 +14,32 @@ import {
   shortestPath,
   stem,
 } from "./graphData";
+
+// --- Colour test helpers (parse #rrggbb → HSL-ish metrics) ---
+function toRgb01(hex: string): { r: number; g: number; b: number } {
+  const n = parseInt(hex.slice(1), 16);
+  return { r: ((n >> 16) & 255) / 255, g: ((n >> 8) & 255) / 255, b: (n & 255) / 255 };
+}
+function lightness(hex: string): number {
+  const { r, g, b } = toRgb01(hex);
+  return (Math.max(r, g, b) + Math.min(r, g, b)) / 2;
+}
+function hueOf(hex: string): number {
+  const { r, g, b } = toRgb01(hex);
+  const mx = Math.max(r, g, b);
+  const mn = Math.min(r, g, b);
+  const d = mx - mn;
+  if (d === 0) return 0;
+  let h: number;
+  if (mx === r) h = ((g - b) / d) % 6;
+  else if (mx === g) h = (b - r) / d + 2;
+  else h = (r - g) / d + 4;
+  return ((h * 60) % 360 + 360) % 360;
+}
+function hueDist(a: string, b: string): number {
+  const d = Math.abs(hueOf(a) - hueOf(b)) % 360;
+  return Math.min(d, 360 - d);
+}
 
 const ROOT = "/vault";
 const emptyFilters = {
@@ -370,5 +398,56 @@ describe("folderGroups (hierarchical galaxies)", () => {
     const galaxies = new Set([...g.galaxyOfCluster.values()]);
     expect(galaxies.size).toBe(1);
     expect(g.galaxyOfCluster.size).toBe(2); // two clusters mapped
+  });
+});
+
+describe("communityPalette (base hue per galaxy, shades per cluster)", () => {
+  it("gives same-galaxy clusters one hue family, different galaxies different hues", () => {
+    // clusters 0,1 → galaxy 0; clusters 2,3 → galaxy 1
+    const gOf = new Map([
+      [0, 0],
+      [1, 0],
+      [2, 1],
+      [3, 1],
+    ]);
+    const pal = communityPalette([0, 1, 2, 3], gOf, false);
+    // Two clusters of the same galaxy stay in one hue family (close hue).
+    expect(hueDist(pal.get(0)!, pal.get(1)!)).toBeLessThan(20);
+    expect(hueDist(pal.get(2)!, pal.get(3)!)).toBeLessThan(20);
+    // Different galaxies read as clearly different hues.
+    expect(hueDist(pal.get(0)!, pal.get(2)!)).toBeGreaterThan(30);
+  });
+
+  it("varies lightness between clusters of the same galaxy (shades)", () => {
+    const gOf = new Map([
+      [0, 0],
+      [1, 0],
+    ]);
+    const pal = communityPalette([0, 1], gOf, false);
+    expect(lightness(pal.get(0)!)).not.toBeCloseTo(lightness(pal.get(1)!), 2);
+  });
+
+  it("produces dark colours on a light background", () => {
+    const gOf = new Map([
+      [0, 0],
+      [1, 1],
+    ]);
+    const dark = communityPalette([0, 1], gOf, false);
+    const light = communityPalette([0, 1], gOf, true);
+    expect(lightness(light.get(0)!)).toBeLessThan(0.5);
+    expect(lightness(dark.get(0)!)).toBeGreaterThan(0.55);
+  });
+
+  it("falls back to distinct per-cluster hues when there is no galaxy map", () => {
+    const pal = communityPalette([0, 1, 2], null, false);
+    expect(hueDist(pal.get(0)!, pal.get(1)!)).toBeGreaterThan(20);
+    expect(hueDist(pal.get(1)!, pal.get(2)!)).toBeGreaterThan(20);
+  });
+});
+
+describe("fieldStar (background-aware orphan colour)", () => {
+  it("is dark on a light background, cool-light on the dark void", () => {
+    expect(lightness(fieldStar(true))).toBeLessThan(0.6);
+    expect(lightness(fieldStar(false))).toBeGreaterThan(0.55);
   });
 });
