@@ -89,8 +89,11 @@ const REPEL_SCALE = 9;
 const CENTER_SCALE = 0.13;
 const CLUSTER_SCALE = 0.18;
 const HUB_PIN = 3;
-const ORBIT_BASE = 0.35;
-const ORBIT_GROW = 0.07;
+// Tighter per-cluster orbit ring → each topic cluster reads as a compact CIRCLE
+// (dandelion puff) so, spread across the galaxy footprint, the puffs sit apart
+// with dark gaps instead of bleeding into one diffuse mass.
+const ORBIT_BASE = 0.22;
+const ORBIT_GROW = 0.045;
 const DUST_PULL = 0.18;
 const BIGBANG_BURST = 22;
 const SIM_ALPHA_MIN = 0.005;
