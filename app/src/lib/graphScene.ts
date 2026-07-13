@@ -42,6 +42,7 @@ import { CoreGlowLayer } from "./coreGlowLayer";
 import { CosmicEvents } from "./cosmicEvents";
 import { GalacticBandLayer } from "./galacticBandLayer";
 import { GalaxyImposterLayer } from "./galaxyImposterLayer";
+import { CommunityHullLayer } from "./communityHullLayer";
 import {
   cosmicScale,
   imposterAlpha,
@@ -499,6 +500,8 @@ export class GraphScene {
   private cosmic: CosmicEvents; // rare black-hole / wormhole events
   private band: GalacticBandLayer; // dust bands hugging each large galaxy
   private imposter: GalaxyImposterLayer; // far-LOD spiral-galaxy discs
+  private hulls: CommunityHullLayer; // atlas-mode translucent community fills
+  private atlasMode = false; // static 2D ForceAtlas2 layout (no sim, flat)
   private imposterEnabled = false; // dark-theme gate (LOD then controls visibility)
   // Cosmic-scale LOD state (see cosmicLod). onScale fires when the camera
   // crosses a scale band (star → system → galaxy → cluster) for the HUD.
@@ -909,6 +912,13 @@ export class GraphScene {
     this.imposter = new GalaxyImposterLayer(this.graph, this.nodeIds, pr, false);
     this.imposterEnabled = false; // never paint spiral discs
     this.scene.add(this.imposter.points);
+    // Atlas mode (backlog GRAPH-01): static 2D ForceAtlas2 map with translucent
+    // per-community territory fills. Positions are set by applyAtlasLayout (no
+    // sim); this layer draws the Gephi-style hull fills behind the flat nodes.
+    this.atlasMode = settings.layout === "atlas";
+    this.hulls = new CommunityHullLayer(this.graph, dark);
+    this.hulls.setVisible(this.atlasMode);
+    this.scene.add(this.hulls.mesh);
 
     // --- spaceship (immersive third-person flight; enabled via setFlyMode) ---
     this.ship = new ShipController(
@@ -1966,6 +1976,7 @@ export class GraphScene {
     this.coreGlow.setNodeIds(this.nodeIds);
     this.band.setNodeIds(this.nodeIds);
     this.imposter.setNodeIds(this.nodeIds);
+    if (this.atlasMode) this.hulls.rebuild();
 
     this.writeNodes();
     this.writeEdges();
@@ -2016,7 +2027,8 @@ export class GraphScene {
     this.nova.setDark(dark);
     this.synapse.setDark(dark);
     this.ship.setDark(dark);
-    this.meteor.lines.visible = amb.meteors && !this.perfLod;
+    this.hulls.setDark(dark);
+    this.meteor.lines.visible = amb.meteors && !this.perfLod && !this.atlasMode;
     // Painted galaxy adornments stay off across theme changes (see ctor).
     this.coreGlow.setEnabled(false);
     this.band.points.visible = false;
@@ -2449,6 +2461,8 @@ export class GraphScene {
     this.scene.remove(this.band.points);
     this.imposter.dispose();
     this.scene.remove(this.imposter.points);
+    this.hulls.dispose();
+    this.scene.remove(this.hulls.mesh);
     this.clusterLabels.dispose();
     this.scene.remove(this.clusterLabels.group);
     this.bloom.dispose();

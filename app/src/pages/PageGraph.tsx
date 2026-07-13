@@ -37,6 +37,7 @@ import {
 } from "../lib/graphData";
 import { analyzeGaps, gapCount } from "../lib/graphGaps";
 import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
+import { applyAtlasLayout } from "../lib/atlasLayout";
 import { makeTheme } from "../lib/graphTheme";
 import { isLightBackground } from "../lib/graphSkins";
 import { GraphScene, type SceneStyleState } from "../lib/graphScene";
@@ -553,6 +554,29 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       };
     }
 
+    // Atlas layout (backlog GRAPH-01): a STATIC 2D ForceAtlas2 map. Positions
+    // are computed once on the main thread and written to the graph; there is
+    // no worker sim, so the scene just renders the fixed layout (+ community
+    // hull fills). Everything downstream guards on simRef being null.
+    if (s.layout === "atlas") {
+      applyAtlasLayout(graph, { targetRadius: s.linkDistance * 26 });
+      sceneRef.current?.syncPositions();
+      sceneRef.current?.fit();
+      container.classList.add("graph-ready");
+      return () => {
+        killed = true;
+        if (tlRafRef.current != null) {
+          cancelAnimationFrame(tlRafRef.current);
+          tlRafRef.current = null;
+        }
+        setTlPlaying(false);
+        scene.dispose();
+        sceneRef.current = null;
+        graphRef.current = null;
+        container.classList.remove("graph-ready");
+      };
+    }
+
     // The sim runs in a worker; each tick posts a position array (node order)
     // that the scene applies directly to its buffers (and mirrors back into the
     // graph for hover/fit/nebula). The main thread never runs the force stack.
@@ -622,6 +646,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.showOrphans,
     settings.nodeSize,
     settings.folderGalaxies,
+    settings.layout,
     glEpoch,
     // NOTE: lightBg is intentionally NOT here — a light/dark flip recolours the
     // existing graph in place (see the theme effect) instead of rebuilding the

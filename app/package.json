@@ -38,6 +38,7 @@
     "d3-force-3d": "^3.0.6",
     "graphology": "^0.26.0",
     "graphology-communities-louvain": "^2.0.2",
+    "graphology-layout-forceatlas2": "^0.10.1",
     "markdown-it": "14.2.0",
     "pdfjs-dist": "^6.1.200",
     "react": "18.3.1",

@@ -27,6 +27,10 @@ export interface GraphSettings {
   // wide ring, with a slow per-galaxy idle rotation — several living galaxies
   // instead of one central mass.
   folderGalaxies: boolean;
+  // Layout engine. "galaxy" = the 3D force sim (default); "atlas" = a static
+  // 2D ForceAtlas2 map with translucent per-community territory fills (Gephi
+  // look). Backlog GRAPH-01.
+  layout: "galaxy" | "atlas";
   // Node colouring. "community" = folder/cluster hues (current); "white" =
   // monochrome white stars; "auto" = white until the vault grows past
   // monoBelow nodes, then community hues kick in. Customisable per taste.
@@ -71,6 +75,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   folderFilter: null,
   skin: "auto",
   folderGalaxies: true,
+  layout: "galaxy",
   arrows: false,
   arrowSize: 1, // arrowhead/flying-ship scale (bumped from 0.35 on request)
   semanticEdges: false,

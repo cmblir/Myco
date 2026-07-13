@@ -113,6 +113,9 @@ export interface Strings {
   gr_skin_galaxy?: string;
   gr_galaxies?: string;
   gr_galaxies_hint?: string;
+  gr_layout?: string;
+  gr_layout_galaxy?: string;
+  gr_layout_atlas?: string;
   gr_node_color?: string;
   gr_node_color_community?: string;
   gr_node_color_white?: string;
@@ -629,6 +632,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_skin_galaxy: "Galaxy",
     gr_galaxies: "Folder galaxies",
     gr_galaxies_hint: "Split the vault into one slowly rotating galaxy per folder",
+    gr_layout: "Layout",
+    gr_layout_galaxy: "Galaxy (3D)",
+    gr_layout_atlas: "Atlas (2D)",
     gr_node_color: "Node colour",
     gr_node_color_community: "By folder",
     gr_node_color_white: "White",
@@ -1155,6 +1161,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_skin_galaxy: "은하계",
     gr_galaxies: "폴더 은하계",
     gr_galaxies_hint: "폴더마다 하나씩, 천천히 자전하는 은하계로 분리",
+    gr_layout: "레이아웃",
+    gr_layout_galaxy: "은하계 (3D)",
+    gr_layout_atlas: "아틀라스 (2D)",
     gr_node_color: "노드 색상",
     gr_node_color_community: "폴더별",
     gr_node_color_white: "화이트",
@@ -1677,6 +1686,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_skin_galaxy: "ギャラクシー",
     gr_galaxies: "フォルダー銀河",
     gr_galaxies_hint: "フォルダーごとにゆっくり自転する銀河へ分割",
+    gr_layout: "レイアウト",
+    gr_layout_galaxy: "ギャラクシー (3D)",
+    gr_layout_atlas: "アトラス (2D)",
     gr_node_color: "ノード色",
     gr_node_color_community: "フォルダー別",
     gr_node_color_white: "ホワイト",

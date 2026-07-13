@@ -201,6 +201,31 @@ export default function GraphControls({
       >
         <div className="graph-field">
           <span className="graph-field__label">
+            {t.gr_layout ?? "Layout"}
+          </span>
+          <div className="graph-chips">
+            {(
+              [
+                ["galaxy", t.gr_layout_galaxy ?? "Galaxy (3D)"],
+                ["atlas", t.gr_layout_atlas ?? "Atlas (2D)"],
+              ] as [GraphSettings["layout"], string][]
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`graph-chip${
+                  settings.layout === key ? " graph-chip--active" : ""
+                }`}
+                aria-pressed={settings.layout === key}
+                onClick={() => onChange({ layout: key })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="graph-field">
+          <span className="graph-field__label">
             {t.gr_skin ?? "Color mode"}
           </span>
           <div className="graph-chips">
