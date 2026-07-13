@@ -211,6 +211,15 @@ const PERF_LOD_NODES = 5000;
 // composer renders everything and additively mixes the bloom texture back in.
 const BLOOM_LAYER = 1;
 
+// Effective monochrome amount (u_mono uniform) from the node-colour setting +
+// the vault's node count: "white" → always 1, "community" → 0, "auto" → white
+// (1) until the vault grows past monoBelow nodes.
+function monoFor(s: GraphSettings, nodeCount: number): number {
+  if (s.nodeColor === "white") return 1;
+  if (s.nodeColor === "auto") return nodeCount < s.monoBelow ? 1 : 0;
+  return 0;
+}
+
 // Additive composite of the base HDR render + the (nodes-only) bloom texture,
 // run before the ACES OutputPass so tone-mapping still sees the summed HDR.
 const MIX_VERT = /* glsl */ `
@@ -300,6 +309,7 @@ void main() {
 const NODE_FRAG = /* glsl */ `
 precision mediump float;
 uniform float u_lodFade; // cosmic-scale LOD: 1 near (nodes shown) → 0 far
+uniform float u_mono;    // 0 = community colour, 1 = monochrome white
 varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
@@ -346,9 +356,19 @@ void main() {
   a = mix(min(1.0, a * 1.7), a, v_dark);
   if (a < 0.004) discard;
   vec3 base = v_color * (0.65 + 0.35 * v_fade);
-  // Class tints: giants burn warm, neutrons burn white-hot.
-  if (v_kind > 2.5) base = mix(base, vec3(0.92, 0.96, 1.0), 0.65);
-  else if (v_kind > 1.5) base *= vec3(1.22, 0.88, 0.66);
+  // Monochrome mode: drop the hue but KEEP brightness — each star becomes a
+  // near-white point (peak channel preserved) so a big vault reads as a clean
+  // white starfield instead of a rainbow. u_mono 0 = full colour, 1 = white.
+  if (u_mono > 0.0) {
+    float peak = max(base.r, max(base.g, base.b));
+    base = mix(base, vec3(0.90, 0.94, 1.0) * peak, u_mono);
+  }
+  // Class tints: giants burn warm, neutrons burn white-hot. (Skipped in full
+  // monochrome so nothing re-introduces a hue.)
+  if (u_mono < 0.99) {
+    if (v_kind > 2.5) base = mix(base, vec3(0.92, 0.96, 1.0), 0.65 * (1.0 - u_mono));
+    else if (v_kind > 1.5) base = mix(base, base * vec3(1.22, 0.88, 0.66), 1.0 - u_mono);
+  }
   // Core inflection differs by theme. Dark: additive brighten toward hue + a
   // touch of white (glowing star on void). Light: DARKEN the core (NormalBlend
   // over near-white bg needs a strong-hued or near-black centre to read).
@@ -745,6 +765,7 @@ export class GraphScene {
         u_time: { value: 0 },
         u_darkTheme: { value: dark ? 1 : 0 },
         u_lodFade: { value: 1 },
+        u_mono: { value: monoFor(settings, graph.order) },
       },
       vertexShader: NODE_VERT,
       fragmentShader: NODE_FRAG,
@@ -2096,6 +2117,8 @@ export class GraphScene {
 
   applySettings(settings: GraphSettings): void {
     this.settings = settings;
+    // Node-colour mode (community / white / auto-by-count) — live, no rebuild.
+    this.nodeMat.uniforms.u_mono.value = monoFor(settings, this.nodeIds.length);
     this.edgeMat.opacity = Math.min(1, this.edgeOpacity * settings.linkThickness);
     // Brightness: overall exposure + bloom glow intensity.
     // Brightness drives overall EXPOSURE only (applied by OutputPass at the end).

@@ -113,6 +113,11 @@ export interface Strings {
   gr_skin_galaxy?: string;
   gr_galaxies?: string;
   gr_galaxies_hint?: string;
+  gr_node_color?: string;
+  gr_node_color_community?: string;
+  gr_node_color_white?: string;
+  gr_node_color_auto?: string;
+  gr_mono_below?: string;
   gr_tl_speed?: string;
   gr_scale_star?: string;
   gr_scale_system?: string;
@@ -624,6 +629,11 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_skin_galaxy: "Galaxy",
     gr_galaxies: "Folder galaxies",
     gr_galaxies_hint: "Split the vault into one slowly rotating galaxy per folder",
+    gr_node_color: "Node colour",
+    gr_node_color_community: "By folder",
+    gr_node_color_white: "White",
+    gr_node_color_auto: "Auto",
+    gr_mono_below: "Colour above N nodes",
     gr_tl_speed: "Timelapse speed",
     gr_scale_star: "Star",
     gr_scale_system: "Star system",
@@ -1145,6 +1155,11 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_skin_galaxy: "은하계",
     gr_galaxies: "폴더 은하계",
     gr_galaxies_hint: "폴더마다 하나씩, 천천히 자전하는 은하계로 분리",
+    gr_node_color: "노드 색상",
+    gr_node_color_community: "폴더별",
+    gr_node_color_white: "화이트",
+    gr_node_color_auto: "자동",
+    gr_mono_below: "N개 이상일 때 색상",
     gr_tl_speed: "타임랩스 속도",
     gr_scale_star: "항성",
     gr_scale_system: "항성계",
@@ -1662,6 +1677,11 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_skin_galaxy: "ギャラクシー",
     gr_galaxies: "フォルダー銀河",
     gr_galaxies_hint: "フォルダーごとにゆっくり自転する銀河へ分割",
+    gr_node_color: "ノード色",
+    gr_node_color_community: "フォルダー別",
+    gr_node_color_white: "ホワイト",
+    gr_node_color_auto: "自動",
+    gr_mono_below: "N個以上で色付け",
     gr_tl_speed: "タイムラプス速度",
     gr_scale_star: "恒星",
     gr_scale_system: "恒星系",

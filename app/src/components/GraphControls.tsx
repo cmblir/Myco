@@ -235,6 +235,42 @@ export default function GraphControls({
           value={settings.folderGalaxies}
           onChange={(v) => onChange({ folderGalaxies: v })}
         />
+        <div className="graph-field">
+          <span className="graph-field__label">
+            {t.gr_node_color ?? "Node colour"}
+          </span>
+          <div className="graph-chips">
+            {(
+              [
+                ["community", t.gr_node_color_community ?? "By folder"],
+                ["white", t.gr_node_color_white ?? "White"],
+                ["auto", t.gr_node_color_auto ?? "Auto"],
+              ] as [GraphSettings["nodeColor"], string][]
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`graph-chip${
+                  settings.nodeColor === key ? " graph-chip--active" : ""
+                }`}
+                aria-pressed={settings.nodeColor === key}
+                onClick={() => onChange({ nodeColor: key })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        {settings.nodeColor === "auto" ? (
+          <Slider
+            label={t.gr_mono_below ?? "Colour above N nodes"}
+            value={settings.monoBelow}
+            min={0}
+            max={2000}
+            step={50}
+            onChange={(v) => onChange({ monoBelow: v })}
+          />
+        ) : null}
         <Toggle
           label={t.gr_arrows ?? "Arrows"}
           hint={t.gr_arrows_hint ?? "Show direction on each link"}

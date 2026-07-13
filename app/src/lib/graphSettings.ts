@@ -27,6 +27,11 @@ export interface GraphSettings {
   // wide ring, with a slow per-galaxy idle rotation — several living galaxies
   // instead of one central mass.
   folderGalaxies: boolean;
+  // Node colouring. "community" = folder/cluster hues (current); "white" =
+  // monochrome white stars; "auto" = white until the vault grows past
+  // monoBelow nodes, then community hues kick in. Customisable per taste.
+  nodeColor: "community" | "white" | "auto";
+  monoBelow: number; // "auto": node count below this → white; at/above → colour
   arrows: boolean;
   arrowSize: number; // arrowhead cone scale, 0.1..1.5 — kept well under node size
   semanticEdges: boolean; // overlay embedding-similarity edges (dim, dashed)
@@ -75,6 +80,8 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   brightness: 0.9, // exposure headroom: the void stays black, only emitters survive
   ambientMotion: true,
   tlSpeed: 1,
+  nodeColor: "community",
+  monoBelow: 200,
   // GALAXY/BRAIN defaults: range-capped LOCAL repulsion (no global outward
   // pressure → no firework spikes) + firm centre gravity collapse the vault into
   // ONE cohesive luminous mass, while community clustering contracts each Louvain

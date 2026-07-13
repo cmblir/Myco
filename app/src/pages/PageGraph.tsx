@@ -653,6 +653,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.arrowSize,
     settings.brightness,
     settings.ambientMotion,
+    settings.nodeColor,
+    settings.monoBelow,
   ]);
 
   // Theme/skin toggle — recolour the scene. Re-read AFTER the app's theme
