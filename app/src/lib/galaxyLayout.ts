@@ -80,7 +80,10 @@ export function galaxyAnchors(
 // clusters) occupies a WIDE field with its clusters spread into separate lobes,
 // not a cramped ball. Small galaxies stay compact.
 export function galaxyFootprint(count: number, linkDistance: number): number {
-  return linkDistance * (0.5 + 0.22 * Math.sqrt(Math.max(1, count)));
+  // A galaxy's disc radius — kept TIGHT so a folder reads as a dense circle, not
+  // a sparse cloud. Separation between galaxies comes from the shell radius, not
+  // from bloating each footprint.
+  return linkDistance * (0.3 + 0.12 * Math.sqrt(Math.max(1, count)));
 }
 
 // Size-aware galaxy centres: fibonacci-sphere DIRECTIONS (flattened on y) at a
@@ -100,7 +103,11 @@ export function galaxyAnchorsBySize(
   // Shell sized so footprints separate but the whole cluster still fits the
   // view: ~half the summed footprints plus one maxFoot pad. (Flinging galaxies
   // far apart made the fit zoom out until every node was sub-pixel.)
-  const baseR = Math.max(linkDistance * 4, sumFoot * 0.35) + maxFoot * 2.2;
+  // Shell radius: big enough that galaxies sit as clearly separate CIRCLES with
+  // real void between them (a big central circle + smaller ones around it). Keyed
+  // to the biggest footprint (so the dominant folder clears its neighbours) plus
+  // a term that grows with galaxy count so many folders still fan out.
+  const baseR = Math.max(linkDistance * 3, maxFoot * 1.3 + sumFoot * 0.15);
   const golden = Math.PI * (3 - Math.sqrt(5));
   const out: GalaxyAnchor[] = [];
   for (let g = 0; g < G; g++) {

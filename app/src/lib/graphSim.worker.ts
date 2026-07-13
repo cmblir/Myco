@@ -96,6 +96,11 @@ const BIGBANG_BURST = 22;
 const SIM_ALPHA_MIN = 0.005;
 const INTER_LINK_DIST_MUL = 1.8;
 const INTER_LINK_STR_MUL = 0.45;
+// Links BETWEEN top-level folders (galaxies) barely attract — otherwise the
+// link force drags every folder into one merged ball and the anchors can't hold
+// them apart (why a real, cross-linked vault collapsed into one blob while a
+// link-free mock separated). Near-zero so folders stay distinct galaxies.
+const INTER_GALAXY_STR_MUL = 0.02;
 const CLUSTERED_GRAVITY_MUL = 0.15;
 const ORPHAN_GRAVITY_MUL = 0.04;
 const CHARGE_RANGE_MUL = 3.2;
@@ -105,12 +110,6 @@ const CHARGE_RANGE_MUL = 3.2;
 // collapse every galaxy back into one ball that never recovered.
 const ANCHOR_SCALE = 0.28;
 const ANCHOR_HUB_MUL = 2.5;
-// ZERO global gravity in galaxy mode. Anchors alone carry the layout. ANY pull
-// toward the origin stretches every galaxy's stars into a tail pointing at the
-// origin — worse the farther the galaxy sits (the "쏠림"/lean seen on reset).
-// A tiny vault with no anchors is still held together by link + range-capped
-// charge + collide, so it doesn't need origin gravity either.
-const GALAXY_GRAVITY_MUL = 0.0;
 // Disc flattening: pull members onto their galaxy's tilted disc plane — the
 // squash that turns a ball of stars into something Andromeda-shaped.
 const FLATTEN_SCALE = 0.14;
@@ -161,11 +160,18 @@ function build(
     typeof l.target === "object" &&
     l.source.community >= 0 &&
     l.source.community === l.target.community;
+  const sameGalaxy = (l: SimLink): boolean =>
+    typeof l.source === "object" &&
+    typeof l.target === "object" &&
+    l.source.galaxy >= 0 &&
+    l.source.galaxy === l.target.galaxy;
 
   const linkStrength = (l: SimLink): number => {
     const sN = typeof l.source === "object" ? l.source.deg : 1;
     const tN = typeof l.target === "object" ? l.target.deg : 1;
     const base = cur.linkForce / (1 + Math.min(sN, tN));
+    // Different folder → near-zero pull (galaxies must not merge).
+    if (cur.folderGalaxies && !sameGalaxy(l)) return base * INTER_GALAXY_STR_MUL;
     return cur.clusterForce > 0 && !sameComm(l) ? base * INTER_LINK_STR_MUL : base;
   };
   // Deterministic per-edge distance jitter (0.7×..1.3×). A uniform intra-
@@ -194,13 +200,15 @@ function build(
   const gravityOf =
     (g: GraphSettings) =>
     (n: SimNode): number => {
-      const base =
-        g.clusterForce > 0
-          ? centerOf(g) * (n.community >= 0 ? CLUSTERED_GRAVITY_MUL : ORPHAN_GRAVITY_MUL)
-          : centerOf(g);
-      // Anchors carry the layout in galaxy mode — keep only a whisper of
-      // global gravity so the ring doesn't collapse back into one mass.
-      return g.folderGalaxies ? base * GALAXY_GRAVITY_MUL : base;
+      if (g.folderGalaxies) {
+        // Anchored nodes: ZERO origin pull (any pull tails the galaxy — the
+        // "쏠림"). Orphans (no anchor): a small pull so they cluster near the
+        // origin instead of drifting off and inflating the fit bounding box.
+        return n.community >= 0 ? 0 : centerOf(g) * ORPHAN_GRAVITY_MUL;
+      }
+      return g.clusterForce > 0
+        ? centerOf(g) * (n.community >= 0 ? CLUSTERED_GRAVITY_MUL : ORPHAN_GRAVITY_MUL)
+        : centerOf(g);
     };
 
   // --- folder-galaxies anchor + disc force -----------------------------------
@@ -243,8 +251,11 @@ function build(
     const centers = galaxyAnchorsBySize(counts, cur.linkDistance);
     const galaxyCenter = new Map<number, GalaxyAnchor>();
     galaxyIds.forEach((g, i) => galaxyCenter.set(g, centers[i]));
-    // Each galaxy's clusters fan out within its footprint as separate lobes; the
-    // whole galaxy shares one disc plane so it flattens as a single galaxy.
+    // Each galaxy's clusters fan out (in 3D) within its footprint as separate
+    // lobes so a folder reads as a disc of distinct-coloured clumps sized by
+    // node count, NOT one collapsed point. The whole galaxy shares one disc
+    // plane so it flattens as a single galaxy. Inter-galaxy links are near-zero
+    // (linkStrength) so folders stay separate circles.
     const byGalaxy = new Map<number, number[]>();
     for (const c of clusterCount.keys()) {
       const g = galaxyOfCluster.get(c) ?? -1;
@@ -257,10 +268,7 @@ function build(
         (a, b) => (clusterCount.get(b) ?? 0) - (clusterCount.get(a) ?? 0) || a - b,
       );
       const center = galaxyCenter.get(g) ?? { x: 0, y: 0, z: 0 };
-      const footprint = galaxyFootprint(
-        galaxyCount.get(g) ?? clusterCount.get(cs[0]) ?? 1,
-        cur.linkDistance,
-      );
+      const footprint = galaxyFootprint(galaxyCount.get(g) ?? 1, cur.linkDistance);
       const mini = clusterAnchors(center, footprint, cs.length, g >= 0 ? g : 0);
       const normal = galaxyNormal(g >= 0 ? g : 0);
       cs.forEach((c, i) => {

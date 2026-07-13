@@ -2214,12 +2214,17 @@ export class GraphScene {
     cx /= count;
     cy /= count;
     cz /= count;
-    let r = 1;
+    // 95th-percentile radius, NOT the max: a few far outliers (a drifted orphan,
+    // a stray ghost) would otherwise blow up the frame and shrink the whole
+    // graph to a speck in the middle of the canvas.
+    const dists: number[] = [];
     for (const id of this.nodeIds) {
       const a = this.graph.getNodeAttributes(id);
       if (a.hidden) continue;
-      r = Math.max(r, Math.hypot(a.x - cx, a.y - cy, a.z - cz));
+      dists.push(Math.hypot(a.x - cx, a.y - cy, a.z - cz));
     }
+    dists.sort((p, q) => p - q);
+    const r = Math.max(1, dists[Math.floor((dists.length - 1) * 0.95)] ?? 1);
     this.controls.target.set(cx, cy, cz);
     const fovRad = (this.camera.fov * Math.PI) / 180;
     const dist = (r * 1.5) / Math.tan(fovRad / 2) + 60;
