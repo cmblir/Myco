@@ -1,6 +1,6 @@
 [package]
 name = "memex"
-version = "0.2.1"
+version = "0.2.2"
 description = "Memex — desktop wiki for plain markdown vaults"
 authors = ["Memex contributors"]
 edition = "2021"

@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-07-13
+
+### Fixed
+
+- **Large graphs no longer lag or load blank.** The cosmic-scale LOD had its
+  thresholds inverted — the default framed view sat in the galaxy-imposter
+  band, so a big vault faded its node cloud to zero and showed only discs +
+  labels (reading as a frozen black screen). The framed view (and closer) now
+  shows the actual node graph; galaxy imposters are a pull-back effect. The sim
+  worker also throttles its position posts to ~30Hz and the main thread
+  coalesces them to one apply per frame, so the settle no longer saturates the
+  event loop, and imposters stop rendering when fully zoomed in.
+
+
 ## [0.2.1] - 2026-07-13
 
 ### Cosmic-scale LOD
