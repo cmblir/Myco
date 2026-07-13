@@ -71,8 +71,9 @@ describe("galaxySizeBoost", () => {
 describe("folderGroups", () => {
   const ROOT = "/vault";
   const noNb = (): string[] => [];
+  const zero = (): number => 0; // single Louvain community for flat galaxies
 
-  it("groups by parent folder relative to the vault root", () => {
+  it("groups top-level folders into separate galaxies", () => {
     const ids = [
       "/vault/wiki/a.md",
       "/vault/wiki/b.md",
@@ -81,16 +82,16 @@ describe("folderGroups", () => {
       "/vault/raw/y.md",
       "/vault/raw/z.md",
     ];
-    const g = folderGroups(ids, ROOT, noNb)!;
+    const g = folderGroups(ids, ROOT, noNb, zero)!;
     expect(g).not.toBeNull();
-    expect(g["/vault/wiki/a.md"]).toBe(g["/vault/wiki/b.md"]);
-    expect(g["/vault/raw/x.md"]).toBe(g["/vault/raw/y.md"]);
-    expect(g["/vault/wiki/a.md"]).not.toBe(g["/vault/raw/x.md"]);
+    expect(g.community["/vault/wiki/a.md"]).toBe(g.community["/vault/wiki/b.md"]);
+    expect(g.community["/vault/raw/x.md"]).toBe(g.community["/vault/raw/y.md"]);
+    expect(g.galaxy["/vault/wiki/a.md"]).not.toBe(g.galaxy["/vault/raw/x.md"]);
   });
 
-  it("returns null for a flat vault (fewer than two sized folders)", () => {
+  it("returns null for a flat vault (fewer than two clusters)", () => {
     const ids = ["/vault/wiki/a.md", "/vault/wiki/b.md", "/vault/wiki/c.md"];
-    expect(folderGroups(ids, ROOT, noNb)).toBeNull();
+    expect(folderGroups(ids, ROOT, noNb, zero)).toBeNull();
   });
 
   it("marks tiny folders (<3 members) as field stars (-1)", () => {
@@ -103,8 +104,8 @@ describe("folderGroups", () => {
       "/vault/raw/z.md",
       "/vault/misc/only.md",
     ];
-    const g = folderGroups(ids, ROOT, noNb)!;
-    expect(g["/vault/misc/only.md"]).toBe(-1);
+    const g = folderGroups(ids, ROOT, noNb, zero)!;
+    expect(g.community["/vault/misc/only.md"]).toBe(-1);
   });
 
   it("ghost nodes adopt their first real neighbour's folder", () => {
@@ -119,11 +120,11 @@ describe("folderGroups", () => {
     ];
     const nb = (id: string): string[] =>
       id === "ghost:missing" ? ["/vault/raw/x.md"] : [];
-    const g = folderGroups(ids, ROOT, nb)!;
-    expect(g["ghost:missing"]).toBe(g["/vault/raw/x.md"]);
+    const g = folderGroups(ids, ROOT, nb, zero)!;
+    expect(g.community["ghost:missing"]).toBe(g.community["/vault/raw/x.md"]);
   });
 
-  it("bigger folders rank first (stable palette order)", () => {
+  it("bigger clusters rank first (stable palette order)", () => {
     const ids = [
       "/vault/a/1.md",
       "/vault/a/2.md",
@@ -133,8 +134,8 @@ describe("folderGroups", () => {
       "/vault/b/3.md",
       "/vault/b/4.md",
     ];
-    const g = folderGroups(ids, ROOT, noNb)!;
-    expect(g["/vault/b/1.md"]).toBe(0); // b has 4 members → rank 0
-    expect(g["/vault/a/1.md"]).toBe(1);
+    const g = folderGroups(ids, ROOT, noNb, zero)!;
+    expect(g.community["/vault/b/1.md"]).toBe(0); // b has 4 members → rank 0
+    expect(g.community["/vault/a/1.md"]).toBe(1);
   });
 });

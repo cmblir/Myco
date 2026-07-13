@@ -6,6 +6,7 @@ import {
   computeAllowed,
   countAllNodes,
   flattenMarkdown,
+  folderGroups,
   inFolder,
   seededUnit,
   shortestPath,
@@ -252,5 +253,122 @@ describe("seededUnit", () => {
 
   it("different salts give independent streams", () => {
     expect(seededUnit("node-1", 0)).not.toBe(seededUnit("node-1", 7));
+  });
+});
+
+describe("folderGroups (hierarchical galaxies)", () => {
+  const noNeighbors = (): string[] => [];
+  const lv = (m: Record<string, number>) => (id: string): number => m[id] ?? -1;
+
+  it("subdivides a flat folder into clusters by link community", () => {
+    // One flat galaxy "wiki" (no subfolders); Louvain splits it into 2 comms.
+    const ids = [
+      "/vault/wiki/a.md",
+      "/vault/wiki/b.md",
+      "/vault/wiki/c.md",
+      "/vault/wiki/d.md",
+      "/vault/wiki/e.md",
+      "/vault/wiki/f.md",
+    ];
+    const louvain = {
+      "/vault/wiki/a.md": 0,
+      "/vault/wiki/b.md": 0,
+      "/vault/wiki/c.md": 0,
+      "/vault/wiki/d.md": 1,
+      "/vault/wiki/e.md": 1,
+      "/vault/wiki/f.md": 1,
+    };
+    const g = folderGroups(ids, "/vault", noNeighbors, lv(louvain));
+    expect(g).not.toBeNull();
+    // Two distinct clusters …
+    expect(new Set(ids.map((id) => g!.community[id])).size).toBe(2);
+    // … both belonging to the ONE "wiki" galaxy.
+    expect(new Set(ids.map((id) => g!.galaxy[id])).size).toBe(1);
+  });
+
+  it("keeps subfolder clusters within one galaxy for a nested folder", () => {
+    const ids = [
+      "/vault/notes/sub1/a.md",
+      "/vault/notes/sub1/b.md",
+      "/vault/notes/sub1/c.md",
+      "/vault/notes/sub2/d.md",
+      "/vault/notes/sub2/e.md",
+      "/vault/notes/sub2/f.md",
+    ];
+    // Louvain would merge them, but for a nested galaxy the subfolder wins.
+    const louvain = Object.fromEntries(ids.map((id) => [id, 0]));
+    const g = folderGroups(ids, "/vault", noNeighbors, lv(louvain));
+    expect(g).not.toBeNull();
+    expect(new Set(ids.map((id) => g!.community[id])).size).toBe(2);
+    expect(new Set(ids.map((id) => g!.galaxy[id])).size).toBe(1);
+    expect([...g!.clusterKeyOf.values()].sort()).toEqual([
+      "notes/sub1",
+      "notes/sub2",
+    ]);
+  });
+
+  it("puts different top-level folders in different galaxies", () => {
+    const ids = [
+      "/vault/A/sub/a.md",
+      "/vault/A/sub/b.md",
+      "/vault/A/sub/c.md",
+      "/vault/B/sub/d.md",
+      "/vault/B/sub/e.md",
+      "/vault/B/sub/f.md",
+    ];
+    const louvain = Object.fromEntries(ids.map((id) => [id, 0]));
+    const g = folderGroups(ids, "/vault", noNeighbors, lv(louvain));
+    expect(new Set(ids.map((id) => g!.galaxy[id])).size).toBe(2);
+    expect([...g!.galaxyKeyOf.values()].sort()).toEqual(["A", "B"]);
+  });
+
+  it("folds clusters under 3 members into field stars (-1)", () => {
+    const ids = [
+      "/vault/wiki/a.md",
+      "/vault/wiki/b.md",
+      "/vault/wiki/c.md",
+      "/vault/wiki/d.md",
+      "/vault/wiki/e.md",
+      "/vault/wiki/f.md",
+      "/vault/wiki/g.md", // comm 2 …
+      "/vault/wiki/h.md", // … only 2 members → folds
+    ];
+    const louvain = {
+      "/vault/wiki/a.md": 0,
+      "/vault/wiki/b.md": 0,
+      "/vault/wiki/c.md": 0,
+      "/vault/wiki/d.md": 1,
+      "/vault/wiki/e.md": 1,
+      "/vault/wiki/f.md": 1,
+      "/vault/wiki/g.md": 2,
+      "/vault/wiki/h.md": 2,
+    };
+    const g = folderGroups(ids, "/vault", noNeighbors, lv(louvain));
+    expect(g).not.toBeNull();
+    expect(g!.community["/vault/wiki/g.md"]).toBe(-1);
+    expect(g!.galaxy["/vault/wiki/g.md"]).toBe(-1);
+    // The two full clusters survive.
+    expect(new Set(["a", "b", "c", "d", "e", "f"].map((n) => g!.community[`/vault/wiki/${n}.md`])).size).toBe(2);
+  });
+
+  it("maps every surviving cluster to its galaxy", () => {
+    const ids = [
+      "/vault/A/x/a.md",
+      "/vault/A/x/b.md",
+      "/vault/A/x/c.md",
+      "/vault/A/y/d.md",
+      "/vault/A/y/e.md",
+      "/vault/A/y/f.md",
+    ];
+    const g = folderGroups(
+      ids,
+      "/vault",
+      noNeighbors,
+      lv(Object.fromEntries(ids.map((id) => [id, 0]))),
+    )!;
+    // Both clusters (A/x, A/y) map to the same single galaxy index.
+    const galaxies = new Set([...g.galaxyOfCluster.values()]);
+    expect(galaxies.size).toBe(1);
+    expect(g.galaxyOfCluster.size).toBe(2); // two clusters mapped
   });
 });
