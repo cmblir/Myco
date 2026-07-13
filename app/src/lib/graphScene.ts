@@ -41,6 +41,14 @@ import { MeteorLayer } from "./meteorLayer";
 import { CoreGlowLayer } from "./coreGlowLayer";
 import { CosmicEvents } from "./cosmicEvents";
 import { GalacticBandLayer } from "./galacticBandLayer";
+import { GalaxyImposterLayer } from "./galaxyImposterLayer";
+import {
+  cosmicScale,
+  imposterAlpha,
+  nodeLodAlpha,
+  zoomLevel,
+  type CosmicScale,
+} from "./cosmicLod";
 import {
   pickByDegree,
   synapseDelay,
@@ -284,6 +292,7 @@ void main() {
 
 const NODE_FRAG = /* glsl */ `
 precision mediump float;
+uniform float u_lodFade; // cosmic-scale LOD: 1 near (nodes shown) → 0 far
 varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
@@ -324,7 +333,7 @@ void main() {
   //          alpha to tint the dst at all, otherwise stars evaporate.
   float aDark = max(core, glow * 0.6) + spikes;
   float aLight = max(core, glow * 0.85) + spikes;
-  float a = mix(aLight, aDark, v_dark) * v_alpha * v_fade;
+  float a = mix(aLight, aDark, v_dark) * v_alpha * v_fade * u_lodFade;
   if (a < 0.004) discard;
   vec3 base = v_color * (0.65 + 0.35 * v_fade);
   // Class tints: giants burn warm, neutrons burn white-hot.
@@ -459,6 +468,12 @@ export class GraphScene {
   private coreGlow: CoreGlowLayer; // Andromeda-style bulge per galaxy
   private cosmic: CosmicEvents; // rare black-hole / wormhole events
   private band: GalacticBandLayer; // dust bands hugging each large galaxy
+  private imposter: GalaxyImposterLayer; // far-LOD spiral-galaxy discs
+  // Cosmic-scale LOD state (see cosmicLod). onScale fires when the camera
+  // crosses a scale band (star → system → galaxy → cluster) for the HUD.
+  private lastScale: CosmicScale | null = null;
+  private onScale: ((s: CosmicScale) => void) | null = null;
+  private imposterTick = 0;
   private coreGlowTick = 0; // throttle centroid refresh
   private synapse: WaveLayer; // idle spontaneous micro-firings (dim ripples)
   private synapseTimer = 3; // seconds until the next idle firing
@@ -714,6 +729,7 @@ export class GraphScene {
         u_fogFar: { value: 2600 },
         u_time: { value: 0 },
         u_darkTheme: { value: dark ? 1 : 0 },
+        u_lodFade: { value: 1 },
       },
       vertexShader: NODE_VERT,
       fragmentShader: NODE_FRAG,
@@ -853,6 +869,12 @@ export class GraphScene {
     this.band.setSizeScale(this.sizeScale(h));
     this.band.points.visible = dark && !this.perfLod;
     this.scene.add(this.band.points);
+    // Galaxy imposters: the far end of the cosmic LOD. Enabled even in perf
+    // mode (they're one cheap draw call) — they're what a 10k-node vault
+    // resolves into when zoomed out, instead of a white blob.
+    this.imposter = new GalaxyImposterLayer(this.graph, this.nodeIds, pr, dark);
+    this.imposter.setSizeScale(this.sizeScale(h));
+    this.scene.add(this.imposter.points);
 
     // --- spaceship (immersive third-person flight; enabled via setFlyMode) ---
     this.ship = new ShipController(
@@ -1617,9 +1639,60 @@ export class GraphScene {
     this.syncPositions();
   }
 
-  // Live galaxy centres + rough radii — where cosmic events may open. Called
-  // only when an event actually triggers (every 40-120 s), so O(n) is fine.
-  private galaxyCentres(): { x: number; y: number; z: number; r: number }[] {
+  /** HUD hook: called when the camera crosses a cosmic-scale band. */
+  setScaleListener(cb: (s: CosmicScale) => void): void {
+    this.onScale = cb;
+  }
+
+  // Per-frame cosmic-scale LOD. Blends the node cloud (near) against galaxy
+  // imposters (far) from the camera's distance to what it's looking at, and
+  // fades edges / core glow with the nodes so the far view is pure discs.
+  // Flying = always fully "near" (you're among the stars).
+  private updateLod(dt: number): void {
+    this.imposter.update(dt);
+    if (!this.imposter.points.visible) {
+      // Imposters off (light skin) — nodes always full, nothing to blend.
+      if (this.nodeMat.uniforms.u_lodFade.value !== 1) {
+        this.nodeMat.uniforms.u_lodFade.value = 1;
+      }
+      return;
+    }
+    // Refresh imposter geometry (centroids/radii) on a slow cadence.
+    if ((this.imposterTick = (this.imposterTick + 1) % 20) === 0) {
+      this.imposter.refresh();
+    }
+    const camDist = this.flyMode
+      ? 0
+      : this.camera.position.distanceTo(this.controls.target);
+    const zoom = this.flyMode ? 0 : zoomLevel(camDist, this.framedDist);
+    const nodeFade = nodeLodAlpha(zoom);
+    this.nodeMat.uniforms.u_lodFade.value = nodeFade;
+    // Edges + core bulges ride with the nodes so the far view is just discs.
+    this.edgeMat.opacity =
+      Math.min(1, this.edgeOpacity * this.settings.linkThickness) * nodeFade;
+    // Per-galaxy imposter alpha: global zoom × local on-screen-size override.
+    const h = Math.max(1, this.container.clientHeight);
+    const scale = this.sizeScale(h);
+    const cents = this.galaxyCentresById();
+    this.imposter.setAlphas((cm) => {
+      const c = cents.get(cm);
+      if (!c) return zoom; // no live centroid — follow global zoom
+      const dist = Math.max(1, this.camera.position.distanceTo(this.tmpVec.set(c.x, c.y, c.z)));
+      const screenFrac = ((c.r * 2 * scale) / dist) / h; // galaxy diameter / viewport
+      return imposterAlpha(zoom, screenFrac);
+    });
+    // Scale-band HUD notification (star / system / galaxy / cluster).
+    if (this.onScale) {
+      const s = cosmicScale(zoom, cents.size > 2);
+      if (s !== this.lastScale) {
+        this.lastScale = s;
+        this.onScale(s);
+      }
+    }
+  }
+
+  // community id → {centroid, RMS radius}. Shared by the LOD blend.
+  private galaxyCentresById(): Map<number, { x: number; y: number; z: number; r: number }> {
     const cx = new Map<number, number>();
     const cy = new Map<number, number>();
     const cz = new Map<number, number>();
@@ -1632,21 +1705,33 @@ export class GraphScene {
       cz.set(a.community, (cz.get(a.community) ?? 0) + a.z);
       cn.set(a.community, (cn.get(a.community) ?? 0) + 1);
     }
-    const out: { x: number; y: number; z: number; r: number }[] = [];
-    const rr = new Map<number, number>();
+    const r2 = new Map<number, number>();
     for (const id of this.nodeIds) {
       const a = this.graph.getNodeAttributes(id);
       const c = a.community;
-      if (c < 0 || a.hidden) continue;
-      const n = cn.get(c)!;
-      const d = Math.hypot(a.x - cx.get(c)! / n, a.y - cy.get(c)! / n, a.z - cz.get(c)! / n);
-      rr.set(c, Math.max(rr.get(c) ?? 0, d));
+      const n = cn.get(c);
+      if (c < 0 || a.hidden || !n) continue;
+      const dx = a.x - cx.get(c)! / n;
+      const dy = a.y - cy.get(c)! / n;
+      const dz = a.z - cz.get(c)! / n;
+      r2.set(c, (r2.get(c) ?? 0) + dx * dx + dy * dy + dz * dz);
     }
+    const out = new Map<number, { x: number; y: number; z: number; r: number }>();
     for (const [c, n] of cn) {
       if (n < 3) continue;
-      out.push({ x: cx.get(c)! / n, y: cy.get(c)! / n, z: cz.get(c)! / n, r: rr.get(c) ?? 40 });
+      out.set(c, {
+        x: cx.get(c)! / n,
+        y: cy.get(c)! / n,
+        z: cz.get(c)! / n,
+        r: Math.sqrt((r2.get(c) ?? 0) / n) || 30,
+      });
     }
     return out;
+  }
+
+  // Live galaxy centres + rough radii — where cosmic events may open.
+  private galaxyCentres(): { x: number; y: number; z: number; r: number }[] {
+    return [...this.galaxyCentresById().values()];
   }
 
   /** Current node positions (nodeIds order) — the worker syncBack payload. */
@@ -1819,6 +1904,7 @@ export class GraphScene {
     this.moonHosts = null;
     this.coreGlow.setNodeIds(this.nodeIds);
     this.band.setNodeIds(this.nodeIds);
+    this.imposter.setNodeIds(this.nodeIds);
 
     this.writeNodes();
     this.writeEdges();
@@ -1872,6 +1958,7 @@ export class GraphScene {
     this.meteor.lines.visible = amb.meteors && !this.perfLod;
     this.coreGlow.setEnabled(dark && !this.perfLod);
     this.band.points.visible = dark && !this.perfLod;
+    this.imposter.setEnabled(dark);
     this.nebula.setDark(SHOW_NEBULA && amb.nebula);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
@@ -2171,6 +2258,9 @@ export class GraphScene {
       } else {
         this.controls.update();
       }
+      // Cosmic-scale LOD: cross-fade the node cloud ↔ galaxy imposters by how
+      // far the camera sits from what it's looking at. Every frame, cheap.
+      this.updateLod(dt);
       // One coalesced hover pick per frame (not one per pointermove event).
       // Suppressed while flying (drag = steer, not hover).
       if (!this.flyMode) this.processPick();
@@ -2290,6 +2380,8 @@ export class GraphScene {
     this.scene.remove(this.cosmic.group);
     this.band.dispose();
     this.scene.remove(this.band.points);
+    this.imposter.dispose();
+    this.scene.remove(this.imposter.points);
     this.clusterLabels.dispose();
     this.scene.remove(this.clusterLabels.group);
     this.bloom.dispose();
@@ -2334,6 +2426,7 @@ export class GraphScene {
     this.coreGlow.setSizeScale(this.sizeScale(h));
     this.cosmic.setSizeScale(this.sizeScale(h));
     this.band.setSizeScale(this.sizeScale(h));
+    this.imposter.setSizeScale(this.sizeScale(h));
     // Fat lines are screen-space — they need the drawing-buffer resolution.
     this.filamentMat?.resolution.set(w, h);
   };

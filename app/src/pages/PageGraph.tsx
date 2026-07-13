@@ -171,6 +171,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   };
   // HUD speed readout, polled at a low rate while flying.
   const [shipSpeed, setShipSpeed] = useState(0);
+  // Cosmic-scale band (star/system/galaxy/cluster) shown briefly on change.
+  const [cosmicScale, setCosmicScale] = useState<string | null>(null);
+  const scaleHideRef = useRef<number | null>(null);
   // Gap-analysis panel (orphans / missing / under-cited / disconnected …).
   const [gapsOpen, setGapsOpen] = useState(false);
   const [tlPlaying, setTlPlaying] = useState(false);
@@ -519,6 +522,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       },
     });
     sceneRef.current = scene;
+    scene.setScaleListener((sc) => {
+      const label = { cluster: "Galaxy cluster", galaxy: "Galaxy", system: "Star system", star: "Star" }[sc];
+      setCosmicScale(label);
+      if (scaleHideRef.current != null) window.clearTimeout(scaleHideRef.current);
+      scaleHideRef.current = window.setTimeout(() => setCosmicScale(null), 2200);
+    });
     scene.start();
 
     // DEV-ONLY: expose the scene/graph so a screenshot harness can drive it.
@@ -1203,6 +1212,11 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 >
                   {t.gr_retry ?? "Rebuild"}
                 </button>
+              </div>
+            ) : null}
+            {cosmicScale ? (
+              <div className="graph-scale-badge" aria-live="polite">
+                {t[`gr_scale_${cosmicScale === "Galaxy cluster" ? "cluster" : cosmicScale === "Galaxy" ? "galaxy" : cosmicScale === "Star system" ? "system" : "star"}` as keyof Strings] ?? cosmicScale}
               </div>
             ) : null}
             {counts.nodes > 5000 ? (

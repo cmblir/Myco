@@ -1501,6 +1501,27 @@ hr {
   backdrop-filter: blur(6px);
   white-space: nowrap;
 }
+.graph-scale-badge {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 18px;
+  border-radius: 999px;
+  background: rgba(10, 12, 20, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e9edf6;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  animation: graph-scale-in 0.3s ease;
+}
+@keyframes graph-scale-in {
+  from { opacity: 0; transform: translate(-50%, -6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
 .ship-hud__speed {
   color: #e9edf6;
   font-variant-numeric: tabular-nums;
