@@ -1,8 +1,22 @@
 // Graph skins — fixed palettes must be DOM-independent (the whole point: the
 // graph's colors no longer follow the app theme unless skin === "auto").
 import { describe, expect, it } from "vitest";
-import { skinAmbience, skinTheme } from "./graphSkins";
+import { isLightBackground, skinAmbience, skinTheme } from "./graphSkins";
 import { DEFAULT_GRAPH_SETTINGS, loadGraphSettings } from "./graphSettings";
+
+describe("isLightBackground", () => {
+  it("is true only for the light (paper) skin", () => {
+    expect(isLightBackground(skinTheme("white"))).toBe(true);
+    expect(isLightBackground(skinTheme("black"))).toBe(false);
+    expect(isLightBackground(skinTheme("galaxy"))).toBe(false);
+  });
+
+  it("treats a non-hex background as dark (safe default)", () => {
+    expect(isLightBackground({ ...skinTheme("black"), bg: "rgb(10,10,10)" })).toBe(
+      false,
+    );
+  });
+});
 
 describe("skinTheme (fixed skins)", () => {
   it("black pins a true-black scene background", () => {

@@ -37,6 +37,7 @@ import {
 import { analyzeGaps, gapCount } from "../lib/graphGaps";
 import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
 import { makeTheme } from "../lib/graphTheme";
+import { isLightBackground } from "../lib/graphSkins";
 import { GraphScene, type SceneStyleState } from "../lib/graphScene";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
@@ -231,6 +232,17 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   // Every markdown file — including link-less ones, which render as Obsidian's
   // free-floating "orphan" stars.
   const allFiles = useMemo(() => flattenMarkdown(fileTree), [fileTree]);
+
+  // Dark vs. light node palette follows the RESOLVED graph background (not the
+  // app theme), so the white skin always gets dark, saturated stars. Memoised to
+  // a boolean so the graph rebuilds only when the light/dark actually flips.
+  const lightBg = useMemo(
+    () => isLightBackground(makeTheme(settings.skin)),
+    // uiTheme IS a real dependency: the "auto" skin resolves its background from
+    // the DOM (--bg), which flips with the app theme — a read the linter can't see.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [settings.skin, uiTheme],
+  );
 
   // Gap report over the live graph. counts/glEpoch change on every rebuild /
   // live-ingest growth / context restore, so it re-derives when the graph does.
@@ -443,6 +455,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       semanticEdges: s.semanticEdges ? semEdgesRef.current : undefined,
       folderGalaxies: s.folderGalaxies,
       vaultRoot: currentVault?.path ?? "",
+      lightBg,
     });
     graphRef.current = graph;
     setCounts({ nodes: graph.order, edges: graph.size });
@@ -608,6 +621,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.showOrphans,
     settings.nodeSize,
     settings.folderGalaxies,
+    lightBg,
     glEpoch,
   ]);
 

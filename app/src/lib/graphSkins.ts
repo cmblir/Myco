@@ -48,6 +48,20 @@ export function skinTheme(skin: Exclude<GraphSkinKey, "auto">): GraphTheme {
   return { ...SKIN_THEMES[skin] };
 }
 
+// Perceived-luminance test on the theme background. The graph picks its node
+// palette (dark void vs. dark-on-paper) from THIS, not from the app theme, so a
+// white skin always gets the dark, saturated stars that read on paper. Non-hex
+// backgrounds fall back to "dark" (the default void).
+export function isLightBackground(theme: GraphTheme): boolean {
+  const m = /^#?([0-9a-f]{6})$/i.exec(theme.bg.trim());
+  if (!m) return false;
+  const n = parseInt(m[1], 16);
+  const r = (n >> 16) & 255;
+  const g = (n >> 8) & 255;
+  const b = n & 255;
+  return 0.299 * r + 0.587 * g + 0.114 * b > 150; // Rec.601 luma, 0..255
+}
+
 // Which ambient background layers a skin shows. `dark` matters only for
 // "auto", where the layers keep their theme-derived behaviour. Meteors are a
 // galaxy-skin signature — the other skins stay calm.
