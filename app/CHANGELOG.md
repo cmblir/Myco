@@ -6,6 +6,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-13
+
+### Cosmic-scale LOD
+
+The Graph now renders at true cosmic scale. Pull the camera back and the node
+cloud fades out while each galaxy resolves into a procedural barred-spiral disc
+(warm core, log-spiral arms with dust mottling, slow rotation, hue from the
+galaxy's hub, sized to its world radius); fly in and the discs fade out as the
+individual stars, edges and labels fade back in. A HUD badge names the altitude
+as you cross scale bands — star → star system → galaxy → galaxy cluster. This
+also fixes the "white blob" a 10k-node vault showed in performance mode: the
+imposters stay on (one cheap draw call), so a huge vault zoomed out reads as a
+majestic cluster of galaxies, and the more nodes the grander the discs.
+
+
 ## [0.2.0] - 2026-07-13
 
 ### Graph universe overhaul
