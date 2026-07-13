@@ -26,6 +26,7 @@ interface NodeInit {
   size: number;
   deg: number;
   community: number;
+  galaxy: number;
   isHub: boolean;
   rJitter: number;
 }
@@ -61,6 +62,7 @@ function nodeInit(graph: VaultGraph, id: string): NodeInit {
     size: a.size,
     deg: a.deg,
     community: a.community,
+    galaxy: a.galaxy,
     isHub: a.isHub,
     // Precompute the orbit-radius jitter here (the worker needs it but must not
     // import graphology); identical formula to the former in-sim value.

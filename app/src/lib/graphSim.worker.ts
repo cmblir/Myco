@@ -26,7 +26,9 @@ import {
 import type { GraphSettings } from "./graphSettings";
 import { bigGraphDecay } from "./simCooling";
 import {
-  galaxyAnchors,
+  clusterAnchors,
+  galaxyAnchorsBySize,
+  galaxyFootprint,
   galaxyNormal,
   galaxySizeBoost,
   type GalaxyAnchor,
@@ -54,6 +56,7 @@ interface SimNode {
   size: number;
   deg: number;
   community: number;
+  galaxy: number;
   isHub: boolean;
   rJitter: number;
   fx?: number | null;
@@ -76,6 +79,7 @@ interface NodeInit {
   size: number;
   deg: number;
   community: number;
+  galaxy: number;
   isHub: boolean;
   rJitter: number;
 }
@@ -206,12 +210,19 @@ function build(
     normals.clear();
     sizeBoost.clear();
     if (!cur.folderGalaxies) return;
-    const counts = new Map<number, number>();
+    // Count nodes per cluster and per galaxy; remember each cluster's galaxy.
+    const clusterCount = new Map<number, number>();
+    const galaxyCount = new Map<number, number>();
+    const galaxyOfCluster = new Map<number, number>();
     for (const n of nodes) {
-      if (n.community >= 0) counts.set(n.community, (counts.get(n.community) ?? 0) + 1);
+      if (n.community < 0) continue;
+      clusterCount.set(n.community, (clusterCount.get(n.community) ?? 0) + 1);
+      if (n.galaxy >= 0) {
+        galaxyCount.set(n.galaxy, (galaxyCount.get(n.galaxy) ?? 0) + 1);
+        galaxyOfCluster.set(n.community, n.galaxy);
+      }
     }
-    const comms = [...counts.keys()].sort((a, b) => a - b);
-    if (comms.length < 2) return;
+    if (clusterCount.size < 2) return;
     const intra = new Map<number, number>();
     for (const l of links) {
       if (sameComm(l)) {
@@ -219,13 +230,38 @@ function build(
         intra.set(c, (intra.get(c) ?? 0) + 1);
       }
     }
-    const maxCount = Math.max(...counts.values());
-    const pts = galaxyAnchors(comms.length, cur.linkDistance, maxCount);
-    comms.forEach((c, i) => {
-      anchors.set(c, pts[i]);
-      normals.set(c, galaxyNormal(c));
-      sizeBoost.set(c, galaxySizeBoost(counts.get(c) ?? 1, intra.get(c) ?? 0));
-    });
+    // Galaxy centres, size-spaced: a bigger galaxy is flung farther out.
+    const galaxyIds = [...galaxyCount.keys()].sort((a, b) => a - b);
+    const counts = galaxyIds.map((g) => galaxyCount.get(g)!);
+    const centers = galaxyAnchorsBySize(counts, cur.linkDistance);
+    const galaxyCenter = new Map<number, GalaxyAnchor>();
+    galaxyIds.forEach((g, i) => galaxyCenter.set(g, centers[i]));
+    // Each galaxy's clusters fan out within its footprint as separate lobes; the
+    // whole galaxy shares one disc plane so it flattens as a single galaxy.
+    const byGalaxy = new Map<number, number[]>();
+    for (const c of clusterCount.keys()) {
+      const g = galaxyOfCluster.get(c) ?? -1;
+      let arr = byGalaxy.get(g);
+      if (!arr) byGalaxy.set(g, (arr = []));
+      arr.push(c);
+    }
+    for (const [g, cs] of byGalaxy) {
+      cs.sort(
+        (a, b) => (clusterCount.get(b) ?? 0) - (clusterCount.get(a) ?? 0) || a - b,
+      );
+      const center = galaxyCenter.get(g) ?? { x: 0, y: 0, z: 0 };
+      const footprint = galaxyFootprint(
+        galaxyCount.get(g) ?? clusterCount.get(cs[0]) ?? 1,
+        cur.linkDistance,
+      );
+      const mini = clusterAnchors(center, footprint, cs.length, g >= 0 ? g : 0);
+      const normal = galaxyNormal(g >= 0 ? g : 0);
+      cs.forEach((c, i) => {
+        anchors.set(c, mini[i]);
+        normals.set(c, normal);
+        sizeBoost.set(c, galaxySizeBoost(clusterCount.get(c) ?? 1, intra.get(c) ?? 0));
+      });
+    }
   };
   const galaxyForce = (): Force<SimNode, SimLink> => {
     let ns: SimNode[] = [];

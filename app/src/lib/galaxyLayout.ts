@@ -75,6 +75,78 @@ export function galaxyAnchors(
   return out;
 }
 
+// A galaxy's own disc radius — how much room its stars occupy. Grows with node
+// count (∝ sqrt), mirroring the cluster force's orbit ring so the sizing math
+// agrees between spacing (here) and the in-galaxy layout (worker).
+export function galaxyFootprint(count: number, linkDistance: number): number {
+  return (
+    linkDistance *
+    (GALAXY_ORBIT_BASE + GALAXY_ORBIT_GROW * Math.sqrt(Math.max(1, count)))
+  );
+}
+
+// Size-aware galaxy centres: fibonacci-sphere DIRECTIONS (flattened on y) with a
+// per-galaxy DISTANCE that grows with that galaxy's own node count. A huge galaxy
+// (e.g. a 10k-note folder) is flung far out into the void while small galaxies
+// stay near the centre, so big blobs stop crowding the little ones. `counts` is
+// indexed by galaxy id order; the returned anchors match that order.
+export function galaxyAnchorsBySize(
+  counts: number[],
+  linkDistance: number,
+): GalaxyAnchor[] {
+  const G = counts.length;
+  if (G <= 0) return [];
+  if (G === 1) return [{ x: 0, y: 0, z: 0 }];
+  const maxCount = Math.max(...counts);
+  const baseR = galaxyRingRadius(G, linkDistance, maxCount);
+  const maxFoot = galaxyFootprint(maxCount, linkDistance);
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const out: GalaxyAnchor[] = [];
+  for (let g = 0; g < G; g++) {
+    const y = 1 - (2 * (g + 0.5)) / G; // -1..1 band
+    const rh = Math.sqrt(Math.max(0, 1 - y * y));
+    const angle = golden * g;
+    const wobble = 0.85 + 0.35 * galaxySeed(g, 7);
+    // Distance scales with THIS galaxy's footprint relative to the biggest —
+    // bigger galaxy → larger radius → farther from the origin (and small ones).
+    const foot = galaxyFootprint(counts[g], linkDistance);
+    const rg = baseR * wobble * (0.55 + 0.75 * (foot / maxFoot));
+    out.push({
+      x: Math.cos(angle) * rh * rg,
+      y: y * rg * 0.55, // oblate
+      z: Math.sin(angle) * rh * rg,
+    });
+  }
+  return out;
+}
+
+// Fan a galaxy's clusters within its footprint around the galaxy centre, so a
+// multi-cluster galaxy (a flat folder split into topics) separates into lobes
+// instead of piling into one ball. A single-cluster galaxy sits dead centre.
+// Deterministic per (galaxyIdx, cluster position); clusters spiral out from the
+// core so the biggest (index 0) sits near the centre.
+export function clusterAnchors(
+  center: GalaxyAnchor,
+  footprint: number,
+  count: number,
+  galaxyIdx: number,
+): GalaxyAnchor[] {
+  if (count <= 1) return [{ ...center }];
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const phase = galaxySeed(galaxyIdx, 19) * Math.PI * 2;
+  const out: GalaxyAnchor[] = [];
+  for (let i = 0; i < count; i++) {
+    const angle = phase + golden * i;
+    const rr = footprint * (0.25 + 0.75 * (i / (count - 1)));
+    out.push({
+      x: center.x + Math.cos(angle) * rr,
+      y: center.y,
+      z: center.z + Math.sin(angle) * rr,
+    });
+  }
+  return out;
+}
+
 // Per-galaxy disc normal (unit) — the spin axis. Seeded from the group id so
 // worker (disc flattening) and scene (idle rotation) agree without plumbing.
 // Biased toward "mostly upright with a random tilt" (|y| ≥ ~0.45) so every
