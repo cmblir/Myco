@@ -217,14 +217,25 @@ function bigRand(n: number): number {
   x ^= x >>> 13;
   return (x >>> 0) / 4294967296;
 }
+const BIG_FOLDERS = [
+  "neural-networks", "data-science", "keyboard-hobby", "spain-tech",
+  "deep-learning", "alignment", "distillation", "rag", "quantization",
+  "activation", "topics", "misc",
+];
+// `?big=N&skew=1` reproduces the real-vault shape: ONE dominant folder (~90%)
+// with a handful of small ones — a single giant galaxy, which stresses the
+// node-sprite overdraw and LOD far harder than the even 12-folder spread.
+function bigSkew(): boolean {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get("skew") === "1";
+}
 export function bigPath(i: number): string {
-  const folders = [
-    "neural-networks", "data-science", "keyboard-hobby", "spain-tech",
-    "deep-learning", "alignment", "distillation", "rag", "quantization",
-    "activation", "topics", "misc",
-  ];
-  const f = folders[i % folders.length];
-  return `${VAULT}/${f}/note-${i}.md`;
+  if (bigSkew()) {
+    // 90% in folder 0, the rest sprinkled across the next 5.
+    const f = bigRand(i * 7 + 3) < 0.9 ? BIG_FOLDERS[0] : BIG_FOLDERS[1 + (i % 5)];
+    return `${VAULT}/${f}/note-${i}.md`;
+  }
+  return `${VAULT}/${BIG_FOLDERS[i % BIG_FOLDERS.length]}/note-${i}.md`;
 }
 function buildBigAdjacency(n: number) {
   const forward: Record<string, string[]> = {};

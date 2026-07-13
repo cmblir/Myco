@@ -24,6 +24,7 @@ import {
   type Force,
 } from "d3-force-3d";
 import type { GraphSettings } from "./graphSettings";
+import { bigGraphDecay } from "./simCooling";
 import {
   galaxyAnchors,
   galaxyNormal,
@@ -389,9 +390,17 @@ function build(
     .force("cluster", clusterForce())
     .force("galaxy", galaxyForce())
     .alpha(1)
-    .alphaDecay(0.028)
+    // Scale-adaptive cooling. A big vault's tick is expensive (Barnes-Hut +
+    // collide + galaxy forces over N nodes), so the default ~185-tick settle
+    // took ~14s of wall-clock at 11k — and until it settled the graph shimmered,
+    // the fit-timer kept re-framing, and every tick flooded an applyPositions.
+    // Cooling faster at scale converges in far fewer ticks (a big graph can't
+    // relax perfectly anyway); small graphs keep the slow, pretty settle.
+    .alphaDecay(bigGraphDecay(nodes.length))
     .alphaMin(SIM_ALPHA_MIN)
-    .velocityDecay(0.55);
+    // Heavier velocity damping at scale kills the slow oscillation of a giant
+    // single community fought over by the cluster/anchor forces.
+    .velocityDecay(nodes.length > 4000 ? 0.72 : 0.55);
 
   let tlActive: SimNode[] | null = null;
   const activeIds = new Set<string>();
