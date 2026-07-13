@@ -85,15 +85,23 @@ describe("clusterAnchors", () => {
     expect(clusterAnchors(center, 40, 1, 0)).toEqual([{ ...center }]);
   });
 
-  it("fans N clusters within the galaxy footprint, all distinct", () => {
+  it("fans N clusters within the galaxy footprint, all distinct in 3D", () => {
     const pts = clusterAnchors(center, 40, 5, 2);
     expect(pts).toHaveLength(5);
     for (const p of pts) {
       const d = Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z);
       expect(d).toBeLessThanOrEqual(40 * 1.05);
     }
-    const keys = new Set(pts.map((p) => `${p.x.toFixed(3)},${p.z.toFixed(3)}`));
+    const keys = new Set(
+      pts.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}`),
+    );
     expect(keys.size).toBe(5);
+  });
+
+  it("spreads clusters off a single plane (not a flat line)", () => {
+    const pts = clusterAnchors(center, 40, 8, 1);
+    const ys = new Set(pts.map((p) => p.y.toFixed(2)));
+    expect(ys.size).toBeGreaterThan(1); // varies in y → not coplanar
   });
 
   it("is deterministic", () => {

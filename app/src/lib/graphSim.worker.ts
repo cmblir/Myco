@@ -103,7 +103,10 @@ const CHARGE_RANGE_MUL = 3.2;
 // galaxy separation) and relax the global gravity so the ring can breathe.
 const ANCHOR_SCALE = 0.06;
 const ANCHOR_HUB_MUL = 2.5;
-const GALAXY_GRAVITY_MUL = 0.35;
+// Whisper of global gravity in galaxy mode. Kept LOW: with galaxies flung far
+// from the origin, any real pull-to-origin stretches each star cluster into a
+// comet tail pointing at the centre. Anchors carry the layout instead.
+const GALAXY_GRAVITY_MUL = 0.08;
 // Disc flattening: pull members onto their galaxy's tilted disc plane — the
 // squash that turns a ball of stars into something Andromeda-shaped.
 const FLATTEN_SCALE = 0.14;
@@ -495,6 +498,19 @@ function build(
   kick();
 
   computeAnchors();
+  // Seed each anchored node NEAR its cluster mini-anchor (once, at build) so the
+  // graph appears already laid out instead of migrating from the origin — that
+  // long migration is what stretches star clusters into comet tails mid-settle.
+  if (cur.folderGalaxies && anchors.size > 0) {
+    for (const n of nodes) {
+      const a = anchors.get(n.community);
+      if (!a) continue;
+      const j = cur.linkDistance;
+      n.x = a.x + (seededUnit(n.id, 71) - 0.5) * j;
+      n.y = a.y + (seededUnit(n.id, 72) - 0.5) * j;
+      n.z = a.z + (seededUnit(n.id, 73) - 0.5) * j;
+    }
+  }
 
   return {
     nodes,

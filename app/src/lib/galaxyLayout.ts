@@ -135,12 +135,16 @@ export function clusterAnchors(
   const phase = galaxySeed(galaxyIdx, 19) * Math.PI * 2;
   const out: GalaxyAnchor[] = [];
   for (let i = 0; i < count; i++) {
+    // 3D oblate spread (fibonacci latitude), NOT a flat x-z plane — a coplanar
+    // fan reads as a straight LINE when the galaxy is viewed edge-on.
+    const yb = 1 - (2 * (i + 0.5)) / count; // -1..1 latitude
+    const rh = Math.sqrt(Math.max(0, 1 - yb * yb));
     const angle = phase + golden * i;
-    const rr = footprint * (0.25 + 0.75 * (i / (count - 1)));
+    const rr = footprint * (0.35 + 0.65 * (i / (count - 1))); // spiral outward
     out.push({
-      x: center.x + Math.cos(angle) * rr,
-      y: center.y,
-      z: center.z + Math.sin(angle) * rr,
+      x: center.x + Math.cos(angle) * rh * rr,
+      y: center.y + yb * rr * 0.6, // oblate — flatter than a sphere, still 3D
+      z: center.z + Math.sin(angle) * rh * rr,
     });
   }
   return out;
