@@ -315,6 +315,29 @@ describe("folderGroups (hierarchical galaxies)", () => {
     expect(new Set(ids.map((id) => g!.galaxy[id])).size).toBe(1);
   });
 
+  it("subdivides a single-subfolder galaxy by link community (the demo case)", () => {
+    // Deep vault root; galaxy 'demo' holds everything in ONE subfolder 'wiki',
+    // so the sub-folder path alone can't split it — Louvain must. This is the
+    // real memex-demo-10k/wiki/ shape (9984 flat notes under one subfolder).
+    const ids: string[] = [];
+    const louvain: Record<string, number> = {};
+    for (let k = 0; k < 3; k++) {
+      const id = `/root/demo/wiki/a${k}.md`;
+      ids.push(id);
+      louvain[id] = 0;
+    }
+    for (let k = 0; k < 3; k++) {
+      const id = `/root/demo/wiki/b${k}.md`;
+      ids.push(id);
+      louvain[id] = 1;
+    }
+    const g = folderGroups(ids, "/root", noNeighbors, lv(louvain));
+    expect(g).not.toBeNull();
+    expect(new Set(ids.map((id) => g!.community[id])).size).toBe(2); // Louvain split
+    expect(new Set(ids.map((id) => g!.galaxy[id])).size).toBe(1); // one 'demo' galaxy
+    expect([...g!.galaxyKeyOf.values()]).toEqual(["demo"]);
+  });
+
   it("keeps subfolder clusters within one galaxy for a nested folder", () => {
     const ids = [
       "/vault/notes/sub1/a.md",
