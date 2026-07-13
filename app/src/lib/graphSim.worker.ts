@@ -105,12 +105,12 @@ const CHARGE_RANGE_MUL = 3.2;
 // collapse every galaxy back into one ball that never recovered.
 const ANCHOR_SCALE = 0.28;
 const ANCHOR_HUB_MUL = 2.5;
-// Barely-there global gravity in galaxy mode. The strong anchor pull carries
-// the layout; this is only a safety floor so a tiny vault with no anchors (< 2
-// communities) still stays centred instead of drifting apart. Kept far below
-// the anchor scale so it can't drag separated galaxies back into one ball on a
-// reheat (the bug when gravity was 0.35 against a weak 0.06 anchor).
-const GALAXY_GRAVITY_MUL = 0.05;
+// ZERO global gravity in galaxy mode. Anchors alone carry the layout. ANY pull
+// toward the origin stretches every galaxy's stars into a tail pointing at the
+// origin — worse the farther the galaxy sits (the "쏠림"/lean seen on reset).
+// A tiny vault with no anchors is still held together by link + range-capped
+// charge + collide, so it doesn't need origin gravity either.
+const GALAXY_GRAVITY_MUL = 0.0;
 // Disc flattening: pull members onto their galaxy's tilted disc plane — the
 // squash that turns a ball of stars into something Andromeda-shaped.
 const FLATTEN_SCALE = 0.14;
