@@ -75,21 +75,18 @@ export function galaxyAnchors(
   return out;
 }
 
-// A galaxy's own disc radius — how much room its stars occupy. Grows with node
-// count (∝ sqrt), mirroring the cluster force's orbit ring so the sizing math
-// agrees between spacing (here) and the in-galaxy layout (worker).
+// A galaxy's own disc radius — how much room its stars occupy. Scales strongly
+// with node count so a big folder (e.g. a 2k-note galaxy with ~100 topic
+// clusters) occupies a WIDE field with its clusters spread into separate lobes,
+// not a cramped ball. Small galaxies stay compact.
 export function galaxyFootprint(count: number, linkDistance: number): number {
-  return (
-    linkDistance *
-    (GALAXY_ORBIT_BASE + GALAXY_ORBIT_GROW * Math.sqrt(Math.max(1, count)))
-  );
+  return linkDistance * (2 + 0.75 * Math.sqrt(Math.max(1, count)));
 }
 
-// Size-aware galaxy centres: fibonacci-sphere DIRECTIONS (flattened on y) with a
-// per-galaxy DISTANCE that grows with that galaxy's own node count. A huge galaxy
-// (e.g. a 10k-note folder) is flung far out into the void while small galaxies
-// stay near the centre, so big blobs stop crowding the little ones. `counts` is
-// indexed by galaxy id order; the returned anchors match that order.
+// Size-aware galaxy centres: fibonacci-sphere DIRECTIONS (flattened on y) at a
+// per-galaxy DISTANCE chosen so (a) no two galaxy FOOTPRINTS overlap and (b) a
+// huge galaxy sits farther out than the small ones. `counts` is indexed by
+// galaxy id order; the returned anchors match that order.
 export function galaxyAnchorsBySize(
   counts: number[],
   linkDistance: number,
@@ -97,20 +94,22 @@ export function galaxyAnchorsBySize(
   const G = counts.length;
   if (G <= 0) return [];
   if (G === 1) return [{ x: 0, y: 0, z: 0 }];
-  const maxCount = Math.max(...counts);
-  const baseR = galaxyRingRadius(G, linkDistance, maxCount);
-  const maxFoot = galaxyFootprint(maxCount, linkDistance);
+  const foots = counts.map((c) => galaxyFootprint(c, linkDistance));
+  const maxFoot = Math.max(...foots);
+  const sumFoot = foots.reduce((s, f) => s + f, 0);
+  // Shell big enough that the ring circumference exceeds the sum of footprint
+  // diameters (with margin) → footprints can't collide, plus one maxFoot pad.
+  const baseR =
+    Math.max(linkDistance * 6, (sumFoot * 2 * 1.5) / (2 * Math.PI)) + maxFoot;
   const golden = Math.PI * (3 - Math.sqrt(5));
   const out: GalaxyAnchor[] = [];
   for (let g = 0; g < G; g++) {
     const y = 1 - (2 * (g + 0.5)) / G; // -1..1 band
     const rh = Math.sqrt(Math.max(0, 1 - y * y));
     const angle = golden * g;
-    const wobble = 0.85 + 0.35 * galaxySeed(g, 7);
-    // Distance scales with THIS galaxy's footprint relative to the biggest —
-    // bigger galaxy → larger radius → farther from the origin (and small ones).
-    const foot = galaxyFootprint(counts[g], linkDistance);
-    const rg = baseR * wobble * (0.55 + 0.75 * (foot / maxFoot));
+    const wobble = 0.9 + 0.2 * galaxySeed(g, 7);
+    // Bigger galaxies pushed a bit farther out; still separated by footprints.
+    const rg = (baseR + foots[g] * 1.2) * wobble;
     out.push({
       x: Math.cos(angle) * rh * rg,
       y: y * rg * 0.55, // oblate
