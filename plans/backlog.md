@@ -67,6 +67,29 @@ created: 2026-04-23
 - **[DX-03] 개발 모드 핫 리로드** — 현재 수동 재시작.
 - **[DX-04] 로깅 포맷 표준화** — JSON 라인 로깅 + 레벨.
 
+## 그래프 / 시각화
+
+- **[GRAPH-01] 커뮤니티-번들 레이아웃 엔진 (별도 엔진)** — 사용자 요청(2026-07-13).
+  현재 그래프는 "폴더 은하계 = dandelion 성단 필드"(ForceLayout + 앵커) 미학.
+  이와 **별개로** ForceAtlas2/Gephi 스타일의 두 번째 엔진을 원함:
+  - **모습**: 각 커뮤니티가 **밀집한 색상 덩어리**(hull), 커뮤니티 사이는 **번들된
+    두꺼운 엣지 다발**로 연결. (참고 이미지: 노드에 `{x,y}` 좌표 라벨, 커뮤니티별
+    단색 채움, 곡선 번들 엣지 — Gephi ForceAtlas2 + edge bundling 룩.)
+  - **왜 별도 엔진인가**: 레이아웃 알고리즘(ForceAtlas2/LinLog: 인력=링크, 척력=
+    Barnes-Hut, 중력)과 렌더링(hierarchical/force-directed **edge bundling**,
+    per-community convex hull 채움)이 현재 d3-force-3d + sigma 파이프라인과 다름.
+    현재 worker(`graphSim.worker.ts`)의 앵커/디스크 포스와 공존 불가 — 별도 모드.
+  - **설계 스케치**:
+    - 새 skin/layout-mode 옵션 `graphSettings.layout: "galaxy" | "atlas"`.
+    - `atlasLayout.worker.ts`: ForceAtlas2 (graphology-layout-forceatlas2 사용
+      가능) 2D 배치 → 커뮤니티가 자연히 덩어리로 뭉침.
+    - Edge bundling: `d3-force`의 path bundling 또는 커뮤니티 centroid 경유
+      곡선(quadratic bezier through hub) — 인터-커뮤니티 엣지만 번들.
+    - 렌더: per-community convex hull(반투명 채움) + 번들 엣지 다발 + 노드.
+    - 2D 우선(참고 이미지가 2D). 기존 3D 은하계 모드와 토글.
+  - **범위**: 큰 기능. 자체 spec→plan→구현 사이클 필요. 현재 은하계 엔진과
+    독립적으로 붙였다 뗐다 할 수 있게.
+
 ## 사용자 경험
 
 - **[UX-01] 온보딩 마법사** — 첫 실행 시 "프로젝트 생성" → "첫 소스 추가" → "질문 해보기" 3단계 튜토리얼.
