@@ -1247,18 +1247,34 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
             ✓ {t.mcp_status_installed}
           </div>
 
+          <div style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: info.serving ? "#22c55e" : "#9aa0a8",
+                display: "inline-block",
+              }}
+              aria-hidden="true"
+            />
+            {info.serving
+              ? `${t.mcp_serving ?? "SSE server running"}${info.url ? ` — ${info.url}` : ""}`
+              : (t.mcp_not_serving ?? "SSE server stopped")}
+          </div>
+
           <div className="col" style={{ gap: 6 }}>
             <div style={{ fontWeight: 600, fontSize: 13 }}>
               {t.mcp_command_label}
             </div>
             {codeBox(info.command, "cmd")}
             <button
-              className="btn"
+              className="btn btn-primary"
               disabled={busy}
               onClick={() => void register()}
               style={{ alignSelf: "flex-start" }}
             >
-              {t.mcp_register_btn}
+              {busy ? (t.mcp_registering ?? "Registering…") : t.mcp_register_btn}
             </button>
           </div>
 

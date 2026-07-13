@@ -126,7 +126,11 @@ fn confine_root(state: &tauri::State<VaultRoot>, arg: &str) -> Result<String, St
 }
 
 #[tauri::command]
-pub fn open_vault(state: tauri::State<VaultRoot>, path: String) -> Result<VaultMeta, String> {
+pub fn open_vault(
+    app: tauri::AppHandle,
+    state: tauri::State<VaultRoot>,
+    path: String,
+) -> Result<VaultMeta, String> {
     let meta = vault::open_vault(&path)?;
     // meta.path is canonical; record it as the confinement root for fs commands.
     state.set(PathBuf::from(&meta.path));
@@ -134,6 +138,9 @@ pub fn open_vault(state: tauri::State<VaultRoot>, path: String) -> Result<VaultM
     // current selection (best-effort: a marker write failure must not block
     // opening the vault).
     let _ = settings::set_active_vault(&path);
+    // The SSE MCP server resolves the vault once at startup, so restart it (if
+    // running) to pick up the new active vault.
+    mcp_server::restart_if_serving(&app);
     Ok(meta)
 }
 
@@ -760,6 +767,21 @@ pub async fn mcp_register(app: tauri::AppHandle, vault_path: String) -> Result<S
     tauri::async_runtime::spawn_blocking(move || mcp_server::register(&app, &vault_path))
         .await
         .map_err(|e| format!("join failed: {e}"))?
+}
+
+/// Start the app-hosted SSE MCP server (idempotent).
+#[tauri::command]
+pub async fn mcp_serve(app: tauri::AppHandle) -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(move || mcp_server::serve(&app))
+        .await
+        .map_err(|e| format!("join failed: {e}"))?
+}
+
+/// Stop the app-hosted SSE MCP server.
+#[tauri::command]
+pub fn mcp_stop() -> Result<String, String> {
+    mcp_server::stop_sse();
+    Ok("MCP server stopped.".into())
 }
 
 // ---------------------------------------------------------------------------

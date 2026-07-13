@@ -81,6 +81,8 @@ pub fn run() {
             commands::mcp_registration_info,
             commands::mcp_install,
             commands::mcp_register,
+            commands::mcp_serve,
+            commands::mcp_stop,
             commands::local_classify,
             commands::local_query,
             commands::reindex_embeddings,
@@ -94,7 +96,16 @@ pub fn run() {
             commands::delete_schedule,
             commands::install_background_schedule,
         ])
-        .setup(|_app| Ok(()))
+        .setup(|app| {
+            // Auto-start the app-hosted SSE MCP server if it's been installed,
+            // so a registered `claude mcp add --transport sse memex …` just
+            // works each launch. Best-effort — a failure never blocks startup.
+            let handle = app.handle().clone();
+            std::thread::spawn(move || {
+                let _ = mcp_server::serve(&handle);
+            });
+            Ok(())
+        })
         .build(tauri::generate_context!())
         .expect("error while running Memex")
         .run(|_app, event| {
@@ -115,6 +126,7 @@ pub fn run() {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
             ) {
                 claude::cancel_all(); // reap in-flight claude children
+                mcp_server::stop_sse(); // don't orphan the SSE server child
                 // SAFETY: _exit simply ends the process; no Rust state needs
                 // unwinding, and it is async-signal-safe.
                 unsafe {

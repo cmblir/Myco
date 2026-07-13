@@ -232,6 +232,9 @@ export interface Strings {
   mcp_register_btn: string;
   mcp_offline_note: string;
   mcp_not_found: string;
+  mcp_serving?: string;
+  mcp_not_serving?: string;
+  mcp_registering?: string;
   s_model_lede: string;
   s_model_ingest: string;
   s_model_query: string;
@@ -741,8 +744,11 @@ export const STRINGS: Record<Lang, Strings> = {
     mcp_copy: "Copy",
     mcp_copied: "Copied",
     mcp_register_btn: "Register to Claude Code now",
+    mcp_serving: "SSE server running",
+    mcp_not_serving: "SSE server stopped",
+    mcp_registering: "Registering…",
     mcp_offline_note:
-      "Works even when Memex is closed — Claude launches the server itself.",
+      "The app hosts the SSE server while it's open and follows your active vault.",
     mcp_not_found:
       "MCP server files are missing from this build. Reinstall the latest Memex.",
     s_model_lede:

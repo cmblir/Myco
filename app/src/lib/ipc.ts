@@ -63,6 +63,8 @@ export interface ClaudeStatus {
 export interface McpRegInfo {
   found: boolean;
   installed: boolean;
+  serving: boolean;
+  url: string | null;
   python: string | null;
   script: string | null;
   command: string | null;

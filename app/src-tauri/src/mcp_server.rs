@@ -12,8 +12,27 @@
 //     which memex_mcp.py / project_registry.py read to locate the vault data.
 
 use std::path::PathBuf;
-use std::process::Command;
+use std::process::{Child, Command, Stdio};
+use std::sync::Mutex;
 use tauri::{AppHandle, Manager};
+
+/// The app hosts ONE long-running SSE server for its lifetime (Obsidian style):
+/// started on launch, stopped on quit, and restarted on a vault switch so it
+/// re-resolves the active vault (memex_mcp resolves PROJECT_ROOT once at import).
+static SSE_CHILD: Mutex<Option<Child>> = Mutex::new(None);
+
+/// SSE bind port. Fixed to match the documented `claude mcp add --transport sse
+/// memex http://localhost:22360/sse`; overridable for dev via MEMEX_MCP_PORT.
+fn sse_port() -> u16 {
+    std::env::var("MEMEX_MCP_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(22360)
+}
+
+pub fn sse_url() -> String {
+    format!("http://localhost:{}/sse", sse_port())
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct McpRegInfo {
@@ -21,9 +40,13 @@ pub struct McpRegInfo {
     pub found: bool,
     /// The app-data venv python exists (Install has been run).
     pub installed: bool,
+    /// The app-hosted SSE server is currently running.
+    pub serving: bool,
+    /// The SSE URL clients connect to (http://localhost:<port>/sse).
+    pub url: Option<String>,
     pub python: Option<String>,
     pub script: Option<String>,
-    /// `claude mcp add --scope user memex --env MEMEX_PROJECT_ROOT=… -- "<py>" "<script>"`.
+    /// `claude mcp add --transport sse memex http://localhost:22360/sse`.
     pub command: Option<String>,
     /// JSON snippet for claude_desktop_config.json.
     pub desktop_json: Option<String>,
@@ -127,6 +150,8 @@ fn not_found() -> McpRegInfo {
     McpRegInfo {
         found: false,
         installed: false,
+        serving: false,
+        url: None,
         python: None,
         script: None,
         command: None,
@@ -134,23 +159,20 @@ fn not_found() -> McpRegInfo {
     }
 }
 
-fn desktop_json(python: &str, script: &str, vault: &str) -> String {
-    // Build via serde_json so a path containing a quote or backslash is escaped
-    // correctly instead of producing malformed JSON the user would paste.
+/// claude_desktop_config.json snippet — a plain URL connector to the SSE server
+/// (works for Claude Desktop AND claude.ai, unlike a local stdio command).
+fn desktop_json(url: &str) -> String {
     let value = serde_json::json!({
-        "mcpServers": {
-            "memex": {
-                "command": python,
-                "args": [script],
-                "env": { "MEMEX_PROJECT_ROOT": vault }
-            }
-        }
+        "mcpServers": { "memex": { "url": url } }
     });
     serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
 }
 
-/// Registration info for exposing `vault_path` via the bundled MCP server.
-pub fn registration_info(app: &AppHandle, vault_path: &str) -> McpRegInfo {
+/// Registration info. The MCP server is now an app-hosted SSE server, so the
+/// registration is a single URL line independent of the vault path — the
+/// running server follows the app's active vault (and the app restarts it on a
+/// vault switch). `vault_path` is accepted for call-signature stability.
+pub fn registration_info(app: &AppHandle, _vault_path: &str) -> McpRegInfo {
     let Some(p) = paths(app) else {
         return not_found();
     };
@@ -158,18 +180,81 @@ pub fn registration_info(app: &AppHandle, vault_path: &str) -> McpRegInfo {
         return not_found(); // bundle is missing the server (build problem)
     }
     let installed = p.python.is_file();
-    let py = p.python.to_string_lossy().into_owned();
-    let sc = p.script.to_string_lossy().into_owned();
-    let command = format!(
-        "claude mcp add --scope user memex --env MEMEX_PROJECT_ROOT=\"{vault_path}\" -- \"{py}\" \"{sc}\""
-    );
+    let url = sse_url();
+    let command = format!("claude mcp add --transport sse memex {url}");
     McpRegInfo {
         found: true,
         installed,
-        desktop_json: Some(desktop_json(&py, &sc, vault_path)),
-        python: Some(py),
-        script: Some(sc),
+        serving: is_serving(),
+        desktop_json: Some(desktop_json(&url)),
+        url: Some(url),
+        python: Some(p.python.to_string_lossy().into_owned()),
+        script: Some(p.script.to_string_lossy().into_owned()),
         command: Some(command),
+    }
+}
+
+/// True when the app-hosted SSE child is alive.
+pub fn is_serving() -> bool {
+    let mut guard = SSE_CHILD.lock().unwrap();
+    match guard.as_mut() {
+        Some(ch) => match ch.try_wait() {
+            Ok(None) => true,          // still running
+            _ => {
+                *guard = None; // exited or errored — clear the slot
+                false
+            }
+        },
+        None => false,
+    }
+}
+
+/// Start the SSE server if it isn't already running. Idempotent. Requires that
+/// Install has created the venv. The running server resolves the vault from the
+/// active-vault marker the app maintains.
+pub fn serve(app: &AppHandle) -> Result<String, String> {
+    if is_serving() {
+        return Ok(sse_url());
+    }
+    let p = paths(app).ok_or("could not resolve app resource/data dirs")?;
+    if !p.script.is_file() {
+        return Err("bundled mcp-server is missing from the app resources".into());
+    }
+    if !p.python.is_file() {
+        return Err("MCP server not installed yet — run Install first".into());
+    }
+    let py = p.python.to_string_lossy().into_owned();
+    let child = Command::new(&p.python)
+        .arg(&p.script)
+        .arg("--sse")
+        .arg("--host")
+        .arg("127.0.0.1")
+        .arg("--port")
+        .arg(sse_port().to_string())
+        .env("PATH", crate::claude::augmented_path(&py))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("spawn SSE server failed: {e}"))?;
+    *SSE_CHILD.lock().unwrap() = Some(child);
+    Ok(sse_url())
+}
+
+/// Kill the SSE server if running (called on quit and before a restart).
+pub fn stop_sse() {
+    if let Some(mut ch) = SSE_CHILD.lock().unwrap().take() {
+        let _ = ch.kill();
+        let _ = ch.wait();
+    }
+}
+
+/// Restart the server so it re-resolves the (now different) active vault. No-op
+/// when the server isn't running — the next start picks up the new vault anyway.
+pub fn restart_if_serving(app: &AppHandle) {
+    if is_serving() {
+        stop_sse();
+        let _ = serve(app);
     }
 }
 
@@ -218,22 +303,28 @@ pub fn install(app: &AppHandle) -> Result<String, String> {
     Ok("MCP server installed.".to_string())
 }
 
-/// Run `claude mcp add …` (user scope) for `vault_path`. Requires the claude CLI.
-pub fn register(app: &AppHandle, vault_path: &str) -> Result<String, String> {
-    let info = registration_info(app, vault_path);
-    if !info.installed {
+/// Register the app-hosted SSE server with Claude Code (user scope). Ensures the
+/// server is running, then `claude mcp add --transport sse memex <url>` (after a
+/// best-effort remove so a re-register doesn't collide with a stale entry).
+pub fn register(app: &AppHandle, _vault_path: &str) -> Result<String, String> {
+    if !registration_info(app, "").installed {
         return Err("MCP server not installed yet — run Install first".into());
     }
-    let (py, sc) = (info.python.unwrap(), info.script.unwrap());
+    serve(app)?; // a URL connector is useless if nothing is listening
+    let url = sse_url();
     let claude = crate::claude::locate_bin("claude", "MEMEX_CLAUDE_PATH")
         .ok_or("claude CLI not found on PATH")?;
+    let path = crate::claude::augmented_path(&claude);
+    // Best-effort remove first — `claude mcp add` errors if `memex` already
+    // exists (e.g. a previous stdio registration), which would otherwise make
+    // Register fail on every run after the first.
+    let _ = Command::new(&claude)
+        .args(["mcp", "remove", "memex"])
+        .env("PATH", &path)
+        .output();
     let out = Command::new(&claude)
-        .args(["mcp", "add", "--scope", "user", "memex", "--env"])
-        .arg(format!("MEMEX_PROJECT_ROOT={vault_path}"))
-        .arg("--")
-        .arg(&py)
-        .arg(&sc)
-        .env("PATH", crate::claude::augmented_path(&claude))
+        .args(["mcp", "add", "--transport", "sse", "memex", &url])
+        .env("PATH", &path)
         .output()
         .map_err(|e| format!("spawn claude failed: {e}"))?;
     if !out.status.success() {
@@ -242,7 +333,7 @@ pub fn register(app: &AppHandle, vault_path: &str) -> Result<String, String> {
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
+    Ok(format!("Registered memex over SSE at {url}"))
 }
 
 #[cfg(test)]
@@ -250,27 +341,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn desktop_json_embeds_paths_and_vault_env() {
-        let j = desktop_json(
-            "/v/bin/python",
-            "/r/mcp-server/memex_mcp.py",
-            "/Users/me/Vault",
+    fn desktop_json_is_a_url_connector() {
+        let j = desktop_json("http://localhost:22360/sse");
+        let parsed: serde_json::Value = serde_json::from_str(&j).expect("must be valid JSON");
+        assert_eq!(
+            parsed["mcpServers"]["memex"]["url"],
+            "http://localhost:22360/sse"
         );
-        assert!(j.contains("\"command\": \"/v/bin/python\""));
-        assert!(j.contains("/r/mcp-server/memex_mcp.py"));
-        assert!(j.contains("\"MEMEX_PROJECT_ROOT\": \"/Users/me/Vault\""));
+        // No stdio command/args/env in the SSE connector form.
+        assert!(parsed["mcpServers"]["memex"]["command"].is_null());
     }
 
     #[test]
-    fn desktop_json_escapes_paths_with_special_chars() {
-        // A vault path containing a quote/backslash must be JSON-escaped, not
-        // produce malformed JSON the user would paste into their config.
-        let j = desktop_json("/py", "/s.py", r#"/Users/me/My "Vault"\dir"#);
-        let parsed: serde_json::Value = serde_json::from_str(&j).expect("must be valid JSON");
-        assert_eq!(
-            parsed["mcpServers"]["memex"]["env"]["MEMEX_PROJECT_ROOT"],
-            r#"/Users/me/My "Vault"\dir"#
-        );
+    fn sse_url_uses_the_configured_port() {
+        assert_eq!(sse_url(), format!("http://localhost:{}/sse", sse_port()));
     }
 
     #[test]
