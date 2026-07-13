@@ -6,11 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-13
+
+### Graph universe overhaul
+
+The Graph view is now a living universe. **Folder galaxies** (default on):
+notes group by parent folder (Louvain fallback on flat vaults), each group is
+pulled to its own anchor on a vast flattened shell and squashed onto a seeded
+tilted disc plane — several separate spiral-ish galaxies with a pulsing
+Andromeda-style core bulge, a faint white dust band (large galaxies only), and
+a slow per-galaxy rotation. Densely interlinked folders swell into bigger
+galaxies; isolated notes orbit their nearest linked star as moons. **Stellar
+classes**: every note renders as one of four seeded star types (main sequence,
+dwarf, red giant, neutron star with diffraction spikes) so the sky reads as a
+population. **Graph-only color mode** (auto / black / white / galaxy skins)
+independent of the app theme. **Motion**: click a node for a supernova +
+neural activation wave rippling through its BFS rings, idle synapse
+micro-firings, ambient meteors, and rare random **black hole / wormhole**
+events. **Spaceship mode** now flies a real CC0 hull (Quaternius) with
+inertial flight physics, banking, an engine particle trail and a HUD speed
+readout. **Timelapse** gains a 0.25×–4× speed slider (live mid-replay) and no
+longer leaves a ghost web behind on light themes.
+
+
 ### Embedded local model (built-in offline provider)
 
-The app now ships with a model inside: **HyperCLOVA X SEED 0.5B** (Q4 GGUF,
-412 MB, git-lfs) runs in-process via llama.cpp (`llama-cpp-2`, Metal on Apple
-silicon) — no Ollama install, no API key, works offline. Registered as the
+The app now ships with a model inside: **Gemma 3 1B instruct** (Q4_K_M GGUF,
+769 MB, git-lfs; © Google, Gemma Terms of Use bundled) runs in-process via
+llama.cpp (`llama-cpp-2`, Metal on Apple silicon) — no Ollama install, no API
+key, works offline. Registered as the
 always-on **Built-in (offline)** provider: Query/Lint route to it with inlined
 vault context; a `local_classify` command post-validates note types against the
 wiki enum. Chosen over Qwen2.5-0.5B after a spike (Qwen leaked Chinese
