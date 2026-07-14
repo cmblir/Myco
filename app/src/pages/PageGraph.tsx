@@ -999,11 +999,54 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   // at the galactic centre and the running d3-force-3d flings it outward,
   // physically shoving the placed stars aside. The galaxy assembles in real time.
   const REVEAL_MS = 18000;
-  const startTimelapse = (): void => {
+  // --- timelapse WebM recorder: captureStream on the WebGL canvas while the
+  // replay runs, download on finish. The vault-growing-into-a-galaxy clip is
+  // the single most shareable thing the app produces — one click, no tooling.
+  const tlRecorderRef = useRef<MediaRecorder | null>(null);
+  const stopTlRecorder = (): void => {
+    const rec = tlRecorderRef.current;
+    tlRecorderRef.current = null;
+    if (rec && rec.state !== "inactive") rec.stop();
+  };
+  const startTlRecorder = (): void => {
+    const canvas = sceneRef.current?.canvas;
+    if (!canvas || typeof MediaRecorder === "undefined") return;
+    try {
+      const stream = canvas.captureStream(30);
+      const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(
+        (m) => MediaRecorder.isTypeSupported(m),
+      );
+      const rec = new MediaRecorder(stream, {
+        mimeType: mime,
+        videoBitsPerSecond: 8_000_000,
+      });
+      const chunks: Blob[] = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      rec.onstop = () => {
+        if (chunks.length === 0) return;
+        const url = URL.createObjectURL(new Blob(chunks, { type: "video/webm" }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "memex-timelapse.webm";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      };
+      rec.start(500);
+      tlRecorderRef.current = rec;
+    } catch {
+      tlRecorderRef.current = null; // recording is best-effort sugar
+    }
+  };
+
+  const startTimelapse = (record = false): void => {
     const scene = sceneRef.current;
     const sim = simRef.current;
     const graph = graphRef.current;
     if (!scene || !sim || !graph || graph.order === 0) return;
+    scene.setCinematicOrbit(true); // recordings read as a produced shot
+    if (record) startTlRecorder();
 
     const present = new Set(graph.nodes());
     const order = tlOrderRef.current.filter((p) => present.has(p));
@@ -1051,6 +1094,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         sm.timelapseSettle();
         tlRafRef.current = null;
         setTlPlaying(false);
+        sc.setCinematicOrbit(false);
+        // Let the final settle breathe on camera before the clip ends.
+        window.setTimeout(stopTlRecorder, 2500);
       }
     };
     tlRafRef.current = requestAnimationFrame(step);
@@ -1070,7 +1116,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       sim.timelapseReveal(graph.nodes());
       sim.timelapseSettle();
       scene.refreshStyle(); // un-hid everything → full write to restore alpha/colour
+      scene.setCinematicOrbit(false);
     }
+    stopTlRecorder();
     setTlPlaying(false);
   };
 
@@ -1220,7 +1268,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
           <button
             type="button"
             className="graph-toolbar__btn"
-            onClick={tlPlaying ? pauseTimelapse : startTimelapse}
+            onClick={() => (tlPlaying ? pauseTimelapse() : startTimelapse())}
             aria-pressed={tlPlaying}
             aria-label={
               tlPlaying
@@ -1243,6 +1291,18 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 <path d="M3 2 L10 6 L3 10 Z" />
               </svg>
             )}
+          </button>
+          <button
+            type="button"
+            className="graph-toolbar__btn"
+            onClick={() => startTimelapse(true)}
+            disabled={tlPlaying}
+            aria-label={t.gr_timelapse_record ?? "Record timelapse (WebM)"}
+            title={t.gr_timelapse_record ?? "Record timelapse (WebM)"}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+              <circle cx="6" cy="6" r="4" />
+            </svg>
           </button>
           {/* Spaceship mode was only reachable via an undocumented F keypress —
               the most demo-able feature deserves a visible door. */}

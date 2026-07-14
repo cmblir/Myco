@@ -2186,6 +2186,20 @@ export class GraphScene {
     if (this.settings.edgeBundles) this.bundles.rebuild();
   }
 
+  /** Cinematic orbit for timelapse replays: a slow-but-visible sweep so the
+   * assembling galaxy is seen from a moving camera (recordings read as a
+   * produced shot, not a locked-off screencap). Restores the ambient policy
+   * (and its slow idle speed) when the replay ends. */
+  setCinematicOrbit(on: boolean): void {
+    this.controls.autoRotateSpeed = on ? 0.9 : 0.12;
+    this.controls.autoRotate = on ? !this.reducedMotion : this.ambientOn();
+  }
+
+  /** The WebGL canvas — used by the timelapse recorder (captureStream). */
+  get canvas(): HTMLCanvasElement {
+    return this.renderer.domElement;
+  }
+
   // All idle motion (auto-rotate, pulses, breathing) honours BOTH the OS
   // reduced-motion preference and the user's "Ambient motion" toggle.
   private ambientOn(): boolean {
