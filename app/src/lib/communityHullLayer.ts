@@ -2,9 +2,19 @@
 // filled blob behind each community's nodes, tinted its hue, so the flat map
 // reads as coloured territories (like Gephi's convex-hull community fills, but
 // rounded). Built as one THREE.Mesh of triangulated convex-hull fans, rebuilt
-// when the (static) atlas layout changes. Additive on dark, so overlaps glow.
+// when the (static) atlas layout changes.
+//
+// NORMAL blending only, and only the biggest communities get a fill: the
+// first cut drew ALL 71 hulls additively — in the dense middle of a 10k map
+// a dozen fills overlapped and stacked to a giant white puck that buried the
+// layout. Normal blending converges toward the tint instead of white, and
+// capping the count keeps territories readable as territories.
 import * as THREE from "three";
 import type { VaultGraph } from "./graphData";
+
+// Only the biggest communities read as "territories" — a fill for every tiny
+// topic just shingles the map. Gephi maps typically shade a handful too.
+const MAX_HULLS = 12;
 
 // 2D convex hull (monotonic chain) — pure, unit-tested. Returns hull points
 // CCW; fewer than 3 unique points returns them as-is.
@@ -47,10 +57,10 @@ export class CommunityHullLayer {
     this.mat = new THREE.MeshBasicMaterial({
       vertexColors: true,
       transparent: true,
-      opacity: dark ? 0.1 : 0.14,
+      opacity: dark ? 0.08 : 0.12,
       depthWrite: false,
       depthTest: false,
-      blending: dark ? THREE.AdditiveBlending : THREE.NormalBlending,
+      blending: THREE.NormalBlending,
       side: THREE.DoubleSide,
     });
     this.mesh = new THREE.Mesh(this.geom, this.mat);
@@ -61,8 +71,7 @@ export class CommunityHullLayer {
   }
 
   setDark(dark: boolean): void {
-    this.mat.opacity = dark ? 0.1 : 0.14;
-    this.mat.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
+    this.mat.opacity = dark ? 0.08 : 0.12;
     this.mat.needsUpdate = true;
   }
 
@@ -91,8 +100,12 @@ export class CommunityHullLayer {
     const pos: number[] = [];
     const col: number[] = [];
     const c = new THREE.Color();
-    for (const [cm, pts] of byCm) {
-      if (pts.length < 3) continue;
+    // Biggest communities only (see MAX_HULLS rationale in the header).
+    const chosen = [...byCm.entries()]
+      .filter(([, pts]) => pts.length >= 3)
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, MAX_HULLS);
+    for (const [cm, pts] of chosen) {
       const hull = convexHull(pts);
       if (hull.length < 3) continue;
       // Centroid + slight outward expansion so the fill hugs a bit past nodes.
@@ -104,7 +117,7 @@ export class CommunityHullLayer {
       }
       hx /= hull.length;
       hy /= hull.length;
-      const grow = 1.18;
+      const grow = 1.06;
       c.set(hue.get(cm) ?? "#8fa6d8");
       for (let i = 0; i < hull.length; i++) {
         const a1 = hull[i];

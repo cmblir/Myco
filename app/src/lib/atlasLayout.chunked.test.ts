@@ -27,9 +27,18 @@ function ringGraph(n: number): VaultGraph {
 describe("atlasIterationBudget / atlasSliceSize", () => {
   it("budget shrinks as the graph grows (big graphs pay more per iteration)", () => {
     expect(atlasIterationBudget(1000)).toBeGreaterThan(atlasIterationBudget(10000));
-    expect(atlasIterationBudget(10000)).toBe(40);
-    expect(atlasIterationBudget(100)).toBe(300); // capped
+    // FULL expansion budget even at scale — 40 iterations froze LinLog
+    // mid-collapse into one white ball (2026-07-14 regression).
+    expect(atlasIterationBudget(10000)).toBeGreaterThanOrEqual(120);
+    expect(atlasIterationBudget(100)).toBe(400); // capped
     expect(atlasIterationBudget(0)).toBe(0);
+  });
+
+  it("worker wall-time budget scales with node count", async () => {
+    const { atlasWorkerBudgetMs } = await import("./atlasLayout");
+    expect(atlasWorkerBudgetMs(10571)).toBeGreaterThanOrEqual(15000);
+    expect(atlasWorkerBudgetMs(100)).toBe(5000);
+    expect(atlasWorkerBudgetMs(1e6)).toBe(25000);
   });
 
   it("slice size collapses to 1 iteration past 5k nodes (no long tasks)", () => {
@@ -46,6 +55,7 @@ describe("applyAtlasLayout (chunked)", () => {
     const completed = await applyAtlasLayout(g, {
       targetRadius: 500,
       iterations: 40,
+      noWorker: true,
       onProgress: (done) => seen.push(done),
     });
     expect(completed).toBe(true);
@@ -66,6 +76,7 @@ describe("applyAtlasLayout (chunked)", () => {
     let calls = 0;
     const completed = await applyAtlasLayout(g, {
       targetRadius: 500,
+      noWorker: true,
       iterations: 10_000, // would take ages if not aborted
       onProgress: () => {
         calls++;
@@ -78,6 +89,6 @@ describe("applyAtlasLayout (chunked)", () => {
 
   it("empty graph resolves immediately", async () => {
     const g = new Graph({ type: "undirected", multi: false }) as unknown as VaultGraph;
-    await expect(applyAtlasLayout(g, { targetRadius: 100 })).resolves.toBe(true);
+    await expect(applyAtlasLayout(g, { targetRadius: 100, noWorker: true })).resolves.toBe(true);
   });
 });

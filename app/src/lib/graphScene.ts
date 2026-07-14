@@ -860,7 +860,13 @@ export class GraphScene {
     // Nebula is just ~9 sprites (8 community clouds + 1 halo), so it's cheap even
     // on a 10k-node vault — enable it regardless of perf-LOD so community colours
     // still read on large graphs (matches applyTheme, which omits the perfLod gate).
-    this.nebula = new NebulaLayer(this.graph, this.nodeIds, SHOW_NEBULA && amb.nebula);
+    // NOT in atlas mode: viewed top-down over a flat map the big soft halo
+    // sprite reads as one giant white puck dead centre, burying the layout.
+    this.nebula = new NebulaLayer(
+      this.graph,
+      this.nodeIds,
+      SHOW_NEBULA && amb.nebula && settings.layout !== "atlas",
+    );
     this.scene.add(this.nebula.group);
 
     // --- pulses (signals flowing along the edges, so the graph reads as alive) ---
@@ -2045,7 +2051,7 @@ export class GraphScene {
     this.coreGlow.setEnabled(false);
     this.band.points.visible = false;
     this.imposterEnabled = false;
-    this.nebula.setDark(SHOW_NEBULA && amb.nebula);
+    this.nebula.setDark(SHOW_NEBULA && amb.nebula && !this.atlasMode);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
     this.edgeOpacity = dark ? EDGE_OPACITY_DARK : EDGE_OPACITY_LIGHT;
