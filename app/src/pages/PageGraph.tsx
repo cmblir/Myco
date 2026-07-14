@@ -561,13 +561,41 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // no worker sim, so the scene just renders the fixed layout (+ community
     // hull fills). Everything downstream guards on simRef being null.
     if (s.layout === "atlas") {
-      applyAtlasLayout(graph, { targetRadius: s.linkDistance * ATLAS_RADIUS_MUL });
-      sceneRef.current?.syncPositions();
-      sceneRef.current?.layoutSettled(); // bundled strands over the static map
-      sceneRef.current?.fit();
-      container.classList.add("graph-ready");
+      // FA2 runs in event-loop slices (see atlasLayout.ts freeze postmortem):
+      // the map visibly unfolds as it converges, the UI stays interactive the
+      // whole time, and unmount/layout-switch aborts mid-run. NEVER run it
+      // synchronously — a 10k vault wedged the WebKit renderer for minutes
+      // and the persisted layout choice re-froze every app launch.
+      let atlasTookOver = false;
+      const atlasTakeOver = (): void => {
+        atlasTookOver = true;
+      };
+      container.addEventListener("wheel", atlasTakeOver, { passive: true, once: true });
+      container.addEventListener("pointerdown", atlasTakeOver, { once: true });
+      let slices = 0;
+      void applyAtlasLayout(graph, {
+        targetRadius: s.linkDistance * ATLAS_RADIUS_MUL,
+        shouldAbort: () => killed,
+        onProgress: () => {
+          if (killed) return;
+          // Live preview: show the map forming instead of a frozen loader.
+          sceneRef.current?.syncPositions();
+          container.classList.add("graph-ready");
+          if (!atlasTookOver && (slices = (slices + 1) % 8) === 0) {
+            sceneRef.current?.fit();
+          }
+        },
+      }).then((completed) => {
+        if (killed || !completed) return;
+        sceneRef.current?.syncPositions();
+        sceneRef.current?.layoutSettled(); // bundled strands over the static map
+        if (!atlasTookOver) sceneRef.current?.fit();
+        container.classList.add("graph-ready");
+      });
       return () => {
         killed = true;
+        container.removeEventListener("wheel", atlasTakeOver);
+        container.removeEventListener("pointerdown", atlasTakeOver);
         if (tlRafRef.current != null) {
           cancelAnimationFrame(tlRafRef.current);
           tlRafRef.current = null;
