@@ -133,6 +133,7 @@ export interface Strings {
   gr_semantic_edges_hint?: string;
   gr_edge_bundles?: string;
   gr_edge_bundles_hint?: string;
+  gr_fly_btn?: string;
   gr_trace: string;
   gr_trace_hint: string;
   gr_spaceship: string;
@@ -654,6 +655,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_semantic_edges_hint: "Overlay dim edges between similar notes",
     gr_edge_bundles: "Bundled strands",
     gr_edge_bundles_hint: "Merge links between two topics into one weighted arc",
+    gr_fly_btn: "Spaceship mode (F)",
     gr_trace: "Trace path",
     gr_trace_hint: "Click a start node, then an end node",
     gr_spaceship: "Spaceship",
@@ -1185,6 +1187,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_semantic_edges_hint: "유사한 노트 사이에 흐린 엣지 표시",
     gr_edge_bundles: "번들 스트랜드",
     gr_edge_bundles_hint: "두 토픽 사이 링크를 하나의 가중 아크로 묶기",
+    gr_fly_btn: "우주선 모드 (F)",
     gr_trace: "경로 추적",
     gr_trace_hint: "시작 노드를 누른 뒤 끝 노드를 누르세요",
     gr_spaceship: "우주선 비행",
@@ -1712,6 +1715,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_semantic_edges_hint: "類似ノート間に淡いエッジを表示",
     gr_edge_bundles: "バンドルストランド",
     gr_edge_bundles_hint: "2つのトピック間のリンクを1本の重み付きアークに束ねる",
+    gr_fly_btn: "宇宙船モード (F)",
     gr_trace: "経路トレース",
     gr_trace_hint: "開始ノードをクリックし、次に終了ノードをクリック",
     gr_spaceship: "宇宙船",

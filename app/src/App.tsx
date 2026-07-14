@@ -282,7 +282,16 @@ export default function App(): JSX.Element {
   else if (route === "graph")
     body = (
       <ErrorBoundary area="the graph">
-        <Suspense fallback={<div className="graph-loading" />}>
+        {/* The three.js chunk is ~800KB — the parse gap used to be a BLANK
+            pane on the marquee view. Reuse the constellation tip so the wait
+            reads as part of the show. */}
+        <Suspense
+          fallback={
+            <div className="graph-loading">
+              <div className="graph-loading-tip">{t.gr_loading ?? "aligning constellations…"}</div>
+            </div>
+          }
+        >
           <PageGraph t={t} />
         </Suspense>
       </ErrorBoundary>

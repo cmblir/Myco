@@ -2123,6 +2123,9 @@ hr {
   flex: 1;
   min-height: 540px;
   background: var(--bg);
+  /* Suspense fallback hosts the absolute .graph-loading-tip (chunk parse gap). */
+  position: relative;
+  color: var(--ink-3);
 }
 
 /* Right-side drawer */

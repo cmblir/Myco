@@ -80,7 +80,10 @@ export function skinAmbience(skin: GraphSkinKey, dark: boolean): SkinAmbience {
     case "galaxy":
       return { starfield: true, nebula: true, meteors: true };
     default:
-      // Pre-skin behaviour: starfield on both themes, nebula dark-only.
-      return { starfield: true, nebula: dark, meteors: false };
+      // Auto skin: starfield on both themes, nebula dark-only — and meteors on
+      // dark too. First-run users land here and never find the skin picker;
+      // shooting stars are near-free (one LineSegments draw, ≤3 trails) and
+      // they're the difference between "static chart" and "alive sky".
+      return { starfield: true, nebula: dark, meteors: dark };
   }
 }

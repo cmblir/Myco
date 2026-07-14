@@ -66,11 +66,11 @@ describe("skinAmbience", () => {
     });
   });
 
-  it("auto keeps the pre-skin behaviour (starfield always, nebula dark-only)", () => {
+  it("auto: starfield always, nebula+meteors dark-only (first-run sky is alive)", () => {
     expect(skinAmbience("auto", true)).toEqual({
       starfield: true,
       nebula: true,
-      meteors: false,
+      meteors: true,
     });
     expect(skinAmbience("auto", false)).toEqual({
       starfield: true,

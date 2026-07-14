@@ -36,7 +36,15 @@ export default function OnboardingWizard({
 
   async function pickVault(): Promise<void> {
     const path = await ipc.pickDirectory();
-    if (path) await openVault(path);
+    if (!path) return;
+    await openVault(path);
+    // openVault never rejects — it stores failures in `error` and only sets
+    // `currentVault` on success. Advance to step 2 only when the pick actually
+    // linked a vault, so a failed open keeps the user on this step. setStep(1)
+    // (not s + 1) because this action belongs to step 1 and the async resolve
+    // must not double-advance if the user already clicked Next meanwhile.
+    const { currentVault: opened, error } = useVaultStore.getState();
+    if (opened && !error) setStep(1);
   }
 
   const steps: Step[] = [

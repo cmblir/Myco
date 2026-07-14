@@ -86,6 +86,9 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
       { type: "nav", label: t.nav_graph, to: "graph" },
       { type: "nav", label: t.nav_history, to: "history" },
       { type: "nav", label: t.nav_provenance, to: "provenance" },
+      { type: "nav", label: t.nav_tags, to: "tags" },
+      { type: "nav", label: t.nav_study, to: "study" },
+      { type: "nav", label: t.nav_schedules, to: "schedules" },
       { type: "nav", label: t.nav_settings, to: "settings" },
     ];
     const pages: CmdEntry[] = collectFiles(fileTree).map((n) => ({
@@ -258,6 +261,9 @@ function iconFor(entry: CmdEntry): IconName {
   if (entry.to === "provenance") return "quote";
   if (entry.to === "ingest") return "upload";
   if (entry.to === "query") return "msg";
+  if (entry.to === "tags") return "book";
+  if (entry.to === "study") return "sparkles";
+  if (entry.to === "schedules") return "history";
   if (entry.to === "settings") return "settings";
   return "arrowR";
 }
