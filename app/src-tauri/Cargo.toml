@@ -32,6 +32,9 @@ pdf-extract = "0.10.0"
 # llama.cpp at build time (adds ~5 min to a clean release build).
 llama-cpp-2 = "0.1.150"
 zip = { version = "4.2.0", default-features = false, features = ["deflate"] }
+# Recoverable deletes: delete_path moves entries to the OS trash instead of
+# unlinking them, so a mis-click never permanently destroys notes.
+trash = "5.2.3"
 
 [dev-dependencies]
 wiremock = "0.6"

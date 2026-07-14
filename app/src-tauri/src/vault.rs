@@ -628,16 +628,15 @@ pub fn create_folder(parent: &str, name: &str) -> Result<String, String> {
     Ok(target.to_string_lossy().into_owned())
 }
 
+/// Move a file or directory to the OS trash (recoverable) instead of
+/// unlinking it. Deliberately NO fallback to a hard delete: if the trash
+/// operation fails we surface the error rather than silently destroying data.
 pub fn delete_path(path: &str) -> Result<(), String> {
     let target = Path::new(path);
     if !target.exists() {
         return Err(format!("not found: {path}"));
     }
-    if target.is_dir() {
-        std::fs::remove_dir_all(target).map_err(|e| format!("rmdir failed: {e}"))
-    } else {
-        std::fs::remove_file(target).map_err(|e| format!("rm failed: {e}"))
-    }
+    trash::delete(target).map_err(|e| format!("move to trash failed: {e}"))
 }
 
 pub fn rename_path(from: &str, to_name: &str) -> Result<String, String> {
@@ -1191,16 +1190,20 @@ mod tests {
     }
 
     #[test]
-    fn delete_path_removes_file_and_dir() {
+    fn delete_path_moves_file_and_dir_to_trash() {
         let dir = temp_vault("del");
         let f = dir.join("a.md");
         fs::write(&f, "x").unwrap();
         delete_path(f.to_str().unwrap()).unwrap();
+        // delete_path routes through the OS trash; we only assert the entry is
+        // gone from its original path (its trash destination is OS-specific).
         assert!(!f.exists());
         let sub = dir.join("sub");
         fs::create_dir_all(sub.join("inner")).unwrap();
         delete_path(sub.to_str().unwrap()).unwrap();
         assert!(!sub.exists());
+        // A path that no longer exists must error, not silently succeed.
+        assert!(delete_path(f.to_str().unwrap()).is_err());
     }
 
     #[test]
