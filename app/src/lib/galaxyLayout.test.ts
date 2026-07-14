@@ -1,58 +1,38 @@
 // Multi-galaxy layout geometry + folder grouping (pure logic).
 import { describe, expect, it } from "vitest";
 import {
-  clusterAnchors,
-  galaxyAnchors,
+  clusterOrbitRadius,
   galaxyAnchorsBySize,
   galaxyFootprint,
   galaxyNormal,
-  galaxyRingRadius,
   galaxySizeBoost,
 } from "./galaxyLayout";
 import { folderGroups } from "./graphData";
 
-describe("galaxyAnchors", () => {
-  it("returns the origin for a single galaxy and [] for none", () => {
-    expect(galaxyAnchors(0, 45, 10)).toEqual([]);
-    expect(galaxyAnchors(1, 45, 10)).toEqual([{ x: 0, y: 0, z: 0 }]);
-  });
-
-  it("scatters G galaxies on a flattened shell with a seeded radius wobble", () => {
-    const anchors = galaxyAnchors(5, 45, 30);
-    const r = galaxyRingRadius(5, 45, 30);
-    expect(anchors).toHaveLength(5);
-    for (const a of anchors) {
-      const d = Math.hypot(a.x, a.y, a.z);
-      expect(d).toBeGreaterThan(r * 0.5);
-      expect(d).toBeLessThanOrEqual(r * 1.21); // wobble ceiling 1.2×
-      expect(Math.abs(a.y)).toBeLessThanOrEqual(r * 0.67); // oblate
-    }
-    // Every anchor pair sits farther apart than a group's own orbit ring —
-    // galaxies must not overlap.
-    const groupR = 45 * (0.35 + 0.07 * Math.sqrt(30));
-    for (let i = 0; i < anchors.length; i++) {
-      for (let j = i + 1; j < anchors.length; j++) {
-        const d = Math.hypot(
-          anchors[i].x - anchors[j].x,
-          anchors[i].y - anchors[j].y,
-          anchors[i].z - anchors[j].z,
-        );
-        expect(d).toBeGreaterThan(groupR * 2);
-      }
-    }
-    // Deterministic: identical inputs, identical scatter.
-    expect(galaxyAnchors(5, 45, 30)).toEqual(anchors);
-  });
-
-  it("ring radius grows with galaxy count and group size", () => {
-    expect(galaxyRingRadius(8, 45, 30)).toBeGreaterThan(galaxyRingRadius(3, 45, 30));
-    expect(galaxyRingRadius(3, 45, 200)).toBeGreaterThan(galaxyRingRadius(3, 45, 10));
-  });
-});
-
 describe("galaxyFootprint", () => {
   it("grows with node count", () => {
     expect(galaxyFootprint(1000, 45)).toBeGreaterThan(galaxyFootprint(50, 45));
+  });
+
+  // The cross-module invariant that used to be a silently-drifting comment:
+  // a cluster's packing footprint must contain its worker orbit ring (members
+  // orbit at ring × jitter ≤ ring), even for densely-boosted clusters —
+  // otherwise packed neighbours visually overlap and the separation collapses.
+  it("contains the worker orbit ring at every size (boost ≤ 2×)", () => {
+    for (const count of [1, 4, 10, 50, 200, 1000, 10000]) {
+      for (const boost of [1, 1.5, 2]) {
+        expect(galaxyFootprint(count, 45)).toBeGreaterThan(
+          clusterOrbitRadius(count, 45, boost),
+        );
+      }
+    }
+  });
+});
+
+describe("clusterOrbitRadius", () => {
+  it("grows with member count and size boost", () => {
+    expect(clusterOrbitRadius(100, 45)).toBeGreaterThan(clusterOrbitRadius(10, 45));
+    expect(clusterOrbitRadius(10, 45, 1.5)).toBeGreaterThan(clusterOrbitRadius(10, 45, 1));
   });
 });
 
@@ -98,40 +78,6 @@ describe("galaxyAnchorsBySize", () => {
   it("is deterministic", () => {
     expect(galaxyAnchorsBySize([10, 20, 30], 45)).toEqual(
       galaxyAnchorsBySize([10, 20, 30], 45),
-    );
-  });
-});
-
-describe("clusterAnchors", () => {
-  const center = { x: 100, y: 0, z: -50 };
-
-  it("returns the centre for a single-cluster galaxy", () => {
-    expect(clusterAnchors(center, 40, 1, 0)).toEqual([{ ...center }]);
-  });
-
-  it("fans N clusters within the galaxy footprint, all distinct in 3D", () => {
-    const pts = clusterAnchors(center, 40, 5, 2);
-    expect(pts).toHaveLength(5);
-    for (const p of pts) {
-      const d = Math.hypot(p.x - center.x, p.y - center.y, p.z - center.z);
-      // footprint × spiral(≤1) × jitter(≤1.3) — allow the jitter headroom.
-      expect(d).toBeLessThanOrEqual(40 * 1.3 * 1.05);
-    }
-    const keys = new Set(
-      pts.map((p) => `${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}`),
-    );
-    expect(keys.size).toBe(5);
-  });
-
-  it("spreads clusters off a single plane (not a flat line)", () => {
-    const pts = clusterAnchors(center, 40, 8, 1);
-    const ys = new Set(pts.map((p) => p.y.toFixed(2)));
-    expect(ys.size).toBeGreaterThan(1); // varies in y → not coplanar
-  });
-
-  it("is deterministic", () => {
-    expect(clusterAnchors(center, 40, 4, 1)).toEqual(
-      clusterAnchors(center, 40, 4, 1),
     );
   });
 });

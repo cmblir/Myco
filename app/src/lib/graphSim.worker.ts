@@ -26,11 +26,31 @@ import {
 import type { GraphSettings } from "./graphSettings";
 import { bigGraphDecay } from "./simCooling";
 import {
+  clusterOrbitRadius,
   galaxyAnchorsBySize,
   galaxyNormal,
   galaxySizeBoost,
   type GalaxyAnchor,
 } from "./galaxyLayout";
+import {
+  REPEL_SCALE,
+  CENTER_SCALE,
+  CLUSTER_SCALE,
+  HUB_PIN,
+  DUST_PULL,
+  BIGBANG_BURST,
+  SIM_ALPHA_MIN,
+  INTER_LINK_DIST_MUL,
+  INTER_LINK_STR_MUL,
+  INTER_GALAXY_STR_MUL,
+  CLUSTERED_GRAVITY_MUL,
+  ORPHAN_GRAVITY_MUL,
+  CHARGE_RANGE_MUL,
+  ANCHOR_SCALE,
+  ANCHOR_HUB_MUL,
+  FLATTEN_SCALE,
+} from "./layoutConfig";
+import { computeLayoutMetrics } from "./layoutMetrics";
 
 // Deterministic RNG — copied from graphData so the worker bundle doesn't pull in
 // graphology. Must stay identical to graphData's so timelapse spawn jitter matches.
@@ -82,42 +102,10 @@ interface NodeInit {
   rJitter: number;
 }
 
-// --- physics constants (verbatim from the former main-thread createSim) -------
-const REPEL_SCALE = 9;
-const CENTER_SCALE = 0.13;
-const CLUSTER_SCALE = 0.18;
-const HUB_PIN = 3;
-// Per-cluster orbit ring — leaves radiate from their hub on visible spokes (the
-// dandelion/firework look), tuned so each cluster reads as a distinct starburst.
-const ORBIT_BASE = 0.32;
-const ORBIT_GROW = 0.06;
-const DUST_PULL = 0.18;
-const BIGBANG_BURST = 22;
-const SIM_ALPHA_MIN = 0.005;
-const INTER_LINK_DIST_MUL = 1.8;
-// Links between DIFFERENT clusters attract almost not at all, so every cluster
-// floats to its OWN anchor as a distinct dandelion regardless of how densely the
-// vault cross-links them. Without this, inter-cluster links reel a connected
-// folder into one central mush (the "뭉침"); the links still render as faint
-// threads between the separated clusters.
-const INTER_LINK_STR_MUL = 0.02;
-// Links BETWEEN top-level folders (galaxies) barely attract — otherwise the
-// link force drags every folder into one merged ball and the anchors can't hold
-// them apart (why a real, cross-linked vault collapsed into one blob while a
-// link-free mock separated). Near-zero so folders stay distinct galaxies.
-const INTER_GALAXY_STR_MUL = 0.02;
-const CLUSTERED_GRAVITY_MUL = 0.15;
-const ORPHAN_GRAVITY_MUL = 0.04;
-const CHARGE_RANGE_MUL = 3.2;
-// Folder-galaxies mode: pull each group FIRMLY toward its own anchor. Must be
-// strong enough that folder separation is the STABLE equilibrium — a weak pull
-// only held the seeded start, and any reheat (drag / slider) let gravity+charge
-// collapse every galaxy back into one ball that never recovered.
-const ANCHOR_SCALE = 0.28;
-const ANCHOR_HUB_MUL = 2.5;
-// Disc flattening: pull members onto their galaxy's tilted disc plane — the
-// squash that turns a ball of stars into something Andromeda-shaped.
-const FLATTEN_SCALE = 0.14;
+// Physics constants live in layoutConfig.ts (single source of truth, backlog
+// A1) — imported above so the worker, the layout-geometry module and the tests
+// can never drift apart again.
+//
 // In the worker the tick loop yields 0ms — it isn't the UI thread, so the only
 // reason to yield is to let queued messages (drag/setFixed) run between ticks.
 const WORKER_YIELD_MS = 0;
@@ -395,10 +383,12 @@ function build(
         }
         const count = cn.get(n.community) ?? 1;
         // Galaxy mode: densely interlinked groups swell (galaxySizeBoost).
-        const ringR =
-          cur.linkDistance *
-          (ORBIT_BASE + ORBIT_GROW * Math.sqrt(count)) *
-          (sizeBoost.get(n.community) ?? 1);
+        // Shared formula (galaxyLayout) so the packing footprint stays honest.
+        const ringR = clusterOrbitRadius(
+          count,
+          cur.linkDistance,
+          sizeBoost.get(n.community) ?? 1,
+        );
         const rTarget = ringR * n.rJitter;
         const corr = (rTarget - dist) * k;
         n.vx = (n.vx ?? 0) + (dx / dist) * corr;
@@ -479,7 +469,13 @@ function build(
       lastPost = nowMs;
     }
     if (settled) {
-      (self as unknown as Worker).postMessage({ type: "settle" });
+      // Ship the settled layout's ACTUAL extent + per-cluster centroids with
+      // the settle notice (backlog A1) — the main thread frames the camera and
+      // rebuilds bundle strands from measurements, not linkDistance guesses.
+      (self as unknown as Worker).postMessage({
+        type: "settle",
+        metrics: computeLayoutMetrics(tlActive ?? nodes),
+      });
       return;
     }
     driverTimer = setTimeout(drive, WORKER_YIELD_MS);
