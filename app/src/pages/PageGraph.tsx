@@ -13,6 +13,7 @@ import GraphControls from "../components/GraphControls";
 import GraphInspector from "../components/GraphInspector";
 import ShipHud from "../components/ShipHud";
 import GraphGaps from "../components/GraphGaps";
+import GraphHelp from "../components/GraphHelp";
 import GraphLegend from "../components/GraphLegend";
 import {
   DEFAULT_GRAPH_SETTINGS,
@@ -183,6 +184,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const scaleHideRef = useRef<number | null>(null);
   // Gap-analysis panel (orphans / missing / under-cited / disconnected …).
   const [gapsOpen, setGapsOpen] = useState(false);
+  // Gesture cheat-sheet popover ("?" toolbar button).
+  const [helpOpen, setHelpOpen] = useState(false);
   const [tlPlaying, setTlPlaying] = useState(false);
   // Bumped on webglcontextrestored to force a clean scene rebuild (WKWebView
   // drops the GL context on backgrounding; three.js does not auto-restore the
@@ -1092,6 +1095,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         tlRafRef.current = requestAnimationFrame(step);
       } else {
         sm.timelapseSettle();
+        // Finale: the year-of-notes replay ends on a bang — a supernova at the
+        // last (newest) star revealed. No-op under OS reduced motion.
+        if (order.length > 0) sc.supernovaAt(order[order.length - 1]);
         tlRafRef.current = null;
         setTlPlaying(false);
         sc.setCinematicOrbit(false);
@@ -1376,6 +1382,18 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               />
             </svg>
           </button>
+          {/* Gesture cheat-sheet — click/double-click/Cmd-click/Esc/F/drag were
+              previously undocumented; the "?" is their one visible door. */}
+          <button
+            type="button"
+            className="graph-toolbar__btn"
+            onClick={() => setHelpOpen((v) => !v)}
+            aria-pressed={helpOpen}
+            aria-label={t.gr_help_btn ?? "Gestures & keys"}
+            title={t.gr_help_btn ?? "Gestures & keys"}
+          >
+            ?
+          </button>
         </div>
         <div className="graph-body">
           <div className="graph-canvas-wrap">
@@ -1462,6 +1480,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 }}
                 onClose={() => setGapsOpen(false)}
               />
+            ) : null}
+            {helpOpen ? (
+              <GraphHelp t={t} onClose={() => setHelpOpen(false)} />
             ) : null}
           </div>
           <GraphControls

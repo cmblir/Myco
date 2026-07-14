@@ -39,7 +39,7 @@ import { SupernovaFx } from "./supernovaFx";
 import { planWave } from "./activationWave";
 import { MeteorLayer } from "./meteorLayer";
 import { CoreGlowLayer } from "./coreGlowLayer";
-import { CosmicEvents } from "./cosmicEvents";
+import { CosmicEvents, type EventKind } from "./cosmicEvents";
 import { GalacticBandLayer } from "./galacticBandLayer";
 import { GalaxyImposterLayer } from "./galaxyImposterLayer";
 import { CommunityHullLayer } from "./communityHullLayer";
@@ -96,6 +96,11 @@ const EDGE_BASE_DARK = 0.22; // per-end brightness (edges are tissue, not light)
 const EDGE_BASE_LIGHT = 0.4;
 const EDGE_HI = 1.15; // incident edges on hover (pop)
 const EDGE_DIM = 0.05; // non-incident edges on hover (fade, not vanish)
+// Hover micro-pop: the hovered star eases to ×HOVER_POP_SCALE over
+// HOVER_POP_MS and back on leave. Deliberately parallel to the ingest pulse
+// (style.pulseId/pulseScale) — hijacking those would fight a live ingest glow.
+const HOVER_POP_SCALE = 1.3;
+const HOVER_POP_MS = 150;
 // Structure is grey; signal is nodes (calm-cosmic-web spec A2): default edges
 // are pulled halfway toward a neutral so the mesh reads as connective tissue
 // and the community hues live in the stars. Dark theme: cool mid-grey. Light
@@ -556,6 +561,10 @@ export class GraphScene {
   private dragMoved = false;
   private downAt: { x: number; y: number } | null = null;
   private hoverId: string | null = null;
+  // Hover micro-pop blends (0..1) per node — the hovered star eases toward 1,
+  // everything else drains toward 0 and is dropped once fully back at base
+  // size. A tiny array: it only ever holds stars mid-animation.
+  private hoverPops: { id: string; blend: number; target: 0 | 1 }[] = [];
   // Latest hover position awaiting a pick. pickNode projects all nodes, so we
   // coalesce to at most ONE pick per render frame instead of one per pointermove
   // (which fires 100-120×/s on fast moves / high-refresh input).
@@ -1119,12 +1128,67 @@ export class GraphScene {
       intn.setX(i, a.hidden ? 0 : inten); // hidden cores must not bloom
       kind.setX(i, a.starKind ?? 0);
     }
+    // Reapply the hover micro-pop on top of the full rewrite so a style push
+    // mid-pop (or while the pop is settled at full scale) doesn't snap the
+    // star back to base size.
+    for (const p of this.hoverPops) {
+      const idx = this.idIndex.get(p.id);
+      if (idx !== undefined) siz.setX(idx, this.popSize(p.id, p.blend));
+    }
     pos.needsUpdate = true;
     col.needsUpdate = true;
     siz.needsUpdate = true;
     alp.needsUpdate = true;
     intn.needsUpdate = true;
     kind.needsUpdate = true;
+  }
+
+  // Rendered a_size for a node at a given hover-pop blend — composes with the
+  // ingest pulse exactly the way writeNodes does, then eases the pop on top.
+  private popSize(id: string, blend: number): number {
+    const a = this.graph.getNodeAttributes(id);
+    const { pulseId, pulseScale, tints } = this.style;
+    const base =
+      pulseId === id && tints.get(id) !== undefined ? a.size * pulseScale : a.size;
+    const e = 1 - Math.pow(1 - blend, 3); // ease-out cubic: fast attack, soft landing
+    return base * (1 + (HOVER_POP_SCALE - 1) * e);
+  }
+
+  // Hover micro-pop bookkeeping: the newly hovered star eases toward full pop,
+  // every other tracked star eases back. Gated on ambientOn() — reduced-motion
+  // users get no pop (the neighbourhood highlight already marks hover).
+  private setHoverPop(id: string | null): void {
+    for (const p of this.hoverPops) if (p.id !== id) p.target = 0;
+    if (!id || !this.ambientOn()) return;
+    const cur = this.hoverPops.find((p) => p.id === id);
+    if (cur) cur.target = 1;
+    else this.hoverPops.push({ id, blend: 0, target: 1 });
+  }
+
+  // Advance the pop blends and rewrite ONLY the affected a_size floats (a
+  // handful at most) — the full writeNodes pass is style-driven, not per-frame.
+  // Entries settled at full pop stop writing; drained entries restore base
+  // size once and drop out, so an idle frame touches no buffers at all.
+  private hoverPopTick(dt: number): void {
+    if (this.hoverPops.length === 0) return;
+    const siz = this.nodeGeom.getAttribute("a_size") as THREE.BufferAttribute;
+    const step = (dt * 1000) / HOVER_POP_MS;
+    let touched = false;
+    for (let i = this.hoverPops.length - 1; i >= 0; i--) {
+      const p = this.hoverPops[i];
+      const before = p.blend;
+      p.blend =
+        p.target === 1 ? Math.min(1, p.blend + step) : Math.max(0, p.blend - step);
+      if (p.blend !== before) {
+        const idx = this.idIndex.get(p.id);
+        if (idx !== undefined) {
+          siz.setX(idx, this.popSize(p.id, p.blend));
+          touched = true;
+        }
+      }
+      if (p.blend === 0 && p.target === 0) this.hoverPops.splice(i, 1);
+    }
+    if (touched) siz.needsUpdate = true;
   }
 
   // Rebuild the endpoint-colour cache from style (community hue pulled halfway
@@ -2086,6 +2150,24 @@ export class GraphScene {
     this.wave.setPlan(planWave((n) => this.graph.neighbors(n), id));
   }
 
+  /** Detonate the selection supernova at a node WITHOUT the activation wave —
+   * the timelapse finale on the last-revealed star. Honours the OS
+   * reduced-motion preference like impulse(). */
+  supernovaAt(id: string): void {
+    if (this.reducedMotion || !this.graph.hasNode(id)) return;
+    const a = this.graph.getNodeAttributes(id);
+    this.nova.trigger(a.x, a.y, a.z, a.size, a.color);
+  }
+
+  /** On-demand cosmic event (black hole / wormhole) at an explicit world
+   * position — bypasses the idle scheduler's random timer. Same gates as the
+   * scheduled path (dark theme, ambient motion on, not perf mode); a running
+   * event wins and the call is dropped. */
+  cosmicEventAt(kind: EventKind, worldPos: { x: number; y: number; z: number }): void {
+    if (!this.darkTheme || this.perfLod || !this.ambientOn()) return;
+    this.cosmic.triggerAt(kind, worldPos);
+  }
+
   // One idle synapse firing: a degree-weighted random node ripples a small dim
   // wave (1–2 hops). Deterministic (starRand over a counter) so idle activity
   // replays identically. Skipped while a previous ripple is still running.
@@ -2496,6 +2578,9 @@ export class GraphScene {
       this.nova.update(dt);
       this.synapse.update(dt);
       this.dust.update(dt);
+      // Hover micro-pop: entries exist only while a pop is animating (the
+      // ambient/reduced-motion gate happens at creation time in setHoverPop).
+      this.hoverPopTick(dt);
       this.updateLabels();
       this.render();
       this.labelRenderer.render(this.scene, this.camera);
@@ -2693,6 +2778,7 @@ export class GraphScene {
     this.renderer.domElement.style.cursor = id ? "pointer" : "grab";
     if (id !== this.hoverId) {
       this.hoverId = id;
+      this.setHoverPop(id);
       this.cb.onNodeHover(id);
     }
   }
@@ -2714,6 +2800,7 @@ export class GraphScene {
       // starting a camera orbit on empty space — drop the hover highlight so the
       // scene isn't stuck dimmed while the user rotates.
       this.hoverId = null;
+      this.setHoverPop(null);
       this.cb.onNodeHover(null);
     }
   };

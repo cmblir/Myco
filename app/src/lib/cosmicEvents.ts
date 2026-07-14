@@ -1,7 +1,8 @@
-// Rare ambient cosmic events — every 40–120 s of idle time either a BLACK
-// HOLE opens near a galaxy (dark core, hot spinning accretion disc, a stream
-// of sparks spiralling in) or a WORMHOLE bridges two galaxies (a portal ring
-// at each end, particles diving into one and bursting out of the other).
+// Rare ambient cosmic events — the first ~15 s into a session, then every
+// 40–120 s of idle time, either a BLACK HOLE opens near a galaxy (dark core,
+// hot spinning accretion disc, a stream of sparks spiralling in) or a
+// WORMHOLE bridges two galaxies (a portal ring at each end, particles diving
+// into one and bursting out of the other). triggerAt() is the on-demand door.
 // Purely visual: the layout is never touched. One event at a time; both
 // effects are a couple of point-sprite draw calls with small particle pools.
 // Additive light — the scene gates updates to dark skins + ambient motion.
@@ -9,6 +10,9 @@ import * as THREE from "three";
 
 const EVENT_GAP_MIN = 40; // seconds between events
 const EVENT_GAP_VAR = 80;
+// The FIRST event of a session lands fast (~15 s) so people actually see one;
+// every later gap uses the full EVENT_GAP range above.
+const FIRST_EVENT_DELAY = 15;
 // Scheduling/placement use Math.random ON PURPOSE — events should genuinely
 // surprise (a different sky every session); only the per-spark constants stay
 // seeded so a running event animates coherently.
@@ -104,7 +108,7 @@ void main() {
 const BH_COLOR = new THREE.Color("#ffb36b"); // hot accretion amber
 const WH_COLOR = new THREE.Color("#7fd0ff"); // cool portal ice
 
-type EventKind = "blackhole" | "wormhole";
+export type EventKind = "blackhole" | "wormhole";
 
 export class CosmicEvents {
   readonly group = new THREE.Group();
@@ -184,7 +188,7 @@ export class CosmicEvents {
     this.sparks.visible = false;
     this.group.add(this.sparks);
 
-    this.nextIn = EVENT_GAP_MIN + Math.random() * EVENT_GAP_VAR;
+    this.nextIn = FIRST_EVENT_DELAY;
   }
 
   setSizeScale(s: number): void {
@@ -221,6 +225,30 @@ export class CosmicEvents {
       this.matB.uniforms.u_time.value += dt;
     }
     this.updateSparks(life);
+  }
+
+  /** Open an event of an explicit kind at an explicit world position — the
+   * on-demand door beside the random idle scheduler (demos, deletion FX
+   * later). One event at a time: a running event wins and the call is
+   * dropped. `wsize` is the core's world size (defaults near a mid galaxy). */
+  triggerAt(kind: EventKind, pos: { x: number; y: number; z: number }, wsize = 90): void {
+    if (this.active) return;
+    this.count++;
+    this.kind = kind;
+    this.active = true;
+    this.t = 0;
+    this.dur = kind === "blackhole" ? BH_DUR : WH_DUR;
+    this.posA.set(pos.x, pos.y, pos.z);
+    this.setupCore(this.coreA, this.matA, this.posA, wsize);
+    if (kind === "wormhole") {
+      // No second anchor is given, so the exit portal opens a short hop away —
+      // far enough to read as a bridge, near enough to share the framing.
+      this.posB.set(pos.x + wsize * 2.6, pos.y + wsize * 0.9, pos.z - wsize * 1.8);
+      this.setupCore(this.coreB, this.matB, this.posB, wsize * 0.75);
+    } else {
+      this.coreB.visible = false;
+    }
+    this.openSparks();
   }
 
   private trigger(centres: { x: number; y: number; z: number; r: number }[]): void {
@@ -261,7 +289,12 @@ export class CosmicEvents {
     } else {
       this.coreB.visible = false;
     }
-    // Orthonormal basis around the A-core for the spark spiral.
+    this.openSparks();
+  }
+
+  // Shared tail of trigger()/triggerAt(): orthonormal basis around the A-core
+  // for the spark spiral + make the pool visible.
+  private openSparks(): void {
     this.basisU.set(0.7, 0.2, -0.7).normalize();
     this.basisV.crossVectors(this.basisU, new THREE.Vector3(0, 1, 0)).normalize();
     this.sparks.visible = true;

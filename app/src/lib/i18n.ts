@@ -135,6 +135,15 @@ export interface Strings {
   gr_edge_bundles_hint?: string;
   gr_fly_btn?: string;
   gr_timelapse_record?: string;
+  // Gesture cheat-sheet popover ("?" toolbar button).
+  gr_help_btn?: string;
+  gr_help_title?: string;
+  gr_help_click?: string;
+  gr_help_dblclick?: string;
+  gr_help_cmdclick?: string;
+  gr_help_esc?: string;
+  gr_help_fly?: string;
+  gr_help_drag?: string;
   gr_trace: string;
   gr_trace_hint: string;
   gr_spaceship: string;
@@ -658,6 +667,14 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_edge_bundles_hint: "Merge links between two topics into one weighted arc",
     gr_fly_btn: "Spaceship mode (F)",
     gr_timelapse_record: "Record timelapse (WebM)",
+    gr_help_btn: "Gestures & keys",
+    gr_help_title: "Gestures & keys",
+    gr_help_click: "Focus a note (1 hop)",
+    gr_help_dblclick: "Widen focus to 2 hops",
+    gr_help_cmdclick: "Shortest path between notes",
+    gr_help_esc: "Step out of the focus",
+    gr_help_fly: "Toggle spaceship mode",
+    gr_help_drag: "Orbit the cosmos",
     gr_trace: "Trace path",
     gr_trace_hint: "Click a start node, then an end node",
     gr_spaceship: "Spaceship",
@@ -1191,6 +1208,14 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_edge_bundles_hint: "두 토픽 사이 링크를 하나의 가중 아크로 묶기",
     gr_fly_btn: "우주선 모드 (F)",
     gr_timelapse_record: "타임랩스 녹화 (WebM)",
+    gr_help_btn: "제스처 안내",
+    gr_help_title: "제스처 안내",
+    gr_help_click: "노트에 포커스 (1홉)",
+    gr_help_dblclick: "포커스를 2홉으로 확장",
+    gr_help_cmdclick: "노트 사이 최단 경로",
+    gr_help_esc: "포커스에서 한 단계 나가기",
+    gr_help_fly: "우주선 모드 전환",
+    gr_help_drag: "우주 궤도 회전",
     gr_trace: "경로 추적",
     gr_trace_hint: "시작 노드를 누른 뒤 끝 노드를 누르세요",
     gr_spaceship: "우주선 비행",
@@ -1720,6 +1745,14 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_edge_bundles_hint: "2つのトピック間のリンクを1本の重み付きアークに束ねる",
     gr_fly_btn: "宇宙船モード (F)",
     gr_timelapse_record: "タイムラプス録画 (WebM)",
+    gr_help_btn: "ジェスチャーガイド",
+    gr_help_title: "ジェスチャーガイド",
+    gr_help_click: "ノートにフォーカス (1ホップ)",
+    gr_help_dblclick: "フォーカスを2ホップに拡大",
+    gr_help_cmdclick: "ノート間の最短経路",
+    gr_help_esc: "フォーカスから一段戻る",
+    gr_help_fly: "宇宙船モード切替",
+    gr_help_drag: "宇宙をオービット回転",
     gr_trace: "経路トレース",
     gr_trace_hint: "開始ノードをクリックし、次に終了ノードをクリック",
     gr_spaceship: "宇宙船",
