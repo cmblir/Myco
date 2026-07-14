@@ -8,6 +8,7 @@
 // objects, and drag uses setFixed/releaseFixed instead of mutating fx/fy/fz.
 import type { GraphSettings } from "./graphSettings";
 import { seededUnit, type VaultGraph } from "./graphData";
+import type { LayoutMetrics } from "./layoutMetrics";
 
 // A read-only view of a node's latest position — enough for drag hit-testing.
 // (The mutable SimNode now lives in the worker.)
@@ -34,7 +35,10 @@ interface NodeInit {
 export interface GraphSim {
   // Live position views (id + getters into the latest tick), for drag picking.
   nodes: SimNode[];
-  onSettle(cb: () => void): void;
+  /** Fires when the worker sim reaches alphaMin. `metrics` carries the settled
+   * layout's measured extent + per-cluster centroids (backlog A1) so consumers
+   * frame/decorate from measurements instead of linkDistance guesses. */
+  onSettle(cb: (metrics: LayoutMetrics) => void): void;
   reheat(alpha: number): void;
   update(next: GraphSettings): void;
   // Drag: pin a node to a position, or release it. Replaces fx/fy/fz mutation,
@@ -100,7 +104,7 @@ export function createSim(
     latest[o + 1] = initNodes[i].y;
     latest[o + 2] = initNodes[i].z;
   }
-  let settleCb: (() => void) | null = null;
+  let settleCb: ((metrics: LayoutMetrics) => void) | null = null;
 
   // Position views with getters reading the current `latest`. `liveAdd` appends.
   const makeView = (index: number, id: string): SimNode => ({
@@ -131,7 +135,8 @@ export function createSim(
   };
   worker.onmessage = (
     e: MessageEvent<
-      { type: "tick"; positions: Float32Array } | { type: "settle" }
+      | { type: "tick"; positions: Float32Array }
+      | { type: "settle"; metrics: LayoutMetrics }
     >,
   ): void => {
     const m = e.data;
@@ -144,7 +149,7 @@ export function createSim(
     } else if (m.type === "settle") {
       // Apply the final resting positions immediately so the last frame is exact.
       onTick(latest);
-      settleCb?.();
+      settleCb?.(m.metrics);
     }
   };
 
