@@ -56,3 +56,6 @@ node_modules/
 
 # Project backups (export_project output)
 projects/.backups/
+
+# Planning / dev-status docs — keep local, not on GitHub
+plans/
