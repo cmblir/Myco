@@ -476,6 +476,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
 
     let killed = false;
     let userTookOver = false;
+    // The first settled frame arrives as a camera FLIGHT (eased fit); later
+    // settles just re-frame instantly.
+    let introPlayed = false;
 
     const highlight = (node: string): void => {
       const neighbors = new Set(graph.neighbors(node));
@@ -589,7 +592,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         if (killed || !completed) return;
         sceneRef.current?.syncPositions();
         sceneRef.current?.layoutSettled(); // bundled strands over the static map
-        if (!atlasTookOver) sceneRef.current?.fit();
+        if (!atlasTookOver) {
+          sceneRef.current?.fit(undefined, introPlayed ? 0 : 2600);
+          introPlayed = true;
+        }
         container.classList.add("graph-ready");
       });
       return () => {
@@ -638,7 +644,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       if (killed) return;
       // Frame from the worker's measured settled extent when available (A1);
       // the no-metrics safety path falls back to the scene's own scan.
-      if (!userTookOver) sceneRef.current?.fit(metrics);
+      if (!userTookOver) {
+        // First settle: cinematic eased arrival onto the framed galaxy.
+        // Later settles (drag/slider) re-frame instantly as before.
+        sceneRef.current?.fit(metrics, introPlayed ? 0 : 2600);
+        introPlayed = true;
+      }
       container.classList.add("graph-ready");
     };
     const revealSafety = window.setTimeout(finalFit, 12000);
@@ -1232,6 +1243,32 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 <path d="M3 2 L10 6 L3 10 Z" />
               </svg>
             )}
+          </button>
+          {/* Spaceship mode was only reachable via an undocumented F keypress —
+              the most demo-able feature deserves a visible door. */}
+          <button
+            type="button"
+            className="graph-toolbar__btn"
+            onClick={() => toggleFly(!flyModeRef.current)}
+            aria-pressed={flyMode}
+            aria-label={t.gr_fly_btn ?? "Spaceship mode (F)"}
+            title={t.gr_fly_btn ?? "Spaceship mode (F)"}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
+              <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+              <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+              <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+            </svg>
           </button>
           <ZoomButtons sceneRef={sceneRef} t={t} />
           <button

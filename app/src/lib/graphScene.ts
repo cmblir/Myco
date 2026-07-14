@@ -2199,6 +2199,7 @@ export class GraphScene {
       clearTimeout(this.rotateResumeTimer);
       this.rotateResumeTimer = null;
     }
+    this.camTween = null; // the hand always wins over an in-flight camera move
     this.controls.autoRotate = false;
     this.beginInteraction();
   };
@@ -2261,7 +2262,7 @@ export class GraphScene {
     this.controls.update();
   }
 
-  fit(m?: LayoutMetrics): void {
+  fit(m?: LayoutMetrics, animateMs = 0): void {
     let cx = 0;
     let cy = 0;
     let cz = 0;
@@ -2300,7 +2301,7 @@ export class GraphScene {
       dists.sort((p, q) => p - q);
       r = Math.max(1, dists[Math.floor((dists.length - 1) * 0.95)] ?? 1);
     }
-    this.controls.target.set(cx, cy, cz);
+    const toTarget = new THREE.Vector3(cx, cy, cz);
     const fovRad = (this.camera.fov * Math.PI) / 180;
     const dist = (r * 1.5) / Math.tan(fovRad / 2) + 60;
     this.framedDist = dist; // zoom reference for semantic-zoom label budget
@@ -2311,13 +2312,21 @@ export class GraphScene {
     this.nodeMat.uniforms.u_fogNear.value = 0.35 * dist;
     this.nodeMat.uniforms.u_fogFar.value = 1.7 * dist;
     (this.scene.fog as THREE.FogExp2).density = 0.55 / dist;
-    const dir = this.tmpVec
-      .copy(this.camera.position)
-      .sub(this.controls.target);
+    const dir = this.tmpVec.copy(this.camera.position).sub(toTarget);
     if (dir.lengthSq() < 1) dir.set(0.3, 0.15, 1);
     dir.setLength(THREE.MathUtils.clamp(dist, this.controls.minDistance, this.controls.maxDistance));
-    this.camera.position.copy(this.controls.target).add(dir);
-    this.controls.update();
+    const toPos = toTarget.clone().add(dir);
+    if (animateMs > 0) {
+      // Cinematic arrival (first settle): ease from wherever the camera is
+      // onto the framed pose instead of snapping — the load ends with a
+      // camera FLIGHT into the settled galaxy. startCamTween handles
+      // reduced-motion by snapping.
+      this.startCamTween(toPos, toTarget, animateMs);
+    } else {
+      this.controls.target.copy(toTarget);
+      this.camera.position.copy(toPos);
+      this.controls.update();
+    }
   }
 
   // Frame the camera on a single node — used by the inspector / search-to-focus
@@ -2325,17 +2334,60 @@ export class GraphScene {
   focusNode(id: string): void {
     if (!this.graph.hasNode(id)) return;
     const a = this.graph.getNodeAttributes(id);
-    this.controls.target.set(a.x, a.y, a.z);
+    const toTarget = new THREE.Vector3(a.x, a.y, a.z);
     const fovRad = (this.camera.fov * Math.PI) / 180;
     const r = Math.max(a.size * NODE_RADIUS * 4, 60);
     const dist = (r * 1.5) / Math.tan(fovRad / 2) + 40;
-    const dir = this.tmpVec.copy(this.camera.position).sub(this.controls.target);
+    const dir = this.tmpVec.copy(this.camera.position).sub(toTarget);
     if (dir.lengthSq() < 1) dir.set(0.3, 0.15, 1);
     dir.setLength(
       THREE.MathUtils.clamp(dist, this.controls.minDistance, this.controls.maxDistance),
     );
-    this.camera.position.copy(this.controls.target).add(dir);
+    // Fly, don't teleport: search-to-focus / inspector jumps ease the camera
+    // to the star (the product's own "fly to a star" story). Reduced motion
+    // (or an in-progress user gesture) snaps instead.
+    this.startCamTween(toTarget.clone().add(dir), toTarget, 750);
+  }
+
+  // --- eased camera flight (focusNode / future cinematic moves) -------------
+  private camTween: {
+    t: number;
+    dur: number;
+    p0: THREE.Vector3;
+    p1: THREE.Vector3;
+    a0: THREE.Vector3;
+    a1: THREE.Vector3;
+  } | null = null;
+
+  private startCamTween(toPos: THREE.Vector3, toTarget: THREE.Vector3, durMs: number): void {
+    if (this.reducedMotion || durMs <= 0) {
+      this.controls.target.copy(toTarget);
+      this.camera.position.copy(toPos);
+      this.controls.update();
+      return;
+    }
+    this.camTween = {
+      t: 0,
+      dur: durMs / 1000,
+      p0: this.camera.position.clone(),
+      p1: toPos,
+      a0: this.controls.target.clone(),
+      a1: toTarget,
+    };
+  }
+
+  /** Advance the camera flight; a user gesture cancels it (onControlsStart). */
+  private camTweenTick(dt: number): void {
+    const tw = this.camTween;
+    if (!tw) return;
+    tw.t = Math.min(tw.dur, tw.t + dt);
+    const u = tw.t / tw.dur;
+    // easeInOutCubic — gentle launch, gentle arrival.
+    const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+    this.controls.target.lerpVectors(tw.a0, tw.a1, e);
+    this.camera.position.lerpVectors(tw.p0, tw.p1, e);
     this.controls.update();
+    if (tw.t >= tw.dur) this.camTween = null;
   }
 
   // One frame of the post-processing graph. Selective path: nodes-only bloom
@@ -2377,6 +2429,7 @@ export class GraphScene {
       if (this.flyMode) {
         this.ship.update(dt);
       } else {
+        this.camTweenTick(dt); // eased focus-flight (no-op when idle)
         this.controls.update();
       }
       this.updateLod(dt);

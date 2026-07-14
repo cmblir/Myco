@@ -71,6 +71,20 @@ export function speedOf(v: Vec3): number {
   return Math.hypot(v.x, v.y, v.z);
 }
 
+/** seconds for the boost blend to ramp 0 → 1 (snappy engage) */
+export const BOOST_BLEND_UP = 0.25;
+/** seconds for the boost blend to ramp 1 → 0 (softer release) */
+export const BOOST_BLEND_DOWN = 0.4;
+
+// Warp-boost visual blend: eases 0→1 while boosting and back to 0 when it
+// ends. Linear ramp with asymmetric rates (quick punch in, gentler fade out),
+// hard-clamped to [0, 1]. Pure so the FOV kick / trail stretch / glow surge
+// it drives in shipController stay unit-testable.
+export function boostBlend(current: number, boosting: boolean, dt: number): number {
+  const rate = boosting ? 1 / BOOST_BLEND_UP : -1 / BOOST_BLEND_DOWN;
+  return Math.min(1, Math.max(0, current + rate * dt));
+}
+
 // Ease the visual bank roll toward −yawRate (turn left ⇒ roll left), clamped
 // to bankMax. Frame-rate independent (exponential smoothing over dt).
 export function stepBank(

@@ -5,13 +5,16 @@
 // WASD/R/F thrust accelerates, drag glides the ship out when keys lift, Shift
 // boosts, and the hull banks into turns like an aircraft. The engine glow
 // swells with throttle and a particle trail streams from the tail under
-// thrust. Q/E roll, arrows or mouse-drag steer, camera chases from behind.
+// thrust. Boosting adds warp juice driven by shipPhysics.boostBlend: the
+// camera FOV kicks out, the trail stretches, and the glow surges — so Shift
+// reads differently from cruising. Q/E roll, arrows or mouse-drag steer,
+// camera chases from behind.
 //
 // Listeners live only while enabled, so keys never leak into inputs / orbit.
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import shipUrl from "../assets/spaceship.glb?url";
-import { FLIGHT, speedOf, stepBank, stepVelocity } from "./shipPhysics";
+import { FLIGHT, boostBlend, speedOf, stepBank, stepVelocity } from "./shipPhysics";
 
 // Normalised hull size: the GLB is uniform-scaled so its longest dimension
 // lands here (world units). 10 filled half the screen at rest — 6 with the
@@ -56,7 +59,14 @@ export class ShipController {
   private trailMat: THREE.ShaderMaterial;
   private trailVel = new Float32Array(TRAIL_MAX * 3);
   private trailLife = new Float32Array(TRAIL_MAX);
+  // Per-particle spawn lifetime — boost stretches it past TRAIL_LIFE, and the
+  // fade normalises against this so stretched particles still fade 1 → 0.
+  private trailLifeMax = new Float32Array(TRAIL_MAX).fill(TRAIL_LIFE);
   private trailCursor = 0;
+  // Warp-boost blend (shipPhysics.boostBlend): 0 cruising → 1 fully boosting.
+  private boostBlendVal = 0;
+  // Camera FOV before the boost kick; restored exactly when flight ends.
+  private baseFov: number;
   // scratch
   private q = new THREE.Quaternion();
   private v = new THREE.Vector3();
@@ -73,6 +83,7 @@ export class ShipController {
     _speed = 600, // legacy tuning knob; flight now comes from shipPhysics.FLIGHT
   ) {
     this.camera = camera;
+    this.baseFov = camera.fov;
     this.dom = dom;
     this.scene = scene;
     this.ship = new THREE.Group();
@@ -203,6 +214,10 @@ void main() {
     this.bank = 0;
     this.yawRate = 0;
     this.trailLife.fill(0);
+    // Re-capture the FOV each entry — the scene may have changed it since the
+    // last flight — so disable() can restore it exactly.
+    this.boostBlendVal = 0;
+    this.baseFov = this.camera.fov;
     window.addEventListener("keydown", this.onKeyDown);
     window.addEventListener("keyup", this.onKeyUp);
     this.dom.addEventListener("pointerdown", this.onDown);
@@ -218,6 +233,10 @@ void main() {
     this.trail.visible = false;
     this.keys.clear();
     this.dragging = false;
+    // Undo any boost FOV kick — orbit mode gets its exact FOV back.
+    this.boostBlendVal = 0;
+    this.camera.fov = this.baseFov;
+    this.camera.updateProjectionMatrix();
     window.removeEventListener("keydown", this.onKeyDown);
     window.removeEventListener("keyup", this.onKeyUp);
     this.dom.removeEventListener("pointerdown", this.onDown);
@@ -338,10 +357,23 @@ void main() {
     if (k.has("f")) t.y -= 1;
     const thrusting = t.lengthSq() > 0;
     if (thrusting) t.normalize().applyQuaternion(this.ship.quaternion);
-    this.vel = stepVelocity(this.vel, t, k.has("shift"), dt);
+    const boosting = k.has("shift");
+    this.vel = stepVelocity(this.vel, t, boosting, dt);
     this.ship.position.x += this.vel.x * dt;
     this.ship.position.y += this.vel.y * dt;
     this.ship.position.z += this.vel.z * dt;
+
+    // Warp-boost blend: eased so the kick ramps in/out instead of snapping.
+    // Gated on thrust — holding Shift at rest shouldn't zoom the camera.
+    this.boostBlendVal = boostBlend(this.boostBlendVal, boosting && thrusting, dt);
+    // FOV kick: widen toward base+12° with the blend for a sense of warp.
+    // (No reduced-motion branch here on purpose: this is direct feedback to a
+    // held key, not ambient motion — graphScene owns the ambient gating.)
+    const targetFov = this.baseFov + 12 * this.boostBlendVal;
+    if (Math.abs(targetFov - this.camera.fov) > 0.01) {
+      this.camera.fov = targetFov;
+      this.camera.updateProjectionMatrix();
+    }
 
     // Visual bank: smooth the yaw input into a rate, roll the hull into it.
     this.yawRate += ((this.yawAccum / dt) - this.yawRate) * Math.min(1, dt * 10);
@@ -350,9 +382,11 @@ void main() {
     this.body.rotation.z = this.bank;
 
     // Engine: glow swells with throttle; the trail streams while thrusting.
+    // Boost surges the glow past its throttle ceiling (opacity stays ≤ 1).
     const throttle = Math.min(1, this.getSpeed() / FLIGHT.maxSpeed);
-    this.glowMat.opacity = 0.35 + 0.6 * throttle;
-    this.glowMat.size = 18 + 16 * throttle;
+    const surge = 1 + this.boostBlendVal * 0.6;
+    this.glowMat.opacity = Math.min(1, (0.35 + 0.6 * throttle) * surge);
+    this.glowMat.size = (18 + 16 * throttle) * surge;
     this.updateTrail(dt, thrusting, throttle);
 
     // Idle bob so a stationary ship still feels alive.
@@ -362,7 +396,8 @@ void main() {
 
   // Spawn/advance the aft particle stream. Particles live in world space with
   // a kick opposite the ship's heading plus a little jitter, fading over
-  // TRAIL_LIFE. Zero-alloc: fixed ring buffer, colours encode the fade.
+  // their spawn lifetime (TRAIL_LIFE, stretched under boost). Zero-alloc:
+  // fixed ring buffer, colours encode the fade.
   private updateTrail(dt: number, thrusting: boolean, throttle: number): void {
     const pos = this.trailGeom.getAttribute("position") as THREE.BufferAttribute;
     const col = this.trailGeom.getAttribute("a_pcolor") as THREE.BufferAttribute;
@@ -370,6 +405,9 @@ void main() {
       const tail = this.v.copy(TAIL).applyQuaternion(this.ship.quaternion).add(this.ship.position);
       const aft = this.v2.set(0, 0, 1).applyQuaternion(this.ship.quaternion);
       const spawn = 2 + Math.round(throttle * 2);
+      // Warp stretch: boosted particles fly faster AND live longer, so the
+      // plume visibly elongates while Shift is held.
+      const stretch = 1 + this.boostBlendVal * 0.8;
       for (let s = 0; s < spawn; s++) {
         const i = this.trailCursor;
         this.trailCursor = (this.trailCursor + 1) % TRAIL_MAX;
@@ -380,10 +418,11 @@ void main() {
           tail.z + (Math.random() - 0.5) * 0.5,
         );
         const kick = 60 + 90 * throttle;
-        this.trailVel[i * 3] = aft.x * kick + (Math.random() - 0.5) * 14;
-        this.trailVel[i * 3 + 1] = aft.y * kick + (Math.random() - 0.5) * 14;
-        this.trailVel[i * 3 + 2] = aft.z * kick + (Math.random() - 0.5) * 14;
-        this.trailLife[i] = TRAIL_LIFE;
+        this.trailVel[i * 3] = (aft.x * kick + (Math.random() - 0.5) * 14) * stretch;
+        this.trailVel[i * 3 + 1] = (aft.y * kick + (Math.random() - 0.5) * 14) * stretch;
+        this.trailVel[i * 3 + 2] = (aft.z * kick + (Math.random() - 0.5) * 14) * stretch;
+        this.trailLife[i] = TRAIL_LIFE * stretch;
+        this.trailLifeMax[i] = this.trailLife[i];
       }
     }
     for (let i = 0; i < TRAIL_MAX; i++) {
@@ -398,7 +437,7 @@ void main() {
         pos.getY(i) + this.trailVel[i * 3 + 1] * dt,
         pos.getZ(i) + this.trailVel[i * 3 + 2] * dt,
       );
-      const f = Math.max(0, this.trailLife[i] / TRAIL_LIFE);
+      const f = Math.max(0, this.trailLife[i] / this.trailLifeMax[i]);
       // Dark: additive → scale toward black. Light: normal blending over a
       // near-white bg → fade toward white instead, so dying particles vanish
       // into the paper rather than turning into black specks.

@@ -1,6 +1,14 @@
 // Inertial flight model (pure math driven by shipController).
 import { describe, expect, it } from "vitest";
-import { FLIGHT, speedOf, stepBank, stepVelocity } from "./shipPhysics";
+import {
+  BOOST_BLEND_DOWN,
+  BOOST_BLEND_UP,
+  FLIGHT,
+  boostBlend,
+  speedOf,
+  stepBank,
+  stepVelocity,
+} from "./shipPhysics";
 
 const FWD = { x: 0, y: 0, z: -1 };
 const ZERO = { x: 0, y: 0, z: 0 };
@@ -68,5 +76,53 @@ describe("stepBank", () => {
     let bank = -FLIGHT.bankMax;
     for (let i = 0; i < 60 * 3; i++) bank = stepBank(bank, 0, DT);
     expect(Math.abs(bank)).toBeLessThan(0.01);
+  });
+});
+
+describe("boostBlend", () => {
+  it("rises monotonically to 1 while boosting and converges there", () => {
+    let b = 0;
+    let prev = 0;
+    const steps = Math.ceil((BOOST_BLEND_UP / DT) * 1.5); // 1.5× the ramp time
+    for (let i = 0; i < steps; i++) {
+      b = boostBlend(b, true, DT);
+      expect(b).toBeGreaterThanOrEqual(prev); // monotonic up
+      expect(b).toBeLessThanOrEqual(1); // clamped
+      prev = b;
+    }
+    expect(b).toBe(1); // fully engaged…
+    expect(boostBlend(b, true, DT)).toBe(1); // …and stable there
+  });
+
+  it("falls monotonically back to 0 when boost ends and converges there", () => {
+    let b = 1;
+    let prev = 1;
+    const steps = Math.ceil((BOOST_BLEND_DOWN / DT) * 1.5);
+    for (let i = 0; i < steps; i++) {
+      b = boostBlend(b, false, DT);
+      expect(b).toBeLessThanOrEqual(prev); // monotonic down
+      expect(b).toBeGreaterThanOrEqual(0); // clamped
+      prev = b;
+    }
+    expect(b).toBe(0); // fully released…
+    expect(boostBlend(b, false, DT)).toBe(0); // …and stable there
+  });
+
+  it("engages faster than it releases (asymmetric ramp)", () => {
+    const up = boostBlend(0, true, DT) - 0;
+    const down = 1 - boostBlend(1 - 1e-9, false, DT);
+    expect(up).toBeGreaterThan(down);
+    // And the ramp times land where they're tuned: ~0.25 s up, ~0.4 s down
+    // (toBeCloseTo — 1/0.4 isn't exact in binary floating point).
+    expect(boostBlend(0, true, BOOST_BLEND_UP)).toBeCloseTo(1, 9);
+    expect(boostBlend(1, false, BOOST_BLEND_DOWN)).toBeCloseTo(0, 9);
+  });
+
+  it("clamps even with dt spikes and out-of-range inputs", () => {
+    expect(boostBlend(0, true, 10)).toBe(1); // huge frame while boosting
+    expect(boostBlend(1, false, 10)).toBe(0); // huge frame on release
+    expect(boostBlend(5, false, DT)).toBe(1); // garbage above the range
+    expect(boostBlend(-3, true, DT)).toBeGreaterThanOrEqual(0); // and below
+    expect(boostBlend(-3, true, DT)).toBeLessThanOrEqual(1);
   });
 });
