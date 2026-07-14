@@ -135,6 +135,10 @@ export interface Strings {
   gr_edge_bundles_hint?: string;
   gr_fly_btn?: string;
   gr_timelapse_record?: string;
+  gr_node_color_black?: string;
+  gr_edge_tint?: string;
+  gr_edge_tint_grey?: string;
+  gr_edge_tint_community?: string;
   // Gesture cheat-sheet popover ("?" toolbar button).
   gr_help_btn?: string;
   gr_help_title?: string;
@@ -667,6 +671,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_edge_bundles_hint: "Merge links between two topics into one weighted arc",
     gr_fly_btn: "Spaceship mode (F)",
     gr_timelapse_record: "Record timelapse (WebM)",
+    gr_node_color_black: "Black",
+    gr_edge_tint: "Link colour",
+    gr_edge_tint_grey: "Grey",
+    gr_edge_tint_community: "Community webs",
     gr_help_btn: "Gestures & keys",
     gr_help_title: "Gestures & keys",
     gr_help_click: "Focus a note (1 hop)",
@@ -1208,6 +1216,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_edge_bundles_hint: "두 토픽 사이 링크를 하나의 가중 아크로 묶기",
     gr_fly_btn: "우주선 모드 (F)",
     gr_timelapse_record: "타임랩스 녹화 (WebM)",
+    gr_node_color_black: "블랙",
+    gr_edge_tint: "링크 색상",
+    gr_edge_tint_grey: "회색",
+    gr_edge_tint_community: "커뮤니티 웹",
     gr_help_btn: "제스처 안내",
     gr_help_title: "제스처 안내",
     gr_help_click: "노트에 포커스 (1홉)",
@@ -1745,6 +1757,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_edge_bundles_hint: "2つのトピック間のリンクを1本の重み付きアークに束ねる",
     gr_fly_btn: "宇宙船モード (F)",
     gr_timelapse_record: "タイムラプス録画 (WebM)",
+    gr_node_color_black: "ブラック",
+    gr_edge_tint: "リンク色",
+    gr_edge_tint_grey: "グレー",
+    gr_edge_tint_community: "コミュニティウェブ",
     gr_help_btn: "ジェスチャーガイド",
     gr_help_title: "ジェスチャーガイド",
     gr_help_click: "ノートにフォーカス (1ホップ)",

@@ -220,12 +220,23 @@ const PERF_LOD_NODES = 5000;
 const BLOOM_LAYER = 1;
 
 // Effective monochrome amount (u_mono uniform) from the node-colour setting +
-// the vault's node count: "white" → always 1, "community" → 0, "auto" → white
-// (1) until the vault grows past monoBelow nodes.
+// the vault's node count: "white"/"black" → always 1, "community" → 0,
+// "auto" → mono (1) until the vault grows past monoBelow nodes.
 function monoFor(s: GraphSettings, nodeCount: number): number {
-  if (s.nodeColor === "white") return 1;
+  if (s.nodeColor === "white" || s.nodeColor === "black") return 1;
   if (s.nodeColor === "auto") return nodeCount < s.monoBelow ? 1 : 0;
   return 0;
+}
+
+// The mono ink (u_monoColor). "white" starlight is invisible on the white
+// skin — "black" is the explicit dark ink, and "auto" picks whichever the
+// current background can actually show.
+const MONO_WHITE = new THREE.Color(0.9, 0.94, 1.0);
+const MONO_BLACK = new THREE.Color(0.09, 0.1, 0.13);
+function monoColorFor(s: GraphSettings, dark: boolean): THREE.Color {
+  if (s.nodeColor === "black") return MONO_BLACK;
+  if (s.nodeColor === "white") return MONO_WHITE;
+  return dark ? MONO_WHITE : MONO_BLACK; // "auto" (and irrelevant for community)
 }
 
 // Additive composite of the base HDR render + the (nodes-only) bloom texture,
@@ -317,7 +328,8 @@ void main() {
 const NODE_FRAG = /* glsl */ `
 precision mediump float;
 uniform float u_lodFade; // cosmic-scale LOD: 1 near (nodes shown) → 0 far
-uniform float u_mono;    // 0 = community colour, 1 = monochrome white
+uniform float u_mono;    // 0 = community colour, 1 = monochrome ink
+uniform vec3 u_monoColor; // the ink — starlight white or near-black
 varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
@@ -365,11 +377,12 @@ void main() {
   if (a < 0.004) discard;
   vec3 base = v_color * (0.65 + 0.35 * v_fade);
   // Monochrome mode: drop the hue but KEEP brightness — each star becomes a
-  // near-white point (peak channel preserved) so a big vault reads as a clean
-  // white starfield instead of a rainbow. u_mono 0 = full colour, 1 = white.
+  // point of the chosen ink (u_monoColor: starlight white, or near-black for
+  // light backgrounds where white is invisible). Peak channel preserved so a
+  // big vault reads as a clean field, not a rainbow. u_mono 0 = full colour.
   if (u_mono > 0.0) {
     float peak = max(base.r, max(base.g, base.b));
-    base = mix(base, vec3(0.90, 0.94, 1.0) * peak, u_mono);
+    base = mix(base, u_monoColor * max(peak, 0.55), u_mono);
   }
   // Class tints: giants burn warm, neutrons burn white-hot. (Skipped in full
   // monochrome so nothing re-introduces a hue.)
@@ -466,6 +479,7 @@ export class GraphScene {
   private edgeNeutral: THREE.Color = EDGE_NEUTRAL_DARK;
   private edgeOpacity = EDGE_OPACITY_DARK;
   private edgeBaseBrightness = EDGE_BASE_DARK;
+  private appliedEdgeTint: GraphSettings["edgeTint"] = "grey";
 
   // Fat glowing filament overlay — the Phase 3 focus/path layer (spec A2). A
   // fixed FILAMENT_CAP-slot buffer, allocated once; each style change fills the
@@ -586,6 +600,7 @@ export class GraphScene {
     this.graph = graph;
     this.theme = theme;
     this.settings = settings;
+    this.appliedEdgeTint = settings.edgeTint;
     this.cb = cb;
     this.reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
@@ -781,6 +796,7 @@ export class GraphScene {
         u_darkTheme: { value: dark ? 1 : 0 },
         u_lodFade: { value: 1 },
         u_mono: { value: monoFor(settings, graph.order) },
+        u_monoColor: { value: monoColorFor(settings, dark).clone() },
       },
       vertexShader: NODE_VERT,
       fragmentShader: NODE_FRAG,
@@ -1203,12 +1219,16 @@ export class GraphScene {
       const [s, t] = this.edgePairs[i];
       const sa = this.graph.getNodeAttributes(s);
       const ta = this.graph.getNodeAttributes(t);
-      // Each end takes its node's community colour, greyed halfway (structure
-      // is grey; signal is nodes) → inter-cluster edges still gradient between
-      // their ends. A brightness factor handles hover focus + timelapse hide.
-      cs.set(sa.color).lerp(this.edgeNeutral, EDGE_GREY_MIX);
-      ct.set(ta.color).lerp(this.edgeNeutral, EDGE_GREY_MIX);
-      let f = this.edgeBaseBrightness;
+      // Each end takes its node's community colour. Default: greyed halfway
+      // (structure is grey; signal is nodes). "community" tint keeps the full
+      // hue and brightens — thousands of intra-cluster edges then stack into
+      // the coloured translucent veil of the classic Gephi hairball, and
+      // inter-cluster strands gradient between their communities' hues.
+      const web = this.settings.edgeTint === "community";
+      const greyMix = web ? 0.12 : EDGE_GREY_MIX;
+      cs.set(sa.color).lerp(this.edgeNeutral, greyMix);
+      ct.set(ta.color).lerp(this.edgeNeutral, greyMix);
+      let f = this.edgeBaseBrightness * (web ? 1.55 : 1);
       if (focus && !(focus.has(s) && focus.has(t))) {
         // Edge leaves the focus set → near-invisible context, hover ignored.
         f = FOCUS_EDGE_DIM;
@@ -2098,6 +2118,10 @@ export class GraphScene {
     this.bloom.radius = 0.7;
     this.nodeMat.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
     this.nodeMat.uniforms.u_darkTheme.value = dark ? 1 : 0;
+    // "auto" mono ink follows the background (white starlight ↔ dark ink).
+    (this.nodeMat.uniforms.u_monoColor.value as THREE.Color).copy(
+      monoColorFor(this.settings, dark),
+    );
     this.nodeMat.needsUpdate = true;
     this.edgeMat.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
     this.edgeMat.needsUpdate = true;
@@ -2231,6 +2255,15 @@ export class GraphScene {
     this.settings = settings;
     // Node-colour mode (community / white / auto-by-count) — live, no rebuild.
     this.nodeMat.uniforms.u_mono.value = monoFor(settings, this.nodeIds.length);
+    (this.nodeMat.uniforms.u_monoColor.value as THREE.Color).copy(
+      monoColorFor(settings, this.darkTheme),
+    );
+    // Edge tint mode flip (grey connective tissue ↔ community-hue webs)
+    // rewrites the endpoint-colour cache — O(edges), only on actual change.
+    if (settings.edgeTint !== this.appliedEdgeTint) {
+      this.appliedEdgeTint = settings.edgeTint;
+      this.writeEdges();
+    }
     this.edgeMat.opacity = Math.min(1, this.edgeOpacity * settings.linkThickness);
     // Brightness: overall exposure + bloom glow intensity.
     // Brightness drives overall EXPOSURE only (applied by OutputPass at the end).

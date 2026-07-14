@@ -732,6 +732,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.nodeColor,
     settings.monoBelow,
     settings.edgeBundles,
+    settings.edgeTint,
   ]);
 
   // Theme/skin toggle — recolour the scene. Re-read AFTER the app's theme

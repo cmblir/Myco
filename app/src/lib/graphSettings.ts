@@ -31,11 +31,16 @@ export interface GraphSettings {
   // 2D ForceAtlas2 map with translucent per-community territory fills (Gephi
   // look). Backlog GRAPH-01.
   layout: "galaxy" | "atlas";
-  // Node colouring. "community" = folder/cluster hues (current); "white" =
-  // monochrome white stars; "auto" = white until the vault grows past
-  // monoBelow nodes, then community hues kick in. Customisable per taste.
-  nodeColor: "community" | "white" | "auto";
-  monoBelow: number; // "auto": node count below this → white; at/above → colour
+  // Node colouring. "community" = folder/cluster hues; "white" = monochrome
+  // starlight; "black" = monochrome ink (the only visible mono on the white
+  // skin); "auto" = theme-appropriate mono until the vault grows past
+  // monoBelow nodes, then community hues kick in.
+  nodeColor: "community" | "white" | "black" | "auto";
+  monoBelow: number; // "auto": node count below this → mono; at/above → colour
+  // Edge colouring. "grey" = neutral connective tissue (signal lives in the
+  // stars); "community" = full community-hue edges — dense clusters read as
+  // coloured translucent webs/veils (the classic Gephi hairball look).
+  edgeTint: "grey" | "community";
   arrows: boolean;
   arrowSize: number; // arrowhead cone scale, 0.1..1.5 — kept well under node size
   semanticEdges: boolean; // overlay embedding-similarity edges (dim, dashed)
@@ -92,6 +97,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   tlSpeed: 1,
   nodeColor: "community",
   monoBelow: 200,
+  edgeTint: "grey",
   // GALAXY/BRAIN defaults: range-capped LOCAL repulsion (no global outward
   // pressure → no firework spikes) + firm centre gravity collapse the vault into
   // ONE cohesive luminous mass, while community clustering contracts each Louvain

@@ -269,6 +269,7 @@ export default function GraphControls({
               [
                 ["community", t.gr_node_color_community ?? "By folder"],
                 ["white", t.gr_node_color_white ?? "White"],
+                ["black", t.gr_node_color_black ?? "Black"],
                 ["auto", t.gr_node_color_auto ?? "Auto"],
               ] as [GraphSettings["nodeColor"], string][]
             ).map(([key, label]) => (
@@ -280,6 +281,31 @@ export default function GraphControls({
                 }`}
                 aria-pressed={settings.nodeColor === key}
                 onClick={() => onChange({ nodeColor: key })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="graph-field">
+          <span className="graph-field__label">
+            {t.gr_edge_tint ?? "Link colour"}
+          </span>
+          <div className="graph-chips">
+            {(
+              [
+                ["grey", t.gr_edge_tint_grey ?? "Grey"],
+                ["community", t.gr_edge_tint_community ?? "Community webs"],
+              ] as [GraphSettings["edgeTint"], string][]
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`graph-chip${
+                  settings.edgeTint === key ? " graph-chip--active" : ""
+                }`}
+                aria-pressed={settings.edgeTint === key}
+                onClick={() => onChange({ edgeTint: key })}
               >
                 {label}
               </button>
