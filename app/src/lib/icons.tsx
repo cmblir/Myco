@@ -1,6 +1,9 @@
 // Lightweight inline SVG icons (Lucide-style, 1.5px stroke, monochrome).
 
 import type { JSX } from "react";
+// The real app logo (the user's mushroom character, background removed) —
+// replaces the old pixel-art placeholder glyph everywhere MemexMark renders.
+import logoUrl from "../assets/logo.png";
 
 export type IconName =
   | "home"
@@ -234,20 +237,14 @@ export function Icon({
 
 export function MemexMark({ size = 22 }: { size?: number }): JSX.Element {
   return (
-    <svg width={size} height={size} viewBox="0 0 240 240">
-      <g fill="currentColor">
-        <rect x="70" y="40" width="20" height="40" />
-        <rect x="150" y="40" width="20" height="40" />
-        <rect x="60" y="80" width="120" height="10" />
-        <rect x="50" y="90" width="140" height="60" />
-        <rect x="30" y="110" width="20" height="20" />
-        <rect x="190" y="110" width="20" height="20" />
-        <rect x="70" y="150" width="30" height="40" />
-        <rect x="140" y="150" width="30" height="40" />
-      </g>
-      <rect x="80" y="110" width="20" height="20" fill="var(--bg)" />
-      <rect x="140" y="110" width="20" height="20" fill="var(--bg)" />
-    </svg>
+    <img
+      src={logoUrl}
+      width={size}
+      height={size}
+      alt="Memex"
+      draggable={false}
+      style={{ display: "block", objectFit: "contain" }}
+    />
   );
 }
 

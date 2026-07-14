@@ -56,7 +56,7 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
       <div className="side-head">
         <button className="brand" onClick={toggleSidebar}>
           <span className="brand-mark">
-            <MemexMark size={20} />
+            <MemexMark size={24} />
           </span>
           <span className="brand-name">{t.app_name}</span>
           <span className="brand-caret">
