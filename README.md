@@ -197,8 +197,8 @@ Link resolution matches Obsidian: `[[note]]`, `[[note|alias]]`, `[[note#heading]
 A right-side settings drawer (gear icon):
 
 - **Filters** — live search by filename, tag chips, folder dropdown, toggles for *Show orphans* and *Existing files only*.
-- **Display** — *Arrows*, *Text fade threshold*, *Node size*, *Link thickness*, a **Glow** slider, an **Ambient motion** toggle (one switch for auto-rotate + pulses + breathing), and a **▶ Play timelapse** button.
-- **Layout** — three presets (**Galaxy** / **Loose web** / **Dense**) cover the common cases; the raw d3-force sliders (*Center / Repel / Link / Link distance / Cluster force*) live under an **Advanced** accordion.
+- **Display** — *Arrows*, *Semantic links*, **Bundled strands** (collapse all links between two topic clusters into one weight-tiered glowing arc, so topic-to-topic structure stays readable while the clusters themselves stay separated), a **Node colour** mode (*community* hues / *white* monochrome / *auto* — white below a node-count threshold), *Text fade threshold*, *Node size*, *Link thickness*, a **Glow** slider, an **Ambient motion** toggle (one switch for auto-rotate + pulses + breathing), and a **▶ Play timelapse** button.
+- **Layout** — a **layout engine** switch (**Galaxy** — the living 3D force sim; **Atlas** — a static 2D ForceAtlas2 map with translucent per-community territory fills, the Gephi look) plus three force presets (**Galaxy** / **Loose web** / **Dense**); the raw d3-force sliders (*Center / Repel / Link / Link distance / Cluster force*) live under an **Advanced** accordion.
 
 **Timelapse** (toolbar ▶ or the drawer button) reveals notes oldest-to-newest by file mtime at their settled positions — edges appear as each note connects up, so you watch the graph build itself in the order you actually wrote it.
 
