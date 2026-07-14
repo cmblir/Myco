@@ -43,6 +43,8 @@ import { CosmicEvents } from "./cosmicEvents";
 import { GalacticBandLayer } from "./galacticBandLayer";
 import { GalaxyImposterLayer } from "./galaxyImposterLayer";
 import { CommunityHullLayer } from "./communityHullLayer";
+import { EdgeBundleLayer } from "./edgeBundleLayer";
+import type { LayoutMetrics } from "./layoutMetrics";
 import {
   cosmicScale,
   imposterAlpha,
@@ -501,6 +503,7 @@ export class GraphScene {
   private band: GalacticBandLayer; // dust bands hugging each large galaxy
   private imposter: GalaxyImposterLayer; // far-LOD spiral-galaxy discs
   private hulls: CommunityHullLayer; // atlas-mode translucent community fills
+  private bundles: EdgeBundleLayer; // bundled inter-community strands (GRAPH-01)
   private atlasMode = false; // static 2D ForceAtlas2 layout (no sim, flat)
   private imposterEnabled = false; // dark-theme gate (LOD then controls visibility)
   // Cosmic-scale LOD state (see cosmicLod). onScale fires when the camera
@@ -919,6 +922,11 @@ export class GraphScene {
     this.hulls = new CommunityHullLayer(this.graph, dark);
     this.hulls.setVisible(this.atlasMode);
     this.scene.add(this.hulls.mesh);
+    // Bundled inter-community strands (GRAPH-01): rebuilt on layoutSettled()
+    // (galaxy mode) / atlas apply, so they always follow the measured layout.
+    this.bundles = new EdgeBundleLayer(this.graph, dark, w, h);
+    this.bundles.setVisible(settings.edgeBundles);
+    this.scene.add(this.bundles.group);
 
     // --- spaceship (immersive third-person flight; enabled via setFlyMode) ---
     this.ship = new ShipController(
@@ -1977,6 +1985,9 @@ export class GraphScene {
     this.band.setNodeIds(this.nodeIds);
     this.imposter.setNodeIds(this.nodeIds);
     if (this.atlasMode) this.hulls.rebuild();
+    // Graph contents changed (live ingest / filter) → re-aggregate strands.
+    this.bundles.markTopologyDirty();
+    if (this.settings.edgeBundles) this.bundles.rebuild();
 
     this.writeNodes();
     this.writeEdges();
@@ -2028,6 +2039,7 @@ export class GraphScene {
     this.synapse.setDark(dark);
     this.ship.setDark(dark);
     this.hulls.setDark(dark);
+    this.bundles.setDark(dark);
     this.meteor.lines.visible = amb.meteors && !this.perfLod && !this.atlasMode;
     // Painted galaxy adornments stay off across theme changes (see ctor).
     this.coreGlow.setEnabled(false);
@@ -2151,9 +2163,21 @@ export class GraphScene {
       clearTimeout(this.rotateResumeTimer);
       this.rotateResumeTimer = null;
     }
+    // Bundled strands toggle — rebuild on enable so the arcs match the current
+    // (possibly swirled) layout instead of a stale snapshot.
+    if (settings.edgeBundles !== this.bundles.group.visible) {
+      this.bundles.setVisible(settings.edgeBundles);
+      if (settings.edgeBundles) this.bundles.rebuild();
+    }
     // Length-falloff thresholds scale with linkDistance — re-derive so a slider
     // move updates edge brightness even before the sim posts its next tick.
     this.writeEdgeGeometry();
+  }
+
+  /** Layout-at-rest hook (worker settle / atlas apply / timelapse end): refresh
+   * the settle-cadence decorations — bundled strands follow the final centroids. */
+  layoutSettled(): void {
+    if (this.settings.edgeBundles) this.bundles.rebuild();
   }
 
   // All idle motion (auto-rotate, pulses, breathing) honours BOTH the OS
@@ -2231,35 +2255,45 @@ export class GraphScene {
     this.controls.update();
   }
 
-  fit(): void {
-    // Bounding sphere of the (visible) nodes → frame the cluster.
+  fit(m?: LayoutMetrics): void {
     let cx = 0;
     let cy = 0;
     let cz = 0;
-    let count = 0;
-    for (const id of this.nodeIds) {
-      const a = this.graph.getNodeAttributes(id);
-      if (a.hidden) continue;
-      cx += a.x;
-      cy += a.y;
-      cz += a.z;
-      count++;
+    let r = 1;
+    if (m && m.n > 0) {
+      // Worker-measured settled extent (backlog A1) — same centroid + 95th-
+      // percentile rule, computed once off-thread instead of re-scanned here.
+      cx = m.cx;
+      cy = m.cy;
+      cz = m.cz;
+      r = Math.max(1, m.radius);
+    } else {
+      // Bounding sphere of the (visible) nodes → frame the cluster.
+      let count = 0;
+      for (const id of this.nodeIds) {
+        const a = this.graph.getNodeAttributes(id);
+        if (a.hidden) continue;
+        cx += a.x;
+        cy += a.y;
+        cz += a.z;
+        count++;
+      }
+      if (count === 0) return;
+      cx /= count;
+      cy /= count;
+      cz /= count;
+      // 95th-percentile radius, NOT the max: a few far outliers (a drifted
+      // orphan, a stray ghost) would otherwise blow up the frame and shrink the
+      // whole graph to a speck in the middle of the canvas.
+      const dists: number[] = [];
+      for (const id of this.nodeIds) {
+        const a = this.graph.getNodeAttributes(id);
+        if (a.hidden) continue;
+        dists.push(Math.hypot(a.x - cx, a.y - cy, a.z - cz));
+      }
+      dists.sort((p, q) => p - q);
+      r = Math.max(1, dists[Math.floor((dists.length - 1) * 0.95)] ?? 1);
     }
-    if (count === 0) return;
-    cx /= count;
-    cy /= count;
-    cz /= count;
-    // 95th-percentile radius, NOT the max: a few far outliers (a drifted orphan,
-    // a stray ghost) would otherwise blow up the frame and shrink the whole
-    // graph to a speck in the middle of the canvas.
-    const dists: number[] = [];
-    for (const id of this.nodeIds) {
-      const a = this.graph.getNodeAttributes(id);
-      if (a.hidden) continue;
-      dists.push(Math.hypot(a.x - cx, a.y - cy, a.z - cz));
-    }
-    dists.sort((p, q) => p - q);
-    const r = Math.max(1, dists[Math.floor((dists.length - 1) * 0.95)] ?? 1);
     this.controls.target.set(cx, cy, cz);
     const fovRad = (this.camera.fov * Math.PI) / 180;
     const dist = (r * 1.5) / Math.tan(fovRad / 2) + 60;
@@ -2463,6 +2497,8 @@ export class GraphScene {
     this.scene.remove(this.imposter.points);
     this.hulls.dispose();
     this.scene.remove(this.hulls.mesh);
+    this.bundles.dispose();
+    this.scene.remove(this.bundles.group);
     this.clusterLabels.dispose();
     this.scene.remove(this.clusterLabels.group);
     this.bloom.dispose();
@@ -2510,6 +2546,7 @@ export class GraphScene {
     this.imposter.setSizeScale(this.sizeScale(h));
     // Fat lines are screen-space — they need the drawing-buffer resolution.
     this.filamentMat?.resolution.set(w, h);
+    this.bundles.setSize(w, h);
   };
 
   private pickNode(clientX: number, clientY: number): string | null {

@@ -38,6 +38,8 @@ import {
 import { analyzeGaps, gapCount } from "../lib/graphGaps";
 import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
 import { applyAtlasLayout } from "../lib/atlasLayout";
+import { ATLAS_RADIUS_MUL } from "../lib/layoutConfig";
+import type { LayoutMetrics } from "../lib/layoutMetrics";
 import { makeTheme } from "../lib/graphTheme";
 import { isLightBackground } from "../lib/graphSkins";
 import { GraphScene, type SceneStyleState } from "../lib/graphScene";
@@ -559,8 +561,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // no worker sim, so the scene just renders the fixed layout (+ community
     // hull fills). Everything downstream guards on simRef being null.
     if (s.layout === "atlas") {
-      applyAtlasLayout(graph, { targetRadius: s.linkDistance * 26 });
+      applyAtlasLayout(graph, { targetRadius: s.linkDistance * ATLAS_RADIUS_MUL });
       sceneRef.current?.syncPositions();
+      sceneRef.current?.layoutSettled(); // bundled strands over the static map
       sceneRef.current?.fit();
       container.classList.add("graph-ready");
       return () => {
@@ -602,16 +605,22 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     const revealTimer = window.setTimeout(() => {
       if (!killed) container.classList.add("graph-ready");
     }, 300);
-    const finalFit = (): void => {
+    const finalFit = (metrics?: LayoutMetrics): void => {
       window.clearInterval(fitTimer);
       if (killed) return;
-      if (!userTookOver) sceneRef.current?.fit();
+      // Frame from the worker's measured settled extent when available (A1);
+      // the no-metrics safety path falls back to the scene's own scan.
+      if (!userTookOver) sceneRef.current?.fit(metrics);
       container.classList.add("graph-ready");
     };
     const revealSafety = window.setTimeout(finalFit, 12000);
-    sim.onSettle(() => {
+    sim.onSettle((metrics) => {
       window.clearTimeout(revealSafety);
-      finalFit();
+      if (killed) return;
+      // Every settle (initial, post-drag, post-slider) refreshes the bundled
+      // strands so the arcs track wherever the clusters ended up.
+      sceneRef.current?.layoutSettled();
+      finalFit(metrics);
     });
 
     return () => {
@@ -680,6 +689,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.ambientMotion,
     settings.nodeColor,
     settings.monoBelow,
+    settings.edgeBundles,
   ]);
 
   // Theme/skin toggle — recolour the scene. Re-read AFTER the app's theme
@@ -966,6 +976,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     graph.forEachNode((n) => graph.setNodeAttribute(n, "hidden", true));
     sim.timelapseReset();
     scene.refreshStyle(); // `hidden` changed → full write (per-tick path is pos-only)
+    // Blank the bundled strands too — every node is hidden, so the rebuild
+    // empties all tiers; without this up to 80 stale arcs float over the empty
+    // sky for the whole replay (no settle fires until the end restores them).
+    scene.layoutSettled();
     setTlPlaying(true);
 
     let next = 0;

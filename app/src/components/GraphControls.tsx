@@ -319,6 +319,15 @@ export default function GraphControls({
           onChange={(v) => onChange({ semanticEdges: v })}
         />
         <Toggle
+          label={t.gr_edge_bundles ?? "Bundled strands"}
+          hint={
+            t.gr_edge_bundles_hint ??
+            "Merge links between two topics into one weighted arc"
+          }
+          value={settings.edgeBundles}
+          onChange={(v) => onChange({ edgeBundles: v })}
+        />
+        <Toggle
           label={t.gr_trace ?? "Trace path"}
           hint={t.gr_trace_hint ?? "Click a start node, then an end node"}
           value={traceMode}
