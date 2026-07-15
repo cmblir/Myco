@@ -433,6 +433,22 @@ export default function GraphControls({
           value={settings.ambientMotion}
           onChange={(v) => onChange({ ambientMotion: v })}
         />
+        <Toggle
+          label={t.gr_cosmic ?? "Cosmic events"}
+          hint={t.gr_cosmic_hint ?? "Black holes & wormholes (dark theme)"}
+          value={settings.cosmicEvents}
+          onChange={(v) => onChange({ cosmicEvents: v })}
+        />
+        {settings.cosmicEvents ? (
+          <Slider
+            label={t.gr_cosmic_freq ?? "Event frequency"}
+            value={settings.cosmicFrequency}
+            min={0.25}
+            max={4}
+            step={0.25}
+            onChange={(v) => onChange({ cosmicFrequency: v })}
+          />
+        ) : null}
         <button
           type="button"
           className="graph-drawer__play"

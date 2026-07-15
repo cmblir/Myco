@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
-import { Icon, ProviderGlyph } from "../lib/icons";
+import { Icon, MemexMark, ProviderGlyph } from "../lib/icons";
 import type { IconName } from "../lib/icons";
 import type { Lang, Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
@@ -1490,24 +1490,10 @@ function SettingsAbout({ t }: { t: Strings }): JSX.Element {
           style={{
             width: 64,
             height: 64,
-            color: "var(--ink)",
             display: "block",
           }}
         >
-          <svg width="64" height="64" viewBox="0 0 240 240">
-            <g fill="currentColor">
-              <rect x="70" y="40" width="20" height="40" />
-              <rect x="150" y="40" width="20" height="40" />
-              <rect x="60" y="80" width="120" height="10" />
-              <rect x="50" y="90" width="140" height="60" />
-              <rect x="30" y="110" width="20" height="20" />
-              <rect x="190" y="110" width="20" height="20" />
-              <rect x="70" y="150" width="30" height="40" />
-              <rect x="140" y="150" width="30" height="40" />
-            </g>
-            <rect x="80" y="110" width="20" height="20" fill="var(--bg)" />
-            <rect x="140" y="110" width="20" height="20" fill="var(--bg)" />
-          </svg>
+          <MemexMark size={64} />
         </span>
         <div>
           <div
@@ -1516,7 +1502,7 @@ function SettingsAbout({ t }: { t: Strings }): JSX.Element {
             Memex
           </div>
           <div className="muted" style={{ fontSize: 13 }}>
-            v0.2.0 · build 2026.05.13
+            v0.2.2 · build 2026.07.15
           </div>
           <p
             style={{

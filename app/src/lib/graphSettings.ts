@@ -63,6 +63,12 @@ export interface GraphSettings {
   // One switch for ALL idle motion (auto-rotate, edge pulses, star breathing) —
   // the spec's motion budget gives ambience a single opt-out instead of three.
   ambientMotion: boolean;
+  // Cosmic events (black hole / wormhole) on the dark skin — a separate opt-out
+  // from ambientMotion because they're the most attention-grabbing FX.
+  cosmicEvents: boolean;
+  // How often cosmic events fire — a multiplier on the idle cadence (0.25 =
+  // quarter as often, 3 = 3× as often). 1 = the default ~40–120 s rhythm.
+  cosmicFrequency: number;
   // Timelapse playback speed multiplier (0.25×..4×). Read live each frame, so
   // dragging the slider mid-replay speeds the assembly up or down in place.
   tlSpeed: number;
@@ -102,6 +108,8 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   linkThickness: 1,
   brightness: 0.9, // exposure headroom: the void stays black, only emitters survive
   ambientMotion: true,
+  cosmicEvents: true,
+  cosmicFrequency: 1,
   tlSpeed: 1,
   nodeColor: "community",
   monoBelow: 200,

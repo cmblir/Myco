@@ -737,6 +737,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.nodeColorDepth,
     settings.edgeBundles,
     settings.edgeTint,
+    settings.cosmicEvents,
+    settings.cosmicFrequency,
   ]);
 
   // Theme/skin toggle — recolour the scene. Re-read AFTER the app's theme

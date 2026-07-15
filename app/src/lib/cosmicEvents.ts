@@ -202,9 +202,17 @@ export class CosmicEvents {
 
   // Advance the clock; when the countdown lapses ask the scene for galaxy
   // centres and open an event. `centres` must return ≥1 world positions.
+  // Frequency multiplier (settings.cosmicFrequency). Higher fires more often;
+  // applied by dividing the idle gap. Clamped so a stray 0 can't stall forever.
+  private freq = 1;
+  setFrequency(f: number): void {
+    this.freq = Math.max(0.05, f);
+  }
+
   update(dt: number, centres: () => { x: number; y: number; z: number; r: number }[]): void {
     if (!this.active) {
-      this.nextIn -= dt;
+      // Advance the clock faster when the user wants events more often.
+      this.nextIn -= dt * this.freq;
       if (this.nextIn <= 0) this.trigger(centres());
       return;
     }

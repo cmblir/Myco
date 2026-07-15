@@ -956,6 +956,7 @@ export class GraphScene {
     this.coreGlow = new CoreGlowLayer(this.graph, this.nodeIds, pr, false);
     this.scene.add(this.coreGlow.points);
     this.cosmic = new CosmicEvents(pr);
+    this.cosmic.setFrequency(settings.cosmicFrequency);
     this.cosmic.setSizeScale(this.sizeScale(h));
     this.scene.add(this.cosmic.group);
     this.band = new GalacticBandLayer(this.graph, this.nodeIds, pr);
@@ -2342,6 +2343,7 @@ export class GraphScene {
       monoColorFor(settings, this.darkTheme),
     );
     this.nodeMat.uniforms.u_colorDepth.value = settings.nodeColorDepth;
+    this.cosmic.setFrequency(settings.cosmicFrequency);
     // Edge tint mode flip (grey connective tissue ↔ community-hue webs)
     // rewrites the endpoint-colour cache — O(edges), only on actual change.
     if (settings.edgeTint !== this.appliedEdgeTint) {
@@ -2683,8 +2685,10 @@ export class GraphScene {
             this.coreGlow.refresh();
           }
         }
-        // Rare black-hole / wormhole events, near live galaxy centres.
-        if (this.darkTheme && !this.perfLod) {
+        // Rare black-hole / wormhole events, near live galaxy centres. A
+        // separate opt-out (cosmicEvents) from the ambient-motion switch, and
+        // never over a flat 2D map (they're 3D galaxy FX).
+        if (this.darkTheme && !this.perfLod && this.settings.cosmicEvents && !this.flatLayout) {
           this.cosmic.update(dt, () => this.galaxyCentres());
         }
         // Each large galaxy's dust band wheels with it.
