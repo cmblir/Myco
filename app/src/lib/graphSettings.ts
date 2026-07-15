@@ -197,47 +197,80 @@ export const LAYOUT_PRESETS: Record<
 // layout read its best). Applied over the current settings by the "Recommend"
 // button. Only the fields that matter for the look are set; everything else is
 // left as the user had it.
+// Values researched from force-directed / ForceAtlas2 / Gephi / neural-viz
+// practice (see plans/ recommended-settings research). Family logic: edges
+// grey on all four (colour lives in nodes / hull fills / fibre brightness);
+// nodeColorDepth rises with the medium (dark-3D luminous < 2D paper); the two
+// sim layouts carry the force tuple, the two FA2 maps don't (forces are inert
+// for them); living (galaxy/synapse/synapse3d) vs static print map (atlas).
 export const LAYOUT_RECOMMENDED: Record<
   GraphSettings["layout"],
   Partial<GraphSettings>
 > = {
-  // 3D galaxy: the calm-cosmic-web default — compact luminous nuclei threaded
-  // into one galaxy, grey connective edges, bundled strands + cosmic events on.
+  // 3D galaxy — the calm cosmic web: compact luminous community nuclei threaded
+  // into one galaxy by faint grey filaments. Short cohesive links + local-range
+  // repulsion (spread-but-cohesive, no firework spokes); bundled inter-cluster
+  // strands read as bridges; cosmic events supply the signature life. (Research
+  // suggested neuralFiring off for "calm"; kept on to honour the living-galaxy
+  // identity — one toggle either way.)
   galaxy: {
-    ...LAYOUT_PRESETS.galaxy,
+    ...LAYOUT_PRESETS.galaxy, // c0.5 r9 l0.45 d45 cl0.35
     folderGalaxies: true,
     edgeTint: "grey",
     edgeBundles: true,
-    cosmicEvents: true,
+    nodeColor: "community",
     nodeColorDepth: 1,
+    cosmicEvents: true,
+    cosmicFrequency: 1,
+    clickBurst: true,
+    neuralFiring: true,
   },
-  // Atlas (2D Gephi map): looser links so the territory hulls read; grey edges
-  // under the translucent fills.
+  // Atlas — the Gephi territory map: a settled print-like 2D spatialisation
+  // where each community reads as a distinct filled hull. Wide world (linkDist
+  // 90) opens whitespace gutters between hulls; deep colour (1.5) so pale hues
+  // survive on paper; no bundles/FX (static map); folderGalaxies off (FA2 does
+  // the spatial community split itself).
   atlas: {
-    linkDistance: 55,
-    clusterForce: 0.35,
+    linkDistance: 90,
+    clusterForce: 0.45,
+    folderGalaxies: false,
     edgeTint: "grey",
     edgeBundles: false,
-    nodeColorDepth: 1.2,
-  },
-  // Synapse 2D (nervous system): bundled nerve strands, deepened colours so the
-  // fibres read, neural firing on so signals travel.
-  synapse: {
-    linkDistance: 55,
-    edgeBundles: true,
-    neuralFiring: true,
-    nodeColorDepth: 1.3,
-    edgeTint: "grey",
-  },
-  // Synapse 3D: same nervous-system rendering over the 3D sim — looser links so
-  // the ganglia separate in space, bundled strands, firing on.
-  synapse3d: {
-    ...LAYOUT_PRESETS.loose,
-    folderGalaxies: true,
-    edgeBundles: true,
-    neuralFiring: true,
+    nodeColor: "community",
+    nodeColorDepth: 1.5,
     cosmicEvents: false,
+    clickBurst: false,
+    neuralFiring: false,
+  },
+  // Synapse 2D — flat nervous system: bright ganglia cores joined by nerve-fibre
+  // bridges. Bundled strands = nerve bundles; neural firing so signals travel;
+  // deep colour (1.3) so the fibres read on the flat map.
+  synapse: {
+    linkDistance: 60,
+    edgeTint: "grey",
+    edgeBundles: true,
+    nodeColor: "community",
+    nodeColorDepth: 1.3,
+    neuralFiring: true,
+    clickBurst: true,
+    cosmicEvents: false,
+  },
+  // Synapse 3D — the nervous system in space: ganglia float and separate (looser
+  // forces + higher repulsion + folderGalaxies), nerve-fibre bridges + firing;
+  // cosmic events OFF so a wormhole never yanks the ganglia mid-read.
+  synapse3d: {
+    centerForce: 0.45,
+    repelForce: 10,
+    linkForce: 0.4,
+    linkDistance: 70,
+    clusterForce: 0.45,
+    folderGalaxies: true,
+    edgeTint: "grey",
+    edgeBundles: true,
     nodeColorDepth: 1.15,
+    neuralFiring: true,
+    clickBurst: true,
+    cosmicEvents: false,
   },
 };
 
