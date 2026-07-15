@@ -39,6 +39,10 @@ export interface GraphSettings {
   // monoBelow nodes, then community hues kick in.
   nodeColor: "community" | "white" | "black" | "auto";
   monoBelow: number; // "auto": node count below this → mono; at/above → colour
+  // Node colour depth — a gamma on the star colour. 1 = as-is; >1 darkens /
+  // deepens (raise it so community colours read on the white skin, where pale
+  // hues otherwise vanish); <1 lightens. Applies to community + black inks.
+  nodeColorDepth: number;
   // Edge colouring. "grey" = neutral connective tissue (signal lives in the
   // stars); "community" = full community-hue edges — dense clusters read as
   // coloured translucent webs/veils (the classic Gephi hairball look). The
@@ -101,6 +105,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   tlSpeed: 1,
   nodeColor: "community",
   monoBelow: 200,
+  nodeColorDepth: 1,
   edgeTint: "grey",
   // GALAXY/BRAIN defaults: range-capped LOCAL repulsion (no global outward
   // pressure → no firework spikes) + firm centre gravity collapse the vault into

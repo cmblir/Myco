@@ -137,6 +137,7 @@ export interface Strings {
   gr_fly_btn?: string;
   gr_timelapse_record?: string;
   gr_node_color_black?: string;
+  gr_color_depth?: string;
   gr_edge_tint?: string;
   gr_edge_tint_grey?: string;
   gr_edge_tint_community?: string;
@@ -674,6 +675,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_fly_btn: "Spaceship mode (F)",
     gr_timelapse_record: "Record timelapse (WebM)",
     gr_node_color_black: "Black",
+    gr_color_depth: "Colour depth",
     gr_edge_tint: "Link colour",
     gr_edge_tint_grey: "Grey",
     gr_edge_tint_community: "Community webs",
@@ -1220,6 +1222,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_fly_btn: "우주선 모드 (F)",
     gr_timelapse_record: "타임랩스 녹화 (WebM)",
     gr_node_color_black: "블랙",
+    gr_color_depth: "색 짙기",
     gr_edge_tint: "링크 색상",
     gr_edge_tint_grey: "회색",
     gr_edge_tint_community: "커뮤니티 웹",
@@ -1762,6 +1765,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_fly_btn: "宇宙船モード (F)",
     gr_timelapse_record: "タイムラプス録画 (WebM)",
     gr_node_color_black: "ブラック",
+    gr_color_depth: "色の濃さ",
     gr_edge_tint: "リンク色",
     gr_edge_tint_grey: "グレー",
     gr_edge_tint_community: "コミュニティウェブ",

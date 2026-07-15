@@ -306,6 +306,14 @@ export default function GraphControls({
             ))}
           </div>
         </div>
+        <Slider
+          label={t.gr_color_depth ?? "Colour depth"}
+          value={settings.nodeColorDepth}
+          min={0.4}
+          max={2.4}
+          step={0.1}
+          onChange={(v) => onChange({ nodeColorDepth: v })}
+        />
         <div className="graph-field">
           <span className="graph-field__label">
             {t.gr_edge_tint ?? "Link colour"}

@@ -734,6 +734,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.ambientMotion,
     settings.nodeColor,
     settings.monoBelow,
+    settings.nodeColorDepth,
     settings.edgeBundles,
     settings.edgeTint,
   ]);

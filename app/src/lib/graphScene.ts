@@ -330,6 +330,7 @@ precision mediump float;
 uniform float u_lodFade; // cosmic-scale LOD: 1 near (nodes shown) → 0 far
 uniform float u_mono;    // 0 = community colour, 1 = monochrome ink
 uniform vec3 u_monoColor; // the ink — starlight white or near-black
+uniform float u_colorDepth; // gamma on node colour (>1 darker/deeper, <1 lighter)
 varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
@@ -384,6 +385,10 @@ void main() {
     float peak = max(base.r, max(base.g, base.b));
     base = mix(base, u_monoColor * max(peak, 0.55), u_mono);
   }
+  // Colour depth: a gamma on the star colour. On the white skin pale community
+  // hues wash out — raising depth (>1) darkens/deepens them so they read on
+  // paper; <1 lightens. Identity at 1.0, so the default is untouched.
+  base = pow(max(base, vec3(0.0)), vec3(u_colorDepth));
   // Class tints: giants burn warm, neutrons burn white-hot. (Skipped in full
   // monochrome so nothing re-introduces a hue.)
   if (u_mono < 0.99) {
@@ -808,6 +813,7 @@ export class GraphScene {
         u_lodFade: { value: 1 },
         u_mono: { value: monoFor(settings, graph.order) },
         u_monoColor: { value: monoColorFor(settings, dark).clone() },
+        u_colorDepth: { value: settings.nodeColorDepth },
       },
       vertexShader: NODE_VERT,
       fragmentShader: NODE_FRAG,
@@ -2335,6 +2341,7 @@ export class GraphScene {
     (this.nodeMat.uniforms.u_monoColor.value as THREE.Color).copy(
       monoColorFor(settings, this.darkTheme),
     );
+    this.nodeMat.uniforms.u_colorDepth.value = settings.nodeColorDepth;
     // Edge tint mode flip (grey connective tissue ↔ community-hue webs)
     // rewrites the endpoint-colour cache — O(edges), only on actual change.
     if (settings.edgeTint !== this.appliedEdgeTint) {
