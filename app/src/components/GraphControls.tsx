@@ -55,6 +55,9 @@ export default function GraphControls({
     // preset chips cover the common cases (spec B4).
     advanced: false,
   });
+  // The tag list can be long — collapsed by default so it never buries the
+  // rest of the Filters section; the active tag (if any) still shows a hint.
+  const [tagsOpen, setTagsOpen] = useState(false);
 
   const toggle = (k: string): void =>
     setOpenSections((p) => ({ ...p, [k]: !p[k] }));
@@ -124,34 +127,49 @@ export default function GraphControls({
 
         {tags.length > 0 ? (
           <div className="graph-field">
-            <span className="graph-field__label">{t.gr_tags ?? "Tags"}</span>
-            <div className="graph-chips">
-              <button
-                type="button"
-                className={`graph-chip${
-                  settings.tagFilter === null ? " graph-chip--active" : ""
-                }`}
-                onClick={() => onChange({ tagFilter: null })}
-              >
-                {t.gr_all ?? "all"}
-              </button>
-              {tags.map((tag) => (
+            <button
+              type="button"
+              className="graph-subhead"
+              onClick={() => setTagsOpen((v) => !v)}
+              aria-expanded={tagsOpen}
+            >
+              <span className="graph-field__label">
+                {t.gr_tags ?? "Tags"} ({tags.length})
+                {settings.tagFilter ? ` · #${settings.tagFilter}` : ""}
+              </span>
+              <span className={`graph-subhead__caret${tagsOpen ? " is-open" : ""}`}>
+                ▸
+              </span>
+            </button>
+            {tagsOpen ? (
+              <div className="graph-chips">
                 <button
-                  key={tag}
                   type="button"
                   className={`graph-chip${
-                    settings.tagFilter === tag ? " graph-chip--active" : ""
+                    settings.tagFilter === null ? " graph-chip--active" : ""
                   }`}
-                  onClick={() =>
-                    onChange({
-                      tagFilter: settings.tagFilter === tag ? null : tag,
-                    })
-                  }
+                  onClick={() => onChange({ tagFilter: null })}
                 >
-                  #{tag}
+                  {t.gr_all ?? "all"}
                 </button>
-              ))}
-            </div>
+                {tags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    className={`graph-chip${
+                      settings.tagFilter === tag ? " graph-chip--active" : ""
+                    }`}
+                    onClick={() =>
+                      onChange({
+                        tagFilter: settings.tagFilter === tag ? null : tag,
+                      })
+                    }
+                  >
+                    #{tag}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
 

@@ -606,6 +606,10 @@ export class GraphScene {
     this.theme = theme;
     this.settings = settings;
     this.appliedEdgeTint = settings.edgeTint;
+    // Set the flat-layout flags EARLY: buildStarfield + fog + camera setup all
+    // branch on flatLayout and run before the hull/atlas block further down.
+    this.atlasMode = settings.layout === "atlas";
+    this.synapseMode = settings.layout === "synapse";
     this.cb = cb;
     this.reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
@@ -670,8 +674,10 @@ export class GraphScene {
     this.controls.zoomSpeed = 0.9;
     this.controls.minDistance = 8; // closer zoom-in
     this.controls.maxDistance = 30000; // far zoom-out for large / spread-out vaults
-    this.controls.autoRotate = this.ambientOn();
+    this.controls.autoRotate = this.autoRotateWanted();
     this.controls.autoRotateSpeed = 0.12; // premium idle motion is slow
+    // Flat layouts lock to a top-down 2D map (no orbit tilt vs the flat bg).
+    this.applyLayoutCamera();
     // Interaction pauses the idle rotation; it eases back after 8 s of quiet.
     this.controls.addEventListener("start", this.onControlsStart);
     this.controls.addEventListener("end", this.onControlsEnd);
@@ -957,8 +963,6 @@ export class GraphScene {
     // to spread the cores apart with nerve-fibre bridges — NO hull fills (a
     // nervous system has no territories, just fibres). Positions are set by
     // applyAtlasLayout (no worker sim).
-    this.atlasMode = settings.layout === "atlas";
-    this.synapseMode = settings.layout === "synapse";
     this.hulls = new CommunityHullLayer(this.graph, dark);
     this.hulls.setVisible(this.atlasMode);
     this.scene.add(this.hulls.mesh);
@@ -1049,7 +1053,13 @@ export class GraphScene {
   // a dense, tiny, very dim wash that fixes the horizon. sizeAttenuation:false
   // keeps points pixel-sized, and a plain low-opacity PointsMaterial (NOT the
   // additive HDR node shader) guarantees these never bloom — depth cue only.
+  //
+  // Flat layouts (atlas / synapse) get a FLAT star plane behind the map instead
+  // of the 3D shells: a top-down 2D map orbiting against a 3D parallax sphere
+  // read as two disconnected things ("이격"). A single plane at fixed depth
+  // behind the flat map pans/zooms coherently with it — a proper 2D backdrop.
   private buildStarfield(dark: boolean): THREE.Group {
+    if (this.flatLayout) return this.buildFlatStarfield(dark);
     const group = new THREE.Group();
     let shells = dark
       ? [
@@ -1094,6 +1104,52 @@ export class GraphScene {
       group.add(pts);
     }
     return group;
+  }
+
+  // Flat 2D star backdrop for atlas / synapse: a single wide plane of pixel
+  // stars sitting far BEHIND the map (−z), so a top-down camera sees a flat
+  // starry field that pans with the map — no 3D parallax to mismatch.
+  private buildFlatStarfield(dark: boolean): THREE.Group {
+    const group = new THREE.Group();
+    const count = 2600;
+    const spread = 16000; // XY extent behind the map
+    const z = -9000;
+    const pos = new Float32Array(count * 3);
+    let seed = 1;
+    for (let i = 0; i < count; i++) {
+      pos[i * 3] = (GraphScene.starRand(seed++) - 0.5) * spread;
+      pos[i * 3 + 1] = (GraphScene.starRand(seed++) - 0.5) * spread;
+      pos[i * 3 + 2] = z + (GraphScene.starRand(seed++) - 0.5) * 200;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const m = new THREE.PointsMaterial({
+      color: dark ? 0x8f9ec4 : 0xa6b0c8,
+      size: dark ? 1.4 : 1.1,
+      sizeAttenuation: false,
+      transparent: true,
+      opacity: dark ? 0.22 : 0.14,
+      depthWrite: false,
+      fog: false,
+    });
+    const pts = new THREE.Points(g, m);
+    pts.frustumCulled = false;
+    group.add(pts);
+    return group;
+  }
+
+  // Camera interaction mode by layout. Flat layouts (atlas / synapse) lock to a
+  // top-down 2D map: orbit disabled (the tilt is what made the flat map fight
+  // the background), pan in the screen plane, zoom only — fit() parks the
+  // camera straight-on down the +Z axis so the map's own XY plane fills the
+  // screen. Galaxy keeps full 3D orbit. Rotate stays off, so the OrbitControls
+  // Y-up polar convention (which assumes an XZ ground plane, not our XY map
+  // plane) never gets a chance to re-tilt the view.
+  private applyLayoutCamera(): void {
+    const flat = this.flatLayout;
+    this.controls.enableRotate = !flat;
+    this.controls.screenSpacePanning = flat;
+    if (flat) this.controls.autoRotate = false;
   }
 
   // Recompute per-node position/color/size/alpha from the graph + style state.
@@ -2258,7 +2314,7 @@ export class GraphScene {
       this.controls.target.copy(this.camera.position).addScaledVector(fwd, 300);
       this.camera.up.set(0, 1, 0);
       this.controls.enabled = true;
-      this.controls.autoRotate = this.ambientOn();
+      this.controls.autoRotate = this.autoRotateWanted();
       this.controls.update();
     }
   }
@@ -2298,7 +2354,7 @@ export class GraphScene {
     // Ambient motion (one switch for auto-rotate / pulses / breathing). The
     // pulse layer is hidden rather than disposed so re-enabling is instant.
     // Arrows ON hides the round pulses — the flying arrows ARE the signals now.
-    this.controls.autoRotate = this.ambientOn();
+    this.controls.autoRotate = this.autoRotateWanted();
     this.pulse.points.visible =
       this.ambientOn() && !this.perfLod && !settings.arrows;
     if (this.rotateResumeTimer != null && !this.ambientOn()) {
@@ -2342,6 +2398,12 @@ export class GraphScene {
     return !this.reducedMotion && this.settings.ambientMotion;
   }
 
+  // Auto-rotate wants ambient motion AND a 3D layout — a flat 2D map must not
+  // spin, but its other ambient life (synapse firing, pulses) stays on.
+  private autoRotateWanted(): boolean {
+    return this.ambientOn() && !this.flatLayout;
+  }
+
   // Auto-rotate pauses the moment the user orbits/zooms and resumes only after
   // a quiet ROTATE_IDLE_MS — idle ambience must never fight the hand (spec A7).
   private onControlsStart = (): void => {
@@ -2357,7 +2419,7 @@ export class GraphScene {
     if (this.rotateResumeTimer != null) clearTimeout(this.rotateResumeTimer);
     this.rotateResumeTimer = setTimeout(() => {
       this.rotateResumeTimer = null;
-      this.controls.autoRotate = this.ambientOn();
+      this.controls.autoRotate = this.autoRotateWanted();
     }, ROTATE_IDLE_MS);
     this.endInteraction();
   };
@@ -2461,9 +2523,16 @@ export class GraphScene {
     // back of the graph always sits in haze, the front always reads crisp.
     this.nodeMat.uniforms.u_fogNear.value = 0.35 * dist;
     this.nodeMat.uniforms.u_fogFar.value = 1.7 * dist;
-    (this.scene.fog as THREE.FogExp2).density = 0.55 / dist;
+    // Flat layouts: a 2D map has no depth to haze, and distance fog on a
+    // top-down view just greys the edges — push fog far away (≈off).
+    (this.scene.fog as THREE.FogExp2).density = this.flatLayout ? 0.02 / dist : 0.55 / dist;
     const dir = this.tmpVec.copy(this.camera.position).sub(toTarget);
-    if (dir.lengthSq() < 1) dir.set(0.3, 0.15, 1);
+    if (this.flatLayout) {
+      // Straight-on top-down: the map is the flat 2D plane it was laid out on.
+      dir.set(0, 0, 1);
+    } else if (dir.lengthSq() < 1) {
+      dir.set(0.3, 0.15, 1);
+    }
     dir.setLength(THREE.MathUtils.clamp(dist, this.controls.minDistance, this.controls.maxDistance));
     const toPos = toTarget.clone().add(dir);
     if (animateMs > 0) {
