@@ -139,6 +139,7 @@ export interface Strings {
   gr_edge_tint?: string;
   gr_edge_tint_grey?: string;
   gr_edge_tint_community?: string;
+  gr_edge_tint_synapse?: string;
   // Gesture cheat-sheet popover ("?" toolbar button).
   gr_help_btn?: string;
   gr_help_title?: string;
@@ -675,6 +676,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_edge_tint: "Link colour",
     gr_edge_tint_grey: "Grey",
     gr_edge_tint_community: "Community webs",
+    gr_edge_tint_synapse: "Synapse",
     gr_help_btn: "Gestures & keys",
     gr_help_title: "Gestures & keys",
     gr_help_click: "Focus a note (1 hop)",
@@ -1220,6 +1222,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_edge_tint: "링크 색상",
     gr_edge_tint_grey: "회색",
     gr_edge_tint_community: "커뮤니티 웹",
+    gr_edge_tint_synapse: "시냅스",
     gr_help_btn: "제스처 안내",
     gr_help_title: "제스처 안내",
     gr_help_click: "노트에 포커스 (1홉)",
@@ -1761,6 +1764,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_edge_tint: "リンク色",
     gr_edge_tint_grey: "グレー",
     gr_edge_tint_community: "コミュニティウェブ",
+    gr_edge_tint_synapse: "シナプス",
     gr_help_btn: "ジェスチャーガイド",
     gr_help_title: "ジェスチャーガイド",
     gr_help_click: "ノートにフォーカス (1ホップ)",

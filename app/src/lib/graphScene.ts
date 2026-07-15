@@ -1224,11 +1224,21 @@ export class GraphScene {
       // hue and brightens — thousands of intra-cluster edges then stack into
       // the coloured translucent veil of the classic Gephi hairball, and
       // inter-cluster strands gradient between their communities' hues.
-      const web = this.settings.edgeTint === "community";
-      const greyMix = web ? 0.12 : EDGE_GREY_MIX;
+      // "synapse" inverts the emphasis: the long INTER-cluster bridges glow as
+      // bright gradient nerve fibres while the dense intra-cluster edges dim
+      // into tight cores (ganglia connected by nerves — the reference look).
+      const tint = this.settings.edgeTint;
+      const web = tint === "community";
+      const synapse = tint === "synapse";
+      const greyMix = web || synapse ? 0.12 : EDGE_GREY_MIX;
       cs.set(sa.color).lerp(this.edgeNeutral, greyMix);
       ct.set(ta.color).lerp(this.edgeNeutral, greyMix);
       let f = this.edgeBaseBrightness * (web ? 1.55 : 1);
+      if (synapse) {
+        const inter =
+          sa.community !== ta.community && sa.community >= 0 && ta.community >= 0;
+        f = this.edgeBaseBrightness * (inter ? 2.4 : 0.5);
+      }
       if (focus && !(focus.has(s) && focus.has(t))) {
         // Edge leaves the focus set → near-invisible context, hover ignored.
         f = FOCUS_EDGE_DIM;
@@ -2196,7 +2206,11 @@ export class GraphScene {
   // wave (1–2 hops). Deterministic (starRand over a counter) so idle activity
   // replays identically. Skipped while a previous ripple is still running.
   private fireSynapse(): void {
-    this.synapseTimer = synapseDelay(GraphScene.starRand(1000 + this.synapseCount * 3));
+    // Synapse edge-tint mode is an explicit "living nervous system" — fire far
+    // more often (a fraction of the idle cadence) so signals are always
+    // travelling the nerve fibres; otherwise keep the rare ambient rhythm.
+    const delay = synapseDelay(GraphScene.starRand(1000 + this.synapseCount * 3));
+    this.synapseTimer = this.settings.edgeTint === "synapse" ? delay * 0.25 : delay;
     const rand = GraphScene.starRand(2000 + this.synapseCount * 7);
     this.synapseCount++;
     if (this.synapse.isActive()) return;

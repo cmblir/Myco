@@ -296,6 +296,7 @@ export default function GraphControls({
               [
                 ["grey", t.gr_edge_tint_grey ?? "Grey"],
                 ["community", t.gr_edge_tint_community ?? "Community webs"],
+                ["synapse", t.gr_edge_tint_synapse ?? "Synapse"],
               ] as [GraphSettings["edgeTint"], string][]
             ).map(([key, label]) => (
               <button
