@@ -1187,6 +1187,23 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
     }
   }
 
+  // Start / stop the SSE server directly (installed but stopped is a valid
+  // state — e.g. the boot auto-start ran before Install, or the user stopped
+  // it). Register also starts it, but a dedicated control is clearer.
+  async function toggleServe(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    try {
+      if (info?.serving) await ipc.mcpStop();
+      else await ipc.mcpServe();
+      setTick((n) => n + 1);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (!currentVault) return <div className="muted">Loading…</div>;
 
   const codeBox = (text: string, which: string): JSX.Element => (
@@ -1261,6 +1278,16 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
             {info.serving
               ? `${t.mcp_serving ?? "SSE server running"}${info.url ? ` — ${info.url}` : ""}`
               : (t.mcp_not_serving ?? "SSE server stopped")}
+            <button
+              className="btn"
+              disabled={busy}
+              onClick={() => void toggleServe()}
+              style={{ marginLeft: 8, padding: "2px 10px", fontSize: 12 }}
+            >
+              {info.serving
+                ? (t.mcp_stop_btn ?? "Stop")
+                : (t.mcp_start_btn ?? "Start server")}
+            </button>
           </div>
 
           <div className="col" style={{ gap: 6 }}>

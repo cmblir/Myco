@@ -2248,7 +2248,7 @@ export class GraphScene {
    * accent (like the trace comet), so it runs regardless of the ambient-motion
    * toggle — but honours the OS reduced-motion preference. */
   impulse(id: string): void {
-    if (this.reducedMotion || !this.graph.hasNode(id)) return;
+    if (this.reducedMotion || !this.settings.clickBurst || !this.graph.hasNode(id)) return;
     const a = this.graph.getNodeAttributes(id);
     this.nova.trigger(a.x, a.y, a.z, a.size, a.color);
     this.wave.setPlan(planWave((n) => this.graph.neighbors(n), id));
@@ -2694,8 +2694,9 @@ export class GraphScene {
         // Each large galaxy's dust band wheels with it.
         if (this.band.points.visible) this.band.update(dt);
         // Spontaneous synapse firings keep the idle brain alive. Perf mode
-        // drops them with the other ambient layers.
-        if (!this.perfLod) {
+        // drops them with the other ambient layers; a dedicated toggle lets a
+        // user silence them for a still graph.
+        if (!this.perfLod && this.settings.neuralFiring) {
           this.synapseTimer -= dt;
           if (this.synapseTimer <= 0) this.fireSynapse();
         }

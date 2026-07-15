@@ -140,6 +140,10 @@ export interface Strings {
   gr_cosmic?: string;
   gr_cosmic_hint?: string;
   gr_cosmic_freq?: string;
+  gr_click_burst?: string;
+  gr_click_burst_hint?: string;
+  gr_neural_firing?: string;
+  gr_neural_firing_hint?: string;
   gr_color_depth?: string;
   gr_edge_tint?: string;
   gr_edge_tint_grey?: string;
@@ -265,6 +269,8 @@ export interface Strings {
   mcp_not_found: string;
   mcp_serving?: string;
   mcp_not_serving?: string;
+  mcp_start_btn?: string;
+  mcp_stop_btn?: string;
   mcp_registering?: string;
   s_model_lede: string;
   s_model_ingest: string;
@@ -681,6 +687,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_cosmic: "Cosmic events",
     gr_cosmic_hint: "Black holes & wormholes (dark theme)",
     gr_cosmic_freq: "Event frequency",
+    gr_click_burst: "Click burst",
+    gr_click_burst_hint: "Supernova + ripple when you select a node",
+    gr_neural_firing: "Neural firing",
+    gr_neural_firing_hint: "Signals that periodically ripple the mesh",
     gr_color_depth: "Colour depth",
     gr_edge_tint: "Link colour",
     gr_edge_tint_grey: "Grey",
@@ -807,6 +817,8 @@ export const STRINGS: Record<Lang, Strings> = {
     mcp_register_btn: "Register to Claude Code now",
     mcp_serving: "SSE server running",
     mcp_not_serving: "SSE server stopped",
+    mcp_start_btn: "Start server",
+    mcp_stop_btn: "Stop",
     mcp_registering: "Registering…",
     mcp_offline_note:
       "The app hosts the SSE server while it's open and follows your active vault.",
@@ -1231,6 +1243,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_cosmic: "우주 이벤트",
     gr_cosmic_hint: "블랙홀·웜홀 (다크 테마)",
     gr_cosmic_freq: "이벤트 빈도",
+    gr_click_burst: "클릭 버스트",
+    gr_click_burst_hint: "노드 선택 시 슈퍼노바 + 파동",
+    gr_neural_firing: "신경 발화",
+    gr_neural_firing_hint: "주기적으로 메시를 타고 흐르는 신호",
     gr_color_depth: "색 짙기",
     gr_edge_tint: "링크 색상",
     gr_edge_tint_grey: "회색",
@@ -1777,6 +1793,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_cosmic: "宇宙イベント",
     gr_cosmic_hint: "ブラックホール・ワームホール (ダークテーマ)",
     gr_cosmic_freq: "イベント頻度",
+    gr_click_burst: "クリックバースト",
+    gr_click_burst_hint: "ノード選択時のスーパーノヴァ + 波紋",
+    gr_neural_firing: "神経発火",
+    gr_neural_firing_hint: "定期的にメッシュを伝う信号",
     gr_color_depth: "色の濃さ",
     gr_edge_tint: "リンク色",
     gr_edge_tint_grey: "グレー",

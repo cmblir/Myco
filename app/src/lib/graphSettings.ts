@@ -69,6 +69,12 @@ export interface GraphSettings {
   // How often cosmic events fire — a multiplier on the idle cadence (0.25 =
   // quarter as often, 3 = 3× as often). 1 = the default ~40–120 s rhythm.
   cosmicFrequency: number;
+  // Click burst: the supernova detonation + neural wave when a node is
+  // selected. The "팡팡 터지는" accent — opt out for a calmer graph.
+  clickBurst: boolean;
+  // Spontaneous neural firings — signals that periodically ripple the mesh
+  // (and travel the fibres in synapse mode). Opt out for a still graph.
+  neuralFiring: boolean;
   // Timelapse playback speed multiplier (0.25×..4×). Read live each frame, so
   // dragging the slider mid-replay speeds the assembly up or down in place.
   tlSpeed: number;
@@ -110,6 +116,8 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   ambientMotion: true,
   cosmicEvents: true,
   cosmicFrequency: 1,
+  clickBurst: true,
+  neuralFiring: true,
   tlSpeed: 1,
   nodeColor: "community",
   monoBelow: 200,

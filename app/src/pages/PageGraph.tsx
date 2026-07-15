@@ -573,41 +573,31 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       // whole time, and unmount/layout-switch aborts mid-run. NEVER run it
       // synchronously — a 10k vault wedged the WebKit renderer for minutes
       // and the persisted layout choice re-froze every app launch.
-      let atlasTookOver = false;
-      const atlasTakeOver = (): void => {
-        atlasTookOver = true;
-      };
-      container.addEventListener("wheel", atlasTakeOver, { passive: true, once: true });
-      container.addEventListener("pointerdown", atlasTakeOver, { once: true });
-      let slices = 0;
+      // Hold the loader through the WHOLE FA2 formation, then reveal the
+      // finished map in ONE instant fit. The old code streamed the raw FA2
+      // positions and re-framed every few slices — but synapse's raw FA2
+      // spread is far bigger than the final separated+normalised layout, so
+      // the graph appeared to explode outward and the camera drifted far
+      // ("갑자기 엄청 멀어지면서"); a mid-formation interaction could even
+      // strand the camera at the huge frame. A flat 2D map has nothing to
+      // gain from a forming preview, so we just show the finished result.
       void applyAtlasLayout(graph, {
         variant: s.layout === "synapse" ? "synapse" : "atlas",
         // Synapse spreads wider, so give it more world room to frame into.
         targetRadius: s.linkDistance * ATLAS_RADIUS_MUL * (s.layout === "synapse" ? 1.6 : 1),
         shouldAbort: () => killed,
-        onProgress: () => {
-          if (killed) return;
-          // Live preview: show the map forming instead of a frozen loader.
-          sceneRef.current?.syncPositions();
-          container.classList.add("graph-ready");
-          if (!atlasTookOver && (slices = (slices + 1) % 8) === 0) {
-            sceneRef.current?.fit();
-          }
-        },
       }).then((completed) => {
         if (killed || !completed) return;
         sceneRef.current?.syncPositions();
         sceneRef.current?.layoutSettled(); // bundled strands over the static map
-        if (!atlasTookOver) {
-          sceneRef.current?.fit(undefined, introPlayed ? 0 : 2600);
-          introPlayed = true;
-        }
+        // Instant fit (no tween): a flat map doesn't need the cinematic
+        // fly-in, and an instant snap can't be stranded by an interaction.
+        sceneRef.current?.fit();
+        introPlayed = true;
         container.classList.add("graph-ready");
       });
       return () => {
         killed = true;
-        container.removeEventListener("wheel", atlasTakeOver);
-        container.removeEventListener("pointerdown", atlasTakeOver);
         if (tlRafRef.current != null) {
           cancelAnimationFrame(tlRafRef.current);
           tlRafRef.current = null;
@@ -739,6 +729,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.edgeTint,
     settings.cosmicEvents,
     settings.cosmicFrequency,
+    settings.clickBurst,
+    settings.neuralFiring,
   ]);
 
   // Theme/skin toggle — recolour the scene. Re-read AFTER the app's theme

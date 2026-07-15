@@ -449,6 +449,18 @@ export default function GraphControls({
             onChange={(v) => onChange({ cosmicFrequency: v })}
           />
         ) : null}
+        <Toggle
+          label={t.gr_click_burst ?? "Click burst"}
+          hint={t.gr_click_burst_hint ?? "Supernova + ripple when you select a node"}
+          value={settings.clickBurst}
+          onChange={(v) => onChange({ clickBurst: v })}
+        />
+        <Toggle
+          label={t.gr_neural_firing ?? "Neural firing"}
+          hint={t.gr_neural_firing_hint ?? "Signals that periodically ripple the mesh"}
+          value={settings.neuralFiring}
+          onChange={(v) => onChange({ neuralFiring: v })}
+        />
         <button
           type="button"
           className="graph-drawer__play"
