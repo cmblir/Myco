@@ -731,6 +731,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.cosmicFrequency,
     settings.clickBurst,
     settings.neuralFiring,
+    settings.skyStyle,
   ]);
 
   // Theme/skin toggle — recolour the scene. Re-read AFTER the app's theme

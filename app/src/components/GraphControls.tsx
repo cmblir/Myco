@@ -7,6 +7,7 @@ import type { JSX } from "react";
 import { useState } from "react";
 import {
   LAYOUT_PRESETS,
+  LAYOUT_RECOMMENDED,
   matchPreset,
   type GraphSettings,
   type GraphSkinKey,
@@ -227,6 +228,7 @@ export default function GraphControls({
                 ["galaxy", t.gr_layout_galaxy ?? "Galaxy (3D)"],
                 ["atlas", t.gr_layout_atlas ?? "Atlas (2D)"],
                 ["synapse", t.gr_layout_synapse ?? "Synapse (2D)"],
+                ["synapse3d", t.gr_layout_synapse3d ?? "Synapse (3D)"],
               ] as [GraphSettings["layout"], string][]
             ).map(([key, label]) => (
               <button
@@ -237,6 +239,39 @@ export default function GraphControls({
                 }`}
                 aria-pressed={settings.layout === key}
                 onClick={() => onChange({ layout: key })}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button
+            type="button"
+            className="graph-recommend"
+            onClick={() => onChange(LAYOUT_RECOMMENDED[settings.layout])}
+            title={t.gr_recommend_hint ?? "Apply the recommended settings for this layout"}
+          >
+            ✦ {t.gr_recommend ?? "Recommended settings"}
+          </button>
+        </div>
+        <div className="graph-field">
+          <span className="graph-field__label">{t.gr_sky ?? "Sky"}</span>
+          <div className="graph-chips">
+            {(
+              [
+                ["stars", t.gr_sky_stars ?? "Stars"],
+                ["dense", t.gr_sky_dense ?? "Dense"],
+                ["grid", t.gr_sky_grid ?? "Grid"],
+                ["void", t.gr_sky_void ?? "Void"],
+              ] as [GraphSettings["skyStyle"], string][]
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`graph-chip${
+                  settings.skyStyle === key ? " graph-chip--active" : ""
+                }`}
+                aria-pressed={settings.skyStyle === key}
+                onClick={() => onChange({ skyStyle: key })}
               >
                 {label}
               </button>

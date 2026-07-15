@@ -29,10 +29,17 @@ export interface GraphSettings {
   folderGalaxies: boolean;
   // Layout engine. "galaxy" = the 3D force sim (default); "atlas" = a static
   // 2D ForceAtlas2 map with translucent per-community territory fills (Gephi
-  // look); "synapse" = a static 2D map tuned to fling communities far apart as
-  // separate bright cores (ganglia) joined by long glowing nerve-fibre
-  // bridges — the nervous-system / big-data-viz look.
-  layout: "galaxy" | "atlas" | "synapse";
+  // look); "synapse" = a static 2D nervous-system map — communities flung far
+  // apart as separate bright cores (ganglia) joined by long glowing nerve-fibre
+  // bridges; "synapse3d" = the same nervous-system RENDERING (nerve fibres +
+  // rapid firing) but over the live 3D force sim, so you can orbit and fly
+  // through it.
+  layout: "galaxy" | "atlas" | "synapse" | "synapse3d";
+  // Background appearance in 3D (galaxy / synapse3d). "stars" = the classic
+  // multi-shell parallax field; "dense" = a fuller star field on every side;
+  // "grid" = a dark dotted grid backdrop (the big-data-viz look); "void" = an
+  // (almost) empty black sky. 2D layouts always use the full field.
+  skyStyle: "stars" | "dense" | "grid" | "void";
   // Node colouring. "community" = folder/cluster hues; "white" = monochrome
   // starlight; "black" = monochrome ink (the only visible mono on the white
   // skin); "auto" = theme-appropriate mono until the vault grows past
@@ -105,6 +112,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   skin: "auto",
   folderGalaxies: true,
   layout: "galaxy",
+  skyStyle: "stars",
   arrows: false,
   arrowSize: 1, // arrowhead/flying-ship scale (bumped from 0.35 on request)
   semanticEdges: false,
@@ -181,6 +189,55 @@ export const LAYOUT_PRESETS: Record<
     linkForce: DEFAULT_GRAPH_SETTINGS.linkForce,
     linkDistance: 34,
     clusterForce: 0.5,
+  },
+};
+
+// Recommended settings PER LAYOUT — one click lands the graph on a tuned look
+// for whichever engine is active (the raw sliders + toggles that make each
+// layout read its best). Applied over the current settings by the "Recommend"
+// button. Only the fields that matter for the look are set; everything else is
+// left as the user had it.
+export const LAYOUT_RECOMMENDED: Record<
+  GraphSettings["layout"],
+  Partial<GraphSettings>
+> = {
+  // 3D galaxy: the calm-cosmic-web default — compact luminous nuclei threaded
+  // into one galaxy, grey connective edges, bundled strands + cosmic events on.
+  galaxy: {
+    ...LAYOUT_PRESETS.galaxy,
+    folderGalaxies: true,
+    edgeTint: "grey",
+    edgeBundles: true,
+    cosmicEvents: true,
+    nodeColorDepth: 1,
+  },
+  // Atlas (2D Gephi map): looser links so the territory hulls read; grey edges
+  // under the translucent fills.
+  atlas: {
+    linkDistance: 55,
+    clusterForce: 0.35,
+    edgeTint: "grey",
+    edgeBundles: false,
+    nodeColorDepth: 1.2,
+  },
+  // Synapse 2D (nervous system): bundled nerve strands, deepened colours so the
+  // fibres read, neural firing on so signals travel.
+  synapse: {
+    linkDistance: 55,
+    edgeBundles: true,
+    neuralFiring: true,
+    nodeColorDepth: 1.3,
+    edgeTint: "grey",
+  },
+  // Synapse 3D: same nervous-system rendering over the 3D sim — looser links so
+  // the ganglia separate in space, bundled strands, firing on.
+  synapse3d: {
+    ...LAYOUT_PRESETS.loose,
+    folderGalaxies: true,
+    edgeBundles: true,
+    neuralFiring: true,
+    cosmicEvents: false,
+    nodeColorDepth: 1.15,
   },
 };
 

@@ -485,6 +485,7 @@ export class GraphScene {
   private edgeOpacity = EDGE_OPACITY_DARK;
   private edgeBaseBrightness = EDGE_BASE_DARK;
   private appliedEdgeTint: GraphSettings["edgeTint"] = "grey";
+  private appliedSkyStyle: GraphSettings["skyStyle"] = "stars";
 
   // Fat glowing filament overlay — the Phase 3 focus/path layer (spec A2). A
   // fixed FILAMENT_CAP-slot buffer, allocated once; each style change fills the
@@ -529,10 +530,16 @@ export class GraphScene {
   private hulls: CommunityHullLayer; // atlas-mode translucent community fills
   private bundles: EdgeBundleLayer; // bundled inter-community strands (GRAPH-01)
   private atlasMode = false; // static 2D ForceAtlas2 layout (no sim, flat)
-  private synapseMode = false; // static 2D nervous-system layout (spread + fibres)
-  // Either static 2D layout skips the worker sim + galaxy adornments.
+  private synapse2dMode = false; // static 2D nervous-system layout (spread + fibres)
+  private synapse3dMode = false; // nervous-system RENDER over the live 3D sim
+  // Either static 2D layout is flat: top-down camera lock, flat bg, no galaxy FX.
   private get flatLayout(): boolean {
-    return this.atlasMode || this.synapseMode;
+    return this.atlasMode || this.synapse2dMode;
+  }
+  // Nervous-system rendering (nerve-fibre edges + rapid firing) — both the 2D
+  // and the 3D synapse layouts.
+  private get synapseRender(): boolean {
+    return this.synapse2dMode || this.synapse3dMode;
   }
   private imposterEnabled = false; // dark-theme gate (LOD then controls visibility)
   // Cosmic-scale LOD state (see cosmicLod). onScale fires when the camera
@@ -610,11 +617,13 @@ export class GraphScene {
     this.graph = graph;
     this.theme = theme;
     this.settings = settings;
-    this.appliedEdgeTint = settings.edgeTint;
-    // Set the flat-layout flags EARLY: buildStarfield + fog + camera setup all
-    // branch on flatLayout and run before the hull/atlas block further down.
+    // Set the layout flags EARLY: buildStarfield + fog + camera setup all
+    // branch on them and run before the hull/atlas block further down.
     this.atlasMode = settings.layout === "atlas";
-    this.synapseMode = settings.layout === "synapse";
+    this.synapse2dMode = settings.layout === "synapse";
+    this.synapse3dMode = settings.layout === "synapse3d";
+    this.appliedEdgeTint = settings.edgeTint;
+    this.appliedSkyStyle = settings.skyStyle;
     this.cb = cb;
     this.reducedMotion = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
@@ -1055,32 +1064,37 @@ export class GraphScene {
     return (x >>> 0) / 4294967296;
   }
 
-  // Three parallax shells (near/mid/far). Closer shells are larger + brighter
-  // and parallax faster against the graph as the camera orbits; the far shell is
-  // a dense, tiny, very dim wash that fixes the horizon. sizeAttenuation:false
-  // keeps points pixel-sized, and a plain low-opacity PointsMaterial (NOT the
-  // additive HDR node shader) guarantees these never bloom — depth cue only.
+  // Star shells on a SPHERE around the origin — a full field on every side, so
+  // it fills the frame from any angle (crucial for spaceship fly-through and
+  // for the 2D layouts, where the map is a tiny cluster in a big sky). Used for
+  // every layout: the 2D layouts lock camera rotation, so the sphere never
+  // tilts against the flat map (the old "이격"); it just pans/zooms coherently.
+  // sizeAttenuation:false keeps points pixel-sized; a plain low-opacity
+  // PointsMaterial (NOT the additive HDR node shader) never blooms.
   //
-  // Flat layouts (atlas / synapse) get a FLAT star plane behind the map instead
-  // of the 3D shells: a top-down 2D map orbiting against a 3D parallax sphere
-  // read as two disconnected things ("이격"). A single plane at fixed depth
-  // behind the flat map pans/zooms coherently with it — a proper 2D backdrop.
+  // skyStyle picks the density/appearance: dense fills every side hard (the
+  // "4면이 꽉 찬 우주"); grid adds a dark dotted backdrop (big-data-viz look);
+  // void is an almost-empty sky.
   private buildStarfield(dark: boolean): THREE.Group {
-    if (this.flatLayout) return this.buildFlatStarfield(dark);
     const group = new THREE.Group();
-    let shells = dark
+    const style = this.settings.skyStyle;
+    // Base three-shell field; density multiplied per style. Flat 2D layouts
+    // never go below "dense" — a sparse plane left big empty gaps in fly mode.
+    const flatFull = this.flatLayout;
+    const densMul =
+      style === "void" ? 0.25 : style === "dense" || flatFull ? 2.2 : 1;
+    const near = dark
       ? [
-          // Background must never compete with foreground (luminance budget) —
-          // dimmer than the dim edges so the hierarchy stays nodes > edges > sky.
-          { count: 900, r0: 2400, r1: 3000, size: 1.6, color: 0xbcc6e0, op: 0.3 },
-          { count: 1100, r0: 3600, r1: 4600, size: 1.4, color: 0x8f9ec4, op: 0.2 },
-          { count: 1400, r0: 5200, r1: 6400, size: 1.0, color: 0x6b7aa6, op: 0.12 },
+          { count: 900, r0: 900, r1: 3000, size: 1.6, color: 0xbcc6e0, op: 0.3 },
+          { count: 1100, r0: 3200, r1: 4600, size: 1.4, color: 0x8f9ec4, op: 0.2 },
+          { count: 1400, r0: 5000, r1: 6800, size: 1.0, color: 0x6b7aa6, op: 0.14 },
         ]
       : [
-          { count: 700, r0: 2400, r1: 3000, size: 1.5, color: 0xc6cee0, op: 0.28 },
-          { count: 900, r0: 3600, r1: 4600, size: 1.1, color: 0xb2bcd2, op: 0.18 },
-          { count: 1100, r0: 5200, r1: 6400, size: 0.8, color: 0xa6b0c8, op: 0.12 },
+          { count: 700, r0: 900, r1: 3000, size: 1.5, color: 0xc6cee0, op: 0.24 },
+          { count: 900, r0: 3200, r1: 4600, size: 1.1, color: 0xb2bcd2, op: 0.16 },
+          { count: 1100, r0: 5000, r1: 6800, size: 0.8, color: 0xa6b0c8, op: 0.1 },
         ];
+    let shells = near.map((s) => ({ ...s, count: Math.round(s.count * densMul) }));
     // Performance mode keeps only the mid shell — one draw call of depth cue.
     if (this.perfLod) shells = [shells[1]];
     let seed = 1; // global stream cursor so shells don't share point positions
@@ -1110,39 +1124,43 @@ export class GraphScene {
       pts.frustumCulled = false;
       group.add(pts);
     }
+    if (style === "grid") group.add(this.buildGridBackdrop(dark));
     return group;
   }
 
-  // Flat 2D star backdrop for atlas / synapse: a single wide plane of pixel
-  // stars sitting far BEHIND the map (−z), so a top-down camera sees a flat
-  // starry field that pans with the map — no 3D parallax to mismatch.
-  private buildFlatStarfield(dark: boolean): THREE.Group {
-    const group = new THREE.Group();
-    const count = 2600;
-    const spread = 16000; // XY extent behind the map
-    const z = -9000;
-    const pos = new Float32Array(count * 3);
-    let seed = 1;
-    for (let i = 0; i < count; i++) {
-      pos[i * 3] = (GraphScene.starRand(seed++) - 0.5) * spread;
-      pos[i * 3 + 1] = (GraphScene.starRand(seed++) - 0.5) * spread;
-      pos[i * 3 + 2] = z + (GraphScene.starRand(seed++) - 0.5) * 200;
+  // A dark dotted-grid backdrop (the big-data-viz / reference look): a large
+  // plane of regularly-spaced dim dots far behind the graph. Two facing planes
+  // (±z) so it reads from a fly-through in either direction. Returns a single
+  // THREE.Points (NOT a group) so the starfield dispose loop — which casts
+  // every child to Points and frees its geometry/material — stays valid.
+  private buildGridBackdrop(dark: boolean): THREE.Points {
+    const step = 260; // world units between dots
+    const half = 34; // 69×69 grid
+    const pos = new Float32Array((half * 2 + 1) * (half * 2 + 1) * 2 * 3);
+    let k = 0;
+    for (const z of [-7000, 7000]) {
+      for (let ix = -half; ix <= half; ix++) {
+        for (let iy = -half; iy <= half; iy++) {
+          pos[k++] = ix * step;
+          pos[k++] = iy * step;
+          pos[k++] = z;
+        }
+      }
     }
     const g = new THREE.BufferGeometry();
     g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
     const m = new THREE.PointsMaterial({
-      color: dark ? 0x8f9ec4 : 0xa6b0c8,
-      size: dark ? 1.4 : 1.1,
+      color: dark ? 0x3a4a7a : 0x9aa4c0,
+      size: 2.0,
       sizeAttenuation: false,
       transparent: true,
-      opacity: dark ? 0.22 : 0.14,
+      opacity: dark ? 0.35 : 0.22,
       depthWrite: false,
       fog: false,
     });
     const pts = new THREE.Points(g, m);
     pts.frustumCulled = false;
-    group.add(pts);
-    return group;
+    return pts;
   }
 
   // Camera interaction mode by layout. Flat layouts (atlas / synapse) lock to a
@@ -1300,11 +1318,11 @@ export class GraphScene {
       // bridges glow as bright gradient nerve fibres while dense intra-cluster
       // edges dim into tight cores (ganglia joined by nerves — the reference).
       const web = this.settings.edgeTint === "community";
-      const greyMix = web || this.synapseMode ? 0.12 : EDGE_GREY_MIX;
+      const greyMix = web || this.synapseRender ? 0.12 : EDGE_GREY_MIX;
       cs.set(sa.color).lerp(this.edgeNeutral, greyMix);
       ct.set(ta.color).lerp(this.edgeNeutral, greyMix);
       let f = this.edgeBaseBrightness * (web ? 1.55 : 1);
-      if (this.synapseMode) {
+      if (this.synapseRender) {
         const inter =
           sa.community !== ta.community && sa.community >= 0 && ta.community >= 0;
         f = this.edgeBaseBrightness * (inter ? 2.4 : 0.5);
@@ -2280,7 +2298,7 @@ export class GraphScene {
     // often (a fraction of the idle cadence) so signals are always travelling
     // the nerve fibres; otherwise keep the rare ambient rhythm.
     const delay = synapseDelay(GraphScene.starRand(1000 + this.synapseCount * 3));
-    this.synapseTimer = this.synapseMode ? delay * 0.25 : delay;
+    this.synapseTimer = this.synapseRender ? delay * 0.25 : delay;
     const rand = GraphScene.starRand(2000 + this.synapseCount * 7);
     this.synapseCount++;
     if (this.synapse.isActive()) return;
@@ -2344,6 +2362,20 @@ export class GraphScene {
     );
     this.nodeMat.uniforms.u_colorDepth.value = settings.nodeColorDepth;
     this.cosmic.setFrequency(settings.cosmicFrequency);
+    // Sky style flip (star density / dotted grid / void) — rebuild the field.
+    if (settings.skyStyle !== this.appliedSkyStyle) {
+      this.appliedSkyStyle = settings.skyStyle;
+      this.scene.remove(this.starfield);
+      for (const child of this.starfield.children) {
+        const p = child as THREE.Points;
+        (p.geometry as THREE.BufferGeometry).dispose();
+        (p.material as THREE.Material).dispose();
+      }
+      this.starfield = this.buildStarfield(this.darkTheme);
+      this.starfield.visible =
+        SHOW_STARFIELD && skinAmbience(settings.skin, this.darkTheme).starfield;
+      this.scene.add(this.starfield);
+    }
     // Edge tint mode flip (grey connective tissue ↔ community-hue webs)
     // rewrites the endpoint-colour cache — O(edges), only on actual change.
     if (settings.edgeTint !== this.appliedEdgeTint) {

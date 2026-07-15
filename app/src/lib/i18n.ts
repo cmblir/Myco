@@ -117,6 +117,14 @@ export interface Strings {
   gr_layout_galaxy?: string;
   gr_layout_atlas?: string;
   gr_layout_synapse?: string;
+  gr_layout_synapse3d?: string;
+  gr_recommend?: string;
+  gr_recommend_hint?: string;
+  gr_sky?: string;
+  gr_sky_stars?: string;
+  gr_sky_dense?: string;
+  gr_sky_grid?: string;
+  gr_sky_void?: string;
   gr_node_color?: string;
   gr_node_color_community?: string;
   gr_node_color_white?: string;
@@ -664,6 +672,14 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_galaxy: "Galaxy (3D)",
     gr_layout_atlas: "Atlas (2D)",
     gr_layout_synapse: "Synapse (2D)",
+    gr_layout_synapse3d: "Synapse (3D)",
+    gr_recommend: "Recommended settings",
+    gr_recommend_hint: "Apply the recommended settings for this layout",
+    gr_sky: "Sky",
+    gr_sky_stars: "Stars",
+    gr_sky_dense: "Dense",
+    gr_sky_grid: "Grid",
+    gr_sky_void: "Void",
     gr_node_color: "Node colour",
     gr_node_color_community: "By folder",
     gr_node_color_white: "White",
@@ -1220,6 +1236,14 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_galaxy: "은하계 (3D)",
     gr_layout_atlas: "아틀라스 (2D)",
     gr_layout_synapse: "시냅스 (2D)",
+    gr_layout_synapse3d: "시냅스 (3D)",
+    gr_recommend: "추천 설정 적용",
+    gr_recommend_hint: "이 레이아웃의 추천 설정을 적용합니다",
+    gr_sky: "배경",
+    gr_sky_stars: "별",
+    gr_sky_dense: "조밀",
+    gr_sky_grid: "그리드",
+    gr_sky_void: "비움",
     gr_node_color: "노드 색상",
     gr_node_color_community: "폴더별",
     gr_node_color_white: "화이트",
@@ -1770,6 +1794,14 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_galaxy: "ギャラクシー (3D)",
     gr_layout_atlas: "アトラス (2D)",
     gr_layout_synapse: "シナプス (2D)",
+    gr_layout_synapse3d: "シナプス (3D)",
+    gr_recommend: "推奨設定を適用",
+    gr_recommend_hint: "このレイアウトの推奨設定を適用します",
+    gr_sky: "背景",
+    gr_sky_stars: "星",
+    gr_sky_dense: "密",
+    gr_sky_grid: "グリッド",
+    gr_sky_void: "空",
     gr_node_color: "ノード色",
     gr_node_color_community: "フォルダー別",
     gr_node_color_white: "ホワイト",

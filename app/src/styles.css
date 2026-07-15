@@ -2376,6 +2376,23 @@ hr {
   flex-wrap: wrap;
   gap: 4px;
 }
+.graph-recommend {
+  margin-top: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.graph-recommend:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
 .graph-chip {
   font-size: 11px;
   padding: 2px 7px;
