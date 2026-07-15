@@ -906,7 +906,7 @@ export class GraphScene {
     this.starfield = this.buildStarfield(dark);
     this.starfield.visible = SHOW_STARFIELD && amb.starfield;
     this.scene.add(this.starfield);
-    this.ensureGridBackdrop(settings.skyStyle === "grid" && amb.starfield, dark);
+    this.ensureGridBackdrop(settings.skyStyle === "grid", dark);
 
     // --- nebula/dust (faint additive gas over the biggest galaxies) ---
     // Nebula is just ~9 sprites (8 community clouds + 1 halo), so it's cheap even
@@ -2242,7 +2242,7 @@ export class GraphScene {
     this.starfield = this.buildStarfield(dark);
     this.starfield.visible = SHOW_STARFIELD && amb.starfield;
     this.scene.add(this.starfield);
-    this.ensureGridBackdrop(this.settings.skyStyle === "grid" && amb.starfield, dark);
+    this.ensureGridBackdrop(this.settings.skyStyle === "grid", dark);
     // Must mirror the constructor's calm calibration (duplicated constants —
     // keep in sync; Phase 1 extracts a single helper).
     this.baseBloom = dark ? 0.45 : 0.25;
@@ -2410,7 +2410,7 @@ export class GraphScene {
       const showSky = SHOW_STARFIELD && skinAmbience(settings.skin, this.darkTheme).starfield;
       this.starfield.visible = showSky;
       this.scene.add(this.starfield);
-      this.ensureGridBackdrop(settings.skyStyle === "grid" && showSky, this.darkTheme);
+      this.ensureGridBackdrop(settings.skyStyle === "grid", this.darkTheme);
     }
     // Edge tint mode flip (grey connective tissue ↔ community-hue webs)
     // rewrites the endpoint-colour cache — O(edges), only on actual change.
