@@ -906,6 +906,7 @@ export class GraphScene {
     this.starfield = this.buildStarfield(dark);
     this.starfield.visible = SHOW_STARFIELD && amb.starfield;
     this.scene.add(this.starfield);
+    this.ensureGridBackdrop(settings.skyStyle === "grid" && amb.starfield, dark);
 
     // --- nebula/dust (faint additive gas over the biggest galaxies) ---
     // Nebula is just ~9 sprites (8 community clouds + 1 halo), so it's cheap even
@@ -1124,43 +1125,76 @@ export class GraphScene {
       pts.frustumCulled = false;
       group.add(pts);
     }
-    if (style === "grid") group.add(this.buildGridBackdrop(dark));
     return group;
   }
 
-  // A dark dotted-grid backdrop (the big-data-viz / reference look): a large
-  // plane of regularly-spaced dim dots far behind the graph. Two facing planes
-  // (±z) so it reads from a fly-through in either direction. Returns a single
-  // THREE.Points (NOT a group) so the starfield dispose loop — which casts
-  // every child to Points and frees its geometry/material — stays valid.
-  private buildGridBackdrop(dark: boolean): THREE.Points {
-    const step = 260; // world units between dots
-    const half = 34; // 69×69 grid
-    const pos = new Float32Array((half * 2 + 1) * (half * 2 + 1) * 2 * 3);
-    let k = 0;
-    for (const z of [-7000, 7000]) {
-      for (let ix = -half; ix <= half; ix++) {
-        for (let iy = -half; iy <= half; iy++) {
-          pos[k++] = ix * step;
-          pos[k++] = iy * step;
-          pos[k++] = z;
-        }
-      }
+  // --- screen-space dotted-grid backdrop (the big-data-viz / reference look) ---
+  // A fullscreen dot grid that fills the ENTIRE viewport whatever the camera
+  // does (the two-wall world-space version left a big empty gap down the
+  // middle). The vertex shader ignores the camera and parks the quad on the
+  // far plane; the fragment shader stamps a dot at each grid cell, with a
+  // subtle parallax offset from the camera direction so it still reads as
+  // depth, not a flat UI overlay.
+  private gridBackdrop: THREE.Mesh | null = null;
+  private ensureGridBackdrop(on: boolean, dark: boolean): void {
+    if (on && !this.gridBackdrop) {
+      const geo = new THREE.PlaneGeometry(2, 2);
+      const mat = new THREE.ShaderMaterial({
+        transparent: true,
+        depthTest: false,
+        depthWrite: false,
+        uniforms: {
+          u_color: { value: new THREE.Color(dark ? 0x4a5a8c : 0x8a94b4) },
+          u_alpha: { value: dark ? 0.5 : 0.3 },
+          u_cells: { value: 46 },
+          u_aspect: { value: 1 },
+          u_offset: { value: new THREE.Vector2(0, 0) },
+        },
+        vertexShader: /* glsl */ `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = vec4(position.xy, 0.9999, 1.0); // fullscreen, far
+          }
+        `,
+        fragmentShader: /* glsl */ `
+          uniform vec3 u_color; uniform float u_alpha; uniform float u_cells;
+          uniform float u_aspect; uniform vec2 u_offset;
+          varying vec2 vUv;
+          void main() {
+            vec2 uv = vUv;
+            uv.x *= u_aspect;          // square cells regardless of viewport
+            uv += u_offset;            // subtle camera-driven parallax
+            vec2 c = fract(uv * u_cells) - 0.5;
+            float d = length(c);
+            float a = (1.0 - smoothstep(0.05, 0.11, d)) * u_alpha;
+            if (a < 0.01) discard;
+            gl_FragColor = vec4(u_color, a);
+          }
+        `,
+      });
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.frustumCulled = false;
+      mesh.renderOrder = -1000; // draw first; everything else paints over it
+      this.gridBackdrop = mesh;
+      this.scene.add(mesh);
+    } else if (!on && this.gridBackdrop) {
+      this.scene.remove(this.gridBackdrop);
+      this.gridBackdrop.geometry.dispose();
+      (this.gridBackdrop.material as THREE.Material).dispose();
+      this.gridBackdrop = null;
     }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-    const m = new THREE.PointsMaterial({
-      color: dark ? 0x3a4a7a : 0x9aa4c0,
-      size: 2.0,
-      sizeAttenuation: false,
-      transparent: true,
-      opacity: dark ? 0.35 : 0.22,
-      depthWrite: false,
-      fog: false,
-    });
-    const pts = new THREE.Points(g, m);
-    pts.frustumCulled = false;
-    return pts;
+    if (this.gridBackdrop) {
+      const h = Math.max(1, this.container.clientHeight);
+      const w = Math.max(1, this.container.clientWidth);
+      (this.gridBackdrop.material as THREE.ShaderMaterial).uniforms.u_aspect.value = w / h;
+      (this.gridBackdrop.material as THREE.ShaderMaterial).uniforms.u_color.value.set(
+        dark ? 0x4a5a8c : 0x8a94b4,
+      );
+      (this.gridBackdrop.material as THREE.ShaderMaterial).uniforms.u_alpha.value = dark
+        ? 0.5
+        : 0.3;
+    }
   }
 
   // Camera interaction mode by layout. Flat layouts (atlas / synapse) lock to a
@@ -2208,6 +2242,7 @@ export class GraphScene {
     this.starfield = this.buildStarfield(dark);
     this.starfield.visible = SHOW_STARFIELD && amb.starfield;
     this.scene.add(this.starfield);
+    this.ensureGridBackdrop(this.settings.skyStyle === "grid" && amb.starfield, dark);
     // Must mirror the constructor's calm calibration (duplicated constants —
     // keep in sync; Phase 1 extracts a single helper).
     this.baseBloom = dark ? 0.45 : 0.25;
@@ -2372,9 +2407,10 @@ export class GraphScene {
         (p.material as THREE.Material).dispose();
       }
       this.starfield = this.buildStarfield(this.darkTheme);
-      this.starfield.visible =
-        SHOW_STARFIELD && skinAmbience(settings.skin, this.darkTheme).starfield;
+      const showSky = SHOW_STARFIELD && skinAmbience(settings.skin, this.darkTheme).starfield;
+      this.starfield.visible = showSky;
       this.scene.add(this.starfield);
+      this.ensureGridBackdrop(settings.skyStyle === "grid" && showSky, this.darkTheme);
     }
     // Edge tint mode flip (grey connective tissue ↔ community-hue webs)
     // rewrites the endpoint-colour cache — O(edges), only on actual change.
@@ -2693,6 +2729,15 @@ export class GraphScene {
         this.controls.update();
       }
       this.updateLod(dt);
+      // Grid backdrop parallax: drift the fullscreen dot grid with the camera's
+      // look direction so it reads as depth behind the graph, not a flat UI
+      // overlay pinned to the window.
+      if (this.gridBackdrop) {
+        const d = this.camera.getWorldDirection(this.tmpVec);
+        const u = (this.gridBackdrop.material as THREE.ShaderMaterial).uniforms.u_offset
+          .value as THREE.Vector2;
+        u.set(d.x * 0.35 + this.camera.position.x * 0.00002, d.y * 0.35 + this.camera.position.y * 0.00002);
+      }
       // One coalesced hover pick per frame (not one per pointermove event).
       // Suppressed while flying (drag = steer, not hover).
       if (!this.flyMode) this.processPick();
@@ -2824,6 +2869,7 @@ export class GraphScene {
     this.scene.remove(this.hulls.mesh);
     this.bundles.dispose();
     this.scene.remove(this.bundles.group);
+    this.ensureGridBackdrop(false, this.darkTheme); // frees the grid mesh
     this.clusterLabels.dispose();
     this.scene.remove(this.clusterLabels.group);
     this.bloom.dispose();
@@ -2872,6 +2918,9 @@ export class GraphScene {
     // Fat lines are screen-space — they need the drawing-buffer resolution.
     this.filamentMat?.resolution.set(w, h);
     this.bundles.setSize(w, h);
+    if (this.gridBackdrop) {
+      (this.gridBackdrop.material as THREE.ShaderMaterial).uniforms.u_aspect.value = w / h;
+    }
   };
 
   private pickNode(clientX: number, clientY: number): string | null {
