@@ -208,6 +208,7 @@ export default function GraphControls({
               [
                 ["galaxy", t.gr_layout_galaxy ?? "Galaxy (3D)"],
                 ["atlas", t.gr_layout_atlas ?? "Atlas (2D)"],
+                ["synapse", t.gr_layout_synapse ?? "Synapse (2D)"],
               ] as [GraphSettings["layout"], string][]
             ).map(([key, label]) => (
               <button
@@ -296,7 +297,6 @@ export default function GraphControls({
               [
                 ["grey", t.gr_edge_tint_grey ?? "Grey"],
                 ["community", t.gr_edge_tint_community ?? "Community webs"],
-                ["synapse", t.gr_edge_tint_synapse ?? "Synapse"],
               ] as [GraphSettings["edgeTint"], string][]
             ).map(([key, label]) => (
               <button

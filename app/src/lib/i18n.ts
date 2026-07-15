@@ -116,6 +116,7 @@ export interface Strings {
   gr_layout?: string;
   gr_layout_galaxy?: string;
   gr_layout_atlas?: string;
+  gr_layout_synapse?: string;
   gr_node_color?: string;
   gr_node_color_community?: string;
   gr_node_color_white?: string;
@@ -139,7 +140,6 @@ export interface Strings {
   gr_edge_tint?: string;
   gr_edge_tint_grey?: string;
   gr_edge_tint_community?: string;
-  gr_edge_tint_synapse?: string;
   // Gesture cheat-sheet popover ("?" toolbar button).
   gr_help_btn?: string;
   gr_help_title?: string;
@@ -653,6 +653,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout: "Layout",
     gr_layout_galaxy: "Galaxy (3D)",
     gr_layout_atlas: "Atlas (2D)",
+    gr_layout_synapse: "Synapse (2D)",
     gr_node_color: "Node colour",
     gr_node_color_community: "By folder",
     gr_node_color_white: "White",
@@ -676,7 +677,6 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_edge_tint: "Link colour",
     gr_edge_tint_grey: "Grey",
     gr_edge_tint_community: "Community webs",
-    gr_edge_tint_synapse: "Synapse",
     gr_help_btn: "Gestures & keys",
     gr_help_title: "Gestures & keys",
     gr_help_click: "Focus a note (1 hop)",
@@ -1199,6 +1199,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout: "레이아웃",
     gr_layout_galaxy: "은하계 (3D)",
     gr_layout_atlas: "아틀라스 (2D)",
+    gr_layout_synapse: "시냅스 (2D)",
     gr_node_color: "노드 색상",
     gr_node_color_community: "폴더별",
     gr_node_color_white: "화이트",
@@ -1222,7 +1223,6 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_edge_tint: "링크 색상",
     gr_edge_tint_grey: "회색",
     gr_edge_tint_community: "커뮤니티 웹",
-    gr_edge_tint_synapse: "시냅스",
     gr_help_btn: "제스처 안내",
     gr_help_title: "제스처 안내",
     gr_help_click: "노트에 포커스 (1홉)",
@@ -1741,6 +1741,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout: "レイアウト",
     gr_layout_galaxy: "ギャラクシー (3D)",
     gr_layout_atlas: "アトラス (2D)",
+    gr_layout_synapse: "シナプス (2D)",
     gr_node_color: "ノード色",
     gr_node_color_community: "フォルダー別",
     gr_node_color_white: "ホワイト",
@@ -1764,7 +1765,6 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_edge_tint: "リンク色",
     gr_edge_tint_grey: "グレー",
     gr_edge_tint_community: "コミュニティウェブ",
-    gr_edge_tint_synapse: "シナプス",
     gr_help_btn: "ジェスチャーガイド",
     gr_help_title: "ジェスチャーガイド",
     gr_help_click: "ノートにフォーカス (1ホップ)",

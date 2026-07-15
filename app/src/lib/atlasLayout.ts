@@ -17,6 +17,7 @@
 import forceAtlas2 from "graphology-layout-forceatlas2";
 import FA2LayoutSupervisor from "graphology-layout-forceatlas2/worker";
 import type { VaultGraph } from "./graphData";
+import { galaxyAnchorsBySize, galaxyFootprint } from "./galaxyLayout";
 
 // Centre a set of 2D points on the origin and scale so the bounding radius
 // lands near `targetRadius` world units. Pure — unit-tested. Returns the
@@ -77,19 +78,32 @@ export function atlasSliceSize(n: number): number {
   return 30;
 }
 
-function fa2Settings(graph: VaultGraph): Record<string, unknown> {
+export type AtlasVariant = "atlas" | "synapse";
+
+function fa2Settings(graph: VaultGraph, variant: AtlasVariant): Record<string, unknown> {
   const n = graph.order;
   // inferSettings tunes gravity/scaling to the graph size; LinLog + outbound-
   // attraction distribution give the tight-community, spread-hub Gephi look.
   // adjustSizes (overlap prevention) is the classic FA2 perf trap — collision
   // passes per iteration; big maps render nodes as dots and don't need it.
   const inferred = forceAtlas2.inferSettings(graph);
+  // Synapse: a nervous-system arrangement — communities fling FAR apart into
+  // separate bright cores (ganglia) with clear voids between, joined by long
+  // nerve-fibre bridges. Weaker gravity lets clusters drift out; higher
+  // scalingRatio pushes stronger repulsion so the voids open; LinLog still
+  // contracts each cluster into a tight core. Atlas keeps the compact Gephi
+  // territory-map spacing.
+  const scalingRatio =
+    variant === "synapse"
+      ? (inferred.scalingRatio as number) * 3
+      : (inferred.scalingRatio as number);
   return {
     ...inferred,
     linLogMode: true,
     outboundAttractionDistribution: true,
     adjustSizes: n <= 2000,
     barnesHutOptimize: n > 800,
+    scalingRatio,
     // Vault graphs are SPARSE (≈1 edge/node, many orphans and disconnected
     // star-clusters). Plain gravity can't hold the pieces LinLog repulsion
     // flings apart — the layout exploded to a 51-MILLION-unit spread on the
@@ -97,7 +111,7 @@ function fa2Settings(graph: VaultGraph): Record<string, unknown> {
     // the Gephi remedy for disconnected graphs) keeps every component in
     // orbit; its coefficient must be SMALL or it crushes the map.
     strongGravityMode: true,
-    gravity: 0.05,
+    gravity: variant === "synapse" ? 0.02 : 0.05,
   };
 }
 
@@ -116,6 +130,8 @@ export interface AtlasOpts {
   shouldAbort?: () => boolean;
   /** Force the main-thread fallback (tests). */
   noWorker?: boolean;
+  /** "atlas" (compact territory map) or "synapse" (spread ganglia + bridges). */
+  variant?: AtlasVariant;
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
@@ -144,6 +160,23 @@ export async function applyAtlasLayout(
     graph.setNodeAttribute(id, "y", Math.sin(t) * r);
   });
 
+  // Synapse: weight the FA2 attraction so INTRA-community links pull hard
+  // (each topic contracts into a tight bright core / ganglion) while
+  // INTER-community links pull weakly (the few cross-topic bridges stretch
+  // long into nerve fibres). Without this, one dominant densely-interlinked
+  // folder — the real-vault shape — lays out as a single big disc instead of
+  // separated cores. FA2's supervisor reads the "weight" edge attribute at
+  // start; galaxy mode never reads it, and the graph is rebuilt on layout
+  // change, so this stays local to the synapse layout.
+  if ((opts.variant ?? "atlas") === "synapse") {
+    graph.forEachEdge((e, _a, s, t) => {
+      const cs = graph.getNodeAttribute(s, "community");
+      const ct = graph.getNodeAttribute(t, "community");
+      const intra = cs >= 0 && cs === ct;
+      graph.setEdgeAttribute(e, "weight", intra ? 6 : 0.15);
+    });
+  }
+
   let ok: boolean;
   if (opts.noWorker) {
     ok = await runChunkedFallback(graph, opts);
@@ -156,6 +189,16 @@ export async function applyAtlasLayout(
     }
   }
   if (!ok) return false;
+
+  // Synapse: FA2 gave each community its organic tight-core SHAPE, but a
+  // densely cross-linked vault still lays them in one disc. Relocate each
+  // core to its own spread anchor (reusing the galaxy layout's irregular
+  // size-packing) so communities become SEPARATED ganglia and their few
+  // cross-links stretch into long nerve-fibre bridges — the reference look,
+  // guaranteed on any vault regardless of how interlinked its topics are.
+  if ((opts.variant ?? "atlas") === "synapse") {
+    separateCommunities(graph);
+  }
 
   // Fit to world units + a deterministic sub-unit z spread so co-planar
   // additive sprites don't z-fight / moiré.
@@ -189,7 +232,7 @@ export async function applyAtlasLayout(
 async function runWorker(graph: VaultGraph, opts: AtlasOpts): Promise<boolean> {
   const budget = opts.budgetMs ?? atlasWorkerBudgetMs(graph.order);
   const layout = new FA2LayoutSupervisor(graph, {
-    settings: fa2Settings(graph) as never,
+    settings: fa2Settings(graph, opts.variant ?? "atlas") as never,
   });
   try {
     layout.start();
@@ -214,7 +257,7 @@ async function runChunkedFallback(
   const n = graph.order;
   const total = opts.iterations ?? atlasIterationBudget(n);
   const slice = atlasSliceSize(n);
-  const settings = fa2Settings(graph);
+  const settings = fa2Settings(graph, opts.variant ?? "atlas");
   let done = 0;
   while (done < total) {
     if (opts.shouldAbort?.()) return false;
@@ -227,6 +270,63 @@ async function runChunkedFallback(
     await sleep(0);
   }
   return !opts.shouldAbort?.();
+}
+
+// Reposition each community's FA2-laid nodes around its own spread anchor so
+// topics become separated cores joined by long bridges (the synapse look).
+// FA2 gives each community its organic SHAPE; we normalise that shape to a
+// controlled size (its footprint) and drop it on a packed anchor, so cores
+// and anchor spacing share ONE unit scale (a mismatch left every core piled
+// at the centre). Pure geometry over node attrs; exported for tests.
+const SYNAPSE_LD = 60; // pseudo link-distance for footprint + packing units
+export function separateCommunities(graph: VaultGraph): void {
+  // Per-community centroid, count, and RMS radius of the FA2 layout.
+  const sx = new Map<number, number>();
+  const sy = new Map<number, number>();
+  const sn = new Map<number, number>();
+  graph.forEachNode((_id, a) => {
+    if (a.community < 0) return;
+    sx.set(a.community, (sx.get(a.community) ?? 0) + a.x);
+    sy.set(a.community, (sy.get(a.community) ?? 0) + a.y);
+    sn.set(a.community, (sn.get(a.community) ?? 0) + 1);
+  });
+  if (sn.size < 2) return; // nothing to separate
+
+  const cx = new Map<number, number>();
+  const cy = new Map<number, number>();
+  for (const [c, n] of sn) {
+    cx.set(c, sx.get(c)! / n);
+    cy.set(c, sy.get(c)! / n);
+  }
+  const r2 = new Map<number, number>();
+  graph.forEachNode((_id, a) => {
+    if (a.community < 0) return;
+    const dx = a.x - cx.get(a.community)!;
+    const dy = a.y - cy.get(a.community)!;
+    r2.set(a.community, (r2.get(a.community) ?? 0) + dx * dx + dy * dy);
+  });
+
+  // Anchor centres from the galaxy layout's irregular size-packing (biggest at
+  // the origin, the rest greedily spread with real voids), in footprint units.
+  const ids = [...sn.keys()].sort((a, b) => (sn.get(b)! - sn.get(a)!) || a - b);
+  const counts = ids.map((c) => sn.get(c)!);
+  const anchors = galaxyAnchorsBySize(counts, SYNAPSE_LD);
+  const anchorOf = new Map<number, { x: number; y: number }>();
+  ids.forEach((c, i) => anchorOf.set(c, { x: anchors[i].x, y: anchors[i].z }));
+
+  graph.forEachNode((id, a) => {
+    if (a.community < 0) return;
+    const c = a.community;
+    const n = sn.get(c)!;
+    const rms = Math.sqrt((r2.get(c) ?? 0) / n) || 1;
+    // Normalise the FA2 core to sit well inside its footprint so clear voids
+    // open between the ganglia (0.38 keeps cores tight, voids wide).
+    const coreR = galaxyFootprint(n, SYNAPSE_LD) * 0.38;
+    const k = coreR / rms;
+    const ax = anchorOf.get(c)!;
+    graph.setNodeAttribute(id, "x", ax.x + (a.x - cx.get(c)!) * k);
+    graph.setNodeAttribute(id, "y", ax.y + (a.y - cy.get(c)!) * k);
+  });
 }
 
 function hashUnit(id: string): number {

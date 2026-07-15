@@ -29,8 +29,10 @@ export interface GraphSettings {
   folderGalaxies: boolean;
   // Layout engine. "galaxy" = the 3D force sim (default); "atlas" = a static
   // 2D ForceAtlas2 map with translucent per-community territory fills (Gephi
-  // look). Backlog GRAPH-01.
-  layout: "galaxy" | "atlas";
+  // look); "synapse" = a static 2D map tuned to fling communities far apart as
+  // separate bright cores (ganglia) joined by long glowing nerve-fibre
+  // bridges — the nervous-system / big-data-viz look.
+  layout: "galaxy" | "atlas" | "synapse";
   // Node colouring. "community" = folder/cluster hues; "white" = monochrome
   // starlight; "black" = monochrome ink (the only visible mono on the white
   // skin); "auto" = theme-appropriate mono until the vault grows past
@@ -39,11 +41,10 @@ export interface GraphSettings {
   monoBelow: number; // "auto": node count below this → mono; at/above → colour
   // Edge colouring. "grey" = neutral connective tissue (signal lives in the
   // stars); "community" = full community-hue edges — dense clusters read as
-  // coloured translucent webs/veils (the classic Gephi hairball look);
-  // "synapse" = nervous-system look — the long INTER-cluster bridges glow as
-  // gradient nerve fibres between tight bright cores, and neural firings run
-  // more often so signals visibly travel the fibres.
-  edgeTint: "grey" | "community" | "synapse";
+  // coloured translucent webs/veils (the classic Gephi hairball look). The
+  // nervous-system nerve-fibre edge look lives in the "synapse" LAYOUT, not
+  // here.
+  edgeTint: "grey" | "community";
   arrows: boolean;
   arrowSize: number; // arrowhead cone scale, 0.1..1.5 — kept well under node size
   semanticEdges: boolean; // overlay embedding-similarity edges (dim, dashed)

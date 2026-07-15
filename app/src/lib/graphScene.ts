@@ -524,6 +524,11 @@ export class GraphScene {
   private hulls: CommunityHullLayer; // atlas-mode translucent community fills
   private bundles: EdgeBundleLayer; // bundled inter-community strands (GRAPH-01)
   private atlasMode = false; // static 2D ForceAtlas2 layout (no sim, flat)
+  private synapseMode = false; // static 2D nervous-system layout (spread + fibres)
+  // Either static 2D layout skips the worker sim + galaxy adornments.
+  private get flatLayout(): boolean {
+    return this.atlasMode || this.synapseMode;
+  }
   private imposterEnabled = false; // dark-theme gate (LOD then controls visibility)
   // Cosmic-scale LOD state (see cosmicLod). onScale fires when the camera
   // crosses a scale band (star → system → galaxy → cluster) for the HUD.
@@ -885,12 +890,13 @@ export class GraphScene {
     // Nebula is just ~9 sprites (8 community clouds + 1 halo), so it's cheap even
     // on a 10k-node vault — enable it regardless of perf-LOD so community colours
     // still read on large graphs (matches applyTheme, which omits the perfLod gate).
-    // NOT in atlas mode: viewed top-down over a flat map the big soft halo
-    // sprite reads as one giant white puck dead centre, burying the layout.
+    // NOT in a flat 2D layout: viewed top-down the big soft halo sprite reads
+    // as one giant white puck dead centre, burying the map.
+    const flat = settings.layout === "atlas" || settings.layout === "synapse";
     this.nebula = new NebulaLayer(
       this.graph,
       this.nodeIds,
-      SHOW_NEBULA && amb.nebula && settings.layout !== "atlas",
+      SHOW_NEBULA && amb.nebula && !flat,
     );
     this.scene.add(this.nebula.group);
 
@@ -946,10 +952,13 @@ export class GraphScene {
     this.imposter = new GalaxyImposterLayer(this.graph, this.nodeIds, pr, false);
     this.imposterEnabled = false; // never paint spiral discs
     this.scene.add(this.imposter.points);
-    // Atlas mode (backlog GRAPH-01): static 2D ForceAtlas2 map with translucent
-    // per-community territory fills. Positions are set by applyAtlasLayout (no
-    // sim); this layer draws the Gephi-style hull fills behind the flat nodes.
+    // Static 2D ForceAtlas2 layouts. "atlas" draws translucent per-community
+    // territory hulls (Gephi map). "synapse" is the same flat pipeline tuned
+    // to spread the cores apart with nerve-fibre bridges — NO hull fills (a
+    // nervous system has no territories, just fibres). Positions are set by
+    // applyAtlasLayout (no worker sim).
     this.atlasMode = settings.layout === "atlas";
+    this.synapseMode = settings.layout === "synapse";
     this.hulls = new CommunityHullLayer(this.graph, dark);
     this.hulls.setVisible(this.atlasMode);
     this.scene.add(this.hulls.mesh);
@@ -1224,17 +1233,15 @@ export class GraphScene {
       // hue and brightens — thousands of intra-cluster edges then stack into
       // the coloured translucent veil of the classic Gephi hairball, and
       // inter-cluster strands gradient between their communities' hues.
-      // "synapse" inverts the emphasis: the long INTER-cluster bridges glow as
-      // bright gradient nerve fibres while the dense intra-cluster edges dim
-      // into tight cores (ganglia connected by nerves — the reference look).
-      const tint = this.settings.edgeTint;
-      const web = tint === "community";
-      const synapse = tint === "synapse";
-      const greyMix = web || synapse ? 0.12 : EDGE_GREY_MIX;
+      // The synapse LAYOUT inverts the emphasis: the long INTER-cluster
+      // bridges glow as bright gradient nerve fibres while dense intra-cluster
+      // edges dim into tight cores (ganglia joined by nerves — the reference).
+      const web = this.settings.edgeTint === "community";
+      const greyMix = web || this.synapseMode ? 0.12 : EDGE_GREY_MIX;
       cs.set(sa.color).lerp(this.edgeNeutral, greyMix);
       ct.set(ta.color).lerp(this.edgeNeutral, greyMix);
       let f = this.edgeBaseBrightness * (web ? 1.55 : 1);
-      if (synapse) {
+      if (this.synapseMode) {
         const inter =
           sa.community !== ta.community && sa.community >= 0 && ta.community >= 0;
         f = this.edgeBaseBrightness * (inter ? 2.4 : 0.5);
@@ -2144,12 +2151,12 @@ export class GraphScene {
     this.ship.setDark(dark);
     this.hulls.setDark(dark);
     this.bundles.setDark(dark);
-    this.meteor.lines.visible = amb.meteors && !this.perfLod && !this.atlasMode;
+    this.meteor.lines.visible = amb.meteors && !this.perfLod && !this.flatLayout;
     // Painted galaxy adornments stay off across theme changes (see ctor).
     this.coreGlow.setEnabled(false);
     this.band.points.visible = false;
     this.imposterEnabled = false;
-    this.nebula.setDark(SHOW_NEBULA && amb.nebula && !this.atlasMode);
+    this.nebula.setDark(SHOW_NEBULA && amb.nebula && !this.flatLayout);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
     this.edgeOpacity = dark ? EDGE_OPACITY_DARK : EDGE_OPACITY_LIGHT;
@@ -2206,11 +2213,11 @@ export class GraphScene {
   // wave (1–2 hops). Deterministic (starRand over a counter) so idle activity
   // replays identically. Skipped while a previous ripple is still running.
   private fireSynapse(): void {
-    // Synapse edge-tint mode is an explicit "living nervous system" — fire far
-    // more often (a fraction of the idle cadence) so signals are always
-    // travelling the nerve fibres; otherwise keep the rare ambient rhythm.
+    // Synapse LAYOUT is an explicit "living nervous system" — fire far more
+    // often (a fraction of the idle cadence) so signals are always travelling
+    // the nerve fibres; otherwise keep the rare ambient rhythm.
     const delay = synapseDelay(GraphScene.starRand(1000 + this.synapseCount * 3));
-    this.synapseTimer = this.settings.edgeTint === "synapse" ? delay * 0.25 : delay;
+    this.synapseTimer = this.synapseMode ? delay * 0.25 : delay;
     const rand = GraphScene.starRand(2000 + this.synapseCount * 7);
     this.synapseCount++;
     if (this.synapse.isActive()) return;

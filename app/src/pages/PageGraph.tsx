@@ -562,11 +562,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       };
     }
 
-    // Atlas layout (backlog GRAPH-01): a STATIC 2D ForceAtlas2 map. Positions
-    // are computed once on the main thread and written to the graph; there is
-    // no worker sim, so the scene just renders the fixed layout (+ community
-    // hull fills). Everything downstream guards on simRef being null.
-    if (s.layout === "atlas") {
+    // Static 2D ForceAtlas2 layouts (no worker sim): "atlas" = compact Gephi
+    // territory map (+ hull fills); "synapse" = communities flung far apart
+    // as bright cores joined by nerve-fibre bridges. Both run the same sliced
+    // FA2 pipeline; only the force tuning + edge rendering differ. Everything
+    // downstream guards on simRef being null.
+    if (s.layout === "atlas" || s.layout === "synapse") {
       // FA2 runs in event-loop slices (see atlasLayout.ts freeze postmortem):
       // the map visibly unfolds as it converges, the UI stays interactive the
       // whole time, and unmount/layout-switch aborts mid-run. NEVER run it
@@ -580,7 +581,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       container.addEventListener("pointerdown", atlasTakeOver, { once: true });
       let slices = 0;
       void applyAtlasLayout(graph, {
-        targetRadius: s.linkDistance * ATLAS_RADIUS_MUL,
+        variant: s.layout === "synapse" ? "synapse" : "atlas",
+        // Synapse spreads wider, so give it more world room to frame into.
+        targetRadius: s.linkDistance * ATLAS_RADIUS_MUL * (s.layout === "synapse" ? 1.6 : 1),
         shouldAbort: () => killed,
         onProgress: () => {
           if (killed) return;
