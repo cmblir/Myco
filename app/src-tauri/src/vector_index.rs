@@ -303,9 +303,10 @@ impl VectorStore {
         }
         let mut acc: HashMap<&str, (Vec<f32>, usize)> = HashMap::new();
         for r in &self.records {
-            // The embed path stores an empty vector for a page that tokenized to
-            // nothing; a width that disagrees with the index would corrupt the
-            // running mean, so leave it out of the average entirely.
+            // A width that disagrees with the index would corrupt the running
+            // mean. Nothing on today's write paths produces one — the tokenizer
+            // always emits at least a BOS — but the index is a file on disk, and
+            // a stale record must not silently skew a centroid.
             if r.vector.len() != self.dim {
                 continue;
             }
@@ -636,8 +637,8 @@ mod tests {
         let mut s = VectorStore::default();
         // Two chunks either side of the x axis average back onto it.
         s.upsert_page("a.md", "a", vec![(1, vec![1.0, 1.0]), (2, vec![1.0, -1.0])]);
-        // The embed path stores an empty vector for a page that tokenizes to
-        // nothing — it must not corrupt the mean or panic.
+        // A record whose width disagrees with the index (a stale or
+        // hand-edited file) must not corrupt the mean or panic.
         s.records.push(rec("a.md", 2, Vec::new()));
         let cents = s.page_centroids();
         assert_eq!(cents.len(), 1);

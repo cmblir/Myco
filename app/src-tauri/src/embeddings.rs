@@ -140,9 +140,11 @@ pub fn normalize(v: &mut [f32]) {
 /// memory bandwidth rather than by the norms (`cargo bench --bench vector_store`:
 /// cosine 1.112 µs vs dot 1.003 µs at 1152d).
 ///
-/// Keeps `cosine`'s length guard. The guard is not ceremony — the embed path
-/// stores an empty vector for a page that tokenizes to nothing, so mismatched
-/// widths do reach this function and must score 0 rather than panic.
+/// Keeps `cosine`'s length guard. Nothing on today's write paths produces a
+/// mismatched width — the tokenizer always emits at least a BOS, so an "empty"
+/// text still embeds to a full vector — but the index is a file on disk that can
+/// be stale or hand-edited, and scoring 0 beats reading past the end of a
+/// vector.
 pub fn dot(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() || a.is_empty() {
         return 0.0;

@@ -283,51 +283,79 @@ impl LocalLlm {
 
     /// Embed texts with the bundled model in embeddings mode (mean-pooled,
     /// L2-normalized). Offline, no key — reuses the already-loaded Gemma weights.
-    /// One fresh context per text (pooled output is read per sequence). Quality
-    /// trails a dedicated embed model but needs zero extra assets.
+    /// Quality trails a dedicated embed model but needs zero extra assets.
+    ///
+    /// One context serves the whole call. Building a context costs ~78 ms and
+    /// this used to build one per text, which reindex pays per chunk — measured
+    /// at 1.25x over a page's worth of chunks (3114 ms -> 2491 ms for 8), and
+    /// ~23 s across a 300-chunk vault. The sequences stay independent because
+    /// the KV cache is cleared between them; verified against a fresh context
+    /// per text, the vectors are bit-identical (max |Δ| = 0.0).
     pub fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
         const EMBED_CTX: u32 = 2048;
         let n_ctx = NonZeroU32::new(EMBED_CTX).ok_or("invalid embed ctx")?;
-        let mut out = Vec::with_capacity(texts.len());
+        let cap = EMBED_CTX as usize - 8;
+
+        // Tokenize everything up front: the context is sized to the widest
+        // sequence in the call, which cannot be known one text at a time.
+        let mut token_sets = Vec::with_capacity(texts.len());
         for text in texts {
             let mut tokens = self
                 .model
                 .str_to_token(text, AddBos::Always)
                 .map_err(|e| format!("embed tokenize: {e}"))?;
-            let cap = EMBED_CTX as usize - 8;
-            if tokens.len() > cap {
-                tokens.truncate(cap);
-            }
+            tokens.truncate(cap);
+            token_sets.push(tokens);
+        }
+        let max_n = token_sets.iter().map(Vec::len).max().unwrap_or(0);
+        if max_n == 0 {
+            // No tokens at all (an empty `texts`, or a tokenizer that emitted
+            // nothing) — there is no context worth building.
+            return Ok(texts.iter().map(|_| Vec::new()).collect());
+        }
+
+        // Mean pooling collapses a sequence into one vector, which llama.cpp can
+        // only do when that whole sequence lands in a single ubatch. n_ubatch
+        // defaults to 512, so this once fed anything longer through
+        // `tokens.chunks(512)` and decoded it in pieces — which aborts the
+        // process from inside llama.cpp (SIGTRAP; not an Err this could return,
+        // nor a panic it could catch). A vault page written as one long
+        // paragraph reaches that: a real chunk_page output of Korean prose
+        // measured 1,501 tokens, and reindexing it killed the app.
+        //
+        // Size to the widest text in the call, and no larger: the Metal compute
+        // buffer scales with n_ubatch at ~1 MiB/token, so pinning it to the 2048
+        // ceiling would reserve ~2 GiB to embed a 400-token chunk. Callers pass
+        // one page's chunks, which chunk_page has already bounded to a common
+        // size, so the widest is close to the average and nothing pays much for
+        // sharing.
+        let ctx_params = LlamaContextParams::default()
+            .with_n_ctx(Some(n_ctx))
+            .with_embeddings(true)
+            .with_pooling_type(LlamaPoolingType::Mean)
+            .with_n_batch(max_n as u32)
+            .with_n_ubatch(max_n as u32);
+        let mut ctx = self
+            .model
+            .new_context(&self.backend, ctx_params)
+            .map_err(|e| format!("embed new_context: {e}"))?;
+        let mut batch = LlamaBatch::new(max_n, 1);
+
+        let mut out = Vec::with_capacity(texts.len());
+        for tokens in &token_sets {
+            // Unreachable on this tokenizer — AddBos::Always means even "" is
+            // one BOS token — but a tokenizer that yields nothing must not index
+            // into an empty batch.
             if tokens.is_empty() {
                 out.push(Vec::new());
                 continue;
             }
-            // Mean pooling collapses the sequence into one vector, which
-            // llama.cpp can only do when the whole sequence lands in a single
-            // ubatch. n_ubatch defaults to 512, so this used to feed anything
-            // longer through `tokens.chunks(512)` and decode it in pieces —
-            // which aborts the process from inside llama.cpp (SIGTRAP; not an
-            // Err this could return, nor a panic it could catch). A vault page
-            // written as one long paragraph reaches that: a real chunk_page
-            // output of Korean prose measured 1,501 tokens, and reindexing it
-            // killed the app.
-            //
-            // Size the batch to this text: large enough that the sequence is
-            // never split, and no larger, because the Metal compute buffer
-            // scales with it — ~1 MiB per token, so pinning ubatch to the 2048
-            // ceiling would reserve ~2 GiB to embed a 400-token chunk.
-            let n = tokens.len();
-            let ctx_params = LlamaContextParams::default()
-                .with_n_ctx(Some(n_ctx))
-                .with_embeddings(true)
-                .with_pooling_type(LlamaPoolingType::Mean)
-                .with_n_batch(n as u32)
-                .with_n_ubatch(n as u32);
-            let mut ctx = self
-                .model
-                .new_context(&self.backend, ctx_params)
-                .map_err(|e| format!("embed new_context: {e}"))?;
-            let mut batch = LlamaBatch::new(n, 1);
+            // Each text is its own sequence. Clearing the KV cache is what keeps
+            // them independent while the context is shared — without it the
+            // previous text's keys would still be in the window and leak into
+            // this one's pooled vector.
+            ctx.clear_kv_cache();
+            batch.clear();
             for (i, tok) in tokens.iter().enumerate() {
                 // Mark output on every token; Mean pooling averages the
                 // sequence's token embeddings into one vector.
