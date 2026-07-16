@@ -25,9 +25,63 @@ pub fn content_hash(s: &str) -> u64 {
     h.finish()
 }
 
+/// Emit `text` as one chunk, or as several if it is longer than `CHUNK_CHARS`.
+///
+/// The hard split is what keeps `chunk_page`'s size promise. Splitting on
+/// headings and blank lines only bounds a chunk when the text *has* those:
+/// a page written as one long unbroken paragraph — ordinary in Korean prose,
+/// and in any wall-of-text note — used to come back out at whatever length it
+/// went in at. That silently broke the embed path, which cannot pool a sequence
+/// past its ubatch.
+///
+/// Prefers to break at whitespace so a chunk does not end mid-word, and falls
+/// back to the nearest char boundary when there is no whitespace to use (CJK
+/// text often has none for long stretches). Never splits inside a codepoint.
+fn push_bounded(out: &mut Vec<String>, text: &str) {
+    let text = text.trim();
+    if text.is_empty() {
+        return;
+    }
+    if text.len() <= CHUNK_CHARS {
+        out.push(text.to_string());
+        return;
+    }
+    let mut rest = text;
+    while rest.len() > CHUNK_CHARS {
+        // Largest char boundary at or before the limit.
+        let mut end = CHUNK_CHARS;
+        while end > 0 && !rest.is_char_boundary(end) {
+            end -= 1;
+        }
+        // Back off to the last whitespace, unless that leaves a scrap.
+        if let Some(ws) = rest[..end].rfind(char::is_whitespace) {
+            if ws >= CHUNK_MIN {
+                end = ws;
+            }
+        }
+        // A single codepoint wider than the limit cannot happen, but a boundary
+        // search that collapsed to 0 would loop forever — refuse to make no
+        // progress.
+        if end == 0 {
+            break;
+        }
+        let (head, tail) = rest.split_at(end);
+        let head = head.trim();
+        if !head.is_empty() {
+            out.push(head.to_string());
+        }
+        rest = tail.trim_start();
+    }
+    if !rest.trim().is_empty() {
+        out.push(rest.trim().to_string());
+    }
+}
+
 /// Split a markdown page into retrieval-sized chunks. Splits first on ATX headings
 /// (`# ...`), then packs paragraphs up to CHUNK_CHARS, so a chunk stays topically
 /// coherent. Frontmatter and code fences are kept inline (cheap; good enough v1).
+///
+/// Every emitted chunk is at most `CHUNK_CHARS` bytes; see `push_bounded`.
 pub fn chunk_page(text: &str) -> Vec<String> {
     // Split into heading-led sections.
     let mut sections: Vec<String> = Vec::new();
@@ -46,25 +100,23 @@ pub fn chunk_page(text: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     for sec in sections {
         if sec.len() <= CHUNK_CHARS {
-            let t = sec.trim();
-            if !t.is_empty() {
-                out.push(t.to_string());
-            }
+            push_bounded(&mut out, &sec);
             continue;
         }
         let mut buf = String::new();
         for para in sec.split("\n\n") {
             if buf.len() + para.len() > CHUNK_CHARS && buf.len() >= CHUNK_MIN {
-                out.push(buf.trim().to_string());
+                push_bounded(&mut out, &buf);
                 buf.clear();
             }
             buf.push_str(para);
             buf.push_str("\n\n");
         }
-        let t = buf.trim();
-        if !t.is_empty() {
-            out.push(t.to_string());
-        }
+        // `buf` can still exceed the limit here: a single paragraph longer than
+        // CHUNK_CHARS never triggers the flush above (the guard needs a
+        // non-scrap `buf` to flush, and an empty one has nothing to give), so it
+        // lands here whole. push_bounded is what actually bounds it.
+        push_bounded(&mut out, &buf);
     }
     out
 }
@@ -175,6 +227,62 @@ mod tests {
     #[test]
     fn chunk_skips_empty() {
         assert!(chunk_page("\n\n   \n").is_empty());
+    }
+
+    #[test]
+    fn chunk_bounds_an_unbroken_paragraph() {
+        // Regression: a page with no headings and no blank lines produced ONE
+        // chunk of the whole page — the size limit was only ever enforced
+        // between paragraphs, so text without any came back unsplit. A real
+        // Korean page did this at 6,419 chars / 1,501 tokens, which then
+        // crashed the embed path.
+        let wall = "지식 그래프는 노트 사이의 연결을 보여준다. ".repeat(200);
+        assert!(wall.len() > CHUNK_CHARS * 3, "fixture must exceed the limit");
+        let chunks = chunk_page(&wall);
+        assert!(chunks.len() > 1);
+        for c in &chunks {
+            assert!(c.len() <= CHUNK_CHARS, "chunk of {} chars exceeds limit", c.len());
+        }
+        // No text is dropped on the floor.
+        let rejoined: String = chunks.join(" ").split_whitespace().collect::<Vec<_>>().join(" ");
+        let original: String = wall.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert_eq!(rejoined, original);
+    }
+
+    #[test]
+    fn chunk_never_splits_a_codepoint() {
+        // A hard split at a byte offset would corrupt multi-byte text; every
+        // chunk must be valid UTF-8 that round-trips.
+        let wall = "한국어".repeat(3000); // no whitespace at all to back off to
+        let chunks = chunk_page(&wall);
+        assert!(chunks.len() > 1);
+        for c in &chunks {
+            assert!(c.len() <= CHUNK_CHARS);
+            assert!(!c.contains('\u{FFFD}'));
+        }
+        assert_eq!(chunks.concat(), wall);
+    }
+
+    #[test]
+    fn chunk_bounds_long_paragraphs_within_a_section() {
+        // Same failure one level in: a heading section whose single paragraph
+        // is oversized.
+        let para = "wiki knowledge graph note ".repeat(200);
+        let md = format!("# Title\n{para}\n\n# Other\nshort body\n");
+        let chunks = chunk_page(&md);
+        for c in &chunks {
+            assert!(c.len() <= CHUNK_CHARS, "chunk of {} chars exceeds limit", c.len());
+        }
+        assert!(chunks.iter().any(|c| c.contains("short body")));
+    }
+
+    #[test]
+    fn chunk_prefers_whitespace_breaks() {
+        let words = "alpha ".repeat(1000);
+        for c in chunk_page(&words) {
+            // Backing off to whitespace means no chunk ends mid-word.
+            assert!(!c.ends_with("alp") && !c.ends_with("alph"), "split mid-word: {c:?}");
+        }
     }
 
     #[test]

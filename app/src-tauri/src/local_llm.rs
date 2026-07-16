@@ -67,6 +67,17 @@ impl LocalLlm {
         })
     }
 
+    /// How many tokens `text` costs this model. The context window is measured in
+    /// tokens while everything upstream (chunk sizes, vault-context budgets) is
+    /// measured in bytes, and the ratio between them swings wildly by script —
+    /// so a caller that needs the real number has to ask the tokenizer.
+    pub fn token_count(&self, text: &str) -> Result<usize, String> {
+        self.model
+            .str_to_token(text, AddBos::Always)
+            .map(|t| t.len())
+            .map_err(|e| format!("tokenize: {e}"))
+    }
+
     /// Render (system, user) through the model's chat template, falling back to
     /// a plain concatenation when the GGUF has none. Returns the prompt text
     /// and whether a BOS still needs to be added at tokenization (the template
@@ -279,14 +290,6 @@ impl LocalLlm {
         let n_ctx = NonZeroU32::new(EMBED_CTX).ok_or("invalid embed ctx")?;
         let mut out = Vec::with_capacity(texts.len());
         for text in texts {
-            let ctx_params = LlamaContextParams::default()
-                .with_n_ctx(Some(n_ctx))
-                .with_embeddings(true)
-                .with_pooling_type(LlamaPoolingType::Mean);
-            let mut ctx = self
-                .model
-                .new_context(&self.backend, ctx_params)
-                .map_err(|e| format!("embed new_context: {e}"))?;
             let mut tokens = self
                 .model
                 .str_to_token(text, AddBos::Always)
@@ -299,20 +302,40 @@ impl LocalLlm {
                 out.push(Vec::new());
                 continue;
             }
-            let mut batch = LlamaBatch::new(512, 1);
-            let mut pos: i32 = 0;
-            for chunk in tokens.chunks(512) {
-                batch.clear();
-                for tok in chunk {
-                    // Mark output on every token; Mean pooling averages the
-                    // sequence's token embeddings into one vector.
-                    batch
-                        .add(*tok, pos, &[0], true)
-                        .map_err(|e| format!("embed batch.add: {e}"))?;
-                    pos += 1;
-                }
-                ctx.decode(&mut batch).map_err(|e| format!("embed decode: {e}"))?;
+            // Mean pooling collapses the sequence into one vector, which
+            // llama.cpp can only do when the whole sequence lands in a single
+            // ubatch. n_ubatch defaults to 512, so this used to feed anything
+            // longer through `tokens.chunks(512)` and decode it in pieces —
+            // which aborts the process from inside llama.cpp (SIGTRAP; not an
+            // Err this could return, nor a panic it could catch). A vault page
+            // written as one long paragraph reaches that: a real chunk_page
+            // output of Korean prose measured 1,501 tokens, and reindexing it
+            // killed the app.
+            //
+            // Size the batch to this text: large enough that the sequence is
+            // never split, and no larger, because the Metal compute buffer
+            // scales with it — ~1 MiB per token, so pinning ubatch to the 2048
+            // ceiling would reserve ~2 GiB to embed a 400-token chunk.
+            let n = tokens.len();
+            let ctx_params = LlamaContextParams::default()
+                .with_n_ctx(Some(n_ctx))
+                .with_embeddings(true)
+                .with_pooling_type(LlamaPoolingType::Mean)
+                .with_n_batch(n as u32)
+                .with_n_ubatch(n as u32);
+            let mut ctx = self
+                .model
+                .new_context(&self.backend, ctx_params)
+                .map_err(|e| format!("embed new_context: {e}"))?;
+            let mut batch = LlamaBatch::new(n, 1);
+            for (i, tok) in tokens.iter().enumerate() {
+                // Mark output on every token; Mean pooling averages the
+                // sequence's token embeddings into one vector.
+                batch
+                    .add(*tok, i as i32, &[0], true)
+                    .map_err(|e| format!("embed batch.add: {e}"))?;
             }
+            ctx.decode(&mut batch).map_err(|e| format!("embed decode: {e}"))?;
             let emb = ctx
                 .embeddings_seq_ith(0)
                 .map_err(|e| format!("embeddings_seq_ith: {e}"))?;
