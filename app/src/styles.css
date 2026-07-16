@@ -3022,6 +3022,122 @@ hr {
   }
 }
 
+/* Multiverse cosmos (3D) view — full-bleed scene with floating chrome. */
+.mv-cosmos {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #05060d;
+}
+.mv-cosmos .graph-canvas.mv-scene {
+  z-index: 0;
+}
+.mv-cosmos-head {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 20px 24px;
+  pointer-events: none;
+  /* fade so the title reads over stars without a hard bar */
+  background: linear-gradient(to bottom, rgba(5, 6, 13, 0.75), transparent);
+}
+.mv-cosmos-head > *,
+.mv-cosmos-head button {
+  pointer-events: auto;
+}
+.mv-cosmos-head .page-eyebrow {
+  color: rgba(220, 225, 245, 0.7);
+}
+.mv-cosmos-title {
+  margin: 2px 0 0;
+  font-size: 22px;
+  font-weight: 650;
+  color: #f2f4fb;
+}
+.mv-cosmos-hint {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  margin: 0;
+  padding: 14px 24px 18px;
+  text-align: center;
+  font-size: 13px;
+  color: rgba(210, 216, 238, 0.72);
+  pointer-events: none;
+  background: linear-gradient(to top, rgba(5, 6, 13, 0.7), transparent);
+}
+.mv-cosmos .mv-state {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  align-content: center;
+  justify-content: center;
+  color: rgba(210, 216, 238, 0.8);
+  z-index: 1;
+}
+
+/* View toggle (Cosmos / Cards) */
+.mv-viewtoggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+}
+.mv-cosmos-head .mv-viewtoggle {
+  background: rgba(20, 24, 40, 0.7);
+  border-color: rgba(150, 160, 200, 0.25);
+  backdrop-filter: blur(6px);
+}
+.mv-viewbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-3);
+  font-size: 13px;
+  font-weight: 550;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+.mv-cosmos-head .mv-viewbtn {
+  color: rgba(200, 208, 232, 0.75);
+}
+.mv-viewbtn svg {
+  width: 15px;
+  height: 15px;
+}
+.mv-viewbtn.is-on {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.mv-cosmos-head .mv-viewbtn.is-on {
+  background: rgba(120, 140, 220, 0.85);
+  color: #fff;
+}
+@media (max-width: 640px) {
+  .mv-cosmos-head {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .mv-cosmos-title {
+    font-size: 18px;
+  }
+}
+
 /* Ingest drop/paste layout: two columns on desktop, stacked on small screens.
    Moved off an inline style so the breakpoint below can override it. */
 .ingest-grid {

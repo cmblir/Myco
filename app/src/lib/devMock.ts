@@ -262,6 +262,29 @@ function buildBigAdjacency(n: number) {
   return { forward, backward, unresolved: {}, tags, meta: {} };
 }
 
+// Re-key every path id in an adjacency from `${VAULT}/...` to `${root}/...`,
+// so the multiverse mock can hand each universe a distinct node namespace.
+function rerootAdjacency(
+  adj: ReturnType<typeof buildAdjacency>,
+  root: string,
+): ReturnType<typeof buildAdjacency> {
+  const re = (p: string): string => (p.startsWith(VAULT) ? root + p.slice(VAULT.length) : p);
+  const remapMap = (m: Record<string, string[]>): Record<string, string[]> => {
+    const out: Record<string, string[]> = {};
+    for (const [k, arr] of Object.entries(m)) out[re(k)] = arr.map(re);
+    return out;
+  };
+  const meta: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(adj.meta ?? {})) meta[re(k)] = v;
+  return {
+    forward: remapMap(adj.forward),
+    backward: remapMap(adj.backward),
+    unresolved: remapMap(adj.unresolved ?? {}),
+    tags: remapMap(adj.tags),
+    meta: meta as typeof adj.meta,
+  };
+}
+
 function buildAdjacency() {
   const big = bigCount();
   if (big > 0) return buildBigAdjacency(big);
@@ -516,7 +539,12 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         },
       ]);
     case "build_link_graph_at":
-      return Promise.resolve(buildAdjacency());
+      // Re-root the demo graph under the requested project so each universe has
+      // DISTINCT node ids (real backends return per-project absolute paths). A
+      // single shared graph would collapse to one universe in the merge.
+      return Promise.resolve(
+        rerootAdjacency(buildAdjacency(), `${VAULT}/projects/${String(args.slug ?? "x")}`),
+      );
     case "set_active_project":
       return Promise.resolve({
         path: `${VAULT}/projects/${String(args.slug ?? "")}`,

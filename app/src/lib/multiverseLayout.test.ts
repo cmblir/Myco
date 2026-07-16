@@ -1,13 +1,34 @@
 import { describe, expect, it } from "vitest";
 import {
   UNIVERSE_SCALE,
+  layoutMultiverse,
   translateByAnchor,
   universeAnchorsBySize,
   universeFootprint,
   universeHue,
   universeNormal,
+  type PositionableGraph,
+  type UniverseAnchor,
   type UniverseInput,
 } from "./multiverseLayout";
+
+// A tiny in-memory PositionableGraph for layoutMultiverse tests — no graphology.
+function fakeGraph(
+  nodes: { id: string; x: number; y: number; z: number; universe?: string }[],
+): PositionableGraph & { get: (id: string) => { x: number; y: number; z: number } } {
+  const map = new Map(nodes.map((n) => [n.id, { ...n }]));
+  return {
+    forEachNode(cb) {
+      for (const n of map.values()) cb(n.id, n);
+    },
+    setNodeAttribute(id, name, value) {
+      (map.get(id)! as unknown as Record<string, number>)[name] = value;
+    },
+    get(id) {
+      return map.get(id)!;
+    },
+  };
+}
 
 const LD = 40; // a representative link distance
 
@@ -123,5 +144,48 @@ describe("translateByAnchor", () => {
       y: 22,
       z: 33,
     });
+  });
+});
+
+describe("layoutMultiverse", () => {
+  const anchors: UniverseAnchor[] = [
+    { slug: "a", x: 0, y: 0, z: 0 },
+    { slug: "b", x: 1000, y: 0, z: 0 },
+  ];
+
+  it("re-centres each universe's centroid onto its anchor, preserving relative shape", () => {
+    // Universe a: two nodes around local (10,0,0); universe b: around (0,0,0).
+    const g = fakeGraph([
+      { id: "a1", x: 5, y: 0, z: 0, universe: "a" },
+      { id: "a2", x: 15, y: 0, z: 0, universe: "a" },
+      { id: "b1", x: -3, y: 4, z: 0, universe: "b" },
+      { id: "b2", x: 3, y: -4, z: 0, universe: "b" },
+    ]);
+    const placed = layoutMultiverse(g, anchors);
+    expect(placed.sort()).toEqual(["a", "b"]);
+    // a's centroid was (10,0,0) → anchor (0,0,0): nodes shift by -10 on x.
+    expect(g.get("a1")).toMatchObject({ x: -5, y: 0, z: 0 });
+    expect(g.get("a2")).toMatchObject({ x: 5, y: 0, z: 0 });
+    // Relative spacing within a preserved (still 10 apart).
+    expect(g.get("a2").x - g.get("a1").x).toBe(10);
+    // b's centroid was (0,0,0) → anchor (1000,0,0): nodes shift +1000 on x only.
+    expect(g.get("b1")).toMatchObject({ x: 997, y: 4, z: 0 });
+    expect(g.get("b2")).toMatchObject({ x: 1003, y: -4, z: 0 });
+  });
+
+  it("separates universes so their node clouds don't overlap", () => {
+    const g = fakeGraph([
+      { id: "a1", x: 0, y: 0, z: 0, universe: "a" },
+      { id: "b1", x: 0, y: 0, z: 0, universe: "b" },
+    ]);
+    layoutMultiverse(g, anchors);
+    const d = Math.abs(g.get("a1").x - g.get("b1").x);
+    expect(d).toBe(1000);
+  });
+
+  it("leaves nodes with no matching anchor untouched", () => {
+    const g = fakeGraph([{ id: "x", x: 7, y: 8, z: 9, universe: "unknown" }]);
+    layoutMultiverse(g, anchors);
+    expect(g.get("x")).toMatchObject({ x: 7, y: 8, z: 9 });
   });
 });

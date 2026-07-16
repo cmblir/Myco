@@ -31,6 +31,9 @@ export interface Strings {
   mv_active: string;
   mv_enter: string;
   mv_independent: string;
+  mv_view_cosmos: string;
+  mv_view_cards: string;
+  mv_cosmos_hint: string;
   folder__root: string;
   folder_sources: string;
   folder_entities: string;
@@ -594,6 +597,9 @@ export const STRINGS: Record<Lang, Strings> = {
     mv_active: "Active",
     mv_enter: "Enter",
     mv_independent: "Standalone vault",
+    mv_view_cosmos: "Cosmos",
+    mv_view_cards: "Cards",
+    mv_cosmos_hint: "Each cluster is a universe. Click a star to enter its project.",
     folder__root: "Root",
     folder_sources: "Sources",
     folder_entities: "Entities",
@@ -1170,6 +1176,9 @@ export const STRINGS: Record<Lang, Strings> = {
     mv_active: "활성",
     mv_enter: "진입",
     mv_independent: "독립 볼트",
+    mv_view_cosmos: "코스모스",
+    mv_view_cards: "카드",
+    mv_cosmos_hint: "각 성단이 하나의 우주입니다. 별을 클릭하면 그 프로젝트로 진입합니다.",
     folder__root: "루트",
     folder_sources: "소스",
     folder_entities: "엔티티",
@@ -1740,6 +1749,9 @@ export const STRINGS: Record<Lang, Strings> = {
     mv_active: "アクティブ",
     mv_enter: "入る",
     mv_independent: "独立ボルト",
+    mv_view_cosmos: "コスモス",
+    mv_view_cards: "カード",
+    mv_cosmos_hint: "各クラスターがひとつの宇宙。星をクリックするとそのプロジェクトに入ります。",
     folder__root: "ルート",
     folder_sources: "ソース",
     folder_entities: "エンティティ",

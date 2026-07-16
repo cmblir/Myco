@@ -24,17 +24,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   browsers), falls back to a still poster under `prefers-reduced-motion` or
   playback failure, and crops the wide clip to a square around the character.
 
-- **Multiverse overview (Phase 1).** A new **Multiverse** workspace view lists
-  every registered project as its own universe — a card tinted with the
-  project's stable identity hue, showing its note count and active state.
-  Entering a universe switches the active vault (registry pointer + confinement)
-  and opens its graph. Backed by a dedicated `multiverseStore` (lazy, parallel
-  per-universe loading, kept separate from the single-vault store) and a pure,
-  unit-tested data+layout core (`buildMultiverseGraph` merges each project's
-  link graph with per-universe node tagging and namespaced ghost links;
-  `universeAnchorsBySize` places each universe's subcloud far apart by reusing
-  the galaxy packer at a larger scale). The 3D fly-into-universe scene builds on
-  this next. Verified across the three standard viewports.
+- **Multiverse view (Phase 1).** A new **Multiverse** workspace view renders
+  every registered project as its own universe in one shared 3D cosmos —
+  each project's link graph laid out as a separate star cluster, placed far
+  apart so the void between them reads as interstellar space; clicking a star
+  enters that project (switching the active vault: registry pointer +
+  confinement). A **Cosmos / Cards** toggle offers a flat card list as the
+  alternative, each card tinted with the project's stable identity hue and
+  showing its note count and active state. Backed by a dedicated
+  `multiverseStore` (lazy, parallel per-universe loading, kept separate from the
+  single-vault store) and a pure, unit-tested data+layout core
+  (`buildMultiverseGraph` merges each project's link graph with per-universe
+  node tagging and namespaced ghost links; `universeAnchorsBySize` +
+  `layoutMultiverse` place each universe's subcloud far apart by reusing the
+  galaxy packer at a larger scale). The 3D scene reuses the existing cosmic
+  renderer statically (no per-universe force sim). Verified across the three
+  standard viewports in both the cosmos and cards views.
 - **Multiverse groundwork (Phase 0).** The Rust backend can now enumerate the
   multi-project registry (`projects.json` discovered above the open vault) and
   build read-only link graphs for any registered project — not just the open

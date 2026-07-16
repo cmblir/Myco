@@ -30,9 +30,14 @@ export interface UniverseAnchor extends GalaxyAnchor {
 // How much bigger a universe's footprint is than a single galaxy of the same
 // node count. A universe contains a whole galaxy field, so its subcloud extent
 // is several galaxy-radii; scaling the packing's linkDistance by this factor
-// spreads universes far enough apart that their subclouds don't overlap. Tuned
-// further in the scene tier; exported so imposter/LOD sizing stays in sync.
-export const UNIVERSE_SCALE = 6;
+// spreads universes far enough apart that their subclouds don't overlap. It has
+// to clear not just the footprint math but the fixed ~300–600 world-unit seed
+// scatter every universe's local nodes start with (seededXYZ in graphData) —
+// which the node-count-driven footprint doesn't see — so a small universe
+// (a handful of notes) still lands far from its neighbours. 18 keeps even two
+// 3-node universes from overlapping while big vaults sit proportionally farther
+// out. Exported so imposter/LOD sizing stays in sync.
+export const UNIVERSE_SCALE = 18;
 
 // The radius a universe's whole subcloud occupies, at the given link distance.
 // Mirrors galaxyFootprint one tier up (× UNIVERSE_SCALE) so imposter discs and
@@ -91,4 +96,54 @@ export function translateByAnchor(
   anchor: GalaxyAnchor,
 ): { x: number; y: number; z: number } {
   return { x: local.x + anchor.x, y: local.y + anchor.y, z: local.z + anchor.z };
+}
+
+// Minimal graph shape layoutMultiverse needs — a structural subset of the
+// graphology VaultGraph, so this stays testable without a real Graph instance.
+export interface PositionableGraph {
+  forEachNode(
+    cb: (id: string, attrs: { x: number; y: number; z: number; universe?: string }) => void,
+  ): void;
+  setNodeAttribute(id: string, name: "x" | "y" | "z", value: number): void;
+}
+
+// Separate a merged multiverse graph into far-apart universe subclouds. Each
+// universe's nodes keep the RELATIVE positions they already have (from their
+// own local layout — buildMultiverseGraph's seeded scatter, or a per-universe
+// atlas pass the caller ran first) and are translated as a rigid group so that
+// universe's centroid lands on its anchor. Mutates x/y/z in place; deterministic
+// (no randomness of its own). Nodes whose `universe` has no anchor are left
+// untouched. Returns the slugs it placed.
+export function layoutMultiverse(
+  graph: PositionableGraph,
+  anchors: UniverseAnchor[],
+): string[] {
+  const anchorBySlug = new Map(anchors.map((a) => [a.slug, a]));
+  // Per-universe centroid of the current local positions.
+  const acc = new Map<string, { x: number; y: number; z: number; n: number }>();
+  graph.forEachNode((_id, a) => {
+    const slug = a.universe ?? "";
+    if (!anchorBySlug.has(slug)) return;
+    const c = acc.get(slug) ?? { x: 0, y: 0, z: 0, n: 0 };
+    c.x += a.x;
+    c.y += a.y;
+    c.z += a.z;
+    c.n += 1;
+    acc.set(slug, c);
+  });
+  const centroid = new Map<string, GalaxyAnchor>();
+  for (const [slug, c] of acc) {
+    centroid.set(slug, { x: c.x / c.n, y: c.y / c.n, z: c.z / c.n });
+  }
+  // Rigidly shift each universe so its centroid sits on its anchor.
+  graph.forEachNode((id, a) => {
+    const slug = a.universe ?? "";
+    const anchor = anchorBySlug.get(slug);
+    const c = centroid.get(slug);
+    if (!anchor || !c) return;
+    graph.setNodeAttribute(id, "x", a.x - c.x + anchor.x);
+    graph.setNodeAttribute(id, "y", a.y - c.y + anchor.y);
+    graph.setNodeAttribute(id, "z", a.z - c.z + anchor.z);
+  });
+  return [...centroid.keys()];
 }

@@ -5,13 +5,17 @@
 // fly-into-universe scene is a later increment; this is the navigable,
 // responsive overview it will grow out of.
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { useMultiverseStore } from "../stores/multiverseStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useUIStore } from "../stores/uiStore";
+import MultiverseScene from "../components/MultiverseScene";
+import type { SceneUniverse } from "../lib/multiverseScene";
+
+type ViewMode = "cosmos" | "cards";
 
 export default function PageMultiverse({ t }: { t: Strings }): JSX.Element {
   const order = useMultiverseStore((s) => s.order);
@@ -20,16 +24,20 @@ export default function PageMultiverse({ t }: { t: Strings }): JSX.Element {
   const error = useMultiverseStore((s) => s.error);
   const available = useMultiverseStore((s) => s.available);
   const loadProjects = useMultiverseStore((s) => s.loadProjects);
+  const loadAll = useMultiverseStore((s) => s.loadAll);
   const setActiveUniverse = useMultiverseStore((s) => s.setActiveUniverse);
   const openVault = useVaultStore((s) => s.openVault);
   const setRoute = useUIStore((s) => s.setRoute);
+  const [view, setView] = useState<ViewMode>("cosmos");
 
   // The registry listing is cheap; fetch it whenever the overview mounts so a
-  // project added/switched elsewhere shows up. Per-universe graphs stay lazy
-  // (the scene tier warms them) — the cards only need the registry metadata.
+  // project added/switched elsewhere shows up. The cosmos view additionally
+  // needs every universe's graph, so it warms them all (parallel, per-universe
+  // error isolation) — the cards only need the registry metadata.
   useEffect(() => {
-    void loadProjects();
-  }, [loadProjects]);
+    if (view === "cosmos") void loadAll();
+    else void loadProjects();
+  }, [view, loadAll, loadProjects]);
 
   // Enter a universe: flip the backend active project (registry pointer +
   // confinement root), then sync the frontend vault and jump to its graph.
@@ -39,7 +47,23 @@ export default function PageMultiverse({ t }: { t: Strings }): JSX.Element {
     setRoute("graph");
   }
 
+  // Enter by slug (from a 3D star click) — look up its root first.
+  async function enterBySlug(slug: string): Promise<void> {
+    const u = universes[slug];
+    if (u) await enter(slug, u.info.root);
+  }
+
   const cards = order.map((slug) => universes[slug]).filter(Boolean);
+
+  // Universes whose graphs have finished loading, for the 3D scene.
+  const sceneUniverses = useMemo<SceneUniverse[]>(
+    () =>
+      order
+        .map((slug) => universes[slug])
+        .filter((u) => u && u.adjacency)
+        .map((u) => ({ slug: u.info.slug, root: u.info.root, adjacency: u.adjacency! })),
+    [order, universes],
+  );
 
   let body: JSX.Element;
   if (isLoading && cards.length === 0) {
@@ -114,12 +138,65 @@ export default function PageMultiverse({ t }: { t: Strings }): JSX.Element {
     );
   }
 
+  const toggle = (
+    <div className="mv-viewtoggle" role="group" aria-label={t.mv_title}>
+      <button
+        type="button"
+        className={"mv-viewbtn" + (view === "cosmos" ? " is-on" : "")}
+        aria-pressed={view === "cosmos"}
+        onClick={() => setView("cosmos")}
+      >
+        <Icon name="globe" />
+        {t.mv_view_cosmos}
+      </button>
+      <button
+        type="button"
+        className={"mv-viewbtn" + (view === "cards" ? " is-on" : "")}
+        aria-pressed={view === "cards"}
+        onClick={() => setView("cards")}
+      >
+        <Icon name="book" />
+        {t.mv_view_cards}
+      </button>
+    </div>
+  );
+
+  // Cosmos (3D) view: full-bleed scene once at least one universe graph is
+  // loaded, with a floating header + view toggle. Falls back to the shared
+  // state panel (loading / error / empty) until the field is ready.
+  if (view === "cosmos" && available) {
+    return (
+      <div className="mv-cosmos">
+        <div className="mv-cosmos-head">
+          <div>
+            <div className="page-eyebrow">{t.nav_multiverse}</div>
+            <h1 className="mv-cosmos-title">{t.mv_title}</h1>
+          </div>
+          {toggle}
+        </div>
+        {sceneUniverses.length > 0 ? (
+          <MultiverseScene
+            universes={sceneUniverses}
+            onEnterUniverse={(slug) => void enterBySlug(slug)}
+          />
+        ) : (
+          <div className="mv-state" role="status" aria-live="polite">
+            <Icon name="globe" />
+            <span>{t.mv_loading}</span>
+          </div>
+        )}
+        <p className="mv-cosmos-hint">{t.mv_cosmos_hint}</p>
+      </div>
+    );
+  }
+
   return (
     <div className="workspace">
       <header className="page-head">
         <div className="page-eyebrow">{t.nav_multiverse}</div>
         <h1 className="page-title">{t.mv_title}</h1>
         <p className="page-lede">{t.mv_lede}</p>
+        {available && cards.length > 0 && <div style={{ marginTop: 16 }}>{toggle}</div>}
       </header>
       {body}
     </div>
