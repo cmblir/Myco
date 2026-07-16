@@ -46,7 +46,16 @@ export default function MultiverseScene({
     // Galaxy layout = the 3D cosmic renderer. We DON'T start a worker sim; the
     // node positions are pre-baked by assembleMultiverse and stay put, so the
     // scene renders the static field (far universes → imposter discs via LOD).
-    const settings = { ...DEFAULT_GRAPH_SETTINGS, layout: "galaxy" as const };
+    // Per-node labels are pushed out of reach for the same reason ghosts are
+    // hidden below: at multiverse framing a note's title is unreadable noise,
+    // and there are thousands of them. Fly into a bubble and the normal graph
+    // takes over with its own labels. (The community names that surface at this
+    // distance are turned off separately — see setClusterLabelsVisible.)
+    const settings = {
+      ...DEFAULT_GRAPH_SETTINGS,
+      layout: "galaxy" as const,
+      textFadeThreshold: 3,
+    };
     const theme = makeTheme(settings.skin);
     const { graph } = assembleMultiverse(
       universes,
@@ -99,6 +108,11 @@ export default function MultiverseScene({
       onContextRestored: noop,
     });
     sceneRef.current = scene;
+    // Community names are a single-vault affordance: pull back and the clusters
+    // name themselves. One tier up they are the wrong nouns — a cluster topic
+    // from inside a bubble sits at screen-fixed size and drowns out the bubble's
+    // own name, which is the only label that means anything out here.
+    scene.setClusterLabelsVisible(false);
     // Wrap each universe in its glowing bubble sphere (the multiverse form),
     // labelled with the project title.
     const titles = new Map(universes.map((u) => [u.slug, u.title ?? u.slug]));

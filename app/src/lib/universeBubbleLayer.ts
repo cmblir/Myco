@@ -17,6 +17,8 @@
 
 import * as THREE from "three";
 import type { VaultGraph } from "./graphData";
+import { readTheme } from "./graphTheme";
+import { isDarkInk } from "./inkContrast";
 
 const VERT = /* glsl */ `
 varying vec3 v_normal;
@@ -164,10 +166,25 @@ export class UniverseBubbleLayer {
     ctx.font = font;
     ctx.textBaseline = "middle";
     ctx.textAlign = "center";
-    const glow = new THREE.Color().setHSL(hue / 360, 0.7, 0.7);
+    // Take the ink from the same place the rest of the graph does — readTheme
+    // decides light/dark from the actually-rendered --bg. This label used to be
+    // hardcoded near-white for the dark cosmic backdrop, which made it all but
+    // invisible on the light theme: the universe name, the one thing a bubble
+    // exists to tell you, read as a faint smudge while the node labels inside it
+    // (which do follow the theme) stayed crisp.
+    const ink = readTheme().ink || "#f4f6ff";
+    // The halo is the bubble's own hue, so a name still reads against the stars
+    // packed behind it, and still ties the label to its bubble. It has to
+    // contrast with the text, not match it: glow light under dark ink, dark
+    // under light ink.
+    const dark = isDarkInk(ink);
+    const glow = new THREE.Color().setHSL(hue / 360, 0.7, dark ? 0.35 : 0.7);
     ctx.shadowColor = `#${glow.getHexString()}`;
     ctx.shadowBlur = 16;
-    ctx.fillStyle = "#f4f6ff";
+    ctx.fillStyle = ink;
+    // Two passes: the shadow is the readable halo, so lay it down twice rather
+    // than fight the stars behind a single faint pass.
+    ctx.fillText(text, w / 2, h / 2);
     ctx.fillText(text, w / 2, h / 2);
 
     const tex = new THREE.CanvasTexture(canvas);

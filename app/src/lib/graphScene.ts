@@ -2517,6 +2517,18 @@ export class GraphScene {
     this.controls.autoRotate = on ? !this.reducedMotion : this.ambientOn();
   }
 
+  /**
+   * Show/hide the community names that surface while zoomed out.
+   *
+   * They are right for a single vault — pull back and the clusters name
+   * themselves — but wrong one tier up: the multiverse draws its own universe
+   * names, and a cluster topic from inside a bubble competes with the name of
+   * the bubble itself.
+   */
+  setClusterLabelsVisible(on: boolean): void {
+    this.clusterLabels.setEnabled(on);
+  }
+
   /** The WebGL canvas — used by the timelapse recorder (captureStream). */
   get canvas(): HTMLCanvasElement {
     return this.renderer.domElement;

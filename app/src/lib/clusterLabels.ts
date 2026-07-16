@@ -37,10 +37,31 @@ export class ClusterLabels {
   private graph: VaultGraph;
   private labels: ClusterLabel[] = [];
   private zoomedOut = true;
+  private enabled = true;
 
   constructor(graph: VaultGraph) {
     this.graph = graph;
     this.rebuild();
+  }
+
+  /**
+   * Turn the whole layer off (the multiverse tier names universes, not the
+   * communities inside them).
+   *
+   * These are CSS2DObjects, so visibility is a DOM class as much as a scene
+   * flag — clearing `is-visible` here rather than trusting the group's
+   * `visible` to cascade through CSS2DRenderer, and `update` returns early so
+   * nothing turns them back on next frame.
+   */
+  setEnabled(on: boolean): void {
+    this.enabled = on;
+    this.group.visible = on;
+    if (!on) {
+      for (const l of this.labels) {
+        l.obj.visible = false;
+        l.el.classList.remove("is-visible");
+      }
+    }
   }
 
   // Re-derive the top communities (size-ranked, like the legend) and their
@@ -89,6 +110,7 @@ export class ClusterLabels {
   // the sim runs). O(labelled nodes); the caller throttles. Labels whose
   // community is mostly timelapse-hidden hide with it.
   update(): void {
+    if (!this.enabled) return;
     for (const l of this.labels) {
       let cx = 0;
       let cy = 0;
