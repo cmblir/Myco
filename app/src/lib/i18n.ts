@@ -20,6 +20,10 @@ export interface Strings {
   ls_hint?: string;
   ls_accept?: string;
   ls_dismiss?: string;
+  zi_title?: string;
+  zi_hint?: string;
+  zi_none?: string;
+  zi_done?: string;
   vw_title?: string;
   vw_lede?: string;
   vw_search?: string;
@@ -613,6 +617,10 @@ export const STRINGS: Record<Lang, Strings> = {
     ls_hint: "Semantically close notes that aren't linked yet. Accept to add a [[wikilink]] under \u201c## Related\u201d.",
     ls_accept: "Link them",
     ls_dismiss: "Dismiss",
+    zi_title: "Import from Zotero",
+    zi_hint: "CSL-JSON or BibTeX export (highlights come along when present). Items land in _inbox/ as source docs for the ingest pipeline.",
+    zi_none: "No importable items found in that file.",
+    zi_done: "Imported {n} item(s) into _inbox/ — run Ingest to turn them into wiki pages.",
     vw_title: "Query views",
     vw_lede: "Filter the wiki by its frontmatter — type, confidence, status, tags, sources — and save the lenses you keep coming back to.",
     vw_search: "Filter by name…",
@@ -1219,6 +1227,10 @@ export const STRINGS: Record<Lang, Strings> = {
     ls_hint: "의미상 가깝지만 아직 연결되지 않은 노트들입니다. 수락하면 \u201c## Related\u201d 아래에 [[위키링크]]가 추가됩니다.",
     ls_accept: "연결하기",
     ls_dismiss: "무시",
+    zi_title: "Zotero에서 가져오기",
+    zi_hint: "CSL-JSON 또는 BibTeX 내보내기 파일(하이라이트 포함 시 함께). 항목은 _inbox/에 소스 문서로 저장됩니다.",
+    zi_none: "가져올 항목을 찾지 못했습니다.",
+    zi_done: "{n}개 항목을 _inbox/로 가져왔습니다 — Ingest를 실행해 위키 페이지로 만드세요.",
     vw_title: "쿼리 뷰",
     vw_lede: "프론트매터(종류·신뢰도·상태·태그·출처 수)로 위키를 필터링하고, 자주 쓰는 렌즈를 저장하세요.",
     vw_search: "이름으로 필터…",

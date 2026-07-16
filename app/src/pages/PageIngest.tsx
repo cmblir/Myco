@@ -14,6 +14,7 @@ import { sourceTextFor } from "../lib/mediaIngest";
 import { formatElapsed } from "../lib/time";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import ZoteroImport from "../components/ZoteroImport";
 import { useIngestStore } from "../stores/ingestStore";
 import IngestProgress from "../components/IngestProgress";
 
@@ -156,6 +157,8 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
         <h1 className="page-title">{t.ing_title}</h1>
         <p className="page-lede">{t.ing_lede}</p>
       </header>
+
+      <ZoteroImport t={t} />
 
       {settings ? (
         <div className="muted" style={{ fontSize: 12, marginTop: 12 }}>

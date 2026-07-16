@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Zotero import.** The Ingest page gains an *Import from Zotero* card:
+  drop a CSL-JSON or BibTeX export (PDF highlights come along when the export
+  carries annotations) and every item is written into `_inbox/` as a markdown
+  source doc — title, authors, year, DOI, quoted highlights — ready for the
+  normal ingest pipeline to turn into cited wiki pages. Tolerant client-side
+  parsing (salvages what it can, never throws), unit-tested.
 - **Suggested links — an accept/reject queue for the embedding pairs.** The
   Overview page now surfaces the semantically-closest note pairs that are NOT
   yet wikilinked. Accepting one appends the `[[wikilink]]` under the source

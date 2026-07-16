@@ -3848,3 +3848,27 @@ hr {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* --- Zotero import card (Ingest) ------------------------------------------ */
+.zotero-import {
+  padding: 14px 16px;
+  margin: 14px 0 4px;
+}
+.zotero-import .section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.zotero-import__hint {
+  font-size: 12px;
+  margin: 4px 0 10px;
+}
+.zotero-import input[type="file"] {
+  font-size: 12px;
+  max-width: 100%;
+}
+.zotero-import__result {
+  font-size: 12px;
+  margin: 8px 0 0;
+  color: var(--ink-2);
+}
