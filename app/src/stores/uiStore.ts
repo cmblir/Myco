@@ -38,6 +38,9 @@ export interface UIState {
   density: Density;
   accent: string;
   showCitations: boolean;
+  // MYCO mascot master switch — WCAG-style full opt-out (also the 14% of
+  // users who reject any character presence). Off = static logo fallback.
+  mascotEnabled: boolean;
   // Sidebar tree
   expandedFolders: Record<string, boolean>;
 
@@ -51,6 +54,7 @@ export interface UIState {
   setDensity: (density: Density) => void;
   setAccent: (accent: string) => void;
   setShowCitations: (v: boolean) => void;
+  setMascotEnabled: (v: boolean) => void;
   toggleFolder: (id: string) => void;
 }
 
@@ -65,6 +69,7 @@ export const useUIStore = create<UIState>()(
       density: "comfortable",
       accent: "#181715",
       showCitations: true,
+      mascotEnabled: true,
       // Keyed by absolute folder path; empty by default (all collapsed). The
       // old slug-keyed seed never matched real paths and was inert.
       expandedFolders: {},
@@ -79,6 +84,7 @@ export const useUIStore = create<UIState>()(
       setDensity: (density) => set({ density }),
       setAccent: (accent) => set({ accent }),
       setShowCitations: (v) => set({ showCitations: v }),
+      setMascotEnabled: (v) => set({ mascotEnabled: v }),
       toggleFolder: (id) =>
         set({
           expandedFolders: {

@@ -3627,3 +3627,111 @@ hr {
   margin: 8px 0 0;
   color: var(--ink-2);
 }
+
+/* --- Help widget (bottom-right ? FAB + panel) ----------------------------- */
+.help-widget__fab {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 90; /* under the cmd palette (100) and modals (2000) */
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  color: var(--ink-3);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.help-widget__fab:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+.graph-fullscreen ~ .help-widget__fab,
+.graph-fullscreen ~ .help-widget__panel,
+.graph-fullscreen .help-widget__fab {
+  display: none;
+}
+.help-widget__panel {
+  position: fixed;
+  right: 18px;
+  bottom: 60px;
+  z-index: 90;
+  width: min(320px, calc(100vw - 36px));
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-elev);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  padding: 14px;
+}
+.help-widget__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.help-widget__head > div {
+  flex: 1;
+  min-width: 0;
+}
+.help-widget__title {
+  font-weight: 600;
+  font-size: 14px;
+}
+.help-widget__sub {
+  font-size: 12px;
+}
+.help-widget__tips {
+  margin: 0 0 10px;
+  padding-left: 18px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.help-widget__sc {
+  border-top: 1px solid var(--line);
+  padding-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+}
+.help-widget__sc-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.help-widget__sc-row kbd {
+  font-family: inherit;
+  font-size: 11px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--ink-2);
+}
+
+/* --- Query empty state ----------------------------------------------------- */
+.query-empty {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 36px 0 12px;
+  text-align: center;
+}
+.query-empty .muted {
+  font-size: 13px;
+}
+
+/* Onboarding: the mascot takes the icon circle's slot. */
+.ob-icon--mascot {
+  background: none;
+  border: none;
+  width: auto;
+  height: auto;
+}

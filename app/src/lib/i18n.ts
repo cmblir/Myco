@@ -23,6 +23,25 @@ export interface Strings {
   zi_hint?: string;
   zi_none?: string;
   zi_done?: string;
+  q_empty?: string;
+  s_mascot?: string;
+  s_mascot_hint?: string;
+  hw_title?: string;
+  hw_sub?: string;
+  hw_sc_cmd?: string;
+  hw_sc_sidebar?: string;
+  hw_sc_fly?: string;
+  hw_sc_esc?: string;
+  hw_tip_graph1?: string;
+  hw_tip_graph2?: string;
+  hw_tip_graph3?: string;
+  hw_tip_query1?: string;
+  hw_tip_query2?: string;
+  hw_tip_ingest1?: string;
+  hw_tip_ingest2?: string;
+  hw_tip_views1?: string;
+  hw_tip_overview1?: string;
+  hw_tip_default?: string;
   vw_title?: string;
   vw_lede?: string;
   vw_search?: string;
@@ -609,6 +628,25 @@ export const STRINGS: Record<Lang, Strings> = {
     zi_hint: "CSL-JSON or BibTeX export (highlights come along when present). Items land in _inbox/ as source docs for the ingest pipeline.",
     zi_none: "No importable items found in that file.",
     zi_done: "Imported {n} item(s) into _inbox/ — run Ingest to turn them into wiki pages.",
+    q_empty: "Ask the wiki anything — answers cite your own pages.",
+    s_mascot: "Show MYCO, the mascot",
+    s_mascot_hint: "Loaders, empty states and the About page. Off = static logo.",
+    hw_title: "Help",
+    hw_sub: "Tips for this page",
+    hw_sc_cmd: "Command palette",
+    hw_sc_sidebar: "Toggle sidebar",
+    hw_sc_fly: "Fly mode (graph)",
+    hw_sc_esc: "Close / deselect",
+    hw_tip_graph1: "Drag a star and the simulation re-heats around it.",
+    hw_tip_graph2: "F flies the spaceship; the ⚠ badge opens gap analysis with research bridges.",
+    hw_tip_graph3: "Near-field planets (settings drawer) turn close-up notes into worlds.",
+    hw_tip_query1: "Answers cite wiki pages — click a citation to open it.",
+    hw_tip_query2: "The graph's gap panel can draft research questions into this box.",
+    hw_tip_ingest1: "Drop any file, paste text, or import a Zotero export.",
+    hw_tip_ingest2: "The web clipper sends pages here through _inbox/ (see clipper/).",
+    hw_tip_views1: "Filters compose — save the result as a named view chip.",
+    hw_tip_overview1: "Suggested links are semantic pairs with no wikilink yet — accept or dismiss.",
+    hw_tip_default: "⌘K jumps anywhere — pages, actions, semantic hits.",
     vw_title: "Query views",
     vw_lede: "Filter the wiki by its frontmatter — type, confidence, status, tags, sources — and save the lenses you keep coming back to.",
     vw_search: "Filter by name…",
@@ -1208,6 +1246,25 @@ export const STRINGS: Record<Lang, Strings> = {
     zi_hint: "CSL-JSON 또는 BibTeX 내보내기 파일(하이라이트 포함 시 함께). 항목은 _inbox/에 소스 문서로 저장됩니다.",
     zi_none: "가져올 항목을 찾지 못했습니다.",
     zi_done: "{n}개 항목을 _inbox/로 가져왔습니다 — Ingest를 실행해 위키 페이지로 만드세요.",
+    q_empty: "위키에 무엇이든 물어보세요 — 답변은 당신의 페이지를 인용합니다.",
+    s_mascot: "마스코트 MYCO 표시",
+    s_mascot_hint: "로더·빈 화면·정보 페이지에 등장합니다. 끄면 정적 로고로 대체됩니다.",
+    hw_title: "도움말",
+    hw_sub: "이 페이지의 팁",
+    hw_sc_cmd: "커맨드 팔레트",
+    hw_sc_sidebar: "사이드바 토글",
+    hw_sc_fly: "비행 모드 (그래프)",
+    hw_sc_esc: "닫기 / 선택 해제",
+    hw_tip_graph1: "별을 드래그하면 시뮬레이션이 주변에서 다시 살아납니다.",
+    hw_tip_graph2: "F는 우주선 비행, ⚠ 배지는 연구 다리가 포함된 갭 분석을 엽니다.",
+    hw_tip_graph3: "근접 행성(설정 서랍)을 켜면 가까운 노트가 행성이 됩니다.",
+    hw_tip_query1: "답변은 위키 페이지를 인용합니다 — 인용을 클릭해 열어보세요.",
+    hw_tip_query2: "그래프의 갭 패널이 연구 질문을 이 입력창에 담아줄 수 있습니다.",
+    hw_tip_ingest1: "파일 드롭, 텍스트 붙여넣기, Zotero 가져오기 모두 가능합니다.",
+    hw_tip_ingest2: "웹 클리퍼는 _inbox/를 통해 페이지를 이곳으로 보냅니다 (clipper/ 참고).",
+    hw_tip_views1: "필터는 조합됩니다 — 결과를 이름 있는 뷰로 저장하세요.",
+    hw_tip_overview1: "제안된 연결은 아직 링크되지 않은 의미상 유사 쌍입니다 — 수락하거나 무시하세요.",
+    hw_tip_default: "⌘K로 어디든 이동 — 페이지·액션·시맨틱 검색.",
     vw_title: "쿼리 뷰",
     vw_lede: "프론트매터(종류·신뢰도·상태·태그·출처 수)로 위키를 필터링하고, 자주 쓰는 렌즈를 저장하세요.",
     vw_search: "이름으로 필터…",

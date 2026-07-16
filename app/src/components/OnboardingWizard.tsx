@@ -6,7 +6,7 @@
 
 import { useId, useState } from "react";
 import type { JSX } from "react";
-import { Icon } from "../lib/icons";
+import MascotClip from "./MascotClip";
 import type { IconName } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
@@ -112,8 +112,8 @@ export default function OnboardingWizard({
         </div>
 
         <div className="ob-body">
-          <div className="ob-icon">
-            <Icon name={cur.icon} size={22} />
+          <div className="ob-icon ob-icon--mascot">
+            <MascotClip clip="idle" size={72} />
           </div>
           <h2 id={titleId} className="ob-step-title">
             {cur.title}

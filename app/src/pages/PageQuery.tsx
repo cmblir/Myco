@@ -14,6 +14,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { complete } from "../lib/chat";
 import { ipc } from "../lib/ipc";
 import { takeQueryPrefill } from "../lib/queryPrefill";
+import MascotClip from "../components/MascotClip";
 import { isActivityQuery, formatActivityAnswer } from "../lib/queryIntent";
 import { flattenMarkdown, stem } from "../lib/graphData";
 import Viewer from "../components/Viewer";
@@ -246,6 +247,14 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
         className="col"
         style={{ marginTop: 24, gap: 16, display: mode === "agent" ? "none" : "flex" }}
       >
+        {turns.length === 0 && !busy ? (
+          // Empty chat — MYCO keeps the blank space company (idle surface, so
+          // the mascot is welcome here; it never interrupts a running chat).
+          <div className="query-empty">
+            <MascotClip clip="idle" size={120} />
+            <p className="muted">{t.q_empty ?? "Ask the wiki anything — answers cite your own pages."}</p>
+          </div>
+        ) : null}
         {turns.map((turn, i) => (
           <div key={i} className="card">
             <div className="row" style={{ marginBottom: 10 }}>

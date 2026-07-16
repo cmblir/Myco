@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **MYCO grows into the app (Phase 1).** A quiet **"?" help widget** sits in
+  the bottom-right corner — it never animates, never opens itself, never
+  interrupts (pull, not push): clicking it opens a small panel where MYCO
+  greets you next to tips for the current page and the global shortcuts. The
+  Ask page's empty chat now welcomes you with the mascot instead of a blank
+  pane, the onboarding wizard's step icon became MYCO, and Settings ›
+  Appearance gains a **"Show MYCO" master switch** — off swaps every mascot
+  slot for the static logo (the full opt-out that character UX research says
+  any mascot needs, on top of the existing `prefers-reduced-motion` fallback).
 - **Web clipper.** A `memx://clip?url=&title=&selection=` deep link drops the
   current browser page into the vault's `_inbox/` as a markdown source doc —
   a minimal MV3 extension and a bookmarklet live in `clipper/`. The Rust

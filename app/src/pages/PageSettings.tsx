@@ -1502,7 +1502,42 @@ function SettingsAppearance({
           );
         })}
       </div>
+      <MascotToggle t={t} />
     </div>
+  );
+}
+
+// MYCO master switch — the full opt-out research says any character presence
+// needs. Off swaps every MascotClip for the static logo.
+function MascotToggle({ t }: { t: Strings }): JSX.Element {
+  const mascotEnabled = useUIStore((s) => s.mascotEnabled);
+  const setMascotEnabled = useUIStore((s) => s.setMascotEnabled);
+  return (
+    <label
+      className="card"
+      style={{
+        padding: "14px 16px",
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        cursor: "pointer",
+      }}
+    >
+      <MascotClip clip="idle" size={44} />
+      <span style={{ flex: 1, minWidth: 0 }}>
+        <span style={{ fontWeight: 500, display: "block" }}>
+          {t.s_mascot ?? "Show MYCO, the mascot"}
+        </span>
+        <span className="muted" style={{ fontSize: 12 }}>
+          {t.s_mascot_hint ?? "Loaders, empty states and the About page. Off = static logo."}
+        </span>
+      </span>
+      <input
+        type="checkbox"
+        checked={mascotEnabled}
+        onChange={(e) => setMascotEnabled(e.target.checked)}
+      />
+    </label>
   );
 }
 

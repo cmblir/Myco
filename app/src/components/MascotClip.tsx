@@ -11,6 +11,8 @@
 // callers just pass one size.
 import { useState } from "react";
 import type { JSX } from "react";
+import { MemexMark } from "../lib/icons";
+import { useUIStore } from "../stores/uiStore";
 import idleMovUrl from "../assets/mascot/idle.mov";
 import idleWebmUrl from "../assets/mascot/idle.webm";
 import idlePosterUrl from "../assets/mascot/idle.poster.png";
@@ -37,7 +39,20 @@ export default function MascotClip({
   size?: number;
 }): JSX.Element {
   const [failed, setFailed] = useState(false);
+  const mascotEnabled = useUIStore((s) => s.mascotEnabled);
   const c = CLIPS[clip];
+  // Master opt-out (Settings › Appearance): the static logo takes the slot so
+  // layouts never shift, the character just stops appearing.
+  if (!mascotEnabled) {
+    return (
+      <span
+        aria-hidden
+        style={{ width: size, height: size, display: "grid", placeItems: "center", flexShrink: 0 }}
+      >
+        <MemexMark size={Math.round(size * 0.66)} />
+      </span>
+    );
+  }
   const reduced =
     typeof window !== "undefined" &&
     window.matchMedia("(prefers-reduced-motion: reduce)").matches;

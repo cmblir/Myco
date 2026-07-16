@@ -7,6 +7,7 @@ import DialogHost from "./components/DialogHost";
 import ErrorBoundary from "./components/ErrorBoundary";
 import OnboardingWizard from "./components/OnboardingWizard";
 import MascotClip from "./components/MascotClip";
+import HelpWidget from "./components/HelpWidget";
 import PageOverview from "./pages/PageOverview";
 import PageIngest from "./pages/PageIngest";
 import PageQuery from "./pages/PageQuery";
@@ -357,6 +358,7 @@ export default function App(): JSX.Element {
       </main>
       <CommandBar t={t} />
       <DialogHost />
+      <HelpWidget t={t} />
       {firstRun ? (
         <OnboardingWizard t={t} onClose={completeOnboarding} />
       ) : null}
