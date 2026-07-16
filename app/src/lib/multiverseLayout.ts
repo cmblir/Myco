@@ -68,6 +68,20 @@ export function universeNormal(index: number): GalaxyAnchor {
   return galaxyNormal(index * 7919 + 104729);
 }
 
+// A universe's fixed identity hue (0..360), hashed from its slug so it is
+// stable across reloads and independent of how many other projects exist or
+// their order (a golden-angle-over-list scheme would reshuffle every hue when a
+// project is added/removed). Identity, not geometry, but kept here so all
+// per-universe derivations live in one place. FNV-1a over the slug.
+export function universeHue(slug: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < slug.length; i++) {
+    h ^= slug.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0) % 360;
+}
+
 // Offset a universe's LOCAL node position (from its own origin-centred sim) into
 // multiverse space by its anchor. The per-universe sim runs at its own origin —
 // this is the cheap translate that assembles the shared field without one giant

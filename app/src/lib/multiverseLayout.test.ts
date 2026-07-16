@@ -4,6 +4,7 @@ import {
   translateByAnchor,
   universeAnchorsBySize,
   universeFootprint,
+  universeHue,
   universeNormal,
   type UniverseInput,
 } from "./multiverseLayout";
@@ -98,6 +99,20 @@ describe("universeNormal", () => {
   });
   it("differs between universes", () => {
     expect(universeNormal(0)).not.toEqual(universeNormal(1));
+  });
+});
+
+describe("universeHue", () => {
+  it("is deterministic and in [0,360)", () => {
+    const h = universeHue("karpathy-llm");
+    expect(universeHue("karpathy-llm")).toBe(h);
+    expect(h).toBeGreaterThanOrEqual(0);
+    expect(h).toBeLessThan(360);
+  });
+  it("differs for different slugs and ignores list membership", () => {
+    expect(universeHue("alpha")).not.toBe(universeHue("beta"));
+    // Not derived from position/order — same slug always same hue.
+    expect(universeHue("reading-log")).toBe(universeHue("reading-log"));
   });
 });
 
