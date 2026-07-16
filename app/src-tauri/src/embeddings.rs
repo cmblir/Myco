@@ -75,6 +75,29 @@ pub fn normalize(v: &mut [f32]) {
     }
 }
 
+/// Dot product — cosine similarity for vectors that are *already* L2-normalized,
+/// which is what every embed path stores (`embed_ollama` and the bundled model
+/// both normalize before the vector reaches the index).
+///
+/// Worth ~10%, not the multiple the arithmetic suggests: `cosine` reads the same
+/// two vectors and only adds two more FMAs per element, so the scan is bound by
+/// memory bandwidth rather than by the norms (`cargo bench --bench vector_store`:
+/// cosine 1.112 µs vs dot 1.003 µs at 1152d).
+///
+/// Keeps `cosine`'s length guard. The guard is not ceremony — the embed path
+/// stores an empty vector for a page that tokenizes to nothing, so mismatched
+/// widths do reach this function and must score 0 rather than panic.
+pub fn dot(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() || a.is_empty() {
+        return 0.0;
+    }
+    let mut acc = 0.0f32;
+    for i in 0..a.len() {
+        acc += a[i] * b[i];
+    }
+    acc
+}
+
 /// Cosine similarity of two vectors (dot product if both are already normalized).
 pub fn cosine(a: &[f32], b: &[f32]) -> f32 {
     if a.len() != b.len() || a.is_empty() {

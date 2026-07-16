@@ -9,19 +9,18 @@
 //! 2. `serialize` — JSON vs a raw-f32 binary format, encode and decode.
 //! 3. `similarity` — full `cosine` vs a dot-product fast path for vectors that
 //!    are already L2-normalized at write time.
-//! 4. `edges` — today's best-chunk-vs-best-chunk `semantic_edges` against a
-//!    page-centroid formulation.
+//! 4. `edges` — the shipped page-centroid `semantic_edges` against the
+//!    best-chunk-vs-best-chunk shape it replaced.
 //!
-//! Candidates are written here first so a proposal is measured before it ships.
-//! Once one lands in `vector_index.rs` the candidate is deleted and the bench
-//! re-pointed at the real code — the binary codec below is now the shipped
-//! `VectorStore::encode`/`decode`, benched against serde_json as the baseline it
-//! replaced. `dot` and the centroid edges are still candidates.
+//! Candidates are written here first so a proposal is measured before it ships;
+//! once one lands in `vector_index.rs` the candidate is deleted and the bench
+//! re-pointed at the real code. All four have now shipped, so each bench pits
+//! the real implementation against the baseline it replaced.
 //!
 //! Run: `cargo bench --bench vector_store`
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use memex_lib::embeddings::{cosine, normalize};
+use memex_lib::embeddings::{cosine, dot, normalize};
 use memex_lib::vector_index::{Record, VectorStore};
 
 /// Embedding width of the bundled Gemma 3 1B — the geometry the real index uses.
@@ -79,74 +78,16 @@ fn synth_store(records: usize) -> VectorStore {
     store
 }
 
-// ---------------------------------------------------------------------------
-// Candidate: dot product (proposal B4b). Valid only because the store holds
-// L2-normalized vectors; keeps `cosine`'s length guard so a dimension mismatch
-// scores 0 rather than panicking or reading a truncated vector.
-// ---------------------------------------------------------------------------
-
-fn dot(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-    let mut acc = 0.0f32;
-    for i in 0..a.len() {
-        acc += a[i] * b[i];
-    }
-    acc
-}
-
-// ---------------------------------------------------------------------------
-// Candidate: centroid-based semantic_edges (proposal B4a). One vector per page
-// instead of every chunk against every chunk.
-// ---------------------------------------------------------------------------
-
-fn page_centroids(store: &VectorStore) -> Vec<(String, Vec<f32>)> {
-    use std::collections::HashMap;
-    let mut acc: HashMap<&str, (Vec<f32>, usize)> = HashMap::new();
-    for r in &store.records {
-        let e = acc.entry(r.page.as_str()).or_insert_with(|| (vec![0.0; store.dim], 0));
-        for (i, x) in r.vector.iter().enumerate() {
-            e.0[i] += x;
-        }
-        e.1 += 1;
-    }
-    acc.into_iter()
-        .map(|(page, (mut v, n))| {
-            for x in v.iter_mut() {
-                *x /= n as f32;
-            }
-            normalize(&mut v);
-            (page.to_string(), v)
-        })
-        .collect()
-}
-
-/// Today's shape: every page against every other page, best chunk vs best chunk.
-fn edges_current(store: &VectorStore, k: usize) -> usize {
+/// The pre-centroid shape of `semantic_edges`: every page against every other,
+/// best chunk vs best chunk. Kept as the baseline the shipped `centroid_edges`
+/// is measured against — `related` itself still works this way for the Reader's
+/// related-notes panel.
+fn edges_best_chunk(store: &VectorStore, k: usize) -> usize {
     let pages: std::collections::HashSet<&str> =
         store.records.iter().map(|r| r.page.as_str()).collect();
     let mut count = 0;
     for page in &pages {
         count += store.related(page, k).len();
-    }
-    count
-}
-
-/// Proposed shape: one centroid per page, so the inner chunk loops collapse.
-fn edges_centroid(store: &VectorStore, k: usize) -> usize {
-    let cents = page_centroids(store);
-    let mut count = 0;
-    for (i, (_, a)) in cents.iter().enumerate() {
-        let mut hits: Vec<f32> = cents
-            .iter()
-            .enumerate()
-            .filter(|(j, _)| *j != i)
-            .map(|(_, (_, b))| dot(a, b))
-            .collect();
-        hits.sort_by(|x, y| y.partial_cmp(x).unwrap_or(std::cmp::Ordering::Equal));
-        hits.truncate(k);
-        count += hits.len();
     }
     count
 }
@@ -234,20 +175,21 @@ fn bench_search(c: &mut Criterion) {
     group.finish();
 }
 
-/// Whole-vault edge build. Quadratic in pages *and* quadratic in chunks per page
-/// today, so it is benched at realistic page counts rather than the 10k-record
-/// sizes above — at 10k records the current implementation is minutes, not ms.
+/// Whole-vault edge build. Both shapes are quadratic in pages; the baseline is
+/// additionally quadratic in chunks per page, which is the factor the centroid
+/// formulation removes. Benched at realistic page counts rather than the
+/// 10k-record sizes above — the baseline at 10k records is minutes, not ms.
 fn bench_edges(c: &mut Criterion) {
     let mut group = c.benchmark_group("edges");
     group.sample_size(10);
     for &pages in &[100usize, 300] {
         let store = synth_store(pages * CHUNKS_PER_PAGE);
         group.throughput(Throughput::Elements(pages as u64));
-        group.bench_with_input(BenchmarkId::new("current_best_chunk", pages), &store, |b, s| {
-            b.iter(|| black_box(edges_current(black_box(s), 5)))
+        group.bench_with_input(BenchmarkId::new("best_chunk_baseline", pages), &store, |b, s| {
+            b.iter(|| black_box(edges_best_chunk(black_box(s), 5)))
         });
         group.bench_with_input(BenchmarkId::new("centroid", pages), &store, |b, s| {
-            b.iter(|| black_box(edges_centroid(black_box(s), 5)))
+            b.iter(|| black_box(black_box(s).centroid_edges(5).len()))
         });
     }
     group.finish();

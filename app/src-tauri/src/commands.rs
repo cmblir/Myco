@@ -1010,6 +1010,9 @@ pub async fn reindex_embeddings(
 }
 
 /// Semantic search: embed the query, return top-`k` chunk hits from the index.
+// Four of the arguments are Tauri-injected state rather than things a caller
+// passes; the invocable surface is (query, k, provider, model).
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn semantic_search(
     app: tauri::AppHandle,
@@ -1072,30 +1075,16 @@ pub fn semantic_edges(
 ) -> Result<Vec<SemanticEdge>, String> {
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
-    let store = cache.get(&index_path);
     let abs = |rel: &str| root.join(rel).to_string_lossy().into_owned();
-    let pages: std::collections::HashSet<String> =
-        store.records.iter().map(|r| r.page.clone()).collect();
-    let mut seen = std::collections::HashSet::new();
-    let mut out = Vec::new();
-    for page in &pages {
-        for hit in store.related(page, k.clamp(1, 10)) {
-            // Undirected de-dup: order the pair lexically.
-            let (a, b) = if page.as_str() < hit.page.as_str() {
-                (page.clone(), hit.page.clone())
-            } else {
-                (hit.page.clone(), page.clone())
-            };
-            if seen.insert(format!("{a}|{b}")) {
-                out.push(SemanticEdge {
-                    source: abs(&a),
-                    target: abs(&b),
-                    score: hit.score,
-                });
-            }
-        }
-    }
-    Ok(out)
+    Ok(cache
+        .edges(&index_path, k.clamp(1, 10))
+        .iter()
+        .map(|e| SemanticEdge {
+            source: abs(&e.a),
+            target: abs(&e.b),
+            score: e.score,
+        })
+        .collect())
 }
 
 #[derive(serde::Serialize)]

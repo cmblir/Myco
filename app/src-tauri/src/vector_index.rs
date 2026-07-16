@@ -25,7 +25,7 @@ use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use crate::embeddings::cosine;
+use crate::embeddings::{cosine, dot, normalize};
 
 /// Magic + version. A version bump invalidates the file rather than attempting a
 /// migration: the index is a derived cache and reindexing rebuilds it.
@@ -48,6 +48,16 @@ pub struct VectorStore {
     pub model: String, // embedding model id; a change wipes the index (dim/geometry differ)
     pub dim: usize,
     pub records: Vec<Record>,
+}
+
+/// An undirected similarity edge between two pages. `a` < `b` lexically, so a
+/// pair has exactly one representation. Paths are vault-relative — the command
+/// layer maps them to the absolute ids the graph uses.
+#[derive(Clone)]
+pub struct PageEdge {
+    pub a: String,
+    pub b: String,
+    pub score: f32,
 }
 
 /// A ranked search hit.
@@ -272,6 +282,89 @@ impl VectorStore {
         scored
     }
 
+    /// One unit vector per page: the mean of its chunk vectors, renormalized.
+    /// Sorted by page so everything derived from it is deterministic.
+    pub fn page_centroids(&self) -> Vec<(String, Vec<f32>)> {
+        use std::collections::HashMap;
+        if self.dim == 0 {
+            return Vec::new();
+        }
+        let mut acc: HashMap<&str, (Vec<f32>, usize)> = HashMap::new();
+        for r in &self.records {
+            // The embed path stores an empty vector for a page that tokenized to
+            // nothing; a width that disagrees with the index would corrupt the
+            // running mean, so leave it out of the average entirely.
+            if r.vector.len() != self.dim {
+                continue;
+            }
+            let e = acc
+                .entry(r.page.as_str())
+                .or_insert_with(|| (vec![0.0; self.dim], 0));
+            for (i, x) in r.vector.iter().enumerate() {
+                e.0[i] += x;
+            }
+            e.1 += 1;
+        }
+        let mut out: Vec<(String, Vec<f32>)> = acc
+            .into_iter()
+            .map(|(page, (mut v, n))| {
+                for x in v.iter_mut() {
+                    *x /= n as f32;
+                }
+                // The mean of unit vectors is not itself a unit vector; renormalize
+                // so a plain dot product is the cosine between two pages.
+                normalize(&mut v);
+                (page.to_string(), v)
+            })
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        out
+    }
+
+    /// Top-`k` similar pages for every page, as undirected deduplicated edges —
+    /// the graph's "semantic links" overlay.
+    ///
+    /// Compares one centroid per page rather than every chunk against every chunk
+    /// (which is what `related` does). That drops a factor of chunks² from the
+    /// inner loop: 300 pages goes from 1.016 s to 114 ms, ~9x (`cargo bench
+    /// --bench vector_store`). It also *changes which edges appear*, on purpose —
+    /// a whole-page centroid expresses "these two notes are about the same thing",
+    /// while best-chunk-vs-best-chunk fires whenever any one paragraph matches,
+    /// so a shared boilerplate section is enough to link two unrelated pages. The
+    /// Reader's related-notes panel keeps `related`: there, surfacing the single
+    /// passage that matches is the point.
+    pub fn centroid_edges(&self, k: usize) -> Vec<PageEdge> {
+        let cents = self.page_centroids();
+        let mut seen: HashSet<(&str, &str)> = HashSet::new();
+        let mut out = Vec::new();
+        for (i, (page, a)) in cents.iter().enumerate() {
+            let mut hits: Vec<(&str, f32)> = cents
+                .iter()
+                .enumerate()
+                .filter(|(j, _)| *j != i)
+                .map(|(_, (other, b))| (other.as_str(), dot(a, b)))
+                .collect();
+            hits.sort_by(|x, y| y.1.partial_cmp(&x.1).unwrap_or(std::cmp::Ordering::Equal));
+            hits.truncate(k);
+            for (other, score) in hits {
+                // Undirected de-dup: order the pair lexically.
+                let pair = if page.as_str() < other {
+                    (page.as_str(), other)
+                } else {
+                    (other, page.as_str())
+                };
+                if seen.insert(pair) {
+                    out.push(PageEdge {
+                        a: pair.0.to_string(),
+                        b: pair.1.to_string(),
+                        score,
+                    });
+                }
+            }
+        }
+        out
+    }
+
     /// Pages most similar to `page`, best-chunk-vs-best-chunk, excluding itself.
     /// Returns one hit per page, ranked.
     pub fn related(&self, page: &str, k: usize) -> Vec<Hit> {
@@ -325,6 +418,30 @@ struct CacheEntry {
     path: PathBuf,
     fingerprint: (std::time::SystemTime, u64),
     store: Arc<VectorStore>,
+    /// Edge lists derived from `store`, keyed by `k`. Tied to this entry's
+    /// lifetime, so they cannot outlive the index revision they came from.
+    edges: std::collections::HashMap<usize, Arc<Vec<PageEdge>>>,
+}
+
+/// Replace the entry unless it already holds this exact revision of `path`.
+/// Returns `None` when there is no index file to key freshness on.
+fn ensure_fresh<'a>(
+    slot: &'a mut Option<CacheEntry>,
+    path: &Path,
+) -> Option<&'a mut CacheEntry> {
+    let fp = fingerprint(path)?;
+    let hit = slot
+        .as_ref()
+        .is_some_and(|e| e.path == *path && e.fingerprint == fp);
+    if !hit {
+        *slot = Some(CacheEntry {
+            path: path.to_path_buf(),
+            fingerprint: fp,
+            store: Arc::new(VectorStore::load(path)),
+            edges: std::collections::HashMap::new(),
+        });
+    }
+    slot.as_mut()
 }
 
 /// Keeps the parsed index in memory across commands.
@@ -353,24 +470,32 @@ impl VectorCache {
         // and serializing concurrent first-callers is better than having each
         // of them parse the same file. No await happens under this guard.
         let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        let fp = fingerprint(path);
-        if let (Some(entry), Some(fp)) = (guard.as_ref(), fp) {
-            if entry.path == *path && entry.fingerprint == fp {
-                return Arc::clone(&entry.store);
-            }
+        match ensure_fresh(&mut guard, path) {
+            Some(entry) => Arc::clone(&entry.store),
+            // No file on disk: return an empty store *uncached*, since there is
+            // nothing to key freshness on. Caching it would pin "empty" past the
+            // first reindex.
+            None => Arc::new(VectorStore::default()),
         }
-        let store = Arc::new(VectorStore::load(path));
-        // With no file on disk there is nothing to key freshness on, so an empty
-        // store is returned uncached — otherwise the first call before indexing
-        // would pin "empty" even after a reindex wrote the file.
-        if let Some(fp) = fingerprint(path) {
-            *guard = Some(CacheEntry {
-                path: path.to_path_buf(),
-                fingerprint: fp,
-                store: Arc::clone(&store),
-            });
+    }
+
+    /// Top-`k` semantic edges for `path`, computed once per index revision.
+    ///
+    /// The graph builds these on mount and again on every toggle of the semantic
+    /// overlay, and the link-suggestions panel asks for the same `k` — all of
+    /// which would otherwise redo a quadratic pass over the vault (114 ms at 300
+    /// pages, and it grows with the square of the page count).
+    pub fn edges(&self, path: &Path, k: usize) -> Arc<Vec<PageEdge>> {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(entry) = ensure_fresh(&mut guard, path) else {
+            return Arc::new(Vec::new());
+        };
+        if let Some(cached) = entry.edges.get(&k) {
+            return Arc::clone(cached);
         }
-        store
+        let edges = Arc::new(entry.store.centroid_edges(k));
+        entry.edges.insert(k, Arc::clone(&edges));
+        edges
     }
 
     /// Adopt a store this process just wrote, so the writer's own work is reused
@@ -381,6 +506,8 @@ impl VectorCache {
             path: path.to_path_buf(),
             fingerprint: fp,
             store: Arc::new(store),
+            // The new store invalidates anything derived from the old one.
+            edges: std::collections::HashMap::new(),
         });
     }
 }
@@ -443,6 +570,103 @@ mod tests {
         assert_eq!(rel.len(), 2);
         assert_eq!(rel[0].page, "b.md");
         assert!(rel.iter().all(|h| h.page != "a.md"));
+    }
+
+    #[test]
+    fn centroid_edges_link_similar_pages_undirected() {
+        let mut s = VectorStore::default();
+        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
+        s.upsert_page("b.md", "b", vec![(2, vec![0.96, 0.28])]); // close to a
+        s.upsert_page("c.md", "c", vec![(3, vec![0.0, 1.0])]); // far from a
+
+        let edges = s.centroid_edges(1);
+        // Each page's single best match, deduplicated: a-b (mutual) and b-c
+        // (c's best is b, since b leans toward c more than a does).
+        assert!(edges.iter().all(|e| e.a < e.b), "pairs are ordered lexically");
+        let pairs: Vec<(&str, &str)> =
+            edges.iter().map(|e| (e.a.as_str(), e.b.as_str())).collect();
+        assert!(pairs.contains(&("a.md", "b.md")));
+        // No pair appears twice in either direction.
+        let mut uniq = pairs.clone();
+        uniq.sort_unstable();
+        uniq.dedup();
+        assert_eq!(uniq.len(), pairs.len());
+        // Scores are cosines of unit centroids.
+        let ab = edges.iter().find(|e| e.a == "a.md" && e.b == "b.md").unwrap();
+        assert!((ab.score - 0.96).abs() < 1e-2, "score was {}", ab.score);
+    }
+
+    #[test]
+    fn centroid_edges_are_deterministic() {
+        // HashMap iteration order is not stable across runs; the edge list that
+        // reaches the graph must be.
+        let mut s = VectorStore::default();
+        for i in 0..12 {
+            let f = i as f32;
+            s.upsert_page(
+                &format!("p{i}.md"),
+                &format!("p{i}"),
+                vec![(i as u64, vec![f.cos(), f.sin()])],
+            );
+        }
+        let first = s.centroid_edges(3);
+        for _ in 0..5 {
+            let again = s.centroid_edges(3);
+            assert_eq!(first.len(), again.len());
+            for (x, y) in first.iter().zip(again.iter()) {
+                assert_eq!((&x.a, &x.b), (&y.a, &y.b));
+            }
+        }
+    }
+
+    #[test]
+    fn page_centroid_averages_chunks_and_ignores_bad_widths() {
+        let mut s = VectorStore::default();
+        // Two chunks either side of the x axis average back onto it.
+        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 1.0]), (2, vec![1.0, -1.0])]);
+        // The embed path stores an empty vector for a page that tokenizes to
+        // nothing — it must not corrupt the mean or panic.
+        s.records.push(rec("a.md", 2, Vec::new()));
+        let cents = s.page_centroids();
+        assert_eq!(cents.len(), 1);
+        let (page, v) = &cents[0];
+        assert_eq!(page, "a.md");
+        assert!((v[0] - 1.0).abs() < 1e-6, "centroid was {v:?}");
+        assert!(v[1].abs() < 1e-6);
+    }
+
+    #[test]
+    fn centroid_edges_empty_for_empty_store() {
+        assert!(VectorStore::default().centroid_edges(4).is_empty());
+    }
+
+    #[test]
+    fn cache_reuses_edges_and_drops_them_on_rewrite() {
+        let dir = scratch("cache-edges");
+        let path = dir.join("idx.mxv");
+        let mut s = VectorStore::default();
+        s.ensure_model("m");
+        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
+        s.upsert_page("b.md", "b", vec![(2, vec![0.9, 0.1])]);
+        s.save(&path).unwrap();
+
+        let cache = VectorCache::default();
+        let first = cache.edges(&path, 4);
+        assert_eq!(first.len(), 1); // a-b, deduplicated
+        // Same allocation — the quadratic pass ran once.
+        assert!(Arc::ptr_eq(&first, &cache.edges(&path, 4)));
+        // A different k is a different question, so it is computed separately.
+        assert!(!Arc::ptr_eq(&first, &cache.edges(&path, 1).clone()));
+
+        // A rewritten index invalidates everything derived from the old one.
+        let mut next = VectorStore::default();
+        next.ensure_model("m");
+        next.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
+        next.upsert_page("b.md", "b", vec![(2, vec![0.9, 0.1])]);
+        next.upsert_page("c.md", "c", vec![(3, vec![0.0, 1.0])]);
+        next.save(&path).unwrap();
+        assert!(cache.edges(&path, 4).len() > first.len());
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
