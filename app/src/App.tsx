@@ -14,7 +14,6 @@ import PageQuery from "./pages/PageQuery";
 // initial bundle so the app boots under the JS budget and loads it on demand.
 const PageGraph = lazy(() => import("./pages/PageGraph"));
 import PageHistory from "./pages/PageHistory";
-import PageMultiverse from "./pages/PageMultiverse";
 import PageProvenance from "./pages/PageProvenance";
 import PageSettings from "./pages/PageSettings";
 import PageReader from "./pages/PageReader";
@@ -305,7 +304,6 @@ export default function App(): JSX.Element {
         </Suspense>
       </ErrorBoundary>
     );
-  else if (route === "multiverse") body = <PageMultiverse t={t} />;
   else if (route === "history") body = <PageHistory t={t} />;
   else if (route === "provenance") body = <PageProvenance t={t} />;
   else if (route === "tags") body = <PageTags t={t} />;

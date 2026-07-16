@@ -147,12 +147,6 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
             badge={dueTotal > 0 ? String(dueTotal) : undefined}
           />
           <NavItem
-            label={t.nav_multiverse}
-            icon="globe"
-            active={route === "multiverse"}
-            onClick={() => setRoute("multiverse")}
-          />
-          <NavItem
             label={t.nav_views ?? "Views"}
             icon="eye"
             active={route === "views"}

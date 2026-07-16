@@ -53,22 +53,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   browsers), falls back to a still poster under `prefers-reduced-motion` or
   playback failure, and crops the wide clip to a square around the character.
 
-- **Multiverse view (Phase 1).** A new **Multiverse** workspace view renders
-  every registered project as its own universe in one shared 3D cosmos —
-  each project's link graph laid out as a separate star cluster, placed far
-  apart so the void between them reads as interstellar space; clicking a star
-  enters that project (switching the active vault: registry pointer +
-  confinement). A **Cosmos / Cards** toggle offers a flat card list as the
-  alternative, each card tinted with the project's stable identity hue and
-  showing its note count and active state. Backed by a dedicated
-  `multiverseStore` (lazy, parallel per-universe loading, kept separate from the
-  single-vault store) and a pure, unit-tested data+layout core
-  (`buildMultiverseGraph` merges each project's link graph with per-universe
-  node tagging and namespaced ghost links; `universeAnchorsBySize` +
-  `layoutMultiverse` place each universe's subcloud far apart by reusing the
-  galaxy packer at a larger scale). The 3D scene reuses the existing cosmic
-  renderer statically (no per-universe force sim). Verified across the three
-  standard viewports in both the cosmos and cards views.
+- **Multiverse — a graph mode, not a separate page.** The Graph view's settings
+  drawer (Display › Multiverse) gains a toggle: turn it on and, instead of this
+  one vault, every registered project appears as its own **glowing universe
+  bubble** floating in one shared cosmos — a translucent fresnel sphere with its
+  star cloud visible inside, tinted by the project's identity hue and placed far
+  apart so the field reads as many distinct orbs. Click a bubble to enter that
+  project (switching the active vault: registry pointer + confinement) and land
+  in its normal graph. Backed by a dedicated `multiverseStore` (lazy, parallel
+  per-universe loading, kept separate from the single-vault store) and a pure,
+  unit-tested core (`buildMultiverseGraph` merges each project's link graph with
+  per-universe node tagging and namespaced ghost links; `universeAnchorsBySize`
+  + `layoutMultiverse` separate each subcloud; `UniverseBubbleLayer` draws the
+  membranes). The 3D scene reuses the existing cosmic renderer statically (no
+  per-universe force sim). Verified across the three standard viewports.
 - **Multiverse groundwork (Phase 0).** The Rust backend can now enumerate the
   multi-project registry (`projects.json` discovered above the open vault) and
   build read-only link graphs for any registered project — not just the open

@@ -218,6 +218,15 @@ export default function GraphControls({
         open={openSections.display}
         onToggle={() => toggle("display")}
       >
+        <Toggle
+          label={t.gr_multiverse ?? "Multiverse"}
+          hint={
+            t.gr_multiverse_hint ??
+            "Show every project as its own universe-bubble; fly into one to open it"
+          }
+          value={settings.multiverse}
+          onChange={(v) => onChange({ multiverse: v })}
+        />
         <div className="graph-field">
           <span className="graph-field__label">
             {t.gr_layout ?? "Layout"}

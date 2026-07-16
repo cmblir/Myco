@@ -35,6 +35,12 @@ export interface GraphSettings {
   // rapid firing) but over the live 3D force sim, so you can orbit and fly
   // through it.
   layout: "galaxy" | "atlas" | "synapse" | "synapse3d";
+  // Multiverse mode: instead of this one vault, show EVERY registered project
+  // as its own glowing universe-bubble in one shared cosmos. Fly into a bubble
+  // to switch the active vault (which turns this back off, landing you in that
+  // project's normal graph). Only meaningful when a project registry exists
+  // above the vault; otherwise the toggle shows a single bubble.
+  multiverse: boolean;
   // Background appearance in 3D (galaxy / synapse3d). "stars" = the classic
   // multi-shell parallax field; "dense" = a fuller star field on every side;
   // "grid" = a dark dotted grid backdrop (the big-data-viz look); "void" = an
@@ -117,6 +123,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   skin: "auto",
   folderGalaxies: true,
   layout: "galaxy",
+  multiverse: false,
   skyStyle: "stars",
   arrows: false,
   arrowSize: 1, // arrowhead/flying-ship scale (bumped from 0.35 on request)

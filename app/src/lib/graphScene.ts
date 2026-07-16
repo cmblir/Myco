@@ -2066,6 +2066,13 @@ export class GraphScene {
     return [...this.galaxyCentresById().values()];
   }
 
+  /** Mount a multiverse overlay (e.g. universe bubbles) into the scene. The
+   *  caller owns the object's lifecycle (build + dispose); this only parents it
+   *  so it renders each frame. Used only in multiverse mode. */
+  addOverlay(obj: THREE.Object3D): void {
+    this.scene.add(obj);
+  }
+
   /** Current node positions (nodeIds order) — the worker syncBack payload. */
   snapshotPositions(): Float32Array {
     const out = new Float32Array(this.nodeIds.length * 3);

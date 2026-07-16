@@ -3032,6 +3032,20 @@ hr {
   }
 }
 
+/* Multiverse mode inside the Graph — hint line over the bubble scene. */
+.graph-mv-hint {
+  position: absolute;
+  bottom: 14px;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  margin: 0;
+  padding: 0 24px;
+  text-align: center;
+  font-size: 12.5px;
+  pointer-events: none;
+}
+
 /* Multiverse cosmos (3D) view — full-bleed scene with floating chrome. */
 .mv-cosmos {
   position: relative;

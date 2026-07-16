@@ -49,6 +49,9 @@ import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useIngestStore } from "../stores/ingestStore";
+import { useMultiverseStore } from "../stores/multiverseStore";
+import MultiverseScene from "../components/MultiverseScene";
+import type { SceneUniverse } from "../lib/multiverseScene";
 import { ipc } from "../lib/ipc";
 import type { Adjacency, SemEdge } from "../lib/ipc";
 
@@ -99,8 +102,15 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const adjacency = useVaultStore((s) => s.adjacency);
   const fileTree = useVaultStore((s) => s.fileTree);
   const currentVault = useVaultStore((s) => s.currentVault);
+  const openVault = useVaultStore((s) => s.openVault);
   const setRoute = useUIStore((s) => s.setRoute);
   const uiTheme = useUIStore((s) => s.theme);
+  // Multiverse: the registered projects + their loaded graphs (kept in a store
+  // separate from the single vault). Only read when the multiverse toggle is on.
+  const mvOrder = useMultiverseStore((s) => s.order);
+  const mvUniverses = useMultiverseStore((s) => s.universes);
+  const mvLoadAll = useMultiverseStore((s) => s.loadAll);
+  const mvSetActive = useMultiverseStore((s) => s.setActiveUniverse);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<GraphScene | null>(null);
@@ -132,6 +142,30 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     loadGraphSettings(),
   );
   const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Multiverse mode: warm every project's graph when the toggle turns on, and
+  // expose the loaded ones to the scene. Kept minimal — the normal single-vault
+  // path is untouched when `multiverse` is off.
+  useEffect(() => {
+    if (settings.multiverse) void mvLoadAll();
+  }, [settings.multiverse, mvLoadAll]);
+  const sceneUniverses = useMemo<SceneUniverse[]>(
+    () =>
+      mvOrder
+        .map((slug) => mvUniverses[slug])
+        .filter((u) => u && u.adjacency)
+        .map((u) => ({ slug: u.info.slug, root: u.info.root, adjacency: u.adjacency! })),
+    [mvOrder, mvUniverses],
+  );
+  // Fly-into-universe: switch the active vault to that project and drop back to
+  // its normal single-vault graph (the multiverse toggle turns off).
+  async function enterUniverse(slug: string): Promise<void> {
+    const u = mvUniverses[slug];
+    if (!u) return;
+    await mvSetActive(slug);
+    await openVault(u.info.root);
+    setSettings((prev) => ({ ...prev, multiverse: false }));
+  }
   // Clicked node → open the inspector panel (instead of navigating away).
   const [selected, setSelected] = useState<string | null>(null);
   // Search-to-focus query (toolbar) — jumps the camera to a node by name.
@@ -488,6 +522,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     const container = containerRef.current;
     if (!container || !adjacency) return;
     const s = settingsRef.current;
+    // Multiverse mode renders its own scene (MultiverseScene overlay); the
+    // single-vault scene must not also build. Re-runs when the toggle flips
+    // (settings.multiverse is a dep), disposing this scene on the way in.
+    if (s.multiverse) return;
     const theme = makeTheme(s.skin);
 
     const allowed = computeAllowed(adjacency, allFiles, {
@@ -736,6 +774,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.nodeSize,
     settings.folderGalaxies,
     settings.layout,
+    settings.multiverse,
     glEpoch,
     // NOTE: lightBg is intentionally NOT here — a light/dark flip recolours the
     // existing graph in place (see the theme effect) instead of rebuilding the
@@ -1444,14 +1483,29 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         <div className="graph-body">
           <div className="graph-canvas-wrap">
             <div ref={containerRef} className="graph-canvas" />
+            {/* Multiverse mode: an overlay scene of every project as a
+                universe-bubble, covering the (idle) single-vault canvas. Fly
+                into a bubble to switch vaults (which turns the toggle off). */}
+            {settings.multiverse ? (
+              <>
+                <MultiverseScene
+                  universes={sceneUniverses}
+                  onEnterUniverse={(slug) => void enterUniverse(slug)}
+                />
+                <p className="muted graph-mv-hint" aria-live="polite">
+                  {t.gr_multiverse_hint ??
+                    "Show every project as its own universe-bubble; fly into one to open it"}
+                </p>
+              </>
+            ) : null}
             {/* Loading state: visible until .graph-ready lands on the canvas
                 (adjacent-sibling CSS — no extra React state). */}
-            {counts.nodes > 0 ? (
+            {!settings.multiverse && counts.nodes > 0 ? (
               <p className="muted graph-loading-tip" aria-hidden="true">
                 {t.gr_loading ?? "aligning constellations…"}
               </p>
             ) : null}
-            {ctxLost ? (
+            {!settings.multiverse && ctxLost ? (
               <div className="graph-toast" role="alert">
                 <span>{t.gr_ctx_lost ?? "Graphics context was lost."}</span>
                 <button
@@ -1466,18 +1520,18 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 </button>
               </div>
             ) : null}
-            {cosmicScale ? (
+            {!settings.multiverse && cosmicScale ? (
               <div className="graph-scale-badge" aria-live="polite">
                 {t[`gr_scale_${cosmicScale === "Galaxy cluster" ? "cluster" : cosmicScale === "Galaxy" ? "galaxy" : cosmicScale === "Star system" ? "system" : "star"}` as keyof Strings] ?? cosmicScale}
               </div>
             ) : null}
-            {counts.nodes > 5000 ? (
+            {!settings.multiverse && counts.nodes > 5000 ? (
               <p className="muted graph-perf-banner">
                 {t.gr_perf_mode ??
                   "Performance mode — ambient layers off for large graphs"}
               </p>
             ) : null}
-            {totalNodes === 0 ? (
+            {!settings.multiverse && totalNodes === 0 ? (
               <p className="muted graph-empty">
                 {t.gr_empty_pre ??
                   "No wikilinks found in the vault yet. Add some "}
@@ -1487,7 +1541,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 {t.gr_empty_post ?? " to see the graph grow."}
               </p>
             ) : null}
-            {selected && adjacency ? (
+            {!settings.multiverse && selected && adjacency ? (
               <GraphInspector
                 t={t}
                 nodeId={selected}
@@ -1510,13 +1564,15 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 onClose={() => setSelected(null)}
               />
             ) : null}
-            <GraphLegend
-              t={t}
-              galaxies={legendGalaxies}
-              isolated={isolated}
-              onIsolate={isolateCommunity}
-            />
-            {gapsOpen && gapReport ? (
+            {!settings.multiverse ? (
+              <GraphLegend
+                t={t}
+                galaxies={legendGalaxies}
+                isolated={isolated}
+                onIsolate={isolateCommunity}
+              />
+            ) : null}
+            {!settings.multiverse && gapsOpen && gapReport ? (
               <GraphGaps
                 t={t}
                 report={gapReport}

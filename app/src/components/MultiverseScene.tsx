@@ -14,6 +14,7 @@ import { GraphScene } from "../lib/graphScene";
 import { DEFAULT_GRAPH_SETTINGS } from "../lib/graphSettings";
 import { makeTheme } from "../lib/graphTheme";
 import { assembleMultiverse, universeOfNode, type SceneUniverse } from "../lib/multiverseScene";
+import { UniverseBubbleLayer } from "../lib/universeBubbleLayer";
 
 export interface MultiverseSceneProps {
   universes: SceneUniverse[];
@@ -79,6 +80,9 @@ export default function MultiverseScene({
       onContextRestored: noop,
     });
     sceneRef.current = scene;
+    // Wrap each universe in its glowing bubble sphere (the multiverse form).
+    const bubbles = new UniverseBubbleLayer(graph, graph.nodes());
+    scene.addOverlay(bubbles.group);
     scene.start();
     // Static layout: positions are final, so sync them into the buffers and
     // frame the whole field immediately (no cinematic worker-settle flight).
@@ -98,6 +102,7 @@ export default function MultiverseScene({
 
     return () => {
       killed = true;
+      bubbles.dispose();
       scene.dispose();
       sceneRef.current = null;
       container.classList.remove("graph-ready");
