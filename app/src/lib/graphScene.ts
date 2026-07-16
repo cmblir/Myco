@@ -2073,6 +2073,18 @@ export class GraphScene {
     this.scene.add(obj);
   }
 
+  /** Live camera world position (clone) — the multiverse uses it to detect when
+   *  the user has dollied INTO a universe bubble (zoom-to-enter). */
+  getCameraPosition(): THREE.Vector3 {
+    return this.camera.position.clone();
+  }
+
+  /** Re-aim the orbit pivot (multiverse: point it at the bubble the user is
+   *  zooming toward so a dolly-in pulls the camera INTO that universe). */
+  setOrbitTarget(v: THREE.Vector3): void {
+    this.controls.target.copy(v);
+  }
+
   /** Current node positions (nodeIds order) — the worker syncBack payload. */
   snapshotPositions(): Float32Array {
     const out = new Float32Array(this.nodeIds.length * 3);

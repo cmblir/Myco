@@ -64,9 +64,16 @@ export default function MultiverseScene({
     let killed = false;
     let entering = false; // guards against re-triggering mid-flight
     let bubbles: UniverseBubbleLayer | null = null;
-    // Multiverse scene ignores hover/drag/void/context — only clicking a star
-    // matters: it flies the camera INTO that star's universe bubble, then (on
-    // arrival) switches the active vault. One shared no-op satisfies the rest.
+    // Enter a universe: guard, then switch the active vault. Idempotent.
+    const enter = (slug: string): void => {
+      if (killed || entering || !slug) return;
+      entering = true;
+      enterRef.current(slug);
+    };
+    // Multiverse scene ignores hover/drag/void/context. Clicking a star flies
+    // the camera INTO its bubble and enters on arrival (a shortcut); the main
+    // gesture is just zooming in — the proximity watcher below enters whichever
+    // bubble the camera dollies into. One shared no-op satisfies the rest.
     const noop = (): void => undefined;
     const scene = new GraphScene(container, graph, theme, settings, {
       onNodeClick: (id) => {
@@ -80,7 +87,7 @@ export default function MultiverseScene({
             if (!killed) enterRef.current(slug);
           });
         } else {
-          enterRef.current(slug); // no bubble (shouldn't happen) — enter directly
+          enter(slug);
         }
       },
       onNodeHover: noop,
@@ -105,6 +112,47 @@ export default function MultiverseScene({
     scene.fit();
     container.classList.add("graph-ready");
 
+    // Zoom-to-enter: point the orbit pivot at whichever bubble is nearest the
+    // camera as the user scrolls IN, so a dolly pulls the camera toward (and
+    // into) that universe; once the camera is inside the bubble, open it — no
+    // click needed. Wheel-driven so it never fires from the initial fit.
+    type BubbleCentre = ReturnType<UniverseBubbleLayer["centres"]>[number];
+    const nearestBubble = (): BubbleCentre | null => {
+      if (!bubbles) return null;
+      const cam = scene.getCameraPosition();
+      let best: BubbleCentre | null = null;
+      let bestD = Infinity;
+      for (const b of bubbles.centres()) {
+        const d = cam.distanceTo(b.centre);
+        if (d < bestD) {
+          bestD = d;
+          best = b;
+        }
+      }
+      return best;
+    };
+    const onWheel = (e: WheelEvent): void => {
+      if (killed || entering || e.deltaY >= 0) return; // only on zoom IN
+      const b = nearestBubble();
+      if (b) scene.setOrbitTarget(b.centre);
+    };
+    container.addEventListener("wheel", onWheel, { passive: true });
+
+    const ENTER_FACTOR = 0.72; // camera within 72% of the radius = "inside"
+    let armed = false;
+    const armTimer = window.setTimeout(() => {
+      armed = true;
+    }, 1200);
+    let raf = requestAnimationFrame(function tick() {
+      if (killed) return;
+      raf = requestAnimationFrame(tick);
+      if (!armed || entering) return;
+      const b = nearestBubble();
+      if (b && scene.getCameraPosition().distanceTo(b.centre) < b.radius * ENTER_FACTOR) {
+        enter(b.slug);
+      }
+    });
+
     // DEV: expose for the screenshot harness (same shape as PageGraph).
     if (import.meta.env.DEV) {
       (window as unknown as { __mvDev?: unknown }).__mvDev = {
@@ -116,6 +164,9 @@ export default function MultiverseScene({
 
     return () => {
       killed = true;
+      cancelAnimationFrame(raf);
+      window.clearTimeout(armTimer);
+      container.removeEventListener("wheel", onWheel);
       bubbles?.dispose();
       scene.dispose();
       sceneRef.current = null;

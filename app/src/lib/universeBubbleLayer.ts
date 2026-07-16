@@ -39,10 +39,10 @@ void main() {
   // Fresnel: 0 facing the camera, 1 at the silhouette. A high power keeps the
   // face transparent (stars show through) and concentrates glow at the rim.
   float f = 1.0 - abs(dot(normalize(v_normal), normalize(v_viewDir)));
-  float rim = pow(f, 2.5);
-  // A whisper of constant fill gives the orb faint volume without hiding its
-  // interior; the rim carries the boundary.
-  float a = (rim * 0.9 + 0.05) * u_opacity;
+  float rim = pow(f, 2.8);
+  // Almost all the alpha lives at the rim; the face is barely tinted so the
+  // stars inside read clearly instead of being washed in the bubble's colour.
+  float a = (rim * 0.95 + 0.015) * u_opacity;
   gl_FragColor = vec4(u_color, a);
 }
 `;
@@ -73,7 +73,7 @@ export class UniverseBubbleLayer {
   private labelMats: THREE.SpriteMaterial[] = [];
 
   constructor(graph: VaultGraph, nodeIds: string[], opts: BubbleOpts = {}) {
-    const opacity = opts.opacity ?? 0.5;
+    const opacity = opts.opacity ?? 0.32;
     const titles = opts.titles ?? new Map<string, string>();
     this.group.renderOrder = 1; // draw after the stars so it glazes over them
 
