@@ -793,19 +793,40 @@ pub fn read_vault_context(root: &str, max_bytes: usize) -> Result<String, String
         return Err(format!("not a directory: {root}"));
     }
 
+    // Emit in priority order, not alphabetical order. The byte budget is spent
+    // top-down and truncates at the first file that does not fit, so whatever
+    // comes first is what a small-budget caller actually receives.
+    //
+    // wiki/ leads because it is the material an answer is drawn from. Sorting
+    // every path together used to put CLAUDE.md first (uppercase sorts ahead of
+    // "raw"/"wiki"), which silently starved the builtin model: its context
+    // budget is 6 KB, and a vault's CLAUDE.md alone — 10.6 KB in this repo's
+    // karpathy vault — consumed all of it, so the model answered from schema
+    // boilerplate with zero wiki pages in front of it.
+    //
+    // CLAUDE.md still follows, and raw/ source dumps last: at a cloud-sized
+    // budget everything fits and lint keeps its schema rules, while a tight
+    // budget now spends itself on pages instead of instructions.
     let mut files: Vec<std::path::PathBuf> = Vec::new();
+    let push_dir = |dir: std::path::PathBuf,
+                        out: &mut Vec<std::path::PathBuf>|
+     -> Result<(), String> {
+        if !dir.is_dir() {
+            return Ok(());
+        }
+        let mut found = Vec::new();
+        collect_markdown(&dir, &mut found).map_err(|e| format!("walk failed: {e}"))?;
+        found.sort();
+        found.dedup();
+        out.extend(found);
+        Ok(())
+    };
+    push_dir(root_path.join("wiki"), &mut files)?;
     let claude = root_path.join("CLAUDE.md");
     if claude.is_file() {
         files.push(claude);
     }
-    for sub in ["wiki", "raw"] {
-        let dir = root_path.join(sub);
-        if dir.is_dir() {
-            collect_markdown(&dir, &mut files).map_err(|e| format!("walk failed: {e}"))?;
-        }
-    }
-    files.sort();
-    files.dedup();
+    push_dir(root_path.join("raw"), &mut files)?;
 
     let mut out = String::new();
     let mut truncated = false;
@@ -1291,6 +1312,39 @@ mod tests {
         // Tiny budget forces truncation without panicking on char boundaries.
         let small = read_vault_context(dir.to_str().unwrap(), 20).unwrap();
         assert!(small.contains("truncated"));
+    }
+
+    #[test]
+    fn read_vault_context_spends_a_tight_budget_on_wiki_not_claude_md() {
+        // Regression: paths were sorted as one list, so CLAUDE.md (uppercase
+        // sorts before "raw"/"wiki") led the output. The builtin model asks for
+        // a 6 KB budget, and a real vault's CLAUDE.md is larger than that on its
+        // own — the karpathy vault's is 10,599 bytes — so the model received a
+        // truncated copy of the schema rules and not one wiki page.
+        let dir = temp_vault("ctx-priority");
+        fs::create_dir_all(dir.join("wiki")).unwrap();
+        fs::create_dir_all(dir.join("raw")).unwrap();
+        fs::write(dir.join("CLAUDE.md"), "S".repeat(10_599)).unwrap();
+        fs::write(dir.join("wiki/alpha.md"), "alpha body").unwrap();
+        fs::write(dir.join("raw/source.md"), "raw source dump").unwrap();
+
+        // The builtin model's real budget.
+        let local = read_vault_context(dir.to_str().unwrap(), 6_000).unwrap();
+        assert!(
+            local.contains("alpha body"),
+            "wiki content must survive a budget smaller than CLAUDE.md"
+        );
+
+        // A cloud-sized budget still fits everything, so lint keeps its schema.
+        let cloud = read_vault_context(dir.to_str().unwrap(), 80_000).unwrap();
+        assert!(cloud.contains("alpha body"));
+        assert!(cloud.contains(&"S".repeat(10_599)));
+        assert!(cloud.contains("raw source dump"));
+        // Priority order is wiki -> CLAUDE.md -> raw.
+        let wiki_at = cloud.find("wiki/alpha.md").unwrap();
+        let claude_at = cloud.find("CLAUDE.md").unwrap();
+        let raw_at = cloud.find("raw/source.md").unwrap();
+        assert!(wiki_at < claude_at && claude_at < raw_at);
     }
 
     #[test]
