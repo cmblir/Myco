@@ -21,6 +21,7 @@ export type RouteId =
   | "history"
   | "provenance"
   | "tags"
+  | "views"
   | "study"
   | "schedules"
   | "settings"

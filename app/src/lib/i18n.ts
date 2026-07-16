@@ -15,6 +15,25 @@ export interface Strings {
   nav_query: string;
   nav_graph: string;
   nav_multiverse: string;
+  nav_views?: string;
+  vw_title?: string;
+  vw_lede?: string;
+  vw_search?: string;
+  vw_any_type?: string;
+  vw_any_conf?: string;
+  vw_any_status?: string;
+  vw_any_tag?: string;
+  vw_orphans?: string;
+  vw_save?: string;
+  vw_save_prompt?: string;
+  vw_pages?: string;
+  vw_empty?: string;
+  vw_col_name?: string;
+  vw_col_type?: string;
+  vw_col_conf?: string;
+  vw_col_sources?: string;
+  vw_col_links?: string;
+  vw_col_tags?: string;
   nav_history: string;
   nav_provenance: string;
   nav_tags: string;
@@ -585,6 +604,25 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_query: "Ask",
     nav_graph: "Graph",
     nav_multiverse: "Multiverse",
+    nav_views: "Views",
+    vw_title: "Query views",
+    vw_lede: "Filter the wiki by its frontmatter — type, confidence, status, tags, sources — and save the lenses you keep coming back to.",
+    vw_search: "Filter by name…",
+    vw_any_type: "Any type",
+    vw_any_conf: "Any confidence",
+    vw_any_status: "Any status",
+    vw_any_tag: "Any tag",
+    vw_orphans: "Orphans only",
+    vw_save: "Save view",
+    vw_save_prompt: "Name this view:",
+    vw_pages: "pages",
+    vw_empty: "No pages match this view.",
+    vw_col_name: "Page",
+    vw_col_type: "Type",
+    vw_col_conf: "Confidence",
+    vw_col_sources: "Sources",
+    vw_col_links: "Links",
+    vw_col_tags: "Tags",
     nav_history: "History",
     nav_provenance: "Provenance",
     nav_tags: "Tags",
@@ -1168,6 +1206,25 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_query: "질문",
     nav_graph: "그래프",
     nav_multiverse: "멀티버스",
+    nav_views: "뷰",
+    vw_title: "쿼리 뷰",
+    vw_lede: "프론트매터(종류·신뢰도·상태·태그·출처 수)로 위키를 필터링하고, 자주 쓰는 렌즈를 저장하세요.",
+    vw_search: "이름으로 필터…",
+    vw_any_type: "모든 종류",
+    vw_any_conf: "모든 신뢰도",
+    vw_any_status: "모든 상태",
+    vw_any_tag: "모든 태그",
+    vw_orphans: "고립 노드만",
+    vw_save: "뷰 저장",
+    vw_save_prompt: "뷰 이름:",
+    vw_pages: "페이지",
+    vw_empty: "조건에 맞는 페이지가 없습니다.",
+    vw_col_name: "페이지",
+    vw_col_type: "종류",
+    vw_col_conf: "신뢰도",
+    vw_col_sources: "출처",
+    vw_col_links: "링크",
+    vw_col_tags: "태그",
     nav_history: "히스토리",
     nav_provenance: "출처",
     nav_tags: "태그",
@@ -1745,6 +1802,7 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_query: "質問",
     nav_graph: "グラフ",
     nav_multiverse: "マルチバース",
+    nav_views: "ビュー",
     nav_history: "履歴",
     nav_provenance: "出典",
     nav_tags: "タグ",

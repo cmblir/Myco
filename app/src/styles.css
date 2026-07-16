@@ -3696,3 +3696,120 @@ hr {
 .schedule-form .input {
   width: 100%;
 }
+
+/* --- Views page (Dataview-lite) ------------------------------------------ */
+.views-saved {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+.views-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 4px 2px 10px;
+  font-size: 12px;
+}
+.views-chip.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.views-chip button {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px;
+}
+.views-chip__x {
+  display: inline-flex;
+  opacity: 0.6;
+}
+.views-chip__x:hover {
+  opacity: 1;
+}
+.views-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.views-filters .input {
+  width: auto;
+  min-width: 120px;
+  flex: 0 1 auto;
+}
+.views-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.views-count {
+  font-size: 12px;
+  margin: 4px 0 10px;
+}
+/* Wide table scrolls inside its own container — the page never scrolls sideways. */
+.views-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.views-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.views-table th,
+.views-table td {
+  text-align: left;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.views-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.views-table td.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.views-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+.views-sort {
+  background: none;
+  border: none;
+  color: var(--ink-3);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+.views-sort.active {
+  color: var(--ink);
+}
+.views-page {
+  background: none;
+  border: none;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0;
+}
+.views-page:hover {
+  color: var(--accent);
+}
+.views-tags {
+  color: var(--ink-4);
+  font-size: 12px;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

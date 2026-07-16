@@ -19,6 +19,7 @@ import PageProvenance from "./pages/PageProvenance";
 import PageSettings from "./pages/PageSettings";
 import PageReader from "./pages/PageReader";
 import PageTags from "./pages/PageTags";
+import PageViews from "./pages/PageViews";
 import PageStudy from "./pages/PageStudy";
 import PageSchedules from "./pages/PageSchedules";
 import { STRINGS } from "./lib/i18n";
@@ -308,6 +309,7 @@ export default function App(): JSX.Element {
   else if (route === "history") body = <PageHistory t={t} />;
   else if (route === "provenance") body = <PageProvenance t={t} />;
   else if (route === "tags") body = <PageTags t={t} />;
+  else if (route === "views") body = <PageViews t={t} />;
   else if (route === "study") body = <PageStudy t={t} />;
   else if (route === "schedules") body = <PageSchedules t={t} />;
   else if (route === "settings") body = <PageSettings t={t} />;

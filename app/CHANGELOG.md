@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Query views — a Dataview-lite over the wiki's frontmatter.** A new
+  **Views** page filters every page by the structured metadata the scanner
+  already extracts — type, confidence, status, tags, source count, orphans,
+  name — with sortable columns (sources / links / type / name) and one-click
+  saved views (localStorage) for the lenses you keep coming back to. Facet
+  dropdowns only offer values that actually exist in the vault. Pure,
+  unit-tested engine (`queryViews.ts`) over the in-memory adjacency — no
+  backend, no query language to learn.
 - **Research bridges — cluster-level gap analysis.** The graph's Gaps panel
   now opens with a *Research bridges* section: pairs of topic clusters whose
   notes are semantically close (per the embedding-similarity pairs) but share
