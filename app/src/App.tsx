@@ -6,6 +6,7 @@ import CommandBar from "./components/CommandBar";
 import DialogHost from "./components/DialogHost";
 import ErrorBoundary from "./components/ErrorBoundary";
 import OnboardingWizard from "./components/OnboardingWizard";
+import MascotClip from "./components/MascotClip";
 import PageOverview from "./pages/PageOverview";
 import PageIngest from "./pages/PageIngest";
 import PageQuery from "./pages/PageQuery";
@@ -289,7 +290,13 @@ export default function App(): JSX.Element {
         <Suspense
           fallback={
             <div className="graph-loading">
-              <div className="graph-loading-tip">{t.gr_loading ?? "aligning constellations…"}</div>
+              <div className="graph-loading-tip">
+                {/* MYCO keeps the chunk-parse gap company. */}
+                <div style={{ display: "grid", justifyItems: "center", gap: 12 }}>
+                  <MascotClip clip="idle" size={140} />
+                  <span>{t.gr_loading ?? "aligning constellations…"}</span>
+                </div>
+              </div>
             </div>
           }
         >

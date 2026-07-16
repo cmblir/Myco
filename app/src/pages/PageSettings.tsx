@@ -4,7 +4,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
-import { Icon, MemexMark, ProviderGlyph } from "../lib/icons";
+import { Icon, ProviderGlyph } from "../lib/icons";
 import type { IconName } from "../lib/icons";
 import type { Lang, Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
@@ -17,6 +17,7 @@ import { BUILTIN_MODEL, PROVIDERS, providerDesc, useEnabledProviders } from "../
 import type { ProviderDef } from "../lib/providers";
 import ModelSelect from "../components/ModelSelect";
 import OllamaSetup from "../components/OllamaSetup";
+import MascotClip from "../components/MascotClip";
 import {
   getBudgetThreshold,
   getUsage,
@@ -1511,18 +1512,19 @@ function SettingsAbout({ t }: { t: Strings }): JSX.Element {
       <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{t.s_about}</h2>
       <div
         className="card"
-        style={{ padding: 24, display: "flex", gap: 18, alignItems: "center" }}
+        style={{
+          padding: 24,
+          display: "flex",
+          gap: 18,
+          alignItems: "center",
+          // Mobile: let the text column wrap under the mascot instead of
+          // pushing the card past the viewport.
+          flexWrap: "wrap",
+        }}
       >
-        <span
-          style={{
-            width: 64,
-            height: 64,
-            display: "block",
-          }}
-        >
-          <MemexMark size={64} />
-        </span>
-        <div>
+        {/* MYCO idle loop (transparent) — the living version of the logo. */}
+        <MascotClip clip="idle" size={96} />
+        <div style={{ flex: "1 1 220px", minWidth: 0 }}>
           <div
             style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.01em" }}
           >
