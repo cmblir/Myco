@@ -42,9 +42,25 @@ trash = "5.2.3"
 wiremock = "0.6"
 tokio = { version = "1", features = ["full"] }
 serial_test = "3"
+criterion = "0.5"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+
+[[bench]]
+name = "vector_store"
+harness = false
+
+# Benches run on a release-derived profile. The shipped release profile is tuned
+# for binary size (opt-level = "s", fat LTO), which both distorts CPU numbers and
+# makes every bench build a full relink. Bench with a normal optimizing profile
+# instead: the absolute numbers then read slightly faster than the shipped build,
+# but the A/B deltas these benches exist to measure stay honest.
+[profile.bench]
+opt-level = 3
+lto = false
+codegen-units = 16
+strip = false
 
 [profile.release]
 panic = "abort"
