@@ -162,6 +162,8 @@ export interface Strings {
   gr_galaxies_hint?: string;
   gr_multiverse?: string;
   gr_multiverse_hint?: string;
+  gr_mv_loading?: string;
+  gr_mv_none?: string;
   gr_layout?: string;
   gr_layout_galaxy?: string;
   gr_layout_atlas?: string;
@@ -770,6 +772,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_galaxies_hint: "Split the vault into one slowly rotating galaxy per folder",
     gr_multiverse: "Multiverse",
     gr_multiverse_hint: "Show every project as its own universe-bubble; fly into one to open it",
+    gr_mv_loading: "Charting universes…",
+    gr_mv_none: "No vault to show yet.",
     gr_layout: "Layout",
     gr_layout_galaxy: "Galaxy (3D)",
     gr_layout_atlas: "Atlas (2D)",
@@ -1388,6 +1392,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_galaxies_hint: "폴더마다 하나씩, 천천히 자전하는 은하계로 분리",
     gr_multiverse: "멀티버스",
     gr_multiverse_hint: "모든 프로젝트를 각자의 우주 버블로 표시. 하나로 날아 들어가면 그 프로젝트가 열림",
+    gr_mv_loading: "우주를 그리는 중…",
+    gr_mv_none: "아직 표시할 볼트가 없습니다.",
     gr_layout: "레이아웃",
     gr_layout_galaxy: "은하계 (3D)",
     gr_layout_atlas: "아틀라스 (2D)",
@@ -1955,6 +1961,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_galaxies_hint: "フォルダーごとにゆっくり自転する銀河へ分割",
     gr_multiverse: "マルチバース",
     gr_multiverse_hint: "各プロジェクトを宇宙バブルとして表示。ひとつに飛び込むとそのプロジェクトが開く",
+    gr_mv_loading: "宇宙を描いています…",
+    gr_mv_none: "まだ表示できるボルトがありません。",
     gr_layout: "レイアウト",
     gr_layout_galaxy: "ギャラクシー (3D)",
     gr_layout_atlas: "アトラス (2D)",

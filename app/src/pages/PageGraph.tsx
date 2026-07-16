@@ -111,6 +111,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const mvUniverses = useMultiverseStore((s) => s.universes);
   const mvLoadAll = useMultiverseStore((s) => s.loadAll);
   const mvSetActive = useMultiverseStore((s) => s.setActiveUniverse);
+  const mvLoading = useMultiverseStore((s) => s.isLoading);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<GraphScene | null>(null);
@@ -149,26 +150,42 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   useEffect(() => {
     if (settings.multiverse) void mvLoadAll();
   }, [settings.multiverse, mvLoadAll]);
-  const sceneUniverses = useMemo<SceneUniverse[]>(
-    () =>
-      mvOrder
-        .map((slug) => mvUniverses[slug])
-        .filter((u) => u && u.adjacency)
-        .map((u) => ({
-          slug: u.info.slug,
-          root: u.info.root,
-          adjacency: u.adjacency!,
-          title: u.info.title,
-        })),
-    [mvOrder, mvUniverses],
-  );
-  // Fly-into-universe: switch the active vault to that project and drop back to
-  // its normal single-vault graph (the multiverse toggle turns off).
+  // The universes to render: every registered project whose graph has loaded,
+  // PLUS the currently-open vault itself (deduped by root). Including the open
+  // vault means the multiverse is never empty — a standalone vault with no
+  // project registry above it still shows as one bubble instead of a blank
+  // scene (the "nothing renders" bug).
+  const sceneUniverses = useMemo<SceneUniverse[]>(() => {
+    const norm = (p: string): string => p.replace(/[\\/]+$/, "");
+    const out: SceneUniverse[] = [];
+    const seen = new Set<string>();
+    for (const slug of mvOrder) {
+      const u = mvUniverses[slug];
+      if (u && u.adjacency) {
+        out.push({ slug: u.info.slug, root: u.info.root, adjacency: u.adjacency, title: u.info.title });
+        seen.add(norm(u.info.root));
+      }
+    }
+    if (currentVault && adjacency && !seen.has(norm(currentVault.path))) {
+      out.push({
+        slug: currentVault.path, // path is unique; hue/label derive from it/name
+        root: currentVault.path,
+        adjacency,
+        title: currentVault.name,
+      });
+    }
+    return out;
+  }, [mvOrder, mvUniverses, currentVault, adjacency]);
+  // Fly-into-universe: switch the active vault to that project, then drop back
+  // to its normal single-vault graph (the multiverse toggle turns off). The
+  // current-vault bubble isn't a registered project (no store entry) — clicking
+  // it just exits multiverse into the vault you're already in.
   async function enterUniverse(slug: string): Promise<void> {
     const u = mvUniverses[slug];
-    if (!u) return;
-    await mvSetActive(slug);
-    await openVault(u.info.root);
+    if (u) {
+      await mvSetActive(slug);
+      await openVault(u.info.root);
+    }
     setSettings((prev) => ({ ...prev, multiverse: false }));
   }
   // Clicked node → open the inspector panel (instead of navigating away).
@@ -1493,10 +1510,20 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 into a bubble to switch vaults (which turns the toggle off). */}
             {settings.multiverse ? (
               <>
-                <MultiverseScene
-                  universes={sceneUniverses}
-                  onEnterUniverse={(slug) => void enterUniverse(slug)}
-                />
+                {sceneUniverses.length > 0 ? (
+                  <MultiverseScene
+                    universes={sceneUniverses}
+                    onEnterUniverse={(slug) => void enterUniverse(slug)}
+                  />
+                ) : (
+                  // No universe yet: still loading the registry/graphs, or no
+                  // vault open. Never a silent black screen (5-state).
+                  <div className="graph-empty" role="status" aria-live="polite">
+                    {mvLoading
+                      ? (t.gr_mv_loading ?? "Charting universes…")
+                      : (t.gr_mv_none ?? "No vault to show yet.")}
+                  </div>
+                )}
                 <p className="muted graph-mv-hint" aria-live="polite">
                   {t.gr_multiverse_hint ??
                     "Show every project as its own universe-bubble; fly into one to open it"}
