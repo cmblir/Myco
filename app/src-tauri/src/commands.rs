@@ -987,10 +987,23 @@ pub async fn reindex_embeddings(
     let model_id = format!("{provider}:{model}");
     store.ensure_model(&model_id);
 
+    // Embedding a page costs far more than a checkpoint write, so checkpoint on
+    // elapsed time rather than a page count: work lost to a crash is bounded by
+    // the interval, and the write overhead stays a fixed fraction of it however
+    // fast or slow the provider is. A page-count rule cannot promise either —
+    // 50 pages is seconds on one vault and minutes on another.
+    const CHECKPOINT_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+
     let pages = collect_wiki_pages(&root);
+    // One pass over the records instead of a full scan per page.
+    let existing = store.hashes_by_page();
     let mut present = std::collections::HashSet::new();
     let mut embed_ms = 0.0;
+    let mut save_ms = 0.0;
     let mut embedded = 0usize;
+    let mut checkpoints = 0usize;
+    let mut dirty = false;
+    let mut last_checkpoint = std::time::Instant::now();
     for (rel, stem, content) in &pages {
         present.insert(rel.clone());
         let chunks = embeddings::chunk_page(content);
@@ -998,7 +1011,7 @@ pub async fn reindex_embeddings(
             continue;
         }
         let hashes: Vec<u64> = chunks.iter().map(|c| embeddings::content_hash(c)).collect();
-        if store.hashes_for(rel) == hashes {
+        if existing.get(rel) == Some(&hashes) {
             continue; // unchanged — skip re-embedding
         }
         let t_embed = std::time::Instant::now();
@@ -1007,11 +1020,32 @@ pub async fn reindex_embeddings(
         embedded += 1;
         let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
         store.upsert_page(rel, stem, entries);
+        dirty = true;
+
+        // Checkpoint. Without this, a crash or quit during the first index of a
+        // large vault threw away every embedding computed so far — the most
+        // expensive work the app does, and the run most likely to be
+        // interrupted because it is the longest. The partial index is valid on
+        // its own: pruning is deferred to the final save, so a checkpoint only
+        // ever adds pages, and the content-hash skip above lets the next run
+        // resume instead of restart.
+        if last_checkpoint.elapsed() >= CHECKPOINT_EVERY {
+            let t_save = std::time::Instant::now();
+            store.save(&index_path)?;
+            save_ms += perf::ms(t_save.elapsed());
+            checkpoints += 1;
+            dirty = false;
+            last_checkpoint = std::time::Instant::now();
+        }
     }
-    store.prune(&present);
-    let t_save = std::time::Instant::now();
-    store.save(&index_path)?;
-    let save_ms = perf::ms(t_save.elapsed());
+    let pruned = store.prune(&present);
+    // The final save is skippable only when nothing changed at all — no page
+    // embedded since the last checkpoint, and no stale page dropped.
+    if dirty || pruned > 0 || checkpoints == 0 {
+        let t_save = std::time::Instant::now();
+        store.save(&index_path)?;
+        save_ms += perf::ms(t_save.elapsed());
+    }
     // Hand the freshly built store to the cache so the searches that follow a
     // reindex reuse it instead of re-reading what we just wrote.
     let indexed = store.indexed_pages();
@@ -1020,12 +1054,14 @@ pub async fn reindex_embeddings(
         &[
             ("load_store_ms", load_ms),
             ("embed_ms", embed_ms),
+            // Every save this run: the checkpoints plus the final one.
             ("save_ms", save_ms),
             ("total_ms", perf::ms(t0.elapsed())),
             ("pages", pages.len() as f64),
             // Pages that actually needed embedding; the rest hit the
             // content-hash skip.
             ("embedded_pages", embedded as f64),
+            ("checkpoints", checkpoints as f64),
             ("records", store.records.len() as f64),
         ],
     );

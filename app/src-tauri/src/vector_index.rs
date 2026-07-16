@@ -224,14 +224,23 @@ impl VectorStore {
         }
     }
 
-    /// Content hashes already stored for a page (so the caller can skip embedding
-    /// chunks whose text is unchanged).
-    pub fn hashes_for(&self, page: &str) -> Vec<u64> {
-        self.records
-            .iter()
-            .filter(|r| r.page == page)
-            .map(|r| r.hash)
-            .collect()
+    /// Content hashes already stored, grouped by page and in section order, so a
+    /// caller can skip embedding chunks whose text is unchanged.
+    ///
+    /// Grouped rather than per-page on purpose: reindex asks about every page,
+    /// and answering one page at a time meant re-scanning every record for each
+    /// one — O(pages × records) to extract what a single pass yields.
+    ///
+    /// Keys are owned so the caller can go on mutating the store (reindex reads
+    /// this map while upserting into it); one short string per record is nothing
+    /// against the scan it replaces.
+    pub fn hashes_by_page(&self) -> std::collections::HashMap<String, Vec<u64>> {
+        let mut out: std::collections::HashMap<String, Vec<u64>> =
+            std::collections::HashMap::new();
+        for r in &self.records {
+            out.entry(r.page.clone()).or_default().push(r.hash);
+        }
+        out
     }
 
     /// Replace all records for one page with a fresh set.
@@ -252,9 +261,12 @@ impl VectorStore {
         }
     }
 
-    /// Drop records for pages no longer present in the vault.
-    pub fn prune(&mut self, existing: &HashSet<String>) {
+    /// Drop records for pages no longer present in the vault. Returns how many
+    /// records were dropped, so a caller can tell whether a save is warranted.
+    pub fn prune(&mut self, existing: &HashSet<String>) -> usize {
+        let before = self.records.len();
         self.records.retain(|r| existing.contains(&r.page));
+        before - self.records.len()
     }
 
     pub fn indexed_pages(&self) -> usize {
@@ -667,6 +679,33 @@ mod tests {
         next.save(&path).unwrap();
         assert!(cache.edges(&path, 4).len() > first.len());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn hashes_by_page_groups_in_section_order() {
+        // Reindex compares this against freshly computed chunk hashes to decide
+        // whether a page changed, so both grouping and order have to hold.
+        let mut s = VectorStore::default();
+        s.upsert_page("a.md", "a", vec![(11, vec![1.0]), (22, vec![0.0])]);
+        s.upsert_page("b.md", "b", vec![(33, vec![1.0])]);
+        let by_page = s.hashes_by_page();
+        assert_eq!(by_page.len(), 2);
+        assert_eq!(by_page["a.md"], vec![11, 22]);
+        assert_eq!(by_page["b.md"], vec![33]);
+        assert!(!by_page.contains_key("never-indexed.md"));
+        assert!(VectorStore::default().hashes_by_page().is_empty());
+    }
+
+    #[test]
+    fn prune_reports_how_many_records_it_dropped() {
+        // reindex uses the count to decide whether a final save is warranted.
+        let mut s = VectorStore::default();
+        s.upsert_page("keep.md", "keep", vec![(1, vec![1.0])]);
+        s.upsert_page("gone.md", "gone", vec![(2, vec![1.0]), (3, vec![1.0])]);
+        let keep: HashSet<String> = ["keep.md".to_string()].into_iter().collect();
+        assert_eq!(s.prune(&keep), 2);
+        // Nothing left to drop the second time.
+        assert_eq!(s.prune(&keep), 0);
     }
 
     #[test]
