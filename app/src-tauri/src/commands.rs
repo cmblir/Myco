@@ -921,6 +921,7 @@ pub fn mcp_stop() -> Result<String, String> {
 // ---------------------------------------------------------------------------
 
 use crate::embeddings;
+use crate::perf;
 use crate::vector_index::{Hit as VecHit, VectorCache, VectorStore};
 
 /// Embed a batch of texts with the chosen provider.
@@ -976,16 +977,20 @@ pub async fn reindex_embeddings(
     provider: String,
     model: String,
 ) -> Result<usize, String> {
+    let t0 = std::time::Instant::now();
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
     // Read through, not from the cache: this needs an owned, mutable store, and
     // embedding the pages dwarfs the read either way.
     let mut store = VectorStore::load(&index_path);
+    let load_ms = perf::ms(t0.elapsed());
     let model_id = format!("{provider}:{model}");
     store.ensure_model(&model_id);
 
     let pages = collect_wiki_pages(&root);
     let mut present = std::collections::HashSet::new();
+    let mut embed_ms = 0.0;
+    let mut embedded = 0usize;
     for (rel, stem, content) in &pages {
         present.insert(rel.clone());
         let chunks = embeddings::chunk_page(content);
@@ -996,15 +1001,34 @@ pub async fn reindex_embeddings(
         if store.hashes_for(rel) == hashes {
             continue; // unchanged — skip re-embedding
         }
+        let t_embed = std::time::Instant::now();
         let vecs = embed_texts(app.clone(), llm.clone(), &provider, &model, chunks).await?;
+        embed_ms += perf::ms(t_embed.elapsed());
+        embedded += 1;
         let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
         store.upsert_page(rel, stem, entries);
     }
     store.prune(&present);
+    let t_save = std::time::Instant::now();
     store.save(&index_path)?;
+    let save_ms = perf::ms(t_save.elapsed());
     // Hand the freshly built store to the cache so the searches that follow a
     // reindex reuse it instead of re-reading what we just wrote.
     let indexed = store.indexed_pages();
+    perf::log(
+        "reindex_embeddings",
+        &[
+            ("load_store_ms", load_ms),
+            ("embed_ms", embed_ms),
+            ("save_ms", save_ms),
+            ("total_ms", perf::ms(t0.elapsed())),
+            ("pages", pages.len() as f64),
+            // Pages that actually needed embedding; the rest hit the
+            // content-hash skip.
+            ("embedded_pages", embedded as f64),
+            ("records", store.records.len() as f64),
+        ],
+    );
     cache.put(&index_path, store);
     Ok(indexed)
 }
@@ -1024,9 +1048,11 @@ pub async fn semantic_search(
     provider: String,
     model: String,
 ) -> Result<Vec<VecHit>, String> {
+    let t0 = std::time::Instant::now();
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
     let store = cache.get(&index_path);
+    let load_ms = perf::ms(t0.elapsed());
     if store.records.is_empty() {
         return Ok(Vec::new());
     }
@@ -1037,9 +1063,23 @@ pub async fn semantic_search(
     if store.model != format!("{provider}:{model}") {
         return Ok(Vec::new());
     }
+    let t_embed = std::time::Instant::now();
     let mut q = embed_texts(app, llm, &provider, &model, vec![query]).await?;
+    let embed_ms = perf::ms(t_embed.elapsed());
     let qv = q.pop().unwrap_or_default();
-    Ok(store.search(&qv, k.clamp(1, 50)))
+    let t_scan = std::time::Instant::now();
+    let hits = store.search(&qv, k.clamp(1, 50));
+    perf::log(
+        "semantic_search",
+        &[
+            ("load_store_ms", load_ms),
+            ("embed_query_ms", embed_ms),
+            ("scan_ms", perf::ms(t_scan.elapsed())),
+            ("total_ms", perf::ms(t0.elapsed())),
+            ("records", store.records.len() as f64),
+        ],
+    );
+    Ok(hits)
 }
 
 /// Pages most semantically similar to `page` (no embedding call — uses stored
@@ -1051,10 +1091,23 @@ pub fn related_pages(
     page: String,
     k: usize,
 ) -> Result<Vec<VecHit>, String> {
+    let t0 = std::time::Instant::now();
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
     let store = cache.get(&index_path);
-    Ok(store.related(&page, k.clamp(1, 50)))
+    let load_ms = perf::ms(t0.elapsed());
+    let t_scan = std::time::Instant::now();
+    let hits = store.related(&page, k.clamp(1, 50));
+    perf::log(
+        "related_pages",
+        &[
+            ("load_store_ms", load_ms),
+            ("scan_ms", perf::ms(t_scan.elapsed())),
+            ("total_ms", perf::ms(t0.elapsed())),
+            ("records", store.records.len() as f64),
+        ],
+    );
+    Ok(hits)
 }
 
 #[derive(serde::Serialize)]
@@ -1073,18 +1126,31 @@ pub fn semantic_edges(
     cache: tauri::State<'_, VectorCache>,
     k: usize,
 ) -> Result<Vec<SemanticEdge>, String> {
+    let t0 = std::time::Instant::now();
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
     let abs = |rel: &str| root.join(rel).to_string_lossy().into_owned();
-    Ok(cache
-        .edges(&index_path, k.clamp(1, 10))
+    // Covers the centroid pass on a cache miss and next to nothing on a hit —
+    // which is the point of the field: a slow line here means a fresh index.
+    let edges = cache.edges(&index_path, k.clamp(1, 10));
+    let build_ms = perf::ms(t0.elapsed());
+    let out: Vec<SemanticEdge> = edges
         .iter()
         .map(|e| SemanticEdge {
             source: abs(&e.a),
             target: abs(&e.b),
             score: e.score,
         })
-        .collect())
+        .collect();
+    perf::log(
+        "semantic_edges",
+        &[
+            ("build_edges_ms", build_ms),
+            ("total_ms", perf::ms(t0.elapsed())),
+            ("edges", out.len() as f64),
+        ],
+    );
+    Ok(out)
 }
 
 #[derive(serde::Serialize)]

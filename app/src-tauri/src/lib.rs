@@ -16,6 +16,7 @@ pub mod mcp_server;
 pub mod memex_pro;
 pub mod ollama;
 pub mod parser;
+pub mod perf;
 pub mod provenance;
 pub mod providers;
 pub mod registry;
