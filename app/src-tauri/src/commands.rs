@@ -921,7 +921,7 @@ pub fn mcp_stop() -> Result<String, String> {
 // ---------------------------------------------------------------------------
 
 use crate::embeddings;
-use crate::vector_index::{Hit as VecHit, VectorStore};
+use crate::vector_index::{Hit as VecHit, VectorCache, VectorStore};
 
 /// Embed a batch of texts with the chosen provider.
 async fn embed_texts(
@@ -972,11 +972,14 @@ pub async fn reindex_embeddings(
     app: tauri::AppHandle,
     vault: tauri::State<'_, VaultRoot>,
     llm: tauri::State<'_, LocalLlmState>,
+    cache: tauri::State<'_, VectorCache>,
     provider: String,
     model: String,
 ) -> Result<usize, String> {
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    // Read through, not from the cache: this needs an owned, mutable store, and
+    // embedding the pages dwarfs the read either way.
     let mut store = VectorStore::load(&index_path);
     let model_id = format!("{provider}:{model}");
     store.ensure_model(&model_id);
@@ -999,7 +1002,11 @@ pub async fn reindex_embeddings(
     }
     store.prune(&present);
     store.save(&index_path)?;
-    Ok(store.indexed_pages())
+    // Hand the freshly built store to the cache so the searches that follow a
+    // reindex reuse it instead of re-reading what we just wrote.
+    let indexed = store.indexed_pages();
+    cache.put(&index_path, store);
+    Ok(indexed)
 }
 
 /// Semantic search: embed the query, return top-`k` chunk hits from the index.
@@ -1008,6 +1015,7 @@ pub async fn semantic_search(
     app: tauri::AppHandle,
     vault: tauri::State<'_, VaultRoot>,
     llm: tauri::State<'_, LocalLlmState>,
+    cache: tauri::State<'_, VectorCache>,
     query: String,
     k: usize,
     provider: String,
@@ -1015,7 +1023,7 @@ pub async fn semantic_search(
 ) -> Result<Vec<VecHit>, String> {
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
-    let store = VectorStore::load(&index_path);
+    let store = cache.get(&index_path);
     if store.records.is_empty() {
         return Ok(Vec::new());
     }
@@ -1036,12 +1044,13 @@ pub async fn semantic_search(
 #[tauri::command]
 pub fn related_pages(
     vault: tauri::State<'_, VaultRoot>,
+    cache: tauri::State<'_, VectorCache>,
     page: String,
     k: usize,
 ) -> Result<Vec<VecHit>, String> {
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
-    let store = VectorStore::load(&index_path);
+    let store = cache.get(&index_path);
     Ok(store.related(&page, k.clamp(1, 50)))
 }
 
@@ -1058,11 +1067,12 @@ pub struct SemanticEdge {
 #[tauri::command]
 pub fn semantic_edges(
     vault: tauri::State<'_, VaultRoot>,
+    cache: tauri::State<'_, VectorCache>,
     k: usize,
 ) -> Result<Vec<SemanticEdge>, String> {
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
-    let store = VectorStore::load(&index_path);
+    let store = cache.get(&index_path);
     let abs = |rel: &str| root.join(rel).to_string_lossy().into_owned();
     let pages: std::collections::HashSet<String> =
         store.records.iter().map(|r| r.page.clone()).collect();
@@ -1098,13 +1108,14 @@ pub struct EmbeddingsStatus {
 #[tauri::command]
 pub fn embeddings_status(
     vault: tauri::State<'_, VaultRoot>,
+    cache: tauri::State<'_, VectorCache>,
 ) -> Result<EmbeddingsStatus, String> {
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
-    let store = VectorStore::load(&index_path);
+    let store = cache.get(&index_path);
     Ok(EmbeddingsStatus {
         indexed_pages: store.indexed_pages(),
-        model: store.model,
+        model: store.model.clone(),
     })
 }
 

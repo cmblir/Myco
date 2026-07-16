@@ -85,6 +85,9 @@ pub fn run() {
         .manage(commands::VaultRoot::default())
         // Embedded local model — lazily loaded on first local_* command.
         .manage(commands::LocalLlmState::default())
+        // Parsed embedding index, kept across commands so the semantic layer
+        // does not re-read and re-deserialize it on every call.
+        .manage(vector_index::VectorCache::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
             commands::ensure_default_vault,

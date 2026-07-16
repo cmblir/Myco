@@ -4,17 +4,19 @@
 //! reproducible on any machine. They exist to justify (or kill) four proposed
 //! optimizations before any of them ship:
 //!
-//!   1. `store_load`   — how much per-call JSON reparse actually costs (motivates
-//!                       an in-memory cache).
-//!   2. `serialize`    — JSON vs a raw-f32 binary format, encode and decode.
-//!   3. `similarity`   — full `cosine` vs a dot-product fast path for vectors that
-//!                       are already L2-normalized at write time.
-//!   4. `edges`        — today's best-chunk-vs-best-chunk `semantic_edges` against
-//!                       a page-centroid formulation.
+//! 1. `store_load` — how much per-call JSON reparse actually costs (motivates an
+//!    in-memory cache).
+//! 2. `serialize` — JSON vs a raw-f32 binary format, encode and decode.
+//! 3. `similarity` — full `cosine` vs a dot-product fast path for vectors that
+//!    are already L2-normalized at write time.
+//! 4. `edges` — today's best-chunk-vs-best-chunk `semantic_edges` against a
+//!    page-centroid formulation.
 //!
-//! Candidate implementations live here, next to the real ones, so a proposal is
-//! measured before it is shipped. Once a winner lands in `vector_index.rs`, its
-//! candidate here should be deleted and the bench re-pointed at the real code.
+//! Candidates are written here first so a proposal is measured before it ships.
+//! Once one lands in `vector_index.rs` the candidate is deleted and the bench
+//! re-pointed at the real code — the binary codec below is now the shipped
+//! `VectorStore::encode`/`decode`, benched against serde_json as the baseline it
+//! replaced. `dot` and the centroid edges are still candidates.
 //!
 //! Run: `cargo bench --bench vector_store`
 
@@ -75,70 +77,6 @@ fn synth_store(records: usize) -> VectorStore {
         });
     }
     store
-}
-
-// ---------------------------------------------------------------------------
-// Candidate: raw-f32 binary codec (proposal B3).
-//
-// Layout: [b"MXV1"][dim u32][n u32] then per record a length-prefixed id/page/
-// stem, section u32, hash u64, and `dim` little-endian f32s written as one bulk
-// slice. Deliberately hand-rolled rather than pulling in a serialization crate:
-// the vectors are ~99% of the bytes, so the format is trivial and stays ours.
-// ---------------------------------------------------------------------------
-
-fn encode_binary(store: &VectorStore) -> Vec<u8> {
-    let mut out = Vec::with_capacity(store.records.len() * (store.dim * 4 + 64));
-    out.extend_from_slice(b"MXV1");
-    out.extend_from_slice(&(store.dim as u32).to_le_bytes());
-    out.extend_from_slice(&(store.records.len() as u32).to_le_bytes());
-    let put_str = |out: &mut Vec<u8>, s: &str| {
-        out.extend_from_slice(&(s.len() as u32).to_le_bytes());
-        out.extend_from_slice(s.as_bytes());
-    };
-    for r in &store.records {
-        put_str(&mut out, &r.id);
-        put_str(&mut out, &r.page);
-        put_str(&mut out, &r.stem);
-        out.extend_from_slice(&(r.section as u32).to_le_bytes());
-        out.extend_from_slice(&r.hash.to_le_bytes());
-        for x in &r.vector {
-            out.extend_from_slice(&x.to_le_bytes());
-        }
-    }
-    out
-}
-
-fn decode_binary(bytes: &[u8]) -> VectorStore {
-    let mut p = 4usize; // skip magic
-    let take_u32 = |b: &[u8], p: &mut usize| -> u32 {
-        let v = u32::from_le_bytes(b[*p..*p + 4].try_into().unwrap());
-        *p += 4;
-        v
-    };
-    let dim = take_u32(bytes, &mut p) as usize;
-    let n = take_u32(bytes, &mut p) as usize;
-    let mut records = Vec::with_capacity(n);
-    for _ in 0..n {
-        let take_str = |b: &[u8], p: &mut usize| -> String {
-            let len = take_u32(b, p) as usize;
-            let s = String::from_utf8_lossy(&b[*p..*p + len]).into_owned();
-            *p += len;
-            s
-        };
-        let id = take_str(bytes, &mut p);
-        let page = take_str(bytes, &mut p);
-        let stem = take_str(bytes, &mut p);
-        let section = take_u32(bytes, &mut p) as usize;
-        let hash = u64::from_le_bytes(bytes[p..p + 8].try_into().unwrap());
-        p += 8;
-        let mut vector = Vec::with_capacity(dim);
-        for _ in 0..dim {
-            vector.push(f32::from_le_bytes(bytes[p..p + 4].try_into().unwrap()));
-            p += 4;
-        }
-        records.push(Record { id, page, stem, section, hash, vector });
-    }
-    VectorStore { model: "builtin-local:".into(), dim, records }
 }
 
 // ---------------------------------------------------------------------------
@@ -225,7 +163,7 @@ fn bench_store_load(c: &mut Criterion) {
     for &n in &[1_000usize, 5_000, 10_000] {
         let store = synth_store(n);
         let json = serde_json::to_vec(&store).unwrap();
-        let bin = encode_binary(&store);
+        let bin = store.encode();
         eprintln!(
             "[size] {n:>6} records x {DIM}d -> json {:>7.2} MB | binary {:>7.2} MB ({:.2}x smaller)",
             json.len() as f64 / 1e6,
@@ -240,7 +178,7 @@ fn bench_store_load(c: &mut Criterion) {
             })
         });
         group.bench_with_input(BenchmarkId::new("binary_decode", n), &bin, |b, j| {
-            b.iter(|| black_box(decode_binary(black_box(j)).records.len()))
+            b.iter(|| black_box(VectorStore::decode(black_box(j)).unwrap().records.len()))
         });
     }
     group.finish();
@@ -257,7 +195,7 @@ fn bench_serialize(c: &mut Criterion) {
             b.iter(|| black_box(serde_json::to_vec(black_box(s)).unwrap().len()))
         });
         group.bench_with_input(BenchmarkId::new("binary_encode", n), &store, |b, s| {
-            b.iter(|| black_box(encode_binary(black_box(s)).len()))
+            b.iter(|| black_box(black_box(s).encode().len()))
         });
     }
     group.finish();
