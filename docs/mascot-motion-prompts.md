@@ -23,7 +23,10 @@
 > part of it. MATTE finish ONLY: no gloss, no shiny speculars, no wet or glassy look, no rim light,
 > no fresnel edge, no transparent dome or glass shell, NO subsurface scattering, NO translucency, no
 > glowing outline. The cap silhouette is a HARD, clean, fully-opaque matte edge — never a glassy,
-> glowing, or see-through rim. Two simple flat white oval dot eyes, no mouth. A SMALL CONTAINED
+> glowing, or see-through rim. THE FACE IS ONLY TWO WHITE OVAL DOT EYES — nothing else, ever.
+> Below and around the eyes the surface is completely blank, smooth and featureless: NO mouth, NO
+> smile, NO lips, NO teeth, NO nose, NO eyebrows, NO cheeks, NO blush. All emotion is expressed
+> ONLY through body motion and the glow — never through facial features. A SMALL CONTAINED
 > violet glow (#8b6cff) only inside the recessed gills directly under the cap, around the eyes — a
 > soft inner light that stays tight to that small area and does NOT bloom, haze, transmit through the
 > body, wash over the body, or bleed past the silhouette. A small round spore-bud sphere on its
@@ -57,15 +60,19 @@
 **[CHROMA]**
 > Background: ONE pure, fully-saturated bright chroma-key green (#00FF00) — a professional green
 > screen. Perfectly flat and evenly lit: one uniform green with NO gradient, NO darker green at the
-> bottom, NO floor, NO cast shadow, NO reflections. Zero green spill and zero green rim on the
-> character. Maximum contrast between the dark opaque character and the flat green so the silhouette
-> extracts with a hard, clean edge.
+> bottom, NO floor, NO cast shadow, NO reflections. There is NO ground plane and NO horizon line
+> anywhere in frame — the character floats in mid-air, well above the bottom edge, and the flat
+> green extends edge to edge, top to bottom, perfectly uniform. Zero green spill and zero green rim
+> on the character. Maximum contrast between the dark opaque character and the flat green so the
+> silhouette extracts with a hard, clean edge.
 
 **[NEGATIVE / must NOT appear]**
-> transparency, translucency, see-through body, glass, gel, crystal, glossy or wet highlights, rim
-> light, fresnel edge, halo, glowing outline, glowing dome, subsurface scattering, atmospheric haze,
-> fog, bloom past the character, motion blur, background gradient, floor, shadow on the green,
-> reflections, extra objects.
+> mouth, smile, lips, teeth, nose, eyebrows, cheeks, blush, any facial feature besides the two
+> eyes, transparency, translucency, see-through body, glass, gel, crystal, glossy or wet
+> highlights, rim light, fresnel edge, halo, glowing outline, glowing dome, subsurface scattering,
+> atmospheric haze, fog, bloom past the character, motion blur, background gradient, ground plane,
+> floor, horizon line, contact shadow, drop shadow, ambient occlusion patch under the character,
+> shadow on the green, reflections, extra objects.
 
 ## 3. 산출물 ① — 캐릭터 시트 1장 (`generate_image`)
 
