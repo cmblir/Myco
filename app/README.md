@@ -141,8 +141,28 @@ npm run lint           # eslint over src/
 npm run format         # prettier write src/
 cargo fmt              # in app/src-tauri
 cargo clippy -- -D warnings
-cargo test             # Rust unit + integration tests (66 currently)
+cargo test             # Rust unit + integration tests (196 currently)
+cargo bench            # vector-store benchmarks (see below)
 ```
+
+### Measuring the semantic layer
+
+`cargo bench --bench vector_store` benchmarks the embedding index over synthetic
+1k/5k/10k-record stores at the bundled model's 1152 dimensions. It is pure CPU —
+no model weights, no Metal — so it runs anywhere and is the place to compare two
+implementations before shipping one. Each candidate optimization is written into
+the bench first and measured against the baseline it proposes to replace.
+
+For where time goes on a *real* vault, which a synthetic bench cannot tell you,
+launch with `MEMEX_PERF=1`. Each semantic command then prints one structured line
+to stderr:
+
+```text
+[memex-perf] semantic_search load_store_ms=0.31 embed_query_ms=182.44 scan_ms=11.98 total_ms=194.79 records=10000
+```
+
+Probed commands: `semantic_search`, `related_pages`, `semantic_edges`,
+`reindex_embeddings`.
 
 ## Build
 
