@@ -110,7 +110,6 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const mvOrder = useMultiverseStore((s) => s.order);
   const mvUniverses = useMultiverseStore((s) => s.universes);
   const mvLoadAll = useMultiverseStore((s) => s.loadAll);
-  const mvSetActive = useMultiverseStore((s) => s.setActiveUniverse);
   const mvLoading = useMultiverseStore((s) => s.isLoading);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -182,10 +181,11 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   // it just exits multiverse into the vault you're already in.
   async function enterUniverse(slug: string): Promise<void> {
     const u = mvUniverses[slug];
-    if (u) {
-      await mvSetActive(slug);
-      await openVault(u.info.root);
-    }
+    // Opening the vault sets the confinement root, the active-vault marker and
+    // restarts the MCP server — everything a switch needs, for both registered
+    // projects and sibling vaults. (The registry `active` pointer isn't updated
+    // here; the marker is what the MCP server follows.)
+    if (u) await openVault(u.info.root);
     setSettings((prev) => ({ ...prev, multiverse: false }));
   }
   // Clicked node → open the inspector panel (instead of navigating away).

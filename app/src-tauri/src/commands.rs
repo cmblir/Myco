@@ -428,6 +428,70 @@ pub fn set_active_project(
     Ok(meta)
 }
 
+/// Every universe the multiverse can show: registered projects (from the
+/// `projects.json` above the open vault, if any) UNION the vault-like sibling
+/// directories beside the open vault. Deduped by canonical root. This is what
+/// lets a user's several side-by-side vaults appear without a registry.
+#[tauri::command]
+pub fn list_universes(
+    state: tauri::State<VaultRoot>,
+) -> Result<Vec<registry::ProjectInfo>, String> {
+    let open = require_root(&state)?;
+    let norm = |p: &str| {
+        std::path::Path::new(p)
+            .canonicalize()
+            .map(|c| c.to_string_lossy().into_owned())
+            .unwrap_or_else(|_| p.to_string())
+    };
+    let mut out: Vec<registry::ProjectInfo> = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    if let Some(reg) = registry::Registry::discover(&open) {
+        for e in reg.project_infos() {
+            if seen.insert(norm(&e.root)) {
+                out.push(e);
+            }
+        }
+    }
+    for e in registry::discover_sibling_vaults(&open) {
+        if seen.insert(norm(&e.root)) {
+            out.push(e);
+        }
+    }
+    Ok(out)
+}
+
+/// Read-only link graph of a universe identified by its ROOT path — validated
+/// to be one of the KNOWN universes (a registered project, a discovered sibling
+/// vault, or the open vault itself), so this never reads an arbitrary path.
+#[tauri::command]
+pub fn build_universe_graph(
+    state: tauri::State<VaultRoot>,
+    root: String,
+) -> Result<Adjacency, String> {
+    let open = require_root(&state)?;
+    let canon = |p: &str| std::path::Path::new(p).canonicalize().ok();
+    let target = canon(&root).ok_or_else(|| format!("universe root missing: {root}"))?;
+    // Build the allow-set of known universe roots.
+    let mut known: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    known.insert(open.clone());
+    if let Some(reg) = registry::Registry::discover(&open) {
+        for e in reg.project_infos() {
+            if let Some(c) = canon(&e.root) {
+                known.insert(c);
+            }
+        }
+    }
+    for e in registry::discover_sibling_vaults(&open) {
+        if let Some(c) = canon(&e.root) {
+            known.insert(c);
+        }
+    }
+    if !known.contains(&target) {
+        return Err("not a known universe".into());
+    }
+    index::build_link_graph(&target.to_string_lossy())
+}
+
 /// Case-insensitive full-text search over the open vault's .md files. Uses the
 /// confined vault root (no path from the frontend), so it can't read elsewhere.
 #[tauri::command]

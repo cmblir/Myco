@@ -85,7 +85,9 @@ export const useMultiverseStore = create<MultiverseState>((set, get) => ({
     const seq = ++projectsSeq;
     set({ isLoading: true, error: null });
     try {
-      const projects = await ipc.listProjects();
+      // Every universe: registered projects + vault-like siblings of the open
+      // vault (so a user's side-by-side vaults show without a registry).
+      const projects = await ipc.listUniverses();
       if (seq !== projectsSeq) return; // a newer listing won
       const { universes, order, activeSlug } = deriveUniverses(projects);
       // Preserve any graphs already built for surviving slugs, so re-listing
@@ -111,12 +113,14 @@ export const useMultiverseStore = create<MultiverseState>((set, get) => ({
   },
 
   async loadUniverse(slug) {
-    if (!get().universes[slug]) return; // unknown slug — listProjects first
+    const cur0 = get().universes[slug];
+    if (!cur0) return; // unknown slug — loadProjects first
     const seq = (uniSeq.get(slug) ?? 0) + 1;
     uniSeq.set(slug, seq);
     patchUniverse(set, slug, { loading: true, error: null });
     try {
-      const adjacency = await ipc.buildLinkGraphAt(slug);
+      // Build by ROOT so both registered projects and sibling vaults work.
+      const adjacency = await ipc.buildUniverseGraph(cur0.info.root);
       if (seq !== uniSeq.get(slug)) return; // a newer load of THIS universe won
       if (!get().universes[slug]) return; // universe vanished (reset/re-list)
       patchUniverse(set, slug, { adjacency, loading: false });
@@ -134,11 +138,12 @@ export const useMultiverseStore = create<MultiverseState>((set, get) => ({
   },
 
   async refreshUniverse(slug) {
-    if (!get().universes[slug]) return;
+    const cur0 = get().universes[slug];
+    if (!cur0) return;
     const seq = (uniSeq.get(slug) ?? 0) + 1;
     uniSeq.set(slug, seq);
     try {
-      const adjacency = await ipc.buildLinkGraphAt(slug);
+      const adjacency = await ipc.buildUniverseGraph(cur0.info.root);
       if (seq !== uniSeq.get(slug)) return;
       const cur = get().universes[slug];
       if (!cur) return;

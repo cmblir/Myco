@@ -308,6 +308,13 @@ export const ipc = {
   /** Read-only link graph of a registered project (not just the open vault). */
   buildLinkGraphAt: (slug: string) =>
     invoke<Adjacency>("build_link_graph_at", { slug }),
+  /** Every universe: registered projects UNION the vault-like sibling folders
+   *  beside the open vault (so multiple side-by-side vaults show without a
+   *  registry). */
+  listUniverses: () => invoke<ProjectInfo[]>("list_universes"),
+  /** Read-only link graph of a known universe by its ROOT path. */
+  buildUniverseGraph: (root: string) =>
+    invoke<Adjacency>("build_universe_graph", { root }),
   /** Switch the active project without the open_vault teardown. */
   setActiveProject: (slug: string) =>
     invoke<VaultMeta>("set_active_project", { slug }),

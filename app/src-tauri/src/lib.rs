@@ -108,6 +108,8 @@ pub fn run() {
             commands::list_projects,
             commands::build_link_graph_at,
             commands::set_active_project,
+            commands::list_universes,
+            commands::build_universe_graph,
             commands::search_vault,
             commands::git_log,
             commands::claude_run,

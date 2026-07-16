@@ -237,6 +237,89 @@ pub fn set_active(project_root: &Path, slug: &str) -> Result<(), String> {
         .map_err(|e| format!("write projects.json: {e}"))
 }
 
+/// Whether a directory looks like a Memex/Obsidian vault worth showing as a
+/// universe: a `wiki/`, an `.obsidian/`, a top-level `CLAUDE.md`, or at least
+/// one top-level `.md` file. Cheap (a shallow read, no recursion).
+fn looks_like_vault(dir: &Path) -> bool {
+    if dir.join("wiki").is_dir()
+        || dir.join(".obsidian").is_dir()
+        || dir.join("CLAUDE.md").is_file()
+    {
+        return true;
+    }
+    // A top-level markdown file also qualifies (a flat notes folder).
+    std::fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .any(|e| e.path().extension().and_then(|x| x.to_str()) == Some("md"))
+}
+
+/// Discover the vaults SITTING BESIDE the open vault — the immediate sibling
+/// directories of its parent that look like vaults — so the multiverse can show
+/// a user's several side-by-side vaults without any `projects.json` registry.
+/// Read-only and confined: only immediate children of the open vault's parent,
+/// each canonicalized and required to stay under that parent (no symlink
+/// escape), and only if it looks like a vault. The open vault itself is
+/// included (flagged active). Returns [] when the parent is a filesystem root
+/// or unreadable.
+pub fn discover_sibling_vaults(open_vault: &Path) -> Vec<ProjectInfo> {
+    let Ok(vault) = open_vault.canonicalize() else {
+        return Vec::new();
+    };
+    let Some(parent) = vault.parent() else {
+        return Vec::new();
+    };
+    // Don't scan a filesystem root (parent has no parent) — too broad.
+    if parent.parent().is_none() {
+        return Vec::new();
+    }
+    let Ok(entries) = std::fs::read_dir(parent) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for e in entries.flatten() {
+        if is_hidden_name(&e.file_name()) {
+            continue;
+        }
+        let Ok(cp) = e.path().canonicalize() else {
+            continue;
+        };
+        // Immediate child of the (canonical) parent — rejects symlinks that
+        // resolve elsewhere.
+        if cp.parent() != Some(parent) || !cp.is_dir() {
+            continue;
+        }
+        if !looks_like_vault(&cp) {
+            continue;
+        }
+        let name = cp
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("vault")
+            .to_string();
+        out.push(ProjectInfo {
+            slug: name.clone(),
+            title: name,
+            description: String::new(),
+            root: cp.to_string_lossy().into_owned(),
+            note_count: count_notes(&cp),
+            created: String::new(),
+            last_used: String::new(),
+            independent_vault: cp.join(".obsidian").is_dir(),
+            active: cp == vault,
+        });
+    }
+    out.sort_by(|a, b| a.slug.cmp(&b.slug));
+    out
+}
+
+/// Local mirror of index::is_hidden_name for the sibling scan (dot-dirs,
+/// node_modules, target).
+fn is_hidden_name(name: &std::ffi::OsStr) -> bool {
+    crate::index::is_hidden_name(name)
+}
+
 /// Count markdown notes under a project root, with the same hidden-dir skip
 /// rules as the link-graph walker so the count approximates graph-node count.
 /// Directory symlinks are NOT followed: a symlink cycle inside a project would
@@ -318,6 +401,32 @@ mod tests {
         {"slug": "beta", "last_used": "2026-01-01"}
       ]
     }"#;
+
+    #[test]
+    fn discover_sibling_vaults_finds_vault_like_siblings() {
+        let tmp = tempfile::tempdir().unwrap();
+        let parent = tmp.path().join("Documents");
+        // Three sibling dirs: two vault-like, one not; plus the open vault.
+        let open = parent.join("Memex");
+        std::fs::create_dir_all(open.join("wiki")).unwrap();
+        std::fs::write(open.join("CLAUDE.md"), "# open").unwrap();
+        std::fs::create_dir_all(parent.join("demo").join("wiki")).unwrap();
+        std::fs::create_dir_all(parent.join("obsidian").join(".obsidian")).unwrap();
+        std::fs::create_dir_all(parent.join("Design")).unwrap(); // no md/markers
+        std::fs::write(parent.join("loose.txt"), "not a dir").unwrap();
+
+        let sibs = discover_sibling_vaults(&open);
+        let slugs: Vec<_> = sibs.iter().map(|s| s.slug.as_str()).collect();
+        assert!(slugs.contains(&"Memex"), "open vault included");
+        assert!(slugs.contains(&"demo"), "wiki/ sibling included");
+        assert!(slugs.contains(&"obsidian"), ".obsidian/ sibling included");
+        assert!(!slugs.contains(&"Design"), "non-vault dir excluded");
+        // The open vault is flagged active; obsidian is flagged independent.
+        let open_e = sibs.iter().find(|s| s.slug == "Memex").unwrap();
+        assert!(open_e.active);
+        let obs = sibs.iter().find(|s| s.slug == "obsidian").unwrap();
+        assert!(obs.independent_vault);
+    }
 
     #[test]
     fn validate_slug_rejects_traversal_forms() {

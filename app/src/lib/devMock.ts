@@ -545,6 +545,46 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(
         rerootAdjacency(buildAdjacency(), `${VAULT}/projects/${String(args.slug ?? "x")}`),
       );
+    // Multiverse (universes = registry projects UNION sibling vaults). The mock
+    // presents two sibling vaults beside the open one to exercise the flow.
+    case "list_universes":
+      return Promise.resolve([
+        {
+          slug: "Memex",
+          title: "Memex",
+          description: "",
+          root: VAULT,
+          noteCount: NODES.length,
+          created: "",
+          lastUsed: "",
+          independentVault: false,
+          active: true,
+        },
+        {
+          slug: "memex-demo-10k",
+          title: "memex-demo-10k",
+          description: "",
+          root: `${VAULT}/../memex-demo-10k`,
+          noteCount: 42,
+          created: "",
+          lastUsed: "",
+          independentVault: false,
+          active: false,
+        },
+        {
+          slug: "Obsidian Vault",
+          title: "Obsidian Vault",
+          description: "",
+          root: `${VAULT}/../Obsidian Vault`,
+          noteCount: 18,
+          created: "",
+          lastUsed: "",
+          independentVault: true,
+          active: false,
+        },
+      ]);
+    case "build_universe_graph":
+      return Promise.resolve(rerootAdjacency(buildAdjacency(), String(args.root ?? "x")));
     case "set_active_project":
       return Promise.resolve({
         path: `${VAULT}/projects/${String(args.slug ?? "")}`,
