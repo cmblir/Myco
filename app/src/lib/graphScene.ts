@@ -42,6 +42,7 @@ import { CoreGlowLayer } from "./coreGlowLayer";
 import { CosmicEvents, type EventKind } from "./cosmicEvents";
 import { GalacticBandLayer } from "./galacticBandLayer";
 import { GalaxyImposterLayer } from "./galaxyImposterLayer";
+import { PlanetLayer } from "./planetLayer";
 import { CommunityHullLayer } from "./communityHullLayer";
 import { EdgeBundleLayer } from "./edgeBundleLayer";
 import type { LayoutMetrics } from "./layoutMetrics";
@@ -542,6 +543,8 @@ export class GraphScene {
     return this.synapse2dMode || this.synapse3dMode;
   }
   private imposterEnabled = false; // dark-theme gate (LOD then controls visibility)
+  private planets: PlanetLayer; // near-LOD: nearest nodes → procedural planet spheres
+  private planetsEnabled = false; // dark-3D layout + nearFieldPlanets toggle
   // Cosmic-scale LOD state (see cosmicLod). onScale fires when the camera
   // crosses a scale band (star → system → galaxy → cluster) for the HUD.
   private lastScale: CosmicScale | null = null;
@@ -975,6 +978,14 @@ export class GraphScene {
     this.imposter = new GalaxyImposterLayer(this.graph, this.nodeIds, pr, false);
     this.imposterEnabled = false; // never paint spiral discs
     this.scene.add(this.imposter.points);
+    // Near-field LOD planets (the close end of the LOD; imposters are the far
+    // end). Constructed disabled; updatePlanetGate() flips it on for dark 3D
+    // layouts when the user enables nearFieldPlanets.
+    this.planets = new PlanetLayer(this.graph, this.nodeIds, this.camera, pr, dark, false);
+    this.scene.add(this.planets.sphere);
+    this.scene.add(this.planets.rings);
+    this.scene.add(this.planets.moons);
+    this.updatePlanetGate();
     // Static 2D ForceAtlas2 layouts. "atlas" draws translucent per-community
     // territory hulls (Gephi map). "synapse" is the same flat pipeline tuned
     // to spread the cores apart with nerve-fibre bridges — NO hull fills (a
@@ -2206,6 +2217,7 @@ export class GraphScene {
     this.coreGlow.setNodeIds(this.nodeIds);
     this.band.setNodeIds(this.nodeIds);
     this.imposter.setNodeIds(this.nodeIds);
+    this.planets.setNodeIds(this.nodeIds); // refresh per-node planet identity cache
     if (this.atlasMode) this.hulls.rebuild();
     // Graph contents changed (live ingest / filter) → re-aggregate strands.
     this.bundles.markTopologyDirty();
@@ -2272,6 +2284,7 @@ export class GraphScene {
     this.coreGlow.setEnabled(false);
     this.band.points.visible = false;
     this.imposterEnabled = false;
+    this.updatePlanetGate(); // skin/theme flip may enable/disable planets
     this.nebula.setDark(SHOW_NEBULA && amb.nebula && !this.flatLayout);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
@@ -2434,6 +2447,7 @@ export class GraphScene {
     this.controls.autoRotate = this.autoRotateWanted();
     this.pulse.points.visible =
       this.ambientOn() && !this.perfLod && !settings.arrows;
+    this.updatePlanetGate(); // nearFieldPlanets toggle (also re-checks perf/skin/layout)
     if (this.rotateResumeTimer != null && !this.ambientOn()) {
       clearTimeout(this.rotateResumeTimer);
       this.rotateResumeTimer = null;
@@ -2479,6 +2493,20 @@ export class GraphScene {
   // spin, but its other ambient life (synapse firing, pulses) stays on.
   private autoRotateWanted(): boolean {
     return this.ambientOn() && !this.flatLayout;
+  }
+
+  // Near-field planets show on DARK 3D layouts only: lit spheres assume a dark
+  // void (wrong on the white/paper skin), and 3D bodies make no sense in the
+  // top-down 2D atlas/synapse map. Also gated by the user toggle and the
+  // perf-LOD cap. They still RENDER under reduced-motion (structure, not
+  // ambience) — only their spin freezes (see PlanetLayer.update()).
+  private updatePlanetGate(): void {
+    this.planetsEnabled =
+      this.settings.nearFieldPlanets &&
+      this.darkTheme &&
+      !this.perfLod &&
+      !this.flatLayout;
+    this.planets.setEnabled(this.planetsEnabled);
   }
 
   // Auto-rotate pauses the moment the user orbits/zooms and resumes only after
@@ -2729,6 +2757,17 @@ export class GraphScene {
         this.controls.update();
       }
       this.updateLod(dt);
+      // Near-field planets: the nodes nearest the camera resolve into procedural
+      // spheres. Structure, not ambience — always updated when enabled (spin
+      // only advances when ambient motion is on, so reduced-motion sees still,
+      // lit planets). Passed the LIVE position buffer so a rebuild() is safe.
+      if (this.planetsEnabled) {
+        this.planets.update(
+          dt,
+          this.nodeGeom.getAttribute("position") as THREE.BufferAttribute,
+          this.ambientOn(),
+        );
+      }
       // Grid backdrop parallax: drift the fullscreen dot grid with the camera's
       // look direction so it reads as depth behind the graph, not a flat UI
       // overlay pinned to the window.
@@ -2865,6 +2904,10 @@ export class GraphScene {
     this.scene.remove(this.band.points);
     this.imposter.dispose();
     this.scene.remove(this.imposter.points);
+    this.planets.dispose();
+    this.scene.remove(this.planets.sphere);
+    this.scene.remove(this.planets.rings);
+    this.scene.remove(this.planets.moons);
     this.hulls.dispose();
     this.scene.remove(this.hulls.mesh);
     this.bundles.dispose();

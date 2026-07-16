@@ -82,6 +82,11 @@ export interface GraphSettings {
   // Spontaneous neural firings — signals that periodically ripple the mesh
   // (and travel the fibres in synapse mode). Opt out for a still graph.
   neuralFiring: boolean;
+  // Near-field LOD planets — when the camera is close, the nodes nearest it
+  // resolve into small procedural planet spheres (rocky/gas/ice/ringed), tinted
+  // by community hue; far nodes stay cheap star points. Dark 3D layouts only,
+  // perf-gated. Off by default (novelty + fragment-cost sensitive).
+  nearFieldPlanets: boolean;
   // Timelapse playback speed multiplier (0.25×..4×). Read live each frame, so
   // dragging the slider mid-replay speeds the assembly up or down in place.
   tlSpeed: number;
@@ -126,6 +131,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   cosmicFrequency: 1,
   clickBurst: true,
   neuralFiring: true,
+  nearFieldPlanets: false,
   tlSpeed: 1,
   nodeColor: "community",
   monoBelow: 200,

@@ -731,6 +731,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.cosmicFrequency,
     settings.clickBurst,
     settings.neuralFiring,
+    settings.nearFieldPlanets,
     settings.skyStyle,
   ]);
 

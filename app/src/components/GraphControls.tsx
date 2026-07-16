@@ -496,6 +496,12 @@ export default function GraphControls({
           value={settings.neuralFiring}
           onChange={(v) => onChange({ neuralFiring: v })}
         />
+        <Toggle
+          label={t.gr_planets ?? "Near-field planets"}
+          hint={t.gr_planets_hint ?? "Close-up nodes become procedural planets (dark 3D)"}
+          value={settings.nearFieldPlanets}
+          onChange={(v) => onChange({ nearFieldPlanets: v })}
+        />
         <button
           type="button"
           className="graph-drawer__play"

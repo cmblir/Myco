@@ -163,6 +163,8 @@ export interface Strings {
   gr_click_burst_hint?: string;
   gr_neural_firing?: string;
   gr_neural_firing_hint?: string;
+  gr_planets?: string;
+  gr_planets_hint?: string;
   gr_color_depth?: string;
   gr_edge_tint?: string;
   gr_edge_tint_grey?: string;
@@ -728,6 +730,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_click_burst_hint: "Supernova + ripple when you select a node",
     gr_neural_firing: "Neural firing",
     gr_neural_firing_hint: "Signals that periodically ripple the mesh",
+    gr_planets: "Near-field planets",
+    gr_planets_hint: "Close-up nodes become procedural planets (dark 3D)",
     gr_color_depth: "Colour depth",
     gr_edge_tint: "Link colour",
     gr_edge_tint_grey: "Grey",
@@ -1302,6 +1306,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_click_burst_hint: "노드 선택 시 슈퍼노바 + 파동",
     gr_neural_firing: "신경 발화",
     gr_neural_firing_hint: "주기적으로 메시를 타고 흐르는 신호",
+    gr_planets: "근접 행성",
+    gr_planets_hint: "가까운 노드가 절차적 행성이 됨 (다크 3D)",
     gr_color_depth: "색 짙기",
     gr_edge_tint: "링크 색상",
     gr_edge_tint_grey: "회색",
@@ -1870,6 +1876,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_click_burst_hint: "ノード選択時のスーパーノヴァ + 波紋",
     gr_neural_firing: "神経発火",
     gr_neural_firing_hint: "定期的にメッシュを伝う信号",
+    gr_planets: "近接プラネット",
+    gr_planets_hint: "近づくとノードが手続き的な惑星になる (ダーク3D)",
     gr_color_depth: "色の濃さ",
     gr_edge_tint: "リンク色",
     gr_edge_tint_grey: "グレー",
