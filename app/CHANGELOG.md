@@ -8,6 +8,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Near-field planet LOD.** A new *Near-field planets* graph toggle: fly in
+  close and the notes nearest the camera resolve from glowing star points into
+  procedural planets — 20 shader families (terran, ocean, lava, gas giant,
+  frozen, crystal, …) seeded per note and tinted by community hue, with rings
+  on giants and small orbiting moons. Hubs read as gas/storm giants,
+  super-connected notes turn molten, orphans go barren. Everything is
+  instanced (spheres + rings + moons ≈ three draw calls, capped at 24 live
+  worlds), gated to dark 3D layouts, and honors reduced motion by freezing
+  spin while still rendering.
+- **MYCO, the Memex mascot.** The mushroom mascot now lives in the app as a
+  transparent alpha-video sprite (`MascotClip`): it idles on the Settings ›
+  About card and keeps the graph's loading screen company. Ships dual-codec
+  alpha video (HEVC `hvc1` for the WKWebView shell, VP9 WebM for Chromium dev
+  browsers), falls back to a still poster under `prefers-reduced-motion` or
+  playback failure, and crops the wide clip to a square around the character.
+
 - **Multiverse overview (Phase 1).** A new **Multiverse** workspace view lists
   every registered project as its own universe — a card tinted with the
   project's stable identity hue, showing its note count and active state.

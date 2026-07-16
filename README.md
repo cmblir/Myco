@@ -161,7 +161,7 @@ bash mcp-server/install.sh    # MCP server for Claude Desktop/Code
 
 ## The desktop app
 
-Routes in the left sidebar — Overview, Graph, History, Provenance, Tags, **Study**, **Schedules**, Settings, plus Ingest and Ask. Cmd/Ctrl-K opens the command palette (with semantic hits), Cmd/Ctrl-B toggles the sidebar. On first launch a 3-step onboarding wizard walks you through opening a vault → adding a source → asking a question; the whole app is responsive down to 320px (the sidebar goes off-canvas on narrow screens).
+Routes in the left sidebar — Overview, Graph, History, Provenance, Tags, **Study**, **Schedules**, Settings, plus Ingest and Ask. Cmd/Ctrl-K opens the command palette (with semantic hits), Cmd/Ctrl-B toggles the sidebar. On first launch a 3-step onboarding wizard walks you through opening a vault → adding a source → asking a question; the whole app is responsive down to 320px (the sidebar goes off-canvas on narrow screens). You'll also meet **MYCO**, the Memex mushroom mascot — a transparent-video sprite who idles on the About page and keeps you company while the graph loads (respects `prefers-reduced-motion`, degrades to a still frame).
 
 ### Overview
 
@@ -197,7 +197,7 @@ Link resolution matches Obsidian: `[[note]]`, `[[note|alias]]`, `[[note#heading]
 A right-side settings drawer (gear icon):
 
 - **Filters** — live search by filename, tag chips, folder dropdown, toggles for *Show orphans* and *Existing files only*.
-- **Display** — *Arrows*, *Semantic links*, **Bundled strands** (collapse all links between two topic clusters into one weight-tiered glowing arc, so topic-to-topic structure stays readable while the clusters themselves stay separated), a **Node colour** mode (*community* hues / *white* monochrome / *auto* — white below a node-count threshold), *Text fade threshold*, *Node size*, *Link thickness*, a **Glow** slider, an **Ambient motion** toggle (one switch for auto-rotate + pulses + breathing), and a **▶ Play timelapse** button.
+- **Display** — *Arrows*, *Semantic links*, **Bundled strands** (collapse all links between two topic clusters into one weight-tiered glowing arc, so topic-to-topic structure stays readable while the clusters themselves stay separated), a **Node colour** mode (*community* hues / *white* monochrome / *auto* — white below a node-count threshold), *Text fade threshold*, *Node size*, *Link thickness*, a **Glow** slider, an **Ambient motion** toggle (one switch for auto-rotate + pulses + breathing), a **Near-field planets** toggle (fly in close and the nearest notes resolve into procedural planets — 20 families from terran to gas giant, seeded per note, with rings and orbiting moons; hubs become giants, orphans barren worlds; dark skins only, instanced so it stays two draw calls), and a **▶ Play timelapse** button.
 - **Layout** — a **layout engine** switch (**Galaxy** — the living 3D force sim; **Atlas** — a static 2D ForceAtlas2 map with translucent per-community territory fills, the Gephi look) plus three force presets (**Galaxy** / **Loose web** / **Dense**); the raw d3-force sliders (*Center / Repel / Link / Link distance / Cluster force*) live under an **Advanced** accordion.
 
 **Timelapse** (toolbar ▶ or the drawer button) reveals notes oldest-to-newest by file mtime at their settled positions — edges appear as each note connects up, so you watch the graph build itself in the order you actually wrote it.
