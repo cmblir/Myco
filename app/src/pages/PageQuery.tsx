@@ -13,6 +13,7 @@ import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { complete } from "../lib/chat";
 import { ipc } from "../lib/ipc";
+import { takeQueryPrefill } from "../lib/queryPrefill";
 import { isActivityQuery, formatActivityAnswer } from "../lib/queryIntent";
 import { flattenMarkdown, stem } from "../lib/graphData";
 import Viewer from "../components/Viewer";
@@ -63,6 +64,13 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const [turns, setTurns] = useState<ChatTurn[]>([]);
   const [busy, setBusy] = useState(false);
   const endRef = useRef<HTMLDivElement | null>(null);
+
+  // A surface elsewhere (e.g. the graph's gap panel) may have drafted a
+  // question for us — consume it once on mount.
+  useEffect(() => {
+    const draft = takeQueryPrefill();
+    if (draft) setQ(draft);
+  }, []);
 
   // stem (lowercased filename minus extension) → absolute path; mirrors the
   // Rust link resolver, so answer citations resolve like real wikilinks.

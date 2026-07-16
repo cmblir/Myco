@@ -8,7 +8,7 @@ import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { stem } from "../lib/graphData";
-import { gapCount, type GapReport } from "../lib/graphGaps";
+import { gapCount, type ClusterBridge, type GapReport } from "../lib/graphGaps";
 
 const GHOST = "ghost:";
 const MAX_ROWS = 15; // per category, with a "+N more" tail
@@ -20,12 +20,18 @@ function displayName(id: string): string {
 export default function GraphGaps({
   t,
   report,
+  bridges = [],
   onSelect,
+  onAskBridge,
   onClose,
 }: {
   t: Strings;
   report: GapReport;
+  /** Cluster pairs that are semantically close but structurally unlinked. */
+  bridges?: ClusterBridge[];
   onSelect: (id: string) => void;
+  /** Route the bridge to the Ask page as a drafted research question. */
+  onAskBridge?: (b: ClusterBridge) => void;
   onClose: () => void;
 }): JSX.Element {
   const cats: { label: string; ids: string[] }[] = [
@@ -56,7 +62,41 @@ export default function GraphGaps({
         </button>
       </div>
 
-      {total === 0 ? (
+      {bridges.length > 0 ? (
+        <div className="graph-gaps__section">
+          <h4>
+            {t.gr_gap_bridges ?? "Research bridges"}{" "}
+            <span className="muted">({bridges.length})</span>
+          </h4>
+          <ul className="graph-gaps__links">
+            {bridges.map((b) => (
+              <li key={`${b.a}:${b.b}`} className="graph-gaps__bridge">
+                <button
+                  type="button"
+                  className="graph-gaps__link"
+                  title={`${b.aHub} ↔ ${b.bHub}`}
+                  onClick={() => onSelect(b.pairs[0]?.source ?? b.aHub)}
+                >
+                  {displayName(b.aHub)} ↔ {displayName(b.bHub)}
+                </button>
+                {onAskBridge ? (
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => onAskBridge(b)}
+                    aria-label={t.gr_gap_ask ?? "Ask about this gap"}
+                    title={t.gr_gap_ask ?? "Ask about this gap"}
+                  >
+                    <Icon name="msg" size={12} />
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {total === 0 && bridges.length === 0 ? (
         <p className="graph-gaps__none">{t.gr_gap_none ?? "No gaps found"}</p>
       ) : (
         cats.map((c) => (

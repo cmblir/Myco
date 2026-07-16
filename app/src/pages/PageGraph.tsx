@@ -36,7 +36,8 @@ import {
   stem,
   type VaultGraph,
 } from "../lib/graphData";
-import { analyzeGaps, gapCount } from "../lib/graphGaps";
+import { analyzeGaps, clusterBridges, gapCount, type ClusterBridge } from "../lib/graphGaps";
+import { setQueryPrefill } from "../lib/queryPrefill";
 import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
 import { applyAtlasLayout } from "../lib/atlasLayout";
 import { ATLAS_RADIUS_MUL } from "../lib/layoutConfig";
@@ -258,6 +259,50 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     return g && g.order > 0 ? analyzeGaps(g) : null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [counts, glEpoch]);
+
+  // Research bridges (cluster-level gaps) need the semantic-similarity pairs —
+  // fetched lazily the first time the gap panel opens, independent of the
+  // semantic-edges display toggle.
+  const [bridgeSem, setBridgeSem] = useState<SemEdge[] | null>(null);
+  useEffect(() => {
+    if (!gapsOpen || bridgeSem !== null) return;
+    let killed = false;
+    ipc
+      .semanticEdges(4)
+      .then((edges) => {
+        if (!killed) setBridgeSem(edges);
+      })
+      .catch(() => {
+        if (!killed) setBridgeSem([]);
+      });
+    return () => {
+      killed = true;
+    };
+  }, [gapsOpen, bridgeSem]);
+
+  const bridges = useMemo(() => {
+    const g = graphRef.current;
+    if (!gapsOpen || !g || g.order === 0 || !bridgeSem?.length) return [];
+    return clusterBridges(g, bridgeSem);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gapsOpen, bridgeSem, counts, glEpoch]);
+
+  // Dashed 3D hint lines between the bridged cluster centroids while the
+  // panel is open.
+  useEffect(() => {
+    sceneRef.current?.setBridgeHints(
+      gapsOpen ? bridges.map((b) => [b.a, b.b] as [number, number]) : [],
+    );
+  }, [bridges, gapsOpen]);
+
+  // "Ask about this gap" → draft a research question and hop to the Ask page.
+  function askBridge(b: ClusterBridge): void {
+    const tpl =
+      t.gr_bridge_question ??
+      'My notes about "{a}" and "{b}" are semantically related but not yet linked. What connects these two topics? Suggest the bridging ideas or notes I should write.';
+    setQueryPrefill(tpl.replace("{a}", stem(b.aHub)).replace("{b}", stem(b.bHub)));
+    setRoute("query");
+  }
 
   // Legend: two-level galaxy → cluster hierarchy. Galaxy = top-level folder
   // (header); clusters = the coloured sub-groups within it (folder or Louvain
@@ -1475,10 +1520,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               <GraphGaps
                 t={t}
                 report={gapReport}
+                bridges={bridges}
                 onSelect={(id) => {
                   setSelected(id);
                   sceneRef.current?.focusNode(id);
                 }}
+                onAskBridge={askBridge}
                 onClose={() => setGapsOpen(false)}
               />
             ) : null}

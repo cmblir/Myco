@@ -1849,6 +1849,16 @@ hr {
   background: var(--bg-hover);
   color: var(--ink);
 }
+/* Bridge rows pair the "A ↔ B" link with a trailing ask button. */
+.graph-gaps__bridge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.graph-gaps__bridge .graph-gaps__link {
+  flex: 1;
+  min-width: 0;
+}
 .graph-gaps__more {
   padding: 2px 6px;
   color: var(--ink-4);

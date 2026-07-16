@@ -230,6 +230,9 @@ export interface Strings {
   gr_gap_disputed?: string;
   gr_gap_islands?: string;
   gr_gap_none?: string;
+  gr_gap_bridges?: string;
+  gr_gap_ask?: string;
+  gr_bridge_question?: string;
   gr_gap_more?: string;
   q_thinking?: string;
   gr_key_size?: string;
@@ -798,6 +801,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_gap_disputed: "Disputed",
     gr_gap_islands: "Disconnected",
     gr_gap_none: "No gaps found",
+    gr_gap_bridges: "Research bridges",
+    gr_gap_ask: "Ask about this gap",
+    gr_bridge_question:
+      'My notes about "{a}" and "{b}" are semantically related but not yet linked. What connects these two topics? Suggest the bridging ideas or notes I should write.',
     gr_gap_more: "more",
     q_thinking: "searching the wiki…",
     gr_key_size: "size = links",
@@ -1377,6 +1384,10 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_gap_disputed: "논쟁",
     gr_gap_islands: "끊긴 클러스터",
     gr_gap_none: "갭 없음",
+    gr_gap_bridges: "연구 다리",
+    gr_gap_ask: "이 갭에 질문하기",
+    gr_bridge_question:
+      '"{a}"와(과) "{b}"에 대한 내 노트들은 의미상 가깝지만 아직 연결되어 있지 않습니다. 두 주제를 잇는 것은 무엇인가요? 다리가 될 아이디어나 작성할 노트를 제안해 주세요.',
     gr_gap_more: "더",
     q_thinking: "위키를 탐색하는 중…",
     gr_key_size: "크기 = 링크 수",

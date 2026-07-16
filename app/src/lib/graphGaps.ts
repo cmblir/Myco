@@ -103,3 +103,94 @@ export function gapCount(r: GapReport): number {
     r.islands.reduce((n, c) => n + c.length, 0)
   );
 }
+
+// ---------------------------------------------------------------------------
+// Cluster bridges — the structural-gap half of gap analysis. Node gaps say
+// "this page is weak"; bridges say "these two TOPICS should be talking".
+// A bridge is a pair of communities whose notes are semantically close (per
+// the embedding similarity edges) but which share zero [[wikilinks]] — the
+// classic "clusters of thinking that aren't talking to each other yet", i.e.
+// your next research question. Pure + synchronous like the node gaps.
+
+export interface BridgePair {
+  source: string;
+  target: string;
+  score: number;
+}
+
+export interface ClusterBridge {
+  /** Community ids (a < b). */
+  a: number;
+  b: number;
+  /** Highest-degree member of each community — the cluster's display anchor. */
+  aHub: string;
+  bHub: string;
+  /** Sum of semantic-pair scores crossing the gap (rank key). */
+  affinity: number;
+  /** Strongest example note pairs bridging the two clusters. */
+  pairs: BridgePair[];
+}
+
+const MAX_BRIDGES = 8;
+const MAX_EXAMPLE_PAIRS = 3;
+
+function pairKey(a: number, b: number): string {
+  return a < b ? `${a}:${b}` : `${b}:${a}`;
+}
+
+export function clusterBridges(g: VaultGraph, sem: BridgePair[]): ClusterBridge[] {
+  if (sem.length === 0) return [];
+
+  // Community of each real node + each community's highest-degree member.
+  const commOf = new Map<string, number>();
+  const hub = new Map<number, { id: string; deg: number }>();
+  g.forEachNode((id, attrs) => {
+    const c = (attrs as { community: number }).community;
+    if (c < 0) return; // field stars / orphans can't anchor a topic bridge
+    commOf.set(id, c);
+    const deg = g.degree(id);
+    const h = hub.get(c);
+    if (!h || deg > h.deg) hub.set(c, { id, deg });
+  });
+
+  // Community pairs that already share structural links are NOT gaps.
+  const linked = new Set<string>();
+  g.forEachEdge((_e, _attrs, s, t) => {
+    const ca = commOf.get(s);
+    const cb = commOf.get(t);
+    if (ca == null || cb == null || ca === cb) return;
+    linked.add(pairKey(ca, cb));
+  });
+
+  // Aggregate semantic affinity across the UNLINKED community pairs.
+  const acc = new Map<string, ClusterBridge>();
+  for (const e of sem) {
+    const ca = commOf.get(e.source);
+    const cb = commOf.get(e.target);
+    if (ca == null || cb == null || ca === cb) continue;
+    const key = pairKey(ca, cb);
+    if (linked.has(key)) continue;
+    let b = acc.get(key);
+    if (!b) {
+      const [lo, hi] = ca < cb ? [ca, cb] : [cb, ca];
+      b = {
+        a: lo,
+        b: hi,
+        aHub: hub.get(lo)?.id ?? "",
+        bHub: hub.get(hi)?.id ?? "",
+        affinity: 0,
+        pairs: [],
+      };
+      acc.set(key, b);
+    }
+    b.affinity += e.score;
+    b.pairs.push(e);
+  }
+
+  const out = [...acc.values()];
+  for (const b of out) {
+    b.pairs.sort((x, y) => y.score - x.score);
+    b.pairs = b.pairs.slice(0, MAX_EXAMPLE_PAIRS);
+  }
+  return out.sort((x, y) => y.affinity - x.affinity).slice(0, MAX_BRIDGES);
+}

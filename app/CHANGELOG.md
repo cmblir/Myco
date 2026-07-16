@@ -8,6 +8,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Research bridges — cluster-level gap analysis.** The graph's Gaps panel
+  now opens with a *Research bridges* section: pairs of topic clusters whose
+  notes are semantically close (per the embedding-similarity pairs) but share
+  zero `[[wikilinks]]` — the clusters of thinking that aren't talking to each
+  other yet. Each bridge names the two clusters by their hub notes, draws a
+  dashed hint line between the cluster centroids in the 3D scene while the
+  panel is open, and carries an *Ask about this gap* action that drafts a
+  bridging research question straight into the Ask page. Pure, unit-tested
+  aggregation (`clusterBridges`) over the live graph — no new backend.
 - **Near-field planet LOD.** A new *Near-field planets* graph toggle: fly in
   close and the notes nearest the camera resolve from glowing star points into
   procedural planets — 20 shader families (terran, ocean, lava, gas giant,

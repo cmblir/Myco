@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { Adjacency } from "./ipc";
 import { buildGraph } from "./graphData";
-import { analyzeGaps, connectedComponents, gapCount } from "./graphGaps";
+import { analyzeGaps, clusterBridges, connectedComponents, gapCount } from "./graphGaps";
 
 function adj(partial: Partial<Adjacency>): Adjacency {
   return { forward: {}, backward: {}, unresolved: {}, tags: {}, ...partial };
@@ -92,5 +92,47 @@ describe("analyzeGaps", () => {
     );
     const r = analyzeGaps(g);
     expect(gapCount(r)).toBeGreaterThan(0);
+  });
+});
+
+describe("clusterBridges", () => {
+  // Two disconnected triangles — Louvain gives each its own community.
+  const tri = {
+    forward: { [A]: [B, C], [B]: [C], [D]: [E, F], [E]: [F] },
+  };
+  const files = new Set([A, B, C, D, E, F]);
+
+  it("finds a semantically-close but unlinked cluster pair", () => {
+    const g = buildGraph(adj(tri), files, opts);
+    const bridges = clusterBridges(g, [
+      { source: A, target: D, score: 0.9 },
+      { source: B, target: E, score: 0.8 },
+    ]);
+    expect(bridges).toHaveLength(1);
+    expect(bridges[0].affinity).toBeCloseTo(1.7);
+    expect(bridges[0].pairs).toHaveLength(2);
+    expect(bridges[0].pairs[0].score).toBeCloseTo(0.9); // sorted desc
+    // hubs come one from each triangle
+    const hubs = [bridges[0].aHub, bridges[0].bHub];
+    expect(hubs.some((h) => [A, B, C].includes(h))).toBe(true);
+    expect(hubs.some((h) => [D, E, F].includes(h))).toBe(true);
+  });
+
+  it("ignores cluster pairs that already share a structural link", () => {
+    const g = buildGraph(
+      adj({ forward: { ...tri.forward, [C]: [F] } }),
+      files,
+      opts,
+    );
+    const bridges = clusterBridges(g, [{ source: A, target: D, score: 0.9 }]);
+    expect(bridges).toHaveLength(0);
+  });
+
+  it("ignores same-community pairs and empty input", () => {
+    const g = buildGraph(adj(tri), files, opts);
+    expect(clusterBridges(g, [])).toHaveLength(0);
+    expect(
+      clusterBridges(g, [{ source: A, target: B, score: 0.99 }]),
+    ).toHaveLength(0);
   });
 });

@@ -545,6 +545,11 @@ export class GraphScene {
   private imposterEnabled = false; // dark-theme gate (LOD then controls visibility)
   private planets: PlanetLayer; // near-LOD: nearest nodes → procedural planet spheres
   private planetsEnabled = false; // dark-3D layout + nearFieldPlanets toggle
+  // Research-bridge hints (gap panel): dashed lines between the centroids of
+  // community pairs that are semantically close but structurally unlinked.
+  private bridgeLines: THREE.LineSegments;
+  private bridgePairs: [number, number][] = [];
+  private bridgeTick = 0;
   // Cosmic-scale LOD state (see cosmicLod). onScale fires when the camera
   // crosses a scale band (star → system → galaxy → cluster) for the HUD.
   private lastScale: CosmicScale | null = null;
@@ -986,6 +991,21 @@ export class GraphScene {
     this.scene.add(this.planets.rings);
     this.scene.add(this.planets.moons);
     this.updatePlanetGate();
+    // Research-bridge hints: hidden until the gap panel supplies pairs.
+    this.bridgeLines = new THREE.LineSegments(
+      new THREE.BufferGeometry(),
+      new THREE.LineDashedMaterial({
+        color: 0x8b6cff,
+        dashSize: 6,
+        gapSize: 5,
+        transparent: true,
+        opacity: 0.55,
+        depthWrite: false,
+      }),
+    );
+    this.bridgeLines.frustumCulled = false;
+    this.bridgeLines.visible = false;
+    this.scene.add(this.bridgeLines);
     // Static 2D ForceAtlas2 layouts. "atlas" draws translucent per-community
     // territory hulls (Gephi map). "synapse" is the same flat pipeline tuned
     // to spread the cores apart with nerve-fibre bridges — NO hull fills (a
@@ -2495,6 +2515,32 @@ export class GraphScene {
     return this.ambientOn() && !this.flatLayout;
   }
 
+  /** Gap panel: dashed hint lines between semantically-close but unlinked
+   * community pairs. Pass [] to hide. Community centroids drift with the sim,
+   * so the render loop refreshes the segment ends on a slow tick. */
+  setBridgeHints(pairs: [number, number][]): void {
+    this.bridgePairs = this.flatLayout ? [] : pairs;
+    this.refreshBridgeLines();
+  }
+
+  private refreshBridgeLines(): void {
+    const on = this.bridgePairs.length > 0;
+    this.bridgeLines.visible = on;
+    if (!on) return;
+    const cents = this.galaxyCentresById();
+    const pts: THREE.Vector3[] = [];
+    for (const [a, b] of this.bridgePairs) {
+      const ca = cents.get(a);
+      const cb = cents.get(b);
+      if (!ca || !cb) continue;
+      pts.push(new THREE.Vector3(ca.x, ca.y, ca.z), new THREE.Vector3(cb.x, cb.y, cb.z));
+    }
+    this.bridgeLines.geometry.dispose();
+    this.bridgeLines.geometry = new THREE.BufferGeometry().setFromPoints(pts);
+    this.bridgeLines.computeLineDistances();
+    this.bridgeLines.visible = pts.length > 0;
+  }
+
   // Near-field planets show on DARK 3D layouts only: lit spheres assume a dark
   // void (wrong on the white/paper skin), and 3D bodies make no sense in the
   // top-down 2D atlas/synapse map. Also gated by the user toggle and the
@@ -2768,6 +2814,10 @@ export class GraphScene {
           this.ambientOn(),
         );
       }
+      // Bridge hints track drifting centroids on a slow cadence.
+      if (this.bridgeLines.visible && (this.bridgeTick = (this.bridgeTick + 1) % 30) === 0) {
+        this.refreshBridgeLines();
+      }
       // Grid backdrop parallax: drift the fullscreen dot grid with the camera's
       // look direction so it reads as depth behind the graph, not a flat UI
       // overlay pinned to the window.
@@ -2908,6 +2958,9 @@ export class GraphScene {
     this.scene.remove(this.planets.sphere);
     this.scene.remove(this.planets.rings);
     this.scene.remove(this.planets.moons);
+    this.bridgeLines.geometry.dispose();
+    (this.bridgeLines.material as THREE.Material).dispose();
+    this.scene.remove(this.bridgeLines);
     this.hulls.dispose();
     this.scene.remove(this.hulls.mesh);
     this.bundles.dispose();
