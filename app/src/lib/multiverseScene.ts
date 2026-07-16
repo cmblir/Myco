@@ -26,6 +26,8 @@ export interface SceneUniverse {
   slug: string;
   root: string;
   adjacency: Adjacency;
+  /** Display title for the bubble label (optional; falls back to the slug). */
+  title?: string;
 }
 
 export interface AssembledMultiverse {

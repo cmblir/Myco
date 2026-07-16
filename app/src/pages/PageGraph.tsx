@@ -154,7 +154,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       mvOrder
         .map((slug) => mvUniverses[slug])
         .filter((u) => u && u.adjacency)
-        .map((u) => ({ slug: u.info.slug, root: u.info.root, adjacency: u.adjacency! })),
+        .map((u) => ({
+          slug: u.info.slug,
+          root: u.info.root,
+          adjacency: u.adjacency!,
+          title: u.info.title,
+        })),
     [mvOrder, mvUniverses],
   );
   // Fly-into-universe: switch the active vault to that project and drop back to

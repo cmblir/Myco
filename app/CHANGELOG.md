@@ -57,8 +57,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   drawer (Display › Multiverse) gains a toggle: turn it on and, instead of this
   one vault, every registered project appears as its own **glowing universe
   bubble** floating in one shared cosmos — a translucent fresnel sphere with its
-  star cloud visible inside, tinted by the project's identity hue and placed far
-  apart so the field reads as many distinct orbs. Click a bubble and the camera
+  star cloud visible inside, each a distinct rank-spread colour with the
+  project's name floating above it, placed far apart so the field reads as many
+  separate orbs. Click a bubble and the camera
   **flies into it**, arriving among that project's stars right as it becomes the
   active vault (registry pointer + confinement) and the view settles into its
   normal graph. Backed by a dedicated `multiverseStore` (lazy, parallel

@@ -92,8 +92,10 @@ export default function MultiverseScene({
       onContextRestored: noop,
     });
     sceneRef.current = scene;
-    // Wrap each universe in its glowing bubble sphere (the multiverse form).
-    bubbles = new UniverseBubbleLayer(graph, graph.nodes());
+    // Wrap each universe in its glowing bubble sphere (the multiverse form),
+    // labelled with the project title.
+    const titles = new Map(universes.map((u) => [u.slug, u.title ?? u.slug]));
+    bubbles = new UniverseBubbleLayer(graph, graph.nodes(), { titles });
     scene.addOverlay(bubbles.group);
     scene.start();
     // Static layout: positions are final, so sync them into the buffers and
