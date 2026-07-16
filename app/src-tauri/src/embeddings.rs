@@ -1,9 +1,13 @@
 //! Text embedding helpers for the semantic layer (Feature 1).
 //!
 //! Pure, dependency-light building blocks: page chunking, vector math, and an
-//! Ollama provider embed call. The bundled-SEED (llama.cpp) local embed path and
-//! the OpenAI/Google provider paths land in a follow-up increment; this module is
-//! written so they slot into `embed_texts` without touching callers.
+//! Ollama provider embed call. The bundled-model embed path lives with the model
+//! itself (`local_llm::embed`); `commands::embed_texts` dispatches between the
+//! two. OpenAI/Google provider paths would slot in there without touching
+//! callers.
+//!
+//! Every path here returns L2-normalized vectors, and the index stores them that
+//! way — which is what lets `dot` stand in for `cosine`.
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};

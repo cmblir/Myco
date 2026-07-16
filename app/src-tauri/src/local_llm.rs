@@ -13,9 +13,9 @@
 //! instruct tuning actually engages — feeding raw "User:/Assistant:" text made
 //! the base LM continue the transcript with fake turns and thinking-style
 //! artifacts. Tokenized prompts are truncated to fit the context window
-//! (keeping the tail, where the question lives) and the batch is sized to the
-//! prompt — a fixed 512 batch overflowed ("Insufficient Space of 512") the
-//! moment vault context was inlined.
+//! (keeping the tail, where the question lives) and prefilled in fixed-size
+//! chunks — pushing a whole prompt into one batch overflowed it ("Insufficient
+//! Space of 512") the moment vault context was inlined.
 //!
 //! Classification uses greedy decoding + a short token cap + post-validation
 //! against the label set, NOT a GBNF grammar: the grammar sampler crashes in the
@@ -100,7 +100,7 @@ impl LocalLlm {
 
     /// Core decode loop over an already-formatted prompt. `sampled` picks the
     /// generation sampler: repetition penalty + low temperature for free-form
-    /// text (pure greedy sends a 0.5B model into degenerate sentence loops —
+    /// text (pure greedy sends a model this small into degenerate sentence loops —
     /// the same line repeated until the token cap); classification stays pure
     /// greedy (single-word output, determinism preferred).
     fn run_prompt(
@@ -133,10 +133,20 @@ impl LocalLlm {
             return Err("empty prompt".into());
         }
 
-        // Chunked prefill: the context's n_batch is 512 (llama-cpp-2 exposes no
-        // setter), so a long prompt must be decoded in ≤512-token chunks —
-        // one oversized decode trips GGML_ASSERT(n_tokens_all <= cparams.n_batch),
-        // and a fixed one-shot batch was the "Insufficient Space of 512" crash.
+        // Chunked prefill: a long prompt is decoded PREFILL_CHUNK tokens at a
+        // time. The binding limit is the batch we allocate immediately below —
+        // LlamaBatch::add rejects the token past `allocated`, which is what the
+        // "Insufficient Space of 512" failure was when this pushed a whole
+        // prompt into one fixed-size batch. So the chunk size and the batch
+        // allocation must stay equal; they are both PREFILL_CHUNK for that
+        // reason.
+        //
+        // llama.cpp's own GGML_ASSERT(n_tokens_all <= cparams.n_batch) sits
+        // above this: n_batch defaults to 2048 (n_ubatch is the one that
+        // defaults to 512), so a 512-token chunk clears it with room to spare.
+        // Raising PREFILL_CHUNK is therefore possible — llama-cpp-2 does expose
+        // with_n_batch/with_n_ubatch — but no measurement says it is worth it,
+        // and prefill on this path has never been profiled. Bench before tuning.
         const PREFILL_CHUNK: usize = 512;
         let mut batch = LlamaBatch::new(PREFILL_CHUNK, 1);
         let total = tokens.len();
@@ -314,7 +324,7 @@ impl LocalLlm {
     }
 
     /// Free-form, language-matched generation. `prompt` is the user turn (the
-    /// caller may prepend inlined vault context); facts are unreliable at 0.5B.
+    /// caller may prepend inlined vault context); facts are unreliable at 1B.
     pub fn generate(&self, prompt: &str, max_tokens: i32) -> Result<String, String> {
         self.run(
             "You are Memex's built-in assistant. Answer briefly, in the same language as the question.",

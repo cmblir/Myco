@@ -101,7 +101,7 @@ pub async fn local_classify(
 }
 
 /// Light free-form generation with the embedded model. The caller inlines any
-/// vault context; factual accuracy is limited at 0.5B (paid tiers for ingest).
+/// vault context; factual accuracy is limited at 1B (paid tiers for ingest).
 #[tauri::command]
 pub async fn local_query(
     app: tauri::AppHandle,
