@@ -2,7 +2,7 @@
 // (settingsStore + keychain IPC); Account/Language/Appearance act on the
 // live UI store; About is static metadata.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Icon, ProviderGlyph } from "../lib/icons";
 import type { IconName } from "../lib/icons";
@@ -35,6 +35,17 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
     "account" | "model" | "providers" | "mcp" | "lang" | "appearance" | "about"
   >("model");
 
+  // Below 768px the tab rail is a horizontally scrolling row. The default tab
+  // is "model", which is not the first one, so without this the rail opens
+  // scrolled to "Account" while the Model panel is on screen — the active tab
+  // invisible. `nearest` so an already-visible tab does not move the page.
+  const railRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    railRef.current
+      ?.querySelector(".qbtn.active")
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }, [tab]);
+
   const tabs: { id: typeof tab; label: string; icon: IconName }[] = [
     { id: "account", label: t.s_account, icon: "shield" },
     { id: "model", label: t.s_model, icon: "sparkles" },
@@ -51,15 +62,8 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
         <div className="page-eyebrow">{t.nav_settings}</div>
         <h1 className="page-title">{t.s_title}</h1>
       </header>
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "200px 1fr",
-          gap: 32,
-          marginTop: 16,
-        }}
-      >
-        <nav className="col" style={{ gap: 1 }}>
+      <div className="settings-grid">
+        <nav className="col" style={{ gap: 1 }} ref={railRef}>
           {tabs.map((x) => (
             <button
               key={x.id}
@@ -228,12 +232,25 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
 // Semantic layer (Feature 1): index health + a manual reindex. Embeddings run
 // offline via the bundled Gemma model. Powers semantic search, related notes,
 // and graph similarity edges.
+//
+// Reindex is the slowest thing the app does — measured at ~467 ms per embedded
+// chunk, so minutes on a real vault — and the first run also pays a one-time
+// model load (873 ms warm, 11.7 s cold). Both are reported rather than left as
+// a frozen button: the backend emits `local-model-load` and `reindex-progress`,
+// and the five states below are idle / loading / empty / error / success.
+type ReindexPhase =
+  | { kind: "idle" }
+  | { kind: "loading-model" }
+  | { kind: "indexing"; done: number; total: number; page: string }
+  | { kind: "error"; message: string }
+  | { kind: "done"; pages: number };
+
 function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
   const [status, setStatus] = useState<{ indexed_pages: number; model: string } | null>(
     null,
   );
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
+  const [phase, setPhase] = useState<ReindexPhase>({ kind: "idle" });
+  const busy = phase.kind === "loading-model" || phase.kind === "indexing";
 
   const refresh = (): void => {
     ipc.embeddingsStatus().then(setStatus).catch(() => setStatus(null));
@@ -241,16 +258,48 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
   useEffect(refresh, []);
 
   const reindex = async (): Promise<void> => {
-    setBusy(true);
-    setErr(null);
+    // The model load is announced first and only on the very first local call,
+    // so start there and let the first progress event move us on.
+    setPhase({ kind: "loading-model" });
+    const { listen } = await import("@tauri-apps/api/event");
+    const offs: (() => void)[] = [];
     try {
-      await ipc.reindexEmbeddings("builtin-local", BUILTIN_MODEL);
+      offs.push(
+        await listen<{ loading: boolean; ok: boolean }>("local-model-load", (e) => {
+          if (e.payload.loading) setPhase({ kind: "loading-model" });
+        }),
+      );
+      offs.push(
+        await listen<{ done: number; total: number; page: string }>(
+          "reindex-progress",
+          (e) => {
+            const { done, total, page } = e.payload;
+            setPhase({ kind: "indexing", done, total, page });
+          },
+        ),
+      );
+      const pages = await ipc.reindexEmbeddings("builtin-local", BUILTIN_MODEL);
+      setPhase({ kind: "done", pages });
       refresh();
     } catch (e) {
-      setErr(String(e));
+      setPhase({ kind: "error", message: String(e) });
     } finally {
-      setBusy(false);
+      // Same lifecycle rule as the other listeners: never outlive the run.
+      for (const off of offs) off();
     }
+  };
+
+  const pct =
+    phase.kind === "indexing" && phase.total > 0
+      ? Math.round((phase.done / phase.total) * 100)
+      : 0;
+
+  const label = (): string => {
+    if (phase.kind === "loading-model") return t.s_embeddings_loading_model ?? "Loading model…";
+    if (phase.kind === "indexing") {
+      return `${t.s_embeddings_indexing ?? "Indexing…"} ${phase.done}/${phase.total}`;
+    }
+    return t.s_embeddings_reindex ?? "Reindex now";
   };
 
   return (
@@ -258,18 +307,87 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
       <div className="row" style={{ marginBottom: 8 }}>
         <div style={{ fontWeight: 600 }}>{t.s_embeddings ?? "Semantic search"}</div>
         <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
-          {status ? `${status.indexed_pages} ${t.s_embeddings_indexed ?? "pages indexed"}` : "—"}
+          {status
+            ? status.indexed_pages > 0
+              ? `${status.indexed_pages} ${t.s_embeddings_indexed ?? "pages indexed"}`
+              : (t.s_embeddings_empty ?? "Not indexed yet")
+            : "—"}
         </span>
       </div>
       <p className="muted" style={{ margin: "0 0 12px", fontSize: 13 }}>
         {t.s_embeddings_lede ??
           "Build an on-device embedding index for semantic search, related notes, and graph similarity. Runs offline."}
       </p>
-      <button className="btn" onClick={() => void reindex()} disabled={busy}>
-        {busy ? (t.s_embeddings_indexing ?? "Indexing…") : (t.s_embeddings_reindex ?? "Reindex now")}
+      <button
+        className="btn"
+        onClick={() => void reindex()}
+        disabled={busy}
+        data-testid="reindex-btn"
+        aria-busy={busy}
+      >
+        {label()}
       </button>
-      {err ? (
-        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{err}</div>
+
+      {/* A determinate bar once pages start arriving; the model load has no
+          progress to report, so it stays a text state rather than a fake bar. */}
+      {phase.kind === "indexing" ? (
+        <div style={{ marginTop: 10 }} data-testid="reindex-progress">
+          <div
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={pct}
+            aria-label={t.s_embeddings_indexing ?? "Indexing…"}
+            style={{
+              height: 4,
+              borderRadius: 999,
+              background: "var(--border, #e5e7eb)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                width: `${pct}%`,
+                height: "100%",
+                background: "var(--accent, #2563eb)",
+                transition: "width 150ms linear",
+              }}
+            />
+          </div>
+          <div
+            className="muted"
+            style={{
+              fontSize: 11,
+              marginTop: 4,
+              // A long vault path must not stretch the card or wrap to a
+              // second line that shifts everything below it.
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {phase.page}
+          </div>
+        </div>
+      ) : null}
+
+      {phase.kind === "loading-model" ? (
+        <div className="muted" style={{ fontSize: 12, marginTop: 8 }} data-testid="reindex-loading">
+          {t.s_embeddings_loading_model_hint ??
+            "First run loads the bundled model — this takes a few seconds."}
+        </div>
+      ) : null}
+
+      {phase.kind === "done" ? (
+        <div style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }} data-testid="reindex-done">
+          {(t.s_embeddings_done ?? "Indexed {n} pages").replace("{n}", String(phase.pages))}
+        </div>
+      ) : null}
+
+      {phase.kind === "error" ? (
+        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }} data-testid="reindex-error">
+          {phase.message}
+        </div>
       ) : null}
     </div>
   );

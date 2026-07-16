@@ -18,6 +18,7 @@
     "test:e2e:audio": "node scripts/audio-smoke.mjs",
     "test:e2e:pdf": "node scripts/pdf-smoke.mjs",
     "test:e2e:query": "node scripts/query-smoke.mjs",
+    "test:e2e:reindex": "node scripts/reindex-progress-smoke.mjs",
     "perf": "node scripts/graph-perf.mjs",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html,json}\"",

@@ -15,6 +15,46 @@ interface Node {
   l: string[]; // links (slugs)
 }
 
+// ---- event bus -------------------------------------------------------------
+// Mirrors the shape @tauri-apps/api/event delivers: the handler is called with
+// {event, id, payload}. Commands that emit progress in Rust emit here too, so
+// the browser build exercises the same listener code paths the app does.
+
+type MockEventHandler = (e: { event: string; id: number; payload: unknown }) => void;
+
+const mockListeners = new Map<string, { id: number; handler: MockEventHandler }[]>();
+let mockEventId = 0;
+
+function emitMock(event: string, payload: unknown): void {
+  for (const l of mockListeners.get(event) ?? []) {
+    l.handler({ event, id: l.id, payload });
+  }
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+/// Walk the sample pages the way the real reindex does, with the same events.
+/// Paced (not instant) so the progress UI has states to show — the real command
+/// takes ~467 ms per embedded chunk, i.e. minutes on a real vault, which is the
+/// whole reason it reports progress at all. Kept to ~1s total so tests stay fast.
+async function mockReindex(): Promise<number> {
+  emitMock("local-model-load", { loading: true, ok: false });
+  await sleep(120);
+  emitMock("local-model-load", { loading: false, ok: true });
+  const total = NODES.length;
+  for (let i = 0; i < total; i++) {
+    await sleep(20);
+    emitMock("reindex-progress", {
+      done: i + 1,
+      total,
+      page: `wiki/${NODES[i].s}.md`,
+      // Mirror the content-hash skip: a few pages are already up to date.
+      embedded: i % 7 !== 0,
+    });
+  }
+  return total;
+}
+
 // Same topology as src-tauri/src/sample_vault.rs (kept in sync as demo data).
 const NODES: Node[] = [
   { s: "transformer-architecture", t: "concept", n: "Transformer Architecture", l: ["attention-mechanism", "embeddings", "tokenization", "positional-encoding", "residual-connections", "feedforward-network", "scaling-laws", "source-attention-is-all-you-need"] },
@@ -722,7 +762,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     // Semantic layer (Feature 1) — mock the embedding index with the sample graph:
     // "similarity" stands in as a node's declared links + a couple of siblings.
     case "reindex_embeddings":
-      return Promise.resolve(NODES.length);
+      return mockReindex();
     case "embeddings_status":
       return Promise.resolve({ indexed_pages: NODES.length, model: "builtin-local:seed" });
     case "semantic_search": {
@@ -804,6 +844,28 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "create_folder":
     case "rename_path":
       return Promise.resolve(`${VAULT}/wiki/new.md`);
+    // ---- event bus -------------------------------------------------------
+    // @tauri-apps/api/event's listen()/unlisten() are themselves invokes, so
+    // the mock has to answer them or every listener in the app silently never
+    // fires — and the returned unlisten resolves to nothing, which is where the
+    // stray rejection in a plain-browser run came from.
+    case "plugin:event|listen": {
+      const name = String(args.event ?? "");
+      const handler = args.handler as MockEventHandler | undefined;
+      if (typeof handler !== "function") return Promise.resolve(0);
+      const id = ++mockEventId;
+      const list = mockListeners.get(name) ?? [];
+      list.push({ id, handler });
+      mockListeners.set(name, list);
+      return Promise.resolve(id);
+    }
+    case "plugin:event|unlisten": {
+      const name = String(args.event ?? "");
+      const id = Number(args.eventId);
+      const list = mockListeners.get(name);
+      if (list) mockListeners.set(name, list.filter((l) => l.id !== id));
+      return Promise.resolve(undefined);
+    }
     default:
       // Unknown command (e.g. plugin event channels) — resolve benign empty.
       return Promise.resolve(undefined);
@@ -811,13 +873,29 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
 }
 
 export function installTauriMock(): void {
-  const w = window as unknown as { __TAURI_INTERNALS__?: unknown };
+  const w = window as unknown as {
+    __TAURI_INTERNALS__?: unknown;
+    __TAURI_EVENT_PLUGIN_INTERNALS__?: unknown;
+  };
   w.__TAURI_INTERNALS__ = {
     invoke: (cmd: string, args?: Record<string, unknown>) => mockInvoke(cmd, args ?? {}),
+    // The real Tauri registers the callback and hands back an id; the mock
+    // passes the function through, and `plugin:event|listen` above stores it.
     transformCallback: (cb: unknown) => cb,
     metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
     plugins: {},
   };
-  // Make any leftover @tauri-apps event/webview calls no-op instead of throwing.
+  // @tauri-apps/api's _unlisten() reaches for this global directly rather than
+  // going through invoke(), so leaving it undefined made every unlisten throw
+  // "Cannot read properties of undefined (reading 'unregisterListener')" — an
+  // unhandled rejection from any component that cleans up a listener, which is
+  // all of them. That noise was being read as an app bug; it is only ever the
+  // mock being incomplete.
+  w.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
+    unregisterListener: (event: string, eventId: number) => {
+      const list = mockListeners.get(event);
+      if (list) mockListeners.set(event, list.filter((l) => l.id !== eventId));
+    },
+  };
   console.info("[devMock] Tauri IPC mock installed with", NODES.length, "sample nodes");
 }

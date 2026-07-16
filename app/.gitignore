@@ -29,3 +29,8 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Playwright self-verification output (screenshots + reports). The smoke
+# scripts under scripts/ are committed; what they produce is not.
+test-results/
+playwright-report/

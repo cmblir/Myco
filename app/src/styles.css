@@ -642,6 +642,16 @@ select {
   flex-direction: column;
   gap: 12px;
 }
+/* Settings: a fixed tab rail beside the panel. minmax(0, 1fr) rather than 1fr
+   for the same reason as .app — the panel's min-content (long model names,
+   provider rows) would otherwise force the grid wider than the viewport and
+   push a page-wide horizontal scrollbar. Narrow layout in the 768px block. */
+.settings-grid {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  gap: 32px;
+  margin-top: 16px;
+}
 .grow {
   flex: 1;
 }
@@ -2954,6 +2964,23 @@ hr {
   .app,
   .app.sidebar-collapsed {
     grid-template-columns: minmax(0, 1fr);
+  }
+  /* Settings: drop the tab rail beside the panel — 200px + a 32px gap leaves
+     too little of a 375px screen for the panel. The rail becomes a scrolling
+     row of tabs above it rather than seven full-width buttons pushing the
+     content off the first screen. */
+  .settings-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .settings-grid > nav {
+    flex-direction: row;
+    overflow-x: auto;
+    gap: 4px;
+    padding-bottom: 4px;
+  }
+  .settings-grid > nav .qbtn {
+    flex: 0 0 auto;
   }
   main {
     min-width: 0;

@@ -65,8 +65,23 @@ fn local_model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Err("bundled model not found (models/gemma-3-1b-it-q4_k_m.gguf)".into())
 }
 
+/// Emitted around the one-time load of the bundled weights, so the UI can say
+/// what the app is doing instead of freezing. `loading` is true when the load
+/// starts and false when it finishes, with `ok` reporting whether it worked.
+#[derive(Clone, serde::Serialize)]
+pub struct ModelLoadEvent {
+    pub loading: bool,
+    pub ok: bool,
+}
+
 /// Run `f` against the lazily-loaded local model on a blocking thread —
 /// inference takes seconds and must not stall the async runtime.
+///
+/// The first call through here pays for the 769 MB of weights: measured at 873 ms
+/// against a warm page cache and 11.7 s genuinely cold (`cargo run --example
+/// bench_local_llm --release`). That is far too long to leave unexplained, so it
+/// is announced on `local-model-load` — every later call finds the model already
+/// in the cell and emits nothing.
 async fn with_local_llm<T, F>(
     app: tauri::AppHandle,
     state: tauri::State<'_, LocalLlmState>,
@@ -76,12 +91,21 @@ where
     T: Send + 'static,
     F: FnOnce(&LocalLlm) -> Result<T, String> + Send + 'static,
 {
+    use tauri::Emitter;
     let cell = state.0.clone();
     let path = local_model_path(&app)?;
     tauri::async_runtime::spawn_blocking(move || {
         let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
-            *guard = Some(LocalLlm::load(&path)?);
+            let _ = app.emit("local-model-load", ModelLoadEvent { loading: true, ok: false });
+            let loaded = LocalLlm::load(&path);
+            // Announce the end on the failure path too — a UI that only hears
+            // "loading" would show a spinner forever.
+            let _ = app.emit(
+                "local-model-load",
+                ModelLoadEvent { loading: false, ok: loaded.is_ok() },
+            );
+            *guard = Some(loaded?);
         }
         f(guard.as_ref().expect("just loaded"))
     })
@@ -966,8 +990,25 @@ fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String, String)> {
     out
 }
 
+/// Per-page progress for a running reindex. `done` counts pages *considered*
+/// (embedded or skipped) out of `total`, so the bar tracks the walk rather than
+/// stalling through a run of unchanged pages.
+#[derive(Clone, serde::Serialize)]
+pub struct ReindexProgress {
+    pub done: usize,
+    pub total: usize,
+    pub page: String,
+    /// False when the page was skipped by the content-hash check — the UI can
+    /// say "checking" rather than implying it re-embedded everything.
+    pub embedded: bool,
+}
+
 /// (Re)build the embedding index for the open vault. Skips pages whose chunk set
 /// is unchanged (content hashes match). Returns the number of indexed pages.
+///
+/// Emits `reindex-progress` per page. This is the slowest thing the app does —
+/// embedding one chunk measures ~467 ms, so a 300-chunk vault is over two
+/// minutes — and it used to run behind nothing but a disabled button.
 #[tauri::command]
 pub async fn reindex_embeddings(
     app: tauri::AppHandle,
@@ -1004,15 +1045,26 @@ pub async fn reindex_embeddings(
     let mut checkpoints = 0usize;
     let mut dirty = false;
     let mut last_checkpoint = std::time::Instant::now();
-    for (rel, stem, content) in &pages {
+    let total = pages.len();
+    for (i, (rel, stem, content)) in pages.iter().enumerate() {
         present.insert(rel.clone());
         let chunks = embeddings::chunk_page(content);
-        if chunks.is_empty() {
-            continue;
-        }
         let hashes: Vec<u64> = chunks.iter().map(|c| embeddings::content_hash(c)).collect();
-        if existing.get(rel) == Some(&hashes) {
-            continue; // unchanged — skip re-embedding
+        let unchanged = chunks.is_empty() || existing.get(rel) == Some(&hashes);
+        {
+            use tauri::Emitter;
+            let _ = app.emit(
+                "reindex-progress",
+                ReindexProgress {
+                    done: i + 1,
+                    total,
+                    page: rel.clone(),
+                    embedded: !unchanged,
+                },
+            );
+        }
+        if unchanged {
+            continue; // nothing to embed, or the content hashes still match
         }
         let t_embed = std::time::Instant::now();
         let vecs = embed_texts(app.clone(), llm.clone(), &provider, &model, chunks).await?;

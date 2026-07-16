@@ -6,8 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Reindexing no longer crashes the app on a long unbroken paragraph.** A page
+  with no headings and no blank lines came back from chunking as a single chunk
+  of the whole page — the size limit was only ever applied between paragraphs, so
+  text without any was never split (measured: 6,419 characters from an 1,800
+  character limit on real Korean prose). Embedding that chunk then killed the
+  process outright, because mean pooling needs the whole sequence in one batch
+  and anything past 512 tokens was being decoded in pieces. Chunks are now hard
+  split at the limit (preferring word breaks, never splitting a character), and
+  the embed batch is sized to its text.
+
 ### Added
 
+- **Reindex tells you what it is doing.** Building the embedding index is the
+  slowest thing Memex does — roughly half a second per chunk, so minutes on a
+  real vault — and it used to run behind nothing but a greyed-out button. It now
+  shows a live count and progress bar with the page being indexed, and the first
+  run says **"Loading model…"** while the bundled model loads (up to ~12 seconds
+  on a cold start) instead of appearing frozen. Settings also fits a phone
+  properly: its tab rail becomes a scrolling row below 768px rather than pushing
+  the page sideways.
 - **MYCO grows into the app (Phase 1).** A quiet **"?" help widget** sits in
   the bottom-right corner — it never animates, never opens itself, never
   interrupts (pull, not push): clicking it opens a small panel where MYCO

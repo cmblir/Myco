@@ -313,6 +313,10 @@ export interface Strings {
   s_embeddings_indexed?: string;
   s_embeddings_reindex?: string;
   s_embeddings_indexing?: string;
+  s_embeddings_empty?: string;
+  s_embeddings_loading_model?: string;
+  s_embeddings_loading_model_hint?: string;
+  s_embeddings_done?: string;
   s_providers: string;
   s_mcp: string;
   s_appearance: string;
@@ -925,6 +929,10 @@ export const STRINGS: Record<Lang, Strings> = {
     s_embeddings_indexed: "pages indexed",
     s_embeddings_reindex: "Reindex now",
     s_embeddings_indexing: "Indexing…",
+    s_embeddings_empty: "Not indexed yet",
+    s_embeddings_loading_model: "Loading model…",
+    s_embeddings_loading_model_hint: "First run loads the bundled model — this takes a few seconds.",
+    s_embeddings_done: "Indexed {n} pages",
     s_providers: "Connections",
     s_appearance: "Appearance",
     s_lang: "Language",
@@ -1545,6 +1553,10 @@ export const STRINGS: Record<Lang, Strings> = {
     s_embeddings_indexed: "페이지 인덱싱됨",
     s_embeddings_reindex: "지금 재인덱스",
     s_embeddings_indexing: "인덱싱 중…",
+    s_embeddings_empty: "아직 인덱스 없음",
+    s_embeddings_loading_model: "모델 로딩 중…",
+    s_embeddings_loading_model_hint: "첫 실행에는 내장 모델을 불러옵니다 — 몇 초 걸립니다.",
+    s_embeddings_done: "{n}개 페이지 인덱싱 완료",
     s_providers: "연결",
     s_appearance: "테마",
     s_lang: "언어",
@@ -2063,6 +2075,10 @@ export const STRINGS: Record<Lang, Strings> = {
     s_embeddings_indexed: "ページをインデックス済み",
     s_embeddings_reindex: "今すぐ再インデックス",
     s_embeddings_indexing: "インデックス中…",
+    s_embeddings_empty: "未インデックス",
+    s_embeddings_loading_model: "モデル読み込み中…",
+    s_embeddings_loading_model_hint: "初回は内蔵モデルを読み込みます — 数秒かかります。",
+    s_embeddings_done: "{n}ページをインデックスしました",
     s_providers: "接続",
     s_appearance: "外観",
     s_lang: "言語",
