@@ -9,6 +9,7 @@ import { useVaultStore } from "../stores/vaultStore";
 import { useReflectStore } from "../stores/reflectStore";
 import { ipc } from "../lib/ipc";
 import type { FileNode, GitCommit } from "../lib/ipc";
+import LinkSuggestions from "../components/LinkSuggestions";
 
 export default function PageOverview({ t }: { t: Strings }): JSX.Element {
   const setRoute = useUIStore((s) => s.setRoute);
@@ -125,6 +126,8 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
           </div>
         </>
       ) : null}
+
+      <LinkSuggestions t={t} />
 
       <div className="section-head">
         <div className="section-title">{t.ov_recent}</div>

@@ -16,6 +16,10 @@ export interface Strings {
   nav_graph: string;
   nav_multiverse: string;
   nav_views?: string;
+  ls_title?: string;
+  ls_hint?: string;
+  ls_accept?: string;
+  ls_dismiss?: string;
   vw_title?: string;
   vw_lede?: string;
   vw_search?: string;
@@ -605,6 +609,10 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_graph: "Graph",
     nav_multiverse: "Multiverse",
     nav_views: "Views",
+    ls_title: "Suggested links",
+    ls_hint: "Semantically close notes that aren't linked yet. Accept to add a [[wikilink]] under \u201c## Related\u201d.",
+    ls_accept: "Link them",
+    ls_dismiss: "Dismiss",
     vw_title: "Query views",
     vw_lede: "Filter the wiki by its frontmatter — type, confidence, status, tags, sources — and save the lenses you keep coming back to.",
     vw_search: "Filter by name…",
@@ -1207,6 +1215,10 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_graph: "그래프",
     nav_multiverse: "멀티버스",
     nav_views: "뷰",
+    ls_title: "제안된 연결",
+    ls_hint: "의미상 가깝지만 아직 연결되지 않은 노트들입니다. 수락하면 \u201c## Related\u201d 아래에 [[위키링크]]가 추가됩니다.",
+    ls_accept: "연결하기",
+    ls_dismiss: "무시",
     vw_title: "쿼리 뷰",
     vw_lede: "프론트매터(종류·신뢰도·상태·태그·출처 수)로 위키를 필터링하고, 자주 쓰는 렌즈를 저장하세요.",
     vw_search: "이름으로 필터…",

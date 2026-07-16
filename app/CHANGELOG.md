@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Suggested links — an accept/reject queue for the embedding pairs.** The
+  Overview page now surfaces the semantically-closest note pairs that are NOT
+  yet wikilinked. Accepting one appends the `[[wikilink]]` under the source
+  note's `## Related` section (read → append → write, frontmatter preserved)
+  and refreshes the link graph; dismissing remembers the pair. The AI only
+  proposes — nothing is ever inserted without a click.
 - **Query views — a Dataview-lite over the wiki's frontmatter.** A new
   **Views** page filters every page by the structured metadata the scanner
   already extracts — type, confidence, status, tags, source count, orphans,
