@@ -146,6 +146,12 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
             onClick={() => setRoute("study")}
             badge={dueTotal > 0 ? String(dueTotal) : undefined}
           />
+          <NavItem
+            label={t.nav_multiverse}
+            icon="globe"
+            active={route === "multiverse"}
+            onClick={() => setRoute("multiverse")}
+          />
         </div>
 
         <div className="nav-group">

@@ -17,6 +17,7 @@ export type RouteId =
   | "ingest"
   | "query"
   | "graph"
+  | "multiverse"
   | "history"
   | "provenance"
   | "tags"

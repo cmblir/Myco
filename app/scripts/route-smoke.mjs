@@ -56,6 +56,24 @@ for (let i = 0; i < WORKSPACE.length; i++) {
   );
 }
 
+// Multiverse is the last item in the workspace nav-group (first group).
+{
+  const before = errors.length;
+  await page
+    .locator(".side-nav .nav-group")
+    .first()
+    .locator(".nav-item")
+    .last()
+    .click();
+  await page
+    .waitForFunction(() => !!document.querySelector(".mv-grid, .mv-state"), {
+      timeout: 20_000,
+    })
+    .catch(() => {});
+  await page.waitForTimeout(800);
+  check("multiverse", errors.length === before, errors.slice(before).join(" | "));
+}
+
 // Settings lives in the tools nav-group (last).
 {
   const before = errors.length;

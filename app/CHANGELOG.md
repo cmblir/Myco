@@ -8,6 +8,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Multiverse overview (Phase 1).** A new **Multiverse** workspace view lists
+  every registered project as its own universe — a card tinted with the
+  project's stable identity hue, showing its note count and active state.
+  Entering a universe switches the active vault (registry pointer + confinement)
+  and opens its graph. Backed by a dedicated `multiverseStore` (lazy, parallel
+  per-universe loading, kept separate from the single-vault store) and a pure,
+  unit-tested data+layout core (`buildMultiverseGraph` merges each project's
+  link graph with per-universe node tagging and namespaced ghost links;
+  `universeAnchorsBySize` places each universe's subcloud far apart by reusing
+  the galaxy packer at a larger scale). The 3D fly-into-universe scene builds on
+  this next. Verified across the three standard viewports.
 - **Multiverse groundwork (Phase 0).** The Rust backend can now enumerate the
   multi-project registry (`projects.json` discovered above the open vault) and
   build read-only link graphs for any registered project — not just the open

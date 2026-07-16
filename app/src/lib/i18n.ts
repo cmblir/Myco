@@ -14,12 +14,23 @@ export interface Strings {
   nav_ingest: string;
   nav_query: string;
   nav_graph: string;
+  nav_multiverse: string;
   nav_history: string;
   nav_provenance: string;
   nav_tags: string;
   nav_study: string;
   nav_schedules: string;
   nav_settings: string;
+  // Multiverse overview (Phase 1)
+  mv_title: string;
+  mv_lede: string;
+  mv_loading: string;
+  mv_empty: string;
+  mv_empty_hint: string;
+  mv_notes: string;
+  mv_active: string;
+  mv_enter: string;
+  mv_independent: string;
   folder__root: string;
   folder_sources: string;
   folder_entities: string;
@@ -565,12 +576,22 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_ingest: "Ingest",
     nav_query: "Ask",
     nav_graph: "Graph",
+    nav_multiverse: "Multiverse",
     nav_history: "History",
     nav_provenance: "Provenance",
     nav_tags: "Tags",
     nav_study: "Study",
     nav_schedules: "Schedules",
     nav_settings: "Settings",
+    mv_title: "Multiverse",
+    mv_lede: "Every project as its own universe. Enter one to make it the active vault.",
+    mv_loading: "Charting universes…",
+    mv_empty: "No other universes yet",
+    mv_empty_hint: "This vault has no project registry above it, so there is nothing else to travel to.",
+    mv_notes: "notes",
+    mv_active: "Active",
+    mv_enter: "Enter",
+    mv_independent: "Standalone vault",
     folder__root: "Root",
     folder_sources: "Sources",
     folder_entities: "Entities",
@@ -1129,12 +1150,22 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_ingest: "가져오기",
     nav_query: "질문",
     nav_graph: "그래프",
+    nav_multiverse: "멀티버스",
     nav_history: "히스토리",
     nav_provenance: "출처",
     nav_tags: "태그",
     nav_study: "학습",
     nav_schedules: "스케줄",
     nav_settings: "설정",
+    mv_title: "멀티버스",
+    mv_lede: "각 프로젝트가 하나의 우주입니다. 진입하면 그 프로젝트가 활성 볼트가 됩니다.",
+    mv_loading: "우주를 그리는 중…",
+    mv_empty: "아직 다른 우주가 없습니다",
+    mv_empty_hint: "이 볼트 상위에 프로젝트 레지스트리가 없어 이동할 다른 우주가 없습니다.",
+    mv_notes: "노트",
+    mv_active: "활성",
+    mv_enter: "진입",
+    mv_independent: "독립 볼트",
     folder__root: "루트",
     folder_sources: "소스",
     folder_entities: "엔티티",
@@ -1687,12 +1718,22 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_ingest: "取り込み",
     nav_query: "質問",
     nav_graph: "グラフ",
+    nav_multiverse: "マルチバース",
     nav_history: "履歴",
     nav_provenance: "出典",
     nav_tags: "タグ",
     nav_study: "学習",
     nav_schedules: "スケジュール",
     nav_settings: "設定",
+    mv_title: "マルチバース",
+    mv_lede: "各プロジェクトがひとつの宇宙。入るとそのプロジェクトがアクティブなボルトになります。",
+    mv_loading: "宇宙を描いています…",
+    mv_empty: "まだ他の宇宙はありません",
+    mv_empty_hint: "このボルトの上位にプロジェクトレジストリがないため、移動先の宇宙がありません。",
+    mv_notes: "ノート",
+    mv_active: "アクティブ",
+    mv_enter: "入る",
+    mv_independent: "独立ボルト",
     folder__root: "ルート",
     folder_sources: "ソース",
     folder_entities: "エンティティ",

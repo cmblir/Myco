@@ -2879,6 +2879,149 @@ hr {
   gap: 12px;
 }
 
+/* --- Multiverse overview --- */
+.mv-grid {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 16px;
+}
+.mv-card {
+  --mv-hue: var(--accent);
+  position: relative;
+  display: flex;
+  gap: 0;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease;
+}
+.mv-card:hover {
+  border-color: var(--line-strong);
+  box-shadow: var(--shadow-2);
+  transform: translateY(-2px);
+}
+.mv-card:focus-within {
+  border-color: var(--mv-hue);
+}
+.mv-card-active {
+  border-color: var(--mv-hue);
+  box-shadow: 0 0 0 1px var(--mv-hue) inset;
+}
+.mv-card-bar {
+  width: 6px;
+  flex: 0 0 6px;
+  background: var(--mv-hue);
+}
+.mv-card-body {
+  flex: 1;
+  min-width: 0;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mv-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.mv-dot {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 10px;
+  border-radius: 50%;
+  background: var(--mv-hue);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--mv-hue) 70%, transparent);
+}
+.mv-card-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mv-badge {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--mv-hue);
+  background: color-mix(in srgb, var(--mv-hue) 16%, transparent);
+}
+.mv-card-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.mv-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.mv-tag {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+}
+.mv-enter {
+  align-self: flex-start;
+  margin-top: 2px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.mv-enter:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.mv-state {
+  margin: 48px auto 0;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  text-align: center;
+  color: var(--ink-3);
+}
+.mv-state svg {
+  width: 28px;
+  height: 28px;
+  opacity: 0.7;
+}
+.mv-state-error {
+  color: var(--c-technique, #dc2626);
+}
+@media (prefers-reduced-motion: reduce) {
+  .mv-card {
+    transition: none;
+  }
+  .mv-card:hover {
+    transform: none;
+  }
+}
+
 /* Ingest drop/paste layout: two columns on desktop, stacked on small screens.
    Moved off an inline style so the breakpoint below can override it. */
 .ingest-grid {
