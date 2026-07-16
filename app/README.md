@@ -164,6 +164,13 @@ to stderr:
 Probed commands: `semantic_search`, `related_pages`, `semantic_edges`,
 `reindex_embeddings`.
 
+For the embedded model itself, `cargo run --example bench_local_llm --release`
+measures load, prefill, generation and embedding against the real GGUF. It is an
+example rather than a bench because `LlamaBackend::init()` refuses a second call
+per process (so a load cannot be iterated), because Metal timings want
+median/p95 over warm state with the cold run discarded, and because it needs the
+769 MB weights that `cargo bench` must not require.
+
 ## Build
 
 ```bash
