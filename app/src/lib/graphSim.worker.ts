@@ -217,7 +217,11 @@ function build(
     anchors.clear();
     normals.clear();
     sizeBoost.clear();
-    if (!cur.folderGalaxies) return;
+    // Cluster separation (anchor packing) runs REGARDLESS of folderGalaxies —
+    // communities always spread into distinct clumps so the graph never
+    // collapses into one diffuse mixed-colour ball. folderGalaxies only toggles
+    // the disc FLATTENING below (on = flat tilted galaxy discs; off = 3D
+    // spherical star clusters). Both read as clustered.
     // Count nodes per cluster and per galaxy; remember each cluster's galaxy.
     const clusterCount = new Map<number, number>();
     for (const n of nodes) {
@@ -267,7 +271,8 @@ function build(
         n.vy = (n.vy ?? 0) + (a.y - n.y) * k * m;
         n.vz = (n.vz ?? 0) + (a.z - n.z) * k * m;
         // Disc flattening: cancel the offset along the galaxy's spin axis.
-        const nm = normals.get(n.community);
+        // Only in folder-galaxy mode — off keeps clusters as 3D spheres.
+        const nm = cur.folderGalaxies ? normals.get(n.community) : undefined;
         if (nm) {
           const dot =
             (n.x - a.x) * nm.x + (n.y - a.y) * nm.y + (n.z - a.z) * nm.z;
@@ -495,7 +500,7 @@ function build(
   // Seed each anchored node NEAR its cluster mini-anchor (once, at build) so the
   // graph appears already laid out instead of migrating from the origin — that
   // long migration is what stretches star clusters into comet tails mid-settle.
-  if (cur.folderGalaxies && anchors.size > 0) {
+  if (anchors.size > 0) {
     for (const n of nodes) {
       const a = anchors.get(n.community);
       if (!a) continue;
