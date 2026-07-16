@@ -161,7 +161,7 @@ bash mcp-server/install.sh    # MCP server for Claude Desktop/Code
 
 ## The desktop app
 
-Routes in the left sidebar — Overview, Graph, History, Provenance, Tags, **Study**, **Schedules**, Settings, plus Ingest and Ask. Cmd/Ctrl-K opens the command palette (with semantic hits), Cmd/Ctrl-B toggles the sidebar. On first launch a 3-step onboarding wizard walks you through opening a vault → adding a source → asking a question; the whole app is responsive down to 320px (the sidebar goes off-canvas on narrow screens). You'll also meet **MYCO**, the Memex mushroom mascot — a transparent-video sprite who idles on the About page and keeps you company while the graph loads (respects `prefers-reduced-motion`, degrades to a still frame).
+Routes in the left sidebar — Overview, Graph, History, Provenance, Tags, **Study**, **Schedules**, Settings, plus Ingest and Ask. Cmd/Ctrl-K opens the command palette (with semantic hits), Cmd/Ctrl-B toggles the sidebar. On first launch a 3-step onboarding wizard walks you through opening a vault → adding a source → asking a question; the whole app is responsive down to 320px (the sidebar goes off-canvas on narrow screens). A companion **web clipper** (browser extension + bookmarklet in `clipper/`) sends any page or selection into `_inbox/` through a `memx://` deep link. You'll also meet **MYCO**, the Memex mushroom mascot — a transparent-video sprite who idles on the About page and keeps you company while the graph loads (respects `prefers-reduced-motion`, degrades to a still frame).
 
 ### Overview
 

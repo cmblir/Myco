@@ -3,6 +3,7 @@
 // the Tauri runtime.
 
 pub mod agent_tools;
+pub mod clip;
 pub mod claude;
 pub mod cli_agent;
 mod commands;
@@ -79,6 +80,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_deep_link::init())
         // Confinement root for filesystem commands; populated on open_vault.
         .manage(commands::VaultRoot::default())
         // Embedded local model — lazily loaded on first local_* command.
@@ -163,6 +165,50 @@ pub fn run() {
             std::thread::spawn(move || {
                 let _ = mcp_server::serve(&handle);
             });
+            // Web clipper: memx://clip?url=…&title=…&selection=… lands in the
+            // open vault's _inbox/ (falling back to the persisted active-vault
+            // marker when the link arrives before a vault is opened). Inputs
+            // are hostile by definition — clip::parse_clip_url validates and
+            // caps everything. Best-effort: a bad clip never crashes the app.
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                use tauri_plugin_notification::NotificationExt;
+                let handle = app.handle().clone();
+                app.deep_link().on_open_url(move |event| {
+                    for u in event.urls() {
+                        let clip = match clip::parse_clip_url(u.as_str()) {
+                            Ok(c) => c,
+                            Err(e) => {
+                                eprintln!("clip rejected: {e}");
+                                continue;
+                            }
+                        };
+                        let root = handle
+                            .state::<commands::VaultRoot>()
+                            .current()
+                            .or_else(|| settings::active_vault().map(std::path::PathBuf::from));
+                        let Some(root) = root else {
+                            eprintln!("clip dropped: no vault open and no active-vault marker");
+                            continue;
+                        };
+                        match clip::save_clip(&root, &clip) {
+                            Ok(path) => {
+                                let _ = handle
+                                    .notification()
+                                    .builder()
+                                    .title("Clipped to Memex")
+                                    .body(clip.title.clone())
+                                    .show();
+                                eprintln!("clip saved: {}", path.display());
+                                // Nudge the frontend so the tree/inbox refreshes.
+                                use tauri::Emitter;
+                                let _ = handle.emit("memex://clip-saved", ());
+                            }
+                            Err(e) => eprintln!("clip save failed: {e}"),
+                        }
+                    }
+                });
+            }
             Ok(())
         })
         .build(tauri::generate_context!())

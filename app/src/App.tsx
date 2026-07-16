@@ -143,6 +143,31 @@ export default function App(): JSX.Element {
     };
   }, [currentVaultPath]);
 
+  // Web clipper: the Rust deep-link handler saved a clip into _inbox/ and
+  // emitted this event — refresh so the new source doc appears immediately.
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    let cancelled = false;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen("memex://clip-saved", () => {
+          const v = useVaultStore.getState();
+          void v.refreshTree();
+        }),
+      )
+      .then((u) => {
+        if (cancelled) u();
+        else unlisten = u;
+      })
+      .catch(() => {
+        /* plain-browser dev: no Tauri event bus */
+      });
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
   // Track the OS colour scheme live so the "System" appearance option follows
   // light/dark changes at runtime (not just on app launch).
   const [sysDark, setSysDark] = useState(

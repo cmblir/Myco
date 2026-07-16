@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Memex Web Clipper",
+  "version": "0.1.0",
+  "description": "Clip the current page (and selection) into your Memex vault's _inbox as a source doc for the ingest pipeline.",
+  "permissions": ["contextMenus", "activeTab", "scripting"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_title": "Clip to Memex" },
+  "icons": {}
+}

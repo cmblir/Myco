@@ -199,6 +199,16 @@ pub fn set_active_vault(path: &str) -> Result<(), String> {
     atomic_write(&f, path.as_bytes()).map_err(|e| format!("write active-vault: {e}"))
 }
 
+/// Read the persisted active-vault marker (None if never set / unreadable).
+/// Used by the deep-link clip handler when a clip arrives before any vault
+/// has been opened in this app session.
+pub fn active_vault() -> Option<String> {
+    let f = settings_dir().ok()?.join("active-vault");
+    let raw = std::fs::read_to_string(f).ok()?;
+    let t = raw.trim();
+    if t.is_empty() { None } else { Some(t.to_string()) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

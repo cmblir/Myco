@@ -29,7 +29,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["dmg", "nsis"],
+    "targets": [
+      "dmg",
+      "nsis"
+    ],
     "macOS": {
       "minimumSystemVersion": "10.15"
     },
@@ -51,5 +54,14 @@
     "category": "Productivity",
     "shortDescription": "Desktop wiki for plain markdown vaults",
     "longDescription": "Memex is a cross-platform desktop wiki app for plain markdown vaults. Edit, link, and visualize a graph of your notes with native performance."
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": [
+          "memx"
+        ]
+      }
+    }
   }
 }

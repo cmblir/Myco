@@ -32,6 +32,10 @@ impl VaultRoot {
     fn get(&self) -> Option<PathBuf> {
         self.0.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
+    /// Read-only view for non-command callers (the deep-link clip handler).
+    pub fn current(&self) -> Option<PathBuf> {
+        self.get()
+    }
 }
 
 fn require_root(state: &tauri::State<VaultRoot>) -> Result<PathBuf, String> {

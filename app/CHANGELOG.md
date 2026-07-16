@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Web clipper.** A `memx://clip?url=&title=&selection=` deep link drops the
+  current browser page into the vault's `_inbox/` as a markdown source doc —
+  a minimal MV3 extension and a bookmarklet live in `clipper/`. The Rust
+  handler treats every clip as hostile input (http(s)-only source URLs,
+  length caps, control-char stripping, whitelisted slug filenames confined to
+  `_inbox/`), notifies on save, and falls back to the persisted active-vault
+  marker when the link arrives before a vault is opened. Scheme registration
+  happens at bundle install — dev builds don't receive `memx:` links on macOS.
 - **Zotero import.** The Ingest page gains an *Import from Zotero* card:
   drop a CSL-JSON or BibTeX export (PDF highlights come along when the export
   carries annotations) and every item is written into `_inbox/` as a markdown
