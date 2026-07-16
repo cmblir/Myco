@@ -58,9 +58,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   one vault, every registered project appears as its own **glowing universe
   bubble** floating in one shared cosmos — a translucent fresnel sphere with its
   star cloud visible inside, tinted by the project's identity hue and placed far
-  apart so the field reads as many distinct orbs. Click a bubble to enter that
-  project (switching the active vault: registry pointer + confinement) and land
-  in its normal graph. Backed by a dedicated `multiverseStore` (lazy, parallel
+  apart so the field reads as many distinct orbs. Click a bubble and the camera
+  **flies into it**, arriving among that project's stars right as it becomes the
+  active vault (registry pointer + confinement) and the view settles into its
+  normal graph. Backed by a dedicated `multiverseStore` (lazy, parallel
   per-universe loading, kept separate from the single-vault store) and a pure,
   unit-tested core (`buildMultiverseGraph` merges each project's link graph with
   per-universe node tagging and namespaced ghost links; `universeAnchorsBySize`

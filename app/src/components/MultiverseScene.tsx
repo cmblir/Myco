@@ -62,14 +62,26 @@ export default function MultiverseScene({
     if (graph.order === 0) return;
 
     let killed = false;
-    // Multiverse scene ignores hover/drag/void/context — only clicking a star to
-    // enter its universe matters. One shared no-op keeps the interface satisfied.
+    let entering = false; // guards against re-triggering mid-flight
+    let bubbles: UniverseBubbleLayer | null = null;
+    // Multiverse scene ignores hover/drag/void/context — only clicking a star
+    // matters: it flies the camera INTO that star's universe bubble, then (on
+    // arrival) switches the active vault. One shared no-op satisfies the rest.
     const noop = (): void => undefined;
     const scene = new GraphScene(container, graph, theme, settings, {
       onNodeClick: (id) => {
-        if (killed) return;
+        if (killed || entering) return;
         const slug = universeOfNode(graph, id);
-        if (slug) enterRef.current(slug);
+        if (!slug) return;
+        const b = bubbles?.centres().find((c) => c.slug === slug);
+        if (b) {
+          entering = true;
+          scene.flyInto(b.centre, b.radius, () => {
+            if (!killed) enterRef.current(slug);
+          });
+        } else {
+          enterRef.current(slug); // no bubble (shouldn't happen) — enter directly
+        }
       },
       onNodeHover: noop,
       onDragStart: noop,
@@ -81,7 +93,7 @@ export default function MultiverseScene({
     });
     sceneRef.current = scene;
     // Wrap each universe in its glowing bubble sphere (the multiverse form).
-    const bubbles = new UniverseBubbleLayer(graph, graph.nodes());
+    bubbles = new UniverseBubbleLayer(graph, graph.nodes());
     scene.addOverlay(bubbles.group);
     scene.start();
     // Static layout: positions are final, so sync them into the buffers and
@@ -102,7 +114,7 @@ export default function MultiverseScene({
 
     return () => {
       killed = true;
-      bubbles.dispose();
+      bubbles?.dispose();
       scene.dispose();
       sceneRef.current = null;
       container.classList.remove("graph-ready");

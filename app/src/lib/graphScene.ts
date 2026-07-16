@@ -2734,13 +2734,20 @@ export class GraphScene {
     p1: THREE.Vector3;
     a0: THREE.Vector3;
     a1: THREE.Vector3;
+    onDone?: () => void;
   } | null = null;
 
-  private startCamTween(toPos: THREE.Vector3, toTarget: THREE.Vector3, durMs: number): void {
+  private startCamTween(
+    toPos: THREE.Vector3,
+    toTarget: THREE.Vector3,
+    durMs: number,
+    onDone?: () => void,
+  ): void {
     if (this.reducedMotion || durMs <= 0) {
       this.controls.target.copy(toTarget);
       this.camera.position.copy(toPos);
       this.controls.update();
+      onDone?.();
       return;
     }
     this.camTween = {
@@ -2750,7 +2757,20 @@ export class GraphScene {
       p1: toPos,
       a0: this.controls.target.clone(),
       a1: toTarget,
+      onDone,
     };
+  }
+
+  /** Fly the camera INTO a universe bubble (multiverse mode) — a dolly toward
+   *  the bubble that ends among its stars — then invoke `onArrive` (the caller
+   *  switches the active vault there). Reduced motion snaps + arrives at once. */
+  flyInto(centre: THREE.Vector3, radius: number, onArrive: () => void): void {
+    const dir = this.tmpVec.copy(this.camera.position).sub(centre);
+    if (dir.lengthSq() < 1) dir.set(0.3, 0.15, 1);
+    // End just inside the membrane, looking at the bubble's core, so we arrive
+    // amid the project's stars right as the vault switches.
+    dir.setLength(Math.max(40, radius * 0.85));
+    this.startCamTween(centre.clone().add(dir), centre.clone(), 950, onArrive);
   }
 
   /** Advance the camera flight; a user gesture cancels it (onControlsStart). */
@@ -2764,7 +2784,11 @@ export class GraphScene {
     this.controls.target.lerpVectors(tw.a0, tw.a1, e);
     this.camera.position.lerpVectors(tw.p0, tw.p1, e);
     this.controls.update();
-    if (tw.t >= tw.dur) this.camTween = null;
+    if (tw.t >= tw.dur) {
+      const done = tw.onDone;
+      this.camTween = null;
+      done?.(); // fire arrival AFTER clearing, so a re-entrant tween is allowed
+    }
   }
 
   // One frame of the post-processing graph. Selective path: nodes-only bloom
