@@ -24,11 +24,16 @@ const CLIPS = {
 } as const;
 export type MascotClipKey = keyof typeof CLIPS;
 
-// WKWebView/Safari carries no Chromium token in its UA.
+// The Tauri shell is ALWAYS WKWebView on macOS — detect the runtime directly
+// (its UA may omit the "Safari" token, which mis-routed the shell to the VP9
+// webm; WKWebView decodes VP9 WITHOUT alpha, painting an opaque black box).
+const IS_TAURI = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+// Real Safari browsers carry no Chromium token in the UA.
 const SAFARI_ENGINE =
   typeof navigator !== "undefined" &&
   /safari/i.test(navigator.userAgent) &&
   !/chrome|chromium|crios|edg|android/i.test(navigator.userAgent);
+const WANTS_HEVC = IS_TAURI || SAFARI_ENGINE;
 
 export default function MascotClip({
   clip = "idle",
@@ -83,7 +88,7 @@ export default function MascotClip({
         <img src={c.poster} alt="" draggable={false} style={mediaStyle} />
       ) : (
         <video
-          src={SAFARI_ENGINE ? c.mov : c.webm}
+          src={WANTS_HEVC ? c.mov : c.webm}
           poster={c.poster}
           autoPlay
           loop
