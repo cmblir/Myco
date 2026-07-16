@@ -488,6 +488,40 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(mtimes());
     case "build_link_graph":
       return Promise.resolve(buildAdjacency());
+    // Multiverse (Phase 0): a two-universe registry. Both slugs reuse the one
+    // mock vault graph; per-slug graph variation comes with the Phase 1 UI.
+    case "list_projects":
+      return Promise.resolve([
+        {
+          slug: "karpathy-llm",
+          title: "Karpathy LLM Wiki",
+          description: "LLM knowledge wiki",
+          root: `${VAULT}/projects/karpathy-llm`,
+          noteCount: NODES.length,
+          created: "2026-07-06",
+          lastUsed: "2026-07-16",
+          independentVault: true,
+          active: true,
+        },
+        {
+          slug: "reading-log",
+          title: "Reading Log",
+          description: "Books and papers",
+          root: `${VAULT}/projects/reading-log`,
+          noteCount: 12,
+          created: "2026-07-10",
+          lastUsed: "2026-07-12",
+          independentVault: false,
+          active: false,
+        },
+      ]);
+    case "build_link_graph_at":
+      return Promise.resolve(buildAdjacency());
+    case "set_active_project":
+      return Promise.resolve({
+        path: `${VAULT}/projects/${String(args.slug ?? "")}`,
+        name: String(args.slug ?? ""),
+      });
     case "search_vault": {
       const needle = String(args.query ?? "")
         .trim()

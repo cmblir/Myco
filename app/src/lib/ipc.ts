@@ -46,6 +46,21 @@ export interface Adjacency {
   meta?: Record<string, NodeMeta>;
 }
 
+/** One registered project ("universe") from the multi-project registry. */
+export interface ProjectInfo {
+  slug: string;
+  title: string;
+  description: string;
+  /** Absolute project root (`<registry root>/projects/<slug>`). */
+  root: string;
+  /** Markdown notes under the project root (graph-node approximation). */
+  noteCount: number;
+  created: string;
+  lastUsed: string;
+  independentVault: boolean;
+  active: boolean;
+}
+
 export interface GitCommit {
   hash: string;
   date: string;
@@ -287,6 +302,15 @@ export const ipc = {
   whisperCheck: () => invoke<ClaudeStatus>("whisper_check"),
   buildLinkGraph: (root: string) =>
     invoke<Adjacency>("build_link_graph", { root }),
+  // Multiverse (Phase 0): registry enumeration + read-only per-project graphs.
+  /** Registered projects; empty when the open vault has no registry above it. */
+  listProjects: () => invoke<ProjectInfo[]>("list_projects"),
+  /** Read-only link graph of a registered project (not just the open vault). */
+  buildLinkGraphAt: (slug: string) =>
+    invoke<Adjacency>("build_link_graph_at", { slug }),
+  /** Switch the active project without the open_vault teardown. */
+  setActiveProject: (slug: string) =>
+    invoke<VaultMeta>("set_active_project", { slug }),
   searchVault: (query: string, limit?: number) =>
     invoke<SearchHit[]>("search_vault", { query, limit }),
   // Semantic layer (Feature 1): embedding index over wiki pages.

@@ -165,7 +165,7 @@ pub fn load() -> Settings {
 // Atomic + durable write: stage into a temp file in the same dir, fsync it,
 // then rename over the target. A crash mid-write leaves the target either fully
 // old or fully new — never a truncated/corrupt file. Mirrors vault::write_file.
-fn atomic_write(target: &std::path::Path, content: &[u8]) -> Result<(), String> {
+pub(crate) fn atomic_write(target: &std::path::Path, content: &[u8]) -> Result<(), String> {
     use std::io::Write;
     let dir = target
         .parent()

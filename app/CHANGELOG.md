@@ -6,6 +6,17 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Multiverse groundwork (Phase 0).** The Rust backend can now enumerate the
+  multi-project registry (`projects.json` discovered above the open vault) and
+  build read-only link graphs for any registered project — not just the open
+  vault — via new `list_projects` / `build_link_graph_at` IPC commands.
+  `set_active_project` switches the active project (registry pointer,
+  confinement root, MCP marker) without the full `open_vault` teardown. Slug
+  validation and symlink containment mirror the Python registry's defenses;
+  every mutating command keeps the single-vault confinement.
+
 ## [0.2.2] - 2026-07-13
 
 ### Fixed

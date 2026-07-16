@@ -17,6 +17,7 @@ pub mod ollama;
 pub mod parser;
 pub mod provenance;
 pub mod providers;
+pub mod registry;
 pub mod sample_vault;
 pub mod schedules;
 pub mod secrets;
@@ -102,6 +103,9 @@ pub fn run() {
             commands::delete_path,
             commands::rename_path,
             commands::build_link_graph,
+            commands::list_projects,
+            commands::build_link_graph_at,
+            commands::set_active_project,
             commands::search_vault,
             commands::git_log,
             commands::claude_run,

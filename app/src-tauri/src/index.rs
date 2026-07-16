@@ -102,7 +102,7 @@ fn collect_files(dir: &Path) -> std::io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
     Ok((sources, linkables))
 }
 
-fn is_hidden_name(name: &std::ffi::OsStr) -> bool {
+pub(crate) fn is_hidden_name(name: &std::ffi::OsStr) -> bool {
     name.to_str()
         .is_some_and(|s| s.starts_with('.') || s == "node_modules" || s == "target")
 }
