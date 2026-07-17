@@ -126,8 +126,11 @@ export const useIngestStore = create<IngestState>((set, get) => ({
     const finalTitle = title.trim() || `untitled-${Date.now()}`;
     const slug = slugify(finalTitle);
     const runId = crypto.randomUUID();
-    await startStreamListener();
 
+    // Claim the run before awaiting anything. `listen()` is async, so the guard
+    // above and this set() would otherwise straddle a microtask boundary and
+    // two callers in the same tick would both start an agent — runInboxPass has
+    // two triggers (clip-saved, interval) that arrive through identical IPCs.
     set({
       stage: "writing-raw",
       log: `Writing raw/${slug}.md…`,
@@ -144,6 +147,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       liveAdjacency: null,
       seen: true,
     });
+    await startStreamListener();
 
     try {
       try {
@@ -257,7 +261,12 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       // The run is over (done / error / cancelled / no-op early return).
       // Drop the claude-stream subscription so it does not outlive the run.
       // A fresh run re-subscribes via startStreamListener().
-      await stopStreamListener();
+      //
+      // Only the run that still owns the store may unsubscribe: the listener is
+      // shared, so a superseded run tearing it down would leave the survivor
+      // streaming into nothing. Unreachable now that the guard is atomic, but
+      // the listener's lifetime should not depend on that.
+      if (get().runId === runId) await stopStreamListener();
     }
   },
 
