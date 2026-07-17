@@ -272,6 +272,8 @@ export interface Strings {
   gr_bridge_question?: string;
   gr_gap_more?: string;
   q_thinking?: string;
+  q_answering?: string;
+  q_answering_from?: string;
   gr_key_size?: string;
   gr_key_dim?: string;
   gr_key_amber?: string;
@@ -887,6 +889,8 @@ export const STRINGS: Record<Lang, Strings> = {
       'My notes about "{a}" and "{b}" are semantically related but not yet linked. What connects these two topics? Suggest the bridging ideas or notes I should write.',
     gr_gap_more: "more",
     q_thinking: "searching the wiki…",
+    q_answering: "answering…",
+    q_answering_from: "answering from {n} pages…",
     gr_key_size: "size = links",
     gr_key_dim: "faint = low confidence",
     gr_key_amber: "amber = disputed",
@@ -1513,6 +1517,8 @@ export const STRINGS: Record<Lang, Strings> = {
       '"{a}"와(과) "{b}"에 대한 내 노트들은 의미상 가깝지만 아직 연결되어 있지 않습니다. 두 주제를 잇는 것은 무엇인가요? 다리가 될 아이디어나 작성할 노트를 제안해 주세요.',
     gr_gap_more: "더",
     q_thinking: "위키를 탐색하는 중…",
+    q_answering: "답변 작성 중…",
+    q_answering_from: "{n}개 페이지를 근거로 답변 작성 중…",
     gr_key_size: "크기 = 링크 수",
     gr_key_dim: "흐림 = 낮은 신뢰도",
     gr_key_amber: "호박색 = 논쟁 중",
@@ -1946,6 +1952,9 @@ export const STRINGS: Record<Lang, Strings> = {
     q_send: "質問する",
     q_recent: "最近の質問",
     q_answer: "回答",
+    q_thinking: "ウィキを検索しています…",
+    q_answering: "回答を作成中…",
+    q_answering_from: "{n}件のページに基づいて回答を作成中…",
     q_sources_used: "参照したソース",
     q_wiki: "ウィキ",
     q_raw: "原本",

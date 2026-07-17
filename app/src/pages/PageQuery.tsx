@@ -11,7 +11,7 @@ import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { complete } from "../lib/chat";
+import { complete, type AskStage } from "../lib/chat";
 import { ipc } from "../lib/ipc";
 import { takeQueryPrefill } from "../lib/queryPrefill";
 import MascotClip from "../components/MascotClip";
@@ -82,16 +82,36 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
     return map;
   }, [fileTree]);
 
-  // Random sample of real page names for the thinking animation — the pulses
-  // light up actual vault pages, so the wait reads as "searching your wiki".
-  const thinkingPages = useMemo(() => {
-    const all = [...stemMap.keys()];
-    for (let i = all.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [all[i], all[j]] = [all[j], all[i]];
+  // What the run is actually doing, reported by complete(). This used to be a
+  // random shuffle of vault stems under a static "searching the wiki…" — the
+  // pulses lit up pages nobody was reading, and the one thing a user wants from
+  // that wait (which of my notes is it using?) was the thing being faked.
+  // Streaming was measured and killed (prefill dominates; tokens would arrive
+  // ~100 ms sooner), so honest staging is what is left to give.
+  const [stage, setStage] = useState<AskStage | null>(null);
+
+  // The pages retrieval chose, carried on the `thinking` stage — the model call
+  // is the long wait, and "these are the notes it is answering from" is exactly
+  // what a user wants to see during it.
+  const retrieved = stage?.kind === "thinking" ? stage.stems : [];
+  // Before retrieval has chosen anything there is nothing true to show, so the
+  // animation runs on the vault's hubs — a backdrop, not a claim.
+  const backdropPages = useMemo(() => [...stemMap.keys()].slice(0, 18), [stemMap]);
+  const thinkingPages = retrieved.length ? retrieved : backdropPages;
+  const thinkingLabel = ((): string => {
+    if (stage?.kind === "thinking") {
+      // Name the pages it is answering FROM when it has them — that is the
+      // question this wait actually raises, and the model call is the long
+      // part, so this is the label a user reads.
+      return retrieved.length
+        ? (t.q_answering_from ?? "answering from {n} pages…").replace(
+            "{n}",
+            String(retrieved.length),
+          )
+        : (t.q_answering ?? "answering…");
     }
-    return all.slice(0, 18);
-  }, [stemMap]);
+    return t.q_thinking ?? "searching the wiki…";
+  })();
 
   const openByStem = (target: string): void => {
     const abs = stemMap.get(target.toLowerCase());
@@ -132,6 +152,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       const content = await complete({
         task: "query",
         cwd: currentVault.path,
+        onStage: setStage,
         messages: [
           { role: "system", content: SYSTEM_PREAMBLE },
           // Skip turns that errored or have no answer — replaying an empty
@@ -161,6 +182,9 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       );
     } finally {
       setBusy(false);
+      // A finished run must not leave its label or its pages behind for the
+      // next one.
+      setStage(null);
     }
   }
 
@@ -275,10 +299,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
               ) : turn.a ? (
                 <Viewer content={turn.a} onLinkClick={openByStem} />
               ) : (
-                <ThinkingGalaxy
-                  pages={thinkingPages}
-                  label={t.q_thinking ?? "searching the wiki…"}
-                />
+                <ThinkingGalaxy pages={thinkingPages} label={thinkingLabel} />
               )}
             </div>
             {turn.a ? (

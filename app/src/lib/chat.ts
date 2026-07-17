@@ -18,10 +18,34 @@ export interface SimpleMessage {
   content: string;
 }
 
+/// What the app is actually doing while an Ask waits.
+///
+/// Streaming was measured and killed — prefill dominates, so tokens would start
+/// appearing ~100 ms earlier and no sooner (see examples/bench_local_llm.rs).
+/// That leaves honest staged status as the thing worth showing, because the
+/// waits ARE long and they are not one undifferentiated lump: a cold model load
+/// alone measured 11.7 s, and prefill over a full context ~2.7 s.
+/// Two stages, because two is what is actually observable. A "reading the
+/// pages" stage was tried and removed: retrieval's file reads take tens of
+/// milliseconds, so it existed for a blink and told nobody anything. What is
+/// left matches the measured shape of the wait — a query embedding (~460 ms),
+/// then the model (prefill ~0.67 ms/token, plus up to 11.7 s of cold weight
+/// load).
+export type AskStage =
+  /// Embedding the question and searching the index.
+  | { kind: "retrieving" }
+  /// The model is running. `stems` are the pages retrieval actually chose —
+  /// empty when there was no index, or when retrieval found nothing.
+  | { kind: "thinking"; stems: string[] };
+
 export interface CompleteArgs {
   task: "query" | "ingest";
   messages: SimpleMessage[];
   cwd: string;
+  /// Called as the run moves between stages. Only the non-tool provider path
+  /// reports: the CLI providers do their own retrieval inside the tool loop, so
+  /// this side cannot see what they read and must not invent it.
+  onStage?: (stage: AskStage) => void;
 }
 
 // Providers that expose Read/Write/Grep/Glob tools with the vault as cwd.
@@ -85,6 +109,10 @@ export async function complete(args: CompleteArgs): Promise<string> {
   // smaller than the cloud providers' (excess is truncated backend-side too).
   const isBuiltin = provider === "builtin-local";
   let messages = args.messages;
+  // Pages retrieval chose, carried to the `thinking` stage: the model call is
+  // the long wait, and "these are the notes it is answering from" is what a
+  // user wants to see during it.
+  let stems: string[] = [];
   try {
     const budget = isBuiltin ? LOCAL_CONTEXT_BUDGET : VAULT_CONTEXT_BUDGET;
     // Prefer semantic top-K retrieval (only the most relevant pages) when an
@@ -92,7 +120,11 @@ export async function complete(args: CompleteArgs): Promise<string> {
     // only thing that fits the builtin model's tiny window. Fall back to the
     // whole-vault concat when the index is empty or retrieval fails.
     const question = lastUserContent(args.messages);
-    let ctx = question ? await semanticContext(args.cwd, question, budget) : "";
+    const retrieved = question
+      ? await semanticContext(args.cwd, question, budget, args.onStage)
+      : { ctx: "", stems: [] };
+    stems = retrieved.stems;
+    let ctx = retrieved.ctx;
     if (!ctx.trim()) {
       ctx = await ipc.readVaultContext(args.cwd, budget);
     }
@@ -102,6 +134,11 @@ export async function complete(args: CompleteArgs): Promise<string> {
   } catch {
     /* proceed without inlined context rather than blocking the request */
   }
+  // Retrieval is done; everything after this is the model. On the builtin path
+  // that means a possible one-time weight load (11.7 s cold) and then prefill,
+  // which is the bulk of the wait — so this is the stage a user actually sits
+  // through, and the retrieved pages stay on screen underneath it.
+  args.onStage?.({ kind: "thinking", stems });
 
   // Embedded model (bundled Gemma 3 1B): in-process, offline, no key. The
   // backend applies the model's own chat template, so pass plain content —
@@ -157,13 +194,16 @@ async function semanticContext(
   cwd: string,
   question: string,
   budget: number,
-): Promise<string> {
+  onStage?: (stage: AskStage) => void,
+): Promise<{ ctx: string; stems: string[] }> {
+  const none = { ctx: "", stems: [] };
   const status = await ipc.embeddingsStatus().catch(() => null);
-  if (!status || status.indexed_pages === 0) return "";
+  if (!status || status.indexed_pages === 0) return none;
+  onStage?.({ kind: "retrieving" });
   const hits = await ipc
     .semanticSearch(question, 12, "builtin-local", BUILTIN_MODEL)
     .catch(() => []);
-  if (hits.length === 0) return "";
+  if (hits.length === 0) return none;
   const seen = new Set<string>();
   const parts: string[] = [];
   let used = 0;
@@ -179,7 +219,14 @@ async function semanticContext(
     parts.push(block);
     used += block.length;
   }
-  return parts.join("\n\n");
+  // Only the pages that made the budget: the ones past it are never shown to
+  // the model, so naming them would be another fiction.
+  return { ctx: parts.join("\n\n"), stems: [...seen].map(stemOf) };
+}
+
+/// `wiki/attention-mechanism.md` -> `attention-mechanism`.
+function stemOf(page: string): string {
+  return page.split("/").pop()?.replace(/\.md$/i, "") ?? page;
 }
 
 // Merge the vault content into the single system message (providers like

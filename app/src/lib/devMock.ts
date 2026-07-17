@@ -44,6 +44,14 @@ const MOCK_STREAM_STEPS: { after: number; kind: string; payload: Record<string, 
   { after: 120, kind: "result", payload: { text: "done" } },
 ];
 
+/// How many pages the embedding index holds. A variable, not NODES.length: the
+/// difference between "indexed" and "not indexed yet" changes what several
+/// features do (semantic retrieval, the Related panel, Ask's staged status) and
+/// a mock that is permanently indexed can only ever show one of those. `null`
+/// means "however many pages the sample vault has" — resolved late, since NODES
+/// is declared below.
+let mockIndexedPages: number | null = null;
+
 // Fingerprint of the mock vault. Fixed: nothing writes to it.
 const MOCK_REVISION = 0x5eed_1234;
 
@@ -712,7 +720,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(
         AGENT_MODE
           ? { ...SETTINGS, query_provider: "anthropic-api", query_model: "claude-sonnet-4-6" }
-          : SETTINGS,
+          : { ...SETTINGS },
       );
     case "agent_tools_schema":
       return Promise.resolve(MOCK_AGENT_TOOLS);
@@ -733,8 +741,13 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "local_classify":
       return Promise.resolve("concept");
     case "local_query":
-      return Promise.resolve(
-        "(mock) local model reply — the real app runs the bundled Gemma 3 1B here.",
+      // Paced, like the real thing. Measured: prefill dominates a local answer
+      // (~0.67 ms/token, ~2.7 s over a full context) and a cold weight load adds
+      // up to 11.7 s. A mock that answers instantly means no test — and no
+      // developer — ever sees the wait states that exist because of those
+      // numbers.
+      return sleep(700).then(
+        () => "(mock) local model reply — the real app runs the bundled Gemma 3 1B here.",
       );
     case "memex_pro_logout":
       SETTINGS.memex_pro_email = "";
@@ -816,7 +829,12 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "reindex_embeddings":
       return mockReindex();
     case "embeddings_status":
-      return Promise.resolve({ indexed_pages: NODES.length, model: "builtin-local:seed" });
+      return Promise.resolve({
+        indexed_pages: mockIndexedPages ?? NODES.length,
+        model: "builtin-local:seed",
+      });
+    // Retrieval costs a query embedding against the real model (~460 ms for a
+    // chunk-sized text), so it is not free here either.
     case "semantic_search": {
       const q = String(args.query ?? "").toLowerCase();
       const k = Number(args.k ?? 8);
@@ -826,12 +844,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         .slice(0, k)
         .map((d, i) => ({ page: `wiki/${d.s}.md`, stem: d.s, section: 0, score: 0.9 - i * 0.05 }));
       // Always return something so the UI path is exercised even on no keyword match.
-      if (hits.length === 0 && NODES.length) {
-        return Promise.resolve(
-          NODES.slice(0, k).map((d, i) => ({ page: `wiki/${d.s}.md`, stem: d.s, section: 0, score: 0.6 - i * 0.05 })),
-        );
-      }
-      return Promise.resolve(hits);
+      const out = hits.length === 0 && NODES.length
+        ? NODES.slice(0, k).map((d, i) => ({ page: `wiki/${d.s}.md`, stem: d.s, section: 0, score: 0.6 - i * 0.05 }))
+        : hits;
+      return sleep(400).then(() => out);
     }
     case "describe_image":
       return Promise.resolve(
@@ -892,6 +908,13 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       mockInbox.delete(String(args.path ?? ""));
       return Promise.resolve(null);
     case "set_settings":
+      // Actually persist. Returning null and keeping a frozen SETTINGS made the
+      // mock silently ignore every settings change — so a flow that depends on
+      // one (Ask via the builtin model rather than the CLI, say) could not be
+      // exercised at all, and a test that tried looked like the FEATURE was
+      // broken.
+      Object.assign(SETTINGS, args.settings ?? {});
+      return Promise.resolve(null);
     case "set_provider_key":
     case "delete_provider_key":
     case "open_external":
@@ -1028,6 +1051,16 @@ export function installTauriMock(): void {
     emit: emitMock,
     clip: emitClipSaved,
     inbox: () => [...mockInbox.keys()],
+    /// Patch the mock's settings. The Settings UI cannot reach every
+    /// combination — its provider picker only lists ENABLED providers, so a
+    /// vault configured for the CLI cannot be switched to the builtin model
+    /// through the UI at all, and a flow that only runs on the non-tool path
+    /// (Ask's staged status) is otherwise unreachable from a test.
+    settings: (patch: Record<string, unknown>) => Object.assign(SETTINGS, patch),
+    /// Pretend the index holds `n` pages (0 = never built).
+    indexedPages: (n: number) => {
+      mockIndexedPages = n;
+    },
   };
   console.info("[devMock] Tauri IPC mock installed with", NODES.length, "sample nodes");
 }
