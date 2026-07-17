@@ -1004,10 +1004,11 @@ async fn embed_texts(
 /// Collect `wiki/**/*.md` pages as (relpath, stem, content).
 fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String, String)> {
     fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, String, String)>) {
-        let Ok(entries) = std::fs::read_dir(dir) else { return };
-        for e in entries.flatten() {
+        // Non-following walk: a symlinked directory under wiki/ must not pull
+        // files from outside the vault into the embedding index.
+        for (e, kind) in vault::vault_entries(dir) {
             let p = e.path();
-            if p.is_dir() {
+            if kind.is_dir() {
                 walk(&p, root, out);
             } else if p.extension().and_then(|x| x.to_str()) == Some("md") {
                 if let Ok(content) = std::fs::read_to_string(&p) {

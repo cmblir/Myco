@@ -86,19 +86,14 @@ fn collect_files(dir: &Path) -> std::io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
     let mut linkables = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
-        // A subdirectory we cannot list (permissions, a vanished mount) skips
-        // itself rather than aborting the vault — same reasoning as the
-        // per-file read below. `flatten` drops individual bad entries for the
-        // same reason.
-        let Ok(entries) = std::fs::read_dir(&d) else {
-            continue;
-        };
-        for e in entries.flatten() {
-            if is_hidden_name(&e.file_name()) {
-                continue;
-            }
+        // vault_entries is best-effort (an unlistable subdirectory yields
+        // nothing rather than aborting the vault — same reasoning as the
+        // per-file read below) and, critically, does not follow symlinks: a
+        // symlinked directory must not walk files from outside the vault into
+        // the graph.
+        for (e, kind) in crate::vault::vault_entries(&d) {
             let p = e.path();
-            if p.is_dir() {
+            if kind.is_dir() {
                 stack.push(p);
                 continue;
             }

@@ -108,12 +108,9 @@ pub fn search_vault(root: &Path, query: &str, limit: usize) -> Vec<SearchHit> {
 }
 
 fn collect_md_files(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
+    for (entry, kind) in vault_entries(dir) {
         let path = entry.path();
-        if path.is_dir() {
+        if kind.is_dir() {
             collect_md_files(&path, out);
         } else if path
             .extension()
@@ -123,6 +120,44 @@ fn collect_md_files(dir: &Path, out: &mut Vec<PathBuf>) {
             out.push(path);
         }
     }
+}
+
+/// The entries of `dir` that belong to the vault: real files and real
+/// directories, no symlinks, no hidden/ignored names. Returns `(entry, kind)`
+/// so a caller never has to ask the filesystem about the path again.
+///
+/// `file_type()` is the whole point — it reports the entry itself, where
+/// `Path::is_dir()` follows the link and answers about the target. Every vault
+/// walker used `is_dir()`, so one `ln -s ~ notes` inside a vault was enough to
+/// walk a home directory into search results, into the context inlined for the
+/// LLM, into the embedding index — and, through `rewrite_backlinks`, to *write*
+/// to files outside the vault when a page was renamed. The whole confinement
+/// promise (see `VaultRoot`) is that this cannot happen, and every mutating
+/// command enforced it on its path argument while the walkers quietly went
+/// around it. A symlink cycle also grew paths until the walk died on
+/// ENAMETOOLONG.
+///
+/// Symlinked FILES are skipped too, not just directories. That is the same
+/// escape with one less step: `write_file` follows a link and persists outside
+/// the vault. The cost is real — a note deliberately symlinked into a vault
+/// stops being indexed — but it fails visibly and recoverably, where following
+/// fails silently and destructively.
+///
+/// Best-effort by design: an unreadable directory yields nothing rather than an
+/// error. Callers walk vaults that can contain anything.
+pub(crate) fn vault_entries(dir: &Path) -> Vec<(std::fs::DirEntry, std::fs::FileType)> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    entries
+        .flatten()
+        .filter(|e| !is_hidden(&e.file_name()))
+        .filter_map(|e| {
+            let ft = e.file_type().ok()?;
+            // A symlink is neither, so this drops it.
+            (ft.is_dir() || ft.is_file()).then_some((e, ft))
+        })
+        .collect()
 }
 
 /// True if `path` lies inside the vault's immutable `raw/` tree.
@@ -775,15 +810,9 @@ pub fn vault_revision(root: &str) -> Result<u64, String> {
 /// the same reason the link-graph walk skips one — a fingerprint that errors is
 /// a fingerprint the caller has to fall back from, which defeats the point.
 fn collect_revision_entries(dir: &Path, out: &mut Vec<(String, i64, u64)>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    for entry in entries.flatten() {
-        if is_hidden(&entry.file_name()) {
-            continue;
-        }
+    for (entry, kind) in vault_entries(dir) {
         let path = entry.path();
-        if path.is_dir() {
+        if kind.is_dir() {
             collect_revision_entries(&path, out);
         } else if is_markdown(&path) {
             let Ok(meta) = entry.metadata() else { continue };
@@ -813,12 +842,9 @@ pub fn file_mtimes(root: &str) -> Result<Vec<(String, i64)>, String> {
 }
 
 fn collect_mtimes(dir: &Path, out: &mut Vec<(String, i64)>) -> std::io::Result<()> {
-    for entry in std::fs::read_dir(dir)?.flatten() {
-        if is_hidden(&entry.file_name()) {
-            continue;
-        }
+    for (entry, kind) in vault_entries(dir) {
         let path = entry.path();
-        if path.is_dir() {
+        if kind.is_dir() {
             collect_mtimes(&path, out)?;
         } else if is_markdown(&path) {
             let mtime = entry
@@ -835,18 +861,15 @@ fn collect_mtimes(dir: &Path, out: &mut Vec<(String, i64)>) -> std::io::Result<(
 }
 
 fn walk_dir(dir: &Path) -> std::io::Result<Vec<FileNode>> {
-    let mut entries: Vec<_> = std::fs::read_dir(dir)?
-        .filter_map(|e| e.ok())
-        .filter(|e| !is_hidden(&e.file_name()))
-        .collect();
-    entries.sort_by_key(|e| e.file_name());
+    let mut entries = vault_entries(dir);
+    entries.sort_by_key(|(e, _)| e.file_name());
 
     let mut nodes = Vec::with_capacity(entries.len());
-    for entry in entries {
+    for (entry, kind) in entries {
         let path = entry.path();
         let name = entry.file_name().to_string_lossy().into_owned();
         let path_str = path.to_string_lossy().into_owned();
-        if path.is_dir() {
+        if kind.is_dir() {
             // Always emit directories, including empty ones, so the seeded
             // scaffold folders (raw/, ingest-reports/) are visible and
             // navigable before they contain any .md file — like Obsidian.
@@ -954,12 +977,9 @@ pub fn read_vault_context(root: &str, max_bytes: usize) -> Result<String, String
 }
 
 fn collect_markdown(dir: &Path, out: &mut Vec<std::path::PathBuf>) -> std::io::Result<()> {
-    for entry in std::fs::read_dir(dir)?.flatten() {
-        if is_hidden(&entry.file_name()) {
-            continue;
-        }
+    for (entry, kind) in vault_entries(dir) {
         let path = entry.path();
-        if path.is_dir() {
+        if kind.is_dir() {
             collect_markdown(&path, out)?;
         } else if is_markdown(&path) {
             out.push(path);
@@ -981,9 +1001,11 @@ fn safe_truncate(s: &str, max: usize) -> &str {
     &s[..end]
 }
 
+/// What the vault never walks into. One definition, in `index`, which the
+/// registry also uses — the rule decides what a vault *is*, and it had already
+/// been copied once.
 fn is_hidden(name: &std::ffi::OsStr) -> bool {
-    name.to_str()
-        .is_some_and(|s| s.starts_with('.') || s == "node_modules" || s == "target")
+    crate::index::is_hidden_name(name)
 }
 
 fn is_markdown(path: &Path) -> bool {
@@ -1157,6 +1179,119 @@ mod tests {
             fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).ok();
         }
         assert!(got.is_ok(), "an unlistable subdir must not fail the check");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The confinement promise is that nothing outside the open vault is read or
+    /// written. A directory symlink inside the vault broke both halves: the
+    /// walkers used `Path::is_dir()`, which follows.
+    #[cfg(unix)]
+    #[test]
+    fn walkers_do_not_follow_directory_symlinks_out_of_the_vault() {
+        let base = temp_vault("symlink-escape");
+        let vault = base.join("vault");
+        let outside = base.join("outside");
+        fs::create_dir_all(vault.join("wiki")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(vault.join("wiki/a.md"), "page citing [[secret-note]]").unwrap();
+        // A private file that happens to be markdown, outside the vault.
+        let secret = outside.join("secret-note.md");
+        fs::write(&secret, "PRIVATE: links to [[old-name]]").unwrap();
+        // The escape hatch: one symlinked directory inside the vault.
+        std::os::unix::fs::symlink(&outside, vault.join("wiki/escape")).unwrap();
+        let root = vault.canonicalize().unwrap();
+
+        // READ: search must not see outside the vault.
+        let hits = search_vault(&root, "PRIVATE", 10);
+        assert!(hits.is_empty(), "search escaped the vault: {hits:?}");
+
+        // READ: the LLM context must not inline outside files.
+        let ctx = read_vault_context(root.to_str().unwrap(), 100_000).unwrap();
+        assert!(!ctx.contains("PRIVATE"), "vault context escaped the vault");
+
+        // READ: the link graph must not pull outside notes in as nodes.
+        let adj = crate::index::build_link_graph(root.to_str().unwrap()).unwrap();
+        let escaped: Vec<&String> = adj
+            .forward
+            .keys()
+            .chain(adj.backward.keys())
+            .filter(|k| k.contains("secret-note"))
+            .collect();
+        assert!(escaped.is_empty(), "link graph escaped the vault: {escaped:?}");
+
+        // READ: the file tree / mtimes / revision must not see outside either.
+        let tree = format!("{:?}", list_files(root.to_str().unwrap()).unwrap());
+        assert!(!tree.contains("secret-note"), "file tree escaped the vault");
+        let mtimes = file_mtimes(root.to_str().unwrap()).unwrap();
+        assert!(
+            !mtimes.iter().any(|(p, _)| p.contains("secret-note")),
+            "mtime walk escaped the vault"
+        );
+
+        // The revision must not change when a file OUTSIDE the vault changes —
+        // if it does, the walk is reaching out there.
+        let rev_before = vault_revision(root.to_str().unwrap()).unwrap();
+        fs::write(&secret, "PRIVATE: links to [[old-name]] — edited, now longer").unwrap();
+        assert_eq!(
+            rev_before,
+            vault_revision(root.to_str().unwrap()).unwrap(),
+            "the fingerprint is watching files outside the vault"
+        );
+
+        // WRITE: a rename must not rewrite a file outside the vault.
+        let before = fs::read_to_string(&secret).unwrap();
+        rewrite_backlinks(&root, "old-name", "new-name");
+        assert_eq!(
+            fs::read_to_string(&secret).unwrap(),
+            before,
+            "rename rewrote a file OUTSIDE the vault"
+        );
+
+        fs::remove_dir_all(&base).ok();
+    }
+
+    /// A symlinked FILE is the same escape with one step removed — write_file
+    /// follows it and persists outside the vault.
+    #[cfg(unix)]
+    #[test]
+    fn walkers_do_not_follow_file_symlinks_out_of_the_vault() {
+        let base = temp_vault("symlink-file");
+        let vault = base.join("vault");
+        let outside = base.join("outside");
+        fs::create_dir_all(vault.join("wiki")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        let secret = outside.join("secret.md");
+        fs::write(&secret, "PRIVATE: cites [[old-name]]").unwrap();
+        std::os::unix::fs::symlink(&secret, vault.join("wiki/linked.md")).unwrap();
+        let root = vault.canonicalize().unwrap();
+
+        assert!(search_vault(&root, "PRIVATE", 10).is_empty(), "search followed a file symlink");
+        let before = fs::read_to_string(&secret).unwrap();
+        rewrite_backlinks(&root, "old-name", "new-name");
+        assert_eq!(
+            fs::read_to_string(&secret).unwrap(),
+            before,
+            "rename wrote THROUGH a file symlink, outside the vault"
+        );
+        fs::remove_dir_all(&base).ok();
+    }
+
+    /// A symlink cycle inside the vault must terminate, not grow paths until the
+    /// walk dies on ENAMETOOLONG.
+    #[cfg(unix)]
+    #[test]
+    fn walkers_terminate_on_a_symlink_cycle() {
+        let dir = temp_vault("symlink-cycle");
+        fs::create_dir_all(dir.join("wiki")).unwrap();
+        fs::write(dir.join("wiki/a.md"), "alpha").unwrap();
+        // wiki/loop -> the vault root: following this recurses forever.
+        std::os::unix::fs::symlink(&dir, dir.join("wiki/loop")).unwrap();
+        let root = dir.canonicalize().unwrap();
+
+        let hits = search_vault(&root, "alpha", 10);
+        assert_eq!(hits.len(), 1, "the real page is found exactly once");
+        assert!(vault_revision(root.to_str().unwrap()).is_ok());
+        assert!(list_files(root.to_str().unwrap()).is_ok());
         fs::remove_dir_all(&dir).ok();
     }
 
