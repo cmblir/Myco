@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -29,6 +29,7 @@ import { getLastVaultPath, useVaultStore } from "./stores/vaultStore";
 import { useAutoIngestScheduler } from "./lib/autoIngest";
 import { useAutoReflectScheduler } from "./lib/autoReflect";
 import { useAutoReindexScheduler } from "./lib/autoReindex";
+import { runInboxPass } from "./lib/autoIngest";
 import { useScheduleTimer } from "./lib/scheduleTimer";
 import { useIngestStore } from "./stores/ingestStore";
 import { ipc } from "./lib/ipc";
@@ -155,7 +156,16 @@ export default function App(): JSX.Element {
   }, [currentVaultPath]);
 
   // Web clipper: the Rust deep-link handler saved a clip into _inbox/ and
-  // emitted this event — refresh so the new source doc appears immediately.
+  // emitted this event. Refresh so the new source doc appears immediately, and
+  // — if the user has auto-ingest on — pick it up NOW rather than on the next
+  // tick. That poll defaults to an hour: without this a clip made from the
+  // browser sat in _inbox/ for up to that long, which is not what "clip it and
+  // it becomes a cited page" promises. Nothing is ingested for a user who has
+  // not turned auto-ingest on; the clip waits in _inbox/ as it always did.
+  // Read through a ref, not a dep: re-subscribing the listener every time a
+  // setting changes would drop a clip that arrived mid-swap.
+  const autoIngestOn = useRef(false);
+  autoIngestOn.current = settings?.auto_ingest_enabled ?? false;
   useEffect(() => {
     let unlisten: (() => void) | null = null;
     let cancelled = false;
@@ -164,6 +174,10 @@ export default function App(): JSX.Element {
         listen("memex://clip-saved", () => {
           const v = useVaultStore.getState();
           void v.refreshTree();
+          // runInboxPass skips itself while a run is in flight and leaves the
+          // source in place if the run fails, so a burst of clips is safe.
+          const path = useVaultStore.getState().currentVault?.path;
+          if (autoIngestOn.current && path) void runInboxPass(path);
         }),
       )
       .then((u) => {

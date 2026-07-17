@@ -20,6 +20,7 @@
     "test:e2e:query": "node scripts/query-smoke.mjs",
     "test:e2e:reindex": "node scripts/reindex-progress-smoke.mjs",
     "test:e2e:multiverse": "node scripts/multiverse-smoke.mjs",
+    "test:e2e:clip": "node scripts/clip-smoke.mjs",
     "perf": "node scripts/graph-perf.mjs",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html,json}\"",

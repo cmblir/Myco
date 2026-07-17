@@ -33,6 +33,17 @@ function emitMock(event: string, payload: unknown): void {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+/// A plausible ingest transcript for the streaming CLI mock: the tool calls and
+/// prose a real run emits, paced so the live panel has states to show.
+const MOCK_STREAM_STEPS: { after: number; kind: string; payload: Record<string, unknown> }[] = [
+  { after: 120, kind: "text", payload: { text: "Reading the source…\n" } },
+  { after: 150, kind: "tool", payload: { tool: "Read", detail: "raw/source.md" } },
+  { after: 150, kind: "text", payload: { text: "Extracting concepts and entities.\n" } },
+  { after: 150, kind: "tool", payload: { tool: "Write", detail: "wiki/source-mock.md" } },
+  { after: 150, kind: "tool", payload: { tool: "Edit", detail: "wiki/index.md" } },
+  { after: 120, kind: "result", payload: { text: "done" } },
+];
+
 // Fingerprint of the mock vault. Fixed: nothing writes to it.
 const MOCK_REVISION = 0x5eed_1234;
 
@@ -426,9 +437,18 @@ function fileTree() {
     name: p.split("/").pop() ?? "deck.md",
     path: p,
   }));
+  const inboxChildren = [...mockInbox.keys()].map((p) => ({
+    kind: "file" as const,
+    name: p.split("/").pop() ?? "clip.md",
+    path: p,
+  }));
   return [
     { kind: "file", name: "CLAUDE.md", path: `${VAULT}/CLAUDE.md` },
     { kind: "file", name: "welcome.md", path: `${VAULT}/welcome.md` },
+    // Only when it has something in it, like the real scaffold's _inbox/.
+    ...(inboxChildren.length
+      ? [{ kind: "directory" as const, name: "_inbox", path: `${VAULT}/_inbox`, children: inboxChildren }]
+      : []),
     { kind: "directory", name: "audio", path: `${VAULT}/audio`, children: [] },
     { kind: "directory", name: "cards", path: `${VAULT}/cards`, children: cardsChildren },
     { kind: "directory", name: "daily", path: `${VAULT}/daily`, children: [] },
@@ -738,11 +758,35 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       ]);
     case "claude_run":
       return Promise.resolve(mockClaudeRun(String(args.prompt ?? "")));
+    // The streaming CLI run. Missing until now, which meant `res` came back
+    // undefined and every ingest and lint in ?mock=1 died on `res.status` with
+    // a TypeError that looked like an app bug — so the whole ingest flow, the
+    // app's headline feature, was untestable in the mock the E2E suites use.
+    // Emits a plausible claude-stream transcript so the mission-control panel
+    // has something to render, then returns the same result claude_run does.
+    case "claude_run_stream": {
+      const runId = String(args.runId ?? args.run_id ?? "");
+      const emit = (kind: string, extra: Record<string, unknown>) =>
+        emitMock("claude-stream", { run_id: runId, kind, tool: null, detail: null, text: null, ...extra });
+      void (async () => {
+        emit("init", {});
+        for (const step of MOCK_STREAM_STEPS) {
+          await sleep(step.after);
+          emit(step.kind, step.payload);
+        }
+      })();
+      return Promise.resolve(mockClaudeRun(String(args.prompt ?? "")));
+    }
     case "read_raw_bytes":
       // Serve the seeded PDF bytes for any raw/*.pdf (real Rust confines to raw/).
       return Promise.resolve(b64ToBytes(MOCK_PDF_B64).buffer);
     case "read_file": {
       const p = String(args.path ?? "");
+      // A clip waiting in _inbox/ — auto-ingest reads it before ingesting.
+      const clip = mockInbox.get(p);
+      if (clip !== undefined) {
+        return Promise.resolve({ path: p, raw: clip, content: clip, frontmatter: null });
+      }
       if (isCardsPath(p)) {
         const raw = mockDecks.get(p) ?? "";
         return Promise.resolve({ path: p, raw, content: raw, frontmatter: null });
@@ -849,11 +893,15 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       if (isCardsPath(p)) mockDecks.set(p, String(args.content ?? ""));
       return Promise.resolve(null);
     }
+    case "delete_path":
+      // Consuming an inbox source removes it, which is how auto-ingest avoids
+      // ingesting the same clip forever.
+      mockInbox.delete(String(args.path ?? ""));
+      return Promise.resolve(null);
     case "set_settings":
     case "set_provider_key":
     case "delete_provider_key":
     case "open_external":
-    case "delete_path":
       return Promise.resolve(null);
     case "create_file":
     case "create_folder":
@@ -887,6 +935,23 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
   }
 }
 
+/// Sources waiting in `_inbox/`, keyed by path. The clipper drops files here and
+/// auto-ingest consumes them, so the mock has to model it as state rather than a
+/// fixed listing — otherwise `runInboxPass` always finds an empty inbox and the
+/// whole handoff is untestable.
+const mockInbox = new Map<string, string>();
+
+/// Drop a clip into `_inbox/` and fire the deep-link handler's
+/// `memex://clip-saved`, the same path the real Tauri event takes into the app.
+/// Exported for the clip E2E: a deep link cannot be delivered to a browser.
+export function emitClipSaved(title = "clipped-article"): void {
+  mockInbox.set(
+    `${VAULT}/_inbox/${title}.md`,
+    `---\nsource_url: https://example.com/article\n---\n\n# ${title}\n\nClipped selection about attention and transformers.\n`,
+  );
+  emitMock("memex://clip-saved", {});
+}
+
 export function installTauriMock(): void {
   const w = window as unknown as {
     __TAURI_INTERNALS__?: unknown;
@@ -911,6 +976,17 @@ export function installTauriMock(): void {
       const list = mockListeners.get(event);
       if (list) mockListeners.set(event, list.filter((l) => l.id !== eventId));
     },
+  };
+  // Test surface for the mock itself. Exposed from HERE, inside the module the
+  // app actually loaded: a Playwright `evaluate` that dynamic-imports this file
+  // gets a SECOND module instance with its own empty listener registry, so
+  // anything it emits reaches nobody.
+  (
+    window as unknown as { __memexMock?: unknown }
+  ).__memexMock = {
+    emit: emitMock,
+    clip: emitClipSaved,
+    inbox: () => [...mockInbox.keys()],
   };
   console.info("[devMock] Tauri IPC mock installed with", NODES.length, "sample nodes");
 }
