@@ -169,20 +169,40 @@ def _validate_slug(slug: str) -> str:
     created, but a hand-edited or imported projects.json must not be able to
     relocate a project root outside projects/ via `..`, a path separator, or an
     absolute path. Fails closed (raises) rather than building an out-of-tree path.
+
+    Mirrors registry.rs::resolve_project_root, and for the reason its comment
+    gives. This check must NOT confine against ``PROJECTS_DIR.resolve()``: that
+    resolves a symlinked ``projects`` component to its TARGET and then confines
+    to the target, so a vault shipping ``projects -> ../..`` plus a slug naming a
+    sibling of the vault ("Documents") passes. ``projects/`` lives inside a
+    vault, and a vault can be shared or downloaded, so that shape is reachable —
+    and this registry backs a long-running server with vault write and git tools.
+
+    Instead: resolve the REGISTRY ROOT, rebuild the literal expected path under
+    it, and require that resolving it changes nothing. A symlink at any component
+    of ``projects/<slug>`` makes the resolved path differ from the literal one,
+    so it fails closed.
     """
     s = (slug or "").strip()
     if (
         not s
         or "/" in s
         or "\\" in s
+        or ":" in s  # a Windows drive letter is an absolute path ("C:")
         or ".." in s
         or s.startswith(".")
         or "\x00" in s
     ):
         raise ValueError(f"invalid project slug: {slug!r}")
-    root = (PROJECTS_DIR / s).resolve()
-    base = PROJECTS_DIR.resolve()
-    if root != base and base not in root.parents:
+    expected = PROJECT_ROOT.resolve() / "projects" / s
+    # Non-strict resolve: it still follows every symlink that EXISTS (which is
+    # what catches the escape) but does not require <slug> itself to be there.
+    # That keeps this usable from list_projects, which must tolerate an entry
+    # whose directory is gone — Rust lists those too (project_infos) and only
+    # refuses when resolving the path for real. Making the two registries
+    # disagree in the other direction is how they drifted here in the first
+    # place.
+    if expected.resolve() != expected:
         raise ValueError(f"project slug escapes projects/: {slug!r}")
     return s
 

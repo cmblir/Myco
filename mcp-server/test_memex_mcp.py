@@ -207,3 +207,78 @@ def test_lint_superseded_and_disputed_contracts():
     assert "status=disputed without a `## Disputed` section" in lint_page_text(disp)
     disp_ok = disp + "\n## Disputed\n\n> contested\n"
     assert lint_page_text(disp_ok) == []
+
+
+# ─── registry symlink confinement ────────────────────────────────────────────
+#
+# `projects/` living in a vault means a shared or downloaded vault can ship one.
+# The Rust registry (app/src-tauri/src/registry.rs) resolves this deliberately
+# and says why in a comment: confining against `canonicalize(projects_dir)`
+# resolves a symlinked `projects` component to its TARGET and then confines to
+# the target, so `projects -> ../..` plus a slug naming a sibling of the registry
+# root escapes. These two registries are mirrors of the same projects.json logic
+# and had drifted on exactly that check — while this one backs a long-running
+# server with vault write and git tools.
+
+
+def _registry_with_root(tmp_path, monkeypatch):
+    """Reload project_registry against a throwaway vault root."""
+    import importlib
+    import project_registry
+
+    monkeypatch.setenv("MEMEX_PROJECT_ROOT", str(tmp_path))
+    return importlib.reload(project_registry)
+
+
+def test_symlinked_projects_dir_cannot_escape(tmp_path, monkeypatch):
+    outside = tmp_path / "outside"
+    (outside / "Secrets").mkdir(parents=True)
+    vault = tmp_path / "vault"
+    vault.mkdir()
+    # The hostile shape: projects/ is a symlink pointing out of the vault.
+    (vault / "projects").symlink_to(outside, target_is_directory=True)
+
+    reg = _registry_with_root(vault, monkeypatch)
+    with pytest.raises(ValueError):
+        reg._validate_slug("Secrets")
+
+
+def test_symlinked_project_entry_cannot_escape(tmp_path, monkeypatch):
+    # The subtler shape: projects/ is real, but one project inside it is a
+    # symlink elsewhere.
+    outside = tmp_path / "elsewhere"
+    outside.mkdir()
+    vault = tmp_path / "vault2"
+    (vault / "projects").mkdir(parents=True)
+    (vault / "projects" / "sneaky").symlink_to(outside, target_is_directory=True)
+
+    reg = _registry_with_root(vault, monkeypatch)
+    with pytest.raises(ValueError):
+        reg._validate_slug("sneaky")
+
+
+def test_a_real_project_still_resolves(tmp_path, monkeypatch):
+    vault = tmp_path / "vault3"
+    (vault / "projects" / "real-one").mkdir(parents=True)
+    reg = _registry_with_root(vault, monkeypatch)
+    assert reg._validate_slug("real-one") == "real-one"
+
+
+def test_a_slug_whose_directory_is_gone_still_validates(tmp_path, monkeypatch):
+    # The check is about escaping, not existence. list_projects must keep
+    # listing an entry whose directory vanished — Rust's project_infos does
+    # (with a 0 note count) and only refuses when resolving the path for real.
+    # Making the two registries disagree the OTHER way is how they drifted here.
+    vault = tmp_path / "vault5"
+    (vault / "projects").mkdir(parents=True)
+    reg = _registry_with_root(vault, monkeypatch)
+    assert reg._validate_slug("not-created-yet") == "not-created-yet"
+
+
+def test_windows_drive_letter_slug_is_rejected(tmp_path, monkeypatch):
+    # The Rust validator rejects ':' for this; the mirror did not.
+    vault = tmp_path / "vault4"
+    (vault / "projects").mkdir(parents=True)
+    reg = _registry_with_root(vault, monkeypatch)
+    with pytest.raises(ValueError):
+        reg._validate_slug("C:")
