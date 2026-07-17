@@ -5,11 +5,15 @@
 
 import { Component } from "react";
 import type { ErrorInfo, ReactNode } from "react";
+import { STRINGS } from "../lib/i18n";
+import type { Strings } from "../lib/i18n";
+import { useUIStore } from "../stores/uiStore";
 
 interface Props {
   children: ReactNode;
-  // Short label for the area being guarded, e.g. "the graph". Defaults to "the app".
-  area?: string;
+  // Which area is being guarded. A key rather than a label so the copy stays
+  // translatable; defaults to the whole app.
+  area?: "app" | "graph";
   // Top-level boundary: offer a full window reload. Route-level boundaries omit
   // this so a single failing view degrades to an inline card while the sidebar
   // and other routes stay usable.
@@ -37,13 +41,37 @@ export default class ErrorBoundary extends Component<Props, State> {
     else this.setState({ error: null });
   };
 
+  /**
+   * Strings for the crash screen.
+   *
+   * A class cannot use hooks, and the top-level boundary must survive the case
+   * where the store itself is what threw — so read the language non-reactively
+   * and fall back to English if anything about that read goes wrong. Losing
+   * live language switching costs nothing here: a crash screen renders once.
+   */
+  private strings(): Strings {
+    try {
+      return STRINGS[useUIStore.getState().lang] ?? STRINGS.en;
+    } catch {
+      return STRINGS.en;
+    }
+  }
+
   override render(): ReactNode {
     const { error } = this.state;
     if (!error) return this.props.children;
-    const area = this.props.area ?? "the app";
+    const t = this.strings();
+    const area =
+      this.props.area === "graph"
+        ? (t.eb_area_graph ?? "the graph")
+        : (t.eb_area_app ?? "the app");
+    const title = (t.eb_title ?? "Something went wrong in {area}.").replace(
+      "{area}",
+      area,
+    );
     return (
       <div className="error-boundary" role="alert">
-        <h2 className="error-boundary__title">Something went wrong in {area}.</h2>
+        <h2 className="error-boundary__title">{title}</h2>
         <p className="error-boundary__msg">{error.message || String(error)}</p>
         <button
           className="btn"
@@ -51,7 +79,9 @@ export default class ErrorBoundary extends Component<Props, State> {
           onClick={this.handleReset}
           autoFocus
         >
-          {this.props.reload ? "Reload Memex" : "Try again"}
+          {this.props.reload
+            ? (t.eb_reload ?? "Reload Memex")
+            : (t.eb_retry ?? "Try again")}
         </button>
       </div>
     );

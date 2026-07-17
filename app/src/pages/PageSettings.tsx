@@ -143,14 +143,16 @@ function SettingsAccount({ t }: { t: Strings }): JSX.Element {
           M
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>Local user</div>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>
+            {t.s_local_user ?? "Local user"}
+          </div>
           <div className="muted" style={{ fontSize: 13 }}>
-            {currentVault?.path ?? "no vault"} · Memex
+            {currentVault?.path ?? (t.s_no_vault ?? "no vault")} · Memex
           </div>
         </div>
       </div>
       <div className="field">
-        <label>Vault path</label>
+        <label>{t.s_vault_path ?? "Vault path"}</label>
         <div className="row">
           <input
             className="input"
@@ -165,7 +167,7 @@ function SettingsAccount({ t }: { t: Strings }): JSX.Element {
               if (p) await openVault(p);
             }}
           >
-            Change…
+            {t.s_change ?? "Change…"}
           </button>
         </div>
         <div className="row" style={{ marginTop: 10, gap: 10, alignItems: "center" }}>

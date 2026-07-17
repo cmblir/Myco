@@ -170,7 +170,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       setTurns((prev) =>
         prev.map((turn, i) =>
           i === prev.length - 1
-            ? { ...turn, a: content || "(empty response)" }
+            ? { ...turn, a: content || (t.q_empty_response ?? "(empty response)") }
             : turn,
         ),
       );

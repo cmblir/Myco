@@ -308,6 +308,16 @@ export interface Strings {
   h_empty: string;
   s_title: string;
   s_account: string;
+  s_local_user?: string;
+  s_no_vault?: string;
+  s_vault_path?: string;
+  s_change?: string;
+  q_empty_response?: string;
+  eb_title?: string; // "{area}" is substituted with eb_area_*
+  eb_reload?: string;
+  eb_retry?: string;
+  eb_area_app?: string;
+  eb_area_graph?: string;
   s_workspace: string;
   s_model: string;
   s_embeddings?: string;
@@ -930,6 +940,16 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_failed: "Lint failed",
     s_title: "Settings",
     s_account: "Account",
+    s_local_user: "Local user",
+    s_no_vault: "no vault",
+    s_vault_path: "Vault path",
+    s_change: "Change…",
+    q_empty_response: "(empty response)",
+    eb_title: "Something went wrong in {area}.",
+    eb_reload: "Reload Memex",
+    eb_retry: "Try again",
+    eb_area_app: "the app",
+    eb_area_graph: "the graph",
     s_workspace: "Workspace",
     s_model: "Model",
     s_embeddings: "Semantic search",
@@ -1560,6 +1580,16 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_failed: "Lint 실패",
     s_title: "설정",
     s_account: "계정",
+    s_local_user: "로컬 사용자",
+    s_no_vault: "볼트 없음",
+    s_vault_path: "볼트 경로",
+    s_change: "변경…",
+    q_empty_response: "(응답 없음)",
+    eb_title: "{area}에서 문제가 발생했습니다.",
+    eb_reload: "Memex 다시 불러오기",
+    eb_retry: "다시 시도",
+    eb_area_app: "앱",
+    eb_area_graph: "그래프",
     s_workspace: "워크스페이스",
     s_model: "모델",
     s_embeddings: "의미 검색",
@@ -2089,6 +2119,16 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_failed: "Lint 失敗",
     s_title: "設定",
     s_account: "アカウント",
+    s_local_user: "ローカルユーザー",
+    s_no_vault: "ボールトなし",
+    s_vault_path: "ボールトのパス",
+    s_change: "変更…",
+    q_empty_response: "(応答なし)",
+    eb_title: "{area}で問題が発生しました。",
+    eb_reload: "Memex を再読み込み",
+    eb_retry: "再試行",
+    eb_area_app: "アプリ",
+    eb_area_graph: "グラフ",
     s_workspace: "ワークスペース",
     s_model: "モデル",
     s_embeddings: "セマンティック検索",

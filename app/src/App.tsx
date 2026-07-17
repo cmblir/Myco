@@ -333,7 +333,7 @@ export default function App(): JSX.Element {
   else if (route === "query") body = <PageQuery t={t} />;
   else if (route === "graph")
     body = (
-      <ErrorBoundary area="the graph">
+      <ErrorBoundary area="graph">
         {/* The three.js chunk is ~800KB — the parse gap used to be a BLANK
             pane on the marquee view. Reuse the constellation tip so the wait
             reads as part of the show. */}
