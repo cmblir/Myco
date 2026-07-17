@@ -59,6 +59,32 @@ pub struct MemexProResult {
 }
 
 /// Ingest one source through the Memex Pro proxy and apply the result to `root`.
+/// May a credential be sent to this proxy URL?
+///
+/// The URL is typed by hand in Settings, and both paths here carry secrets: the
+/// account password on login, the license key as a bearer token on ingest. On
+/// `http://` to anything but loopback, both go out in the clear — a typo, a
+/// paste of the wrong thing, or a downgrade is enough. Loopback stays allowed
+/// because that is how the proxy is developed and tested, and traffic on it
+/// never leaves the machine.
+///
+/// The same rule the keyed provider endpoints already use, borrowed rather than
+/// restated: two copies of "is this URL safe to put a secret on" is one too
+/// many.
+fn proxy_url_allowed(url: &str) -> bool {
+    crate::providers::override_allowed(url)
+}
+
+fn require_safe_proxy(url: &str) -> Result<(), String> {
+    if proxy_url_allowed(url) {
+        return Ok(());
+    }
+    Err(format!(
+        "Memex Pro URL must be https (or http://localhost while testing) — \
+         refusing to send your credentials in the clear to {url:?}"
+    ))
+}
+
 pub async fn ingest(
     root: &Path,
     proxy_url: &str,
@@ -67,6 +93,7 @@ pub async fn ingest(
     title: &str,
     text: &str,
 ) -> Result<MemexProResult, String> {
+    require_safe_proxy(proxy_url)?;
     let pages = collect_pages(root);
     let schema = std::fs::read_to_string(root.join("CLAUDE.md")).unwrap_or_default();
     let body = IngestRequest {
@@ -166,6 +193,7 @@ pub struct LoginOutcome {
 /// fetch its access key. The app then uses that key for ingest — the user never
 /// copies a key by hand.
 pub async fn login(proxy_url: &str, email: &str, password: &str) -> Result<LoginOutcome, String> {
+    require_safe_proxy(proxy_url)?;
     let url = format!("{}/auth/login", proxy_url.trim_end_matches('/'));
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30))
@@ -284,6 +312,54 @@ async fn read_capped(resp: reqwest::Response, max: usize) -> Result<Vec<u8>, Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The proxy URL is typed by hand in Settings. If it reads `http://`, login
+    /// POSTs the account password in the clear and ingest sends the license key
+    /// as a bearer token in the clear.
+    #[tokio::test]
+    async fn plaintext_http_is_refused_for_a_remote_proxy() {
+        let err = login("http://pro.example.com", "a@b.c", "hunter2")
+            .await
+            .expect_err("cleartext password must be refused");
+        assert!(err.contains("https"), "the error must say why: {err}");
+
+        let err = ingest(
+            Path::new("/tmp"),
+            "http://pro.example.com",
+            "license-key",
+            "slug",
+            "title",
+            "text",
+        )
+        .await
+        .expect_err("cleartext license key must be refused");
+        assert!(err.contains("https"), "the error must say why: {err}");
+    }
+
+    /// A scheme we do not understand is not a free pass. Asserting on the
+    /// MESSAGE, not just is_err(): these would fail at the network layer anyway,
+    /// so a bare is_err() passes with the guard removed and tests nothing.
+    #[tokio::test]
+    async fn a_non_http_url_is_refused_by_the_check_not_by_the_network() {
+        for url in ["ftp://pro.example.com", "pro.example.com", ""] {
+            let err = login(url, "a@b.c", "p").await.expect_err("must refuse");
+            assert!(
+                err.contains("must be https"),
+                "{url:?} should be refused by the URL check, got: {err}"
+            );
+        }
+    }
+
+    /// Loopback stays usable: that is how the proxy is developed and tested,
+    /// and a password on the loopback interface never leaves the machine.
+    #[test]
+    fn loopback_http_is_allowed() {
+        assert!(proxy_url_allowed("http://localhost:8787"));
+        assert!(proxy_url_allowed("http://127.0.0.1:8787/base"));
+        assert!(proxy_url_allowed("https://pro.example.com"));
+        assert!(!proxy_url_allowed("http://pro.example.com"));
+        assert!(!proxy_url_allowed("http://127.0.0.1.evil.com"));
+    }
 
     #[test]
     fn safe_join_allows_wiki_paths_rejects_escape() {
