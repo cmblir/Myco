@@ -244,8 +244,13 @@ export const LAYOUT_RECOMMENDED: Record<
   // survive on paper; no bundles/FX (static map); folderGalaxies off (FA2 does
   // the spatial community split itself).
   atlas: {
+    // linkDistance IS read by the FA2 path (it sets targetRadius); the other
+    // force-tuple fields are not — atlas runs applyAtlasLayout, not the worker
+    // sim. clusterForce was set here and it is inert on atlas, but the settings
+    // are shared, so it wrote 0.45 into the value galaxy/synapse3d DO read: click
+    // Recommend on atlas, switch back to galaxy, and its tuned 0.35 was silently
+    // gone. So set only what atlas reads. (See the FA2-purity test.)
     linkDistance: 90,
-    clusterForce: 0.45,
     folderGalaxies: false,
     edgeTint: "grey",
     edgeBundles: false,
