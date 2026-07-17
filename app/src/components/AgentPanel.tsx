@@ -24,6 +24,7 @@ import {
 import { promptText } from "../stores/dialogStore";
 import type { AgentStep } from "../lib/agentLoop";
 import Viewer from "./Viewer";
+import { isComposingKey } from "../lib/ime";
 
 export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
@@ -162,6 +163,7 @@ export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
+              if (isComposingKey(e)) return;
               if (e.key === "Enter") void run();
             }}
             disabled={running || !currentVault || !supported}

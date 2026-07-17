@@ -25,6 +25,7 @@ import ThinkingGalaxy from "../components/ThinkingGalaxy";
 import MiniGalaxy from "../components/MiniGalaxy";
 import type { GalaxyLink, GalaxyNode } from "../components/MiniGalaxy";
 import NodePreview from "../components/NodePreview";
+import { isComposingKey } from "../lib/ime";
 
 interface ChatTurn {
   q: string;
@@ -209,6 +210,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
+            if (isComposingKey(e)) return;
             if (e.key === "Enter") void ask();
           }}
           disabled={busy || !currentVault}

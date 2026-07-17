@@ -24,6 +24,7 @@ import {
   setBudgetThreshold,
   DEFAULT_MONTHLY_THRESHOLD_USD,
 } from "../lib/budget";
+import { isComposingKey } from "../lib/ime";
 
 export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
@@ -845,6 +846,7 @@ function MemexProCard({
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 onKeyDown={(e) => {
+                  if (isComposingKey(e)) return;
                   if (e.key === "Enter") void logIn();
                 }}
               />

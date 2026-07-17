@@ -54,6 +54,7 @@ import MultiverseScene from "../components/MultiverseScene";
 import type { SceneUniverse } from "../lib/multiverseScene";
 import { ipc } from "../lib/ipc";
 import type { Adjacency, SemEdge } from "../lib/ipc";
+import { isComposingKey } from "../lib/ime";
 
 // Live-ingest node tints — pages the in-flight run wrote glow gold, pages it
 // only read glow ice blue. Both sit inside the cosmic palette so they read as
@@ -1374,6 +1375,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             aria-label={t.gr_find_ph ?? "Find a note"}
             onChange={(e) => setFind(e.target.value)}
             onKeyDown={(e) => {
+              if (isComposingKey(e)) return;
               if (e.key === "Enter") focusFind(find);
             }}
           />

@@ -11,6 +11,7 @@ import { useVaultStore } from "../stores/vaultStore";
 import { ipc } from "../lib/ipc";
 import { BUILTIN_MODEL } from "../lib/providers";
 import type { FileNode, SearchHit, VecHit } from "../lib/ipc";
+import { isComposingKey } from "../lib/ime";
 
 interface CmdEntry {
   type: "nav" | "page";
@@ -154,6 +155,10 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
+              // Escape stays reachable mid-composition (it cancels the
+              // candidate, and a user hitting it wants out either way); every
+              // other branch here would act on a half-typed query.
+              if (e.key !== "Escape" && isComposingKey(e)) return;
               if (e.key === "Escape") setCmdOpen(false);
               else if (e.key === "ArrowDown") {
                 e.preventDefault();

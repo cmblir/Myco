@@ -6,6 +6,7 @@ import type { JSX, KeyboardEvent } from "react";
 import { useDialogStore } from "../stores/dialogStore";
 import { useUIStore } from "../stores/uiStore";
 import { STRINGS } from "../lib/i18n";
+import { isComposingKey } from "../lib/ime";
 
 // Elements that can receive keyboard focus inside the dialog. Used to keep
 // Tab / Shift+Tab cycling within the modal (a lightweight focus trap).
@@ -125,6 +126,7 @@ export default function DialogHost(): JSX.Element | null {
             placeholder={request.placeholder}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
+              if (isComposingKey(e)) return;
               if (e.key === "Enter") submit();
             }}
           />
