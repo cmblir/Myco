@@ -37,16 +37,21 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 const MOCK_REVISION = 0x5eed_1234;
 
 /// Walk the sample pages the way the real reindex does, with the same events.
-/// Paced (not instant) so the progress UI has states to show — the real command
-/// takes ~467 ms per embedded chunk, i.e. minutes on a real vault, which is the
-/// whole reason it reports progress at all. Kept to ~1s total so tests stay fast.
+///
+/// Paced, not instant. The real command takes ~467 ms per embedded chunk — i.e.
+/// minutes on a real vault — which is the whole reason it reports progress, and
+/// the reason a run routinely outlives the panel that started it. A mock that
+/// finishes in a blink cannot show a test any of that: it was fast enough to
+/// complete during a navigation, which is precisely the case where the run state
+/// living in the component was broken. ~3s is long enough for a test to leave
+/// and come back mid-run, short enough not to drag the suite.
 async function mockReindex(): Promise<number> {
   emitMock("local-model-load", { loading: true, ok: false });
-  await sleep(120);
+  await sleep(200);
   emitMock("local-model-load", { loading: false, ok: true });
   const total = NODES.length;
   for (let i = 0; i < total; i++) {
-    await sleep(20);
+    await sleep(55);
     emitMock("reindex-progress", {
       done: i + 1,
       total,

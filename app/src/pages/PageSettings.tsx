@@ -13,7 +13,7 @@ import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { ipc } from "../lib/ipc";
 import type { McpRegInfo, MemexSettings, OllamaStatus } from "../lib/ipc";
-import { BUILTIN_MODEL, PROVIDERS, providerDesc, useEnabledProviders } from "../lib/providers";
+import { PROVIDERS, providerDesc, useEnabledProviders } from "../lib/providers";
 import type { ProviderDef } from "../lib/providers";
 import ModelSelect from "../components/ModelSelect";
 import OllamaSetup from "../components/OllamaSetup";
@@ -25,6 +25,7 @@ import {
   DEFAULT_MONTHLY_THRESHOLD_USD,
 } from "../lib/budget";
 import { isComposingKey } from "../lib/ime";
+import { useReindexStore } from "../stores/reindexStore";
 
 export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
@@ -234,71 +235,39 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
 // offline via the bundled Gemma model. Powers semantic search, related notes,
 // and graph similarity edges.
 //
-// Reindex is the slowest thing the app does — measured at ~467 ms per embedded
-// chunk, so minutes on a real vault — and the first run also pays a one-time
-// model load (873 ms warm, 11.7 s cold). Both are reported rather than left as
-// a frozen button: the backend emits `local-model-load` and `reindex-progress`,
-// and the five states below are idle / loading / empty / error / success.
-type ReindexPhase =
-  | { kind: "idle" }
-  | { kind: "loading-model" }
-  | { kind: "indexing"; done: number; total: number; page: string }
-  | { kind: "error"; message: string }
-  | { kind: "done"; pages: number };
-
+// The run itself lives in reindexStore, not here: it takes minutes, so it
+// outlives this panel routinely, and state that dies with the panel let a second
+// run start against the same index. This component renders the store's five
+// states and re-attaches to a run already in flight.
 function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
   const [status, setStatus] = useState<{ indexed_pages: number; model: string } | null>(
     null,
   );
-  const [phase, setPhase] = useState<ReindexPhase>({ kind: "idle" });
-  const busy = phase.kind === "loading-model" || phase.kind === "indexing";
+  const stage = useReindexStore((s) => s.stage);
+  const done = useReindexStore((s) => s.done);
+  const total = useReindexStore((s) => s.total);
+  const page = useReindexStore((s) => s.page);
+  const indexed = useReindexStore((s) => s.indexed);
+  const error = useReindexStore((s) => s.error);
+  const reindex = useReindexStore((s) => s.reindex);
+  const busy = stage === "loading-model" || stage === "indexing";
 
   const refresh = (): void => {
     ipc.embeddingsStatus().then(setStatus).catch(() => setStatus(null));
   };
   useEffect(refresh, []);
+  // Refresh the page count when a run finishes — including a run that finished
+  // while this panel was unmounted.
+  useEffect(() => {
+    if (stage === "done") refresh();
+  }, [stage]);
 
-  const reindex = async (): Promise<void> => {
-    // The model load is announced first and only on the very first local call,
-    // so start there and let the first progress event move us on.
-    setPhase({ kind: "loading-model" });
-    const { listen } = await import("@tauri-apps/api/event");
-    const offs: (() => void)[] = [];
-    try {
-      offs.push(
-        await listen<{ loading: boolean; ok: boolean }>("local-model-load", (e) => {
-          if (e.payload.loading) setPhase({ kind: "loading-model" });
-        }),
-      );
-      offs.push(
-        await listen<{ done: number; total: number; page: string }>(
-          "reindex-progress",
-          (e) => {
-            const { done, total, page } = e.payload;
-            setPhase({ kind: "indexing", done, total, page });
-          },
-        ),
-      );
-      const pages = await ipc.reindexEmbeddings("builtin-local", BUILTIN_MODEL);
-      setPhase({ kind: "done", pages });
-      refresh();
-    } catch (e) {
-      setPhase({ kind: "error", message: String(e) });
-    } finally {
-      // Same lifecycle rule as the other listeners: never outlive the run.
-      for (const off of offs) off();
-    }
-  };
-
-  const pct =
-    phase.kind === "indexing" && phase.total > 0
-      ? Math.round((phase.done / phase.total) * 100)
-      : 0;
+  const pct = stage === "indexing" && total > 0 ? Math.round((done / total) * 100) : 0;
 
   const label = (): string => {
-    if (phase.kind === "loading-model") return t.s_embeddings_loading_model ?? "Loading model…";
-    if (phase.kind === "indexing") {
-      return `${t.s_embeddings_indexing ?? "Indexing…"} ${phase.done}/${phase.total}`;
+    if (stage === "loading-model") return t.s_embeddings_loading_model ?? "Loading model…";
+    if (stage === "indexing") {
+      return `${t.s_embeddings_indexing ?? "Indexing…"} ${done}/${total}`;
     }
     return t.s_embeddings_reindex ?? "Reindex now";
   };
@@ -331,7 +300,7 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
 
       {/* A determinate bar once pages start arriving; the model load has no
           progress to report, so it stays a text state rather than a fake bar. */}
-      {phase.kind === "indexing" ? (
+      {stage === "indexing" ? (
         <div style={{ marginTop: 10 }} data-testid="reindex-progress">
           <div
             role="progressbar"
@@ -367,27 +336,27 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
               whiteSpace: "nowrap",
             }}
           >
-            {phase.page}
+            {page}
           </div>
         </div>
       ) : null}
 
-      {phase.kind === "loading-model" ? (
+      {stage === "loading-model" ? (
         <div className="muted" style={{ fontSize: 12, marginTop: 8 }} data-testid="reindex-loading">
           {t.s_embeddings_loading_model_hint ??
             "First run loads the bundled model — this takes a few seconds."}
         </div>
       ) : null}
 
-      {phase.kind === "done" ? (
+      {stage === "done" ? (
         <div style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }} data-testid="reindex-done">
-          {(t.s_embeddings_done ?? "Indexed {n} pages").replace("{n}", String(phase.pages))}
+          {(t.s_embeddings_done ?? "Indexed {n} pages").replace("{n}", String(indexed))}
         </div>
       ) : null}
 
-      {phase.kind === "error" ? (
+      {stage === "error" ? (
         <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }} data-testid="reindex-error">
-          {phase.message}
+          {error}
         </div>
       ) : null}
     </div>

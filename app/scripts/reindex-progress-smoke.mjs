@@ -139,10 +139,60 @@ for (const vp of VIEWPORTS) {
   });
   check(`${vp.name}: progress does not overflow its card`, overflow === 0, `overflow=${overflow}px`);
 
+  // --- a run survives leaving the panel ---------------------------------
+  // Reindex takes minutes, so navigating away mid-run is ordinary. The state
+  // used to live in the component: leaving reset it to idle and re-enabled the
+  // button, and clicking again started a SECOND reindex against the same index.
+  {
+    // Below 768px the sidebar is an off-canvas overlay that navigating closes,
+    // so it has to be reopened before each hop.
+    const openNav = async () => {
+      if (vp.width <= 768) {
+        await page.locator(".topbar .icon-btn").first().click();
+        await page.waitForTimeout(400);
+      }
+    };
+    await openNav();
+    await page.locator(".side-nav .nav-group").first().locator(".nav-item").first().click();
+    await page.waitForTimeout(300);
+    await openNav();
+    await page
+      .locator(".side-nav .nav-group")
+      .last()
+      .locator(".nav-item", { hasText: "Settings" })
+      .first()
+      .click();
+    await page.waitForSelector(".page-title", { timeout: 20_000 });
+    await page.waitForTimeout(400);
+    await page.locator(".qbtn", { hasText: "Model" }).first().click();
+    const back = page.locator('[data-testid="reindex-btn"]');
+    await back.waitFor({ timeout: 20_000 });
+    check(
+      `${vp.name}: a run in flight is still busy after leaving and returning`,
+      await back.isDisabled(),
+      `button text: ${await back.innerText()}`,
+    );
+    check(
+      `${vp.name}: the returning panel shows the live run, not idle`,
+      /\d+\/\d+|Loading model/.test(await back.innerText()),
+      await back.innerText(),
+    );
+  }
+
   // --- success ----------------------------------------------------------
   const done = page.locator('[data-testid="reindex-done"]');
-  await done.waitFor({ timeout: 20_000 });
-  check(`${vp.name}: success state shown`, /Indexed \d+ pages/.test(await done.innerText()), await done.innerText());
+  // Recorded as a check rather than an unguarded waitFor: a throw here loses
+  // every result the run collected, and this is exactly where a regression
+  // lands (a run whose state died with the panel never reports success).
+  const finished = await done
+    .waitFor({ timeout: 20_000 })
+    .then(() => true)
+    .catch(() => false);
+  check(
+    `${vp.name}: success state shown`,
+    finished && /Indexed \d+ pages/.test(await done.innerText()),
+    finished ? await done.innerText() : "no success state appeared",
+  );
   check(`${vp.name}: button returns to idle`, await btn.isEnabled());
   await page.screenshot({ path: `${SHOTS}/${vp.name}-4-done.png` });
 
