@@ -499,6 +499,22 @@ fn ensure_fresh<'a>(
 /// restored backup, the user deleting the file — is picked up rather than served
 /// stale. `reindex_embeddings` additionally seeds the entry with the store it
 /// just built, so the rebuild never pays a reload.
+/// What a caller needs to answer "top-`k` edges for this index".
+///
+/// Not just the edges, because computing them is a quadratic pass (114 ms at 300
+/// pages, and it grows with the square of the page count) and must not happen
+/// while the cache's lock is held — every other semantic command wants that
+/// lock. The caller gets either the finished list or the store to compute from,
+/// and hands the result back with `VectorCache::store_edges`.
+pub enum EdgeLookup {
+    /// Already computed for this index revision.
+    Ready(Arc<Vec<PageEdge>>),
+    /// Not computed yet — run `centroid_edges(k)` on this, off-thread.
+    Compute(Arc<VectorStore>),
+    /// No index on disk.
+    Empty,
+}
+
 #[derive(Default)]
 pub struct VectorCache {
     inner: Mutex<Option<CacheEntry>>,
@@ -520,23 +536,42 @@ impl VectorCache {
         }
     }
 
-    /// Top-`k` semantic edges for `path`, computed once per index revision.
+    /// Cached edges for `(path, k)`, or the store to compute them from.
     ///
-    /// The graph builds these on mount and again on every toggle of the semantic
-    /// overlay, and the link-suggestions panel asks for the same `k` — all of
-    /// which would otherwise redo a quadratic pass over the vault (114 ms at 300
-    /// pages, and it grows with the square of the page count).
-    pub fn edges(&self, path: &Path, k: usize) -> Arc<Vec<PageEdge>> {
+    /// The graph asks on mount and on every toggle of the semantic overlay, and
+    /// the link-suggestions panel asks for the same `k` — so the answer is
+    /// cached per index revision and they share one computation.
+    pub fn lookup_edges(&self, path: &Path, k: usize) -> EdgeLookup {
         let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         let Some(entry) = ensure_fresh(&mut guard, path) else {
-            return Arc::new(Vec::new());
+            return EdgeLookup::Empty;
         };
-        if let Some(cached) = entry.edges.get(&k) {
-            return Arc::clone(cached);
+        match entry.edges.get(&k) {
+            Some(cached) => EdgeLookup::Ready(Arc::clone(cached)),
+            None => EdgeLookup::Compute(Arc::clone(&entry.store)),
         }
-        let edges = Arc::new(entry.store.centroid_edges(k));
-        entry.edges.insert(k, Arc::clone(&edges));
-        edges
+    }
+
+    /// Adopt edges computed from `store`.
+    ///
+    /// Only if the cache still holds that exact store: the index can be
+    /// reindexed while the pass is running, and edges describing the old one
+    /// must not be filed against the new. Pointer identity says it precisely —
+    /// `ensure_fresh` replaces the whole entry when the file moves.
+    pub fn store_edges(
+        &self,
+        path: &Path,
+        k: usize,
+        store: &Arc<VectorStore>,
+        edges: Arc<Vec<PageEdge>>,
+    ) {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(entry) = ensure_fresh(&mut guard, path) else {
+            return;
+        };
+        if Arc::ptr_eq(&entry.store, store) {
+            entry.edges.insert(k, edges);
+        }
     }
 
     /// Adopt a store this process just wrote, so the writer's own work is reused
@@ -681,6 +716,21 @@ mod tests {
         assert!(VectorStore::default().centroid_edges(4).is_empty());
     }
 
+    /// What a command does with the split lookup/store API: compute on a miss,
+    /// reuse on a hit. Mirrors semantic_edges so the test exercises the real
+    /// shape rather than a convenience wrapper.
+    fn edges_via_cache(cache: &VectorCache, path: &Path, k: usize) -> Arc<Vec<PageEdge>> {
+        match cache.lookup_edges(path, k) {
+            EdgeLookup::Ready(e) => e,
+            EdgeLookup::Empty => Arc::new(Vec::new()),
+            EdgeLookup::Compute(store) => {
+                let built = Arc::new(store.centroid_edges(k));
+                cache.store_edges(path, k, &store, Arc::clone(&built));
+                built
+            }
+        }
+    }
+
     #[test]
     fn cache_reuses_edges_and_drops_them_on_rewrite() {
         let dir = scratch("cache-edges");
@@ -692,12 +742,12 @@ mod tests {
         s.save(&path).unwrap();
 
         let cache = VectorCache::default();
-        let first = cache.edges(&path, 4);
+        let first = edges_via_cache(&cache, &path, 4);
         assert_eq!(first.len(), 1); // a-b, deduplicated
         // Same allocation — the quadratic pass ran once.
-        assert!(Arc::ptr_eq(&first, &cache.edges(&path, 4)));
+        assert!(Arc::ptr_eq(&first, &edges_via_cache(&cache, &path, 4)));
         // A different k is a different question, so it is computed separately.
-        assert!(!Arc::ptr_eq(&first, &cache.edges(&path, 1).clone()));
+        assert!(!Arc::ptr_eq(&first, &edges_via_cache(&cache, &path, 1)));
 
         // A rewritten index invalidates everything derived from the old one.
         let mut next = VectorStore::default();
@@ -706,7 +756,48 @@ mod tests {
         next.upsert_page("b.md", "b", vec![(2, vec![0.9, 0.1])]);
         next.upsert_page("c.md", "c", vec![(3, vec![0.0, 1.0])]);
         next.save(&path).unwrap();
-        assert!(cache.edges(&path, 4).len() > first.len());
+        assert!(edges_via_cache(&cache, &path, 4).len() > first.len());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The reason the compute happens outside the lock: edges built from an
+    /// index that has since been reindexed must not be filed against the new
+    /// one. The pass takes seconds on a large vault, so this window is real.
+    #[test]
+    fn edges_computed_from_a_superseded_store_are_discarded() {
+        let dir = scratch("cache-edges-stale");
+        let path = dir.join("idx.mxv");
+        let mut s = VectorStore::default();
+        s.ensure_model("m");
+        s.upsert_page("a.md", "a", vec![(1, vec![1.0, 0.0])]);
+        s.upsert_page("b.md", "b", vec![(2, vec![0.9, 0.1])]);
+        s.save(&path).unwrap();
+
+        let cache = VectorCache::default();
+        // A command starts a pass against the store as it is now...
+        let EdgeLookup::Compute(old_store) = cache.lookup_edges(&path, 4) else {
+            panic!("expected a cache miss");
+        };
+        let stale = Arc::new(old_store.centroid_edges(4));
+
+        // ...and a reindex lands before it finishes.
+        let mut next = VectorStore::default();
+        next.ensure_model("m");
+        for i in 0..4 {
+            next.upsert_page(&format!("n{i}.md"), "n", vec![(i as u64, vec![1.0, i as f32])]);
+        }
+        next.save(&path).unwrap();
+        // Fault the new revision in, so the cache is holding a different store.
+        let _ = cache.get(&path);
+
+        cache.store_edges(&path, 4, &old_store, stale);
+        // The stale list must not be served for the new index.
+        let fresh = edges_via_cache(&cache, &path, 4);
+        assert!(
+            fresh.iter().all(|e| e.a.starts_with('n') && e.b.starts_with('n')),
+            "edges from the superseded index leaked: {:?}",
+            fresh.iter().map(|e| (&e.a, &e.b)).collect::<Vec<_>>()
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 

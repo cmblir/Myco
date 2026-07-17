@@ -178,10 +178,22 @@ pub fn ensure_default_vault() -> Result<String, String> {
     vault::ensure_default_vault()
 }
 
+/// The vault's file tree.
+///
+/// Async: this is the other leg of the 4-second refresh poll, and the one the
+/// vault fingerprint cannot short-circuit — the fingerprint covers .md files,
+/// while the tree also shows folders, so gating it would stop a new empty folder
+/// from ever appearing. It walks the whole vault every tick, so it belongs off
+/// the event loop.
 #[tauri::command]
-pub fn list_files(state: tauri::State<VaultRoot>, root: String) -> Result<Vec<FileNode>, String> {
+pub async fn list_files(
+    state: tauri::State<'_, VaultRoot>,
+    root: String,
+) -> Result<Vec<FileNode>, String> {
     let root = confine_root(&state, &root)?;
-    vault::list_files(&root)
+    tauri::async_runtime::spawn_blocking(move || vault::list_files(&root))
+        .await
+        .map_err(|e| format!("join failed: {e}"))?
 }
 
 #[tauri::command]
@@ -520,9 +532,18 @@ pub fn list_universes(
 /// Read-only link graph of a universe identified by its ROOT path — validated
 /// to be one of the KNOWN universes (a registered project, a discovered sibling
 /// vault, or the open vault itself), so this never reads an arbitrary path.
+/// Async for the same reason `build_link_graph` is: this reads and parses every
+/// note in the target vault (305 ms warm on a 10k-note vault). The multiverse
+/// loads every universe at once — on the event loop those builds serialise and
+/// freeze the whole app, not just the graph, for their sum.
+///
+/// The allow-set is still resolved on the calling side, BEFORE the spawn: it is
+/// cheap (a registry read and a sibling scan), and it is the check that stops
+/// this from reading an arbitrary path — leaving it here keeps the refusal
+/// immediate and impossible to skip.
 #[tauri::command]
-pub fn build_universe_graph(
-    state: tauri::State<VaultRoot>,
+pub async fn build_universe_graph(
+    state: tauri::State<'_, VaultRoot>,
     root: String,
 ) -> Result<Adjacency, String> {
     let open = require_root(&state)?;
@@ -546,7 +567,9 @@ pub fn build_universe_graph(
     if !known.contains(&target) {
         return Err("not a known universe".into());
     }
-    index::build_link_graph(&target.to_string_lossy())
+    tauri::async_runtime::spawn_blocking(move || index::build_link_graph(&target.to_string_lossy()))
+        .await
+        .map_err(|e| format!("join failed: {e}"))?
 }
 
 /// Case-insensitive full-text search over the open vault's .md files. Uses the
@@ -979,7 +1002,7 @@ pub fn mcp_stop() -> Result<String, String> {
 
 use crate::embeddings;
 use crate::perf;
-use crate::vector_index::{Hit as VecHit, VectorCache, VectorStore};
+use crate::vector_index::{EdgeLookup, Hit as VecHit, VectorCache, VectorStore};
 
 /// Embed a batch of texts with the chosen provider.
 async fn embed_texts(
@@ -1206,8 +1229,12 @@ pub async fn semantic_search(
 
 /// Pages most semantically similar to `page` (no embedding call — uses stored
 /// vectors), for the Reader related-notes panel and graph similarity edges.
+///
+/// Async: this scans every record, best-chunk against best-chunk, which is the
+/// heaviest read in the semantic layer after the edge pass. The Reader asks for
+/// it on every page open, so on the event loop it would stall navigation.
 #[tauri::command]
-pub fn related_pages(
+pub async fn related_pages(
     vault: tauri::State<'_, VaultRoot>,
     cache: tauri::State<'_, VectorCache>,
     page: String,
@@ -1218,15 +1245,18 @@ pub fn related_pages(
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
     let store = cache.get(&index_path);
     let load_ms = perf::ms(t0.elapsed());
+    let records = store.records.len();
     let t_scan = std::time::Instant::now();
-    let hits = store.related(&page, k.clamp(1, 50));
+    let hits = tauri::async_runtime::spawn_blocking(move || store.related(&page, k.clamp(1, 50)))
+        .await
+        .map_err(|e| format!("join failed: {e}"))?;
     perf::log(
         "related_pages",
         &[
             ("load_store_ms", load_ms),
             ("scan_ms", perf::ms(t_scan.elapsed())),
             ("total_ms", perf::ms(t0.elapsed())),
-            ("records", store.records.len() as f64),
+            ("records", records as f64),
         ],
     );
     Ok(hits)
@@ -1242,8 +1272,15 @@ pub struct SemanticEdge {
 /// Top-`k` semantic-similarity edges across the vault, for the graph's
 /// "semantic links" overlay. Absolute page paths so they align with the
 /// wikilink graph's node ids. Undirected pairs are de-duplicated.
+///
+/// Async because a cache miss runs the centroid pass, which is quadratic in
+/// pages (114 ms at 300, growing with the square) — on the event loop that
+/// stalls every other IPC call. The pass also runs OUTSIDE the cache's lock, so
+/// a search issued while the graph is building its overlay does not queue behind
+/// it: `lookup_edges` hands back the store, the work happens on the blocking
+/// pool, and `store_edges` files the result only if that store is still current.
 #[tauri::command]
-pub fn semantic_edges(
+pub async fn semantic_edges(
     vault: tauri::State<'_, VaultRoot>,
     cache: tauri::State<'_, VectorCache>,
     k: usize,
@@ -1251,11 +1288,24 @@ pub fn semantic_edges(
     let t0 = std::time::Instant::now();
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
-    let abs = |rel: &str| root.join(rel).to_string_lossy().into_owned();
-    // Covers the centroid pass on a cache miss and next to nothing on a hit —
-    // which is the point of the field: a slow line here means a fresh index.
-    let edges = cache.edges(&index_path, k.clamp(1, 10));
+    let k = k.clamp(1, 10);
+
+    let (edges, computed) = match cache.lookup_edges(&index_path, k) {
+        EdgeLookup::Ready(edges) => (edges, false),
+        EdgeLookup::Empty => (Arc::new(Vec::new()), false),
+        EdgeLookup::Compute(store) => {
+            let for_pass = Arc::clone(&store);
+            let built = tauri::async_runtime::spawn_blocking(move || for_pass.centroid_edges(k))
+                .await
+                .map_err(|e| format!("join failed: {e}"))?;
+            let built = Arc::new(built);
+            cache.store_edges(&index_path, k, &store, Arc::clone(&built));
+            (built, true)
+        }
+    };
     let build_ms = perf::ms(t0.elapsed());
+
+    let abs = |rel: &str| root.join(rel).to_string_lossy().into_owned();
     let out: Vec<SemanticEdge> = edges
         .iter()
         .map(|e| SemanticEdge {
@@ -1267,9 +1317,12 @@ pub fn semantic_edges(
     perf::log(
         "semantic_edges",
         &[
+            // Near zero on a cache hit; the centroid pass on a miss. A slow line
+            // here means a fresh index, which is what the field is for.
             ("build_edges_ms", build_ms),
             ("total_ms", perf::ms(t0.elapsed())),
             ("edges", out.len() as f64),
+            ("computed", if computed { 1.0 } else { 0.0 }),
         ],
     );
     Ok(out)
