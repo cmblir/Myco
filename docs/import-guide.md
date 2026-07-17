@@ -1,29 +1,84 @@
-# Import Guide — Getting Conversations & Sessions Into Memex
+# Import Guide — Getting Sources Into Memex
 
-This guide shows you, step by step, how to pull your AI conversations and coding
-sessions into a Memex vault: **ChatGPT**, **Claude.ai**, **Claude Code**, and
-**Codex CLI**. Every path is the same — *drop a file in one folder and walk away*.
+How to get material into a Memex vault, and — just as importantly — what does
+**not** work yet.
 
-> [!important] `raw/` is immutable. Nothing here ever edits it.
-> Memex treats `<vault>/raw/` as **immutable source-of-truth**. You drop exports
-> into a **staging inbox** (`<vault>/raw/imports/`), and Memex writes the parsed,
-> normalized transcripts into `raw/conversations/...` — it **never overwrites,
-> edits, or deletes** an existing `raw/` file. Re-dropping the same export is a
-> safe no-op (see [Idempotency](#idempotency--re-dropping-is-safe)). If a source
-> is wrong, the correction goes to a `wiki/` page, never back into `raw/`.
+> [!warning] Read this first: bulk conversation import is not built.
+> An earlier version of this guide described a full pipeline for ChatGPT /
+> Claude / Claude Code / Codex exports: a `raw/imports/` drop folder,
+> source auto-detection, normalized transcripts at `raw/conversations/<id>.md`,
+> and a dedup ledger for safe re-drops.
+>
+> **None of that exists.** No code reads `raw/imports/`, there is no conversation
+> parser, and there is no ledger. The guide was written ahead of the feature and
+> never marked as such. If you followed it, nothing happened to your files —
+> they are still sitting where you copied them.
+>
+> This page now describes only what actually runs. The export steps below are
+> real and worth doing — they are vendor-side, and you will want the files when
+> the parsers land.
 
 ---
 
-## The drop folder
+## What works today
 
-Everything you export lands in **one** place:
+One source file at a time, wikified by the model:
 
-```
-<vault>/raw/imports/
-```
+1. You put a source into the vault's inbox — `<vault>/_inbox/` — or paste it
+   straight into the app (**Ingest a source**).
+2. The source is copied to `raw/<slug>.md`, which becomes the citable original.
+3. The model reads it with the vault's `CLAUDE.md` as its instructions and
+   writes into `wiki/`, with citations pointing back at the `raw/` copy.
+4. An account of the run lands in `ingest-reports/`.
 
-`<vault>` is your Memex vault root (the folder containing `raw/`, `wiki/`,
-`ingest-reports/`). The default is:
+That pipeline is solid. What is missing is everything *upstream* of it: nothing
+splits one big vendor export into per-conversation sources, so a 200 MB
+`conversations.json` is one enormous "source" rather than 1,400 of them.
+
+### The inbox is markdown-only in the app
+
+This surprises people, so it is worth being blunt about. The two things that
+drain `_inbox/` accept **different file types**:
+
+| You drop | App (auto-ingest, while open) | `automation/autoingest.py` (headless) |
+|---|---|---|
+| `.md` `.markdown` | ✅ | ✅ |
+| `.txt` `.csv` `.tsv` `.json` `.yaml` `.html` | ❌ **invisible** | ✅ read as text |
+| `.pdf` `.xlsx` `.ods` | ❌ **invisible** | ✅ via the Memex binary (`--app-bin`) |
+| `.jsonl` | ❌ **invisible** | ❌ **not handled** |
+
+The app's file listing is markdown-only (`vault::walk_dir` keeps only `.md`), so
+a non-`.md` file in `_inbox/` is not ignored on purpose — it is not seen at all.
+The daemon is the broader path, and even it does not know `.jsonl`.
+
+**Consequences for the exports below:** a ChatGPT/Claude `conversations.json`
+can only be consumed by the daemon, and only as one raw blob. Claude Code and
+Codex sessions are `.jsonl` and are consumed by **nothing**. Copying them into
+`_inbox/` today does nothing at all.
+
+### `raw/` is immutable — this part is true
+
+Ingest **creates** `raw/<slug>.md` and nothing ever edits or deletes an existing
+`raw/` file. Corrections go to a `wiki/` page, never back into `raw/`. That rule
+holds and is enforced for the agent's tools (`vault::is_raw_path`).
+
+The old guide had this backwards: it told you to `mkdir ~/Documents/Memex/raw/imports`
+and drop exports *inside* `raw/`, then said the consumed file "leaves
+`raw/imports/`" — i.e. a delete inside the immutable tree. Do not do that. The
+inbox is `_inbox/`, which sits beside `raw/`, not in it.
+
+> [!note] The app deletes a consumed inbox file; the daemon archives it.
+> After a successful run the daemon moves the source to `_inbox/.archived/`,
+> while the in-app pass deletes it. The content survives either way as
+> `raw/<slug>.md`, but if a run half-fails the app path is the lossy one. Prefer
+> the daemon for anything you cannot re-export.
+
+---
+
+## Where your vault is
+
+`<vault>` is the folder containing `wiki/`, `raw/` and `ingest-reports/`. The
+default:
 
 | OS | Default `<vault>` |
 |----|-------------------|
@@ -31,82 +86,50 @@ Everything you export lands in **one** place:
 | Windows | `%USERPROFILE%\Documents\Memex` |
 | Linux | `~/Documents/Memex` |
 
-To find or change it, open the app → **Settings → Account → current vault path →
-Change…**. If you use a different folder, substitute it for `<vault>` everywhere
-below.
+To find or change it: **Settings → Account → Vault path → Change…**
 
-Create the drop folder once:
+The inbox is created for you; if it is missing:
 
 ```bash
-mkdir -p ~/Documents/Memex/raw/imports
+mkdir -p ~/Documents/Memex/_inbox
 ```
-
-> [!note] The inbox is *staging*, not immutable content.
-> `raw/imports/` is where you **drop** raw exports. Memex parses each file and
-> writes the canonical transcript to `raw/conversations/<source>/<id>.md`. The
-> dropped export is consumed (moved out of the inbox) once processed, so the
-> inbox doubles as your "pending" tray. Your immutable wiki sources live under
-> `raw/conversations/`, not in `imports/`.
 
 ---
 
-## 1. ChatGPT (`conversations.json`)
+## Exporting your data
 
-### Export your data
+These steps are vendor-side and current. Do them now if you like — the files
+keep, and they are what the importer will consume when it exists. Just know that
+dropping the results into `_inbox/` today will not import them (see the table
+above).
 
-1. Open [chatgpt.com](https://chatgpt.com) in a browser and sign in.
-2. Click your profile (top-right) → **Settings**.
-3. Go to **Data controls** → **Export data** → **Export**.
-4. Confirm in the dialog. OpenAI emails you a download link (usually within
-   minutes, sometimes up to 24 h). The link expires, so download promptly.
-5. You receive a ZIP, e.g. `chatgpt-export-2026-06-08.zip`. Unzip it.
+### ChatGPT (`conversations.json`)
 
-### Where `conversations.json` lands
-
-Inside the unzipped folder you'll find:
+1. Open [chatgpt.com](https://chatgpt.com) and sign in.
+2. Profile (top-right) → **Settings**.
+3. **Data controls** → **Export data** → **Export**.
+4. Confirm. OpenAI emails a download link (usually minutes, sometimes up to
+   24 h). The link expires — download promptly.
+5. Unzip. Inside:
 
 ```
 chatgpt-export-2026-06-08/
-├── conversations.json     ← this is the one you want (all your chats)
+├── conversations.json     ← every chat, as one JSON array
 ├── chat.html
 ├── message_feedback.json
 ├── model_comparisons.json
 └── user.json
 ```
 
-`conversations.json` is a **JSON array** of every conversation. That single file
-is all Memex needs.
+`conversations.json` is the only file the importer will need.
 
-### Drop it in
-
-```bash
-cp ~/Downloads/chatgpt-export-2026-06-08/conversations.json \
-   ~/Documents/Memex/raw/imports/chatgpt-conversations.json
-```
-
-> [!tip] Rename so you can tell sources apart.
-> The file is generically named `conversations.json` for both ChatGPT and
-> Claude. Renaming the dropped copy to `chatgpt-conversations.json` keeps your
-> inbox readable. Memex auto-detects the source from the file's **contents**, so
-> the name is only for your own sanity — but it helps.
-
-That's it. Memex picks it up (see [What happens next](#what-memex-does-after-the-drop)).
-
----
-
-## 2. Claude.ai (`conversations.json`)
-
-### Export your data
+### Claude.ai (`conversations.json`)
 
 1. Open [claude.ai](https://claude.ai) and sign in.
-2. Click your name / initials (bottom-left) → **Settings**.
-3. Go to **Privacy** (or **Account → Data**, depending on plan) → **Export
-   data**.
-4. Confirm. Anthropic emails you a download link. Download and unzip.
-5. You receive a ZIP containing a `conversations.json` (some builds ship it as a
-   one-object-per-line `.jsonl` instead — both work).
-
-### Where it lands
+2. Your name / initials (bottom-left) → **Settings**.
+3. **Privacy** (or **Account → Data**, depending on plan) → **Export data**.
+4. Confirm, download, unzip. Some builds ship one-object-per-line `.jsonl`
+   instead of `.json`.
 
 ```
 claude-export/
@@ -115,243 +138,114 @@ claude-export/
 └── users.json
 ```
 
-### Drop it in
+> [!tip] Rename them apart.
+> Both vendors call the file `conversations.json`. Keep them distinct
+> (`chatgpt-conversations.json`, `claude-conversations.json`) or your own `cp`
+> will clobber one with the other before Memex is anywhere near it.
 
-```bash
-cp ~/Downloads/claude-export/conversations.json \
-   ~/Documents/Memex/raw/imports/claude-conversations.json
-```
+### Claude Code sessions
 
-> [!warning] Don't overwrite the ChatGPT file.
-> Both providers call the file `conversations.json`. If you dropped the ChatGPT
-> one as `conversations.json`, copying the Claude one with the same name will
-> clobber it **inside your Downloads/inbox** before Memex even sees it. Always
-> give them distinct names (`chatgpt-conversations.json`,
-> `claude-conversations.json`). Memex itself never overwrites `raw/` — but your
-> own `cp` can overwrite a file in the inbox, so name them apart.
-
----
-
-## 3. Claude Code sessions (`~/.claude/projects/.../*.jsonl`)
-
-Claude Code stores every session as an **append-only JSONL** file on your disk —
-no export step needed. They live at:
+No export step — sessions are already on your disk as append-only JSONL:
 
 ```
 ~/.claude/projects/<encoded-project>/<sessionId>.jsonl
 ```
 
-`<encoded-project>` is the project's absolute path with every `/` and `.`
-replaced by `-`. For example, work done in `/Users/yoo/project/Memex` lives under:
-
-```
-~/.claude/projects/-Users-yoo-project-Memex/
-```
-
-Each `<sessionId>.jsonl` (a UUID) is one session.
-
-### Find the sessions you want
-
-List your projects:
+`<encoded-project>` is the project's absolute path with `/` and `.` replaced by
+`-`, so `/Users/yoo/project/Memex` lives at
+`~/.claude/projects/-Users-yoo-project-Memex/`. Each `<sessionId>.jsonl` (a
+UUID) is one session.
 
 ```bash
-ls -1 ~/.claude/projects/
+ls -1 ~/.claude/projects/                                  # your projects
+ls -lt ~/.claude/projects/-Users-yoo-project-Memex/        # sessions, newest first
 ```
 
-List the sessions for one project, newest last:
+### Codex CLI sessions
 
-```bash
-ls -lt ~/.claude/projects/-Users-yoo-project-Memex/
-```
-
-(Drop in the encoded name from the previous command for your own project.)
-
-### Copy them into the drop folder
-
-**One session:**
-
-```bash
-cp ~/.claude/projects/-Users-yoo-project-Memex/<sessionId>.jsonl \
-   ~/Documents/Memex/raw/imports/
-```
-
-**All sessions for one project:**
-
-```bash
-cp ~/.claude/projects/-Users-yoo-project-Memex/*.jsonl \
-   ~/Documents/Memex/raw/imports/
-```
-
-**Everything, across all projects** (recursive copy, flattening into the inbox):
-
-```bash
-find ~/.claude/projects -name '*.jsonl' \
-  -exec cp {} ~/Documents/Memex/raw/imports/ \;
-```
-
-> [!note] Copy, don't move.
-> Use `cp`, never `mv`. Leaving the originals in `~/.claude/projects/` means
-> Claude Code keeps working normally, and active sessions can be re-imported
-> later as updates. Memex reads the copies in the inbox.
-
-> [!tip] Coding sessions become structured pages, not raw dumps.
-> Memex extracts the *problem solved*, the repo/files touched, and the tools
-> used — emitting `entity` pages (repos, files) and `technique`/`analysis` pages
-> — rather than pasting the whole turn-by-turn log. Sidechain/sub-agent and
-> internal-meta lines are filtered out automatically.
-
----
-
-## 4. Codex CLI sessions (`~/.codex/`)
-
-Codex CLI keeps its data under `$CODEX_HOME` (default `~/.codex/`). Two things
-are useful:
+Under `$CODEX_HOME` (default `~/.codex/`):
 
 ```
 ~/.codex/
-├── history.jsonl                                  ← flat global prompt log
-└── sessions/
-    └── YYYY/MM/DD/
-        └── rollout-<ISO-ts>-<uuid>.jsonl          ← one session each
+├── history.jsonl                                  ← flat prompt log (optional)
+└── sessions/YYYY/MM/DD/rollout-<ISO-ts>-<uuid>.jsonl   ← one session each
 ```
-
-- **`sessions/.../rollout-*.jsonl`** — the full session transcripts (what you
-  want for wikification).
-- **`history.jsonl`** — a flat log of your prompts only; handy as a search/title
-  aid. Optional. (May be empty if you set `history=none`.)
-
-### Find recent sessions
 
 ```bash
 find ~/.codex/sessions -name 'rollout-*.jsonl' | sort | tail -20
 ```
 
-### Copy them into the drop folder
-
-**One session:**
-
-```bash
-cp ~/.codex/sessions/2026/06/08/rollout-<ts>-<uuid>.jsonl \
-   ~/Documents/Memex/raw/imports/
-```
-
-**All sessions:**
-
-```bash
-find ~/.codex/sessions -name 'rollout-*.jsonl' \
-  -exec cp {} ~/Documents/Memex/raw/imports/ \;
-```
-
-**The global prompt history too (optional):**
-
-```bash
-cp ~/.codex/history.jsonl ~/Documents/Memex/raw/imports/codex-history.jsonl
-```
-
-Same rule as Claude Code: **`cp`, not `mv`** — keep your originals in place.
+> [!note] Copy, never move.
+> When the importer lands, it will read copies. Leaving the originals in
+> `~/.claude/projects/` and `~/.codex/sessions/` keeps both tools working and
+> lets a growing session be re-imported later.
 
 ---
 
-## What Memex does after the drop
+## Ingesting one source, today
 
-Once a file settles in `<vault>/raw/imports/`, the pipeline runs end to end:
+The path that works. Either:
 
-1. **Auto-detect** — Memex inspects the file's *contents* (not just its name) and
-   classifies the source: ChatGPT array, Claude export, Claude Code JSONL, or
-   Codex rollout. Date formats, message trees, and role names are normalized per
-   source (e.g. Claude's `human` → `user`, ChatGPT's `current_node` thread is
-   walked to the root).
-2. **Normalize → `raw/`** — each conversation/session is serialized to one clean
-   markdown transcript at:
+**In the app** — **Ingest a source**, paste a title and the text, and watch the
+run. This accepts anything you can paste, plus dropped files the extractor
+understands (PDF, spreadsheets, audio/video via transcription).
 
-   ```
-   <vault>/raw/conversations/<source>/<id>.md
-   ```
+**Via the inbox** — write or copy a `.md` file into `<vault>/_inbox/` and turn on
+auto-ingest (**Settings → Model**), or run the headless daemon:
 
-   where `<source>` ∈ `chatgpt | claude | claude-code | codex` and `<id>` is the
-   vendor's stable id (conversation UUID / `sessionId`). **This write is
-   guarded**: if a file for that id already exists, Memex refuses to overwrite it
-   — `raw/` stays immutable. The consumed file leaves `raw/imports/`.
-3. **Ingest (chunk → extract → merge → cite)** — the transcript is split on
-   speaker-turn boundaries, facts and entities are extracted, then matched
-   against your existing wiki. Each new fact is decided **ADD / UPDATE / MERGE /
-   NOOP** so the same idea from two chats converges onto one page instead of
-   duplicating.
-4. **Wiki pages with citations** — `wiki/` pages are created or updated with
-   inline citations pointing back at the exact source:
+```bash
+python3 automation/autoingest.py \
+  --vault ~/Documents/Memex \
+  --app-bin "/Applications/Memex.app/Contents/MacOS/Memex"
+```
 
-   ```
-   This was decided in the 2026-03 planning chat.[^src-conv-<id>]
+`--app-bin` points at the installed binary and is what enables PDF/spreadsheet
+extraction. See `automation/README.md`.
 
-   [^src-conv-<id>]: [[source-conv-<id>]]
-   ```
-
-   Coding sessions cite `[^src-session-<sessionId>]`. Every citation resolves to
-   the transcript page under `raw/conversations/...`, matching the vault's
-   citation contract.
-5. **Commit + report** — related page writes are grouped into a single
-   `ingest: <title>` commit, a WHY report is written to `ingest-reports/`, and
-   `wiki/index.md` + `wiki/log.md` are updated last.
-
-> [!note] Contradictions are handled, not clobbered.
-> If a new conversation contradicts an existing claim, Memex applies the vault's
-> contradiction policy — moving the old claim to `## Historical claims`, opening
-> a `## Disputed` section, or marking the old source `superseded` — with date
-> stamps, rather than silently overwriting.
+If you want a conversation in the wiki *now*, the honest answer is: copy the
+part you care about into a markdown file and ingest that. It is manual, and it
+is the only thing that works.
 
 ---
 
-## Idempotency — re-dropping is safe
+## What is planned
 
-**You can re-drop the same export as many times as you like.** Memex keeps a
-dedup ledger at:
+Tracked, not promised. Roughly, in order:
 
-```
-<vault>/.memex/ledger.json   (gitignored)
-```
+1. **Conversation parsers** — split one vendor export into N per-conversation
+   sources in `_inbox/`. This is the whole feature; everything else is a shell
+   around it. Undecided: whether a `.jsonl` session is worth parsing per-session
+   or per-project.
+2. **A dedup ledger** — so re-dropping a monthly export skips what is already
+   imported instead of producing `x-2.md`, `x-3.md`. Today re-dropping the same
+   file really does duplicate.
+3. **Bulk-import UX** — two-level progress and retry-failed, once there is a
+   batch to run.
+4. **Secret scanning on the way in** — today `scan_secrets` only guards the MCP
+   path, so a source arriving through the app is not scanned. This matters much
+   more once thousands of session transcripts land unattended in a git-committed
+   tree.
 
-It uses a two-level key:
-
-1. **`<source>:<id>`** — the vendor's conversation/session id. If it's already
-   imported, the drop is skipped: a no-op.
-2. **Content SHA-256** of the normalized transcript — catches the *same*
-   conversation re-exported under a different filename, and detects *edits*. A
-   changed transcript (e.g. an active session that grew, or a chat you continued)
-   re-ingests as an **UPDATE** to the existing page — never a duplicate.
-
-Practical consequences:
-
-- **Re-export ChatGPT/Claude monthly and re-drop the whole file** — only new and
-  changed conversations are processed; everything already imported is skipped.
-- **Re-copy your `~/.claude/projects` and `~/.codex/sessions`** repeatedly — same
-  story. Growing sessions update in place.
-- Page writes are **replace-over-page**, never blind append, so a crashed or
-  partial run simply converges on the next drop. The import is resumable.
-
-> [!important] Immutability + idempotency together
-> Because `raw/` writes are pre-existence-checked **and** the ledger skips known
-> ids, dropping the same export twice can neither corrupt `raw/` nor double-count
-> your wiki. This is what makes "drop a folder and forget it" safe.
+When these land, this page gets the drop-a-folder-and-forget-it story it
+promised prematurely.
 
 ---
 
 ## Quick reference
 
-| Source | Where it comes from | Drop into | Detected id |
-|--------|--------------------|-----------|-------------|
-| ChatGPT | Settings → Data controls → Export → `conversations.json` | `<vault>/raw/imports/` | conversation UUID |
-| Claude.ai | Settings → Privacy → Export → `conversations.json`/`.jsonl` | `<vault>/raw/imports/` | conversation `uuid` |
-| Claude Code | `~/.claude/projects/<encoded-project>/<sessionId>.jsonl` (copy) | `<vault>/raw/imports/` | `sessionId` |
-| Codex CLI | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` (copy) | `<vault>/raw/imports/` | session UUID |
+| Folder | Purpose | Mutable? |
+|--------|---------|----------|
+| `<vault>/_inbox/` | where you drop sources; consumed after ingest | yes (staging) |
+| `<vault>/_inbox/.archived/` | sources the daemon has consumed | yes |
+| `<vault>/raw/` | the citable originals, written by ingest | **created, never edited or deleted** |
+| `<vault>/wiki/` | generated pages with citations | yes (Memex-owned) |
+| `<vault>/ingest-reports/` | what each run did, and why | yes |
 
-| Folder | Mutable? | Purpose |
-|--------|----------|---------|
-| `<vault>/raw/imports/` | yes (staging) | where **you** drop exports; consumed after parse |
-| `<vault>/raw/conversations/` | **no — immutable** | normalized transcripts; never edited/overwritten |
-| `<vault>/wiki/` | yes (Memex-owned) | generated pages with citations |
-| `<vault>/.memex/ledger.json` | yes (gitignored) | dedup ledger for idempotent re-drops |
-
-> [!warning] The one rule that never bends
-> `raw/` is immutable. You drop into `raw/imports/`; Memex writes
-> `raw/conversations/`; nobody edits or deletes existing `raw/` files. Fixes go
-> to `wiki/`. Re-dropping is always safe.
+| Source | Export it from | Importable today? |
+|--------|---------------|-------------------|
+| ChatGPT | Settings → Data controls → Export | ⚠️ daemon only, as one raw blob |
+| Claude.ai | Settings → Privacy → Export | ⚠️ daemon only, as one raw blob |
+| Claude Code | `~/.claude/projects/…/*.jsonl` (already on disk) | ❌ `.jsonl` is handled by nothing |
+| Codex CLI | `~/.codex/sessions/…/rollout-*.jsonl` | ❌ `.jsonl` is handled by nothing |
+| A markdown note | — | ✅ |
+| PDF / spreadsheet / audio / video | — | ✅ (app, or daemon with `--app-bin`) |
