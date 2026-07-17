@@ -8,12 +8,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
-- **Multiverse bubbles are now labelled readably in both themes.** A universe's
-  name — the one thing a bubble exists to tell you — was hardcoded near-white
-  (invisible on the light theme) and then drowned out by the community names
-  that surface while zoomed out. The name now follows the app theme, and
-  community labels stay off in multiverse view where the universe name is the
-  label that matters.
+- **Renaming a page no longer edits the sources that cite it.** `raw/` is
+  read-only by rule, but a rename rewrote wikilinks everywhere in the vault —
+  including inside the source documents your wiki cites. A citation is only worth
+  something if the thing cited didn't move underneath it.
+- **Typing Korean, Japanese or Chinese no longer submits half-composed text.**
+  The Enter that commits an IME candidate was being treated as "send": it
+  submitted partial questions to the model, activated the wrong command-palette
+  row, and closed dialogs early.
+- **One unreadable file no longer blanks the whole graph.** A dangling symlink,
+  an un-downloaded iCloud placeholder or a single permission-denied note used to
+  abort the entire link graph, so the Graph view and every multiverse bubble
+  rendered nothing.
+- **The vault boundary now holds against symlinks.** A symlinked folder inside a
+  vault let search, the context sent to the model, and the embedding index read
+  files from outside it — and let a page rename write to them.
+- **Multiverse bubbles are now labelled readably in both themes, and you can see
+  more than one at a time.** A universe's name — the one thing a bubble exists to
+  tell you — was hardcoded near-white (invisible on the light theme) and drowned
+  out by the community names that surface while zoomed out. The vaults were also
+  spaced as if a big one occupied far more room than it draws, which pushed the
+  others out of frame; they now sit a couple of bubble-widths apart.
 - **Reindexing no longer crashes the app on a long unbroken paragraph.** A page
   with no headings and no blank lines came back from chunking as a single chunk
   of the whole page — the size limit was only ever applied between paragraphs, so
@@ -24,8 +39,21 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   split at the limit (preferring word breaks, never splitting a character), and
   the embed batch is sized to its text.
 
+### Added
+
+- **Optional: keep the semantic index up to date automatically.** Settings ›
+  Semantic search gains a toggle — while Memex is open, pages you edit are
+  re-embedded once you stop typing, so semantic search, related notes and graph
+  similarity stop describing the vault as it was at your last manual reindex.
+  Off by default, and it only maintains an index you already built.
+
 ### Changed
 
+- **The app no longer stalls on a large vault.** It was rebuilding the entire
+  link graph every four seconds to notice outside edits — reading and parsing
+  every note, roughly 300 ms on a 10,000-note vault, forever, almost always to
+  conclude nothing had changed. It now checks a cheap fingerprint first and only
+  rebuilds when something actually moved.
 - **The semantic layer got dramatically faster.** The embedding index is now
   kept in memory between commands and stored in a compact binary format
   (previously every semantic search re-read and re-parsed a JSON file — at
@@ -35,8 +63,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   mid-index no longer discards everything, and embedding reuses one model
   context per page (~25% faster). Existing indexes migrate automatically on
   the next reindex.
-
-### Added
 
 - **Reindex tells you what it is doing.** Building the embedding index is the
   slowest thing Memex does — roughly half a second per chunk, so minutes on a
