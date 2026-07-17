@@ -811,13 +811,6 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(NODES.map((d) => `===== wiki/${d.s}.md =====\n${body(d)}`).join("\n\n"));
     case "list_provider_models":
       return Promise.resolve(["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"]);
-    case "has_provider_key":
-      return Promise.resolve(false);
-    case "parse_links": {
-      const p = String(args.path ?? "");
-      const slug = p.split("/").pop()?.replace(/\.md$/, "") ?? "";
-      return Promise.resolve(bySlug.get(slug)?.l ?? []);
-    }
     // Semantic layer (Feature 1) — mock the embedding index with the sample graph:
     // "similarity" stands in as a node's declared links + a couple of siblings.
     case "reindex_embeddings":
@@ -929,9 +922,57 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       if (list) mockListeners.set(name, list.filter((l) => l.id !== id));
       return Promise.resolve(undefined);
     }
+    // The rest of the registered surface. Nothing here is interesting to look
+    // at — the point is that it EXISTS, so the default below can reject like
+    // the real thing.
+    case "write_run_log":
+      return Promise.resolve(null);
+    case "claude_cancel":
+      return Promise.resolve(true);
+    case "read_external_text":
+      return Promise.resolve("(mock) text extracted from the dropped file.");
+    case "scaffold_obsidian_vault":
+      return Promise.resolve(`${VAULT}/.obsidian`);
+    case "agent_run":
+      return Promise.resolve(mockClaudeRun(String(args.prompt ?? "")));
+    case "chat_complete": {
+      const req = (args.request ?? {}) as { provider_id?: string; model?: string };
+      return Promise.resolve({
+        provider_id: req.provider_id ?? "anthropic-api",
+        model: req.model ?? "mock-model",
+        content: "(mock) provider reply — the real app calls the HTTP provider here.",
+        usage: { input_tokens: 120, output_tokens: 42 },
+      });
+    }
+    case "mcp_registration_info":
+      return Promise.resolve({
+        found: true,
+        installed: false,
+        serving: false,
+        url: "http://localhost:22360/sse",
+        python: "/usr/bin/python3",
+        script: "/mock/memex_mcp.py",
+        command: "claude mcp add --transport sse memex http://localhost:22360/sse",
+        desktop_json: null,
+      });
+    case "mcp_install":
+      return Promise.resolve("(mock) MCP server installed.");
+    case "mcp_register":
+      return Promise.resolve("(mock) registered with the Claude CLI.");
+    case "mcp_serve":
+      return Promise.resolve("(mock) MCP server started.");
+    case "mcp_stop":
+      return Promise.resolve("(mock) MCP server stopped.");
     default:
-      // Unknown command (e.g. plugin event channels) — resolve benign empty.
-      return Promise.resolve(undefined);
+      // Reject, like the real Tauri does for a command that is not registered.
+      // Resolving `undefined` instead is how the mock hid a broken feature for
+      // as long as it did: ingest called claude_run_stream, got undefined back,
+      // and died on `res.status` with a TypeError that read like an app bug —
+      // in the mock every E2E suite runs against. A command that reaches here
+      // is either a typo or an unmocked command, and both should be loud.
+      return Promise.reject(
+        new Error(`devMock: no handler for command "${cmd}" — add one in devMock.ts`),
+      );
   }
 }
 
