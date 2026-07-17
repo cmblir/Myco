@@ -929,6 +929,29 @@ fn external_target_allowed(target: &str) -> bool {
     false
 }
 
+/// Whether `target` is safe to pass through `cmd.exe` on Windows.
+///
+/// The Windows branch launches via `cmd /C start`, and cmd re-parses the command
+/// line with its own rules — Rust's argument quoting does not escape cmd
+/// metacharacters, because it cannot know the child is a shell. So
+/// `https://ok.com/&calc` opens the URL AND runs `calc`, and the scheme
+/// allow-list waves it through because the scheme really is https.
+///
+/// The input is attacker-controlled: a link in a clipped, imported, synced or
+/// ingested note reaches here on a click. markdown-it percent-encodes spaces
+/// (`%20`), so a payload cannot carry arguments — but `&` survives verbatim, and
+/// "run any executable already on PATH, without arguments" is enough.
+///
+/// Kept pure and separate from the platform branch so it is unit-testable
+/// everywhere, not only on Windows.
+fn windows_opener_safe(target: &str) -> bool {
+    // cmd.exe's metacharacters, plus % (environment expansion) and the control
+    // characters that could split the command line.
+    !target.contains([
+        '&', '|', '<', '>', '^', '"', '%', '(', ')', '\n', '\r',
+    ])
+}
+
 /// Opens an external URL in the user's default browser via `open` (macOS),
 /// `xdg-open` (Linux), or `start` (Windows). Used by the Ollama setup card
 /// to take the user to the install page.
@@ -949,6 +972,14 @@ pub fn open_external(url: String) -> Result<(), String> {
     let cmd = if cfg!(target_os = "macos") {
         std::process::Command::new("open").arg(&url).spawn()
     } else if cfg!(target_os = "windows") {
+        // `start` runs inside cmd.exe, which would interpret metacharacters in
+        // the URL as command syntax. Refusing them is the zero-dependency half
+        // of the fix; routing around cmd entirely (ShellExecuteW, e.g. via
+        // tauri-plugin-opener) is the other half and needs a Windows machine to
+        // verify, so it is deliberately not done here.
+        if !windows_opener_safe(&url) {
+            return Err(format!("refused to open: {url}"));
+        }
         std::process::Command::new("cmd")
             .args(["/C", "start", "", &url])
             .spawn()
@@ -1359,7 +1390,7 @@ pub async fn fetch_youtube_transcript(url: String) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::external_target_allowed;
+    use super::{external_target_allowed, windows_opener_safe};
 
     #[test]
     fn allows_safe_url_schemes() {
@@ -1383,6 +1414,34 @@ mod tests {
         assert!(!external_target_allowed("ftp://example.com/file"));
         assert!(!external_target_allowed("file:///etc/passwd"));
         assert!(!external_target_allowed("vscode://open?file=/etc/passwd"));
+    }
+
+    #[test]
+    fn windows_opener_rejects_cmd_metacharacters() {
+        // The scheme allow-list passes every one of these — the scheme really is
+        // https — so this is the only thing standing between a link in a note
+        // and cmd.exe running the tail of it.
+        assert!(!windows_opener_safe("https://ok.com/&calc"));
+        assert!(!windows_opener_safe("https://ok.com/|calc"));
+        assert!(!windows_opener_safe("https://ok.com/>out.txt"));
+        assert!(!windows_opener_safe("https://ok.com/<in.txt"));
+        assert!(!windows_opener_safe("https://ok.com/^calc"));
+        assert!(!windows_opener_safe(r#"https://ok.com/"&calc"#));
+        assert!(!windows_opener_safe("https://ok.com/%PATH%"));
+        assert!(!windows_opener_safe("https://ok.com/(calc)"));
+        assert!(!windows_opener_safe("https://ok.com/\ncalc"));
+        assert!(!windows_opener_safe("https://ok.com/\rcalc"));
+    }
+
+    #[test]
+    fn windows_opener_allows_ordinary_targets() {
+        assert!(windows_opener_safe("https://example.com"));
+        assert!(windows_opener_safe("https://example.com/a/b?x=1"));
+        assert!(windows_opener_safe("mailto:user@example.com"));
+        assert!(windows_opener_safe(r"C:\Users\me\notes.md"));
+        // Percent-encoded metacharacters are inert to cmd — but '%' itself is
+        // cmd's expansion sigil, so they are refused rather than decoded here.
+        assert!(!windows_opener_safe("https://example.com/a%20b"));
     }
 
     #[test]
