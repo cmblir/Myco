@@ -8,6 +8,23 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The bundled MCP server now requires a token.** It runs on localhost for the
+  life of the app and exposes tools that write to your vault and make git
+  commits — with no credential, any other program on your machine could drive
+  them. The app mints a token each launch and the registration line it shows you
+  carries it. (Re-register after an update; the command in Settings › MCP is
+  always current.)
+- **Memex Pro no longer sends your password or license key over plain http.**
+- **Ask tells you what it is doing.** The waiting animation used to pulse a
+  random sample of your pages under "searching the wiki…" — it now names the
+  pages it actually retrieved, and says nothing about pages when there was no
+  index to search.
+- **Related notes explain themselves when the index is missing** instead of
+  silently not appearing — which looked identical to a note having no relatives.
+- **A web clip is ingested right away** when auto-ingest is on, instead of
+  waiting for the next pass (up to an hour).
+- **A reindex survives leaving Settings**, and can no longer be started twice
+  against the same index.
 - **Renaming a page no longer edits the sources that cite it.** `raw/` is
   read-only by rule, but a rename rewrote wikilinks everywhere in the vault —
   including inside the source documents your wiki cites. A citation is only worth
