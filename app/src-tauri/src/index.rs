@@ -60,7 +60,16 @@ pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
         if std::fs::metadata(file).map(|m| m.len()).unwrap_or(0) > 2 * 1024 * 1024 {
             continue;
         }
-        let raw = std::fs::read_to_string(file).map_err(|e| format!("read {file:?}: {e}"))?;
+        // Skip what we cannot read instead of failing the build. One bad file —
+        // a dangling symlink, an un-downloaded iCloud placeholder, a
+        // permission-denied note, something that is not UTF-8 — used to abort
+        // the whole adjacency, which blanks the Graph view and every multiverse
+        // bubble for the vault. The user cannot see which file did it, and a
+        // graph missing one note is enormously better than no graph at all.
+        // This matches how search_vault (vault.rs) already degrades.
+        let Ok(raw) = std::fs::read_to_string(file) else {
+            continue;
+        };
         ingest_links(file, &raw, &names, &mut adj);
         ingest_frontmatter(file, &raw, &mut adj);
     }
@@ -77,8 +86,14 @@ fn collect_files(dir: &Path) -> std::io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
     let mut linkables = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
     while let Some(d) = stack.pop() {
-        for entry in std::fs::read_dir(&d)? {
-            let e = entry?;
+        // A subdirectory we cannot list (permissions, a vanished mount) skips
+        // itself rather than aborting the vault — same reasoning as the
+        // per-file read below. `flatten` drops individual bad entries for the
+        // same reason.
+        let Ok(entries) = std::fs::read_dir(&d) else {
+            continue;
+        };
+        for e in entries.flatten() {
             if is_hidden_name(&e.file_name()) {
                 continue;
             }
@@ -246,6 +261,67 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// Regression: one unreadable .md must not blank the whole graph.
+    #[test]
+    fn one_unreadable_file_does_not_abort_the_build() {
+        let dir = temp_vault("unreadable");
+        fs::write(dir.join("good.md"), "links to [[other]]").unwrap();
+        fs::write(dir.join("other.md"), "# other").unwrap();
+        // A dangling symlink named *.md: is_dir() is false and the extension is
+        // md, so it is collected as a source and then fails to read. This is not
+        // exotic — a moved target or an un-downloaded iCloud placeholder does it.
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.join("nowhere.md"), dir.join("dangling.md")).unwrap();
+
+        let adj = build_link_graph(dir.to_str().unwrap())
+            .expect("one bad file must not fail the whole build");
+        // build_link_graph canonicalizes the root, and on macOS the temp dir
+        // resolves through /private — compare against the canonical path.
+        let root = dir.canonicalize().unwrap();
+        let good = root.join("good.md").to_string_lossy().into_owned();
+        assert!(
+            adj.forward.contains_key(&good),
+            "the readable files must still be in the graph; got {:?}",
+            adj.forward.keys().collect::<Vec<_>>()
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Regression: an unreadable SUBDIRECTORY must not abort the walk either.
+    #[test]
+    fn unreadable_directory_does_not_abort_the_walk() {
+        let dir = temp_vault("unreadable-dir");
+        fs::create_dir_all(dir.join("wiki")).unwrap();
+        // `forward` only holds files that resolve at least one link, so the
+        // fixture needs a real link to be observable there.
+        fs::write(dir.join("wiki/good.md"), "see [[target]]").unwrap();
+        fs::write(dir.join("wiki/target.md"), "# target").unwrap();
+        let locked = dir.join("locked");
+        fs::create_dir_all(&locked).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+        }
+
+        let adj = build_link_graph(dir.to_str().unwrap());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            // Restore before asserting so the dir is removable even on failure.
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).ok();
+        }
+        let adj = adj.expect("an unreadable subdir must not fail the whole build");
+        let root = dir.canonicalize().unwrap();
+        let good = root.join("wiki/good.md").to_string_lossy().into_owned();
+        assert!(
+            adj.forward.contains_key(&good),
+            "readable files survive an unlistable sibling dir; got {:?}",
+            adj.forward.keys().collect::<Vec<_>>()
+        );
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
