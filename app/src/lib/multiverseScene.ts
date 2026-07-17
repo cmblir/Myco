@@ -141,3 +141,32 @@ function filesOf(adjacency: Adjacency): string[] {
   for (const p of Object.keys(adjacency.tags)) set.add(p);
   return [...set];
 }
+
+// The scene's rebuild key.
+//
+// The scene is expensive to build, so it rebuilds only when the multiverse's
+// CONTENT changes. Slugs alone cannot say that: re-entering the multiverse
+// reloads every universe, and a vault edited in between comes back with the
+// same slug and new content. Identity is the signal — the store commits a new
+// adjacency object exactly when the graph changed (loadUniverse and
+// refreshUniverse both guard on sameJSON) — so the key tracks identity, per
+// universe, and the scene sees edits made while the user was inside a vault.
+const adjIds = new WeakMap<object, number>();
+let nextAdjId = 0;
+
+function adjId(adjacency: object): number {
+  let id = adjIds.get(adjacency);
+  if (id === undefined) {
+    id = ++nextAdjId;
+    adjIds.set(adjacency, id);
+  }
+  return id;
+}
+
+export function multiverseSceneKey(universes: SceneUniverse[]): string {
+  return (
+    universes.map((u) => `${u.slug}:${adjId(u.adjacency)}`).join("|") +
+    "#" +
+    universes.length
+  );
+}

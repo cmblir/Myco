@@ -136,6 +136,38 @@ describe("loadUniverse / loadAll", () => {
     await useMultiverseStore.getState().loadUniverse("ghost");
     expect(buildUniverseGraph).not.toHaveBeenCalled();
   });
+
+  // The scene keys off adjacency identity to decide whether to rebuild, so
+  // identity has to mean "the content moved" — nothing else.
+  it("keeps the adjacency object when a reload finds the same content", async () => {
+    listUniverses.mockResolvedValue([proj({ slug: "a" })]);
+    buildUniverseGraph.mockImplementation(() => Promise.resolve(emptyAdj()));
+
+    await useMultiverseStore.getState().loadAll();
+    const first = useMultiverseStore.getState().universes.a.adjacency;
+    // Re-entering the multiverse reloads everything; nothing changed on disk.
+    await useMultiverseStore.getState().loadAll();
+    const second = useMultiverseStore.getState().universes.a.adjacency;
+
+    expect(second).toBe(first);
+  });
+
+  it("replaces the adjacency object when a reload finds new content", async () => {
+    listUniverses.mockResolvedValue([proj({ slug: "a" })]);
+    buildUniverseGraph.mockImplementation(() => Promise.resolve(emptyAdj()));
+    await useMultiverseStore.getState().loadAll();
+    const first = useMultiverseStore.getState().universes.a.adjacency;
+
+    // The user added a note while inside the vault.
+    buildUniverseGraph.mockImplementation(() =>
+      Promise.resolve({ ...emptyAdj(), forward: { "wiki/new.md": [] } }),
+    );
+    await useMultiverseStore.getState().loadAll();
+    const second = useMultiverseStore.getState().universes.a.adjacency;
+
+    expect(second).not.toBe(first);
+    expect(second?.forward).toHaveProperty("wiki/new.md");
+  });
 });
 
 describe("refreshUniverse", () => {

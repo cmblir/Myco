@@ -13,7 +13,12 @@ import type { JSX } from "react";
 import { GraphScene } from "../lib/graphScene";
 import { DEFAULT_GRAPH_SETTINGS } from "../lib/graphSettings";
 import { makeTheme } from "../lib/graphTheme";
-import { assembleMultiverse, universeOfNode, type SceneUniverse } from "../lib/multiverseScene";
+import {
+  assembleMultiverse,
+  multiverseSceneKey,
+  universeOfNode,
+  type SceneUniverse,
+} from "../lib/multiverseScene";
 import { UniverseBubbleLayer } from "../lib/universeBubbleLayer";
 
 export interface MultiverseSceneProps {
@@ -36,8 +41,8 @@ export default function MultiverseScene({
 
   // A stable key over the universe set + each one's adjacency identity, so the
   // scene rebuilds only when the actual multiverse content changes — not on
-  // every render (loadAll replaces the adjacency objects when content changes).
-  const key = universes.map((u) => u.slug).join("|") + "#" + universes.length;
+  // every render (the store replaces the adjacency object when content changes).
+  const key = multiverseSceneKey(universes);
 
   useEffect(() => {
     const container = containerRef.current;

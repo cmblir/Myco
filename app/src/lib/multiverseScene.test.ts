@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Adjacency } from "./ipc";
-import { assembleMultiverse, universeOfNode, type SceneUniverse } from "./multiverseScene";
+import {
+  assembleMultiverse,
+  multiverseSceneKey,
+  universeOfNode,
+  type SceneUniverse,
+} from "./multiverseScene";
 
 function adj(partial: Partial<Adjacency>): Adjacency {
   return { forward: {}, backward: {}, unresolved: {}, tags: {}, ...partial };
@@ -90,5 +95,43 @@ describe("assembleMultiverse", () => {
     const first = graph.getNodeAttribute("/reg/projects/alpha/wiki/a.md", "x");
     const second = again.graph.getNodeAttribute("/reg/projects/alpha/wiki/a.md", "x");
     expect(second).toBe(first);
+  });
+});
+
+
+// The scene is expensive to build, so it rebuilds only when this key changes.
+// The key therefore has to move whenever the multiverse's CONTENT moves — the
+// bug it exists to prevent is re-entering the multiverse and seeing the star
+// field from the first visit, which is exactly the "open multiverse, fly into a
+// vault, work, come back" loop the feature is for.
+describe("multiverseSceneKey", () => {
+  it("is stable across renders when nothing changed", () => {
+    const us = [universe("/v/one"), universe("/v/two")];
+    expect(multiverseSceneKey(us)).toBe(multiverseSceneKey(us));
+  });
+
+  it("changes when a universe's adjacency is replaced", () => {
+    const before = [universe("/v/one")];
+    const after = [{ ...before[0], adjacency: adj({ forward: { "/v/one/wiki/new.md": [] } }) }];
+    expect(multiverseSceneKey(after)).not.toBe(multiverseSceneKey(before));
+  });
+
+  it("does not change when an identical-content adjacency object is reused", () => {
+    // The store guards on content, so a no-op reload keeps the same object and
+    // must not cost a rebuild.
+    const u = universe("/v/one");
+    expect(multiverseSceneKey([u])).toBe(multiverseSceneKey([{ ...u }]));
+  });
+
+  it("changes when a universe is added or removed", () => {
+    const one = universe("/v/one");
+    const two = universe("/v/two");
+    expect(multiverseSceneKey([one, two])).not.toBe(multiverseSceneKey([one]));
+  });
+
+  it("changes when the same slugs arrive in a different order", () => {
+    const one = universe("/v/one");
+    const two = universe("/v/two");
+    expect(multiverseSceneKey([one, two])).not.toBe(multiverseSceneKey([two, one]));
   });
 });

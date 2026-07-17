@@ -122,7 +122,16 @@ export const useMultiverseStore = create<MultiverseState>((set, get) => ({
       // Build by ROOT so both registered projects and sibling vaults work.
       const adjacency = await ipc.buildUniverseGraph(cur0.info.root);
       if (seq !== uniSeq.get(slug)) return; // a newer load of THIS universe won
-      if (!get().universes[slug]) return; // universe vanished (reset/re-list)
+      const cur = get().universes[slug];
+      if (!cur) return; // universe vanished (reset/re-list)
+      // Same rule as refreshUniverse: an unchanged rebuild must not churn a new
+      // adjacency object, because the scene keys off its identity to decide
+      // whether the content moved. Re-entering the multiverse reloads every
+      // universe, so without this every re-entry would look like a change.
+      if (sameJSON(cur.adjacency, adjacency)) {
+        patchUniverse(set, slug, { loading: false });
+        return;
+      }
       patchUniverse(set, slug, { adjacency, loading: false });
     } catch (err) {
       if (seq !== uniSeq.get(slug)) return;
