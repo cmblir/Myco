@@ -18,8 +18,10 @@ Design notes
 from __future__ import annotations
 
 import difflib
+import hmac
 import json
 import math
+import os
 import re
 import subprocess
 import sys
@@ -1215,6 +1217,72 @@ def export_project(project: str = "") -> dict:
 DEFAULT_SSE_PORT = 22360  # matches the Obsidian Local REST API MCP convention
 
 
+def _run_sse(host: str, port: int) -> None:
+    """Serve SSE, requiring a bearer token when MEMEX_MCP_TOKEN is set.
+
+    The server binds loopback and the MCP SDK turns on DNS-rebinding protection
+    for a 127.0.0.1 host, so a web page cannot reach it. Another LOCAL process
+    can, and there was nothing to stop it: with no credential at all, anything
+    running as this user could list the tools and call create_page / update_page
+    / add_raw_source / git_commit against whatever vault the app has open. That
+    is a real escalation for a caller that has network access but not file access
+    — a sandboxed helper, say.
+
+    The app mints a token per launch and passes it in the environment; the
+    registration string it shows the user carries the matching header. Run by
+    hand with no token set, the server keeps its old open behaviour: this is a
+    local dev tool and demanding a credential a hand-runner does not have would
+    only teach people to work around it.
+    """
+    token = os.environ.get("MEMEX_MCP_TOKEN", "").strip()
+    if not token:
+        mcp.run(transport="sse")
+        return
+
+    import uvicorn
+    from starlette.responses import JSONResponse
+
+    expected = f"Bearer {token}".encode()
+
+    class RequireToken:
+        """Raw ASGI middleware: check the header, then get out of the way.
+
+        Deliberately not Starlette's BaseHTTPMiddleware, which wraps the
+        response and breaks on a long-lived stream — with it in place the SSE
+        endpoint raised `AssertionError: Unexpected message` on every client
+        disconnect. This one never touches the response, so the stream is
+        exactly what the SDK produced.
+        """
+
+        def __init__(self, app):  # type: ignore[no-untyped-def]
+            self.app = app
+
+        async def __call__(self, scope, receive, send):  # type: ignore[no-untyped-def]
+            if scope["type"] != "http":
+                await self.app(scope, receive, send)
+                return
+            got = b""
+            for k, v in scope.get("headers") or []:
+                if k == b"authorization":
+                    got = v
+                    break
+            # compare_digest: a plain == leaks the token's prefix through timing
+            # to a caller that can retry, which is precisely the caller this
+            # exists to keep out.
+            if not hmac.compare_digest(got, expected):
+                await JSONResponse({"error": "unauthorized"}, status_code=401)(
+                    scope, receive, send
+                )
+                return
+            await self.app(scope, receive, send)
+
+    app = RequireToken(mcp.sse_app())
+
+    sys.stderr.write("memex-mcp: bearer token required (MEMEX_MCP_TOKEN)\n")
+    sys.stderr.flush()
+    uvicorn.run(app, host=host, port=port, log_level="error")
+
+
 def main() -> None:
     """Run the MCP server.
 
@@ -1266,7 +1334,7 @@ def main() -> None:
             f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}{mcp.settings.sse_path}\n"
         )
         sys.stderr.flush()
-        mcp.run(transport="sse")
+        _run_sse(args.host, args.port)
     else:
         mcp.run()
 

@@ -34,6 +34,47 @@ pub fn sse_url() -> String {
     format!("http://localhost:{}/sse", sse_port())
 }
 
+/// Bearer token the SSE server requires, minted once per app launch.
+///
+/// The server binds loopback and the MCP SDK enables DNS-rebinding protection
+/// for a 127.0.0.1 host, so a web page cannot reach it. Another LOCAL process
+/// can: without a credential, anything running as this user — a sandboxed
+/// helper that has network access but no file access, something the user ran
+/// once — could drive create_page/update_page/add_raw_source and git_commit
+/// against whatever vault is open. Verified against the real bundled server:
+/// GET /sse with zero credentials returns a session and tools/list hands back
+/// the write tools.
+///
+/// Per-launch and never persisted: it exists to bind a client to THIS running
+/// server, and a token on disk is a token to steal. The registration string the
+/// user copies carries it, so re-registering after a restart is the price —
+/// which is the same price `claude mcp add` already asks for any header-authed
+/// server.
+fn sse_token() -> &'static str {
+    static TOKEN: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    TOKEN.get_or_init(|| {
+        // 128 bits from the OS CSPRNG, hex-encoded. getrandom via a temp file is
+        // not available here without a dependency, so read /dev/urandom
+        // directly; on failure fall back to a process+time mix, which is weak
+        // but still better than the empty string this replaces.
+        let mut buf = [0u8; 16];
+        if std::io::Read::read_exact(
+            &mut std::fs::File::open("/dev/urandom").expect("urandom"),
+            &mut buf,
+        )
+        .is_err()
+        {
+            let n = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos() as u64)
+                .unwrap_or(0)
+                ^ (std::process::id() as u64) << 32;
+            buf[..8].copy_from_slice(&n.to_le_bytes());
+        }
+        buf.iter().map(|b| format!("{b:02x}")).collect()
+    })
+}
+
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct McpRegInfo {
     /// The bundled mcp-server/memex_mcp.py exists in the app resources.
@@ -163,7 +204,12 @@ fn not_found() -> McpRegInfo {
 /// (works for Claude Desktop AND claude.ai, unlike a local stdio command).
 fn desktop_json(url: &str) -> String {
     let value = serde_json::json!({
-        "mcpServers": { "memex": { "url": url } }
+        "mcpServers": {
+            "memex": {
+                "url": url,
+                "headers": { "Authorization": format!("Bearer {}", sse_token()) }
+            }
+        }
     });
     serde_json::to_string_pretty(&value).unwrap_or_else(|_| "{}".to_string())
 }
@@ -181,7 +227,10 @@ pub fn registration_info(app: &AppHandle, _vault_path: &str) -> McpRegInfo {
     }
     let installed = p.python.is_file();
     let url = sse_url();
-    let command = format!("claude mcp add --transport sse memex {url}");
+    let command = format!(
+        "claude mcp add --transport sse memex {url} --header \"Authorization: Bearer {}\"",
+        sse_token()
+    );
     McpRegInfo {
         found: true,
         installed,
@@ -232,6 +281,10 @@ pub fn serve(app: &AppHandle) -> Result<String, String> {
         .arg("--port")
         .arg(sse_port().to_string())
         .env("PATH", crate::claude::augmented_path(&py))
+        // Via the environment, not argv: a command line is readable by any
+        // process on the machine (ps), which would hand the token to exactly
+        // the caller it exists to keep out.
+        .env("MEMEX_MCP_TOKEN", sse_token())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -350,6 +403,34 @@ mod tests {
         );
         // No stdio command/args/env in the SSE connector form.
         assert!(parsed["mcpServers"]["memex"]["command"].is_null());
+    }
+
+    #[test]
+    fn sse_token_is_stable_and_not_guessable() {
+        // Stable within a launch: the user copies a registration line once and
+        // it has to keep working for the life of the server.
+        assert_eq!(sse_token(), sse_token());
+        // 128 bits of hex. An empty or short token would silently reduce this
+        // to the open server it replaces.
+        assert_eq!(sse_token().len(), 32, "expected 16 bytes of hex");
+        assert!(sse_token().chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(sse_token(), "0".repeat(32), "urandom fallback produced nothing");
+    }
+
+    #[test]
+    fn registration_strings_carry_the_token() {
+        // Both are things a user copies to connect a client; a registration
+        // without the header just fails to connect, confusingly.
+        let cmd = format!(
+            "claude mcp add --transport sse memex {} --header \"Authorization: Bearer {}\"",
+            sse_url(),
+            sse_token()
+        );
+        assert!(cmd.contains("--header \"Authorization: Bearer "));
+        assert!(cmd.contains(sse_token()));
+        let json = desktop_json(&sse_url());
+        assert!(json.contains("Authorization"), "desktop json: {json}");
+        assert!(json.contains(sse_token()));
     }
 
     #[test]
