@@ -708,6 +708,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
           cancelAnimationFrame(tlRafRef.current);
           tlRafRef.current = null;
         }
+        // The RAF drove the finish path that stops the recorder, so cancelling
+        // it alone would strand the recording on the canvas about to be
+        // disposed — silently, with no file.
+        stopTlRecorder();
         setTlPlaying(false);
         scene.dispose();
         sceneRef.current = null;
@@ -774,6 +778,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         cancelAnimationFrame(tlRafRef.current);
         tlRafRef.current = null;
       }
+      stopTlRecorder();
       setTlPlaying(false);
       container.removeEventListener("wheel", takeOver);
       container.removeEventListener("pointerdown", takeOver);
@@ -1118,16 +1123,26 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   // replay runs, download on finish. The vault-growing-into-a-galaxy clip is
   // the single most shareable thing the app produces — one click, no tooling.
   const tlRecorderRef = useRef<MediaRecorder | null>(null);
+  // The capture stream is retained so its track can be released. Without it the
+  // track stays live for the session even after a clean recording, holding the
+  // canvas capture open.
+  const tlStreamRef = useRef<MediaStream | null>(null);
   const stopTlRecorder = (): void => {
     const rec = tlRecorderRef.current;
+    const stream = tlStreamRef.current;
     tlRecorderRef.current = null;
+    tlStreamRef.current = null;
+    // stop() flushes a last dataavailable and fires onstop, so an interrupted
+    // recording still downloads what it captured instead of vanishing.
     if (rec && rec.state !== "inactive") rec.stop();
+    for (const track of stream?.getTracks() ?? []) track.stop();
   };
   const startTlRecorder = (): void => {
     const canvas = sceneRef.current?.canvas;
     if (!canvas || typeof MediaRecorder === "undefined") return;
     try {
       const stream = canvas.captureStream(30);
+      tlStreamRef.current = stream;
       const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(
         (m) => MediaRecorder.isTypeSupported(m),
       );
@@ -1243,6 +1258,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   useEffect(() => {
     return () => {
       if (tlRafRef.current != null) cancelAnimationFrame(tlRafRef.current);
+      stopTlRecorder();
     };
   }, []);
 

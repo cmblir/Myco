@@ -24,6 +24,7 @@
     "test:e2e:ask": "node scripts/ask-stages-smoke.mjs",
     "test:e2e:semantic": "node scripts/semantic-discoverability-smoke.mjs",
     "test:e2e:i18n": "node scripts/i18n-smoke.mjs",
+    "test:e2e:timelapse": "node scripts/timelapse-smoke.mjs",
     "perf": "node scripts/graph-perf.mjs",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html,json}\"",
