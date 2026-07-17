@@ -111,9 +111,27 @@ impl VectorStore {
         let bytes = self.encode();
         // Atomic-ish write: temp + rename, so a crash mid-write cannot leave a
         // half-written index in place.
-        let tmp = path.with_extension("mxv.tmp");
+        //
+        // The temp name is unique per save, not a fixed `<stem>.mxv.tmp`. Two
+        // saves can genuinely overlap — reindex checkpoints every 30 s, and
+        // until the UI serialised runs, navigating away and back started a
+        // second one — and on a shared name they fight: both write the same
+        // file, then the first rename moves it away and the second fails with
+        // ENOENT, so a save that did all its work reports failure and the
+        // caller loses the whole reindex. (Reproduced with two barrier-synced
+        // savers.) Worse in principle, the interleaved writes mean the winning
+        // rename can publish a mixture of both.
+        //
+        // With a private temp per save, each writer renames its own complete
+        // file: last writer wins, both succeed, and what lands is always one
+        // whole index.
+        let tmp = path.with_extension(format!("{}.mxv.tmp", unique_suffix()));
         std::fs::write(&tmp, &bytes).map_err(|e| format!("write index: {e}"))?;
-        std::fs::rename(&tmp, path).map_err(|e| format!("rename index: {e}"))?;
+        if let Err(e) = std::fs::rename(&tmp, path) {
+            // Don't leave the temp behind on a failed publish.
+            let _ = std::fs::remove_file(&tmp);
+            return Err(format!("rename index: {e}"));
+        }
         // The binary file is now authoritative; drop any superseded JSON rather
         // than leaving a stale copy behind (at 10k records that is 143 MB of
         // dead weight). Best-effort: failing to remove it is not worth failing
@@ -416,6 +434,16 @@ impl VectorStore {
         hits.truncate(k);
         hits
     }
+}
+
+/// A per-save token for the temp filename. Process id plus a monotonic counter:
+/// unique between concurrent saves in this process, and between processes.
+/// Nothing depends on it being unpredictable — only on two savers never picking
+/// the same one.
+fn unique_suffix() -> String {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{}-{n}", std::process::id())
 }
 
 /// Identity of the index file as it is right now: modified time and length.
@@ -728,6 +756,80 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// Two saves racing on the same index must never leave a torn file: the
+    /// temp path used to be a fixed `<stem>.mxv.tmp`, so one writer could rename
+    /// the other writer's half-written bytes into place.
+    #[test]
+    fn concurrent_saves_never_leave_a_torn_index() {
+        let dir = scratch("save-race");
+        let path = dir.join("idx.mxv");
+
+        // Two stores big enough that a write is not one syscall's worth of
+        // bytes, and distinguishable by their record count.
+        // Sized so a write is many megabytes — the race window is however long
+        // fs::write takes, and a small payload closes it before the other thread
+        // is scheduled.
+        let build = |n: usize, tag: u64| {
+            let mut s = VectorStore::default();
+            s.ensure_model("m");
+            for i in 0..n {
+                s.upsert_page(&format!("p{i}.md"), "p", vec![(tag, vec![0.5; 1152])]);
+            }
+            s
+        };
+        let a = build(2_000, 1);
+        let b = build(4_000, 2);
+
+        // Tuned so this actually catches the bug rather than decorating it:
+        // with 2 writers it passes against the broken code in a debug build
+        // (the threads stagger and never overlap) and only fails under
+        // --release, which `cargo test` does not run. 8 writers x 4 rounds
+        // fails 5/5 against the broken code in a plain debug `cargo test`.
+        for _ in 0..4 {
+            // A barrier so every writer really is inside save() at once —
+            // without it each thread finishes before the next is scheduled and
+            // the race never happens.
+            const WRITERS: usize = 8;
+            let gate = std::sync::Barrier::new(WRITERS);
+            let results: Vec<Result<(), String>> = std::thread::scope(|sc| {
+                let handles: Vec<_> = (0..WRITERS)
+                    .map(|i| {
+                        let store = if i % 2 == 0 { &a } else { &b };
+                        let gate = &gate;
+                        let path = &path;
+                        sc.spawn(move || {
+                            gate.wait();
+                            store.save(path)
+                        })
+                    })
+                    .collect();
+                handles.into_iter().map(|h| h.join().unwrap()).collect()
+            });
+            // A save that did all its work must not report failure — the caller
+            // (reindex) treats that as losing the whole run.
+            for r in &results {
+                assert!(r.is_ok(), "a save failed while another was in flight: {r:?}");
+            }
+            // Whoever won, the file on disk must be a COMPLETE index — one of
+            // the two, never a mixture.
+            let loaded = VectorStore::load(&path);
+            assert!(
+                loaded.records.len() == 2_000 || loaded.records.len() == 4_000,
+                "torn index: {} records (expected one writer's whole store)",
+                loaded.records.len()
+            );
+        }
+        // No temp files left behind.
+        let strays: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains("tmp"))
+            .collect();
+        assert!(strays.is_empty(), "left temp files behind: {strays:?}");
+        std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
