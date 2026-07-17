@@ -36,8 +36,20 @@ interface ReindexState {
   page: string;
   /** Pages in the index after a successful run. */
   indexed: number;
+  /**
+   * Pages the index holds right now; `null` until asked.
+   *
+   * Lives here so the features that DEPEND on the index can tell "no index" from
+   * "no results" — they could not, and both rendered as nothing: the command
+   * palette's semantic group simply never appeared, the Related panel returned
+   * null, and a new user got a quietly worse product with no hint that the
+   * feature existed or how to turn it on.
+   */
+  indexedPages: number | null;
   error: string | null;
   reindex: () => Promise<void>;
+  /** Read the index's size. Cheap (it hits the in-memory VectorCache). */
+  refreshStatus: () => Promise<void>;
   reset: () => void;
 }
 
@@ -57,7 +69,14 @@ export const useReindexStore = create<ReindexState>((set, get) => ({
   total: 0,
   page: "",
   indexed: 0,
+  indexedPages: null,
   error: null,
+
+  async refreshStatus() {
+    if (!useVaultStore.getState().currentVault) return;
+    const status = await ipc.embeddingsStatus().catch(() => null);
+    set({ indexedPages: status?.indexed_pages ?? null });
+  },
 
   async reindex() {
     const vault = useVaultStore.getState().currentVault;
@@ -85,7 +104,7 @@ export const useReindexStore = create<ReindexState>((set, get) => ({
         }),
       );
       const indexed = await ipc.reindexEmbeddings("builtin-local", BUILTIN_MODEL);
-      set({ stage: "done", indexed, error: null });
+      set({ stage: "done", indexed, indexedPages: indexed, error: null });
     } catch (err) {
       set({ stage: "error", error: String(err) });
     } finally {

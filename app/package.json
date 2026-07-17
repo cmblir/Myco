@@ -22,6 +22,7 @@
     "test:e2e:multiverse": "node scripts/multiverse-smoke.mjs",
     "test:e2e:clip": "node scripts/clip-smoke.mjs",
     "test:e2e:ask": "node scripts/ask-stages-smoke.mjs",
+    "test:e2e:semantic": "node scripts/semantic-discoverability-smoke.mjs",
     "perf": "node scripts/graph-perf.mjs",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html,json}\"",

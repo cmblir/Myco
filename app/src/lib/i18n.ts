@@ -423,6 +423,8 @@ export interface Strings {
   rd_preview?: string;
   rd_backlinks_empty?: string;
   rd_related?: string;
+  rd_related_no_index?: string;
+  rd_related_no_index_cta?: string;
   rd_make_cards?: string;
   rd_making?: string;
   rd_cards_none?: string;
@@ -1050,6 +1052,8 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_preview: "Preview",
     rd_backlinks_empty: "No notes link here yet.",
     rd_related: "Related",
+    rd_related_no_index: "Related notes come from an on-device index that hasn't been built yet.",
+    rd_related_no_index_cta: "Set up semantic search",
     rd_make_cards: "Make cards",
     rd_making: "Generating…",
     rd_cards_none: "No cards generated.",
@@ -1673,6 +1677,8 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_preview: "미리보기",
     rd_backlinks_empty: "아직 여기로 연결된 노트가 없습니다.",
     rd_related: "관련 노트",
+    rd_related_no_index: "관련 노트는 아직 만들지 않은 온디바이스 인덱스에서 나옵니다.",
+    rd_related_no_index_cta: "의미 검색 설정하기",
     rd_make_cards: "카드 만들기",
     rd_making: "생성 중…",
     rd_cards_none: "생성된 카드가 없습니다.",
@@ -2200,6 +2206,8 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_preview: "プレビュー",
     rd_backlinks_empty: "まだここにリンクするノートはありません。",
     rd_related: "関連ノート",
+    rd_related_no_index: "関連ノートは、まだ作成されていないオンデバイス索引から取得します。",
+    rd_related_no_index_cta: "セマンティック検索を設定",
     rd_make_cards: "カード作成",
     rd_making: "生成中…",
     rd_cards_none: "生成されたカードがありません。",
