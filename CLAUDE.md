@@ -11,9 +11,10 @@ projects/karpathy-llm # 기본(legacy에서 이관된) 프로젝트, projects.js
 projects.json         # 프로젝트 레지스트리 (active 포인터)
 templates/            # 신규 프로젝트 CLAUDE.md/폴더 템플릿
 app/                  # Memex 데스크톱 앱 (Tauri + React)
-mcp-server/           # MCP 서버 (19 tools) — projects.json을 공유
+mcp-server/           # MCP 서버 — projects.json을 공유
 automation/           # 자동 ingest 스크립트
-plans/ dev-status/    # 개발 계획/상태 문서
+plans/                # 개발 계획·제안 문서
+dev-status/           # architecture.md (시스템 맵) + ingest 부하 테스트
 cosmic-refs/          # 그래프 디자인 레퍼런스
 ```
 
