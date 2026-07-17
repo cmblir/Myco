@@ -8,6 +8,14 @@ import type { ErrorInfo, ReactNode } from "react";
 import { STRINGS } from "../lib/i18n";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
+// The still frame, imported directly — NOT MascotClip.
+//
+// This screen renders because something in the tree threw. MascotClip reads a
+// store, sniffs the engine, and decodes alpha video; if any of that is what
+// broke, mounting it here would throw inside the boundary that is supposed to
+// contain the throw, and blank the window. A crash screen may only use things
+// that cannot fail: an <img> and a string.
+import mascotPosterUrl from "../assets/mascot/idle.poster.png";
 
 interface Props {
   children: ReactNode;
@@ -71,6 +79,12 @@ export default class ErrorBoundary extends Component<Props, State> {
     );
     return (
       <div className="error-boundary" role="alert">
+        <img
+          className="error-boundary__mascot"
+          src={mascotPosterUrl}
+          alt=""
+          draggable={false}
+        />
         <h2 className="error-boundary__title">{title}</h2>
         <p className="error-boundary__msg">{error.message || String(error)}</p>
         <button

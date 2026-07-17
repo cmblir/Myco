@@ -2882,6 +2882,17 @@ hr {
   padding: 40px 24px;
   text-align: center;
 }
+.error-boundary__mascot {
+  /* The clip frame is 16:9 with the character centred; crop to a square around
+     it the way MascotClip does, but with plain CSS — no component, no video, no
+     store read. This screen has to render when the app is broken. */
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  object-position: center;
+  flex-shrink: 0;
+  user-select: none;
+}
 .error-boundary__title {
   font-size: 18px;
   font-weight: 600;
