@@ -28,6 +28,7 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { getLastVaultPath, useVaultStore } from "./stores/vaultStore";
 import { useAutoIngestScheduler } from "./lib/autoIngest";
 import { useAutoReflectScheduler } from "./lib/autoReflect";
+import { useAutoReindexScheduler } from "./lib/autoReindex";
 import { useScheduleTimer } from "./lib/scheduleTimer";
 import { useIngestStore } from "./stores/ingestStore";
 import { ipc } from "./lib/ipc";
@@ -107,6 +108,12 @@ export default function App(): JSX.Element {
   useAutoReflectScheduler(
     settings?.auto_reflect_enabled ?? false,
     settings?.auto_reflect_interval_min ?? 180,
+    currentVault?.path,
+  );
+
+  // Keep the embedding index current with the vault while the app is open.
+  useAutoReindexScheduler(
+    settings?.auto_reindex_enabled ?? false,
     currentVault?.path,
   );
 

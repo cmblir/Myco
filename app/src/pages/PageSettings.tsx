@@ -359,6 +359,71 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
           {error}
         </div>
       ) : null}
+
+      <AutoReindexToggle t={t} />
+    </div>
+  );
+}
+
+// Lives inside the Semantic search card rather than beside the other auto-*
+// switches: what it keeps up to date is the index built right above it, and the
+// hint below only makes sense next to that button.
+function AutoReindexToggle({ t }: { t: Strings }): JSX.Element | null {
+  const settings = useSettingsStore((s) => s.settings);
+  const update = useSettingsStore((s) => s.update);
+  if (!settings) return null;
+  const enabled = settings.auto_reindex_enabled;
+  return (
+    <div
+      className="row"
+      style={{
+        marginTop: 14,
+        paddingTop: 12,
+        borderTop: "1px solid var(--line)",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        gap: 12,
+      }}
+    >
+      <div style={{ paddingRight: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>
+          {t.s_autoreindex_title ?? "Keep the index up to date"}
+        </div>
+        <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+          {t.s_autoreindex_desc ??
+            "While Memex is open, re-embed pages you edit once you stop typing. Only pages that changed are re-embedded."}
+        </div>
+      </div>
+      <button
+        role="switch"
+        aria-checked={enabled}
+        aria-label={t.s_autoreindex_title ?? "Keep the index up to date"}
+        data-testid="auto-reindex-toggle"
+        onClick={() => void update({ auto_reindex_enabled: !enabled })}
+        style={{
+          width: 44,
+          height: 24,
+          borderRadius: 12,
+          border: "1px solid var(--line)",
+          background: enabled ? "var(--ink)" : "var(--bg-soft)",
+          position: "relative",
+          cursor: "pointer",
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            top: 2,
+            left: enabled ? 22 : 2,
+            width: 18,
+            height: 18,
+            borderRadius: "50%",
+            background: enabled ? "var(--bg)" : "var(--ink)",
+            transition: "left 150ms ease",
+          }}
+        />
+      </button>
     </div>
   );
 }

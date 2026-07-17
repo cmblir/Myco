@@ -37,6 +37,13 @@ pub struct Settings {
     pub auto_reflect_enabled: bool,
     #[serde(default = "default_auto_reflect_interval")]
     pub auto_reflect_interval_min: u32,
+    /// While the app is open, re-embed changed pages once the vault has been
+    /// quiet for a moment, so semantic search / related notes / graph similarity
+    /// edges keep describing the vault as it is. Maintains an existing index
+    /// only — the first build stays a deliberate action in Settings, since it
+    /// loads the bundled model and embeds every page.
+    #[serde(default)]
+    pub auto_reindex_enabled: bool,
 }
 
 impl Default for Settings {
@@ -53,6 +60,7 @@ impl Default for Settings {
             auto_ingest_interval_min: default_auto_ingest_interval(),
             auto_reflect_enabled: false,
             auto_reflect_interval_min: default_auto_reflect_interval(),
+            auto_reindex_enabled: false,
         }
     }
 }

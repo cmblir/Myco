@@ -163,6 +163,9 @@ export interface MemexSettings {
   /** Periodically run a read-only reflect pass while the app is open. */
   auto_reflect_enabled: boolean;
   auto_reflect_interval_min: number;
+  /** Re-embed changed pages while the app is open (maintains an existing index
+   *  only; the first build stays a deliberate action). */
+  auto_reindex_enabled: boolean;
 }
 
 export interface MemexProResult {

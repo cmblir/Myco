@@ -317,6 +317,8 @@ export interface Strings {
   s_embeddings_loading_model?: string;
   s_embeddings_loading_model_hint?: string;
   s_embeddings_done?: string;
+  s_autoreindex_title?: string;
+  s_autoreindex_desc?: string;
   s_providers: string;
   s_mcp: string;
   s_appearance: string;
@@ -933,6 +935,8 @@ export const STRINGS: Record<Lang, Strings> = {
     s_embeddings_loading_model: "Loading model…",
     s_embeddings_loading_model_hint: "First run loads the bundled model — this takes a few seconds.",
     s_embeddings_done: "Indexed {n} pages",
+    s_autoreindex_title: "Keep the index up to date",
+    s_autoreindex_desc: "While Memex is open, re-embed pages you edit once you stop typing. Only pages that changed are re-embedded.",
     s_providers: "Connections",
     s_appearance: "Appearance",
     s_lang: "Language",
@@ -1557,6 +1561,8 @@ export const STRINGS: Record<Lang, Strings> = {
     s_embeddings_loading_model: "모델 로딩 중…",
     s_embeddings_loading_model_hint: "첫 실행에는 내장 모델을 불러옵니다 — 몇 초 걸립니다.",
     s_embeddings_done: "{n}개 페이지 인덱싱 완료",
+    s_autoreindex_title: "인덱스 자동 최신화",
+    s_autoreindex_desc: "Memex가 열려 있는 동안, 편집을 멈추면 수정한 페이지를 다시 임베딩합니다. 바뀐 페이지만 처리합니다.",
     s_providers: "연결",
     s_appearance: "테마",
     s_lang: "언어",
@@ -2079,6 +2085,8 @@ export const STRINGS: Record<Lang, Strings> = {
     s_embeddings_loading_model: "モデル読み込み中…",
     s_embeddings_loading_model_hint: "初回は内蔵モデルを読み込みます — 数秒かかります。",
     s_embeddings_done: "{n}ページをインデックスしました",
+    s_autoreindex_title: "インデックスを自動更新",
+    s_autoreindex_desc: "Memexが開いている間、編集の手が止まったら変更したページを再埋め込みします。変更されたページのみ処理します。",
     s_providers: "接続",
     s_appearance: "外観",
     s_lang: "言語",

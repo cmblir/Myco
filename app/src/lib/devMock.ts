@@ -463,6 +463,7 @@ const SETTINGS = {
   memex_pro_url: "",
   memex_pro_email: "",
   auto_ingest_enabled: false,
+  auto_reindex_enabled: false,
   auto_ingest_interval_min: 60,
   auto_reflect_enabled: false,
   auto_reflect_interval_min: 180,

@@ -99,6 +99,23 @@ for (const vp of VIEWPORTS) {
   check(`${vp.name}: idle shows the action`, (await btn.innerText()).includes("Reindex now"));
   check(`${vp.name}: idle is enabled`, await btn.isEnabled());
 
+  // The auto-reindex toggle lives in this card because what it maintains is the
+  // index the button above builds.
+  const auto = page.locator('[data-testid="auto-reindex-toggle"]');
+  check(`${vp.name}: auto-reindex toggle present`, await auto.isVisible());
+  check(
+    `${vp.name}: auto-reindex is off by default`,
+    (await auto.getAttribute("aria-checked")) === "false",
+  );
+  await auto.click();
+  await page.waitForTimeout(300);
+  check(
+    `${vp.name}: auto-reindex toggles on`,
+    (await auto.getAttribute("aria-checked")) === "true",
+  );
+  await auto.click();
+  await page.waitForTimeout(200);
+
   await page.screenshot({ path: `${SHOTS}/${vp.name}-1-idle.png` });
 
   // --- loading model ----------------------------------------------------
