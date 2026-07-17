@@ -11,6 +11,9 @@ must still be checked by hand.
 | Surface | Covered by | How to run |
 | --- | --- | --- |
 | Frontend routes render without console/page errors | **route-smoke** (browser) | `npm run test:e2e` |
+| Command palette keyboard + screen-reader semantics, 3 viewports | **cmdbar-a11y-smoke** (browser) | `npm run test:e2e:cmdbar` |
+| User-facing copy follows the chosen language (en/ko/ja) | **i18n-smoke** (browser) | `npm run test:e2e:i18n` |
+| Timelapse survives unmount/rebuild and releases its capture | **timelapse-smoke** (browser) | `npm run test:e2e:timelapse` |
 | Frontend unit/component logic | **vitest** | `npm test` |
 | Vault lifecycle (open → list → write → link graph → provenance → rename/delete) | **cargo test** (`tests/vault_lifecycle.rs`) | `cargo test` |
 | HTTP provider adapters (Anthropic/OpenAI/OpenRouter/Google/Ollama), retries, size cap | **cargo test** (`tests/provider_adapters.rs`, wiremock) | `cargo test` |

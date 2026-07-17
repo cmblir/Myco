@@ -8,6 +8,34 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The command palette works without a mouse.** It had no dialog role and no
+  focus trap, and its keys were bound to the search box — so one Tab away, both
+  arrows and Escape stopped working and further tabs walked focus onto the page
+  behind it. The selected row is also visible again: it is a button, and an
+  inline background reset had been quietly overriding the highlight, in both
+  themes. Screen readers now announce the selection instead of nothing.
+- **The account panel, crash screen and empty-response text follow your
+  language.** A fresh install is Korean, and Settings › Account rendered its
+  header translated above English labels.
+- **Ingesting a source can no longer start twice.** With auto-ingest on, two
+  triggers arriving together (a clip landing on an interval tick) could each
+  start an agent against the same vault, doubling edits and token spend, with
+  the second run impossible to cancel from the UI.
+- **A timelapse recording is no longer lost** when you navigate away or change a
+  graph setting mid-record. You get the partial clip instead of no file and no
+  error, and the canvas capture is released when a recording ends.
+- **Re-opening the multiverse shows your vaults as they are now.** From the
+  second visit on, every bubble kept the star field from the first — so notes
+  added while you were inside a vault never appeared until a restart.
+- **Links containing shell metacharacters can no longer run commands on
+  Windows.** External links were opened through `cmd`, which read `&` in a URL
+  as the start of another command; a link in a clipped or synced note was enough.
+
+### Performance
+
+- **Opening the Graph builds the scene once instead of twice**, halving the
+  WebGL and worker setup on every visit.
+
 - **The bundled MCP server now requires a token.** It runs on localhost for the
   life of the app and exposes tools that write to your vault and make git
   commits — with no credential, any other program on your machine could drive
