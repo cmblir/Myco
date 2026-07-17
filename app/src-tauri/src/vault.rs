@@ -125,11 +125,29 @@ fn collect_md_files(dir: &Path, out: &mut Vec<PathBuf>) {
     }
 }
 
+/// True if `path` lies inside the vault's immutable `raw/` tree.
+///
+/// `raw/` holds the source documents every wiki page cites. They are read-only
+/// by rule — the repo's CLAUDE.md states this outranks any project-level rule —
+/// because a citation is only worth anything if the thing cited never moved
+/// under it. This is the one definition of that boundary; `agent_tools` gates
+/// its write tools on it too, and a second copy is how the rule gets missed in
+/// a third place.
+pub(crate) fn is_raw_path(root: &Path, path: &Path) -> bool {
+    path.strip_prefix(root)
+        .ok()
+        .and_then(|rel| rel.components().next())
+        .map(|c| c.as_os_str() == "raw")
+        .unwrap_or(false)
+}
+
 /// Rewrite every inbound `[[wikilink]]` that targets `old_stem` to `new_stem`
 /// across all .md files under `root`, preserving any `#section`, `^block`, and
 /// `|alias`. Matches the target case-insensitively (Obsidian semantics). Returns
 /// the number of files changed. Best-effort: files that fail to read or write
 /// are skipped so a single bad file can't abort a rename that already happened.
+///
+/// Skips `raw/`: renaming a wiki page must not edit the sources that cite it.
 pub fn rewrite_backlinks(root: &Path, old_stem: &str, new_stem: &str) -> usize {
     use regex::Regex;
     use std::sync::OnceLock;
@@ -142,6 +160,9 @@ pub fn rewrite_backlinks(root: &Path, old_stem: &str, new_stem: &str) -> usize {
 
     let mut changed = 0usize;
     for path in files {
+        if is_raw_path(root, &path) {
+            continue;
+        }
         let Ok(content) = std::fs::read_to_string(&path) else {
             continue;
         };
@@ -996,6 +1017,33 @@ mod tests {
         );
         assert!(confine_path(&root, &escape).is_err());
         let _ = fs::remove_file(&sibling);
+    }
+
+    /// Regression: `raw/` is immutable — the repo CLAUDE.md states it outranks
+    /// every project rule, and the agent write tools already refuse it. A rename
+    /// must not be the one path that edits a source document.
+    #[test]
+    fn rewrite_backlinks_never_touches_raw() {
+        let dir = temp_vault("rewrite-raw");
+        fs::create_dir_all(dir.join("wiki")).unwrap();
+        fs::create_dir_all(dir.join("raw")).unwrap();
+        let raw_before = "source doc citing [[old-note]] verbatim";
+        fs::write(dir.join("raw/source.md"), raw_before).unwrap();
+        fs::write(dir.join("wiki/a.md"), "wiki page citing [[old-note]]").unwrap();
+
+        let changed = rewrite_backlinks(&dir, "old-note", "new-note");
+
+        // The wiki page is rewritten...
+        let wiki_after = fs::read_to_string(dir.join("wiki/a.md")).unwrap();
+        assert!(wiki_after.contains("[[new-note]]"), "wiki backlinks still rewrite");
+        // ...and the immutable source is byte-for-byte untouched.
+        assert_eq!(
+            fs::read_to_string(dir.join("raw/source.md")).unwrap(),
+            raw_before,
+            "raw/ is immutable — a rename must not rewrite a source document"
+        );
+        assert_eq!(changed, 1, "only the wiki page counts as changed");
+        fs::remove_dir_all(&dir).ok();
     }
 
     #[test]

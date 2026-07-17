@@ -136,14 +136,9 @@ fn resolve(root: &Path, path: &str) -> String {
 }
 
 /// True if the confined path lies inside the vault's immutable `raw/` tree.
-fn is_raw_path(root: &Path, confined: &Path) -> bool {
-    confined
-        .strip_prefix(root)
-        .ok()
-        .and_then(|rel| rel.components().next())
-        .map(|c| c.as_os_str() == "raw")
-        .unwrap_or(false)
-}
+/// Defined once, in the vault module that owns the layout — the rule is also
+/// what stops a page rename from rewriting a source document.
+use crate::vault::is_raw_path;
 
 /// Execute a tool call. Returns a JSON value on success or an error string the
 /// loop feeds back to the model as a tool_result so it can recover.
