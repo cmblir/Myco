@@ -1002,6 +1002,12 @@ hr {
   cursor: pointer;
   font-size: 13.5px;
   color: var(--ink-2);
+  /* Rows are <button>s; reset the UA chrome here rather than inline, or the
+     inline background wins over .active below and the selection never shows. */
+  width: 100%;
+  background: transparent;
+  border: 0;
+  text-align: left;
 }
 .cmd-row:hover,
 .cmd-row.active {

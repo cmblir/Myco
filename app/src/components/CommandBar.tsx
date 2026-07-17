@@ -1,7 +1,7 @@
 // Command palette (⌘K). Searches navigation routes and vault file leaves.
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { JSX } from "react";
+import type { JSX, KeyboardEvent } from "react";
 import { Icon } from "../lib/icons";
 import type { IconName } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
@@ -144,9 +144,45 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
     });
   }
 
+  // Keys are handled on the PANEL, not the input: focus can sit on a row (or
+  // anywhere inside), and Escape/arrows have to keep working there.
+  function onPanelKeyDown(e: KeyboardEvent<HTMLDivElement>): void {
+    // Escape stays reachable mid-composition (it cancels the candidate, and a
+    // user hitting it wants out either way); every other branch here would act
+    // on a half-typed query.
+    if (e.key !== "Escape" && isComposingKey(e)) return;
+    if (e.key === "Escape") {
+      setCmdOpen(false);
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      move(1);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      move(-1);
+    } else if (e.key === "Enter") {
+      if (total > 0) activate(active);
+    } else if (e.key === "Tab") {
+      // The rows are not tab stops (they are reached with the arrows), so the
+      // input is the only stop inside — Tab would otherwise walk focus onto the
+      // page behind the modal while it stayed open.
+      e.preventDefault();
+      inputRef.current?.focus();
+    }
+  }
+
+  const listId = "cmd-listbox";
+  const rowId = (i: number): string => `cmd-opt-${i}`;
+
   return (
     <div className="cmd-overlay" onClick={() => setCmdOpen(false)}>
-      <div className="cmd-panel" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="cmd-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={t.ph_search}
+        onClick={(e) => e.stopPropagation()}
+        onKeyDown={onPanelKeyDown}
+      >
         <div className="cmd-input">
           <Icon name="search" size={16} />
           <input
@@ -154,26 +190,17 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
             placeholder={t.ph_search}
             value={q}
             onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => {
-              // Escape stays reachable mid-composition (it cancels the
-              // candidate, and a user hitting it wants out either way); every
-              // other branch here would act on a half-typed query.
-              if (e.key !== "Escape" && isComposingKey(e)) return;
-              if (e.key === "Escape") setCmdOpen(false);
-              else if (e.key === "ArrowDown") {
-                e.preventDefault();
-                move(1);
-              } else if (e.key === "ArrowUp") {
-                e.preventDefault();
-                move(-1);
-              } else if (e.key === "Enter") {
-                if (total > 0) activate(active);
-              }
-            }}
+            role="combobox"
+            aria-expanded={total > 0}
+            aria-controls={listId}
+            // Without this the arrow selection is background-colour only —
+            // a screen reader announces nothing as it moves.
+            aria-activedescendant={total > 0 ? rowId(active) : undefined}
+            aria-autocomplete="list"
           />
           <span className="kbd">esc</span>
         </div>
-        <div className="cmd-list" ref={listRef}>
+        <div className="cmd-list" id={listId} role="listbox" ref={listRef}>
           {filtered.length === 0 &&
           contentHits.length === 0 &&
           semanticHits.length === 0 ? (
@@ -182,14 +209,12 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
           {filtered.map((r, i) => (
             <button
               key={`${r.type}-${r.to}-${i}`}
+              id={rowId(i)}
+              role="option"
+              aria-selected={total > 0 && active === i}
+              tabIndex={-1}
               className={`cmd-row${total > 0 && active === i ? " active" : ""}`}
               onClick={() => go(r)}
-              style={{
-                width: "100%",
-                background: "transparent",
-                border: 0,
-                textAlign: "left",
-              }}
             >
               <Icon name={iconFor(r)} size={13} />
               <span>{r.label}</span>
@@ -208,16 +233,14 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
           {contentHits.map((h, i) => (
             <button
               key={`content-${h.path}-${h.line}`}
+              id={rowId(filtered.length + i)}
+              role="option"
+              aria-selected={active === filtered.length + i}
+              tabIndex={-1}
               className={`cmd-row${
                 active === filtered.length + i ? " active" : ""
               }`}
               onClick={() => goPath(h.path)}
-              style={{
-                width: "100%",
-                background: "transparent",
-                border: 0,
-                textAlign: "left",
-              }}
             >
               <Icon name="search" size={13} />
               <span className="cmd-content-hit">
@@ -237,14 +260,12 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
             return (
               <button
                 key={`sem-${h.page}`}
+                id={rowId(idx)}
+                role="option"
+                aria-selected={active === idx}
+                tabIndex={-1}
                 className={`cmd-row${active === idx ? " active" : ""}`}
                 onClick={() => goPath(h.page)}
-                style={{
-                  width: "100%",
-                  background: "transparent",
-                  border: 0,
-                  textAlign: "left",
-                }}
               >
                 <Icon name="sparkles" size={13} />
                 <span>{h.stem}</span>
