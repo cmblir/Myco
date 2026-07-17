@@ -141,7 +141,7 @@ npm run lint           # eslint over src/
 npm run format         # prettier write src/
 cargo fmt              # in app/src-tauri
 cargo clippy -- -D warnings
-cargo test             # Rust unit + integration tests (196 currently)
+cargo test             # Rust unit + integration tests (202 currently)
 cargo bench            # vector-store benchmarks (see below)
 ```
 

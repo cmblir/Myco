@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Multiverse bubbles are now labelled readably in both themes.** A universe's
+  name — the one thing a bubble exists to tell you — was hardcoded near-white
+  (invisible on the light theme) and then drowned out by the community names
+  that surface while zoomed out. The name now follows the app theme, and
+  community labels stay off in multiverse view where the universe name is the
+  label that matters.
 - **Reindexing no longer crashes the app on a long unbroken paragraph.** A page
   with no headings and no blank lines came back from chunking as a single chunk
   of the whole page — the size limit was only ever applied between paragraphs, so
@@ -17,6 +23,18 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and anything past 512 tokens was being decoded in pieces. Chunks are now hard
   split at the limit (preferring word breaks, never splitting a character), and
   the embed batch is sized to its text.
+
+### Changed
+
+- **The semantic layer got dramatically faster.** The embedding index is now
+  kept in memory between commands and stored in a compact binary format
+  (previously every semantic search re-read and re-parsed a JSON file — at
+  10,000 chunks that was ~290 ms of parsing to run a 12 ms search). Graph
+  similarity edges compute ~10x faster and are cached per index revision.
+  Long reindexes save a checkpoint every 30 seconds, so quitting or crashing
+  mid-index no longer discards everything, and embedding reuses one model
+  context per page (~25% faster). Existing indexes migrate automatically on
+  the next reindex.
 
 ### Added
 
