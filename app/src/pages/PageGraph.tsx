@@ -911,6 +911,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   useEffect(() => {
     let killed = false;
     if (!settings.semanticEdges) {
+      // Nothing to clear on the first run — the ref starts empty. Bumping
+      // glEpoch here would tear the scene and the sim worker down and rebuild
+      // them for no reason, on every mount, with the default settings.
+      if (semEdgesRef.current.length === 0) return;
       semEdgesRef.current = [];
       setGlEpoch((e) => e + 1);
       return;
