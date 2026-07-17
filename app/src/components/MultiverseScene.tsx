@@ -66,7 +66,6 @@ export default function MultiverseScene({
         showGhosts: false, // ghosts add noise across a whole multiverse; hide them
         folderGalaxies: true,
       },
-      settings.linkDistance,
     );
     if (graph.order === 0) return;
 

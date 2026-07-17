@@ -26,14 +26,13 @@ const OPTS = {
   showGhosts: true,
 };
 
-const LD = 40;
 
 describe("assembleMultiverse", () => {
   const universes = [
     universe("/reg/projects/alpha"),
     universe("/reg/projects/beta"),
   ];
-  const { graph, placed } = assembleMultiverse(universes, OPTS, LD);
+  const { graph, placed } = assembleMultiverse(universes, OPTS);
 
   it("places every non-empty universe and tags its nodes", () => {
     expect(placed).toEqual(new Set(["alpha", "beta"]));
@@ -67,25 +66,25 @@ describe("assembleMultiverse", () => {
       universe("/reg/projects/alpha"),
       { slug: "empty", root: "/reg/projects/empty", adjacency: adj({}) },
     ];
-    const res = assembleMultiverse(withEmpty, OPTS, LD);
+    const res = assembleMultiverse(withEmpty, OPTS);
     expect(res.placed.has("alpha")).toBe(true);
     expect(res.placed.has("empty")).toBe(false);
   });
 
   it("handles a single universe (anchored at origin)", () => {
-    const res = assembleMultiverse([universe("/reg/projects/solo")], OPTS, LD);
+    const res = assembleMultiverse([universe("/reg/projects/solo")], OPTS);
     expect(res.placed).toEqual(new Set(["solo"]));
     expect(res.graph.order).toBeGreaterThan(0);
   });
 
   it("returns an empty graph for no universes", () => {
-    const res = assembleMultiverse([], OPTS, LD);
+    const res = assembleMultiverse([], OPTS);
     expect(res.graph.order).toBe(0);
     expect(res.placed.size).toBe(0);
   });
 
   it("is deterministic across runs", () => {
-    const again = assembleMultiverse(universes, OPTS, LD);
+    const again = assembleMultiverse(universes, OPTS);
     expect(again.graph.order).toBe(graph.order);
     // Same positions too (deterministic layout).
     const first = graph.getNodeAttribute("/reg/projects/alpha/wiki/a.md", "x");

@@ -82,6 +82,58 @@ for (const vp of VIEWPORTS) {
   );
   check(`${vp.name}: field has nodes`, scene.nodes > 0, `nodes=${scene.nodes}`);
 
+  // --- the field must be framable --------------------------------------
+  // Universe clouds are seeded onto a fixed shell, so every bubble renders at
+  // roughly the same radius no matter how many notes it holds. The packing once
+  // spaced them by predicted node-count footprint instead — the 10k demo vault
+  // claimed 99x the room its bubble occupies and pushed the others ~74,000
+  // away, where framing them all makes each ~2% of the view. Assert the field
+  // stays proportionate to what is drawn.
+  const geom = await page.evaluate(() => {
+    const g = window.__mvDev.graph;
+    const sum = new Map();
+    g.forEachNode((_i, a) => {
+      const s = a.universe ?? "";
+      if (!s || a.hidden) return;
+      const e = sum.get(s) ?? { x: 0, y: 0, z: 0, n: 0 };
+      e.x += a.x; e.y += a.y; e.z += a.z; e.n++;
+      sum.set(s, e);
+    });
+    const c = new Map([...sum].map(([s, e]) => [s, { x: e.x / e.n, y: e.y / e.n, z: e.z / e.n }]));
+    const maxR = new Map();
+    g.forEachNode((_i, a) => {
+      const s = a.universe ?? "";
+      const cc = c.get(s);
+      if (!cc || a.hidden) return;
+      maxR.set(s, Math.max(maxR.get(s) ?? 0, Math.hypot(a.x - cc.x, a.y - cc.y, a.z - cc.z)));
+    });
+    const names = [...c.keys()];
+    let extent = 0;
+    let minSep = Infinity;
+    for (let i = 0; i < names.length; i++) {
+      for (let j = i + 1; j < names.length; j++) {
+        const d = Math.hypot(
+          c.get(names[i]).x - c.get(names[j]).x,
+          c.get(names[i]).y - c.get(names[j]).y,
+          c.get(names[i]).z - c.get(names[j]).z,
+        );
+        extent = Math.max(extent, d);
+        minSep = Math.min(minSep, d / (maxR.get(names[i]) + maxR.get(names[j])));
+      }
+    }
+    return { extent, minSep, biggestR: Math.max(...maxR.values()) };
+  });
+  check(
+    `${vp.name}: bubbles do not overlap`,
+    geom.minSep > 1,
+    `closest pair centre-distance / (R1+R2) = ${geom.minSep.toFixed(2)}`,
+  );
+  check(
+    `${vp.name}: the whole field frames without dwarfing a bubble`,
+    geom.extent < geom.biggestR * 12,
+    `extent=${Math.round(geom.extent)} vs biggest bubble R=${Math.round(geom.biggestR)}`,
+  );
+
   // --- community labels must not compete with universe names -----------
   const clusterLabels = await page.evaluate(
     () => document.querySelectorAll(".cluster-label.is-visible").length,

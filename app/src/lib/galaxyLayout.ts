@@ -55,10 +55,20 @@ export function galaxyAnchorsBySize(
   counts: number[],
   linkDistance: number,
 ): GalaxyAnchor[] {
-  const G = counts.length;
+  return galaxyAnchorsByFootprint(counts.map((c) => galaxyFootprint(c, linkDistance)));
+}
+
+/// The packer itself, over footprints the caller has already decided.
+///
+/// `galaxyAnchorsBySize` predicts each footprint from a node count, which is
+/// right for galaxies inside one vault — their nodes really do spread with
+/// count. A caller packing something whose extent it can measure should pass
+/// that instead of a prediction: the multiverse does, because its universe
+/// clouds are seeded onto a fixed shell and do not grow with count at all.
+export function galaxyAnchorsByFootprint(foots: number[]): GalaxyAnchor[] {
+  const G = foots.length;
   if (G <= 0) return [];
   if (G === 1) return [{ x: 0, y: 0, z: 0 }];
-  const foots = counts.map((c) => galaxyFootprint(c, linkDistance));
   const maxFoot = Math.max(...foots);
   // IRREGULAR packing, not a fibonacci shell. A fibonacci sphere spreads points
   // as EVENLY as possible → the smooth round ball the user rejected. Instead
@@ -68,7 +78,7 @@ export function galaxyAnchorsBySize(
   // crowd, others leave voids — and the greedy radial packing varies depth, so
   // the ensemble reads as a lumpy, organic cluster of galaxies. Deterministic
   // (galaxySeed, fixed size-order) so reloads are identical.
-  const order = counts.map((_, i) => i).sort((a, b) => foots[b] - foots[a] || a - b);
+  const order = foots.map((_, i) => i).sort((a, b) => foots[b] - foots[a] || a - b);
   const placed: { x: number; y: number; z: number; foot: number }[] = [];
   const out: GalaxyAnchor[] = new Array(G);
   const step = Math.max(1, maxFoot * 0.35);

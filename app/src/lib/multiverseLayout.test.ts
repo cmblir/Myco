@@ -10,6 +10,9 @@ import {
   type PositionableGraph,
   type UniverseAnchor,
   type UniverseInput,
+  universeAnchorsByRadius,
+  bubbleRadius,
+  BUBBLE_MIN_RADIUS,
 } from "./multiverseLayout";
 
 // A tiny in-memory PositionableGraph for layoutMultiverse tests — no graphology.
@@ -187,5 +190,70 @@ describe("layoutMultiverse", () => {
     const g = fakeGraph([{ id: "x", x: 7, y: 8, z: 9, universe: "unknown" }]);
     layoutMultiverse(g, anchors);
     expect(g.get("x")).toMatchObject({ x: 7, y: 8, z: 9 });
+  });
+});
+
+describe("universeAnchorsByRadius", () => {
+  it("packs by measured radius, so a huge vault no longer exiles the others", () => {
+    // The real three-vault setup. Every universe's cloud is seeded onto the same
+    // fixed shell, so they all render at ~700 regardless of note count — the old
+    // count-driven packing gave the 10k vault a 70,361 footprint for its 713
+    // bubble and pushed the others ~74,000 away, where no camera distance shows
+    // two bubbles at a readable size.
+    const anchors = universeAnchorsByRadius([
+      { slug: "Memex", radius: 705 },
+      { slug: "ObsidianVault", radius: 676 },
+      { slug: "demo-10k", radius: 713 },
+    ]);
+    const by = new Map(anchors.map((a) => [a.slug, a]));
+    const dist = (a: string, b: string): number =>
+      Math.hypot(by.get(a)!.x - by.get(b)!.x, by.get(a)!.y - by.get(b)!.y, by.get(a)!.z - by.get(b)!.z);
+
+    // Nothing overlaps...
+    expect(dist("Memex", "demo-10k")).toBeGreaterThan(705 + 713);
+    expect(dist("Memex", "ObsidianVault")).toBeGreaterThan(705 + 676);
+    // ...and the whole field stays within a few bubble-diameters, so they frame
+    // together. The old packing put this above 70,000.
+    const extent = Math.max(
+      dist("Memex", "demo-10k"),
+      dist("Memex", "ObsidianVault"),
+      dist("ObsidianVault", "demo-10k"),
+    );
+    expect(extent).toBeLessThan(12_000);
+  });
+
+  it("ignores note count entirely — only the rendered radius matters", () => {
+    // Two universes of equal radius must be packed identically no matter how
+    // many notes are inside them; that is the whole correction.
+    const a = universeAnchorsByRadius([
+      { slug: "tiny", radius: 700 },
+      { slug: "huge", radius: 700 },
+    ]);
+    expect(Math.hypot(a[0].x - a[1].x, a[0].y - a[1].y, a[0].z - a[1].z)).toBeGreaterThan(1400);
+  });
+
+  it("is deterministic across calls", () => {
+    const input = [
+      { slug: "a", radius: 700 },
+      { slug: "b", radius: 120 },
+      { slug: "c", radius: 900 },
+    ];
+    expect(universeAnchorsByRadius(input)).toEqual(universeAnchorsByRadius(input));
+  });
+
+  it("gives a lone universe the origin", () => {
+    expect(universeAnchorsByRadius([{ slug: "only", radius: 700 }])).toEqual([
+      { slug: "only", x: 0, y: 0, z: 0 },
+    ]);
+  });
+});
+
+describe("bubbleRadius", () => {
+  it("pads the cloud and floors a tiny universe", () => {
+    expect(bubbleRadius(1000)).toBeCloseTo(1180);
+    // A one-note universe has zero extent but must still be a real bubble —
+    // and the packing must reserve room for that same floor, which is why the
+    // renderer and the layout share this function.
+    expect(bubbleRadius(0)).toBe(BUBBLE_MIN_RADIUS);
   });
 });

@@ -16,8 +16,8 @@ import {
 import type { Adjacency } from "./ipc";
 import {
   layoutMultiverse,
-  universeAnchorsBySize,
-  type UniverseInput,
+  bubbleRadius,
+  universeAnchorsByRadius,
 } from "./multiverseLayout";
 
 // One universe's inputs to the scene — the subset of the store's UniverseData
@@ -48,7 +48,6 @@ export interface AssembledMultiverse {
 export function assembleMultiverse(
   universes: SceneUniverse[],
   o: BuildGraphOpts,
-  linkDistance: number,
 ): AssembledMultiverse {
   const built: MultiverseUniverse[] = [];
   for (const u of universes) {
@@ -67,20 +66,59 @@ export function assembleMultiverse(
 
   const graph = buildMultiverseGraph(built, o);
 
-  // Node count per universe from the merged graph (post-filter, incl. ghosts) —
-  // the honest size to pack by, matching what actually renders.
-  const counts = new Map<string, number>();
-  graph.forEachNode((_id, a) => {
-    const slug = a.universe ?? "";
-    counts.set(slug, (counts.get(slug) ?? 0) + 1);
-  });
-  const inputs: UniverseInput[] = built
-    .filter((u) => (counts.get(u.slug) ?? 0) > 0)
-    .map((u) => ({ slug: u.slug, nodeCount: counts.get(u.slug) ?? 0 }));
+  // Measure each universe's cloud from the positions buildMultiverseGraph just
+  // produced, and pack by that. Node count is the wrong proxy here: the clouds
+  // are seeded onto a fixed shell, so they do not grow with count — packing by
+  // count reserved ~99x the room a big vault actually occupies and pushed the
+  // others out of frame. This is the same max-distance-from-centroid the bubble
+  // layer uses to size the membrane, so the spacing follows what renders.
+  const radii = universeRadii(graph);
+  const inputs = built
+    .filter((u) => (radii.get(u.slug) ?? 0) > 0)
+    .map((u) => ({ slug: u.slug, radius: radii.get(u.slug) ?? 0 }));
 
-  const anchors = universeAnchorsBySize(inputs, linkDistance);
+  const anchors = universeAnchorsByRadius(inputs);
   const placedSlugs = layoutMultiverse(graph, anchors);
   return { graph, placed: new Set(placedSlugs) };
+}
+
+/// Each universe's cloud radius: the greatest distance from its centroid to any
+/// of its visible nodes.
+///
+/// This is deliberately the same measurement UniverseBubbleLayer makes to size
+/// the membrane — the packing has to be about the thing the user sees, and the
+/// last time it was about a predicted node-count footprint instead, the two
+/// disagreed by 99x. Hidden nodes are excluded for the same reason: the bubble
+/// does not enclose them.
+function universeRadii(graph: VaultGraph): Map<string, number> {
+  const sum = new Map<string, { x: number; y: number; z: number; n: number }>();
+  graph.forEachNode((_id, a) => {
+    const slug = a.universe ?? "";
+    if (!slug || a.hidden) return;
+    const e = sum.get(slug) ?? { x: 0, y: 0, z: 0, n: 0 };
+    e.x += a.x;
+    e.y += a.y;
+    e.z += a.z;
+    e.n += 1;
+    sum.set(slug, e);
+  });
+  const centre = new Map<string, { x: number; y: number; z: number }>();
+  for (const [slug, e] of sum) {
+    centre.set(slug, { x: e.x / e.n, y: e.y / e.n, z: e.z / e.n });
+  }
+  const out = new Map<string, number>();
+  graph.forEachNode((_id, a) => {
+    const slug = a.universe ?? "";
+    const c = centre.get(slug);
+    if (!c || a.hidden) return;
+    const d = Math.hypot(a.x - c.x, a.y - c.y, a.z - c.z);
+    out.set(slug, Math.max(out.get(slug) ?? 0, d));
+  });
+  // Return the RENDERED bubble radius, not the raw cloud extent: that is the
+  // sphere the packing has to leave room for (and it floors a one-note universe
+  // into a real bubble rather than a point).
+  for (const [slug, r] of out) out.set(slug, bubbleRadius(r));
+  return out;
 }
 
 // The universe a node belongs to — the graph carries it as an attribute. Ghost

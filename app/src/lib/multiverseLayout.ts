@@ -12,6 +12,7 @@
 // instead of an even lattice.
 
 import {
+  galaxyAnchorsByFootprint,
   galaxyAnchorsBySize,
   galaxyFootprint,
   galaxyNormal,
@@ -62,6 +63,61 @@ export function universeAnchorsBySize(
 ): UniverseAnchor[] {
   const counts = universes.map((u) => Math.max(1, u.nodeCount));
   const anchors = galaxyAnchorsBySize(counts, linkDistance * scale);
+  return universes.map((u, i) => ({ slug: u.slug, ...anchors[i] }));
+}
+
+/// The rendered radius of a universe's bubble, given the greatest distance from
+/// its centroid to any of its stars.
+///
+/// Lives here, in the pure-math layout module, rather than in the layer that
+/// draws it: the packing has to reserve room for the bubble the user actually
+/// sees, and when the two were derived separately they disagreed by 99x. The
+/// renderer imports this; so does the packing.
+///
+/// The 1.18 gives the star cloud a little breathing room inside the membrane,
+/// and the floor keeps a two-note universe a real bubble rather than a speck.
+export const BUBBLE_MIN_RADIUS = 60;
+export function bubbleRadius(maxDistanceFromCentre: number): number {
+  return Math.max(BUBBLE_MIN_RADIUS, maxDistanceFromCentre * 1.18);
+}
+
+/// How much room to give a universe whose cloud measures `radius`.
+///
+/// The packer lets footprints approach to 0.72 × their sum, so two universes of
+/// radius R land ~1.44 × PAD × R apart, centre to centre. 4.2 puts that at ~6 R
+/// — roughly two clear bubble-diameters of void between membranes.
+///
+/// Tuned by looking, not by taste: the packer aims each universe in a seeded
+/// random direction, so at close spacing two bubbles that are properly separated
+/// in 3D still land on top of each other in PROJECTION from the default camera,
+/// and the field reads as one lumpy blob with colliding labels. ~6 R is where
+/// three bubbles stay visually distinct while the whole field still frames at a
+/// readable size (each bubble ~15% of the view).
+const UNIVERSE_PAD = 4.2;
+
+/// Universe centres packed by each cloud's MEASURED radius.
+///
+/// `universeAnchorsBySize` predicts a footprint from node count, which is what
+/// galaxies inside one vault do — their stars really do spread as the count
+/// grows. Universe clouds do not: the multiverse seeds every one of them onto
+/// the same fixed shell, so a 9,984-note vault and a 16-note vault both render
+/// as a ball of radius ~700 (the big one is denser, not wider).
+///
+/// Packing them by count therefore reserved room nobody occupies — measured on
+/// the real three-vault setup, the 10k vault claimed a footprint of 70,361 for
+/// a bubble of 713, i.e. 99x, which shoved the other vaults ~74,000 away. At
+/// that spread no camera distance shows two bubbles at a readable size: frame
+/// them both and each is ~1% of the view; approach one and the rest are dots.
+///
+/// So pack by what is actually there. The caller measures each cloud from the
+/// node positions it just built (the same max-distance-from-centroid the bubble
+/// layer uses to size the membrane), and the packing follows the render instead
+/// of predicting it.
+export function universeAnchorsByRadius(
+  universes: { slug: string; radius: number }[],
+): UniverseAnchor[] {
+  const foots = universes.map((u) => Math.max(1, u.radius) * UNIVERSE_PAD);
+  const anchors = galaxyAnchorsByFootprint(foots);
   return universes.map((u, i) => ({ slug: u.slug, ...anchors[i] }));
 }
 

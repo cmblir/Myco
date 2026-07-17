@@ -19,6 +19,7 @@ import * as THREE from "three";
 import type { VaultGraph } from "./graphData";
 import { readTheme } from "./graphTheme";
 import { isDarkInk } from "./inkContrast";
+import { bubbleRadius } from "./multiverseLayout";
 
 const VERT = /* glsl */ `
 varying vec3 v_normal;
@@ -112,9 +113,9 @@ export class UniverseBubbleLayer {
     const slugs = [...centre.keys()].sort();
     slugs.forEach((slug, rank) => {
       const c = centre.get(slug)!;
-      // Enclose the whole star cloud with a little breathing room, with a floor
-      // so a tiny (few-note) universe still reads as a real bubble.
-      const R = Math.max(60, (maxR.get(slug) ?? 0) * 1.18);
+      // Shared with the layout packing — see bubbleRadius. The two must agree:
+      // the packing exists to reserve room for exactly this sphere.
+      const R = bubbleRadius(maxR.get(slug) ?? 0);
       const hue = spreadHue(rank);
       col.setHSL(hue / 360, 0.7, 0.6);
       const mat = new THREE.ShaderMaterial({
