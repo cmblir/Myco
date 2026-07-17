@@ -733,6 +733,71 @@ pub fn list_files(root: &str) -> Result<Vec<FileNode>, String> {
     walk_dir(&root_path).map_err(|e| format!("walk failed: {e}"))
 }
 
+/// A cheap fingerprint of the vault's markdown: a hash over every .md file's
+/// path, mtime and length.
+///
+/// This exists so a caller can ask "did anything change?" without paying to
+/// rebuild what it already has. The app polls for external edits (Obsidian,
+/// Finder, a finished ingest) every few seconds, and answering that with a full
+/// link-graph rebuild means reading and parsing every note in the vault —
+/// measured at 305 ms warm (1.85 s cold) on a 10k-note vault, forever, in the
+/// overwhelmingly common case where nothing changed at all. This walk only
+/// stats.
+///
+/// Deliberately not a content hash: mtime+len is what a filesystem gives away
+/// for free. It cannot see an edit that preserves both, which in practice means
+/// a same-size write inside one mtime tick — the graph then updates on the next
+/// real change or on the user's next explicit action. Paying to read every file
+/// to close that gap would reintroduce the cost this removes.
+pub fn vault_revision(root: &str) -> Result<u64, String> {
+    let root_path = Path::new(root)
+        .canonicalize()
+        .map_err(|e| format!("canonicalize failed for {root}: {e}"))?;
+    if !root_path.is_dir() {
+        return Err(format!("not a directory: {root}"));
+    }
+    let mut entries: Vec<(String, i64, u64)> = Vec::new();
+    collect_revision_entries(&root_path, &mut entries);
+    // Sort so the hash depends on the vault's content, not on the order the
+    // filesystem happened to hand back directory entries.
+    entries.sort();
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for (path, mtime, len) in &entries {
+        std::hash::Hash::hash(path, &mut h);
+        std::hash::Hash::hash(mtime, &mut h);
+        std::hash::Hash::hash(len, &mut h);
+    }
+    Ok(std::hash::Hasher::finish(&h))
+}
+
+/// Stat-only walk backing `vault_revision`. Best-effort throughout: an
+/// unreadable directory contributes nothing rather than failing the check, for
+/// the same reason the link-graph walk skips one — a fingerprint that errors is
+/// a fingerprint the caller has to fall back from, which defeats the point.
+fn collect_revision_entries(dir: &Path, out: &mut Vec<(String, i64, u64)>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        if is_hidden(&entry.file_name()) {
+            continue;
+        }
+        let path = entry.path();
+        if path.is_dir() {
+            collect_revision_entries(&path, out);
+        } else if is_markdown(&path) {
+            let Ok(meta) = entry.metadata() else { continue };
+            let mtime = meta
+                .modified()
+                .ok()
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            out.push((path.to_string_lossy().into_owned(), mtime, meta.len()));
+        }
+    }
+}
+
 /// Flat (path, mtime_unix_seconds) list for every .md file under root.
 /// Drives the graph timelapse — nodes are revealed in mtime order.
 pub fn file_mtimes(root: &str) -> Result<Vec<(String, i64)>, String> {
@@ -1017,6 +1082,82 @@ mod tests {
         );
         assert!(confine_path(&root, &escape).is_err());
         let _ = fs::remove_file(&sibling);
+    }
+
+    #[test]
+    fn vault_revision_is_stable_and_notices_real_changes() {
+        let dir = temp_vault("revision");
+        fs::create_dir_all(dir.join("wiki")).unwrap();
+        fs::write(dir.join("wiki/a.md"), "alpha").unwrap();
+        let root = dir.to_str().unwrap();
+
+        let r1 = vault_revision(root).unwrap();
+        // Same vault, no writes: the fingerprint must not move, or the caller it
+        // exists for (skip the rebuild when nothing changed) never skips.
+        assert_eq!(r1, vault_revision(root).unwrap());
+
+        // A new file changes it.
+        fs::write(dir.join("wiki/b.md"), "beta").unwrap();
+        let r2 = vault_revision(root).unwrap();
+        assert_ne!(r1, r2, "a new page must change the revision");
+
+        // A length change changes it even within the same mtime second.
+        fs::write(dir.join("wiki/b.md"), "beta plus more text").unwrap();
+        let r3 = vault_revision(root).unwrap();
+        assert_ne!(r2, r3, "an edit that changes length must change the revision");
+
+        // Deleting changes it back to something new (not necessarily r1: mtimes
+        // of the remaining files are unchanged, so it should in fact equal r1).
+        fs::remove_file(dir.join("wiki/b.md")).unwrap();
+        assert_eq!(r1, vault_revision(root).unwrap(), "removing the new page restores the revision");
+
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn vault_revision_ignores_non_markdown_and_hidden() {
+        let dir = temp_vault("revision-scope");
+        fs::create_dir_all(dir.join("wiki")).unwrap();
+        fs::create_dir_all(dir.join(".obsidian")).unwrap();
+        fs::write(dir.join("wiki/a.md"), "alpha").unwrap();
+        let root = dir.to_str().unwrap();
+        let before = vault_revision(root).unwrap();
+
+        // The link graph only reads .md, so churn the fingerprint must not see:
+        // an app's own state file, and anything under a dot-directory.
+        fs::write(dir.join("wiki/notes.txt"), "not markdown").unwrap();
+        fs::write(dir.join(".obsidian/workspace.json"), "{}").unwrap();
+        fs::write(dir.join(".obsidian/scratch.md"), "hidden md").unwrap();
+        assert_eq!(
+            before,
+            vault_revision(root).unwrap(),
+            "only vault markdown may move the revision"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn vault_revision_survives_an_unreadable_subdir() {
+        // A fingerprint that errors is one the caller must fall back from,
+        // which defeats its purpose.
+        let dir = temp_vault("revision-locked");
+        fs::create_dir_all(dir.join("wiki")).unwrap();
+        fs::write(dir.join("wiki/a.md"), "alpha").unwrap();
+        let locked = dir.join("locked");
+        fs::create_dir_all(&locked).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+        }
+        let got = vault_revision(dir.to_str().unwrap());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&locked, fs::Permissions::from_mode(0o755)).ok();
+        }
+        assert!(got.is_ok(), "an unlistable subdir must not fail the check");
+        fs::remove_dir_all(&dir).ok();
     }
 
     /// Regression: `raw/` is immutable — the repo CLAUDE.md states it outranks

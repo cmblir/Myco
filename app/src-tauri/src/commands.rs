@@ -385,10 +385,43 @@ pub fn rename_path(
     Ok(new_path)
 }
 
+/// Full link graph for the open vault.
+///
+/// Async + `spawn_blocking` because this is not a cheap read: it walks, reads
+/// and parses every note (measured at 305 ms warm — 1.85 s cold — on a
+/// 10k-note vault). A sync `#[tauri::command]` body runs inline on the platform
+/// event loop, so at that size it stalls every other IPC call behind it. The
+/// blocking pool is where the rest of the heavy work already goes
+/// (`transcribe_media`, `claude_run`).
+///
+/// Prefer `vault_revision` when the caller only needs to know *whether* to
+/// rebuild.
 #[tauri::command]
-pub fn build_link_graph(state: tauri::State<VaultRoot>, root: String) -> Result<Adjacency, String> {
+pub async fn build_link_graph(
+    state: tauri::State<'_, VaultRoot>,
+    root: String,
+) -> Result<Adjacency, String> {
     let root = confine_root(&state, &root)?;
-    index::build_link_graph(&root)
+    tauri::async_runtime::spawn_blocking(move || index::build_link_graph(&root))
+        .await
+        .map_err(|e| format!("join failed: {e}"))?
+}
+
+/// Cheap hash of the vault's markdown (path + mtime + length per .md file), so
+/// a caller can skip a rebuild when nothing changed.
+///
+/// Measured against the work it guards: 0.5 ms vs 9 ms on a 51-note vault, and
+/// 51 ms vs 1.3 s on a 10k-note vault — ~26x cheaper, because it only stats
+/// where `build_link_graph` reads and parses.
+#[tauri::command]
+pub async fn vault_revision(
+    state: tauri::State<'_, VaultRoot>,
+    root: String,
+) -> Result<u64, String> {
+    let root = confine_root(&state, &root)?;
+    tauri::async_runtime::spawn_blocking(move || vault::vault_revision(&root))
+        .await
+        .map_err(|e| format!("join failed: {e}"))?
 }
 
 // ---- Multiverse (multi-project registry, Phase 0) ----

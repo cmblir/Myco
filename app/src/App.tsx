@@ -129,7 +129,10 @@ export default function App(): JSX.Element {
       if (INGEST_RUNNING.includes(useIngestStore.getState().stage)) return;
       const v = useVaultStore.getState();
       void v.refreshTree();
-      void v.refreshLinkGraph();
+      // Poll for edits made outside the app (Obsidian, Finder, a finished
+      // ingest). `ifChanged` makes the common "nothing happened" tick a cheap
+      // fingerprint check instead of a full re-read of every note.
+      void v.refreshLinkGraph({ ifChanged: true });
     };
     const onVisible = (): void => {
       if (document.visibilityState === "visible") refresh();

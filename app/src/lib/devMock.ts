@@ -33,6 +33,9 @@ function emitMock(event: string, payload: unknown): void {
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
+// Fingerprint of the mock vault. Fixed: nothing writes to it.
+const MOCK_REVISION = 0x5eed_1234;
+
 /// Walk the sample pages the way the real reindex does, with the same events.
 /// Paced (not instant) so the progress UI has states to show — the real command
 /// takes ~467 ms per embedded chunk, i.e. minutes on a real vault, which is the
@@ -551,6 +554,12 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(mtimes());
     case "build_link_graph":
       return Promise.resolve(buildAdjacency());
+    // The vault fingerprint. Constant here because the mock vault is in-memory
+    // and never changes on disk — which is exactly right: it makes the poll's
+    // steady state (revision unmoved -> skip the rebuild) the path a mock run
+    // exercises.
+    case "vault_revision":
+      return Promise.resolve(MOCK_REVISION);
     // Multiverse (Phase 0): a two-universe registry. Both slugs reuse the one
     // mock vault graph; per-slug graph variation comes with the Phase 1 UI.
     case "list_projects":

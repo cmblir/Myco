@@ -109,6 +109,7 @@ pub fn run() {
             commands::delete_path,
             commands::rename_path,
             commands::build_link_graph,
+            commands::vault_revision,
             commands::list_projects,
             commands::build_link_graph_at,
             commands::set_active_project,

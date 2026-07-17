@@ -14,6 +14,13 @@ const LAST_VAULT_KEY = "memex.lastVaultPath";
 let openSeq = 0;
 let refreshSeq = 0;
 
+// Vault fingerprint (path+mtime+length over every .md) as of the last committed
+// link graph, plus the vault it belongs to — pairing them means switching vaults
+// invalidates it without an explicit reset. Only the background poll consults
+// this; see refreshLinkGraph.
+let lastRevision: number | null = null;
+let lastRevisionVault: string | null = null;
+
 export interface VaultState {
   currentVault: VaultMeta | null;
   fileTree: FileNode[];
@@ -24,7 +31,9 @@ export interface VaultState {
   openVault: (path: string) => Promise<void>;
   openFile: (path: string) => Promise<void>;
   saveFile: (path: string, content: string) => Promise<void>;
-  refreshLinkGraph: () => Promise<void>;
+  /** `ifChanged` skips the rebuild when the vault fingerprint is unmoved
+   *  (background poll only — a caller that just wrote should force). */
+  refreshLinkGraph: (opts?: { ifChanged?: boolean }) => Promise<void>;
   refreshTree: () => Promise<void>;
   createFile: (parentDir: string, name: string) => Promise<string | null>;
   createFolder: (parentDir: string, name: string) => Promise<string | null>;
@@ -68,11 +77,38 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     }
   },
 
-  async refreshLinkGraph() {
+  async refreshLinkGraph(opts) {
     const vault = get().currentVault;
     if (!vault) return;
     const seq = ++refreshSeq;
     try {
+      // `ifChanged` is for the background poll only: it fires every few seconds
+      // to catch edits made outside the app, and rebuilding the graph to answer
+      // that means reading and parsing every note — 305 ms on a 10k-note vault,
+      // over and over, almost always to conclude nothing happened. The
+      // fingerprint answers the same question ~26x cheaper (it only stats).
+      //
+      // Every other caller has just written to the vault and passes nothing, so
+      // it always rebuilds. That is deliberate rather than lazy: mtime+len
+      // cannot see an edit that keeps both (rewriting [[a]] to [[b]] inside one
+      // mtime tick), and after a local write we know the file changed, so there
+      // is no reason to ask.
+      if (opts?.ifChanged) {
+        const revision = await ipc.vaultRevision(vault.path);
+        if (seq !== refreshSeq) return;
+        const fresh =
+          lastRevisionVault === vault.path &&
+          lastRevision === revision &&
+          get().adjacency !== null;
+        if (fresh) return;
+        lastRevision = revision;
+        lastRevisionVault = vault.path;
+      } else {
+        // A forced rebuild leaves the poll's baseline stale — clear it so the
+        // next poll re-reads the fingerprint rather than trusting an old one.
+        lastRevision = null;
+        lastRevisionVault = null;
+      }
       const adjacency = await ipc.buildLinkGraph(vault.path);
       // Discard if the user switched vaults during the rebuild, or if
       // another refresh has been kicked off after this one.

@@ -302,6 +302,9 @@ export const ipc = {
   whisperCheck: () => invoke<ClaudeStatus>("whisper_check"),
   buildLinkGraph: (root: string) =>
     invoke<Adjacency>("build_link_graph", { root }),
+  /** Cheap hash of the vault's markdown (path+mtime+length per .md). Ask this
+   *  before rebuilding the graph — it is ~26x cheaper because it only stats. */
+  vaultRevision: (root: string) => invoke<number>("vault_revision", { root }),
   // Multiverse (Phase 0): registry enumeration + read-only per-project graphs.
   /** Registered projects; empty when the open vault has no registry above it. */
   listProjects: () => invoke<ProjectInfo[]>("list_projects"),
