@@ -1,60 +1,61 @@
 # Import Guide — Getting Sources Into Memex
 
-How to get material into a Memex vault, and — just as importantly — what does
-**not** work yet.
+How to get material into a Memex vault.
 
-> [!warning] Read this first: bulk conversation import is not built.
-> An earlier version of this guide described a full pipeline for ChatGPT /
-> Claude / Claude Code / Codex exports: a `raw/imports/` drop folder,
-> source auto-detection, normalized transcripts at `raw/conversations/<id>.md`,
-> and a dedup ledger for safe re-drops.
+> [!note] Conversation import works now — via Settings? No: **Ingest → Import a
+> conversation**.
+> Pick a ChatGPT export (`conversations.json`) or a Claude Code / Codex session
+> (`.jsonl`) and Memex parses it, drops each conversation into `_inbox/` as a
+> source doc, and the normal ingest pipeline turns them into wiki pages. A
+> conversation whose text looks like it contains a secret (an API key, a token)
+> is held back and reported, never written.
 >
-> **None of that exists.** No code reads `raw/imports/`, there is no conversation
-> parser, and there is no ledger. The guide was written ahead of the feature and
-> never marked as such. If you followed it, nothing happened to your files —
-> they are still sitting where you copied them.
+> Two things are NOT built yet: **Claude.ai web exports** (its `conversations.json`
+> has a different shape from ChatGPT's and is not yet parsed), and a **dedup
+> ledger** — re-importing the same export re-creates the `_inbox/` docs, so if
+> they were already ingested you may get duplicate work. Import what you need
+> once for now.
 >
-> This page now describes only what actually runs. The export steps below are
-> real and worth doing — they are vendor-side, and you will want the files when
-> the parsers land.
+> Older versions of this guide described a `raw/imports/` drop folder writing to
+> `raw/conversations/`. That never existed and would have violated `raw/`
+> immutability; the real drop zone is `_inbox/`, beside `raw/`.
 
 ---
 
 ## What works today
 
-One source file at a time, wikified by the model:
+**Conversation import.** In the app, open **Ingest → Import a conversation** and
+pick a file. Memex detects the format from its contents (not its name), splits it
+into per-conversation source docs, scans each for secrets, and writes the clean
+ones to `_inbox/` as `<source>-<id>.md`. Supported: ChatGPT `conversations.json`,
+Claude Code sessions, Codex sessions. From `_inbox/` the pipeline below takes
+over.
 
-1. You put a source into the vault's inbox — `<vault>/_inbox/` — or paste it
-   straight into the app (**Ingest a source**).
-2. The source is copied to `raw/<slug>.md`, which becomes the citable original.
-3. The model reads it with the vault's `CLAUDE.md` as its instructions and
-   writes into `wiki/`, with citations pointing back at the `raw/` copy.
+**Single-source ingest**, wikified by the model:
+
+1. A source lands in `<vault>/_inbox/` (the importer above, the web clipper, or
+   your own drop), or you paste one straight into the app (**Ingest a source**).
+2. The source is copied to `raw/<slug>.md`, the citable original.
+3. The model reads it with the vault's `CLAUDE.md` and writes into `wiki/`, with
+   citations pointing back at the `raw/` copy.
 4. An account of the run lands in `ingest-reports/`.
 
-That pipeline is solid. What is missing is everything *upstream* of it: nothing
-splits one big vendor export into per-conversation sources, so a 200 MB
-`conversations.json` is one enormous "source" rather than 1,400 of them.
+### `_inbox/` file types differ by drain
 
-### The inbox is markdown-only in the app
-
-This surprises people, so it is worth being blunt about. The two things that
-drain `_inbox/` accept **different file types**:
+The importer writes `.md`, so it always works. But if you drop a raw file into
+`_inbox/` YOURSELF, note the two drains accept different types:
 
 | You drop | App (auto-ingest, while open) | `automation/autoingest.py` (headless) |
 |---|---|---|
 | `.md` `.markdown` | ✅ | ✅ |
 | `.txt` `.csv` `.tsv` `.json` `.yaml` `.html` | ❌ **invisible** | ✅ read as text |
 | `.pdf` `.xlsx` `.ods` | ❌ **invisible** | ✅ via the Memex binary (`--app-bin`) |
-| `.jsonl` | ❌ **invisible** | ❌ **not handled** |
+| `.jsonl` (raw session) | ❌ **invisible** | ❌ not handled |
 
 The app's file listing is markdown-only (`vault::walk_dir` keeps only `.md`), so
-a non-`.md` file in `_inbox/` is not ignored on purpose — it is not seen at all.
-The daemon is the broader path, and even it does not know `.jsonl`.
-
-**Consequences for the exports below:** a ChatGPT/Claude `conversations.json`
-can only be consumed by the daemon, and only as one raw blob. Claude Code and
-Codex sessions are `.jsonl` and are consumed by **nothing**. Copying them into
-`_inbox/` today does nothing at all.
+a non-`.md` file dropped straight into `_inbox/` is not seen by the in-app pass.
+This is why you use **Import a conversation** for a `.json`/`.jsonl` export rather
+than copying it into `_inbox/` — the importer parses it to `.md` first.
 
 ### `raw/` is immutable — this part is true
 
@@ -243,9 +244,9 @@ promised prematurely.
 
 | Source | Export it from | Importable today? |
 |--------|---------------|-------------------|
-| ChatGPT | Settings → Data controls → Export | ⚠️ daemon only, as one raw blob |
-| Claude.ai | Settings → Privacy → Export | ⚠️ daemon only, as one raw blob |
-| Claude Code | `~/.claude/projects/…/*.jsonl` (already on disk) | ❌ `.jsonl` is handled by nothing |
-| Codex CLI | `~/.codex/sessions/…/rollout-*.jsonl` | ❌ `.jsonl` is handled by nothing |
+| ChatGPT | Settings → Data controls → Export | ✅ Ingest → Import a conversation |
+| Claude Code | `~/.claude/projects/…/*.jsonl` (already on disk) | ✅ Ingest → Import a conversation |
+| Codex CLI | `~/.codex/sessions/…/rollout-*.jsonl` | ✅ Ingest → Import a conversation |
+| Claude.ai | Settings → Privacy → Export | ❌ not yet (its format differs from ChatGPT's) |
 | A markdown note | — | ✅ |
 | PDF / spreadsheet / audio / video | — | ✅ (app, or daemon with `--app-bin`) |

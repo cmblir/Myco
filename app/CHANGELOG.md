@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Import your AI conversations.** Ingest → Import a conversation takes a ChatGPT
+  export or a Claude Code / Codex session and turns each conversation into a wiki
+  source. Memex detects the format from the file itself, keeps only the real
+  discussion (dropping tool output, sub-agent chatter and internal reasoning),
+  and — importantly — holds back any conversation whose text looks like it
+  contains a secret (an API key or token) so it never lands in your vault.
+
 ### Fixed
 
 - **Japanese and Korean are complete.** ja was missing 99 of the app's strings
