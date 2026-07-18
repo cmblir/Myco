@@ -12,6 +12,7 @@
 //! caller writes the docs.
 
 pub mod chatgpt;
+pub mod claude_code;
 
 /// Which tool an exported conversation came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
