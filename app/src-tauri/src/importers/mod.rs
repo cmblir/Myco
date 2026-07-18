@@ -14,6 +14,7 @@
 pub mod chatgpt;
 pub mod claude_code;
 pub mod codex;
+pub mod secrets_scan;
 
 /// Parse an ISO-8601 timestamp (`2026-07-18T12:34:56.789Z`) to unix seconds,
 /// reading the fixed-width fields so no chrono dependency is needed. Shared by
