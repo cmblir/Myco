@@ -564,66 +564,13 @@ pub async fn vault_revision(
         .map_err(|e| format!("join failed: {e}"))?
 }
 
-// ---- Multiverse (multi-project registry, Phase 0) ----
+// ---- Multiverse (multi-project registry) ----
 //
-// These three commands are the only multi-root surface. They deliberately do
-// NOT use `confine_root` (which pins reads to the single open vault): a slug
-// is turned into a path exclusively by `registry::resolve_project_root`, which
-// requires the slug to be registered in the `projects.json` found ABOVE the
-// open vault and the resolved path to stay under its `projects/` dir. Reads
-// only — every mutating command keeps the single-root confinement.
-
-/// Enumerate the registered projects ("universes"). Empty when the open vault
-/// is standalone (no projects.json in its ancestry) — the frontend reads that
-/// as "no multiverse available".
-#[tauri::command]
-pub fn list_projects(
-    state: tauri::State<VaultRoot>,
-) -> Result<Vec<registry::ProjectInfo>, String> {
-    let open = require_root(&state)?;
-    Ok(registry::Registry::discover(&open)
-        .map(|reg| reg.project_infos())
-        .unwrap_or_default())
-}
-
-/// Read-only link graph of a REGISTERED project that need not be the open
-/// vault — the multiverse view builds one adjacency per universe with this.
-#[tauri::command]
-pub fn build_link_graph_at(
-    state: tauri::State<VaultRoot>,
-    slug: String,
-) -> Result<Adjacency, String> {
-    let open = require_root(&state)?;
-    let reg = registry::Registry::discover(&open)
-        .ok_or_else(|| "no project registry above the open vault".to_string())?;
-    let root = reg.resolve_project_root(&slug)?;
-    index::build_link_graph(&root.to_string_lossy())
-}
-
-/// Switch the active project without the frontend teardown `open_vault`
-/// implies: registry `active` pointer + confinement root + active-vault marker
-/// + MCP restart. The multiverse scene stays alive and just re-frames.
-#[tauri::command]
-pub fn set_active_project(
-    app: tauri::AppHandle,
-    state: tauri::State<VaultRoot>,
-    slug: String,
-) -> Result<VaultMeta, String> {
-    let open = require_root(&state)?;
-    let reg = registry::Registry::discover(&open)
-        .ok_or_else(|| "no project registry above the open vault".to_string())?;
-    let root = reg.resolve_project_root(&slug)?;
-    let meta = vault::open_vault(&root.to_string_lossy())?;
-    // Point the registry at the new project FIRST — if this write fails,
-    // nothing has switched and the command errors cleanly.
-    registry::set_active(&reg.project_root, &slug)?;
-    state.set(PathBuf::from(&meta.path));
-    // Best-effort marker write, mirroring open_vault: the bundled MCP server
-    // follows this file; a failure must not block the switch.
-    let _ = settings::set_active_vault(&meta.path);
-    mcp_server::restart_if_serving(&app);
-    Ok(meta)
-}
+// The multi-root surface (list_universes / build_universe_graph) deliberately
+// does NOT use `confine_root` (which pins reads to the single open vault): a
+// root is validated against the discovered registry and the sibling-vault set,
+// never trusted from the frontend. Read-only — entering a universe opens it as
+// the vault via `open_vault`, so there is no separate switch command.
 
 /// Every universe the multiverse can show: registered projects (from the
 /// `projects.json` above the open vault, if any) UNION the vault-like sibling

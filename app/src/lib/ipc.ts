@@ -320,22 +320,15 @@ export const ipc = {
   /** Cheap hash of the vault's markdown (path+mtime+length per .md). Ask this
    *  before rebuilding the graph — it is ~26x cheaper because it only stats. */
   vaultRevision: (root: string) => invoke<number>("vault_revision", { root }),
-  // Multiverse (Phase 0): registry enumeration + read-only per-project graphs.
-  /** Registered projects; empty when the open vault has no registry above it. */
-  listProjects: () => invoke<ProjectInfo[]>("list_projects"),
-  /** Read-only link graph of a registered project (not just the open vault). */
-  buildLinkGraphAt: (slug: string) =>
-    invoke<Adjacency>("build_link_graph_at", { slug }),
-  /** Every universe: registered projects UNION the vault-like sibling folders
-   *  beside the open vault (so multiple side-by-side vaults show without a
-   *  registry). */
+  // Multiverse: every universe is a registered project UNION the vault-like
+  // sibling folders beside the open vault (so side-by-side vaults show without a
+  // registry). Entering one opens it as the vault (openVault), so the old
+  // Phase-0 registry-switch commands (list_projects / build_link_graph_at /
+  // set_active_project) are gone.
   listUniverses: () => invoke<ProjectInfo[]>("list_universes"),
   /** Read-only link graph of a known universe by its ROOT path. */
   buildUniverseGraph: (root: string) =>
     invoke<Adjacency>("build_universe_graph", { root }),
-  /** Switch the active project without the open_vault teardown. */
-  setActiveProject: (slug: string) =>
-    invoke<VaultMeta>("set_active_project", { slug }),
   searchVault: (query: string, limit?: number) =>
     invoke<SearchHit[]>("search_vault", { query, limit }),
   // Semantic layer (Feature 1): embedding index over wiki pages.

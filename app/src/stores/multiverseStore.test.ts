@@ -5,13 +5,11 @@ import type { Adjacency, ProjectInfo } from "../lib/ipc";
 // node without Tauri. Each test sets the mock behaviour it needs.
 const listUniverses = vi.fn<() => Promise<ProjectInfo[]>>();
 const buildUniverseGraph = vi.fn<(root: string) => Promise<Adjacency>>();
-const setActiveProject = vi.fn<(slug: string) => Promise<unknown>>();
 
 vi.mock("../lib/ipc", () => ({
   ipc: {
     listUniverses: () => listUniverses(),
     buildUniverseGraph: (root: string) => buildUniverseGraph(root),
-    setActiveProject: (slug: string) => setActiveProject(slug),
   },
 }));
 
@@ -46,7 +44,6 @@ const emptyAdj = (): Adjacency => ({
 beforeEach(() => {
   listUniverses.mockReset();
   buildUniverseGraph.mockReset();
-  setActiveProject.mockReset();
   useMultiverseStore.getState().reset();
 });
 
@@ -185,20 +182,5 @@ describe("refreshUniverse", () => {
     buildUniverseGraph.mockResolvedValue({ ...emptyAdj(), forward: { "/a": ["/b", "/c"] } });
     await useMultiverseStore.getState().refreshUniverse("a");
     expect(useMultiverseStore.getState().universes.a.adjacency).not.toBe(before);
-  });
-});
-
-describe("setActiveUniverse", () => {
-  it("switches the active pointer via IPC and updates flags", async () => {
-    listUniverses.mockResolvedValue([proj({ slug: "a", active: true }), proj({ slug: "b" })]);
-    setActiveProject.mockResolvedValue({ path: "/reg/projects/b", name: "b" });
-    await useMultiverseStore.getState().loadProjects();
-    await useMultiverseStore.getState().setActiveUniverse("b");
-    const s = useMultiverseStore.getState();
-    expect(setActiveProject).toHaveBeenCalledTimes(1);
-    expect(setActiveProject).toHaveBeenCalledWith("b");
-    expect(s.activeSlug).toBe("b");
-    expect(s.universes.b.info.active).toBe(true);
-    expect(s.universes.a.info.active).toBe(false);
   });
 });

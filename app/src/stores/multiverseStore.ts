@@ -39,7 +39,6 @@ export interface MultiverseState {
   loadUniverse: (slug: string) => Promise<void>;
   loadAll: () => Promise<void>;
   refreshUniverse: (slug: string) => Promise<void>;
-  setActiveUniverse: (slug: string) => Promise<void>;
   reset: () => void;
 }
 
@@ -167,21 +166,6 @@ export const useMultiverseStore = create<MultiverseState>((set, get) => ({
     }
   },
 
-  async setActiveUniverse(slug) {
-    if (!get().universes[slug]) return;
-    try {
-      await ipc.setActiveProject(slug);
-      // Reflect the switch locally; the registry `active` flag will agree on the
-      // next loadProjects. Camera/scene handoff is the scene tier's job.
-      set((state) => ({
-        activeSlug: slug,
-        universes: remapActive(state.universes, slug),
-      }));
-    } catch (err) {
-      set({ error: errorMessage(err) });
-    }
-  },
-
   reset() {
     uniSeq.clear();
     set({
@@ -211,18 +195,6 @@ function patchUniverse(
 
 // Return a universes record whose `info.active` flags match `activeSlug` — so
 // the derived listing stays internally consistent before the next re-list.
-function remapActive(
-  universes: Record<string, UniverseData>,
-  activeSlug: string,
-): Record<string, UniverseData> {
-  const out: Record<string, UniverseData> = {};
-  for (const [slug, u] of Object.entries(universes)) {
-    const active = slug === activeSlug;
-    out[slug] = active === u.info.active ? u : { ...u, info: { ...u.info, active } };
-  }
-  return out;
-}
-
 function errorMessage(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (typeof err === "string") return err;
