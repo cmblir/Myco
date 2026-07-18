@@ -8,6 +8,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Japanese and Korean are complete.** ja was missing 99 of the app's strings
+  and rendered English for the graph inspector, Views, the help widget, Zotero
+  import and more; ko was five short. Both now translate everything, and a test
+  keeps them from drifting.
+- **Dropping several files into Ingest says so.** It loads the first — the form
+  takes one source at a time — instead of silently discarding the rest.
+- **Auto-ingest never deletes your source.** A consumed inbox file is moved to
+  `_inbox/.archived/`, matching the headless daemon, so a half-failed run cannot
+  lose the original.
+- **Ollama status no longer misreports.** A daemon that answers with an
+  unreadable body is shown as an error, not as "running with zero models" — which
+  would tell you to pull a model you already have.
+- **The ingest history rows are screen-reader-correct.** Each row was one button
+  with a link nested inside it; it is now three separate, properly-named
+  controls, with the layout unchanged.
+- **The two audio-overview hosts sound different from the first play.** They used
+  to share one voice until a replay, on the engine Memex actually ships.
+- **Zooming into the multiverse glides instead of snapping.** The view no longer
+  jumps when the nearest vault changes as you scroll in.
+- **Atlas's Recommend no longer disturbs the galaxy layout.** It was writing a
+  value the galaxy reads and atlas ignores.
 - **The command palette works without a mouse.** It had no dialog role and no
   focus trap, and its keys were bound to the search box — so one Tab away, both
   arrows and Escape stopped working and further tabs walked focus onto the page
