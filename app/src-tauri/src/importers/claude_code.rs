@@ -85,7 +85,7 @@ pub fn parse(jsonl: &str, fallback_id: &str) -> Option<Conversation> {
         id,
         source: Source::ClaudeCode,
         title: title_from(&turns),
-        created: first_ts.as_deref().and_then(parse_ts),
+        created: first_ts.as_deref().and_then(super::parse_iso8601),
         turns,
     })
 }
@@ -126,30 +126,6 @@ fn title_from(turns: &[Turn]) -> String {
         })
         .filter(|l| !l.is_empty())
         .unwrap_or_else(|| "Claude Code session".to_string())
-}
-
-/// Claude Code timestamps are ISO-8601 (`2026-07-18T12:34:56.789Z`). Pull the
-/// unix seconds without a chrono dependency — parse the fixed-width fields.
-fn parse_ts(ts: &str) -> Option<i64> {
-    // YYYY-MM-DDTHH:MM:SS…
-    let b = ts.as_bytes();
-    if b.len() < 19 || b[4] != b'-' || b[10] != b'T' {
-        return None;
-    }
-    let num = |r: std::ops::Range<usize>| ts.get(r)?.parse::<i64>().ok();
-    let (y, mo, d) = (num(0..4)?, num(5..7)?, num(8..10)?);
-    let (h, mi, s) = (num(11..13)?, num(14..16)?, num(17..19)?);
-    Some(days_from_civil(y, mo, d) * 86400 + h * 3600 + mi * 60 + s)
-}
-
-/// Days since the Unix epoch for a civil date (Howard Hinnant's algorithm).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
-    let y = if m <= 2 { y - 1 } else { y };
-    let era = (if y >= 0 { y } else { y - 399 }) / 400;
-    let yoe = y - era * 400;
-    let doy = (153 * (if m > 2 { m - 3 } else { m + 9 }) + 2) / 5 + d - 1;
-    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    era * 146097 + doe - 719468
 }
 
 #[cfg(test)]
@@ -211,10 +187,4 @@ mod tests {
         assert_eq!(c.turns[0].text, "real");
     }
 
-    #[test]
-    fn ts_parser_matches_a_known_epoch() {
-        assert_eq!(parse_ts("2026-07-18T09:00:00.000Z"), Some(1_784_365_200));
-        assert_eq!(parse_ts("1970-01-01T00:00:00Z"), Some(0));
-        assert_eq!(parse_ts("garbage"), None);
-    }
 }
