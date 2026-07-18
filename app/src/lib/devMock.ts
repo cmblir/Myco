@@ -947,6 +947,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve({
         source: "claude-code",
         imported: 1,
+        skipped: 2,
         quarantined: [{ title: "a chat that pasted a key", secrets: ["OpenAI/Anthropic-style API key"] }],
       });
     }

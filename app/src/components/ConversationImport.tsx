@@ -33,14 +33,20 @@ export default function ConversationImport({ t }: { t: Strings }): JSX.Element |
         setResult(t.ci_none ?? "No conversations found in that file.");
         return;
       }
-      if (outcome.imported > 0) {
-        await refreshTree();
-        setResult(
-          (t.ci_done ?? "Imported {n} conversation(s) into _inbox/.").replace(
-            "{n}",
-            String(outcome.imported),
-          ),
+      if (outcome.imported > 0 || outcome.skipped > 0) {
+        if (outcome.imported > 0) await refreshTree();
+        const done = (t.ci_done ?? "Imported {n} conversation(s) into _inbox/.").replace(
+          "{n}",
+          String(outcome.imported),
         );
+        const skip =
+          outcome.skipped > 0
+            ? (t.ci_skipped ?? " ({n} already imported, skipped.)").replace(
+                "{n}",
+                String(outcome.skipped),
+              )
+            : "";
+        setResult(done + skip);
       }
       if (outcome.quarantined.length > 0) {
         setWarning(

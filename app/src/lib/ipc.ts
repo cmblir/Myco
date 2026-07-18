@@ -134,6 +134,8 @@ export interface ImportOutcome {
   source: string;
   /** How many source docs were written to `_inbox/`. */
   imported: number;
+  /** Conversations already imported unchanged (dedup ledger). */
+  skipped: number;
   /** Conversations skipped because their text matched a secret pattern. */
   quarantined: { title: string; secrets: string[] }[];
 }

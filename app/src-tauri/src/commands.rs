@@ -449,6 +449,8 @@ pub struct ImportOutcome {
     pub source: String,
     /// How many source docs were written to `_inbox/`.
     pub imported: usize,
+    /// Conversations already imported unchanged, per the dedup ledger.
+    pub skipped: usize,
     /// Conversations skipped because their text matched a secret pattern.
     pub quarantined: Vec<QuarantinedConversation>,
 }
@@ -487,7 +489,8 @@ pub async fn import_conversations(
         let content = std::fs::read_to_string(&source_path)
             .map_err(|e| format!("cannot read {source_path}: {e}"))?;
 
-        let plan = crate::importers::plan_import(&source_path, &content)?;
+        let mut ledger = crate::importers::ledger::Ledger::load(&root);
+        let plan = crate::importers::plan_import(&source_path, &content, &ledger)?;
 
         let inbox = root.join("_inbox");
         std::fs::create_dir_all(&inbox).map_err(|e| format!("create _inbox: {e}"))?;
@@ -495,11 +498,19 @@ pub async fn import_conversations(
         for doc in &plan.docs {
             std::fs::write(inbox.join(format!("{}.md", doc.stem)), &doc.body)
                 .map_err(|e| format!("write {}: {e}", doc.stem))?;
+            // Record only after a successful write, so a failed write is retried
+            // rather than silently skipped next time.
+            ledger.record(doc.key.clone(), doc.fingerprint.clone());
             imported += 1;
+        }
+        if imported > 0 {
+            // Best effort: a ledger that fails to save just costs a re-import.
+            let _ = ledger.save(&root);
         }
         Ok(ImportOutcome {
             source: plan.source,
             imported,
+            skipped: plan.skipped,
             quarantined: plan
                 .quarantined
                 .into_iter()
