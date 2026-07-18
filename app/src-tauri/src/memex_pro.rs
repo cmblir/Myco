@@ -134,6 +134,13 @@ pub async fn ingest(
             continue;
         }
         let target = safe_join(root, &op.path)?;
+        // Defence in depth: the proxy is meant to return wiki operations, but a
+        // compromised or buggy response must not be able to overwrite an
+        // immutable raw/ source. Same rule the command and agent-tool layers
+        // enforce.
+        if crate::vault::is_raw_path(root, &target) {
+            return Err(format!("refused: raw/ is immutable: {}", op.path));
+        }
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent)
                 .map_err(|e| format!("create dir {}: {e}", parent.display()))?;
@@ -373,6 +380,18 @@ mod tests {
         assert!(safe_join(root, "wiki/../../escape.md").is_err());
         assert!(safe_join(root, "a\\b.md").is_err());
         assert!(safe_join(root, "").is_err());
+    }
+
+    #[test]
+    fn a_raw_write_op_is_caught_by_the_immutability_guard() {
+        // safe_join permits raw/ (it only blocks escapes), so the ingest loop
+        // relies on is_raw_path to refuse a proxy op that targets raw/. Verify
+        // the composition the loop performs.
+        let root = Path::new("/vault");
+        let raw = safe_join(root, "raw/attention.md").unwrap();
+        assert!(crate::vault::is_raw_path(root, &raw));
+        let wiki = safe_join(root, "wiki/attention.md").unwrap();
+        assert!(!crate::vault::is_raw_path(root, &wiki));
     }
 
     #[test]

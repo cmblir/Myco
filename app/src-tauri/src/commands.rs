@@ -248,6 +248,13 @@ pub fn write_file(
 ) -> Result<(), String> {
     let root = require_root(&state)?;
     let p = vault::confine_path(&root, &path)?;
+    // raw/ is immutable: a source may be CREATED (that is how ingest files an
+    // original) but never modified. Refuse a write that would overwrite an
+    // existing raw/ file. agent_tools already blocks the agent from raw/ writes
+    // entirely; this closes the same rule at the direct command layer.
+    if vault::is_raw_path(&root, &p) && p.exists() {
+        return Err("refused: raw/ is immutable — an existing source cannot be overwritten".into());
+    }
     vault::write_file(&p.to_string_lossy(), &content)
 }
 
@@ -361,6 +368,9 @@ pub fn create_folder(
 pub fn delete_path(state: tauri::State<VaultRoot>, path: String) -> Result<(), String> {
     let root = require_root(&state)?;
     let p = vault::confine_path(&root, &path)?;
+    if vault::is_raw_path(&root, &p) {
+        return Err("refused: raw/ is immutable — a source cannot be deleted".into());
+    }
     vault::delete_path(&p.to_string_lossy())
 }
 
@@ -372,6 +382,9 @@ pub fn rename_path(
 ) -> Result<String, String> {
     let root = require_root(&state)?;
     let p = vault::confine_path(&root, &from)?;
+    if vault::is_raw_path(&root, &p) {
+        return Err("refused: raw/ is immutable — a source cannot be renamed".into());
+    }
     // Renaming a note moves its wikilink target (the file stem), orphaning every
     // inbound [[old]]. Capture the stems, then rewrite backlinks vault-wide so
     // the graph and backlinks panel stay connected.
@@ -395,6 +408,15 @@ pub fn rename_path(
         }
     }
     Ok(new_path)
+}
+
+/// A free `raw/<stem>.md` path (suffixed on collision) for a new ingest source,
+/// so a second source under the same title never overwrites the first's
+/// immutable original.
+#[tauri::command]
+pub fn available_raw_path(state: tauri::State<VaultRoot>, stem: String) -> Result<String, String> {
+    let root = require_root(&state)?;
+    Ok(vault::available_raw_path(&root, &stem))
 }
 
 /// Archive a consumed inbox source instead of deleting it.

@@ -933,6 +933,13 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       const name = p.split("/").pop() ?? "source.md";
       return Promise.resolve(`${VAULT}/_inbox/.archived/${name}`);
     }
+    case "available_raw_path": {
+      // The mock raw/ is a fixed fixture with no dynamic sources, so nothing
+      // collides — return the plain path. (Real collision handling is Rust-side
+      // and unit-tested there.)
+      const stem = String(args.stem ?? "source");
+      return Promise.resolve(`raw/${stem}.md`);
+    }
     case "set_settings":
       // Actually persist. Returning null and keeping a frozen SETTINGS made the
       // mock silently ignore every settings change — so a flow that depends on

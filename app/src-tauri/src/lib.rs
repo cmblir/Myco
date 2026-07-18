@@ -109,6 +109,7 @@ pub fn run() {
             commands::delete_path,
             commands::rename_path,
             commands::archive_inbox_source,
+            commands::available_raw_path,
             commands::build_link_graph,
             commands::vault_revision,
             commands::list_projects,

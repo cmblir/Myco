@@ -710,6 +710,27 @@ pub fn rename_path(from: &str, to_name: &str) -> Result<String, String> {
     Ok(target.to_string_lossy().into_owned())
 }
 
+/// A `raw/<stem>.md` path that does not exist yet, suffixing `-2`, `-3`, … on
+/// collision. Returned vault-relative.
+///
+/// raw/ is immutable, so ingesting a second source under a title that already
+/// has a raw file must not overwrite the first — it gets its own original. Same
+/// suffix scheme as the archive path.
+pub fn available_raw_path(root: &Path, stem: &str) -> String {
+    let raw = root.join("raw");
+    if !raw.join(format!("{stem}.md")).exists() {
+        return format!("raw/{stem}.md");
+    }
+    let mut n = 2;
+    loop {
+        let name = format!("{stem}-{n}.md");
+        if !raw.join(&name).exists() {
+            return format!("raw/{name}");
+        }
+        n += 1;
+    }
+}
+
 /// Move a consumed inbox source into `<its dir>/.archived/`, never delete it.
 ///
 /// Mirrors the headless daemon (`automation/autoingest.py::_archive`) exactly so
@@ -1101,6 +1122,42 @@ mod tests {
     #[test]
     fn archive_rejects_a_missing_file() {
         assert!(archive_inbox_source("/no/such/file.md").is_err());
+    }
+
+    #[test]
+    fn is_raw_path_identifies_only_the_raw_subtree() {
+        // The write/delete/rename command guards all key off this predicate, so
+        // it has to be exactly right about what counts as raw/.
+        let root = Path::new("/v");
+        assert!(is_raw_path(root, Path::new("/v/raw/a.md")));
+        assert!(is_raw_path(root, Path::new("/v/raw/sub/a.md")));
+        assert!(is_raw_path(root, Path::new("/v/raw")));
+        // Not raw: other top-level dirs, and a dir that merely starts with "raw".
+        assert!(!is_raw_path(root, Path::new("/v/wiki/a.md")));
+        assert!(!is_raw_path(root, Path::new("/v/_inbox/a.md")));
+        assert!(!is_raw_path(root, Path::new("/v/rawish/a.md")));
+        assert!(!is_raw_path(root, Path::new("/v/wiki/raw/a.md")));
+        // Outside the root is not raw (confinement handles the escape separately).
+        assert!(!is_raw_path(root, Path::new("/other/raw/a.md")));
+    }
+
+    #[test]
+    fn available_raw_path_suffixes_only_on_collision() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        fs::create_dir_all(root.join("raw")).unwrap();
+
+        // Free name → no suffix.
+        assert_eq!(available_raw_path(root, "attention"), "raw/attention.md");
+
+        // Occupy it → next call suffixes, and keeps climbing.
+        fs::write(root.join("raw/attention.md"), "x").unwrap();
+        assert_eq!(available_raw_path(root, "attention"), "raw/attention-2.md");
+        fs::write(root.join("raw/attention-2.md"), "x").unwrap();
+        assert_eq!(available_raw_path(root, "attention"), "raw/attention-3.md");
+
+        // A different stem is unaffected.
+        assert_eq!(available_raw_path(root, "scaling"), "raw/scaling.md");
     }
 
     #[test]

@@ -124,7 +124,10 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       return; // one run at a time
 
     const finalTitle = title.trim() || `untitled-${Date.now()}`;
-    const slug = slugify(finalTitle);
+    // Provisional slug for the log line before the run is claimed. The effective
+    // one is resolved below against the filesystem, since raw/ is immutable and a
+    // same-titled re-ingest must land on its own path, not overwrite the first.
+    let slug = slugify(finalTitle);
     const runId = crypto.randomUUID();
 
     // Claim the run before awaiting anything. `listen()` is async, so the guard
@@ -155,11 +158,20 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       } catch {
         /* already exists */
       }
+      // Resolve a free raw/ path so a second source under the same title gets its
+      // own original instead of overwriting the first (which the command layer
+      // now refuses outright). Fall back to the provisional slug if the lookup
+      // fails, so ingest still proceeds.
+      const rawRel = await ipc
+        .availableRawPath(slug)
+        .catch(() => `raw/${slug}.md`);
+      slug = rawRel.replace(/^raw\//, "").replace(/\.md$/, "");
+      set({ log: `Writing ${rawRel}…` });
       const payload =
         body.trim().length > 0
           ? `# ${finalTitle}\n\n${body.trim()}\n`
           : `# ${finalTitle}\n\n_(empty)_\n`;
-      await ipc.writeFile(`${vault.path}/raw/${slug}.md`, payload);
+      await ipc.writeFile(`${vault.path}/${rawRel}`, payload);
       await useVaultStore.getState().refreshTree();
 
       // Snapshot wiki/ mtimes before the model runs so we can verify it
