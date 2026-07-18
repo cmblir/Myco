@@ -397,6 +397,22 @@ pub fn rename_path(
     Ok(new_path)
 }
 
+/// Archive a consumed inbox source instead of deleting it.
+///
+/// The in-app auto-ingest pass used to `delete_path` a source once ingested,
+/// while the headless daemon archives it to `_inbox/.archived/`. That divergence
+/// is a data-loss risk: if a run half-fails, the delete path throws the original
+/// away. This makes the app match the daemon.
+#[tauri::command]
+pub fn archive_inbox_source(
+    state: tauri::State<VaultRoot>,
+    path: String,
+) -> Result<String, String> {
+    let root = require_root(&state)?;
+    let p = vault::confine_path(&root, &path)?;
+    vault::archive_inbox_source(&p.to_string_lossy())
+}
+
 /// Full link graph for the open vault.
 ///
 /// Async + `spawn_blocking` because this is not a cheap read: it walks, reads

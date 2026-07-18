@@ -344,6 +344,8 @@ export const ipc = {
   deletePath: (path: string) => invoke<null>("delete_path", { path }),
   renamePath: (from: string, toName: string) =>
     invoke<string>("rename_path", { from, toName }),
+  archiveInboxSource: (path: string) =>
+    invoke<string>("archive_inbox_source", { path }),
   pickDirectory: async (): Promise<string | null> => {
     const selection = await open({ directory: true, multiple: false });
     return typeof selection === "string" ? selection : null;

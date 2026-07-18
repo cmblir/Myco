@@ -60,8 +60,10 @@ export async function runInboxPass(vaultPath: string): Promise<boolean> {
   await useIngestStore.getState().startIngest(title, fc.raw);
 
   if (useIngestStore.getState().stage === "done") {
-    // Remove the consumed source — its content now lives in raw/<slug>.md.
-    await ipc.deletePath(f.path).catch(() => undefined);
+    // Archive the consumed source (never delete) — its content is also in
+    // raw/<slug>.md now, but a preserved original matches the headless daemon
+    // and means a later half-failure cannot lose it.
+    await ipc.archiveInboxSource(f.path).catch(() => undefined);
     return true;
   }
   return false; // error / no-op: leave the source in _inbox to retry next pass

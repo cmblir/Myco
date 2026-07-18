@@ -907,6 +907,14 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // ingesting the same clip forever.
       mockInbox.delete(String(args.path ?? ""));
       return Promise.resolve(null);
+    case "archive_inbox_source": {
+      // Same effect on the inbox as delete_path — the source leaves the tray —
+      // but it moves to .archived/ instead of vanishing.
+      const p = String(args.path ?? "");
+      mockInbox.delete(p);
+      const name = p.split("/").pop() ?? "source.md";
+      return Promise.resolve(`${VAULT}/_inbox/.archived/${name}`);
+    }
     case "set_settings":
       // Actually persist. Returning null and keeping a frozen SETTINGS made the
       // mock silently ignore every settings change — so a flow that depends on

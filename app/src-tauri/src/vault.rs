@@ -710,6 +710,43 @@ pub fn rename_path(from: &str, to_name: &str) -> Result<String, String> {
     Ok(target.to_string_lossy().into_owned())
 }
 
+/// Move a consumed inbox source into `<its dir>/.archived/`, never delete it.
+///
+/// Mirrors the headless daemon (`automation/autoingest.py::_archive`) exactly so
+/// the two auto-ingest paths behave the same: on success the original survives
+/// in `.archived/`, not the trash, so a half-failed run cannot lose a source
+/// whose only other copy the ingest was still writing. Collisions get a
+/// `-2`, `-3`, … suffix, same as the daemon.
+pub fn archive_inbox_source(from: &str) -> Result<String, String> {
+    let src = Path::new(from);
+    if !src.is_file() {
+        return Err(format!("not a file: {from}"));
+    }
+    let parent = src.parent().ok_or_else(|| "no parent dir".to_string())?;
+    let archive = parent.join(".archived");
+    std::fs::create_dir_all(&archive).map_err(|e| format!("mkdir .archived failed: {e}"))?;
+    let name = src
+        .file_name()
+        .ok_or_else(|| "no file name".to_string())?
+        .to_string_lossy()
+        .into_owned();
+    let stem = src.file_stem().map(|s| s.to_string_lossy().into_owned());
+    let ext = src.extension().map(|s| s.to_string_lossy().into_owned());
+    let mut dest = archive.join(&name);
+    let mut n = 2;
+    while dest.exists() {
+        let candidate = match (&stem, &ext) {
+            (Some(s), Some(e)) => format!("{s}-{n}.{e}"),
+            (Some(s), None) => format!("{s}-{n}"),
+            _ => format!("{name}-{n}"),
+        };
+        dest = archive.join(candidate);
+        n += 1;
+    }
+    std::fs::rename(src, &dest).map_err(|e| format!("archive failed: {e}"))?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
 fn validate_name(name: &str) -> Result<(), String> {
     if name.is_empty() {
         return Err("name is empty".into());
@@ -1021,6 +1058,49 @@ mod tests {
     #[test]
     fn open_vault_rejects_empty() {
         assert!(open_vault("").is_err());
+    }
+
+    #[test]
+    fn archive_moves_the_source_and_leaves_it_intact() {
+        let dir = tempfile::tempdir().unwrap();
+        let inbox = dir.path().join("_inbox");
+        fs::create_dir_all(&inbox).unwrap();
+        let src = inbox.join("note.md");
+        fs::write(&src, "hello").unwrap();
+
+        let dest = archive_inbox_source(&src.to_string_lossy()).unwrap();
+
+        // The source is gone from the inbox but preserved under .archived, byte
+        // for byte — the daemon's promise, now the app's too.
+        assert!(!src.exists());
+        assert!(std::path::Path::new(&dest).exists());
+        assert_eq!(fs::read_to_string(&dest).unwrap(), "hello");
+        assert_eq!(
+            std::path::Path::new(&dest).parent().unwrap(),
+            inbox.join(".archived")
+        );
+    }
+
+    #[test]
+    fn archive_suffixes_on_collision_like_the_daemon() {
+        let dir = tempfile::tempdir().unwrap();
+        let inbox = dir.path().join("_inbox");
+        fs::create_dir_all(&inbox).unwrap();
+
+        for expected in ["note.md", "note-2.md", "note-3.md"] {
+            let src = inbox.join("note.md");
+            fs::write(&src, "x").unwrap();
+            let dest = archive_inbox_source(&src.to_string_lossy()).unwrap();
+            assert_eq!(
+                std::path::Path::new(&dest).file_name().unwrap(),
+                std::ffi::OsStr::new(expected)
+            );
+        }
+    }
+
+    #[test]
+    fn archive_rejects_a_missing_file() {
+        assert!(archive_inbox_source("/no/such/file.md").is_err());
     }
 
     #[test]
