@@ -14,6 +14,9 @@ must still be checked by hand.
 | Command palette keyboard + screen-reader semantics, 3 viewports | **cmdbar-a11y-smoke** (browser) | `npm run test:e2e:cmdbar` |
 | User-facing copy follows the chosen language (en/ko/ja) | **i18n-smoke** (browser) | `npm run test:e2e:i18n` |
 | Timelapse survives unmount/rebuild and releases its capture | **timelapse-smoke** (browser) | `npm run test:e2e:timelapse` |
+| History rows are screen-reader-correct (no nested interactives), 3 viewports | **history-a11y-smoke** (browser) | `npm run test:e2e:history` |
+| Crash screen renders with its still mascot across viewports | **crash-screen-smoke** (browser) | `npm run test:e2e:crash` |
+| Multiverse orbit pivot eases instead of snapping | **orbit-ease-smoke** (browser) | `npm run test:e2e:orbit` |
 | Frontend unit/component logic | **vitest** | `npm test` |
 | Vault lifecycle (open → list → write → link graph → provenance → rename/delete) | **cargo test** (`tests/vault_lifecycle.rs`) | `cargo test` |
 | HTTP provider adapters (Anthropic/OpenAI/OpenRouter/Google/Ollama), retries, size cap | **cargo test** (`tests/provider_adapters.rs`, wiremock) | `cargo test` |
@@ -30,9 +33,10 @@ must still be checked by hand.
   the `?mock=1` dev server (mocked IPC) and clicks through every workspace and
   tools route, asserting each renders with no page/console error. It cannot see
   any real backend behavior — the IPC layer is stubbed.
-- **cargo test** (`app/src-tauri`): 117 tests + 3 `#[ignore]`d. Exercises the
-  domain modules directly, without booting the Tauri GUI. This is the tractable
-  native layer and the bulk of backend coverage.
+- **cargo test** (`app/src-tauri`): the domain modules exercised directly,
+  without booting the Tauri GUI — the bulk of backend coverage, plus a few
+  `#[ignore]`d keychain round-trips. (Run `cargo test` for the current count;
+  hardcoding it here only rots.)
 - **manual**: flows that need a live `tauri::AppHandle`, real credentials, or an
   interactive keychain — see the acceptance checklist.
 
@@ -46,7 +50,7 @@ npm run test:e2e         # route-smoke (dev server must be on :5173)
 
 # backend
 cd app/src-tauri
-cargo test               # 117 pass, 3 keychain tests skipped (ignored)
+cargo test               # domain tests; 3 keychain tests skipped (ignored)
 cargo test -- --ignored  # ALSO run the keychain round-trip (see caveats below)
 ```
 
