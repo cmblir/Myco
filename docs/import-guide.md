@@ -4,17 +4,16 @@ How to get material into a Memex vault.
 
 > [!note] Conversation import works now — via Settings? No: **Ingest → Import a
 > conversation**.
-> Pick a ChatGPT export (`conversations.json`) or a Claude Code / Codex session
-> (`.jsonl`) and Memex parses it, drops each conversation into `_inbox/` as a
-> source doc, and the normal ingest pipeline turns them into wiki pages. A
-> conversation whose text looks like it contains a secret (an API key, a token)
-> is held back and reported, never written.
+> Pick a ChatGPT export, a Claude.ai export, or a Claude Code / Codex session,
+> and Memex parses it, drops each conversation into `_inbox/` as a source doc,
+> and the normal ingest pipeline turns them into wiki pages. A conversation whose
+> text looks like it contains a secret (an API key, a token) is held back and
+> reported, never written. Re-importing the same export is safe — a dedup ledger
+> skips conversations already imported, so only new and changed ones are added.
 >
-> Two things are NOT built yet: **Claude.ai web exports** (its `conversations.json`
-> has a different shape from ChatGPT's and is not yet parsed), and a **dedup
-> ledger** — re-importing the same export re-creates the `_inbox/` docs, so if
-> they were already ingested you may get duplicate work. Import what you need
-> once for now.
+> One caveat: the Claude.ai parser is written to Anthropic's documented export
+> format but has not been checked against a real export yet, so verify the result
+> on your first Claude.ai import.
 >
 > Older versions of this guide described a `raw/imports/` drop folder writing to
 > `raw/conversations/`. That never existed and would have violated `raw/`
@@ -211,24 +210,23 @@ is the only thing that works.
 
 ## What is planned
 
-Tracked, not promised. Roughly, in order:
+Tracked, not promised.
 
-1. **Conversation parsers** — split one vendor export into N per-conversation
-   sources in `_inbox/`. This is the whole feature; everything else is a shell
-   around it. Undecided: whether a `.jsonl` session is worth parsing per-session
-   or per-project.
-2. **A dedup ledger** — so re-dropping a monthly export skips what is already
-   imported instead of producing `x-2.md`, `x-3.md`. Today re-dropping the same
-   file really does duplicate.
-3. **Bulk-import UX** — two-level progress and retry-failed, once there is a
-   batch to run.
-4. **Secret scanning on the way in** — today `scan_secrets` only guards the MCP
-   path, so a source arriving through the app is not scanned. This matters much
-   more once thousands of session transcripts land unattended in a git-committed
-   tree.
+Built and shipped: the four conversation parsers (ChatGPT, Claude.ai, Claude
+Code, Codex), content-based format detection, secret quarantine on the import
+path, and the dedup ledger (`.memex/ledger.json`) that makes re-importing an
+export idempotent.
 
-When these land, this page gets the drop-a-folder-and-forget-it story it
-promised prematurely.
+Still open:
+
+1. **Verify Claude.ai on a real export** — its parser is written to the
+   documented format but has not been run against a real Anthropic export.
+2. **Bulk-import UX** — two-level progress (X of Y, per-conversation status) and
+   retry-failed, for importing an entire history at once. Today the card reports
+   totals, not per-conversation progress.
+3. **Session sweep** — a scheduled pass over `~/.claude/projects` and
+   `~/.codex/sessions` that imports new sessions automatically, instead of
+   picking a file each time.
 
 ---
 
@@ -247,6 +245,6 @@ promised prematurely.
 | ChatGPT | Settings → Data controls → Export | ✅ Ingest → Import a conversation |
 | Claude Code | `~/.claude/projects/…/*.jsonl` (already on disk) | ✅ Ingest → Import a conversation |
 | Codex CLI | `~/.codex/sessions/…/rollout-*.jsonl` | ✅ Ingest → Import a conversation |
-| Claude.ai | Settings → Privacy → Export | ❌ not yet (its format differs from ChatGPT's) |
+| Claude.ai | Settings → Privacy → Export | ✅ Ingest → Import a conversation (verify on first use) |
 | A markdown note | — | ✅ |
 | PDF / spreadsheet / audio / video | — | ✅ (app, or daemon with `--app-bin`) |
