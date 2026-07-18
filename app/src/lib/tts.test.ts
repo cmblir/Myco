@@ -56,8 +56,8 @@ function makeSynth(voicesAfterEvent: SpeechSynthesisVoice[], startEmpty: boolean
 }
 
 const TURNS: DialogueTurn[] = [
-  { speaker: "A", text: "Hello from host A." },
-  { speaker: "B", text: "And host B here." },
+  { speaker: "A", text: "Hello from host A.", cites: [] },
+  { speaker: "B", text: "And host B here.", cites: [] },
 ];
 
 beforeEach(() => {
