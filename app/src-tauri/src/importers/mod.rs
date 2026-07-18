@@ -51,6 +51,53 @@ mod time_tests {
     }
 }
 
+#[cfg(test)]
+mod dispatch_tests {
+    use super::*;
+
+    #[test]
+    fn routes_a_chatgpt_array_to_the_chatgpt_parser() {
+        let json = r#"[{"conversation_id":"c1","current_node":"a",
+          "mapping":{"a":{"message":{"author":{"role":"user"},"content":{"parts":["hi"]}},"parent":null}}}]"#;
+        let convs = detect_and_parse("conversations.json", json).unwrap();
+        assert_eq!(convs.len(), 1);
+        assert_eq!(convs[0].source, Source::ChatGpt);
+    }
+
+    #[test]
+    fn routes_a_claude_code_session_by_its_line_shape() {
+        let jsonl = "{\"type\":\"user\",\"sessionId\":\"s\",\"message\":{\"role\":\"user\",\"content\":\"hi\"}}";
+        let convs = detect_and_parse("2202078e.jsonl", jsonl).unwrap();
+        assert_eq!(convs.len(), 1);
+        assert_eq!(convs[0].source, Source::ClaudeCode);
+    }
+
+    #[test]
+    fn routes_a_codex_rollout_by_its_payload_key() {
+        let jsonl = "{\"type\":\"response_item\",\"payload\":{\"type\":\"message\",\"role\":\"user\",\"content\":[{\"type\":\"input_text\",\"text\":\"hi\"}]}}";
+        let convs = detect_and_parse("rollout-x.jsonl", jsonl).unwrap();
+        assert_eq!(convs.len(), 1);
+        assert_eq!(convs[0].source, Source::Codex);
+    }
+
+    #[test]
+    fn an_unrecognized_shape_is_an_error() {
+        assert!(detect_and_parse("x.txt", "just some prose").is_err());
+        assert!(detect_and_parse("x.json", "{\"random\":\"object\"}").is_err());
+    }
+
+    #[test]
+    fn detection_is_by_content_not_filename() {
+        // A ChatGPT export saved under a Claude-ish name still parses as ChatGPT.
+        let json = r#"[{"conversation_id":"c1","current_node":"a",
+          "mapping":{"a":{"message":{"author":{"role":"user"},"content":{"parts":["hi"]}},"parent":null}}}]"#;
+        assert_eq!(
+            detect_and_parse("claude-conversations.json", json).unwrap()[0].source,
+            Source::ChatGpt
+        );
+    }
+}
+
 /// Which tool an exported conversation came from.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Source {
@@ -140,6 +187,61 @@ impl Conversation {
         }
         out
     }
+}
+
+/// Detect a supported export/session format from its CONTENT (not its name —
+/// ChatGPT and Claude both call the file `conversations.json`) and parse it.
+///
+/// Returns every conversation the file holds: a ChatGPT export is one file with
+/// many; a CLI session is one file with one. `filename` is used only for the
+/// fallback id when a session carries none. An unrecognized shape is an error,
+/// not a silent empty result.
+pub fn detect_and_parse(filename: &str, content: &str) -> Result<Vec<Conversation>, String> {
+    let stem = std::path::Path::new(filename)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| filename.to_string());
+
+    match sniff(content) {
+        Some(Kind::ChatGpt) => chatgpt::parse(content),
+        Some(Kind::Codex) => Ok(codex::parse(content, &stem).into_iter().collect()),
+        Some(Kind::ClaudeCode) => Ok(claude_code::parse(content, &stem).into_iter().collect()),
+        None => Err("unrecognized export format".to_string()),
+    }
+}
+
+enum Kind {
+    ChatGpt,
+    ClaudeCode,
+    Codex,
+}
+
+/// Decide the format from the bytes. A top-level `[` is a ChatGPT export; a
+/// stream of JSON objects is a CLI session, told apart by the keys its lines
+/// carry (`payload` = Codex, `sessionId`/`isSidechain`/message roles = Claude
+/// Code). Peeks a handful of lines so a leading blank or metadata line doesn't
+/// throw it off.
+fn sniff(content: &str) -> Option<Kind> {
+    if content.trim_start().starts_with('[') {
+        return Some(Kind::ChatGpt);
+    }
+    for line in content.lines().filter(|l| !l.trim().is_empty()).take(8) {
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if v.get("payload").is_some() {
+            return Some(Kind::Codex);
+        }
+        if v.get("sessionId").is_some() || v.get("isSidechain").is_some() {
+            return Some(Kind::ClaudeCode);
+        }
+        if let Some(t) = v.get("type").and_then(|t| t.as_str()) {
+            if t == "user" || t == "assistant" {
+                return Some(Kind::ClaudeCode);
+            }
+        }
+    }
+    None
 }
 
 /// Keep only characters that are safe and stable in a filename.
