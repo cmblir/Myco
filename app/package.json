@@ -27,6 +27,7 @@
     "test:e2e:timelapse": "node scripts/timelapse-smoke.mjs",
     "test:e2e:cmdbar": "node scripts/cmdbar-a11y-smoke.mjs",
     "test:e2e:crash": "node scripts/crash-screen-smoke.mjs",
+    "test:e2e:history": "node scripts/history-a11y-smoke.mjs",
     "perf": "node scripts/graph-perf.mjs",
     "lint": "eslint .",
     "format": "prettier --write \"src/**/*.{ts,tsx,css,html,json}\"",

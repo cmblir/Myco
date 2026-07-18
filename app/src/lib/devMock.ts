@@ -460,7 +460,20 @@ function fileTree() {
     { kind: "directory", name: "audio", path: `${VAULT}/audio`, children: [] },
     { kind: "directory", name: "cards", path: `${VAULT}/cards`, children: cardsChildren },
     { kind: "directory", name: "daily", path: `${VAULT}/daily`, children: [] },
-    { kind: "directory", name: "ingest-reports", path: `${VAULT}/ingest-reports`, children: [] },
+    {
+      kind: "directory",
+      name: "ingest-reports",
+      path: `${VAULT}/ingest-reports`,
+      // One report so the History page renders a row (it was empty, which made
+      // History untestable and hid the row's a11y structure).
+      children: [
+        {
+          kind: "file" as const,
+          name: "2026-07-15-attention.md",
+          path: `${VAULT}/ingest-reports/2026-07-15-attention.md`,
+        },
+      ],
+    },
     { kind: "directory", name: "raw", path: `${VAULT}/raw`, children: [
       { kind: "file", name: `${MOCK_PDF_STEM}.pdf`, path: MOCK_PDF_PATH },
     ] },
@@ -795,6 +808,11 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(b64ToBytes(MOCK_PDF_B64).buffer);
     case "read_file": {
       const p = String(args.path ?? "");
+      if (p.includes("/ingest-reports/")) {
+        const raw =
+          "# Ingest report — attention\n\nAdded 3 facts, merged 1, cited 2 sources.\n";
+        return Promise.resolve({ path: p, raw, content: raw, frontmatter: null });
+      }
       // A clip waiting in _inbox/ — auto-ingest reads it before ingesting.
       const clip = mockInbox.get(p);
       if (clip !== undefined) {

@@ -118,65 +118,91 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
                 className="card"
                 style={{ padding: 0, borderRadius: 10, marginBottom: 8 }}
               >
-                <button
-                  type="button"
-                  onClick={() => setOpenPath(open ? null : r.path)}
-                  aria-expanded={open}
+                {/* A plain grid row holding THREE sibling controls. It used to
+                    be one disclosure <button> with a role="link" span nested
+                    inside it — invalid interactive nesting that a screen reader
+                    read as one polluted name ("report, date, Open report,
+                    collapsed, button"). Same 4-column layout, now three real,
+                    separately-named buttons. */}
+                <div
                   style={{
                     display: "grid",
                     gridTemplateColumns: "auto 1fr auto auto",
                     gap: 16,
                     alignItems: "center",
                     padding: 16,
-                    width: "100%",
-                    background: "transparent",
-                    border: 0,
-                    textAlign: "left",
-                    cursor: "pointer",
                   }}
                 >
-                  <div
+                  <button
+                    type="button"
+                    onClick={() => setOpenPath(open ? null : r.path)}
+                    aria-expanded={open}
+                    aria-label={r.name}
                     style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 8,
-                      background: i === 0 ? "var(--ink)" : "var(--bg-soft)",
-                      color: i === 0 ? "var(--bg)" : "var(--ink-3)",
+                      gridColumn: "1 / 3",
                       display: "grid",
-                      placeItems: "center",
+                      gridTemplateColumns: "auto 1fr",
+                      gap: 16,
+                      alignItems: "center",
+                      background: "transparent",
+                      border: 0,
+                      textAlign: "left",
+                      cursor: "pointer",
+                      padding: 0,
                     }}
                   >
-                    <Icon name={i === 0 ? "spark" : "upload"} size={16} />
-                  </div>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 15 }}>
-                      {r.name}
+                    <div
+                      style={{
+                        width: 36,
+                        height: 36,
+                        borderRadius: 8,
+                        background: i === 0 ? "var(--ink)" : "var(--bg-soft)",
+                        color: i === 0 ? "var(--bg)" : "var(--ink-3)",
+                        display: "grid",
+                        placeItems: "center",
+                      }}
+                    >
+                      <Icon name={i === 0 ? "spark" : "upload"} size={16} />
                     </div>
-                    {r.mtime > 0 ? (
-                      <div className="muted" style={{ fontSize: 12.5 }}>
-                        {dateFmt.format(new Date(r.mtime * 1000))}
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 15 }}>
+                        {r.name}
                       </div>
-                    ) : null}
-                  </div>
-                  <span
+                      {r.mtime > 0 ? (
+                        <div className="muted" style={{ fontSize: 12.5 }}>
+                          {dateFmt.format(new Date(r.mtime * 1000))}
+                        </div>
+                      ) : null}
+                    </div>
+                  </button>
+                  <button
+                    type="button"
                     className="btn"
-                    role="link"
-                    tabIndex={0}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setRoute(`page:${r.path}`);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        e.stopPropagation();
-                        setRoute(`page:${r.path}`);
-                      }
-                    }}
+                    onClick={() => setRoute(`page:${r.path}`)}
                   >
                     {t.ing_open_report}
-                  </span>
-                  <Icon name={open ? "chevD" : "chevR"} size={13} />
-                </button>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setOpenPath(open ? null : r.path)}
+                    aria-expanded={open}
+                    aria-label={
+                      open
+                        ? (t.hist_collapse ?? "Collapse")
+                        : (t.hist_expand ?? "Expand")
+                    }
+                    style={{
+                      background: "transparent",
+                      border: 0,
+                      cursor: "pointer",
+                      display: "grid",
+                      placeItems: "center",
+                      padding: 0,
+                    }}
+                  >
+                    <Icon name={open ? "chevD" : "chevR"} size={13} />
+                  </button>
+                </div>
                 {open ? (
                   <div
                     className="ingest-preview-body"

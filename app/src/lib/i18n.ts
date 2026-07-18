@@ -111,6 +111,8 @@ export interface Strings {
   ing_success_sub: string;
   ing_open_index: string;
   ing_open_report: string;
+  hist_collapse?: string;
+  hist_expand?: string;
   ing_run_again: string;
   ing_live_title: string;
   ing_live_warmup: string;
@@ -740,6 +742,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_success_sub: "Wiki updated · {time}",
     ing_open_index: "Open wiki index",
     ing_open_report: "Open ingest report",
+    hist_collapse: "Collapse",
+    hist_expand: "Expand",
     ing_run_again: "Ingest another",
     ing_live_title: "Writing your wiki…",
     ing_live_warmup: "Starting Claude…",
@@ -1381,6 +1385,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_success_sub: "위키가 갱신되었습니다 · {time}",
     ing_open_index: "위키 인덱스 열기",
     ing_open_report: "Ingest 보고서 열기",
+    hist_collapse: "접기",
+    hist_expand: "펼치기",
     ing_run_again: "새로 가져오기",
     ing_live_title: "LLM 위키 작성 중…",
     ing_live_warmup: "Claude 시작 중…",
@@ -1976,6 +1982,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_success_sub: "ウィキを更新しました · {time}",
     ing_open_index: "ウィキインデックスを開く",
     ing_open_report: "取り込みレポートを開く",
+    hist_collapse: "折りたたむ",
+    hist_expand: "展開",
     ing_run_again: "別のソースを取り込む",
     ing_live_title: "LLM がウィキを作成中…",
     ing_live_warmup: "Claude を起動中…",
