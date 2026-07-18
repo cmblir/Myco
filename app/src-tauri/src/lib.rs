@@ -10,6 +10,7 @@ mod commands;
 pub mod embeddings;
 pub mod extract;
 pub mod git_log;
+pub mod importers;
 pub mod index;
 pub mod local_llm;
 pub mod mcp_server;
