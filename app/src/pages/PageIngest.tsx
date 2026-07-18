@@ -4,7 +4,7 @@
 // keeps going — and stays visible via the Topbar chip — while the user
 // navigates elsewhere. This page is the form plus the live progress panel.
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Icon } from "../lib/icons";
@@ -17,6 +17,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import ZoteroImport from "../components/ZoteroImport";
 import { useIngestStore } from "../stores/ingestStore";
 import IngestProgress from "../components/IngestProgress";
+import { dropNoticeFor } from "../lib/ingestDrop";
 
 export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
@@ -26,6 +27,12 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   const [body, setBody] = useState("");
   const [ytBusy, setYtBusy] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
+  const [dropNotice, setDropNotice] = useState<string | null>(null);
+  // The drop listener is registered once; keep the latest copy reachable so its
+  // message follows a language change (same reason the handler reads settings
+  // via getState() rather than closing over them).
+  const tRef = useRef(t);
+  tRef.current = t;
   const stage = useIngestStore((s) => s.stage);
   const events = useIngestStore((s) => s.events);
   const log = useIngestStore((s) => s.log);
@@ -77,6 +84,11 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
           if (paths.length === 0) return;
           const first = paths[0];
           setDropError(null);
+          // The form composes ONE source; extra dropped files used to vanish
+          // with no signal. Load the first, but say so when there were more.
+          setDropNotice(
+            dropNoticeFor(paths.length, tRef.current.ing_drop_multi),
+          );
           const base = first.split(/[\\/]/).pop() ?? "";
           setTitle((prev) => prev || base.replace(/\.[^.]+$/, ""));
           try {
@@ -110,6 +122,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
     setTitle("");
     setBody("");
     setDropError(null);
+    setDropNotice(null);
   }
 
   // Pull a YouTube video's captions into the body so it ingests like any source.
@@ -305,6 +318,18 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
                   }}
                 >
                   {dropError}
+                </div>
+              ) : null}
+              {dropNotice ? (
+                <div
+                  data-testid="ingest-drop-notice"
+                  style={{
+                    marginTop: 10,
+                    color: "var(--ink-3)",
+                    fontSize: 12,
+                  }}
+                >
+                  {dropNotice}
                 </div>
               ) : null}
             </div>
