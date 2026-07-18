@@ -149,10 +149,23 @@ export default function MultiverseScene({
       }
       return best;
     };
+    // Hysteresis: once we're aiming at a bubble, only switch when another is
+    // clearly closer (>15%), so two near-equidistant bubbles don't fight over
+    // the pivot and retarget every wheel tick.
+    let targetSlug: string | null = null;
     const onWheel = (e: WheelEvent): void => {
       if (killed || entering || e.deltaY >= 0) return; // only on zoom IN
       const b = nearestBubble();
-      if (b) scene.setOrbitTarget(b.centre);
+      if (!b) return;
+      if (targetSlug && b.slug !== targetSlug) {
+        const cam = scene.getCameraPosition();
+        const cur = bubbles?.centres().find((c) => c.slug === targetSlug);
+        if (cur && cam.distanceTo(b.centre) > cam.distanceTo(cur.centre) * 0.85) {
+          return; // the new nearest isn't decisively closer — stay put
+        }
+      }
+      targetSlug = b.slug;
+      scene.setOrbitTarget(b.centre);
     };
     container.addEventListener("wheel", onWheel, { passive: true });
 

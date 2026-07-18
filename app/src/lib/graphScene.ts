@@ -2079,10 +2079,50 @@ export class GraphScene {
     return this.camera.position.clone();
   }
 
+  /** The orbit pivot. Symmetric with getCameraPosition; used by the dev harness
+   *  to observe the eased retarget. */
+  getOrbitTarget(): THREE.Vector3 {
+    return this.controls.target.clone();
+  }
+
   /** Re-aim the orbit pivot (multiverse: point it at the bubble the user is
    *  zooming toward so a dolly-in pulls the camera INTO that universe). */
+  /** Ease the orbit pivot to `v` over ~220 ms (only the target moves; the wheel
+   *  dolly keeps driving the camera). A hard copy() here made the view snap —
+   *  measured up to ~21° in one frame when the nearest bubble flipped as the
+   *  user scrolled in. Reduced motion still snaps. */
   setOrbitTarget(v: THREE.Vector3): void {
-    this.controls.target.copy(v);
+    if (this.reducedMotion) {
+      this.controls.target.copy(v);
+      this.targetTween = null;
+      return;
+    }
+    // Already there (or heading there) — don't restart the ease every wheel tick.
+    if (this.controls.target.distanceToSquared(v) < 1) return;
+    this.targetTween = {
+      t: 0,
+      dur: 0.22,
+      from: this.controls.target.clone(),
+      to: v.clone(),
+    };
+  }
+
+  private targetTween: {
+    t: number;
+    dur: number;
+    from: THREE.Vector3;
+    to: THREE.Vector3;
+  } | null = null;
+
+  private targetTweenTick(dt: number): void {
+    const tw = this.targetTween;
+    if (!tw) return;
+    tw.t = Math.min(tw.dur, tw.t + dt);
+    const u = tw.t / tw.dur;
+    const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2; // easeInOutCubic
+    this.controls.target.lerpVectors(tw.from, tw.to, e);
+    this.controls.update();
+    if (tw.t >= tw.dur) this.targetTween = null;
   }
 
   /** Current node positions (nodeIds order) — the worker syncBack payload. */
@@ -2855,6 +2895,7 @@ export class GraphScene {
         this.ship.update(dt);
       } else {
         this.camTweenTick(dt); // eased focus-flight (no-op when idle)
+        this.targetTweenTick(dt); // eased orbit-pivot retarget (no-op when idle)
         this.controls.update();
       }
       this.updateLod(dt);
