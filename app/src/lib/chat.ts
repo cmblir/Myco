@@ -48,9 +48,6 @@ export interface CompleteArgs {
   onStage?: (stage: AskStage) => void;
 }
 
-// Providers that expose Read/Write/Grep/Glob tools with the vault as cwd.
-const TOOL_CAPABLE_PROVIDERS = new Set(["anthropic-cli"]);
-
 // How much vault markdown to inline (in bytes/chars) for non-tool providers.
 const VAULT_CONTEXT_BUDGET = 80_000;
 // The embedded 0.5B model only has a 4k-token window — keep its inline slice
@@ -58,10 +55,6 @@ const VAULT_CONTEXT_BUDGET = 80_000;
 const LOCAL_CONTEXT_BUDGET = 6_000;
 
 /** Whether the given provider can read/write vault files via tools. */
-export function providerSupportsVaultTools(provider: string): boolean {
-  return TOOL_CAPABLE_PROVIDERS.has(provider);
-}
-
 export async function complete(args: CompleteArgs): Promise<string> {
   const settings = await ipc.getSettings();
   const provider =

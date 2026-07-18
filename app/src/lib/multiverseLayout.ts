@@ -5,65 +5,19 @@
 // one another (their anchors) and describes each universe's spatial footprint
 // so the scene/LOD/imposter tiers can size and frame them.
 //
-// It deliberately REUSES the galaxy packing math (galaxyAnchorsBySize), just at
-// a much larger scale: a universe's node count plays the role a galaxy's node
-// count plays one tier down, so the same greedy, seeded, deterministic,
+// It deliberately REUSES the galaxy packing math (galaxyAnchorsByFootprint),
+// just at a much larger scale, so the same greedy, seeded, deterministic,
 // non-overlapping footprint packing gives universes an organic clumped spread
 // instead of an even lattice.
 
 import {
   galaxyAnchorsByFootprint,
-  galaxyAnchorsBySize,
-  galaxyFootprint,
   galaxyNormal,
   type GalaxyAnchor,
 } from "./galaxyLayout";
 
-export interface UniverseInput {
-  slug: string;
-  nodeCount: number;
-}
-
 export interface UniverseAnchor extends GalaxyAnchor {
   slug: string;
-}
-
-// How much bigger a universe's footprint is than a single galaxy of the same
-// node count. A universe contains a whole galaxy field, so its subcloud extent
-// is several galaxy-radii; scaling the packing's linkDistance by this factor
-// spreads universes far enough apart that their subclouds don't overlap. It has
-// to clear not just the footprint math but the fixed ~300–600 world-unit seed
-// scatter every universe's local nodes start with (seededXYZ in graphData) —
-// which the node-count-driven footprint doesn't see — so a small universe
-// (a handful of notes) still lands far from its neighbours. 18 keeps even two
-// 3-node universes from overlapping while big vaults sit proportionally farther
-// out. Exported so imposter/LOD sizing stays in sync.
-export const UNIVERSE_SCALE = 18;
-
-// The radius a universe's whole subcloud occupies, at the given link distance.
-// Mirrors galaxyFootprint one tier up (× UNIVERSE_SCALE) so imposter discs and
-// LOD proximity bands can be sized from the same number the packing uses.
-export function universeFootprint(
-  nodeCount: number,
-  linkDistance: number,
-  scale: number = UNIVERSE_SCALE,
-): number {
-  return galaxyFootprint(Math.max(1, nodeCount), linkDistance * scale);
-}
-
-// Size-aware universe centres. Each universe's node count is fed to the galaxy
-// packer at UNIVERSE_SCALE × linkDistance, so bigger universes sit farther out
-// and no two footprints overlap. Anchors are returned in the SAME order as the
-// input and tagged with their slug (the caller keys everything by slug, never
-// by index, so a registry reorder can't mis-place a universe).
-export function universeAnchorsBySize(
-  universes: UniverseInput[],
-  linkDistance: number,
-  scale: number = UNIVERSE_SCALE,
-): UniverseAnchor[] {
-  const counts = universes.map((u) => Math.max(1, u.nodeCount));
-  const anchors = galaxyAnchorsBySize(counts, linkDistance * scale);
-  return universes.map((u, i) => ({ slug: u.slug, ...anchors[i] }));
 }
 
 /// The rendered radius of a universe's bubble, given the greatest distance from
@@ -97,9 +51,9 @@ const UNIVERSE_PAD = 4.2;
 
 /// Universe centres packed by each cloud's MEASURED radius.
 ///
-/// `universeAnchorsBySize` predicts a footprint from node count, which is what
-/// galaxies inside one vault do — their stars really do spread as the count
-/// grows. Universe clouds do not: the multiverse seeds every one of them onto
+/// Packing by predicted footprint (node count) is what galaxies inside one vault
+/// do — their stars really do spread as the count grows. Universe clouds do not:
+/// the multiverse seeds every one of them onto
 /// the same fixed shell, so a 9,984-note vault and a 16-note vault both render
 /// as a ball of radius ~700 (the big one is denser, not wider).
 ///

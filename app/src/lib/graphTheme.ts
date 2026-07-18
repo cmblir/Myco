@@ -1,10 +1,6 @@
-// Graph theme colours (read from the live CSS variables / rendered background)
-// and the sigma Settings derived from theme + the user's display sliders.
-import type { Settings } from "sigma/settings";
-import { drawDiscNodeLabel } from "sigma/rendering";
-import type { GraphSettings, GraphSkinKey } from "./graphSettings";
+// Graph theme colours, read from the live CSS variables / rendered background.
+import type { GraphSkinKey } from "./graphSettings";
 import { skinTheme } from "./graphSkins";
-import NodeGlowProgram from "./graphNodeGlow";
 
 export interface GraphTheme {
   bg: string;
@@ -74,53 +70,3 @@ export function makeTheme(skin: GraphSkinKey): GraphTheme {
   return skin === "auto" ? readTheme() : skinTheme(skin);
 }
 
-// textFadeThreshold (0.1..3, default 1.1) → labelRenderedSizeThreshold. sigma
-// shows a node's label only once its RENDERED size clears the threshold, and
-// picks the largest node per grid cell — so hubs label first and the overview
-// shows none. Higher slider → higher threshold → labels appear later.
-export function buildSigmaSettings(
-  theme: GraphTheme,
-  s: GraphSettings,
-): Partial<Settings> {
-  const sansFont =
-    getComputedStyle(document.documentElement)
-      .getPropertyValue("--font-sans")
-      .trim() || "Inter, system-ui, sans-serif";
-  return {
-    // edges — faint straight hairlines
-    defaultEdgeColor: theme.edge,
-    defaultEdgeType: s.arrows ? "arrow" : "line",
-    minEdgeThickness: 0.25,
-    enableEdgeEvents: false,
-    // labels — Obsidian-style hub-first zoom reveal
-    renderLabels: true,
-    labelColor: { color: theme.ink },
-    labelDensity: 0.5,
-    labelGridCellSize: 140,
-    labelRenderedSizeThreshold: Math.max(
-      1,
-      5 + (s.textFadeThreshold - 1.1) * 6,
-    ),
-    labelFont: sansFont,
-    labelSize: 11,
-    // Hover draws the label TEXT ONLY — reuse the plain label renderer instead
-    // of sigma's default node-hover, which fills a white rounded box behind it.
-    defaultDrawNodeHover: drawDiscNodeLabel,
-    // nodes — glowing stars (small bright core + soft halo). The glow PROGRAM
-    // itself is registered only at construction (see NODE_PROGRAM_SETTINGS);
-    // re-sending it through setSettings on a live renderer blanks the graph.
-    defaultNodeColor: theme.node,
-    zIndex: true,
-  };
-}
-
-// Program classes belong ONLY in the initial Sigma constructor. buildSigmaSettings
-// is also re-applied via setSettings on every slider/theme change, and re-sending
-// nodeProgramClasses there re-instantiates the WebGL program and renders every
-// node blank — so these settings live apart and are spread in once, at build time.
-export function nodeProgramSettings(): Partial<Settings> {
-  return {
-    defaultNodeType: "glow",
-    nodeProgramClasses: { glow: NodeGlowProgram },
-  };
-}
