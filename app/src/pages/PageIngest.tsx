@@ -15,6 +15,7 @@ import { formatElapsed } from "../lib/time";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import ZoteroImport from "../components/ZoteroImport";
+import ConversationImport from "../components/ConversationImport";
 import { useIngestStore } from "../stores/ingestStore";
 import IngestProgress from "../components/IngestProgress";
 import { dropNoticeFor } from "../lib/ingestDrop";
@@ -171,6 +172,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
         <p className="page-lede">{t.ing_lede}</p>
       </header>
 
+      <ConversationImport t={t} />
       <ZoteroImport t={t} />
 
       {settings ? (

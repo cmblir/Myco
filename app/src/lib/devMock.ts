@@ -940,6 +940,16 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       const stem = String(args.stem ?? "source");
       return Promise.resolve(`raw/${stem}.md`);
     }
+    case "import_conversations": {
+      // The real parse/scan/write is Rust; the mock can't read the picked file,
+      // so it returns a plausible outcome (one imported, one quarantined) so the
+      // import UI's success and secret-warning states are both exercisable.
+      return Promise.resolve({
+        source: "claude-code",
+        imported: 1,
+        quarantined: [{ title: "a chat that pasted a key", secrets: ["OpenAI/Anthropic-style API key"] }],
+      });
+    }
     case "set_settings":
       // Actually persist. Returning null and keeping a frozen SETTINGS made the
       // mock silently ignore every settings change — so a flow that depends on
@@ -961,6 +971,15 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     // the mock has to answer them or every listener in the app silently never
     // fires — and the returned unlisten resolves to nothing, which is where the
     // stray rejection in a plain-browser run came from.
+    case "plugin:dialog|open": {
+      // The native file/folder picker. Return a fixed path so the picker-driven
+      // flows (import a conversation, pick a vault) are exercisable in the mock;
+      // a real dialog can't open headless anyway.
+      const opts = (args.options ?? {}) as { directory?: boolean };
+      return Promise.resolve(
+        opts.directory ? `${VAULT}` : `${VAULT}/_inbox/picked-export.jsonl`,
+      );
+    }
     case "plugin:event|listen": {
       const name = String(args.event ?? "");
       const handler = args.handler as MockEventHandler | undefined;

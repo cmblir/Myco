@@ -23,6 +23,13 @@ export interface Strings {
   zi_hint?: string;
   zi_none?: string;
   zi_done?: string;
+  ci_title?: string;
+  ci_hint?: string;
+  ci_btn?: string;
+  ci_busy?: string;
+  ci_done?: string; // {n}
+  ci_quarantined?: string; // {n}
+  ci_none?: string;
   q_empty?: string;
   s_mascot?: string;
   s_mascot_hint?: string;
@@ -653,6 +660,13 @@ export const STRINGS: Record<Lang, Strings> = {
     zi_hint: "CSL-JSON or BibTeX export (highlights come along when present). Items land in _inbox/ as source docs for the ingest pipeline.",
     zi_none: "No importable items found in that file.",
     zi_done: "Imported {n} item(s) into _inbox/ — run Ingest to turn them into wiki pages.",
+    ci_title: "Import a conversation",
+    ci_hint: "A ChatGPT export (conversations.json) or a Claude Code / Codex session (.jsonl). Each conversation lands in _inbox/ as a source doc for the ingest pipeline.",
+    ci_btn: "Choose a file…",
+    ci_busy: "Importing…",
+    ci_done: "Imported {n} conversation(s) into _inbox/ — run Ingest to turn them into wiki pages.",
+    ci_quarantined: "{n} conversation(s) were held back because they contain what looks like a secret (API key, token). Review them at the source; they were not imported.",
+    ci_none: "No conversations found in that file.",
     q_empty: "Ask the wiki anything — answers cite your own pages.",
     s_mascot: "Show MYCO, the mascot",
     s_mascot_hint: "Loaders, empty states and the About page. Off = static logo.",
@@ -1296,6 +1310,13 @@ export const STRINGS: Record<Lang, Strings> = {
     zi_hint: "CSL-JSON 또는 BibTeX 내보내기 파일(하이라이트 포함 시 함께). 항목은 _inbox/에 소스 문서로 저장됩니다.",
     zi_none: "가져올 항목을 찾지 못했습니다.",
     zi_done: "{n}개 항목을 _inbox/로 가져왔습니다 — Ingest를 실행해 위키 페이지로 만드세요.",
+    ci_title: "대화 가져오기",
+    ci_hint: "ChatGPT 내보내기(conversations.json) 또는 Claude Code / Codex 세션(.jsonl). 각 대화가 소스 문서로 _inbox/에 들어가 ingest 파이프라인이 처리합니다.",
+    ci_btn: "파일 선택…",
+    ci_busy: "가져오는 중…",
+    ci_done: "{n}개 대화를 _inbox/로 가져왔습니다 — Ingest를 실행해 위키 페이지로 만드세요.",
+    ci_quarantined: "{n}개 대화가 시크릿(API 키·토큰)으로 보이는 내용을 포함해 제외됐습니다. 원본에서 확인하세요. 가져오지 않았습니다.",
+    ci_none: "그 파일에서 대화를 찾지 못했습니다.",
     q_empty: "위키에 무엇이든 물어보세요 — 답변은 당신의 페이지를 인용합니다.",
     s_mascot: "마스코트 MYCO 표시",
     s_mascot_hint: "로더·빈 화면·정보 페이지에 등장합니다. 끄면 정적 로고로 대체됩니다.",
@@ -2469,6 +2490,13 @@ export const STRINGS: Record<Lang, Strings> = {
     zi_hint: "CSL-JSON または BibTeX エクスポート（ハイライトがあれば一緒に取り込まれます）。項目はソース文書として _inbox/ に入り、取り込みパイプラインで処理されます。",
     zi_none: "そのファイルにインポート可能な項目が見つかりませんでした。",
     zi_done: "{n} 件を _inbox/ にインポートしました — 「取り込み」を実行して wiki ページに変換してください。",
+    ci_title: "会話をインポート",
+    ci_hint: "ChatGPT エクスポート（conversations.json）または Claude Code / Codex セッション（.jsonl）。各会話はソース文書として _inbox/ に入り、取り込みパイプラインが処理します。",
+    ci_btn: "ファイルを選択…",
+    ci_busy: "インポート中…",
+    ci_done: "{n} 件の会話を _inbox/ にインポートしました — 「取り込み」を実行して wiki ページに変換してください。",
+    ci_quarantined: "{n} 件の会話はシークレット（API キー・トークン）と思われる内容を含むため除外されました。元データで確認してください。インポートされていません。",
+    ci_none: "そのファイルに会話が見つかりませんでした。",
     q_empty: "wiki に何でも質問できます — 回答はあなた自身のページを引用します。",
     s_mascot: "マスコット MYCO を表示",
     s_mascot_hint: "ローダー・空の状態・About ページに表示。オフにすると静的ロゴになります。",

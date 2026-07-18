@@ -128,6 +128,16 @@ export interface EmbeddingsStatus {
   model: string;
 }
 
+/** Result of importing a conversation export into `_inbox/`. */
+export interface ImportOutcome {
+  /** Detected format: chatgpt | claude-code | codex | unknown. */
+  source: string;
+  /** How many source docs were written to `_inbox/`. */
+  imported: number;
+  /** Conversations skipped because their text matched a secret pattern. */
+  quarantined: { title: string; secrets: string[] }[];
+}
+
 /** A semantic-similarity edge for the graph overlay (absolute page paths). */
 export interface SemEdge {
   source: string;
@@ -397,6 +407,18 @@ export const ipc = {
     });
     return typeof selection === "string" ? selection : null;
   },
+  /** Pick a conversation export (ChatGPT .json, or a Claude Code / Codex
+   *  .jsonl session). Returns a real filesystem path for the Rust importer. */
+  pickImportFile: async (): Promise<string | null> => {
+    const selection = await open({
+      directory: false,
+      multiple: false,
+      filters: [{ name: "Conversation export", extensions: ["json", "jsonl"] }],
+    });
+    return typeof selection === "string" ? selection : null;
+  },
+  importConversations: (sourcePath: string) =>
+    invoke<ImportOutcome>("import_conversations", { sourcePath }),
   gitLog: (vaultPath: string, limit?: number) =>
     invoke<GitCommit[]>("git_log", { vaultPath, limit }),
   claudeCheck: () => invoke<ClaudeStatus>("claude_check"),
