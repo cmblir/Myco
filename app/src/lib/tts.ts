@@ -74,7 +74,14 @@ export function speakTurns(
     return { pause: noop, resume: noop, cancel: noop };
   }
   const synth = window.speechSynthesis;
-  const { a, b } = pickVoices(synth.getVoices(), opts.lang ?? "en");
+  const lang = opts.lang ?? "en";
+  // getVoices() can be empty until `voiceschanged` fires — on WebKit/WKWebView it
+  // usually is on the first play. Picking then gives {null, null}, and BOTH hosts
+  // fall back to the one default voice, losing the two-voice dialogue. loadVoices
+  // exists precisely to wait for that event; wire it in (it was dead code, which
+  // is why the race shipped). If voices are already present it resolves at once,
+  // so the common case pays nothing.
+  let picked = pickVoices(synth.getVoices(), lang);
   let i = Math.max(0, startIndex);
   let cancelled = false;
 
@@ -89,7 +96,7 @@ export function speakTurns(
     const turn = turns[i];
     opts.onTurn?.(i);
     const u = new SpeechSynthesisUtterance(turn.text);
-    const voice = turn.speaker === "B" ? b : a;
+    const voice = turn.speaker === "B" ? picked.b : picked.a;
     if (voice) u.voice = voice;
     u.rate = 1.02;
     u.onend = () => {
@@ -107,7 +114,17 @@ export function speakTurns(
     synth.speak(u);
   };
 
-  speakNext();
+  // If two distinct voices are already in hand, start now (zero delay). If not,
+  // wait for the OS voice list before the first utterance so A and B differ.
+  if (picked.a && picked.b && picked.a !== picked.b) {
+    speakNext();
+  } else {
+    void loadVoices().then((vs) => {
+      if (cancelled) return;
+      picked = pickVoices(vs, lang);
+      speakNext();
+    });
+  }
 
   return {
     pause: () => synth.pause(),
