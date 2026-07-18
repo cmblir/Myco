@@ -111,6 +111,7 @@ pub fn run() {
             commands::rename_path,
             commands::archive_inbox_source,
             commands::available_raw_path,
+            commands::import_conversations,
             commands::build_link_graph,
             commands::vault_revision,
             commands::list_projects,

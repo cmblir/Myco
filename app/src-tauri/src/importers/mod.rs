@@ -97,6 +97,34 @@ mod dispatch_tests {
             Source::ChatGpt
         );
     }
+
+    #[test]
+    fn plan_import_writes_clean_docs() {
+        let jsonl = "{\"type\":\"user\",\"sessionId\":\"s1\",\"message\":{\"role\":\"user\",\"content\":\"how does attention work\"}}";
+        let plan = plan_import("s1.jsonl", jsonl).unwrap();
+        assert_eq!(plan.source, "claude-code");
+        assert_eq!(plan.docs.len(), 1);
+        assert_eq!(plan.docs[0].stem, "claude-code-s1");
+        assert!(plan.docs[0].body.contains("how does attention work"));
+        assert!(plan.quarantined.is_empty());
+    }
+
+    #[test]
+    fn plan_import_quarantines_a_conversation_with_a_secret() {
+        // A prompt that pasted an API key must never reach _inbox/.
+        let jsonl = "{\"type\":\"user\",\"sessionId\":\"leak\",\"message\":{\"role\":\"user\",\"content\":\"my key is sk-abcdefghijklmnopqrstuvwxyz012345 fix it\"}}";
+        let plan = plan_import("leak.jsonl", jsonl).unwrap();
+        assert!(plan.docs.is_empty(), "must not write a doc with a secret");
+        assert_eq!(plan.quarantined.len(), 1);
+        assert!(plan.quarantined[0]
+            .secrets
+            .contains(&"OpenAI/Anthropic-style API key"));
+    }
+
+    #[test]
+    fn plan_import_errors_on_an_unknown_format() {
+        assert!(plan_import("x.txt", "not an export").is_err());
+    }
 }
 
 /// Which tool an exported conversation came from.
@@ -243,6 +271,58 @@ fn sniff(content: &str) -> Option<Kind> {
         }
     }
     None
+}
+
+/// A source doc ready to write to `_inbox/`: its stem (no extension) and body.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InboxDoc {
+    pub stem: String,
+    pub body: String,
+}
+
+/// A conversation held back from import because its text matched a secret shape.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Quarantined {
+    pub title: String,
+    pub secrets: Vec<&'static str>,
+}
+
+/// The plan for importing one export file: the clean docs to write and the
+/// conversations quarantined for containing secrets. Pure — no IO — so the whole
+/// parse → scan → render decision is testable; the command only writes the docs.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportPlan {
+    pub source: String,
+    pub docs: Vec<InboxDoc>,
+    pub quarantined: Vec<Quarantined>,
+}
+
+/// Parse an export, then split its conversations into clean docs (ready for
+/// `_inbox/`) and quarantined ones. A conversation whose rendered doc matches any
+/// secret pattern is never written — a leaked key in a committed source is
+/// permanent.
+pub fn plan_import(filename: &str, content: &str) -> Result<ImportPlan, String> {
+    let convs = detect_and_parse(filename, content)?;
+    let source = convs
+        .first()
+        .map(|c| c.source.slug().to_string())
+        .unwrap_or_else(|| "unknown".to_string());
+    let mut docs = Vec::new();
+    let mut quarantined = Vec::new();
+    for c in convs {
+        let body = c.to_inbox_doc();
+        let hits = secrets_scan::scan(&body);
+        if hits.is_empty() {
+            docs.push(InboxDoc { stem: c.doc_stem(), body });
+        } else {
+            quarantined.push(Quarantined { title: c.title, secrets: hits });
+        }
+    }
+    Ok(ImportPlan {
+        source,
+        docs,
+        quarantined,
+    })
 }
 
 /// Keep only characters that are safe and stable in a filename.

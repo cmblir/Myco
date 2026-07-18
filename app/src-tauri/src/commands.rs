@@ -435,6 +435,85 @@ pub fn archive_inbox_source(
     vault::archive_inbox_source(&p.to_string_lossy())
 }
 
+/// One conversation held back from import for containing a secret.
+#[derive(serde::Serialize)]
+pub struct QuarantinedConversation {
+    pub title: String,
+    pub secrets: Vec<String>,
+}
+
+/// The outcome of importing an export file, for the UI.
+#[derive(serde::Serialize)]
+pub struct ImportOutcome {
+    /// Detected format: chatgpt | claude-code | codex | unknown.
+    pub source: String,
+    /// How many source docs were written to `_inbox/`.
+    pub imported: usize,
+    /// Conversations skipped because their text matched a secret pattern.
+    pub quarantined: Vec<QuarantinedConversation>,
+}
+
+/// Import an AI conversation export (ChatGPT / Claude Code / Codex) into the
+/// vault's `_inbox/`, from which normal ingest turns each conversation into wiki
+/// pages.
+///
+/// `source_path` is an EXTERNAL file the user chose (a download, a session file
+/// under ~/.claude or ~/.codex) — not vault-confined; only the writes are, into
+/// `_inbox/`. Each conversation becomes one `_inbox/<source>-<id>.md`; the id is
+/// the vendor's, so re-importing the same export overwrites the same pending
+/// file rather than duplicating. A conversation whose rendered text matches a
+/// secret pattern is quarantined — reported, never written.
+///
+/// Async + `spawn_blocking`: a big export is parsed and many files written, and a
+/// sync command body would freeze the window for the duration.
+#[tauri::command]
+pub async fn import_conversations(
+    state: tauri::State<'_, VaultRoot>,
+    source_path: String,
+) -> Result<ImportOutcome, String> {
+    let root = require_root(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        // The picked file can be large (a ChatGPT export is one big JSON), but a
+        // pathological size should error rather than exhaust memory.
+        const MAX_BYTES: u64 = 512 * 1024 * 1024;
+        let meta = std::fs::metadata(&source_path)
+            .map_err(|e| format!("cannot read {source_path}: {e}"))?;
+        if meta.len() > MAX_BYTES {
+            return Err(format!(
+                "export too large ({} MB); split it first",
+                meta.len() / (1024 * 1024)
+            ));
+        }
+        let content = std::fs::read_to_string(&source_path)
+            .map_err(|e| format!("cannot read {source_path}: {e}"))?;
+
+        let plan = crate::importers::plan_import(&source_path, &content)?;
+
+        let inbox = root.join("_inbox");
+        std::fs::create_dir_all(&inbox).map_err(|e| format!("create _inbox: {e}"))?;
+        let mut imported = 0;
+        for doc in &plan.docs {
+            std::fs::write(inbox.join(format!("{}.md", doc.stem)), &doc.body)
+                .map_err(|e| format!("write {}: {e}", doc.stem))?;
+            imported += 1;
+        }
+        Ok(ImportOutcome {
+            source: plan.source,
+            imported,
+            quarantined: plan
+                .quarantined
+                .into_iter()
+                .map(|q| QuarantinedConversation {
+                    title: q.title,
+                    secrets: q.secrets.into_iter().map(str::to_string).collect(),
+                })
+                .collect(),
+        })
+    })
+    .await
+    .map_err(|e| format!("join failed: {e}"))?
+}
+
 /// Full link graph for the open vault.
 ///
 /// Async + `spawn_blocking` because this is not a cheap read: it walks, reads
