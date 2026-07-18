@@ -13,6 +13,7 @@
 
 pub mod chatgpt;
 pub mod claude_code;
+pub mod claude_web;
 pub mod codex;
 pub mod ledger;
 pub mod secrets_scan;
@@ -72,6 +73,15 @@ mod dispatch_tests {
         let convs = detect_and_parse("2202078e.jsonl", jsonl).unwrap();
         assert_eq!(convs.len(), 1);
         assert_eq!(convs[0].source, Source::ClaudeCode);
+    }
+
+    #[test]
+    fn routes_a_claude_ai_export_by_its_chat_messages_key() {
+        // Same top-level [ as ChatGPT, but chat_messages disambiguates it.
+        let json = r#"[{"uuid":"c1","name":"t","chat_messages":[{"sender":"human","text":"hi"}]}]"#;
+        let convs = detect_and_parse("conversations.json", json).unwrap();
+        assert_eq!(convs.len(), 1);
+        assert_eq!(convs[0].source, Source::Claude);
     }
 
     #[test]
@@ -270,6 +280,7 @@ pub fn detect_and_parse(filename: &str, content: &str) -> Result<Vec<Conversatio
 
     match sniff(content) {
         Some(Kind::ChatGpt) => chatgpt::parse(content),
+        Some(Kind::ClaudeWeb) => claude_web::parse(content),
         Some(Kind::Codex) => Ok(codex::parse(content, &stem).into_iter().collect()),
         Some(Kind::ClaudeCode) => Ok(claude_code::parse(content, &stem).into_iter().collect()),
         None => Err("unrecognized export format".to_string()),
@@ -278,17 +289,28 @@ pub fn detect_and_parse(filename: &str, content: &str) -> Result<Vec<Conversatio
 
 enum Kind {
     ChatGpt,
+    ClaudeWeb,
     ClaudeCode,
     Codex,
 }
 
-/// Decide the format from the bytes. A top-level `[` is a ChatGPT export; a
-/// stream of JSON objects is a CLI session, told apart by the keys its lines
-/// carry (`payload` = Codex, `sessionId`/`isSidechain`/message roles = Claude
-/// Code). Peeks a handful of lines so a leading blank or metadata line doesn't
-/// throw it off.
+/// Decide the format from the bytes. A top-level `[` is a web export — ChatGPT or
+/// Claude.ai, told apart by whether its elements carry `chat_messages`. A stream
+/// of JSON objects is a CLI session, told apart by the keys its lines carry
+/// (`payload` = Codex, `sessionId`/`isSidechain`/message roles = Claude Code).
+/// Peeks a handful of lines so a leading blank or metadata line doesn't throw it
+/// off.
 fn sniff(content: &str) -> Option<Kind> {
     if content.trim_start().starts_with('[') {
+        // Both are JSON arrays; the key that separates them appears at the top of
+        // the first element. Scan a bounded prefix rather than parse the whole
+        // file (a ChatGPT export can be huge, and chatgpt::parse re-parses it).
+        // Byte-level so a 64 KB cut inside a multibyte char can't panic.
+        let needle = b"\"chat_messages\"";
+        let hay = &content.as_bytes()[..content.len().min(64 * 1024)];
+        if hay.windows(needle.len()).any(|w| w == needle) {
+            return Some(Kind::ClaudeWeb);
+        }
         return Some(Kind::ChatGpt);
     }
     for line in content.lines().filter(|l| !l.trim().is_empty()).take(8) {
