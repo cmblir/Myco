@@ -61,14 +61,14 @@ fn full_lifecycle_seed_to_graph_to_mutate() {
     let raw_path = vault::create_folder(&meta.path, "raw").unwrap();
     assert!(Path::new(&raw_path).is_dir());
 
-    let alpha = vault::create_file(&wiki_path, "alpha.md").unwrap();
-    let beta = vault::create_file(&wiki_path, "beta.md").unwrap();
-    let src1 = vault::create_file(&raw_path, "src-paper.md").unwrap();
+    let alpha = vault::create_file(&wiki_path, "alpha.md", "").unwrap();
+    let beta = vault::create_file(&wiki_path, "beta.md", "").unwrap();
+    let src1 = vault::create_file(&raw_path, "src-paper.md", "").unwrap();
 
     // Name validation: traversal / slashes / empty / dotdot all rejected.
-    assert!(vault::create_file(&meta.path, "../escape.md").is_err());
-    assert!(vault::create_file(&meta.path, "").is_err());
-    assert!(vault::create_file(&meta.path, "..").is_err());
+    assert!(vault::create_file(&meta.path, "../escape.md", "").is_err());
+    assert!(vault::create_file(&meta.path, "", "").is_err());
+    assert!(vault::create_file(&meta.path, "..", "").is_err());
     assert!(vault::create_folder(&meta.path, "with/slash").is_err());
 
     // ---- 3. write_file with body that has frontmatter + wikilinks ----

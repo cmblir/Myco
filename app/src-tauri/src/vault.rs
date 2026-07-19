@@ -625,7 +625,7 @@ fn pod_to_json_depth(pod: gray_matter::Pod, depth: usize) -> serde_json::Value {
     }
 }
 
-pub fn create_file(parent: &str, name: &str) -> Result<String, String> {
+pub fn create_file(parent: &str, name: &str, content: &str) -> Result<String, String> {
     validate_name(name)?;
     let parent_path = Path::new(parent);
     if !parent_path.is_dir() {
@@ -635,8 +635,59 @@ pub fn create_file(parent: &str, name: &str) -> Result<String, String> {
     if target.exists() {
         return Err(format!("already exists: {}", target.display()));
     }
-    std::fs::write(&target, "").map_err(|e| format!("create failed: {e}"))?;
+    std::fs::write(&target, content).map_err(|e| format!("create failed: {e}"))?;
     Ok(target.to_string_lossy().into_owned())
+}
+
+// Directories with their own file format — a new file here must NOT get the
+// wiki page schema (daily notes are dated journals, raw/ is immutable sources,
+// etc.). Everything else that is markdown is a knowledge page.
+const NON_WIKI_DIRS: &[&str] = &[
+    "daily",
+    "raw",
+    "ingest-reports",
+    "_inbox",
+    "cards",
+    "audio",
+    "runs",
+];
+
+/// Whether a NEW markdown file at `path` should be seeded with the wiki page
+/// schema. True for a `.md` knowledge page (wiki/, the vault root, user folders);
+/// false for non-markdown and for files under a directory that owns its own
+/// format. The graph and Views scan the whole vault, so a root-level note needs
+/// the frontmatter too, not only `wiki/`.
+pub(crate) fn should_seed_frontmatter(root: &Path, path: &Path) -> bool {
+    let is_md = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("md"));
+    if !is_md {
+        return false;
+    }
+    let Ok(rel) = path.strip_prefix(root) else {
+        return false;
+    };
+    let first = rel
+        .components()
+        .next()
+        .map(|c| c.as_os_str().to_string_lossy().into_owned())
+        .unwrap_or_default();
+    // A dotdir (.obsidian, .memex, .archived) or a known format-owning dir is
+    // excluded; a plain filename first component means a root-level note.
+    !first.starts_with('.') && !NON_WIKI_DIRS.contains(&first.as_str())
+}
+
+/// The starter body for a new `wiki/` page: the required frontmatter with
+/// sensible defaults, and an H1 from the file stem. Without this a
+/// human-created page has no frontmatter and is invisible to Views, gap
+/// buckets and the graph's type/confidence encoding. `date` is injected so the
+/// template is deterministic to test.
+pub(crate) fn wiki_page_stub(stem: &str, date: &str) -> String {
+    let title = stem.replace(['-', '_'], " ");
+    format!(
+        "---\ntype: concept\ntags:\ncreated: {date}\nconfidence: medium\nstatus: active\n---\n\n# {title}\n",
+    )
 }
 
 /// Persist a completed run transcript to `<vault>/runs/<name>`, creating the
@@ -1650,18 +1701,50 @@ mod tests {
     }
 
     #[test]
-    fn create_file_writes_empty_md() {
+    fn create_file_writes_the_given_content() {
         let dir = temp_vault("create-file");
-        let path = create_file(dir.to_str().unwrap(), "alpha.md").unwrap();
+        let path = create_file(dir.to_str().unwrap(), "alpha.md", "").unwrap();
         assert!(std::path::Path::new(&path).exists());
         assert_eq!(fs::read_to_string(&path).unwrap(), "");
+        let seeded = create_file(dir.to_str().unwrap(), "beta.md", "hello").unwrap();
+        assert_eq!(fs::read_to_string(&seeded).unwrap(), "hello");
     }
 
     #[test]
     fn create_file_rejects_collision() {
         let dir = temp_vault("create-file-collide");
         fs::write(dir.join("x.md"), "old").unwrap();
-        assert!(create_file(dir.to_str().unwrap(), "x.md").is_err());
+        assert!(create_file(dir.to_str().unwrap(), "x.md", "").is_err());
+    }
+
+    #[test]
+    fn should_seed_frontmatter_covers_knowledge_pages_only() {
+        let root = Path::new("/v");
+        // Knowledge pages: wiki/, subfolders, the vault root, a user folder.
+        assert!(should_seed_frontmatter(root, Path::new("/v/wiki/a.md")));
+        assert!(should_seed_frontmatter(root, Path::new("/v/wiki/sub/a.md")));
+        assert!(should_seed_frontmatter(root, Path::new("/v/untitled.md"))); // root note
+        assert!(should_seed_frontmatter(root, Path::new("/v/projects/x.md")));
+        // Excluded: non-markdown and format-owning / dot directories.
+        assert!(!should_seed_frontmatter(root, Path::new("/v/wiki/a.txt")));
+        assert!(!should_seed_frontmatter(root, Path::new("/v/daily/2026-07-19.md")));
+        assert!(!should_seed_frontmatter(root, Path::new("/v/raw/a.md")));
+        assert!(!should_seed_frontmatter(root, Path::new("/v/ingest-reports/r.md")));
+        assert!(!should_seed_frontmatter(root, Path::new("/v/_inbox/s.md")));
+        assert!(!should_seed_frontmatter(root, Path::new("/v/.obsidian/x.md")));
+    }
+
+    #[test]
+    fn wiki_page_stub_has_the_required_frontmatter_and_a_title() {
+        let s = wiki_page_stub("attention-mechanism", "2026-07-19");
+        assert!(s.starts_with("---\n"));
+        assert!(s.contains("type: concept"));
+        assert!(s.contains("tags:"));
+        assert!(s.contains("created: 2026-07-19"));
+        assert!(s.contains("confidence: medium"));
+        assert!(s.contains("status: active"));
+        // Title humanizes the stem.
+        assert!(s.contains("# attention mechanism"));
     }
 
     #[test]

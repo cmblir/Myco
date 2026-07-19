@@ -350,7 +350,17 @@ pub fn create_file(
 ) -> Result<String, String> {
     let root = require_root(&state)?;
     let p = vault::confine_parent(&root, &parent)?;
-    vault::create_file(&p.to_string_lossy(), &name)
+    // Seed the required frontmatter for a new wiki page so it is visible to
+    // Views, gap buckets and the graph from the moment it exists; daily notes
+    // and other files stay empty.
+    let target = p.join(&name);
+    let content = if vault::should_seed_frontmatter(&root, &target) {
+        let stem = name.strip_suffix(".md").unwrap_or(&name);
+        vault::wiki_page_stub(stem, &registry::today_utc())
+    } else {
+        String::new()
+    };
+    vault::create_file(&p.to_string_lossy(), &name, &content)
 }
 
 #[tauri::command]

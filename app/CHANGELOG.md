@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **New notes start as real wiki pages.** Creating a page now seeds the required
+  frontmatter (type, tags, created, confidence, status) and a title, so a
+  hand-made note is visible to Views, the gap report and the graph's colour
+  encoding from the moment it exists — instead of being invisible until an LLM
+  rewrote it. Daily notes and files under raw/ keep their own format.
+
 - **Import your AI conversations.** Ingest → Import a conversation takes a ChatGPT
   export, a Claude.ai export, or a Claude Code / Codex session and turns each
   conversation into a wiki source. Memex detects the format from the file itself,

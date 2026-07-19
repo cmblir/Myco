@@ -354,7 +354,7 @@ fn count_notes(root: &Path) -> usize {
 /// Today's date as `YYYY-MM-DD` (UTC — the Python side uses local time; a
 /// same-day discrepancy across a midnight boundary is acceptable for a
 /// recency stamp and not worth a chrono dependency).
-fn today_utc() -> String {
+pub(crate) fn today_utc() -> String {
     let secs = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
