@@ -31,6 +31,9 @@ export interface Strings {
   ci_quarantined?: string; // {n}
   ci_none?: string;
   ci_skipped?: string; // {n}
+  ci_sweep_cc?: string;
+  ci_sweep_cx?: string;
+  ci_sweep_hint?: string;
   q_empty?: string;
   s_mascot?: string;
   s_mascot_hint?: string;
@@ -669,6 +672,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ci_quarantined: "{n} conversation(s) were held back because they contain what looks like a secret (API key, token). Review them at the source; they were not imported.",
     ci_none: "No conversations found in that file.",
     ci_skipped: " ({n} already imported, skipped.)",
+    ci_sweep_cc: "Import my Claude Code sessions",
+    ci_sweep_cx: "Import my Codex sessions",
+    ci_sweep_hint: "Or import every session already on this machine — from ~/.claude and ~/.codex. Re-running only adds new and grown sessions.",
     q_empty: "Ask the wiki anything — answers cite your own pages.",
     s_mascot: "Show MYCO, the mascot",
     s_mascot_hint: "Loaders, empty states and the About page. Off = static logo.",
@@ -1320,6 +1326,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ci_quarantined: "{n}개 대화가 시크릿(API 키·토큰)으로 보이는 내용을 포함해 제외됐습니다. 원본에서 확인하세요. 가져오지 않았습니다.",
     ci_none: "그 파일에서 대화를 찾지 못했습니다.",
     ci_skipped: " ({n}개는 이미 가져와 건너뜀.)",
+    ci_sweep_cc: "내 Claude Code 세션 가져오기",
+    ci_sweep_cx: "내 Codex 세션 가져오기",
+    ci_sweep_hint: "또는 이 컴퓨터에 이미 있는 모든 세션을 가져옵니다 — ~/.claude·~/.codex에서. 다시 실행해도 새로 생기거나 늘어난 세션만 추가됩니다.",
     q_empty: "위키에 무엇이든 물어보세요 — 답변은 당신의 페이지를 인용합니다.",
     s_mascot: "마스코트 MYCO 표시",
     s_mascot_hint: "로더·빈 화면·정보 페이지에 등장합니다. 끄면 정적 로고로 대체됩니다.",
@@ -2501,6 +2510,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ci_quarantined: "{n} 件の会話はシークレット（API キー・トークン）と思われる内容を含むため除外されました。元データで確認してください。インポートされていません。",
     ci_none: "そのファイルに会話が見つかりませんでした。",
     ci_skipped: "（{n} 件はインポート済みのためスキップ。）",
+    ci_sweep_cc: "自分の Claude Code セッションをインポート",
+    ci_sweep_cx: "自分の Codex セッションをインポート",
+    ci_sweep_hint: "またはこのマシンにある全セッションをインポート — ~/.claude・~/.codex から。再実行しても新規・増加分のみ追加されます。",
     q_empty: "wiki に何でも質問できます — 回答はあなた自身のページを引用します。",
     s_mascot: "マスコット MYCO を表示",
     s_mascot_hint: "ローダー・空の状態・About ページに表示。オフにすると静的ロゴになります。",

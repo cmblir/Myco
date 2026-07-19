@@ -414,6 +414,9 @@ export const ipc = {
   },
   importConversations: (sourcePath: string) =>
     invoke<ImportOutcome>("import_conversations", { sourcePath }),
+  /** Import every on-disk session for a CLI tool in one pass (dedup-safe). */
+  importSessionSweep: (kind: "claude-code" | "codex") =>
+    invoke<ImportOutcome>("import_session_sweep", { kind }),
   gitLog: (vaultPath: string, limit?: number) =>
     invoke<GitCommit[]>("git_log", { vaultPath, limit }),
   claudeCheck: () => invoke<ClaudeStatus>("claude_check"),

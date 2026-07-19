@@ -500,39 +500,147 @@ pub async fn import_conversations(
             .map_err(|e| format!("cannot read {source_path}: {e}"))?;
 
         let mut ledger = crate::importers::ledger::Ledger::load(&root);
-        let plan = crate::importers::plan_import(&source_path, &content, &ledger)?;
-
-        let inbox = root.join("_inbox");
-        std::fs::create_dir_all(&inbox).map_err(|e| format!("create _inbox: {e}"))?;
-        let mut imported = 0;
-        for doc in &plan.docs {
-            std::fs::write(inbox.join(format!("{}.md", doc.stem)), &doc.body)
-                .map_err(|e| format!("write {}: {e}", doc.stem))?;
-            // Record only after a successful write, so a failed write is retried
-            // rather than silently skipped next time.
-            ledger.record(doc.key.clone(), doc.fingerprint.clone());
-            imported += 1;
-        }
+        let (imported, skipped, quarantined, source) =
+            apply_import(&root, &mut ledger, &source_path, &content)?;
         if imported > 0 {
             // Best effort: a ledger that fails to save just costs a re-import.
             let _ = ledger.save(&root);
         }
         Ok(ImportOutcome {
-            source: plan.source,
+            source,
             imported,
-            skipped: plan.skipped,
-            quarantined: plan
-                .quarantined
-                .into_iter()
-                .map(|q| QuarantinedConversation {
-                    title: q.title,
-                    secrets: q.secrets.into_iter().map(str::to_string).collect(),
-                })
-                .collect(),
+            skipped,
+            quarantined,
         })
     })
     .await
     .map_err(|e| format!("join failed: {e}"))?
+}
+
+/// Parse one file's conversations, write the clean ones to `_inbox/` and record
+/// them in `ledger` (NOT saved — the caller batches the save). Returns
+/// (imported, skipped, quarantined, detected source). Shared by the single-file
+/// import and the session sweep.
+#[allow(clippy::type_complexity)]
+fn apply_import(
+    root: &std::path::Path,
+    ledger: &mut crate::importers::ledger::Ledger,
+    filename: &str,
+    content: &str,
+) -> Result<(usize, usize, Vec<QuarantinedConversation>, String), String> {
+    let plan = crate::importers::plan_import(filename, content, ledger)?;
+    let inbox = root.join("_inbox");
+    std::fs::create_dir_all(&inbox).map_err(|e| format!("create _inbox: {e}"))?;
+    let mut imported = 0;
+    for doc in &plan.docs {
+        std::fs::write(inbox.join(format!("{}.md", doc.stem)), &doc.body)
+            .map_err(|e| format!("write {}: {e}", doc.stem))?;
+        // Record only after a successful write, so a failed write is retried
+        // rather than silently skipped next time.
+        ledger.record(doc.key.clone(), doc.fingerprint.clone());
+        imported += 1;
+    }
+    let quarantined = plan
+        .quarantined
+        .into_iter()
+        .map(|q| QuarantinedConversation {
+            title: q.title,
+            secrets: q.secrets.into_iter().map(str::to_string).collect(),
+        })
+        .collect();
+    Ok((imported, plan.skipped, quarantined, plan.source))
+}
+
+/// Import every session Memex can find on disk for one CLI tool, in one pass.
+///
+/// `kind` is "claude-code" (`~/.claude/projects/**/*.jsonl`) or "codex"
+/// (`$CODEX_HOME`/`~/.codex/sessions/**/*.jsonl`). Reading the user's own
+/// session directory is explicit — this runs on a button, never automatically.
+/// The dedup ledger makes it idempotent: sweeping again imports only sessions
+/// that are new or have grown. Errors on individual files are skipped, not fatal.
+#[tauri::command]
+pub async fn import_session_sweep(
+    state: tauri::State<'_, VaultRoot>,
+    kind: String,
+) -> Result<ImportOutcome, String> {
+    let root = require_root(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let dir = session_dir(&kind)?;
+        if !dir.is_dir() {
+            return Err(format!("no session directory at {}", dir.display()));
+        }
+        let mut files = Vec::new();
+        collect_jsonl(&dir, &mut files, 0);
+
+        let mut ledger = crate::importers::ledger::Ledger::load(&root);
+        let (mut imported, mut skipped) = (0usize, 0usize);
+        let mut quarantined = Vec::new();
+        for f in &files {
+            // A file that vanished or won't read (a live session mid-write) is
+            // skipped; one bad session must not abort the sweep.
+            let Ok(content) = std::fs::read_to_string(f) else {
+                continue;
+            };
+            if let Ok((i, s, q, _)) =
+                apply_import(&root, &mut ledger, &f.to_string_lossy(), &content)
+            {
+                imported += i;
+                skipped += s;
+                quarantined.extend(q);
+            }
+        }
+        let _ = ledger.save(&root);
+        Ok(ImportOutcome {
+            source: kind,
+            imported,
+            skipped,
+            quarantined,
+        })
+    })
+    .await
+    .map_err(|e| format!("join failed: {e}"))?
+}
+
+/// The on-disk session directory for a CLI tool.
+fn session_dir(kind: &str) -> Result<PathBuf, String> {
+    let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .unwrap_or_default();
+    match kind {
+        "claude-code" => Ok(PathBuf::from(home).join(".claude").join("projects")),
+        "codex" => Ok(std::env::var("CODEX_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(home).join(".codex"))
+            .join("sessions")),
+        other => Err(format!("unknown session kind: {other}")),
+    }
+}
+
+/// Collect `*.jsonl` files under `dir`, recursively, skipping symlinks and
+/// hidden/archived directories, bounded in depth and count.
+fn collect_jsonl(dir: &std::path::Path, out: &mut Vec<PathBuf>, depth: u32) {
+    if depth > 8 || out.len() >= 20_000 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_symlink() {
+            continue; // stay on the real tree
+        }
+        let path = entry.path();
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if ft.is_dir() {
+            if name.starts_with('.') {
+                continue; // .archived, .git, etc.
+            }
+            collect_jsonl(&path, out, depth + 1);
+        } else if name.ends_with(".jsonl") {
+            out.push(path);
+        }
+    }
 }
 
 /// Full link graph for the open vault.

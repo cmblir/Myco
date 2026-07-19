@@ -112,6 +112,7 @@ pub fn run() {
             commands::archive_inbox_source,
             commands::available_raw_path,
             commands::import_conversations,
+            commands::import_session_sweep,
             commands::build_link_graph,
             commands::vault_revision,
             commands::list_universes,

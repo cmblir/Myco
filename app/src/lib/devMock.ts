@@ -912,6 +912,15 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         quarantined: [{ title: "a chat that pasted a key", secrets: ["OpenAI/Anthropic-style API key"] }],
       });
     }
+    case "import_session_sweep": {
+      // A plausible bulk result so the sweep buttons' success state is testable.
+      return Promise.resolve({
+        source: String(args.kind ?? "claude-code"),
+        imported: 12,
+        skipped: 40,
+        quarantined: [],
+      });
+    }
     case "set_settings":
       // Actually persist. Returning null and keeping a frozen SETTINGS made the
       // mock silently ignore every settings change — so a flow that depends on
