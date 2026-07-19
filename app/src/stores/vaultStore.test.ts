@@ -97,3 +97,43 @@ describe("refreshLinkGraph", () => {
     expect(buildLinkGraph).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("openWikilink (resolve or create)", () => {
+  const tree = [
+    { kind: "file" as const, name: "attention.md", path: "/v/wiki/attention.md" },
+  ];
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    useVaultStore.setState({ currentVault: VAULT, fileTree: tree, adjacency: null, error: null });
+    vi.spyOn(ipc, "buildLinkGraph").mockResolvedValue(ADJ);
+    vi.spyOn(ipc, "vaultRevision").mockResolvedValue(1);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue(tree as never);
+  });
+
+  it("returns the existing page for a resolved link, creating nothing", async () => {
+    const create = vi.spyOn(ipc, "createFile");
+    const p = await useVaultStore.getState().openWikilink("attention");
+    expect(p).toBe("/v/wiki/attention.md");
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("creates the note in wiki/ for an unresolved link and returns its path", async () => {
+    vi.spyOn(ipc, "createFolder").mockResolvedValue("/v/wiki" as never);
+    const create = vi.spyOn(ipc, "createFile").mockResolvedValue("/v/wiki/new-idea.md");
+    const p = await useVaultStore.getState().openWikilink("new idea");
+    // wiki/ ensured, file created from the sanitized target, path returned.
+    expect(create).toHaveBeenCalledWith("/v/wiki", "new idea.md");
+    expect(p).toBe("/v/wiki/new-idea.md");
+  });
+
+  it("honours an explicit contextDir (next to the current file)", async () => {
+    const create = vi.spyOn(ipc, "createFile").mockResolvedValue("/v/wiki/sub/x.md");
+    await useVaultStore.getState().openWikilink("x", "/v/wiki/sub");
+    expect(create).toHaveBeenCalledWith("/v/wiki/sub", "x.md");
+  });
+
+  it("returns null when there is no open vault", async () => {
+    useVaultStore.setState({ currentVault: null });
+    expect(await useVaultStore.getState().openWikilink("x")).toBeNull();
+  });
+});

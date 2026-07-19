@@ -58,6 +58,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
   const fileTree = useVaultStore((s) => s.fileTree);
   const adjacency = useVaultStore((s) => s.adjacency);
+  const openWikilink = useVaultStore((s) => s.openWikilink);
   const setRoute = useUIStore((s) => s.setRoute);
   const lang = useUIStore((s) => s.lang);
   const settings = useSettingsStore((s) => s.settings);
@@ -115,7 +116,14 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
 
   const openByStem = (target: string): void => {
     const abs = stemMap.get(target.toLowerCase());
-    if (abs) setRoute(`page:${abs}`);
+    if (abs) {
+      setRoute(`page:${abs}`);
+      return;
+    }
+    // Unresolved link: create the note and open it, instead of a silent no-op.
+    void openWikilink(target).then((p) => {
+      if (p) setRoute(`page:${p}`);
+    });
   };
 
   useEffect(() => {

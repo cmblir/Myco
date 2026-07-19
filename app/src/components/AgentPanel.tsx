@@ -31,6 +31,7 @@ export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
   const fileTree = useVaultStore((s) => s.fileTree);
   const refreshTree = useVaultStore((s) => s.refreshTree);
   const resolveWikilink = useVaultStore((s) => s.resolveWikilink);
+  const openWikilink = useVaultStore((s) => s.openWikilink);
   const setRoute = useUIStore((s) => s.setRoute);
   const settings = useSettingsStore((s) => s.settings);
 
@@ -102,7 +103,13 @@ export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
 
   const openByStem = (target: string): void => {
     const abs = resolveWikilink(target);
-    if (abs) setRoute(`page:${abs}`);
+    if (abs) {
+      setRoute(`page:${abs}`);
+      return;
+    }
+    void openWikilink(target).then((p) => {
+      if (p) setRoute(`page:${p}`);
+    });
   };
 
   return (

@@ -6,7 +6,6 @@ import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
-import { ipc } from "../lib/ipc";
 import { SAMPLE } from "../lib/sample";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
@@ -166,7 +165,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const genAudio = useAudioStore((s) => s.generate);
   const audioBusy = useAudioStore((s) => s.generating);
   const saveFile = useVaultStore((s) => s.saveFile);
-  const resolveWikilink = useVaultStore((s) => s.resolveWikilink);
+  const openWikilink = useVaultStore((s) => s.openWikilink);
   const refreshTree = useVaultStore((s) => s.refreshTree);
   const error = useVaultStore((s) => s.error);
   const setRoute = useUIStore((s) => s.setRoute);
@@ -418,25 +417,13 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
                   );
                   return;
                 }
-                const resolved = resolveWikilink(target);
-                if (resolved) {
-                  setRoute(`page:${resolved}`);
-                  return;
-                }
-                // Unresolved link: create the note next to the current file
-                // and open it (Obsidian-style create-on-click), instead of a
-                // silent no-op.
-                void (async () => {
-                  const dir = path.replace(/[\\/][^\\/]+$/, "");
-                  const name = `${target.replace(/[\\/]/g, "-")}.md`;
-                  try {
-                    const created = await ipc.createFile(dir, name);
-                    await refreshTree();
-                    setRoute(`page:${created}`);
-                  } catch {
-                    /* already exists or invalid name — ignore */
-                  }
-                })();
+                // Resolve, or create the note next to the current file and open
+                // it (Obsidian-style create-on-click) — same as Ask and the
+                // agent panel, via the shared store method.
+                const dir = path.replace(/[\\/][^\\/]+$/, "");
+                void openWikilink(target, dir).then((p) => {
+                  if (p) setRoute(`page:${p}`);
+                });
               }}
             />
           </div>

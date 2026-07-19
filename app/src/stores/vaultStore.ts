@@ -40,6 +40,13 @@ export interface VaultState {
   deletePath: (path: string) => Promise<void>;
   renamePath: (from: string, toName: string) => Promise<string | null>;
   resolveWikilink: (target: string) => string | null;
+  /**
+   * Resolve a wikilink to an existing page, or CREATE it and open it
+   * (Obsidian-style create-on-click). Returns the absolute path to route to, or
+   * null. `contextDir` is where a new note lands; without it, `wiki/`. A created
+   * page is seeded with frontmatter by the create_file command.
+   */
+  openWikilink: (target: string, contextDir?: string) => Promise<string | null>;
   reset: () => void;
 }
 
@@ -239,6 +246,26 @@ export const useVaultStore = create<VaultState>((set, get) => ({
 
   resolveWikilink: (target: string) => {
     return findFileByStem(get().fileTree, target.toLowerCase());
+  },
+
+  openWikilink: async (target: string, contextDir?: string) => {
+    const resolved = get().resolveWikilink(target);
+    if (resolved) return resolved;
+    const vault = get().currentVault;
+    if (!vault) return null;
+    // A new note defaults to wiki/ (the knowledge dir); ensure it exists.
+    const dir = contextDir ?? `${vault.path}/wiki`;
+    if (!contextDir) await ipc.createFolder(vault.path, "wiki").catch(() => undefined);
+    const name = `${target.replace(/[\\/]/g, "-")}.md`;
+    try {
+      const created = await ipc.createFile(dir, name);
+      await get().refreshTree();
+      void get().refreshLinkGraph();
+      return created;
+    } catch {
+      // Lost a race (already created) — resolve again; else give up.
+      return get().resolveWikilink(target);
+    }
   },
 
   reset: () => {
