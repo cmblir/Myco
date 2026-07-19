@@ -3,7 +3,7 @@
 // and the fallback-to-first-connected behaviour so callers only supply the
 // current selection and an onPick handler.
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import type { JSX } from "react";
 import { ipc } from "../lib/ipc";
 import type { ProviderDef } from "../lib/providers";
@@ -23,6 +23,9 @@ export default function ModelSelect({
   const [models, setModels] = useState<string[]>(def?.catalog ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Unique per instance (Settings + topbar both render one) so the datalist
+  // ids don't collide.
+  const listId = useId();
 
   // If the currently selected provider got disconnected, fall back to the
   // first connected one (and persist it) so settings never point at a
@@ -76,22 +79,26 @@ export default function ModelSelect({
             </option>
           ))}
         </select>
-        <select
-          className="select"
+        {/* An input+datalist, not a select: the catalog/live list is offered as
+            suggestions, but you can type any model id — so a model that ships
+            after this app build is still selectable without waiting for a
+            release. */}
+        <input
+          className="input"
+          list={listId}
           value={model}
           onChange={(e) => onPick(provider, e.target.value)}
+          placeholder="model id"
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
           style={{ flex: 2 }}
-        >
-          {models.length === 0 ? (
-            <option value={model}>{model || "(no models)"}</option>
-          ) : (
-            models.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))
-          )}
-        </select>
+        />
+        <datalist id={listId}>
+          {models.map((m) => (
+            <option key={m} value={m} />
+          ))}
+        </datalist>
       </div>
       {busy ? (
         <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
