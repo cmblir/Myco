@@ -22,6 +22,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   looks like it contains a secret (an API key or token) so it never lands in your
   vault. Re-importing the same export is safe: a dedup ledger skips conversations
   already imported, adding only new and changed ones.
+- **Import every session on your machine in one click.** Beside the file picker,
+  "Import my Claude Code sessions" / "Import my Codex sessions" sweep
+  ~/.claude and ~/.codex and import them all, dedup-safe.
+- **Any model id is selectable.** The model field accepts free text (with the
+  known list as suggestions), so a model that ships after this build can be used
+  without waiting for a release.
+- **Clicking a red [[link]] creates the note** — in Ask and the agent panel too,
+  not just the editor, and the new page starts with real frontmatter.
 
 ### Fixed
 
