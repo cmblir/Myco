@@ -34,6 +34,10 @@ export interface Strings {
   ci_sweep_cc?: string;
   ci_sweep_cx?: string;
   ci_sweep_hint?: string;
+  ci_sweep_progress?: string; // {done} {total}
+  ci_sweep_tally?: string; // {i} {s} {f}
+  ci_failed_summary?: string; // {n}
+  ci_retry_failed?: string; // {n}
   q_empty?: string;
   s_mascot?: string;
   s_mascot_hint?: string;
@@ -675,6 +679,10 @@ export const STRINGS: Record<Lang, Strings> = {
     ci_sweep_cc: "Import my Claude Code sessions",
     ci_sweep_cx: "Import my Codex sessions",
     ci_sweep_hint: "Or import every session already on this machine — from ~/.claude and ~/.codex. Re-running only adds new and grown sessions.",
+    ci_sweep_progress: "Importing session {done} of {total}",
+    ci_sweep_tally: "imported {i} · skipped {s} · {f} failed",
+    ci_failed_summary: "{n} couldn’t be imported",
+    ci_retry_failed: "Retry failed ({n})",
     q_empty: "Ask the wiki anything — answers cite your own pages.",
     s_mascot: "Show MYCO, the mascot",
     s_mascot_hint: "Loaders, empty states and the About page. Off = static logo.",
@@ -1329,6 +1337,10 @@ export const STRINGS: Record<Lang, Strings> = {
     ci_sweep_cc: "내 Claude Code 세션 가져오기",
     ci_sweep_cx: "내 Codex 세션 가져오기",
     ci_sweep_hint: "또는 이 컴퓨터에 이미 있는 모든 세션을 가져옵니다 — ~/.claude·~/.codex에서. 다시 실행해도 새로 생기거나 늘어난 세션만 추가됩니다.",
+    ci_sweep_progress: "세션 가져오는 중 {done} / {total}",
+    ci_sweep_tally: "가져옴 {i} · 건너뜀 {s} · 실패 {f}",
+    ci_failed_summary: "{n}개를 가져오지 못했습니다",
+    ci_retry_failed: "실패 재시도 ({n})",
     q_empty: "위키에 무엇이든 물어보세요 — 답변은 당신의 페이지를 인용합니다.",
     s_mascot: "마스코트 MYCO 표시",
     s_mascot_hint: "로더·빈 화면·정보 페이지에 등장합니다. 끄면 정적 로고로 대체됩니다.",
@@ -2513,6 +2525,10 @@ export const STRINGS: Record<Lang, Strings> = {
     ci_sweep_cc: "自分の Claude Code セッションをインポート",
     ci_sweep_cx: "自分の Codex セッションをインポート",
     ci_sweep_hint: "またはこのマシンにある全セッションをインポート — ~/.claude・~/.codex から。再実行しても新規・増加分のみ追加されます。",
+    ci_sweep_progress: "セッションをインポート中 {done} / {total}",
+    ci_sweep_tally: "インポート {i} · スキップ {s} · 失敗 {f}",
+    ci_failed_summary: "{n} 件をインポートできませんでした",
+    ci_retry_failed: "失敗を再試行 ({n})",
     q_empty: "wiki に何でも質問できます — 回答はあなた自身のページを引用します。",
     s_mascot: "マスコット MYCO を表示",
     s_mascot_hint: "ローダー・空の状態・About ページに表示。オフにすると静的ロゴになります。",

@@ -58,8 +58,12 @@ for (const vp of VIEWPORTS) {
   check(at("Claude Code sweep button present"), (await cc.count()) === 1);
   check(at("Codex sweep button present"), (await cx.count()) === 1);
   await cc.click();
-  // The mock sweep streams progress over ~840ms, so wait for the result line
-  // rather than a fixed timeout.
+  // A progress bar shows while the sweep streams (mock: ~14 files over ~840ms).
+  await page.waitForSelector("[data-testid='import-progress']", { timeout: 5_000 }).catch(() => {});
+  check(at("a progress bar shows during the sweep"),
+    (await card.locator("[data-testid='import-progress']").count()) === 1);
+
+  // Then the result line lands.
   await page
     .waitForFunction(
       () =>
@@ -73,6 +77,21 @@ for (const vp of VIEWPORTS) {
   const sweepText = await card.locator(".zotero-import__result").allInnerTexts();
   check(at("sweep reports an import count into _inbox"),
     sweepText.some((x) => /_inbox/.test(x) && /\d/.test(x)), JSON.stringify(sweepText));
+
+  // The failures list + retry appear (mock returns 2 failures).
+  const failures = card.locator("[data-testid='import-failures']");
+  check(at("failures list appears"), (await failures.count()) === 1);
+  const retry = failures.getByRole("button", { name: /Retry failed/ });
+  check(at("retry button present"), (await retry.count()) === 1);
+  // Retry succeeds in the mock → failures clear.
+  await retry.click();
+  await page.waitForFunction(
+    () => document.querySelector("[data-testid='import-failures']") === null,
+    null,
+    { timeout: 10_000 },
+  ).catch(() => {});
+  check(at("retry clears the failures"),
+    (await card.locator("[data-testid='import-failures']").count()) === 0);
 
   await page.screenshot({ path: `test-results/import-card/${vp.name}.png` });
   check(at("no page errors"), errors.length === 0, errors.slice(0, 1).join("; "));
