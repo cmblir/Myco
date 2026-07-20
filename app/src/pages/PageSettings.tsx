@@ -1136,8 +1136,11 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
               >
                 <ProviderGlyph id={p.id} size={18} />
               </span>
-              <div>
-                <div className="row" style={{ gap: 8 }}>
+              {/* min-width:0 lets this 1fr column shrink; the header row wraps so
+                  the name + status chips never force the action button off-screen
+                  at narrow widths (375px). */}
+              <div style={{ minWidth: 0 }}>
+                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
                   <span style={{ fontWeight: 600 }}>{p.name}</span>
                   <span
                     className="chip"

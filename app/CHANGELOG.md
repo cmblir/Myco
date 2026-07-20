@@ -70,6 +70,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Connections settings no longer overflow on a narrow window.** On a phone-width
+  layout the provider cards pushed their Connect button off the right edge; the
+  card now lets its middle column shrink and wraps the status chips, so nothing
+  is clipped at 375px.
+
 - **Japanese and Korean are complete.** ja was missing 99 of the app's strings
   and rendered English for the graph inspector, Views, the help widget, Zotero
   import and more; ko was five short. Both now translate everything, and a test
