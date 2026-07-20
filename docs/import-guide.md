@@ -215,18 +215,19 @@ Tracked, not promised.
 Built and shipped: the four conversation parsers (ChatGPT, Claude.ai, Claude
 Code, Codex), content-based format detection, secret quarantine on the import
 path, and the dedup ledger (`.memex/ledger.json`) that makes re-importing an
-export idempotent.
+export idempotent. The ledger also stamps each session file's (mtime, len), so a
+re-sweep skips unchanged sessions **without reading them** — the second sweep of
+a large history is near-instant, and only new or grown sessions are re-parsed.
+The bulk-import card shows two-level progress (file X of Y with a running
+imported/skipped/failed tally) and a retry-failed list; a one-click sweep imports
+every session under `~/.claude/projects` and `~/.codex/sessions`.
 
 Still open:
 
 1. **Verify Claude.ai on a real export** — its parser is written to the
    documented format but has not been run against a real Anthropic export.
-2. **Bulk-import UX** — two-level progress (X of Y, per-conversation status) and
-   retry-failed, for importing an entire history at once. Today the card reports
-   totals, not per-conversation progress.
-3. **Session sweep** — a scheduled pass over `~/.claude/projects` and
-   `~/.codex/sessions` that imports new sessions automatically, instead of
-   picking a file each time.
+2. **Scheduled sweep** — the sweep is one click today; running it automatically
+   on a schedule (so new sessions import without any click) is not wired yet.
 
 ---
 

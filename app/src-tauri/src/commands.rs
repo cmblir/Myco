@@ -488,9 +488,25 @@ pub struct ImportProgress {
     pub failed: usize,
 }
 
+/// A file's (mtime, len) identity for the incremental skip. `None` when the
+/// metadata or mtime is unavailable — the file is then always processed (safe:
+/// no skip, no stamp recorded), and an unreadable file fails later as before.
+fn file_stamp(path: &std::path::Path) -> Option<(u64, u64)> {
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime_ns = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_nanos() as u64;
+    Some((mtime_ns, meta.len()))
+}
+
 /// The one import engine: parse+scan+write each file's conversations into
 /// `_inbox/`, recording the ledger once for the whole run. A file that won't
 /// read/parse becomes a `FailedImport` — never fatal, never silently dropped.
+/// A file that imported cleanly before and hasn't changed since is skipped
+/// without being read — so re-sweeping thousands of sessions is near-instant.
 /// `on_progress` is called on a throttled schedule (import does no model calls,
 /// so 5,000 unthrottled events would flood the IPC bridge). Emit-free so it is
 /// unit-testable; the commands wrap it to emit `import-progress`.
@@ -508,27 +524,47 @@ fn run_import(
     let mut quarantined = Vec::new();
     let mut failed: Vec<FailedImport> = Vec::new();
     let mut source = String::new();
+    let mut dirty = false;
 
     for (i, f) in files.iter().enumerate() {
         let path_str = f.to_string_lossy().into_owned();
-        let res = (|| -> Result<(usize, usize, Vec<QuarantinedConversation>, String), String> {
-            let meta = std::fs::metadata(f).map_err(|e| format!("cannot read: {e}"))?;
-            if meta.len() > MAX_BYTES {
-                return Err(format!("too large ({} MB); split it first", meta.len() / (1024 * 1024)));
-            }
-            let content = std::fs::read_to_string(f).map_err(|e| format!("cannot read: {e}"))?;
-            apply_import(root, &mut ledger, &path_str, &content)
-        })();
-        match res {
-            Ok((i2, s2, q2, src)) => {
-                imported += i2;
-                skipped += s2;
-                quarantined.extend(q2);
-                if source.is_empty() && !src.is_empty() {
-                    source = src;
+        let stamp = file_stamp(f);
+        // Unchanged since a clean import? Count its conversations as already
+        // imported and move on without reading or re-parsing the file.
+        let unchanged = stamp.and_then(|(m, l)| ledger.file_convs(&path_str, m, l));
+        if let Some(convs) = unchanged {
+            skipped += convs;
+        } else {
+            let res = (|| -> Result<(usize, usize, Vec<QuarantinedConversation>, String), String> {
+                let len = stamp.map(|(_, l)| l);
+                if let Some(len) = len {
+                    if len > MAX_BYTES {
+                        return Err(format!("too large ({} MB); split it first", len / (1024 * 1024)));
+                    }
                 }
+                let content = std::fs::read_to_string(f).map_err(|e| format!("cannot read: {e}"))?;
+                apply_import(root, &mut ledger, &path_str, &content)
+            })();
+            match res {
+                Ok((i2, s2, q2, src)) => {
+                    imported += i2;
+                    skipped += s2;
+                    // Only stamp files that imported with no quarantine, so a
+                    // held-back secret is re-checked (and re-warned) each sweep.
+                    let clean = q2.is_empty();
+                    quarantined.extend(q2);
+                    if clean {
+                        if let Some((m, l)) = stamp {
+                            ledger.record_file(path_str.clone(), m, l, i2 + s2);
+                            dirty = true;
+                        }
+                    }
+                    if source.is_empty() && !src.is_empty() {
+                        source = src;
+                    }
+                }
+                Err(error) => failed.push(FailedImport { path: path_str, error }),
             }
-            Err(error) => failed.push(FailedImport { path: path_str, error }),
         }
         if i % 32 == 0 || i + 1 == total {
             on_progress(ImportProgress {
@@ -544,7 +580,7 @@ fn run_import(
             });
         }
     }
-    if imported > 0 {
+    if imported > 0 || dirty {
         // Best effort: a ledger that fails to save just costs a re-import.
         let _ = ledger.save(root);
     }
@@ -1718,10 +1754,31 @@ mod tests {
         let first = run_import(root, &files, |_| {});
         assert_eq!(first.imported, 1);
         assert_eq!(first.skipped, 0);
-        // Same files again: the ledger skips the write.
+        // Same files again: unchanged, so the file is skipped without a re-read
+        // and its one conversation counts as already imported.
         let second = run_import(root, &files, |_| {});
         assert_eq!(second.imported, 0);
         assert_eq!(second.skipped, 1);
+    }
+
+    #[test]
+    fn run_import_reprocesses_a_changed_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let f = root.join("a.jsonl");
+        std::fs::write(&f, session_line("s1", "hello")).unwrap();
+        let files = vec![f.clone()];
+
+        let first = run_import(root, &files, |_| {});
+        assert_eq!(first.imported, 1);
+
+        // The session grew (different length → the stamp no longer matches even
+        // if the mtime clock is coarse): it must be read again and re-imported
+        // as an update, not skipped.
+        std::fs::write(&f, session_line("s1", "hello there, a much longer continuation")).unwrap();
+        let second = run_import(root, &files, |_| {});
+        assert_eq!(second.imported, 1, "a changed session must re-import");
+        assert_eq!(second.skipped, 0);
     }
 
     #[test]

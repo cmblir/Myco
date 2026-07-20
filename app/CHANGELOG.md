@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Re-sweeping your sessions is now near-instant.** The import ledger remembers
+  each session file's size and modified-time, so a second sweep skips every
+  session that hasn't changed without re-reading or re-parsing it — only new and
+  grown sessions are processed. The "already imported" count stays accurate.
+
 - **Remove a local model from Settings.** The installed-model list under
   Settings › Connections › Ollama now has a remove button on each model, with an
   inline confirm, so a mistakenly pulled multi-gigabyte model can be freed
