@@ -81,6 +81,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **The multiverse's starry backdrop now spans the whole field.** The deep-field
+  stars were a fixed sphere around the origin, so once vaults were spread far
+  apart they showed as a ball of stars in the middle with the outer galaxies
+  floating on pure black. The starfield is now centred on the field and scaled to
+  reach past the farthest galaxy, so stars sit behind every vault. Single-vault
+  graphs are unchanged.
+
 - **Entering a universe no longer switches off your Multiverse toggle.** Flying
   into a bubble drops you into that vault's graph, but the saved Multiverse
   preference now stays on — it's a transient view change, not a silent edit of a

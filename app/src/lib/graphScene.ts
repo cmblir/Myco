@@ -516,6 +516,10 @@ export class GraphScene {
 
   // Multi-shell parallax background (2-3 Points layers in one Group) for depth.
   private starfield: THREE.Group;
+  // Multiplies the (origin-centred) shell radii. 1 for a single vault; the
+  // multiverse sets it >1 (and repositions the group) so the deep field spans
+  // the far-flung galaxies instead of leaving a bounded ball of stars at origin.
+  private starfieldScale = 1;
   private nebula: NebulaLayer;
   private nebulaTick = 0; // throttle nebula centroid recompute (every Nth tick)
   private pulse: PulseLayer; // signals flowing along edges (alive/communication)
@@ -1126,7 +1130,16 @@ export class GraphScene {
           { count: 900, r0: 3200, r1: 4600, size: 1.1, color: 0xb2bcd2, op: 0.16 },
           { count: 1100, r0: 5000, r1: 6800, size: 0.8, color: 0xa6b0c8, op: 0.1 },
         ];
-    let shells = near.map((s) => ({ ...s, count: Math.round(s.count * densMul) }));
+    // starfieldScale stretches the shells to cover a wide multiverse field.
+    // Count is boosted sub-linearly (radii grow, volume grows ~cubically) so the
+    // field stays populated without a runaway point count. Single vault: sf=1.
+    const sf = this.starfieldScale;
+    let shells = near.map((s) => ({
+      ...s,
+      r0: s.r0 * sf,
+      r1: s.r1 * sf,
+      count: Math.round(s.count * densMul * Math.min(sf, 2.2)),
+    }));
     // Performance mode keeps only the mid shell — one draw call of depth cue.
     if (this.perfLod) shells = [shells[1]];
     let seed = 1; // global stream cursor so shells don't share point positions
@@ -1157,6 +1170,33 @@ export class GraphScene {
       group.add(pts);
     }
     return group;
+  }
+
+  /**
+   * Envelope the starfield around a wide field: centre the shells on `center`
+   * and scale them so the outermost shell comfortably exceeds `radius`. The
+   * multiverse spreads galaxies far past the default origin-centred shells,
+   * which otherwise render as a bounded ball of stars in the middle of the frame
+   * with the outer galaxies floating on pure black. Single-vault never calls
+   * this (starfieldScale stays 1, behaviour unchanged).
+   */
+  setStarfieldEnvelope(cx: number, cy: number, cz: number, radius: number): void {
+    const OUTER = 6800; // default outermost shell radius (dark + light share it)
+    // Cover the field with margin; clamp so a tiny field doesn't shrink stars
+    // and a huge one doesn't explode the point count.
+    this.starfieldScale = Math.min(6, Math.max(1, (radius * 1.4) / OUTER));
+    const dark = this.darkTheme;
+    const amb = skinAmbience(this.settings.skin, dark);
+    this.scene.remove(this.starfield);
+    for (const child of this.starfield.children) {
+      const p = child as THREE.Points;
+      (p.geometry as THREE.BufferGeometry).dispose();
+      (p.material as THREE.Material).dispose();
+    }
+    this.starfield = this.buildStarfield(dark);
+    this.starfield.visible = SHOW_STARFIELD && amb.starfield;
+    this.starfield.position.set(cx, cy, cz);
+    this.scene.add(this.starfield);
   }
 
   // --- screen-space dotted-grid backdrop (the big-data-viz / reference look) ---
