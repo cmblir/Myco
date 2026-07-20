@@ -188,6 +188,23 @@ for (const vp of VIEWPORTS) {
     entered.length > 0,
     `entered=${JSON.stringify(entered)}`,
   );
+
+  // Regression guard: entering used to silently flip the SAVED Multiverse
+  // preference off. Drilling into a vault is a transient view change — the
+  // stored toggle must stay on, and the field overlay must give way to the
+  // single-vault graph.
+  if (entered.length > 0) {
+    await page.waitForTimeout(500);
+    const stillOn = await page.evaluate(() => {
+      const raw = JSON.parse(localStorage.getItem("memex.graph.settings.v26") || "{}");
+      const s = raw.state ?? raw;
+      return s.multiverse === true;
+    });
+    check("entering keeps the saved Multiverse toggle on", stillOn, `stillOn=${stillOn}`);
+    const hintGone = (await page.locator(".graph-mv-hint").count()) === 0;
+    check("entering drops into the single-vault graph (field overlay gone)", hintGone);
+  }
+
   check("entering does not error", errors.length === 0, errors.slice(0, 2).join(" | "));
   await page.close();
 }

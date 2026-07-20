@@ -81,6 +81,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- **Entering a universe no longer switches off your Multiverse toggle.** Flying
+  into a bubble drops you into that vault's graph, but the saved Multiverse
+  preference now stays on — it's a transient view change, not a silent edit of a
+  stored setting. Re-assert the toggle (or Reset) to pop back to the bubble field.
+
 - **Connections settings no longer overflow on a narrow window.** On a phone-width
   layout the provider cards pushed their Connect button off the right edge; the
   card now lets its middle column shrink and wraps the status chips, so nothing

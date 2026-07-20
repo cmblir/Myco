@@ -142,6 +142,15 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const [settings, setSettings] = useState<GraphSettings>(() =>
     loadGraphSettings(),
   );
+  // Transient "drilled into one universe" view-state — NOT persisted. Entering a
+  // bubble shows that vault's single-vault graph while leaving the SAVED
+  // Multiverse preference on (it used to be silently turned off on enter, which
+  // mutated a stored setting behind the user's back). `showMultiverse` gates the
+  // scene; `settings.multiverse` remains the preference the toggle reflects.
+  const [enteredUniverse, setEnteredUniverse] = useState(false);
+  const enteredUniverseRef = useRef(false);
+  enteredUniverseRef.current = enteredUniverse;
+  const showMultiverse = settings.multiverse && !enteredUniverse;
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   // Multiverse mode: warm every project's graph when the toggle turns on, and
@@ -176,10 +185,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     }
     return out;
   }, [mvOrder, mvUniverses, currentVault, adjacency]);
-  // Fly-into-universe: switch the active vault to that project, then drop back
-  // to its normal single-vault graph (the multiverse toggle turns off). The
-  // current-vault bubble isn't a registered project (no store entry) — clicking
-  // it just exits multiverse into the vault you're already in.
+  // Fly-into-universe: switch the active vault to that project, then drop into
+  // its normal single-vault graph. This flips the TRANSIENT view-state only —
+  // the saved Multiverse preference stays on, so re-asserting it (the toggle, or
+  // Reset) pops back to the bubble field. The current-vault bubble isn't a
+  // registered project (no store entry) — clicking it just drops into the vault
+  // you're already in.
   async function enterUniverse(slug: string): Promise<void> {
     const u = mvUniverses[slug];
     // Opening the vault sets the confinement root, the active-vault marker and
@@ -187,7 +198,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // projects and sibling vaults. (The registry `active` pointer isn't updated
     // here; the marker is what the MCP server follows.)
     if (u) await openVault(u.info.root);
-    setSettings((prev) => ({ ...prev, multiverse: false }));
+    setEnteredUniverse(true);
   }
   // Clicked node → open the inspector panel (instead of navigating away).
   const [selected, setSelected] = useState<string | null>(null);
@@ -546,9 +557,11 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     if (!container || !adjacency) return;
     const s = settingsRef.current;
     // Multiverse mode renders its own scene (MultiverseScene overlay); the
-    // single-vault scene must not also build. Re-runs when the toggle flips
-    // (settings.multiverse is a dep), disposing this scene on the way in.
-    if (s.multiverse) return;
+    // single-vault scene must not also build WHILE the field is shown. Once the
+    // user enters a universe (enteredUniverse) the single-vault scene builds even
+    // though the preference is still on. Re-runs when either flips (both are
+    // deps), disposing this scene on the way into the field.
+    if (s.multiverse && !enteredUniverseRef.current) return;
     const theme = makeTheme(s.skin);
 
     const allowed = computeAllowed(adjacency, allFiles, {
@@ -803,6 +816,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.folderGalaxies,
     settings.layout,
     settings.multiverse,
+    enteredUniverse,
     glEpoch,
     // NOTE: lightBg is intentionally NOT here — a light/dark flip recolours the
     // existing graph in place (see the theme effect) instead of rebuilding the
@@ -1529,8 +1543,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             <div ref={containerRef} className="graph-canvas" />
             {/* Multiverse mode: an overlay scene of every project as a
                 universe-bubble, covering the (idle) single-vault canvas. Fly
-                into a bubble to switch vaults (which turns the toggle off). */}
-            {settings.multiverse ? (
+                into a bubble to drop into that vault (the saved toggle stays
+                on; re-assert it to come back). */}
+            {showMultiverse ? (
               <>
                 {sceneUniverses.length > 0 ? (
                   <MultiverseScene
@@ -1554,12 +1569,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             ) : null}
             {/* Loading state: visible until .graph-ready lands on the canvas
                 (adjacent-sibling CSS — no extra React state). */}
-            {!settings.multiverse && counts.nodes > 0 ? (
+            {!showMultiverse && counts.nodes > 0 ? (
               <p className="muted graph-loading-tip" aria-hidden="true">
                 {t.gr_loading ?? "aligning constellations…"}
               </p>
             ) : null}
-            {!settings.multiverse && ctxLost ? (
+            {!showMultiverse && ctxLost ? (
               <div className="graph-toast" role="alert">
                 <span>{t.gr_ctx_lost ?? "Graphics context was lost."}</span>
                 <button
@@ -1574,18 +1589,18 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 </button>
               </div>
             ) : null}
-            {!settings.multiverse && cosmicScale ? (
+            {!showMultiverse && cosmicScale ? (
               <div className="graph-scale-badge" aria-live="polite">
                 {t[`gr_scale_${cosmicScale === "Galaxy cluster" ? "cluster" : cosmicScale === "Galaxy" ? "galaxy" : cosmicScale === "Star system" ? "system" : "star"}` as keyof Strings] ?? cosmicScale}
               </div>
             ) : null}
-            {!settings.multiverse && counts.nodes > 5000 ? (
+            {!showMultiverse && counts.nodes > 5000 ? (
               <p className="muted graph-perf-banner">
                 {t.gr_perf_mode ??
                   "Performance mode — ambient layers off for large graphs"}
               </p>
             ) : null}
-            {!settings.multiverse && totalNodes === 0 ? (
+            {!showMultiverse && totalNodes === 0 ? (
               <p className="muted graph-empty">
                 {t.gr_empty_pre ??
                   "No wikilinks found in the vault yet. Add some "}
@@ -1595,7 +1610,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 {t.gr_empty_post ?? " to see the graph grow."}
               </p>
             ) : null}
-            {!settings.multiverse && selected && adjacency ? (
+            {!showMultiverse && selected && adjacency ? (
               <GraphInspector
                 t={t}
                 nodeId={selected}
@@ -1618,7 +1633,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 onClose={() => setSelected(null)}
               />
             ) : null}
-            {!settings.multiverse ? (
+            {!showMultiverse ? (
               <GraphLegend
                 t={t}
                 galaxies={legendGalaxies}
@@ -1626,7 +1641,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 onIsolate={isolateCommunity}
               />
             ) : null}
-            {!settings.multiverse && gapsOpen && gapReport ? (
+            {!showMultiverse && gapsOpen && gapReport ? (
               <GraphGaps
                 t={t}
                 report={gapReport}
@@ -1648,8 +1663,21 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             open={drawerOpen}
             onToggle={() => setDrawerOpen((v) => !v)}
             settings={settings}
-            onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
-            onReset={() => setSettings({ ...DEFAULT_GRAPH_SETTINGS, search: "" })}
+            onChange={(patch) => {
+              // While drilled into a universe the toggle still reads ON (the
+              // preference). Touching it means "back to the field": clear the
+              // transient enter instead of turning the saved preference off.
+              if ("multiverse" in patch && enteredUniverse) {
+                setEnteredUniverse(false);
+                return;
+              }
+              if (patch.multiverse) setEnteredUniverse(false);
+              setSettings((prev) => ({ ...prev, ...patch }));
+            }}
+            onReset={() => {
+              setEnteredUniverse(false);
+              setSettings({ ...DEFAULT_GRAPH_SETTINGS, search: "" });
+            }}
             tags={tags}
             folders={folders}
             tlPlaying={tlPlaying}
