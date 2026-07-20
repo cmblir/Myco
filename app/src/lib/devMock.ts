@@ -522,12 +522,56 @@ function mtimes(): [string, number][] {
 }
 
 function provenance() {
+  // Give a couple of pages resolved provenance (one imported from a ChatGPT
+  // conversation, one hand-authored source) plus a dangling citation, so the
+  // Provenance UI's source list renders in ?mock=1.
+  const SOURCES: Record<string, ProvenanceSource[]> = {
+    "attention-mechanism": [
+      {
+        slug: "chatgpt-ab12cd34",
+        kind: "chatgpt",
+        title: "How attention works",
+        conversation_id: "ab12cd34-0000-4a1b-9c2d-ef3456789012",
+        created: "1700000000",
+        resolved: true,
+      },
+      {
+        slug: "getting-started",
+        kind: "",
+        title: "Getting started",
+        conversation_id: null,
+        created: "2026-02-01",
+        resolved: true,
+      },
+    ],
+    embeddings: [
+      {
+        slug: "claude-code-7f8e",
+        kind: "claude-code",
+        title: "Embeddings deep-dive session",
+        conversation_id: "7f8e9d0c",
+        created: "1699500000",
+        resolved: true,
+      },
+      { slug: "missing-source", kind: "", title: null, conversation_id: null, created: null, resolved: false },
+    ],
+  };
   return NODES.map((d) => ({
     path: pathOf(d.s),
     name: `${d.s}.md`,
     cited: 1,
     total: d.t === "analysis" ? 3 : 2,
+    sources: SOURCES[d.s] ?? [],
   }));
+}
+
+interface ProvenanceSource {
+  slug: string;
+  kind: string;
+  title: string | null;
+  conversation_id: string | null;
+  created: string | null;
+  resolved: boolean;
 }
 
 const SETTINGS = {

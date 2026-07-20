@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **See which conversation a page came from.** The Provenance page now shows,
+  under each page, the sources it cites — resolved from every `[^src-…]` citation
+  back to the original. A source imported from an AI conversation shows its
+  provider (ChatGPT, Claude.ai, Claude Code, Codex), the conversation id and the
+  date; a hand-written source shows its title; a citation whose source file is
+  gone is flagged. Nothing new is recorded at import time — this reads provenance
+  that was already being kept.
+
 - **Re-sweeping your sessions is now near-instant.** The import ledger remembers
   each session file's size and modified-time, so a second sweep skips every
   session that hasn't changed without re-reading or re-parsing it — only new and

@@ -5,7 +5,31 @@
 // `<cite n="N"/>` tag.
 
 use serde::Serialize;
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
+
+/// A source a page cites, resolved from its `[^src-<slug>]` footnote to the
+/// immutable `raw/<slug>.md` file behind it. For a source imported from an AI
+/// conversation the raw file carries the provenance the importer recorded
+/// (`source:` vendor, `conversation_id:`, `created:`); a hand-authored source
+/// has only the slug/title. Lets the Provenance view answer "which conversation
+/// did this page come from," not just "how much of it is cited."
+#[derive(Debug, Clone, Serialize)]
+pub struct SourceRef {
+    /// The raw stem, i.e. the footnote id minus `src-` (e.g. `chatgpt-ab12`).
+    pub slug: String,
+    /// Vendor from the raw file's `source:` frontmatter (chatgpt | claude |
+    /// claude-code | codex), or empty for a hand-authored source.
+    pub kind: String,
+    /// `title:` frontmatter, else the first `# ` heading, else none.
+    pub title: Option<String>,
+    /// The vendor conversation/session id, when the source was imported.
+    pub conversation_id: Option<String>,
+    /// `created:` frontmatter as written (an epoch or a date string).
+    pub created: Option<String>,
+    /// False when no `raw/<slug>.md` backs the citation (a dangling source).
+    pub resolved: bool,
+}
 
 #[derive(Debug, Clone, Serialize)]
 pub struct ProvenanceRow {
@@ -13,6 +37,8 @@ pub struct ProvenanceRow {
     pub name: String,
     pub cited: u32,
     pub total: u32,
+    /// Distinct sources this page cites, resolved to their raw provenance.
+    pub sources: Vec<SourceRef>,
 }
 
 pub fn scan_provenance(vault_path: &str) -> Result<Vec<ProvenanceRow>, String> {
@@ -23,6 +49,9 @@ pub fn scan_provenance(vault_path: &str) -> Result<Vec<ProvenanceRow>, String> {
         return Err(format!("not a directory: {vault_path}"));
     }
     let files = collect_markdown(&root).map_err(|e| format!("walk failed: {e}"))?;
+    // Index the immutable raw sources once so resolving each page's citations is
+    // a map lookup, not a re-read per citation. Read-only — raw/ is never touched.
+    let raw_index = build_raw_index(&root);
     let mut rows = Vec::with_capacity(files.len());
     for file in &files {
         // Skip files larger than 2 MB so a single pathological file can't dominate
@@ -34,10 +63,23 @@ pub fn scan_provenance(vault_path: &str) -> Result<Vec<ProvenanceRow>, String> {
             Ok(s) => s,
             Err(_) => continue,
         };
-        let (cited, total) = count_claims(&raw);
+        let (cited, total, slugs) = scan_page(&raw);
         if total == 0 {
             continue;
         }
+        let sources = slugs
+            .iter()
+            .map(|stem| {
+                raw_index.get(stem).cloned().unwrap_or_else(|| SourceRef {
+                    slug: stem.clone(),
+                    kind: String::new(),
+                    title: None,
+                    conversation_id: None,
+                    created: None,
+                    resolved: false,
+                })
+            })
+            .collect();
         rows.push(ProvenanceRow {
             path: file.to_string_lossy().into_owned(),
             name: file
@@ -47,6 +89,7 @@ pub fn scan_provenance(vault_path: &str) -> Result<Vec<ProvenanceRow>, String> {
                 .to_string(),
             cited,
             total,
+            sources,
         });
     }
     rows.sort_by(|a, b| {
@@ -57,9 +100,18 @@ pub fn scan_provenance(vault_path: &str) -> Result<Vec<ProvenanceRow>, String> {
     Ok(rows)
 }
 
+#[cfg(test)]
 fn count_claims(text: &str) -> (u32, u32) {
+    let (cited, total, _) = scan_page(text);
+    (cited, total)
+}
+
+/// Count claim/cited lines AND collect the distinct raw source slugs the page
+/// cites (footnote id minus `src-`), sharing one frontmatter/code-skipping pass.
+fn scan_page(text: &str) -> (u32, u32, BTreeSet<String>) {
     let mut total = 0u32;
     let mut cited = 0u32;
+    let mut slugs = BTreeSet::new();
     let mut in_frontmatter = false;
     let mut frontmatter_done = false;
     let mut in_code = false;
@@ -93,6 +145,10 @@ fn count_claims(text: &str) -> (u32, u32) {
             continue;
         }
         seen_content = true;
+        // Collect sources from any body line (a prose reference or the footnote
+        // definition both name the same source), so a page's sources are found
+        // even when its citations live only in the definition block.
+        extract_src_slugs(trimmed, &mut slugs);
         if is_non_claim_line(trimmed) {
             continue;
         }
@@ -101,7 +157,102 @@ fn count_claims(text: &str) -> (u32, u32) {
             cited += 1;
         }
     }
-    (cited, total)
+    (cited, total, slugs)
+}
+
+/// Pull every `[^src-<stem>]` footnote out of a line, inserting each `<stem>`
+/// (the raw filename behind the citation). Tolerant of several per line.
+fn extract_src_slugs(line: &str, out: &mut BTreeSet<String>) {
+    let mut rest = line;
+    while let Some(pos) = rest.find("[^src-") {
+        let after = &rest[pos + "[^src-".len()..];
+        match after.find(']') {
+            Some(end) => {
+                let stem = &after[..end];
+                if !stem.is_empty() {
+                    out.insert(stem.to_string());
+                }
+                rest = &after[end + 1..];
+            }
+            None => break,
+        }
+    }
+}
+
+/// Read `<root>/raw/*.md` once, mapping each stem to the provenance recorded in
+/// its frontmatter. Missing raw/ (a young vault) yields an empty index.
+fn build_raw_index(root: &Path) -> HashMap<String, SourceRef> {
+    let mut idx = HashMap::new();
+    let Ok(entries) = std::fs::read_dir(root.join("raw")) else {
+        return idx;
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|s| s.to_str()) != Some("md") {
+            continue;
+        }
+        let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        // Only the frontmatter matters; cap the read like the main scan.
+        if std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0) > 2 * 1024 * 1024 {
+            continue;
+        }
+        if let Ok(text) = std::fs::read_to_string(&p) {
+            idx.insert(stem.to_string(), parse_source_ref(stem, &text));
+        }
+    }
+    idx
+}
+
+/// Parse a raw source file's frontmatter into a `SourceRef`. Uses the same
+/// gray_matter YAML engine as the indexer, so it agrees on what a field is.
+fn parse_source_ref(stem: &str, text: &str) -> SourceRef {
+    use gray_matter::Pod;
+    let mut kind = String::new();
+    let mut title = None;
+    let mut conversation_id = None;
+    let mut created = None;
+    if let Ok(parsed) = gray_matter::Matter::<gray_matter::engine::YAML>::new().parse(text) {
+        if let Some(Pod::Hash(map)) = parsed.data {
+            let get_str = |k: &str| match map.get(k) {
+                Some(Pod::String(s)) if !s.trim().is_empty() => Some(s.trim().to_string()),
+                _ => None,
+            };
+            kind = get_str("source").unwrap_or_default();
+            title = get_str("title");
+            conversation_id = get_str("conversation_id");
+            // `created` is an epoch integer from the importer, a date string when
+            // hand-authored; keep whichever form and let the UI format it.
+            created = match map.get("created") {
+                Some(Pod::String(s)) if !s.trim().is_empty() => Some(s.trim().to_string()),
+                Some(Pod::Integer(n)) => Some(n.to_string()),
+                _ => None,
+            };
+        }
+    }
+    if title.is_none() {
+        title = first_h1(text);
+    }
+    SourceRef {
+        slug: stem.to_string(),
+        kind,
+        title,
+        conversation_id,
+        created,
+        resolved: true,
+    }
+}
+
+/// The first `# ` heading in the body, as a title fallback.
+fn first_h1(text: &str) -> Option<String> {
+    text.lines().find_map(|l| {
+        let t = l.trim();
+        t.strip_prefix("# ")
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    })
 }
 
 // Lines that carry markdown structure rather than a prose claim: headings,
@@ -234,6 +385,63 @@ mod tests {
         let (cited2, total2) = count_claims(defs_only);
         assert_eq!(total2, 0);
         assert_eq!(cited2, 0);
+    }
+
+    #[test]
+    fn extract_src_slugs_finds_distinct_stems() {
+        let mut out = BTreeSet::new();
+        extract_src_slugs("a[^src-x] and b[^src-y] and again[^src-x].", &mut out);
+        assert_eq!(out.len(), 2);
+        assert!(out.contains("x"));
+        assert!(out.contains("y"));
+        // A plain footnote (not a source) is ignored.
+        let mut only = BTreeSet::new();
+        extract_src_slugs("a note[^1] and a source[^src-z].", &mut only);
+        assert_eq!(only.len(), 1);
+        assert!(only.contains("z"));
+    }
+
+    #[test]
+    fn resolves_a_citation_to_its_raw_source_provenance() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("raw")).unwrap();
+        std::fs::create_dir_all(root.join("wiki")).unwrap();
+        std::fs::write(
+            root.join("raw/chatgpt-ab12.md"),
+            "---\nsource: chatgpt\nconversation_id: ab12\ncreated: 1700000000\n---\n# How attention works\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("wiki/attention.md"),
+            "---\ntitle: Attention\n---\nSelf-attention scales with length[^src-chatgpt-ab12].\n\n[^src-chatgpt-ab12]: [[source-chatgpt-ab12]]\n",
+        )
+        .unwrap();
+
+        let rows = scan_provenance(root.to_str().unwrap()).unwrap();
+        let row = rows.iter().find(|r| r.name == "attention.md").unwrap();
+        assert_eq!(row.sources.len(), 1);
+        let s = &row.sources[0];
+        assert_eq!(s.slug, "chatgpt-ab12");
+        assert_eq!(s.kind, "chatgpt");
+        assert_eq!(s.conversation_id.as_deref(), Some("ab12"));
+        assert_eq!(s.created.as_deref(), Some("1700000000"));
+        assert_eq!(s.title.as_deref(), Some("How attention works"));
+        assert!(s.resolved);
+    }
+
+    #[test]
+    fn a_citation_with_no_raw_file_is_unresolved() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("wiki")).unwrap();
+        std::fs::write(root.join("wiki/x.md"), "A claim[^src-ghost].\n").unwrap();
+
+        let rows = scan_provenance(root.to_str().unwrap()).unwrap();
+        let row = rows.iter().find(|r| r.name == "x.md").unwrap();
+        assert_eq!(row.sources.len(), 1);
+        assert_eq!(row.sources[0].slug, "ghost");
+        assert!(!row.sources[0].resolved);
     }
 
     #[test]

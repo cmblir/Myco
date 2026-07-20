@@ -101,11 +101,26 @@ export interface ClaudeStreamPayload {
   text: string | null;
 }
 
+export interface SourceRef {
+  /** Raw stem (footnote id minus `src-`), e.g. "chatgpt-ab12". */
+  slug: string;
+  /** Vendor from the raw file's `source:` frontmatter, or "" if hand-authored. */
+  kind: string;
+  title: string | null;
+  conversation_id: string | null;
+  /** As written — an epoch (imported) or a date string (hand-authored). */
+  created: string | null;
+  /** False when no raw/<slug>.md backs the citation (a dangling source). */
+  resolved: boolean;
+}
+
 export interface ProvenanceRow {
   path: string;
   name: string;
   cited: number;
   total: number;
+  /** Distinct sources this page cites, resolved to their raw provenance. */
+  sources: SourceRef[];
 }
 
 export interface SearchHit {

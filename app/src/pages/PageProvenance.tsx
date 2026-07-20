@@ -1,12 +1,12 @@
 // Provenance page — scans every markdown file in the vault, counts claim
 // lines, and flags those with citation coverage below the slider threshold.
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
-import type { ProvenanceRow } from "../lib/ipc";
+import type { ProvenanceRow, SourceRef } from "../lib/ipc";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useLintStore } from "../stores/lintStore";
@@ -14,6 +14,7 @@ import { useLintStore } from "../stores/lintStore";
 export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
   const setRoute = useUIStore((s) => s.setRoute);
+  const lang = useUIStore((s) => s.lang);
   const [rows, setRows] = useState<ProvenanceRow[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -221,8 +222,8 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
               const pct = r.total > 0 ? r.cited / r.total : 1;
               const low = pct < threshold;
               return (
+                <Fragment key={r.path}>
                 <button
-                  key={r.path}
                   className="list-row"
                   style={{
                     gridTemplateColumns: "20px 1.4fr 2fr auto auto",
@@ -322,11 +323,137 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
                     <Icon name="chevR" size={12} />
                   </span>
                 </button>
+                {r.sources.length > 0 ? (
+                  <SourceList sources={r.sources} t={t} lang={lang} />
+                ) : null}
+                </Fragment>
               );
             })}
           </div>
         </>
       )}
     </div>
+  );
+}
+
+// Vendor display names are proper nouns — shown as-is, not translated.
+const VENDOR_LABEL: Record<string, string> = {
+  chatgpt: "ChatGPT",
+  claude: "Claude.ai",
+  "claude-code": "Claude Code",
+  codex: "Codex",
+};
+
+// `created` is an epoch (seconds, from the importer) or a date string (a
+// hand-authored source). Format both; fall back to the raw value if neither.
+function formatSourceDate(created: string | null, lang: string): string | null {
+  if (!created) return null;
+  const d = /^\d+$/.test(created)
+    ? new Date(Number(created) * 1000)
+    : new Date(created);
+  if (Number.isNaN(d.getTime())) return created;
+  try {
+    return new Intl.DateTimeFormat(lang, { dateStyle: "medium" }).format(d);
+  } catch {
+    return d.toISOString().slice(0, 10);
+  }
+}
+
+// The sources a page cites, resolved to their provenance — collapsed by default
+// so the coverage table stays scannable, expandable to trace each claim back to
+// the conversation (or hand-authored source) it came from.
+function SourceList({
+  sources,
+  t,
+  lang,
+}: {
+  sources: SourceRef[];
+  t: Strings;
+  lang: string;
+}): JSX.Element {
+  return (
+    <details
+      className="prov-sources"
+      data-testid="prov-sources"
+      style={{
+        margin: "-2px 0 6px 40px",
+        fontSize: 12.5,
+      }}
+    >
+      <summary style={{ cursor: "pointer", color: "var(--ink-3)" }}>
+        {(t.p_sources ?? "Sources ({n})").replace("{n}", String(sources.length))}
+      </summary>
+      <ul
+        style={{
+          listStyle: "none",
+          margin: "6px 0 0",
+          padding: 0,
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
+        }}
+      >
+        {sources.map((s) => {
+          const vendor = VENDOR_LABEL[s.kind];
+          const date = formatSourceDate(s.created, lang);
+          return (
+            <li
+              key={s.slug}
+              className="row"
+              style={{ gap: 8, alignItems: "baseline", flexWrap: "wrap" }}
+            >
+              <span
+                className="chip"
+                style={{
+                  background: vendor
+                    ? "rgba(37,99,235,0.1)"
+                    : "var(--bg-soft)",
+                  color: vendor ? "var(--accent, #2563eb)" : "var(--ink-3)",
+                  flexShrink: 0,
+                }}
+              >
+                {vendor ?? (t.p_src_manual ?? "Written source")}
+              </span>
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                  color: s.resolved ? "var(--ink)" : "var(--ink-3)",
+                }}
+                title={s.title ?? s.slug}
+              >
+                {s.title ?? s.slug}
+                {!s.resolved ? (
+                  <span className="muted" style={{ marginLeft: 6 }}>
+                    ({t.p_src_missing ?? "raw source missing"})
+                  </span>
+                ) : null}
+              </span>
+              {date ? (
+                <span className="muted" style={{ flexShrink: 0, fontSize: 11.5 }}>
+                  {date}
+                </span>
+              ) : null}
+              {s.conversation_id ? (
+                <span
+                  className="muted"
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 11,
+                    flexShrink: 0,
+                  }}
+                  title={s.conversation_id}
+                >
+                  {s.conversation_id.slice(0, 8)}
+                </span>
+              ) : null}
+            </li>
+          );
+        })}
+      </ul>
+    </details>
   );
 }

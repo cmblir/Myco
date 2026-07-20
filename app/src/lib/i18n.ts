@@ -320,6 +320,9 @@ export interface Strings {
   p_threshold: string;
   p_low: string;
   p_ok: string;
+  p_sources: string;
+  p_src_manual: string;
+  p_src_missing: string;
   p_lint_running: string;
   p_lint_done: string;
   p_lint_failed: string;
@@ -976,6 +979,9 @@ export const STRINGS: Record<Lang, Strings> = {
     p_threshold: "Coverage threshold",
     p_low: "Below threshold",
     p_ok: "Healthy",
+    p_sources: "Sources ({n})",
+    p_src_manual: "Written source",
+    p_src_missing: "raw source missing",
     p_lint_running: "Lint is running — you can keep browsing; it continues in the background.",
     p_lint_done: "Lint done",
     p_lint_failed: "Lint failed",
@@ -1639,6 +1645,9 @@ export const STRINGS: Record<Lang, Strings> = {
     p_threshold: "인용률 임계값",
     p_low: "임계값 미만",
     p_ok: "양호",
+    p_sources: "출처 {n}개",
+    p_src_manual: "직접 작성한 출처",
+    p_src_missing: "raw 원본 없음",
     p_lint_running: "Lint 실행 중 — 다른 페이지로 이동해도 백그라운드에서 계속됩니다.",
     p_lint_done: "Lint 완료",
     p_lint_failed: "Lint 실패",
@@ -2191,6 +2200,9 @@ export const STRINGS: Record<Lang, Strings> = {
     p_threshold: "引用率しきい値",
     p_low: "しきい値未満",
     p_ok: "良好",
+    p_sources: "出典 {n}件",
+    p_src_manual: "手書きの出典",
+    p_src_missing: "raw 原本なし",
     p_lint_running: "Lint 実行中 — 他のページに移動してもバックグラウンドで続行します。",
     p_lint_done: "Lint 完了",
     p_lint_failed: "Lint 失敗",
