@@ -13,6 +13,8 @@ import { listen } from "@tauri-apps/api/event";
 import { ipc } from "../lib/ipc";
 import type { Adjacency, CandidatePage, ClaudeStreamPayload } from "../lib/ipc";
 import { complete } from "../lib/chat";
+import { buildIngestPlanPrompt, parseIngestPlan } from "../lib/ingestPlan";
+import type { PlanItem } from "../lib/ingestPlan";
 import { log } from "../lib/log";
 import { useVaultStore } from "./vaultStore";
 
@@ -53,10 +55,27 @@ function candidatesBlock(candidates: CandidatePage[]): string {
   return `\n\nSemantic search suggests this source most likely relates to these EXISTING wiki pages. Read the relevant ones FIRST and UPDATE them with citations rather than creating duplicates; only create a new page when none of these fits:\n${lines}`;
 }
 
+// A phase-2 plan is richer than a raw candidate list: it already names, per
+// topic, whether to ADD/UPDATE/MERGE/NOOP and into which page. Feed it to the
+// agent as the plan to follow. Falls back to the phase-1 candidate block when no
+// plan was produced (planner unavailable or its reply did not parse).
+function groundingBlock(plan: PlanItem[], candidates: CandidatePage[]): string {
+  if (plan.length === 0) return candidatesBlock(candidates);
+  const lines = plan
+    .map((p) => {
+      const tgt = p.target ? ` [[${p.target}]]` : "";
+      const why = p.reason ? ` — ${p.reason}` : "";
+      return `   - ${p.decision}${tgt}: ${p.subject}${why}`;
+    })
+    .join("\n");
+  return `\n\nA preliminary analysis produced this ingest plan. Follow it, adjusting only where the source clearly warrants — UPDATE/MERGE into the named existing pages with citations rather than creating duplicates:\n${lines}`;
+}
+
 const INGEST_PROMPT = (
   slug: string,
   title: string,
   candidates: CandidatePage[] = [],
+  plan: PlanItem[] = [],
 ) =>
   `New source has been added at \`raw/${slug}.md\` (title: "${title}"). Please ingest it into the wiki following the workflow in CLAUDE.md:
 
@@ -65,7 +84,7 @@ const INGEST_PROMPT = (
 3. Update existing pages with inline citations, or create new pages with required frontmatter.
 4. Create the source-summary page \`wiki/source-${slug}.md\`.
 5. Update \`wiki/index.md\` and append a \`wiki/log.md\` entry.
-6. Write an ingest report at \`ingest-reports/<datetime>-${slug}.md\` summarising what was created/modified and why.${candidatesBlock(candidates)}
+6. Write an ingest report at \`ingest-reports/<datetime>-${slug}.md\` summarising what was created/modified and why.${groundingBlock(plan, candidates)}
 
 When done, output a one-line confirmation.`;
 
@@ -96,6 +115,11 @@ interface IngestState {
    * into the ingest prompt so the agent updates them instead of duplicating.
    * Empty when the vector index is absent/stale — grounding is best-effort. */
   candidates: CandidatePage[];
+  /** Structured ingest plan (ADD/UPDATE/MERGE/NOOP per topic) from a read-only
+   * planning call before the writing agent runs; injected into the prompt and
+   * shown as telemetry. Empty when the planner is unavailable or its reply did
+   * not parse — ingest then falls back to phase-1 candidate grounding. */
+  plan: PlanItem[];
   /** Fresh link graph rescanned (debounced) after each streamed write, so
    * live views (mini graph, galaxy growth) see edges of pages created
    * mid-run. Never written to vaultStore.adjacency — that would tear down
@@ -131,6 +155,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
   reportPath: null,
   vaultPath: null,
   candidates: [],
+  plan: [],
   liveAdjacency: null,
   seen: true,
 
@@ -170,6 +195,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       reportPath: null,
       vaultPath: vault.path,
       candidates: [],
+      plan: [],
       liveAdjacency: null,
       seen: true,
     });
@@ -213,9 +239,31 @@ export const useIngestStore = create<IngestState>((set, get) => ({
         .catch(() => [] as CandidatePage[]);
       set({ candidates });
 
+      // Phase 2: one read-only planning call turns the source + candidates into
+      // explicit ADD/UPDATE/MERGE/NOOP decisions, shown as telemetry and fed to
+      // the writing agent. Best-effort — a failure or unparseable reply leaves
+      // the plan empty and the prompt falls back to candidate grounding.
+      let plan: PlanItem[] = [];
+      try {
+        const planReply = await complete({
+          task: "query",
+          cwd: vault.path,
+          messages: [
+            {
+              role: "user",
+              content: buildIngestPlanPrompt(body.trim(), candidates),
+            },
+          ],
+        });
+        plan = parseIngestPlan(planReply);
+      } catch {
+        /* planner unavailable — proceed with candidate grounding only */
+      }
+      set({ plan });
+
       set({ stage: "claude" });
       const settings = await ipc.getSettings();
-      const prompt = INGEST_PROMPT(slug, finalTitle, candidates);
+      const prompt = INGEST_PROMPT(slug, finalTitle, candidates, plan);
       let out: string;
       if (settings.ingest_provider === "anthropic-cli") {
         // Pass the chosen model (e.g. "haiku") so ingest can run on a cheaper
@@ -337,6 +385,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       finishedAt: null,
       reportPath: null,
       candidates: [],
+      plan: [],
       liveAdjacency: null,
       seen: true,
     }),

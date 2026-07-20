@@ -1,9 +1,12 @@
 // Usage (dev server on :5173):  node scripts/wikify-grounding-smoke.mjs
 //
-// Wikification v2 phase 1: before the ingest agent runs, the source is matched
-// against the existing vault (semantic retrieval) and the ingest panel shows
-// which pages it will update instead of duplicating. The mock returns candidates
-// for a source whose text overlaps seeded pages. 3 viewports.
+// Wikification v2 (phases 1+2): before the ingest agent runs, the source is
+// matched against the existing vault (phase 1 retrieval) and a read-only planning
+// call turns that into an explicit ADD/UPDATE/MERGE/NOOP plan (phase 2). The
+// ingest panel shows the plan so the agent updates existing pages instead of
+// duplicating. The mock returns candidates + a plan referencing seeded pages.
+// (When the planner yields nothing the panel falls back to the phase-1 candidate
+// list; that path is covered by unit tests.) 3 viewports.
 import { chromium } from "playwright";
 
 const VIEWPORTS = [
@@ -45,15 +48,15 @@ for (const vp of VIEWPORTS) {
   check(at("run button present"), (await run.count()) >= 1);
   await run.first().click();
 
-  // The retrieval-grounding panel appears with matched existing pages.
-  await page.waitForSelector("[data-testid='ingest-candidates']", { timeout: 10_000 }).catch(() => {});
-  const panel = page.locator("[data-testid='ingest-candidates']");
-  check(at("grounding panel appears"), (await panel.count()) === 1, String(await panel.count()));
-  const chips = panel.locator(".chip");
-  check(at("panel lists matched pages"), (await chips.count()) >= 1, String(await chips.count()));
+  // The ingest-plan panel appears with explicit ADD/UPDATE/MERGE/NOOP decisions.
+  await page.waitForSelector("[data-testid='ingest-plan']", { timeout: 15_000 }).catch(() => {});
+  const panel = page.locator("[data-testid='ingest-plan']");
+  check(at("ingest plan panel appears"), (await panel.count()) === 1, String(await panel.count()));
   const panelText = (await panel.innerText().catch(() => "")).replace(/\s+/g, " ");
-  check(at("a seeded page was matched"),
-    /attention-mechanism|transformer-architecture|embeddings/.test(panelText), panelText.slice(0, 90));
+  check(at("plan shows an UPDATE decision"), /UPDATE/.test(panelText), panelText.slice(0, 100));
+  check(at("plan shows an ADD decision"), /ADD/.test(panelText));
+  check(at("plan names a seeded target page"),
+    /attention-mechanism|embeddings|tokenization/.test(panelText), panelText.slice(0, 100));
 
   await page.screenshot({ path: `test-results/wikify-grounding/${vp.name}.png`, fullPage: false });
   check(at("no page errors"), errors.length === 0, errors.slice(0, 1).join("; "));

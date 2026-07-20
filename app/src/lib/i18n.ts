@@ -137,6 +137,8 @@ export interface Strings {
   ing_live_writes: string;
   ing_grounded: string;
   ing_grounded_hint: string;
+  ing_plan: string;
+  ing_plan_hint: string;
   ing_cancel: string;
   ing_cancelled: string;
   ing_preview_open: string;
@@ -794,6 +796,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_grounded: "Matched {n} existing page(s) to update",
     ing_grounded_hint:
       "The source was steered to these pages so it updates them instead of duplicating.",
+    ing_plan: "Ingest plan ({n})",
+    ing_plan_hint:
+      "What the source will change — the agent follows this, updating existing pages instead of duplicating.",
     ing_cancel: "Cancel",
     ing_cancelled: "Ingest cancelled",
     ing_preview_open: "Open page",
@@ -1463,6 +1468,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_grounded: "갱신할 기존 페이지 {n}개 매칭",
     ing_grounded_hint:
       "이 페이지들로 유도해 중복 생성 대신 기존 페이지를 갱신하도록 했습니다.",
+    ing_plan: "인제스트 계획 {n}개",
+    ing_plan_hint:
+      "이 소스가 무엇을 바꿀지 — 에이전트가 이 계획을 따라 중복 대신 기존 페이지를 갱신합니다.",
     ing_cancel: "취소",
     ing_cancelled: "가져오기가 취소되었습니다",
     ing_preview_open: "페이지 열기",
@@ -2071,6 +2079,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_grounded: "更新すべき既存ページを{n}件マッチ",
     ing_grounded_hint:
       "重複作成ではなく既存ページを更新するよう、これらのページへ誘導しました。",
+    ing_plan: "取り込み計画 {n}件",
+    ing_plan_hint:
+      "このソースが何を変えるか — エージェントはこの計画に従い、重複ではなく既存ページを更新します。",
     ing_cancel: "キャンセル",
     ing_cancelled: "取り込みをキャンセルしました",
     ing_preview_open: "ページを開く",

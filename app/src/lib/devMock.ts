@@ -279,7 +279,19 @@ function b64ToBytes(b64: string): Uint8Array {
 function mockClaudeRun(prompt: string): { stdout: string; stderr: string; status: number } {
   const p = prompt.toLowerCase();
   let stdout: string;
-  if (p.includes("flashcard")) {
+  if (p.includes("produce a plan") && p.includes("decision")) {
+    // Ingest-plan preview (wikification v2 phase 2): return decisions over the
+    // seeded pages so the plan panel renders in ?mock=1.
+    stdout =
+      "```json\n" +
+      JSON.stringify([
+        { subject: "scaled dot-product attention", decision: "UPDATE", target: "attention-mechanism", reason: "adds the scaling factor detail" },
+        { subject: "flash attention", decision: "ADD", target: null, reason: "not yet covered by any page" },
+        { subject: "token embeddings", decision: "MERGE", target: "embeddings", reason: "overlaps the existing page" },
+        { subject: "tokenization basics", decision: "NOOP", target: "tokenization", reason: "already fully covered" },
+      ]) +
+      "\n```";
+  } else if (p.includes("flashcard")) {
     stdout = JSON.stringify([
       { front: "Mock card A?", back: "Answer A.", sourceRef: "[^src-attention-is-all-you-need]" },
       { front: "Mock card B?", back: "Answer B.", sourceRef: "[[embeddings]]" },

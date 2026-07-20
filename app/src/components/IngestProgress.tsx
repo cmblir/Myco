@@ -25,6 +25,22 @@ const TOOL_ICONS: Record<string, IconName> = {
   Bash: "terminal",
 };
 
+// Decision colours for the ingest-plan telemetry: new (green), extend (blue),
+// fold-in (amber), nothing-to-do (muted) — colour is backed by the text label
+// too, so the meaning never rests on colour alone (WCAG 1.4.1).
+const DECISION_BG: Record<string, string> = {
+  ADD: "rgba(22,163,74,0.12)",
+  UPDATE: "rgba(37,99,235,0.12)",
+  MERGE: "rgba(217,119,6,0.14)",
+  NOOP: "var(--bg-soft)",
+};
+const DECISION_FG: Record<string, string> = {
+  ADD: "var(--c-entity)",
+  UPDATE: "var(--accent, #2563eb)",
+  MERGE: "var(--c-technique)",
+  NOOP: "var(--ink-3)",
+};
+
 function describe(ev: IngestEvent): string {
   if (ev.kind === "tool") {
     const target = ev.detail ?? "";
@@ -43,6 +59,7 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
   const startedAt = useIngestStore((s) => s.startedAt);
   const finishedAt = useIngestStore((s) => s.finishedAt);
   const candidates = useIngestStore((s) => s.candidates);
+  const plan = useIngestStore((s) => s.plan);
   const cancelIngest = useIngestStore((s) => s.cancelIngest);
 
   const running =
@@ -117,7 +134,52 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
 
       <IngestMiniGraph t={t} />
 
-      {candidates.length > 0 ? (
+      {plan.length > 0 ? (
+        <div className="card" data-testid="ingest-plan" style={{ padding: "10px 12px" }}>
+          <div className="section-title" style={{ fontSize: 13, marginBottom: 2 }}>
+            <Icon name="sparkles" size={12} />{" "}
+            {(t.ing_plan ?? "Ingest plan ({n})").replace("{n}", String(plan.length))}
+          </div>
+          <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+            {t.ing_plan_hint ??
+              "What the source will change — the agent follows this, updating existing pages instead of duplicating."}
+          </div>
+          <div className="col" style={{ gap: 5 }}>
+            {plan.map((p, i) => (
+              <div
+                key={i}
+                className="row"
+                style={{ gap: 7, alignItems: "baseline", fontSize: 12.5, flexWrap: "wrap" }}
+              >
+                <span
+                  className="chip"
+                  style={{
+                    flexShrink: 0,
+                    fontSize: 11,
+                    fontWeight: 600,
+                    background: DECISION_BG[p.decision] ?? "var(--bg-soft)",
+                    color: DECISION_FG[p.decision] ?? "var(--ink-3)",
+                  }}
+                >
+                  {p.decision}
+                </span>
+                <span style={{ minWidth: 0, flex: 1 }}>
+                  {p.subject}
+                  {p.target ? (
+                    <span className="muted"> → {p.target}</span>
+                  ) : null}
+                  {p.reason ? (
+                    <span className="muted" style={{ fontSize: 11.5 }}>
+                      {" "}
+                      · {p.reason}
+                    </span>
+                  ) : null}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : candidates.length > 0 ? (
         <div className="card" data-testid="ingest-candidates" style={{ padding: "10px 12px" }}>
           <div
             className="section-title"

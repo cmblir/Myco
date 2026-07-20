@@ -16,6 +16,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   shows which pages were matched. When no index exists yet, ingest works exactly
   as before.
 
+- **Ingest shows its plan before it writes.** A quick read-only planning pass
+  turns the source into an explicit list of what it will do — add a new page,
+  update or merge into an existing one, or skip a topic that is already covered —
+  colour-coded in the Ingest panel, and handed to the agent as the plan to
+  follow. If the planner is unavailable it falls back to the matched-pages list.
+
 - **See which conversation a page came from.** The Provenance page now shows,
   under each page, the sources it cites — resolved from every `[^src-…]` citation
   back to the original. A source imported from an AI conversation shows its
