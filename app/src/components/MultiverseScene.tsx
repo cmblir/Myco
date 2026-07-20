@@ -11,6 +11,7 @@
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
 import { GraphScene } from "../lib/graphScene";
+import { hslToHex, mixHex } from "../lib/graphData";
 import { DEFAULT_GRAPH_SETTINGS } from "../lib/graphSettings";
 import { makeTheme } from "../lib/graphTheme";
 import {
@@ -19,7 +20,7 @@ import {
   universeOfNode,
   type SceneUniverse,
 } from "../lib/multiverseScene";
-import { UniverseBubbleLayer } from "../lib/universeBubbleLayer";
+import { UniverseBubbleLayer, spreadHue } from "../lib/universeBubbleLayer";
 
 export interface MultiverseSceneProps {
   universes: SceneUniverse[];
@@ -73,6 +74,29 @@ export default function MultiverseScene({
       },
     );
     if (graph.order === 0) return;
+
+    // Tint each galaxy's stars toward its bubble's hue, so a star reads as
+    // belonging to its vault at multiverse framing (where per-note colour is
+    // noise). Ranks are derived exactly as UniverseBubbleLayer does — the
+    // sorted set of slugs with visible nodes → golden-angle hue — so a galaxy's
+    // stars and its membrane share one colour. Non-hex fallbacks (dim field
+    // stars) are left alone. Applied before GraphScene reads node colours.
+    {
+      const slugs = new Set<string>();
+      graph.forEachNode((_id, a) => {
+        if (a.universe && !a.hidden) slugs.add(a.universe as string);
+      });
+      const hueBySlug = new Map<string, number>();
+      [...slugs].sort().forEach((slug, rank) => hueBySlug.set(slug, spreadHue(rank)));
+      graph.forEachNode((id, a) => {
+        const slug = a.universe as string | undefined;
+        const col = a.color as string | undefined;
+        if (!slug || !col || !/^#[0-9a-f]{6}$/i.test(col)) return;
+        const hue = hueBySlug.get(slug);
+        if (hue === undefined) return;
+        graph.setNodeAttribute(id, "color", mixHex(col, hslToHex(hue, 0.7, 0.6), 0.5));
+      });
+    }
 
     let killed = false;
     let entering = false; // guards against re-triggering mid-flight

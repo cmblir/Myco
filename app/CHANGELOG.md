@@ -8,6 +8,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Each vault's galaxy now glows in its own colour.** In the multiverse view a
+  galaxy's stars are tinted to match its bubble, so at a glance you can tell which
+  cluster of stars belongs to which vault — instead of every galaxy sharing the
+  same by-topic colours. The tint uses the exact hue the bubble already uses.
+
 - **A Tasks view gathers every checkbox in your vault.** Any `- [ ]` / `- [x]`
   item in any note now shows up on a new Tasks page — open items first, completed
   ones tucked into a collapsible section — and clicking one jumps to the note it

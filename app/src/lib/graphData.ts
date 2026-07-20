@@ -52,7 +52,7 @@ export function communityPalette(
   return out;
 }
 
-function hslToHex(h: number, s: number, l: number): string {
+export function hslToHex(h: number, s: number, l: number): string {
   const c = (1 - Math.abs(2 * l - 1)) * s;
   const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
   const m = l - c / 2;
@@ -622,8 +622,9 @@ function rgbToHex(r: number, g: number, b: number): string {
   return `#${h(r)}${h(g)}${h(b)}`;
 }
 
-// Blend two #rrggbb colours: t=0 → a, t=1 → b. Used for the disputed warning tint.
-function mixHex(a: string, b: string, t: number): string {
+// Blend two #rrggbb colours: t=0 → a, t=1 → b. Used for the disputed warning tint
+// and the multiverse per-vault star tint.
+export function mixHex(a: string, b: string, t: number): string {
   const ca = hexToRgb01(a);
   const cb = hexToRgb01(b);
   if (!ca || !cb) return a;

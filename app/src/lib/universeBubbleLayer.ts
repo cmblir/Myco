@@ -51,7 +51,9 @@ void main() {
 `;
 
 // Golden-angle hue by rank — maximally spread, so N bubbles are all distinct.
-function spreadHue(rank: number): number {
+// Exported so the scene can tint each galaxy's stars with the SAME hue its
+// bubble uses (ranks must be derived identically — sorted slugs).
+export function spreadHue(rank: number): number {
   return (rank * 137.508) % 360;
 }
 
