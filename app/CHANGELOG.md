@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Ingest now updates existing pages instead of duplicating them.** Before the
+  ingest agent runs, Memex matches the new source against your existing wiki
+  (semantic search over the local embedding index) and steers the agent to the
+  pages it most likely relates to — so a follow-up conversation extends the
+  page you already have rather than creating a near-duplicate. The Ingest panel
+  shows which pages were matched. When no index exists yet, ingest works exactly
+  as before.
+
 - **See which conversation a page came from.** The Provenance page now shows,
   under each page, the sources it cites — resolved from every `[^src-…]` citation
   back to the original. A source imported from an AI conversation shows its

@@ -138,6 +138,12 @@ export interface VecHit {
   score: number;
 }
 
+export interface CandidatePage {
+  page: string;
+  stem: string;
+  score: number;
+}
+
 export interface EmbeddingsStatus {
   indexed_pages: number;
   model: string;
@@ -363,6 +369,9 @@ export const ipc = {
     invoke<number>("reindex_embeddings", { provider, model }),
   semanticSearch: (query: string, k: number, provider: string, model: string) =>
     invoke<VecHit[]>("semantic_search", { query, k, provider, model }),
+  /** Existing pages a new source likely relates to — retrieval grounding for ingest. */
+  wikifyCandidates: (sourceText: string, k: number) =>
+    invoke<CandidatePage[]>("wikify_candidates", { sourceText, k }),
   relatedPages: (page: string, k: number) =>
     invoke<VecHit[]>("related_pages", { page, k }),
   embeddingsStatus: () =>

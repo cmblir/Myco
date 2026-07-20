@@ -924,6 +924,26 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         : hits;
       return sleep(400).then(() => out);
     }
+    case "wikify_candidates": {
+      // Retrieval grounding: match the source text against node bodies, exclude
+      // source-summary/structural stems, return a ranked candidate list.
+      const text = String(args.sourceText ?? "").toLowerCase();
+      const k = Number(args.k ?? 8);
+      const scored = NODES.filter(
+        (d) => !d.s.startsWith("source-") && d.s !== "index" && d.s !== "log",
+      )
+        .map((d) => {
+          const hay = (d.n + " " + body(d)).toLowerCase();
+          const words = text.split(/\W+/).filter((w) => w.length > 3);
+          const overlap = words.filter((w) => hay.includes(w)).length;
+          return { d, overlap };
+        })
+        .filter((x) => x.overlap > 0)
+        .sort((a, b) => b.overlap - a.overlap)
+        .slice(0, k)
+        .map((x, i) => ({ page: `wiki/${x.d.s}.md`, stem: x.d.s, score: 0.88 - i * 0.06 }));
+      return sleep(500).then(() => scored);
+    }
     case "describe_image":
       return Promise.resolve(
         "(mock) Image description: a labeled diagram of the transformer architecture — " +

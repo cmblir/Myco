@@ -11,7 +11,7 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { ipc } from "../lib/ipc";
-import type { Adjacency, ClaudeStreamPayload } from "../lib/ipc";
+import type { Adjacency, CandidatePage, ClaudeStreamPayload } from "../lib/ipc";
 import { complete } from "../lib/chat";
 import { log } from "../lib/log";
 import { useVaultStore } from "./vaultStore";
@@ -40,7 +40,24 @@ export interface TouchedFile {
 
 const WRITE_TOOLS = new Set(["Write", "Edit", "NotebookEdit"]);
 
-const INGEST_PROMPT = (slug: string, title: string) =>
+// A retrieval-grounding block: semantic search over the existing vault picks the
+// pages this source most likely touches, so the agent UPDATES them (with
+// citations) instead of creating near-duplicates — which "identify pages from
+// index.md" cannot do once the vault has hundreds of pages. Empty candidates →
+// no block, and the prompt is exactly the pre-grounding one.
+function candidatesBlock(candidates: CandidatePage[]): string {
+  if (candidates.length === 0) return "";
+  const lines = candidates
+    .map((c) => `   - [[${c.stem}]] (similarity ${c.score.toFixed(2)})`)
+    .join("\n");
+  return `\n\nSemantic search suggests this source most likely relates to these EXISTING wiki pages. Read the relevant ones FIRST and UPDATE them with citations rather than creating duplicates; only create a new page when none of these fits:\n${lines}`;
+}
+
+const INGEST_PROMPT = (
+  slug: string,
+  title: string,
+  candidates: CandidatePage[] = [],
+) =>
   `New source has been added at \`raw/${slug}.md\` (title: "${title}"). Please ingest it into the wiki following the workflow in CLAUDE.md:
 
 1. Read the source completely.
@@ -48,7 +65,7 @@ const INGEST_PROMPT = (slug: string, title: string) =>
 3. Update existing pages with inline citations, or create new pages with required frontmatter.
 4. Create the source-summary page \`wiki/source-${slug}.md\`.
 5. Update \`wiki/index.md\` and append a \`wiki/log.md\` entry.
-6. Write an ingest report at \`ingest-reports/<datetime>-${slug}.md\` summarising what was created/modified and why.
+6. Write an ingest report at \`ingest-reports/<datetime>-${slug}.md\` summarising what was created/modified and why.${candidatesBlock(candidates)}
 
 When done, output a one-line confirmation.`;
 
@@ -75,6 +92,10 @@ interface IngestState {
   finishedAt: number | null;
   reportPath: string | null;
   vaultPath: string | null;
+  /** Existing pages the source was matched to (retrieval grounding); injected
+   * into the ingest prompt so the agent updates them instead of duplicating.
+   * Empty when the vector index is absent/stale — grounding is best-effort. */
+  candidates: CandidatePage[];
   /** Fresh link graph rescanned (debounced) after each streamed write, so
    * live views (mini graph, galaxy growth) see edges of pages created
    * mid-run. Never written to vaultStore.adjacency — that would tear down
@@ -109,6 +130,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
   finishedAt: null,
   reportPath: null,
   vaultPath: null,
+  candidates: [],
   liveAdjacency: null,
   seen: true,
 
@@ -147,6 +169,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       finishedAt: null,
       reportPath: null,
       vaultPath: vault.path,
+      candidates: [],
       liveAdjacency: null,
       seen: true,
     });
@@ -182,9 +205,17 @@ export const useIngestStore = create<IngestState>((set, get) => ({
           .map(([p, m]) => [p, m] as const),
       );
 
+      // Retrieval grounding: find existing pages this source likely relates to
+      // so the prompt tells the agent to update them, not duplicate. Best-effort
+      // — an absent/stale vector index yields none and ingest proceeds unchanged.
+      const candidates = await ipc
+        .wikifyCandidates(body.trim(), 8)
+        .catch(() => [] as CandidatePage[]);
+      set({ candidates });
+
       set({ stage: "claude" });
       const settings = await ipc.getSettings();
-      const prompt = INGEST_PROMPT(slug, finalTitle);
+      const prompt = INGEST_PROMPT(slug, finalTitle, candidates);
       let out: string;
       if (settings.ingest_provider === "anthropic-cli") {
         // Pass the chosen model (e.g. "haiku") so ingest can run on a cheaper
@@ -305,6 +336,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       startedAt: null,
       finishedAt: null,
       reportPath: null,
+      candidates: [],
       liveAdjacency: null,
       seen: true,
     }),

@@ -42,6 +42,7 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
   const model = useIngestStore((s) => s.model);
   const startedAt = useIngestStore((s) => s.startedAt);
   const finishedAt = useIngestStore((s) => s.finishedAt);
+  const candidates = useIngestStore((s) => s.candidates);
   const cancelIngest = useIngestStore((s) => s.cancelIngest);
 
   const running =
@@ -115,6 +116,40 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
       </div>
 
       <IngestMiniGraph t={t} />
+
+      {candidates.length > 0 ? (
+        <div className="card" data-testid="ingest-candidates" style={{ padding: "10px 12px" }}>
+          <div
+            className="section-title"
+            style={{ fontSize: 13, marginBottom: 2 }}
+          >
+            <Icon name="link" size={12} />{" "}
+            {(t.ing_grounded ?? "Matched {n} existing page(s) to update").replace(
+              "{n}",
+              String(candidates.length),
+            )}
+          </div>
+          <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+            {t.ing_grounded_hint ??
+              "The source was steered to these pages so it updates them instead of duplicating."}
+          </div>
+          <div className="row" style={{ gap: 6, flexWrap: "wrap" }}>
+            {candidates.map((c) => (
+              <span
+                key={c.page}
+                className="chip"
+                style={{ background: "var(--bg-soft)", fontSize: 12 }}
+                title={`${c.page} · ${c.score.toFixed(2)}`}
+              >
+                {c.stem}
+                <span className="muted" style={{ marginLeft: 4 }}>
+                  {c.score.toFixed(2)}
+                </span>
+              </span>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="card ingest-feed-card">
         <div className="section-title" style={{ fontSize: 13.5, marginBottom: 6 }}>

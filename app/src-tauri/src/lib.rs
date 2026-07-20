@@ -18,6 +18,7 @@ pub mod memex_pro;
 pub mod ollama;
 pub mod parser;
 pub mod perf;
+pub mod pipeline;
 pub mod provenance;
 pub mod providers;
 pub mod registry;
@@ -151,6 +152,7 @@ pub fn run() {
             commands::local_query,
             commands::reindex_embeddings,
             commands::semantic_search,
+            commands::wikify_candidates,
             commands::related_pages,
             commands::embeddings_status,
             commands::semantic_edges,

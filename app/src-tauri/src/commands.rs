@@ -1559,6 +1559,75 @@ pub async fn semantic_search(
     Ok(hits)
 }
 
+/// Existing wiki pages a new source most likely relates to — the retrieval
+/// grounding for wikification (v2 phase 1). Chunks the source, embeds the chunks
+/// with the SAME model the vector index was built with, retrieves per-chunk hits
+/// and folds them to a ranked, deduplicated candidate list. The ingest prompt
+/// injects this so the agent updates existing pages rather than duplicating.
+///
+/// Best-effort: an empty/absent index or a model-space mismatch returns no
+/// candidates and ingest proceeds unchanged. Source-summary and structural pages
+/// are excluded — they are not "update this knowledge" targets.
+#[tauri::command]
+pub async fn wikify_candidates(
+    app: tauri::AppHandle,
+    vault: tauri::State<'_, VaultRoot>,
+    llm: tauri::State<'_, LocalLlmState>,
+    cache: tauri::State<'_, VectorCache>,
+    source_text: String,
+    k: usize,
+) -> Result<Vec<crate::pipeline::CandidatePage>, String> {
+    let t0 = std::time::Instant::now();
+    let root = require_root(&vault)?;
+    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    let store = cache.get(&index_path);
+    if store.records.is_empty() {
+        return Ok(Vec::new()); // nothing indexed → nothing to dedup against
+    }
+    // Embed with the model the index was built with so cosines are meaningful;
+    // `store.model` is "{provider}:{model}" (e.g. "builtin-local:").
+    let (provider, model) = store
+        .model
+        .split_once(':')
+        .map(|(p, m)| (p.to_string(), m.to_string()))
+        .unwrap_or((store.model.clone(), String::new()));
+
+    // Cap the chunks embedded: a long transcript would otherwise cost seconds.
+    // The leading chunks capture the source's subject matter well enough to
+    // retrieve its candidate pages (spread-sampling is a later refinement).
+    const MAX_CHUNKS: usize = 8;
+    let mut chunks = crate::embeddings::chunk_page(&source_text);
+    chunks.truncate(MAX_CHUNKS);
+    if chunks.is_empty() {
+        return Ok(Vec::new());
+    }
+    let n_chunks = chunks.len();
+    // One batched embed call shares a llama context across the chunks.
+    let vecs = embed_texts(app, llm, &provider, &model, chunks).await?;
+    // Per chunk, retrieve extra hits then keep only knowledge pages, so
+    // source-summaries don't crowd out real update targets before the fold.
+    let per_chunk: Vec<Vec<VecHit>> = vecs
+        .iter()
+        .map(|v| {
+            store
+                .search(v, 16)
+                .into_iter()
+                .filter(|h| crate::pipeline::is_knowledge_page(&h.stem))
+                .collect()
+        })
+        .collect();
+    let out = crate::pipeline::rank_candidates(&per_chunk, k.clamp(1, 20));
+    perf::log(
+        "wikify_candidates",
+        &[
+            ("chunks", n_chunks as f64),
+            ("candidates", out.len() as f64),
+            ("total_ms", perf::ms(t0.elapsed())),
+        ],
+    );
+    Ok(out)
+}
+
 /// Pages most semantically similar to `page` (no embedding call — uses stored
 /// vectors), for the Reader related-notes panel and graph similarity edges.
 ///

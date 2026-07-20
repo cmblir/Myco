@@ -135,6 +135,8 @@ export interface Strings {
   ing_live_files: string;
   ing_live_reads: string;
   ing_live_writes: string;
+  ing_grounded: string;
+  ing_grounded_hint: string;
   ing_cancel: string;
   ing_cancelled: string;
   ing_preview_open: string;
@@ -789,6 +791,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_live_files: "Pages touched",
     ing_live_reads: "read",
     ing_live_writes: "written",
+    ing_grounded: "Matched {n} existing page(s) to update",
+    ing_grounded_hint:
+      "The source was steered to these pages so it updates them instead of duplicating.",
     ing_cancel: "Cancel",
     ing_cancelled: "Ingest cancelled",
     ing_preview_open: "Open page",
@@ -1455,6 +1460,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_live_files: "작업한 페이지",
     ing_live_reads: "읽음",
     ing_live_writes: "작성",
+    ing_grounded: "갱신할 기존 페이지 {n}개 매칭",
+    ing_grounded_hint:
+      "이 페이지들로 유도해 중복 생성 대신 기존 페이지를 갱신하도록 했습니다.",
     ing_cancel: "취소",
     ing_cancelled: "가져오기가 취소되었습니다",
     ing_preview_open: "페이지 열기",
@@ -2060,6 +2068,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_live_files: "作業したページ",
     ing_live_reads: "読込",
     ing_live_writes: "作成",
+    ing_grounded: "更新すべき既存ページを{n}件マッチ",
+    ing_grounded_hint:
+      "重複作成ではなく既存ページを更新するよう、これらのページへ誘導しました。",
     ing_cancel: "キャンセル",
     ing_cancelled: "取り込みをキャンセルしました",
     ing_preview_open: "ページを開く",
