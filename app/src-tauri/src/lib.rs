@@ -113,6 +113,7 @@ pub fn run() {
             commands::available_raw_path,
             commands::import_conversations,
             commands::import_session_sweep,
+            commands::import_paths,
             commands::build_link_graph,
             commands::vault_revision,
             commands::list_universes,

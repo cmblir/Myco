@@ -452,7 +452,15 @@ pub struct QuarantinedConversation {
     pub secrets: Vec<String>,
 }
 
-/// The outcome of importing an export file, for the UI.
+/// A file that could not be imported (read/parse error) — kept so the UI can
+/// list it and retry just these, not the whole sweep.
+#[derive(serde::Serialize, Clone)]
+pub struct FailedImport {
+    pub path: String,
+    pub error: String,
+}
+
+/// The outcome of importing one or many export files, for the UI.
 #[derive(serde::Serialize)]
 pub struct ImportOutcome {
     /// Detected format: chatgpt | claude-code | codex | unknown.
@@ -463,6 +471,90 @@ pub struct ImportOutcome {
     pub skipped: usize,
     /// Conversations skipped because their text matched a secret pattern.
     pub quarantined: Vec<QuarantinedConversation>,
+    /// Files that could not be read/parsed — retryable.
+    pub failed: Vec<FailedImport>,
+}
+
+/// Progress of a running import, emitted as `import-progress`. `done`/`total`
+/// are FILE counts (known upfront from the file list); the tallies run up.
+#[derive(serde::Serialize, Clone)]
+pub struct ImportProgress {
+    pub done: usize,
+    pub total: usize,
+    /// Basename of the file just processed.
+    pub file: String,
+    pub imported: usize,
+    pub skipped: usize,
+    pub failed: usize,
+}
+
+/// The one import engine: parse+scan+write each file's conversations into
+/// `_inbox/`, recording the ledger once for the whole run. A file that won't
+/// read/parse becomes a `FailedImport` — never fatal, never silently dropped.
+/// `on_progress` is called on a throttled schedule (import does no model calls,
+/// so 5,000 unthrottled events would flood the IPC bridge). Emit-free so it is
+/// unit-testable; the commands wrap it to emit `import-progress`.
+fn run_import(
+    root: &std::path::Path,
+    files: &[PathBuf],
+    mut on_progress: impl FnMut(ImportProgress),
+) -> ImportOutcome {
+    // A single oversized file should error rather than exhaust memory; applied
+    // per file so one giant export can't take down a whole sweep.
+    const MAX_BYTES: u64 = 512 * 1024 * 1024;
+    let mut ledger = crate::importers::ledger::Ledger::load(root);
+    let total = files.len();
+    let (mut imported, mut skipped) = (0usize, 0usize);
+    let mut quarantined = Vec::new();
+    let mut failed: Vec<FailedImport> = Vec::new();
+    let mut source = String::new();
+
+    for (i, f) in files.iter().enumerate() {
+        let path_str = f.to_string_lossy().into_owned();
+        let res = (|| -> Result<(usize, usize, Vec<QuarantinedConversation>, String), String> {
+            let meta = std::fs::metadata(f).map_err(|e| format!("cannot read: {e}"))?;
+            if meta.len() > MAX_BYTES {
+                return Err(format!("too large ({} MB); split it first", meta.len() / (1024 * 1024)));
+            }
+            let content = std::fs::read_to_string(f).map_err(|e| format!("cannot read: {e}"))?;
+            apply_import(root, &mut ledger, &path_str, &content)
+        })();
+        match res {
+            Ok((i2, s2, q2, src)) => {
+                imported += i2;
+                skipped += s2;
+                quarantined.extend(q2);
+                if source.is_empty() && !src.is_empty() {
+                    source = src;
+                }
+            }
+            Err(error) => failed.push(FailedImport { path: path_str, error }),
+        }
+        if i % 32 == 0 || i + 1 == total {
+            on_progress(ImportProgress {
+                done: i + 1,
+                total,
+                file: f
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_default(),
+                imported,
+                skipped,
+                failed: failed.len(),
+            });
+        }
+    }
+    if imported > 0 {
+        // Best effort: a ledger that fails to save just costs a re-import.
+        let _ = ledger.save(root);
+    }
+    ImportOutcome {
+        source,
+        imported,
+        skipped,
+        quarantined,
+        failed,
+    }
 }
 
 /// Import an AI conversation export (ChatGPT / Claude Code / Codex) into the
@@ -481,37 +573,37 @@ pub struct ImportOutcome {
 #[tauri::command]
 pub async fn import_conversations(
     state: tauri::State<'_, VaultRoot>,
+    app: tauri::AppHandle,
     source_path: String,
 ) -> Result<ImportOutcome, String> {
     let root = require_root(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
-        // The picked file can be large (a ChatGPT export is one big JSON), but a
-        // pathological size should error rather than exhaust memory.
-        const MAX_BYTES: u64 = 512 * 1024 * 1024;
-        let meta = std::fs::metadata(&source_path)
-            .map_err(|e| format!("cannot read {source_path}: {e}"))?;
-        if meta.len() > MAX_BYTES {
-            return Err(format!(
-                "export too large ({} MB); split it first",
-                meta.len() / (1024 * 1024)
-            ));
-        }
-        let content = std::fs::read_to_string(&source_path)
-            .map_err(|e| format!("cannot read {source_path}: {e}"))?;
+        Ok(run_import(&root, &[PathBuf::from(source_path)], |p| {
+            use tauri::Emitter;
+            let _ = app.emit("import-progress", p);
+        }))
+    })
+    .await
+    .map_err(|e| format!("join failed: {e}"))?
+}
 
-        let mut ledger = crate::importers::ledger::Ledger::load(&root);
-        let (imported, skipped, quarantined, source) =
-            apply_import(&root, &mut ledger, &source_path, &content)?;
-        if imported > 0 {
-            // Best effort: a ledger that fails to save just costs a re-import.
-            let _ = ledger.save(&root);
-        }
-        Ok(ImportOutcome {
-            source,
-            imported,
-            skipped,
-            quarantined,
-        })
+/// Re-import an explicit list of files — the "retry failed" path. It re-reads
+/// only these files (the ledger skips the WRITE of an already-imported
+/// conversation, never the parse+scan, so a whole-kind re-sweep would redo the
+/// minutes-long work; this does not).
+#[tauri::command]
+pub async fn import_paths(
+    state: tauri::State<'_, VaultRoot>,
+    app: tauri::AppHandle,
+    paths: Vec<String>,
+) -> Result<ImportOutcome, String> {
+    let root = require_root(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let files: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+        Ok(run_import(&root, &files, |p| {
+            use tauri::Emitter;
+            let _ = app.emit("import-progress", p);
+        }))
     })
     .await
     .map_err(|e| format!("join failed: {e}"))?
@@ -561,6 +653,7 @@ fn apply_import(
 #[tauri::command]
 pub async fn import_session_sweep(
     state: tauri::State<'_, VaultRoot>,
+    app: tauri::AppHandle,
     kind: String,
 ) -> Result<ImportOutcome, String> {
     let root = require_root(&state)?;
@@ -571,31 +664,10 @@ pub async fn import_session_sweep(
         }
         let mut files = Vec::new();
         collect_jsonl(&dir, &mut files, 0);
-
-        let mut ledger = crate::importers::ledger::Ledger::load(&root);
-        let (mut imported, mut skipped) = (0usize, 0usize);
-        let mut quarantined = Vec::new();
-        for f in &files {
-            // A file that vanished or won't read (a live session mid-write) is
-            // skipped; one bad session must not abort the sweep.
-            let Ok(content) = std::fs::read_to_string(f) else {
-                continue;
-            };
-            if let Ok((i, s, q, _)) =
-                apply_import(&root, &mut ledger, &f.to_string_lossy(), &content)
-            {
-                imported += i;
-                skipped += s;
-                quarantined.extend(q);
-            }
-        }
-        let _ = ledger.save(&root);
-        Ok(ImportOutcome {
-            source: kind,
-            imported,
-            skipped,
-            quarantined,
-        })
+        Ok(run_import(&root, &files, |p| {
+            use tauri::Emitter;
+            let _ = app.emit("import-progress", p);
+        }))
     })
     .await
     .map_err(|e| format!("join failed: {e}"))?
@@ -1583,7 +1655,92 @@ pub async fn fetch_youtube_transcript(url: String) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{external_target_allowed, windows_opener_safe};
+    use super::{external_target_allowed, run_import, windows_opener_safe};
+    use std::path::PathBuf;
+
+    // A Claude Code session line (parses to one conversation via the importer).
+    fn session_line(id: &str, text: &str) -> String {
+        format!(
+            "{{\"type\":\"user\",\"sessionId\":\"{id}\",\"message\":{{\"role\":\"user\",\"content\":\"{text}\"}}}}"
+        )
+    }
+
+    #[test]
+    fn run_import_counts_imported_failed_and_writes_inbox() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let sessions = root.join("sessions");
+        std::fs::create_dir_all(&sessions).unwrap();
+
+        let good1 = sessions.join("a.jsonl");
+        std::fs::write(&good1, session_line("s1", "how does attention work")).unwrap();
+        let good2 = sessions.join("b.jsonl");
+        std::fs::write(&good2, session_line("s2", "explain embeddings")).unwrap();
+        let missing = sessions.join("gone.jsonl"); // never created → a read failure
+
+        let mut progress = Vec::new();
+        let files: Vec<PathBuf> = vec![good1, missing.clone(), good2];
+        let outcome = run_import(root, &files, |p| progress.push(p));
+
+        assert_eq!(outcome.imported, 2);
+        assert_eq!(outcome.failed.len(), 1);
+        assert_eq!(outcome.failed[0].path, missing.to_string_lossy());
+        assert!(outcome.failed[0].error.contains("cannot read"));
+        assert_eq!(outcome.source, "claude-code");
+        // Two inbox docs written.
+        let inbox = root.join("_inbox");
+        let n = std::fs::read_dir(&inbox).unwrap().filter(|e| {
+            e.as_ref()
+                .unwrap()
+                .path()
+                .extension()
+                .map(|x| x == "md")
+                .unwrap_or(false)
+        }).count();
+        assert_eq!(n, 2);
+        // Progress reported, ending at done == total.
+        assert!(!progress.is_empty());
+        let last = progress.last().unwrap();
+        assert_eq!(last.done, 3);
+        assert_eq!(last.total, 3);
+        assert_eq!(last.imported, 2);
+        assert_eq!(last.failed, 1);
+    }
+
+    #[test]
+    fn run_import_dedups_on_a_second_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let f = root.join("a.jsonl");
+        std::fs::write(&f, session_line("s1", "hello there")).unwrap();
+        let files = vec![f];
+
+        let first = run_import(root, &files, |_| {});
+        assert_eq!(first.imported, 1);
+        assert_eq!(first.skipped, 0);
+        // Same files again: the ledger skips the write.
+        let second = run_import(root, &files, |_| {});
+        assert_eq!(second.imported, 0);
+        assert_eq!(second.skipped, 1);
+    }
+
+    #[test]
+    fn run_import_throttles_progress_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let mut files = Vec::new();
+        for i in 0..100 {
+            let f = root.join(format!("s{i}.jsonl"));
+            std::fs::write(&f, session_line(&format!("s{i}"), "hi")).unwrap();
+            files.push(f);
+        }
+        let mut count = 0usize;
+        let _ = run_import(root, &files, |_| count += 1);
+        // 100 files, emit on i%32==0 (0,32,64,96) plus the final (99) → far fewer
+        // than 100, and the last is always sent.
+        assert!(count < 100, "expected throttling, got {count}");
+        assert!(count >= 4);
+    }
 
     #[test]
     fn allows_safe_url_schemes() {

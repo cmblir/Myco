@@ -128,7 +128,7 @@ export interface EmbeddingsStatus {
   model: string;
 }
 
-/** Result of importing a conversation export into `_inbox/`. */
+/** Result of importing one or many conversation exports into `_inbox/`. */
 export interface ImportOutcome {
   /** Detected format: chatgpt | claude-code | codex | unknown. */
   source: string;
@@ -138,6 +138,18 @@ export interface ImportOutcome {
   skipped: number;
   /** Conversations skipped because their text matched a secret pattern. */
   quarantined: { title: string; secrets: string[] }[];
+  /** Files that could not be read/parsed — retryable via importPaths. */
+  failed: { path: string; error: string }[];
+}
+
+/** Progress of a running import (file counts + running tallies). */
+export interface ImportProgress {
+  done: number;
+  total: number;
+  file: string;
+  imported: number;
+  skipped: number;
+  failed: number;
 }
 
 /** A semantic-similarity edge for the graph overlay (absolute page paths). */
@@ -417,6 +429,9 @@ export const ipc = {
   /** Import every on-disk session for a CLI tool in one pass (dedup-safe). */
   importSessionSweep: (kind: "claude-code" | "codex") =>
     invoke<ImportOutcome>("import_session_sweep", { kind }),
+  /** Re-import an explicit list of files (retry-failed). */
+  importPaths: (paths: string[]) =>
+    invoke<ImportOutcome>("import_paths", { paths }),
   gitLog: (vaultPath: string, limit?: number) =>
     invoke<GitCommit[]>("git_log", { vaultPath, limit }),
   claudeCheck: () => invoke<ClaudeStatus>("claude_check"),

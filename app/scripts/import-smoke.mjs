@@ -58,10 +58,21 @@ for (const vp of VIEWPORTS) {
   check(at("Claude Code sweep button present"), (await cc.count()) === 1);
   check(at("Codex sweep button present"), (await cx.count()) === 1);
   await cc.click();
-  await page.waitForTimeout(600);
+  // The mock sweep streams progress over ~840ms, so wait for the result line
+  // rather than a fixed timeout.
+  await page
+    .waitForFunction(
+      () =>
+        [...document.querySelectorAll(".zotero-import__result")].some((el) =>
+          /_inbox/.test(el.textContent || ""),
+        ),
+      null,
+      { timeout: 10_000 },
+    )
+    .catch(() => {});
   const sweepText = await card.locator(".zotero-import__result").allInnerTexts();
-  check(at("sweep reports imported + skipped counts"),
-    sweepText.some((x) => /12/.test(x) && /40/.test(x)), JSON.stringify(sweepText));
+  check(at("sweep reports an import count into _inbox"),
+    sweepText.some((x) => /_inbox/.test(x) && /\d/.test(x)), JSON.stringify(sweepText));
 
   await page.screenshot({ path: `test-results/import-card/${vp.name}.png` });
   check(at("no page errors"), errors.length === 0, errors.slice(0, 1).join("; "));

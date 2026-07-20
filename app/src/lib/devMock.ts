@@ -82,6 +82,41 @@ async function mockReindex(): Promise<number> {
   return total;
 }
 
+// A paced bulk-import sweep: emit throttled import-progress (like the real Rust
+// engine) then resolve with an outcome that includes failures, so the progress
+// bar, running tally, failures list and retry button are all exercisable.
+async function mockImportSweep(source: string): Promise<unknown> {
+  const total = 14;
+  let imported = 0;
+  let skipped = 0;
+  let failed = 0;
+  for (let i = 0; i < total; i++) {
+    await sleep(60);
+    // A couple of files "fail"; most import, some are already-seen skips.
+    if (i === 5 || i === 11) failed++;
+    else if (i % 3 === 0) skipped++;
+    else imported++;
+    emitMock("import-progress", {
+      done: i + 1,
+      total,
+      file: `session-${i}.jsonl`,
+      imported,
+      skipped,
+      failed,
+    });
+  }
+  return {
+    source,
+    imported,
+    skipped,
+    quarantined: [],
+    failed: [
+      { path: "/Users/you/.claude/projects/x/live.jsonl", error: "cannot read: mid-write" },
+      { path: "/Users/you/.claude/projects/y/truncated.jsonl", error: "cannot read: unexpected EOF" },
+    ],
+  };
+}
+
 // Same topology as src-tauri/src/sample_vault.rs (kept in sync as demo data).
 const NODES: Node[] = [
   { s: "transformer-architecture", t: "concept", n: "Transformer Architecture", l: ["attention-mechanism", "embeddings", "tokenization", "positional-encoding", "residual-connections", "feedforward-network", "scaling-laws", "source-attention-is-all-you-need"] },
@@ -905,22 +940,30 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // The real parse/scan/write is Rust; the mock can't read the picked file,
       // so it returns a plausible outcome (one imported, one quarantined) so the
       // import UI's success and secret-warning states are both exercisable.
+      // Single-file: instant, no progress stream, no failures.
       return Promise.resolve({
         source: "claude-code",
         imported: 1,
         skipped: 2,
         quarantined: [{ title: "a chat that pasted a key", secrets: ["OpenAI/Anthropic-style API key"] }],
+        failed: [],
       });
     }
-    case "import_session_sweep": {
-      // A plausible bulk result so the sweep buttons' success state is testable.
+    case "import_session_sweep":
+      // Emit a paced import-progress stream (like the real sweep) so the progress
+      // bar and tallies are exercisable, then return a result with two failures
+      // so the failures list + retry are too. The real mock's instant return
+      // would hide exactly this.
+      return mockImportSweep(String(args.kind ?? "claude-code"));
+    case "import_paths":
+      // Retry succeeds: the previously-failed files now import; failed list clears.
       return Promise.resolve({
-        source: String(args.kind ?? "claude-code"),
-        imported: 12,
-        skipped: 40,
+        source: "claude-code",
+        imported: Array.isArray(args.paths) ? args.paths.length : 1,
+        skipped: 0,
         quarantined: [],
+        failed: [],
       });
-    }
     case "set_settings":
       // Actually persist. Returning null and keeping a frozen SETTINGS made the
       // mock silently ignore every settings change — so a flow that depends on
