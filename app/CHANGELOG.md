@@ -25,6 +25,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Import every session on your machine in one click.** Beside the file picker,
   "Import my Claude Code sessions" / "Import my Codex sessions" sweep
   ~/.claude and ~/.codex and import them all, dedup-safe.
+- **Bulk import shows its work.** A sweep of thousands of sessions now shows a
+  progress bar and a running imported/skipped/failed tally instead of a frozen
+  button, lists the sessions that could not be read, and offers "retry failed"
+  that re-reads only those — not the whole sweep.
 - **Any model id is selectable.** The model field accepts free text (with the
   known list as suggestions), so a model that ships after this build can be used
   without waiting for a release.
