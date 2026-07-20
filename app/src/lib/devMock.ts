@@ -769,7 +769,24 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // Connections tab renders without an undefined-status crash in dev.
       return Promise.resolve({ installed: false, version: null, path: null });
     case "ollama_status":
-      return Promise.resolve({ binary_installed: false, binary_path: null, version: null, daemon_running: false, endpoint: "http://localhost:11434", models: [], error: null });
+      // ?mock=1&ollama=1 fakes a running daemon with installed models so the
+      // model list + delete UI render without a real Ollama on the machine.
+      return Promise.resolve(
+        new URLSearchParams(location.search).get("ollama") === "1"
+          ? {
+              binary_installed: true,
+              binary_path: "/usr/local/bin/ollama",
+              version: "0.5.1",
+              daemon_running: true,
+              endpoint: "http://localhost:11434",
+              models: [
+                { name: "gemma3:1b", size: 815_000_000 },
+                { name: "llama3.1:8b", size: 4_700_000_000 },
+              ],
+              error: null,
+            }
+          : { binary_installed: false, binary_path: null, version: null, daemon_running: false, endpoint: "http://localhost:11434", models: [], error: null },
+      );
     case "ollama_install_url":
       return Promise.resolve("https://ollama.com/download");
     case "git_log":

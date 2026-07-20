@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Remove a local model from Settings.** The installed-model list under
+  Settings › Connections › Ollama now has a remove button on each model, with an
+  inline confirm, so a mistakenly pulled multi-gigabyte model can be freed
+  without dropping to a terminal (`ollama rm`). The delete goes straight to the
+  local daemon; the list refreshes when it is gone.
+
 - **New notes start as real wiki pages.** Creating a page now seeds the required
   frontmatter (type, tags, created, confidence, status) and a title, so a
   hand-made note is visible to Views, the gap report and the graph's colour

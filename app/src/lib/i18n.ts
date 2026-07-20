@@ -431,6 +431,11 @@ export interface Strings {
   ol_pull_failed: string;
   ol_pull_ready: string;
   ol_dismiss: string;
+  ol_delete: string;
+  ol_delete_confirm: string;
+  ol_delete_yes: string;
+  ol_deleting: string;
+  ol_delete_failed: string;
   // Shared UI (optional — components fall back to English).
   ui_close?: string;
   // Provenance page.
@@ -1091,6 +1096,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ol_pull_failed: "failed",
     ol_pull_ready: "ready",
     ol_dismiss: "dismiss",
+    ol_delete: "Remove model",
+    ol_delete_confirm: "Remove?",
+    ol_delete_yes: "Remove",
+    ol_deleting: "Removing…",
+    ol_delete_failed: "Couldn't remove the model.",
     ui_close: "Close",
     p_lint_run: "Run lint",
     p_linting: "Linting…",
@@ -1749,6 +1759,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ol_pull_failed: "실패",
     ol_pull_ready: "준비됨",
     ol_dismiss: "닫기",
+    ol_delete: "모델 삭제",
+    ol_delete_confirm: "삭제할까요?",
+    ol_delete_yes: "삭제",
+    ol_deleting: "삭제 중…",
+    ol_delete_failed: "모델을 삭제하지 못했습니다.",
     ui_close: "닫기",
     p_lint_run: "린트 실행",
     p_linting: "린트 중…",
@@ -2291,6 +2306,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ol_pull_failed: "失敗",
     ol_pull_ready: "準備完了",
     ol_dismiss: "閉じる",
+    ol_delete: "モデルを削除",
+    ol_delete_confirm: "削除しますか？",
+    ol_delete_yes: "削除",
+    ol_deleting: "削除中…",
+    ol_delete_failed: "モデルを削除できませんでした。",
     ui_close: "閉じる",
     p_lint_run: "リント実行",
     p_linting: "リント中…",

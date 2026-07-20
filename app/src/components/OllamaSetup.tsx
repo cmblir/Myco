@@ -253,7 +253,12 @@ export default function OllamaSetup({
       </div>
 
       {status.models.length > 0 ? (
-        <InstalledList models={status.models} t={t} />
+        <InstalledList
+          models={status.models}
+          endpoint={status.endpoint}
+          onDeleted={refresh}
+          t={t}
+        />
       ) : null}
 
       <div>
@@ -382,11 +387,42 @@ export default function OllamaSetup({
 
 function InstalledList({
   models,
+  endpoint,
+  onDeleted,
   t,
 }: {
   models: { name: string; size: number }[];
+  endpoint: string;
+  onDeleted: () => void;
   t: Strings;
 }): JSX.Element {
+  // Inline two-step confirm instead of a native confirm() dialog (which blocks
+  // the WebView). One row at a time can be confirming or deleting.
+  const [confirming, setConfirming] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function remove(name: string): Promise<void> {
+    setDeleting(name);
+    setError(null);
+    try {
+      // Ollama frees the disk space; mirror the pull's direct-fetch approach
+      // (CORS is permissive on localhost). DELETE /api/delete with {name}.
+      const resp = await fetch(`${endpoint}/api/delete`, {
+        method: "DELETE",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      setConfirming(null);
+      onDeleted(); // re-list models from the daemon
+    } catch {
+      setError(name);
+    } finally {
+      setDeleting(null);
+    }
+  }
+
   return (
     <div className="col" style={{ gap: 4 }}>
       <div
@@ -408,11 +444,81 @@ function InstalledList({
             background: "var(--bg-soft)",
             borderRadius: 4,
             fontSize: 12.5,
+            gap: 8,
             justifyContent: "space-between",
           }}
         >
-          <span style={{ fontFamily: "var(--font-mono)" }}>{m.name}</span>
-          <span className="muted">{formatBytes(m.size)}</span>
+          <span
+            style={{
+              fontFamily: "var(--font-mono)",
+              flex: 1,
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {m.name}
+          </span>
+          {confirming === m.name ? (
+            <span
+              className="row"
+              style={{ gap: 6, flexShrink: 0, alignItems: "center" }}
+            >
+              {error === m.name ? (
+                <span style={{ color: "#dc2626", fontSize: 11.5 }}>
+                  {t.ol_delete_failed ?? "Couldn't remove the model."}
+                </span>
+              ) : (
+                <span className="muted">
+                  {t.ol_delete_confirm ?? "Remove?"}
+                </span>
+              )}
+              <button
+                type="button"
+                className="btn"
+                style={{ padding: "2px 8px", fontSize: 12, color: "#dc2626" }}
+                disabled={deleting === m.name}
+                onClick={() => void remove(m.name)}
+              >
+                {deleting === m.name
+                  ? (t.ol_deleting ?? "Removing…")
+                  : (t.ol_delete_yes ?? "Remove")}
+              </button>
+              <button
+                type="button"
+                className="btn-ghost btn"
+                style={{ padding: "2px 8px", fontSize: 12 }}
+                disabled={deleting === m.name}
+                onClick={() => {
+                  setConfirming(null);
+                  setError(null);
+                }}
+              >
+                {t.dlg_cancel ?? "Cancel"}
+              </button>
+            </span>
+          ) : (
+            <span
+              className="row"
+              style={{ gap: 8, flexShrink: 0, alignItems: "center" }}
+            >
+              <span className="muted">{formatBytes(m.size)}</span>
+              <button
+                type="button"
+                className="btn-ghost btn"
+                aria-label={t.ol_delete ?? "Remove model"}
+                title={t.ol_delete ?? "Remove model"}
+                style={{ padding: "2px 6px" }}
+                onClick={() => {
+                  setConfirming(m.name);
+                  setError(null);
+                }}
+              >
+                <Icon name="trash" size={13} />
+              </button>
+            </span>
+          )}
         </div>
       ))}
     </div>
