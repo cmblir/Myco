@@ -114,6 +114,14 @@ export interface SourceRef {
   resolved: boolean;
 }
 
+export interface TaskItem {
+  page: string;
+  stem: string;
+  line: number;
+  text: string;
+  done: boolean;
+}
+
 export interface ProvenanceRow {
   path: string;
   name: string;
@@ -469,6 +477,8 @@ export const ipc = {
     invoke<ClaudeStatus>("agent_check", { provider }),
   agentRun: (provider: string, model: string, prompt: string, cwd: string) =>
     invoke<ClaudeResult>("agent_run", { provider, model, prompt, cwd }),
+  scanTasks: (vaultPath: string) =>
+    invoke<TaskItem[]>("scan_tasks", { vaultPath }),
   scanProvenance: (vaultPath: string) =>
     invoke<ProvenanceRow[]>("scan_provenance", { vaultPath }),
   memexProIngest: (slug: string, title: string, text: string) =>

@@ -982,6 +982,16 @@ pub fn scan_provenance(
     provenance::scan_provenance(&vault_path)
 }
 
+/// Collect every markdown checkbox item across the vault into one task list.
+#[tauri::command]
+pub fn scan_tasks(
+    state: tauri::State<VaultRoot>,
+    vault_path: String,
+) -> Result<Vec<crate::tasks::TaskItem>, String> {
+    let vault_path = confine_root(&state, &vault_path)?;
+    crate::tasks::scan_tasks(&vault_path)
+}
+
 /// Memex Pro ingest: send the open vault's snapshot + this source to the
 /// configured proxy and apply the wiki file operations it returns (confined to
 /// the vault). The proxy URL comes from settings; the license key from the

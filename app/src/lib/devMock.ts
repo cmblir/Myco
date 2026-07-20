@@ -759,6 +759,15 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       }
       return Promise.resolve(hits);
     }
+    case "scan_tasks":
+      // Seeded checkbox items across a couple of notes; open ones first.
+      return Promise.resolve([
+        { page: "daily.md", stem: "daily", line: 3, text: "reindex embeddings before the demo", done: false },
+        { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", line: 42, text: "add the flash-attention variant", done: false },
+        { page: "wiki/embeddings.md", stem: "embeddings", line: 18, text: "cite the original word2vec paper", done: false },
+        { page: "daily.md", stem: "daily", line: 7, text: "skim the RoPE paper", done: true },
+        { page: "wiki/tokenization.md", stem: "tokenization", line: 25, text: "note the BPE merge order", done: true },
+      ]);
     case "scan_provenance":
       return Promise.resolve(provenance());
     case "list_schedules":

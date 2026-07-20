@@ -77,6 +77,16 @@ export interface Strings {
   vw_col_tags?: string;
   nav_history: string;
   nav_provenance: string;
+  nav_tasks: string;
+  tasks_title: string;
+  tasks_lede: string;
+  tasks_loading: string;
+  tasks_empty: string;
+  tasks_empty_hint: string;
+  tasks_open_n: string;
+  tasks_done_n: string;
+  tasks_all_done: string;
+  tasks_completed: string;
   nav_tags: string;
   nav_study: string;
   nav_schedules: string;
@@ -734,6 +744,16 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_col_tags: "Tags",
     nav_history: "History",
     nav_provenance: "Provenance",
+    nav_tasks: "Tasks",
+    tasks_title: "Tasks",
+    tasks_lede: "Every checkbox item across your notes, gathered in one place.",
+    tasks_loading: "Scanning notes…",
+    tasks_empty: "No tasks yet",
+    tasks_empty_hint: "Add a `- [ ] …` checkbox to any note and it will show up here.",
+    tasks_open_n: "{n} open",
+    tasks_done_n: "{n} done",
+    tasks_all_done: "All caught up — nothing open.",
+    tasks_completed: "Completed ({n})",
     nav_tags: "Tags",
     nav_study: "Study",
     nav_schedules: "Schedules",
@@ -1406,6 +1426,16 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_col_tags: "태그",
     nav_history: "히스토리",
     nav_provenance: "출처",
+    nav_tasks: "할 일",
+    tasks_title: "할 일",
+    tasks_lede: "노트 전체의 체크박스 항목을 한곳에 모았습니다.",
+    tasks_loading: "노트 스캔 중…",
+    tasks_empty: "아직 할 일이 없습니다",
+    tasks_empty_hint: "아무 노트에나 `- [ ] …` 체크박스를 추가하면 여기에 표시됩니다.",
+    tasks_open_n: "미완 {n}개",
+    tasks_done_n: "완료 {n}개",
+    tasks_all_done: "모두 완료 — 남은 항목이 없습니다.",
+    tasks_completed: "완료 ({n})",
     nav_tags: "태그",
     nav_study: "학습",
     nav_schedules: "스케줄",
@@ -2017,6 +2047,16 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_views: "ビュー",
     nav_history: "履歴",
     nav_provenance: "出典",
+    nav_tasks: "タスク",
+    tasks_title: "タスク",
+    tasks_lede: "ノート全体のチェックボックス項目を一か所にまとめました。",
+    tasks_loading: "ノートをスキャン中…",
+    tasks_empty: "まだタスクがありません",
+    tasks_empty_hint: "任意のノートに `- [ ] …` チェックボックスを追加すると、ここに表示されます。",
+    tasks_open_n: "未完了 {n}件",
+    tasks_done_n: "完了 {n}件",
+    tasks_all_done: "すべて完了 — 残りはありません。",
+    tasks_completed: "完了 ({n})",
     nav_tags: "タグ",
     nav_study: "学習",
     nav_schedules: "スケジュール",

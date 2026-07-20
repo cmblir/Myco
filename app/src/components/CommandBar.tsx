@@ -87,6 +87,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
       { type: "nav", label: t.nav_graph, to: "graph" },
       { type: "nav", label: t.nav_history, to: "history" },
       { type: "nav", label: t.nav_provenance, to: "provenance" },
+      { type: "nav", label: t.nav_tasks ?? "Tasks", to: "tasks" },
       { type: "nav", label: t.nav_tags, to: "tags" },
       { type: "nav", label: t.nav_study, to: "study" },
       { type: "nav", label: t.nav_schedules, to: "schedules" },

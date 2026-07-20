@@ -26,6 +26,7 @@ pub mod sample_vault;
 pub mod schedules;
 pub mod secrets;
 pub mod settings;
+pub mod tasks;
 pub mod vault;
 pub mod vector_index;
 pub mod whisper;
@@ -128,6 +129,7 @@ pub fn run() {
             commands::agent_check,
             commands::agent_run,
             commands::scan_provenance,
+            commands::scan_tasks,
             commands::memex_pro_ingest,
             commands::memex_pro_login,
             commands::memex_pro_logout,

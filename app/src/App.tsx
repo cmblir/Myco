@@ -16,6 +16,7 @@ import PageQuery from "./pages/PageQuery";
 const PageGraph = lazy(() => import("./pages/PageGraph"));
 import PageHistory from "./pages/PageHistory";
 import PageProvenance from "./pages/PageProvenance";
+import PageTasks from "./pages/PageTasks";
 import PageSettings from "./pages/PageSettings";
 import PageReader from "./pages/PageReader";
 import PageTags from "./pages/PageTags";
@@ -356,6 +357,7 @@ export default function App(): JSX.Element {
     );
   else if (route === "history") body = <PageHistory t={t} />;
   else if (route === "provenance") body = <PageProvenance t={t} />;
+  else if (route === "tasks") body = <PageTasks t={t} />;
   else if (route === "tags") body = <PageTags t={t} />;
   else if (route === "views") body = <PageViews t={t} />;
   else if (route === "study") body = <PageStudy t={t} />;

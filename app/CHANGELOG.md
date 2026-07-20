@@ -8,6 +8,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A Tasks view gathers every checkbox in your vault.** Any `- [ ]` / `- [x]`
+  item in any note now shows up on a new Tasks page — open items first, completed
+  ones tucked into a collapsible section — and clicking one jumps to the note it
+  lives in. Read-only for now: you check things off where they live. `raw/`
+  sources and code samples are skipped.
+
 - **Ingest now updates existing pages instead of duplicating them.** Before the
   ingest agent runs, Memex matches the new source against your existing wiki
   (semantic search over the local embedding index) and steers the agent to the

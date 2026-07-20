@@ -152,6 +152,12 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
             active={route === "views"}
             onClick={() => setRoute("views")}
           />
+          <NavItem
+            label={t.nav_tasks ?? "Tasks"}
+            icon="check"
+            active={route === "tasks"}
+            onClick={() => setRoute("tasks")}
+          />
         </div>
 
         <div className="nav-group">

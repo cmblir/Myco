@@ -19,6 +19,7 @@ export type RouteId =
   | "graph"
   | "history"
   | "provenance"
+  | "tasks"
   | "tags"
   | "views"
   | "study"
