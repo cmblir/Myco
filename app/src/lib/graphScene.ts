@@ -109,6 +109,15 @@ const HOVER_POP_MS = 150;
 const EDGE_NEUTRAL_DARK = new THREE.Color("#8b93a8");
 const EDGE_NEUTRAL_LIGHT = new THREE.Color("#2c3446");
 const EDGE_GREY_MIX = 0.5;
+// Cosmic-web skin: the edges ARE the picture (dark-matter-simulation look).
+// Tiny stars, and thin violet filaments whose brightness comes from OVERLAP —
+// each line is faint, additive blending sums where strands cross, so density
+// paints itself. Nodes shrink to points so the web reads as tissue, not bulbs.
+const EDGE_NEUTRAL_WEB = new THREE.Color("#6f7ce0");
+const EDGE_OPACITY_WEB = 0.16;
+const EDGE_BASE_WEB = 0.6; // single strand faint but visible; crossings glow
+const EDGE_GREY_MIX_WEB = 0.85; // near-uniform filament tissue, faint hue hint
+const WEB_NODE_SCALE = 0.34; // node size multiplier on the web skin
 // Midpoint-split edge treatment (spec A2, Holten-style): each edge renders as
 // TWO segments s→m, m→t so alpha can peak at the middle and fade at the ends —
 // N spokes converging on a hub no longer sum to a bright disc at the core.
@@ -225,6 +234,10 @@ const BLOOM_LAYER = 1;
 // "auto" → mono (1) until the vault grows past monoBelow nodes.
 function monoFor(s: GraphSettings, nodeCount: number): number {
   if (s.nodeColor === "white" || s.nodeColor === "black") return 1;
+  // Cosmic-web skin: mono is the look. Stars are pale points and the violet
+  // filaments carry the picture — community confetti would fight the density
+  // read that IS this skin, so the skin decides (like "white"/"black" above).
+  if (s.skin === "web") return 1;
   if (s.nodeColor === "auto") return nodeCount < s.monoBelow ? 1 : 0;
   return 0;
 }
@@ -516,10 +529,13 @@ export class GraphScene {
 
   // Multi-shell parallax background (2-3 Points layers in one Group) for depth.
   private starfield: THREE.Group;
-  // Multiplies the (origin-centred) shell radii. 1 for a single vault; the
-  // multiverse sets it >1 (and repositions the group) so the deep field spans
-  // the far-flung galaxies instead of leaving a bounded ball of stars at origin.
-  private starfieldScale = 1;
+  // Recenter the starfield on the camera every frame (an infinite-sky feel):
+  // the camera is always INSIDE the shells, so stars fill the frame at any
+  // distance. The multiverse turns this on — its galaxies spread far beyond the
+  // fixed shell radii, which otherwise render as a bounded ball of stars with
+  // the outer galaxies floating on pure black. Off (default) for single vaults,
+  // where the origin-centred shells give parallax depth.
+  private starfieldFollow = false;
   private nebula: NebulaLayer;
   private nebulaTick = 0; // throttle nebula centroid recompute (every Nth tick)
   private pulse: PulseLayer; // signals flowing along edges (alive/communication)
@@ -545,6 +561,14 @@ export class GraphScene {
   // and the 3D synapse layouts.
   private get synapseRender(): boolean {
     return this.synapse2dMode || this.synapse3dMode;
+  }
+  // Cosmic-web skin: tiny nodes, filament edges that brighten by overlap.
+  private get webSkin(): boolean {
+    return this.settings.skin === "web";
+  }
+  // Per-skin node size multiplier, folded into u_sizeScale wherever it is set.
+  private skinNodeScale(): number {
+    return this.webSkin ? WEB_NODE_SCALE : 1;
   }
   private imposterEnabled = false; // dark-theme gate (LOD then controls visibility)
   private planets: PlanetLayer; // near-LOD: nearest nodes → procedural planet spheres
@@ -826,7 +850,7 @@ export class GraphScene {
     this.nodeMat = new THREE.ShaderMaterial({
       uniforms: {
         u_pixelRatio: { value: pr },
-        u_sizeScale: { value: this.sizeScale(h) },
+        u_sizeScale: { value: this.sizeScale(h) * this.skinNodeScale() },
         u_fogNear: { value: 200 },
         u_fogFar: { value: 2600 },
         u_time: { value: 0 },
@@ -867,10 +891,23 @@ export class GraphScene {
       new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 12), 3),
     );
     // Pick the theme-branched edge look up front so both the material and the
-    // vertex-colour derivation (writeEdges) draw from the same values.
-    this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
-    this.edgeOpacity = dark ? EDGE_OPACITY_DARK : EDGE_OPACITY_LIGHT;
-    this.edgeBaseBrightness = dark ? EDGE_BASE_DARK : EDGE_BASE_LIGHT;
+    // vertex-colour derivation (writeEdges) draw from the same values. The web
+    // skin overrides: faint additive violet strands that sum where they cross.
+    this.edgeNeutral = this.webSkin
+      ? EDGE_NEUTRAL_WEB
+      : dark
+        ? EDGE_NEUTRAL_DARK
+        : EDGE_NEUTRAL_LIGHT;
+    this.edgeOpacity = this.webSkin
+      ? EDGE_OPACITY_WEB
+      : dark
+        ? EDGE_OPACITY_DARK
+        : EDGE_OPACITY_LIGHT;
+    this.edgeBaseBrightness = this.webSkin
+      ? EDGE_BASE_WEB
+      : dark
+        ? EDGE_BASE_DARK
+        : EDGE_BASE_LIGHT;
     this.edgeMat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
@@ -1130,16 +1167,7 @@ export class GraphScene {
           { count: 900, r0: 3200, r1: 4600, size: 1.1, color: 0xb2bcd2, op: 0.16 },
           { count: 1100, r0: 5000, r1: 6800, size: 0.8, color: 0xa6b0c8, op: 0.1 },
         ];
-    // starfieldScale stretches the shells to cover a wide multiverse field.
-    // Count is boosted sub-linearly (radii grow, volume grows ~cubically) so the
-    // field stays populated without a runaway point count. Single vault: sf=1.
-    const sf = this.starfieldScale;
-    let shells = near.map((s) => ({
-      ...s,
-      r0: s.r0 * sf,
-      r1: s.r1 * sf,
-      count: Math.round(s.count * densMul * Math.min(sf, 2.2)),
-    }));
+    let shells = near.map((s) => ({ ...s, count: Math.round(s.count * densMul) }));
     // Performance mode keeps only the mid shell — one draw call of depth cue.
     if (this.perfLod) shells = [shells[1]];
     let seed = 1; // global stream cursor so shells don't share point positions
@@ -1173,30 +1201,14 @@ export class GraphScene {
   }
 
   /**
-   * Envelope the starfield around a wide field: centre the shells on `center`
-   * and scale them so the outermost shell comfortably exceeds `radius`. The
-   * multiverse spreads galaxies far past the default origin-centred shells,
-   * which otherwise render as a bounded ball of stars in the middle of the frame
-   * with the outer galaxies floating on pure black. Single-vault never calls
-   * this (starfieldScale stays 1, behaviour unchanged).
+   * Keep the starfield centred on the camera (an "infinite sky"): the camera
+   * never leaves the shells, so stars fill the frame at any distance and can
+   * never render as a bounded ball the scene outgrows. The multiverse enables
+   * this; single-vault keeps the origin-centred parallax shells.
    */
-  setStarfieldEnvelope(cx: number, cy: number, cz: number, radius: number): void {
-    const OUTER = 6800; // default outermost shell radius (dark + light share it)
-    // Cover the field with margin; clamp so a tiny field doesn't shrink stars
-    // and a huge one doesn't explode the point count.
-    this.starfieldScale = Math.min(6, Math.max(1, (radius * 1.4) / OUTER));
-    const dark = this.darkTheme;
-    const amb = skinAmbience(this.settings.skin, dark);
-    this.scene.remove(this.starfield);
-    for (const child of this.starfield.children) {
-      const p = child as THREE.Points;
-      (p.geometry as THREE.BufferGeometry).dispose();
-      (p.material as THREE.Material).dispose();
-    }
-    this.starfield = this.buildStarfield(dark);
-    this.starfield.visible = SHOW_STARFIELD && amb.starfield;
-    this.starfield.position.set(cx, cy, cz);
-    this.scene.add(this.starfield);
+  setStarfieldFollowCamera(on: boolean): void {
+    this.starfieldFollow = on;
+    if (!on) this.starfield.position.set(0, 0, 0);
   }
 
   // --- screen-space dotted-grid backdrop (the big-data-viz / reference look) ---
@@ -1423,10 +1435,16 @@ export class GraphScene {
       // bridges glow as bright gradient nerve fibres while dense intra-cluster
       // edges dim into tight cores (ganglia joined by nerves — the reference).
       const web = this.settings.edgeTint === "community";
-      const greyMix = web || this.synapseRender ? 0.12 : EDGE_GREY_MIX;
+      // Web skin: near-uniform filament tissue (strong pull to the violet
+      // neutral) — density, not hue, carries the picture there.
+      const greyMix = this.webSkin
+        ? EDGE_GREY_MIX_WEB
+        : web || this.synapseRender
+          ? 0.12
+          : EDGE_GREY_MIX;
       cs.set(sa.color).lerp(this.edgeNeutral, greyMix);
       ct.set(ta.color).lerp(this.edgeNeutral, greyMix);
-      let f = this.edgeBaseBrightness * (web ? 1.55 : 1);
+      let f = this.edgeBaseBrightness * (web && !this.webSkin ? 1.55 : 1);
       if (this.synapseRender) {
         const inter =
           sa.community !== ta.community && sa.community >= 0 && ta.community >= 0;
@@ -2113,6 +2131,14 @@ export class GraphScene {
     this.scene.add(obj);
   }
 
+  // Per-frame hook for overlay layers (the multiverse bubbles breathe with it).
+  // Runs only while ambient motion is allowed, so reduced-motion / the ambience
+  // toggle quiet the overlays exactly like the scene's own idle life.
+  private overlayTick: ((t: number) => void) | null = null;
+  setOverlayTick(fn: ((t: number) => void) | null): void {
+    this.overlayTick = fn;
+  }
+
   /** Live camera world position (clone) — the multiverse uses it to detect when
    *  the user has dollied INTO a universe bubble (zoom-to-enter). */
   getCameraPosition(): THREE.Vector3 {
@@ -2406,10 +2432,26 @@ export class GraphScene {
     this.updatePlanetGate(); // skin/theme flip may enable/disable planets
     this.nebula.setDark(SHOW_NEBULA && amb.nebula && !this.flatLayout);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
-    this.edgeNeutral = dark ? EDGE_NEUTRAL_DARK : EDGE_NEUTRAL_LIGHT;
-    this.edgeOpacity = dark ? EDGE_OPACITY_DARK : EDGE_OPACITY_LIGHT;
-    this.edgeBaseBrightness = dark ? EDGE_BASE_DARK : EDGE_BASE_LIGHT;
+    this.edgeNeutral = this.webSkin
+      ? EDGE_NEUTRAL_WEB
+      : dark
+        ? EDGE_NEUTRAL_DARK
+        : EDGE_NEUTRAL_LIGHT;
+    this.edgeOpacity = this.webSkin
+      ? EDGE_OPACITY_WEB
+      : dark
+        ? EDGE_OPACITY_DARK
+        : EDGE_OPACITY_LIGHT;
+    this.edgeBaseBrightness = this.webSkin
+      ? EDGE_BASE_WEB
+      : dark
+        ? EDGE_BASE_DARK
+        : EDGE_BASE_LIGHT;
     this.edgeMat.opacity = Math.min(1, this.edgeOpacity * this.settings.linkThickness);
+    // Web skin shrinks stars to points (a skin switch must land live, and the
+    // resize handler owns this uniform otherwise — same formula, same source).
+    this.nodeMat.uniforms.u_sizeScale.value =
+      this.sizeScale(this.renderer.domElement.clientHeight || 1) * this.skinNodeScale();
     // Arrows are tinted per-instance by source-node colour; only the no-colour
     // fallback tracks the theme. writeArrowColors() below repaints them.
     this.arrowFallback = parseRGBA(theme.edgeHi).color;
@@ -2658,11 +2700,14 @@ export class GraphScene {
   // perf-LOD cap. They still RENDER under reduced-motion (structure, not
   // ambience) — only their spin freezes (see PlanetLayer.update()).
   private updatePlanetGate(): void {
+    // The web skin keeps nodes as bare points — resolving the nearest ones
+    // into full-colour planet spheres would break its monochrome density read.
     this.planetsEnabled =
       this.settings.nearFieldPlanets &&
       this.darkTheme &&
       !this.perfLod &&
-      !this.flatLayout;
+      !this.flatLayout &&
+      !this.webSkin;
     this.planets.setEnabled(this.planetsEnabled);
   }
 
@@ -2954,6 +2999,11 @@ export class GraphScene {
       if (this.bridgeLines.visible && (this.bridgeTick = (this.bridgeTick + 1) % 30) === 0) {
         this.refreshBridgeLines();
       }
+      // Infinite-sky mode (multiverse): ride the shells along with the camera
+      // so the deep field never runs out, no matter how wide the scene spans.
+      if (this.starfieldFollow) this.starfield.position.copy(this.camera.position);
+      // Overlay life (multiverse bubble breathing) — ambience-gated.
+      if (this.overlayTick && this.ambientOn()) this.overlayTick(now / 1000);
       // Grid backdrop parallax: drift the fullscreen dot grid with the camera's
       // look direction so it reads as depth behind the graph, not a flat UI
       // overlay pinned to the window.
@@ -2971,7 +3021,9 @@ export class GraphScene {
       // idle motion — spec B4).
       if (this.ambientOn() && !this.interacting) {
         // Round pulses only when the flying-arrow fleet isn't the signal layer.
-        if (!this.settings.arrows) this.pulse.update(dt);
+        // The cosmic-web skin also mutes them: hundreds of community-coloured
+        // particles read as confetti over its faint monochrome filaments.
+        if (!this.settings.arrows && !this.webSkin) this.pulse.update(dt);
         this.nodeMat.uniforms.u_time.value += dt;
         // Meteors cross the galaxy-skin sky (visibility gates the skin/perf).
         if (this.meteor.lines.visible) this.meteor.update(dt);
@@ -3139,7 +3191,7 @@ export class GraphScene {
     }
     this.bloom.setSize(w, h);
     this.labelRenderer.setSize(w, h);
-    this.nodeMat.uniforms.u_sizeScale.value = this.sizeScale(h);
+    this.nodeMat.uniforms.u_sizeScale.value = this.sizeScale(h) * this.skinNodeScale();
     this.wave.setSizeScale(this.sizeScale(h));
     this.nova.setSizeScale(this.sizeScale(h));
     this.synapse.setSizeScale(this.sizeScale(h));

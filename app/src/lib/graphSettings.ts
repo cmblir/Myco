@@ -8,7 +8,7 @@
 //   - github.com/ycnmhd/obsidian-graph-presets (slider ranges)
 
 // Kept here (not graphTheme.ts) so this module stays DOM-free and testable.
-export type GraphSkinKey = "auto" | "black" | "white" | "galaxy";
+export type GraphSkinKey = "auto" | "black" | "white" | "galaxy" | "web";
 
 export interface GraphSettings {
   // Filters

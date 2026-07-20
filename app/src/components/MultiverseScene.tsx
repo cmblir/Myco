@@ -61,6 +61,9 @@ export default function MultiverseScene({
       ...DEFAULT_GRAPH_SETTINGS,
       layout: "galaxy" as const,
       textFadeThreshold: 3,
+      // A dense sky sells "a sea of universes": with the camera-following
+      // starfield the whole frame stays star-filled behind every bubble.
+      skyStyle: "dense" as const,
     };
     const theme = makeTheme(settings.skin);
     const { graph } = assembleMultiverse(
@@ -152,38 +155,12 @@ export default function MultiverseScene({
     scene.syncPositions();
     scene.layoutSettled();
     scene.fit();
-    // Envelope the deep starfield around the whole field. The default shells are
-    // origin-centred with a fixed ~6800 radius, so across a wide multiverse they
-    // render as a ball of stars in the middle while the far galaxies float on
-    // black. Centre on the field centroid and scale to reach past the outermost
-    // node so the stars fill behind every galaxy.
-    {
-      let cx = 0;
-      let cy = 0;
-      let cz = 0;
-      let n = 0;
-      graph.forEachNode((_id, a) => {
-        if (a.hidden) return;
-        cx += a.x as number;
-        cy += a.y as number;
-        cz += a.z as number;
-        n += 1;
-      });
-      if (n > 0) {
-        cx /= n;
-        cy /= n;
-        cz /= n;
-        let r2 = 0;
-        graph.forEachNode((_id, a) => {
-          if (a.hidden) return;
-          const dx = (a.x as number) - cx;
-          const dy = (a.y as number) - cy;
-          const dz = (a.z as number) - cz;
-          r2 = Math.max(r2, dx * dx + dy * dy + dz * dz);
-        });
-        scene.setStarfieldEnvelope(cx, cy, cz, Math.sqrt(r2));
-      }
-    }
+    // Infinite sky: ride the starfield along with the camera so the deep field
+    // always fills the frame — a fixed origin-centred shell renders as a
+    // bounded ball of stars that the far-flung galaxies float outside of.
+    scene.setStarfieldFollowCamera(true);
+    // Idle life: the membranes breathe (ambience-gated inside the scene loop).
+    scene.setOverlayTick((tSec) => bubbles?.tick(tSec));
     container.classList.add("graph-ready");
 
     // Zoom-to-enter: point the orbit pivot at whichever bubble is nearest the

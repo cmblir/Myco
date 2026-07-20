@@ -41,6 +41,24 @@ const SKIN_THEMES: Record<Exclude<GraphSkinKey, "auto">, GraphTheme> = {
   },
   // Deep space: dark palette + the full ambience (3 star shells, nebula).
   galaxy: { ...SKIN_DARK_BASE, bg: "#05060d", sceneBg: "#05060d" },
+  // Cosmic web (the dark-matter-simulation look): near-black indigo void,
+  // tiny stars for nodes, and the EDGES as the protagonist — thin violet
+  // filaments that brighten where they overlap (additive accumulation).
+  // Warm core hue for hubs mirrors the IllustrisTNG blue-filament /
+  // orange-cluster palette.
+  web: {
+    ...SKIN_DARK_BASE,
+    bg: "#02040c",
+    sceneBg: "#02040c",
+    node: "#dfe4ff",
+    starDim: "#4a5578",
+    gxCore: "#ffb86b",
+    gxArm: "#93a4e8",
+    gxHalo: "#4a5a8f",
+    edge: "rgba(120,135,235,0.16)",
+    edgeHi: "rgba(190,205,255,0.95)",
+    accent: "#8a93ff",
+  },
 };
 
 // Resolve a FIXED skin to a fresh palette copy (scene code mutates themes).
@@ -79,6 +97,10 @@ export function skinAmbience(skin: GraphSkinKey, dark: boolean): SkinAmbience {
       return { starfield: false, nebula: false, meteors: false };
     case "galaxy":
       return { starfield: true, nebula: true, meteors: true };
+    case "web":
+      // The web IS the picture — keep a faint star depth cue, drop the nebula
+      // wash and meteors so nothing competes with the filament accumulation.
+      return { starfield: true, nebula: false, meteors: false };
     default:
       // Auto skin: starfield on both themes, nebula dark-only — and meteors on
       // dark too. First-run users land here and never find the skin picker;

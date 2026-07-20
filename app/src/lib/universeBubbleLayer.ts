@@ -62,6 +62,10 @@ interface Bubble {
   mesh: THREE.Mesh;
   mat: THREE.ShaderMaterial;
   label?: THREE.Sprite;
+  /** Membrane radius at rest — tick() breathes around this, never from it. */
+  baseR: number;
+  /** Phase offset so the field shimmers instead of pulsing in lockstep. */
+  phase: number;
 }
 
 export interface BubbleOpts {
@@ -140,8 +144,25 @@ export class UniverseBubbleLayer {
 
       const label = this.makeLabel(titles.get(slug) ?? slug, hue, c, R);
       if (label) this.group.add(label);
-      this.bubbles.push({ slug, mesh, mat, label: label ?? undefined });
+      this.bubbles.push({
+        slug,
+        mesh,
+        mat,
+        label: label ?? undefined,
+        baseR: R,
+        phase: rank * 2.1,
+      });
     });
+  }
+
+  /** Idle life: each membrane breathes gently (±1.2% radius, ~8s period) on its
+   * own phase so the field shimmers instead of pulsing in lockstep. Driven by
+   * the scene's ambience-gated overlay tick, so reduced-motion stills it.
+   * Centre and rest radius never change — zoom-to-enter geometry stays exact. */
+  tick(t: number): void {
+    for (const b of this.bubbles) {
+      b.mesh.scale.setScalar(b.baseR * (1 + 0.012 * Math.sin(t * 0.8 + b.phase)));
+    }
   }
 
   // A billboarded text sprite floating just above the bubble — the project's

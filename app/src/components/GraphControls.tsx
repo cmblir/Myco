@@ -298,6 +298,7 @@ export default function GraphControls({
                 ["black", t.gr_skin_black ?? "Black"],
                 ["white", t.gr_skin_white ?? "White"],
                 ["galaxy", t.gr_skin_galaxy ?? "Galaxy"],
+                ["web", t.gr_skin_web ?? "Cosmic web"],
               ] as [GraphSkinKey, string][]
             ).map(([key, label]) => (
               <button

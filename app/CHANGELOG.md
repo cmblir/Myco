@@ -8,6 +8,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **A new "Cosmic web" graph skin.** The dark-matter-simulation look: notes
+  shrink to pale points of starlight and the links carry the picture — thin
+  violet filaments that genuinely brighten where strands overlap, so the
+  structure paints itself as a density field. Planet spheres and the coloured
+  edge-signal particles stay out of this skin's way. Pick it under Graph
+  settings → Color mode.
+
+- **The multiverse now feels like space, not a diorama.** The deep starfield
+  rides with the camera, so the sky is star-filled in every direction at any
+  zoom — vault bubbles can never drift past the edge of the backdrop again. The
+  sky is denser out there, and each universe membrane now breathes gently on its
+  own rhythm (still under the ambient-motion/reduced-motion switches).
+
 - **Each vault's galaxy now glows in its own colour.** In the multiverse view a
   galaxy's stars are tinted to match its bubble, so at a glance you can tell which
   cluster of stars belongs to which vault — instead of every galaxy sharing the
