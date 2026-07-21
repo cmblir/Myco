@@ -451,8 +451,13 @@ export const VIBE_PRESETS: Record<VibeKey, Partial<GraphSettings>> = {
   paper: { skin: "white", layout: "atlas", ...LAYOUT_RECOMMENDED.atlas },
   // The vault as readable history — time strata on paper.
   chronicle: { skin: "white", layout: "strata", ...LAYOUT_RECOMMENDED.strata },
-  // The meaning-nebula: notes cluster by embedding, community stars on void.
-  nebula: { skin: "black", layout: "semantic", ...LAYOUT_RECOMMENDED.semantic },
+  // The meaning-nebula: notes cluster by EMBEDDING, wrapped in glowing nebula
+  // gas. It must ride a skin that actually renders the nebula — the old "black"
+  // skin stripped ALL ambience (skinAmbience black = no starfield/nebula/atmo),
+  // so "의미 성운" showed as bare faint dots on an AgX-blued void, no nebula at
+  // all. "galaxy" turns on the living-nebula atmo field + starfield so the
+  // meaning-clusters read as luminous clouds on a clean dark cosmos.
+  nebula: { skin: "galaxy", layout: "semantic", ...LAYOUT_RECOMMENDED.semantic },
 };
 
 // Which preset (if any) the current force values correspond to — drives the
