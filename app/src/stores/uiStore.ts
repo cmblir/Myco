@@ -30,6 +30,9 @@ export type RouteId =
 export interface UIState {
   // Routing
   route: RouteId;
+  // Split view: when set, a SECOND pane shows this route beside the primary one
+  // (e.g. Overview + Graph side by side). null = single pane.
+  splitRoute: RouteId | null;
   // Layout
   sidebarCollapsed: boolean;
   cmdOpen: boolean;
@@ -46,6 +49,7 @@ export interface UIState {
   expandedFolders: Record<string, boolean>;
 
   setRoute: (route: RouteId) => void;
+  setSplitRoute: (route: RouteId | null) => void;
   setSidebarCollapsed: (v: boolean) => void;
   toggleSidebar: () => void;
   setCmdOpen: (v: boolean) => void;
@@ -63,6 +67,7 @@ export const useUIStore = create<UIState>()(
   persist(
     (set, get) => ({
       route: "overview",
+      splitRoute: null,
       sidebarCollapsed: false,
       cmdOpen: false,
       lang: "ko",
@@ -75,7 +80,12 @@ export const useUIStore = create<UIState>()(
       // old slug-keyed seed never matched real paths and was inert.
       expandedFolders: {},
 
-      setRoute: (route) => set({ route }),
+      setRoute: (route) =>
+        // Never let the primary and split panes show the SAME route (two live
+        // graph scenes, duplicate state) — clear the split if it would collide.
+        set((s) => ({ route, splitRoute: s.splitRoute === route ? null : s.splitRoute })),
+      setSplitRoute: (route) =>
+        set((s) => ({ splitRoute: route === s.route ? null : route })),
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
       toggleSidebar: () => set({ sidebarCollapsed: !get().sidebarCollapsed }),
       setCmdOpen: (v) => set({ cmdOpen: v }),

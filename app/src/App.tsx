@@ -24,7 +24,9 @@ import PageViews from "./pages/PageViews";
 import PageStudy from "./pages/PageStudy";
 import PageSchedules from "./pages/PageSchedules";
 import { STRINGS } from "./lib/i18n";
+import type { Strings } from "./lib/i18n";
 import { useUIStore } from "./stores/uiStore";
+import type { RouteId } from "./stores/uiStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { getLastVaultPath, useVaultStore } from "./stores/vaultStore";
 import { useAutoIngestScheduler } from "./lib/autoIngest";
@@ -54,8 +56,55 @@ function countPages(nodes: FileNode[]): number {
 // [data-theme] stylesheet own --accent instead of overriding it inline.
 const DEFAULT_ACCENT = "#181715";
 
+// Routes offered in the split-pane picker (settings + reader pages are excluded
+// — single-purpose surfaces that don't pair usefully).
+const SPLIT_ROUTES: RouteId[] = [
+  "overview",
+  "graph",
+  "query",
+  "ingest",
+  "history",
+  "provenance",
+  "tags",
+  "views",
+  "tasks",
+  "study",
+  "schedules",
+];
+
+function routeLabel(t: Strings, r: RouteId): string {
+  switch (r) {
+    case "overview":
+      return t.nav_overview;
+    case "graph":
+      return t.nav_graph;
+    case "query":
+      return t.nav_query;
+    case "ingest":
+      return t.nav_ingest;
+    case "history":
+      return t.nav_history;
+    case "provenance":
+      return t.nav_provenance;
+    case "tags":
+      return t.nav_tags;
+    case "views":
+      return t.nav_views ?? "Views";
+    case "tasks":
+      return t.nav_tasks;
+    case "study":
+      return t.nav_study;
+    case "schedules":
+      return t.nav_schedules;
+    default:
+      return r;
+  }
+}
+
 export default function App(): JSX.Element {
   const route = useUIStore((s) => s.route);
+  const splitRoute = useUIStore((s) => s.splitRoute);
+  const setSplitRoute = useUIStore((s) => s.setSplitRoute);
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const lang = useUIStore((s) => s.lang);
   const theme = useUIStore((s) => s.theme);
@@ -328,44 +377,77 @@ export default function App(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  let body: JSX.Element;
-  if (route === "overview") body = <PageOverview t={t} />;
-  else if (route === "ingest") body = <PageIngest t={t} />;
-  else if (route === "query") body = <PageQuery t={t} />;
-  else if (route === "graph")
-    body = (
-      <ErrorBoundary area="graph">
-        {/* The three.js chunk is ~800KB — the parse gap used to be a BLANK
-            pane on the marquee view. Reuse the constellation tip so the wait
-            reads as part of the show. */}
-        <Suspense
-          fallback={
-            <div className="graph-loading">
-              <div className="graph-loading-tip">
-                {/* MYCO keeps the chunk-parse gap company. */}
-                <div style={{ display: "grid", justifyItems: "center", gap: 12 }}>
-                  <MascotClip clip="idle" size={140} />
-                  <span>{t.gr_loading ?? "aligning constellations…"}</span>
+  const renderRoute = (r: RouteId): JSX.Element => {
+    if (r === "overview") return <PageOverview t={t} />;
+    if (r === "ingest") return <PageIngest t={t} />;
+    if (r === "query") return <PageQuery t={t} />;
+    if (r === "graph")
+      return (
+        <ErrorBoundary area="graph">
+          {/* The three.js chunk is ~800KB — the parse gap used to be a BLANK
+              pane on the marquee view. Reuse the constellation tip so the wait
+              reads as part of the show. */}
+          <Suspense
+            fallback={
+              <div className="graph-loading">
+                <div className="graph-loading-tip">
+                  {/* MYCO keeps the chunk-parse gap company. */}
+                  <div style={{ display: "grid", justifyItems: "center", gap: 12 }}>
+                    <MascotClip clip="idle" size={140} />
+                    <span>{t.gr_loading ?? "aligning constellations…"}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          }
-        >
-          <PageGraph t={t} />
-        </Suspense>
-      </ErrorBoundary>
-    );
-  else if (route === "history") body = <PageHistory t={t} />;
-  else if (route === "provenance") body = <PageProvenance t={t} />;
-  else if (route === "tasks") body = <PageTasks t={t} />;
-  else if (route === "tags") body = <PageTags t={t} />;
-  else if (route === "views") body = <PageViews t={t} />;
-  else if (route === "study") body = <PageStudy t={t} />;
-  else if (route === "schedules") body = <PageSchedules t={t} />;
-  else if (route === "settings") body = <PageSettings t={t} />;
-  else if (route.startsWith("page:"))
-    body = <PageReader t={t} pageRoute={route.slice(5)} />;
-  else body = <PageOverview t={t} />;
+            }
+          >
+            <PageGraph t={t} />
+          </Suspense>
+        </ErrorBoundary>
+      );
+    if (r === "history") return <PageHistory t={t} />;
+    if (r === "provenance") return <PageProvenance t={t} />;
+    if (r === "tasks") return <PageTasks t={t} />;
+    if (r === "tags") return <PageTags t={t} />;
+    if (r === "views") return <PageViews t={t} />;
+    if (r === "study") return <PageStudy t={t} />;
+    if (r === "schedules") return <PageSchedules t={t} />;
+    if (r === "settings") return <PageSettings t={t} />;
+    if (r.startsWith("page:")) return <PageReader t={t} pageRoute={r.slice(5)} />;
+    return <PageOverview t={t} />;
+  };
+
+  const body: JSX.Element = splitRoute ? (
+    <div className="workspace-split">
+      <section className="workspace-pane">{renderRoute(route)}</section>
+      <section className="workspace-pane workspace-pane--secondary">
+        <div className="pane-bar">
+          <select
+            className="pane-bar__pick"
+            value={splitRoute}
+            onChange={(e) => setSplitRoute(e.target.value as RouteId)}
+            aria-label={t.split_pick ?? "Second pane"}
+          >
+            {SPLIT_ROUTES.map((r) => (
+              <option key={r} value={r} disabled={r === route}>
+                {routeLabel(t, r)}
+              </option>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="pane-bar__close"
+            onClick={() => setSplitRoute(null)}
+            aria-label={t.split_close ?? "Close split"}
+          >
+            ×
+          </button>
+        </div>
+        <div className="pane-body">{renderRoute(splitRoute)}</div>
+      </section>
+    </div>
+  ) : (
+    renderRoute(route)
+  );
 
   return (
     <div className={"app" + (sidebarCollapsed ? " sidebar-collapsed" : "")}>

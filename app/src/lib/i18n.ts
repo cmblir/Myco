@@ -91,6 +91,10 @@ export interface Strings {
   nav_study: string;
   nav_schedules: string;
   nav_settings: string;
+  // Split view (two panes side by side)
+  split_open?: string;
+  split_close?: string;
+  split_pick?: string;
   // Multiverse overview (Phase 1)
   folder__root: string;
   folder_sources: string;
@@ -826,6 +830,9 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_study: "Study",
     nav_schedules: "Schedules",
     nav_settings: "Settings",
+    split_open: "Split view",
+    split_close: "Close split view",
+    split_pick: "Second pane",
     folder__root: "Root",
     folder_sources: "Sources",
     folder_entities: "Entities",
@@ -1576,6 +1583,9 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_study: "학습",
     nav_schedules: "스케줄",
     nav_settings: "설정",
+    split_open: "화면 분할",
+    split_close: "분할 닫기",
+    split_pick: "두 번째 창",
     folder__root: "루트",
     folder_sources: "소스",
     folder_entities: "엔티티",
@@ -2265,6 +2275,9 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_study: "学習",
     nav_schedules: "スケジュール",
     nav_settings: "設定",
+    split_open: "画面分割",
+    split_close: "分割を閉じる",
+    split_pick: "2つ目のペイン",
     folder__root: "ルート",
     folder_sources: "ソース",
     folder_entities: "エンティティ",

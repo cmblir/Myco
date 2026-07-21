@@ -36,6 +36,7 @@ export type IconName =
   | "trash"
   | "edit"
   | "sidebar"
+  | "columns"
   | "cmd"
   | "globe"
   | "cloud"
@@ -182,6 +183,12 @@ export function Icon({
       <>
         <rect x="3" y="4" width="18" height="16" rx="2" />
         <path d="M9 4v16" />
+      </>
+    ),
+    columns: (
+      <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="M12 4v16" />
       </>
     ),
     cmd: (

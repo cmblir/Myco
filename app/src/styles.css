@@ -497,6 +497,24 @@ select {
 .pill:hover {
   background: var(--bg-hover);
 }
+/* Square icon-only pill (split-view toggle). Keeps the pill's border/hover but
+   a fixed square footprint so a bare glyph isn't lozenge-stretched. */
+.pill-icon {
+  padding: 0;
+  width: 28px;
+  height: 26px;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--ink-2);
+}
+.pill-icon.is-active {
+  background: var(--accent, var(--ink));
+  border-color: transparent;
+  color: var(--bg);
+}
+.pill-icon.is-active:hover {
+  background: var(--accent, var(--ink));
+}
 .pill .dot {
   width: 6px;
   height: 6px;
@@ -549,6 +567,102 @@ select {
   flex-direction: column;
   overflow: hidden;
 }
+
+/* Split view — two panes side by side under the shared topbar. The split fills
+   the remaining viewport height; each pane scrolls (or fills, for the graph)
+   independently. Stacks to a single column on narrow widths. */
+.workspace-split {
+  display: flex;
+  height: calc(100vh - var(--top-h));
+  overflow: hidden;
+}
+.workspace-pane {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+.workspace-pane--secondary {
+  border-left: 1px solid var(--line);
+}
+/* A page inside a pane drops its centered max-width and heavy horizontal
+   padding and scrolls within the pane rather than the viewport. */
+.workspace-pane .workspace {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 32px 64px;
+  max-width: none;
+  margin: 0;
+}
+/* The graph/marquee page sizes to the viewport on its own; inside a pane it
+   must fill the PANE (height:auto + flex) so it never spawns a 2nd scrollbar. */
+.workspace-pane .workspace-wide {
+  height: auto;
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0 16px;
+}
+.pane-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--line);
+  flex: 0 0 auto;
+}
+.pane-bar__pick {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12.5px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  cursor: pointer;
+}
+.pane-bar__close {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink-2);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+}
+.pane-bar__close:hover {
+  background: var(--bg-hover);
+}
+.pane-body {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+/* Below the small-window breakpoint a side-by-side split is too cramped —
+   stack the two panes vertically instead. */
+@media (max-width: 820px) {
+  .workspace-split {
+    flex-direction: column;
+  }
+  .workspace-pane--secondary {
+    border-left: none;
+    border-top: 1px solid var(--line);
+  }
+}
+
 .page-head {
   padding: 56px 0 16px;
 }

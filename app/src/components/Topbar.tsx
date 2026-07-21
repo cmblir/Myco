@@ -17,6 +17,8 @@ import { formatTicker } from "../lib/time";
 
 export default function Topbar({ t }: { t: Strings }): JSX.Element {
   const route = useUIStore((s) => s.route);
+  const splitRoute = useUIStore((s) => s.splitRoute);
+  const setSplitRoute = useUIStore((s) => s.setSplitRoute);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const toggleCmd = useUIStore((s) => s.toggleCmd);
   const lang = useUIStore((s) => s.lang);
@@ -45,6 +47,19 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
         ))}
       </div>
       <div className="topbar-spacer" />
+      {/* Split view: open a second pane beside the current one (Overview + Graph
+          etc.). Defaults the pane to Graph, or Overview when Graph is primary. */}
+      <button
+        className={`pill pill-icon${splitRoute ? " is-active" : ""}`}
+        onClick={() =>
+          setSplitRoute(splitRoute ? null : route === "graph" ? "overview" : "graph")
+        }
+        title={splitRoute ? (t.split_close ?? "Close split view") : (t.split_open ?? "Split view")}
+        aria-label={splitRoute ? (t.split_close ?? "Close split view") : (t.split_open ?? "Split view")}
+        aria-pressed={!!splitRoute}
+      >
+        <Icon name="columns" size={14} />
+      </button>
       <IngestChip t={t} />
       <LintChip t={t} />
       <button className="pill pill-search" onClick={toggleCmd}>
