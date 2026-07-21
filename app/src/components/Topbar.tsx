@@ -169,6 +169,7 @@ function ModelChip({ t }: { t: Strings }): JSX.Element | null {
             {t.s_model_query}
           </div>
           <ModelSelect
+            t={t}
             providers={providers}
             provider={provider}
             model={model}

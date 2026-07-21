@@ -208,6 +208,7 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
         </p>
       </div>
       <ModelPicker
+        t={t}
         label={t.s_model_query}
         providers={enabled}
         provider={settings.query_provider}
@@ -217,6 +218,7 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
         }
       />
       <ModelPicker
+        t={t}
         label={t.s_model_ingest}
         providers={enabled}
         provider={settings.ingest_provider}
@@ -687,12 +689,14 @@ function AutoIngestSetting({
 }
 
 function ModelPicker({
+  t,
   label,
   providers,
   provider,
   model,
   onPick,
 }: {
+  t: Strings;
   label: string;
   providers: ProviderDef[];
   provider: string;
@@ -708,6 +712,7 @@ function ModelPicker({
         </span>
       </div>
       <ModelSelect
+        t={t}
         providers={providers}
         provider={provider}
         model={model}

@@ -457,6 +457,9 @@ export interface Strings {
   s_model_lede: string;
   s_model_ingest: string;
   s_model_query: string;
+  model_custom?: string;
+  model_custom_ph?: string;
+  model_fetching?: string;
   s_model_recommended: string;
   s_model_ctx: string;
   s_providers_lede: string;
@@ -1201,6 +1204,9 @@ export const STRINGS: Record<Lang, Strings> = {
       "Memex uses Claude by default. You can switch models for ingest, queries, or both — each task can use a different model.",
     s_model_ingest: "Ingest model",
     s_model_query: "Query model",
+    model_custom: "Custom\u2026",
+    model_custom_ph: "model id",
+    model_fetching: "fetching model list\u2026",
     s_model_recommended: "Recommended",
     s_model_ctx: "context",
     s_providers_lede:
@@ -1948,6 +1954,9 @@ export const STRINGS: Record<Lang, Strings> = {
       "Memex는 기본적으로 Claude를 사용합니다. 가져오기와 질문에 서로 다른 모델을 지정할 수 있습니다.",
     s_model_ingest: "가져오기용 모델",
     s_model_query: "질문용 모델",
+    model_custom: "직접 입력\u2026",
+    model_custom_ph: "모델 ID",
+    model_fetching: "모델 목록 가져오는 중\u2026",
     s_model_recommended: "추천",
     s_model_ctx: "컨텍스트",
     s_providers_lede:
@@ -2579,6 +2588,9 @@ export const STRINGS: Record<Lang, Strings> = {
       "Memex は標準で Claude を使います。取り込みと質問で別々のモデルを指定できます。",
     s_model_ingest: "取り込み用モデル",
     s_model_query: "質問用モデル",
+    model_custom: "カスタム\u2026",
+    model_custom_ph: "モデルID",
+    model_fetching: "モデル一覧を取得中\u2026",
     s_model_recommended: "推奨",
     s_model_ctx: "コンテキスト",
     s_providers_lede:
