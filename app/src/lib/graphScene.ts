@@ -94,9 +94,9 @@ const EDGE_OPACITY_DARK = 0.2;
 // Light bg uses NormalBlending (not additive), so thousands of overlapping
 // star-spoke edges STACK into an opaque grey wash that buries the nodes. Keep
 // the per-edge alpha low so a dense hub-and-spoke vault stays readable on paper.
-const EDGE_OPACITY_LIGHT = 0.16;
+const EDGE_OPACITY_LIGHT = 0.42;
 const EDGE_BASE_DARK = 0.22; // per-end brightness (edges are tissue, not light)
-const EDGE_BASE_LIGHT = 0.4;
+const EDGE_BASE_LIGHT = 0.9;
 const EDGE_HI = 1.15; // incident edges on hover (pop)
 const EDGE_DIM = 0.05; // non-incident edges on hover (fade, not vanish)
 // Hover micro-pop: the hovered star eases to ×HOVER_POP_SCALE over
@@ -119,13 +119,18 @@ const EDGE_NEUTRAL_WEB = new THREE.Color("#6f7ce0");
 const EDGE_OPACITY_WEB = 0.16;
 const EDGE_BASE_WEB = 0.6; // single strand faint but visible; crossings glow
 // Sigma skin: the coloured Gephi veil — visible community-hue strands over the
-// charcoal board, curving (sag boost) like the classic sigma.js hairball.
-const EDGE_OPACITY_SIGMA = 0.34;
-const EDGE_BASE_SIGMA = 0.85;
-const EDGE_GREY_MIX_SIGMA = 0.08; // near-full community hue on the veil
+// charcoal board, curving (sag boost) like the classic sigma.js hairball. The
+// veil is the picture (the reference is as much edge as node), so it runs
+// bright and fairly opaque; NormalBlending keeps overlaps from washing white.
+const EDGE_OPACITY_SIGMA = 0.5;
+const EDGE_BASE_SIGMA = 1.0;
+const EDGE_GREY_MIX_SIGMA = 0.05; // near-full community hue on the veil
 const EDGE_SAG_BOOST_SIGMA = 2.6;
 const EDGE_GREY_MIX_WEB = 0.85; // near-uniform filament tissue, faint hue hint
 const WEB_NODE_SCALE = 0.34; // node size multiplier on the web skin
+// Chunky Gephi dots — the reference reads as bold filled circles, not the
+// pin-pricks the deep-space skins use. Above 1 so sigma nodes out-weigh edges.
+const SIGMA_NODE_SCALE = 1.15;
 // Midpoint-split edge treatment (spec A2, Holten-style): each edge renders as
 // TWO segments s→m, m→t so alpha can peak at the middle and fade at the ends —
 // N spokes converging on a hub no longer sum to a bright disc at the core.
@@ -455,11 +460,12 @@ void main() {
     gl_PointSize *= 1.0 + coc * 1.5;
   }
   // Light bg (NormalBlending, no additive self-brightening): bump sprite size so
-  // the dark stars have enough AREA to read on paper. Dark bg stays as-is.
-  gl_PointSize *= mix(1.5, 1.0, u_darkTheme);
+  // the dark stars have enough AREA to read on paper — a print map is filled
+  // dots, not pin-pricks. Dark bg stays as-is (additive self-brightens there).
+  gl_PointSize *= mix(1.85, 1.0, u_darkTheme);
   // Floor so distant field stars are true pinpricks (higher on light so they
   // don't vanish); cap so a near hub can't fill the viewport with one sprite.
-  gl_PointSize = clamp(gl_PointSize, mix(2.4, 1.3, u_darkTheme), 180.0);
+  gl_PointSize = clamp(gl_PointSize, mix(3.2, 1.3, u_darkTheme), 180.0);
   // Selected node: a larger canvas so its anamorphic streak has room to read
   // (the streak lives inside the point quad). After the clamp — selection must
   // pop even when the sprite would otherwise sit at the size floor/cap.
@@ -563,6 +569,18 @@ void main() {
     float amp = max((v_int - 0.85) * 1.7, v_sel * 1.4);
     spikes += (1.0 - smoothstep(0.0, fw, abs(pc.y))) * fall * amp;
   }
+  // Paper fill: the per-class profiles above are pinpoint glows built to BLOOM
+  // over the void — additive blending fills the sprite there. On light paper
+  // (NormalBlending, no self-brightening) that same pinpoint reads as a near-
+  // empty speck: only the ~0.4-radius core is opaque, the rest is sub-1% alpha
+  // falloff, so a node all but vanishes on white. Fill the disc to a solid ink
+  // mark (a print map is filled circles, not glints). Sigma takes u_flat's own
+  // filled disc, so exclude it; dark keeps the glow.
+  if (v_dark < 0.5 && u_flat < 0.5) {
+    float hw = max(0.06, aa);
+    float disc = 1.0 - smoothstep(0.60 - hw, 0.60 + hw, d);
+    core = max(core, disc);
+  }
   // Separation ring (halo-lite): carve a dim band between core and halo so
   // overlapping stars keep readable edges instead of fusing into one blob.
   // Depth-weighted — NEAR stars (the occluders) get the stronger ring; the far
@@ -611,7 +629,13 @@ void main() {
   vec3 lift = base * core * (0.2 + v_int * 0.9);
   vec3 colDark = base + lift;
   colDark = mix(colDark, vec3(1.0), core * clamp(v_int * 0.22, 0.0, 0.28));
-  vec3 colLight = base - lift * 0.7;
+  // The community palette is tuned BRIGHT to glow over the void; on paper those
+  // pastels evaporate. Deepen every light-theme node to a saturated ink (keep
+  // the hue, drop the value) so each dot reads as a filled mark on a print map,
+  // not just the hub cores. Then the usual hub-core darkening on top.
+  float lum = dot(base, vec3(0.2126, 0.7152, 0.0722));
+  vec3 ink = clamp(mix(vec3(lum), base, 1.35) * 0.62, 0.0, 1.0);
+  vec3 colLight = ink - lift * 0.7;
   colLight = mix(colLight, vec3(0.0), core * clamp(v_int * 0.35, 0.0, 0.5));
   vec3 col = mix(colLight, colDark, v_dark);
   // Depth desaturation: distant stars drift toward grey as well as dim, the
@@ -822,9 +846,27 @@ export class GraphScene {
   private get sigmaSkin(): boolean {
     return this.settings.skin === "sigma";
   }
+  // Tone-mapping is a LOOK decision, not a global. The filmic AgX grade is a
+  // deep-space affordance: it compresses HDR bloom without the ACES purple
+  // hue-skew. But on paper it greys #fff to ~#d8d8d8 and on the sigma board it
+  // pulls the vivid Gephi palette to pastel — both promise honest, flat colour,
+  // so they pass display values straight through (NoToneMapping). Everything
+  // sigma/white draws already lives in [0,1] (NormalBlending, tiny bloom), so
+  // there is no HDR to compress away.
+  private lookToneMapping(): THREE.ToneMapping {
+    return this.darkTheme && !this.sigmaSkin
+      ? THREE.AgXToneMapping
+      : THREE.NoToneMapping;
+  }
+  // Exposure = the brightness slider, but paper must not dim below 1.0 or the
+  // white board turns grey (NoToneMapping multiplies the background straight).
+  private lookExposure(): number {
+    if (!this.darkTheme || this.sigmaSkin) return Math.max(1, this.settings.brightness);
+    return this.settings.brightness;
+  }
   // Per-skin node size multiplier, folded into u_sizeScale wherever it is set.
   private skinNodeScale(): number {
-    return this.webSkin ? WEB_NODE_SCALE : this.sigmaSkin ? 0.72 : 1;
+    return this.webSkin ? WEB_NODE_SCALE : this.sigmaSkin ? SIGMA_NODE_SCALE : 1;
   }
   private imposterEnabled = false; // dark-theme gate (LOD then controls visibility)
   private planets: PlanetLayer; // near-LOD: nearest nodes → procedural planet spheres
@@ -960,11 +1002,13 @@ export class GraphScene {
     this.renderer.setSize(w, h);
     // AgX over ACES: ACES's hue skew twists bright blue/cyan cores toward
     // purple — exactly this palette's failure mode. AgX preserves hue under
-    // the HDR glow (research round 2, Tier-1 #3). Slight exposure lift keeps
-    // the perceived brightness at the old ACES level.
-    this.renderer.toneMapping = THREE.AgXToneMapping;
+    // the HDR glow (research round 2, Tier-1 #3). But the filmic grade is a
+    // dark-void look ONLY — lookToneMapping drops to Linear on paper and the
+    // sigma board, whose promise is honest flat colour (AgX greys #fff to
+    // ~#d8d8d8 and pulls the vivid Gephi palette to pastel).
+    this.renderer.toneMapping = this.lookToneMapping();
     // Brightness slider drives overall scene exposure (light intensity).
-    this.renderer.toneMappingExposure = settings.brightness;
+    this.renderer.toneMappingExposure = this.lookExposure();
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.domElement.classList.add("graph-canvas-3d");
     container.appendChild(this.renderer.domElement);
@@ -3256,10 +3300,15 @@ export class GraphScene {
     this.ensureGridBackdrop(this.settings.skyStyle === "grid", dark);
     // Must mirror the constructor's calm calibration (duplicated constants —
     // keep in sync; Phase 1 extracts a single helper).
-    this.baseBloom = dark ? 0.45 : 0.25;
+    this.baseBloom = this.sigmaSkin ? 0.12 : dark ? 0.45 : 0.25;
     this.bloom.strength = this.baseBloom; // brightness drives exposure, not bloom
     this.bloom.threshold = dark ? 1.9 : 1.05; // light: above the LDR bg (see ctor)
     this.bloom.radius = 0.7;
+    // Tone-mapping / exposure follow the LOOK (paper + sigma pass colour
+    // straight through; only the deep-space void gets the filmic AgX grade).
+    // applyTheme runs on every theme AND skin change, so this lands live.
+    this.renderer.toneMapping = this.lookToneMapping();
+    this.renderer.toneMappingExposure = this.lookExposure();
     this.nodeMat.blending =
       dark && !this.sigmaSkin ? THREE.AdditiveBlending : THREE.NormalBlending;
     this.nodeMat.uniforms.u_darkTheme.value = dark ? 1 : 0;
@@ -3474,8 +3523,9 @@ export class GraphScene {
     // Brightness: overall exposure + bloom glow intensity.
     // Brightness drives overall EXPOSURE only (applied by OutputPass at the end).
     // Bloom strength stays fixed so raising brightness lifts the whole image
-    // without ballooning the core glow back into a white wash.
-    this.renderer.toneMappingExposure = settings.brightness;
+    // without ballooning the core glow back into a white wash. lookExposure
+    // clamps paper/sigma to ≥1 so the white board never dims to grey.
+    this.renderer.toneMappingExposure = this.lookExposure();
     this.bloom.strength = this.baseBloom;
     // Direction arrows: toggle the flying-arrow fleet + repaint source colours.
     this.arrows.visible = settings.arrows;
@@ -3826,24 +3876,29 @@ export class GraphScene {
     // Cosmic-web skin: accumulate this frame's edge splats first, so the ramp
     // quad the composers are about to draw samples fresh density.
     if (this.edgeDensity) this.edgeDensity.render(this.renderer, this.camera);
-    if (this.selective && this.bloomComposer && this.finalComposer) {
-      const camMask = this.camera.layers.mask;
-      // Bloom pass: restrict the camera to layer 1 (nodes only) AND drop the
-      // scene background — the mix pass ADDS this whole texture onto the final
-      // render, so any background here would be summed twice (invisible on the
-      // near-black dark theme, but on light it doubled the near-white bg into
-      // a blown-out frame).
-      const bg = this.scene.background;
-      this.scene.background = null;
-      this.camera.layers.set(BLOOM_LAYER);
-      // Light theme: bloom pass renders BLACK (see darkTheme docs) so the mix
-      // adds nothing and stars are drawn exactly once.
-      const showPoints = this.points.visible;
-      if (!this.darkTheme) this.points.visible = false;
-      this.bloomComposer.render();
-      this.points.visible = showPoints;
-      this.camera.layers.mask = camMask; // restore (default: layer 0)
-      this.scene.background = bg;
+    if (this.selective && this.bloomComposer && this.finalComposer && this.mixPass) {
+      if (this.darkTheme) {
+        // Dark void: the whole point of selective bloom — restrict the camera
+        // to layer 1 (nodes only), bloom them, and the mix pass ADDS that glow
+        // back over the full render. Drop the background so the near-black bg
+        // isn't summed twice.
+        const camMask = this.camera.layers.mask;
+        const bg = this.scene.background;
+        this.scene.background = null;
+        this.camera.layers.set(BLOOM_LAYER);
+        this.bloomComposer.render();
+        this.camera.layers.mask = camMask; // restore (default: layer 0)
+        this.scene.background = bg;
+        this.mixPass.enabled = true;
+      } else {
+        // Light paper: NOTHING blooms (NormalBlending, threshold 1.05 sits above
+        // the near-white bg), so the selective mix has no glow to add — and
+        // MIX_FRAG's `base + bloomTexture` over an HDR-linear near-white base
+        // erased the dark ink nodes entirely (measured: 7/58 nodes survived the
+        // mix, 58/58 without it). Skip the bloom pass and the mix; render the
+        // scene straight through (RenderPass → OutputPass → grade).
+        this.mixPass.enabled = false;
+      }
       this.finalComposer.render();
     } else {
       this.composer.render();

@@ -422,14 +422,16 @@ export type VibeKey =
 export const VIBE_PRESETS: Record<VibeKey, Partial<GraphSettings>> = {
   // The default identity: the living galaxy.
   living: { skin: "auto", layout: "galaxy", ...LAYOUT_RECOMMENDED.galaxy },
-  // The classic sigma.js / Gephi hairball: one force-directed mass of vivid
-  // community colour on a charcoal board. folderGalaxies off — the reference
-  // look is ONE organism, not separated galaxies.
+  // The classic sigma.js / Gephi hairball: a flat ForceAtlas2 continent of
+  // vivid community colour, curved coloured edges over a charcoal board. The
+  // reference is a SPREAD 2D map (distinct colour regions joined by arcs), not
+  // a collapsed galaxy ball — so it rides the atlas layout, and the community
+  // hue carries both nodes and the edge veil (edgeTint: community).
   sigma: {
     skin: "sigma",
-    layout: "galaxy",
-    ...LAYOUT_RECOMMENDED.galaxy,
-    folderGalaxies: false,
+    layout: "atlas",
+    ...LAYOUT_RECOMMENDED.atlas,
+    edgeTint: "community",
     cosmicEvents: false,
     neuralFiring: false,
   },
