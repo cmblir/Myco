@@ -524,6 +524,12 @@ export default function GraphControls({
           onChange={(v) => onChange({ recencyGlow: v })}
         />
         <Toggle
+          label={t.gr_cinematic ?? "Cinematic finish"}
+          hint={t.gr_cinematic_hint ?? "Film grain, vignette, lens streaks, anti-aliasing"}
+          value={settings.cinematic}
+          onChange={(v) => onChange({ cinematic: v })}
+        />
+        <Toggle
           label={t.gr_minimap ?? "Minimap"}
           hint={t.gr_minimap_hint ?? "Corner chart of the whole galaxy; click to fly"}
           value={settings.minimap}

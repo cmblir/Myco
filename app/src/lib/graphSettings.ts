@@ -85,6 +85,10 @@ export interface GraphSettings {
   // Galaxy chart minimap: a corner inset of the whole graph with a marker for
   // the camera — the antidote to getting lost in free 3D flight.
   minimap: boolean;
+  // Cinematic finish: FXAA + film grain + vignette + a whisper of chromatic
+  // aberration, plus anamorphic streaks on the brightest cores. The "shot on
+  // a camera" grade over the raw render.
+  cinematic: boolean;
   // Cosmic events (black hole / wormhole) on the dark skin — a separate opt-out
   // from ambientMotion because they're the most attention-grabbing FX.
   cosmicEvents: boolean;
@@ -145,6 +149,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   ambientMotion: true,
   recencyGlow: true,
   minimap: true,
+  cinematic: true,
   cosmicEvents: true,
   cosmicFrequency: 1,
   clickBurst: true,

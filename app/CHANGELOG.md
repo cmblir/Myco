@@ -26,6 +26,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **A cinematic finish over every frame.** Real anti-aliasing (the scene
+  renders through HDR buffers that bypassed the browser's AA entirely), plus a
+  film grade: fine animated grain that also kills gradient banding around glow
+  cores, a soft vignette, a whisper of chromatic aberration at the corners, and
+  anamorphic lens streaks across the brightest hub cores. One "Cinematic
+  finish" toggle; grain freezes under reduced motion.
+
 - **One-tap looks.** A new "One-tap looks" row in Graph settings changes the
   graph's entire personality with a single tap — Living galaxy, Sigma board,
   Cosmic web, Neural, Planetarium, Paper atlas, Chronicle, Meaning nebula. Each

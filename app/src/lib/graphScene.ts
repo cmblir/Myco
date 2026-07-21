@@ -17,6 +17,7 @@ import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
 import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
+import { FXAAShader } from "three/examples/jsm/shaders/FXAAShader.js";
 import {
   CSS2DRenderer,
   CSS2DObject,
@@ -260,6 +261,38 @@ function monoColorFor(s: GraphSettings, dark: boolean): THREE.Color {
   return dark ? MONO_WHITE : MONO_BLACK; // "auto" (and irrelevant for community)
 }
 
+// Cinematic finish (display-space, after OutputPass): a whisper of radial
+// chromatic aberration, a soft vignette, and animated filmic grain that lives
+// mostly in the shadows — the "shot on a camera" grade. Cheap: one fullscreen
+// pass, three texture taps. u_time freezes with the ambience gate, so
+// reduced-motion sees static grain.
+const CINE_FRAG = /* glsl */ `
+varying vec2 vUv;
+uniform sampler2D tDiffuse;
+uniform float u_time;
+uniform float u_vig;
+uniform float u_grain;
+uniform float u_ca;
+float hash12(vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+void main() {
+  vec2 uv = vUv;
+  vec2 c = uv - 0.5;
+  float r2 = dot(c, c);
+  vec2 off = c * (u_ca * r2 * 4.0);
+  vec3 col;
+  col.r = texture2D(tDiffuse, uv + off).r;
+  col.g = texture2D(tDiffuse, uv).g;
+  col.b = texture2D(tDiffuse, uv - off).b;
+  col *= 1.0 - u_vig * smoothstep(0.2, 0.72, r2);
+  float g = hash12(uv * vec2(1917.0, 1013.0) + fract(u_time * 0.61) * 41.7) - 0.5;
+  float shadow = 1.0 - smoothstep(0.0, 0.55, dot(col, vec3(0.3333)));
+  col += g * u_grain * (0.35 + 0.65 * shadow);
+  gl_FragColor = vec4(col, 1.0);
+}
+`;
+
 // Additive composite of the base HDR render + the (nodes-only) bloom texture,
 // run before the ACES OutputPass so tone-mapping still sees the summed HDR.
 const MIX_VERT = /* glsl */ `
@@ -401,6 +434,7 @@ uniform float u_recency;  // 1 = recency glow on (recent edits burn hotter)
 uniform float u_searchOn; // 1 = a search is active (hits pulse, rest recede)
 uniform float u_flat;     // 1 = flat sigma discs (no glow profile, no spikes)
 uniform float u_saturate; // >1 boosts colour saturation (the vivid Gephi board)
+uniform float u_flare;    // 1 = anamorphic streaks on the brightest cores
 varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
@@ -441,6 +475,14 @@ void main() {
     // Main sequence (the original glow star).
     core = 1.0 - smoothstep(0.30, 0.45, d);
     glow = pow(max(0.0, 1.0 - d), 2.2);
+  }
+  // Anamorphic flare: the brightest cores (v_int is the HDR hub boost) get a
+  // thin horizontal streak — the cinema-lens signature. Never on flat sigma
+  // discs, and only for genuine hubs so the field stays calm.
+  if (u_flare > 0.5 && u_flat < 0.5 && v_int > 0.85) {
+    float fall = max(0.0, 1.0 - d);
+    spikes += (1.0 - smoothstep(0.0, 0.02, abs(pc.y))) * fall * fall * fall *
+              (v_int - 0.85) * 1.7;
   }
   // Separation ring (halo-lite): carve a dim band between core and halo so
   // overlapping stars keep readable edges instead of fusing into one blob.
@@ -542,6 +584,8 @@ export class GraphScene {
   private bloomComposer?: EffectComposer;
   private finalComposer?: EffectComposer;
   private mixPass?: ShaderPass;
+  private fxaaPass?: ShaderPass;
+  private cinePass?: ShaderPass;
   private selective = false;
   // Live theme darkness (ctor + applyTheme). On light the bloom pass renders
   // BLACK (points hidden) so the additive mix is a no-op — bloom is a dark-
@@ -906,17 +950,19 @@ export class GraphScene {
         "baseTexture",
       );
       this.finalComposer.addPass(this.mixPass);
-      // OutputPass MUST be last: ACES tone-map + exposure + sRGB on the summed HDR.
+      // OutputPass converts to display space (ACES + sRGB); the finishing
+      // passes below deliberately run AFTER it — AA and film grade both
+      // belong on the final LDR image, not the HDR sum.
       this.finalComposer.addPass(new OutputPass());
+      this.attachFinishing(this.finalComposer, w, h, pr);
     } else {
       this.composer = new EffectComposer(this.renderer, mkHdrTarget());
       this.composer.setPixelRatio(pr);
       this.composer.setSize(w, h);
       this.composer.addPass(new RenderPass(this.scene, this.camera));
       this.composer.addPass(this.bloom);
-      // OutputPass MUST be last: it re-applies renderer.toneMapping (ACES) +
-      // toneMappingExposure + sRGB on the final HDR buffer.
       this.composer.addPass(new OutputPass());
+      this.attachFinishing(this.composer, w, h, pr);
     }
 
     // --- nodes ---
@@ -977,6 +1023,7 @@ export class GraphScene {
         u_spawnClock: { value: -1 },
         u_flat: { value: settings.skin === "sigma" ? 1 : 0 },
         u_saturate: { value: settings.skin === "sigma" ? 1.45 : 1 },
+        u_flare: { value: settings.cinematic ? 1 : 0 },
         // Sub-pixel at typical framing (~2 world units), so the GPU-only drift
         // never visibly detaches stars from their CPU-anchored edges. Flat 2D
         // maps stay perfectly still — drift is a galaxy-space affordance.
@@ -2531,6 +2578,35 @@ export class GraphScene {
     return true;
   }
 
+  /** FXAA + cinematic grade, appended after OutputPass on whichever composer
+   * chain this scene built. Toggled live via settings.cinematic. */
+  private attachFinishing(composer: EffectComposer, w: number, h: number, pr: number): void {
+    this.fxaaPass = new ShaderPass(FXAAShader);
+    (this.fxaaPass.material.uniforms.resolution.value as THREE.Vector2).set(
+      1 / Math.max(1, w * pr),
+      1 / Math.max(1, h * pr),
+    );
+    composer.addPass(this.fxaaPass);
+    this.cinePass = new ShaderPass(
+      new THREE.ShaderMaterial({
+        uniforms: {
+          tDiffuse: { value: null },
+          u_time: { value: 0 },
+          u_vig: { value: 0.26 },
+          u_grain: { value: 0.045 },
+          u_ca: { value: 0.0012 },
+        },
+        vertexShader: MIX_VERT,
+        fragmentShader: CINE_FRAG,
+      }),
+      "tDiffuse",
+    );
+    composer.addPass(this.cinePass);
+    const on = this.settings.cinematic;
+    this.fxaaPass.enabled = on;
+    this.cinePass.enabled = on;
+  }
+
   // Edge-density field (cosmic-web skin): edges splat into an offscreen HDR
   // accumulator and composite through a density ramp; the plain edge lines hide
   // while it runs (hover/path feedback lives on the filament overlay).
@@ -3000,6 +3076,9 @@ export class GraphScene {
     );
     this.nodeMat.uniforms.u_colorDepth.value = settings.nodeColorDepth;
     this.nodeMat.uniforms.u_recency.value = settings.recencyGlow ? 1 : 0;
+    this.nodeMat.uniforms.u_flare.value = settings.cinematic ? 1 : 0;
+    if (this.fxaaPass) this.fxaaPass.enabled = settings.cinematic;
+    if (this.cinePass) this.cinePass.enabled = settings.cinematic;
     this.setMinimap(settings.minimap);
     this.cosmic.setFrequency(settings.cosmicFrequency);
     // Sky style flip (star density / dotted grid / void) — rebuild the field.
@@ -3446,6 +3525,12 @@ export class GraphScene {
       if (this.starfieldFollow) this.starfield.position.copy(this.camera.position);
       // Overlay life (multiverse bubble breathing) — ambience-gated.
       if (this.overlayTick && this.ambientOn()) this.overlayTick(now / 1000);
+      // Film grain rides the same ambience-gated clock as the stars: with
+      // ambient motion off (or reduced motion) the grain freezes too.
+      if (this.cinePass) {
+        this.cinePass.material.uniforms.u_time.value =
+          this.nodeMat.uniforms.u_time.value;
+      }
       // Grid backdrop parallax: drift the fullscreen dot grid with the camera's
       // look direction so it reads as depth behind the graph, not a flat UI
       // overlay pinned to the window.
@@ -3641,6 +3726,12 @@ export class GraphScene {
     this.bloom.setSize(w, h);
     this.labelRenderer.setSize(w, h);
     this.nodeMat.uniforms.u_sizeScale.value = this.sizeScale(h) * this.skinNodeScale();
+    if (this.fxaaPass) {
+      (this.fxaaPass.material.uniforms.resolution.value as THREE.Vector2).set(
+        1 / Math.max(1, w * this.renderer.getPixelRatio()),
+        1 / Math.max(1, h * this.renderer.getPixelRatio()),
+      );
+    }
     this.edgeDensity?.setSize(w, h, this.renderer.getPixelRatio());
     this.wave.setSizeScale(this.sizeScale(h));
     this.nova.setSizeScale(this.sizeScale(h));
