@@ -1,7 +1,9 @@
-// Obsidian-style right-side controls drawer for the Graph view. Three
-// sections: Filters, Display, Forces. Each slider mutates the live
-// settings object; the parent re-runs the layout and restyles the
-// canvas in response.
+// Right-side controls drawer for the Graph view. The panel is organised so the
+// common path is one tap: pick a LOOK (a vibe card that bundles skin + layout +
+// its recommended settings), and go. Everything else is tucked into labelled,
+// collapsible groups — Filters, Layout, Appearance, Motion & effects, Forces —
+// so the ~30 fine controls never overwhelm the first glance. Each slider/toggle
+// mutates the live settings object; the parent re-runs the layout and restyles.
 
 import type { JSX } from "react";
 import { useState } from "react";
@@ -11,7 +13,6 @@ import {
   matchPreset,
   VIBE_PRESETS,
   type GraphSettings,
-  type GraphSkinKey,
   type LayoutPresetKey,
   type VibeKey,
 } from "../lib/graphSettings";
@@ -34,6 +35,21 @@ interface Props {
   onFlyMode: (on: boolean) => void;
 }
 
+// The eight one-tap looks, each with a one-line "what you get" so a first-time
+// user can choose by outcome, not by decoding skin+layout jargon.
+function vibeMeta(t: Strings): { key: VibeKey; label: string; desc: string }[] {
+  return [
+    { key: "living", label: t.gr_vibe_living ?? "Living galaxy", desc: t.gr_vibe_living_desc ?? "The default — a glowing, breathing star map" },
+    { key: "sigma", label: t.gr_vibe_sigma ?? "Sigma board", desc: t.gr_vibe_sigma_desc ?? "Vivid Gephi hairball on a clean charcoal board" },
+    { key: "cosmicweb", label: t.gr_vibe_cosmicweb ?? "Cosmic web", desc: t.gr_vibe_cosmicweb_desc ?? "Dark-matter filaments; the links are the picture" },
+    { key: "neural", label: t.gr_vibe_neural ?? "Neural", desc: t.gr_vibe_neural_desc ?? "A firing nervous system in the void" },
+    { key: "planetarium", label: t.gr_vibe_planetarium ?? "Planetarium", desc: t.gr_vibe_planetarium_desc ?? "Constellations per topic under a deep-space sky" },
+    { key: "paper", label: t.gr_vibe_paper ?? "Paper atlas", desc: t.gr_vibe_paper_desc ?? "A print-like territory map on white paper" },
+    { key: "chronicle", label: t.gr_vibe_chronicle ?? "Chronicle", desc: t.gr_vibe_chronicle_desc ?? "Time strata — the vault read as history" },
+    { key: "nebula", label: t.gr_vibe_nebula ?? "Meaning nebula", desc: t.gr_vibe_nebula_desc ?? "Notes clustered by meaning (embeddings)" },
+  ];
+}
+
 export default function GraphControls({
   t,
   open,
@@ -51,15 +67,17 @@ export default function GraphControls({
   onFlyMode,
 }: Props): JSX.Element {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
+    // The look picker leads; Filters is common enough to sit open. The detail
+    // groups start collapsed so the panel opens calm, not as a wall of controls.
+    looks: true,
     filters: true,
-    display: true,
-    forces: true,
-    // Raw force sliders are an expert affordance — collapsed by default; the
-    // preset chips cover the common cases (spec B4).
+    layout: false,
+    appearance: false,
+    motion: false,
+    forces: false,
+    // Raw force sliders are an expert affordance — collapsed inside Forces.
     advanced: false,
   });
-  // The tag list can be long — collapsed by default so it never buries the
-  // rest of the Filters section; the active tag (if any) still shows a hint.
   const [tagsOpen, setTagsOpen] = useState(false);
 
   const toggle = (k: string): void =>
@@ -85,6 +103,10 @@ export default function GraphControls({
       </button>
     );
   }
+
+  const activeVibe = (key: VibeKey): boolean =>
+    settings.skin === VIBE_PRESETS[key].skin &&
+    settings.layout === VIBE_PRESETS[key].layout;
 
   return (
     <aside className="graph-drawer" aria-label={t.gr_settings ?? "Graph settings"}>
@@ -112,6 +134,41 @@ export default function GraphControls({
         </div>
       </header>
 
+      {/* ── Looks: the one-tap vibe picker (the primary control) ── */}
+      <Section
+        title={t.gr_looks ?? "Looks"}
+        open={openSections.looks}
+        onToggle={() => toggle("looks")}
+      >
+        <div className="graph-vibes" role="group" aria-label={t.gr_vibes ?? "One-tap looks"}>
+          {vibeMeta(t).map(({ key, label, desc }) => {
+            const active = activeVibe(key);
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`graph-vibe${active ? " graph-vibe--active" : ""}`}
+                aria-pressed={active}
+                onClick={() => onChange(VIBE_PRESETS[key])}
+              >
+                <span className="graph-vibe__name">{label}</span>
+                <span className="graph-vibe__desc">{desc}</span>
+              </button>
+            );
+          })}
+        </div>
+        <Toggle
+          label={t.gr_multiverse ?? "Multiverse"}
+          hint={
+            t.gr_multiverse_hint ??
+            "Show every project as its own universe-bubble; fly into one to open it"
+          }
+          value={settings.multiverse}
+          onChange={(v) => onChange({ multiverse: v })}
+        />
+      </Section>
+
+      {/* ── Filters ── */}
       <Section
         title={t.gr_filters ?? "Filters"}
         open={openSections.filters}
@@ -178,15 +235,11 @@ export default function GraphControls({
 
         {folders.length > 0 ? (
           <label className="graph-field">
-            <span className="graph-field__label">
-              {t.gr_folder ?? "Folder"}
-            </span>
+            <span className="graph-field__label">{t.gr_folder ?? "Folder"}</span>
             <select
               className="graph-field__input"
               value={settings.folderFilter ?? ""}
-              onChange={(e) =>
-                onChange({ folderFilter: e.target.value || null })
-              }
+              onChange={(e) => onChange({ folderFilter: e.target.value || null })}
             >
               <option value="">{t.gr_all_folders ?? "all folders"}</option>
               {folders.map((f) => (
@@ -215,145 +268,38 @@ export default function GraphControls({
         />
       </Section>
 
+      {/* ── Layout: the shape of the map ── */}
       <Section
-        title={t.gr_display ?? "Display"}
-        open={openSections.display}
-        onToggle={() => toggle("display")}
+        title={t.gr_layout ?? "Layout"}
+        open={openSections.layout}
+        onToggle={() => toggle("layout")}
       >
-        <div className="graph-field">
-          <span className="graph-field__label">{t.gr_vibes ?? "One-tap looks"}</span>
-          <div className="graph-chips">
-            {(
-              [
-                ["living", t.gr_vibe_living ?? "Living galaxy"],
-                ["sigma", t.gr_vibe_sigma ?? "Sigma board"],
-                ["cosmicweb", t.gr_vibe_cosmicweb ?? "Cosmic web"],
-                ["neural", t.gr_vibe_neural ?? "Neural"],
-                ["planetarium", t.gr_vibe_planetarium ?? "Planetarium"],
-                ["paper", t.gr_vibe_paper ?? "Paper atlas"],
-                ["chronicle", t.gr_vibe_chronicle ?? "Chronicle"],
-                ["nebula", t.gr_vibe_nebula ?? "Meaning nebula"],
-              ] as [VibeKey, string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className={`graph-chip${
-                  settings.skin === VIBE_PRESETS[key].skin &&
-                  settings.layout === VIBE_PRESETS[key].layout
-                    ? " graph-chip--active"
-                    : ""
-                }`}
-                onClick={() => onChange(VIBE_PRESETS[key])}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <Toggle
-          label={t.gr_multiverse ?? "Multiverse"}
-          hint={
-            t.gr_multiverse_hint ??
-            "Show every project as its own universe-bubble; fly into one to open it"
-          }
-          value={settings.multiverse}
-          onChange={(v) => onChange({ multiverse: v })}
+        <ChipRow
+          label={t.gr_layout ?? "Layout"}
+          value={settings.layout}
+          onPick={(v) => onChange({ layout: v })}
+          options={[
+            ["galaxy", t.gr_layout_galaxy ?? "Galaxy (3D)"],
+            ["atlas", t.gr_layout_atlas ?? "Atlas (2D)"],
+            ["synapse", t.gr_layout_synapse ?? "Synapse (2D)"],
+            ["synapse3d", t.gr_layout_synapse3d ?? "Synapse (3D)"],
+            ["spiral", t.gr_layout_spiral ?? "Spiral galaxy"],
+            ["strata", t.gr_layout_strata ?? "Timeline (2D)"],
+            ["semantic", t.gr_layout_semantic ?? "Semantic map"],
+            ["celestial", t.gr_layout_celestial ?? "Celestial sphere"],
+            ["radial", t.gr_layout_radial ?? "Radial orbit"],
+          ]}
         />
-        <div className="graph-field">
-          <span className="graph-field__label">
-            {t.gr_layout ?? "Layout"}
-          </span>
-          <div className="graph-chips">
-            {(
-              [
-                ["galaxy", t.gr_layout_galaxy ?? "Galaxy (3D)"],
-                ["atlas", t.gr_layout_atlas ?? "Atlas (2D)"],
-                ["synapse", t.gr_layout_synapse ?? "Synapse (2D)"],
-                ["synapse3d", t.gr_layout_synapse3d ?? "Synapse (3D)"],
-                ["spiral", t.gr_layout_spiral ?? "Spiral galaxy"],
-                ["strata", t.gr_layout_strata ?? "Timeline (2D)"],
-                ["semantic", t.gr_layout_semantic ?? "Semantic map"],
-                ["celestial", t.gr_layout_celestial ?? "Celestial sphere"],
-                ["radial", t.gr_layout_radial ?? "Radial orbit"],
-              ] as [GraphSettings["layout"], string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className={`graph-chip${
-                  settings.layout === key ? " graph-chip--active" : ""
-                }`}
-                aria-pressed={settings.layout === key}
-                onClick={() => onChange({ layout: key })}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className="graph-recommend"
-            onClick={() => onChange(LAYOUT_RECOMMENDED[settings.layout])}
-            title={t.gr_recommend_hint ?? "Apply the recommended settings for this layout"}
-          >
-            ✦ {t.gr_recommend ?? "Recommended settings"}
-          </button>
-        </div>
-        <div className="graph-field">
-          <span className="graph-field__label">{t.gr_sky ?? "Sky"}</span>
-          <div className="graph-chips">
-            {(
-              [
-                ["stars", t.gr_sky_stars ?? "Stars"],
-                ["dense", t.gr_sky_dense ?? "Dense"],
-                ["grid", t.gr_sky_grid ?? "Grid"],
-                ["void", t.gr_sky_void ?? "Void"],
-              ] as [GraphSettings["skyStyle"], string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className={`graph-chip${
-                  settings.skyStyle === key ? " graph-chip--active" : ""
-                }`}
-                aria-pressed={settings.skyStyle === key}
-                onClick={() => onChange({ skyStyle: key })}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <div className="graph-field">
-          <span className="graph-field__label">
-            {t.gr_skin ?? "Color mode"}
-          </span>
-          <div className="graph-chips">
-            {(
-              [
-                ["auto", t.gr_skin_auto ?? "App theme"],
-                ["black", t.gr_skin_black ?? "Black"],
-                ["white", t.gr_skin_white ?? "White"],
-                ["galaxy", t.gr_skin_galaxy ?? "Galaxy"],
-                ["web", t.gr_skin_web ?? "Cosmic web"],
-                ["sigma", t.gr_skin_sigma ?? "Sigma"],
-              ] as [GraphSkinKey, string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className={`graph-chip${
-                  settings.skin === key ? " graph-chip--active" : ""
-                }`}
-                aria-pressed={settings.skin === key}
-                onClick={() => onChange({ skin: key })}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <button
+          type="button"
+          className="graph-recommend"
+          onClick={() => onChange(LAYOUT_RECOMMENDED[settings.layout])}
+          title={
+            t.gr_recommend_hint ?? "Apply the recommended settings for this layout"
+          }
+        >
+          ✦ {t.gr_recommend ?? "Recommended settings"}
+        </button>
         <Toggle
           label={t.gr_galaxies ?? "Folder galaxies"}
           hint={
@@ -363,66 +309,49 @@ export default function GraphControls({
           value={settings.folderGalaxies}
           onChange={(v) => onChange({ folderGalaxies: v })}
         />
-        <div className="graph-field">
-          <span className="graph-field__label">
-            {t.gr_node_color ?? "Node colour"}
-          </span>
-          <div className="graph-chips">
-            {(
-              [
-                ["community", t.gr_node_color_community ?? "By folder"],
-                ["white", t.gr_node_color_white ?? "White"],
-                ["black", t.gr_node_color_black ?? "Black"],
-                ["auto", t.gr_node_color_auto ?? "Auto"],
-              ] as [GraphSettings["nodeColor"], string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className={`graph-chip${
-                  settings.nodeColor === key ? " graph-chip--active" : ""
-                }`}
-                aria-pressed={settings.nodeColor === key}
-                onClick={() => onChange({ nodeColor: key })}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-        <Slider
-          label={t.gr_color_depth ?? "Colour depth"}
-          value={settings.nodeColorDepth}
-          min={0.4}
-          max={2.4}
-          step={0.1}
-          onChange={(v) => onChange({ nodeColorDepth: v })}
+      </Section>
+
+      {/* ── Appearance: colour, sky, sizes ── */}
+      <Section
+        title={t.gr_appearance ?? "Appearance"}
+        open={openSections.appearance}
+        onToggle={() => toggle("appearance")}
+      >
+        <ChipRow
+          label={t.gr_skin ?? "Color mode"}
+          value={settings.skin}
+          onPick={(v) => onChange({ skin: v })}
+          options={[
+            ["auto", t.gr_skin_auto ?? "App theme"],
+            ["black", t.gr_skin_black ?? "Black"],
+            ["white", t.gr_skin_white ?? "White"],
+            ["galaxy", t.gr_skin_galaxy ?? "Galaxy"],
+            ["web", t.gr_skin_web ?? "Cosmic web"],
+            ["sigma", t.gr_skin_sigma ?? "Sigma"],
+          ]}
         />
-        <div className="graph-field">
-          <span className="graph-field__label">
-            {t.gr_edge_tint ?? "Link colour"}
-          </span>
-          <div className="graph-chips">
-            {(
-              [
-                ["grey", t.gr_edge_tint_grey ?? "Grey"],
-                ["community", t.gr_edge_tint_community ?? "Community webs"],
-              ] as [GraphSettings["edgeTint"], string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className={`graph-chip${
-                  settings.edgeTint === key ? " graph-chip--active" : ""
-                }`}
-                aria-pressed={settings.edgeTint === key}
-                onClick={() => onChange({ edgeTint: key })}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <ChipRow
+          label={t.gr_sky ?? "Sky"}
+          value={settings.skyStyle}
+          onPick={(v) => onChange({ skyStyle: v })}
+          options={[
+            ["stars", t.gr_sky_stars ?? "Stars"],
+            ["dense", t.gr_sky_dense ?? "Dense"],
+            ["grid", t.gr_sky_grid ?? "Grid"],
+            ["void", t.gr_sky_void ?? "Void"],
+          ]}
+        />
+        <ChipRow
+          label={t.gr_node_color ?? "Node colour"}
+          value={settings.nodeColor}
+          onPick={(v) => onChange({ nodeColor: v })}
+          options={[
+            ["community", t.gr_node_color_community ?? "By folder"],
+            ["white", t.gr_node_color_white ?? "White"],
+            ["black", t.gr_node_color_black ?? "Black"],
+            ["auto", t.gr_node_color_auto ?? "Auto"],
+          ]}
+        />
         {settings.nodeColor === "auto" ? (
           <Slider
             label={t.gr_mono_below ?? "Colour above N nodes"}
@@ -433,6 +362,55 @@ export default function GraphControls({
             onChange={(v) => onChange({ monoBelow: v })}
           />
         ) : null}
+        <ChipRow
+          label={t.gr_edge_tint ?? "Link colour"}
+          value={settings.edgeTint}
+          onPick={(v) => onChange({ edgeTint: v })}
+          options={[
+            ["grey", t.gr_edge_tint_grey ?? "Grey"],
+            ["community", t.gr_edge_tint_community ?? "Community webs"],
+          ]}
+        />
+        <Slider
+          label={t.gr_color_depth ?? "Colour depth"}
+          value={settings.nodeColorDepth}
+          min={0.4}
+          max={2.4}
+          step={0.1}
+          onChange={(v) => onChange({ nodeColorDepth: v })}
+        />
+        <Slider
+          label={t.gr_node_size ?? "Node size"}
+          value={settings.nodeSize}
+          min={0.5}
+          max={3}
+          step={0.05}
+          onChange={(v) => onChange({ nodeSize: v })}
+        />
+        <Slider
+          label={t.gr_link_thickness ?? "Link thickness"}
+          value={settings.linkThickness}
+          min={0.3}
+          max={3}
+          step={0.05}
+          onChange={(v) => onChange({ linkThickness: v })}
+        />
+        <Slider
+          label={t.gr_glow ?? "Glow"}
+          value={settings.brightness}
+          min={0.4}
+          max={1.6}
+          step={0.05}
+          onChange={(v) => onChange({ brightness: v })}
+        />
+        <Slider
+          label={t.gr_text_fade ?? "Text fade threshold"}
+          value={settings.textFadeThreshold}
+          min={0.1}
+          max={3}
+          step={0.05}
+          onChange={(v) => onChange({ textFadeThreshold: v })}
+        />
         <Toggle
           label={t.gr_arrows ?? "Arrows"}
           hint={t.gr_arrows_hint ?? "Show direction on each link"}
@@ -464,53 +442,14 @@ export default function GraphControls({
           value={settings.edgeBundles}
           onChange={(v) => onChange({ edgeBundles: v })}
         />
-        <Toggle
-          label={t.gr_trace ?? "Trace path"}
-          hint={t.gr_trace_hint ?? "Click a start node, then an end node"}
-          value={traceMode}
-          onChange={onTraceMode}
-        />
-        <Toggle
-          label={t.gr_spaceship ?? "Spaceship"}
-          hint={
-            t.gr_spaceship_hint ??
-            "WASD fly · drag to steer · click a node for info · Esc exit"
-          }
-          value={flyMode}
-          onChange={onFlyMode}
-        />
-        <Slider
-          label={t.gr_text_fade ?? "Text fade threshold"}
-          value={settings.textFadeThreshold}
-          min={0.1}
-          max={3}
-          step={0.05}
-          onChange={(v) => onChange({ textFadeThreshold: v })}
-        />
-        <Slider
-          label={t.gr_node_size ?? "Node size"}
-          value={settings.nodeSize}
-          min={0.5}
-          max={3}
-          step={0.05}
-          onChange={(v) => onChange({ nodeSize: v })}
-        />
-        <Slider
-          label={t.gr_link_thickness ?? "Link thickness"}
-          value={settings.linkThickness}
-          min={0.3}
-          max={3}
-          step={0.05}
-          onChange={(v) => onChange({ linkThickness: v })}
-        />
-        <Slider
-          label={t.gr_glow ?? "Glow"}
-          value={settings.brightness}
-          min={0.4}
-          max={1.6}
-          step={0.05}
-          onChange={(v) => onChange({ brightness: v })}
-        />
+      </Section>
+
+      {/* ── Motion & effects ── */}
+      <Section
+        title={t.gr_motion_fx ?? "Motion & effects"}
+        open={openSections.motion}
+        onToggle={() => toggle("motion")}
+      >
         <Toggle
           label={t.gr_motion ?? "Ambient motion"}
           hint={t.gr_motion_hint ?? "Auto-rotate, pulses, breathing"}
@@ -525,7 +464,9 @@ export default function GraphControls({
         />
         <Toggle
           label={t.gr_cinematic ?? "Cinematic finish"}
-          hint={t.gr_cinematic_hint ?? "Film grain, vignette, lens streaks, anti-aliasing"}
+          hint={
+            t.gr_cinematic_hint ?? "Film grain, vignette, lens streaks, anti-aliasing"
+          }
           value={settings.cinematic}
           onChange={(v) => onChange({ cinematic: v })}
         />
@@ -575,54 +516,39 @@ export default function GraphControls({
           value={settings.nearFieldPlanets}
           onChange={(v) => onChange({ nearFieldPlanets: v })}
         />
-        <button
-          type="button"
-          className="graph-drawer__play"
-          onClick={onTimelapse}
-          aria-pressed={tlPlaying}
-        >
-          {tlPlaying
-            ? (t.gr_timelapse_pause ?? "Pause timelapse")
-            : (t.gr_timelapse_play ?? "Play timelapse")}
-        </button>
-        <Slider
-          label={t.gr_tl_speed ?? "Timelapse speed"}
-          value={settings.tlSpeed}
-          min={0.25}
-          max={4}
-          step={0.25}
-          onChange={(v) => onChange({ tlSpeed: v })}
+        <Toggle
+          label={t.gr_trace ?? "Trace path"}
+          hint={t.gr_trace_hint ?? "Click a start node, then an end node"}
+          value={traceMode}
+          onChange={onTraceMode}
+        />
+        <Toggle
+          label={t.gr_spaceship ?? "Spaceship"}
+          hint={
+            t.gr_spaceship_hint ??
+            "WASD fly · drag to steer · click a node for info · Esc exit"
+          }
+          value={flyMode}
+          onChange={onFlyMode}
         />
       </Section>
 
+      {/* ── Forces (expert layout tuning) ── */}
       <Section
         title={t.gr_forces ?? "Forces"}
         open={openSections.forces}
         onToggle={() => toggle("forces")}
       >
-        <div className="graph-field">
-          <span className="graph-field__label">{t.gr_preset ?? "Layout"}</span>
-          <div className="graph-chips">
-            {(
-              [
-                ["galaxy", t.gr_preset_galaxy ?? "Galaxy"],
-                ["loose", t.gr_preset_loose ?? "Loose web"],
-                ["dense", t.gr_preset_dense ?? "Dense"],
-              ] as [LayoutPresetKey, string][]
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                className={`graph-chip${
-                  matchPreset(settings) === key ? " graph-chip--active" : ""
-                }`}
-                onClick={() => onChange({ ...LAYOUT_PRESETS[key] })}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
+        <ChipRow
+          label={t.gr_preset ?? "Layout"}
+          value={matchPreset(settings) ?? ""}
+          onPick={(v) => onChange({ ...LAYOUT_PRESETS[v as LayoutPresetKey] })}
+          options={[
+            ["galaxy", t.gr_preset_galaxy ?? "Galaxy"],
+            ["loose", t.gr_preset_loose ?? "Loose web"],
+            ["dense", t.gr_preset_dense ?? "Dense"],
+          ]}
+        />
         <Section
           title={t.gr_advanced ?? "Advanced"}
           open={openSections.advanced}
@@ -671,7 +597,63 @@ export default function GraphControls({
           />
         </Section>
       </Section>
+
+      {/* ── Timelapse: an always-visible footer action ── */}
+      <div className="graph-drawer__footer">
+        <button
+          type="button"
+          className="graph-drawer__play"
+          onClick={onTimelapse}
+          aria-pressed={tlPlaying}
+        >
+          {tlPlaying
+            ? (t.gr_timelapse_pause ?? "Pause timelapse")
+            : (t.gr_timelapse_play ?? "Play timelapse")}
+        </button>
+        <Slider
+          label={t.gr_tl_speed ?? "Timelapse speed"}
+          value={settings.tlSpeed}
+          min={0.25}
+          max={4}
+          step={0.25}
+          onChange={(v) => onChange({ tlSpeed: v })}
+        />
+      </div>
     </aside>
+  );
+}
+
+// A labelled row of single-select chips — the panel's most repeated shape, so it
+// lives in one place (skin / sky / node colour / layout / edge tint / preset all
+// share it). The generic keeps each caller's literal-union value type.
+function ChipRow<T extends string>({
+  label,
+  value,
+  options,
+  onPick,
+}: {
+  label: string;
+  value: T | "";
+  options: [T, string][];
+  onPick: (v: T) => void;
+}): JSX.Element {
+  return (
+    <div className="graph-field">
+      <span className="graph-field__label">{label}</span>
+      <div className="graph-chips">
+        {options.map(([key, text]) => (
+          <button
+            key={key}
+            type="button"
+            className={`graph-chip${value === key ? " graph-chip--active" : ""}`}
+            aria-pressed={value === key}
+            onClick={() => onPick(key)}
+          >
+            {text}
+          </button>
+        ))}
+      </div>
+    </div>
   );
 }
 

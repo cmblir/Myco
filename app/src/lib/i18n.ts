@@ -211,6 +211,17 @@ export interface Strings {
   gr_vibe_paper?: string;
   gr_vibe_chronicle?: string;
   gr_vibe_nebula?: string;
+  gr_vibe_living_desc?: string;
+  gr_vibe_sigma_desc?: string;
+  gr_vibe_cosmicweb_desc?: string;
+  gr_vibe_neural_desc?: string;
+  gr_vibe_planetarium_desc?: string;
+  gr_vibe_paper_desc?: string;
+  gr_vibe_chronicle_desc?: string;
+  gr_vibe_nebula_desc?: string;
+  gr_looks?: string;
+  gr_appearance?: string;
+  gr_motion_fx?: string;
   gr_cinematic?: string;
   gr_cinematic_hint?: string;
   gr_flow?: string;
@@ -907,6 +918,17 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_paper: "Paper atlas",
     gr_vibe_chronicle: "Chronicle",
     gr_vibe_nebula: "Meaning nebula",
+    gr_vibe_living_desc: "The default — a glowing, breathing star map",
+    gr_vibe_sigma_desc: "Vivid Gephi hairball on a clean charcoal board",
+    gr_vibe_cosmicweb_desc: "Dark-matter filaments; the links are the picture",
+    gr_vibe_neural_desc: "A firing nervous system in the void",
+    gr_vibe_planetarium_desc: "Constellations per topic under a deep-space sky",
+    gr_vibe_paper_desc: "A print-like territory map on white paper",
+    gr_vibe_chronicle_desc: "Time strata — the vault read as history",
+    gr_vibe_nebula_desc: "Notes clustered by meaning (embeddings)",
+    gr_looks: "Looks",
+    gr_appearance: "Appearance",
+    gr_motion_fx: "Motion & effects",
     gr_cinematic: "Cinematic finish",
     gr_cinematic_hint: "Film grain, vignette, lens streaks, anti-aliasing",
     gr_flow: "Edge flow",
@@ -1614,6 +1636,17 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_paper: "종이 지도",
     gr_vibe_chronicle: "연대기",
     gr_vibe_nebula: "의미 성운",
+    gr_vibe_living_desc: "기본값 — 빛나며 숨쉬는 별 지도",
+    gr_vibe_sigma_desc: "깨끗한 차콜 보드 위 선명한 Gephi 헤어볼",
+    gr_vibe_cosmicweb_desc: "암흑물질 필라멘트 — 링크가 그림을 만든다",
+    gr_vibe_neural_desc: "공허 속 발화하는 신경망",
+    gr_vibe_planetarium_desc: "주제별 별자리, 깊은 우주 하늘",
+    gr_vibe_paper_desc: "흰 종이 위 인쇄물 같은 영역 지도",
+    gr_vibe_chronicle_desc: "시간 지층 — 볼트를 역사로 읽기",
+    gr_vibe_nebula_desc: "의미(임베딩)로 군집된 노트",
+    gr_looks: "룩",
+    gr_appearance: "외형",
+    gr_motion_fx: "모션·효과",
     gr_cinematic: "시네마틱 마감",
     gr_cinematic_hint: "필름 그레인·비네트·렌즈 스트릭·안티앨리어싱",
     gr_flow: "엣지 흐름",
@@ -2263,6 +2296,17 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_paper: "紙の地図",
     gr_vibe_chronicle: "クロニクル",
     gr_vibe_nebula: "意味の星雲",
+    gr_vibe_living_desc: "デフォルト — 輝き呼吸する星図",
+    gr_vibe_sigma_desc: "clean なチャコール盤の鮮やかな Gephi ヘアボール",
+    gr_vibe_cosmicweb_desc: "暗黒物質フィラメント — リンクが絵を描く",
+    gr_vibe_neural_desc: "虚空で発火する神経系",
+    gr_vibe_planetarium_desc: "トピックごとの星座、深宇宙の空",
+    gr_vibe_paper_desc: "白い紙の印刷物のような領域地図",
+    gr_vibe_chronicle_desc: "時間の地層 — ボルトを歴史として読む",
+    gr_vibe_nebula_desc: "意味(埋め込み)でクラスタ化されたノート",
+    gr_looks: "ルック",
+    gr_appearance: "外観",
+    gr_motion_fx: "モーション・効果",
     gr_cinematic: "シネマティック仕上げ",
     gr_cinematic_hint: "フィルムグレイン・ビネット・レンズストリーク・AA",
     gr_flow: "エッジフロー",
