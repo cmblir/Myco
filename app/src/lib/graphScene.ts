@@ -298,6 +298,8 @@ attribute float a_intensity;
 attribute float a_kind; // stellar class: 0 main, 1 dwarf, 2 giant, 3 neutron
 attribute float a_age; // days since last modified (9999 = unknown/old)
 attribute float a_hit; // 1 = current search match (pulse-in-phase highlight)
+attribute float a_spawn; // condensation intro: per-node birth delay (s)
+uniform float u_spawnClock; // intro clock (s); <0 = intro off, all stars full
 uniform float u_pixelRatio;
 uniform float u_sizeScale;
 uniform float u_fogNear;
@@ -329,6 +331,20 @@ void main() {
     vec3 c2 = vec3(cos(q2.z + t2), cos(q2.x - t2), cos(q2.y + t2 * 0.7));
     p += u_driftAmp * (c1 + 0.5 * c2);
   }
+  // Condensation intro: each star is born a little away from its place along a
+  // deterministic direction and eases home on its own delay (staggered by
+  // cluster) — a nebula condensing into stars. One-shot; u_spawnClock < 0
+  // disables (reduced-motion, or the intro has already played this visit).
+  float birth = u_spawnClock < 0.0
+    ? 1.0
+    : clamp((u_spawnClock - a_spawn) / 0.9, 0.0, 1.0);
+  float birthE = 1.0 - pow(1.0 - birth, 3.0); // easeOutCubic
+  if (birthE < 1.0) {
+    vec3 dir = normalize(
+      vec3(sin(position.x * 12.9898), cos(position.y * 78.233), sin(position.z * 37.719)) +
+      vec3(1e-4));
+    p += dir * (1.0 - birthE) * 90.0;
+  }
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   float dist = max(1.0, -mv.z);
   gl_PointSize = a_size * ${NODE_RADIUS.toFixed(1)} * ${GLOW_SCALE.toFixed(1)} * u_sizeScale * u_pixelRatio / dist;
@@ -353,9 +369,12 @@ void main() {
   // Floor so distant field stars are true pinpricks (higher on light so they
   // don't vanish); cap so a near hub can't fill the viewport with one sprite.
   gl_PointSize = clamp(gl_PointSize, mix(2.4, 1.3, u_darkTheme), 180.0);
+  // Condensation intro (see birth offset above): grow in from nothing. Applied
+  // after the clamp so a being-born star really is invisible, not floored.
+  gl_PointSize *= birthE;
   gl_Position = projectionMatrix * mv;
   v_color = a_color;
-  v_alpha = a_alpha;
+  v_alpha = a_alpha * birthE;
   v_int = a_intensity;
   v_dark = u_darkTheme;
   // Nearer stars brighter; distant ones fade into the fog. Floor at 0.18 so the
@@ -908,6 +927,10 @@ export class GraphScene {
       "a_hit",
       new THREE.BufferAttribute(new Float32Array(n), 1),
     );
+    this.nodeGeom.setAttribute(
+      "a_spawn",
+      new THREE.BufferAttribute(new Float32Array(n), 1),
+    );
     this.nodeMat = new THREE.ShaderMaterial({
       uniforms: {
         u_pixelRatio: { value: pr },
@@ -922,6 +945,7 @@ export class GraphScene {
         u_colorDepth: { value: settings.nodeColorDepth },
         u_recency: { value: settings.recencyGlow ? 1 : 0 },
         u_searchOn: { value: 0 },
+        u_spawnClock: { value: -1 },
         // Sub-pixel at typical framing (~2 world units), so the GPU-only drift
         // never visibly detaches stars from their CPU-anchored edges. Flat 2D
         // maps stay perfectly still — drift is a galaxy-space affordance.
@@ -1441,6 +1465,34 @@ export class GraphScene {
     kind.needsUpdate = true;
     age.needsUpdate = true;
     hit.needsUpdate = true;
+  }
+
+  // ── Condensation intro ────────────────────────────────────────────────
+  // One-shot birth animation: stars ease in from a small offset, staggered by
+  // cluster. Runs on the page's FIRST scene of a visit (PageGraph gates the
+  // call), never on filter-rebuild churn. −1 = idle/off.
+  private spawnClock = -1;
+
+  /** Per-node birth delays: clusters condense one after another, stars within
+   * a cluster shimmer in over a short window. Deterministic. */
+  private writeSpawnDelays(): void {
+    const spawn = this.nodeGeom.getAttribute("a_spawn") as THREE.BufferAttribute;
+    const rankOf = new Map<number, number>();
+    for (let i = 0; i < this.nodeIds.length; i++) {
+      const cm = this.graph.getNodeAttribute(this.nodeIds[i], "community");
+      if (!rankOf.has(cm)) rankOf.set(cm, rankOf.size);
+      const rank = Math.min(rankOf.get(cm) ?? 0, 12);
+      spawn.setX(i, rank * 0.09 + GraphScene.starRand(i * 3 + 1) * 0.4);
+    }
+    spawn.needsUpdate = true;
+  }
+
+  /** Play the condensation intro (no-op under reduced motion). */
+  playCondensation(): void {
+    if (this.reducedMotion) return;
+    this.writeSpawnDelays();
+    this.spawnClock = 0;
+    this.nodeMat.uniforms.u_spawnClock.value = 0;
   }
 
   // Current search-match set (pulse-in-phase highlight). Null = no search.
@@ -2590,8 +2642,10 @@ export class GraphScene {
     this.nodeGeom.setAttribute("a_kind", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.nodeGeom.setAttribute("a_age", new THREE.BufferAttribute(new Float32Array(n).fill(9999), 1));
     this.nodeGeom.setAttribute("a_hit", new THREE.BufferAttribute(new Float32Array(n), 1));
+    this.nodeGeom.setAttribute("a_spawn", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.points.geometry = this.nodeGeom;
     oldNodeGeom.dispose();
+    this.writeSpawnDelays();
 
     this.edgePairs = this.graph.mapEdges(
       (_e, _a, s, t) => [s, t] as [string, string],
@@ -3295,6 +3349,13 @@ export class GraphScene {
       const now = performance.now();
       const dt = Math.min(0.1, (now - this.lastFrame) / 1000); // clamp tab-refocus jumps
       this.lastFrame = now;
+      // Condensation intro clock — an explicit one-shot, so it advances even
+      // with ambient motion off; parks at −1 when done (zero steady-state cost).
+      if (this.spawnClock >= 0) {
+        this.spawnClock += dt;
+        this.nodeMat.uniforms.u_spawnClock.value =
+          this.spawnClock > 4 ? (this.spawnClock = -1) : this.spawnClock;
+      }
       if (this.flyMode) {
         this.ship.update(dt);
       } else {

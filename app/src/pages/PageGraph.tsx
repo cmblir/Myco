@@ -150,6 +150,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const [enteredUniverse, setEnteredUniverse] = useState(false);
   const enteredUniverseRef = useRef(false);
   enteredUniverseRef.current = enteredUniverse;
+  // Condensation intro plays once per Graph-page visit (not per rebuild).
+  const introPlayedRef = useRef(false);
   const showMultiverse = settings.multiverse && !enteredUniverse;
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -671,6 +673,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       },
     });
     sceneRef.current = scene;
+    // Condensation intro: stars are born condensing into place — once per
+    // Graph visit, not on every filter-rebuild of the scene.
+    if (!introPlayedRef.current) {
+      introPlayedRef.current = true;
+      scene.playCondensation();
+    }
     scene.setScaleListener((sc) => {
       const label = { cluster: "Galaxy cluster", galaxy: "Galaxy", system: "Star system", star: "Star" }[sc];
       setCosmicScale(label);

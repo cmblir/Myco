@@ -26,6 +26,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **The galaxy condenses into being.** Opening the Graph now births the vault:
+  stars ease in from a small drift, cluster after cluster, like a nebula
+  condensing — once per visit, never on filter changes, and skipped entirely
+  under reduced motion.
+
 - **A galaxy chart in the corner.** A minimap inset shows the whole graph from
   above with a marker for where you are and which way you're facing — and
   clicking anywhere on the chart flies the view there. The antidote to getting
