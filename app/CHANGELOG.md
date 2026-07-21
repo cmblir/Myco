@@ -26,6 +26,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **The galaxy never freezes.** Once the layout settles, every star drifts
+  through a frozen curl field — circulating locally without ever migrating, so
+  positions stay readable while the sky stays alive. Sub-pixel by design, stilled
+  by the ambient-motion switch and reduced-motion preference, and flat 2D maps
+  stay perfectly still.
+
 - **The Cosmic web skin now renders true density.** Edges accumulate into an
   offscreen HDR buffer and colour on a dark-matter-simulation ramp: sparse
   strands deep blue-violet, converging bundles warming through orange, the

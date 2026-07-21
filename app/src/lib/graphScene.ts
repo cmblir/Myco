@@ -312,8 +312,24 @@ varying float v_dark;
 varying float v_kind;
 varying float v_age;
 varying float v_hit;
+uniform float u_driftAmp; // curl micro-drift amplitude (world units; 0 = off)
 void main() {
-  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  // Curl micro-drift: once settled, every star orbits a frozen divergence-free
+  // field (curl of A = (sin ky, sin kz, sin kx)/k is exactly -cos of the next
+  // axis — zero divergence by construction, so stars circulate locally and
+  // never migrate). Two octaves for an organic swirl. Rides u_time, which only
+  // advances under the ambient-motion gate — reduced-motion sees a still sky.
+  vec3 p = position;
+  if (u_driftAmp > 0.0) {
+    float t1 = u_time * 0.11;
+    float t2 = u_time * 0.23;
+    vec3 q1 = position * 0.012;
+    vec3 q2 = position * 0.031;
+    vec3 c1 = -vec3(cos(q1.z + t1), cos(q1.x + t1), cos(q1.y + t1));
+    vec3 c2 = vec3(cos(q2.z + t2), cos(q2.x - t2), cos(q2.y + t2 * 0.7));
+    p += u_driftAmp * (c1 + 0.5 * c2);
+  }
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
   float dist = max(1.0, -mv.z);
   gl_PointSize = a_size * ${NODE_RADIUS.toFixed(1)} * ${GLOW_SCALE.toFixed(1)} * u_sizeScale * u_pixelRatio / dist;
   gl_PointSize *= (1.0 + a_intensity * 0.35); // hub cores a touch larger
@@ -906,6 +922,10 @@ export class GraphScene {
         u_colorDepth: { value: settings.nodeColorDepth },
         u_recency: { value: settings.recencyGlow ? 1 : 0 },
         u_searchOn: { value: 0 },
+        // Sub-pixel at typical framing (~2 world units), so the GPU-only drift
+        // never visibly detaches stars from their CPU-anchored edges. Flat 2D
+        // maps stay perfectly still — drift is a galaxy-space affordance.
+        u_driftAmp: { value: this.flatLayout ? 0 : 2.2 },
       },
       vertexShader: NODE_VERT,
       fragmentShader: NODE_FRAG,
