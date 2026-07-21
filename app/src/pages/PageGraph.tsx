@@ -41,6 +41,7 @@ import { analyzeGaps, clusterBridges, gapCount, type ClusterBridge } from "../li
 import { setQueryPrefill } from "../lib/queryPrefill";
 import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
 import { applyAtlasLayout } from "../lib/atlasLayout";
+import { bakeSeededSky } from "../lib/skyTexture";
 import {
   applyCelestialLayout,
   applyRadialLayout,
@@ -688,6 +689,18 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     if (!introPlayedRef.current) {
       introPlayedRef.current = true;
       scene.playCondensation();
+    }
+    // Seeded deep sky: every vault gets its own faint nebula backdrop, baked
+    // once off the critical path. Deep-space skins only — web/sigma/black own
+    // their voids, and paper stays paper.
+    if (s.skin === "galaxy" || (s.skin === "auto" && !lightBg)) {
+      window.setTimeout(() => {
+        if (killed) return;
+        const tex = bakeSeededSky(currentVault?.path ?? "memex", true);
+        if (tex && !killed && sceneRef.current === scene) {
+          scene.setSkyTexture(tex);
+        }
+      }, 80);
     }
     scene.setScaleListener((sc) => {
       const label = { cluster: "Galaxy cluster", galaxy: "Galaxy", system: "Star system", star: "Star" }[sc];

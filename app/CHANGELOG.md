@@ -26,6 +26,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **Every vault gets its own sky.** Deep-space skins now bake a faint seeded
+  nebula backdrop from the vault's identity — the same vault always opens under
+  the same sky, and no two vaults share one. Baked once off the critical path,
+  zero per-frame cost, and deliberately a whisper so the graph keeps the stage.
+
+- **Stars no longer shimmer at a distance.** Node edges are now pixel-exact at
+  every sprite size (screen-space-aware profiles): large stars keep their
+  designed look, tiny distant ones melt into clean round points instead of
+  crawling as the camera drifts.
+
 - **Truer colours under glow.** Tone mapping moved from ACES to AgX: ACES
   notoriously skews bright blues and cyans toward purple exactly where the
   glow is strongest — AgX keeps every community's hue honest inside its own

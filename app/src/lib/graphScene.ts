@@ -446,34 +446,46 @@ varying float v_hit;
 void main() {
   vec2 pc = gl_PointCoord - vec2(0.5);
   float d = length(pc) * 2.0;
+  // Pixel-true edges (SDF discs): fwidth(d) is the screen-space footprint of
+  // one pixel in disc units, so every smoothstep band below is clamped to at
+  // least ~1px. Large sprites keep their designed profile; tiny distant ones
+  // melt into clean round dots instead of crawling/shimmering as the camera
+  // drifts (research round 2, Tier-1 #4).
+  float aa = fwidth(d) * 1.1;
   // Stellar-class light profiles — the sky must read as a POPULATION, not a
   // wall of identical glows.
   float core;
   float glow;
   float spikes = 0.0;
   if (u_flat > 0.5) {
-    // Sigma: a crisp flat disc with a hairline soft edge — data-viz marks,
+    // Sigma: a crisp flat disc with a pixel-exact soft edge — data-viz marks,
     // not glowing stars. Class profiles/spikes deliberately skipped.
-    core = 1.0 - smoothstep(0.72, 0.9, d);
+    float hw = max(0.06, aa);
+    core = 1.0 - smoothstep(0.86 - hw, 0.86 + hw, d);
     glow = 0.0;
   } else if (v_kind > 2.5) {
     // Neutron star: piercing pinpoint, hardly any halo, diffraction spikes.
-    core = 1.0 - smoothstep(0.10, 0.22, d);
+    float hw = max(0.06, aa);
+    core = 1.0 - smoothstep(0.16 - hw, 0.16 + hw, d);
     glow = pow(max(0.0, 1.0 - d), 5.0) * 0.5;
     float fall = max(0.0, 1.0 - d);
-    spikes = ((1.0 - smoothstep(0.0, 0.05, abs(pc.y))) +
-              (1.0 - smoothstep(0.0, 0.05, abs(pc.x)))) * fall * fall * 0.7;
+    float sw = max(0.05, fwidth(pc.y) * 1.5);
+    spikes = ((1.0 - smoothstep(0.0, sw, abs(pc.y))) +
+              (1.0 - smoothstep(0.0, sw, abs(pc.x)))) * fall * fall * 0.7;
   } else if (v_kind > 1.5) {
-    // Red giant: a big soft diffuse ball, no hard centre.
+    // Red giant: a big soft diffuse ball, no hard centre (already wide —
+    // inherently anti-aliased).
     core = (1.0 - smoothstep(0.0, 0.75, d)) * 0.55;
     glow = pow(max(0.0, 1.0 - d), 1.4);
   } else if (v_kind > 0.5) {
     // Dwarf: small dense core, thin halo — most of the quiet population.
-    core = 1.0 - smoothstep(0.18, 0.30, d);
+    float hw = max(0.06, aa);
+    core = 1.0 - smoothstep(0.24 - hw, 0.24 + hw, d);
     glow = pow(max(0.0, 1.0 - d), 3.2) * 0.35;
   } else {
     // Main sequence (the original glow star).
-    core = 1.0 - smoothstep(0.30, 0.45, d);
+    float hw = max(0.075, aa);
+    core = 1.0 - smoothstep(0.375 - hw, 0.375 + hw, d);
     glow = pow(max(0.0, 1.0 - d), 2.2);
   }
   // Anamorphic flare: the brightest cores (v_int is the HDR hub boost) get a
@@ -481,7 +493,8 @@ void main() {
   // discs, and only for genuine hubs so the field stays calm.
   if (u_flare > 0.5 && u_flat < 0.5 && v_int > 0.85) {
     float fall = max(0.0, 1.0 - d);
-    spikes += (1.0 - smoothstep(0.0, 0.02, abs(pc.y))) * fall * fall * fall *
+    float fw = max(0.02, fwidth(pc.y) * 1.5);
+    spikes += (1.0 - smoothstep(0.0, fw, abs(pc.y))) * fall * fall * fall *
               (v_int - 0.85) * 1.7;
   }
   // Separation ring (halo-lite): carve a dim band between core and halo so
@@ -2383,6 +2396,14 @@ export class GraphScene {
     this.overlayTick = fn;
   }
 
+  // Seeded deep-sky background (equirect bake) — swapped in async once baked.
+  private skyTex: THREE.Texture | null = null;
+  setSkyTexture(tex: THREE.Texture | null): void {
+    this.skyTex?.dispose();
+    this.skyTex = tex;
+    if (tex) this.scene.background = tex;
+  }
+
   // ── Galaxy chart minimap ──────────────────────────────────────────────
   // A corner inset rendering the WHOLE graph straight-on from far out, with a
   // marker for the main camera — the fix for "I flew somewhere and now I'm
@@ -2883,7 +2904,7 @@ export class GraphScene {
       : dark
         ? new THREE.Color(0x05060d)
         : bg;
-    this.scene.background = sceneBg;
+    this.scene.background = this.skyTex ?? sceneBg;
     (this.scene.fog as THREE.FogExp2).color.copy(sceneBg);
     // Starfield shells are colour-baked per dark/light at build time, and the
     // active skin decides whether they show at all — rebuild them so a theme or
@@ -3632,6 +3653,8 @@ export class GraphScene {
       this.scene.remove(obj);
     }
     this.labels.clear();
+    this.skyTex?.dispose();
+    this.skyTex = null;
     this.setMinimap(false);
     if (this.edgeDensity) {
       this.scene.remove(this.edgeDensity.quad);
