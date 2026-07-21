@@ -588,16 +588,18 @@ impl VectorCache {
     }
 }
 
-/// One page's position on the 2D semantic map (see `semantic_map_points`).
+/// One page's position on the 3D semantic map (see `semantic_map_points`).
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct SemanticPoint {
     pub page: String,
     pub x: f32,
     pub y: f32,
+    pub z: f32,
 }
 
-/// Project page centroids onto their top-2 principal components — the layout
-/// coordinates for the "semantic map" (notes cluster by MEANING, not links).
+/// Project page centroids onto their top-3 principal components — the layout
+/// coordinates for the "semantic map" (notes cluster by MEANING, not links),
+/// a 3D meaning-nebula rather than a flat chart.
 /// PCA by power iteration with deflation: never materialises the d×d
 /// covariance (d = 1152), just streams Σᵢ(xᵢ·v)xᵢ over the centred data.
 /// Deterministic (fixed seed vector, fixed iteration count) and pure, so the
@@ -608,7 +610,7 @@ pub fn semantic_map_points(centroids: &[(String, Vec<f32>)]) -> Vec<SemanticPoin
     if n < 2 {
         return centroids
             .iter()
-            .map(|(p, _)| SemanticPoint { page: p.clone(), x: 0.0, y: 0.0 })
+            .map(|(p, _)| SemanticPoint { page: p.clone(), x: 0.0, y: 0.0, z: 0.0 })
             .collect();
     }
     let d = centroids[0].1.len();
@@ -639,7 +641,7 @@ pub fn semantic_map_points(centroids: &[(String, Vec<f32>)]) -> Vec<SemanticPoin
     let dot = |a: &[f32], b: &[f32]| -> f32 { a.iter().zip(b).map(|(x, y)| x * y).sum() };
 
     let mut comps: Vec<Vec<f32>> = Vec::new();
-    for c in 0..2 {
+    for c in 0..3 {
         // Fixed pseudo-random seed vector — determinism over elegance.
         let mut v: Vec<f32> = (0..d)
             .map(|i| (((i * 2_654_435_761 + c * 97) % 1000) as f32) / 1000.0 - 0.5)
@@ -669,9 +671,11 @@ pub fn semantic_map_points(centroids: &[(String, Vec<f32>)]) -> Vec<SemanticPoin
 
     let mut xs: Vec<f32> = Vec::with_capacity(n);
     let mut ys: Vec<f32> = Vec::with_capacity(n);
+    let mut zs: Vec<f32> = Vec::with_capacity(n);
     for x in &centred {
         xs.push(dot(x, &comps[0]));
         ys.push(dot(x, &comps[1]));
+        zs.push(dot(x, &comps[2]));
     }
     let span = |vals: &[f32]| -> (f32, f32) {
         let mut lo = f32::MAX;
@@ -684,6 +688,7 @@ pub fn semantic_map_points(centroids: &[(String, Vec<f32>)]) -> Vec<SemanticPoin
     };
     let (x0, xw) = span(&xs);
     let (y0, yw) = span(&ys);
+    let (z0, zw) = span(&zs);
     centroids
         .iter()
         .enumerate()
@@ -691,6 +696,7 @@ pub fn semantic_map_points(centroids: &[(String, Vec<f32>)]) -> Vec<SemanticPoin
             page: p.clone(),
             x: ((xs[i] - x0) / xw) * 2.0 - 1.0,
             y: ((ys[i] - y0) / yw) * 2.0 - 1.0,
+            z: ((zs[i] - z0) / zw) * 2.0 - 1.0,
         })
         .collect()
 }
@@ -725,7 +731,7 @@ mod tests {
         // Deterministic: a second run produces identical coordinates.
         let pts2 = semantic_map_points(&cents);
         for (p, q) in pts.iter().zip(&pts2) {
-            assert_eq!((p.x, p.y), (q.x, q.y));
+            assert_eq!((p.x, p.y, p.z), (q.x, q.y, q.z));
         }
         // Normalised into [-1, 1].
         for p in &pts {
@@ -738,7 +744,7 @@ mod tests {
         assert!(semantic_map_points(&[]).is_empty());
         let one = semantic_map_points(&[("solo".into(), vec![1.0, 2.0])]);
         assert_eq!(one.len(), 1);
-        assert_eq!((one[0].x, one[0].y), (0.0, 0.0));
+        assert_eq!((one[0].x, one[0].y, one[0].z), (0.0, 0.0, 0.0));
     }
 
     fn rec(page: &str, sec: usize, v: Vec<f32>) -> Record {

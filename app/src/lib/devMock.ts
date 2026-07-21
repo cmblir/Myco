@@ -961,10 +961,12 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
           const ang = (k / Math.max(1, types.length)) * Math.PI * 2;
           const jx = (((i * 37) % 100) / 100 - 0.5) * 0.5;
           const jy = (((i * 61) % 100) / 100 - 0.5) * 0.5;
+          const jz = (((i * 43) % 100) / 100 - 0.5) * 0.7;
           return {
             page: pathOf(d.s),
             x: Math.max(-1, Math.min(1, Math.cos(ang) * 0.62 + jx)),
             y: Math.max(-1, Math.min(1, Math.sin(ang) * 0.62 + jy)),
+            z: Math.max(-1, Math.min(1, jz)),
           };
         }),
       );

@@ -150,6 +150,7 @@ export interface SemanticPoint {
   page: string;
   x: number;
   y: number;
+  z: number;
 }
 
 export interface CandidatePage {

@@ -41,7 +41,12 @@ import { analyzeGaps, clusterBridges, gapCount, type ClusterBridge } from "../li
 import { setQueryPrefill } from "../lib/queryPrefill";
 import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
 import { applyAtlasLayout } from "../lib/atlasLayout";
-import { applySpiralLayout, applyStrataLayout } from "../lib/staticLayouts";
+import {
+  applyCelestialLayout,
+  applyRadialLayout,
+  applySpiralLayout,
+  applyStrataLayout,
+} from "../lib/staticLayouts";
 import { ATLAS_RADIUS_MUL } from "../lib/layoutConfig";
 import type { LayoutMetrics } from "../lib/layoutMetrics";
 import { makeTheme } from "../lib/graphTheme";
@@ -732,16 +737,18 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             graph.forEachNode((id) => {
               const p = at.get(id);
               if (p) {
+                // 3D meaning-nebula: PC1/PC2 span the map, PC3 gives depth —
+                // flattened to 55% so the top-down reading stays a map.
                 graph.setNodeAttribute(id, "x", p.x * radius);
                 graph.setNodeAttribute(id, "y", p.y * radius);
-                graph.setNodeAttribute(id, "z", 0);
+                graph.setNodeAttribute(id, "z", p.z * radius * 0.55);
               } else {
                 // No embedding (ghost / not yet indexed): park on the outer
                 // ring so it reads "outside the mapped meaning", not random.
                 const ang = seededUnit(id, 31) * Math.PI * 2;
                 graph.setNodeAttribute(id, "x", Math.cos(ang) * radius * 1.14);
                 graph.setNodeAttribute(id, "y", Math.sin(ang) * radius * 1.14);
-                graph.setNodeAttribute(id, "z", 0);
+                graph.setNodeAttribute(id, "z", (seededUnit(id, 37) - 0.5) * radius * 0.2);
               }
             });
           }
@@ -771,10 +778,19 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // Pure-math static layouts (spiral galaxy / time strata): positions are a
     // deterministic O(n log n) function of the built graph — no FA2 slices, no
     // worker sim. Compute, bake, reveal in one fit.
-    if (s.layout === "spiral" || s.layout === "strata") {
+    if (
+      s.layout === "spiral" ||
+      s.layout === "strata" ||
+      s.layout === "celestial" ||
+      s.layout === "radial"
+    ) {
       const radius = s.linkDistance * ATLAS_RADIUS_MUL;
       if (s.layout === "spiral") {
         applySpiralLayout(graph, { targetRadius: radius * 1.3 });
+      } else if (s.layout === "celestial") {
+        applyCelestialLayout(graph, { targetRadius: radius * 1.1 });
+      } else if (s.layout === "radial") {
+        applyRadialLayout(graph, { targetRadius: radius * 1.2 });
       } else {
         applyStrataLayout(graph, { mtimes, targetRadius: radius * 1.2 });
       }

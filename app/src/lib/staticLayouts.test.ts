@@ -1,7 +1,12 @@
 import { describe, it, expect } from "vitest";
 import Graph from "graphology";
 import type { VaultGraph } from "./graphData";
-import { applySpiralLayout, applyStrataLayout } from "./staticLayouts";
+import {
+  applyCelestialLayout,
+  applyRadialLayout,
+  applySpiralLayout,
+  applyStrataLayout,
+} from "./staticLayouts";
 
 function makeGraph(
   nodes: { id: string; community: number; deg?: number }[],
@@ -108,5 +113,88 @@ describe("applyStrataLayout", () => {
     g.forEachNode((id) => {
       expect(Number.isFinite(pos(g, id).x)).toBe(true);
     });
+  });
+});
+
+describe("applyCelestialLayout", () => {
+  const nodes = [
+    ...Array.from({ length: 12 }, (_, i) => ({ id: `a${i}.md`, community: 0, deg: 12 - i })),
+    ...Array.from({ length: 6 }, (_, i) => ({ id: `b${i}.md`, community: 1 })),
+    ...Array.from({ length: 3 }, (_, i) => ({ id: `c${i}.md`, community: 2 })),
+  ];
+
+  it("puts every note on the sphere shell (small radial jitter allowed)", () => {
+    const g = makeGraph(nodes);
+    applyCelestialLayout(g, { targetRadius: 900 });
+    g.forEachNode((id) => {
+      const p = pos(g, id);
+      const r = Math.hypot(p.x, p.y, p.z);
+      expect(r).toBeGreaterThan(900 * 0.95);
+      expect(r).toBeLessThan(900 * 1.05);
+    });
+  });
+
+  it("keeps a community's constellation patch tighter than the whole sky", () => {
+    const g = makeGraph(nodes);
+    applyCelestialLayout(g, { targetRadius: 900 });
+    const ids = nodes.filter((n) => n.community === 1).map((n) => n.id);
+    const ps = ids.map((id) => pos(g, id));
+    const c = ps.reduce(
+      (s, p) => ({ x: s.x + p.x / ps.length, y: s.y + p.y / ps.length, z: s.z + p.z / ps.length }),
+      { x: 0, y: 0, z: 0 },
+    );
+    for (const p of ps) {
+      expect(Math.hypot(p.x - c.x, p.y - c.y, p.z - c.z)).toBeLessThan(900);
+    }
+  });
+
+  it("is deterministic", () => {
+    const g1 = makeGraph(nodes);
+    const g2 = makeGraph(nodes);
+    applyCelestialLayout(g1, { targetRadius: 700 });
+    applyCelestialLayout(g2, { targetRadius: 700 });
+    g1.forEachNode((id) => expect(pos(g1, id)).toEqual(pos(g2, id)));
+  });
+});
+
+describe("applyRadialLayout", () => {
+  // hub links to m1..m3; m1 links to leaf; orphan is disconnected.
+  const nodes = [
+    { id: "hub.md", community: 0, deg: 3 },
+    { id: "m1.md", community: 0, deg: 2 },
+    { id: "m2.md", community: 0, deg: 1 },
+    { id: "m3.md", community: 1, deg: 1 },
+    { id: "leaf.md", community: 1, deg: 1 },
+    { id: "orphan.md", community: -1, deg: 0 },
+  ];
+  const wire = (g: VaultGraph): void => {
+    g.addEdge("hub.md", "m1.md");
+    g.addEdge("hub.md", "m2.md");
+    g.addEdge("hub.md", "m3.md");
+    g.addEdge("m1.md", "leaf.md");
+  };
+
+  it("centres the top hub and orders shells by BFS depth", () => {
+    const g = makeGraph(nodes);
+    wire(g);
+    applyRadialLayout(g, { targetRadius: 600 });
+    const r = (id: string): number => {
+      const p = pos(g, id);
+      return Math.hypot(p.x, p.y, p.z);
+    };
+    expect(r("hub.md")).toBe(0);
+    expect(r("m1.md")).toBeGreaterThan(0);
+    expect(r("leaf.md")).toBeGreaterThan(r("m1.md"))
+    expect(r("orphan.md")).toBeGreaterThan(r("leaf.md")); // outermost orbit
+  });
+
+  it("is deterministic", () => {
+    const g1 = makeGraph(nodes);
+    const g2 = makeGraph(nodes);
+    wire(g1);
+    wire(g2);
+    applyRadialLayout(g1, { targetRadius: 600 });
+    applyRadialLayout(g2, { targetRadius: 600 });
+    g1.forEachNode((id) => expect(pos(g1, id)).toEqual(pos(g2, id)));
   });
 });

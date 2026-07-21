@@ -11,7 +11,7 @@ import { LAYOUT_RECOMMENDED } from "./graphSettings";
 // Recommend used to set clusterForce: 0.45; invisible on atlas, but it clobbered
 // the 0.35 galaxy is tuned to, so clicking Recommend on atlas and switching back
 // to galaxy silently changed galaxy's look.
-const STATIC_LAYOUTS = ["atlas", "synapse", "spiral", "strata", "semantic"] as const;
+const STATIC_LAYOUTS = ["atlas", "synapse", "spiral", "strata", "semantic", "celestial", "radial"] as const;
 const SIM_ONLY_FORCES = ["centerForce", "repelForce", "linkForce", "clusterForce"] as const;
 
 describe("LAYOUT_RECOMMENDED", () => {
@@ -41,7 +41,7 @@ describe("LAYOUT_RECOMMENDED", () => {
   });
 
   it("gives every flat/chart layout the paper-deepened community dots", () => {
-    for (const layout of ["atlas", "synapse", "strata", "semantic"] as const) {
+    for (const layout of ["atlas", "synapse", "strata"] as const) {
       const rec = LAYOUT_RECOMMENDED[layout];
       expect(rec.nodeColor, `${layout}: a categorical map is unreadable mono`).toBe("community");
       expect(rec.nodeColorDepth ?? 0, `${layout}: flat maps need deepened dots`).toBeGreaterThanOrEqual(1.3);

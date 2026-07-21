@@ -26,6 +26,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **The Semantic map is now a 3D meaning-nebula, and two new 3D layouts land:
+  Celestial sphere and Radial orbit.** Semantic gains a third principal
+  component for depth — orbit the nebula of meaning instead of reading a flat
+  chart. "Celestial sphere" puts every note on one star globe, each topic a
+  constellation patch with its hubs at the centre — fly inside for a
+  planetarium. "Radial orbit" arranges the vault as a solar system around its
+  heaviest hub: link-distance shells outward, disconnected notes in the
+  farthest orbit. Nine layouts total — six of them 3D.
+
 - **Every layout now has research-grade recommended settings.** The ✦
   Recommended button covers all seven layouts with a per-layout bundle tuned to
   what each form actually reads by: the spiral keeps luminous community arms,

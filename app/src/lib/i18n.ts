@@ -199,6 +199,8 @@ export interface Strings {
   gr_layout_strata?: string;
   gr_layout_semantic?: string;
   gr_semantic_missing?: string;
+  gr_layout_celestial?: string;
+  gr_layout_radial?: string;
   gr_galaxies?: string;
   gr_galaxies_hint?: string;
   gr_multiverse?: string;
@@ -879,6 +881,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_spiral: "Spiral galaxy",
     gr_layout_strata: "Timeline (2D)",
     gr_layout_semantic: "Semantic map",
+    gr_layout_celestial: "Celestial sphere",
+    gr_layout_radial: "Radial orbit",
     gr_semantic_missing: "Semantic map needs the embedding index — run Reindex under Settings \u2192 Model, then reopen. Showing the spiral instead.",
     gr_galaxies: "Folder galaxies",
     gr_galaxies_hint: "Split the vault into one slowly rotating galaxy per folder",
@@ -1570,6 +1574,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_spiral: "나선 은하",
     gr_layout_strata: "시간 지층 (2D)",
     gr_layout_semantic: "의미 지도",
+    gr_layout_celestial: "천구 별자리",
+    gr_layout_radial: "동심 궤도",
     gr_semantic_missing: "의미 지도는 임베딩 인덱스가 필요합니다 — 설정 \u2192 모델에서 재색인 후 다시 열어주세요. 지금은 나선 배치로 표시합니다.",
     gr_galaxies: "폴더 은하계",
     gr_galaxies_hint: "폴더마다 하나씩, 천천히 자전하는 은하계로 분리",
@@ -2203,6 +2209,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_spiral: "渦巻銀河",
     gr_layout_strata: "時間地層 (2D)",
     gr_layout_semantic: "意味マップ",
+    gr_layout_celestial: "天球星座",
+    gr_layout_radial: "同心軌道",
     gr_semantic_missing: "意味マップには埋め込みインデックスが必要です — 設定 \u2192 モデルで再イン<デックス後に開き直してください。今は渦巻で表示します。",
     gr_galaxies: "フォルダー銀河",
     gr_galaxies_hint: "フォルダーごとにゆっくり自転する銀河へ分割",

@@ -241,6 +241,8 @@ export default function GraphControls({
                 ["spiral", t.gr_layout_spiral ?? "Spiral galaxy"],
                 ["strata", t.gr_layout_strata ?? "Timeline (2D)"],
                 ["semantic", t.gr_layout_semantic ?? "Semantic map"],
+                ["celestial", t.gr_layout_celestial ?? "Celestial sphere"],
+                ["radial", t.gr_layout_radial ?? "Radial orbit"],
               ] as [GraphSettings["layout"], string][]
             ).map(([key, label]) => (
               <button

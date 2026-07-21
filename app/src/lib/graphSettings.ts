@@ -37,7 +37,7 @@ export interface GraphSettings {
   // "spiral" = a static log-spiral galaxy (the cosmic-refs Andromeda/M101
   // form): communities along the arms, biggest at the core. "strata" = a
   // static 2D time chart: x = last-modified (oldest left), y = community band.
-  layout: "galaxy" | "atlas" | "synapse" | "synapse3d" | "spiral" | "strata" | "semantic";
+  layout: "galaxy" | "atlas" | "synapse" | "synapse3d" | "spiral" | "strata" | "semantic" | "celestial" | "radial";
   // Multiverse mode: instead of this one vault, show EVERY registered project
   // as its own glowing universe-bubble in one shared cosmos. Fly into a bubble
   // to switch the active vault (which turns this back off, landing you in that
@@ -345,20 +345,50 @@ export const LAYOUT_RECOMMENDED: Record<
     cosmicEvents: false,
     arrows: false,
   },
-  // Semantic map — position IS meaning, so the similarity-edge overlay is
-  // redundant by construction; wikilink edges stay (grey) as the explicit
-  // structure draped over meaning-space. Community hue on the dots is the
-  // interesting read: where link-communities DISAGREE with embedding
-  // neighbourhoods, the map shows it. Depth 1.4 like atlas (flat map on
-  // paper); static-chart FX policy applies.
+  // Semantic map — a 3D meaning-nebula (top-3 principal components): position
+  // IS meaning, so the similarity-edge overlay is redundant by construction;
+  // wikilink edges stay (grey) as the explicit structure draped over
+  // meaning-space. Community hue on the stars is the interesting read: where
+  // link-communities DISAGREE with embedding neighbourhoods, the nebula shows
+  // it. Dark-3D luminous depth (1.15); baked positions → FX off.
   semantic: {
     folderGalaxies: false,
     edgeTint: "grey",
     edgeBundles: false,
     semanticEdges: false,
     nodeColor: "community",
-    nodeColorDepth: 1.4,
-    clickBurst: false,
+    nodeColorDepth: 1.15,
+    clickBurst: true,
+    neuralFiring: false,
+    cosmicEvents: false,
+  },
+  // Celestial sphere — the vault as a planetarium: every note on one shell,
+  // each topic a constellation patch, hubs at patch centres. Community hue IS
+  // the constellation identity; luminous dark-3D depth; grey edges read as
+  // constellation lines (intra) and chords through the void (inter). Baked →
+  // FX off; firing off (a night sky is still); click supernova kept — poking
+  // a star should still delight.
+  celestial: {
+    folderGalaxies: false,
+    edgeTint: "grey",
+    edgeBundles: false,
+    nodeColor: "community",
+    nodeColorDepth: 1,
+    clickBurst: true,
+    neuralFiring: false,
+    cosmicEvents: false,
+  },
+  // Radial orbit — a solar system around the vault's heaviest hub: BFS-depth
+  // shells, disconnected notes in the outermost orbit. Distance from centre is
+  // the ONE encoded meaning, so edges stay grey tissue and bundles stay off
+  // (arcs would fake orbital relations). Baked → FX off.
+  radial: {
+    folderGalaxies: false,
+    edgeTint: "grey",
+    edgeBundles: false,
+    nodeColor: "community",
+    nodeColorDepth: 1,
+    clickBurst: true,
     neuralFiring: false,
     cosmicEvents: false,
   },

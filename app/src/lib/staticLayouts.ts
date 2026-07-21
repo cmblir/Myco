@@ -97,6 +97,153 @@ export function applySpiralLayout(g: VaultGraph, o: SpiralOpts): void {
   }
 }
 
+export interface CelestialOpts {
+  /** Sphere radius the constellations sit on. */
+  targetRadius: number;
+}
+
+/** The vault as a celestial sphere: every note on one shell, each community a
+ * constellation patch (a spherical cap sized by member count), hubs at the
+ * patch centre. Fly inside and it's a planetarium; orbit outside and it's a
+ * star globe. Patch directions come from a fibonacci spiral over communities,
+ * so patches spread evenly and deterministically. */
+export function applyCelestialLayout(g: VaultGraph, o: CelestialOpts): void {
+  if (g.order === 0) return;
+  const R = o.targetRadius;
+  const groups = communitiesBySize(g);
+  const total = g.order;
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  let ci = 0;
+  const count = groups.size;
+  for (const [, members] of groups) {
+    // Patch centre: fibonacci-sphere direction #ci (even spread, no poles bias).
+    const t = count > 1 ? ci / (count - 1) : 0.5;
+    const cy = 1 - 2 * t;
+    const cr = Math.sqrt(Math.max(0, 1 - cy * cy));
+    const ca = golden * ci;
+    const centre = {
+      x: Math.cos(ca) * cr,
+      y: cy,
+      z: Math.sin(ca) * cr,
+    };
+    // Angular patch radius grows with membership (sqrt keeps big topics from
+    // swallowing the sky); floor keeps tiny topics visibly a PATCH, not a dot.
+    const cap = Math.max(0.1, Math.sqrt(members.length / total) * 0.85);
+    // Tangent basis at the patch centre.
+    const up = Math.abs(centre.y) > 0.9 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
+    let tx = {
+      x: up.y * centre.z - up.z * centre.y,
+      y: up.z * centre.x - up.x * centre.z,
+      z: up.x * centre.y - up.y * centre.x,
+    };
+    const tl = Math.hypot(tx.x, tx.y, tx.z) || 1;
+    tx = { x: tx.x / tl, y: tx.y / tl, z: tx.z / tl };
+    const ty = {
+      x: centre.y * tx.z - centre.z * tx.y,
+      y: centre.z * tx.x - centre.x * tx.z,
+      z: centre.x * tx.y - centre.y * tx.x,
+    };
+    members.sort(
+      (a, b) => (g.getNodeAttribute(b, "deg") ?? 0) - (g.getNodeAttribute(a, "deg") ?? 0),
+    );
+    for (let i = 0; i < members.length; i++) {
+      const id = members[i];
+      // Hubs central: angular distance grows with rank (sunflower packing).
+      const rr = cap * Math.sqrt((i + 0.5) / members.length);
+      const aa = golden * i + seededUnit(id, 41) * 0.35;
+      const ox = Math.cos(aa) * rr;
+      const oy = Math.sin(aa) * rr;
+      let px = centre.x + tx.x * ox + ty.x * oy;
+      let py = centre.y + tx.y * ox + ty.y * oy;
+      let pz = centre.z + tx.z * ox + ty.z * oy;
+      const pl = Math.hypot(px, py, pz) || 1;
+      // Back onto the shell, with a whisper of radial jitter for depth twinkle.
+      const rad = R * (1 + (seededUnit(id, 43) - 0.5) * 0.04);
+      px = (px / pl) * rad;
+      py = (py / pl) * rad;
+      pz = (pz / pl) * rad;
+      g.setNodeAttribute(id, "x", px);
+      g.setNodeAttribute(id, "y", py);
+      g.setNodeAttribute(id, "z", pz);
+    }
+    ci++;
+  }
+}
+
+export interface RadialOpts {
+  /** World radius of the outermost shell. */
+  targetRadius: number;
+}
+
+/** The vault as a solar system around its heaviest hub: BFS-depth shells in 3D
+ * (depth 1 inner shell, depth 2 next…), each shell's nodes spread by community
+ * sector. Reads "how far is everything from the centre of my thinking".
+ * Disconnected notes take the outermost shell. */
+export function applyRadialLayout(g: VaultGraph, o: RadialOpts): void {
+  if (g.order === 0) return;
+  const R = o.targetRadius;
+  // Centre: the highest-degree node (ties broken by id for determinism).
+  let hub: string | null = null;
+  let best = -1;
+  g.forEachNode((id, a) => {
+    const deg = (a.deg as number) ?? 0;
+    if (deg > best || (deg === best && (hub === null || id < hub))) {
+      best = deg;
+      hub = id;
+    }
+  });
+  if (!hub) return;
+  // BFS depths.
+  const depth = new Map<string, number>([[hub, 0]]);
+  const queue: string[] = [hub];
+  let head = 0;
+  let maxDepth = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    const d = depth.get(cur) ?? 0;
+    for (const nb of g.neighbors(cur)) {
+      if (depth.has(nb)) continue;
+      depth.set(nb, d + 1);
+      maxDepth = Math.max(maxDepth, d + 1);
+      queue.push(nb);
+    }
+  }
+  const outer = maxDepth + 1; // disconnected notes orbit past everything
+  const shells = Math.max(1, outer);
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  // Group members per shell for even fibonacci spread within each.
+  const byShell = new Map<number, string[]>();
+  g.forEachNode((id) => {
+    const d = depth.get(id) ?? outer;
+    const arr = byShell.get(d) ?? [];
+    arr.push(id);
+    byShell.set(d, arr);
+  });
+  for (const [d, members] of byShell) {
+    if (d === 0) {
+      g.setNodeAttribute(members[0], "x", 0);
+      g.setNodeAttribute(members[0], "y", 0);
+      g.setNodeAttribute(members[0], "z", 0);
+      continue;
+    }
+    members.sort(); // deterministic order within a shell
+    const rad = (R * d) / shells;
+    for (let i = 0; i < members.length; i++) {
+      const id = members[i];
+      // Fibonacci sphere within the shell + per-node jitter so successive
+      // shells don't moiré against each other.
+      const t = members.length > 1 ? i / (members.length - 1) : 0.5;
+      const y = 1 - 2 * t;
+      const r = Math.sqrt(Math.max(0, 1 - y * y));
+      const a = golden * i + seededUnit(id, 47) * 0.5;
+      const wob = 1 + (seededUnit(id, 53) - 0.5) * 0.08;
+      g.setNodeAttribute(id, "x", Math.cos(a) * r * rad * wob);
+      g.setNodeAttribute(id, "y", y * rad * wob);
+      g.setNodeAttribute(id, "z", Math.sin(a) * r * rad * wob);
+    }
+  }
+}
+
 export interface StrataOpts {
   /** Absolute path → mtime ms (missing/unknown files sink to the oldest edge). */
   mtimes: Map<string, number> | null;
