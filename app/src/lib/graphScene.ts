@@ -1407,7 +1407,10 @@ export class GraphScene {
     // nervous system has no territories, just fibres). Positions are set by
     // applyAtlasLayout (no worker sim).
     this.hulls = new CommunityHullLayer(this.graph, dark);
-    this.hulls.setVisible(this.atlasMode);
+    // Territory fills belong to the paper atlas (a Gephi MAP). The sigma board
+    // is a Gephi HAIRBALL — nodes + coloured edges on a clean charcoal board,
+    // no translucent territory washes greying it out.
+    this.hulls.setVisible(this.atlasMode && !this.sigmaSkin);
     this.scene.add(this.hulls.mesh);
     // Bundled inter-community strands (GRAPH-01): rebuilt on layoutSettled()
     // (galaxy mode) / atlas apply, so they always follow the measured layout.
@@ -3336,6 +3339,8 @@ export class GraphScene {
     this.synapse.setDark(dark);
     this.ship.setDark(dark);
     this.hulls.setDark(dark);
+    // A live skin flip to/from sigma toggles the territory fills (see ctor).
+    this.hulls.setVisible(this.atlasMode && !this.sigmaSkin);
     this.bundles.setDark(dark);
     this.meteor.lines.visible = amb.meteors && !this.perfLod && !this.flatLayout;
     // Painted galaxy adornments stay off across theme changes (see ctor).
@@ -3877,7 +3882,7 @@ export class GraphScene {
     // quad the composers are about to draw samples fresh density.
     if (this.edgeDensity) this.edgeDensity.render(this.renderer, this.camera);
     if (this.selective && this.bloomComposer && this.finalComposer && this.mixPass) {
-      if (this.darkTheme) {
+      if (this.darkTheme && !this.sigmaSkin) {
         // Dark void: the whole point of selective bloom — restrict the camera
         // to layer 1 (nodes only), bloom them, and the mix pass ADDS that glow
         // back over the full render. Drop the background so the near-black bg
@@ -3891,12 +3896,13 @@ export class GraphScene {
         this.scene.background = bg;
         this.mixPass.enabled = true;
       } else {
-        // Light paper: NOTHING blooms (NormalBlending, threshold 1.05 sits above
-        // the near-white bg), so the selective mix has no glow to add — and
-        // MIX_FRAG's `base + bloomTexture` over an HDR-linear near-white base
-        // erased the dark ink nodes entirely (measured: 7/58 nodes survived the
-        // mix, 58/58 without it). Skip the bloom pass and the mix; render the
-        // scene straight through (RenderPass → OutputPass → grade).
+        // Light paper AND the sigma board render straight through — no bloom mix.
+        // Paper: nothing blooms (NormalBlending, threshold 1.05 above the near-
+        // white bg) and MIX_FRAG's `base + bloomTexture` over an HDR-linear near-
+        // white base ERASED the dark ink nodes (measured 7/58 survived, 58/58
+        // without). Sigma: a Gephi board is crisp flat discs on a CLEAN charcoal
+        // board — the bloom haze of the vivid nodes was bluing/greying the whole
+        // frame (board measured #272d3f instead of #1c1c21). Skip the mix.
         this.mixPass.enabled = false;
       }
       this.finalComposer.render();

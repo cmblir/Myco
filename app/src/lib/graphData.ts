@@ -19,6 +19,13 @@ export function fieldStar(lightBg: boolean): string {
 // golden-angle hues so no two galaxies collide.
 const PALETTE_HUES = [212, 163, 40, 262, 338, 20];
 
+// The Gephi/sigma.js palette: a full-spectrum wheel at high saturation — the
+// vivid categorical look of the classic hairball, where each community is an
+// unmistakable pure hue (red / orange / yellow / green / cyan / blue / violet /
+// magenta), not the calm cosmic pastels. Used only for the "vivid" mode (sigma
+// skin). Beyond these, golden-angle keeps later clusters distinct.
+const VIVID_HUES = [0, 32, 52, 120, 168, 200, 264, 300, 16, 90, 320, 224];
+
 function goldenHueDeg(rank: number): number {
   return (rank * 137.508) % 360; // golden angle — well-spread hues
 }
@@ -26,11 +33,13 @@ function goldenHueDeg(rank: number): number {
 // A cluster's colour: its galaxy's base hue, shaded by `t` ∈ [-0.5, 0.5] (the
 // cluster's position within the galaxy) so same-galaxy clusters read as one hue
 // family in different shades. Light backgrounds get darker, more saturated
-// colours so the nodes stand out on paper instead of washing out.
-function shadeHex(hueDeg: number, t: number, lightBg: boolean): string {
-  const sat = lightBg ? 0.72 : 0.62;
-  const baseL = lightBg ? 0.4 : 0.68;
-  const spread = lightBg ? 0.2 : 0.22;
+// colours so the nodes stand out on paper instead of washing out. `vivid` is the
+// Gephi board look: near-full saturation, mid lightness — pure categorical
+// colour on the charcoal board (the pastels read as washed there).
+function shadeHex(hueDeg: number, t: number, lightBg: boolean, vivid = false): string {
+  const sat = vivid ? 0.92 : lightBg ? 0.72 : 0.62;
+  const baseL = vivid ? 0.56 : lightBg ? 0.4 : 0.68;
+  const spread = vivid ? 0.12 : lightBg ? 0.2 : 0.22;
   const l = Math.min(0.85, Math.max(0.16, baseL + t * spread));
   return hslToHex(((hueDeg % 360) + 360) % 360, sat, l);
 }
@@ -39,15 +48,17 @@ function shadeHex(hueDeg: number, t: number, lightBg: boolean): string {
 // even sub-clusters of the same galaxy — gets a separate hue (curated palette
 // first, then golden-angle) so each legend row and each on-screen clump reads as
 // its own group. Light backgrounds get the dark, saturated variant so nodes
-// stand out on paper instead of washing out.
+// stand out on paper instead of washing out. `vivid` swaps in the Gephi wheel.
 export function communityPalette(
   clusters: number[],
   lightBg: boolean,
+  vivid = false,
 ): Map<number, string> {
+  const hues = vivid ? VIVID_HUES : PALETTE_HUES;
   const out = new Map<number, string>();
   clusters.forEach((c, i) => {
-    const hue = i < PALETTE_HUES.length ? PALETTE_HUES[i] : goldenHueDeg(i);
-    out.set(c, shadeHex(hue, 0, lightBg));
+    const hue = i < hues.length ? hues[i] : goldenHueDeg(i);
+    out.set(c, shadeHex(hue, 0, lightBg, vivid));
   });
   return out;
 }
@@ -298,9 +309,10 @@ function colorByCommunity(
   graph: VaultGraph,
   maxDeg: number,
   override?: Record<string, number> | null,
-  colorOpts?: { lightBg?: boolean },
+  colorOpts?: { lightBg?: boolean; vivid?: boolean },
 ): void {
   const lightBg = colorOpts?.lightBg ?? false;
+  const vivid = colorOpts?.vivid ?? false;
   let comm: Record<string, number>;
   if (override) {
     comm = override;
@@ -325,8 +337,9 @@ function colorByCommunity(
     .filter(([, n]) => n >= 3)
     .sort((a, b) => b[1] - a[1])
     .map(([c]) => c);
-  // A distinct hue per cluster (light backgrounds get the dark variant).
-  const colorOf = communityPalette(ranked, lightBg);
+  // A distinct hue per cluster (light backgrounds get the dark variant; the
+  // sigma board gets the vivid Gephi wheel).
+  const colorOf = communityPalette(ranked, lightBg, vivid);
   const sized = new Set(ranked);
   // Highest-degree node of each sized community = its galaxy core.
   const hubOf = new Map<number, { id: string; deg: number }>();
@@ -365,7 +378,7 @@ function colorByCommunity(
 // the whole layout). Uses the community/galaxy/status already on the nodes, so
 // no Louvain pass. The scene picks the new colours up via its next writeNodes
 // (applyTheme calls it on the skin change).
-export function recolorGraph(graph: VaultGraph, lightBg: boolean): void {
+export function recolorGraph(graph: VaultGraph, lightBg: boolean, vivid = false): void {
   let maxDeg = 0;
   graph.forEachNode((_id, a) => {
     if (a.deg > maxDeg) maxDeg = a.deg;
@@ -377,7 +390,7 @@ export function recolorGraph(graph: VaultGraph, lightBg: boolean): void {
   const ranked = [...size.entries()]
     .sort((x, y) => y[1] - x[1])
     .map(([c]) => c);
-  const colorOf = communityPalette(ranked, lightBg);
+  const colorOf = communityPalette(ranked, lightBg, vivid);
   graph.forEachNode((id, a) => {
     const dn = maxDeg > 0 ? a.deg / maxDeg : 0;
     let color = tintColor(colorOf.get(a.community) ?? fieldStar(lightBg), dn, id);
@@ -525,6 +538,9 @@ export interface BuildGraphOpts {
   // Light (white-skin) background: pick the dark, saturated node palette so
   // stars read on paper instead of washing out.
   lightBg?: boolean;
+  // Vivid (sigma board): swap the calm cosmic pastels for the Gephi full-
+  // spectrum wheel at high saturation — the categorical hairball palette.
+  vivid?: boolean;
   // Recency glow: absolute path → mtime (ms) and the "now" to age against.
   // When present each node gets an `age` attr (days since modified); missing
   // files read as very old so unknown never glows.
@@ -880,6 +896,7 @@ export function buildGraph(
   }
   colorByCommunity(g, maxDeg, groups?.community ?? null, {
     lightBg: o.lightBg ?? false,
+    vivid: o.vivid ?? false,
   });
   // Galaxy (top-level folder) attribute drives the shell anchor + legend parent.
   g.forEachNode((id) =>

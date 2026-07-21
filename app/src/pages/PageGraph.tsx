@@ -599,6 +599,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       folderGalaxies: s.folderGalaxies,
       vaultRoot: currentVault?.path ?? "",
       lightBg,
+      vivid: s.skin === "sigma", // the Gephi board wears the vivid categorical wheel
+
       // Recency glow: age each note against its file mtime (absent → no glow).
       mtimes: mtimes ?? undefined,
       now: Date.now(),
@@ -1029,7 +1031,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       // Recolour the graph in place for the resolved light/dark background, then
       // applyTheme's writeNodes pushes the new colours — no sim rebuild/jitter.
       const g = graphRef.current;
-      if (g) recolorGraph(g, isLightBackground(makeTheme(settingsRef.current.skin)));
+      if (g)
+        recolorGraph(
+          g,
+          isLightBackground(makeTheme(settingsRef.current.skin)),
+          settingsRef.current.skin === "sigma",
+        );
       sc.applySettings(settingsRef.current);
       sc.applyTheme(makeTheme(settingsRef.current.skin));
     };
