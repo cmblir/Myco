@@ -273,4 +273,44 @@ describe("applyWalrusLayout", () => {
     const p = pos(g, "lonely.md");
     expect(Math.hypot(p.x, p.y, p.z)).toBeGreaterThan(100);
   });
+
+  it("spreads a hub's heavy branches into DISTINCT directions (no collapsed blob)", () => {
+    // Root → 6 branches, each a fan of 24 leaves. The 6 branch subtrees must
+    // point in clearly different directions, or the layout is an unreadable ball.
+    const nodes: { id: string; community: number; deg?: number }[] = [
+      { id: "root", community: 0, deg: 100 }, // the vault hub — highest degree
+    ];
+    for (let b = 0; b < 6; b++) {
+      nodes.push({ id: `b${b}`, community: b, deg: 25 });
+      for (let i = 0; i < 24; i++) nodes.push({ id: `b${b}_${i}`, community: b, deg: 1 });
+    }
+    const g = makeGraph(nodes);
+    for (let b = 0; b < 6; b++) {
+      g.addEdge("root", `b${b}`);
+      for (let i = 0; i < 24; i++) g.addEdge(`b${b}`, `b${b}_${i}`);
+    }
+    applyWalrusLayout(g, { targetRadius: 600 });
+    // Each branch's outward direction = its hub node's unit position.
+    const dirs = Array.from({ length: 6 }, (_, b) => {
+      const p = pos(g, `b${b}`);
+      const r = Math.hypot(p.x, p.y, p.z) || 1;
+      return [p.x / r, p.y / r, p.z / r];
+    });
+    // The closest pair of branch directions must still be well separated
+    // (dot < 0.9 ≈ >25° apart) — a blob would have them nearly parallel.
+    let maxDot = -1;
+    for (let i = 0; i < 6; i++)
+      for (let j = i + 1; j < 6; j++) {
+        const d = dirs[i][0] * dirs[j][0] + dirs[i][1] * dirs[j][1] + dirs[i][2] * dirs[j][2];
+        maxDot = Math.max(maxDot, d);
+      }
+    expect(maxDot).toBeLessThan(0.9);
+    // And the field genuinely fills space (bounding sphere near targetRadius).
+    let far = 0;
+    g.forEachNode((id) => {
+      const p = pos(g, id);
+      far = Math.max(far, Math.hypot(p.x, p.y, p.z));
+    });
+    expect(far).toBeGreaterThan(400);
+  });
 });

@@ -278,8 +278,15 @@ uniform float u_time;
 uniform float u_vig;
 uniform float u_grain;
 uniform float u_ca;
+// Hash-without-Sine (Dave Hoskins). The canonical fract(sin(dot(p,k))*C) hash
+// DEGENERATES into regular DIAGONAL BANDS at mediump precision once the coords
+// are scaled up (uv * ~1900) — which showed as a crosshatch lattice over the
+// dark void, where the shadow-weighted grain is strongest. This variant uses
+// only fract + small multipliers and stays stable at mediump.
 float hash12(vec2 p) {
-  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+  vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+  p3 += dot(p3, p3.yzx + 33.33);
+  return fract((p3.x + p3.y) * p3.z);
 }
 void main() {
   vec2 uv = vUv;
@@ -291,7 +298,9 @@ void main() {
   col.g = texture2D(tDiffuse, uv).g;
   col.b = texture2D(tDiffuse, uv - off).b;
   col *= 1.0 - u_vig * smoothstep(0.2, 0.72, r2);
-  float g = hash12(uv * vec2(1917.0, 1013.0) + fract(u_time * 0.61) * 41.7) - 0.5;
+  // Per-pixel grain keyed on gl_FragCoord (small integer coords — no scale
+  // blow-up) + a time offset, so it stays clean random noise, never a lattice.
+  float g = hash12(gl_FragCoord.xy + fract(u_time * 0.61) * 137.0) - 0.5;
   float shadow = 1.0 - smoothstep(0.0, 0.55, dot(col, vec3(0.3333)));
   col += g * u_grain * (0.35 + 0.65 * shadow);
   gl_FragColor = vec4(col, 1.0);

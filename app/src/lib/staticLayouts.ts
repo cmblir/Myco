@@ -399,8 +399,9 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
   const n = g.order;
   if (n === 0) return;
   const golden = Math.PI * (3 - Math.sqrt(5));
-  const DECAY = 0.6; // edge-length shrink per depth (the hyperbolic compression)
-  const CONE = 1.15; // ~66° cone half-angle for a deeper node's child burst
+  const DECAY = 0.72; // radial-step shrink per depth (gentle → the tree spreads,
+  // deep nodes still converge toward the boundary shell)
+  const CONE = 1.0; // fallback cone half-angle when a node has no allocated share
 
   // Degree lookup (attribute, falling back to live degree) for hub selection.
   const degOf = (id: string): number =>
@@ -455,10 +456,23 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
     roots.push(id);
   }
 
+  // Subtree weight (nodes in each subtree), bottom-up — the KEY to a real cone
+  // tree: a child is given a cone whose solid angle is proportional to its
+  // subtree's weight, so a heavy branch gets room to spread and a light one
+  // stays a thin twig. Without this, big subtrees pile on top of each other into
+  // an unreadable blob (the earlier fixed-cone version's failure).
+  const weight = new Map<string, number>();
+  for (let i = order.length - 1; i >= 0; i--) {
+    const v = order[i];
+    let wsum = 1;
+    for (const c of children.get(v) ?? []) wsum += weight.get(c) ?? 1;
+    weight.set(v, wsum);
+  }
+
   const pos = new Map<string, [number, number, number]>();
   const axis = new Map<string, [number, number, number]>();
+  const coneHalf = new Map<string, number>(); // half-angle a node may spread kids into
 
-  // Fibonacci-sphere unit direction i of N (full-sphere spread), lightly jittered.
   const fibDir = (i: number, N: number, seed: string): [number, number, number] => {
     const t = N > 1 ? i / (N - 1) : 0.5;
     const y = 1 - 2 * t;
@@ -467,49 +481,70 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
     return [Math.cos(a) * r, y, Math.sin(a) * r];
   };
 
-  // Component roots: main at the centre; others on a boundary shell (pre-scale
-  // units — the whole field is normalised to targetRadius at the end).
-  const BOUNDARY = 2.4;
+  // Component roots: main at the centre spreading over the FULL sphere; others
+  // out on the rim as compact local bursts so a disconnected tail never becomes
+  // its own giant lonely firework floating off in space.
   roots.forEach((rt, ri) => {
     if (ri === 0) {
       pos.set(rt, [0, 0, 0]);
       axis.set(rt, [0, 1, 0]);
+      coneHalf.set(rt, Math.PI); // the root fans children over the whole sphere
     } else {
       const d = fibDir(ri, roots.length, rt);
-      pos.set(rt, [d[0] * BOUNDARY, d[1] * BOUNDARY, d[2] * BOUNDARY]);
+      pos.set(rt, [d[0] * 0.9, d[1] * 0.9, d[2] * 0.9]);
       axis.set(rt, d);
+      coneHalf.set(rt, 0.85);
     }
   });
 
-  // Grow each node's children in BFS order (parent already placed).
+  // Grow each node's children in BFS order (parent already placed). Children are
+  // distributed over the parent's spherical cap by CUMULATIVE weight (area ∝
+  // angle², so polar ∝ √cumFrac spreads them evenly by subtree mass), with the
+  // azimuth on a golden spiral. Radial step decays with depth so the tree fills
+  // a ball and deep subtrees settle into distinct fireworks near the boundary.
   for (const v of order) {
     const kids = children.get(v) ?? [];
     if (kids.length === 0) continue;
     const d = depth.get(v) ?? 0;
-    const L = Math.pow(DECAY, d); // parent→child edge length at this depth
+    const step = Math.pow(DECAY, d) * (1 - DECAY); // hyperbolic radial increment
+    const H = coneHalf.get(v) ?? CONE;
     const [px, py, pz] = pos.get(v)!;
     const a = axis.get(v)!;
     const [u, w] = perpBasis(a);
-    kids.forEach((c, j) => {
-      let dir: [number, number, number];
-      if (d === 0) {
-        // Root: children fan over the FULL sphere on long spokes.
-        dir = fibDir(j, kids.length, c);
-      } else {
-        // Deeper: burst into a cone around the parent's outward axis.
-        const phi = CONE * Math.sqrt((j + 0.5) / kids.length);
-        const psi = golden * j;
-        const cs = Math.cos(phi);
-        const sn = Math.sin(phi);
-        dir = [
-          a[0] * cs + (u[0] * Math.cos(psi) + w[0] * Math.sin(psi)) * sn,
-          a[1] * cs + (u[1] * Math.cos(psi) + w[1] * Math.sin(psi)) * sn,
-          a[2] * cs + (u[2] * Math.cos(psi) + w[2] * Math.sin(psi)) * sn,
-        ];
-      }
-      const jit = 1 + (seededUnit(c, 59) - 0.5) * 0.12;
-      pos.set(c, [px + dir[0] * L * jit, py + dir[1] * L * jit, pz + dir[2] * L * jit]);
-      axis.set(c, dir);
+    // Heaviest branches first → they claim the axis-adjacent room, light twigs
+    // fill the rim of the cap. Deterministic tie-break.
+    const sorted = kids
+      .slice()
+      .sort((x, y) => (weight.get(y) ?? 1) - (weight.get(x) ?? 1) || (x < y ? -1 : 1));
+    const totalW = sorted.reduce((s, c) => s + (weight.get(c) ?? 1), 0);
+    let cum = 0;
+    const capCos = Math.cos(Math.min(Math.PI, H));
+    sorted.forEach((c, j) => {
+      const frac = (weight.get(c) ?? 1) / totalW;
+      // Equal-AREA polar within the cap (cos is linear in area on a sphere), so
+      // children spread evenly by subtree mass instead of bunching at the pole —
+      // for the root (H=π) this is the standard even-sphere distribution.
+      const areaFrac = cum + frac * 0.5;
+      const polar = Math.acos(Math.max(-1, Math.min(1, 1 - areaFrac * (1 - capCos))));
+      cum += frac;
+      const az = golden * j + seededUnit(c, 71) * 0.5;
+      const ca = Math.cos(az);
+      const sa = Math.sin(az);
+      const cs = Math.cos(polar);
+      const sn = Math.sin(polar);
+      let dx = a[0] * cs + (u[0] * ca + w[0] * sa) * sn;
+      let dy = a[1] * cs + (u[1] * ca + w[1] * sa) * sn;
+      let dz = a[2] * cs + (u[2] * ca + w[2] * sa) * sn;
+      const dl = Math.hypot(dx, dy, dz) || 1;
+      dx /= dl;
+      dy /= dl;
+      dz /= dl;
+      const jit = 1 + (seededUnit(c, 59) - 0.5) * 0.1;
+      pos.set(c, [px + dx * step * jit, py + dy * step * jit, pz + dz * step * jit]);
+      axis.set(c, [dx, dy, dz]);
+      // The child's own cone ∝ √(its weight share), capped so no single branch
+      // eats a whole hemisphere; a leaf gets none.
+      coneHalf.set(c, Math.min(1.2, H * Math.sqrt(frac) * 1.35));
     });
   }
 
