@@ -399,11 +399,9 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
   const n = g.order;
   if (n === 0) return;
   const golden = Math.PI * (3 - Math.sqrt(5));
-  const DECAY = 0.64; // radial-step shrink per depth. The step is measured from
-  // ORIGIN (r(d) = R·(1−DECAY^d)), so fireworks land at MANY radii — 0.36R,
-  // 0.59R, 0.74R… — filling the ball. A "long root spoke" instead shoved every
-  // first-level branch onto one shell, hollowing the centre on vaults whose hub
-  // has few big branches (the broken ring look).
+  const DECAY = 0.6; // deep-burst step shrink per depth (compact fireworks)
+  const BURST_STEP = 0.13; // radial step for a depth≥1 node off its parent —
+  // small, so a subtree stays a tight firework instead of a diffuse cloud
   const CONE = 1.0; // fallback cone half-angle when a node has no allocated share
 
   // Degree lookup (attribute, falling back to live degree) for hub selection.
@@ -509,10 +507,11 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
     const kids = children.get(v) ?? [];
     if (kids.length === 0) continue;
     const d = depth.get(v) ?? 0;
-    // Radial increment from parent = r(d+1) − r(d) with r(d)=1−DECAY^d, so the
-    // cumulative distance from origin converges toward the boundary and each
-    // depth lands at its own radius → the ball fills evenly, no hollow shell.
-    const step = Math.pow(DECAY, d) * (1 - DECAY);
+    // Deep steps decay so a subtree stays a compact burst. The ROOT's step is
+    // overridden per-child below (its branches scatter through the ball volume,
+    // not onto one shell — the fix for the hollow-centre "broken ring" on a
+    // shallow-wide vault whose hub has many topic branches).
+    const step = d === 0 ? 0 : BURST_STEP * Math.pow(DECAY, d - 1);
     const H = coneHalf.get(v) ?? CONE;
     const [px, py, pz] = pos.get(v)!;
     const a = axis.get(v)!;
@@ -545,8 +544,16 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
       dx /= dl;
       dy /= dl;
       dz /= dl;
+      // Root's branches scatter through the ball by VOLUME (radius ∝ cbrt of
+      // their cumulative fraction → uniform density, some near the core, some at
+      // the rim) so the centre fills instead of shelling. Deeper nodes take the
+      // decaying `step` for a tight firework off their parent.
+      const stepC =
+        d === 0
+          ? 0.22 + 0.72 * Math.cbrt(Math.min(1, cum))
+          : step;
       const jit = 1 + (seededUnit(c, 59) - 0.5) * 0.1;
-      pos.set(c, [px + dx * step * jit, py + dy * step * jit, pz + dz * step * jit]);
+      pos.set(c, [px + dx * stepC * jit, py + dy * stepC * jit, pz + dz * stepC * jit]);
       axis.set(c, [dx, dy, dz]);
       // The child's own cone ∝ √(its weight share), capped tight so a firework
       // stays a compact burst (a wide cone smears neighbouring bursts together).
