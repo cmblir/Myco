@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { LAYOUT_RECOMMENDED } from "./graphSettings";
+import { LAYOUT_RECOMMENDED, VIBE_PRESETS } from "./graphSettings";
 
 // The graph settings are ONE shared object, not per-layout state. So a "Recommend"
 // preset that sets a field the current layout ignores does not vanish — it
@@ -37,6 +37,30 @@ describe("LAYOUT_RECOMMENDED", () => {
         LAYOUT_RECOMMENDED[layout].cosmicEvents,
         `${layout}: a wormhole would yank baked positions with no sim to pull them home`,
       ).toBe(false);
+    }
+  });
+
+  it("every vibe is a complete look: skin + layout + that layout's recommend", () => {
+    for (const [name, vibe] of Object.entries(VIBE_PRESETS)) {
+      expect(vibe.skin, `${name}: a vibe must pick a skin`).toBeTruthy();
+      expect(vibe.layout, `${name}: a vibe must pick a layout`).toBeTruthy();
+      // Spot-check the recommend actually got spread: every layout recommend
+      // sets edgeTint, so a vibe missing it forgot the spread.
+      expect(vibe.edgeTint, `${name}: must spread LAYOUT_RECOMMENDED`).toBeTruthy();
+    }
+  });
+
+  it("vibes on baked layouts never carry sim-only forces", () => {
+    const SIM = ["centerForce", "repelForce", "linkForce", "clusterForce"];
+    for (const [name, vibe] of Object.entries(VIBE_PRESETS)) {
+      const layout = vibe.layout as string;
+      if (layout === "galaxy" || layout === "synapse3d") continue; // sim layouts
+      for (const f of SIM) {
+        expect(
+          f in vibe,
+          `${name} (${layout}): baked layout must not write ${f}`,
+        ).toBe(false);
+      }
     }
   });
 

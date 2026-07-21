@@ -59,6 +59,22 @@ const SKIN_THEMES: Record<Exclude<GraphSkinKey, "auto">, GraphTheme> = {
     edgeHi: "rgba(190,205,255,0.95)",
     accent: "#8a93ff",
   },
+  // Sigma — the classic sigma.js / Gephi look: flat vivid discs and a coloured
+  // edge veil on a charcoal board. No glow, no sky — crisp data-viz, the graph
+  // as a PICTURE of saturated community colour (the reference hairball).
+  sigma: {
+    ...SKIN_DARK_BASE,
+    bg: "#1c1c21",
+    sceneBg: "#1c1c21",
+    node: "#e8e8e8",
+    starDim: "#7a7f8a",
+    gxCore: "#ffd166",
+    gxArm: "#9aa4c0",
+    gxHalo: "#5a6072",
+    edge: "rgba(200,205,220,0.22)",
+    edgeHi: "rgba(255,255,255,0.9)",
+    accent: "#ff5a5f",
+  },
 };
 
 // Resolve a FIXED skin to a fresh palette copy (scene code mutates themes).
@@ -101,6 +117,9 @@ export function skinAmbience(skin: GraphSkinKey, dark: boolean): SkinAmbience {
       // The web IS the picture — keep a faint star depth cue, drop the nebula
       // wash and meteors so nothing competes with the filament accumulation.
       return { starfield: true, nebula: false, meteors: false };
+    case "sigma":
+      // A data-viz board, not a sky: no ambient layers at all.
+      return { starfield: false, nebula: false, meteors: false };
     default:
       // Auto skin: starfield on both themes, nebula dark-only — and meteors on
       // dark too. First-run users land here and never find the skin picker;

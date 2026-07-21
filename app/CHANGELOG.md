@@ -26,6 +26,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **One-tap looks.** A new "One-tap looks" row in Graph settings changes the
+  graph's entire personality with a single tap — Living galaxy, Sigma board,
+  Cosmic web, Neural, Planetarium, Paper atlas, Chronicle, Meaning nebula. Each
+  bundles a skin, a layout and that layout's research-tuned recommendations.
+
+- **A Sigma skin — the classic graph-viz board.** Flat vivid discs and a
+  coloured edge veil on charcoal, no glow, edges curving like the sigma.js
+  hairball: saturated community colour as a crisp PICTURE of the vault rather
+  than a night sky. Planet spheres and glow effects stay out of its way.
+
 - **The Semantic map is now a 3D meaning-nebula, and two new 3D layouts land:
   Celestial sphere and Radial orbit.** Semantic gains a third principal
   component for depth — orbit the nebula of meaning instead of reading a flat

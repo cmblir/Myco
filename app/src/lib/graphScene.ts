@@ -117,6 +117,12 @@ const EDGE_GREY_MIX = 0.5;
 const EDGE_NEUTRAL_WEB = new THREE.Color("#6f7ce0");
 const EDGE_OPACITY_WEB = 0.16;
 const EDGE_BASE_WEB = 0.6; // single strand faint but visible; crossings glow
+// Sigma skin: the coloured Gephi veil — visible community-hue strands over the
+// charcoal board, curving (sag boost) like the classic sigma.js hairball.
+const EDGE_OPACITY_SIGMA = 0.34;
+const EDGE_BASE_SIGMA = 0.85;
+const EDGE_GREY_MIX_SIGMA = 0.08; // near-full community hue on the veil
+const EDGE_SAG_BOOST_SIGMA = 2.6;
 const EDGE_GREY_MIX_WEB = 0.85; // near-uniform filament tissue, faint hue hint
 const WEB_NODE_SCALE = 0.34; // node size multiplier on the web skin
 // Midpoint-split edge treatment (spec A2, Holten-style): each edge renders as
@@ -393,6 +399,8 @@ uniform vec3 u_monoColor; // the ink — starlight white or near-black
 uniform float u_colorDepth; // gamma on node colour (>1 darker/deeper, <1 lighter)
 uniform float u_recency;  // 1 = recency glow on (recent edits burn hotter)
 uniform float u_searchOn; // 1 = a search is active (hits pulse, rest recede)
+uniform float u_flat;     // 1 = flat sigma discs (no glow profile, no spikes)
+uniform float u_saturate; // >1 boosts colour saturation (the vivid Gephi board)
 varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
@@ -409,7 +417,12 @@ void main() {
   float core;
   float glow;
   float spikes = 0.0;
-  if (v_kind > 2.5) {
+  if (u_flat > 0.5) {
+    // Sigma: a crisp flat disc with a hairline soft edge — data-viz marks,
+    // not glowing stars. Class profiles/spikes deliberately skipped.
+    core = 1.0 - smoothstep(0.72, 0.9, d);
+    glow = 0.0;
+  } else if (v_kind > 2.5) {
     // Neutron star: piercing pinpoint, hardly any halo, diffraction spikes.
     core = 1.0 - smoothstep(0.10, 0.22, d);
     glow = pow(max(0.0, 1.0 - d), 5.0) * 0.5;
@@ -454,6 +467,12 @@ void main() {
   if (u_mono > 0.0) {
     float peak = max(base.r, max(base.g, base.b));
     base = mix(base, u_monoColor * max(peak, 0.55), u_mono);
+  }
+  // Saturation boost (sigma skin): push hues away from their luma toward the
+  // vivid Gephi palette. Identity at 1.0.
+  if (u_saturate != 1.0) {
+    float sl = dot(base, vec3(0.2126, 0.7152, 0.0722));
+    base = clamp(mix(vec3(sl), base, u_saturate), 0.0, 2.0);
   }
   // Colour depth: a gamma on the star colour. On the white skin pale community
   // hues wash out — raising depth (>1) darkens/deepens them so they read on
@@ -639,9 +658,13 @@ export class GraphScene {
   private get webSkin(): boolean {
     return this.settings.skin === "web";
   }
+  // Sigma skin: flat vivid discs + a coloured edge veil (the Gephi look).
+  private get sigmaSkin(): boolean {
+    return this.settings.skin === "sigma";
+  }
   // Per-skin node size multiplier, folded into u_sizeScale wherever it is set.
   private skinNodeScale(): number {
-    return this.webSkin ? WEB_NODE_SCALE : 1;
+    return this.webSkin ? WEB_NODE_SCALE : this.sigmaSkin ? 0.72 : 1;
   }
   private imposterEnabled = false; // dark-theme gate (LOD then controls visibility)
   private planets: PlanetLayer; // near-LOD: nearest nodes → procedural planet spheres
@@ -843,7 +866,7 @@ export class GraphScene {
     // atmospheric glow instead of a hard white disc.
     // Strength is brightness-INDEPENDENT: exposure already scales the whole image
     // via OutputPass, so double-multiplying would blow the glow into a wash.
-    this.baseBloom = dark ? 0.45 : 0.25;
+    this.baseBloom = this.sigmaSkin ? 0.12 : dark ? 0.45 : 0.25;
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(w, h),
       this.baseBloom,
@@ -952,6 +975,8 @@ export class GraphScene {
         u_recency: { value: settings.recencyGlow ? 1 : 0 },
         u_searchOn: { value: 0 },
         u_spawnClock: { value: -1 },
+        u_flat: { value: settings.skin === "sigma" ? 1 : 0 },
+        u_saturate: { value: settings.skin === "sigma" ? 1.45 : 1 },
         // Sub-pixel at typical framing (~2 world units), so the GPU-only drift
         // never visibly detaches stars from their CPU-anchored edges. Flat 2D
         // maps stay perfectly still — drift is a galaxy-space affordance.
@@ -963,8 +988,9 @@ export class GraphScene {
       depthWrite: false,
       depthTest: false,
       // Additive on dark themes so dense clumps self-brighten into glowing
-      // galaxy cores; normal on light themes (additive would wash to white).
-      blending: dark ? THREE.AdditiveBlending : THREE.NormalBlending,
+      // galaxy cores; normal on light themes (additive would wash to white) and
+      // on the sigma skin (flat discs must stay crisp, not bloom into glow).
+      blending: dark && settings.skin !== "sigma" ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
     this.points = new THREE.Points(this.nodeGeom, this.nodeMat);
     this.points.frustumCulled = false;
@@ -997,22 +1023,27 @@ export class GraphScene {
         : EDGE_NEUTRAL_LIGHT;
     this.edgeOpacity = this.webSkin
       ? EDGE_OPACITY_WEB
-      : dark
-        ? EDGE_OPACITY_DARK
-        : EDGE_OPACITY_LIGHT;
+      : this.sigmaSkin
+        ? EDGE_OPACITY_SIGMA
+        : dark
+          ? EDGE_OPACITY_DARK
+          : EDGE_OPACITY_LIGHT;
     this.edgeBaseBrightness = this.webSkin
       ? EDGE_BASE_WEB
-      : dark
-        ? EDGE_BASE_DARK
-        : EDGE_BASE_LIGHT;
+      : this.sigmaSkin
+        ? EDGE_BASE_SIGMA
+        : dark
+          ? EDGE_BASE_DARK
+          : EDGE_BASE_LIGHT;
     this.edgeMat = new THREE.LineBasicMaterial({
       vertexColors: true,
       transparent: true,
       opacity: Math.min(1, this.edgeOpacity * settings.linkThickness),
       depthWrite: false,
       // Additive on dark (colored edges glow + sum into the mesh); normal on
-      // light (additive would wash saturated edges to white over a near-white bg).
-      blending: dark ? THREE.AdditiveBlending : THREE.NormalBlending,
+      // light (additive would wash saturated edges to white over a near-white
+      // bg) and on sigma (the veil is layered colour, not light).
+      blending: dark && !this.sigmaSkin ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
     this.edges = new THREE.LineSegments(this.edgeGeom, this.edgeMat);
     this.edges.frustumCulled = false;
@@ -1585,11 +1616,27 @@ export class GraphScene {
       // neutral) — density, not hue, carries the picture there.
       const greyMix = this.webSkin
         ? EDGE_GREY_MIX_WEB
-        : web || this.synapseRender
-          ? 0.12
-          : EDGE_GREY_MIX;
+        : this.sigmaSkin
+          ? EDGE_GREY_MIX_SIGMA
+          : web || this.synapseRender
+            ? 0.12
+            : EDGE_GREY_MIX;
       cs.set(sa.color).lerp(this.edgeNeutral, greyMix);
       ct.set(ta.color).lerp(this.edgeNeutral, greyMix);
+      if (this.sigmaSkin) {
+        // Vivid veil: push the strand hues away from grey (mirrors the node
+        // shader's u_saturate, which never touches edge vertex colours).
+        const boost = (c: THREE.Color): void => {
+          const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+          c.setRGB(
+            Math.min(1, Math.max(0, l + (c.r - l) * 1.5)),
+            Math.min(1, Math.max(0, l + (c.g - l) * 1.5)),
+            Math.min(1, Math.max(0, l + (c.b - l) * 1.5)),
+          );
+        };
+        boost(cs);
+        boost(ct);
+      }
       let f = this.edgeBaseBrightness * (web && !this.webSkin ? 1.55 : 1);
       if (this.synapseRender) {
         const inter =
@@ -1874,7 +1921,7 @@ export class GraphScene {
       const pz = dx * ry - dy * rx;
       const pLen = Math.sqrt(px * px + py * py + pz * pz);
       if (pLen > 1e-6) {
-        const k = (sagMag[e] * len) / pLen;
+        const k = (sagMag[e] * (this.sigmaSkin ? EDGE_SAG_BOOST_SIGMA : 1) * len) / pLen;
         mx += px * k;
         my += py * k;
         mz += pz * k;
@@ -2778,14 +2825,18 @@ export class GraphScene {
     this.bloom.strength = this.baseBloom; // brightness drives exposure, not bloom
     this.bloom.threshold = dark ? 1.9 : 1.05; // light: above the LDR bg (see ctor)
     this.bloom.radius = 0.7;
-    this.nodeMat.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
+    this.nodeMat.blending =
+      dark && !this.sigmaSkin ? THREE.AdditiveBlending : THREE.NormalBlending;
     this.nodeMat.uniforms.u_darkTheme.value = dark ? 1 : 0;
+    this.nodeMat.uniforms.u_flat.value = this.sigmaSkin ? 1 : 0;
+    this.nodeMat.uniforms.u_saturate.value = this.sigmaSkin ? 1.45 : 1;
     // "auto" mono ink follows the background (white starlight ↔ dark ink).
     (this.nodeMat.uniforms.u_monoColor.value as THREE.Color).copy(
       monoColorFor(this.settings, dark),
     );
     this.nodeMat.needsUpdate = true;
-    this.edgeMat.blending = dark ? THREE.AdditiveBlending : THREE.NormalBlending;
+    this.edgeMat.blending =
+      dark && !this.sigmaSkin ? THREE.AdditiveBlending : THREE.NormalBlending;
     this.edgeMat.needsUpdate = true;
     this.pulse.setDark(dark);
     this.tracePulse.setDark(dark);
@@ -2811,14 +2862,18 @@ export class GraphScene {
         : EDGE_NEUTRAL_LIGHT;
     this.edgeOpacity = this.webSkin
       ? EDGE_OPACITY_WEB
-      : dark
-        ? EDGE_OPACITY_DARK
-        : EDGE_OPACITY_LIGHT;
+      : this.sigmaSkin
+        ? EDGE_OPACITY_SIGMA
+        : dark
+          ? EDGE_OPACITY_DARK
+          : EDGE_OPACITY_LIGHT;
     this.edgeBaseBrightness = this.webSkin
       ? EDGE_BASE_WEB
-      : dark
-        ? EDGE_BASE_DARK
-        : EDGE_BASE_LIGHT;
+      : this.sigmaSkin
+        ? EDGE_BASE_SIGMA
+        : dark
+          ? EDGE_BASE_DARK
+          : EDGE_BASE_LIGHT;
     this.edgeMat.opacity = Math.min(1, this.edgeOpacity * this.settings.linkThickness);
     // Web skin shrinks stars to points (a skin switch must land live, and the
     // resize handler owns this uniform otherwise — same formula, same source).
@@ -3083,7 +3138,8 @@ export class GraphScene {
       this.darkTheme &&
       !this.perfLod &&
       !this.flatLayout &&
-      !this.webSkin;
+      !this.webSkin &&
+      !this.sigmaSkin;
     this.planets.setEnabled(this.planetsEnabled);
   }
 

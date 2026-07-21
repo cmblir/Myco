@@ -9,9 +9,11 @@ import {
   LAYOUT_PRESETS,
   LAYOUT_RECOMMENDED,
   matchPreset,
+  VIBE_PRESETS,
   type GraphSettings,
   type GraphSkinKey,
   type LayoutPresetKey,
+  type VibeKey,
 } from "../lib/graphSettings";
 import type { Strings } from "../lib/i18n";
 
@@ -218,6 +220,37 @@ export default function GraphControls({
         open={openSections.display}
         onToggle={() => toggle("display")}
       >
+        <div className="graph-field">
+          <span className="graph-field__label">{t.gr_vibes ?? "One-tap looks"}</span>
+          <div className="graph-chips">
+            {(
+              [
+                ["living", t.gr_vibe_living ?? "Living galaxy"],
+                ["sigma", t.gr_vibe_sigma ?? "Sigma board"],
+                ["cosmicweb", t.gr_vibe_cosmicweb ?? "Cosmic web"],
+                ["neural", t.gr_vibe_neural ?? "Neural"],
+                ["planetarium", t.gr_vibe_planetarium ?? "Planetarium"],
+                ["paper", t.gr_vibe_paper ?? "Paper atlas"],
+                ["chronicle", t.gr_vibe_chronicle ?? "Chronicle"],
+                ["nebula", t.gr_vibe_nebula ?? "Meaning nebula"],
+              ] as [VibeKey, string][]
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                className={`graph-chip${
+                  settings.skin === VIBE_PRESETS[key].skin &&
+                  settings.layout === VIBE_PRESETS[key].layout
+                    ? " graph-chip--active"
+                    : ""
+                }`}
+                onClick={() => onChange(VIBE_PRESETS[key])}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
         <Toggle
           label={t.gr_multiverse ?? "Multiverse"}
           hint={
@@ -304,6 +337,7 @@ export default function GraphControls({
                 ["white", t.gr_skin_white ?? "White"],
                 ["galaxy", t.gr_skin_galaxy ?? "Galaxy"],
                 ["web", t.gr_skin_web ?? "Cosmic web"],
+                ["sigma", t.gr_skin_sigma ?? "Sigma"],
               ] as [GraphSkinKey, string][]
             ).map(([key, label]) => (
               <button

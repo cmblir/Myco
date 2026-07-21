@@ -8,7 +8,7 @@
 //   - github.com/ycnmhd/obsidian-graph-presets (slider ranges)
 
 // Kept here (not graphTheme.ts) so this module stays DOM-free and testable.
-export type GraphSkinKey = "auto" | "black" | "white" | "galaxy" | "web";
+export type GraphSkinKey = "auto" | "black" | "white" | "galaxy" | "web" | "sigma";
 
 export interface GraphSettings {
   // Filters
@@ -392,6 +392,49 @@ export const LAYOUT_RECOMMENDED: Record<
     neuralFiring: false,
     cosmicEvents: false,
   },
+};
+
+// ── One-click looks ("vibes") ────────────────────────────────────────────
+// A vibe bundles skin + layout + that layout's recommended settings into a
+// single toggle, so the whole personality of the graph changes with one tap.
+// Each spreads LAYOUT_RECOMMENDED so a vibe never drifts from the per-layout
+// research; the few extra overrides are the vibe's own signature.
+export type VibeKey =
+  | "living"
+  | "sigma"
+  | "cosmicweb"
+  | "neural"
+  | "planetarium"
+  | "paper"
+  | "chronicle"
+  | "nebula";
+
+export const VIBE_PRESETS: Record<VibeKey, Partial<GraphSettings>> = {
+  // The default identity: the living galaxy.
+  living: { skin: "auto", layout: "galaxy", ...LAYOUT_RECOMMENDED.galaxy },
+  // The classic sigma.js / Gephi hairball: one force-directed mass of vivid
+  // community colour on a charcoal board. folderGalaxies off — the reference
+  // look is ONE organism, not separated galaxies.
+  sigma: {
+    skin: "sigma",
+    layout: "galaxy",
+    ...LAYOUT_RECOMMENDED.galaxy,
+    folderGalaxies: false,
+    cosmicEvents: false,
+    neuralFiring: false,
+  },
+  // Dark-matter simulation: filaments carry the picture.
+  cosmicweb: { skin: "web", layout: "galaxy", ...LAYOUT_RECOMMENDED.galaxy, cosmicEvents: false },
+  // Firing nervous system in space, on the void-black board.
+  neural: { skin: "black", layout: "synapse3d", ...LAYOUT_RECOMMENDED.synapse3d },
+  // Inside the star globe: constellations per topic, full deep-space dressing.
+  planetarium: { skin: "galaxy", layout: "celestial", ...LAYOUT_RECOMMENDED.celestial },
+  // A settled print-like territory map on paper.
+  paper: { skin: "white", layout: "atlas", ...LAYOUT_RECOMMENDED.atlas },
+  // The vault as readable history — time strata on paper.
+  chronicle: { skin: "white", layout: "strata", ...LAYOUT_RECOMMENDED.strata },
+  // The meaning-nebula: notes cluster by embedding, community stars on void.
+  nebula: { skin: "black", layout: "semantic", ...LAYOUT_RECOMMENDED.semantic },
 };
 
 // Which preset (if any) the current force values correspond to — drives the

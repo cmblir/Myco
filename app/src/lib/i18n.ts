@@ -201,6 +201,16 @@ export interface Strings {
   gr_semantic_missing?: string;
   gr_layout_celestial?: string;
   gr_layout_radial?: string;
+  gr_skin_sigma?: string;
+  gr_vibes?: string;
+  gr_vibe_living?: string;
+  gr_vibe_sigma?: string;
+  gr_vibe_cosmicweb?: string;
+  gr_vibe_neural?: string;
+  gr_vibe_planetarium?: string;
+  gr_vibe_paper?: string;
+  gr_vibe_chronicle?: string;
+  gr_vibe_nebula?: string;
   gr_galaxies?: string;
   gr_galaxies_hint?: string;
   gr_multiverse?: string;
@@ -883,6 +893,16 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_semantic: "Semantic map",
     gr_layout_celestial: "Celestial sphere",
     gr_layout_radial: "Radial orbit",
+    gr_skin_sigma: "Sigma",
+    gr_vibes: "One-tap looks",
+    gr_vibe_living: "Living galaxy",
+    gr_vibe_sigma: "Sigma board",
+    gr_vibe_cosmicweb: "Cosmic web",
+    gr_vibe_neural: "Neural",
+    gr_vibe_planetarium: "Planetarium",
+    gr_vibe_paper: "Paper atlas",
+    gr_vibe_chronicle: "Chronicle",
+    gr_vibe_nebula: "Meaning nebula",
     gr_semantic_missing: "Semantic map needs the embedding index — run Reindex under Settings \u2192 Model, then reopen. Showing the spiral instead.",
     gr_galaxies: "Folder galaxies",
     gr_galaxies_hint: "Split the vault into one slowly rotating galaxy per folder",
@@ -1576,6 +1596,16 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_semantic: "의미 지도",
     gr_layout_celestial: "천구 별자리",
     gr_layout_radial: "동심 궤도",
+    gr_skin_sigma: "시그마",
+    gr_vibes: "원탭 룩",
+    gr_vibe_living: "살아있는 은하",
+    gr_vibe_sigma: "시그마 보드",
+    gr_vibe_cosmicweb: "우주 그물",
+    gr_vibe_neural: "신경계",
+    gr_vibe_planetarium: "플라네타륨",
+    gr_vibe_paper: "종이 지도",
+    gr_vibe_chronicle: "연대기",
+    gr_vibe_nebula: "의미 성운",
     gr_semantic_missing: "의미 지도는 임베딩 인덱스가 필요합니다 — 설정 \u2192 모델에서 재색인 후 다시 열어주세요. 지금은 나선 배치로 표시합니다.",
     gr_galaxies: "폴더 은하계",
     gr_galaxies_hint: "폴더마다 하나씩, 천천히 자전하는 은하계로 분리",
@@ -2211,6 +2241,16 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_semantic: "意味マップ",
     gr_layout_celestial: "天球星座",
     gr_layout_radial: "同心軌道",
+    gr_skin_sigma: "シグマ",
+    gr_vibes: "ワンタップルック",
+    gr_vibe_living: "生きた銀河",
+    gr_vibe_sigma: "シグマボード",
+    gr_vibe_cosmicweb: "宇宙の網",
+    gr_vibe_neural: "神経系",
+    gr_vibe_planetarium: "プラネタリウム",
+    gr_vibe_paper: "紙の地図",
+    gr_vibe_chronicle: "クロニクル",
+    gr_vibe_nebula: "意味の星雲",
     gr_semantic_missing: "意味マップには埋め込みインデックスが必要です — 設定 \u2192 モデルで再イン<デックス後に開き直してください。今は渦巻で表示します。",
     gr_galaxies: "フォルダー銀河",
     gr_galaxies_hint: "フォルダーごとにゆっくり自転する銀河へ分割",
