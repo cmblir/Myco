@@ -842,7 +842,11 @@ export class GraphScene {
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.setPixelRatio(pr);
     this.renderer.setSize(w, h);
-    this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    // AgX over ACES: ACES's hue skew twists bright blue/cyan cores toward
+    // purple — exactly this palette's failure mode. AgX preserves hue under
+    // the HDR glow (research round 2, Tier-1 #3). Slight exposure lift keeps
+    // the perceived brightness at the old ACES level.
+    this.renderer.toneMapping = THREE.AgXToneMapping;
     // Brightness slider drives overall scene exposure (light intensity).
     this.renderer.toneMappingExposure = settings.brightness;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;

@@ -26,6 +26,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **Truer colours under glow.** Tone mapping moved from ACES to AgX: ACES
+  notoriously skews bright blues and cyans toward purple exactly where the
+  glow is strongest — AgX keeps every community's hue honest inside its own
+  halo.
+
 - **A cinematic finish over every frame.** Real anti-aliasing (the scene
   renders through HDR buffers that bypassed the browser's AA entirely), plus a
   film grade: fine animated grain that also kills gradient banding around glow
