@@ -222,6 +222,20 @@ export interface Strings {
   gr_looks?: string;
   gr_appearance?: string;
   gr_motion_fx?: string;
+  gr_mascot_cameo?: string;
+  gr_mascot_cameo_hint?: string;
+  mc_label?: string;
+  mc_dismiss?: string;
+  mc_tip_drag?: string;
+  mc_tip_path?: string;
+  mc_tip_fly?: string;
+  mc_tip_looks?: string;
+  mc_tip_timelapse?: string;
+  mc_tip_multiverse?: string;
+  mc_tip_minimap?: string;
+  mc_tip_recency?: string;
+  mc_tip_save?: string;
+  mc_tip_chronicle?: string;
   gr_saved?: string;
   gr_saved_apply?: string;
   gr_saved_delete?: string;
@@ -941,6 +955,20 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_looks: "Looks",
     gr_appearance: "Appearance",
     gr_motion_fx: "Motion & effects",
+    gr_mascot_cameo: "MYCO cameo",
+    gr_mascot_cameo_hint: "MYCO drifts in now and then with a feature tip",
+    mc_label: "MYCO tip",
+    mc_dismiss: "Dismiss",
+    mc_tip_drag: "Drag any star and the simulation re-heats \u2014 its neighbours follow, then spring back.",
+    mc_tip_path: "Cmd/Ctrl-click two notes to light the shortest path between them.",
+    mc_tip_fly: "Press F to pilot a spaceship through your vault \u2014 WASD to fly, Esc to land.",
+    mc_tip_looks: "Open the settings panel and tap a Look \u2014 Sigma, Paper, Neural, Planetarium\u2026",
+    mc_tip_timelapse: "Play the Timelapse to watch your vault build itself in the order you wrote it.",
+    mc_tip_multiverse: "Turn on Multiverse to see every project as its own glowing universe-bubble.",
+    mc_tip_minimap: "That corner minimap? Click anywhere on it to fly the camera there.",
+    mc_tip_recency: "Recently edited notes burn hotter \u2014 the graph maps where your attention is.",
+    mc_tip_save: "Tuned a look you love? Name it under Saved looks and recall it with one tap.",
+    mc_tip_chronicle: "Try the Chronicle layout \u2014 your notes laid out along a real time axis.",
     gr_saved: "Saved looks",
     gr_saved_apply: "Apply this saved look",
     gr_saved_delete: "Delete",
@@ -1671,6 +1699,20 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_looks: "룩",
     gr_appearance: "외형",
     gr_motion_fx: "모션·효과",
+    gr_mascot_cameo: "MYCO 카메오",
+    gr_mascot_cameo_hint: "가끔 MYCO가 기능 팁과 함께 등장",
+    mc_label: "MYCO 팁",
+    mc_dismiss: "닫기",
+    mc_tip_drag: "아무 별이나 드래그하면 시뮬레이션이 다시 데워집니다 \u2014 이웃이 따라오다 튕겨 돌아와요.",
+    mc_tip_path: "두 노트를 Cmd/Ctrl-클릭하면 사이의 최단 경로가 빛납니다.",
+    mc_tip_fly: "F를 누르면 볼트를 우주선으로 비행 \u2014 WASD로 날고 Esc로 착륙.",
+    mc_tip_looks: "설정 패널을 열고 룩을 탭하세요 \u2014 Sigma, Paper, Neural, Planetarium\u2026",
+    mc_tip_timelapse: "타임랩스를 재생하면 작성한 순서대로 볼트가 스스로 자라납니다.",
+    mc_tip_multiverse: "멀티버스를 켜면 각 프로젝트가 저마다 빛나는 우주 버블로 보입니다.",
+    mc_tip_minimap: "구석의 미니맵 \u2014 아무 데나 클릭하면 카메라가 그곳으로 날아갑니다.",
+    mc_tip_recency: "최근 편집한 노트일수록 더 뜨겁게 타올라 \u2014 그래프가 당신의 관심을 지도로 그립니다.",
+    mc_tip_save: "마음에 드는 룩을 튜닝했나요? 저장된 룩에 이름을 붙여 한 번에 불러오세요.",
+    mc_tip_chronicle: "연대기 레이아웃을 써보세요 \u2014 노트가 실제 시간축을 따라 놓입니다.",
     gr_saved: "저장된 룩",
     gr_saved_apply: "이 저장된 룩 적용",
     gr_saved_delete: "삭제",
@@ -2343,6 +2385,20 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_looks: "ルック",
     gr_appearance: "外観",
     gr_motion_fx: "モーション・効果",
+    gr_mascot_cameo: "MYCO カメオ",
+    gr_mascot_cameo_hint: "時々 MYCO が機能ヒントと共に登場",
+    mc_label: "MYCO ヒント",
+    mc_dismiss: "閉じる",
+    mc_tip_drag: "どの星でもドラッグするとシミュレーションが再加熱 \u2014 隣接ノードが追従し弾んで戻ります。",
+    mc_tip_path: "2つのノートを Cmd/Ctrl-クリックすると最短経路が光ります。",
+    mc_tip_fly: "F を押すとボルトを宇宙船で飛行 \u2014 WASD で飛び Esc で着陸。",
+    mc_tip_looks: "設定パネルを開いてルックをタップ \u2014 Sigma, Paper, Neural, Planetarium\u2026",
+    mc_tip_timelapse: "タイムラプスを再生すると書いた順にボルトが自ら育ちます。",
+    mc_tip_multiverse: "マルチバースをオンにすると各プロジェクトが輝く宇宙バブルに。",
+    mc_tip_minimap: "隅のミニマップ \u2014 どこでもクリックするとカメラがそこへ飛びます。",
+    mc_tip_recency: "最近編集したノートほど熱く燃える \u2014 グラフがあなたの関心を地図化します。",
+    mc_tip_save: "気に入ったルックを調整した？保存ルックに名前を付けてワンタップで呼び出し。",
+    mc_tip_chronicle: "年代記レイアウトを試して \u2014 ノートが実際の時間軸に沿って並びます。",
     gr_saved: "保存したルック",
     gr_saved_apply: "この保存ルックを適用",
     gr_saved_delete: "削除",

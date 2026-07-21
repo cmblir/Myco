@@ -93,6 +93,11 @@ export interface GraphSettings {
   // the ambient clock — citation direction as ambient motion. Auto-muted when
   // the flying-arrow fleet is on (one directional signal at a time).
   edgeFlow: boolean;
+  // Mascot cameo: MYCO (the planet mushroom) drifts into the graph on a rare
+  // timer with a one-line feature tip. The graph cosmos is a play space, so a
+  // gentle guide reads as welcome, not a Clippy nag; still opt-out here, and it
+  // never appears under reduced motion.
+  mascotCameo: boolean;
   // Cosmic events (black hole / wormhole) on the dark skin — a separate opt-out
   // from ambientMotion because they're the most attention-grabbing FX.
   cosmicEvents: boolean;
@@ -155,6 +160,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   minimap: true,
   cinematic: true,
   edgeFlow: true,
+  mascotCameo: true,
   cosmicEvents: true,
   cosmicFrequency: 1,
   clickBurst: true,

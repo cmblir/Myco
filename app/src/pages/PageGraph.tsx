@@ -59,6 +59,7 @@ import { useVaultStore } from "../stores/vaultStore";
 import { useIngestStore } from "../stores/ingestStore";
 import { useMultiverseStore } from "../stores/multiverseStore";
 import MultiverseScene from "../components/MultiverseScene";
+import MascotCameo from "../components/MascotCameo";
 import type { SceneUniverse } from "../lib/multiverseScene";
 import { ipc } from "../lib/ipc";
 import type { Adjacency, SemEdge } from "../lib/ipc";
@@ -1755,6 +1756,11 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                     "Show every project as its own universe-bubble; fly into one to open it"}
                 </p>
               </>
+            ) : null}
+            {/* MYCO cameo: a rare, dismissible feature-tip visit over the graph
+                cosmos (not in the multiverse field, which has its own scene). */}
+            {!showMultiverse && counts.nodes > 0 ? (
+              <MascotCameo enabled={settings.mascotCameo} t={t} />
             ) : null}
             {/* Loading state: visible until .graph-ready lands on the canvas
                 (adjacent-sibling CSS — no extra React state). */}

@@ -589,6 +589,12 @@ export default function GraphControls({
           onChange={(v) => onChange({ nearFieldPlanets: v })}
         />
         <Toggle
+          label={t.gr_mascot_cameo ?? "MYCO cameo"}
+          hint={t.gr_mascot_cameo_hint ?? "MYCO drifts in now and then with a feature tip"}
+          value={settings.mascotCameo}
+          onChange={(v) => onChange({ mascotCameo: v })}
+        />
+        <Toggle
           label={t.gr_trace ?? "Trace path"}
           hint={t.gr_trace_hint ?? "Click a start node, then an end node"}
           value={traceMode}
