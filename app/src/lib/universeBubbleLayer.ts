@@ -24,10 +24,12 @@ import { bubbleRadius } from "./multiverseLayout";
 const VERT = /* glsl */ `
 varying vec3 v_normal;
 varying vec3 v_viewDir;
+varying vec3 v_pos; // object space — the unit sphere, so |v_pos| ≈ 1
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   v_normal = normalize(normalMatrix * normal);
   v_viewDir = normalize(-mv.xyz);
+  v_pos = position;
   gl_Position = projectionMatrix * mv;
 }
 `;
@@ -35,23 +37,37 @@ void main() {
 const FRAG = /* glsl */ `
 precision highp float;
 uniform vec3 u_color;
+uniform vec3 u_color2; // aurora companion hue (u_color rotated ~+50°)
 uniform float u_opacity;
 uniform float u_density; // 0..1 — how full this universe is, vs its siblings
+uniform float u_time;    // ambience-gated overlay clock; frozen = still bands
+uniform float u_phase;   // per-bubble offset so the field never syncs up
 varying vec3 v_normal;
 varying vec3 v_viewDir;
+varying vec3 v_pos;
 void main() {
   // Fresnel: 0 facing the camera, 1 at the silhouette. A high power keeps the
   // face transparent (stars show through) and concentrates glow at the rim.
   float f = 1.0 - abs(dot(normalize(v_normal), normalize(v_viewDir)));
   float rim = pow(f, 2.8);
+  // Aurora membrane (research round 2 #12): two counter-drifting latitude
+  // waves make slow curtains that wander the shell. The band value modulates
+  // BOTH the rim brightness (curtains of light on the silhouette) and the hue
+  // (u_color ↔ u_color2), so each membrane looks like weather, not paint.
+  // Rides the ambience-gated clock: reduced motion sees static bands.
+  float band = sin(v_pos.y * 5.0 + u_time * 0.5 + u_phase)
+             + 0.5 * sin(v_pos.y * 11.0 - u_time * 0.34 + v_pos.x * 4.0 + u_phase);
+  band = smoothstep(-1.2, 1.5, band); // → 0..1, soft-edged curtains
+  vec3 mem = mix(u_color, u_color2, band * 0.85);
+  float shimmer = 1.0 + 0.35 * (band - 0.5);
   // Almost all the alpha lives at the rim; the face is barely tinted so the
   // stars inside read clearly instead of being washed in the bubble's colour.
   // Density modulates the membrane like an X-ray halo: a full universe glows
   // brighter at the rim and carries a faint inner haze, an empty one is a thin
   // soap film — the field reads "which of these worlds has the mass" at a
   // glance, before any label.
-  float a = (rim * (0.65 + 0.55 * u_density) + 0.015 + 0.025 * u_density) * u_opacity;
-  gl_FragColor = vec4(u_color, a);
+  float a = (rim * (0.65 + 0.55 * u_density) * shimmer + 0.015 + 0.025 * u_density) * u_opacity;
+  gl_FragColor = vec4(mem, a);
 }
 `;
 
@@ -132,11 +148,17 @@ export class UniverseBubbleLayer {
       const R = bubbleRadius(maxR.get(slug) ?? 0);
       const hue = spreadHue(rank);
       col.setHSL(hue / 360, 0.7, 0.6);
+      // Aurora companion: the same lightness family, hue walked +50° — close
+      // enough to read as one membrane's weather, far enough to shimmer.
+      const col2 = new THREE.Color().setHSL(((hue + 50) % 360) / 360, 0.75, 0.62);
       const mat = new THREE.ShaderMaterial({
         uniforms: {
           u_color: { value: new THREE.Vector3(col.r, col.g, col.b) },
+          u_color2: { value: new THREE.Vector3(col2.r, col2.g, col2.b) },
           u_opacity: { value: opacity },
           u_density: { value: Math.sqrt((sum.get(slug)?.n ?? 0) / maxN) },
+          u_time: { value: 0 },
+          u_phase: { value: rank * 2.1 },
         },
         vertexShader: VERT,
         fragmentShader: FRAG,
@@ -165,12 +187,13 @@ export class UniverseBubbleLayer {
   }
 
   /** Idle life: each membrane breathes gently (±1.2% radius, ~8s period) on its
-   * own phase so the field shimmers instead of pulsing in lockstep. Driven by
-   * the scene's ambience-gated overlay tick, so reduced-motion stills it.
+   * own phase, and its aurora curtains drift on the same clock. Driven by the
+   * scene's ambience-gated overlay tick, so reduced-motion stills both.
    * Centre and rest radius never change — zoom-to-enter geometry stays exact. */
   tick(t: number): void {
     for (const b of this.bubbles) {
       b.mesh.scale.setScalar(b.baseR * (1 + 0.012 * Math.sin(t * 0.8 + b.phase)));
+      b.mat.uniforms.u_time.value = t;
     }
   }
 

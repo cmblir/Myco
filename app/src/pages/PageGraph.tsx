@@ -1001,7 +1001,22 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.neuralFiring,
     settings.nearFieldPlanets,
     settings.skyStyle,
+    settings.recencyGlow,
+    settings.minimap,
+    settings.cinematic,
+    settings.edgeFlow,
+    // linkDistance drives the sim, but applySettings' closing
+    // writeEdgeGeometry also derives the edge length-fade thresholds from it —
+    // without this key a slider move (or a loose/dense preset) left the whole
+    // web dimming against stale thresholds until an unrelated toggle fired.
+    settings.linkDistance,
   ]);
+
+  // Selection streak: mirror the inspector's subject into the scene so the
+  // selected star carries its anamorphic mark (cleared on deselect).
+  useEffect(() => {
+    sceneRef.current?.setSelectedNode(selected);
+  }, [selected]);
 
   // Theme/skin toggle — recolour the scene. Re-read AFTER the app's theme
   // effect has flipped --bg (rAF + a slow-start safety timeout). A skin change

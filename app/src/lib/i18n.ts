@@ -213,6 +213,8 @@ export interface Strings {
   gr_vibe_nebula?: string;
   gr_cinematic?: string;
   gr_cinematic_hint?: string;
+  gr_flow?: string;
+  gr_flow_hint?: string;
   gr_galaxies?: string;
   gr_galaxies_hint?: string;
   gr_multiverse?: string;
@@ -907,6 +909,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_nebula: "Meaning nebula",
     gr_cinematic: "Cinematic finish",
     gr_cinematic_hint: "Film grain, vignette, lens streaks, anti-aliasing",
+    gr_flow: "Edge flow",
+    gr_flow_hint: "Light pulses ride links source \u2192 target",
     gr_semantic_missing: "Semantic map needs the embedding index — run Reindex under Settings \u2192 Model, then reopen. Showing the spiral instead.",
     gr_galaxies: "Folder galaxies",
     gr_galaxies_hint: "Split the vault into one slowly rotating galaxy per folder",
@@ -1612,6 +1616,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_nebula: "의미 성운",
     gr_cinematic: "시네마틱 마감",
     gr_cinematic_hint: "필름 그레인·비네트·렌즈 스트릭·안티앨리어싱",
+    gr_flow: "엣지 흐름",
+    gr_flow_hint: "링크를 따라 빛 펄스가 출발\u2192도착 방향으로 흐름",
     gr_semantic_missing: "의미 지도는 임베딩 인덱스가 필요합니다 — 설정 \u2192 모델에서 재색인 후 다시 열어주세요. 지금은 나선 배치로 표시합니다.",
     gr_galaxies: "폴더 은하계",
     gr_galaxies_hint: "폴더마다 하나씩, 천천히 자전하는 은하계로 분리",
@@ -2259,6 +2265,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_nebula: "意味の星雲",
     gr_cinematic: "シネマティック仕上げ",
     gr_cinematic_hint: "フィルムグレイン・ビネット・レンズストリーク・AA",
+    gr_flow: "エッジフロー",
+    gr_flow_hint: "リンクに沿って光のパルスが始点\u2192終点へ流れる",
     gr_semantic_missing: "意味マップには埋め込みインデックスが必要です — 設定 \u2192 モデルで再イン<デックス後に開き直してください。今は渦巻で表示します。",
     gr_galaxies: "フォルダー銀河",
     gr_galaxies_hint: "フォルダーごとにゆっくり自転する銀河へ分割",

@@ -311,6 +311,43 @@ void main() {
 }
 `;
 
+// God rays (research round 2 #10): classic screen-space volumetric scattering
+// (GPU Gems 3 ch.13) seeded by the vault's brightest hub. Display-space (after
+// OutputPass, like the cine pass): march toward the hub's screen position,
+// accumulate only what clears a luma threshold with per-tap decay, and add the
+// shaft back over the base. The hub position + amplitude are CPU-driven each
+// frame (u_amp fades to 0 off-screen), so the pass costs nothing but its taps.
+const GOD_FRAG = /* glsl */ `
+precision mediump float;
+uniform sampler2D tDiffuse;
+uniform vec2 u_center; // hub position in uv space
+uniform float u_amp;   // shaft strength; 0 = pass-through
+varying vec2 vUv;
+void main() {
+  vec4 base = texture2D(tDiffuse, vUv);
+  if (u_amp <= 0.001) {
+    gl_FragColor = base;
+    return;
+  }
+  // 0.55 shaft length: rays reach just over half-way from the hub to any
+  // pixel, so the core radiates without smearing the whole frame.
+  vec2 stp = (u_center - vUv) * (0.55 / 22.0);
+  vec2 uv = vUv;
+  float decay = 1.0;
+  vec3 acc = vec3(0.0);
+  for (int i = 0; i < 22; i++) {
+    uv += stp;
+    vec3 s = texture2D(tDiffuse, uv).rgb;
+    float l = dot(s, vec3(0.2126, 0.7152, 0.0722));
+    // Only genuinely bright pixels (bloomed cores) feed the shaft — the
+    // threshold keeps the star field and nebulae from fogging the frame.
+    acc += s * max(0.0, l - 0.55) * decay;
+    decay *= 0.93;
+  }
+  gl_FragColor = vec4(base.rgb + acc * (u_amp / 22.0), base.a);
+}
+`;
+
 const INGEST_WRITE = new THREE.Color("#ffd27a");
 const INGEST_READ = new THREE.Color("#7fe1ff");
 
@@ -338,7 +375,10 @@ attribute float a_kind; // stellar class: 0 main, 1 dwarf, 2 giant, 3 neutron
 attribute float a_age; // days since last modified (9999 = unknown/old)
 attribute float a_hit; // 1 = current search match (pulse-in-phase highlight)
 attribute float a_spawn; // condensation intro: per-node birth delay (s)
+attribute float a_sel; // 1 = the inspector-selected node (anamorphic streak)
 uniform float u_spawnClock; // intro clock (s); <0 = intro off, all stars full
+uniform float u_dofAmp; // depth-of-field strength; 0 = off (pin-sharp field)
+uniform float u_focusDist; // camera distance of the focal plane (orbit target)
 uniform float u_pixelRatio;
 uniform float u_sizeScale;
 uniform float u_fogNear;
@@ -353,6 +393,7 @@ varying float v_dark;
 varying float v_kind;
 varying float v_age;
 varying float v_hit;
+varying float v_sel;
 uniform float u_driftAmp; // curl micro-drift amplitude (world units; 0 = off)
 void main() {
   // Curl micro-drift: once settled, every star orbits a frozen divergence-free
@@ -402,18 +443,35 @@ void main() {
   // out together no matter how cluttered the sky). One shared phase, no
   // per-node offset — lockstep IS the signal here, unlike the ambient breathing.
   if (a_hit > 0.5) gl_PointSize *= 1.0 + 0.22 * sin(u_time * 4.0);
+  // Vertex depth-of-field (research round 2 #9): stars off the focal plane
+  // (the orbit-pivot distance) swell into faint bokeh discs — bigger AND
+  // dimmer, so defocus reads as optics, not as importance. Quadratic CoC ramp
+  // keeps a wide sharp band around the plane; the far field is already
+  // fog-faded so the effect mostly sculpts the near foreground.
+  float coc = 0.0;
+  if (u_dofAmp > 0.0) {
+    coc = clamp(abs(dist - u_focusDist) / max(60.0, u_focusDist), 0.0, 1.0);
+    coc = coc * coc * u_dofAmp;
+    gl_PointSize *= 1.0 + coc * 1.5;
+  }
   // Light bg (NormalBlending, no additive self-brightening): bump sprite size so
   // the dark stars have enough AREA to read on paper. Dark bg stays as-is.
   gl_PointSize *= mix(1.5, 1.0, u_darkTheme);
   // Floor so distant field stars are true pinpricks (higher on light so they
   // don't vanish); cap so a near hub can't fill the viewport with one sprite.
   gl_PointSize = clamp(gl_PointSize, mix(2.4, 1.3, u_darkTheme), 180.0);
+  // Selected node: a larger canvas so its anamorphic streak has room to read
+  // (the streak lives inside the point quad). After the clamp — selection must
+  // pop even when the sprite would otherwise sit at the size floor/cap.
+  if (a_sel > 0.5) gl_PointSize *= 1.35;
   // Condensation intro (see birth offset above): grow in from nothing. Applied
   // after the clamp so a being-born star really is invisible, not floored.
   gl_PointSize *= birthE;
   gl_Position = projectionMatrix * mv;
   v_color = a_color;
-  v_alpha = a_alpha * birthE;
+  // Defocused sprites spread the same light over more pixels — fade alpha with
+  // the CoC so bokeh stays airy instead of stacking into bright shells.
+  v_alpha = a_alpha * birthE / (1.0 + coc * 2.4);
   v_int = a_intensity;
   v_dark = u_darkTheme;
   // Nearer stars brighter; distant ones fade into the fog. Floor at 0.18 so the
@@ -421,6 +479,7 @@ void main() {
   v_fade = clamp((u_fogFar - dist) / max(1.0, u_fogFar - u_fogNear), 0.18, 1.0);
   v_age = a_age;
   v_hit = a_hit;
+  v_sel = a_sel;
 }
 `;
 
@@ -435,6 +494,7 @@ uniform float u_searchOn; // 1 = a search is active (hits pulse, rest recede)
 uniform float u_flat;     // 1 = flat sigma discs (no glow profile, no spikes)
 uniform float u_saturate; // >1 boosts colour saturation (the vivid Gephi board)
 uniform float u_flare;    // 1 = anamorphic streaks on the brightest cores
+uniform float u_halo;     // 1 = analytic aura (bloom substitute for light bg)
 varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
@@ -443,6 +503,7 @@ varying float v_dark;
 varying float v_kind;
 varying float v_age;
 varying float v_hit;
+varying float v_sel;
 void main() {
   vec2 pc = gl_PointCoord - vec2(0.5);
   float d = length(pc) * 2.0;
@@ -490,12 +551,17 @@ void main() {
   }
   // Anamorphic flare: the brightest cores (v_int is the HDR hub boost) get a
   // thin horizontal streak — the cinema-lens signature. Never on flat sigma
-  // discs, and only for genuine hubs so the field stays calm.
-  if (u_flare > 0.5 && u_flat < 0.5 && v_int > 0.85) {
-    float fall = max(0.0, 1.0 - d);
+  // discs, and only for genuine hubs so the field stays calm. The SELECTED
+  // node earns the same streak regardless of rank (research round 2 #11): the
+  // inspector's subject reads as "the star the lens is trained on", findable
+  // again after any orbit without hunting for the highlight ring.
+  if (u_flare > 0.5 && u_flat < 0.5 && (v_int > 0.85 || v_sel > 0.5)) {
+    // Gentle 1.5-power falloff: the arm must survive OUT to the quad edge —
+    // a cubic dies inside the core glow and the streak never reads.
+    float fall = pow(max(0.0, 1.0 - d), 1.5);
     float fw = max(0.02, fwidth(pc.y) * 1.5);
-    spikes += (1.0 - smoothstep(0.0, fw, abs(pc.y))) * fall * fall * fall *
-              (v_int - 0.85) * 1.7;
+    float amp = max((v_int - 0.85) * 1.7, v_sel * 1.4);
+    spikes += (1.0 - smoothstep(0.0, fw, abs(pc.y))) * fall * amp;
   }
   // Separation ring (halo-lite): carve a dim band between core and halo so
   // overlapping stars keep readable edges instead of fusing into one blob.
@@ -568,6 +634,28 @@ void main() {
     col *= mix(0.45, 1.35, v_hit);
     a *= mix(0.5, 1.0, v_hit);
   }
+  // Analytic halo (research round 2 #6): light backgrounds get no additive
+  // self-brightening and only a whisper of bloom, so hubs read as flat ink
+  // dots. Paint the aura INSIDE the sprite instead: a soft saturated wash of
+  // the node's own hue, hub-weighted, alpha-composited over the paper. Skipped
+  // on dark themes (bloom owns the glow there) and on flat sigma discs.
+  if (u_halo > 0.5 && u_flat < 0.5) {
+    // Hub-weighted hard: field stars stay crisp ink dots (aura ≈ 0), only the
+    // structural cores earn a wash — otherwise every star sprays grey haze and
+    // the paper look turns foggy. The wash is a PASTEL lift of the node's hue
+    // (highlighter over paper): the light-theme palette is deliberately dark
+    // ink, and dark ink at low alpha only ever reads as grey smudge.
+    float aura = pow(max(0.0, 1.0 - d), 2.0) * (0.08 + 0.92 * v_int);
+    // The aura must recede with its star during a search — max()'ing an
+    // undimmed aura back over the halved alpha would exempt every non-matching
+    // hub from the "matches lift, everything else recedes" contract.
+    if (u_searchOn > 0.5) aura *= mix(0.5, 1.0, v_hit);
+    float lm = dot(base, vec3(0.2126, 0.7152, 0.0722));
+    vec3 sat = clamp(mix(vec3(lm), base, 2.6), 0.0, 1.0);
+    vec3 wash = 1.0 - (1.0 - sat) * 0.55;
+    col = mix(col, wash, clamp(aura * (1.0 - core) * 0.9, 0.0, 1.0));
+    a = max(a, aura * (0.22 + 0.38 * v_int) * v_alpha * v_fade * u_lodFade);
+  }
   // Pre-tonemap luminance clamp: caps each sprite's additive CONTRIBUTION at
   // 3.0, so an N-sprite overlap sums to at most 3N instead of unbounded HDR —
   // the structural backstop the per-intensity caps alone can't give.
@@ -599,6 +687,21 @@ export class GraphScene {
   private mixPass?: ShaderPass;
   private fxaaPass?: ShaderPass;
   private cinePass?: ShaderPass;
+  private godPass?: ShaderPass;
+  // Screen-space god rays radiate from the vault's single brightest hub —
+  // re-picked on (re)build, projected per frame in updateGodRays().
+  private hubIndex = -1;
+  // Edge flow pulses (research round 2 #7): uniforms shared with the
+  // onBeforeCompile-patched LineBasicMaterial. Owned here so the render loop
+  // and applySettings can drive them before/after the program compiles.
+  private edgeFlowUniforms = {
+    u_flowTime: { value: 0 },
+    u_flowAmp: { value: 0 },
+    u_flowDark: { value: 1 },
+  };
+  // Inspector-selected node (anamorphic streak). Kept as an id so rebuild()
+  // can restore the a_sel attribute over a fresh geometry.
+  private selectedNode: string | null = null;
   private selective = false;
   // Live theme darkness (ctor + applyTheme). On light the bloom pass renders
   // BLACK (points hidden) so the additive mix is a no-op — bloom is a dark-
@@ -1023,6 +1126,10 @@ export class GraphScene {
       "a_spawn",
       new THREE.BufferAttribute(new Float32Array(n), 1),
     );
+    this.nodeGeom.setAttribute(
+      "a_sel",
+      new THREE.BufferAttribute(new Float32Array(n), 1),
+    );
     this.nodeMat = new THREE.ShaderMaterial({
       uniforms: {
         u_pixelRatio: { value: pr },
@@ -1041,6 +1148,9 @@ export class GraphScene {
         u_flat: { value: settings.skin === "sigma" ? 1 : 0 },
         u_saturate: { value: settings.skin === "sigma" ? 1.45 : 1 },
         u_flare: { value: settings.cinematic ? 1 : 0 },
+        u_halo: { value: dark ? 0 : 1 },
+        u_dofAmp: { value: this.dofAmpFor(settings) },
+        u_focusDist: { value: 600 },
         // Sub-pixel at typical framing (~2 world units), so the GPU-only drift
         // never visibly detaches stars from their CPU-anchored edges. Flat 2D
         // maps stay perfectly still — drift is a galaxy-space affordance.
@@ -1077,6 +1187,7 @@ export class GraphScene {
       "color",
       new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 12), 3),
     );
+    this.writeEdgeFlowAttrs();
     // Pick the theme-branched edge look up front so both the material and the
     // vertex-colour derivation (writeEdges) draw from the same values. The web
     // skin overrides: faint additive violet strands that sum where they cross.
@@ -1109,6 +1220,8 @@ export class GraphScene {
       // bg) and on sigma (the veil is layered colour, not light).
       blending: dark && !this.sigmaSkin ? THREE.AdditiveBlending : THREE.NormalBlending,
     });
+    this.patchEdgeFlow(this.edgeMat, dark);
+    this.edgeFlowUniforms.u_flowAmp.value = this.flowAmpFor(settings);
     this.edges = new THREE.LineSegments(this.edgeGeom, this.edgeMat);
     this.edges.frustumCulled = false;
     this.scene.add(this.edges);
@@ -1288,6 +1401,7 @@ export class GraphScene {
 
     this.writeNodes();
     this.writeEdges();
+    this.computeHub();
     this.initArrowMotion();
     this.writeArrowColors();
     this.fit();
@@ -1606,6 +1720,183 @@ export class GraphScene {
     this.searchHits = ids && ids.size > 0 ? ids : null;
     this.nodeMat.uniforms.u_searchOn.value = this.searchHits ? 1 : 0;
     this.writeNodes();
+  }
+
+  /** Mark the inspector-selected node: it carries a persistent anamorphic
+   * streak (see NODE_FRAG) so the subject stays findable after any orbit.
+   * Null clears. Distinct from hover (transient) and clickBurst (one-shot). */
+  setSelectedNode(id: string | null): void {
+    this.selectedNode = id;
+    this.writeSelected();
+  }
+
+  private writeSelected(): void {
+    const sel = this.nodeGeom.getAttribute("a_sel") as THREE.BufferAttribute;
+    for (let i = 0; i < this.nodeIds.length; i++) {
+      sel.setX(i, this.nodeIds[i] === this.selectedNode ? 1 : 0);
+    }
+    sel.needsUpdate = true;
+  }
+
+  // ── Edge flow pulses (research round 2 #7) ────────────────────────────
+  // A narrow gaussian light band rides each edge from source to target on the
+  // ambience-gated clock — the vault's citation direction as ambient motion.
+
+  /** Static per-vertex flow parameters: a_prog runs 0 → 0.5 → 0.5 → 1 across
+   * the midpoint-split vertex pair (linearly interpolated along the strand);
+   * a_rnd staggers each edge's band phase/speed so the field shimmers instead
+   * of strobing in lockstep. Deterministic across rebuilds. */
+  private writeEdgeFlowAttrs(): void {
+    const n = this.edgePairs.length;
+    const prog = new Float32Array(n * 4);
+    const rnd = new Float32Array(n * 4);
+    for (let i = 0; i < n; i++) {
+      const o = i * 4;
+      prog[o + 1] = 0.5;
+      prog[o + 2] = 0.5;
+      prog[o + 3] = 1;
+      const r = seededUnit(`flow-${i}`, 53);
+      rnd[o] = rnd[o + 1] = rnd[o + 2] = rnd[o + 3] = r;
+    }
+    this.edgeGeom.setAttribute("a_prog", new THREE.BufferAttribute(prog, 1));
+    this.edgeGeom.setAttribute("a_rnd", new THREE.BufferAttribute(rnd, 1));
+  }
+
+  /** Inject the flow channel into the stock LineBasicMaterial via
+   * onBeforeCompile — NOT a bespoke ShaderMaterial, so opacity / vertexColors /
+   * blending keep their stock plumbing (applySettings mutates all three).
+   * Dark (additive): the band lifts the strand's own colour into a glint.
+   * Light/sigma (normal blend): brightening would fade INTO the paper, so the
+   * band deepens the ink instead. Zero-colour (hidden) edges stay invisible
+   * either way because both branches scale the existing colour. */
+  private patchEdgeFlow(mat: THREE.LineBasicMaterial, dark: boolean): void {
+    this.edgeFlowUniforms.u_flowDark.value = dark && !this.sigmaSkin ? 1 : 0;
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, this.edgeFlowUniforms);
+      shader.vertexShader = shader.vertexShader
+        .replace(
+          "#include <common>",
+          "#include <common>\nattribute float a_prog;\nattribute float a_rnd;\nvarying float v_prog;\nvarying float v_rnd;",
+        )
+        .replace(
+          "#include <begin_vertex>",
+          "#include <begin_vertex>\nv_prog = a_prog;\nv_rnd = a_rnd;",
+        );
+      shader.fragmentShader = shader.fragmentShader
+        .replace(
+          "#include <common>",
+          "#include <common>\nuniform float u_flowTime;\nuniform float u_flowAmp;\nuniform float u_flowDark;\nvarying float v_prog;\nvarying float v_rnd;",
+        )
+        .replace(
+          "#include <color_fragment>",
+          `#include <color_fragment>
+          if (u_flowAmp > 0.0) {
+            float ph = fract(u_flowTime * (0.10 + v_rnd * 0.06) + v_rnd * 7.0);
+            float w = exp(-pow((v_prog - ph) * 6.0, 2.0)) * u_flowAmp;
+            // The band carries its own light (the strands are deliberately dim
+            // tissue — a pure multiple would stay sub-perceptual): re-emit the
+            // strand's hue at unit luma, gated so hidden (timelapse) and
+            // focus-dimmed edges stay silent instead of betraying the dim.
+            float lum = dot(diffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+            vec3 hue = diffuseColor.rgb / max(lum, 1e-4) * smoothstep(0.015, 0.06, lum);
+            vec3 lit = diffuseColor.rgb + hue * (w * 1.2);
+            vec3 ink = diffuseColor.rgb * (1.0 - w * 0.8);
+            diffuseColor.rgb = mix(ink, lit, u_flowDark);
+          }`,
+        );
+    };
+    // Stable program key: every scene shares one patched program instead of
+    // recompiling per material instance.
+    mat.customProgramCacheKey = () => "memex-edge-flow";
+  }
+
+  /** Flow amplitude for the current settings. Sigma is flat data-viz (no
+   * travelling light), and the flying-arrow fleet already IS the directional
+   * signal — never stack both. */
+  private flowAmpFor(s: GraphSettings): number {
+    return s.edgeFlow && !this.sigmaSkin && !s.arrows ? 0.55 : 0;
+  }
+
+  /** DOF amplitude: flat 2D maps and the sigma board must stay pin-sharp end
+   * to end, and light paper too — a defocused dark-ink disc under
+   * NormalBlending is a grey smudge, not bokeh. Dark-void cinematic only. */
+  private dofAmpFor(s: GraphSettings): number {
+    return s.cinematic && !this.flatLayout && s.skin !== "sigma" && this.darkTheme
+      ? 0.7
+      : 0;
+  }
+
+  // ── God rays (research round 2 #10) ───────────────────────────────────
+
+  /** Dark-void effect only: on light paper the shafts read as smudge, on the
+   * web skin they compete with the filament field, sigma is flat, and a flat
+   * 2D map is a chart, not a sky. perfLod: the pass is 23 full-res taps per
+   * pixel — on >5000-node vaults it sheds with the other ambient layers. */
+  private godRaysWanted(): boolean {
+    return (
+      this.settings.cinematic &&
+      this.darkTheme &&
+      !this.sigmaSkin &&
+      !this.webSkin &&
+      !this.flatLayout &&
+      !this.perfLod
+    );
+  }
+
+  /** Re-pick the single brightest hub (highest HDR intensity) that anchors the
+   * god-ray pass. Called on (re)build; the per-frame cost is projection only. */
+  private computeHub(): void {
+    let best = -1;
+    let bestI = 0.5; // floor: a vault with no real hub casts no shaft
+    for (let i = 0; i < this.nodeIds.length; i++) {
+      const inten =
+        (this.graph.getNodeAttribute(this.nodeIds[i], "intensity") as number) ?? 0;
+      if (inten > bestI) {
+        bestI = inten;
+        best = i;
+      }
+    }
+    this.hubIndex = best;
+  }
+
+  /** Project the hub into screen space and drive the shaft uniforms. Amplitude
+   * fades as the hub leaves the frame and cuts when it passes behind the
+   * camera — the pass early-outs to a plain copy at u_amp 0. */
+  private updateGodRays(): void {
+    const pass = this.godPass;
+    if (!pass?.enabled) return;
+    const amp = pass.material.uniforms.u_amp as { value: number };
+    if (this.hubIndex < 0 || this.hubIndex >= this.nodeIds.length) {
+      amp.value = 0;
+      return;
+    }
+    // An invisible star casts no shaft: writeNodes zeroes the buffered
+    // intensity for timelapse-hidden, focus-dimmed and hover-dimmed hubs, so
+    // this one gate covers every dimming channel without re-picking the hub.
+    const intn = this.nodeGeom.getAttribute("a_intensity") as THREE.BufferAttribute;
+    if (intn.getX(this.hubIndex) <= 0) {
+      amp.value = 0;
+      return;
+    }
+    // Controls moved the camera this frame but the renderer hasn't refreshed
+    // its matrices yet — update now so the shaft doesn't trail the hub by one
+    // frame during orbits (Camera.updateMatrixWorld also refreshes the inverse).
+    this.camera.updateMatrixWorld();
+    const pos = this.nodeGeom.getAttribute("position") as THREE.BufferAttribute;
+    this.tmpVec
+      .set(pos.getX(this.hubIndex), pos.getY(this.hubIndex), pos.getZ(this.hubIndex))
+      .applyMatrix4(this.camera.matrixWorldInverse);
+    if (this.tmpVec.z >= -1e-3) {
+      amp.value = 0; // behind (or at) the camera plane
+      return;
+    }
+    const v = this.tmpVec.applyMatrix4(this.camera.projectionMatrix); // NDC
+    const edge = Math.max(Math.abs(v.x), Math.abs(v.y));
+    amp.value = 0.5 * (1 - THREE.MathUtils.smoothstep(edge, 0.9, 1.3));
+    (pass.material.uniforms.u_center.value as THREE.Vector2).set(
+      v.x * 0.5 + 0.5,
+      v.y * 0.5 + 0.5,
+    );
   }
 
   // Rendered a_size for a node at a given hover-pop blend — composes with the
@@ -2607,6 +2898,22 @@ export class GraphScene {
   /** FXAA + cinematic grade, appended after OutputPass on whichever composer
    * chain this scene built. Toggled live via settings.cinematic. */
   private attachFinishing(composer: EffectComposer, w: number, h: number, pr: number): void {
+    // God rays go FIRST (before FXAA/cine) so the shafts get anti-aliased and
+    // graded like everything else. Still display-space, after OutputPass —
+    // never on the bloom composer (its renderTarget2 binding breaks).
+    this.godPass = new ShaderPass(
+      new THREE.ShaderMaterial({
+        uniforms: {
+          tDiffuse: { value: null },
+          u_center: { value: new THREE.Vector2(0.5, 0.5) },
+          u_amp: { value: 0 },
+        },
+        vertexShader: MIX_VERT,
+        fragmentShader: GOD_FRAG,
+      }),
+      "tDiffuse",
+    );
+    composer.addPass(this.godPass);
     this.fxaaPass = new ShaderPass(FXAAShader);
     (this.fxaaPass.material.uniforms.resolution.value as THREE.Vector2).set(
       1 / Math.max(1, w * pr),
@@ -2631,6 +2938,7 @@ export class GraphScene {
     const on = this.settings.cinematic;
     this.fxaaPass.enabled = on;
     this.cinePass.enabled = on;
+    this.godPass.enabled = this.godRaysWanted();
   }
 
   // Edge-density field, two personalities (see edgeDensity.ts):
@@ -2819,9 +3127,12 @@ export class GraphScene {
     this.nodeGeom.setAttribute("a_age", new THREE.BufferAttribute(new Float32Array(n).fill(9999), 1));
     this.nodeGeom.setAttribute("a_hit", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.nodeGeom.setAttribute("a_spawn", new THREE.BufferAttribute(new Float32Array(n), 1));
+    this.nodeGeom.setAttribute("a_sel", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.points.geometry = this.nodeGeom;
     oldNodeGeom.dispose();
     this.writeSpawnDelays();
+    this.writeSelected(); // restore the streak over the fresh a_sel buffer
+    this.computeHub(); // node set changed — re-anchor the god rays
 
     this.edgePairs = this.graph.mapEdges(
       (_e, _a, s, t) => [s, t] as [string, string],
@@ -2831,6 +3142,7 @@ export class GraphScene {
     this.edgeGeom = new THREE.BufferGeometry();
     this.edgeGeom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 12), 3));
     this.edgeGeom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 12), 3));
+    this.writeEdgeFlowAttrs();
     this.edges.geometry = this.edgeGeom;
     this.edgeDensity?.setGeometry(this.edgeGeom);
     oldEdgeGeom.dispose();
@@ -2953,6 +3265,12 @@ export class GraphScene {
     this.nodeMat.uniforms.u_darkTheme.value = dark ? 1 : 0;
     this.nodeMat.uniforms.u_flat.value = this.sigmaSkin ? 1 : 0;
     this.nodeMat.uniforms.u_saturate.value = this.sigmaSkin ? 1.45 : 1;
+    // Analytic halo substitutes for bloom on light paper; dark themes keep the
+    // real bloom. God rays and DOF are dark-void effects — retire on light.
+    this.nodeMat.uniforms.u_halo.value = dark ? 0 : 1;
+    this.nodeMat.uniforms.u_dofAmp.value = this.dofAmpFor(this.settings);
+    if (this.godPass) this.godPass.enabled = this.godRaysWanted();
+    this.edgeFlowUniforms.u_flowDark.value = dark && !this.sigmaSkin ? 1 : 0;
     // "auto" mono ink follows the background (white starlight ↔ dark ink).
     (this.nodeMat.uniforms.u_monoColor.value as THREE.Color).copy(
       monoColorFor(this.settings, dark),
@@ -3124,8 +3442,11 @@ export class GraphScene {
     this.nodeMat.uniforms.u_colorDepth.value = settings.nodeColorDepth;
     this.nodeMat.uniforms.u_recency.value = settings.recencyGlow ? 1 : 0;
     this.nodeMat.uniforms.u_flare.value = settings.cinematic ? 1 : 0;
+    this.nodeMat.uniforms.u_dofAmp.value = this.dofAmpFor(settings);
+    this.edgeFlowUniforms.u_flowAmp.value = this.flowAmpFor(settings);
     if (this.fxaaPass) this.fxaaPass.enabled = settings.cinematic;
     if (this.cinePass) this.cinePass.enabled = settings.cinematic;
+    if (this.godPass) this.godPass.enabled = this.godRaysWanted();
     this.setMinimap(settings.minimap);
     this.cosmic.setFrequency(settings.cosmicFrequency);
     // Sky style flip (star density / dotted grid / void) — rebuild the field.
@@ -3580,6 +3901,18 @@ export class GraphScene {
       }
       // The living nebula breathes on the same gated clock.
       this.edgeDensity?.setTime(this.nodeMat.uniforms.u_time.value);
+      // Edge flow pulses ride the same ambience-gated clock — reduced motion
+      // (or Ambient motion off) freezes the bands in place.
+      this.edgeFlowUniforms.u_flowTime.value = this.nodeMat.uniforms.u_time.value;
+      // DOF focal plane tracks what the user is actually looking at: the orbit
+      // pivot. Fly mode has no pivot — hold a mid-field plane instead.
+      if ((this.nodeMat.uniforms.u_dofAmp.value as number) > 0) {
+        this.nodeMat.uniforms.u_focusDist.value = this.flyMode
+          ? 600
+          : this.camera.position.distanceTo(this.controls.target);
+      }
+      // God rays: re-project the anchor hub every frame (cheap — one vec3).
+      this.updateGodRays();
       // Grid backdrop parallax: drift the fullscreen dot grid with the camera's
       // look direction so it reads as depth behind the graph, not a flat UI
       // overlay pinned to the window.

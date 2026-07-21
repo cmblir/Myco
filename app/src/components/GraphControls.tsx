@@ -530,6 +530,12 @@ export default function GraphControls({
           onChange={(v) => onChange({ cinematic: v })}
         />
         <Toggle
+          label={t.gr_flow ?? "Edge flow"}
+          hint={t.gr_flow_hint ?? "Light pulses ride links source → target"}
+          value={settings.edgeFlow}
+          onChange={(v) => onChange({ edgeFlow: v })}
+        />
+        <Toggle
           label={t.gr_minimap ?? "Minimap"}
           hint={t.gr_minimap_hint ?? "Corner chart of the whole galaxy; click to fly"}
           value={settings.minimap}

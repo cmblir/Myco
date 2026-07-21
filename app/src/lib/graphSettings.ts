@@ -89,6 +89,10 @@ export interface GraphSettings {
   // aberration, plus anamorphic streaks on the brightest cores. The "shot on
   // a camera" grade over the raw render.
   cinematic: boolean;
+  // Edge flow pulses: a narrow light band rides each link source → target on
+  // the ambient clock — citation direction as ambient motion. Auto-muted when
+  // the flying-arrow fleet is on (one directional signal at a time).
+  edgeFlow: boolean;
   // Cosmic events (black hole / wormhole) on the dark skin — a separate opt-out
   // from ambientMotion because they're the most attention-grabbing FX.
   cosmicEvents: boolean;
@@ -150,6 +154,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   recencyGlow: true,
   minimap: true,
   cinematic: true,
+  edgeFlow: true,
   cosmicEvents: true,
   cosmicFrequency: 1,
   clickBurst: true,
