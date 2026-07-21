@@ -240,6 +240,7 @@ export default function GraphControls({
                 ["synapse3d", t.gr_layout_synapse3d ?? "Synapse (3D)"],
                 ["spiral", t.gr_layout_spiral ?? "Spiral galaxy"],
                 ["strata", t.gr_layout_strata ?? "Timeline (2D)"],
+                ["semantic", t.gr_layout_semantic ?? "Semantic map"],
               ] as [GraphSettings["layout"], string][]
             ).map(([key, label]) => (
               <button

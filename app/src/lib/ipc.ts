@@ -146,6 +146,12 @@ export interface VecHit {
   score: number;
 }
 
+export interface SemanticPoint {
+  page: string;
+  x: number;
+  y: number;
+}
+
 export interface CandidatePage {
   page: string;
   stem: string;
@@ -377,6 +383,8 @@ export const ipc = {
     invoke<number>("reindex_embeddings", { provider, model }),
   semanticSearch: (query: string, k: number, provider: string, model: string) =>
     invoke<VecHit[]>("semantic_search", { query, k, provider, model }),
+  /** 2D semantic-map coordinates (PCA over page embeddings) for every indexed page. */
+  semanticMap: () => invoke<SemanticPoint[]>("semantic_map", {}),
   /** Existing pages a new source likely relates to — retrieval grounding for ingest. */
   wikifyCandidates: (sourceText: string, k: number) =>
     invoke<CandidatePage[]>("wikify_candidates", { sourceText, k }),

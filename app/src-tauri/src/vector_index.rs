@@ -588,9 +588,158 @@ impl VectorCache {
     }
 }
 
+/// One page's position on the 2D semantic map (see `semantic_map_points`).
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SemanticPoint {
+    pub page: String,
+    pub x: f32,
+    pub y: f32,
+}
+
+/// Project page centroids onto their top-2 principal components — the layout
+/// coordinates for the "semantic map" (notes cluster by MEANING, not links).
+/// PCA by power iteration with deflation: never materialises the d×d
+/// covariance (d = 1152), just streams Σᵢ(xᵢ·v)xᵢ over the centred data.
+/// Deterministic (fixed seed vector, fixed iteration count) and pure, so the
+/// same index always draws the same map. Output is normalised to [-1, 1] per
+/// axis. O(iters · n · d) — ~1s for 10k pages in release, run it off-thread.
+pub fn semantic_map_points(centroids: &[(String, Vec<f32>)]) -> Vec<SemanticPoint> {
+    let n = centroids.len();
+    if n < 2 {
+        return centroids
+            .iter()
+            .map(|(p, _)| SemanticPoint { page: p.clone(), x: 0.0, y: 0.0 })
+            .collect();
+    }
+    let d = centroids[0].1.len();
+    if d == 0 {
+        return Vec::new();
+    }
+    let mut mean = vec![0f32; d];
+    for (_, v) in centroids {
+        for i in 0..d.min(v.len()) {
+            mean[i] += v[i];
+        }
+    }
+    for m in &mut mean {
+        *m /= n as f32;
+    }
+    // Centre once — 10k × 1152 f32 is ~46 MB transient, cheaper than paying the
+    // subtraction inside every power iteration.
+    let centred: Vec<Vec<f32>> = centroids
+        .iter()
+        .map(|(_, v)| {
+            let mut c = vec![0f32; d];
+            for i in 0..d.min(v.len()) {
+                c[i] = v[i] - mean[i];
+            }
+            c
+        })
+        .collect();
+    let dot = |a: &[f32], b: &[f32]| -> f32 { a.iter().zip(b).map(|(x, y)| x * y).sum() };
+
+    let mut comps: Vec<Vec<f32>> = Vec::new();
+    for c in 0..2 {
+        // Fixed pseudo-random seed vector — determinism over elegance.
+        let mut v: Vec<f32> = (0..d)
+            .map(|i| (((i * 2_654_435_761 + c * 97) % 1000) as f32) / 1000.0 - 0.5)
+            .collect();
+        for _ in 0..30 {
+            let mut next = vec![0f32; d];
+            for x in &centred {
+                let s = dot(x, &v);
+                for i in 0..d {
+                    next[i] += s * x[i];
+                }
+            }
+            // Deflate: keep the second component orthogonal to the first.
+            for pc in &comps {
+                let pr = dot(&next, pc);
+                for i in 0..d {
+                    next[i] -= pr * pc[i];
+                }
+            }
+            let norm = dot(&next, &next).sqrt().max(1e-9);
+            for i in 0..d {
+                v[i] = next[i] / norm;
+            }
+        }
+        comps.push(v);
+    }
+
+    let mut xs: Vec<f32> = Vec::with_capacity(n);
+    let mut ys: Vec<f32> = Vec::with_capacity(n);
+    for x in &centred {
+        xs.push(dot(x, &comps[0]));
+        ys.push(dot(x, &comps[1]));
+    }
+    let span = |vals: &[f32]| -> (f32, f32) {
+        let mut lo = f32::MAX;
+        let mut hi = f32::MIN;
+        for &v in vals {
+            lo = lo.min(v);
+            hi = hi.max(v);
+        }
+        (lo, (hi - lo).max(1e-9))
+    };
+    let (x0, xw) = span(&xs);
+    let (y0, yw) = span(&ys);
+    centroids
+        .iter()
+        .enumerate()
+        .map(|(i, (p, _))| SemanticPoint {
+            page: p.clone(),
+            x: ((xs[i] - x0) / xw) * 2.0 - 1.0,
+            y: ((ys[i] - y0) / yw) * 2.0 - 1.0,
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn semantic_map_separates_clusters_and_is_deterministic() {
+        // Two tight clusters along one axis + one along another, in 8-dim.
+        let mk = |base: [f32; 8], jit: f32, name: &str| {
+            (name.to_string(), base.iter().map(|b| b + jit).collect::<Vec<f32>>())
+        };
+        let cents = vec![
+            mk([5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0.01, "a1"),
+            mk([5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], -0.02, "a2"),
+            mk([-5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0.015, "b1"),
+            mk([-5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], -0.01, "b2"),
+            mk([0.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0.02, "c1"),
+            mk([0.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], -0.015, "c2"),
+        ];
+        let pts = semantic_map_points(&cents);
+        assert_eq!(pts.len(), 6);
+        let at = |n: &str| pts.iter().find(|p| p.page == n).unwrap();
+        let d = |a: &SemanticPoint, b: &SemanticPoint| ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt();
+        // Intra-cluster pairs sit close; inter-cluster pairs sit far.
+        assert!(d(at("a1"), at("a2")) < 0.2);
+        assert!(d(at("b1"), at("b2")) < 0.2);
+        assert!(d(at("a1"), at("b1")) > 0.8);
+        assert!(d(at("a1"), at("c1")) > 0.5);
+        // Deterministic: a second run produces identical coordinates.
+        let pts2 = semantic_map_points(&cents);
+        for (p, q) in pts.iter().zip(&pts2) {
+            assert_eq!((p.x, p.y), (q.x, q.y));
+        }
+        // Normalised into [-1, 1].
+        for p in &pts {
+            assert!(p.x >= -1.0 && p.x <= 1.0 && p.y >= -1.0 && p.y <= 1.0);
+        }
+    }
+
+    #[test]
+    fn semantic_map_handles_tiny_inputs() {
+        assert!(semantic_map_points(&[]).is_empty());
+        let one = semantic_map_points(&[("solo".into(), vec![1.0, 2.0])]);
+        assert_eq!(one.len(), 1);
+        assert_eq!((one[0].x, one[0].y), (0.0, 0.0));
+    }
 
     fn rec(page: &str, sec: usize, v: Vec<f32>) -> Record {
         Record {

@@ -37,7 +37,7 @@ export interface GraphSettings {
   // "spiral" = a static log-spiral galaxy (the cosmic-refs Andromeda/M101
   // form): communities along the arms, biggest at the core. "strata" = a
   // static 2D time chart: x = last-modified (oldest left), y = community band.
-  layout: "galaxy" | "atlas" | "synapse" | "synapse3d" | "spiral" | "strata";
+  layout: "galaxy" | "atlas" | "synapse" | "synapse3d" | "spiral" | "strata" | "semantic";
   // Multiverse mode: instead of this one vault, show EVERY registered project
   // as its own glowing universe-bubble in one shared cosmos. Fly into a bubble
   // to switch the active vault (which turns this back off, landing you in that
@@ -315,6 +315,15 @@ export const LAYOUT_RECOMMENDED: Record<
     edgeBundles: false,
     cosmicEvents: false,
     arrows: false,
+  },
+  // Position IS semantic proximity here, so the similarity-edge overlay is
+  // redundant noise; wikilink edges stay to show explicit structure.
+  semantic: {
+    folderGalaxies: false,
+    edgeTint: "grey",
+    edgeBundles: false,
+    semanticEdges: false,
+    cosmicEvents: false,
   },
 };
 

@@ -154,6 +154,7 @@ pub fn run() {
             commands::local_query,
             commands::reindex_embeddings,
             commands::semantic_search,
+            commands::semantic_map,
             commands::wikify_candidates,
             commands::related_pages,
             commands::embeddings_status,

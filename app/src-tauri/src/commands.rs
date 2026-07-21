@@ -1638,6 +1638,36 @@ pub async fn wikify_candidates(
     Ok(out)
 }
 
+/// 2D semantic-map coordinates for every indexed page — the "semantic" graph
+/// layout (notes cluster by meaning, not links). PCA runs here in Rust so the
+/// 1152-dim centroids never cross the IPC bridge; only (page, x, y) does.
+/// Empty when no index exists — the layout falls back and says why.
+///
+/// Async + `spawn_blocking`: the power iteration is ~1s on a 10k-page index.
+#[tauri::command]
+pub async fn semantic_map(
+    vault: tauri::State<'_, VaultRoot>,
+    cache: tauri::State<'_, VectorCache>,
+) -> Result<Vec<crate::vector_index::SemanticPoint>, String> {
+    let root = require_root(&vault)?;
+    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    let store = cache.get(&index_path);
+    if store.records.is_empty() {
+        return Ok(Vec::new());
+    }
+    let t0 = std::time::Instant::now();
+    let out = tauri::async_runtime::spawn_blocking(move || {
+        crate::vector_index::semantic_map_points(&store.page_centroids())
+    })
+    .await
+    .map_err(|e| format!("semantic map task failed: {e}"))?;
+    perf::log(
+        "semantic_map",
+        &[("pages", out.len() as f64), ("total_ms", perf::ms(t0.elapsed()))],
+    );
+    Ok(out)
+}
+
 /// Pages most semantically similar to `page` (no embedding call — uses stored
 /// vectors), for the Reader related-notes panel and graph similarity edges.
 ///

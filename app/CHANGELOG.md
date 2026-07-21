@@ -26,6 +26,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **A Semantic map layout — the vault arranged by meaning.** Notes take their
+  position from their embeddings (top-2 principal components of the local
+  index), so pages about the same thing sit together even when no link joins
+  them, and wikilink edges drape over the meaning-space as the explicit
+  structure. Runs entirely on the local index — nothing leaves the machine. No
+  index yet? The view falls back to the spiral and tells you to reindex.
+
 - **Two new layouts: Spiral galaxy and Timeline.** "Spiral galaxy" lays the
   vault along the arms of a log-spiral — whole topics stretch contiguously
   along an arm, the biggest anchors the core bulge, and a tilt shows a real

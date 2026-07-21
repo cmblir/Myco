@@ -951,6 +951,24 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         : hits;
       return sleep(400).then(() => out);
     }
+    case "semantic_map": {
+      // Structured fake PCA: one 2D cluster per node TYPE, deterministic
+      // per-index jitter — the semantic layout shows meaning-clusters in mock.
+      const types = [...new Set(NODES.map((d) => d.t))];
+      return Promise.resolve(
+        NODES.map((d, i) => {
+          const k = types.indexOf(d.t);
+          const ang = (k / Math.max(1, types.length)) * Math.PI * 2;
+          const jx = (((i * 37) % 100) / 100 - 0.5) * 0.5;
+          const jy = (((i * 61) % 100) / 100 - 0.5) * 0.5;
+          return {
+            page: pathOf(d.s),
+            x: Math.max(-1, Math.min(1, Math.cos(ang) * 0.62 + jx)),
+            y: Math.max(-1, Math.min(1, Math.sin(ang) * 0.62 + jy)),
+          };
+        }),
+      );
+    }
     case "wikify_candidates": {
       // Retrieval grounding: match the source text against node bodies, exclude
       // source-summary/structural stems, return a ranked candidate list.

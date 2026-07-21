@@ -31,6 +31,7 @@ import {
   flattenMarkdown,
   type LegendGalaxy,
   recolorGraph,
+  seededUnit,
   shortestPath,
   starKindOf,
   stem,
@@ -153,6 +154,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   enteredUniverseRef.current = enteredUniverse;
   // Condensation intro plays once per Graph-page visit (not per rebuild).
   const introPlayedRef = useRef(false);
+  // Semantic layout picked but no embedding index — the view fell back to the
+  // spiral and this drives the "reindex first" hint.
+  const [semanticMissing, setSemanticMissing] = useState(false);
   const showMultiverse = settings.multiverse && !enteredUniverse;
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -702,6 +706,68 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // as bright cores joined by nerve-fibre bridges. Both run the same sliced
     // FA2 pipeline; only the force tuning + edge rendering differ. Everything
     // downstream guards on simRef being null.
+    // Semantic map: 2D PCA coordinates come from Rust (page embeddings never
+    // cross the bridge). Notes cluster by MEANING; wikilink edges stay drawn
+    // over it as the explicit structure. No index → spiral fallback + a hint.
+    if (s.layout === "semantic") {
+      const radius = s.linkDistance * ATLAS_RADIUS_MUL;
+      const finish = (): void => {
+        if (killed) return;
+        sceneRef.current?.syncPositions();
+        sceneRef.current?.layoutSettled();
+        sceneRef.current?.fit();
+        introPlayed = true;
+        container.classList.add("graph-ready");
+      };
+      void ipc
+        .semanticMap()
+        .then((pts) => {
+          if (killed) return;
+          if (pts.length === 0) {
+            applySpiralLayout(graph, { targetRadius: radius * 1.3 });
+            setSemanticMissing(true);
+          } else {
+            setSemanticMissing(false);
+            const at = new Map(pts.map((p) => [p.page, p]));
+            graph.forEachNode((id) => {
+              const p = at.get(id);
+              if (p) {
+                graph.setNodeAttribute(id, "x", p.x * radius);
+                graph.setNodeAttribute(id, "y", p.y * radius);
+                graph.setNodeAttribute(id, "z", 0);
+              } else {
+                // No embedding (ghost / not yet indexed): park on the outer
+                // ring so it reads "outside the mapped meaning", not random.
+                const ang = seededUnit(id, 31) * Math.PI * 2;
+                graph.setNodeAttribute(id, "x", Math.cos(ang) * radius * 1.14);
+                graph.setNodeAttribute(id, "y", Math.sin(ang) * radius * 1.14);
+                graph.setNodeAttribute(id, "z", 0);
+              }
+            });
+          }
+          finish();
+        })
+        .catch(() => {
+          if (killed) return;
+          applySpiralLayout(graph, { targetRadius: radius * 1.3 });
+          setSemanticMissing(true);
+          finish();
+        });
+      return () => {
+        killed = true;
+        if (tlRafRef.current != null) {
+          cancelAnimationFrame(tlRafRef.current);
+          tlRafRef.current = null;
+        }
+        stopTlRecorder();
+        setTlPlaying(false);
+        scene.dispose();
+        sceneRef.current = null;
+        graphRef.current = null;
+        container.classList.remove("graph-ready");
+      };
+    }
+
     // Pure-math static layouts (spiral galaxy / time strata): positions are a
     // deterministic O(n log n) function of the built graph — no FA2 slices, no
     // worker sim. Compute, bake, reveal in one fit.
@@ -1667,6 +1733,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               <p className="muted graph-perf-banner">
                 {t.gr_perf_mode ??
                   "Performance mode — ambient layers off for large graphs"}
+              </p>
+            ) : null}
+            {!showMultiverse && settings.layout === "semantic" && semanticMissing ? (
+              <p className="muted graph-perf-banner" role="status">
+                {t.gr_semantic_missing ??
+                  "Semantic map needs the embedding index — run Reindex under Settings → Model, then reopen. Showing the spiral instead."}
               </p>
             ) : null}
             {!showMultiverse && totalNodes === 0 ? (

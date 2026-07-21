@@ -624,11 +624,12 @@ export class GraphScene {
   private bundles: EdgeBundleLayer; // bundled inter-community strands (GRAPH-01)
   private atlasMode = false; // static 2D ForceAtlas2 layout (no sim, flat)
   private strataMode = false; // static 2D time-strata chart (no sim, flat)
+  private semanticMode = false; // static 2D semantic map (no sim, flat)
   private synapse2dMode = false; // static 2D nervous-system layout (spread + fibres)
   private synapse3dMode = false; // nervous-system RENDER over the live 3D sim
   // Either static 2D layout is flat: top-down camera lock, flat bg, no galaxy FX.
   private get flatLayout(): boolean {
-    return this.atlasMode || this.synapse2dMode || this.strataMode;
+    return this.atlasMode || this.synapse2dMode || this.strataMode || this.semanticMode;
   }
   // Nervous-system rendering (nerve-fibre edges + rapid firing) — both the 2D
   // and the 3D synapse layouts.
@@ -734,6 +735,9 @@ export class GraphScene {
     // stretched across the whole time axis would paint one huge balloon).
     // Spiral stays a full-3D orbit (a disc with a bulge; the tilt is the point).
     this.strataMode = settings.layout === "strata";
+    // Semantic map: position IS meaning — flat top-down chart like atlas,
+    // without the hull fills (clusters are emergent, not community-bounded).
+    this.semanticMode = settings.layout === "semantic";
     this.synapse2dMode = settings.layout === "synapse";
     this.synapse3dMode = settings.layout === "synapse3d";
     this.appliedEdgeTint = settings.edgeTint;
