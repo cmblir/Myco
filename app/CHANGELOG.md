@@ -26,6 +26,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **The Cosmic web skin now renders true density.** Edges accumulate into an
+  offscreen HDR buffer and colour on a dark-matter-simulation ramp: sparse
+  strands deep blue-violet, converging bundles warming through orange, the
+  densest cores white-hot. Where filaments overlap, the field genuinely
+  brightens — structure paints itself.
+
 - **A new "Cosmic web" graph skin.** The dark-matter-simulation look: notes
   shrink to pale points of starlight and the links carry the picture — thin
   violet filaments that genuinely brighten where strands overlap, so the

@@ -33,6 +33,7 @@ import { NebulaLayer } from "./nebulaLayer";
 import { PulseLayer } from "./pulseLayer";
 import { TracePulse } from "./tracePulse";
 import { DustLayer } from "./dustLayer";
+import { EdgeDensityLayer } from "./edgeDensity";
 import { ClusterLabels } from "./clusterLabels";
 import { WaveLayer } from "./waveLayer";
 import { SupernovaFx } from "./supernovaFx";
@@ -966,6 +967,8 @@ export class GraphScene {
     this.edges = new THREE.LineSegments(this.edgeGeom, this.edgeMat);
     this.edges.frustumCulled = false;
     this.scene.add(this.edges);
+    // Cosmic-web skin: edges render as an accumulated density field instead.
+    this.ensureEdgeDensity(this.webSkin);
 
     // --- filament focus/path layer (lit only on hover / shortest path) ---
     this.buildFilaments();
@@ -2202,6 +2205,28 @@ export class GraphScene {
     this.overlayTick = fn;
   }
 
+  // Edge-density field (cosmic-web skin): edges splat into an offscreen HDR
+  // accumulator and composite through a density ramp; the plain edge lines hide
+  // while it runs (hover/path feedback lives on the filament overlay).
+  private edgeDensity: EdgeDensityLayer | null = null;
+  private ensureEdgeDensity(on: boolean): void {
+    if (on && !this.edgeDensity) {
+      const el = this.renderer.domElement;
+      this.edgeDensity = new EdgeDensityLayer(
+        this.edgeGeom,
+        el.clientWidth || 2,
+        el.clientHeight || 2,
+        this.renderer.getPixelRatio(),
+      );
+      this.scene.add(this.edgeDensity.quad);
+    } else if (!on && this.edgeDensity) {
+      this.scene.remove(this.edgeDensity.quad);
+      this.edgeDensity.dispose();
+      this.edgeDensity = null;
+    }
+    this.edges.visible = !on;
+  }
+
   /** Live camera world position (clone) — the multiverse uses it to detect when
    *  the user has dollied INTO a universe bubble (zoom-to-enter). */
   getCameraPosition(): THREE.Vector3 {
@@ -2356,6 +2381,7 @@ export class GraphScene {
     this.edgeGeom.setAttribute("position", new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 12), 3));
     this.edgeGeom.setAttribute("color", new THREE.BufferAttribute(new Float32Array(this.edgePairs.length * 12), 3));
     this.edges.geometry = this.edgeGeom;
+    this.edgeDensity?.setGeometry(this.edgeGeom);
     oldEdgeGeom.dispose();
 
     // Filaments: drop the old focus/path layer and rebuild over the new edge
@@ -2517,6 +2543,8 @@ export class GraphScene {
     // resize handler owns this uniform otherwise — same formula, same source).
     this.nodeMat.uniforms.u_sizeScale.value =
       this.sizeScale(this.renderer.domElement.clientHeight || 1) * this.skinNodeScale();
+    // Density-field edges follow the skin (created/torn down live).
+    this.ensureEdgeDensity(this.webSkin);
     // Arrows are tinted per-instance by source-node colour; only the no-colour
     // fallback tracks the theme. writeArrowColors() below repaints them.
     this.arrowFallback = parseRGBA(theme.edgeHi).color;
@@ -3010,6 +3038,9 @@ export class GraphScene {
   // pass into a texture, then a full-scene pass that mixes the bloom back in
   // before ACES tone-mapping (spec A1). Single path: legacy full-scene bloom.
   private render(): void {
+    // Cosmic-web skin: accumulate this frame's edge splats first, so the ramp
+    // quad the composers are about to draw samples fresh density.
+    if (this.edgeDensity) this.edgeDensity.render(this.renderer, this.camera);
     if (this.selective && this.bloomComposer && this.finalComposer) {
       const camMask = this.camera.layers.mask;
       // Bloom pass: restrict the camera to layer 1 (nodes only) AND drop the
@@ -3166,6 +3197,11 @@ export class GraphScene {
       this.scene.remove(obj);
     }
     this.labels.clear();
+    if (this.edgeDensity) {
+      this.scene.remove(this.edgeDensity.quad);
+      this.edgeDensity.dispose();
+      this.edgeDensity = null;
+    }
     this.nodeGeom.dispose();
     this.nodeMat.dispose();
     this.edgeGeom.dispose();
@@ -3258,6 +3294,7 @@ export class GraphScene {
     this.bloom.setSize(w, h);
     this.labelRenderer.setSize(w, h);
     this.nodeMat.uniforms.u_sizeScale.value = this.sizeScale(h) * this.skinNodeScale();
+    this.edgeDensity?.setSize(w, h, this.renderer.getPixelRatio());
     this.wave.setSizeScale(this.sizeScale(h));
     this.nova.setSizeScale(this.sizeScale(h));
     this.synapse.setSizeScale(this.sizeScale(h));
