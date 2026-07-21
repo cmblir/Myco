@@ -2150,29 +2150,42 @@ hr {
   font-style: italic;
 }
 
-/* MYCO graph cameo — a floating speech-bubble tip beside the planet mascot,
-   anchored bottom-centre (clear of the bottom-left legend and bottom-right
-   minimap). The container ignores pointer events so it never blocks graph
-   interaction; only the bubble and the mascot are clickable (to dismiss). */
+/* MYCO graph cameo — the planet mascot rendered as a world IN the 3D cosmos:
+   a 0-size anchor is positioned every frame at the projected screen point of a
+   drifting world coordinate, the video is centred on it (perspective-sized in
+   JS), and the tip bubble floats to its left. The container ignores pointer
+   events so it never blocks graph interaction; only the bubble and the mascot
+   are clickable (to dismiss). Only ever mounted on a 3D dark layout. */
 .mascot-cameo {
   position: absolute;
-  bottom: 26px;
-  left: 50%;
-  transform: translateX(-50%);
+  width: 0;
+  height: 0;
   z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: 6px;
   pointer-events: none;
-  animation: mascot-cameo-in 520ms cubic-bezier(0.2, 0.9, 0.3, 1);
+  animation: mascot-cameo-in 460ms ease;
 }
 .mascot-cameo--leaving {
   animation: mascot-cameo-out 500ms ease forwards;
 }
+.mascot-cameo__video {
+  pointer-events: auto;
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 152px;
+  width: auto;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  filter: drop-shadow(0 6px 18px rgba(120, 110, 255, 0.3));
+}
 .mascot-cameo__bubble {
   pointer-events: auto;
-  position: relative;
-  max-width: 260px;
+  position: absolute;
+  top: 0;
+  right: 120px;
+  transform: translateY(-50%);
+  width: max-content;
+  max-width: 250px;
   background: var(--bg-soft);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -2223,31 +2236,20 @@ hr {
 .mascot-cameo__dismiss:hover {
   color: var(--ink);
 }
-.mascot-cameo__video {
-  pointer-events: auto;
-  height: 152px;
-  width: auto;
-  cursor: pointer;
-  filter: drop-shadow(0 6px 16px rgba(120, 110, 255, 0.28));
-}
 @keyframes mascot-cameo-in {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(18px) scale(0.96);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0) scale(1);
   }
 }
 @keyframes mascot-cameo-out {
   to {
     opacity: 0;
-    transform: translateX(-50%) translateY(12px) scale(0.97);
   }
 }
-/* Hidden in fullscreen (like the other overlays) and on very narrow screens
-   where the graph itself is too small to host it. */
+/* Hidden in fullscreen (like the other overlays) and on very narrow screens. */
 .graph-fullscreen .mascot-cameo {
   display: none;
 }

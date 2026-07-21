@@ -3037,6 +3037,76 @@ export class GraphScene {
     return this.camera.position.clone();
   }
 
+  // ── Mascot planet cameo anchor ─────────────────────────────────────────
+  // The MYCO cameo is a DOM element (reliable video alpha) but it must read as
+  // a PLANET embedded in the 3D cosmos: sized by perspective, parallaxing when
+  // the camera orbits. So the React layer anchors it to a WORLD point and asks
+  // the scene to project that point to screen every frame. Only meaningful on a
+  // 3D layout (a flat 2D chart has no depth for a planet to sit in).
+
+  /** Is the graph currently a 3D cosmos (vs a flat 2D chart)? The cameo planet
+   *  only belongs in the former. */
+  is3D(): boolean {
+    return !this.flatLayout;
+  }
+
+  /** The camera's framed distance — the cameo sizes the planet relative to it so
+   *  it reads the same on a small vault and a huge one. */
+  getFramedDist(): number {
+    return this.framedDist;
+  }
+
+  /** A world anchor for the cameo planet: in front of the orbit pivot and off to
+   *  the lower-right, at ~half the framed distance, so it drifts into frame like
+   *  a passing world sized to the current zoom. Plain object so React can hold
+   *  and drift it without importing three. */
+  mascotSpawnPoint(): { x: number; y: number; z: number } {
+    this.camera.updateMatrixWorld();
+    const target = this.controls.target;
+    const fwd = this.camera.getWorldDirection(new THREE.Vector3());
+    const right = new THREE.Vector3()
+      .crossVectors(fwd, this.camera.up)
+      .normalize();
+    const up = this.camera.up.clone().normalize();
+    const d = Math.max(200, this.framedDist * 0.5);
+    const p = target
+      .clone()
+      .addScaledVector(fwd, d * 0.18)
+      .addScaledVector(right, d * 0.5)
+      .addScaledVector(up, -d * 0.24);
+    return { x: p.x, y: p.y, z: p.z };
+  }
+
+  /** Project a world point to canvas pixels + a perspective scale (pixels per
+   *  world unit at that depth), so the DOM planet can be sized like a real
+   *  object. `visible` is false when it is behind the camera or well off-frame. */
+  projectPoint(p: { x: number; y: number; z: number }): {
+    sx: number;
+    sy: number;
+    pxPerWorld: number;
+    visible: boolean;
+  } {
+    this.camera.updateMatrixWorld();
+    const el = this.renderer.domElement;
+    const w = el.clientWidth || 1;
+    const h = el.clientHeight || 1;
+    const world = new THREE.Vector3(p.x, p.y, p.z);
+    const camSpace = world.clone().applyMatrix4(this.camera.matrixWorldInverse);
+    const dist = Math.max(1, -camSpace.z);
+    const ndc = world.project(this.camera); // mutates `world`
+    const sx = (ndc.x * 0.5 + 0.5) * w;
+    const sy = (-ndc.y * 0.5 + 0.5) * h;
+    const fov = (this.camera.fov * Math.PI) / 180;
+    const pxPerWorld = h / (2 * dist * Math.tan(fov / 2));
+    const visible =
+      camSpace.z < -1e-3 &&
+      sx > -300 &&
+      sx < w + 300 &&
+      sy > -300 &&
+      sy < h + 300;
+    return { sx, sy, pxPerWorld, visible };
+  }
+
   /** The orbit pivot. Symmetric with getCameraPosition; used by the dev harness
    *  to observe the eased retarget. */
   getOrbitTarget(): THREE.Vector3 {

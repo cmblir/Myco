@@ -70,6 +70,10 @@ import { isComposingKey } from "../lib/ime";
 // "hot" stars rather than UI chrome.
 const PULSE_MS = 900;
 
+// The flat 2D chart layouts — a floating planet mascot has no depth to sit in
+// there, so the cameo is gated to the 3D cosmos layouts (everything else).
+const FLAT_LAYOUTS = new Set<GraphSettings["layout"]>(["atlas", "synapse", "strata"]);
+
 interface IngestGlow {
   /** absolute node id → was it written (vs only read) */
   tint: Map<string, boolean>;
@@ -1757,10 +1761,20 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 </p>
               </>
             ) : null}
-            {/* MYCO cameo: a rare, dismissible feature-tip visit over the graph
-                cosmos (not in the multiverse field, which has its own scene). */}
+            {/* MYCO cameo: a rare, dismissible feature-tip visit — MYCO drifts
+                through the cosmos AS a planet. Belongs to the 3D dark cosmos
+                only (a floating planet over a flat 2D chart or light paper is
+                incongruous), and never in the multiverse field. */}
             {!showMultiverse && counts.nodes > 0 ? (
-              <MascotCameo enabled={settings.mascotCameo} t={t} />
+              <MascotCameo
+                active={
+                  settings.mascotCameo &&
+                  !lightBg &&
+                  !FLAT_LAYOUTS.has(settings.layout)
+                }
+                sceneRef={sceneRef}
+                t={t}
+              />
             ) : null}
             {/* Loading state: visible until .graph-ready lands on the canvas
                 (adjacent-sibling CSS — no extra React state). */}
