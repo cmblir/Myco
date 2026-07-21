@@ -36,6 +36,7 @@ const FRAG = /* glsl */ `
 precision highp float;
 uniform vec3 u_color;
 uniform float u_opacity;
+uniform float u_density; // 0..1 — how full this universe is, vs its siblings
 varying vec3 v_normal;
 varying vec3 v_viewDir;
 void main() {
@@ -45,7 +46,11 @@ void main() {
   float rim = pow(f, 2.8);
   // Almost all the alpha lives at the rim; the face is barely tinted so the
   // stars inside read clearly instead of being washed in the bubble's colour.
-  float a = (rim * 0.95 + 0.015) * u_opacity;
+  // Density modulates the membrane like an X-ray halo: a full universe glows
+  // brighter at the rim and carries a faint inner haze, an empty one is a thin
+  // soap film — the field reads "which of these worlds has the mass" at a
+  // glance, before any label.
+  float a = (rim * (0.65 + 0.55 * u_density) + 0.015 + 0.025 * u_density) * u_opacity;
   gl_FragColor = vec4(u_color, a);
 }
 `;
@@ -115,6 +120,9 @@ export class UniverseBubbleLayer {
 
     this.unitGeom = new THREE.SphereGeometry(1, 48, 32);
     const col = new THREE.Color();
+    // Density (vs the fullest sibling), sqrt-compressed so a 10k-note vault
+    // doesn't flatten every 100-note one to zero glow.
+    const maxN = Math.max(1, ...[...sum.values()].map((s) => s.n));
     // Sort for a deterministic rank → deterministic colours across reloads.
     const slugs = [...centre.keys()].sort();
     slugs.forEach((slug, rank) => {
@@ -128,6 +136,7 @@ export class UniverseBubbleLayer {
         uniforms: {
           u_color: { value: new THREE.Vector3(col.r, col.g, col.b) },
           u_opacity: { value: opacity },
+          u_density: { value: Math.sqrt((sum.get(slug)?.n ?? 0) / maxN) },
         },
         vertexShader: VERT,
         fragmentShader: FRAG,
