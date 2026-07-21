@@ -391,6 +391,7 @@ attribute float a_hit; // 1 = current search match (pulse-in-phase highlight)
 attribute float a_spawn; // condensation intro: per-node birth delay (s)
 attribute float a_sel; // 1 = the inspector-selected node (anamorphic streak)
 uniform float u_spawnClock; // intro clock (s); <0 = intro off, all stars full
+uniform float u_birthMode; // 0 = condensation (fly-in), 1 = live-ingest birth (grow in place)
 uniform float u_dofAmp; // depth-of-field strength; 0 = off (pin-sharp field)
 uniform float u_focusDist; // camera distance of the focal plane (orbit target)
 uniform float u_pixelRatio;
@@ -433,7 +434,10 @@ void main() {
     ? 1.0
     : clamp((u_spawnClock - a_spawn) / 0.9, 0.0, 1.0);
   float birthE = 1.0 - pow(1.0 - birth, 3.0); // easeOutCubic
-  if (birthE < 1.0) {
+  // Condensation intro (u_birthMode 0) flies each star in from a small offset.
+  // Live-ingest BIRTH (u_birthMode 1) leaves position alone — a node budded off
+  // its cluster must grow IN PLACE, not streak in from the far field.
+  if (birthE < 1.0 && u_birthMode < 0.5) {
     vec3 dir = normalize(
       vec3(sin(position.x * 12.9898), cos(position.y * 78.233), sin(position.z * 37.719)) +
       vec3(1e-4));
@@ -1198,6 +1202,7 @@ export class GraphScene {
         u_recency: { value: settings.recencyGlow ? 1 : 0 },
         u_searchOn: { value: 0 },
         u_spawnClock: { value: -1 },
+        u_birthMode: { value: 0 },
         u_flat: { value: settings.skin === "sigma" ? 1 : 0 },
         u_saturate: { value: settings.skin === "sigma" ? 1.45 : 1 },
         u_flare: { value: settings.cinematic ? 1 : 0 },
@@ -1763,6 +1768,32 @@ export class GraphScene {
   playCondensation(): void {
     if (this.reducedMotion) return;
     this.writeSpawnDelays();
+    this.nodeMat.uniforms.u_birthMode.value = 0; // condensation flies stars in
+    this.spawnClock = 0;
+    this.nodeMat.uniforms.u_spawnClock.value = 0;
+  }
+
+  /** Live-ingest BIRTH: the given ids (nodes just added by a running ingest)
+   * grow in from nothing at their positions while everything else stays put —
+   * the graph visibly SPROUTS the notes the run is writing. Reuses the spawn
+   * clock but in "grow in place" mode (no fly-in offset). No-op under reduced
+   * motion (the newcomers still appear, just without the animation). */
+  playBirth(newIds: Set<string>): void {
+    if (this.reducedMotion || newIds.size === 0) return;
+    const spawn = this.nodeGeom.getAttribute("a_spawn") as THREE.BufferAttribute;
+    let anyNew = false;
+    for (let i = 0; i < this.nodeIds.length; i++) {
+      if (newIds.has(this.nodeIds[i])) {
+        // Born now, lightly staggered so a batch shimmers in rather than snaps.
+        spawn.setX(i, GraphScene.starRand(i * 7 + 3) * 0.6);
+        anyNew = true;
+      } else {
+        spawn.setX(i, -100); // already full — untouched by the clock
+      }
+    }
+    if (!anyNew) return;
+    spawn.needsUpdate = true;
+    this.nodeMat.uniforms.u_birthMode.value = 1; // grow in place, no fly-in
     this.spawnClock = 0;
     this.nodeMat.uniforms.u_spawnClock.value = 0;
   }

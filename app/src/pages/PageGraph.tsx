@@ -1280,6 +1280,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       syncSwirl(); // liveAdd reheats — adopt swirled positions first
       sim.liveAdd([...newIdSet], addedEdges);
       scene.rebuild();
+      // Birth motion: the just-added notes grow in from nothing at their spots
+      // (the ingest gold-glow tint rides on top via pushStyle) — the galaxy
+      // visibly sprouts what the run is writing.
+      if (newIdSet.size > 0) scene.playBirth(newIdSet);
       pushStyle();
       setCounts({ nodes: g.order, edges: g.size });
     };
