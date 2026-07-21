@@ -220,6 +220,8 @@ export interface Strings {
   gr_vibe_paper_desc?: string;
   gr_vibe_chronicle_desc?: string;
   gr_vibe_nebula_desc?: string;
+  gr_vibe_walrus?: string;
+  gr_vibe_walrus_desc?: string;
   gr_looks?: string;
   gr_appearance?: string;
   gr_motion_fx?: string;
@@ -954,6 +956,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_paper_desc: "A print-like territory map on white paper",
     gr_vibe_chronicle_desc: "Time strata — the vault read as history",
     gr_vibe_nebula_desc: "Notes clustered by meaning (embeddings)",
+    gr_vibe_walrus: "Walrus tree",
+    gr_vibe_walrus_desc: "A hyperbolic spanning tree in a sphere (CAIDA Walrus)",
     gr_looks: "Looks",
     gr_appearance: "Appearance",
     gr_motion_fx: "Motion & effects",
@@ -1699,6 +1703,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_paper_desc: "흰 종이 위 인쇄물 같은 영역 지도",
     gr_vibe_chronicle_desc: "시간 지층 — 볼트를 역사로 읽기",
     gr_vibe_nebula_desc: "의미(임베딩)로 군집된 노트",
+    gr_vibe_walrus: "월러스 트리",
+    gr_vibe_walrus_desc: "구 안의 하이퍼볼릭 스패닝 트리 (CAIDA Walrus)",
     gr_looks: "룩",
     gr_appearance: "외형",
     gr_motion_fx: "모션·효과",
@@ -2386,6 +2392,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_paper_desc: "白い紙の印刷物のような領域地図",
     gr_vibe_chronicle_desc: "時間の地層 — ボルトを歴史として読む",
     gr_vibe_nebula_desc: "意味(埋め込み)でクラスタ化されたノート",
+    gr_vibe_walrus: "ウォルラスツリー",
+    gr_vibe_walrus_desc: "球体内の双曲スパニングツリー (CAIDA Walrus)",
     gr_looks: "ルック",
     gr_appearance: "外観",
     gr_motion_fx: "モーション・効果",

@@ -437,7 +437,8 @@ export type VibeKey =
   | "planetarium"
   | "paper"
   | "chronicle"
-  | "nebula";
+  | "nebula"
+  | "walrus";
 
 export const VIBE_PRESETS: Record<VibeKey, Partial<GraphSettings>> = {
   // The default identity: the living galaxy.
@@ -472,6 +473,11 @@ export const VIBE_PRESETS: Record<VibeKey, Partial<GraphSettings>> = {
   // all. "galaxy" turns on the living-nebula atmo field + starfield so the
   // meaning-clusters read as luminous clouds on a clean dark cosmos.
   nebula: { skin: "galaxy", layout: "semantic", ...LAYOUT_RECOMMENDED.semantic },
+  // The CAIDA Walrus: a hyperbolic spanning tree filling a boundary sphere.
+  // Rides the galaxy skin for a clean dark cosmos (the black skin's AgX haze
+  // muddies the void the tree needs) — the tree spokes and boundary sphere are
+  // the picture, so structural grey edges and no nebula-competing extras.
+  walrus: { skin: "galaxy", layout: "walrus", ...LAYOUT_RECOMMENDED.walrus },
 };
 
 // Which preset (if any) the current force values correspond to — drives the

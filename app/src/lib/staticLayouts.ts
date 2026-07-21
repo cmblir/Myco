@@ -399,11 +399,11 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
   const n = g.order;
   if (n === 0) return;
   const golden = Math.PI * (3 - Math.sqrt(5));
-  const DECAY = 0.58; // firework-step shrink per depth: tight so a subtree stays
-  // a COMPACT burst instead of a diffuse cloud that merges with its neighbours
-  const ROOT_SPOKE = 0.62; // long root→child spokes reaching toward the shell —
-  // the CAIDA look is distinct fireworks at the ends of long central spokes
-  const BURST = 0.15; // the first firework step (depth 1); decays by DECAY after
+  const DECAY = 0.64; // radial-step shrink per depth. The step is measured from
+  // ORIGIN (r(d) = R·(1−DECAY^d)), so fireworks land at MANY radii — 0.36R,
+  // 0.59R, 0.74R… — filling the ball. A "long root spoke" instead shoved every
+  // first-level branch onto one shell, hollowing the centre on vaults whose hub
+  // has few big branches (the broken ring look).
   const CONE = 1.0; // fallback cone half-angle when a node has no allocated share
 
   // Degree lookup (attribute, falling back to live degree) for hub selection.
@@ -509,9 +509,10 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
     const kids = children.get(v) ?? [];
     if (kids.length === 0) continue;
     const d = depth.get(v) ?? 0;
-    // Long spokes off the root, compact bursts everywhere deeper → distinct
-    // fireworks at the spoke ends rather than one uniform dandelion ball.
-    const step = d === 0 ? ROOT_SPOKE : BURST * Math.pow(DECAY, d - 1);
+    // Radial increment from parent = r(d+1) − r(d) with r(d)=1−DECAY^d, so the
+    // cumulative distance from origin converges toward the boundary and each
+    // depth lands at its own radius → the ball fills evenly, no hollow shell.
+    const step = Math.pow(DECAY, d) * (1 - DECAY);
     const H = coneHalf.get(v) ?? CONE;
     const [px, py, pz] = pos.get(v)!;
     const a = axis.get(v)!;

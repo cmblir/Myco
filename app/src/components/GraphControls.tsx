@@ -50,6 +50,7 @@ function vibeMeta(t: Strings): { key: VibeKey; label: string; desc: string }[] {
     { key: "paper", label: t.gr_vibe_paper ?? "Paper atlas", desc: t.gr_vibe_paper_desc ?? "A print-like territory map on white paper" },
     { key: "chronicle", label: t.gr_vibe_chronicle ?? "Chronicle", desc: t.gr_vibe_chronicle_desc ?? "Time strata — the vault read as history" },
     { key: "nebula", label: t.gr_vibe_nebula ?? "Meaning nebula", desc: t.gr_vibe_nebula_desc ?? "Notes clustered by meaning (embeddings)" },
+    { key: "walrus", label: t.gr_vibe_walrus ?? "Walrus tree", desc: t.gr_vibe_walrus_desc ?? "A hyperbolic spanning tree in a sphere (CAIDA Walrus)" },
   ];
 }
 
