@@ -40,6 +40,7 @@ import { analyzeGaps, clusterBridges, gapCount, type ClusterBridge } from "../li
 import { setQueryPrefill } from "../lib/queryPrefill";
 import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
 import { applyAtlasLayout } from "../lib/atlasLayout";
+import { applySpiralLayout, applyStrataLayout } from "../lib/staticLayouts";
 import { ATLAS_RADIUS_MUL } from "../lib/layoutConfig";
 import type { LayoutMetrics } from "../lib/layoutMetrics";
 import { makeTheme } from "../lib/graphTheme";
@@ -701,6 +702,36 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // as bright cores joined by nerve-fibre bridges. Both run the same sliced
     // FA2 pipeline; only the force tuning + edge rendering differ. Everything
     // downstream guards on simRef being null.
+    // Pure-math static layouts (spiral galaxy / time strata): positions are a
+    // deterministic O(n log n) function of the built graph — no FA2 slices, no
+    // worker sim. Compute, bake, reveal in one fit.
+    if (s.layout === "spiral" || s.layout === "strata") {
+      const radius = s.linkDistance * ATLAS_RADIUS_MUL;
+      if (s.layout === "spiral") {
+        applySpiralLayout(graph, { targetRadius: radius * 1.3 });
+      } else {
+        applyStrataLayout(graph, { mtimes, targetRadius: radius * 1.2 });
+      }
+      scene.syncPositions();
+      scene.layoutSettled();
+      scene.fit();
+      introPlayed = true;
+      container.classList.add("graph-ready");
+      return () => {
+        killed = true;
+        if (tlRafRef.current != null) {
+          cancelAnimationFrame(tlRafRef.current);
+          tlRafRef.current = null;
+        }
+        stopTlRecorder();
+        setTlPlaying(false);
+        scene.dispose();
+        sceneRef.current = null;
+        graphRef.current = null;
+        container.classList.remove("graph-ready");
+      };
+    }
+
     if (s.layout === "atlas" || s.layout === "synapse") {
       // FA2 runs in event-loop slices (see atlasLayout.ts freeze postmortem):
       // the map visibly unfolds as it converges, the UI stays interactive the

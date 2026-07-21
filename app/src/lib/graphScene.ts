@@ -623,11 +623,12 @@ export class GraphScene {
   private hulls: CommunityHullLayer; // atlas-mode translucent community fills
   private bundles: EdgeBundleLayer; // bundled inter-community strands (GRAPH-01)
   private atlasMode = false; // static 2D ForceAtlas2 layout (no sim, flat)
+  private strataMode = false; // static 2D time-strata chart (no sim, flat)
   private synapse2dMode = false; // static 2D nervous-system layout (spread + fibres)
   private synapse3dMode = false; // nervous-system RENDER over the live 3D sim
   // Either static 2D layout is flat: top-down camera lock, flat bg, no galaxy FX.
   private get flatLayout(): boolean {
-    return this.atlasMode || this.synapse2dMode;
+    return this.atlasMode || this.synapse2dMode || this.strataMode;
   }
   // Nervous-system rendering (nerve-fibre edges + rapid firing) — both the 2D
   // and the 3D synapse layouts.
@@ -728,6 +729,11 @@ export class GraphScene {
     // Set the layout flags EARLY: buildStarfield + fog + camera setup all
     // branch on them and run before the hull/atlas block further down.
     this.atlasMode = settings.layout === "atlas";
+    // Strata is a 2D time chart — same top-down camera lock and flat-map
+    // treatment as atlas, but WITHOUT the community hull fills (a community
+    // stretched across the whole time axis would paint one huge balloon).
+    // Spiral stays a full-3D orbit (a disc with a bulge; the tilt is the point).
+    this.strataMode = settings.layout === "strata";
     this.synapse2dMode = settings.layout === "synapse";
     this.synapse3dMode = settings.layout === "synapse3d";
     this.appliedEdgeTint = settings.edgeTint;

@@ -34,7 +34,10 @@ export interface GraphSettings {
   // bridges; "synapse3d" = the same nervous-system RENDERING (nerve fibres +
   // rapid firing) but over the live 3D force sim, so you can orbit and fly
   // through it.
-  layout: "galaxy" | "atlas" | "synapse" | "synapse3d";
+  // "spiral" = a static log-spiral galaxy (the cosmic-refs Andromeda/M101
+  // form): communities along the arms, biggest at the core. "strata" = a
+  // static 2D time chart: x = last-modified (oldest left), y = community band.
+  layout: "galaxy" | "atlas" | "synapse" | "synapse3d" | "spiral" | "strata";
   // Multiverse mode: instead of this one vault, show EVERY registered project
   // as its own glowing universe-bubble in one shared cosmos. Fly into a bubble
   // to switch the active vault (which turns this back off, landing you in that
@@ -297,6 +300,21 @@ export const LAYOUT_RECOMMENDED: Record<
     neuralFiring: true,
     clickBurst: true,
     cosmicEvents: false,
+  },
+  // Static layouts ignore the force sliders entirely; the recommendations only
+  // pick the rendering that reads best on each form.
+  spiral: {
+    folderGalaxies: false,
+    edgeTint: "grey",
+    edgeBundles: false,
+    cosmicEvents: false,
+  },
+  strata: {
+    folderGalaxies: false,
+    edgeTint: "community",
+    edgeBundles: false,
+    cosmicEvents: false,
+    arrows: false,
   },
 };
 

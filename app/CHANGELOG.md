@@ -26,6 +26,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **Two new layouts: Spiral galaxy and Timeline.** "Spiral galaxy" lays the
+  vault along the arms of a log-spiral — whole topics stretch contiguously
+  along an arm, the biggest anchors the core bulge, and a tilt shows a real
+  galactic disc (the Andromeda/M101 form the design references always wanted).
+  "Timeline (2D)" charts the vault as time strata: left→right is when each
+  note was last touched, each topic gets its own horizontal band — reading the
+  chart IS the history of the vault. Files with no known date pin to a thin
+  "before memory" column at the far left. Both are instant and deterministic —
+  no simulation, the same vault always draws the same picture.
+
 - **The galaxy condenses into being.** Opening the Graph now births the vault:
   stars ease in from a small drift, cluster after cluster, like a nebula
   condensing — once per visit, never on filter changes, and skipped entirely

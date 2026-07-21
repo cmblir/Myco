@@ -238,6 +238,8 @@ export default function GraphControls({
                 ["atlas", t.gr_layout_atlas ?? "Atlas (2D)"],
                 ["synapse", t.gr_layout_synapse ?? "Synapse (2D)"],
                 ["synapse3d", t.gr_layout_synapse3d ?? "Synapse (3D)"],
+                ["spiral", t.gr_layout_spiral ?? "Spiral galaxy"],
+                ["strata", t.gr_layout_strata ?? "Timeline (2D)"],
               ] as [GraphSettings["layout"], string][]
             ).map(([key, label]) => (
               <button

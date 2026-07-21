@@ -195,6 +195,8 @@ export interface Strings {
   gr_recency_hint?: string;
   gr_minimap?: string;
   gr_minimap_hint?: string;
+  gr_layout_spiral?: string;
+  gr_layout_strata?: string;
   gr_galaxies?: string;
   gr_galaxies_hint?: string;
   gr_multiverse?: string;
@@ -872,6 +874,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_recency_hint: "Recently edited notes burn hotter",
     gr_minimap: "Minimap",
     gr_minimap_hint: "Corner chart of the whole galaxy; click to fly",
+    gr_layout_spiral: "Spiral galaxy",
+    gr_layout_strata: "Timeline (2D)",
     gr_galaxies: "Folder galaxies",
     gr_galaxies_hint: "Split the vault into one slowly rotating galaxy per folder",
     gr_multiverse: "Multiverse",
@@ -1559,6 +1563,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_recency_hint: "최근 수정한 노트가 더 뜨겁게 빛납니다",
     gr_minimap: "미니맵",
     gr_minimap_hint: "은하 전체 차트 — 클릭하면 그 지점으로 이동",
+    gr_layout_spiral: "나선 은하",
+    gr_layout_strata: "시간 지층 (2D)",
     gr_galaxies: "폴더 은하계",
     gr_galaxies_hint: "폴더마다 하나씩, 천천히 자전하는 은하계로 분리",
     gr_multiverse: "멀티버스",
@@ -2188,6 +2194,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_recency_hint: "最近編集したノートほど熱く光ります",
     gr_minimap: "ミニマップ",
     gr_minimap_hint: "銀河全体のチャート — クリックでその地点へ",
+    gr_layout_spiral: "渦巻銀河",
+    gr_layout_strata: "時間地層 (2D)",
     gr_galaxies: "フォルダー銀河",
     gr_galaxies_hint: "フォルダーごとにゆっくり自転する銀河へ分割",
     gr_multiverse: "マルチバース",
