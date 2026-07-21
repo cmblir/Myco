@@ -26,6 +26,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **A galaxy chart in the corner.** A minimap inset shows the whole graph from
+  above with a marker for where you are and which way you're facing — and
+  clicking anywhere on the chart flies the view there. The antidote to getting
+  lost in free 3D flight; toggle under Graph settings.
+
+- **Universe bubbles now show their mass.** In the multiverse, a vault packed
+  with notes glows with a brighter membrane and a faint inner haze, while a
+  near-empty one stays a thin soap film — which world has the substance reads at
+  a glance, before any label.
+
 - **The galaxy never freezes.** Once the layout settles, every star drifts
   through a frozen curl field — circulating locally without ever migrating, so
   positions stay readable while the sky stays alive. Sub-pixel by design, stilled

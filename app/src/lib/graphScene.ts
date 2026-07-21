@@ -989,6 +989,8 @@ export class GraphScene {
     this.scene.add(this.edges);
     // Cosmic-web skin: edges render as an accumulated density field instead.
     this.ensureEdgeDensity(this.webSkin);
+    // Galaxy chart minimap (corner inset + click-to-fly).
+    this.setMinimap(settings.minimap);
 
     // --- filament focus/path layer (lit only on hover / shortest path) ---
     this.buildFilaments();
@@ -2225,6 +2227,205 @@ export class GraphScene {
     this.overlayTick = fn;
   }
 
+  // ── Galaxy chart minimap ──────────────────────────────────────────────
+  // A corner inset rendering the WHOLE graph straight-on from far out, with a
+  // marker for the main camera — the fix for "I flew somewhere and now I'm
+  // lost". Same scene, second orthographic camera, scissored viewport after
+  // the main composite; ambient backdrops (starfield/grid/density quad/meteors)
+  // hide during the pass so the chart stays a clean map. Click-to-fly: a click
+  // inside the inset retargets the orbit pivot to that world point.
+  private minimapOn = false;
+  private minimapCam: THREE.OrthographicCamera | null = null;
+  private minimapMarker: THREE.Group | null = null;
+  private minimapMarkerLine: THREE.Line | null = null;
+  private minimapBounds = { cx: 0, cy: 0, cz: 0, r: 1 };
+  private minimapBoundsTick = 0;
+  private static readonly MINIMAP_MARGIN = 12;
+
+  setMinimap(on: boolean): void {
+    this.minimapOn = on;
+    if (on && !this.minimapCam) {
+      this.minimapCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100000);
+      const dot = new THREE.Points(
+        new THREE.BufferGeometry().setAttribute(
+          "position",
+          new THREE.BufferAttribute(new Float32Array(3), 3),
+        ),
+        new THREE.PointsMaterial({
+          color: 0xff5a3d,
+          size: 7,
+          sizeAttenuation: false,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      dot.frustumCulled = false;
+      const lineGeom = new THREE.BufferGeometry().setAttribute(
+        "position",
+        new THREE.BufferAttribute(new Float32Array(6), 3),
+      );
+      this.minimapMarkerLine = new THREE.Line(
+        lineGeom,
+        new THREE.LineBasicMaterial({
+          color: 0xff5a3d,
+          transparent: true,
+          opacity: 0.8,
+          depthTest: false,
+          depthWrite: false,
+        }),
+      );
+      this.minimapMarkerLine.frustumCulled = false;
+      this.minimapMarker = new THREE.Group();
+      this.minimapMarker.add(dot, this.minimapMarkerLine);
+      this.minimapMarker.visible = false; // only during the minimap pass
+      this.minimapMarker.renderOrder = 999;
+      this.scene.add(this.minimapMarker);
+    } else if (!on && this.minimapCam) {
+      if (this.minimapMarker) {
+        this.scene.remove(this.minimapMarker);
+        this.minimapMarker.traverse((o) => {
+          const m = o as THREE.Mesh;
+          (m.geometry as THREE.BufferGeometry | undefined)?.dispose?.();
+          (m.material as THREE.Material | undefined)?.dispose?.();
+        });
+        this.minimapMarker = null;
+        this.minimapMarkerLine = null;
+      }
+      this.minimapCam = null;
+    }
+  }
+
+  /** Inset rect in CSS px (top-left origin), or null when hidden/too small. */
+  private minimapRect(): { x: number; y: number; size: number } | null {
+    if (!this.minimapOn) return null;
+    const el = this.renderer.domElement;
+    const w = el.clientWidth;
+    const h = el.clientHeight;
+    const size = Math.min(190, Math.floor(Math.min(w, h) * 0.24));
+    if (size < 80) return null; // too cramped to be a useful chart
+    const m = GraphScene.MINIMAP_MARGIN;
+    return { x: w - size - m, y: h - size - m, size };
+  }
+
+  private renderMinimap(): void {
+    const rect = this.minimapRect();
+    if (!rect || !this.minimapCam || this.nodeIds.length === 0) return;
+    // Refresh bounds every ~20 frames (O(n) over the position buffer).
+    if (this.minimapBoundsTick-- <= 0) {
+      this.minimapBoundsTick = 20;
+      const pos = this.nodeGeom.getAttribute("position") as THREE.BufferAttribute;
+      let cx = 0;
+      let cy = 0;
+      let cz = 0;
+      const n = this.nodeIds.length;
+      for (let i = 0; i < n; i++) {
+        cx += pos.getX(i);
+        cy += pos.getY(i);
+        cz += pos.getZ(i);
+      }
+      cx /= n;
+      cy /= n;
+      cz /= n;
+      let r2 = 1;
+      for (let i = 0; i < n; i++) {
+        const dx = pos.getX(i) - cx;
+        const dy = pos.getY(i) - cy;
+        r2 = Math.max(r2, dx * dx + dy * dy);
+      }
+      this.minimapBounds = { cx, cy, cz, r: Math.sqrt(r2) };
+    }
+    const b = this.minimapBounds;
+    const half = b.r * 1.15;
+    const cam = this.minimapCam;
+    cam.left = -half;
+    cam.right = half;
+    cam.top = half;
+    cam.bottom = -half;
+    cam.position.set(b.cx, b.cy, b.cz + b.r * 3 + 100);
+    cam.near = 0.1;
+    cam.far = b.r * 8 + 1000;
+    cam.lookAt(b.cx, b.cy, b.cz);
+    cam.updateProjectionMatrix();
+    // Camera marker: where the pilot is, and which way they face.
+    if (this.minimapMarker && this.minimapMarkerLine) {
+      this.minimapMarker.visible = true;
+      this.minimapMarker.position.copy(this.camera.position);
+      const dir = this.camera.getWorldDirection(this.tmpVec);
+      const lp = this.minimapMarkerLine.geometry.getAttribute(
+        "position",
+      ) as THREE.BufferAttribute;
+      lp.setXYZ(0, 0, 0, 0);
+      lp.setXYZ(1, dir.x * b.r * 0.22, dir.y * b.r * 0.22, dir.z * b.r * 0.22);
+      lp.needsUpdate = true;
+    }
+    // Backdrops off — the chart is nodes/edges/bubbles only.
+    const sf = this.starfield.visible;
+    const gb = this.gridBackdrop?.visible ?? false;
+    const dq = this.edgeDensity?.quad.visible ?? false;
+    const mt = this.meteor.lines.visible;
+    this.starfield.visible = false;
+    if (this.gridBackdrop) this.gridBackdrop.visible = false;
+    if (this.edgeDensity) this.edgeDensity.quad.visible = false;
+    this.meteor.lines.visible = false;
+
+    const r = this.renderer;
+    const el = r.domElement;
+    const h = el.clientHeight;
+    // GL viewport origin is bottom-left.
+    const vx = rect.x;
+    const vy = h - rect.y - rect.size;
+    const prevAuto = r.autoClear;
+    r.autoClear = false;
+    r.setScissorTest(true);
+    r.setViewport(vx, vy, rect.size, rect.size);
+    r.setScissor(vx, vy, rect.size, rect.size);
+    const bg = this.scene.background;
+    r.setClearColor(this.darkTheme ? 0x05070f : 0xf2f3f7, 1);
+    this.scene.background = null;
+    r.clear(true, true, false);
+    r.render(this.scene, cam);
+    this.scene.background = bg;
+    r.setScissorTest(false);
+    r.setViewport(0, 0, el.clientWidth, h);
+    r.autoClear = prevAuto;
+
+    if (this.minimapMarker) this.minimapMarker.visible = false;
+    this.starfield.visible = sf;
+    if (this.gridBackdrop) this.gridBackdrop.visible = gb;
+    if (this.edgeDensity) this.edgeDensity.quad.visible = dq;
+    this.meteor.lines.visible = mt;
+  }
+
+  /** If the pointer is inside the minimap, retarget the orbit pivot to the
+   * clicked world point (click-to-fly) and swallow the event. */
+  private minimapClick(e: PointerEvent): boolean {
+    const rect = this.minimapRect();
+    if (!rect) return false;
+    const el = this.renderer.domElement;
+    const bounds = el.getBoundingClientRect();
+    const px = e.clientX - bounds.left;
+    const py = e.clientY - bounds.top;
+    if (px < rect.x || px > rect.x + rect.size || py < rect.y || py > rect.y + rect.size) {
+      return false;
+    }
+    const b = this.minimapBounds;
+    const half = b.r * 1.15;
+    const u = (px - rect.x) / rect.size;
+    const v = (py - rect.y) / rect.size;
+    const to = new THREE.Vector3(
+      b.cx + (u - 0.5) * 2 * half,
+      b.cy + (0.5 - v) * 2 * half,
+      b.cz,
+    );
+    this.targetTween = {
+      t: 0,
+      dur: 0.85,
+      from: this.controls.target.clone(),
+      to,
+    };
+    return true;
+  }
+
   // Edge-density field (cosmic-web skin): edges splat into an offscreen HDR
   // accumulator and composite through a density ramp; the plain edge lines hide
   // while it runs (hover/path feedback lives on the filament overlay).
@@ -2684,6 +2885,7 @@ export class GraphScene {
     );
     this.nodeMat.uniforms.u_colorDepth.value = settings.nodeColorDepth;
     this.nodeMat.uniforms.u_recency.value = settings.recencyGlow ? 1 : 0;
+    this.setMinimap(settings.minimap);
     this.cosmic.setFrequency(settings.cosmicFrequency);
     // Sky style flip (star density / dotted grid / void) — rebuild the field.
     if (settings.skyStyle !== this.appliedSkyStyle) {
@@ -3190,6 +3392,7 @@ export class GraphScene {
       this.updateLabels();
       this.render();
       this.labelRenderer.render(this.scene, this.camera);
+      this.renderMinimap();
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
@@ -3217,6 +3420,7 @@ export class GraphScene {
       this.scene.remove(obj);
     }
     this.labels.clear();
+    this.setMinimap(false);
     if (this.edgeDensity) {
       this.scene.remove(this.edgeDensity.quad);
       this.edgeDensity.dispose();
@@ -3408,6 +3612,11 @@ export class GraphScene {
 
   private onPointerDown = (e: PointerEvent): void => {
     if (e.button !== 0) return;
+    // Minimap click-to-fly wins over drag/orbit/pick inside its inset.
+    if (this.minimapClick(e)) {
+      e.stopPropagation();
+      return;
+    }
     this.downAt = { x: e.clientX, y: e.clientY };
     if (this.flyMode) return; // no node-drag while flying; the ship steers
     const id = this.pickNode(e.clientX, e.clientY);

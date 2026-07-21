@@ -79,6 +79,9 @@ export interface GraphSettings {
   // Recency glow: recently edited notes burn a touch hotter, untouched ones
   // cool — the vault reads as a map of the owner's current attention.
   recencyGlow: boolean;
+  // Galaxy chart minimap: a corner inset of the whole graph with a marker for
+  // the camera — the antidote to getting lost in free 3D flight.
+  minimap: boolean;
   // Cosmic events (black hole / wormhole) on the dark skin — a separate opt-out
   // from ambientMotion because they're the most attention-grabbing FX.
   cosmicEvents: boolean;
@@ -138,6 +141,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   brightness: 0.9, // exposure headroom: the void stays black, only emitters survive
   ambientMotion: true,
   recencyGlow: true,
+  minimap: true,
   cosmicEvents: true,
   cosmicFrequency: 1,
   clickBurst: true,

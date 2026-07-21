@@ -485,6 +485,12 @@ export default function GraphControls({
           onChange={(v) => onChange({ recencyGlow: v })}
         />
         <Toggle
+          label={t.gr_minimap ?? "Minimap"}
+          hint={t.gr_minimap_hint ?? "Corner chart of the whole galaxy; click to fly"}
+          value={settings.minimap}
+          onChange={(v) => onChange({ minimap: v })}
+        />
+        <Toggle
           label={t.gr_cosmic ?? "Cosmic events"}
           hint={t.gr_cosmic_hint ?? "Black holes & wormholes (dark theme)"}
           value={settings.cosmicEvents}
