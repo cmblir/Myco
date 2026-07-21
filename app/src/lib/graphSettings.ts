@@ -266,7 +266,11 @@ export const LAYOUT_RECOMMENDED: Record<
     edgeTint: "grey",
     edgeBundles: false,
     nodeColor: "community",
-    nodeColorDepth: 1.5,
+    // Gamma touches the node DOTS only (u_colorDepth lives in NODE_FRAG; hull
+    // fills sample raw a.color and never respond to it). 1.4 keeps white-skin
+    // dot contrast without over-darkening the same map on the dark skin —
+    // 1.5 was tuned to a claim ("keeps the fills saturated") that isn't true.
+    nodeColorDepth: 1.4,
     cosmicEvents: false,
     clickBurst: false,
     neuralFiring: false,
@@ -283,6 +287,9 @@ export const LAYOUT_RECOMMENDED: Record<
     neuralFiring: true,
     clickBurst: true,
     cosmicEvents: false,
+    // Both 2D maps: hulls/ganglia come from Louvain communities, not the one
+    // dominant folder a real vault usually has.
+    folderGalaxies: false,
   },
   // Synapse 3D — the nervous system in space: ganglia float and separate (looser
   // forces + higher repulsion + folderGalaxies), nerve-fibre bridges + firing;
@@ -301,28 +308,58 @@ export const LAYOUT_RECOMMENDED: Record<
     clickBurst: true,
     cosmicEvents: false,
   },
-  // Static layouts ignore the force sliders entirely; the recommendations only
-  // pick the rendering that reads best on each form.
+  // The static layouts never run the worker sim, so the force tuple is
+  // deliberately absent (the FA2-purity rule: never write a value only OTHER
+  // layouts read). cosmicEvents stay off everywhere positions are baked — a
+  // wormhole would yank nodes with no sim to pull them home.
+  //
+  // Spiral — a 3D galactic disc whose ARMS are the topics (whole communities
+  // laid contiguously along each arm). Hue is what makes an arm read as one
+  // topic, so community colour is mandatory; depth 1.0 keeps the additive
+  // dark-3D glow luminous (same logic as galaxy). Grey edges: the arm shape
+  // already encodes topic adjacency, coloured edges would veil it. Firing off:
+  // a static disc is calm; life comes from drift/twinkle + the click supernova.
   spiral: {
     folderGalaxies: false,
     edgeTint: "grey",
     edgeBundles: false,
+    nodeColor: "community",
+    nodeColorDepth: 1,
+    neuralFiring: false,
     cosmicEvents: false,
   },
+  // Strata — a print-like 2D time chart (the atlas of WHEN): x is history,
+  // bands are topics. Family line for flat maps: colour lives in the node dots
+  // (community, deepened 1.3 so dots read on paper), edges stay grey tissue —
+  // coloured edges arcing across bands would double-encode topic AND fake
+  // temporal relations. All FX off: like atlas, its affordance is a still
+  // chart you can study; a supernova on a timeline is tonal noise.
   strata: {
     folderGalaxies: false,
-    edgeTint: "community",
+    edgeTint: "grey",
     edgeBundles: false,
+    nodeColor: "community",
+    nodeColorDepth: 1.3,
+    clickBurst: false,
+    neuralFiring: false,
     cosmicEvents: false,
     arrows: false,
   },
-  // Position IS semantic proximity here, so the similarity-edge overlay is
-  // redundant noise; wikilink edges stay to show explicit structure.
+  // Semantic map — position IS meaning, so the similarity-edge overlay is
+  // redundant by construction; wikilink edges stay (grey) as the explicit
+  // structure draped over meaning-space. Community hue on the dots is the
+  // interesting read: where link-communities DISAGREE with embedding
+  // neighbourhoods, the map shows it. Depth 1.4 like atlas (flat map on
+  // paper); static-chart FX policy applies.
   semantic: {
     folderGalaxies: false,
     edgeTint: "grey",
     edgeBundles: false,
     semanticEdges: false,
+    nodeColor: "community",
+    nodeColorDepth: 1.4,
+    clickBurst: false,
+    neuralFiring: false,
     cosmicEvents: false,
   },
 };

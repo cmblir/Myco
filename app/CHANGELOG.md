@@ -26,6 +26,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **Every layout now has research-grade recommended settings.** The ✦
+  Recommended button covers all seven layouts with a per-layout bundle tuned to
+  what each form actually reads by: the spiral keeps luminous community arms,
+  the timeline and semantic maps become still, print-like charts (all effects
+  off, deepened community dots), and two research-verified corrections landed —
+  the atlas no longer over-darkens its dots on the dark theme, and both 2D maps
+  now take their structure from topic communities rather than the one dominant
+  folder. Guard rails keep a layout's recommendation from silently changing a
+  different layout's tuned look.
+
 - **A Semantic map layout — the vault arranged by meaning.** Notes take their
   position from their embeddings (top-2 principal components of the local
   index), so pages about the same thing sit together even when no link joins
