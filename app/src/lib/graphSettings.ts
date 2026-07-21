@@ -37,7 +37,7 @@ export interface GraphSettings {
   // "spiral" = a static log-spiral galaxy (the cosmic-refs Andromeda/M101
   // form): communities along the arms, biggest at the core. "strata" = a
   // static 2D time chart: x = last-modified (oldest left), y = community band.
-  layout: "galaxy" | "atlas" | "synapse" | "synapse3d" | "spiral" | "strata" | "semantic" | "celestial" | "radial";
+  layout: "galaxy" | "atlas" | "synapse" | "synapse3d" | "spiral" | "strata" | "semantic" | "celestial" | "radial" | "walrus";
   // Multiverse mode: instead of this one vault, show EVERY registered project
   // as its own glowing universe-bubble in one shared cosmos. Fly into a bubble
   // to switch the active vault (which turns this back off, landing you in that
@@ -399,6 +399,20 @@ export const LAYOUT_RECOMMENDED: Record<
   // the ONE encoded meaning, so edges stay grey tissue and bundles stay off
   // (arcs would fake orbital relations). Baked → FX off.
   radial: {
+    folderGalaxies: false,
+    edgeTint: "grey",
+    edgeBundles: false,
+    nodeColor: "community",
+    nodeColorDepth: 1,
+    clickBurst: true,
+    neuralFiring: false,
+    cosmicEvents: false,
+  },
+  // Walrus hyperbolic tree: the spanning-tree spokes ARE the picture, so keep
+  // edges as plain grey structure (no bundling, no community-web wash) and pin
+  // the baked positions (cosmic events would yank the tree apart). Community
+  // colour lets each sub-burst read as its own topic.
+  walrus: {
     folderGalaxies: false,
     edgeTint: "grey",
     edgeBundles: false,

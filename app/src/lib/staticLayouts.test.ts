@@ -6,6 +6,7 @@ import {
   applyRadialLayout,
   applySpiralLayout,
   applyStrataLayout,
+  applyWalrusLayout,
 } from "./staticLayouts";
 
 function makeGraph(
@@ -221,5 +222,55 @@ describe("applyRadialLayout", () => {
     applyRadialLayout(g1, { targetRadius: 600 });
     applyRadialLayout(g2, { targetRadius: 600 });
     g1.forEachNode((id) => expect(pos(g1, id)).toEqual(pos(g2, id)));
+  });
+});
+
+describe("applyWalrusLayout", () => {
+  // A small tree: hub → 3 children, one of which has 2 grandchildren.
+  const build = (): VaultGraph => {
+    const g = makeGraph([
+      { id: "hub.md", community: 0, deg: 3 },
+      { id: "a.md", community: 0, deg: 2 },
+      { id: "b.md", community: 1, deg: 1 },
+      { id: "c.md", community: 1, deg: 1 },
+      { id: "a1.md", community: 0, deg: 1 },
+      { id: "a2.md", community: 0, deg: 1 },
+      { id: "lonely.md", community: -1, deg: 0 }, // disconnected
+    ]);
+    g.addEdge("hub.md", "a.md");
+    g.addEdge("hub.md", "b.md");
+    g.addEdge("hub.md", "c.md");
+    g.addEdge("a.md", "a1.md");
+    g.addEdge("a.md", "a2.md");
+    return g;
+  };
+
+  it("roots the busiest hub at the centre and gives every node a finite position", () => {
+    const g = build();
+    applyWalrusLayout(g, { targetRadius: 500 });
+    const hub = pos(g, "hub.md");
+    expect(Math.hypot(hub.x, hub.y, hub.z)).toBeLessThan(1); // root at origin
+    g.forEachNode((id) => {
+      const p = pos(g, id);
+      expect(Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)).toBe(true);
+    });
+  });
+
+  it("grows children outward — a grandchild sits farther from the root than its parent", () => {
+    const g = build();
+    applyWalrusLayout(g, { targetRadius: 500 });
+    const r = (id: string): number => {
+      const p = pos(g, id);
+      return Math.hypot(p.x, p.y, p.z);
+    };
+    expect(r("a.md")).toBeGreaterThan(r("hub.md"));
+    expect(r("a1.md")).toBeGreaterThan(r("a.md"));
+  });
+
+  it("places a disconnected component out on the boundary shell, not on the root", () => {
+    const g = build();
+    applyWalrusLayout(g, { targetRadius: 500 });
+    const p = pos(g, "lonely.md");
+    expect(Math.hypot(p.x, p.y, p.z)).toBeGreaterThan(100);
   });
 });

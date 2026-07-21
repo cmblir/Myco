@@ -201,6 +201,7 @@ export interface Strings {
   gr_semantic_missing?: string;
   gr_layout_celestial?: string;
   gr_layout_radial?: string;
+  gr_layout_walrus?: string;
   gr_skin_sigma?: string;
   gr_vibes?: string;
   gr_vibe_living?: string;
@@ -934,6 +935,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_semantic: "Semantic map",
     gr_layout_celestial: "Celestial sphere",
     gr_layout_radial: "Radial orbit",
+    gr_layout_walrus: "Walrus tree",
     gr_skin_sigma: "Sigma",
     gr_vibes: "One-tap looks",
     gr_vibe_living: "Living galaxy",
@@ -1678,6 +1680,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_semantic: "의미 지도",
     gr_layout_celestial: "천구 별자리",
     gr_layout_radial: "동심 궤도",
+    gr_layout_walrus: "월러스 트리",
     gr_skin_sigma: "시그마",
     gr_vibes: "원탭 룩",
     gr_vibe_living: "살아있는 은하",
@@ -2364,6 +2367,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_semantic: "意味マップ",
     gr_layout_celestial: "天球星座",
     gr_layout_radial: "同心軌道",
+    gr_layout_walrus: "ウォルラスツリー",
     gr_skin_sigma: "シグマ",
     gr_vibes: "ワンタップルック",
     gr_vibe_living: "生きた銀河",

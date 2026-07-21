@@ -360,6 +360,7 @@ export default function GraphControls({
             ["semantic", t.gr_layout_semantic ?? "Semantic map"],
             ["celestial", t.gr_layout_celestial ?? "Celestial sphere"],
             ["radial", t.gr_layout_radial ?? "Radial orbit"],
+            ["walrus", t.gr_layout_walrus ?? "Walrus tree"],
           ]}
         />
         <ChipRow

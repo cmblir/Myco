@@ -46,6 +46,7 @@ import {
   applyCelestialLayout,
   applyRadialLayout,
   applySpiralLayout,
+  applyWalrusLayout,
   applyStrataLayout,
 } from "../lib/staticLayouts";
 import { ATLAS_RADIUS_MUL } from "../lib/layoutConfig";
@@ -802,7 +803,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       s.layout === "spiral" ||
       s.layout === "strata" ||
       s.layout === "celestial" ||
-      s.layout === "radial"
+      s.layout === "radial" ||
+      s.layout === "walrus"
     ) {
       const radius = s.linkDistance * ATLAS_RADIUS_MUL;
       if (s.layout === "spiral") {
@@ -811,6 +813,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         applyCelestialLayout(graph, { targetRadius: radius * 1.1 });
       } else if (s.layout === "radial") {
         applyRadialLayout(graph, { targetRadius: radius * 1.2 });
+      } else if (s.layout === "walrus") {
+        applyWalrusLayout(graph, { targetRadius: radius * 1.25 });
       } else {
         // Chronicle: bake the time-strata positions AND draw the date axis
         // under them (the axis shares the layout's time→x mapping).

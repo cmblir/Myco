@@ -45,7 +45,7 @@ describe("saveLook", () => {
 // Recommend used to set clusterForce: 0.45; invisible on atlas, but it clobbered
 // the 0.35 galaxy is tuned to, so clicking Recommend on atlas and switching back
 // to galaxy silently changed galaxy's look.
-const STATIC_LAYOUTS = ["atlas", "synapse", "spiral", "strata", "semantic", "celestial", "radial"] as const;
+const STATIC_LAYOUTS = ["atlas", "synapse", "spiral", "strata", "semantic", "celestial", "radial", "walrus"] as const;
 const SIM_ONLY_FORCES = ["centerForce", "repelForce", "linkForce", "clusterForce"] as const;
 
 describe("LAYOUT_RECOMMENDED", () => {

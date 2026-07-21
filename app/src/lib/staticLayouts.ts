@@ -360,3 +360,167 @@ export function applyStrataLayout(g: VaultGraph, o: StrataOpts): StrataResult {
   const yPad = bandSpan / Math.max(2, bands) + R * 0.12;
   return { ticks, yTop: yMax + yPad, yBottom: -(yMax + yPad) };
 }
+
+export interface WalrusOpts {
+  targetRadius: number;
+}
+
+// An orthonormal pair perpendicular to unit vector `a` — the plane a child cone
+// spreads in. Picks the more stable of two cross products to avoid degeneracy.
+function perpBasis(a: [number, number, number]): [number[], number[]] {
+  const ref: [number, number, number] =
+    Math.abs(a[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  let ux = a[1] * ref[2] - a[2] * ref[1];
+  let uy = a[2] * ref[0] - a[0] * ref[2];
+  let uz = a[0] * ref[1] - a[1] * ref[0];
+  const ul = Math.hypot(ux, uy, uz) || 1;
+  ux /= ul;
+  uy /= ul;
+  uz /= ul;
+  const wx = a[1] * uz - a[2] * uy;
+  const wy = a[2] * ux - a[0] * uz;
+  const wz = a[0] * uy - a[1] * ux;
+  return [
+    [ux, uy, uz],
+    [wx, wy, wz],
+  ];
+}
+
+// "walrus": the vault as a 3D HYPERBOLIC SPANNING TREE (the CAIDA Walrus look).
+// A BFS spanning tree is rooted at the busiest hub and grown OUTWARD into a
+// ball: the root's children fan across the whole sphere on long spokes, and
+// every deeper node bursts its children into a tight cone around its own outward
+// axis. Edge length decays geometrically with depth, so deep subtrees compress
+// into "firework" bundles near the boundary — the hyperbolic fisheye that makes
+// a huge tree legible from its root. Disconnected components root at their own
+// hub on the boundary shell. The scene draws the real wikilink edges over this,
+// so the tree spokes AND the cross-links both show.
+export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
+  const n = g.order;
+  if (n === 0) return;
+  const golden = Math.PI * (3 - Math.sqrt(5));
+  const DECAY = 0.6; // edge-length shrink per depth (the hyperbolic compression)
+  const CONE = 1.15; // ~66° cone half-angle for a deeper node's child burst
+
+  // Degree lookup (attribute, falling back to live degree) for hub selection.
+  const degOf = (id: string): number =>
+    (g.getNodeAttribute(id, "deg") as number) ?? g.degree(id);
+
+  const parent = new Map<string, string | null>();
+  const depth = new Map<string, number>();
+  const children = new Map<string, string[]>();
+  const order: string[] = []; // BFS order — every parent precedes its children
+
+  // BFS a whole component from `start`, recording the spanning tree.
+  const bfs = (start: string): void => {
+    parent.set(start, null);
+    depth.set(start, 0);
+    children.set(start, []);
+    order.push(start);
+    const q = [start];
+    let h = 0;
+    while (h < q.length) {
+      const cur = q[h++];
+      const d = depth.get(cur) ?? 0;
+      // Deterministic, and hubs first so the biggest sub-bursts get placed early.
+      const nbs = g
+        .neighbors(cur)
+        .slice()
+        .sort((x, y) => degOf(y) - degOf(x) || (x < y ? -1 : 1));
+      for (const nb of nbs) {
+        if (depth.has(nb)) continue;
+        depth.set(nb, d + 1);
+        parent.set(nb, cur);
+        children.set(nb, []);
+        children.get(cur)!.push(nb);
+        order.push(nb);
+        q.push(nb);
+      }
+    }
+  };
+
+  // Main root = global max-degree node; then each disconnected component roots
+  // at its own max-degree node (both deterministic).
+  const all = g.nodes().slice().sort();
+  let root = all[0];
+  for (const id of all) if (degOf(id) > degOf(root)) root = id;
+  bfs(root);
+  const roots: string[] = [root];
+  for (const id of all) {
+    if (depth.has(id)) continue;
+    // `all` is degree-agnostic but sorted; the first unvisited node of a
+    // component roots it. (Components are small tails — orphans and pairs — so a
+    // perfect per-component hub buys nothing over determinism here.)
+    bfs(id);
+    roots.push(id);
+  }
+
+  const pos = new Map<string, [number, number, number]>();
+  const axis = new Map<string, [number, number, number]>();
+
+  // Fibonacci-sphere unit direction i of N (full-sphere spread), lightly jittered.
+  const fibDir = (i: number, N: number, seed: string): [number, number, number] => {
+    const t = N > 1 ? i / (N - 1) : 0.5;
+    const y = 1 - 2 * t;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const a = golden * i + seededUnit(seed, 71) * 0.4;
+    return [Math.cos(a) * r, y, Math.sin(a) * r];
+  };
+
+  // Component roots: main at the centre; others on a boundary shell (pre-scale
+  // units — the whole field is normalised to targetRadius at the end).
+  const BOUNDARY = 2.4;
+  roots.forEach((rt, ri) => {
+    if (ri === 0) {
+      pos.set(rt, [0, 0, 0]);
+      axis.set(rt, [0, 1, 0]);
+    } else {
+      const d = fibDir(ri, roots.length, rt);
+      pos.set(rt, [d[0] * BOUNDARY, d[1] * BOUNDARY, d[2] * BOUNDARY]);
+      axis.set(rt, d);
+    }
+  });
+
+  // Grow each node's children in BFS order (parent already placed).
+  for (const v of order) {
+    const kids = children.get(v) ?? [];
+    if (kids.length === 0) continue;
+    const d = depth.get(v) ?? 0;
+    const L = Math.pow(DECAY, d); // parent→child edge length at this depth
+    const [px, py, pz] = pos.get(v)!;
+    const a = axis.get(v)!;
+    const [u, w] = perpBasis(a);
+    kids.forEach((c, j) => {
+      let dir: [number, number, number];
+      if (d === 0) {
+        // Root: children fan over the FULL sphere on long spokes.
+        dir = fibDir(j, kids.length, c);
+      } else {
+        // Deeper: burst into a cone around the parent's outward axis.
+        const phi = CONE * Math.sqrt((j + 0.5) / kids.length);
+        const psi = golden * j;
+        const cs = Math.cos(phi);
+        const sn = Math.sin(phi);
+        dir = [
+          a[0] * cs + (u[0] * Math.cos(psi) + w[0] * Math.sin(psi)) * sn,
+          a[1] * cs + (u[1] * Math.cos(psi) + w[1] * Math.sin(psi)) * sn,
+          a[2] * cs + (u[2] * Math.cos(psi) + w[2] * Math.sin(psi)) * sn,
+        ];
+      }
+      const jit = 1 + (seededUnit(c, 59) - 0.5) * 0.12;
+      pos.set(c, [px + dir[0] * L * jit, py + dir[1] * L * jit, pz + dir[2] * L * jit]);
+      axis.set(c, dir);
+    });
+  }
+
+  // Normalise so the farthest node sits at targetRadius (the ball boundary).
+  let maxR = 1e-6;
+  for (const p of pos.values()) maxR = Math.max(maxR, Math.hypot(p[0], p[1], p[2]));
+  const s = o.targetRadius / maxR;
+  for (const id of all) {
+    const p = pos.get(id) ?? [0, 0, 0];
+    g.setNodeAttribute(id, "x", p[0] * s);
+    g.setNodeAttribute(id, "y", p[1] * s);
+    g.setNodeAttribute(id, "z", p[2] * s);
+  }
+}
