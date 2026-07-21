@@ -114,6 +114,31 @@ describe("applyStrataLayout", () => {
       expect(Number.isFinite(pos(g, id).x)).toBe(true);
     });
   });
+
+  it("returns a date axis whose ticks ascend in x and carry no duplicate labels", () => {
+    const g = makeGraph(nodes);
+    // A multi-year span so year-granularity labels could collide without dedup.
+    const yr = 365 * 86_400_000;
+    const spread = new Map([
+      ["old.md", 0],
+      ["mid.md", yr],
+      ["new.md", 2 * yr],
+      ["other.md", 3 * yr],
+    ]);
+    const { ticks, yTop, yBottom } = applyStrataLayout(g, {
+      mtimes: spread,
+      targetRadius: 500,
+    });
+    expect(ticks.length).toBeGreaterThan(1);
+    // The "before memory" marker (unknown) leads, then dated ticks ascend in x.
+    const dated = ticks.filter((t) => !t.unknown);
+    for (let i = 1; i < dated.length; i++) {
+      expect(dated[i].x).toBeGreaterThan(dated[i - 1].x);
+    }
+    const labels = dated.map((t) => t.label);
+    expect(new Set(labels).size).toBe(labels.length); // no duplicate period labels
+    expect(yTop).toBeGreaterThan(yBottom);
+  });
 });
 
 describe("applyCelestialLayout", () => {

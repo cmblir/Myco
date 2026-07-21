@@ -9,11 +9,14 @@ import type { JSX } from "react";
 import { useState } from "react";
 import {
   LAYOUT_PRESETS,
-  LAYOUT_RECOMMENDED,
+  deleteLook,
+  loadSavedLooks,
   matchPreset,
+  saveLook,
   VIBE_PRESETS,
   type GraphSettings,
   type LayoutPresetKey,
+  type SavedLook,
   type VibeKey,
 } from "../lib/graphSettings";
 import type { Strings } from "../lib/i18n";
@@ -79,9 +82,20 @@ export default function GraphControls({
     advanced: false,
   });
   const [tagsOpen, setTagsOpen] = useState(false);
+  // User-saved looks: the list + the "name this look" input. Loaded lazily so
+  // the panel doesn't touch localStorage until it's opened.
+  const [savedLooks, setSavedLooks] = useState<SavedLook[]>(() => loadSavedLooks());
+  const [lookName, setLookName] = useState("");
 
   const toggle = (k: string): void =>
     setOpenSections((p) => ({ ...p, [k]: !p[k] }));
+
+  const commitSaveLook = (): void => {
+    const name = lookName.trim();
+    if (!name) return;
+    setSavedLooks(saveLook(name, settings));
+    setLookName("");
+  };
 
   if (!open) {
     return (
@@ -157,6 +171,65 @@ export default function GraphControls({
             );
           })}
         </div>
+
+        {/* Saved looks: the user's own tuned configurations, one tap to recall. */}
+        <div className="graph-field">
+          <span className="graph-field__label">{t.gr_saved ?? "Saved looks"}</span>
+          {savedLooks.length > 0 ? (
+            <div className="graph-chips">
+              {savedLooks.map((look) => (
+                <span key={look.name} className="graph-saved">
+                  <button
+                    type="button"
+                    className="graph-saved__apply"
+                    onClick={() => onChange(look.settings)}
+                    title={t.gr_saved_apply ?? "Apply this saved look"}
+                  >
+                    {look.name}
+                  </button>
+                  <button
+                    type="button"
+                    className="graph-saved__del"
+                    onClick={() => setSavedLooks(deleteLook(look.name))}
+                    aria-label={`${t.gr_saved_delete ?? "Delete"} ${look.name}`}
+                    title={t.gr_saved_delete ?? "Delete"}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          ) : (
+            <span className="graph-saved__empty">
+              {t.gr_saved_empty ?? "Save the current settings to recall them later."}
+            </span>
+          )}
+          <div className="graph-saverow">
+            <input
+              type="text"
+              className="graph-field__input"
+              placeholder={t.gr_saved_name_ph ?? "Name this look…"}
+              value={lookName}
+              maxLength={40}
+              onChange={(e) => setLookName(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  commitSaveLook();
+                }
+              }}
+            />
+            <button
+              type="button"
+              className="graph-saverow__btn"
+              onClick={commitSaveLook}
+              disabled={!lookName.trim()}
+            >
+              {t.gr_saved_save ?? "Save"}
+            </button>
+          </div>
+        </div>
+
         <Toggle
           label={t.gr_multiverse ?? "Multiverse"}
           hint={
@@ -268,38 +341,37 @@ export default function GraphControls({
         />
       </Section>
 
-      {/* ── Layout: the shape of the map ── */}
+      {/* ── Layout: the shape of the map, grouped by dimension ── */}
       <Section
         title={t.gr_layout ?? "Layout"}
         open={openSections.layout}
         onToggle={() => toggle("layout")}
       >
+        {/* 3D layouts orbit in space; 2D layouts are flat, top-down maps. The
+            split answers the recurring "which of these are 3D?" up front. */}
         <ChipRow
-          label={t.gr_layout ?? "Layout"}
+          label={t.gr_layout_3d ?? "3D — orbit in space"}
           value={settings.layout}
           onPick={(v) => onChange({ layout: v })}
           options={[
-            ["galaxy", t.gr_layout_galaxy ?? "Galaxy (3D)"],
-            ["atlas", t.gr_layout_atlas ?? "Atlas (2D)"],
-            ["synapse", t.gr_layout_synapse ?? "Synapse (2D)"],
-            ["synapse3d", t.gr_layout_synapse3d ?? "Synapse (3D)"],
+            ["galaxy", t.gr_layout_galaxy_s ?? "Galaxy"],
+            ["synapse3d", t.gr_layout_synapse3d_s ?? "Synapse"],
             ["spiral", t.gr_layout_spiral ?? "Spiral galaxy"],
-            ["strata", t.gr_layout_strata ?? "Timeline (2D)"],
             ["semantic", t.gr_layout_semantic ?? "Semantic map"],
             ["celestial", t.gr_layout_celestial ?? "Celestial sphere"],
             ["radial", t.gr_layout_radial ?? "Radial orbit"],
           ]}
         />
-        <button
-          type="button"
-          className="graph-recommend"
-          onClick={() => onChange(LAYOUT_RECOMMENDED[settings.layout])}
-          title={
-            t.gr_recommend_hint ?? "Apply the recommended settings for this layout"
-          }
-        >
-          ✦ {t.gr_recommend ?? "Recommended settings"}
-        </button>
+        <ChipRow
+          label={t.gr_layout_2d ?? "2D — flat map"}
+          value={settings.layout}
+          onPick={(v) => onChange({ layout: v })}
+          options={[
+            ["atlas", t.gr_layout_atlas_s ?? "Atlas"],
+            ["synapse", t.gr_layout_synapse_s ?? "Synapse (flat)"],
+            ["strata", t.gr_layout_strata ?? "Chronicle"],
+          ]}
+        />
         <Toggle
           label={t.gr_galaxies ?? "Folder galaxies"}
           hint={

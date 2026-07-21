@@ -3341,6 +3341,18 @@ export class GraphScene {
     this.hulls.setDark(dark);
     // A live skin flip to/from sigma toggles the territory fills (see ctor).
     this.hulls.setVisible(this.atlasMode && !this.sigmaSkin);
+    // Chronicle axis gridlines are theme-tuned at draw time; a theme/skin flip
+    // recolours in place without a rebuild, so re-tint the live material here or
+    // the slate stays dark on light paper (the labels follow CSS and would
+    // already have flipped, leaving a half-updated axis).
+    this.timeAxis?.traverse((o) => {
+      const ls = o as THREE.LineSegments;
+      if (!(ls as { isLineSegments?: boolean }).isLineSegments) return;
+      const mat = ls.material as THREE.LineBasicMaterial;
+      mat.color.setHex(dark ? 0x4a5578 : 0x9aa3b8);
+      mat.opacity = dark ? 0.22 : 0.35;
+      mat.needsUpdate = true;
+    });
     this.bundles.setDark(dark);
     this.meteor.lines.visible = amb.meteors && !this.perfLod && !this.flatLayout;
     // Painted galaxy adornments stay off across theme changes (see ctor).
@@ -3582,6 +3594,76 @@ export class GraphScene {
    */
   setClusterLabelsVisible(on: boolean): void {
     this.clusterLabels.setEnabled(on);
+  }
+
+  // ── Chronicle time axis ───────────────────────────────────────────────
+  // The strata (chronicle) layout lays notes on a real time axis; this draws
+  // the DATES under it — faint vertical gridlines at each period boundary plus a
+  // world-space date label, so the flat scatter reads as a labelled timeline.
+  // Owned as one Group so a layout change tears it all down in one call.
+  private timeAxis: THREE.Group | null = null;
+  private timeAxisLabels: CSS2DObject[] = [];
+
+  /** Draw (or clear, with null) the chronicle's date axis. `ticks` carry world-x
+   * positions from applyStrataLayout so the axis shares the nodes' time→x map. */
+  setTimeAxis(
+    axis: { ticks: { x: number; label: string; unknown?: boolean }[]; yTop: number; yBottom: number } | null,
+  ): void {
+    // Tear down any previous axis (labels are DOM-backed — remove them too).
+    if (this.timeAxis) {
+      this.scene.remove(this.timeAxis);
+      this.timeAxis.traverse((o) => {
+        const m = o as THREE.Mesh;
+        m.geometry?.dispose?.();
+        (m.material as THREE.Material | undefined)?.dispose?.();
+      });
+      this.timeAxis = null;
+    }
+    for (const l of this.timeAxisLabels) {
+      (l.element as HTMLElement).remove();
+      this.scene.remove(l);
+    }
+    this.timeAxisLabels = [];
+    if (!axis || axis.ticks.length === 0) return;
+
+    const group = new THREE.Group();
+    group.renderOrder = -400; // behind the nodes/edges, part of the backdrop
+    // Faint vertical gridlines at each real date (skip the "before memory" one).
+    const verts: number[] = [];
+    for (const tk of axis.ticks) {
+      if (tk.unknown) continue;
+      verts.push(tk.x, axis.yBottom, 0, tk.x, axis.yTop, 0);
+    }
+    if (verts.length) {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(verts), 3));
+      const grid = new THREE.LineSegments(
+        geo,
+        new THREE.LineBasicMaterial({
+          color: this.darkTheme ? 0x4a5578 : 0x9aa3b8,
+          transparent: true,
+          opacity: this.darkTheme ? 0.22 : 0.35,
+          depthWrite: false,
+        }),
+      );
+      grid.frustumCulled = false;
+      group.add(grid);
+    }
+    this.scene.add(group);
+    this.timeAxis = group;
+
+    // Date labels sit just under the axis, in world space (they scale with the
+    // chart, unlike the screen-fixed cluster names).
+    for (const tk of axis.ticks) {
+      const el = document.createElement("div");
+      el.className = tk.unknown ? "graph-axis-label graph-axis-label--dim" : "graph-axis-label";
+      el.textContent = tk.label;
+      const obj = new CSS2DObject(el);
+      obj.position.set(tk.x, axis.yBottom, 0);
+      obj.renderOrder = -399;
+      this.scene.add(obj);
+      this.timeAxisLabels.push(obj);
+    }
   }
 
   /** The WebGL canvas — used by the timelapse recorder (captureStream). */
@@ -4052,6 +4134,7 @@ export class GraphScene {
   dispose(): void {
     if (this.raf != null) cancelAnimationFrame(this.raf);
     this.raf = null;
+    this.setTimeAxis(null); // drop the chronicle axis + its DOM labels
     this.resizeObs.disconnect();
     const el = this.renderer.domElement;
     el.removeEventListener("pointermove", this.onPointerMove);

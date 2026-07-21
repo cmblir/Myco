@@ -222,6 +222,18 @@ export interface Strings {
   gr_looks?: string;
   gr_appearance?: string;
   gr_motion_fx?: string;
+  gr_saved?: string;
+  gr_saved_apply?: string;
+  gr_saved_delete?: string;
+  gr_saved_empty?: string;
+  gr_saved_name_ph?: string;
+  gr_saved_save?: string;
+  gr_layout_3d?: string;
+  gr_layout_2d?: string;
+  gr_layout_galaxy_s?: string;
+  gr_layout_synapse3d_s?: string;
+  gr_layout_atlas_s?: string;
+  gr_layout_synapse_s?: string;
   gr_cinematic?: string;
   gr_cinematic_hint?: string;
   gr_flow?: string;
@@ -904,7 +916,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_minimap: "Minimap",
     gr_minimap_hint: "Corner chart of the whole galaxy; click to fly",
     gr_layout_spiral: "Spiral galaxy",
-    gr_layout_strata: "Timeline (2D)",
+    gr_layout_strata: "Chronicle",
     gr_layout_semantic: "Semantic map",
     gr_layout_celestial: "Celestial sphere",
     gr_layout_radial: "Radial orbit",
@@ -929,6 +941,18 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_looks: "Looks",
     gr_appearance: "Appearance",
     gr_motion_fx: "Motion & effects",
+    gr_saved: "Saved looks",
+    gr_saved_apply: "Apply this saved look",
+    gr_saved_delete: "Delete",
+    gr_saved_empty: "Save the current settings to recall them later.",
+    gr_saved_name_ph: "Name this look\u2026",
+    gr_saved_save: "Save",
+    gr_layout_3d: "3D \u2014 orbit in space",
+    gr_layout_2d: "2D \u2014 flat map",
+    gr_layout_galaxy_s: "Galaxy",
+    gr_layout_synapse3d_s: "Synapse",
+    gr_layout_atlas_s: "Atlas",
+    gr_layout_synapse_s: "Synapse (flat)",
     gr_cinematic: "Cinematic finish",
     gr_cinematic_hint: "Film grain, vignette, lens streaks, anti-aliasing",
     gr_flow: "Edge flow",
@@ -1622,7 +1646,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_minimap: "미니맵",
     gr_minimap_hint: "은하 전체 차트 — 클릭하면 그 지점으로 이동",
     gr_layout_spiral: "나선 은하",
-    gr_layout_strata: "시간 지층 (2D)",
+    gr_layout_strata: "연대기",
     gr_layout_semantic: "의미 지도",
     gr_layout_celestial: "천구 별자리",
     gr_layout_radial: "동심 궤도",
@@ -1647,6 +1671,18 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_looks: "룩",
     gr_appearance: "외형",
     gr_motion_fx: "모션·효과",
+    gr_saved: "저장된 룩",
+    gr_saved_apply: "이 저장된 룩 적용",
+    gr_saved_delete: "삭제",
+    gr_saved_empty: "현재 설정을 저장해 두면 나중에 불러올 수 있습니다.",
+    gr_saved_name_ph: "룩 이름\u2026",
+    gr_saved_save: "저장",
+    gr_layout_3d: "3D \u2014 공간 궤도",
+    gr_layout_2d: "2D \u2014 평면 지도",
+    gr_layout_galaxy_s: "은하",
+    gr_layout_synapse3d_s: "시냅스",
+    gr_layout_atlas_s: "아틀라스",
+    gr_layout_synapse_s: "시냅스 (평면)",
     gr_cinematic: "시네마틱 마감",
     gr_cinematic_hint: "필름 그레인·비네트·렌즈 스트릭·안티앨리어싱",
     gr_flow: "엣지 흐름",
@@ -2282,7 +2318,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_minimap: "ミニマップ",
     gr_minimap_hint: "銀河全体のチャート — クリックでその地点へ",
     gr_layout_spiral: "渦巻銀河",
-    gr_layout_strata: "時間地層 (2D)",
+    gr_layout_strata: "年代記",
     gr_layout_semantic: "意味マップ",
     gr_layout_celestial: "天球星座",
     gr_layout_radial: "同心軌道",
@@ -2307,6 +2343,18 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_looks: "ルック",
     gr_appearance: "外観",
     gr_motion_fx: "モーション・効果",
+    gr_saved: "保存したルック",
+    gr_saved_apply: "この保存ルックを適用",
+    gr_saved_delete: "削除",
+    gr_saved_empty: "現在の設定を保存すると後で呼び出せます。",
+    gr_saved_name_ph: "ルック名\u2026",
+    gr_saved_save: "保存",
+    gr_layout_3d: "3D \u2014 宇宙を周回",
+    gr_layout_2d: "2D \u2014 平面地図",
+    gr_layout_galaxy_s: "銀河",
+    gr_layout_synapse3d_s: "シナプス",
+    gr_layout_atlas_s: "アトラス",
+    gr_layout_synapse_s: "シナプス (平面)",
     gr_cinematic: "シネマティック仕上げ",
     gr_cinematic_hint: "フィルムグレイン・ビネット・レンズストリーク・AA",
     gr_flow: "エッジフロー",

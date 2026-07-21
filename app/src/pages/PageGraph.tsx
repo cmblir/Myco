@@ -807,7 +807,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       } else if (s.layout === "radial") {
         applyRadialLayout(graph, { targetRadius: radius * 1.2 });
       } else {
-        applyStrataLayout(graph, { mtimes, targetRadius: radius * 1.2 });
+        // Chronicle: bake the time-strata positions AND draw the date axis
+        // under them (the axis shares the layout's time→x mapping).
+        const axis = applyStrataLayout(graph, { mtimes, targetRadius: radius * 1.2 });
+        scene.setTimeAxis(axis);
       }
       scene.syncPositions();
       scene.layoutSettled();
@@ -1857,9 +1860,17 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             settings={settings}
             onChange={(patch) => {
               // While drilled into a universe the toggle still reads ON (the
-              // preference). Touching it means "back to the field": clear the
-              // transient enter instead of turning the saved preference off.
-              if ("multiverse" in patch && enteredUniverse) {
+              // preference). Touching JUST the toggle means "back to the field":
+              // clear the transient enter instead of turning the saved
+              // preference off. Guard on a SINGLE-key {multiverse} patch — a
+              // batch patch (e.g. applying a saved look) that merely happens to
+              // carry the key must NOT be swallowed here.
+              const keys = Object.keys(patch);
+              if (
+                keys.length === 1 &&
+                keys[0] === "multiverse" &&
+                enteredUniverse
+              ) {
                 setEnteredUniverse(false);
                 return;
               }

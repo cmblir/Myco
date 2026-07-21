@@ -64,6 +64,13 @@ export default function MultiverseScene({
       // A dense sky sells "a sea of universes": with the camera-following
       // starfield the whole frame stays star-filled behind every bubble.
       skyStyle: "dense" as const,
+      // The multiverse is ALWAYS a dark cosmic sea, never the app's light theme:
+      // the default "auto" skin follows --bg, and on a light app theme the
+      // additive bubble membranes and glowing stars wash out to near-invisible
+      // white-on-white — the field looked empty / unresponsive. Pin the galaxy
+      // skin so the deep-space backdrop (and the bubbles that only read against
+      // it) are guaranteed no matter which theme the rest of the app is in.
+      skin: "galaxy" as const,
     };
     const theme = makeTheme(settings.skin);
     const { graph } = assembleMultiverse(

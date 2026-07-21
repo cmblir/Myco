@@ -1,5 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { LAYOUT_RECOMMENDED, VIBE_PRESETS } from "./graphSettings";
+import {
+  DEFAULT_GRAPH_SETTINGS,
+  LAYOUT_RECOMMENDED,
+  saveLook,
+  VIBE_PRESETS,
+} from "./graphSettings";
+
+describe("saveLook", () => {
+  it("drops transient view/mode state so a recalled look never yanks the view", () => {
+    const s = {
+      ...DEFAULT_GRAPH_SETTINGS,
+      skin: "sigma" as const,
+      layout: "atlas" as const,
+      // View/mode state that must NOT be baked into a look:
+      search: "tag:#x",
+      tagFilter: "concept",
+      folderFilter: "wiki",
+      multiverse: true,
+    };
+    const [look] = saveLook("My look", s);
+    expect(look.name).toBe("My look");
+    // The visual configuration is kept…
+    expect(look.settings.skin).toBe("sigma");
+    expect(look.settings.layout).toBe("atlas");
+    // …but every transient key is stripped (applying multiverse:true would bounce
+    // the user to the bubble field; a stale tag/folder could empty the graph).
+    for (const k of ["search", "tagFilter", "folderFilter", "multiverse"] as const) {
+      expect(k in look.settings, `${k} must not be saved into a look`).toBe(false);
+    }
+  });
+
+  it("ignores a blank name", () => {
+    expect(saveLook("   ", DEFAULT_GRAPH_SETTINGS)).toEqual([]);
+  });
+});
 
 // The graph settings are ONE shared object, not per-layout state. So a "Recommend"
 // preset that sets a field the current layout ignores does not vanish — it

@@ -250,36 +250,83 @@ export interface StrataOpts {
   targetRadius: number;
 }
 
-export function applyStrataLayout(g: VaultGraph, o: StrataOpts): void {
+/** One date gridline of the chronicle's time axis: a world-x position and the
+ * date/period text that sits under it. Returned so the scene can draw the axis
+ * with the SAME time→x mapping the nodes use. */
+export interface TimeTick {
+  x: number;
+  label: string;
+  /** The "before memory" column (unknown mtimes) is styled dimmer + no gridline. */
+  unknown?: boolean;
+}
+
+export interface StrataResult {
+  ticks: TimeTick[];
+  /** World-y extent of the note bands, so the axis draws gridlines to fit. */
+  yTop: number;
+  yBottom: number;
+}
+
+// Format a tick date at the granularity the span calls for: multi-year history
+// reads as years, a tighter span as "Mon YYYY". Intl keeps it locale-correct.
+function tickLabel(ms: number, spanDays: number): string {
+  const d = new Date(ms);
+  if (spanDays > 900) {
+    return new Intl.DateTimeFormat(undefined, { year: "numeric" }).format(d);
+  }
+  if (spanDays > 90) {
+    return new Intl.DateTimeFormat(undefined, { year: "numeric", month: "short" }).format(d);
+  }
+  return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(d);
+}
+
+// The vault as a CHRONICLE: notes laid on a real time axis (x), stacked into
+// community swim-lanes (y). Unlike a rank plot, x is ACTUAL elapsed time, so a
+// burst of activity clumps into a dense column and a quiet stretch opens a gap —
+// the reader sees the rhythm of the vault's history, not just its order. Returns
+// the date ticks + y-extent so the scene can label the axis.
+export function applyStrataLayout(g: VaultGraph, o: StrataOpts): StrataResult {
+  const empty: StrataResult = { ticks: [], yTop: 0, yBottom: 0 };
   const n = g.order;
-  if (n === 0) return;
+  if (n === 0) return empty;
   const R = o.targetRadius;
   const groups = communitiesBySize(g);
 
-  // x: time rank (oldest left). Files with no mtime (ghosts, unindexed) pin to
-  // a thin "before memory" column at the far-left edge instead of spreading —
-  // rank-spreading ties would fake a history that isn't there.
+  // Real-time x: files with a known mtime map linearly across [minT, maxT] →
+  // [-0.8R, R] so gaps and bursts show. Files with no mtime (ghosts, unindexed)
+  // pin to a thin "before memory" column at the far-left edge — a rank spread
+  // would fake a history they don't have.
   const known = g.nodes().filter((id) => o.mtimes?.has(id));
   const unknown = g.nodes().filter((id) => !o.mtimes?.has(id));
-  known.sort((a, b) => (o.mtimes?.get(a) ?? 0) - (o.mtimes?.get(b) ?? 0));
+  const times = known.map((id) => o.mtimes?.get(id) ?? 0);
+  const minT = times.length ? Math.min(...times) : 0;
+  const maxT = times.length ? Math.max(...times) : 0;
+  const spanT = Math.max(1, maxT - minT);
+  const X0 = -0.8 * R; // oldest known note
+  const X1 = R; // newest known note
+  const timeToX = (ms: number): number => X0 + ((ms - minT) / spanT) * (X1 - X0);
+
   const xOf = new Map<string, number>();
-  for (let i = 0; i < known.length; i++) {
-    // Known history spans [-0.85R, R]; the left margin belongs to the unknowns.
-    const t = known.length > 1 ? i / (known.length - 1) : 0.5;
-    xOf.set(known[i], -0.85 * R + t * 1.85 * R);
+  for (const id of known) {
+    xOf.set(id, timeToX(o.mtimes?.get(id) ?? minT));
   }
+  const unknownX = -R; // the "before memory" column
   for (const id of unknown) {
-    xOf.set(id, -R + seededGauss(id, 29) * R * 0.02);
+    xOf.set(id, unknownX + seededGauss(id, 29) * R * 0.015);
   }
 
-  // y: one horizontal band per community, big communities near the middle.
+  // y: one horizontal swim-lane per community, big communities near the middle.
   const bands = groups.size;
   const bandSpan = R * 1.2;
+  const laneY = (rank: number): number => {
+    const step = Math.ceil(rank / 2) * (rank % 2 === 0 ? 1 : -1); // 0,+1,-1,+2,-2…
+    return bands > 1 ? (step * bandSpan) / bands : 0;
+  };
   let rank = 0;
+  let yMax = 0;
   for (const [, members] of groups) {
-    // Centre-out ordering: 0, +1, -1, +2, -2… so the largest sits mid-chart.
-    const step = Math.ceil(rank / 2) * (rank % 2 === 0 ? 1 : -1);
-    const yc = bands > 1 ? (step * bandSpan) / bands : 0;
+    const yc = laneY(rank);
+    yMax = Math.max(yMax, Math.abs(yc));
     const jitter = (bandSpan / Math.max(2, bands)) * 0.28;
     for (const id of members) {
       g.setNodeAttribute(id, "x", xOf.get(id) ?? 0);
@@ -288,4 +335,28 @@ export function applyStrataLayout(g: VaultGraph, o: StrataOpts): void {
     }
     rank++;
   }
+
+  // Date ticks: ~6 evenly-spaced markers across the known span, at their true x.
+  // Drop a tick whose label repeats the previous one (year granularity over a
+  // multi-year span lands two markers in the same year → "2024 2024").
+  const ticks: TimeTick[] = [];
+  if (times.length >= 2) {
+    const spanDays = spanT / 86_400_000;
+    const STEPS = Math.min(6, Math.max(2, known.length));
+    let prev = "";
+    for (let i = 0; i < STEPS; i++) {
+      const ms = minT + (spanT * i) / (STEPS - 1);
+      const label = tickLabel(ms, spanDays);
+      if (label === prev) continue;
+      prev = label;
+      ticks.push({ x: timeToX(ms), label });
+    }
+  } else if (times.length === 1) {
+    ticks.push({ x: timeToX(minT), label: tickLabel(minT, 1) });
+  }
+  if (unknown.length > 0) {
+    ticks.unshift({ x: unknownX, label: "—", unknown: true });
+  }
+  const yPad = bandSpan / Math.max(2, bands) + R * 0.12;
+  return { ticks, yTop: yMax + yPad, yBottom: -(yMax + yPad) };
 }

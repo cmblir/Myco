@@ -488,3 +488,81 @@ export function saveGraphSettings(s: GraphSettings): void {
     /* quota or disabled — ignore */
   }
 }
+
+// ── User-saved looks ──────────────────────────────────────────────────────
+// The eight built-in vibes are curated starting points; a saved look is the
+// user's OWN tuned configuration, named and recalled with one tap. Stored
+// separately from the live settings so resetting or switching looks never
+// touches the saved set. The whole (non-transient) settings object is captured
+// so a look restores the exact configuration, not a lossy subset.
+const LOOKS_KEY = "memex.graph.savedLooks.v1";
+export const MAX_SAVED_LOOKS = 24;
+
+export interface SavedLook {
+  name: string;
+  settings: Partial<GraphSettings>;
+}
+
+export function loadSavedLooks(): SavedLook[] {
+  try {
+    const raw = localStorage.getItem(LOOKS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (x): x is SavedLook =>
+        !!x &&
+        typeof (x as SavedLook).name === "string" &&
+        // typeof null === "object" — a null settings would pass and then throw
+        // on spread when applied, so require a real object.
+        !!(x as SavedLook).settings &&
+        typeof (x as SavedLook).settings === "object",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function writeSavedLooks(looks: SavedLook[]): SavedLook[] {
+  try {
+    localStorage.setItem(LOOKS_KEY, JSON.stringify(looks));
+  } catch {
+    /* quota or disabled — ignore */
+  }
+  return looks;
+}
+
+/** Save (or overwrite by trimmed name) the current settings under `name`. A
+ * look is the VISUAL configuration (skin / layout / colours / effects / forces)
+ * — the transient VIEW state is dropped so applying a look never yanks the mode
+ * or re-applies a stale filter: `search`, the active `tagFilter`/`folderFilter`,
+ * and `multiverse` mode (baking multiverse:true would bounce the user to the
+ * bubble field on recall). Returns the updated list. */
+export function saveLook(name: string, s: GraphSettings): SavedLook[] {
+  const trimmed = name.trim();
+  if (!trimmed) return loadSavedLooks();
+  const {
+    search: _s,
+    tagFilter: _t,
+    folderFilter: _f,
+    multiverse: _m,
+    ...settings
+  } = s;
+  void _s;
+  void _t;
+  void _f;
+  void _m;
+  const looks = loadSavedLooks().filter(
+    (l) => l.name.toLowerCase() !== trimmed.toLowerCase(),
+  );
+  looks.unshift({ name: trimmed, settings });
+  return writeSavedLooks(looks.slice(0, MAX_SAVED_LOOKS));
+}
+
+export function deleteLook(name: string): SavedLook[] {
+  return writeSavedLooks(
+    loadSavedLooks().filter(
+      (l) => l.name.toLowerCase() !== name.trim().toLowerCase(),
+    ),
+  );
+}
