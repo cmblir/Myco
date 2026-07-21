@@ -40,8 +40,12 @@ const HOLD_MS = 13_000;
 // Planet world radius as a fraction of the framed distance, and the video-frame
 // height needed to render a planet of that radius (the planet fills ~half the
 // 16:9 clip). Tuned so the cameo reads as a mid-size world at the fitted zoom.
-const WORLD_FRAC = 0.12;
+// Node-scale: MYCO reads as just another little world among the stars, not a
+// giant that dwarfs the graph. Sized to a large node / near-field planet.
+const WORLD_FRAC = 0.03;
 const FRAME_TO_PLANET = 4.0; // video height ÷ planet diameter
+const FRAME_H_MIN = 34; // px — a distant speck floor
+const FRAME_H_MAX = 96; // px — a firm ceiling so it stays node-sized
 
 // The minimal slice of GraphScene the cameo needs — projection of a world anchor.
 interface MascotScene {
@@ -148,7 +152,10 @@ export default function MascotCameo({
     // video is centred on it. Planet diameter in px comes from perspective; the
     // 16:9 clip frame is ~2× the planet (it fills ~half the frame height).
     const planetPx = 2 * worldR.current * pr.pxPerWorld;
-    const frameH = Math.max(70, Math.min(planetPx * (FRAME_TO_PLANET / 2), 520));
+    const frameH = Math.max(
+      FRAME_H_MIN,
+      Math.min(planetPx * (FRAME_TO_PLANET / 2), FRAME_H_MAX),
+    );
     const frameW = (frameH * 16) / 9;
     root.style.left = `${pr.sx}px`;
     root.style.top = `${pr.sy}px`;
