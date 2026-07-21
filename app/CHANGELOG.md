@@ -26,6 +26,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   star's core and halo stops dense clusters from fusing into one blob — nearer
   stars get the stronger ring, the far field stays a soft continuum.
 
+- **The air itself now glows where your links crowd.** A living nebula rises
+  from the graph's own structure: link-dense regions bloom into a soft breathing
+  wash of their community's colour, under the stars and edges. It is not a
+  painted backdrop — it is your vault's connectivity, rendered as atmosphere,
+  and it moves when the structure moves.
+
 - **Every vault gets its own sky.** Deep-space skins now bake a faint seeded
   nebula backdrop from the vault's identity — the same vault always opens under
   the same sky, and no two vaults share one. Baked once off the critical path,

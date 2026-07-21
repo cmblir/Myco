@@ -1112,8 +1112,9 @@ export class GraphScene {
     this.edges = new THREE.LineSegments(this.edgeGeom, this.edgeMat);
     this.edges.frustumCulled = false;
     this.scene.add(this.edges);
-    // Cosmic-web skin: edges render as an accumulated density field instead.
-    this.ensureEdgeDensity(this.webSkin);
+    // Edge-density layer: the web skin's ramped field, or the living-nebula
+    // atmosphere on the deep-space skins.
+    this.ensureEdgeDensity();
     // Galaxy chart minimap (corner inset + click-to-fly).
     this.setMinimap(settings.minimap);
 
@@ -2632,26 +2633,47 @@ export class GraphScene {
     this.cinePass.enabled = on;
   }
 
-  // Edge-density field (cosmic-web skin): edges splat into an offscreen HDR
-  // accumulator and composite through a density ramp; the plain edge lines hide
-  // while it runs (hover/path feedback lives on the filament overlay).
+  // Edge-density field, two personalities (see edgeDensity.ts):
+  //  "web"  — the cosmic-web skin's ramped field; plain edges HIDE.
+  //  "atmo" — the living nebula: blurred community-coloured glow where links
+  //           crowd, UNDER the normal edges (which stay visible). Deep-space
+  //           dark 3D skins only, and never in performance mode.
   private edgeDensity: EdgeDensityLayer | null = null;
-  private ensureEdgeDensity(on: boolean): void {
-    if (on && !this.edgeDensity) {
+  private desiredDensityMode(): "web" | "atmo" | null {
+    if (this.webSkin) return "web";
+    if (
+      this.darkTheme &&
+      !this.sigmaSkin &&
+      !this.flatLayout &&
+      !this.perfLod &&
+      skinAmbience(this.settings.skin, this.darkTheme).nebula
+    ) {
+      return "atmo";
+    }
+    return null;
+  }
+  private ensureEdgeDensity(): void {
+    const want = this.desiredDensityMode();
+    if (this.edgeDensity && this.edgeDensity.mode !== want) {
+      this.scene.remove(this.edgeDensity.quad);
+      this.edgeDensity.dispose();
+      this.edgeDensity = null;
+    }
+    if (want && !this.edgeDensity) {
       const el = this.renderer.domElement;
       this.edgeDensity = new EdgeDensityLayer(
         this.edgeGeom,
         el.clientWidth || 2,
         el.clientHeight || 2,
         this.renderer.getPixelRatio(),
+        want,
       );
+      // The nebula sits behind everything the graph draws; the web field is
+      // the edge layer itself.
+      this.edgeDensity.quad.renderOrder = want === "atmo" ? -700 : -500;
       this.scene.add(this.edgeDensity.quad);
-    } else if (!on && this.edgeDensity) {
-      this.scene.remove(this.edgeDensity.quad);
-      this.edgeDensity.dispose();
-      this.edgeDensity = null;
     }
-    this.edges.visible = !on;
+    this.edges.visible = this.edgeDensity?.mode !== "web";
   }
 
   /** Live camera world position (clone) — the multiverse uses it to detect when
@@ -2980,8 +3002,8 @@ export class GraphScene {
     // resize handler owns this uniform otherwise — same formula, same source).
     this.nodeMat.uniforms.u_sizeScale.value =
       this.sizeScale(this.renderer.domElement.clientHeight || 1) * this.skinNodeScale();
-    // Density-field edges follow the skin (created/torn down live).
-    this.ensureEdgeDensity(this.webSkin);
+    // Density-field edges follow the skin/theme (created/torn down live).
+    this.ensureEdgeDensity();
     // Arrows are tinted per-instance by source-node colour; only the no-colour
     // fallback tracks the theme. writeArrowColors() below repaints them.
     this.arrowFallback = parseRGBA(theme.edgeHi).color;
@@ -3556,6 +3578,8 @@ export class GraphScene {
         this.cinePass.material.uniforms.u_time.value =
           this.nodeMat.uniforms.u_time.value;
       }
+      // The living nebula breathes on the same gated clock.
+      this.edgeDensity?.setTime(this.nodeMat.uniforms.u_time.value);
       // Grid backdrop parallax: drift the fullscreen dot grid with the camera's
       // look direction so it reads as depth behind the graph, not a flat UI
       // overlay pinned to the window.
