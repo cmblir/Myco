@@ -530,7 +530,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   }, [popFrame]);
 
   // Fetch mtimes whenever the vault changes — drives the timelapse reveal order
-  // (oldest file first, so the graph grows in creation order).
+  // (oldest file first, so the graph grows in creation order) AND the recency
+  // glow (per-node age). Stored as state so the build picks the ages up.
+  const [mtimes, setMtimes] = useState<Map<string, number> | null>(null);
   useEffect(() => {
     if (!currentVault?.path) return;
     let cancelled = false;
@@ -541,6 +543,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         tlOrderRef.current = [...rows]
           .sort((a, b) => a[1] - b[1])
           .map((r) => r[0]);
+        // Normalise to ms (the backend reports epoch seconds).
+        setMtimes(new Map(rows.map(([p, m]) => [p, m < 1e12 ? m * 1000 : m])));
       })
       .catch(() => {
         /* mtime unavailable — timelapse just won't order by age */
@@ -582,6 +586,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       folderGalaxies: s.folderGalaxies,
       vaultRoot: currentVault?.path ?? "",
       lightBg,
+      // Recency glow: age each note against its file mtime (absent → no glow).
+      mtimes: mtimes ?? undefined,
+      now: Date.now(),
     });
     graphRef.current = graph;
     setCounts({ nodes: graph.order, edges: graph.size });
@@ -817,6 +824,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.layout,
     settings.multiverse,
     enteredUniverse,
+    mtimes,
     glEpoch,
     // NOTE: lightBg is intentionally NOT here — a light/dark flip recolours the
     // existing graph in place (see the theme effect) instead of rebuilding the
@@ -1276,6 +1284,25 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     };
   }, []);
 
+  // Live search highlight: every node matching the find box pulses IN PHASE
+  // while the rest recede — pre-attentive pop-out of the matched set as you
+  // type, before committing to the Enter fly-to.
+  const updateSearchHits = (q: string): void => {
+    const g = graphRef.current;
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const needle = q.trim().toLowerCase();
+    if (!g || !needle) {
+      scene.setSearchHits(null);
+      return;
+    }
+    const hits = new Set<string>();
+    g.forEachNode((id) => {
+      if (stem(id).toLowerCase().includes(needle)) hits.add(id);
+    });
+    scene.setSearchHits(hits);
+  };
+
   // Search-to-focus: fly the camera to the best-matching node and open its
   // inspector. Distinct from the drawer's filter search (which subsets the
   // graph); this leaves the graph intact and just frames + selects a star.
@@ -1407,7 +1434,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             value={find}
             placeholder={t.gr_find_ph ?? "Find a note…"}
             aria-label={t.gr_find_ph ?? "Find a note"}
-            onChange={(e) => setFind(e.target.value)}
+            onChange={(e) => {
+              setFind(e.target.value);
+              updateSearchHits(e.target.value);
+            }}
             onKeyDown={(e) => {
               if (isComposingKey(e)) return;
               if (e.key === "Enter") focusFind(find);

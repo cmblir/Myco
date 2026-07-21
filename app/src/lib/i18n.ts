@@ -191,6 +191,8 @@ export interface Strings {
   gr_skin_white?: string;
   gr_skin_galaxy?: string;
   gr_skin_web?: string;
+  gr_recency?: string;
+  gr_recency_hint?: string;
   gr_galaxies?: string;
   gr_galaxies_hint?: string;
   gr_multiverse?: string;
@@ -864,6 +866,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_skin_white: "White",
     gr_skin_galaxy: "Galaxy",
     gr_skin_web: "Cosmic web",
+    gr_recency: "Recency glow",
+    gr_recency_hint: "Recently edited notes burn hotter",
     gr_galaxies: "Folder galaxies",
     gr_galaxies_hint: "Split the vault into one slowly rotating galaxy per folder",
     gr_multiverse: "Multiverse",
@@ -1547,6 +1551,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_skin_white: "화이트",
     gr_skin_galaxy: "은하계",
     gr_skin_web: "우주 그물",
+    gr_recency: "최근성 발광",
+    gr_recency_hint: "최근 수정한 노트가 더 뜨겁게 빛납니다",
     gr_galaxies: "폴더 은하계",
     gr_galaxies_hint: "폴더마다 하나씩, 천천히 자전하는 은하계로 분리",
     gr_multiverse: "멀티버스",
@@ -2172,6 +2178,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_skin_white: "ホワイト",
     gr_skin_galaxy: "ギャラクシー",
     gr_skin_web: "宇宙の網",
+    gr_recency: "最近さグロー",
+    gr_recency_hint: "最近編集したノートほど熱く光ります",
     gr_galaxies: "フォルダー銀河",
     gr_galaxies_hint: "フォルダーごとにゆっくり自転する銀河へ分割",
     gr_multiverse: "マルチバース",

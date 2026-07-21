@@ -529,8 +529,14 @@ function fileTree() {
 }
 
 function mtimes(): [string, number][] {
+  // A handful of recent files (so the recency glow has something to light) on
+  // top of an old baseline (so timelapse ordering still spans a real range).
   const base = 1_700_000_000;
-  return NODES.map((d, i) => [pathOf(d.s), base + i * 3600] as [string, number]);
+  const now = Math.floor(Date.now() / 1000);
+  return NODES.map(
+    (d, i) =>
+      [pathOf(d.s), i < 5 ? now - i * 43_200 : base + i * 3600] as [string, number],
+  );
 }
 
 function provenance() {

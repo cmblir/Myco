@@ -8,6 +8,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **The graph now shows where your attention is.** Notes edited in the last two
+  weeks burn hotter and warmer; untouched ones cool off — the vault reads as a
+  live map of what you're working on. Toggle under Graph settings ("Recency
+  glow").
+
+- **Typing in the graph's find box lights up every match.** All matching notes
+  pulse together while the rest recede, so the matched set pops out before you
+  even press Enter to fly to the best one.
+
+- **Notes of the same kind now share a star shape.** Sources are piercing spiked
+  beacons, entities big warm giants, techniques dense small cores — a consistent,
+  colour-blind-safe glyph channel instead of a random population (untyped notes
+  keep the varied sky).
+
+- **Overlapping stars keep their edges.** A subtle separation ring between a
+  star's core and halo stops dense clusters from fusing into one blob — nearer
+  stars get the stronger ring, the far field stays a soft continuum.
+
 - **A new "Cosmic web" graph skin.** The dark-matter-simulation look: notes
   shrink to pale points of starlight and the links carry the picture — thin
   violet filaments that genuinely brighten where strands overlap, so the

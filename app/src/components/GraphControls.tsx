@@ -479,6 +479,12 @@ export default function GraphControls({
           onChange={(v) => onChange({ ambientMotion: v })}
         />
         <Toggle
+          label={t.gr_recency ?? "Recency glow"}
+          hint={t.gr_recency_hint ?? "Recently edited notes burn hotter"}
+          value={settings.recencyGlow}
+          onChange={(v) => onChange({ recencyGlow: v })}
+        />
+        <Toggle
           label={t.gr_cosmic ?? "Cosmic events"}
           hint={t.gr_cosmic_hint ?? "Black holes & wormholes (dark theme)"}
           value={settings.cosmicEvents}

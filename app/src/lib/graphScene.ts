@@ -295,6 +295,8 @@ attribute vec3 a_color;
 attribute float a_alpha;
 attribute float a_intensity;
 attribute float a_kind; // stellar class: 0 main, 1 dwarf, 2 giant, 3 neutron
+attribute float a_age; // days since last modified (9999 = unknown/old)
+attribute float a_hit; // 1 = current search match (pulse-in-phase highlight)
 uniform float u_pixelRatio;
 uniform float u_sizeScale;
 uniform float u_fogNear;
@@ -307,6 +309,8 @@ varying float v_fade;
 varying float v_int;
 varying float v_dark;
 varying float v_kind;
+varying float v_age;
+varying float v_hit;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   float dist = max(1.0, -mv.z);
@@ -322,6 +326,10 @@ void main() {
   float bAmp = v_kind > 2.5 ? 0.07 : 0.025;
   float bFreq = v_kind > 2.5 ? 3.4 : 0.6;
   gl_PointSize *= 1.0 + bAmp * sin(u_time * bFreq + position.x * 0.03 + position.y * 0.021);
+  // Search hits pulse IN PHASE (motion is pre-attentive: the matched set pops
+  // out together no matter how cluttered the sky). One shared phase, no
+  // per-node offset — lockstep IS the signal here, unlike the ambient breathing.
+  if (a_hit > 0.5) gl_PointSize *= 1.0 + 0.22 * sin(u_time * 4.0);
   // Light bg (NormalBlending, no additive self-brightening): bump sprite size so
   // the dark stars have enough AREA to read on paper. Dark bg stays as-is.
   gl_PointSize *= mix(1.5, 1.0, u_darkTheme);
@@ -336,6 +344,8 @@ void main() {
   // Nearer stars brighter; distant ones fade into the fog. Floor at 0.18 so the
   // far field never fully vanishes.
   v_fade = clamp((u_fogFar - dist) / max(1.0, u_fogFar - u_fogNear), 0.18, 1.0);
+  v_age = a_age;
+  v_hit = a_hit;
 }
 `;
 
@@ -345,12 +355,16 @@ uniform float u_lodFade; // cosmic-scale LOD: 1 near (nodes shown) → 0 far
 uniform float u_mono;    // 0 = community colour, 1 = monochrome ink
 uniform vec3 u_monoColor; // the ink — starlight white or near-black
 uniform float u_colorDepth; // gamma on node colour (>1 darker/deeper, <1 lighter)
+uniform float u_recency;  // 1 = recency glow on (recent edits burn hotter)
+uniform float u_searchOn; // 1 = a search is active (hits pulse, rest recede)
 varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
 varying float v_int;
 varying float v_dark;
 varying float v_kind;
+varying float v_age;
+varying float v_hit;
 void main() {
   vec2 pc = gl_PointCoord - vec2(0.5);
   float d = length(pc) * 2.0;
@@ -379,6 +393,12 @@ void main() {
     core = 1.0 - smoothstep(0.30, 0.45, d);
     glow = pow(max(0.0, 1.0 - d), 2.2);
   }
+  // Separation ring (halo-lite): carve a dim band between core and halo so
+  // overlapping stars keep readable edges instead of fusing into one blob.
+  // Depth-weighted — NEAR stars (the occluders) get the stronger ring; the far
+  // field stays a soft continuum. Spikes are added after, so beacons keep them.
+  float ring = smoothstep(0.40, 0.50, d) * (1.0 - smoothstep(0.62, 0.78, d));
+  glow *= 1.0 - ring * 0.45 * v_fade;
   // Alpha profile per theme:
   //   dark:  additive blending sums over the void — a low halo alpha is fine.
   //   light: NormalBlending over near-white paper — the halo needs a higher
@@ -422,6 +442,22 @@ void main() {
   // atmospheric-perspective cue additive blending otherwise erases.
   float luma = dot(col, vec3(0.2126, 0.7152, 0.0722));
   col = mix(vec3(luma), col, 0.4 + 0.6 * v_fade);
+  // Recency glow: notes touched in the last ~2 weeks burn hotter and a touch
+  // warmer (exp decay, ~14-day half-feel) — the vault reads as a map of the
+  // owner's current attention. One meaning per channel: temperature = recency.
+  if (u_recency > 0.5) {
+    float rec = exp(-max(v_age, 0.0) / 14.0);
+    col *= 1.0 + 0.55 * rec;
+    col = mix(col, col * vec3(1.16, 0.97, 0.78), rec * 0.45);
+  }
+  // Active search: matches lift, everything else recedes — the matched set is
+  // the only thing the eye is offered. (The in-phase size pulse rides u_time in
+  // the vertex stage; with ambient motion frozen this static lift still marks
+  // the hits.)
+  if (u_searchOn > 0.5) {
+    col *= mix(0.45, 1.35, v_hit);
+    a *= mix(0.5, 1.0, v_hit);
+  }
   // Pre-tonemap luminance clamp: caps each sprite's additive CONTRIBUTION at
   // 3.0, so an N-sprite overlap sums to at most 3N instead of unbounded HDR —
   // the structural backstop the per-intensity caps alone can't give.
@@ -847,6 +883,14 @@ export class GraphScene {
       "a_kind",
       new THREE.BufferAttribute(new Float32Array(n), 1),
     );
+    this.nodeGeom.setAttribute(
+      "a_age",
+      new THREE.BufferAttribute(new Float32Array(n).fill(9999), 1),
+    );
+    this.nodeGeom.setAttribute(
+      "a_hit",
+      new THREE.BufferAttribute(new Float32Array(n), 1),
+    );
     this.nodeMat = new THREE.ShaderMaterial({
       uniforms: {
         u_pixelRatio: { value: pr },
@@ -859,6 +903,8 @@ export class GraphScene {
         u_mono: { value: monoFor(settings, graph.order) },
         u_monoColor: { value: monoColorFor(settings, dark).clone() },
         u_colorDepth: { value: settings.nodeColorDepth },
+        u_recency: { value: settings.recencyGlow ? 1 : 0 },
+        u_searchOn: { value: 0 },
       },
       vertexShader: NODE_VERT,
       fragmentShader: NODE_FRAG,
@@ -1304,6 +1350,8 @@ export class GraphScene {
     const alp = this.nodeGeom.getAttribute("a_alpha") as THREE.BufferAttribute;
     const intn = this.nodeGeom.getAttribute("a_intensity") as THREE.BufferAttribute;
     const kind = this.nodeGeom.getAttribute("a_kind") as THREE.BufferAttribute;
+    const age = this.nodeGeom.getAttribute("a_age") as THREE.BufferAttribute;
+    const hit = this.nodeGeom.getAttribute("a_hit") as THREE.BufferAttribute;
     const { hoveredNode, neighbors, focus, tints, pulseId, pulseScale } =
       this.style;
     const c = new THREE.Color();
@@ -1350,6 +1398,8 @@ export class GraphScene {
       alp.setX(i, alpha);
       intn.setX(i, a.hidden ? 0 : inten); // hidden cores must not bloom
       kind.setX(i, a.starKind ?? 0);
+      age.setX(i, a.age ?? 9999);
+      hit.setX(i, this.searchHits?.has(id) ? 1 : 0);
     }
     // Reapply the hover micro-pop on top of the full rewrite so a style push
     // mid-pop (or while the pop is settled at full scale) doesn't snap the
@@ -1364,6 +1414,19 @@ export class GraphScene {
     alp.needsUpdate = true;
     intn.needsUpdate = true;
     kind.needsUpdate = true;
+    age.needsUpdate = true;
+    hit.needsUpdate = true;
+  }
+
+  // Current search-match set (pulse-in-phase highlight). Null = no search.
+  private searchHits: Set<string> | null = null;
+
+  /** Highlight the current search matches: they pulse in phase and everything
+   * else recedes. Pass null (or an empty set) to clear. */
+  setSearchHits(ids: Set<string> | null): void {
+    this.searchHits = ids && ids.size > 0 ? ids : null;
+    this.nodeMat.uniforms.u_searchOn.value = this.searchHits ? 1 : 0;
+    this.writeNodes();
   }
 
   // Rendered a_size for a node at a given hover-pop blend — composes with the
@@ -2279,6 +2342,8 @@ export class GraphScene {
     this.nodeGeom.setAttribute("a_alpha", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.nodeGeom.setAttribute("a_intensity", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.nodeGeom.setAttribute("a_kind", new THREE.BufferAttribute(new Float32Array(n), 1));
+    this.nodeGeom.setAttribute("a_age", new THREE.BufferAttribute(new Float32Array(n).fill(9999), 1));
+    this.nodeGeom.setAttribute("a_hit", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.points.geometry = this.nodeGeom;
     oldNodeGeom.dispose();
 
@@ -2570,6 +2635,7 @@ export class GraphScene {
       monoColorFor(settings, this.darkTheme),
     );
     this.nodeMat.uniforms.u_colorDepth.value = settings.nodeColorDepth;
+    this.nodeMat.uniforms.u_recency.value = settings.recencyGlow ? 1 : 0;
     this.cosmic.setFrequency(settings.cosmicFrequency);
     // Sky style flip (star density / dotted grid / void) — rebuild the field.
     if (settings.skyStyle !== this.appliedSkyStyle) {

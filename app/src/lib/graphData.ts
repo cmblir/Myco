@@ -525,6 +525,11 @@ export interface BuildGraphOpts {
   // Light (white-skin) background: pick the dark, saturated node palette so
   // stars read on paper instead of washing out.
   lightBg?: boolean;
+  // Recency glow: absolute path → mtime (ms) and the "now" to age against.
+  // When present each node gets an `age` attr (days since modified); missing
+  // files read as very old so unknown never glows.
+  mtimes?: Map<string, number>;
+  now?: number;
   // Multiverse: stamp this slug on every node's `universe` attr, and namespace
   // ghost ids with `ghostPrefix` so the same unresolved [[link]] in two
   // projects can't merge into one cross-universe node. Both default to the
@@ -676,6 +681,8 @@ export interface GraphNodeAttrs {
   // diffraction spikes). Seeded per note so the sky isn't a wall of identical
   // glows; top hubs always stay blazing main-sequence.
   starKind?: number;
+  // Days since the file was last modified (recency glow); 9999 = unknown/old.
+  age?: number;
   hidden?: boolean;
   // Phase 2 — wiki frontmatter encoded into the star's appearance.
   baseAlpha?: number; // confidence → brightness (1 = full; <1 dims low-confidence)
@@ -697,8 +704,31 @@ export type VaultGraph = Graph<GraphNodeAttrs, GraphEdgeAttrs>;
 // Stellar classification — deterministic per note. Top hubs stay blazing
 // main-sequence stars; orphans skew toward quiet dwarfs; the rest mix so the
 // sky reads like a real population instead of uniform glow.
-export function starKindOf(id: string, deg: number, dn: number): number {
+export function starKindOf(
+  id: string,
+  deg: number,
+  dn: number,
+  nodeType?: string,
+): number {
   if (dn > 0.75) return 0; // top hubs: blazing main-sequence
+  // Frontmatter type → a CONSISTENT glyph (same kind of note, same shape of
+  // star), a colour-blind-safe channel that survives HDR bloom better than hue.
+  // Sources are piercing spiked beacons (the citable references), entities are
+  // big warm presences, techniques dense small cores; concepts/analysis keep
+  // the default glow. Untyped notes keep the seeded population look.
+  switch (nodeType) {
+    case "source-summary":
+      return 3; // neutron: pinpoint + diffraction spikes
+    case "entity":
+      return 2; // red giant: big soft warm ball
+    case "technique":
+      return 1; // dwarf: small dense core
+    case "concept":
+    case "analysis":
+      return 0; // main-sequence glow
+    default:
+      break;
+  }
   const r = seededUnit(id, 5);
   if (deg === 0) return r < 0.6 ? 1 : 0; // orphans: mostly quiet dwarfs
   if (r < 0.5) return 0; // main sequence
@@ -814,7 +844,18 @@ export function buildGraph(
     // in a nucleus), not by individual HDR — additive overlap sums past any
     // per-sprite cap, so per-sprite HDR stays low (calm-cosmic-web spec).
     g.setNodeAttribute(id, "intensity", Math.min(1.7, 0.22 + Math.pow(dn, 1.8) * 1.5));
-    g.setNodeAttribute(id, "starKind", starKindOf(id, deg, dn));
+    g.setNodeAttribute(id, "starKind", starKindOf(id, deg, dn, adjacency.meta?.[id]?.type));
+    // Recency: days since last modified (9999 = unknown → never glows). Ghost
+    // nodes have no file and stay unknown.
+    if (o.mtimes) {
+      const mt = o.mtimes.get(id);
+      const now = o.now ?? 0;
+      g.setNodeAttribute(
+        id,
+        "age",
+        mt !== undefined && now > 0 ? Math.max(0, (now - mt) / 86_400_000) : 9999,
+      );
+    }
   });
   // Colour by community hue + star temperature; store community id + hub flag
   // (needs the degree normalisation above, so it runs AFTER the size pass).

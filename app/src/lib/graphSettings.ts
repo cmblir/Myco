@@ -76,6 +76,9 @@ export interface GraphSettings {
   // One switch for ALL idle motion (auto-rotate, edge pulses, star breathing) —
   // the spec's motion budget gives ambience a single opt-out instead of three.
   ambientMotion: boolean;
+  // Recency glow: recently edited notes burn a touch hotter, untouched ones
+  // cool — the vault reads as a map of the owner's current attention.
+  recencyGlow: boolean;
   // Cosmic events (black hole / wormhole) on the dark skin — a separate opt-out
   // from ambientMotion because they're the most attention-grabbing FX.
   cosmicEvents: boolean;
@@ -134,6 +137,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   linkThickness: 1,
   brightness: 0.9, // exposure headroom: the void stays black, only emitters survive
   ambientMotion: true,
+  recencyGlow: true,
   cosmicEvents: true,
   cosmicFrequency: 1,
   clickBurst: true,
