@@ -3675,6 +3675,81 @@ export class GraphScene {
     this.clusterLabels.setEnabled(on);
   }
 
+  // ── Walrus boundary sphere ────────────────────────────────────────────
+  // The hyperbolic-tree layout fills a ball; the CAIDA Walrus signature is the
+  // faint sphere OUTLINE that ball sits in. Three great-circle rings (one per
+  // plane) fitted to the node cloud read as that sphere without the cost of a
+  // full wireframe. Rebuilt on each walrus (re)layout, torn down otherwise.
+  private walrusBoundary: THREE.LineSegments | null = null;
+
+  /** Draw (true) or clear (false) the boundary sphere fitted to the current node
+   *  cloud. Only meaningful for the walrus layout — the caller gates it. */
+  setWalrusBoundary(on: boolean): void {
+    if (this.walrusBoundary) {
+      this.scene.remove(this.walrusBoundary);
+      this.walrusBoundary.geometry.dispose();
+      (this.walrusBoundary.material as THREE.Material).dispose();
+      this.walrusBoundary = null;
+    }
+    if (!on) return;
+    const pos = this.nodeGeom.getAttribute("position") as THREE.BufferAttribute;
+    const n = this.nodeIds.length;
+    if (n === 0) return;
+    // Centre = node centroid; radius = the enclosing distance (a hair past the
+    // farthest node) so every firework sits just inside the shell.
+    let cx = 0;
+    let cy = 0;
+    let cz = 0;
+    for (let i = 0; i < n; i++) {
+      cx += pos.getX(i);
+      cy += pos.getY(i);
+      cz += pos.getZ(i);
+    }
+    cx /= n;
+    cy /= n;
+    cz /= n;
+    let r = 1;
+    for (let i = 0; i < n; i++) {
+      r = Math.max(r, Math.hypot(pos.getX(i) - cx, pos.getY(i) - cy, pos.getZ(i) - cz));
+    }
+    r *= 1.04;
+    const SEG = 96;
+    const verts: number[] = [];
+    // Three great circles: XY, YZ, ZX planes. Each is SEG line segments.
+    const ring = (axis: 0 | 1 | 2): void => {
+      for (let i = 0; i < SEG; i++) {
+        const a0 = (i / SEG) * Math.PI * 2;
+        const a1 = ((i + 1) / SEG) * Math.PI * 2;
+        const pt = (a: number): [number, number, number] => {
+          const c = Math.cos(a) * r;
+          const s = Math.sin(a) * r;
+          if (axis === 0) return [cx + c, cy + s, cz]; // XY
+          if (axis === 1) return [cx, cy + c, cz + s]; // YZ
+          return [cx + s, cy, cz + c]; // ZX
+        };
+        verts.push(...pt(a0), ...pt(a1));
+      }
+    };
+    ring(0);
+    ring(1);
+    ring(2);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(new Float32Array(verts), 3));
+    const line = new THREE.LineSegments(
+      geo,
+      new THREE.LineBasicMaterial({
+        color: this.darkTheme ? 0x5a6a9c : 0x9aa3b8,
+        transparent: true,
+        opacity: this.darkTheme ? 0.22 : 0.3,
+        depthWrite: false,
+      }),
+    );
+    line.frustumCulled = false;
+    line.renderOrder = -600; // behind the nodes/edges, part of the backdrop
+    this.scene.add(line);
+    this.walrusBoundary = line;
+  }
+
   // ── Chronicle time axis ───────────────────────────────────────────────
   // The strata (chronicle) layout lays notes on a real time axis; this draws
   // the DATES under it — faint vertical gridlines at each period boundary plus a
@@ -4214,6 +4289,7 @@ export class GraphScene {
     if (this.raf != null) cancelAnimationFrame(this.raf);
     this.raf = null;
     this.setTimeAxis(null); // drop the chronicle axis + its DOM labels
+    this.setWalrusBoundary(false); // drop the walrus boundary sphere
     this.resizeObs.disconnect();
     const el = this.renderer.domElement;
     el.removeEventListener("pointermove", this.onPointerMove);

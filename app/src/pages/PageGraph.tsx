@@ -822,6 +822,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         scene.setTimeAxis(axis);
       }
       scene.syncPositions();
+      // Walrus: draw the CAIDA boundary sphere around the baked ball (after
+      // syncPositions so it reads the final node positions).
+      scene.setWalrusBoundary(s.layout === "walrus");
       scene.layoutSettled();
       scene.fit();
       introPlayed = true;

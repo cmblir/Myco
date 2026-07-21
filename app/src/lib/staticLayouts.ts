@@ -399,8 +399,11 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
   const n = g.order;
   if (n === 0) return;
   const golden = Math.PI * (3 - Math.sqrt(5));
-  const DECAY = 0.72; // radial-step shrink per depth (gentle → the tree spreads,
-  // deep nodes still converge toward the boundary shell)
+  const DECAY = 0.58; // firework-step shrink per depth: tight so a subtree stays
+  // a COMPACT burst instead of a diffuse cloud that merges with its neighbours
+  const ROOT_SPOKE = 0.62; // long root→child spokes reaching toward the shell —
+  // the CAIDA look is distinct fireworks at the ends of long central spokes
+  const BURST = 0.15; // the first firework step (depth 1); decays by DECAY after
   const CONE = 1.0; // fallback cone half-angle when a node has no allocated share
 
   // Degree lookup (attribute, falling back to live degree) for hub selection.
@@ -506,7 +509,9 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
     const kids = children.get(v) ?? [];
     if (kids.length === 0) continue;
     const d = depth.get(v) ?? 0;
-    const step = Math.pow(DECAY, d) * (1 - DECAY); // hyperbolic radial increment
+    // Long spokes off the root, compact bursts everywhere deeper → distinct
+    // fireworks at the spoke ends rather than one uniform dandelion ball.
+    const step = d === 0 ? ROOT_SPOKE : BURST * Math.pow(DECAY, d - 1);
     const H = coneHalf.get(v) ?? CONE;
     const [px, py, pz] = pos.get(v)!;
     const a = axis.get(v)!;
@@ -542,9 +547,9 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
       const jit = 1 + (seededUnit(c, 59) - 0.5) * 0.1;
       pos.set(c, [px + dx * step * jit, py + dy * step * jit, pz + dz * step * jit]);
       axis.set(c, [dx, dy, dz]);
-      // The child's own cone ∝ √(its weight share), capped so no single branch
-      // eats a whole hemisphere; a leaf gets none.
-      coneHalf.set(c, Math.min(1.2, H * Math.sqrt(frac) * 1.35));
+      // The child's own cone ∝ √(its weight share), capped tight so a firework
+      // stays a compact burst (a wide cone smears neighbouring bursts together).
+      coneHalf.set(c, Math.min(1.0, H * Math.sqrt(frac) * 1.15));
     });
   }
 
