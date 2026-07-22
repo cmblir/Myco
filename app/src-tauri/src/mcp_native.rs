@@ -26,8 +26,9 @@ use rmcp::{
         StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
     },
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio_util::sync::CancellationToken;
 
 use crate::importers::secrets_scan;
@@ -38,6 +39,177 @@ pub const MCP_PORT: u16 = 22360;
 
 pub fn mcp_url() -> String {
     format!("http://localhost:{MCP_PORT}/mcp")
+}
+
+// ─── auth token (persisted, so Connect is one-time) ──────────────────────────
+
+/// Bearer token the server requires. Loopback bind + DNS-rebinding protection
+/// already keep browsers out; the token stops any OTHER local process from
+/// driving the write tools against the open vault. Persisted to app-data (the
+/// user chose a one-time Connect over a per-launch rotating token), so a single
+/// `claude mcp add` survives restarts.
+fn load_or_create_token() -> String {
+    let path = settings::settings_dir().ok().map(|d| d.join("mcp-token"));
+    if let Some(p) = &path {
+        if let Ok(t) = std::fs::read_to_string(p) {
+            let t = t.trim().to_string();
+            if !t.is_empty() {
+                return t;
+            }
+        }
+    }
+    let tok = gen_token();
+    if let Some(p) = &path {
+        let _ = std::fs::write(p, &tok);
+    }
+    tok
+}
+
+fn gen_token() -> String {
+    let mut buf = [0u8; 16];
+    #[cfg(unix)]
+    {
+        use std::io::Read;
+        if std::fs::File::open("/dev/urandom")
+            .and_then(|mut f| f.read_exact(&mut buf))
+            .is_ok()
+        {
+            return buf.iter().map(|b| format!("{b:02x}")).collect();
+        }
+    }
+    // Fallback (non-unix / urandom failure): time+pid mix. Weak, but the threat
+    // model is a same-user local process, and the token is persisted to a
+    // user-readable file anyway — its job is binding a client, not deep secrecy.
+    let n = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(1)
+        ^ ((std::process::id() as u64) << 32);
+    buf[..8].copy_from_slice(&n.to_le_bytes());
+    buf[8..].copy_from_slice(&n.rotate_left(17).to_le_bytes());
+    buf.iter().map(|b| format!("{b:02x}")).collect()
+}
+
+fn token_ref() -> &'static str {
+    static TOKEN: OnceLock<String> = OnceLock::new();
+    TOKEN.get_or_init(load_or_create_token)
+}
+
+/// The current bearer token (minted+persisted on first use).
+pub fn token() -> String {
+    token_ref().to_string()
+}
+
+/// The one-line `claude mcp add` command (with the auth header) the UI shows.
+pub fn connect_command() -> String {
+    format!(
+        "claude mcp add --transport http memex {} --header \"Authorization: Bearer {}\"",
+        mcp_url(),
+        token()
+    )
+}
+
+/// The claude_desktop_config.json snippet (a URL connector with the header).
+pub fn desktop_json() -> String {
+    format!(
+        "{{\n  \"mcpServers\": {{\n    \"memex\": {{\n      \"url\": \"{}\",\n      \"headers\": {{ \"Authorization\": \"Bearer {}\" }}\n    }}\n  }}\n}}",
+        mcp_url(),
+        token()
+    )
+}
+
+static RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Whether the in-process server is currently bound and listening.
+pub fn is_running() -> bool {
+    RUNNING.load(Ordering::Relaxed)
+}
+
+/// What the Settings panel needs: the server is always running (no install),
+/// the connect command, and the desktop-config snippet.
+#[derive(Debug, Clone, Serialize)]
+pub struct NativeInfo {
+    pub running: bool,
+    pub url: String,
+    pub command: String,
+    pub desktop_json: String,
+}
+
+pub fn info() -> NativeInfo {
+    NativeInfo {
+        running: is_running(),
+        url: mcp_url(),
+        command: connect_command(),
+        desktop_json: desktop_json(),
+    }
+}
+
+/// One-click Connect: register (or re-register) memex with Claude Code over the
+/// HTTP transport, WITH the auth header (the old SSE button omitted it). A
+/// best-effort remove first so a re-Connect never collides with a stale entry.
+pub fn register() -> Result<String, String> {
+    let url = mcp_url();
+    let claude = crate::claude::locate_bin("claude", "MEMEX_CLAUDE_PATH")
+        .ok_or("claude CLI not found on PATH")?;
+    let path = crate::claude::augmented_path(&claude);
+    let _ = std::process::Command::new(&claude)
+        .args(["mcp", "remove", "memex"])
+        .env("PATH", &path)
+        .output();
+    let out = std::process::Command::new(&claude)
+        .args([
+            "mcp",
+            "add",
+            "--transport",
+            "http",
+            "memex",
+            &url,
+            "--header",
+            &format!("Authorization: Bearer {}", token()),
+        ])
+        .env("PATH", &path)
+        .output()
+        .map_err(|e| format!("spawn claude failed: {e}"))?;
+    if !out.status.success() {
+        return Err(format!(
+            "claude mcp add failed:\n{}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(format!("Connected memex over HTTP at {url}"))
+}
+
+/// Constant-time byte comparison (no early return on mismatch).
+fn ct_eq(a: &[u8], b: &[u8]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut diff = 0u8;
+    for (x, y) in a.iter().zip(b.iter()) {
+        diff |= x ^ y;
+    }
+    diff == 0
+}
+
+/// Reject any request without a valid `Authorization: Bearer <token>`.
+async fn require_bearer(
+    axum::extract::State(token): axum::extract::State<std::sync::Arc<String>>,
+    req: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> axum::response::Response {
+    use axum::response::IntoResponse;
+    let ok = req
+        .headers()
+        .get(axum::http::header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|h| h.strip_prefix("Bearer "))
+        .map(|got| ct_eq(got.as_bytes(), token.as_bytes()))
+        .unwrap_or(false);
+    if ok {
+        next.run(req).await
+    } else {
+        axum::http::StatusCode::UNAUTHORIZED.into_response()
+    }
 }
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -1491,16 +1663,23 @@ pub async fn serve(ct: CancellationToken) -> Result<(), String> {
             .with_cancellation_token(ct.clone()),
     );
 
-    let router = axum::Router::new().nest_service("/mcp", service);
+    let router = axum::Router::new().nest_service("/mcp", service).layer(
+        axum::middleware::from_fn_with_state(
+            std::sync::Arc::new(token_ref().to_string()),
+            require_bearer,
+        ),
+    );
     let addr = format!("127.0.0.1:{MCP_PORT}");
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .map_err(|e| format!("bind {addr}: {e}"))?;
 
+    RUNNING.store(true, Ordering::Relaxed);
     tokio::spawn(async move {
         let _ = axum::serve(listener, router)
             .with_graceful_shutdown(async move { ct.cancelled().await })
             .await;
+        RUNNING.store(false, Ordering::Relaxed);
     });
     Ok(())
 }

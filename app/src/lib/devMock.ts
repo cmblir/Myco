@@ -1180,6 +1180,17 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve("(mock) MCP server started.");
     case "mcp_stop":
       return Promise.resolve("(mock) MCP server stopped.");
+    case "mcp_info":
+      return Promise.resolve({
+        running: true,
+        url: "http://localhost:22360/mcp",
+        command:
+          'claude mcp add --transport http memex http://localhost:22360/mcp --header "Authorization: Bearer 0123456789abcdef0123456789abcdef"',
+        desktop_json:
+          '{\n  "mcpServers": {\n    "memex": {\n      "url": "http://localhost:22360/mcp",\n      "headers": { "Authorization": "Bearer 0123456789abcdef0123456789abcdef" }\n    }\n  }\n}',
+      });
+    case "mcp_connect":
+      return Promise.resolve("(mock) Connected memex over HTTP at http://localhost:22360/mcp");
     default:
       // Reject, like the real Tauri does for a command that is not registered.
       // Resolving `undefined` instead is how the mock hid a broken feature for

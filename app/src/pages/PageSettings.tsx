@@ -12,7 +12,7 @@ import type { Theme } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { ipc } from "../lib/ipc";
-import type { McpRegInfo, MemexSettings, OllamaStatus } from "../lib/ipc";
+import type { McpNativeInfo, MemexSettings, OllamaStatus } from "../lib/ipc";
 import { PROVIDERS, providerDesc, useEnabledProviders } from "../lib/providers";
 import type { ProviderDef } from "../lib/providers";
 import ModelSelect from "../components/ModelSelect";
@@ -1294,18 +1294,19 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
 }
 
 function SettingsMcp({ t }: { t: Strings }): JSX.Element {
-  const currentVault = useVaultStore((s) => s.currentVault);
-  const [info, setInfo] = useState<McpRegInfo | null>(null);
+  const [info, setInfo] = useState<McpNativeInfo | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
   const [tick, setTick] = useState(0);
 
+  // The native server is global (not per-vault) and auto-starts at launch —
+  // there is nothing to install, so this just reads its status + connect info.
   useEffect(() => {
-    if (!currentVault) return;
     let alive = true;
     ipc
-      .mcpRegistrationInfo(currentVault.path)
+      .mcpInfo()
       .then((i) => {
         if (alive) setInfo(i);
       })
@@ -1315,7 +1316,7 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
     return () => {
       alive = false;
     };
-  }, [currentVault, tick]);
+  }, [tick]);
 
   function copy(text: string, which: string): void {
     void navigator.clipboard.writeText(text).then(() => {
@@ -1324,12 +1325,15 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
     });
   }
 
-  async function install(): Promise<void> {
-    if (!currentVault) return;
+  // One-click Connect: register memex with Claude Code over HTTP, token header
+  // included. Re-runnable — it removes any stale entry first.
+  async function connect(): Promise<void> {
     setBusy(true);
     setError(null);
+    setStatus(null);
     try {
-      await ipc.mcpInstall(currentVault.path);
+      const msg = await ipc.mcpConnect();
+      setStatus(msg);
       setTick((n) => n + 1);
     } catch (e) {
       setError(String(e));
@@ -1337,39 +1341,6 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
       setBusy(false);
     }
   }
-
-  async function register(): Promise<void> {
-    if (!currentVault) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await ipc.mcpRegister(currentVault.path);
-      setTick((n) => n + 1);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  // Start / stop the SSE server directly (installed but stopped is a valid
-  // state — e.g. the boot auto-start ran before Install, or the user stopped
-  // it). Register also starts it, but a dedicated control is clearer.
-  async function toggleServe(): Promise<void> {
-    setBusy(true);
-    setError(null);
-    try {
-      if (info?.serving) await ipc.mcpStop();
-      else await ipc.mcpServe();
-      setTick((n) => n + 1);
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  if (!currentVault) return <div className="muted">Loading…</div>;
 
   const codeBox = (text: string, which: string): JSX.Element => (
     <div
@@ -1401,88 +1372,52 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
         </p>
       </div>
 
-      {info && !info.found ? (
-        <div className="card" style={{ padding: 14, fontSize: 13 }} role="alert">
-          {t.mcp_not_found}
-        </div>
-      ) : null}
+      {/* The server runs in-process and starts with the app — no install. */}
+      <div style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+        <span
+          style={{
+            width: 8,
+            height: 8,
+            borderRadius: "50%",
+            background: info?.running ? "#22c55e" : "#9aa0a8",
+            display: "inline-block",
+          }}
+          aria-hidden="true"
+        />
+        {info?.running
+          ? `${t.mcp_serving ?? "MCP server running"} — ${info.url}`
+          : (t.mcp_starting ?? "MCP server starting…")}
+      </div>
 
-      {info && info.found && !info.installed ? (
-        <div className="col" style={{ gap: 10 }}>
-          <div className="muted" style={{ fontSize: 13 }}>
-            {t.mcp_status_not_installed}
-          </div>
-          <button
-            className="btn btn-primary"
-            disabled={busy}
-            onClick={() => void install()}
-            style={{ alignSelf: "flex-start" }}
-          >
-            {busy ? t.mcp_installing : t.mcp_install_btn}
-          </button>
-        </div>
-      ) : null}
+      <div className="col" style={{ gap: 8 }}>
+        <button
+          className="btn btn-primary"
+          disabled={busy || !info}
+          onClick={() => void connect()}
+          style={{ alignSelf: "flex-start" }}
+        >
+          {busy ? (t.mcp_connecting ?? "Connecting…") : (t.mcp_connect_btn ?? "Connect to Claude Code")}
+        </button>
+        {status ? (
+          <div style={{ fontSize: 12, color: "#16a34a" }}>{status}</div>
+        ) : null}
+      </div>
 
-      {info && info.installed && info.command && info.desktop_json ? (
-        <div className="col" style={{ gap: 16 }}>
-          <div className="muted" style={{ fontSize: 13 }}>
-            ✓ {t.mcp_status_installed}
-          </div>
-
-          <div style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 6 }}>
-            <span
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: "50%",
-                background: info.serving ? "#22c55e" : "#9aa0a8",
-                display: "inline-block",
-              }}
-              aria-hidden="true"
-            />
-            {info.serving
-              ? `${t.mcp_serving ?? "SSE server running"}${info.url ? ` — ${info.url}` : ""}`
-              : (t.mcp_not_serving ?? "SSE server stopped")}
-            <button
-              className="btn"
-              disabled={busy}
-              onClick={() => void toggleServe()}
-              style={{ marginLeft: 8, padding: "2px 10px", fontSize: 12 }}
-            >
-              {info.serving
-                ? (t.mcp_stop_btn ?? "Stop")
-                : (t.mcp_start_btn ?? "Start server")}
-            </button>
-          </div>
-
-          <div className="col" style={{ gap: 6 }}>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>
-              {t.mcp_command_label}
-            </div>
-            {codeBox(info.command, "cmd")}
-            <button
-              className="btn btn-primary"
-              disabled={busy}
-              onClick={() => void register()}
-              style={{ alignSelf: "flex-start" }}
-            >
-              {busy ? (t.mcp_registering ?? "Registering…") : t.mcp_register_btn}
-            </button>
-          </div>
-
-          <div className="col" style={{ gap: 6 }}>
-            <div style={{ fontWeight: 600, fontSize: 13 }}>
-              {t.mcp_desktop_label}
-            </div>
-            <div className="muted" style={{ fontSize: 12 }}>
-              {t.mcp_desktop_path}
-            </div>
-            {codeBox(info.desktop_json, "desktop")}
-          </div>
-
+      {info ? (
+        <div className="col" style={{ gap: 6 }}>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>{t.mcp_command_label}</div>
           <div className="muted" style={{ fontSize: 12 }}>
-            {t.mcp_offline_note}
+            {t.mcp_connect_hint ?? "Or run this once in a terminal:"}
           </div>
+          {codeBox(info.command, "cmd")}
+        </div>
+      ) : null}
+
+      {info ? (
+        <div className="col" style={{ gap: 6 }}>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>{t.mcp_desktop_label}</div>
+          <div className="muted" style={{ fontSize: 12 }}>{t.mcp_desktop_path}</div>
+          {codeBox(info.desktop_json, "desktop")}
         </div>
       ) : null}
 

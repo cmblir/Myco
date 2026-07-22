@@ -458,6 +458,10 @@ export interface Strings {
   mcp_start_btn?: string;
   mcp_stop_btn?: string;
   mcp_registering?: string;
+  mcp_starting?: string;
+  mcp_connect_btn?: string;
+  mcp_connecting?: string;
+  mcp_connect_hint?: string;
   s_model_lede: string;
   s_model_ingest: string;
   s_model_query: string;
@@ -1198,11 +1202,15 @@ export const STRINGS: Record<Lang, Strings> = {
     mcp_copy: "Copy",
     mcp_copied: "Copied",
     mcp_register_btn: "Register to Claude Code now",
-    mcp_serving: "SSE server running",
-    mcp_not_serving: "SSE server stopped",
+    mcp_serving: "MCP server running",
+    mcp_not_serving: "MCP server stopped",
     mcp_start_btn: "Start server",
     mcp_stop_btn: "Stop",
     mcp_registering: "Registering…",
+    mcp_starting: "MCP server starting…",
+    mcp_connect_btn: "Connect to Claude Code",
+    mcp_connecting: "Connecting…",
+    mcp_connect_hint: "Or run this once in a terminal:",
     mcp_offline_note:
       "The app hosts the SSE server while it's open and follows your active vault.",
     mcp_not_found:
@@ -1955,8 +1963,12 @@ export const STRINGS: Record<Lang, Strings> = {
       "Memex가 꺼져 있어도 동작 — Claude가 서버를 직접 띄웁니다.",
     mcp_not_found:
       "이 빌드에 MCP 서버 파일이 없습니다. 최신 Memex를 다시 설치하세요.",
-    mcp_serving: "SSE 서버 실행 중",
-    mcp_not_serving: "SSE 서버 중지됨",
+    mcp_serving: "MCP 서버 실행 중",
+    mcp_not_serving: "MCP 서버 중지됨",
+    mcp_starting: "MCP 서버 시작 중…",
+    mcp_connect_btn: "Claude Code에 연결",
+    mcp_connecting: "연결 중…",
+    mcp_connect_hint: "또는 터미널에서 한 번 실행:",
     mcp_start_btn: "서버 시작",
     mcp_stop_btn: "중지",
     mcp_registering: "등록 중…",
@@ -2994,8 +3006,12 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_ctx_lost: "グラフィックスコンテキストが失われました。",
     gr_retry: "再構築",
     gr_perf_mode: "パフォーマンスモード — 大きなグラフではアンビエントレイヤーをオフに",
-    mcp_serving: "SSE サーバー実行中",
-    mcp_not_serving: "SSE サーバー停止中",
+    mcp_serving: "MCP サーバー実行中",
+    mcp_not_serving: "MCP サーバー停止中",
+    mcp_starting: "MCP サーバー起動中…",
+    mcp_connect_btn: "Claude Code に接続",
+    mcp_connecting: "接続中…",
+    mcp_connect_hint: "またはターミナルで一度実行:",
     mcp_start_btn: "サーバーを起動",
     mcp_stop_btn: "停止",
     mcp_registering: "登録中…",

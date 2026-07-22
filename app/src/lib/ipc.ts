@@ -86,6 +86,14 @@ export interface McpRegInfo {
   desktop_json: string | null;
 }
 
+/// Native (in-process) MCP server info — no install, always running.
+export interface McpNativeInfo {
+  running: boolean;
+  url: string;
+  command: string;
+  desktop_json: string;
+}
+
 export interface ClaudeResult {
   stdout: string;
   stderr: string;
@@ -534,6 +542,8 @@ export const ipc = {
     invoke<string>("mcp_register", { vaultPath }),
   mcpServe: () => invoke<string>("mcp_serve"),
   mcpStop: () => invoke<string>("mcp_stop"),
+  mcpInfo: () => invoke<McpNativeInfo>("mcp_info"),
+  mcpConnect: () => invoke<string>("mcp_connect"),
   // Embedded local model (bundled Gemma 3 1B) — offline, no key. First call
   // lazily loads the weights, so it can take a few extra seconds.
   localClassify: (note: string) => invoke<string>("local_classify", { note }),

@@ -151,6 +151,8 @@ pub fn run() {
             commands::mcp_register,
             commands::mcp_serve,
             commands::mcp_stop,
+            commands::mcp_info,
+            commands::mcp_connect,
             commands::local_classify,
             commands::local_query,
             commands::reindex_embeddings,
@@ -174,15 +176,17 @@ pub fn run() {
                 let _ = std::fs::create_dir_all(&dir);
                 let _ = PANIC_LOG_PATH.set(dir.join("memex-panic.log"));
             }
-            // Auto-start the app-hosted SSE MCP server if it's been installed,
-            // so a registered `claude mcp add --transport sse memex …` just
-            // works each launch. Best-effort — a failure never blocks startup.
-            // NOTE: being replaced by the native in-process server in mcp_native
-            // (rmcp, no Python) — kept as the launch path until the tool port
-            // reaches parity, then flipped + deleted (see the migration plan).
-            let handle = app.handle().clone();
-            std::thread::spawn(move || {
-                let _ = mcp_server::serve(&handle);
+            // Auto-start the native in-process MCP server (rmcp) on every launch.
+            // No install / venv / Python, so it always comes up — the Obsidian-
+            // like "the app just serves it" model. Runs on the app's tokio
+            // runtime and reads the active-vault marker per call, so it follows
+            // project switches with no restart. Best-effort: a bind failure
+            // never blocks startup.
+            let mcp_ct = tokio_util::sync::CancellationToken::new();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = mcp_native::serve(mcp_ct).await {
+                    eprintln!("native MCP server failed to start: {e}");
+                }
             });
             // Web clipper: memx://clip?url=…&title=…&selection=… lands in the
             // open vault's _inbox/ (falling back to the persisted active-vault

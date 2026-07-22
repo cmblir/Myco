@@ -1336,6 +1336,21 @@ pub fn mcp_stop() -> Result<String, String> {
     Ok("MCP server stopped.".into())
 }
 
+/// Native (in-process) MCP server status + one-click connect info. Replaces the
+/// Python install/serve/register flow — there is nothing to install.
+#[tauri::command]
+pub fn mcp_info() -> crate::mcp_native::NativeInfo {
+    crate::mcp_native::info()
+}
+
+/// One-click Connect: register memex with Claude Code over HTTP, with the token.
+#[tauri::command]
+pub async fn mcp_connect() -> Result<String, String> {
+    tauri::async_runtime::spawn_blocking(crate::mcp_native::register)
+        .await
+        .map_err(|e| format!("join failed: {e}"))?
+}
+
 // ---------------------------------------------------------------------------
 // Semantic layer (Feature 1): embed vault pages into an on-disk vector index and
 // serve semantic search / related-pages. Embedding runs offline via the bundled
