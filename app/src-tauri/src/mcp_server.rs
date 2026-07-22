@@ -21,6 +21,10 @@ use tauri::{AppHandle, Manager};
 /// re-resolves the active vault (memex_mcp resolves PROJECT_ROOT once at import).
 static SSE_CHILD: Mutex<Option<Child>> = Mutex::new(None);
 
+/// App-data filename the SSE child's stdout+stderr are teed to, so a launch
+/// crash leaves a readable trace instead of vanishing into /dev/null.
+const LOG_FILE: &str = "mcp-server.log";
+
 /// SSE bind port. Fixed to match the documented `claude mcp add --transport sse
 /// memex http://localhost:22360/sse`; overridable for dev via MEMEX_MCP_PORT.
 fn sse_port() -> u16 {
@@ -273,6 +277,20 @@ pub fn serve(app: &AppHandle) -> Result<String, String> {
         return Err("MCP server not installed yet — run Install first".into());
     }
     let py = p.python.to_string_lossy().into_owned();
+    // Child stdout+stderr go to a log file in app-data, NOT /dev/null. When the
+    // server dies on launch — a missing dep, a port already bound, a bad Python
+    // — that reason has to survive somewhere, or the failure is undebuggable
+    // from the outside (the exact bind-and-die the user hit). File::create
+    // truncates, so the log always holds the LATEST launch's output.
+    let log_path = app.path().app_data_dir().ok().map(|d| d.join(LOG_FILE));
+    let (out, err): (Stdio, Stdio) = match log_path
+        .as_ref()
+        .and_then(|lp| std::fs::File::create(lp).ok())
+        .and_then(|f| f.try_clone().ok().map(|f2| (f, f2)))
+    {
+        Some((f, f2)) => (Stdio::from(f), Stdio::from(f2)),
+        None => (Stdio::null(), Stdio::null()),
+    };
     let child = Command::new(&p.python)
         .arg(&p.script)
         .arg("--sse")
@@ -286,11 +304,30 @@ pub fn serve(app: &AppHandle) -> Result<String, String> {
         // the caller it exists to keep out.
         .env("MEMEX_MCP_TOKEN", sse_token())
         .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stdout(out)
+        .stderr(err)
         .spawn()
         .map_err(|e| format!("spawn SSE server failed: {e}"))?;
     *SSE_CHILD.lock().unwrap() = Some(child);
+
+    // The SSE server crashes INSTANTLY when it crashes at all (a bind conflict
+    // or import error throws before uvicorn's event loop starts). Wait briefly
+    // and, if the child already exited, hand back the log tail instead of a URL
+    // that nothing is listening on — turning "it just dies" into a real reason.
+    std::thread::sleep(std::time::Duration::from_millis(500));
+    if !is_serving() {
+        let detail = log_path
+            .as_ref()
+            .and_then(|lp| std::fs::read_to_string(lp).ok())
+            .map(|s| {
+                let lines: Vec<&str> = s.lines().collect();
+                let start = lines.len().saturating_sub(12);
+                lines[start..].join("\n")
+            })
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or_else(|| "(no output captured)".into());
+        return Err(format!("MCP server exited immediately on launch:\n{detail}"));
+    }
     Ok(sse_url())
 }
 

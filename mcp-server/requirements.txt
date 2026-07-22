@@ -1,1 +1,7 @@
 mcp>=1.2,<2
+# The --sse transport (_run_sse) hard-imports both of these. They arrive
+# transitively via mcp today, but a hard import must declare its own deps:
+# an mcp release that drops uvicorn would otherwise make --sse die on launch
+# with ModuleNotFoundError and no venv change to explain it.
+uvicorn>=0.27
+starlette>=0.37
