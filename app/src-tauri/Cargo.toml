@@ -40,6 +40,7 @@ trash = "5.2.3"
 rmcp = { version = "=2.2.0", default-features = false, features = ["server", "macros", "schemars", "transport-streamable-http-server", "transport-streamable-http-server-session"] }
 axum = "0.8"
 tokio-util = "0.7"
+similar = "2"
 
 [dev-dependencies]
 wiremock = "0.6"

@@ -11,8 +11,11 @@
 // (vault.rs / registry.rs / index.rs / provenance.rs). This file is a crate
 // module, so it can reach `pub(crate)` helpers too.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
+use regex::Regex;
 use rmcp::{
     ErrorData as McpError, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
@@ -26,7 +29,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
-use crate::{index, provenance, registry, settings, vault};
+use crate::{registry, settings, vault};
 
 /// Fixed loopback port. Matches the documented `claude mcp add` URL.
 pub const MCP_PORT: u16 = 22360;
@@ -127,6 +130,194 @@ fn fm_str(fm: &Value, key: &str) -> String {
     fm.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
 }
 
+fn fm_opt(fm: &Value, key: &str) -> Option<String> {
+    fm.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
+}
+
+/// (frontmatter, body) for a page, via the vault's frontmatter parser.
+fn read_parts(abs: &Path) -> Option<(Value, String)> {
+    vault::read_file(&abs.to_string_lossy())
+        .ok()
+        .map(|fc| (fc.frontmatter, fc.content))
+}
+
+// ─── ported wiki-schema logic (mirrors the Python server, regex parity) ───────
+
+const VALID_TYPES: [&str; 5] = ["concept", "technique", "entity", "source-summary", "analysis"];
+const LINT_META_TYPES: [&str; 2] = ["overview", "meta"];
+const LINT_SKIP_NAMES: [&str; 2] = ["index.md", "log.md"];
+
+/// title → slug. Mirror of the Python `make_slug` (Unicode-aware; the regex
+/// crate's `\w` already matches Hangul, so Korean titles slug like Python's).
+fn make_slug(title: &str) -> String {
+    static NONWORD: OnceLock<Regex> = OnceLock::new();
+    static WS: OnceLock<Regex> = OnceLock::new();
+    static DASHES: OnceLock<Regex> = OnceLock::new();
+    let nonword = NONWORD.get_or_init(|| Regex::new(r"[^\w\s-]").unwrap());
+    let ws = WS.get_or_init(|| Regex::new(r"[\s_]+").unwrap());
+    let dashes = DASHES.get_or_init(|| Regex::new(r"-+").unwrap());
+    let s = title.trim().to_lowercase();
+    let s = nonword.replace_all(&s, "");
+    let s = ws.replace_all(&s, "-");
+    let s = dashes.replace_all(&s, "-");
+    let s = s.trim_matches('-').to_string();
+    if s.is_empty() {
+        let n = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        format!("untitled-{n}")
+    } else {
+        s
+    }
+}
+
+/// `[^src-*]` citation refs (not the `[^src-*]:` definitions). The regex crate
+/// has no lookahead, so the trailing-colon exclusion is checked by hand.
+fn footnote_refs(body: &str) -> BTreeSet<String> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"\[\^(src-[\w-]+)\]").unwrap());
+    let mut out = BTreeSet::new();
+    for m in re.captures_iter(body) {
+        let whole = m.get(0).unwrap();
+        if body[whole.end()..].chars().next() == Some(':') {
+            continue; // it's a definition, not a reference
+        }
+        out.insert(m[1].to_string());
+    }
+    out
+}
+
+/// `[^src-*]:` footnote definitions (line-start).
+fn footnote_defs(body: &str) -> BTreeSet<String> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"(?m)^\[\^(src-[\w-]+)\]:").unwrap());
+    re.captures_iter(body).map(|m| m[1].to_string()).collect()
+}
+
+/// Raw `[[...]]` occurrence count (with duplicates), for stats parity.
+fn wikilink_count(body: &str) -> usize {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]").unwrap());
+    re.find_iter(body).count()
+}
+
+/// `[[link]]` targets, `.md`-normalized and de-duplicated (sorted).
+fn extract_links(body: &str) -> BTreeSet<String> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE.get_or_init(|| Regex::new(r"\[\[([^\]|]+)(?:\|[^\]]*)?\]\]").unwrap());
+    let mut out = BTreeSet::new();
+    for m in re.captures_iter(body) {
+        let s = m[1].trim();
+        out.insert(if s.ends_with(".md") {
+            s.to_string()
+        } else {
+            format!("{s}.md")
+        });
+    }
+    out
+}
+
+/// `[[slug::page]]` cross-project links → (slug, page-without-.md).
+fn cross_links(body: &str) -> Vec<(String, String)> {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    let re = RE
+        .get_or_init(|| Regex::new(r"\[\[([a-z0-9][\w-]*?)::([^\]|]+?)(?:\|[^\]]*?)?\]\]").unwrap());
+    re.captures_iter(body)
+        .map(|m| {
+            let slug = m[1].trim().to_string();
+            let page = m[2].trim();
+            (slug, page.strip_suffix(".md").unwrap_or(page).to_string())
+        })
+        .collect()
+}
+
+/// Structural + citation lint of one page (frontmatter + body). Mirrors the
+/// Python `lint_page_text`. Empty = clean.
+fn lint_page(fm: &Value, body: &str) -> Vec<String> {
+    let mut problems = Vec::new();
+    let empty_fm = fm.as_object().map(|o| o.is_empty()).unwrap_or(true);
+    if empty_fm {
+        problems.push("missing frontmatter".to_string());
+        return problems;
+    }
+    let ptype = fm_opt(fm, "type");
+    if let Some(t) = &ptype {
+        if LINT_META_TYPES.contains(&t.as_str()) {
+            return Vec::new(); // meta/scaffold page — schema does not apply
+        }
+    }
+    match &ptype {
+        None => problems.push("missing `type`".to_string()),
+        Some(t) if !VALID_TYPES.contains(&t.as_str()) => {
+            problems.push(format!("invalid `type`: {t}"))
+        }
+        _ => {}
+    }
+    let status = fm_opt(fm, "status");
+    if status.as_deref() == Some("superseded") && fm.get("superseded_by").is_none() {
+        problems.push("status=superseded without `superseded_by`".to_string());
+    }
+    if status.as_deref() == Some("disputed") && !body.contains("## Disputed") {
+        problems.push("status=disputed without a `## Disputed` section".to_string());
+    }
+    let refs = footnote_refs(body);
+    let defs = footnote_defs(body);
+    for r in refs.difference(&defs) {
+        problems.push(format!("citation [^{r}] has no definition"));
+    }
+    for d in defs.difference(&refs) {
+        problems.push(format!("footnote [^{d}] defined but never referenced"));
+    }
+    if !refs.is_empty() {
+        if let Some(sc) = fm.get("source_count") {
+            let n = sc
+                .as_i64()
+                .or_else(|| sc.as_str().and_then(|s| s.parse::<i64>().ok()));
+            match n {
+                Some(n) if n as usize != refs.len() => problems.push(format!(
+                    "source_count={sc} but {} distinct citations",
+                    refs.len()
+                )),
+                None if sc.as_str().is_some() => {
+                    problems.push(format!("source_count is not a number: {sc}"))
+                }
+                _ => {}
+            }
+        }
+    }
+    problems
+}
+
+/// Source-type → trust weight (GOV-03). Unknown/absent → neutral 0.5.
+fn source_trust(stype: &str) -> f64 {
+    match stype.trim().to_lowercase().as_str() {
+        "peer-reviewed" => 1.0,
+        "paper" => 0.95,
+        "book" => 0.9,
+        "official-docs" => 0.85,
+        "primary" => 0.85,
+        "news" => 0.6,
+        "blog" => 0.45,
+        "forum" => 0.35,
+        "tweet" => 0.25,
+        _ => 0.5,
+    }
+}
+
+fn suggest_confidence(stype: Option<&str>, cites: usize) -> &'static str {
+    let trust = source_trust(stype.unwrap_or("unknown"));
+    let cite_factor = (cites as f64 / 3.0).min(1.0);
+    let score = trust * (0.5 + 0.5 * cite_factor);
+    if score >= 0.75 {
+        "high"
+    } else if score >= 0.45 {
+        "medium"
+    } else {
+        "low"
+    }
+}
+
 // ─── server ──────────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -192,6 +383,16 @@ struct InboxSourceArgs {
     project: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct PreviewArgs {
+    /// wiki-relative filename to preview an update for.
+    filename: String,
+    /// The full proposed new content (frontmatter + body).
+    content: String,
+    #[serde(default)]
+    project: String,
+}
+
 #[tool_router]
 impl MemexServer {
     pub fn new() -> Self {
@@ -250,8 +451,8 @@ impl MemexServer {
         }
     }
 
-    /// Counts: wiki pages, raw sources, links, and page-type breakdown.
-    #[tool(description = "Vault statistics: page/source counts, link totals, type breakdown")]
+    /// Counts: wiki pages, raw sources, total wikilinks, and type breakdown.
+    #[tool(description = "Vault statistics: page/source counts, link total, type breakdown")]
     async fn stats(
         &self,
         Parameters(a): Parameters<ProjectArg>,
@@ -260,22 +461,23 @@ impl MemexServer {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let pages = collect_md(&wiki_dir(&root)).len();
+        let pages = collect_md(&wiki_dir(&root));
         let raw_sources = collect_md(&raw_dir(&root)).len();
-        let (mut links, mut unresolved) = (0usize, 0usize);
-        let mut types: std::collections::BTreeMap<String, usize> = Default::default();
-        if let Ok(adj) = index::build_link_graph(&root.to_string_lossy()) {
-            links = adj.forward.values().map(|v| v.len()).sum();
-            unresolved = adj.unresolved.values().map(|v| v.len()).sum();
-            for m in adj.meta.values() {
-                if let Some(t) = &m.node_type {
-                    *types.entry(t.clone()).or_default() += 1;
+        // total_links counts raw [[...]] occurrences (with duplicates), matching
+        // the Python server — not resolved graph edges.
+        let mut total_links = 0usize;
+        let mut type_counts: std::collections::BTreeMap<String, usize> = Default::default();
+        for abs in &pages {
+            if let Some((fm, body)) = read_parts(abs) {
+                if let Some(t) = fm_opt(&fm, "type") {
+                    *type_counts.entry(t).or_default() += 1;
                 }
+                total_links += wikilink_count(&body);
             }
         }
         json_result(json!({
-            "ok": true, "pages": pages, "raw_sources": raw_sources,
-            "links": links, "unresolved_links": unresolved, "types": types,
+            "ok": true, "total_pages": pages.len(), "raw_sources": raw_sources,
+            "total_links": total_links, "type_counts": type_counts,
         }))
     }
 
@@ -491,8 +693,9 @@ impl MemexServer {
         }
     }
 
-    /// Citation-trust report: per-source confidence tiers (from provenance).
-    #[tool(description = "Provenance/trust report: which sources back each page and how")]
+    /// Source-trust audit: each page's source_type, trust weight, citation
+    /// count, and the confidence the schema would suggest (flags mismatches).
+    #[tool(description = "Source-trust audit: declared vs suggested confidence per page")]
     async fn trust_report(
         &self,
         Parameters(a): Parameters<ProjectArg>,
@@ -501,25 +704,216 @@ impl MemexServer {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        match provenance::scan_provenance(&root.to_string_lossy()) {
-            Ok(rows) => {
-                let pages: Vec<Value> = rows
-                    .into_iter()
-                    .map(|r| {
-                        json!({
-                            "page": rel_to(&root, Path::new(&r.path)),
-                            "cited": r.cited, "total": r.total,
-                            "sources": r.sources.iter().map(|s| json!({
-                                "slug": s.slug, "kind": s.kind, "title": s.title,
-                                "resolved": s.resolved,
-                            })).collect::<Vec<_>>(),
-                        })
-                    })
-                    .collect();
-                json_result(json!({ "ok": true, "count": pages.len(), "pages": pages }))
+        let wiki = wiki_dir(&root);
+        let mut rows = Vec::new();
+        let mut mismatches = 0usize;
+        for abs in collect_md(&wiki) {
+            let name = abs.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            if LINT_SKIP_NAMES.contains(&name.as_str()) {
+                continue;
             }
-            Err(e) => fail(e),
+            let Some((fm, body)) = read_parts(&abs) else { continue };
+            let empty = fm.as_object().map(|o| o.is_empty()).unwrap_or(true);
+            if empty || fm_opt(&fm, "type").map(|t| LINT_META_TYPES.contains(&t.as_str())).unwrap_or(false) {
+                continue;
+            }
+            let stype = fm_opt(&fm, "source_type");
+            let cites = footnote_refs(&body).len();
+            let suggested = suggest_confidence(stype.as_deref(), cites);
+            let declared = fm_opt(&fm, "confidence");
+            let mismatch = declared.as_deref().map(|d| d != suggested).unwrap_or(false);
+            if mismatch {
+                mismatches += 1;
+            }
+            rows.push(json!({
+                "filename": rel_to(&wiki, &abs),
+                "source_type": stype.clone().unwrap_or_else(|| "(unset)".into()),
+                "trust": source_trust(stype.as_deref().unwrap_or("unknown")),
+                "citations": cites,
+                "declared_confidence": declared.unwrap_or_else(|| "(unset)".into()),
+                "suggested_confidence": suggested,
+                "mismatch": mismatch,
+            }));
         }
+        json_result(json!({ "ok": true, "pages": rows.len(), "mismatches": mismatches, "rows": rows }))
+    }
+
+    /// Structural + citation lint over every wiki page — no LLM, instant.
+    #[tool(description = "Lint all wiki pages: frontmatter, type, citation contracts")]
+    async fn lint_citations(
+        &self,
+        Parameters(a): Parameters<ProjectArg>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let wiki = wiki_dir(&root);
+        let mut report = serde_json::Map::new();
+        let (mut total, mut checked) = (0usize, 0usize);
+        for abs in collect_md(&wiki) {
+            let name = abs.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            if LINT_SKIP_NAMES.contains(&name.as_str()) {
+                continue;
+            }
+            checked += 1;
+            let Some((fm, body)) = read_parts(&abs) else { continue };
+            let problems = lint_page(&fm, &body);
+            if !problems.is_empty() {
+                total += problems.len();
+                report.insert(rel_to(&wiki, &abs), json!(problems));
+            }
+        }
+        json_result(json!({
+            "ok": true, "pages_checked": checked,
+            "pages_with_problems": report.len(), "problems_total": total, "report": report,
+        }))
+    }
+
+    /// Unified diff of what update_page WOULD write — changes nothing on disk.
+    #[tool(description = "Preview a page update as a unified diff without writing")]
+    async fn preview_page_update(
+        &self,
+        Parameters(a): Parameters<PreviewArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let Some(abs) = safe_join(&wiki_dir(&root), &a.filename) else {
+            return fail(format!("path escapes wiki/: {}", a.filename));
+        };
+        if !abs.is_file() {
+            return fail(format!("not found: {}", a.filename));
+        }
+        let old = std::fs::read_to_string(&abs).unwrap_or_default();
+        if old == a.content {
+            return json_result(json!({ "ok": true, "changed": false, "diff": "" }));
+        }
+        let diff = similar::TextDiff::from_lines(&old, &a.content)
+            .unified_diff()
+            .header(&format!("a/{}", a.filename), &format!("b/{}", a.filename))
+            .to_string();
+        json_result(json!({ "ok": true, "changed": true, "diff": diff }))
+    }
+
+    /// Structural contradiction scan — disputed pages + active→superseded links.
+    #[tool(description = "Flag disputed pages and active pages linking to superseded ones")]
+    async fn contradictions(
+        &self,
+        Parameters(a): Parameters<ProjectArg>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let wiki = wiki_dir(&root);
+        // filename → (status, normalized links)
+        let mut pages: std::collections::BTreeMap<String, (String, BTreeSet<String>)> =
+            Default::default();
+        for abs in collect_md(&wiki) {
+            let name = abs.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            if LINT_SKIP_NAMES.contains(&name.as_str()) {
+                continue;
+            }
+            let Some((fm, body)) = read_parts(&abs) else { continue };
+            let status = fm_opt(&fm, "status").unwrap_or_else(|| "active".into());
+            pages.insert(rel_to(&wiki, &abs), (status, extract_links(&body)));
+        }
+        let mut found = Vec::new();
+        for (fnm, (status, _)) in &pages {
+            if status == "disputed" {
+                found.push(json!({ "kind": "disputed", "page": fnm, "detail": "page is flagged disputed" }));
+            }
+        }
+        for (fnm, (status, links)) in &pages {
+            if status != "active" {
+                continue;
+            }
+            for tgt in links {
+                if pages.get(tgt).map(|(s, _)| s == "superseded").unwrap_or(false) {
+                    let disp = tgt.strip_suffix(".md").unwrap_or(tgt);
+                    found.push(json!({ "kind": "stale-link", "page": fnm, "detail": format!("links to superseded [[{disp}]]") }));
+                }
+            }
+        }
+        json_result(json!({ "ok": true, "count": found.len(), "found": found }))
+    }
+
+    /// Resolve a page's [[slug::page]] cross-project links (target + existence).
+    #[tool(description = "Resolve [[slug::page]] cross-project links on a page")]
+    async fn resolve_cross_links(
+        &self,
+        Parameters(a): Parameters<ReadPageArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let Some(abs) = safe_join(&wiki_dir(&root), &a.filename) else {
+            return fail(format!("path escapes wiki/: {}", a.filename));
+        };
+        if !abs.is_file() {
+            return fail(format!("not found: {}", a.filename));
+        }
+        let Some((_, body)) = read_parts(&abs) else {
+            return fail("could not read page");
+        };
+        let projs = settings::active_vault()
+            .map(PathBuf::from)
+            .and_then(|p| registry::Registry::discover(&p))
+            .map(|r| r.project_infos())
+            .unwrap_or_default();
+        let mut links = Vec::new();
+        for (slug, page) in cross_links(&body) {
+            let tproj = projs.iter().find(|p| p.slug == slug);
+            let exists = tproj
+                .map(|p| Path::new(&p.root).join("wiki").join(format!("{page}.md")).is_file())
+                .unwrap_or(false);
+            links.push(json!({
+                "project": slug, "page": page,
+                "exists": exists, "known_project": tproj.is_some(),
+            }));
+        }
+        json_result(json!({ "ok": true, "links": links }))
+    }
+
+    /// KO/EN translation-relation audit: declared translation_of pairs, dangling
+    /// targets, and missing reciprocal back-links.
+    #[tool(description = "Audit translation_of page pairs (dangling / non-reciprocal)")]
+    async fn translation_report(
+        &self,
+        Parameters(a): Parameters<ProjectArg>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let wiki = wiki_dir(&root);
+        let mut metas: std::collections::BTreeMap<String, Value> = Default::default();
+        for abs in collect_md(&wiki) {
+            let stem = abs.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            if let Some((fm, _)) = read_parts(&abs) {
+                metas.insert(stem, fm);
+            }
+        }
+        let mut pairs = Vec::new();
+        for (stem, fm) in &metas {
+            let Some(tgt) = fm_opt(fm, "translation_of") else { continue };
+            let tgt_stem = tgt.strip_suffix(".md").unwrap_or(&tgt).to_string();
+            let target_meta = metas.get(&tgt_stem);
+            let reciprocal = target_meta
+                .and_then(|tm| fm_opt(tm, "translation_of"))
+                .map(|s| s.replace(".md", "") == *stem)
+                .unwrap_or(false);
+            pairs.push(json!({
+                "page": format!("{stem}.md"),
+                "translation_of": format!("{tgt_stem}.md"),
+                "target_exists": target_meta.is_some(),
+                "reciprocal": reciprocal,
+            }));
+        }
+        json_result(json!({ "ok": true, "count": pairs.len(), "pairs": pairs }))
     }
 }
 
