@@ -40,6 +40,7 @@ import {
 import { analyzeGaps, clusterBridges, gapCount, type ClusterBridge } from "../lib/graphGaps";
 import { setQueryPrefill } from "../lib/queryPrefill";
 import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
+import { createStaticDrag } from "../lib/staticDrag";
 import { applyAtlasLayout } from "../lib/atlasLayout";
 import { bakeSeededSky } from "../lib/skyTexture";
 import {
@@ -642,6 +643,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     };
 
     let draggedSim: SimNode | undefined;
+    // Elastic drag for the deterministic (static) layouts, which run no sim.
+    const staticDrag = createStaticDrag(graph, () => sceneRef.current?.syncPositions());
 
     const scene = new GraphScene(container, graph, theme, s, {
       onNodeClick: (id, additive) => {
@@ -660,17 +663,23 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       },
       onDragStart: (id) => {
         syncSwirl(); // adopt swirled positions before the pin + warm-up
-        draggedSim = simRef.current?.nodes.find((n) => n.id === id);
         highlight(id);
-        if (draggedSim) {
-          // Pin the node in the worker (it owns the mutable sim node now).
-          simRef.current?.setFixed(id, draggedSim.x, draggedSim.y, draggedSim.z);
+        if (simRef.current) {
+          // Force layouts: pin the node in the worker (it owns the mutable sim
+          // node now) and hold the sim warm for the WHOLE drag — a one-shot
+          // reheat cools toward 0 and re-settles within ~1s, freezing the
+          // neighbourhood mid-drag (worse the bigger the vault). dragWarm keeps
+          // it ticking so the neighbours keep trailing until the drag ends.
+          draggedSim = simRef.current.nodes.find((n) => n.id === id);
+          if (draggedSim) {
+            simRef.current.setFixed(id, draggedSim.x, draggedSim.y, draggedSim.z);
+          }
+          simRef.current.dragWarm(true);
+        } else {
+          // Static (deterministic) layouts have no sim — run a local elastic
+          // relaxation so the neighbourhood follows the pulled node.
+          staticDrag.begin(id);
         }
-        // Hold the sim warm for the WHOLE drag, not a one-shot reheat: a reheat
-        // cools toward 0 and re-settles within ~1s, freezing the neighbourhood
-        // mid-drag (worse the bigger the vault). dragWarm keeps it ticking so
-        // the neighbours keep trailing the pinned node until the drag ends.
-        simRef.current?.dragWarm(true);
       },
       onDrag: (id, x, y, z) => {
         simRef.current?.setFixed(id, x, y, z);
@@ -681,12 +690,17 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         sceneRef.current?.syncPositions();
       },
       onDragEnd: () => {
-        if (draggedSim) simRef.current?.releaseFixed(draggedSim.id);
-        draggedSim = undefined;
         clearHighlight();
-        // Release the warm hold: the sim cools from its drag alpha and eases the
-        // freed star + its neighbours back to rest, then posts the settle notice.
-        simRef.current?.dragWarm(false);
+        if (simRef.current) {
+          if (draggedSim) simRef.current.releaseFixed(draggedSim.id);
+          draggedSim = undefined;
+          // Release the warm hold: the sim cools from its drag alpha and eases
+          // the freed star + neighbours back to rest, then posts the settle notice.
+          simRef.current.dragWarm(false);
+        } else {
+          // Static layout: ease the pulled neighbourhood back to the baked layout.
+          staticDrag.release();
+        }
       },
       onContextLost: () => {
         if (!killed) setCtxLost(true);
@@ -794,6 +808,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         }
         stopTlRecorder();
         setTlPlaying(false);
+        staticDrag.dispose();
         scene.dispose();
         sceneRef.current = null;
         graphRef.current = null;
@@ -842,6 +857,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         }
         stopTlRecorder();
         setTlPlaying(false);
+        staticDrag.dispose();
         scene.dispose();
         sceneRef.current = null;
         graphRef.current = null;
@@ -889,6 +905,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         // disposed — silently, with no file.
         stopTlRecorder();
         setTlPlaying(false);
+        staticDrag.dispose();
         scene.dispose();
         sceneRef.current = null;
         graphRef.current = null;
@@ -959,6 +976,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       container.removeEventListener("wheel", takeOver);
       container.removeEventListener("pointerdown", takeOver);
       sim.stop();
+      staticDrag.dispose();
       scene.dispose();
       sceneRef.current = null;
       simRef.current = null;
