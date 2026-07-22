@@ -7,7 +7,6 @@ use crate::cli_agent;
 use crate::git_log::{self, Commit};
 use crate::index::{self, Adjacency};
 use crate::local_llm::LocalLlm;
-use crate::mcp_server::{self, McpRegInfo};
 use crate::ollama::{self, OllamaStatus};
 use crate::provenance::{self, ProvenanceRow};
 use crate::providers::{self, ChatRequest, ChatResponse};
@@ -156,20 +155,17 @@ fn confine_root(state: &tauri::State<VaultRoot>, arg: &str) -> Result<String, St
 
 #[tauri::command]
 pub fn open_vault(
-    app: tauri::AppHandle,
     state: tauri::State<VaultRoot>,
     path: String,
 ) -> Result<VaultMeta, String> {
     let meta = vault::open_vault(&path)?;
     // meta.path is canonical; record it as the confinement root for fs commands.
     state.set(PathBuf::from(&meta.path));
-    // Record the active vault so the bundled MCP server follows the app's
+    // Record the active vault so the native MCP server follows the app's
     // current selection (best-effort: a marker write failure must not block
-    // opening the vault).
+    // opening the vault). The native server re-reads this marker per call, so
+    // no restart is needed — the next tool call sees the new vault.
     let _ = settings::set_active_vault(&path);
-    // The SSE MCP server resolves the vault once at startup, so restart it (if
-    // running) to pick up the new active vault.
-    mcp_server::restart_if_serving(&app);
     Ok(meta)
 }
 
@@ -1300,44 +1296,8 @@ pub fn open_external(url: String) -> Result<(), String> {
     cmd.map(|_| ()).map_err(|e| format!("open failed: {e}"))
 }
 
-#[tauri::command]
-pub fn mcp_registration_info(app: tauri::AppHandle, vault_path: String) -> McpRegInfo {
-    mcp_server::registration_info(&app, &vault_path)
-}
-
-#[tauri::command]
-pub async fn mcp_install(app: tauri::AppHandle, _vault_path: String) -> Result<String, String> {
-    // vault_path is irrelevant to install (venv is vault-independent) but kept so
-    // the frontend call signature is unchanged.
-    tauri::async_runtime::spawn_blocking(move || mcp_server::install(&app))
-        .await
-        .map_err(|e| format!("join failed: {e}"))?
-}
-
-#[tauri::command]
-pub async fn mcp_register(app: tauri::AppHandle, vault_path: String) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || mcp_server::register(&app, &vault_path))
-        .await
-        .map_err(|e| format!("join failed: {e}"))?
-}
-
-/// Start the app-hosted SSE MCP server (idempotent).
-#[tauri::command]
-pub async fn mcp_serve(app: tauri::AppHandle) -> Result<String, String> {
-    tauri::async_runtime::spawn_blocking(move || mcp_server::serve(&app))
-        .await
-        .map_err(|e| format!("join failed: {e}"))?
-}
-
-/// Stop the app-hosted SSE MCP server.
-#[tauri::command]
-pub fn mcp_stop() -> Result<String, String> {
-    mcp_server::stop_sse();
-    Ok("MCP server stopped.".into())
-}
-
 /// Native (in-process) MCP server status + one-click connect info. Replaces the
-/// Python install/serve/register flow — there is nothing to install.
+/// former Python install/serve/register flow — there is nothing to install.
 #[tauri::command]
 pub fn mcp_info() -> crate::mcp_native::NativeInfo {
     crate::mcp_native::info()

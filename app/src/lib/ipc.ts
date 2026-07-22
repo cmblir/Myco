@@ -75,17 +75,6 @@ export interface ClaudeStatus {
   path: string | null;
 }
 
-export interface McpRegInfo {
-  found: boolean;
-  installed: boolean;
-  serving: boolean;
-  url: string | null;
-  python: string | null;
-  script: string | null;
-  command: string | null;
-  desktop_json: string | null;
-}
-
 /// Native (in-process) MCP server info — no install, always running.
 export interface McpNativeInfo {
   running: boolean;
@@ -534,14 +523,6 @@ export const ipc = {
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),
   ollamaInstallUrl: () => invoke<string>("ollama_install_url"),
   openExternal: (url: string) => invoke<null>("open_external", { url }),
-  mcpRegistrationInfo: (vaultPath: string) =>
-    invoke<McpRegInfo>("mcp_registration_info", { vaultPath }),
-  mcpInstall: (vaultPath: string) =>
-    invoke<string>("mcp_install", { vaultPath }),
-  mcpRegister: (vaultPath: string) =>
-    invoke<string>("mcp_register", { vaultPath }),
-  mcpServe: () => invoke<string>("mcp_serve"),
-  mcpStop: () => invoke<string>("mcp_stop"),
   mcpInfo: () => invoke<McpNativeInfo>("mcp_info"),
   mcpConnect: () => invoke<string>("mcp_connect"),
   // Embedded local model (bundled Gemma 3 1B) — offline, no key. First call

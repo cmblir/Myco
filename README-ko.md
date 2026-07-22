@@ -286,7 +286,9 @@ Vault 디렉터리의 `git log`를 읽어 각 커밋의 제목, 해시, 날짜, 
 
 데스크톱 앱은 UI 안에서 모든 작업을 노출하지만, 다른 곳에서 실행 중인 **Claude Desktop / Claude Code** 세션에서도 같은 vault에 접근하고 싶다면 MCP 서버를 쓰세요.
 
-**가장 쉬운 길 — 앱이 대신 해줍니다.** 데스크톱 앱은 **MCP 서버를 번들로 포함하고 자동 등록**합니다: **Settings → MCP**에서 *Install*(앱 데이터 디렉터리에 전용 Python venv 생성) → *Register*(`claude mcp add` 자동 실행) 클릭. 이후 서버는 **앱이 현재 연 vault를 따라갑니다** — 앱이 vault 전환 때마다 다시 쓰는 `active-vault` 마커를 읽으므로, 앱에서 vault를 바꾸면 MCP 읽기/쓰기 대상도 자동으로 바뀝니다(재등록 불필요). 아래 단계는 소스 체크아웃에서 직접 구동할 때를 위한 것입니다.
+**가장 쉬운 길 — 앱이 직접 호스팅, 설치 불필요.** 데스크톱 앱은 MCP 서버를 **인프로세스로 실행**합니다(네이티브 — Python·venv·pip 불필요, `.dmg`만 설치한 환경 포함 앱이 도는 어떤 머신에서도 동작). **Settings → MCP**에서 **Connect to Claude Code** 클릭 — 앱의 인증 토큰과 함께 `claude mcp add --transport http memex http://localhost:22360/mcp`를 대신 실행합니다. 서버는 **앱이 현재 연 vault를 따라갑니다** — 매 tool 호출마다 `active-vault` 마커를 다시 읽으므로 앱에서 vault를 바꾸면 MCP 읽기/쓰기 대상도 자동으로 바뀝니다(재등록 불필요). 토큰이 저장되므로 한 번 연결하면 재시작 후에도 유지됩니다.
+
+> **이전 빌드에서 올라오셨나요?** 네이티브 서버는 옛 SSE(`/sse`)가 아니라 HTTP(`/mcp`)를 씁니다. **Connect**를 한 번 다시 실행하세요(또는 `claude mcp remove memex` 후 위 `--transport http` 명령). 기존 `--transport sse` 등록은 더 이상 연결되지 않습니다.
 
 <details>
 <summary><b>4단계 MCP 셋업 (소스에서)</b></summary>

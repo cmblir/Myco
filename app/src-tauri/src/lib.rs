@@ -14,7 +14,6 @@ pub mod importers;
 pub mod index;
 pub mod local_llm;
 pub mod mcp_native;
-pub mod mcp_server;
 pub mod memex_pro;
 pub mod ollama;
 pub mod parser;
@@ -146,11 +145,6 @@ pub fn run() {
             commands::ollama_status,
             commands::ollama_install_url,
             commands::open_external,
-            commands::mcp_registration_info,
-            commands::mcp_install,
-            commands::mcp_register,
-            commands::mcp_serve,
-            commands::mcp_stop,
             commands::mcp_info,
             commands::mcp_connect,
             commands::local_classify,
@@ -254,7 +248,6 @@ pub fn run() {
                 tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
             ) {
                 claude::cancel_all(); // reap in-flight claude children
-                mcp_server::stop_sse(); // don't orphan the SSE server child
                 // SAFETY: _exit simply ends the process; no Rust state needs
                 // unwinding, and it is async-signal-safe.
                 unsafe {

@@ -1161,25 +1161,6 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         usage: { input_tokens: 120, output_tokens: 42 },
       });
     }
-    case "mcp_registration_info":
-      return Promise.resolve({
-        found: true,
-        installed: false,
-        serving: false,
-        url: "http://localhost:22360/sse",
-        python: "/usr/bin/python3",
-        script: "/mock/memex_mcp.py",
-        command: "claude mcp add --transport sse memex http://localhost:22360/sse",
-        desktop_json: null,
-      });
-    case "mcp_install":
-      return Promise.resolve("(mock) MCP server installed.");
-    case "mcp_register":
-      return Promise.resolve("(mock) registered with the Claude CLI.");
-    case "mcp_serve":
-      return Promise.resolve("(mock) MCP server started.");
-    case "mcp_stop":
-      return Promise.resolve("(mock) MCP server stopped.");
     case "mcp_info":
       return Promise.resolve({
         running: true,

@@ -294,10 +294,15 @@ Right-click any tree node for **New note / New folder / Rename / Delete**. Cmd-K
 
 The desktop app exposes everything from inside its UI, but you may want the same vault accessible from **Claude Desktop / Claude Code** sessions running elsewhere. That's what the MCP server does.
 
-**Easiest path — let the app do it.** The desktop app **bundles the MCP server and registers it for you**: open **Settings → MCP**, click *Install* (creates a private Python venv in the app's data dir) then *Register* (runs `claude mcp add` for you). The server then **follows whichever vault the app currently has open** — it reads an `active-vault` marker the app rewrites on every vault switch, so changing vaults in the app redirects MCP reads/writes automatically, with no re-registration. The manual steps below are for driving the server from a from-source checkout.
+**Easiest path — the app hosts it, no install.** The desktop app runs the MCP server **in-process** (native, no Python, no venv, no pip — it works on any machine the app runs on, including a `.dmg`-only install). Open **Settings → MCP** and click **Connect to Claude Code** — that runs `claude mcp add --transport http memex http://localhost:22360/mcp` with the app's auth token for you. The server **follows whichever vault the app currently has open** — it re-reads an `active-vault` marker on every tool call, so switching vaults in the app redirects MCP reads/writes automatically, with no re-registration. Because the token is persisted, you connect once and it survives restarts.
+
+> **Upgrading from an older build?** The native server uses HTTP (`/mcp`), not the old SSE endpoint (`/sse`). Re-run **Connect** (or `claude mcp remove memex` then the `--transport http` command above) once — an old `--transport sse` registration will no longer connect.
 
 <details>
-<summary><b>4-step MCP setup wizard (from source)</b></summary>
+<summary><b>Standalone Python server (from-source / dev)</b></summary>
+
+The app no longer needs this — it's the optional standalone server for a
+from-source checkout or a non-app MCP client.
 
 #### Step 1 — Install the server
 

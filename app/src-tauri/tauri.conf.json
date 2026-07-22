@@ -37,9 +37,6 @@
       "minimumSystemVersion": "10.15"
     },
     "resources": {
-      "../../mcp-server/memex_mcp.py": "mcp-server/memex_mcp.py",
-      "../../mcp-server/project_registry.py": "mcp-server/project_registry.py",
-      "../../mcp-server/requirements.txt": "mcp-server/requirements.txt",
       "../../automation/digest.py": "automation/digest.py",
       "models/gemma-3-1b-it-q4_k_m.gguf": "models/gemma-3-1b-it-q4_k_m.gguf",
       "models/LICENSE-gemma.txt": "models/LICENSE-gemma.txt"
