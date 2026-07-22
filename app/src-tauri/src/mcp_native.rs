@@ -12,6 +12,7 @@
 // module, so it can reach `pub(crate)` helpers too.
 
 use std::collections::BTreeSet;
+use std::io::Write as _;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
@@ -29,6 +30,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio_util::sync::CancellationToken;
 
+use crate::importers::secrets_scan;
 use crate::{registry, settings, vault};
 
 /// Fixed loopback port. Matches the documented `claude mcp add` URL.
@@ -318,6 +320,34 @@ fn suggest_confidence(stype: Option<&str>, cites: usize) -> &'static str {
     }
 }
 
+/// Python `str.capitalize()`: first char upper, the rest lower.
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        Some(c) => c.to_uppercase().collect::<String>() + &chars.as_str().to_lowercase(),
+        None => String::new(),
+    }
+}
+
+/// Every file under `dir`, recursively (absolute paths, sorted). Empty if absent.
+fn walk_all(dir: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    fn rec(d: &Path, out: &mut Vec<PathBuf>) {
+        let Ok(rd) = std::fs::read_dir(d) else { return };
+        let mut entries: Vec<_> = rd.flatten().map(|e| e.path()).collect();
+        entries.sort();
+        for p in entries {
+            if p.is_dir() {
+                rec(&p, out);
+            } else if p.is_file() {
+                out.push(p);
+            }
+        }
+    }
+    rec(dir, &mut out);
+    out
+}
+
 // ─── server ──────────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -389,6 +419,70 @@ struct PreviewArgs {
     filename: String,
     /// The full proposed new content (frontmatter + body).
     content: String,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct CreatePageArgs {
+    /// Page title (used to derive the slug).
+    title: String,
+    /// One of concept/entity/technique/source-summary/analysis, or a custom type.
+    page_type: String,
+    /// Body markdown (without frontmatter). Include inline [^src-*] citations.
+    #[serde(default)]
+    content: String,
+    /// Optional subfolder under wiki/.
+    #[serde(default)]
+    folder: String,
+    /// Optional tag list.
+    #[serde(default)]
+    tags: Vec<String>,
+    /// Optional source slugs (without the "src-" prefix).
+    #[serde(default)]
+    sources: Vec<String>,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct UpdatePageArgs {
+    /// wiki-relative filename to overwrite. Keep the frontmatter block.
+    filename: String,
+    /// The full new content (frontmatter + body).
+    content: String,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct AddRawArgs {
+    /// New raw/ filename (may include a subfolder), e.g. "papers/attention.md".
+    filename: String,
+    /// Source content (immutable once written).
+    content: String,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct CreateFolderArgs {
+    /// New folder name.
+    name: String,
+    /// Optional parent under wiki/.
+    #[serde(default)]
+    parent: String,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct AppendChangelogArgs {
+    /// The changelog entry text.
+    entry: String,
+    /// Section: Added / Changed / Fixed / Removed (default Changed).
+    #[serde(default)]
+    section: String,
     #[serde(default)]
     project: String,
 }
@@ -914,6 +1008,351 @@ impl MemexServer {
             }));
         }
         json_result(json!({ "ok": true, "count": pairs.len(), "pairs": pairs }))
+    }
+
+    // ─── writers ─────────────────────────────────────────────────────────────
+
+    /// Create a new wiki page with proper Memex frontmatter.
+    #[tool(description = "Create a wiki page with Memex frontmatter (title/type/tags/sources)")]
+    async fn create_page(
+        &self,
+        Parameters(a): Parameters<CreatePageArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if a.title.trim().is_empty() {
+            return fail("title required");
+        }
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let wiki = wiki_dir(&root);
+        let _ = std::fs::create_dir_all(&wiki);
+        let slug = make_slug(&a.title);
+        let Some(base) = safe_join(&wiki, &a.folder) else {
+            return fail(format!("folder escapes wiki/: {}", a.folder));
+        };
+        let _ = std::fs::create_dir_all(&base);
+        let mut target = base.join(format!("{slug}.md"));
+        let mut n = 2;
+        while target.exists() {
+            target = base.join(format!("{slug}-{n}.md"));
+            n += 1;
+        }
+        let today = registry::today_utc();
+        let mut parts: Vec<String> = vec![
+            "---".into(),
+            format!("title: \"{}\"", a.title),
+            format!("type: {}", a.page_type),
+            format!("created: {today}"),
+            format!("last_updated: {today}"),
+            format!("source_count: {}", a.sources.len()),
+            "confidence: medium".into(),
+            "status: active".into(),
+        ];
+        if a.tags.is_empty() {
+            parts.push("tags: []".into());
+        } else {
+            parts.push("tags:".into());
+            parts.push(a.tags.iter().map(|t| format!("  - {t}")).collect::<Vec<_>>().join("\n"));
+        }
+        if !a.sources.is_empty() {
+            parts.push("sources:".into());
+            parts.push(a.sources.iter().map(|s| format!("  - {s}")).collect::<Vec<_>>().join("\n"));
+        }
+        parts.push("---\n".into());
+        let body = if a.content.is_empty() {
+            format!("# {}\n\n<!-- TODO: add content with inline [^src-*] citations -->", a.title)
+        } else {
+            a.content.clone()
+        };
+        let full = format!("{}\n{}\n", parts.join("\n"), body);
+        if let Err(e) = vault::write_file(&target.to_string_lossy(), &full) {
+            return fail(e);
+        }
+        json_result(json!({
+            "ok": true, "filename": rel_to(&wiki, &target), "path": rel_to(&root, &target),
+        }))
+    }
+
+    /// Overwrite a wiki page's content (caller keeps the frontmatter block).
+    #[tool(description = "Overwrite a wiki page's full content by filename")]
+    async fn update_page(
+        &self,
+        Parameters(a): Parameters<UpdatePageArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let Some(target) = safe_join(&wiki_dir(&root), &a.filename) else {
+            return fail(format!("path escapes wiki/: {}", a.filename));
+        };
+        if !target.is_file() {
+            return fail(format!("page not found: {}", a.filename));
+        }
+        if let Err(e) = vault::write_file(&target.to_string_lossy(), &a.content) {
+            return fail(e);
+        }
+        json_result(json!({ "ok": true, "filename": rel_to(&wiki_dir(&root), &target) }))
+    }
+
+    /// Add a new immutable source file to raw/ (never overwrites).
+    #[tool(description = "Add a new immutable raw/ source file (append-only)")]
+    async fn add_raw_source(
+        &self,
+        Parameters(a): Parameters<AddRawArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let raw = raw_dir(&root);
+        let _ = std::fs::create_dir_all(&raw);
+        let Some(target) = safe_join(&raw, &a.filename) else {
+            return fail(format!("path escapes raw/: {}", a.filename));
+        };
+        if target.exists() {
+            return fail(format!("raw/ file exists (immutable): {}", a.filename));
+        }
+        if let Some(p) = target.parent() {
+            let _ = std::fs::create_dir_all(p);
+        }
+        if let Err(e) = vault::write_file(&target.to_string_lossy(), &a.content) {
+            return fail(e);
+        }
+        let stem = target.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let mut out = json!({
+            "ok": true, "raw_path": rel_to(&root, &target), "src_slug": format!("src-{stem}"),
+        });
+        let hits = secrets_scan::scan(&a.content);
+        if !hits.is_empty() {
+            out["secret_warning"] = json!(format!(
+                "possible secrets detected: {} — raw/ is immutable and committed to git; \
+                 redact and re-add if unintended.",
+                hits.join(", ")
+            ));
+        }
+        json_result(out)
+    }
+
+    /// Create a folder under wiki/ (or wiki/<parent>/).
+    #[tool(description = "Create a folder under wiki/")]
+    async fn create_folder(
+        &self,
+        Parameters(a): Parameters<CreateFolderArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let wiki = wiki_dir(&root);
+        let _ = std::fs::create_dir_all(&wiki);
+        let base = if a.parent.is_empty() {
+            wiki.clone()
+        } else {
+            match safe_join(&wiki, &a.parent) {
+                Some(p) => p,
+                None => return fail(format!("parent escapes wiki/: {}", a.parent)),
+            }
+        };
+        let Some(target) = safe_join(&base, &a.name) else {
+            return fail(format!("name escapes parent: {}", a.name));
+        };
+        if let Err(e) = std::fs::create_dir_all(&target) {
+            return fail(format!("mkdir failed: {e}"));
+        }
+        json_result(json!({ "ok": true, "path": rel_to(&wiki, &target) }))
+    }
+
+    /// Archive a processed _inbox/ source: copy into a new raw/<slug>.md, then
+    /// move the original into _inbox/.archived/.
+    #[tool(description = "Archive an ingested inbox source: copy to raw/ then move it out")]
+    async fn archive_inbox_source(
+        &self,
+        Parameters(a): Parameters<InboxSourceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let Some(src) = safe_join(&inbox_dir(&root), &a.filename) else {
+            return fail(format!("path escapes _inbox/: {}", a.filename));
+        };
+        if !src.is_file() {
+            return fail(format!("not found in inbox: {}", a.filename));
+        }
+        let raw = raw_dir(&root);
+        let _ = std::fs::create_dir_all(&raw);
+        let content = std::fs::read_to_string(&src).unwrap_or_default();
+        let stem = src.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let slug = make_slug(&stem);
+        let mut raw_path = raw.join(format!("{slug}.md"));
+        let mut n = 2;
+        while raw_path.exists() {
+            raw_path = raw.join(format!("{slug}-{n}.md"));
+            n += 1;
+        }
+        if let Err(e) = vault::write_file(&raw_path.to_string_lossy(), &content) {
+            return fail(e);
+        }
+        // Move the original out of the inbox so it is not re-ingested.
+        let archive = src.parent().map(|p| p.join(".archived")).unwrap_or_default();
+        let _ = std::fs::create_dir_all(&archive);
+        let ext = src.extension().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let mut dest = archive.join(src.file_name().unwrap_or_default());
+        let mut m = 2;
+        while dest.exists() {
+            dest = archive.join(if ext.is_empty() {
+                format!("{stem}-{m}")
+            } else {
+                format!("{stem}-{m}.{ext}")
+            });
+            m += 1;
+        }
+        if let Err(e) = std::fs::rename(&src, &dest) {
+            return fail(format!("archive move failed: {e}"));
+        }
+        let raw_stem = raw_path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        json_result(json!({
+            "ok": true, "raw_path": rel_to(&root, &raw_path),
+            "archived": dest.file_name().map(|s| s.to_string_lossy().to_string()),
+            "src_slug": format!("src-{raw_stem}"),
+        }))
+    }
+
+    /// Append an entry under CHANGELOG.md's `## [Unreleased]` → `### <section>`.
+    #[tool(description = "Append a CHANGELOG.md entry (Keep a Changelog, Unreleased section)")]
+    async fn append_changelog(
+        &self,
+        Parameters(a): Parameters<AppendChangelogArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if a.entry.trim().is_empty() {
+            return fail("entry required");
+        }
+        let section = if a.section.trim().is_empty() { "Changed" } else { a.section.trim() };
+        let sec = capitalize(section);
+        if !["Added", "Changed", "Fixed", "Removed"].contains(&sec.as_str()) {
+            return fail(format!("invalid section: {}", a.section));
+        }
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let _ = std::fs::create_dir_all(&root);
+        let path = root.join("CHANGELOG.md");
+        if !path.exists() {
+            let seed = "# Changelog\n\nAll notable changes to this wiki are recorded here \
+                        (Keep a Changelog format).\n\n## [Unreleased]\n";
+            if let Err(e) = vault::write_file(&path.to_string_lossy(), seed) {
+                return fail(e);
+            }
+        }
+        let mut text = std::fs::read_to_string(&path).unwrap_or_default();
+        if !text.contains("## [Unreleased]") {
+            text = format!("{}\n\n## [Unreleased]\n", text.trim_end());
+        }
+        let mut lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
+        let ur = lines.iter().position(|l| l.starts_with("## [Unreleased]")).unwrap_or(0);
+        let nxt = (ur + 1..lines.len())
+            .find(|&i| lines[i].starts_with("## "))
+            .unwrap_or(lines.len());
+        let hdr = format!("### {sec}");
+        let block_hdr = (ur + 1..nxt).find(|&i| lines[i] == hdr);
+        if let Some(hi) = block_hdr {
+            lines.insert(hi + 1, format!("- {}", a.entry.trim()));
+        } else {
+            for (k, s) in ["".to_string(), hdr, format!("- {}", a.entry.trim())].into_iter().enumerate() {
+                lines.insert(nxt + k, s);
+            }
+        }
+        let joined = format!("{}\n", lines.join("\n").trim_end());
+        if let Err(e) = vault::write_file(&path.to_string_lossy(), &joined) {
+            return fail(e);
+        }
+        json_result(json!({ "ok": true, "changelog": rel_to(&root, &path), "section": sec }))
+    }
+
+    /// Scaffold the project as its own standalone Obsidian vault (.obsidian/).
+    #[tool(description = "Make the project openable as its own Obsidian vault")]
+    async fn register_vault(
+        &self,
+        Parameters(a): Parameters<ProjectArg>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        match vault::scaffold_obsidian_vault(&root) {
+            Ok(obs) => json_result(json!({
+                "ok": true, "obsidian_dir": rel_to(&root, Path::new(&obs)), "open_as": root.to_string_lossy(),
+            })),
+            Err(e) => fail(e),
+        }
+    }
+
+    /// Zip a project's vault (wiki/, raw/, reports, CLAUDE.md, CHANGELOG.md,
+    /// settings) into a backup archive.
+    #[tool(description = "Export the project vault to a .zip backup")]
+    async fn export_project(
+        &self,
+        Parameters(a): Parameters<ProjectArg>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        if !root.exists() {
+            return fail("project root missing");
+        }
+        // Backups live beside the registry's projects/ dir when there is one,
+        // else under the vault itself.
+        let backups = settings::active_vault()
+            .map(PathBuf::from)
+            .and_then(|p| registry::Registry::discover(&p))
+            .map(|r| r.projects_dir.join(".backups"))
+            .unwrap_or_else(|| root.join(".backups"));
+        let _ = std::fs::create_dir_all(&backups);
+        let base = root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "vault".into());
+        let mut dest = backups.join(format!("{base}.zip"));
+        let mut n = 2;
+        while dest.exists() {
+            dest = backups.join(format!("{base}-{n}.zip"));
+            n += 1;
+        }
+        let file = match std::fs::File::create(&dest) {
+            Ok(f) => f,
+            Err(e) => return fail(format!("create zip: {e}")),
+        };
+        let mut zw = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        let mut count = 0usize;
+        for sub in ["wiki", "raw", "ingest-reports", "reflect-reports"] {
+            for f in walk_all(&root.join(sub)) {
+                let arc = rel_to(&root, &f);
+                if zw.start_file(arc, opts).is_ok() {
+                    if let Ok(bytes) = std::fs::read(&f) {
+                        let _ = zw.write_all(&bytes);
+                        count += 1;
+                    }
+                }
+            }
+        }
+        for fname in ["CLAUDE.md", "CHANGELOG.md", ".settings.json"] {
+            let f = root.join(fname);
+            if f.is_file() && zw.start_file(fname, opts).is_ok() {
+                if let Ok(bytes) = std::fs::read(&f) {
+                    let _ = zw.write_all(&bytes);
+                    count += 1;
+                }
+            }
+        }
+        if let Err(e) = zw.finish() {
+            return fail(format!("finish zip: {e}"));
+        }
+        json_result(json!({
+            "ok": true, "archive": rel_to(&root, &dest), "files": count,
+        }))
     }
 }
 
