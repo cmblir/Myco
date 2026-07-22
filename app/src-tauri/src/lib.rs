@@ -13,6 +13,7 @@ pub mod git_log;
 pub mod importers;
 pub mod index;
 pub mod local_llm;
+pub mod mcp_native;
 pub mod mcp_server;
 pub mod memex_pro;
 pub mod ollama;
@@ -176,6 +177,9 @@ pub fn run() {
             // Auto-start the app-hosted SSE MCP server if it's been installed,
             // so a registered `claude mcp add --transport sse memex …` just
             // works each launch. Best-effort — a failure never blocks startup.
+            // NOTE: being replaced by the native in-process server in mcp_native
+            // (rmcp, no Python) — kept as the launch path until the tool port
+            // reaches parity, then flipped + deleted (see the migration plan).
             let handle = app.handle().clone();
             std::thread::spawn(move || {
                 let _ = mcp_server::serve(&handle);

@@ -37,6 +37,9 @@ zip = { version = "4.2.0", default-features = false, features = ["deflate"] }
 # Recoverable deletes: delete_path moves entries to the OS trash instead of
 # unlinking them, so a mis-click never permanently destroys notes.
 trash = "5.2.3"
+rmcp = { version = "=2.2.0", default-features = false, features = ["server", "macros", "schemars", "transport-streamable-http-server", "transport-streamable-http-server-session"] }
+axum = "0.8"
+tokio-util = "0.7"
 
 [dev-dependencies]
 wiremock = "0.6"
