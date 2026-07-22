@@ -45,6 +45,9 @@ export interface GraphSim {
   // which is impossible now that the node objects live in the worker.
   setFixed(id: string, x: number, y: number, z: number): void;
   releaseFixed(id: string): void;
+  /** Hold the sim warm+ticking for a drag (true), then let it settle (false).
+   *  Without this a held drag freezes the neighbourhood as the reheat cools. */
+  dragWarm(on: boolean): void;
   timelapseReset(): void;
   timelapseReveal(ids: string[]): void;
   timelapseSettle(): void;
@@ -171,6 +174,9 @@ export function createSim(
     },
     releaseFixed(id) {
       worker.postMessage({ type: "setFixed", id, x: null });
+    },
+    dragWarm(on) {
+      worker.postMessage({ type: "dragWarm", on });
     },
     timelapseReset() {
       worker.postMessage({ type: "timelapseReset" });

@@ -659,14 +659,18 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         else clearHighlight();
       },
       onDragStart: (id) => {
-        syncSwirl(); // adopt swirled positions before the pin + reheat
+        syncSwirl(); // adopt swirled positions before the pin + warm-up
         draggedSim = simRef.current?.nodes.find((n) => n.id === id);
         highlight(id);
         if (draggedSim) {
           // Pin the node in the worker (it owns the mutable sim node now).
           simRef.current?.setFixed(id, draggedSim.x, draggedSim.y, draggedSim.z);
         }
-        simRef.current?.reheat(0.2); // lighter reheat → shorter post-drag settle
+        // Hold the sim warm for the WHOLE drag, not a one-shot reheat: a reheat
+        // cools toward 0 and re-settles within ~1s, freezing the neighbourhood
+        // mid-drag (worse the bigger the vault). dragWarm keeps it ticking so
+        // the neighbours keep trailing the pinned node until the drag ends.
+        simRef.current?.dragWarm(true);
       },
       onDrag: (id, x, y, z) => {
         simRef.current?.setFixed(id, x, y, z);
@@ -680,8 +684,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         if (draggedSim) simRef.current?.releaseFixed(draggedSim.id);
         draggedSim = undefined;
         clearHighlight();
-        // Reheat so the released star and its neighbours ease back to rest.
-        simRef.current?.reheat(0.2); // lighter reheat → shorter post-drag settle
+        // Release the warm hold: the sim cools from its drag alpha and eases the
+        // freed star + its neighbours back to rest, then posts the settle notice.
+        simRef.current?.dragWarm(false);
       },
       onContextLost: () => {
         if (!killed) setCtxLost(true);

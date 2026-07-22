@@ -110,6 +110,12 @@ interface NodeInit {
 // reason to yield is to let queued messages (drag/setFixed) run between ticks.
 const WORKER_YIELD_MS = 0;
 
+// Sustained alpha while a node is being dragged. A one-shot reheat cools toward
+// 0, so a held drag would re-settle within ~1s and the neighbours would freeze
+// mid-drag. Holding alphaTarget here keeps the tick driver running so the whole
+// neighbourhood keeps following the pinned node until the drag ends.
+const DRAG_ALPHA_TARGET = 0.3;
+
 interface SimState {
   nodes: SimNode[];
   byId: Map<string, SimNode>;
@@ -119,6 +125,9 @@ interface SimState {
   reheat: (a: number) => void;
   update: (s: GraphSettings) => void;
   setFixed: (id: string, x: number | null, y?: number, z?: number) => void;
+  /** Keep the sim warm+ticking for the duration of a drag (true), then let it
+   *  cool and settle (false). */
+  dragWarm: (on: boolean) => void;
   timelapseReset: () => void;
   timelapseReveal: (ids: string[]) => void;
   timelapseSettle: () => void;
@@ -521,6 +530,22 @@ function build(
       sim.alpha(alpha).alphaTarget(0);
       kick();
     },
+    dragWarm(on) {
+      if (on) {
+        // Hold a positive target so the driver never settles mid-drag, and make
+        // sure alpha is high enough that neighbours actually move (a fully
+        // settled sim sits at ~0). timelapse owns its own alpha — don't fight it.
+        if (tlActive) return;
+        sim.alphaTarget(DRAG_ALPHA_TARGET);
+        if (sim.alpha() < DRAG_ALPHA_TARGET) sim.alpha(DRAG_ALPHA_TARGET);
+        kick();
+      } else {
+        // Release: cool toward rest. The driver keeps ticking until alpha dips
+        // below SIM_ALPHA_MIN, then posts the settle notice and stops.
+        sim.alphaTarget(0);
+        kick();
+      }
+    },
     update(next) {
       cur = next;
       clusterStrength = next.clusterForce * CLUSTER_SCALE;
@@ -641,6 +666,7 @@ function build(
 type InMsg =
   | { type: "init"; nodes: NodeInit[]; links: [number, number][]; settings: GraphSettings }
   | { type: "reheat"; alpha: number }
+  | { type: "dragWarm"; on: boolean }
   | { type: "update"; settings: GraphSettings }
   | { type: "setFixed"; id: string; x: number | null; y?: number; z?: number }
   | { type: "timelapseReset" }
@@ -662,6 +688,9 @@ self.onmessage = (e: MessageEvent<InMsg>): void => {
       break;
     case "reheat":
       state?.reheat(msg.alpha);
+      break;
+    case "dragWarm":
+      state?.dragWarm(msg.on);
       break;
     case "update":
       state?.update(msg.settings);
