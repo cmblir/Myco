@@ -329,6 +329,19 @@ fn capitalize(s: &str) -> String {
     }
 }
 
+/// Nearest ancestor (inclusive) that contains a `.git` directory.
+fn find_git_root(start: &Path) -> Option<PathBuf> {
+    let start = start.canonicalize().ok()?;
+    let mut cur: Option<&Path> = Some(&start);
+    while let Some(d) = cur {
+        if d.join(".git").is_dir() {
+            return Some(d.to_path_buf());
+        }
+        cur = d.parent();
+    }
+    None
+}
+
 /// Every file under `dir`, recursively (absolute paths, sorted). Empty if absent.
 fn walk_all(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
@@ -483,6 +496,14 @@ struct AppendChangelogArgs {
     /// Section: Added / Changed / Fixed / Removed (default Changed).
     #[serde(default)]
     section: String,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct GitCommitArgs {
+    /// Commit message (Conventional Commit style, e.g. "ingest: attention…").
+    message: String,
     #[serde(default)]
     project: String,
 }
@@ -1353,6 +1374,95 @@ impl MemexServer {
         json_result(json!({
             "ok": true, "archive": rel_to(&root, &dest), "files": count,
         }))
+    }
+
+    /// Stage the project's wiki/, raw/, reports (+ project metadata) and commit.
+    #[tool(description = "git add the project's wiki/raw/reports and commit with a message")]
+    async fn git_commit(
+        &self,
+        Parameters(a): Parameters<GitCommitArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        if a.message.trim().is_empty() {
+            return fail("message required");
+        }
+        let vault = match resolve_root(&a.project) {
+            Ok(r) => r.canonicalize().unwrap_or(r),
+            Err(e) => return fail(e),
+        };
+        // Repo root: the registry root (holds projects.json), else the nearest
+        // .git ancestor, else the vault itself.
+        let repo_root = registry::Registry::discover(&vault)
+            .map(|r| r.project_root)
+            .or_else(|| find_git_root(&vault))
+            .unwrap_or_else(|| vault.clone());
+        if !repo_root.join(".git").is_dir() {
+            return fail("repository is not a git repo");
+        }
+        // A whole-repo (legacy) vault keeps wiki/raw at the root; a project vault
+        // lives under projects/<slug>/ and also carries its own metadata files.
+        let rel = vault
+            .strip_prefix(&repo_root)
+            .ok()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let paths: Vec<String> = if rel.is_empty() {
+            vec!["wiki".into(), "raw".into(), "ingest-reports".into()]
+        } else {
+            vec![
+                format!("{rel}/wiki"),
+                format!("{rel}/raw"),
+                format!("{rel}/ingest-reports"),
+                format!("{rel}/CLAUDE.md"),
+                format!("{rel}/CHANGELOG.md"),
+                format!("{rel}/.settings.json"),
+                "projects.json".into(),
+            ]
+        };
+        let git = |args: &[&str]| {
+            std::process::Command::new("git")
+                .args(args)
+                .current_dir(&repo_root)
+                .output()
+        };
+        for p in &paths {
+            if !repo_root.join(p).exists() {
+                continue;
+            }
+            match git(&["add", p]) {
+                Ok(o) if !o.status.success() => {
+                    let msg = if o.stderr.is_empty() { &o.stdout } else { &o.stderr };
+                    let msg: String = String::from_utf8_lossy(msg).trim().chars().take(500).collect();
+                    return fail(format!("git add failed for {p}: {msg}"));
+                }
+                Err(e) => return fail(format!("git add failed for {p}: {e}")),
+                _ => {}
+            }
+        }
+        let files: Vec<String> = match git(&["diff", "--cached", "--name-only"]) {
+            Ok(o) => String::from_utf8_lossy(&o.stdout)
+                .lines()
+                .filter(|l| !l.is_empty())
+                .map(|s| s.to_string())
+                .collect(),
+            Err(e) => return fail(format!("git diff failed: {e}")),
+        };
+        if files.is_empty() {
+            return json_result(json!({ "ok": true, "no_op": true, "files": [] }));
+        }
+        match git(&["commit", "-m", &a.message]) {
+            Ok(o) if !o.status.success() => {
+                let msg = if o.stderr.is_empty() { &o.stdout } else { &o.stderr };
+                let msg: String = String::from_utf8_lossy(msg).trim().chars().take(500).collect();
+                return fail(msg);
+            }
+            Err(e) => return fail(format!("git commit failed: {e}")),
+            _ => {}
+        }
+        let hash = git(&["log", "-1", "--format=%H"])
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default();
+        json_result(json!({ "ok": true, "hash": hash, "files": files }))
     }
 }
 
