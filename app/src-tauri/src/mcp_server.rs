@@ -326,7 +326,16 @@ pub fn serve(app: &AppHandle) -> Result<String, String> {
             })
             .filter(|s| !s.trim().is_empty())
             .unwrap_or_else(|| "(no output captured)".into());
-        return Err(format!("MCP server exited immediately on launch:\n{detail}"));
+        // The bundled script's own hint points at install.sh, which targets a
+        // read-only path inside the .app — wrong for the app-hosted venv. Steer
+        // the user to the in-app Install, which (re)builds the right venv.
+        let hint = if detail.contains("ModuleNotFoundError") || detail.contains("missing dependency") {
+            "\n\n\u{2192} The server venv is missing its dependencies (often a stale \
+             venv built by an older Python). Open Settings and run Install to rebuild it."
+        } else {
+            ""
+        };
+        return Err(format!("MCP server exited immediately on launch:\n{detail}{hint}"));
     }
     Ok(sse_url())
 }
@@ -361,6 +370,12 @@ pub fn install(app: &AppHandle) -> Result<String, String> {
         "Python 3.10+ is required (the mcp package needs it) but none was found. \
          Install it (e.g. `brew install python`) or set MEMEX_PYTHON_PATH.",
     )?;
+    // A venv built by an OLDER Python (e.g. a 3.9 venv from a past install)
+    // survives app upgrades untouched — its interpreter can't satisfy mcp's
+    // >=3.10 pin, so pip resolves nothing and the server dies on `import mcp`.
+    // Reinstalling must start CLEAN: wipe any existing venv and rebuild with py3.
+    // Only reached AFTER py3 is found, so a failed lookup never destroys a venv.
+    let _ = std::fs::remove_dir_all(&p.venv_dir);
     // 1) create the venv in the writable app-data dir.
     let out = Command::new(&py3)
         .arg("-m")
