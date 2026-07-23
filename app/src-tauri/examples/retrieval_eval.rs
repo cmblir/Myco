@@ -11,7 +11,12 @@
 use std::collections::HashSet;
 use std::path::PathBuf;
 
-use memex_lib::{embeddings, local_llm::LocalLlm, sample_vault, vector_index::VectorStore};
+use memex_lib::{
+    embeddings,
+    local_llm::{apply_prefix, embed_spec_by_id, EmbedRole, LocalLlm},
+    sample_vault,
+    vector_index::VectorStore,
+};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -28,7 +33,16 @@ const KS: [usize; 4] = [1, 3, 5, 10];
 
 fn main() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let model_path = manifest.join("models/gemma-3-1b-it-q4_k_m.gguf");
+    // MEMEX_EMBED_SPEC selects which embed model the harness measures.
+    // Default "gemma" reproduces the Phase-0 baseline (bundled chat model,
+    // mean-pooled); any other id names an EMBED_SPECS entry (Task 4 bake-off).
+    let spec_id = std::env::var("MEMEX_EMBED_SPEC").unwrap_or_else(|_| "gemma".into());
+    let model_path = if spec_id == "gemma" {
+        manifest.join("models/gemma-3-1b-it-q4_k_m.gguf")
+    } else {
+        let spec = embed_spec_by_id(&spec_id).expect("known spec");
+        manifest.join(spec.file)
+    };
     let eval_path = manifest.join("eval/retrieval-queries.json");
 
     let set: EvalSet = serde_json::from_str(
@@ -36,8 +50,37 @@ fn main() {
     )
     .expect("parse eval set");
 
-    eprintln!("loading model {} …", model_path.display());
+    eprintln!("loading model {} (spec: {spec_id}) …", model_path.display());
     let llm = LocalLlm::load(&model_path).expect("load model");
+
+    // Document/query embedding, branched once here (DRY) instead of at each
+    // call site. The non-gemma branch runs the shared pooling core
+    // (`embed_pooled`) against the SAME loaded model rather than `embed_spec`,
+    // which would need a second load via `load_embed_model` — both produce
+    // identical vectors since they share the pooling core, but this avoids
+    // loading the model file twice.
+    let doc_vecs = |llm: &LocalLlm, chunks: &[String]| -> Vec<Vec<f32>> {
+        if spec_id == "gemma" {
+            llm.embed(chunks).expect("embed page")
+        } else {
+            let spec = embed_spec_by_id(&spec_id).expect("known spec");
+            let prefixed = apply_prefix(spec, EmbedRole::Document, chunks);
+            llm.embed_pooled(&prefixed, spec.pooling, spec.max_ctx)
+                .expect("embed page")
+        }
+    };
+    let query_vec = |llm: &LocalLlm, q: &str| -> Vec<f32> {
+        if spec_id == "gemma" {
+            llm.embed(&[q.to_string()]).expect("embed query").pop().unwrap()
+        } else {
+            let spec = embed_spec_by_id(&spec_id).expect("known spec");
+            let prefixed = apply_prefix(spec, EmbedRole::Query, &[q.to_string()]);
+            llm.embed_pooled(&prefixed, spec.pooling, spec.max_ctx)
+                .expect("embed query")
+                .pop()
+                .unwrap()
+        }
+    };
 
     // Build an in-memory index from the bundled sample vault, mirroring
     // reindex_embeddings exactly (chunk_page → content_hash → embed → upsert).
@@ -58,7 +101,7 @@ fn main() {
             continue;
         }
         let hashes: Vec<u64> = chunks.iter().map(|c| embeddings::content_hash(c)).collect();
-        let vecs = llm.embed(&chunks).expect("embed page");
+        let vecs = doc_vecs(&llm, &chunks);
         chunks_total += chunks.len();
         pages += 1;
         let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
@@ -76,8 +119,8 @@ fn main() {
     let mut worst: Vec<(String, usize)> = Vec::new(); // (query, rank-of-first-relevant; 0 = miss)
 
     for lab in &set.queries {
-        let qvec = llm.embed(&[lab.q.clone()]).expect("embed query");
-        let hits = store.search(&qvec[0], 40);
+        let qvec = query_vec(&llm, &lab.q);
+        let hits = store.search(&qvec, 40);
         // Dedup to best-per-page, preserving the score-desc order search returns.
         let mut ranked: Vec<String> = Vec::new();
         let mut seen = HashSet::new();
@@ -121,7 +164,7 @@ fn main() {
     }
 
     println!("═══════════════════════════════════════════════════");
-    println!(" Memex retrieval baseline — Gemma-3-1B dense, cosine");
+    println!(" Memex retrieval — {spec_id}");
     println!("═══════════════════════════════════════════════════");
     println!(" corpus: {pages} wiki pages · {chunks_total} chunks · {} queries", set.queries.len());
     println!();
