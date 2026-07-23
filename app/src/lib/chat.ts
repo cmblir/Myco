@@ -247,7 +247,7 @@ async function semanticContext(
     if (used + block.length > budget && parts.length > 0) break;
     parts.push(block);
     used += block.length;
-    if (h.page !== lastPage) stems.push(h.stem);
+    if (h.page !== lastPage && !stems.includes(h.stem)) stems.push(h.stem);
     lastPage = h.page;
   }
   // Only the pages that made the budget: the ones past it are never shown to

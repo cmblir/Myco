@@ -62,6 +62,36 @@ describe("complete() ask stages", () => {
     });
   });
 
+  it("dedupes a page's stem when its hits are not adjacent in rank order", async () => {
+    // semantic_search returns hits ranked by SCORE, not grouped by page, so
+    // the same page can resurface after another page's hit (A, B, A). The
+    // citation header may legitimately repeat for that page, but the stem
+    // list feeding the page count/list must only name it once.
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 51,
+      model: CURRENT_INDEX_MODEL,
+    });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
+      { page: "wiki/a.md", stem: "a", section: 0, text: "AAA one", score: 0.9 },
+      { page: "wiki/b.md", stem: "b", section: 0, text: "BBB", score: 0.85 },
+      { page: "wiki/a.md", stem: "a", section: 1, text: "AAA two", score: 0.8 },
+    ]);
+
+    const { seen, onStage } = stages();
+    await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "what is AAA?" }],
+      onStage,
+    });
+
+    expect(seen.map((s) => s.kind)).toEqual(["retrieving", "thinking"]);
+    expect(seen[1]).toEqual({
+      kind: "thinking",
+      stems: ["a", "b"],
+    });
+  });
+
   it("reports only the pages that fit the budget, not every hit", async () => {
     // The context is bounded; pages past the budget are never shown to the
     // model, so naming them in the UI would be another fiction.
