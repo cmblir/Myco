@@ -1544,7 +1544,28 @@ pub async fn reindex_embeddings(
     Ok(indexed)
 }
 
-/// Semantic search: embed the query, return top-`k` chunk hits from the index.
+/// A retrieval hit carrying the matching chunk's TEXT, so callers inline the
+/// passage instead of re-reading the whole page. `text` is reconstructed at
+/// query time from the page (the index stores only vectors+hashes).
+#[derive(Clone, serde::Serialize)]
+pub struct ScoredChunk {
+    pub page: String,
+    pub stem: String,
+    pub section: usize,
+    pub text: String,
+    pub score: f32,
+}
+
+/// The `section`-th chunk of `content` under the same `chunk_page` split the
+/// index was built with. `None` if `section` is out of range (e.g. the page was
+/// edited after indexing) — the caller drops such a hit.
+fn chunk_text_at(content: &str, section: usize) -> Option<String> {
+    crate::embeddings::chunk_page(content).into_iter().nth(section)
+}
+
+/// Semantic search: embed the query, return top-`k` chunk hits from the index,
+/// with each hit's chunk TEXT reconstructed so callers (e.g. Ask) can inline the
+/// passage instead of re-reading the whole page.
 // Four of the arguments are Tauri-injected state rather than things a caller
 // passes; the invocable surface is (query, k, provider, model).
 #[allow(clippy::too_many_arguments)]
@@ -1558,7 +1579,7 @@ pub async fn semantic_search(
     k: usize,
     provider: String,
     model: String,
-) -> Result<Vec<VecHit>, String> {
+) -> Result<Vec<ScoredChunk>, String> {
     let t0 = std::time::Instant::now();
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
@@ -1598,7 +1619,29 @@ pub async fn semantic_search(
             ("records", store.records.len() as f64),
         ],
     );
-    Ok(hits)
+    // Reconstruct each hit's chunk TEXT from its page (the index stores only
+    // vectors+hashes). Cache per page: several hits commonly share one page.
+    use std::collections::HashMap;
+    let mut page_cache: HashMap<String, Vec<String>> = HashMap::new();
+    let mut out: Vec<ScoredChunk> = Vec::with_capacity(hits.len());
+    for h in hits {
+        let chunks = page_cache.entry(h.page.clone()).or_insert_with(|| {
+            std::fs::read_to_string(root.join(&h.page))
+                .map(|c| crate::embeddings::chunk_page(&c))
+                .unwrap_or_default()
+        });
+        match chunks.get(h.section) {
+            Some(text) if !text.trim().is_empty() => out.push(ScoredChunk {
+                page: h.page,
+                stem: h.stem,
+                section: h.section,
+                text: text.clone(),
+                score: h.score,
+            }),
+            _ => {} // missing file or stale section index → skip
+        }
+    }
+    Ok(out)
 }
 
 /// Whether a `(provider, model)` pair derived from `store.model` is a
@@ -1870,8 +1913,20 @@ pub async fn fetch_youtube_transcript(url: String) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{builtin_index_is_stale, external_target_allowed, run_import, windows_opener_safe};
+    use super::{
+        builtin_index_is_stale, chunk_text_at, external_target_allowed, run_import,
+        windows_opener_safe,
+    };
     use std::path::PathBuf;
+
+    #[test]
+    fn chunk_text_at_indexes_sections() {
+        // chunk_page splits on ATX headings; two sections here.
+        let md = "# A\nalpha body text\n\n# B\nbeta body text\n";
+        assert_eq!(chunk_text_at(md, 0).as_deref(), Some("# A\nalpha body text"));
+        assert!(chunk_text_at(md, 1).unwrap().contains("beta"));
+        assert_eq!(chunk_text_at(md, 9), None); // out of range → None (page changed since index)
+    }
 
     // A Claude Code session line (parses to one conversation via the importer).
     fn session_line(id: &str, text: &str) -> String {
