@@ -1620,22 +1620,20 @@ pub async fn semantic_search(
         ],
     );
     // Reconstruct each hit's chunk TEXT from its page (the index stores only
-    // vectors+hashes). Cache per page: several hits commonly share one page.
-    use std::collections::HashMap;
-    let mut page_cache: HashMap<String, Vec<String>> = HashMap::new();
+    // vectors+hashes). No cross-hit cache: k is capped at 50 (realistically
+    // <=12), pages are small markdown files, and re-reading one a second hit
+    // shares is not a measurable cost — so this just calls the pure helper.
     let mut out: Vec<ScoredChunk> = Vec::with_capacity(hits.len());
     for h in hits {
-        let chunks = page_cache.entry(h.page.clone()).or_insert_with(|| {
-            std::fs::read_to_string(root.join(&h.page))
-                .map(|c| crate::embeddings::chunk_page(&c))
-                .unwrap_or_default()
-        });
-        match chunks.get(h.section) {
+        let Ok(content) = std::fs::read_to_string(root.join(&h.page)) else {
+            continue;
+        };
+        match chunk_text_at(&content, h.section) {
             Some(text) if !text.trim().is_empty() => out.push(ScoredChunk {
                 page: h.page,
                 stem: h.stem,
                 section: h.section,
-                text: text.clone(),
+                text,
                 score: h.score,
             }),
             _ => {} // missing file or stale section index → skip
