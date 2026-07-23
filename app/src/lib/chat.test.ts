@@ -40,15 +40,10 @@ describe("complete() ask stages", () => {
       model: CURRENT_INDEX_MODEL,
     });
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
-      { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", section: 0, score: 0.9 },
-      { page: "wiki/embeddings.md", stem: "embeddings", section: 0, score: 0.8 },
+      { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", section: 0, text: "attention body", score: 0.9 },
+      { page: "wiki/embeddings.md", stem: "embeddings", section: 0, text: "embeddings body", score: 0.8 },
     ]);
-    vi.spyOn(ipc, "readFile").mockResolvedValue({
-      path: "x",
-      raw: "body",
-      content: "body",
-      frontmatter: null,
-    });
+    const readFile = vi.spyOn(ipc, "readFile");
 
     const { seen, onStage } = stages();
     await complete({
@@ -57,6 +52,7 @@ describe("complete() ask stages", () => {
       messages: [{ role: "user", content: "what is attention?" }],
       onStage,
     });
+    expect(readFile).not.toHaveBeenCalled();
 
     expect(seen.map((s) => s.kind)).toEqual(["retrieving", "thinking"]);
     // The real hits, not a sample of the vault.
@@ -73,21 +69,16 @@ describe("complete() ask stages", () => {
       indexed_pages: 51,
       model: CURRENT_INDEX_MODEL,
     });
+    // Each chunk's passage is a third of the builtin budget, so only a few can fit.
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue(
       Array.from({ length: 12 }, (_, i) => ({
         page: `wiki/p${i}.md`,
         stem: `p${i}`,
         section: 0,
+        text: "x".repeat(2_500),
         score: 1 - i / 12,
       })),
     );
-    // Each page is a third of the builtin budget, so only a few can fit.
-    vi.spyOn(ipc, "readFile").mockResolvedValue({
-      path: "x",
-      raw: "x".repeat(2_500),
-      content: "x".repeat(2_500),
-      frontmatter: null,
-    });
 
     const { seen, onStage } = stages();
     await complete({
@@ -154,6 +145,40 @@ describe("complete() ask stages", () => {
     await expect(
       complete({ task: "query", cwd: VAULT, messages: [{ role: "user", content: "q" }] }),
     ).resolves.toBe("an answer");
+  });
+
+  it("inlines retrieved chunk passages, grouped by page, not whole files", async () => {
+    const chunks = [
+      { page: "wiki/a.md", stem: "a", section: 0, text: "AAA passage one", score: 0.9 },
+      { page: "wiki/a.md", stem: "a", section: 2, text: "AAA passage two", score: 0.8 },
+      { page: "wiki/b.md", stem: "b", section: 0, text: "BBB passage", score: 0.7 },
+    ];
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 51,
+      model: CURRENT_INDEX_MODEL,
+    });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue(chunks);
+    const readFile = vi.spyOn(ipc, "readFile");
+    let seenPrompt = "";
+    vi.spyOn(ipc, "localQuery").mockImplementation(async (prompt: string) => {
+      seenPrompt = prompt;
+      return "an answer";
+    });
+
+    const { onStage } = stages();
+    await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "what is AAA?" }],
+      onStage,
+    });
+
+    expect(readFile).not.toHaveBeenCalled();
+    expect(seenPrompt).toContain("AAA passage one");
+    expect(seenPrompt).toContain("AAA passage two");
+    expect(seenPrompt).toContain("BBB passage");
+    expect(seenPrompt).toContain("[[a]]");
+    expect(seenPrompt).toContain("[[b]]");
   });
 
   it("signals stale and skips retrieval when the index predates a bundled embed-model swap", async () => {

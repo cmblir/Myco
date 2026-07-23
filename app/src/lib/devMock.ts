@@ -944,10 +944,22 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         (d) => d.n.toLowerCase().includes(q) || body(d).toLowerCase().includes(q),
       )
         .slice(0, k)
-        .map((d, i) => ({ page: `wiki/${d.s}.md`, stem: d.s, section: 0, score: 0.9 - i * 0.05 }));
+        .map((d, i) => ({
+          page: `wiki/${d.s}.md`,
+          stem: d.s,
+          section: 0,
+          text: `passage from ${d.s}`,
+          score: 0.9 - i * 0.05,
+        }));
       // Always return something so the UI path is exercised even on no keyword match.
       const out = hits.length === 0 && NODES.length
-        ? NODES.slice(0, k).map((d, i) => ({ page: `wiki/${d.s}.md`, stem: d.s, section: 0, score: 0.6 - i * 0.05 }))
+        ? NODES.slice(0, k).map((d, i) => ({
+            page: `wiki/${d.s}.md`,
+            stem: d.s,
+            section: 0,
+            text: `passage from ${d.s}`,
+            score: 0.6 - i * 0.05,
+          }))
         : hits;
       return sleep(400).then(() => out);
     }

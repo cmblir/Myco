@@ -143,6 +143,18 @@ export interface VecHit {
   score: number;
 }
 
+/** A semantic search hit with its matching chunk's text reconstructed
+ * server-side — what `semantic_search` returns (unlike `related_pages`,
+ * which stays a bare `VecHit`: it has no single query chunk to attach text
+ * to). */
+export interface ScoredChunk {
+  page: string;
+  stem: string;
+  section: number;
+  text: string;
+  score: number;
+}
+
 export interface SemanticPoint {
   page: string;
   x: number;
@@ -380,7 +392,7 @@ export const ipc = {
   reindexEmbeddings: (provider: string, model: string) =>
     invoke<number>("reindex_embeddings", { provider, model }),
   semanticSearch: (query: string, k: number, provider: string, model: string) =>
-    invoke<VecHit[]>("semantic_search", { query, k, provider, model }),
+    invoke<ScoredChunk[]>("semantic_search", { query, k, provider, model }),
   /** 2D semantic-map coordinates (PCA over page embeddings) for every indexed page. */
   semanticMap: () => invoke<SemanticPoint[]>("semantic_map", {}),
   /** Existing pages a new source likely relates to — retrieval grounding for ingest. */

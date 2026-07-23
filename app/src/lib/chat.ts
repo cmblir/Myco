@@ -9,7 +9,7 @@
 //     providers we inline the vault content so the model has real context
 //     instead of answering blind.
 
-import { ipc } from "./ipc";
+import { ipc, type ScoredChunk } from "./ipc";
 import { BUILTIN_EMBED_MODEL } from "./providers";
 import { getBudgetThreshold, overBudget, recordUsage } from "./budget";
 
@@ -122,7 +122,7 @@ export async function complete(args: CompleteArgs): Promise<string> {
     // whole-vault concat when the index is empty, stale, or retrieval fails.
     const question = lastUserContent(args.messages);
     const retrieved = question
-      ? await semanticContext(args.cwd, question, budget, args.onStage)
+      ? await semanticContext(question, budget, args.onStage)
       : { ctx: "", stems: [], stale: false };
     stems = retrieved.stems;
     stale = retrieved.stale;
@@ -208,15 +208,17 @@ export function isIndexStale(
   return status.model !== CURRENT_BUILTIN_INDEX_ID;
 }
 
-/** Semantic retrieval: embed the question, pull the top-matching pages from the
- * embedding index, and assemble their bodies (bounded by `budget`) with citeable
- * [[stem]] headers. Returns "" when no index exists so the caller can fall back
+/** Semantic retrieval: embed the question, pull the top-matching chunks from the
+ * embedding index, and inline their PASSAGE TEXT (bounded by `budget`) under one
+ * citeable [[stem]] header per page — not the whole page body, which is what
+ * this used to re-read from disk. Chunks are already ranked by the index, so
+ * later chunks of a page just append under its existing header rather than
+ * repeating it. Returns "" when no index exists so the caller can fall back
  * to the whole-vault concat. `stale` is true when the index predates a bundled
  * embed-model swap — retrieval is skipped entirely rather than cosining across
  * incompatible vector spaces, and the caller must surface this, not just fall
  * back silently. */
 async function semanticContext(
-  cwd: string,
   question: string,
   budget: number,
   onStage?: (stage: AskStage) => void,
@@ -230,31 +232,27 @@ async function semanticContext(
   onStage?.({ kind: "retrieving" });
   const hits = await ipc
     .semanticSearch(question, 12, "builtin-local", BUILTIN_EMBED_MODEL)
-    .catch(() => []);
+    .catch(() => [] as ScoredChunk[]);
   if (hits.length === 0) return none;
-  const seen = new Set<string>();
   const parts: string[] = [];
+  const stems: string[] = [];
   let used = 0;
+  let lastPage = "";
   for (const h of hits) {
-    if (seen.has(h.page)) continue;
-    seen.add(h.page);
-    const abs = h.page.startsWith("/") ? h.page : `${cwd}/${h.page}`;
-    const file = await ipc.readFile(abs).catch(() => null);
-    const text = file?.content?.trim();
-    if (!text) continue;
-    const block = `===== [[${h.stem}]] =====\n${text}`;
+    if (!h.text) continue;
+    // One citeable header per page; later chunks of the same page just
+    // append under it instead of repeating the citation.
+    const header = h.page !== lastPage ? `===== [[${h.stem}]] =====\n` : "\n";
+    const block = `${header}${h.text}`;
     if (used + block.length > budget && parts.length > 0) break;
     parts.push(block);
     used += block.length;
+    if (h.page !== lastPage) stems.push(h.stem);
+    lastPage = h.page;
   }
   // Only the pages that made the budget: the ones past it are never shown to
   // the model, so naming them would be another fiction.
-  return { ctx: parts.join("\n\n"), stems: [...seen].map(stemOf), stale: false };
-}
-
-/// `wiki/attention-mechanism.md` -> `attention-mechanism`.
-function stemOf(page: string): string {
-  return page.split("/").pop()?.replace(/\.md$/i, "") ?? page;
+  return { ctx: parts.join("\n\n"), stems, stale: false };
 }
 
 // Merge the vault content into the single system message (providers like
