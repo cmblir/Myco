@@ -101,6 +101,10 @@ pub fn embed_spec_by_id(id: &str) -> Option<&'static EmbedSpec> {
     EMBED_SPECS.iter().find(|s| s.id == id)
 }
 
+/// The embed model the app currently bundles and tags new indexes with.
+/// Mirrors the frontend `BUILTIN_EMBED_MODEL` (app/src/lib/providers.ts).
+pub const BUILTIN_EMBED_MODEL: &str = "bge-m3";
+
 /// Prepend the role's instruction to each text (empty prefix = unchanged).
 pub fn apply_prefix(spec: &EmbedSpec, role: EmbedRole, texts: &[String]) -> Vec<String> {
     let prefix = match role {

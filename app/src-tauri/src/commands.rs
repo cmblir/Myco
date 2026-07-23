@@ -1357,7 +1357,11 @@ async fn embed_texts(
             // Pre-migration callers (an index/id still on the old bundled-Gemma
             // scheme) may pass an empty model; treat that the same as the
             // current bundled winner rather than failing the lookup.
-            let model = if model.is_empty() { "bge-m3" } else { model };
+            let model = if model.is_empty() {
+                crate::local_llm::BUILTIN_EMBED_MODEL
+            } else {
+                model
+            };
             let spec = crate::local_llm::embed_spec_by_id(model)
                 .ok_or_else(|| format!("unknown builtin embed model: {model}"))?;
             let embed_path = local_embed_model_path(&app, spec.file)?;
@@ -1598,15 +1602,19 @@ pub async fn semantic_search(
 }
 
 /// Whether a `(provider, model)` pair derived from `store.model` is a
-/// builtin-local index left behind by a bundled-embed-model swap (e.g. the
-/// gemma-3-1b -> bge-m3 migration): the model id no longer resolves to a
-/// known `EmbedSpec`, so `embed_texts` would hard-error rather than embed.
+/// builtin-local index NOT tagged with the model the app currently bundles
+/// (`local_llm::BUILTIN_EMBED_MODEL`) — e.g. left behind by a bundled-embed-
+/// model swap (the gemma-3-1b -> bge-m3 migration), or tagged with a model
+/// id that resolves to a known `EmbedSpec` but isn't bundled right now (e.g.
+/// a bake-off candidate like e5-large). Either way `embed_texts` would either
+/// hard-error ("unknown builtin embed model") or, worse, silently succeed
+/// against a GGUF the current build doesn't ship — so both count as stale.
 /// Only builtin-local is checked — "ollama" model ids are never `EmbedSpec`
 /// ids at all, but `embed_texts` routes that provider straight to Ollama
 /// without an `EmbedSpec` lookup, so it is never "stale" by this check.
 fn builtin_index_is_stale(provider: &str, model: &str) -> bool {
     (provider == "builtin-local" || provider.is_empty())
-        && crate::local_llm::embed_spec_by_id(model).is_none()
+        && model != crate::local_llm::BUILTIN_EMBED_MODEL
 }
 
 /// Existing wiki pages a new source most likely relates to — the retrieval
@@ -2032,7 +2040,7 @@ mod tests {
     }
 
     #[test]
-    fn builtin_index_is_stale_detects_retired_embed_model() {
+    fn builtin_index_is_stale_only_accepts_the_bundled_model() {
         // A store still tagged with the model the bge-m3 swap retired (Task 4)
         // must report stale — `wikify_candidates` degrades to Ok(empty) for
         // this, rather than propagating embed_texts's "unknown builtin embed
@@ -2040,6 +2048,14 @@ mod tests {
         assert!(builtin_index_is_stale("builtin-local", "gemma-3-1b"));
         // The current bundled winner is not stale.
         assert!(!builtin_index_is_stale("builtin-local", "bge-m3"));
+        // A known-but-unbundled EmbedSpec id (a bake-off candidate the app
+        // doesn't currently ship) must ALSO report stale: pre-fix, this used
+        // to pass as "fresh" because `embed_spec_by_id` resolved it, which
+        // would let `wikify_candidates` proceed into `embed_texts` and hard-
+        // error ("bundled embed model not found") once a second model is
+        // bundled and this one no longer is. Staleness must track "is this
+        // the model we bundle right now", not "is this id known at all".
+        assert!(builtin_index_is_stale("builtin-local", "e5-large"));
         // A model id an ollama-provider index carries is never a builtin
         // `EmbedSpec` id, but embed_texts routes "ollama" straight to Ollama
         // without ever consulting EMBED_SPECS — never "stale" here.
