@@ -44,6 +44,75 @@ const CLASSIFY_MAX_TOKENS: i32 = 6;
 // may start inventing new dialogue turns.
 const STOP_MARKERS: [&str; 4] = ["\nUser:", "\nAssistant:", "\nQ:", "\n질문:"];
 
+/// Whether a text is being embedded as a search query or as an indexed
+/// document. Asymmetric models (e5, nomic) prepend a different instruction for
+/// each; symmetric models (bge-m3) ignore it.
+#[derive(Clone, Copy)]
+pub enum EmbedRole {
+    Query,
+    Document,
+}
+
+/// A bundleable embedding model and how to drive it correctly. `pooling` and the
+/// prefixes are model-specific and MUST match the checkpoint, or the vectors are
+/// silently wrong.
+pub struct EmbedSpec {
+    pub id: &'static str,
+    pub file: &'static str,
+    pub pooling: LlamaPoolingType,
+    pub query_prefix: &'static str,
+    pub doc_prefix: &'static str,
+    pub max_ctx: u32,
+}
+
+/// Bake-off candidates. Files are downloaded into `models/` for the harness; the
+/// winner is later added to `tauri.conf.json` resources (Task 4).
+pub const EMBED_SPECS: &[EmbedSpec] = &[
+    // XLM-RoBERTa, CLS-pooled, symmetric (no instruction), 1024-d, MIRACL Korean.
+    EmbedSpec {
+        id: "bge-m3",
+        file: "models/bge-m3-Q4_K_M.gguf",
+        pooling: LlamaPoolingType::Cls,
+        query_prefix: "",
+        doc_prefix: "",
+        max_ctx: 2048,
+    },
+    // XLM-RoBERTa, mean-pooled, asymmetric prefixes, 1024-d, 512-token limit.
+    EmbedSpec {
+        id: "e5-large",
+        file: "models/multilingual-e5-large-q4_k_m.gguf",
+        pooling: LlamaPoolingType::Mean,
+        query_prefix: "query: ",
+        doc_prefix: "passage: ",
+        max_ctx: 512,
+    },
+    // Optional English-leaning contender; drop if bge-m3/e5 clearly win.
+    EmbedSpec {
+        id: "nomic-1.5",
+        file: "models/nomic-embed-text-v1.5.Q4_K_M.gguf",
+        pooling: LlamaPoolingType::Mean,
+        query_prefix: "search_query: ",
+        doc_prefix: "search_document: ",
+        max_ctx: 2048,
+    },
+];
+
+pub fn embed_spec_by_id(id: &str) -> Option<&'static EmbedSpec> {
+    EMBED_SPECS.iter().find(|s| s.id == id)
+}
+
+/// Prepend the role's instruction to each text (empty prefix = unchanged).
+pub fn apply_prefix(spec: &EmbedSpec, role: EmbedRole, texts: &[String]) -> Vec<String> {
+    let prefix = match role {
+        EmbedRole::Query => spec.query_prefix,
+        EmbedRole::Document => spec.doc_prefix,
+    };
+    if prefix.is_empty() {
+        return texts.to_vec();
+    }
+    texts.iter().map(|t| format!("{prefix}{t}")).collect()
+}
+
 pub struct LocalLlm {
     // The backend guard must outlive the model; drop deinits llama.cpp.
     backend: LlamaBackend,
@@ -281,9 +350,11 @@ impl LocalLlm {
             .ok_or_else(|| format!("no known label in model output: {raw:?}"))
     }
 
-    /// Embed texts with the bundled model in embeddings mode (mean-pooled,
-    /// L2-normalized). Offline, no key — reuses the already-loaded Gemma weights.
-    /// Quality trails a dedicated embed model but needs zero extra assets.
+    /// Embed texts with the bundled model in embeddings mode (pooled per
+    /// `pooling`, L2-normalized). Offline, no key — reuses the already-loaded
+    /// model weights. `max_ctx` bounds both the context window and the token
+    /// truncation cap, so callers can match a spec's real limit (e.g. e5's
+    /// 512 tokens) instead of the chat model's 2048.
     ///
     /// One context serves the whole call. Building a context costs ~78 ms and
     /// this used to build one per text, which reindex pays per chunk — measured
@@ -291,10 +362,14 @@ impl LocalLlm {
     /// ~23 s across a 300-chunk vault. The sequences stay independent because
     /// the KV cache is cleared between them; verified against a fresh context
     /// per text, the vectors are bit-identical (max |Δ| = 0.0).
-    pub fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
-        const EMBED_CTX: u32 = 2048;
-        let n_ctx = NonZeroU32::new(EMBED_CTX).ok_or("invalid embed ctx")?;
-        let cap = EMBED_CTX as usize - 8;
+    pub fn embed_pooled(
+        &self,
+        texts: &[String],
+        pooling: LlamaPoolingType,
+        max_ctx: u32,
+    ) -> Result<Vec<Vec<f32>>, String> {
+        let n_ctx = NonZeroU32::new(max_ctx).ok_or("invalid embed ctx")?;
+        let cap = max_ctx as usize - 8;
 
         // Tokenize everything up front: the context is sized to the widest
         // sequence in the call, which cannot be known one text at a time.
@@ -332,7 +407,7 @@ impl LocalLlm {
         let ctx_params = LlamaContextParams::default()
             .with_n_ctx(Some(n_ctx))
             .with_embeddings(true)
-            .with_pooling_type(LlamaPoolingType::Mean)
+            .with_pooling_type(pooling)
             .with_n_batch(max_n as u32)
             .with_n_ubatch(max_n as u32);
         let mut ctx = self
@@ -374,6 +449,12 @@ impl LocalLlm {
         Ok(out)
     }
 
+    /// Back-compat: mean-pooled with the bundled chat model (Gemma). New code should
+    /// use `embed_spec` with a real EmbedSpec.
+    pub fn embed(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, String> {
+        self.embed_pooled(texts, LlamaPoolingType::Mean, 2048)
+    }
+
     /// Free-form, language-matched generation. `prompt` is the user turn (the
     /// caller may prepend inlined vault context); facts are unreliable at 1B.
     pub fn generate(&self, prompt: &str, max_tokens: i32) -> Result<String, String> {
@@ -392,6 +473,29 @@ mod tests {
 
     fn cos(a: &[f32], b: &[f32]) -> f32 {
         crate::embeddings::cosine(a, b)
+    }
+
+    #[test]
+    fn embed_spec_lookup_and_prefixes() {
+        // bge-m3 is prefix-free and CLS-pooled.
+        let bge = embed_spec_by_id("bge-m3").expect("bge-m3 spec exists");
+        assert!(matches!(bge.pooling, LlamaPoolingType::Cls));
+        let out = apply_prefix(bge, EmbedRole::Query, &["hello".into()]);
+        assert_eq!(out, vec!["hello".to_string()]); // no prefix
+
+        // e5 needs asymmetric query:/passage: prefixes and Mean pooling.
+        let e5 = embed_spec_by_id("e5-large").expect("e5 spec exists");
+        assert!(matches!(e5.pooling, LlamaPoolingType::Mean));
+        assert_eq!(
+            apply_prefix(e5, EmbedRole::Query, &["cat".into()]),
+            vec!["query: cat".to_string()]
+        );
+        assert_eq!(
+            apply_prefix(e5, EmbedRole::Document, &["a cat".into()]),
+            vec!["passage: a cat".to_string()]
+        );
+
+        assert!(embed_spec_by_id("nope").is_none());
     }
 
     // E2E: load the bundled Gemma model and embed. Ignored by default (loads a
