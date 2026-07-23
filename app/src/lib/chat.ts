@@ -10,7 +10,7 @@
 //     instead of answering blind.
 
 import { ipc } from "./ipc";
-import { BUILTIN_MODEL } from "./providers";
+import { BUILTIN_EMBED_MODEL } from "./providers";
 import { getBudgetThreshold, overBudget, recordUsage } from "./budget";
 
 export interface SimpleMessage {
@@ -194,7 +194,7 @@ async function semanticContext(
   if (!status || status.indexed_pages === 0) return none;
   onStage?.({ kind: "retrieving" });
   const hits = await ipc
-    .semanticSearch(question, 12, "builtin-local", BUILTIN_MODEL)
+    .semanticSearch(question, 12, "builtin-local", BUILTIN_EMBED_MODEL)
     .catch(() => []);
   if (hits.length === 0) return none;
   const seen = new Set<string>();

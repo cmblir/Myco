@@ -9,7 +9,7 @@ import { useUIStore } from "../stores/uiStore";
 import type { RouteId } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { ipc } from "../lib/ipc";
-import { BUILTIN_MODEL } from "../lib/providers";
+import { BUILTIN_EMBED_MODEL } from "../lib/providers";
 import type { FileNode, SearchHit, VecHit } from "../lib/ipc";
 import { isComposingKey } from "../lib/ime";
 
@@ -65,7 +65,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
         });
       // Semantic hits run in parallel; empty when no index is built (quiet fail).
       ipc
-        .semanticSearch(needle, 6, "builtin-local", BUILTIN_MODEL)
+        .semanticSearch(needle, 6, "builtin-local", BUILTIN_EMBED_MODEL)
         .then((hits) => {
           if (!cancelled) setSemanticHits(hits);
         })

@@ -152,6 +152,16 @@ impl LocalLlm {
         Ok(())
     }
 
+    /// Idempotent `load_embed_model`: loads the purpose-built embedder only if
+    /// one isn't already resident, so callers can call this on every request
+    /// without re-reading the GGUF each time.
+    pub fn ensure_embed_model(&mut self, model_path: &Path) -> Result<(), String> {
+        if self.embed_model.is_none() {
+            self.load_embed_model(model_path)?;
+        }
+        Ok(())
+    }
+
     /// How many tokens `text` costs this model. The context window is measured in
     /// tokens while everything upstream (chunk sizes, vault-context budgets) is
     /// measured in bytes, and the ratio between them swings wildly by script —

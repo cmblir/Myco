@@ -64,6 +64,22 @@ fn local_model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Err("bundled model not found (models/gemma-3-1b-it-q4_k_m.gguf)".into())
 }
 
+/// Path to the bundled purpose-built embedding model (winner of the 1a bake-off).
+/// `rel` is the spec's `EmbedSpec.file`, e.g. "models/bge-m3-Q4_K_M.gguf".
+fn local_embed_model_path(app: &tauri::AppHandle, rel: &str) -> Result<PathBuf, String> {
+    if let Ok(res) = app.path().resource_dir() {
+        let p = res.join(rel);
+        if p.is_file() {
+            return Ok(p);
+        }
+    }
+    let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(rel);
+    if dev.is_file() {
+        return Ok(dev);
+    }
+    Err(format!("bundled embed model not found ({rel})"))
+}
+
 /// Emitted around the one-time load of the bundled weights, so the UI can say
 /// what the app is doing instead of freezing. `loading` is true when the load
 /// starts and false when it finishes, with `ok` reporting whether it worked.
@@ -81,6 +97,10 @@ pub struct ModelLoadEvent {
 /// bench_local_llm --release`). That is far too long to leave unexplained, so it
 /// is announced on `local-model-load` — every later call finds the model already
 /// in the cell and emits nothing.
+// `&mut LocalLlm` (rather than `&LocalLlm`) so the embed path below can call
+// `ensure_embed_model`, which lazily loads the second (embed) model into the
+// same cell; the pre-existing `&self`-only callers (classify, generate) still
+// work unchanged through a `&mut` reference.
 async fn with_local_llm<T, F>(
     app: tauri::AppHandle,
     state: tauri::State<'_, LocalLlmState>,
@@ -88,7 +108,7 @@ async fn with_local_llm<T, F>(
 ) -> Result<T, String>
 where
     T: Send + 'static,
-    F: FnOnce(&LocalLlm) -> Result<T, String> + Send + 'static,
+    F: FnOnce(&mut LocalLlm) -> Result<T, String> + Send + 'static,
 {
     use tauri::Emitter;
     let cell = state.0.clone();
@@ -106,7 +126,7 @@ where
             );
             *guard = Some(loaded?);
         }
-        f(guard.as_ref().expect("just loaded"))
+        f(guard.as_mut().expect("just loaded"))
     })
     .await
     .map_err(|e| format!("local model task failed: {e}"))?
@@ -1321,17 +1341,34 @@ use crate::embeddings;
 use crate::perf;
 use crate::vector_index::{EdgeLookup, Hit as VecHit, VectorCache, VectorStore};
 
-/// Embed a batch of texts with the chosen provider.
+/// Embed a batch of texts with the chosen provider. `role` picks the query/doc
+/// instruction prefix for asymmetric embedding models (bge-m3 ignores it — see
+/// `EmbedSpec.query_prefix`/`doc_prefix`).
 async fn embed_texts(
     app: tauri::AppHandle,
     llm: tauri::State<'_, LocalLlmState>,
     provider: &str,
     model: &str,
+    role: crate::local_llm::EmbedRole,
     texts: Vec<String>,
 ) -> Result<Vec<Vec<f32>>, String> {
     match provider {
         "" | "builtin-local" => {
-            with_local_llm(app, llm, move |m| m.embed(&texts)).await
+            // Pre-migration callers (an index/id still on the old bundled-Gemma
+            // scheme) may pass an empty model; treat that the same as the
+            // current bundled winner rather than failing the lookup.
+            let model = if model.is_empty() { "bge-m3" } else { model };
+            let spec = crate::local_llm::embed_spec_by_id(model)
+                .ok_or_else(|| format!("unknown builtin embed model: {model}"))?;
+            let embed_path = local_embed_model_path(&app, spec.file)?;
+            with_local_llm(app, llm, move |m| {
+                // Loads the embed model once if absent; the chat model (Gemma)
+                // is already resident from `with_local_llm`'s own lazy load, so
+                // this path holds both models in RAM at once (~806 MB + 438 MB).
+                m.ensure_embed_model(&embed_path)?;
+                m.embed_spec(spec, role, &texts)
+            })
+            .await
         }
         "ollama" => {
             let m = if model.is_empty() { "nomic-embed-text" } else { model };
@@ -1441,7 +1478,15 @@ pub async fn reindex_embeddings(
             continue; // nothing to embed, or the content hashes still match
         }
         let t_embed = std::time::Instant::now();
-        let vecs = embed_texts(app.clone(), llm.clone(), &provider, &model, chunks).await?;
+        let vecs = embed_texts(
+            app.clone(),
+            llm.clone(),
+            &provider,
+            &model,
+            crate::local_llm::EmbedRole::Document,
+            chunks,
+        )
+        .await?;
         embed_ms += perf::ms(t_embed.elapsed());
         embedded += 1;
         let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
@@ -1526,7 +1571,15 @@ pub async fn semantic_search(
         return Ok(Vec::new());
     }
     let t_embed = std::time::Instant::now();
-    let mut q = embed_texts(app, llm, &provider, &model, vec![query]).await?;
+    let mut q = embed_texts(
+        app,
+        llm,
+        &provider,
+        &model,
+        crate::local_llm::EmbedRole::Query,
+        vec![query],
+    )
+    .await?;
     let embed_ms = perf::ms(t_embed.elapsed());
     let qv = q.pop().unwrap_or_default();
     let t_scan = std::time::Instant::now();
@@ -1587,8 +1640,18 @@ pub async fn wikify_candidates(
         return Ok(Vec::new());
     }
     let n_chunks = chunks.len();
-    // One batched embed call shares a llama context across the chunks.
-    let vecs = embed_texts(app, llm, &provider, &model, chunks).await?;
+    // One batched embed call shares a llama context across the chunks. Role is
+    // Query: the incoming source's chunks are the search side, probed against
+    // the already-indexed pages (embedded as Document during reindex).
+    let vecs = embed_texts(
+        app,
+        llm,
+        &provider,
+        &model,
+        crate::local_llm::EmbedRole::Query,
+        chunks,
+    )
+    .await?;
     // Per chunk, retrieve extra hits then keep only knowledge pages, so
     // source-summaries don't crowd out real update targets before the fold.
     let per_chunk: Vec<Vec<VecHit>> = vecs
@@ -1942,5 +2005,16 @@ mod tests {
         assert!(!external_target_allowed("/usr/local/bin"));
         assert!(!external_target_allowed("relative/path"));
         assert!(!external_target_allowed(r"C:\Users\me\file.txt"));
+    }
+
+    #[test]
+    fn winner_spec_is_wired() {
+        // Task 4: bge-m3 is the bake-off winner `embed_texts` routes to for the
+        // builtin-local provider — this asserts the spec it resolves is really
+        // the winner (right file, right pooling) rather than a stale entry.
+        let s = crate::local_llm::embed_spec_by_id("bge-m3").expect("winner spec present");
+        assert_eq!(s.id, "bge-m3");
+        assert_eq!(s.file, "models/bge-m3-Q4_K_M.gguf");
+        assert!(matches!(s.pooling, llama_cpp_2::context::params::LlamaPoolingType::Cls));
     }
 }

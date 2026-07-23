@@ -39,7 +39,8 @@
     "resources": {
       "../../automation/digest.py": "automation/digest.py",
       "models/gemma-3-1b-it-q4_k_m.gguf": "models/gemma-3-1b-it-q4_k_m.gguf",
-      "models/LICENSE-gemma.txt": "models/LICENSE-gemma.txt"
+      "models/LICENSE-gemma.txt": "models/LICENSE-gemma.txt",
+      "models/bge-m3-Q4_K_M.gguf": "models/bge-m3-Q4_K_M.gguf"
     },
     "icon": [
       "icons/32x32.png",

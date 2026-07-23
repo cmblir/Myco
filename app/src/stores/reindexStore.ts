@@ -16,7 +16,7 @@
 import { create } from "zustand";
 import { listen } from "@tauri-apps/api/event";
 import { ipc } from "../lib/ipc";
-import { BUILTIN_MODEL } from "../lib/providers";
+import { BUILTIN_EMBED_MODEL } from "../lib/providers";
 import { useVaultStore } from "./vaultStore";
 
 /** Five states, in the order a run passes through them. */
@@ -103,7 +103,7 @@ export const useReindexStore = create<ReindexState>((set, get) => ({
           set({ stage: "indexing", done, total, page });
         }),
       );
-      const indexed = await ipc.reindexEmbeddings("builtin-local", BUILTIN_MODEL);
+      const indexed = await ipc.reindexEmbeddings("builtin-local", BUILTIN_EMBED_MODEL);
       set({ stage: "done", indexed, indexedPages: indexed, error: null });
     } catch (err) {
       set({ stage: "error", error: String(err) });

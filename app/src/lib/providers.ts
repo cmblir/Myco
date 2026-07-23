@@ -10,10 +10,16 @@ import type { MemexSettings } from "./ipc";
 import { ipc } from "./ipc";
 import { useSettingsStore } from "../stores/settingsStore";
 
-// The bundled offline model's catalog id. Also used as the embedding-model
-// key ("builtin-local:<id>") so a bundled-model swap invalidates stale vector
-// indexes (see semantic_search's stale-index guard on the Rust side).
+// The bundled offline chat/generate model's catalog id (Gemma 3 1B). Used for
+// classification and light query generation, and as the chat-provider catalog
+// entry below — NOT for embedding (see BUILTIN_EMBED_MODEL).
 export const BUILTIN_MODEL = "gemma-3-1b";
+
+// The bundled offline embedding model's id (bge-m3, the retrieval-1a bake-off
+// winner). Used as the embedding-model key ("builtin-local:<id>") so a
+// bundled-model swap invalidates stale vector indexes (see semantic_search's
+// stale-index guard on the Rust side).
+export const BUILTIN_EMBED_MODEL = "bge-m3";
 
 export interface ProviderDef {
   id: ProviderId;
