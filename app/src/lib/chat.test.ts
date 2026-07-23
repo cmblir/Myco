@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { complete, type AskStage } from "./chat";
+import { complete, isIndexStale, type AskStage } from "./chat";
 import { ipc } from "./ipc";
+import { BUILTIN_EMBED_MODEL } from "./providers";
+
+// The id a healthy (non-stale) index is tagged with today — matches
+// `CURRENT_BUILTIN_INDEX_ID` in chat.ts.
+const CURRENT_INDEX_MODEL = `builtin-local:${BUILTIN_EMBED_MODEL}`;
 
 // The Ask wait used to be theatre: a random shuffle of vault stems pulsing under
 // a static "searching the wiki…", while the code that actually chose the pages
@@ -32,7 +37,7 @@ describe("complete() ask stages", () => {
   it("reports the pages retrieval actually chose", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
       indexed_pages: 51,
-      model: "builtin-local:gemma-3-1b",
+      model: CURRENT_INDEX_MODEL,
     });
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
       { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", section: 0, score: 0.9 },
@@ -66,7 +71,7 @@ describe("complete() ask stages", () => {
     // model, so naming them in the UI would be another fiction.
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
       indexed_pages: 51,
-      model: "builtin-local:gemma-3-1b",
+      model: CURRENT_INDEX_MODEL,
     });
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue(
       Array.from({ length: 12 }, (_, i) => ({
@@ -117,7 +122,7 @@ describe("complete() ask stages", () => {
   it("names no pages when retrieval finds nothing", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
       indexed_pages: 51,
-      model: "builtin-local:gemma-3-1b",
+      model: CURRENT_INDEX_MODEL,
     });
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue([]);
 
@@ -149,5 +154,50 @@ describe("complete() ask stages", () => {
     await expect(
       complete({ task: "query", cwd: VAULT, messages: [{ role: "user", content: "q" }] }),
     ).resolves.toBe("an answer");
+  });
+
+  it("signals stale and skips retrieval when the index predates a bundled embed-model swap", async () => {
+    // The bge-m3 swap (Task 4) leaves a pre-existing index tagged with the
+    // retired model id — cosining a fresh query against it would be
+    // meaningless, so retrieval must not even be attempted.
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 51,
+      model: "builtin-local:gemma-3-1b",
+    });
+    const search = vi.spyOn(ipc, "semanticSearch");
+    const fallback = vi.spyOn(ipc, "readVaultContext").mockResolvedValue("whole vault");
+
+    const { seen, onStage } = stages();
+    const out = await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "q" }],
+      onStage,
+    });
+
+    expect(search).not.toHaveBeenCalled();
+    expect(fallback).toHaveBeenCalled(); // the fallback must still run
+    expect(seen).toEqual([{ kind: "thinking", stems: [], stale: true }]);
+    expect(out).toBe("an answer");
+  });
+});
+
+describe("isIndexStale", () => {
+  it("flags an index whose model no longer matches the current builtin embed id", () => {
+    expect(
+      isIndexStale({ indexed_pages: 12, model: "builtin-local:gemma-3-1b" }),
+    ).toBe(true);
+  });
+
+  it("does not flag an index that matches the current builtin embed id", () => {
+    expect(isIndexStale({ indexed_pages: 12, model: CURRENT_INDEX_MODEL })).toBe(
+      false,
+    );
+  });
+
+  it("does not flag a never-indexed vault, even with no model recorded", () => {
+    expect(isIndexStale({ indexed_pages: 0, model: "" })).toBe(false);
+    expect(isIndexStale(null)).toBe(false);
+    expect(isIndexStale(undefined)).toBe(false);
   });
 });

@@ -35,8 +35,11 @@ export type AskStage =
   /// Embedding the question and searching the index.
   | { kind: "retrieving" }
   /// The model is running. `stems` are the pages retrieval actually chose —
-  /// empty when there was no index, or when retrieval found nothing.
-  | { kind: "thinking"; stems: string[] };
+  /// empty when there was no index, or when retrieval found nothing. `stale`
+  /// is set (never `false`, only present or absent — see `isIndexStale`) when
+  /// the index predates a bundled embed-model swap and the whole-vault
+  /// fallback was used instead: the UI should say so, not silently fall back.
+  | { kind: "thinking"; stems: string[]; stale?: boolean };
 
 export interface CompleteArgs {
   task: "query" | "ingest";
@@ -106,17 +109,23 @@ export async function complete(args: CompleteArgs): Promise<string> {
   // the long wait, and "these are the notes it is answering from" is what a
   // user wants to see during it.
   let stems: string[] = [];
+  // Set when the index predates a bundled embed-model swap: retrieval was
+  // skipped and the whole-vault fallback used instead. Carried to the
+  // `thinking` stage so the Ask UI can say "reindex needed" instead of just
+  // quietly answering worse.
+  let stale = false;
   try {
     const budget = isBuiltin ? LOCAL_CONTEXT_BUDGET : VAULT_CONTEXT_BUDGET;
     // Prefer semantic top-K retrieval (only the most relevant pages) when an
     // embedding index exists — far better than dumping the whole vault, and the
     // only thing that fits the builtin model's tiny window. Fall back to the
-    // whole-vault concat when the index is empty or retrieval fails.
+    // whole-vault concat when the index is empty, stale, or retrieval fails.
     const question = lastUserContent(args.messages);
     const retrieved = question
       ? await semanticContext(args.cwd, question, budget, args.onStage)
-      : { ctx: "", stems: [] };
+      : { ctx: "", stems: [], stale: false };
     stems = retrieved.stems;
+    stale = retrieved.stale;
     let ctx = retrieved.ctx;
     if (!ctx.trim()) {
       ctx = await ipc.readVaultContext(args.cwd, budget);
@@ -131,7 +140,7 @@ export async function complete(args: CompleteArgs): Promise<string> {
   // that means a possible one-time weight load (11.7 s cold) and then prefill,
   // which is the bulk of the wait — so this is the stage a user actually sits
   // through, and the retrieved pages stay on screen underneath it.
-  args.onStage?.({ kind: "thinking", stems });
+  args.onStage?.({ kind: "thinking", stems, ...(stale ? { stale: true } : {}) });
 
   // Embedded model (bundled Gemma 3 1B): in-process, offline, no key. The
   // backend applies the model's own chat template, so pass plain content —
@@ -179,19 +188,41 @@ function lastUserContent(messages: SimpleMessage[]): string {
   return "";
 }
 
+/** The id a freshly built builtin-local index is tagged with — `store.model`
+ * on the Rust side is `"{provider}:{model}"` (see `embeddings_status`). */
+const CURRENT_BUILTIN_INDEX_ID = `builtin-local:${BUILTIN_EMBED_MODEL}`;
+
+/** Whether an existing embedding index was built under a bundled embed model
+ * that has since been swapped out (e.g. the gemma-3-1b -> bge-m3 migration) —
+ * its vectors live in a different space than a fresh query embedding, so
+ * search would silently return nothing. Distinct from "never indexed"
+ * (`indexed_pages === 0`), which needs no reindex nudge. */
+export function isIndexStale(
+  status: { indexed_pages: number; model: string } | null | undefined,
+): boolean {
+  if (!status || status.indexed_pages === 0) return false;
+  return status.model !== CURRENT_BUILTIN_INDEX_ID;
+}
+
 /** Semantic retrieval: embed the question, pull the top-matching pages from the
  * embedding index, and assemble their bodies (bounded by `budget`) with citeable
  * [[stem]] headers. Returns "" when no index exists so the caller can fall back
- * to the whole-vault concat. */
+ * to the whole-vault concat. `stale` is true when the index predates a bundled
+ * embed-model swap — retrieval is skipped entirely rather than cosining across
+ * incompatible vector spaces, and the caller must surface this, not just fall
+ * back silently. */
 async function semanticContext(
   cwd: string,
   question: string,
   budget: number,
   onStage?: (stage: AskStage) => void,
-): Promise<{ ctx: string; stems: string[] }> {
-  const none = { ctx: "", stems: [] };
+): Promise<{ ctx: string; stems: string[]; stale: boolean }> {
+  const none = { ctx: "", stems: [], stale: false };
   const status = await ipc.embeddingsStatus().catch(() => null);
   if (!status || status.indexed_pages === 0) return none;
+  if (isIndexStale(status)) {
+    return { ctx: "", stems: [], stale: true };
+  }
   onStage?.({ kind: "retrieving" });
   const hits = await ipc
     .semanticSearch(question, 12, "builtin-local", BUILTIN_EMBED_MODEL)
@@ -214,7 +245,7 @@ async function semanticContext(
   }
   // Only the pages that made the budget: the ones past it are never shown to
   // the model, so naming them would be another fiction.
-  return { ctx: parts.join("\n\n"), stems: [...seen].map(stemOf) };
+  return { ctx: parts.join("\n\n"), stems: [...seen].map(stemOf), stale: false };
 }
 
 /// `wiki/attention-mechanism.md` -> `attention-mechanism`.

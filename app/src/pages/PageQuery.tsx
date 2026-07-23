@@ -31,6 +31,10 @@ interface ChatTurn {
   q: string;
   a: string;
   error?: string;
+  /// The embedding index predated a bundled embed-model swap, so this answer
+  /// used the whole-vault fallback instead of semantic retrieval — surfaced
+  /// so the fallback stays visible instead of a silent quality drop.
+  stale?: boolean;
 }
 
 const SYSTEM_PREAMBLE = `You are Memex, the wiki maintainer for the user's local markdown vault.
@@ -156,11 +160,17 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       return;
     }
 
+    // Set from the `thinking` stage if the index turned out stale — read once
+    // the run finishes, since `setStage(null)` in `finally` clears it.
+    let stale = false;
     try {
       const content = await complete({
         task: "query",
         cwd: currentVault.path,
-        onStage: setStage,
+        onStage: (s) => {
+          setStage(s);
+          if (s.kind === "thinking" && s.stale) stale = true;
+        },
         messages: [
           { role: "system", content: SYSTEM_PREAMBLE },
           // Skip turns that errored or have no answer — replaying an empty
@@ -178,7 +188,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       setTurns((prev) =>
         prev.map((turn, i) =>
           i === prev.length - 1
-            ? { ...turn, a: content || (t.q_empty_response ?? "(empty response)") }
+            ? { ...turn, a: content || (t.q_empty_response ?? "(empty response)"), stale }
             : turn,
         ),
       );
@@ -310,6 +320,20 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 <ThinkingGalaxy pages={thinkingPages} label={thinkingLabel} />
               )}
             </div>
+            {turn.stale ? (
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                <Icon name="info" size={12} />{" "}
+                {t.q_stale_index ??
+                  "This answer used the whole vault instead of the search index, which is out of date after a model update."}{" "}
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12, padding: "2px 8px" }}
+                  onClick={() => setRoute("settings")}
+                >
+                  {t.q_open_model_settings ?? "Model settings"} →
+                </button>
+              </div>
+            ) : null}
             {turn.a ? (
               <AnswerGalaxy
                 t={t}

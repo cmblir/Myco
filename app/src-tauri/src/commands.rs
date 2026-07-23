@@ -1597,6 +1597,18 @@ pub async fn semantic_search(
     Ok(hits)
 }
 
+/// Whether a `(provider, model)` pair derived from `store.model` is a
+/// builtin-local index left behind by a bundled-embed-model swap (e.g. the
+/// gemma-3-1b -> bge-m3 migration): the model id no longer resolves to a
+/// known `EmbedSpec`, so `embed_texts` would hard-error rather than embed.
+/// Only builtin-local is checked — "ollama" model ids are never `EmbedSpec`
+/// ids at all, but `embed_texts` routes that provider straight to Ollama
+/// without an `EmbedSpec` lookup, so it is never "stale" by this check.
+fn builtin_index_is_stale(provider: &str, model: &str) -> bool {
+    (provider == "builtin-local" || provider.is_empty())
+        && crate::local_llm::embed_spec_by_id(model).is_none()
+}
+
 /// Existing wiki pages a new source most likely relates to — the retrieval
 /// grounding for wikification (v2 phase 1). Chunks the source, embeds the chunks
 /// with the SAME model the vector index was built with, retrieves per-chunk hits
@@ -1629,6 +1641,18 @@ pub async fn wikify_candidates(
         .split_once(':')
         .map(|(p, m)| (p.to_string(), m.to_string()))
         .unwrap_or((store.model.clone(), String::new()));
+    if builtin_index_is_stale(&provider, &model) {
+        // The index predates a bundled-embed-model swap (e.g. gemma-3-1b ->
+        // bge-m3): `model` no longer resolves to a known `EmbedSpec`, so
+        // `embed_texts` would hard-error. A stale index can't be meaningfully
+        // deduped against anyway — the user will reindex — so degrade to "no
+        // candidates" instead, same as the empty-index case above.
+        perf::log(
+            "wikify_candidates",
+            &[("stale_index", 1.0), ("total_ms", perf::ms(t0.elapsed()))],
+        );
+        return Ok(Vec::new());
+    }
 
     // Cap the chunks embedded: a long transcript would otherwise cost seconds.
     // The leading chunks capture the source's subject matter well enough to
@@ -1838,7 +1862,7 @@ pub async fn fetch_youtube_transcript(url: String) -> Result<String, String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{external_target_allowed, run_import, windows_opener_safe};
+    use super::{builtin_index_is_stale, external_target_allowed, run_import, windows_opener_safe};
     use std::path::PathBuf;
 
     // A Claude Code session line (parses to one conversation via the importer).
@@ -2005,6 +2029,21 @@ mod tests {
         assert!(!external_target_allowed("/usr/local/bin"));
         assert!(!external_target_allowed("relative/path"));
         assert!(!external_target_allowed(r"C:\Users\me\file.txt"));
+    }
+
+    #[test]
+    fn builtin_index_is_stale_detects_retired_embed_model() {
+        // A store still tagged with the model the bge-m3 swap retired (Task 4)
+        // must report stale — `wikify_candidates` degrades to Ok(empty) for
+        // this, rather than propagating embed_texts's "unknown builtin embed
+        // model" error.
+        assert!(builtin_index_is_stale("builtin-local", "gemma-3-1b"));
+        // The current bundled winner is not stale.
+        assert!(!builtin_index_is_stale("builtin-local", "bge-m3"));
+        // A model id an ollama-provider index carries is never a builtin
+        // `EmbedSpec` id, but embed_texts routes "ollama" straight to Ollama
+        // without ever consulting EMBED_SPECS — never "stale" here.
+        assert!(!builtin_index_is_stale("ollama", "nomic-embed-text"));
     }
 
     #[test]

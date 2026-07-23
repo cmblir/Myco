@@ -664,6 +664,7 @@ export interface Strings {
   q_via?: string;
   q_builtin_note?: string;
   q_open_model_settings?: string;
+  q_stale_index?: string;
   q_you?: string;
   // Sidebar.
   sb_new_note?: string;
@@ -1418,6 +1419,8 @@ export const STRINGS: Record<Lang, Strings> = {
     q_builtin_note:
       "The built-in offline model (Gemma 3 1B) is compact and can be inaccurate. For better offline answers, run a larger model via Ollama (e.g. gemma3:4b); for the most reliable answers, use Claude.",
     q_open_model_settings: "Model settings",
+    q_stale_index:
+      "This answer used the whole vault instead of the search index, which is out of date after a model update.",
     q_you: "you",
     sb_new_note: "New note",
     sb_new_folder: "New folder",
@@ -2174,6 +2177,8 @@ export const STRINGS: Record<Lang, Strings> = {
     q_builtin_note:
       "내장 오프라인 모델(Gemma 3 1B)은 작아서 부정확할 수 있습니다. 오프라인이라면 Ollama로 더 큰 모델(예: gemma3:4b)을 돌려보고, 가장 정확한 답변은 Claude를 쓰세요.",
     q_open_model_settings: "모델 설정",
+    q_stale_index:
+      "이 답변은 검색 인덱스 대신 전체 볼트를 사용했습니다 — 모델 업데이트 이후 인덱스가 오래되었습니다.",
     q_you: "나",
     sb_new_note: "새 노트",
     sb_new_folder: "새 폴더",
@@ -2812,6 +2817,8 @@ export const STRINGS: Record<Lang, Strings> = {
     q_builtin_note:
       "内蔵のオフラインモデル（Gemma 3 1B）は小さく不正確な場合があります。オフラインなら Ollama で大きめのモデル（例: gemma3:4b）を、最も正確な回答には Claude をお使いください。",
     q_open_model_settings: "モデル設定",
+    q_stale_index:
+      "この回答は検索インデックスの代わりにボルト全体を使用しました — モデル更新後にインデックスが古くなっています。",
     q_you: "あなた",
     sb_new_note: "新規ノート",
     sb_new_folder: "新規フォルダ",
