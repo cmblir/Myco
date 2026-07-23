@@ -59,3 +59,6 @@ projects/.backups/
 
 # Planning / dev-status docs — keep local, not on GitHub
 plans/
+
+# Non-winner embed bake-off model (Phase 1a) — kept local for re-eval, not shipped
+app/src-tauri/models/multilingual-e5-large-q4_k_m.gguf
