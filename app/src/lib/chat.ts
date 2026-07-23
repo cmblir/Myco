@@ -196,11 +196,15 @@ const CURRENT_BUILTIN_INDEX_ID = `builtin-local:${BUILTIN_EMBED_MODEL}`;
  * that has since been swapped out (e.g. the gemma-3-1b -> bge-m3 migration) —
  * its vectors live in a different space than a fresh query embedding, so
  * search would silently return nothing. Distinct from "never indexed"
- * (`indexed_pages === 0`), which needs no reindex nudge. */
+ * (`indexed_pages === 0`), which needs no reindex nudge. Only builtin-local
+ * indexes can go stale this way (mirrors `builtin_index_is_stale` in
+ * commands.rs) — an ollama-tagged index is never flagged. */
 export function isIndexStale(
   status: { indexed_pages: number; model: string } | null | undefined,
 ): boolean {
   if (!status || status.indexed_pages === 0) return false;
+  const [provider] = status.model.split(":");
+  if (provider !== "builtin-local" && provider !== "") return false;
   return status.model !== CURRENT_BUILTIN_INDEX_ID;
 }
 

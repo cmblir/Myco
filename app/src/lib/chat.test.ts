@@ -200,4 +200,10 @@ describe("isIndexStale", () => {
     expect(isIndexStale(null)).toBe(false);
     expect(isIndexStale(undefined)).toBe(false);
   });
+
+  it("does not flag an ollama-tagged index (only builtin-local can go stale)", () => {
+    expect(
+      isIndexStale({ indexed_pages: 5, model: "ollama:nomic-embed-text" }),
+    ).toBe(false);
+  });
 });
