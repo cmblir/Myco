@@ -1609,20 +1609,12 @@ pub async fn semantic_search(
     let qv = q.pop().unwrap_or_default();
     let t_scan = std::time::Instant::now();
     let hits = store.search(&qv, k.clamp(1, 50));
-    perf::log(
-        "semantic_search",
-        &[
-            ("load_store_ms", load_ms),
-            ("embed_query_ms", embed_ms),
-            ("scan_ms", perf::ms(t_scan.elapsed())),
-            ("total_ms", perf::ms(t0.elapsed())),
-            ("records", store.records.len() as f64),
-        ],
-    );
+    let scan_ms = perf::ms(t_scan.elapsed());
     // Reconstruct each hit's chunk TEXT from its page (the index stores only
     // vectors+hashes). No cross-hit cache: k is capped at 50 (realistically
     // <=12), pages are small markdown files, and re-reading one a second hit
     // shares is not a measurable cost — so this just calls the pure helper.
+    let t_reconstruct = std::time::Instant::now();
     let mut out: Vec<ScoredChunk> = Vec::with_capacity(hits.len());
     for h in hits {
         let Ok(content) = std::fs::read_to_string(root.join(&h.page)) else {
@@ -1639,6 +1631,18 @@ pub async fn semantic_search(
             _ => {} // missing file or stale section index → skip
         }
     }
+    perf::log(
+        "semantic_search",
+        &[
+            ("load_store_ms", load_ms),
+            ("embed_query_ms", embed_ms),
+            ("scan_ms", scan_ms),
+            ("reconstruct_ms", perf::ms(t_reconstruct.elapsed())),
+            ("total_ms", perf::ms(t0.elapsed())),
+            ("records", store.records.len() as f64),
+            ("returned", out.len() as f64),
+        ],
+    );
     Ok(out)
 }
 
