@@ -119,6 +119,9 @@ pub struct LocalLlm {
     model: LlamaModel,
     // The GGUF's own chat template (None if the file ships without one).
     template: Option<LlamaChatTemplate>,
+    // Purpose-built embedder, loaded separately via `load_embed_model`, sharing
+    // `backend` with the chat model above.
+    embed_model: Option<LlamaModel>,
 }
 
 impl LocalLlm {
@@ -133,7 +136,20 @@ impl LocalLlm {
             backend,
             model,
             template,
+            embed_model: None,
         })
+    }
+
+    /// Load a purpose-built embedding model onto the SAME backend as the chat
+    /// model. `LlamaBackend::init()` is process-global and errors if called
+    /// twice, so this reuses `self.backend` rather than constructing a second
+    /// `LocalLlm`.
+    pub fn load_embed_model(&mut self, model_path: &Path) -> Result<(), String> {
+        let model =
+            LlamaModel::load_from_file(&self.backend, model_path, &LlamaModelParams::default())
+                .map_err(|e| format!("load embed model {}: {e}", model_path.display()))?;
+        self.embed_model = Some(model);
+        Ok(())
     }
 
     /// How many tokens `text` costs this model. The context window is measured in
@@ -368,6 +384,34 @@ impl LocalLlm {
         pooling: LlamaPoolingType,
         max_ctx: u32,
     ) -> Result<Vec<Vec<f32>>, String> {
+        self.embed_pooled_with(&self.model, texts, pooling, max_ctx)
+    }
+
+    /// Embed with the purpose-built model, applying the spec's role prefix and
+    /// pooling. Errors (does not fall back) if no embed model was loaded — a
+    /// silent fall back to the chat model would produce vectors incompatible
+    /// with the index.
+    pub fn embed_spec(
+        &self,
+        spec: &EmbedSpec,
+        role: EmbedRole,
+        texts: &[String],
+    ) -> Result<Vec<Vec<f32>>, String> {
+        let model = self.embed_model.as_ref().ok_or("embed model not loaded")?;
+        let prefixed = apply_prefix(spec, role, texts);
+        self.embed_pooled_with(model, &prefixed, spec.pooling, spec.max_ctx)
+    }
+
+    /// Shared decode loop behind `embed_pooled` (chat model) and `embed_spec`
+    /// (purpose-built embed model) — the same context/batch/KV-cache dance,
+    /// parameterized on which already-loaded model to run it against.
+    fn embed_pooled_with(
+        &self,
+        model: &LlamaModel,
+        texts: &[String],
+        pooling: LlamaPoolingType,
+        max_ctx: u32,
+    ) -> Result<Vec<Vec<f32>>, String> {
         let n_ctx = NonZeroU32::new(max_ctx).ok_or("invalid embed ctx")?;
         let cap = max_ctx as usize - 8;
 
@@ -375,8 +419,7 @@ impl LocalLlm {
         // sequence in the call, which cannot be known one text at a time.
         let mut token_sets = Vec::with_capacity(texts.len());
         for text in texts {
-            let mut tokens = self
-                .model
+            let mut tokens = model
                 .str_to_token(text, AddBos::Always)
                 .map_err(|e| format!("embed tokenize: {e}"))?;
             tokens.truncate(cap);
@@ -410,8 +453,7 @@ impl LocalLlm {
             .with_pooling_type(pooling)
             .with_n_batch(max_n as u32)
             .with_n_ubatch(max_n as u32);
-        let mut ctx = self
-            .model
+        let mut ctx = model
             .new_context(&self.backend, ctx_params)
             .map_err(|e| format!("embed new_context: {e}"))?;
         let mut batch = LlamaBatch::new(max_n, 1);
@@ -496,6 +538,21 @@ mod tests {
         );
 
         assert!(embed_spec_by_id("nope").is_none());
+    }
+
+    // E2E: without load_embed_model, embed_spec must error, not panic or
+    // silently fall back to the chat model. Ignored by default (loads the
+    // bundled Gemma model). Run with:
+    // cargo test --lib embed_spec_requires_loaded_embed_model -- --ignored
+    #[test]
+    #[ignore]
+    fn embed_spec_requires_loaded_embed_model() {
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("models/gemma-3-1b-it-q4_k_m.gguf");
+        let llm = LocalLlm::load(&path).expect("load chat model");
+        let bge = embed_spec_by_id("bge-m3").unwrap();
+        let err = llm.embed_spec(bge, EmbedRole::Query, &["x".into()]).unwrap_err();
+        assert!(err.contains("embed model not loaded"), "got: {err}");
     }
 
     // E2E: load the bundled Gemma model and embed. Ignored by default (loads a
