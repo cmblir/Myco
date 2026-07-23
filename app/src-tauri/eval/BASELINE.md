@@ -57,12 +57,13 @@ only one weak query remains for both models
 
 **Winner: `bge-m3`.** e5-large edges it on this eval (MRR 0.876 vs 0.860), but the
 corpus is English-only (the bundled karpathy-llm sample vault) and does not test
-Korean. bge-m3 is MIRACL Korean-tuned and has an 8192-token context, so it does
-not truncate long chunks; e5-large's 512-token limit would silently truncate long
-Korean chunks (~1800-byte chunks can exceed 512 tokens in Korean). For a
+Korean. bge-m3 is MIRACL Korean-tuned; the model supports up to 8192 tokens and we
+configure it at `max_ctx: 2048` (`EMBED_SPECS`) — comfortably above our ~1800-byte
+chunks, so they are not truncated. e5-large's hard 512-token limit would silently
+truncate long Korean chunks (~1800 bytes can exceed 512 tokens in Korean). For a
 Korean+English vault the 0.016-MRR gap on a 30-query English set is within noise,
-and bge-m3's Korean coverage + no-truncation wins. 32 MB size difference is
-negligible.
+and bge-m3's Korean coverage + no truncation at our chunk size wins. 32 MB size
+difference is negligible.
 
 **New reference for Phase 1b:** bge-m3 — hit@10 100.0 % · MRR 0.860 · nDCG@10 0.874.
 Phase 1b (CJK BM25 + RRF) must beat these, focusing on the remaining weak query and
