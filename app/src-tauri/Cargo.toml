@@ -26,7 +26,7 @@ tempfile = "3"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
-tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
 calamine = "0.30.1"
 pdf-extract = "0.10.0"
 # Embedded local model (bundled SEED 0.5B GGUF). Pure in-process inference — no
