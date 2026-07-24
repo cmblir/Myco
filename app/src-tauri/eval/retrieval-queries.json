@@ -59,6 +59,12 @@
     { "q": "PPO", "relevant": ["rlhf"] },
     { "q": "RLAIF", "relevant": ["constitutional-ai"] },
     { "q": "pre-norm and post-norm placement", "relevant": ["layer-normalization"] },
-    { "q": "grouped-query attention paged cache management", "relevant": ["kv-cache"] }
+    { "q": "grouped-query attention paged cache management", "relevant": ["kv-cache"] },
+
+    { "q": "PPO로 정책을 갱신하는 인간 선호 정렬", "relevant": ["ko-rlhf"] },
+    { "q": "QLoRA에서 4비트로 동결된 베이스 모델과 어댑터", "relevant": ["ko-lora"] },
+    { "q": "프리-노름과 포스트-노름 정규화 배치", "relevant": ["ko-layer-normalization"] },
+    { "q": "closed-form 목표로 선호 쌍을 직접 학습하는 방법", "relevant": ["ko-dpo"] },
+    { "q": "그룹 쿼리 어텐션과 페이지 단위 캐시 관리", "relevant": ["ko-kv-cache"] }
   ]
 }
