@@ -1015,6 +1015,22 @@ pub fn scan_provenance(
     provenance::scan_provenance(&vault_path)
 }
 
+/// Deterministic ingest gate (Phase 1f): validate the changed pages' citations,
+/// frontmatter schema, and wikilinks in Rust instead of trusting the LLM to
+/// have gotten them right. Replaces the old mtime-only gate.
+#[tauri::command]
+pub fn validate_ingest(
+    state: tauri::State<VaultRoot>,
+    vault_path: String,
+    changed_pages: Vec<String>,
+) -> Result<crate::validator::ValidationReport, String> {
+    let root = confine_root(&state, &vault_path)?;
+    Ok(crate::validator::validate_pages(
+        std::path::Path::new(&root),
+        &changed_pages,
+    ))
+}
+
 /// Collect every markdown checkbox item across the vault into one task list.
 #[tauri::command]
 pub fn scan_tasks(

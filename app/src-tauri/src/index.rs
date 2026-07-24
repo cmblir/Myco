@@ -81,7 +81,7 @@ pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
 /// tags). `linkables` = `.md` + `.base` — everything a wikilink may resolve to,
 /// because Obsidian Bases (`.base`) are linked by name and otherwise leave a
 /// large fraction of links unresolved (so their notes look like orphans).
-fn collect_files(dir: &Path) -> std::io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
+pub(crate) fn collect_files(dir: &Path) -> std::io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
     let mut sources = Vec::new();
     let mut linkables = Vec::new();
     let mut stack = vec![dir.to_path_buf()];
@@ -121,7 +121,7 @@ pub(crate) fn is_hidden_name(name: &std::ffi::OsStr) -> bool {
 /// lowercased basename (`note.md` / `x.base`). Obsidian links `.md` notes by
 /// stem but Bases by full name (`[[X.base]]`), so a wikilink target must be
 /// matchable in either form.
-fn build_name_index(files: &[PathBuf]) -> HashMap<String, PathBuf> {
+pub(crate) fn build_name_index(files: &[PathBuf]) -> HashMap<String, PathBuf> {
     let mut idx = HashMap::with_capacity(files.len() * 2);
     for f in files {
         if let Some(stem) = f.file_stem().and_then(|s| s.to_str()) {

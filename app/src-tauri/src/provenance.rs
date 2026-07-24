@@ -162,7 +162,7 @@ fn scan_page(text: &str) -> (u32, u32, BTreeSet<String>) {
 
 /// Pull every `[^src-<stem>]` footnote out of a line, inserting each `<stem>`
 /// (the raw filename behind the citation). Tolerant of several per line.
-fn extract_src_slugs(line: &str, out: &mut BTreeSet<String>) {
+pub(crate) fn extract_src_slugs(line: &str, out: &mut BTreeSet<String>) {
     let mut rest = line;
     while let Some(pos) = rest.find("[^src-") {
         let after = &rest[pos + "[^src-".len()..];
@@ -179,18 +179,20 @@ fn extract_src_slugs(line: &str, out: &mut BTreeSet<String>) {
     }
 }
 
-/// Read `<root>/raw/*.md` once, mapping each stem to the provenance recorded in
-/// its frontmatter. Missing raw/ (a young vault) yields an empty index.
-fn build_raw_index(root: &Path) -> HashMap<String, SourceRef> {
+/// Read every `<root>/raw/**/*.md` once (recursively — sources may live in
+/// subdirectories, e.g. `raw/conversations/<id>.md`), mapping each file stem to
+/// the provenance recorded in its frontmatter. Missing raw/ (a young vault)
+/// yields an empty index.
+pub(crate) fn build_raw_index(root: &Path) -> HashMap<String, SourceRef> {
     let mut idx = HashMap::new();
-    let Ok(entries) = std::fs::read_dir(root.join("raw")) else {
+    let raw_dir = root.join("raw");
+    if !raw_dir.is_dir() {
+        return idx;
+    }
+    let Ok(files) = collect_markdown(&raw_dir) else {
         return idx;
     };
-    for entry in entries.flatten() {
-        let p = entry.path();
-        if p.extension().and_then(|s| s.to_str()) != Some("md") {
-            continue;
-        }
+    for p in files {
         let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
