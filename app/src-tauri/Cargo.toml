@@ -41,6 +41,7 @@ rmcp = { version = "=2.2.0", default-features = false, features = ["server", "ma
 axum = "0.8"
 tokio-util = "0.7"
 similar = "2"
+notify = "8.2.0"
 
 [dev-dependencies]
 wiremock = "0.6"

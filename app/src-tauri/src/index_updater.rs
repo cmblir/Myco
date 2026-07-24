@@ -41,9 +41,15 @@ impl IndexUpdater {
     /// Start the actor on the Tauri async runtime and return a handle to it.
     pub fn spawn(app: tauri::AppHandle) -> Self {
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<UpdateMsg>();
+        let watcher_tx = tx.clone();
         tauri::async_runtime::spawn(async move {
             const DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(500);
             let mut root: Option<PathBuf> = None;
+            // Held only for its Drop side effect: reassigning on `Rebind` stops
+            // the previous vault's watch. Never read directly, so both
+            // unused-variable lints are expected false positives here.
+            #[allow(unused_variables, unused_assignments)]
+            let mut watcher: Option<notify::RecommendedWatcher> = None;
             let mut dirty: HashSet<String> = Default::default();
             let mut consecutive_errors: u32 = 0;
             loop {
@@ -65,6 +71,14 @@ impl IndexUpdater {
                             }
                         }
                         Some(UpdateMsg::Rebind(new_root)) => {
+                            // Reassigning drops the old watcher (if any), which stops
+                            // the previous vault's watch before the new one starts.
+                            // `watcher` is held only for that Drop side effect and
+                            // never read, hence the lint override.
+                            #[allow(unused_assignments)]
+                            {
+                                watcher = start_watcher(&new_root, watcher_tx.clone());
+                            }
                             root = Some(new_root);
                             dirty.insert("*".into()); // force a stale-check batch
                         }
@@ -132,7 +146,6 @@ fn index_is_stale(store_model: &str) -> bool {
 
 /// The vault-relative path for `abs`, iff it is a markdown file under
 /// `root/wiki` — `raw/` (immutable) and everything else is never indexed.
-#[allow(dead_code)] // wired in Task 3 (filesystem watcher resolves changed paths through this)
 fn wiki_rel_of(root: &Path, abs: &Path) -> Option<String> {
     if abs.extension().and_then(|e| e.to_str()) != Some("md") {
         return None;
@@ -146,6 +159,37 @@ fn wiki_rel_of(root: &Path, abs: &Path) -> Option<String> {
 /// (as dirty paths and rebind's "*" sentinel are).
 fn should_index(rel: &str) -> bool {
     rel.starts_with("wiki/") && rel.ends_with(".md")
+}
+
+/// Start watching `root/wiki` for filesystem changes, marking each changed
+/// markdown page dirty via `tx`. Returns `None` if the watcher couldn't be
+/// created or `root/wiki` doesn't exist (e.g. an empty/new vault) — the
+/// caller is left without a watcher for that root rather than failing.
+///
+/// The callback runs on `notify`'s own (non-tokio) thread; `tx.send` is an
+/// unbounded, non-blocking, thread-safe send, so it never blocks that thread
+/// or drops an event.
+fn start_watcher(
+    root: &Path,
+    tx: tokio::sync::mpsc::UnboundedSender<UpdateMsg>,
+) -> Option<notify::RecommendedWatcher> {
+    use notify::{RecursiveMode, Watcher};
+    let root_buf = root.to_path_buf();
+    let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+        if let Ok(ev) = res {
+            for p in ev.paths {
+                if let Some(rel) = wiki_rel_of(&root_buf, &p) {
+                    let _ = tx.send(UpdateMsg::Dirty(rel));
+                }
+            }
+        }
+    })
+    .ok()?;
+    let wiki = root.join("wiki");
+    if wiki.is_dir() {
+        w.watch(&wiki, RecursiveMode::Recursive).ok()?;
+    }
+    Some(w)
 }
 
 /// Bring the index for `root` up to date with `batch` (the paths that went
