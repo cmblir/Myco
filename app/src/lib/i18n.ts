@@ -660,6 +660,10 @@ export interface Strings {
   ing_title_label?: string;
   ing_title_ph?: string;
   ing_working?: string;
+  // Deterministic ingest validator (Phase 1f) — optional; fall back to English.
+  ingest_no_changes?: string;
+  ingest_validation_failed?: string;
+  ingest_validation_warnings?: string;
   // Query page.
   q_via?: string;
   q_builtin_note?: string;
@@ -1415,6 +1419,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
+    ingest_no_changes:
+      "WARNING: the model finished but no wiki pages were created or updated. The source was saved to raw/{slug}.md, but nothing was ingested into the wiki. Check the model output above, or try the Claude Code (CLI) provider.",
+    ingest_validation_failed:
+      "Ingest validation failed — the following issues must be fixed before this ingest can be accepted:",
+    ingest_validation_warnings: "Validation warnings (non-blocking):",
     q_via: "via {provider} · {model}",
     q_builtin_note:
       "The built-in offline model (Gemma 3 1B) is compact and can be inaccurate. For better offline answers, run a larger model via Ollama (e.g. gemma3:4b); for the most reliable answers, use Claude.",
@@ -2173,6 +2182,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
+    ingest_no_changes:
+      "경고: 모델이 작업을 마쳤지만 위키 페이지가 생성되거나 수정되지 않았습니다. 원본은 raw/{slug}.md에 저장되었지만 위키에는 반영되지 않았습니다. 위 모델 출력을 확인하거나 Claude Code(CLI) 제공자를 사용해 보세요.",
+    ingest_validation_failed:
+      "인제스트 검증 실패 — 다음 문제를 해결해야 인제스트를 수락할 수 있습니다:",
+    ingest_validation_warnings: "검증 경고(차단하지 않음):",
     q_via: "{provider} · {model} 사용",
     q_builtin_note:
       "내장 오프라인 모델(Gemma 3 1B)은 작아서 부정확할 수 있습니다. 오프라인이라면 Ollama로 더 큰 모델(예: gemma3:4b)을 돌려보고, 가장 정확한 답변은 Claude를 쓰세요.",
@@ -2813,6 +2827,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",
+    ingest_no_changes:
+      "警告: モデルは処理を完了しましたが、ウィキページが作成・更新されませんでした。ソースは raw/{slug}.md に保存されましたが、ウィキには反映されていません。上のモデル出力を確認するか、Claude Code (CLI) プロバイダーをお試しください。",
+    ingest_validation_failed:
+      "取り込み検証に失敗しました — 次の問題を解決しないと取り込みは受け付けられません:",
+    ingest_validation_warnings: "検証の警告(処理は続行されます):",
     q_via: "{provider} · {model} を使用",
     q_builtin_note:
       "内蔵のオフラインモデル（Gemma 3 1B）は小さく不正確な場合があります。オフラインなら Ollama で大きめのモデル（例: gemma3:4b）を、最も正確な回答には Claude をお使いください。",

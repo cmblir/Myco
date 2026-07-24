@@ -128,6 +128,18 @@ export interface ProvenanceRow {
   sources: SourceRef[];
 }
 
+/** One validator finding (deterministic ingest gate, replaces the mtime check). */
+export interface ValidationIssue {
+  page: string;
+  kind: string;
+  detail: string;
+}
+
+export interface ValidationReport {
+  errors: ValidationIssue[];
+  warnings: ValidationIssue[];
+}
+
 export interface SearchHit {
   path: string;
   name: string;
@@ -499,6 +511,11 @@ export const ipc = {
     invoke<TaskItem[]>("scan_tasks", { vaultPath }),
   scanProvenance: (vaultPath: string) =>
     invoke<ProvenanceRow[]>("scan_provenance", { vaultPath }),
+  /** Deterministic ingest gate (Phase 1f): dangling citations / missing
+   *  required frontmatter / invalid enums are errors; unresolved wikilinks /
+   *  source_count mismatch / missing superseded_by are warnings. */
+  validateIngest: (vaultPath: string, changedPages: string[]) =>
+    invoke<ValidationReport>("validate_ingest", { vaultPath, changedPages }),
   memexProIngest: (slug: string, title: string, text: string) =>
     invoke<MemexProResult>("memex_pro_ingest", { slug, title, text }),
   memexProLogin: (email: string, password: string) =>

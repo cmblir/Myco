@@ -16,7 +16,16 @@ import { complete } from "../lib/chat";
 import { buildIngestPlanPrompt, parseIngestPlan } from "../lib/ingestPlan";
 import type { PlanItem } from "../lib/ingestPlan";
 import { log } from "../lib/log";
+import { STRINGS } from "../lib/i18n";
+import { useUIStore } from "./uiStore";
 import { useVaultStore } from "./vaultStore";
+
+// This store logs plain user-facing text (not JSX), so it reads the current
+// language directly off uiStore rather than taking a `Strings` prop like
+// components do.
+function t() {
+  return STRINGS[useUIStore.getState().lang] ?? STRINGS.en;
+}
 
 export type IngestStage =
   | "idle"
@@ -308,24 +317,53 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       // Verify the wiki changed: a new wiki page appeared or an existing one
       // was modified. If nothing changed, the model replied but did not ingest.
       const afterMtimes = await ipc.fileMtimes(vault.path).catch(() => []);
-      const wikiChanged = afterMtimes.some(
-        ([p, m]) =>
-          p.includes("/wiki/") &&
-          (!wikiBefore.has(p) || m > (wikiBefore.get(p) ?? 0)),
-      );
-      if (!wikiChanged) {
+      const changed = afterMtimes
+        .filter(
+          ([p, m]) =>
+            p.includes("/wiki/") &&
+            (!wikiBefore.has(p) || m > (wikiBefore.get(p) ?? 0)),
+        )
+        .map(([p]) => p);
+      if (changed.length === 0) {
         set((st) => ({
           finishedAt: Date.now(),
           stage: "error",
           seen: false,
-          log:
-            `${st.log}\n\nWARNING: the model finished but no wiki pages were ` +
-            `created or updated. The source was saved to raw/${slug}.md, but ` +
-            `nothing was ingested into the wiki. Check the model output above, ` +
-            `or try the Claude Code (CLI) provider.`,
+          log: `${st.log}\n\n${(
+            t().ingest_no_changes ??
+            "WARNING: the model finished but no wiki pages were created or " +
+              "updated. The source was saved to raw/{slug}.md, but nothing " +
+              "was ingested into the wiki. Check the model output above, or " +
+              "try the Claude Code (CLI) provider."
+          ).replace("{slug}", slug)}`,
         }));
         return;
       }
+
+      // Deterministic validator (Phase 1f): dangling citations / missing
+      // required frontmatter / invalid enums fail the ingest outright;
+      // unresolved wikilinks / source_count mismatch / missing superseded_by
+      // are reported but do not block. Best-effort — a validator failure
+      // (e.g. IPC error) must not itself fail an otherwise-good ingest.
+      const vr = await ipc.validateIngest(vault.path, changed).catch(() => null);
+      if (vr && vr.errors.length > 0) {
+        const lines = vr.errors.map((e) => `- ${e.page}: ${e.detail}`).join("\n");
+        set((st) => ({
+          finishedAt: Date.now(),
+          stage: "error",
+          seen: false,
+          log: `${st.log}\n\n${
+            t().ingest_validation_failed ?? "Ingest validation failed:"
+          }\n${lines}`,
+        }));
+        return;
+      }
+      const warnLines =
+        vr && vr.warnings.length > 0
+          ? `\n\n${
+              t().ingest_validation_warnings ?? "Validation warnings:"
+            }\n${vr.warnings.map((w) => `- ${w.page}: ${w.detail}`).join("\n")}`
+          : "";
 
       // Open the report the model actually wrote (newest matching file),
       // instead of guessing the filename from today's date.
@@ -334,12 +372,13 @@ export const useIngestStore = create<IngestState>((set, get) => ({
           ([p]) => p.includes("/ingest-reports/") && p.endsWith(`-${slug}.md`),
         )
         .sort((a, b) => b[1] - a[1])[0];
-      set({
+      set((st) => ({
         reportPath: report ? report[0] : null,
         finishedAt: Date.now(),
         stage: "done",
         seen: false,
-      });
+        log: `${st.log}${warnLines}`,
+      }));
     } catch (err) {
       const cancelled = String(err).includes("cancelled");
       set((st) => ({

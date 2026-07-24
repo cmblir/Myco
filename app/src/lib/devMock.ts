@@ -776,6 +776,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       ]);
     case "scan_provenance":
       return Promise.resolve(provenance());
+    case "validate_ingest":
+      // Mock vault has no citations/frontmatter to violate — clean pass so
+      // ?mock=1 ingest runs are not blocked by the deterministic validator.
+      return Promise.resolve({ errors: [], warnings: [] });
     case "list_schedules":
       return Promise.resolve(mockSchedules);
     case "upsert_schedule": {

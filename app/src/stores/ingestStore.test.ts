@@ -30,7 +30,11 @@ vi.mock("./vaultStore", () => ({
 }));
 
 vi.mock("../lib/chat", () => ({ complete: vi.fn().mockResolvedValue("done") }));
-vi.mock("../lib/log", () => ({ log: vi.fn().mockResolvedValue(undefined) }));
+// Shaped like the real `log` object ({ info/warn/error }), not a bare
+// function — persistRunTranscript's failure path calls `log.warn(...)`.
+vi.mock("../lib/log", () => ({
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
 
 import { ipc } from "../lib/ipc";
 import { useIngestStore } from "./ingestStore";
@@ -97,5 +101,82 @@ describe("startIngest concurrency", () => {
     await useIngestStore.getState().startIngest("t", "b");
 
     expect(run).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Phase 1f: the deterministic validator replaced the old mtime-only gate.
+// These cover the new branch — validator errors block, warnings don't.
+describe("ingest validation gate", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    listenMock.mockClear();
+    useIngestStore.setState({ stage: "idle", runId: null });
+
+    vi.spyOn(ipc, "getSettings").mockResolvedValue({
+      ingest_provider: "anthropic-cli",
+      ingest_model: "",
+      query_provider: "builtin-local",
+      query_model: "gemma-3-1b",
+    } as never);
+    vi.spyOn(ipc, "createFolder").mockResolvedValue(undefined as never);
+    vi.spyOn(ipc, "writeFile").mockResolvedValue(undefined as never);
+    vi.spyOn(ipc, "readVaultContext").mockResolvedValue("");
+    vi.spyOn(ipc, "buildLinkGraph").mockResolvedValue({
+      nodes: [],
+      edges: [],
+    } as never);
+    vi.spyOn(ipc, "claudeRunStream").mockResolvedValue({
+      stdout: "ok",
+      stderr: "",
+      status: 0,
+    } as never);
+  });
+
+  it("blocks on validator errors instead of reaching done", async () => {
+    // wikiBefore snapshot (empty) then afterMtimes showing one wiki page
+    // changed, so the run has something to validate.
+    vi.spyOn(ipc, "fileMtimes")
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([["/v/wiki/foo.md", 1]]);
+    const validate = vi.spyOn(ipc, "validateIngest").mockResolvedValue({
+      errors: [
+        { page: "wiki/foo.md", kind: "dangling_citation", detail: "no raw/bar.md" },
+      ],
+      warnings: [],
+    });
+
+    await useIngestStore.getState().startIngest("t", "b");
+
+    expect(validate).toHaveBeenCalledWith("/v", ["/v/wiki/foo.md"]);
+    expect(useIngestStore.getState().stage).toBe("error");
+    expect(useIngestStore.getState().log).toContain("wiki/foo.md");
+    expect(useIngestStore.getState().log).toContain("no raw/bar.md");
+  });
+
+  it("reaches done and surfaces warnings when the validator only warns", async () => {
+    vi.spyOn(ipc, "fileMtimes")
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([["/v/wiki/foo.md", 1]]);
+    vi.spyOn(ipc, "validateIngest").mockResolvedValue({
+      errors: [],
+      warnings: [
+        { page: "wiki/foo.md", kind: "unresolved_wikilink", detail: "[[bar]] not found" },
+      ],
+    });
+
+    await useIngestStore.getState().startIngest("t", "b");
+
+    expect(useIngestStore.getState().stage).toBe("done");
+    expect(useIngestStore.getState().log).toContain("[[bar]] not found");
+  });
+
+  it("fails as before (no-changes) when no wiki page changed, without calling the validator", async () => {
+    vi.spyOn(ipc, "fileMtimes").mockResolvedValue([]);
+    const validate = vi.spyOn(ipc, "validateIngest");
+
+    await useIngestStore.getState().startIngest("t", "b");
+
+    expect(validate).not.toHaveBeenCalled();
+    expect(useIngestStore.getState().stage).toBe("error");
   });
 });
