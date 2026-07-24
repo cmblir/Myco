@@ -77,8 +77,11 @@ impl IndexUpdater {
                             {
                                 watcher = start_watcher(&new_root, watcher_tx.clone());
                             }
+                            dirty.clear(); // drop paths queued for the OLD vault — the
+                                           // "*" sentinel below reconciles the NEW one
+                                           // in full regardless
                             root = Some(new_root);
-                            dirty.insert("*".into()); // force a stale-check batch
+                            dirty.insert("*".into()); // force a full-reconcile batch
                         }
                     },
                     _ = timer => {
@@ -142,6 +145,21 @@ fn index_is_stale(store_model: &str) -> bool {
     store_model != format!("builtin-local:{}", crate::local_llm::BUILTIN_EMBED_MODEL)
 }
 
+/// Whether `process_batch` should reconcile the *whole* vault against disk
+/// (walk every wiki page) rather than touch only `batch`'s dirty paths:
+/// either the index is `stale` (wrong model, or none yet), or `batch` carries
+/// the "*" sentinel a `Rebind` inserts.
+///
+/// A rebind must reconcile in full even when the index is already
+/// current — not just when it's stale — because the actor may have missed
+/// on-disk changes while it wasn't watching this vault (edit-then-quit,
+/// a non-active-project MCP write, an external/CLI edit made while the vault
+/// was closed). Without this, the "*" sentinel fails `should_index` and a
+/// rebind onto a fresh index would silently be a no-op.
+fn reconcile_requested(batch: &[String], stale: bool) -> bool {
+    stale || batch.iter().any(|r| r == "*")
+}
+
 /// The vault-relative path for `abs`, iff it is a markdown file under
 /// `root/wiki` — `raw/` (immutable) and everything else is never indexed.
 fn wiki_rel_of(root: &Path, abs: &Path) -> Option<String> {
@@ -160,9 +178,12 @@ fn should_index(rel: &str) -> bool {
 }
 
 /// Start watching `root/wiki` for filesystem changes, marking each changed
-/// markdown page dirty via `tx`. Returns `None` if the watcher couldn't be
-/// created or `root/wiki` doesn't exist (e.g. an empty/new vault) — the
-/// caller is left without a watcher for that root rather than failing.
+/// markdown page dirty via `tx`. Returns `None` only if the watch backend
+/// itself couldn't be created, or (when `root/wiki` exists) couldn't attach
+/// to it. If `root/wiki` doesn't exist yet (e.g. an empty/new vault), the
+/// watcher is still created and returned `Some` — it just has nothing
+/// attached, so it silently watches nothing until the next `Rebind` replaces
+/// it.
 ///
 /// The callback runs on `notify`'s own (non-tokio) thread; `tx.send` is an
 /// unbounded, non-blocking, thread-safe send, so it never blocks that thread
@@ -174,12 +195,15 @@ fn start_watcher(
     use notify::{RecursiveMode, Watcher};
     let root_buf = root.to_path_buf();
     let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        if let Ok(ev) = res {
-            for p in ev.paths {
-                if let Some(rel) = wiki_rel_of(&root_buf, &p) {
-                    let _ = tx.send(UpdateMsg::Dirty(rel));
+        match res {
+            Ok(ev) => {
+                for p in ev.paths {
+                    if let Some(rel) = wiki_rel_of(&root_buf, &p) {
+                        let _ = tx.send(UpdateMsg::Dirty(rel));
+                    }
                 }
             }
+            Err(e) => eprintln!("[index_updater] watch error: {e}"),
         }
     })
     .ok()?;
@@ -191,13 +215,30 @@ fn start_watcher(
 }
 
 /// Bring the index for `root` up to date with `batch` (the paths that went
-/// dirty since the last run — or the "*" rebind sentinel).
+/// dirty since the last run) — or, whenever `reconcile_requested` says so,
+/// with the *whole* vault regardless of `batch`'s other contents.
 ///
-/// A stale/missing index (wrong model, or none yet) gets a full rebuild over
-/// every wiki page, same as `reindex_embeddings`; `batch` is ignored in that
-/// case since the whole vault is being walked anyway. Otherwise each dirty
-/// path is re-embedded (or, if the file no longer exists, dropped from the
-/// index) — the fast path this actor exists for.
+/// A stale/missing index (wrong model, or none yet) is wiped via
+/// `ensure_model`, same as `reindex_embeddings`. A reconcile pass — run when
+/// the index is stale, or `batch` carries the "*" `Rebind` sentinel — then
+/// walks every wiki page and re-embeds it; `embed_one_page`'s content-hash
+/// skip makes pages that are already current in the index free, so this
+/// stays cheap except where content actually changed. This is what makes
+/// opening/rebinding a vault always reconcile its index to disk: without it,
+/// a rebind onto an already-current index would be a no-op (the sentinel
+/// fails `should_index`), silently leaving on-disk edits unindexed — e.g. an
+/// edit made just before the actor was killed mid-debounce, a
+/// non-active-project MCP write, or an external/CLI edit made while the
+/// vault was closed.
+///
+/// Otherwise (not stale, not a rebind) only the dirty paths in `batch` are
+/// re-embedded, or — if the file no longer exists — dropped from the index:
+/// the fast incremental path this actor exists for.
+///
+/// Only saves the index (and updates `VectorCache`) if something actually
+/// changed, so a rebind onto an already-current index costs a walk plus a
+/// hash check per page but never forces a save or resets the
+/// semantic-edge cache.
 async fn process_batch(
     app: &tauri::AppHandle,
     root: &Path,
@@ -207,16 +248,23 @@ async fn process_batch(
     let mut store = VectorStore::load(&index_path);
     let model_id = format!("builtin-local:{}", crate::local_llm::BUILTIN_EMBED_MODEL);
 
-    if index_is_stale(&store.model) {
-        // First index, or a migration to the current model: wipe and rebuild
-        // over every wiki page rather than trying to reconcile a batch
-        // against geometry that no longer matches.
+    let stale = index_is_stale(&store.model);
+    let reconcile = reconcile_requested(&batch, stale);
+    if stale {
+        // First index, or a migration to the current model: wipe so the
+        // reconcile pass below re-embeds against the new geometry rather
+        // than trying to reconcile a batch against records that no longer
+        // match it.
         store.ensure_model(&model_id);
-        let existing = store.hashes_by_page(); // empty right after the wipe
+    }
+
+    let mut changed = false;
+    if reconcile {
+        let existing = store.hashes_by_page(); // empty right after a wipe
         let pages = crate::commands::collect_wiki_pages(root);
         for (rel, stem, content) in &pages {
             let llm = app.state::<LocalLlmState>();
-            let _ = crate::commands::embed_one_page(
+            let embedded = crate::commands::embed_one_page(
                 app,
                 &llm,
                 "builtin-local",
@@ -228,21 +276,12 @@ async fn process_batch(
                 &mut store,
             )
             .await?;
+            changed |= embedded;
         }
         let present: HashSet<String> = pages.into_iter().map(|(r, _, _)| r).collect();
-        store.prune(&present);
+        changed |= store.prune(&present) > 0;
     } else {
-        // `batch` may carry the "*" sentinel from a rebind of an already-fresh
-        // index; it fails `should_index` and is filtered out here, so a rebind
-        // onto a fresh index is a no-op incremental pass. Bail out before
-        // touching the store at all in that case: `VectorCache::put` resets
-        // the semantic-edge cache, so saving on a genuine no-op would force
-        // every `open_vault` on a current index to needlessly wipe and
-        // recompute edges.
         let to_process: Vec<String> = batch.into_iter().filter(|r| should_index(r)).collect();
-        if to_process.is_empty() {
-            return Ok(());
-        }
         let existing = store.hashes_by_page();
         for rel in to_process {
             let abs = root.join(&rel);
@@ -254,7 +293,7 @@ async fn process_batch(
                     .unwrap_or("")
                     .to_string();
                 let llm = app.state::<LocalLlmState>();
-                let _ = crate::commands::embed_one_page(
+                let embedded = crate::commands::embed_one_page(
                     app,
                     &llm,
                     "builtin-local",
@@ -266,14 +305,22 @@ async fn process_batch(
                     &mut store,
                 )
                 .await?;
+                changed |= embedded;
             } else {
                 store.upsert_page(&rel, "", Vec::new()); // deleted → drop its records
+                changed = true;
             }
         }
     }
 
-    store.save(&index_path)?;
-    app.state::<VectorCache>().put(&index_path, store);
+    // `VectorCache::put` resets the semantic-edge cache, so only pay for a
+    // save (and that reset) when something actually changed — a rebind onto
+    // an already-current index should walk + hash-check every page for
+    // free, not force every `open_vault` to needlessly recompute edges.
+    if changed {
+        store.save(&index_path)?;
+        app.state::<VectorCache>().put(&index_path, store);
+    }
     Ok(())
 }
 
@@ -287,6 +334,14 @@ mod tests {
         assert!(index_is_stale("builtin-local:gemma-3-1b"));
         assert!(index_is_stale("")); // empty/new index
         assert!(index_is_stale("ollama:nomic-embed-text"));
+    }
+
+    #[test]
+    fn reconcile_requested_covers_rebind_and_stale_but_not_normal_batch() {
+        assert!(reconcile_requested(&["*".to_string()], false)); // rebind sentinel
+        assert!(reconcile_requested(&[], true)); // stale index, even w/ an empty batch
+        assert!(reconcile_requested(&["wiki/a.md".to_string()], true)); // stale + dirty
+        assert!(!reconcile_requested(&["wiki/a.md".to_string()], false)); // normal incremental batch
     }
 
     #[test]
