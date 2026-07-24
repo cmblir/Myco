@@ -108,6 +108,35 @@ fn main() {
         store.upsert_page(&rel, &stem, entries);
         eprint!("\rindexed {pages} pages / {chunks_total} chunks");
     }
+
+    // Korean parallel corpus (eval-only, read from disk so it never ships in the
+    // binary or the starter vault). Same pipeline as the English block above.
+    let ko_dir = manifest.join("eval/ko-corpus");
+    if ko_dir.is_dir() {
+        let mut ko_files: Vec<PathBuf> = std::fs::read_dir(&ko_dir)
+            .expect("read ko-corpus dir")
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().map(|x| x == "md").unwrap_or(false))
+            .collect();
+        ko_files.sort();
+        for path in ko_files {
+            let content = std::fs::read_to_string(&path).expect("read ko page");
+            let stem = path.file_stem().unwrap().to_string_lossy().to_string();
+            let rel = format!("ko-corpus/{stem}.md");
+            let chunks = embeddings::chunk_page(&content);
+            if chunks.is_empty() {
+                continue;
+            }
+            let hashes: Vec<u64> = chunks.iter().map(|c| embeddings::content_hash(c)).collect();
+            let vecs = doc_vecs(&llm, &chunks);
+            chunks_total += chunks.len();
+            pages += 1;
+            let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
+            store.upsert_page(&rel, &stem, entries);
+            eprint!("\rindexed {pages} pages / {chunks_total} chunks");
+        }
+    }
+
     eprintln!("\nindexed {pages} pages, {chunks_total} chunks. evaluating {} queries…\n", set.queries.len());
 
     // Aggregates
