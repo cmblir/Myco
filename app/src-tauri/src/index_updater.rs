@@ -45,6 +45,7 @@ impl IndexUpdater {
             const DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(500);
             let mut root: Option<PathBuf> = None;
             let mut dirty: HashSet<String> = Default::default();
+            let mut consecutive_errors: u32 = 0;
             loop {
                 // Never busy-loops: with nothing dirty the timer arm parks
                 // forever and the select is driven purely by `rx.recv()`.
@@ -70,12 +71,37 @@ impl IndexUpdater {
                     },
                     _ = timer => {
                         if let Some(r) = root.clone() {
-                            let batch: Vec<String> = dirty.drain().collect();
-                            if let Err(e) = process_batch(&app, &r, batch).await {
-                                eprintln!("[index_updater] {e}");
+                            // Snapshot rather than drain: on failure we need to
+                            // keep exactly these paths dirty for a retry. Any
+                            // new `Dirty`/`Rebind` that arrives while this
+                            // `.await` runs buffers in the unbounded channel
+                            // (`rx.recv()` isn't polled until the next loop
+                            // iteration) rather than landing in `dirty`, so
+                            // removing exactly `batch` on success is correct.
+                            let batch: Vec<String> = dirty.iter().cloned().collect();
+                            match process_batch(&app, &r, batch.clone()).await {
+                                Ok(()) => {
+                                    for p in &batch {
+                                        dirty.remove(p);
+                                    }
+                                    consecutive_errors = 0;
+                                }
+                                Err(e) => {
+                                    consecutive_errors = (consecutive_errors + 1).min(6);
+                                    eprintln!("[index_updater] batch failed (will retry): {e}");
+                                    // Keep `dirty` so the batch is retried next
+                                    // cycle; back off so a persistent error
+                                    // (e.g. the embed model won't load) can't
+                                    // spin every 500ms.
+                                    tokio::time::sleep(std::time::Duration::from_millis(
+                                        500u64 << consecutive_errors,
+                                    ))
+                                    .await;
+                                }
                             }
                         } else {
-                            dirty.clear();
+                            dirty.clear(); // no vault bound yet — a `Dirty` before the
+                                            // first `Rebind` is intentionally dropped
                         }
                     }
                 }
@@ -164,11 +190,19 @@ async fn process_batch(
         let present: HashSet<String> = pages.into_iter().map(|(r, _, _)| r).collect();
         store.prune(&present);
     } else {
-        let existing = store.hashes_by_page();
         // `batch` may carry the "*" sentinel from a rebind of an already-fresh
         // index; it fails `should_index` and is filtered out here, so a rebind
-        // onto a fresh index is a no-op incremental pass.
-        for rel in batch.into_iter().filter(|r| should_index(r)) {
+        // onto a fresh index is a no-op incremental pass. Bail out before
+        // touching the store at all in that case: `VectorCache::put` resets
+        // the semantic-edge cache, so saving on a genuine no-op would force
+        // every `open_vault` on a current index to needlessly wipe and
+        // recompute edges.
+        let to_process: Vec<String> = batch.into_iter().filter(|r| should_index(r)).collect();
+        if to_process.is_empty() {
+            return Ok(());
+        }
+        let existing = store.hashes_by_page();
+        for rel in to_process {
             let abs = root.join(&rel);
             if abs.is_file() {
                 let content = std::fs::read_to_string(&abs).unwrap_or_default();
