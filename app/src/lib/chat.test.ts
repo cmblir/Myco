@@ -237,6 +237,113 @@ describe("complete() ask stages", () => {
   });
 });
 
+describe("complete() CLI query retrieval (retrieval 1b)", () => {
+  // CLI providers (anthropic-cli/gemini-cli/codex-cli) used to grep the vault
+  // cwd blind on every query. These cover the new bge-m3 retrieval injection
+  // into the flattened CLI prompt — ingest must stay untouched (it already
+  // has real tool access and writes files; injecting stale search context
+  // into that flow was never the ask).
+  const CLI_SETTINGS = {
+    query_provider: "anthropic-cli",
+    query_model: "sonnet",
+    ingest_provider: "anthropic-cli",
+    ingest_model: "haiku",
+  } as never;
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(CLI_SETTINGS);
+  });
+
+  it("injects retrieved passage text into the CLI query prompt when the index has hits", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 51,
+      model: CURRENT_INDEX_MODEL,
+    });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
+      { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", section: 0, text: "attention body passage", score: 0.9 },
+    ]);
+    const claudeRun = vi
+      .spyOn(ipc, "claudeRun")
+      .mockResolvedValue({ stdout: "an answer", stderr: "", status: 0 });
+
+    const { seen, onStage } = stages();
+    const out = await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [
+        { role: "system", content: "You are Memex." },
+        { role: "user", content: "what is attention?" },
+      ],
+      onStage,
+    });
+
+    expect(out).toBe("an answer");
+    expect(claudeRun).toHaveBeenCalledTimes(1);
+    const [prompt] = claudeRun.mock.calls[0];
+    expect(prompt).toContain("Relevant wiki context");
+    expect(prompt).toContain("attention body passage");
+    expect(prompt).toContain("[[attention-mechanism]]");
+    // Retrieval block must land between the system content and the user turn.
+    expect(prompt.indexOf("You are Memex.")).toBeLessThan(
+      prompt.indexOf("Relevant wiki context"),
+    );
+    expect(prompt.indexOf("Relevant wiki context")).toBeLessThan(
+      prompt.indexOf("what is attention?"),
+    );
+    expect(seen).toEqual([
+      { kind: "retrieving" },
+      { kind: "thinking", stems: ["attention-mechanism"] },
+    ]);
+  });
+
+  it("falls back to a plain flattened prompt when retrieval finds nothing", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 0, model: "" });
+    const search = vi.spyOn(ipc, "semanticSearch");
+    const claudeRun = vi
+      .spyOn(ipc, "claudeRun")
+      .mockResolvedValue({ stdout: "an answer", stderr: "", status: 0 });
+
+    const out = await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "what is attention?" }],
+    });
+
+    expect(out).toBe("an answer");
+    expect(search).not.toHaveBeenCalled();
+    const [prompt] = claudeRun.mock.calls[0];
+    expect(prompt).not.toContain("Relevant wiki context");
+    expect(prompt).toBe("what is attention?");
+  });
+
+  it("does not inject retrieval into the CLI ingest prompt", async () => {
+    const status = vi.spyOn(ipc, "embeddingsStatus");
+    const search = vi.spyOn(ipc, "semanticSearch");
+    const claudeRun = vi
+      .spyOn(ipc, "claudeRun")
+      .mockResolvedValue({ stdout: "ingested", stderr: "", status: 0 });
+
+    const { seen, onStage } = stages();
+    const out = await complete({
+      task: "ingest",
+      cwd: VAULT,
+      messages: [
+        { role: "system", content: "Ingest instructions." },
+        { role: "user", content: "ingest raw/foo.txt" },
+      ],
+      onStage,
+    });
+
+    expect(out).toBe("ingested");
+    expect(status).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
+    expect(seen).toEqual([]);
+    const [prompt] = claudeRun.mock.calls[0];
+    expect(prompt).toBe("Ingest instructions.\n\ningest raw/foo.txt");
+  });
+});
+
 describe("isIndexStale", () => {
   it("flags an index whose model no longer matches the current builtin embed id", () => {
     expect(

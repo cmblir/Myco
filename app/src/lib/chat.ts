@@ -78,7 +78,28 @@ export async function complete(args: CompleteArgs): Promise<string> {
         m.role === "assistant" ? `Assistant: ${m.content}` : m.content,
       )
       .join("\n\n");
-    const prompt = system ? `${system.content}\n\n${userTurns}` : userTurns;
+
+    // Query only (not ingest): the CLI would otherwise grep the vault cwd
+    // blind. Give it the same bge-m3 semantic retrieval the non-CLI path
+    // uses, at the CLI models' much larger budget — a head start, not a
+    // replacement for its own Read/Grep, so an empty index/no-hits result
+    // injects nothing and the CLI falls back to grepping as before.
+    let retrievalBlock = "";
+    if (args.task === "query") {
+      const question = lastUserContent(args.messages);
+      const { ctx, stems, stale } = question
+        ? await semanticContext(question, VAULT_CONTEXT_BUDGET, args.onStage)
+        : { ctx: "", stems: [], stale: false };
+      if (ctx.trim()) {
+        retrievalBlock =
+          `## Relevant wiki context (local semantic search — start here; use Read/Grep for anything more)\n\n${ctx}\n\n`;
+      }
+      args.onStage?.({ kind: "thinking", stems, ...(stale ? { stale: true } : {}) });
+    }
+
+    const prompt = system
+      ? `${system.content}\n\n${retrievalBlock}${userTurns}`
+      : `${retrievalBlock}${userTurns}`;
     const res =
       provider === "anthropic-cli"
         ? await ipc.claudeRun(prompt, args.cwd, model || undefined)
