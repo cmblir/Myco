@@ -1383,7 +1383,7 @@ async fn embed_texts(
 }
 
 /// Collect `wiki/**/*.md` pages as (relpath, stem, content).
-fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String, String)> {
+pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String, String)> {
     fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, String, String)>) {
         // Non-following walk: a symlinked directory under wiki/ must not pull
         // files from outside the vault into the embedding index.
@@ -1403,6 +1403,43 @@ fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String, String)> {
     let mut out = Vec::new();
     walk(&root.join("wiki"), root, &mut out);
     out
+}
+
+/// Embed a single page's chunks and upsert them into `store`, unless the page's
+/// content hashes are unchanged from `existing` (or it has no chunks at all).
+/// Shared by `reindex_embeddings` and the incremental index updater — this is
+/// the only place that decides "does this page need re-embedding".
+///
+/// Returns `Ok(true)` when the page was embedded and upserted, `Ok(false)` when
+/// it was skipped.
+pub(crate) async fn embed_one_page(
+    app: &tauri::AppHandle,
+    llm: &tauri::State<'_, LocalLlmState>,
+    provider: &str,
+    model: &str,
+    rel: &str,
+    stem: &str,
+    content: &str,
+    existing: &std::collections::HashMap<String, Vec<u64>>,
+    store: &mut VectorStore,
+) -> Result<bool, String> {
+    let chunks = embeddings::chunk_page(content);
+    let hashes: Vec<u64> = chunks.iter().map(|c| embeddings::content_hash(c)).collect();
+    if chunks.is_empty() || existing.get(rel) == Some(&hashes) {
+        return Ok(false); // nothing to embed, or the content hashes still match
+    }
+    let vecs = embed_texts(
+        app.clone(),
+        (*llm).clone(),
+        provider,
+        model,
+        crate::local_llm::EmbedRole::Document,
+        chunks,
+    )
+    .await?;
+    let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
+    store.upsert_page(rel, stem, entries);
+    Ok(true)
 }
 
 /// Per-page progress for a running reindex. `done` counts pages *considered*
@@ -1463,9 +1500,13 @@ pub async fn reindex_embeddings(
     let total = pages.len();
     for (i, (rel, stem, content)) in pages.iter().enumerate() {
         present.insert(rel.clone());
-        let chunks = embeddings::chunk_page(content);
-        let hashes: Vec<u64> = chunks.iter().map(|c| embeddings::content_hash(c)).collect();
-        let unchanged = chunks.is_empty() || existing.get(rel) == Some(&hashes);
+        let t_embed = std::time::Instant::now();
+        let did = embed_one_page(&app, &llm, &provider, &model, rel, stem, content, &existing, &mut store).await?;
+        if did {
+            embed_ms += perf::ms(t_embed.elapsed());
+            embedded += 1;
+            dirty = true;
+        }
         {
             use tauri::Emitter;
             let _ = app.emit(
@@ -1474,28 +1515,13 @@ pub async fn reindex_embeddings(
                     done: i + 1,
                     total,
                     page: rel.clone(),
-                    embedded: !unchanged,
+                    embedded: did,
                 },
             );
         }
-        if unchanged {
+        if !did {
             continue; // nothing to embed, or the content hashes still match
         }
-        let t_embed = std::time::Instant::now();
-        let vecs = embed_texts(
-            app.clone(),
-            llm.clone(),
-            &provider,
-            &model,
-            crate::local_llm::EmbedRole::Document,
-            chunks,
-        )
-        .await?;
-        embed_ms += perf::ms(t_embed.elapsed());
-        embedded += 1;
-        let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
-        store.upsert_page(rel, stem, entries);
-        dirty = true;
 
         // Checkpoint. Without this, a crash or quit during the first index of a
         // large vault threw away every embedding computed so far — the most
