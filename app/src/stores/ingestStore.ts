@@ -349,7 +349,16 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       // unresolved wikilinks / source_count mismatch / missing superseded_by
       // are reported but do not block. Best-effort — a validator failure
       // (e.g. IPC error) must not itself fail an otherwise-good ingest.
-      const vr = await ipc.validateIngest(vault.path, changed).catch(() => null);
+      const vr = await ipc.validateIngest(vault.path, changed).catch((err) => {
+        // Fail open (a validator-IPC error must not itself fail an otherwise-
+        // good ingest), but log it — silently swallowing this would let a
+        // broken validator call disable the gate with no trace.
+        log.warn("validate_ingest.failed", {
+          feature: "ingest",
+          error: String(err),
+        });
+        return null;
+      });
       if (vr && vr.errors.length > 0) {
         const lines = vr.errors.map((e) => `- ${e.page}: ${e.detail}`).join("\n");
         set((st) => ({
