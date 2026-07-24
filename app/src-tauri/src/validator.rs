@@ -160,7 +160,7 @@ pub fn validate_pages(root: &Path, changed_rels: &[String]) -> ValidationReport 
 
         // Wikilinks must resolve to a page in the vault (WARNING).
         for link in parser::parse_links_from_text(&text) {
-            let key = link.split('#').next().unwrap_or(&link).to_lowercase();
+            let key = link.split('#').next().unwrap_or(&link).trim().to_lowercase();
             if !key.is_empty() && !names.contains_key(&key) {
                 rep.warnings.push(Issue {
                     page: rel.clone(),
@@ -230,5 +230,44 @@ mod tests {
         ]);
         let r = validate_pages(d.path(), &["wiki/index.md".into(), "wiki/e.md".into()]);
         assert!(r.errors.is_empty() && r.warnings.is_empty(), "clean+structural: {:?} {:?}", r.errors, r.warnings);
+    }
+    #[test]
+    fn overview_type_exempts_knowledge_named_page_but_missing_type_still_errors() {
+        // "summary" is a knowledge-page stem (not index/log/source-*), so this
+        // exercises the `type: overview` exemption itself, not the
+        // `!is_knowledge_page` short-circuit that `wiki/index.md` covers above.
+        let overview = vault(&[("wiki/summary.md", "---\ntype: overview\n---\n# Summary\n[[whatever]]")]);
+        let r = validate_pages(overview.path(), &["wiki/summary.md".into()]);
+        assert!(r.errors.is_empty() && r.warnings.is_empty(), "type:overview must fully exempt: {:?} {:?}", r.errors, r.warnings);
+
+        // Same knowledge-page name, but no `type: overview` this time — proves
+        // the exemption above is what did the work, not the page's name.
+        let non_overview = vault(&[(
+            "wiki/summary.md",
+            "---\ntitle: S\ncreated: 2026-01-01\nconfidence: high\nstatus: active\n---\n# Summary\n",
+        )]);
+        let r2 = validate_pages(non_overview.path(), &["wiki/summary.md".into()]);
+        assert!(
+            r2.errors.iter().any(|e| e.kind == "missing_frontmatter" && e.detail.contains("type")),
+            "missing type must still error without the overview exemption: {:?}",
+            r2.errors
+        );
+    }
+    #[test]
+    fn wikilink_with_space_before_heading_hash_resolves_after_trim() {
+        // Mirrors index::ingest_links's `.trim()`: a link like
+        // "[[Target #Section]]" (space before `#`) must resolve to
+        // wiki/target.md, not warn — matching what the real link-graph does.
+        let d = vault(&[
+            ("raw/real.md", "# Real"),
+            ("wiki/target.md", GOOD_FM),
+            ("wiki/f.md", &format!("{GOOD_FM}\nClaim.[^src-real] See [[Target #Section]].\n")),
+        ]);
+        let r = validate_pages(d.path(), &["wiki/f.md".into()]);
+        assert!(
+            !r.warnings.iter().any(|w| w.kind == "unresolved_wikilink"),
+            "space before # must still resolve via trim: {:?}",
+            r.warnings
+        );
     }
 }
