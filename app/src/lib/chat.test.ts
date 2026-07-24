@@ -297,6 +297,43 @@ describe("complete() CLI query retrieval (retrieval 1b)", () => {
     ]);
   });
 
+  it("does not inject retrieval when the caller passes no onStage (study/digests/audioOverview)", async () => {
+    // These share task:"query" + query_provider with interactive Ask but never
+    // pass onStage — they also demand strict-JSON-only output, so retrieval's
+    // prose block ("use Read/Grep for anything more") must not reach them even
+    // when the index is healthy and has real hits.
+    const status = vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 51,
+      model: CURRENT_INDEX_MODEL,
+    });
+    const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
+      { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", section: 0, text: "attention body passage", score: 0.9 },
+    ]);
+    const claudeRun = vi
+      .spyOn(ipc, "claudeRun")
+      .mockResolvedValue({ stdout: "[]", stderr: "", status: 0 });
+
+    const out = await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [
+        { role: "system", content: "Reply with ONLY a JSON array, no prose." },
+        { role: "user", content: "generate 5 flashcards about attention" },
+      ],
+      // no onStage — this is how study.ts/digests.ts/audioOverview.ts call complete()
+    });
+
+    expect(out).toBe("[]");
+    expect(status).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
+    expect(claudeRun).toHaveBeenCalledTimes(1);
+    const [prompt] = claudeRun.mock.calls[0];
+    expect(prompt).not.toContain("Relevant wiki context");
+    expect(prompt).toBe(
+      "Reply with ONLY a JSON array, no prose.\n\ngenerate 5 flashcards about attention",
+    );
+  });
+
   it("falls back to a plain flattened prompt when retrieval finds nothing", async () => {
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 0, model: "" });
     const search = vi.spyOn(ipc, "semanticSearch");

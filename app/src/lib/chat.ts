@@ -45,9 +45,13 @@ export interface CompleteArgs {
   task: "query" | "ingest";
   messages: SimpleMessage[];
   cwd: string;
-  /// Called as the run moves between stages. Only the non-tool provider path
-  /// reports: the CLI providers do their own retrieval inside the tool loop, so
-  /// this side cannot see what they read and must not invent it.
+  /// Called as the run moves between stages. The non-tool provider path always
+  /// reports these. The CLI query path now reports too, but only when this is
+  /// passed — that's how interactive Ask (the only caller of task:"query" that
+  /// passes it) opts in, and how study.ts/digests.ts/audioOverview.ts (which
+  /// don't) opt out of both the stage reports and the CLI retrieval injection
+  /// below. The CLI's own Read/Grep inside its tool loop stays invisible to
+  /// this side regardless, and must not be invented.
   onStage?: (stage: AskStage) => void;
 }
 
@@ -84,8 +88,17 @@ export async function complete(args: CompleteArgs): Promise<string> {
     // uses, at the CLI models' much larger budget — a head start, not a
     // replacement for its own Read/Grep, so an empty index/no-hits result
     // injects nothing and the CLI falls back to grepping as before.
+    //
+    // Also gated on `onStage`: task:"query" + one `query_provider` setting is
+    // shared by FOUR features — interactive Ask (which passes `onStage`), and
+    // study.ts (flashcard/quiz), digests.ts, and audioOverview.ts (which don't).
+    // Those three demand strict-JSON-only output with no UI to show a stage
+    // to, so injecting a retrieval block — plus its "use Read/Grep for
+    // anything more" prose hint — risked malformed-JSON failures for them with
+    // no signal. `onStage` is only ever passed by interactive Ask, so it
+    // doubles as the discriminator for "this is the path that wants retrieval."
     let retrievalBlock = "";
-    if (args.task === "query") {
+    if (args.task === "query" && args.onStage) {
       const question = lastUserContent(args.messages);
       const { ctx, stems, stale } = question
         ? await semanticContext(question, VAULT_CONTEXT_BUDGET, args.onStage)
