@@ -1,5 +1,5 @@
 {
-  "_about": "Phase 0 retrieval eval set for Memex. Queries labeled with the wiki page stem(s) that should be retrieved, run against the bundled sample vault (sample_vault::SAMPLE_NOTES). Mix of semantic paraphrases and exact-term/acronym queries (the latter are where dense Gemma embeddings are weakest and BM25 will help in Phase 1). Edit freely; the harness reads this file.",
+  "_about": "Retrieval eval set for Memex, run against a BILINGUAL corpus: the English bundled sample vault (sample_vault::SAMPLE_NOTES, 51 pages) plus the Korean parallel fixture on disk (eval/ko-corpus/, 20 pages), indexed into one store by examples/retrieval_eval.rs. Queries are labeled with the wiki page stem(s) that should be retrieved (Korean queries -> ko-* stems). Three groups: (1) Phase-0 English semantic paraphrases + exact-term/acronym; (2) Phase-1b Korean semantic + exact-term (Korean queries against Korean docs -- the CJK lexical overlap the BM25 arm exploits; dense alone tends to confuse the parallel EN page); (3) Phase-1b hard English exact tokens present in exactly one page (QLoRA/PPO/RLAIF/...), where dense under-weights rare strings. Phase 1a saturated the English-only set at hit@10 100%; groups (2)/(3) re-open measurable headroom for BM25 + RRF. Edit freely; the harness reads this file.",
   "queries": [
     { "q": "how does a model weigh the relevance of every token to every other token", "relevant": ["attention-mechanism", "self-attention"] },
     { "q": "queries keys and values derived from the same sequence", "relevant": ["self-attention"] },
@@ -30,6 +30,35 @@
     { "q": "compressing a large teacher model into a smaller student", "relevant": ["distillation"] },
     { "q": "the open protocol that lets assistants call external tools and data", "relevant": ["mcp"] },
     { "q": "training a model to align with a written set of principles", "relevant": ["constitutional-ai"] },
-    { "q": "the feed-forward sublayer applied to each position", "relevant": ["feedforward-network"] }
+    { "q": "the feed-forward sublayer applied to each position", "relevant": ["feedforward-network"] },
+
+    { "q": "모델이 각 토큰이 다른 모든 토큰에 대해 갖는 관련성을 어떻게 가중하는가", "relevant": ["ko-attention-mechanism"] },
+    { "q": "쿼리 키 값이 동일한 입력 시퀀스에서 유도되는 어텐션", "relevant": ["ko-self-attention"] },
+    { "q": "여러 어텐션 패턴을 병렬로 실행하는 방법", "relevant": ["ko-multi-head-attention"] },
+    { "q": "원시 텍스트를 서브워드 단위로 나누는 과정", "relevant": ["ko-tokenization", "ko-byte-pair-encoding"] },
+    { "q": "자기회귀 생성 중 이전에 계산한 키와 값을 캐싱해 재계산을 피함", "relevant": ["ko-kv-cache"] },
+    { "q": "순환 구조 없이 트랜스포머가 토큰의 순서를 아는 방법", "relevant": ["ko-positional-encoding"] },
+    { "q": "한 층의 특징 전반에 걸쳐 활성값을 정규화하는 것", "relevant": ["ko-layer-normalization"] },
+    { "q": "서브층의 입력을 그 출력에 더하는 스킵 연결", "relevant": ["ko-residual-connections"] },
+    { "q": "대규모 비라벨 코퍼스에서 다음 토큰을 예측하는 자기지도 학습", "relevant": ["ko-pretraining"] },
+    { "q": "모델 크기 데이터 연산이 커질수록 성능이 예측 가능하게 향상됨", "relevant": ["ko-scaling-laws"] },
+    { "q": "학습된 보상을 이용해 인간 선호에 모델을 정렬하는 것", "relevant": ["ko-rlhf"] },
+    { "q": "별도의 보상 모델 학습을 생략하는 선호 최적화", "relevant": ["ko-dpo"] },
+    { "q": "동결된 모델에 작은 저랭크 가중치 행렬을 붙여 적응", "relevant": ["ko-lora"] },
+    { "q": "모델 가중치를 더 낮은 수치 정밀도로 줄이는 것", "relevant": ["ko-quantization"] },
+    { "q": "문서를 먼저 검색해 생성의 근거를 마련하는 방법", "relevant": ["ko-rag", "ko-vector-database"] },
+    { "q": "모델이 단계별로 추론하도록 유도하는 프롬프팅", "relevant": ["ko-chain-of-thought"] },
+    { "q": "프롬프트 안의 예시만으로 새로운 과제를 학습", "relevant": ["ko-in-context-learning"] },
+    { "q": "다중 헤드 어텐션", "relevant": ["ko-multi-head-attention"] },
+    { "q": "바이트 페어 인코딩", "relevant": ["ko-byte-pair-encoding"] },
+    { "q": "KV 캐시", "relevant": ["ko-kv-cache"] },
+    { "q": "직접 선호 최적화", "relevant": ["ko-dpo"] },
+    { "q": "임베딩", "relevant": ["ko-embeddings"] },
+
+    { "q": "QLoRA", "relevant": ["lora"] },
+    { "q": "PPO", "relevant": ["rlhf"] },
+    { "q": "RLAIF", "relevant": ["constitutional-ai"] },
+    { "q": "pre-norm and post-norm placement", "relevant": ["layer-normalization"] },
+    { "q": "grouped-query attention paged cache management", "relevant": ["kv-cache"] }
   ]
 }
