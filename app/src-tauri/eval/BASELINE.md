@@ -68,3 +68,55 @@ difference is negligible.
 **New reference for Phase 1b:** bge-m3 — hit@10 100.0 % · MRR 0.860 · nDCG@10 0.874.
 Phase 1b (CJK BM25 + RRF) must beat these, focusing on the remaining weak query and
 on Korean queries once the eval set is extended.
+
+## Phase 1b — extended bilingual corpus (2026-07-25)
+
+The Phase-1a set (51 English pages · 30 English queries) was **saturated** at
+hit@10 100 %, so BM25/RRF had no headroom to prove a gain. This increment extends
+the eval — it adds no retrieval code. Two additions:
+
+- **Korean parallel corpus**: 20 pages under `eval/ko-corpus/` (`ko-*` stems),
+  parallel translations of the core concept pages, read from disk by the harness
+  and indexed into the *same* store as `SAMPLE_NOTES`. Eval-only — not in the
+  shipped binary or the starter vault. Combined corpus: **71 pages · 142 chunks**.
+- **32 new queries** (`eval/retrieval-queries.json`): 27 Korean (semantic + Korean
+  exact-term + Korean-phrase-with-shared-acronym) and 5 hard English (rare exact
+  tokens present in exactly one page — QLoRA/PPO/RLAIF/pre-post-norm/grouped-query-cache).
+  **62 queries** total.
+
+Measured with `MEMEX_EMBED_SPEC=bge-m3 cargo run --example retrieval_eval --release`.
+
+### Results — bge-m3 dense, cosine (71 pages · 142 chunks · 62 queries)
+
+| k  | hit@k  | recall@k |
+|----|--------|----------|
+| 1  | 72.6 % | 67.7 %   |
+| 3  | 91.9 % | 87.9 %   |
+| 5  | 96.8 % | 94.4 %   |
+| 10 | 98.4 % | 96.8 %   |
+
+**MRR 0.829 · nDCG@10 0.847**
+
+The extension **de-saturated** the eval (hit@10 100 % → 98.4 %, MRR 0.860 → 0.829,
+hit@1 76.7 % → 72.6 %), re-opening measurable headroom for BM25 + RRF.
+
+### Weak queries — the explicit gap the BM25/RRF increment must close
+
+| rank | query | lang | why dense is weak |
+|------|-------|------|-------------------|
+| @4  | `RLAIF` | EN | rare exact token; appears verbatim only in `constitutional-ai` |
+| @4  | `PPO로 정책을 갱신하는 인간 선호 정렬` → `ko-rlhf` | KO | shared acronym **PPO** pulls the English `rlhf` page above the Korean one; Korean tokens (정책/갱신/인간 선호) would disambiguate |
+| @5  | `모델 크기 데이터 연산이 커질수록 성능이 예측 가능하게 향상됨` → `ko-scaling-laws` | KO | semantic paraphrase, no distinctive lexical anchor |
+| @8  | `training a model to align with a written set of principles` → `constitutional-ai` | EN | persistent Phase-1a miss (semantic) |
+| @12 | `PPO` → `rlhf` | EN | rare exact token; dense under-weights it |
+
+**Honest finding:** bge-m3's Korean is strong — every Korean *exact-term* query
+(다중 헤드 어텐션, 바이트 페어 인코딩, KV 캐시, 직접 선호 최적화, 임베딩) already
+lands in the top-3. The residual gap is (a) **rare English exact tokens** (PPO,
+RLAIF) and (b) **Korean phrases sharing a cross-lingual acronym** where the English
+parallel page becomes a distractor — both classic **lexical-arm** territory.
+
+**New reference the next increment must beat:** bge-m3 — hit@1 72.6 % · hit@10
+98.4 % · MRR 0.829 · nDCG@10 0.847. The CJK BM25 + RRF core (shared `retrieval.rs`)
+should raise MRR / hit@1 and rescue the five weak queries above without regressing
+the queries already at rank 1; each addition is re-run here or it is dropped.
