@@ -40,6 +40,13 @@ use tauri::Manager as _;
 /// to the system temp dir.
 static PANIC_LOG_PATH: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
 
+/// Global handle to the running `IndexUpdater` actor (Task 4). Set once in
+/// `.setup()`; every write-hook site and the stateless native MCP server reach
+/// it through this static rather than threading a `State<IndexUpdater>` arg
+/// through every command signature.
+pub static INDEX_UPDATER: std::sync::OnceLock<crate::index_updater::IndexUpdater> =
+    std::sync::OnceLock::new();
+
 fn panic_log_path() -> std::path::PathBuf {
     PANIC_LOG_PATH
         .get()
@@ -183,6 +190,15 @@ pub fn run() {
                     eprintln!("native MCP server failed to start: {e}");
                 }
             });
+            // Background index updater: debounces wiki writes into incremental
+            // re-embeds so the vector index never goes stale (Task 4). Pre-arm
+            // it at the launch vault, if any, so a fresh/stale index gets
+            // caught up before the first search rather than waiting for a write.
+            let updater = index_updater::IndexUpdater::spawn(app.handle().clone());
+            let _ = INDEX_UPDATER.set(updater.clone());
+            if let Some(root) = settings::active_vault() {
+                updater.rebind(std::path::PathBuf::from(root));
+            }
             // Web clipper: memx://clip?url=…&title=…&selection=… lands in the
             // open vault's _inbox/ (falling back to the persisted active-vault
             // marker when the link arrives before a vault is opened). Inputs

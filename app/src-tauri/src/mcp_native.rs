@@ -1262,6 +1262,9 @@ impl MemexServer {
         if let Err(e) = vault::write_file(&target.to_string_lossy(), &full) {
             return fail(e);
         }
+        if let Some(u) = crate::INDEX_UPDATER.get() {
+            u.mark_dirty(rel_to(&root, &target).replace('\\', "/"));
+        }
         json_result(json!({
             "ok": true, "filename": rel_to(&wiki, &target), "path": rel_to(&root, &target),
         }))
@@ -1285,6 +1288,9 @@ impl MemexServer {
         }
         if let Err(e) = vault::write_file(&target.to_string_lossy(), &a.content) {
             return fail(e);
+        }
+        if let Some(u) = crate::INDEX_UPDATER.get() {
+            u.mark_dirty(rel_to(&root, &target).replace('\\', "/"));
         }
         json_result(json!({ "ok": true, "filename": rel_to(&wiki_dir(&root), &target) }))
     }

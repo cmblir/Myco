@@ -181,6 +181,11 @@ pub fn open_vault(
     let meta = vault::open_vault(&path)?;
     // meta.path is canonical; record it as the confinement root for fs commands.
     state.set(PathBuf::from(&meta.path));
+    // Rebind the background index updater to the newly-opened vault, so it
+    // watches the right wiki/ and catches up a fresh/stale index.
+    if let Some(u) = crate::INDEX_UPDATER.get() {
+        u.rebind(PathBuf::from(&meta.path));
+    }
     // Record the active vault so the native MCP server follows the app's
     // current selection (best-effort: a marker write failure must not block
     // opening the vault). The native server re-reads this marker per call, so
@@ -271,7 +276,13 @@ pub fn write_file(
     if vault::is_raw_path(&root, &p) && p.exists() {
         return Err("refused: raw/ is immutable — an existing source cannot be overwritten".into());
     }
-    vault::write_file(&p.to_string_lossy(), &content)
+    vault::write_file(&p.to_string_lossy(), &content)?;
+    if let Some(u) = crate::INDEX_UPDATER.get() {
+        if let Ok(rel) = p.strip_prefix(&root) {
+            u.mark_dirty(rel.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    Ok(())
 }
 
 /// Describe an image with a vision-capable provider (Feature 2 image ingest),
@@ -376,7 +387,13 @@ pub fn create_file(
     } else {
         String::new()
     };
-    vault::create_file(&p.to_string_lossy(), &name, &content)
+    let created = vault::create_file(&p.to_string_lossy(), &name, &content)?;
+    if let Some(u) = crate::INDEX_UPDATER.get() {
+        if let Ok(rel) = target.strip_prefix(&root) {
+            u.mark_dirty(rel.to_string_lossy().replace('\\', "/"));
+        }
+    }
+    Ok(created)
 }
 
 #[tauri::command]

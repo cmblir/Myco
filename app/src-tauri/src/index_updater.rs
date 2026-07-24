@@ -31,12 +31,10 @@ pub enum UpdateMsg {
 /// filesystem watcher, which runs on its own non-tokio thread — never block
 /// or drop a message.
 #[derive(Clone)]
-#[allow(dead_code)] // wired in Task 4 (write path + open_vault call spawn/mark_dirty/rebind)
 pub struct IndexUpdater {
     tx: tokio::sync::mpsc::UnboundedSender<UpdateMsg>,
 }
 
-#[allow(dead_code)] // wired in Task 4
 impl IndexUpdater {
     /// Start the actor on the Tauri async runtime and return a handle to it.
     pub fn spawn(app: tauri::AppHandle) -> Self {

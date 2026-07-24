@@ -212,6 +212,11 @@ pub fn dispatch(
                 return Err(format!("refused: {path} does not exist (use create_page)"));
             }
             vault::write_file(&confined.to_string_lossy(), &content)?;
+            if let Some(u) = crate::INDEX_UPDATER.get() {
+                if let Ok(rel) = confined.strip_prefix(root) {
+                    u.mark_dirty(rel.to_string_lossy().replace('\\', "/"));
+                }
+            }
             Ok(json!({ "written": confined.to_string_lossy(), "bytes": content.len() }))
         }
         other => Err(format!("unknown tool: {other}")),
