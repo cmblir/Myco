@@ -317,13 +317,17 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       // Verify the wiki changed: a new wiki page appeared or an existing one
       // was modified. If nothing changed, the model replied but did not ingest.
       const afterMtimes = await ipc.fileMtimes(vault.path).catch(() => []);
+      // ipc.fileMtimes returns absolute filesystem paths, but validateIngest
+      // (Rust validate_pages) requires vault-relative paths — its loop does
+      // `if !rel.starts_with("wiki/")` and silently skips anything else, so an
+      // un-relativized path here makes the validator a silent no-op.
       const changed = afterMtimes
         .filter(
           ([p, m]) =>
             p.includes("/wiki/") &&
             (!wikiBefore.has(p) || m > (wikiBefore.get(p) ?? 0)),
         )
-        .map(([p]) => p);
+        .map(([p]) => relativize(p, vault.path));
       if (changed.length === 0) {
         set((st) => ({
           finishedAt: Date.now(),

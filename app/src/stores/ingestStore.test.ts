@@ -147,7 +147,9 @@ describe("ingest validation gate", () => {
 
     await useIngestStore.getState().startIngest("t", "b");
 
-    expect(validate).toHaveBeenCalledWith("/v", ["/v/wiki/foo.md"]);
+    // Vault-relative, not the absolute fileMtimes path — validate_pages (Rust)
+    // requires `rel.starts_with("wiki/")` and silently skips anything else.
+    expect(validate).toHaveBeenCalledWith("/v", ["wiki/foo.md"]);
     expect(useIngestStore.getState().stage).toBe("error");
     expect(useIngestStore.getState().log).toContain("wiki/foo.md");
     expect(useIngestStore.getState().log).toContain("no raw/bar.md");
