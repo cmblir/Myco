@@ -2,12 +2,22 @@
 //
 // `wikify_candidates` is the app's SECOND retrieval consumer: given a piece of
 // source text it suggests which existing wiki pages that text should link to /
-// update. It got the same dense+BM25(RRF) fusion as Ask but had never been
-// measured. This harness measures it.
+// update. It got the same dense+BM25(RRF) fusion as Ask (retrieval 1b), and
+// this harness measured it FIRST for this path — fusion turned out to help
+// English cases but lose ~15-16pp k=10 recall on Korean ones (long-prose
+// queries dilute BM25; the CJK bigram tokenizer makes it worse on long text),
+// so wikify shipped back to dense-only while Ask kept the fusion. See
+// eval/BASELINE.md for the full tables. This harness is kept running BOTH
+// arms so a future, smarter fusion attempt for this path can be re-measured
+// against the same recorded baseline instead of re-discovering the diagnosis.
 //
 // It drives the SHIPPED glue — `pipeline::fuse_chunk_matches` (fuse → filter →
 // cap) and `pipeline::rank_candidates` — so it cannot drift from the command.
-// Only the Tauri/IO shell (vault root, caches, `embed_texts`) is replaced.
+// `wikify_candidates` itself always calls `fuse_chunk_matches` with an empty
+// lexical arm (dense-only); this harness's `dense` arm does the same, so it
+// stays a true control, while its `fused` arm passes the real BM25 hits to
+// measure any future change to that side. Only the Tauri/IO shell (vault
+// root, caches, `embed_texts`) is replaced.
 //
 // Ground truth is the corpus's own link graph, not invented labels: for a page
 // P, the relevant set is the pages P links to via `[[...]]`. Two source-text

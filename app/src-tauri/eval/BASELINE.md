@@ -328,6 +328,12 @@ output.
 
 ## Wikify — first measurement of the second retrieval path (2026-07-26)
 
+> **Outcome: fusion was reverted on this path.** `wikify_candidates` ships
+> **dense-only**; `semantic_search` (Ask) keeps the fusion, where it measured
+> better. See "Decision" below the verdict. The measurement, tables, and
+> mechanism analysis in this section are kept as the evidence for that call
+> and are unchanged from when they were first recorded.
+
 Everything above measures **Ask** (`semantic_search`). The app's other retrieval
 consumer, `wikify_candidates` — "which existing pages should this source text
 link to / update?" — received the same dense+BM25(RRF) fusion but had **never
@@ -549,6 +555,31 @@ definition credits.
   chunks do not eat candidate slots (`fuse_chunk_matches` filters before capping,
   which is unit-tested), and RRF's compressed score range does not flatten
   `rank_candidates` — the fused MAP is *higher*, i.e. discrimination improved.
+
+### Decision
+
+Per this project's standard (every addition must beat the recorded baseline or
+be dropped), **wikify was reverted to dense-only** (2026-07-26): the strict-label
+k=10 recall regression (−14.4 pp easy, −10.5 pp hard) is not offset by the MAP
+gain for a "suggest wikilink targets" feature, where what a user sees is the
+ranked list itself, not a ranking-quality summary statistic — and even under
+the more generous translation-aware labels the KO recall gap does not fully
+close. **Ask (`semantic_search`) is unaffected and keeps the fusion**, where it
+was measured to help outright (see the Phase 1b sections above) with no
+comparable regression.
+
+**Mechanism, for whoever attempts fusion here again**: wikify's "query" per
+chunk is a whole paragraph of source prose, not a short keyword query, so BM25
+promotes many pages that merely share common vocabulary with that prose, and
+RRF's rank-based weighting lets those lexical-only matches displace the
+dense-correct pages in the fused ranking. The CJK bigram tokenizer compounds
+this on long Korean text specifically (more spurious bigram overlaps across
+unrelated pages as the query text gets longer), which is why the KO subset
+regresses harder than EN even after crediting translation twins. A future
+attempt should likely score on a short extracted query (keywords/entities, not
+the raw chunk prose) rather than reusing the chunk text as the BM25 query
+verbatim, and should re-run `examples/wikify_eval.rs` — kept in the tree for
+exactly this — against the tables above before shipping.
 
 ### Worst EN cases — where a future change should aim
 
