@@ -14,6 +14,7 @@ use std::path::PathBuf;
 use memex_lib::{
     embeddings,
     local_llm::{apply_prefix, embed_spec_by_id, EmbedRole, LocalLlm},
+    retrieval::{rrf_fuse, Bm25Index},
     sample_vault,
     vector_index::VectorStore,
 };
@@ -85,6 +86,9 @@ fn main() {
     // Build an in-memory index from the bundled sample vault, mirroring
     // reindex_embeddings exactly (chunk_page → content_hash → embed → upsert).
     let mut store = VectorStore::load(&PathBuf::from("/tmp/memex-eval-nonexistent.mxv"));
+    // Lexical index built from the SAME chunks fed to `store`, so dense and
+    // fused arms are measured against identical (page, section) identity.
+    let mut bm25 = Bm25Index::new();
     let mut pages = 0usize;
     let mut chunks_total = 0usize;
     for (path, content) in sample_vault::SAMPLE_NOTES {
@@ -106,6 +110,7 @@ fn main() {
         pages += 1;
         let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
         store.upsert_page(&rel, &stem, entries);
+        bm25.upsert_page(&rel, &stem, &chunks);
         eprint!("\rindexed {pages} pages / {chunks_total} chunks");
     }
 
@@ -133,87 +138,156 @@ fn main() {
             pages += 1;
             let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
             store.upsert_page(&rel, &stem, entries);
+            bm25.upsert_page(&rel, &stem, &chunks);
             eprint!("\rindexed {pages} pages / {chunks_total} chunks");
         }
     }
 
     eprintln!("\nindexed {pages} pages, {chunks_total} chunks. evaluating {} queries…\n", set.queries.len());
 
-    // Aggregates
-    let n = set.queries.len() as f64;
-    let mut recall_sum = [0.0f64; KS.len()];
-    let mut hit_sum = [0.0f64; KS.len()];
-    let mut mrr_sum = 0.0f64;
-    let mut ndcg_sum = 0.0f64;
-    let mut worst: Vec<(String, usize)> = Vec::new(); // (query, rank-of-first-relevant; 0 = miss)
+    // Aggregate metrics for one arm (dense-only or fused), computed from a
+    // pre-ranked, deduped-by-stem list per query — the SAME function is
+    // applied to both arms so the comparison is apples-to-apples.
+    struct Metrics {
+        recall: [f64; KS.len()],
+        hit: [f64; KS.len()],
+        mrr: f64,
+        ndcg: f64,
+        first_rel: Vec<usize>, // per-query rank of first relevant hit; 0 = miss
+    }
 
-    for lab in &set.queries {
-        let qvec = query_vec(&llm, &lab.q);
-        let hits = store.search(&qvec, 40);
-        // Dedup to best-per-page, preserving the score-desc order search returns.
-        let mut ranked: Vec<String> = Vec::new();
+    fn evaluate(ranked_per_query: &[Vec<String>], queries: &[Labeled]) -> Metrics {
+        let n = queries.len() as f64;
+        let mut recall_sum = [0.0f64; KS.len()];
+        let mut hit_sum = [0.0f64; KS.len()];
+        let mut mrr_sum = 0.0f64;
+        let mut ndcg_sum = 0.0f64;
+        let mut first_rel = Vec::with_capacity(queries.len());
+
+        for (lab, ranked) in queries.iter().zip(ranked_per_query) {
+            let relevant: HashSet<&str> = lab.relevant.iter().map(String::as_str).collect();
+            let rel_n = relevant.len().max(1) as f64;
+
+            // rank (1-based) of the first relevant page, 0 if none in top-40
+            let rank = ranked
+                .iter()
+                .position(|s| relevant.contains(s.as_str()))
+                .map(|i| i + 1)
+                .unwrap_or(0);
+            mrr_sum += if rank > 0 { 1.0 / rank as f64 } else { 0.0 };
+            first_rel.push(rank);
+
+            for (ki, &k) in KS.iter().enumerate() {
+                let topk: HashSet<&str> = ranked.iter().take(k).map(String::as_str).collect();
+                let found = relevant.iter().filter(|r| topk.contains(*r)).count();
+                recall_sum[ki] += found as f64 / rel_n;
+                hit_sum[ki] += if found > 0 { 1.0 } else { 0.0 };
+            }
+
+            // nDCG@10 (binary relevance)
+            let mut dcg = 0.0f64;
+            for (i, s) in ranked.iter().take(10).enumerate() {
+                if relevant.contains(s.as_str()) {
+                    dcg += 1.0 / ((i + 2) as f64).log2();
+                }
+            }
+            let ideal = relevant.len().min(10);
+            let mut idcg = 0.0f64;
+            for i in 0..ideal {
+                idcg += 1.0 / ((i + 2) as f64).log2();
+            }
+            ndcg_sum += if idcg > 0.0 { dcg / idcg } else { 0.0 };
+        }
+
+        Metrics {
+            recall: std::array::from_fn(|ki| recall_sum[ki] / n),
+            hit: std::array::from_fn(|ki| hit_sum[ki] / n),
+            mrr: mrr_sum / n,
+            ndcg: ndcg_sum / n,
+            first_rel,
+        }
+    }
+
+    fn print_block(title: &str, m: &Metrics) {
+        println!("  --- {title} ---");
+        println!("  k     hit@k    recall@k");
+        for (ki, &k) in KS.iter().enumerate() {
+            println!("  {:<4}  {:>5.1}%   {:>5.1}%", k, 100.0 * m.hit[ki], 100.0 * m.recall[ki]);
+        }
+        println!();
+        println!("  MRR       {:>6.3}", m.mrr);
+        println!("  nDCG@10   {:>6.3}", m.ndcg);
+        println!();
+    }
+
+    // Dedup a ranked Hit list to best-per-stem, preserving score-desc order.
+    fn dedup_stems(hits: &[memex_lib::vector_index::Hit]) -> Vec<String> {
+        let mut ranked = Vec::new();
         let mut seen = HashSet::new();
-        for h in &hits {
+        for h in hits {
             if seen.insert(h.stem.clone()) {
                 ranked.push(h.stem.clone());
             }
         }
-        let relevant: HashSet<&str> = lab.relevant.iter().map(String::as_str).collect();
-        let rel_n = relevant.len().max(1) as f64;
-
-        // rank (1-based) of the first relevant page, 0 if none in top-40
-        let first_rel = ranked
-            .iter()
-            .position(|s| relevant.contains(s.as_str()))
-            .map(|i| i + 1)
-            .unwrap_or(0);
-        mrr_sum += if first_rel > 0 { 1.0 / first_rel as f64 } else { 0.0 };
-        worst.push((lab.q.clone(), first_rel));
-
-        for (ki, &k) in KS.iter().enumerate() {
-            let topk: HashSet<&str> = ranked.iter().take(k).map(String::as_str).collect();
-            let found = relevant.iter().filter(|r| topk.contains(*r)).count();
-            recall_sum[ki] += found as f64 / rel_n;
-            hit_sum[ki] += if found > 0 { 1.0 } else { 0.0 };
-        }
-
-        // nDCG@10 (binary relevance)
-        let mut dcg = 0.0f64;
-        for (i, s) in ranked.iter().take(10).enumerate() {
-            if relevant.contains(s.as_str()) {
-                dcg += 1.0 / ((i + 2) as f64).log2();
-            }
-        }
-        let ideal = relevant.len().min(10);
-        let mut idcg = 0.0f64;
-        for i in 0..ideal {
-            idcg += 1.0 / ((i + 2) as f64).log2();
-        }
-        ndcg_sum += if idcg > 0.0 { dcg / idcg } else { 0.0 };
+        ranked
     }
+
+    let mut dense_ranked: Vec<Vec<String>> = Vec::with_capacity(set.queries.len());
+    let mut fused_ranked: Vec<Vec<String>> = Vec::with_capacity(set.queries.len());
+
+    for lab in &set.queries {
+        let qvec = query_vec(&llm, &lab.q);
+        let dense_hits = store.search(&qvec, 40);
+        let lexical_hits = bm25.search(&lab.q, 40);
+        let fused_hits = rrf_fuse(&dense_hits, &lexical_hits, 40);
+
+        dense_ranked.push(dedup_stems(&dense_hits));
+        fused_ranked.push(dedup_stems(&fused_hits));
+    }
+
+    let dense = evaluate(&dense_ranked, &set.queries);
+    let fused = evaluate(&fused_ranked, &set.queries);
 
     println!("═══════════════════════════════════════════════════");
     println!(" Memex retrieval — {spec_id}");
     println!("═══════════════════════════════════════════════════");
     println!(" corpus: {pages} wiki pages · {chunks_total} chunks · {} queries", set.queries.len());
     println!();
-    println!("  k     hit@k    recall@k");
-    for (ki, &k) in KS.iter().enumerate() {
-        println!("  {:<4}  {:>5.1}%   {:>5.1}%", k, 100.0 * hit_sum[ki] / n, 100.0 * recall_sum[ki] / n);
-    }
-    println!();
-    println!("  MRR       {:>6.3}", mrr_sum / n);
-    println!("  nDCG@10   {:>6.3}", ndcg_sum / n);
-    println!();
+    print_block("dense", &dense);
+    print_block("dense+bm25 (RRF)", &fused);
 
-    // Surface the misses — these are exactly where BM25 / rerank should help.
-    let mut misses: Vec<&(String, usize)> = worst.iter().filter(|(_, r)| *r == 0 || *r > 3).collect();
+    // Every query whose first-relevant rank changed between the two arms —
+    // gains and regressions must be equally visible, not just improvements.
+    let fmt_rank = |r: usize| if r == 0 { "MISS".to_string() } else { format!("@{r}") };
+    let mut changed: Vec<(&str, usize, usize)> = Vec::new();
+    for (i, lab) in set.queries.iter().enumerate() {
+        let d = dense.first_rel[i];
+        let f = fused.first_rel[i];
+        if d != f {
+            changed.push((lab.q.as_str(), d, f));
+        }
+    }
+    if !changed.is_empty() {
+        println!("  rank changes (dense -> fused):");
+        for (q, d, f) in &changed {
+            println!("    {:>5} -> {:<5}  {}", fmt_rank(*d), fmt_rank(*f), q);
+        }
+        println!();
+    }
+
+    // Surface the dense misses — these are exactly where BM25 / rerank should help.
+    let mut misses: Vec<(&str, usize)> = set
+        .queries
+        .iter()
+        .zip(&dense.first_rel)
+        .map(|(lab, &r)| (lab.q.as_str(), r))
+        .filter(|(_, r)| *r == 0 || *r > 3)
+        .collect();
     misses.sort_by_key(|(_, r)| if *r == 0 { usize::MAX } else { *r });
     if !misses.is_empty() {
-        println!("  weak queries (first relevant beyond rank 3, or missed):");
+        println!("  weak queries (dense: first relevant beyond rank 3, or missed):");
         for (q, r) in misses {
-            let where_ = if *r == 0 { "MISS".to_string() } else { format!("@{r}") };
-            println!("    {:>5}  {}", where_, q);
+            println!("    {:>5}  {}", fmt_rank(r), q);
         }
     }
 }
