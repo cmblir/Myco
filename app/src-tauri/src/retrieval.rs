@@ -252,7 +252,18 @@ impl Bm25Index {
                 }
             })
             .collect();
-        hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        // Score descending, then chunk identity ascending. Score alone is not
+        // a total order — two chunks can score bit-identically — and
+        // HashMap iteration order must not leak into the result, since
+        // callers (RRF fusion, retrieval-quality measurement, Ask) depend on
+        // identical inputs producing an identical ranking across processes.
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.page.cmp(&b.page))
+                .then_with(|| a.section.cmp(&b.section))
+        });
         hits.truncate(k);
         hits
     }
@@ -560,6 +571,29 @@ mod tests {
         ix.upsert_page("wiki/lora.md", "lora", &["low rank adapters".into()]);
         let hits = ix.search("PPO", 5);
         assert_eq!(hits[0].stem, "rlhf");
+    }
+    #[test]
+    fn bm25_search_breaks_ties_by_page_then_section_not_hashmap_order() {
+        // Two docs in different pages, same single query term, equal doc
+        // length -> bit-identical BM25 scores. Without a tie-break on
+        // document identity, relative order depends on HashMap iteration
+        // order and flips between processes (the bug this test pins).
+        let mut ix = Bm25Index::new();
+        ix.upsert_page("wiki/zzz.md", "zzz", &["qlora".into()]);
+        ix.upsert_page("wiki/aaa.md", "aaa", &["qlora".into()]);
+        let hits = ix.search("qlora", 5);
+        assert_eq!(hits.len(), 2);
+        assert_eq!(hits[0].score, hits[1].score, "scores must be bit-identical for this test to pin the tie-break");
+        // Deterministic total order: score desc, then page asc, then section asc.
+        assert_eq!(hits[0].page, "wiki/aaa.md");
+        assert_eq!(hits[1].page, "wiki/zzz.md");
+        // Repeating in-process must be stable too (necessary but not sufficient
+        // on its own — see the explicit page assertions above).
+        for _ in 0..20 {
+            let repeat = ix.search("qlora", 5);
+            assert_eq!(repeat[0].page, "wiki/aaa.md");
+            assert_eq!(repeat[1].page, "wiki/zzz.md");
+        }
     }
     #[test]
     fn bm25_upsert_replaces_not_appends() {
