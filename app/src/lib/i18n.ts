@@ -1432,7 +1432,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_stale_index:
       "This answer used the whole vault instead of the search index, which is out of date after a model update.",
     q_retrieval_failed:
-      "The search index could not be reached, so this answer used the whole vault instead. Check the app logs if this keeps happening.",
+      "The search index could not be reached, so this answer skipped semantic search and read the vault directly instead. If it keeps happening, run “Reindex now” under Model settings.",
     q_you: "you",
     sb_new_note: "New note",
     sb_new_folder: "New folder",
@@ -2197,7 +2197,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_stale_index:
       "이 답변은 검색 인덱스 대신 전체 볼트를 사용했습니다 — 모델 업데이트 이후 인덱스가 오래되었습니다.",
     q_retrieval_failed:
-      "검색 인덱스에 접근할 수 없어 이 답변은 전체 볼트를 대신 사용했습니다. 이 문제가 계속되면 앱 로그를 확인하세요.",
+      "검색 인덱스에 접근할 수 없어, 이 답변은 의미 검색을 건너뛰고 볼트를 직접 읽어 작성했습니다. 계속 반복되면 모델 설정에서 ‘지금 재인덱스’를 실행해 보세요.",
     q_you: "나",
     sb_new_note: "새 노트",
     sb_new_folder: "새 폴더",
@@ -2844,7 +2844,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_stale_index:
       "この回答は検索インデックスの代わりにボルト全体を使用しました — モデル更新後にインデックスが古くなっています。",
     q_retrieval_failed:
-      "検索インデックスに接続できなかったため、この回答はボルト全体を代わりに使用しました。この状態が続く場合はアプリのログを確認してください。",
+      "検索インデックスに接続できなかったため、この回答はセマンティック検索を行わずボルトを直接読んで作成されました。続く場合はモデル設定の「今すぐ再インデックス」を実行してください。",
     q_you: "あなた",
     sb_new_note: "新規ノート",
     sb_new_folder: "新規フォルダ",

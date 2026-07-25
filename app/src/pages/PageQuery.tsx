@@ -350,8 +350,11 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
             {turn.retrievalFailed ? (
               <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
                 <Icon name="info" size={12} />{" "}
+                {/* Deliberately vague about HOW the vault was read: the non-CLI
+                    path inlines a whole-vault concat, while the CLI path injects
+                    nothing and lets the CLI's own Read/Grep find the pages. */}
                 {t.q_retrieval_failed ??
-                  "The search index could not be reached, so this answer used the whole vault instead. Check the app logs if this keeps happening."}
+                  "The search index could not be reached, so this answer skipped semantic search and read the vault directly instead. If it keeps happening, run “Reindex now” under Model settings."}
               </div>
             ) : null}
             {turn.a ? (
