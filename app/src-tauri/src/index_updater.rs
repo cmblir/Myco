@@ -148,8 +148,8 @@ fn index_is_stale(store_model: &str) -> bool {
 
 /// Whether `process_batch` should reconcile the *whole* vault against disk
 /// (walk every wiki page) rather than touch only `batch`'s dirty paths:
-/// either the index is `stale` (wrong model, or none yet), or `batch` carries
-/// the "*" sentinel a `Rebind` inserts.
+/// the index is `stale` (wrong model, or none yet), `batch` carries the "*"
+/// sentinel a `Rebind` inserts, or the lexical index still needs bootstrapping.
 ///
 /// A rebind must reconcile in full even when the index is already
 /// current — not just when it's stale — because the actor may have missed
@@ -157,8 +157,18 @@ fn index_is_stale(store_model: &str) -> bool {
 /// a non-active-project MCP write, an external/CLI edit made while the vault
 /// was closed). Without this, the "*" sentinel fails `should_index` and a
 /// rebind onto a fresh index would silently be a no-op.
-fn reconcile_requested(batch: &[String], stale: bool) -> bool {
-    stale || batch.iter().any(|r| r == "*")
+///
+/// `bm25_needs_bootstrap` exists because the incremental branch only visits
+/// `batch`'s dirty paths. With an absent or unreadable `.mxb` (a fresh install,
+/// a deleted or corrupt sidecar) but a populated `.mxv`, an incremental batch
+/// would upsert only the edited page and then persist a ONE-PAGE lexical
+/// index — and that is not benign: its lone rank-0 lexical hit scores the same
+/// `1/RRF_K` as the dense rank-0 hit, so a page matching nothing but a
+/// stop-word lands level with the genuinely relevant page at the top of the
+/// fused list. Promoting such a batch to a reconcile makes the bootstrap visit
+/// every page instead.
+fn reconcile_requested(batch: &[String], stale: bool, bm25_needs_bootstrap: bool) -> bool {
+    stale || bm25_needs_bootstrap || batch.iter().any(|r| r == "*")
 }
 
 /// The vault-relative path for `abs`, iff it is a markdown file under
@@ -221,8 +231,9 @@ fn start_watcher(
 ///
 /// A stale/missing index (wrong model, or none yet) is wiped via
 /// `ensure_model`, same as `reindex_embeddings`. A reconcile pass — run when
-/// the index is stale, or `batch` carries the "*" `Rebind` sentinel — then
-/// walks every wiki page and re-embeds it; `embed_one_page`'s content-hash
+/// the index is stale, when `batch` carries the "*" `Rebind` sentinel, or when
+/// the lexical index still needs bootstrapping (see `reconcile_requested`) —
+/// then walks every wiki page and re-embeds it; `embed_one_page`'s content-hash
 /// skip makes pages that are already current in the index free, so this
 /// stays cheap except where content actually changed. This is what makes
 /// opening/rebinding a vault always reconcile its index to disk: without it,
@@ -263,7 +274,12 @@ async fn process_batch(
     let model_id = format!("builtin-local:{}", crate::local_llm::BUILTIN_EMBED_MODEL);
 
     let stale = index_is_stale(&store.model);
-    let reconcile = reconcile_requested(&batch, stale);
+    // An empty lexical index next to a populated dense store means the `.mxb`
+    // is missing/unreadable and has never been built for this vault. Only a
+    // reconcile can bootstrap it; the incremental branch below would save a
+    // one-page lexical index instead (see `reconcile_requested`).
+    let bm25_needs_bootstrap = bm25.is_empty() && !store.records.is_empty();
+    let reconcile = reconcile_requested(&batch, stale, bm25_needs_bootstrap);
     if stale {
         // First index, or a migration to the current model: wipe so the
         // reconcile pass below re-embeds against the new geometry rather
@@ -374,10 +390,65 @@ mod tests {
 
     #[test]
     fn reconcile_requested_covers_rebind_and_stale_but_not_normal_batch() {
-        assert!(reconcile_requested(&["*".to_string()], false)); // rebind sentinel
-        assert!(reconcile_requested(&[], true)); // stale index, even w/ an empty batch
-        assert!(reconcile_requested(&["wiki/a.md".to_string()], true)); // stale + dirty
-        assert!(!reconcile_requested(&["wiki/a.md".to_string()], false)); // normal incremental batch
+        assert!(reconcile_requested(&["*".to_string()], false, false)); // rebind sentinel
+        assert!(reconcile_requested(&[], true, false)); // stale index, even w/ an empty batch
+        assert!(reconcile_requested(&["wiki/a.md".to_string()], true, false)); // stale + dirty
+        assert!(!reconcile_requested(&["wiki/a.md".to_string()], false, false)); // normal incremental batch
+    }
+
+    #[test]
+    fn a_dirty_page_with_an_unbootstrapped_bm25_is_promoted_to_a_reconcile() {
+        // The decision this pins: one dirty page, a current dense index (not
+        // stale), no rebind sentinel — but no lexical index yet. Without the
+        // `bm25_needs_bootstrap` term this returns false, the incremental
+        // branch runs, and it persists a ONE-PAGE `.mxb` whose lone rank-0
+        // lexical hit then ties the dense rank-0 hit at 1/RRF_K at the top of
+        // the fused list (see the test below for that damage).
+        assert!(reconcile_requested(&["wiki/a.md".to_string()], false, true));
+    }
+
+    /// Demonstrates the damage the promotion above prevents, at the exact
+    /// mutation the incremental branch performs (`process_batch` itself needs a
+    /// live `AppHandle` + loaded embed model, so it cannot be called here):
+    /// upserting one dirty page into an empty index and saving yields a
+    /// one-page `.mxb`, and that single lexical hit lands level with the page
+    /// the dense arm ranked first — top-of-list placement decided by nothing
+    /// but the tie-break.
+    #[test]
+    fn a_one_page_bm25_pollutes_the_top_of_the_fused_list() {
+        use crate::retrieval::rrf_fuse;
+        use crate::vector_index::Hit;
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.mxb");
+
+        // The incremental branch's mutation with an absent `.mxb`: load (empty)
+        // → upsert the one dirty page → save.
+        let mut bm25 = Bm25Index::load(&path);
+        assert!(bm25.is_empty());
+        bm25.upsert_page(
+            "wiki/shopping-list.md",
+            "shopping-list",
+            &["milk eggs and the bread".to_string()],
+        );
+        bm25.save(&path).unwrap();
+        let persisted = Bm25Index::load(&path);
+        assert_eq!(persisted.len(), 1, "this is the partial index that must never be saved");
+
+        // A query the dense arm answers correctly, matching the stray page on
+        // nothing but the stop-word "the".
+        let dense =
+            vec![Hit { page: "wiki/rlhf.md".into(), stem: "rlhf".into(), section: 0, score: 0.8 }];
+        let lexical = persisted.search("what is the reward model in rlhf", 40);
+        assert_eq!(lexical.len(), 1);
+        let fused = rrf_fuse(&dense, &lexical, 10);
+        assert_eq!(fused.len(), 2);
+        assert_eq!(
+            fused[0].score.to_bits(),
+            fused[1].score.to_bits(),
+            "a one-page .mxb puts a stop-word match level with the relevant page"
+        );
+        assert!(fused.iter().any(|h| h.page == "wiki/shopping-list.md"));
     }
 
     #[test]

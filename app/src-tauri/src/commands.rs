@@ -1469,6 +1469,14 @@ pub(crate) struct EmbedOutcome {
 /// gated on `bm25_pages`) since `bm25.upsert_page` has no per-page staleness
 /// signal of its own and is idempotent to call again.
 ///
+/// This bootstrap only completes when the CALLER visits every page — the
+/// reconcile pass in `index_updater::process_batch`, or this whole loop in
+/// `reindex_embeddings`. It is not a property of this function: handed a
+/// single dirty page against an empty `bm25`, it upserts that one page and
+/// nothing else, which is why `index_updater::reconcile_requested` promotes a
+/// batch to a reconcile when the lexical index is unbootstrapped rather than
+/// letting the incremental branch persist a one-page index.
+///
 /// Whenever BM25 is touched, it receives the exact same `Vec<String>` chunk
 /// texts computed for embedding — upserted by reference before that `Vec` is
 /// moved into `embed_texts` — so `(page, section)` identity always matches
