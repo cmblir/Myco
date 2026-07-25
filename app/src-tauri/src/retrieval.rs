@@ -588,72 +588,47 @@ fn chunk_id(page: &str, section: usize) -> String {
 /// dense type) carrying the fused score, so downstream code that already
 /// consumes `Vec<Hit>` needs no changes.
 pub fn rrf_fuse(dense: &[Hit], lexical: &[Bm25Hit], k: usize) -> Vec<Hit> {
-    /// One fused candidate: the representative hit plus the evidence the
-    /// tie-break needs.
-    struct Fused {
-        hit: Hit,
-        score: f32,
-        /// Best (lowest) rank this chunk reached in the DENSE list, if any.
-        dense_rank: Option<usize>,
-    }
-    let mut acc: HashMap<String, Fused> = HashMap::new();
+    let mut scores: HashMap<String, f32> = HashMap::new();
+    // Preserve enough of one representative hit per id to build the output.
+    let mut rep: HashMap<String, Hit> = HashMap::new();
 
     for (rank, hit) in dense.iter().enumerate() {
-        let entry = acc.entry(chunk_id(&hit.page, hit.section)).or_insert_with(|| Fused {
-            hit: hit.clone(),
-            score: 0.0,
-            dense_rank: None,
-        });
-        entry.score += 1.0 / (RRF_K + rank as f32);
-        entry.dense_rank = Some(entry.dense_rank.map_or(rank, |r| r.min(rank)));
+        let id = chunk_id(&hit.page, hit.section);
+        *scores.entry(id.clone()).or_insert(0.0) += 1.0 / (RRF_K + rank as f32);
+        rep.entry(id).or_insert_with(|| hit.clone());
     }
     for (rank, hit) in lexical.iter().enumerate() {
-        let entry = acc.entry(chunk_id(&hit.page, hit.section)).or_insert_with(|| Fused {
-            hit: Hit {
-                page: hit.page.clone(),
-                stem: hit.stem.clone(),
-                section: hit.section,
-                score: hit.score,
-            },
-            score: 0.0,
-            dense_rank: None,
+        let id = chunk_id(&hit.page, hit.section);
+        *scores.entry(id.clone()).or_insert(0.0) += 1.0 / (RRF_K + rank as f32);
+        rep.entry(id).or_insert_with(|| Hit {
+            page: hit.page.clone(),
+            stem: hit.stem.clone(),
+            section: hit.section,
+            score: hit.score,
         });
-        entry.score += 1.0 / (RRF_K + rank as f32);
     }
 
-    let mut fused: Vec<Fused> = acc.into_values().collect();
-    // Fused score descending, then — and this decides more of the top of the
-    // list than the score does — the tie-breaks, in order:
-    //
-    //  1. better (lower) dense rank first, chunks absent from the dense list
-    //     last. Exact ties are the ORDINARY case, not a corner: whenever the
-    //     two arms' top hits differ, each is at rank 0 of its own list only and
-    //     both score exactly `1/RRF_K`. Ordering those on chunk identity meant
-    //     fused rank 1 was decided by filename — measurably, on short acronym
-    //     queries. Dense rank is retrieval evidence, so it decides first.
-    //     (A chunk found by BOTH arms needs no separate rule: it has a dense
-    //     rank, so it already outranks any lexical-only chunk it ties with.)
-    //  2. chunk identity (page asc, section asc), so the result is still a
-    //     deterministic TOTAL order — `HashMap` iteration order must never leak
-    //     into a ranking that callers (retrieval-quality measurement, Ask,
-    //     wikify) require to be reproducible across processes.
+    let mut fused: Vec<Hit> = rep
+        .into_iter()
+        .map(|(id, mut h)| {
+            h.score = scores[&id];
+            h
+        })
+        .collect();
+    // Fused score descending, then chunk identity ascending. The score alone
+    // is not a total order — two chunks can tie exactly (e.g. each appearing
+    // only at rank 0 of its own list) — and HashMap iteration order must not
+    // leak into the result, since callers (retrieval-quality measurement,
+    // Ask) depend on identical inputs producing an identical ranking.
     fused.sort_by(|a, b| {
         b.score
             .partial_cmp(&a.score)
             .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| {
-                a.dense_rank
-                    .unwrap_or(usize::MAX)
-                    .cmp(&b.dense_rank.unwrap_or(usize::MAX))
-            })
-            .then_with(|| a.hit.page.cmp(&b.hit.page))
-            .then_with(|| a.hit.section.cmp(&b.hit.section))
+            .then_with(|| a.page.cmp(&b.page))
+            .then_with(|| a.section.cmp(&b.section))
     });
     fused.truncate(k);
     fused
-        .into_iter()
-        .map(|f| Hit { score: f.score, ..f.hit })
-        .collect()
 }
 
 #[cfg(test)]
@@ -1002,91 +977,21 @@ mod tests {
     }
 
     #[test]
-    fn rrf_fuse_breaks_ties_by_dense_rank_then_identity() {
+    fn rrf_fuse_breaks_ties_deterministically_by_chunk_identity() {
         use crate::vector_index::Hit;
         // Chunk "b.md#0" appears only in dense at rank 0, chunk "a.md#0" only
         // in lexical at rank 0 -> both score exactly 1/(RRF_K+0). The score
-        // alone cannot order them. Dense evidence decides first: "b.md" has a
-        // dense rank and "a.md" has none, so "b.md" must come first — and
-        // must do so the same way every run (no HashMap-order leakage).
+        // alone cannot order them; the tie-break (page asc, then section asc)
+        // must, and must do so the same way every time.
         let dense = vec![Hit { page: "b.md".into(), stem: "b".into(), section: 0, score: 0.5 }];
         let lex = vec![Bm25Hit { page: "a.md".into(), stem: "a".into(), section: 0, score: 1.0 }];
-        let expected = vec!["b.md".to_string(), "a.md".to_string()];
+        let expected = vec!["a.md".to_string(), "b.md".to_string()];
         for _ in 0..5 {
             let fused = rrf_fuse(&dense, &lex, 10);
             assert_eq!(
                 fused.iter().map(|h| h.page.clone()).collect::<Vec<_>>(),
                 expected,
-                "a tied dense hit must outrank a tied lexical-only hit, every run"
-            );
-        }
-    }
-
-    #[test]
-    fn rrf_fuse_ties_with_dense_evidence_on_both_sides_prefer_better_dense_rank() {
-        use crate::vector_index::Hit;
-        // "x.md#0" is dense rank 0 + lexical rank 1; "y.md#0" is dense rank 1
-        // + lexical rank 0. Both fused scores are exactly
-        // 1/(RRF_K+0) + 1/(RRF_K+1) (floating-point addition is commutative,
-        // so the two sums are bit-identical) -> the score alone cannot order
-        // them. Both have dense evidence, so the better (lower) dense rank
-        // must decide: "x.md" (dense rank 0) before "y.md" (dense rank 1).
-        let dense = vec![
-            Hit { page: "x.md".into(), stem: "x".into(), section: 0, score: 0.9 },
-            Hit { page: "y.md".into(), stem: "y".into(), section: 0, score: 0.8 },
-        ];
-        let lex = vec![
-            Bm25Hit { page: "y.md".into(), stem: "y".into(), section: 0, score: 5.0 },
-            Bm25Hit { page: "x.md".into(), stem: "x".into(), section: 0, score: 4.0 },
-        ];
-        let expected = vec!["x.md".to_string(), "y.md".to_string()];
-        for _ in 0..5 {
-            let fused = rrf_fuse(&dense, &lex, 10);
-            assert_eq!(
-                fused[0].score, fused[1].score,
-                "the two fused scores must be exactly tied for this to be testing the tie-break"
-            );
-            assert_eq!(
-                fused.iter().map(|h| h.page.clone()).collect::<Vec<_>>(),
-                expected,
-                "tied dense evidence must order by the better (lower) dense rank, every run"
-            );
-        }
-    }
-
-    #[test]
-    fn rrf_fuse_ties_with_no_dense_evidence_fall_back_to_identity() {
-        // Both "a.md#0" and "b.md#0" are absent from dense (dense_rank is
-        // None for both, so dense evidence is equal). Their lexical-only
-        // scores still tie exactly: "a.md" accumulates rank-0 and rank-30
-        // terms, "b.md" accumulates rank-3 and rank-24 terms, and
-        // 1/(60+0) + 1/(60+30) == 1/(60+3) + 1/(60+24) bit-for-bit in f32
-        // (verified numerically). With dense evidence equal, only chunk
-        // identity (page asc, then section asc) can order them.
-        let mut lex = Vec::with_capacity(31);
-        for i in 0..=30u32 {
-            let page = match i {
-                0 | 30 => "a.md",
-                3 | 24 => "b.md",
-                _ => "z.md", // filler occupying the other rank positions
-            };
-            lex.push(Bm25Hit { page: page.into(), stem: page.into(), section: 0, score: 1.0 });
-        }
-        let expected_a_before_b = |fused: &[Hit]| {
-            let pos = |page: &str| fused.iter().position(|h| h.page == page).unwrap();
-            pos("a.md") < pos("b.md")
-        };
-        for _ in 0..5 {
-            let fused = rrf_fuse(&[], &lex, 10);
-            let a = fused.iter().find(|h| h.page == "a.md").expect("a.md present");
-            let b = fused.iter().find(|h| h.page == "b.md").expect("b.md present");
-            assert_eq!(
-                a.score, b.score,
-                "the two fused scores must be exactly tied for this to be testing the tie-break"
-            );
-            assert!(
-                expected_a_before_b(&fused),
-                "with dense evidence equal (both absent), identity (page asc) must decide, every run"
+                "tied chunks must order by page asc, then section asc, every run"
             );
         }
     }
