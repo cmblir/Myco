@@ -26,6 +26,11 @@ pub const FUSE_POOL: usize = 50;
 /// Chunk matches kept per source chunk, after filtering, before `rank_candidates`.
 const MAX_MATCHES: usize = 16;
 
+/// Source chunks embedded per wikify call. Caps the cost: a long transcript
+/// would otherwise take seconds, and the leading chunks capture the source's
+/// subject matter well enough to retrieve its candidate pages.
+pub const MAX_CHUNKS: usize = 8;
+
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct CandidatePage {
     /// Vault-relative path, e.g. `wiki/attention-mechanism.md`.

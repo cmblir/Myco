@@ -1896,10 +1896,9 @@ pub async fn wikify_candidates(
         return Ok(Vec::new());
     }
 
-    // Cap the chunks embedded: a long transcript would otherwise cost seconds.
-    // The leading chunks capture the source's subject matter well enough to
-    // retrieve its candidate pages (spread-sampling is a later refinement).
-    const MAX_CHUNKS: usize = 8;
+    // Cap the chunks embedded (see `pipeline::MAX_CHUNKS`); spread-sampling is
+    // a later refinement.
+    use crate::pipeline::MAX_CHUNKS;
     let mut chunks = crate::embeddings::chunk_page(&source_text);
     chunks.truncate(MAX_CHUNKS);
     if chunks.is_empty() {
