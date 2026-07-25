@@ -1741,6 +1741,7 @@ pub async fn semantic_search(
     vault: tauri::State<'_, VaultRoot>,
     llm: tauri::State<'_, LocalLlmState>,
     cache: tauri::State<'_, VectorCache>,
+    bm25_cache: tauri::State<'_, crate::retrieval::Bm25Cache>,
     query: String,
     k: usize,
     provider: String,
@@ -1761,6 +1762,7 @@ pub async fn semantic_search(
     if store.model != format!("{provider}:{model}") {
         return Ok(Vec::new());
     }
+    let k = k.clamp(1, 50);
     let t_embed = std::time::Instant::now();
     let mut q = embed_texts(
         app,
@@ -1768,13 +1770,25 @@ pub async fn semantic_search(
         &provider,
         &model,
         crate::local_llm::EmbedRole::Query,
-        vec![query],
+        vec![query.clone()],
     )
     .await?;
     let embed_ms = perf::ms(t_embed.elapsed());
     let qv = q.pop().unwrap_or_default();
     let t_scan = std::time::Instant::now();
-    let hits = store.search(&qv, k.clamp(1, 50));
+    // Pull a candidate pool from each arm wider than `k` before fusing: RRF
+    // needs enough overlap between the dense and lexical rankings to reorder
+    // usefully, and a lexical-only top hit outside the dense top-k would
+    // never surface if both arms were pre-truncated to k.
+    let pool = (k * 5).clamp(20, 50);
+    let dense_hits = store.search(&qv, pool);
+    let bm25_path = crate::retrieval::Bm25Index::path_for(&root.to_string_lossy())?;
+    let bm25 = bm25_cache.get(&bm25_path);
+    let lexical_hits = bm25.search(&query, pool);
+    // If the lexical index is empty (fresh vault, or `.mxb` not yet
+    // bootstrapped), `rrf_fuse` degrades to the dense order unchanged — see
+    // `rrf_fuse_empty_lexical_preserves_dense_order` in retrieval.rs.
+    let hits = crate::retrieval::rrf_fuse(&dense_hits, &lexical_hits, k);
     let scan_ms = perf::ms(t_scan.elapsed());
     // Reconstruct each hit's chunk TEXT from its page (the index stores only
     // vectors+hashes). No cross-hit cache: k is capped at 50 (realistically
@@ -2085,7 +2099,8 @@ mod tests {
         builtin_index_is_stale, chunk_text_at, external_target_allowed, run_import,
         sync_bm25_for_page, windows_opener_safe,
     };
-    use crate::retrieval::Bm25Index;
+    use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
+    use crate::vector_index::Hit;
     use std::collections::{HashMap, HashSet};
     use std::path::PathBuf;
 
@@ -2346,6 +2361,37 @@ mod tests {
         // `EmbedSpec` id, but embed_texts routes "ollama" straight to Ollama
         // without ever consulting EMBED_SPECS — never "stale" here.
         assert!(!builtin_index_is_stale("ollama", "nomic-embed-text"));
+    }
+
+    // Pins `semantic_search`'s graceful-degrade contract (Task 6): when the
+    // BM25 side is empty (fresh vault, or `.mxb` not yet bootstrapped),
+    // fusing must not change the dense order. This exercises the exact glue
+    // `semantic_search` runs — `Bm25Cache::get` on a path with no file on
+    // disk, then `Bm25Index::search`, then `rrf_fuse` — rather than
+    // `semantic_search` itself, which needs a live `AppHandle` and embedding
+    // model and so isn't unit-testable here (no existing test in this file
+    // calls an async Tauri command directly; `rrf_fuse`'s own degrade
+    // behavior is covered separately in `retrieval.rs`).
+    #[test]
+    fn semantic_search_glue_degrades_to_dense_order_when_bm25_is_empty() {
+        let dense = vec![
+            Hit { page: "b.md".into(), stem: "b".into(), section: 0, score: 0.9 },
+            Hit { page: "a.md".into(), stem: "a".into(), section: 0, score: 0.5 },
+            Hit { page: "c.md".into(), stem: "c".into(), section: 1, score: 0.1 },
+        ];
+        let cache = Bm25Cache::default();
+        // No `.mxb` was ever written at this path — same state a fresh vault
+        // (or one mid-bootstrap) is in when `semantic_search` runs.
+        let bm25_path = PathBuf::from("/nonexistent/does-not-exist.mxb");
+        let bm25 = cache.get(&bm25_path);
+        assert!(bm25.is_empty(), "cache must not fabricate content for a missing file");
+        let lexical = bm25.search("self attention tokens", 50);
+        assert!(lexical.is_empty());
+
+        let fused = rrf_fuse(&dense, &lexical, dense.len());
+        let fused_pages: Vec<&str> = fused.iter().map(|h| h.page.as_str()).collect();
+        let dense_pages: Vec<&str> = dense.iter().map(|h| h.page.as_str()).collect();
+        assert_eq!(fused_pages, dense_pages, "empty BM25 arm must not reorder the dense hits");
     }
 
     #[test]
