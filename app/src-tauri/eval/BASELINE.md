@@ -223,16 +223,40 @@ Two queries lost rank 1, both by exactly one position, in both post-fix runs:
 No other query regressed, and the five rescues listed above were identical in
 both runs.
 
-Both are the same mechanism, and it is inherent to RRF rather than a tuning
-mistake: for a 3-letter acronym that titles its own page, the dense arm already
-ranks that page first, while BM25 spreads the term across every page that
-mentions it (`dpo` is discussed at length in `analysis-rlhf-vs-dpo`, `rag` in
-`vector-database`). Where the lexical arm's own #1 is a *different* chunk, RRF's
-rank-agreement sum can push that chunk above the dense #1. Neither query drops
-out of the top 3, so neither costs hit@3 or hit@5, and MRR loses ~0.008 each
-against the +0.077 net. No other query regressed; no query left the top 10.
-Recorded here rather than smoothed over: this is the price paid for the +9.7 pp
-on hit@1, and a future reranker is the place to reclaim it.
+Both are the same mechanism, and it is the tie-break in `rrf_fuse`, not a
+tuning mistake: for a 3-letter acronym that titles its own page, the dense arm
+already ranks that page first, while BM25 spreads the term across every page
+that mentions it (`dpo` is discussed at length in `analysis-rlhf-vs-dpo`, `rag`
+in `vector-database`). When the lexical arm's own #1 is a *different* chunk,
+each arm's top hit sits at rank 0 of its own list only, so both chunks score
+exactly `1/RRF_K` — the score alone cannot order them. `rrf_fuse` breaks that
+tie on chunk identity (`page` ascending, then `section`), and for these two
+queries the lexical arm's top chunk alphabetically precedes the dense arm's,
+so it wins fused rank 1. Neither query drops out of the top 3, so neither
+costs hit@3 or hit@5, and MRR loses ~0.008 each against the +0.077 net. No
+other query regressed; no query left the top 10. Recorded here rather than
+smoothed over: this is the price paid for the +9.7 pp on hit@1, and a future
+reranker is the place to reclaim it.
+
+**A dense-rank-preferring tie-break was tried and refuted — do not re-try it
+blind.** The obvious fix reads as: since exact ties at `1/RRF_K` are the
+*ordinary* case whenever the two arms' top hits differ (not a rare corner),
+a chunk's dense rank — the better (lower) it is, the more decisive it should
+be — ought to decide before falling back to chunk identity, since a chunk
+found by the dense arm at all is stronger evidence than one found only by
+BM25. This was implemented, tested (three unit tests pinning the new
+precedence, all passing), and measured on this same corpus and query set:
+hit@1 **80.6 %** · hit@3/@5/@10 100 % · MRR **0.898** · nDCG@10 **0.920** —
+worse than the identity tie-break on every metric that moved. `RAG` did
+reclaim rank 1, but the aggregate still
+fell, because preferring dense rank systematically demotes chunks the lexical
+arm found and the dense arm ranked poorly or missed — exactly the rescue BM25
+exists to provide (`PPO` is dense rank @12; fused rank @3 depends on the
+lexical arm's top hit being allowed to outrank a weak or absent dense hit on
+ties elsewhere too). The diagnosis above (ties at `1/RRF_K` decide rank 1,
+and it is ordinary rather than a corner case) is correct; the remedy is
+refuted by measurement. The change was reverted; the identity tie-break
+(`page` asc, then `section`) is what ships.
 
 Before the tie-break fix, `DPO` was the query whose fused rank flip-flopped
 between @1 and @2 across runs (the earlier "run-to-run stability" note above);
@@ -259,10 +283,31 @@ fused figures on this corpus carry noise (±1 query, ≈1.6 pp hit@1, ≈0.008 M
 has been fixed — `search` now sorts ties by `(page, section)` ascending — so
 that noise no longer applies.
 
-### Wired-path check (not just the harness)
+**Re-verified after the final whole-branch review's fix wave.** That review
+landed two more determinism/correctness fixes after this section was first
+written — `upsert_page` made O(page terms) instead of O(index) (perf only, no
+scoring change), and `Bm25Index::search`'s query-term loop made to iterate a
+sorted `Vec` instead of a `HashSet` (float-accumulation order was otherwise
+per-process-random for any query matching 3+ terms). Two fresh runs of
+`MEMEX_EMBED_SPEC=bge-m3 cargo run --example retrieval_eval --release` with
+both fixes in place reproduced the identical fused block above byte-for-byte
+(hit@1 82.3 % · hit@3/@5/@10 100 % · MRR 0.906 · nDCG@10 0.926, `DPO`/`RAG`
+both @1 → @2, all five weak-query rescues intact) — the same review's
+dense-rank-preferring tie-break was also tried in this pass and reverted, as
+detailed above.
+
+### Wired-path check (not a scale check)
 
 Measured on the real vault the app was bound to (`~/Documents/Memex`,
-53 wiki pages · 109 chunks), not the eval corpus:
+53 wiki pages · 109 chunks), not the eval corpus. This confirms the wired
+command path (not just the harness) behaves correctly — it is **not** a
+verification that the implementation scales; 53 pages is far below where the
+pre-fix `Bm25Index::upsert_page` quadratic cost was visible (measured
+250p = 0.99 s / 500p = 4.0 s / 1000p = 16.0 s / 2000p = 65.7 s, extrapolating
+to tens of minutes for a ~10k-page vault's first bootstrap). See commit
+`9a7b65f`, which fixed that to linear (same corpus: 0.022 / 0.046 / 0.094 /
+0.205 s, and 10000 pages in 1.11 s) — that commit's own measurement, not this
+53-page check, is the scale evidence:
 
 - The running app creates and populates the `.mxb` sidecar next to the `.mxv`
   under `<app-data>/embeddings/`, including the bootstrap case where the dense
