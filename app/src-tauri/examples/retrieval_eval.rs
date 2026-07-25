@@ -1,12 +1,17 @@
-// Phase 0 — retrieval evaluation harness.
+// Retrieval evaluation harness (Phase 0 dense baseline, extended in Phase 1b).
 //
-// Measures the ACTUAL semantic retrieval the app ships (bundled Gemma-3-1B
-// mean-pooled embeddings → VectorStore cosine search) against a labeled query
-// set, so any Phase-1 change (a real embed model, BM25, reranking) can be proven
-// to help instead of measured by vibes. Reports recall@k, MRR and nDCG@10.
+// Measures the ACTUAL retrieval the app ships against a labeled query set, so
+// any change (embed model swap, BM25, reranking) can be proven to help
+// instead of measured by vibes. Reports recall@k, MRR and nDCG@10 for:
+//   - the dense arm alone (VectorStore cosine search over the configured
+//     embed spec, e.g. bge-m3 — see MEMEX_EMBED_SPEC below), and
+//   - the fused arm (dense + a BM25 lexical index, combined via
+//     Reciprocal Rank Fusion — `retrieval::rrf_fuse`).
 //
 // Run:  cargo run --example retrieval_eval --release
 // (release so the one-time embed of the sample vault isn't glacial.)
+// Set MEMEX_EMBED_SPEC to pick the embed model (e.g. `bge-m3`); see
+// `local_llm::embed_spec_by_id` for available ids.
 
 use std::collections::HashSet;
 use std::path::PathBuf;

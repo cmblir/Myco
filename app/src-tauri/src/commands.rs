@@ -1452,38 +1452,6 @@ pub(crate) struct EmbedOutcome {
     pub changed: bool,
 }
 
-/// Bring one page's chunks up to date in both `store` (dense) and `bm25`
-/// (lexical), unless BOTH already reflect this page's current content.
-/// Shared by `reindex_embeddings` and the incremental index updater — this is
-/// the only place that decides "does this page need (re-)indexing".
-///
-/// The two indexes are gated independently: `store` is current when its
-/// content hashes (`existing`) match the page's freshly computed hashes;
-/// `bm25` is current when `bm25_pages` (a snapshot of `bm25.pages()`) already
-/// contains this page. A page can need only one side updated — most notably,
-/// bootstrapping a fresh/dropped `.mxb` against an already-current `.mxv`
-/// (first launch after this feature ships, or a `.mxb` a user deleted) skips
-/// every page's dense re-embed via the content-hash match, but BM25 must
-/// still receive every page or it never gets built at all. When the dense
-/// side IS stale, BM25 is re-upserted unconditionally alongside it (not
-/// gated on `bm25_pages`) since `bm25.upsert_page` has no per-page staleness
-/// signal of its own and is idempotent to call again.
-///
-/// This bootstrap only completes when the CALLER visits every page — the
-/// reconcile pass in `index_updater::process_batch`, or this whole loop in
-/// `reindex_embeddings`. It is not a property of this function: handed a
-/// single dirty page against an empty `bm25`, it upserts that one page and
-/// nothing else, which is why `index_updater::reconcile_requested` promotes a
-/// batch to a reconcile when the lexical index is unbootstrapped rather than
-/// letting the incremental branch persist a one-page index.
-///
-/// Whenever BM25 is touched, it receives the exact same `Vec<String>` chunk
-/// texts computed for embedding — upserted by reference before that `Vec` is
-/// moved into `embed_texts` — so `(page, section)` identity always matches
-/// between the two indexes, which RRF fusion depends on. BM25 is not
-/// model-gated (unlike `store`, which can be wiped/rebuilt on an embed-model
-/// change): it re-derives from raw text, so upserting it here regardless of
-/// which embed model ran keeps it correct across a model migration too.
 /// Sync core of `embed_one_page`: decides whether either index needs
 /// updating and, if so, upserts `bm25` — the one part of this decision with
 /// no dependency on a live app/loaded model, split out so it is directly
@@ -1523,6 +1491,38 @@ fn sync_bm25_for_page(
     Some((chunks, hashes, dense_current))
 }
 
+/// Bring one page's chunks up to date in both `store` (dense) and `bm25`
+/// (lexical), unless BOTH already reflect this page's current content.
+/// Shared by `reindex_embeddings` and the incremental index updater — this is
+/// the only place that decides "does this page need (re-)indexing".
+///
+/// The two indexes are gated independently: `store` is current when its
+/// content hashes (`existing`) match the page's freshly computed hashes;
+/// `bm25` is current when `bm25_pages` (a snapshot of `bm25.pages()`) already
+/// contains this page. A page can need only one side updated — most notably,
+/// bootstrapping a fresh/dropped `.mxb` against an already-current `.mxv`
+/// (first launch after this feature ships, or a `.mxb` a user deleted) skips
+/// every page's dense re-embed via the content-hash match, but BM25 must
+/// still receive every page or it never gets built at all. When the dense
+/// side IS stale, BM25 is re-upserted unconditionally alongside it (not
+/// gated on `bm25_pages`) since `bm25.upsert_page` has no per-page staleness
+/// signal of its own and is idempotent to call again.
+///
+/// This bootstrap only completes when the CALLER visits every page — the
+/// reconcile pass in `index_updater::process_batch`, or this whole loop in
+/// `reindex_embeddings`. It is not a property of this function: handed a
+/// single dirty page against an empty `bm25`, it upserts that one page and
+/// nothing else, which is why `index_updater::reconcile_requested` promotes a
+/// batch to a reconcile when the lexical index is unbootstrapped rather than
+/// letting the incremental branch persist a one-page index.
+///
+/// Whenever BM25 is touched, it receives the exact same `Vec<String>` chunk
+/// texts computed for embedding — upserted by reference before that `Vec` is
+/// moved into `embed_texts` — so `(page, section)` identity always matches
+/// between the two indexes, which RRF fusion depends on. BM25 is not
+/// model-gated (unlike `store`, which can be wiped/rebuilt on an embed-model
+/// change): it re-derives from raw text, so upserting it here regardless of
+/// which embed model ran keeps it correct across a model migration too.
 pub(crate) async fn embed_one_page(
     app: &tauri::AppHandle,
     llm: &tauri::State<'_, LocalLlmState>,
@@ -2479,10 +2479,14 @@ mod tests {
     // indexing chunk_texts by the wrong offset) surfaces the WRONG page's
     // stem as top-scoring, or drops a page this test expects, and fails.
     //
-    // Verified this actually catches the swap: temporarily replacing
-    // `.zip(chunk_texts.iter())` with `.zip(chunk_texts.iter().rev())` makes
-    // this test fail (chunk 0 resolves to "photosynthesis" instead of
-    // "quaternion-rotations").
+    // This test re-implements the command's fuse/filter glue inline (it
+    // cannot call `wikify_candidates` itself — that needs a live AppHandle
+    // and embedding model) and only exercises its OWN `.zip(chunk_texts.iter())`
+    // below, not the production call site in `wikify_candidates`. Verified: temporarily
+    // replacing THIS test's zip with `.zip(chunk_texts.iter().rev())` makes it fail
+    // (chunk 0 resolves to "photosynthesis" instead of "quaternion-rotations") — that
+    // proves this test's own re-implementation is sensitive to the pairing, not that it
+    // covers a swap in `wikify_candidates` itself.
     #[test]
     fn wikify_candidates_glue_keeps_chunk_vector_and_chunk_text_aligned() {
         // Two pages, each built from a chunk whose text is dominated by a

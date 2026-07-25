@@ -315,7 +315,7 @@ impl Bm25Index {
             // Document frequency is the posting count for the term — there is
             // no separate `df` map to keep in sync.
             let df = postings.len() as f32;
-            let idf = ((1.0 + (n - df + 0.5) / (df + 0.5)) as f32).ln();
+            let idf = (1.0 + (n - df + 0.5) / (df + 0.5)).ln();
             // Iteration order over one term's postings does not affect any
             // score: each doc receives exactly ONE contribution per query
             // term, so a doc's accumulation order is fixed by the query-term

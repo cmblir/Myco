@@ -356,7 +356,9 @@ async fn process_batch(
     // free, not force every `open_vault` to needlessly recompute edges.
     //
     // Both `.mxv` and `.mxb` are saved under this one `changed` flag, which
-    // both indexes mutate in lockstep above. `bm25.save` runs FIRST and
+    // either index can set alone above — `changed` covers a BM25-only
+    // bootstrap update (dense already current, lexical catching up) just as
+    // much as a normal lockstep re-embed of both. `bm25.save` runs FIRST and
     // `store.save` second — deliberately, not arbitrarily: the retry
     // decision on the next batch is gated on `store`'s on-disk content
     // hashes (`hashes_by_page`), not on bm25's. If `.mxv` were saved first
