@@ -35,6 +35,11 @@ interface ChatTurn {
   /// used the whole-vault fallback instead of semantic retrieval — surfaced
   /// so the fallback stays visible instead of a silent quality drop.
   stale?: boolean;
+  /// An IPC call inside retrieval (embeddings_status/semantic_search)
+  /// actually rejected, so this answer used the whole-vault fallback instead
+  /// — distinct from a legitimately empty index/hit list, which is not a
+  /// failure and must not set this.
+  retrievalFailed?: boolean;
 }
 
 const SYSTEM_PREAMBLE = `You are Memex, the wiki maintainer for the user's local markdown vault.
@@ -160,9 +165,11 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       return;
     }
 
-    // Set from the `thinking` stage if the index turned out stale — read once
-    // the run finishes, since `setStage(null)` in `finally` clears it.
+    // Set from the `thinking` stage if the index turned out stale or
+    // retrieval itself failed — read once the run finishes, since
+    // `setStage(null)` in `finally` clears it.
     let stale = false;
+    let retrievalFailed = false;
     try {
       const content = await complete({
         task: "query",
@@ -170,6 +177,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
         onStage: (s) => {
           setStage(s);
           if (s.kind === "thinking" && s.stale) stale = true;
+          if (s.kind === "thinking" && s.retrievalFailed) retrievalFailed = true;
         },
         messages: [
           { role: "system", content: SYSTEM_PREAMBLE },
@@ -188,7 +196,12 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       setTurns((prev) =>
         prev.map((turn, i) =>
           i === prev.length - 1
-            ? { ...turn, a: content || (t.q_empty_response ?? "(empty response)"), stale }
+            ? {
+                ...turn,
+                a: content || (t.q_empty_response ?? "(empty response)"),
+                stale,
+                retrievalFailed,
+              }
             : turn,
         ),
       );
@@ -332,6 +345,13 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 >
                   {t.q_open_model_settings ?? "Model settings"} →
                 </button>
+              </div>
+            ) : null}
+            {turn.retrievalFailed ? (
+              <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
+                <Icon name="info" size={12} />{" "}
+                {t.q_retrieval_failed ??
+                  "The search index could not be reached, so this answer used the whole vault instead. Check the app logs if this keeps happening."}
               </div>
             ) : null}
             {turn.a ? (

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { complete, isIndexStale, type AskStage } from "./chat";
 import { ipc } from "./ipc";
 import { BUILTIN_EMBED_MODEL } from "./providers";
+import { log } from "./log";
 
 // The id a healthy (non-stale) index is tagged with today — matches
 // `CURRENT_BUILTIN_INDEX_ID` in chat.ts.
@@ -157,7 +158,13 @@ describe("complete() ask stages", () => {
     expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [] }]);
   });
 
-  it("still reaches the model when retrieval throws", async () => {
+  it("still reaches the model when retrieval throws, and marks the failure as visible, not empty", async () => {
+    // Before this fix, a rejected embeddings_status call was swallowed into
+    // `null` and treated exactly like "no index exists" — indistinguishable
+    // from a legitimately empty vault. This is the regression test for that:
+    // the fallback must still run (so the user gets an answer), but the
+    // failure must now be flagged and logged rather than silently hidden.
+    const warn = vi.spyOn(log, "warn").mockImplementation(() => undefined);
     vi.spyOn(ipc, "embeddingsStatus").mockRejectedValue(new Error("index gone"));
     const { seen, onStage } = stages();
     const out = await complete({
@@ -167,7 +174,99 @@ describe("complete() ask stages", () => {
       onStage,
     });
     expect(out).toBe("an answer");
+    expect(seen).toEqual([
+      { kind: "thinking", stems: [], retrievalFailed: true },
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      "semantic_context.embeddings_status_failed",
+      expect.objectContaining({ error: expect.stringContaining("index gone") }),
+    );
+  });
+
+  it("flags retrievalFailed and logs when semantic_search rejects (not an empty hit list)", async () => {
+    // A rejected semantic_search must be distinguishable from "retrieval ran
+    // and legitimately found nothing" — the false-negative this bug caused.
+    const warn = vi.spyOn(log, "warn").mockImplementation(() => undefined);
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 51,
+      model: CURRENT_INDEX_MODEL,
+    });
+    vi.spyOn(ipc, "semanticSearch").mockRejectedValue(new Error("search backend down"));
+
+    const { seen, onStage } = stages();
+    const out = await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "q" }],
+      onStage,
+    });
+
+    expect(out).toBe("an answer");
+    expect(seen).toEqual([
+      { kind: "retrieving" },
+      { kind: "thinking", stems: [], retrievalFailed: true },
+    ]);
+    expect(warn).toHaveBeenCalledWith(
+      "semantic_context.semantic_search_failed",
+      expect.objectContaining({ error: expect.stringContaining("search backend down") }),
+    );
+  });
+
+  it("does NOT flag retrievalFailed for a legitimately never-indexed vault (false-positive guard)", async () => {
+    // indexed_pages === 0 is a normal, expected state (fresh vault) — it must
+    // never be conflated with a failed IPC call, or every fresh vault would
+    // show a spurious failure notice.
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 0, model: "" });
+    const search = vi.spyOn(ipc, "semanticSearch");
+
+    const { seen, onStage } = stages();
+    await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "q" }],
+      onStage,
+    });
+
+    expect(search).not.toHaveBeenCalled();
     expect(seen).toEqual([{ kind: "thinking", stems: [] }]);
+  });
+
+  it("does NOT flag retrievalFailed when semantic_search legitimately resolves to no hits", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 51,
+      model: CURRENT_INDEX_MODEL,
+    });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue([]);
+
+    const { seen, onStage } = stages();
+    await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "q" }],
+      onStage,
+    });
+
+    expect(seen).toEqual([{ kind: "retrieving" }, { kind: "thinking", stems: [] }]);
+  });
+
+  it("a stale index still sets `stale`, not `retrievalFailed` (they are distinct signals)", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 51,
+      model: "builtin-local:gemma-3-1b",
+    });
+    const search = vi.spyOn(ipc, "semanticSearch");
+    vi.spyOn(ipc, "readVaultContext").mockResolvedValue("whole vault");
+
+    const { seen, onStage } = stages();
+    await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "q" }],
+      onStage,
+    });
+
+    expect(search).not.toHaveBeenCalled();
+    expect(seen).toEqual([{ kind: "thinking", stems: [], stale: true }]);
   });
 
   it("works without an onStage callback", async () => {

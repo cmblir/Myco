@@ -12,6 +12,7 @@
 import { ipc, type ScoredChunk } from "./ipc";
 import { BUILTIN_EMBED_MODEL } from "./providers";
 import { getBudgetThreshold, overBudget, recordUsage } from "./budget";
+import { log } from "./log";
 
 export interface SimpleMessage {
   role: "system" | "user" | "assistant";
@@ -39,7 +40,13 @@ export type AskStage =
   /// is set (never `false`, only present or absent — see `isIndexStale`) when
   /// the index predates a bundled embed-model swap and the whole-vault
   /// fallback was used instead: the UI should say so, not silently fall back.
-  | { kind: "thinking"; stems: string[]; stale?: boolean };
+  /// `retrievalFailed` is set the same way when an IPC call in retrieval
+  /// (embeddings_status or semantic_search) *rejected* — as opposed to
+  /// legitimately reporting an empty index or an empty hit list, neither of
+  /// which is a failure. The whole-vault fallback still runs either way;
+  /// this only makes the failure visible instead of indistinguishable from
+  /// "found nothing".
+  | { kind: "thinking"; stems: string[]; stale?: boolean; retrievalFailed?: boolean };
 
 export interface CompleteArgs {
   task: "query" | "ingest";
@@ -100,14 +107,19 @@ export async function complete(args: CompleteArgs): Promise<string> {
     let retrievalBlock = "";
     if (args.task === "query" && args.onStage) {
       const question = lastUserContent(args.messages);
-      const { ctx, stems, stale } = question
+      const { ctx, stems, stale, retrievalFailed } = question
         ? await semanticContext(question, VAULT_CONTEXT_BUDGET, args.onStage)
-        : { ctx: "", stems: [], stale: false };
+        : { ctx: "", stems: [], stale: false, retrievalFailed: false };
       if (ctx.trim()) {
         retrievalBlock =
           `## Relevant wiki context (local semantic search — start here; use Read/Grep for anything more)\n\n${ctx}\n\n`;
       }
-      args.onStage?.({ kind: "thinking", stems, ...(stale ? { stale: true } : {}) });
+      args.onStage?.({
+        kind: "thinking",
+        stems,
+        ...(stale ? { stale: true } : {}),
+        ...(retrievalFailed ? { retrievalFailed: true } : {}),
+      });
     }
 
     const prompt = system
@@ -148,6 +160,11 @@ export async function complete(args: CompleteArgs): Promise<string> {
   // `thinking` stage so the Ask UI can say "reindex needed" instead of just
   // quietly answering worse.
   let stale = false;
+  // Set when an IPC call inside retrieval actually rejected (as opposed to
+  // legitimately reporting an empty index or empty hit list). Carried to the
+  // `thinking` stage so the failure is visible instead of looking identical
+  // to "found nothing" — see semanticContext's doc comment.
+  let retrievalFailed = false;
   try {
     const budget = isBuiltin ? LOCAL_CONTEXT_BUDGET : VAULT_CONTEXT_BUDGET;
     // Prefer semantic top-K retrieval (only the most relevant pages) when an
@@ -157,9 +174,10 @@ export async function complete(args: CompleteArgs): Promise<string> {
     const question = lastUserContent(args.messages);
     const retrieved = question
       ? await semanticContext(question, budget, args.onStage)
-      : { ctx: "", stems: [], stale: false };
+      : { ctx: "", stems: [], stale: false, retrievalFailed: false };
     stems = retrieved.stems;
     stale = retrieved.stale;
+    retrievalFailed = retrieved.retrievalFailed;
     let ctx = retrieved.ctx;
     if (!ctx.trim()) {
       ctx = await ipc.readVaultContext(args.cwd, budget);
@@ -174,7 +192,12 @@ export async function complete(args: CompleteArgs): Promise<string> {
   // that means a possible one-time weight load (11.7 s cold) and then prefill,
   // which is the bulk of the wait — so this is the stage a user actually sits
   // through, and the retrieved pages stay on screen underneath it.
-  args.onStage?.({ kind: "thinking", stems, ...(stale ? { stale: true } : {}) });
+  args.onStage?.({
+    kind: "thinking",
+    stems,
+    ...(stale ? { stale: true } : {}),
+    ...(retrievalFailed ? { retrievalFailed: true } : {}),
+  });
 
   // Embedded model (bundled Gemma 3 1B): in-process, offline, no key. The
   // backend applies the model's own chat template, so pass plain content —
@@ -251,22 +274,43 @@ export function isIndexStale(
  * to the whole-vault concat. `stale` is true when the index predates a bundled
  * embed-model swap — retrieval is skipped entirely rather than cosining across
  * incompatible vector spaces, and the caller must surface this, not just fall
- * back silently. */
+ * back silently.
+ *
+ * `retrievalFailed` is true when `embeddings_status` or `semantic_search`
+ * actually REJECTED (network/IPC error, panic, etc.) — not when they resolved
+ * to a legitimately empty result (`indexed_pages === 0`, or an empty hit
+ * list). Those two are normal outcomes and must never set this flag, or every
+ * fresh, never-indexed vault would look like a failure. A rejection is caught
+ * here (never left to blow up the caller — the whole-vault fallback must
+ * still run), but it is logged and threaded back so the caller can surface it
+ * instead of it being silently indistinguishable from "found nothing". */
 async function semanticContext(
   question: string,
   budget: number,
   onStage?: (stage: AskStage) => void,
-): Promise<{ ctx: string; stems: string[]; stale: boolean }> {
-  const none = { ctx: "", stems: [], stale: false };
-  const status = await ipc.embeddingsStatus().catch(() => null);
-  if (!status || status.indexed_pages === 0) return none;
+): Promise<{ ctx: string; stems: string[]; stale: boolean; retrievalFailed: boolean }> {
+  const none = { ctx: "", stems: [], stale: false, retrievalFailed: false };
+  const status = await ipc.embeddingsStatus().catch((err) => {
+    log.warn("semantic_context.embeddings_status_failed", { error: String(err) });
+    return null;
+  });
+  if (status === null) return { ...none, retrievalFailed: true };
+  if (status.indexed_pages === 0) return none;
   if (isIndexStale(status)) {
-    return { ctx: "", stems: [], stale: true };
+    return { ctx: "", stems: [], stale: true, retrievalFailed: false };
   }
   onStage?.({ kind: "retrieving" });
+  let searchRejected = false;
   const hits = await ipc
     .semanticSearch(question, 12, "builtin-local", BUILTIN_EMBED_MODEL)
-    .catch(() => [] as ScoredChunk[]);
+    .catch((err) => {
+      log.warn("semantic_context.semantic_search_failed", { error: String(err) });
+      searchRejected = true;
+      return [] as ScoredChunk[];
+    });
+  if (searchRejected) {
+    return { ctx: "", stems: [], stale: false, retrievalFailed: true };
+  }
   if (hits.length === 0) return none;
   const parts: string[] = [];
   const stems: string[] = [];
@@ -286,7 +330,7 @@ async function semanticContext(
   }
   // Only the pages that made the budget: the ones past it are never shown to
   // the model, so naming them would be another fiction.
-  return { ctx: parts.join("\n\n"), stems, stale: false };
+  return { ctx: parts.join("\n\n"), stems, stale: false, retrievalFailed: false };
 }
 
 // Merge the vault content into the single system message (providers like
