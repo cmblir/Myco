@@ -11,13 +11,12 @@
 // arms so a future, smarter fusion attempt for this path can be re-measured
 // against the same recorded baseline instead of re-discovering the diagnosis.
 //
-// It drives the SHIPPED glue — `pipeline::fuse_chunk_matches` (fuse → filter →
-// cap) and `pipeline::rank_candidates` — so it cannot drift from the command.
-// `wikify_candidates` itself always calls `fuse_chunk_matches` with an empty
-// lexical arm (dense-only); this harness's `dense` arm does the same, so it
-// stays a true control, while its `fused` arm passes the real BM25 hits to
-// measure any future change to that side. Only the Tauri/IO shell (vault
-// root, caches, `embed_texts`) is replaced.
+// It drives the SHIPPED glue — `pipeline::dense_chunk_matches` (filter → cap)
+// and `pipeline::rank_candidates` — so it cannot drift from the command: the
+// `dense` arm calls the very helper `wikify_candidates` calls, making it a true
+// control. The `fused` arm calls `pipeline::fuse_chunk_matches` with real BM25
+// hits to keep the other side measurable. Only the Tauri/IO shell (vault root,
+// caches, `embed_texts`) is replaced.
 //
 // Ground truth is the corpus's own link graph, not invented labels: for a page
 // P, the relevant set is the pages P links to via `[[...]]`. Two source-text
@@ -300,7 +299,10 @@ fn main() {
     // ---- index, mirroring reindex_embeddings (chunk_page → content_hash →
     // embed as Document → upsert), with the lexical index built from the SAME
     // chunks so both arms share `(page, section)` identity.
-    let mut store = VectorStore::load(&PathBuf::from("/tmp/memex-wikify-eval-nonexistent.mxv"));
+    // Built empty in memory, never loaded from disk: depending on a path that
+    // must NOT exist would silently augment the corpus (and invalidate the
+    // recorded baseline) the day such a file happens to be there.
+    let mut store = VectorStore::default();
     let mut bm25 = Bm25Index::new();
     let mut pages = 0usize;
     let mut chunks_total = 0usize;
@@ -319,10 +321,14 @@ fn main() {
     }
     eprintln!("\nevaluating {} cases × 2 variants × 2 arms …", cases.len());
 
-    // ---- run the shipped path per case. `fused` and `dense` differ ONLY in
-    // whether the lexical arm is passed: an empty lexical list is exactly what
-    // the command sees when no `.mxb` sidecar exists, so the dense arm is the
-    // real dense-only behaviour, not a re-implementation of it.
+    // ---- run the shipped path per case. The `dense` arm calls
+    // `pipeline::dense_chunk_matches`, the exact helper `wikify_candidates`
+    // ships (filter → cap, cosine scores preserved), so it is the real
+    // dense-only behaviour rather than a re-implementation. The `fused` arm
+    // calls `pipeline::fuse_chunk_matches` with the real BM25 hits; note its
+    // hit scores are RRF rank scores, so `rank_candidates` folds a page's
+    // chunks by best rank there and by max cosine on the dense arm — that
+    // difference is part of what the two arms measure.
     struct Ranked {
         dense: Vec<String>,
         fused: Vec<String>,
@@ -339,7 +345,7 @@ fn main() {
         for (v, chunk_text) in vecs.iter().zip(chunks.iter()) {
             let dense = store.search(v, pipeline::FUSE_POOL);
             let lexical = bm25.search(chunk_text, pipeline::FUSE_POOL);
-            dense_per_chunk.push(pipeline::fuse_chunk_matches(&dense, &[]));
+            dense_per_chunk.push(pipeline::dense_chunk_matches(&dense));
             fused_per_chunk.push(pipeline::fuse_chunk_matches(&dense, &lexical));
         }
         let stems = |c: Vec<CandidatePage>| c.into_iter().map(|c| c.stem).collect();

@@ -1925,18 +1925,21 @@ pub async fn wikify_candidates(
     // `semantic_search` (Ask) keeps the fusion, where it measured better — see
     // eval/BASELINE.md ("wikify" section) before re-adding a lexical arm here.
     //
-    // `fuse_chunk_matches(&dense, &[])` is called with an empty lexical arm
-    // rather than duplicating its filter → cap logic: this is the exact
-    // "no `.mxb`" degrade path already proven order-preserving
-    // (`fuse_chunk_matches_empty_lexical_keeps_dense_order`), and it is what
-    // `examples/wikify_eval.rs`'s own dense arm calls, so the harness's
-    // "dense" column stays a true control for this command.
+    // `dense_chunk_matches` (filter → cap, no RRF) is used rather than
+    // `fuse_chunk_matches(&dense, &[])`: RRF over a single arm keeps the dense
+    // ORDER but overwrites every score with `1/(RRF_K + rank)`, and this path's
+    // scores are read as cosine similarities downstream — `rank_candidates`
+    // folds a page's chunks by max cosine, the ingest planner prompt shows
+    // `(similarity 0.xx)` to the LLM, and the Ingest panel renders it. So the
+    // dense-only path must carry the raw cosine through. `examples/wikify_eval.rs`
+    // calls the same helper for its dense arm, keeping that column a true
+    // control for this command.
     use crate::pipeline::FUSE_POOL;
     let per_chunk: Vec<Vec<VecHit>> = vecs
         .iter()
         .map(|v| {
             let dense = store.search(v, FUSE_POOL);
-            crate::pipeline::fuse_chunk_matches(&dense, &[])
+            crate::pipeline::dense_chunk_matches(&dense)
         })
         .collect();
     let out = crate::pipeline::rank_candidates(&per_chunk, k.clamp(1, 20));

@@ -29,7 +29,10 @@ const B: f32 = 0.75;
 /// Reciprocal Rank Fusion constant — dampens the influence of any single
 /// list's exact rank so that agreement between lists (not one list's
 /// confidence) drives the fused order.
-const RRF_K: f32 = 60.0;
+// `pub(crate)` only so `pipeline`'s tests can assert that `fuse_chunk_matches`
+// returns RRF rank scores while `dense_chunk_matches` returns cosines. Value
+// and use are unchanged.
+pub(crate) const RRF_K: f32 = 60.0;
 
 /// Split text into search tokens. Script-aware and dependency-free:
 /// Latin/ASCII-alphanumeric runs become one lowercased token (`"QLoRA"` ->

@@ -90,7 +90,10 @@ fn main() {
 
     // Build an in-memory index from the bundled sample vault, mirroring
     // reindex_embeddings exactly (chunk_page → content_hash → embed → upsert).
-    let mut store = VectorStore::load(&PathBuf::from("/tmp/memex-eval-nonexistent.mxv"));
+    // Built empty in memory, never loaded from disk: depending on a path that
+    // must NOT exist would silently augment the corpus (and invalidate the
+    // recorded baseline) the day such a file happens to be there.
+    let mut store = VectorStore::default();
     // Lexical index built from the SAME chunks fed to `store`, so dense and
     // fused arms are measured against identical (page, section) identity.
     let mut bm25 = Bm25Index::new();

@@ -51,28 +51,48 @@ pub fn is_knowledge_page(stem: &str) -> bool {
     stem != "index" && stem != "log" && !stem.starts_with("source-")
 }
 
-/// Per-source-chunk match list: fuse one chunk's dense and lexical rankings,
-/// THEN keep only knowledge pages, THEN cap at `MAX_MATCHES`. Filtering after
-/// truncating would let source-summary/index/log chunks consume the cap and
-/// evict knowledge pages a dense-only search would have surfaced. With an
-/// empty `lexical` this degrades to the dense order unchanged — see
-/// `rrf_fuse_empty_lexical_preserves_dense_order` in retrieval.rs.
+/// Per-source-chunk match list for the shipped **dense-only** wikify path: keep
+/// only knowledge pages, THEN cap at `MAX_MATCHES`. Filtering after truncating
+/// would let source-summary/index/log chunks consume the cap and evict
+/// knowledge pages a dense-only search would have surfaced.
 ///
-/// `wikify_candidates` (`commands.rs`) ships dense-only: it always calls this
-/// with `lexical: &[]`, taking the degrade path above rather than duplicating
-/// the filter → cap logic. BM25+RRF fusion WAS wired in here (retrieval 1b)
-/// but `examples/wikify_eval.rs` measured it worse than dense-only on this
-/// path (k=10 recall -15-16pp on Korean cases) — see eval/BASELINE.md. The
-/// harness keeps calling this with a real `lexical` arg too, alongside the
-/// same `&[]` dense control the command uses, so a future fusion attempt for
-/// wikify can be re-measured against the same shipped sequence instead of a
-/// re-implementation of it. `semantic_search` (Ask) does NOT call this
-/// function — it fuses inline with `retrieval::rrf_fuse` directly, unaffected
-/// by this decision.
+/// Deliberately does NOT route through `rrf_fuse`. RRF preserves the dense
+/// *order*, but it overwrites every hit's score with `1/(RRF_K + rank)`, which
+/// would collapse all candidates into a near-constant ~0.017..0.012 band. The
+/// scores on this path are consumed as cosine similarities: `rank_candidates`
+/// folds a page's chunks by max score (max cosine, not "best rank"), the
+/// ingest planner prompt puts `(similarity 0.xx)` in front of the LLM, and the
+/// Ingest panel renders the value. So the raw cosine from `VectorStore::search`
+/// must survive to `CandidatePage.score`.
 ///
 /// Lives here rather than in `retrieval.rs` because the policy it encodes (the
 /// knowledge-page filter, the cap) is wikify-specific, while `retrieval.rs`
 /// stays the generic lexical/fusion layer shared with Ask.
+pub fn dense_chunk_matches(dense: &[Hit]) -> Vec<Hit> {
+    let mut kept: Vec<Hit> = dense
+        .iter()
+        .filter(|h| is_knowledge_page(&h.stem))
+        .cloned()
+        .collect();
+    kept.truncate(MAX_MATCHES);
+    kept
+}
+
+/// Same filter → cap policy as `dense_chunk_matches`, but over the RRF fusion
+/// of a chunk's dense and lexical rankings.
+///
+/// **No production caller.** BM25+RRF fusion WAS wired into `wikify_candidates`
+/// (retrieval 1b) but `examples/wikify_eval.rs` measured it worse than
+/// dense-only on this path (k=10 recall -15-16pp on Korean cases) — see
+/// eval/BASELINE.md — so the command ships `dense_chunk_matches` instead. This
+/// stays as the harness's `fused` arm so a future, smarter fusion attempt for
+/// wikify can be measured against the same recorded baseline rather than a
+/// fresh re-implementation. Note the returned scores are RRF rank scores, not
+/// cosines: any future production use must first fix the downstream consumers
+/// that read `CandidatePage.score` as a similarity.
+///
+/// `semantic_search` (Ask) does NOT call this function — it fuses inline with
+/// `retrieval::rrf_fuse` directly, unaffected by this decision.
 pub fn fuse_chunk_matches(dense: &[Hit], lexical: &[Bm25Hit]) -> Vec<Hit> {
     let mut fused: Vec<Hit> = rrf_fuse(dense, lexical, FUSE_POOL)
         .into_iter()
@@ -195,6 +215,63 @@ mod tests {
         // (and is NOT re-sorted alphabetically by the identity tie-break).
         let stems: Vec<&str> = out.iter().map(|h| h.stem.as_str()).collect();
         assert_eq!(stems, vec!["b", "a", "c"]);
+    }
+
+    #[test]
+    fn dense_chunk_matches_filters_before_capping() {
+        // Same order-of-operations assertion as the fused variant, on the path
+        // production actually ships.
+        let mut dense: Vec<Hit> = (0..=MAX_MATCHES)
+            .map(|i| hit(&format!("wiki/source-s{i}.md"), &format!("source-s{i}"), 0.9))
+            .collect();
+        dense.push(hit("wiki/a.md", "a", 0.1));
+        let out = dense_chunk_matches(&dense);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].stem, "a");
+    }
+
+    #[test]
+    fn dense_chunk_matches_respects_cap() {
+        let dense: Vec<Hit> = (0..MAX_MATCHES + 5)
+            .map(|i| hit(&format!("wiki/p{i:02}.md"), &format!("p{i:02}"), 1.0 - i as f32 * 0.01))
+            .collect();
+        assert_eq!(dense_chunk_matches(&dense).len(), MAX_MATCHES);
+    }
+
+    #[test]
+    fn dense_chunk_matches_keeps_cosine_scores_where_fuse_replaces_them_with_rrf() {
+        // The distinction this whole helper exists for. Downstream consumers
+        // (`rank_candidates`'s max-score fold, the ingest planner prompt, the
+        // Ingest panel) read `CandidatePage.score` as a cosine similarity, so
+        // the dense path must return the INPUT scores verbatim. Routing through
+        // `rrf_fuse` preserves order but overwrites each score with
+        // `1/(RRF_K + rank)`, collapsing them into a near-constant band.
+        let dense = vec![
+            hit("wiki/b.md", "b", 0.91),
+            hit("wiki/a.md", "a", 0.52),
+            hit("wiki/c.md", "c", 0.13),
+        ];
+
+        let out = dense_chunk_matches(&dense);
+        let stems: Vec<&str> = out.iter().map(|h| h.stem.as_str()).collect();
+        assert_eq!(stems, vec!["b", "a", "c"]);
+        let scores: Vec<f32> = out.iter().map(|h| h.score).collect();
+        for (got, want) in scores.iter().zip([0.91f32, 0.52, 0.13]) {
+            assert!((got - want).abs() < 1e-6, "expected cosine {want}, got {got}");
+        }
+
+        // Contrast: the fused helper returns RRF rank scores for the same input.
+        let fused = fuse_chunk_matches(&dense, &[]);
+        for (rank, h) in fused.iter().enumerate() {
+            let rrf = 1.0 / (crate::retrieval::RRF_K + rank as f32);
+            assert!(
+                (h.score - rrf).abs() < 1e-6,
+                "fused score should be the RRF rank score {rrf}, got {}",
+                h.score
+            );
+            // And it is NOT the cosine it came in with.
+            assert!((h.score - dense[rank].score).abs() > 1e-3);
+        }
     }
 
     #[test]
