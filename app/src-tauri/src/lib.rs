@@ -102,6 +102,10 @@ pub fn run() {
         // Parsed embedding index, kept across commands so the semantic layer
         // does not re-read and re-deserialize it on every call.
         .manage(vector_index::VectorCache::default())
+        // Parsed BM25 index, kept across commands for the same reason as
+        // `VectorCache` above — avoids re-reading and re-parsing the `.mxb`
+        // file on every lexical-search call.
+        .manage(retrieval::Bm25Cache::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
             commands::ensure_default_vault,

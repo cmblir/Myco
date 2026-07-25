@@ -11,6 +11,7 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 use crate::vector_index::Hit;
 
@@ -400,6 +401,74 @@ fn unique_suffix() -> String {
     format!("{}-{n}", std::process::id())
 }
 
+/// Identity of the index file as it is right now: modified time and length.
+/// Cheap (one `stat`) next to the parse it guards. Mirrors
+/// `vector_index::fingerprint`.
+fn fingerprint(path: &Path) -> Option<(std::time::SystemTime, u64)> {
+    let meta = std::fs::metadata(path).ok()?;
+    Some((meta.modified().ok()?, meta.len()))
+}
+
+struct CacheEntry {
+    path: PathBuf,
+    fingerprint: (std::time::SystemTime, u64),
+    index: Arc<Bm25Index>,
+}
+
+/// Replace the entry unless it already holds this exact revision of `path`.
+/// Returns `None` when there is no index file to key freshness on.
+fn ensure_fresh<'a>(slot: &'a mut Option<CacheEntry>, path: &Path) -> Option<&'a mut CacheEntry> {
+    let fp = fingerprint(path)?;
+    let hit = slot.as_ref().is_some_and(|e| e.path == *path && e.fingerprint == fp);
+    if !hit {
+        *slot = Some(CacheEntry {
+            path: path.to_path_buf(),
+            fingerprint: fp,
+            index: Arc::new(Bm25Index::load(path)),
+        });
+    }
+    slot.as_mut()
+}
+
+/// Keeps the parsed BM25 index in memory across commands, mirroring
+/// `vector_index::VectorCache` exactly: without it, every lexical-search
+/// command would re-read and re-parse the whole `.mxb` file from disk on
+/// every call, the same cost `VectorCache` already eliminated for the dense
+/// side. Freshness is keyed on the file's mtime+length rather than trusted,
+/// so a rewrite from outside this cache is picked up instead of served stale.
+#[derive(Default)]
+pub struct Bm25Cache {
+    inner: Mutex<Option<CacheEntry>>,
+}
+
+impl Bm25Cache {
+    /// The index for `path`, parsed at most once per on-disk revision.
+    pub fn get(&self, path: &Path) -> Arc<Bm25Index> {
+        // Held across the load: the parse is the expensive thing being cached,
+        // and serializing concurrent first-callers is better than having each
+        // of them parse the same file.
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        match ensure_fresh(&mut guard, path) {
+            Some(entry) => Arc::clone(&entry.index),
+            // No file on disk: return an empty index *uncached*, since there is
+            // nothing to key freshness on. Caching it would pin "empty" past the
+            // first reindex.
+            None => Arc::new(Bm25Index::default()),
+        }
+    }
+
+    /// Adopt an index this process just wrote, so the writer's own work is
+    /// reused instead of being re-read from the file it came from.
+    pub fn put(&self, path: &Path, index: Bm25Index) {
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+        *guard = fingerprint(path).map(|fp| CacheEntry {
+            path: path.to_path_buf(),
+            fingerprint: fp,
+            index: Arc::new(index),
+        });
+    }
+}
+
 /// Chunk identity shared with the dense side: `"{page}#{section}"`.
 fn chunk_id(page: &str, section: usize) -> String {
     format!("{page}#{section}")
@@ -617,6 +686,61 @@ mod tests {
         // Path scheme mirrors VectorStore's: same settings dir, .mxb extension.
         let p2 = Bm25Index::path_for("some/vault/root").unwrap();
         assert_eq!(p2.extension().unwrap(), "mxb");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn bm25_cache_get_miss_yields_empty_index() {
+        let dir = std::env::temp_dir()
+            .join(format!("memex-bm25-cache-test-miss-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("idx.mxb");
+        let cache = Bm25Cache::default();
+        assert!(cache.get(&path).is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn bm25_cache_reuses_parse_and_notices_a_rewrite() {
+        let dir = std::env::temp_dir()
+            .join(format!("memex-bm25-cache-test-reuse-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("idx.mxb");
+        let mut ix = Bm25Index::new();
+        ix.upsert_page("a.md", "a", &["alpha".into()]);
+        ix.save(&path).unwrap();
+
+        let cache = Bm25Cache::default();
+        let first = cache.get(&path);
+        let second = cache.get(&path);
+        assert_eq!(first.len(), 1);
+        // Same allocation — the second call did not re-parse the file.
+        assert!(Arc::ptr_eq(&first, &second));
+
+        let mut next = Bm25Index::new();
+        next.upsert_page("a.md", "a", &["alpha".into()]);
+        next.upsert_page("b.md", "b", &["beta".into()]);
+        next.save(&path).unwrap();
+        assert_eq!(cache.get(&path).len(), 2);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn bm25_cache_put_adopts_a_freshly_written_index() {
+        let dir = std::env::temp_dir()
+            .join(format!("memex-bm25-cache-test-put-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("idx.mxb");
+        let mut ix = Bm25Index::new();
+        ix.upsert_page("a.md", "a", &["alpha".into()]);
+        ix.save(&path).unwrap();
+
+        let cache = Bm25Cache::default();
+        cache.put(&path, ix);
+        let got = cache.get(&path);
+        assert_eq!(got.len(), 1);
+        // The adopted entry is fresh, so get() served it rather than re-reading.
+        assert!(Arc::ptr_eq(&got, &cache.get(&path)));
         std::fs::remove_dir_all(&dir).ok();
     }
 
