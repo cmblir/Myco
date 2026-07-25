@@ -276,7 +276,18 @@ pub fn rrf_fuse(dense: &[Hit], lexical: &[Bm25Hit], k: usize) -> Vec<Hit> {
             h
         })
         .collect();
-    fused.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    // Fused score descending, then chunk identity ascending. The score alone
+    // is not a total order — two chunks can tie exactly (e.g. each appearing
+    // only at rank 0 of its own list) — and HashMap iteration order must not
+    // leak into the result, since callers (retrieval-quality measurement,
+    // Ask) depend on identical inputs producing an identical ranking.
+    fused.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.page.cmp(&b.page))
+            .then_with(|| a.section.cmp(&b.section))
+    });
     fused.truncate(k);
     fused
 }
@@ -347,5 +358,24 @@ mod tests {
         ];
         let fused = rrf_fuse(&dense, &lex, 10);
         assert_eq!(fused[0].stem, "b"); // b in both lists -> higher RRF than a
+    }
+    #[test]
+    fn rrf_fuse_breaks_ties_deterministically_by_chunk_identity() {
+        use crate::vector_index::Hit;
+        // Chunk "b.md#0" appears only in dense at rank 0, chunk "a.md#0" only
+        // in lexical at rank 0 -> both score exactly 1/(RRF_K+0). The score
+        // alone cannot order them; the tie-break (page asc, then section asc)
+        // must, and must do so the same way every time.
+        let dense = vec![Hit { page: "b.md".into(), stem: "b".into(), section: 0, score: 0.5 }];
+        let lex = vec![Bm25Hit { page: "a.md".into(), stem: "a".into(), section: 0, score: 1.0 }];
+        let expected = vec!["a.md".to_string(), "b.md".to_string()];
+        for _ in 0..5 {
+            let fused = rrf_fuse(&dense, &lex, 10);
+            assert_eq!(
+                fused.iter().map(|h| h.page.clone()).collect::<Vec<_>>(),
+                expected,
+                "tied chunks must order by page asc, then section asc, every run"
+            );
+        }
     }
 }
