@@ -1929,28 +1929,17 @@ pub async fn wikify_candidates(
     let bm25 = bm25_cache.get(&bm25_path);
     // Per chunk, fuse dense+lexical hits (`vecs` and `chunk_texts` stay index-
     // aligned: both came from the same truncated `chunks` in original chunk
-    // order, and `.iter().zip(.iter())` walks them in lockstep), THEN keep
-    // only knowledge pages, THEN cap at 16 — filtering after truncating would
-    // let source-summary/index/log chunks consume the depth-16 budget and
-    // evict knowledge pages a dense-only search would have surfaced. Fuse
-    // from a wider pool than the final 16 so filtering has enough candidates
-    // left to fill it. With an empty/absent `.mxb` this degrades to the dense
-    // order unchanged — see `rrf_fuse_empty_lexical_preserves_dense_order` in
-    // retrieval.rs.
-    const FUSE_POOL: usize = 50;
-    const MAX_MATCHES: usize = 16;
+    // order, and `.iter().zip(.iter())` walks them in lockstep). The fuse →
+    // filter → cap sequence lives in `pipeline::fuse_chunk_matches` so the
+    // wikify measurement harness drives the same code this command does.
+    use crate::pipeline::FUSE_POOL;
     let per_chunk: Vec<Vec<VecHit>> = vecs
         .iter()
         .zip(chunk_texts.iter())
         .map(|(v, chunk_text)| {
             let dense = store.search(v, FUSE_POOL);
             let lexical = bm25.search(chunk_text, FUSE_POOL);
-            let mut fused: Vec<VecHit> = crate::retrieval::rrf_fuse(&dense, &lexical, FUSE_POOL)
-                .into_iter()
-                .filter(|h| crate::pipeline::is_knowledge_page(&h.stem))
-                .collect();
-            fused.truncate(MAX_MATCHES);
-            fused
+            crate::pipeline::fuse_chunk_matches(&dense, &lexical)
         })
         .collect();
     let out = crate::pipeline::rank_candidates(&per_chunk, k.clamp(1, 20));

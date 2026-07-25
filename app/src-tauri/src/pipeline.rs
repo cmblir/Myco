@@ -13,9 +13,18 @@
 //! best-effort: no index, an empty one, or a model-space mismatch yields no
 //! candidates and ingest proceeds exactly as it did before.
 
+use crate::retrieval::{rrf_fuse, Bm25Hit};
 use crate::vector_index::Hit;
 use serde::Serialize;
 use std::collections::HashMap;
+
+/// Retrieval depth per arm, and the pool `rrf_fuse` folds them into. Wider than
+/// the final `MAX_MATCHES` so the knowledge-page filter below still has enough
+/// candidates left to fill it.
+pub const FUSE_POOL: usize = 50;
+
+/// Chunk matches kept per source chunk, after filtering, before `rank_candidates`.
+const MAX_MATCHES: usize = 16;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct CandidatePage {
@@ -33,6 +42,27 @@ pub struct CandidatePage {
 /// would be wrong; `index.md`/`log.md` are handled by the workflow regardless.
 pub fn is_knowledge_page(stem: &str) -> bool {
     stem != "index" && stem != "log" && !stem.starts_with("source-")
+}
+
+/// Per-source-chunk match list: fuse one chunk's dense and lexical rankings,
+/// THEN keep only knowledge pages, THEN cap at `MAX_MATCHES`. Filtering after
+/// truncating would let source-summary/index/log chunks consume the cap and
+/// evict knowledge pages a dense-only search would have surfaced. With an
+/// empty `lexical` this degrades to the dense order unchanged — see
+/// `rrf_fuse_empty_lexical_preserves_dense_order` in retrieval.rs.
+///
+/// Lives here rather than in `retrieval.rs` because the policy it encodes (the
+/// knowledge-page filter, the cap) is wikify-specific, while `retrieval.rs`
+/// stays the generic lexical/fusion layer shared with Ask. Extracted so the
+/// measurement harness (`examples/wikify_eval.rs`) exercises the *shipped*
+/// sequence instead of re-implementing it.
+pub fn fuse_chunk_matches(dense: &[Hit], lexical: &[Bm25Hit]) -> Vec<Hit> {
+    let mut fused: Vec<Hit> = rrf_fuse(dense, lexical, FUSE_POOL)
+        .into_iter()
+        .filter(|h| is_knowledge_page(&h.stem))
+        .collect();
+    fused.truncate(MAX_MATCHES);
+    fused
 }
 
 /// Fold chunk-level hits (each source chunk yields several, and a page can be hit
@@ -111,6 +141,43 @@ mod tests {
     fn empty_input_is_empty() {
         assert!(rank_candidates(&[], 5).is_empty());
         assert!(rank_candidates(&[vec![]], 5).is_empty());
+    }
+
+    #[test]
+    fn fuse_chunk_matches_filters_before_capping() {
+        // MAX_MATCHES + 1 source-summary chunks ranked ahead of one knowledge
+        // page. Capping before filtering would return nothing; filtering first
+        // must keep the knowledge page.
+        let mut dense: Vec<Hit> = (0..=MAX_MATCHES)
+            .map(|i| hit(&format!("wiki/source-s{i}.md"), &format!("source-s{i}"), 0.9))
+            .collect();
+        dense.push(hit("wiki/a.md", "a", 0.1));
+        let out = fuse_chunk_matches(&dense, &[]);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].stem, "a");
+    }
+
+    #[test]
+    fn fuse_chunk_matches_respects_cap() {
+        let dense: Vec<Hit> = (0..MAX_MATCHES + 5)
+            .map(|i| hit(&format!("wiki/p{i:02}.md"), &format!("p{i:02}"), 1.0 - i as f32 * 0.01))
+            .collect();
+        let out = fuse_chunk_matches(&dense, &[]);
+        assert_eq!(out.len(), MAX_MATCHES);
+    }
+
+    #[test]
+    fn fuse_chunk_matches_empty_lexical_keeps_dense_order() {
+        let dense = vec![
+            hit("wiki/b.md", "b", 0.9),
+            hit("wiki/a.md", "a", 0.5),
+            hit("wiki/c.md", "c", 0.1),
+        ];
+        let out = fuse_chunk_matches(&dense, &[]);
+        // RRF over a single arm is rank-monotonic, so the dense order survives
+        // (and is NOT re-sorted alphabetically by the identity tie-break).
+        let stems: Vec<&str> = out.iter().map(|h| h.stem.as_str()).collect();
+        assert_eq!(stems, vec!["b", "a", "c"]);
     }
 
     #[test]
