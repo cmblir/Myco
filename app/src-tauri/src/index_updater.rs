@@ -254,6 +254,12 @@ async fn process_batch(
     // the reconcile pass a stale store forces is what keeps it correct then
     // — not a wipe.
     let mut bm25 = Bm25Index::load(&bm25_path);
+    // Snapshot once, same spirit as `store.hashes_by_page()` below: lets
+    // `embed_one_page` detect "BM25 doesn't have this page yet" (e.g.
+    // bootstrapping a fresh/dropped `.mxb` against an already-current
+    // `.mxv`, where every page's dense side skips via the content-hash
+    // match) without an O(n) scan per page.
+    let bm25_pages = bm25.pages();
     let model_id = format!("builtin-local:{}", crate::local_llm::BUILTIN_EMBED_MODEL);
 
     let stale = index_is_stale(&store.model);
@@ -273,7 +279,7 @@ async fn process_batch(
         let pages = crate::commands::collect_wiki_pages(root);
         for (rel, stem, content) in &pages {
             let llm = app.state::<LocalLlmState>();
-            let embedded = crate::commands::embed_one_page(
+            let outcome = crate::commands::embed_one_page(
                 app,
                 &llm,
                 "builtin-local",
@@ -284,9 +290,10 @@ async fn process_batch(
                 &existing,
                 &mut store,
                 &mut bm25,
+                &bm25_pages,
             )
             .await?;
-            changed |= embedded;
+            changed |= outcome.changed;
         }
         let present: HashSet<String> = pages.into_iter().map(|(r, _, _)| r).collect();
         changed |= store.prune(&present) > 0;
@@ -304,7 +311,7 @@ async fn process_batch(
                     .unwrap_or("")
                     .to_string();
                 let llm = app.state::<LocalLlmState>();
-                let embedded = crate::commands::embed_one_page(
+                let outcome = crate::commands::embed_one_page(
                     app,
                     &llm,
                     "builtin-local",
@@ -315,9 +322,10 @@ async fn process_batch(
                     &existing,
                     &mut store,
                     &mut bm25,
+                    &bm25_pages,
                 )
                 .await?;
-                changed |= embedded;
+                changed |= outcome.changed;
             } else {
                 store.upsert_page(&rel, "", Vec::new()); // deleted → drop its records
                 bm25.upsert_page(&rel, "", &[]); // upsert with no chunks == delete, same as store

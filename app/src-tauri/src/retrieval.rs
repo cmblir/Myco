@@ -133,6 +133,17 @@ impl Bm25Index {
         self.docs.len()
     }
 
+    /// Distinct pages currently indexed. Callers compute this once per batch
+    /// (mirroring how `VectorStore::hashes_by_page` is snapshotted once) and
+    /// check membership per page with `.contains`, rather than re-scanning
+    /// `docs` from scratch for every page — this is what lets
+    /// `embed_one_page` detect "BM25 doesn't have this page yet" (e.g. a
+    /// bootstrap against an already-current dense store) without an O(n)
+    /// scan per page.
+    pub fn pages(&self) -> HashSet<String> {
+        self.docs.iter().map(|d| d.page.clone()).collect()
+    }
+
     /// Replace all chunks for one page with a fresh set, then rebuild the
     /// derived postings/df/total_len from the resulting `doc_terms`. Mirrors
     /// `VectorStore::upsert_page`'s retain-then-append shape so the two

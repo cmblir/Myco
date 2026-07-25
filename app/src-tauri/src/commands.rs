@@ -1438,20 +1438,83 @@ pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String,
     out
 }
 
-/// Embed a single page's chunks and upsert them into `store`, unless the page's
-/// content hashes are unchanged from `existing` (or it has no chunks at all).
+/// Outcome of `embed_one_page`. Split into two flags because "was the page
+/// re-embedded" and "does something need saving" are NOT the same question
+/// once BM25 can be upserted on its own (see `embed_one_page`'s doc comment):
+/// a page can be BM25-only-updated without touching the dense store at all,
+/// which must still trigger a save/checkpoint but must not count as an
+/// "embedded" page in progress/perf counters.
+pub(crate) struct EmbedOutcome {
+    /// True only when the dense store was actually (re-)embedded.
+    pub embedded: bool,
+    /// True when either index was mutated — this, not `embedded`, is what
+    /// callers must gate a save on.
+    pub changed: bool,
+}
+
+/// Bring one page's chunks up to date in both `store` (dense) and `bm25`
+/// (lexical), unless BOTH already reflect this page's current content.
 /// Shared by `reindex_embeddings` and the incremental index updater — this is
-/// the only place that decides "does this page need re-embedding".
+/// the only place that decides "does this page need (re-)indexing".
 ///
-/// Also upserts the same chunk texts into `bm25`, so the dense and lexical
-/// indexes are always built from identical `(page, section)` chunk text —
-/// required for RRF fusion to pair hits between them. BM25 is not
+/// The two indexes are gated independently: `store` is current when its
+/// content hashes (`existing`) match the page's freshly computed hashes;
+/// `bm25` is current when `bm25_pages` (a snapshot of `bm25.pages()`) already
+/// contains this page. A page can need only one side updated — most notably,
+/// bootstrapping a fresh/dropped `.mxb` against an already-current `.mxv`
+/// (first launch after this feature ships, or a `.mxb` a user deleted) skips
+/// every page's dense re-embed via the content-hash match, but BM25 must
+/// still receive every page or it never gets built at all. When the dense
+/// side IS stale, BM25 is re-upserted unconditionally alongside it (not
+/// gated on `bm25_pages`) since `bm25.upsert_page` has no per-page staleness
+/// signal of its own and is idempotent to call again.
+///
+/// Whenever BM25 is touched, it receives the exact same `Vec<String>` chunk
+/// texts computed for embedding — upserted by reference before that `Vec` is
+/// moved into `embed_texts` — so `(page, section)` identity always matches
+/// between the two indexes, which RRF fusion depends on. BM25 is not
 /// model-gated (unlike `store`, which can be wiped/rebuilt on an embed-model
-/// change): it re-derives from raw text, so re-upserting here whenever the
-/// page is (re)embedded keeps it correct regardless of which embed model ran.
+/// change): it re-derives from raw text, so upserting it here regardless of
+/// which embed model ran keeps it correct across a model migration too.
+/// Sync core of `embed_one_page`: decides whether either index needs
+/// updating and, if so, upserts `bm25` — the one part of this decision with
+/// no dependency on a live app/loaded model, split out so it is directly
+/// unit-testable (see the `commands::tests` module).
 ///
-/// Returns `Ok(true)` when the page was embedded and upserted, `Ok(false)` when
-/// it was skipped.
+/// Returns `None` when nothing needs doing (no chunks, or both indexes
+/// already current for this page — the caller should report
+/// `EmbedOutcome { embedded: false, changed: false }`). Returns
+/// `Some((chunks, hashes, dense_current))` otherwise, having already
+/// upserted `bm25` as needed; `dense_current` tells the caller whether it
+/// must still embed and upsert `store`, or whether BM25 alone needed
+/// catching up.
+fn sync_bm25_for_page(
+    content: &str,
+    rel: &str,
+    stem: &str,
+    existing: &std::collections::HashMap<String, Vec<u64>>,
+    bm25: &mut crate::retrieval::Bm25Index,
+    bm25_pages: &std::collections::HashSet<String>,
+) -> Option<(Vec<String>, Vec<u64>, bool)> {
+    let chunks = embeddings::chunk_page(content);
+    if chunks.is_empty() {
+        return None; // nothing to index on either side
+    }
+    let hashes: Vec<u64> = chunks.iter().map(|c| embeddings::content_hash(c)).collect();
+    let dense_current = existing.get(rel) == Some(&hashes);
+    let bm25_current = bm25_pages.contains(rel);
+    if dense_current && bm25_current {
+        return None; // both already reflect this content
+    }
+    // Past this point at least one side needs updating. Upsert BM25
+    // unconditionally — cheap and idempotent — before `chunks` moves into
+    // `embed_texts` (in the async caller), covering both "dense is stale"
+    // (re-embed case) and "dense is current but BM25 never had this page"
+    // (bootstrap case).
+    bm25.upsert_page(rel, stem, &chunks);
+    Some((chunks, hashes, dense_current))
+}
+
 pub(crate) async fn embed_one_page(
     app: &tauri::AppHandle,
     llm: &tauri::State<'_, LocalLlmState>,
@@ -1463,15 +1526,17 @@ pub(crate) async fn embed_one_page(
     existing: &std::collections::HashMap<String, Vec<u64>>,
     store: &mut VectorStore,
     bm25: &mut crate::retrieval::Bm25Index,
-) -> Result<bool, String> {
-    let chunks = embeddings::chunk_page(content);
-    let hashes: Vec<u64> = chunks.iter().map(|c| embeddings::content_hash(c)).collect();
-    if chunks.is_empty() || existing.get(rel) == Some(&hashes) {
-        return Ok(false); // nothing to embed, or the content hashes still match
+    bm25_pages: &std::collections::HashSet<String>,
+) -> Result<EmbedOutcome, String> {
+    let Some((chunks, hashes, dense_current)) =
+        sync_bm25_for_page(content, rel, stem, existing, bm25, bm25_pages)
+    else {
+        return Ok(EmbedOutcome { embedded: false, changed: false });
+    };
+    if dense_current {
+        // Dense already matches; BM25 alone needed catching up. No re-embed.
+        return Ok(EmbedOutcome { embedded: false, changed: true });
     }
-    // Upsert BM25 from `chunks` before it is moved into `embed_texts`, so both
-    // indexes are built from the exact same `Vec<String>` chunk texts.
-    bm25.upsert_page(rel, stem, &chunks);
     let vecs = embed_texts(
         app.clone(),
         (*llm).clone(),
@@ -1483,7 +1548,7 @@ pub(crate) async fn embed_one_page(
     .await?;
     let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
     store.upsert_page(rel, stem, entries);
-    Ok(true)
+    Ok(EmbedOutcome { embedded: true, changed: true })
 }
 
 /// Per-page progress for a running reindex. `done` counts pages *considered*
@@ -1540,6 +1605,10 @@ pub async fn reindex_embeddings(
     let pages = collect_wiki_pages(&root);
     // One pass over the records instead of a full scan per page.
     let existing = store.hashes_by_page();
+    // Snapshot once, same as `existing` — a page can need only a BM25 upsert
+    // (dense already current) when this snapshot doesn't contain it yet, e.g.
+    // bootstrapping a fresh `.mxb` against an already-current `.mxv`.
+    let bm25_pages = bm25.pages();
     let mut present = std::collections::HashSet::new();
     let mut embed_ms = 0.0;
     let mut save_ms = 0.0;
@@ -1551,13 +1620,16 @@ pub async fn reindex_embeddings(
     for (i, (rel, stem, content)) in pages.iter().enumerate() {
         present.insert(rel.clone());
         let t_embed = std::time::Instant::now();
-        let did = embed_one_page(
+        let outcome = embed_one_page(
             &app, &llm, &provider, &model, rel, stem, content, &existing, &mut store, &mut bm25,
+            &bm25_pages,
         )
         .await?;
-        if did {
+        if outcome.embedded {
             embed_ms += perf::ms(t_embed.elapsed());
             embedded += 1;
+        }
+        if outcome.changed {
             dirty = true;
         }
         {
@@ -1568,12 +1640,15 @@ pub async fn reindex_embeddings(
                     done: i + 1,
                     total,
                     page: rel.clone(),
-                    embedded: did,
+                    // Reports whether the DENSE side was re-embedded, not
+                    // whether anything changed at all — a BM25-only catch-up
+                    // must not read to the user as "re-embedded this page".
+                    embedded: outcome.embedded,
                 },
             );
         }
-        if !did {
-            continue; // nothing to embed, or the content hashes still match
+        if !outcome.changed {
+            continue; // nothing changed on either side
         }
 
         // Checkpoint. Without this, a crash or quit during the first index of a
@@ -2008,9 +2083,72 @@ pub async fn fetch_youtube_transcript(url: String) -> Result<String, String> {
 mod tests {
     use super::{
         builtin_index_is_stale, chunk_text_at, external_target_allowed, run_import,
-        windows_opener_safe,
+        sync_bm25_for_page, windows_opener_safe,
     };
+    use crate::retrieval::Bm25Index;
+    use std::collections::{HashMap, HashSet};
     use std::path::PathBuf;
+
+    // Covers the Critical fix: BM25 must be upserted even when the DENSE
+    // side is already current, or `.mxb` never bootstraps on a vault whose
+    // `.mxv` is already up to date (every real vault after its first index).
+    // Before the fix, the skip was gated on the dense side alone and
+    // returned before ever touching `bm25` — this test fails against that
+    // version (the page would not be in `bm25` at all after the call).
+    #[test]
+    fn sync_bm25_upserts_a_page_bm25_is_missing_even_when_dense_is_current() {
+        let content = "# Attention\ntransformers use self attention to weigh tokens";
+        let hashes: Vec<u64> = crate::embeddings::chunk_page(content)
+            .iter()
+            .map(|c| crate::embeddings::content_hash(c))
+            .collect();
+        let mut existing = HashMap::new();
+        existing.insert("wiki/attention.md".to_string(), hashes); // dense already current
+        let bm25_pages = HashSet::new(); // bm25 has never seen this page
+
+        let mut bm25 = Bm25Index::new();
+        let outcome = sync_bm25_for_page(
+            content,
+            "wiki/attention.md",
+            "attention",
+            &existing,
+            &mut bm25,
+            &bm25_pages,
+        );
+
+        let (_, _, dense_current) = outcome.expect("bm25 missing the page must still signal an update");
+        assert!(dense_current, "dense side was already current; only bm25 needed catching up");
+        assert!(
+            bm25.search("self attention tokens", 10).iter().any(|h| h.page == "wiki/attention.md"),
+            "the page must be searchable in bm25 immediately after sync_bm25_for_page"
+        );
+    }
+
+    #[test]
+    fn sync_bm25_skips_when_both_indexes_are_already_current() {
+        let content = "# Attention\ntransformers use self attention to weigh tokens";
+        let hashes: Vec<u64> = crate::embeddings::chunk_page(content)
+            .iter()
+            .map(|c| crate::embeddings::content_hash(c))
+            .collect();
+        let mut existing = HashMap::new();
+        existing.insert("wiki/attention.md".to_string(), hashes);
+        let mut bm25_pages = HashSet::new();
+        bm25_pages.insert("wiki/attention.md".to_string()); // bm25 already has it too
+
+        let mut bm25 = Bm25Index::new();
+        let outcome = sync_bm25_for_page(
+            content,
+            "wiki/attention.md",
+            "attention",
+            &existing,
+            &mut bm25,
+            &bm25_pages,
+        );
+
+        assert!(outcome.is_none(), "both sides already current: nothing to do, no wasted embed");
+        assert!(bm25.is_empty(), "must not have upserted anything into bm25 in the both-current case");
+    }
 
     #[test]
     fn chunk_text_at_indexes_sections() {
