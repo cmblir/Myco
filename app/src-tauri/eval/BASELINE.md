@@ -120,3 +120,121 @@ parallel page becomes a distractor — both classic **lexical-arm** territory.
 98.4 % · MRR 0.829 · nDCG@10 0.847. The CJK BM25 + RRF core (shared `retrieval.rs`)
 should raise MRR / hit@1 and rescue the five weak queries above without regressing
 the queries already at rank 1; each addition is re-run here or it is dropped.
+
+## Phase 1b — BM25 + RRF fusion (2026-07-25)
+
+The lexical arm from the previous section's plan, now implemented and measured:
+a dependency-free script-aware tokenizer (Latin runs lowercased, CJK runs as
+character bigrams), a BM25 index (`k1 = 1.2`, `b = 0.75`) keyed on the same
+`(page, section)` chunk identity as the vector store, and Reciprocal Rank Fusion
+(`k = 60`) over the two rankings. Same corpus and same query set as the section
+above — **nothing about the eval inputs changed**, only the retrieval under test.
+
+Measured with `MEMEX_EMBED_SPEC=bge-m3 cargo run --example retrieval_eval --release`
+over **71 wiki pages · 142 chunks · 62 queries**. The harness reports both arms in
+one run, so the two tables below come from a single execution and share the
+identical index.
+
+### Results — bge-m3 dense, cosine (control)
+
+| k  | hit@k  | recall@k |
+|----|--------|----------|
+| 1  | 72.6 % | 67.7 %   |
+| 3  | 91.9 % | 87.9 %   |
+| 5  | 96.8 % | 94.4 %   |
+| 10 | 98.4 % | 96.8 %   |
+
+**MRR 0.829 · nDCG@10 0.847**
+
+### Results — dense + BM25 (RRF fused)
+
+| k  | hit@k   | recall@k |
+|----|---------|----------|
+| 1  | 82.3 %  | 77.4 %   |
+| 3  | 100.0 % | 98.4 %   |
+| 5  | 100.0 % | 100.0 %  |
+| 10 | 100.0 % | 100.0 %  |
+
+**MRR 0.906 · nDCG@10 0.926**
+
+### Aggregate delta (fused − dense)
+
+| metric    | dense | fused | delta      |
+|-----------|------:|------:|-----------:|
+| hit@1     | 72.6  |  82.3 | **+9.7 pp** |
+| hit@3     | 91.9  | 100.0 | **+8.1 pp** |
+| hit@5     | 96.8  | 100.0 | **+3.2 pp** |
+| hit@10    | 98.4  | 100.0 | **+1.6 pp** |
+| recall@10 | 96.8  | 100.0 | **+3.2 pp** |
+| MRR       | 0.829 | 0.906 | **+0.077**  |
+| nDCG@10   | 0.847 | 0.926 | **+0.079**  |
+
+Every query now has a relevant page in its top 3, and recall@5 is complete.
+
+### The five recorded weak queries — all rescued
+
+| query | target | dense | fused |
+|-------|--------|------:|------:|
+| `PPO` | `rlhf` | @12 | **@3** |
+| `RLAIF` | `constitutional-ai` | @4 | **@2** |
+| `PPO로 정책을 갱신하는 인간 선호 정렬` | `ko-rlhf` | @4 | **@2** |
+| `모델 크기 데이터 연산이 커질수록 성능이 예측 가능하게 향상됨` | `ko-scaling-laws` | @5 | **@1** |
+| `training a model to align with a written set of principles` | `constitutional-ai` | @8 | **@3** |
+
+The two hypotheses behind the increment both hold: rare English exact tokens
+(`PPO` @12 → @3, `RLAIF` @4 → @2) are recovered by the lexical arm, and the
+Korean-phrase-with-shared-acronym distractor case (`PPO로 정책을…` @4 → @2) is
+disambiguated by the CJK bigram tokens. The Korean semantic paraphrase
+(`모델 크기 데이터 연산이…` @5 → @1) also gains, from partial lexical overlap
+(모델/데이터/성능) rather than from an exact-term hit.
+
+### Regressions — the complete list
+
+Two queries lost rank 1, both by exactly one position:
+
+| query | target | dense | fused |
+|-------|--------|------:|------:|
+| `DPO` | `dpo` | @1 | @2 |
+| `RAG` | `rag` | @1 | @2 |
+
+Both are the same mechanism, and it is inherent to RRF rather than a tuning
+mistake: for a 3-letter acronym that titles its own page, the dense arm already
+ranks that page first, while BM25 spreads the term across every page that
+mentions it (`dpo` is discussed at length in `analysis-rlhf-vs-dpo`, `rag` in
+`vector-database`). Where the lexical arm's own #1 is a *different* chunk, RRF's
+rank-agreement sum can push that chunk above the dense #1. Neither query drops
+out of the top 3, so neither costs hit@3 or hit@5, and MRR loses ~0.008 each
+against the +0.077 net. No other query regressed; no query left the top 10.
+Recorded here rather than smoothed over: this is the price paid for the +9.7 pp
+on hit@1, and a future reranker is the place to reclaim it.
+
+### Success criteria — met
+
+The previous section required the increment to "raise MRR / hit@1 and rescue the
+five weak queries above without regressing the queries already at rank 1." The
+first two are met with margin (MRR 0.829 → 0.906, hit@1 72.6 % → 82.3 %) and all
+five weak queries are rescued. The third is met with the two exceptions listed
+above — `DPO` and `RAG` each slipped @1 → @2 — so the criterion is met **with a
+documented, quantified exception**, not unconditionally.
+
+**New reference the next increment must beat:** dense+BM25 RRF — hit@1 82.3 % ·
+hit@3 100.0 % · MRR 0.906 · nDCG@10 0.926. Note that hit@3/@5/@10 are saturated
+again: further gains are only measurable on hit@1 / MRR / nDCG until the corpus
+or query set is extended again.
+
+### Wired-path check (not just the harness)
+
+Measured on the real vault the app was bound to (`~/Documents/Memex`,
+53 wiki pages · 109 chunks), not the eval corpus:
+
+- The running app creates and populates the `.mxb` sidecar next to the `.mxv`
+  under `<app-data>/embeddings/`, including the bootstrap case where the dense
+  index was already current (`.mxb` deleted, app relaunched → sidecar rebuilt in
+  6 s with the `.mxv` byte-identical, i.e. no re-embed).
+- Fused retrieval over those real on-disk sidecars raises `wiki/rlhf.md` — the
+  only page containing `PPO`, absent from the dense top-8 — to fused rank 2.
+- With the `.mxb` absent, the fused order is byte-for-byte the dense order:
+  the lexical arm degrades to a no-op rather than an error.
+
+See the task-8 report for the commands, the observed output, and for what could
+**not** be driven end-to-end through the Tauri command layer.
