@@ -1929,21 +1929,28 @@ pub async fn wikify_candidates(
     let bm25 = bm25_cache.get(&bm25_path);
     // Per chunk, fuse dense+lexical hits (`vecs` and `chunk_texts` stay index-
     // aligned: both came from the same truncated `chunks` in original chunk
-    // order, and `.iter().zip(.iter())` walks them in lockstep) then keep
-    // only knowledge pages, so source-summaries don't crowd out real update
-    // targets before the fold. With an empty/absent `.mxb` this degrades to
-    // the dense order unchanged — see `rrf_fuse_empty_lexical_preserves_dense_order`
-    // in retrieval.rs.
+    // order, and `.iter().zip(.iter())` walks them in lockstep), THEN keep
+    // only knowledge pages, THEN cap at 16 — filtering after truncating would
+    // let source-summary/index/log chunks consume the depth-16 budget and
+    // evict knowledge pages a dense-only search would have surfaced. Fuse
+    // from a wider pool than the final 16 so filtering has enough candidates
+    // left to fill it. With an empty/absent `.mxb` this degrades to the dense
+    // order unchanged — see `rrf_fuse_empty_lexical_preserves_dense_order` in
+    // retrieval.rs.
+    const FUSE_POOL: usize = 50;
+    const MAX_MATCHES: usize = 16;
     let per_chunk: Vec<Vec<VecHit>> = vecs
         .iter()
         .zip(chunk_texts.iter())
         .map(|(v, chunk_text)| {
-            let dense = store.search(v, 16);
-            let lexical = bm25.search(chunk_text, 16);
-            crate::retrieval::rrf_fuse(&dense, &lexical, 16)
+            let dense = store.search(v, FUSE_POOL);
+            let lexical = bm25.search(chunk_text, FUSE_POOL);
+            let mut fused: Vec<VecHit> = crate::retrieval::rrf_fuse(&dense, &lexical, FUSE_POOL)
                 .into_iter()
                 .filter(|h| crate::pipeline::is_knowledge_page(&h.stem))
-                .collect()
+                .collect();
+            fused.truncate(MAX_MATCHES);
+            fused
         })
         .collect();
     let out = crate::pipeline::rank_candidates(&per_chunk, k.clamp(1, 20));
