@@ -94,6 +94,13 @@ struct Bm25Doc {
     len: u32,
 }
 
+/// One occupied slot: a chunk plus its term->tf map. Slots live in a
+/// `Vec<Option<Slot>>` whose indices are *stable* — see `Bm25Index`.
+struct Slot {
+    doc: Bm25Doc,
+    terms: HashMap<String, u32>,
+}
+
 /// A lexical search hit. Field-compatible with `vector_index::Hit`, kept
 /// distinct because `score` here is a BM25 score, not a cosine similarity.
 #[derive(Clone)]
@@ -104,18 +111,37 @@ pub struct Bm25Hit {
     pub score: f32,
 }
 
-/// In-memory BM25 index over vault chunks. No persistence — Task 3 owns
-/// saving/loading; this type is rebuilt from vault text like the vector store
-/// used to be before it grew a binary format.
+/// In-memory BM25 index over vault chunks.
+///
+/// Doc slots are **stable**: a chunk keeps its slot index for as long as it is
+/// indexed, and a removed chunk's slot is recycled rather than compacted away.
+/// That is what lets `postings` (which keys on slot index) be maintained
+/// *incrementally* on every mutation instead of recomputed from scratch —
+/// compaction would renumber every surviving doc and invalidate every posting,
+/// which is exactly why the original implementation had to rebuild all derived
+/// state per `upsert_page` and made a per-page bootstrap loop O(pages²).
+///
+/// There is deliberately no "derived state is dirty" flag: `postings` and
+/// `total_len` are corrected inside each mutation, so a caller cannot search a
+/// stale index at all — `search` takes `&self` behind an `Arc`, so any deferred
+/// rebuild would need interior mutability and could silently serve wrong
+/// scores if a writer forgot to finish.
 #[derive(Default)]
 pub struct Bm25Index {
-    docs: Vec<Bm25Doc>,
-    /// Per-doc term frequency, parallel to `docs`.
-    doc_terms: Vec<HashMap<String, u32>>,
-    /// term -> [(doc idx, tf)], derived from `doc_terms` on every mutation.
-    postings: HashMap<String, Vec<(usize, u32)>>,
-    /// term -> document frequency, derived alongside `postings`.
-    df: HashMap<String, u32>,
+    /// Chunk slots. `None` is a recycled hole; `free` lists the holes.
+    slots: Vec<Option<Slot>>,
+    free: Vec<usize>,
+    /// Occupied slot count — the BM25 `N`. Not `slots.len()`, which counts holes.
+    n_live: usize,
+    /// page -> its slot indices, so replacing a page is O(that page) rather
+    /// than a scan of every slot.
+    page_slots: HashMap<String, Vec<usize>>,
+    /// term -> {slot idx -> tf}. A map (not a vec) so removing one doc's
+    /// posting is O(1) rather than a scan of the term's whole posting list —
+    /// with a vec, dropping a stop-word posting would be O(N) per doc and a
+    /// full re-upsert of the vault would stay quadratic. Document frequency is
+    /// `postings[term].len()`, so it needs no separate map.
+    postings: HashMap<String, HashMap<usize, u32>>,
     total_len: u64,
 }
 
@@ -125,12 +151,12 @@ impl Bm25Index {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.docs.is_empty()
+        self.n_live == 0
     }
 
     /// Number of indexed chunks.
     pub fn len(&self) -> usize {
-        self.docs.len()
+        self.n_live
     }
 
     /// Distinct pages currently indexed. Callers compute this once per batch
@@ -141,86 +167,134 @@ impl Bm25Index {
     /// bootstrap against an already-current dense store) without an O(n)
     /// scan per page.
     pub fn pages(&self) -> HashSet<String> {
-        self.docs.iter().map(|d| d.page.clone()).collect()
+        self.page_slots.keys().cloned().collect()
     }
 
-    /// Replace all chunks for one page with a fresh set, then rebuild the
-    /// derived postings/df/total_len from the resulting `doc_terms`. Mirrors
-    /// `VectorStore::upsert_page`'s retain-then-append shape so the two
-    /// indexes stay in step chunk-for-chunk.
+    /// Replace all chunks for one page with a fresh set, keeping the derived
+    /// `postings`/`total_len` correct incrementally. Mirrors
+    /// `VectorStore::upsert_page`'s replace-the-page shape so the two indexes
+    /// stay in step chunk-for-chunk. Cost is O(this page's terms), independent
+    /// of how much else is indexed — an empty-chunk call is therefore also the
+    /// delete path (as the index updater uses it).
     pub fn upsert_page(&mut self, page: &str, stem: &str, chunk_texts: &[String]) {
-        // Compact out the page's existing docs (and their parallel term maps)
-        // before appending the fresh ones, so a re-indexed page never leaves
-        // stale chunks behind.
-        let mut kept_docs = Vec::with_capacity(self.docs.len());
-        let mut kept_terms = Vec::with_capacity(self.doc_terms.len());
-        for (doc, terms) in self.docs.drain(..).zip(self.doc_terms.drain(..)) {
-            if doc.page != page {
-                kept_docs.push(doc);
-                kept_terms.push(terms);
-            }
-        }
-        self.docs = kept_docs;
-        self.doc_terms = kept_terms;
+        // Drop the page's existing chunks first, so a re-indexed page never
+        // leaves stale ones behind.
+        self.remove_page(page);
 
+        let mut idxs = Vec::with_capacity(chunk_texts.len());
         for (i, text) in chunk_texts.iter().enumerate() {
             let tokens = tokenize(text);
             let mut terms: HashMap<String, u32> = HashMap::new();
             for t in &tokens {
                 *terms.entry(t.clone()).or_insert(0) += 1;
             }
-            self.docs.push(Bm25Doc {
+            let doc = Bm25Doc {
                 page: page.to_string(),
                 stem: stem.to_string(),
                 section: i,
                 len: tokens.len() as u32,
-            });
-            self.doc_terms.push(terms);
+            };
+            let idx = match self.free.pop() {
+                Some(idx) => {
+                    self.slots[idx] = Some(Slot { doc, terms });
+                    idx
+                }
+                None => {
+                    self.slots.push(Some(Slot { doc, terms }));
+                    self.slots.len() - 1
+                }
+            };
+            let slot = self.slots[idx].as_ref().expect("just filled");
+            self.total_len += slot.doc.len as u64;
+            self.n_live += 1;
+            // Collected first, then inserted, to keep the borrow of `slot` out
+            // of the `postings` mutation below.
+            let terms: Vec<(String, u32)> =
+                slot.terms.iter().map(|(t, tf)| (t.clone(), *tf)).collect();
+            for (term, tf) in terms {
+                self.postings.entry(term).or_default().insert(idx, tf);
+            }
+            idxs.push(idx);
         }
+        if !idxs.is_empty() {
+            self.page_slots.insert(page.to_string(), idxs);
+        }
+    }
 
-        self.rebuild_derived();
+    /// Drop one page's chunks and every trace of them in the derived state.
+    /// O(that page's terms). No-op for a page that isn't indexed.
+    fn remove_page(&mut self, page: &str) {
+        let Some(idxs) = self.page_slots.remove(page) else {
+            return;
+        };
+        for idx in idxs {
+            let Some(slot) = self.slots[idx].take() else {
+                continue;
+            };
+            self.total_len -= slot.doc.len as u64;
+            self.n_live -= 1;
+            for term in slot.terms.keys() {
+                if let Some(p) = self.postings.get_mut(term) {
+                    p.remove(&idx);
+                    if p.is_empty() {
+                        self.postings.remove(term);
+                    }
+                }
+            }
+            self.free.push(idx);
+        }
     }
 
     /// Drop chunks for pages no longer present in the vault. Returns how many
     /// chunks were dropped.
     pub fn prune(&mut self, existing: &HashSet<String>) -> usize {
-        let before = self.docs.len();
-        let mut kept_docs = Vec::with_capacity(self.docs.len());
-        let mut kept_terms = Vec::with_capacity(self.doc_terms.len());
-        for (doc, terms) in self.docs.drain(..).zip(self.doc_terms.drain(..)) {
-            if existing.contains(&doc.page) {
-                kept_docs.push(doc);
-                kept_terms.push(terms);
-            }
+        let before = self.n_live;
+        let gone: Vec<String> = self
+            .page_slots
+            .keys()
+            .filter(|p| !existing.contains(*p))
+            .cloned()
+            .collect();
+        for page in gone {
+            self.remove_page(&page);
         }
-        self.docs = kept_docs;
-        self.doc_terms = kept_terms;
-        self.rebuild_derived();
-        before - self.docs.len()
+        before - self.n_live
     }
 
-    /// Recompute `postings`, `df`, and `total_len` from `doc_terms`.
+    /// Recompute all derived state (`postings`, `page_slots`, `total_len`,
+    /// `n_live`, `free`) from the occupied slots, preserving slot indices.
+    /// Used by `decode` to derive what the format deliberately doesn't store —
+    /// and by the tests as the reference the incremental maintenance above is
+    /// checked against.
     fn rebuild_derived(&mut self) {
         self.postings.clear();
-        self.df.clear();
+        self.page_slots.clear();
+        self.free.clear();
         self.total_len = 0;
-        for doc in &self.docs {
-            self.total_len += doc.len as u64;
-        }
-        for (i, terms) in self.doc_terms.iter().enumerate() {
+        self.n_live = 0;
+        for idx in 0..self.slots.len() {
+            let Some(slot) = self.slots[idx].as_ref() else {
+                self.free.push(idx);
+                continue;
+            };
+            self.total_len += slot.doc.len as u64;
+            self.n_live += 1;
+            let page = slot.doc.page.clone();
+            let terms: Vec<(String, u32)> =
+                slot.terms.iter().map(|(t, tf)| (t.clone(), *tf)).collect();
+            self.page_slots.entry(page).or_default().push(idx);
             for (term, tf) in terms {
-                self.postings.entry(term.clone()).or_default().push((i, *tf));
-                *self.df.entry(term.clone()).or_insert(0) += 1;
+                self.postings.entry(term).or_default().insert(idx, tf);
             }
         }
     }
 
     /// Top-`k` chunks by BM25 score against `query`.
     pub fn search(&self, query: &str, k: usize) -> Vec<Bm25Hit> {
-        if self.docs.is_empty() {
+        if self.n_live == 0 {
             return Vec::new();
         }
-        let n = self.docs.len() as f32;
+        let n = self.n_live as f32;
         let avg_len = (self.total_len as f32 / n).max(1e-9);
         let query_terms: HashSet<String> = tokenize(query).into_iter().collect();
 
@@ -229,10 +303,17 @@ impl Bm25Index {
             let Some(postings) = self.postings.get(term) else {
                 continue;
             };
-            let df = *self.df.get(term).unwrap_or(&0) as f32;
+            // Document frequency is the posting count for the term — there is
+            // no separate `df` map to keep in sync.
+            let df = postings.len() as f32;
             let idf = ((1.0 + (n - df + 0.5) / (df + 0.5)) as f32).ln();
-            for &(doc_idx, tf) in postings {
-                let doc_len = self.docs[doc_idx].len as f32;
+            // Iteration order over one term's postings does not affect any
+            // score: each doc receives exactly ONE contribution per query
+            // term, so a doc's accumulation order is fixed by the query-term
+            // order alone, not by this inner loop.
+            for (&doc_idx, &tf) in postings {
+                let doc = self.slots[doc_idx].as_ref().expect("posting points at a live slot");
+                let doc_len = doc.doc.len as f32;
                 let tf = tf as f32;
                 let denom = tf + K1 * (1.0 - B + B * doc_len / avg_len);
                 let score = idf * (tf * (K1 + 1.0)) / denom;
@@ -243,7 +324,7 @@ impl Bm25Index {
         let mut hits: Vec<Bm25Hit> = scores
             .into_iter()
             .map(|(doc_idx, score)| {
-                let doc = &self.docs[doc_idx];
+                let doc = &self.slots[doc_idx].as_ref().expect("live slot").doc;
                 Bm25Hit {
                     page: doc.page.clone(),
                     stem: doc.stem.clone(),
@@ -320,11 +401,14 @@ impl Bm25Index {
             out.extend_from_slice(&(s.len() as u32).to_le_bytes());
             out.extend_from_slice(s.as_bytes());
         }
-        let mut out = Vec::with_capacity(16 + self.docs.len() * 64);
+        let mut out = Vec::with_capacity(16 + self.n_live * 64);
         out.extend_from_slice(MXB_MAGIC);
         out.push(MXB_VERSION);
-        out.extend_from_slice(&(self.docs.len() as u32).to_le_bytes());
-        for (doc, terms) in self.docs.iter().zip(self.doc_terms.iter()) {
+        out.extend_from_slice(&(self.n_live as u32).to_le_bytes());
+        // Live slots only, in slot order: recycled holes are not persisted, so
+        // a reloaded index is always compact.
+        for slot in self.slots.iter().flatten() {
+            let (doc, terms) = (&slot.doc, &slot.terms);
             put_str(&mut out, &doc.page);
             put_str(&mut out, &doc.stem);
             out.extend_from_slice(&(doc.section as u32).to_le_bytes());
@@ -379,8 +463,7 @@ impl Bm25Index {
         if n_docs.checked_mul(20)? > bytes.len() {
             return None;
         }
-        let mut docs = Vec::with_capacity(n_docs);
-        let mut doc_terms = Vec::with_capacity(n_docs);
+        let mut slots = Vec::with_capacity(n_docs);
         for _ in 0..n_docs {
             let page = c.string()?;
             let stem = c.string()?;
@@ -398,17 +481,10 @@ impl Bm25Index {
                 let tf = c.u32()?;
                 terms.insert(term, tf);
             }
-            docs.push(Bm25Doc { page, stem, section, len });
-            doc_terms.push(terms);
+            slots.push(Some(Slot { doc: Bm25Doc { page, stem, section, len }, terms }));
         }
 
-        let mut index = Bm25Index {
-            docs,
-            doc_terms,
-            postings: HashMap::new(),
-            df: HashMap::new(),
-            total_len: 0,
-        };
+        let mut index = Bm25Index { slots, ..Default::default() };
         index.rebuild_derived();
         Some(index)
     }
@@ -604,6 +680,108 @@ mod tests {
         assert_eq!(ix.len(), 1);
         assert!(ix.search("alpha", 5).is_empty());
     }
+    /// Corpus used by the two equivalence tests below: enough pages, chunks,
+    /// shared terms (so `df` matters) and scripts to make a wrong `postings` /
+    /// `total_len` / `n_live` show up in the scores.
+    fn equivalence_corpus() -> Vec<(String, String, Vec<String>)> {
+        (0..40)
+            .map(|i| {
+                let page = format!("wiki/p{i}.md");
+                let stem = format!("p{i}");
+                let chunks = vec![
+                    format!("the policy is optimized with PPO and a reward model page{i}"),
+                    format!("정책 최적화 그리고 보상 모델 {i} shared common tokens here"),
+                    format!("rare{i} token appears only on this page along with common words"),
+                ];
+                (page, stem, chunks)
+            })
+            .collect()
+    }
+
+    const EQUIVALENCE_QUERIES: [&str; 6] = [
+        "PPO",
+        "reward model",
+        "정책 최적화",
+        "rare7",
+        "the common words page3",
+        "nothing matches this query at all",
+    ];
+
+    fn ranked(ix: &Bm25Index, q: &str) -> Vec<(String, usize, u32)> {
+        ix.search(q, 40)
+            .into_iter()
+            .map(|h| (h.page, h.section, h.score.to_bits()))
+            .collect()
+    }
+
+    #[test]
+    fn bm25_incremental_derived_state_matches_a_full_rebuild() {
+        // `upsert_page`/`prune` maintain postings/total_len/n_live/page_slots
+        // incrementally instead of recomputing them (the O(pages²) fix). This
+        // pins the equivalence: after churn — inserts, replacements that
+        // change a page's chunk count, deletes, a prune, and re-inserts that
+        // recycle freed slots — the incrementally maintained state must score
+        // BIT-identically to `rebuild_derived`'s from-scratch recomputation.
+        let mut ix = Bm25Index::new();
+        for (page, stem, chunks) in equivalence_corpus() {
+            ix.upsert_page(&page, &stem, &chunks);
+        }
+        // Replace a page with fewer chunks, delete two, prune a third away,
+        // then add a fresh page that must land in the recycled slots.
+        ix.upsert_page("wiki/p5.md", "p5", &["the policy only now".to_string()]);
+        ix.upsert_page("wiki/p9.md", "p9", &[]); // delete path
+        ix.upsert_page("wiki/p11.md", "p11", &[]);
+        let keep: HashSet<String> = (0..40)
+            .filter(|i| *i != 13)
+            .map(|i| format!("wiki/p{i}.md"))
+            .collect();
+        ix.prune(&keep);
+        ix.upsert_page(
+            "wiki/late.md",
+            "late",
+            &["a late page with PPO and 정책 최적화 and rare7".to_string(), "second chunk".to_string()],
+        );
+
+        let before: Vec<Vec<_>> = EQUIVALENCE_QUERIES.iter().map(|q| ranked(&ix, q)).collect();
+        let (len_before, pages_before) = (ix.len(), ix.pages());
+        ix.rebuild_derived();
+        let after: Vec<Vec<_>> = EQUIVALENCE_QUERIES.iter().map(|q| ranked(&ix, q)).collect();
+
+        assert_eq!(ix.len(), len_before);
+        assert_eq!(ix.pages(), pages_before);
+        for (qi, q) in EQUIVALENCE_QUERIES.iter().enumerate() {
+            assert_eq!(before[qi], after[qi], "query {q:?} differs from a full rebuild");
+        }
+    }
+
+    #[test]
+    fn bm25_same_corpus_built_two_ways_searches_identically() {
+        // Search output must depend only on the index's CONTENT, never on the
+        // order the pages were upserted in or on how many intermediate states
+        // it passed through — otherwise slot recycling would leak into scores.
+        let corpus = equivalence_corpus();
+
+        let mut a = Bm25Index::new();
+        for (page, stem, chunks) in &corpus {
+            a.upsert_page(page, stem, chunks);
+        }
+
+        let mut b = Bm25Index::new();
+        // Reverse order, with a throwaway page upserted and deleted between
+        // every real one so `b` is riddled with recycled slots.
+        for (i, (page, stem, chunks)) in corpus.iter().enumerate().rev() {
+            b.upsert_page("wiki/scratch.md", "scratch", &[format!("scratch {i} PPO 정책")]);
+            b.upsert_page(page, stem, chunks);
+            b.upsert_page("wiki/scratch.md", "scratch", &[]);
+        }
+
+        assert_eq!(a.len(), b.len());
+        assert_eq!(a.pages(), b.pages());
+        for q in EQUIVALENCE_QUERIES {
+            assert_eq!(ranked(&a, q), ranked(&b, q), "query {q:?} depends on build order");
+        }
+    }
+
     #[test]
     fn bm25_prune_drops_absent_pages() {
         let mut ix = Bm25Index::new();
