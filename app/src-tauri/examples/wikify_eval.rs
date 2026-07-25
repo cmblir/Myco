@@ -327,8 +327,11 @@ fn main() {
     // dense-only behaviour rather than a re-implementation. The `fused` arm
     // calls `pipeline::fuse_chunk_matches` with the real BM25 hits; note its
     // hit scores are RRF rank scores, so `rank_candidates` folds a page's
-    // chunks by best rank there and by max cosine on the dense arm — that
-    // difference is part of what the two arms measure.
+    // chunks by best rank there and by max cosine on the dense arm. But every
+    // case source in this corpus is a single chunk (max ~966 bytes vs the
+    // 1800-byte CHUNK_CHARS target — see eval/BASELINE.md's re-measurement
+    // section), so there is no cross-chunk fold here to disagree: this
+    // harness cannot exercise that difference at all, in either direction.
     struct Ranked {
         dense: Vec<String>,
         fused: Vec<String>,

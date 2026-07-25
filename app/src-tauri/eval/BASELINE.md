@@ -628,14 +628,32 @@ P@5/10/20 34.9/26.3/18.2 % · R 64.0/89.1/92.9 % · MAP@20 0.416; strict hard
 translation-aware hard 24.2 % / 83.0 % / 0.404; and every EN/KO split row. The
 fused column is unchanged by construction (it still calls `fuse_chunk_matches`).
 
-So on this corpus the two folds happened to produce the same ranking: max-RRF is
-`min` rank and min-rank ordering agreed with max-cosine ordering on the whole
-top-20 for all 71 cases × 2 variants. That is an **empirical coincidence of this
-corpus, not an identity** — the two folds can disagree whenever a page's
-best-cosine chunk is not its best-rank chunk, so the fix is a real behavioural
-correction that this particular measurement cannot see. **No number in this
-section changed, so the fusion verdict stands unchanged**: fused is still worse
-than dense on aggregate recall/precision at k=10, and wikify still ships
+The dense arm's numbers could not have moved, and this is structural, not a
+coincidence: every one of the harness's 142 case-variants (71 pages × easy/hard)
+is a **single chunk**. Raw pages chunk to 2 sections (frontmatter + body);
+`strip_markup` drops the frontmatter, leaving one; and the longest case variant
+is **966 bytes** against `CHUNK_CHARS = 1800` (`src/embeddings.rs:17`) — the
+chunks-per-case histogram is `{1: 71}` for both variants (this is exactly what
+the harness's own printed corpus line, `71 pages · 142 chunks`, says). With one
+chunk there is no cross-chunk fold for `rank_candidates` to perform: `rrf_fuse`
+assigns strictly decreasing scores over unique ids, so order is preserved, and
+each page folds to its single occurrence under either scoring. The byte-identical
+dense output was therefore guaranteed a priori, not something this run happened
+to observe.
+
+**So this harness validates neither the fold change nor its absence.** The
+evidence for the cosine-score fix is the unit test
+(`pipeline::dense_chunk_matches_keeps_cosine_scores_where_fuse_replaces_them_with_rrf`),
+not these tables. The wikify eval corpus does not exercise multi-chunk sources at
+all, whereas production feeds up to `MAX_CHUNKS = 8` chunks of real text — so a
+future change to the fold, or a revert of the call site back to
+`fuse_chunk_matches`, would show **no movement here while changing real
+behaviour**. That is the trap this note exists to prevent.
+
+**The fusion verdict is unaffected by any of this**: the fused arm changes the
+within-chunk ordering, which this harness *does* measure (`rrf_fuse` reorders by
+rank rather than cosine even with a single chunk per case), so fused is still
+worse than dense on aggregate recall/precision at k=10, and wikify still ships
 dense-only.
 
 ### Known measurement artifacts
