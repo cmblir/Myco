@@ -134,29 +134,26 @@ Measured with `MEMEX_EMBED_SPEC=bge-m3 cargo run --example retrieval_eval --rele
 over **71 wiki pages · 142 chunks · 62 queries**. The harness reports both arms in
 one run, so within a run the two tables share the identical index.
 
-**Run-to-run stability — read this before quoting a fused number.** Four runs of
-the unchanged harness on the unchanged corpus and query set were recorded. The
-dense control came out **identical in all four** (every figure below reproduces
-exactly). The fused arm did **not**: it landed on one of two outcomes, differing
-in exactly one query (`DPO`), and therefore in hit@1 / recall@1 / MRR / nDCG@10.
-Observed 2× each:
+**Run-to-run stability — fixed.** An earlier measurement pass on this same
+harness, corpus, and query set recorded the fused arm landing on one of two
+outcomes across runs, differing in exactly one query (`DPO`) and therefore in
+hit@1 / recall@1 / MRR / nDCG@10. The cause was not the embedder — bge-m3 is
+bit-reproducible for the same input, within and across processes — but
+`Bm25Index::search` (`src/retrieval.rs`): for the query `DPO`,
+`wiki/analysis-rlhf-vs-dpo.md#1` and `ko-corpus/ko-dpo.md#1` scored
+bit-identically (both `0x408b86dc`), the hit list was materialised from a
+`HashMap` (per-process random iteration order) and sorted with a *stable* sort
+on score alone, so which of the two took lexical rank 1 varied per process.
+RRF weights by rank, so that swap was enough to move `wiki/dpo.md` between
+fused rank 1 and 2.
 
-| outcome | hit@1 | recall@1 | MRR | nDCG@10 | `DPO` |
-|---------|------:|---------:|----:|--------:|------:|
-| A | 83.9 % | 79.0 % | 0.914 | 0.932 | @1 (no regression) |
-| B | 82.3 % | 77.4 % | 0.906 | 0.926 | @2 (regression) |
-
-The cause is not the embedder: bge-m3 was checked and is bit-reproducible for the
-same input, within a process and across processes. It is `Bm25Index::search`
-(`src/retrieval.rs`): for the query `DPO`, `wiki/analysis-rlhf-vs-dpo.md#1` and
-`ko-corpus/ko-dpo.md#1` score **bit-identically** (both `0x408b86dc`), the hit
-list is materialised from a `HashMap` (per-process random iteration order) and
-sorted with a *stable* sort on score alone, so which of the two takes lexical
-rank 1 varies per process. RRF weights by rank (1/61 vs 1/62), so that swap is
-enough to move `wiki/dpo.md` between fused rank 1 and 2. Reproduced directly:
-5 index-only runs of the same query gave order A 3× and order B 2×, with
-identical scores. Every figure below that depends on that one query is therefore
-quoted as the observed range, not as an exact value.
+`Bm25Index::search` now breaks ties on score by `(page, section)` ascending —
+the same tie-break `rrf_fuse` already used — giving it a deterministic total
+order. Two runs of `MEMEX_EMBED_SPEC=bge-m3 cargo run --example retrieval_eval
+--release` after the fix produced a **byte-identical fused block** (every
+table and rank-change line below reproduced exactly). The figures below are
+single measured values, not a range: the earlier spread was a property of the
+tie-break bug, not of the retrieval itself.
 
 ### Results — bge-m3 dense, cosine (control)
 
@@ -171,32 +168,30 @@ quoted as the observed range, not as an exact value.
 
 ### Results — dense + BM25 (RRF fused)
 
-| k  | hit@k              | recall@k           |
-|----|--------------------|--------------------|
-| 1  | 82.3 – 83.9 %      | 77.4 – 79.0 %      |
-| 3  | 100.0 %            | 98.4 %             |
-| 5  | 100.0 %            | 100.0 %            |
-| 10 | 100.0 %            | 100.0 %            |
+| k  | hit@k   | recall@k |
+|----|---------|----------|
+| 1  | 82.3 %  | 77.4 %   |
+| 3  | 100.0 % | 98.4 %   |
+| 5  | 100.0 % | 100.0 %  |
+| 10 | 100.0 % | 100.0 %  |
 
-**MRR 0.906 – 0.914 · nDCG@10 0.926 – 0.932**
+**MRR 0.906 · nDCG@10 0.926**
 
-The ranges are the two outcomes tabulated above, each seen in 2 of 4 runs; hit@3,
-hit@5, hit@10 and their recalls were identical in every run.
+Identical in both post-fix runs; no range to quote.
 
 ### Aggregate delta (fused − dense)
 
-| metric    | dense | fused         | delta                |
-|-----------|------:|--------------:|---------------------:|
-| hit@1     | 72.6  | 82.3 – 83.9   | **+9.7 – +11.3 pp**  |
-| hit@3     | 91.9  | 100.0         | **+8.1 pp**          |
-| hit@5     | 96.8  | 100.0         | **+3.2 pp**          |
-| hit@10    | 98.4  | 100.0         | **+1.6 pp**          |
-| recall@10 | 96.8  | 100.0         | **+3.2 pp**          |
-| MRR       | 0.829 | 0.906 – 0.914 | **+0.077 – +0.085**  |
-| nDCG@10   | 0.847 | 0.926 – 0.932 | **+0.079 – +0.085**  |
+| metric    | dense | fused | delta            |
+|-----------|------:|------:|-----------------:|
+| hit@1     | 72.6  | 82.3  | **+9.7 pp**       |
+| hit@3     | 91.9  | 100.0 | **+8.1 pp**       |
+| hit@5     | 96.8  | 100.0 | **+3.2 pp**       |
+| hit@10    | 98.4  | 100.0 | **+1.6 pp**       |
+| recall@10 | 96.8  | 100.0 | **+3.2 pp**       |
+| MRR       | 0.829 | 0.906 | **+0.077**        |
+| nDCG@10   | 0.847 | 0.926 | **+0.079**        |
 
-Fusion beats dense on every metric in every run — the run-to-run variation is
-smaller than the smallest gain. Every query now has a relevant page in its
+Fusion beats dense on every metric. Every query now has a relevant page in its
 top 3, and recall@5 is complete.
 
 ### The five recorded weak queries — all rescued
@@ -218,15 +213,15 @@ disambiguated by the CJK bigram tokens. The Korean semantic paraphrase
 
 ### Regressions — the complete list
 
-Two queries lost rank 1, both by exactly one position:
+Two queries lost rank 1, both by exactly one position, in both post-fix runs:
 
-| query | target | dense | fused | seen in |
-|-------|--------|------:|------:|---------|
-| `DPO` | `dpo` | @1 | @2 | 2 of 4 runs (the tied-score coin-flip above) |
-| `RAG` | `rag` | @1 | @2 | all 4 runs |
+| query | target | dense | fused |
+|-------|--------|------:|------:|
+| `DPO` | `dpo` | @1 | @2 |
+| `RAG` | `rag` | @1 | @2 |
 
-No other query regressed in any run, and the five rescues listed above were
-identical in all four.
+No other query regressed, and the five rescues listed above were identical in
+both runs.
 
 Both are the same mechanism, and it is inherent to RRF rather than a tuning
 mistake: for a 3-letter acronym that titles its own page, the dense arm already
@@ -239,24 +234,30 @@ against the +0.077 net. No other query regressed; no query left the top 10.
 Recorded here rather than smoothed over: this is the price paid for the +9.7 pp
 on hit@1, and a future reranker is the place to reclaim it.
 
+Before the tie-break fix, `DPO` was the query whose fused rank flip-flopped
+between @1 and @2 across runs (the earlier "run-to-run stability" note above);
+`RAG` regressed in every run recorded then, and still does now. With the fix,
+`DPO`'s @1 → @2 regression is reproducible on every run — the previously
+"lucky" @1 outcome is not something the current, corrected code produces.
+
 ### Success criteria — met
 
 The previous section required the increment to "raise MRR / hit@1 and rescue the
 five weak queries above without regressing the queries already at rank 1." The
-first two are met with margin in every run (MRR 0.829 → 0.906–0.914, hit@1
-72.6 % → 82.3–83.9 %) and all five weak queries are rescued. The third is met with
-the exceptions listed above — `RAG` slipped @1 → @2 in every run and `DPO` in half
-of them — so the criterion is met **with a documented, quantified exception**, not
-unconditionally.
+first two are met with margin (MRR 0.829 → 0.906, hit@1 72.6 % → 82.3 %) and all
+five weak queries are rescued. The third is met with the exceptions listed
+above — `RAG` and `DPO` both slip @1 → @2 — so the criterion is met **with a
+documented, quantified exception**, not unconditionally.
 
 **New reference the next increment must beat:** dense+BM25 RRF — hit@1 82.3 % ·
-hit@3 100.0 % · MRR 0.906 · nDCG@10 0.926, i.e. the **worse** of the two observed
-outcomes, so a real improvement is not confused with landing on the luckier one.
-Note that hit@3/@5/@10 are saturated again: further gains are only measurable on
-hit@1 / MRR / nDCG until the corpus or query set is extended again. The tie-order
-instability in `Bm25Index::search` is a separate follow-up: until it is given an
-identity tie-break, single-run fused figures on this corpus carry ±1 query
-(≈1.6 pp hit@1, ≈0.008 MRR) of noise.
+hit@3 100.0 % · MRR 0.906 · nDCG@10 0.926. These are now stable, reproducible
+values (two identical post-fix runs), not the worse end of a range. Note that
+hit@3/@5/@10 are saturated again: further gains are only measurable on
+hit@1 / MRR / nDCG until the corpus or query set is extended again. The
+tie-order instability in `Bm25Index::search` that previously made single-run
+fused figures on this corpus carry noise (±1 query, ≈1.6 pp hit@1, ≈0.008 MRR)
+has been fixed — `search` now sorts ties by `(page, section)` ascending — so
+that noise no longer applies.
 
 ### Wired-path check (not just the harness)
 
