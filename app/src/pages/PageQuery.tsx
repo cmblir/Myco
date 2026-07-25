@@ -354,7 +354,14 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                     path inlines a whole-vault concat, while the CLI path injects
                     nothing and lets the CLI's own Read/Grep find the pages. */}
                 {t.q_retrieval_failed ??
-                  "The search index could not be reached, so this answer skipped semantic search and read the vault directly instead. If it keeps happening, run “Reindex now” under Model settings."}
+                  "The search index could not be reached, so this answer skipped semantic search and read the vault directly instead. If it keeps happening, run “Reindex now” under Model settings."}{" "}
+                <button
+                  className="btn btn-ghost"
+                  style={{ fontSize: 12, padding: "2px 8px" }}
+                  onClick={() => setRoute("settings")}
+                >
+                  {t.q_open_model_settings ?? "Model settings"} →
+                </button>
               </div>
             ) : null}
             {turn.a ? (
