@@ -1857,6 +1857,7 @@ pub async fn wikify_candidates(
     vault: tauri::State<'_, VaultRoot>,
     llm: tauri::State<'_, LocalLlmState>,
     cache: tauri::State<'_, VectorCache>,
+    bm25_cache: tauri::State<'_, crate::retrieval::Bm25Cache>,
     source_text: String,
     k: usize,
 ) -> Result<Vec<crate::pipeline::CandidatePage>, String> {
@@ -1897,6 +1898,11 @@ pub async fn wikify_candidates(
         return Ok(Vec::new());
     }
     let n_chunks = chunks.len();
+    // `chunks` is moved into `embed_texts` below, but each chunk's own text is
+    // also the lexical (BM25) query for that same chunk, so keep a copy —
+    // cloning `n_chunks` (<= MAX_CHUNKS) short chunk strings is negligible
+    // next to the embed call itself.
+    let chunk_texts = chunks.clone();
     // One batched embed call shares a llama context across the chunks. Role is
     // Query: the incoming source's chunks are the search side, probed against
     // the already-indexed pages (embedded as Document during reindex).
@@ -1909,13 +1915,24 @@ pub async fn wikify_candidates(
         chunks,
     )
     .await?;
-    // Per chunk, retrieve extra hits then keep only knowledge pages, so
-    // source-summaries don't crowd out real update targets before the fold.
+    // Load the lexical index once, outside the per-chunk loop — same vault
+    // root the `.mxv` (dense) index was derived from.
+    let bm25_path = crate::retrieval::Bm25Index::path_for(&root.to_string_lossy())?;
+    let bm25 = bm25_cache.get(&bm25_path);
+    // Per chunk, fuse dense+lexical hits (`vecs` and `chunk_texts` stay index-
+    // aligned: both came from the same truncated `chunks` in original chunk
+    // order, and `.iter().zip(.iter())` walks them in lockstep) then keep
+    // only knowledge pages, so source-summaries don't crowd out real update
+    // targets before the fold. With an empty/absent `.mxb` this degrades to
+    // the dense order unchanged — see `rrf_fuse_empty_lexical_preserves_dense_order`
+    // in retrieval.rs.
     let per_chunk: Vec<Vec<VecHit>> = vecs
         .iter()
-        .map(|v| {
-            store
-                .search(v, 16)
+        .zip(chunk_texts.iter())
+        .map(|(v, chunk_text)| {
+            let dense = store.search(v, 16);
+            let lexical = bm25.search(chunk_text, 16);
+            crate::retrieval::rrf_fuse(&dense, &lexical, 16)
                 .into_iter()
                 .filter(|h| crate::pipeline::is_knowledge_page(&h.stem))
                 .collect()
@@ -2392,6 +2409,121 @@ mod tests {
         let fused_pages: Vec<&str> = fused.iter().map(|h| h.page.as_str()).collect();
         let dense_pages: Vec<&str> = dense.iter().map(|h| h.page.as_str()).collect();
         assert_eq!(fused_pages, dense_pages, "empty BM25 arm must not reorder the dense hits");
+    }
+
+    // Pins `wikify_candidates`'s per-chunk fusion glue (Task 7): with an
+    // empty/absent BM25 index, fusing each chunk's dense hits must not
+    // reorder them (same contract as `semantic_search`, exercised on the
+    // `wikify_candidates` shape: per-chunk dense hits fused against that
+    // chunk's own lexical query, then filtered to knowledge pages).
+    #[test]
+    fn wikify_candidates_glue_degrades_to_dense_order_when_bm25_is_empty() {
+        let dense_per_chunk = vec![
+            vec![
+                Hit { page: "attn.md".into(), stem: "attn".into(), section: 0, score: 0.9 },
+                Hit { page: "index.md".into(), stem: "index".into(), section: 0, score: 0.8 },
+            ],
+            vec![Hit { page: "backprop.md".into(), stem: "backprop".into(), section: 0, score: 0.7 }],
+        ];
+        let chunk_texts = vec!["attention is all you need".to_string(), "gradient descent".to_string()];
+        let cache = Bm25Cache::default();
+        let bm25_path = PathBuf::from("/nonexistent/does-not-exist-2.mxb");
+        let bm25 = cache.get(&bm25_path);
+        assert!(bm25.is_empty(), "cache must not fabricate content for a missing file");
+
+        let per_chunk: Vec<Vec<Hit>> = dense_per_chunk
+            .iter()
+            .zip(chunk_texts.iter())
+            .map(|(dense, text)| {
+                let lexical = bm25.search(text, 16);
+                assert!(lexical.is_empty());
+                crate::retrieval::rrf_fuse(dense, &lexical, 16)
+                    .into_iter()
+                    .filter(|h| crate::pipeline::is_knowledge_page(&h.stem))
+                    .collect()
+            })
+            .collect();
+
+        // Chunk 0: dense order preserved, and the "index" stem is dropped by
+        // the knowledge-page filter (same as the real command).
+        assert_eq!(
+            per_chunk[0].iter().map(|h| h.page.as_str()).collect::<Vec<_>>(),
+            vec!["attn.md"]
+        );
+        assert_eq!(per_chunk[1].iter().map(|h| h.page.as_str()).collect::<Vec<_>>(), vec![
+            "backprop.md"
+        ]);
+    }
+
+    // Pins chunk-vector/chunk-text alignment (Task 7): a bug that paired
+    // chunk N's dense hits with a DIFFERENT chunk's lexical query would still
+    // compile and still return plausible-looking candidates — no existing
+    // test catches that. Here each chunk's lexical query is a keyword that
+    // matches a page ONLY when paired with its own chunk's dense hit; a
+    // swapped pairing (e.g. `.iter().zip(chunk_texts.iter().rev())`, or
+    // indexing chunk_texts by the wrong offset) surfaces the WRONG page's
+    // stem as top-scoring, or drops a page this test expects, and fails.
+    //
+    // Verified this actually catches the swap: temporarily replacing
+    // `.zip(chunk_texts.iter())` with `.zip(chunk_texts.iter().rev())` makes
+    // this test fail (chunk 0 resolves to "photosynthesis" instead of
+    // "quaternion-rotations").
+    #[test]
+    fn wikify_candidates_glue_keeps_chunk_vector_and_chunk_text_aligned() {
+        // Two pages, each built from a chunk whose text is dominated by a
+        // distinct, non-overlapping keyword — "quaternion" only appears in
+        // chunk 0's page/text, "photosynthesis" only in chunk 1's.
+        let mut bm25 = Bm25Index::new();
+        bm25.upsert_page(
+            "quaternion-rotations.md",
+            "quaternion-rotations",
+            &["quaternion rotations avoid gimbal lock in 3D graphics".to_string()],
+        );
+        bm25.upsert_page(
+            "photosynthesis.md",
+            "photosynthesis",
+            &["photosynthesis converts light energy into chemical energy".to_string()],
+        );
+
+        // Dense hits are irrelevant to this pairing (identical, weak score
+        // for both pages on every chunk) so the fused rank is driven purely
+        // by which chunk's text is matched against the lexical index — this
+        // isolates the zip/index pairing itself from dense-side effects.
+        let weak_dense = vec![
+            Hit { page: "quaternion-rotations.md".into(), stem: "quaternion-rotations".into(), section: 0, score: 0.01 },
+            Hit { page: "photosynthesis.md".into(), stem: "photosynthesis".into(), section: 0, score: 0.01 },
+        ];
+        let dense_per_chunk = vec![weak_dense.clone(), weak_dense];
+        // Chunk 0's own text is about quaternions; chunk 1's is about
+        // photosynthesis — correct pairing must surface each chunk's own
+        // topic as the top lexical (and thus top fused) hit for that chunk.
+        let chunk_texts = vec![
+            "explain quaternion rotation math".to_string(),
+            "explain photosynthesis chemistry".to_string(),
+        ];
+
+        let per_chunk: Vec<Vec<Hit>> = dense_per_chunk
+            .iter()
+            .zip(chunk_texts.iter())
+            .map(|(dense, text)| {
+                let lexical = bm25.search(text, 16);
+                crate::retrieval::rrf_fuse(dense, &lexical, 16)
+                    .into_iter()
+                    .filter(|h| crate::pipeline::is_knowledge_page(&h.stem))
+                    .collect()
+            })
+            .collect();
+
+        assert_eq!(
+            per_chunk[0].first().map(|h| h.stem.as_str()),
+            Some("quaternion-rotations"),
+            "chunk 0's own text must drive chunk 0's top fused hit"
+        );
+        assert_eq!(
+            per_chunk[1].first().map(|h| h.stem.as_str()),
+            Some("photosynthesis"),
+            "chunk 1's own text must drive chunk 1's top fused hit"
+        );
     }
 
     #[test]
