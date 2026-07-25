@@ -9,8 +9,17 @@
 //! `Hit` type the rest of the app already consumes.
 
 use std::collections::{HashMap, HashSet};
+use std::hash::{Hash, Hasher};
+use std::path::{Path, PathBuf};
 
 use crate::vector_index::Hit;
+
+/// Magic + format-version byte for the `.mxb` sidecar. Unlike `.mxv`
+/// (`vector_index::MAGIC`), there is no embedding model baked into the
+/// format: BM25 is purely lexical, so it survives an embed-model swap that
+/// would otherwise wipe the vector index.
+const MXB_MAGIC: &[u8; 4] = b"MXB1";
+const MXB_VERSION: u8 = 1;
 
 /// BM25 term-frequency saturation parameter.
 const K1: f32 = 1.2;
@@ -235,6 +244,160 @@ impl Bm25Index {
         hits.truncate(k);
         hits
     }
+
+    /// Index file path for a given vault root, under `<app-data>/embeddings/`.
+    /// Same settings dir and hash scheme as `VectorStore::path_for`, so the
+    /// lexical and dense sidecars for one vault sit next to each other —
+    /// just a different extension.
+    pub fn path_for(vault_root: &str) -> Result<PathBuf, String> {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        vault_root.hash(&mut h);
+        let dir = crate::settings::settings_dir()?.join("embeddings");
+        std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir embeddings: {e}"))?;
+        Ok(dir.join(format!("{:016x}.mxb", h.finish())))
+    }
+
+    /// Read the index, or return an empty one. A missing, truncated, or
+    /// corrupt file is never fatal: the index is derived state that a
+    /// reindex rebuilds, so a bad read just degrades to "not indexed yet".
+    pub fn load(path: &Path) -> Self {
+        std::fs::read(path)
+            .ok()
+            .and_then(|bytes| Self::decode(&bytes))
+            .unwrap_or_default()
+    }
+
+    /// Atomic temp-file-plus-rename save, mirroring `VectorStore::save`: a
+    /// unique per-save temp name so two overlapping saves each publish a
+    /// whole file rather than racing on a shared `.tmp` path.
+    pub fn save(&self, path: &Path) -> Result<(), String> {
+        let bytes = self.encode();
+        let tmp = path.with_extension(format!("{}.mxb.tmp", unique_suffix()));
+        std::fs::write(&tmp, &bytes).map_err(|e| format!("write index: {e}"))?;
+        if let Err(e) = std::fs::rename(&tmp, path) {
+            let _ = std::fs::remove_file(&tmp);
+            return Err(format!("rename index: {e}"));
+        }
+        Ok(())
+    }
+
+    /// Serialize to the binary format. Only the per-doc identity (`page`,
+    /// `stem`, `section`, `len`) and its term->tf map are persisted;
+    /// `postings`/`df`/`total_len` are derived and rebuilt by `decode` via
+    /// `rebuild_derived`, so there is nothing to keep in sync on disk.
+    ///
+    /// ```text
+    /// "MXB1" | version u8 | n_docs u32
+    /// per doc: page, stem (u32 len + utf8) | section u32 | len u32
+    ///          | n_terms u32
+    ///          per term: term (u32 len + utf8) | tf u32
+    /// ```
+    pub fn encode(&self) -> Vec<u8> {
+        fn put_str(out: &mut Vec<u8>, s: &str) {
+            out.extend_from_slice(&(s.len() as u32).to_le_bytes());
+            out.extend_from_slice(s.as_bytes());
+        }
+        let mut out = Vec::with_capacity(16 + self.docs.len() * 64);
+        out.extend_from_slice(MXB_MAGIC);
+        out.push(MXB_VERSION);
+        out.extend_from_slice(&(self.docs.len() as u32).to_le_bytes());
+        for (doc, terms) in self.docs.iter().zip(self.doc_terms.iter()) {
+            put_str(&mut out, &doc.page);
+            put_str(&mut out, &doc.stem);
+            out.extend_from_slice(&(doc.section as u32).to_le_bytes());
+            out.extend_from_slice(&doc.len.to_le_bytes());
+            out.extend_from_slice(&(terms.len() as u32).to_le_bytes());
+            for (term, tf) in terms {
+                put_str(&mut out, term);
+                out.extend_from_slice(&tf.to_le_bytes());
+            }
+        }
+        out
+    }
+
+    /// Parse the binary format. Every read is bounds-checked and returns
+    /// `None` on any inconsistency — a file on disk can be truncated,
+    /// corrupted, or simply not this format, and none of that may panic.
+    pub fn decode(bytes: &[u8]) -> Option<Self> {
+        struct Cursor<'a> {
+            b: &'a [u8],
+            p: usize,
+        }
+        impl<'a> Cursor<'a> {
+            fn take(&mut self, n: usize) -> Option<&'a [u8]> {
+                let end = self.p.checked_add(n)?;
+                let s = self.b.get(self.p..end)?;
+                self.p = end;
+                Some(s)
+            }
+            fn u32(&mut self) -> Option<u32> {
+                Some(u32::from_le_bytes(self.take(4)?.try_into().ok()?))
+            }
+            fn string(&mut self) -> Option<String> {
+                let len = self.u32()? as usize;
+                String::from_utf8(self.take(len)?.to_vec()).ok()
+            }
+        }
+
+        let mut c = Cursor { b: bytes, p: 0 };
+        if c.take(4)? != MXB_MAGIC {
+            return None;
+        }
+        let version = *c.take(1)?.first()?;
+        if version != MXB_VERSION {
+            return None;
+        }
+        let n_docs = c.u32()? as usize;
+        // Reject an impossible doc count before reserving for it, so a
+        // corrupt length field cannot drive a huge allocation. Every doc
+        // contributes at least 4 length-prefixed-empty-string fields plus
+        // section/len/n_terms — 5 u32s minimum (20 bytes) even with empty
+        // strings and no terms.
+        if n_docs.checked_mul(20)? > bytes.len() {
+            return None;
+        }
+        let mut docs = Vec::with_capacity(n_docs);
+        let mut doc_terms = Vec::with_capacity(n_docs);
+        for _ in 0..n_docs {
+            let page = c.string()?;
+            let stem = c.string()?;
+            let section = c.u32()? as usize;
+            let len = c.u32()?;
+            let n_terms = c.u32()? as usize;
+            // Same guard, per-term: at least a 4-byte length prefix + 4-byte
+            // tf per term (8 bytes minimum).
+            if n_terms.checked_mul(8)? > bytes.len() {
+                return None;
+            }
+            let mut terms = HashMap::with_capacity(n_terms);
+            for _ in 0..n_terms {
+                let term = c.string()?;
+                let tf = c.u32()?;
+                terms.insert(term, tf);
+            }
+            docs.push(Bm25Doc { page, stem, section, len });
+            doc_terms.push(terms);
+        }
+
+        let mut index = Bm25Index {
+            docs,
+            doc_terms,
+            postings: HashMap::new(),
+            df: HashMap::new(),
+            total_len: 0,
+        };
+        index.rebuild_derived();
+        Some(index)
+    }
+}
+
+/// A per-save token for the temp filename, mirroring
+/// `vector_index::unique_suffix`: process id plus a monotonic counter, unique
+/// between concurrent saves in this process and between processes.
+fn unique_suffix() -> String {
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{}-{n}", std::process::id())
 }
 
 /// Chunk identity shared with the dense side: `"{page}#{section}"`.
@@ -359,6 +522,104 @@ mod tests {
         let fused = rrf_fuse(&dense, &lex, 10);
         assert_eq!(fused[0].stem, "b"); // b in both lists -> higher RRF than a
     }
+    #[test]
+    fn mxb_roundtrip_preserves_search() {
+        let mut ix = Bm25Index::new();
+        ix.upsert_page("wiki/rlhf.md", "rlhf", &["policy optimized with PPO".into()]);
+        let bytes = ix.encode();
+        let ix2 = Bm25Index::decode(&bytes).expect("decode");
+        assert_eq!(ix2.search("PPO", 5)[0].stem, "rlhf");
+    }
+    #[test]
+    fn mxb_load_missing_is_empty() {
+        let ix = Bm25Index::load(std::path::Path::new("/tmp/memex-nonexistent.mxb"));
+        assert!(ix.is_empty());
+    }
+    #[test]
+    fn mxb_roundtrip_multi_page_preserves_scoring() {
+        // A single-doc round trip can pass while df rebuilding is broken —
+        // this exercises multiple pages/chunks so document frequency actually
+        // has to be reconstructed correctly.
+        let mut ix = Bm25Index::new();
+        ix.upsert_page(
+            "wiki/rlhf.md",
+            "rlhf",
+            &["policy optimized with PPO".into(), "reward model training".into()],
+        );
+        ix.upsert_page("wiki/lora.md", "lora", &["low rank adapters".into()]);
+        ix.upsert_page(
+            "wiki/common.md",
+            "common",
+            &["policy gradient methods are common".into()],
+        );
+        let before = ix.search("policy", 10);
+        let bytes = ix.encode();
+        let after = Bm25Index::decode(&bytes).expect("decode").search("policy", 10);
+        assert_eq!(before.len(), after.len());
+        for (b, a) in before.iter().zip(after.iter()) {
+            assert_eq!(b.page, a.page);
+            assert_eq!(b.section, a.section);
+            assert!((b.score - a.score).abs() < 1e-6, "{} vs {}", b.score, a.score);
+        }
+        assert_eq!(after[0].stem, "rlhf");
+    }
+    #[test]
+    fn mxb_decode_rejects_corrupt_input_without_panicking() {
+        assert!(Bm25Index::decode(b"").is_none());
+        assert!(Bm25Index::decode(b"XXXX").is_none()); // bad magic
+        assert!(Bm25Index::decode(b"MXB1").is_none()); // header cut short beyond magic+version
+
+        let mut ix = Bm25Index::new();
+        ix.upsert_page("p.md", "p", &["alpha beta".into()]);
+        let good = ix.encode();
+        assert!(Bm25Index::decode(&good).is_some());
+        for cut in 1..good.len() {
+            assert!(
+                Bm25Index::decode(&good[..cut]).is_none(),
+                "truncation at {cut} must not decode"
+            );
+        }
+    }
+    #[test]
+    fn mxb_decode_rejects_garbage_bytes() {
+        assert!(Bm25Index::decode(b"not an index at all, just garbage bytes here").is_none());
+    }
+    #[test]
+    fn mxb_decode_rejects_huge_length_prefix_without_huge_alloc() {
+        let mut ix = Bm25Index::new();
+        ix.upsert_page("p.md", "p", &["alpha beta".into()]);
+        let good = ix.encode();
+        // Corrupt the doc-count field (right after magic+version) to a huge
+        // value; must be rejected rather than driving a giant allocation.
+        let mut bogus = good.clone();
+        bogus[5..9].copy_from_slice(&u32::MAX.to_le_bytes());
+        assert!(Bm25Index::decode(&bogus).is_none());
+    }
+    #[test]
+    fn mxb_load_falls_back_to_empty_for_unreadable_index() {
+        let dir = std::env::temp_dir().join(format!("memex-bm25-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("idx.mxb");
+        std::fs::write(&path, b"not an index at all").unwrap();
+        assert!(Bm25Index::load(&path).is_empty());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+    #[test]
+    fn mxb_save_load_roundtrip_via_files() {
+        let dir = std::env::temp_dir().join(format!("memex-bm25-test-save-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("idx.mxb");
+        let mut ix = Bm25Index::new();
+        ix.upsert_page("wiki/rlhf.md", "rlhf", &["policy optimized with PPO".into()]);
+        ix.save(&path).unwrap();
+        let loaded = Bm25Index::load(&path);
+        assert_eq!(loaded.search("PPO", 5)[0].stem, "rlhf");
+        // Path scheme mirrors VectorStore's: same settings dir, .mxb extension.
+        let p2 = Bm25Index::path_for("some/vault/root").unwrap();
+        assert_eq!(p2.extension().unwrap(), "mxb");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
     #[test]
     fn rrf_fuse_breaks_ties_deterministically_by_chunk_identity() {
         use crate::vector_index::Hit;
