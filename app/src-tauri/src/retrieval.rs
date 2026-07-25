@@ -296,7 +296,16 @@ impl Bm25Index {
         }
         let n = self.n_live as f32;
         let avg_len = (self.total_len as f32 / n).max(1e-9);
-        let query_terms: HashSet<String> = tokenize(query).into_iter().collect();
+        // Sorted + deduped (not a `HashSet`) so this list's iteration order is
+        // fixed by term content alone, not by the process's random hash seed:
+        // a document matching 3+ terms accumulates its score across multiple
+        // `+=` below, and float addition is not associative, so hash-order
+        // iteration could make a doc's score differ in its low bits between
+        // processes — which would defeat the score-equality tie-break in
+        // `rrf_fuse`/`Bm25Hit` ordering below.
+        let mut query_terms: Vec<String> = tokenize(query).into_iter().collect();
+        query_terms.sort_unstable();
+        query_terms.dedup();
 
         let mut scores: HashMap<usize, f32> = HashMap::new();
         for term in &query_terms {
