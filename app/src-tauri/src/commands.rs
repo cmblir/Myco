@@ -2433,14 +2433,14 @@ mod tests {
     // chunk's own lexical query, then filtered to knowledge pages).
     #[test]
     fn wikify_candidates_glue_degrades_to_dense_order_when_bm25_is_empty() {
-        let dense_per_chunk = vec![
+        let dense_per_chunk = [
             vec![
                 Hit { page: "attn.md".into(), stem: "attn".into(), section: 0, score: 0.9 },
                 Hit { page: "index.md".into(), stem: "index".into(), section: 0, score: 0.8 },
             ],
             vec![Hit { page: "backprop.md".into(), stem: "backprop".into(), section: 0, score: 0.7 }],
         ];
-        let chunk_texts = vec!["attention is all you need".to_string(), "gradient descent".to_string()];
+        let chunk_texts = ["attention is all you need".to_string(), "gradient descent".to_string()];
         let cache = Bm25Cache::default();
         let bm25_path = PathBuf::from("/nonexistent/does-not-exist-2.mxb");
         let bm25 = cache.get(&bm25_path);
@@ -2512,11 +2512,11 @@ mod tests {
             Hit { page: "quaternion-rotations.md".into(), stem: "quaternion-rotations".into(), section: 0, score: 0.01 },
             Hit { page: "photosynthesis.md".into(), stem: "photosynthesis".into(), section: 0, score: 0.01 },
         ];
-        let dense_per_chunk = vec![weak_dense.clone(), weak_dense];
+        let dense_per_chunk = [weak_dense.clone(), weak_dense];
         // Chunk 0's own text is about quaternions; chunk 1's is about
         // photosynthesis — correct pairing must surface each chunk's own
         // topic as the top lexical (and thus top fused) hit for that chunk.
-        let chunk_texts = vec![
+        let chunk_texts = [
             "explain quaternion rotation math".to_string(),
             "explain photosynthesis chemistry".to_string(),
         ];
