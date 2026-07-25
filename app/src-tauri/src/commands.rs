@@ -1443,6 +1443,13 @@ pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String,
 /// Shared by `reindex_embeddings` and the incremental index updater — this is
 /// the only place that decides "does this page need re-embedding".
 ///
+/// Also upserts the same chunk texts into `bm25`, so the dense and lexical
+/// indexes are always built from identical `(page, section)` chunk text —
+/// required for RRF fusion to pair hits between them. BM25 is not
+/// model-gated (unlike `store`, which can be wiped/rebuilt on an embed-model
+/// change): it re-derives from raw text, so re-upserting here whenever the
+/// page is (re)embedded keeps it correct regardless of which embed model ran.
+///
 /// Returns `Ok(true)` when the page was embedded and upserted, `Ok(false)` when
 /// it was skipped.
 pub(crate) async fn embed_one_page(
@@ -1455,12 +1462,16 @@ pub(crate) async fn embed_one_page(
     content: &str,
     existing: &std::collections::HashMap<String, Vec<u64>>,
     store: &mut VectorStore,
+    bm25: &mut crate::retrieval::Bm25Index,
 ) -> Result<bool, String> {
     let chunks = embeddings::chunk_page(content);
     let hashes: Vec<u64> = chunks.iter().map(|c| embeddings::content_hash(c)).collect();
     if chunks.is_empty() || existing.get(rel) == Some(&hashes) {
         return Ok(false); // nothing to embed, or the content hashes still match
     }
+    // Upsert BM25 from `chunks` before it is moved into `embed_texts`, so both
+    // indexes are built from the exact same `Vec<String>` chunk texts.
+    bm25.upsert_page(rel, stem, &chunks);
     let vecs = embed_texts(
         app.clone(),
         (*llm).clone(),
@@ -1500,15 +1511,21 @@ pub async fn reindex_embeddings(
     vault: tauri::State<'_, VaultRoot>,
     llm: tauri::State<'_, LocalLlmState>,
     cache: tauri::State<'_, VectorCache>,
+    bm25_cache: tauri::State<'_, crate::retrieval::Bm25Cache>,
     provider: String,
     model: String,
 ) -> Result<usize, String> {
     let t0 = std::time::Instant::now();
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    let bm25_path = crate::retrieval::Bm25Index::path_for(&root.to_string_lossy())?;
     // Read through, not from the cache: this needs an owned, mutable store, and
     // embedding the pages dwarfs the read either way.
     let mut store = VectorStore::load(&index_path);
+    // BM25 is never model-gated (see `embed_one_page`'s doc comment): it is
+    // loaded as-is and re-upserted alongside the store regardless of which
+    // embed model this reindex targets.
+    let mut bm25 = crate::retrieval::Bm25Index::load(&bm25_path);
     let load_ms = perf::ms(t0.elapsed());
     let model_id = format!("{provider}:{model}");
     store.ensure_model(&model_id);
@@ -1534,7 +1551,10 @@ pub async fn reindex_embeddings(
     for (i, (rel, stem, content)) in pages.iter().enumerate() {
         present.insert(rel.clone());
         let t_embed = std::time::Instant::now();
-        let did = embed_one_page(&app, &llm, &provider, &model, rel, stem, content, &existing, &mut store).await?;
+        let did = embed_one_page(
+            &app, &llm, &provider, &model, rel, stem, content, &existing, &mut store, &mut bm25,
+        )
+        .await?;
         if did {
             embed_ms += perf::ms(t_embed.elapsed());
             embedded += 1;
@@ -1565,6 +1585,15 @@ pub async fn reindex_embeddings(
         // resume instead of restart.
         if last_checkpoint.elapsed() >= CHECKPOINT_EVERY {
             let t_save = std::time::Instant::now();
+            // `.mxb` saved BEFORE `.mxv`: a rerun's re-embed decision is
+            // gated on the store's on-disk content hashes, so if `.mxv` were
+            // saved first and `.mxb` then failed, a later rerun would see
+            // those pages' hashes already current, skip re-embedding them,
+            // and never get a chance to re-upsert BM25 for them. Saving
+            // `.mxb` first means a failure here aborts (via `?`) before the
+            // store checkpoint lands, so the pages stay eligible for re-embed
+            // (and re-upsert into both indexes) on the next run.
+            bm25.save(&bm25_path)?;
             store.save(&index_path)?;
             save_ms += perf::ms(t_save.elapsed());
             checkpoints += 1;
@@ -1573,10 +1602,12 @@ pub async fn reindex_embeddings(
         }
     }
     let pruned = store.prune(&present);
+    let bm25_pruned = bm25.prune(&present) > 0;
     // The final save is skippable only when nothing changed at all — no page
     // embedded since the last checkpoint, and no stale page dropped.
-    if dirty || pruned > 0 || checkpoints == 0 {
+    if dirty || pruned > 0 || bm25_pruned || checkpoints == 0 {
         let t_save = std::time::Instant::now();
+        bm25.save(&bm25_path)?; // see the checkpoint save above for why this order matters
         store.save(&index_path)?;
         save_ms += perf::ms(t_save.elapsed());
     }
@@ -1600,6 +1631,7 @@ pub async fn reindex_embeddings(
         ],
     );
     cache.put(&index_path, store);
+    bm25_cache.put(&bm25_path, bm25);
     Ok(indexed)
 }
 

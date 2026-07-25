@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use tauri::Manager as _;
 
 use crate::commands::LocalLlmState;
+use crate::retrieval::{Bm25Cache, Bm25Index};
 use crate::vector_index::{VectorCache, VectorStore};
 
 /// A message for the actor. `Dirty` marks one vault-relative page path as
@@ -246,6 +247,13 @@ async fn process_batch(
 ) -> Result<(), String> {
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
     let mut store = VectorStore::load(&index_path);
+    let bm25_path = Bm25Index::path_for(&root.to_string_lossy())?;
+    // BM25 has no model field and is never wiped by `ensure_model` below: it
+    // is derived from raw chunk text, not embedding geometry, so it stays
+    // valid across an embed-model migration. Re-upserting every page during
+    // the reconcile pass a stale store forces is what keeps it correct then
+    // — not a wipe.
+    let mut bm25 = Bm25Index::load(&bm25_path);
     let model_id = format!("builtin-local:{}", crate::local_llm::BUILTIN_EMBED_MODEL);
 
     let stale = index_is_stale(&store.model);
@@ -254,7 +262,8 @@ async fn process_batch(
         // First index, or a migration to the current model: wipe so the
         // reconcile pass below re-embeds against the new geometry rather
         // than trying to reconcile a batch against records that no longer
-        // match it.
+        // match it. BM25 is deliberately NOT wiped here (see the comment on
+        // `bm25` above) — only the vector store is model-specific.
         store.ensure_model(&model_id);
     }
 
@@ -274,12 +283,14 @@ async fn process_batch(
                 content,
                 &existing,
                 &mut store,
+                &mut bm25,
             )
             .await?;
             changed |= embedded;
         }
         let present: HashSet<String> = pages.into_iter().map(|(r, _, _)| r).collect();
         changed |= store.prune(&present) > 0;
+        changed |= bm25.prune(&present) > 0;
     } else {
         let to_process: Vec<String> = batch.into_iter().filter(|r| should_index(r)).collect();
         let existing = store.hashes_by_page();
@@ -303,11 +314,13 @@ async fn process_batch(
                     &content,
                     &existing,
                     &mut store,
+                    &mut bm25,
                 )
                 .await?;
                 changed |= embedded;
             } else {
                 store.upsert_page(&rel, "", Vec::new()); // deleted → drop its records
+                bm25.upsert_page(&rel, "", &[]); // upsert with no chunks == delete, same as store
                 changed = true;
             }
         }
@@ -317,8 +330,23 @@ async fn process_batch(
     // save (and that reset) when something actually changed — a rebind onto
     // an already-current index should walk + hash-check every page for
     // free, not force every `open_vault` to needlessly recompute edges.
+    //
+    // Both `.mxv` and `.mxb` are saved under this one `changed` flag, which
+    // both indexes mutate in lockstep above. `bm25.save` runs FIRST and
+    // `store.save` second — deliberately, not arbitrarily: the retry
+    // decision on the next batch is gated on `store`'s on-disk content
+    // hashes (`hashes_by_page`), not on bm25's. If `.mxv` were saved first
+    // and `.mxb` then failed, a retry would see the new hashes already on
+    // disk, skip re-embedding those pages entirely, and never re-upsert
+    // BM25 for them — a permanent drift. Saving `.mxb` first means any
+    // failure there aborts via `?` before `.mxv` is written, so the next
+    // retry still sees stale hashes, re-embeds, and re-upserts both indexes.
+    // A failed `.mxb` save surfaces as a batch error, retried with backoff
+    // by the caller, exactly like a failed `store.save` already does.
     if changed {
+        bm25.save(&bm25_path)?;
         store.save(&index_path)?;
+        app.state::<Bm25Cache>().put(&bm25_path, bm25);
         app.state::<VectorCache>().put(&index_path, store);
     }
     Ok(())
@@ -354,5 +382,90 @@ mod tests {
         assert_eq!(wiki_rel_of(root, std::path::Path::new("/v/raw/a.md")), None); // raw/ never
         assert_eq!(wiki_rel_of(root, std::path::Path::new("/v/wiki/a.txt")), None); // non-md
         assert!(should_index("wiki/a.md") && !should_index("raw/a.md") && !should_index("wiki/a.tmp"));
+    }
+
+    // `process_batch` needs a live `tauri::AppHandle` + a loaded embed model to
+    // call end-to-end, which this crate has no test harness for. The tests
+    // below instead exercise the real `Bm25Index` API at the three exact
+    // mutation points `process_batch` performs it at — upsert-then-save
+    // (incremental/reconcile re-embed), delete-then-save (incremental delete:
+    // `bm25.upsert_page(&rel, "", &[])`), and prune-then-save (reconcile) —
+    // against a real on-disk `.mxb`, so each would fail if that seam were
+    // wired wrong. What they do NOT cover: that `process_batch` actually
+    // reaches these calls at the right branch, and that the chunk texts
+    // handed to `bm25.upsert_page` are identical to what `store.upsert_page`
+    // received — those are verified by code inspection only (see the task
+    // report), since a real embed call is out of reach for a unit test here.
+
+    #[test]
+    fn bm25_upsert_then_save_makes_a_page_searchable_on_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.mxb");
+
+        let mut bm25 = Bm25Index::load(&path); // missing file → empty, as process_batch does
+        bm25.upsert_page(
+            "wiki/attention.md",
+            "attention",
+            &["transformers use self attention to weigh tokens".to_string()],
+        );
+        bm25.save(&path).unwrap();
+
+        let reloaded = Bm25Index::load(&path);
+        let hits = reloaded.search("self attention tokens", 10);
+        assert!(
+            hits.iter().any(|h| h.page == "wiki/attention.md"),
+            "expected the upserted page to be searchable after a reload, got {:?}",
+            hits.iter().map(|h| &h.page).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn bm25_delete_path_removes_the_page_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.mxb");
+
+        let mut bm25 = Bm25Index::load(&path);
+        bm25.upsert_page(
+            "wiki/gone.md",
+            "gone",
+            &["a page that will be deleted next".to_string()],
+        );
+        bm25.save(&path).unwrap();
+        assert!(Bm25Index::load(&path).search("deleted next", 10).iter().any(|h| h.page == "wiki/gone.md"));
+
+        // Mirrors process_batch's incremental delete path exactly.
+        let mut bm25 = Bm25Index::load(&path);
+        bm25.upsert_page("wiki/gone.md", "", &[]);
+        bm25.save(&path).unwrap();
+
+        let reloaded = Bm25Index::load(&path);
+        assert!(
+            !reloaded.search("deleted next", 10).iter().any(|h| h.page == "wiki/gone.md"),
+            "deleted page must not be searchable after save+reload"
+        );
+        assert!(reloaded.is_empty());
+    }
+
+    #[test]
+    fn bm25_reconcile_prune_drops_a_page_missing_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("test.mxb");
+
+        let mut bm25 = Bm25Index::load(&path);
+        bm25.upsert_page("wiki/kept.md", "kept", &["this page still exists on disk".to_string()]);
+        bm25.upsert_page("wiki/removed.md", "removed", &["this page was deleted outside the app".to_string()]);
+        bm25.save(&path).unwrap();
+
+        // Mirrors process_batch's reconcile-branch prune: `present` is the set
+        // of pages `collect_wiki_pages` actually found on disk.
+        let mut bm25 = Bm25Index::load(&path);
+        let present: HashSet<String> = ["wiki/kept.md".to_string()].into_iter().collect();
+        let pruned = bm25.prune(&present);
+        assert_eq!(pruned, 1);
+        bm25.save(&path).unwrap();
+
+        let reloaded = Bm25Index::load(&path);
+        assert!(reloaded.search("still exists", 10).iter().any(|h| h.page == "wiki/kept.md"));
+        assert!(!reloaded.search("deleted outside", 10).iter().any(|h| h.page == "wiki/removed.md"));
     }
 }
