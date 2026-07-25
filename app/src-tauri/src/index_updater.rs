@@ -149,7 +149,8 @@ fn index_is_stale(store_model: &str) -> bool {
 /// Whether `process_batch` should reconcile the *whole* vault against disk
 /// (walk every wiki page) rather than touch only `batch`'s dirty paths:
 /// the index is `stale` (wrong model, or none yet), `batch` carries the "*"
-/// sentinel a `Rebind` inserts, or the lexical index still needs bootstrapping.
+/// sentinel a `Rebind` inserts, or the lexical index is incomplete (empty or
+/// short of the dense store's page count).
 ///
 /// A rebind must reconcile in full even when the index is already
 /// current — not just when it's stale — because the actor may have missed
@@ -158,17 +159,30 @@ fn index_is_stale(store_model: &str) -> bool {
 /// was closed). Without this, the "*" sentinel fails `should_index` and a
 /// rebind onto a fresh index would silently be a no-op.
 ///
-/// `bm25_needs_bootstrap` exists because the incremental branch only visits
-/// `batch`'s dirty paths. With an absent or unreadable `.mxb` (a fresh install,
-/// a deleted or corrupt sidecar) but a populated `.mxv`, an incremental batch
-/// would upsert only the edited page and then persist a ONE-PAGE lexical
-/// index — and that is not benign: its lone rank-0 lexical hit scores the same
-/// `1/RRF_K` as the dense rank-0 hit, so a page matching nothing but a
-/// stop-word lands level with the genuinely relevant page at the top of the
-/// fused list. Promoting such a batch to a reconcile makes the bootstrap visit
-/// every page instead.
-fn reconcile_requested(batch: &[String], stale: bool, bm25_needs_bootstrap: bool) -> bool {
-    stale || bm25_needs_bootstrap || batch.iter().any(|r| r == "*")
+/// `bm25_incomplete` exists because the incremental branch only visits
+/// `batch`'s dirty paths. With a `.mxb` that has fewer indexed pages than the
+/// `.mxv` next to it — absent entirely (fresh install, deleted/corrupt
+/// sidecar), or partially built (a large-vault bootstrap that persisted a
+/// checkpoint and then errored out before finishing) — an incremental batch
+/// would upsert only the edited page on top of that shortfall, leaving the
+/// lexical index permanently short. That is not benign: BM25's idf is
+/// computed over however few pages it has, so its handful of indexed pages
+/// can score at or above genuinely relevant pages that BM25 hasn't seen yet,
+/// and RRF then lets them displace good dense hits at the top of the fused
+/// list. Promoting such a batch to a reconcile makes it visit every page
+/// instead, until the lexical index catches back up to the dense one.
+fn reconcile_requested(batch: &[String], stale: bool, bm25_incomplete: bool) -> bool {
+    stale || bm25_incomplete || batch.iter().any(|r| r == "*")
+}
+
+/// Whether the lexical index is missing pages the dense store already has —
+/// the case a plain `is_empty()` check misses: a `.mxb` that is non-empty but
+/// still short of `.mxv`'s page count (e.g. a bootstrap that checkpointed
+/// partway through and then errored out, per the comment on
+/// `reconcile_requested`). An empty dense store (`dense_page_count == 0`)
+/// never counts as incomplete — there is nothing yet to bootstrap from.
+fn bm25_is_incomplete(dense_page_count: usize, bm25_page_count: usize) -> bool {
+    dense_page_count > 0 && bm25_page_count < dense_page_count
 }
 
 /// The vault-relative path for `abs`, iff it is a markdown file under
@@ -232,7 +246,7 @@ fn start_watcher(
 /// A stale/missing index (wrong model, or none yet) is wiped via
 /// `ensure_model`, same as `reindex_embeddings`. A reconcile pass — run when
 /// the index is stale, when `batch` carries the "*" `Rebind` sentinel, or when
-/// the lexical index still needs bootstrapping (see `reconcile_requested`) —
+/// the lexical index is incomplete (see `reconcile_requested`) —
 /// then walks every wiki page and re-embeds it; `embed_one_page`'s content-hash
 /// skip makes pages that are already current in the index free, so this
 /// stays cheap except where content actually changed. This is what makes
@@ -274,12 +288,13 @@ async fn process_batch(
     let model_id = format!("builtin-local:{}", crate::local_llm::BUILTIN_EMBED_MODEL);
 
     let stale = index_is_stale(&store.model);
-    // An empty lexical index next to a populated dense store means the `.mxb`
-    // is missing/unreadable and has never been built for this vault. Only a
-    // reconcile can bootstrap it; the incremental branch below would save a
-    // one-page lexical index instead (see `reconcile_requested`).
-    let bm25_needs_bootstrap = bm25.is_empty() && !store.records.is_empty();
-    let reconcile = reconcile_requested(&batch, stale, bm25_needs_bootstrap);
+    // A lexical index with fewer pages than the dense store — empty (never
+    // built) or partial (a checkpointed-then-aborted bootstrap) — cannot be
+    // trusted: see `bm25_is_incomplete` and the comment on
+    // `reconcile_requested` for why a partial `.mxb` is actively harmful,
+    // not just incomplete.
+    let bm25_incomplete = bm25_is_incomplete(store.indexed_pages(), bm25_pages.len());
+    let reconcile = reconcile_requested(&batch, stale, bm25_incomplete);
     if stale {
         // First index, or a migration to the current model: wipe so the
         // reconcile pass below re-embeds against the new geometry rather
@@ -402,11 +417,29 @@ mod tests {
     fn a_dirty_page_with_an_unbootstrapped_bm25_is_promoted_to_a_reconcile() {
         // The decision this pins: one dirty page, a current dense index (not
         // stale), no rebind sentinel — but no lexical index yet. Without the
-        // `bm25_needs_bootstrap` term this returns false, the incremental
+        // `bm25_incomplete` term this returns false, the incremental
         // branch runs, and it persists a ONE-PAGE `.mxb` whose lone rank-0
         // lexical hit then ties the dense rank-0 hit at 1/RRF_K at the top of
         // the fused list (see the test below for that damage).
         assert!(reconcile_requested(&["wiki/a.md".to_string()], false, true));
+    }
+
+    #[test]
+    fn bm25_is_incomplete_widens_the_guard_from_empty_to_short_of_the_dense_store() {
+        // Complete: lexical index has caught up to the dense store (equal
+        // page counts) — no promotion, or every batch would force a full
+        // reconcile forever, undoing the incremental fast path.
+        assert!(!bm25_is_incomplete(10, 10));
+        // Partial: a checkpointed-then-aborted bootstrap left `.mxb` non-empty
+        // but short of `.mxv` — this is the case a plain `is_empty()` check
+        // misses, and the one this fix adds.
+        assert!(bm25_is_incomplete(10, 4));
+        // Empty: no lexical index at all yet — already covered before this
+        // fix, must stay covered.
+        assert!(bm25_is_incomplete(10, 0));
+        // Empty dense store: nothing indexed yet on either side, so there is
+        // nothing to bootstrap from — no promotion.
+        assert!(!bm25_is_incomplete(0, 0));
     }
 
     /// Demonstrates the damage the promotion above prevents, at the exact
