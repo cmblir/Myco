@@ -18,9 +18,11 @@ use crate::vector_index::Hit;
 use serde::Serialize;
 use std::collections::HashMap;
 
-/// Retrieval depth per arm, and the pool `rrf_fuse` folds them into. Wider than
-/// the final `MAX_MATCHES` so the knowledge-page filter below still has enough
-/// candidates left to fill it.
+/// Retrieval depth per arm. Also the dense-only search depth `wikify_candidates`
+/// requests directly (no lexical arm), and the pool `rrf_fuse` folds both arms
+/// into when the harness measures fusion. Wider than the final `MAX_MATCHES`
+/// so the knowledge-page filter below still has enough candidates left to
+/// fill it, dense-only included.
 pub const FUSE_POOL: usize = 50;
 
 /// Chunk matches kept per source chunk, after filtering, before `rank_candidates`.
@@ -56,11 +58,21 @@ pub fn is_knowledge_page(stem: &str) -> bool {
 /// empty `lexical` this degrades to the dense order unchanged — see
 /// `rrf_fuse_empty_lexical_preserves_dense_order` in retrieval.rs.
 ///
+/// `wikify_candidates` (`commands.rs`) ships dense-only: it always calls this
+/// with `lexical: &[]`, taking the degrade path above rather than duplicating
+/// the filter → cap logic. BM25+RRF fusion WAS wired in here (retrieval 1b)
+/// but `examples/wikify_eval.rs` measured it worse than dense-only on this
+/// path (k=10 recall -15-16pp on Korean cases) — see eval/BASELINE.md. The
+/// harness keeps calling this with a real `lexical` arg too, alongside the
+/// same `&[]` dense control the command uses, so a future fusion attempt for
+/// wikify can be re-measured against the same shipped sequence instead of a
+/// re-implementation of it. `semantic_search` (Ask) does NOT call this
+/// function — it fuses inline with `retrieval::rrf_fuse` directly, unaffected
+/// by this decision.
+///
 /// Lives here rather than in `retrieval.rs` because the policy it encodes (the
 /// knowledge-page filter, the cap) is wikify-specific, while `retrieval.rs`
-/// stays the generic lexical/fusion layer shared with Ask. Extracted so the
-/// measurement harness (`examples/wikify_eval.rs`) exercises the *shipped*
-/// sequence instead of re-implementing it.
+/// stays the generic lexical/fusion layer shared with Ask.
 pub fn fuse_chunk_matches(dense: &[Hit], lexical: &[Bm25Hit]) -> Vec<Hit> {
     let mut fused: Vec<Hit> = rrf_fuse(dense, lexical, FUSE_POOL)
         .into_iter()
