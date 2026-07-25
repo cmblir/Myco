@@ -121,6 +121,57 @@ fn hard_variant(body: &str) -> String {
     tidy(&re.replace_all(body, ""))
 }
 
+/// Whether retrieved stem `s` counts as a hit against `label` under the given
+/// label definition.
+///
+/// **strict** (`translation_aware = false`): exact stem match only — what the
+/// harness measured before this change.
+///
+/// **translation-aware** (`true`): also true if `s` and `label` are the two
+/// mechanical forms of the same underlying page under the corpus's own
+/// `ko-<slug>.md` / `wiki/<slug>.md` naming convention (checked both
+/// directions, since either side of a pair can be the label depending on which
+/// page is the source). This is a string-level rule derived from the existing
+/// filename convention, not a hand-maintained stem-to-stem mapping table.
+fn label_match(s: &str, label: &str, translation_aware: bool) -> bool {
+    if s == label {
+        return true;
+    }
+    translation_aware
+        && (s.strip_prefix("ko-") == Some(label) || label.strip_prefix("ko-") == Some(s))
+}
+
+/// Which ranks in `list` count as a hit, and against which label — computed
+/// once per case so both the recall/precision/F1 loop and MAP walk the exact
+/// same accounting.
+///
+/// A label can be satisfied by more than one retrieved stem under the
+/// translation-aware definition (e.g. both `self-attention` and its twin
+/// `ko-self-attention` could both appear in the ranked list). Counting both as
+/// hits would silently inflate precision and MAP relative to the strict
+/// definition without the retriever having found anything extra, so each
+/// label is claimed by the FIRST (best-ranked) matching stem only; any later
+/// stem matching an already-claimed label is not counted as a hit. This is the
+/// dedup the translation-aware definition requires: one label satisfied is
+/// one hit, never two.
+fn compute_hits(list: &[String], labels: &HashSet<String>, translation_aware: bool) -> Vec<bool> {
+    let mut claimed: HashSet<&str> = HashSet::new();
+    list.iter()
+        .map(|s| {
+            match labels
+                .iter()
+                .find(|l| !claimed.contains(l.as_str()) && label_match(s, l, translation_aware))
+            {
+                Some(l) => {
+                    claimed.insert(l.as_str());
+                    true
+                }
+                None => false,
+            }
+        })
+        .collect()
+}
+
 /// Link targets of `body`, normalised to bare stems: `[[Note#Section]]` refers
 /// to the note, and an alias is already dropped by `parse_links_from_text`.
 fn link_stems(body: &str) -> Vec<String> {
@@ -307,7 +358,11 @@ fn main() {
         recall_at_10: Vec<f64>,
     }
 
-    let evaluate = |subset: &[&Case], arm: fn(&Ranked) -> &Vec<String>, variant: &str| -> Metrics {
+    let evaluate = |subset: &[&Case],
+                     arm: fn(&Ranked) -> &Vec<String>,
+                     variant: &str,
+                     translation_aware: bool|
+     -> Metrics {
         let n = subset.len() as f64;
         let mut p_sum = [0.0f64; KS.len()];
         let mut r_sum = [0.0f64; KS.len()];
@@ -318,12 +373,12 @@ fn main() {
         for case in subset {
             let list = arm(&ranked[&(variant, case.stem.as_str())]);
             let rel_n = case.labels.len() as f64;
+            // `hits[i]` is true iff rank i is the first (best-ranked) stem to
+            // satisfy some not-yet-claimed label — see `compute_hits` for why
+            // this dedup matters once translation twins are in play.
+            let hits = compute_hits(list, &case.labels, translation_aware);
             for (ki, &k) in KS.iter().enumerate() {
-                let found = list
-                    .iter()
-                    .take(k)
-                    .filter(|s| case.labels.contains(s.as_str()))
-                    .count() as f64;
+                let found = hits.iter().take(k).filter(|&&h| h).count() as f64;
                 // Precision divides by the number of slots actually returned:
                 // a list shorter than k is not penalised for slots that never
                 // existed. Empty list -> precision 0.
@@ -341,8 +396,8 @@ fn main() {
             // relevant pages (so missed labels cost, as they should).
             let mut found = 0.0f64;
             let mut ap = 0.0f64;
-            for (i, s) in list.iter().enumerate() {
-                if case.labels.contains(s.as_str()) {
+            for (i, &h) in hits.iter().enumerate() {
+                if h {
                     found += 1.0;
                     ap += found / (i + 1) as f64;
                 }
@@ -376,10 +431,7 @@ fn main() {
     let dense_arm: fn(&Ranked) -> &Vec<String> = |r| &r.dense;
     let fused_arm: fn(&Ranked) -> &Vec<String> = |r| &r.fused;
     let all: Vec<&Case> = cases.iter().collect();
-    let easy_dense = evaluate(&all, dense_arm, "easy");
-    let easy_fused = evaluate(&all, fused_arm, "easy");
-    let hard_dense = evaluate(&all, dense_arm, "hard");
-    let hard_fused = evaluate(&all, fused_arm, "hard");
+    let ki10 = KS.iter().position(|&k| k == 10).expect("k=10 reported");
 
     println!("═══════════════════════════════════════════════════");
     println!(" Memex wikify_candidates — {spec_id}");
@@ -401,68 +453,93 @@ fn main() {
         label_total as f64 / cases.len() as f64
     );
     println!();
-    println!(" ### easy variant (wikilinks → display text)\n");
-    print_block("dense only", &easy_dense);
-    print_block("dense+bm25 (RRF)", &easy_fused);
-    println!(" ### hard variant (linked phrase deleted)\n");
-    print_block("dense only", &hard_dense);
-    print_block("dense+bm25 (RRF)", &hard_fused);
 
-    // Deltas at k=10 (the headline) — gains and regressions equally visible.
-    println!(" ### delta at k=10 (fused − dense)\n");
-    println!("  variant  metric        dense    fused    delta");
-    for (variant, d, f) in [
-        ("easy", &easy_dense, &easy_fused),
-        ("hard", &hard_dense, &hard_fused),
-    ] {
-        let ki = KS.iter().position(|&k| k == 10).expect("k=10 reported");
-        for (name, dv, fv) in [
-            ("precision@10", 100.0 * d.precision[ki], 100.0 * f.precision[ki]),
-            ("recall@10", 100.0 * d.recall[ki], 100.0 * f.recall[ki]),
-            ("F1@10", d.f1[ki], f.f1[ki]),
-            ("MAP", d.map, f.map),
+    // Every metric block below is reported under BOTH label definitions, side
+    // by side, rather than picking one after seeing which looks better:
+    //   - strict:            a suggestion is correct only if its stem is
+    //     exactly a labeled link target.
+    //   - translation-aware: a suggestion is also correct if it is the
+    //     mechanical `ko-<slug>` / `<slug>` translation twin of a labeled
+    //     stem (see `label_match`/`compute_hits`). This targets one specific,
+    //     evidenced artifact — the KO fixtures' labels point at English stems
+    //     by construction — and is reported alongside strict, not instead of
+    //     it, so the reader sees the artifact's size rather than a single
+    //     number that hides it.
+    for (label_name, translation_aware) in [("strict labels", false), ("translation-aware labels", true)] {
+        let easy_dense = evaluate(&all, dense_arm, "easy", translation_aware);
+        let easy_fused = evaluate(&all, fused_arm, "easy", translation_aware);
+        let hard_dense = evaluate(&all, dense_arm, "hard", translation_aware);
+        let hard_fused = evaluate(&all, fused_arm, "hard", translation_aware);
+
+        println!(" ═══ label definition: {label_name} ═══\n");
+        println!(" ### easy variant (wikilinks → display text)\n");
+        print_block("dense only", &easy_dense);
+        print_block("dense+bm25 (RRF)", &easy_fused);
+        println!(" ### hard variant (linked phrase deleted)\n");
+        print_block("dense only", &hard_dense);
+        print_block("dense+bm25 (RRF)", &hard_fused);
+
+        // Deltas at k=10 (the headline) — gains and regressions equally visible.
+        println!(" ### delta at k=10 (fused − dense) — {label_name}\n");
+        println!("  variant  metric        dense    fused    delta");
+        for (variant, d, f) in [
+            ("easy", &easy_dense, &easy_fused),
+            ("hard", &hard_dense, &hard_fused),
         ] {
-            println!("  {variant:<7}  {name:<12}  {dv:>6.3}  {fv:>7.3}  {:>+7.3}", fv - dv);
+            for (name, dv, fv) in [
+                ("precision@10", 100.0 * d.precision[ki10], 100.0 * f.precision[ki10]),
+                ("recall@10", 100.0 * d.recall[ki10], 100.0 * f.recall[ki10]),
+                ("F1@10", d.f1[ki10], f.f1[ki10]),
+                ("MAP", d.map, f.map),
+            ] {
+                println!("  {variant:<7}  {name:<12}  {dv:>6.3}  {fv:>7.3}  {:>+7.3}", fv - dv);
+            }
         }
+        println!();
     }
-    println!();
 
-    // Split by corpus language. Not a nicety: the Korean fixtures link to the
-    // ENGLISH stems (`[[self-attention|셀프 어텐션]]`) while the corpus also
-    // holds their Korean twins, so a Korean case's semantically-right answer is
-    // a page that is NOT in its label set. That confound is specific to the KO
-    // subset, and it must be visible before the headline is read.
+    // Split by corpus language. This is a POST-HOC split — chosen after seeing
+    // the strict aggregate regress — not a pre-registered breakdown, and it
+    // is labeled as such rather than presented as if planned in advance. It
+    // exists because the Korean fixtures link to the ENGLISH stems
+    // (`[[self-attention|셀프 어텐션]]`) while the corpus also holds their
+    // Korean twins, so under strict labels a Korean case's semantically-right
+    // answer is a page that is NOT in its label set. Reported under both
+    // label definitions so the translation-aware recovery on KO is visible
+    // alongside the strict confound, not asserted separately.
     let en: Vec<&Case> = cases.iter().filter(|c| !c.stem.starts_with("ko-")).collect();
     let ko: Vec<&Case> = cases.iter().filter(|c| c.stem.starts_with("ko-")).collect();
-    println!(" ### by corpus language at k=10 (EN {} cases · KO {} cases)\n", en.len(), ko.len());
-    println!("  lang  variant  arm     precision@10  recall@10  F1@10   MAP");
-    let ki10 = KS.iter().position(|&k| k == 10).expect("k=10 reported");
-    for (lang, subset) in [("EN", &en), ("KO", &ko)] {
-        for variant in ["easy", "hard"] {
-            for (arm_name, arm) in [("dense", dense_arm), ("fused", fused_arm)] {
-                let m = evaluate(subset, arm, variant);
-                println!(
-                    "  {lang:<4}  {variant:<7}  {arm_name:<6}  {:>10.1}%   {:>7.1}%   {:>5.3}  {:>5.3}",
-                    100.0 * m.precision[ki10],
-                    100.0 * m.recall[ki10],
-                    m.f1[ki10],
-                    m.map
-                );
+    println!(" ### by corpus language at k=10 (EN {} cases · KO {} cases) — post-hoc split\n", en.len(), ko.len());
+    println!("  labels                    lang  variant  arm     precision@10  recall@10  F1@10   MAP");
+    for (label_name, translation_aware) in [("strict", false), ("translation-aware", true)] {
+        for (lang, subset) in [("EN", &en), ("KO", &ko)] {
+            for variant in ["easy", "hard"] {
+                for (arm_name, arm) in [("dense", dense_arm), ("fused", fused_arm)] {
+                    let m = evaluate(subset, arm, variant, translation_aware);
+                    println!(
+                        "  {label_name:<24}  {lang:<4}  {variant:<7}  {arm_name:<6}  {:>10.1}%   {:>7.1}%   {:>5.3}  {:>5.3}",
+                        100.0 * m.precision[ki10],
+                        100.0 * m.recall[ki10],
+                        m.f1[ki10],
+                        m.map
+                    );
+                }
             }
         }
     }
     println!();
 
-    // Worst cases by fused recall@10 — where a future change should aim. Split
-    // by language, because otherwise the confounded KO subset fills the whole
-    // list and hides the EN cases that are actually actionable.
+    // Worst cases by fused recall@10 (strict labels — where a future change
+    // should aim under the definition that exists today). Split by language,
+    // because otherwise the confounded KO subset fills the whole list and
+    // hides the EN cases that are actually actionable.
     for (variant, lang, subset) in [
         ("easy", "EN", &en),
         ("easy", "KO", &ko),
         ("hard", "EN", &en),
         ("hard", "KO", &ko),
     ] {
-        let m = evaluate(subset, fused_arm, variant);
+        let m = evaluate(subset, fused_arm, variant, false);
         let mut worst: Vec<(&str, f64, usize)> = subset
             .iter()
             .zip(&m.recall_at_10)
