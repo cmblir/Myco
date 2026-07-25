@@ -325,3 +325,172 @@ to tens of minutes for a ~10k-page vault's first bootstrap). See commit
 
 See the task-8 report and task-8-diagnosis for the commands and the observed
 output.
+
+## Wikify — first measurement of the second retrieval path (2026-07-26)
+
+Everything above measures **Ask** (`semantic_search`). The app's other retrieval
+consumer, `wikify_candidates` — "which existing pages should this source text
+link to / update?" — received the same dense+BM25(RRF) fusion but had **never
+been measured**. This section is that measurement. It adds no retrieval code and
+changes no parameter.
+
+Harness: `examples/wikify_eval.rs`, run as
+`cargo run --example wikify_eval --release` (defaults to `MEMEX_EMBED_SPEC=bge-m3`,
+the shipped embedder; the env var still overrides). It drives the *shipped* glue —
+`pipeline::fuse_chunk_matches` (fuse → filter non-knowledge pages → cap at 16) and
+`pipeline::rank_candidates` — which was extracted out of `wikify_candidates` for
+exactly this reason, so the harness cannot drift from the command. Only the Tauri
+shell (vault root, caches, `embed_texts`) is replaced. `MAX_CHUNKS` = 8 unchanged.
+
+### Corpus and coverage
+
+Same corpus as the Ask eval: **71 pages · 142 chunks** (51 English
+`sample_vault::SAMPLE_NOTES` `wiki/` pages + 20 Korean `eval/ko-corpus/` fixtures).
+
+Ground truth is the corpus's own link graph, not authored labels. For each page P,
+the label set is the `[[...]]` targets of P (via `parser::parse_links_from_text`,
+`#`-fragment stripped) that (a) exist in the corpus, (b) pass
+`pipeline::is_knowledge_page`, and (c) are not P itself — every page in this vault
+self-links at least once. **71 of 71 pages had a non-empty label set, so 0 pages
+were skipped**; 215 labels total, 3.0 per case.
+
+Two source-text variants per case, both with the YAML frontmatter, the `[^src-*]`
+citation markers and the footnote definition lines stripped (markup, not prose a
+user would paste); the `#` heading and body are kept:
+
+- **easy** — each `[[stem|alias]]` becomes `alias`, each `[[stem]]` becomes the
+  stem as prose (hyphens → spaces). The realistic case: ordinary writing that
+  names the concepts, and wikify must find the pages that own them.
+- **hard** — the linked phrase is deleted outright, leaving only the surrounding
+  prose, so only context can identify the target. A Hangul run glued to the
+  closing brackets (`[[dpo|직접 선호 최적화]]는`) is an agglutinative particle
+  belonging to the deleted phrase and goes with it; the residual whitespace and
+  punctuation damage is then collapsed.
+
+### Results — easy variant (71 cases)
+
+| k  | precision@k | recall@k | F1@k  |     | precision@k | recall@k | F1@k  |
+|----|------------:|---------:|------:|-----|------------:|---------:|------:|
+|    | **dense**   |          |       |     | **fused**   |          |       |
+| 5  | 34.9 %      | 64.0 %   | 0.437 |     | 34.4 %      | 61.8 %   | 0.427 |
+| 10 | 26.3 %      | 89.1 %   | 0.396 |     | 21.7 %      | 74.8 %   | 0.327 |
+| 20 | 18.2 %      | 92.9 %   | 0.297 |     | 15.4 %      | 82.7 %   | 0.255 |
+
+**MAP@20 — dense 0.416 · fused 0.421**
+
+### Results — hard variant (71 cases)
+
+| k  | precision@k | recall@k | F1@k  |     | precision@k | recall@k | F1@k  |
+|----|------------:|---------:|------:|-----|------------:|---------:|------:|
+|    | **dense**   |          |       |     | **fused**   |          |       |
+| 5  | 29.9 %      | 54.8 %   | 0.374 |     | 29.6 %      | 53.2 %   | 0.367 |
+| 10 | 22.8 %      | 79.1 %   | 0.345 |     | 19.9 %      | 68.6 %   | 0.300 |
+| 20 | 17.1 %      | 88.7 %   | 0.280 |     | 14.5 %      | 78.5 %   | 0.240 |
+
+**MAP@20 — dense 0.355 · fused 0.373**
+
+### Headline delta at k=10 (fused − dense)
+
+| variant | metric       |  dense |  fused |     delta |
+|---------|--------------|-------:|-------:|----------:|
+| easy    | precision@10 | 26.3 % | 21.7 % | **−4.6 pp** |
+| easy    | recall@10    | 89.1 % | 74.8 % | **−14.4 pp** |
+| easy    | F1@10        |  0.396 |  0.327 | **−0.068** |
+| easy    | MAP@20       |  0.416 |  0.421 | +0.005 |
+| hard    | precision@10 | 22.8 % | 19.9 % | **−3.0 pp** |
+| hard    | recall@10    | 79.1 % | 68.6 % | **−10.5 pp** |
+| hard    | F1@10        |  0.345 |  0.300 | **−0.045** |
+| hard    | MAP@20       |  0.355 |  0.373 | +0.018 |
+
+**Plainly: on the aggregate 71-case set, fusion HURTS wikify.** It costs 10–14 pp
+of recall@10 and 3–5 pp of precision@10 on both variants, buying only a marginal
+MAP gain. That is the opposite sign of its effect on Ask (MRR 0.829 → 0.906), and
+it is the outcome the whole-branch review suspected. Nothing was tuned to soften
+it. The next section explains where the loss comes from — the explanation does
+*not* retract the aggregate figure.
+
+### Where the regression comes from — a label confound in the KO subset
+
+| lang | variant | arm   | precision@10 | recall@10 | F1@10 | MAP@20 |
+|------|---------|-------|-------------:|----------:|------:|-------:|
+| EN (51) | easy | dense | 27.1 %       | 94.2 %    | 0.409 | 0.469 |
+| EN (51) | easy | fused | **27.5 %**   | **94.9 %**| **0.414** | **0.559** |
+| EN (51) | hard | dense | 23.5 %       | 84.3 %    | 0.358 | 0.393 |
+| EN (51) | hard | fused | **25.3 %**   | **87.8 %**| **0.382** | **0.497** |
+| KO (20) | easy | dense | 24.5 %       | 76.1 %    | 0.362 | 0.281 |
+| KO (20) | easy | fused | 7.0 %        | 23.3 %    | 0.106 | 0.069 |
+| KO (20) | hard | dense | 21.0 %       | 65.9 %    | 0.311 | 0.259 |
+| KO (20) | hard | fused | 6.0 %        | 19.6 %    | 0.090 | 0.057 |
+
+On the 51 English cases fusion **helps on every metric, both variants** (hard:
+recall@10 84.3 → 87.8 %, MAP 0.393 → 0.497). The entire aggregate regression comes
+from the 20 Korean cases, where fused recall@10 collapses 76.1 → 23.3 %.
+
+The mechanism is visible in the harness's own worst-case output, which prints what
+the retriever returned instead of the labels:
+
+```
+0.0%  ko-attention-mechanism (6 labels) <- ko-attention-mechanism, ko-self-attention,
+                                           ko-kv-cache, ko-multi-head-attention, ko-embeddings
+```
+
+The Korean fixtures were written as translations that link to the **English**
+stems (`[[self-attention|셀프 어텐션]]`), while the corpus also contains their
+Korean twins (`ko-self-attention`). So a Korean page's label set is the English
+pages, but the semantically correct answer for Korean source text is the Korean
+twin — which is not in the label set. Dense retrieval is fuzzy enough to surface
+both; the CJK-bigram lexical arm is *sharply* right about the Korean twins and
+promotes them into every slot, evicting the English pages the labels demand.
+Fusion is being penalised here for being more correct than the labels.
+
+This is a defect of the eval fixtures, not of the retrieval, and it is recorded
+rather than patched: the labels come from real structure, and rewriting the
+Korean fixtures' link targets (or aliasing `ko-x` ≡ `x`) would be authoring
+labels to obtain a better number. **Read the EN block as the load-bearing
+evidence about fusion on this path, and the aggregate as the number that is
+distorted by the fixtures.**
+
+### Verdict
+
+- **Fusion helps wikify on the English subset** — the only subset whose labels
+  are sound — on precision@10, recall@10, F1@10 and MAP, on both difficulty
+  levels. The MAP gains are large (+0.090 easy, +0.104 hard): fusion pulls the
+  correct pages toward the top of the candidate list.
+- **Fusion hurts the aggregate**, entirely via the confounded KO subset.
+- Neither of the review's two hypothesised harms was observed on EN: source-summary
+  chunks do not eat candidate slots (`fuse_chunk_matches` filters before capping,
+  which is unit-tested), and RRF's compressed score range does not flatten
+  `rank_candidates` — the fused MAP is *higher*, i.e. discrimination improved.
+
+### Worst EN cases — where a future change should aim
+
+| variant | case | fused recall@10 |
+|---------|------|----------------:|
+| easy | `interpretability` (2 labels) | 50.0 % |
+| easy | `analysis-scaling-vs-data`, `google-deepmind`, `pretraining`, `prompting` (3 labels each) | 66.7 % |
+| hard | `google-deepmind`, `gpt-4` (3 labels) | 33.3 % |
+| hard | `interpretability`, `layer-normalization`, `meta-ai` (2 labels) | 50.0 % |
+
+The organisation/model pages (`google-deepmind`, `gpt-4`, `meta-ai`) are the hard
+variant's weak spot: with the linked entity names deleted, nothing in the residual
+prose distinguishes one lab or model page from another, and the fused top-5 fills
+with sibling org/model pages.
+
+### Determinism
+
+Two consecutive runs of `cargo run --example wikify_eval --release` produced
+**byte-identical stdout** (`cmp` clean), including every metric table and every
+worst-case list. No nondeterminism source survives on this path.
+
+### Known measurement artifacts
+
+- **Precision has a hard ceiling below 100 %.** Cases average 3.0 labels, so
+  precision@10 cannot exceed 30 % and precision@20 cannot exceed 15 %. Compare
+  precision *between arms*, never against 100 %.
+- **The source page P is itself indexed**, because the source text is derived from
+  P's body. P therefore takes rank 1 in essentially every case (visible in the
+  worst-case lists) and is excluded from its own labels, so it burns one slot of
+  every top-k. Real wikify input is unindexed text, so this is an artifact — but it
+  costs both arms identically, so it does not bias the dense-vs-fused comparison.
+- The **easy** variant hands the retriever the target pages' titles verbatim (that
+  is what "easy" means); the **hard** variant is the one with no lexical gift.
