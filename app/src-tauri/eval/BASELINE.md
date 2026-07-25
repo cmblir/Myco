@@ -343,9 +343,11 @@ changes no parameter.
 Harness: `examples/wikify_eval.rs`, run as
 `cargo run --example wikify_eval --release` (defaults to `MEMEX_EMBED_SPEC=bge-m3`,
 the shipped embedder; the env var still overrides). It drives the *shipped* glue —
-`pipeline::fuse_chunk_matches` (fuse → filter non-knowledge pages → cap at 16) and
-`pipeline::rank_candidates` — which was extracted out of `wikify_candidates` for
-exactly this reason, so the harness cannot drift from the command. Only the Tauri
+`pipeline::dense_chunk_matches` (filter non-knowledge pages → cap at 16) for the
+dense arm, `pipeline::fuse_chunk_matches` (the same policy over `rrf_fuse`) for
+the fused arm, and `pipeline::rank_candidates` for both — which was extracted out
+of `wikify_candidates` for exactly this reason, so the harness cannot drift from
+the command: the dense arm calls the very helper the command calls. Only the Tauri
 shell (vault root, caches, `embed_texts`) is replaced. `MAX_CHUNKS` = 8 unchanged.
 
 ### Corpus and coverage
@@ -498,10 +500,15 @@ breakdown, and is reported as such.
 | trans-aware | KO (20) | hard | dense | 26.0 % | 79.8 % | 0.383 | 0.433 |
 | trans-aware | KO (20) | hard | fused | 20.5 % | 64.4 % | 0.304 | 0.452 |
 
-The EN rows are **identical** under both label definitions — the translation
-twin rule only ever touches `ko-*` cases, by construction, so it cannot have
-manufactured the EN improvement. On EN, fusion **helps on every metric, both
-variants**, under either label definition.
+The EN rows came back **identical** under both label definitions **in this
+run**, so the twin rule did not manufacture the EN improvement here. This is a
+measured property of this corpus and embedder, **not a structural guarantee**:
+`label_match` is symmetric, and 20 of the 51 English pages do have Korean
+twins, so an English case *could* gain a credited hit whenever a labeled
+English stem falls outside the top-k while its Korean twin lands inside it. A
+different embedder, more Korean pages, or a larger k could break the
+invariance — it has to be re-checked, not assumed, on any future run. On EN,
+fusion **helps on every metric, both variants**, under either label definition.
 
 On KO, translation-aware labels recover most — not all — of the strict
 collapse: recall@10 goes from 23.3 %→66.9 % (easy) and 19.6 %→64.4 % (hard),
@@ -552,8 +559,8 @@ definition credits.
   overstates the harm; the translation-aware number is not a "fixed" number
   that erases it, and neither should be read as the sole headline in isolation.
 - Neither of the review's two hypothesised harms was observed on EN: source-summary
-  chunks do not eat candidate slots (`fuse_chunk_matches` filters before capping,
-  which is unit-tested), and RRF's compressed score range does not flatten
+  chunks do not eat candidate slots (both helpers filter before capping, which is
+  unit-tested), and RRF's compressed score range does not flatten
   `rank_candidates` — the fused MAP is *higher*, i.e. discrimination improved.
 
 ### Decision
@@ -601,6 +608,36 @@ Two consecutive runs of `cargo run --example wikify_eval --release` produced
 **byte-identical stdout** (`cmp` clean), including every metric table and every
 worst-case list. No nondeterminism source survives on this path.
 
+### Re-measurement after the cosine-score fix (2026-07-26)
+
+The dense arm above was originally computed through
+`fuse_chunk_matches(&dense, &[])`, i.e. `rrf_fuse` over one arm. That preserves
+the dense *order* within a chunk but replaces each hit's score with
+`1/(RRF_K + rank)`, so `rank_candidates` was folding a page's chunks by **best
+rank across chunks** rather than by **max cosine** — and the scores reaching the
+ingest planner prompt and the Ingest panel, both of which read them as
+similarities, were a near-constant ~0.017…0.012. The shipped command and this
+harness's dense arm now both call `pipeline::dense_chunk_matches`, which keeps
+the raw cosine.
+
+Re-ran the harness twice after that change (`cargo run -q --release --example
+wikify_eval`, `cmp` clean between the two runs — byte-identical). **Every dense
+figure in every table above reproduced exactly**: strict easy dense
+P@5/10/20 34.9/26.3/18.2 % · R 64.0/89.1/92.9 % · MAP@20 0.416; strict hard
+22.8 % / 79.1 % / 0.355; translation-aware easy 27.0 % / 91.2 % / 0.474;
+translation-aware hard 24.2 % / 83.0 % / 0.404; and every EN/KO split row. The
+fused column is unchanged by construction (it still calls `fuse_chunk_matches`).
+
+So on this corpus the two folds happened to produce the same ranking: max-RRF is
+`min` rank and min-rank ordering agreed with max-cosine ordering on the whole
+top-20 for all 71 cases × 2 variants. That is an **empirical coincidence of this
+corpus, not an identity** — the two folds can disagree whenever a page's
+best-cosine chunk is not its best-rank chunk, so the fix is a real behavioural
+correction that this particular measurement cannot see. **No number in this
+section changed, so the fusion verdict stands unchanged**: fused is still worse
+than dense on aggregate recall/precision at k=10, and wikify still ships
+dense-only.
+
 ### Known measurement artifacts
 
 - **Precision has a hard ceiling below 100 %.** Cases average 3.0 labels, so
@@ -620,10 +657,15 @@ worst-case list. No nondeterminism source survives on this path.
   identically.
 - The **EN/KO language split is a post-hoc breakdown**, chosen after the strict
   aggregate came back regressed, not a split planned before running the harness.
-- The **translation-aware label definition only ever changes `ko-*` cases**: it
-  adds no credit anywhere a labeled stem's twin does not exist, and the EN rows
-  in every table are bit-for-bit identical between the two label definitions,
-  which is itself evidence the definition is not doing anything to the EN result.
+- The **translation-aware label definition changed no `EN` row in this run**: it
+  adds no credit anywhere a labeled stem's twin does not exist, and every EN row
+  in every table came out bit-for-bit identical between the two label
+  definitions, which is evidence the definition did not do anything to the EN
+  result here. It is *not* structurally guaranteed to leave EN alone —
+  `label_match` is symmetric and 20 of the 51 EN pages have Korean twins, so an
+  EN case can in principle gain a hit from a twin inside the top-k when the
+  labeled English stem falls outside it. The EN invariance is a measured
+  property of this corpus/embedder/k and must be re-verified on future runs.
   When both a stem and its translation twin are retrieved for one labeled stem,
   only the best-ranked one is counted (`compute_hits`), so translation-aware
   precision/MAP cannot be inflated by double-crediting a single label.
