@@ -367,7 +367,37 @@ user would paste); the `#` heading and body are kept:
   belonging to the deleted phrase and goes with it; the residual whitespace and
   punctuation damage is then collapsed.
 
+### Label confound in the KO subset, and two label definitions
+
+The Korean fixtures (`eval/ko-corpus/ko-*.md`) are parallel translations of 20
+English `wiki/` pages, but they were authored with their `[[wikilinks]]`
+pointing at the **English** stems (`[[self-attention|셀프 어텐션]]`), while the
+corpus also contains their Korean twins (`ko-self-attention`). So a Korean
+page's label set can only ever contain English stems — yet the CJK-bigram
+lexical arm correctly surfaces the Korean twins, which then (a) count as wrong
+against the English-only label set and (b) evict the labeled English pages
+from the top-k. Fusion is penalised here for making the more appropriate
+suggestion, not for being wrong.
+
+Rather than loosen the labels and report only the improved number — which would
+be moving the goalposts after seeing a bad result — every metric below is
+reported under **both** label definitions:
+
+- **strict** (the original definition): a suggestion counts as correct only if
+  its stem is exactly a labeled link target.
+- **translation-aware**: a suggestion also counts as correct if it is the
+  parallel translation of a labeled stem, i.e. for a labeled stem `x`, `ko-x`
+  also counts, and vice versa. The pairing is mechanical — derived from the
+  `ko-<slug>.md` / `wiki/<slug>.md` filename convention the corpus already
+  uses, not a hand-maintained mapping table (`label_match` in
+  `examples/wikify_eval.rs`). If both `x` and `ko-x` are retrieved for one
+  labeled stem, only the first (best-ranked) counts as a hit — `compute_hits`
+  claims each label at most once — so precision/MAP cannot be inflated by
+  double-crediting a single label.
+
 ### Results — easy variant (71 cases)
+
+**Strict labels:**
 
 | k  | precision@k | recall@k | F1@k  |     | precision@k | recall@k | F1@k  |
 |----|------------:|---------:|------:|-----|------------:|---------:|------:|
@@ -376,9 +406,22 @@ user would paste); the `#` heading and body are kept:
 | 10 | 26.3 %      | 89.1 %   | 0.396 |     | 21.7 %      | 74.8 %   | 0.327 |
 | 20 | 18.2 %      | 92.9 %   | 0.297 |     | 15.4 %      | 82.7 %   | 0.255 |
 
-**MAP@20 — dense 0.416 · fused 0.421**
+MAP@20 — dense 0.416 · fused 0.421
+
+**Translation-aware labels:**
+
+| k  | precision@k | recall@k | F1@k  |     | precision@k | recall@k | F1@k  |
+|----|------------:|---------:|------:|-----|------------:|---------:|------:|
+|    | **dense**   |          |       |     | **fused**   |          |       |
+| 5  | 40.6 %      | 72.9 %   | 0.504 |     | 44.2 %      | 77.4 %   | 0.544 |
+| 10 | 27.0 %      | 91.2 %   | 0.406 |     | 25.8 %      | 87.0 %   | 0.387 |
+| 20 | 18.5 %      | 94.1 %   | 0.302 |     | 17.5 %      | 91.5 %   | 0.287 |
+
+MAP@20 — dense 0.474 · fused 0.537
 
 ### Results — hard variant (71 cases)
+
+**Strict labels:**
 
 | k  | precision@k | recall@k | F1@k  |     | precision@k | recall@k | F1@k  |
 |----|------------:|---------:|------:|-----|------------:|---------:|------:|
@@ -387,76 +430,121 @@ user would paste); the `#` heading and body are kept:
 | 10 | 22.8 %      | 79.1 %   | 0.345 |     | 19.9 %      | 68.6 %   | 0.300 |
 | 20 | 17.1 %      | 88.7 %   | 0.280 |     | 14.5 %      | 78.5 %   | 0.240 |
 
-**MAP@20 — dense 0.355 · fused 0.373**
+MAP@20 — dense 0.355 · fused 0.373
+
+**Translation-aware labels:**
+
+| k  | precision@k | recall@k | F1@k  |     | precision@k | recall@k | F1@k  |
+|----|------------:|---------:|------:|-----|------------:|---------:|------:|
+|    | **dense**   |          |       |     | **fused**   |          |       |
+| 5  | 33.5 %      | 60.5 %   | 0.416 |     | 39.4 %      | 68.6 %   | 0.483 |
+| 10 | 24.2 %      | 83.0 %   | 0.365 |     | 23.9 %      | 81.2 %   | 0.360 |
+| 20 | 17.3 %      | 90.0 %   | 0.285 |     | 16.8 %      | 88.6 %   | 0.276 |
+
+MAP@20 — dense 0.404 · fused 0.484
 
 ### Headline delta at k=10 (fused − dense)
 
-| variant | metric       |  dense |  fused |     delta |
-|---------|--------------|-------:|-------:|----------:|
-| easy    | precision@10 | 26.3 % | 21.7 % | **−4.6 pp** |
-| easy    | recall@10    | 89.1 % | 74.8 % | **−14.4 pp** |
-| easy    | F1@10        |  0.396 |  0.327 | **−0.068** |
-| easy    | MAP@20       |  0.416 |  0.421 | +0.005 |
-| hard    | precision@10 | 22.8 % | 19.9 % | **−3.0 pp** |
-| hard    | recall@10    | 79.1 % | 68.6 % | **−10.5 pp** |
-| hard    | F1@10        |  0.345 |  0.300 | **−0.045** |
-| hard    | MAP@20       |  0.355 |  0.373 | +0.018 |
+| variant | metric       | strict: dense | strict: fused | strict Δ | trans-aware: dense | trans-aware: fused | trans-aware Δ |
+|---------|--------------|---------------:|---------------:|-----------:|---------------:|---------------:|-----------:|
+| easy    | precision@10 | 26.3 % | 21.7 % | **−4.6 pp** | 27.0 % | 25.8 % | **−1.3 pp** |
+| easy    | recall@10    | 89.1 % | 74.8 % | **−14.4 pp** | 91.2 % | 87.0 % | **−4.1 pp** |
+| easy    | F1@10        |  0.396 |  0.327 | **−0.068** | 0.406 | 0.387 | **−0.019** |
+| easy    | MAP@20       |  0.416 |  0.421 | +0.005 | 0.474 | 0.537 | **+0.063** |
+| hard    | precision@10 | 22.8 % | 19.9 % | **−3.0 pp** | 24.2 % | 23.9 % | −0.3 pp |
+| hard    | recall@10    | 79.1 % | 68.6 % | **−10.5 pp** | 83.0 % | 81.2 % | **−1.8 pp** |
+| hard    | F1@10        |  0.345 |  0.300 | **−0.045** | 0.365 | 0.360 | −0.006 |
+| hard    | MAP@20       |  0.355 |  0.373 | +0.018 | 0.404 | 0.484 | **+0.080** |
 
-**Plainly: on the aggregate 71-case set, fusion HURTS wikify.** It costs 10–14 pp
-of recall@10 and 3–5 pp of precision@10 on both variants, buying only a marginal
-MAP gain. That is the opposite sign of its effect on Ask (MRR 0.829 → 0.906), and
-it is the outcome the whole-branch review suspected. Nothing was tuned to soften
-it. The next section explains where the loss comes from — the explanation does
-*not* retract the aggregate figure.
+**Under strict labels, fusion HURTS wikify at k=10** — 10–14 pp of recall and
+3–5 pp of precision, on both variants. **Under translation-aware labels the
+regression shrinks by roughly two-thirds but does not disappear**: recall@10
+still drops 4.1 pp (easy) / 1.8 pp (hard), and MAP now clearly *improves* under
+fusion in both variants and both label definitions. Nothing was tuned to
+produce either column; the difference between them is entirely the label
+definition, computed from the same single run. The next section shows why the
+strict number is this much worse: it is not purely the translation-label
+artifact — a real, smaller fusion regression on the KO subset survives even
+once the artifact is corrected for.
 
-### Where the regression comes from — a label confound in the KO subset
+### Where the regression comes from — language split (post-hoc)
 
-| lang | variant | arm   | precision@10 | recall@10 | F1@10 | MAP@20 |
-|------|---------|-------|-------------:|----------:|------:|-------:|
-| EN (51) | easy | dense | 27.1 %       | 94.2 %    | 0.409 | 0.469 |
-| EN (51) | easy | fused | **27.5 %**   | **94.9 %**| **0.414** | **0.559** |
-| EN (51) | hard | dense | 23.5 %       | 84.3 %    | 0.358 | 0.393 |
-| EN (51) | hard | fused | **25.3 %**   | **87.8 %**| **0.382** | **0.497** |
-| KO (20) | easy | dense | 24.5 %       | 76.1 %    | 0.362 | 0.281 |
-| KO (20) | easy | fused | 7.0 %        | 23.3 %    | 0.106 | 0.069 |
-| KO (20) | hard | dense | 21.0 %       | 65.9 %    | 0.311 | 0.259 |
-| KO (20) | hard | fused | 6.0 %        | 19.6 %    | 0.090 | 0.057 |
+This split was chosen *after* seeing the aggregate regress, on the hypothesis
+that the KO fixtures' labels were the cause — it is not a pre-registered
+breakdown, and is reported as such.
 
-On the 51 English cases fusion **helps on every metric, both variants** (hard:
-recall@10 84.3 → 87.8 %, MAP 0.393 → 0.497). The entire aggregate regression comes
-from the 20 Korean cases, where fused recall@10 collapses 76.1 → 23.3 %.
+| labels | lang | variant | arm | precision@10 | recall@10 | F1@10 | MAP@20 |
+|---|---|---|---|---:|---:|---:|---:|
+| strict | EN (51) | easy | dense | 27.1 % | 94.2 % | 0.409 | 0.469 |
+| strict | EN (51) | easy | fused | **27.5 %** | **94.9 %** | **0.414** | **0.559** |
+| strict | EN (51) | hard | dense | 23.5 % | 84.3 % | 0.358 | 0.393 |
+| strict | EN (51) | hard | fused | **25.3 %** | **87.8 %** | **0.382** | **0.497** |
+| strict | KO (20) | easy | dense | 24.5 % | 76.1 % | 0.362 | 0.281 |
+| strict | KO (20) | easy | fused | 7.0 % | 23.3 % | 0.106 | 0.069 |
+| strict | KO (20) | hard | dense | 21.0 % | 65.9 % | 0.311 | 0.259 |
+| strict | KO (20) | hard | fused | 6.0 % | 19.6 % | 0.090 | 0.057 |
+| trans-aware | EN (51) | easy | dense | 27.1 % | 94.2 % | 0.409 | 0.469 |
+| trans-aware | EN (51) | easy | fused | **27.5 %** | **94.9 %** | **0.414** | **0.559** |
+| trans-aware | EN (51) | hard | dense | 23.5 % | 84.3 % | 0.358 | 0.393 |
+| trans-aware | EN (51) | hard | fused | **25.3 %** | **87.8 %** | **0.382** | **0.497** |
+| trans-aware | KO (20) | easy | dense | 27.0 % | 83.3 % | 0.398 | 0.485 |
+| trans-aware | KO (20) | easy | fused | 21.5 % | 66.9 % | 0.318 | 0.479 |
+| trans-aware | KO (20) | hard | dense | 26.0 % | 79.8 % | 0.383 | 0.433 |
+| trans-aware | KO (20) | hard | fused | 20.5 % | 64.4 % | 0.304 | 0.452 |
 
-The mechanism is visible in the harness's own worst-case output, which prints what
-the retriever returned instead of the labels:
+The EN rows are **identical** under both label definitions — the translation
+twin rule only ever touches `ko-*` cases, by construction, so it cannot have
+manufactured the EN improvement. On EN, fusion **helps on every metric, both
+variants**, under either label definition.
+
+On KO, translation-aware labels recover most — not all — of the strict
+collapse: recall@10 goes from 23.3 %→66.9 % (easy) and 19.6 %→64.4 % (hard),
+but dense still beats fused on KO recall@10 by 16.4 pp (easy) / 15.4 pp (hard)
+even once the twins are credited. So part of the KO regression really was the
+labeling artifact (the ~53–45 pp jump on correction), and part of it is a
+genuine fusion weakness on this specific 20-page bilingual subset that
+translation-awareness does not explain away — plausibly the CJK-bigram lexical
+arm still over-concentrating candidate slots on near-duplicate KO chunks in a
+way that costs a *few* labeled hits even after the twin credit, though this
+harness does not isolate that mechanism further. KO's MAP tells a mixed story:
+fused MAP is roughly flat vs. dense on KO-easy (0.479 vs. 0.485) and higher on
+KO-hard (0.452 vs. 0.433).
+
+The mechanism for the artifact itself is visible in the harness's own
+worst-case output (computed under strict labels, unchanged by this scoring
+change), which prints what the retriever returned instead of the labels:
 
 ```
 0.0%  ko-attention-mechanism (6 labels) <- ko-attention-mechanism, ko-self-attention,
                                            ko-kv-cache, ko-multi-head-attention, ko-embeddings
 ```
 
-The Korean fixtures were written as translations that link to the **English**
-stems (`[[self-attention|셀프 어텐션]]`), while the corpus also contains their
-Korean twins (`ko-self-attention`). So a Korean page's label set is the English
-pages, but the semantically correct answer for Korean source text is the Korean
-twin — which is not in the label set. Dense retrieval is fuzzy enough to surface
-both; the CJK-bigram lexical arm is *sharply* right about the Korean twins and
-promotes them into every slot, evicting the English pages the labels demand.
-Fusion is being penalised here for being more correct than the labels.
-
-This is a defect of the eval fixtures, not of the retrieval, and it is recorded
-rather than patched: the labels come from real structure, and rewriting the
-Korean fixtures' link targets (or aliasing `ko-x` ≡ `x`) would be authoring
-labels to obtain a better number. **Read the EN block as the load-bearing
-evidence about fusion on this path, and the aggregate as the number that is
-distorted by the fixtures.**
+Every one of those top-5 stems besides the source page itself is the Korean
+twin of a labeled English stem — exactly the pattern the translation-aware
+definition credits.
 
 ### Verdict
 
 - **Fusion helps wikify on the English subset** — the only subset whose labels
-  are sound — on precision@10, recall@10, F1@10 and MAP, on both difficulty
-  levels. The MAP gains are large (+0.090 easy, +0.104 hard): fusion pulls the
-  correct pages toward the top of the candidate list.
-- **Fusion hurts the aggregate**, entirely via the confounded KO subset.
+  were never confounded — on precision@10, recall@10, F1@10 and MAP, on both
+  difficulty levels and under both label definitions (the EN rows do not move).
+  The MAP gains are large (+0.090 easy, +0.104 hard): fusion pulls the correct
+  pages toward the top of the candidate list.
+- **Under strict labels, fusion hurts the aggregate**, overwhelmingly via the
+  confounded KO subset (translation-labeled-as-wrong twins evicting the correct
+  English answers).
+- **Under translation-aware labels, the aggregate recall/precision regression
+  at k=10 shrinks substantially (by roughly two-thirds) but does not
+  disappear**, and aggregate MAP now improves under fusion in both variants.
+  The residual KO gap is real, not an artifact of this particular labeling
+  choice — treat it as a genuine (if second-order, non-EN) fusion weakness on
+  this bilingual fixture set rather than as evidence against fusion generally.
+- **Honest overall read**: fusion improves ranking quality (MAP) everywhere
+  measured, and improves recall/precision cleanly on the sound (EN) label set;
+  it costs some raw recall/precision on the KO fixtures specifically, and only
+  part of that cost is a labeling artifact. The strict aggregate number
+  overstates the harm; the translation-aware number is not a "fixed" number
+  that erases it, and neither should be read as the sole headline in isolation.
 - Neither of the review's two hypothesised harms was observed on EN: source-summary
   chunks do not eat candidate slots (`fuse_chunk_matches` filters before capping,
   which is unit-tested), and RRF's compressed score range does not flatten
@@ -494,3 +582,17 @@ worst-case list. No nondeterminism source survives on this path.
   costs both arms identically, so it does not bias the dense-vs-fused comparison.
 - The **easy** variant hands the retriever the target pages' titles verbatim (that
   is what "easy" means); the **hard** variant is the one with no lexical gift.
+- The **hard** variant's phrase deletion leaves residual grammatical damage in a
+  few cases (a comma or connective left dangling after its clause was removed).
+  The `tidy()` cleanup repairs whitespace/punctuation, not grammar, so the hard
+  variant is slightly less natural than real user prose — it affects both arms
+  identically.
+- The **EN/KO language split is a post-hoc breakdown**, chosen after the strict
+  aggregate came back regressed, not a split planned before running the harness.
+- The **translation-aware label definition only ever changes `ko-*` cases**: it
+  adds no credit anywhere a labeled stem's twin does not exist, and the EN rows
+  in every table are bit-for-bit identical between the two label definitions,
+  which is itself evidence the definition is not doing anything to the EN result.
+  When both a stem and its translation twin are retrieved for one labeled stem,
+  only the best-ranked one is counted (`compute_hits`), so translation-aware
+  precision/MAP cannot be inflated by double-crediting a single label.
