@@ -1,5 +1,12 @@
 # Cross-encoder rerank — Stage 1 (measurement) design
 
+**Outcome (recorded after implementation): rejected.** The rerank arm measured
+worse than the shipped hybrid retrieval (hit@1 80.6 % vs 82.3 %, MRR 0.901 vs
+0.906) and was retired behind an off-by-default `rerank` cargo feature. See
+`eval/BASELINE.md`, "Cross-encoder rerank — Stage 1", for the full numbers, and
+the "Correction (implementation)" note in this document for a premise below
+that the implementation proved false.
+
 Parent: `2026-07-22-retrieval-first-ingest-design.md` (Approach A), whose Phase-1b
 tail lists an optional cross-encoder rerank as **staged and conditional on a
 feasibility spike**. That spike is done (two rounds); this is the increment it
@@ -68,6 +75,18 @@ impl Reranker {
     pub fn score_batch(&mut self, query: &str, passages: &[String]) -> Result<Vec<f32>, String>;
 }
 ```
+
+> **Correction (implementation).** The doc comment above assumed `n_cls_out !=
+> 1` was the way to reject a non-reranker model. Implementation proved that
+> false: `n_cls_out` defaults to 1 for *any* model that omits
+> `classifier.output_labels` — including the bundled `bge-m3` embedding
+> model — so it cannot discriminate a reranker from a plain embedder at all.
+> What shipped instead (`src/rerank.rs`, `require_classification_head`)
+> inspects the GGUF's **tensor set** for `cls.weight` / `cls.output.weight` via
+> a header-only parse; `n_cls_out == 1` is kept only as a secondary assert that
+> is load-bearing solely for the `n_cls_out == 0` case. The reasoning above is
+> left as originally written for the record.
+
 Query and passage go into **one** sequence in the model's expected pair format;
 `encode()` (not `decode()`); pooling `Rank`; no L2 normalisation. The unsound
 wrapper is bypassed: one clearly-commented `unsafe` block reads a single `f32`
