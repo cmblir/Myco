@@ -687,3 +687,114 @@ dense-only.
   When both a stem and its translation twin are retrieved for one labeled stem,
   only the best-ranked one is counted (`compute_hits`), so translation-aware
   precision/MAP cannot be inflated by double-crediting a single label.
+
+## Cross-encoder rerank — Stage 1 (2026-07-26) — **REJECTED, does not beat fused**
+
+Design: `docs/specs/2026-07-26-retrieval-rerank-stage1-design.md`. Measurement
+only — no product surface was built, and none will be: the arm loses.
+
+Setup: `bge-reranker-v2-m3` Q4_K_M (438 MB, kept outside the repo at
+`~/.cache/memex-spike/`), scored through `src/rerank.rs` with
+`LLAMA_POOLING_TYPE_RANK`, query and passage in one sequence
+(`<s> q </s></s> passage </s>`), `encode()`, **no L2 normalisation**. The arm
+takes the top **12** fused *chunk* candidates (12 = the number of chunks Ask
+inlines), rescores them, re-sorts that head by score, and leaves the fused tail
+untouched. Same corpus and query set as the section above — **no retrieval
+parameter, query, or corpus file was changed**.
+
+Run: `MEMEX_EMBED_SPEC=bge-m3 MEMEX_RERANK_MODEL=<path> cargo run --example
+retrieval_eval --release`, over 71 wiki pages · 142 chunks · 62 queries.
+
+### Results — dense + BM25 + rerank (top-12)
+
+| k  | hit@k   | recall@k |
+|----|---------|----------|
+| 1  | 80.6 %  | 76.6 %   |
+| 3  | 100.0 % | 96.8 %   |
+| 5  | 100.0 % | 99.2 %   |
+| 10 | 100.0 % | 100.0 %  |
+
+**MRR 0.901 · nDCG@10 0.919**
+
+### Against the bar it had to clear
+
+| metric    | fused | +rerank | delta        | required |
+|-----------|------:|--------:|-------------:|----------|
+| hit@1     | 82.3  |  80.6   | **−1.7 pp**  | > 82.3   |
+| recall@3  | 98.4  |  96.8   | −1.6 pp      | —        |
+| recall@5  | 100.0 |  99.2   | −0.8 pp      | —        |
+| MRR       | 0.906 |  0.901  | **−0.005**   | > 0.906  |
+| nDCG@10   | 0.926 |  0.919  | −0.007       | —        |
+
+**Every criterion fails.** hit@1 falls, MRR falls, and the "no query that fused
+ranks 1st may be pushed out of 1st" condition is violated **six times**.
+
+### Per-query movement — the complete list
+
+Promotions (5):
+
+| query | fused | rerank |
+|-------|------:|-------:|
+| `BPE` | @2 | **@1** |
+| `DPO` | @2 | **@1** |
+| `storing embeddings for nearest-neighbor similarity search` | @2 | **@1** |
+| `training a model to align with a written set of principles` | @3 | **@1** |
+| `PPO로 정책을 갱신하는 인간 선호 정렬` | @2 | **@1** |
+
+Demotions (6) — all six were at fused rank 1:
+
+| query | fused | rerank |
+|-------|------:|-------:|
+| `how a transformer knows the order of tokens without recurrence` | @1 | @2 |
+| `performance improves predictably with model size data and compute` | @1 | @2 |
+| `QLoRA` | @1 | @2 |
+| `원시 텍스트를 서브워드 단위로 나누는 과정` | @1 | @2 |
+| `자기회귀 생성 중 이전에 계산한 키와 값을 캐싱해 재계산을 피함` | @1 | @2 |
+| `모델 크기 데이터 연산이 커질수록 성능이 예측 가능하게 향상됨` | @1 | @2 |
+
+Eleven queries move, 5 up and 6 down, and the net is one lost rank-1 (51/62 →
+50/62). Nothing leaves the top 10 in either direction — the reranker is
+reshuffling a head that fusion had already made complete at k=3, which is
+precisely why there was so little to win and something to lose. The last row
+is the same Korean paraphrase that BM25 rescued from @5 to @1 in the previous
+section; the reranker gives half of that back.
+
+### Cost
+
+**~550 ms per query** for 12 candidates on Apple silicon with Metal (557 ms in
+run 1, 544 ms in run 2 — 34.5 s / 33.7 s over the 62 queries), i.e. ~46 ms per
+pair at this corpus's chunk length. That is on top of a ~400 ms cold model load
+and ~950 MB resident RSS, and the spike's CPU-only estimate is several times
+worse. So the arm costs roughly half a second per question and 438 MB of
+download to make retrieval slightly worse.
+
+### Determinism
+
+Two consecutive runs were **byte-identical in every table and every rank-change
+line**; the only textual difference between them is the wall-clock latency line
+(557 vs 544 ms/query), which is a measurement rather than a retrieval output.
+The scorer itself is bit-reproducible (unit test
+`rerank::tests::scoring_is_deterministic`).
+
+### Verdict
+
+**Rerank does not beat fused. Stage 2 is dropped**, under the same rule that
+retired wikify fusion: an increment that does not beat the recorded baseline is
+not shipped. Nothing was tuned to rescue it — no change was made to the query
+set, the corpus, `MAX_CHUNKS`, the BM25 parameters, `RRF_K`, or the top-N — and
+no such tuning should be attempted on this evidence, because a top-N or
+threshold chosen after seeing this table would be fitted to 62 queries.
+
+`src/rerank.rs` and the harness arm are kept as measurement infrastructure: they
+are not wired into `semantic_search`, `wikify_candidates`, or any command, no
+model is bundled or downloaded, and the arm is inert unless `MEMEX_RERANK_MODEL`
+is set.
+
+**What would make this worth re-measuring** (none of it is scheduled): a corpus
+where fusion is *not* already at hit@3 100 %, i.e. one large enough that the
+right page is often outside the fused top 3 — this eval leaves the reranker a
+maximum of ~11 rank-1 promotions to win and 51 to lose. A reranker is a
+precision instrument for a recall problem this corpus no longer has.
+
+**Reference for the next increment is unchanged:** dense+BM25 RRF — hit@1
+82.3 % · hit@3/@5/@10 100 % · MRR 0.906 · nDCG@10 0.926.
