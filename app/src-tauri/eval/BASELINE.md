@@ -699,8 +699,9 @@ Setup: `bge-reranker-v2-m3` Q4_K_M (438 MB, kept outside the repo at
 (`<s> q </s></s> passage </s>`), `encode()`, **no L2 normalisation**. The arm
 takes the top **12** fused *chunk* candidates (12 = the number of chunks Ask
 inlines), rescores them, re-sorts that head by score, and leaves the fused tail
-untouched. Same corpus and query set as the section above — **no retrieval
-parameter, query, or corpus file was changed**.
+untouched. Same corpus and query set as "Phase 1b — BM25 + RRF fusion" above
+(71 wiki pages · 142 chunks · 62 queries) — **no retrieval parameter, query, or
+corpus file was changed**.
 
 **Feature-gated.** Since this section was written, `src/rerank.rs` and the
 harness arm below have been put behind an off-by-default cargo feature named
@@ -720,8 +721,10 @@ this one was a Stage-1 spike model only). It is not fetched by any build
 script — download it yourself and point `MEMEX_RERANK_MODEL` at wherever you
 put it; `~/.cache/memex-spike/` is just the convention this measurement's
 machine used. With `MEMEX_RERANK_MODEL` unset (or the feature off), the
-harness's dense and fused blocks are unaffected — see "Byte-identity" in the
-section above.
+harness's dense and fused blocks are unaffected — they are the same
+dense/fused arms measured in "### Results — dense + BM25 (RRF fused)" under
+"Phase 1b — BM25 + RRF fusion" above (hit@1 82.3 % · MRR 0.906, the bar this
+arm is measured against below).
 
 Run: `MEMEX_EMBED_SPEC=bge-m3 MEMEX_RERANK_MODEL=<path> cargo run --example
 retrieval_eval --release --features rerank`, over 71 wiki pages · 142 chunks ·
