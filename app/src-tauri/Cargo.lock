@@ -2789,6 +2789,7 @@ dependencies = [
  "gray_matter",
  "keyring",
  "llama-cpp-2",
+ "llama-cpp-sys-2",
  "notify",
  "pdf-extract",
  "regex",

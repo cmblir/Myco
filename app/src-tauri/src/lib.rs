@@ -23,6 +23,7 @@ pub mod pipeline;
 pub mod provenance;
 pub mod providers;
 pub mod registry;
+pub mod rerank;
 pub mod retrieval;
 pub mod sample_vault;
 pub mod schedules;

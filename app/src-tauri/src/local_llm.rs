@@ -24,6 +24,7 @@
 
 use std::num::NonZeroU32;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use llama_cpp_2::context::params::LlamaContextParams;
 use llama_cpp_2::context::params::LlamaPoolingType;
@@ -117,9 +118,26 @@ pub fn apply_prefix(spec: &EmbedSpec, role: EmbedRole, texts: &[String]) -> Vec<
     texts.iter().map(|t| format!("{prefix}{t}")).collect()
 }
 
+/// The one llama.cpp backend for this process, initialized on first use and
+/// then shared. `LlamaBackend::init()` errors with `BackendAlreadyInitialized`
+/// on a second call, so every part of the app that needs a backend token —
+/// `LocalLlm` here and `rerank::Reranker` — must come through this accessor
+/// rather than initializing its own. The token is deliberately leaked into the
+/// `OnceLock` for the process lifetime: dropping a `LlamaBackend` flips the
+/// crate's global "initialized" flag back to false, which would make a second,
+/// still-live token's drop hit the crate's `unreachable!()`.
+pub fn shared_backend() -> Result<&'static LlamaBackend, String> {
+    static BACKEND: OnceLock<Result<LlamaBackend, String>> = OnceLock::new();
+    BACKEND
+        .get_or_init(|| LlamaBackend::init().map_err(|e| format!("llama backend init: {e}")))
+        .as_ref()
+        .map_err(String::clone)
+}
+
 pub struct LocalLlm {
-    // The backend guard must outlive the model; drop deinits llama.cpp.
-    backend: LlamaBackend,
+    // Process-wide backend; must outlive the model, which it does by being
+    // 'static.
+    backend: &'static LlamaBackend,
     model: LlamaModel,
     // The GGUF's own chat template (None if the file ships without one).
     template: Option<LlamaChatTemplate>,
@@ -131,9 +149,9 @@ pub struct LocalLlm {
 impl LocalLlm {
     /// Load the bundled GGUF. Call once per process (backend init is global).
     pub fn load(model_path: &Path) -> Result<Self, String> {
-        let backend = LlamaBackend::init().map_err(|e| format!("llama backend init: {e}"))?;
+        let backend = shared_backend()?;
         let model =
-            LlamaModel::load_from_file(&backend, model_path, &LlamaModelParams::default())
+            LlamaModel::load_from_file(backend, model_path, &LlamaModelParams::default())
                 .map_err(|e| format!("load model {}: {e}", model_path.display()))?;
         let template = model.chat_template(None).ok();
         Ok(Self {
@@ -150,7 +168,7 @@ impl LocalLlm {
     /// `LocalLlm`.
     pub fn load_embed_model(&mut self, model_path: &Path) -> Result<(), String> {
         let model =
-            LlamaModel::load_from_file(&self.backend, model_path, &LlamaModelParams::default())
+            LlamaModel::load_from_file(self.backend, model_path, &LlamaModelParams::default())
                 .map_err(|e| format!("load embed model {}: {e}", model_path.display()))?;
         self.embed_model = Some(model);
         Ok(())
@@ -224,7 +242,7 @@ impl LocalLlm {
         let ctx_params = LlamaContextParams::default().with_n_ctx(Some(n_ctx));
         let mut ctx = self
             .model
-            .new_context(&self.backend, ctx_params)
+            .new_context(self.backend, ctx_params)
             .map_err(|e| format!("new_context: {e}"))?;
 
         let mut tokens = self
@@ -468,7 +486,7 @@ impl LocalLlm {
             .with_n_batch(max_n as u32)
             .with_n_ubatch(max_n as u32);
         let mut ctx = model
-            .new_context(&self.backend, ctx_params)
+            .new_context(self.backend, ctx_params)
             .map_err(|e| format!("embed new_context: {e}"))?;
         let mut batch = LlamaBatch::new(max_n, 1);
 
