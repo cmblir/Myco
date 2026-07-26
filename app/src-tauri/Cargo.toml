@@ -33,13 +33,15 @@ pdf-extract = "0.10.0"
 # daemon, no Python. Metal is on by default on macOS. Vendors + compiles
 # llama.cpp at build time (adds ~5 min to a clean release build).
 llama-cpp-2 = "0.1.150"
-# Raw llama.cpp bindings, used ONLY by `src/rerank.rs`. It is already in the
-# lockfile as llama-cpp-2's own dependency, so naming it here adds no new code to
-# the build — it only makes the already-compiled sys crate callable. The `=` pin
-# must track llama-cpp-2's exact version: a skew would build and link a SECOND
-# copy of llama.cpp, and `=` turns that into a resolution error instead of a
-# silent disaster. Bump both lines together, never one alone.
-llama-cpp-sys-2 = "=0.1.150"
+# Raw llama.cpp bindings, used ONLY by `src/rerank.rs` (behind the `rerank`
+# feature, off by default). It is already in the lockfile as llama-cpp-2's own
+# dependency, so naming it here as `optional` adds no new code to the build —
+# it only makes the already-compiled sys crate callable when `rerank` is
+# enabled, without adding a direct-dependency edge to a default build. The `=`
+# pin must track llama-cpp-2's exact version: a skew would build and link a
+# SECOND copy of llama.cpp, and `=` turns that into a resolution error instead
+# of a silent disaster. Bump both lines together, never one alone.
+llama-cpp-sys-2 = { version = "=0.1.150", optional = true }
 zip = { version = "4.2.0", default-features = false, features = ["deflate"] }
 # Recoverable deletes: delete_path moves entries to the OS trash instead of
 # unlinking them, so a mis-click never permanently destroys notes.
@@ -58,6 +60,10 @@ criterion = "0.5"
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]
+# Cross-encoder reranker (src/rerank.rs) — a retired, measurement-only
+# experiment (see eval/BASELINE.md). Off by default so a normal build compiles
+# none of it and does not pull llama-cpp-sys-2 in as a direct dependency.
+rerank = ["dep:llama-cpp-sys-2"]
 
 [[bench]]
 name = "vector_store"

@@ -17,6 +17,11 @@
 // Set MEMEX_RERANK_MODEL to the path of a cross-encoder GGUF to add the rerank
 // arm. UNSET IT and this harness behaves exactly as it did before the arm
 // existed — the recorded baselines must stay reproducible.
+//
+// The rerank arm is retired (see `rerank` module docs / eval/BASELINE.md) and
+// lives behind the `rerank` cargo feature: build/run with
+// `--features rerank` to re-enable it, otherwise this whole arm — including
+// the `llama-cpp-sys-2` dependency it pulls in — is not compiled at all.
 
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
@@ -24,11 +29,12 @@ use std::path::PathBuf;
 use memex_lib::{
     embeddings,
     local_llm::{apply_prefix, embed_spec_by_id, EmbedRole, LocalLlm},
-    rerank::Reranker,
     retrieval::{rrf_fuse, Bm25Index},
     sample_vault,
     vector_index::VectorStore,
 };
+#[cfg(feature = "rerank")]
+use memex_lib::rerank::Reranker;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -262,7 +268,9 @@ fn main() {
     }
 
     // The rerank arm is opt-in: with MEMEX_RERANK_MODEL unset, not one line of
-    // this harness's behaviour or output changes.
+    // this harness's behaviour or output changes. With the `rerank` feature
+    // off, this arm is not compiled at all.
+    #[cfg(feature = "rerank")]
     let mut reranker = match std::env::var("MEMEX_RERANK_MODEL") {
         Ok(path) if !path.is_empty() => {
             eprintln!("loading reranker {path} …");
@@ -273,8 +281,14 @@ fn main() {
 
     let mut dense_ranked: Vec<Vec<String>> = Vec::with_capacity(set.queries.len());
     let mut fused_ranked: Vec<Vec<String>> = Vec::with_capacity(set.queries.len());
+    #[cfg(feature = "rerank")]
     let mut rerank_ranked: Vec<Vec<String>> = Vec::new();
+    #[cfg(not(feature = "rerank"))]
+    let rerank_ranked: Vec<Vec<String>> = Vec::new();
+    #[cfg(feature = "rerank")]
     let mut rerank_time = std::time::Duration::ZERO;
+    #[cfg(not(feature = "rerank"))]
+    let rerank_time = std::time::Duration::ZERO;
 
     for lab in &set.queries {
         let qvec = query_vec(&llm, &lab.q);
@@ -285,6 +299,7 @@ fn main() {
         dense_ranked.push(dedup_stems(&dense_hits));
         fused_ranked.push(dedup_stems(&fused_hits));
 
+        #[cfg(feature = "rerank")]
         if let Some(r) = reranker.as_mut() {
             // Rescore the fused head at CHUNK level — the same unit Ask feeds
             // the model — then re-sort those candidates by score and append the

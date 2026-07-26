@@ -23,6 +23,7 @@ pub mod pipeline;
 pub mod provenance;
 pub mod providers;
 pub mod registry;
+#[cfg(feature = "rerank")]
 pub mod rerank;
 pub mod retrieval;
 pub mod sample_vault;

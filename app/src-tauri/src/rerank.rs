@@ -1,5 +1,13 @@
 //! Cross-encoder reranker — Stage 1, measurement only.
 //!
+//! **Retired.** Measured worse than the shipped hybrid (dense+BM25/RRF)
+//! retrieval — hit@1 80.6% vs 82.3%, MRR 0.901 vs 0.906, 6 rank-1 demotions,
+//! ~550 ms/query — so nothing here ships; it is kept behind the `rerank`
+//! cargo feature purely so a future attempt (different model, page-level
+//! rerank, different top-N) is one command away instead of a rewrite. See the
+//! "Cross-encoder rerank — Stage 1" section of `eval/BASELINE.md` for the full
+//! numbers, the verdict, and the exact reproduction command.
+//!
 //! A cross-encoder scores a (query, passage) PAIR in one forward pass, so it
 //! sees the interaction between the two instead of comparing two independently
 //! produced vectors. `bge-reranker-v2-m3` is the XLM-RoBERTa backbone we already
