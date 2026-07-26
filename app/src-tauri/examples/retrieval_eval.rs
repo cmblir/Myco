@@ -6,19 +6,25 @@
 //   - the dense arm alone (VectorStore cosine search over the configured
 //     embed spec, e.g. bge-m3 — see MEMEX_EMBED_SPEC below), and
 //   - the fused arm (dense + a BM25 lexical index, combined via
-//     Reciprocal Rank Fusion — `retrieval::rrf_fuse`).
+//     Reciprocal Rank Fusion — `retrieval::rrf_fuse`), and
+//   - optionally the rerank arm (fused, then the top RERANK_TOP_N chunks
+//     rescored by a cross-encoder — `rerank::Reranker`).
 //
 // Run:  cargo run --example retrieval_eval --release
 // (release so the one-time embed of the sample vault isn't glacial.)
 // Set MEMEX_EMBED_SPEC to pick the embed model (e.g. `bge-m3`); see
 // `local_llm::embed_spec_by_id` for available ids.
+// Set MEMEX_RERANK_MODEL to the path of a cross-encoder GGUF to add the rerank
+// arm. UNSET IT and this harness behaves exactly as it did before the arm
+// existed — the recorded baselines must stay reproducible.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use memex_lib::{
     embeddings,
     local_llm::{apply_prefix, embed_spec_by_id, EmbedRole, LocalLlm},
+    rerank::Reranker,
     retrieval::{rrf_fuse, Bm25Index},
     sample_vault,
     vector_index::VectorStore,
@@ -36,6 +42,11 @@ struct Labeled {
 }
 
 const KS: [usize; 4] = [1, 3, 5, 10];
+
+/// How many fused chunk candidates the rerank arm rescores. 12 matches the
+/// number of chunks Ask inlines, so the measured latency is the latency the
+/// product would actually pay.
+const RERANK_TOP_N: usize = 12;
 
 fn main() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -97,6 +108,10 @@ fn main() {
     // Lexical index built from the SAME chunks fed to `store`, so dense and
     // fused arms are measured against identical (page, section) identity.
     let mut bm25 = Bm25Index::new();
+    // Chunk text keyed by the same `page#section` identity the two indexes use,
+    // so the rerank arm can recover the passage behind a fused Hit. Unused when
+    // the rerank arm is off.
+    let mut chunk_text: HashMap<String, String> = HashMap::new();
     let mut pages = 0usize;
     let mut chunks_total = 0usize;
     for (path, content) in sample_vault::SAMPLE_NOTES {
@@ -119,6 +134,9 @@ fn main() {
         let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
         store.upsert_page(&rel, &stem, entries);
         bm25.upsert_page(&rel, &stem, &chunks);
+        for (i, c) in chunks.iter().enumerate() {
+            chunk_text.insert(format!("{rel}#{i}"), c.clone());
+        }
         eprint!("\rindexed {pages} pages / {chunks_total} chunks");
     }
 
@@ -147,6 +165,9 @@ fn main() {
             let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
             store.upsert_page(&rel, &stem, entries);
             bm25.upsert_page(&rel, &stem, &chunks);
+            for (i, c) in chunks.iter().enumerate() {
+                chunk_text.insert(format!("{rel}#{i}"), c.clone());
+            }
             eprint!("\rindexed {pages} pages / {chunks_total} chunks");
         }
     }
@@ -240,8 +261,20 @@ fn main() {
         ranked
     }
 
+    // The rerank arm is opt-in: with MEMEX_RERANK_MODEL unset, not one line of
+    // this harness's behaviour or output changes.
+    let mut reranker = match std::env::var("MEMEX_RERANK_MODEL") {
+        Ok(path) if !path.is_empty() => {
+            eprintln!("loading reranker {path} …");
+            Some(Reranker::load(&PathBuf::from(path)).expect("load reranker"))
+        }
+        _ => None,
+    };
+
     let mut dense_ranked: Vec<Vec<String>> = Vec::with_capacity(set.queries.len());
     let mut fused_ranked: Vec<Vec<String>> = Vec::with_capacity(set.queries.len());
+    let mut rerank_ranked: Vec<Vec<String>> = Vec::new();
+    let mut rerank_time = std::time::Duration::ZERO;
 
     for lab in &set.queries {
         let qvec = query_vec(&llm, &lab.q);
@@ -251,10 +284,39 @@ fn main() {
 
         dense_ranked.push(dedup_stems(&dense_hits));
         fused_ranked.push(dedup_stems(&fused_hits));
+
+        if let Some(r) = reranker.as_mut() {
+            // Rescore the fused head at CHUNK level — the same unit Ask feeds
+            // the model — then re-sort those candidates by score and append the
+            // untouched fused tail.
+            let n = fused_hits.len().min(RERANK_TOP_N);
+            let passages: Vec<String> = fused_hits[..n]
+                .iter()
+                .map(|h| {
+                    chunk_text
+                        .get(&format!("{}#{}", h.page, h.section))
+                        .expect("indexed chunk text")
+                        .clone()
+                })
+                .collect();
+            let t0 = std::time::Instant::now();
+            let scores = r.score_batch(&lab.q, &passages).expect("rerank candidates");
+            rerank_time += t0.elapsed();
+
+            // `sort_by` is stable and `total_cmp` is a total order, so equal
+            // scores keep their fused order and the result is reproducible.
+            let mut order: Vec<(usize, f32)> = scores.iter().copied().enumerate().collect();
+            order.sort_by(|a, b| b.1.total_cmp(&a.1));
+            let mut reordered: Vec<_> =
+                order.iter().map(|(i, _)| fused_hits[*i].clone()).collect();
+            reordered.extend_from_slice(&fused_hits[n..]);
+            rerank_ranked.push(dedup_stems(&reordered));
+        }
     }
 
     let dense = evaluate(&dense_ranked, &set.queries);
     let fused = evaluate(&fused_ranked, &set.queries);
+    let rerank = (!rerank_ranked.is_empty()).then(|| evaluate(&rerank_ranked, &set.queries));
 
     println!("═══════════════════════════════════════════════════");
     println!(" Memex retrieval — {spec_id}");
@@ -263,6 +325,14 @@ fn main() {
     println!();
     print_block("dense", &dense);
     print_block("dense+bm25 (RRF)", &fused);
+    if let Some(r) = &rerank {
+        print_block(&format!("dense+bm25+rerank (top-{RERANK_TOP_N})"), r);
+        println!(
+            "  rerank cost: {:.0} ms/query over {RERANK_TOP_N} candidates ({:.1} s total)\n",
+            rerank_time.as_secs_f64() * 1000.0 / set.queries.len() as f64,
+            rerank_time.as_secs_f64()
+        );
+    }
 
     // Every query whose first-relevant rank changed between the two arms —
     // gains and regressions must be equally visible, not just improvements.
@@ -281,6 +351,27 @@ fn main() {
             println!("    {:>5} -> {:<5}  {}", fmt_rank(*d), fmt_rank(*f), q);
         }
         println!();
+    }
+
+    // Same treatment for the rerank arm: promotions AND demotions against fused.
+    if let Some(r) = &rerank {
+        let mut moved: Vec<(&str, usize, usize)> = Vec::new();
+        for (i, lab) in set.queries.iter().enumerate() {
+            if fused.first_rel[i] != r.first_rel[i] {
+                moved.push((lab.q.as_str(), fused.first_rel[i], r.first_rel[i]));
+            }
+        }
+        if moved.is_empty() {
+            println!("  rank changes (fused -> rerank): none\n");
+        } else {
+            println!("  rank changes (fused -> rerank):");
+            for (q, f, rr) in &moved {
+                println!("    {:>5} -> {:<5}  {}", fmt_rank(*f), fmt_rank(*rr), q);
+            }
+            println!();
+        }
+        let lost_first = moved.iter().filter(|(_, f, rr)| *f == 1 && *rr != 1).count();
+        println!("  queries pushed out of rank 1 by rerank: {lost_first}\n");
     }
 
     // Surface the dense misses — these are exactly where BM25 / rerank should help.
