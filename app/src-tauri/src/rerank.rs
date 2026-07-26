@@ -262,7 +262,12 @@ impl Reranker {
         if tokens.is_empty() {
             return Err("rerank: empty pair".to_string());
         }
-        debug_assert!(tokens.len() <= CTX_TOKENS as usize);
+        if tokens.len() > CTX_TOKENS as usize {
+            return Err(format!(
+                "rerank: pair is {} tokens, exceeds the {CTX_TOKENS}-token batch allocation",
+                tokens.len()
+            ));
+        }
 
         // SAFETY: `self.ctx` is live. `llama_get_memory` returns null for a
         // model with no KV cache (this encoder-only BERT is one), so the clear
