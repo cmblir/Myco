@@ -702,8 +702,30 @@ inlines), rescores them, re-sorts that head by score, and leaves the fused tail
 untouched. Same corpus and query set as the section above — **no retrieval
 parameter, query, or corpus file was changed**.
 
+**Feature-gated.** Since this section was written, `src/rerank.rs` and the
+harness arm below have been put behind an off-by-default cargo feature named
+`rerank`, so a default build compiles neither and does not pull
+`llama-cpp-sys-2` in as a direct dependency. Reproducing this measurement (or
+re-measuring a future variant — different model, page-level rerank, different
+top-N) needs `--features rerank`:
+
+```
+MEMEX_EMBED_SPEC=bge-m3 \
+MEMEX_RERANK_MODEL=~/.cache/memex-spike/bge-reranker-v2-m3-Q4_K_M.gguf \
+cargo run --example retrieval_eval --release --features rerank
+```
+
+The GGUF is not in the repo (git-LFS payloads are for models the app bundles;
+this one was a Stage-1 spike model only). It is not fetched by any build
+script — download it yourself and point `MEMEX_RERANK_MODEL` at wherever you
+put it; `~/.cache/memex-spike/` is just the convention this measurement's
+machine used. With `MEMEX_RERANK_MODEL` unset (or the feature off), the
+harness's dense and fused blocks are unaffected — see "Byte-identity" in the
+section above.
+
 Run: `MEMEX_EMBED_SPEC=bge-m3 MEMEX_RERANK_MODEL=<path> cargo run --example
-retrieval_eval --release`, over 71 wiki pages · 142 chunks · 62 queries.
+retrieval_eval --release --features rerank`, over 71 wiki pages · 142 chunks ·
+62 queries.
 
 ### Results — dense + BM25 + rerank (top-12)
 
@@ -788,7 +810,8 @@ threshold chosen after seeing this table would be fitted to 62 queries.
 `src/rerank.rs` and the harness arm are kept as measurement infrastructure: they
 are not wired into `semantic_search`, `wikify_candidates`, or any command, no
 model is bundled or downloaded, and the arm is inert unless `MEMEX_RERANK_MODEL`
-is set.
+is set — and, since the feature gate above, unless the crate is built with
+`--features rerank` in the first place.
 
 **What would make this worth re-measuring** (none of it is scheduled): a corpus
 where fusion is *not* already at hit@3 100 %, i.e. one large enough that the
