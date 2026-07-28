@@ -193,10 +193,17 @@ pub fn open_vault(
     // no restart is needed — the next tool call sees the new vault.
     let _ = settings::set_active_vault(&path);
     // M3: this vault's background digests may still be installed under the
-    // pre-rename LaunchAgent label. Re-install them under the new label (which
-    // boots out and deletes the old agent first, so digests do not fire twice).
+    // pre-rename LaunchAgent label. Re-install them under the new label (the old
+    // agent is booted out and deleted only once the new one is loaded, so
+    // digests neither fire twice nor stop firing).
     // Skipped when python3 or the digest runner can't be resolved — better to
     // leave the old agent working than to remove it with no replacement.
+    //
+    // DEFERRED (I5): `locate_bin` shells out to a LOGIN shell to find python3,
+    // which costs a shell startup on EVERY open_vault even for the overwhelming
+    // majority of vaults that have no legacy plist at all. Reorder later so the
+    // cheap check (does any legacy plist exist for this vault's schedules?) runs
+    // first and the binary is only resolved when there is work to do.
     #[cfg(target_os = "macos")]
     if let (Some(python), Ok(script)) = (
         claude::locate_bin("python3", "MEMEX_PYTHON_PATH"),

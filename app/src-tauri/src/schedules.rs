@@ -153,10 +153,14 @@ pub enum LegacyAgentStep {
     Delete(PathBuf),
 }
 
-/// What must happen to a schedule's pre-rename LaunchAgent before the renamed
-/// one is installed. Empty when the old plist is absent (fresh install, or the
+/// What must happen to a schedule's pre-rename LaunchAgent once the renamed one
+/// is in place. Empty when the old plist is absent (fresh install, or the
 /// migration already ran) — that is what makes this a no-op the second time.
-pub fn legacy_agent_steps(agents_dir: &Path, id: &str, legacy_plist_exists: bool) -> Vec<LegacyAgentStep> {
+pub fn legacy_agent_steps(
+    agents_dir: &Path,
+    id: &str,
+    legacy_plist_exists: bool,
+) -> Vec<LegacyAgentStep> {
     if !legacy_plist_exists {
         return Vec::new();
     }
@@ -165,6 +169,44 @@ pub fn legacy_agent_steps(agents_dir: &Path, id: &str, legacy_plist_exists: bool
         LegacyAgentStep::Unload(plist.clone()),
         LegacyAgentStep::Delete(plist),
     ]
+}
+
+/// One step of installing a schedule's renamed LaunchAgent, in the order they
+/// must run. Returned as data so the I1 ordering invariant is unit-testable
+/// without invoking `launchctl`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum InstallStep {
+    /// Write the renamed plist. Failing here aborts the install.
+    WriteNew(PathBuf),
+    /// `launchctl unload` (any prior copy) then `load -w`. Failing here aborts.
+    LoadNew(PathBuf),
+    /// Retire the pre-rename agent — only reached once the new one is loaded.
+    RetireLegacy(LegacyAgentStep),
+}
+
+/// The ordered install plan for a schedule.
+///
+/// I1: the legacy agent is retired LAST, and only if every preceding step
+/// succeeded. The previous order unloaded and deleted the legacy plist first,
+/// so a failure to write or load the new one (disk full, LaunchAgents
+/// permissions, an MDM policy) — or a crash in between — left the user with no
+/// agent at all. And because `migrate_legacy_agents` keys off `legacy.exists()`,
+/// which was by then false, the schedule was skipped on every later launch:
+/// the background digest disappeared permanently with no UI signal and no
+/// retry. Retiring last means a failed install leaves the OLD agent loaded and
+/// firing, and leaves its plist on disk, so the next vault open tries again.
+pub fn install_plan(agents_dir: &Path, id: &str, legacy_plist_exists: bool) -> Vec<InstallStep> {
+    let plist = agents_dir.join(format!("{}.plist", launch_label(id)));
+    let mut steps = vec![
+        InstallStep::WriteNew(plist.clone()),
+        InstallStep::LoadNew(plist),
+    ];
+    steps.extend(
+        legacy_agent_steps(agents_dir, id, legacy_plist_exists)
+            .into_iter()
+            .map(InstallStep::RetireLegacy),
+    );
+    steps
 }
 
 /// Build a LaunchAgent plist XML. Pure, so its shape is unit-testable. When
@@ -260,26 +302,39 @@ pub fn install_background(
     let dir = launch_agents_dir()?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("create LaunchAgents dir: {e}"))?;
     let plist = dir.join(format!("{label}.plist"));
+    let legacy_exists = dir
+        .join(format!("{}.plist", legacy_launch_label(id)))
+        .exists();
 
-    // M3: retire any pre-rename LaunchAgent for this schedule FIRST — unload it,
-    // then delete its plist — before the renamed agent is written or removed.
-    // The old plist is already installed on the user's machine and keeps firing
-    // under its own label; leaving it behind means duplicate digests forever.
-    // Best-effort per step: a no-op when the old plist is absent.
-    for step in legacy_agent_steps(&dir, id, dir.join(format!("{}.plist", legacy_launch_label(id))).exists()) {
-        match step {
-            LegacyAgentStep::Unload(p) => {
-                let _ = Command::new("launchctl").arg("unload").arg("-w").arg(&p).output();
-            }
-            LegacyAgentStep::Delete(p) => {
-                let _ = std::fs::remove_file(&p);
+    // The pre-rename plist is already installed on the user's machine and keeps
+    // firing under its own label, so it has to go — but only ever as the LAST
+    // step of a install that already worked. See `install_plan`.
+    let retire_legacy = |steps: Vec<LegacyAgentStep>| {
+        for step in steps {
+            match step {
+                LegacyAgentStep::Unload(p) => {
+                    let _ = Command::new("launchctl")
+                        .arg("unload")
+                        .arg("-w")
+                        .arg(&p)
+                        .output();
+                }
+                LegacyAgentStep::Delete(p) => {
+                    let _ = std::fs::remove_file(&p);
+                }
             }
         }
-    }
+    };
 
     if !on {
-        let _ = Command::new("launchctl").arg("unload").arg("-w").arg(&plist).output();
+        // Removal: nothing can be stranded, since the user asked for no agent.
+        let _ = Command::new("launchctl")
+            .arg("unload")
+            .arg("-w")
+            .arg(&plist)
+            .output();
         let _ = std::fs::remove_file(&plist);
+        retire_legacy(legacy_agent_steps(&dir, id, legacy_exists));
         return Ok(format!("background schedule removed ({label})"));
     }
 
@@ -292,33 +347,63 @@ pub fn install_background(
         "--schedule".to_string(),
         id.to_string(),
     ];
-    let xml = plist_xml(&label, &args, interval_secs, &log.to_string_lossy(), &path_env());
-    std::fs::write(&plist, xml.as_bytes()).map_err(|e| format!("write plist: {e}"))?;
-    // Reload: unload any prior version, then load with -w (persist across logins).
-    let _ = Command::new("launchctl").arg("unload").arg(&plist).output();
-    let out = Command::new("launchctl")
-        .arg("load")
-        .arg("-w")
-        .arg(&plist)
-        .output()
-        .map_err(|e| format!("launchctl load: {e}"))?;
-    if !out.status.success() {
-        return Err(format!(
-            "launchctl load failed: {}",
-            String::from_utf8_lossy(&out.stderr).trim()
-        ));
+    let xml = plist_xml(
+        &label,
+        &args,
+        interval_secs,
+        &log.to_string_lossy(),
+        &path_env(),
+    );
+
+    let mut legacy_steps = Vec::new();
+    for step in install_plan(&dir, id, legacy_exists) {
+        match step {
+            InstallStep::WriteNew(p) => {
+                std::fs::write(&p, xml.as_bytes()).map_err(|e| format!("write plist: {e}"))?;
+            }
+            InstallStep::LoadNew(p) => {
+                // Reload: unload any prior version, then load with -w (persist
+                // across logins).
+                let _ = Command::new("launchctl").arg("unload").arg(&p).output();
+                let out = Command::new("launchctl")
+                    .arg("load")
+                    .arg("-w")
+                    .arg(&p)
+                    .output()
+                    .map_err(|e| format!("launchctl load: {e}"))?;
+                if !out.status.success() {
+                    return Err(format!(
+                        "launchctl load failed: {}",
+                        String::from_utf8_lossy(&out.stderr).trim()
+                    ));
+                }
+            }
+            // Collected, not run inline: `?` above must be able to return
+            // without any legacy step having executed.
+            InstallStep::RetireLegacy(s) => legacy_steps.push(s),
+        }
     }
-    Ok(format!("background schedule installed ({label}, every {interval_secs}s)"))
+    retire_legacy(legacy_steps);
+    Ok(format!(
+        "background schedule installed ({label}, every {interval_secs}s)"
+    ))
 }
 
 /// Retire every pre-rename LaunchAgent in this vault and re-install it under the
 /// new label (M3). Called on vault open; a no-op once no legacy plist is left.
 ///
 /// Only schedules that actually have an old plist are touched, and the old agent
-/// is only booted out as part of installing its replacement — if the install
-/// fails the user is left with the OLD agent still working rather than with no
-/// background digest at all. The caller must therefore skip this entirely when
-/// it cannot resolve `python`/`script`.
+/// is retired as the LAST step of an install that already succeeded (see
+/// `install_plan`). So a failed install leaves the OLD agent loaded and its
+/// plist on disk — the user keeps getting digests, and because this function
+/// keys off exactly that plist, the next vault open retries. The caller must
+/// still skip this entirely when it cannot resolve `python`/`script`.
+///
+/// DEFERRED (M3 sweep): this only runs for a vault the user actually re-opens.
+/// A vault that is never opened again keeps its pre-rename agent forever —
+/// harmless (the old runner still works) but it means the rename is not fully
+/// complete until every vault has been visited. A later stage should sweep
+/// `~/Library/LaunchAgents` for the legacy label prefix directly.
 #[cfg(target_os = "macos")]
 pub fn migrate_legacy_agents(root: &Path, python: &str, script: &str) -> Vec<String> {
     let Ok(dir) = launch_agents_dir() else {
@@ -330,8 +415,8 @@ pub fn migrate_legacy_agents(root: &Path, python: &str, script: &str) -> Vec<Str
         if !legacy.exists() {
             continue;
         }
-        // install_background performs the unload + delete of the legacy plist
-        // before writing and loading the renamed one.
+        // install_background writes and loads the renamed plist first, and only
+        // then unloads + deletes the legacy one.
         if let Err(e) = install_background(
             root,
             python,
@@ -463,6 +548,37 @@ mod tests {
                 LegacyAgentStep::Delete(plist)
             ]
         );
+    }
+
+    #[test]
+    fn legacy_agent_is_retired_only_after_the_renamed_one_is_loaded() {
+        // I1: retiring the legacy agent first meant a failed write/load left the
+        // user with NO agent, and — since the legacy plist was already gone —
+        // migrate_legacy_agents skipped that schedule forever. The new agent
+        // must therefore be written and loaded before anything legacy is touched.
+        let dir = PathBuf::from("/Users/u/Library/LaunchAgents");
+        let plan = install_plan(&dir, "s1", true);
+        let new_plist = dir.join("dev.cmblir.myco.digest.s1.plist");
+        let old_plist = dir.join("dev.cmblir.memex.digest.s1.plist");
+        assert_eq!(
+            plan,
+            vec![
+                InstallStep::WriteNew(new_plist.clone()),
+                InstallStep::LoadNew(new_plist),
+                InstallStep::RetireLegacy(LegacyAgentStep::Unload(old_plist.clone())),
+                InstallStep::RetireLegacy(LegacyAgentStep::Delete(old_plist)),
+            ]
+        );
+    }
+
+    #[test]
+    fn install_plan_without_a_legacy_agent_is_just_write_then_load() {
+        let dir = PathBuf::from("/Users/u/Library/LaunchAgents");
+        let plan = install_plan(&dir, "s1", false);
+        assert_eq!(plan.len(), 2);
+        assert!(!plan
+            .iter()
+            .any(|s| matches!(s, InstallStep::RetireLegacy(_))));
     }
 
     #[test]
