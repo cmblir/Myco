@@ -141,6 +141,13 @@ fn migrate_accounts(
 /// Run the keychain service migration against the real keychain. Best effort:
 /// every failure is reported as a warning line, never an error that blocks app
 /// startup.
+///
+/// DEFERRED (I2): this runs unconditionally on EVERY launch and does
+/// `KNOWN_ACCOUNTS.len()` keychain reads before the window appears. On a locked
+/// keychain each of those can raise a system prompt or block, so startup can
+/// stall long after the migration has nothing left to do. A later stage should
+/// write a done-marker (next to settings.json) once a full pass completes with
+/// no warnings, and skip the whole walk when it is present.
 pub fn migrate_legacy_service() -> Vec<String> {
     migrate_accounts(
         KNOWN_ACCOUNTS,
