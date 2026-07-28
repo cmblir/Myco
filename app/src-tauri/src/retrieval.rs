@@ -919,8 +919,14 @@ mod tests {
         let loaded = Bm25Index::load(&path);
         assert_eq!(loaded.search("PPO", 5)[0].stem, "rlhf");
         // Path scheme mirrors VectorStore's: same settings dir, .mxb extension.
-        let p2 = Bm25Index::path_for("some/vault/root").unwrap();
-        assert_eq!(p2.extension().unwrap(), "mxb");
+        // path_for() resolves (and CREATES) the app-data dir, so it must run
+        // against an isolated one — unisolated it migrated and wrote to the
+        // developer's real ~/Library/Application Support.
+        crate::settings::test_support::with_isolated_data("bm25-path-for", |data| {
+            let p2 = Bm25Index::path_for("some/vault/root").unwrap();
+            assert_eq!(p2.extension().unwrap(), "mxb");
+            assert!(p2.starts_with(data), "index path escaped the test data dir");
+        });
         std::fs::remove_dir_all(&dir).ok();
     }
 
