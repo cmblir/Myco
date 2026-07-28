@@ -23,7 +23,8 @@ docs/.venv/
 # Claude Code
 .claude/
 
-# Memex vault cache (link graph SQLite, etc.)
+# per-vault app state (schedules, import ledger, digest logs)
+.myco/
 .memex/
 
 # Local dev scratch

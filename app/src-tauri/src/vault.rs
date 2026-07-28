@@ -673,7 +673,7 @@ pub(crate) fn should_seed_frontmatter(root: &Path, path: &Path) -> bool {
         .next()
         .map(|c| c.as_os_str().to_string_lossy().into_owned())
         .unwrap_or_default();
-    // A dotdir (.obsidian, .memex, .archived) or a known format-owning dir is
+    // A dotdir (.obsidian, .myco, .archived) or a known format-owning dir is
     // excluded; a plain filename first component means a root-level note.
     !first.starts_with('.') && !NON_WIKI_DIRS.contains(&first.as_str())
 }

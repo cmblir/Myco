@@ -3,7 +3,7 @@
 
 The desktop app fires due schedules with its in-app timer while it's open; this
 standalone runner is what a launchd/cron job invokes so a digest still runs when
-the app is closed. It reads the vault's `.memex/schedules.json`, builds the
+the app is closed. It reads the vault's `.myco/schedules.json`, builds the
 prompt for one schedule, runs the user's `claude` CLI (their subscription — no
 API key) with the hardened Read/Grep/Glob toolset (never Bash), writes a plain
 markdown note into `digests/`, and stamps `last_run`.
@@ -51,7 +51,18 @@ def slugify(name: str) -> str:
 
 
 def schedules_path(vault: Path) -> Path:
-    return vault / ".memex" / "schedules.json"
+    """Locate the vault's schedules file.
+
+    READ-ONLY, like project_registry._app_data_dir: the desktop app owns the
+    `.memex` -> `.myco` move. This script runs from a checkout that a `git pull`
+    can update ahead of the installed app, so it must follow whichever directory
+    is actually there instead of forcing one.
+    """
+    current = vault / ".myco" / "schedules.json"
+    if current.exists():
+        return current
+    legacy = vault / ".memex" / "schedules.json"
+    return legacy if legacy.exists() else current
 
 
 def load_schedule(vault: Path, sid: str) -> dict | None:

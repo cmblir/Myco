@@ -1,5 +1,5 @@
 // Recurring schedules (Feature 7). Persists per-vault digest schedules to
-// `<vault>/.memex/schedules.json` and answers "is this due?" for the in-app
+// `<vault>/.myco/schedules.json` and answers "is this due?" for the in-app
 // timer. Digest *generation* runs in the TS layer (reuses the LLM stack); this
 // module owns only the model + persistence + cadence math, so it stays pure and
 // unit-testable without a Tauri runtime or a clock.
@@ -72,7 +72,7 @@ pub fn is_due(cadence: &str, last_run: Option<i64>, now: i64) -> bool {
 }
 
 fn dir(root: &Path) -> PathBuf {
-    root.join(".memex")
+    crate::vault_dir::dir(root)
 }
 
 pub fn schedules_path(root: &Path) -> PathBuf {
@@ -90,7 +90,7 @@ pub fn load(root: &Path) -> Vec<Schedule> {
 /// Atomic write: stage to a temp file in the same dir, then rename over target.
 pub fn save(root: &Path, schedules: &[Schedule]) -> Result<(), String> {
     let d = dir(root);
-    std::fs::create_dir_all(&d).map_err(|e| format!("create .memex dir: {e}"))?;
+    std::fs::create_dir_all(&d).map_err(|e| format!("create {} dir: {e}", crate::vault_dir::DIR_NAME))?;
     let raw = serde_json::to_string_pretty(schedules).map_err(|e| format!("serialize: {e}"))?;
     let target = schedules_path(root);
     let tmp = d.join(".schedules.json.tmp");
@@ -338,7 +338,7 @@ pub fn install_background(
         return Ok(format!("background schedule removed ({label})"));
     }
 
-    let log = root.join(".memex").join(format!("digest-{id}.log"));
+    let log = crate::vault_dir::dir(root).join(format!("digest-{id}.log"));
     let args = vec![
         python.to_string(),
         script.to_string(),

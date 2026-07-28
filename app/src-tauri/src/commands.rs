@@ -180,6 +180,19 @@ pub fn open_vault(
     path: String,
 ) -> Result<VaultMeta, String> {
     let meta = vault::open_vault(&path)?;
+    // M6: move this vault's `.memex/` state directory to `.myco/` BEFORE anything
+    // reads out of it — the launchd migration below loads schedules.json from it,
+    // and the index updater rebinds against it. Best effort: a vault whose state
+    // could not be moved still opens, it just keeps using the old directory.
+    match crate::vault_dir::migrate(std::path::Path::new(&meta.path)) {
+        Ok(true) => eprintln!(
+            "vault state moved: {} -> {}",
+            crate::vault_dir::LEGACY_DIR_NAME,
+            crate::vault_dir::DIR_NAME
+        ),
+        Ok(false) => {}
+        Err(e) => eprintln!("vault state migration skipped: {e}"),
+    }
     // meta.path is canonical; record it as the confinement root for fs commands.
     state.set(PathBuf::from(&meta.path));
     // Rebind the background index updater to the newly-opened vault, so it

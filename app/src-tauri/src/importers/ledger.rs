@@ -7,7 +7,7 @@
 //! its key is present with the SAME fingerprint; a changed one (a session that
 //! grew, a chat continued) has a new fingerprint and imports again as an update.
 //!
-//! It lives at `<vault>/.memex/ledger.json`. A missing or corrupt file reads as
+//! It lives at `<vault>/.myco/ledger.json`. A missing or corrupt file reads as
 //! empty — the ledger is a cache, never a source of truth, so losing it costs a
 //! round of re-imports, nothing more. The fingerprint is a non-cryptographic
 //! DefaultHasher digest, matching the vault's other content fingerprints
@@ -65,7 +65,7 @@ pub struct Ledger {
 
 impl Ledger {
     fn dir(vault_root: &Path) -> std::path::PathBuf {
-        vault_root.join(".memex")
+        crate::vault_dir::dir(vault_root)
     }
     fn path(vault_root: &Path) -> std::path::PathBuf {
         Self::dir(vault_root).join("ledger.json")
@@ -125,11 +125,11 @@ impl Ledger {
         );
     }
 
-    /// Persist the ledger, creating `.memex/` (and a `.gitignore` so the whole
+    /// Persist the ledger, creating `.myco/` (and a `.gitignore` so the whole
     /// directory stays out of a vault that is itself a git repo).
     pub fn save(&self, vault_root: &Path) -> Result<(), String> {
         let dir = Self::dir(vault_root);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("create .memex: {e}"))?;
+        std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", crate::vault_dir::DIR_NAME))?;
         let ignore = dir.join(".gitignore");
         if !ignore.exists() {
             let _ = std::fs::write(&ignore, "*\n");
@@ -171,7 +171,7 @@ mod tests {
         l.record("codex:s1".into(), "fp1".into());
         l.save(root).unwrap();
 
-        assert_eq!(std::fs::read_to_string(root.join(".memex/.gitignore")).unwrap(), "*\n");
+        assert_eq!(std::fs::read_to_string(root.join(".myco/.gitignore")).unwrap(), "*\n");
         let reloaded = Ledger::load(root);
         assert!(reloaded.seen("codex:s1", "fp1"));
     }
@@ -180,8 +180,8 @@ mod tests {
     fn a_missing_or_corrupt_ledger_reads_as_empty() {
         let dir = tempfile::tempdir().unwrap();
         assert!(!Ledger::load(dir.path()).seen("x", "y")); // missing
-        std::fs::create_dir_all(dir.path().join(".memex")).unwrap();
-        std::fs::write(dir.path().join(".memex/ledger.json"), "{not json").unwrap();
+        std::fs::create_dir_all(dir.path().join(".myco")).unwrap();
+        std::fs::write(dir.path().join(".myco/ledger.json"), "{not json").unwrap();
         assert!(!Ledger::load(dir.path()).seen("x", "y")); // corrupt
     }
 
@@ -213,10 +213,10 @@ mod tests {
     fn a_legacy_flat_map_ledger_upgrades_and_keeps_dedup() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
-        std::fs::create_dir_all(root.join(".memex")).unwrap();
+        std::fs::create_dir_all(root.join(".myco")).unwrap();
         // Pre-file-tracking ledger: a bare `{key: fingerprint}` object.
         std::fs::write(
-            root.join(".memex/ledger.json"),
+            root.join(".myco/ledger.json"),
             r#"{"chatgpt:c1":"abc","codex:s2":"def"}"#,
         )
         .unwrap();

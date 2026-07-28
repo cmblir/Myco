@@ -11,7 +11,7 @@
 #      daily/, ingest-reports/, welcome.md, CLAUDE.md, wiki/index.md,
 #      wiki/log.md).
 #   5. The link-graph IPC fires within the first ~15s of mount:
-#      <vault>/.memex/cache.db is created.
+#      <vault>/.myco/cache.db is created.
 #
 # Exits non-zero on any failure. Cleans up after itself.
 
@@ -95,8 +95,8 @@ fi
 ok "vault scaffold present at $VAULT"
 
 # 7. Link-graph cache was built (proves listFiles + buildLinkGraph IPCs ran)
-[ -f "$VAULT/.memex/cache.db" ] || fail ".memex/cache.db not created (IPC chain broken)"
-ok ".memex/cache.db created (IPC chain executed)"
+[ -f "$VAULT/.myco/cache.db" ] || fail ".myco/cache.db not created (IPC chain broken)"
+ok ".myco/cache.db created (IPC chain executed)"
 
 # 8. Clean shutdown
 kill -TERM $PID 2>/dev/null || true

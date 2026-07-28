@@ -57,7 +57,7 @@ done
 for f in welcome.md CLAUDE.md wiki/index.md wiki/log.md; do
   [ -f "$VAULT/$f" ] || fail "missing $VAULT/$f"
 done
-[ -f "$VAULT/.memex/cache.db" ] || fail ".memex/cache.db not created"
+[ -f "$VAULT/.myco/cache.db" ] || fail ".myco/cache.db not created"
 ok "first-launch scaffold complete"
 
 kill -TERM $PID 2>/dev/null || true; sleep 1; kill -KILL $PID 2>/dev/null || true
@@ -92,8 +92,8 @@ ok "relaunch with populated vault alive"
 kill -TERM $PID2 2>/dev/null || true; sleep 1; kill -KILL $PID2 2>/dev/null || true
 
 # 5. Verify link graph found the wikilinks (build_link_graph fires on open)
-if sqlite3 -batch "$VAULT/.memex/cache.db" "SELECT COUNT(*) FROM links;" 2>/dev/null | grep -q -v "^0$"; then
-  COUNT=$(sqlite3 -batch "$VAULT/.memex/cache.db" "SELECT COUNT(*) FROM links;" 2>/dev/null)
+if sqlite3 -batch "$VAULT/.myco/cache.db" "SELECT COUNT(*) FROM links;" 2>/dev/null | grep -q -v "^0$"; then
+  COUNT=$(sqlite3 -batch "$VAULT/.myco/cache.db" "SELECT COUNT(*) FROM links;" 2>/dev/null)
   ok "link graph has $COUNT entries"
 else
   warn "link graph cache empty after relaunch (may need a longer warm-up window)"

@@ -34,6 +34,7 @@ pub mod settings;
 pub mod tasks;
 pub mod validator;
 pub mod vault;
+pub mod vault_dir;
 pub mod vector_index;
 pub mod whisper;
 pub mod youtube;

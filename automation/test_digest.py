@@ -6,7 +6,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from digest import build_prompt, digest_path, format_note, run, slugify
+from digest import build_prompt, digest_path, format_note, run, schedules_path, slugify
 
 
 def _vault(tmp_path: Path, schedules: list[dict]) -> Path:
@@ -87,3 +87,19 @@ def test_run_claude_failure_writes_nothing(tmp_path):
               run_claude=lambda *a: (1, "", "boom"))
     assert not res["ok"]
     assert not (v / "digests").exists()
+
+
+def test_schedules_path_prefers_the_new_dir_and_falls_back_to_the_legacy_one(tmp_path):
+    # Nothing there yet: name the new one, so a fresh vault never resurrects
+    # `.memex/`.
+    assert schedules_path(tmp_path).parent.name == ".myco"
+
+    # A vault the app has not re-opened yet still has only the old directory.
+    (tmp_path / ".memex").mkdir()
+    (tmp_path / ".memex" / "schedules.json").write_text("[]", "utf-8")
+    assert schedules_path(tmp_path).parent.name == ".memex"
+
+    # Once the app has moved it, the new one wins.
+    (tmp_path / ".myco").mkdir()
+    (tmp_path / ".myco" / "schedules.json").write_text("[]", "utf-8")
+    assert schedules_path(tmp_path).parent.name == ".myco"
