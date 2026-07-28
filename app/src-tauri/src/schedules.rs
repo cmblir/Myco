@@ -123,14 +123,48 @@ pub fn delete(root: &Path, id: &str) -> Result<Vec<Schedule>, String> {
 // Python digest runner on the cadence interval, so digests fire even when the
 // app is closed. Gated behind an explicit UI opt-in. macOS only for now.
 
+/// Sanitize a schedule id into a reverse-DNS-safe label component.
+fn safe_label_component(id: &str) -> String {
+    id.chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect()
+}
+
 /// The LaunchAgent label for a schedule (stable, so re-install replaces).
 pub fn launch_label(id: &str) -> String {
-    // Sanitize the id into a reverse-DNS-safe label component.
-    let safe: String = id
-        .chars()
-        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
-        .collect();
-    format!("dev.cmblir.memex.digest.{safe}")
+    format!("dev.cmblir.myco.digest.{}", safe_label_component(id))
+}
+
+/// The label used before the myco rename. Only ever used to find and remove an
+/// agent an existing install already has: renaming alone would leave the old
+/// LaunchAgent loaded and firing forever, so the user would get every digest
+/// twice — once from the old plist and once from the new one.
+pub fn legacy_launch_label(id: &str) -> String {
+    format!("dev.cmblir.memex.digest.{}", safe_label_component(id))
+}
+
+/// One step of the launchd migration, returned as data so the ordering is
+/// unit-testable without invoking `launchctl`.
+#[derive(Debug, PartialEq, Eq)]
+pub enum LegacyAgentStep {
+    /// `launchctl unload -w <plist>` — stop the old agent before its plist goes.
+    Unload(PathBuf),
+    /// Delete the old plist so it cannot be reloaded at the next login.
+    Delete(PathBuf),
+}
+
+/// What must happen to a schedule's pre-rename LaunchAgent before the renamed
+/// one is installed. Empty when the old plist is absent (fresh install, or the
+/// migration already ran) — that is what makes this a no-op the second time.
+pub fn legacy_agent_steps(agents_dir: &Path, id: &str, legacy_plist_exists: bool) -> Vec<LegacyAgentStep> {
+    if !legacy_plist_exists {
+        return Vec::new();
+    }
+    let plist = agents_dir.join(format!("{}.plist", legacy_launch_label(id)));
+    vec![
+        LegacyAgentStep::Unload(plist.clone()),
+        LegacyAgentStep::Delete(plist),
+    ]
 }
 
 /// Build a LaunchAgent plist XML. Pure, so its shape is unit-testable. When
@@ -227,6 +261,22 @@ pub fn install_background(
     std::fs::create_dir_all(&dir).map_err(|e| format!("create LaunchAgents dir: {e}"))?;
     let plist = dir.join(format!("{label}.plist"));
 
+    // M3: retire any pre-rename LaunchAgent for this schedule FIRST — unload it,
+    // then delete its plist — before the renamed agent is written or removed.
+    // The old plist is already installed on the user's machine and keeps firing
+    // under its own label; leaving it behind means duplicate digests forever.
+    // Best-effort per step: a no-op when the old plist is absent.
+    for step in legacy_agent_steps(&dir, id, dir.join(format!("{}.plist", legacy_launch_label(id))).exists()) {
+        match step {
+            LegacyAgentStep::Unload(p) => {
+                let _ = Command::new("launchctl").arg("unload").arg("-w").arg(&p).output();
+            }
+            LegacyAgentStep::Delete(p) => {
+                let _ = std::fs::remove_file(&p);
+            }
+        }
+    }
+
     if !on {
         let _ = Command::new("launchctl").arg("unload").arg("-w").arg(&plist).output();
         let _ = std::fs::remove_file(&plist);
@@ -259,6 +309,46 @@ pub fn install_background(
         ));
     }
     Ok(format!("background schedule installed ({label}, every {interval_secs}s)"))
+}
+
+/// Retire every pre-rename LaunchAgent in this vault and re-install it under the
+/// new label (M3). Called on vault open; a no-op once no legacy plist is left.
+///
+/// Only schedules that actually have an old plist are touched, and the old agent
+/// is only booted out as part of installing its replacement — if the install
+/// fails the user is left with the OLD agent still working rather than with no
+/// background digest at all. The caller must therefore skip this entirely when
+/// it cannot resolve `python`/`script`.
+#[cfg(target_os = "macos")]
+pub fn migrate_legacy_agents(root: &Path, python: &str, script: &str) -> Vec<String> {
+    let Ok(dir) = launch_agents_dir() else {
+        return Vec::new();
+    };
+    let mut warnings = Vec::new();
+    for sched in load(root) {
+        let legacy = dir.join(format!("{}.plist", legacy_launch_label(&sched.id)));
+        if !legacy.exists() {
+            continue;
+        }
+        // install_background performs the unload + delete of the legacy plist
+        // before writing and loading the renamed one.
+        if let Err(e) = install_background(
+            root,
+            python,
+            script,
+            &sched.id,
+            interval_secs(&sched.cadence),
+            true,
+        ) {
+            warnings.push(format!("schedule {}: {e}", sched.id));
+        }
+    }
+    warnings
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn migrate_legacy_agents(_root: &Path, _python: &str, _script: &str) -> Vec<String> {
+    Vec::new()
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -343,8 +433,43 @@ mod tests {
 
     #[test]
     fn launch_label_is_dns_safe() {
-        assert_eq!(launch_label("sch-abc123"), "dev.cmblir.memex.digest.sch-abc123");
-        assert_eq!(launch_label("a/b c"), "dev.cmblir.memex.digest.a-b-c");
+        assert_eq!(launch_label("sch-abc123"), "dev.cmblir.myco.digest.sch-abc123");
+        assert_eq!(launch_label("a/b c"), "dev.cmblir.myco.digest.a-b-c");
+    }
+
+    #[test]
+    fn legacy_label_matches_what_old_builds_installed() {
+        // These labels name plists already on the user's machine — if this
+        // string is wrong the old agent is never found and fires forever.
+        assert_eq!(
+            legacy_launch_label("sch-abc123"),
+            "dev.cmblir.memex.digest.sch-abc123"
+        );
+        assert_eq!(legacy_launch_label("a/b c"), "dev.cmblir.memex.digest.a-b-c");
+        assert_ne!(legacy_launch_label("x"), launch_label("x"));
+    }
+
+    #[test]
+    fn legacy_agent_is_unloaded_before_its_plist_is_deleted() {
+        let dir = PathBuf::from("/Users/u/Library/LaunchAgents");
+        let steps = legacy_agent_steps(&dir, "s1", true);
+        let plist = dir.join("dev.cmblir.memex.digest.s1.plist");
+        // Order matters: deleting the plist first would leave the job loaded in
+        // launchd with no file to boot it out by, so it keeps firing.
+        assert_eq!(
+            steps,
+            vec![
+                LegacyAgentStep::Unload(plist.clone()),
+                LegacyAgentStep::Delete(plist)
+            ]
+        );
+    }
+
+    #[test]
+    fn legacy_agent_steps_are_empty_when_the_old_plist_is_absent() {
+        // Fresh install, or the migration already ran — must be a no-op.
+        let dir = PathBuf::from("/Users/u/Library/LaunchAgents");
+        assert!(legacy_agent_steps(&dir, "s1", false).is_empty());
     }
 
     #[test]
@@ -355,9 +480,9 @@ mod tests {
             "--vault".to_string(),
             "/v & co".to_string(),
         ];
-        let xml = plist_xml("dev.cmblir.memex.digest.s1", &args, 86400, "/v/.memex/d.log", "/usr/bin:/bin");
+        let xml = plist_xml("dev.cmblir.myco.digest.s1", &args, 86400, "/v/.memex/d.log", "/usr/bin:/bin");
         assert!(xml.contains("<key>PATH</key><string>/usr/bin:/bin</string>"));
-        assert!(xml.contains("<key>Label</key><string>dev.cmblir.memex.digest.s1</string>"));
+        assert!(xml.contains("<key>Label</key><string>dev.cmblir.myco.digest.s1</string>"));
         assert!(xml.contains("<integer>86400</integer>"));
         assert!(xml.contains("<string>/res/automation/digest.py</string>"));
         // & in an arg must be XML-escaped, not raw.

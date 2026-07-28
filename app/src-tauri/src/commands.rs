@@ -175,6 +175,7 @@ fn confine_root(state: &tauri::State<VaultRoot>, arg: &str) -> Result<String, St
 
 #[tauri::command]
 pub fn open_vault(
+    #[allow(unused_variables)] app: tauri::AppHandle,
     state: tauri::State<VaultRoot>,
     path: String,
 ) -> Result<VaultMeta, String> {
@@ -191,6 +192,22 @@ pub fn open_vault(
     // opening the vault). The native server re-reads this marker per call, so
     // no restart is needed — the next tool call sees the new vault.
     let _ = settings::set_active_vault(&path);
+    // M3: this vault's background digests may still be installed under the
+    // pre-rename LaunchAgent label. Re-install them under the new label (which
+    // boots out and deletes the old agent first, so digests do not fire twice).
+    // Skipped when python3 or the digest runner can't be resolved — better to
+    // leave the old agent working than to remove it with no replacement.
+    #[cfg(target_os = "macos")]
+    if let (Some(python), Ok(script)) = (
+        claude::locate_bin("python3", "MEMEX_PYTHON_PATH"),
+        digest_script_path(&app),
+    ) {
+        for warning in
+            crate::schedules::migrate_legacy_agents(std::path::Path::new(&meta.path), &python, &script)
+        {
+            eprintln!("launchd migration: {warning}");
+        }
+    }
     Ok(meta)
 }
 
