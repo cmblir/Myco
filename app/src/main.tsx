@@ -1,10 +1,13 @@
+// Must stay the first import: it renames the legacy `memex.*` storage keys, and
+// modules imported below read their key at evaluation time. See storageMigration.ts.
+import "./lib/storageMigration";
 import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
 import "./styles.css";
 
-const ERROR_LOG_KEY = "memex.errorlog";
+const ERROR_LOG_KEY = "myco.errorlog";
 const ERROR_LOG_MAX = 20;
 
 // Ring-buffer the last N uncaught errors into localStorage so crashes leave a

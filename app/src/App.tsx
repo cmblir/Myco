@@ -38,7 +38,7 @@ import { useIngestStore } from "./stores/ingestStore";
 import { ipc } from "./lib/ipc";
 import type { FileNode } from "./lib/ipc";
 
-const ONBOARDED_KEY = "memex.onboarded";
+const ONBOARDED_KEY = "myco.onboarded";
 
 function countPages(nodes: FileNode[]): number {
   let n = 0;

@@ -106,6 +106,6 @@ export const useUIStore = create<UIState>()(
           },
         }),
     }),
-    { name: "memex-ui", version: 3 },
+    { name: "myco-ui", version: 3 },
   ),
 );

@@ -1,6 +1,6 @@
 // First-run onboarding wizard (UX-01). A 3-step overlay shown only on a
 // genuine first run (no vault / empty vault) and never again once completed or
-// skipped — App persists a `memex.onboarded` flag and calls onClose here.
+// skipped — App persists a `myco.onboarded` flag and calls onClose here.
 // Reuses the modal shell (.memex-modal*) so it stays visually consistent with
 // DialogHost instead of inventing a parallel design system.
 

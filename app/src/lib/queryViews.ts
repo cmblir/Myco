@@ -123,7 +123,7 @@ export function facetValues(adj: Adjacency, files: string[]): {
 
 // --- persistence -----------------------------------------------------------
 
-const KEY = "memex.queryViews.v1";
+const KEY = "myco.queryViews.v1";
 
 export function loadViews(): SavedView[] {
   try {

@@ -68,7 +68,7 @@ export function appendWikilink(content: string, targetPath: string): string {
 
 // --- dismissal persistence ---------------------------------------------------
 
-const KEY = "memex.linkSuggestions.dismissed.v1";
+const KEY = "myco.linkSuggestions.dismissed.v1";
 const MAX_DISMISSED = 500; // bounded so localStorage can't grow unbounded
 
 export function loadDismissed(): Set<string> {

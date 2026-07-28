@@ -43,9 +43,9 @@ const PRICES: Record<string, ModelPrice> = {
 const ZERO: ModelPrice = { in: 0, out: 0 };
 
 /** localStorage key for the cumulative per-month usage record. */
-export const BUDGET_KEY = "memex.budget.usage.v1";
+export const BUDGET_KEY = "myco.budget.usage.v1";
 /** localStorage key for the configurable monthly spend threshold. */
-export const BUDGET_THRESHOLD_KEY = "memex.budget.threshold.v1";
+export const BUDGET_THRESHOLD_KEY = "myco.budget.threshold.v1";
 /** Default monthly spend threshold in USD. */
 export const DEFAULT_MONTHLY_THRESHOLD_USD = 20;
 

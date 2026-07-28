@@ -6,7 +6,7 @@ import { ipc } from "../lib/ipc";
 import type { Adjacency, FileContent, FileNode, VaultMeta } from "../lib/ipc";
 import { useUIStore } from "./uiStore";
 
-const LAST_VAULT_KEY = "memex.lastVaultPath";
+const LAST_VAULT_KEY = "myco.lastVaultPath";
 
 // Monotonic counter to guard against race conditions when openVault or
 // refreshLinkGraph is called multiple times in quick succession. Only the

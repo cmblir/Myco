@@ -193,7 +193,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
 // the recalibrated defaults apply instead of the old firework-era ones.
 // (ambientMotion arrived later without a bump — loadGraphSettings back-fills
 // missing fields from defaults, so additive fields never need one.)
-const KEY = "memex.graph.settings.v26";
+const KEY = "myco.graph.settings.v26";
 
 // Layout presets (spec B4): three curated force profiles replace slider
 // twiddling for most users; the raw sliders live on under "Advanced". Each is a
@@ -526,7 +526,7 @@ export function saveGraphSettings(s: GraphSettings): void {
 // separately from the live settings so resetting or switching looks never
 // touches the saved set. The whole (non-transient) settings object is captured
 // so a look restores the exact configuration, not a lossy subset.
-const LOOKS_KEY = "memex.graph.savedLooks.v1";
+const LOOKS_KEY = "myco.graph.savedLooks.v1";
 export const MAX_SAVED_LOOKS = 24;
 
 export interface SavedLook {

@@ -11,7 +11,7 @@
 import { ipc } from "./ipc";
 import { stem } from "./graphData";
 
-const CACHE_KEY = "memex.graph.clusterTopics.v1";
+const CACHE_KEY = "myco.graph.clusterTopics.v1";
 const MAX_LABEL_CHARS = 28;
 const PROMPT_MEMBERS = 12; // top-degree members included in the prompt
 
