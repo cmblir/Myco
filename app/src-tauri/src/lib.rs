@@ -15,7 +15,7 @@ pub mod index;
 mod index_updater;
 pub mod local_llm;
 pub mod mcp_native;
-pub mod memex_pro;
+pub mod myco_pro;
 pub mod ollama;
 pub mod parser;
 pub mod perf;
@@ -147,9 +147,9 @@ pub fn run() {
             commands::scan_provenance,
             commands::validate_ingest,
             commands::scan_tasks,
-            commands::memex_pro_ingest,
-            commands::memex_pro_login,
-            commands::memex_pro_logout,
+            commands::myco_pro_ingest,
+            commands::myco_pro_login,
+            commands::myco_pro_logout,
             commands::set_provider_key,
             commands::delete_provider_key,
             commands::get_settings,

@@ -16,11 +16,11 @@ const LEGACY_SERVICE: &str = "dev.cmblir.memex";
 ///
 /// The list is the provider id set (`app/src/lib/icons.tsx::ProviderId`, mirrored
 /// by `app/src/lib/providers.ts::PROVIDERS`), which is what `set_provider_key` /
-/// `delete_provider_key` are called with, plus `memex-pro` (commands.rs, the
-/// Memex Pro login). Providers that need no key today are included anyway: they
+/// `delete_provider_key` are called with, plus `myco-pro` (commands.rs, the
+/// myco Pro login). Providers that need no key today are included anyway: they
 /// cost one absent-entry lookup and cover a key stored by an older build.
-/// NOTE: `memex-pro` is an *account* name, not the service — renaming it is
-/// Stage B's job (it is the same string as the `ingest_provider` value).
+/// These are the CURRENT names; `legacy_account` below maps the one that was
+/// renamed back to what an older build wrote.
 pub const KNOWN_ACCOUNTS: &[&str] = &[
     "anthropic-cli",
     "gemini-cli",
@@ -30,7 +30,7 @@ pub const KNOWN_ACCOUNTS: &[&str] = &[
     "google-api",
     "ollama",
     "openrouter",
-    "memex-pro",
+    "myco-pro",
     "builtin-local",
 ];
 
@@ -58,6 +58,22 @@ pub fn delete_key(provider_id: &str) -> Result<(), String> {
 }
 
 // ---- M2: keychain service rename (dev.cmblir.memex -> dev.cmblir.myco) ----
+// ---- M5: keychain account rename (memex-pro -> myco-pro) ------------------
+
+/// Accounts whose *name* changed with the rebrand. Everything else in
+/// `KNOWN_ACCOUNTS` is a provider id that was never spelled "memex".
+const RENAMED_ACCOUNTS: &[&str] = &[crate::settings::PRO_PROVIDER_ID];
+
+const LEGACY_PRO_ACCOUNT: &str = "memex-pro";
+
+/// The name an older build stored this account under.
+fn legacy_account(account: &str) -> &str {
+    if account == crate::settings::PRO_PROVIDER_ID {
+        LEGACY_PRO_ACCOUNT
+    } else {
+        account
+    }
+}
 
 fn read(service: &str, account: &str) -> Result<Option<String>, String> {
     let entry = Entry::new(service, account).map_err(|e| e.to_string())?;
@@ -149,24 +165,42 @@ fn migrate_accounts(
 /// write a done-marker (next to settings.json) once a full pass completes with
 /// no warnings, and skip the whole walk when it is present.
 pub fn migrate_legacy_service() -> Vec<String> {
-    migrate_accounts(
-        KNOWN_ACCOUNTS,
-        &mut |a| read(LEGACY_SERVICE, a),
+    let write = |service: &str, a: &str, v: &str| -> Result<(), String> {
+        Entry::new(service, a)
+            .map_err(|e| e.to_string())?
+            .set_password(v)
+            .map_err(|e| e.to_string())
+    };
+    let delete = |service: &str, a: &str| -> Result<(), String> {
+        let entry = Entry::new(service, a).map_err(|e| e.to_string())?;
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(e) => Err(e.to_string()),
+        }
+    };
+
+    // Hop 1 first, because its source is the NEWER of the two: it was written by
+    // a build that had already migrated the service. `migrate_accounts` never
+    // overwrites an existing new-side value, so whichever hop runs first wins —
+    // and the newer value has to.
+    let mut warnings = migrate_accounts(
+        RENAMED_ACCOUNTS,
+        &mut |a| read(SERVICE, legacy_account(a)),
         &mut |a| read(SERVICE, a),
-        &mut |a, v| {
-            Entry::new(SERVICE, a)
-                .map_err(|e| e.to_string())?
-                .set_password(v)
-                .map_err(|e| e.to_string())
-        },
-        &mut |a| {
-            let entry = Entry::new(LEGACY_SERVICE, a).map_err(|e| e.to_string())?;
-            match entry.delete_credential() {
-                Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-                Err(e) => Err(e.to_string()),
-            }
-        },
-    )
+        &mut |a, v| write(SERVICE, a, v),
+        &mut |a| delete(SERVICE, legacy_account(a)),
+    );
+    // Hop 2: an install from before the rename, where both the service and the
+    // account name are old. Reading under the legacy name and writing under the
+    // current one takes it all the way in one launch.
+    warnings.extend(migrate_accounts(
+        KNOWN_ACCOUNTS,
+        &mut |a| read(LEGACY_SERVICE, legacy_account(a)),
+        &mut |a| read(SERVICE, a),
+        &mut |a, v| write(SERVICE, a, v),
+        &mut |a| delete(LEGACY_SERVICE, legacy_account(a)),
+    ));
+    warnings
 }
 
 #[cfg(test)]
@@ -182,7 +216,7 @@ mod tests {
     }
 
     #[test]
-    fn known_accounts_cover_every_provider_id_and_memex_pro() {
+    fn known_accounts_cover_every_provider_id_and_the_pro_account() {
         // Mirrors app/src/lib/icons.tsx::ProviderId. A provider added there
         // without being added here would have its key stranded under the old
         // service by the migration.
@@ -195,7 +229,7 @@ mod tests {
             "google-api",
             "ollama",
             "openrouter",
-            "memex-pro",
+            "myco-pro",
             "builtin-local",
         ];
         for id in expected {
@@ -207,9 +241,50 @@ mod tests {
         assert_eq!(KNOWN_ACCOUNTS.len(), expected.len());
         // The accounts every key-bearing provider uses today, spelled out so a
         // rename of one is caught here rather than in the field.
-        for id in ["anthropic-api", "openai-api", "google-api", "openrouter", "memex-pro"] {
+        for id in ["anthropic-api", "openai-api", "google-api", "openrouter", "myco-pro"] {
             assert!(KNOWN_ACCOUNTS.contains(&id));
         }
+    }
+
+    #[test]
+    fn only_the_pro_account_has_a_legacy_name() {
+        assert_eq!(legacy_account("myco-pro"), "memex-pro");
+        assert_eq!(RENAMED_ACCOUNTS, &["myco-pro"]);
+        for account in KNOWN_ACCOUNTS {
+            if *account == "myco-pro" {
+                continue;
+            }
+            assert_eq!(
+                legacy_account(account),
+                *account,
+                "{account} was never renamed; mapping it would strand its key"
+            );
+        }
+    }
+
+    #[test]
+    fn the_pro_key_survives_both_hops_of_the_rename() {
+        // Hop 2's shape: a pre-rename install, old service AND old account name.
+        let old: HashMap<String, String> = [("memex-pro".to_string(), "lic-1".to_string())].into();
+        let new = std::cell::RefCell::new(HashMap::<String, String>::new());
+        let warnings = migrate_accounts(
+            RENAMED_ACCOUNTS,
+            &mut |a| Ok(old.get(legacy_account(a)).cloned()),
+            &mut |a| Ok(new.borrow().get(a).cloned()),
+            &mut |a, v| {
+                new.borrow_mut().insert(a.to_string(), v.to_string());
+                Ok(())
+            },
+            &mut |_| Ok(()),
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let new = new.into_inner();
+        assert_eq!(
+            new.get("myco-pro").map(String::as_str),
+            Some("lic-1"),
+            "the license key must land under the new account name"
+        );
+        assert!(!new.contains_key("memex-pro"));
     }
 
     /// In-memory keychain pair for the ordering tests.
@@ -264,11 +339,11 @@ mod tests {
 
     #[test]
     fn migration_copies_verifies_then_deletes_and_is_idempotent() {
-        let mut s = store(&[("openai-api", "sk-1"), ("memex-pro", "lic-2")]);
-        let warnings = run(&mut s, &["openai-api", "memex-pro", "google-api"], None);
+        let mut s = store(&[("openai-api", "sk-1"), ("myco-pro", "lic-2")]);
+        let warnings = run(&mut s, &["openai-api", "myco-pro", "google-api"], None);
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(s.new.get("openai-api").unwrap(), "sk-1");
-        assert_eq!(s.new.get("memex-pro").unwrap(), "lic-2");
+        assert_eq!(s.new.get("myco-pro").unwrap(), "lic-2");
         assert!(s.old.is_empty(), "old entries must be gone after a verified copy");
         // The write must precede the delete for every account.
         let w = s.log.iter().position(|l| l == "write_new openai-api").unwrap();
@@ -279,7 +354,7 @@ mod tests {
 
         // Second run: nothing left under the old service, so it is a no-op.
         s.log.clear();
-        let warnings = run(&mut s, &["openai-api", "memex-pro"], None);
+        let warnings = run(&mut s, &["openai-api", "myco-pro"], None);
         assert!(warnings.is_empty());
         assert!(!s.log.iter().any(|l| l.starts_with("write_new")));
         assert_eq!(s.new.get("openai-api").unwrap(), "sk-1");

@@ -726,7 +726,7 @@ function ModelPicker({
 // the app fetches and stores the account's access key automatically — the user
 // never copies a key by hand. Settings is the single source of truth for the
 // logged-in email + connection flag (the Rust login command persists both).
-function MemexProCard({
+function MycoProCard({
   t,
   def,
   settings,
@@ -737,10 +737,10 @@ function MemexProCard({
 }): JSX.Element {
   const update = useSettingsStore((s) => s.update);
   const reload = useSettingsStore((s) => s.load);
-  const loggedInEmail = (settings?.memex_pro_email ?? "").trim();
+  const loggedInEmail = (settings?.myco_pro_email ?? "").trim();
   const loggedIn = loggedInEmail.length > 0;
-  const hasAccess = settings?.providers.memex_pro === true;
-  const [url, setUrl] = useState(settings?.memex_pro_url ?? "");
+  const hasAccess = settings?.providers.myco_pro === true;
+  const [url, setUrl] = useState(settings?.myco_pro_url ?? "");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -748,22 +748,22 @@ function MemexProCard({
 
   async function logIn(): Promise<void> {
     if (!url.trim()) {
-      setError(t.s_memexpro_url);
+      setError(t.s_mycopro_url);
       return;
     }
     if (!email.trim() || !password) {
-      setError(`${t.s_memexpro_email} · ${t.s_memexpro_password}`);
+      setError(`${t.s_mycopro_email} · ${t.s_mycopro_password}`);
       return;
     }
     setBusy(true);
     setError(null);
     try {
       // Persist the URL first — the Rust login command reads it from settings.
-      await update({ memex_pro_url: url.trim() });
-      const res = await ipc.memexProLogin(email.trim(), password);
+      await update({ myco_pro_url: url.trim() });
+      const res = await ipc.mycoProLogin(email.trim(), password);
       await reload(); // pull the email + connection flag the command persisted
       setPassword("");
-      if (!res.connected) setError(t.s_memexpro_noaccess);
+      if (!res.connected) setError(t.s_mycopro_noaccess);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -774,7 +774,7 @@ function MemexProCard({
   async function logOut(): Promise<void> {
     setBusy(true);
     try {
-      await ipc.memexProLogout();
+      await ipc.mycoProLogout();
       await reload();
       setEmail("");
       setPassword("");
@@ -832,7 +832,7 @@ function MemexProCard({
               className="chip"
               style={{ background: "rgba(217,119,6,0.12)", color: "#d97706" }}
             >
-              ○ {t.s_memexpro_noaccess}
+              ○ {t.s_mycopro_noaccess}
             </span>
           ) : (
             <span className="chip">○ {t.s_provider_disconnected}</span>
@@ -844,7 +844,7 @@ function MemexProCard({
         {loggedIn ? (
           <div className="row" style={{ gap: 8, alignItems: "center" }}>
             <span style={{ fontSize: 13 }}>
-              {t.s_memexpro_loggedin} <strong>{loggedInEmail}</strong>
+              {t.s_mycopro_loggedin} <strong>{loggedInEmail}</strong>
             </span>
             <button
               className="btn"
@@ -852,23 +852,23 @@ function MemexProCard({
               onClick={() => void logOut()}
               disabled={busy}
             >
-              {t.s_memexpro_logout}
+              {t.s_mycopro_logout}
             </button>
           </div>
         ) : (
           <>
             <div className="field" style={{ marginBottom: 8 }}>
-              <label>{t.s_memexpro_url}</label>
+              <label>{t.s_mycopro_url}</label>
               <input
                 className="input"
-                placeholder="https://memex-proxy.<you>.workers.dev"
+                placeholder="https://myco-proxy.<you>.workers.dev"
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
                 style={{ fontFamily: "var(--font-mono)", fontSize: 13 }}
               />
             </div>
             <div className="field" style={{ marginBottom: 8 }}>
-              <label>{t.s_memexpro_email}</label>
+              <label>{t.s_mycopro_email}</label>
               <input
                 className="input"
                 type="email"
@@ -879,7 +879,7 @@ function MemexProCard({
               />
             </div>
             <div className="field" style={{ marginBottom: 12 }}>
-              <label>{t.s_memexpro_password}</label>
+              <label>{t.s_mycopro_password}</label>
               <input
                 className="input"
                 type="password"
@@ -897,7 +897,7 @@ function MemexProCard({
               onClick={() => void logIn()}
               disabled={busy || !url.trim() || !email.trim() || !password}
             >
-              {t.s_memexpro_login}
+              {t.s_mycopro_login}
             </button>
           </>
         )}
@@ -1053,9 +1053,9 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
               ? cliStatus?.installed
               : agentStatus[p.id]?.installed
             : undefined;
-          if (p.id === "memex-pro") {
+          if (p.id === "myco-pro") {
             return (
-              <MemexProCard key={p.id} t={t} def={p} settings={settings ?? null} />
+              <MycoProCard key={p.id} t={t} def={p} settings={settings ?? null} />
             );
           }
           if (p.id === "ollama") {

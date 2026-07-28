@@ -474,14 +474,14 @@ export interface Strings {
   s_provider_connected: string;
   s_provider_disconnected: string;
   s_provider_cli_missing: string;
-  s_memexpro_url: string;
-  s_memexpro_key: string;
-  s_memexpro_email: string;
-  s_memexpro_password: string;
-  s_memexpro_login: string;
-  s_memexpro_logout: string;
-  s_memexpro_loggedin: string;
-  s_memexpro_noaccess: string;
+  s_mycopro_url: string;
+  s_mycopro_key: string;
+  s_mycopro_email: string;
+  s_mycopro_password: string;
+  s_mycopro_login: string;
+  s_mycopro_logout: string;
+  s_mycopro_loggedin: string;
+  s_mycopro_noaccess: string;
   s_autoingest_title: string;
   s_autoingest_desc: string;
   s_autoingest_interval: string;
@@ -747,7 +747,7 @@ export interface Strings {
   s_provider_desc_builtin_local?: string;
   s_provider_desc_ollama?: string;
   s_provider_desc_openrouter?: string;
-  s_provider_desc_memex_pro?: string;
+  s_provider_desc_myco_pro?: string;
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -1235,14 +1235,14 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_connected: "Connected",
     s_provider_disconnected: "Not connected",
     s_provider_cli_missing: "CLI not installed",
-    s_memexpro_url: "Service URL",
-    s_memexpro_key: "License key",
-    s_memexpro_email: "Email",
-    s_memexpro_password: "Password",
-    s_memexpro_login: "Log in",
-    s_memexpro_logout: "Log out",
-    s_memexpro_loggedin: "Logged in as",
-    s_memexpro_noaccess: "No active access yet",
+    s_mycopro_url: "Service URL",
+    s_mycopro_key: "License key",
+    s_mycopro_email: "Email",
+    s_mycopro_password: "Password",
+    s_mycopro_login: "Log in",
+    s_mycopro_logout: "Log out",
+    s_mycopro_loggedin: "Logged in as",
+    s_mycopro_noaccess: "No active access yet",
     s_autoingest_title: "Auto-ingest inbox",
     s_autoingest_desc:
       "While Memex is open, periodically ingest sources you drop into the vault's _inbox/ folder.",
@@ -1514,7 +1514,7 @@ export const STRINGS: Record<Lang, Strings> = {
       "Run open-source models locally. Auto-detects http://localhost:11434.",
     s_provider_desc_openrouter:
       "One key for many providers (useful for model comparison).",
-    s_provider_desc_memex_pro:
+    s_provider_desc_myco_pro:
       "Unlimited ingest on a managed model — no API key or CLI needed. Sign in with your Memex Pro account.",
   },
   ko: {
@@ -2001,14 +2001,14 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_connected: "연결됨",
     s_provider_disconnected: "미연결",
     s_provider_cli_missing: "CLI 설치 안 됨",
-    s_memexpro_url: "서비스 URL",
-    s_memexpro_key: "라이선스 키",
-    s_memexpro_email: "이메일",
-    s_memexpro_password: "비밀번호",
-    s_memexpro_login: "로그인",
-    s_memexpro_logout: "로그아웃",
-    s_memexpro_loggedin: "로그인:",
-    s_memexpro_noaccess: "활성 구독 없음",
+    s_mycopro_url: "서비스 URL",
+    s_mycopro_key: "라이선스 키",
+    s_mycopro_email: "이메일",
+    s_mycopro_password: "비밀번호",
+    s_mycopro_login: "로그인",
+    s_mycopro_logout: "로그아웃",
+    s_mycopro_loggedin: "로그인:",
+    s_mycopro_noaccess: "활성 구독 없음",
     s_autoingest_title: "인박스 자동 인게스트",
     s_autoingest_desc:
       "Memex가 켜져 있는 동안 vault의 _inbox/ 폴더에 넣은 소스를 주기적으로 인게스트합니다.",
@@ -2279,7 +2279,7 @@ export const STRINGS: Record<Lang, Strings> = {
       "오픈소스 모델을 로컬에서 실행합니다. http://localhost:11434를 자동 감지합니다.",
     s_provider_desc_openrouter:
       "하나의 키로 여러 제공자 사용 (모델 비교에 유용).",
-    s_provider_desc_memex_pro:
+    s_provider_desc_myco_pro:
       "관리형 모델로 무제한 ingest — API 키나 CLI가 필요 없습니다. Memex Pro 계정으로 로그인하세요.",
   },
   ja: {
@@ -2647,14 +2647,14 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_connected: "接続済み",
     s_provider_disconnected: "未接続",
     s_provider_cli_missing: "CLI 未インストール",
-    s_memexpro_url: "サービス URL",
-    s_memexpro_key: "ライセンスキー",
-    s_memexpro_email: "メール",
-    s_memexpro_password: "パスワード",
-    s_memexpro_login: "ログイン",
-    s_memexpro_logout: "ログアウト",
-    s_memexpro_loggedin: "ログイン中:",
-    s_memexpro_noaccess: "有効なアクセスなし",
+    s_mycopro_url: "サービス URL",
+    s_mycopro_key: "ライセンスキー",
+    s_mycopro_email: "メール",
+    s_mycopro_password: "パスワード",
+    s_mycopro_login: "ログイン",
+    s_mycopro_logout: "ログアウト",
+    s_mycopro_loggedin: "ログイン中:",
+    s_mycopro_noaccess: "有効なアクセスなし",
     s_autoingest_title: "受信トレイ自動取り込み",
     s_autoingest_desc:
       "Memexを開いている間、vaultの_inbox/フォルダに入れたソースを定期的に取り込みます。",
@@ -2926,7 +2926,7 @@ export const STRINGS: Record<Lang, Strings> = {
       "オープンソースモデルをローカルで実行します。http://localhost:11434 を自動検出。",
     s_provider_desc_openrouter:
       "1 つのキーで多数のプロバイダーを利用（モデル比較に便利）。",
-    s_provider_desc_memex_pro:
+    s_provider_desc_myco_pro:
       "マネージドモデルで無制限の取り込み — API キーや CLI は不要。Memex Pro アカウントでサインインしてください。",
     // Backfilled ja (was English-fallback): suggested links, Zotero, help,
     // query views, graph inspector/gaps, MCP SSE.

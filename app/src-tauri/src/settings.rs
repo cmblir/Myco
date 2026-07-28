@@ -19,14 +19,18 @@ pub struct Settings {
     pub ingest_provider: String,
     #[serde(default = "default_ingest_model")]
     pub ingest_model: String,
-    /// Memex Pro proxy base URL (the subscription ingest endpoint). Empty until
+    /// myco Pro proxy base URL (the subscription ingest endpoint). Empty until
     /// the user configures it; the license key lives in the keychain.
-    #[serde(default)]
-    pub memex_pro_url: String,
-    /// The Memex Pro account email the app is logged in as (for display only;
+    ///
+    /// The `memex_pro_*` aliases are what installs from before the myco rename
+    /// wrote into `settings.json`; without them serde would fall back to the
+    /// `default` and silently log the user out of their subscription.
+    #[serde(default, alias = "memex_pro_url")]
+    pub myco_pro_url: String,
+    /// The myco Pro account email the app is logged in as (for display only;
     /// the access key lives in the keychain). Empty when logged out.
-    #[serde(default)]
-    pub memex_pro_email: String,
+    #[serde(default, alias = "memex_pro_email")]
+    pub myco_pro_email: String,
     /// While the app is open, periodically ingest pending `_inbox/` sources.
     #[serde(default)]
     pub auto_ingest_enabled: bool,
@@ -55,8 +59,8 @@ impl Default for Settings {
             query_model: default_query_model(),
             ingest_provider: default_ingest_provider(),
             ingest_model: default_ingest_model(),
-            memex_pro_url: String::new(),
-            memex_pro_email: String::new(),
+            myco_pro_url: String::new(),
+            myco_pro_email: String::new(),
             auto_ingest_enabled: false,
             auto_ingest_interval_min: default_auto_ingest_interval(),
             auto_reflect_enabled: false,
@@ -87,8 +91,8 @@ pub struct ProviderFlags {
     pub ollama: bool,
     #[serde(default)]
     pub openrouter: bool,
-    #[serde(default)]
-    pub memex_pro: bool,
+    #[serde(default, alias = "memex_pro")]
+    pub myco_pro: bool,
     // Embedded model ships inside the app — zero setup, so on by default.
     #[serde(default = "default_true")]
     pub builtin_local: bool,
@@ -105,7 +109,7 @@ impl Default for ProviderFlags {
             google_api: false,
             ollama: false,
             openrouter: false,
-            memex_pro: false,
+            myco_pro: false,
             builtin_local: true,
         }
     }
@@ -390,8 +394,29 @@ pub fn load() -> Settings {
         Ok(s) => s,
         Err(_) => return Settings::default(),
     };
-    serde_json::from_str(&raw).unwrap_or_default()
+    let mut settings: Settings = serde_json::from_str(&raw).unwrap_or_default();
+    settings.rename_legacy_provider_ids();
+    settings
 }
+
+/// The `memex-pro` provider id became `myco-pro`. Unlike the struct fields
+/// above, this is a stored *value*, so `#[serde(alias)]` cannot help: an
+/// unmapped id no longer matches any entry in `providers.ts`, which silently
+/// deselects the user's chosen provider and falls the app back to a default.
+impl Settings {
+    fn rename_legacy_provider_ids(&mut self) {
+        for field in [&mut self.query_provider, &mut self.ingest_provider] {
+            if field == LEGACY_PRO_PROVIDER_ID {
+                *field = PRO_PROVIDER_ID.to_string();
+            }
+        }
+    }
+}
+
+/// Provider id for the subscription backend; also the keychain account name
+/// (`secrets::KNOWN_ACCOUNTS`) and the id in `app/src/lib/providers.ts`.
+pub const PRO_PROVIDER_ID: &str = "myco-pro";
+const LEGACY_PRO_PROVIDER_ID: &str = "memex-pro";
 
 // Atomic + durable write: stage into a temp file in the same dir, fsync it,
 // then rename over the target. A crash mid-write leaves the target either fully
@@ -495,6 +520,52 @@ mod tests {
         let d = std::env::temp_dir().join(format!("myco-m1-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         d
+    }
+
+    // ---- M4: persisted `memex_pro_*` fields and the `memex-pro` id ----
+
+    #[test]
+    fn legacy_pro_fields_still_parse_from_an_existing_settings_json() {
+        // Exactly what a pre-rename install left on disk.
+        let raw = r#"{
+            "providers": { "memex_pro": true },
+            "memex_pro_url": "https://proxy.example",
+            "memex_pro_email": "a@b.c"
+        }"#;
+        let s: Settings = serde_json::from_str(raw).expect("legacy settings must parse");
+        assert_eq!(s.myco_pro_url, "https://proxy.example");
+        assert_eq!(s.myco_pro_email, "a@b.c");
+        assert!(s.providers.myco_pro, "the subscription flag must survive");
+    }
+
+    #[test]
+    fn new_field_names_win_and_are_what_gets_written_back() {
+        let s: Settings = serde_json::from_str(r#"{"myco_pro_email":"new@b.c"}"#).unwrap();
+        assert_eq!(s.myco_pro_email, "new@b.c");
+        let written = serde_json::to_string(&s).unwrap();
+        assert!(written.contains("\"myco_pro_email\""));
+        assert!(
+            !written.contains("memex_pro"),
+            "we must stop writing the old spelling"
+        );
+    }
+
+    #[test]
+    fn stored_provider_id_memex_pro_is_renamed_on_load() {
+        // A stored *value*, so serde aliases cannot cover it: left unmapped it
+        // matches no entry in providers.ts and the user's choice silently resets.
+        let mut s: Settings =
+            serde_json::from_str(r#"{"ingest_provider":"memex-pro","query_provider":"memex-pro"}"#)
+                .unwrap();
+        s.rename_legacy_provider_ids();
+        assert_eq!(s.ingest_provider, PRO_PROVIDER_ID);
+        assert_eq!(s.query_provider, PRO_PROVIDER_ID);
+
+        // Anything else is left exactly as stored.
+        let mut other: Settings =
+            serde_json::from_str(r#"{"ingest_provider":"anthropic-cli"}"#).unwrap();
+        other.rename_legacy_provider_ids();
+        assert_eq!(other.ingest_provider, "anthropic-cli");
     }
 
     #[test]

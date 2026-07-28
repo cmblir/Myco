@@ -290,12 +290,12 @@ export const useIngestStore = create<IngestState>((set, get) => ({
         // Opt-in persistence: the streamed run accumulated a transcript in
         // `events` — write it to runs/ alongside the final output.
         await persistRunTranscript(vault.path, runId, out);
-      } else if (settings.ingest_provider === "memex-pro") {
+      } else if (settings.ingest_provider === "myco-pro") {
         // Memex Pro: the proxy runs a cheap model server-side and returns the
         // wiki file operations, which Rust applies (confined). The raw source
         // was already written above; this fills in the wiki pages. No tool
         // stream — stage UI only.
-        const result = await ipc.memexProIngest(slug, finalTitle, body.trim());
+        const result = await ipc.mycoProIngest(slug, finalTitle, body.trim());
         out = `${result.summary}\n\n(${result.applied} wiki file${
           result.applied === 1 ? "" : "s"
         } updated via Memex Pro)`;

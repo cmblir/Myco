@@ -593,13 +593,13 @@ interface ProvenanceSource {
 }
 
 const SETTINGS = {
-  providers: { anthropic_api: false, openai_api: false, google_api: false, ollama: false, openrouter: false, memex_pro: false, builtin_local: true },
+  providers: { anthropic_api: false, openai_api: false, google_api: false, ollama: false, openrouter: false, myco_pro: false, builtin_local: true },
   query_provider: "anthropic-cli",
   query_model: "claude-sonnet-4-6",
   ingest_provider: "anthropic-cli",
   ingest_model: "claude-sonnet-4-6",
-  memex_pro_url: "",
-  memex_pro_email: "",
+  myco_pro_url: "",
+  myco_pro_email: "",
   auto_ingest_enabled: false,
   auto_reindex_enabled: false,
   auto_ingest_interval_min: 60,
@@ -812,15 +812,15 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(mockAgentToolCall(cmd, args));
     case "agent_chat":
       return Promise.resolve(mockAgentChat(args));
-    case "memex_pro_ingest":
+    case "myco_pro_ingest":
       return Promise.resolve({
         summary: `(dev mock) ingested ${String(args.slug ?? "source")}`,
         applied: 2,
         paths: ["wiki/source-mock.md", "wiki/index.md"],
       });
-    case "memex_pro_login":
-      SETTINGS.memex_pro_email = String(args.email ?? "");
-      SETTINGS.providers.memex_pro = true;
+    case "myco_pro_login":
+      SETTINGS.myco_pro_email = String(args.email ?? "");
+      SETTINGS.providers.myco_pro = true;
       return Promise.resolve({ email: String(args.email ?? ""), connected: true });
     case "local_classify":
       return Promise.resolve("concept");
@@ -833,9 +833,9 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return sleep(700).then(
         () => "(mock) local model reply — the real app runs the bundled Gemma 3 1B here.",
       );
-    case "memex_pro_logout":
-      SETTINGS.memex_pro_email = "";
-      SETTINGS.providers.memex_pro = false;
+    case "myco_pro_logout":
+      SETTINGS.myco_pro_email = "";
+      SETTINGS.providers.myco_pro = false;
       return Promise.resolve(null);
     case "claude_check":
       return Promise.resolve({ installed: true, version: "claude 1.0.0", path: "/usr/local/bin/claude" });

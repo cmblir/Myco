@@ -116,8 +116,8 @@ export const PROVIDERS: ProviderDef[] = [
     catalog: [],
   },
   {
-    id: "memex-pro",
-    flag: "memex_pro",
+    id: "myco-pro",
+    flag: "myco_pro",
     name: "Memex Pro",
     kind: "api",
     needsKey: true,
@@ -137,7 +137,7 @@ const PROVIDER_DESC_KEYS: Record<ProviderId, keyof Strings> = {
   "builtin-local": "s_provider_desc_builtin_local",
   ollama: "s_provider_desc_ollama",
   openrouter: "s_provider_desc_openrouter",
-  "memex-pro": "s_provider_desc_memex_pro",
+  "myco-pro": "s_provider_desc_myco_pro",
 };
 
 /** Localised provider blurb, falling back to the English `desc:` on the def. */

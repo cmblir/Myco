@@ -264,7 +264,7 @@ export type ProviderId =
   | "google-api"
   | "ollama"
   | "openrouter"
-  | "memex-pro"
+  | "myco-pro"
   | "builtin-local";
 
 export function ProviderGlyph({
@@ -289,7 +289,7 @@ export function ProviderGlyph({
     strokeWidth: 1.6,
   };
   switch (id) {
-    case "memex-pro":
+    case "myco-pro":
       return (
         <svg {...common}>
           <path d="M12 2l2.6 6 6.4.5-4.9 4.2 1.5 6.3L12 15.8 6.4 19l1.5-6.3L3 8.5 9.4 8z" />

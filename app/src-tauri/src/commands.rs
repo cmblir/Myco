@@ -1068,52 +1068,52 @@ pub fn scan_tasks(
 /// Memex Pro ingest: send the open vault's snapshot + this source to the
 /// configured proxy and apply the wiki file operations it returns (confined to
 /// the vault). The proxy URL comes from settings; the license key from the
-/// keychain ("memex-pro").
+/// keychain ("myco-pro").
 #[tauri::command]
-pub async fn memex_pro_ingest(
+pub async fn myco_pro_ingest(
     state: tauri::State<'_, VaultRoot>,
     slug: String,
     title: String,
     text: String,
-) -> Result<crate::memex_pro::MemexProResult, String> {
+) -> Result<crate::myco_pro::MycoProResult, String> {
     let root = require_root(&state)?;
     // VaultRoot is Send + Sync, so holding State across the await keeps the
     // future Send; we just need the owned root before the network call.
     let s = settings::load();
-    let url = s.memex_pro_url.trim().to_string();
+    let url = s.myco_pro_url.trim().to_string();
     if url.is_empty() {
         return Err("Memex Pro proxy URL is not configured (Settings → Connections)".into());
     }
-    let key = secrets::get_key("memex-pro")?.ok_or_else(|| {
+    let key = secrets::get_key(settings::PRO_PROVIDER_ID)?.ok_or_else(|| {
         "Memex Pro is not connected — log in under Settings → Connections".to_string()
     })?;
-    crate::memex_pro::ingest(&root, &url, &key, &slug, &title, &text).await
+    crate::myco_pro::ingest(&root, &url, &key, &slug, &title, &text).await
 }
 
 /// Log in to Memex Pro with the account created on the website. Fetches the
 /// account's access key, stores it in the keychain, and records the email for
 /// display — so the user never copies a key by hand.
 #[tauri::command]
-pub async fn memex_pro_login(
+pub async fn myco_pro_login(
     email: String,
     password: String,
-) -> Result<crate::memex_pro::LoginOutcome, String> {
-    let url = settings::load().memex_pro_url.trim().to_string();
+) -> Result<crate::myco_pro::LoginOutcome, String> {
+    let url = settings::load().myco_pro_url.trim().to_string();
     if url.is_empty() {
         return Err("Set the Memex Pro service URL first (Settings → Connections)".into());
     }
-    let outcome = crate::memex_pro::login(&url, &email, &password).await?;
+    let outcome = crate::myco_pro::login(&url, &email, &password).await?;
     if let Some(key) = &outcome.license_key {
-        secrets::set_key("memex-pro", key)?;
+        secrets::set_key(settings::PRO_PROVIDER_ID, key)?;
     }
     // Persist the logged-in email + connection flag (the key stays in the
     // keychain). The flag gates the model picker; settings is the single source.
     let mut s = settings::load();
-    s.memex_pro_email = outcome.email.clone();
-    s.providers.memex_pro = outcome.connected;
+    s.myco_pro_email = outcome.email.clone();
+    s.providers.myco_pro = outcome.connected;
     let _ = settings::save(&s);
     // Don't echo the key back to the frontend; it's in the keychain.
-    Ok(crate::memex_pro::LoginOutcome {
+    Ok(crate::myco_pro::LoginOutcome {
         license_key: None,
         ..outcome
     })
@@ -1121,11 +1121,11 @@ pub async fn memex_pro_login(
 
 /// Log out of Memex Pro: clear the stored key and email.
 #[tauri::command]
-pub fn memex_pro_logout() -> Result<(), String> {
-    let _ = secrets::delete_key("memex-pro");
+pub fn myco_pro_logout() -> Result<(), String> {
+    let _ = secrets::delete_key(settings::PRO_PROVIDER_ID);
     let mut s = settings::load();
-    s.memex_pro_email = String::new();
-    s.providers.memex_pro = false;
+    s.myco_pro_email = String::new();
+    s.providers.myco_pro = false;
     settings::save(&s)
 }
 

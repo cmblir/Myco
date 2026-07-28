@@ -226,7 +226,7 @@ export interface MemexSettings {
     google_api: boolean;
     ollama: boolean;
     openrouter: boolean;
-    memex_pro: boolean;
+    myco_pro: boolean;
     /** Embedded model (bundled GGUF) — ships in the app, on by default. */
     builtin_local: boolean;
   };
@@ -235,9 +235,9 @@ export interface MemexSettings {
   ingest_provider: string;
   ingest_model: string;
   /** Memex Pro proxy base URL (the subscription ingest endpoint). */
-  memex_pro_url: string;
+  myco_pro_url: string;
   /** The Memex Pro account email the app is logged in as (display only). */
-  memex_pro_email: string;
+  myco_pro_email: string;
   /** Periodically ingest pending _inbox/ sources while the app is open. */
   auto_ingest_enabled: boolean;
   auto_ingest_interval_min: number;
@@ -249,13 +249,13 @@ export interface MemexSettings {
   auto_reindex_enabled: boolean;
 }
 
-export interface MemexProResult {
+export interface MycoProResult {
   summary: string;
   applied: number;
   paths: string[];
 }
 
-export interface MemexProLogin {
+export interface MycoProLogin {
   email: string;
   /** True when the account has active access (a usable key was stored). */
   connected: boolean;
@@ -516,11 +516,11 @@ export const ipc = {
    *  source_count mismatch / missing superseded_by are warnings. */
   validateIngest: (vaultPath: string, changedPages: string[]) =>
     invoke<ValidationReport>("validate_ingest", { vaultPath, changedPages }),
-  memexProIngest: (slug: string, title: string, text: string) =>
-    invoke<MemexProResult>("memex_pro_ingest", { slug, title, text }),
-  memexProLogin: (email: string, password: string) =>
-    invoke<MemexProLogin>("memex_pro_login", { email, password }),
-  memexProLogout: () => invoke<null>("memex_pro_logout"),
+  mycoProIngest: (slug: string, title: string, text: string) =>
+    invoke<MycoProResult>("myco_pro_ingest", { slug, title, text }),
+  mycoProLogin: (email: string, password: string) =>
+    invoke<MycoProLogin>("myco_pro_login", { email, password }),
+  mycoProLogout: () => invoke<null>("myco_pro_logout"),
   setProviderKey: (providerId: string, key: string) =>
     invoke<null>("set_provider_key", { providerId, key }),
   deleteProviderKey: (providerId: string) =>

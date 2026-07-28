@@ -52,7 +52,7 @@ struct IngestResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub struct MemexProResult {
+pub struct MycoProResult {
     pub summary: String,
     pub applied: usize,
     pub paths: Vec<String>,
@@ -92,7 +92,7 @@ pub async fn ingest(
     slug: &str,
     title: &str,
     text: &str,
-) -> Result<MemexProResult, String> {
+) -> Result<MycoProResult, String> {
     require_safe_proxy(proxy_url)?;
     let pages = collect_pages(root);
     let schema = std::fs::read_to_string(root.join("CLAUDE.md")).unwrap_or_default();
@@ -152,7 +152,7 @@ pub async fn ingest(
         paths.push(op.path.clone());
     }
 
-    Ok(MemexProResult {
+    Ok(MycoProResult {
         summary: if parsed.summary.is_empty() {
             "ingest complete".to_string()
         } else {
@@ -399,7 +399,7 @@ mod tests {
 
     #[test]
     fn collect_pages_reads_wiki_markdown() {
-        let dir = std::env::temp_dir().join(format!("memex-pro-pages-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("myco-pro-pages-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("wiki/sub")).unwrap();
         std::fs::write(dir.join("wiki/a.md"), "alpha").unwrap();
