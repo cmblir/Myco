@@ -70,11 +70,13 @@ myco의 주력은 네이티브 데스크톱 앱입니다. 다른 Claude 클라�
 
 **[최신 릴리스](https://github.com/cmblir/Memex/releases/latest)**에서 플랫폼별 번들을 받으세요:
 
-- **macOS** (유니버설 — Apple Silicon + Intel): `myco_0.1.0_universal.dmg`
-- **Windows x64**: `myco_0.1.0_x64-setup.exe` (NSIS 설치 파일)
+- **macOS** (유니버설 — Apple Silicon + Intel): `myco_0.3.0_universal.dmg` —
+  서명·공증되어 Gatekeeper 경고 없이 열립니다.
+- **Windows x64**: v0.3.0 빌드는 없습니다. 최신 Windows 설치 파일은 v0.2.2의
+  `Memex_0.2.2_x64-setup.exe`이며, 이후 myco 빌드로 올릴 때 데이터가 이전됩니다.
 
-> [!note] 첫 실행 — v0.1.0 설치 파일은 서명되지 않음
-> 두 번들 모두 **서명되지 않아** OS가 첫 실행 시 경고합니다. 정상이며 한 번만 허용하면 됩니다:
+> [!note] Windows, 그리고 v0.3.0 이전 macOS 빌드
+> 해당 번들은 **서명되지 않아** OS가 첫 실행 시 경고합니다. 한 번만 허용하면 됩니다:
 > - **macOS**(Gatekeeper "확인되지 않은 개발자") — 앱 우클릭 → **열기** → **열기**; 또는 `xattr -dr com.apple.quarantine /Applications/myco.app`; 또는 **시스템 설정 → 개인정보 보호 및 보안 → "그래도 열기"**.
 > - **Windows**(SmartScreen "PC를 보호했습니다") — **추가 정보** → **실행**.
 

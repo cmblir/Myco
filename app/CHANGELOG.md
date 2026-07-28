@@ -6,7 +6,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-## [0.3.0] - 2026-07-28
+## [0.3.0] - 2026-07-29
 
 ### Added
 
@@ -254,6 +254,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   changed from `sse` to `http`.
 
 ### Changed
+
+- **Memex is now myco**, named after MYCO, the mushroom mascot that has been in
+  the app since v0.2.2. Everything moves with the name and **your existing data
+  comes with it** — the app migrates its settings directory, your keychain
+  entries, background digest schedules, saved graph looks, onboarding state, the
+  per-vault state folder, and your subscription login on first launch. Nothing to
+  do on your side.
+
+  Two deliberate exceptions, so nothing you already set up breaks:
+  - The old `memx://` web-clipper link still works, and always will — bookmarklets
+    and extensions you saved cannot be updated by us.
+  - Every `MEMEX_*` environment variable is still honoured alongside its new
+    `MYCO_*` spelling.
+
+  If you connected the MCP server to Claude Code, click **Connect** once more in
+  Settings → MCP: it re-registers under the new name and clears the old entry.
+
+- **The About card shows the real version.** It had been hardcoded to v0.2.2 and
+  no release ever updated it; it now reads the version from the bundle.
 
 - **The app no longer stalls on a large vault.** It was rebuilding the entire
   link graph every four seconds to notice outside edits — reading and parsing

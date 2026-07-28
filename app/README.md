@@ -103,13 +103,14 @@ can run e.g. Claude Sonnet for ingest and a local Llama for Q&A.
 Download a release bundle from the
 [latest release](https://github.com/cmblir/Memex/releases/latest):
 
-- macOS (universal — Apple Silicon + Intel): `myco_0.1.0_universal.dmg`
-- Windows x64: `myco_0.1.0_x64-setup.exe` (NSIS installer)
+- macOS (universal — Apple Silicon + Intel): `myco_0.3.0_universal.dmg` —
+  signed and notarized.
+- Windows x64: no v0.3.0 build; the latest is `Memex_0.2.2_x64-setup.exe`.
 
-Mount/run, drag to Applications.
+Mount, drag to Applications.
 
-Both installers are **unsigned** for v0.1.0, so the OS warns on first open.
-Unblock once:
+Windows, and macOS builds before v0.3.0, are **unsigned**, so the OS warns on
+first open. Unblock once:
 
 - macOS (Gatekeeper "unidentified developer"): right-click the app → Open →
   Open; or run `xattr -dr com.apple.quarantine /Applications/myco.app`; or

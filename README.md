@@ -71,13 +71,16 @@ Both share the same vault layout (`raw/ wiki/ daily/ ingest-reports/`) and never
 Grab the bundle for your platform from the
 **[latest release](https://github.com/cmblir/Memex/releases/latest)**:
 
-- **macOS** (universal — Apple Silicon + Intel): `myco_0.1.0_universal.dmg`
-- **Windows x64**: `myco_0.1.0_x64-setup.exe` (NSIS installer)
+- **macOS** (universal — Apple Silicon + Intel): `myco_0.3.0_universal.dmg` —
+  signed and notarized, so it opens without a Gatekeeper warning.
+- **Windows x64**: no v0.3.0 build. The latest Windows installer is
+  `Memex_0.2.2_x64-setup.exe` from the v0.2.2 release; upgrading to a myco build
+  later migrates your data then.
 
-Mount/run, drag to Applications.
+Mount, drag to Applications.
 
-> [!note] First launch — installers are unsigned for v0.1.0
-> Both bundles are **unsigned**, so the OS will warn on first open. This is expected; unblock once:
+> [!note] Windows, and macOS builds before v0.3.0
+> Those bundles are **unsigned**, so the OS warns on first open. Unblock once:
 >
 > - **macOS** (Gatekeeper "unidentified developer") — right-click the app → **Open** → **Open**; or run `xattr -dr com.apple.quarantine /Applications/myco.app`; or go to **System Settings → Privacy & Security → "Open Anyway"**.
 > - **Windows** (SmartScreen "Windows protected your PC") — click **More info** → **Run anyway**.

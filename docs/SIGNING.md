@@ -7,11 +7,17 @@ on real macOS + Windows runners with
 [`tauri-apps/tauri-action`](https://github.com/tauri-apps/tauri-action) and
 publishes the `.dmg` / `.exe` to a GitHub Release.
 
-> [!important] v0.1.0 is UNSIGNED — this is the upgrade path, not the current state.
-> Today both installers (`myco_x.y.z_universal.dmg`, `myco_x.y.z_x64-setup.exe`)
-> are unsigned. On first launch users must manually unblock them (see the
-> [README](../README.md)). Signing removes that friction. **No code changes are
-> required to keep shipping unsigned** — everything below is additive.
+> [!important] Current state as of v0.3.0: macOS is signed LOCALLY, Windows is not.
+> The Developer ID certificate lives in the maintainer's login keychain, not in
+> repo secrets, so the release `.dmg` is built and notarized on the maintainer's
+> Mac (see [Part 1b](#part-1b--signing-locally-what-v030-actually-does)) and
+> uploaded with `gh release create`. `.github/workflows/release.yml` is therefore
+> **manual-dispatch only** — if it still fired on a tag push it would race that
+> upload with an unsigned runner build of the same version.
+>
+> The GitHub Actions route below (Part 1a) stays documented and is what to use
+> if signing ever moves to CI. Windows (`myco_x.y.z_x64-setup.exe`) is still
+> unsigned; users unblock it once (see the [README](../README.md)).
 
 > [!warning] Secrets are NEVER committed.
 > Every value below is a **GitHub Actions secret**, added only in
@@ -165,6 +171,46 @@ single shared `env:` block is fine for the current matrix.
 > `tauri-action`. That is equivalent but more verbose. The `env:`-block approach
 > above is the documented, lower-maintenance path for `tauri-action` and is what
 > myco should use unless a future need forces the manual variant.
+
+---
+
+## Part 1b — Signing locally (what v0.3.0 actually does)
+
+With the Developer ID certificate already in your login keychain, no secret ever
+leaves the machine. From the repo root:
+
+```bash
+# One-time: the universal bundle needs both Mac targets.
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+# Notarization credentials. Set them in the shell, never in a tracked file.
+# APPLE_PASSWORD is the app-specific password from step 1.6, not your login one.
+export APPLE_SIGNING_IDENTITY="Developer ID Application: <name> (<TEAMID>)"
+export APPLE_ID="<apple-account-email>"
+export APPLE_PASSWORD="<app-specific-password>"
+export APPLE_TEAM_ID="<TEAMID>"
+
+cd app && npm run tauri build -- --target universal-apple-darwin
+```
+
+Tauri signs the bundle and submits it to Apple for notarization as part of the
+build. Verify before shipping, on the built `.app` and the `.dmg`:
+
+```bash
+codesign --verify --deep --strict --verbose=2 \
+  app/src-tauri/target/universal-apple-darwin/release/bundle/macos/myco.app
+spctl --assess --type execute --verbose \
+  app/src-tauri/target/universal-apple-darwin/release/bundle/macos/myco.app
+xcrun stapler validate \
+  app/src-tauri/target/universal-apple-darwin/release/bundle/dmg/myco_*.dmg
+```
+
+`spctl` must say **accepted / source=Notarized Developer ID**. Then attach the
+`.dmg` to the release:
+
+```bash
+gh release create v0.3.0 <path-to-dmg> --title "myco v0.3.0" --notes-file <notes>
+```
 
 ---
 

@@ -1,13 +1,22 @@
 name: release
 
 # Build the Tauri desktop app on real macOS + Windows runners and publish the
-# installers to a GitHub Release. Triggered by pushing a version tag (e.g.
-# v0.1.0). macOS produces a universal .dmg (Apple Silicon + Intel); Windows
-# produces an NSIS .exe — the two bundle targets declared in tauri.conf.json.
+# installers to a GitHub Release. macOS produces a universal .dmg (Apple Silicon
+# + Intel); Windows produces an NSIS .exe — the two bundle targets declared in
+# tauri.conf.json.
+#
+# MANUAL ONLY as of v0.3.0. The macOS bundle is now signed and notarized, and
+# the Developer ID certificate lives in the maintainer's keychain rather than in
+# repo secrets — so the release .dmg is built locally and uploaded with
+# `gh release create`. If this still fired on `push: tags`, pushing the release
+# tag would race that upload with an UNSIGNED runner build of the same version.
+# Dispatch it by hand when a Windows installer is wanted for a tag.
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing version tag to build and attach assets to (e.g. v0.3.0)"
+        required: true
 
 jobs:
   publish-tauri:
@@ -25,6 +34,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # Build the tagged tree, not whatever main is at dispatch time.
+          ref: ${{ inputs.tag }}
           # The bundled SEED model (models/*.gguf, ~412 MB) is stored in Git
           # LFS. Without this the runner checks out only the ~130-byte LFS
           # pointer, and tauri bundles THAT — producing a ~10 MB installer whose
@@ -67,16 +78,17 @@ jobs:
           # secrets and restore the APPLE_* / AZURE_* env block per docs/SIGNING.md.
         with:
           projectPath: app # the Tauri app lives in app/, not the repo root
-          tagName: ${{ github.ref_name }}
-          releaseName: "myco ${{ github.ref_name }}"
+          tagName: ${{ inputs.tag }}
+          releaseName: "myco ${{ inputs.tag }}"
           releaseBody: >
             myco — a cross-platform desktop wiki for plain markdown vaults.
 
             Download the installer for your OS below.
             macOS: universal .dmg (Apple Silicon + Intel).
             Windows: NSIS .exe installer.
-            Both are unsigned for v0.1 — on first launch macOS Gatekeeper and
-            Windows SmartScreen will warn; see the README for how to allow it.
+            Runner builds are UNSIGNED — Windows SmartScreen will warn on first
+            launch; see the README for how to allow it. The signed macOS .dmg is
+            built and uploaded separately.
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
