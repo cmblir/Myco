@@ -187,6 +187,14 @@ pub fn run() {
                 let _ = std::fs::create_dir_all(&dir);
                 let _ = PANIC_LOG_PATH.set(dir.join("memex-panic.log"));
             }
+            // One-time keychain service rename (dev.cmblir.memex →
+            // dev.cmblir.myco). Runs before anything can read a provider key.
+            // Best-effort: a locked or unavailable keychain only produces
+            // warnings — it must never block startup, and it never deletes an
+            // old entry whose copy was not verified.
+            for warning in secrets::migrate_legacy_service() {
+                eprintln!("keychain migration: {warning}");
+            }
             // Auto-start the native in-process MCP server (rmcp) on every launch.
             // No install / venv / Python, so it always comes up — the Obsidian-
             // like "the app just serves it" model. Runs on the app's tokio
