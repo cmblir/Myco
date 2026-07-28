@@ -9,7 +9,7 @@
 // looks are lost.
 
 /** Old key → new key. Exported so tests can assert the list is complete. */
-export const RENAMED_STORAGE_KEYS: ReadonlyArray<readonly [string, string]> = [
+export const RENAMED_STORAGE_KEYS: readonly (readonly [string, string])[] = [
   ["memex.errorlog", "myco.errorlog"],
   ["memex.onboarded", "myco.onboarded"],
   ["memex.lastVaultPath", "myco.lastVaultPath"],
