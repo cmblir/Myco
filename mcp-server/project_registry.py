@@ -30,19 +30,45 @@ from pathlib import Path
 #   3. script-relative repo root — running directly from a checkout.
 
 
-def _app_data_dir() -> Path:
-    """Per-user app data dir — must mirror the Rust app's settings_dir()
-    (app/src-tauri/src/settings.rs) so we read the marker the app writes."""
-    override = os.environ.get("MEMEX_DATA_DIR")
-    if override:
-        return Path(override)
+def _platform_data_dir(macos: str, windows: str, linux: str) -> Path:
     home = Path(os.path.expanduser("~"))
     if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / "dev.cmblir.memex"
+        return home / "Library" / "Application Support" / macos
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
-        return Path(appdata) / "Memex" if appdata else home / "Memex"
-    return home / ".config" / "memex"
+        return Path(appdata) / windows if appdata else home / windows
+    return home / ".config" / linux
+
+
+def _app_data_dir() -> Path:
+    """Per-user app data dir — must mirror the Rust app's settings_dir()
+    (app/src-tauri/src/settings.rs), including the memex→myco migration rule,
+    so we read the marker the app writes. If the two ever disagree, this server
+    silently stops following the app's vault.
+
+    MYCO_DATA_DIR wins; MEMEX_DATA_DIR is still honoured for existing setups.
+    An explicit override is used verbatim — no migration, since the operator has
+    already said where the data lives.
+    """
+    override = os.environ.get("MYCO_DATA_DIR") or os.environ.get("MEMEX_DATA_DIR")
+    if override:
+        return Path(override)
+    new = _platform_data_dir("dev.cmblir.myco", "myco", "myco")
+    old = _platform_data_dir("dev.cmblir.memex", "Memex", "memex")
+    # Same rule as the Rust side: move once, never when the new dir already
+    # exists, and on ANY failure keep using the old directory rather than
+    # reading an empty new one (losing the active-vault marker would silently
+    # point this server at the wrong vault).
+    if new.exists() or not old.exists():
+        return new
+    try:
+        new.parent.mkdir(parents=True, exist_ok=True)
+        old.rename(new)
+        return new
+    except OSError:
+        # A concurrent process (the desktop app, which mirrors this rule) may
+        # have won the race and already moved it.
+        return new if new.exists() else old
 
 
 def _active_vault() -> Path | None:

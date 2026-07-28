@@ -2,6 +2,8 @@
 (backlog DX-01). Run from mcp-server/:  .venv/bin/python -m pytest -q
 """
 
+from pathlib import Path
+
 import pytest
 
 from memex_mcp import (
@@ -282,3 +284,62 @@ def test_windows_drive_letter_slug_is_rejected(tmp_path, monkeypatch):
     reg = _registry_with_root(vault, monkeypatch)
     with pytest.raises(ValueError):
         reg._validate_slug("C:")
+
+
+# ─── app data dir (M1 mirror of the Rust settings_dir) ───────────────────────
+
+
+def _isolated_home(tmp_path, monkeypatch):
+    """Point the data-dir resolution at a throwaway HOME with no overrides."""
+    import project_registry as reg
+
+    monkeypatch.delenv("MYCO_DATA_DIR", raising=False)
+    monkeypatch.delenv("MEMEX_DATA_DIR", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData"))
+    old = reg._platform_data_dir("dev.cmblir.memex", "Memex", "memex")
+    new = reg._platform_data_dir("dev.cmblir.myco", "myco", "myco")
+    return reg, old, new
+
+
+def test_app_data_dir_override_prefers_myco_spelling(tmp_path, monkeypatch):
+    import project_registry as reg
+
+    monkeypatch.setenv("MEMEX_DATA_DIR", "/tmp/old-spelling")
+    monkeypatch.setenv("MYCO_DATA_DIR", "/tmp/new-spelling")
+    assert reg._app_data_dir() == Path("/tmp/new-spelling")
+    monkeypatch.delenv("MYCO_DATA_DIR")
+    assert reg._app_data_dir() == Path("/tmp/old-spelling")
+
+
+def test_app_data_dir_migrates_old_dir_once(tmp_path, monkeypatch):
+    reg, old, new = _isolated_home(tmp_path, monkeypatch)
+    old.mkdir(parents=True)
+    (old / "active-vault").write_text("/some/vault", "utf-8")
+
+    assert reg._app_data_dir() == new
+    assert not old.exists()
+    assert (new / "active-vault").read_text("utf-8") == "/some/vault"
+    # Idempotent: a second call is a no-op.
+    assert reg._app_data_dir() == new
+    assert (new / "active-vault").read_text("utf-8") == "/some/vault"
+
+
+def test_app_data_dir_leaves_both_alone_when_new_exists(tmp_path, monkeypatch):
+    reg, old, new = _isolated_home(tmp_path, monkeypatch)
+    old.mkdir(parents=True)
+    new.mkdir(parents=True)
+    (old / "active-vault").write_text("/old", "utf-8")
+    (new / "active-vault").write_text("/new", "utf-8")
+
+    assert reg._app_data_dir() == new
+    assert (new / "active-vault").read_text("utf-8") == "/new"
+    assert (old / "active-vault").read_text("utf-8") == "/old"
+
+
+def test_app_data_dir_fresh_install_creates_nothing(tmp_path, monkeypatch):
+    reg, old, new = _isolated_home(tmp_path, monkeypatch)
+    assert reg._app_data_dir() == new
+    assert not old.exists()
+    assert not new.exists()

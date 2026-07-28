@@ -1,4 +1,4 @@
-// Persisted user settings — written to ~/Library/Application Support/dev.cmblir.memex/
+// Persisted user settings — written to ~/Library/Application Support/dev.cmblir.myco/
 // (or platform equivalent). Stores non-secret data only: connection flags
 // (true/false), selected provider + model per task, language. API keys live
 // in the OS keychain (see secrets.rs).
@@ -138,21 +138,122 @@ fn default_auto_reflect_interval() -> u32 {
     180
 }
 
+// ---- app-data directory (M1: memex → myco) -------------------------------
+//
+// The per-platform directory names. `LEGACY_DIR_NAMES` is what installs made
+// before the myco rename wrote to, and is only ever read for the one-time move
+// below. NOTE: `mcp-server/project_registry.py::_app_data_dir()` is a hand-
+// copied mirror of this resolution (the stdio MCP server reads the
+// `active-vault` marker the app writes here). Any change to the names, the env
+// overrides, or the migration rule MUST be made in both places, or the MCP
+// server silently stops following the app's vault.
+struct DirNames {
+    macos: &'static str,
+    windows: &'static str,
+    linux: &'static str,
+}
+
+const DIR_NAMES: DirNames = DirNames {
+    macos: "dev.cmblir.myco",
+    windows: "myco",
+    linux: "myco",
+};
+
+const LEGACY_DIR_NAMES: DirNames = DirNames {
+    macos: "dev.cmblir.memex",
+    windows: "Memex",
+    linux: "memex",
+};
+
+/// Resolve the data dir for a given OS name (`std::env::consts::OS` values), so
+/// all three platform layouts stay unit-testable from any one of them.
+fn data_dir_on(
+    os: &str,
+    home: Option<&std::ffi::OsStr>,
+    appdata: Option<&std::ffi::OsStr>,
+    names: &DirNames,
+) -> Result<PathBuf, String> {
+    match os {
+        "macos" => {
+            let home = home.ok_or_else(|| "no HOME".to_string())?;
+            Ok(PathBuf::from(home)
+                .join("Library")
+                .join("Application Support")
+                .join(names.macos))
+        }
+        "windows" => {
+            let appdata = appdata.ok_or_else(|| "no APPDATA".to_string())?;
+            Ok(PathBuf::from(appdata).join(names.windows))
+        }
+        _ => {
+            let home = home.ok_or_else(|| "no HOME".to_string())?;
+            Ok(PathBuf::from(home).join(".config").join(names.linux))
+        }
+    }
+}
+
+/// Explicit override, preferring the new spelling. `MEMEX_DATA_DIR` is still
+/// honoured (unchanged behaviour) so existing scripts and dev setups that
+/// export the old name keep working.
+fn data_dir_override() -> Option<PathBuf> {
+    std::env::var_os("MYCO_DATA_DIR")
+        .or_else(|| std::env::var_os("MEMEX_DATA_DIR"))
+        .map(PathBuf::from)
+}
+
+/// One-time move of the pre-rename data dir onto the new path. Returns the
+/// directory that should actually be used.
+///
+/// Rules, in order of importance:
+///  - If the new dir already exists, the migration has already run (or the user
+///    is a fresh install): never touch the old dir again. This is what makes a
+///    second launch a no-op.
+///  - If the old dir is absent there is nothing to move.
+///  - If the move FAILS (cross-device rename, permissions, a racing process),
+///    we return the OLD directory and keep using it. Silently starting from an
+///    empty new dir would strand the user's settings.json, active-vault marker,
+///    mcp-token and embeddings/ indexes — losing that state is far worse than
+///    running under the old path name forever.
+fn migrate_data_dir(old: &std::path::Path, new: &std::path::Path) -> PathBuf {
+    if new.exists() || !old.exists() {
+        return new.to_path_buf();
+    }
+    // The parent must exist for the rename (e.g. ~/.config on Linux). Best
+    // effort: a failure here just falls through to the rename's own error.
+    if let Some(parent) = new.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match std::fs::rename(old, new) {
+        Ok(()) => new.to_path_buf(),
+        Err(e) => {
+            // A concurrent process (e.g. the bundled MCP server, which mirrors
+            // this rule) may have won the race and already moved it.
+            if new.exists() {
+                return new.to_path_buf();
+            }
+            eprintln!(
+                "data dir migration failed ({} -> {}): {e}; continuing to use the old directory",
+                old.display(),
+                new.display()
+            );
+            old.to_path_buf()
+        }
+    }
+}
+
 pub fn settings_dir() -> Result<PathBuf, String> {
-    let base = if let Ok(p) = std::env::var("MEMEX_DATA_DIR") {
-        PathBuf::from(p)
-    } else if cfg!(target_os = "macos") {
-        let home = std::env::var_os("HOME").ok_or_else(|| "no HOME".to_string())?;
-        PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("dev.cmblir.memex")
-    } else if cfg!(target_os = "windows") {
-        let appdata = std::env::var_os("APPDATA").ok_or_else(|| "no APPDATA".to_string())?;
-        PathBuf::from(appdata).join("Memex")
-    } else {
-        let home = std::env::var_os("HOME").ok_or_else(|| "no HOME".to_string())?;
-        PathBuf::from(home).join(".config").join("memex")
+    let base = match data_dir_override() {
+        // An explicit override names the directory to use verbatim — no
+        // migration, since the operator has already said where the data lives.
+        Some(p) => p,
+        None => {
+            let os = std::env::consts::OS;
+            let home = std::env::var_os("HOME");
+            let appdata = std::env::var_os("APPDATA");
+            let new = data_dir_on(os, home.as_deref(), appdata.as_deref(), &DIR_NAMES)?;
+            let old = data_dir_on(os, home.as_deref(), appdata.as_deref(), &LEGACY_DIR_NAMES)?;
+            migrate_data_dir(&old, &new)
+        }
     };
     std::fs::create_dir_all(&base).map_err(|e| format!("create settings dir: {e}"))?;
     Ok(base)
@@ -231,20 +332,32 @@ mod tests {
             std::env::temp_dir().join(format!("memex-settings-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        let prev = std::env::var("MEMEX_DATA_DIR").ok();
+        let prev_myco = std::env::var("MYCO_DATA_DIR").ok();
+        let prev_memex = std::env::var("MEMEX_DATA_DIR").ok();
         unsafe {
-            std::env::set_var("MEMEX_DATA_DIR", &dir);
+            std::env::set_var("MYCO_DATA_DIR", &dir);
+            std::env::remove_var("MEMEX_DATA_DIR");
         }
         f(&dir);
-        if let Some(v) = prev {
-            unsafe {
-                std::env::set_var("MEMEX_DATA_DIR", v);
-            }
-        } else {
-            unsafe {
-                std::env::remove_var("MEMEX_DATA_DIR");
+        unsafe {
+            restore_var("MYCO_DATA_DIR", prev_myco);
+            restore_var("MEMEX_DATA_DIR", prev_memex);
+        }
+    }
+
+    unsafe fn restore_var(name: &str, prev: Option<String>) {
+        unsafe {
+            match prev {
+                Some(v) => std::env::set_var(name, v),
+                None => std::env::remove_var(name),
             }
         }
+    }
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("myco-m1-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        d
     }
 
     #[test]
@@ -350,6 +463,169 @@ mod tests {
             set_active_vault("/another/vault").unwrap();
             assert_eq!(std::fs::read_to_string(&marker).unwrap(), "/another/vault");
         });
+    }
+
+    // ---- M1: data-dir naming, env overrides, one-time migration ----------
+
+    fn os_str(s: &str) -> std::ffi::OsString {
+        std::ffi::OsString::from(s)
+    }
+
+    #[test]
+    fn data_dir_names_per_platform() {
+        let home = os_str("/home/u");
+        let appdata = os_str("C:\\Users\\u\\AppData\\Roaming");
+        assert_eq!(
+            data_dir_on("macos", Some(&home), None, &DIR_NAMES).unwrap(),
+            PathBuf::from("/home/u/Library/Application Support/dev.cmblir.myco")
+        );
+        assert_eq!(
+            data_dir_on("windows", None, Some(&appdata), &DIR_NAMES).unwrap(),
+            PathBuf::from("C:\\Users\\u\\AppData\\Roaming").join("myco")
+        );
+        assert_eq!(
+            data_dir_on("linux", Some(&home), None, &DIR_NAMES).unwrap(),
+            PathBuf::from("/home/u/.config/myco")
+        );
+    }
+
+    #[test]
+    fn legacy_data_dir_names_per_platform() {
+        // The migration source must keep naming the pre-rename directories
+        // exactly, or an upgrading user's state is never found.
+        let home = os_str("/home/u");
+        let appdata = os_str("C:\\Users\\u\\AppData\\Roaming");
+        assert_eq!(
+            data_dir_on("macos", Some(&home), None, &LEGACY_DIR_NAMES).unwrap(),
+            PathBuf::from("/home/u/Library/Application Support/dev.cmblir.memex")
+        );
+        assert_eq!(
+            data_dir_on("windows", None, Some(&appdata), &LEGACY_DIR_NAMES).unwrap(),
+            PathBuf::from("C:\\Users\\u\\AppData\\Roaming").join("Memex")
+        );
+        assert_eq!(
+            data_dir_on("linux", Some(&home), None, &LEGACY_DIR_NAMES).unwrap(),
+            PathBuf::from("/home/u/.config/memex")
+        );
+    }
+
+    #[test]
+    fn data_dir_reports_missing_env() {
+        assert!(data_dir_on("macos", None, None, &DIR_NAMES).is_err());
+        assert!(data_dir_on("windows", None, None, &DIR_NAMES).is_err());
+        assert!(data_dir_on("linux", None, None, &DIR_NAMES).is_err());
+    }
+
+    #[test]
+    fn override_prefers_myco_but_accepts_memex() {
+        let _guard = ENV_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let prev_myco = std::env::var("MYCO_DATA_DIR").ok();
+        let prev_memex = std::env::var("MEMEX_DATA_DIR").ok();
+
+        unsafe {
+            std::env::set_var("MYCO_DATA_DIR", "/tmp/new-spelling");
+            std::env::set_var("MEMEX_DATA_DIR", "/tmp/old-spelling");
+        }
+        assert_eq!(data_dir_override(), Some(PathBuf::from("/tmp/new-spelling")));
+
+        // Old spelling alone still works — dev setups and scripts export it.
+        unsafe {
+            std::env::remove_var("MYCO_DATA_DIR");
+        }
+        assert_eq!(data_dir_override(), Some(PathBuf::from("/tmp/old-spelling")));
+
+        unsafe {
+            std::env::remove_var("MEMEX_DATA_DIR");
+        }
+        assert_eq!(data_dir_override(), None);
+
+        unsafe {
+            restore_var("MYCO_DATA_DIR", prev_myco);
+            restore_var("MEMEX_DATA_DIR", prev_memex);
+        }
+    }
+
+    #[test]
+    fn migration_moves_old_dir_once_and_is_idempotent() {
+        let base = temp_dir("move");
+        let old = base.join("old");
+        let new = base.join("new");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("settings.json"), "{}").unwrap();
+        std::fs::write(old.join("mcp-token"), "tok").unwrap();
+
+        assert_eq!(migrate_data_dir(&old, &new), new);
+        assert!(!old.exists(), "old dir must be gone after the move");
+        assert_eq!(
+            std::fs::read_to_string(new.join("mcp-token")).unwrap(),
+            "tok"
+        );
+
+        // Second run: nothing left to do, and it must not recreate//touch old.
+        assert_eq!(migrate_data_dir(&old, &new), new);
+        assert!(!old.exists());
+        assert_eq!(
+            std::fs::read_to_string(new.join("settings.json")).unwrap(),
+            "{}"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn migration_skips_when_new_dir_already_exists() {
+        // A user who already migrated (or re-created state under the new name)
+        // must keep the NEW state; the old dir is left untouched, never merged.
+        let base = temp_dir("both");
+        let old = base.join("old");
+        let new = base.join("new");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::create_dir_all(&new).unwrap();
+        std::fs::write(old.join("settings.json"), "OLD").unwrap();
+        std::fs::write(new.join("settings.json"), "NEW").unwrap();
+
+        assert_eq!(migrate_data_dir(&old, &new), new);
+        assert_eq!(
+            std::fs::read_to_string(new.join("settings.json")).unwrap(),
+            "NEW"
+        );
+        assert_eq!(
+            std::fs::read_to_string(old.join("settings.json")).unwrap(),
+            "OLD",
+            "old dir must be left intact as a fallback copy"
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn migration_is_noop_for_fresh_install() {
+        let base = temp_dir("fresh");
+        let old = base.join("old");
+        let new = base.join("new");
+        assert_eq!(migrate_data_dir(&old, &new), new);
+        assert!(!old.exists());
+        assert!(!new.exists(), "migration must not create the dir itself");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn migration_falls_back_to_old_dir_when_move_fails() {
+        // Simulate an unmovable old dir by making the new path's parent a FILE,
+        // so rename() cannot succeed. Losing settings/keys/indexes is worse than
+        // staying on the old path, so the old dir must be returned.
+        let base = temp_dir("fallback");
+        let old = base.join("old");
+        std::fs::create_dir_all(&old).unwrap();
+        std::fs::write(old.join("settings.json"), "OLD").unwrap();
+        let blocker = base.join("blocker");
+        std::fs::write(&blocker, "not a dir").unwrap();
+        let new = blocker.join("new");
+
+        assert_eq!(migrate_data_dir(&old, &new), old);
+        assert_eq!(
+            std::fs::read_to_string(old.join("settings.json")).unwrap(),
+            "OLD"
+        );
+        let _ = std::fs::remove_dir_all(&base);
     }
 
     #[test]
