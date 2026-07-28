@@ -2,9 +2,9 @@
 
 <br />
 
-<img src="docs/memex-icon.png" width="100" alt="Memex icon" />
+<img src="docs/myco-icon.png" width="100" alt="myco icon" />
 
-<h1>Memex</h1>
+<h1>myco</h1>
 
 <p><strong>A personal knowledge base that writes itself.</strong></p>
 
@@ -33,7 +33,7 @@ Your knowledge compounds — in plain markdown you own.
 
 <br />
 
-<img src="docs/screenshots/hero-mesh.png" width="100%" alt="Memex knowledge graph — a vault rendered as a 3D cosmic web of glowing, community-colored stars with named clusters" />
+<img src="docs/screenshots/hero-mesh.png" width="100%" alt="myco knowledge graph — a vault rendered as a 3D cosmic web of glowing, community-colored stars with named clusters" />
 
 <sub><em>The Graph view — a "calm cosmic web". Every note is a star sized by its links, each community its own hue with an auto-named cluster label, <code>[[wikilinks]]</code> are faint grey connective tissue, and only true hubs bloom. This is the seeded ~50-note starter vault you get on first launch.</em></sub>
 
@@ -45,20 +45,20 @@ Your knowledge compounds — in plain markdown you own.
 
 Most LLM-plus-documents setups **re-derive knowledge on every query**. RAG finds chunks, the model stitches an answer, nothing is kept. Ten queries against the same docs → ten rediscoveries.
 
-**Memex inverts this.** You add a source once. Claude reads it, integrates it into a persistent wiki, flags contradictions against older pages, wires up citations, and commits the result. By query #10 the wiki itself answers — the bookkeeping already happened.
+**myco inverts this.** You add a source once. Claude reads it, integrates it into a persistent wiki, flags contradictions against older pages, wires up citations, and commits the result. By query #10 the wiki itself answers — the bookkeeping already happened.
 
-Based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). Named for [Vannevar Bush's 1945 Memex](https://en.wikipedia.org/wiki/Memex).
+Based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f). The idea goes back to [Vannevar Bush's 1945 Memex](https://en.wikipedia.org/wiki/Memex), which the project was originally named after.
 
 ---
 
 ## Two surfaces, one wiki
 
-Memex ships as a native desktop app. A second surface exists for programmatic access from another Claude client.
+myco ships as a native desktop app. A second surface exists for programmatic access from another Claude client.
 
 | Surface | What it is | When to use |
 |---|---|---|
-| **Memex desktop app** (`app/`) | Tauri 2 + React. Ships as a `.dmg` / `.exe`. Bundles its own vault, talks to any of 5 LLM providers (CLI + 4 HTTP APIs + Ollama). | **Default. Use this.** |
-| **MCP server** (`mcp-server/`) | 26 tools exposed via the Model Context Protocol. | Drive Memex from Claude Desktop / Claude Code / any MCP client. |
+| **myco desktop app** (`app/`) | Tauri 2 + React. Ships as a `.dmg` / `.exe`. Bundles its own vault, talks to any of 5 LLM providers (CLI + 4 HTTP APIs + Ollama). | **Default. Use this.** |
+| **MCP server** (`mcp-server/`) | 26 tools exposed via the Model Context Protocol. | Drive myco from Claude Desktop / Claude Code / any MCP client. |
 
 Both share the same vault layout (`raw/ wiki/ daily/ ingest-reports/`) and never lock your data. Plain markdown on disk, always.
 
@@ -71,22 +71,22 @@ Both share the same vault layout (`raw/ wiki/ daily/ ingest-reports/`) and never
 Grab the bundle for your platform from the
 **[latest release](https://github.com/cmblir/Memex/releases/latest)**:
 
-- **macOS** (universal — Apple Silicon + Intel): `Memex_0.1.0_universal.dmg`
-- **Windows x64**: `Memex_0.1.0_x64-setup.exe` (NSIS installer)
+- **macOS** (universal — Apple Silicon + Intel): `myco_0.1.0_universal.dmg`
+- **Windows x64**: `myco_0.1.0_x64-setup.exe` (NSIS installer)
 
 Mount/run, drag to Applications.
 
 > [!note] First launch — installers are unsigned for v0.1.0
 > Both bundles are **unsigned**, so the OS will warn on first open. This is expected; unblock once:
 >
-> - **macOS** (Gatekeeper "unidentified developer") — right-click the app → **Open** → **Open**; or run `xattr -dr com.apple.quarantine /Applications/Memex.app`; or go to **System Settings → Privacy & Security → "Open Anyway"**.
+> - **macOS** (Gatekeeper "unidentified developer") — right-click the app → **Open** → **Open**; or run `xattr -dr com.apple.quarantine /Applications/myco.app`; or go to **System Settings → Privacy & Security → "Open Anyway"**.
 > - **Windows** (SmartScreen "Windows protected your PC") — click **More info** → **Run anyway**.
 
-On first launch Memex creates
-`~/Documents/Memex/` and seeds it with:
+On first launch myco creates
+`~/Documents/myco/` and seeds it with:
 
 ```
-~/Documents/Memex/
+~/Documents/myco/
 ├── CLAUDE.md            ← maintenance rules for Claude
 ├── welcome.md           ← onboarding note
 ├── raw/                 ← drop sources here (immutable)
@@ -110,7 +110,7 @@ Requires Python 3.10+ (stdlib only) and the [Claude Code CLI](https://docs.anthr
 
 ```bash
 git clone https://github.com/cmblir/memex.git
-cd memex
+cd myco
 bash mcp-server/install.sh    # MCP server for Claude Desktop/Code
 ```
 
@@ -119,7 +119,7 @@ bash mcp-server/install.sh    # MCP server for Claude Desktop/Code
 ## Screenshots
 
 <p align="center">
-<img src="docs/screenshots/mesh.gif" width="100%" alt="The Memex 3D cosmic-web graph slowly auto-orbiting — glowing community-colored stars, cluster labels and faint grey wikilink tissue" />
+<img src="docs/screenshots/mesh.gif" width="100%" alt="The myco 3D cosmic-web graph slowly auto-orbiting — glowing community-colored stars, cluster labels and faint grey wikilink tissue" />
 <br/>
 <sub><em>The Graph view idling on a slow auto-orbit — community-colored stars, auto-named cluster labels, faint grey <code>[[wikilink]]</code> tissue and cosmic-dust haze. Grab any star and the d3-force-3d sim re-heats; its neighbours follow and spring back on release.</em></sub>
 </p>
@@ -161,7 +161,7 @@ bash mcp-server/install.sh    # MCP server for Claude Desktop/Code
 
 ## The desktop app
 
-Routes in the left sidebar — Overview, Graph, History, Provenance, Tags, **Study**, **Schedules**, Settings, plus Ingest and Ask. Cmd/Ctrl-K opens the command palette (with semantic hits), Cmd/Ctrl-B toggles the sidebar. On first launch a 3-step onboarding wizard walks you through opening a vault → adding a source → asking a question; the whole app is responsive down to 320px (the sidebar goes off-canvas on narrow screens). A companion **web clipper** (browser extension + bookmarklet in `clipper/`) sends any page or selection into `_inbox/` through a `memx://` deep link. You'll also meet **MYCO**, the Memex mushroom mascot — a transparent-video sprite who idles on the About page and keeps you company while the graph loads (respects `prefers-reduced-motion`, degrades to a still frame).
+Routes in the left sidebar — Overview, Graph, History, Provenance, Tags, **Study**, **Schedules**, Settings, plus Ingest and Ask. Cmd/Ctrl-K opens the command palette (with semantic hits), Cmd/Ctrl-B toggles the sidebar. On first launch a 3-step onboarding wizard walks you through opening a vault → adding a source → asking a question; the whole app is responsive down to 320px (the sidebar goes off-canvas on narrow screens). A companion **web clipper** (browser extension + bookmarklet in `clipper/`) sends any page or selection into `_inbox/` through a `memx://` deep link. You'll also meet **MYCO**, the mushroom mascot the app is named after — a transparent-video sprite who idles on the About page and keeps you company while the graph loads (respects `prefers-reduced-motion`, degrades to a still frame).
 
 ### Overview
 
@@ -169,7 +169,7 @@ Vault stats (file count, resolved wikilinks, ratio), recent git activity, jump-b
 
 ### Ingest
 
-1. Drop a file or paste raw text → Memex writes it to `raw/<slug>.md`.
+1. Drop a file or paste raw text → myco writes it to `raw/<slug>.md`.
 2. The active **ingest model** is invoked (Claude CLI by default) with the vault as cwd.
 3. Claude reads the source, finds affected wiki pages, writes citations, creates/updates `wiki/source-<slug>.md`, appends `wiki/log.md`, and files an `ingest-reports/<datetime>-<slug>.md` with the WHY.
 4. The tree and graph refresh.
@@ -241,7 +241,7 @@ Six sub-tabs:
   - **Ollama** — local `http://localhost:11434`. Auto-detects installed models.
   - **OpenRouter** — `/api/v1/chat/completions`. Live catalog of 80+ models.
   
-  API keys go straight to the OS keychain (macOS Keychain / Windows Credential Manager / freedesktop Secret Service) under the service name `dev.cmblir.memex`. **Never written to disk in plaintext.**
+  API keys go straight to the OS keychain (macOS Keychain / Windows Credential Manager / freedesktop Secret Service) under the service name `dev.cmblir.myco`. **Never written to disk in plaintext.**
 - **Language** — EN / 한국어 / 日本語 (UI). The drafting language for the model is independent.
 - **Appearance** — light / dark / system.
 - **About** — version + about text.
@@ -265,7 +265,7 @@ Right-click any tree node for **New note / New folder / Rename / Delete**. Cmd-K
 ## The pattern
 
 ```
-   ~/Documents/Memex/    Your vault (or any folder you point Memex at)
+   ~/Documents/myco/    Your vault (or any folder you point myco at)
      ├─ raw/             Original sources. Immutable.
      │    │
      │    ▼  Ingest page
@@ -278,10 +278,10 @@ Right-click any tree node for **New note / New folder / Rename / Delete**. Cmd-K
      ├─ audio/           Audio-overview transcripts.
      ├─ agents/          Saved task-agent presets.
      ├─ digests/         Scheduled digest notes.
-     └─ CLAUDE.md        Maintenance rules Memex seeds on first launch.
+     └─ CLAUDE.md        Maintenance rules myco seeds on first launch.
      ▼
-   Memex desktop + Obsidian (optional) + your shell / git client
-   All three see the same files. Memex never locks the vault.
+   myco desktop + Obsidian (optional) + your shell / git client
+   All three see the same files. myco never locks the vault.
 ```
 
 - **You**: curate sources, ask questions, draw the boundaries.
@@ -294,9 +294,9 @@ Right-click any tree node for **New note / New folder / Rename / Delete**. Cmd-K
 
 The desktop app exposes everything from inside its UI, but you may want the same vault accessible from **Claude Desktop / Claude Code** sessions running elsewhere. That's what the MCP server does.
 
-**Easiest path — the app hosts it, no install.** The desktop app runs the MCP server **in-process** (native, no Python, no venv, no pip — it works on any machine the app runs on, including a `.dmg`-only install). Open **Settings → MCP** and click **Connect to Claude Code** — that runs `claude mcp add --transport http memex http://localhost:22360/mcp` with the app's auth token for you. The server **follows whichever vault the app currently has open** — it re-reads an `active-vault` marker on every tool call, so switching vaults in the app redirects MCP reads/writes automatically, with no re-registration. Because the token is persisted, you connect once and it survives restarts.
+**Easiest path — the app hosts it, no install.** The desktop app runs the MCP server **in-process** (native, no Python, no venv, no pip — it works on any machine the app runs on, including a `.dmg`-only install). Open **Settings → MCP** and click **Connect to Claude Code** — that runs `claude mcp add --transport http myco http://localhost:22360/mcp` with the app's auth token for you. The server **follows whichever vault the app currently has open** — it re-reads an `active-vault` marker on every tool call, so switching vaults in the app redirects MCP reads/writes automatically, with no re-registration. Because the token is persisted, you connect once and it survives restarts.
 
-> **Upgrading from an older build?** The native server uses HTTP (`/mcp`), not the old SSE endpoint (`/sse`). Re-run **Connect** (or `claude mcp remove memex` then the `--transport http` command above) once — an old `--transport sse` registration will no longer connect.
+> **Upgrading from an older build?** The native server uses HTTP (`/mcp`), not the old SSE endpoint (`/sse`). Re-run **Connect** (or `claude mcp remove myco` then the `--transport http` command above) once — an old `--transport sse` registration will no longer connect.
 
 <details>
 <summary><b>Standalone Python server (from-source / dev)</b></summary>
@@ -330,15 +330,15 @@ absolute paths:
 
 ```bash
 bash mcp-server/serve.sh              # serves http://127.0.0.1:22360/sse
-claude mcp add --transport sse memex http://localhost:22360/sse
-claude mcp list                       # memex should appear
+claude mcp add --transport sse myco http://localhost:22360/sse
+claude mcp list                       # myco should appear
 ```
 
 Or stdio (Claude spawns it per session):
 
 ```bash
-claude mcp add --scope user memex \
-  -- "$PWD/mcp-server/.venv/bin/python" "$PWD/mcp-server/memex_mcp.py"
+claude mcp add --scope user myco \
+  -- "$PWD/mcp-server/.venv/bin/python" "$PWD/mcp-server/myco_mcp.py"
 ```
 
 **Claude Desktop:**
@@ -351,9 +351,9 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
 ```json
 {
   "mcpServers": {
-    "memex": {
-      "command": "/Users/<you>/Memex/mcp-server/.venv/bin/python",
-      "args": ["/Users/<you>/Memex/mcp-server/memex_mcp.py"]
+    "myco": {
+      "command": "/Users/<you>/myco/mcp-server/.venv/bin/python",
+      "args": ["/Users/<you>/myco/mcp-server/myco_mcp.py"]
     }
   }
 }
@@ -361,7 +361,7 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
 
 #### Step 3 — Verify
 
-> List my Memex projects.
+> List my myco projects.
 
 Claude should call `list_projects` and reply.
 
@@ -369,13 +369,13 @@ Claude should call `list_projects` and reply.
 
 At the start of an ingestion-heavy chat:
 
-> Call `memex.get_instructions` once. From now on treat factual content
+> Call `myco.get_instructions` once. From now on treat factual content
 > I share as wiki ingestion — write to the wiki with citations, ask
 > before creating new pages, commit at the end.
 
 </details>
 
-The MCP server and the Memex desktop app share the same `wiki/` tree, so changes from either surface are immediately visible in the other.
+The MCP server and the myco desktop app share the same `wiki/` tree, so changes from either surface are immediately visible in the other.
 
 ---
 
@@ -423,13 +423,13 @@ The desktop app focuses on a single open vault at a time. To switch vaults, use 
 ## Repository layout
 
 ```
-app/                       Memex desktop app (Tauri 2 + React)
+app/                       myco desktop app (Tauri 2 + React)
   src/                       React frontend (TS)
   src-tauri/                 Rust shell + IPC
   README.md                  Desktop app docs
   PLAN.md / PROGRESS.md      Build history
 mcp-server/                MCP server (26 tools)
-  memex_mcp.py
+  myco_mcp.py
   project_registry.py        Multi-project resolver
   install.sh
 CLAUDE.md                  Root common schema
@@ -447,7 +447,7 @@ templates/                 Project templates
 
 ### Desktop app
 
-Stored at `~/Library/Application Support/dev.cmblir.memex/settings.json`
+Stored at `~/Library/Application Support/dev.cmblir.myco/settings.json`
 (macOS, equivalent path on other OSes). Holds selected provider/model
 per task, connection flags, language. **Never stores API keys** — those
 are in the OS keychain.

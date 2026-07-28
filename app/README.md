@@ -1,13 +1,13 @@
-# Memex
+# myco
 
 A cross-platform desktop wiki app for plain markdown vaults. Built with
 Tauri 2 + React 18 + TypeScript. Ships as a small native bundle (no
 Chromium), edits real files on disk, talks to your choice of LLM provider,
 and grows a citation-aware knowledge graph as you work.
 
-## What is Memex?
+## What is myco?
 
-Memex is **one app** that combines four things you'd otherwise stitch
+myco is **one app** that combines four things you'd otherwise stitch
 together yourself:
 
 - **A markdown editor** — Obsidian-style `[[wikilinks]]`, autocomplete,
@@ -25,9 +25,9 @@ together yourself:
   no key, works offline — for classification and light queries; use a
   cloud provider for high-quality ingest.
 - **A vault you own** — everything is plain markdown on disk. Open the
-  folder in Finder, in Obsidian, in Vim — Memex never locks your data.
+  folder in Finder, in Obsidian, in Vim — myco never locks your data.
 
-Memex creates its own vault at `~/Documents/Memex/` on first launch
+myco creates its own vault at `~/Documents/myco/` on first launch
 (scaffolded with `raw/`, `wiki/`, `daily/`, `ingest-reports/` and a
 maintenance `CLAUDE.md`). You can point it at any other directory from
 Settings → Account.
@@ -49,7 +49,7 @@ Settings → Account.
 
 | | |
 | --- | --- |
-| Ingest | Drop a file or paste raw text → Memex writes `raw/<slug>.md` → invokes the active model with the ingest workflow → Claude reads, summarises, extracts entities/concepts, cross-links existing pages, writes a `wiki/source-<slug>.md` summary, updates `index.md` + `log.md`, and files a WHY report in `ingest-reports/`. **Multimodal inputs:** PDF, plain text, Office documents (`.docx` / `.pptx`, parsed from OOXML), spreadsheets (`.xlsx` / `.xls` / `.ods`), **images** (described via a vision provider), **audio/video** (transcribed by an installed `whisper` CLI — none bundled), and **YouTube URLs** (transcript fetched from the watch page) all reduce to markdown before ingest |
+| Ingest | Drop a file or paste raw text → myco writes `raw/<slug>.md` → invokes the active model with the ingest workflow → Claude reads, summarises, extracts entities/concepts, cross-links existing pages, writes a `wiki/source-<slug>.md` summary, updates `index.md` + `log.md`, and files a WHY report in `ingest-reports/`. **Multimodal inputs:** PDF, plain text, Office documents (`.docx` / `.pptx`, parsed from OOXML), spreadsheets (`.xlsx` / `.xls` / `.ods`), **images** (described via a vision provider), **audio/video** (transcribed by an installed `whisper` CLI — none bundled), and **YouTube URLs** (transcript fetched from the watch page) all reduce to markdown before ingest |
 | Semantic search | A local embedding index over the wiki (bundled Gemma model by default, or an opt-in provider) powers meaning-based lookup: the command palette (`⌘K`) surfaces semantic hits, Ask retrieves the top-K relevant pages instead of dumping the whole vault, and the Graph can overlay similarity edges. Reindex from Settings; the index is a plain rebuildable file under the app-data dir |
 | Related notes | Every page shows a "Related" panel — the nearest pages by embedding similarity, even when they aren't wikilinked |
 | Live ingest progress | With the Claude CLI provider, the run streams in real time (`--output-format stream-json`): a mission-control panel shows the current action, an interactive mini-galaxy of pages touched so far (live d3-force physics — new pages born at the hub, real wikilink edges, drag to tow, hover for path, click for an in-place markdown preview with an open-in-reader button), a scrolling activity feed, read/write counters and elapsed time — plus a **Cancel** button that kills the run. The run lives in a global store, so navigating away doesn't lose it; a Topbar chip keeps showing a spinner + elapsed (click to jump back), then flips to done/failed until you revisit the page. On the Graph page, nodes the run touches glow live — written pages gold, read pages ice blue, newest touch pulsing — and brand-new pages are born into the galaxy mid-run: each write triggers a debounced link rescan whose diff is injected into the live physics, so new stars bud off their neighbours and settle in real time. The tint persists after the run so you can see what changed. When the run finishes, the mission-control panel stays up as the result view — mini galaxy, feed and counters intact — until you start another ingest |
@@ -83,10 +83,10 @@ Settings → Connections lets you connect any combination of:
 
 API keys go straight to the OS keychain (macOS Keychain Access / Windows
 Credential Manager / freedesktop Secret Service) under the service name
-`dev.cmblir.memex`. They never touch the disk in plaintext.
+`dev.cmblir.myco`. They never touch the disk in plaintext.
 
 Settings → Model gives you separate provider+model dropdowns for the two
-tasks Memex performs — **Query** (Ask the wiki) and **Ingest** — so you
+tasks myco performs — **Query** (Ask the wiki) and **Ingest** — so you
 can run e.g. Claude Sonnet for ingest and a local Llama for Q&A.
 
 ### Interface
@@ -103,8 +103,8 @@ can run e.g. Claude Sonnet for ingest and a local Llama for Q&A.
 Download a release bundle from the
 [latest release](https://github.com/cmblir/Memex/releases/latest):
 
-- macOS (universal — Apple Silicon + Intel): `Memex_0.1.0_universal.dmg`
-- Windows x64: `Memex_0.1.0_x64-setup.exe` (NSIS installer)
+- macOS (universal — Apple Silicon + Intel): `myco_0.1.0_universal.dmg`
+- Windows x64: `myco_0.1.0_x64-setup.exe` (NSIS installer)
 
 Mount/run, drag to Applications.
 
@@ -112,12 +112,12 @@ Both installers are **unsigned** for v0.1.0, so the OS warns on first open.
 Unblock once:
 
 - macOS (Gatekeeper "unidentified developer"): right-click the app → Open →
-  Open; or run `xattr -dr com.apple.quarantine /Applications/Memex.app`; or
+  Open; or run `xattr -dr com.apple.quarantine /Applications/myco.app`; or
   System Settings → Privacy & Security → "Open Anyway".
 - Windows (SmartScreen "Windows protected your PC"): click "More info" →
   "Run anyway".
 
-On first launch Memex creates `~/Documents/Memex/` and seeds it with the
+On first launch myco creates `~/Documents/myco/` and seeds it with the
 canonical layout plus a few interconnected starter notes (LLM concepts) so
 the Graph is populated on day one — delete them anytime. To use a different
 folder, open Settings → Account → Change…
@@ -158,7 +158,7 @@ launch with `MEMEX_PERF=1`. Each semantic command then prints one structured lin
 to stderr:
 
 ```text
-[memex-perf] semantic_search load_store_ms=0.31 embed_query_ms=182.44 scan_ms=11.98 total_ms=194.79 records=10000
+[myco-perf] semantic_search load_store_ms=0.31 embed_query_ms=182.44 scan_ms=11.98 total_ms=194.79 records=10000
 ```
 
 Probed commands: `semantic_search`, `related_pages`, `semantic_edges`,
@@ -180,9 +180,9 @@ npm run tauri build
 
 Outputs land in `app/src-tauri/target/release/bundle/`:
 
-- `dmg/Memex_x.y.z_aarch64.dmg` — macOS installer (~2.8 MB)
-- `nsis/Memex_x.y.z_x64-setup.exe` — Windows installer (when built on Windows)
-- `macos/Memex.app/` — raw `.app` bundle
+- `dmg/myco_x.y.z_aarch64.dmg` — macOS installer (~2.8 MB)
+- `nsis/myco_x.y.z_x64-setup.exe` — Windows installer (when built on Windows)
+- `macos/myco.app/` — raw `.app` bundle
 
 The release profile uses `lto`, `opt-level = "s"`, and `strip = true`.
 
@@ -223,7 +223,7 @@ app/
 │       └── i18n.ts            # en/ko/ja strings
 └── src-tauri/                 # Rust shell
     ├── src/
-    │   ├── main.rs            # entry → memex_lib::run
+    │   ├── main.rs            # entry → myco_lib::run
     │   ├── lib.rs             # Tauri builder + IPC handler list
     │   ├── commands.rs        # thin IPC adapter layer
     │   ├── vault.rs           # open/list/read/write/CRUD + scaffold seed
@@ -248,7 +248,7 @@ defined in `src/lib/ipc.ts` and `src-tauri/src/commands.rs`:
 | Command | Purpose |
 | --- | --- |
 | `open_vault` | Validate a directory; return canonical path + name |
-| `ensure_default_vault` | Create `~/Documents/Memex/` with scaffolding if missing |
+| `ensure_default_vault` | Create `~/Documents/myco/` with scaffolding if missing |
 | `list_files` | Recursive `.md` walk → `FileNode` tree |
 | `read_file` | Read a file + parse YAML frontmatter (gray_matter) |
 | `read_vault_context` | Concatenate vault markdown (bounded) so non-CLI providers can answer Query/Lint with real context |
@@ -268,14 +268,14 @@ defined in `src/lib/ipc.ts` and `src-tauri/src/commands.rs`:
 
 ### Storage
 
-Files on disk are the source of truth. Memex never modifies your files
+Files on disk are the source of truth. myco never modifies your files
 outside explicit writes. The link graph is derived fresh from the markdown
 on every `build_link_graph` call (no cache). Persistent app settings (not
 your notes) live at:
 
-- macOS: `~/Library/Application Support/dev.cmblir.memex/settings.json`
-- Windows: `%APPDATA%/Memex/settings.json`
-- Linux: `~/.config/memex/settings.json`
+- macOS: `~/Library/Application Support/dev.cmblir.myco/settings.json`
+- Windows: `%APPDATA%/myco/settings.json`
+- Linux: `~/.config/myco/settings.json`
 
 API keys are in the OS keychain, never in this file or anywhere else.
 

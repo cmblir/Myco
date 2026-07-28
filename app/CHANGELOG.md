@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to Memex are documented here. The format follows
+All notable changes to myco are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
@@ -154,7 +154,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   sources and code samples are skipped.
 
 - **Ingest now updates existing pages instead of duplicating them.** Before the
-  ingest agent runs, Memex matches the new source against your existing wiki
+  ingest agent runs, myco matches the new source against your existing wiki
   (semantic search over the local embedding index) and steers the agent to the
   pages it most likely relates to — so a follow-up conversation extends the
   page you already have rather than creating a near-duplicate. The Ingest panel
@@ -194,7 +194,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - **Import your AI conversations.** Ingest → Import a conversation takes a ChatGPT
   export, a Claude.ai export, or a Claude Code / Codex session and turns each
-  conversation into a wiki source. Memex detects the format from the file itself,
+  conversation into a wiki source. myco detects the format from the file itself,
   keeps only the real discussion (dropping tool output, sub-agent chatter and
   internal reasoning), and — importantly — holds back any conversation whose text
   looks like it contains a secret (an API key or token) so it never lands in your
@@ -214,7 +214,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   not just the editor, and the new page starts with real frontmatter.
 
 - **Optional: keep the semantic index up to date automatically.** Settings ›
-  Semantic search gains a toggle — while Memex is open, pages you edit are
+  Semantic search gains a toggle — while myco is open, pages you edit are
   re-embedded once you stop typing, so semantic search, related notes and graph
   similarity stop describing the vault as it was at your last manual reindex.
   Off by default, and it only maintains an index you already built.
@@ -243,13 +243,13 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   so this is the one place it appears unprompted — never in the multiverse,
   fullscreen, on a small window, under reduced motion, or with "Show MYCO" off.
 
-- **Connecting Claude Code to Memex is now one click, with nothing to install.**
-  The MCP server runs inside Memex itself: Settings › MCP shows an
+- **Connecting Claude Code to myco is now one click, with nothing to install.**
+  The MCP server runs inside myco itself: Settings › MCP shows an
   always-running status dot and a "Connect to Claude Code" button, plus the
   copyable command and a Claude Desktop config snippet. All 26 tools are there,
   it follows whichever vault you have open with no restart, and every request
   needs a token that is minted once and survives restarts. There is no Install
-  step, no Start/Stop toggle, and Memex no longer ships or needs Python for
+  step, no Start/Stop toggle, and myco no longer ships or needs Python for
   this. If you registered the old server, re-run Connect once — the transport
   changed from `sse` to `http`.
 
@@ -271,7 +271,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the next reindex.
 
 - **Reindex tells you what it is doing.** Building the embedding index is the
-  slowest thing Memex does — roughly half a second per chunk, so minutes on a
+  slowest thing myco does — roughly half a second per chunk, so minutes on a
   real vault — and it used to run behind nothing but a greyed-out button. It now
   shows a live count and progress bar with the page being indexed, and the first
   run says **"Loading model…"** while the bundled model loads (up to ~12 seconds
@@ -333,7 +333,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   instanced (spheres + rings + moons ≈ three draw calls, capped at 24 live
   worlds), gated to dark 3D layouts, and honors reduced motion by freezing
   spin while still rendering.
-- **MYCO, the Memex mascot.** The mushroom mascot now lives in the app as a
+- **MYCO, the mascot.** The mushroom mascot now lives in the app as a
   transparent alpha-video sprite (`MascotClip`): it idles on the Settings ›
   About card and keeps the graph's loading screen company. Ships dual-codec
   alpha video (HEVC `hvc1` for the WKWebView shell, VP9 WebM for Chromium dev
@@ -383,10 +383,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   per page. More of what the model reads is the relevant part, and one long
   page can no longer crowd the other results out of the answer.
 
-- **The index now keeps itself up to date — including edits Memex didn't make.**
+- **The index now keeps itself up to date — including edits myco didn't make.**
   Pages are re-embedded shortly after they change, whether the change came from
   the editor, an ingest run, the MCP server, the CLI, or another editor open
-  beside Memex, and opening a vault reconciles whatever moved while Memex was
+  beside myco, and opening a vault reconciles whatever moved while myco was
   closed. A vault with no index yet gets one built the same way. In practice
   semantic search, Related notes, Ask and graph similarity now describe the
   vault as it is rather than as it was at your last manual Reindex — the
@@ -463,7 +463,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   with a link nested inside it; it is now three separate, properly-named
   controls, with the layout unchanged.
 - **The two audio-overview hosts sound different from the first play.** They used
-  to share one voice until a replay, on the engine Memex actually ships.
+  to share one voice until a replay, on the engine myco actually ships.
 - **Zooming into the multiverse glides instead of snapping.** The view no longer
   jumps when the nearest vault changes as you scroll in.
 - **Atlas's Recommend no longer disturbs the galaxy layout.** It was writing a
@@ -512,7 +512,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   them. The app mints a token each launch and the registration line it shows you
   carries it. (Re-register after an update; the command in Settings › MCP is
   always current.)
-- **Memex Pro no longer sends your password or license key over plain http.**
+- **myco Pro no longer sends your password or license key over plain http.**
 - **Ask tells you what it is doing.** The waiting animation used to pulse a
   random sample of your pages under "searching the wiki…" — it now names the
   pages it actually retrieved, and says nothing about pages when there was no
@@ -649,7 +649,7 @@ finding was adversarially re-verified against the source):
 - **PDF / spreadsheet parsing is isolated in a child process.** pdf-extract and
   calamine run on untrusted bytes under `panic = "abort"`; a parser panic/OOM
   used to crash the whole app. `read_external_text` now parses via
-  `memex --extract-text <path>`, so a crash/timeout becomes a normal error. The
+  `myco --extract-text <path>`, so a crash/timeout becomes a normal error. The
   extracted output is capped and the cell walk bounded (xlsx zip-bomb defence).
 - **`read_file` rejects pathologically deep YAML frontmatter** before parsing
   (and `pod_to_json` caps recursion), so adversarial nesting can't overflow the
@@ -761,14 +761,14 @@ finding was adversarially re-verified against the source):
 
 ### Added
 
-- **Memex Pro provider** (Settings → Connections): a managed ingest option that
+- **myco Pro provider** (Settings → Connections): a managed ingest option that
   runs a cheap model server-side and applies the returned wiki pages locally —
-  no API key or CLI needed. You **sign in with your Memex Pro account** (the one
+  no API key or CLI needed. You **sign in with your myco Pro account** (the one
   created on the website); the app fetches and stores the account's access key
-  automatically — no key to copy by hand. The `memex_pro_ingest` command then
+  automatically — no key to copy by hand. The `myco_pro_ingest` command then
   POSTs the vault snapshot and applies the returned file operations through the
-  confined `write_file`; `memex_pro_login` / `memex_pro_logout` manage the session.
-- **In-app auto-ingest toggle** (Settings → Model): while Memex is open, it
+  confined `write_file`; `myco_pro_login` / `myco_pro_logout` manage the session.
+- **In-app auto-ingest toggle** (Settings → Model): while myco is open, it
   periodically ingests sources dropped into the vault's `_inbox/` via the
   selected provider (a configurable interval). Complements the headless cron
   daemon; both watch the same `_inbox/`.
@@ -800,7 +800,7 @@ finding was adversarially re-verified against the source):
 
 ## [0.1.0] - 2026-06-21
 
-First public installer release of Memex — a cross-platform desktop wiki for
+First public installer release of myco — a cross-platform desktop wiki for
 plain markdown vaults. Supersedes the 2026-05-09 internal MVP build.
 
 ### Added

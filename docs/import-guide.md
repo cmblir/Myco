@@ -1,11 +1,11 @@
-# Import Guide — Getting Sources Into Memex
+# Import Guide — Getting Sources Into myco
 
-How to get material into a Memex vault.
+How to get material into a myco vault.
 
 > [!note] Conversation import works now — via Settings? No: **Ingest → Import a
 > conversation**.
 > Pick a ChatGPT export, a Claude.ai export, or a Claude Code / Codex session,
-> and Memex parses it, drops each conversation into `_inbox/` as a source doc,
+> and myco parses it, drops each conversation into `_inbox/` as a source doc,
 > and the normal ingest pipeline turns them into wiki pages. A conversation whose
 > text looks like it contains a secret (an API key, a token) is held back and
 > reported, never written. Re-importing the same export is safe — a dedup ledger
@@ -24,7 +24,7 @@ How to get material into a Memex vault.
 ## What works today
 
 **Conversation import.** In the app, open **Ingest → Import a conversation** and
-pick a file. Memex detects the format from its contents (not its name), splits it
+pick a file. myco detects the format from its contents (not its name), splits it
 into per-conversation source docs, scans each for secrets, and writes the clean
 ones to `_inbox/` as `<source>-<id>.md`. Supported: ChatGPT `conversations.json`,
 Claude Code sessions, Codex sessions. From `_inbox/` the pipeline below takes
@@ -48,7 +48,7 @@ The importer writes `.md`, so it always works. But if you drop a raw file into
 |---|---|---|
 | `.md` `.markdown` | ✅ | ✅ |
 | `.txt` `.csv` `.tsv` `.json` `.yaml` `.html` | ❌ **invisible** | ✅ read as text |
-| `.pdf` `.xlsx` `.ods` | ❌ **invisible** | ✅ via the Memex binary (`--app-bin`) |
+| `.pdf` `.xlsx` `.ods` | ❌ **invisible** | ✅ via the myco binary (`--app-bin`) |
 | `.jsonl` (raw session) | ❌ **invisible** | ❌ not handled |
 
 The app's file listing is markdown-only (`vault::walk_dir` keeps only `.md`), so
@@ -62,7 +62,7 @@ Ingest **creates** `raw/<slug>.md` and nothing ever edits or deletes an existing
 `raw/` file. Corrections go to a `wiki/` page, never back into `raw/`. That rule
 holds and is enforced for the agent's tools (`vault::is_raw_path`).
 
-The old guide had this backwards: it told you to `mkdir ~/Documents/Memex/raw/imports`
+The old guide had this backwards: it told you to `mkdir ~/Documents/myco/raw/imports`
 and drop exports *inside* `raw/`, then said the consumed file "leaves
 `raw/imports/`" — i.e. a delete inside the immutable tree. Do not do that. The
 inbox is `_inbox/`, which sits beside `raw/`, not in it.
@@ -82,16 +82,16 @@ default:
 
 | OS | Default `<vault>` |
 |----|-------------------|
-| macOS | `~/Documents/Memex` |
-| Windows | `%USERPROFILE%\Documents\Memex` |
-| Linux | `~/Documents/Memex` |
+| macOS | `~/Documents/myco` |
+| Windows | `%USERPROFILE%\Documents\myco` |
+| Linux | `~/Documents/myco` |
 
 To find or change it: **Settings → Account → Vault path → Change…**
 
 The inbox is created for you; if it is missing:
 
 ```bash
-mkdir -p ~/Documents/Memex/_inbox
+mkdir -p ~/Documents/myco/_inbox
 ```
 
 ---
@@ -141,7 +141,7 @@ claude-export/
 > [!tip] Rename them apart.
 > Both vendors call the file `conversations.json`. Keep them distinct
 > (`chatgpt-conversations.json`, `claude-conversations.json`) or your own `cp`
-> will clobber one with the other before Memex is anywhere near it.
+> will clobber one with the other before myco is anywhere near it.
 
 ### Claude Code sessions
 
@@ -152,13 +152,13 @@ No export step — sessions are already on your disk as append-only JSONL:
 ```
 
 `<encoded-project>` is the project's absolute path with `/` and `.` replaced by
-`-`, so `/Users/yoo/project/Memex` lives at
-`~/.claude/projects/-Users-yoo-project-Memex/`. Each `<sessionId>.jsonl` (a
+`-`, so `/Users/yoo/project/myco` lives at
+`~/.claude/projects/-Users-yoo-project-myco/`. Each `<sessionId>.jsonl` (a
 UUID) is one session.
 
 ```bash
 ls -1 ~/.claude/projects/                                  # your projects
-ls -lt ~/.claude/projects/-Users-yoo-project-Memex/        # sessions, newest first
+ls -lt ~/.claude/projects/-Users-yoo-project-myco/        # sessions, newest first
 ```
 
 ### Codex CLI sessions
@@ -195,8 +195,8 @@ auto-ingest (**Settings → Model**), or run the headless daemon:
 
 ```bash
 python3 automation/autoingest.py \
-  --vault ~/Documents/Memex \
-  --app-bin "/Applications/Memex.app/Contents/MacOS/Memex"
+  --vault ~/Documents/myco \
+  --app-bin "/Applications/myco.app/Contents/MacOS/myco"
 ```
 
 `--app-bin` points at the installed binary and is what enables PDF/spreadsheet
@@ -214,7 +214,7 @@ Tracked, not promised.
 
 Built and shipped: the four conversation parsers (ChatGPT, Claude.ai, Claude
 Code, Codex), content-based format detection, secret quarantine on the import
-path, and the dedup ledger (`.memex/ledger.json`) that makes re-importing an
+path, and the dedup ledger (`.myco/ledger.json`) that makes re-importing an
 export idempotent. The ledger also stamps each session file's (mtime, len), so a
 re-sweep skips unchanged sessions **without reading them** — the second sweep of
 a large history is near-instant, and only new or grown sessions are re-parsed.
@@ -238,7 +238,7 @@ Still open:
 | `<vault>/_inbox/` | where you drop sources; consumed after ingest | yes (staging) |
 | `<vault>/_inbox/.archived/` | sources the daemon has consumed | yes |
 | `<vault>/raw/` | the citable originals, written by ingest | **created, never edited or deleted** |
-| `<vault>/wiki/` | generated pages with citations | yes (Memex-owned) |
+| `<vault>/wiki/` | generated pages with citations | yes (myco-owned) |
 | `<vault>/ingest-reports/` | what each run did, and why | yes |
 
 | Source | Export it from | Importable today? |

@@ -1,6 +1,6 @@
-# Code Signing — Releasing a Trusted Memex Build
+# Code Signing — Releasing a Trusted myco Build
 
-This guide shows you, step by step, how to **code-sign Memex** so the installers
+This guide shows you, step by step, how to **code-sign myco** so the installers
 stop tripping macOS Gatekeeper and Windows SmartScreen. It wires signing into the
 existing release pipeline (`.github/workflows/release.yml`), which builds the app
 on real macOS + Windows runners with
@@ -8,7 +8,7 @@ on real macOS + Windows runners with
 publishes the `.dmg` / `.exe` to a GitHub Release.
 
 > [!important] v0.1.0 is UNSIGNED — this is the upgrade path, not the current state.
-> Today both installers (`Memex_x.y.z_universal.dmg`, `Memex_x.y.z_x64-setup.exe`)
+> Today both installers (`myco_x.y.z_universal.dmg`, `myco_x.y.z_x64-setup.exe`)
 > are unsigned. On first launch users must manually unblock them (see the
 > [README](../README.md)). Signing removes that friction. **No code changes are
 > required to keep shipping unsigned** — everything below is additive.
@@ -27,7 +27,7 @@ publishes the `.dmg` / `.exe` to a GitHub Release.
 
 | Platform | Without signing | With signing |
 |----------|-----------------|--------------|
-| macOS | Gatekeeper: *"Memex can't be opened because it is from an unidentified developer."* User must right-click → Open, or `xattr -dr com.apple.quarantine`. | App opens normally. Notarization makes Gatekeeper trust it on a machine that has never seen it. |
+| macOS | Gatekeeper: *"myco can't be opened because it is from an unidentified developer."* User must right-click → Open, or `xattr -dr com.apple.quarantine`. | App opens normally. Notarization makes Gatekeeper trust it on a machine that has never seen it. |
 | Windows | SmartScreen: *"Windows protected your PC."* User must click **More info → Run anyway**. | Publisher name shows in the UAC prompt. With an OV cert the warning fades as reputation builds; with EV / Azure Trusted Signing it is suppressed sooner. |
 
 You can sign **one platform at a time** — macOS and Windows are independent. Ship
@@ -164,7 +164,7 @@ single shared `env:` block is fine for the current matrix.
 > secret, and only pass `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` to
 > `tauri-action`. That is equivalent but more verbose. The `env:`-block approach
 > above is the documented, lower-maintenance path for `tauri-action` and is what
-> Memex should use unless a future need forces the manual variant.
+> myco should use unless a future need forces the manual variant.
 
 ---
 
@@ -218,7 +218,7 @@ authenticates to Azure with environment variables.
 ```json
 "bundle": {
   "windows": {
-    "signCommand": "trusted-signing-cli -e https://<region>.codesigning.azure.net -a <AccountName> -c <CertificateProfileName> -d Memex %1"
+    "signCommand": "trusted-signing-cli -e https://<region>.codesigning.azure.net -a <AccountName> -c <CertificateProfileName> -d myco %1"
   }
 }
 ```
@@ -227,7 +227,7 @@ authenticates to Azure with environment variables.
   `https://wus2.codesigning.azure.net`).
 - `-a` — the Trusted Signing **account name**.
 - `-c` — the **certificate profile name**.
-- `-d` — a description (the product name, `Memex`).
+- `-d` — a description (the product name, `myco`).
 - `%1` — placeholder Tauri replaces with the path of the file to sign.
 
 The workflow must install `trusted-signing-cli` on the runner (e.g.
@@ -294,11 +294,11 @@ After a signed build, verify the artifacts locally before you trust the release.
 
 ```bash
 # Inspect the signature and the signing identity (Authority lines).
-codesign -dv --verbose=4 /Applications/Memex.app
+codesign -dv --verbose=4 /Applications/myco.app
 
 # Assess against Gatekeeper policy — this is the real test users experience.
 # A notarized, correctly signed app prints: "accepted" and "source=Notarized Developer ID".
-spctl -a -vvv /Applications/Memex.app
+spctl -a -vvv /Applications/myco.app
 ```
 
 If `spctl` says `rejected` or `source=Unnotarized Developer ID`, signing
@@ -311,7 +311,7 @@ succeeded but notarization did not — re-check `APPLE_ID`, `APPLE_PASSWORD`
 validates against the Authenticode policy:
 
 ```powershell
-signtool verify /pa /v "Memex_x.y.z_x64-setup.exe"
+signtool verify /pa /v "myco_x.y.z_x64-setup.exe"
 ```
 
 A valid result shows the certificate chain and a timestamp. "Successfully

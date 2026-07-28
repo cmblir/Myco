@@ -1,6 +1,6 @@
-# Memex — End-to-End & Native Test Coverage
+# myco — End-to-End & Native Test Coverage
 
-Memex is a Tauri 2 app: a React frontend over a Rust backend, wired by IPC.
+myco is a Tauri 2 app: a React frontend over a Rust backend, wired by IPC.
 The frontend can be exercised in a plain browser, but the backend's native
 behaviors (OS keychain, spawning CLI agents, MCP path resolution) only run
 under the real Tauri runtime. This doc maps what is covered where, and what
@@ -65,7 +65,7 @@ macOS**, and we deliberately do not attempt it here.
   (Windows, WebView2).
 - On macOS, Tauri renders in **WKWebView**, which exposes **no WebDriver
   endpoint**. `safaridriver` drives Safari, not an embedded WKWebView, so it
-  cannot attach to the Memex window.
+  cannot attach to the myco window.
 - Verified on this machine (macOS, arm64): `tauri-driver` not installed,
   `WebKitWebDriver` absent, only `safaridriver` present.
 
@@ -87,7 +87,7 @@ cd app && npm ci && npm run tauri build -- --debug
 
 # 4. point a WebdriverIO/Playwright spec at tauri-driver (default :4444),
 #    with tauri:options.application = path to the built debug binary, e.g.
-#      app/src-tauri/target/debug/memex
+#      app/src-tauri/target/debug/myco
 #    Run the runner under xvfb-run for a headless display:
 xvfb-run -a <your-webdriverio-or-playwright-runner>
 ```
@@ -125,8 +125,8 @@ of scope for `cargo test`.
       **not** re-displayed — it is write-only from the UI).
 - [ ] Clear the key. The provider reverts to "not set"; re-clearing is a no-op
       (no error).
-- [ ] Confirm the key is in the OS keychain under service `dev.cmblir.memex`
-      (macOS: Keychain Access → search "memex"), not in any app file on disk.
+- [ ] Confirm the key is in the OS keychain under service `dev.cmblir.myco`
+      (macOS: Keychain Access → search "myco"), not in any app file on disk.
 
 ### Real CLI ingest (Claude / Gemini / Codex)
 - [ ] With the `claude` CLI installed and logged in, run an ingest on a raw/
@@ -147,7 +147,7 @@ of scope for `cargo test`.
 - [ ] The shown `claude mcp add …` command and `claude_desktop_config.json`
       snippet contain the bundled script path and the current vault as
       `MEMEX_PROJECT_ROOT`.
-- [ ] "Register" runs `claude mcp add --scope user memex …` successfully (needs
-      the `claude` CLI). Afterwards `claude mcp list` shows `memex`.
+- [ ] "Register" runs `claude mcp add --scope user myco …` successfully (needs
+      the `claude` CLI). Afterwards `claude mcp list` shows `myco`.
 - [ ] The registered server resolves the correct vault even when the vault lives
       outside the source repo (bundled script + `MEMEX_PROJECT_ROOT` env).

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Memex ingest load test + monitor (parallel).
+# myco ingest load test + monitor (parallel).
 #
 # Replicates the desktop app's CLI ingest (claude --print --allowedTools ...
 # --model <model>, cwd = vault, prompt on stdin) over N synthetic sources of
@@ -18,16 +18,16 @@
 # Each ingest is still the identical CLI path the app uses.
 #
 # It seeds throwaway vaults (copies the app's CLAUDE.md + a wiki scaffold) so
-# your real ~/Documents/Memex is never touched.
+# your real ~/Documents/myco is never touched.
 set -uo pipefail
 
 N="${1:-5}"
 MODEL="${2:-haiku}"
 CONCURRENCY="${3:-6}"
 TOOLS="Read,Write,Edit,Glob,Grep,Bash"
-RUN_DIR="/tmp/memex-ingest-test"
+RUN_DIR="/tmp/myco-ingest-test"
 LOG="$RUN_DIR/results.jsonl"
-SEED_VAULT="$HOME/Documents/Memex"
+SEED_VAULT="$HOME/Documents/myco"
 
 # clamp concurrency to [1, N]
 [ "$CONCURRENCY" -lt 1 ] && CONCURRENCY=1
@@ -46,7 +46,7 @@ seed_vault() {
     # a handful of existing concept pages to link to (not the whole vault)
     ls "$SEED_VAULT"/wiki/*.md 2>/dev/null | head -8 | while read -r f; do cp "$f" "$vault/wiki/"; done
   else
-    printf '# Memex Vault\nMaintain wiki/ pages with frontmatter + [^src-*] citations per ingest.\n' > "$vault/CLAUDE.md"
+    printf '# myco Vault\nMaintain wiki/ pages with frontmatter + [^src-*] citations per ingest.\n' > "$vault/CLAUDE.md"
     printf '# Index\n' > "$vault/wiki/index.md"
     printf '# Log\n' > "$vault/wiki/log.md"
   fi

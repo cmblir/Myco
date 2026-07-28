@@ -2,9 +2,9 @@
 
 <br />
 
-<img src="docs/memex-icon.png" width="100" alt="Memex icon" />
+<img src="docs/myco-icon.png" width="100" alt="myco icon" />
 
-<h1>Memex</h1>
+<h1>myco</h1>
 
 <p><strong>스스로 자라는 개인 지식 베이스.</strong></p>
 
@@ -33,7 +33,7 @@
 
 <br />
 
-<img src="docs/screenshots/hero-mesh.png" width="100%" alt="Memex 지식 그래프 — vault를 3D 코스믹 웹으로 렌더링, 커뮤니티별로 색칠되고 이름이 붙은 클러스터의 빛나는 별들" />
+<img src="docs/screenshots/hero-mesh.png" width="100%" alt="myco 지식 그래프 — vault를 3D 코스믹 웹으로 렌더링, 커뮤니티별로 색칠되고 이름이 붙은 클러스터의 빛나는 별들" />
 
 <sub><em>Graph 뷰 — "고요한 코스믹 웹". 각 노트는 링크 수에 따라 크기가 정해지는 별이고, 커뮤니티마다 고유 색과 자동으로 이름 붙은 클러스터 라벨을 갖습니다. <code>[[wikilinks]]</code>는 옅은 회색 연결 조직이고, 진짜 허브만 발광합니다. 첫 실행 시 제공되는 시드 노트 약 50개짜리 스타터 vault 화면입니다.</em></sub>
 
@@ -45,20 +45,20 @@
 
 대부분의 LLM + 문서 셋업은 **모든 질의마다 지식을 재유도합니다**. RAG는 청크를 찾고, 모델은 답을 짜 맞추고, 아무것도 남지 않습니다. 같은 문서에 열 번 물어보면 → 열 번의 재발견이죠.
 
-**Memex는 이 흐름을 뒤집습니다.** 소스를 한 번 넣으면, Claude가 읽고, 영속 위키에 통합하고, 기존 페이지와의 모순을 표시하고, 인용을 연결하고, 커밋합니다. 10번째 질의에서는 위키 스스로 답합니다 — 정리는 이미 끝나 있으니까요.
+**myco는 이 흐름을 뒤집습니다.** 소스를 한 번 넣으면, Claude가 읽고, 영속 위키에 통합하고, 기존 페이지와의 모순을 표시하고, 인용을 연결하고, 커밋합니다. 10번째 질의에서는 위키 스스로 답합니다 — 정리는 이미 끝나 있으니까요.
 
-[Andrej Karpathy의 LLM Wiki 패턴](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 기반. 이름은 [Vannevar Bush의 1945년 Memex](https://en.wikipedia.org/wiki/Memex)에서.
+[Andrej Karpathy의 LLM Wiki 패턴](https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f) 기반. 발상의 뿌리는 [Vannevar Bush의 1945년 Memex](https://en.wikipedia.org/wiki/Memex) — 프로젝트의 원래 이름이기도 합니다.
 
 ---
 
 ## 두 가지 표면, 하나의 위키
 
-Memex의 주력은 네이티브 데스크톱 앱입니다. 다른 Claude 클라이언트에서의 프로그램적 접근을 위해 보조 표면 하나가 제공됩니다.
+myco의 주력은 네이티브 데스크톱 앱입니다. 다른 Claude 클라이언트에서의 프로그램적 접근을 위해 보조 표면 하나가 제공됩니다.
 
 | 표면 | 설명 | 사용 시기 |
 |---|---|---|
-| **Memex 데스크톱 앱** (`app/`) | Tauri 2 + React, `.dmg`/`.exe`로 배포. 자체 vault 생성, 5개 LLM 프로바이더 지원. | **기본. 이걸 쓰세요.** |
-| **MCP 서버** (`mcp-server/`) | Model Context Protocol을 통한 26개 도구. | Claude Desktop/Code 같은 MCP 클라이언트에서 Memex 조작. |
+| **myco 데스크톱 앱** (`app/`) | Tauri 2 + React, `.dmg`/`.exe`로 배포. 자체 vault 생성, 5개 LLM 프로바이더 지원. | **기본. 이걸 쓰세요.** |
+| **MCP 서버** (`mcp-server/`) | Model Context Protocol을 통한 26개 도구. | Claude Desktop/Code 같은 MCP 클라이언트에서 myco 조작. |
 
 두 표면 모두 같은 vault 레이아웃(`raw/ wiki/ daily/ ingest-reports/`)을 공유하며 데이터를 잠그지 않습니다. 디스크 위의 평범한 마크다운, 언제나.
 
@@ -70,18 +70,18 @@ Memex의 주력은 네이티브 데스크톱 앱입니다. 다른 Claude 클라�
 
 **[최신 릴리스](https://github.com/cmblir/Memex/releases/latest)**에서 플랫폼별 번들을 받으세요:
 
-- **macOS** (유니버설 — Apple Silicon + Intel): `Memex_0.1.0_universal.dmg`
-- **Windows x64**: `Memex_0.1.0_x64-setup.exe` (NSIS 설치 파일)
+- **macOS** (유니버설 — Apple Silicon + Intel): `myco_0.1.0_universal.dmg`
+- **Windows x64**: `myco_0.1.0_x64-setup.exe` (NSIS 설치 파일)
 
 > [!note] 첫 실행 — v0.1.0 설치 파일은 서명되지 않음
 > 두 번들 모두 **서명되지 않아** OS가 첫 실행 시 경고합니다. 정상이며 한 번만 허용하면 됩니다:
-> - **macOS**(Gatekeeper "확인되지 않은 개발자") — 앱 우클릭 → **열기** → **열기**; 또는 `xattr -dr com.apple.quarantine /Applications/Memex.app`; 또는 **시스템 설정 → 개인정보 보호 및 보안 → "그래도 열기"**.
+> - **macOS**(Gatekeeper "확인되지 않은 개발자") — 앱 우클릭 → **열기** → **열기**; 또는 `xattr -dr com.apple.quarantine /Applications/myco.app`; 또는 **시스템 설정 → 개인정보 보호 및 보안 → "그래도 열기"**.
 > - **Windows**(SmartScreen "PC를 보호했습니다") — **추가 정보** → **실행**.
 
-마운트/실행 → Applications 드래그. 첫 실행 시 Memex가 `~/Documents/Memex/`를 자동 생성하고 다음 구조로 시드합니다:
+마운트/실행 → Applications 드래그. 첫 실행 시 myco가 `~/Documents/myco/`를 자동 생성하고 다음 구조로 시드합니다:
 
 ```
-~/Documents/Memex/
+~/Documents/myco/
 ├── CLAUDE.md            ← Claude를 위한 유지보수 규칙
 ├── welcome.md           ← 시작 노트
 ├── raw/                 ← 소스 드롭 (불변)
@@ -103,7 +103,7 @@ Python 3.10+ (stdlib만)과 [Claude Code CLI](https://docs.anthropic.com/en/docs
 
 ```bash
 git clone https://github.com/cmblir/memex.git
-cd memex
+cd myco
 bash mcp-server/install.sh    # Claude Desktop/Code용 MCP 서버
 ```
 
@@ -112,7 +112,7 @@ bash mcp-server/install.sh    # Claude Desktop/Code용 MCP 서버
 ## 스크린샷
 
 <p align="center">
-<img src="docs/screenshots/mesh.gif" width="100%" alt="Memex 3D 코스믹 웹 그래프가 천천히 자동 공전 — 커뮤니티 색 빛나는 별, 클러스터 라벨, 옅은 회색 위키링크 조직" />
+<img src="docs/screenshots/mesh.gif" width="100%" alt="myco 3D 코스믹 웹 그래프가 천천히 자동 공전 — 커뮤니티 색 빛나는 별, 클러스터 라벨, 옅은 회색 위키링크 조직" />
 <br/>
 <sub><em>Graph 화면이 천천히 자동 공전하며 대기하는 모습 — 커뮤니티 색 빛나는 별, 자동으로 이름 붙은 클러스터 라벨, 옅은 회색 <code>[[wikilink]]</code> 연결 조직. 별을 잡으면 d3-force-3d 시뮬레이션이 재가열돼 이웃이 따라오고 놓으면 제자리로 돌아옵니다.</em></sub>
 </p>
@@ -161,7 +161,7 @@ Vault 통계 (파일 수, 해결된 위키링크, 비율), 최근 git 활동, �
 
 ### Ingest
 
-1. 파일 드롭 또는 텍스트 붙여넣기 → Memex가 `raw/<slug>.md`에 저장.
+1. 파일 드롭 또는 텍스트 붙여넣기 → myco가 `raw/<slug>.md`에 저장.
 2. 활성 **ingest 모델** 호출 (기본: Claude CLI), vault를 cwd로.
 3. Claude가 소스를 읽고, 영향받는 wiki 페이지를 찾고, 인용을 추가하고, `wiki/source-<slug>.md`를 생성/갱신하고, `wiki/log.md`에 추가하고, `ingest-reports/<datetime>-<slug>.md`에 WHY를 기록.
 4. 트리와 그래프 새로고침.
@@ -233,7 +233,7 @@ Vault 디렉터리의 `git log`를 읽어 각 커밋의 제목, 해시, 날짜, 
   - **Ollama** — 로컬 `http://localhost:11434`. 설치된 모델 자동 감지.
   - **OpenRouter** — `/api/v1/chat/completions`. 80개 이상 모델 실시간 카탈로그.
   
-  API 키는 OS 키체인 (macOS Keychain / Windows Credential Manager / freedesktop Secret Service)에 서비스 이름 `dev.cmblir.memex`로 저장됩니다. **디스크에 평문으로 절대 쓰이지 않습니다.**
+  API 키는 OS 키체인 (macOS Keychain / Windows Credential Manager / freedesktop Secret Service)에 서비스 이름 `dev.cmblir.myco`로 저장됩니다. **디스크에 평문으로 절대 쓰이지 않습니다.**
 - **Language** — EN / 한국어 / 日本語 (UI). 모델의 작성 언어는 독립.
 - **Appearance** — light / dark / system.
 - **About** — 버전 + 설명.
@@ -257,7 +257,7 @@ Vault 디렉터리의 `git log`를 읽어 각 커밋의 제목, 해시, 날짜, 
 ## 패턴
 
 ```
-   ~/Documents/Memex/    당신의 vault (또는 Memex를 가리키게 한 다른 폴더)
+   ~/Documents/myco/    당신의 vault (또는 myco를 가리키게 한 다른 폴더)
      ├─ raw/             원본 소스. 불변.
      │    │
      │    ▼  Ingest 페이지
@@ -270,10 +270,10 @@ Vault 디렉터리의 `git log`를 읽어 각 커밋의 제목, 해시, 날짜, 
      ├─ audio/           오디오 개요 대본.
      ├─ agents/          저장된 작업 에이전트 프리셋.
      ├─ digests/         스케줄 다이제스트 노트.
-     └─ CLAUDE.md        Memex가 첫 실행 시 시드하는 유지 규칙.
+     └─ CLAUDE.md        myco가 첫 실행 시 시드하는 유지 규칙.
      ▼
-   Memex 데스크톱 + Obsidian (선택) + 셸 / git 클라이언트
-   세 도구가 같은 파일을 봅니다. Memex는 vault를 잠그지 않습니다.
+   myco 데스크톱 + Obsidian (선택) + 셸 / git 클라이언트
+   세 도구가 같은 파일을 봅니다. myco는 vault를 잠그지 않습니다.
 ```
 
 - **당신**: 소스 큐레이션, 질문, 경계 설정.
@@ -286,9 +286,9 @@ Vault 디렉터리의 `git log`를 읽어 각 커밋의 제목, 해시, 날짜, 
 
 데스크톱 앱은 UI 안에서 모든 작업을 노출하지만, 다른 곳에서 실행 중인 **Claude Desktop / Claude Code** 세션에서도 같은 vault에 접근하고 싶다면 MCP 서버를 쓰세요.
 
-**가장 쉬운 길 — 앱이 직접 호스팅, 설치 불필요.** 데스크톱 앱은 MCP 서버를 **인프로세스로 실행**합니다(네이티브 — Python·venv·pip 불필요, `.dmg`만 설치한 환경 포함 앱이 도는 어떤 머신에서도 동작). **Settings → MCP**에서 **Connect to Claude Code** 클릭 — 앱의 인증 토큰과 함께 `claude mcp add --transport http memex http://localhost:22360/mcp`를 대신 실행합니다. 서버는 **앱이 현재 연 vault를 따라갑니다** — 매 tool 호출마다 `active-vault` 마커를 다시 읽으므로 앱에서 vault를 바꾸면 MCP 읽기/쓰기 대상도 자동으로 바뀝니다(재등록 불필요). 토큰이 저장되므로 한 번 연결하면 재시작 후에도 유지됩니다.
+**가장 쉬운 길 — 앱이 직접 호스팅, 설치 불필요.** 데스크톱 앱은 MCP 서버를 **인프로세스로 실행**합니다(네이티브 — Python·venv·pip 불필요, `.dmg`만 설치한 환경 포함 앱이 도는 어떤 머신에서도 동작). **Settings → MCP**에서 **Connect to Claude Code** 클릭 — 앱의 인증 토큰과 함께 `claude mcp add --transport http myco http://localhost:22360/mcp`를 대신 실행합니다. 서버는 **앱이 현재 연 vault를 따라갑니다** — 매 tool 호출마다 `active-vault` 마커를 다시 읽으므로 앱에서 vault를 바꾸면 MCP 읽기/쓰기 대상도 자동으로 바뀝니다(재등록 불필요). 토큰이 저장되므로 한 번 연결하면 재시작 후에도 유지됩니다.
 
-> **이전 빌드에서 올라오셨나요?** 네이티브 서버는 옛 SSE(`/sse`)가 아니라 HTTP(`/mcp`)를 씁니다. **Connect**를 한 번 다시 실행하세요(또는 `claude mcp remove memex` 후 위 `--transport http` 명령). 기존 `--transport sse` 등록은 더 이상 연결되지 않습니다.
+> **이전 빌드에서 올라오셨나요?** 네이티브 서버는 옛 SSE(`/sse`)가 아니라 HTTP(`/mcp`)를 씁니다. **Connect**를 한 번 다시 실행하세요(또는 `claude mcp remove myco` 후 위 `--transport http` 명령). 기존 `--transport sse` 등록은 더 이상 연결되지 않습니다.
 
 <details>
 <summary><b>4단계 MCP 셋업 (소스에서)</b></summary>
@@ -316,9 +316,9 @@ bash mcp-server/install.sh
 **Claude Code (터미널 CLI):**
 
 ```bash
-claude mcp add --scope user memex \
-  -- "$PWD/mcp-server/.venv/bin/python" "$PWD/mcp-server/memex_mcp.py"
-claude mcp list                       # memex가 보여야 함
+claude mcp add --scope user myco \
+  -- "$PWD/mcp-server/.venv/bin/python" "$PWD/mcp-server/myco_mcp.py"
+claude mcp list                       # myco가 보여야 함
 ```
 
 **Claude Desktop:**
@@ -331,9 +331,9 @@ claude mcp list                       # memex가 보여야 함
 ```json
 {
   "mcpServers": {
-    "memex": {
-      "command": "/Users/<you>/Memex/mcp-server/.venv/bin/python",
-      "args": ["/Users/<you>/Memex/mcp-server/memex_mcp.py"]
+    "myco": {
+      "command": "/Users/<you>/myco/mcp-server/.venv/bin/python",
+      "args": ["/Users/<you>/myco/mcp-server/myco_mcp.py"]
     }
   }
 }
@@ -341,7 +341,7 @@ claude mcp list                       # memex가 보여야 함
 
 #### 3단계 — 검증
 
-> 내 Memex 프로젝트들을 보여줘.
+> 내 myco 프로젝트들을 보여줘.
 
 Claude가 `list_projects`를 호출하고 응답해야 합니다.
 
@@ -349,7 +349,7 @@ Claude가 `list_projects`를 호출하고 응답해야 합니다.
 
 ingest 중심 채팅 시작 시:
 
-> `memex.get_instructions`를 한 번 호출해. 지금부터 내가 공유하는
+> `myco.get_instructions`를 한 번 호출해. 지금부터 내가 공유하는
 > 사실적인 내용은 위키 ingestion으로 처리해 — 인용 포함해서 위키에 쓰고,
 > 새 페이지 만들 땐 먼저 물어보고, 마지막에 커밋해.
 
@@ -402,13 +402,13 @@ MCP 서버는 여러 독립 wiki를 지원합니다. 각각 `projects/<slug>/` �
 ## 레포지토리 레이아웃
 
 ```
-app/                       Memex 데스크톱 앱 (Tauri 2 + React)
+app/                       myco 데스크톱 앱 (Tauri 2 + React)
   src/                       React 프론트엔드 (TS)
   src-tauri/                 Rust 셸 + IPC
   README.md                  데스크톱 앱 문서
   PLAN.md / PROGRESS.md      빌드 히스토리
 mcp-server/                MCP 서버 (26개 도구)
-  memex_mcp.py
+  myco_mcp.py
   project_registry.py        멀티 프로젝트 리졸버
   install.sh
 CLAUDE.md                  루트 공통 스키마
@@ -426,7 +426,7 @@ templates/                 프로젝트 템플릿
 
 ### 데스크톱 앱
 
-`~/Library/Application Support/dev.cmblir.memex/settings.json` (macOS, 다른 OS는 동등 경로)에 저장. 작업별 선택된 프로바이더/모델, 연결 플래그, 언어 보존. **API 키는 절대 저장하지 않습니다** — OS 키체인에.
+`~/Library/Application Support/dev.cmblir.myco/settings.json` (macOS, 다른 OS는 동등 경로)에 저장. 작업별 선택된 프로바이더/모델, 연결 플래그, 언어 보존. **API 키는 절대 저장하지 않습니다** — OS 키체인에.
 
 프로젝트별 설정(MCP)은 `projects/<slug>/.settings.json`과 `projects/<slug>/CLAUDE.md`에.
 

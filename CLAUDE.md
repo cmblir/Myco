@@ -1,6 +1,6 @@
-# Memex — Repository Guide
+# myco — Repository Guide
 
-이 레포는 Memex(로컬 지식 위키 도구)의 **개발 레포 + 멀티 프로젝트 vault**입니다.
+이 레포는 myco(로컬 지식 위키 도구)의 **개발 레포 + 멀티 프로젝트 vault**입니다.
 위키 콘텐츠는 이제 `projects/<slug>/` 아래에 프로젝트 단위로 삽니다.
 
 ## 구조
@@ -10,7 +10,7 @@ projects/             # 프로젝트별 vault — 각자 wiki/ raw/ CLAUDE.md �
 projects/karpathy-llm # 기본(legacy에서 이관된) 프로젝트, projects.json의 active
 projects.json         # 프로젝트 레지스트리 (active 포인터)
 templates/            # 신규 프로젝트 CLAUDE.md/폴더 템플릿
-app/                  # Memex 데스크톱 앱 (Tauri + React)
+app/                  # myco 데스크톱 앱 (Tauri + React)
 mcp-server/           # MCP 서버 — projects.json을 공유
 automation/           # 자동 ingest 스크립트
 plans/                # 개발 계획·제안 문서

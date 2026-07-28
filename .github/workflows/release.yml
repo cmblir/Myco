@@ -68,9 +68,9 @@ jobs:
         with:
           projectPath: app # the Tauri app lives in app/, not the repo root
           tagName: ${{ github.ref_name }}
-          releaseName: "Memex ${{ github.ref_name }}"
+          releaseName: "myco ${{ github.ref_name }}"
           releaseBody: >
-            Memex — a cross-platform desktop wiki for plain markdown vaults.
+            myco — a cross-platform desktop wiki for plain markdown vaults.
 
             Download the installer for your OS below.
             macOS: universal .dmg (Apple Silicon + Intel).

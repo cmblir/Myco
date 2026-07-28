@@ -1,12 +1,12 @@
 ---
-title: "Memex — Architecture"
+title: "myco — Architecture"
 type: dev-status-architecture
-project: memex-app
+project: myco-app
 ---
 
-# Memex — Architecture
+# myco — Architecture
 
-A system map of the Memex desktop app: what the pieces are and how a change
+A system map of the myco desktop app: what the pieces are and how a change
 travels between them.
 
 > **Scope, deliberately narrow.** This file describes *structure*, not status
@@ -81,9 +81,9 @@ pitch: the vault opens in Obsidian, or in a text editor, forever.
   `ollama.rs`, `agent_tools.rs`
 - Extraction: `extract.rs`, `whisper.rs`, `youtube.rs`, `clip.rs`
 - Plumbing: `commands.rs` (the IPC surface), `settings.rs`, `secrets.rs`,
-  `schedules.rs`, `mcp_server.rs`, `memex_pro.rs`, `lib.rs` (registration), `main.rs`
+  `schedules.rs`, `mcp_server.rs`, `myco_pro.rs`, `lib.rs` (registration), `main.rs`
 
-**MCP — `mcp-server/memex_mcp.py`**
+**MCP — `mcp-server/myco_mcp.py`**
 
 A standalone Python FastMCP server, registered with Claude clients from within
 the app (`mcp_server.rs`). It shares `projects.json` with the Rust side and
