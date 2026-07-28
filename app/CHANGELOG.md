@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-28
+
 ### Added
 
 - **The graph now shows where your attention is.** Notes edited in the last two
@@ -211,129 +213,45 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Clicking a red [[link]] creates the note** — in Ask and the agent panel too,
   not just the editor, and the new page starts with real frontmatter.
 
-### Fixed
-
-- **The multiverse's starry backdrop now spans the whole field.** The deep-field
-  stars were a fixed sphere around the origin, so once vaults were spread far
-  apart they showed as a ball of stars in the middle with the outer galaxies
-  floating on pure black. The starfield is now centred on the field and scaled to
-  reach past the farthest galaxy, so stars sit behind every vault. Single-vault
-  graphs are unchanged.
-
-- **Entering a universe no longer switches off your Multiverse toggle.** Flying
-  into a bubble drops you into that vault's graph, but the saved Multiverse
-  preference now stays on — it's a transient view change, not a silent edit of a
-  stored setting. Re-assert the toggle (or Reset) to pop back to the bubble field.
-
-- **Connections settings no longer overflow on a narrow window.** On a phone-width
-  layout the provider cards pushed their Connect button off the right edge; the
-  card now lets its middle column shrink and wraps the status chips, so nothing
-  is clipped at 375px.
-
-- **Japanese and Korean are complete.** ja was missing 99 of the app's strings
-  and rendered English for the graph inspector, Views, the help widget, Zotero
-  import and more; ko was five short. Both now translate everything, and a test
-  keeps them from drifting.
-- **Dropping several files into Ingest says so.** It loads the first — the form
-  takes one source at a time — instead of silently discarding the rest.
-- **Auto-ingest never deletes your source.** A consumed inbox file is moved to
-  `_inbox/.archived/`, matching the headless daemon, so a half-failed run cannot
-  lose the original.
-- **Ollama status no longer misreports.** A daemon that answers with an
-  unreadable body is shown as an error, not as "running with zero models" — which
-  would tell you to pull a model you already have.
-- **The ingest history rows are screen-reader-correct.** Each row was one button
-  with a link nested inside it; it is now three separate, properly-named
-  controls, with the layout unchanged.
-- **The two audio-overview hosts sound different from the first play.** They used
-  to share one voice until a replay, on the engine Memex actually ships.
-- **Zooming into the multiverse glides instead of snapping.** The view no longer
-  jumps when the nearest vault changes as you scroll in.
-- **Atlas's Recommend no longer disturbs the galaxy layout.** It was writing a
-  value the galaxy reads and atlas ignores.
-- **The command palette works without a mouse.** It had no dialog role and no
-  focus trap, and its keys were bound to the search box — so one Tab away, both
-  arrows and Escape stopped working and further tabs walked focus onto the page
-  behind it. The selected row is also visible again: it is a button, and an
-  inline background reset had been quietly overriding the highlight, in both
-  themes. Screen readers now announce the selection instead of nothing.
-- **The account panel, crash screen and empty-response text follow your
-  language.** A fresh install is Korean, and Settings › Account rendered its
-  header translated above English labels.
-- **Ingesting a source can no longer start twice.** With auto-ingest on, two
-  triggers arriving together (a clip landing on an interval tick) could each
-  start an agent against the same vault, doubling edits and token spend, with
-  the second run impossible to cancel from the UI.
-- **A timelapse recording is no longer lost** when you navigate away or change a
-  graph setting mid-record. You get the partial clip instead of no file and no
-  error, and the canvas capture is released when a recording ends.
-- **Re-opening the multiverse shows your vaults as they are now.** From the
-  second visit on, every bubble kept the star field from the first — so notes
-  added while you were inside a vault never appeared until a restart.
-- **Links containing shell metacharacters can no longer run commands on
-  Windows.** External links were opened through `cmd`, which read `&` in a URL
-  as the start of another command; a link in a clipped or synced note was enough.
-
-### Performance
-
-- **Opening the Graph builds the scene once instead of twice**, halving the
-  WebGL and worker setup on every visit.
-
-- **The bundled MCP server now requires a token.** It runs on localhost for the
-  life of the app and exposes tools that write to your vault and make git
-  commits — with no credential, any other program on your machine could drive
-  them. The app mints a token each launch and the registration line it shows you
-  carries it. (Re-register after an update; the command in Settings › MCP is
-  always current.)
-- **Memex Pro no longer sends your password or license key over plain http.**
-- **Ask tells you what it is doing.** The waiting animation used to pulse a
-  random sample of your pages under "searching the wiki…" — it now names the
-  pages it actually retrieved, and says nothing about pages when there was no
-  index to search.
-- **Related notes explain themselves when the index is missing** instead of
-  silently not appearing — which looked identical to a note having no relatives.
-- **A web clip is ingested right away** when auto-ingest is on, instead of
-  waiting for the next pass (up to an hour).
-- **A reindex survives leaving Settings**, and can no longer be started twice
-  against the same index.
-- **Renaming a page no longer edits the sources that cite it.** `raw/` is
-  read-only by rule, but a rename rewrote wikilinks everywhere in the vault —
-  including inside the source documents your wiki cites. A citation is only worth
-  something if the thing cited didn't move underneath it.
-- **Typing Korean, Japanese or Chinese no longer submits half-composed text.**
-  The Enter that commits an IME candidate was being treated as "send": it
-  submitted partial questions to the model, activated the wrong command-palette
-  row, and closed dialogs early.
-- **One unreadable file no longer blanks the whole graph.** A dangling symlink,
-  an un-downloaded iCloud placeholder or a single permission-denied note used to
-  abort the entire link graph, so the Graph view and every multiverse bubble
-  rendered nothing.
-- **The vault boundary now holds against symlinks.** A symlinked folder inside a
-  vault let search, the context sent to the model, and the embedding index read
-  files from outside it — and let a page rename write to them.
-- **Multiverse bubbles are now labelled readably in both themes, and you can see
-  more than one at a time.** A universe's name — the one thing a bubble exists to
-  tell you — was hardcoded near-white (invisible on the light theme) and drowned
-  out by the community names that surface while zoomed out. The vaults were also
-  spaced as if a big one occupied far more room than it draws, which pushed the
-  others out of frame; they now sit a couple of bubble-widths apart.
-- **Reindexing no longer crashes the app on a long unbroken paragraph.** A page
-  with no headings and no blank lines came back from chunking as a single chunk
-  of the whole page — the size limit was only ever applied between paragraphs, so
-  text without any was never split (measured: 6,419 characters from an 1,800
-  character limit on real Korean prose). Embedding that chunk then killed the
-  process outright, because mean pooling needs the whole sequence in one batch
-  and anything past 512 tokens was being decoded in pieces. Chunks are now hard
-  split at the limit (preferring word breaks, never splitting a character), and
-  the embed batch is sized to its text.
-
-### Added
-
 - **Optional: keep the semantic index up to date automatically.** Settings ›
   Semantic search gains a toggle — while Memex is open, pages you edit are
   re-embedded once you stop typing, so semantic search, related notes and graph
   similarity stop describing the vault as it was at your last manual reindex.
   Off by default, and it only maintains an index you already built.
+
+- **Two pages at once.** A columns toggle in the topbar opens a second pane
+  beside the current one — keep the Graph up while you read the Overview, or
+  watch Ingest run next to a note. Each pane picks its own page and scrolls
+  independently (the graph fills its pane), the same page can't run twice, and
+  on a window narrower than 820px the two panes stack instead of squeezing.
+
+- **A new Walrus tree layout.** The vault drawn as a hyperbolic spanning tree:
+  the busiest hub sits at the centre, its neighbours fan out across a sphere on
+  long spokes, and deeper notes burst into tight firework bundles near the
+  boundary — the classic CAIDA look, where a big tree stays legible from its
+  root. Your real wikilinks are still drawn over the tree, so the branches and
+  the cross-links both show.
+
+- **Notes sprout into the galaxy as an agent writes them.** With the graph open
+  during an ingest run, each new note now grows in place out of nothing instead
+  of popping in, so the galaxy visibly buds what the run is producing. Skipped
+  under reduced motion — the newcomers still appear, just without the growth.
+
+- **MYCO drops by the graph.** On a rare, randomised timer the mascot drifts in
+  over the cosmos with a one-line tip about a feature you may not have found,
+  then fades out; click it or the × to send it away. The graph is a play space,
+  so this is the one place it appears unprompted — never in the multiverse,
+  fullscreen, on a small window, under reduced motion, or with "Show MYCO" off.
+
+- **Connecting Claude Code to Memex is now one click, with nothing to install.**
+  The MCP server runs inside Memex itself: Settings › MCP shows an
+  always-running status dot and a "Connect to Claude Code" button, plus the
+  copyable command and a Claude Desktop config snippet. All 26 tools are there,
+  it follows whichever vault you have open with no restart, and every request
+  needs a token that is minted once and survives restarts. There is no Install
+  step, no Start/Stop toggle, and Memex no longer ships or needs Python for
+  this. If you registered the old server, re-run Connect once — the transport
+  changed from `sse` to `http`.
 
 ### Changed
 
@@ -446,6 +364,196 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   confinement root, MCP marker) without the full `open_vault` teardown. Slug
   validation and symlink containment mirror the Python registry's defenses;
   every mutating command keeps the single-vault confinement.
+
+- **Ask finds the right notes far more often.** Two changes, each measured
+  against the project's retrieval benchmark before it was kept. First, the
+  built-in embeddings moved off the general-purpose chat model onto a model
+  built for the job (bge-m3): on the English benchmark that alone took "is a
+  relevant page anywhere in the top ten" from about half of all questions to
+  every one of them. Second, search no longer only matches on meaning — a
+  keyword pass now runs alongside it and the two rankings are merged, which on
+  the larger bilingual benchmark moved the *top* result from right 73 % of the
+  time to right 82 %, and put a relevant page in the top three for every single
+  question. Exact terms and acronyms — `PPO`, `RLAIF`, `BPE`, `DPO` — were what
+  the old setup missed worst, and they are what the keyword pass recovers.
+
+- **Ask quotes the passages it found instead of pasting whole pages.** It used
+  to re-read every matched page in full and hand the lot to the model; it now
+  passes just the sections that actually matched, grouped under one citation
+  per page. More of what the model reads is the relevant part, and one long
+  page can no longer crowd the other results out of the answer.
+
+- **The index now keeps itself up to date — including edits Memex didn't make.**
+  Pages are re-embedded shortly after they change, whether the change came from
+  the editor, an ingest run, the MCP server, the CLI, or another editor open
+  beside Memex, and opening a vault reconciles whatever moved while Memex was
+  closed. A vault with no index yet gets one built the same way. In practice
+  semantic search, Related notes, Ask and graph similarity now describe the
+  vault as it is rather than as it was at your last manual Reindex — the
+  Reindex button stays for when you want to force the whole thing.
+
+- **Asking through a CLI provider now starts from your wiki.** With Claude
+  Code, Gemini CLI or Codex CLI selected, Ask used to hand over the bare
+  question and leave the CLI to grep the vault blind. It now retrieves the
+  relevant pages first and puts them in front of the question, the same as the
+  built-in and API providers. Only Ask — ingest is unchanged.
+
+- **Korean questions retrieve better.** The new embedding model is trained on
+  Korean, and the keyword pass reads Korean (and Japanese, and Chinese) as
+  overlapping character pairs rather than splitting on spaces, so it has
+  something to match on at all. On the benchmark's Korean half, exact Korean
+  terms now land in the top three, and a Korean question that shares an acronym
+  with an English note — "PPO로 정책을 갱신하는…" — no longer gets that English
+  note handed back first.
+
+- **Ingest fails loudly, and says exactly what is wrong.** A run used to be
+  accepted merely because some file changed, so a page could land with a
+  citation pointing at a source that does not exist. Every page an ingest
+  touches is now checked before the run is accepted: a dangling citation, a
+  missing required frontmatter field or an invalid type/status value fails the
+  ingest and names the page and the field. Unresolved wikilinks, a source count
+  that disagrees with the citations, and a missing supersession link are
+  reported as warnings and still let the run through.
+
+- **The model field is a picker, not a text box.** Choosing a model no longer
+  means knowing its exact id: it is a dropdown of the provider's models
+  (fetched live from Ollama, OpenAI and OpenRouter, from the catalog
+  otherwise). "Custom…" reveals the text field, so a model released after this
+  build is still reachable.
+
+- **Dragging a note in a fixed layout now pulls its neighbours.** The
+  deterministic layouts — Walrus, spiral, radial, celestial, semantic, atlas,
+  synapse, strata — bake their positions and run no simulation, so a drag used
+  to move exactly one star against a frozen sky. The neighbourhood now follows,
+  less the further out it sits, and the whole thing glides back to the baked
+  layout when you let go.
+
+### Fixed
+
+- **The multiverse's starry backdrop now spans the whole field.** The deep-field
+  stars were a fixed sphere around the origin, so once vaults were spread far
+  apart they showed as a ball of stars in the middle with the outer galaxies
+  floating on pure black. The starfield is now centred on the field and scaled to
+  reach past the farthest galaxy, so stars sit behind every vault. Single-vault
+  graphs are unchanged.
+
+- **Entering a universe no longer switches off your Multiverse toggle.** Flying
+  into a bubble drops you into that vault's graph, but the saved Multiverse
+  preference now stays on — it's a transient view change, not a silent edit of a
+  stored setting. Re-assert the toggle (or Reset) to pop back to the bubble field.
+
+- **Connections settings no longer overflow on a narrow window.** On a phone-width
+  layout the provider cards pushed their Connect button off the right edge; the
+  card now lets its middle column shrink and wraps the status chips, so nothing
+  is clipped at 375px.
+
+- **Japanese and Korean are complete.** ja was missing 99 of the app's strings
+  and rendered English for the graph inspector, Views, the help widget, Zotero
+  import and more; ko was five short. Both now translate everything, and a test
+  keeps them from drifting.
+- **Dropping several files into Ingest says so.** It loads the first — the form
+  takes one source at a time — instead of silently discarding the rest.
+- **Auto-ingest never deletes your source.** A consumed inbox file is moved to
+  `_inbox/.archived/`, matching the headless daemon, so a half-failed run cannot
+  lose the original.
+- **Ollama status no longer misreports.** A daemon that answers with an
+  unreadable body is shown as an error, not as "running with zero models" — which
+  would tell you to pull a model you already have.
+- **The ingest history rows are screen-reader-correct.** Each row was one button
+  with a link nested inside it; it is now three separate, properly-named
+  controls, with the layout unchanged.
+- **The two audio-overview hosts sound different from the first play.** They used
+  to share one voice until a replay, on the engine Memex actually ships.
+- **Zooming into the multiverse glides instead of snapping.** The view no longer
+  jumps when the nearest vault changes as you scroll in.
+- **Atlas's Recommend no longer disturbs the galaxy layout.** It was writing a
+  value the galaxy reads and atlas ignores.
+- **The command palette works without a mouse.** It had no dialog role and no
+  focus trap, and its keys were bound to the search box — so one Tab away, both
+  arrows and Escape stopped working and further tabs walked focus onto the page
+  behind it. The selected row is also visible again: it is a button, and an
+  inline background reset had been quietly overriding the highlight, in both
+  themes. Screen readers now announce the selection instead of nothing.
+- **The account panel, crash screen and empty-response text follow your
+  language.** A fresh install is Korean, and Settings › Account rendered its
+  header translated above English labels.
+- **Ingesting a source can no longer start twice.** With auto-ingest on, two
+  triggers arriving together (a clip landing on an interval tick) could each
+  start an agent against the same vault, doubling edits and token spend, with
+  the second run impossible to cancel from the UI.
+- **A timelapse recording is no longer lost** when you navigate away or change a
+  graph setting mid-record. You get the partial clip instead of no file and no
+  error, and the canvas capture is released when a recording ends.
+- **Re-opening the multiverse shows your vaults as they are now.** From the
+  second visit on, every bubble kept the star field from the first — so notes
+  added while you were inside a vault never appeared until a restart.
+- **Links containing shell metacharacters can no longer run commands on
+  Windows.** External links were opened through `cmd`, which read `&` in a URL
+  as the start of another command; a link in a clipped or synced note was enough.
+
+- **Ask says when the search failed instead of quietly answering anyway.** If
+  the index could not be searched, or predates the built-in embedding model and
+  has not been rebuilt yet, the answer is now labelled: Ask tells you it skipped
+  semantic search and read the vault directly, and offers a button straight to
+  Model settings to reindex. Before, a failed search was indistinguishable from
+  a search that legitimately found nothing — the answer just quietly got worse.
+
+- **The pages Ask says it consulted are counted once.** A page that matched at
+  two separate ranks was listed twice and inflated the count above it.
+
+### Performance
+
+- **Opening the Graph builds the scene once instead of twice**, halving the
+  WebGL and worker setup on every visit.
+
+- **The bundled MCP server now requires a token.** It runs on localhost for the
+  life of the app and exposes tools that write to your vault and make git
+  commits — with no credential, any other program on your machine could drive
+  them. The app mints a token each launch and the registration line it shows you
+  carries it. (Re-register after an update; the command in Settings › MCP is
+  always current.)
+- **Memex Pro no longer sends your password or license key over plain http.**
+- **Ask tells you what it is doing.** The waiting animation used to pulse a
+  random sample of your pages under "searching the wiki…" — it now names the
+  pages it actually retrieved, and says nothing about pages when there was no
+  index to search.
+- **Related notes explain themselves when the index is missing** instead of
+  silently not appearing — which looked identical to a note having no relatives.
+- **A web clip is ingested right away** when auto-ingest is on, instead of
+  waiting for the next pass (up to an hour).
+- **A reindex survives leaving Settings**, and can no longer be started twice
+  against the same index.
+- **Renaming a page no longer edits the sources that cite it.** `raw/` is
+  read-only by rule, but a rename rewrote wikilinks everywhere in the vault —
+  including inside the source documents your wiki cites. A citation is only worth
+  something if the thing cited didn't move underneath it.
+- **Typing Korean, Japanese or Chinese no longer submits half-composed text.**
+  The Enter that commits an IME candidate was being treated as "send": it
+  submitted partial questions to the model, activated the wrong command-palette
+  row, and closed dialogs early.
+- **One unreadable file no longer blanks the whole graph.** A dangling symlink,
+  an un-downloaded iCloud placeholder or a single permission-denied note used to
+  abort the entire link graph, so the Graph view and every multiverse bubble
+  rendered nothing.
+- **The vault boundary now holds against symlinks.** A symlinked folder inside a
+  vault let search, the context sent to the model, and the embedding index read
+  files from outside it — and let a page rename write to them.
+- **Multiverse bubbles are now labelled readably in both themes, and you can see
+  more than one at a time.** A universe's name — the one thing a bubble exists to
+  tell you — was hardcoded near-white (invisible on the light theme) and drowned
+  out by the community names that surface while zoomed out. The vaults were also
+  spaced as if a big one occupied far more room than it draws, which pushed the
+  others out of frame; they now sit a couple of bubble-widths apart.
+- **Reindexing no longer crashes the app on a long unbroken paragraph.** A page
+  with no headings and no blank lines came back from chunking as a single chunk
+  of the whole page — the size limit was only ever applied between paragraphs, so
+  text without any was never split (measured: 6,419 characters from an 1,800
+  character limit on real Korean prose). Embedding that chunk then killed the
+  process outright, because mean pooling needs the whole sequence in one batch
+  and anything past 512 tokens was being decoded in pieces. Chunks are now hard
+  split at the limit (preferring word breaks, never splitting a character), and
+  the embed batch is sized to its text.
+
 
 ## [0.2.2] - 2026-07-13
 
