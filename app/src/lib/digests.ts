@@ -8,7 +8,7 @@ import { complete } from "./chat";
 import type { Schedule } from "./ipc";
 
 const SYSTEM =
-  "You are Memex's digest writer. Produce a concise, well-structured markdown " +
+  "You are myco's digest writer. Produce a concise, well-structured markdown " +
   "digest grounded ONLY in the user's wiki. Cite pages inline as [[page-stem]]. " +
   "Use short sections and bullet points. Do not invent sources.";
 

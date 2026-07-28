@@ -73,8 +73,8 @@ await page.locator(".btn", { hasText: "Run" }).first().click();
 // Wait for the confirmation dialog and accept it via the primary action.
 let confirmed = false;
 try {
-  await page.waitForSelector(".memex-modal[role=dialog]", { timeout: 8000 });
-  await page.locator(".memex-modal__btn--primary").first().click();
+  await page.waitForSelector(".myco-modal[role=dialog]", { timeout: 8000 });
+  await page.locator(".myco-modal__btn--primary").first().click();
   confirmed = true;
 } catch {
   /* dialog did not appear */

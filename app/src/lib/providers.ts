@@ -1,12 +1,12 @@
 // Provider catalog + connection logic, shared by the Settings Model tab and the
 // topbar model picker. The model strings live here as `catalog` arrays; the
-// selected values are plain strings stored in MemexSettings.query_model /
+// selected values are plain strings stored in MycoSettings.query_model /
 // ingest_model.
 
 import { useEffect, useMemo, useState } from "react";
 import type { ProviderId } from "./icons";
 import type { Strings } from "./i18n";
-import type { MemexSettings } from "./ipc";
+import type { MycoSettings } from "./ipc";
 import { ipc } from "./ipc";
 import { useSettingsStore } from "../stores/settingsStore";
 
@@ -23,7 +23,7 @@ export const BUILTIN_EMBED_MODEL = "bge-m3";
 
 export interface ProviderDef {
   id: ProviderId;
-  flag: keyof MemexSettings["providers"]; // connection gate — picker shows connected only
+  flag: keyof MycoSettings["providers"]; // connection gate — picker shows connected only
   name: string;
   kind: "cli" | "api" | "local";
   needsKey: boolean;
@@ -118,10 +118,10 @@ export const PROVIDERS: ProviderDef[] = [
   {
     id: "myco-pro",
     flag: "myco_pro",
-    name: "Memex Pro",
+    name: "myco Pro",
     kind: "api",
     needsKey: true,
-    desc: "Unlimited ingest on a managed model — no API key or CLI needed. Sign in with your Memex Pro account.",
+    desc: "Unlimited ingest on a managed model — no API key or CLI needed. Sign in with your myco Pro account.",
     catalog: ["gemini-2.5-flash", "claude-haiku-4-5"],
   },
 ];
@@ -151,7 +151,7 @@ export function providerDesc(t: Strings, def: ProviderDef): string {
 export function useEnabledProviders(): ProviderDef[] {
   const settings = useSettingsStore((s) => s.settings);
   // Ollama is selectable whenever the daemon is live with models installed —
-  // not only after a model was pulled from inside Memex. This keeps the Model
+  // not only after a model was pulled from inside myco. This keeps the Model
   // tab consistent with the "connected" chip on the Providers tab.
   const [ollamaLive, setOllamaLive] = useState(false);
   useEffect(() => {

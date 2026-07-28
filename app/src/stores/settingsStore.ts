@@ -1,10 +1,10 @@
-// Mirror of the Rust-persisted Memex settings (~/Library/Application Support/
+// Mirror of the Rust-persisted myco settings (~/Library/Application Support/
 // dev.cmblir.memex/settings.json). Loaded once on app start; mutations write
 // straight back to disk so every window reflects the latest state.
 
 import { create } from "zustand";
 import { ipc } from "../lib/ipc";
-import type { MemexSettings } from "../lib/ipc";
+import type { MycoSettings } from "../lib/ipc";
 
 /** Normalize an unknown thrown value into a displayable message. */
 function errorMessage(e: unknown): string {
@@ -14,16 +14,16 @@ function errorMessage(e: unknown): string {
 }
 
 interface SettingsState {
-  settings: MemexSettings | null;
+  settings: MycoSettings | null;
   loading: boolean;
   /** Last persist (disk write) failure, or null when the in-memory state is
    * known to match disk. Set when an ipc.setSettings call rejects so the UI
    * can surface that the optimistic update was rolled back. */
   error: string | null;
   load: () => Promise<void>;
-  update: (patch: Partial<MemexSettings>) => Promise<void>;
+  update: (patch: Partial<MycoSettings>) => Promise<void>;
   setProviderConnected: (
-    key: keyof MemexSettings["providers"],
+    key: keyof MycoSettings["providers"],
     on: boolean,
   ) => Promise<void>;
   /** Mirror the live ollama daemon state into the connection flag, so a
@@ -62,7 +62,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   setProviderConnected: async (key, on) => {
     const current = get().settings;
     if (!current) return;
-    const next: MemexSettings = {
+    const next: MycoSettings = {
       ...current,
       providers: { ...current.providers, [key]: on },
     };

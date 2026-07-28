@@ -1,6 +1,6 @@
 // Claude CLI bridge. Spawns the system `claude` binary with a prompt and
 // captures stdout. The CLI uses the user's existing Claude Pro/Max
-// subscription via the Anthropic OAuth login it manages itself — Memex does
+// subscription via the Anthropic OAuth login it manages itself — myco does
 // not store an API key.
 //
 // We pass the prompt on stdin so it can be arbitrary length without bumping
@@ -18,7 +18,7 @@ const DEFAULT_TIMEOUT_SECS: u64 = 600;
 
 // Children of in-flight streaming runs, keyed by run_id. Lets `cancel` kill
 // a run early and `cancel_all` reap everything on app exit so no orphan
-// claude processes outlive Memex. (OnceLock not LazyLock: MSRV is 1.77.)
+// claude processes outlive myco. (OnceLock not LazyLock: MSRV is 1.77.)
 static RUNNING: OnceLock<Mutex<HashMap<String, Child>>> = OnceLock::new();
 
 fn running() -> &'static Mutex<HashMap<String, Child>> {
@@ -77,7 +77,7 @@ pub fn run_prompt(prompt: &str, cwd: &str, model: Option<&str>) -> Result<CliRes
         return Err(format!("cwd is not a directory: {cwd}"));
     }
     // --print so the CLI exits after producing output (non-interactive).
-    // --allowedTools so Claude can actually edit the vault Memex spawned
+    // --allowedTools so Claude can actually edit the vault myco spawned
     // it on — without this, every Write/Edit in an ingest workflow gets
     // silently denied in --print mode. We pre-authorize only the tools the
     // Ingest / Lint workflow needs to maintain markdown: Read/Write/Edit/
@@ -624,7 +624,7 @@ mod tests {
     #[test]
     fn run_prompt_rejects_invalid_cwd() {
         // Independent of whether claude is on PATH — we want the error path.
-        let unique = std::env::temp_dir().join("memex-claude-no-such-xyz");
+        let unique = std::env::temp_dir().join("myco-claude-no-such-xyz");
         let _ = std::fs::remove_dir_all(&unique);
         let res = run_prompt("hi", unique.to_str().unwrap(), None);
         assert!(res.is_err(), "expected error for missing cwd");

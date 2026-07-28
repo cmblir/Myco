@@ -3,10 +3,10 @@
 // links → build graph → scan provenance → mutate (create / rename /
 // delete) → re-scan.
 
-use memex_lib::index;
-use memex_lib::parser;
-use memex_lib::provenance;
-use memex_lib::vault::{self, FileContent, FileNode, VaultMeta};
+use myco_lib::index;
+use myco_lib::parser;
+use myco_lib::provenance;
+use myco_lib::vault::{self, FileContent, FileNode, VaultMeta};
 use std::fs;
 use std::path::{Path, PathBuf};
 

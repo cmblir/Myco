@@ -2780,40 +2780,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
-name = "memex"
-version = "0.3.0"
-dependencies = [
- "axum",
- "calamine",
- "criterion",
- "gray_matter",
- "keyring",
- "llama-cpp-2",
- "llama-cpp-sys-2",
- "notify",
- "pdf-extract",
- "regex",
- "reqwest 0.12.28",
- "rmcp",
- "serde",
- "serde_json",
- "serial_test",
- "similar",
- "tauri",
- "tauri-build",
- "tauri-plugin-deep-link",
- "tauri-plugin-dialog",
- "tauri-plugin-notification",
- "tempfile",
- "tokio",
- "tokio-util",
- "trash",
- "url",
- "wiremock",
- "zip",
-]
-
-[[package]]
 name = "memoffset"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2875,6 +2841,40 @@ dependencies = [
  "serde",
  "thiserror 2.0.18",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "myco"
+version = "0.3.0"
+dependencies = [
+ "axum",
+ "calamine",
+ "criterion",
+ "gray_matter",
+ "keyring",
+ "llama-cpp-2",
+ "llama-cpp-sys-2",
+ "notify",
+ "pdf-extract",
+ "regex",
+ "reqwest 0.12.28",
+ "rmcp",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "similar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-deep-link",
+ "tauri-plugin-dialog",
+ "tauri-plugin-notification",
+ "tempfile",
+ "tokio",
+ "tokio-util",
+ "trash",
+ "url",
+ "wiremock",
+ "zip",
 ]
 
 [[package]]

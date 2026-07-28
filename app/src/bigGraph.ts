@@ -1,4 +1,4 @@
-// DEV-ONLY hero render: a ~14k-star SPIRAL GALAXY in Memex's glow-star style,
+// DEV-ONLY hero render: a ~14k-star SPIRAL GALAXY in myco's glow-star style,
 // for the README hero image (captured via Playwright). Never bundled into the
 // app (no entry imports it; big-graph.html is dev-served only).
 //

@@ -749,7 +749,7 @@ fn apply_import(
     Ok((imported, plan.skipped, quarantined, plan.source))
 }
 
-/// Import every session Memex can find on disk for one CLI tool, in one pass.
+/// Import every session myco can find on disk for one CLI tool, in one pass.
 ///
 /// `kind` is "claude-code" (`~/.claude/projects/**/*.jsonl`) or "codex"
 /// (`$CODEX_HOME`/`~/.codex/sessions/**/*.jsonl`). Reading the user's own
@@ -1078,7 +1078,7 @@ pub fn scan_tasks(
     crate::tasks::scan_tasks(&vault_path)
 }
 
-/// Memex Pro ingest: send the open vault's snapshot + this source to the
+/// myco Pro ingest: send the open vault's snapshot + this source to the
 /// configured proxy and apply the wiki file operations it returns (confined to
 /// the vault). The proxy URL comes from settings; the license key from the
 /// keychain ("myco-pro").
@@ -1095,15 +1095,15 @@ pub async fn myco_pro_ingest(
     let s = settings::load();
     let url = s.myco_pro_url.trim().to_string();
     if url.is_empty() {
-        return Err("Memex Pro proxy URL is not configured (Settings → Connections)".into());
+        return Err("myco Pro proxy URL is not configured (Settings → Connections)".into());
     }
     let key = secrets::get_key(settings::PRO_PROVIDER_ID)?.ok_or_else(|| {
-        "Memex Pro is not connected — log in under Settings → Connections".to_string()
+        "myco Pro is not connected — log in under Settings → Connections".to_string()
     })?;
     crate::myco_pro::ingest(&root, &url, &key, &slug, &title, &text).await
 }
 
-/// Log in to Memex Pro with the account created on the website. Fetches the
+/// Log in to myco Pro with the account created on the website. Fetches the
 /// account's access key, stores it in the keychain, and records the email for
 /// display — so the user never copies a key by hand.
 #[tauri::command]
@@ -1113,7 +1113,7 @@ pub async fn myco_pro_login(
 ) -> Result<crate::myco_pro::LoginOutcome, String> {
     let url = settings::load().myco_pro_url.trim().to_string();
     if url.is_empty() {
-        return Err("Set the Memex Pro service URL first (Settings → Connections)".into());
+        return Err("Set the myco Pro service URL first (Settings → Connections)".into());
     }
     let outcome = crate::myco_pro::login(&url, &email, &password).await?;
     if let Some(key) = &outcome.license_key {
@@ -1132,7 +1132,7 @@ pub async fn myco_pro_login(
     })
 }
 
-/// Log out of Memex Pro: clear the stored key and email.
+/// Log out of myco Pro: clear the stored key and email.
 #[tauri::command]
 pub fn myco_pro_logout() -> Result<(), String> {
     let _ = secrets::delete_key(settings::PRO_PROVIDER_ID);
@@ -1393,7 +1393,7 @@ pub fn mcp_info() -> crate::mcp_native::NativeInfo {
     crate::mcp_native::info()
 }
 
-/// One-click Connect: register memex with Claude Code over HTTP, with the token.
+/// One-click Connect: register myco with Claude Code over HTTP, with the token.
 #[tauri::command]
 pub async fn mcp_connect() -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(crate::mcp_native::register)

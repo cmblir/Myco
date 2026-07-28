@@ -1,4 +1,5 @@
-// MYCO — the Memex mascot. Plays the keyed (transparent-background) mascot
+// MYCO — the mascot the product is named after. Plays the keyed
+// (transparent-background) mascot
 // loop on empty/waiting surfaces. Alpha video needs a different codec per
 // engine: the Tauri shell is WKWebView (Safari engine) → HEVC+alpha (hvc1
 // .mov); a Chromium dev browser → VP9 alpha WebM. The source is picked by
@@ -11,7 +12,7 @@
 // callers just pass one size.
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
-import { MemexMark } from "../lib/icons";
+import { MycoMark } from "../lib/icons";
 import { useUIStore } from "../stores/uiStore";
 import idleMovUrl from "../assets/mascot/idle.mov";
 import idleWebmUrl from "../assets/mascot/idle.webm";
@@ -103,7 +104,7 @@ export default function MascotClip({
         aria-hidden
         style={{ width: size, height: size, display: "grid", placeItems: "center", flexShrink: 0 }}
       >
-        <MemexMark size={Math.round(size * 0.66)} />
+        <MycoMark size={Math.round(size * 0.66)} />
       </span>
     );
   }

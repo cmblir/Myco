@@ -332,7 +332,7 @@ mod tests {
     use std::io::Write;
 
     fn tmp(name: &str, content: &[u8]) -> std::path::PathBuf {
-        let p = std::env::temp_dir().join(format!("memex-extract-{}-{name}", std::process::id()));
+        let p = std::env::temp_dir().join(format!("myco-extract-{}-{name}", std::process::id()));
         let mut f = fs::File::create(&p).unwrap();
         f.write_all(content).unwrap();
         p
@@ -388,7 +388,7 @@ mod tests {
     // Build a minimal OOXML zip (one entry) and confirm the extractor reads it.
     fn ooxml_zip(name: &str, entry: &str, xml: &str) -> std::path::PathBuf {
         let p =
-            std::env::temp_dir().join(format!("memex-extract-{}-{name}", std::process::id()));
+            std::env::temp_dir().join(format!("myco-extract-{}-{name}", std::process::id()));
         let f = fs::File::create(&p).unwrap();
         let mut zw = zip::ZipWriter::new(f);
         let opts: zip::write::SimpleFileOptions =

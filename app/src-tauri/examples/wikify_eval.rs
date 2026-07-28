@@ -32,7 +32,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use memex_lib::{
+use myco_lib::{
     embeddings,
     local_llm::{apply_prefix, embed_spec_by_id, EmbedRole, LocalLlm},
     parser::parse_links_from_text,

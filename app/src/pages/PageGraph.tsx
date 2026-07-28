@@ -1379,7 +1379,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         const url = URL.createObjectURL(new Blob(chunks, { type: "video/webm" }));
         const a = document.createElement("a");
         a.href = url;
-        a.download = "memex-timelapse.webm";
+        a.download = "myco-timelapse.webm";
         a.click();
         setTimeout(() => URL.revokeObjectURL(url), 10_000);
       };

@@ -1,4 +1,4 @@
-/* Memex — Notion-flavored design tokens & shell styles */
+/* myco — Notion-flavored design tokens & shell styles */
 
 :root {
   /* Type */
@@ -1273,7 +1273,7 @@ hr {
 }
 
 /* Modal */
-.memex-modal__backdrop {
+.myco-modal__backdrop {
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.55);
@@ -1282,7 +1282,7 @@ hr {
   justify-content: center;
   z-index: 2000;
 }
-.memex-modal {
+.myco-modal {
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--r-lg);
@@ -1291,17 +1291,17 @@ hr {
   max-width: 480px;
   box-shadow: var(--shadow-pop);
 }
-.memex-modal__title {
+.myco-modal__title {
   font-size: 1.05rem;
   margin: 0 0 0.5rem;
   color: var(--ink);
 }
-.memex-modal__message {
+.myco-modal__message {
   margin: 0 0 0.75rem;
   color: var(--ink-3);
   font-size: 0.9rem;
 }
-.memex-modal__input {
+.myco-modal__input {
   width: 100%;
   background: var(--bg);
   color: var(--ink);
@@ -1310,18 +1310,18 @@ hr {
   padding: 0.4rem 0.6rem;
   font: inherit;
 }
-.memex-modal__input:focus {
+.myco-modal__input:focus {
   outline: none;
   border-color: var(--ink);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-.memex-modal__actions {
+.myco-modal__actions {
   display: flex;
   justify-content: flex-end;
   gap: 0.5rem;
   margin-top: 1rem;
 }
-.memex-modal__btn {
+.myco-modal__btn {
   padding: 0.4rem 0.85rem;
   font-size: 0.85rem;
   border: 1px solid var(--line);
@@ -1329,22 +1329,22 @@ hr {
   color: var(--ink);
   background: transparent;
 }
-.memex-modal__btn:hover {
+.myco-modal__btn:hover {
   background: var(--bg-hover);
 }
-.memex-modal__btn:focus-visible {
+.myco-modal__btn:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
-.memex-modal__btn--primary {
+.myco-modal__btn--primary {
   border-color: var(--ink);
   background: var(--ink);
   color: var(--bg);
 }
-.memex-modal__btn--primary:hover {
+.myco-modal__btn--primary:hover {
   background: var(--ink-2);
 }
-.memex-modal__btn--danger {
+.myco-modal__btn--danger {
   border-color: #dc2626;
   background: #dc2626 !important;
   color: white !important;
@@ -3219,7 +3219,7 @@ hr {
   overflow-y: auto;
   font-size: 13px;
 }
-.ingest-preview-body .memex-viewer {
+.ingest-preview-body .myco-viewer {
   font-size: 13px;
 }
 
@@ -3489,7 +3489,7 @@ hr {
   }
   /* Modals declare min-width:360px on desktop, which would force a horizontal
      scrollbar at 320px — release it and let them fit the viewport. */
-  .memex-modal {
+  .myco-modal {
     min-width: 0;
     width: calc(100vw - 24px);
   }

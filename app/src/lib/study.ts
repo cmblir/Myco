@@ -22,14 +22,14 @@ export interface QuizQuestion {
 }
 
 const CARD_SYSTEM =
-  "You are Memex's study-card generator. You turn a markdown note into concise " +
+  "You are myco's study-card generator. You turn a markdown note into concise " +
   "active-recall flashcards. Each card is a single clear question and a short " +
   "answer drawn ONLY from the note. Preserve source grounding: copy the nearest " +
   "citation token ([^src-*] or [[stem]]) from the span the card is based on into " +
   "sourceRef (empty string if none). Reply with ONLY a JSON array, no prose.";
 
 const QUIZ_SYSTEM =
-  "You are Memex's quiz generator. You turn a markdown note into multiple-choice " +
+  "You are myco's quiz generator. You turn a markdown note into multiple-choice " +
   "questions with exactly one correct option. Draw everything ONLY from the note. " +
   "Copy the nearest citation token ([^src-*] or [[stem]]) into sourceRef (empty " +
   "string if none) and add a one-line explanation. Reply with ONLY a JSON array.";

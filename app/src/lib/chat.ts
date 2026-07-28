@@ -341,7 +341,7 @@ function withVaultContext(
   ctx: string,
 ): SimpleMessage[] {
   const block =
-    `Below is the current content of the user's Memex vault (markdown files). ` +
+    `Below is the current content of the user's myco vault (markdown files). ` +
     `Answer the question using ONLY the content below. Do NOT use outside ` +
     `knowledge, and do NOT invent pages, files, facts, or events. If the answer ` +
     `is not present in the content below, reply that you could not find it in ` +

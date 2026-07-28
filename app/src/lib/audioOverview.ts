@@ -30,7 +30,7 @@ export interface AudioScript {
 const PAGE_BUDGET = 24_000;
 
 const SYSTEM =
-  "You are Memex's audio-overview writer. You turn wiki notes into a lively, " +
+  "You are myco's audio-overview writer. You turn wiki notes into a lively, " +
   "accurate two-host spoken dialogue (Host A interviews Guest B). Every claim " +
   "must come ONLY from the provided notes — no invention. Attach the page the " +
   "claim came from to that turn's cites (copy the [[stem]] header or a [^src-*] " +

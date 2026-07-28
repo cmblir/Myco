@@ -11,8 +11,9 @@ import { useUIStore } from "../stores/uiStore";
 import type { Theme } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { getVersion } from "@tauri-apps/api/app";
 import { ipc } from "../lib/ipc";
-import type { McpNativeInfo, MemexSettings, OllamaStatus } from "../lib/ipc";
+import type { McpNativeInfo, MycoSettings, OllamaStatus } from "../lib/ipc";
 import { PROVIDERS, providerDesc, useEnabledProviders } from "../lib/providers";
 import type { ProviderDef } from "../lib/providers";
 import ModelSelect from "../components/ModelSelect";
@@ -147,7 +148,7 @@ function SettingsAccount({ t }: { t: Strings }): JSX.Element {
             {t.s_local_user ?? "Local user"}
           </div>
           <div className="muted" style={{ fontSize: 13 }}>
-            {currentVault?.path ?? (t.s_no_vault ?? "no vault")} · Memex
+            {currentVault?.path ?? (t.s_no_vault ?? "no vault")} · myco
           </div>
         </div>
       </div>
@@ -395,7 +396,7 @@ function AutoReindexToggle({ t }: { t: Strings }): JSX.Element | null {
         </div>
         <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
           {t.s_autoreindex_desc ??
-            "While Memex is open, re-embed pages you edit once you stop typing. Only pages that changed are re-embedded."}
+            "While myco is open, re-embed pages you edit once you stop typing. Only pages that changed are re-embedded."}
         </div>
       </div>
       <button
@@ -521,8 +522,8 @@ function AutoReflectSetting({
   update,
 }: {
   t: Strings;
-  settings: MemexSettings;
-  update: (patch: Partial<MemexSettings>) => Promise<void> | void;
+  settings: MycoSettings;
+  update: (patch: Partial<MycoSettings>) => Promise<void> | void;
 }): JSX.Element {
   const enabled = settings.auto_reflect_enabled;
   const interval = settings.auto_reflect_interval_min;
@@ -538,7 +539,7 @@ function AutoReflectSetting({
           </div>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
             {t.s_autoreflect_desc ??
-              "While Memex is open, periodically run a read-only reflect pass to surface orphans, stale pages, and missing links."}
+              "While myco is open, periodically run a read-only reflect pass to surface orphans, stale pages, and missing links."}
           </div>
         </div>
         <button
@@ -611,8 +612,8 @@ function AutoIngestSetting({
   update,
 }: {
   t: Strings;
-  settings: MemexSettings;
-  update: (patch: Partial<MemexSettings>) => Promise<void> | void;
+  settings: MycoSettings;
+  update: (patch: Partial<MycoSettings>) => Promise<void> | void;
 }): JSX.Element {
   const enabled = settings.auto_ingest_enabled;
   const interval = settings.auto_ingest_interval_min;
@@ -722,7 +723,7 @@ function ModelPicker({
   );
 }
 
-// Memex Pro signs in with the account created on the website (email + password);
+// myco Pro signs in with the account created on the website (email + password);
 // the app fetches and stores the account's access key automatically — the user
 // never copies a key by hand. Settings is the single source of truth for the
 // logged-in email + connection flag (the Rust login command persists both).
@@ -733,7 +734,7 @@ function MycoProCard({
 }: {
   t: Strings;
   def: ProviderDef;
-  settings: MemexSettings | null;
+  settings: MycoSettings | null;
 }): JSX.Element {
   const update = useSettingsStore((s) => s.update);
   const reload = useSettingsStore((s) => s.load);
@@ -1008,7 +1009,7 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
       // If Query/Ingest were pointed at this provider, reset them to the
       // always-available CLI so the picker and the actual dispatch target stay
       // in sync (otherwise a request would fail on the just-removed key).
-      const patch: Partial<MemexSettings> = {};
+      const patch: Partial<MycoSettings> = {};
       if (settings?.query_provider === providerId) {
         patch.query_provider = "anthropic-cli";
         patch.query_model = "sonnet";
@@ -1641,6 +1642,26 @@ function MascotToggle({ t }: { t: Strings }): JSX.Element {
 }
 
 function SettingsAbout({ t }: { t: Strings }): JSX.Element {
+  // Read the version from the bundle rather than hardcoding it: the literal
+  // that used to live here said 0.2.2 long after every manifest said 0.3.0,
+  // because no release step ever touched this file. Falls back to the manifest
+  // version in a plain browser (dev mock / screenshots), where there is no
+  // Tauri host to ask.
+  const [appVersion, setAppVersion] = useState(__PACKAGE_VERSION__);
+  useEffect(() => {
+    let alive = true;
+    void getVersion()
+      .then((v) => {
+        if (alive) setAppVersion(v);
+      })
+      .catch(() => {
+        // Not running inside Tauri; the fallback above stands.
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   return (
     <div className="col" style={{ gap: 20 }}>
       <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>{t.s_about}</h2>
@@ -1662,10 +1683,10 @@ function SettingsAbout({ t }: { t: Strings }): JSX.Element {
           <div
             style={{ fontSize: 20, fontWeight: 700, letterSpacing: "-0.01em" }}
           >
-            Memex
+            myco
           </div>
           <div className="muted" style={{ fontSize: 13 }}>
-            v0.2.2 · build 2026.07.15
+            v{appVersion} · build {__BUILD_DATE__}
           </div>
           <p
             style={{

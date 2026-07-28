@@ -330,7 +330,7 @@ export default function App(): JSX.Element {
   // Auto-restore or create default vault on first mount.
   //
   // We always run ensureDefaultVault first — it's idempotent and seeds
-  // the canonical ~/Documents/Memex scaffold. This repairs any missing
+  // the canonical ~/Documents/myco scaffold. This repairs any missing
   // subdirectories or seed files (e.g. if the user manually deleted
   // raw/ from Finder).
   //

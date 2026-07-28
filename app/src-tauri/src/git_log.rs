@@ -1,6 +1,6 @@
 // Git log reader. Shells out to the system `git` binary to keep our binary
 // small. The vault directory must be inside (or be the root of) a git repo;
-// otherwise we return an empty list rather than failing — many Memex users
+// otherwise we return an empty list rather than failing — many myco users
 // won't have version control set up yet.
 
 use serde::Serialize;

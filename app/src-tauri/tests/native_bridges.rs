@@ -15,8 +15,8 @@
 // (headless Linux CI). Run them deliberately on a machine with an unlocked
 // keychain via:  cargo test --test native_bridges -- --ignored
 
-use memex_lib::cli_agent;
-use memex_lib::secrets;
+use myco_lib::cli_agent;
+use myco_lib::secrets;
 
 // ---------- keychain secret storage (real OS keychain; #[ignore]) ----------
 

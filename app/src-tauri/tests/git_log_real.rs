@@ -2,7 +2,7 @@
 // a git repo, makes a few commits, then verifies our shellout returns
 // the same set the user would see in `git log`.
 
-use memex_lib::git_log;
+use myco_lib::git_log;
 use std::path::PathBuf;
 use std::process::Command;
 

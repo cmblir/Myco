@@ -371,7 +371,7 @@ describe("complete() CLI query retrieval (retrieval 1b)", () => {
       task: "query",
       cwd: VAULT,
       messages: [
-        { role: "system", content: "You are Memex." },
+        { role: "system", content: "You are myco." },
         { role: "user", content: "what is attention?" },
       ],
       onStage,
@@ -384,7 +384,7 @@ describe("complete() CLI query retrieval (retrieval 1b)", () => {
     expect(prompt).toContain("attention body passage");
     expect(prompt).toContain("[[attention-mechanism]]");
     // Retrieval block must land between the system content and the user turn.
-    expect(prompt.indexOf("You are Memex.")).toBeLessThan(
+    expect(prompt.indexOf("You are myco.")).toBeLessThan(
       prompt.indexOf("Relevant wiki context"),
     );
     expect(prompt.indexOf("Relevant wiki context")).toBeLessThan(

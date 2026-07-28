@@ -5,7 +5,7 @@
 //
 // This complements the headless cron daemon (automation/autoingest.py): the
 // daemon runs without the app open via your CLI; this runs while the app is open
-// via whatever provider you've selected (CLI, Memex Pro, …). Both watch the same
+// via whatever provider you've selected (CLI, myco Pro, …). Both watch the same
 // `_inbox/` folder. Only .md inbox files are picked up here (list_files is
 // markdown-only); the daemon handles other types.
 

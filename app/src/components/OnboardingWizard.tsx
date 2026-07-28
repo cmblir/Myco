@@ -1,7 +1,7 @@
 // First-run onboarding wizard (UX-01). A 3-step overlay shown only on a
 // genuine first run (no vault / empty vault) and never again once completed or
 // skipped — App persists a `myco.onboarded` flag and calls onClose here.
-// Reuses the modal shell (.memex-modal*) so it stays visually consistent with
+// Reuses the modal shell (.myco-modal*) so it stays visually consistent with
 // DialogHost instead of inventing a parallel design system.
 
 import { useId, useState } from "react";
@@ -53,7 +53,7 @@ export default function OnboardingWizard({
       title: t.ob_s1_title ?? "Create or open a project",
       body:
         t.ob_s1_body ??
-        "Memex keeps every page as plain markdown in a folder you control. Open an existing folder, or keep the default vault Memex just created for you.",
+        "myco keeps every page as plain markdown in a folder you control. Open an existing folder, or keep the default vault myco just created for you.",
       action: t.ob_s1_action ?? "Open a folder…",
       run: () => void pickVault(),
     },
@@ -62,7 +62,7 @@ export default function OnboardingWizard({
       title: t.ob_s2_title ?? "Add your first source",
       body:
         t.ob_s2_body ??
-        "Drop a file, paste a URL, or write a note. Memex reads it, extracts entities and concepts, and weaves a cited page into your graph.",
+        "Drop a file, paste a URL, or write a note. myco reads it, extracts entities and concepts, and weaves a cited page into your graph.",
       action: t.ob_s2_action ?? "Go to Ingest",
       run: () => {
         setRoute("ingest");
@@ -74,7 +74,7 @@ export default function OnboardingWizard({
       title: t.ob_s3_title ?? "Ask a question",
       body:
         t.ob_s3_body ??
-        "Ask the wiki anything. Memex answers from your pages first and reaches into raw sources only when needed — every claim ships with a citation.",
+        "Ask the wiki anything. myco answers from your pages first and reaches into raw sources only when needed — every claim ships with a citation.",
       action: t.ob_s3_action ?? "Go to Ask",
       run: () => {
         setRoute("query");
@@ -89,14 +89,14 @@ export default function OnboardingWizard({
 
   return (
     <div
-      className="memex-modal__backdrop onboarding-backdrop"
+      className="myco-modal__backdrop onboarding-backdrop"
       role="dialog"
       aria-modal="true"
       aria-labelledby={titleId}
     >
-      <div className="memex-modal onboarding">
+      <div className="myco-modal onboarding">
         <div className="ob-head">
-          <span className="ob-eyebrow">{t.ob_title ?? "Welcome to Memex"}</span>
+          <span className="ob-eyebrow">{t.ob_title ?? "Welcome to myco"}</span>
           <button type="button" className="ob-skip" onClick={onClose}>
             {t.ob_skip ?? "Skip"}
           </button>

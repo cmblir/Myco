@@ -533,7 +533,7 @@ impl LocalLlm {
     /// caller may prepend inlined vault context); facts are unreliable at 1B.
     pub fn generate(&self, prompt: &str, max_tokens: i32) -> Result<String, String> {
         self.run(
-            "You are Memex's built-in assistant. Answer briefly, in the same language as the question.",
+            "You are myco's built-in assistant. Answer briefly, in the same language as the question.",
             prompt,
             max_tokens.clamp(1, 512),
         )

@@ -1,7 +1,7 @@
-// Memex Pro provider — the subscription ingest path.
+// myco Pro provider — the subscription ingest path.
 //
 // Instead of running a model locally (the claude CLI) the app sends the vault
-// snapshot to the Memex Pro proxy, which runs a cheap model THE SERVICE pays for
+// snapshot to the myco Pro proxy, which runs a cheap model THE SERVICE pays for
 // and returns the wiki file operations to apply. The app stores only the proxy
 // URL (settings) and the license key (OS keychain) — the model and billing live
 // server-side. This is a generic client: it POSTs to a configurable URL and
@@ -58,7 +58,7 @@ pub struct MycoProResult {
     pub paths: Vec<String>,
 }
 
-/// Ingest one source through the Memex Pro proxy and apply the result to `root`.
+/// Ingest one source through the myco Pro proxy and apply the result to `root`.
 /// May a credential be sent to this proxy URL?
 ///
 /// The URL is typed by hand in Settings, and both paths here carry secrets: the
@@ -80,7 +80,7 @@ fn require_safe_proxy(url: &str) -> Result<(), String> {
         return Ok(());
     }
     Err(format!(
-        "Memex Pro URL must be https (or http://localhost while testing) — \
+        "myco Pro URL must be https (or http://localhost while testing) — \
          refusing to send your credentials in the clear to {url:?}"
     ))
 }
@@ -115,18 +115,18 @@ pub async fn ingest(
         .json(&body)
         .send()
         .await
-        .map_err(|e| format!("Memex Pro request failed: {e}"))?;
+        .map_err(|e| format!("myco Pro request failed: {e}"))?;
     let status = resp.status();
     let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
     if !status.is_success() {
         return Err(format!(
-            "Memex Pro {}: {}",
+            "myco Pro {}: {}",
             status,
             String::from_utf8_lossy(&bytes)
         ));
     }
     let parsed: IngestResponse =
-        serde_json::from_slice(&bytes).map_err(|e| format!("Memex Pro response parse: {e}"))?;
+        serde_json::from_slice(&bytes).map_err(|e| format!("myco Pro response parse: {e}"))?;
 
     let mut paths = Vec::new();
     for op in &parsed.operations {
@@ -188,7 +188,7 @@ struct LoginResponse {
     error: Option<String>,
 }
 
-/// Outcome of a Memex Pro account login. `license_key` is the access key fetched
+/// Outcome of a myco Pro account login. `license_key` is the access key fetched
 /// for the account (None when the account has no active access granted yet).
 #[derive(Debug, Clone, Serialize)]
 pub struct LoginOutcome {
@@ -199,7 +199,7 @@ pub struct LoginOutcome {
     pub exp: i64,
 }
 
-/// Log in to the Memex Pro proxy with the account created on the website and
+/// Log in to the myco Pro proxy with the account created on the website and
 /// fetch its access key. The app then uses that key for ingest — the user never
 /// copies a key by hand.
 pub async fn login(proxy_url: &str, email: &str, password: &str) -> Result<LoginOutcome, String> {
@@ -215,15 +215,15 @@ pub async fn login(proxy_url: &str, email: &str, password: &str) -> Result<Login
         .json(&serde_json::json!({ "email": email, "password": password }))
         .send()
         .await
-        .map_err(|e| format!("Memex Pro login failed: {e}"))?;
+        .map_err(|e| format!("myco Pro login failed: {e}"))?;
     let status = resp.status();
     let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
     let parsed: LoginResponse =
-        serde_json::from_slice(&bytes).map_err(|e| format!("Memex Pro login parse: {e}"))?;
+        serde_json::from_slice(&bytes).map_err(|e| format!("myco Pro login parse: {e}"))?;
     if !status.is_success() {
         return Err(parsed
             .error
-            .unwrap_or_else(|| format!("Memex Pro login {status}")));
+            .unwrap_or_else(|| format!("myco Pro login {status}")));
     }
     let account = parsed
         .account

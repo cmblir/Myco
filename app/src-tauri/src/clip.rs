@@ -220,7 +220,7 @@ mod tests {
 
     #[test]
     fn save_clip_writes_inside_inbox() {
-        let dir = std::env::temp_dir().join(format!("memex-clip-test-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("myco-clip-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let c = Clip { title: "t".into(), url: Some("https://x.com".into()), selection: None };
         let p = save_clip(&dir, &c).unwrap();

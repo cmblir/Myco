@@ -2,7 +2,7 @@
 // desktop app calls. Mirrors PageIngest.tsx → ipc.claudeRun → Rust
 // claude::run_prompt.
 
-use memex_lib::claude;
+use myco_lib::claude;
 
 const PROMPT: &str = r#"New source has been added at `raw/test-attention.md` (title: "Attention mechanism test source"). Ingest it into the wiki following CLAUDE.md:
 
@@ -18,7 +18,7 @@ fn main() {
     let home = std::env::var("HOME").expect("HOME");
     let vault = format!("{home}/Documents/Memex");
 
-    println!("Running ingest workflow through memex_lib::claude::run_prompt");
+    println!("Running ingest workflow through myco_lib::claude::run_prompt");
     println!("cwd: {vault}");
     let start = std::time::Instant::now();
     match claude::run_prompt(PROMPT, &vault, None) {

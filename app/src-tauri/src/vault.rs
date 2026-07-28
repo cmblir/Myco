@@ -242,9 +242,9 @@ pub enum FileNode {
     },
 }
 
-// Creates and seeds Memex's own vault on first launch. We default to
-// ~/Documents/Memex so the folder shows up in Finder/Files, alongside the
-// user's other documents — Memex owns it, but it is plain markdown that
+// Creates and seeds myco's own vault on first launch. We default to
+// ~/Documents/myco so the folder shows up in Finder/Files, alongside the
+// user's other documents — myco owns it, but it is plain markdown that
 // can also be opened in Obsidian or any editor.
 //
 // Scaffolds the wiki workflow layout from CLAUDE.md:
@@ -260,7 +260,17 @@ pub fn ensure_default_vault() -> Result<String, String> {
     let home = std::env::var_os("HOME")
         .or_else(|| std::env::var_os("USERPROFILE"))
         .ok_or_else(|| "no home directory found".to_string())?;
-    let target = Path::new(&home).join("Documents").join("Memex");
+    // A fresh install gets ~/Documents/myco. An install that already has the
+    // pre-rename folder keeps using it: moving a directory full of the user's
+    // own notes is not ours to do, and seeding a second empty vault beside it
+    // would look like their writing had vanished.
+    let documents = Path::new(&home).join("Documents");
+    let legacy = documents.join("Memex");
+    let target = if legacy.is_dir() {
+        legacy
+    } else {
+        documents.join("myco")
+    };
     seed_vault(&target)?;
     Ok(target.to_string_lossy().into_owned())
 }
@@ -292,15 +302,15 @@ fn write_if_missing(path: &Path, content: &str) -> Result<(), String> {
     std::fs::write(path, content).map_err(|e| format!("write {path:?}: {e}"))
 }
 
-const WELCOME: &str = r#"# Welcome to Memex
+const WELCOME: &str = r#"# Welcome to myco
 
-This is your Memex vault. Everything you write here lives in plain
+This is your myco vault. Everything you write here lives in plain
 markdown on disk — you stay in control.
 
 ## Layout
 
 - `raw/` — drop or paste sources here (PDF, text, articles). Treat as
-  immutable; Memex never modifies these.
+  immutable; myco never modifies these.
 - `wiki/` — your maintained pages: entities, concepts, techniques,
   analyses, plus `index.md` and `log.md`.
 - `daily/` — daily notes (`YYYY-MM-DD.md`). Use the sidebar
@@ -325,9 +335,9 @@ Open Settings → Connections to wire up your LLM provider (Claude CLI,
 Anthropic API, OpenAI, Gemini, Ollama, or OpenRouter).
 "#;
 
-const VAULT_CLAUDE_MD: &str = r#"# Memex Vault — Maintenance Rules
+const VAULT_CLAUDE_MD: &str = r#"# myco Vault — Maintenance Rules
 
-This vault is maintained by Claude through the Memex desktop app. The
+This vault is maintained by Claude through the myco desktop app. The
 following rules govern how Claude reads and writes files when invoked
 with this vault as cwd.
 
@@ -362,7 +372,7 @@ status: active | superseded | disputed
 
 ## On ingest
 
-When the user drops a source via Memex's Ingest page, Claude is called
+When the user drops a source via myco's Ingest page, Claude is called
 with the prompt and the new `raw/<slug>.md` already written. Steps:
 
 1. Read the full source.
@@ -843,7 +853,7 @@ pub fn write_file(path: &str, content: &str) -> Result<(), String> {
 
     use std::io::Write;
     let mut tmp = tempfile::Builder::new()
-        .prefix(".memex-tmp-")
+        .prefix(".myco-tmp-")
         .suffix(".md")
         .tempfile_in(parent)
         .map_err(|e| format!("tempfile create failed: {e}"))?;

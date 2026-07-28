@@ -74,12 +74,12 @@ check("highlight click opens citing note", /attention-mechanism/i.test(title), t
 // --- Click a [[pdf::…]] link inside a note → viewer opens at page/anchor ---
 await page.locator(".nav-item", { hasText: "wiki" }).first().click();
 await page.locator(".nav-leaf", { hasText: "pdf-demo" }).first().click();
-await page.waitForSelector(".memex-wikilink", { timeout: 10_000 });
+await page.waitForSelector(".myco-wikilink", { timeout: 10_000 });
 check(
   "pdf pinpoint link rendered in note",
-  (await page.locator(".memex-wikilink").count()) >= 1,
+  (await page.locator(".myco-wikilink").count()) >= 1,
 );
-await page.locator(".memex-wikilink").first().click();
+await page.locator(".myco-wikilink").first().click();
 await page.waitForSelector('[data-testid="pdf-viewer"]', { timeout: 15_000 }).catch(() => {});
 check("clicking pdf link opens viewer", (await page.locator('[data-testid="pdf-viewer"]').count()) > 0);
 

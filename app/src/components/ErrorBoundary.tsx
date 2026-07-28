@@ -94,7 +94,7 @@ export default class ErrorBoundary extends Component<Props, State> {
           autoFocus
         >
           {this.props.reload
-            ? (t.eb_reload ?? "Reload Memex")
+            ? (t.eb_reload ?? "Reload myco")
             : (t.eb_retry ?? "Try again")}
         </button>
       </div>

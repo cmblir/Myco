@@ -38,7 +38,7 @@ function wikilinkRule(state: InlineState, silent: boolean): boolean {
   if (!silent) {
     const token = state.push("wikilink", "a", 0);
     token.attrSet("data-link", match.target);
-    token.attrSet("class", "memex-wikilink");
+    token.attrSet("class", "myco-wikilink");
     token.content = match.display || match.target;
   }
 
@@ -59,7 +59,7 @@ export function createRenderer(): MarkdownIt {
     const token = tokens[idx];
     const target = token.attrGet("data-link") ?? "";
     const display = token.content;
-    return `<a data-link="${escapeHtml(target)}" class="memex-wikilink" href="#">${escapeHtml(display)}</a>`;
+    return `<a data-link="${escapeHtml(target)}" class="myco-wikilink" href="#">${escapeHtml(display)}</a>`;
   };
 
   // Mark external links (incl. linkified bare URLs) so the Viewer can open them

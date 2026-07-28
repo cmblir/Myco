@@ -1894,7 +1894,7 @@ export class GraphScene {
     };
     // Stable program key: every scene shares one patched program instead of
     // recompiling per material instance.
-    mat.customProgramCacheKey = () => "memex-edge-flow";
+    mat.customProgramCacheKey = () => "myco-edge-flow";
   }
 
   /** Flow amplitude for the current settings. Sigma is flat data-viz (no

@@ -88,7 +88,7 @@ export default function Editor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey]);
 
-  return <div ref={containerRef} className="memex-editor" />;
+  return <div ref={containerRef} className="myco-editor" />;
 }
 
 function wikilinkCompletion(

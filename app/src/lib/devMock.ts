@@ -207,7 +207,7 @@ function synthNodes(target: number): Node[] {
   if (stress > 0) NODES.push(...synthNodes(stress));
 }
 
-const VAULT = "/Memex";
+const VAULT = "/myco";
 const SLUGS = new Set(NODES.map((d) => d.s));
 const pathOf = (s: string): string => `${VAULT}/wiki/${s}.md`;
 
@@ -255,7 +255,7 @@ const MOCK_SIDECAR = JSON.stringify({
       id: "seed1",
       page: 1,
       quads: [{ x: 0.12, y: 0.42, w: 0.5, h: 0.06 }],
-      text: "Hello Memex PDF",
+      text: "Hello myco PDF",
       color: "#ffd54f",
       note: `${VAULT}/wiki/attention-mechanism.md`,
       created: "2026-07-10T00:00:00Z",
@@ -691,7 +691,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "ensure_default_vault":
       return Promise.resolve(VAULT);
     case "open_vault":
-      return Promise.resolve({ path: VAULT, name: "Memex" });
+      return Promise.resolve({ path: VAULT, name: "myco" });
     case "list_files":
       return Promise.resolve(fileTree());
     case "file_mtimes":
@@ -709,8 +709,8 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "list_universes":
       return Promise.resolve([
         {
-          slug: "Memex",
-          title: "Memex",
+          slug: "myco",
+          title: "myco",
           description: "",
           root: VAULT,
           noteCount: NODES.length,
@@ -915,7 +915,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       }
       if (p === MOCK_PDF_LINK_NOTE) {
         const body =
-          `# PDF demo\n\nSee the source: [[pdf::${MOCK_PDF_STEM}#p1:seed1|Hello Memex PDF]].\n`;
+          `# PDF demo\n\nSee the source: [[pdf::${MOCK_PDF_STEM}#p1:seed1|Hello myco PDF]].\n`;
         return Promise.resolve({ path: p, raw: body, content: body, frontmatter: null });
       }
       const slug = p.split("/").pop()?.replace(/\.md$/, "") ?? "";
@@ -924,7 +924,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         const content = `# ${d.n}\n\n${body(d)}`;
         return Promise.resolve({ path: p, raw: content, content, frontmatter: frontmatter(d) });
       }
-      return Promise.resolve({ path: p, raw: "# Memex\n\nSample note.\n", content: "# Memex\n\nSample note.\n", frontmatter: null });
+      return Promise.resolve({ path: p, raw: "# myco\n\nSample note.\n", content: "# myco\n\nSample note.\n", frontmatter: null });
     }
     case "read_vault_context":
       return Promise.resolve(NODES.map((d) => `===== wiki/${d.s}.md =====\n${body(d)}`).join("\n\n"));

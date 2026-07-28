@@ -2,7 +2,7 @@
 // `--transport http` client round-trip can be proven without launching the full
 // Tauri app. Delete after Phase 0 sign-off.
 
-use memex_lib::mcp_native;
+use myco_lib::mcp_native;
 use tokio_util::sync::CancellationToken;
 
 #[tokio::main]

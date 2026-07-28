@@ -752,7 +752,7 @@ export interface Strings {
 
 export const STRINGS: Record<Lang, Strings> = {
   en: {
-    app_name: "Memex",
+    app_name: "myco",
     quick_search: "Search or jump to…",
     quick_ingest: "Ingest a source",
     quick_ask: "Ask the wiki",
@@ -853,7 +853,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_eyebrow: "Living wiki",
     ov_title: "Drop a source. Watch the graph grow.",
     ov_lede:
-      "Memex turns every paper, article and note you ingest into a cross-linked, fully-cited knowledge graph — kept in plain markdown so you stay in control.",
+      "myco turns every paper, article and note you ingest into a cross-linked, fully-cited knowledge graph — kept in plain markdown so you stay in control.",
     ov_cta_ingest: "Ingest a source",
     ov_cta_ask: "Ask the wiki",
     ov_stats_pages: "Pages",
@@ -865,7 +865,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_quick: "Jump back in",
     ing_title: "Ingest",
     ing_lede:
-      "Drop a file, paste a URL, or write a note. Memex will route it through Claude, extract entities and concepts, write a source page, and weave it into the graph.",
+      "Drop a file, paste a URL, or write a note. myco will route it through Claude, extract entities and concepts, write a source page, and weave it into the graph.",
     ing_drop: "Drop a file here",
     ing_drop_or: "or paste a URL",
     ing_browse: "Browse files…",
@@ -913,7 +913,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_chip_error: "Ingest failed",
     q_title: "Ask the wiki",
     q_lede:
-      "Memex answers from your wiki first, then reaches into raw sources only when needed. Every claim ships with a citation.",
+      "myco answers from your wiki first, then reaches into raw sources only when needed. Every claim ships with a citation.",
     q_ph: "What is BPE? How does midtraining differ from finetuning?",
     q_send: "Ask",
     q_recent: "Recent questions",
@@ -1173,7 +1173,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_change: "Change…",
     q_empty_response: "(empty response)",
     eb_title: "Something went wrong in {area}.",
-    eb_reload: "Reload Memex",
+    eb_reload: "Reload myco",
     eb_retry: "Try again",
     eb_area_app: "the app",
     eb_area_graph: "the graph",
@@ -1189,7 +1189,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_embeddings_loading_model_hint: "First run loads the bundled model — this takes a few seconds.",
     s_embeddings_done: "Indexed {n} pages",
     s_autoreindex_title: "Keep the index up to date",
-    s_autoreindex_desc: "While Memex is open, re-embed pages you edit once you stop typing. Only pages that changed are re-embedded.",
+    s_autoreindex_desc: "While myco is open, re-embed pages you edit once you stop typing. Only pages that changed are re-embedded.",
     s_providers: "Connections",
     s_appearance: "Appearance",
     s_lang: "Language",
@@ -1220,9 +1220,9 @@ export const STRINGS: Record<Lang, Strings> = {
     mcp_offline_note:
       "The app hosts the SSE server while it's open and follows your active vault.",
     mcp_not_found:
-      "MCP server files are missing from this build. Reinstall the latest Memex.",
+      "MCP server files are missing from this build. Reinstall the latest myco.",
     s_model_lede:
-      "Memex uses Claude by default. You can switch models for ingest, queries, or both — each task can use a different model.",
+      "myco uses Claude by default. You can switch models for ingest, queries, or both — each task can use a different model.",
     s_model_ingest: "Ingest model",
     s_model_query: "Query model",
     model_custom: "Custom\u2026",
@@ -1231,7 +1231,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_model_recommended: "Recommended",
     s_model_ctx: "context",
     s_providers_lede:
-      "Bring your own provider. Memex never sees your keys — they're stored locally.",
+      "Bring your own provider. myco never sees your keys — they're stored locally.",
     s_provider_connected: "Connected",
     s_provider_disconnected: "Not connected",
     s_provider_cli_missing: "CLI not installed",
@@ -1245,13 +1245,13 @@ export const STRINGS: Record<Lang, Strings> = {
     s_mycopro_noaccess: "No active access yet",
     s_autoingest_title: "Auto-ingest inbox",
     s_autoingest_desc:
-      "While Memex is open, periodically ingest sources you drop into the vault's _inbox/ folder.",
+      "While myco is open, periodically ingest sources you drop into the vault's _inbox/ folder.",
     s_autoingest_interval: "Every",
     s_provider_connect: "Connect",
     s_provider_disconnect: "Disconnect",
     s_provider_test: "Test",
     s_lang_lede:
-      "Memex's UI and Claude's drafting language are independent — write English notes from a Korean UI if you like.",
+      "myco's UI and Claude's drafting language are independent — write English notes from a Korean UI if you like.",
     s_lang_ui: "Interface",
     s_lang_drafts: "Drafting language (Claude)",
     s_appearance_lede: "Theme follows your system by default.",
@@ -1259,7 +1259,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_appearance_dark: "Dark",
     s_appearance_system: "System",
     s_about_built:
-      "Memex is a thin client over a local Obsidian vault and the Claude Code CLI. Pages are plain markdown — your knowledge stays yours.",
+      "myco is a thin client over a local Obsidian vault and the Claude Code CLI. Pages are plain markdown — your knowledge stays yours.",
     dlg_cancel: "Cancel",
     dlg_ok: "OK",
     dlg_create: "Create",
@@ -1465,7 +1465,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_run: "Reflect",
     rf_running: "Reflecting…",
     rf_empty: "No suggestions — the vault looks well-connected.",
-    ob_title: "Welcome to Memex",
+    ob_title: "Welcome to myco",
     ob_skip: "Skip",
     ob_back: "Back",
     ob_next: "Next",
@@ -1474,15 +1474,15 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_vault_none: "No vault linked yet",
     ob_s1_title: "Create or open a project",
     ob_s1_body:
-      "Memex keeps every page as plain markdown in a folder you control. Open an existing folder, or keep the default vault Memex just created for you.",
+      "myco keeps every page as plain markdown in a folder you control. Open an existing folder, or keep the default vault myco just created for you.",
     ob_s1_action: "Open a folder…",
     ob_s2_title: "Add your first source",
     ob_s2_body:
-      "Drop a file, paste a URL, or write a note. Memex reads it, extracts entities and concepts, and weaves a cited page into your graph.",
+      "Drop a file, paste a URL, or write a note. myco reads it, extracts entities and concepts, and weaves a cited page into your graph.",
     ob_s2_action: "Go to Ingest",
     ob_s3_title: "Ask a question",
     ob_s3_body:
-      "Ask the wiki anything. Memex answers from your pages first and reaches into raw sources only when needed — every claim ships with a citation.",
+      "Ask the wiki anything. myco answers from your pages first and reaches into raw sources only when needed — every claim ships with a citation.",
     ob_s3_action: "Go to Ask",
     s_budget_title: "Monthly spend guard",
     s_budget_desc:
@@ -1493,7 +1493,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_budget_empty: "No paid-API usage tracked yet this month.",
     s_autoreflect_title: "Auto-reflect",
     s_autoreflect_desc:
-      "While Memex is open, periodically run a read-only reflect pass to surface orphans, stale pages, and missing links.",
+      "While myco is open, periodically run a read-only reflect pass to surface orphans, stale pages, and missing links.",
     s_autoreflect_interval: "Every",
     s_vault_register: "Make this an independent Obsidian vault",
     s_vault_registered: "Obsidian vault ready",
@@ -1515,10 +1515,10 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_openrouter:
       "One key for many providers (useful for model comparison).",
     s_provider_desc_myco_pro:
-      "Unlimited ingest on a managed model — no API key or CLI needed. Sign in with your Memex Pro account.",
+      "Unlimited ingest on a managed model — no API key or CLI needed. Sign in with your myco Pro account.",
   },
   ko: {
-    app_name: "Memex",
+    app_name: "myco",
     quick_search: "검색하거나 이동…",
     quick_ingest: "소스 가져오기",
     quick_ask: "위키에 질문하기",
@@ -1619,7 +1619,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_eyebrow: "살아있는 위키",
     ov_title: "소스를 넣으면, 그래프가 자랍니다.",
     ov_lede:
-      "Memex는 가져온 모든 논문·아티클·노트를 인용 기반으로 연결된 지식 그래프로 만듭니다. 모든 페이지는 마크다운이라, 통제권은 항상 당신에게 있습니다.",
+      "myco는 가져온 모든 논문·아티클·노트를 인용 기반으로 연결된 지식 그래프로 만듭니다. 모든 페이지는 마크다운이라, 통제권은 항상 당신에게 있습니다.",
     ov_cta_ingest: "소스 가져오기",
     ov_cta_ask: "위키에 질문",
     ov_stats_pages: "페이지",
@@ -1679,7 +1679,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_chip_error: "가져오기 실패",
     q_title: "위키에 질문하기",
     q_lede:
-      "Memex는 먼저 위키에서 답을 찾고, 부족할 때만 원본 소스로 들어갑니다. 모든 주장에는 인용이 따라옵니다.",
+      "myco는 먼저 위키에서 답을 찾고, 부족할 때만 원본 소스로 들어갑니다. 모든 주장에는 인용이 따라옵니다.",
     q_ph: "BPE는 무엇인가요? 미드트레이닝은 파인튜닝과 어떻게 다른가요?",
     q_send: "질문하기",
     q_recent: "최근 질문",
@@ -1939,7 +1939,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_change: "변경…",
     q_empty_response: "(응답 없음)",
     eb_title: "{area}에서 문제가 발생했습니다.",
-    eb_reload: "Memex 다시 불러오기",
+    eb_reload: "myco 다시 불러오기",
     eb_retry: "다시 시도",
     eb_area_app: "앱",
     eb_area_graph: "그래프",
@@ -1955,7 +1955,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_embeddings_loading_model_hint: "첫 실행에는 내장 모델을 불러옵니다 — 몇 초 걸립니다.",
     s_embeddings_done: "{n}개 페이지 인덱싱 완료",
     s_autoreindex_title: "인덱스 자동 최신화",
-    s_autoreindex_desc: "Memex가 열려 있는 동안, 편집을 멈추면 수정한 페이지를 다시 임베딩합니다. 바뀐 페이지만 처리합니다.",
+    s_autoreindex_desc: "myco가 열려 있는 동안, 편집을 멈추면 수정한 페이지를 다시 임베딩합니다. 바뀐 페이지만 처리합니다.",
     s_providers: "연결",
     s_appearance: "테마",
     s_lang: "언어",
@@ -1975,9 +1975,9 @@ export const STRINGS: Record<Lang, Strings> = {
     mcp_copied: "복사됨",
     mcp_register_btn: "지금 Claude Code에 등록",
     mcp_offline_note:
-      "Memex가 꺼져 있어도 동작 — Claude가 서버를 직접 띄웁니다.",
+      "myco가 꺼져 있어도 동작 — Claude가 서버를 직접 띄웁니다.",
     mcp_not_found:
-      "이 빌드에 MCP 서버 파일이 없습니다. 최신 Memex를 다시 설치하세요.",
+      "이 빌드에 MCP 서버 파일이 없습니다. 최신 myco를 다시 설치하세요.",
     mcp_serving: "MCP 서버 실행 중",
     mcp_not_serving: "MCP 서버 중지됨",
     mcp_starting: "MCP 서버 시작 중…",
@@ -1988,7 +1988,7 @@ export const STRINGS: Record<Lang, Strings> = {
     mcp_stop_btn: "중지",
     mcp_registering: "등록 중…",
     s_model_lede:
-      "Memex는 기본적으로 Claude를 사용합니다. 가져오기와 질문에 서로 다른 모델을 지정할 수 있습니다.",
+      "myco는 기본적으로 Claude를 사용합니다. 가져오기와 질문에 서로 다른 모델을 지정할 수 있습니다.",
     s_model_ingest: "가져오기용 모델",
     s_model_query: "질문용 모델",
     model_custom: "직접 입력\u2026",
@@ -1997,7 +1997,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_model_recommended: "추천",
     s_model_ctx: "컨텍스트",
     s_providers_lede:
-      "원하는 제공자를 연결하세요. 키는 로컬에만 저장되며, Memex 서버는 절대 보지 못합니다.",
+      "원하는 제공자를 연결하세요. 키는 로컬에만 저장되며, myco 서버는 절대 보지 못합니다.",
     s_provider_connected: "연결됨",
     s_provider_disconnected: "미연결",
     s_provider_cli_missing: "CLI 설치 안 됨",
@@ -2011,7 +2011,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_mycopro_noaccess: "활성 구독 없음",
     s_autoingest_title: "인박스 자동 인게스트",
     s_autoingest_desc:
-      "Memex가 켜져 있는 동안 vault의 _inbox/ 폴더에 넣은 소스를 주기적으로 인게스트합니다.",
+      "myco가 켜져 있는 동안 vault의 _inbox/ 폴더에 넣은 소스를 주기적으로 인게스트합니다.",
     s_autoingest_interval: "주기",
     s_provider_connect: "연결",
     s_provider_disconnect: "해제",
@@ -2025,7 +2025,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_appearance_dark: "다크",
     s_appearance_system: "시스템",
     s_about_built:
-      "Memex는 로컬 Obsidian 볼트와 Claude Code CLI 위에서 동작하는 얇은 클라이언트입니다. 페이지는 마크다운 — 당신의 지식은 당신의 것입니다.",
+      "myco는 로컬 Obsidian 볼트와 Claude Code CLI 위에서 동작하는 얇은 클라이언트입니다. 페이지는 마크다운 — 당신의 지식은 당신의 것입니다.",
     dlg_cancel: "취소",
     dlg_ok: "확인",
     dlg_create: "만들기",
@@ -2230,7 +2230,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_run: "Reflect 실행",
     rf_running: "분석 중…",
     rf_empty: "제안이 없습니다 — vault가 잘 연결되어 있습니다.",
-    ob_title: "Memex에 오신 것을 환영합니다",
+    ob_title: "myco에 오신 것을 환영합니다",
     ob_skip: "건너뛰기",
     ob_back: "이전",
     ob_next: "다음",
@@ -2239,15 +2239,15 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_vault_none: "아직 연결된 vault가 없습니다",
     ob_s1_title: "프로젝트 만들기 또는 열기",
     ob_s1_body:
-      "Memex는 모든 페이지를 당신이 관리하는 폴더에 마크다운으로 보관합니다. 기존 폴더를 열거나, 방금 만들어진 기본 vault를 그대로 사용하세요.",
+      "myco는 모든 페이지를 당신이 관리하는 폴더에 마크다운으로 보관합니다. 기존 폴더를 열거나, 방금 만들어진 기본 vault를 그대로 사용하세요.",
     ob_s1_action: "폴더 열기…",
     ob_s2_title: "첫 소스 추가하기",
     ob_s2_body:
-      "파일을 드롭하거나 URL을 붙여넣거나 메모를 쓰세요. Memex가 읽고, 엔티티와 개념을 추출해 인용이 달린 페이지를 그래프에 엮습니다.",
+      "파일을 드롭하거나 URL을 붙여넣거나 메모를 쓰세요. myco가 읽고, 엔티티와 개념을 추출해 인용이 달린 페이지를 그래프에 엮습니다.",
     ob_s2_action: "가져오기로 이동",
     ob_s3_title: "질문하기",
     ob_s3_body:
-      "위키에 무엇이든 물어보세요. Memex는 먼저 당신의 페이지에서 답하고 필요할 때만 원본으로 들어갑니다 — 모든 주장에는 인용이 따라옵니다.",
+      "위키에 무엇이든 물어보세요. myco는 먼저 당신의 페이지에서 답하고 필요할 때만 원본으로 들어갑니다 — 모든 주장에는 인용이 따라옵니다.",
     ob_s3_action: "질문으로 이동",
     s_budget_title: "월 지출 가드",
     s_budget_desc:
@@ -2258,7 +2258,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_budget_empty: "이번 달 추적된 유료 API 사용량이 없습니다.",
     s_autoreflect_title: "자동 Reflect",
     s_autoreflect_desc:
-      "Memex가 켜져 있는 동안 읽기 전용 Reflect를 주기적으로 실행해 고립 노드·오래된 페이지·빠진 링크를 찾아냅니다.",
+      "myco가 켜져 있는 동안 읽기 전용 Reflect를 주기적으로 실행해 고립 노드·오래된 페이지·빠진 링크를 찾아냅니다.",
     s_autoreflect_interval: "주기",
     s_vault_register: "독립 Obsidian 볼트로 만들기",
     s_vault_registered: "Obsidian 볼트 준비됨",
@@ -2280,10 +2280,10 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_openrouter:
       "하나의 키로 여러 제공자 사용 (모델 비교에 유용).",
     s_provider_desc_myco_pro:
-      "관리형 모델로 무제한 ingest — API 키나 CLI가 필요 없습니다. Memex Pro 계정으로 로그인하세요.",
+      "관리형 모델로 무제한 ingest — API 키나 CLI가 필요 없습니다. myco Pro 계정으로 로그인하세요.",
   },
   ja: {
-    app_name: "Memex",
+    app_name: "myco",
     quick_search: "検索 / 移動…",
     quick_ingest: "ソースを取り込む",
     quick_ask: "ウィキに質問",
@@ -2324,7 +2324,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_eyebrow: "生きたウィキ",
     ov_title: "ソースを入れる。グラフが育つ。",
     ov_lede:
-      "Memex は取り込んだ論文・記事・ノートを、引用付きの知識グラフへと織り上げます。すべてはマークダウン — あなたの知識は、あなたの手の中に。",
+      "myco は取り込んだ論文・記事・ノートを、引用付きの知識グラフへと織り上げます。すべてはマークダウン — あなたの知識は、あなたの手の中に。",
     ov_cta_ingest: "ソースを取り込む",
     ov_cta_ask: "ウィキに質問",
     ov_stats_pages: "ページ",
@@ -2384,7 +2384,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_chip_error: "取り込み失敗",
     q_title: "ウィキに質問",
     q_lede:
-      "Memex はまずウィキから答え、必要なときだけ原本に降りていきます。すべての主張に出典が付きます。",
+      "myco はまずウィキから答え、必要なときだけ原本に降りていきます。すべての主張に出典が付きます。",
     q_ph: "BPE とは? ミッドトレーニングはファインチューニングとどう違う?",
     q_send: "質問する",
     q_recent: "最近の質問",
@@ -2594,7 +2594,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_change: "変更…",
     q_empty_response: "(応答なし)",
     eb_title: "{area}で問題が発生しました。",
-    eb_reload: "Memex を再読み込み",
+    eb_reload: "myco を再読み込み",
     eb_retry: "再試行",
     eb_area_app: "アプリ",
     eb_area_graph: "グラフ",
@@ -2610,11 +2610,11 @@ export const STRINGS: Record<Lang, Strings> = {
     s_embeddings_loading_model_hint: "初回は内蔵モデルを読み込みます — 数秒かかります。",
     s_embeddings_done: "{n}ページをインデックスしました",
     s_autoreindex_title: "インデックスを自動更新",
-    s_autoreindex_desc: "Memexが開いている間、編集の手が止まったら変更したページを再埋め込みします。変更されたページのみ処理します。",
+    s_autoreindex_desc: "mycoが開いている間、編集の手が止まったら変更したページを再埋め込みします。変更されたページのみ処理します。",
     s_providers: "接続",
     s_appearance: "外観",
     s_lang: "言語",
-    s_about: "Memex について",
+    s_about: "myco について",
     s_mcp: "MCP サーバー",
     mcp_lede:
       "この vault を Claude Code・Claude Desktop に MCP ツールとして公開します。下のコマンドで一度登録すれば、このアプリを閉じていても全ての Claude セッションで動作します。",
@@ -2630,11 +2630,11 @@ export const STRINGS: Record<Lang, Strings> = {
     mcp_copied: "コピー済み",
     mcp_register_btn: "今すぐ Claude Code に登録",
     mcp_offline_note:
-      "Memex を閉じていても動作 — Claude がサーバーを自分で起動します。",
+      "myco を閉じていても動作 — Claude がサーバーを自分で起動します。",
     mcp_not_found:
-      "このビルドに MCP サーバーファイルがありません。最新の Memex を再インストールしてください。",
+      "このビルドに MCP サーバーファイルがありません。最新の myco を再インストールしてください。",
     s_model_lede:
-      "Memex は標準で Claude を使います。取り込みと質問で別々のモデルを指定できます。",
+      "myco は標準で Claude を使います。取り込みと質問で別々のモデルを指定できます。",
     s_model_ingest: "取り込み用モデル",
     s_model_query: "質問用モデル",
     model_custom: "カスタム\u2026",
@@ -2643,7 +2643,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_model_recommended: "推奨",
     s_model_ctx: "コンテキスト",
     s_providers_lede:
-      "好きなプロバイダーを接続してください。キーはローカル保存 — Memex のサーバーには届きません。",
+      "好きなプロバイダーを接続してください。キーはローカル保存 — myco のサーバーには届きません。",
     s_provider_connected: "接続済み",
     s_provider_disconnected: "未接続",
     s_provider_cli_missing: "CLI 未インストール",
@@ -2657,7 +2657,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_mycopro_noaccess: "有効なアクセスなし",
     s_autoingest_title: "受信トレイ自動取り込み",
     s_autoingest_desc:
-      "Memexを開いている間、vaultの_inbox/フォルダに入れたソースを定期的に取り込みます。",
+      "mycoを開いている間、vaultの_inbox/フォルダに入れたソースを定期的に取り込みます。",
     s_autoingest_interval: "間隔",
     s_provider_connect: "接続",
     s_provider_disconnect: "解除",
@@ -2671,7 +2671,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_appearance_dark: "ダーク",
     s_appearance_system: "システム",
     s_about_built:
-      "Memex はローカルの Obsidian ボルトと Claude Code CLI 上に立つ薄いクライアントです。ページはマークダウン — あなたの知識はあなたのもの。",
+      "myco はローカルの Obsidian ボルトと Claude Code CLI 上に立つ薄いクライアントです。ページはマークダウン — あなたの知識はあなたのもの。",
     dlg_cancel: "キャンセル",
     dlg_ok: "OK",
     dlg_create: "作成",
@@ -2877,7 +2877,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_run: "Reflect 実行",
     rf_running: "分析中…",
     rf_empty: "提案はありません — vault は十分につながっています。",
-    ob_title: "Memex へようこそ",
+    ob_title: "myco へようこそ",
     ob_skip: "スキップ",
     ob_back: "戻る",
     ob_next: "次へ",
@@ -2886,15 +2886,15 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_vault_none: "まだ vault が接続されていません",
     ob_s1_title: "プロジェクトを作成 / 開く",
     ob_s1_body:
-      "Memex はすべてのページを、あなたが管理するフォルダにマークダウンで保存します。既存のフォルダを開くか、作成された既定の vault をそのまま使ってください。",
+      "myco はすべてのページを、あなたが管理するフォルダにマークダウンで保存します。既存のフォルダを開くか、作成された既定の vault をそのまま使ってください。",
     ob_s1_action: "フォルダを開く…",
     ob_s2_title: "最初のソースを追加",
     ob_s2_body:
-      "ファイルをドロップ、URL を貼り付け、あるいはメモを書く。Memex が読み、エンティティと概念を抽出し、出典付きのページをグラフに織り込みます。",
+      "ファイルをドロップ、URL を貼り付け、あるいはメモを書く。myco が読み、エンティティと概念を抽出し、出典付きのページをグラフに織り込みます。",
     ob_s2_action: "取り込みへ",
     ob_s3_title: "質問する",
     ob_s3_body:
-      "ウィキに何でも聞いてください。Memex はまずあなたのページから答え、必要なときだけ原本に降ります — すべての主張に出典が付きます。",
+      "ウィキに何でも聞いてください。myco はまずあなたのページから答え、必要なときだけ原本に降ります — すべての主張に出典が付きます。",
     ob_s3_action: "質問へ",
     s_budget_title: "月間支出ガード",
     s_budget_desc:
@@ -2905,7 +2905,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_budget_empty: "今月はまだ有料 API の使用量が記録されていません。",
     s_autoreflect_title: "自動リフレクト",
     s_autoreflect_desc:
-      "Memex を開いている間、読み取り専用のリフレクトを定期的に実行し、孤立ノード・古いページ・欠けたリンクを洗い出します。",
+      "myco を開いている間、読み取り専用のリフレクトを定期的に実行し、孤立ノード・古いページ・欠けたリンクを洗い出します。",
     s_autoreflect_interval: "間隔",
     s_vault_register: "独立した Obsidian ボルトにする",
     s_vault_registered: "Obsidian ボルト準備完了",
@@ -2927,7 +2927,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_openrouter:
       "1 つのキーで多数のプロバイダーを利用（モデル比較に便利）。",
     s_provider_desc_myco_pro:
-      "マネージドモデルで無制限の取り込み — API キーや CLI は不要。Memex Pro アカウントでサインインしてください。",
+      "マネージドモデルで無制限の取り込み — API キーや CLI は不要。myco Pro アカウントでサインインしてください。",
     // Backfilled ja (was English-fallback): suggested links, Zotero, help,
     // query views, graph inspector/gaps, MCP SSE.
     ls_title: "リンク候補",

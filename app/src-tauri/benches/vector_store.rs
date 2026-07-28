@@ -20,8 +20,8 @@
 //! Run: `cargo bench --bench vector_store`
 
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use memex_lib::embeddings::{cosine, dot, normalize};
-use memex_lib::vector_index::{Record, VectorStore};
+use myco_lib::embeddings::{cosine, dot, normalize};
+use myco_lib::vector_index::{Record, VectorStore};
 
 /// Embedding width of the bundled Gemma 3 1B — the geometry the real index uses.
 const DIM: usize = 1152;

@@ -2,7 +2,7 @@
 
 import type { JSX } from "react";
 // The real app logo (the user's mushroom character, background removed) —
-// replaces the old pixel-art placeholder glyph everywhere MemexMark renders.
+// replaces the old pixel-art placeholder glyph everywhere MycoMark renders.
 import logoUrl from "../assets/logo.png";
 
 export type IconName =
@@ -242,13 +242,13 @@ export function Icon({
   return <svg {...props}>{paths[name] ?? null}</svg>;
 }
 
-export function MemexMark({ size = 22 }: { size?: number }): JSX.Element {
+export function MycoMark({ size = 22 }: { size?: number }): JSX.Element {
   return (
     <img
       src={logoUrl}
       width={size}
       height={size}
-      alt="Memex"
+      alt="myco"
       draggable={false}
       style={{ display: "block", objectFit: "contain" }}
     />

@@ -23,7 +23,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use memex_lib::local_llm::LocalLlm;
+use myco_lib::local_llm::LocalLlm;
 
 /// Warm-state runs kept per measurement, after the discarded first one.
 const RUNS: usize = 5;

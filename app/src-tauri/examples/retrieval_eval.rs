@@ -26,7 +26,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
-use memex_lib::{
+use myco_lib::{
     embeddings,
     local_llm::{apply_prefix, embed_spec_by_id, EmbedRole, LocalLlm},
     retrieval::{rrf_fuse, Bm25Index},
@@ -34,7 +34,7 @@ use memex_lib::{
     vector_index::VectorStore,
 };
 #[cfg(feature = "rerank")]
-use memex_lib::rerank::Reranker;
+use myco_lib::rerank::Reranker;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -256,7 +256,7 @@ fn main() {
     }
 
     // Dedup a ranked Hit list to best-per-stem, preserving score-desc order.
-    fn dedup_stems(hits: &[memex_lib::vector_index::Hit]) -> Vec<String> {
+    fn dedup_stems(hits: &[myco_lib::vector_index::Hit]) -> Vec<String> {
         let mut ranked = Vec::new();
         let mut seen = HashSet::new();
         for h in hits {

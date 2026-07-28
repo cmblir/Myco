@@ -21,7 +21,7 @@ export function agentSupported(provider: string): boolean {
 }
 
 export const DEFAULT_AGENT_PROMPT =
-  "You are Memex's in-app research agent for the user's local markdown wiki. " +
+  "You are myco's in-app research agent for the user's local markdown wiki. " +
   "Plan and use the provided tools to gather evidence from the vault before " +
   "answering: search, read pages, and traverse links. Cite the pages you rely " +
   "on inline as [[page-stem]]. If you cannot find something, say so rather than " +

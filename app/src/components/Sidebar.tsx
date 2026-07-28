@@ -4,7 +4,7 @@
 
 import { useEffect, useState } from "react";
 import type { JSX, MouseEvent } from "react";
-import { Icon, MemexMark } from "../lib/icons";
+import { Icon, MycoMark } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
@@ -56,7 +56,7 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
       <div className="side-head">
         <button className="brand" onClick={toggleSidebar}>
           <span className="brand-mark">
-            <MemexMark size={24} />
+            <MycoMark size={24} />
           </span>
           <span className="brand-name">{t.app_name}</span>
           <span className="brand-caret">
@@ -439,7 +439,7 @@ function ContextMenu({
 
   return (
     <ul
-      className="memex-menu"
+      className="myco-menu"
       style={{ left: menu.x, top: menu.y }}
       role="menu"
       onClick={(e) => e.stopPropagation()}
@@ -456,7 +456,7 @@ function ContextMenu({
       </li>
       {menu.node !== "vault" ? (
         <>
-          <li className="memex-menu__sep" />
+          <li className="myco-menu__sep" />
           <li>
             <button type="button" onClick={() => void handleRename()}>
               {t.sb_rename ?? "Rename…"}
@@ -465,7 +465,7 @@ function ContextMenu({
           <li>
             <button
               type="button"
-              className="memex-menu__danger"
+              className="myco-menu__danger"
               onClick={() => void handleDelete()}
             >
               {t.dlg_delete}

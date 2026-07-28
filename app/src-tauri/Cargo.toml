@@ -1,13 +1,13 @@
 [package]
-name = "memex"
+name = "myco"
 version = "0.3.0"
-description = "Memex — desktop wiki for plain markdown vaults"
-authors = ["Memex contributors"]
+description = "myco — desktop wiki for plain markdown vaults"
+authors = ["myco contributors"]
 edition = "2021"
 rust-version = "1.77"
 
 [lib]
-name = "memex_lib"
+name = "myco_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]

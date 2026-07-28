@@ -216,7 +216,7 @@ export interface SemEdge {
   score: number;
 }
 
-export interface MemexSettings {
+export interface MycoSettings {
   providers: {
     anthropic_cli: boolean;
     gemini_cli: boolean;
@@ -234,9 +234,9 @@ export interface MemexSettings {
   query_model: string;
   ingest_provider: string;
   ingest_model: string;
-  /** Memex Pro proxy base URL (the subscription ingest endpoint). */
+  /** myco Pro proxy base URL (the subscription ingest endpoint). */
   myco_pro_url: string;
-  /** The Memex Pro account email the app is logged in as (display only). */
+  /** The myco Pro account email the app is logged in as (display only). */
   myco_pro_email: string;
   /** Periodically ingest pending _inbox/ sources while the app is open. */
   auto_ingest_enabled: boolean;
@@ -525,8 +525,8 @@ export const ipc = {
     invoke<null>("set_provider_key", { providerId, key }),
   deleteProviderKey: (providerId: string) =>
     invoke<null>("delete_provider_key", { providerId }),
-  getSettings: () => invoke<MemexSettings>("get_settings"),
-  setSettings: (value: MemexSettings) =>
+  getSettings: () => invoke<MycoSettings>("get_settings"),
+  setSettings: (value: MycoSettings) =>
     invoke<null>("set_settings", { value }),
   chatComplete: (request: ChatRequest) =>
     invoke<ChatResponse>("chat_complete", { request }),

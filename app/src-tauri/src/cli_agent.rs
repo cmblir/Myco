@@ -1,8 +1,8 @@
-// Bridges to third-party agent CLIs (Gemini CLI, Codex CLI) so Memex can
+// Bridges to third-party agent CLIs (Gemini CLI, Codex CLI) so myco can
 // drive them like the claude CLI: locate the binary (the GUI inherits
 // launchd's minimal PATH), spawn headless with the vault as cwd, and capture
 // the final answer. Both CLIs use the user's own subscription/login that the
-// CLI manages itself — Memex stores no API key for them.
+// CLI manages itself — myco stores no API key for them.
 //
 // Invocations (verified against the installed CLIs):
 //   gemini -p <prompt> [--model <m>] --approval-mode yolo
@@ -145,7 +145,7 @@ pub fn run_prompt(
         return Err(format!("cwd is not a directory: {cwd}"));
     }
     let out_file = std::env::temp_dir().join(format!(
-        "memex-{bin}-{}-{}.txt",
+        "myco-{bin}-{}-{}.txt",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

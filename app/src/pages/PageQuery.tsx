@@ -42,7 +42,7 @@ interface ChatTurn {
   retrievalFailed?: boolean;
 }
 
-const SYSTEM_PREAMBLE = `You are Memex, the wiki maintainer for the user's local markdown vault.
+const SYSTEM_PREAMBLE = `You are myco, the wiki maintainer for the user's local markdown vault.
 The current working directory is the vault root. Use Read/Grep/Glob tools to
 look up answers from the wiki (\`wiki/\` if it exists) before reaching for
 \`raw/\` sources. Answer in the user's language. When you state a fact that

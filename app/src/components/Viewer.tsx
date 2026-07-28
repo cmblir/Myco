@@ -43,7 +43,7 @@ export default function Viewer({
 
   return (
     <div
-      className="memex-viewer"
+      className="myco-viewer"
       onClick={handleClick}
       dangerouslySetInnerHTML={{ __html: html }}
     />

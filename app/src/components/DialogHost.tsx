@@ -101,27 +101,27 @@ export default function DialogHost(): JSX.Element | null {
       : t.dlg_create;
 
   return (
-    <div className="memex-modal__backdrop" onClick={cancel}>
+    <div className="myco-modal__backdrop" onClick={cancel}>
       <div
         ref={dialogRef}
-        className="memex-modal"
+        className="myco-modal"
         role="dialog"
         aria-modal="true"
         aria-labelledby={request.title ? titleId : undefined}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={onDialogKeyDown}
       >
-        <h2 id={titleId} className="memex-modal__title">
+        <h2 id={titleId} className="myco-modal__title">
           {request.title}
         </h2>
         {request.message ? (
-          <p className="memex-modal__message">{request.message}</p>
+          <p className="myco-modal__message">{request.message}</p>
         ) : null}
         {request.kind === "prompt" ? (
           <input
             ref={inputRef}
             type="text"
-            className="memex-modal__input"
+            className="myco-modal__input"
             value={value}
             placeholder={request.placeholder}
             onChange={(e) => setValue(e.target.value)}
@@ -131,15 +131,15 @@ export default function DialogHost(): JSX.Element | null {
             }}
           />
         ) : null}
-        <div className="memex-modal__actions">
-          <button type="button" className="memex-modal__btn" onClick={cancel}>
+        <div className="myco-modal__actions">
+          <button type="button" className="myco-modal__btn" onClick={cancel}>
             {t.dlg_cancel}
           </button>
           <button
             ref={primaryRef}
             type="button"
-            className={`memex-modal__btn memex-modal__btn--primary${
-              request.danger ? " memex-modal__btn--danger" : ""
+            className={`myco-modal__btn myco-modal__btn--primary${
+              request.danger ? " myco-modal__btn--danger" : ""
             }`}
             onClick={submit}
           >

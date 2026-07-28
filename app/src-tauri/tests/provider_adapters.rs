@@ -2,7 +2,7 @@
 // server, points the corresponding MEMEX_*_URL env var at it, and asserts
 // both the outgoing request shape and the parsed response.
 
-use memex_lib::providers::{chat_complete, list_models, ChatMessage, ChatRequest};
+use myco_lib::providers::{chat_complete, list_models, ChatMessage, ChatRequest};
 use serde_json::json;
 use wiremock::matchers::{header, method, path};
 use wiremock::{Mock, MockServer, ResponseTemplate};

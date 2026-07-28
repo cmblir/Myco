@@ -237,7 +237,7 @@ pub fn set_active(project_root: &Path, slug: &str) -> Result<(), String> {
         .map_err(|e| format!("write projects.json: {e}"))
 }
 
-/// Whether a directory looks like a Memex/Obsidian vault worth showing as a
+/// Whether a directory looks like a myco/Obsidian vault worth showing as a
 /// universe: a `wiki/`, an `.obsidian/`, a top-level `CLAUDE.md`, or at least
 /// one top-level `.md` file. Cheap (a shallow read, no recursion).
 fn looks_like_vault(dir: &Path) -> bool {

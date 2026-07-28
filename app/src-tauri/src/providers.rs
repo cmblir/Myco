@@ -97,7 +97,7 @@ fn http_url_or(default_url: &str, env_key: &str) -> String {
 // (Ollama at 127.0.0.1, the wiremock test server) keep working.
 //
 // pub(crate) because the same question — "may we send a credential to this
-// URL?" — is asked of the user-entered Memex Pro proxy. One answer, not two.
+// URL?" — is asked of the user-entered myco Pro proxy. One answer, not two.
 pub(crate) fn override_allowed(value: &str) -> bool {
     if let Some(rest) = value.strip_prefix("https://") {
         return !rest.is_empty();

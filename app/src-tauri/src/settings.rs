@@ -427,7 +427,7 @@ pub(crate) fn atomic_write(target: &std::path::Path, content: &[u8]) -> Result<(
         .parent()
         .ok_or_else(|| format!("no parent dir for {}", target.display()))?;
     let mut tmp = tempfile::Builder::new()
-        .prefix(".memex-tmp-")
+        .prefix(".myco-tmp-")
         .tempfile_in(dir)
         .map_err(|e| format!("tempfile create failed: {e}"))?;
     tmp.write_all(content)
@@ -648,7 +648,7 @@ mod tests {
             let leftovers: Vec<_> = std::fs::read_dir(dir)
                 .unwrap()
                 .filter_map(|e| e.ok())
-                .filter(|e| e.file_name().to_string_lossy().starts_with(".memex-tmp-"))
+                .filter(|e| e.file_name().to_string_lossy().starts_with(".myco-tmp-"))
                 .collect();
             assert!(
                 leftovers.is_empty(),

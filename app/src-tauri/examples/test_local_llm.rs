@@ -6,14 +6,14 @@ use std::path::PathBuf;
 fn main() {
     let model = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models/gemma-3-1b-it-q4_k_m.gguf");
     println!("loading {} …", model.display());
-    let llm = memex_lib::local_llm::LocalLlm::load(&model).expect("load");
+    let llm = myco_lib::local_llm::LocalLlm::load(&model).expect("load");
 
     let t0 = std::time::Instant::now();
     let label = llm
         .classify("어텐션 메커니즘은 트랜스포머에서 토큰 간 관계를 계산하는 기법이다.")
         .expect("classify");
     println!("CLASSIFY(ko) -> {label}  ({:.1}s)", t0.elapsed().as_secs_f32());
-    assert!(memex_lib::local_llm::WIKI_TYPES.contains(&label.as_str()));
+    assert!(myco_lib::local_llm::WIKI_TYPES.contains(&label.as_str()));
 
     let t1 = std::time::Instant::now();
     let out = llm

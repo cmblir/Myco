@@ -1,4 +1,4 @@
-// Memex application entry point. The Tauri builder wires IPC commands and
+// myco application entry point. The Tauri builder wires IPC commands and
 // plugins. Domain logic lives in dedicated modules and stays testable without
 // the Tauri runtime.
 
@@ -57,7 +57,7 @@ fn panic_log_path() -> std::path::PathBuf {
     PANIC_LOG_PATH
         .get()
         .cloned()
-        .unwrap_or_else(|| std::env::temp_dir().join("memex-panic.log"))
+        .unwrap_or_else(|| std::env::temp_dir().join("myco-panic.log"))
 }
 
 /// Release builds use `panic = "abort"` (Cargo.toml), so a backend panic kills
@@ -187,7 +187,7 @@ pub fn run() {
             // writing to the temp-dir fallback.
             if let Ok(dir) = app.path().app_log_dir() {
                 let _ = std::fs::create_dir_all(&dir);
-                let _ = PANIC_LOG_PATH.set(dir.join("memex-panic.log"));
+                let _ = PANIC_LOG_PATH.set(dir.join("myco-panic.log"));
             }
             // One-time keychain service rename (dev.cmblir.memex →
             // dev.cmblir.myco). Runs before anything can read a provider key.
@@ -249,7 +249,7 @@ pub fn run() {
                                 let _ = handle
                                     .notification()
                                     .builder()
-                                    .title("Clipped to Memex")
+                                    .title("Clipped to myco")
                                     .body(clip.title.clone())
                                     .show();
                                 eprintln!("clip saved: {}", path.display());
@@ -265,13 +265,13 @@ pub fn run() {
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("error while running Memex")
+        .expect("error while running myco")
         .run(|_app, event| {
             // The embedded llama.cpp/ggml Metal backend aborts inside its C++
             // static destructors during process teardown. On macOS, quitting goes
             // AppKit `-[NSApplication terminate:]` → `exit()` → `__cxa_finalize`,
             // which runs those destructors and aborts — so every quit popped a
-            // "Memex quit unexpectedly" dialog. RunEvent::Exit fires only after the
+            // "myco quit unexpectedly" dialog. RunEvent::Exit fires only after the
             // run loop returns, which never happens (AppKit calls exit() itself),
             // so we intercept at ExitRequested (emitted from applicationShould-
             // Terminate, BEFORE AppKit's exit()) and terminate immediately with

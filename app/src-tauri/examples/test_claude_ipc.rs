@@ -2,7 +2,7 @@
 // does — same function, same vault cwd, same prompt shape. If this script
 // returns a non-empty stdout with status 0, the subscription chain works.
 
-use memex_lib::claude;
+use myco_lib::claude;
 
 fn main() {
     let home = std::env::var("HOME").expect("HOME");

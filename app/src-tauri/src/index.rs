@@ -252,7 +252,7 @@ mod tests {
     use std::fs;
 
     fn temp_vault(name: &str) -> PathBuf {
-        let dir = env::temp_dir().join(format!("memex-idx-{name}-{}", std::process::id()));
+        let dir = env::temp_dir().join(format!("myco-idx-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
