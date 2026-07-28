@@ -298,8 +298,9 @@ def _isolated_home(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("USERPROFILE", str(tmp_path))
     monkeypatch.setenv("APPDATA", str(tmp_path / "AppData"))
-    old = reg._platform_data_dir("dev.cmblir.memex", "Memex", "memex")
-    new = reg._platform_data_dir("dev.cmblir.myco", "myco", "myco")
+    args = (reg._os_name(), str(tmp_path), str(tmp_path / "AppData"))
+    old = reg._platform_data_dir(*args, "dev.cmblir.memex", "Memex", "memex")
+    new = reg._platform_data_dir(*args, "dev.cmblir.myco", "myco", "myco")
     return reg, old, new
 
 
@@ -313,20 +314,77 @@ def test_app_data_dir_override_prefers_myco_spelling(tmp_path, monkeypatch):
     assert reg._app_data_dir() == Path("/tmp/old-spelling")
 
 
-def test_app_data_dir_migrates_old_dir_once(tmp_path, monkeypatch):
+def test_app_data_dir_reads_the_old_dir_and_never_renames_it(tmp_path, monkeypatch):
+    # C2: this module resolves READ-ONLY. It used to rename old→new at import
+    # time, so a lint, an IDE or a pytest collection moved a user's data dir —
+    # and since install.sh registers the checkout's mcp-server, a `git pull`
+    # could move it out from under the still-installed OLD app, which then came
+    # up on Settings::default(). Only the desktop app may move it.
     reg, old, new = _isolated_home(tmp_path, monkeypatch)
     old.mkdir(parents=True)
     (old / "active-vault").write_text("/some/vault", "utf-8")
 
-    assert reg._app_data_dir() == new
-    assert not old.exists()
-    assert (new / "active-vault").read_text("utf-8") == "/some/vault"
-    # Idempotent: a second call is a no-op.
-    assert reg._app_data_dir() == new
-    assert (new / "active-vault").read_text("utf-8") == "/some/vault"
+    assert reg._app_data_dir() == old
+    assert old.exists(), "the old dir must never be renamed from here"
+    assert not new.exists(), "nothing may be created from here either"
+    assert (old / "active-vault").read_text("utf-8") == "/some/vault"
+    # Repeated calls stay a pure read.
+    assert reg._app_data_dir() == old
+    assert old.exists() and not new.exists()
 
 
-def test_app_data_dir_leaves_both_alone_when_new_exists(tmp_path, monkeypatch):
+def test_app_data_dir_prefers_new_once_the_app_has_migrated(tmp_path, monkeypatch):
+    reg, _old, new = _isolated_home(tmp_path, monkeypatch)
+    new.mkdir(parents=True)
+    (new / "active-vault").write_text("/some/vault", "utf-8")
+    assert reg._app_data_dir() == new
+
+
+def test_app_data_dir_prefers_old_when_new_exists_but_is_stateless(tmp_path, monkeypatch):
+    # Mirror of the Rust I4 guard: a new dir that exists but holds none of the
+    # marker files the app writes is not proof the migration completed, so the
+    # old dir (which does hold them) is what we read.
+    reg, old, new = _isolated_home(tmp_path, monkeypatch)
+    old.mkdir(parents=True)
+    new.mkdir(parents=True)
+    (old / "settings.json").write_text("{}", "utf-8")
+
+    assert reg._app_data_dir() == old
+    # Once the new dir has state of its own it wins again.
+    (new / "settings.json").write_text("{}", "utf-8")
+    assert reg._app_data_dir() == new
+
+
+def test_blank_override_is_treated_as_unset(tmp_path, monkeypatch):
+    # I3(a): `MYCO_DATA_DIR=` must not shadow a real MEMEX_DATA_DIR, and must
+    # not resolve to Path(""). Rust's var_os took "" literally; the two sides
+    # resolved to different directories from the same environment.
+    import project_registry as reg
+
+    monkeypatch.setenv("MYCO_DATA_DIR", "")
+    monkeypatch.setenv("MEMEX_DATA_DIR", "/tmp/old-spelling")
+    assert reg._app_data_dir() == Path("/tmp/old-spelling")
+
+    # Both blank → fall all the way through to the platform default.
+    _reg, _old, new = _isolated_home(tmp_path, monkeypatch)
+    monkeypatch.setenv("MYCO_DATA_DIR", "  ")
+    monkeypatch.setenv("MEMEX_DATA_DIR", "")
+    assert reg._app_data_dir() == new
+
+
+def test_windows_without_appdata_fails_like_the_rust_side(tmp_path):
+    # I3(b): Python used to fall back to home/"myco" where Rust errored, so the
+    # server read a marker the app would never write. Both now refuse.
+    import project_registry as reg
+
+    with pytest.raises(ValueError):
+        reg.resolve_env_data_dir("windows", "/home/u", None, None, None)
+    assert reg.resolve_env_data_dir("windows", "/home/u", "C:/AppData", None, None) == Path(
+        "C:/AppData/myco"
+    )
+
+
+def test_app_data_dir_leaves_both_alone_when_new_has_state(tmp_path, monkeypatch):
     reg, old, new = _isolated_home(tmp_path, monkeypatch)
     old.mkdir(parents=True)
     new.mkdir(parents=True)

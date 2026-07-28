@@ -30,45 +30,116 @@ from pathlib import Path
 #   3. script-relative repo root — running directly from a checkout.
 
 
-def _platform_data_dir(macos: str, windows: str, linux: str) -> Path:
-    home = Path(os.path.expanduser("~"))
+def _os_name() -> str:
+    """This host, spelled the way Rust's `std::env::consts::OS` spells it, so the
+    two implementations can be driven through the same matrix in tests."""
     if sys.platform == "darwin":
-        return home / "Library" / "Application Support" / macos
+        return "macos"
     if os.name == "nt":
-        appdata = os.environ.get("APPDATA")
-        return Path(appdata) / windows if appdata else home / windows
-    return home / ".config" / linux
+        return "windows"
+    return "linux"
+
+
+def _platform_data_dir(os_name: str, home: str | None, appdata: str | None,
+                       macos: str, windows: str, linux: str) -> Path:
+    """Mirror of settings.rs::data_dir_on. Raises ValueError for the same
+    missing-variable cases the Rust side returns an error for — notably Windows
+    without APPDATA. It must NOT fall back to `home/<name>` there: the app cannot
+    resolve a dir in that environment either, so inventing one would make this
+    server read a marker the app never writes.
+    """
+    if os_name == "macos":
+        if not home:
+            raise ValueError("no HOME")
+        return Path(home) / "Library" / "Application Support" / macos
+    if os_name == "windows":
+        if not appdata:
+            raise ValueError("no APPDATA")
+        return Path(appdata) / windows
+    if not home:
+        raise ValueError("no HOME")
+    return Path(home) / ".config" / linux
+
+
+def resolve_env_data_dir(os_name: str, home: str | None, appdata: str | None,
+                         myco: str | None, memex: str | None) -> Path:
+    """Resolve the app-data dir from the ENVIRONMENT alone — the layer that is
+    hand-copied from settings.rs::resolve_env_data_dir and must stay identical.
+
+    Parameterised rather than reading os.environ so the Rust test
+    `data_dir_env_resolution_matches_python` can drive both implementations
+    through one matrix; testing each side in isolation is what let them drift.
+
+    A blank (empty or whitespace-only) override counts as UNSET on both sides.
+    `MYCO_DATA_DIR=` is how a shell passes through a variable it does not have;
+    Python's old `or`-chain skipped "" while Rust's `var_os` took it literally,
+    so the same environment resolved to two different directories.
+    """
+    override = _override_data_dir(myco, memex)
+    if override is not None:
+        return override
+    return _platform_data_dir(os_name, home, appdata,
+                              "dev.cmblir.myco", "myco", "myco")
+
+
+def _override_data_dir(myco: str | None, memex: str | None) -> Path | None:
+    """MYCO_DATA_DIR wins, MEMEX_DATA_DIR is still honoured; blank means unset.
+    Used verbatim — no migration, since the operator said where the data lives."""
+    for value in (myco, memex):
+        if value is not None and value.strip():
+            return Path(value)
+    return None
 
 
 def _app_data_dir() -> Path:
-    """Per-user app data dir — must mirror the Rust app's settings_dir()
-    (app/src-tauri/src/settings.rs), including the memex→myco migration rule,
-    so we read the marker the app writes. If the two ever disagree, this server
-    silently stops following the app's vault.
+    """Per-user app data dir — mirrors the Rust app's settings_dir()
+    (app/src-tauri/src/settings.rs) so we read the marker the app writes. If the
+    two ever disagree, this server silently stops following the app's vault.
 
-    MYCO_DATA_DIR wins; MEMEX_DATA_DIR is still honoured for existing setups.
-    An explicit override is used verbatim — no migration, since the operator has
-    already said where the data lives.
+    READ-ONLY BY DESIGN: the desktop app owns the memex→myco move; this side only
+    picks whichever directory is there. Renaming here would be a data-loss bug,
+    not a shortcut — install.sh registers the *checkout's* mcp-server, so a `git
+    pull` updates this file while the installed app is still the previous build.
+    A rename from here would move the directory out from under that running app,
+    which would then start from an empty one and show Settings::default(): a
+    silent factory reset, worse than never renaming at all. Merely importing this
+    module (a lint, an IDE, pytest collection) must never touch user data.
+
+    So: prefer the new dir when it exists, fall back to the old one when it is
+    the only one there, and otherwise name the new one. This also mirrors the
+    Rust I4 guard — a new dir that exists but holds none of the marker files the
+    app writes does not count as migrated.
     """
-    override = os.environ.get("MYCO_DATA_DIR") or os.environ.get("MEMEX_DATA_DIR")
-    if override:
-        return Path(override)
-    new = _platform_data_dir("dev.cmblir.myco", "myco", "myco")
-    old = _platform_data_dir("dev.cmblir.memex", "Memex", "memex")
-    # Same rule as the Rust side: move once, never when the new dir already
-    # exists, and on ANY failure keep using the old directory rather than
-    # reading an empty new one (losing the active-vault marker would silently
-    # point this server at the wrong vault).
-    if new.exists() or not old.exists():
+    override = _override_data_dir(
+        os.environ.get("MYCO_DATA_DIR"), os.environ.get("MEMEX_DATA_DIR")
+    )
+    if override is not None:
+        return override
+    os_name = _os_name()
+    home = os.path.expanduser("~")
+    appdata = os.environ.get("APPDATA")
+    # Both raise the same ValueError in an environment neither name resolves in.
+    new = _platform_data_dir(os_name, home, appdata, "dev.cmblir.myco", "myco", "myco")
+    old = _platform_data_dir(os_name, home, appdata, "dev.cmblir.memex", "Memex", "memex")
+    return _pick_existing_data_dir(new, old)
+
+
+def _has_user_state(d: Path) -> bool:
+    """Mirror of settings.rs::has_user_state — the files every install writes."""
+    return (d / "settings.json").exists() or (d / "active-vault").exists()
+
+
+def _pick_existing_data_dir(new: Path, old: Path) -> Path:
+    """Which of the two directories to READ. Mirrors settings.rs::migrate_data_dir
+    minus the move: prefer `new`, but fall back to `old` whenever `old` is the
+    only one holding the app's marker files."""
+    if not old.exists():
         return new
-    try:
-        new.parent.mkdir(parents=True, exist_ok=True)
-        old.rename(new)
+    if not new.exists():
+        return old
+    if _has_user_state(new) or not _has_user_state(old):
         return new
-    except OSError:
-        # A concurrent process (the desktop app, which mirrors this rule) may
-        # have won the race and already moved it.
-        return new if new.exists() else old
+    return old
 
 
 def _active_vault() -> Path | None:

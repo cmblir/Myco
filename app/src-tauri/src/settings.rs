@@ -905,6 +905,188 @@ mod tests {
         );
     }
 
+    // ---- I3: the Rust and Python resolutions must not drift apart ----------
+
+    /// The environment matrix both implementations must agree on. Each row is
+    /// (label, os, HOME, APPDATA, MYCO_DATA_DIR, MEMEX_DATA_DIR).
+    const PARITY_MATRIX: &[(
+        &str,
+        &str,
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
+        Option<&str>,
+    )] = &[
+        ("macos default", "macos", Some("/home/u"), None, None, None),
+        ("linux default", "linux", Some("/home/u"), None, None, None),
+        (
+            "windows default",
+            "windows",
+            Some("/home/u"),
+            Some("C:/Users/u/AppData/Roaming"),
+            None,
+            None,
+        ),
+        // (b) Windows with no APPDATA: both must fail rather than one of them
+        // inventing home/myco, which the app would never write to.
+        (
+            "windows no APPDATA",
+            "windows",
+            Some("/home/u"),
+            None,
+            None,
+            None,
+        ),
+        ("macos no HOME", "macos", None, None, None, None),
+        ("linux no HOME", "linux", None, None, None, None),
+        (
+            "myco override wins",
+            "macos",
+            Some("/home/u"),
+            None,
+            Some("/tmp/o1"),
+            Some("/tmp/o2"),
+        ),
+        (
+            "memex override alone",
+            "linux",
+            Some("/home/u"),
+            None,
+            None,
+            Some("/tmp/o2"),
+        ),
+        // (a) the divergence the review found.
+        (
+            "empty myco override falls through to memex",
+            "macos",
+            Some("/home/u"),
+            None,
+            Some(""),
+            Some("/tmp/o2"),
+        ),
+        (
+            "empty myco override alone is unset",
+            "macos",
+            Some("/home/u"),
+            None,
+            Some(""),
+            None,
+        ),
+        (
+            "whitespace override is unset",
+            "linux",
+            Some("/home/u"),
+            None,
+            Some("   "),
+            Some("\t"),
+        ),
+        (
+            "override wins even with no HOME",
+            "windows",
+            None,
+            None,
+            Some("/tmp/o1"),
+            None,
+        ),
+    ];
+
+    /// Compare this module's env-layer resolution against the hand-copied Python
+    /// mirror by actually RUNNING the Python, rather than asserting each side in
+    /// isolation — testing them separately is what let them drift in the first
+    /// place. Filesystem state (which of new/old to use) is deliberately out of
+    /// scope: only the app migrates, so the two are *meant* to differ there.
+    #[test]
+    fn data_dir_env_resolution_matches_python() {
+        let script = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../mcp-server/project_registry.py")
+            .canonicalize()
+            .expect("mcp-server/project_registry.py must exist next to the app");
+        let Some(python) = ["python3", "/usr/bin/python3"]
+            .into_iter()
+            .find(|p| std::process::Command::new(p).arg("-V").output().is_ok())
+        else {
+            eprintln!("SKIP data_dir_env_resolution_matches_python: no python3 on PATH");
+            return;
+        };
+
+        let rows: Vec<String> = PARITY_MATRIX
+            .iter()
+            .map(|(_, os, home, appdata, myco, memex)| {
+                format!(
+                    "{}\x1f{}\x1f{}\x1f{}\x1f{}",
+                    os,
+                    home.unwrap_or("\0"),
+                    appdata.unwrap_or("\0"),
+                    myco.unwrap_or("\0"),
+                    memex.unwrap_or("\0")
+                )
+            })
+            .collect();
+
+        // Reads the \x1f-separated matrix on stdin, prints one resolved path (or
+        // "ERR") per line. `\0` stands for "variable not set".
+        let driver = r#"
+import sys, pathlib
+sys.path.insert(0, sys.argv[1])
+import project_registry as pr
+def opt(s):
+    return None if s == "\0" else s
+for line in sys.stdin.read().splitlines():
+    os_name, home, appdata, myco, memex = line.split("\x1f")
+    try:
+        print(pr.resolve_env_data_dir(os_name, opt(home), opt(appdata), opt(myco), opt(memex)))
+    except ValueError:
+        print("ERR")
+"#;
+        let mut child = std::process::Command::new(python)
+            .arg("-c")
+            .arg(driver)
+            .arg(script.parent().unwrap())
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .expect("spawn python3");
+        {
+            use std::io::Write;
+            child
+                .stdin
+                .as_mut()
+                .unwrap()
+                .write_all(rows.join("\n").as_bytes())
+                .unwrap();
+        }
+        let out = child.wait_with_output().unwrap();
+        assert!(
+            out.status.success(),
+            "python mirror failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let py: Vec<&str> = std::str::from_utf8(&out.stdout).unwrap().lines().collect();
+        assert_eq!(py.len(), PARITY_MATRIX.len(), "python printed {py:?}");
+
+        for (i, (label, os, home, appdata, myco, memex)) in PARITY_MATRIX.iter().enumerate() {
+            let rust = resolve_env_data_dir(
+                os,
+                home.map(std::ffi::OsStr::new),
+                appdata.map(std::ffi::OsStr::new),
+                myco.map(std::ffi::OsStr::new),
+                memex.map(std::ffi::OsStr::new),
+            );
+            let rust_s = match &rust {
+                // Windows paths are built with the host separator on each side,
+                // so compare on a normalised form.
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => "ERR".to_string(),
+            };
+            assert_eq!(
+                rust_s,
+                py[i].replace('\\', "/"),
+                "rust/python disagree for {label:?}"
+            );
+        }
+    }
+
     #[test]
     fn load_tolerates_partial_json() {
         with_isolated_data("partial", |dir| {
