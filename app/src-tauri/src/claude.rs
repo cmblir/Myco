@@ -85,9 +85,9 @@ pub fn run_prompt(prompt: &str, cwd: &str, model: Option<&str>) -> Result<CliRes
     // UNTRUSTED raw/ source content to the agent in non-interactive --print
     // mode (no human approval prompt), so a prompt-injection payload hidden in
     // a source must not be able to reach a shell. A user who genuinely needs a
-    // different (or wider) set can override via the MEMEX_CLAUDE_TOOLS env var.
-    let allowed = std::env::var("MEMEX_CLAUDE_TOOLS")
-        .unwrap_or_else(|_| "Read,Write,Edit,Glob,Grep".to_string());
+    // different (or wider) set can override via the MYCO_CLAUDE_TOOLS env var.
+    let allowed = crate::env::var("MYCO_CLAUDE_TOOLS")
+        .unwrap_or_else(|| "Read,Write,Edit,Glob,Grep".to_string());
     let mut cmd = Command::new(&path);
     cmd.arg("--print").arg("--allowedTools").arg(&allowed);
     // --model selects the model for this run (alias like "haiku"/"sonnet"/"opus"
@@ -247,9 +247,9 @@ where
         return Err(format!("cwd is not a directory: {cwd}"));
     }
     // Same default-tool policy as run_prompt: no Bash on untrusted ingest
-    // content (overridable via MEMEX_CLAUDE_TOOLS).
-    let allowed = std::env::var("MEMEX_CLAUDE_TOOLS")
-        .unwrap_or_else(|_| "Read,Write,Edit,Glob,Grep".to_string());
+    // content (overridable via MYCO_CLAUDE_TOOLS).
+    let allowed = crate::env::var("MYCO_CLAUDE_TOOLS")
+        .unwrap_or_else(|| "Read,Write,Edit,Glob,Grep".to_string());
     // --verbose is required by the CLI when combining --print with
     // --output-format stream-json.
     let mut cmd = Command::new(&path);
@@ -375,7 +375,7 @@ pub fn cancel_all() {
 }
 
 fn locate() -> Option<String> {
-    locate_bin("claude", "MEMEX_CLAUDE_PATH")
+    locate_bin("claude", "MYCO_CLAUDE_PATH")
 }
 
 /// Home directory env var — `USERPROFILE` on Windows, `HOME` elsewhere.
@@ -411,7 +411,7 @@ fn which_lookup(bin: &str) -> Option<String> {
 /// well-known install dirs, then (Unix only) the user's login shell, which
 /// sources the profile that puts nvm / custom dirs on PATH.
 pub(crate) fn locate_bin(bin: &str, env_var: &str) -> Option<String> {
-    if let Ok(p) = std::env::var(env_var) {
+    if let Some(p) = crate::env::var(env_var) {
         if !p.is_empty() {
             return Some(p);
         }
@@ -736,19 +736,19 @@ mod tests {
 
     #[test]
     fn locate_honors_env_override() {
-        let prev = std::env::var("MEMEX_CLAUDE_PATH").ok();
+        let prev = std::env::var("MYCO_CLAUDE_PATH").ok();
         unsafe {
-            std::env::set_var("MEMEX_CLAUDE_PATH", "/tmp/fake-claude");
+            std::env::set_var("MYCO_CLAUDE_PATH", "/tmp/fake-claude");
         }
         let p = locate();
         assert_eq!(p.as_deref(), Some("/tmp/fake-claude"));
         if let Some(v) = prev {
             unsafe {
-                std::env::set_var("MEMEX_CLAUDE_PATH", v);
+                std::env::set_var("MYCO_CLAUDE_PATH", v);
             }
         } else {
             unsafe {
-                std::env::remove_var("MEMEX_CLAUDE_PATH");
+                std::env::remove_var("MYCO_CLAUDE_PATH");
             }
         }
     }

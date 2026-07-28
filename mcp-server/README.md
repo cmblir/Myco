@@ -1,8 +1,8 @@
-# Memex MCP server
+# myco MCP server
 
-Expose this Memex vault as a Model Context Protocol (MCP) server so any MCP
+Expose this myco vault as a Model Context Protocol (MCP) server so any MCP
 client (Claude Code, Claude Desktop, Cursor, etc.) can read, search, and
-maintain the wiki directly, alongside the Memex desktop app.
+maintain the wiki directly, alongside the myco desktop app.
 
 ## What it gives Claude
 
@@ -10,7 +10,7 @@ maintain the wiki directly, alongside the Memex desktop app.
 
 | Tool | Purpose |
 |---|---|
-| `list_projects` | Enumerate Memex projects (legacy + multi-project). |
+| `list_projects` | Enumerate myco projects (legacy + multi-project). |
 | `get_instructions` | Return the project's CLAUDE.md (schema + ingest workflow). |
 | `stats` | Page count, type distribution, raw source count. |
 | `list_pages` | List pages with frontmatter, optionally filtered by type/folder. |
@@ -20,7 +20,7 @@ maintain the wiki directly, alongside the Memex desktop app.
 | `recent_log` | Tail of wiki/log.md. |
 | `list_raw_sources` | List immutable source files under raw/. |
 | `add_raw_source` | Append-only write to raw/ (refuses to overwrite). |
-| `create_page` | New wiki page with proper Memex frontmatter. |
+| `create_page` | New wiki page with proper myco frontmatter. |
 | `update_page` | Overwrite an existing wiki page. |
 | `create_folder` | Create a folder under wiki/. |
 | `git_commit` | Stage wiki/, raw/, ingest-reports/ and commit. |
@@ -43,9 +43,9 @@ inside `wiki/`.
 ## Install & run (SSE server — recommended)
 
 Requires Python 3.10+. The MCP SDK is installed into a local virtualenv so it
-doesn't pollute the rest of the Memex repo (which keeps a zero-pip-deps core).
+doesn't pollute the rest of the myco repo (which keeps a zero-pip-deps core).
 
-Run Memex as a standalone HTTP/SSE server — start it once, leave it running,
+Run myco as a standalone HTTP/SSE server — start it once, leave it running,
 and every client connects over a URL (the Obsidian Local REST API style). No
 per-session subprocess, no absolute paths in the client config.
 
@@ -56,13 +56,13 @@ bash mcp-server/serve.sh          # bootstraps the venv, serves http://127.0.0.1
 Register it with Claude Code — **one line, no paths**:
 
 ```bash
-claude mcp add --transport sse memex http://localhost:22360/sse
+claude mcp add --transport sse myco http://localhost:22360/sse
 ```
 
-That's it. `claude mcp list` should show `memex`; the tools are available in
+That's it. `claude mcp list` should show `myco`; the tools are available in
 every session while the server is running. Try:
 
-> Use `memex` to list pages of type `concept` in this wiki.
+> Use `myco` to list pages of type `concept` in this wiki.
 
 Custom port: `bash mcp-server/serve.sh --port 9001` then register with the
 matching URL. The server binds `127.0.0.1` (localhost only) by default; set
@@ -77,7 +77,7 @@ the URL:
 ```json
 {
   "mcpServers": {
-    "memex": { "url": "http://localhost:22360/sse" }
+    "myco": { "url": "http://localhost:22360/sse" }
   }
 }
 ```
@@ -91,7 +91,7 @@ If you'd rather Claude spawn the process itself instead of running a server:
 
 ```bash
 bash mcp-server/install.sh   # prints the exact command for your checkout
-# → claude mcp add --scope user memex -- "<venv>/bin/python" "<repo>/mcp-server/memex_mcp.py"
+# → claude mcp add --scope user myco -- "<venv>/bin/python" "<repo>/mcp-server/myco_mcp.py"
 ```
 
 The same file serves both transports; `--sse` selects the server, the default
@@ -104,7 +104,7 @@ language and Claude composes the right tool calls.
 
 **Save the current conversation as a source**
 
-> Save this conversation to my Memex wiki as a source titled
+> Save this conversation to my myco wiki as a source titled
 > "Transformer scaling discussion".
 
 Behavior: Claude composes a markdown summary of the chat, calls
@@ -126,14 +126,14 @@ commits.
 For longer sessions, ask Claude to load the rules first so frontmatter,
 citation format, and contradiction policy are followed:
 
-> Call `memex.get_instructions` once, then we will treat this whole chat
+> Call `myco.get_instructions` once, then we will treat this whole chat
 > as a wiki ingestion session — anything factual goes into the wiki with
 > citations, anything I mark as "draft" stays just in chat.
 
 ## Suggested first prompt
 
 ```
-You now have the `memex` MCP tools. Call `get_instructions` once, then
+You now have the `myco` MCP tools. Call `get_instructions` once, then
 list the existing pages and tell me which sources you would ingest next.
 Do not modify raw/. When you create or update wiki pages, include inline
 [^src-*] citations and call git_commit when a coherent change is ready.
@@ -141,7 +141,7 @@ Do not modify raw/. When you create or update wiki pages, include inline
 
 ## How it relates to the desktop app
 
-The Memex desktop app (`app/`) is the human-driven UI: a visual graph,
+The myco desktop app (`app/`) is the human-driven UI: a visual graph,
 ingest-via-form, editor, etc. The MCP server is the same vault exposed as
 agent-callable tools. They share the same `projects.json` and the same
 `wiki/` tree, so changes made via either surface are immediately visible

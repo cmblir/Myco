@@ -8,6 +8,7 @@ pub mod claude;
 pub mod cli_agent;
 mod commands;
 pub mod embeddings;
+pub mod env;
 pub mod extract;
 pub mod git_log;
 pub mod importers;
@@ -253,7 +254,7 @@ pub fn run() {
                                 eprintln!("clip saved: {}", path.display());
                                 // Nudge the frontend so the tree/inbox refreshes.
                                 use tauri::Emitter;
-                                let _ = handle.emit("memex://clip-saved", ());
+                                let _ = handle.emit("myco://clip-saved", ());
                             }
                             Err(e) => eprintln!("clip save failed: {e}"),
                         }

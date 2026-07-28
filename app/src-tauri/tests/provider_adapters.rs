@@ -32,7 +32,7 @@ fn system_msg(text: &str) -> ChatMessage {
 async fn anthropic_chat_parses_text_content_and_usage() {
     let server = MockServer::start().await;
     std::env::set_var(
-        "MEMEX_ANTHROPIC_URL",
+        "MYCO_ANTHROPIC_URL",
         format!("{}/v1/messages", server.uri()),
     );
 
@@ -90,7 +90,7 @@ async fn anthropic_missing_key_errors_immediately() {
 async fn anthropic_propagates_http_error_with_body() {
     let server = MockServer::start().await;
     std::env::set_var(
-        "MEMEX_ANTHROPIC_URL",
+        "MYCO_ANTHROPIC_URL",
         format!("{}/v1/messages", server.uri()),
     );
     Mock::given(method("POST"))
@@ -120,7 +120,7 @@ async fn anthropic_propagates_http_error_with_body() {
 async fn openai_chat_parses_choices() {
     let server = MockServer::start().await;
     std::env::set_var(
-        "MEMEX_OPENAI_URL",
+        "MYCO_OPENAI_URL",
         format!("{}/v1/chat/completions", server.uri()),
     );
     Mock::given(method("POST"))
@@ -155,7 +155,7 @@ async fn openai_chat_parses_choices() {
 async fn openai_list_models_filters_to_chat_capable() {
     let server = MockServer::start().await;
     std::env::set_var(
-        "MEMEX_OPENAI_MODELS_URL",
+        "MYCO_OPENAI_MODELS_URL",
         format!("{}/v1/models", server.uri()),
     );
     Mock::given(method("GET"))
@@ -192,7 +192,7 @@ async fn openai_list_models_filters_to_chat_capable() {
 async fn openrouter_chat_uses_openrouter_url() {
     let server = MockServer::start().await;
     std::env::set_var(
-        "MEMEX_OPENROUTER_URL",
+        "MYCO_OPENROUTER_URL",
         format!("{}/api/v1/chat/completions", server.uri()),
     );
     Mock::given(method("POST"))
@@ -219,7 +219,7 @@ async fn openrouter_chat_uses_openrouter_url() {
 async fn openrouter_list_models_takes_top_80() {
     let server = MockServer::start().await;
     std::env::set_var(
-        "MEMEX_OPENROUTER_MODELS_URL",
+        "MYCO_OPENROUTER_MODELS_URL",
         format!("{}/api/v1/models", server.uri()),
     );
     let many: Vec<serde_json::Value> = (0..120)
@@ -241,7 +241,7 @@ async fn openrouter_list_models_takes_top_80() {
 async fn google_chat_uses_system_instruction_and_concatenates_parts() {
     let server = MockServer::start().await;
     std::env::set_var(
-        "MEMEX_GOOGLE_URL",
+        "MYCO_GOOGLE_URL",
         format!("{}/v1beta/models", server.uri()),
     );
     Mock::given(method("POST"))
@@ -284,7 +284,7 @@ async fn google_chat_uses_system_instruction_and_concatenates_parts() {
 #[serial_test::serial]
 async fn ollama_chat_returns_content_and_token_counts() {
     let server = MockServer::start().await;
-    std::env::set_var("MEMEX_OLLAMA_URL", server.uri());
+    std::env::set_var("MYCO_OLLAMA_URL", server.uri());
     Mock::given(method("POST"))
         .and(path("/api/chat"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -314,7 +314,7 @@ async fn ollama_chat_returns_content_and_token_counts() {
 #[serial_test::serial]
 async fn ollama_list_models_parses_tags() {
     let server = MockServer::start().await;
-    std::env::set_var("MEMEX_OLLAMA_URL", server.uri());
+    std::env::set_var("MYCO_OLLAMA_URL", server.uri());
     Mock::given(method("GET"))
         .and(path("/api/tags"))
         .respond_with(ResponseTemplate::new(200).set_body_json(json!({
@@ -372,7 +372,7 @@ async fn google_static_model_catalog() {
 async fn chat_rejects_over_cap_response_body() {
     let server = MockServer::start().await;
     std::env::set_var(
-        "MEMEX_OPENAI_URL",
+        "MYCO_OPENAI_URL",
         format!("{}/v1/chat/completions", server.uri()),
     );
     // A body one byte past the cap must be rejected before we attempt to parse
@@ -407,7 +407,7 @@ async fn chat_rejects_over_cap_response_body() {
 async fn chat_retries_503_then_succeeds() {
     let server = MockServer::start().await;
     std::env::set_var(
-        "MEMEX_OPENAI_URL",
+        "MYCO_OPENAI_URL",
         format!("{}/v1/chat/completions", server.uri()),
     );
     // First attempt: a transient 503. wiremock serves mounts in priority order
@@ -447,7 +447,7 @@ async fn chat_retries_503_then_succeeds() {
 async fn chat_does_not_retry_4xx_auth_error() {
     let server = MockServer::start().await;
     std::env::set_var(
-        "MEMEX_OPENAI_URL",
+        "MYCO_OPENAI_URL",
         format!("{}/v1/chat/completions", server.uri()),
     );
     // A 401 is a hard auth failure; we must fail fast and hit the endpoint

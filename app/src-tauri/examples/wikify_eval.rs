@@ -26,7 +26,7 @@
 //   - `hard`: the linked phrase deleted, leaving only surrounding context (no
 //     lexical gift at all).
 //
-// Run:  MEMEX_EMBED_SPEC=bge-m3 cargo run --example wikify_eval --release
+// Run:  MYCO_EMBED_SPEC=bge-m3 cargo run --example wikify_eval --release
 // (bge-m3 is the default here since that is what ships; the env var overrides.)
 
 use std::collections::{HashMap, HashSet};
@@ -202,7 +202,7 @@ fn main() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     // Defaults to bge-m3 — the model the app actually ships — unlike
     // retrieval_eval, whose "gemma" default preserves its Phase-0 baseline.
-    let spec_id = std::env::var("MEMEX_EMBED_SPEC").unwrap_or_else(|_| "bge-m3".into());
+    let spec_id = std::env::var("MYCO_EMBED_SPEC").unwrap_or_else(|_| "bge-m3".into());
     let model_path = if spec_id == "gemma" {
         manifest.join("models/gemma-3-1b-it-q4_k_m.gguf")
     } else {
@@ -275,7 +275,7 @@ fn main() {
 
     // Inspection mode: dump one case's derived labels and both source variants
     // and stop, so the eval inputs can be reviewed without a 5-minute run.
-    if let Ok(want) = std::env::var("MEMEX_WIKIFY_DUMP") {
+    if let Ok(want) = std::env::var("MYCO_WIKIFY_DUMP") {
         let case = cases.iter().find(|c| c.stem == want).expect("case exists");
         let mut labels: Vec<&str> = case.labels.iter().map(String::as_str).collect();
         labels.sort();

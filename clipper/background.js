@@ -1,5 +1,6 @@
-// Memex Web Clipper — builds a memx://clip deep link from the active tab and
-// opens it; the Memex desktop app (which registered the memx: scheme) writes
+// myco Web Clipper — builds a myco://clip deep link from the active tab and
+// opens it; the myco desktop app (which registers both the myco: and the
+// legacy memx: scheme) writes
 // the clip into the vault's _inbox/. No network, no storage, no tracking:
 // the extension only reads the tab you explicitly clip.
 
@@ -10,7 +11,7 @@ function clipUrl(tab, selection) {
   if (tab.url && /^https?:\/\//.test(tab.url)) p.set("url", tab.url);
   if (tab.title) p.set("title", tab.title.slice(0, 300));
   if (selection) p.set("selection", selection.slice(0, MAX_SELECTION));
-  return `memx://clip?${p.toString()}`;
+  return `myco://clip?${p.toString()}`;
 }
 
 async function grabSelection(tabId) {
@@ -29,7 +30,7 @@ async function clip(tab) {
   if (!tab?.id) return;
   const selection = await grabSelection(tab.id);
   const url = clipUrl(tab, selection);
-  // Navigating a tab to a custom scheme hands off to the OS handler (Memex).
+  // Navigating a tab to a custom scheme hands off to the OS handler (myco).
   await chrome.tabs.update(tab.id, { url });
 }
 
@@ -38,7 +39,7 @@ chrome.action.onClicked.addListener((tab) => void clip(tab));
 chrome.runtime.onInstalled.addListener(() => {
   chrome.contextMenus.create({
     id: "memex-clip",
-    title: "Clip to Memex",
+    title: "Clip to myco",
     contexts: ["page", "selection"],
   });
 });

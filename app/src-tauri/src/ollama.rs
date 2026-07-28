@@ -25,7 +25,7 @@ pub struct OllamaStatus {
 }
 
 fn endpoint() -> String {
-    std::env::var("MEMEX_OLLAMA_URL").unwrap_or_else(|_| "http://localhost:11434".to_string())
+    crate::env::var("MYCO_OLLAMA_URL").unwrap_or_else(|| "http://localhost:11434".to_string())
 }
 
 /// Parse the body of a `GET /api/tags` 200 into the model list.
@@ -59,7 +59,7 @@ fn locate_binary() -> (bool, Option<String>) {
     // Cross-platform resolution (env override, where/which, well-known dirs,
     // login shell) — shared with the claude/gemini/codex CLIs so Windows finds
     // `ollama.exe` via `where` instead of the unix-only `/usr/bin/which`.
-    if let Some(p) = crate::claude::locate_bin("ollama", "MEMEX_OLLAMA_PATH") {
+    if let Some(p) = crate::claude::locate_bin("ollama", "MYCO_OLLAMA_PATH") {
         return (true, Some(p));
     }
     // macOS app-bundle fallback (Ollama.app ships the binary outside PATH).
@@ -154,16 +154,16 @@ mod tests {
     #[test]
     fn endpoint_defaults_to_localhost() {
         // Snapshot then restore so we don't pollute env for other tests.
-        let prev = std::env::var("MEMEX_OLLAMA_URL").ok();
+        let prev = std::env::var("MYCO_OLLAMA_URL").ok();
         // SAFETY: tests are single-threaded by default for env mutation.
         unsafe {
-            std::env::remove_var("MEMEX_OLLAMA_URL");
+            std::env::remove_var("MYCO_OLLAMA_URL");
         }
         let url = endpoint();
         assert_eq!(url, "http://localhost:11434");
         if let Some(v) = prev {
             unsafe {
-                std::env::set_var("MEMEX_OLLAMA_URL", v);
+                std::env::set_var("MYCO_OLLAMA_URL", v);
             }
         }
     }
@@ -201,19 +201,19 @@ mod tests {
 
     #[test]
     fn endpoint_respects_env_override() {
-        let prev = std::env::var("MEMEX_OLLAMA_URL").ok();
+        let prev = std::env::var("MYCO_OLLAMA_URL").ok();
         unsafe {
-            std::env::set_var("MEMEX_OLLAMA_URL", "http://example.test:1234");
+            std::env::set_var("MYCO_OLLAMA_URL", "http://example.test:1234");
         }
         let url = endpoint();
         assert_eq!(url, "http://example.test:1234");
         if let Some(v) = prev {
             unsafe {
-                std::env::set_var("MEMEX_OLLAMA_URL", v);
+                std::env::set_var("MYCO_OLLAMA_URL", v);
             }
         } else {
             unsafe {
-                std::env::remove_var("MEMEX_OLLAMA_URL");
+                std::env::remove_var("MYCO_OLLAMA_URL");
             }
         }
     }

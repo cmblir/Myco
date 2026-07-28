@@ -1,4 +1,4 @@
-//! Opt-in timing for hot commands, enabled with `MEMEX_PERF=1`.
+//! Opt-in timing for hot commands, enabled with `MYCO_PERF=1`.
 //!
 //! `benches/vector_store.rs` measures the vector store in isolation on synthetic
 //! data. That is the right place to compare two implementations, but it cannot
@@ -14,7 +14,7 @@
 //! Output is one line per command on stderr, structured for grepping:
 //!
 //! ```text
-//! [memex-perf] semantic_search load_store_ms=0.31 embed_query_ms=182.44 scan_ms=11.98 total_ms=194.79 records=10000
+//! [myco-perf] semantic_search load_store_ms=0.31 embed_query_ms=182.44 scan_ms=11.98 total_ms=194.79 records=10000
 //! ```
 
 use std::sync::OnceLock;
@@ -24,7 +24,7 @@ use std::time::Duration;
 /// changes under a running app.
 pub fn enabled() -> bool {
     static ON: OnceLock<bool> = OnceLock::new();
-    *ON.get_or_init(|| std::env::var("MEMEX_PERF").is_ok_and(|v| v == "1"))
+    *ON.get_or_init(|| crate::env::var("MYCO_PERF").is_some_and(|v| v == "1"))
 }
 
 /// Milliseconds, for building a field value from an elapsed `Duration`.
@@ -50,10 +50,10 @@ fn format_line(command: &str, fields: &[(&str, f64)]) -> String {
             }
         })
         .collect();
-    format!("[memex-perf] {command} {}", body.join(" "))
+    format!("[myco-perf] {command} {}", body.join(" "))
 }
 
-/// Emit one `[memex-perf]` line on stderr. No-op unless `MEMEX_PERF=1`.
+/// Emit one `[myco-perf]` line on stderr. No-op unless `MYCO_PERF=1`.
 pub fn log(command: &str, fields: &[(&str, f64)]) {
     if !enabled() {
         return;
@@ -85,7 +85,7 @@ mod tests {
         );
         assert_eq!(
             line,
-            "[memex-perf] semantic_search load_store_ms=0.31 embed_query_ms=182.44 \
+            "[myco-perf] semantic_search load_store_ms=0.31 embed_query_ms=182.44 \
              scan_ms=11.98 total_ms=194.79 records=10000"
         );
     }
@@ -95,12 +95,12 @@ mod tests {
         // The line is read left-to-right as the shape of the work, so the order
         // the command reported its stages in must survive.
         let line = format_line("x", &[("b_ms", 2.0), ("a_ms", 1.0)]);
-        assert_eq!(line, "[memex-perf] x b_ms=2.00 a_ms=1.00");
+        assert_eq!(line, "[myco-perf] x b_ms=2.00 a_ms=1.00");
     }
 
     #[test]
     fn log_is_inert_when_disabled() {
-        // The suite runs without MEMEX_PERF: a disabled probe must cost nothing
+        // The suite runs without MYCO_PERF: a disabled probe must cost nothing
         // and never fail a command.
         log("noop", &[("total_ms", 1.0)]);
     }

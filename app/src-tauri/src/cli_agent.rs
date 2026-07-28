@@ -39,8 +39,8 @@ const DEFAULT_MODEL: &str = "(default)";
 
 pub fn provider_bin(provider: &str) -> Option<(&'static str, &'static str)> {
     match provider {
-        "gemini-cli" => Some(("gemini", "MEMEX_GEMINI_PATH")),
-        "codex-cli" => Some(("codex", "MEMEX_CODEX_PATH")),
+        "gemini-cli" => Some(("gemini", "MYCO_GEMINI_PATH")),
+        "codex-cli" => Some(("codex", "MYCO_CODEX_PATH")),
         _ => None,
     }
 }

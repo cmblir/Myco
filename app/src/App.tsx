@@ -221,7 +221,7 @@ export default function App(): JSX.Element {
     let cancelled = false;
     void import("@tauri-apps/api/event")
       .then(({ listen }) =>
-        listen("memex://clip-saved", () => {
+        listen("myco://clip-saved", () => {
           const v = useVaultStore.getState();
           void v.refreshTree();
           // runInboxPass skips itself while a run is in flight and leaves the

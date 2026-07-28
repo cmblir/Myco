@@ -1,4 +1,4 @@
-"""Unit tests for the pure functions in memex_mcp.py / project_registry.py
+"""Unit tests for the pure functions in myco_mcp.py / project_registry.py
 (backlog DX-01). Run from mcp-server/:  .venv/bin/python -m pytest -q
 """
 
@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from memex_mcp import (
+from myco_mcp import (
     extract_links,
     find_contradictions,
     lint_page_text,
@@ -228,7 +228,7 @@ def _registry_with_root(tmp_path, monkeypatch):
     import importlib
     import project_registry
 
-    monkeypatch.setenv("MEMEX_PROJECT_ROOT", str(tmp_path))
+    monkeypatch.setenv("MYCO_PROJECT_ROOT", str(tmp_path))
     return importlib.reload(project_registry)
 
 
@@ -401,3 +401,28 @@ def test_app_data_dir_fresh_install_creates_nothing(tmp_path, monkeypatch):
     assert reg._app_data_dir() == new
     assert not old.exists()
     assert not new.exists()
+
+
+# ---- C4: MYCO_* env names with a MEMEX_* fallback -------------------------
+
+
+def test_env_var_prefers_the_new_spelling_and_falls_back_to_the_old(monkeypatch):
+    import project_registry as reg
+
+    monkeypatch.delenv("MYCO_PROJECT_ROOT", raising=False)
+    monkeypatch.delenv("MEMEX_PROJECT_ROOT", raising=False)
+    assert reg.env_var("MYCO_PROJECT_ROOT") is None
+
+    # An operator whose shell profile still exports the old name keeps working.
+    monkeypatch.setenv("MEMEX_PROJECT_ROOT", "/old")
+    assert reg.env_var("MYCO_PROJECT_ROOT") == "/old"
+
+    monkeypatch.setenv("MYCO_PROJECT_ROOT", "/new")
+    assert reg.env_var("MYCO_PROJECT_ROOT") == "/new"
+
+
+def test_env_var_only_rewrites_the_myco_prefix(monkeypatch):
+    import project_registry as reg
+
+    monkeypatch.setenv("NOT_MYCO_THING", "x")
+    assert reg.env_var("NOT_MYCO_THING") == "x"

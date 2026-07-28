@@ -25,7 +25,7 @@ from pathlib import Path
 #   1. the desktop app's "active vault" marker — the vault the app currently
 #      has open (the app rewrites it on every open_vault). This makes the MCP
 #      server FOLLOW the app instead of writing into the source-repo root.
-#   2. MEMEX_PROJECT_ROOT env — explicit override for CLI / dev / a pinned setup
+#   2. MYCO_PROJECT_ROOT env — explicit override for CLI / dev / a pinned setup
 #      (used when no app marker exists, e.g. headless).
 #   3. script-relative repo root — running directly from a checkout.
 
@@ -89,6 +89,19 @@ def _override_data_dir(myco: str | None, memex: str | None) -> Path | None:
         if value is not None and value.strip():
             return Path(value)
     return None
+
+
+def env_var(name: str) -> str | None:
+    """Read a `MYCO_*` variable, falling back to the pre-rename `MEMEX_*` name.
+
+    Mirrors app/src-tauri/src/env.rs. Env names are documented, so an operator's
+    existing shell profile or CI config keeps working after the rebrand; the new
+    spelling wins when both are set. Blank counts as set here (unlike
+    `_override_data_dir`, which has its own blank rule to match Rust).
+    """
+    legacy = "MEMEX_" + name[len("MYCO_"):] if name.startswith("MYCO_") else name
+    value = os.environ.get(name)
+    return value if value is not None else os.environ.get(legacy)
 
 
 def _app_data_dir() -> Path:
@@ -156,11 +169,11 @@ def _active_vault() -> Path | None:
 
 
 def _resolve_project_root() -> Path:
-    # 1. explicit override wins — an operator setting MEMEX_PROJECT_ROOT means
+    # 1. explicit override wins — an operator setting MYCO_PROJECT_ROOT means
     #    "this vault", regardless of which vault the desktop app has open.
     #    (It used to lose to active-vault, which made the env var a silent no-op
     #    whenever the app had ever been launched.)
-    env = os.environ.get("MEMEX_PROJECT_ROOT")
+    env = env_var("MYCO_PROJECT_ROOT")
     if env:
         return Path(env).resolve()
     av = _active_vault()  # 2. follow the app's current vault

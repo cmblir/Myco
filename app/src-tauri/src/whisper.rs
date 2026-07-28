@@ -26,10 +26,10 @@ pub enum Variant {
 
 /// Locate a whisper binary, preferring openai-whisper, then whisper.cpp.
 pub fn locate() -> Option<(String, Variant)> {
-    if let Some(p) = locate_bin("whisper", "MEMEX_WHISPER_PATH") {
+    if let Some(p) = locate_bin("whisper", "MYCO_WHISPER_PATH") {
         return Some((p, Variant::OpenAi));
     }
-    if let Some(p) = locate_bin("whisper-cli", "MEMEX_WHISPER_CLI_PATH") {
+    if let Some(p) = locate_bin("whisper-cli", "MYCO_WHISPER_CLI_PATH") {
         return Some((p, Variant::WhisperCpp));
     }
     None
@@ -91,7 +91,7 @@ pub fn build_args(
 pub fn transcribe(path: &str) -> Result<String, String> {
     let (bin, variant) = locate().ok_or_else(|| {
         "no whisper CLI found on PATH. Install openai-whisper (`pip install \
-         openai-whisper`) or whisper.cpp, or set MEMEX_WHISPER_PATH."
+         openai-whisper`) or whisper.cpp, or set MYCO_WHISPER_PATH."
             .to_string()
     })?;
     let file = Path::new(path);

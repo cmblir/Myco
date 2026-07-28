@@ -31,13 +31,19 @@ fn clean(s: &str, max: usize) -> String {
     out.trim().to_string()
 }
 
-/// Parse and validate a `memx://clip?...` URL. Anything else is rejected.
+/// The deep-link schemes we answer to. `memx` is the pre-rename spelling and
+/// must be accepted FOREVER: it is baked into bookmarklets users have already
+/// saved and into browser extensions we cannot update on their machines.
+pub const CLIP_SCHEMES: &[&str] = &["myco", "memx"];
+
+/// Parse and validate a `myco://clip?...` URL (or the legacy `memx://` one).
+/// Anything else is rejected.
 pub fn parse_clip_url(raw: &str) -> Result<Clip, String> {
     let u = url::Url::parse(raw).map_err(|e| format!("bad url: {e}"))?;
-    if u.scheme() != "memx" {
+    if !CLIP_SCHEMES.contains(&u.scheme()) {
         return Err(format!("unsupported scheme: {}", u.scheme()));
     }
-    // Accept both memx://clip?... (host) and memx:/clip?... (path) forms —
+    // Accept both myco://clip?... (host) and myco:/clip?... (path) forms —
     // OS launchers normalize these differently.
     let action = u.host_str().unwrap_or_else(|| u.path().trim_start_matches('/'));
     if action != "clip" {
@@ -51,7 +57,7 @@ pub fn parse_clip_url(raw: &str) -> Result<Clip, String> {
             "title" => title = clean(&v, MAX_TITLE),
             "url" => {
                 let v = clean(&v, MAX_URL);
-                // Only real web pages: no javascript:, file:, data:, memx: …
+                // Only real web pages: no javascript:, file:, data:, myco: …
                 if v.starts_with("http://") || v.starts_with("https://") {
                     page_url = Some(v);
                 }
@@ -151,9 +157,21 @@ mod tests {
     }
 
     #[test]
+    fn parses_the_same_clip_under_the_new_scheme() {
+        // The tests around this one deliberately stay on `memx://`: saved
+        // bookmarklets still emit it and must keep working forever.
+        let c = parse_clip_url("myco://clip?title=Hi&url=https%3A%2F%2Fx.com%2Fa").unwrap();
+        assert_eq!(c.title, "Hi");
+        assert_eq!(c.url.as_deref(), Some("https://x.com/a"));
+        assert_eq!(CLIP_SCHEMES, &["myco", "memx"]);
+    }
+
+    #[test]
     fn rejects_wrong_scheme_action_and_empty() {
         assert!(parse_clip_url("https://clip?url=https://x.com").is_err());
         assert!(parse_clip_url("memx://open?url=https://x.com").is_err());
+        assert!(parse_clip_url("myco://open?url=https://x.com").is_err());
+        assert!(parse_clip_url("mycox://clip?url=https://x.com").is_err());
         assert!(parse_clip_url("memx://clip?title=only-a-title").is_err());
     }
 

@@ -86,8 +86,8 @@ async fn send_with_retry(
 // SSRF-shaped hazard of a non-http scheme (file://, gopher://, …) and the
 // cleartext-exfiltration hazard of `http://attacker/...` carrying an API key.
 fn http_url_or(default_url: &str, env_key: &str) -> String {
-    match std::env::var(env_key) {
-        Ok(value) if override_allowed(&value) => value,
+    match crate::env::var(env_key) {
+        Some(value) if override_allowed(&value) => value,
         _ => default_url.to_string(),
     }
 }
@@ -113,37 +113,37 @@ pub(crate) fn override_allowed(value: &str) -> bool {
 fn url_anthropic() -> String {
     http_url_or(
         "https://api.anthropic.com/v1/messages",
-        "MEMEX_ANTHROPIC_URL",
+        "MYCO_ANTHROPIC_URL",
     )
 }
 fn url_openai() -> String {
     http_url_or(
         "https://api.openai.com/v1/chat/completions",
-        "MEMEX_OPENAI_URL",
+        "MYCO_OPENAI_URL",
     )
 }
 fn url_openai_models() -> String {
     http_url_or(
         "https://api.openai.com/v1/models",
-        "MEMEX_OPENAI_MODELS_URL",
+        "MYCO_OPENAI_MODELS_URL",
     )
 }
 fn url_openrouter() -> String {
     http_url_or(
         "https://openrouter.ai/api/v1/chat/completions",
-        "MEMEX_OPENROUTER_URL",
+        "MYCO_OPENROUTER_URL",
     )
 }
 fn url_openrouter_models() -> String {
     http_url_or(
         "https://openrouter.ai/api/v1/models",
-        "MEMEX_OPENROUTER_MODELS_URL",
+        "MYCO_OPENROUTER_MODELS_URL",
     )
 }
 fn url_google(model: &str) -> String {
     let base = http_url_or(
         "https://generativelanguage.googleapis.com/v1beta/models",
-        "MEMEX_GOOGLE_URL",
+        "MYCO_GOOGLE_URL",
     );
     format!("{base}/{model}:generateContent")
 }
@@ -689,7 +689,7 @@ async fn call_ollama(client: &reqwest::Client, req: ChatRequest) -> Result<ChatR
             num_predict: req.max_tokens,
         }),
     };
-    let endpoint = http_url_or("http://localhost:11434", "MEMEX_OLLAMA_URL");
+    let endpoint = http_url_or("http://localhost:11434", "MYCO_OLLAMA_URL");
     let url = format!("{}/api/chat", endpoint.trim_end_matches('/'));
     let resp = send_with_retry(|| client.post(&url).json(&body))
         .await
@@ -718,7 +718,7 @@ async fn call_ollama(client: &reqwest::Client, req: ChatRequest) -> Result<ChatR
 }
 
 async fn list_ollama_models(client: &reqwest::Client) -> Result<Vec<String>, String> {
-    let endpoint = http_url_or("http://localhost:11434", "MEMEX_OLLAMA_URL");
+    let endpoint = http_url_or("http://localhost:11434", "MYCO_OLLAMA_URL");
     let url = format!("{}/api/tags", endpoint.trim_end_matches('/'));
     let resp = client.get(&url).send().await.map_err(|e| e.to_string())?;
     if !resp.status().is_success() {
@@ -1246,7 +1246,7 @@ mod tests {
 
     // Use a dedicated env key so this test never collides with the production
     // MEMEX_*_URL keys the wiremock tests rely on (which run in the same process).
-    const KEY: &str = "MEMEX_TEST_HTTP_URL_OR";
+    const KEY: &str = "MYCO_TEST_HTTP_URL_OR";
     const DEFAULT: &str = "https://example.invalid/default";
 
     #[test]

@@ -446,7 +446,7 @@ mod tests {
     /// repo: `models/` is git-LFS tracked and this file must never enter the
     /// working tree. Overridable so another machine can point elsewhere.
     fn reranker_path() -> PathBuf {
-        std::env::var("MEMEX_RERANK_MODEL").map(PathBuf::from).unwrap_or_else(|_| {
+        crate::env::var("MYCO_RERANK_MODEL").map(PathBuf::from).unwrap_or_else(|| {
             PathBuf::from(std::env::var("HOME").unwrap_or_default())
                 .join(".cache/memex-spike/bge-reranker-v2-m3-Q4_K_M.gguf")
         })

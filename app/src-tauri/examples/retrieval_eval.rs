@@ -4,7 +4,7 @@
 // any change (embed model swap, BM25, reranking) can be proven to help
 // instead of measured by vibes. Reports recall@k, MRR and nDCG@10 for:
 //   - the dense arm alone (VectorStore cosine search over the configured
-//     embed spec, e.g. bge-m3 — see MEMEX_EMBED_SPEC below), and
+//     embed spec, e.g. bge-m3 — see MYCO_EMBED_SPEC below), and
 //   - the fused arm (dense + a BM25 lexical index, combined via
 //     Reciprocal Rank Fusion — `retrieval::rrf_fuse`), and
 //   - optionally the rerank arm (fused, then the top RERANK_TOP_N chunks
@@ -12,9 +12,9 @@
 //
 // Run:  cargo run --example retrieval_eval --release
 // (release so the one-time embed of the sample vault isn't glacial.)
-// Set MEMEX_EMBED_SPEC to pick the embed model (e.g. `bge-m3`); see
+// Set MYCO_EMBED_SPEC to pick the embed model (e.g. `bge-m3`); see
 // `local_llm::embed_spec_by_id` for available ids.
-// Set MEMEX_RERANK_MODEL to the path of a cross-encoder GGUF to add the rerank
+// Set MYCO_RERANK_MODEL to the path of a cross-encoder GGUF to add the rerank
 // arm. UNSET IT and this harness behaves exactly as it did before the arm
 // existed — the recorded baselines must stay reproducible.
 //
@@ -56,10 +56,10 @@ const RERANK_TOP_N: usize = 12;
 
 fn main() {
     let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    // MEMEX_EMBED_SPEC selects which embed model the harness measures.
+    // MYCO_EMBED_SPEC selects which embed model the harness measures.
     // Default "gemma" reproduces the Phase-0 baseline (bundled chat model,
     // mean-pooled); any other id names an EMBED_SPECS entry (Task 4 bake-off).
-    let spec_id = std::env::var("MEMEX_EMBED_SPEC").unwrap_or_else(|_| "gemma".into());
+    let spec_id = std::env::var("MYCO_EMBED_SPEC").unwrap_or_else(|_| "gemma".into());
     let model_path = if spec_id == "gemma" {
         manifest.join("models/gemma-3-1b-it-q4_k_m.gguf")
     } else {
@@ -267,11 +267,11 @@ fn main() {
         ranked
     }
 
-    // The rerank arm is opt-in: with MEMEX_RERANK_MODEL unset, not one line of
+    // The rerank arm is opt-in: with MYCO_RERANK_MODEL unset, not one line of
     // this harness's behaviour or output changes. With the `rerank` feature
     // off, this arm is not compiled at all.
     #[cfg(feature = "rerank")]
-    let mut reranker = match std::env::var("MEMEX_RERANK_MODEL") {
+    let mut reranker = match std::env::var("MYCO_RERANK_MODEL") {
         Ok(path) if !path.is_empty() => {
             eprintln!("loading reranker {path} …");
             Some(Reranker::load(&PathBuf::from(path)).expect("load reranker"))

@@ -57,6 +57,7 @@
     "deep-link": {
       "desktop": {
         "schemes": [
+          "myco",
           "memx"
         ]
       }

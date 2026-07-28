@@ -1208,14 +1208,14 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
 const mockInbox = new Map<string, string>();
 
 /// Drop a clip into `_inbox/` and fire the deep-link handler's
-/// `memex://clip-saved`, the same path the real Tauri event takes into the app.
+/// `myco://clip-saved`, the same path the real Tauri event takes into the app.
 /// Exported for the clip E2E: a deep link cannot be delivered to a browser.
 export function emitClipSaved(title = "clipped-article"): void {
   mockInbox.set(
     `${VAULT}/_inbox/${title}.md`,
     `---\nsource_url: https://example.com/article\n---\n\n# ${title}\n\nClipped selection about attention and transformers.\n`,
   );
-  emitMock("memex://clip-saved", {});
+  emitMock("myco://clip-saved", {});
 }
 
 export function installTauriMock(): void {

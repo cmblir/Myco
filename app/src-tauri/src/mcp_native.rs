@@ -95,6 +95,13 @@ fn token_ref() -> &'static str {
     TOKEN.get_or_init(load_or_create_token)
 }
 
+/// The name this server is registered under in the user's `~/.claude.json`.
+pub const SERVER_NAME: &str = "myco";
+
+/// The name used before the myco rename. Only ever passed to `mcp remove`, so
+/// an upgrading user does not keep a duplicate registration of the same server.
+const LEGACY_SERVER_NAME: &str = "memex";
+
 /// The current bearer token (minted+persisted on first use).
 pub fn token() -> String {
     token_ref().to_string()
@@ -103,7 +110,7 @@ pub fn token() -> String {
 /// The one-line `claude mcp add` command (with the auth header) the UI shows.
 pub fn connect_command() -> String {
     format!(
-        "claude mcp add --transport http memex {} --header \"Authorization: Bearer {}\"",
+        "claude mcp add --transport http myco {} --header \"Authorization: Bearer {}\"",
         mcp_url(),
         token()
     )
@@ -112,7 +119,7 @@ pub fn connect_command() -> String {
 /// The claude_desktop_config.json snippet (a URL connector with the header).
 pub fn desktop_json() -> String {
     format!(
-        "{{\n  \"mcpServers\": {{\n    \"memex\": {{\n      \"url\": \"{}\",\n      \"headers\": {{ \"Authorization\": \"Bearer {}\" }}\n    }}\n  }}\n}}",
+        "{{\n  \"mcpServers\": {{\n    \"myco\": {{\n      \"url\": \"{}\",\n      \"headers\": {{ \"Authorization\": \"Bearer {}\" }}\n    }}\n  }}\n}}",
         mcp_url(),
         token()
     )
@@ -144,25 +151,31 @@ pub fn info() -> NativeInfo {
     }
 }
 
-/// One-click Connect: register (or re-register) memex with Claude Code over the
+/// One-click Connect: register (or re-register) myco with Claude Code over the
 /// HTTP transport, WITH the auth header (the old SSE button omitted it). A
 /// best-effort remove first so a re-Connect never collides with a stale entry.
+///
+/// The removal covers the pre-rename name too: a user who connected before the
+/// rebrand has a `memex` entry in `~/.claude.json` pointing at this same port,
+/// and leaving it there gives Claude Code two registrations of one server.
 pub fn register() -> Result<String, String> {
     let url = mcp_url();
-    let claude = crate::claude::locate_bin("claude", "MEMEX_CLAUDE_PATH")
+    let claude = crate::claude::locate_bin("claude", "MYCO_CLAUDE_PATH")
         .ok_or("claude CLI not found on PATH")?;
     let path = crate::claude::augmented_path(&claude);
-    let _ = std::process::Command::new(&claude)
-        .args(["mcp", "remove", "memex"])
-        .env("PATH", &path)
-        .output();
+    for name in [SERVER_NAME, LEGACY_SERVER_NAME] {
+        let _ = std::process::Command::new(&claude)
+            .args(["mcp", "remove", name])
+            .env("PATH", &path)
+            .output();
+    }
     let out = std::process::Command::new(&claude)
         .args([
             "mcp",
             "add",
             "--transport",
             "http",
-            "memex",
+            SERVER_NAME,
             &url,
             "--header",
             &format!("Authorization: Bearer {}", token()),
@@ -176,7 +189,7 @@ pub fn register() -> Result<String, String> {
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    Ok(format!("Connected memex over HTTP at {url}"))
+    Ok(format!("Connected {SERVER_NAME} over HTTP at {url}"))
 }
 
 /// Constant-time byte comparison (no early return on mismatch).
@@ -536,8 +549,8 @@ fn walk_all(dir: &Path) -> Vec<PathBuf> {
 // ─── server ──────────────────────────────────────────────────────────────────
 
 #[derive(Clone)]
-pub struct MemexServer {
-    tool_router: ToolRouter<MemexServer>,
+pub struct McpServer {
+    tool_router: ToolRouter<McpServer>,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -681,16 +694,16 @@ struct GitCommitArgs {
 }
 
 #[tool_router]
-impl MemexServer {
+impl McpServer {
     pub fn new() -> Self {
         Self {
             tool_router: Self::tool_router(),
         }
     }
 
-    /// List all Memex projects plus the active slug. Use a slug as `project` in
+    /// List all myco projects plus the active slug. Use a slug as `project` in
     /// other tools, or pass "" for the active one.
-    #[tool(description = "List all Memex projects and the active project slug")]
+    #[tool(description = "List all myco projects and the active project slug")]
     async fn list_projects(&self) -> Result<CallToolResult, McpError> {
         let Some(active) = settings::active_vault().map(PathBuf::from) else {
             return fail("no active vault open");
@@ -717,7 +730,7 @@ impl MemexServer {
     }
 
     /// The active (or named) vault's CLAUDE.md authoring instructions.
-    #[tool(description = "Get the Memex wiki authoring instructions (CLAUDE.md) for a project")]
+    #[tool(description = "Get the myco wiki authoring instructions (CLAUDE.md) for a project")]
     async fn get_instructions(
         &self,
         Parameters(a): Parameters<ProjectArg>,
@@ -1205,8 +1218,8 @@ impl MemexServer {
 
     // ─── writers ─────────────────────────────────────────────────────────────
 
-    /// Create a new wiki page with proper Memex frontmatter.
-    #[tool(description = "Create a wiki page with Memex frontmatter (title/type/tags/sources)")]
+    /// Create a new wiki page with proper myco frontmatter.
+    #[tool(description = "Create a wiki page with myco frontmatter (title/type/tags/sources)")]
     async fn create_page(
         &self,
         Parameters(a): Parameters<CreatePageArgs>,
@@ -1645,7 +1658,7 @@ impl MemexServer {
 }
 
 #[tool_handler]
-impl ServerHandler for MemexServer {}
+impl ServerHandler for McpServer {}
 
 // ─── transport ───────────────────────────────────────────────────────────────
 
@@ -1654,7 +1667,7 @@ impl ServerHandler for MemexServer {}
 /// Cancelling `ct` shuts the server down and frees the port.
 pub async fn serve(ct: CancellationToken) -> Result<(), String> {
     let service = StreamableHttpService::new(
-        || Ok(MemexServer::new()),
+        || Ok(McpServer::new()),
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
             .with_stateful_mode(true)

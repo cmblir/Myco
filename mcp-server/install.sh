@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Bootstrap the Memex MCP server in a local venv and print the
+# Bootstrap the myco MCP server in a local venv and print the
 # `claude mcp add` command tuned to this checkout.
 #
 # Usage:
 #   bash mcp-server/install.sh
 #
-# After this prints the command, run it to register Memex with Claude Code.
+# After this prints the command, run it to register myco with Claude Code.
 # For Claude Desktop, copy the JSON snippet from mcp-server/README.md.
 
 set -euo pipefail
@@ -21,7 +21,7 @@ if ! command -v "${PY_BIN}" >/dev/null 2>&1; then
 fi
 
 if [ ! -d "${VENV}" ]; then
-    echo "[memex-mcp] creating venv at ${VENV}"
+    echo "[myco-mcp] creating venv at ${VENV}"
     "${PY_BIN}" -m venv "${VENV}"
 fi
 
@@ -31,11 +31,11 @@ pip install --quiet --upgrade pip
 pip install --quiet -r "${HERE}/requirements.txt"
 
 ENTRY="${VENV}/bin/python"
-SCRIPT="${HERE}/memex_mcp.py"
-PORT="${MEMEX_MCP_PORT:-22360}"
+SCRIPT="${HERE}/myco_mcp.py"
+PORT="${MYCO_MCP_PORT:-22360}"
 
 echo
-echo "[memex-mcp] installed."
+echo "[myco-mcp] installed."
 echo
 echo "════════════════════════════════════════════════════════════════════"
 echo " Recommended: run as a standalone SSE server (Obsidian style)"
@@ -47,13 +47,13 @@ echo "     bash ${HERE}/serve.sh"
 echo
 echo "2. Register it with Claude Code — ONE line, no paths:"
 echo
-echo "     claude mcp add --transport sse memex http://localhost:${PORT}/sse"
+echo "     claude mcp add --transport sse myco http://localhost:${PORT}/sse"
 echo
 echo "   For Claude Desktop, add to claude_desktop_config.json:"
 cat <<JSON
      {
        "mcpServers": {
-         "memex": { "url": "http://localhost:${PORT}/sse" }
+         "myco": { "url": "http://localhost:${PORT}/sse" }
        }
      }
 JSON
@@ -62,5 +62,5 @@ echo "────────────────────────�
 echo " Alternative: stdio (Claude spawns the process per session)"
 echo "────────────────────────────────────────────────────────────────────"
 echo
-echo "     claude mcp add --scope user memex -- \"${ENTRY}\" \"${SCRIPT}\""
+echo "     claude mcp add --scope user myco -- \"${ENTRY}\" \"${SCRIPT}\""
 echo

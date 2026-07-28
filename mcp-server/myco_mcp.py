@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Memex MCP server.
+"""myco MCP server.
 
-Exposes the Memex wiki vault as a set of MCP tools so Claude (Desktop, Code,
+Exposes the myco wiki vault as a set of MCP tools so Claude (Desktop, Code,
 or any MCP client) can read, search, and maintain the wiki directly.
 
 Design notes
 ------------
 - Standalone: this file is the only entry point. Two transports (see `main`):
   a standalone SSE server (`--sse`, the recommended Obsidian-style setup —
-  `claude mcp add --transport sse memex http://localhost:22360/sse`) or stdio
+  `claude mcp add --transport sse myco http://localhost:22360/sse`) or stdio
   (default; Claude spawns it per session).
 - Uses the sibling `project_registry` module (no side effects) to resolve the
   project layout (legacy or multi-project under `projects/<slug>/`).
@@ -48,7 +48,7 @@ try:
     from mcp.server.fastmcp import FastMCP
 except ImportError:
     sys.stderr.write(
-        "memex-mcp: missing dependency. Install with:\n"
+        "myco-mcp: missing dependency. Install with:\n"
         "  pip install --user 'mcp>=1.0' \n"
         "or use the bundled install script:\n"
         f"  bash {Path(__file__).parent / 'install.sh'}\n"
@@ -56,9 +56,9 @@ except ImportError:
     raise
 
 mcp = FastMCP(
-    "memex",
+    "myco",
     instructions=(
-        "Memex is a self-maintaining LLM wiki backed by an Obsidian vault. "
+        "myco is a self-maintaining LLM wiki backed by an Obsidian vault. "
         "Use `get_instructions` once per session to load the wiki schema "
         "(frontmatter rules, citation format, contradiction policy). "
         "Then use the read tools (list_pages, read_page, search) to browse "
@@ -186,7 +186,7 @@ def _today() -> str:
 
 @mcp.tool()
 def list_projects() -> dict:
-    """List all Memex projects (multi-project) plus legacy if present.
+    """List all myco projects (multi-project) plus legacy if present.
 
     Returns the active project slug and an array of {slug, title, is_legacy,
     description, model, wiki_dir, raw_dir}. Use the slug as `project` in
@@ -552,7 +552,7 @@ def create_page(
     sources: list[str] | None = None,
     project: str = "",
 ) -> dict:
-    """Create a new wiki page with proper Memex frontmatter.
+    """Create a new wiki page with proper myco frontmatter.
 
     Args:
         title: Page title (used to derive slug).
@@ -1218,7 +1218,7 @@ DEFAULT_SSE_PORT = 22360  # matches the Obsidian Local REST API MCP convention
 
 
 def _run_sse(host: str, port: int) -> None:
-    """Serve SSE, requiring a bearer token when MEMEX_MCP_TOKEN is set.
+    """Serve SSE, requiring a bearer token when MYCO_MCP_TOKEN is set.
 
     The server binds loopback and the MCP SDK turns on DNS-rebinding protection
     for a 127.0.0.1 host, so a web page cannot reach it. Another LOCAL process
@@ -1234,7 +1234,7 @@ def _run_sse(host: str, port: int) -> None:
     local dev tool and demanding a credential a hand-runner does not have would
     only teach people to work around it.
     """
-    token = os.environ.get("MEMEX_MCP_TOKEN", "").strip()
+    token = (project_registry.env_var("MYCO_MCP_TOKEN") or "").strip()
     if not token:
         mcp.run(transport="sse")
         return
@@ -1278,7 +1278,7 @@ def _run_sse(host: str, port: int) -> None:
 
     app = RequireToken(mcp.sse_app())
 
-    sys.stderr.write("memex-mcp: bearer token required (MEMEX_MCP_TOKEN)\n")
+    sys.stderr.write("myco-mcp: bearer token required (MYCO_MCP_TOKEN)\n")
     sys.stderr.flush()
     uvicorn.run(app, host=host, port=port, log_level="error")
 
@@ -1289,35 +1289,35 @@ def main() -> None:
     Two transports:
 
     - **stdio** (default) — Claude spawns the process per session:
-        claude mcp add memex -- python <abs path>/memex_mcp.py
+        claude mcp add myco -- python <abs path>/myco_mcp.py
 
     - **sse** — run ONCE as a standalone HTTP server, then point Claude at it
       (the Obsidian style, far simpler to manage):
-        python memex_mcp.py --sse            # serves http://127.0.0.1:22360/sse
-        claude mcp add --transport sse memex http://localhost:22360/sse
+        python myco_mcp.py --sse            # serves http://127.0.0.1:22360/sse
+        claude mcp add --transport sse myco http://localhost:22360/sse
 
-    Flags/env: --sse (or MEMEX_MCP_TRANSPORT=sse), --port/-p (MEMEX_MCP_PORT),
-    --host (MEMEX_MCP_HOST). Env vars are the fallback for each flag.
+    Flags/env: --sse (or MYCO_MCP_TRANSPORT=sse), --port/-p (MYCO_MCP_PORT),
+    --host (MYCO_MCP_HOST). Env vars are the fallback for each flag.
     """
     import argparse
     import os
 
-    parser = argparse.ArgumentParser(prog="memex_mcp", add_help=True)
+    parser = argparse.ArgumentParser(prog="myco_mcp", add_help=True)
     parser.add_argument(
         "--sse",
         action="store_true",
-        default=os.environ.get("MEMEX_MCP_TRANSPORT", "").lower() == "sse",
+        default=(project_registry.env_var("MYCO_MCP_TRANSPORT") or "").lower() == "sse",
         help="serve over HTTP/SSE instead of stdio",
     )
     parser.add_argument(
         "--host",
-        default=os.environ.get("MEMEX_MCP_HOST", "127.0.0.1"),
+        default=project_registry.env_var("MYCO_MCP_HOST") or "127.0.0.1",
         help="SSE bind host (default 127.0.0.1)",
     )
     parser.add_argument(
         "-p", "--port",
         type=int,
-        default=int(os.environ.get("MEMEX_MCP_PORT", DEFAULT_SSE_PORT)),
+        default=int(project_registry.env_var("MYCO_MCP_PORT") or DEFAULT_SSE_PORT),
         help=f"SSE port (default {DEFAULT_SSE_PORT})",
     )
     args = parser.parse_args()
@@ -1328,9 +1328,9 @@ def main() -> None:
         # Startup banner on stderr (stdout must stay clean for stdio clients;
         # here it's just informational for the operator running the server).
         sys.stderr.write(
-            f"memex-mcp: serving over SSE at http://{args.host}:{args.port}"
+            f"myco-mcp: serving over SSE at http://{args.host}:{args.port}"
             f"{mcp.settings.sse_path}\n"
-            f"  register: claude mcp add --transport sse memex "
+            f"  register: claude mcp add --transport sse myco "
             f"http://{args.host if args.host != '0.0.0.0' else 'localhost'}:{args.port}{mcp.settings.sse_path}\n"
         )
         sys.stderr.flush()

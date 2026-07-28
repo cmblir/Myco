@@ -206,7 +206,7 @@ pub fn open_vault(
     // first and the binary is only resolved when there is work to do.
     #[cfg(target_os = "macos")]
     if let (Some(python), Ok(script)) = (
-        claude::locate_bin("python3", "MEMEX_PYTHON_PATH"),
+        claude::locate_bin("python3", "MYCO_PYTHON_PATH"),
         digest_script_path(&app),
     ) {
         for warning in
@@ -1227,7 +1227,7 @@ pub fn install_background_schedule(
             .find(|s| s.id == id)
             .ok_or_else(|| format!("schedule not found: {id}"))?;
         let interval = crate::schedules::interval_secs(&sched.cadence);
-        let python = claude::locate_bin("python3", "MEMEX_PYTHON_PATH")
+        let python = claude::locate_bin("python3", "MYCO_PYTHON_PATH")
             .ok_or("python3 not found on PATH (needed for background schedules)")?;
         let script = digest_script_path(&app)?;
         crate::schedules::install_background(root_path, &python, &script, &id, interval, true)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run the Memex MCP server as a standalone HTTP/SSE server (Obsidian style).
+# Run the myco MCP server as a standalone HTTP/SSE server (Obsidian style).
 #
 # Start it once and leave it running; every Claude session then connects over
 # SSE — no per-session subprocess, no absolute paths in the client config.
@@ -9,7 +9,7 @@
 #   bash mcp-server/serve.sh --port 9001  # custom port
 #
 # Then register (once):
-#   claude mcp add --transport sse memex http://localhost:22360/sse
+#   claude mcp add --transport sse myco http://localhost:22360/sse
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,7 +18,7 @@ PY_BIN="${PYTHON:-python3}"
 
 # Bootstrap the venv on first run.
 if [ ! -x "${VENV}/bin/python" ]; then
-    echo "[memex-mcp] creating venv at ${VENV}"
+    echo "[myco-mcp] creating venv at ${VENV}"
     "${PY_BIN}" -m venv "${VENV}"
     # shellcheck disable=SC1091
     source "${VENV}/bin/activate"
@@ -29,4 +29,4 @@ else
     source "${VENV}/bin/activate"
 fi
 
-exec "${VENV}/bin/python" "${HERE}/memex_mcp.py" --sse "$@"
+exec "${VENV}/bin/python" "${HERE}/myco_mcp.py" --sse "$@"
