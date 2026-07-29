@@ -676,8 +676,6 @@ export interface Strings {
   q_extractive_empty?: string;
   q_extractive_stale?: string;
   q_extractive_failed?: string;
-  q_synth_claude?: string;
-  q_synth_label?: string;
   q_you?: string;
   // Sidebar.
   sb_new_note?: string;
@@ -1439,7 +1437,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_builtin_note:
       "The built-in offline model (Gemma 3 1B) is compact and can be inaccurate. For better offline answers, run a larger model via Ollama (e.g. gemma3:4b); for the most reliable answers, use Claude.",
     q_builtin_extractive_note:
-      "Answers show the top matching passages from your notes. For a synthesized answer, use “Ask Claude” under any answer, or pick a cloud provider.",
+      "Answers show the top matching passages from your notes. For a synthesized answer, pick an AI provider under Model settings.",
     q_open_model_settings: "Model settings",
     q_stale_index:
       "This answer used the whole vault instead of the search index, which is out of date after a model update.",
@@ -1452,8 +1450,6 @@ export const STRINGS: Record<Lang, Strings> = {
       "The search index predates a model update, so it can't be searched. Run “Reindex now” under Model settings, then ask again.",
     q_extractive_failed:
       "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.",
-    q_synth_claude: "Ask Claude",
-    q_synth_label: "Claude's answer",
     q_you: "you",
     sb_new_note: "New note",
     sb_new_folder: "New folder",
@@ -2216,7 +2212,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_builtin_note:
       "내장 오프라인 모델(Gemma 3 1B)은 작아서 부정확할 수 있습니다. 오프라인이라면 Ollama로 더 큰 모델(예: gemma3:4b)을 돌려보고, 가장 정확한 답변은 Claude를 쓰세요.",
     q_builtin_extractive_note:
-      "답변은 내 노트에서 가장 일치하는 구절을 그대로 보여줍니다. 정리된 답변이 필요하면 답변 아래 “Claude에게 물어보기”를 누르거나 클라우드 프로바이더를 선택하세요.",
+      "답변은 내 노트에서 가장 일치하는 구절을 그대로 보여줍니다. 정리된 답변이 필요하면 모델 설정에서 AI 프로바이더를 선택하세요.",
     q_open_model_settings: "모델 설정",
     q_stale_index:
       "이 답변은 검색 인덱스 대신 전체 볼트를 사용했습니다 — 모델 업데이트 이후 인덱스가 오래되었습니다.",
@@ -2229,8 +2225,6 @@ export const STRINGS: Record<Lang, Strings> = {
       "검색 인덱스가 모델 업데이트 이전에 만들어져 검색할 수 없습니다. 모델 설정에서 “지금 재인덱스”를 실행한 뒤 다시 질문해 주세요.",
     q_extractive_failed:
       "검색 인덱스에 접근할 수 없어 관련 구절을 가져오지 못했습니다. 계속되면 모델 설정에서 “지금 재인덱스”를 실행해 주세요.",
-    q_synth_claude: "Claude에게 물어보기",
-    q_synth_label: "Claude의 답변",
     q_you: "나",
     sb_new_note: "새 노트",
     sb_new_folder: "새 폴더",
@@ -2875,7 +2869,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_builtin_note:
       "内蔵のオフラインモデル（Gemma 3 1B）は小さく不正確な場合があります。オフラインなら Ollama で大きめのモデル（例: gemma3:4b）を、最も正確な回答には Claude をお使いください。",
     q_builtin_extractive_note:
-      "回答はノート内の最も一致する箇所をそのまま表示します。まとめた回答が必要な場合は、回答の下の「Claudeに質問」を押すか、クラウドプロバイダーを選択してください。",
+      "回答はノート内の最も一致する箇所をそのまま表示します。まとめた回答が必要な場合は、モデル設定でAIプロバイダーを選択してください。",
     q_open_model_settings: "モデル設定",
     q_stale_index:
       "この回答は検索インデックスの代わりにボルト全体を使用しました — モデル更新後にインデックスが古くなっています。",
@@ -2888,8 +2882,6 @@ export const STRINGS: Record<Lang, Strings> = {
       "検索インデックスがモデル更新前のものだったため、検索できませんでした。モデル設定の「今すぐ再インデックス」を実行してから、もう一度質問してください。",
     q_extractive_failed:
       "検索インデックスに接続できず、該当する箇所を取得できませんでした。続く場合は、モデル設定の「今すぐ再インデックス」を実行してください。",
-    q_synth_claude: "Claudeに質問",
-    q_synth_label: "Claudeの回答",
     q_you: "あなた",
     sb_new_note: "新規ノート",
     sb_new_folder: "新規フォルダ",

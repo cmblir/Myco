@@ -60,10 +60,6 @@ export interface CompleteArgs {
   /// below. The CLI's own Read/Grep inside its tool loop stays invisible to
   /// this side regardless, and must not be invented.
   onStage?: (stage: AskStage) => void;
-  /// Force a specific provider/model for this one call, bypassing the
-  /// settings-selected query/ingest provider. Used by the extractive Ask
-  /// path's "Summarize with Claude" escalation. Empty model = provider default.
-  providerOverride?: { provider: string; model: string };
 }
 
 // How much vault markdown to inline (in bytes/chars) for non-tool providers.
@@ -76,11 +72,9 @@ const LOCAL_CONTEXT_BUDGET = 6_000;
 export async function complete(args: CompleteArgs): Promise<string> {
   const settings = await ipc.getSettings();
   const provider =
-    args.providerOverride?.provider ??
-    (args.task === "query" ? settings.query_provider : settings.ingest_provider);
+    args.task === "query" ? settings.query_provider : settings.ingest_provider;
   const model =
-    args.providerOverride?.model ??
-    (args.task === "query" ? settings.query_model : settings.ingest_model);
+    args.task === "query" ? settings.query_model : settings.ingest_model;
 
   const isCli =
     provider === "anthropic-cli" ||

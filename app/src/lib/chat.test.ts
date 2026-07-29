@@ -557,31 +557,3 @@ describe("retrieveChunks", () => {
     expect(r).toEqual({ hits: [], stale: false, retrievalFailed: false });
   });
 });
-
-describe("complete() providerOverride", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it("routes to the overridden provider instead of settings", async () => {
-    vi.spyOn(ipc, "getSettings").mockResolvedValue({
-      query_provider: "builtin-local",
-      query_model: "gemma-3-1b",
-    } as never);
-    const claudeRun = vi.spyOn(ipc, "claudeRun").mockResolvedValue({
-      status: 0,
-      stdout: "synthesized",
-      stderr: "",
-    });
-    const localQuery = vi.spyOn(ipc, "localQuery");
-    const out = await complete({
-      task: "query",
-      cwd: "/vault",
-      providerOverride: { provider: "anthropic-cli", model: "" },
-      messages: [{ role: "user", content: "q" }],
-    });
-    expect(out).toBe("synthesized");
-    expect(claudeRun).toHaveBeenCalled();
-    expect(localQuery).not.toHaveBeenCalled();
-  });
-});
