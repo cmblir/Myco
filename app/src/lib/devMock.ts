@@ -937,7 +937,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "embeddings_status":
       return Promise.resolve({
         indexed_pages: mockIndexedPages ?? NODES.length,
-        model: "builtin-local:seed",
+        // Must track BUILTIN_EMBED_MODEL: an outdated id makes isIndexStale()
+        // flag the mock index stale, which silently skips semantic retrieval
+        // in every ?mock=1 flow (Ask, CLI injection, Related).
+        model: "builtin-local:bge-m3",
       });
     // Retrieval costs a query embedding against the real model (~460 ms for a
     // chunk-sized text), so it is not free here either.
