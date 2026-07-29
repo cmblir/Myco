@@ -5,19 +5,22 @@ import { Fragment, useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
-import { ipc } from "../lib/ipc";
-import type { ProvenanceRow, SourceRef } from "../lib/ipc";
+import type { SourceRef } from "../lib/ipc";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useLintStore } from "../stores/lintStore";
+import { useProvenanceStore } from "../stores/provenanceStore";
 
 export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
   const setRoute = useUIStore((s) => s.setRoute);
   const lang = useUIStore((s) => s.lang);
-  const [rows, setRows] = useState<ProvenanceRow[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  // Scan state lives in provenanceStore: leaving mid-scan doesn't lose it,
+  // and coming back shows the cached rows instantly.
+  const rows = useProvenanceStore((s) => s.rows);
+  const error = useProvenanceStore((s) => s.error);
+  const loading = useProvenanceStore((s) => s.loading);
+  const scan = useProvenanceStore((s) => s.scan);
   const [threshold, setThreshold] = useState(0.7);
   // Lint runs live in lintStore so navigating away doesn't lose them.
   const lintStage = useLintStore((s) => s.stage);
@@ -35,14 +38,8 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
 
   useEffect(() => {
     if (!currentVault) return;
-    setLoading(true);
-    setError(null);
-    ipc
-      .scanProvenance(currentVault.path)
-      .then(setRows)
-      .catch((e: unknown) => setError(String(e)))
-      .finally(() => setLoading(false));
-  }, [currentVault]);
+    void scan(currentVault.path);
+  }, [currentVault, scan]);
 
   const totals = useMemo(() => {
     if (!rows) return { cited: 0, total: 0 };
