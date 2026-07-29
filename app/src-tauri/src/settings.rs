@@ -396,6 +396,7 @@ pub fn load() -> Settings {
     };
     let mut settings: Settings = serde_json::from_str(&raw).unwrap_or_default();
     settings.rename_legacy_provider_ids();
+    settings.rename_legacy_builtin_model();
     settings
 }
 
@@ -411,7 +412,27 @@ impl Settings {
             }
         }
     }
+
+    /// The bundled Gemma chat model left the app; a builtin-local selection
+    /// stored before that still names `gemma-3-1b`, which no longer matches
+    /// the provider's catalog (`extractive-retrieval` in providers.ts) and
+    /// renders Settings' model picker as a stale custom entry.
+    fn rename_legacy_builtin_model(&mut self) {
+        for (provider, model) in [
+            (&self.query_provider, &mut self.query_model),
+            (&self.ingest_provider, &mut self.ingest_model),
+        ] {
+            if provider == "builtin-local" && model == LEGACY_BUILTIN_MODEL {
+                *model = BUILTIN_MODEL_LABEL.to_string();
+            }
+        }
+    }
 }
+
+/// Catalog label for the builtin provider since the chat GGUF left the bundle.
+/// Mirrors `BUILTIN_MODEL` in `app/src/lib/providers.ts`.
+const BUILTIN_MODEL_LABEL: &str = "extractive-retrieval";
+const LEGACY_BUILTIN_MODEL: &str = "gemma-3-1b";
 
 /// Provider id for the subscription backend; also the keychain account name
 /// (`secrets::KNOWN_ACCOUNTS`) and the id in `app/src/lib/providers.ts`.
@@ -605,6 +626,27 @@ mod tests {
         with_isolated_data("load-missing", |_dir| {
             let s = load();
             assert_eq!(s.query_provider, "anthropic-cli");
+        });
+    }
+
+    #[test]
+    fn builtin_gemma_model_migrates_to_extractive_retrieval() {
+        with_isolated_data("gemma-migration", |dir| {
+            // Settings stored while Gemma was bundled: the model id no longer
+            // exists in the builtin catalog and must migrate on load — but
+            // only under the builtin provider (a cloud model named the same
+            // would be the user's own value, not ours to rewrite).
+            std::fs::write(
+                dir.join("settings.json"),
+                r#"{
+                  "query_provider": "builtin-local", "query_model": "gemma-3-1b",
+                  "ingest_provider": "anthropic-cli", "ingest_model": "gemma-3-1b"
+                }"#,
+            )
+            .unwrap();
+            let s = load();
+            assert_eq!(s.query_model, "extractive-retrieval");
+            assert_eq!(s.ingest_model, "gemma-3-1b"); // non-builtin: untouched
         });
     }
 
