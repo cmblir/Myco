@@ -15,12 +15,12 @@ const VIEWPORTS = [
 
 const seed = () => {
   localStorage.setItem(
-    "memex-ui",
+    "myco-ui",
     JSON.stringify({ state: { route: "graph", lang: "ko", theme: "dark" }, version: 3 }),
   );
-  localStorage.setItem("memex.onboarded", "1");
+  localStorage.setItem("myco.onboarded", "1");
   // Turn multiverse mode on in the graph settings.
-  localStorage.setItem("memex.graph.settings.v26", JSON.stringify({ multiverse: true }));
+  localStorage.setItem("myco.graph.settings.v26", JSON.stringify({ multiverse: true }));
 };
 
 const browser = await chromium.launch();
@@ -64,10 +64,10 @@ for (const vp of VIEWPORTS) {
   // Seed with multiverse OFF, then open the drawer and confirm the toggle is there.
   await page.addInitScript(() => {
     localStorage.setItem(
-      "memex-ui",
+      "myco-ui",
       JSON.stringify({ state: { route: "graph", lang: "ko", theme: "dark" }, version: 3 }),
     );
-    localStorage.setItem("memex.onboarded", "1");
+    localStorage.setItem("myco.onboarded", "1");
   });
   await page.goto("http://localhost:5173/?mock=1", { waitUntil: "domcontentloaded" });
   await page.waitForSelector(".graph-canvas canvas", { timeout: 30000 }).catch(() => {});

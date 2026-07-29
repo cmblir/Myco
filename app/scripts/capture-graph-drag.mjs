@@ -18,16 +18,16 @@ const page = await browser.newPage({ viewport: { width: W, height: H } });
 // Seed localStorage before the app boots: open straight on the Graph route,
 // English, dark theme, with slightly larger nodes so the hub is easy to grab.
 await page.addInitScript(() => {
-  localStorage.setItem("memex.lastVaultPath", "/Memex");
+  localStorage.setItem("myco.lastVaultPath", "/Memex");
   localStorage.setItem(
-    "memex-ui",
+    "myco-ui",
     JSON.stringify({
       state: { route: "graph", sidebarCollapsed: false, cmdOpen: false, lang: "en", theme: "dark", density: "comfortable", accent: "#181715", showCitations: true, expandedFolders: {} },
       version: 3,
     }),
   );
   localStorage.setItem(
-    "memex.graph.settings.v20",
+    "myco.graph.settings.v20",
     JSON.stringify({ showOrphans: true, existingOnly: false, tagFilter: null, folderFilter: null, arrows: false, textFadeThreshold: 1.8, nodeSize: 3, linkThickness: 1.3, centerForce: 0.5, repelForce: 11, linkForce: 1, linkDistance: 60 }),
   );
 });

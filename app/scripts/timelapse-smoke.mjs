@@ -19,9 +19,9 @@ const check = (n, ok, d = "") => results.push({ n, ok, d });
 async function graphPage() {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.addInitScript(() => {
-    localStorage.setItem("memex.onboarded", "1");
+    localStorage.setItem("myco.onboarded", "1");
     localStorage.setItem(
-      "memex-ui",
+      "myco-ui",
       JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }),
     );
     window.__rec = { states: [], stopped: 0, downloads: [] };

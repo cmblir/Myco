@@ -47,8 +47,8 @@ function initBrowser(args) {
     convertFileSrc: (s) => s,
   };
   try {
-    localStorage.setItem("memex-ui", JSON.stringify({ state: { route: args.route || "overview", lang: "en", theme: "dark", sidebarCollapsed: false }, version: 3 }));
-    localStorage.setItem("memex.lastVaultPath", vault);
+    localStorage.setItem("myco-ui", JSON.stringify({ state: { route: args.route || "overview", lang: "en", theme: "dark", sidebarCollapsed: false }, version: 3 }));
+    localStorage.setItem("myco.lastVaultPath", vault);
   } catch {
     /* ignore */
   }

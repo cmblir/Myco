@@ -46,15 +46,15 @@ function initBrowser(mock) {
   try {
     if (mock.atlas) {
       localStorage.setItem(
-        "memex.graph.settings.v26",
+        "myco.graph.settings.v26",
         JSON.stringify({ layout: "atlas" }),
       );
     }
     localStorage.setItem(
-      "memex-ui",
+      "myco-ui",
       JSON.stringify({ state: { route: "graph", lang: "ko", theme: "dark" }, version: 3 }),
     );
-    localStorage.setItem("memex.lastVaultPath", mock.vault);
+    localStorage.setItem("myco.lastVaultPath", mock.vault);
   } catch {
     /* ignore */
   }

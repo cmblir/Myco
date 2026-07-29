@@ -1182,12 +1182,12 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         running: true,
         url: "http://localhost:22360/mcp",
         command:
-          'claude mcp add --transport http memex http://localhost:22360/mcp --header "Authorization: Bearer 0123456789abcdef0123456789abcdef"',
+          'claude mcp add --transport http myco http://localhost:22360/mcp --header "Authorization: Bearer 0123456789abcdef0123456789abcdef"',
         desktop_json:
-          '{\n  "mcpServers": {\n    "memex": {\n      "url": "http://localhost:22360/mcp",\n      "headers": { "Authorization": "Bearer 0123456789abcdef0123456789abcdef" }\n    }\n  }\n}',
+          '{\n  "mcpServers": {\n    "myco": {\n      "url": "http://localhost:22360/mcp",\n      "headers": { "Authorization": "Bearer 0123456789abcdef0123456789abcdef" }\n    }\n  }\n}',
       });
     case "mcp_connect":
-      return Promise.resolve("(mock) Connected memex over HTTP at http://localhost:22360/mcp");
+      return Promise.resolve("(mock) Connected myco over HTTP at http://localhost:22360/mcp");
     default:
       // Reject, like the real Tauri does for a command that is not registered.
       // Resolving `undefined` instead is how the mock hid a broken feature for
@@ -1248,8 +1248,8 @@ export function installTauriMock(): void {
   // gets a SECOND module instance with its own empty listener registry, so
   // anything it emits reaches nobody.
   (
-    window as unknown as { __memexMock?: unknown }
-  ).__memexMock = {
+    window as unknown as { __mycoMock?: unknown }
+  ).__mycoMock = {
     emit: emitMock,
     clip: emitClipSaved,
     inbox: () => [...mockInbox.keys()],

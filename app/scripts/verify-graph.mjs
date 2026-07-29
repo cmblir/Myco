@@ -9,7 +9,7 @@ import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 
 const BASE = process.argv[2] || "http://localhost:4173";
-const OUT = "/tmp/memex-graph-qa";
+const OUT = "/tmp/myco-graph-qa";
 mkdirSync(OUT, { recursive: true });
 
 // Real wiki structure (slug → outgoing wikilink slugs), from the graph analysis.
@@ -76,10 +76,10 @@ function initBrowser(mock) {
   };
   try {
     localStorage.setItem(
-      "memex-ui",
+      "myco-ui",
       JSON.stringify({ state: { route: "graph", lang: "en", theme: "dark" }, version: 3 }),
     );
-    localStorage.setItem("memex.lastVaultPath", mock.vault);
+    localStorage.setItem("myco.lastVaultPath", mock.vault);
   } catch {
     /* ignore */
   }

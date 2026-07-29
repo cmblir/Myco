@@ -21,8 +21,8 @@ for (const vp of VIEWPORTS) {
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   await page.addInitScript(() => {
-    localStorage.setItem("memex.onboarded", "1");
-    localStorage.setItem("memex-ui", JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }));
+    localStorage.setItem("myco.onboarded", "1");
+    localStorage.setItem("myco-ui", JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }));
   });
 
   // Intercept the model delete so it succeeds without a real daemon, and record

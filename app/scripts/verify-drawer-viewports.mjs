@@ -18,7 +18,7 @@ for (const vp of VIEWPORTS) {
   // clicking the tab text is impossible (verify-graph.mjs precedent).
   await page.addInitScript(() => {
     localStorage.setItem(
-      "memex-ui",
+      "myco-ui",
       JSON.stringify({ state: { route: "graph", lang: "ko", theme: "dark" }, version: 3 }),
     );
   });

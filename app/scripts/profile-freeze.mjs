@@ -9,7 +9,7 @@ const browser = await chromium.launch();
 const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 await page.addInitScript(() => {
   localStorage.setItem(
-    "memex-ui",
+    "myco-ui",
     JSON.stringify({ state: { route: "graph", lang: "ko", theme: "dark" }, version: 3 }),
   );
   // Count long tasks from inside the page.
