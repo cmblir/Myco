@@ -69,7 +69,7 @@ Both share the same vault layout (`raw/ wiki/ daily/ ingest-reports/`) and never
 ### Desktop app (recommended)
 
 Grab the bundle for your platform from the
-**[latest release](https://github.com/cmblir/Memex/releases/latest)**:
+**[latest release](https://github.com/cmblir/Myco/releases/latest)**:
 
 - **macOS** (Apple Silicon): `myco_0.3.0_aarch64.dmg` — signed and notarized,
   so it opens without a Gatekeeper warning. No Intel build this release; open an
@@ -113,8 +113,8 @@ Settings → Account → Change…
 Requires Python 3.10+ (stdlib only) and the [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code).
 
 ```bash
-git clone https://github.com/cmblir/memex.git
-cd myco
+git clone https://github.com/cmblir/Myco.git
+cd Myco
 bash mcp-server/install.sh    # MCP server for Claude Desktop/Code
 ```
 
@@ -463,11 +463,11 @@ Per-project settings (MCP) live in `projects/<slug>/.settings.json` and
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=cmblir/memex&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=cmblir/Myco&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cmblir/memex&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cmblir/memex&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cmblir/memex&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cmblir/Myco&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cmblir/Myco&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cmblir/Myco&type=date&legend=top-left" />
  </picture>
 </a>
 

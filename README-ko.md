@@ -68,7 +68,7 @@ myco의 주력은 네이티브 데스크톱 앱입니다. 다른 Claude 클라�
 
 ### 데스크톱 앱 (권장)
 
-**[최신 릴리스](https://github.com/cmblir/Memex/releases/latest)**에서 플랫폼별 번들을 받으세요:
+**[최신 릴리스](https://github.com/cmblir/Myco/releases/latest)**에서 플랫폼별 번들을 받으세요:
 
 - **macOS** (Apple Silicon): `myco_0.3.0_aarch64.dmg` — 서명·공증되어 Gatekeeper
   경고 없이 열립니다. 이번 릴리스에 Intel 빌드는 없습니다. 필요하시면 이슈로 알려주세요.
@@ -104,8 +104,8 @@ myco의 주력은 네이티브 데스크톱 앱입니다. 다른 Claude 클라�
 Python 3.10+ (stdlib만)과 [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) 필요.
 
 ```bash
-git clone https://github.com/cmblir/memex.git
-cd myco
+git clone https://github.com/cmblir/Myco.git
+cd Myco
 bash mcp-server/install.sh    # Claude Desktop/Code용 MCP 서버
 ```
 
@@ -436,11 +436,11 @@ templates/                 프로젝트 템플릿
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=cmblir/memex&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=cmblir/Myco&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cmblir/memex&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cmblir/memex&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cmblir/memex&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cmblir/Myco&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cmblir/Myco&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cmblir/Myco&type=date&legend=top-left" />
  </picture>
 </a>
 
