@@ -44,6 +44,12 @@ interface ChatTurn {
   /// Answer is retrieved passages rendered verbatim (builtin-local path) —
   /// no model synthesis. Keys the "Summarize with Claude" escalation button.
   extractive?: boolean;
+  /// Claude CLI synthesis appended below an extractive answer via the
+  /// escalation button. `synthBusy` gates the button; `synthError` renders
+  /// inline like `error` does.
+  synth?: string;
+  synthBusy?: boolean;
+  synthError?: string;
 }
 
 const SYSTEM_PREAMBLE = `You are myco, the wiki maintainer for the user's local markdown vault.
@@ -258,6 +264,36 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
     }
   }
 
+  async function synthesize(idx: number): Promise<void> {
+    const turn = turns[idx];
+    if (!turn || !currentVault || turn.synthBusy) return;
+    setTurns((prev) =>
+      prev.map((p, i) => (i === idx ? { ...p, synthBusy: true, synthError: undefined } : p)),
+    );
+    try {
+      const content = await complete({
+        task: "query",
+        cwd: currentVault.path,
+        providerOverride: { provider: "anthropic-cli", model: "" },
+        messages: [
+          { role: "system", content: SYSTEM_PREAMBLE },
+          { role: "user", content: turn.q },
+        ],
+      });
+      setTurns((prev) =>
+        prev.map((p, i) =>
+          i === idx ? { ...p, synth: content, synthBusy: false } : p,
+        ),
+      );
+    } catch (err) {
+      setTurns((prev) =>
+        prev.map((p, i) =>
+          i === idx ? { ...p, synthBusy: false, synthError: String(err) } : p,
+        ),
+      );
+    }
+  }
+
   return (
     <div className="workspace">
       <header className="page-head">
@@ -408,11 +444,38 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 </button>
               </div>
             ) : null}
+            {turn.extractive && turn.a && !turn.error ? (
+              <div style={{ marginTop: 10 }}>
+                {turn.synth ? (
+                  <>
+                    <div className="section-title" style={{ fontSize: 13, marginBottom: 4 }}>
+                      {t.q_synth_label ?? "Claude's summary"}
+                    </div>
+                    <div className="prose">
+                      <Viewer content={turn.synth} onLinkClick={openByStem} />
+                    </div>
+                  </>
+                ) : (
+                  <button
+                    className="btn btn-ghost"
+                    style={{ fontSize: 12.5 }}
+                    disabled={turn.synthBusy}
+                    onClick={() => void synthesize(i)}
+                  >
+                    <Icon name="spark" size={12} />{" "}
+                    {turn.synthBusy ? "…" : (t.q_synth_claude ?? "Summarize with Claude")}
+                  </button>
+                )}
+                {turn.synthError ? (
+                  <p style={{ color: "#dc2626", fontSize: 12.5 }}>{turn.synthError}</p>
+                ) : null}
+              </div>
+            ) : null}
             {turn.a ? (
               <AnswerGalaxy
                 t={t}
                 question={turn.q}
-                answer={turn.a}
+                answer={turn.synth ? `${turn.a}\n\n${turn.synth}` : turn.a}
                 stemMap={stemMap}
                 adjacency={adjacency}
                 onOpen={(abs) => setRoute(`page:${abs}`)}

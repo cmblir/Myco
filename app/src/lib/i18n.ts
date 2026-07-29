@@ -672,6 +672,8 @@ export interface Strings {
   q_retrieval_failed?: string;
   q_extractive_label?: string;
   q_extractive_empty?: string;
+  q_synth_claude?: string;
+  q_synth_label?: string;
   q_you?: string;
   // Sidebar.
   sb_new_note?: string;
@@ -1438,6 +1440,8 @@ export const STRINGS: Record<Lang, Strings> = {
     q_extractive_label: "From your notes (top matches, verbatim)",
     q_extractive_empty:
       "Nothing relevant found in the wiki index. Try rephrasing, or run “Reindex now” under Model settings.",
+    q_synth_claude: "Summarize with Claude",
+    q_synth_label: "Claude's summary",
     q_you: "you",
     sb_new_note: "New note",
     sb_new_folder: "New folder",
@@ -2206,6 +2210,8 @@ export const STRINGS: Record<Lang, Strings> = {
     q_extractive_label: "내 노트에서 찾음 (상위 일치 원문)",
     q_extractive_empty:
       "위키 인덱스에서 관련 내용을 찾지 못했습니다. 질문을 바꿔 보거나, 모델 설정에서 “지금 재색인”을 실행해 보세요.",
+    q_synth_claude: "Claude로 정리",
+    q_synth_label: "Claude 정리",
     q_you: "나",
     sb_new_note: "새 노트",
     sb_new_folder: "새 폴더",
@@ -2856,6 +2862,8 @@ export const STRINGS: Record<Lang, Strings> = {
     q_extractive_label: "ノートからの抜粋（上位一致・原文）",
     q_extractive_empty:
       "ウィキのインデックスに該当する内容が見つかりませんでした。質問を言い換えるか、モデル設定の「今すぐ再インデックス」を実行してください。",
+    q_synth_claude: "Claudeで要約",
+    q_synth_label: "Claudeの要約",
     q_you: "あなた",
     sb_new_note: "新規ノート",
     sb_new_folder: "新規フォルダ",
