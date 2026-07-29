@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { complete, isIndexStale, type AskStage } from "./chat";
+import { complete, isIndexStale, retrieveChunks, type AskStage } from "./chat";
 import { ipc } from "./ipc";
 import { BUILTIN_EMBED_MODEL } from "./providers";
 import { log } from "./log";
@@ -503,5 +503,57 @@ describe("isIndexStale", () => {
     expect(
       isIndexStale({ indexed_pages: 5, model: "ollama:nomic-embed-text" }),
     ).toBe(false);
+  });
+});
+
+describe("retrieveChunks", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("returns hits from a healthy index", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 10,
+      model: `builtin-local:${BUILTIN_EMBED_MODEL}`,
+    });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
+      { page: "wiki/bpe.md", stem: "bpe", section: 0, text: "BPE merges pairs.", score: 0.9 },
+    ]);
+    const r = await retrieveChunks("what is bpe", 12);
+    expect(r.hits).toHaveLength(1);
+    expect(r.stale).toBe(false);
+    expect(r.retrievalFailed).toBe(false);
+  });
+
+  it("flags a stale index and never searches", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 10,
+      model: "builtin-local:gemma-3-1b", // pre-swap model id
+    });
+    const search = vi.spyOn(ipc, "semanticSearch");
+    const r = await retrieveChunks("q");
+    expect(r.stale).toBe(true);
+    expect(r.hits).toEqual([]);
+    expect(search).not.toHaveBeenCalled();
+  });
+
+  it("flags retrievalFailed when semantic_search rejects", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 10,
+      model: `builtin-local:${BUILTIN_EMBED_MODEL}`,
+    });
+    vi.spyOn(ipc, "semanticSearch").mockRejectedValue(new Error("ipc down"));
+    const r = await retrieveChunks("q");
+    expect(r.retrievalFailed).toBe(true);
+    expect(r.hits).toEqual([]);
+  });
+
+  it("returns empty (not failed) for a never-indexed vault", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 0,
+      model: "",
+    });
+    const r = await retrieveChunks("q");
+    expect(r).toEqual({ hits: [], stale: false, retrievalFailed: false });
   });
 });

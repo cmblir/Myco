@@ -265,6 +265,43 @@ export function isIndexStale(
   return status.model !== CURRENT_BUILTIN_INDEX_ID;
 }
 
+/** Retrieval half of semanticContext, exported for the extractive Ask path.
+ * Same semantics: `stale` = index predates a bundled embed-model swap (search
+ * skipped); `retrievalFailed` = an IPC call REJECTED (logged, caught) — never
+ * set for a legitimately empty index or empty hit list. `onRetrieving` fires
+ * just before the search IPC, matching the old stage-event timing. */
+export interface RetrievedChunks {
+  hits: ScoredChunk[];
+  stale: boolean;
+  retrievalFailed: boolean;
+}
+
+export async function retrieveChunks(
+  question: string,
+  k = 12,
+  onRetrieving?: () => void,
+): Promise<RetrievedChunks> {
+  const none: RetrievedChunks = { hits: [], stale: false, retrievalFailed: false };
+  const status = await ipc.embeddingsStatus().catch((err) => {
+    log.warn("semantic_context.embeddings_status_failed", { error: String(err) });
+    return null;
+  });
+  if (status === null) return { ...none, retrievalFailed: true };
+  if (status.indexed_pages === 0) return none;
+  if (isIndexStale(status)) return { ...none, stale: true };
+  onRetrieving?.();
+  let searchRejected = false;
+  const hits = await ipc
+    .semanticSearch(question, k, "builtin-local", BUILTIN_EMBED_MODEL)
+    .catch((err) => {
+      log.warn("semantic_context.semantic_search_failed", { error: String(err) });
+      searchRejected = true;
+      return [] as ScoredChunk[];
+    });
+  if (searchRejected) return { ...none, retrievalFailed: true };
+  return { hits, stale: false, retrievalFailed: false };
+}
+
 /** Semantic retrieval: embed the question, pull the top-matching chunks from the
  * embedding index, and inline their PASSAGE TEXT (bounded by `budget`) under one
  * citeable [[stem]] header per page — not the whole page body, which is what
@@ -289,37 +326,16 @@ async function semanticContext(
   budget: number,
   onStage?: (stage: AskStage) => void,
 ): Promise<{ ctx: string; stems: string[]; stale: boolean; retrievalFailed: boolean }> {
-  const none = { ctx: "", stems: [], stale: false, retrievalFailed: false };
-  const status = await ipc.embeddingsStatus().catch((err) => {
-    log.warn("semantic_context.embeddings_status_failed", { error: String(err) });
-    return null;
-  });
-  if (status === null) return { ...none, retrievalFailed: true };
-  if (status.indexed_pages === 0) return none;
-  if (isIndexStale(status)) {
-    return { ctx: "", stems: [], stale: true, retrievalFailed: false };
+  const r = await retrieveChunks(question, 12, () => onStage?.({ kind: "retrieving" }));
+  if (r.stale || r.retrievalFailed || r.hits.length === 0) {
+    return { ctx: "", stems: [], stale: r.stale, retrievalFailed: r.retrievalFailed };
   }
-  onStage?.({ kind: "retrieving" });
-  let searchRejected = false;
-  const hits = await ipc
-    .semanticSearch(question, 12, "builtin-local", BUILTIN_EMBED_MODEL)
-    .catch((err) => {
-      log.warn("semantic_context.semantic_search_failed", { error: String(err) });
-      searchRejected = true;
-      return [] as ScoredChunk[];
-    });
-  if (searchRejected) {
-    return { ctx: "", stems: [], stale: false, retrievalFailed: true };
-  }
-  if (hits.length === 0) return none;
   const parts: string[] = [];
   const stems: string[] = [];
   let used = 0;
   let lastPage = "";
-  for (const h of hits) {
+  for (const h of r.hits) {
     if (!h.text) continue;
-    // One citeable header per page; later chunks of the same page just
-    // append under it instead of repeating the citation.
     const header = h.page !== lastPage ? `===== [[${h.stem}]] =====\n` : "\n";
     const block = `${header}${h.text}`;
     if (used + block.length > budget && parts.length > 0) break;
@@ -328,8 +344,6 @@ async function semanticContext(
     if (h.page !== lastPage && !stems.includes(h.stem)) stems.push(h.stem);
     lastPage = h.page;
   }
-  // Only the pages that made the budget: the ones past it are never shown to
-  // the model, so naming them would be another fiction.
   return { ctx: parts.join("\n\n"), stems, stale: false, retrievalFailed: false };
 }
 
