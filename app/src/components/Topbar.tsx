@@ -9,6 +9,7 @@ import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useIngestStore } from "../stores/ingestStore";
 import { useLintStore } from "../stores/lintStore";
+import { useQueryStore } from "../stores/queryStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useEnabledProviders } from "../lib/providers";
 import ModelSelect from "./ModelSelect";
@@ -62,6 +63,7 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
       </button>
       <IngestChip t={t} />
       <LintChip t={t} />
+      <QueryChip t={t} />
       <button className="pill pill-search" onClick={toggleCmd}>
         <Icon name="search" size={14} />
         <span className="pill-label">{t.ph_search}</span>
@@ -219,7 +221,7 @@ function IngestChip({ t }: { t: Strings }): JSX.Element | null {
   if (running) {
     return (
       <button
-        className="pill"
+        className="pill chip-live"
         onClick={() => setRoute("ingest")}
         title={t.ing_live_title}
       >
@@ -234,7 +236,7 @@ function IngestChip({ t }: { t: Strings }): JSX.Element | null {
     const ok = stage === "done";
     return (
       <button
-        className="pill"
+        className="pill chip-pop"
         onClick={() => setRoute("ingest")}
         title={ok ? t.ing_chip_done : t.ing_chip_error}
       >
@@ -243,6 +245,57 @@ function IngestChip({ t }: { t: Strings }): JSX.Element | null {
           style={{ background: ok ? "#16a34a" : "#dc2626" }}
         ></span>
         <span>{ok ? t.ing_chip_done : t.ing_chip_error}</span>
+      </button>
+    );
+  }
+  return null;
+}
+
+// Same pattern as IngestChip, for Ask runs: the chat lives in queryStore, so
+// an answer keeps computing when the user leaves the Query page — this chip
+// is how they see it running (and find their way back).
+function QueryChip({ t }: { t: Strings }): JSX.Element | null {
+  const busy = useQueryStore((s) => s.busy);
+  const startedAt = useQueryStore((s) => s.startedAt);
+  const seen = useQueryStore((s) => s.seen);
+  const turns = useQueryStore((s) => s.turns);
+  const setRoute = useUIStore((s) => s.setRoute);
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!busy) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [busy]);
+
+  if (busy) {
+    return (
+      <button
+        className="pill chip-live"
+        onClick={() => setRoute("query")}
+        title={t.q_answering ?? "answering…"}
+      >
+        <span className="ingest-chip-spinner" />
+        <span>
+          {t.nav_query} {startedAt ? formatTicker(now - startedAt) : ""}
+        </span>
+      </button>
+    );
+  }
+  const last = turns[turns.length - 1];
+  if (!seen && last) {
+    const ok = !last.error;
+    return (
+      <button
+        className="pill chip-pop"
+        onClick={() => setRoute("query")}
+        title={ok ? (t.q_chip_done ?? "Answer ready") : (t.q_chip_error ?? "Answer failed")}
+      >
+        <span
+          className="dot"
+          style={{ background: ok ? "#16a34a" : "#dc2626" }}
+        ></span>
+        <span>{ok ? (t.q_chip_done ?? "Answer ready") : (t.q_chip_error ?? "Answer failed")}</span>
       </button>
     );
   }
@@ -259,7 +312,7 @@ function LintChip({ t }: { t: Strings }): JSX.Element | null {
   if (stage === "running") {
     return (
       <button
-        className="pill"
+        className="pill chip-live"
         onClick={() => setRoute("provenance")}
         title={t.p_lint_running}
       >
@@ -272,7 +325,7 @@ function LintChip({ t }: { t: Strings }): JSX.Element | null {
     const ok = stage === "done";
     return (
       <button
-        className="pill"
+        className="pill chip-pop"
         onClick={() => setRoute("provenance")}
         title={ok ? t.p_lint_done : t.p_lint_failed}
       >

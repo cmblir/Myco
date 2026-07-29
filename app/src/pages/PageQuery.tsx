@@ -1,8 +1,8 @@
-// Ask the wiki — shells the prompt to `claude --print` with the vault as
-// cwd. The CLI uses the user's existing Pro/Max subscription so we never
-// touch an API key. Answers render as real markdown (clickable [[wikilinks]])
+// Ask the wiki — answers render as real markdown (clickable [[wikilinks]])
 // and every cited page appears in an interactive mini galaxy under the
-// answer — drag, hover, click for an in-place preview.
+// answer — drag, hover, click for an in-place preview. The chat itself lives
+// in queryStore so an in-flight answer survives navigating away; the Topbar
+// shows a chip while it runs.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
@@ -11,12 +11,9 @@ import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { complete, retrieveChunks, type AskStage } from "../lib/chat";
-import { formatExtractiveAnswer } from "../lib/extractive";
-import { ipc } from "../lib/ipc";
+import { useQueryStore } from "../stores/queryStore";
 import { takeQueryPrefill } from "../lib/queryPrefill";
 import MascotClip from "../components/MascotClip";
-import { isActivityQuery, formatActivityAnswer } from "../lib/queryIntent";
 import { flattenMarkdown, stem } from "../lib/graphData";
 import Viewer from "../components/Viewer";
 import AgentPanel from "../components/AgentPanel";
@@ -27,35 +24,6 @@ import MiniGalaxy from "../components/MiniGalaxy";
 import type { GalaxyLink, GalaxyNode } from "../components/MiniGalaxy";
 import NodePreview from "../components/NodePreview";
 import { isComposingKey } from "../lib/ime";
-
-interface ChatTurn {
-  q: string;
-  a: string;
-  error?: string;
-  /// The embedding index predated a bundled embed-model swap, so this answer
-  /// used the whole-vault fallback instead of semantic retrieval — surfaced
-  /// so the fallback stays visible instead of a silent quality drop.
-  stale?: boolean;
-  /// An IPC call inside retrieval (embeddings_status/semantic_search)
-  /// actually rejected, so this answer used the whole-vault fallback instead
-  /// — distinct from a legitimately empty index/hit list, which is not a
-  /// failure and must not set this.
-  retrievalFailed?: boolean;
-  /// Answer is retrieved passages rendered verbatim (builtin-local path) —
-  /// no model synthesis. For a synthesized answer the user picks an AI
-  /// provider under Model settings.
-  extractive?: boolean;
-  /// Extractive turn that produced no passages (stale index, retrieval
-  /// failure, or a legitimately empty hit list) — suppresses the "From your
-  /// notes" label, since there is nothing to attribute to the notes.
-  extractiveEmpty?: boolean;
-}
-
-const SYSTEM_PREAMBLE = `You are myco, the wiki maintainer for the user's local markdown vault.
-The current working directory is the vault root. Use Read/Grep/Glob tools to
-look up answers from the wiki (\`wiki/\` if it exists) before reaching for
-\`raw/\` sources. Answer in the user's language. When you state a fact that
-comes from a vault file, cite it inline as [[page-stem]].`;
 
 // All [[wikilink]] targets in an answer, alias stripped, order kept, deduped.
 function extractWikilinks(text: string): string[] {
@@ -82,9 +50,18 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const settings = useSettingsStore((s) => s.settings);
   const [mode, setMode] = useState<"ask" | "agent">("ask");
   const [q, setQ] = useState("");
-  const [turns, setTurns] = useState<ChatTurn[]>([]);
-  const [busy, setBusy] = useState(false);
+  const turns = useQueryStore((s) => s.turns);
+  const busy = useQueryStore((s) => s.busy);
+  const stage = useQueryStore((s) => s.stage);
+  const askStore = useQueryStore((s) => s.ask);
+  const markSeen = useQueryStore((s) => s.markSeen);
   const endRef = useRef<HTMLDivElement | null>(null);
+
+  // Visiting this page acknowledges a finished answer (clears the Topbar
+  // chip) — same pattern as lint on the Provenance page.
+  useEffect(() => {
+    markSeen();
+  }, [busy, markSeen]);
 
   // A surface elsewhere (e.g. the graph's gap panel) may have drafted a
   // question for us — consume it once on mount.
@@ -100,14 +77,6 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
     for (const p of flattenMarkdown(fileTree)) map.set(stem(p).toLowerCase(), p);
     return map;
   }, [fileTree]);
-
-  // What the run is actually doing, reported by complete(). This used to be a
-  // random shuffle of vault stems under a static "searching the wiki…" — the
-  // pulses lit up pages nobody was reading, and the one thing a user wants from
-  // that wait (which of my notes is it using?) was the thing being faked.
-  // Streaming was measured and killed (prefill dominates; tokens would arrive
-  // ~100 ms sooner), so honest staging is what is left to give.
-  const [stage, setStage] = useState<AskStage | null>(null);
 
   // The pages retrieval chose, carried on the `thinking` stage — the model call
   // is the long wait, and "these are the notes it is answering from" is exactly
@@ -148,131 +117,24 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [turns.length]);
 
+  // The chat logic (activity routing, extractive path, provider call) lives in
+  // queryStore.ask so it keeps running when this page unmounts. The page only
+  // hands over the localized copy the store bakes into turns.
   async function ask(): Promise<void> {
     const question = q.trim();
     if (!question || !currentVault || busy) return;
     setQ("");
-    setBusy(true);
-    const pending: ChatTurn = { q: question, a: "" };
-    setTurns((prev) => [...prev, pending]);
-
-    // "What did I do recently / what changed" is a git-history question, not a
-    // wiki-content one — answering it from git_log is factual, whereas sending
-    // it to the (small, offline) model made it confabulate. Route it directly.
-    if (isActivityQuery(question)) {
-      try {
-        const commits = await ipc.gitLog(currentVault.path, 20).catch(() => []);
-        const answer = formatActivityAnswer(commits, lang);
-        setTurns((prev) =>
-          prev.map((turn, i) =>
-            i === prev.length - 1 ? { ...turn, a: answer } : turn,
-          ),
-        );
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
-
-    // builtin-local: extractive answer. Retrieval is the measured strength of
-    // this stack; the 1B model paraphrasing on top of it produced echo loops
-    // (the reported bug), so render what retrieval found and offer Claude
-    // synthesis as an explicit escalation instead.
-    if (settings?.query_provider === "builtin-local") {
-      try {
-        setStage({ kind: "retrieving" });
-        const r = await retrieveChunks(question, 12);
-        const md = formatExtractiveAnswer(r.hits);
-        // Pick the body by state: a stale/failed index means retrieval never
-        // ran, so those get their own honest copy instead of the generic
-        // "found nothing" message (which implies retrieval ran and came up
-        // empty).
-        const body = r.stale
-          ? (t.q_extractive_stale ??
-              "The search index predates a model update, so it can't be searched. Run “Reindex now” under Model settings, then ask again.")
-          : r.retrievalFailed
-            ? (t.q_extractive_failed ??
-                "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.")
-            : md || (t.q_extractive_empty ?? "Nothing relevant found in the wiki index.");
-        setTurns((prev) =>
-          prev.map((turn, i) =>
-            i === prev.length - 1
-              ? {
-                  ...turn,
-                  a: body,
-                  extractive: true,
-                  extractiveEmpty: !md,
-                  stale: r.stale,
-                  retrievalFailed: r.retrievalFailed,
-                }
-              : turn,
-          ),
-        );
-      } catch (err) {
-        setTurns((prev) =>
-          prev.map((turn, i) =>
-            i === prev.length - 1 ? { ...turn, a: "", error: String(err) } : turn,
-          ),
-        );
-      } finally {
-        setBusy(false);
-        setStage(null);
-      }
-      return;
-    }
-
-    // Set from the `thinking` stage if the index turned out stale or
-    // retrieval itself failed — read once the run finishes, since
-    // `setStage(null)` in `finally` clears it.
-    let stale = false;
-    let retrievalFailed = false;
-    try {
-      const content = await complete({
-        task: "query",
-        cwd: currentVault.path,
-        onStage: (s) => {
-          setStage(s);
-          if (s.kind === "thinking" && s.stale) stale = true;
-          if (s.kind === "thinking" && s.retrievalFailed) retrievalFailed = true;
-        },
-        messages: [
-          { role: "system", content: SYSTEM_PREAMBLE },
-          // Skip turns that errored or have no answer — replaying an empty
-          // assistant message makes providers (e.g. Anthropic) reject the
-          // request with a 400 on the next question.
-          ...turns
-            .filter((p) => p.a && !p.error)
-            .flatMap((p) => [
-              { role: "user" as const, content: p.q },
-              { role: "assistant" as const, content: p.a },
-            ]),
-          { role: "user", content: question },
-        ],
-      });
-      setTurns((prev) =>
-        prev.map((turn, i) =>
-          i === prev.length - 1
-            ? {
-                ...turn,
-                a: content || (t.q_empty_response ?? "(empty response)"),
-                stale,
-                retrievalFailed,
-              }
-            : turn,
-        ),
-      );
-    } catch (err) {
-      setTurns((prev) =>
-        prev.map((turn, i) =>
-          i === prev.length - 1 ? { ...turn, a: "", error: String(err) } : turn,
-        ),
-      );
-    } finally {
-      setBusy(false);
-      // A finished run must not leave its label or its pages behind for the
-      // next one.
-      setStage(null);
-    }
+    await askStore(question, lang, {
+      extractiveStale:
+        t.q_extractive_stale ??
+        "The search index predates a model update, so it can't be searched. Run “Reindex now” under Model settings, then ask again.",
+      extractiveFailed:
+        t.q_extractive_failed ??
+        "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.",
+      extractiveEmpty:
+        t.q_extractive_empty ?? "Nothing relevant found in the wiki index.",
+      emptyResponse: t.q_empty_response ?? "(empty response)",
+    });
   }
 
   return (

@@ -3160,12 +3160,45 @@ hr {
   }
 }
 
+/* Background-activity chips (ingest / lint / ask): drop in like a notification
+   and breathe while the work runs, so leaving the page doesn't mean losing
+   sight of it. `chip-pop` is the finished state — one entrance, no loop. */
+@keyframes chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes chip-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(22, 163, 74, 0);
+  }
+}
+.chip-live {
+  animation:
+    chip-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
+    chip-breathe 1.8s ease-in-out 0.24s infinite;
+}
+.chip-pop {
+  animation: chip-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ingest-orb-core,
   .ingest-orb-ring,
   .ingest-star,
   .ingest-feed-row,
-  .ingest-chip-spinner {
+  .ingest-chip-spinner,
+  .chip-live,
+  .chip-pop {
     animation: none;
   }
   .ingest-orb-ring {

@@ -676,6 +676,8 @@ export interface Strings {
   q_extractive_empty?: string;
   q_extractive_stale?: string;
   q_extractive_failed?: string;
+  q_chip_done?: string;
+  q_chip_error?: string;
   q_you?: string;
   // Sidebar.
   sb_new_note?: string;
@@ -1450,6 +1452,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "The search index predates a model update, so it can't be searched. Run “Reindex now” under Model settings, then ask again.",
     q_extractive_failed:
       "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.",
+    q_chip_done: "Answer ready",
+    q_chip_error: "Answer failed",
     q_you: "you",
     sb_new_note: "New note",
     sb_new_folder: "New folder",
@@ -2225,6 +2229,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "검색 인덱스가 모델 업데이트 이전에 만들어져 검색할 수 없습니다. 모델 설정에서 “지금 재인덱스”를 실행한 뒤 다시 질문해 주세요.",
     q_extractive_failed:
       "검색 인덱스에 접근할 수 없어 관련 구절을 가져오지 못했습니다. 계속되면 모델 설정에서 “지금 재인덱스”를 실행해 주세요.",
+    q_chip_done: "답변 완료",
+    q_chip_error: "답변 실패",
     q_you: "나",
     sb_new_note: "새 노트",
     sb_new_folder: "새 폴더",
@@ -2882,6 +2888,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "検索インデックスがモデル更新前のものだったため、検索できませんでした。モデル設定の「今すぐ再インデックス」を実行してから、もう一度質問してください。",
     q_extractive_failed:
       "検索インデックスに接続できず、該当する箇所を取得できませんでした。続く場合は、モデル設定の「今すぐ再インデックス」を実行してください。",
+    q_chip_done: "回答完了",
+    q_chip_error: "回答失敗",
     q_you: "あなた",
     sb_new_note: "新規ノート",
     sb_new_folder: "新規フォルダ",
