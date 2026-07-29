@@ -70,8 +70,8 @@ myco의 주력은 네이티브 데스크톱 앱입니다. 다른 Claude 클라�
 
 **[최신 릴리스](https://github.com/cmblir/Memex/releases/latest)**에서 플랫폼별 번들을 받으세요:
 
-- **macOS** (유니버설 — Apple Silicon + Intel): `myco_0.3.0_universal.dmg` —
-  서명·공증되어 Gatekeeper 경고 없이 열립니다.
+- **macOS** (Apple Silicon): `myco_0.3.0_aarch64.dmg` — 서명·공증되어 Gatekeeper
+  경고 없이 열립니다. 이번 릴리스에 Intel 빌드는 없습니다. 필요하시면 이슈로 알려주세요.
 - **Windows x64**: v0.3.0 빌드는 없습니다. 최신 Windows 설치 파일은 v0.2.2의
   `Memex_0.2.2_x64-setup.exe`이며, 이후 myco 빌드로 올릴 때 데이터가 이전됩니다.
 

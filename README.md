@@ -71,8 +71,9 @@ Both share the same vault layout (`raw/ wiki/ daily/ ingest-reports/`) and never
 Grab the bundle for your platform from the
 **[latest release](https://github.com/cmblir/Memex/releases/latest)**:
 
-- **macOS** (universal — Apple Silicon + Intel): `myco_0.3.0_universal.dmg` —
-  signed and notarized, so it opens without a Gatekeeper warning.
+- **macOS** (Apple Silicon): `myco_0.3.0_aarch64.dmg` — signed and notarized,
+  so it opens without a Gatekeeper warning. No Intel build this release; open an
+  issue if you need one.
 - **Windows x64**: no v0.3.0 build. The latest Windows installer is
   `Memex_0.2.2_x64-setup.exe` from the v0.2.2 release; upgrading to a myco build
   later migrates your data then.

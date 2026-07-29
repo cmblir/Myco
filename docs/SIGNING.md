@@ -177,11 +177,18 @@ single shared `env:` block is fine for the current matrix.
 ## Part 1b — Signing locally (what v0.3.0 actually does)
 
 With the Developer ID certificate already in your login keychain, no secret ever
-leaves the machine. From the repo root:
+leaves the machine.
+
+v0.3.0 ships **Apple Silicon only**. Every recorded download of a `universal`
+bundle across v0.1.0-v0.2.2 came from the single v0.1.0 release, so there is no
+measured Intel demand — and universal costs a rustup toolchain plus a second
+full compile of the bundled llama.cpp. To add Intel back later, run
+`rustup target add x86_64-apple-darwin` and build
+`--target universal-apple-darwin` instead.
+
+From the repo root:
 
 ```bash
-# One-time: the universal bundle needs both Mac targets.
-rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
 # Notarization credentials. Set them in the shell, never in a tracked file.
 # APPLE_PASSWORD is the app-specific password from step 1.6, not your login one.
@@ -190,7 +197,7 @@ export APPLE_ID="<apple-account-email>"
 export APPLE_PASSWORD="<app-specific-password>"
 export APPLE_TEAM_ID="<TEAMID>"
 
-cd app && npm run tauri build -- --target universal-apple-darwin
+cd app && npm run tauri build -- --target aarch64-apple-darwin
 ```
 
 Tauri signs the bundle and submits it to Apple for notarization as part of the
@@ -198,11 +205,11 @@ build. Verify before shipping, on the built `.app` and the `.dmg`:
 
 ```bash
 codesign --verify --deep --strict --verbose=2 \
-  app/src-tauri/target/universal-apple-darwin/release/bundle/macos/myco.app
+  app/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/myco.app
 spctl --assess --type execute --verbose \
-  app/src-tauri/target/universal-apple-darwin/release/bundle/macos/myco.app
+  app/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/myco.app
 xcrun stapler validate \
-  app/src-tauri/target/universal-apple-darwin/release/bundle/dmg/myco_*.dmg
+  app/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/myco_*.dmg
 ```
 
 `spctl` must say **accepted / source=Notarized Developer ID**. Then attach the
