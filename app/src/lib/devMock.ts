@@ -1116,8 +1116,9 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // mock silently ignore every settings change — so a flow that depends on
       // one (Ask via the builtin model rather than the CLI, say) could not be
       // exercised at all, and a test that tried looked like the FEATURE was
-      // broken.
-      Object.assign(SETTINGS, args.settings ?? {});
+      // broken. The payload key is `value` (ipc.setSettings) — reading the
+      // wrong key here reproduces exactly that silent no-op.
+      Object.assign(SETTINGS, args.value ?? {});
       return Promise.resolve(null);
     case "set_provider_key":
     case "delete_provider_key":
