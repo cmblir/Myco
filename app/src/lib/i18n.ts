@@ -1530,7 +1530,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_google_api:
       "Gemini family via generativelanguage.googleapis.com.",
     s_provider_desc_builtin_local:
-      "Gemma 3 1B bundled inside the app. Works offline with zero setup; good for classification and light queries, use a cloud provider for high-quality ingest. Model © Google, provided under the Gemma Terms of Use (text ships with the app).",
+      "bge-m3 embedder bundled inside the app. Works offline with zero setup; Ask answers extractively from your notes via semantic search. No local chat model ships — use a cloud provider for ingest, classification, and generation.",
     s_provider_desc_ollama:
       "Run open-source models locally. Auto-detects http://localhost:11434.",
     s_provider_desc_openrouter:
@@ -2307,7 +2307,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_google_api:
       "generativelanguage.googleapis.com을 통한 Gemini 계열.",
     s_provider_desc_builtin_local:
-      "앱에 내장된 Gemma 3 1B. 설치 없이 오프라인으로 동작하며, 분류·가벼운 질문에 적합합니다. 고품질 ingest에는 클라우드 제공자를 사용하세요. 모델 © Google, Gemma Terms of Use 적용(전문 동봉).",
+      "앱에 내장된 bge-m3 임베더. 설치 없이 오프라인으로 동작하며, Ask는 시맨틱 검색으로 내 노트 원문을 그대로 답변합니다. 로컬 챗 모델은 번들하지 않음 — ingest·분류·생성은 클라우드 제공자를 사용하세요.",
     s_provider_desc_ollama:
       "오픈소스 모델을 로컬에서 실행합니다. http://localhost:11434를 자동 감지합니다.",
     s_provider_desc_openrouter:
@@ -2966,7 +2966,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_google_api:
       "generativelanguage.googleapis.com 経由の Gemini ファミリー。",
     s_provider_desc_builtin_local:
-      "アプリに同梱された Gemma 3 1B。セットアップ不要でオフライン動作、分類や軽い質問に最適です。高品質な取り込みにはクラウドプロバイダーを使用してください。Model © Google, Gemma Terms of Use 適用（全文同梱）。",
+      "アプリに同梱された bge-m3 エンベッダー。セットアップ不要でオフライン動作、Ask はセマンティック検索でノートの原文をそのまま回答します。ローカルチャットモデルは同梱されません — 取り込み・分類・生成にはクラウドプロバイダーを使用してください。",
     s_provider_desc_ollama:
       "オープンソースモデルをローカルで実行します。http://localhost:11434 を自動検出。",
     s_provider_desc_openrouter:

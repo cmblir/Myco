@@ -11,9 +11,10 @@ import { ipc } from "./ipc";
 import { useSettingsStore } from "../stores/settingsStore";
 
 // The bundled offline chat/generate model's catalog id (Gemma 3 1B). Used for
-// classification and light query generation, and as the chat-provider catalog
-// entry below — NOT for embedding (see BUILTIN_EMBED_MODEL).
-export const BUILTIN_MODEL = "gemma-3-1b";
+// The catalog label for the built-in provider. No chat GGUF ships anymore —
+// builtin-local queries answer extractively from the embedding index (see
+// BUILTIN_EMBED_MODEL), so the "model" here names the retrieval stack.
+export const BUILTIN_MODEL = "extractive-retrieval";
 
 // The bundled offline embedding model's id (bge-m3, the retrieval-1a bake-off
 // winner). Used as the embedding-model key ("builtin-local:<id>") so a
@@ -94,7 +95,7 @@ export const PROVIDERS: ProviderDef[] = [
     name: "Built-in (offline)",
     kind: "local",
     needsKey: false,
-    desc: "Gemma 3 1B bundled inside the app. Works offline with zero setup; good for classification and light queries, use a cloud provider for high-quality ingest. Model © Google, provided under the Gemma Terms of Use (text ships with the app).",
+    desc: "bge-m3 embedder bundled inside the app. Works offline with zero setup; Ask answers extractively from your notes via semantic search. No local chat model ships — use a cloud provider for ingest, classification, and generation.",
     catalog: [BUILTIN_MODEL],
   },
   {

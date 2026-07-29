@@ -20,12 +20,13 @@ together yourself:
   (no API key; they use your existing subscriptions, like the `claude`
   CLI). Pick a different model for ingest vs ask;
   keys live in your OS keychain.
-- **A built-in offline model** — Gemma 3 1B ships inside the
-  app and runs in-process (llama.cpp, Metal on Apple silicon). Zero setup,
-  no key, works offline — handles classification; Ask answers extractively
-  (verbatim passages from your notes via local semantic search, no model),
-  with an **Ask Claude** button to escalate to the Claude CLI. Use a cloud
-  provider for high-quality ingest.
+- **A built-in offline embedder** — a bge-m3 embedding model ships inside
+  the app and runs in-process (llama.cpp, Metal on Apple silicon). Zero
+  setup, no key, works offline — powers semantic search; Ask answers
+  extractively (verbatim passages from your notes, no chat model), with an
+  **Ask Claude** button to escalate to the Claude CLI. No local chat model
+  is bundled: classification and generation need a connected provider. Use
+  a cloud provider for high-quality ingest.
 - **A vault you own** — everything is plain markdown on disk. Open the
   folder in Finder, in Obsidian, in Vim — myco never locks your data.
 
@@ -52,7 +53,7 @@ Settings → Account.
 | | |
 | --- | --- |
 | Ingest | Drop a file or paste raw text → myco writes `raw/<slug>.md` → invokes the active model with the ingest workflow → Claude reads, summarises, extracts entities/concepts, cross-links existing pages, writes a `wiki/source-<slug>.md` summary, updates `index.md` + `log.md`, and files a WHY report in `ingest-reports/`. **Multimodal inputs:** PDF, plain text, Office documents (`.docx` / `.pptx`, parsed from OOXML), spreadsheets (`.xlsx` / `.xls` / `.ods`), **images** (described via a vision provider), **audio/video** (transcribed by an installed `whisper` CLI — none bundled), and **YouTube URLs** (transcript fetched from the watch page) all reduce to markdown before ingest |
-| Semantic search | A local embedding index over the wiki (bundled Gemma model by default, or an opt-in provider) powers meaning-based lookup: the command palette (`⌘K`) surfaces semantic hits, Ask retrieves the top-K relevant pages instead of dumping the whole vault, and the Graph can overlay similarity edges. Reindex from Settings; the index is a plain rebuildable file under the app-data dir |
+| Semantic search | A local embedding index over the wiki (bundled bge-m3 embedder by default, or an opt-in provider) powers meaning-based lookup: the command palette (`⌘K`) surfaces semantic hits, Ask retrieves the top-K relevant pages instead of dumping the whole vault, and the Graph can overlay similarity edges. Reindex from Settings; the index is a plain rebuildable file under the app-data dir |
 | Related notes | Every page shows a "Related" panel — the nearest pages by embedding similarity, even when they aren't wikilinked |
 | Live ingest progress | With the Claude CLI provider, the run streams in real time (`--output-format stream-json`): a mission-control panel shows the current action, an interactive mini-galaxy of pages touched so far (live d3-force physics — new pages born at the hub, real wikilink edges, drag to tow, hover for path, click for an in-place markdown preview with an open-in-reader button), a scrolling activity feed, read/write counters and elapsed time — plus a **Cancel** button that kills the run. The run lives in a global store, so navigating away doesn't lose it; a Topbar chip keeps showing a spinner + elapsed (click to jump back), then flips to done/failed until you revisit the page. On the Graph page, nodes the run touches glow live — written pages gold, read pages ice blue, newest touch pulsing — and brand-new pages are born into the galaxy mid-run: each write triggers a debounced link rescan whose diff is injected into the live physics, so new stars bud off their neighbours and settle in real time. The tint persists after the run so you can see what changed. When the run finishes, the mission-control panel stays up as the result view — mini galaxy, feed and counters intact — until you start another ingest |
 | Ask | Question your wiki. With a cloud or CLI provider, the model answers with citations to vault pages. With the built-in offline provider, Ask instead renders the top-matching passages from your notes verbatim (local semantic search, no model) — real `[[wikilink]]` citations, plus an **Ask Claude** button that escalates the question to the Claude CLI for a synthesized answer. Answers render as markdown with clickable `[[wikilinks]]`, and every cited page appears in an interactive mini galaxy under the answer (drag, hover, click for an in-place preview) |
@@ -75,7 +76,7 @@ Settings → Account.
 
 Settings → Connections lets you connect any combination of:
 
-- **Built-in (offline)** — Gemma 3 1B bundled in the app, in-process llama.cpp — no install, no key, offline. Model © Google, provided under the Gemma Terms of Use (text ships with the app).
+- **Built-in (offline)** — bge-m3 embedder bundled in the app, in-process llama.cpp — no install, no key, offline. Semantic search and extractive Ask only; no local chat model ships.
 - **Claude Code (CLI)** — uses your Pro/Max subscription. No key needed; just have `claude` on PATH.
 - **Anthropic API** — direct `/v1/messages`. Key from console.anthropic.com.
 - **OpenAI API** — `/v1/chat/completions`. Live model list fetched from `/v1/models`.
@@ -170,8 +171,9 @@ For the embedded model itself, `cargo run --example bench_local_llm --release`
 measures load, prefill, generation and embedding against the real GGUF. It is an
 example rather than a bench because `LlamaBackend::init()` refuses a second call
 per process (so a load cannot be iterated), because Metal timings want
-median/p95 over warm state with the cold run discarded, and because it needs the
-769 MB weights that `cargo bench` must not require.
+median/p95 over warm state with the cold run discarded, and because it needs
+model weights that `cargo bench` must not require (the chat GGUF it exercises
+is no longer bundled — point it at a local download).
 
 ## Build
 

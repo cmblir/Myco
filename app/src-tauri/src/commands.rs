@@ -41,14 +41,17 @@ fn require_root(state: &tauri::State<VaultRoot>) -> Result<PathBuf, String> {
     state.get().ok_or_else(|| "no vault is open".to_string())
 }
 
-/// Lazily-loaded embedded model (bundled Gemma 3 1B GGUF). `None` until the
-/// first local_* command; the 769 MB weights must not tax startup or RAM when
-/// the feature is unused. Arc so inference can run on a blocking thread.
+/// Lazily-loaded local model host. `None` until the first local_* command;
+/// model weights must not tax startup or RAM when the feature is unused. Arc
+/// so inference can run on a blocking thread. Since the Gemma GGUF left the
+/// bundle this usually hosts only the embedder (bge-m3); a chat GGUF present
+/// on disk (dev tree / older install) is still picked up.
 #[derive(Default, Clone)]
 pub struct LocalLlmState(Arc<Mutex<Option<LocalLlm>>>);
 
-/// Bundled model path: the packaged resource dir, falling back to the source
-/// tree in dev (`cargo tauri dev` may run before resources are staged).
+/// Optional local chat-model path: the packaged resource dir, falling back to
+/// the source tree in dev. The file is NOT bundled anymore (Ask answers
+/// extractively), so a miss is normal — callers load an embed-only host then.
 fn local_model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     const REL: &str = "models/gemma-3-1b-it-q4_k_m.gguf";
     if let Ok(res) = app.path().resource_dir() {
@@ -112,12 +115,18 @@ where
 {
     use tauri::Emitter;
     let cell = state.0.clone();
-    let path = local_model_path(&app)?;
+    // Missing chat GGUF is normal now (not bundled): host the embedder only.
+    // Chat consumers (classify/generate) then error per-call with a clear
+    // "not bundled" message instead of failing every local_* command here.
+    let path = local_model_path(&app).ok();
     tauri::async_runtime::spawn_blocking(move || {
         let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
             let _ = app.emit("local-model-load", ModelLoadEvent { loading: true, ok: false });
-            let loaded = LocalLlm::load(&path);
+            let loaded = match &path {
+                Some(p) => LocalLlm::load(p),
+                None => LocalLlm::load_embed_host(),
+            };
             // Announce the end on the failure path too — a UI that only hears
             // "loading" would show a spinner forever.
             let _ = app.emit(

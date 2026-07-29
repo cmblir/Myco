@@ -167,7 +167,7 @@ Vault 통계 (파일 수, 해결된 위키링크, 비율), 최근 git 활동, �
 3. Claude가 소스를 읽고, 영향받는 wiki 페이지를 찾고, 인용을 추가하고, `wiki/source-<slug>.md`를 생성/갱신하고, `wiki/log.md`에 추가하고, `ingest-reports/<datetime>-<slug>.md`에 WHY를 기록.
 4. 트리와 그래프 새로고침.
 
-**입력은 멀티모달** — PDF, 일반 텍스트, Office 문서(`.docx` / `.pptx`), 스프레드시트(`.xlsx` / `.xls` / `.ods`), **이미지**(비전 프로바이더 — Anthropic / OpenAI / Google API로 설명 생성), **오디오·비디오**(설치된 `whisper` CLI로 전사 — openai-whisper 또는 whisper.cpp; 모델은 번들하지 않음), 그리고 **YouTube URL**(watch 페이지에서 자막을 가져옴)이 모두 1단계 전에 마크다운으로 환원됩니다. 위키 위에 **로컬 임베딩 인덱스**(기본은 번들된 Gemma 모델, 또는 옵트인 프로바이더)를 구축해 Ask가 가장 관련 있는 페이지를 검색하고, 명령 팔레트가 시맨틱 히트를 띄우며, 각 페이지에 **관련 노트** 패널이 붙습니다. 재색인은 Settings에서.
+**입력은 멀티모달** — PDF, 일반 텍스트, Office 문서(`.docx` / `.pptx`), 스프레드시트(`.xlsx` / `.xls` / `.ods`), **이미지**(비전 프로바이더 — Anthropic / OpenAI / Google API로 설명 생성), **오디오·비디오**(설치된 `whisper` CLI로 전사 — openai-whisper 또는 whisper.cpp; 모델은 번들하지 않음), 그리고 **YouTube URL**(watch 페이지에서 자막을 가져옴)이 모두 1단계 전에 마크다운으로 환원됩니다. 위키 위에 **로컬 임베딩 인덱스**(기본은 번들된 bge-m3 임베더, 또는 옵트인 프로바이더)를 구축해 Ask가 가장 관련 있는 페이지를 검색하고, 명령 팔레트가 시맨틱 히트를 띄우며, 각 페이지에 **관련 노트** 패널이 붙습니다. 재색인은 Settings에서.
 
 ### Ask
 
@@ -226,7 +226,7 @@ Vault 디렉터리의 `git log`를 읽어 각 커밋의 제목, 해시, 날짜, 
 - **Account** — 현재 vault 경로. **Change…**로 다른 폴더로 전환, **Make this an independent Obsidian vault**로 `.obsidian/`을 스캐폴딩해 폴더를 Obsidian에서 단독으로 열 수 있게 만듭니다.
 - **Model** — **Query**와 **Ingest**용 프로바이더+모델 드롭다운을 따로 지정. 모델별 월간 **비용 예산**(임계값 + 이번 달 지출, 예산 초과 시 HTTP 호출 차단), `_inbox/` 폴더용 **자동 ingest** 토글, 그리고 위키 개선 제안을 주기적으로 요청하는 **자동 반영(auto-reflect)** 토글.
 - **Connections** — 다음 중 원하는 조합으로 연결:
-  - **Built-in (오프라인)** — Gemma 3 1B가 앱에 내장(인프로세스 llama.cpp, Apple Silicon에선 Metal). 설치·키·인터넷 불필요 — 분류를 담당하며, Ask는 로컬 시맨틱 검색으로 내 노트의 원문 구절을 그대로 답변으로 보여주고 **Claude에게 물어보기** 버튼으로 확장할 수 있습니다. 고품질 ingest는 클라우드 프로바이더 선택. 모델 © Google, Gemma Terms of Use 적용(전문 동봉).
+  - **Built-in (오프라인)** — bge-m3 임베딩 모델이 앱에 내장(인프로세스 llama.cpp, Apple Silicon에선 Metal). 설치·키·인터넷 불필요 — 시맨틱 검색을 담당하고, Ask는 내 노트의 원문 구절을 그대로 답변으로 보여주며 **Claude에게 물어보기** 버튼으로 확장할 수 있습니다. 로컬 챗 모델은 번들하지 않음: 분류·생성은 연결된 프로바이더가 필요하고, 고품질 ingest는 클라우드 프로바이더 선택.
   - **Claude Code (CLI)** — Pro/Max 구독 사용. 키 불필요, PATH에 `claude`만 있으면 됨.
   - **Anthropic API** — 직접 `/v1/messages` 호출.
   - **OpenAI API** — `/v1/chat/completions`. `/v1/models`로 실시간 모델 리스트.

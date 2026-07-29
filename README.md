@@ -176,7 +176,7 @@ Vault stats (file count, resolved wikilinks, ratio), recent git activity, jump-b
 3. Claude reads the source, finds affected wiki pages, writes citations, creates/updates `wiki/source-<slug>.md`, appends `wiki/log.md`, and files an `ingest-reports/<datetime>-<slug>.md` with the WHY.
 4. The tree and graph refresh.
 
-**Inputs are multimodal** — PDFs, plain text, Office documents (`.docx` / `.pptx`), spreadsheets (`.xlsx` / `.xls` / `.ods`), **images** (described by a vision provider — Anthropic / OpenAI / Google API), **audio & video** (transcribed by an installed `whisper` CLI — openai-whisper or whisper.cpp; no model is bundled), and **YouTube URLs** (the transcript is fetched from the watch page) are all reduced to markdown before step 1. A **local embedding index** (bundled Gemma model, or an opt-in provider) is built over the wiki so Ask retrieves the most relevant pages, the command palette surfaces semantic hits, and each page gets a **Related notes** panel; reindex from Settings.
+**Inputs are multimodal** — PDFs, plain text, Office documents (`.docx` / `.pptx`), spreadsheets (`.xlsx` / `.xls` / `.ods`), **images** (described by a vision provider — Anthropic / OpenAI / Google API), **audio & video** (transcribed by an installed `whisper` CLI — openai-whisper or whisper.cpp; no model is bundled), and **YouTube URLs** (the transcript is fetched from the watch page) are all reduced to markdown before step 1. A **local embedding index** (bundled bge-m3 embedder, or an opt-in provider) is built over the wiki so Ask retrieves the most relevant pages, the command palette surfaces semantic hits, and each page gets a **Related notes** panel; reindex from Settings.
 
 ### Ask
 
@@ -235,7 +235,7 @@ Six sub-tabs:
 - **Account** — current vault path; **Change…** to point at any folder, and **Make this an independent Obsidian vault** (scaffolds an `.obsidian/` so the folder opens standalone in Obsidian).
 - **Model** — separate provider+model dropdowns for **Query** and **Ingest**, a monthly **cost budget** (threshold + current-month spend, per model; over-budget HTTP calls are blocked), an **auto-ingest** toggle for the `_inbox/` folder, and an **auto-reflect** toggle that periodically asks for wiki-improvement suggestions.
 - **Connections** — connect/disconnect any of:
-  - **Built-in (offline)** — Gemma 3 1B ships inside the app (in-process llama.cpp, Metal on Apple silicon). No install, no key, works offline — handles classification; Ask answers extractively (verbatim passages from your notes via local semantic search) with an **Ask Claude** escalation button; pick a cloud provider for high-quality ingest. Model © Google, provided under the Gemma Terms of Use (text ships with the app).
+  - **Built-in (offline)** — a bge-m3 embedding model ships inside the app (in-process llama.cpp, Metal on Apple silicon). No install, no key, works offline — powers semantic search, and Ask answers extractively (verbatim passages from your notes) with an **Ask Claude** escalation button. No local chat model is bundled: classification and generation need a connected provider; pick a cloud provider for high-quality ingest.
   - **Claude Code (CLI)** — uses your Pro/Max subscription. No key required, just `claude` on PATH.
   - **Anthropic API** — direct `/v1/messages`.
   - **OpenAI API** — `/v1/chat/completions`. Live model list via `/v1/models`.

@@ -138,13 +138,21 @@ pub struct LocalLlm {
     // Process-wide backend; must outlive the model, which it does by being
     // 'static.
     backend: &'static LlamaBackend,
-    model: LlamaModel,
+    // The chat/generation model. `None` since the Gemma GGUF left the bundle
+    // (Ask answers extractively; classification/generation surface a clear
+    // error instead) — the struct still hosts the embedder below either way.
+    chat: Option<LlamaModel>,
     // The GGUF's own chat template (None if the file ships without one).
     template: Option<LlamaChatTemplate>,
     // Purpose-built embedder, loaded separately via `load_embed_model`, sharing
     // `backend` with the chat model above.
     embed_model: Option<LlamaModel>,
 }
+
+/// The one error every chat-model consumer reports when no chat GGUF ships.
+const CHAT_MODEL_MISSING: &str = "no local chat model is bundled: Ask answers \
+    extractively from your notes; classification and generation need a \
+    connected provider (Settings → Model)";
 
 impl LocalLlm {
     /// Load the bundled GGUF. Call once per process (backend init is global).
@@ -156,10 +164,27 @@ impl LocalLlm {
         let template = model.chat_template(None).ok();
         Ok(Self {
             backend,
-            model,
+            chat: Some(model),
             template,
             embed_model: None,
         })
+    }
+
+    /// Host for the embedder only — no chat weights on disk (the Gemma GGUF is
+    /// not bundled anymore). Embedding still works; chat-model consumers get
+    /// [`CHAT_MODEL_MISSING`].
+    pub fn load_embed_host() -> Result<Self, String> {
+        Ok(Self {
+            backend: shared_backend()?,
+            chat: None,
+            template: None,
+            embed_model: None,
+        })
+    }
+
+    /// The chat model, or the canonical "not bundled" error.
+    fn chat_model(&self) -> Result<&LlamaModel, String> {
+        self.chat.as_ref().ok_or_else(|| CHAT_MODEL_MISSING.to_string())
     }
 
     /// Load a purpose-built embedding model onto the SAME backend as the chat
@@ -189,7 +214,7 @@ impl LocalLlm {
     /// measured in bytes, and the ratio between them swings wildly by script —
     /// so a caller that needs the real number has to ask the tokenizer.
     pub fn token_count(&self, text: &str) -> Result<usize, String> {
-        self.model
+        self.chat_model()?
             .str_to_token(text, AddBos::Always)
             .map(|t| t.len())
             .map_err(|e| format!("tokenize: {e}"))
@@ -200,14 +225,14 @@ impl LocalLlm {
     /// and whether a BOS still needs to be added at tokenization (the template
     /// already embeds its own special tokens).
     fn format_chat(&self, system: &str, user: &str) -> (String, AddBos) {
-        if let Some(tmpl) = &self.template {
+        if let (Some(tmpl), Some(model)) = (&self.template, &self.chat) {
             let msgs: Vec<LlamaChatMessage> = [("system", system), ("user", user)]
                 .into_iter()
                 .filter(|(_, c)| !c.is_empty())
                 .filter_map(|(r, c)| LlamaChatMessage::new(r.into(), c.into()).ok())
                 .collect();
             if !msgs.is_empty() {
-                if let Ok(p) = self.model.apply_chat_template(tmpl, &msgs, true) {
+                if let Ok(p) = model.apply_chat_template(tmpl, &msgs, true) {
                     return (p, AddBos::Never);
                 }
             }
@@ -238,15 +263,14 @@ impl LocalLlm {
         max_tokens: i32,
         sampled: bool,
     ) -> Result<String, String> {
+        let model = self.chat_model()?;
         let n_ctx = NonZeroU32::new(CTX_TOKENS).ok_or("invalid ctx size")?;
         let ctx_params = LlamaContextParams::default().with_n_ctx(Some(n_ctx));
-        let mut ctx = self
-            .model
+        let mut ctx = model
             .new_context(self.backend, ctx_params)
             .map_err(|e| format!("new_context: {e}"))?;
 
-        let mut tokens = self
-            .model
+        let mut tokens = model
             .str_to_token(&prompt, add_bos)
             .map_err(|e| format!("tokenize: {e}"))?;
 
@@ -322,14 +346,13 @@ impl LocalLlm {
         'gen: for _ in 0..max_tokens {
             let token = sampler.sample(&ctx, batch.n_tokens() - 1);
             sampler.accept(token);
-            if self.model.is_eog_token(token) {
+            if model.is_eog_token(token) {
                 break;
             }
-            let bytes = match self.model.token_to_piece_bytes(token, 32, false, None) {
+            let bytes = match model.token_to_piece_bytes(token, 32, false, None) {
                 Ok(b) => b,
                 // Negative size = required buffer; retry once at that size.
-                Err(llama_cpp_2::TokenToStringError::InsufficientBufferSpace(i)) => self
-                    .model
+                Err(llama_cpp_2::TokenToStringError::InsufficientBufferSpace(i)) => model
                     .token_to_piece_bytes(token, i.unsigned_abs() as usize, false, None)
                     .map_err(|e| format!("token bytes: {e}"))?,
                 Err(e) => return Err(format!("token bytes: {e}")),
@@ -416,7 +439,7 @@ impl LocalLlm {
         pooling: LlamaPoolingType,
         max_ctx: u32,
     ) -> Result<Vec<Vec<f32>>, String> {
-        self.embed_pooled_with(&self.model, texts, pooling, max_ctx)
+        self.embed_pooled_with(self.chat_model()?, texts, pooling, max_ctx)
     }
 
     /// Embed with the purpose-built model, applying the spec's role prefix and
