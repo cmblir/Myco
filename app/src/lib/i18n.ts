@@ -670,6 +670,8 @@ export interface Strings {
   q_open_model_settings?: string;
   q_stale_index?: string;
   q_retrieval_failed?: string;
+  q_extractive_label?: string;
+  q_extractive_empty?: string;
   q_you?: string;
   // Sidebar.
   sb_new_note?: string;
@@ -1433,6 +1435,9 @@ export const STRINGS: Record<Lang, Strings> = {
       "This answer used the whole vault instead of the search index, which is out of date after a model update.",
     q_retrieval_failed:
       "The search index could not be reached, so this answer skipped semantic search and read the vault directly instead. If it keeps happening, run “Reindex now” under Model settings.",
+    q_extractive_label: "From your notes (top matches, verbatim)",
+    q_extractive_empty:
+      "Nothing relevant found in the wiki index. Try rephrasing, or run “Reindex now” under Model settings.",
     q_you: "you",
     sb_new_note: "New note",
     sb_new_folder: "New folder",
@@ -2198,6 +2203,9 @@ export const STRINGS: Record<Lang, Strings> = {
       "이 답변은 검색 인덱스 대신 전체 볼트를 사용했습니다 — 모델 업데이트 이후 인덱스가 오래되었습니다.",
     q_retrieval_failed:
       "검색 인덱스에 접근할 수 없어, 이 답변은 의미 검색을 건너뛰고 볼트를 직접 읽어 작성했습니다. 계속 반복되면 모델 설정에서 ‘지금 재인덱스’를 실행해 보세요.",
+    q_extractive_label: "내 노트에서 찾음 (상위 일치 원문)",
+    q_extractive_empty:
+      "위키 인덱스에서 관련 내용을 찾지 못했습니다. 질문을 바꿔 보거나, 모델 설정에서 “지금 재색인”을 실행해 보세요.",
     q_you: "나",
     sb_new_note: "새 노트",
     sb_new_folder: "새 폴더",
@@ -2845,6 +2853,9 @@ export const STRINGS: Record<Lang, Strings> = {
       "この回答は検索インデックスの代わりにボルト全体を使用しました — モデル更新後にインデックスが古くなっています。",
     q_retrieval_failed:
       "検索インデックスに接続できなかったため、この回答はセマンティック検索を行わずボルトを直接読んで作成されました。続く場合はモデル設定の「今すぐ再インデックス」を実行してください。",
+    q_extractive_label: "ノートからの抜粋（上位一致・原文）",
+    q_extractive_empty:
+      "ウィキのインデックスに該当する内容が見つかりませんでした。質問を言い換えるか、モデル設定の「今すぐ再インデックス」を実行してください。",
     q_you: "あなた",
     sb_new_note: "新規ノート",
     sb_new_folder: "新規フォルダ",

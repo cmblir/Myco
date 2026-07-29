@@ -11,7 +11,8 @@ import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { complete, type AskStage } from "../lib/chat";
+import { complete, retrieveChunks, type AskStage } from "../lib/chat";
+import { formatExtractiveAnswer } from "../lib/extractive";
 import { ipc } from "../lib/ipc";
 import { takeQueryPrefill } from "../lib/queryPrefill";
 import MascotClip from "../components/MascotClip";
@@ -40,6 +41,9 @@ interface ChatTurn {
   /// — distinct from a legitimately empty index/hit list, which is not a
   /// failure and must not set this.
   retrievalFailed?: boolean;
+  /// Answer is retrieved passages rendered verbatim (builtin-local path) —
+  /// no model synthesis. Keys the "Summarize with Claude" escalation button.
+  extractive?: boolean;
 }
 
 const SYSTEM_PREAMBLE = `You are myco, the wiki maintainer for the user's local markdown vault.
@@ -161,6 +165,41 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
         );
       } finally {
         setBusy(false);
+      }
+      return;
+    }
+
+    // builtin-local: extractive answer. Retrieval is the measured strength of
+    // this stack; the 1B model paraphrasing on top of it produced echo loops
+    // (the reported bug), so render what retrieval found and offer Claude
+    // synthesis as an explicit escalation instead.
+    if (settings?.query_provider === "builtin-local") {
+      try {
+        setStage({ kind: "retrieving" });
+        const r = await retrieveChunks(question, 12);
+        const md = formatExtractiveAnswer(r.hits);
+        setTurns((prev) =>
+          prev.map((turn, i) =>
+            i === prev.length - 1
+              ? {
+                  ...turn,
+                  a: md || (t.q_extractive_empty ?? "Nothing relevant found in the wiki index."),
+                  extractive: true,
+                  stale: r.stale,
+                  retrievalFailed: r.retrievalFailed,
+                }
+              : turn,
+          ),
+        );
+      } catch (err) {
+        setTurns((prev) =>
+          prev.map((turn, i) =>
+            i === prev.length - 1 ? { ...turn, a: "", error: String(err) } : turn,
+          ),
+        );
+      } finally {
+        setBusy(false);
+        setStage(null);
       }
       return;
     }
@@ -324,6 +363,11 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
               </span>
               <span style={{ fontWeight: 500 }}>{turn.q}</span>
             </div>
+            {turn.extractive && turn.a && !turn.error ? (
+              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+                <Icon name="info" size={12} /> {t.q_extractive_label ?? "From your notes (top matches, verbatim)"}
+              </div>
+            ) : null}
             <div className="prose" style={{ marginTop: 8 }}>
               {turn.error ? (
                 <p style={{ color: "#dc2626" }}>{turn.error}</p>
