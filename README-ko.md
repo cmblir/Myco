@@ -72,8 +72,7 @@ myco의 주력은 네이티브 데스크톱 앱입니다. 다른 Claude 클라�
 
 - **macOS** (Apple Silicon): `myco_0.3.0_aarch64.dmg` — 서명·공증되어 Gatekeeper
   경고 없이 열립니다. 이번 릴리스에 Intel 빌드는 없습니다. 필요하시면 이슈로 알려주세요.
-- **Windows x64**: v0.3.0 빌드는 없습니다. 최신 Windows 설치 파일은 v0.2.2의
-  `Memex_0.2.2_x64-setup.exe`이며, 이후 myco 빌드로 올릴 때 데이터가 이전됩니다.
+- **Windows x64**: `myco_0.3.0_x64-setup.exe` (NSIS 설치 파일) — 서명되지 않았습니다.
 
 > [!note] Windows, 그리고 v0.3.0 이전 macOS 빌드
 > 해당 번들은 **서명되지 않아** OS가 첫 실행 시 경고합니다. 한 번만 허용하면 됩니다:

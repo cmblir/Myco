@@ -15,9 +15,13 @@ publishes the `.dmg` / `.exe` to a GitHub Release.
 > **manual-dispatch only** — if it still fired on a tag push it would race that
 > upload with an unsigned runner build of the same version.
 >
-> The GitHub Actions route below (Part 1a) stays documented and is what to use
-> if signing ever moves to CI. Windows (`myco_x.y.z_x64-setup.exe`) is still
-> unsigned; users unblock it once (see the [README](../README.md)).
+> `.github/workflows/release.yml` is therefore **Windows-only**: a runner cannot
+> reach the certificate, so a macOS job there would upload an unsigned `.dmg`
+> over the signed one. Windows (`myco_x.y.z_x64-setup.exe`) is still unsigned;
+> users unblock it once (see the [README](../README.md)).
+>
+> The GitHub Actions route below (Part 1) stays documented and is what to use if
+> macOS signing ever moves to CI.
 
 > [!warning] Secrets are NEVER committed.
 > Every value below is a **GitHub Actions secret**, added only in

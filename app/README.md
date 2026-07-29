@@ -104,7 +104,7 @@ Download a release bundle from the
 [latest release](https://github.com/cmblir/Myco/releases/latest):
 
 - macOS (Apple Silicon): `myco_0.3.0_aarch64.dmg` — signed and notarized.
-- Windows x64: no v0.3.0 build; the latest is `Memex_0.2.2_x64-setup.exe`.
+- Windows x64: `myco_0.3.0_x64-setup.exe` (NSIS installer) — unsigned.
 
 Mount, drag to Applications.
 
