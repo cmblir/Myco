@@ -235,7 +235,7 @@ Six sub-tabs:
 - **Account** — current vault path; **Change…** to point at any folder, and **Make this an independent Obsidian vault** (scaffolds an `.obsidian/` so the folder opens standalone in Obsidian).
 - **Model** — separate provider+model dropdowns for **Query** and **Ingest**, a monthly **cost budget** (threshold + current-month spend, per model; over-budget HTTP calls are blocked), an **auto-ingest** toggle for the `_inbox/` folder, and an **auto-reflect** toggle that periodically asks for wiki-improvement suggestions.
 - **Connections** — connect/disconnect any of:
-  - **Built-in (offline)** — Gemma 3 1B ships inside the app (in-process llama.cpp, Metal on Apple silicon). No install, no key, works offline — classification and light queries; pick a cloud provider for high-quality ingest. Model © Google, provided under the Gemma Terms of Use (text ships with the app).
+  - **Built-in (offline)** — Gemma 3 1B ships inside the app (in-process llama.cpp, Metal on Apple silicon). No install, no key, works offline — handles classification; Ask answers extractively (verbatim passages from your notes via local semantic search) with an **Ask Claude** escalation button; pick a cloud provider for high-quality ingest. Model © Google, provided under the Gemma Terms of Use (text ships with the app).
   - **Claude Code (CLI)** — uses your Pro/Max subscription. No key required, just `claude` on PATH.
   - **Anthropic API** — direct `/v1/messages`.
   - **OpenAI API** — `/v1/chat/completions`. Live model list via `/v1/models`.

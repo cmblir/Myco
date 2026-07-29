@@ -342,6 +342,8 @@ async function semanticContext(
   let lastPage = "";
   for (const h of r.hits) {
     if (!h.text) continue;
+    // One citeable header per page; later chunks of the same page just
+    // append under it instead of repeating the citation.
     const header = h.page !== lastPage ? `===== [[${h.stem}]] =====\n` : "\n";
     const block = `${header}${h.text}`;
     if (used + block.length > budget && parts.length > 0) break;
@@ -350,6 +352,8 @@ async function semanticContext(
     if (h.page !== lastPage && !stems.includes(h.stem)) stems.push(h.stem);
     lastPage = h.page;
   }
+  // Only the pages that made the budget: the ones past it are never shown to
+  // the model, so naming them would be another fiction.
   return { ctx: parts.join("\n\n"), stems, stale: false, retrievalFailed: false };
 }
 

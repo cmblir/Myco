@@ -44,6 +44,11 @@ interface ChatTurn {
   /// Answer is retrieved passages rendered verbatim (builtin-local path) —
   /// no model synthesis. Keys the "Summarize with Claude" escalation button.
   extractive?: boolean;
+  /// Extractive turn that produced no passages (stale index, retrieval
+  /// failure, or a legitimately empty hit list) — suppresses the "From your
+  /// notes" label, since there is nothing to attribute to the notes. The
+  /// escalation button still renders; that's when Claude helps most.
+  extractiveEmpty?: boolean;
   /// Claude CLI synthesis appended below an extractive answer via the
   /// escalation button. `synthBusy` gates the button; `synthError` renders
   /// inline like `error` does.
@@ -184,13 +189,25 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
         setStage({ kind: "retrieving" });
         const r = await retrieveChunks(question, 12);
         const md = formatExtractiveAnswer(r.hits);
+        // Pick the body by state: a stale/failed index means retrieval never
+        // ran, so those get their own honest copy instead of the generic
+        // "found nothing" message (which implies retrieval ran and came up
+        // empty).
+        const body = r.stale
+          ? (t.q_extractive_stale ??
+              "The search index predates a model update, so it can't be searched. Run “Reindex now” under Model settings, then ask again.")
+          : r.retrievalFailed
+            ? (t.q_extractive_failed ??
+                "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.")
+            : md || (t.q_extractive_empty ?? "Nothing relevant found in the wiki index.");
         setTurns((prev) =>
           prev.map((turn, i) =>
             i === prev.length - 1
               ? {
                   ...turn,
-                  a: md || (t.q_extractive_empty ?? "Nothing relevant found in the wiki index."),
+                  a: body,
                   extractive: true,
+                  extractiveEmpty: !md,
                   stale: r.stale,
                   retrievalFailed: r.retrievalFailed,
                 }
@@ -282,7 +299,9 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       });
       setTurns((prev) =>
         prev.map((p, i) =>
-          i === idx ? { ...p, synth: content, synthBusy: false } : p,
+          i === idx
+            ? { ...p, synth: content || (t.q_empty_response ?? "(empty response)"), synthBusy: false }
+            : p,
         ),
       );
     } catch (err) {
@@ -355,16 +374,19 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       </div>
       {settings && mode === "ask" ? (
         <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-          {(t.q_via ?? "via {provider} · {model}")
-            .replace("{provider}", settings.query_provider)
-            .replace("{model}", settings.query_model)}
+          {settings.query_provider === "builtin-local"
+            ? (t.q_via_retrieval ??
+                "via local semantic search — answers quote your notes verbatim (no model)")
+            : (t.q_via ?? "via {provider} · {model}")
+                .replace("{provider}", settings.query_provider)
+                .replace("{model}", settings.query_model)}
         </div>
       ) : null}
       {settings?.query_provider === "builtin-local" && mode === "ask" ? (
         <div className="q-builtin-note muted" style={{ fontSize: 12, marginTop: 4 }}>
           <Icon name="info" size={12} />{" "}
-          {t.q_builtin_note ??
-            "The built-in offline model is small and can be inaccurate. For reliable answers, pick Claude or another provider."}{" "}
+          {t.q_builtin_extractive_note ??
+            "Answers show the top matching passages from your notes. For a synthesized answer, use “Ask Claude” under any answer, or pick a cloud provider."}{" "}
           <button
             className="btn btn-ghost"
             style={{ fontSize: 12, padding: "2px 8px" }}
@@ -399,7 +421,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
               </span>
               <span style={{ fontWeight: 500 }}>{turn.q}</span>
             </div>
-            {turn.extractive && turn.a && !turn.error ? (
+            {turn.extractive && turn.a && !turn.error && !turn.extractiveEmpty ? (
               <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
                 <Icon name="info" size={12} /> {t.q_extractive_label ?? "From your notes (top matches, verbatim)"}
               </div>
@@ -413,7 +435,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 <ThinkingGalaxy pages={thinkingPages} label={thinkingLabel} />
               )}
             </div>
-            {turn.stale ? (
+            {turn.stale && !turn.extractive ? (
               <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
                 <Icon name="info" size={12} />{" "}
                 {t.q_stale_index ??
@@ -427,7 +449,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 </button>
               </div>
             ) : null}
-            {turn.retrievalFailed ? (
+            {turn.retrievalFailed && !turn.extractive ? (
               <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
                 <Icon name="info" size={12} />{" "}
                 {/* Deliberately vague about HOW the vault was read: the non-CLI
@@ -449,7 +471,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 {turn.synth ? (
                   <>
                     <div className="section-title" style={{ fontSize: 13, marginBottom: 4 }}>
-                      {t.q_synth_label ?? "Claude's summary"}
+                      {t.q_synth_label ?? "Claude's answer"}
                     </div>
                     <div className="prose">
                       <Viewer content={turn.synth} onLinkClick={openByStem} />
@@ -463,7 +485,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                     onClick={() => void synthesize(i)}
                   >
                     <Icon name="spark" size={12} />{" "}
-                    {turn.synthBusy ? "…" : (t.q_synth_claude ?? "Summarize with Claude")}
+                    {turn.synthBusy ? "…" : (t.q_synth_claude ?? "Ask Claude")}
                   </button>
                 )}
                 {turn.synthError ? (

@@ -22,8 +22,10 @@ together yourself:
   keys live in your OS keychain.
 - **A built-in offline model** — Gemma 3 1B ships inside the
   app and runs in-process (llama.cpp, Metal on Apple silicon). Zero setup,
-  no key, works offline — for classification and light queries; use a
-  cloud provider for high-quality ingest.
+  no key, works offline — handles classification; Ask answers extractively
+  (verbatim passages from your notes via local semantic search, no model),
+  with an **Ask Claude** button to escalate to the Claude CLI. Use a cloud
+  provider for high-quality ingest.
 - **A vault you own** — everything is plain markdown on disk. Open the
   folder in Finder, in Obsidian, in Vim — myco never locks your data.
 
@@ -53,7 +55,7 @@ Settings → Account.
 | Semantic search | A local embedding index over the wiki (bundled Gemma model by default, or an opt-in provider) powers meaning-based lookup: the command palette (`⌘K`) surfaces semantic hits, Ask retrieves the top-K relevant pages instead of dumping the whole vault, and the Graph can overlay similarity edges. Reindex from Settings; the index is a plain rebuildable file under the app-data dir |
 | Related notes | Every page shows a "Related" panel — the nearest pages by embedding similarity, even when they aren't wikilinked |
 | Live ingest progress | With the Claude CLI provider, the run streams in real time (`--output-format stream-json`): a mission-control panel shows the current action, an interactive mini-galaxy of pages touched so far (live d3-force physics — new pages born at the hub, real wikilink edges, drag to tow, hover for path, click for an in-place markdown preview with an open-in-reader button), a scrolling activity feed, read/write counters and elapsed time — plus a **Cancel** button that kills the run. The run lives in a global store, so navigating away doesn't lose it; a Topbar chip keeps showing a spinner + elapsed (click to jump back), then flips to done/failed until you revisit the page. On the Graph page, nodes the run touches glow live — written pages gold, read pages ice blue, newest touch pulsing — and brand-new pages are born into the galaxy mid-run: each write triggers a debounced link rescan whose diff is injected into the live physics, so new stars bud off their neighbours and settle in real time. The tint persists after the run so you can see what changed. When the run finishes, the mission-control panel stays up as the result view — mini galaxy, feed and counters intact — until you start another ingest |
-| Ask | Question your wiki; the model answers with citations to vault pages. Answers render as markdown with clickable `[[wikilinks]]`, and every cited page appears in an interactive mini galaxy under the answer (drag, hover, click for an in-place preview) |
+| Ask | Question your wiki. With a cloud or CLI provider, the model answers with citations to vault pages. With the built-in offline provider, Ask instead renders the top-matching passages from your notes verbatim (local semantic search, no model) — real `[[wikilink]]` citations, plus an **Ask Claude** button that escalates the question to the Claude CLI for a synthesized answer. Answers render as markdown with clickable `[[wikilinks]]`, and every cited page appears in an interactive mini galaxy under the answer (drag, hover, click for an in-place preview) |
 | Lint | "Run lint" in Provenance shells the CLAUDE.md checklist (structure / citation / connection / freshness) to the active model and renders a Markdown report. The run lives in a global store — navigate freely while it works; a Topbar chip tracks it and flips to done/failed until you return |
 | Provenance | Per-page citation coverage (claim lines vs cited claims); sort by lowest coverage, slider threshold flags below-target pages |
 | History | Lists the WHY report each ingest files under `ingest-reports/`, newest first, with an expandable in-place markdown preview and an open-in-reader jump |

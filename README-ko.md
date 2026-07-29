@@ -226,7 +226,7 @@ Vault 디렉터리의 `git log`를 읽어 각 커밋의 제목, 해시, 날짜, 
 - **Account** — 현재 vault 경로. **Change…**로 다른 폴더로 전환, **Make this an independent Obsidian vault**로 `.obsidian/`을 스캐폴딩해 폴더를 Obsidian에서 단독으로 열 수 있게 만듭니다.
 - **Model** — **Query**와 **Ingest**용 프로바이더+모델 드롭다운을 따로 지정. 모델별 월간 **비용 예산**(임계값 + 이번 달 지출, 예산 초과 시 HTTP 호출 차단), `_inbox/` 폴더용 **자동 ingest** 토글, 그리고 위키 개선 제안을 주기적으로 요청하는 **자동 반영(auto-reflect)** 토글.
 - **Connections** — 다음 중 원하는 조합으로 연결:
-  - **Built-in (오프라인)** — Gemma 3 1B가 앱에 내장(인프로세스 llama.cpp, Apple Silicon에선 Metal). 설치·키·인터넷 불필요 — 분류와 가벼운 질의용이며, 고품질 ingest는 클라우드 프로바이더 선택. 모델 © Google, Gemma Terms of Use 적용(전문 동봉).
+  - **Built-in (오프라인)** — Gemma 3 1B가 앱에 내장(인프로세스 llama.cpp, Apple Silicon에선 Metal). 설치·키·인터넷 불필요 — 분류를 담당하며, Ask는 로컬 시맨틱 검색으로 내 노트의 원문 구절을 그대로 답변으로 보여주고 **Claude에게 물어보기** 버튼으로 확장할 수 있습니다. 고품질 ingest는 클라우드 프로바이더 선택. 모델 © Google, Gemma Terms of Use 적용(전문 동봉).
   - **Claude Code (CLI)** — Pro/Max 구독 사용. 키 불필요, PATH에 `claude`만 있으면 됨.
   - **Anthropic API** — 직접 `/v1/messages` 호출.
   - **OpenAI API** — `/v1/chat/completions`. `/v1/models`로 실시간 모델 리스트.

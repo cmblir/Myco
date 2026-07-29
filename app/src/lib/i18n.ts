@@ -666,12 +666,16 @@ export interface Strings {
   ingest_validation_warnings?: string;
   // Query page.
   q_via?: string;
+  q_via_retrieval?: string;
   q_builtin_note?: string;
+  q_builtin_extractive_note?: string;
   q_open_model_settings?: string;
   q_stale_index?: string;
   q_retrieval_failed?: string;
   q_extractive_label?: string;
   q_extractive_empty?: string;
+  q_extractive_stale?: string;
+  q_extractive_failed?: string;
   q_synth_claude?: string;
   q_synth_label?: string;
   q_you?: string;
@@ -1430,8 +1434,12 @@ export const STRINGS: Record<Lang, Strings> = {
       "Ingest validation failed — the following issues must be fixed before this ingest can be accepted:",
     ingest_validation_warnings: "Validation warnings (non-blocking):",
     q_via: "via {provider} · {model}",
+    q_via_retrieval:
+      "via local semantic search — answers quote your notes verbatim (no model)",
     q_builtin_note:
       "The built-in offline model (Gemma 3 1B) is compact and can be inaccurate. For better offline answers, run a larger model via Ollama (e.g. gemma3:4b); for the most reliable answers, use Claude.",
+    q_builtin_extractive_note:
+      "Answers show the top matching passages from your notes. For a synthesized answer, use “Ask Claude” under any answer, or pick a cloud provider.",
     q_open_model_settings: "Model settings",
     q_stale_index:
       "This answer used the whole vault instead of the search index, which is out of date after a model update.",
@@ -1440,8 +1448,12 @@ export const STRINGS: Record<Lang, Strings> = {
     q_extractive_label: "From your notes (top matches, verbatim)",
     q_extractive_empty:
       "Nothing relevant found in the wiki index. Try rephrasing, or run “Reindex now” under Model settings.",
-    q_synth_claude: "Summarize with Claude",
-    q_synth_label: "Claude's summary",
+    q_extractive_stale:
+      "The search index predates a model update, so it can't be searched. Run “Reindex now” under Model settings, then ask again.",
+    q_extractive_failed:
+      "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.",
+    q_synth_claude: "Ask Claude",
+    q_synth_label: "Claude's answer",
     q_you: "you",
     sb_new_note: "New note",
     sb_new_folder: "New folder",
@@ -2200,8 +2212,11 @@ export const STRINGS: Record<Lang, Strings> = {
       "인제스트 검증 실패 — 다음 문제를 해결해야 인제스트를 수락할 수 있습니다:",
     ingest_validation_warnings: "검증 경고(차단하지 않음):",
     q_via: "{provider} · {model} 사용",
+    q_via_retrieval: "로컬 시맨틱 검색 기반 — 답변은 내 노트 원문 인용 (모델 미사용)",
     q_builtin_note:
       "내장 오프라인 모델(Gemma 3 1B)은 작아서 부정확할 수 있습니다. 오프라인이라면 Ollama로 더 큰 모델(예: gemma3:4b)을 돌려보고, 가장 정확한 답변은 Claude를 쓰세요.",
+    q_builtin_extractive_note:
+      "답변은 내 노트에서 가장 일치하는 구절을 그대로 보여줍니다. 정리된 답변이 필요하면 답변 아래 “Claude에게 물어보기”를 누르거나 클라우드 프로바이더를 선택하세요.",
     q_open_model_settings: "모델 설정",
     q_stale_index:
       "이 답변은 검색 인덱스 대신 전체 볼트를 사용했습니다 — 모델 업데이트 이후 인덱스가 오래되었습니다.",
@@ -2209,9 +2224,13 @@ export const STRINGS: Record<Lang, Strings> = {
       "검색 인덱스에 접근할 수 없어, 이 답변은 의미 검색을 건너뛰고 볼트를 직접 읽어 작성했습니다. 계속 반복되면 모델 설정에서 ‘지금 재인덱스’를 실행해 보세요.",
     q_extractive_label: "내 노트에서 찾음 (상위 일치 원문)",
     q_extractive_empty:
-      "위키 인덱스에서 관련 내용을 찾지 못했습니다. 질문을 바꿔 보거나, 모델 설정에서 “지금 재색인”을 실행해 보세요.",
-    q_synth_claude: "Claude로 정리",
-    q_synth_label: "Claude 정리",
+      "위키 인덱스에서 관련 내용을 찾지 못했습니다. 질문을 바꿔 보거나, 모델 설정에서 “지금 재인덱스”를 실행해 보세요.",
+    q_extractive_stale:
+      "검색 인덱스가 모델 업데이트 이전에 만들어져 검색할 수 없습니다. 모델 설정에서 “지금 재인덱스”를 실행한 뒤 다시 질문해 주세요.",
+    q_extractive_failed:
+      "검색 인덱스에 접근할 수 없어 관련 구절을 가져오지 못했습니다. 계속되면 모델 설정에서 “지금 재인덱스”를 실행해 주세요.",
+    q_synth_claude: "Claude에게 물어보기",
+    q_synth_label: "Claude의 답변",
     q_you: "나",
     sb_new_note: "새 노트",
     sb_new_folder: "새 폴더",
@@ -2852,8 +2871,11 @@ export const STRINGS: Record<Lang, Strings> = {
       "取り込み検証に失敗しました — 次の問題を解決しないと取り込みは受け付けられません:",
     ingest_validation_warnings: "検証の警告(処理は続行されます):",
     q_via: "{provider} · {model} を使用",
+    q_via_retrieval: "ローカルセマンティック検索 — 回答はノートの原文引用（モデル不使用）",
     q_builtin_note:
       "内蔵のオフラインモデル（Gemma 3 1B）は小さく不正確な場合があります。オフラインなら Ollama で大きめのモデル（例: gemma3:4b）を、最も正確な回答には Claude をお使いください。",
+    q_builtin_extractive_note:
+      "回答はノート内の最も一致する箇所をそのまま表示します。まとめた回答が必要な場合は、回答の下の「Claudeに質問」を押すか、クラウドプロバイダーを選択してください。",
     q_open_model_settings: "モデル設定",
     q_stale_index:
       "この回答は検索インデックスの代わりにボルト全体を使用しました — モデル更新後にインデックスが古くなっています。",
@@ -2862,8 +2884,12 @@ export const STRINGS: Record<Lang, Strings> = {
     q_extractive_label: "ノートからの抜粋（上位一致・原文）",
     q_extractive_empty:
       "ウィキのインデックスに該当する内容が見つかりませんでした。質問を言い換えるか、モデル設定の「今すぐ再インデックス」を実行してください。",
-    q_synth_claude: "Claudeで要約",
-    q_synth_label: "Claudeの要約",
+    q_extractive_stale:
+      "検索インデックスがモデル更新前のものだったため、検索できませんでした。モデル設定の「今すぐ再インデックス」を実行してから、もう一度質問してください。",
+    q_extractive_failed:
+      "検索インデックスに接続できず、該当する箇所を取得できませんでした。続く場合は、モデル設定の「今すぐ再インデックス」を実行してください。",
+    q_synth_claude: "Claudeに質問",
+    q_synth_label: "Claudeの回答",
     q_you: "あなた",
     sb_new_note: "新規ノート",
     sb_new_folder: "新規フォルダ",
