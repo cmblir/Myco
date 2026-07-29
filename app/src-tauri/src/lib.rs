@@ -35,6 +35,7 @@ pub mod tasks;
 pub mod validator;
 pub mod vault;
 pub mod vault_dir;
+pub mod webview_data;
 pub mod vector_index;
 pub mod whisper;
 pub mod youtube;
@@ -95,6 +96,13 @@ fn install_panic_hook() {
 
 pub fn run() {
     install_panic_hook();
+    // M8: BEFORE the builder — WebKit creates its per-identifier container as
+    // soon as a webview exists, and windows declared in tauri.conf.json are
+    // built before `.setup()` runs. Move the pre-rename container first, or the
+    // frontend's localStorage key migration renames keys in an empty store.
+    for warning in webview_data::migrate_legacy_container() {
+        eprintln!("webview data migration: {warning}");
+    }
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
