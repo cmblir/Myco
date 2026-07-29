@@ -93,6 +93,17 @@ body,
   padding: 0;
   height: 100%;
 }
+
+/* No visible scrollbars anywhere — scrolling itself is untouched (wheel,
+   trackpad, keys). WKWebView draws overlay bars over the app chrome, which
+   is the artifact this removes; Windows (WebView2) hides its classic bars
+   via the same -webkit rule. scrollbar-width covers any non-WebKit engine. */
+* {
+  scrollbar-width: none;
+}
+*::-webkit-scrollbar {
+  display: none;
+}
 body {
   font-family: var(--font-sans);
   font-size: 14px;
