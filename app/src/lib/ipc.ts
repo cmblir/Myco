@@ -238,6 +238,10 @@ export interface MycoSettings {
   myco_pro_url: string;
   /** The myco Pro account email the app is logged in as (display only). */
   myco_pro_email: string;
+  /** Periodically sweep local CLI session logs (Claude Code / Codex) into
+   *  _inbox/ while the app is open — no hooks or manual harness needed. */
+  auto_import_enabled: boolean;
+  auto_import_interval_min: number;
   /** Periodically ingest pending _inbox/ sources while the app is open. */
   auto_ingest_enabled: boolean;
   auto_ingest_interval_min: number;

@@ -30,6 +30,7 @@ import type { RouteId } from "./stores/uiStore";
 import { useSettingsStore } from "./stores/settingsStore";
 import { getLastVaultPath, useVaultStore } from "./stores/vaultStore";
 import { useAutoIngestScheduler } from "./lib/autoIngest";
+import { useAutoImportScheduler } from "./lib/autoImport";
 import { useAutoReflectScheduler } from "./lib/autoReflect";
 import { useAutoReindexScheduler } from "./lib/autoReindex";
 import { runInboxPass } from "./lib/autoIngest";
@@ -147,6 +148,14 @@ export default function App(): JSX.Element {
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
+
+  // Scheduled sweep of local CLI session logs into _inbox/ while the app is
+  // open — conversations flow in without hooks or manual harnessing.
+  useAutoImportScheduler(
+    settings?.auto_import_enabled ?? false,
+    settings?.auto_import_interval_min ?? 30,
+    currentVault?.path,
+  );
 
   // Scheduled auto-ingest of the vault's _inbox/ while the app is open.
   useAutoIngestScheduler(

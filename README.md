@@ -233,7 +233,7 @@ Recurring, unattended digests. Define a schedule — a free **query**, a **"what
 Six sub-tabs:
 
 - **Account** — current vault path; **Change…** to point at any folder, and **Make this an independent Obsidian vault** (scaffolds an `.obsidian/` so the folder opens standalone in Obsidian).
-- **Model** — separate provider+model dropdowns for **Query** and **Ingest**, a monthly **cost budget** (threshold + current-month spend, per model; over-budget HTTP calls are blocked), an **auto-ingest** toggle for the `_inbox/` folder, and an **auto-reflect** toggle that periodically asks for wiki-improvement suggestions.
+- **Model** — separate provider+model dropdowns for **Query** and **Ingest**, a monthly **cost budget** (threshold + current-month spend, per model; over-budget HTTP calls are blocked), an **auto-collect** toggle (on by default) that periodically sweeps local Claude Code / Codex sessions into `_inbox/`, an **auto-ingest** toggle for the `_inbox/` folder, and an **auto-reflect** toggle that periodically asks for wiki-improvement suggestions.
 - **Connections** — connect/disconnect any of:
   - **Built-in (offline)** — a bge-m3 embedding model ships inside the app (in-process llama.cpp, Metal on Apple silicon). No install, no key, works offline — powers semantic search, and Ask answers extractively (verbatim passages from your notes). No local chat model is bundled: for synthesized answers, classification, and generation pick an AI provider under Settings → Model; pick a cloud provider for high-quality ingest.
   - **Claude Code (CLI)** — uses your Pro/Max subscription. No key required, just `claude` on PATH.

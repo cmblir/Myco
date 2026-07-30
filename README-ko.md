@@ -224,7 +224,7 @@ Vault 디렉터리의 `git log`를 읽어 각 커밋의 제목, 해시, 날짜, 
 6개 서브 탭:
 
 - **Account** — 현재 vault 경로. **Change…**로 다른 폴더로 전환, **Make this an independent Obsidian vault**로 `.obsidian/`을 스캐폴딩해 폴더를 Obsidian에서 단독으로 열 수 있게 만듭니다.
-- **Model** — **Query**와 **Ingest**용 프로바이더+모델 드롭다운을 따로 지정. 모델별 월간 **비용 예산**(임계값 + 이번 달 지출, 예산 초과 시 HTTP 호출 차단), `_inbox/` 폴더용 **자동 ingest** 토글, 그리고 위키 개선 제안을 주기적으로 요청하는 **자동 반영(auto-reflect)** 토글.
+- **Model** — **Query**와 **Ingest**용 프로바이더+모델 드롭다운을 따로 지정. 모델별 월간 **비용 예산**(임계값 + 이번 달 지출, 예산 초과 시 HTTP 호출 차단), 로컬 Claude Code / Codex 세션을 주기적으로 `_inbox/`로 가져오는 **CLI 세션 자동 수집** 토글(기본 켜짐), `_inbox/` 폴더용 **자동 ingest** 토글, 그리고 위키 개선 제안을 주기적으로 요청하는 **자동 반영(auto-reflect)** 토글.
 - **Connections** — 다음 중 원하는 조합으로 연결:
   - **Built-in (오프라인)** — bge-m3 임베딩 모델이 앱에 내장(인프로세스 llama.cpp, Apple Silicon에선 Metal). 설치·키·인터넷 불필요 — 시맨틱 검색을 담당하고, Ask는 내 노트의 원문 구절을 그대로 답변으로 보여줍니다. 로컬 챗 모델은 번들하지 않음: 정리된 답변·분류·생성은 설정 → 모델에서 AI 프로바이더를 선택하고, 고품질 ingest는 클라우드 프로바이더 선택.
   - **Claude Code (CLI)** — Pro/Max 구독 사용. 키 불필요, PATH에 `claude`만 있으면 됨.

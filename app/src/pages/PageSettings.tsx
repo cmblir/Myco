@@ -228,6 +228,7 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
           void update({ ingest_provider: provider, ingest_model: model })
         }
       />
+      <AutoImportSetting t={t} settings={settings} update={update} />
       <AutoIngestSetting t={t} settings={settings} update={update} />
       <AutoReflectSetting t={t} settings={settings} update={update} />
       <BudgetSetting t={t} />
@@ -606,6 +607,93 @@ function AutoReflectSetting({
 
 // While the app is open, periodically ingest pending _inbox/ sources via the
 // selected provider. Complements the headless cron daemon.
+// Toggle + interval for the background session sweep (autoImport.ts): while
+// the app is open, Claude Code / Codex session logs flow into _inbox/ on
+// their own. Pair with auto-ingest below for a fully hands-off pipeline.
+function AutoImportSetting({
+  t,
+  settings,
+  update,
+}: {
+  t: Strings;
+  settings: MycoSettings;
+  update: (patch: Partial<MycoSettings>) => Promise<void> | void;
+}): JSX.Element {
+  const enabled = settings.auto_import_enabled;
+  const interval = settings.auto_import_interval_min;
+  return (
+    <div className="card">
+      <div
+        className="row"
+        style={{ justifyContent: "space-between", alignItems: "flex-start" }}
+      >
+        <div style={{ paddingRight: 16 }}>
+          <div style={{ fontWeight: 600 }}>{t.s_autoimport_title ?? "Auto-collect CLI sessions"}</div>
+          <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+            {t.s_autoimport_desc ??
+              "While myco is open, periodically sweep Claude Code / Codex conversations into _inbox/. Already-imported sessions are skipped; enable auto-ingest below to turn them into wiki pages."}
+          </div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={enabled}
+          aria-label={t.s_autoimport_title ?? "Auto-collect CLI sessions"}
+          onClick={() => void update({ auto_import_enabled: !enabled })}
+          style={{
+            width: 44,
+            height: 24,
+            borderRadius: 12,
+            border: "1px solid var(--line)",
+            background: enabled ? "var(--ink)" : "var(--bg-soft)",
+            position: "relative",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 2,
+              left: enabled ? 22 : 2,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: enabled ? "var(--bg)" : "var(--ink-3)",
+              transition: "left 150ms",
+            }}
+          />
+        </button>
+      </div>
+      {enabled ? (
+        <div
+          className="row"
+          style={{ marginTop: 12, gap: 8, alignItems: "center" }}
+        >
+          <label style={{ fontSize: 13 }}>{t.s_autoingest_interval}</label>
+          <input
+            className="input"
+            type="number"
+            min={1}
+            value={interval}
+            onChange={(e) =>
+              void update({
+                auto_import_interval_min: Math.max(
+                  1,
+                  Number(e.target.value) || 30,
+                ),
+              })
+            }
+            style={{ width: 90 }}
+          />
+          <span className="muted" style={{ fontSize: 13 }}>
+            min
+          </span>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function AutoIngestSetting({
   t,
   settings,

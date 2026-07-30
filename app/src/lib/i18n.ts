@@ -482,6 +482,8 @@ export interface Strings {
   s_mycopro_logout: string;
   s_mycopro_loggedin: string;
   s_mycopro_noaccess: string;
+  s_autoimport_title?: string;
+  s_autoimport_desc?: string;
   s_autoingest_title: string;
   s_autoingest_desc: string;
   s_autoingest_interval: string;
@@ -1251,6 +1253,9 @@ export const STRINGS: Record<Lang, Strings> = {
     s_mycopro_logout: "Log out",
     s_mycopro_loggedin: "Logged in as",
     s_mycopro_noaccess: "No active access yet",
+    s_autoimport_title: "Auto-collect CLI sessions",
+    s_autoimport_desc:
+      "While myco is open, periodically sweep Claude Code / Codex conversations into _inbox/. Already-imported sessions are skipped; enable auto-ingest below to turn them into wiki pages.",
     s_autoingest_title: "Auto-ingest inbox",
     s_autoingest_desc:
       "While myco is open, periodically ingest sources you drop into the vault's _inbox/ folder.",
@@ -2030,6 +2035,9 @@ export const STRINGS: Record<Lang, Strings> = {
     s_mycopro_logout: "로그아웃",
     s_mycopro_loggedin: "로그인:",
     s_mycopro_noaccess: "활성 구독 없음",
+    s_autoimport_title: "CLI 세션 자동 수집",
+    s_autoimport_desc:
+      "myco가 켜져 있는 동안 Claude Code / Codex 대화를 주기적으로 _inbox/로 가져옵니다. 이미 가져온 세션은 건너뜁니다. 위키 페이지로 만들려면 아래 자동 인게스트를 켜세요.",
     s_autoingest_title: "인박스 자동 인게스트",
     s_autoingest_desc:
       "myco가 켜져 있는 동안 vault의 _inbox/ 폴더에 넣은 소스를 주기적으로 인게스트합니다.",
@@ -2688,6 +2696,9 @@ export const STRINGS: Record<Lang, Strings> = {
     s_mycopro_logout: "ログアウト",
     s_mycopro_loggedin: "ログイン中:",
     s_mycopro_noaccess: "有効なアクセスなし",
+    s_autoimport_title: "CLIセッション自動収集",
+    s_autoimport_desc:
+      "mycoを開いている間、Claude Code / Codex の会話を定期的に _inbox/ へ取り込みます。取り込み済みのセッションはスキップされます。ウィキページ化するには下の自動取り込みをオンにしてください。",
     s_autoingest_title: "受信トレイ自動取り込み",
     s_autoingest_desc:
       "mycoを開いている間、vaultの_inbox/フォルダに入れたソースを定期的に取り込みます。",

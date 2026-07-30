@@ -1,0 +1,72 @@
+// In-app auto-import scheduler. While the app is open and the toggle is on,
+// it periodically sweeps local CLI session logs (Claude Code / Codex) into the
+// vault's `_inbox/` — myco pulls conversations in by itself, no hooks or
+// manual harness. The Rust import ledger dedups per file (mtime/len fast-skip)
+// and per conversation (fingerprint), so a sweep with nothing new is a no-op.
+//
+// Turning what lands in `_inbox/` into wiki pages is auto-ingest's job
+// (autoIngest.ts, separate toggle — that step runs the selected provider).
+
+import { useEffect } from "react";
+import { ipc } from "./ipc";
+import { log } from "./log";
+import { useImportStore } from "../stores/importStore";
+import { useIngestStore } from "../stores/ingestStore";
+
+const KINDS = ["claude-code", "codex"] as const;
+
+function busy(): boolean {
+  const imp = useImportStore.getState().stage;
+  const ing = useIngestStore.getState().stage;
+  return (
+    imp === "importing-file" ||
+    imp === "sweeping" ||
+    ing === "writing-raw" ||
+    ing === "claude" ||
+    ing === "indexing"
+  );
+}
+
+/** One background sweep across both CLI session kinds. Quiet on a kind whose
+ * session directory doesn't exist (tool not installed) — that is the normal
+ * state on most machines, not an error worth surfacing. */
+export async function runSessionSweep(): Promise<void> {
+  if (busy()) return;
+  for (const kind of KINDS) {
+    try {
+      const out = await ipc.importSessionSweep(kind);
+      if (out.imported > 0) {
+        log.info("auto_import.swept", {
+          kind,
+          imported: out.imported,
+          skipped: out.skipped,
+        });
+      }
+    } catch {
+      /* no session dir / vault closed — retry next tick */
+    }
+  }
+}
+
+/** React hook: drive runSessionSweep on an interval while enabled. */
+export function useAutoImportScheduler(
+  enabled: boolean,
+  intervalMin: number,
+  vaultPath: string | undefined,
+): void {
+  useEffect(() => {
+    if (!enabled || !vaultPath || intervalMin <= 0) return;
+    let cancelled = false;
+    const tick = (): void => {
+      if (!cancelled) void runSessionSweep();
+    };
+    // A short kick after enabling, then on the interval.
+    const kick = window.setTimeout(tick, 8000);
+    const id = window.setInterval(tick, intervalMin * 60_000);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(kick);
+      window.clearInterval(id);
+    };
+  }, [enabled, intervalMin, vaultPath]);
+}

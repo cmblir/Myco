@@ -31,6 +31,16 @@ pub struct Settings {
     /// the access key lives in the keychain). Empty when logged out.
     #[serde(default, alias = "memex_pro_email")]
     pub myco_pro_email: String,
+    /// While the app is open, periodically sweep local CLI session logs
+    /// (Claude Code / Codex) into `_inbox/` — myco pulls conversations in by
+    /// itself, no hooks or manual harness. Defaults ON: the sweep is local,
+    /// secret-scanned, and the import ledger makes a quiet pass a no-op.
+    /// Turning what lands in `_inbox/` into wiki pages is auto-ingest's job
+    /// (the separate, paid-provider toggle below).
+    #[serde(default = "default_true")]
+    pub auto_import_enabled: bool,
+    #[serde(default = "default_auto_import_interval")]
+    pub auto_import_interval_min: u32,
     /// While the app is open, periodically ingest pending `_inbox/` sources.
     #[serde(default)]
     pub auto_ingest_enabled: bool,
@@ -61,6 +71,8 @@ impl Default for Settings {
             ingest_model: default_ingest_model(),
             myco_pro_url: String::new(),
             myco_pro_email: String::new(),
+            auto_import_enabled: true,
+            auto_import_interval_min: default_auto_import_interval(),
             auto_ingest_enabled: false,
             auto_ingest_interval_min: default_auto_ingest_interval(),
             auto_reflect_enabled: false,
@@ -136,6 +148,11 @@ fn default_ingest_model() -> String {
 }
 fn default_auto_ingest_interval() -> u32 {
     60
+}
+fn default_auto_import_interval() -> u32 {
+    // Session sweeps are ledger-deduped (mtime/len fast-skip), so a shorter
+    // cadence than ingest costs almost nothing.
+    30
 }
 fn default_auto_reflect_interval() -> u32 {
     // Reflect is a heavier full-vault pass than a single inbox ingest, so it
@@ -626,6 +643,20 @@ mod tests {
         with_isolated_data("load-missing", |_dir| {
             let s = load();
             assert_eq!(s.query_provider, "anthropic-cli");
+        });
+    }
+
+    #[test]
+    fn auto_import_defaults_on_with_30_min_interval() {
+        with_isolated_data("auto-import-defaults", |dir| {
+            // Both a fresh install and a pre-feature settings.json must come up
+            // with the sweep enabled — "myco pulls conversations in by itself"
+            // only holds if nobody has to find a toggle first.
+            std::fs::write(dir.join("settings.json"), r#"{ "auto_ingest_enabled": true }"#)
+                .unwrap();
+            let s = load();
+            assert!(s.auto_import_enabled);
+            assert_eq!(s.auto_import_interval_min, 30);
         });
     }
 

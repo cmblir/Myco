@@ -600,6 +600,8 @@ const SETTINGS = {
   ingest_model: "claude-sonnet-4-6",
   myco_pro_url: "",
   myco_pro_email: "",
+  auto_import_enabled: true,
+  auto_import_interval_min: 30,
   auto_ingest_enabled: false,
   auto_reindex_enabled: false,
   auto_ingest_interval_min: 60,
