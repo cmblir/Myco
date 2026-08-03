@@ -39,7 +39,10 @@ async function askAndWatch({ indexed }) {
   // UI — and the staged path is the non-tool one, so it would be unreachable.
   await page.evaluate(
     (n) => {
-      window.__memexMock.settings({ query_provider: "builtin-local", query_model: "gemma-3-1b" });
+      window.__memexMock.settings({
+        query_provider: "builtin-local",
+        query_model: "extractive-retrieval",
+      });
       window.__memexMock.indexedPages(n);
     },
     indexed,
@@ -79,12 +82,26 @@ async function askAndWatch({ indexed }) {
     labels[0] === "searching the wiki…",
     JSON.stringify(labels),
   );
+  // The builtin provider no longer runs a chat model: Ask answers extractively,
+  // quoting the passages retrieval found. So the old "answering from N pages"
+  // label (which described the model call) can no longer appear, and the answer
+  // is the quoted notes rather than the mock model's reply. What this file
+  // guards is unchanged — the wait must not claim work that is not happening.
   check(
-    "it names the pages it is answering FROM during the long wait",
-    /answering from \d+ pages/.test(labels[labels.length - 1] ?? ""),
+    "it never claims to be running a model, because it is not",
+    !labels.some((l) => /answering/.test(l)),
     JSON.stringify(labels),
   );
-  check("an answer arrives", /local model reply/.test(answer));
+  check(
+    "the answer is the notes themselves, not a model reply",
+    /From your notes/.test(answer) && !/local model reply/.test(answer),
+    answer.slice(0, 120).replace(/\n/g, " | "),
+  );
+  check(
+    "each cited page carries its real relevance",
+    /\d+%/.test(answer),
+    answer.slice(0, 120).replace(/\n/g, " | "),
+  );
   check("no page errors", errors.length === 0, errors.slice(0, 2).join(" | "));
 }
 

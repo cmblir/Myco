@@ -949,9 +949,16 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "semantic_search": {
       const q = String(args.query ?? "").toLowerCase();
       const k = Number(args.k ?? 8);
-      const hits = NODES.filter(
-        (d) => d.n.toLowerCase().includes(q) || body(d).toLowerCase().includes(q),
-      )
+      // Match on any meaningful TOKEN, not the whole query string: the real
+      // backend matches by meaning, so a mock that needed the entire sentence
+      // to appear verbatim sent every realistic question ("what is attention?")
+      // down the no-match fallback below — which now means "abstain", so
+      // mock-driven tests could not reach the answer path at all.
+      const terms = q.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 2);
+      const hits = NODES.filter((d) => {
+        const hay = `${d.n} ${body(d)}`.toLowerCase();
+        return terms.some((w) => hay.includes(w));
+      })
         .slice(0, k)
         .map((d, i) => ({
           page: `wiki/${d.s}.md`,
