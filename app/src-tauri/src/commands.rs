@@ -1773,7 +1773,21 @@ pub struct ScoredChunk {
     pub stem: String,
     pub section: usize,
     pub text: String,
+    /// Fusion score from `rrf_fuse` — `Σ 1/(RRF_K + rank)` over the dense and
+    /// lexical rankings. RANK-based, so it is scale-free: the top hit of a
+    /// perfect match and the top hit of a nonsense query score the same. Good
+    /// for ordering, USELESS as a confidence measure — use `similarity`.
     pub score: f32,
+    /// True dense cosine similarity between the query and this chunk, carried
+    /// through fusion so callers can judge whether a hit is relevant AT ALL.
+    /// `None` when the chunk was surfaced only by the lexical arm (no dense
+    /// score exists for it).
+    ///
+    /// Measured on the bilingual eval corpus (71 pages / 142 chunks, bge-m3):
+    /// queries whose answer IS in the corpus scored ≥ 0.543 at top-1 (n=45,
+    /// median 0.650); off-corpus queries topped out at 0.491 (n=15, median
+    /// 0.408). That gap is what `RELEVANCE_FLOOR` on the TS side sits in.
+    pub similarity: Option<f32>,
 }
 
 /// The `section`-th chunk of `content` under the same `chunk_page` split the
@@ -1842,6 +1856,14 @@ pub async fn semantic_search(
     // If the lexical index is empty (fresh vault, or `.mxb` not yet
     // bootstrapped), `rrf_fuse` degrades to the dense order unchanged — see
     // `rrf_fuse_empty_lexical_preserves_dense_order` in retrieval.rs.
+    // Keep each candidate's DENSE COSINE before fusing: rrf_fuse replaces score
+    // with a rank-based value, which orders well but says nothing about whether
+    // a hit is relevant at all. Callers need the cosine to reject "nothing in
+    // the vault answers this" instead of presenting the least-bad chunks.
+    let dense_by_id: std::collections::HashMap<(String, usize), f32> = dense_hits
+        .iter()
+        .map(|h| ((h.page.clone(), h.section), h.score))
+        .collect();
     let hits = crate::retrieval::rrf_fuse(&dense_hits, &lexical_hits, k);
     let scan_ms = perf::ms(t_scan.elapsed());
     // Reconstruct each hit's chunk TEXT from its page (the index stores only
@@ -1856,6 +1878,7 @@ pub async fn semantic_search(
         };
         match chunk_text_at(&content, h.section) {
             Some(text) if !text.trim().is_empty() => out.push(ScoredChunk {
+                similarity: dense_by_id.get(&(h.page.clone(), h.section)).copied(),
                 page: h.page,
                 stem: h.stem,
                 section: h.section,

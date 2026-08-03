@@ -164,7 +164,13 @@ export interface ScoredChunk {
   stem: string;
   section: number;
   text: string;
+  /** Rank-based fusion score (RRF). Orders hits; says NOTHING about whether a
+   *  hit is relevant — a nonsense query's top hit scores like a perfect
+   *  match's. Use `similarity` to judge relevance. */
   score: number;
+  /** True dense cosine similarity, carried through fusion. `null` when the
+   *  chunk came only from the lexical arm. See RELEVANCE_FLOOR in chat.ts. */
+  similarity: number | null;
 }
 
 export interface SemanticPoint {

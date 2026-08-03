@@ -814,6 +814,20 @@ mod tests {
         assert_eq!(fused.iter().map(|h| h.stem.clone()).collect::<Vec<_>>(), vec!["a", "b"]);
     }
     #[test]
+    fn rrf_fuse_score_is_rank_based_not_a_confidence() {
+        use crate::vector_index::Hit;
+        // The reason `semantic_search` carries the dense cosine separately: RRF
+        // scores a rank, so a top hit scores identically whether its cosine was
+        // 0.95 (a real answer) or 0.31 (nothing in the vault matched). Anything
+        // thresholding or displaying confidence must use the cosine instead —
+        // this test pins the property so that never silently changes.
+        let strong = vec![Hit { page: "a.md".into(), stem: "a".into(), section: 0, score: 0.95 }];
+        let weak = vec![Hit { page: "a.md".into(), stem: "a".into(), section: 0, score: 0.31 }];
+        let fused_strong = rrf_fuse(&strong, &[], 10);
+        let fused_weak = rrf_fuse(&weak, &[], 10);
+        assert_eq!(fused_strong[0].score, fused_weak[0].score);
+    }
+    #[test]
     fn rrf_fuse_lifts_agreed_chunk() {
         use crate::vector_index::Hit;
         let dense = vec![

@@ -299,7 +299,37 @@ export async function retrieveChunks(
       return [] as ScoredChunk[];
     });
   if (searchRejected) return { ...none, retrievalFailed: true };
-  return { hits, stale: false, retrievalFailed: false };
+  return { hits: hits.filter(isRelevant), stale: false, retrievalFailed: false };
+}
+
+/** Dense-cosine floor a chunk must clear to count as an answer at all.
+ *
+ * Measured, not guessed (`examples/abstention_probe.rs` over the bilingual eval
+ * corpus, 71 pages / 142 chunks, bge-m3):
+ *
+ *   queries answerable from the corpus   n=45  top-1 cosine 0.543 … 0.721 (median 0.650)
+ *   off-corpus queries                   n=15  top-1 cosine 0.305 … 0.491 (median 0.408)
+ *
+ * 0.50 sits in the empty gap between those ranges: it rejected 15/15 off-corpus
+ * queries while costing 0/45 answerable ones. Raising it to 0.55 starts losing
+ * real answers (3/45), lowering it to 0.45 lets a third of the nonsense through.
+ *
+ * Retrieval never used to reject anything — top-k always came back, so an
+ * off-vault question was answered with the least-bad chunks in the vault, shown
+ * with the same confidence as a real hit. Filtering here rather than in the
+ * formatter means BOTH consumers benefit: the extractive answer abstains, and
+ * the CLI/API path stops spending prompt tokens on the weak tail (rank-5 cosine
+ * is a median 0.528 — right at the floor, so the 5th passage was padding about
+ * half the time). */
+export const RELEVANCE_FLOOR = 0.5;
+
+/** A lexical-only hit has no dense cosine (`similarity: null`); it earned its
+ * place through exact-term overlap, which is its own relevance evidence, so it
+ * is kept rather than rejected for lacking a score. `== null` deliberately
+ * covers `undefined` too: a backend that predates the field must degrade to the
+ * old unfiltered behaviour, not silently reject every hit. */
+function isRelevant(hit: ScoredChunk): boolean {
+  return hit.similarity == null || hit.similarity >= RELEVANCE_FLOOR;
 }
 
 /** Semantic retrieval: embed the question, pull the top-matching chunks from the

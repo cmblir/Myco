@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { complete, isIndexStale, retrieveChunks, type AskStage } from "./chat";
+import {
+  complete,
+  isIndexStale,
+  retrieveChunks,
+  RELEVANCE_FLOOR,
+  type AskStage,
+} from "./chat";
 import { ipc } from "./ipc";
 import { BUILTIN_EMBED_MODEL } from "./providers";
 import { log } from "./log";
@@ -41,8 +47,8 @@ describe("complete() ask stages", () => {
       model: CURRENT_INDEX_MODEL,
     });
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
-      { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", section: 0, text: "attention body", score: 0.9 },
-      { page: "wiki/embeddings.md", stem: "embeddings", section: 0, text: "embeddings body", score: 0.8 },
+      { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", section: 0, text: "attention body", score: 0.9, similarity: 0.7 },
+      { page: "wiki/embeddings.md", stem: "embeddings", section: 0, text: "embeddings body", score: 0.8, similarity: 0.7 },
     ]);
     const readFile = vi.spyOn(ipc, "readFile");
 
@@ -73,9 +79,9 @@ describe("complete() ask stages", () => {
       model: CURRENT_INDEX_MODEL,
     });
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
-      { page: "wiki/a.md", stem: "a", section: 0, text: "AAA one", score: 0.9 },
-      { page: "wiki/b.md", stem: "b", section: 0, text: "BBB", score: 0.85 },
-      { page: "wiki/a.md", stem: "a", section: 1, text: "AAA two", score: 0.8 },
+      { page: "wiki/a.md", stem: "a", section: 0, text: "AAA one", score: 0.9, similarity: 0.7 },
+      { page: "wiki/b.md", stem: "b", section: 0, text: "BBB", score: 0.85, similarity: 0.7 },
+      { page: "wiki/a.md", stem: "a", section: 1, text: "AAA two", score: 0.8, similarity: 0.7 },
     ]);
 
     const { seen, onStage } = stages();
@@ -108,6 +114,9 @@ describe("complete() ask stages", () => {
         section: 0,
         text: "x".repeat(2_500),
         score: 1 - i / 12,
+        // Above RELEVANCE_FLOOR, so it is the BUDGET that truncates here —
+        // which is what this test is about.
+        similarity: 0.7,
       })),
     );
 
@@ -278,9 +287,9 @@ describe("complete() ask stages", () => {
 
   it("inlines retrieved chunk passages, grouped by page, not whole files", async () => {
     const chunks = [
-      { page: "wiki/a.md", stem: "a", section: 0, text: "AAA passage one", score: 0.9 },
-      { page: "wiki/a.md", stem: "a", section: 2, text: "AAA passage two", score: 0.8 },
-      { page: "wiki/b.md", stem: "b", section: 0, text: "BBB passage", score: 0.7 },
+      { page: "wiki/a.md", stem: "a", section: 0, text: "AAA passage one", score: 0.9, similarity: 0.7 },
+      { page: "wiki/a.md", stem: "a", section: 2, text: "AAA passage two", score: 0.8, similarity: 0.7 },
+      { page: "wiki/b.md", stem: "b", section: 0, text: "BBB passage", score: 0.7, similarity: 0.7 },
     ];
     vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
       indexed_pages: 51,
@@ -360,7 +369,7 @@ describe("complete() CLI query retrieval (retrieval 1b)", () => {
       model: CURRENT_INDEX_MODEL,
     });
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
-      { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", section: 0, text: "attention body passage", score: 0.9 },
+      { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", section: 0, text: "attention body passage", score: 0.9, similarity: 0.7 },
     ]);
     const claudeRun = vi
       .spyOn(ipc, "claudeRun")
@@ -406,7 +415,7 @@ describe("complete() CLI query retrieval (retrieval 1b)", () => {
       model: CURRENT_INDEX_MODEL,
     });
     const search = vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
-      { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", section: 0, text: "attention body passage", score: 0.9 },
+      { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", section: 0, text: "attention body passage", score: 0.9, similarity: 0.7 },
     ]);
     const claudeRun = vi
       .spyOn(ipc, "claudeRun")
@@ -517,7 +526,7 @@ describe("retrieveChunks", () => {
       model: `builtin-local:${BUILTIN_EMBED_MODEL}`,
     });
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
-      { page: "wiki/bpe.md", stem: "bpe", section: 0, text: "BPE merges pairs.", score: 0.9 },
+      { page: "wiki/bpe.md", stem: "bpe", section: 0, text: "BPE merges pairs.", score: 0.9, similarity: 0.7 },
     ]);
     const r = await retrieveChunks("what is bpe", 12);
     expect(r.hits).toHaveLength(1);
@@ -555,5 +564,52 @@ describe("retrieveChunks", () => {
     });
     const r = await retrieveChunks("q");
     expect(r).toEqual({ hits: [], stale: false, retrievalFailed: false });
+  });
+
+  it("drops hits below the measured relevance floor", async () => {
+    // Retrieval always returns top-k, so an off-vault question used to be
+    // answered with the least-bad chunks in the vault at full confidence. The
+    // floor is what makes "nothing here answers this" expressible.
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 10,
+      model: `builtin-local:${BUILTIN_EMBED_MODEL}`,
+    });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
+      { page: "wiki/a.md", stem: "a", section: 0, text: "strong", score: 0.9, similarity: 0.62 },
+      { page: "wiki/b.md", stem: "b", section: 0, text: "borderline", score: 0.8, similarity: RELEVANCE_FLOOR },
+      { page: "wiki/c.md", stem: "c", section: 0, text: "weak", score: 0.7, similarity: 0.49 },
+    ]);
+    const r = await retrieveChunks("q");
+    expect(r.hits.map((h) => h.stem)).toEqual(["a", "b"]); // floor is inclusive
+    expect(r.retrievalFailed).toBe(false);
+  });
+
+  it("returns nothing for an off-vault question instead of the least-bad chunks", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 10,
+      model: `builtin-local:${BUILTIN_EMBED_MODEL}`,
+    });
+    // Cosines in the measured off-corpus range (0.305–0.491).
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
+      { page: "wiki/a.md", stem: "a", section: 0, text: "unrelated", score: 0.9, similarity: 0.41 },
+      { page: "wiki/b.md", stem: "b", section: 0, text: "unrelated", score: 0.8, similarity: 0.33 },
+    ]);
+    const r = await retrieveChunks("김치찌개 레시피");
+    expect(r.hits).toEqual([]);
+    // Not a failure and not a stale index — the vault genuinely has no answer.
+    expect(r.stale).toBe(false);
+    expect(r.retrievalFailed).toBe(false);
+  });
+
+  it("keeps a lexical-only hit, which has no dense cosine to judge", async () => {
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 10,
+      model: `builtin-local:${BUILTIN_EMBED_MODEL}`,
+    });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
+      { page: "wiki/bpe.md", stem: "bpe", section: 0, text: "BPE", score: 0.9, similarity: null },
+    ]);
+    const r = await retrieveChunks("BPE");
+    expect(r.hits.map((h) => h.stem)).toEqual(["bpe"]);
   });
 });

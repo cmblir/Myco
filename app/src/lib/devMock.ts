@@ -959,8 +959,13 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
           section: 0,
           text: `passage from ${d.s}`,
           score: 0.9 - i * 0.05,
+          // A keyword match stands in for a confident hit here, so these sit
+          // above RELEVANCE_FLOOR (0.5) and survive filtering.
+          similarity: 0.68 - i * 0.02,
         }));
-      // Always return something so the UI path is exercised even on no keyword match.
+      // No keyword match: return weak hits the way the real backend does for an
+      // off-vault question — below RELEVANCE_FLOOR, so the abstention path (not
+      // the answer path) is what a mock-mode nonsense query exercises.
       const out = hits.length === 0 && NODES.length
         ? NODES.slice(0, k).map((d, i) => ({
             page: `wiki/${d.s}.md`,
@@ -968,6 +973,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
             section: 0,
             text: `passage from ${d.s}`,
             score: 0.6 - i * 0.05,
+            similarity: 0.42 - i * 0.02,
           }))
         : hits;
       return sleep(400).then(() => out);
