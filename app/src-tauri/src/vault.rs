@@ -43,13 +43,32 @@ pub fn confine_path(root: &Path, path: &str) -> Result<PathBuf, String> {
 
 /// Confine a parent directory (for create_file / create_folder) to `root`.
 pub fn confine_parent(root: &Path, parent: &str) -> Result<PathBuf, String> {
-    let resolved = Path::new(parent)
-        .canonicalize()
-        .map_err(|e| format!("canonicalize failed for {parent}: {e}"))?;
-    if !resolved.starts_with(root) {
+    let p = Path::new(parent);
+    // An existing parent is canonicalized — that resolves symlinks, so it is the
+    // strongest containment check available.
+    if let Ok(resolved) = p.canonicalize() {
+        if !resolved.starts_with(root) {
+            return Err("parent is outside the open vault".into());
+        }
+        return Ok(resolved);
+    }
+    // A parent that does not exist YET is legitimate: creating the first page of
+    // a vault whose `wiki/` was never made is exactly this case, and the old
+    // unconditional canonicalize turned it into a raw
+    // "canonicalize failed for <path>: No such file or directory" surfacing to
+    // the user (reported when clicking an unresolved [[wikilink]]). Resolve it
+    // lexically against the canonical root instead; `..` is refused outright
+    // rather than normalized, since without an on-disk path there is no
+    // symlink-safe way to prove where it would land.
+    let joined = if p.is_absolute() { p.to_path_buf() } else { root.join(p) };
+    if joined
+        .components()
+        .any(|c| matches!(c, std::path::Component::ParentDir))
+        || !joined.starts_with(root)
+    {
         return Err("parent is outside the open vault".into());
     }
-    Ok(resolved)
+    Ok(joined)
 }
 
 // --- Backlink rewriting on rename -------------------------------------------
@@ -638,6 +657,13 @@ fn pod_to_json_depth(pod: gray_matter::Pod, depth: usize) -> serde_json::Value {
 pub fn create_file(parent: &str, name: &str, content: &str) -> Result<String, String> {
     validate_name(name)?;
     let parent_path = Path::new(parent);
+    // Same as create_folder: the parent is vault-confined by the caller and may
+    // legitimately not exist yet (clicking an unresolved [[wikilink]] in a vault
+    // with no `wiki/` directory), so create it instead of erroring out.
+    if !parent_path.exists() {
+        std::fs::create_dir_all(parent_path)
+            .map_err(|e| format!("mkdir parent failed for {parent}: {e}"))?;
+    }
     if !parent_path.is_dir() {
         return Err(format!("parent is not a directory: {parent}"));
     }
@@ -734,6 +760,14 @@ pub fn scaffold_obsidian_vault(vault: &Path) -> Result<String, String> {
 pub fn create_folder(parent: &str, name: &str) -> Result<String, String> {
     validate_name(name)?;
     let parent_path = Path::new(parent);
+    // The parent is already confined to the vault by `confine_parent`, which now
+    // admits one that does not exist yet — so materialize it rather than
+    // refusing (creating `wiki/.annotations` in a vault with no `wiki/` is the
+    // real case this hit).
+    if !parent_path.exists() {
+        std::fs::create_dir_all(parent_path)
+            .map_err(|e| format!("mkdir parent failed for {parent}: {e}"))?;
+    }
     if !parent_path.is_dir() {
         return Err(format!("parent is not a directory: {parent}"));
     }

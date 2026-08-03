@@ -24,6 +24,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   const setCmdOpen = useUIStore((s) => s.setCmdOpen);
   const setRoute = useUIStore((s) => s.setRoute);
   const fileTree = useVaultStore((s) => s.fileTree);
+  const currentVault = useVaultStore((s) => s.currentVault);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const [q, setQ] = useState("");
@@ -119,6 +120,15 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
     setRoute(`page:${path}` as RouteId);
     setCmdOpen(false);
   }
+  /// Semantic hits carry a VAULT-RELATIVE `page` (that is how the embedding
+  /// index keys them), while the `page:` route hands its path straight to
+  /// ipc.readFile — so a relative path has to be rejoined to the vault root or
+  /// the click dies on "canonicalize failed for wiki/…". Full-text hits already
+  /// carry absolute paths and go through goPath directly.
+  function goIndexedPage(relPath: string): void {
+    const root = currentVault?.path;
+    goPath(root && !relPath.startsWith(root) ? `${root}/${relPath}` : relPath);
+  }
   // Activate the row at the given combined index.
   function activate(index: number): void {
     if (index < filtered.length) {
@@ -129,7 +139,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
       if (hit) goPath(hit.path);
     } else {
       const hit = semanticHits[index - filtered.length - contentHits.length];
-      if (hit) goPath(hit.page);
+      if (hit) goIndexedPage(hit.page);
     }
   }
   // Move the selection and scroll the newly-active row into view. Uses the
@@ -266,7 +276,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
                 aria-selected={active === idx}
                 tabIndex={-1}
                 className={`cmd-row${active === idx ? " active" : ""}`}
-                onClick={() => goPath(h.page)}
+                onClick={() => goIndexedPage(h.page)}
               >
                 <Icon name="sparkles" size={13} />
                 <span>{h.stem}</span>

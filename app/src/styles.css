@@ -912,6 +912,38 @@ select {
 .prose p {
   margin: 8px 0;
 }
+/* Quoted material — notably extractive Ask answers, which render retrieved
+   passages verbatim. With no blockquote styling at all (the previous state) a
+   quote was indistinguishable from myco's own prose, so a cited note's `##`
+   headings read as the app talking rather than as the note being quoted. */
+.prose blockquote {
+  margin: 8px 0;
+  padding: 8px 14px;
+  border-left: 3px solid var(--line-strong);
+  background: var(--bg-soft);
+  border-radius: 0 6px 6px 0;
+  color: var(--ink-3);
+}
+.prose blockquote > :first-child {
+  margin-top: 0;
+}
+.prose blockquote > :last-child {
+  margin-bottom: 0;
+}
+/* A quoted page keeps its heading hierarchy, but at prose scale: the passage is
+   a citation, not this page's own structure. */
+.prose blockquote h1,
+.prose blockquote h2,
+.prose blockquote h3,
+.prose blockquote h4 {
+  font-size: 15.5px;
+  font-weight: 600;
+  margin: 10px 0 4px;
+  color: var(--ink-2);
+}
+.prose blockquote table {
+  font-size: 13.5px;
+}
 .prose code {
   background: var(--bg-soft);
   padding: 1px 5px;

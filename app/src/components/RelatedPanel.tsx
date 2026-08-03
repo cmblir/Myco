@@ -88,7 +88,12 @@ export default function RelatedPanel({
           <li key={h.page}>
             <button
               type="button"
-              onClick={() => setRoute(`page:${h.page}`)}
+              // `h.page` is VAULT-RELATIVE (that is how the index keys pages,
+              // see `rel` above) but the `page:` route carries an absolute path
+              // straight to ipc.readFile — so joining the root back on is what
+              // makes the click open the note instead of failing to canonicalize
+              // a relative "wiki/…" path.
+              onClick={() => setRoute(`page:${root ? `${root}/${h.page}` : h.page}`)}
               style={{
                 display: "flex",
                 alignItems: "center",
