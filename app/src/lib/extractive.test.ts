@@ -74,6 +74,24 @@ describe("formatExtractiveAnswer", () => {
     expect(md).not.toContain("%");
   });
 
+  it("never truncates inside a fenced code block", () => {
+    // A mid-fence cut leaves an unterminated ``` that swallows the rest of the
+    // answer into one code block when the markdown renders.
+    const body = ["prose line", "```ts", "const a = 1;", "const b = 2;", "```", "tail"].join("\n");
+    const md = formatExtractiveAnswer([chunk({ text: body })], { perPageChars: 30 });
+    const fences = (md.match(/```/g) ?? []).length;
+    expect(fences % 2).toBe(0);
+  });
+
+  it("cuts on a line boundary rather than mid-word", () => {
+    const md = formatExtractiveAnswer(
+      [chunk({ text: "first line here\nsecond line here\nthird" })],
+      { perPageChars: 25 },
+    );
+    expect(md).toContain("> first line here");
+    expect(md).not.toContain("second line h…");
+  });
+
   it("returns empty string for no hits / text-less hits", () => {
     expect(formatExtractiveAnswer([])).toBe("");
     expect(formatExtractiveAnswer([chunk({ text: "" })])).toBe("");

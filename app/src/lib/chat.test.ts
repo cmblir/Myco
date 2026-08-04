@@ -187,7 +187,7 @@ describe("complete() ask stages", () => {
       { kind: "thinking", stems: [], retrievalFailed: true },
     ]);
     expect(warn).toHaveBeenCalledWith(
-      "semantic_context.embeddings_status_failed",
+      "retrieve_chunks.embeddings_status_failed",
       expect.objectContaining({ error: expect.stringContaining("index gone") }),
     );
   });
@@ -216,7 +216,7 @@ describe("complete() ask stages", () => {
       { kind: "thinking", stems: [], retrievalFailed: true },
     ]);
     expect(warn).toHaveBeenCalledWith(
-      "semantic_context.semantic_search_failed",
+      "retrieve_chunks.semantic_search_failed",
       expect.objectContaining({ error: expect.stringContaining("search backend down") }),
     );
   });

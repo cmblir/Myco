@@ -283,7 +283,7 @@ export async function retrieveChunks(
 ): Promise<RetrievedChunks> {
   const none: RetrievedChunks = { hits: [], stale: false, retrievalFailed: false };
   const status = await ipc.embeddingsStatus().catch((err) => {
-    log.warn("semantic_context.embeddings_status_failed", { error: String(err) });
+    log.warn("retrieve_chunks.embeddings_status_failed", { error: String(err) });
     return null;
   });
   if (status === null) return { ...none, retrievalFailed: true };
@@ -294,7 +294,7 @@ export async function retrieveChunks(
   const hits = await ipc
     .semanticSearch(question, k, "builtin-local", BUILTIN_EMBED_MODEL)
     .catch((err) => {
-      log.warn("semantic_context.semantic_search_failed", { error: String(err) });
+      log.warn("retrieve_chunks.semantic_search_failed", { error: String(err) });
       searchRejected = true;
       return [] as ScoredChunk[];
     });

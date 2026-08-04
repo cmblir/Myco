@@ -13,6 +13,22 @@ export interface ExtractiveOptions {
   perPageChars?: number;
 }
 
+/** Cut `text` to at most `limit` chars on a LINE boundary, and never inside a
+ * fenced code block: a mid-fence cut leaves an unterminated ``` that swallows
+ * the rest of the answer into one code block when the markdown renders. Drops
+ * whole trailing lines until any fence count is even, so the quote stays valid
+ * markdown at the cost of a little content. */
+function truncateWholeLines(text: string, limit: number): string {
+  const lines = text.slice(0, limit).split("\n");
+  // A partial last line is dropped rather than shown mid-word — unless it is
+  // the only line, where dropping it would leave nothing at all.
+  if (lines.length > 1 && text.length > limit) lines.pop();
+  const fenced = (ls: string[]): number =>
+    ls.filter((l) => l.trimStart().startsWith("```")).length;
+  while (lines.length > 0 && fenced(lines) % 2 !== 0) lines.pop();
+  return lines.join("\n");
+}
+
 export function formatExtractiveAnswer(
   hits: ScoredChunk[],
   opts: ExtractiveOptions = {},
@@ -48,7 +64,7 @@ export function formatExtractiveAnswer(
     const { stem, texts, best } = byPage.get(page)!;
     let body = texts.join("\n\n");
     if (body.length > perPageChars) {
-      body = `${body.slice(0, perPageChars).trimEnd()}…`;
+      body = `${truncateWholeLines(body, perPageChars).trimEnd()}…`;
     }
     const quoted = body
       .split("\n")
