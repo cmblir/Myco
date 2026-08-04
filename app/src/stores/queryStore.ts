@@ -7,7 +7,16 @@ import { create } from "zustand";
 import { complete, retrieveChunks, type AskStage } from "../lib/chat";
 import { formatExtractiveAnswer } from "../lib/extractive";
 import { ipc } from "../lib/ipc";
-import { formatActivityAnswer, isActivityQuery } from "../lib/queryIntent";
+import {
+  formatActivityAnswer,
+  formatRecentFilesAnswer,
+  isActivityQuery,
+} from "../lib/queryIntent";
+import { BUILTIN_EMBED_MODEL } from "../lib/providers";
+import { log } from "../lib/log";
+
+/** Mirrors `intent::VAULT_FILES` on the Rust side. */
+const VAULT_FILES_INTENT = "vault-files";
 import type { Lang } from "../lib/i18n";
 import { useVaultStore } from "./vaultStore";
 
@@ -59,6 +68,30 @@ interface QueryState {
   ask: (question: string, lang: Lang, copy: AskCopy) => Promise<void>;
   markSeen: () => void;
   clear: () => void;
+}
+
+/** The answer for a question whose intent is NOT page content, or `null` when
+ * the question is an ordinary content question after all (so the caller shows
+ * its "nothing found" copy). Never throws: a classification or mtime failure
+ * just means no meta answer, which the caller already handles. */
+async function metaAnswer(
+  question: string,
+  vaultPath: string,
+  lang: Lang,
+): Promise<string | null> {
+  try {
+    const verdict = await ipc.classifyIntent(
+      question,
+      "builtin-local",
+      BUILTIN_EMBED_MODEL,
+    );
+    if (verdict?.intent !== VAULT_FILES_INTENT) return null;
+    const entries = await ipc.fileMtimes(vaultPath);
+    return formatRecentFilesAnswer(entries, lang);
+  } catch (err) {
+    log.warn("query.intent_classify_failed", { error: String(err) });
+    return null;
+  }
 }
 
 export const useQueryStore = create<QueryState>((set, get) => ({
@@ -117,6 +150,18 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         // ran, so those get their own honest copy instead of the generic
         // "found nothing" message (which implies retrieval ran and came up
         // empty).
+        // Retrieval found nothing relevant, and the index is healthy — so this
+        // may be a question page CONTENT cannot answer at all ("which notes did
+        // I add today"). Classifying costs a query embedding, which is why it
+        // happens HERE and not up front: a question the vault could answer never
+        // pays for it.
+        if (!md && !r.stale && !r.retrievalFailed) {
+          const meta = await metaAnswer(question, vault.path, lang);
+          if (meta) {
+            finishTurn({ a: meta });
+            return;
+          }
+        }
         const body = r.stale
           ? copy.extractiveStale
           : r.retrievalFailed

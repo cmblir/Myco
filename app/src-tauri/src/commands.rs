@@ -15,7 +15,7 @@ use crate::secrets;
 use crate::settings::{self, Settings};
 use crate::vault::{self, FileContent, FileNode, SearchHit, VaultMeta};
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use tauri::Manager;
 
 /// Canonical root of the currently-open vault. Set on `open_vault` and used to
@@ -1901,6 +1901,80 @@ pub async fn semantic_search(
         ],
     );
     Ok(out)
+}
+
+#[derive(serde::Serialize)]
+pub struct QueryIntent {
+    pub intent: String,
+    pub similarity: f32,
+}
+
+/// Classify a question's INTENT by embedding it against `intent::EXEMPLARS`.
+/// `None` when nothing clears `intent::INTENT_FLOOR` — the common case, and the
+/// caller should carry on with its normal content answer.
+///
+/// Callers must only reach this when content retrieval already came up empty:
+/// it costs a query embedding (~460 ms), and a question the vault can answer
+/// should never pay for it. The exemplar vectors are embedded ONCE per
+/// (provider, model) in a single batched call and cached for the process.
+#[tauri::command]
+pub async fn classify_intent(
+    app: tauri::AppHandle,
+    llm: tauri::State<'_, LocalLlmState>,
+    query: String,
+    provider: String,
+    model: String,
+) -> Result<Option<QueryIntent>, String> {
+    use crate::embeddings::cosine;
+    let texts = crate::intent::exemplar_texts();
+    // The exemplars and the query go through one embed call each. bge-m3 is
+    // prefix-free (its EmbedSpec query/doc prefixes are empty), so the roles
+    // below do not change the vectors for the bundled model — they are still
+    // passed correctly so a future asymmetric embedder needs no change here.
+    let key = format!("{provider}:{model}");
+    let cached = {
+        let guard = exemplar_cache().lock().unwrap_or_else(|e| e.into_inner());
+        guard.as_ref().filter(|(k, _)| *k == key).map(|(_, v)| v.clone())
+    };
+    let exemplar_vecs = match cached {
+        Some(v) => v,
+        None => {
+            let v = embed_texts(
+                app.clone(),
+                llm.clone(),
+                &provider,
+                &model,
+                crate::local_llm::EmbedRole::Document,
+                texts.clone(),
+            )
+            .await?;
+            let mut guard = exemplar_cache().lock().unwrap_or_else(|e| e.into_inner());
+            *guard = Some((key, v.clone()));
+            v
+        }
+    };
+    let mut q = embed_texts(
+        app,
+        llm,
+        &provider,
+        &model,
+        crate::local_llm::EmbedRole::Query,
+        vec![query],
+    )
+    .await?;
+    let qv = q.pop().unwrap_or_default();
+    let sims: Vec<f32> = exemplar_vecs.iter().map(|e| cosine(&qv, e)).collect();
+    Ok(crate::intent::best_intent(&sims).map(|(intent, similarity)| QueryIntent {
+        intent: intent.to_string(),
+        similarity,
+    }))
+}
+
+/// Embedded exemplars, keyed by `"{provider}:{model}"` so a model switch
+/// re-embeds instead of cosining across incompatible vector spaces.
+fn exemplar_cache() -> &'static Mutex<Option<(String, Vec<Vec<f32>>)>> {
+    static CACHE: OnceLock<Mutex<Option<(String, Vec<Vec<f32>>)>>> = OnceLock::new();
+    CACHE.get_or_init(|| Mutex::new(None))
 }
 
 /// Whether a `(provider, model)` pair derived from `store.model` is a

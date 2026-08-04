@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { isActivityQuery, formatActivityAnswer } from "./queryIntent";
+import {
+  isActivityQuery,
+  formatActivityAnswer,
+  formatRecentFilesAnswer,
+} from "./queryIntent";
 import type { GitCommit } from "./ipc";
 
 describe("isActivityQuery — matches vault-activity/meta questions", () => {
@@ -44,5 +48,70 @@ describe("formatActivityAnswer", () => {
   it("unknown lang falls back to English header", () => {
     // @ts-expect-error testing a lang outside the union
     expect(formatActivityAnswer(commits, "de")).toContain("recent vault activity");
+  });
+});
+
+describe("formatRecentFilesAnswer — answers from file metadata, not page content", () => {
+  // Timestamps are built in LOCAL time so these hold in any timezone: the
+  // answer's "today"/"yesterday" is the user's calendar day, not UTC's.
+  const secs = (d: Date): number => Math.floor(d.getTime() / 1000);
+  const NOW = new Date(2026, 7, 4, 9, 0).getTime(); // 2026-08-04 09:00 local
+
+  it("lists newest first as working wikilinks, older ones by date", () => {
+    const out = formatRecentFilesAnswer(
+      [
+        ["/v/wiki/older.md", secs(new Date(2026, 6, 30, 10, 0))],
+        ["/v/wiki/newest.md", secs(new Date(2026, 7, 4, 8, 0))],
+      ],
+      "en",
+      NOW,
+    );
+    expect(out.indexOf("[[newest]]")).toBeLessThan(out.indexOf("[[older]]"));
+    expect(out).toContain("2026-07-30");
+  });
+
+  it("says today/yesterday by CALENDAR day, not elapsed hours", () => {
+    // 23:30 the previous local day is "yesterday" even though it is barely an
+    // hour ago — an elapsed-hours bucket would call it "today".
+    const out = formatRecentFilesAnswer(
+      [["/v/wiki/late.md", secs(new Date(2026, 7, 3, 23, 30))]],
+      "en",
+      new Date(2026, 7, 4, 0, 30).getTime(),
+    );
+    expect(out).toMatch(/yesterday/);
+  });
+
+  it("dates older files in the user's timezone, not UTC", () => {
+    // A file written late on the 30th local time must not read as the 29th
+    // just because UTC had not rolled over yet.
+    const out = formatRecentFilesAnswer(
+      [["/v/wiki/late.md", secs(new Date(2026, 6, 30, 23, 30))]],
+      "en",
+      NOW,
+    );
+    expect(out).toContain("2026-07-30");
+  });
+
+  it("honours the caller's language", () => {
+    const out = formatRecentFilesAnswer(
+      [["/v/wiki/a.md", secs(new Date(2026, 7, 4, 8, 0))]],
+      "ko",
+      NOW,
+    );
+    expect(out).toContain("최근에 바뀐 노트");
+    expect(out).toContain("오늘");
+  });
+
+  it("says so plainly when the vault has no markdown at all", () => {
+    expect(formatRecentFilesAnswer([], "ko", NOW)).toContain("아직 마크다운 파일이 없습니다");
+  });
+
+  it("caps the list so a big vault does not dump every file", () => {
+    const many: [string, number][] = Array.from({ length: 40 }, (_, i) => [
+      `/v/wiki/p${i}.md`,
+      secs(new Date(2026, 7, 4, 8, 0)) - i,
+    ]);
+    const rows = formatRecentFilesAnswer(many, "en", NOW).split("\n").filter((l) => l.startsWith("- "));
+    expect(rows).toHaveLength(15);
   });
 });

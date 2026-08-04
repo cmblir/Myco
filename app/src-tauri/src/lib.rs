@@ -14,6 +14,7 @@ pub mod git_log;
 pub mod importers;
 pub mod index;
 mod index_updater;
+pub mod intent;
 pub mod local_llm;
 pub mod mcp_native;
 pub mod myco_pro;
@@ -123,6 +124,7 @@ pub fn run() {
             commands::ensure_default_vault,
             commands::list_files,
             commands::file_mtimes,
+            commands::classify_intent,
             commands::read_file,
             commands::read_raw_bytes,
             commands::read_vault_context,

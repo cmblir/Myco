@@ -370,6 +370,16 @@ export const ipc = {
   listFiles: (root: string) => invoke<FileNode[]>("list_files", { root }),
   fileMtimes: (root: string) =>
     invoke<[string, number][]>("file_mtimes", { root }),
+  /** Intent of a question, by embedding it against exemplars. `null` when the
+   *  question is an ordinary content question (the common case). Only worth
+   *  calling once content retrieval has come up empty — it costs a query
+   *  embedding. See `intent.rs` for the exemplars and the measured floor. */
+  classifyIntent: (query: string, provider: string, model: string) =>
+    invoke<{ intent: string; similarity: number } | null>("classify_intent", {
+      query,
+      provider,
+      model,
+    }),
   readFile: (path: string) => invoke<FileContent>("read_file", { path }),
   /** Raw bytes of a `raw/`-confined source file (PDF viewer, Feature 6). */
   readRawBytes: (relpath: string) =>

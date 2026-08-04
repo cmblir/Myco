@@ -49,6 +49,76 @@ const EMPTY: Record<Lang, string> = {
   ja: "このボルトにはまだ git 履歴がありません。git リポジトリにしてコミットすると、最近の作業に関する質問に履歴から回答します。",
 };
 
+const FILE_HEADERS: Record<Lang, string> = {
+  en: "Your most recently changed notes (by file modification time):",
+  ko: "최근에 바뀐 노트입니다 (파일 수정 시각 기준):",
+  ja: "最近変更されたノートです（ファイル更新時刻順）：",
+};
+
+const FILE_EMPTY: Record<Lang, string> = {
+  en: "No markdown files found in this vault yet.",
+  ko: "이 볼트에는 아직 마크다운 파일이 없습니다.",
+  ja: "このボルトにはまだマークダウンファイルがありません。",
+};
+
+/** Render a factual, no-LLM answer listing the vault's most recently modified
+ * notes. This answers "what did I add today / which notes changed this week",
+ * which page CONTENT cannot: the answer lives in file metadata.
+ *
+ * `entries` are `[absolutePath, unixSeconds]` exactly as `ipc.fileMtimes`
+ * returns them; `now` is injected so the relative dates are testable. Paths are
+ * emitted as `[[stem]]` so each row is a working wikilink, the same as every
+ * other citation the app renders. */
+export function formatRecentFilesAnswer(
+  entries: [string, number][],
+  lang: Lang,
+  now: number = Date.now(),
+  limit = 15,
+): string {
+  const L = FILE_HEADERS[lang] ? lang : "en";
+  if (!entries || entries.length === 0) return FILE_EMPTY[L];
+  const today = new Date(now);
+  const startOfToday = new Date(
+    today.getFullYear(),
+    today.getMonth(),
+    today.getDate(),
+  ).getTime();
+  const rows = [...entries]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([path, secs]) => {
+      const ms = secs * 1000;
+      const stem = (path.split(/[\\/]/).pop() ?? path).replace(/\.md$/i, "");
+      // Day offset from today rather than an elapsed-hours bucket: "yesterday"
+      // has to mean the calendar day, or a note written at 23:00 reads as
+      // "today" for the next hour.
+      const days = Math.floor((startOfToday - ms) / 86_400_000) + (ms >= startOfToday ? 0 : 1);
+      const when =
+        ms >= startOfToday
+          ? RELATIVE[L].today
+          : days <= 1
+            ? RELATIVE[L].yesterday
+            : localDate(ms);
+      return `- **${when}** · [[${stem}]]`;
+    });
+  return `${FILE_HEADERS[L]}\n\n${rows.join("\n")}`;
+}
+
+/** `YYYY-MM-DD` in the user's own timezone. `toISOString()` would print the UTC
+ * day, which disagrees with the local-day "today"/"yesterday" above — so a note
+ * could read as an older date than the day it was written on. */
+function localDate(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+const RELATIVE: Record<Lang, { today: string; yesterday: string }> = {
+  en: { today: "today", yesterday: "yesterday" },
+  ko: { today: "오늘", yesterday: "어제" },
+  ja: { today: "今日", yesterday: "昨日" },
+};
+
 /** Render a factual, no-LLM answer from recent commits. */
 export function formatActivityAnswer(commits: GitCommit[], lang: Lang): string {
   const L = HEADERS[lang] ? lang : "en";

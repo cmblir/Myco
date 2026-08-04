@@ -985,6 +985,18 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         : hits;
       return sleep(400).then(() => out);
     }
+    case "classify_intent": {
+      // No embedder in mock mode, so stand in with the shape of the real
+      // verdict: a question about the vault's own files routes, anything else
+      // returns null (an ordinary content question).
+      const q = String(args.query ?? "");
+      const meta =
+        /오늘|어제|이번\s*주|최근|요즘|신규|today|yesterday|this week|recent|newest|latest/i.test(q) &&
+        /파일|노트|문서|md|file|note|page|doc/i.test(q);
+      return sleep(200).then(() =>
+        meta ? { intent: "vault-files", similarity: 0.86 } : null,
+      );
+    }
     case "semantic_map": {
       // Structured fake PCA: one 2D cluster per node TYPE, deterministic
       // per-index jitter — the semantic layout shows meaning-clusters in mock.
