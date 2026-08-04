@@ -143,8 +143,14 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     // (the reported bug), so render what retrieval found verbatim.
     if (provider === "builtin-local") {
       try {
-        set({ stage: { kind: "retrieving" } });
-        const r = await retrieveChunks(question, 12);
+        // The stage is reported through retrieveChunks' callback, which fires
+        // only once an index is known to exist. Setting it before the call
+        // claimed "searching the wiki…" on a vault with NO index — a wait that
+        // describes work not happening, which is the thing ask-stages-smoke
+        // exists to catch.
+        const r = await retrieveChunks(question, 12, () =>
+          set({ stage: { kind: "retrieving" } }),
+        );
         const md = formatExtractiveAnswer(r.hits);
         // Pick the body by state: a stale/failed index means retrieval never
         // ran, so those get their own honest copy instead of the generic

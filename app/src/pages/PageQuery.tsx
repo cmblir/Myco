@@ -98,7 +98,12 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
           )
         : (t.q_answering ?? "answering…");
     }
-    return t.q_thinking ?? "searching the wiki…";
+    // "searching the wiki…" is a claim, so it is only made while retrieval is
+    // ACTUALLY running. With no index there is nothing to search and no
+    // retrieving stage is ever reported — saying it anyway (the old default)
+    // described work that was not happening.
+    if (stage?.kind === "retrieving") return t.q_thinking ?? "searching the wiki…";
+    return t.q_answering ?? "answering…";
   })();
 
   const openByStem = (target: string): void => {
