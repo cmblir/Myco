@@ -64,26 +64,30 @@ describe("migrateLegacyStorageKeys", () => {
 // Regression guard for the rebrand: a newly added `memex.*` storage key would
 // be invisible to the migration above, so fail the build instead.
 describe("source tree", () => {
-  const srcRoot = new URL("../", import.meta.url);
+  // `scripts/` is in scope on purpose: the QA and screenshot-capture scripts
+  // seed these keys through `localStorage.setItem`, and they were missed by the
+  // first rename sweep — the capture script kept writing `memex.onboarded`, so
+  // every regenerated screenshot would have had the onboarding overlay on it.
+  const roots = [new URL("../", import.meta.url), new URL("../../scripts/", import.meta.url)];
 
   function* walk(dir: URL): Generator<URL> {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const child = new URL(entry.name + (entry.isDirectory() ? "/" : ""), dir);
       if (entry.isDirectory()) yield* walk(child);
-      else if (/\.tsx?$/.test(entry.name)) yield child;
+      else if (/\.(tsx?|mjs)$/.test(entry.name)) yield child;
     }
   }
 
   it("has no leftover legacy storage keys", () => {
     const offenders: string[] = [];
-    for (const file of walk(srcRoot)) {
+    for (const file of roots.flatMap((r) => [...walk(r)])) {
       if (/storageMigration\.(ts|test\.ts)$/.test(file.pathname)) continue;
       const text = readFileSync(file, "utf8");
       // Storage-key shapes only: a dotted `memex.*` literal, or the zustand
       // persist name. Other `memex-*` literals (CSS classes, the `memex-pro`
       // provider id) are not storage and are renamed by their own stages.
       for (const m of text.matchAll(/["'`](memex\.[\w.]*|memex-ui)["'`]/g)) {
-        offenders.push(`${file.pathname.split("/src/")[1]}: ${m[0]}`);
+        offenders.push(`${file.pathname.split("/app/")[1]}: ${m[0]}`);
       }
     }
     expect(offenders).toEqual([]);

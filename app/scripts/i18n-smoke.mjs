@@ -19,11 +19,11 @@ const hasText = (hay, needle) =>
 async function settingsText(lang) {
   const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
   await page.addInitScript((l) => {
-    localStorage.setItem("memex.onboarded", "1");
+    localStorage.setItem("myco.onboarded", "1");
     // Only seed the store when overriding; otherwise let the real default win.
     if (l) {
       localStorage.setItem(
-        "memex-ui",
+        "myco-ui",
         JSON.stringify({ state: { lang: l, theme: "light" }, version: 3 }),
       );
     }

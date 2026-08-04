@@ -7,13 +7,13 @@ import { chromium } from "playwright";
 const b = await chromium.launch({ headless: true, args: ["--use-gl=swiftshader", "--enable-unsafe-swiftshader"] });
 const page = await b.newPage({ viewport: { width: 1280, height: 800 } });
 await page.addInitScript(() => {
-  localStorage.setItem("memex.onboarded", "1");
-  localStorage.setItem("memex-ui", JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }));
+  localStorage.setItem("myco.onboarded", "1");
+  localStorage.setItem("myco-ui", JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }));
 });
 await page.goto("http://localhost:5173/?mock=1", { waitUntil: "domcontentloaded", timeout: 60000 });
 await page.waitForSelector(".side-nav .nav-item", { timeout: 30000 });
 await page.evaluate(() => {
-  const k = "memex.graph.settings.v26";
+  const k = "myco.graph.settings.v26";
   const cur = JSON.parse(localStorage.getItem(k) || "{}");
   localStorage.setItem(k, JSON.stringify(cur.state ? { ...cur, state: { ...cur.state, multiverse: true } } : { ...cur, multiverse: true }));
 });

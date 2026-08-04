@@ -23,9 +23,9 @@ for (const vp of VIEWPORTS) {
   const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
   page.on("pageerror", () => {}); // the throw is deliberate
   await page.addInitScript(() => {
-    localStorage.setItem("memex.onboarded", "1");
+    localStorage.setItem("myco.onboarded", "1");
     localStorage.setItem(
-      "memex-ui",
+      "myco-ui",
       JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }),
     );
   });

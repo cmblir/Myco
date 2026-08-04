@@ -25,9 +25,9 @@ async function askAndWatch({ indexed }) {
     if (m.type() === "error") errors.push(`console: ${m.text()}`);
   });
   await page.addInitScript(() => {
-    localStorage.setItem("memex.onboarded", "1");
+    localStorage.setItem("myco.onboarded", "1");
     localStorage.setItem(
-      "memex-ui",
+      "myco-ui",
       JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }),
     );
   });
@@ -39,11 +39,11 @@ async function askAndWatch({ indexed }) {
   // UI — and the staged path is the non-tool one, so it would be unreachable.
   await page.evaluate(
     (n) => {
-      window.__memexMock.settings({
+      window.__mycoMock.settings({
         query_provider: "builtin-local",
         query_model: "extractive-retrieval",
       });
-      window.__memexMock.indexedPages(n);
+      window.__mycoMock.indexedPages(n);
     },
     indexed,
   );

@@ -17,8 +17,8 @@ const check = (n, ok, d = "") => results.push({ n, ok, d });
 for (const vp of VIEWPORTS) {
   const page = await browser.newPage({ viewport: { width: vp.width, height: vp.height } });
   await page.addInitScript(() => {
-    localStorage.setItem("memex.onboarded", "1");
-    localStorage.setItem("memex-ui", JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }));
+    localStorage.setItem("myco.onboarded", "1");
+    localStorage.setItem("myco-ui", JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }));
   });
   await page.goto("http://localhost:5173/?mock=1", { waitUntil: "domcontentloaded", timeout: 60_000 });
   await page.waitForSelector(".side-nav .nav-item", { timeout: 30_000 });

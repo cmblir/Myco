@@ -2,7 +2,7 @@
 
 <br />
 
-<img src="docs/myco-icon.png" width="100" alt="myco icon" />
+<img src="docs/myco-banner.jpg" width="100%" alt="myco — feed it sources, watch your galaxy grow" />
 
 <h1>myco</h1>
 

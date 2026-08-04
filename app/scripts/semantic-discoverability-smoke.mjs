@@ -26,15 +26,15 @@ async function readerWith(indexed) {
     if (m.type() === "error") errors.push(`console: ${m.text()}`);
   });
   await page.addInitScript(() => {
-    localStorage.setItem("memex.onboarded", "1");
+    localStorage.setItem("myco.onboarded", "1");
     localStorage.setItem(
-      "memex-ui",
+      "myco-ui",
       JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }),
     );
   });
   await page.goto(BASE, { waitUntil: "domcontentloaded", timeout: 60_000 });
   await page.waitForSelector(".side-nav .nav-item", { timeout: 30_000 });
-  await page.evaluate((n) => window.__memexMock.indexedPages(n), indexed);
+  await page.evaluate((n) => window.__mycoMock.indexedPages(n), indexed);
 
   // The palette is the reliable way to a page; the sidebar tree needs expanding.
   await page.keyboard.press("Meta+k");

@@ -1,7 +1,7 @@
 // Web-clipper handoff E2E.
 //
 // A clip lands in the vault's `_inbox/` and the Rust side emits
-// `memex://clip-saved`. The app used to answer that by refreshing the file tree
+// `myco://clip-saved`. The app used to answer that by refreshing the file tree
 // and nothing else, so the clip sat there until auto-ingest's next tick — which
 // defaults to an hour. "Clip it and it becomes a cited page" should not mean
 // "in up to an hour".
@@ -28,9 +28,9 @@ async function clipWith(autoIngest) {
     if (m.type() === "error") errors.push(`console: ${m.text()}`);
   });
   await page.addInitScript(() => {
-    localStorage.setItem("memex.onboarded", "1");
+    localStorage.setItem("myco.onboarded", "1");
     localStorage.setItem(
-      "memex-ui",
+      "myco-ui",
       JSON.stringify({ state: { lang: "en", theme: "light" }, version: 3 }),
     );
   });
@@ -57,10 +57,10 @@ async function clipWith(autoIngest) {
   // where the next pass is up to an hour away.
   await page.waitForTimeout(5_500);
 
-  // Fire the clip through the mock the APP installed (window.__memexMock).
+  // Fire the clip through the mock the APP installed (window.__mycoMock).
   // Importing devMock from `evaluate` would emit into a second module
   // instance's empty listener registry and reach nobody.
-  await page.evaluate(() => window.__memexMock.clip());
+  await page.evaluate(() => window.__mycoMock.clip());
 
   // Watch for the Topbar's ingest chip in its POST-RUN state, not the spinner:
   // the mock's run is quick enough to be over before a poll sees it, and a test

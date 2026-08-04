@@ -7,7 +7,7 @@ import { chromium } from "playwright";
 import { mkdirSync } from "node:fs";
 
 const BASE = process.argv[2] || "http://localhost:5173";
-const OUT = "/tmp/memex-graph-qa";
+const OUT = "/tmp/myco-graph-qa";
 mkdirSync(OUT, { recursive: true });
 const VAULT = "/vault";
 const p = (s) => `${VAULT}/wiki/${s}.md`;
@@ -50,8 +50,8 @@ function initBrowser(mock) {
   };
   window.__TAURI_INTERNALS__ = { invoke: async (c, a) => (H[c] ? H[c](a) : null), transformCallback: (cb) => cb, unregisterCallback: () => {}, convertFileSrc: (s) => s };
   try {
-    localStorage.setItem("memex-ui", JSON.stringify({ state: { route: "graph", lang: "en", theme: "dark", sidebarCollapsed: true }, version: 3 }));
-    localStorage.setItem("memex.lastVaultPath", mock.vault);
+    localStorage.setItem("myco-ui", JSON.stringify({ state: { route: "graph", lang: "en", theme: "dark", sidebarCollapsed: true }, version: 3 }));
+    localStorage.setItem("myco.lastVaultPath", mock.vault);
   } catch { /* ignore */ }
 }
 

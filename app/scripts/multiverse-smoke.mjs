@@ -29,9 +29,9 @@ const check = (n, ok, d = "") => results.push({ n, ok, d });
 /** Open the Graph route with multiverse turned on. */
 async function openMultiverse(page, vp, theme = "light") {
   await page.addInitScript((th) => {
-    localStorage.setItem("memex.onboarded", "1");
+    localStorage.setItem("myco.onboarded", "1");
     localStorage.setItem(
-      "memex-ui",
+      "myco-ui",
       JSON.stringify({ state: { lang: "en", theme: th }, version: 3 }),
     );
   }, theme);
@@ -40,7 +40,7 @@ async function openMultiverse(page, vp, theme = "light") {
   // The toggle lives in the graph settings panel; set it at its source of truth
   // and reload rather than driving the panel open at every viewport.
   await page.evaluate(() => {
-    const k = "memex.graph.settings.v26";
+    const k = "myco.graph.settings.v26";
     const cur = JSON.parse(localStorage.getItem(k) || "{}");
     const next = cur.state
       ? { ...cur, state: { ...cur.state, multiverse: true } }
@@ -196,7 +196,7 @@ for (const vp of VIEWPORTS) {
   if (entered.length > 0) {
     await page.waitForTimeout(500);
     const stillOn = await page.evaluate(() => {
-      const raw = JSON.parse(localStorage.getItem("memex.graph.settings.v26") || "{}");
+      const raw = JSON.parse(localStorage.getItem("myco.graph.settings.v26") || "{}");
       const s = raw.state ?? raw;
       return s.multiverse === true;
     });
