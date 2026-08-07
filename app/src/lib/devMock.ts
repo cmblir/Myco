@@ -768,8 +768,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(hits);
     }
     case "scan_tasks":
-      // Seeded checkbox items across a couple of notes; open ones first.
+      // Seeded checkbox items, plus anything written this session so add/toggle
+      // actually round-trips.
       return Promise.resolve([
+        ...tasksFromMockNotes(),
         { page: "daily.md", stem: "daily", line: 3, text: "reindex embeddings before the demo", done: false },
         { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", line: 42, text: "add the flash-attention variant", done: false },
         { page: "wiki/embeddings.md", stem: "embeddings", line: 18, text: "cite the original word2vec paper", done: false },
@@ -902,6 +904,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         const raw =
           "# Ingest report — attention\n\nAdded 3 facts, merged 1, cited 2 sources.\n";
         return Promise.resolve({ path: p, raw, content: raw, frontmatter: null });
+      }
+      const written = mockNotes.get(p);
+      if (written !== undefined) {
+        return Promise.resolve({ path: p, raw: written, content: written, frontmatter: null });
       }
       // A clip waiting in _inbox/ — auto-ingest reads it before ingesting.
       const clip = mockInbox.get(p);
@@ -1087,7 +1093,9 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     }
     case "write_file": {
       const p = String(args.path ?? "");
-      if (isCardsPath(p)) mockDecks.set(p, String(args.content ?? ""));
+      const content = String(args.content ?? "");
+      if (isCardsPath(p)) mockDecks.set(p, content);
+      else mockNotes.set(p, content);
       return Promise.resolve(null);
     }
     case "delete_path":
@@ -1237,6 +1245,31 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
 /// fixed listing — otherwise `runInboxPass` always finds an empty inbox and the
 /// whole handoff is untestable.
 const mockInbox = new Map<string, string>();
+
+/// Notes written through `write_file`, so the task page's add/toggle round-trip
+/// is exercisable in mock mode: without this a write was dropped and the next
+/// scan returned the same seeded list, making a working feature look broken.
+const mockNotes = new Map<string, string>();
+
+/// Checkbox lines in a written note, in the shape scan_tasks returns.
+function tasksFromMockNotes(): {
+  page: string;
+  stem: string;
+  line: number;
+  text: string;
+  done: boolean;
+}[] {
+  const out: ReturnType<typeof tasksFromMockNotes> = [];
+  for (const [path, content] of mockNotes) {
+    const rel = path.replace(/^.*?\/(daily|wiki)\//, "$1/");
+    const stem = (path.split("/").pop() ?? path).replace(/\.md$/, "");
+    content.split("\n").forEach((raw, i) => {
+      const m = /^\s*[-*+]\s*\[([ xX/-])\]\s*(.*)$/.exec(raw);
+      if (m) out.push({ page: rel, stem, line: i + 1, text: m[2], done: /[xX]/.test(m[1]) });
+    });
+  }
+  return out;
+}
 
 /// Drop a clip into `_inbox/` and fire the deep-link handler's
 /// `myco://clip-saved`, the same path the real Tauri event takes into the app.

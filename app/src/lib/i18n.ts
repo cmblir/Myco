@@ -83,6 +83,10 @@ export interface Strings {
   tasks_loading: string;
   tasks_empty: string;
   tasks_empty_hint: string;
+  tasks_ph?: string;
+  tasks_due?: string;
+  tasks_add?: string;
+  tasks_stale?: string;
   tasks_open_n: string;
   tasks_done_n: string;
   tasks_all_done: string;
@@ -842,6 +846,10 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_loading: "Scanning notes…",
     tasks_empty: "No tasks yet",
     tasks_empty_hint: "Add a `- [ ] …` checkbox to any note and it will show up here.",
+    tasks_ph: "What do you have to do?",
+    tasks_due: "Due date",
+    tasks_add: "Add",
+    tasks_stale: "That note changed since the list was built, so it has been refreshed. Try again.",
     tasks_open_n: "{n} open",
     tasks_done_n: "{n} done",
     tasks_all_done: "All caught up — nothing open.",
@@ -1624,6 +1632,10 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_loading: "노트 스캔 중…",
     tasks_empty: "아직 할 일이 없습니다",
     tasks_empty_hint: "아무 노트에나 `- [ ] …` 체크박스를 추가하면 여기에 표시됩니다.",
+    tasks_ph: "무엇을 해야 하나요?",
+    tasks_due: "마감일",
+    tasks_add: "추가",
+    tasks_stale: "목록을 만든 뒤 노트가 바뀌어서 새로 읽었습니다. 다시 시도해 주세요.",
     tasks_open_n: "미완 {n}개",
     tasks_done_n: "완료 {n}개",
     tasks_all_done: "모두 완료 — 남은 항목이 없습니다.",
@@ -2344,6 +2356,10 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_loading: "ノートをスキャン中…",
     tasks_empty: "まだタスクがありません",
     tasks_empty_hint: "任意のノートに `- [ ] …` チェックボックスを追加すると、ここに表示されます。",
+    tasks_ph: "何をしますか？",
+    tasks_due: "期限",
+    tasks_add: "追加",
+    tasks_stale: "リスト作成後にノートが変更されたため、読み直しました。もう一度お試しください。",
     tasks_open_n: "未完了 {n}件",
     tasks_done_n: "完了 {n}件",
     tasks_all_done: "すべて完了 — 残りはありません。",
