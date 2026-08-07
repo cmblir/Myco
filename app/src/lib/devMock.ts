@@ -1258,6 +1258,7 @@ function tasksFromMockNotes(): {
   line: number;
   text: string;
   done: boolean;
+  status: "todo" | "doing" | "blocked" | "done";
 }[] {
   const out: ReturnType<typeof tasksFromMockNotes> = [];
   for (const [path, content] of mockNotes) {
@@ -1265,7 +1266,12 @@ function tasksFromMockNotes(): {
     const stem = (path.split("/").pop() ?? path).replace(/\.md$/, "");
     content.split("\n").forEach((raw, i) => {
       const m = /^\s*[-*+]\s*\[([ xX/-])\]\s*(.*)$/.exec(raw);
-      if (m) out.push({ page: rel, stem, line: i + 1, text: m[2], done: /[xX]/.test(m[1]) });
+      if (m) {
+        const mark = m[1];
+        const status =
+          mark === "/" ? "doing" : mark === "-" ? "blocked" : /[xX]/.test(mark) ? "done" : "todo";
+        out.push({ page: rel, stem, line: i + 1, text: m[2], done: status === "done", status });
+      }
     });
   }
   return out;

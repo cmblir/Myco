@@ -1,5 +1,6 @@
-//! Task scanner. Collects GitHub-style markdown checkbox items — `- [ ] todo`
-//! and `- [x] done` — from every note in the vault into one list, so open TODOs
+//! Task scanner. Collects GitHub-style markdown checkbox items — `- [ ] todo`,
+//! `- [/] doing`, `- [-] blocked`, `- [x] done` — from every note in the vault
+//! into one list, so open TODOs
 //! scattered across daily notes and pages are visible in one place. Read-only:
 //! it never edits a file. `raw/` is skipped (immutable source material, not the
 //! user's own task list), as are code fences (a checkbox inside a code sample is
@@ -17,7 +18,23 @@ pub struct TaskItem {
     /// 1-based line number of the checkbox within the file.
     pub line: u32,
     pub text: String,
+    /// `true` only for `[x]`. Kept alongside `status` because "is it finished"
+    /// is what most callers actually ask.
     pub done: bool,
+    /// The checkbox mark, widened past done/not-done so a board can have more
+    /// than two columns: `todo` `[ ]`, `doing` `[/]`, `blocked` `[-]`, `done`
+    /// `[x]` — the Obsidian Tasks convention, so these files stay meaningful in
+    /// other editors.
+    pub status: TaskStatus,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskStatus {
+    Todo,
+    Doing,
+    Blocked,
+    Done,
 }
 
 pub fn scan_tasks(vault_path: &str) -> Result<Vec<TaskItem>, String> {
@@ -46,13 +63,14 @@ pub fn scan_tasks(vault_path: &str) -> Result<Vec<TaskItem>, String> {
             .and_then(|s| s.to_str())
             .unwrap_or("")
             .to_string();
-        for (line, done, task) in extract_tasks(&text) {
+        for (line, status, task) in extract_tasks(&text) {
             out.push(TaskItem {
                 page: rel.clone(),
                 stem: stem.clone(),
                 line,
                 text: task,
-                done,
+                done: status == TaskStatus::Done,
+                status,
             });
         }
     }
@@ -66,9 +84,10 @@ pub fn scan_tasks(vault_path: &str) -> Result<Vec<TaskItem>, String> {
     Ok(out)
 }
 
-/// Pull `(1-based line, done, text)` for every checkbox item in a note, skipping
-/// fenced code blocks. Pure so it is unit-testable without the filesystem.
-pub fn extract_tasks(text: &str) -> Vec<(u32, bool, String)> {
+/// Pull `(1-based line, status, text)` for every checkbox item in a note,
+/// skipping fenced code blocks. Pure so it is unit-testable without the
+/// filesystem.
+pub fn extract_tasks(text: &str) -> Vec<(u32, TaskStatus, String)> {
     let mut out = Vec::new();
     let mut in_code = false;
     for (i, raw) in text.lines().enumerate() {
@@ -80,16 +99,21 @@ pub fn extract_tasks(text: &str) -> Vec<(u32, bool, String)> {
         if in_code {
             continue;
         }
-        if let Some((done, task)) = parse_task_line(trimmed) {
-            out.push((i as u32 + 1, done, task));
+        if let Some((status, task)) = parse_task_line(trimmed) {
+            out.push((i as u32 + 1, status, task));
         }
     }
     out
 }
 
-/// A single `- [ ] text` / `- [x] text` line (also `*`/`+` bullets, `X` mark).
-/// Returns `(done, text)`; `None` for a non-task line.
-fn parse_task_line(trimmed: &str) -> Option<(bool, String)> {
+/// A single `- [ ] text` / `- [x] text` line (also `*`/`+` bullets, `X` mark),
+/// plus the in-progress `[/]` and blocked `[-]` marks. Returns
+/// `(status, text)`; `None` for a non-task line.
+///
+/// `[/]` and `[-]` used to return `None`, i.e. they were not tasks at all — so
+/// moving a card to a board column that writes one would have made the task
+/// vanish from the very list the board is built from.
+fn parse_task_line(trimmed: &str) -> Option<(TaskStatus, String)> {
     let rest = trimmed
         .strip_prefix("- ")
         .or_else(|| trimmed.strip_prefix("* "))
@@ -99,15 +123,17 @@ fn parse_task_line(trimmed: &str) -> Option<(bool, String)> {
     let mut chars = after.chars();
     let mark = chars.next()?;
     let text = chars.as_str().strip_prefix(']')?.trim();
-    let done = match mark {
-        ' ' => false,
-        'x' | 'X' => true,
+    let status = match mark {
+        ' ' => TaskStatus::Todo,
+        'x' | 'X' => TaskStatus::Done,
+        '/' => TaskStatus::Doing,
+        '-' => TaskStatus::Blocked,
         _ => return None,
     };
     if text.is_empty() {
         return None;
     }
-    Some((done, text.to_string()))
+    Some((status, text.to_string()))
 }
 
 fn collect_markdown(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
@@ -144,10 +170,31 @@ mod tests {
         let text = "# Notes\n\n- [ ] write the parser\n- [x] read the spec\nplain line\n* [ ] star bullet\n+ [X] plus bullet\n";
         let tasks = extract_tasks(text);
         assert_eq!(tasks.len(), 4);
-        assert_eq!(tasks[0], (3, false, "write the parser".to_string()));
-        assert_eq!(tasks[1], (4, true, "read the spec".to_string()));
-        assert_eq!(tasks[2], (6, false, "star bullet".to_string()));
-        assert_eq!(tasks[3], (7, true, "plus bullet".to_string()));
+        assert_eq!(tasks[0], (3, TaskStatus::Todo, "write the parser".to_string()));
+        assert_eq!(tasks[1], (4, TaskStatus::Done, "read the spec".to_string()));
+        assert_eq!(tasks[2], (6, TaskStatus::Todo, "star bullet".to_string()));
+        assert_eq!(tasks[3], (7, TaskStatus::Done, "plus bullet".to_string()));
+    }
+
+    #[test]
+    fn reads_the_in_progress_and_blocked_marks_as_tasks() {
+        // These used to parse as "not a task", so a board column that writes
+        // one would have made the card disappear from the list it came from.
+        let text = "- [/] migrating the schema\n- [-] waiting on approval\n";
+        let tasks = extract_tasks(text);
+        assert_eq!(tasks.len(), 2);
+        assert_eq!(tasks[0].1, TaskStatus::Doing);
+        assert_eq!(tasks[1].1, TaskStatus::Blocked);
+    }
+
+    #[test]
+    fn only_a_finished_box_counts_as_done() {
+        let text = "- [ ] a\n- [/] b\n- [-] c\n- [x] d\n";
+        let marks: Vec<bool> = extract_tasks(text)
+            .iter()
+            .map(|(_, s, _)| *s == TaskStatus::Done)
+            .collect();
+        assert_eq!(marks, vec![false, false, false, true]);
     }
 
     #[test]

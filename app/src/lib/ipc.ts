@@ -116,7 +116,11 @@ export interface TaskItem {
   stem: string;
   line: number;
   text: string;
+  /** True only for `[x]` — "is it finished", which most callers want. */
   done: boolean;
+  /** The checkbox mark: `[ ]` `[/]` `[-]` `[x]`. Absent from older backends,
+   *  where everything reads as todo/done. */
+  status?: "todo" | "doing" | "blocked" | "done";
 }
 
 export interface ProvenanceRow {

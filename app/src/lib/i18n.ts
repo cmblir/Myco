@@ -87,6 +87,13 @@ export interface Strings {
   tasks_due?: string;
   tasks_add?: string;
   tasks_stale?: string;
+  tasks_view?: string;
+  tasks_view_list?: string;
+  tasks_view_board?: string;
+  tasks_col_todo?: string;
+  tasks_col_doing?: string;
+  tasks_col_blocked?: string;
+  tasks_col_done?: string;
   tasks_open_n: string;
   tasks_done_n: string;
   tasks_all_done: string;
@@ -850,6 +857,13 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_due: "Due date",
     tasks_add: "Add",
     tasks_stale: "That note changed since the list was built, so it has been refreshed. Try again.",
+    tasks_view: "View",
+    tasks_view_list: "List",
+    tasks_view_board: "Board",
+    tasks_col_todo: "To do",
+    tasks_col_doing: "In progress",
+    tasks_col_blocked: "Blocked",
+    tasks_col_done: "Done",
     tasks_open_n: "{n} open",
     tasks_done_n: "{n} done",
     tasks_all_done: "All caught up — nothing open.",
@@ -1636,6 +1650,13 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_due: "마감일",
     tasks_add: "추가",
     tasks_stale: "목록을 만든 뒤 노트가 바뀌어서 새로 읽었습니다. 다시 시도해 주세요.",
+    tasks_view: "보기",
+    tasks_view_list: "목록",
+    tasks_view_board: "보드",
+    tasks_col_todo: "할 일",
+    tasks_col_doing: "진행",
+    tasks_col_blocked: "보류",
+    tasks_col_done: "완료",
     tasks_open_n: "미완 {n}개",
     tasks_done_n: "완료 {n}개",
     tasks_all_done: "모두 완료 — 남은 항목이 없습니다.",
@@ -2360,6 +2381,13 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_due: "期限",
     tasks_add: "追加",
     tasks_stale: "リスト作成後にノートが変更されたため、読み直しました。もう一度お試しください。",
+    tasks_view: "表示",
+    tasks_view_list: "リスト",
+    tasks_view_board: "ボード",
+    tasks_col_todo: "未着手",
+    tasks_col_doing: "進行中",
+    tasks_col_blocked: "保留",
+    tasks_col_done: "完了",
     tasks_open_n: "未完了 {n}件",
     tasks_done_n: "完了 {n}件",
     tasks_all_done: "すべて完了 — 残りはありません。",

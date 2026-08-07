@@ -912,6 +912,78 @@ select {
 .prose p {
   margin: 8px 0;
 }
+/* Task board (Kanban). Columns scroll independently so a long column never
+   pushes the others off-screen, and the board scrolls horizontally on a narrow
+   window rather than crushing four columns into unreadable strips. */
+.task-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(220px, 1fr);
+  gap: 12px;
+  margin-top: 16px;
+  overflow-x: auto;
+  align-items: start;
+}
+.task-col {
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px;
+  min-height: 120px;
+  max-height: 62vh;
+  overflow-y: auto;
+  transition: background 120ms, border-color 120ms;
+}
+/* The drop target has to be obvious while a card is in the air. */
+.task-col.is-over {
+  background: var(--bg-hover);
+  border-color: var(--ink-3);
+}
+.task-col-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+  margin-bottom: 8px;
+}
+.task-card {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  cursor: grab;
+}
+.task-card:active {
+  cursor: grabbing;
+}
+.task-card-title {
+  font-size: 13.5px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.task-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.task-card-page {
+  color: var(--ink-4);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .task-col {
+    transition: none;
+  }
+}
+
 /* Quoted material — notably extractive Ask answers, which render retrieved
    passages verbatim. With no blockquote styling at all (the previous state) a
    quote was indistinguishable from myco's own prose, so a cited note's `##`
