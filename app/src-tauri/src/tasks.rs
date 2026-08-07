@@ -1,10 +1,10 @@
 //! Task scanner. Collects GitHub-style markdown checkbox items — `- [ ] todo`,
 //! `- [/] doing`, `- [-] blocked`, `- [x] done` — from every note in the vault
-//! into one list, so open TODOs
-//! scattered across daily notes and pages are visible in one place. Read-only:
-//! it never edits a file. `raw/` is skipped (immutable source material, not the
-//! user's own task list), as are code fences (a checkbox inside a code sample is
-//! documentation, not a task).
+//! into one list, so open TODOs scattered across daily notes and pages are
+//! visible in one place. Read-only: it never edits a file. `raw/`, `_inbox/`
+//! and `sessions/` are skipped — none of them is the user's own task list — as
+//! are code fences (a checkbox inside a code sample is documentation, not a
+//! task).
 
 use serde::Serialize;
 use std::path::{Path, PathBuf};
@@ -144,8 +144,17 @@ fn collect_markdown(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
             let e = entry?;
             let name = e.file_name();
             let name = name.to_str().unwrap_or("");
-            // Skip dotdirs, deps, and raw/ (immutable sources, not tasks).
-            if name.starts_with('.') || name == "node_modules" || name == "target" || name == "raw"
+            // Skip dotdirs, deps, and the directories that are not the user's
+            // own task list: `raw/` (immutable sources), `_inbox/` (sources
+            // awaiting ingest) and `sessions/` (imported work logs — one real
+            // vault had 386 checkbox lines inside session transcripts, every
+            // one of which would have shown up as a task to do).
+            if name.starts_with('.')
+                || name == "node_modules"
+                || name == "target"
+                || name == "raw"
+                || name == "_inbox"
+                || name == "sessions"
             {
                 continue;
             }
@@ -174,6 +183,24 @@ mod tests {
         assert_eq!(tasks[1], (4, TaskStatus::Done, "read the spec".to_string()));
         assert_eq!(tasks[2], (6, TaskStatus::Todo, "star bullet".to_string()));
         assert_eq!(tasks[3], (7, TaskStatus::Done, "plus bullet".to_string()));
+    }
+
+    #[test]
+    fn staging_directories_are_not_the_users_task_list() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for d in ["wiki", "raw", "_inbox", "sessions"] {
+            std::fs::create_dir_all(root.join(d)).unwrap();
+        }
+        std::fs::write(root.join("wiki/a.md"), "- [ ] mine\n").unwrap();
+        std::fs::write(root.join("raw/s.md"), "- [ ] from a source\n").unwrap();
+        std::fs::write(root.join("_inbox/p.md"), "- [ ] pending source\n").unwrap();
+        // A session transcript quoting a plan is not a task list.
+        std::fs::write(root.join("sessions/log.md"), "- [ ] Step 1: write the test\n").unwrap();
+
+        let tasks = scan_tasks(root.to_str().unwrap()).unwrap();
+        assert_eq!(tasks.len(), 1);
+        assert_eq!(tasks[0].text, "mine");
     }
 
     #[test]

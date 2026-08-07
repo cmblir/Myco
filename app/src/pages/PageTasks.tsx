@@ -14,6 +14,7 @@ import type { TaskItem } from "../lib/ipc";
 import { isComposingKey } from "../lib/ime";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
+import { notifyEnabled, runTaskNotifyPass, setNotifyEnabled } from "../lib/taskNotifier";
 import {
   appendTaskLine,
   buildTaskLine,
@@ -33,6 +34,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
   const [due, setDue] = useState("");
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<"list" | "board">("list");
+  const [notifyOn, setNotifyOn] = useState(notifyEnabled());
 
   const refresh = useCallback(async (): Promise<void> => {
     if (!currentVault) return;
@@ -145,6 +147,25 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           {t.tasks_view_board ?? "Board"}
         </button>
       </div>
+
+      <label
+        className="muted"
+        style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, marginTop: 8 }}
+      >
+        <input
+          type="checkbox"
+          checked={notifyOn}
+          onChange={(e) => {
+            const on = e.target.checked;
+            setNotifyEnabled(on);
+            setNotifyOn(on);
+            // Run one pass immediately so enabling it asks for the OS
+            // permission now, rather than silently at some later interval.
+            if (on && currentVault) void runTaskNotifyPass(currentVault.path);
+          }}
+        />
+        {t.tasks_notify ?? "Notify me about due tasks (morning digest + timed reminders)"}
+      </label>
 
       <div className="card" style={{ padding: 12, marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
         <input

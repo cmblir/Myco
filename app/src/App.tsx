@@ -31,6 +31,7 @@ import { useSettingsStore } from "./stores/settingsStore";
 import { getLastVaultPath, useVaultStore } from "./stores/vaultStore";
 import { useAutoIngestScheduler } from "./lib/autoIngest";
 import { useAutoImportScheduler } from "./lib/autoImport";
+import { useTaskNotifier } from "./lib/taskNotifier";
 import { useAutoReflectScheduler } from "./lib/autoReflect";
 import { useAutoReindexScheduler } from "./lib/autoReindex";
 import { runInboxPass } from "./lib/autoIngest";
@@ -148,6 +149,10 @@ export default function App(): JSX.Element {
   useEffect(() => {
     void loadSettings();
   }, [loadSettings]);
+
+  // Due-task notifications (opt-in) while the app is open: a morning digest and
+  // an alarm for tasks that named a time.
+  useTaskNotifier(currentVault?.path);
 
   // Scheduled sweep of local CLI session logs into _inbox/ while the app is
   // open — conversations flow in without hooks or manual harnessing.

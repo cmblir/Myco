@@ -94,6 +94,7 @@ export interface Strings {
   tasks_col_doing?: string;
   tasks_col_blocked?: string;
   tasks_col_done?: string;
+  tasks_notify?: string;
   tasks_open_n: string;
   tasks_done_n: string;
   tasks_all_done: string;
@@ -864,6 +865,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_col_doing: "In progress",
     tasks_col_blocked: "Blocked",
     tasks_col_done: "Done",
+    tasks_notify: "Notify me about due tasks — a morning digest, plus a reminder for tasks that name a time",
     tasks_open_n: "{n} open",
     tasks_done_n: "{n} done",
     tasks_all_done: "All caught up — nothing open.",
@@ -1657,6 +1659,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_col_doing: "진행",
     tasks_col_blocked: "보류",
     tasks_col_done: "완료",
+    tasks_notify: "마감 알림 받기 — 아침 요약과, 시각을 적은 항목의 개별 알림",
     tasks_open_n: "미완 {n}개",
     tasks_done_n: "완료 {n}개",
     tasks_all_done: "모두 완료 — 남은 항목이 없습니다.",
@@ -2388,6 +2391,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_col_doing: "進行中",
     tasks_col_blocked: "保留",
     tasks_col_done: "完了",
+    tasks_notify: "期限の通知を受け取る — 朝のまとめと、時刻を書いた項目の個別リマインダー",
     tasks_open_n: "未完了 {n}件",
     tasks_done_n: "完了 {n}件",
     tasks_all_done: "すべて完了 — 残りはありません。",
