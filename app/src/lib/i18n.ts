@@ -1255,7 +1255,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_mycopro_noaccess: "No active access yet",
     s_autoimport_title: "Auto-collect CLI sessions",
     s_autoimport_desc:
-      "While myco is open, periodically sweep Claude Code / Codex conversations into _inbox/. Already-imported sessions are skipped; enable auto-ingest below to turn them into wiki pages.",
+      "While myco is open, periodically sweep Claude Code / Codex conversations into sessions/, where Ask can search and quote them. Trivial sessions and already-imported ones are skipped. Sessions are never queued for paid ingest — they are logs, not wiki pages.",
     s_autoingest_title: "Auto-ingest inbox",
     s_autoingest_desc:
       "While myco is open, periodically ingest sources you drop into the vault's _inbox/ folder.",
@@ -2037,7 +2037,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_mycopro_noaccess: "활성 구독 없음",
     s_autoimport_title: "CLI 세션 자동 수집",
     s_autoimport_desc:
-      "myco가 켜져 있는 동안 Claude Code / Codex 대화를 주기적으로 _inbox/로 가져옵니다. 이미 가져온 세션은 건너뜁니다. 위키 페이지로 만들려면 아래 자동 인게스트를 켜세요.",
+      "myco가 켜져 있는 동안 Claude Code / Codex 대화를 주기적으로 sessions/로 가져옵니다. Ask가 그 내용을 검색해 인용합니다. 짧은 잡음 세션과 이미 가져온 세션은 건너뜁니다. 세션은 유료 인게스트 대상이 아닙니다 — 위키가 아니라 기록이기 때문입니다.",
     s_autoingest_title: "인박스 자동 인게스트",
     s_autoingest_desc:
       "myco가 켜져 있는 동안 vault의 _inbox/ 폴더에 넣은 소스를 주기적으로 인게스트합니다.",
@@ -2698,7 +2698,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_mycopro_noaccess: "有効なアクセスなし",
     s_autoimport_title: "CLIセッション自動収集",
     s_autoimport_desc:
-      "mycoを開いている間、Claude Code / Codex の会話を定期的に _inbox/ へ取り込みます。取り込み済みのセッションはスキップされます。ウィキページ化するには下の自動取り込みをオンにしてください。",
+      "mycoを開いている間、Claude Code / Codex の会話を定期的に sessions/ へ取り込み、Ask が検索・引用できるようにします。ごく短いセッションと取り込み済みのものはスキップされます。セッションは有料の取り込み対象にはなりません — ウィキではなく記録だからです。",
     s_autoingest_title: "受信トレイ自動取り込み",
     s_autoingest_desc:
       "mycoを開いている間、vaultの_inbox/フォルダに入れたソースを定期的に取り込みます。",

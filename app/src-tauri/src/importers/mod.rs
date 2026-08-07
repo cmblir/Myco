@@ -98,6 +98,18 @@ mod dispatch_tests {
         assert!(detect_and_parse("x.json", "{\"random\":\"object\"}").is_err());
     }
 
+
+    /// A claude-code session line whose spoken text clears `MIN_SPOKEN_CHARS`.
+    /// The old fixtures were a handful of words — shorter than any real
+    /// exchange, and now indistinguishable from the `ping` noise the filter
+    /// exists to drop.
+    fn session(id: &str, seed: &str) -> String {
+        let text = format!("{seed} ").repeat(1000 / (seed.len() + 1) + 2);
+        format!(
+            "{{\"type\":\"user\",\"sessionId\":\"{id}\",\"message\":{{\"role\":\"user\",\"content\":\"{text}\"}}}}"
+        )
+    }
+
     #[test]
     fn detection_is_by_content_not_filename() {
         // A ChatGPT export saved under a Claude-ish name still parses as ChatGPT.
@@ -111,7 +123,8 @@ mod dispatch_tests {
 
     #[test]
     fn plan_import_writes_clean_docs() {
-        let jsonl = "{\"type\":\"user\",\"sessionId\":\"s1\",\"message\":{\"role\":\"user\",\"content\":\"how does attention work\"}}";
+        let jsonl = session("s1", "how does attention work");
+        let jsonl = jsonl.as_str();
         let plan = plan_import("s1.jsonl", jsonl, &ledger::Ledger::default()).unwrap();
         assert_eq!(plan.source, "claude-code");
         assert_eq!(plan.docs.len(), 1);
@@ -125,7 +138,8 @@ mod dispatch_tests {
     #[test]
     fn plan_import_quarantines_a_conversation_with_a_secret() {
         // A prompt that pasted an API key must never reach _inbox/.
-        let jsonl = "{\"type\":\"user\",\"sessionId\":\"leak\",\"message\":{\"role\":\"user\",\"content\":\"my key is sk-abcdefghijklmnopqrstuvwxyz012345 fix it\"}}";
+        let jsonl = session("leak", "my key is sk-abcdefghijklmnopqrstuvwxyz012345 fix it");
+        let jsonl = jsonl.as_str();
         let plan = plan_import("leak.jsonl", jsonl, &ledger::Ledger::default()).unwrap();
         assert!(plan.docs.is_empty(), "must not write a doc with a secret");
         assert_eq!(plan.quarantined.len(), 1);
@@ -135,13 +149,25 @@ mod dispatch_tests {
     }
 
     #[test]
+    fn a_ping_sized_session_is_dropped_before_it_reaches_the_vault() {
+        // The only filter used to be "has >= 1 spoken turn", which `ping`
+        // passes — one sweep of a machine's history imported 1,139 files under
+        // 2 KB of `ping` / `hello` / daemon acks.
+        let jsonl = "{\"type\":\"user\",\"sessionId\":\"p\",\"message\":{\"role\":\"user\",\"content\":\"ping\"}}";
+        let plan = plan_import("p.jsonl", jsonl, &ledger::Ledger::default()).unwrap();
+        assert!(plan.docs.is_empty());
+        assert_eq!(plan.skipped, 1);
+    }
+
+    #[test]
     fn plan_import_errors_on_an_unknown_format() {
         assert!(plan_import("x.txt", "not an export", &ledger::Ledger::default()).is_err());
     }
 
     #[test]
     fn plan_import_skips_a_conversation_already_in_the_ledger() {
-        let jsonl = "{\"type\":\"user\",\"sessionId\":\"s1\",\"message\":{\"role\":\"user\",\"content\":\"how does attention work\"}}";
+        let jsonl = session("s1", "how does attention work");
+        let jsonl = jsonl.as_str();
         // First import records the ledger.
         let empty = ledger::Ledger::default();
         let first = plan_import("s1.jsonl", jsonl, &empty).unwrap();
@@ -158,7 +184,8 @@ mod dispatch_tests {
     #[test]
     fn plan_import_reimports_a_changed_conversation() {
         let led = {
-            let jsonl = "{\"type\":\"user\",\"sessionId\":\"s1\",\"message\":{\"role\":\"user\",\"content\":\"original\"}}";
+            let jsonl = session("s1", "original");
+            let jsonl = jsonl.as_str();
             let first = plan_import("s1.jsonl", jsonl, &ledger::Ledger::default()).unwrap();
             let mut l = ledger::Ledger::default();
             for d in &first.docs {
@@ -167,7 +194,8 @@ mod dispatch_tests {
             l
         };
         // The session grew — same id, new content → imports again as an update.
-        let grown = "{\"type\":\"user\",\"sessionId\":\"s1\",\"message\":{\"role\":\"user\",\"content\":\"original then more\"}}";
+        let grown = session("s1", "original then more");
+        let grown = grown.as_str();
         let plan = plan_import("s1.jsonl", grown, &led).unwrap();
         assert_eq!(plan.docs.len(), 1);
         assert_eq!(plan.skipped, 0);
@@ -235,7 +263,24 @@ pub struct Conversation {
     pub turns: Vec<Turn>,
 }
 
+/// Total spoken characters a conversation needs before it is worth keeping.
+///
+/// The only filter used to be "has at least one turn", which a `ping` passes —
+/// so a sweep of one machine's session history imported 1,139 files under 2 KB:
+/// `ping`, `hello`, `hello-from-daemon`, automation acks. They cost index space
+/// and retrieval precision and answer nothing.
+const MIN_SPOKEN_CHARS: usize = 800;
+
 impl Conversation {
+    /// Whether this conversation carries enough to be worth storing at all.
+    ///
+    /// Measured on spoken text, not file size: a session's rendered doc includes
+    /// frontmatter and turn headers, so a `ping` renders to ~200 bytes of
+    /// scaffolding around 4 characters of content.
+    pub fn is_substantial(&self) -> bool {
+        self.turns.iter().map(|t| t.text.trim().len()).sum::<usize>() >= MIN_SPOKEN_CHARS
+    }
+
     /// A stable, filesystem-safe basename (no extension) for the source doc.
     /// `<source>-<id>` — the id is the vendor's, so it does not depend on the
     /// title and cannot collide across a re-export.
@@ -377,6 +422,10 @@ pub fn plan_import(filename: &str, content: &str, ledger: &ledger::Ledger) -> Re
     let mut quarantined = Vec::new();
     let mut skipped = 0;
     for c in convs {
+        if !c.is_substantial() {
+            skipped += 1;
+            continue;
+        }
         let body = c.to_inbox_doc();
         let key = format!("{}:{}", c.source.slug(), c.id);
         let fp = ledger::fingerprint(&body);

@@ -589,9 +589,37 @@ fn file_stamp(path: &std::path::Path) -> Option<(u64, u64)> {
 /// `on_progress` is called on a throttled schedule (import does no model calls,
 /// so 5,000 unthrottled events would flood the IPC bridge). Emit-free so it is
 /// unit-testable; the commands wrap it to emit `import-progress`.
+/// Where a rendered conversation lands.
+///
+/// `_inbox/` is a QUEUE whose consumer costs money: ingest calls the selected
+/// provider per file, writes wiki pages and archives the source. Only something
+/// the user picked belongs there.
+///
+/// A session sweep is not that. Sessions are work logs, valuable to SEARCH
+/// ("why did I do it this way") but not worth a paid page each — so they go to
+/// `sessions/`, which the embedding index reads (see `collect_wiki_pages`) and
+/// the knowledge graph skips (see `index::collect_files`). Enabling the sweep by
+/// default while it wrote into `_inbox/` is what queued 1,690 unwanted ingests.
+pub(crate) const DEST_INBOX: &str = "_inbox";
+pub(crate) const DEST_SESSIONS: &str = "sessions";
+
+/// Resolve a caller-supplied destination to one of the two known directories.
+///
+/// `dest` reaches `apply_import` as a path segment joined onto the vault root,
+/// so it is never taken on trust: anything but these two literals is refused
+/// rather than sanitized, which is the only way a `../` can't be argued into.
+fn import_dest(dest: &str) -> Result<&'static str, String> {
+    match dest {
+        DEST_INBOX => Ok(DEST_INBOX),
+        DEST_SESSIONS => Ok(DEST_SESSIONS),
+        other => Err(format!("unknown import destination: {other}")),
+    }
+}
+
 fn run_import(
     root: &std::path::Path,
     files: &[PathBuf],
+    dest: &str,
     mut on_progress: impl FnMut(ImportProgress),
 ) -> ImportOutcome {
     // A single oversized file should error rather than exhaust memory; applied
@@ -622,7 +650,7 @@ fn run_import(
                     }
                 }
                 let content = std::fs::read_to_string(f).map_err(|e| format!("cannot read: {e}"))?;
-                apply_import(root, &mut ledger, &path_str, &content)
+                apply_import(root, &mut ledger, &path_str, &content, dest)
             })();
             match res {
                 Ok((i2, s2, q2, src)) => {
@@ -693,7 +721,7 @@ pub async fn import_conversations(
 ) -> Result<ImportOutcome, String> {
     let root = require_root(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
-        Ok(run_import(&root, &[PathBuf::from(source_path)], |p| {
+        Ok(run_import(&root, &[PathBuf::from(source_path)], DEST_INBOX, |p| {
             use tauri::Emitter;
             let _ = app.emit("import-progress", p);
         }))
@@ -711,11 +739,15 @@ pub async fn import_paths(
     state: tauri::State<'_, VaultRoot>,
     app: tauri::AppHandle,
     paths: Vec<String>,
+    dest: String,
 ) -> Result<ImportOutcome, String> {
     let root = require_root(&state)?;
+    // A retry must land where the run that failed was heading — re-queueing a
+    // swept session into `_inbox/` would book it a paid ingest nobody asked for.
+    let dest = import_dest(&dest)?;
     tauri::async_runtime::spawn_blocking(move || {
         let files: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
-        Ok(run_import(&root, &files, |p| {
+        Ok(run_import(&root, &files, dest, |p| {
             use tauri::Emitter;
             let _ = app.emit("import-progress", p);
         }))
@@ -734,13 +766,14 @@ fn apply_import(
     ledger: &mut crate::importers::ledger::Ledger,
     filename: &str,
     content: &str,
+    dest: &str,
 ) -> Result<(usize, usize, Vec<QuarantinedConversation>, String), String> {
     let plan = crate::importers::plan_import(filename, content, ledger)?;
-    let inbox = root.join("_inbox");
-    std::fs::create_dir_all(&inbox).map_err(|e| format!("create _inbox: {e}"))?;
+    let out_dir = root.join(dest);
+    std::fs::create_dir_all(&out_dir).map_err(|e| format!("create {dest}: {e}"))?;
     let mut imported = 0;
     for doc in &plan.docs {
-        std::fs::write(inbox.join(format!("{}.md", doc.stem)), &doc.body)
+        std::fs::write(out_dir.join(format!("{}.md", doc.stem)), &doc.body)
             .map_err(|e| format!("write {}: {e}", doc.stem))?;
         // Record only after a successful write, so a failed write is retried
         // rather than silently skipped next time.
@@ -779,7 +812,7 @@ pub async fn import_session_sweep(
         }
         let mut files = Vec::new();
         collect_jsonl(&dir, &mut files, 0);
-        Ok(run_import(&root, &files, |p| {
+        Ok(run_import(&root, &files, DEST_SESSIONS, |p| {
             use tauri::Emitter;
             let _ = app.emit("import-progress", p);
         }))
@@ -1481,6 +1514,12 @@ pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String,
     }
     let mut out = Vec::new();
     walk(&root.join("wiki"), root, &mut out);
+    // Session logs are indexed but never graphed: they answer "why did I do it
+    // this way" through Ask, which quotes them verbatim at no model cost, while
+    // the knowledge graph stays the wiki (see `index::collect_files`). Turning
+    // each session into a wiki page instead would spend a paid ingest per work
+    // log to produce pages titled after prompt boilerplate.
+    walk(&root.join(DEST_SESSIONS), root, &mut out);
     out
 }
 
@@ -2260,8 +2299,8 @@ pub async fn fetch_youtube_transcript(url: String) -> Result<String, String> {
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_index_is_stale, chunk_text_at, external_target_allowed, run_import,
-        sync_bm25_for_page, windows_opener_safe,
+        builtin_index_is_stale, chunk_text_at, external_target_allowed, import_dest, run_import,
+        sync_bm25_for_page, windows_opener_safe, DEST_INBOX, DEST_SESSIONS,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
@@ -2339,7 +2378,14 @@ mod tests {
     }
 
     // A Claude Code session line (parses to one conversation via the importer).
+    // `text` is repeated so the spoken length clears the importer's substance
+    // filter — a one-line fixture now reads as the `ping` noise that filter
+    // drops, which is not what these tests are about.
     fn session_line(id: &str, text: &str) -> String {
+        // Repeat by LENGTH, not a fixed count: a short seed times 60 still
+        // lands under the floor, which is how these fixtures silently became
+        // "noise" again.
+        let text = format!("{text} ").repeat(1000 / (text.len() + 1) + 2);
         format!(
             "{{\"type\":\"user\",\"sessionId\":\"{id}\",\"message\":{{\"role\":\"user\",\"content\":\"{text}\"}}}}"
         )
@@ -2360,7 +2406,7 @@ mod tests {
 
         let mut progress = Vec::new();
         let files: Vec<PathBuf> = vec![good1, missing.clone(), good2];
-        let outcome = run_import(root, &files, |p| progress.push(p));
+        let outcome = run_import(root, &files, DEST_INBOX, |p| progress.push(p));
 
         assert_eq!(outcome.imported, 2);
         assert_eq!(outcome.failed.len(), 1);
@@ -2388,6 +2434,33 @@ mod tests {
     }
 
     #[test]
+    fn a_swept_session_lands_in_sessions_not_the_ingest_queue() {
+        // _inbox/ books a paid ingest per file. A session sweep is not a request
+        // for that, and defaulting the sweep ON while it wrote there is what
+        // queued 1,690 unwanted runs.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let f = root.join("a.jsonl");
+        std::fs::write(&f, session_line("s1", "why we chose the cosine floor")).unwrap();
+
+        let out = run_import(root, &[f], DEST_SESSIONS, |_| {});
+        assert_eq!(out.imported, 1);
+        assert!(root.join("sessions/claude-code-s1.md").is_file());
+        assert!(!root.join("_inbox").exists(), "must not queue an ingest");
+    }
+
+    #[test]
+    fn import_dest_refuses_anything_but_the_two_known_dirs() {
+        // `dest` is joined onto the vault root, so it is a path segment: a
+        // caller-supplied value has to be refused, not sanitized.
+        assert_eq!(import_dest("_inbox"), Ok(DEST_INBOX));
+        assert_eq!(import_dest("sessions"), Ok(DEST_SESSIONS));
+        assert!(import_dest("../../etc").is_err());
+        assert!(import_dest("wiki").is_err());
+        assert!(import_dest("").is_err());
+    }
+
+    #[test]
     fn run_import_dedups_on_a_second_run() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
@@ -2395,12 +2468,12 @@ mod tests {
         std::fs::write(&f, session_line("s1", "hello there")).unwrap();
         let files = vec![f];
 
-        let first = run_import(root, &files, |_| {});
+        let first = run_import(root, &files, DEST_INBOX, |_| {});
         assert_eq!(first.imported, 1);
         assert_eq!(first.skipped, 0);
         // Same files again: unchanged, so the file is skipped without a re-read
         // and its one conversation counts as already imported.
-        let second = run_import(root, &files, |_| {});
+        let second = run_import(root, &files, DEST_INBOX, |_| {});
         assert_eq!(second.imported, 0);
         assert_eq!(second.skipped, 1);
     }
@@ -2413,14 +2486,14 @@ mod tests {
         std::fs::write(&f, session_line("s1", "hello")).unwrap();
         let files = vec![f.clone()];
 
-        let first = run_import(root, &files, |_| {});
+        let first = run_import(root, &files, DEST_INBOX, |_| {});
         assert_eq!(first.imported, 1);
 
         // The session grew (different length → the stamp no longer matches even
         // if the mtime clock is coarse): it must be read again and re-imported
         // as an update, not skipped.
         std::fs::write(&f, session_line("s1", "hello there, a much longer continuation")).unwrap();
-        let second = run_import(root, &files, |_| {});
+        let second = run_import(root, &files, DEST_INBOX, |_| {});
         assert_eq!(second.imported, 1, "a changed session must re-import");
         assert_eq!(second.skipped, 0);
     }
@@ -2436,7 +2509,7 @@ mod tests {
             files.push(f);
         }
         let mut count = 0usize;
-        let _ = run_import(root, &files, |_| count += 1);
+        let _ = run_import(root, &files, DEST_INBOX, |_| count += 1);
         // 100 files, emit on i%32==0 (0,32,64,96) plus the final (99) → far fewer
         // than 100, and the last is always sent.
         assert!(count < 100, "expected throttling, got {count}");

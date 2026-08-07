@@ -39,6 +39,9 @@ interface ImportState {
   quarantined: { title: string; secrets: string[] }[];
   /** Files that failed — retryable, survives navigation (final). */
   failedItems: FailedItem[];
+  /** Where the run that produced `failedItems` was writing, so a retry lands
+   *  in the same place instead of re-queueing swept sessions for paid ingest. */
+  lastDest: "_inbox" | "sessions";
   source: string;
   error: string | null;
   /** Import one picked export (instant → no progress bar). */
@@ -102,15 +105,18 @@ export const useImportStore = create<ImportState>((set, get) => ({
   stage: "idle",
   ...CLEARED,
   source: "",
+  lastDest: "sessions",
 
   async importFile(sourcePath: string) {
     if (running(get().stage) || !useVaultStore.getState().currentVault) return;
+    set({ lastDest: "_inbox" });
     await drive(set, "importing-file", () => ipc.importConversations(sourcePath));
     if (get().imported > 0) await useVaultStore.getState().refreshTree();
   },
 
   async sweep(kind) {
     if (running(get().stage) || !useVaultStore.getState().currentVault) return;
+    set({ lastDest: "sessions" });
     await drive(set, "sweeping", () => ipc.importSessionSweep(kind));
     if (get().imported > 0) await useVaultStore.getState().refreshTree();
   },
@@ -118,7 +124,7 @@ export const useImportStore = create<ImportState>((set, get) => ({
   async retryFailed() {
     const paths = get().failedItems.map((f) => f.path);
     if (running(get().stage) || paths.length === 0) return;
-    await drive(set, "sweeping", () => ipc.importPaths(paths));
+    await drive(set, "sweeping", () => ipc.importPaths(paths, get().lastDest));
     if (get().imported > 0) await useVaultStore.getState().refreshTree();
   },
 

@@ -511,9 +511,11 @@ export const ipc = {
   /** Import every on-disk session for a CLI tool in one pass (dedup-safe). */
   importSessionSweep: (kind: "claude-code" | "codex") =>
     invoke<ImportOutcome>("import_session_sweep", { kind }),
-  /** Re-import an explicit list of files (retry-failed). */
-  importPaths: (paths: string[]) =>
-    invoke<ImportOutcome>("import_paths", { paths }),
+  /** Re-import an explicit list of files (retry-failed). `dest` must match the
+   *  run that produced the failures: "_inbox" books a paid ingest per file,
+   *  "sessions" does not. The backend refuses anything else. */
+  importPaths: (paths: string[], dest: "_inbox" | "sessions") =>
+    invoke<ImportOutcome>("import_paths", { paths, dest }),
   gitLog: (vaultPath: string, limit?: number) =>
     invoke<GitCommit[]>("git_log", { vaultPath, limit }),
   claudeCheck: () => invoke<ClaudeStatus>("claude_check"),

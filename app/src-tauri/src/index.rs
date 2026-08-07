@@ -77,10 +77,28 @@ pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
     Ok(adj)
 }
 
+/// Whether `path` is a top-level staging directory the KNOWLEDGE graph must not
+/// walk. `_inbox/` holds sources awaiting ingest and `sessions/` holds work logs
+/// — neither is a wiki page, and both are full of text that merely LOOKS like
+/// wiki syntax: 596 imported session logs mentioned `[[TASK_DONE]]` in passing,
+/// which the link graph turned into one ghost node with 596 spokes. That hub is
+/// what made the graph unusable at load, so the fix is to not walk them at all.
+///
+/// Top-level only (compared against the vault root), so a legitimate
+/// `wiki/sessions.md` page or a `wiki/x/_inbox/` folder is untouched.
+fn is_staging_dir(root: &Path, path: &Path) -> bool {
+    path.parent() == Some(root)
+        && matches!(
+            path.file_name().and_then(|n| n.to_str()),
+            Some("_inbox") | Some("sessions")
+        )
+}
+
 /// Walk the vault once. `sources` = `.md` files (parsed for `[[wikilinks]]` and
 /// tags). `linkables` = `.md` + `.base` — everything a wikilink may resolve to,
 /// because Obsidian Bases (`.base`) are linked by name and otherwise leave a
 /// large fraction of links unresolved (so their notes look like orphans).
+/// Top-level staging directories are skipped (see [`is_staging_dir`]).
 pub(crate) fn collect_files(dir: &Path) -> std::io::Result<(Vec<PathBuf>, Vec<PathBuf>)> {
     let mut sources = Vec::new();
     let mut linkables = Vec::new();
@@ -94,6 +112,9 @@ pub(crate) fn collect_files(dir: &Path) -> std::io::Result<(Vec<PathBuf>, Vec<Pa
         for (e, kind) in crate::vault::vault_entries(&d) {
             let p = e.path();
             if kind.is_dir() {
+                if is_staging_dir(dir, &p) {
+                    continue;
+                }
                 stack.push(p);
                 continue;
             }
@@ -256,6 +277,33 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// Staging dirs are not knowledge: `_inbox/` awaits ingest and `sessions/`
+    /// is work logs. Walking them put 1,690 imported files in the graph, and
+    /// the `[[TASK_DONE]]` strings quoted inside 596 session transcripts became
+    /// one ghost hub with 596 spokes — the thing that made the graph unusable.
+    #[test]
+    fn the_graph_skips_inbox_and_sessions_but_not_wiki() {
+        let root = temp_vault("staging");
+        for d in ["wiki", "_inbox", "sessions"] {
+            fs::create_dir_all(root.join(d)).unwrap();
+        }
+        fs::write(root.join("wiki/real.md"), "# real\n[[other]]\n").unwrap();
+        fs::write(root.join("_inbox/pending.md"), "# pending\n[[TASK_DONE]]\n").unwrap();
+        fs::write(root.join("sessions/log.md"), "# log\n[[TASK_DONE]]\n").unwrap();
+        // A page legitimately NAMED sessions.md is a wiki page, not a staging dir.
+        fs::write(root.join("wiki/sessions.md"), "# sessions\n").unwrap();
+
+        let (sources, _) = collect_files(&root).unwrap();
+        let names: Vec<String> = sources
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert!(names.contains(&"real.md".to_string()));
+        assert!(names.contains(&"sessions.md".to_string()));
+        assert!(!names.contains(&"pending.md".to_string()));
+        assert!(!names.contains(&"log.md".to_string()));
     }
 
     /// Regression: one unreadable .md must not blank the whole graph.
