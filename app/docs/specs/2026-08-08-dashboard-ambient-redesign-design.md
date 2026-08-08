@@ -217,11 +217,53 @@ in the background; transitions earn theirs by getting out of the way.
 - Verified at 375 / 768 / 1280, keyboard-only, and with a numeric label beside
   the sparkline so it does not encode meaning in colour alone.
 
-### Unmeasured
+### Measured
 
-`fileMtimes` cost over 1125 files is unknown. It must not block first paint.
-Measure during implementation; if it is slow, the ambient layer mounts after
-the numbers rather than blocking them. No number is claimed here in advance.
+**`fileMtimes` walk cost.** Real vault, `/Users/o/Documents/Memex`, via a
+throwaway `cargo run --release --example` calling `vault::file_mtimes`
+directly:
+
+```
+1144 files in 5.217625ms
+```
+
+(1144, not the ~1125 estimated when this spec was written — the vault grew by
+a handful of files in the meantime.) Two orders of magnitude under the ~100ms
+budget. The deferral this section originally reserved — mounting `VaultPulse`
+after the numbers instead of with them — is not needed; the walk is fast
+enough to sit on the same tick as `fileTree` / `adjacency`, unchanged.
+
+**Page height, 375 / 768 / 1280px**, against the old dashboard's 1333px
+(900px-tall viewport, `?mock=1`, `.workspace.scrollHeight`):
+
+| Viewport | Height | vs. old 1333px | vs. ~950px target |
+|---|---|---|---|
+| 375 | 1489px | 156px taller | missed |
+| 768 | 1163px | 170px shorter | missed |
+| 1280 | 1088px | 245px shorter | missed |
+
+The ~950px target was stated as "not a promise," and it was not met at any
+of the three widths — 1280px, the closest, still sits 138px over it. At
+375px the new page is taller than the one it replaces: below 640px the
+two-column band collapses to one column, so the particle strip, both
+full-width CTAs, and both list sections stack in sequence instead of
+side-by-side. No width overflowed horizontally —
+`document.documentElement.scrollWidth > window.innerWidth` was `false` at
+375, 768, and 1280.
+
+**Reduced motion.** Playwright with `reducedMotion: 'reduce'`: running
+animations `document.getAnimations().filter(a => a.playState ===
+'running').length` was `0`; `.vp-dot` count was `21`. Both requirements hold
+— the ambient layer is fully stilled, and the particle field stays rendered,
+so the "how linked" signal survives motion being turned off.
+
+**Keyboard reachability.** Tabbing through the rendered dashboard at 1280px
+(`mock=1`) landed on 40 consecutive `<button>` / `<select>` elements, each
+carrying a visible `outline: auto 1px` ring (checked visually via
+screenshot, not just computed style). In sequence this included both CTAs
+(`소스 가져오기`, `위키에 질문`), both "이어서 보기" cards, and all 6 rows of
+"최근 움직인 노트" — every row is a `<button class="list-row recent-row">`,
+not a `div`, so all six take focus and show the ring.
 
 ## Testing
 
