@@ -1238,6 +1238,21 @@ select {
   }
 }
 
+/* Two bands side by side above 720px, stacked below. minmax(0, 1fr) for the
+   same reason as the app shell: a bare 1fr floors at its content's width and
+   a long note title would push the band wider than the page. */
+.ov-bands {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  margin-top: 28px;
+}
+@media (min-width: 720px) {
+  .ov-bands {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Particles stay rendered but still: a frozen field still says "many links",
      so hiding it would drop information rather than just motion. */

@@ -1,4 +1,6 @@
-// Overview — hero + real vault stats (file count, links, recent commits).
+// Overview — the vault's own state: counts, 7-day activity, what moved
+// recently. The hero copy renders only for an empty vault, where it is the
+// only true thing to show.
 
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
@@ -8,23 +10,42 @@ import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useReflectStore } from "../stores/reflectStore";
 import { ipc } from "../lib/ipc";
-import type { FileNode, GitCommit } from "../lib/ipc";
+import type { FileNode } from "../lib/ipc";
 import LinkSuggestions from "../components/LinkSuggestions";
+import VaultPulse from "../components/VaultPulse";
+import RecentNotes from "../components/RecentNotes";
+import { bucketByDay } from "../lib/vaultPulse";
 
 export default function PageOverview({ t }: { t: Strings }): JSX.Element {
   const setRoute = useUIStore((s) => s.setRoute);
   const currentVault = useVaultStore((s) => s.currentVault);
   const fileTree = useVaultStore((s) => s.fileTree);
   const adjacency = useVaultStore((s) => s.adjacency);
-  const [recent, setRecent] = useState<GitCommit[]>([]);
+  const [mtimes, setMtimes] = useState<[string, number][]>([]);
 
   useEffect(() => {
     if (!currentVault) return;
+    let cancelled = false;
+    // One read per vault change — the dashboard does not poll. Failure is
+    // quiet and degrades to "no activity yet" rather than an error state: a
+    // missing sparkline must not take the page's numbers down with it.
     ipc
-      .gitLog(currentVault.path, 8)
-      .then(setRecent)
-      .catch(() => setRecent([]));
+      .fileMtimes(currentVault.path)
+      .then((rows) => {
+        if (!cancelled) setMtimes(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setMtimes([]);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [currentVault]);
+
+  const buckets = useMemo(
+    () => bucketByDay(mtimes, currentVault?.path ?? "", 7, new Date()),
+    [mtimes, currentVault],
+  );
 
   const stats = useMemo(() => {
     const files = countFiles(fileTree);
@@ -50,117 +71,67 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
 
   return (
     <div className="workspace">
-      <header className="page-head">
-        <div className="page-eyebrow">{t.ov_eyebrow}</div>
-        <h1 className="page-title">{t.ov_title}</h1>
-        <p className="page-lede">{t.ov_lede}</p>
-        <div className="row" style={{ marginTop: 24 }}>
-          <button
-            className="btn btn-primary"
-            onClick={() => setRoute("ingest")}
-          >
-            <Icon name="upload" size={14} /> {t.ov_cta_ingest}
-          </button>
-          <button className="btn" onClick={() => setRoute("query")}>
-            <Icon name="msg" size={14} /> {t.ov_cta_ask}
-          </button>
-        </div>
-      </header>
-
-      <div className="stat-strip">
-        <Stat
-          label={t.ov_stats_pages}
-          value={String(stats.files)}
-          sub={currentVault?.path ?? "—"}
+      {stats.files === 0 ? (
+        // For an empty vault this copy is the only true thing to show, and it
+        // is the one moment it is genuinely useful. With pages present it is
+        // product copy shown to someone who already uses the product.
+        <header className="page-head">
+          <div className="page-eyebrow">{t.ov_eyebrow}</div>
+          <h1 className="page-title">{t.ov_title}</h1>
+          <p className="page-lede">{t.ov_lede}</p>
+        </header>
+      ) : (
+        <VaultPulse
+          t={t}
+          pages={stats.files}
+          links={stats.links}
+          buckets={buckets}
+          resolvedRatio={stats.resolvedRatio}
         />
-        <Stat
-          label={t.ov_stats_sources}
-          value={String(stats.sources)}
-          sub="raw / sources folders"
-        />
-        <Stat
-          label={t.ov_stats_links}
-          value={String(stats.links)}
-          sub="resolved wikilinks"
-        />
-        <Stat
-          label={t.ov_stats_ratio}
-          value={`${Math.round(stats.resolvedRatio * 100)}%`}
-          sub="links resolved"
-        />
-      </div>
+      )}
 
-      {recentLeaves.length > 0 ? (
-        <>
-          <div className="section-head">
-            <div className="section-title">{t.ov_quick}</div>
-          </div>
-          <div className="card-grid">
-            {recentLeaves.slice(0, 3).map((node) => (
-              <button
-                key={node.path}
-                className="card"
-                style={{ textAlign: "left", cursor: "pointer" }}
-                onClick={() => setRoute(`page:${node.path}`)}
-              >
-                <div className="row" style={{ marginBottom: 8 }}>
-                  <span className="typebadge">
-                    <span className="tb-dot t-overview"></span>
-                    file
-                  </span>
-                </div>
-                <div
-                  style={{
-                    fontSize: 17,
-                    fontWeight: 600,
-                    letterSpacing: "-0.01em",
-                  }}
-                >
-                  {node.name.replace(/\.md$/i, "")}
-                </div>
-                <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
-                  {node.path}
-                </div>
-              </button>
-            ))}
-          </div>
-        </>
-      ) : null}
-
-      <LinkSuggestions t={t} />
-
-      <div className="section-head">
-        <div className="section-title">{t.ov_recent}</div>
-        <button
-          className="section-action"
-          onClick={() => setRoute("history")}
-          style={{ background: "transparent", border: 0 }}
-        >
-          {t.ov_recent_more} →
+      <div className="row" style={{ marginTop: 20 }}>
+        <button className="btn btn-primary" onClick={() => setRoute("ingest")}>
+          <Icon name="upload" size={14} /> {t.ov_cta_ingest}
+        </button>
+        <button className="btn" onClick={() => setRoute("query")}>
+          <Icon name="msg" size={14} /> {t.ov_cta_ask}
         </button>
       </div>
-      <div className="list">
-        {recent.length === 0 ? (
-          <p className="muted" style={{ padding: "10px 6px" }}>
-            {t.ov_no_git ?? "No git history yet."}
-          </p>
-        ) : (
-          recent.map((c) => (
-            <div key={c.hash} className="list-row">
-              <span className="ic">
-                <Icon name="save" size={14} />
-              </span>
-              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <span style={{ fontWeight: 500 }}>{c.subject}</span>
-              </span>
-              <span className="meta">{c.date}</span>
-              <span className="meta" style={{ fontFamily: "var(--font-mono)" }}>
-                {c.hash}
-              </span>
+
+      <div className="ov-bands">
+        {recentLeaves.length > 0 ? (
+          <section>
+            <div className="section-head">
+              <div className="section-title">{t.ov_quick}</div>
             </div>
-          ))
-        )}
+            <div className="card-grid">
+              {recentLeaves.slice(0, 2).map((node) => (
+                <button
+                  key={node.path}
+                  className="card"
+                  style={{ textAlign: "left", cursor: "pointer" }}
+                  onClick={() => setRoute(`page:${node.path}`)}
+                >
+                  <div className="row" style={{ marginBottom: 8 }}>
+                    <span className="typebadge">
+                      <span className="tb-dot t-overview"></span>
+                      file
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.01em" }}>
+                    {node.name.replace(/\.md$/i, "")}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        ) : null}
+
+        <RecentNotes t={t} entries={mtimes} vaultRoot={currentVault?.path ?? ""} />
       </div>
+
+      <LinkSuggestions t={t} />
 
       <ReflectPanel t={t} />
     </div>
@@ -248,34 +219,6 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
         </pre>
       ) : null}
     </section>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string;
-  sub: string;
-}): JSX.Element {
-  return (
-    <div className="stat">
-      <div className="stat-label">{label}</div>
-      <div className="stat-value">{value}</div>
-      <div
-        className="stat-sub"
-        style={{
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-        title={sub}
-      >
-        {sub}
-      </div>
-    </div>
   );
 }
 
