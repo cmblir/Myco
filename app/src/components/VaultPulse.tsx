@@ -64,8 +64,10 @@ export default function VaultPulse({
             key={i}
             // Spread the phase so the field drifts instead of pulsing in
             // lockstep. Deterministic — no Math.random, so re-renders do not
-            // reshuffle the field under the user.
-            style={{ "--i": i } as CSSProperties}
+            // reshuffle the field under the user. --lane is precomputed here
+            // (not `%` inside CSS calc(), which is a percentage sign, not a
+            // modulo operator, and silently drops the whole transform).
+            style={{ "--i": i, "--lane": (i % 7) - 3 } as CSSProperties}
           />
         ))}
       </div>

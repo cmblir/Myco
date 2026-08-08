@@ -1153,14 +1153,17 @@ select {
   border-radius: 50%;
   background: var(--ink-3);
   /* Phase and lane are derived from the index so the field is deterministic:
-     a re-render must not reshuffle it under the user. */
-  transform: translateY(calc((var(--i) % 7 - 3) * 14px));
+     a re-render must not reshuffle it under the user. --lane is computed in
+     JS (VaultPulse.tsx), not `% 7` here: `%` inside calc() is a percentage
+     sign, not modulo, so the old expression was invalid CSS and the whole
+     transform was silently dropped. */
+  transform: translateY(calc(var(--lane) * 14px));
   animation: vp-drift calc(var(--vault-pulse, 4s) * 4) linear infinite;
   animation-delay: calc(var(--i) * -0.37s);
 }
 @keyframes vp-drift {
   from {
-    transform: translate(-4%, calc((var(--i) % 7 - 3) * 14px));
+    transform: translate(-4%, calc(var(--lane) * 14px));
     opacity: 0;
   }
   10%,
@@ -1168,7 +1171,7 @@ select {
     opacity: 1;
   }
   to {
-    transform: translate(104cqw, calc((var(--i) % 7 - 3) * 14px));
+    transform: translate(104cqw, calc(var(--lane) * 14px));
     opacity: 0;
   }
 }
