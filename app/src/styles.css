@@ -1100,6 +1100,137 @@ select {
   }
 }
 
+/* Dashboard ambient layer. Everything animated here is transform or opacity —
+   the two properties the compositor handles off the main thread. The three
+   --vault-* custom properties are set from data in VaultPulse.tsx. */
+.vault-pulse {
+  position: relative;
+  /* Establishes the container for cqw below, so particles travel the CARD's
+     width. vw would send them far past the right edge on a wide window, where
+     they would spend most of the cycle clipped and invisible. */
+  container-type: inline-size;
+  margin-top: 8px;
+  padding: 28px 24px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  background: var(--bg-soft);
+  overflow: hidden;
+}
+.vp-figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+  position: relative;
+  z-index: 1;
+}
+.vp-value {
+  font-size: clamp(28px, 5vw, 44px);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.vp-label {
+  font-size: 12px;
+  color: var(--ink-4);
+  margin-top: 2px;
+}
+
+/* Particle field. One container gets will-change; putting it on each dot
+   would multiply compositor layers by the particle count. */
+.vp-field {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--vault-glow, 0.2);
+  will-change: transform;
+}
+.vp-dot {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--ink-3);
+  /* Phase and lane are derived from the index so the field is deterministic:
+     a re-render must not reshuffle it under the user. */
+  transform: translateY(calc((var(--i) % 7 - 3) * 14px));
+  animation: vp-drift calc(var(--vault-pulse, 4s) * 4) linear infinite;
+  animation-delay: calc(var(--i) * -0.37s);
+}
+@keyframes vp-drift {
+  from {
+    transform: translate(-4%, calc((var(--i) % 7 - 3) * 14px));
+    opacity: 0;
+  }
+  10%,
+  90% {
+    opacity: 1;
+  }
+  to {
+    transform: translate(104cqw, calc((var(--i) % 7 - 3) * 14px));
+    opacity: 0;
+  }
+}
+
+/* Sparkline. Fixed height so a busy week cannot change the page's layout. */
+.vp-spark {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  height: 34px;
+  margin-top: 20px;
+}
+.vp-bar {
+  position: relative;
+  flex: 1;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+}
+.vp-bar-authored,
+.vp-bar-ingested {
+  flex: 1;
+  min-height: 2px;
+  border-radius: 2px 2px 0 0;
+  transform-origin: bottom;
+  animation: vp-rise var(--dur-enter, 320ms) var(--ease-out, ease) backwards;
+}
+.vp-bar-authored {
+  background: var(--ink-2);
+}
+.vp-bar-ingested {
+  background: var(--line-strong);
+}
+@keyframes vp-rise {
+  from {
+    transform: scaleY(0);
+  }
+}
+.vp-caption {
+  position: relative;
+  z-index: 1;
+  font-size: 12px;
+  margin: 6px 0 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Particles stay rendered but still: a frozen field still says "many links",
+     so hiding it would drop information rather than just motion. */
+  .vp-dot,
+  .vp-bar-authored,
+  .vp-bar-ingested {
+    animation: none;
+  }
+  .vp-dot {
+    /* Without the drift they need placing across the width by hand. */
+    left: calc(var(--i) * 3.4%);
+  }
+}
+
 /* Quoted material — notably extractive Ask answers, which render retrieved
    passages verbatim. With no blockquote styling at all (the previous state) a
    quote was indistinguishable from myco's own prose, so a cited note's `##`

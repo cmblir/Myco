@@ -130,6 +130,11 @@ export interface Strings {
   ov_recent: string;
   ov_recent_more: string;
   ov_quick: string;
+  ov_stats_moved?: string;
+  ov_moved_none?: string;
+  ov_pulse_alt?: string;
+  ov_recent_moved?: string;
+  ov_recent_never?: string;
   ing_title: string;
   ing_lede: string;
   ing_drop: string;
@@ -903,6 +908,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_recent: "Recent activity",
     ov_recent_more: "View all",
     ov_quick: "Jump back in",
+    ov_stats_moved: "moved this week",
+    ov_moved_none: "Nothing written in the last 7 days",
+    ov_pulse_alt: "{pages} pages, {links} links, {moved} touched this week",
+    ov_recent_moved: "Recently moved",
+    ov_recent_never: "No notes have changed yet.",
     ing_title: "Ingest",
     ing_lede:
       "Drop a file, paste a URL, or write a note. myco will route it through Claude, extract entities and concepts, write a source page, and weave it into the graph.",
@@ -1700,6 +1710,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_recent: "최근 활동",
     ov_recent_more: "전체 보기",
     ov_quick: "이어서 보기",
+    ov_stats_moved: "이번 주 움직임",
+    ov_moved_none: "최근 7일간 쓴 것 없음",
+    ov_pulse_alt: "페이지 {pages}개, 연결 {links}개, 이번 주 {moved}개 움직임",
+    ov_recent_moved: "최근 움직인 노트",
+    ov_recent_never: "아직 바뀐 노트가 없습니다.",
     ing_title: "가져오기",
     ing_lede:
       "파일을 드롭하거나 URL을 붙여넣거나 메모를 입력하세요. Claude가 읽고, 엔티티와 개념을 추출하고, 소스 페이지를 만들고, 그래프에 엮어 넣습니다.",
@@ -2435,6 +2450,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_recent: "最近のアクティビティ",
     ov_recent_more: "すべて見る",
     ov_quick: "続きから",
+    ov_stats_moved: "今週の動き",
+    ov_moved_none: "直近 7 日間の記述なし",
+    ov_pulse_alt: "ページ {pages} 件、リンク {links} 件、今週 {moved} 件が更新",
+    ov_recent_moved: "最近動いたノート",
+    ov_recent_never: "まだ変更されたノートはありません。",
     ing_title: "取り込み",
     ing_lede:
       "ファイルをドロップ、URL を貼り付け、あるいはメモを書く。Claude が読み、エンティティと概念を抽出し、ソースページを作成し、グラフに織り込みます。",
