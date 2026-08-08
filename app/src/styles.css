@@ -1176,19 +1176,23 @@ select {
   }
 }
 
-/* Sparkline. Fixed height so a busy week cannot change the page's layout. */
+/* Sparkline. Fixed height so a busy week cannot change the page's layout.
+   Each day slot has a small fixed width instead of stretching to fill an
+   equal share of the card (a wide card turned that into a row of solid
+   blocks rather than a chart); space-between spreads the 7 slots across the
+   full width so it still reads as a week at both 1280px and 375px. */
 .vp-spark {
   position: relative;
   z-index: 1;
   display: flex;
   align-items: flex-end;
-  gap: 4px;
+  justify-content: space-between;
   height: 34px;
   margin-top: 20px;
 }
 .vp-bar {
   position: relative;
-  flex: 1;
+  flex: 0 0 auto;
   height: 100%;
   display: flex;
   align-items: flex-end;
@@ -1196,7 +1200,8 @@ select {
 }
 .vp-bar-authored,
 .vp-bar-ingested {
-  flex: 1;
+  flex: 0 0 auto;
+  width: 6px;
   min-height: 2px;
   border-radius: 2px 2px 0 0;
   transform-origin: bottom;

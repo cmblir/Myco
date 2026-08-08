@@ -49,7 +49,6 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
 
   const stats = useMemo(() => {
     const files = countFiles(fileTree);
-    const sources = countIn(fileTree, "raw") + countIn(fileTree, "sources");
     const links = adjacency
       ? Object.values(adjacency.forward).reduce((s, arr) => s + arr.length, 0)
       : 0;
@@ -61,7 +60,7 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
       : 0;
     const total = links + unresolved;
     const resolvedRatio = total > 0 ? links / total : 0;
-    return { files, sources, links, resolvedRatio };
+    return { files, links, resolvedRatio };
   }, [fileTree, adjacency]);
 
   const recentLeaves = useMemo(
@@ -232,14 +231,6 @@ function countFiles(tree: FileNode[]): number {
     else stack.push(...node.children);
   }
   return n;
-}
-
-function countIn(tree: FileNode[], folder: string): number {
-  const root = tree.find(
-    (n) => n.kind === "directory" && n.name.toLowerCase() === folder,
-  );
-  if (!root || root.kind !== "directory") return 0;
-  return countFiles(root.children);
 }
 
 function collectFiles(tree: FileNode[]): FileNode[] {
