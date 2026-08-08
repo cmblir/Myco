@@ -117,7 +117,9 @@ Changes:
   `i18n.ts` — for an empty vault they are accurate and are the only thing
   worth showing.
 - The git section is deleted and replaced by mtime-based "Recently moved
-  notes". The mismatched "more →" link goes with it.
+  notes". The mismatched "more →" link goes with it. Only the dashboard's
+  `ipc.gitLog` call goes — `queryStore.ts` and `digests.ts` still use it, so
+  the IPC binding and the Rust `git_log` command stay exactly as they are.
 - "Pick up" and "Recently moved" sit side by side; two stacked sections become
   one band. Below 640px they stack again.
 - File paths come off the cards. The card title already carries that.
@@ -227,6 +229,35 @@ the numbers rather than blocking them. No number is claimed here in advance.
   authored/ingested split, empty vault, clamp limits at both ends.
 - The existing i18n parity test catches any new string missing ko/ja.
 - Playwright against mock mode for the rendered result, as with the calendar.
+
+## Files touched
+
+New:
+
+```
+src/lib/vaultPulse.ts            the arithmetic
+src/lib/vaultPulse.test.ts       its tests
+src/components/VaultPulse.tsx    ambient layer
+src/components/RecentNotes.tsx   recently-moved list
+```
+
+Modified:
+
+```
+src/pages/PageOverview.tsx   largely rewritten
+src/styles.css               motion tokens, ambient layer, two-column band
+src/lib/i18n.ts              new strings across en/ko/ja
+src/components/Sidebar.tsx   token substitution only
+src/components/Topbar.tsx    token substitution only
+src/App.tsx                  one fade layer on route change
+```
+
+Sidebar, Topbar and App.tsx are token substitution: hardcoded durations become
+variables, no structural or behavioural change. The visible effect is that
+hover timings stop disagreeing with each other. If that is unwanted, dropping
+those three files leaves the rest of the design intact.
+
+No Rust changes.
 
 ## Out of scope
 
