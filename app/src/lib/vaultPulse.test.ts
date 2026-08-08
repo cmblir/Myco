@@ -85,3 +85,53 @@ describe("bucketByDay", () => {
     expect(b.authored[6]).toBe(1);
   });
 });
+
+import { motionVars, PARTICLE_MAX } from "./vaultPulse";
+
+describe("motionVars", () => {
+  it("gives an empty vault the floor of every range", () => {
+    const v = motionVars(0, 0, 0);
+    expect(v.particles).toBe(3);
+    expect(v.pulseMs).toBe(6000); // idle: the slowest heartbeat
+    expect(v.glow).toBeCloseTo(0.15, 5);
+  });
+
+  it("never exceeds the particle cap, however large the vault", () => {
+    expect(motionVars(1_000_000, 0, 1).particles).toBe(PARTICLE_MAX);
+    expect(PARTICLE_MAX).toBe(28);
+  });
+
+  it("scales particles logarithmically, so 10x the links is not 10x the dots", () => {
+    const small = motionVars(150, 0, 0).particles;
+    const big = motionVars(1500, 0, 0).particles;
+    expect(big).toBeGreaterThan(small);
+    // The underlying signal only supports few/some/many. A linear map would
+    // assert a precision 'number of wikilinks' does not have.
+    expect(big).toBeLessThan(small * 3);
+  });
+
+  it("speeds the pulse up as the user writes more, and clamps at the busy end", () => {
+    expect(motionVars(100, 0, 0).pulseMs).toBe(6000);
+    expect(motionVars(100, 5, 0).pulseMs).toBeLessThan(6000);
+    expect(motionVars(100, 500, 0).pulseMs).toBe(1800);
+  });
+
+  it("maps resolved ratio onto glow across the full range", () => {
+    expect(motionVars(0, 0, 1).glow).toBeCloseTo(0.5, 5);
+    expect(motionVars(0, 0, 0.5).glow).toBeCloseTo(0.325, 5);
+  });
+
+  it("survives nonsense input rather than emitting NaN into CSS", () => {
+    // A NaN in a custom property silently kills the whole animation, which is
+    // far harder to notice than a wrong-but-visible value.
+    for (const v of [
+      motionVars(-5, -5, -1),
+      motionVars(Number.NaN, Number.NaN, Number.NaN),
+    ]) {
+      expect(Number.isFinite(v.particles)).toBe(true);
+      expect(Number.isFinite(v.pulseMs)).toBe(true);
+      expect(Number.isFinite(v.glow)).toBe(true);
+      expect(v.particles).toBeGreaterThanOrEqual(3);
+    }
+  });
+});

@@ -60,3 +60,57 @@ export function bucketByDay(
   }
   return { authored, ingested };
 }
+
+/** Ambient motion is capped here because the data behind it is ordinal. Tens of
+ *  particles read as "many"; hundreds would claim a precision that
+ *  "153 wikilinks" does not carry. */
+export const PARTICLE_MAX = 28;
+const PARTICLE_MIN = 3;
+const PULSE_IDLE_MS = 6000;
+const PULSE_BUSY_MS = 1800;
+const GLOW_MIN = 0.15;
+const GLOW_MAX = 0.5;
+
+/** The three CSS custom properties the ambient layer runs on. */
+export interface MotionVars {
+  /** How many particle elements to render. */
+  particles: number;
+  /** One heartbeat, in milliseconds. */
+  pulseMs: number;
+  /** Opacity of the connective glow. */
+  glow: number;
+}
+
+/** Coerce anything the callers might hand us into a usable number. A NaN
+ *  reaching a custom property kills the animation silently — far harder to
+ *  notice than a wrong but visible value. */
+function safe(n: number): number {
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+const clamp = (n: number, lo: number, hi: number): number =>
+  Math.min(hi, Math.max(lo, n));
+
+/** Turn vault counts into the ambient layer's three variables.
+ *
+ *  `links` drives particle COUNT, `authoredWeek` (files the user touched in the
+ *  window) drives pulse RATE, `resolvedRatio` (0..1) drives glow. */
+export function motionVars(
+  links: number,
+  authoredWeek: number,
+  resolvedRatio: number,
+): MotionVars {
+  // log1p so an order-of-magnitude bigger vault is a few more dots, not ten
+  // times as many. log1p(1000) ≈ 6.9, so /7 lands a very large vault at the cap.
+  const spread = clamp(Math.log1p(safe(links)) / 7, 0, 1);
+  const particles = Math.round(PARTICLE_MIN + spread * (PARTICLE_MAX - PARTICLE_MIN));
+
+  // Ten authored files in the window is already "busy" — this is a personal
+  // vault, not a team repo.
+  const busy = clamp(safe(authoredWeek) / 10, 0, 1);
+  const pulseMs = Math.round(PULSE_IDLE_MS - busy * (PULSE_IDLE_MS - PULSE_BUSY_MS));
+
+  const glow = GLOW_MIN + clamp(safe(resolvedRatio), 0, 1) * (GLOW_MAX - GLOW_MIN);
+
+  return { particles, pulseMs, glow };
+}
