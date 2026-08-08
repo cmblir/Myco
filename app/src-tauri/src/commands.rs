@@ -1892,6 +1892,12 @@ pub async fn semantic_search(
     // usefully, and a lexical-only top hit outside the dense top-k would
     // never surface if both arms were pre-truncated to k.
     let pool = (k * 5).clamp(20, 50);
+    // At most this many chunks from any one page. Measured on the real vault
+    // (`examples/corpus_mix_probe.rs`, 14.5k chunks): 2 raised distinct pages
+    // across the query set from 87 to 95 with no query getting worse, while 1
+    // was worse — it evicted a page's genuinely-relevant second chunk (the BPE
+    // query dropped from 12 wiki hits to 9, backfilled with session noise).
+    const PAGE_CAP: usize = 2;
     let dense_hits = store.search(&qv, pool);
     let bm25_path = crate::retrieval::Bm25Index::path_for(&root.to_string_lossy())?;
     let bm25 = bm25_cache.get(&bm25_path);
@@ -1907,7 +1913,12 @@ pub async fn semantic_search(
         .iter()
         .map(|h| ((h.page.clone(), h.section), h.score))
         .collect();
-    let hits = crate::retrieval::rrf_fuse(&dense_hits, &lexical_hits, k);
+    // Fuse WIDER than k, then cap chunks-per-page, then cut to k. Fusing
+    // straight to k and capping after would only shrink the list — the whole
+    // point of the cap is to let a DISTINCT page take the slot a near-duplicate
+    // would have held.
+    let fused = crate::retrieval::rrf_fuse(&dense_hits, &lexical_hits, pool);
+    let hits = crate::retrieval::cap_per_page(fused, PAGE_CAP, k);
     let scan_ms = perf::ms(t_scan.elapsed());
     // Reconstruct each hit's chunk TEXT from its page (the index stores only
     // vectors+hashes). No cross-hit cache: k is capped at 50 (realistically
@@ -2629,10 +2640,35 @@ mod tests {
         let lexical = bm25.search("self attention tokens", 50);
         assert!(lexical.is_empty());
 
+        // Same two steps, same order as `semantic_search`: fuse wide, then cap.
         let fused = rrf_fuse(&dense, &lexical, dense.len());
-        let fused_pages: Vec<&str> = fused.iter().map(|h| h.page.as_str()).collect();
+        let capped = crate::retrieval::cap_per_page(fused, 2, dense.len());
+        let fused_pages: Vec<&str> = capped.iter().map(|h| h.page.as_str()).collect();
         let dense_pages: Vec<&str> = dense.iter().map(|h| h.page.as_str()).collect();
         assert_eq!(fused_pages, dense_pages, "empty BM25 arm must not reorder the dense hits");
+    }
+
+    // The per-page cap must not cost a distinct-page result its slot: with one
+    // hit per page there is nothing to cap, and the whole list has to survive.
+    // Guards against a future cap that counts slots instead of pages.
+    #[test]
+    fn page_cap_leaves_an_all_distinct_result_untouched() {
+        let dense: Vec<Hit> = ["a.md", "b.md", "c.md", "d.md"]
+            .iter()
+            .enumerate()
+            .map(|(i, p)| Hit {
+                page: (*p).into(),
+                stem: (*p).into(),
+                section: 0,
+                score: 1.0 - i as f32 * 0.1,
+            })
+            .collect();
+        let fused = rrf_fuse(&dense, &[], dense.len());
+        let capped = crate::retrieval::cap_per_page(fused, 2, dense.len());
+        assert_eq!(
+            capped.iter().map(|h| h.page.as_str()).collect::<Vec<_>>(),
+            vec!["a.md", "b.md", "c.md", "d.md"],
+        );
     }
 
     #[test]

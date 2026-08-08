@@ -634,6 +634,93 @@ pub fn rrf_fuse(dense: &[Hit], lexical: &[Bm25Hit], k: usize) -> Vec<Hit> {
     fused
 }
 
+/// Cap how many chunks any ONE page may occupy, then truncate to `k`.
+///
+/// Fusion ranks chunks, not documents, so a single long note whose sections all
+/// match can take most of a top-k on its own. Measured on a real 14.5k-chunk
+/// vault (`examples/corpus_mix_probe.rs`): one session transcript held three of
+/// twelve slots, and on a Korean query two chunks of the same transcript
+/// outranked the wiki page that actually answered it. The budget `k` exists to
+/// buy DISTINCT sources; without a cap it buys near-duplicates.
+///
+/// Order-preserving: hits stay in fused order, the over-quota ones are dropped.
+/// Applied AFTER fusion rather than inside it so `rrf_fuse` stays a pure fusion
+/// primitive and the recorded retrieval baselines keep meaning what they did.
+pub fn cap_per_page(hits: Vec<Hit>, max_per_page: usize, k: usize) -> Vec<Hit> {
+    // A cap of 0 would silently return nothing; treat it as "no cap" instead of
+    // making a bad config empty every answer.
+    if max_per_page == 0 {
+        return hits.into_iter().take(k).collect();
+    }
+    let mut seen: HashMap<String, usize> = HashMap::new();
+    let mut out = Vec::with_capacity(k);
+    for h in hits {
+        let n = seen.entry(h.page.clone()).or_insert(0);
+        if *n >= max_per_page {
+            continue;
+        }
+        *n += 1;
+        out.push(h);
+        if out.len() == k {
+            break;
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod cap_tests {
+    use super::*;
+
+    fn hit(page: &str, section: usize, score: f32) -> Hit {
+        Hit { page: page.into(), stem: page.into(), section, score }
+    }
+
+    #[test]
+    fn keeps_fused_order_while_dropping_a_page_over_quota() {
+        let hits = vec![
+            hit("sessions/a.md", 0, 0.9),
+            hit("sessions/a.md", 1, 0.8),
+            hit("sessions/a.md", 2, 0.7),
+            hit("wiki/self-attention.md", 0, 0.6),
+        ];
+        let out = cap_per_page(hits, 2, 4);
+        assert_eq!(
+            out.iter().map(|h| (h.page.as_str(), h.section)).collect::<Vec<_>>(),
+            vec![("sessions/a.md", 0), ("sessions/a.md", 1), ("wiki/self-attention.md", 0)],
+        );
+    }
+
+    #[test]
+    fn promotes_a_distinct_page_into_the_slot_a_duplicate_would_have_taken() {
+        // The point of the cap: within the same k, a third source appears.
+        let hits = vec![
+            hit("sessions/a.md", 0, 0.9),
+            hit("sessions/a.md", 1, 0.8),
+            hit("wiki/b.md", 0, 0.5),
+        ];
+        assert_eq!(cap_per_page(hits, 1, 2).len(), 2);
+    }
+
+    #[test]
+    fn truncates_to_k_and_never_exceeds_it() {
+        let hits: Vec<Hit> = (0..10).map(|i| hit(&format!("p{i}.md"), 0, 1.0)).collect();
+        assert_eq!(cap_per_page(hits, 2, 3).len(), 3);
+    }
+
+    #[test]
+    fn a_zero_cap_means_no_cap_rather_than_an_empty_answer() {
+        let hits = vec![hit("a.md", 0, 0.9), hit("a.md", 1, 0.8)];
+        assert_eq!(cap_per_page(hits, 0, 5).len(), 2);
+    }
+
+    #[test]
+    fn a_shorter_list_than_k_is_returned_whole() {
+        let hits = vec![hit("a.md", 0, 0.9), hit("b.md", 0, 0.8)];
+        assert_eq!(cap_per_page(hits, 2, 12).len(), 2);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
