@@ -233,23 +233,26 @@ budget. The deferral this section originally reserved — mounting `VaultPulse`
 after the numbers instead of with them — is not needed; the walk is fast
 enough to sit on the same tick as `fileTree` / `adjacency`, unchanged.
 
-**Page height, 375 / 768 / 1280px**, against the old dashboard's 1333px
-(900px-tall viewport, `?mock=1`, `.workspace.scrollHeight`):
+**Page height, 375 / 768 / 1280px.** The "1333px" figure quoted in Problem
+was measured at 1280px width only — a height baseline is only meaningful at
+the width it was taken at, so comparing a narrow-viewport new height against
+that single wide-viewport number is not valid. The old dashboard was
+re-measured at all three widths, in a git worktree checked out at
+`345f0957` (the last commit before this redesign), same mock vault, same
+900px-tall viewport, same `.workspace.scrollHeight`:
 
-| Viewport | Height | vs. old 1333px | vs. ~950px target |
-|---|---|---|---|
-| 375 | 1489px | 156px taller | missed |
-| 768 | 1163px | 170px shorter | missed |
-| 1280 | 1088px | 245px shorter | missed |
+| Viewport | Old (`345f0957`) | New | Change | vs. ~950px target |
+|---|---|---|---|---|
+| 375 | 2065px | 1489px | −576px (−28%) | missed |
+| 768 | 1505px | 1163px | −342px (−23%) | missed |
+| 1280 | 1333px | 1088px | −245px (−18%) | missed |
 
-The ~950px target was stated as "not a promise," and it was not met at any
-of the three widths — 1280px, the closest, still sits 138px over it. At
-375px the new page is taller than the one it replaces: below 640px the
-two-column band collapses to one column, so the particle strip, both
-full-width CTAs, and both list sections stack in sequence instead of
-side-by-side. No width overflowed horizontally —
+The page got shorter at every width, and 375px improved the most, not the
+least. The ~950px target was stated as "not a promise," and it was still not
+met at any of the three widths — 1280px, the closest, sits 138px over it.
+No width overflowed horizontally —
 `document.documentElement.scrollWidth > window.innerWidth` was `false` at
-375, 768, and 1280.
+375, 768, and 1280, old and new alike.
 
 **Reduced motion.** Playwright with `reducedMotion: 'reduce'`: running
 animations `document.getAnimations().filter(a => a.playState ===
