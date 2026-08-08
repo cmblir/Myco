@@ -1217,6 +1217,27 @@ select {
   margin: 6px 0 0;
 }
 
+/* The recent list's rows are buttons (they navigate), so they need the
+   button reset the .list-row div never needed. */
+.recent-row {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background var(--dur-quick, 140ms) var(--ease-out, ease);
+}
+.recent-row:hover {
+  background: var(--bg-hover);
+}
+@media (prefers-reduced-motion: reduce) {
+  .recent-row {
+    transition: none;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   /* Particles stay rendered but still: a frozen field still says "many links",
      so hiding it would drop information rather than just motion. */

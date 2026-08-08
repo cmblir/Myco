@@ -114,3 +114,30 @@ export function motionVars(
 
   return { particles, pulseMs, glow };
 }
+
+/** One row of the "recently moved" list. */
+export interface RecentEntry {
+  /** Vault-relative path, e.g. `wiki/self-attention.md`. */
+  rel: string;
+  /** Unix seconds. */
+  mtime: number;
+}
+
+/** The `limit` most recently touched files the USER wrote, newest first.
+ *
+ *  Ingested folders are excluded because they would be the entire list: the
+ *  sweep rewrites every session file daily, so without this filter the newest
+ *  1029 entries are all machine writes. */
+export function recentAuthored(
+  entries: [string, number][],
+  vaultRoot: string,
+  limit: number,
+): RecentEntry[] {
+  const prefix = vaultRoot.endsWith("/") ? vaultRoot : `${vaultRoot}/`;
+  return entries
+    .filter(([p]) => p.startsWith(prefix))
+    .map(([p, mtime]) => ({ rel: p.slice(prefix.length), mtime }))
+    .filter((r) => !isIngested(r.rel))
+    .sort((a, b) => b.mtime - a.mtime)
+    .slice(0, limit);
+}

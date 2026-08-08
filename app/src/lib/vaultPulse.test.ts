@@ -135,3 +135,35 @@ describe("motionVars", () => {
     }
   });
 });
+
+import { recentAuthored } from "./vaultPulse";
+
+describe("recentAuthored", () => {
+  const ROOT = "/vault";
+  const e = (p: string, secs: number): [string, number] => [`${ROOT}/${p}`, secs];
+
+  it("returns the newest first, limited, with vault-relative paths", () => {
+    const out = recentAuthored(
+      [e("wiki/a.md", 300), e("wiki/b.md", 100), e("wiki/c.md", 200)],
+      ROOT,
+      2,
+    );
+    expect(out.map((r) => r.rel)).toEqual(["wiki/a.md", "wiki/c.md"]);
+    expect(out[0].mtime).toBe(300);
+  });
+
+  it("excludes machine-written folders, which would otherwise be the whole list", () => {
+    // The real vault has 1029 session files all touched today; without this
+    // the list would never show anything the user wrote.
+    const out = recentAuthored(
+      [e("sessions/s.md", 999), e("_inbox/i.md", 998), e("wiki/a.md", 1)],
+      ROOT,
+      5,
+    );
+    expect(out.map((r) => r.rel)).toEqual(["wiki/a.md"]);
+  });
+
+  it("returns an empty list rather than throwing on an empty vault", () => {
+    expect(recentAuthored([], ROOT, 5)).toEqual([]);
+  });
+});
