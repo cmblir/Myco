@@ -480,7 +480,12 @@ export default function App(): JSX.Element {
       />
       <main>
         <Topbar t={t} />
-        {body}
+        {/* key={route} forces a remount on navigation so the fade replays;
+            without it React reuses the DOM node and the animation only ever
+            runs once, on first mount. */}
+        <div className="route-fade" key={route}>
+          {body}
+        </div>
       </main>
       <CommandBar t={t} />
       <DialogHost />

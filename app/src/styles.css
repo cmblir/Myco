@@ -8,6 +8,14 @@
   --font-serif: "EB Garamond", "Iowan Old Style", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
+  /* Motion. Four tokens because 25 transitions currently hardcode 120ms,
+     140ms, 150ms, 200ms, 0.12s and 0.15s for the same job — hover timings
+     that disagree read as jitter. */
+  --dur-quick: 140ms;
+  --dur-enter: 320ms;
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --ease-spring: cubic-bezier(0.2, 0.9, 0.3, 1.2);
+
   /* Light (default) — Notion-style warm whites */
   --bg: #ffffff;
   --bg-elev: #fbfbfa;
@@ -341,7 +349,7 @@ select {
   display: grid;
   place-items: center;
   color: var(--ink-4);
-  transition: transform 0.12s;
+  transition: transform var(--dur-quick);
 }
 .ni-caret.open {
   transform: rotate(90deg);
@@ -977,7 +985,7 @@ select {
   min-height: 120px;
   max-height: 62vh;
   overflow-y: auto;
-  transition: background 120ms, border-color 120ms;
+  transition: background var(--dur-quick), border-color var(--dur-quick);
 }
 /* The drop target has to be obvious while a card is in the air. */
 .task-col.is-over {
@@ -1054,7 +1062,7 @@ select {
   border-radius: 6px;
   background: var(--bg-soft);
   cursor: pointer;
-  transition: background 120ms, border-color 120ms;
+  transition: background var(--dur-quick), border-color var(--dur-quick);
 }
 .task-cal-day.is-over {
   background: var(--bg-hover);
@@ -1403,7 +1411,7 @@ select {
   position: relative;
   cursor: pointer;
   flex: none;
-  transition: background 0.15s;
+  transition: background var(--dur-quick);
   border: 0;
   padding: 0;
 }
@@ -1416,7 +1424,7 @@ select {
   height: 14px;
   border-radius: 50%;
   background: var(--bg);
-  transition: left 0.15s;
+  transition: left var(--dur-quick);
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 .switch.on {
@@ -1805,7 +1813,7 @@ hr {
   height: 4px;
   border-radius: 999px;
   background: var(--line-strong);
-  transition: background 0.15s;
+  transition: background var(--dur-quick);
 }
 .ob-dot.active {
   background: var(--ink);
@@ -1975,7 +1983,7 @@ hr {
      in PageGraph.tsx) so the raw scatter / first relayout frame is never
      shown — Obsidian-style clean reveal. */
   opacity: 0;
-  transition: opacity 320ms ease;
+  transition: opacity var(--dur-enter) var(--ease-out);
 }
 .graph-canvas.graph-ready {
   opacity: 1;
@@ -2981,7 +2989,7 @@ hr {
   display: inline-block;
   font-size: 8px;
   color: var(--ink-4);
-  transition: transform 120ms ease;
+  transition: transform var(--dur-quick) var(--ease-out);
   width: 10px;
 }
 .graph-drawer__section-body {
@@ -3004,7 +3012,7 @@ hr {
   font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: opacity 120ms ease;
+  transition: opacity var(--dur-quick) var(--ease-out);
 }
 .graph-drawer__play:hover {
   opacity: 0.88;
@@ -3042,7 +3050,7 @@ hr {
 .graph-subhead__caret {
   font-size: 10px;
   color: var(--ink-4);
-  transition: transform 150ms ease;
+  transition: transform var(--dur-quick) var(--ease-out);
 }
 .graph-subhead__caret.is-open {
   transform: rotate(90deg);
@@ -3078,7 +3086,7 @@ hr {
   border: 1px solid var(--line);
   border-radius: 6px;
   cursor: pointer;
-  transition: background 120ms ease, color 120ms ease;
+  transition: background var(--dur-quick) var(--ease-out), color var(--dur-quick) var(--ease-out);
 }
 .graph-recommend:hover {
   background: var(--bg-hover);
@@ -3121,7 +3129,7 @@ hr {
   background: var(--bg-soft);
   color: var(--ink);
   cursor: pointer;
-  transition: border-color 120ms ease, background 120ms ease;
+  transition: border-color var(--dur-quick) var(--ease-out), background var(--dur-quick) var(--ease-out);
 }
 .graph-vibe:hover {
   background: var(--bg-hover);
@@ -3282,7 +3290,7 @@ hr {
   border-radius: 10px;
   position: relative;
   flex-shrink: 0;
-  transition: background 140ms ease;
+  transition: background var(--dur-quick) var(--ease-out);
   cursor: pointer;
 }
 .graph-toggle__switch--on {
@@ -3296,7 +3304,7 @@ hr {
   height: 12px;
   background: var(--bg);
   border-radius: 50%;
-  transition: transform 140ms ease;
+  transition: transform var(--dur-quick) var(--ease-out);
 }
 .graph-toggle__switch--on .graph-toggle__knob {
   transform: translateX(12px);
@@ -3951,7 +3959,7 @@ hr {
 
 /* Study (Feature 3) — decks, review cards, quiz */
 .deck-row {
-  transition: background 0.12s, border-color 0.12s;
+  transition: background var(--dur-quick), border-color var(--dur-quick);
 }
 .deck-row:hover {
   background: var(--bg-hover);
@@ -4595,6 +4603,23 @@ hr {
 }
 .query-empty .muted {
   font-size: 13px;
+}
+
+/* One layer of motion on navigation, deliberately short. Motion that replays
+   on every click reads as latency by the third time. */
+.route-fade {
+  animation: route-in var(--dur-enter) var(--ease-out);
+}
+@keyframes route-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .route-fade {
+    animation: none;
+  }
 }
 
 /* Onboarding: the mascot takes the icon circle's slot. */
