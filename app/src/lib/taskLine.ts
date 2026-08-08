@@ -69,10 +69,52 @@ export function setLineStatus(
   return lines.join("\n");
 }
 
+/** Rewrite line `lineNo`'s due date: sets `@YYYY-MM-DD` when `due` is given,
+ * removes it when `due` is "". Any time suffix already on the line is dropped —
+ * moving a task to another day should not silently keep 14:00 from the old one.
+ *
+ * `null` for the same reason as `setLineStatus`: that line is no longer a
+ * checkbox, so the scan it came from is stale and rewriting would edit the
+ * wrong line. */
+export function setLineDue(
+  content: string,
+  lineNo: number,
+  due: string,
+): string | null {
+  const lines = content.split("\n");
+  const idx = lineNo - 1;
+  const line = lines[idx];
+  if (line === undefined) return null;
+  if (!/^\s*[-*+]\s*\[[^\]]\]/.test(line)) return null;
+  // Drop the existing marker (with the space that preceded it) before adding
+  // the new one, so repeated moves cannot stack `@a @b @c`.
+  const bare = line.replace(/\s*@\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?/, "").trimEnd();
+  lines[idx] = due ? `${bare} @${due}` : bare;
+  return lines.join("\n");
+}
+
 /** Append a task line to a note, keeping exactly one trailing newline. */
 export function appendTaskLine(content: string, line: string): string {
   const body = content.replace(/\s*$/, "");
   return body ? `${body}\n${line}\n` : `${line}\n`;
+}
+
+/** The days of the calendar grid containing `month`, padded to whole weeks so
+ * every row has seven cells. Monday-first, which is what a work week reads as
+ * here. Pure and local-time throughout — a UTC-based grid puts tasks on the
+ * wrong day for anyone east of Greenwich. */
+export function monthGrid(month: Date): Date[] {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  // getDay() is Sunday-0; shift so Monday is the first column.
+  const lead = (first.getDay() + 6) % 7;
+  const start = new Date(first.getFullYear(), first.getMonth(), 1 - lead);
+  const days: Date[] = [];
+  for (let i = 0; i < 42; i++) {
+    days.push(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
+  }
+  // Trim a trailing all-next-month week so a short month is not padded to six
+  // rows of mostly greyed-out cells.
+  return days.slice(0, days[35].getMonth() === month.getMonth() ? 42 : 35);
 }
 
 /** Local `YYYY-MM-DD` — the user's calendar day, not UTC's, so a task written

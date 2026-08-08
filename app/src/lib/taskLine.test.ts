@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   appendTaskLine,
+  monthGrid,
+  setLineDue,
   buildTaskLine,
   parseTaskMeta,
   setLineStatus,
@@ -84,5 +86,65 @@ describe("today", () => {
   it("uses the local calendar day, not UTC", () => {
     // 23:30 local on the 9th is still the 9th, even where UTC has rolled over.
     expect(today(new Date(2026, 7, 9, 23, 30))).toBe("2026-08-09");
+  });
+});
+
+describe("setLineDue", () => {
+  const doc = ["- [ ] alpha", "- [/] beta @2026-08-10", "- [x] gamma @2026-08-12T14:00", "prose"].join("\n");
+
+  it("adds a due date to a task that had none", () => {
+    expect(setLineDue(doc, 1, "2026-08-09")?.split("\n")[0]).toBe("- [ ] alpha @2026-08-09");
+  });
+
+  it("replaces an existing one rather than stacking markers", () => {
+    const once = setLineDue(doc, 2, "2026-08-20");
+    const twice = setLineDue(once!, 2, "2026-08-21");
+    expect(twice?.split("\n")[1]).toBe("- [/] beta @2026-08-21");
+  });
+
+  it("drops a time when the day changes, instead of keeping the old hour", () => {
+    expect(setLineDue(doc, 3, "2026-08-20")?.split("\n")[2]).toBe("- [x] gamma @2026-08-20");
+  });
+
+  it("removes the due date when given an empty string", () => {
+    expect(setLineDue(doc, 2, "")?.split("\n")[1]).toBe("- [/] beta");
+  });
+
+  it("refuses a line that is not a checkbox", () => {
+    expect(setLineDue(doc, 4, "2026-08-09")).toBeNull();
+    expect(setLineDue(doc, 99, "2026-08-09")).toBeNull();
+  });
+
+  it("leaves every other line untouched", () => {
+    const out = setLineDue(doc, 1, "2026-08-09");
+    expect(out?.split("\n").slice(1)).toEqual(doc.split("\n").slice(1));
+  });
+});
+
+describe("monthGrid", () => {
+  const iso = (d: Date): string => today(d);
+
+  it("starts on the Monday on or before the 1st", () => {
+    // 2026-08-01 is a Saturday, so the grid opens on Mon 2026-07-27.
+    const g = monthGrid(new Date(2026, 7, 1));
+    expect(iso(g[0])).toBe("2026-07-27");
+    expect(g[0].getDay()).toBe(1);
+  });
+
+  it("covers the whole month in whole weeks", () => {
+    const g = monthGrid(new Date(2026, 7, 1));
+    expect(g.length % 7).toBe(0);
+    expect(g.map(iso)).toContain("2026-08-31");
+  });
+
+  it("uses five rows when six are not needed", () => {
+    // 2026-02 starts Sunday and has 28 days: it still needs six rows here
+    // (Mon-first pushes the 1st into the leading week), so assert the rule
+    // rather than a magic number — no trailing week that is all next month.
+    for (const m of [0, 1, 3, 8]) {
+      const g = monthGrid(new Date(2026, m, 1));
+      const lastWeek = g.slice(-7);
+      expect(lastWeek.some((d) => d.getMonth() === m)).toBe(true);
+    }
   });
 });
