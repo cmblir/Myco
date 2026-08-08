@@ -434,9 +434,21 @@ export default function App(): JSX.Element {
     return <PageOverview t={t} />;
   };
 
+  // key={route} remounts only the PRIMARY pane's content on navigation, so
+  // the fade replays without React reusing the old DOM node. Scoped to this
+  // one element (not the split wrapper below) so navigating the primary
+  // route never remounts the secondary pane — that pane is keyed by
+  // splitRoute instead and must keep its own state (an unsubmitted query,
+  // scroll position, an in-flight panel) untouched.
+  const primaryContent = (
+    <div className="route-fade" key={route}>
+      {renderRoute(route)}
+    </div>
+  );
+
   const body: JSX.Element = splitRoute ? (
     <div className="workspace-split">
-      <section className="workspace-pane">{renderRoute(route)}</section>
+      <section className="workspace-pane">{primaryContent}</section>
       <section className="workspace-pane workspace-pane--secondary">
         <div className="pane-bar">
           <select
@@ -464,7 +476,7 @@ export default function App(): JSX.Element {
       </section>
     </div>
   ) : (
-    renderRoute(route)
+    primaryContent
   );
 
   return (
@@ -480,12 +492,7 @@ export default function App(): JSX.Element {
       />
       <main>
         <Topbar t={t} />
-        {/* key={route} forces a remount on navigation so the fade replays;
-            without it React reuses the DOM node and the animation only ever
-            runs once, on first mount. */}
-        <div className="route-fade" key={route}>
-          {body}
-        </div>
+        {body}
       </main>
       <CommandBar t={t} />
       <DialogHost />

@@ -750,8 +750,8 @@ select {
   font-size: 13px;
   font-weight: 500;
   transition:
-    background 0.12s,
-    border-color 0.12s;
+    background var(--dur-quick),
+    border-color var(--dur-quick);
 }
 .btn:hover {
   background: var(--bg-hover);
@@ -1388,8 +1388,8 @@ select {
   width: 100%;
   outline: none;
   transition:
-    border-color 0.12s,
-    box-shadow 0.12s;
+    border-color var(--dur-quick),
+    box-shadow var(--dur-quick);
 }
 .input:focus,
 .textarea:focus,
@@ -1590,8 +1590,8 @@ hr {
   text-align: center;
   background: var(--bg-soft);
   transition:
-    border-color 0.15s,
-    background 0.15s;
+    border-color var(--dur-quick),
+    background var(--dur-quick);
 }
 .dropzone.over {
   border-color: var(--ink);
