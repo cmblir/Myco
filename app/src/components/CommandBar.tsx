@@ -104,7 +104,9 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
 
   if (!open) return null;
   const filtered = q.trim()
-    ? all.filter((x) => x.label.toLowerCase().includes(q.toLowerCase()))
+    // Capped like the no-query branch below: a two-letter query over a
+    // 1121-file vault otherwise renders every match into the palette.
+    ? all.filter((x) => x.label.toLowerCase().includes(q.toLowerCase())).slice(0, 50)
     : all.slice(0, 12);
 
   // The two rendered groups form a single navigable list: nav/file entries

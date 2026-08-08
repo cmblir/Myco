@@ -22,7 +22,6 @@ interface ContextMenuState {
 export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   const route = useUIStore((s) => s.route);
   const setRoute = useUIStore((s) => s.setRoute);
-  const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const toggleCmd = useUIStore((s) => s.toggleCmd);
   const fileTree = useVaultStore((s) => s.fileTree);
   const currentVault = useVaultStore((s) => s.currentVault);
@@ -54,14 +53,18 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   return (
     <aside className="sidebar" onClick={() => setMenu(null)}>
       <div className="side-head">
-        <button className="brand" onClick={toggleSidebar}>
+        {/* The mark goes HOME. It used to toggle the sidebar, duplicating the
+            Topbar's collapse button — two controls for one action, and the
+            caret made this one look like the canonical one. */}
+        <button
+          className="brand"
+          onClick={() => setRoute("overview")}
+          title={t.nav_overview}
+        >
           <span className="brand-mark">
             <MycoMark size={24} />
           </span>
           <span className="brand-name">{t.app_name}</span>
-          <span className="brand-caret">
-            <Icon name="sidebar" size={14} />
-          </span>
         </button>
         <button
           className="proj-switch"
@@ -183,22 +186,25 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
           )}
         </div>
 
-        <div className="nav-group">
-          <div className="nav-group-label">{t.nav_tools}</div>
-          <NavItem
-            label={t.nav_schedules}
-            icon="history"
-            active={route === "schedules"}
-            onClick={() => setRoute("schedules")}
-          />
-          <NavItem
-            label={t.nav_settings}
-            icon="settings"
-            active={route === "settings"}
-            onClick={() => setRoute("settings")}
-          />
-        </div>
       </nav>
+
+      {/* Pinned OUTSIDE the scrolling nav: these used to sit below the page
+          tree, so a 1121-file vault put 설정 an endless scroll away. */}
+      <div className="side-tools">
+        <div className="nav-group-label">{t.nav_tools}</div>
+        <NavItem
+          label={t.nav_schedules}
+          icon="history"
+          active={route === "schedules"}
+          onClick={() => setRoute("schedules")}
+        />
+        <NavItem
+          label={t.nav_settings}
+          icon="settings"
+          active={route === "settings"}
+          onClick={() => setRoute("settings")}
+        />
+      </div>
 
       <div className="side-foot">
         <div className="status-row">
@@ -315,6 +321,10 @@ function DirectoryRow({
           <Icon name="folder" size={14} />
         </span>
         <span className="ni-text">{node.name}</span>
+        {/* How many notes a folder hides, so a row that detonates into 985 says
+            so before it is clicked. `.ni-count` and countFiles both already
+            exist — this is the badge the nav items use. */}
+        <span className="ni-count">{countFiles([node]).toLocaleString()}</span>
       </button>
       {expanded
         ? node.children.map((child) => (

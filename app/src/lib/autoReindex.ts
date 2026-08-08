@@ -21,8 +21,10 @@ import { useReindexStore } from "../stores/reindexStore";
 
 /** How long the vault must sit still before reindexing. */
 const QUIET_MS = 10_000;
-/** How often to look for a change. */
-const POLL_MS = 4_000;
+/** How often to look for a change. Never finer than QUIET_MS: the vault has to
+ * sit still for that long anyway, so a faster poll buys nothing and costs a
+ * full-vault fingerprint each time. */
+const POLL_MS = 10_000;
 
 function ingestBusy(): boolean {
   const s = useIngestStore.getState().stage;

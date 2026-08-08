@@ -945,7 +945,7 @@ pub fn vault_revision(root: &str) -> Result<u64, String> {
         return Err(format!("not a directory: {root}"));
     }
     let mut entries: Vec<(String, i64, u64)> = Vec::new();
-    collect_revision_entries(&root_path, &mut entries);
+    collect_revision_entries(&root_path, &root_path, &mut entries);
     // Sort so the hash depends on the vault's content, not on the order the
     // filesystem happened to hand back directory entries.
     entries.sort();
@@ -962,11 +962,18 @@ pub fn vault_revision(root: &str) -> Result<u64, String> {
 /// unreadable directory contributes nothing rather than failing the check, for
 /// the same reason the link-graph walk skips one — a fingerprint that errors is
 /// a fingerprint the caller has to fall back from, which defeats the point.
-fn collect_revision_entries(dir: &Path, out: &mut Vec<(String, i64, u64)>) {
+fn collect_revision_entries(root: &Path, dir: &Path, out: &mut Vec<(String, i64, u64)>) {
     for (entry, kind) in vault_entries(dir) {
         let path = entry.path();
         if kind.is_dir() {
-            collect_revision_entries(&path, out);
+            // Fingerprint exactly what the consumers read. Without this a write
+            // under `sessions/` (985 files in one real vault) changed the
+            // revision and triggered a refresh of a tree and graph that do not
+            // contain it — 8x the files stat'd, for a diff nobody can see.
+            if crate::index::is_staging_dir(root, &path) {
+                continue;
+            }
+            collect_revision_entries(root, &path, out);
         } else if is_markdown(&path) {
             let Ok(meta) = entry.metadata() else { continue };
             let mtime = meta

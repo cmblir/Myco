@@ -132,7 +132,13 @@ select {
 /* App layout */
 .app {
   display: grid;
-  grid-template-columns: var(--side-w) 1fr;
+  /* minmax(0, 1fr), never a bare 1fr: a grid item's min-width defaults to auto,
+     so any child wider than the column (the kanban board's four columns, a wide
+     table, a long code line) pushes the COLUMN wider than the viewport. The page
+     then overflows sideways and its right edge is cut off, instead of the wide
+     child scrolling inside its own container. This one pair of parens is why
+     content stopped being clipped app-wide. */
+  grid-template-columns: var(--side-w) minmax(0, 1fr);
   min-height: 100vh;
   background: var(--bg);
 }
@@ -142,7 +148,7 @@ select {
    column (which we previously left at 0) and the workspace renders 0-wide,
    forcing every character of the title onto its own line. */
 .app.sidebar-collapsed {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 .app.sidebar-collapsed .sidebar {
   transform: translateX(-100%);
@@ -420,6 +426,14 @@ select {
   background: var(--c-analysis);
 }
 
+/* Tools (스케줄 / 설정) live OUTSIDE the scrolling nav, so a 1121-file vault
+   cannot push them out of reach. `.sidebar` is already a flex column, so any
+   child outside `.side-nav` is pinned by construction. */
+.side-tools {
+  flex: none;
+  padding: 6px 8px;
+  border-top: 1px solid var(--line-soft);
+}
 .side-foot {
   padding: 8px 10px;
   border-top: 1px solid var(--line-soft);
@@ -459,6 +473,9 @@ select {
   align-items: center;
   gap: 8px;
   padding: 0 16px;
+  /* Height is fixed, so nothing reflows: this only rescues the trailing pills
+     when several run chips (ingest / lint / ask) are live at once. */
+  overflow-x: auto;
   border-bottom: 1px solid var(--line);
   background: var(--bg);
   position: sticky;
@@ -564,9 +581,15 @@ select {
 
 /* Workspace */
 .workspace {
-  padding: 0 80px 96px;
+  /* Padding scales with the window instead of costing a fixed 160px: on a
+     ~900px window that fixed gutter was a fifth of the usable width, which is
+     what pushed wide content (the kanban board) past the right edge. */
+  padding: 0 clamp(16px, 5vw, 80px) 96px;
   max-width: 1100px;
   margin: 0 auto;
+  /* Belt to the grid's braces: a wide descendant scrolls itself rather than
+     stretching this column. */
+  min-width: 0;
 }
 .workspace-wide {
   padding: 0 40px;
@@ -604,7 +627,9 @@ select {
   flex: 1 1 0;
   min-height: 0;
   overflow-y: auto;
-  overflow-x: hidden;
+  /* `hidden` here cut content off with no gesture to reach it: a pane is ~354px
+     at a 1100px window, which the kanban and the stat strip both exceed. */
+  overflow-x: auto;
   padding: 0 32px 64px;
   max-width: none;
   margin: 0;
@@ -761,6 +786,10 @@ select {
   display: flex;
   gap: 12px;
   align-items: center;
+  /* `.btn` is flex-shrink:0 + nowrap, so a button group's width is a hard
+     floor: without wrapping, the row clips instead of reflowing. Engages only
+     when it would otherwise overflow. */
+  flex-wrap: wrap;
 }
 .col {
   display: flex;
@@ -783,7 +812,9 @@ select {
 
 .stat-strip {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  /* A bare `fr` floors each track at its widest label — wider still in Korean —
+     so four of them overflow a narrow pane. auto-fit reflows to 2x2 instead. */
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   gap: 12px;
   margin-top: 32px;
 }
@@ -889,6 +920,18 @@ select {
   line-height: 1.7;
   color: var(--ink-2);
   max-width: 720px;
+  /* A linkified bare URL is one unbreakable token wider than this column. */
+  overflow-wrap: anywhere;
+}
+/* A code fence or table is the one thing in rendered markdown that legitimately
+   exceeds the text column, and `pre` does not wrap by default. Making each its
+   own scroll container also drops its min-content to 0, so it can no longer drag
+   a flex parent (Reader's split view) wider than the pane. */
+.prose pre,
+.prose table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
 }
 .prose h1 {
   font-size: 32px;
@@ -912,13 +955,15 @@ select {
 .prose p {
   margin: 8px 0;
 }
-/* Task board (Kanban). Columns scroll independently so a long column never
-   pushes the others off-screen, and the board scrolls horizontally on a narrow
-   window rather than crushing four columns into unreadable strips. */
+/* Task board (Kanban). Four columns need 916px of content box, which a ~900px
+   window never has (a 1100px cap minus the sidebar and gutters leaves ~546px) —
+   so a single row of columns simply had its last two cut off. Scrolling was not
+   a way out either: scrollbars are hidden app-wide, so the overflow was
+   invisible AND unreachable. auto-fit reflows to 2x2 instead, and each column
+   still scrolls vertically so a long one never pushes the others away. */
 .task-board {
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: minmax(220px, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
   margin-top: 16px;
   overflow-x: auto;
@@ -1072,6 +1117,10 @@ select {
 .input,
 .textarea,
 .select {
+  /* min-width defaults to the control's intrinsic size (~170px for a text
+     input, ~110px for type=date), so in a flex row it refuses to yield and
+     shoves whatever follows — usually the submit button — off the edge. */
+  min-width: 0;
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--r-md);
@@ -1598,6 +1647,10 @@ hr {
   display: flex;
   align-items: center;
   gap: 8px;
+  /* ~578px of stats plus eleven buttons, inside an overflow:hidden shell: the
+     trailing controls (spaceship, the ? cheat sheet) were unreachable below
+     ~920px. Not height-locked, so wrapping is safe. */
+  flex-wrap: wrap;
   padding: 8px 12px;
   border-bottom: 1px solid var(--line);
   background: var(--bg);
@@ -4088,6 +4141,10 @@ hr {
   text-align: left;
   padding: 7px 12px;
   border-bottom: 1px solid var(--line);
+}
+/* Headers stay on one line; cell VALUES wrap, since nowrap on both guaranteed
+   the table overflowed a wrapper whose scrollability is invisible. */
+.views-table th {
   white-space: nowrap;
 }
 .views-table tbody tr:last-child td {

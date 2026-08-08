@@ -1112,12 +1112,16 @@ pub fn validate_ingest(
 
 /// Collect every markdown checkbox item across the vault into one task list.
 #[tauri::command]
-pub fn scan_tasks(
-    state: tauri::State<VaultRoot>,
+pub async fn scan_tasks(
+    state: tauri::State<'_, VaultRoot>,
     vault_path: String,
 ) -> Result<Vec<crate::tasks::TaskItem>, String> {
     let vault_path = confine_root(&state, &vault_path)?;
-    crate::tasks::scan_tasks(&vault_path)
+    // A full-vault walk on the UI thread froze the window for its duration, and
+    // the notification timer now runs it every 5 minutes unattended.
+    tauri::async_runtime::spawn_blocking(move || crate::tasks::scan_tasks(&vault_path))
+        .await
+        .map_err(|e| format!("join failed: {e}"))?
 }
 
 /// myco Pro ingest: send the open vault's snapshot + this source to the

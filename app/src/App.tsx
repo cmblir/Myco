@@ -211,7 +211,11 @@ export default function App(): JSX.Element {
     };
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", onVisible);
-    const id = window.setInterval(refresh, 4000);
+    // 30s, not 4s: this walks the vault twice (tree + link graph) on every
+    // tick, forever, while the window is merely visible. In-app writes refresh
+    // directly and focus/visibility still fire, so the only cost is up to 30s
+    // before an edit made in another app shows up here.
+    const id = window.setInterval(refresh, 30_000);
     return () => {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", onVisible);

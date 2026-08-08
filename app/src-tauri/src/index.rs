@@ -86,7 +86,7 @@ pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
 ///
 /// Top-level only (compared against the vault root), so a legitimate
 /// `wiki/sessions.md` page or a `wiki/x/_inbox/` folder is untouched.
-fn is_staging_dir(root: &Path, path: &Path) -> bool {
+pub(crate) fn is_staging_dir(root: &Path, path: &Path) -> bool {
     path.parent() == Some(root)
         && matches!(
             path.file_name().and_then(|n| n.to_str()),
