@@ -572,3 +572,247 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
     g.setNodeAttribute(id, "z", p[2] * s);
   }
 }
+
+export interface MyceliumOpts {
+  targetRadius: number;
+}
+
+// "mycelium": the vault as a spreading FUNGAL MAT. Where walrus bursts children
+// into a spherical cap around the parent's axis (compact fireworks in a ball),
+// mycelium does the opposite: a hypha keeps going. Each node hands its heaviest
+// child the parent's own direction with only a small deflection — apical
+// dominance — so a lineage becomes one long meandering thread, and the lighter
+// children peel off sideways as lateral branches. Threads then push away from
+// whatever is already nearby, which is what makes a real mat cover territory
+// instead of piling on itself.
+//
+// The result reads as growth rather than radiation: long runs, shallow forks,
+// an open interior. Flattened on y so it spreads like a mat on a substrate,
+// which also keeps it visually distinct from walrus's ball at a glance.
+//
+// Deterministic throughout (seededUnit) — the same vault must lay out the same
+// way twice, or the picture stops being "my vault" and becomes noise.
+export function applyMyceliumLayout(g: VaultGraph, o: MyceliumOpts): void {
+  const n = g.order;
+  if (n === 0) return;
+
+  const APICAL_DEFLECT = 0.30; // rad — how much the continuing tip wanders
+  const LATERAL_MIN = 0.55; // rad — narrowest a side branch peels off at
+  const LATERAL_SPAN = 0.65; // rad — extra spread for lighter branches
+  const STEP = 1.0;
+  const STEP_DECAY = 0.965; // per depth — nearly none, so threads stay long
+  const FLATTEN = 0.55; // y compression: a mat, not a ball
+  const AVOID_R = 0.85; // push-apart radius, in step units
+  const AVOID_PASSES = 2;
+
+  const degOf = (id: string): number =>
+    (g.getNodeAttribute(id, "deg") as number) ?? g.degree(id);
+
+  const parent = new Map<string, string | null>();
+  const depth = new Map<string, number>();
+  const children = new Map<string, string[]>();
+  const order: string[] = [];
+
+  const bfs = (start: string): void => {
+    parent.set(start, null);
+    depth.set(start, 0);
+    children.set(start, []);
+    order.push(start);
+    const q = [start];
+    let h = 0;
+    while (h < q.length) {
+      const cur = q[h++];
+      const d = depth.get(cur) ?? 0;
+      const nbs = g
+        .neighbors(cur)
+        .slice()
+        .sort((x, y) => degOf(y) - degOf(x) || (x < y ? -1 : 1));
+      for (const nb of nbs) {
+        if (depth.has(nb)) continue;
+        depth.set(nb, d + 1);
+        parent.set(nb, cur);
+        children.set(nb, []);
+        children.get(cur)!.push(nb);
+        order.push(nb);
+        q.push(nb);
+      }
+    }
+  };
+
+  const all = g.nodes().slice().sort();
+  let root = all[0];
+  for (const id of all) if (degOf(id) > degOf(root)) root = id;
+  bfs(root);
+  const roots: string[] = [root];
+  for (const id of all) {
+    if (depth.has(id)) continue;
+    bfs(id);
+    roots.push(id);
+  }
+
+  // Subtree weight decides which child inherits the tip. The heaviest lineage
+  // continuing straight is what turns a tree into threads.
+  const weight = new Map<string, number>();
+  for (let i = order.length - 1; i >= 0; i--) {
+    const v = order[i];
+    let wsum = 1;
+    for (const c of children.get(v) ?? []) wsum += weight.get(c) ?? 1;
+    weight.set(v, wsum);
+  }
+
+  const pos = new Map<string, [number, number, number]>();
+  const dir = new Map<string, [number, number, number]>();
+
+  const norm = (v: [number, number, number]): [number, number, number] => {
+    const m = Math.hypot(v[0], v[1], v[2]) || 1;
+    return [v[0] / m, v[1] / m, v[2] / m];
+  };
+
+  // Rotate `d` away from itself by `ang`, around an azimuth `az` in the plane
+  // perpendicular to d. This is how both the apical wander and the lateral
+  // branches are aimed.
+  const deflect = (
+    d: [number, number, number],
+    ang: number,
+    az: number,
+  ): [number, number, number] => {
+    const [u, w] = perpBasis(d);
+    const s = Math.sin(ang);
+    const c = Math.cos(ang);
+    const cu = Math.cos(az) * s;
+    const cw = Math.sin(az) * s;
+    return norm([
+      d[0] * c + u[0] * cu + w[0] * cw,
+      d[1] * c + u[1] * cu + w[1] * cw,
+      d[2] * c + u[2] * cu + w[2] * cw,
+    ]);
+  };
+
+  // Inoculation points: the main hub at the centre, other components spaced
+  // around it so a disconnected tail starts its own colony instead of growing
+  // out of the middle of somebody else's.
+  const golden2 = Math.PI * (3 - Math.sqrt(5));
+  roots.forEach((rt, ri) => {
+    if (ri === 0) {
+      pos.set(rt, [0, 0, 0]);
+      dir.set(rt, [1, 0, 0]);
+    } else {
+      const t = roots.length > 1 ? ri / roots.length : 0.5;
+      const a = golden2 * ri;
+      const rr = 2.2 + t * 5.5;
+      const d = norm([Math.cos(a), (seededUnit(rt, 83) - 0.5) * 0.5, Math.sin(a)]);
+      pos.set(rt, [d[0] * rr, d[1] * rr * FLATTEN, d[2] * rr]);
+      dir.set(rt, d);
+    }
+  });
+
+  for (const v of order) {
+    const kids = children.get(v) ?? [];
+    if (kids.length === 0) continue;
+    const d = depth.get(v) ?? 0;
+    const step = STEP * Math.pow(STEP_DECAY, d);
+    const p = pos.get(v)!;
+    const pd = dir.get(v)!;
+
+    // Heaviest first — it gets the tip, the rest become laterals.
+    const sorted = kids
+      .slice()
+      .sort((x, y) => (weight.get(y) ?? 1) - (weight.get(x) ?? 1) || (x < y ? -1 : 1));
+    const laterals = sorted.length - 1;
+
+    sorted.forEach((c, j) => {
+      let nd: [number, number, number];
+      if (j === 0) {
+        // Apical: keep going, wander a little.
+        const az = seededUnit(c, 91) * Math.PI * 2;
+        nd = deflect(pd, APICAL_DEFLECT * (0.4 + seededUnit(c, 92) * 0.6), az);
+      } else {
+        // Lateral: peel off. Spread the branches around the parent thread so
+        // two siblings never leave on the same side.
+        const k = laterals > 1 ? (j - 1) / (laterals - 1) : 0.5;
+        const az = k * Math.PI * 2 + seededUnit(c, 93) * 0.9;
+        const ang = LATERAL_MIN + LATERAL_SPAN * seededUnit(c, 94);
+        nd = deflect(pd, ang, az);
+      }
+      const jit = 0.85 + seededUnit(c, 95) * 0.3;
+      pos.set(c, [
+        p[0] + nd[0] * step * jit,
+        p[1] + nd[1] * step * jit * FLATTEN,
+        p[2] + nd[2] * step * jit,
+      ]);
+      dir.set(c, nd);
+    });
+  }
+
+  // Push overlapping tips apart. Real hyphae avoid one another; without this the
+  // mat collapses into a few dense lumps and stops reading as growth.
+  //
+  // ponytail: uniform grid hash, rebuilt per pass — O(n) per pass at this size
+  // (a 1144-node vault bakes in one shot). Swap for a KD-tree only if a vault
+  // gets big enough to measure.
+  const cell = AVOID_R;
+  const key = (x: number, y: number, z: number): string =>
+    `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
+
+  for (let pass = 0; pass < AVOID_PASSES; pass++) {
+    const grid = new Map<string, string[]>();
+    for (const id of all) {
+      const p = pos.get(id);
+      if (!p) continue;
+      const k = key(p[0], p[1], p[2]);
+      const bucket = grid.get(k);
+      if (bucket) bucket.push(id);
+      else grid.set(k, [id]);
+    }
+    for (const id of all) {
+      const p = pos.get(id);
+      if (!p) continue;
+      // A root is the colony's anchor — moving it drags the whole thread.
+      if ((depth.get(id) ?? 0) === 0) continue;
+      let dx = 0;
+      let dy = 0;
+      let dz = 0;
+      const cx = Math.floor(p[0] / cell);
+      const cy = Math.floor(p[1] / cell);
+      const cz = Math.floor(p[2] / cell);
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          for (let oz = -1; oz <= 1; oz++) {
+            const bucket = grid.get(`${cx + ox},${cy + oy},${cz + oz}`);
+            if (!bucket) continue;
+            for (const other of bucket) {
+              if (other === id) continue;
+              // Never push a node off its own parent — that would snap the thread.
+              if (parent.get(id) === other || parent.get(other) === id) continue;
+              const q = pos.get(other)!;
+              const ex = p[0] - q[0];
+              const ey = p[1] - q[1];
+              const ez = p[2] - q[2];
+              const dist = Math.hypot(ex, ey, ez);
+              if (dist >= AVOID_R || dist < 1e-6) continue;
+              const f = (AVOID_R - dist) / AVOID_R;
+              dx += (ex / dist) * f;
+              dy += (ey / dist) * f;
+              dz += (ez / dist) * f;
+            }
+          }
+        }
+      }
+      pos.set(id, [
+        p[0] + dx * 0.35,
+        p[1] + dy * 0.35 * FLATTEN,
+        p[2] + dz * 0.35,
+      ]);
+    }
+  }
+
+  let maxR = 1e-6;
+  for (const p of pos.values()) maxR = Math.max(maxR, Math.hypot(p[0], p[1], p[2]));
+  const s = o.targetRadius / maxR;
+  for (const id of all) {
+    const p = pos.get(id) ?? [0, 0, 0];
+    g.setNodeAttribute(id, "x", p[0] * s);
+    g.setNodeAttribute(id, "y", p[1] * s);
+    g.setNodeAttribute(id, "z", p[2] * s);
+  }
+}
