@@ -37,7 +37,7 @@ export interface GraphSettings {
   // "spiral" = a static log-spiral galaxy (the cosmic-refs Andromeda/M101
   // form): communities along the arms, biggest at the core. "strata" = a
   // static 2D time chart: x = last-modified (oldest left), y = community band.
-  layout: "galaxy" | "atlas" | "synapse" | "synapse3d" | "spiral" | "strata" | "semantic" | "celestial" | "radial" | "walrus" | "mycelium";
+  layout: "galaxy" | "atlas" | "synapse" | "synapse3d" | "spiral" | "strata" | "semantic" | "celestial" | "radial" | "walrus";
   // Multiverse mode: instead of this one vault, show EVERY registered project
   // as its own glowing universe-bubble in one shared cosmos. Fly into a bubble
   // to switch the active vault (which turns this back off, landing you in that
@@ -422,19 +422,6 @@ export const LAYOUT_RECOMMENDED: Record<
     neuralFiring: false,
     cosmicEvents: false,
   },
-  // Mycelium: the threads ARE the picture, so edges stay plain structure and
-  // the baked mat is pinned (cosmic events would tear the hyphae apart).
-  // Community colour lets each lineage read as its own strand of the mat.
-  mycelium: {
-    folderGalaxies: false,
-    edgeTint: "grey",
-    edgeBundles: false,
-    nodeColor: "community",
-    nodeColorDepth: 1,
-    clickBurst: true,
-    neuralFiring: false,
-    cosmicEvents: false,
-  },
 };
 
 // ── One-click looks ("vibes") ────────────────────────────────────────────
@@ -451,8 +438,7 @@ export type VibeKey =
   | "paper"
   | "chronicle"
   | "nebula"
-  | "walrus"
-  | "mycelium";
+  | "walrus";
 
 export const VIBE_PRESETS: Record<VibeKey, Partial<GraphSettings>> = {
   // The default identity: the living galaxy.
@@ -492,10 +478,6 @@ export const VIBE_PRESETS: Record<VibeKey, Partial<GraphSettings>> = {
   // muddies the void the tree needs) — the tree spokes and boundary sphere are
   // the picture, so structural grey edges and no nebula-competing extras.
   walrus: { skin: "galaxy", layout: "walrus", ...LAYOUT_RECOMMENDED.walrus },
-  // The fungal mat: long hyphae spreading across a dark substrate. Rides the
-  // galaxy skin for the same reason walrus does — the threads need a clean void
-  // to read against, and the black skin's haze muddies them.
-  mycelium: { skin: "galaxy", layout: "mycelium", ...LAYOUT_RECOMMENDED.mycelium },
 };
 
 // Which preset (if any) the current force values correspond to — drives the
