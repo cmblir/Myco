@@ -10,9 +10,15 @@ import type { Lang, Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import type { Theme } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
+import {
+  createOverviewEngine,
+  OVERVIEW_THEMES,
+  type OverviewThemeKey,
+} from "../lib/overviewThemes";
 import { useSettingsStore } from "../stores/settingsStore";
 import { getVersion } from "@tauri-apps/api/app";
 import { ipc } from "../lib/ipc";
+import type { ProjectInfo } from "../lib/ipc";
 import type { McpNativeInfo, MycoSettings, OllamaStatus } from "../lib/ipc";
 import { PROVIDERS, providerDesc, useEnabledProviders } from "../lib/providers";
 import type { ProviderDef } from "../lib/providers";
@@ -89,7 +95,10 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
             <SettingsLang t={t} lang={lang} setLang={setLang} />
           ) : null}
           {tab === "appearance" ? (
-            <SettingsAppearance t={t} theme={theme} setTheme={setTheme} />
+            <div className="col" style={{ gap: 24 }}>
+              <SettingsAppearance t={t} theme={theme} setTheme={setTheme} />
+              <SettingsOverviewTheme t={t} />
+            </div>
           ) : null}
           {tab === "about" ? <SettingsAbout t={t} /> : null}
         </div>
@@ -171,6 +180,7 @@ function SettingsAccount({ t }: { t: Strings }): JSX.Element {
             {t.s_change ?? "Change…"}
           </button>
         </div>
+        <KnownVaults t={t} />
         <div className="row" style={{ marginTop: 10, gap: 10, alignItems: "center" }}>
           <button
             className="btn"
@@ -1789,5 +1799,198 @@ function SettingsAbout({ t }: { t: Strings }): JSX.Element {
         </div>
       </div>
     </div>
+  );
+}
+
+// Vaults myco already knows about, so switching is a click instead of
+// re-navigating a folder dialog. The "change folder" control itself already
+// lives in the account block above — this only adds the shortcut list, rather
+// than a second way to do the same thing on the same screen.
+function KnownVaults({ t }: { t: Strings }): JSX.Element | null {
+  const currentVault = useVaultStore((s) => s.currentVault);
+  const openVault = useVaultStore((s) => s.openVault);
+  const [known, setKnown] = useState<ProjectInfo[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    // Best effort: a registry that cannot be read means "no shortcuts", never a
+    // broken settings page.
+    ipc
+      .listUniverses()
+      .then((rows) => {
+        if (!cancelled) setKnown(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setKnown([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const others = known.filter((k) => k.root !== currentVault?.path);
+  if (others.length === 0) return null;
+
+  return (
+    <div className="col" style={{ gap: 6, marginTop: 12 }}>
+      <span className="muted" style={{ fontSize: 12 }}>
+        {t.s_vault_known ?? "Vaults myco already knows"}
+      </span>
+      <div className="list">
+        {others.map((k) => (
+          <button
+            key={k.root}
+            type="button"
+            className="list-row recent-row"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              void openVault(k.root).finally(() => setBusy(false));
+            }}
+          >
+            <span className="ic">
+              <Icon name="folder" size={14} />
+            </span>
+            <span style={{ fontWeight: 500 }}>{k.title || k.slug}</span>
+            <span className="meta">{k.noteCount}</span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// The Overview page's living background. Options are named after the graph's
+// layouts on purpose — one vocabulary, two expressions — but the setting is
+// deliberately NOT linked to the graph's own layout.
+function SettingsOverviewTheme({ t }: { t: Strings }): JSX.Element {
+  const overviewTheme = useUIStore((s) => s.overviewTheme);
+  const setOverviewTheme = useUIStore((s) => s.setOverviewTheme);
+
+  const label = (k: OverviewThemeKey): string => {
+    const map: Record<OverviewThemeKey, string | undefined> = {
+      galaxy: t.gr_layout_galaxy_s,
+      mycelium: t.ov_theme_mycelium,
+      spiral: t.gr_layout_spiral,
+      synapse3d: t.gr_layout_synapse3d_s,
+      celestial: t.gr_layout_celestial,
+      radial: t.gr_layout_radial,
+      walrus: t.gr_layout_walrus,
+      strata: t.gr_layout_strata,
+      semantic: t.gr_layout_semantic,
+      atlas: t.gr_layout_atlas_s,
+    };
+    return map[k] ?? k;
+  };
+
+  return (
+    <div className="col" style={{ gap: 14 }}>
+      <div>
+        <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>
+          {t.s_ov_theme ?? "Overview background"}
+        </h2>
+        <p className="muted" style={{ margin: "6px 0 0", fontSize: 14 }}>
+          {t.s_ov_theme_lede ??
+            "The living background on the Overview page. Named after the graph's layouts; not linked to them."}
+        </p>
+      </div>
+      <div className="ov-theme-grid">
+        {OVERVIEW_THEMES.map((k) => (
+          <ThemeSwatch
+            key={k}
+            themeKey={k}
+            label={label(k)}
+            selected={overviewTheme === k}
+            onPick={() => setOverviewTheme(k)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// A live preview, not a static thumbnail: the choice is about MOTION, so a
+// frozen image cannot represent it. Each swatch runs its own engine and stops
+// as soon as it scrolls out of view.
+function ThemeSwatch({
+  themeKey,
+  label,
+  selected,
+  onPick,
+}: {
+  themeKey: OverviewThemeKey;
+  label: string;
+  selected: boolean;
+  onPick: () => void;
+}): JSX.Element {
+  const ref = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const ctx = cv.getContext("2d");
+    if (!ctx) return;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const engine = createOverviewEngine(themeKey, { count: 14, speed: 0.6 });
+    let raf = 0;
+    let last = 0;
+    let visible = true;
+    let stopped = false;
+
+    const fit = (): { w: number; h: number } => {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const rect = cv.getBoundingClientRect();
+      const w = Math.max(1, Math.round(rect.width));
+      const h = Math.max(1, Math.round(rect.height));
+      if (cv.width !== w * dpr || cv.height !== h * dpr) {
+        cv.width = w * dpr;
+        cv.height = h * dpr;
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      return { w, h };
+    };
+    const draw = (dt: number): void => {
+      const { w, h } = fit();
+      if (!engine.trails) ctx.clearRect(0, 0, w, h);
+      engine.step(ctx, w, h, dt);
+    };
+    const frame = (ts: number): void => {
+      if (stopped) return;
+      const dt = last ? Math.min((ts - last) / 1000, 0.05) : 0.016;
+      last = ts;
+      draw(dt);
+      raf = requestAnimationFrame(frame);
+    };
+    draw(0.016);
+    // Ten swatches all animating off-screen is ten idle loops for nothing.
+    const io = new IntersectionObserver((entries) => {
+      visible = entries.some((e) => e.isIntersecting);
+      if (visible && !reduced && !raf && !stopped) {
+        last = 0;
+        raf = requestAnimationFrame(frame);
+      } else if (!visible && raf) {
+        cancelAnimationFrame(raf);
+        raf = 0;
+      }
+    });
+    io.observe(cv);
+    return () => {
+      stopped = true;
+      cancelAnimationFrame(raf);
+      io.disconnect();
+    };
+  }, [themeKey]);
+
+  return (
+    <button
+      type="button"
+      className={`ov-theme-sw${selected ? " is-on" : ""}`}
+      aria-pressed={selected}
+      onClick={onPick}
+    >
+      <canvas ref={ref} aria-hidden="true" />
+      <span>{label}</span>
+    </button>
   );
 }
