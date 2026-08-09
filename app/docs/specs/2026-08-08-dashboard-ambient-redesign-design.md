@@ -194,11 +194,17 @@ Called once when the vault changes, alongside the existing `fileTree` /
 Almost no new motion — the tokens are applied so existing durations stop
 disagreeing:
 
-- Sidebar hover/active: `--dur-quick`, transform only.
 - Route change: one layer of fade + 8px rise on entering content,
   `--dur-enter`.
+- Existing hover/transition rules converted to `--dur-quick` / `--ease-out`:
+  buttons, switches, the dropzone, the task calendar, deck rows, and the
+  graph's drawer/toggle controls.
 - Existing `chip-breathe` / `agent-pulse`: switched to tokens, behaviour
   unchanged.
+
+Sidebar and Topbar are untouched: `.nav-item:hover` and `.icon-btn:hover`
+carry no `transition` property at all, so there was nothing in either file
+to tokenize.
 
 Route transitions stay short deliberately. Motion that replays on every click
 reads as latency by the third time. Ambient motion earns its keep by running
@@ -290,17 +296,18 @@ Modified:
 
 ```
 src/pages/PageOverview.tsx   largely rewritten
-src/styles.css               motion tokens, ambient layer, two-column band
+src/styles.css               motion tokens, ambient layer, two-column band,
+                              --dur-quick/--ease-out on existing hover rules
+                              (buttons, switches, dropzone, task calendar,
+                              deck rows, graph drawer/toggle)
 src/lib/i18n.ts              new strings across en/ko/ja
-src/components/Sidebar.tsx   token substitution only
-src/components/Topbar.tsx    token substitution only
 src/App.tsx                  one fade layer on route change
 ```
 
-Sidebar, Topbar and App.tsx are token substitution: hardcoded durations become
-variables, no structural or behavioural change. The visible effect is that
-hover timings stop disagreeing with each other. If that is unwanted, dropping
-those three files leaves the rest of the design intact.
+`src/components/Sidebar.tsx` and `src/components/Topbar.tsx` are not touched
+by this branch — their hover rules (`.nav-item:hover`, `.icon-btn:hover`)
+carry no `transition` property, before or after, so there was nothing to
+tokenize there.
 
 No Rust changes.
 

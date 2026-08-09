@@ -136,6 +136,31 @@ describe("motionVars", () => {
   });
 });
 
+import { sparkHeights } from "./vaultPulse";
+
+describe("sparkHeights", () => {
+  it("scales each series against its own peak, not a shared one", () => {
+    // The real vault's shape: a week of near-silence on the user's side
+    // while the session-file sweep keeps ingesting ~1000/day. Against a
+    // SHARED peak every authored bar would round to the same ~0.1-0.2%
+    // stub; scaled independently, the day with 2 reads as taller than the
+    // day with 1, and both are far above 0.
+    const buckets = {
+      authored: [0, 0, 0, 0, 0, 1, 2],
+      ingested: [1000, 1000, 1000, 1000, 1000, 1000, 1000],
+    };
+    const h = sparkHeights(buckets);
+    expect(h.authored).toEqual([0, 0, 0, 0, 0, 50, 100]);
+    expect(h.ingested).toEqual([100, 100, 100, 100, 100, 100, 100]);
+  });
+
+  it("floors the peak at 1 so an all-zero series divides by zero nowhere", () => {
+    const h = sparkHeights({ authored: [0, 0, 0], ingested: [0, 0, 0] });
+    expect(h.authored).toEqual([0, 0, 0]);
+    expect(h.ingested).toEqual([0, 0, 0]);
+  });
+});
+
 import { recentAuthored } from "./vaultPulse";
 
 describe("recentAuthored", () => {

@@ -61,6 +61,25 @@ export function bucketByDay(
   return { authored, ingested };
 }
 
+/** Sparkline bar heights (0..100) for each day, one series per key.
+ *
+ *  Each series is scaled against its OWN peak, not a shared one: `authored`
+ *  and `ingested` measure different things in different units — the user's
+ *  writing vs. machine intake — so their bar HEIGHTS were never meant to be
+ *  compared against each other. Height shows each series' own shape across
+ *  the week; absolute magnitudes are the caller's job (the `n / m` caption
+ *  in VaultPulse.tsx). A shared peak flattens `authored` to invisible on the
+ *  real vault, where a day's `ingested` (the session-file sweep) runs 1000+
+ *  against `authored`'s 0-50. */
+export function sparkHeights(buckets: DayBuckets): DayBuckets {
+  const authoredPeak = Math.max(1, ...buckets.authored);
+  const ingestedPeak = Math.max(1, ...buckets.ingested);
+  return {
+    authored: buckets.authored.map((n) => (n / authoredPeak) * 100),
+    ingested: buckets.ingested.map((n) => (n / ingestedPeak) * 100),
+  };
+}
+
 /** Ambient motion is capped here because the data behind it is ordinal. Tens of
  *  particles read as "many"; hundreds would claim a precision that
  *  "153 wikilinks" does not carry. */

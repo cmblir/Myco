@@ -124,11 +124,8 @@ export interface Strings {
   ov_cta_ingest: string;
   ov_cta_ask: string;
   ov_stats_pages: string;
-  ov_stats_sources: string;
   ov_stats_links: string;
   ov_stats_ratio: string;
-  ov_recent: string;
-  ov_recent_more: string;
   ov_quick: string;
   ov_stats_moved?: string;
   ov_moved_none?: string;
@@ -724,7 +721,6 @@ export interface Strings {
   gr_fit?: string;
   gr_zoom_in?: string;
   // Overview / History empty states.
-  ov_no_git?: string;
   h_open_vault?: string;
   // Tags page (FEAT-03).
   tg_title: string;
@@ -902,11 +898,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_cta_ingest: "Ingest a source",
     ov_cta_ask: "Ask the wiki",
     ov_stats_pages: "Pages",
-    ov_stats_sources: "Sources",
     ov_stats_links: "Links",
     ov_stats_ratio: "Wiki-only answers",
-    ov_recent: "Recent activity",
-    ov_recent_more: "View all",
     ov_quick: "Jump back in",
     ov_stats_moved: "moved this week",
     ov_moved_none: "Nothing written in the last 7 days",
@@ -1518,7 +1511,6 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_zoom_out: "Zoom out",
     gr_fit: "Fit",
     gr_zoom_in: "Zoom in",
-    ov_no_git: "No git history yet.",
     h_open_vault: "Open a vault to see history.",
     tg_title: "Tags",
     tg_lede:
@@ -1704,11 +1696,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_cta_ingest: "소스 가져오기",
     ov_cta_ask: "위키에 질문",
     ov_stats_pages: "페이지",
-    ov_stats_sources: "소스",
     ov_stats_links: "연결",
     ov_stats_ratio: "위키만으로 답변",
-    ov_recent: "최근 활동",
-    ov_recent_more: "전체 보기",
     ov_quick: "이어서 보기",
     ov_stats_moved: "이번 주 움직임",
     ov_moved_none: "최근 7일간 쓴 것 없음",
@@ -2318,7 +2307,6 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_zoom_out: "축소",
     gr_fit: "맞춤",
     gr_zoom_in: "확대",
-    ov_no_git: "아직 git 히스토리가 없습니다.",
     h_open_vault: "히스토리를 보려면 vault를 여세요.",
     tg_title: "태그",
     tg_lede:
@@ -2444,11 +2432,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_cta_ingest: "ソースを取り込む",
     ov_cta_ask: "ウィキに質問",
     ov_stats_pages: "ページ",
-    ov_stats_sources: "ソース",
     ov_stats_links: "リンク",
     ov_stats_ratio: "ウィキだけで回答",
-    ov_recent: "最近のアクティビティ",
-    ov_recent_more: "すべて見る",
     ov_quick: "続きから",
     ov_stats_moved: "今週の動き",
     ov_moved_none: "直近 7 日間の記述なし",
@@ -3000,7 +2985,6 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_zoom_out: "ズームアウト",
     gr_fit: "全体表示",
     gr_zoom_in: "ズームイン",
-    ov_no_git: "まだ git 履歴がありません。",
     h_open_vault: "履歴を見るには vault を開いてください。",
     tg_title: "タグ",
     tg_lede:

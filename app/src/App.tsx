@@ -437,9 +437,11 @@ export default function App(): JSX.Element {
   // key={route} remounts only the PRIMARY pane's content on navigation, so
   // the fade replays without React reusing the old DOM node. Scoped to this
   // one element (not the split wrapper below) so navigating the primary
-  // route never remounts the secondary pane — that pane is keyed by
-  // splitRoute instead and must keep its own state (an unsubmitted query,
-  // scroll position, an in-flight panel) untouched.
+  // route never remounts the secondary pane. The secondary pane carries no
+  // key at all — its content changes only because renderRoute(splitRoute)
+  // returns a different component type when splitRoute changes, which is
+  // enough for React to swap it, and it keeps its own state (an unsubmitted
+  // query, scroll position, an in-flight panel) untouched.
   const primaryContent = (
     <div className="route-fade" key={route}>
       {renderRoute(route)}

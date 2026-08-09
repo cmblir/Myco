@@ -8,7 +8,7 @@
 import { useMemo } from "react";
 import type { CSSProperties, JSX } from "react";
 import type { Strings } from "../lib/i18n";
-import { motionVars, type DayBuckets } from "../lib/vaultPulse";
+import { motionVars, sparkHeights, type DayBuckets } from "../lib/vaultPulse";
 
 interface VaultPulseProps {
   t: Strings;
@@ -41,7 +41,9 @@ export default function VaultPulse({
     "--vault-glow": vars.glow,
   } as CSSProperties;
 
-  const peak = Math.max(1, ...buckets.authored, ...buckets.ingested);
+  // See `sparkHeights` for why each series scales against its own peak
+  // instead of a shared one.
+  const heights = sparkHeights(buckets);
   const alt = (t.ov_pulse_alt ?? "{pages} pages, {links} links, {moved} touched this week")
     .replace("{pages}", String(pages))
     .replace("{links}", String(links))
@@ -73,15 +75,12 @@ export default function VaultPulse({
       </div>
 
       <div className="vp-spark">
-        {buckets.authored.map((n, i) => (
+        {heights.authored.map((h, i) => (
           <span className="vp-bar" key={i}>
-            <span
-              className="vp-bar-authored"
-              style={{ height: `${(n / peak) * 100}%` }}
-            />
+            <span className="vp-bar-authored" style={{ height: `${h}%` }} />
             <span
               className="vp-bar-ingested"
-              style={{ height: `${((buckets.ingested[i] ?? 0) / peak) * 100}%` }}
+              style={{ height: `${heights.ingested[i] ?? 0}%` }}
             />
           </span>
         ))}
