@@ -455,6 +455,10 @@ export interface Strings {
   s_providers: string;
   s_mcp: string;
   s_appearance: string;
+  s_vault_known?: string;
+  s_ov_theme?: string;
+  s_ov_theme_lede?: string;
+  ov_theme_mycelium?: string;
   s_lang: string;
   s_about: string;
   mcp_lede: string;
@@ -1235,6 +1239,10 @@ export const STRINGS: Record<Lang, Strings> = {
     s_autoreindex_desc: "While myco is open, re-embed pages you edit once you stop typing. Only pages that changed are re-embedded.",
     s_providers: "Connections",
     s_appearance: "Appearance",
+    s_vault_known: "Vaults myco already knows",
+    s_ov_theme: "Overview background",
+    s_ov_theme_lede: "The living background on the Overview page. Named after the graph's layouts; not linked to them.",
+    ov_theme_mycelium: "Mycelium",
     s_lang: "Language",
     s_about: "About",
     s_mcp: "MCP Server",
@@ -2033,6 +2041,10 @@ export const STRINGS: Record<Lang, Strings> = {
     s_autoreindex_desc: "myco가 열려 있는 동안, 편집을 멈추면 수정한 페이지를 다시 임베딩합니다. 바뀐 페이지만 처리합니다.",
     s_providers: "연결",
     s_appearance: "테마",
+    s_vault_known: "myco가 이미 아는 보관함",
+    s_ov_theme: "개요 배경",
+    s_ov_theme_lede: "개요 페이지의 살아있는 배경입니다. 그래프 레이아웃 이름을 그대로 쓰지만 연동되지는 않습니다.",
+    ov_theme_mycelium: "균사",
     s_lang: "언어",
     s_about: "정보",
     s_mcp: "MCP 서버",
@@ -2719,6 +2731,10 @@ export const STRINGS: Record<Lang, Strings> = {
     s_autoreindex_desc: "mycoが開いている間、編集の手が止まったら変更したページを再埋め込みします。変更されたページのみ処理します。",
     s_providers: "接続",
     s_appearance: "外観",
+    s_vault_known: "myco が把握しているヴォールト",
+    s_ov_theme: "概要の背景",
+    s_ov_theme_lede: "概要ページの生きた背景です。グラフのレイアウト名をそのまま使いますが、連動はしません。",
+    ov_theme_mycelium: "菌糸",
     s_lang: "言語",
     s_about: "myco について",
     s_mcp: "MCP サーバー",

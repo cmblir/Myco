@@ -1143,8 +1143,17 @@ select {
   margin-top: 2px;
 }
 
-/* Particle field. One container gets will-change; putting it on each dot
-   would multiply compositor layers by the particle count. */
+/* The living background. One canvas behind the figures; the engine that draws
+   it is picked in Settings (lib/overviewThemes.ts). */
+.vp-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  opacity: var(--vault-glow, 0.35);
+  pointer-events: none;
+}
 .vp-field {
   position: absolute;
   inset: 0;
@@ -1284,6 +1293,49 @@ select {
   .vp-dot {
     /* Without the drift they need placing across the width by hand. */
     left: calc(var(--i) * 3.4%);
+  }
+}
+
+/* Overview background picker. Live previews, so the grid keeps them small
+   enough that ten running engines stay cheap. */
+.ov-theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 132px), 1fr));
+  gap: 10px;
+}
+.ov-theme-sw {
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #0f0f0e;
+  overflow: hidden;
+  cursor: pointer;
+  display: block;
+  text-align: left;
+  transition: border-color var(--dur-quick, 140ms) var(--ease-out, ease);
+}
+.ov-theme-sw canvas {
+  display: block;
+  width: 100%;
+  height: 64px;
+}
+.ov-theme-sw span {
+  display: block;
+  padding: 6px 8px 7px;
+  font-size: 11.5px;
+  color: #a5a099;
+  background: #141412;
+  border-top: 1px solid #232220;
+}
+.ov-theme-sw.is-on {
+  border-color: var(--accent, #2b4a72);
+}
+.ov-theme-sw.is-on span {
+  color: #edeae4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ov-theme-sw {
+    transition: none;
   }
 }
 

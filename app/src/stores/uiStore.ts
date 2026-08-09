@@ -3,6 +3,11 @@
 // keep their configuration.
 
 import { create } from "zustand";
+import {
+  DEFAULT_OVERVIEW_THEME,
+  isOverviewTheme,
+  type OverviewThemeKey,
+} from "../lib/overviewThemes";
 import { persist } from "zustand/middleware";
 import type { Lang } from "../lib/i18n";
 
@@ -45,6 +50,10 @@ export interface UIState {
   // MYCO mascot master switch — WCAG-style full opt-out (also the 14% of
   // users who reject any character presence). Off = static logo fallback.
   mascotEnabled: boolean;
+  // Which ambient background the Overview page runs. Named after the graph's
+  // layouts on purpose — same vocabulary, two expressions — but deliberately a
+  // SEPARATE key: the two are not linked, so changing one must not move the other.
+  overviewTheme: OverviewThemeKey;
   // Sidebar tree
   expandedFolders: Record<string, boolean>;
 
@@ -60,6 +69,7 @@ export interface UIState {
   setAccent: (accent: string) => void;
   setShowCitations: (v: boolean) => void;
   setMascotEnabled: (v: boolean) => void;
+  setOverviewTheme: (v: OverviewThemeKey) => void;
   toggleFolder: (id: string) => void;
 }
 
@@ -72,6 +82,7 @@ export const useUIStore = create<UIState>()(
       cmdOpen: false,
       lang: "ko",
       theme: "dark",
+      overviewTheme: DEFAULT_OVERVIEW_THEME,
       density: "comfortable",
       accent: "#181715",
       showCitations: true,
@@ -96,6 +107,7 @@ export const useUIStore = create<UIState>()(
       setAccent: (accent) => set({ accent }),
       setShowCitations: (v) => set({ showCitations: v }),
       setMascotEnabled: (v) => set({ mascotEnabled: v }),
+      setOverviewTheme: (v) => set({ overviewTheme: v }),
       toggleFolder: (id) =>
         set({
           expandedFolders: {
@@ -106,6 +118,22 @@ export const useUIStore = create<UIState>()(
           },
         }),
     }),
-    { name: "myco-ui", version: 3 },
+    {
+      name: "myco-ui",
+      version: 3,
+      // A store persisted before this key existed — or one holding a theme that
+      // has since been removed — would otherwise hand the Overview page an
+      // engine key with no factory behind it.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<UIState>;
+        return {
+          ...current,
+          ...p,
+          overviewTheme: isOverviewTheme(p.overviewTheme)
+            ? p.overviewTheme
+            : DEFAULT_OVERVIEW_THEME,
+        };
+      },
+    },
   ),
 );
