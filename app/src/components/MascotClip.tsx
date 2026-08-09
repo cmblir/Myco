@@ -10,7 +10,7 @@
 // and falls back to the poster if playback errors. The clip frame is a wide
 // 16:9; the component crops to a square around the centered character so
 // callers just pass one size.
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { MycoMark } from "../lib/icons";
 import { useUIStore } from "../stores/uiStore";
@@ -68,6 +68,7 @@ export default function MascotClip({
   onEnded?: () => void;
 }): JSX.Element {
   const [failed, setFailed] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   // A finished one-shot holds its last frame. Tracked in state (not left to the
   // element) so the reduced-motion and error paths render the same still.
   const [ended, setEnded] = useState(false);
@@ -98,6 +99,28 @@ export default function MascotClip({
   }, [clip, loops, willNotPlay]);
   // Master opt-out (Settings › Appearance): the static logo takes the slot so
   // layouts never shift, the character just stops appearing.
+  // Autoplay can be REFUSED without ever firing an error event — Low Power
+  // Mode, a backgrounded tab at mount, or a webview that wants a gesture. The
+  // element then sits on its poster showing WKWebView's play glyph, which is
+  // the "myco sometimes appears as a play button" bug. onError does not cover
+  // this (it fires for load/decode failures only), so catch the rejected
+  // play() promise and fall back to the poster IMAGE, which has no such
+  // affordance.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    let cancelled = false;
+    const attempt = v.play();
+    if (attempt && typeof attempt.catch === "function") {
+      attempt.catch(() => {
+        if (!cancelled) setFailed(true);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [clip, reduced, failed, ended]);
+
   if (!mascotEnabled) {
     return (
       <span
@@ -135,6 +158,7 @@ export default function MascotClip({
         <img src={c.poster} alt="" draggable={false} style={mediaStyle} />
       ) : (
         <video
+          ref={videoRef}
           src={WANTS_HEVC ? c.mov : c.webm}
           poster={c.poster}
           autoPlay
