@@ -209,45 +209,6 @@ select {
   color: var(--ink-4);
   display: flex;
 }
-.proj-switch {
-  margin-top: 4px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 6px;
-  border-radius: var(--r);
-  cursor: pointer;
-  border: 0;
-  background: transparent;
-  width: 100%;
-}
-.proj-switch:hover {
-  background: var(--bg-hover);
-}
-.proj-icon {
-  width: 18px;
-  height: 18px;
-  border-radius: 4px;
-  background: var(--ink);
-  color: var(--bg);
-  font-size: 11px;
-  font-weight: 600;
-  display: grid;
-  place-items: center;
-}
-.proj-name {
-  flex: 1;
-  font-weight: 500;
-  color: var(--ink-2);
-  text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.proj-meta {
-  color: var(--ink-4);
-  font-size: 12px;
-}
 
 .side-quick {
   padding: 8px;

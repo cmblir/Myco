@@ -16,7 +16,7 @@ import { promptText, confirmAction } from "../stores/dialogStore";
 interface ContextMenuState {
   x: number;
   y: number;
-  node: FileNode | "vault";
+  node: FileNode;
 }
 
 export default function Sidebar({ t }: { t: Strings }): JSX.Element {
@@ -38,7 +38,7 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   const totalFiles = countFiles(fileTree);
   const activePath = route.startsWith("page:") ? route.slice(5) : null;
 
-  function showMenu(e: MouseEvent, node: FileNode | "vault"): void {
+  function showMenu(e: MouseEvent, node: FileNode): void {
     e.preventDefault();
     e.stopPropagation();
     setMenu({ x: e.clientX, y: e.clientY, node });
@@ -59,23 +59,6 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
             <MycoMark size={24} />
           </span>
           <span className="brand-name">{t.app_name}</span>
-        </button>
-        {/* Shows WHICH vault is open and how big it is; changing it lives in
-            Settings. This used to open a folder dialog itself, which made three
-            controls for one action (here, Settings' "Change…", and the
-            known-vault shortcuts). The caret went with it — it promised a
-            dropdown that never existed. */}
-        <button
-          className="proj-switch"
-          onClick={() => setRoute("settings")}
-          onContextMenu={(e) => showMenu(e, "vault")}
-          title={t.s_vault_goto ?? "Change the vault in Settings"}
-        >
-          <span className="proj-icon">
-            {currentVault?.name?.charAt(0).toUpperCase() ?? "·"}
-          </span>
-          <span className="proj-name">{currentVault?.name ?? "No vault"}</span>
-          <span className="proj-meta">{totalFiles || ""}</span>
         </button>
       </div>
 
@@ -381,14 +364,12 @@ function ContextMenu({
   onClose: () => void;
   t: Strings;
 }): JSX.Element {
-  const currentVault = useVaultStore((s) => s.currentVault);
   const createFile = useVaultStore((s) => s.createFile);
   const createFolder = useVaultStore((s) => s.createFolder);
   const deletePath = useVaultStore((s) => s.deletePath);
   const renamePath = useVaultStore((s) => s.renamePath);
 
   function parentDir(): string {
-    if (menu.node === "vault") return currentVault?.path ?? "";
     if (menu.node.kind === "directory") return menu.node.path;
     const parts = menu.node.path.split(/[\\/]/);
     parts.pop();
@@ -418,7 +399,6 @@ function ContextMenu({
   }
 
   async function handleRename(): Promise<void> {
-    if (menu.node === "vault") return;
     const target = menu.node;
     onClose();
     const newName = await promptText({
@@ -431,7 +411,6 @@ function ContextMenu({
   }
 
   async function handleDelete(): Promise<void> {
-    if (menu.node === "vault") return;
     const target = menu.node;
     onClose();
     const ok = await confirmAction({
@@ -463,25 +442,21 @@ function ContextMenu({
           {t.sb_new_folder ?? "New folder"}
         </button>
       </li>
-      {menu.node !== "vault" ? (
-        <>
-          <li className="myco-menu__sep" />
-          <li>
-            <button type="button" onClick={() => void handleRename()}>
-              {t.sb_rename ?? "Rename…"}
-            </button>
-          </li>
-          <li>
-            <button
-              type="button"
-              className="myco-menu__danger"
-              onClick={() => void handleDelete()}
-            >
-              {t.dlg_delete}
-            </button>
-          </li>
-        </>
-      ) : null}
+      <li className="myco-menu__sep" />
+      <li>
+        <button type="button" onClick={() => void handleRename()}>
+          {t.sb_rename ?? "Rename…"}
+        </button>
+      </li>
+      <li>
+        <button
+          type="button"
+          className="myco-menu__danger"
+          onClick={() => void handleDelete()}
+        >
+          {t.dlg_delete}
+        </button>
+      </li>
     </ul>
   );
 }
