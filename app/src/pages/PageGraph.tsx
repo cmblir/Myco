@@ -1796,15 +1796,26 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               (settings.skin === "mycelium" ? " is-mycelium" : "")
             }
           >
-            {/* The mycelium view is a SEPARATE renderer, not a skin on this
-                one. GraphScene is built for deep space, and switching its
-                layers off one at a time never stopped the sky showing through
-                — so mycelium mounts its own canvas instead. */}
-            {settings.skin === "mycelium" ? (
-              <MyceliumView graph={graphRef.current} vaultPath={currentVault?.path ?? ""} />
-            ) : (
-              <div ref={containerRef} className="graph-canvas" />
-            )}
+            {/* The container ALWAYS mounts: the build effect bails on a missing
+                one, and it is what builds the graph, clears the loading state
+                and marks .graph-ready. Removing it for the mycelium skin left
+                the page stuck on "arranging constellations…" with no data.
+
+                The mycelium view is a SEPARATE renderer — GraphScene is built
+                for deep space and switching its layers off one at a time never
+                stopped the sky showing through — so it mounts its own canvas
+                OVER this one rather than replacing it. */}
+            <div ref={containerRef} className="graph-canvas" />
+            {settings.skin === "mycelium" && counts.nodes > 0 ? (
+              // `counts` is the render-visible signal that the build finished —
+              // graphRef is a ref, so reading it alone never re-renders and the
+              // view mounted with a null graph and stayed empty.
+              <MyceliumView
+                key={`${counts.nodes}-${counts.edges}`}
+                graph={graphRef.current}
+                vaultPath={currentVault?.path ?? ""}
+              />
+            ) : null}
             {/* Multiverse mode: an overlay scene of every project as a
                 universe-bubble, covering the (idle) single-vault canvas. Fly
                 into a bubble to drop into that vault (the saved toggle stays

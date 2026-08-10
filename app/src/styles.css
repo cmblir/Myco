@@ -1342,6 +1342,9 @@ select {
 .myc-view {
   position: absolute;
   inset: 0;
+  /* Sits over the space canvas, which stays mounted because the build pipeline
+     hangs off it. Opaque, so nothing behind it shows through. */
+  z-index: 2;
   background: #0b0a08;
 }
 .myc-view canvas {
