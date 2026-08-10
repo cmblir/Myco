@@ -760,6 +760,11 @@ export interface MyceliumMat {
   width: number;
   /** Flat [x1,y1,z1, x2,y2,z2, …] in world space. */
   positions: Float32Array;
+  /** Growth index of each segment, ascending. Mycelium is a thing that GROWS,
+   *  so the renderer reveals segments in the order they were laid down rather
+   *  than painting the finished mat at once. Sorted, so a global progress
+   *  threshold turns into a count with a binary search. */
+  birth: Float32Array;
 }
 
 export function applyMyceliumLayout(g: VaultGraph, o: MyceliumOpts): MyceliumMat[] {
@@ -799,18 +804,22 @@ export function applyMyceliumLayout(g: VaultGraph, o: MyceliumOpts): MyceliumMat
   // Widths come from the prototype: base 2.6px, tapering 0.62 per generation.
   const BASE_W = 2.6;
   const TAPER = 0.62;
-  const buckets = new Map<number, number[]>();
-  for (const h of mat) {
-    if (h.parent < 0) continue;
+  const buckets = new Map<number, { pts: number[]; birth: number[] }>();
+  mat.forEach((h, i) => {
+    if (h.parent < 0) return;
     const p2 = mat[h.parent];
-    const arr = buckets.get(h.order) ?? [];
-    arr.push(p2.x * scale, p2.y * scale, p2.z * scale, h.x * scale, h.y * scale, h.z * scale);
-    buckets.set(h.order, arr);
-  }
+    const b = buckets.get(h.order) ?? { pts: [], birth: [] };
+    b.pts.push(p2.x * scale, p2.y * scale, p2.z * scale, h.x * scale, h.y * scale, h.z * scale);
+    // `i` is the growth index: nodes are pushed in the order they grew, so this
+    // is already ascending within every bucket.
+    b.birth.push(i / Math.max(1, mat.length - 1));
+    buckets.set(h.order, b);
+  });
   return [...buckets.entries()]
     .sort((a, b) => a[0] - b[0])
-    .map(([order, pts]) => ({
+    .map(([order, b]) => ({
       width: Math.max(0.6, BASE_W * Math.pow(TAPER, order)),
-      positions: new Float32Array(pts),
+      positions: new Float32Array(b.pts),
+      birth: new Float32Array(b.birth),
     }));
 }

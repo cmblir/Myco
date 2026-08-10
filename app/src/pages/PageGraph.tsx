@@ -858,6 +858,15 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       // Draw the grown hyphae (null for every other layout, which tears down a
       // mat left over from a previous one).
       scene.setMyceliumMat(myceliumMat);
+      // Grow it in rather than painting the finished mat. Mycelium is a thing
+      // that spreads, and revealing it all at once is what made the layout read
+      // as a picture of a network instead of one forming.
+      if (myceliumMat) {
+        // The scene owns the clock: a React effect that re-runs cancels its own
+        // rAF, which stalled the grow-in partway through.
+        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        scene.startMyceliumGrowth(reduced ? 0 : 3.2);
+      }
       scene.layoutSettled();
       scene.fit();
       introPlayed = true;
