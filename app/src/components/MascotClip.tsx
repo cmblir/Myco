@@ -99,13 +99,22 @@ export default function MascotClip({
   }, [clip, loops, willNotPlay]);
   // Master opt-out (Settings › Appearance): the static logo takes the slot so
   // layouts never shift, the character just stops appearing.
-  // Autoplay can be REFUSED without ever firing an error event — Low Power
-  // Mode, a backgrounded tab at mount, or a webview that wants a gesture. The
-  // element then sits on its poster showing WKWebView's play glyph, which is
-  // the "myco sometimes appears as a play button" bug. onError does not cover
-  // this (it fires for load/decode failures only), so catch the rejected
-  // play() promise and fall back to the poster IMAGE, which has no such
-  // affordance.
+  // MYCO must never appear as a play button.
+  //
+  // Catching a rejected play() was not enough: WKWebView also draws its play
+  // glyph over a video that ACCEPTED play() but never actually produced frames
+  // (a stalled HEVC-alpha decode does exactly this), and no error or rejection
+  // fires in that case.
+  //
+  // So the video is never the visible element until it has proven it is
+  // playing. The poster renders first; the <video> sits underneath at zero
+  // opacity and only fades in on its own `playing` event. A clip that never
+  // plays therefore stays a poster forever, which is the desired outcome and
+  // cannot show a control.
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    setPlaying(false);
+  }, [clip]);
   useEffect(() => {
     const v = videoRef.current;
     if (!v) return;
@@ -154,11 +163,13 @@ export default function MascotClip({
         flexShrink: 0,
       }}
     >
-      {reduced || failed || ended ? (
-        <img src={c.poster} alt="" draggable={false} style={mediaStyle} />
-      ) : (
+      {/* The poster is always mounted underneath. It is what shows before the
+          first frame arrives, and what remains if the clip never plays. */}
+      <img src={c.poster} alt="" draggable={false} style={mediaStyle} />
+      {reduced || failed || ended ? null : (
         <video
           ref={videoRef}
+          onPlaying={() => setPlaying(true)}
           src={WANTS_HEVC ? c.mov : c.webm}
           poster={c.poster}
           autoPlay
@@ -174,7 +185,7 @@ export default function MascotClip({
                   onEnded?.();
                 }
           }
-          style={mediaStyle}
+          style={{ ...mediaStyle, opacity: playing ? 1 : 0 }}
         />
       )}
     </span>

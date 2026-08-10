@@ -344,17 +344,31 @@ describe("growMycelium", () => {
     expect(xy).toBeGreaterThan(z * 3);
   });
 
-  it("terminates well inside its round cap instead of running to the limit", () => {
-    // Depth pinned at the cap means growth never converged — the symptom the
-    // single-tip version showed.
+  it("retires its tips instead of running a few endless worms", () => {
+    // Tips that never retire produce a handful of very deep lineages and no
+    // spread. Depth must stay modest relative to how many segments grew.
     const mat = growMycelium(90, "t");
-    expect(Math.max(...mat.map((h) => h.depth))).toBeLessThan(200);
+    const maxDepth = Math.max(...mat.map((h) => h.depth));
+    expect(maxDepth).toBeLessThan(mat.length / 4);
+  });
+
+  it("keeps threads FINE — many short segments, not a few long ones", () => {
+    // The look this has to match is the Overview background: lots of thin
+    // wandering threads. A mat with few segments per fork is sparse spokes.
+    const mat = growMycelium(200, "t");
+    const kids = new Map<number, number>();
+    mat.forEach((h) => {
+      if (h.parent >= 0) kids.set(h.parent, (kids.get(h.parent) ?? 0) + 1);
+    });
+    const forks = [...kids.values()].filter((c) => c > 1).length;
+    expect(mat.length).toBeGreaterThan(600);
+    expect(forks).toBeGreaterThan(40);
   });
 
   it("every segment hangs off a real parent, and only spores are rootless", () => {
-    const mat = growMycelium(60, "t");
+    const mat = growMycelium(60, "t", { spores: 4 });
     const roots = mat.filter((h) => h.parent === -1);
-    expect(roots.length).toBe(3);
+    expect(roots.length).toBe(4);
     mat.forEach((h, i) => {
       expect(h.parent).toBeLessThan(i); // parents always precede their children
       if (h.parent >= 0) expect(mat[h.parent]).toBeDefined();

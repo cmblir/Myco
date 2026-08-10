@@ -587,175 +587,102 @@ export interface HyphaNode {
   depth: number;
 }
 
-// SPACE COLONIZATION — the algorithm behind leaf venation and branching trees
-// (Runions et al.). Attractors are scattered through the territory; every tip
-// steps toward the attractors that are closest to IT, and an attractor is
-// consumed once a tip reaches it. Tips fork wherever attractors pull in
-// genuinely different directions.
+// The same growth the Overview page's mycelium background runs: a handful of
+// spores, each sending out tips that wander, fork, and retire. Fine threads,
+// frequent forks, an open middle.
 //
-// This is deliberately NOT derived from the wikilink graph. An earlier attempt
-// grew a spanning tree and called it mycelium; measured on the real vault that
-// tree is four levels deep with one hub holding 34 children, so "apical
-// dominance" had nothing to run along and the result was a starburst. The
-// structure a mycelium needs is not in the link data, so the mat is GROWN
-// first and the notes are hung on it afterwards.
+// Two earlier attempts are worth knowing about, because both looked wrong in a
+// way the tests did not catch:
 //
-// Deterministic: attractors and jitter both come from `seededUnit`.
+//   1. A spanning tree over the wikilinks. Measured on the real vault that tree
+//      is four levels deep with one hub holding 34 children, so there was no
+//      lineage for a thread to run along and it rendered as a starburst.
+//   2. Space colonization. It branched correctly but drew long sparse spokes
+//      with dense knots at the ends, nothing like the Overview background.
+//
+// This one is the Overview algorithm, so the two surfaces show the same
+// organism. Deterministic via `seededUnit` — the same vault grows the same mat
+// twice, or the picture stops being "my vault".
 export function growMycelium(
   count: number,
   seedKey: string,
-  opts: { attractors?: number; step?: number; killRadius?: number; influence?: number } = {},
+  opts: { spores?: number; step?: number; branch?: number; maxNodes?: number } = {},
 ): HyphaNode[] {
-  // Attractor count is CAPPED rather than proportional to the vault. The mat
-  // only has to offer enough slots to hang notes on, and each attractor costs a
-  // neighbourhood scan every round — scaling it with note count made a
-  // 1244-note vault take 3.8s to lay out while most of those attractors were
-  // never reachable anyway. ~1.4 slots grow per attractor, so this stays ahead
-  // of the note count at every size.
-  const ATTRACTORS = opts.attractors ?? Math.min(2600, Math.max(260, Math.round(count * 1.6)));
-  const STEP = opts.step ?? 0.045;
-  const KILL = opts.killRadius ?? STEP * 2.0;
-  const INFLUENCE = opts.influence ?? STEP * 8;
+  const SPORES = opts.spores ?? 5;
+  const STEP = opts.step ?? 0.030;
+  const BRANCH = opts.branch ?? 0.085; // per tip per step
+  // Enough segments to hang every note on, with headroom so notes spread along
+  // the threads rather than crowding the first few. Capped so a huge vault
+  // cannot turn a layout bake into a freeze.
+  const MAX_NODES = opts.maxNodes ?? Math.min(4200, Math.max(700, count * 3));
+  const MAX_TIPS = 90;
+  const BOUND = 1.0;
+  const MAX_GEN = 6;
 
-  // Attractors fill a disc in the X–Y plane, thin in Z.
-  //
-  // The plane matters as much as the flattening. Grown across X–Z the mat is
-  // correct but the graph's default camera looks along it, so a mat reads as a
-  // thin horizontal line — which is exactly what the first render showed. The
-  // flat layouts this sits beside (strata) spread in X–Y for the same reason.
-  const attractors: [number, number, number][] = [];
-  for (let i = 0; i < ATTRACTORS; i++) {
-    const u = seededUnit(`${seedKey}-ax`, i);
-    const v = seededUnit(`${seedKey}-ay`, i);
-    const w = seededUnit(`${seedKey}-az`, i);
-    const ang = u * Math.PI * 2;
-    const rad = Math.sqrt(v); // uniform over the disc, not bunched at the centre
-    attractors.push([Math.cos(ang) * rad, Math.sin(ang) * rad, (w - 0.5) * 0.3]);
-  }
-  const alive = new Array<boolean>(attractors.length).fill(true);
-  let liveCount = attractors.length;
-
-  // Three spores rather than one origin: a single start makes every early tip
-  // overlap, and the mat opens as a puffball instead of something spreading.
   const nodes: HyphaNode[] = [];
-  for (let sp = 0; sp < 3; sp++) {
-    const a = (sp / 3) * Math.PI * 2 + 0.4;
-    nodes.push({ x: Math.cos(a) * 0.18, y: Math.sin(a) * 0.18, z: 0, parent: -1, depth: 0 });
+  interface Tip {
+    node: number;
+    ax: number; // heading
+    ay: number;
+    gen: number;
+    life: number;
+  }
+  let tips: Tip[] = [];
+  let draw = 0; // monotonic counter — every random draw gets its own salt
+
+  const rnd = (): number => seededUnit(seedKey, draw++);
+
+  // Spores spread across the disc rather than all at the origin: a single
+  // origin makes every early tip overlap and the mat opens as a puffball.
+  for (let s = 0; s < SPORES; s++) {
+    const a = (s / SPORES) * Math.PI * 2 + rnd() * 0.7;
+    const d = 0.10 + rnd() * 0.22;
+    nodes.push({ x: Math.cos(a) * d, y: Math.sin(a) * d, z: (rnd() - 0.5) * 0.05, parent: -1, depth: 0 });
+    const spore = nodes.length - 1;
+    for (let k = 0; k < 3; k++) {
+      const h = (k / 3) * Math.PI * 2 + rnd() * 0.8;
+      tips.push({ node: spore, ax: Math.cos(h), ay: Math.sin(h), gen: 0, life: 0 });
+    }
   }
 
-  // Uniform grid over the node set so an attractor finds its nearest node
-  // without scanning all of them. Cell = INFLUENCE, so the 27-cell neighbourhood
-  // always covers the search radius. Nodes are only ever appended, never moved,
-  // so the grid is maintained incrementally rather than rebuilt.
-  const cell = INFLUENCE;
-  const grid = new Map<string, number[]>();
-  const keyOf = (x: number, y: number, z: number): string =>
-    `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
-  const insert = (i: number): void => {
-    const n = nodes[i];
-    const k = keyOf(n.x, n.y, n.z);
-    const b = grid.get(k);
-    if (b) b.push(i);
-    else grid.set(k, [i]);
-  };
-  for (let i = 0; i < nodes.length; i++) insert(i);
+  while (nodes.length < MAX_NODES && tips.length > 0) {
+    const next: Tip[] = [];
+    for (const t of tips) {
+      // Wander: a small heading change each step is what makes a hypha meander
+      // instead of running straight.
+      const turn = (rnd() - 0.5) * 0.45;
+      const ca = Math.cos(turn);
+      const sa = Math.sin(turn);
+      const ax = t.ax * ca - t.ay * sa;
+      const ay = t.ax * sa + t.ay * ca;
 
-  const nearest = (x: number, y: number, z: number, within: number): number => {
-    const cx = Math.floor(x / cell);
-    const cy = Math.floor(y / cell);
-    const cz = Math.floor(z / cell);
-    let best = -1;
-    let bestD = within;
-    for (let ox = -1; ox <= 1; ox++) {
-      for (let oy = -1; oy <= 1; oy++) {
-        for (let oz = -1; oz <= 1; oz++) {
-          const b = grid.get(`${cx + ox},${cy + oy},${cz + oz}`);
-          if (!b) continue;
-          for (const i of b) {
-            const n = nodes[i];
-            const d = Math.hypot(x - n.x, y - n.y, z - n.z);
-            if (d < bestD) {
-              bestD = d;
-              best = i;
-            }
-          }
-        }
+      const from = nodes[t.node];
+      const nx = from.x + ax * STEP;
+      const ny = from.y + ay * STEP;
+      const nz = from.z + (rnd() - 0.5) * STEP * 0.28;
+      nodes.push({ x: nx, y: ny, z: nz, parent: t.node, depth: from.depth + 1 });
+      const grown = nodes.length - 1;
+
+      // A tip that has wandered out of the dish, run too long, or hit the node
+      // budget stops. Without retiring tips the mat is a few endless worms.
+      const out = Math.hypot(nx, ny) > BOUND;
+      if (out || t.life > 90 || nodes.length >= MAX_NODES) continue;
+
+      next.push({ node: grown, ax, ay, gen: t.gen, life: t.life + 1 });
+      if (rnd() < BRANCH && t.gen < MAX_GEN && next.length + tips.length < MAX_TIPS) {
+        const off = (rnd() < 0.5 ? 1 : -1) * (0.55 + rnd() * 0.5);
+        const cb = Math.cos(off);
+        const sb = Math.sin(off);
+        next.push({
+          node: grown,
+          ax: ax * cb - ay * sb,
+          ay: ax * sb + ay * cb,
+          gen: t.gen + 1,
+          life: 0,
+        });
       }
     }
-    return best;
-  };
-
-  // Bounded: each round either grows or stops. The cap is a backstop against a
-  // pathological input, not the normal exit.
-  const MAX_ROUNDS = 400;
-  const MAX_NODES = 20000;
-  for (let round = 0; round < MAX_ROUNDS && liveCount > 0 && nodes.length < MAX_NODES; round++) {
-    // Every attractor votes for its nearest node in the WHOLE network — not
-    // just the newest tips. This is what makes the mat branch: an interior node
-    // that still has attractors near it grows another child, so one lineage
-    // forks instead of every node having exactly one successor. (Restricting
-    // the search to current tips produced three long worms and zero forks.)
-    const pull = new Map<number, [number, number, number]>();
-    for (let ai = 0; ai < attractors.length; ai++) {
-      if (!alive[ai]) continue;
-      const [ax, ay, az] = attractors[ai];
-      const best = nearest(ax, ay, az, INFLUENCE);
-      if (best < 0) continue;
-      const n = nodes[best];
-      const dx = ax - n.x;
-      const dy = ay - n.y;
-      const dz = az - n.z;
-      const m = Math.hypot(dx, dy, dz) || 1;
-      const acc = pull.get(best) ?? [0, 0, 0];
-      acc[0] += dx / m;
-      acc[1] += dy / m;
-      acc[2] += dz / m;
-      pull.set(best, acc);
-    }
-    if (pull.size === 0) break;
-
-    const grown: number[] = [];
-    for (const [ti, acc] of pull) {
-      let dx = acc[0];
-      let dy = acc[1];
-      let dz = acc[2];
-      let m = Math.hypot(dx, dy, dz);
-      const n = nodes[ti];
-      if (m < 1e-6) {
-        // Attractors pulling equally from opposite sides cancel out. Keep the
-        // parent's heading rather than stalling the tip.
-        const p = n.parent >= 0 ? nodes[n.parent] : null;
-        dx = p ? n.x - p.x : 1;
-        dy = p ? n.y - p.y : 0;
-        dz = p ? n.z - p.z : 0;
-        m = Math.hypot(dx, dy, dz) || 1;
-      }
-      const jitter = (seededUnit(`${seedKey}-j`, nodes.length) - 0.5) * 0.3;
-      nodes.push({
-        x: n.x + (dx / m) * STEP + jitter * STEP,
-        y: n.y + (dy / m) * STEP - jitter * STEP,
-        z: n.z + (dz / m) * STEP * 0.4,
-        parent: ti,
-        depth: n.depth + 1,
-      });
-      const gi = nodes.length - 1;
-      insert(gi);
-      grown.push(gi);
-    }
-
-    // An attractor that has been reached has done its job.
-    for (let ai = 0; ai < attractors.length; ai++) {
-      if (!alive[ai]) continue;
-      const [ax, ay, az] = attractors[ai];
-      for (const gi of grown) {
-        const n = nodes[gi];
-        if (Math.hypot(ax - n.x, ay - n.y, az - n.z) < KILL) {
-          alive[ai] = false;
-          liveCount--;
-          break;
-        }
-      }
-    }
+    tips = next;
   }
   return nodes;
 }
