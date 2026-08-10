@@ -2447,6 +2447,11 @@ export class GraphScene {
     const w = Math.max(1, this.container.clientWidth);
     const h = Math.max(1, this.container.clientHeight);
     this.filamentMat.resolution.set(w, h);
+    // Same for the grown mat: LineMaterial rasterises width in screen pixels,
+    // so a stale resolution makes every hypha the wrong weight after a resize.
+    for (const m of this.myceliumMat) {
+      (m.material as LineMaterial).resolution.set(w, h);
+    }
     this.filaments = new LineSegments2(this.filamentGeom, this.filamentMat);
     this.filaments.frustumCulled = false;
     this.filaments.renderOrder = 1; // over the thin edge mesh, under the pulses
@@ -3728,7 +3733,7 @@ export class GraphScene {
   // plane) fitted to the node cloud read as that sphere without the cost of a
   // full wireframe. Rebuilt on each walrus (re)layout, torn down otherwise.
   private walrusBoundary: THREE.LineSegments | null = null;
-  private myceliumMat: THREE.LineSegments | null = null;
+  private myceliumMat: LineSegments2[] = [];
 
   /** Draw (true) or clear (false) the boundary sphere fitted to the current node
    *  cloud. Only meaningful for the walrus layout — the caller gates it. */
@@ -3740,31 +3745,44 @@ export class GraphScene {
   //
   // `segments` is a flat [x1,y1,z1, x2,y2,z2, …] list in world space. Passing
   // null tears the mat down, which is what a layout change does.
-  setMyceliumMat(segments: Float32Array | null): void {
-    if (this.myceliumMat) {
-      this.scene.remove(this.myceliumMat);
-      this.myceliumMat.geometry.dispose();
-      (this.myceliumMat.material as THREE.Material).dispose();
-      this.myceliumMat = null;
+  setMyceliumMat(buckets: { width: number; positions: Float32Array }[] | null): void {
+    for (const m of this.myceliumMat) {
+      this.scene.remove(m);
+      m.geometry.dispose();
+      (m.material as THREE.Material).dispose();
     }
-    if (!segments || segments.length === 0) return;
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.BufferAttribute(segments, 3));
-    const line = new THREE.LineSegments(
-      geo,
-      new THREE.LineBasicMaterial({
-        color: this.myceliumSkin ? 0xd6cebc : this.darkTheme ? 0x9fb4d4 : 0x6b7280,
+    this.myceliumMat = [];
+    if (!buckets || buckets.length === 0) return;
+
+    const res = new THREE.Vector2();
+    this.renderer.getSize(res);
+    for (const b of buckets) {
+      if (b.positions.length === 0) continue;
+      // LineSegments2, NOT LineSegments: `LineBasicMaterial.linewidth` is
+      // ignored on essentially every platform, so a plain line set is always a
+      // 1px hairline no matter what width is asked for. That single fact is why
+      // three earlier attempts at this look failed — the growth was fine, the
+      // stroke could not get thicker. LineMaterial rasterises real width in
+      // screen pixels, and one set per branch order is how the taper is
+      // expressed (a LineMaterial carries a single width for the whole set).
+      const geo = new LineSegmentsGeometry();
+      geo.setPositions(Array.from(b.positions));
+      const mat = new LineMaterial({
+        color: 0xd8d0bd,
+        linewidth: b.width,
         transparent: true,
-        // On the mycelium skin the threads ARE the picture, so they sit bright.
-        // On a sky skin they must not compete with the stars.
-        opacity: this.myceliumSkin ? 0.72 : this.darkTheme ? 0.3 : 0.4,
+        opacity: 0.82,
         depthWrite: false,
-      }),
-    );
-    line.frustumCulled = false;
-    line.renderOrder = -500; // behind nodes and edges, in front of the sky
-    this.scene.add(line);
-    this.myceliumMat = line;
+        worldUnits: false, // screen px, so the mat keeps its weight when zoomed
+      });
+      mat.resolution.copy(res);
+      const line = new LineSegments2(geo, mat);
+      line.computeLineDistances();
+      line.frustumCulled = false;
+      line.renderOrder = -500; // behind the notes, in front of the ground
+      this.scene.add(line);
+      this.myceliumMat.push(line);
+    }
   }
 
   setWalrusBoundary(on: boolean): void {

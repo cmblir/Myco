@@ -49,6 +49,7 @@ import {
   applySpiralLayout,
   applyWalrusLayout,
   applyMyceliumLayout,
+  type MyceliumMat,
   applyStrataLayout,
 } from "../lib/staticLayouts";
 import { ATLAS_RADIUS_MUL } from "../lib/layoutConfig";
@@ -833,7 +834,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       s.layout === "mycelium"
     ) {
       const radius = s.linkDistance * ATLAS_RADIUS_MUL;
-      let myceliumMat: Float32Array | null = null;
+      let myceliumMat: MyceliumMat[] | null = null;
       if (s.layout === "spiral") {
         applySpiralLayout(graph, { targetRadius: radius * 1.3 });
       } else if (s.layout === "celestial") {

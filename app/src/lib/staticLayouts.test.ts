@@ -332,13 +332,30 @@ describe("growMycelium", () => {
     expect(forks).toBeGreaterThan(10);
   });
 
-  it("grows exactly one segment per note, so every hypha ends on a note", () => {
-    // The version this replaced grew a much denser mat and hung notes on it.
-    // Its threads ran behind the nodes without joining them — decoration, not
-    // a network.
-    for (const n of [12, 90, 640]) {
-      expect(growMycelium(n, "t").length).toBe(n);
-    }
+  it("tracks branch order, which is what the renderer turns into width", () => {
+    // The prototype showed the look comes from tapered stroke width, not from
+    // the growth rule — so `order` has to be carried, and has to actually vary.
+    const mat = growMycelium(300, "t");
+    const orders = new Set(mat.map((h) => h.order));
+    expect(orders.size).toBeGreaterThan(2);
+    expect(Math.min(...orders)).toBe(0);
+  });
+
+  it("fuses more as the fusion radius grows — the bridges are real", () => {
+    const near = growMycelium(600, "t", { fuse: 0.03 }).filter((h) => h.fused).length;
+    const far = growMycelium(600, "t", { fuse: 0.09 }).filter((h) => h.fused).length;
+    expect(far).toBeGreaterThan(near);
+  });
+
+  it("fuses without retiring the tip", () => {
+    // Retiring on fusion thinned the mat faster than the loops filled it, so
+    // "more fusion" produced a sparser picture — the opposite of the intent.
+    const mat = growMycelium(600, "t");
+    const fused = mat.filter((h) => h.fused).length;
+    expect(fused).toBeGreaterThan(0);
+    // Growth must dominate the bridges — if fusion stalled tips, bridges would
+    // approach or exceed the growth steps and the mat would thin out.
+    expect(mat.length - fused).toBeGreaterThan(fused);
   });
 
   it("spreads as a flat mat in the X-Y plane, facing the camera", () => {
@@ -439,38 +456,29 @@ describe("applyMyceliumLayout", () => {
     expect(spores.has(key)).toBe(true);
   });
 
-  it("returns hyphae whose endpoints are NOTE positions, not a decorative mat", () => {
-    // This is the property that failed on screen: threads must join notes.
+  it("returns hyphae bucketed by width, thickest first", () => {
+    // Width per branch order is the property that makes the mat read as
+    // mycelium; a single width is the hairline look it replaces.
     const g = build(60);
-    const segs = applyMyceliumLayout(g, { targetRadius: 500 });
-    expect(segs.length).toBeGreaterThan(0);
-    const points = new Set<string>();
-    g.forEachNode((id) => {
-      const p = pos(g, id);
-      points.add(`${p.x.toFixed(2)},${p.y.toFixed(2)},${p.z.toFixed(2)}`);
-    });
-    for (let i = 0; i < segs.length; i += 6) {
-      const a = `${segs[i].toFixed(2)},${segs[i + 1].toFixed(2)},${segs[i + 2].toFixed(2)}`;
-      const b = `${segs[i + 3].toFixed(2)},${segs[i + 4].toFixed(2)},${segs[i + 5].toFixed(2)}`;
-      expect(points.has(a)).toBe(true);
-      expect(points.has(b)).toBe(true);
+    const buckets = applyMyceliumLayout(g, { targetRadius: 500 });
+    expect(buckets.length).toBeGreaterThan(1);
+    for (let i = 1; i < buckets.length; i++) {
+      expect(buckets[i].width).toBeLessThan(buckets[i - 1].width);
+    }
+    expect(buckets[0].width).toBeGreaterThan(1.5);
+    for (const b of buckets) {
+      expect(b.positions.length % 6).toBe(0);
+      expect(b.positions.every((v) => Number.isFinite(v))).toBe(true);
     }
   });
 
-  it("never stacks notes on one point when there are more notes than slots", () => {
-    // The mat is capped, so a large vault shares slots. Stacking would draw one
-    // bright blob instead of a cluster.
-    const g = build(600);
-    applyMyceliumLayout(g, { targetRadius: 500 });
-    const seen = new Set<string>();
-    let dupes = 0;
-    g.forEachNode((id) => {
-      const p = pos(g, id);
-      const k = `${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}`;
-      if (seen.has(k)) dupes++;
-      seen.add(k);
-    });
-    expect(dupes).toBe(0);
+  it("grows a mat richer than the note count — the hyphae are the picture", () => {
+    // One segment per note gave a sparse skeleton with nothing between the
+    // dots; the notes are septa ON the threads, not the threads themselves.
+    const g = build(60);
+    const buckets = applyMyceliumLayout(g, { targetRadius: 500 });
+    const segs = buckets.reduce((n, b) => n + b.positions.length / 6, 0);
+    expect(segs).toBeGreaterThan(61);
   });
 
   it("is deterministic — the same vault lays out identically twice", () => {

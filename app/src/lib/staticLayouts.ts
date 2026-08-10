@@ -585,111 +585,160 @@ export interface HyphaNode {
   z: number;
   parent: number; // index into the returned array, -1 for a spore
   depth: number;
+  /** Branch generation. Drives stroke WIDTH — the property that actually makes
+   *  the mat read as mycelium rather than as hairlines. */
+  order: number;
+  /** True when this point is an anastomosis bridge rather than tip growth. */
+  fused?: boolean;
 }
 
-// The same growth the Overview page's mycelium background runs: a handful of
-// spores, each sending out tips that wander, fork, and retire. Fine threads,
-// frequent forks, an open middle.
+// Hyphal growth: tip extension + branching + anastomosis.
 //
-// Two earlier attempts are worth knowing about, because both looked wrong in a
-// way the tests did not catch:
+// Proven in a standalone prototype before landing here, which is how two
+// confident-but-wrong ideas got caught:
 //
-//   1. A spanning tree over the wikilinks. Measured on the real vault that tree
-//      is four levels deep with one hub holding 34 children, so there was no
-//      lineage for a thread to run along and it rendered as a starburst.
-//   2. Space colonization. It branched correctly but drew long sparse spokes
-//      with dense knots at the ends, nothing like the Overview background.
+//   1. A spanning tree over the wikilinks. The real vault's tree is four levels
+//      deep with one hub holding 34 children, so there was no lineage for a
+//      thread to run along and it rendered as a starburst.
+//   2. "Anastomosis is the missing ingredient." Fusing tips DID add loops, but
+//      retiring a tip on every fusion thinned the mat faster than the loops
+//      filled it, so more fusion produced a SPARSER picture. Fusion now records
+//      the bridge and lets the tip carry on.
 //
-// This one is the Overview algorithm, so the two surfaces show the same
-// organism. Deterministic via `seededUnit` — the same vault grows the same mat
-// twice, or the picture stops being "my vault".
+// What actually produces the look is stroke WIDTH tapering by branch order —
+// see `order` on each node, which the renderer buckets into line widths.
 export function growMycelium(
   count: number,
   seedKey: string,
-  opts: { spores?: number; step?: number; branch?: number; maxNodes?: number } = {},
+  opts: {
+    spores?: number;
+    step?: number;
+    branchPct?: number;
+    fuse?: number;
+    maxNodes?: number;
+  } = {},
 ): HyphaNode[] {
-  const SPORES = opts.spores ?? 5;
-  const STEP = opts.step ?? 0.042;
-  const BRANCH = opts.branch ?? 0.085; // per tip per step
-  // Enough segments to hang every note on, with headroom so notes spread along
-  // the threads rather than crowding the first few. Capped so a huge vault
-  // cannot turn a layout bake into a freeze.
-  // Exactly one grown segment per note. The segments ARE the notes: an earlier
-  // version grew a dense mat and hung notes on it, which drew threads that
-  // passed BEHIND the nodes instead of joining them — a decorative background,
-  // not a network. Every hypha here ends on a real note.
-  const MAX_NODES = opts.maxNodes ?? Math.max(1, count);
-  const MAX_TIPS = 90;
-  const BOUND = 1.0;
-  const MAX_GEN = 6;
+  const SPORES = opts.spores ?? 4;
+  const STEP = opts.step ?? 0.021;
+  const BRANCH_PCT = opts.branchPct ?? 3.2; // per tip per step
+  const FUSE = opts.fuse ?? 0.049; // world units, ~7px at the prototype's scale
+  const MAX_NODES = opts.maxNodes ?? Math.min(9000, Math.max(900, count * 4));
+  const MAX_TIPS = 260;
+  const MAX_LIFE = 260;
+  const MAX_ORDER = 5;
+  const BOUND = 1.15;
+
+  let draw = 0;
+  const rnd = (): number => seededUnit(seedKey, draw++);
 
   const nodes: HyphaNode[] = [];
   interface Tip {
     node: number;
-    ax: number; // heading
-    ay: number;
-    gen: number;
+    a: number;
+    order: number;
     life: number;
+    /** This tip's own recent points. A tip must not fuse with the trail it just
+     *  laid: FUSE is larger than STEP, so without this every tip re-touches its
+     *  own path every step and half the mat becomes bridges. A GLOBAL
+     *  recent-window cannot do this job — with many tips it holds none of any
+     *  single tip's own points. */
+    trail: number[];
   }
   let tips: Tip[] = [];
-  let draw = 0; // monotonic counter — every random draw gets its own salt
 
-  const rnd = (): number => seededUnit(seedKey, draw++);
+  // Uniform grid over laid-down points, so a tip can ask "is another hypha
+  // within FUSE of me" without scanning the whole mat.
+  const cell = Math.max(FUSE, 1e-4);
+  const grid = new Map<string, number[]>();
+  const key = (x: number, y: number): string =>
+    `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
+  const remember = (i: number): void => {
+    const n = nodes[i];
+    const k = key(n.x, n.y);
+    const b = grid.get(k);
+    if (b) b.push(i);
+    else grid.set(k, [i]);
+  };
+  // Nearest earlier point, skipping the tip's own fresh trail — a tip must not
+  // fuse with the segment it just drew.
+  const nearest = (x: number, y: number, own: Set<number>): number => {
+    const cx = Math.floor(x / cell);
+    const cy = Math.floor(y / cell);
+    let best = -1;
+    let bestD = FUSE;
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        const b = grid.get(`${cx + ox},${cy + oy}`);
+        if (!b) continue;
+        for (const i of b) {
+          if (own.has(i)) continue;
+          const d = Math.hypot(x - nodes[i].x, y - nodes[i].y);
+          if (d < bestD) {
+            bestD = d;
+            best = i;
+          }
+        }
+      }
+    }
+    return best;
+  };
 
-  // Spores spread across the disc rather than all at the origin: a single
-  // origin makes every early tip overlap and the mat opens as a puffball.
-  const spores = Math.max(1, Math.min(SPORES, Math.ceil(MAX_NODES / 8)));
+  // Spores spread over the field, not stacked at one origin.
+  const spores = Math.max(1, Math.min(SPORES, Math.ceil(MAX_NODES / 40)));
   for (let s = 0; s < spores; s++) {
-    const a = (s / spores) * Math.PI * 2 + rnd() * 0.7;
-    const d = 0.10 + rnd() * 0.22;
-    if (nodes.length >= MAX_NODES) break;
-    nodes.push({ x: Math.cos(a) * d, y: Math.sin(a) * d, z: (rnd() - 0.5) * 0.05, parent: -1, depth: 0 });
+    const a = (s / spores) * Math.PI * 2 + rnd() * 0.9;
+    const d = 0.16 * (0.3 + rnd() * 0.7);
+    nodes.push({ x: Math.cos(a) * d, y: Math.sin(a) * d, z: 0, parent: -1, depth: 0, order: 0 });
     const spore = nodes.length - 1;
+    remember(spore);
     for (let k = 0; k < 3; k++) {
-      const h = (k / 3) * Math.PI * 2 + rnd() * 0.8;
-      tips.push({ node: spore, ax: Math.cos(h), ay: Math.sin(h), gen: 0, life: 0 });
+      tips.push({ node: spore, a: (k / 3) * Math.PI * 2 + rnd(), order: 0, life: 0, trail: [spore] });
     }
   }
 
-  while (nodes.length < MAX_NODES && tips.length > 0) {
+  while (tips.length > 0 && nodes.length < MAX_NODES) {
     const next: Tip[] = [];
     for (const t of tips) {
-      // Wander: a small heading change each step is what makes a hypha meander
-      // instead of running straight.
-      const turn = (rnd() - 0.5) * 0.45;
-      const ca = Math.cos(turn);
-      const sa = Math.sin(turn);
-      const ax = t.ax * ca - t.ay * sa;
-      const ay = t.ax * sa + t.ay * ca;
-
-      // Budget check BEFORE growing, not after: checking afterwards overshoots
-      // by one node per live tip, so a 12-note vault grew 14 segments and two
-      // notes had nowhere to sit.
       if (nodes.length >= MAX_NODES) break;
+      t.a += (rnd() - 0.5) * 0.42;
       const from = nodes[t.node];
-      const nx = from.x + ax * STEP;
-      const ny = from.y + ay * STEP;
-      const nz = from.z + (rnd() - 0.5) * STEP * 0.28;
-      nodes.push({ x: nx, y: ny, z: nz, parent: t.node, depth: from.depth + 1 });
-      const grown = nodes.length - 1;
+      const nx = from.x + Math.cos(t.a) * STEP;
+      const ny = from.y + Math.sin(t.a) * STEP;
 
-      // A tip that has wandered out of the dish, run too long, or hit the node
-      // budget stops. Without retiring tips the mat is a few endless worms.
-      const out = Math.hypot(nx, ny) > BOUND;
-      if (out || t.life > 90 || nodes.length >= MAX_NODES) continue;
-
-      next.push({ node: grown, ax, ay, gen: t.gen, life: t.life + 1 });
-      if (rnd() < BRANCH && t.gen < MAX_GEN && next.length + tips.length < MAX_TIPS) {
-        const off = (rnd() < 0.5 ? 1 : -1) * (0.55 + rnd() * 0.5);
-        const cb = Math.cos(off);
-        const sb = Math.sin(off);
-        next.push({
-          node: grown,
-          ax: ax * cb - ay * sb,
-          ay: ax * sb + ay * cb,
-          gen: t.gen + 1,
-          life: 0,
+      // Anastomosis: record the bridge, keep the tip alive.
+      const hit = nearest(nx, ny, new Set(t.trail));
+      if (hit >= 0) {
+        nodes.push({
+          x: nodes[hit].x,
+          y: nodes[hit].y,
+          z: from.z,
+          parent: t.node,
+          depth: from.depth + 1,
+          order: t.order,
+          fused: true,
         });
+      }
+
+      nodes.push({
+        x: nx,
+        y: ny,
+        z: from.z + (rnd() - 0.5) * STEP * 0.25,
+        parent: t.node,
+        depth: from.depth + 1,
+        order: t.order,
+      });
+      const grown = nodes.length - 1;
+      remember(grown);
+      t.node = grown;
+      t.life++;
+      t.trail.push(grown);
+      if (t.trail.length > 24) t.trail.shift();
+
+      if (Math.hypot(nx, ny) > BOUND || t.life > MAX_LIFE) continue;
+      next.push(t);
+      if (rnd() * 100 < BRANCH_PCT && t.order < MAX_ORDER && next.length < MAX_TIPS) {
+        const off = (rnd() < 0.5 ? 1 : -1) * (0.5 + rnd() * 0.55);
+        next.push({ node: grown, a: t.a + off, order: t.order + 1, life: 0, trail: t.trail.slice(-12) });
       }
     }
     tips = next;
@@ -704,66 +753,64 @@ export function growMycelium(
 // spores, leaves take the fine tips out at the rim, so the picture still says
 // something true about the vault (how connected a note is) while the shape
 // stays something the link data could never have produced on its own.
-export function applyMyceliumLayout(g: VaultGraph, o: MyceliumOpts): Float32Array {
+/** Hyphae grouped by stroke width. `LineMaterial` carries ONE width per set, so
+ *  taper is expressed as several sets rather than a per-vertex attribute. */
+export interface MyceliumMat {
+  /** Screen-pixel line width for this bucket. */
+  width: number;
+  /** Flat [x1,y1,z1, x2,y2,z2, …] in world space. */
+  positions: Float32Array;
+}
+
+export function applyMyceliumLayout(g: VaultGraph, o: MyceliumOpts): MyceliumMat[] {
   const n = g.order;
-  if (n === 0) return new Float32Array(0);
+  if (n === 0) return [];
   const all = g.nodes().slice().sort();
 
   const degOf = (id: string): number =>
     (g.getNodeAttribute(id, "deg") as number) ?? g.degree(id);
 
-  // One grown segment per note, so every hypha ENDS on a note and every note
-  // sits on the network. Growing a denser mat and hanging notes on it drew
-  // threads that ran behind the nodes without joining them — a picture in the
-  // background rather than the vault laid out as a mycelium.
+  // The mat is grown larger than the note count on purpose: the hyphae ARE the
+  // picture, and notes are septa sitting along them. Growing exactly one
+  // segment per note made a sparse skeleton with nothing between the dots.
   const mat = growMycelium(n, "myc");
 
-  // Shallow segments first: the most-linked notes take the thick early runs
-  // near the spores, the least-linked the fine tips at the rim. That is the
-  // only thing the link data decides; the SHAPE is grown.
-  const order = mat
+  // Notes take segments in depth order — the busiest note nearest a spore, the
+  // least-linked out at a tip. That is the only thing the link data decides.
+  const slots = mat
     .map((h, i) => ({ h, i }))
+    .filter((e) => !e.h.fused)
     .sort((a, b) => a.h.depth - b.h.depth || a.i - b.i);
   const byDegree = all.slice().sort((x, y) => degOf(y) - degOf(x) || (x < y ? -1 : 1));
 
-  // matIndex -> note id, so a segment can be turned into a note-to-note thread.
-  const noteAt = new Map<number, string>();
   let maxR = 1e-6;
-  const placed = new Map<string, [number, number, number]>();
-  byDegree.forEach((id, k) => {
-    const slot = order[k];
-    if (!slot) return;
-    noteAt.set(slot.i, id);
-    const { x, y, z } = slot.h;
-    placed.set(id, [x, y, z]);
-    maxR = Math.max(maxR, Math.hypot(x, y, z));
-  });
-
+  for (const h of mat) maxR = Math.max(maxR, Math.hypot(h.x, h.y, h.z));
   const scale = o.targetRadius / maxR;
-  for (const id of all) {
-    const p = placed.get(id) ?? [0, 0, 0];
-    g.setNodeAttribute(id, "x", p[0] * scale);
-    g.setNodeAttribute(id, "y", p[1] * scale);
-    g.setNodeAttribute(id, "z", p[2] * scale);
-  }
 
-  // The hyphae: one line per parent→child pair, both ends being real notes.
-  const segs = new Float32Array(mat.length * 6);
-  let w = 0;
-  mat.forEach((h, i) => {
-    if (h.parent < 0) return; // a spore has nothing upstream
-    const childId = noteAt.get(i);
-    const parentId = noteAt.get(h.parent);
-    if (!childId || !parentId) return;
-    const a = placed.get(parentId);
-    const b = placed.get(childId);
-    if (!a || !b) return;
-    segs[w++] = a[0] * scale;
-    segs[w++] = a[1] * scale;
-    segs[w++] = a[2] * scale;
-    segs[w++] = b[0] * scale;
-    segs[w++] = b[1] * scale;
-    segs[w++] = b[2] * scale;
+  byDegree.forEach((id, k) => {
+    const slot = slots[Math.min(slots.length - 1, Math.floor((k * slots.length) / byDegree.length))];
+    const h = slot ? slot.h : { x: 0, y: 0, z: 0 };
+    g.setNodeAttribute(id, "x", h.x * scale);
+    g.setNodeAttribute(id, "y", h.y * scale);
+    g.setNodeAttribute(id, "z", h.z * scale);
   });
-  return segs.subarray(0, w);
+
+  // Bucket every segment by branch order, then hand each bucket its width.
+  // Widths come from the prototype: base 2.6px, tapering 0.62 per generation.
+  const BASE_W = 2.6;
+  const TAPER = 0.62;
+  const buckets = new Map<number, number[]>();
+  for (const h of mat) {
+    if (h.parent < 0) continue;
+    const p2 = mat[h.parent];
+    const arr = buckets.get(h.order) ?? [];
+    arr.push(p2.x * scale, p2.y * scale, p2.z * scale, h.x * scale, h.y * scale, h.z * scale);
+    buckets.set(h.order, arr);
+  }
+  return [...buckets.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([order, pts]) => ({
+      width: Math.max(0.6, BASE_W * Math.pow(TAPER, order)),
+      positions: new Float32Array(pts),
+    }));
 }
