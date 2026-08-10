@@ -2447,11 +2447,6 @@ export class GraphScene {
     const w = Math.max(1, this.container.clientWidth);
     const h = Math.max(1, this.container.clientHeight);
     this.filamentMat.resolution.set(w, h);
-    // Same for the grown mat: LineMaterial rasterises width in screen pixels,
-    // so a stale resolution makes every hypha the wrong weight after a resize.
-    for (const m of this.myceliumMat) {
-      (m.material as LineMaterial).resolution.set(w, h);
-    }
     this.filaments = new LineSegments2(this.filamentGeom, this.filamentMat);
     this.filaments.frustumCulled = false;
     this.filaments.renderOrder = 1; // over the thin edge mesh, under the pulses
@@ -3733,115 +3728,9 @@ export class GraphScene {
   // plane) fitted to the node cloud read as that sphere without the cost of a
   // full wireframe. Rebuilt on each walrus (re)layout, torn down otherwise.
   private walrusBoundary: THREE.LineSegments | null = null;
-  private myceliumMat: LineSegments2[] = [];
-  /** Per-bucket growth index, ascending — see setMyceliumProgress. */
-  private myceliumBirth: Float32Array[] = [];
-  /** Seconds into the grow-in, or -1 when idle/finished. Advanced by the scene's
-   *  own loop rather than a React effect: an effect that re-runs cancels its
-   *  rAF, which stalled the growth partway through. */
-  private myceliumClock = -1;
-  private myceliumGrowSecs = 3.2;
 
   /** Draw (true) or clear (false) the boundary sphere fitted to the current node
    *  cloud. Only meaningful for the walrus layout — the caller gates it. */
-  // ── Mycelium mat ──────────────────────────────────────────────────────
-  // The mycelium layout GROWS a branching network and then hangs the notes on
-  // it. Without drawing that network the notes are just a scatter of stars —
-  // the hyphae are the picture, and they are not wikilink edges, so nothing
-  // else in the scene would ever draw them.
-  //
-  // `segments` is a flat [x1,y1,z1, x2,y2,z2, …] list in world space. Passing
-  // null tears the mat down, which is what a layout change does.
-  setMyceliumMat(
-    buckets: { width: number; positions: Float32Array; birth: Float32Array }[] | null,
-  ): void {
-    for (const m of this.myceliumMat) {
-      this.scene.remove(m);
-      m.geometry.dispose();
-      (m.material as THREE.Material).dispose();
-    }
-    this.myceliumMat = [];
-    this.myceliumBirth = [];
-    if (!buckets || buckets.length === 0) return;
-
-    const res = new THREE.Vector2();
-    this.renderer.getSize(res);
-    for (const b of buckets) {
-      if (b.positions.length === 0) continue;
-      // LineSegments2, NOT LineSegments: `LineBasicMaterial.linewidth` is
-      // ignored on essentially every platform, so a plain line set is always a
-      // 1px hairline no matter what width is asked for. That single fact is why
-      // three earlier attempts at this look failed — the growth was fine, the
-      // stroke could not get thicker. LineMaterial rasterises real width in
-      // screen pixels, and one set per branch order is how the taper is
-      // expressed (a LineMaterial carries a single width for the whole set).
-      const geo = new LineSegmentsGeometry();
-      geo.setPositions(Array.from(b.positions));
-      const mat = new LineMaterial({
-        color: 0xd8d0bd,
-        linewidth: b.width,
-        transparent: true,
-        opacity: 0.82,
-        depthWrite: false,
-        worldUnits: false, // screen px, so the mat keeps its weight when zoomed
-      });
-      mat.resolution.copy(res);
-      const line = new LineSegments2(geo, mat);
-      line.computeLineDistances();
-      line.frustumCulled = false;
-      line.renderOrder = -500; // behind the notes, in front of the ground
-      this.scene.add(line);
-      this.myceliumMat.push(line);
-      this.myceliumBirth.push(b.birth);
-    }
-    // Start hidden; the loop grows it in.
-    this.setMyceliumProgress(0);
-  }
-
-  /** Reveal the mat up to `t` (0..1) of its growth.
-   *
-   * Mycelium is a thing that GROWS, and painting the finished mat at once threw
-   * that away — the layout looked like a picture of a network instead of one
-   * spreading. Each bucket's segments are stored in growth order, so revealing
-   * is a per-bucket instance count found by binary search on the birth index.
-   */
-  /** Begin (or restart) the grow-in. `secs` 0 reveals the finished mat at once,
-   *  which is what reduced motion asks for. */
-  startMyceliumGrowth(secs: number): void {
-    this.myceliumGrowSecs = Math.max(0, secs);
-    if (this.myceliumGrowSecs === 0) {
-      this.myceliumClock = -1;
-      this.setMyceliumProgress(1);
-      return;
-    }
-    this.myceliumClock = 0;
-    this.setMyceliumProgress(0);
-  }
-
-  private tickMycelium(dt: number): void {
-    if (this.myceliumClock < 0 || this.myceliumMat.length === 0) return;
-    this.myceliumClock += dt;
-    const k = Math.min(1, this.myceliumClock / this.myceliumGrowSecs);
-    // Ease out — hyphae push hardest at the start and settle at the rim.
-    this.setMyceliumProgress(1 - Math.pow(1 - k, 2));
-    if (k >= 1) this.myceliumClock = -1;
-  }
-
-  setMyceliumProgress(t: number): void {
-    for (let i = 0; i < this.myceliumMat.length; i++) {
-      const birth = this.myceliumBirth[i];
-      let lo = 0;
-      let hi = birth.length;
-      while (lo < hi) {
-        const mid = (lo + hi) >> 1;
-        if (birth[mid] <= t) lo = mid + 1;
-        else hi = mid;
-      }
-      const geo = this.myceliumMat[i].geometry as unknown as { instanceCount: number };
-      geo.instanceCount = lo;
-    }
-  }
-
   setWalrusBoundary(on: boolean): void {
     if (this.walrusBoundary) {
       this.scene.remove(this.walrusBoundary);
@@ -4340,7 +4229,6 @@ export class GraphScene {
       this.lastFrame = now;
       // Condensation intro clock — an explicit one-shot, so it advances even
       // with ambient motion off; parks at −1 when done (zero steady-state cost).
-      this.tickMycelium(dt);
       if (this.spawnClock >= 0) {
         this.spawnClock += dt;
         this.nodeMat.uniforms.u_spawnClock.value =
@@ -4474,7 +4362,6 @@ export class GraphScene {
     this.raf = null;
     this.setTimeAxis(null); // drop the chronicle axis + its DOM labels
     this.setWalrusBoundary(false); // drop the walrus boundary sphere
-    this.setMyceliumMat(null); // and the grown mat, if the mycelium layout drew one
     this.resizeObs.disconnect();
     const el = this.renderer.domElement;
     el.removeEventListener("pointermove", this.onPointerMove);

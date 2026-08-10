@@ -48,8 +48,6 @@ import {
   applyRadialLayout,
   applySpiralLayout,
   applyWalrusLayout,
-  applyMyceliumLayout,
-  type MyceliumMat,
   applyStrataLayout,
 } from "../lib/staticLayouts";
 import { ATLAS_RADIUS_MUL } from "../lib/layoutConfig";
@@ -134,6 +132,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<GraphScene | null>(null);
   const simRef = useRef<GraphSim | null>(null);
+  // The mycelium view is a separate renderer (MyceliumView) the toolbar's Fit
+  // button doesn't otherwise reach — it stashes its own fit() here.
+  const myceliumFitRef = useRef<(() => void) | null>(null);
   const graphRef = useRef<VaultGraph | null>(null);
   const settingsRef = useRef<GraphSettings>(DEFAULT_GRAPH_SETTINGS);
   const tlRafRef = useRef<number | null>(null);
@@ -825,7 +826,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
 
     // Pure-math static layouts (spiral galaxy / time strata): positions are a
     // deterministic O(n log n) function of the built graph — no FA2 slices, no
-    // worker sim. Compute, bake, reveal in one fit.
+    // worker sim. Compute, bake, reveal in one fit. "mycelium" is a no-op here
+    // on purpose: its picture comes from MyceliumView, a wholly separate
+    // renderer mounted OVER this (invisible while active) canvas — see
+    // myceliumScene.ts for why it owns its own layout and growth clock instead.
     if (
       s.layout === "spiral" ||
       s.layout === "strata" ||
@@ -835,7 +839,6 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       s.layout === "mycelium"
     ) {
       const radius = s.linkDistance * ATLAS_RADIUS_MUL;
-      let myceliumMat: MyceliumMat[] | null = null;
       if (s.layout === "spiral") {
         applySpiralLayout(graph, { targetRadius: radius * 1.3 });
       } else if (s.layout === "celestial") {
@@ -845,7 +848,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       } else if (s.layout === "walrus") {
         applyWalrusLayout(graph, { targetRadius: radius * 1.25 });
       } else if (s.layout === "mycelium") {
-        myceliumMat = applyMyceliumLayout(graph, { targetRadius: radius * 1.35 });
+        // No-op — see the comment above.
       } else {
         // Chronicle: bake the time-strata positions AND draw the date axis
         // under them (the axis shares the layout's time→x mapping).
@@ -856,18 +859,6 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       // Walrus: draw the CAIDA boundary sphere around the baked ball (after
       // syncPositions so it reads the final node positions).
       scene.setWalrusBoundary(s.layout === "walrus");
-      // Draw the grown hyphae (null for every other layout, which tears down a
-      // mat left over from a previous one).
-      scene.setMyceliumMat(myceliumMat);
-      // Grow it in rather than painting the finished mat. Mycelium is a thing
-      // that spreads, and revealing it all at once is what made the layout read
-      // as a picture of a network instead of one forming.
-      if (myceliumMat) {
-        // The scene owns the clock: a React effect that re-runs cancels its own
-        // rAF, which stalled the grow-in partway through.
-        const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-        scene.startMyceliumGrowth(reduced ? 0 : 3.2);
-      }
       scene.layoutSettled();
       scene.fit();
       introPlayed = true;
@@ -1730,7 +1721,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
             </svg>
           </button>
-          <ZoomButtons sceneRef={sceneRef} t={t} />
+          <ZoomButtons sceneRef={sceneRef} t={t} onFit={() => myceliumFitRef.current?.()} />
           <button
             type="button"
             className="graph-toolbar__btn graph-toolbar__btn--badged"
@@ -1811,9 +1802,11 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               // graphRef is a ref, so reading it alone never re-renders and the
               // view mounted with a null graph and stayed empty.
               <MyceliumView
-                key={`${counts.nodes}-${counts.edges}`}
+                key={`${counts.nodes}-${counts.edges}-${settings.myceliumDim}`}
                 graph={graphRef.current}
                 vaultPath={currentVault?.path ?? ""}
+                flat={settings.myceliumDim === "2d"}
+                fitRef={myceliumFitRef}
               />
             ) : null}
             {/* Multiverse mode: an overlay scene of every project as a
@@ -2010,9 +2003,13 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
 function ZoomButtons({
   sceneRef,
   t,
+  onFit,
 }: {
   sceneRef: React.MutableRefObject<GraphScene | null>;
   t: Strings;
+  /** Re-frame the mycelium view too — it's a separate renderer sceneRef can't
+   *  reach, and it's the one visibly showing while the mycelium skin is on. */
+  onFit?: () => void;
 }): JSX.Element {
   return (
     <div style={{ display: "flex", gap: 4 }}>
@@ -2027,7 +2024,10 @@ function ZoomButtons({
       <button
         type="button"
         className="graph-toolbar__btn"
-        onClick={() => sceneRef.current?.fit()}
+        onClick={() => {
+          sceneRef.current?.fit();
+          onFit?.();
+        }}
         aria-label={t.gr_fit ?? "Fit"}
       >
         fit

@@ -29,9 +29,14 @@ export interface MatBucket {
 
 export interface Septum {
   id: string;
+  /** Final (settled) position. */
   x: number;
   y: number;
   z: number;
+  /** Starting position the note spreads out FROM as the mat grows. */
+  sx: number;
+  sy: number;
+  sz: number;
   /** 0..1 — bigger for a more-linked note. */
   weight: number;
   color: THREE.ColorRepresentation;
@@ -56,11 +61,22 @@ export class MyceliumScene {
 
   private mat: LineSegments2[] = [];
   private birth: Float32Array[] = [];
+  // Growth is a LERP of two position sets per bucket/septum (start → final),
+  // driven by the same clock that reveals segments — "spreading" and
+  // "connecting" are one animation, not two. setProgress writes the lerp
+  // straight into the geometry's existing GPU buffer (see there for why).
+  private matStart: Float32Array[] = [];
+  private matFinal: Float32Array[] = [];
   private clock = -1;
   private growSecs = 3.2;
+  /** Bounding box of the FINAL layout, computed once from the raw arrays —
+   *  fit() must frame the settled mat, not whatever the mid-grow buffer holds. */
+  private finalBox: THREE.Box3 = new THREE.Box3();
 
   private septa: THREE.Points | null = null;
   private septaIds: string[] = [];
+  private septaStart: Float32Array = new Float32Array(0);
+  private septaFinal: Float32Array = new Float32Array(0);
   private raf: number | null = null;
   private last = 0;
   private ro: ResizeObserver;
@@ -139,7 +155,11 @@ export class MyceliumScene {
     return best;
   }
 
-  setMat(buckets: MatBucket[]): void {
+  /** `start` is the clustered spawn positions; `final` is the settled layout —
+   *  SAME edge order/bucket membership as `start` (both come from the same
+   *  buildHyphaMat call over the same graph), so the two arrays line up
+   *  index-for-index and setProgress can lerp between them directly. */
+  setMat(final: MatBucket[], start: MatBucket[]): void {
     for (const m of this.mat) {
       this.scene.remove(m);
       m.geometry.dispose();
@@ -147,17 +167,25 @@ export class MyceliumScene {
     }
     this.mat = [];
     this.birth = [];
+    this.matStart = [];
+    this.matFinal = [];
+    this.finalBox = new THREE.Box3();
     const res = new THREE.Vector2();
     this.renderer.getSize(res);
-    for (const b of buckets) {
-      if (b.positions.length === 0) continue;
+    for (let i = 0; i < final.length; i++) {
+      const f = final[i];
+      if (f.positions.length === 0) continue;
+      const s = start[i]?.positions.length === f.positions.length ? start[i].positions : f.positions;
+      for (let k = 0; k < f.positions.length; k += 3) {
+        this.finalBox.expandByPoint(new THREE.Vector3(f.positions[k], f.positions[k + 1], f.positions[k + 2]));
+      }
       const geo = new LineSegmentsGeometry();
-      geo.setPositions(Array.from(b.positions));
+      geo.setPositions(s); // start at the CLUSTERED positions; growth lerps toward f
       // LineMaterial, because LineBasicMaterial ignores `linewidth` on
       // essentially every platform — the reason hyphae were always hairlines.
       const mtl = new LineMaterial({
         color: 0xd8d0bd,
-        linewidth: b.width,
+        linewidth: f.width,
         transparent: true,
         opacity: 0.85,
         depthWrite: false,
@@ -165,11 +193,12 @@ export class MyceliumScene {
       });
       mtl.resolution.copy(res);
       const line = new LineSegments2(geo, mtl);
-      line.computeLineDistances();
       line.frustumCulled = false;
       this.scene.add(line);
       this.mat.push(line);
-      this.birth.push(b.birth);
+      this.birth.push(f.birth);
+      this.matStart.push(s);
+      this.matFinal.push(f.positions);
     }
     this.setProgress(0);
   }
@@ -182,15 +211,25 @@ export class MyceliumScene {
       this.septa = null;
     }
     this.septaIds = items.map((s) => s.id);
+    this.septaStart = new Float32Array(items.length * 3);
+    this.septaFinal = new Float32Array(items.length * 3);
     if (items.length === 0) return;
     const pos = new Float32Array(items.length * 3);
     const col = new Float32Array(items.length * 3);
     const size = new Float32Array(items.length);
     const c = new THREE.Color();
     items.forEach((s, i) => {
-      pos[i * 3] = s.x;
-      pos[i * 3 + 1] = s.y;
-      pos[i * 3 + 2] = s.z;
+      this.septaStart[i * 3] = s.sx;
+      this.septaStart[i * 3 + 1] = s.sy;
+      this.septaStart[i * 3 + 2] = s.sz;
+      this.septaFinal[i * 3] = s.x;
+      this.septaFinal[i * 3 + 1] = s.y;
+      this.septaFinal[i * 3 + 2] = s.z;
+      this.finalBox.expandByPoint(new THREE.Vector3(s.x, s.y, s.z));
+      // Start at the clustered spawn point — growth lerps toward the final spot.
+      pos[i * 3] = s.sx;
+      pos[i * 3 + 1] = s.sy;
+      pos[i * 3 + 2] = s.sz;
       c.set(s.color);
       col[i * 3] = c.r;
       col[i * 3 + 1] = c.g;
@@ -233,7 +272,11 @@ export class MyceliumScene {
     this.scene.add(this.septa);
   }
 
-  /** Reveal the mat up to `t` (0..1) of its growth. */
+  /** Reveal the mat up to `t` (0..1) of its growth — AND spread every note and
+   *  hypha from its clustered start toward its final position by the same
+   *  `t`. Node spread and edge reveal are one animation, driven by one clock:
+   *  a straight-line thread that only just extended into view would still
+   *  read as decorative; it has to arrive AT the note it connects. */
   setProgress(t: number): void {
     for (let i = 0; i < this.mat.length; i++) {
       const b = this.birth[i];
@@ -245,6 +288,34 @@ export class MyceliumScene {
         else hi = mid;
       }
       (this.mat[i].geometry as unknown as { instanceCount: number }).instanceCount = lo;
+
+      const s = this.matStart[i];
+      const f = this.matFinal[i];
+      if (s !== f) {
+        // Mutate the EXISTING interleaved buffer in place (instanceStart and
+        // instanceEnd are two attribute views over one shared buffer) and flag
+        // it for re-upload — calling setPositions() again here would allocate
+        // a fresh GPU buffer every frame for the whole grow-in.
+        const geo = this.mat[i].geometry as LineSegmentsGeometry;
+        const buf = (geo.getAttribute("instanceStart") as THREE.InterleavedBufferAttribute)
+          .data as THREE.InterleavedBuffer;
+        const arr = buf.array as Float32Array;
+        for (let k = 0; k < f.length; k++) arr[k] = s[k] + (f[k] - s[k]) * t;
+        buf.needsUpdate = true;
+      }
+    }
+    if (this.septa) {
+      const posAttr = this.septa.geometry.getAttribute("position") as THREE.BufferAttribute;
+      for (let i = 0; i < this.septaIds.length; i++) {
+        const o = i * 3;
+        posAttr.setXYZ(
+          i,
+          this.septaStart[o] + (this.septaFinal[o] - this.septaStart[o]) * t,
+          this.septaStart[o + 1] + (this.septaFinal[o + 1] - this.septaStart[o + 1]) * t,
+          this.septaStart[o + 2] + (this.septaFinal[o + 2] - this.septaStart[o + 2]) * t,
+        );
+      }
+      posAttr.needsUpdate = true;
     }
   }
 
@@ -259,11 +330,20 @@ export class MyceliumScene {
     this.setProgress(0);
   }
 
-  /** Frame the whole mat. */
+  /** Lock (true) or free (false) the camera's tilt — the 2D view is a flat map
+   *  you pan/zoom, not an orbitable scene; positions are already flattened to
+   *  z≈0 by the caller, so a level, front-on view is all that's needed. */
+  setPlanar(on: boolean): void {
+    this.controls.enableRotate = !on;
+    this.controls.minPolarAngle = on ? Math.PI / 2 : Math.PI * 0.15;
+    this.controls.maxPolarAngle = on ? Math.PI / 2 : Math.PI * 0.85;
+  }
+
+  /** Frame the FINAL layout — using the precomputed box, not the live (possibly
+   *  still-growing) geometry, so the camera doesn't frame the tiny starting
+   *  cluster and get left behind as the mat spreads out from it. */
   fit(): void {
-    const box = new THREE.Box3();
-    for (const m of this.mat) box.expandByObject(m);
-    if (this.septa) box.expandByObject(this.septa);
+    const box = this.finalBox;
     if (box.isEmpty()) return;
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     const fov = (this.camera.fov * Math.PI) / 180;
@@ -319,7 +399,7 @@ export class MyceliumScene {
     this.renderer.domElement.removeEventListener("pointermove", this.onMove);
     this.renderer.domElement.removeEventListener("click", this.onClick);
     this.controls.dispose();
-    this.setMat([]);
+    this.setMat([], []);
     this.setSepta([]);
     this.renderer.dispose();
     this.renderer.domElement.remove();
