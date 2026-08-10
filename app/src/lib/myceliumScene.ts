@@ -41,11 +41,23 @@ export interface Septum {
   color: THREE.ColorRepresentation;
 }
 
+/** A label's on-screen position for one rendered frame — see setLabelIds. */
+export interface FrameLabel {
+  id: string;
+  x: number;
+  y: number;
+}
+
 export interface MyceliumSceneOpts {
   /** Substrate colour. A warm near-black loam, not a blue void. */
   ground?: number;
   onPick?: (id: string) => void;
   onHover?: (id: string | null) => void;
+  /** Called once per rendered frame with the current screen position of every
+   *  always-on label (see setLabelIds) that's grown in and on-screen — drives
+   *  the hub-label overlay, which has to track the camera every frame since
+   *  the mat itself never moves but the view does. */
+  onFrame?: (labels: FrameLabel[]) => void;
 }
 
 const GROUND = 0x0b0a08;
@@ -72,6 +84,11 @@ export class MyceliumScene {
    *  lookup for setHoverVisual instead of an indexOf scan per hover change. */
   private septaIndexOf = new Map<string, number>();
   private hoveredIdx = -1;
+  /** Always-on hub label ids (see setLabelIds) — capped small by the caller. */
+  private labelIds: string[] = [];
+  /** Current growth progress (setProgress's `t`) — a label must not float
+   *  over a septum that hasn't grown in yet. */
+  private growT = 0;
   private raf: number | null = null;
   private last = 0;
   private ro: ResizeObserver;
@@ -321,11 +338,19 @@ export class MyceliumScene {
     attr.needsUpdate = true;
   }
 
+  /** Note ids that should carry an always-on label (the caller caps this
+   *  small — see MyceliumView's HUB_LABEL_CAP). Their screen positions are
+   *  reported to opts.onFrame every rendered frame. */
+  setLabelIds(ids: string[]): void {
+    this.labelIds = ids;
+  }
+
   /** Reveal the mat up to `t` (0..1) of its growth — hyphae by instance count
    *  (binary search on each bucket's ascending birth index) and septa by the
    *  same birth threshold on the GPU (see setSepta's shader). Nothing moves;
    *  growing is revealing, not animating a spread. */
   setProgress(t: number): void {
+    this.growT = t;
     for (let i = 0; i < this.mat.length; i++) {
       const b = this.birth[i];
       let lo = 0;
@@ -426,9 +451,32 @@ export class MyceliumScene {
       }
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
+      if (this.opts.onFrame && this.labelIds.length > 0) this.reportLabelFrame();
       this.raf = requestAnimationFrame(loop);
     };
     this.raf = requestAnimationFrame(loop);
+  }
+
+  /** Project every always-on label id to screen space for this frame, skipping
+   *  whichever haven't grown in yet (see setProgress's growT), sit behind the
+   *  camera, or would stack on a higher-degree label already placed this
+   *  frame (busy hubs cluster close together on the mat, and 20 legible
+   *  labels beats 20 overlapping ones). Capped list (setLabelIds), so the
+   *  O(n^2) stacking check is cheap even at 60fps. */
+  private reportLabelFrame(): void {
+    if (!this.septa) return;
+    const birthAttr = this.septa.geometry.getAttribute("a_birth") as THREE.BufferAttribute;
+    const MIN_GAP = 22; // px — roughly one label's line height
+    const out: FrameLabel[] = [];
+    for (const id of this.labelIds) {
+      const idx = this.septaIndexOf.get(id);
+      if (idx == null || birthAttr.getX(idx) > this.growT) continue;
+      const s = this.projectToScreen(id);
+      if (!s) continue;
+      if (out.some((o) => Math.abs(o.x - s.x) < MIN_GAP && Math.abs(o.y - s.y) < MIN_GAP)) continue;
+      out.push({ id, x: s.x, y: s.y });
+    }
+    this.opts.onFrame!(out);
   }
 
   stop(): void {

@@ -1369,6 +1369,27 @@ select {
   white-space: nowrap;
   pointer-events: none;
 }
+/* Always-on hub labels (top-N by link count — see HUB_LABEL_CAP). One
+   positioned wrapper so every label's transform shares the canvas's origin;
+   dimmer and borderless than the hover label since these are ambient, not a
+   direct answer to "what is this". */
+.myc-hub-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.myc-hub-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  padding: 1px 5px;
+  font-size: 10.5px;
+  color: #cfc7b5;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
 
 /* Quoted material — notably extractive Ask answers, which render retrieved
    passages verbatim. With no blockquote styling at all (the previous state) a

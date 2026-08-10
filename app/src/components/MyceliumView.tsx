@@ -24,6 +24,11 @@ const GROW_SECS = 3.2;
 // linkDistance-derived scale — this renderer never reads the force-layout
 // settings.
 const TARGET_RADIUS = 900;
+// Always-on labels are capped to the busiest notes: a real vault runs ~1244
+// notes, and a label per note is unreadable clutter (and, before growth
+// finishes, a wall of text over an still-forming mat). 20 keeps the layer
+// legible while still naming the notes most worth orienting by.
+const HUB_LABEL_CAP = 20;
 
 export default function MyceliumView({
   graph,
@@ -44,12 +49,38 @@ export default function MyceliumView({
   // avoids pulling a whole label-renderer into a scene that otherwise has
   // none of that machinery.
   const labelRef = useRef<HTMLDivElement | null>(null);
+  // Always-on hub labels — a fixed small set of DOM spans, repositioned every
+  // frame by the scene's onFrame (see below). Created imperatively like the
+  // hover label above, not React state: their count is capped (HUB_LABEL_CAP)
+  // and they move every frame, so state-driven re-renders would be wasted work.
+  const hubHostRef = useRef<HTMLDivElement | null>(null);
   const setRoute = useUIStore((s) => s.setRoute);
 
   useEffect(() => {
     const el = host.current;
     const label = labelRef.current;
+    const hubHost = hubHostRef.current;
     if (!el || !graph || graph.order === 0) return;
+
+    // The busiest notes by link count — same "hubs first" convention as the
+    // static layouts (applyRadialLayout etc). A span per id, created once;
+    // onFrame only ever toggles their visibility/position.
+    const hubIds = graph
+      .nodes()
+      .slice()
+      .sort((a, b) => (graph.getNodeAttribute(b, "deg") ?? 0) - (graph.getNodeAttribute(a, "deg") ?? 0))
+      .slice(0, HUB_LABEL_CAP);
+    const hubEls = new Map<string, HTMLSpanElement>();
+    if (hubHost) {
+      hubHost.replaceChildren();
+      for (const id of hubIds) {
+        const span = document.createElement("span");
+        span.className = "myc-hub-label";
+        span.textContent = graph.getNodeAttribute(id, "label") ?? id;
+        hubHost.appendChild(span);
+        hubEls.set(id, span);
+      }
+    }
 
     const scene = new MyceliumScene(el, {
       onPick: (id) => {
@@ -67,7 +98,22 @@ export default function MyceliumView({
           label.style.display = "none";
         }
       },
+      onFrame: (labels) => {
+        const shown = new Set(labels.map((l) => l.id));
+        for (const [id, span] of hubEls) {
+          if (!shown.has(id)) span.style.display = "none";
+        }
+        for (const l of labels) {
+          const span = hubEls.get(l.id);
+          if (!span) continue;
+          span.style.display = "block";
+          // Offset off the dot itself, or the text sits directly on top of
+          // the point it's naming instead of beside it.
+          span.style.transform = `translate(${l.x + 6}px, ${l.y - 6}px)`;
+        }
+      },
     });
+    scene.setLabelIds(hubIds);
     // The label follows the raw cursor, not the septum's projected position —
     // the pick radius is only 14px, so the cursor is already right on the dot,
     // and this avoids re-projecting a point every pointer move just to place
@@ -151,6 +197,7 @@ export default function MyceliumView({
   return (
     <div className="myc-view" ref={host}>
       <div ref={labelRef} className="myc-hover-label" />
+      <div ref={hubHostRef} className="myc-hub-labels" />
     </div>
   );
 }
