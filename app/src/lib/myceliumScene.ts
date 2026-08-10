@@ -68,6 +68,10 @@ export class MyceliumScene {
 
   private septa: THREE.Points | null = null;
   private septaIds: string[] = [];
+  /** note id -> its index in septaIds/the geometry's attribute arrays — O(1)
+   *  lookup for setHoverVisual instead of an indexOf scan per hover change. */
+  private septaIndexOf = new Map<string, number>();
+  private hoveredIdx = -1;
   private raf: number | null = null;
   private last = 0;
   private ro: ResizeObserver;
@@ -106,6 +110,7 @@ export class MyceliumScene {
     this.ro.observe(container);
 
     this.renderer.domElement.addEventListener("pointermove", this.onMove);
+    this.renderer.domElement.addEventListener("pointerleave", this.onLeave);
     this.renderer.domElement.addEventListener("click", this.onClick);
   }
 
@@ -114,7 +119,19 @@ export class MyceliumScene {
     if (id !== this.hovered) {
       this.hovered = id;
       this.renderer.domElement.style.cursor = id ? "pointer" : "grab";
+      this.setHoverVisual(id);
       this.opts.onHover?.(id);
+    }
+  };
+  // pointermove alone never fires again once the cursor leaves the canvas —
+  // without this, hovering a septum then moving the pointer off-canvas left
+  // the label and the brightened point stuck showing the last-hovered note.
+  private onLeave = (): void => {
+    if (this.hovered !== null) {
+      this.hovered = null;
+      this.renderer.domElement.style.cursor = "grab";
+      this.setHoverVisual(null);
+      this.opts.onHover?.(null);
     }
   };
   private onClick = (e: MouseEvent): void => {
@@ -144,6 +161,26 @@ export class MyceliumScene {
       }
     }
     return best;
+  }
+
+  /** A septum's on-screen position (canvas-local CSS px), or null if it isn't
+   *  in the current septa set or sits behind the camera. Used by the hover
+   *  test harness to move the pointer onto a known note, and reused by the
+   *  always-on hub-label projection each frame. */
+  projectToScreen(id: string): { x: number; y: number } | null {
+    const idx = this.septaIndexOf.get(id);
+    if (idx == null || !this.septa) return null;
+    const pos = this.septa.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const v = new THREE.Vector3(pos.getX(idx), pos.getY(idx), pos.getZ(idx));
+    // Behind the camera: project()'s perspective divide by a negative w can
+    // land inside [-1,1] NDC anyway, so check view-space z rather than trust
+    // the projected coordinates blindly.
+    const view = v.clone().applyMatrix4(this.camera.matrixWorldInverse);
+    if (view.z > 0) return null;
+    v.project(this.camera);
+    const w = this.renderer.domElement.clientWidth;
+    const h = this.renderer.domElement.clientHeight;
+    return { x: ((v.x + 1) / 2) * w, y: ((1 - v.y) / 2) * h };
   }
 
   /** The mat doesn't move once grown — only more of it gets revealed over
@@ -194,11 +231,14 @@ export class MyceliumScene {
       this.septa = null;
     }
     this.septaIds = items.map((s) => s.id);
+    this.septaIndexOf = new Map(items.map((s, i) => [s.id, i]));
+    this.hoveredIdx = -1; // fresh geometry — nothing highlighted yet
     if (items.length === 0) return;
     const pos = new Float32Array(items.length * 3);
     const col = new Float32Array(items.length * 3);
     const size = new Float32Array(items.length);
     const birth = new Float32Array(items.length);
+    const hi = new Float32Array(items.length); // 0 = normal; see setHoverVisual
     const c = new THREE.Color();
     items.forEach((s, i) => {
       pos[i * 3] = s.x;
@@ -217,6 +257,7 @@ export class MyceliumScene {
     geo.setAttribute("a_color", new THREE.BufferAttribute(col, 3));
     geo.setAttribute("a_size", new THREE.BufferAttribute(size, 1));
     geo.setAttribute("a_birth", new THREE.BufferAttribute(birth, 1));
+    geo.setAttribute("a_hi", new THREE.BufferAttribute(hi, 1));
     // A FLAT disc with a soft edge — deliberately not the glow shader the space
     // renderer uses. A halo is what makes a node read as a star, and a septum
     // is a thickening of a thread, not a light source.
@@ -228,33 +269,56 @@ export class MyceliumScene {
         attribute vec3 a_color;
         attribute float a_size;
         attribute float a_birth;
+        attribute float a_hi;
         uniform float u_t;
         varying vec3 v_color;
         varying float v_grown;
+        varying float v_hi;
         void main() {
           v_color = a_color;
+          v_hi = a_hi;
           // Hidden until growth reaches this note's spot on the mat — same
           // birth-index reveal as a hypha segment, just per-point.
           v_grown = step(a_birth, u_t);
           vec4 mv = modelViewMatrix * vec4(position, 1.0);
-          gl_PointSize = a_size * v_grown * (320.0 / -mv.z);
+          // Hover/neighbour highlight grows the point a touch, not a halo —
+          // size reads as "lit up" without turning a septum into a glow.
+          float sizeBoost = 1.0 + v_hi * 0.6;
+          gl_PointSize = a_size * v_grown * sizeBoost * (320.0 / -mv.z);
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `
         varying vec3 v_color;
         varying float v_grown;
+        varying float v_hi;
         void main() {
           if (v_grown < 0.5) discard;
           vec2 d = gl_PointCoord - vec2(0.5);
           float r = length(d) * 2.0;
           if (r > 1.0) discard;
           float a = smoothstep(1.0, 0.72, r);
-          gl_FragColor = vec4(v_color, a);
+          // Brighten toward white rather than just raising alpha — reads as
+          // "lit up", not "less transparent".
+          vec3 col = mix(v_color, vec3(1.0), v_hi * 0.55);
+          gl_FragColor = vec4(col, a);
         }`,
     });
     this.septa = new THREE.Points(geo, mtl);
     this.septa.frustumCulled = false;
     this.scene.add(this.septa);
+  }
+
+  /** Brighten exactly the hovered septum (a_hi -> 1) and un-brighten whatever
+   *  was hovered before — O(1), touching only the two changed indices in the
+   *  GPU buffer rather than scanning every point on each pointer move. */
+  private setHoverVisual(id: string | null): void {
+    if (!this.septa) return;
+    const attr = this.septa.geometry.getAttribute("a_hi") as THREE.BufferAttribute;
+    if (this.hoveredIdx >= 0) attr.setX(this.hoveredIdx, 0);
+    const idx = id != null ? this.septaIndexOf.get(id) : undefined;
+    this.hoveredIdx = idx ?? -1;
+    if (this.hoveredIdx >= 0) attr.setX(this.hoveredIdx, 1);
+    attr.needsUpdate = true;
   }
 
   /** Reveal the mat up to `t` (0..1) of its growth — hyphae by instance count
@@ -376,6 +440,7 @@ export class MyceliumScene {
     this.stop();
     this.ro.disconnect();
     this.renderer.domElement.removeEventListener("pointermove", this.onMove);
+    this.renderer.domElement.removeEventListener("pointerleave", this.onLeave);
     this.renderer.domElement.removeEventListener("click", this.onClick);
     this.controls.dispose();
     this.setMat([]);

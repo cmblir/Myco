@@ -39,10 +39,16 @@ export default function MyceliumView({
   fitRef?: React.MutableRefObject<(() => void) | null>;
 }): JSX.Element {
   const host = useRef<HTMLDivElement | null>(null);
+  // Hover label: a plain DOM element positioned at the cursor rather than a
+  // CSS2DRenderer layer — one node, updated on pointer move, is cheap and
+  // avoids pulling a whole label-renderer into a scene that otherwise has
+  // none of that machinery.
+  const labelRef = useRef<HTMLDivElement | null>(null);
   const setRoute = useUIStore((s) => s.setRoute);
 
   useEffect(() => {
     const el = host.current;
+    const label = labelRef.current;
     if (!el || !graph || graph.order === 0) return;
 
     const scene = new MyceliumScene(el, {
@@ -52,7 +58,26 @@ export default function MyceliumView({
         const abs = id.startsWith(vaultPath) ? id : `${vaultPath}/${id}`;
         setRoute(`page:${abs}` as RouteId);
       },
+      onHover: (id) => {
+        if (!label) return;
+        if (id) {
+          label.textContent = graph.getNodeAttribute(id, "label") ?? id;
+          label.style.display = "block";
+        } else {
+          label.style.display = "none";
+        }
+      },
     });
+    // The label follows the raw cursor, not the septum's projected position —
+    // the pick radius is only 14px, so the cursor is already right on the dot,
+    // and this avoids re-projecting a point every pointer move just to place
+    // some text next to it.
+    const onPointerMove = (e: PointerEvent): void => {
+      if (!label) return;
+      const rect = el.getBoundingClientRect();
+      label.style.transform = `translate(${e.clientX - rect.left + 14}px, ${e.clientY - rect.top + 14}px)`;
+    };
+    el.addEventListener("pointermove", onPointerMove);
 
     const { buckets, matIndexOf, mat } = buildMyceliumMat(graph, { targetRadius: TARGET_RADIUS });
     // The 2D toggle flattens the grown mat itself (not just the notes) —
@@ -117,10 +142,15 @@ export default function MyceliumView({
     document.addEventListener("visibilitychange", onVisible);
     return () => {
       document.removeEventListener("visibilitychange", onVisible);
+      el.removeEventListener("pointermove", onPointerMove);
       if (fitRef) fitRef.current = null;
       scene.dispose();
     };
   }, [graph, vaultPath, flat, setRoute, fitRef]);
 
-  return <div className="myc-view" ref={host} />;
+  return (
+    <div className="myc-view" ref={host}>
+      <div ref={labelRef} className="myc-hover-label" />
+    </div>
+  );
 }

@@ -1352,6 +1352,23 @@ select {
   width: 100%;
   height: 100%;
 }
+/* Hover label — positioned via a JS transform (see MyceliumView's
+   pointermove handler), not top/left, so moving it never triggers layout. */
+.myc-hover-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  display: none;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: rgba(20, 18, 14, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f2eee4;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
 
 /* Quoted material — notably extractive Ask answers, which render retrieved
    passages verbatim. With no blockquote styling at all (the previous state) a
