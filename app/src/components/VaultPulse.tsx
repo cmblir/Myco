@@ -9,7 +9,7 @@
 // motion. `lib/vaultPulse.ts` still derives how MUCH to draw and how fast, so
 // changing the look never changes what the screen says about the vault.
 
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, JSX } from "react";
 import type { Strings } from "../lib/i18n";
 import { motionVars, sparkHeights, type DayBuckets } from "../lib/vaultPulse";
@@ -140,24 +140,13 @@ export default function VaultPulse({
           information, so a screen reader gains nothing from the background. */}
       <canvas className="vp-canvas" ref={canvasRef} aria-hidden="true" />
 
-      <div className="vp-spark">
-        {heights.authored.map((h, i) => (
-          <span className="vp-bar" key={i}>
-            <span className="vp-bar-authored" style={{ height: `${h}%` }} />
-            <span
-              className="vp-bar-ingested"
-              style={{ height: `${heights.ingested[i] ?? 0}%` }}
-            />
-          </span>
-        ))}
-      </div>
-      {/* The count in text, so the chart never encodes meaning in colour and
-          height alone. */}
-      <p className="vp-caption muted">
-        {authoredWeek === 0
-          ? (t.ov_moved_none ?? "Nothing written in the last 7 days")
-          : `${authoredWeek} / ${ingestedWeek}`}
-      </p>
+      <ActivityStrip
+        t={t}
+        buckets={buckets}
+        heights={heights}
+        authoredWeek={authoredWeek}
+        ingestedWeek={ingestedWeek}
+      />
     </section>
   );
 }
@@ -167,6 +156,91 @@ function Figure({ value, label }: { value: number; label: string }): JSX.Element
     <div className="vp-figure">
       <div className="vp-value">{value}</div>
       <div className="vp-label">{label}</div>
+    </div>
+  );
+}
+
+// The 7-day strip. It used to be seven pairs of 2px stubs, which on a vault
+// with a quiet week rendered as specks that read like rendering debris rather
+// than a chart — especially against an animated background.
+//
+// Three changes fix that without inventing data: every day keeps a visible
+// TRACK so an empty week reads as "a chart with nothing in it"; each day is a
+// real hover/focus target that says what it holds; and the day under the
+// pointer is named in the caption instead of only in a tooltip, so the
+// information is reachable without a mouse.
+function ActivityStrip({
+  t,
+  buckets,
+  heights,
+  authoredWeek,
+  ingestedWeek,
+}: {
+  t: Strings;
+  buckets: DayBuckets;
+  heights: DayBuckets;
+  authoredWeek: number;
+  ingestedWeek: number;
+}): JSX.Element {
+  const [hover, setHover] = useState<number | null>(null);
+  const days = heights.authored.length;
+
+  // Oldest bucket first, today last — the same order bucketByDay produces.
+  const dayDate = (i: number): Date => {
+    const d = new Date();
+    d.setHours(12, 0, 0, 0);
+    d.setDate(d.getDate() - (days - 1 - i));
+    return d;
+  };
+  const weekday = new Intl.DateTimeFormat(undefined, { weekday: "narrow" });
+  const full = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+
+  const caption = (): string => {
+    if (hover != null) {
+      const a = buckets.authored[hover] ?? 0;
+      const g = buckets.ingested[hover] ?? 0;
+      return `${full.format(dayDate(hover))} · ${a} / ${g}`;
+    }
+    return authoredWeek === 0
+      ? (t.ov_moved_none ?? "Nothing written in the last 7 days")
+      : `${authoredWeek} / ${ingestedWeek}`;
+  };
+
+  return (
+    <div className="vp-activity">
+      <div className="vp-spark" onMouseLeave={() => setHover(null)}>
+        {heights.authored.map((h, i) => {
+          const a = buckets.authored[i] ?? 0;
+          const g = buckets.ingested[i] ?? 0;
+          return (
+            <button
+              type="button"
+              className={`vp-day${hover === i ? " is-on" : ""}`}
+              key={i}
+              onMouseEnter={() => setHover(i)}
+              onFocus={() => setHover(i)}
+              onBlur={() => setHover(null)}
+              aria-label={`${full.format(dayDate(i))}: ${a} / ${g}`}
+            >
+              <span className="vp-track">
+                <span className="vp-bar-authored" style={{ height: `${h}%` }} />
+                <span
+                  className="vp-bar-ingested"
+                  style={{ height: `${heights.ingested[i] ?? 0}%` }}
+                />
+              </span>
+              <span className="vp-dayname" aria-hidden="true">
+                {weekday.format(dayDate(i))}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      {/* Counts in text, so the chart never encodes meaning in colour and
+          height alone. */}
+      <p className="vp-caption muted" aria-live="polite">
+        {caption()}
+      </p>
     </div>
   );
 }

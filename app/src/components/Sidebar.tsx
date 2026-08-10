@@ -25,7 +25,6 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   const toggleCmd = useUIStore((s) => s.toggleCmd);
   const fileTree = useVaultStore((s) => s.fileTree);
   const currentVault = useVaultStore((s) => s.currentVault);
-  const openVault = useVaultStore((s) => s.openVault);
   const dueTotal = useStudyStore((s) => s.dueTotal);
   const refreshStudy = useStudyStore((s) => s.refresh);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
@@ -35,11 +34,6 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   useEffect(() => {
     void refreshStudy();
   }, [refreshStudy, fileTree]);
-
-  async function pickVault(): Promise<void> {
-    const path = await ipc.pickDirectory();
-    if (path) await openVault(path);
-  }
 
   const totalFiles = countFiles(fileTree);
   const activePath = route.startsWith("page:") ? route.slice(5) : null;
@@ -66,17 +60,22 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
           </span>
           <span className="brand-name">{t.app_name}</span>
         </button>
+        {/* Shows WHICH vault is open and how big it is; changing it lives in
+            Settings. This used to open a folder dialog itself, which made three
+            controls for one action (here, Settings' "Change…", and the
+            known-vault shortcuts). The caret went with it — it promised a
+            dropdown that never existed. */}
         <button
           className="proj-switch"
-          onClick={() => void pickVault()}
+          onClick={() => setRoute("settings")}
           onContextMenu={(e) => showMenu(e, "vault")}
+          title={t.s_vault_goto ?? "Change the vault in Settings"}
         >
           <span className="proj-icon">
             {currentVault?.name?.charAt(0).toUpperCase() ?? "·"}
           </span>
           <span className="proj-name">{currentVault?.name ?? "No vault"}</span>
           <span className="proj-meta">{totalFiles || ""}</span>
-          <Icon name="chevD" size={12} />
         </button>
       </div>
 

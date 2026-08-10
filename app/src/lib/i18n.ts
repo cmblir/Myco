@@ -456,6 +456,7 @@ export interface Strings {
   s_mcp: string;
   s_appearance: string;
   s_vault_known?: string;
+  s_vault_goto?: string;
   s_ov_theme?: string;
   s_ov_theme_lede?: string;
   ov_theme_mycelium?: string;
@@ -1240,6 +1241,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_providers: "Connections",
     s_appearance: "Appearance",
     s_vault_known: "Vaults myco already knows",
+    s_vault_goto: "Change the vault in Settings",
     s_ov_theme: "Overview background",
     s_ov_theme_lede: "The living background on the Overview page. Named after the graph's layouts; not linked to them.",
     ov_theme_mycelium: "Mycelium",
@@ -2042,6 +2044,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_providers: "연결",
     s_appearance: "테마",
     s_vault_known: "myco가 이미 아는 보관함",
+    s_vault_goto: "보관함은 설정에서 바꿉니다",
     s_ov_theme: "개요 배경",
     s_ov_theme_lede: "개요 페이지의 살아있는 배경입니다. 그래프 레이아웃 이름을 그대로 쓰지만 연동되지는 않습니다.",
     ov_theme_mycelium: "균사",
@@ -2732,6 +2735,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_providers: "接続",
     s_appearance: "外観",
     s_vault_known: "myco が把握しているヴォールト",
+    s_vault_goto: "ヴォールトの変更は設定から",
     s_ov_theme: "概要の背景",
     s_ov_theme_lede: "概要ページの生きた背景です。グラフのレイアウト名をそのまま使いますが、連動はしません。",
     ov_theme_mycelium: "菌糸",

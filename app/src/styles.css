@@ -1193,31 +1193,58 @@ select {
   }
 }
 
-/* Sparkline. Fixed height so a busy week cannot change the page's layout.
-   Each day slot has a small fixed width instead of stretching to fill an
-   equal share of the card (a wide card turned that into a row of solid
-   blocks rather than a chart). max-width caps the whole strip so the 7
-   slots stay a compact, adjacent-reading figure on a wide card too —
-   without it, space-between stretched the same 7 slots across the full
-   card width, which reads as scattered tick marks rather than one chart.
-   Left-aligned (no auto margins), matching the figures above it. */
-.vp-spark {
+/* 7-day activity strip. Fixed height so a busy week cannot change the page's
+   layout, and max-width so the seven slots stay one compact figure on a wide
+   card instead of scattered tick marks.
+
+   Every day keeps a visible TRACK. Without it a quiet week drew seven pairs of
+   2px stubs, which against an animated background read as rendering debris
+   rather than as a chart holding nothing. */
+.vp-activity {
   position: relative;
   z-index: 1;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  max-width: 240px;
-  height: 34px;
-  margin-top: 20px;
+  margin-top: 18px;
 }
-.vp-bar {
-  position: relative;
-  flex: 0 0 auto;
-  height: 100%;
+.vp-spark {
   display: flex;
   align-items: flex-end;
+  gap: 4px;
+  max-width: 240px;
+}
+.vp-day {
+  flex: 0 0 auto;
+  width: 26px;
+  padding: 0 0 2px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  border-radius: 4px;
+  transition: background var(--dur-quick, 140ms) var(--ease-out, ease);
+}
+.vp-day.is-on,
+.vp-day:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+.vp-day:focus-visible {
+  outline: 2px solid var(--ink-3);
+  outline-offset: 1px;
+}
+.vp-track {
+  width: 100%;
+  height: 34px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
   gap: 2px;
+  border-radius: 3px;
+  /* The slot itself has to be visible, not just its border: on a dark card a
+     1px --line edge disappears, and a zero day falls back to looking like two
+     stray specks. currentColor tracks the theme, so this works on paper too. */
+  background: color-mix(in srgb, currentColor 7%, transparent);
 }
 .vp-bar-authored,
 .vp-bar-ingested {
@@ -1234,9 +1261,19 @@ select {
 .vp-bar-ingested {
   background: var(--line-strong);
 }
+.vp-dayname {
+  font-size: 9.5px;
+  line-height: 1;
+  color: var(--ink-4);
+}
 @keyframes vp-rise {
   from {
     transform: scaleY(0);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vp-day {
+    transition: none;
   }
 }
 .vp-caption {
