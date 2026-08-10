@@ -6,26 +6,24 @@
 // time all ended with the same blue sky showing through. MyceliumScene owns its
 // renderer and has no post-processing at all, so there is nothing to switch off.
 //
-// The picture itself: every hypha IS a real wikilink edge (buildHyphaMat reads
-// the graph's own edges), and every note SPREADS from a tight starting cluster
-// out to a radial layout (BFS shells from the busiest hub — real graph
-// structure, not a decorative growth) as the mat grows in. Positions are
-// computed on a COPY of the graph so this view never mutates the shared one
-// that the (hidden, invisible-while-mycelium-is-active) GraphScene also holds.
+// The picture itself: buildMyceliumMat GROWS a real fungal mat (tip growth +
+// branching + anastomosis — a shape the wikilink graph could never produce)
+// and then EMBEDS the note graph into it, so a link between two notes is a
+// path along real hyphae, never a drawn chord. See staticLayouts.ts for the
+// growth + embedding; this component just feeds the result to the renderer.
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
 import { MyceliumScene, type Septum } from "../lib/myceliumScene";
-import { applyRadialLayout, buildHyphaMat, clusterStart } from "../lib/staticLayouts";
+import { buildMyceliumMat } from "../lib/staticLayouts";
 import type { VaultGraph } from "../lib/graphData";
 import { useUIStore } from "../stores/uiStore";
 import type { RouteId } from "../stores/uiStore";
 
 const GROW_SECS = 3.2;
-// Final layout radius. Independent of the hidden GraphScene's linkDistance-
-// derived scale — this renderer never reads the force-layout settings.
+// World radius of the grown mat. Independent of the hidden GraphScene's
+// linkDistance-derived scale — this renderer never reads the force-layout
+// settings.
 const TARGET_RADIUS = 900;
-// The tight cluster every note starts from before spreading to its real spot.
-const CLUSTER_RADIUS = 40;
 
 export default function MyceliumView({
   graph,
@@ -56,46 +54,35 @@ export default function MyceliumView({
       },
     });
 
-    // Final layout: radial shells from the busiest hub, computed on a COPY —
-    // this view must never write into the graph object the hidden GraphScene
-    // (and the rest of the page) also holds.
-    const laid = graph.copy() as VaultGraph;
-    applyRadialLayout(laid, { targetRadius: TARGET_RADIUS });
-    if (flat) laid.forEachNode((id) => laid.setNodeAttribute(id, "z", 0));
-    const finalOf = (id: string): { x: number; y: number; z: number } => ({
-      x: laid.getNodeAttribute(id, "x"),
-      y: laid.getNodeAttribute(id, "y"),
-      z: laid.getNodeAttribute(id, "z"),
-    });
-    const startOf = (id: string): { x: number; y: number; z: number } => {
-      const c = clusterStart(id, CLUSTER_RADIUS);
-      return flat ? { x: c.x, y: c.y, z: 0 } : c;
-    };
-
-    const finalBuckets = buildHyphaMat(graph, finalOf);
-    const startBuckets = buildHyphaMat(graph, startOf);
-    scene.setMat(finalBuckets, startBuckets);
+    const { buckets, matIndexOf, mat } = buildMyceliumMat(graph, { targetRadius: TARGET_RADIUS });
+    // The 2D toggle flattens the grown mat itself (not just the notes) —
+    // otherwise hyphae would draw in 3D under notes pinned to z=0.
+    if (flat) {
+      for (const b of buckets) for (let k = 2; k < b.positions.length; k += 3) b.positions[k] = 0;
+    }
 
     let maxDeg = 1;
     graph.forEachNode((_id, attrs) => {
       maxDeg = Math.max(maxDeg, (attrs.deg as number) ?? 1);
     });
+    const lastIdx = Math.max(1, mat.length - 1);
     const septa: Septum[] = [];
     graph.forEachNode((id, attrs) => {
-      const f = finalOf(id);
-      const s = startOf(id);
+      const idx = matIndexOf.get(id);
+      if (idx == null) return;
+      const h = mat[idx];
       septa.push({
         id,
-        x: f.x,
-        y: f.y,
-        z: f.z,
-        sx: s.x,
-        sy: s.y,
-        sz: s.z,
+        x: h.x,
+        y: h.y,
+        z: flat ? 0 : h.z,
+        birth: idx / lastIdx,
         weight: Math.min(1, ((attrs.deg as number) ?? 1) / maxDeg),
         color: (attrs.color as string) ?? "#d8cfbc",
       });
     });
+
+    scene.setMat(buckets);
     scene.setSepta(septa);
     scene.setPlanar(flat);
     scene.fit();
@@ -107,19 +94,19 @@ export default function MyceliumView({
     scene.start();
 
     // DEV-ONLY: expose enough for a screenshot/measurement harness to prove
-    // hyphae follow real edges and growth actually animates over time —
-    // mirrors PageGraph.tsx's __graphDev for the main scene.
+    // hyphae are the grown mat (never a note-to-note chord) and growth
+    // actually animates over time — mirrors PageGraph.tsx's __graphDev.
     if (import.meta.env.DEV) {
       (window as unknown as { __myceliumDev?: unknown }).__myceliumDev = {
         scene,
         mountedAt: performance.now(),
         nodeIds: graph.nodes(),
         edges: graph.edges().map((e) => graph.extremities(e)),
-        finalOf,
-        startOf,
+        matIndexOf,
+        mat,
         // The exact geometry buckets fed to the renderer — lets the harness
-        // confirm a drawn polyline's own endpoints, not just re-derive them.
-        finalBuckets: finalBuckets.map((b) => ({ width: b.width, positions: Array.from(b.positions) })),
+        // confirm a drawn segment's own endpoints, not just re-derive them.
+        buckets: buckets.map((b) => ({ width: b.width, positions: Array.from(b.positions) })),
       };
     }
 

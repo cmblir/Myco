@@ -573,24 +573,6 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
   }
 }
 
-export interface Position {
-  x: number;
-  y: number;
-  z: number;
-}
-
-/** A node's start-of-growth position: a tight, deterministic jitter near the
- *  origin. Every note starts here and spreads out to its real layout spot —
- *  the mycelium "growing" is that spread, driven by the scene's progress
- *  clock (see myceliumScene.ts setProgress). */
-export function clusterStart(id: string, radius: number): Position {
-  return {
-    x: (seededUnit(id, 601) - 0.5) * radius,
-    y: (seededUnit(id, 602) - 0.5) * radius,
-    z: (seededUnit(id, 603) - 0.5) * radius,
-  };
-}
-
 /** Hyphae grouped by stroke width. `LineMaterial` carries ONE width per set, so
  *  taper is expressed as several sets rather than a per-vertex attribute. */
 export interface HyphaBucket {
@@ -603,139 +585,339 @@ export interface HyphaBucket {
   birth: Float32Array;
 }
 
-// BFS depth from the busiest hub(s) — same technique as applyRadialLayout,
-// reused here as the growth ORDER: hyphae connect outward from the hub first,
-// same as real fungal growth colonising outward from a spore. Disconnected
-// components each get their own local hub so nothing is left without an order.
-function bfsDepthFromHubs(g: VaultGraph): Map<string, number> {
-  const degOf = (id: string): number =>
-    (g.getNodeAttribute(id, "deg") as number) ?? g.degree(id);
-  const depth = new Map<string, number>();
-  const remaining = new Set(g.nodes());
-  while (remaining.size > 0) {
-    let hub = "";
-    let best = -1;
-    for (const id of remaining) {
-      const d = degOf(id);
-      if (d > best) {
-        best = d;
-        hub = id;
-      }
-    }
-    depth.set(hub, 0);
-    remaining.delete(hub);
-    const queue = [hub];
-    let head = 0;
-    while (head < queue.length) {
-      const cur = queue[head++];
-      const d = depth.get(cur) ?? 0;
-      for (const nb of g.neighbors(cur)) {
-        if (depth.has(nb)) continue;
-        depth.set(nb, d + 1);
-        remaining.delete(nb);
-        queue.push(nb);
-      }
-    }
-  }
-  return depth;
+/** One grown hypha point: a position plus the parent it extended or branched
+ *  from. Exported so tests (and the note-embedding below) can walk the mat as
+ *  a graph. */
+export interface HyphaNode {
+  x: number;
+  y: number;
+  z: number;
+  /** Index into the same array, or -1 for a spore. */
+  parent: number;
+  /** Branch generation. Drives stroke width (taper) — see buildMyceliumMat. */
+  order: number;
+  /** Set on an anastomosis bridge: the index of the pre-existing hypha point
+   *  this one fused with. The bridge is still drawn as a real segment
+   *  (parent → this, positioned at bridgeTo's coordinates), and this field
+   *  additionally makes it an adjacency edge to bridgeTo — the loop that lets
+   *  the note-embedding BFS shortcut across the mat instead of only ever
+   *  walking back through the trunk. */
+  bridgeTo?: number;
 }
 
-// "mycelium": every hypha IS a real wikilink edge — the picture this replaces
-// grew a decorative network independent of the graph (space colonization) and
-// only hung notes on it afterward, so a thread you saw connecting two notes
-// often did not correspond to a link between them at all. That is the one
-// thing that was wrong with it, and this function is the fix: it takes the
-// graph's real edges and renders EACH ONE as an organic, subdivided, curved
-// filament (seeded lateral wander + a slight sag) instead of a straight line —
-// a straight line reads as a graph edge, a wandering one reads as a hypha.
+// Hyphal growth: tip extension + branching + anastomosis. The mat's SHAPE is
+// independent of the wikilink graph on purpose — see buildMyceliumMat for how
+// notes get embedded into it afterward.
 //
-// Positions come from the caller (`posOf`) rather than being grown here, so
-// the same function draws the tight starting cluster AND the settled layout —
-// see MyceliumView, which calls this twice and lerps between the two results
-// by the scene's progress clock.
-export function buildHyphaMat(
-  g: VaultGraph,
-  posOf: (id: string) => Position,
-): HyphaBucket[] {
-  if (g.size === 0) return [];
-  const depth = bfsDepthFromHubs(g);
-  let maxDeg = 1;
-  g.forEachNode((id) => {
-    maxDeg = Math.max(maxDeg, g.degree(id));
-  });
+// Proven in a standalone prototype before landing here, which is how two
+// confident-but-wrong ideas got caught:
+//
+//   1. A spanning tree over the wikilinks. The real vault's tree is four levels
+//      deep with one hub holding 34 children, so there was no lineage for a
+//      thread to run along and it rendered as a starburst.
+//   2. "Anastomosis is the missing ingredient." Fusing tips DID add loops, but
+//      retiring a tip on every fusion thinned the mat faster than the loops
+//      filled it, so more fusion produced a SPARSER picture. Fusion now records
+//      the bridge and lets the tip carry on.
+//
+// A third bug surfaced while measuring: the fusion radius is larger than the
+// growth step, so every tip kept re-touching its own fresh trail and half the
+// mat became bridges — a rate that did not even respond to the fusion radius.
+// A GLOBAL recent-window cannot fix that (with many tips it holds none of any
+// one tip's own points), so each tip carries its own trail instead.
+export function growMycelium(
+  count: number,
+  opts: {
+    spores?: number;
+    step?: number;
+    branchPct?: number;
+    fuse?: number;
+    maxNodes?: number;
+  } = {},
+): HyphaNode[] {
+  const SEED = "mycelium-mat"; // fixed: the shape must not depend on the graph
+  const SPORES = opts.spores ?? 4;
+  const STEP = opts.step ?? 0.021;
+  const BRANCH_PCT = opts.branchPct ?? 3.2; // per tip per step
+  const FUSE = opts.fuse ?? 0.049; // world units, ~7px at the prototype's scale
+  const MAX_NODES = opts.maxNodes ?? Math.min(9000, Math.max(900, count * 4));
+  const MAX_TIPS = 260;
+  const MAX_LIFE = 260;
+  const MAX_ORDER = 5;
+  const BOUND = 1.15;
 
-  // Growth order: outward from the hub, same convention as applyWalrusLayout/
-  // applyRadialLayout, so hyphae read as connecting progressively rather than
-  // popping in at random.
-  const edges: { u: string; v: string; order: number }[] = [];
-  g.forEachEdge((_e, _a, u, v) => {
-    edges.push({ u, v, order: Math.min(depth.get(u) ?? 0, depth.get(v) ?? 0) });
-  });
-  edges.sort((a, b) => a.order - b.order || (a.u < b.u ? -1 : 1) || (a.v < b.v ? -1 : 1));
+  let draw = 0;
+  const rnd = (): number => seededUnit(SEED, draw++);
 
-  // Width bucket by the THINNER endpoint's degree (log-scaled, same curve
-  // buildGraph uses for node size): a hub-to-hub trunk is thick, a hub-to-leaf
-  // strand tapers to the leaf's weight, not the hub's.
-  const N_BUCKETS = 4;
-  const BASE_W = 2.8;
-  const TAPER = 0.6;
-  const widths = Array.from({ length: N_BUCKETS }, (_, i) => Math.max(0.6, BASE_W * Math.pow(TAPER, i)));
-  const bucketOf = (du: number, dv: number): number => {
-    const minDeg = Math.min(du, dv);
-    const dn = Math.log2(1 + minDeg) / Math.log2(1 + maxDeg);
-    return Math.min(N_BUCKETS - 1, Math.floor((1 - dn) * N_BUCKETS));
+  const nodes: HyphaNode[] = [];
+  interface Tip {
+    node: number;
+    a: number; // heading
+    order: number;
+    life: number;
+    /** This tip's own recent points — see the anastomosis note above. */
+    trail: number[];
+  }
+  let tips: Tip[] = [];
+
+  // Uniform grid over laid-down points, so a tip can ask "is another hypha
+  // within FUSE of me" without scanning the whole mat.
+  const cell = Math.max(FUSE, 1e-4);
+  const grid = new Map<string, number[]>();
+  const key = (x: number, y: number): string => `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
+  const remember = (i: number): void => {
+    const n = nodes[i];
+    const k = key(n.x, n.y);
+    const b = grid.get(k);
+    if (b) b.push(i);
+    else grid.set(k, [i]);
+  };
+  // Nearest earlier point, skipping the tip's own fresh trail.
+  const nearest = (x: number, y: number, own: Set<number>): number => {
+    const cx = Math.floor(x / cell);
+    const cy = Math.floor(y / cell);
+    let best = -1;
+    let bestD = FUSE;
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        const b = grid.get(`${cx + ox},${cy + oy}`);
+        if (!b) continue;
+        for (const i of b) {
+          if (own.has(i)) continue;
+          const d = Math.hypot(x - nodes[i].x, y - nodes[i].y);
+          if (d < bestD) {
+            bestD = d;
+            best = i;
+          }
+        }
+      }
+    }
+    return best;
   };
 
-  const SUBDIVS = 6; // interior points per edge — enough to read as curved, not enough to cost much
-  // Wander/sag as a fraction of the edge's own length. A hub-and-spoke graph
-  // converges many nearly-straight short edges on the same points, and at 0.1
-  // that measured-real curvature (verified in staticLayouts.test.ts) was still
-  // too subtle to READ as organic next to that convergence — visual QA on the
-  // rebuilt view (screenshots, not just the passing tests) is what caught it.
-  const WANDER = 0.18;
-  const SAG = 0.1;
-
-  const buckets: { pts: number[]; birth: number[] }[] = Array.from({ length: N_BUCKETS }, () => ({
-    pts: [],
-    birth: [],
-  }));
-
-  edges.forEach(({ u, v }, i) => {
-    const a = posOf(u);
-    const b = posOf(v);
-    const bucket = buckets[bucketOf(g.degree(u), g.degree(v))];
-    const len = Math.hypot(b.x - a.x, b.y - a.y, b.z - a.z) || 1;
-    const dx = (b.x - a.x) / len;
-    const dy = (b.y - a.y) / len;
-    const dz = (b.z - a.z) / len;
-    const [perp] = perpBasis([dx, dy, dz]);
-
-    const pts: Position[] = [a];
-    for (let s = 1; s <= SUBDIVS; s++) {
-      const t = s / (SUBDIVS + 1);
-      // Seeded per EDGE (not per note), so the same two linked notes always
-      // wander the same way — deterministic, like clusterStart.
-      const w = (seededUnit(`${u} ${v}`, s) - 0.5) * 2 * WANDER * len * Math.sin(Math.PI * t);
-      const sag = -SAG * len * Math.sin(Math.PI * t);
-      pts.push({
-        x: a.x + dx * t * len + perp[0] * w,
-        y: a.y + dy * t * len + perp[1] * w + sag,
-        z: a.z + dz * t * len + perp[2] * w,
-      });
+  // Spores spread over the field, not stacked at one origin — one origin
+  // makes an early puffball instead of a mat.
+  const spores = Math.max(1, Math.min(SPORES, Math.ceil(MAX_NODES / 40)));
+  for (let s = 0; s < spores; s++) {
+    const a = (s / spores) * Math.PI * 2 + rnd() * 0.9;
+    const d = 0.16 * (0.3 + rnd() * 0.7);
+    nodes.push({ x: Math.cos(a) * d, y: Math.sin(a) * d, z: 0, parent: -1, order: 0 });
+    const spore = nodes.length - 1;
+    remember(spore);
+    for (let k = 0; k < 3; k++) {
+      tips.push({ node: spore, a: (k / 3) * Math.PI * 2 + rnd(), order: 0, life: 0, trail: [spore] });
     }
-    pts.push(b);
-    for (let s = 0; s < pts.length - 1; s++) {
-      bucket.pts.push(pts[s].x, pts[s].y, pts[s].z, pts[s + 1].x, pts[s + 1].y, pts[s + 1].z);
-      bucket.birth.push(i);
+  }
+
+  while (tips.length > 0 && nodes.length < MAX_NODES) {
+    const next: Tip[] = [];
+    for (const t of tips) {
+      if (nodes.length >= MAX_NODES) break;
+      t.a += (rnd() - 0.5) * 0.42; // wander ~±0.21 rad per step
+      const from = nodes[t.node];
+      const nx = from.x + Math.cos(t.a) * STEP;
+      const ny = from.y + Math.sin(t.a) * STEP;
+
+      // Anastomosis: record the bridge, keep the tip alive.
+      const hit = nearest(nx, ny, new Set(t.trail));
+      if (hit >= 0) {
+        nodes.push({
+          x: nodes[hit].x,
+          y: nodes[hit].y,
+          z: from.z,
+          parent: t.node,
+          order: t.order,
+          bridgeTo: hit,
+        });
+      }
+
+      nodes.push({
+        x: nx,
+        y: ny,
+        z: from.z + (rnd() - 0.5) * STEP * 0.25,
+        parent: t.node,
+        order: t.order,
+      });
+      const grown = nodes.length - 1;
+      remember(grown);
+      t.node = grown;
+      t.life++;
+      t.trail.push(grown);
+      if (t.trail.length > 24) t.trail.shift();
+
+      if (Math.hypot(nx, ny) > BOUND || t.life > MAX_LIFE) continue; // retire
+      next.push(t);
+      if (rnd() * 100 < BRANCH_PCT && t.order < MAX_ORDER && next.length < MAX_TIPS) {
+        const off = (rnd() < 0.5 ? 1 : -1) * (0.5 + rnd() * 0.55);
+        next.push({ node: grown, a: t.a + off, order: t.order + 1, life: 0, trail: t.trail.slice(-12) });
+      }
+    }
+    tips = next;
+  }
+  return nodes;
+}
+
+export interface MyceliumOpts {
+  targetRadius: number;
+}
+
+export interface MyceliumResult {
+  /** Width-bucketed, birth-ordered hypha segments. Every point is a real grown
+   *  mat coordinate — nothing here is a chord drawn between two notes. */
+  buckets: HyphaBucket[];
+  /** Note id → index into `mat`, the mat node the embedding assigned it to. */
+  matIndexOf: Map<string, number>;
+  /** The grown network itself (already scaled to `targetRadius`), for
+   *  adjacency introspection — e.g. proving two linked notes' assigned mat
+   *  nodes are connected within a few hyphal hops. */
+  mat: HyphaNode[];
+}
+
+// "mycelium": GROW a real mat (space colonization, above — the shape a
+// wikilink graph could never produce on its own), then EMBED the note graph
+// into it so a link reads as a path of real hyphae, never a drawn chord.
+//
+// The embedding walks the note graph breadth-first from its busiest note. The
+// root note takes a spore; every note visited after that takes the NEAREST
+// still-free mat node to whichever already-placed note discovered it — so a
+// graph edge always becomes a short walk to an adjacent (or near-adjacent)
+// mat node, not just "the next slot in some other traversal."
+//
+// That distinction is why an earlier version of this (pairing the note BFS's
+// k-th visit with the mat BFS's k-th visit, one global index shared by both)
+// measured wrong: the mat BFS interleaves many simultaneously-growing tips,
+// so its k-th and (k+1)-th visited nodes are frequently on DIFFERENT tips
+// whose only common ancestor is many generations back — index-adjacency in a
+// breadth-first VISIT ORDER is not mat-adjacency. Measured on the real vault
+// shape (1244 notes / ~440 edges): that version put linked notes an average
+// 14.3 hyphal hops apart (up to 81). Searching outward from each note's own
+// placed neighbour instead of from a shared global counter fixes it — see
+// staticLayouts.test.ts for the current measured numbers.
+export function buildMyceliumMat(g: VaultGraph, o: MyceliumOpts): MyceliumResult {
+  const empty: MyceliumResult = { buckets: [], matIndexOf: new Map(), mat: [] };
+  if (g.order === 0) return empty;
+
+  const mat = growMycelium(g.order);
+
+  // Scale the grown (roughly unit-radius) mat to the caller's world radius.
+  let maxR = 1e-6;
+  for (const h of mat) maxR = Math.max(maxR, Math.hypot(h.x, h.y, h.z));
+  const scale = o.targetRadius / maxR;
+  for (const h of mat) {
+    h.x *= scale;
+    h.y *= scale;
+    h.z *= scale;
+  }
+
+  // Mat adjacency: parent↔child hyphal links plus anastomosis bridges (a
+  // bridge is a second path between two points already on the mat — the loop
+  // a search can shortcut through instead of only ever walking the trunk).
+  const matAdj: number[][] = mat.map(() => []);
+  mat.forEach((h, i) => {
+    if (h.parent >= 0) {
+      matAdj[i].push(h.parent);
+      matAdj[h.parent].push(i);
+    }
+    if (h.bridgeTo != null) {
+      matAdj[i].push(h.bridgeTo);
+      matAdj[h.bridgeTo].push(i);
     }
   });
+  const spores = mat.map((_, i) => i).filter((i) => mat[i].parent === -1);
+  // A bridge duplicates an existing point's coordinates, so it is never an
+  // assignment target — two notes must not land exactly on top of each other.
+  const isAssignable = (i: number): boolean => mat[i].bridgeTo == null;
 
-  const totalEdges = Math.max(1, edges.length - 1);
-  return buckets
-    .map((b, i) => ({
-      width: widths[i],
+  const used = new Set<number>();
+  // Nearest unused, assignable mat node to `start` — BFS outward, first match
+  // wins. `start` itself counts (a fresh spore, or a note's own mat node
+  // before any of ITS neighbours have claimed it).
+  const nearestFree = (start: number): number => {
+    if (isAssignable(start) && !used.has(start)) return start;
+    const seen = new Set([start]);
+    let frontier = [start];
+    while (frontier.length > 0) {
+      const next: number[] = [];
+      for (const cur of frontier) {
+        for (const nb of matAdj[cur]) {
+          if (seen.has(nb)) continue;
+          seen.add(nb);
+          if (isAssignable(nb) && !used.has(nb)) return nb;
+          next.push(nb);
+        }
+      }
+      frontier = next;
+    }
+    // ponytail: mat exhausted (every reachable node already used) — reuse
+    // `start` rather than crash. maxNodes scales with note count so this
+    // shouldn't trigger on a real vault; a repeated slot is a visual overlap,
+    // not a broken layout.
+    return start;
+  };
+
+  const degOf = (id: string): number => (g.getNodeAttribute(id, "deg") as number) ?? g.degree(id);
+  const allNotes = g.nodes().slice().sort();
+  let hub = allNotes[0];
+  for (const id of allNotes) if (degOf(id) > degOf(hub)) hub = id;
+  // Hubs first among a note's neighbours, same convention as
+  // applyRadialLayout/applyWalrusLayout — a hub's OWN links claim the nearest
+  // slots before its lighter neighbours' links compete for what is left.
+  const noteNeighbors = (id: string): string[] =>
+    g.neighbors(id).slice().sort((a, b) => degOf(b) - degOf(a) || (a < b ? -1 : 1));
+
+  const matIndexOf = new Map<string, number>();
+  let sporeCursor = 0;
+  // One full BFS per note-graph component (same shape as applyWalrusLayout's
+  // multi-root bfs()): `root` seeds at the nearest free node to a spore
+  // (round-robin, so disconnected components spread across spores instead of
+  // piling onto one), then every note reached from it takes the nearest free
+  // node to whichever note discovered it.
+  const embedComponent = (root: string): void => {
+    if (matIndexOf.has(root)) return;
+    const seed = nearestFree(spores[sporeCursor % spores.length]);
+    sporeCursor++;
+    used.add(seed);
+    matIndexOf.set(root, seed);
+    const queue = [root];
+    let head = 0;
+    while (head < queue.length) {
+      const u = queue[head++];
+      const mu = matIndexOf.get(u)!;
+      for (const v of noteNeighbors(u)) {
+        if (matIndexOf.has(v)) continue;
+        const mv = nearestFree(mu);
+        used.add(mv);
+        matIndexOf.set(v, mv);
+        queue.push(v);
+      }
+    }
+  };
+  embedComponent(hub);
+  for (const id of allNotes) embedComponent(id); // remaining components
+
+  // Bucket every hyphal segment by branch order → stroke width. Widths and
+  // taper come from the prototype: base 2.6px, ×0.62 per generation.
+  const BASE_W = 2.6;
+  const TAPER = 0.62;
+  const bucketsByOrder = new Map<number, { pts: number[]; birth: number[] }>();
+  const lastIdx = Math.max(1, mat.length - 1);
+  mat.forEach((h, i) => {
+    if (h.parent < 0) return;
+    const p2 = mat[h.parent];
+    const b = bucketsByOrder.get(h.order) ?? { pts: [], birth: [] };
+    b.pts.push(p2.x, p2.y, p2.z, h.x, h.y, h.z);
+    // `i` is the growth index: nodes are pushed in the order they grew, so
+    // this is already ascending within every bucket.
+    b.birth.push(i / lastIdx);
+    bucketsByOrder.set(h.order, b);
+  });
+  const buckets = [...bucketsByOrder.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([order, b]) => ({
+      width: Math.max(0.6, BASE_W * Math.pow(TAPER, order)),
       positions: new Float32Array(b.pts),
-      birth: new Float32Array(b.birth.map((n) => n / totalEdges)),
-    }))
-    .filter((b) => b.positions.length > 0);
+      birth: new Float32Array(b.birth),
+    }));
+
+  return { buckets, matIndexOf, mat };
 }

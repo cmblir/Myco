@@ -7,9 +7,9 @@ import {
   applySpiralLayout,
   applyStrataLayout,
   applyWalrusLayout,
-  buildHyphaMat,
-  clusterStart,
-  type Position,
+  buildMyceliumMat,
+  growMycelium,
+  type HyphaNode,
 } from "./staticLayouts";
 
 function makeGraph(
@@ -39,6 +39,65 @@ const pos = (g: VaultGraph, id: string): { x: number; y: number; z: number } => 
   y: g.getNodeAttribute(id, "y"),
   z: g.getNodeAttribute(id, "z"),
 });
+
+// The real vault's shape (see the mycelium redesign brief): 1244 notes, ~440
+// wikilinks, hub-heavy — one note holds 34 links. Deterministic (no
+// Math.random) so a failing assertion reproduces every run.
+function makeRealScaleGraph(): VaultGraph {
+  const N = 1244;
+  const ids = Array.from({ length: N }, (_, i) => `note-${i}.md`);
+  const g = makeGraph(ids.map((id) => ({ id, community: 0 })));
+  const addEdge = (a: string, b: string): void => {
+    if (a !== b && !g.hasEdge(a, b)) g.addEdge(a, b);
+  };
+  for (let k = 1; k <= 34; k++) addEdge(ids[0], ids[k]);
+  // The rest: small deterministic 2-3 node clusters spread across the
+  // remaining notes, leaving plenty of true orphans between them (the real
+  // vault's 440 edges over 1244 notes average under one link per note).
+  let budget = 440 - 34;
+  for (let i = 40; i < N - 1 && budget > 0; i += 3) {
+    addEdge(ids[i], ids[i + 1]);
+    budget--;
+  }
+  g.forEachNode((id) => g.setNodeAttribute(id, "deg", g.degree(id)));
+  return g;
+}
+
+// BFS hop distance between two mat-node indices, over parent/child + bridge
+// adjacency — built once and reused across many (a, b) queries.
+function matHopDistances(mat: HyphaNode[]): (a: number, b: number) => number {
+  const adj: number[][] = mat.map(() => []);
+  mat.forEach((h, i) => {
+    if (h.parent >= 0) {
+      adj[i].push(h.parent);
+      adj[h.parent].push(i);
+    }
+    if (h.bridgeTo != null) {
+      adj[i].push(h.bridgeTo);
+      adj[h.bridgeTo].push(i);
+    }
+  });
+  return (a: number, b: number): number => {
+    if (a === b) return 0;
+    const visited = new Set([a]);
+    let frontier = [a];
+    let hops = 0;
+    while (frontier.length > 0) {
+      hops++;
+      const next: number[] = [];
+      for (const cur of frontier) {
+        for (const nb of adj[cur]) {
+          if (visited.has(nb)) continue;
+          if (nb === b) return hops;
+          visited.add(nb);
+          next.push(nb);
+        }
+      }
+      frontier = next;
+    }
+    return Infinity;
+  };
+}
 
 describe("applySpiralLayout", () => {
   const nodes = [
@@ -318,119 +377,116 @@ describe("applyWalrusLayout", () => {
   });
 });
 
-describe("clusterStart", () => {
-  it("is deterministic per id and differs across ids", () => {
-    expect(clusterStart("a.md", 30)).toEqual(clusterStart("a.md", 30));
-    expect(clusterStart("a.md", 30)).not.toEqual(clusterStart("b.md", 30));
+describe("growMycelium", () => {
+  it("is deterministic — same count grows the identical mat twice", () => {
+    expect(growMycelium(50)).toEqual(growMycelium(50));
   });
 
-  it("stays within the requested radius", () => {
-    for (const id of ["a.md", "b.md", "c.md"]) {
-      const p = clusterStart(id, 30);
-      expect(Math.abs(p.x)).toBeLessThanOrEqual(15);
-      expect(Math.abs(p.y)).toBeLessThanOrEqual(15);
-      expect(Math.abs(p.z)).toBeLessThanOrEqual(15);
+  it("branches (order > 0 appears) and fuses (bridgeTo appears) at a real vault's node count", () => {
+    const mat = growMycelium(1244);
+    expect(mat.some((h) => h.order > 0)).toBe(true);
+    expect(mat.some((h) => h.bridgeTo != null)).toBe(true);
+  });
+
+  it("every non-spore node's parent is an EARLIER index — a valid, drawable tree", () => {
+    const mat = growMycelium(300);
+    mat.forEach((h, i) => {
+      if (h.parent < 0) return;
+      expect(h.parent).toBeLessThan(i);
+    });
+  });
+
+  it("stays within the field (one step of overshoot is the retirement check, not a hard clamp)", () => {
+    const mat = growMycelium(300);
+    for (const h of mat) {
+      expect(Math.hypot(h.x, h.y)).toBeLessThan(1.15 + 0.05);
     }
   });
 });
 
-describe("buildHyphaMat", () => {
-  // A fixed lookup table posOf reads from, so tests control exact positions
-  // instead of depending on any layout algorithm.
-  const posMap = (table: Record<string, Position>) => (id: string): Position =>
-    table[id] ?? { x: 0, y: 0, z: 0 };
+// A fixed field radius every buildMyceliumMat test lays out against, so "is
+// this a chord" has a concrete threshold to compare against.
+const FIELD_R = 900;
 
-  it("every hypha starts and ends EXACTLY at its edge's two note positions", () => {
-    // The one thing the old growMycelium picture got wrong: threads that
-    // passed near two notes without actually connecting them. A single-edge
-    // graph makes the check unambiguous — the whole bucket is that one edge.
-    const g = makeGraph([
-      { id: "a.md", community: 0, deg: 1 },
-      { id: "b.md", community: 0, deg: 1 },
-    ]);
-    g.addEdge("a.md", "b.md");
-    const table = { "a.md": { x: 10, y: 20, z: 30 }, "b.md": { x: 110, y: -40, z: 5 } };
-    const buckets = buildHyphaMat(g, posMap(table));
-    expect(buckets.length).toBe(1);
-    const p = buckets[0].positions;
-    expect([p[0], p[1], p[2]]).toEqual([10, 20, 30]);
-    const last = p.length;
-    expect([p[last - 3], p[last - 2], p[last - 1]]).toEqual([110, -40, 5]);
+describe("buildMyceliumMat", () => {
+  it("does not throw on an edgeless/empty graph and returns nothing to draw", () => {
+    const g = makeGraph([]);
+    expect(() => buildMyceliumMat(g, { targetRadius: FIELD_R })).not.toThrow();
+    const result = buildMyceliumMat(g, { targetRadius: FIELD_R });
+    expect(result.buckets).toEqual([]);
+    expect(result.matIndexOf.size).toBe(0);
   });
 
-  it("wanders off the straight line between the two notes — organic, not a graph line", () => {
-    const g = makeGraph([
-      { id: "a.md", community: 0, deg: 1 },
-      { id: "b.md", community: 0, deg: 1 },
-    ]);
-    g.addEdge("a.md", "b.md");
-    const table = { "a.md": { x: 0, y: 0, z: 0 }, "b.md": { x: 1000, y: 0, z: 0 } };
-    const buckets = buildHyphaMat(g, posMap(table));
-    const p = buckets[0].positions;
-    let maxOffLine = 0;
-    for (let i = 0; i < p.length; i += 3) {
-      // The straight line runs along X, so any Y/Z component IS the deviation.
-      maxOffLine = Math.max(maxOffLine, Math.abs(p[i + 1]), Math.abs(p[i + 2]));
-    }
-    expect(maxOffLine).toBeGreaterThan(1);
-    // But it must not wander wildly off — still reads as running BETWEEN them.
-    expect(maxOffLine).toBeLessThan(1000 * 0.3);
-  });
-
-  it("buckets a hub-to-hub edge thicker than a leaf-to-leaf edge", () => {
-    const g = makeGraph([
-      { id: "hub1.md", community: 0 },
-      { id: "hub2.md", community: 0 },
-      { id: "leaf1.md", community: 0 },
-      { id: "leaf2.md", community: 0 },
-      ...Array.from({ length: 18 }, (_, i) => ({ id: `filler${i}.md`, community: 0 })),
-    ]);
-    g.addEdge("hub1.md", "hub2.md");
-    g.addEdge("leaf1.md", "leaf2.md");
-    // buildHyphaMat reads LIVE graph.degree(), not a stored attribute — give
-    // both hubs plenty of other neighbours so they actually outrank the leaves.
-    for (let i = 0; i < 18; i++) {
-      g.addEdge("hub1.md", `filler${i}.md`);
-      g.addEdge("hub2.md", `filler${i}.md`);
-    }
-    // Every node gets its own unique, well-separated x — a bucket can then be
-    // found unambiguously by which node's coordinate it contains.
-    const table: Record<string, Position> = {};
-    g.nodes().forEach((id, i) => {
-      table[id] = { x: i * 1000, y: 0, z: 0 };
-    });
-    const buckets = buildHyphaMat(g, posMap(table));
-    const widthContaining = (id: string): number => {
-      const target = table[id].x;
-      for (const b of buckets) {
-        for (let i = 0; i < b.positions.length; i += 3) {
-          if (Math.abs(b.positions[i] - target) < 1e-6) return b.width;
-        }
-      }
-      throw new Error(`no bucket contains ${id}`);
-    };
-    // hub1.md's coordinate appears in its own hub-hub edge FIRST (buckets are
-    // scanned thickest-first), so this reads that edge's width, not a filler's.
-    expect(widthContaining("hub1.md")).toBeGreaterThan(widthContaining("leaf1.md"));
-  });
-
-  it("reveals edges in ascending, non-decreasing growth order per bucket", () => {
-    const g = makeGraph([
-      { id: "hub.md", community: 0, deg: 5 },
-      ...Array.from({ length: 5 }, (_, i) => ({ id: `n${i}.md`, community: 0, deg: 1 })),
-    ]);
-    for (let i = 0; i < 5; i++) g.addEdge("hub.md", `n${i}.md`);
-    const table: Record<string, Position> = { "hub.md": { x: 0, y: 0, z: 0 } };
-    for (let i = 0; i < 5; i++) table[`n${i}.md`] = { x: (i + 1) * 10, y: 0, z: 0 };
-    const buckets = buildHyphaMat(g, posMap(table));
+  it("never draws a chord: every segment is a short local hyphal step, not a long straight span", () => {
+    // The exact defect being fixed — a wireframe polyhedron is built from
+    // segments that cross a big fraction of the field. A real growth step (or
+    // an anastomosis bridge) is short no matter how big the vault is.
+    const g = makeGraph(
+      Array.from({ length: 120 }, (_, i) => ({ id: `n${i}.md`, community: 0, deg: 1 })),
+    );
+    for (let i = 0; i < 119; i++) g.addEdge(`n${i}.md`, `n${i + 1}.md`);
+    const { buckets } = buildMyceliumMat(g, { targetRadius: FIELD_R });
+    let maxSeg = 0;
     for (const b of buckets) {
-      for (let i = 1; i < b.birth.length; i++) {
-        expect(b.birth[i]).toBeGreaterThanOrEqual(b.birth[i - 1]);
+      for (let i = 0; i < b.positions.length; i += 6) {
+        const len = Math.hypot(
+          b.positions[i + 3] - b.positions[i],
+          b.positions[i + 4] - b.positions[i + 1],
+          b.positions[i + 5] - b.positions[i + 2],
+        );
+        maxSeg = Math.max(maxSeg, len);
       }
+    }
+    expect(maxSeg).toBeGreaterThan(0);
+    expect(maxSeg).toBeLessThan(FIELD_R * 0.1); // ~10x a growth step's own share of the field
+  });
+
+  it("assigns every note a mat position", () => {
+    const g = makeGraph([
+      { id: "a.md", community: 0 },
+      { id: "b.md", community: 0 },
+      { id: "c.md", community: -1 },
+    ]);
+    g.addEdge("a.md", "b.md");
+    const { matIndexOf, mat } = buildMyceliumMat(g, { targetRadius: FIELD_R });
+    for (const id of ["a.md", "b.md", "c.md"]) {
+      expect(matIndexOf.has(id)).toBe(true);
+      const h = mat[matIndexOf.get(id)!];
+      expect(h).toBeDefined();
+      expect(Number.isFinite(h.x)).toBe(true);
     }
   });
 
-  it("is deterministic — same graph and positions lay out identically twice", () => {
+  it("graph-adjacent notes land mat-adjacent: linked notes' mat nodes are close in hyphal hops", () => {
+    const g = makeRealScaleGraph();
+    const { matIndexOf, mat } = buildMyceliumMat(g, { targetRadius: FIELD_R });
+    const hops = matHopDistances(mat);
+    const sampled: number[] = [];
+    const hubSampled: number[] = [];
+    g.forEachEdge((_e, _a, u, v) => {
+      const iu = matIndexOf.get(u);
+      const iv = matIndexOf.get(v);
+      if (iu == null || iv == null) return;
+      const d = hops(iu, iv);
+      sampled.push(d);
+      if (u === "note-0.md" || v === "note-0.md") hubSampled.push(d);
+    });
+    expect(sampled.length).toBeGreaterThan(50);
+    const avg = sampled.reduce((s, n) => s + n, 0) / sampled.length;
+    const hubAvg = hubSampled.reduce((s, n) => s + n, 0) / hubSampled.length;
+    console.info(
+      `[mycelium] linked-note mat-hop distance over ${sampled.length} real edges: avg=${avg.toFixed(2)} max=${Math.max(...sampled)}; ` +
+        `hub(34 links) only: n=${hubSampled.length} avg=${hubAvg.toFixed(2)} max=${Math.max(...hubSampled)} sample=${hubSampled.slice(0, 34)}`,
+    );
+    // A handful of hyphal hops, not "somewhere in the mat" — the embedding's
+    // whole job is to make this small. Measured: avg 1.21, max 5 (hub-only:
+    // avg 3.12, max 5) — thresholds below leave headroom, not padding out a
+    // known-bad number.
+    expect(avg).toBeLessThan(4);
+    expect(Math.max(...sampled)).toBeLessThan(15);
+  });
+
+  it("is deterministic — same graph lays out identically twice", () => {
     const g = makeGraph([
       { id: "a.md", community: 0, deg: 2 },
       { id: "b.md", community: 0, deg: 2 },
@@ -438,31 +494,56 @@ describe("buildHyphaMat", () => {
     ]);
     g.addEdge("a.md", "b.md");
     g.addEdge("b.md", "c.md");
-    const table: Record<string, Position> = {
-      "a.md": { x: 0, y: 0, z: 0 },
-      "b.md": { x: 50, y: 10, z: 0 },
-      "c.md": { x: 90, y: -5, z: 20 },
-    };
-    const a = buildHyphaMat(g, posMap(table));
-    const b = buildHyphaMat(g, posMap(table));
-    expect(a).toEqual(b);
+    const a = buildMyceliumMat(g, { targetRadius: FIELD_R });
+    const b = buildMyceliumMat(g, { targetRadius: FIELD_R });
+    expect(a.mat).toEqual(b.mat);
+    expect([...a.matIndexOf.entries()]).toEqual([...b.matIndexOf.entries()]);
   });
 
-  it("does not throw on an edgeless graph", () => {
-    const g = makeGraph([{ id: "solo.md", community: -1 }]);
-    expect(() => buildHyphaMat(g, () => ({ x: 0, y: 0, z: 0 }))).not.toThrow();
-    expect(buildHyphaMat(g, () => ({ x: 0, y: 0, z: 0 }))).toEqual([]);
-  });
-
-  it("produces only finite coordinates", () => {
-    const g = makeGraph([
-      { id: "a.md", community: 0 },
-      { id: "b.md", community: 0 },
-    ]);
-    g.addEdge("a.md", "b.md");
-    const buckets = buildHyphaMat(g, () => ({ x: 12, y: -8, z: 3 }));
+  it("reveals segments in ascending, non-decreasing growth order per bucket", () => {
+    const g = makeRealScaleGraph();
+    const { buckets } = buildMyceliumMat(g, { targetRadius: FIELD_R });
     for (const b of buckets) {
-      expect(b.positions.every((v) => Number.isFinite(v))).toBe(true);
+      for (let i = 1; i < b.birth.length; i++) {
+        expect(b.birth[i]).toBeGreaterThanOrEqual(b.birth[i - 1]);
+      }
     }
+  });
+
+  it("growth animates: revealing more of the birth range monotonically reveals more segments", () => {
+    const g = makeRealScaleGraph();
+    const { buckets } = buildMyceliumMat(g, { targetRadius: FIELD_R });
+    const revealedAt = (t: number): number =>
+      buckets.reduce((sum, b) => {
+        let lo = 0;
+        let hi = b.birth.length;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (b.birth[mid] <= t) lo = mid + 1;
+          else hi = mid;
+        }
+        return sum + lo;
+      }, 0);
+    const samples = [0, 0.25, 0.5, 0.75, 1].map(revealedAt);
+    console.info(`[mycelium] revealed segment counts over time: ${samples.join(" -> ")}`);
+    for (let i = 1; i < samples.length; i++) {
+      expect(samples[i]).toBeGreaterThanOrEqual(samples[i - 1]);
+    }
+    expect(samples[samples.length - 1]).toBeGreaterThan(samples[0]);
+  });
+
+  it("real-scale (1244 notes / ~440 edges, one 34-link hub): grows and embeds inside a real frame budget", () => {
+    const g = makeRealScaleGraph();
+    const start = performance.now();
+    const { buckets, matIndexOf, mat } = buildMyceliumMat(g, { targetRadius: FIELD_R });
+    const ms = performance.now() - start;
+    const segCount = buckets.reduce((s, b) => s + b.birth.length, 0);
+    console.info(
+      `[mycelium] real scale: ${g.order} notes / ${g.size} edges -> ${mat.length} mat nodes, ` +
+        `${segCount} segments, ${matIndexOf.size} notes placed, ${ms.toFixed(1)}ms`,
+    );
+    expect(matIndexOf.size).toBe(g.order);
+    expect(mat.length).toBeGreaterThan(g.order); // the mat is denser than the note count on purpose
+    expect(ms).toBeLessThan(2000);
   });
 });
