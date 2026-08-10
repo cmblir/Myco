@@ -686,9 +686,14 @@ export function buildHyphaMat(
     return Math.min(N_BUCKETS - 1, Math.floor((1 - dn) * N_BUCKETS));
   };
 
-  const SUBDIVS = 5; // interior points per edge — enough to read as curved, not enough to cost much
-  const WANDER = 0.1; // lateral wander, as a fraction of the edge's own length
-  const SAG = 0.06; // downward sag at the midpoint, same fraction basis
+  const SUBDIVS = 6; // interior points per edge — enough to read as curved, not enough to cost much
+  // Wander/sag as a fraction of the edge's own length. A hub-and-spoke graph
+  // converges many nearly-straight short edges on the same points, and at 0.1
+  // that measured-real curvature (verified in staticLayouts.test.ts) was still
+  // too subtle to READ as organic next to that convergence — visual QA on the
+  // rebuilt view (screenshots, not just the passing tests) is what caught it.
+  const WANDER = 0.18;
+  const SAG = 0.1;
 
   const buckets: { pts: number[]; birth: number[] }[] = Array.from({ length: N_BUCKETS }, () => ({
     pts: [],

@@ -106,6 +106,23 @@ export default function MyceliumView({
     );
     scene.start();
 
+    // DEV-ONLY: expose enough for a screenshot/measurement harness to prove
+    // hyphae follow real edges and growth actually animates over time —
+    // mirrors PageGraph.tsx's __graphDev for the main scene.
+    if (import.meta.env.DEV) {
+      (window as unknown as { __myceliumDev?: unknown }).__myceliumDev = {
+        scene,
+        mountedAt: performance.now(),
+        nodeIds: graph.nodes(),
+        edges: graph.edges().map((e) => graph.extremities(e)),
+        finalOf,
+        startOf,
+        // The exact geometry buckets fed to the renderer — lets the harness
+        // confirm a drawn polyline's own endpoints, not just re-derive them.
+        finalBuckets: finalBuckets.map((b) => ({ width: b.width, positions: Array.from(b.positions) })),
+      };
+    }
+
     const onVisible = (): void => {
       if (document.hidden) scene.stop();
       else scene.start();

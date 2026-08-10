@@ -330,6 +330,25 @@ export class MyceliumScene {
     this.setProgress(0);
   }
 
+  /** Growth state snapshot — cheap, read-only, for the screenshot/measurement
+   *  harness (window.__myceliumDev). Not used by the running app itself. */
+  debugSnapshot(): {
+    revealed: number[];
+    totalSegments: number[];
+    samplePos: [number, number, number] | null;
+  } {
+    const revealed = this.mat.map(
+      (m) => (m.geometry as unknown as { instanceCount: number }).instanceCount,
+    );
+    const totalSegments = this.birth.map((b) => b.length);
+    let samplePos: [number, number, number] | null = null;
+    if (this.septa && this.septaIds.length > 0) {
+      const pos = this.septa.geometry.getAttribute("position") as THREE.BufferAttribute;
+      samplePos = [pos.getX(0), pos.getY(0), pos.getZ(0)];
+    }
+    return { revealed, totalSegments, samplePos };
+  }
+
   /** Lock (true) or free (false) the camera's tilt — the 2D view is a flat map
    *  you pan/zoom, not an orbitable scene; positions are already flattened to
    *  z≈0 by the caller, so a level, front-on view is all that's needed. */
