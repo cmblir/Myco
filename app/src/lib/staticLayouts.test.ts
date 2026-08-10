@@ -7,6 +7,8 @@ import {
   applySpiralLayout,
   applyStrataLayout,
   applyWalrusLayout,
+  applyMyceliumLayout,
+  growMycelium,
 } from "./staticLayouts";
 
 function makeGraph(
@@ -312,5 +314,135 @@ describe("applyWalrusLayout", () => {
       far = Math.max(far, Math.hypot(p.x, p.y, p.z));
     });
     expect(far).toBeGreaterThan(400);
+  });
+});
+
+describe("growMycelium", () => {
+  const kidCounts = (mat: ReturnType<typeof growMycelium>): number[] => {
+    const kids = new Map<number, number>();
+    mat.forEach((h) => {
+      if (h.parent >= 0) kids.set(h.parent, (kids.get(h.parent) ?? 0) + 1);
+    });
+    return [...kids.values()];
+  };
+
+  it("BRANCHES — the property that makes it mycelium and not three worms", () => {
+    // The first attempt let attractors see only the newest tips and replaced
+    // the tip set each round, so every node had exactly one successor: 1800
+    // straight segments and ZERO forks. Attractors must see the whole network.
+    const mat = growMycelium(90, "t");
+    const forks = kidCounts(mat).filter((c) => c > 1).length;
+    expect(forks).toBeGreaterThan(20);
+  });
+
+  it("spreads as a flat mat in the X-Y plane, facing the camera", () => {
+    // The plane is load-bearing, not cosmetic: grown across X-Z the mat sits
+    // edge-on to the graph's default camera and renders as a thin line.
+    const mat = growMycelium(90, "t");
+    const xy = Math.max(...mat.map((h) => Math.hypot(h.x, h.y)));
+    const z = Math.max(...mat.map((h) => Math.abs(h.z)));
+    expect(xy).toBeGreaterThan(z * 3);
+  });
+
+  it("terminates well inside its round cap instead of running to the limit", () => {
+    // Depth pinned at the cap means growth never converged — the symptom the
+    // single-tip version showed.
+    const mat = growMycelium(90, "t");
+    expect(Math.max(...mat.map((h) => h.depth))).toBeLessThan(200);
+  });
+
+  it("every segment hangs off a real parent, and only spores are rootless", () => {
+    const mat = growMycelium(60, "t");
+    const roots = mat.filter((h) => h.parent === -1);
+    expect(roots.length).toBe(3);
+    mat.forEach((h, i) => {
+      expect(h.parent).toBeLessThan(i); // parents always precede their children
+      if (h.parent >= 0) expect(mat[h.parent]).toBeDefined();
+    });
+  });
+
+  it("is deterministic for the same seed and differs for another", () => {
+    const a = growMycelium(50, "one");
+    const b = growMycelium(50, "one");
+    const c = growMycelium(50, "two");
+    expect(b).toEqual(a);
+    expect(c).not.toEqual(a);
+  });
+
+  it("stays bounded as the vault grows — attractors are capped, not proportional", () => {
+    // Scaling attractors with note count took a 1244-note vault to 3.8s.
+    const small = growMycelium(90, "t").length;
+    const huge = growMycelium(20000, "t").length;
+    expect(huge).toBeLessThan(small * 12);
+  });
+
+  it("produces only finite coordinates", () => {
+    for (const h of growMycelium(120, "t")) {
+      expect(Number.isFinite(h.x) && Number.isFinite(h.y) && Number.isFinite(h.z)).toBe(true);
+    }
+  });
+});
+
+describe("applyMyceliumLayout", () => {
+  const build = (n: number): VaultGraph => {
+    const nodes = [{ id: "hub.md", community: 0, deg: n }];
+    for (let i = 0; i < n; i++) nodes.push({ id: `n${i}.md`, community: i % 4, deg: 1 });
+    const g = makeGraph(nodes);
+    for (let i = 0; i < n; i++) g.addEdge("hub.md", `n${i}.md`);
+    return g;
+  };
+
+  it("gives every node a finite position inside the target radius", () => {
+    const g = build(40);
+    applyMyceliumLayout(g, { targetRadius: 500 });
+    g.forEachNode((id) => {
+      const p = pos(g, id);
+      expect(Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)).toBe(true);
+      expect(Math.hypot(p.x, p.y, p.z)).toBeLessThanOrEqual(501);
+    });
+  });
+
+  it("puts the most-linked note nearer the spores than a leaf", () => {
+    // Notes are hung on the grown mat by degree: hubs on the early trunk,
+    // leaves out at the fine tips. That is the only thing the LINK data is
+    // allowed to decide — the shape itself is grown, not derived.
+    const g = build(40);
+    applyMyceliumLayout(g, { targetRadius: 500 });
+    const r = (id: string): number => {
+      const p = pos(g, id);
+      return Math.hypot(p.x, p.y, p.z);
+    };
+    const leaves = Array.from({ length: 40 }, (_, i) => r(`n${i}.md`));
+    const median = leaves.sort((a, b) => a - b)[Math.floor(leaves.length / 2)];
+    expect(r("hub.md")).toBeLessThan(median);
+  });
+
+  it("never stacks notes on one point when there are more notes than slots", () => {
+    // The mat is capped, so a large vault shares slots. Stacking would draw one
+    // bright blob instead of a cluster.
+    const g = build(600);
+    applyMyceliumLayout(g, { targetRadius: 500 });
+    const seen = new Set<string>();
+    let dupes = 0;
+    g.forEachNode((id) => {
+      const p = pos(g, id);
+      const k = `${p.x.toFixed(3)},${p.y.toFixed(3)},${p.z.toFixed(3)}`;
+      if (seen.has(k)) dupes++;
+      seen.add(k);
+    });
+    expect(dupes).toBe(0);
+  });
+
+  it("is deterministic — the same vault lays out identically twice", () => {
+    const a = build(30);
+    const b = build(30);
+    applyMyceliumLayout(a, { targetRadius: 400 });
+    applyMyceliumLayout(b, { targetRadius: 400 });
+    a.forEachNode((id) => expect(pos(b, id)).toEqual(pos(a, id)));
+  });
+
+  it("does not throw on an empty graph", () => {
+    const g = makeGraph([]);
+    expect(() => applyMyceliumLayout(g, { targetRadius: 500 })).not.toThrow();
   });
 });

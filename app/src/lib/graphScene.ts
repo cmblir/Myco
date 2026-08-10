@@ -3712,9 +3712,45 @@ export class GraphScene {
   // plane) fitted to the node cloud read as that sphere without the cost of a
   // full wireframe. Rebuilt on each walrus (re)layout, torn down otherwise.
   private walrusBoundary: THREE.LineSegments | null = null;
+  private myceliumMat: THREE.LineSegments | null = null;
 
   /** Draw (true) or clear (false) the boundary sphere fitted to the current node
    *  cloud. Only meaningful for the walrus layout — the caller gates it. */
+  // ── Mycelium mat ──────────────────────────────────────────────────────
+  // The mycelium layout GROWS a branching network and then hangs the notes on
+  // it. Without drawing that network the notes are just a scatter of stars —
+  // the hyphae are the picture, and they are not wikilink edges, so nothing
+  // else in the scene would ever draw them.
+  //
+  // `segments` is a flat [x1,y1,z1, x2,y2,z2, …] list in world space. Passing
+  // null tears the mat down, which is what a layout change does.
+  setMyceliumMat(segments: Float32Array | null): void {
+    if (this.myceliumMat) {
+      this.scene.remove(this.myceliumMat);
+      this.myceliumMat.geometry.dispose();
+      (this.myceliumMat.material as THREE.Material).dispose();
+      this.myceliumMat = null;
+    }
+    if (!segments || segments.length === 0) return;
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(segments, 3));
+    const line = new THREE.LineSegments(
+      geo,
+      new THREE.LineBasicMaterial({
+        color: this.darkTheme ? 0x9fb4d4 : 0x6b7280,
+        transparent: true,
+        // Faint on purpose: the mat is the substrate the notes sit on, so it
+        // has to read as structure without competing with the stars.
+        opacity: this.darkTheme ? 0.3 : 0.4,
+        depthWrite: false,
+      }),
+    );
+    line.frustumCulled = false;
+    line.renderOrder = -500; // behind nodes and edges, in front of the sky
+    this.scene.add(line);
+    this.myceliumMat = line;
+  }
+
   setWalrusBoundary(on: boolean): void {
     if (this.walrusBoundary) {
       this.scene.remove(this.walrusBoundary);
@@ -4321,6 +4357,7 @@ export class GraphScene {
     this.raf = null;
     this.setTimeAxis(null); // drop the chronicle axis + its DOM labels
     this.setWalrusBoundary(false); // drop the walrus boundary sphere
+    this.setMyceliumMat(null); // and the grown mat, if the mycelium layout drew one
     this.resizeObs.disconnect();
     const el = this.renderer.domElement;
     el.removeEventListener("pointermove", this.onPointerMove);

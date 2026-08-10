@@ -48,6 +48,7 @@ import {
   applyRadialLayout,
   applySpiralLayout,
   applyWalrusLayout,
+  applyMyceliumLayout,
   applyStrataLayout,
 } from "../lib/staticLayouts";
 import { ATLAS_RADIUS_MUL } from "../lib/layoutConfig";
@@ -824,9 +825,11 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       s.layout === "strata" ||
       s.layout === "celestial" ||
       s.layout === "radial" ||
-      s.layout === "walrus"
+      s.layout === "walrus" ||
+      s.layout === "mycelium"
     ) {
       const radius = s.linkDistance * ATLAS_RADIUS_MUL;
+      let myceliumMat: Float32Array | null = null;
       if (s.layout === "spiral") {
         applySpiralLayout(graph, { targetRadius: radius * 1.3 });
       } else if (s.layout === "celestial") {
@@ -835,6 +838,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
         applyRadialLayout(graph, { targetRadius: radius * 1.2 });
       } else if (s.layout === "walrus") {
         applyWalrusLayout(graph, { targetRadius: radius * 1.25 });
+      } else if (s.layout === "mycelium") {
+        myceliumMat = applyMyceliumLayout(graph, { targetRadius: radius * 1.35 });
       } else {
         // Chronicle: bake the time-strata positions AND draw the date axis
         // under them (the axis shares the layout's time→x mapping).
@@ -845,6 +850,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       // Walrus: draw the CAIDA boundary sphere around the baked ball (after
       // syncPositions so it reads the final node positions).
       scene.setWalrusBoundary(s.layout === "walrus");
+      // Draw the grown hyphae (null for every other layout, which tears down a
+      // mat left over from a previous one).
+      scene.setMyceliumMat(myceliumMat);
       scene.layoutSettled();
       scene.fit();
       introPlayed = true;

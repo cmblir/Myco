@@ -223,6 +223,7 @@ export interface Strings {
   gr_layout_celestial?: string;
   gr_layout_radial?: string;
   gr_layout_walrus?: string;
+  gr_layout_mycelium?: string;
   gr_skin_sigma?: string;
   gr_vibes?: string;
   gr_vibe_living?: string;
@@ -242,7 +243,9 @@ export interface Strings {
   gr_vibe_chronicle_desc?: string;
   gr_vibe_nebula_desc?: string;
   gr_vibe_walrus?: string;
+  gr_vibe_mycelium?: string;
   gr_vibe_walrus_desc?: string;
+  gr_vibe_mycelium_desc?: string;
   gr_looks?: string;
   gr_appearance?: string;
   gr_motion_fx?: string;
@@ -1006,6 +1009,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_celestial: "Celestial sphere",
     gr_layout_radial: "Radial orbit",
     gr_layout_walrus: "Walrus tree",
+    gr_layout_mycelium: "Mycelium mat",
     gr_skin_sigma: "Sigma",
     gr_vibes: "One-tap looks",
     gr_vibe_living: "Living galaxy",
@@ -1025,7 +1029,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_chronicle_desc: "Time strata — the vault read as history",
     gr_vibe_nebula_desc: "Notes clustered by meaning (embeddings)",
     gr_vibe_walrus: "Walrus tree",
+    gr_vibe_mycelium: "Mycelium",
     gr_vibe_walrus_desc: "A hyperbolic spanning tree in a sphere (CAIDA Walrus)",
+    gr_vibe_mycelium_desc: "A grown fungal mat, with the notes hung on it",
     gr_looks: "Looks",
     gr_appearance: "Appearance",
     gr_motion_fx: "Motion & effects",
@@ -1809,6 +1815,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_celestial: "천구 별자리",
     gr_layout_radial: "동심 궤도",
     gr_layout_walrus: "월러스 트리",
+    gr_layout_mycelium: "균사 매트",
     gr_skin_sigma: "시그마",
     gr_vibes: "원탭 룩",
     gr_vibe_living: "살아있는 은하",
@@ -1828,7 +1835,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_chronicle_desc: "시간 지층 — 볼트를 역사로 읽기",
     gr_vibe_nebula_desc: "의미(임베딩)로 군집된 노트",
     gr_vibe_walrus: "월러스 트리",
+    gr_vibe_mycelium: "균사",
     gr_vibe_walrus_desc: "구 안의 하이퍼볼릭 스패닝 트리 (CAIDA Walrus)",
+    gr_vibe_mycelium_desc: "자라난 균사 매트 위에 노트를 걸었습니다",
     gr_looks: "룩",
     gr_appearance: "외형",
     gr_motion_fx: "모션·효과",
@@ -2553,6 +2562,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_celestial: "天球星座",
     gr_layout_radial: "同心軌道",
     gr_layout_walrus: "ウォルラスツリー",
+    gr_layout_mycelium: "菌糸マット",
     gr_skin_sigma: "シグマ",
     gr_vibes: "ワンタップルック",
     gr_vibe_living: "生きた銀河",
@@ -2572,7 +2582,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_chronicle_desc: "時間の地層 — ボルトを歴史として読む",
     gr_vibe_nebula_desc: "意味(埋め込み)でクラスタ化されたノート",
     gr_vibe_walrus: "ウォルラスツリー",
+    gr_vibe_mycelium: "菌糸",
     gr_vibe_walrus_desc: "球体内の双曲スパニングツリー (CAIDA Walrus)",
+    gr_vibe_mycelium_desc: "育った菌糸マットにノートを掛けています",
     gr_looks: "ルック",
     gr_appearance: "外観",
     gr_motion_fx: "モーション・効果",

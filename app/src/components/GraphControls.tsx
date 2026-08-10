@@ -51,6 +51,7 @@ function vibeMeta(t: Strings): { key: VibeKey; label: string; desc: string }[] {
     { key: "chronicle", label: t.gr_vibe_chronicle ?? "Chronicle", desc: t.gr_vibe_chronicle_desc ?? "Time strata — the vault read as history" },
     { key: "nebula", label: t.gr_vibe_nebula ?? "Meaning nebula", desc: t.gr_vibe_nebula_desc ?? "Notes clustered by meaning (embeddings)" },
     { key: "walrus", label: t.gr_vibe_walrus ?? "Walrus tree", desc: t.gr_vibe_walrus_desc ?? "A hyperbolic spanning tree in a sphere (CAIDA Walrus)" },
+    { key: "mycelium", label: t.gr_vibe_mycelium ?? "Mycelium", desc: t.gr_vibe_mycelium_desc ?? "A grown fungal mat, with the notes hung on it" },
   ];
 }
 
@@ -362,6 +363,7 @@ export default function GraphControls({
             ["celestial", t.gr_layout_celestial ?? "Celestial sphere"],
             ["radial", t.gr_layout_radial ?? "Radial orbit"],
             ["walrus", t.gr_layout_walrus ?? "Walrus tree"],
+            ["mycelium", t.gr_layout_mycelium ?? "Mycelium mat"],
           ]}
         />
         <ChipRow

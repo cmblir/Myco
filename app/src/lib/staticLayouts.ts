@@ -572,3 +572,272 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
     g.setNodeAttribute(id, "z", p[2] * s);
   }
 }
+
+export interface MyceliumOpts {
+  targetRadius: number;
+}
+
+/** One grown hypha segment: a node position plus the parent it branched from.
+ *  Exported so tests can inspect the grown network before notes are attached. */
+export interface HyphaNode {
+  x: number;
+  y: number;
+  z: number;
+  parent: number; // index into the returned array, -1 for a spore
+  depth: number;
+}
+
+// SPACE COLONIZATION — the algorithm behind leaf venation and branching trees
+// (Runions et al.). Attractors are scattered through the territory; every tip
+// steps toward the attractors that are closest to IT, and an attractor is
+// consumed once a tip reaches it. Tips fork wherever attractors pull in
+// genuinely different directions.
+//
+// This is deliberately NOT derived from the wikilink graph. An earlier attempt
+// grew a spanning tree and called it mycelium; measured on the real vault that
+// tree is four levels deep with one hub holding 34 children, so "apical
+// dominance" had nothing to run along and the result was a starburst. The
+// structure a mycelium needs is not in the link data, so the mat is GROWN
+// first and the notes are hung on it afterwards.
+//
+// Deterministic: attractors and jitter both come from `seededUnit`.
+export function growMycelium(
+  count: number,
+  seedKey: string,
+  opts: { attractors?: number; step?: number; killRadius?: number; influence?: number } = {},
+): HyphaNode[] {
+  // Attractor count is CAPPED rather than proportional to the vault. The mat
+  // only has to offer enough slots to hang notes on, and each attractor costs a
+  // neighbourhood scan every round — scaling it with note count made a
+  // 1244-note vault take 3.8s to lay out while most of those attractors were
+  // never reachable anyway. ~1.4 slots grow per attractor, so this stays ahead
+  // of the note count at every size.
+  const ATTRACTORS = opts.attractors ?? Math.min(2600, Math.max(260, Math.round(count * 1.6)));
+  const STEP = opts.step ?? 0.045;
+  const KILL = opts.killRadius ?? STEP * 2.0;
+  const INFLUENCE = opts.influence ?? STEP * 8;
+
+  // Attractors fill a disc in the X–Y plane, thin in Z.
+  //
+  // The plane matters as much as the flattening. Grown across X–Z the mat is
+  // correct but the graph's default camera looks along it, so a mat reads as a
+  // thin horizontal line — which is exactly what the first render showed. The
+  // flat layouts this sits beside (strata) spread in X–Y for the same reason.
+  const attractors: [number, number, number][] = [];
+  for (let i = 0; i < ATTRACTORS; i++) {
+    const u = seededUnit(`${seedKey}-ax`, i);
+    const v = seededUnit(`${seedKey}-ay`, i);
+    const w = seededUnit(`${seedKey}-az`, i);
+    const ang = u * Math.PI * 2;
+    const rad = Math.sqrt(v); // uniform over the disc, not bunched at the centre
+    attractors.push([Math.cos(ang) * rad, Math.sin(ang) * rad, (w - 0.5) * 0.3]);
+  }
+  const alive = new Array<boolean>(attractors.length).fill(true);
+  let liveCount = attractors.length;
+
+  // Three spores rather than one origin: a single start makes every early tip
+  // overlap, and the mat opens as a puffball instead of something spreading.
+  const nodes: HyphaNode[] = [];
+  for (let sp = 0; sp < 3; sp++) {
+    const a = (sp / 3) * Math.PI * 2 + 0.4;
+    nodes.push({ x: Math.cos(a) * 0.18, y: Math.sin(a) * 0.18, z: 0, parent: -1, depth: 0 });
+  }
+
+  // Uniform grid over the node set so an attractor finds its nearest node
+  // without scanning all of them. Cell = INFLUENCE, so the 27-cell neighbourhood
+  // always covers the search radius. Nodes are only ever appended, never moved,
+  // so the grid is maintained incrementally rather than rebuilt.
+  const cell = INFLUENCE;
+  const grid = new Map<string, number[]>();
+  const keyOf = (x: number, y: number, z: number): string =>
+    `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
+  const insert = (i: number): void => {
+    const n = nodes[i];
+    const k = keyOf(n.x, n.y, n.z);
+    const b = grid.get(k);
+    if (b) b.push(i);
+    else grid.set(k, [i]);
+  };
+  for (let i = 0; i < nodes.length; i++) insert(i);
+
+  const nearest = (x: number, y: number, z: number, within: number): number => {
+    const cx = Math.floor(x / cell);
+    const cy = Math.floor(y / cell);
+    const cz = Math.floor(z / cell);
+    let best = -1;
+    let bestD = within;
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        for (let oz = -1; oz <= 1; oz++) {
+          const b = grid.get(`${cx + ox},${cy + oy},${cz + oz}`);
+          if (!b) continue;
+          for (const i of b) {
+            const n = nodes[i];
+            const d = Math.hypot(x - n.x, y - n.y, z - n.z);
+            if (d < bestD) {
+              bestD = d;
+              best = i;
+            }
+          }
+        }
+      }
+    }
+    return best;
+  };
+
+  // Bounded: each round either grows or stops. The cap is a backstop against a
+  // pathological input, not the normal exit.
+  const MAX_ROUNDS = 400;
+  const MAX_NODES = 20000;
+  for (let round = 0; round < MAX_ROUNDS && liveCount > 0 && nodes.length < MAX_NODES; round++) {
+    // Every attractor votes for its nearest node in the WHOLE network — not
+    // just the newest tips. This is what makes the mat branch: an interior node
+    // that still has attractors near it grows another child, so one lineage
+    // forks instead of every node having exactly one successor. (Restricting
+    // the search to current tips produced three long worms and zero forks.)
+    const pull = new Map<number, [number, number, number]>();
+    for (let ai = 0; ai < attractors.length; ai++) {
+      if (!alive[ai]) continue;
+      const [ax, ay, az] = attractors[ai];
+      const best = nearest(ax, ay, az, INFLUENCE);
+      if (best < 0) continue;
+      const n = nodes[best];
+      const dx = ax - n.x;
+      const dy = ay - n.y;
+      const dz = az - n.z;
+      const m = Math.hypot(dx, dy, dz) || 1;
+      const acc = pull.get(best) ?? [0, 0, 0];
+      acc[0] += dx / m;
+      acc[1] += dy / m;
+      acc[2] += dz / m;
+      pull.set(best, acc);
+    }
+    if (pull.size === 0) break;
+
+    const grown: number[] = [];
+    for (const [ti, acc] of pull) {
+      let dx = acc[0];
+      let dy = acc[1];
+      let dz = acc[2];
+      let m = Math.hypot(dx, dy, dz);
+      const n = nodes[ti];
+      if (m < 1e-6) {
+        // Attractors pulling equally from opposite sides cancel out. Keep the
+        // parent's heading rather than stalling the tip.
+        const p = n.parent >= 0 ? nodes[n.parent] : null;
+        dx = p ? n.x - p.x : 1;
+        dy = p ? n.y - p.y : 0;
+        dz = p ? n.z - p.z : 0;
+        m = Math.hypot(dx, dy, dz) || 1;
+      }
+      const jitter = (seededUnit(`${seedKey}-j`, nodes.length) - 0.5) * 0.3;
+      nodes.push({
+        x: n.x + (dx / m) * STEP + jitter * STEP,
+        y: n.y + (dy / m) * STEP - jitter * STEP,
+        z: n.z + (dz / m) * STEP * 0.4,
+        parent: ti,
+        depth: n.depth + 1,
+      });
+      const gi = nodes.length - 1;
+      insert(gi);
+      grown.push(gi);
+    }
+
+    // An attractor that has been reached has done its job.
+    for (let ai = 0; ai < attractors.length; ai++) {
+      if (!alive[ai]) continue;
+      const [ax, ay, az] = attractors[ai];
+      for (const gi of grown) {
+        const n = nodes[gi];
+        if (Math.hypot(ax - n.x, ay - n.y, az - n.z) < KILL) {
+          alive[ai] = false;
+          liveCount--;
+          break;
+        }
+      }
+    }
+  }
+  return nodes;
+}
+
+// "mycelium": the vault as a grown fungal mat.
+//
+// The mat comes from `growMycelium` — space colonization, not the link graph.
+// Notes are then ATTACHED to it: hubs take the thick early segments near the
+// spores, leaves take the fine tips out at the rim, so the picture still says
+// something true about the vault (how connected a note is) while the shape
+// stays something the link data could never have produced on its own.
+export function applyMyceliumLayout(g: VaultGraph, o: MyceliumOpts): Float32Array {
+  const n = g.order;
+  if (n === 0) return new Float32Array(0);
+  const all = g.nodes().slice().sort();
+
+  const degOf = (id: string): number =>
+    (g.getNodeAttribute(id, "deg") as number) ?? g.degree(id);
+
+  const mat = growMycelium(n, "myc");
+  // Sort mat positions by depth: shallow segments are the trunk, deep ones the
+  // fine tips. Ties broken by index so this stays deterministic.
+  const slots = mat
+    .map((h, i) => ({ h, i }))
+    .sort((a, b) => a.h.depth - b.h.depth || a.i - b.i);
+
+  // Most-linked note first, so hubs land on the trunk.
+  const byDegree = all.slice().sort((x, y) => degOf(y) - degOf(x) || (x < y ? -1 : 1));
+
+  // Map notes onto slots proportionally, which works whichever side is bigger:
+  // a small vault spreads out along the mat, a vault larger than the mat shares
+  // slots. Sharing is normal at scale — the mat is capped, so a 5k-note vault
+  // has fewer slots than notes — and stacking them on one point would draw a
+  // single bright blob, so each extra note on a slot is nudged off it.
+  let maxR = 1e-6;
+  const placed: [string, number, number, number][] = [];
+  const used = new Map<number, number>();
+  const total = byDegree.length;
+  byDegree.forEach((id, k) => {
+    const si = Math.min(slots.length - 1, Math.floor((k * slots.length) / total));
+    const slot = slots[si];
+    const h = slot ? slot.h : { x: 0, y: 0, z: 0, parent: -1, depth: 0 };
+    const dup = used.get(si) ?? 0;
+    used.set(si, dup + 1);
+
+    let x = h.x;
+    let y = h.y;
+    let z = h.z;
+    if (dup > 0) {
+      // Offset around the hypha, not along it, so a shared slot reads as a
+      // cluster of notes on one thread rather than a thickened thread.
+      const a = seededUnit(id, 73) * Math.PI * 2;
+      const rad = 0.012 * (1 + Math.sqrt(dup));
+      x += Math.cos(a) * rad;
+      y += Math.sin(a) * rad;
+      z += (seededUnit(id, 74) - 0.5) * rad * 0.5;
+    }
+    placed.push([id, x, y, z]);
+    maxR = Math.max(maxR, Math.hypot(x, y, z));
+  });
+
+  const s = o.targetRadius / maxR;
+  for (const [id, x, y, z] of placed) {
+    g.setNodeAttribute(id, "x", x * s);
+    g.setNodeAttribute(id, "y", y * s);
+    g.setNodeAttribute(id, "z", z * s);
+  }
+
+  // Hand back the hyphae in the SAME world scale as the nodes. The scene draws
+  // these; without them the notes are a scatter of stars on an invisible mat,
+  // and the mat is the whole point of this layout.
+  const segs = new Float32Array(Math.max(0, (mat.length - 3) * 6));
+  let w = 0;
+  for (const h of mat) {
+    if (h.parent < 0) continue; // spores have no incoming segment
+    const p2 = mat[h.parent];
+    segs[w++] = p2.x * s;
+    segs[w++] = p2.y * s;
+    segs[w++] = p2.z * s;
+    segs[w++] = h.x * s;
+    segs[w++] = h.y * s;
+    segs[w++] = h.z * s;
+  }
+  return segs.subarray(0, w);
+}
