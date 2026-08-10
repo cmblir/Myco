@@ -45,6 +45,9 @@ export interface GraphSettings {
   // form): communities along the arms, biggest at the core. "strata" = a
   // static 2D time chart: x = last-modified (oldest left), y = community band.
   layout: "galaxy" | "atlas" | "synapse" | "synapse3d" | "spiral" | "strata" | "semantic" | "celestial" | "radial" | "walrus" | "mycelium";
+  // Mycelium view only: "3d" orbits freely; "2d" flattens the layout to a
+  // plane and locks the camera to a front-on, pan/zoom-only view.
+  myceliumDim: "2d" | "3d";
   // Multiverse mode: instead of this one vault, show EVERY registered project
   // as its own glowing universe-bubble in one shared cosmos. Fly into a bubble
   // to switch the active vault (which turns this back off, landing you in that
@@ -152,6 +155,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   skin: "auto",
   folderGalaxies: true,
   layout: "galaxy",
+  myceliumDim: "3d",
   multiverse: false,
   skyStyle: "stars",
   arrows: false,

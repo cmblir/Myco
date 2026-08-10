@@ -385,6 +385,17 @@ export default function GraphControls({
           value={settings.folderGalaxies}
           onChange={(v) => onChange({ folderGalaxies: v })}
         />
+        {settings.skin === "mycelium" ? (
+          <ChipRow
+            label={t.gr_mycelium_dim ?? "Mycelium view"}
+            value={settings.myceliumDim}
+            onPick={(v) => onChange({ myceliumDim: v })}
+            options={[
+              ["3d", t.gr_mycelium_3d ?? "3D"],
+              ["2d", t.gr_mycelium_2d ?? "2D"],
+            ]}
+          />
+        ) : null}
       </Section>
 
       {/* ── Appearance: colour, sky, sizes ── */}
