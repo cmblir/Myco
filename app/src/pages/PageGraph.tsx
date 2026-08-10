@@ -1779,7 +1779,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
           </button>
         </div>
         <div className="graph-body">
-          <div className="graph-canvas-wrap">
+          <div
+            className={
+              "graph-canvas-wrap" +
+              (settings.skin === "mycelium" ? " is-mycelium" : "")
+            }
+          >
             <div ref={containerRef} className="graph-canvas" />
             {/* Multiverse mode: an overlay scene of every project as a
                 universe-bubble, covering the (idle) single-vault canvas. Fly

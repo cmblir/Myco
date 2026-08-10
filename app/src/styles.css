@@ -2024,6 +2024,14 @@ hr {
     ),
     var(--bg);
 }
+/* Mycelium skin: a substrate, so the CSS deep-space backdrop must go too.
+   The WebGL canvas is transparent, so this layer is what actually paints the
+   background — turning off the starfield, nebula and bloom in the scene still
+   left a blue nebula glow and vignette showing through from here, which is why
+   the mat kept reading as space. */
+.graph-canvas-wrap.is-mycelium {
+  background: #0b0a08;
+}
 .graph-canvas {
   position: absolute;
   inset: 0;

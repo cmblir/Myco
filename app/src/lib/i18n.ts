@@ -225,6 +225,7 @@ export interface Strings {
   gr_layout_walrus?: string;
   gr_layout_mycelium?: string;
   gr_skin_sigma?: string;
+  gr_skin_mycelium?: string;
   gr_vibes?: string;
   gr_vibe_living?: string;
   gr_vibe_sigma?: string;
@@ -1010,6 +1011,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_walrus: "Walrus tree",
     gr_layout_mycelium: "Mycelium mat",
     gr_skin_sigma: "Sigma",
+    gr_skin_mycelium: "Mycelium",
     gr_vibes: "One-tap looks",
     gr_vibe_living: "Living galaxy",
     gr_vibe_sigma: "Sigma board",
@@ -1815,6 +1817,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_walrus: "월러스 트리",
     gr_layout_mycelium: "균사 매트",
     gr_skin_sigma: "시그마",
+    gr_skin_mycelium: "균사",
     gr_vibes: "원탭 룩",
     gr_vibe_living: "살아있는 은하",
     gr_vibe_sigma: "시그마 보드",
@@ -2561,6 +2564,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_walrus: "ウォルラスツリー",
     gr_layout_mycelium: "菌糸マット",
     gr_skin_sigma: "シグマ",
+    gr_skin_mycelium: "菌糸",
     gr_vibes: "ワンタップルック",
     gr_vibe_living: "生きた銀河",
     gr_vibe_sigma: "シグマボード",

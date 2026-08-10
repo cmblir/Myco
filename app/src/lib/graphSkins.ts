@@ -41,6 +41,29 @@ const SKIN_THEMES: Record<Exclude<GraphSkinKey, "auto">, GraphTheme> = {
   },
   // Deep space: dark palette + the full ambience (3 star shells, nebula).
   galaxy: { ...SKIN_DARK_BASE, bg: "#05060d", sceneBg: "#05060d" },
+  // Mycelium: a substrate, NOT a sky.
+  //
+  // Every earlier attempt at the mycelium look failed for the same reason —
+  // the layout changed but the scene stayed a galaxy renderer, so a starfield,
+  // a nebula wash and heavy bloom turned any arrangement back into space. This
+  // skin gives the mat its own world: a warm near-black loam instead of blue
+  // void, pale filament-coloured threads as the protagonist, and node dots
+  // that read as spore bodies rather than glowing stars.
+  mycelium: {
+    bg: "#0b0a08",
+    sceneBg: "#0b0a08",
+    ink: "#e8e3d8",
+    node: "#d8cfbc",
+    starDim: "#4a453c",
+    gxCore: "#f0e6cf",
+    gxArm: "#b9b09c",
+    gxHalo: "#5a5347",
+    // The hyphae carry the picture, so edges sit far brighter here than on any
+    // sky skin, where they are deliberately faint against the stars.
+    edge: "rgba(214,206,188,0.22)",
+    edgeHi: "rgba(240,234,220,0.95)",
+    accent: "#c9b98f",
+  },
   // Cosmic web (the dark-matter-simulation look): near-black indigo void,
   // tiny stars for nodes, and the EDGES as the protagonist — thin violet
   // filaments that brighten where they overlap (additive accumulation).
@@ -119,6 +142,10 @@ export function skinAmbience(skin: GraphSkinKey, dark: boolean): SkinAmbience {
       return { starfield: true, nebula: false, meteors: false };
     case "sigma":
       // A data-viz board, not a sky: no ambient layers at all.
+      return { starfield: false, nebula: false, meteors: false };
+    case "mycelium":
+      // A substrate, not a sky. Stars and nebula are exactly what kept making
+      // the mat read as a galaxy no matter how the layout was grown.
       return { starfield: false, nebula: false, meteors: false };
     default:
       // Auto skin: starfield on both themes, nebula dark-only — and meteors on

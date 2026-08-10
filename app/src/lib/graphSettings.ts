@@ -8,7 +8,14 @@
 //   - github.com/ycnmhd/obsidian-graph-presets (slider ranges)
 
 // Kept here (not graphTheme.ts) so this module stays DOM-free and testable.
-export type GraphSkinKey = "auto" | "black" | "white" | "galaxy" | "web" | "sigma";
+export type GraphSkinKey =
+  | "auto"
+  | "black"
+  | "white"
+  | "galaxy"
+  | "web"
+  | "sigma"
+  | "mycelium";
 
 export interface GraphSettings {
   // Filters
@@ -494,7 +501,7 @@ export const VIBE_PRESETS: Record<VibeKey, Partial<GraphSettings>> = {
   // The fungal mat: hyphae grown by space colonization, then the notes hung on
   // them. Galaxy skin for the same reason walrus uses it — the threads need a
   // clean void to read against.
-  mycelium: { skin: "galaxy", layout: "mycelium", ...LAYOUT_RECOMMENDED.mycelium },
+  mycelium: { skin: "mycelium", layout: "mycelium", ...LAYOUT_RECOMMENDED.mycelium },
 };
 
 // Which preset (if any) the current force values correspond to — drives the

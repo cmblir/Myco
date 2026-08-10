@@ -859,6 +859,11 @@ export class GraphScene {
   private get sigmaSkin(): boolean {
     return this.settings.skin === "sigma";
   }
+  // Mycelium skin: a substrate, not a sky. Star bloom is what kept smearing
+  // the mat back into a galaxy however the layout was grown.
+  private get myceliumSkin(): boolean {
+    return this.settings.skin === "mycelium";
+  }
   // Tone-mapping is a LOOK decision, not a global. The filmic AgX grade is a
   // deep-space affordance: it compresses HDR bloom without the ACES purple
   // hue-skew. But on paper it greys #fff to ~#d8d8d8 and on the sigma board it
@@ -867,14 +872,21 @@ export class GraphScene {
   // sigma/white draws already lives in [0,1] (NormalBlending, tiny bloom), so
   // there is no HDR to compress away.
   private lookToneMapping(): THREE.ToneMapping {
-    return this.darkTheme && !this.sigmaSkin
+    // Mycelium joins paper and sigma in passing colour straight through. AgX is
+    // a deep-space affordance and it LIFTS near-black with a blue cast, which
+    // turned the substrate (#0b0a08) into a blue-grey sky — the last thing
+    // still making the mat read as space after the starfield, nebula, bloom and
+    // CSS backdrop were all off.
+    return this.darkTheme && !this.sigmaSkin && !this.myceliumSkin
       ? THREE.AgXToneMapping
       : THREE.NoToneMapping;
   }
   // Exposure = the brightness slider, but paper must not dim below 1.0 or the
   // white board turns grey (NoToneMapping multiplies the background straight).
   private lookExposure(): number {
-    if (!this.darkTheme || this.sigmaSkin) return Math.max(1, this.settings.brightness);
+    if (!this.darkTheme || this.sigmaSkin || this.myceliumSkin) {
+      return Math.max(1, this.settings.brightness);
+    }
     return this.settings.brightness;
   }
   // Per-skin node size multiplier, folded into u_sizeScale wherever it is set.
@@ -1087,7 +1099,7 @@ export class GraphScene {
     // atmospheric glow instead of a hard white disc.
     // Strength is brightness-INDEPENDENT: exposure already scales the whole image
     // via OutputPass, so double-multiplying would blow the glow into a wash.
-    this.baseBloom = this.sigmaSkin ? 0.12 : dark ? 0.45 : 0.25;
+    this.baseBloom = this.sigmaSkin ? 0.12 : this.myceliumSkin ? 0.14 : dark ? 0.45 : 0.25;
     this.bloom = new UnrealBloomPass(
       new THREE.Vector2(w, h),
       this.baseBloom,
@@ -3395,7 +3407,11 @@ export class GraphScene {
       : dark
         ? new THREE.Color(0x05060d)
         : bg;
-    this.scene.background = this.skyTex ?? sceneBg;
+    // The mycelium skin pins its own ground. A generated sky texture is the
+    // last thing that would still make the mat read as space after the
+    // starfield, nebula and bloom are off — it paints a sky-coloured wash over
+    // the substrate colour.
+    this.scene.background = this.myceliumSkin ? sceneBg : (this.skyTex ?? sceneBg);
     (this.scene.fog as THREE.FogExp2).color.copy(sceneBg);
     // Starfield shells are colour-baked per dark/light at build time, and the
     // active skin decides whether they show at all — rebuild them so a theme or
@@ -3413,7 +3429,7 @@ export class GraphScene {
     this.ensureGridBackdrop(this.settings.skyStyle === "grid", dark);
     // Must mirror the constructor's calm calibration (duplicated constants —
     // keep in sync; Phase 1 extracts a single helper).
-    this.baseBloom = this.sigmaSkin ? 0.12 : dark ? 0.45 : 0.25;
+    this.baseBloom = this.sigmaSkin ? 0.12 : this.myceliumSkin ? 0.14 : dark ? 0.45 : 0.25;
     this.bloom.strength = this.baseBloom; // brightness drives exposure, not bloom
     this.bloom.threshold = dark ? 1.9 : 1.05; // light: above the LDR bg (see ctor)
     this.bloom.radius = 0.7;
@@ -3737,11 +3753,11 @@ export class GraphScene {
     const line = new THREE.LineSegments(
       geo,
       new THREE.LineBasicMaterial({
-        color: this.darkTheme ? 0x9fb4d4 : 0x6b7280,
+        color: this.myceliumSkin ? 0xd6cebc : this.darkTheme ? 0x9fb4d4 : 0x6b7280,
         transparent: true,
-        // Faint on purpose: the mat is the substrate the notes sit on, so it
-        // has to read as structure without competing with the stars.
-        opacity: this.darkTheme ? 0.3 : 0.4,
+        // On the mycelium skin the threads ARE the picture, so they sit bright.
+        // On a sky skin they must not compete with the stars.
+        opacity: this.myceliumSkin ? 0.72 : this.darkTheme ? 0.3 : 0.4,
         depthWrite: false,
       }),
     );

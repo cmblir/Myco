@@ -404,6 +404,7 @@ export default function GraphControls({
             ["galaxy", t.gr_skin_galaxy ?? "Galaxy"],
             ["web", t.gr_skin_web ?? "Cosmic web"],
             ["sigma", t.gr_skin_sigma ?? "Sigma"],
+            ["mycelium", t.gr_skin_mycelium ?? "Mycelium"],
           ]}
         />
         <ChipRow
