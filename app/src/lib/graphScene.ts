@@ -4215,6 +4215,25 @@ export class GraphScene {
   }
 
 
+  /** Compile every shader program the scene will need BEFORE the first frame.
+   *
+   * Profiling the first load attributed the bulk of it to WebGL program
+   * compilation and the GPU command-buffer waits behind it: three.js compiles
+   * lazily, so the first frame that touches each material stalls the main
+   * thread mid-animation, which is exactly the "graph stutters on first load"
+   * complaint. compileAsync does that work up front, off the critical frame.
+   *
+   * Best-effort: a context that cannot compile asynchronously just falls back
+   * to the old lazy behaviour rather than failing to render at all.
+   */
+  async warmUpShaders(): Promise<void> {
+    try {
+      await this.renderer.compileAsync(this.scene, this.camera);
+    } catch {
+      /* older/software contexts: lazy compile is still correct, just slower */
+    }
+  }
+
   start(): void {
     if (this.raf != null) return;
     this.lastFrame = performance.now();

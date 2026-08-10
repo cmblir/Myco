@@ -364,8 +364,26 @@ impl VectorStore {
     /// so a shared boilerplate section is enough to link two unrelated pages. The
     /// Reader's related-notes panel keeps `related`: there, surfacing the single
     /// passage that matches is the point.
+    /// Folders whose pages are machine-written, so a "you might link these"
+    /// suggestion over them is noise the user cannot act on.
+    ///
+    /// Without this the panel offered pairs of session transcripts by their
+    /// UUID filenames — on the real vault 98% of indexed chunks are swept
+    /// sessions, so every suggestion was `codex-019fdc04-… ↔ codex-019fdc05-…`
+    /// and not one row named something a person had written.
+    fn is_machine_written(page: &str) -> bool {
+        matches!(
+            page.split('/').next().unwrap_or(""),
+            "sessions" | "_inbox" | "raw" | "ingest-reports"
+        )
+    }
+
     pub fn centroid_edges(&self, k: usize) -> Vec<PageEdge> {
-        let cents = self.page_centroids();
+        let cents: Vec<(String, Vec<f32>)> = self
+            .page_centroids()
+            .into_iter()
+            .filter(|(page, _)| !Self::is_machine_written(page))
+            .collect();
         let mut seen: HashSet<(&str, &str)> = HashSet::new();
         let mut out = Vec::new();
         for (i, (page, a)) in cents.iter().enumerate() {
@@ -1236,5 +1254,56 @@ mod tests {
         // The adopted entry is fresh, so get() served it rather than re-reading.
         assert!(Arc::ptr_eq(&got, &cache.get(&path)));
         std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod suggestion_scope_tests {
+    use super::*;
+
+    fn store_with(pages: &[&str]) -> VectorStore {
+        let mut s = VectorStore { dim: 2, ..Default::default() };
+        for (i, p) in pages.iter().enumerate() {
+            s.records.push(Record {
+                id: format!("{p}#0"),
+                page: (*p).to_string(),
+                stem: p.rsplit('/').next().unwrap_or(p).to_string(),
+                section: 0,
+                hash: i as u64,
+                vector: vec![1.0, i as f32 * 0.01],
+            });
+        }
+        s
+    }
+
+    #[test]
+    fn link_suggestions_never_offer_machine_written_pages() {
+        // The real vault is 98% swept sessions, so before this every suggestion
+        // was a pair of UUID filenames the user could not act on.
+        let s = store_with(&[
+            "wiki/attention.md",
+            "wiki/transformers.md",
+            "sessions/codex-019fdc04.md",
+            "sessions/codex-019fdc05.md",
+            "_inbox/dropped.md",
+            "raw/paper.md",
+            "ingest-reports/2026-08-01.md",
+        ]);
+        let edges = s.centroid_edges(4);
+        assert!(!edges.is_empty(), "the two wiki pages should still pair up");
+        for e in &edges {
+            for p in [&e.a, &e.b] {
+                assert!(
+                    p.starts_with("wiki/"),
+                    "machine-written page leaked into a suggestion: {p}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_vault_of_only_machine_pages_suggests_nothing_rather_than_noise() {
+        let s = store_with(&["sessions/a.md", "sessions/b.md", "raw/c.md"]);
+        assert!(s.centroid_edges(4).is_empty());
     }
 }
