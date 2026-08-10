@@ -64,6 +64,7 @@ import { useIngestStore } from "../stores/ingestStore";
 import { useMultiverseStore } from "../stores/multiverseStore";
 import MultiverseScene from "../components/MultiverseScene";
 import MascotCameo from "../components/MascotCameo";
+import MyceliumView from "../components/MyceliumView";
 import type { SceneUniverse } from "../lib/multiverseScene";
 import { ipc } from "../lib/ipc";
 import type { Adjacency, SemEdge } from "../lib/ipc";
@@ -1795,7 +1796,15 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               (settings.skin === "mycelium" ? " is-mycelium" : "")
             }
           >
-            <div ref={containerRef} className="graph-canvas" />
+            {/* The mycelium view is a SEPARATE renderer, not a skin on this
+                one. GraphScene is built for deep space, and switching its
+                layers off one at a time never stopped the sky showing through
+                — so mycelium mounts its own canvas instead. */}
+            {settings.skin === "mycelium" ? (
+              <MyceliumView graph={graphRef.current} vaultPath={currentVault?.path ?? ""} />
+            ) : (
+              <div ref={containerRef} className="graph-canvas" />
+            )}
             {/* Multiverse mode: an overlay scene of every project as a
                 universe-bubble, covering the (idle) single-vault canvas. Fly
                 into a bubble to drop into that vault (the saved toggle stays

@@ -1337,6 +1337,19 @@ select {
   }
 }
 
+/* The mycelium view owns its own canvas; no deep-space CSS backdrop, because
+   that layer showed through the transparent graph canvas and repainted space. */
+.myc-view {
+  position: absolute;
+  inset: 0;
+  background: #0b0a08;
+}
+.myc-view canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 /* Quoted material — notably extractive Ask answers, which render retrieved
    passages verbatim. With no blockquote styling at all (the previous state) a
    quote was indistinguishable from myco's own prose, so a cited note's `##`
