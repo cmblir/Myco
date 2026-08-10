@@ -4223,12 +4223,18 @@ export class GraphScene {
    * thread mid-animation, which is exactly the "graph stutters on first load"
    * complaint. compileAsync does that work up front, off the critical frame.
    *
-   * Best-effort: a context that cannot compile asynchronously just falls back
-   * to the old lazy behaviour rather than failing to render at all.
+   * Best-effort: a context that cannot precompile just falls back to the old
+   * lazy behaviour rather than failing to render at all.
    */
-  async warmUpShaders(): Promise<void> {
+  warmUpShaders(): void {
     try {
-      await this.renderer.compileAsync(this.scene, this.camera);
+      // Synchronous compile, NOT compileAsync: the async variant polls
+      // `program.isReady()` from its own callback, and a material that got no
+      // program throws there — outside the promise, so a try/catch around the
+      // await cannot see it. That surfaced as three uncaught page errors.
+      // The synchronous call does the same work with no polling; the stall it
+      // costs happens once, here, instead of during the first frames.
+      this.renderer.compile(this.scene, this.camera);
     } catch {
       /* older/software contexts: lazy compile is still correct, just slower */
     }

@@ -609,12 +609,16 @@ export function growMycelium(
   opts: { spores?: number; step?: number; branch?: number; maxNodes?: number } = {},
 ): HyphaNode[] {
   const SPORES = opts.spores ?? 5;
-  const STEP = opts.step ?? 0.030;
+  const STEP = opts.step ?? 0.042;
   const BRANCH = opts.branch ?? 0.085; // per tip per step
   // Enough segments to hang every note on, with headroom so notes spread along
   // the threads rather than crowding the first few. Capped so a huge vault
   // cannot turn a layout bake into a freeze.
-  const MAX_NODES = opts.maxNodes ?? Math.min(4200, Math.max(700, count * 3));
+  // Exactly one grown segment per note. The segments ARE the notes: an earlier
+  // version grew a dense mat and hung notes on it, which drew threads that
+  // passed BEHIND the nodes instead of joining them — a decorative background,
+  // not a network. Every hypha here ends on a real note.
+  const MAX_NODES = opts.maxNodes ?? Math.max(1, count);
   const MAX_TIPS = 90;
   const BOUND = 1.0;
   const MAX_GEN = 6;
@@ -634,9 +638,11 @@ export function growMycelium(
 
   // Spores spread across the disc rather than all at the origin: a single
   // origin makes every early tip overlap and the mat opens as a puffball.
-  for (let s = 0; s < SPORES; s++) {
-    const a = (s / SPORES) * Math.PI * 2 + rnd() * 0.7;
+  const spores = Math.max(1, Math.min(SPORES, Math.ceil(MAX_NODES / 8)));
+  for (let s = 0; s < spores; s++) {
+    const a = (s / spores) * Math.PI * 2 + rnd() * 0.7;
     const d = 0.10 + rnd() * 0.22;
+    if (nodes.length >= MAX_NODES) break;
     nodes.push({ x: Math.cos(a) * d, y: Math.sin(a) * d, z: (rnd() - 0.5) * 0.05, parent: -1, depth: 0 });
     const spore = nodes.length - 1;
     for (let k = 0; k < 3; k++) {
@@ -656,6 +662,10 @@ export function growMycelium(
       const ax = t.ax * ca - t.ay * sa;
       const ay = t.ax * sa + t.ay * ca;
 
+      // Budget check BEFORE growing, not after: checking afterwards overshoots
+      // by one node per live tip, so a 12-note vault grew 14 segments and two
+      // notes had nowhere to sit.
+      if (nodes.length >= MAX_NODES) break;
       const from = nodes[t.node];
       const nx = from.x + ax * STEP;
       const ny = from.y + ay * STEP;
@@ -702,69 +712,58 @@ export function applyMyceliumLayout(g: VaultGraph, o: MyceliumOpts): Float32Arra
   const degOf = (id: string): number =>
     (g.getNodeAttribute(id, "deg") as number) ?? g.degree(id);
 
+  // One grown segment per note, so every hypha ENDS on a note and every note
+  // sits on the network. Growing a denser mat and hanging notes on it drew
+  // threads that ran behind the nodes without joining them — a picture in the
+  // background rather than the vault laid out as a mycelium.
   const mat = growMycelium(n, "myc");
-  // Sort mat positions by depth: shallow segments are the trunk, deep ones the
-  // fine tips. Ties broken by index so this stays deterministic.
-  const slots = mat
+
+  // Shallow segments first: the most-linked notes take the thick early runs
+  // near the spores, the least-linked the fine tips at the rim. That is the
+  // only thing the link data decides; the SHAPE is grown.
+  const order = mat
     .map((h, i) => ({ h, i }))
     .sort((a, b) => a.h.depth - b.h.depth || a.i - b.i);
-
-  // Most-linked note first, so hubs land on the trunk.
   const byDegree = all.slice().sort((x, y) => degOf(y) - degOf(x) || (x < y ? -1 : 1));
 
-  // Map notes onto slots proportionally, which works whichever side is bigger:
-  // a small vault spreads out along the mat, a vault larger than the mat shares
-  // slots. Sharing is normal at scale — the mat is capped, so a 5k-note vault
-  // has fewer slots than notes — and stacking them on one point would draw a
-  // single bright blob, so each extra note on a slot is nudged off it.
+  // matIndex -> note id, so a segment can be turned into a note-to-note thread.
+  const noteAt = new Map<number, string>();
   let maxR = 1e-6;
-  const placed: [string, number, number, number][] = [];
-  const used = new Map<number, number>();
-  const total = byDegree.length;
+  const placed = new Map<string, [number, number, number]>();
   byDegree.forEach((id, k) => {
-    const si = Math.min(slots.length - 1, Math.floor((k * slots.length) / total));
-    const slot = slots[si];
-    const h = slot ? slot.h : { x: 0, y: 0, z: 0, parent: -1, depth: 0 };
-    const dup = used.get(si) ?? 0;
-    used.set(si, dup + 1);
-
-    let x = h.x;
-    let y = h.y;
-    let z = h.z;
-    if (dup > 0) {
-      // Offset around the hypha, not along it, so a shared slot reads as a
-      // cluster of notes on one thread rather than a thickened thread.
-      const a = seededUnit(id, 73) * Math.PI * 2;
-      const rad = 0.012 * (1 + Math.sqrt(dup));
-      x += Math.cos(a) * rad;
-      y += Math.sin(a) * rad;
-      z += (seededUnit(id, 74) - 0.5) * rad * 0.5;
-    }
-    placed.push([id, x, y, z]);
+    const slot = order[k];
+    if (!slot) return;
+    noteAt.set(slot.i, id);
+    const { x, y, z } = slot.h;
+    placed.set(id, [x, y, z]);
     maxR = Math.max(maxR, Math.hypot(x, y, z));
   });
 
-  const s = o.targetRadius / maxR;
-  for (const [id, x, y, z] of placed) {
-    g.setNodeAttribute(id, "x", x * s);
-    g.setNodeAttribute(id, "y", y * s);
-    g.setNodeAttribute(id, "z", z * s);
+  const scale = o.targetRadius / maxR;
+  for (const id of all) {
+    const p = placed.get(id) ?? [0, 0, 0];
+    g.setNodeAttribute(id, "x", p[0] * scale);
+    g.setNodeAttribute(id, "y", p[1] * scale);
+    g.setNodeAttribute(id, "z", p[2] * scale);
   }
 
-  // Hand back the hyphae in the SAME world scale as the nodes. The scene draws
-  // these; without them the notes are a scatter of stars on an invisible mat,
-  // and the mat is the whole point of this layout.
-  const segs = new Float32Array(Math.max(0, (mat.length - 3) * 6));
+  // The hyphae: one line per parent→child pair, both ends being real notes.
+  const segs = new Float32Array(mat.length * 6);
   let w = 0;
-  for (const h of mat) {
-    if (h.parent < 0) continue; // spores have no incoming segment
-    const p2 = mat[h.parent];
-    segs[w++] = p2.x * s;
-    segs[w++] = p2.y * s;
-    segs[w++] = p2.z * s;
-    segs[w++] = h.x * s;
-    segs[w++] = h.y * s;
-    segs[w++] = h.z * s;
-  }
+  mat.forEach((h, i) => {
+    if (h.parent < 0) return; // a spore has nothing upstream
+    const childId = noteAt.get(i);
+    const parentId = noteAt.get(h.parent);
+    if (!childId || !parentId) return;
+    const a = placed.get(parentId);
+    const b = placed.get(childId);
+    if (!a || !b) return;
+    segs[w++] = a[0] * scale;
+    segs[w++] = a[1] * scale;
+    segs[w++] = a[2] * scale;
+    segs[w++] = b[0] * scale;
+    segs[w++] = b[1] * scale;
+    segs[w++] = b[2] * scale;
+  });
   return segs.subarray(0, w);
 }

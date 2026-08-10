@@ -738,10 +738,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     });
     // Compile the shader programs before the first frame rather than letting
     // three.js do it lazily mid-animation — profiling put the first-load
-    // stutter squarely on program compilation. Fire-and-forget: start() must
-    // not wait on the GPU, and a context that cannot compile async just falls
-    // back to the old behaviour.
-    void scene.warmUpShaders();
+    // stutter squarely on program compilation.
+    scene.warmUpShaders();
     scene.start();
 
     // DEV-ONLY: expose the scene/graph so a screenshot harness can drive it.

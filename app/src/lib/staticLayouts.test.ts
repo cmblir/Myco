@@ -326,13 +326,19 @@ describe("growMycelium", () => {
     return [...kids.values()];
   };
 
-  it("BRANCHES — the property that makes it mycelium and not three worms", () => {
-    // The first attempt let attractors see only the newest tips and replaced
-    // the tip set each round, so every node had exactly one successor: 1800
-    // straight segments and ZERO forks. Attractors must see the whole network.
-    const mat = growMycelium(90, "t");
+  it("BRANCHES — the property that makes it mycelium and not a few worms", () => {
+    const mat = growMycelium(300, "t");
     const forks = kidCounts(mat).filter((c) => c > 1).length;
-    expect(forks).toBeGreaterThan(20);
+    expect(forks).toBeGreaterThan(10);
+  });
+
+  it("grows exactly one segment per note, so every hypha ends on a note", () => {
+    // The version this replaced grew a much denser mat and hung notes on it.
+    // Its threads ran behind the nodes without joining them — decoration, not
+    // a network.
+    for (const n of [12, 90, 640]) {
+      expect(growMycelium(n, "t").length).toBe(n);
+    }
   });
 
   it("spreads as a flat mat in the X-Y plane, facing the camera", () => {
@@ -352,17 +358,13 @@ describe("growMycelium", () => {
     expect(maxDepth).toBeLessThan(mat.length / 4);
   });
 
-  it("keeps threads FINE — many short segments, not a few long ones", () => {
-    // The look this has to match is the Overview background: lots of thin
-    // wandering threads. A mat with few segments per fork is sparse spokes.
-    const mat = growMycelium(200, "t");
-    const kids = new Map<number, number>();
-    mat.forEach((h) => {
-      if (h.parent >= 0) kids.set(h.parent, (kids.get(h.parent) ?? 0) + 1);
-    });
-    const forks = [...kids.values()].filter((c) => c > 1).length;
-    expect(mat.length).toBeGreaterThan(600);
-    expect(forks).toBeGreaterThan(40);
+  it("spreads across the field instead of piling on the spores", () => {
+    // Threads have to travel. A growth that stalls near its origins gives a
+    // blob with a halo, which is what the mat-plus-notes version looked like.
+    const mat = growMycelium(400, "t");
+    const r = mat.map((h) => Math.hypot(h.x, h.y)).sort((a, b) => a - b);
+    const median = r[Math.floor(r.length / 2)];
+    expect(median).toBeGreaterThan(0.25);
   });
 
   it("every segment hangs off a real parent, and only spores are rootless", () => {
@@ -383,11 +385,12 @@ describe("growMycelium", () => {
     expect(c).not.toEqual(a);
   });
 
-  it("stays bounded as the vault grows — attractors are capped, not proportional", () => {
-    // Scaling attractors with note count took a 1244-note vault to 3.8s.
-    const small = growMycelium(90, "t").length;
-    const huge = growMycelium(20000, "t").length;
-    expect(huge).toBeLessThan(small * 12);
+  it("costs one step per note — growth is linear, not a search", () => {
+    // An earlier space-colonization version rescanned thousands of attractors
+    // per round and took 3.8s on a 1244-note vault.
+    const t0 = Date.now();
+    growMycelium(20000, "t");
+    expect(Date.now() - t0).toBeLessThan(500);
   });
 
   it("produces only finite coordinates", () => {
@@ -416,19 +419,42 @@ describe("applyMyceliumLayout", () => {
     });
   });
 
-  it("puts the most-linked note nearer the spores than a leaf", () => {
-    // Notes are hung on the grown mat by degree: hubs on the early trunk,
-    // leaves out at the fine tips. That is the only thing the LINK data is
-    // allowed to decide — the shape itself is grown, not derived.
-    const g = build(40);
+  it("gives the most-linked note the shallowest segment — a spore, not a tip", () => {
+    // The only thing the LINK data decides is WHICH note goes where along the
+    // grown network; the shape itself is grown, not derived. Distance from the
+    // origin is NOT the property — there are several spores, so the field has
+    // no single centre — but depth in the network is.
+    const g = build(120);
     applyMyceliumLayout(g, { targetRadius: 500 });
-    const r = (id: string): number => {
+    const mat = growMycelium(121, "myc"); // same seed and size the layout used
+    const spores = new Set(
+      mat
+        .filter((h) => h.parent === -1)
+        .map((h) => `${h.x.toFixed(4)},${h.y.toFixed(4)},${h.z.toFixed(4)}`),
+    );
+    const maxR = Math.max(...mat.map((h) => Math.hypot(h.x, h.y, h.z)));
+    const p = pos(g, "hub.md");
+    const back = 500 / maxR;
+    const key = `${(p.x / back).toFixed(4)},${(p.y / back).toFixed(4)},${(p.z / back).toFixed(4)}`;
+    expect(spores.has(key)).toBe(true);
+  });
+
+  it("returns hyphae whose endpoints are NOTE positions, not a decorative mat", () => {
+    // This is the property that failed on screen: threads must join notes.
+    const g = build(60);
+    const segs = applyMyceliumLayout(g, { targetRadius: 500 });
+    expect(segs.length).toBeGreaterThan(0);
+    const points = new Set<string>();
+    g.forEachNode((id) => {
       const p = pos(g, id);
-      return Math.hypot(p.x, p.y, p.z);
-    };
-    const leaves = Array.from({ length: 40 }, (_, i) => r(`n${i}.md`));
-    const median = leaves.sort((a, b) => a - b)[Math.floor(leaves.length / 2)];
-    expect(r("hub.md")).toBeLessThan(median);
+      points.add(`${p.x.toFixed(2)},${p.y.toFixed(2)},${p.z.toFixed(2)}`);
+    });
+    for (let i = 0; i < segs.length; i += 6) {
+      const a = `${segs[i].toFixed(2)},${segs[i + 1].toFixed(2)},${segs[i + 2].toFixed(2)}`;
+      const b = `${segs[i + 3].toFixed(2)},${segs[i + 4].toFixed(2)},${segs[i + 5].toFixed(2)}`;
+      expect(points.has(a)).toBe(true);
+      expect(points.has(b)).toBe(true);
+    }
   });
 
   it("never stacks notes on one point when there are more notes than slots", () => {
