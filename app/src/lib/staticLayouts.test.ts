@@ -7,8 +7,10 @@ import {
   applySpiralLayout,
   applyStrataLayout,
   applyWalrusLayout,
+  buildMatAdjacency,
   buildMyceliumMat,
   growMycelium,
+  matPath,
   type HyphaNode,
 } from "./staticLayouts";
 
@@ -407,6 +409,42 @@ describe("growMycelium", () => {
 // A fixed field radius every buildMyceliumMat test lays out against, so "is
 // this a chord" has a concrete threshold to compare against.
 const FIELD_R = 900;
+
+describe("matPath", () => {
+  // A trunk chain 0-1-2-...-7, plus node 8 bridged from 7 back onto 1 (an
+  // anastomosis loop) and node 9 disconnected. The bridge makes 0->7 via
+  // 0,1,8,7 (3 hops) strictly shorter than the trunk-only 7 hops, so a BFS
+  // that ignores bridges would get a provably worse answer, not just a tie.
+  const mat: HyphaNode[] = [
+    { x: 0, y: 0, z: 0, parent: -1, order: 0 }, // 0
+    { x: 1, y: 0, z: 0, parent: 0, order: 0 }, // 1
+    { x: 2, y: 0, z: 0, parent: 1, order: 0 }, // 2
+    { x: 3, y: 0, z: 0, parent: 2, order: 0 }, // 3
+    { x: 4, y: 0, z: 0, parent: 3, order: 0 }, // 4
+    { x: 5, y: 0, z: 0, parent: 4, order: 0 }, // 5
+    { x: 6, y: 0, z: 0, parent: 5, order: 0 }, // 6
+    { x: 7, y: 0, z: 0, parent: 6, order: 0 }, // 7
+    { x: 1, y: 0, z: 0, parent: 7, order: 0, bridgeTo: 1 }, // 8
+    { x: 9, y: 9, z: 0, parent: -1, order: 0 }, // 9 — disconnected
+  ];
+  const adj = buildMatAdjacency(mat);
+
+  it("finds the trunk route when there is no shorter option", () => {
+    expect(matPath(adj, 0, 3)).toEqual([0, 1, 2, 3]);
+  });
+
+  it("a node to itself is a length-1 path", () => {
+    expect(matPath(adj, 2, 2)).toEqual([2]);
+  });
+
+  it("shortcuts across an anastomosis bridge instead of the longer trunk", () => {
+    expect(matPath(adj, 0, 7)).toEqual([0, 1, 8, 7]);
+  });
+
+  it("returns null for a disconnected pair", () => {
+    expect(matPath(adj, 0, 9)).toBeNull();
+  });
+});
 
 describe("buildMyceliumMat", () => {
   it("does not throw on an edgeless/empty graph and returns nothing to draw", () => {

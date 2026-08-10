@@ -773,6 +773,60 @@ export interface MyceliumResult {
   mat: HyphaNode[];
 }
 
+/** Adjacency of the grown mat: parent<->child hyphal links plus anastomosis
+ *  bridges (a bridge is a second path between two points already on the mat
+ *  — the loop a search can shortcut through instead of only ever walking the
+ *  trunk). Shared by the note-embedding BFS below and MyceliumView's
+ *  neighbour-highlight path search, which needs the REAL hyphal route
+ *  between two notes' mat nodes — never a chord. */
+export function buildMatAdjacency(mat: HyphaNode[]): number[][] {
+  const adj: number[][] = mat.map(() => []);
+  mat.forEach((h, i) => {
+    if (h.parent >= 0) {
+      adj[i].push(h.parent);
+      adj[h.parent].push(i);
+    }
+    if (h.bridgeTo != null) {
+      adj[i].push(h.bridgeTo);
+      adj[h.bridgeTo].push(i);
+    }
+  });
+  return adj;
+}
+
+/** Shortest path between two mat-node indices (BFS over buildMatAdjacency),
+ *  inclusive of both ends, or null if disconnected. Index-based sibling of
+ *  graphData's shortestPath — used to draw the real hyphal route a
+ *  neighbour-highlight lights up, never a note-to-note chord. */
+export function matPath(adj: number[][], a: number, b: number): number[] | null {
+  if (a === b) return [a];
+  const prev = new Map<number, number>();
+  const seen = new Set<number>([a]);
+  const queue = [a];
+  let head = 0;
+  while (head < queue.length) {
+    const cur = queue[head++];
+    if (cur === b) break;
+    for (const nb of adj[cur]) {
+      if (seen.has(nb)) continue;
+      seen.add(nb);
+      prev.set(nb, cur);
+      queue.push(nb);
+    }
+  }
+  if (!seen.has(b)) return null;
+  const path = [b];
+  let cur = b;
+  while (cur !== a) {
+    const p = prev.get(cur);
+    if (p == null) return null;
+    path.push(p);
+    cur = p;
+  }
+  path.reverse();
+  return path;
+}
+
 // "mycelium": GROW a real mat (space colonization, above — the shape a
 // wikilink graph could never produce on its own), then EMBED the note graph
 // into it so a link reads as a path of real hyphae, never a drawn chord.
@@ -809,20 +863,7 @@ export function buildMyceliumMat(g: VaultGraph, o: MyceliumOpts): MyceliumResult
     h.z *= scale;
   }
 
-  // Mat adjacency: parent↔child hyphal links plus anastomosis bridges (a
-  // bridge is a second path between two points already on the mat — the loop
-  // a search can shortcut through instead of only ever walking the trunk).
-  const matAdj: number[][] = mat.map(() => []);
-  mat.forEach((h, i) => {
-    if (h.parent >= 0) {
-      matAdj[i].push(h.parent);
-      matAdj[h.parent].push(i);
-    }
-    if (h.bridgeTo != null) {
-      matAdj[i].push(h.bridgeTo);
-      matAdj[h.bridgeTo].push(i);
-    }
-  });
+  const matAdj = buildMatAdjacency(mat);
   const spores = mat.map((_, i) => i).filter((i) => mat[i].parent === -1);
   // A bridge duplicates an existing point's coordinates, so it is never an
   // assignment target — two notes must not land exactly on top of each other.

@@ -61,6 +61,11 @@ export interface MyceliumSceneOpts {
 }
 
 const GROUND = 0x0b0a08;
+// Hyphae opacity: normal, and dimmed while a neighbour highlight is active
+// (setHighlight) — everything not part of the highlighted set fades toward
+// the substrate so the lit path actually reads as "the answer".
+const HYPHA_OPACITY = 0.85;
+const HYPHA_DIM_OPACITY = 0.18;
 
 export class MyceliumScene {
   private renderer: THREE.WebGLRenderer;
@@ -81,9 +86,16 @@ export class MyceliumScene {
   private septa: THREE.Points | null = null;
   private septaIds: string[] = [];
   /** note id -> its index in septaIds/the geometry's attribute arrays — O(1)
-   *  lookup for setHoverVisual instead of an indexOf scan per hover change. */
+   *  lookup for setHighlight instead of an indexOf scan per hover change. */
   private septaIndexOf = new Map<string, number>();
-  private hoveredIdx = -1;
+  /** Septa indices currently carrying a non-zero a_hi (the hovered note plus
+   *  its wikilink neighbours) — see setHighlight, which clears exactly these
+   *  before applying the next set. */
+  private highlightIdxs: number[] = [];
+  /** The real hyphal path(s) between the hovered note and its neighbours,
+   *  drawn bright over the (dimmed) base mat — see setHighlight. Lazily
+   *  created on first use. */
+  private highlightLine: LineSegments2 | null = null;
   /** Always-on hub label ids (see setLabelIds) — capped small by the caller. */
   private labelIds: string[] = [];
   /** Current growth progress (setProgress's `t`) — a label must not float
@@ -136,18 +148,16 @@ export class MyceliumScene {
     if (id !== this.hovered) {
       this.hovered = id;
       this.renderer.domElement.style.cursor = id ? "pointer" : "grab";
-      this.setHoverVisual(id);
       this.opts.onHover?.(id);
     }
   };
   // pointermove alone never fires again once the cursor leaves the canvas —
   // without this, hovering a septum then moving the pointer off-canvas left
-  // the label and the brightened point stuck showing the last-hovered note.
+  // the label and the highlight stuck showing the last-hovered note.
   private onLeave = (): void => {
     if (this.hovered !== null) {
       this.hovered = null;
       this.renderer.domElement.style.cursor = "grab";
-      this.setHoverVisual(null);
       this.opts.onHover?.(null);
     }
   };
@@ -226,7 +236,7 @@ export class MyceliumScene {
         color: 0xd8d0bd,
         linewidth: b.width,
         transparent: true,
-        opacity: 0.85,
+        opacity: HYPHA_OPACITY,
         depthWrite: false,
         worldUnits: false,
       });
@@ -249,13 +259,13 @@ export class MyceliumScene {
     }
     this.septaIds = items.map((s) => s.id);
     this.septaIndexOf = new Map(items.map((s, i) => [s.id, i]));
-    this.hoveredIdx = -1; // fresh geometry — nothing highlighted yet
+    this.highlightIdxs = []; // fresh geometry — nothing highlighted yet
     if (items.length === 0) return;
     const pos = new Float32Array(items.length * 3);
     const col = new Float32Array(items.length * 3);
     const size = new Float32Array(items.length);
     const birth = new Float32Array(items.length);
-    const hi = new Float32Array(items.length); // 0 = normal; see setHoverVisual
+    const hi = new Float32Array(items.length); // 0 = normal; see setHighlight
     const c = new THREE.Color();
     items.forEach((s, i) => {
       pos[i * 3] = s.x;
@@ -281,7 +291,7 @@ export class MyceliumScene {
     const mtl = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: false,
-      uniforms: { u_t: { value: 0 } },
+      uniforms: { u_t: { value: 0 }, u_dim: { value: 0 } },
       vertexShader: `
         attribute vec3 a_color;
         attribute float a_size;
@@ -308,6 +318,7 @@ export class MyceliumScene {
         varying vec3 v_color;
         varying float v_grown;
         varying float v_hi;
+        uniform float u_dim;
         void main() {
           if (v_grown < 0.5) discard;
           vec2 d = gl_PointCoord - vec2(0.5);
@@ -317,7 +328,11 @@ export class MyceliumScene {
           // Brighten toward white rather than just raising alpha — reads as
           // "lit up", not "less transparent".
           vec3 col = mix(v_color, vec3(1.0), v_hi * 0.55);
-          gl_FragColor = vec4(col, a);
+          // While a highlight is active (u_dim=1), everything not flagged
+          // a_hi fades toward the substrate; the hovered note (v_hi=1) and
+          // its neighbours (v_hi=0.7, set by setHighlight) stay lit.
+          float dimMul = mix(1.0, mix(0.15, 1.0, v_hi), u_dim);
+          gl_FragColor = vec4(col, a * dimMul);
         }`,
     });
     this.septa = new THREE.Points(geo, mtl);
@@ -325,17 +340,67 @@ export class MyceliumScene {
     this.scene.add(this.septa);
   }
 
-  /** Brighten exactly the hovered septum (a_hi -> 1) and un-brighten whatever
-   *  was hovered before — O(1), touching only the two changed indices in the
-   *  GPU buffer rather than scanning every point on each pointer move. */
-  private setHoverVisual(id: string | null): void {
+  /** Brighten the hovered note + its wikilink neighbours, dim everything
+   *  else, and draw `pathPositions` (the real hyphal route between them —
+   *  see MyceliumView's matPath-based BFS) as a bright overlay. Pass a null
+   *  id to clear the highlight entirely (undim, hide the overlay). A note
+   *  with no neighbours is just "brighten this one point, dim the rest" —
+   *  Part 1's original hover behaviour, as the neighbours-empty case. */
+  setHighlight(hoveredId: string | null, neighborIds: string[], pathPositions: Float32Array): void {
     if (!this.septa) return;
     const attr = this.septa.geometry.getAttribute("a_hi") as THREE.BufferAttribute;
-    if (this.hoveredIdx >= 0) attr.setX(this.hoveredIdx, 0);
-    const idx = id != null ? this.septaIndexOf.get(id) : undefined;
-    this.hoveredIdx = idx ?? -1;
-    if (this.hoveredIdx >= 0) attr.setX(this.hoveredIdx, 1);
+    for (const i of this.highlightIdxs) attr.setX(i, 0);
+    this.highlightIdxs = [];
+    const hoveredIdx = hoveredId != null ? this.septaIndexOf.get(hoveredId) : undefined;
+    if (hoveredIdx != null) {
+      attr.setX(hoveredIdx, 1);
+      this.highlightIdxs.push(hoveredIdx);
+    }
+    for (const nid of neighborIds) {
+      const idx = this.septaIndexOf.get(nid);
+      if (idx == null) continue;
+      attr.setX(idx, 0.7);
+      this.highlightIdxs.push(idx);
+    }
     attr.needsUpdate = true;
+
+    const active = hoveredIdx != null;
+    (this.septa.material as THREE.ShaderMaterial).uniforms.u_dim.value = active ? 1 : 0;
+    const hyphaOpacity = active ? HYPHA_DIM_OPACITY : HYPHA_OPACITY;
+    for (const m of this.mat) (m.material as LineMaterial).opacity = hyphaOpacity;
+
+    this.updateHighlightLine(pathPositions);
+  }
+
+  /** (Re)builds the bright overlay line from scratch each call — the
+   *  highlighted path is small (a note's own links, ~1.2 hyphal hops apart
+   *  on average) and only changes on a hover-id change, not every frame, so
+   *  a fresh LineSegmentsGeometry per call is cheap enough. */
+  private updateHighlightLine(positions: Float32Array): void {
+    if (!this.highlightLine) {
+      const mtl = new LineMaterial({
+        color: 0xfff2d8,
+        linewidth: 3,
+        transparent: true,
+        opacity: 0.95,
+        depthWrite: false,
+        worldUnits: false,
+      });
+      const res = new THREE.Vector2();
+      this.renderer.getSize(res);
+      mtl.resolution.copy(res);
+      this.highlightLine = new LineSegments2(new LineSegmentsGeometry(), mtl);
+      this.highlightLine.frustumCulled = false;
+      this.highlightLine.renderOrder = 1; // over the dimmed base mat
+      this.scene.add(this.highlightLine);
+    }
+    this.highlightLine.visible = positions.length > 0;
+    if (positions.length > 0) {
+      this.highlightLine.geometry.dispose();
+      const geo = new LineSegmentsGeometry();
+      geo.setPositions(positions);
+      this.highlightLine.geometry = geo;
+    }
   }
 
   /** Note ids that should carry an always-on label (the caller caps this
@@ -433,6 +498,7 @@ export class MyceliumScene {
     // LineMaterial rasterises width in screen pixels, so a stale resolution
     // leaves every hypha the wrong weight after a resize.
     for (const m of this.mat) (m.material as LineMaterial).resolution.set(w, h);
+    if (this.highlightLine) (this.highlightLine.material as LineMaterial).resolution.set(w, h);
   }
 
   start(): void {
@@ -493,6 +559,12 @@ export class MyceliumScene {
     this.controls.dispose();
     this.setMat([]);
     this.setSepta([]);
+    if (this.highlightLine) {
+      this.scene.remove(this.highlightLine);
+      this.highlightLine.geometry.dispose();
+      (this.highlightLine.material as THREE.Material).dispose();
+      this.highlightLine = null;
+    }
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }

@@ -14,7 +14,7 @@
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
 import { MyceliumScene, type Septum } from "../lib/myceliumScene";
-import { buildMyceliumMat } from "../lib/staticLayouts";
+import { buildMatAdjacency, buildMyceliumMat, matPath } from "../lib/staticLayouts";
 import type { VaultGraph } from "../lib/graphData";
 import { useUIStore } from "../stores/uiStore";
 import type { RouteId } from "../stores/uiStore";
@@ -82,6 +82,16 @@ export default function MyceliumView({
       }
     }
 
+    const { buckets, matIndexOf, mat } = buildMyceliumMat(graph, { targetRadius: TARGET_RADIUS });
+    // The 2D toggle flattens the grown mat itself (not just the notes) —
+    // otherwise hyphae would draw in 3D under notes pinned to z=0.
+    if (flat) {
+      for (const b of buckets) for (let k = 2; k < b.positions.length; k += 3) b.positions[k] = 0;
+    }
+    // Mat adjacency for the neighbour-highlight's path search — built once
+    // and reused on every hover, not rebuilt per hover event.
+    const matAdj = buildMatAdjacency(mat);
+
     const scene = new MyceliumScene(el, {
       onPick: (id) => {
         // The graph keys nodes by vault-relative path; the page route reads an
@@ -90,13 +100,38 @@ export default function MyceliumView({
         setRoute(`page:${abs}` as RouteId);
       },
       onHover: (id) => {
-        if (!label) return;
-        if (id) {
-          label.textContent = graph.getNodeAttribute(id, "label") ?? id;
-          label.style.display = "block";
-        } else {
-          label.style.display = "none";
+        if (label) {
+          if (id) {
+            label.textContent = graph.getNodeAttribute(id, "label") ?? id;
+            label.style.display = "block";
+          } else {
+            label.style.display = "none";
+          }
         }
+        if (!id) {
+          scene.setHighlight(null, [], new Float32Array());
+          return;
+        }
+        // Neighbours come from the wikilink GRAPH (graphology), never mat
+        // topology — but the line drawn between them is the real hyphal
+        // route (matPath, BFS over the mat), so "the hyphae between them" is
+        // never a note-to-note chord.
+        const neighborIds = graph.neighbors(id);
+        const fromIdx = matIndexOf.get(id);
+        const segPts: number[] = [];
+        if (fromIdx != null) {
+          for (const nid of neighborIds) {
+            const toIdx = matIndexOf.get(nid);
+            const path = toIdx != null ? matPath(matAdj, fromIdx, toIdx) : null;
+            if (!path) continue;
+            for (let i = 0; i + 1 < path.length; i++) {
+              const a = mat[path[i]];
+              const b = mat[path[i + 1]];
+              segPts.push(a.x, a.y, flat ? 0 : a.z, b.x, b.y, flat ? 0 : b.z);
+            }
+          }
+        }
+        scene.setHighlight(id, neighborIds, new Float32Array(segPts));
       },
       onFrame: (labels) => {
         const shown = new Set(labels.map((l) => l.id));
@@ -124,13 +159,6 @@ export default function MyceliumView({
       label.style.transform = `translate(${e.clientX - rect.left + 14}px, ${e.clientY - rect.top + 14}px)`;
     };
     el.addEventListener("pointermove", onPointerMove);
-
-    const { buckets, matIndexOf, mat } = buildMyceliumMat(graph, { targetRadius: TARGET_RADIUS });
-    // The 2D toggle flattens the grown mat itself (not just the notes) —
-    // otherwise hyphae would draw in 3D under notes pinned to z=0.
-    if (flat) {
-      for (const b of buckets) for (let k = 2; k < b.positions.length; k += 3) b.positions[k] = 0;
-    }
 
     let maxDeg = 1;
     graph.forEachNode((_id, attrs) => {
