@@ -603,6 +603,93 @@ fn file_stamp(path: &std::path::Path) -> Option<(u64, u64)> {
 pub(crate) const DEST_INBOX: &str = "_inbox";
 pub(crate) const DEST_SESSIONS: &str = "sessions";
 
+/// The `YYYY-MM` sub-directory a swept session belongs in.
+///
+/// Prefers a date already in the stem (importers name files after the
+/// conversation), and falls back to the current month so a stem without one
+/// still lands somewhere deterministic rather than at the root of `sessions/`.
+pub(crate) fn session_bucket(stem: &str) -> String {
+    if let Some(pos) = stem.find(|c: char| c.is_ascii_digit()) {
+        let tail = &stem[pos..];
+        let b = tail.as_bytes();
+        // YYYY-MM… — only accept a real-looking date, never a UUID fragment.
+        if b.len() >= 7
+            && b[0..4].iter().all(u8::is_ascii_digit)
+            && b[4] == b'-'
+            && b[5..7].iter().all(u8::is_ascii_digit)
+        {
+            let y: u16 = tail[0..4].parse().unwrap_or(0);
+            let m: u8 = tail[5..7].parse().unwrap_or(0);
+            if (1970..=2999).contains(&y) && (1..=12).contains(&m) {
+                return format!("{y:04}-{m:02}");
+            }
+        }
+    }
+    current_month()
+}
+
+/// `YYYY-MM` for now, in UTC. The bucket is an archive key, not a thing the
+/// user reads as a local date, so UTC keeps it stable across machines.
+fn current_month() -> String {
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let days = secs / 86_400;
+    // Civil-from-days (Howard Hinnant's algorithm) — no chrono dependency for
+    // one number.
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!("{y:04}-{m:02}")
+}
+
+/// Move flat `sessions/*.md` into their `YYYY-MM` bucket.
+///
+/// Idempotent and non-destructive: a file already inside a bucket is left
+/// alone, and a name collision is skipped rather than overwritten — a session
+/// archive is the one place we must not lose a file to a rename race.
+///
+/// Returns (moved, skipped).
+pub(crate) fn partition_sessions(root: &std::path::Path) -> Result<(usize, usize), String> {
+    let dir = root.join(DEST_SESSIONS);
+    if !dir.is_dir() {
+        return Ok((0, 0));
+    }
+    let mut moved = 0;
+    let mut skipped = 0;
+    let entries = std::fs::read_dir(&dir).map_err(|e| format!("read sessions: {e}"))?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        // Only loose .md files at the top level; buckets are already correct.
+        if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            skipped += 1;
+            continue;
+        };
+        let bucket = dir.join(session_bucket(stem));
+        std::fs::create_dir_all(&bucket).map_err(|e| format!("create bucket: {e}"))?;
+        let target = bucket.join(format!("{stem}.md"));
+        if target.exists() {
+            skipped += 1;
+            continue;
+        }
+        match std::fs::rename(&path, &target) {
+            Ok(()) => moved += 1,
+            Err(_) => skipped += 1,
+        }
+    }
+    Ok((moved, skipped))
+}
+
 /// Resolve a caller-supplied destination to one of the two known directories.
 ///
 /// `dest` reaches `apply_import` as a path segment joined onto the vault root,
@@ -769,10 +856,22 @@ fn apply_import(
     dest: &str,
 ) -> Result<(usize, usize, Vec<QuarantinedConversation>, String), String> {
     let plan = crate::importers::plan_import(filename, content, ledger)?;
-    let out_dir = root.join(dest);
-    std::fs::create_dir_all(&out_dir).map_err(|e| format!("create {dest}: {e}"))?;
     let mut imported = 0;
     for doc in &plan.docs {
+        // Sessions are partitioned by month. A sweep every 30 minutes had put
+        // 1,029 files as flat siblings in one directory, which makes the folder
+        // tree unusable, costs a full re-read of the directory on every scan,
+        // and gives nothing to scope work to. A month bucket keeps each
+        // directory small and lets anything that walks the vault skip whole
+        // periods. `_inbox/` stays flat — it is a short-lived queue, not an
+        // archive.
+        let out_dir = if dest == DEST_SESSIONS {
+            root.join(dest).join(session_bucket(&doc.stem))
+        } else {
+            root.join(dest)
+        };
+        std::fs::create_dir_all(&out_dir)
+            .map_err(|e| format!("create {}: {e}", out_dir.display()))?;
         std::fs::write(out_dir.join(format!("{}.md", doc.stem)), &doc.body)
             .map_err(|e| format!("write {}: {e}", doc.stem))?;
         // Record only after a successful write, so a failed write is retried
@@ -809,6 +908,14 @@ pub async fn import_session_sweep(
         let dir = session_dir(&kind)?;
         if !dir.is_dir() {
             return Err(format!("no session directory at {}", dir.display()));
+        }
+        // Fold any loose sessions from before month-bucketing into their bucket
+        // as part of the normal sweep — one archive shape, no separate chore
+        // for the user to remember. Best effort: a migration that cannot move a
+        // file must not stop the sweep that follows it.
+        if let Err(e) = partition_sessions(&root) {
+            crate::perf::log("partition_sessions_failed", &[]);
+            let _ = e;
         }
         let mut files = Vec::new();
         collect_jsonl(&dir, &mut files, 0);
@@ -2460,8 +2567,25 @@ mod tests {
 
         let out = run_import(root, &[f], DEST_SESSIONS, |_| {});
         assert_eq!(out.imported, 1);
-        assert!(root.join("sessions/claude-code-s1.md").is_file());
         assert!(!root.join("_inbox").exists(), "must not queue an ingest");
+
+        // Under sessions/, and inside a YYYY-MM bucket rather than loose at the
+        // top level — a flat archive had grown to 1,029 siblings.
+        let mut found = None;
+        for bucket in std::fs::read_dir(root.join("sessions")).unwrap().flatten() {
+            let name = bucket.file_name().to_string_lossy().into_owned();
+            if bucket.path().is_dir() && name.len() == 7 && name.as_bytes()[4] == b'-' {
+                let f = bucket.path().join("claude-code-s1.md");
+                if f.is_file() {
+                    found = Some(name);
+                }
+            }
+        }
+        assert!(found.is_some(), "session was not filed into a month bucket");
+        assert!(
+            !root.join("sessions/claude-code-s1.md").exists(),
+            "nothing should be left loose at the archive root"
+        );
     }
 
     #[test]
@@ -2680,5 +2804,68 @@ mod tests {
         assert_eq!(s.id, "bge-m3");
         assert_eq!(s.file, "models/bge-m3-Q4_K_M.gguf");
         assert!(matches!(s.pooling, llama_cpp_2::context::params::LlamaPoolingType::Cls));
+    }
+}
+
+#[cfg(test)]
+mod session_bucket_tests {
+    use super::*;
+
+    #[test]
+    fn a_dated_stem_lands_in_its_own_month() {
+        assert_eq!(session_bucket("claude-code-2026-07-12-abc"), "2026-07");
+        assert_eq!(session_bucket("codex-2025-12-31-x"), "2025-12");
+    }
+
+    #[test]
+    fn a_uuid_stem_is_not_mistaken_for_a_date() {
+        // `codex-019fdc04-c083-7f62` starts with digits but is not a date; a
+        // naive parse would file it under year 0190.
+        let b = session_bucket("codex-019fdc04-c083-7f62-8be6");
+        assert_eq!(b.len(), 7);
+        let year: u16 = b[0..4].parse().unwrap();
+        assert!((2020..=2999).contains(&year), "fell back to a sane month, got {b}");
+    }
+
+    #[test]
+    fn an_impossible_month_falls_back_rather_than_creating_a_bogus_bucket() {
+        let b = session_bucket("x-2026-13-01");
+        let month: u8 = b[5..7].parse().unwrap();
+        assert!((1..=12).contains(&month));
+    }
+
+    #[test]
+    fn partition_moves_loose_files_and_leaves_buckets_alone() {
+        let tmp = std::env::temp_dir().join(format!("myco-part-{}", std::process::id()));
+        let sessions = tmp.join(DEST_SESSIONS);
+        std::fs::create_dir_all(sessions.join("2026-07")).unwrap();
+        std::fs::write(sessions.join("a-2026-07-01.md"), "x").unwrap();
+        std::fs::write(sessions.join("b-2025-01-09.md"), "y").unwrap();
+        std::fs::write(sessions.join("2026-07").join("already.md"), "z").unwrap();
+
+        let (moved, skipped) = partition_sessions(&tmp).unwrap();
+        assert_eq!((moved, skipped), (2, 0));
+        assert!(sessions.join("2026-07").join("a-2026-07-01.md").is_file());
+        assert!(sessions.join("2025-01").join("b-2025-01-09.md").is_file());
+        assert!(sessions.join("2026-07").join("already.md").is_file());
+
+        // Idempotent: a second run has nothing loose left to move.
+        assert_eq!(partition_sessions(&tmp).unwrap(), (0, 0));
+        std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn a_name_collision_is_skipped_rather_than_overwriting_an_archived_session() {
+        let tmp = std::env::temp_dir().join(format!("myco-part2-{}", std::process::id()));
+        let sessions = tmp.join(DEST_SESSIONS);
+        std::fs::create_dir_all(sessions.join("2026-07")).unwrap();
+        std::fs::write(sessions.join("2026-07").join("dup-2026-07-02.md"), "keep").unwrap();
+        std::fs::write(sessions.join("dup-2026-07-02.md"), "incoming").unwrap();
+
+        let (moved, skipped) = partition_sessions(&tmp).unwrap();
+        assert_eq!((moved, skipped), (0, 1));
+        let kept = std::fs::read_to_string(sessions.join("2026-07").join("dup-2026-07-02.md")).unwrap();
+        assert_eq!(kept, "keep", "an archived session must never be overwritten");
+        std::fs::remove_dir_all(&tmp).ok();
     }
 }
