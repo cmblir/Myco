@@ -19,10 +19,14 @@ import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 
-/** One stroke-width bucket of hyphae. */
+/** One stroke-width bucket of hyphae. Colour rides per-vertex (see setMat)
+ *  rather than a further per-bucket flat colour — a strand's colour varies
+ *  by cluster along its own length (see buildMyceliumMat). */
 export interface MatBucket {
   width: number;
   positions: Float32Array;
+  /** Flat [r1,g1,b1, r2,g2,b2, …] (0..1), same layout as `positions`. */
+  colors: Float32Array;
   /** Growth index per segment, ascending — drives the grow-in. */
   birth: Float32Array;
 }
@@ -55,10 +59,6 @@ export interface FrameLabel {
 export interface MyceliumSceneOpts {
   /** Substrate colour. A warm near-black loam, not a blue void. */
   ground?: number;
-  /** Flat hyphae colour (see setMat) — independently settable from the septa
-   *  colour on each Septum, so a node no longer has to share a hue with the
-   *  strand it sits on to be locatable. */
-  hyphaColor?: THREE.ColorRepresentation;
   onPick?: (id: string) => void;
   onHover?: (id: string | null) => void;
   /** Called once per rendered frame with the current screen position of every
@@ -247,13 +247,20 @@ export class MyceliumScene {
       }
       const geo = new LineSegmentsGeometry();
       geo.setPositions(b.positions);
+      // Per-vertex colour (cluster hue, blended toward the flat base — see
+      // buildMyceliumMat) rather than one flat material colour per bucket, so
+      // a strand's colour can vary by cluster along its own length. `color:
+      // 0xffffff` leaves vertex colour unmultiplied (LineMaterial's fragment
+      // chunk does diffuseColor.rgb *= vColor).
+      geo.setColors(b.colors);
       // LineMaterial, because LineBasicMaterial ignores `linewidth` on
       // essentially every platform — the reason hyphae were always hairlines.
       // depthWrite ties to the current 2D/3D mode (see setPlanar): off in 2D
       // (unchanged, flat-map look), on in 3D so a near strand actually
       // occludes a far one instead of both just blending by draw order.
       const mtl = new LineMaterial({
-        color: this.opts.hyphaColor ?? 0xd8d0bd,
+        color: 0xffffff,
+        vertexColors: true,
         linewidth: b.width,
         transparent: true,
         opacity: HYPHA_OPACITY,

@@ -106,6 +106,7 @@ export default function MyceliumView({
     const { buckets, matIndexOf, mat } = buildMyceliumMat(graph, {
       targetRadius: TARGET_RADIUS,
       dim: flat ? "2d" : "3d",
+      hyphaColor,
     });
     // The 2D toggle flattens the grown mat itself (not just the notes) —
     // otherwise hyphae would draw in 3D under notes pinned to z=0.
@@ -117,7 +118,6 @@ export default function MyceliumView({
     const matAdj = buildMatAdjacency(mat);
 
     const scene = new MyceliumScene(el, {
-      hyphaColor,
       onPick: (id) => {
         // The graph keys nodes by vault-relative path; the page route reads an
         // ABSOLUTE one (it hands it to readFile), so rejoin the root.
@@ -238,7 +238,14 @@ export default function MyceliumView({
         mat,
         // The exact geometry buckets fed to the renderer — lets the harness
         // confirm a drawn segment's own endpoints, not just re-derive them.
-        buckets: buckets.map((b) => ({ width: b.width, positions: Array.from(b.positions) })),
+        // `colors` rides alongside so the harness can verify cluster colouring
+        // (distinct-colour count, region contiguity) against the ACTUAL
+        // per-vertex data, not just re-sampled screenshot pixels.
+        buckets: buckets.map((b) => ({
+          width: b.width,
+          positions: Array.from(b.positions),
+          colors: Array.from(b.colors),
+        })),
       };
     }
 

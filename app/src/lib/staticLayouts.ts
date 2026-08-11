@@ -14,7 +14,7 @@
 // seeded per node id — the same vault always lays out the same way.
 
 import type { VaultGraph } from "./graphData";
-import { seededUnit } from "./graphData";
+import { hexToRgb01, seededUnit } from "./graphData";
 
 // Box-Muller from two seeded uniforms — deterministic gaussian per (id, salt).
 function seededGauss(id: string, salt: number): number {
@@ -574,12 +574,20 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
 }
 
 /** Hyphae grouped by stroke width. `LineMaterial` carries ONE width per set, so
- *  taper is expressed as several sets rather than a per-vertex attribute. */
+ *  taper is expressed as several sets rather than a per-vertex attribute.
+ *  Cluster colour, in contrast, rides PER-VERTEX colour on top of these same
+ *  width buckets (LineMaterial.vertexColors) rather than further bucketing by
+ *  (width x cluster) — that would multiply draw calls by the community count
+ *  for no benefit, since colour and taper are independent axes and colour
+ *  already needs to blend smoothly segment-to-segment (see buildMyceliumMat). */
 export interface HyphaBucket {
   /** Screen-pixel line width for this bucket. */
   width: number;
   /** Flat [x1,y1,z1, x2,y2,z2, …] in world space. */
   positions: Float32Array;
+  /** Flat [r1,g1,b1, r2,g2,b2, …] (0..1), one colour per endpoint, same
+   *  layout/order as `positions` — see LineSegmentsGeometry.setColors. */
+  colors: Float32Array;
   /** Growth index of each segment, ascending — see myceliumScene.ts
    *  setProgress, which reveals segments up to a threshold via binary search. */
   birth: Float32Array;
@@ -889,6 +897,9 @@ export interface MyceliumOpts {
    *  through); "2d" (the default) keeps the original planar-wander mat that
    *  the flattened view has always used. See growMycelium's `volumetric`. */
   dim?: "2d" | "3d";
+  /** Flat base colour (hex) every strand's cluster hue blends toward — see
+   *  the colour-propagation pass below. Defaults to the old flat cream. */
+  hyphaColor?: string;
 }
 
 export interface MyceliumResult {
@@ -1066,17 +1077,75 @@ export function buildMyceliumMat(g: VaultGraph, o: MyceliumOpts): MyceliumResult
   embedComponent(hub);
   for (const id of allNotes) embedComponent(id); // remaining components
 
+  // Colour every mat node from the NEAREST note it's near (multi-source BFS
+  // over the mat's own adjacency, seeded at every note-carrying node at
+  // once) — "derive a strand's colour from the notes it carries, or its
+  // local neighbourhood if it carries none." A note's `color` attribute is
+  // already the app's community-hue tint (colorByCommunity in graphData.ts),
+  // so a bare stretch of hyphae between two notes blends smoothly between
+  // their two colours instead of a second, invented palette. Blended toward
+  // a flat base (HYPHA_MIX) so the mat still reads as one tinted organism
+  // (and any community-less vault falls back to the old flat cream).
+  const HYPHA_MIX = 0.3;
+  const base = hexToRgb01(o.hyphaColor ?? "#d8d0bd") ?? { r: 0.847, g: 0.816, b: 0.741 };
+  const matColor = new Float32Array(mat.length * 3);
+  {
+    const seen = new Uint8Array(mat.length);
+    let frontier: number[] = [];
+    for (const [noteId, idx] of matIndexOf) {
+      const c = hexToRgb01((g.getNodeAttribute(noteId, "color") as string) ?? "") ?? base;
+      matColor[idx * 3] = c.r;
+      matColor[idx * 3 + 1] = c.g;
+      matColor[idx * 3 + 2] = c.b;
+      seen[idx] = 1;
+      frontier.push(idx);
+    }
+    while (frontier.length > 0) {
+      const next: number[] = [];
+      for (const cur of frontier) {
+        for (const nb of matAdj[cur]) {
+          if (seen[nb]) continue;
+          seen[nb] = 1;
+          matColor[nb * 3] = matColor[cur * 3];
+          matColor[nb * 3 + 1] = matColor[cur * 3 + 1];
+          matColor[nb * 3 + 2] = matColor[cur * 3 + 2];
+          next.push(nb);
+        }
+      }
+      frontier = next;
+    }
+    // A mat node unreachable from any note (a disconnected mat fragment, or
+    // no notes at all) keeps the flat base rather than rendering black.
+    for (let i = 0; i < mat.length; i++) {
+      if (seen[i]) continue;
+      matColor[i * 3] = base.r;
+      matColor[i * 3 + 1] = base.g;
+      matColor[i * 3 + 2] = base.b;
+    }
+    for (let i = 0; i < mat.length; i++) {
+      matColor[i * 3] = matColor[i * 3] * (1 - HYPHA_MIX) + base.r * HYPHA_MIX;
+      matColor[i * 3 + 1] = matColor[i * 3 + 1] * (1 - HYPHA_MIX) + base.g * HYPHA_MIX;
+      matColor[i * 3 + 2] = matColor[i * 3 + 2] * (1 - HYPHA_MIX) + base.b * HYPHA_MIX;
+    }
+  }
+
   // Bucket every hyphal segment by branch order → stroke width. Widths and
-  // taper come from the prototype: base 2.6px, ×0.62 per generation.
+  // taper come from the prototype: base 2.6px, ×0.62 per generation. Colour
+  // rides per-vertex on top of these same buckets (see HyphaBucket) rather
+  // than a further (width x cluster) bucketing.
   const BASE_W = 2.6;
   const TAPER = 0.62;
-  const bucketsByOrder = new Map<number, { pts: number[]; birth: number[] }>();
+  const bucketsByOrder = new Map<number, { pts: number[]; cols: number[]; birth: number[] }>();
   const lastIdx = Math.max(1, mat.length - 1);
   mat.forEach((h, i) => {
     if (h.parent < 0) return;
     const p2 = mat[h.parent];
-    const b = bucketsByOrder.get(h.order) ?? { pts: [], birth: [] };
+    const b = bucketsByOrder.get(h.order) ?? { pts: [], cols: [], birth: [] };
     b.pts.push(p2.x, p2.y, p2.z, h.x, h.y, h.z);
+    b.cols.push(
+      matColor[h.parent * 3], matColor[h.parent * 3 + 1], matColor[h.parent * 3 + 2],
+      matColor[i * 3], matColor[i * 3 + 1], matColor[i * 3 + 2],
+    );
     // `i` is the growth index: nodes are pushed in the order they grew, so
     // this is already ascending within every bucket.
     b.birth.push(i / lastIdx);
@@ -1086,6 +1155,7 @@ export function buildMyceliumMat(g: VaultGraph, o: MyceliumOpts): MyceliumResult
     .sort((a, b) => a[0] - b[0])
     .map(([order, b]) => ({
       width: Math.max(0.6, BASE_W * Math.pow(TAPER, order)),
+      colors: new Float32Array(b.cols),
       positions: new Float32Array(b.pts),
       birth: new Float32Array(b.birth),
     }));

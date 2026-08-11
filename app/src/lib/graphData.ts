@@ -630,7 +630,7 @@ function kelvinTint(dn: number, id: string): { r: number; g: number; b: number }
   return { r: cr / mx, g: cg / mx, b: cb / mx };
 }
 
-function hexToRgb01(hex: string): { r: number; g: number; b: number } | null {
+export function hexToRgb01(hex: string): { r: number; g: number; b: number } | null {
   const m = /^#([0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return null;
   const n = parseInt(m[1], 16);
