@@ -296,7 +296,13 @@ export class MyceliumScene {
       col[i * 3] = c.r;
       col[i * 3 + 1] = c.g;
       col[i * 3 + 2] = c.b;
-      size[i] = 3 + s.weight * 7;
+      // Fixed screen-space size (device px, via pixelRatio) — like hyphae
+      // linewidth (LineMaterial worldUnits:false), NOT perspective-attenuated
+      // by distance. See the vertex shader below for why: a world-scaled size
+      // here was measured sub-pixel (0.17-0.43px) at this renderer's actual
+      // camera distance, for every TARGET_RADIUS this view has used — septa
+      // were never really visible, independent of colour.
+      size[i] = (6 + s.weight * 8) * this.renderer.getPixelRatio();
       birth[i] = s.birth;
     });
     const geo = new THREE.BufferGeometry();
@@ -331,7 +337,11 @@ export class MyceliumScene {
           // Hover/neighbour highlight grows the point a touch, not a halo —
           // size reads as "lit up" without turning a septum into a glow.
           float sizeBoost = 1.0 + v_hi * 0.6;
-          gl_PointSize = a_size * v_grown * sizeBoost * (320.0 / -mv.z);
+          // Fixed screen-space size, not distance-attenuated — see a_size's
+          // assignment in setSepta for why. A septum only needs to be findable
+          // from a normal viewing distance, not shrink into invisibility on a
+          // big mat the way a physically-scaled marker would.
+          gl_PointSize = a_size * v_grown * sizeBoost;
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `
