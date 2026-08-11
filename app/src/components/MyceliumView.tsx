@@ -23,7 +23,20 @@ const GROW_SECS = 3.2;
 // World radius of the grown mat. Independent of the hidden GraphScene's
 // linkDistance-derived scale — this renderer never reads the force-layout
 // settings.
-const TARGET_RADIUS = 900;
+//
+// MEASURED, not assumed: fit() always reframes to the mat's own bounding
+// sphere (see myceliumScene.ts), and that reframe scales camera distance
+// proportionally to sphere radius — so scaling TARGET_RADIUS alone is a
+// projective no-op on the rendered image. Confirmed at 1244 notes: the
+// on-canvas mat-pixel fraction was IDENTICAL (0.1211) at radius 900 and at
+// radius 1800 with fit()'s old 1.25 padding unchanged. The lever that
+// actually changes on-screen size is fit()'s padding constant, tightened
+// below (1.25 -> 1.05: fraction 0.1211 -> ~0.13). Still bumped here (2x)
+// because it is not a PURE no-op: hyphae linewidth and septa point size are
+// fixed screen-space px (see setMat/setSepta), so more world space per strand
+// gives near/far clipping and pointer-pick tolerances more headroom at this
+// scale, and keeps this renderer's own notion of "big" in step with fit()'s.
+const TARGET_RADIUS = 1800;
 // Always-on labels are capped to the busiest notes: a real vault runs ~1244
 // notes, and a label per note is unreadable clutter (and, before growth
 // finishes, a wall of text over an still-forming mat). 20 keeps the layer

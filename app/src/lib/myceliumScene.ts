@@ -539,7 +539,13 @@ export class MyceliumScene {
     if (box.isEmpty()) return;
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     const fov = (this.camera.fov * Math.PI) / 180;
-    const dist = (sphere.radius * 1.25) / Math.tan(fov / 2);
+    // Padding above 1 (bounding-sphere radius / tan(fov/2) exactly fills the
+    // frame vertically). 1.25 left ~1/5 of the frame as margin — measured at
+    // 1244 notes, the mat read as small (~12% of the canvas by pixel count).
+    // A sphere's silhouette is rotation-invariant, so tightening this is safe
+    // in 3D too: orbiting never pushes the mat past the frame the way it
+    // would for a non-spherical bound.
+    const dist = (sphere.radius * 1.05) / Math.tan(fov / 2);
     this.controls.target.copy(sphere.center);
     this.camera.position.set(sphere.center.x, sphere.center.y, sphere.center.z + dist);
     this.camera.near = Math.max(0.1, dist / 500);
