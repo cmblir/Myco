@@ -82,7 +82,10 @@ export default function MyceliumView({
       }
     }
 
-    const { buckets, matIndexOf, mat } = buildMyceliumMat(graph, { targetRadius: TARGET_RADIUS });
+    const { buckets, matIndexOf, mat } = buildMyceliumMat(graph, {
+      targetRadius: TARGET_RADIUS,
+      dim: flat ? "2d" : "3d",
+    });
     // The 2D toggle flattens the grown mat itself (not just the notes) —
     // otherwise hyphae would draw in 3D under notes pinned to z=0.
     if (flat) {
@@ -104,6 +107,9 @@ export default function MyceliumView({
           if (id) {
             label.textContent = graph.getNodeAttribute(id, "label") ?? id;
             label.style.display = "block";
+            // Depth cue: a note at the back of the volume shouldn't read as
+            // if it were right in front of the camera — see depthOpacity.
+            label.style.opacity = String(scene.depthOpacity(id));
           } else {
             label.style.display = "none";
           }
@@ -145,6 +151,9 @@ export default function MyceliumView({
           // Offset off the dot itself, or the text sits directly on top of
           // the point it's naming instead of beside it.
           span.style.transform = `translate(${l.x + 6}px, ${l.y - 6}px)`;
+          // Depth cue (see MyceliumScene.depthT): a hub at the back of the
+          // volume fades instead of reading as if it were up front.
+          span.style.opacity = String(l.opacity);
         }
       },
     });

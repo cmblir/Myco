@@ -46,6 +46,10 @@ export interface FrameLabel {
   id: string;
   x: number;
   y: number;
+  /** 1 near the camera, fading toward MIN_LABEL_OPACITY on the far side of
+   *  the mat — see depthT. In 2D the whole mat sits at roughly one distance
+   *  from the locked-off camera, so this is ~1 everywhere and has no effect. */
+  opacity: number;
 }
 
 export interface MyceliumSceneOpts {
@@ -66,6 +70,10 @@ const GROUND = 0x0b0a08;
 // the substrate so the lit path actually reads as "the answer".
 const HYPHA_OPACITY = 0.85;
 const HYPHA_DIM_OPACITY = 0.18;
+// A label for a strand at the back of the ball must not read as if it were
+// in front — see depthT/depthOpacity. Not so dim it's illegible; just enough
+// recession to read as farther away.
+const MIN_LABEL_OPACITY = 0.35;
 
 export class MyceliumScene {
   private renderer: THREE.WebGLRenderer;
@@ -105,6 +113,11 @@ export class MyceliumScene {
   private last = 0;
   private ro: ResizeObserver;
   private hovered: string | null = null;
+  /** true = 2D (flat, camera locked). Gates depthWrite on every mat/septa/
+   *  highlight material — see setPlanar. The flat map has no real depth to
+   *  speak of, so it keeps the original depthWrite:false look; the 3D view
+   *  needs it on for near strands to actually occlude far ones. */
+  private planar = false;
 
   constructor(container: HTMLElement, opts: MyceliumSceneOpts = {}) {
     this.container = container;
@@ -232,12 +245,15 @@ export class MyceliumScene {
       geo.setPositions(b.positions);
       // LineMaterial, because LineBasicMaterial ignores `linewidth` on
       // essentially every platform — the reason hyphae were always hairlines.
+      // depthWrite ties to the current 2D/3D mode (see setPlanar): off in 2D
+      // (unchanged, flat-map look), on in 3D so a near strand actually
+      // occludes a far one instead of both just blending by draw order.
       const mtl = new LineMaterial({
         color: 0xd8d0bd,
         linewidth: b.width,
         transparent: true,
         opacity: HYPHA_OPACITY,
-        depthWrite: false,
+        depthWrite: !this.planar,
         worldUnits: false,
       });
       mtl.resolution.copy(res);
@@ -290,7 +306,7 @@ export class MyceliumScene {
     // is a thickening of a thread, not a light source.
     const mtl = new THREE.ShaderMaterial({
       transparent: true,
-      depthWrite: false,
+      depthWrite: !this.planar, // see setPlanar — real occlusion only in 3D
       uniforms: { u_t: { value: 0 }, u_dim: { value: 0 } },
       vertexShader: `
         attribute vec3 a_color;
@@ -378,12 +394,15 @@ export class MyceliumScene {
    *  a fresh LineSegmentsGeometry per call is cheap enough. */
   private updateHighlightLine(positions: Float32Array): void {
     if (!this.highlightLine) {
+      // Same depth rule as the base mat (see setPlanar): in 3D the highlight
+      // is a real path through the ball and should weave behind nearer
+      // strands, not float on top regardless of where the hovered note is.
       const mtl = new LineMaterial({
         color: 0xfff2d8,
         linewidth: 3,
         transparent: true,
         opacity: 0.95,
-        depthWrite: false,
+        depthWrite: !this.planar,
         worldUnits: false,
       });
       const res = new THREE.Vector2();
@@ -469,6 +488,42 @@ export class MyceliumScene {
     this.controls.enableRotate = !on;
     this.controls.minPolarAngle = on ? Math.PI / 2 : Math.PI * 0.15;
     this.controls.maxPolarAngle = on ? Math.PI / 2 : Math.PI * 0.85;
+    this.planar = on;
+    // Live-update whatever materials already exist (setMat/setSepta run
+    // before this in MyceliumView's mount order) — see the depthWrite
+    // comments on each material's creation for why this is the one thing
+    // that actually makes orbiting read as a volume.
+    for (const m of this.mat) (m.material as LineMaterial).depthWrite = !on;
+    if (this.septa) (this.septa.material as THREE.ShaderMaterial).depthWrite = !on;
+    if (this.highlightLine) (this.highlightLine.material as LineMaterial).depthWrite = !on;
+  }
+
+  /** 0 (nearest point of the mat's bounding sphere, from the current camera)
+   *  .. 1 (farthest) — a cheap depth cue for labels. Not a true occlusion
+   *  test (that would mean raycasting the whole mat per label per frame);
+   *  distance through the mat's own bounding sphere is a fair proxy since
+   *  the grown mat is roughly a ball. In 2D the flattened disc sits at
+   *  ~one distance from the locked-off camera, so this comes out ~constant
+   *  and the depth fade has no visible effect — nothing to fix there. */
+  private depthT(pos: THREE.Vector3): number {
+    const sphere = this.finalBox.getBoundingSphere(new THREE.Sphere());
+    if (sphere.radius <= 1e-6) return 0;
+    const centerDist = this.camera.position.distanceTo(sphere.center);
+    const dist = this.camera.position.distanceTo(pos);
+    const t = (dist - (centerDist - sphere.radius)) / (2 * sphere.radius);
+    return Math.max(0, Math.min(1, t));
+  }
+
+  /** Opacity a label for this note should render at right now — see depthT.
+   *  Used by the hover label, whose position follows the cursor rather than
+   *  a projected point (see MyceliumView), so it can't come from onFrame's
+   *  per-frame label list the way the always-on hub labels do. */
+  depthOpacity(id: string): number {
+    const idx = this.septaIndexOf.get(id);
+    if (idx == null || !this.septa) return 1;
+    const pos = this.septa.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const v = new THREE.Vector3(pos.getX(idx), pos.getY(idx), pos.getZ(idx));
+    return 1 - this.depthT(v) * (1 - MIN_LABEL_OPACITY);
   }
 
   /** Frame the WHOLE grown mat — using the precomputed box, not the live
@@ -532,6 +587,7 @@ export class MyceliumScene {
   private reportLabelFrame(): void {
     if (!this.septa) return;
     const birthAttr = this.septa.geometry.getAttribute("a_birth") as THREE.BufferAttribute;
+    const posAttr = this.septa.geometry.getAttribute("position") as THREE.BufferAttribute;
     const MIN_GAP = 22; // px — roughly one label's line height
     const out: FrameLabel[] = [];
     for (const id of this.labelIds) {
@@ -540,7 +596,9 @@ export class MyceliumScene {
       const s = this.projectToScreen(id);
       if (!s) continue;
       if (out.some((o) => Math.abs(o.x - s.x) < MIN_GAP && Math.abs(o.y - s.y) < MIN_GAP)) continue;
-      out.push({ id, x: s.x, y: s.y });
+      const v = new THREE.Vector3(posAttr.getX(idx), posAttr.getY(idx), posAttr.getZ(idx));
+      const opacity = 1 - this.depthT(v) * (1 - MIN_LABEL_OPACITY);
+      out.push({ id, x: s.x, y: s.y, opacity });
     }
     this.opts.onFrame!(out);
   }
