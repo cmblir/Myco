@@ -107,6 +107,15 @@ export class MyceliumScene {
   /** Bounding box of the mat, computed once from the raw arrays — fit() must
    *  frame the whole grown mat, not just whatever is revealed mid-grow. */
   private finalBox: THREE.Box3 = new THREE.Box3();
+  /** Radius that fit() actually frames: the 88th percentile of vertex distance
+   *  from the mat's centre, NOT the full bounding radius. Now that tips retire
+   *  at their own radius (see BOUND_EXTRA in staticLayouts), a handful of long
+   *  tendrils reach far past the mat's visual mass, and framing the full bound
+   *  shrank that mass to ~a third of the canvas. Framing the percentile fills
+   *  the frame with the mat and lets the outlying tendrils run off the edge —
+   *  which is also what "no fixed edge" looks like: the mat continues past the
+   *  viewport instead of terminating inside it. */
+  private frameRadius = 0;
 
   private septa: THREE.Points | null = null;
   private septaIds: string[] = [];
@@ -254,12 +263,20 @@ export class MyceliumScene {
     this.mat = [];
     this.birth = [];
     this.finalBox = new THREE.Box3();
+    // Distances from the origin, subsampled — buildMyceliumMat normalises the
+    // mat around the origin, so this is the mat's radial distribution and
+    // frameRadius (above) is a percentile of it. Every 4th vertex is plenty for
+    // a percentile and keeps this off the hot path at 20k+ vertices.
+    const radii: number[] = [];
     const res = new THREE.Vector2();
     this.renderer.getSize(res);
     for (const b of buckets) {
       if (b.positions.length === 0) continue;
       for (let k = 0; k < b.positions.length; k += 3) {
         this.finalBox.expandByPoint(new THREE.Vector3(b.positions[k], b.positions[k + 1], b.positions[k + 2]));
+        if ((k / 3) % 4 === 0) {
+          radii.push(Math.hypot(b.positions[k], b.positions[k + 1], b.positions[k + 2]));
+        }
       }
       const geo = new LineSegmentsGeometry();
       geo.setPositions(b.positions);
@@ -290,6 +307,8 @@ export class MyceliumScene {
       this.mat.push(line);
       this.birth.push(b.birth);
     }
+    radii.sort((a, z) => a - z);
+    this.frameRadius = radii.length > 0 ? radii[Math.floor(radii.length * 0.88)] : 0;
     this.setProgress(0);
   }
 
@@ -579,13 +598,14 @@ export class MyceliumScene {
     if (box.isEmpty()) return;
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     const fov = (this.camera.fov * Math.PI) / 180;
-    // Padding above 1 (bounding-sphere radius / tan(fov/2) exactly fills the
-    // frame vertically). 1.25 left ~1/5 of the frame as margin — measured at
-    // 1244 notes, the mat read as small (~12% of the canvas by pixel count).
+    // Padding above 1 (framed radius / tan(fov/2) exactly fills the frame
+    // vertically). 1.25 left ~1/5 of the frame as margin — measured at 1244
+    // notes, the mat read as small (~12% of the canvas by pixel count).
     // A sphere's silhouette is rotation-invariant, so tightening this is safe
-    // in 3D too: orbiting never pushes the mat past the frame the way it
-    // would for a non-spherical bound.
-    const dist = (sphere.radius * 1.05) / Math.tan(fov / 2);
+    // in 3D too: orbiting never pushes the framed radius past the frame the
+    // way it would for a non-spherical bound.
+    const r = this.frameRadius > 0 ? this.frameRadius : sphere.radius;
+    const dist = (r * 1.05) / Math.tan(fov / 2);
     this.controls.target.copy(sphere.center);
     this.camera.position.set(sphere.center.x, sphere.center.y, sphere.center.z + dist);
     this.camera.near = Math.max(0.1, dist / 500);

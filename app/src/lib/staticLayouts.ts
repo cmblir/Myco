@@ -720,7 +720,7 @@ export function growMycelium(
     life: number;
     /** This tip's own recent points — see the anastomosis note above. */
     trail: number[];
-    /** This tip's own retirement radius — see BOUND_JITTER above. */
+    /** This tip's own retirement radius — see BOUND_EXTRA above. */
     limit: number;
   }
   let tips: Tip[] = [];
