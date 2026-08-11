@@ -399,9 +399,11 @@ describe("growMycelium", () => {
   });
 
   it("stays within the field (one step of overshoot is the retirement check, not a hard clamp)", () => {
+    // Per-tip retirement radius is BOUND (1.15) plus up to another 50% (see
+    // BOUND_JITTER/tipLimit in growMycelium) — the ragged-front fix below.
     const mat = growMycelium(300);
     for (const h of mat) {
-      expect(Math.hypot(h.x, h.y)).toBeLessThan(1.15 + 0.05);
+      expect(Math.hypot(h.x, h.y)).toBeLessThan(1.15 * 1.5 + 0.05);
     }
   });
 
@@ -427,7 +429,7 @@ describe("growMycelium", () => {
     it("stays within a SPHERICAL field (retirement checks the full 3D radius, not just x,y)", () => {
       const mat = growMycelium(300, { volumetric: true });
       for (const h of mat) {
-        expect(Math.hypot(h.x, h.y, h.z)).toBeLessThan(1.15 + 0.05);
+        expect(Math.hypot(h.x, h.y, h.z)).toBeLessThan(1.15 * 1.5 + 0.05);
       }
     });
 
@@ -451,6 +453,56 @@ describe("growMycelium", () => {
         expect(h.y).toBe(target.y);
         expect(h.z).toBe(target.z);
       }
+    });
+  });
+
+  // The rendered complaint this fixes: the mat used to terminate on a clean
+  // circular arc — every strand stopping at the same radius reads as a disc
+  // that was CUT, not something that grew. Proof: the SUPPORT FUNCTION (the
+  // farthest any mat node reaches along a sampled direction) of a perfect
+  // circle/sphere is constant; a ragged, real advancing front is not.
+  describe("ragged (non-uniform) advancing front", () => {
+    function support(mat: HyphaNode[], dirs: [number, number, number][]): number[] {
+      return dirs.map(([dx, dy, dz]) => {
+        let m = -Infinity;
+        for (const h of mat) {
+          const v = h.x * dx + h.y * dy + h.z * dz;
+          if (v > m) m = v;
+        }
+        return m;
+      });
+    }
+    function coefficientOfVariation(vals: number[]): number {
+      const mean = vals.reduce((a, b) => a + b, 0) / vals.length;
+      const variance = vals.reduce((a, b) => a + (b - mean) ** 2, 0) / vals.length;
+      return Math.sqrt(variance) / mean;
+    }
+    const circleDirs = (k: number): [number, number, number][] =>
+      Array.from({ length: k }, (_, i) => {
+        const a = (i / k) * Math.PI * 2;
+        return [Math.cos(a), Math.sin(a), 0];
+      });
+    const sphereDirs = (k: number): [number, number, number][] => {
+      const golden = Math.PI * (3 - Math.sqrt(5));
+      return Array.from({ length: k }, (_, i) => {
+        const t = i / (k - 1);
+        const y = 1 - 2 * t;
+        const r = Math.sqrt(Math.max(0, 1 - y * y));
+        const a = golden * i;
+        return [Math.cos(a) * r, y, Math.sin(a) * r];
+      });
+    };
+
+    it("2D: the front's reach varies by direction (measured: shared-BOUND CV was 0.5%, a near-perfect circle; per-tip limit CV is 3%+)", () => {
+      const cv = coefficientOfVariation(support(growMycelium(1244), circleDirs(72)));
+      expect(cv).toBeGreaterThan(0.02);
+    });
+
+    it("3D: same, over the sphere (measured: shared-BOUND CV was 6.9%; per-tip limit CV is 8%+)", () => {
+      const cv = coefficientOfVariation(
+        support(growMycelium(1244, { volumetric: true }), sphereDirs(200)),
+      );
+      expect(cv).toBeGreaterThan(0.07);
     });
   });
 });

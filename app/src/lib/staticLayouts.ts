@@ -667,14 +667,40 @@ export function growMycelium(
   const STEP = opts.step ?? 0.021;
   const BRANCH_PCT = opts.branchPct ?? 3.2; // per tip per step
   const FUSE = opts.fuse ?? 0.049; // world units, ~7px at the prototype's scale
-  const MAX_NODES = opts.maxNodes ?? Math.min(9000, Math.max(900, count * 4));
+  // Raised from the original count*4/9000 cap: buildMyceliumMat always
+  // rescales the grown mat so its farthest point lands exactly on
+  // targetRadius, so a bigger BOUND (below) is a no-op on-screen — the only
+  // lever that actually makes the mat read as bigger/denser is more hyphae
+  // filling that same normalized sphere. The multiplier was swept (6x, 8x,
+  // 10x) because the note-embedding's hop distance is noisy and non-monotonic
+  // in mat size (same lesson as the volumetric spore count above) — 6x and 8x
+  // both measured WORSE max hop distance (24 and 14) than the ORIGINAL 4x
+  // (5), while 10x measured back at parity (5) despite growing the mat 2.5x
+  // (1244 notes: 4976 -> 12440 mat nodes; real-vault build time 80.8ms, well
+  // inside the 2000ms budget — see staticLayouts.test.ts's real-scale test).
+  const MAX_NODES = opts.maxNodes ?? Math.min(22500, Math.max(2250, count * 10));
   const MAX_TIPS = 260;
   const MAX_LIFE = 260;
   const MAX_ORDER = 5;
   const BOUND = 1.15;
+  // Every tip used to retire at this ONE shared radius, which reads as a mat
+  // that was cut to a disc/ball rather than one that grew and stopped on its
+  // own — measured: the grown front's support function (farthest reach per
+  // sampled direction) had stdev/mean = 0.5% in 2D, i.e. a near-perfect
+  // circle. A real mycelial mat's advancing front is uneven, so each tip
+  // instead draws its own retirement radius once at spawn: BOUND is a FLOOR,
+  // never a cut a tip retires short of, and up to another 50% on top of it —
+  // a few tips push fingers out past the rest, none stop earlier than the old
+  // shared radius did. (A symmetric +-jitter around BOUND was tried first and
+  // measured WORSE: shrinking some tips' budget cut their branch chances
+  // enough that the whole population went sub-critical and died out short of
+  // the node budget — 4223 mat nodes at 1244 notes, fewer than the old fixed
+  // BOUND's 4976. Floor-at-BOUND fixed it: 9952 mat nodes, matching MAX_NODES.)
+  const BOUND_EXTRA = 0.5;
 
   let draw = 0;
   const rnd = (): number => seededUnit(SEED, draw++);
+  const tipLimit = (): number => BOUND * (1 + rnd() * BOUND_EXTRA);
   // A uniformly random direction on the unit sphere (Archimedes' hat-box: y
   // uniform in [-1,1], azimuth uniform) — volumetric tips seed their first
   // heading from this instead of one in-plane angle.
@@ -694,6 +720,8 @@ export function growMycelium(
     life: number;
     /** This tip's own recent points — see the anastomosis note above. */
     trail: number[];
+    /** This tip's own retirement radius — see BOUND_JITTER above. */
+    limit: number;
   }
   let tips: Tip[] = [];
 
@@ -768,7 +796,7 @@ export function growMycelium(
       const spore = nodes.length - 1;
       remember(spore);
       for (let k = 0; k < 3; k++) {
-        tips.push({ node: spore, a: 0, dir: randDir(), order: 0, life: 0, trail: [spore] });
+        tips.push({ node: spore, a: 0, dir: randDir(), order: 0, life: 0, trail: [spore], limit: tipLimit() });
       }
     } else {
       const a = (s / spores) * Math.PI * 2 + rnd() * 0.9;
@@ -784,6 +812,7 @@ export function growMycelium(
           order: 0,
           life: 0,
           trail: [spore],
+          limit: tipLimit(),
         });
       }
     }
@@ -847,7 +876,7 @@ export function growMycelium(
       if (t.trail.length > 24) t.trail.shift();
 
       const dist = VOL ? Math.hypot(nx, ny, nz) : Math.hypot(nx, ny);
-      if (dist > BOUND || t.life > MAX_LIFE) continue; // retire
+      if (dist > t.limit || t.life > MAX_LIFE) continue; // retire
       next.push(t);
       if (rnd() * 100 < BRANCH_PCT && t.order < MAX_ORDER && next.length < MAX_TIPS) {
         if (VOL) {
@@ -872,6 +901,7 @@ export function growMycelium(
             order: t.order + 1,
             life: 0,
             trail: t.trail.slice(-12),
+            limit: tipLimit(),
           });
         } else {
           const off = (rnd() < 0.5 ? 1 : -1) * (0.5 + rnd() * 0.55);
@@ -882,6 +912,7 @@ export function growMycelium(
             order: t.order + 1,
             life: 0,
             trail: t.trail.slice(-12),
+            limit: tipLimit(),
           });
         }
       }
