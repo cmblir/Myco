@@ -374,6 +374,13 @@ export class MyceliumScene {
     });
     this.septa = new THREE.Points(geo, mtl);
     this.septa.frustumCulled = false;
+    // A septum sits exactly at a hypha vertex (same coordinate), so distance-
+    // sorted transparent blending can tie between the two — renderOrder is a
+    // primary sort key ahead of that, so a septum always draws over the
+    // hyphae it sits on rather than occasionally losing the tie (found by
+    // sampling actual rendered septum pixels: a small minority came back as
+    // the neighbouring strand's cluster colour, not myceliumNodeColor).
+    this.septa.renderOrder = 1;
     this.scene.add(this.septa);
   }
 
