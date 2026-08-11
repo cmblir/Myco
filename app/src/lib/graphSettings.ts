@@ -48,6 +48,19 @@ export interface GraphSettings {
   // Mycelium view only: "3d" orbits freely; "2d" flattens the layout to a
   // plane and locks the camera to a front-on, pan/zoom-only view.
   myceliumDim: "2d" | "3d";
+  // Mycelium view only: septa (notes) render this FLAT colour regardless of
+  // cluster — independent of myceliumHyphaColor on purpose. The old behaviour
+  // coloured a septum by its own note's community tint, the same palette the
+  // hyphae now carry (see myceliumHyphaColor), so a node all but vanished
+  // into a same-hued strand. A single bright, high-lightness accent stays
+  // locatable against every cluster's hue at once.
+  myceliumNodeColor: string; // hex
+  // Mycelium view only: the flat colour every hypha's cluster-derived hue is
+  // blended toward (see buildMyceliumMat) — keeps the mat reading as one
+  // tinted organism rather than a raw palette wash, and is the literal
+  // colour of any stretch with no nearby coloured note (community -1, or a
+  // vault with no community structure at all).
+  myceliumHyphaColor: string; // hex
   // Multiverse mode: instead of this one vault, show EVERY registered project
   // as its own glowing universe-bubble in one shared cosmos. Fly into a bubble
   // to switch the active vault (which turns this back off, landing you in that
@@ -156,6 +169,12 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   folderGalaxies: true,
   layout: "galaxy",
   myceliumDim: "3d",
+  // Bright pale mint (hue ~101°, far from every curated cluster hue —
+  // 212/163/40/262/338/20 — and the amber/cream family hyphae lean toward)
+  // at high lightness (~0.84) — see the mycelium legibility measurements in
+  // the Part 1 commit message for the luminance/contrast numbers.
+  myceliumNodeColor: "#e1f1da",
+  myceliumHyphaColor: "#d8d0bd", // the old flat cream, unchanged
   multiverse: false,
   skyStyle: "stars",
   arrows: false,

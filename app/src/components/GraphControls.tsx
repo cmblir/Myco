@@ -386,15 +386,30 @@ export default function GraphControls({
           onChange={(v) => onChange({ folderGalaxies: v })}
         />
         {settings.skin === "mycelium" ? (
-          <ChipRow
-            label={t.gr_mycelium_dim ?? "Mycelium view"}
-            value={settings.myceliumDim}
-            onPick={(v) => onChange({ myceliumDim: v })}
-            options={[
-              ["3d", t.gr_mycelium_3d ?? "3D"],
-              ["2d", t.gr_mycelium_2d ?? "2D"],
-            ]}
-          />
+          <>
+            <ChipRow
+              label={t.gr_mycelium_dim ?? "Mycelium view"}
+              value={settings.myceliumDim}
+              onPick={(v) => onChange({ myceliumDim: v })}
+              options={[
+                ["3d", t.gr_mycelium_3d ?? "3D"],
+                ["2d", t.gr_mycelium_2d ?? "2D"],
+              ]}
+            />
+            {/* Node vs hyphae colour are independently settable — a node
+                tinted the same as its strand is exactly how it used to
+                disappear into the mat. */}
+            <ColorField
+              label={t.gr_myc_node_color ?? "Node colour"}
+              value={settings.myceliumNodeColor}
+              onChange={(v) => onChange({ myceliumNodeColor: v })}
+            />
+            <ColorField
+              label={t.gr_myc_hypha_color ?? "Hyphae colour"}
+              value={settings.myceliumHyphaColor}
+              onChange={(v) => onChange({ myceliumHyphaColor: v })}
+            />
+          </>
         ) : null}
       </Section>
 
@@ -748,6 +763,30 @@ function ChipRow<T extends string>({
         ))}
       </div>
     </div>
+  );
+}
+
+// A native colour picker — the platform already renders a swatch + OS colour
+// dialog, so there's no reason to build one.
+function ColorField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+}): JSX.Element {
+  return (
+    <label className="graph-field--color">
+      <span className="graph-field__label">{label}</span>
+      <input
+        type="color"
+        className="graph-field__color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </label>
   );
 }
 

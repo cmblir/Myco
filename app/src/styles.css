@@ -3182,6 +3182,26 @@ hr {
   background: var(--bg);
 }
 
+/* Node/hyphae colour pickers (mycelium) — label + native swatch on one row,
+   same rhythm as .graph-toggle. */
+.graph-field--color {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 2px 0;
+}
+.graph-field__color {
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
 .graph-chips {
   display: flex;
   flex-wrap: wrap;

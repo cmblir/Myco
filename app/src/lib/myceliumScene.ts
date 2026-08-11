@@ -55,6 +55,10 @@ export interface FrameLabel {
 export interface MyceliumSceneOpts {
   /** Substrate colour. A warm near-black loam, not a blue void. */
   ground?: number;
+  /** Flat hyphae colour (see setMat) — independently settable from the septa
+   *  colour on each Septum, so a node no longer has to share a hue with the
+   *  strand it sits on to be locatable. */
+  hyphaColor?: THREE.ColorRepresentation;
   onPick?: (id: string) => void;
   onHover?: (id: string | null) => void;
   /** Called once per rendered frame with the current screen position of every
@@ -249,7 +253,7 @@ export class MyceliumScene {
       // (unchanged, flat-map look), on in 3D so a near strand actually
       // occludes a far one instead of both just blending by draw order.
       const mtl = new LineMaterial({
-        color: 0xd8d0bd,
+        color: this.opts.hyphaColor ?? 0xd8d0bd,
         linewidth: b.width,
         transparent: true,
         opacity: HYPHA_OPACITY,

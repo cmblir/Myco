@@ -34,12 +34,20 @@ export default function MyceliumView({
   graph,
   vaultPath,
   flat,
+  nodeColor,
+  hyphaColor,
   fitRef,
 }: {
   graph: VaultGraph | null;
   vaultPath: string;
   /** 2D: layout flattened to z=0, camera locked front-on. 3D: free orbit. */
   flat: boolean;
+  /** Flat septa colour — independent of hyphaColor so a node never has to
+   *  share a hue with the strand it sits on to be locatable (see
+   *  graphSettings.ts's myceliumNodeColor). */
+  nodeColor: string;
+  /** Flat hyphae colour (graphSettings.ts's myceliumHyphaColor). */
+  hyphaColor: string;
   /** Exposes this instance's fit() to the page's toolbar Fit button. */
   fitRef?: React.MutableRefObject<(() => void) | null>;
 }): JSX.Element {
@@ -96,6 +104,7 @@ export default function MyceliumView({
     const matAdj = buildMatAdjacency(mat);
 
     const scene = new MyceliumScene(el, {
+      hyphaColor,
       onPick: (id) => {
         // The graph keys nodes by vault-relative path; the page route reads an
         // ABSOLUTE one (it hands it to readFile), so rejoin the root.
@@ -186,7 +195,9 @@ export default function MyceliumView({
         z: flat ? 0 : h.z,
         birth: idx / lastIdx,
         weight: Math.min(1, ((attrs.deg as number) ?? 1) / maxDeg),
-        color: (attrs.color as string) ?? "#d8cfbc",
+        // Flat, independent of the note's own community tint — see the
+        // nodeColor prop doc for why (Part 1 legibility fix).
+        color: nodeColor,
       });
     });
 
@@ -229,7 +240,7 @@ export default function MyceliumView({
       if (fitRef) fitRef.current = null;
       scene.dispose();
     };
-  }, [graph, vaultPath, flat, setRoute, fitRef]);
+  }, [graph, vaultPath, flat, nodeColor, hyphaColor, setRoute, fitRef]);
 
   return (
     <div className="myc-view" ref={host}>

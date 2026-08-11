@@ -1802,10 +1802,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               // graphRef is a ref, so reading it alone never re-renders and the
               // view mounted with a null graph and stayed empty.
               <MyceliumView
-                key={`${counts.nodes}-${counts.edges}-${settings.myceliumDim}`}
+                key={`${counts.nodes}-${counts.edges}-${settings.myceliumDim}-${settings.myceliumNodeColor}-${settings.myceliumHyphaColor}`}
                 graph={graphRef.current}
                 vaultPath={currentVault?.path ?? ""}
                 flat={settings.myceliumDim === "2d"}
+                nodeColor={settings.myceliumNodeColor}
+                hyphaColor={settings.myceliumHyphaColor}
                 fitRef={myceliumFitRef}
               />
             ) : null}
