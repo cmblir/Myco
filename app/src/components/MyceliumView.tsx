@@ -50,6 +50,7 @@ export default function MyceliumView({
   nodeColor,
   hyphaColor,
   fitRef,
+  startGrowthRef,
 }: {
   graph: VaultGraph | null;
   vaultPath: string;
@@ -63,6 +64,10 @@ export default function MyceliumView({
   hyphaColor: string;
   /** Exposes this instance's fit() to the page's toolbar Fit button. */
   fitRef?: React.MutableRefObject<(() => void) | null>;
+  /** Exposes this instance's startGrowth() to the page's toolbar timelapse
+   *  button — the on-demand replay, independent of the auto-play-once rule
+   *  below (see useUIStore's myceliumGrown). */
+  startGrowthRef?: React.MutableRefObject<(() => void) | null>;
 }): JSX.Element {
   const host = useRef<HTMLDivElement | null>(null);
   // Hover label: a plain DOM element positioned at the cursor rather than a
@@ -219,10 +224,32 @@ export default function MyceliumView({
     scene.setPlanar(flat);
     scene.fit();
     if (fitRef) fitRef.current = () => scene.fit();
+    if (startGrowthRef) startGrowthRef.current = () => scene.startGrowth(GROW_SECS);
 
-    scene.startGrowth(
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : GROW_SECS,
-    );
+    // Grow-in plays automatically only the FIRST time this view has ever
+    // mounted (persisted — see useUIStore's myceliumGrown), same as the other
+    // graph layouts' one-shot intro. Every mount after that shows the fully
+    // grown mat instantly; the toolbar timelapse button (wired to
+    // startGrowthRef above) replays it on demand regardless of this flag.
+    const grownBefore = useUIStore.getState().myceliumGrown;
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scene.startGrowth(reduced || grownBefore ? 0 : GROW_SECS);
+    // Marking "seen" is DEFERRED, not immediate: switching to the mycelium
+    // skin flips settings.skin a render before the graph-build effect (keyed
+    // on settings.layout) catches up, so this view can mount once against
+    // the previous layout's still-valid graph and immediately remount again
+    // against the freshly-rebuilt one once that effect runs. Writing the flag
+    // synchronously let that first, throwaway mount spend the one-shot flag,
+    // so the mount the user actually SAW never animated. Cancelling the write
+    // on cleanup means only a mount that survives gets to spend it.
+    // ponytail: a fixed delay, not an exact "did a replacement mount happen"
+    // signal — 500ms is generous headroom over a same-tick React re-render,
+    // upgrade to tracking the build effect's own completion if this ever
+    // proves too short in practice.
+    let markGrownTimer: number | null = null;
+    if (!grownBefore) {
+      markGrownTimer = window.setTimeout(() => useUIStore.getState().setMyceliumGrown(true), 500);
+    }
     scene.start();
 
     // DEV-ONLY: expose enough for a screenshot/measurement harness to prove
@@ -255,12 +282,14 @@ export default function MyceliumView({
     };
     document.addEventListener("visibilitychange", onVisible);
     return () => {
+      if (markGrownTimer != null) window.clearTimeout(markGrownTimer);
       document.removeEventListener("visibilitychange", onVisible);
       el.removeEventListener("pointermove", onPointerMove);
       if (fitRef) fitRef.current = null;
+      if (startGrowthRef) startGrowthRef.current = null;
       scene.dispose();
     };
-  }, [graph, vaultPath, flat, nodeColor, hyphaColor, setRoute, fitRef]);
+  }, [graph, vaultPath, flat, nodeColor, hyphaColor, setRoute, fitRef, startGrowthRef]);
 
   return (
     <div className="myc-view" ref={host}>

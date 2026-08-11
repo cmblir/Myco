@@ -56,6 +56,11 @@ export interface UIState {
   overviewTheme: OverviewThemeKey;
   // Sidebar tree
   expandedFolders: Record<string, boolean>;
+  // Mycelium graph skin: the grow-in animation plays automatically only the
+  // FIRST time the user ever sees it — after that it mounts fully grown, same
+  // as the other layouts' one-shot intros. The toolbar timelapse button
+  // replays it on demand regardless of this flag (see MyceliumView).
+  myceliumGrown: boolean;
 
   setRoute: (route: RouteId) => void;
   setSplitRoute: (route: RouteId | null) => void;
@@ -71,6 +76,7 @@ export interface UIState {
   setMascotEnabled: (v: boolean) => void;
   setOverviewTheme: (v: OverviewThemeKey) => void;
   toggleFolder: (id: string) => void;
+  setMyceliumGrown: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -90,6 +96,7 @@ export const useUIStore = create<UIState>()(
       // Keyed by absolute folder path; empty by default (all collapsed). The
       // old slug-keyed seed never matched real paths and was inert.
       expandedFolders: {},
+      myceliumGrown: false,
 
       setRoute: (route) =>
         // Never let the primary and split panes show the SAME route (two live
@@ -117,6 +124,7 @@ export const useUIStore = create<UIState>()(
             [id]: !(get().expandedFolders[id] ?? false),
           },
         }),
+      setMyceliumGrown: (v) => set({ myceliumGrown: v }),
     }),
     {
       name: "myco-ui",

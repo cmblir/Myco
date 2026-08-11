@@ -133,8 +133,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const sceneRef = useRef<GraphScene | null>(null);
   const simRef = useRef<GraphSim | null>(null);
   // The mycelium view is a separate renderer (MyceliumView) the toolbar's Fit
-  // button doesn't otherwise reach — it stashes its own fit() here.
+  // and timelapse buttons don't otherwise reach — it stashes its own fit()
+  // and startGrowth() here.
   const myceliumFitRef = useRef<(() => void) | null>(null);
+  const myceliumGrowthRef = useRef<(() => void) | null>(null);
   const graphRef = useRef<VaultGraph | null>(null);
   const settingsRef = useRef<GraphSettings>(DEFAULT_GRAPH_SETTINGS);
   const tlRafRef = useRef<number | null>(null);
@@ -1659,7 +1661,17 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
           <button
             type="button"
             className="graph-toolbar__btn"
-            onClick={() => (tlPlaying ? pauseTimelapse() : startTimelapse())}
+            onClick={() => {
+              // Mycelium is a separate renderer with its own growth clock, not
+              // the worker-sim timelapse the button drives for every other
+              // layout — replay is a one-shot reveal, nothing to pause.
+              if (settings.skin === "mycelium") {
+                myceliumGrowthRef.current?.();
+                return;
+              }
+              if (tlPlaying) pauseTimelapse();
+              else startTimelapse();
+            }}
             aria-pressed={tlPlaying}
             aria-label={
               tlPlaying
@@ -1809,6 +1821,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 nodeColor={settings.myceliumNodeColor}
                 hyphaColor={settings.myceliumHyphaColor}
                 fitRef={myceliumFitRef}
+                startGrowthRef={myceliumGrowthRef}
               />
             ) : null}
             {/* Multiverse mode: an overlay scene of every project as a
