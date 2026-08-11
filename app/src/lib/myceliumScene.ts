@@ -78,6 +78,19 @@ const HYPHA_DIM_OPACITY = 0.18;
 // in front — see depthT/depthOpacity. Not so dim it's illegible; just enough
 // recession to read as farther away.
 const MIN_LABEL_OPACITY = 0.35;
+// 3D-orbit polar-angle limit, in from each pole. Used to be 0.15*pi/0.85*pi
+// (27deg/153deg — a 54deg-wide dead zone at each pole the camera flatly
+// refused to enter) on the reasoning that "a mat lies on a substrate; free-
+// tumbling it just shows the field edge-on". That was true when the 3D view
+// was still a flattened disc; growMycelium's `volumetric` mode (the 3D path
+// since) grows a genuine ball, so the old clamp just made orbiting stop
+// responding a third of the way to either pole — the investigated cause of
+// the "3D cuts off partway" report (camera near/far were ruled out by
+// measurement: at a real 1244-note mat, near~13/far~53852 world units against
+// a ~1200-unit mat radius, nowhere close to clipping). Left a hair short of
+// the exact poles (not 0/pi) because OrbitControls' spherical basis is
+// degenerate exactly there.
+const POLE_GUARD = Math.PI * 0.02;
 
 export class MyceliumScene {
   private renderer: THREE.WebGLRenderer;
@@ -148,9 +161,12 @@ export class MyceliumScene {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.08;
-    // A mat lies on a substrate; free-tumbling it just shows the field edge-on.
-    this.controls.maxPolarAngle = Math.PI * 0.85;
-    this.controls.minPolarAngle = Math.PI * 0.15;
+    // The 3D mat grows through a real ball volume (see growMycelium's
+    // `volumetric` mode), not a flat disc on a substrate — see POLE_GUARD's
+    // doc for why this used to be a much tighter clamp and why that read as
+    // the mat "cutting off" when orbiting toward either pole.
+    this.controls.maxPolarAngle = Math.PI - POLE_GUARD;
+    this.controls.minPolarAngle = POLE_GUARD;
 
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
@@ -514,8 +530,8 @@ export class MyceliumScene {
    *  z≈0 by the caller, so a level, front-on view is all that's needed. */
   setPlanar(on: boolean): void {
     this.controls.enableRotate = !on;
-    this.controls.minPolarAngle = on ? Math.PI / 2 : Math.PI * 0.15;
-    this.controls.maxPolarAngle = on ? Math.PI / 2 : Math.PI * 0.85;
+    this.controls.minPolarAngle = on ? Math.PI / 2 : POLE_GUARD;
+    this.controls.maxPolarAngle = on ? Math.PI / 2 : Math.PI - POLE_GUARD;
     this.planar = on;
     // Live-update whatever materials already exist (setMat/setSepta run
     // before this in MyceliumView's mount order) — see the depthWrite
