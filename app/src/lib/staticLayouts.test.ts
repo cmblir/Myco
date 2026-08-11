@@ -404,6 +404,55 @@ describe("growMycelium", () => {
       expect(Math.hypot(h.x, h.y)).toBeLessThan(1.15 + 0.05);
     }
   });
+
+  describe("volumetric", () => {
+    it("is deterministic — same count grows the identical mat twice", () => {
+      expect(growMycelium(50, { volumetric: true })).toEqual(growMycelium(50, { volumetric: true }));
+    });
+
+    it("branches and fuses at a real vault's node count", () => {
+      const mat = growMycelium(1244, { volumetric: true });
+      expect(mat.some((h) => h.order > 0)).toBe(true);
+      expect(mat.some((h) => h.bridgeTo != null)).toBe(true);
+    });
+
+    it("every non-spore node's parent is an EARLIER index — a valid, drawable tree", () => {
+      const mat = growMycelium(300, { volumetric: true });
+      mat.forEach((h, i) => {
+        if (h.parent < 0) return;
+        expect(h.parent).toBeLessThan(i);
+      });
+    });
+
+    it("stays within a SPHERICAL field (retirement checks the full 3D radius, not just x,y)", () => {
+      const mat = growMycelium(300, { volumetric: true });
+      for (const h of mat) {
+        expect(Math.hypot(h.x, h.y, h.z)).toBeLessThan(1.15 + 0.05);
+      }
+    });
+
+    it("actually explores z — this is the difference from the planar mat: z spread is a real fraction of x/y spread, not jitter", () => {
+      const mat = growMycelium(1244, { volumetric: true });
+      const extent = (pick: (h: HyphaNode) => number): number =>
+        Math.max(...mat.map(pick)) - Math.min(...mat.map(pick));
+      const xy = Math.max(extent((h) => h.x), extent((h) => h.y));
+      const z = extent((h) => h.z);
+      // Measured on a 1244-node grow: z/xy ≈ 0.87 — a rounded volume, not a
+      // disc (the planar path's z/xy is ~0.03, all cosmetic jitter).
+      expect(z / xy).toBeGreaterThan(0.5);
+    });
+
+    it("an anastomosis bridge coincides exactly with its target — never a mismatched-z chord", () => {
+      const mat = growMycelium(1244, { volumetric: true });
+      for (const h of mat) {
+        if (h.bridgeTo == null) continue;
+        const target = mat[h.bridgeTo];
+        expect(h.x).toBe(target.x);
+        expect(h.y).toBe(target.y);
+        expect(h.z).toBe(target.z);
+      }
+    });
+  });
 });
 
 // A fixed field radius every buildMyceliumMat test lays out against, so "is
@@ -583,5 +632,83 @@ describe("buildMyceliumMat", () => {
     expect(matIndexOf.size).toBe(g.order);
     expect(mat.length).toBeGreaterThan(g.order); // the mat is denser than the note count on purpose
     expect(ms).toBeLessThan(2000);
+  });
+
+  // dim: "3d" — the volumetric mat. Same invariants as the planar (default)
+  // mat above, re-measured: growing through a real ball must not quietly
+  // break the no-chord guarantee or the embedding's whole point (a wikilink
+  // is a SHORT walk along real hyphae).
+  describe("dim: 3d (volumetric)", () => {
+    it("fills a rounded volume: z-extent is a real fraction of x/y-extent, not the ~0 of the flattened 2D mat", () => {
+      const g = makeRealScaleGraph();
+      const flat = buildMyceliumMat(g, { targetRadius: FIELD_R, dim: "2d" });
+      const vol = buildMyceliumMat(g, { targetRadius: FIELD_R, dim: "3d" });
+      const extent = (mat: HyphaNode[], pick: (h: HyphaNode) => number): number =>
+        Math.max(...mat.map(pick)) - Math.min(...mat.map(pick));
+      const ratio = (mat: HyphaNode[]): number => {
+        const xy = Math.max(extent(mat, (h) => h.x), extent(mat, (h) => h.y));
+        return extent(mat, (h) => h.z) / xy;
+      };
+      const flatRatio = ratio(flat.mat);
+      const volRatio = ratio(vol.mat);
+      console.info(`[mycelium] z/xy extent ratio: 2d=${flatRatio.toFixed(3)} 3d=${volRatio.toFixed(3)}`);
+      expect(flatRatio).toBeLessThan(0.1); // planar: z is cosmetic jitter only
+      expect(volRatio).toBeGreaterThan(0.5); // volumetric: a real rounded fill
+    });
+
+    it("never draws a chord, same as the planar mat: every segment is a short local hyphal step", () => {
+      const g = makeRealScaleGraph();
+      const { buckets } = buildMyceliumMat(g, { targetRadius: FIELD_R, dim: "3d" });
+      let maxSeg = 0;
+      for (const b of buckets) {
+        for (let i = 0; i < b.positions.length; i += 6) {
+          const len = Math.hypot(
+            b.positions[i + 3] - b.positions[i],
+            b.positions[i + 4] - b.positions[i + 1],
+            b.positions[i + 5] - b.positions[i + 2],
+          );
+          maxSeg = Math.max(maxSeg, len);
+        }
+      }
+      expect(maxSeg).toBeGreaterThan(0);
+      expect(maxSeg).toBeLessThan(FIELD_R * 0.1);
+    });
+
+    it("graph-adjacent notes still land mat-adjacent — the embedding survives growing in a volume", () => {
+      const g = makeRealScaleGraph();
+      const { matIndexOf, mat } = buildMyceliumMat(g, { targetRadius: FIELD_R, dim: "3d" });
+      const hops = matHopDistances(mat);
+      const sampled: number[] = [];
+      g.forEachEdge((_e, _a, u, v) => {
+        const iu = matIndexOf.get(u);
+        const iv = matIndexOf.get(v);
+        if (iu == null || iv == null) return;
+        sampled.push(hops(iu, iv));
+      });
+      const avg = sampled.reduce((s, n) => s + n, 0) / sampled.length;
+      console.info(
+        `[mycelium] 3D linked-note mat-hop distance over ${sampled.length} real edges: ` +
+          `avg=${avg.toFixed(2)} max=${Math.max(...sampled)}`,
+      );
+      // Measured: avg 1.22, max 5 — matching the planar mat's 1.21/5. An
+      // earlier volumetric pass (4 spores, same as the planar default)
+      // measured avg 1.56 max 63: with node count fixed but the mat spread
+      // over a ~30x bigger volume, many of the vault's small/disconnected
+      // components round-robin onto the same 4 seed regions and exhaust them
+      // faster than the now-sparser mat can route around. More seed regions
+      // (16, see growMycelium's SPORES) fixed it directly and stayed stable
+      // across a spore-count sweep, unlike fuse-radius tuning, which was
+      // noisy. Thresholds below leave headroom, not padding a known-bad number.
+      expect(avg).toBeLessThan(4);
+      expect(Math.max(...sampled)).toBeLessThan(15);
+    });
+
+    it("is deterministic — same graph lays out identically twice", () => {
+      const g = makeRealScaleGraph();
+      const a = buildMyceliumMat(g, { targetRadius: FIELD_R, dim: "3d" });
+      const b = buildMyceliumMat(g, { targetRadius: FIELD_R, dim: "3d" });
+      expect(a.mat).toEqual(b.mat);
+      expect([...a.matIndexOf.entries()]).toEqual([...b.matIndexOf.entries()]);
+    });
   });
 });

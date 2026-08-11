@@ -633,10 +633,29 @@ export function growMycelium(
     branchPct?: number;
     fuse?: number;
     maxNodes?: number;
+    /** Wander and branch through all three dimensions and retire tips on a
+     *  SPHERE instead of a circle, so the mat fills a rounded volume rather
+     *  than a disc with cosmetic z jitter. Off by default: every existing
+     *  caller — and the flattened 2D view, which zeroes z afterward anyway —
+     *  keeps the original planar-wander shape byte-for-byte. See
+     *  buildMyceliumMat's `dim` option, which is what actually turns this on. */
+    volumetric?: boolean;
   } = {},
 ): HyphaNode[] {
   const SEED = "mycelium-mat"; // fixed: the shape must not depend on the graph
-  const SPORES = opts.spores ?? 4;
+  const VOL = opts.volumetric ?? false;
+  // A volumetric mat spreads the SAME node budget over a ball instead of a
+  // disc — roughly 30x more space (measured: z-extent alone grows from ~3%
+  // to ~94% of the xy-extent). With only 4 spores, the note-embedding's many
+  // separate small/disconnected components round-robin onto those same 4
+  // seed regions and exhaust them locally faster than the now-sparser mat can
+  // route around (fewer nearby bridges once density drops) — measured on the
+  // real vault shape (1244 notes/~440 edges): hop distance for graph-adjacent
+  // notes blew out to max 63 (was 5) with 4 spores, but a clean, STABLE 5
+  // (matching 2D exactly) at 16 — a smooth minimum (13 at 8, 6 at 12, 6 at 24,
+  // 9 at 32), unlike fuse-radius tuning, which was noisy and non-monotonic.
+  // More seed regions is the direct fix: less crowding per region.
+  const SPORES = opts.spores ?? (VOL ? 16 : 4);
   const STEP = opts.step ?? 0.021;
   const BRANCH_PCT = opts.branchPct ?? 3.2; // per tip per step
   const FUSE = opts.fuse ?? 0.049; // world units, ~7px at the prototype's scale
@@ -648,11 +667,21 @@ export function growMycelium(
 
   let draw = 0;
   const rnd = (): number => seededUnit(SEED, draw++);
+  // A uniformly random direction on the unit sphere (Archimedes' hat-box: y
+  // uniform in [-1,1], azimuth uniform) — volumetric tips seed their first
+  // heading from this instead of one in-plane angle.
+  const randDir = (): [number, number, number] => {
+    const y = 1 - 2 * rnd();
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const az = rnd() * Math.PI * 2;
+    return [Math.cos(az) * r, y, Math.sin(az) * r];
+  };
 
   const nodes: HyphaNode[] = [];
   interface Tip {
     node: number;
-    a: number; // heading
+    a: number; // planar heading — the 2D path only
+    dir: [number, number, number]; // 3D heading — the volumetric path only
     order: number;
     life: number;
     /** This tip's own recent points — see the anastomosis note above. */
@@ -661,33 +690,45 @@ export function growMycelium(
   let tips: Tip[] = [];
 
   // Uniform grid over laid-down points, so a tip can ask "is another hypha
-  // within FUSE of me" without scanning the whole mat.
+  // within FUSE of me" without scanning the whole mat. Planar mode keys by
+  // (x,y) only (unchanged); volumetric adds the z cell — a 2D-only proximity
+  // check would let a bridge fuse with a target far away in z, which is
+  // exactly the long-chord defect this mat exists to avoid.
   const cell = Math.max(FUSE, 1e-4);
   const grid = new Map<string, number[]>();
-  const key = (x: number, y: number): string => `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
+  const key = (x: number, y: number, z: number): string =>
+    VOL
+      ? `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`
+      : `${Math.floor(x / cell)},${Math.floor(y / cell)}`;
   const remember = (i: number): void => {
     const n = nodes[i];
-    const k = key(n.x, n.y);
+    const k = key(n.x, n.y, n.z);
     const b = grid.get(k);
     if (b) b.push(i);
     else grid.set(k, [i]);
   };
   // Nearest earlier point, skipping the tip's own fresh trail.
-  const nearest = (x: number, y: number, own: Set<number>): number => {
+  const nearest = (x: number, y: number, z: number, own: Set<number>): number => {
     const cx = Math.floor(x / cell);
     const cy = Math.floor(y / cell);
+    const cz = Math.floor(z / cell);
     let best = -1;
     let bestD = FUSE;
     for (let ox = -1; ox <= 1; ox++) {
       for (let oy = -1; oy <= 1; oy++) {
-        const b = grid.get(`${cx + ox},${cy + oy}`);
-        if (!b) continue;
-        for (const i of b) {
-          if (own.has(i)) continue;
-          const d = Math.hypot(x - nodes[i].x, y - nodes[i].y);
-          if (d < bestD) {
-            bestD = d;
-            best = i;
+        for (let oz = VOL ? -1 : 0; oz <= (VOL ? 1 : 0); oz++) {
+          const k = VOL ? `${cx + ox},${cy + oy},${cz + oz}` : `${cx + ox},${cy + oy}`;
+          const b = grid.get(k);
+          if (!b) continue;
+          for (const i of b) {
+            if (own.has(i)) continue;
+            const d = VOL
+              ? Math.hypot(x - nodes[i].x, y - nodes[i].y, z - nodes[i].z)
+              : Math.hypot(x - nodes[i].x, y - nodes[i].y);
+            if (d < bestD) {
+              bestD = d;
+              best = i;
+            }
           }
         }
       }
@@ -696,16 +737,47 @@ export function growMycelium(
   };
 
   // Spores spread over the field, not stacked at one origin — one origin
-  // makes an early puffball instead of a mat.
+  // makes an early puffball instead of a mat. Volumetric spores fan their
+  // centres over a full sphere (fibonacci spread) instead of a ring on z=0,
+  // and each seeds 3 tips in independent random directions instead of one
+  // in-plane fan — spores distribute THROUGH the volume, not across a disc.
   const spores = Math.max(1, Math.min(SPORES, Math.ceil(MAX_NODES / 40)));
+  const golden = Math.PI * (3 - Math.sqrt(5));
   for (let s = 0; s < spores; s++) {
-    const a = (s / spores) * Math.PI * 2 + rnd() * 0.9;
-    const d = 0.16 * (0.3 + rnd() * 0.7);
-    nodes.push({ x: Math.cos(a) * d, y: Math.sin(a) * d, z: 0, parent: -1, order: 0 });
-    const spore = nodes.length - 1;
-    remember(spore);
-    for (let k = 0; k < 3; k++) {
-      tips.push({ node: spore, a: (k / 3) * Math.PI * 2 + rnd(), order: 0, life: 0, trail: [spore] });
+    if (VOL) {
+      const t = spores > 1 ? s / (spores - 1) : 0.5;
+      const cy = 1 - 2 * t;
+      const cr = Math.sqrt(Math.max(0, 1 - cy * cy));
+      const ca = golden * s;
+      const d = 0.16 * (0.3 + rnd() * 0.7);
+      nodes.push({
+        x: Math.cos(ca) * cr * d,
+        y: cy * d,
+        z: Math.sin(ca) * cr * d,
+        parent: -1,
+        order: 0,
+      });
+      const spore = nodes.length - 1;
+      remember(spore);
+      for (let k = 0; k < 3; k++) {
+        tips.push({ node: spore, a: 0, dir: randDir(), order: 0, life: 0, trail: [spore] });
+      }
+    } else {
+      const a = (s / spores) * Math.PI * 2 + rnd() * 0.9;
+      const d = 0.16 * (0.3 + rnd() * 0.7);
+      nodes.push({ x: Math.cos(a) * d, y: Math.sin(a) * d, z: 0, parent: -1, order: 0 });
+      const spore = nodes.length - 1;
+      remember(spore);
+      for (let k = 0; k < 3; k++) {
+        tips.push({
+          node: spore,
+          a: (k / 3) * Math.PI * 2 + rnd(),
+          dir: [0, 0, 0],
+          order: 0,
+          life: 0,
+          trail: [spore],
+        });
+      }
     }
   }
 
@@ -713,31 +785,52 @@ export function growMycelium(
     const next: Tip[] = [];
     for (const t of tips) {
       if (nodes.length >= MAX_NODES) break;
-      t.a += (rnd() - 0.5) * 0.42; // wander ~±0.21 rad per step
       const from = nodes[t.node];
-      const nx = from.x + Math.cos(t.a) * STEP;
-      const ny = from.y + Math.sin(t.a) * STEP;
-
-      // Anastomosis: record the bridge, keep the tip alive.
-      const hit = nearest(nx, ny, new Set(t.trail));
-      if (hit >= 0) {
-        nodes.push({
-          x: nodes[hit].x,
-          y: nodes[hit].y,
-          z: from.z,
-          parent: t.node,
-          order: t.order,
-          bridgeTo: hit,
-        });
+      let nx: number;
+      let ny: number;
+      let nz: number;
+      if (VOL) {
+        // Isotropic wander: nudge the heading vector by a small random
+        // vector and renormalize, so a tip can curve toward ANY neighbouring
+        // direction on the sphere — not just left/right within one plane,
+        // which is what actually makes the mat explore real depth.
+        const wx = t.dir[0] + (rnd() - 0.5) * 0.6;
+        const wy = t.dir[1] + (rnd() - 0.5) * 0.6;
+        const wz = t.dir[2] + (rnd() - 0.5) * 0.6;
+        const wl = Math.hypot(wx, wy, wz) || 1;
+        t.dir = [wx / wl, wy / wl, wz / wl];
+        nx = from.x + t.dir[0] * STEP;
+        ny = from.y + t.dir[1] * STEP;
+        nz = from.z + t.dir[2] * STEP;
+      } else {
+        t.a += (rnd() - 0.5) * 0.42; // wander ~±0.21 rad per step
+        nx = from.x + Math.cos(t.a) * STEP;
+        ny = from.y + Math.sin(t.a) * STEP;
+        nz = from.z + (rnd() - 0.5) * STEP * 0.25;
       }
 
-      nodes.push({
-        x: nx,
-        y: ny,
-        z: from.z + (rnd() - 0.5) * STEP * 0.25,
-        parent: t.node,
-        order: t.order,
-      });
+      // Anastomosis: record the bridge, keep the tip alive. Volumetric
+      // bridges copy the target's FULL position (not just x,y) so the bridge
+      // point coincides exactly with it — a zero-length adjacency edge — and
+      // the search that found `hit` was itself 3D-aware, so parent->bridge
+      // stays a short local step in every axis, never a long vertical chord.
+      const hit = nearest(nx, ny, nz, new Set(t.trail));
+      if (hit >= 0) {
+        nodes.push(
+          VOL
+            ? {
+                x: nodes[hit].x,
+                y: nodes[hit].y,
+                z: nodes[hit].z,
+                parent: t.node,
+                order: t.order,
+                bridgeTo: hit,
+              }
+            : { x: nodes[hit].x, y: nodes[hit].y, z: from.z, parent: t.node, order: t.order, bridgeTo: hit },
+        );
+      }
+
+      nodes.push({ x: nx, y: ny, z: nz, parent: t.node, order: t.order });
       const grown = nodes.length - 1;
       remember(grown);
       t.node = grown;
@@ -745,11 +838,44 @@ export function growMycelium(
       t.trail.push(grown);
       if (t.trail.length > 24) t.trail.shift();
 
-      if (Math.hypot(nx, ny) > BOUND || t.life > MAX_LIFE) continue; // retire
+      const dist = VOL ? Math.hypot(nx, ny, nz) : Math.hypot(nx, ny);
+      if (dist > BOUND || t.life > MAX_LIFE) continue; // retire
       next.push(t);
       if (rnd() * 100 < BRANCH_PCT && t.order < MAX_ORDER && next.length < MAX_TIPS) {
-        const off = (rnd() < 0.5 ? 1 : -1) * (0.5 + rnd() * 0.55);
-        next.push({ node: grown, a: t.a + off, order: t.order + 1, life: 0, trail: t.trail.slice(-12) });
+        if (VOL) {
+          // Branch into a real 3D cone around the parent's heading — same
+          // perpendicular-basis trick applyWalrusLayout uses to spread a cone
+          // tree, instead of one fixed in-plane rotation.
+          const polar = 0.5 + rnd() * 0.55;
+          const az = rnd() * Math.PI * 2;
+          const [u, w] = perpBasis(t.dir);
+          const cs = Math.cos(polar);
+          const sn = Math.sin(polar);
+          const ca = Math.cos(az);
+          const sa = Math.sin(az);
+          const bx = t.dir[0] * cs + (u[0] * ca + w[0] * sa) * sn;
+          const by = t.dir[1] * cs + (u[1] * ca + w[1] * sa) * sn;
+          const bz = t.dir[2] * cs + (u[2] * ca + w[2] * sa) * sn;
+          const bl = Math.hypot(bx, by, bz) || 1;
+          next.push({
+            node: grown,
+            a: t.a,
+            dir: [bx / bl, by / bl, bz / bl],
+            order: t.order + 1,
+            life: 0,
+            trail: t.trail.slice(-12),
+          });
+        } else {
+          const off = (rnd() < 0.5 ? 1 : -1) * (0.5 + rnd() * 0.55);
+          next.push({
+            node: grown,
+            a: t.a + off,
+            dir: [0, 0, 0],
+            order: t.order + 1,
+            life: 0,
+            trail: t.trail.slice(-12),
+          });
+        }
       }
     }
     tips = next;
@@ -759,6 +885,10 @@ export function growMycelium(
 
 export interface MyceliumOpts {
   targetRadius: number;
+  /** "3d" grows tips through a real ball volume (genuine depth to orbit
+   *  through); "2d" (the default) keeps the original planar-wander mat that
+   *  the flattened view has always used. See growMycelium's `volumetric`. */
+  dim?: "2d" | "3d";
 }
 
 export interface MyceliumResult {
@@ -851,7 +981,7 @@ export function buildMyceliumMat(g: VaultGraph, o: MyceliumOpts): MyceliumResult
   const empty: MyceliumResult = { buckets: [], matIndexOf: new Map(), mat: [] };
   if (g.order === 0) return empty;
 
-  const mat = growMycelium(g.order);
+  const mat = growMycelium(g.order, { volumetric: o.dim === "3d" });
 
   // Scale the grown (roughly unit-radius) mat to the caller's world radius.
   let maxR = 1e-6;
