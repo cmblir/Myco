@@ -449,6 +449,6 @@ mod tests {
             .unwrap()
             .to_string_lossy()
             .into_owned();
-        assert!(adj.meta.get(&bkey).is_none());
+        assert!(!adj.meta.contains_key(&bkey));
     }
 }

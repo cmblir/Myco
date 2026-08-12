@@ -376,7 +376,7 @@ fn footnote_refs(body: &str) -> BTreeSet<String> {
     let mut out = BTreeSet::new();
     for m in re.captures_iter(body) {
         let whole = m.get(0).unwrap();
-        if body[whole.end()..].chars().next() == Some(':') {
+        if body[whole.end()..].starts_with(':') {
             continue; // it's a definition, not a reference
         }
         out.insert(m[1].to_string());
@@ -560,6 +560,9 @@ fn walk_all(dir: &Path) -> Vec<PathBuf> {
 
 #[derive(Clone)]
 pub struct McpServer {
+    // Read by the #[tool_handler] macro's generated dispatch, not by any code
+    // written here — dead-code analysis only sees the write in new().
+    #[allow(dead_code)]
     tool_router: ToolRouter<McpServer>,
 }
 
@@ -701,6 +704,12 @@ struct GitCommitArgs {
     message: String,
     #[serde(default)]
     project: String,
+}
+
+impl Default for McpServer {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[tool_router]

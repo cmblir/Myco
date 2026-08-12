@@ -1757,6 +1757,10 @@ fn sync_bm25_for_page(
 /// model-gated (unlike `store`, which can be wiped/rebuilt on an embed-model
 /// change): it re-derives from raw text, so upserting it here regardless of
 /// which embed model ran keeps it correct across a model migration too.
+// Every parameter is a distinct borrow of caller-owned state (two indexes, the
+// model handles, the page's own fields). Bundling them into a struct would only
+// move the same list one level down.
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn embed_one_page(
     app: &tauri::AppHandle,
     llm: &tauri::State<'_, LocalLlmState>,
@@ -2196,7 +2200,11 @@ pub async fn classify_intent(
 
 /// Embedded exemplars, keyed by `"{provider}:{model}"` so a model switch
 /// re-embeds instead of cosining across incompatible vector spaces.
+// (cache key, embedded exemplars) behind a lock — naming the tuple would not
+// make the signature say more than it already does.
+#[allow(clippy::type_complexity)]
 fn exemplar_cache() -> &'static Mutex<Option<(String, Vec<Vec<f32>>)>> {
+    #[allow(clippy::type_complexity)]
     static CACHE: OnceLock<Mutex<Option<(String, Vec<Vec<f32>>)>>> = OnceLock::new();
     CACHE.get_or_init(|| Mutex::new(None))
 }

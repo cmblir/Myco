@@ -277,7 +277,7 @@ impl LocalLlm {
             .map_err(|e| format!("new_context: {e}"))?;
 
         let mut tokens = model
-            .str_to_token(&prompt, add_bos)
+            .str_to_token(prompt, add_bos)
             .map_err(|e| format!("tokenize: {e}"))?;
 
         // Fit prompt + generation inside the context window. Drop from the
@@ -350,6 +350,10 @@ impl LocalLlm {
         // Continue positions after the FULL prompt (batch.n_tokens() would only
         // count the last prefill chunk).
         let mut n_cur = total as i32;
+        // n_cur is a KV-cache position, not a loop index — it starts at the
+        // prompt length and is what the decode batch is keyed on. Clippy's
+        // suggested zip() would hide that behind an iterator adaptor.
+        #[allow(clippy::explicit_counter_loop)]
         'gen: for _ in 0..max_tokens {
             let token = sampler.sample(&ctx, batch.n_tokens() - 1);
             sampler.accept(token);

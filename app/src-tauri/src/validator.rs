@@ -260,7 +260,7 @@ mod tests {
             ("raw/real.md", "# Real"),
             ("wiki/target.md", GOOD_FM),
             // source_count says 2 but only 1 distinct src; links to a missing page
-            ("wiki/d.md", &format!("---\ntitle: D\ntype: concept\ncreated: 2026-01-01\nsource_count: 2\nconfidence: high\nstatus: active\n---\nClaim.[^src-real] See [[nonexistent]] and [[target]].\n")),
+            ("wiki/d.md", "---\ntitle: D\ntype: concept\ncreated: 2026-01-01\nsource_count: 2\nconfidence: high\nstatus: active\n---\nClaim.[^src-real] See [[nonexistent]] and [[target]].\n"),
         ]);
         let r = validate_pages(&root, &["wiki/d.md".into()]);
         assert!(r.errors.is_empty(), "no hard errors: {:?}", r.errors);

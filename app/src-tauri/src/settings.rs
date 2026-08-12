@@ -1066,6 +1066,9 @@ mod tests {
 
     /// The environment matrix both implementations must agree on. Each row is
     /// (label, os, HOME, APPDATA, MYCO_DATA_DIR, MEMEX_DATA_DIR).
+    // A fixed table of (label, os, HOME, APPDATA, MYCO_DATA_DIR, MEMEX_DATA_DIR)
+    // rows — the tuple IS the documentation, per the comment above.
+    #[allow(clippy::type_complexity)]
     const PARITY_MATRIX: &[(
         &str,
         &str,
