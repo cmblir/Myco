@@ -938,6 +938,11 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(NODES.map((d) => `===== wiki/${d.s}.md =====\n${body(d)}`).join("\n\n"));
     case "list_provider_models":
       return Promise.resolve(["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"]);
+    // Mirrors the real command: no chat GGUF ships (Ask is extractive), so the
+    // mock answers false too — the fast-fail path in chat.ts behaves the same
+    // under ?mock=1 as in the app.
+    case "local_chat_model_available":
+      return Promise.resolve(false);
     // Semantic layer (Feature 1) — mock the embedding index with the sample graph:
     // "similarity" stands in as a node's declared links + a couple of siblings.
     case "reindex_embeddings":
