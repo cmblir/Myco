@@ -164,8 +164,13 @@ mod tests {
         assert_eq!(args[1], "/a/talk.wav");
         assert!(args.contains(&"-otxt".to_string()));
         // -of gets the base path without extension; whisper.cpp appends .txt.
+        // Built with join() rather than a literal: this is a real filesystem
+        // path, so the separator is the platform's ('\' on Windows).
         let of_idx = args.iter().position(|a| a == "-of").unwrap();
-        assert_eq!(args[of_idx + 1], "/tmp/x/talk");
-        assert_eq!(out, PathBuf::from("/tmp/x/talk.txt"));
+        assert_eq!(
+            args[of_idx + 1],
+            Path::new("/tmp/x").join("talk").to_string_lossy()
+        );
+        assert_eq!(out, Path::new("/tmp/x").join("talk.txt"));
     }
 }

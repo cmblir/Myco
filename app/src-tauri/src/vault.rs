@@ -1112,7 +1112,13 @@ pub fn read_vault_context(root: &str, max_bytes: usize) -> Result<String, String
             Ok(b) => b,
             Err(_) => continue,
         };
-        let header = format!("\n\n===== {} =====\n", rel.to_string_lossy());
+        // Vault-relative paths are addressed with '/' everywhere else the model
+        // sees them (wikilinks, page ids, citations), so normalise the separator
+        // instead of handing Windows a '\' form the model has never been shown.
+        let header = format!(
+            "\n\n===== {} =====\n",
+            rel.to_string_lossy().replace('\\', "/")
+        );
         // If even the section header can't fit in the remaining budget, stop
         // rather than overshoot. (A header is small, but the running total must
         // stay bounded — a single header should not push `out` past max_bytes.)
