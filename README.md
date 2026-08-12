@@ -65,7 +65,9 @@ Based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/4
 Grab the bundle for your platform from the
 **[latest release](https://github.com/cmblir/Myco/releases/latest)**:
 
-- **macOS** (Apple Silicon): `myco_x.y.z_aarch64.dmg` — signed and notarized.
+- **macOS** (Apple Silicon): `myco_x.y.z_aarch64.dmg` — unsigned; Gatekeeper
+  warns on first open (right-click the app → **Open** → **Open**, or
+  **System Settings → Privacy & Security → "Open Anyway"**).
 - **Windows x64**: `myco_x.y.z_x64-setup.exe` — unsigned; SmartScreen warns on
   first launch (**More info → Run anyway**).
 

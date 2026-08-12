@@ -64,7 +64,9 @@
 
 **[최신 릴리즈](https://github.com/cmblir/Myco/releases/latest)**에서 플랫폼에 맞는 번들을 받으세요:
 
-- **macOS** (Apple Silicon): `myco_x.y.z_aarch64.dmg` — 서명·공증 완료.
+- **macOS** (Apple Silicon): `myco_x.y.z_aarch64.dmg` — 미서명; 첫 실행 시
+  Gatekeeper 경고가 뜹니다 (앱 우클릭 → **열기** → **열기**, 또는
+  **시스템 설정 → 개인정보 보호 및 보안 → "그래도 열기"**).
 - **Windows x64**: `myco_x.y.z_x64-setup.exe` — 미서명; 첫 실행 시 SmartScreen
   경고가 뜹니다 (**추가 정보 → 실행**).
 
