@@ -931,6 +931,14 @@ export interface MyceliumOpts {
   /** Flat base colour (hex) every strand's cluster hue blends toward — see
    *  the colour-propagation pass below. Defaults to the old flat cream. */
   hyphaColor?: string;
+  /** Mat density knob (growMycelium's own opts, passed straight through) —
+   *  see graphSettings.ts's myceliumMaxNodes for the "Link distance" slider
+   *  mapping that derives this. */
+  maxNodes?: number;
+  /** Branch density knob (growMycelium's own opts, passed straight through)
+   *  — see graphSettings.ts's myceliumBranchPct for the "Cluster force"
+   *  slider mapping that derives this. */
+  branchPct?: number;
 }
 
 export interface MyceliumResult {
@@ -1023,7 +1031,11 @@ export function buildMyceliumMat(g: VaultGraph, o: MyceliumOpts): MyceliumResult
   const empty: MyceliumResult = { buckets: [], matIndexOf: new Map(), mat: [] };
   if (g.order === 0) return empty;
 
-  const mat = growMycelium(g.order, { volumetric: o.dim === "3d" });
+  const mat = growMycelium(g.order, {
+    volumetric: o.dim === "3d",
+    maxNodes: o.maxNodes,
+    branchPct: o.branchPct,
+  });
 
   // Scale the grown (roughly unit-radius) mat to the caller's world radius.
   let maxR = 1e-6;

@@ -637,6 +637,32 @@ export function saveLook(name: string, s: GraphSettings): SavedLook[] {
   return writeSavedLooks(looks.slice(0, MAX_SAVED_LOOKS));
 }
 
+// ── Mycelium "force" mapping ─────────────────────────────────────────────
+// The mat is GROWN (space colonization), not force-simulated, so the shared
+// Forces sliders (which drive a d3 sim on every other layout) don't apply
+// literally. They're repurposed onto the two growMycelium knobs that
+// actually reshape the mat — see staticLayouts.ts's growMycelium for what
+// maxNodes/branchPct do to the grown shape. Kept here (not MyceliumView) so
+// the mapping is pure and unit-testable without touching three.js.
+
+/** "Link distance" (30..500, default 45) → growMycelium's maxNodes. Inverted:
+ *  a WIDER requested spacing between notes reads as a SPARSER mat, since
+ *  scaling the mat's world radius is a no-op on screen (see MyceliumView's
+ *  TARGET_RADIUS comment) — density is the only lever that visibly changes.
+ *  The default linkDistance (45) reproduces growMycelium's own default
+ *  multiplier (order*10) exactly, so an untouched slider changes nothing. */
+export function myceliumMaxNodes(linkDistance: number, order: number): number {
+  const mul = 10 * (45 / Math.max(30, linkDistance));
+  return Math.round(Math.min(22500, Math.max(2250, order * mul)));
+}
+
+/** "Cluster force" (0..1, default 0.35) → growMycelium's branchPct (per-tip
+ *  branch chance per step, default 3.2). A simple ratio around the default,
+ *  so an untouched slider reproduces growMycelium's own default exactly. */
+export function myceliumBranchPct(clusterForce: number): number {
+  return 3.2 * (Math.max(0, clusterForce) / 0.35);
+}
+
 export function deleteLook(name: string): SavedLook[] {
   return writeSavedLooks(
     loadSavedLooks().filter(
