@@ -123,6 +123,13 @@ export default function GraphControls({
   const activeVibe = (key: VibeKey): boolean =>
     settings.skin === VIBE_PRESETS[key].skin &&
     settings.layout === VIBE_PRESETS[key].layout;
+  // The mycelium skin is its own renderer (myceliumScene.ts) with no
+  // post-processing and a GROWN, not simulated, layout — most of GraphScene's
+  // controls have nothing under them to affect. Gate those off here rather
+  // than leave them visibly deadened (see MyceliumView/myceliumScene.ts for
+  // what's actually wired: node size, link thickness, text fade, ambient
+  // motion, and mat/branch density via the Forces sliders below).
+  const isMycelium = settings.skin === "mycelium";
 
   return (
     <aside className="graph-drawer" aria-label={t.gr_settings ?? "Graph settings"}>
@@ -376,16 +383,18 @@ export default function GraphControls({
             ["strata", t.gr_layout_strata ?? "Chronicle"],
           ]}
         />
-        <Toggle
-          label={t.gr_galaxies ?? "Folder galaxies"}
-          hint={
-            t.gr_galaxies_hint ??
-            "Split the vault into one slowly rotating galaxy per folder"
-          }
-          value={settings.folderGalaxies}
-          onChange={(v) => onChange({ folderGalaxies: v })}
-        />
-        {settings.skin === "mycelium" ? (
+        {!isMycelium ? (
+          <Toggle
+            label={t.gr_galaxies ?? "Folder galaxies"}
+            hint={
+              t.gr_galaxies_hint ??
+              "Split the vault into one slowly rotating galaxy per folder"
+            }
+            value={settings.folderGalaxies}
+            onChange={(v) => onChange({ folderGalaxies: v })}
+          />
+        ) : null}
+        {isMycelium ? (
           <>
             <ChipRow
               label={t.gr_mycelium_dim ?? "Mycelium view"}
@@ -433,55 +442,59 @@ export default function GraphControls({
             ["mycelium", t.gr_skin_mycelium ?? "Mycelium"],
           ]}
         />
-        <ChipRow
-          label={t.gr_sky ?? "Sky"}
-          value={settings.skyStyle}
-          onPick={(v) => onChange({ skyStyle: v })}
-          options={[
-            ["stars", t.gr_sky_stars ?? "Stars"],
-            ["dense", t.gr_sky_dense ?? "Dense"],
-            ["grid", t.gr_sky_grid ?? "Grid"],
-            ["void", t.gr_sky_void ?? "Void"],
-          ]}
-        />
-        <ChipRow
-          label={t.gr_node_color ?? "Node colour"}
-          value={settings.nodeColor}
-          onPick={(v) => onChange({ nodeColor: v })}
-          options={[
-            ["community", t.gr_node_color_community ?? "By folder"],
-            ["white", t.gr_node_color_white ?? "White"],
-            ["black", t.gr_node_color_black ?? "Black"],
-            ["auto", t.gr_node_color_auto ?? "Auto"],
-          ]}
-        />
-        {settings.nodeColor === "auto" ? (
-          <Slider
-            label={t.gr_mono_below ?? "Colour above N nodes"}
-            value={settings.monoBelow}
-            min={0}
-            max={2000}
-            step={50}
-            onChange={(v) => onChange({ monoBelow: v })}
-          />
+        {!isMycelium ? (
+          <>
+            <ChipRow
+              label={t.gr_sky ?? "Sky"}
+              value={settings.skyStyle}
+              onPick={(v) => onChange({ skyStyle: v })}
+              options={[
+                ["stars", t.gr_sky_stars ?? "Stars"],
+                ["dense", t.gr_sky_dense ?? "Dense"],
+                ["grid", t.gr_sky_grid ?? "Grid"],
+                ["void", t.gr_sky_void ?? "Void"],
+              ]}
+            />
+            <ChipRow
+              label={t.gr_node_color ?? "Node colour"}
+              value={settings.nodeColor}
+              onPick={(v) => onChange({ nodeColor: v })}
+              options={[
+                ["community", t.gr_node_color_community ?? "By folder"],
+                ["white", t.gr_node_color_white ?? "White"],
+                ["black", t.gr_node_color_black ?? "Black"],
+                ["auto", t.gr_node_color_auto ?? "Auto"],
+              ]}
+            />
+            {settings.nodeColor === "auto" ? (
+              <Slider
+                label={t.gr_mono_below ?? "Colour above N nodes"}
+                value={settings.monoBelow}
+                min={0}
+                max={2000}
+                step={50}
+                onChange={(v) => onChange({ monoBelow: v })}
+              />
+            ) : null}
+            <ChipRow
+              label={t.gr_edge_tint ?? "Link colour"}
+              value={settings.edgeTint}
+              onPick={(v) => onChange({ edgeTint: v })}
+              options={[
+                ["grey", t.gr_edge_tint_grey ?? "Grey"],
+                ["community", t.gr_edge_tint_community ?? "Community webs"],
+              ]}
+            />
+            <Slider
+              label={t.gr_color_depth ?? "Colour depth"}
+              value={settings.nodeColorDepth}
+              min={0.4}
+              max={2.4}
+              step={0.1}
+              onChange={(v) => onChange({ nodeColorDepth: v })}
+            />
+          </>
         ) : null}
-        <ChipRow
-          label={t.gr_edge_tint ?? "Link colour"}
-          value={settings.edgeTint}
-          onPick={(v) => onChange({ edgeTint: v })}
-          options={[
-            ["grey", t.gr_edge_tint_grey ?? "Grey"],
-            ["community", t.gr_edge_tint_community ?? "Community webs"],
-          ]}
-        />
-        <Slider
-          label={t.gr_color_depth ?? "Colour depth"}
-          value={settings.nodeColorDepth}
-          min={0.4}
-          max={2.4}
-          step={0.1}
-          onChange={(v) => onChange({ nodeColorDepth: v })}
-        />
         <Slider
           label={t.gr_node_size ?? "Node size"}
           value={settings.nodeSize}
@@ -498,14 +511,16 @@ export default function GraphControls({
           step={0.05}
           onChange={(v) => onChange({ linkThickness: v })}
         />
-        <Slider
-          label={t.gr_glow ?? "Glow"}
-          value={settings.brightness}
-          min={0.4}
-          max={1.6}
-          step={0.05}
-          onChange={(v) => onChange({ brightness: v })}
-        />
+        {!isMycelium ? (
+          <Slider
+            label={t.gr_glow ?? "Glow"}
+            value={settings.brightness}
+            min={0.4}
+            max={1.6}
+            step={0.05}
+            onChange={(v) => onChange({ brightness: v })}
+          />
+        ) : null}
         <Slider
           label={t.gr_text_fade ?? "Text fade threshold"}
           value={settings.textFadeThreshold}
@@ -514,37 +529,41 @@ export default function GraphControls({
           step={0.05}
           onChange={(v) => onChange({ textFadeThreshold: v })}
         />
-        <Toggle
-          label={t.gr_arrows ?? "Arrows"}
-          hint={t.gr_arrows_hint ?? "Show direction on each link"}
-          value={settings.arrows}
-          onChange={(v) => onChange({ arrows: v })}
-        />
-        {settings.arrows ? (
-          <Slider
-            label={t.gr_arrow_size ?? "Arrow size"}
-            value={settings.arrowSize}
-            min={0.1}
-            max={3}
-            step={0.05}
-            onChange={(v) => onChange({ arrowSize: v })}
-          />
+        {!isMycelium ? (
+          <>
+            <Toggle
+              label={t.gr_arrows ?? "Arrows"}
+              hint={t.gr_arrows_hint ?? "Show direction on each link"}
+              value={settings.arrows}
+              onChange={(v) => onChange({ arrows: v })}
+            />
+            {settings.arrows ? (
+              <Slider
+                label={t.gr_arrow_size ?? "Arrow size"}
+                value={settings.arrowSize}
+                min={0.1}
+                max={3}
+                step={0.05}
+                onChange={(v) => onChange({ arrowSize: v })}
+              />
+            ) : null}
+            <Toggle
+              label={t.gr_semantic_edges ?? "Semantic links"}
+              hint={t.gr_semantic_edges_hint ?? "Overlay dim edges between similar notes"}
+              value={settings.semanticEdges}
+              onChange={(v) => onChange({ semanticEdges: v })}
+            />
+            <Toggle
+              label={t.gr_edge_bundles ?? "Bundled strands"}
+              hint={
+                t.gr_edge_bundles_hint ??
+                "Merge links between two topics into one weighted arc"
+              }
+              value={settings.edgeBundles}
+              onChange={(v) => onChange({ edgeBundles: v })}
+            />
+          </>
         ) : null}
-        <Toggle
-          label={t.gr_semantic_edges ?? "Semantic links"}
-          hint={t.gr_semantic_edges_hint ?? "Overlay dim edges between similar notes"}
-          value={settings.semanticEdges}
-          onChange={(v) => onChange({ semanticEdges: v })}
-        />
-        <Toggle
-          label={t.gr_edge_bundles ?? "Bundled strands"}
-          hint={
-            t.gr_edge_bundles_hint ??
-            "Merge links between two topics into one weighted arc"
-          }
-          value={settings.edgeBundles}
-          onChange={(v) => onChange({ edgeBundles: v })}
-        />
       </Section>
 
       {/* ── Motion & effects ── */}
@@ -555,91 +574,99 @@ export default function GraphControls({
       >
         <Toggle
           label={t.gr_motion ?? "Ambient motion"}
-          hint={t.gr_motion_hint ?? "Auto-rotate, pulses, breathing"}
+          hint={
+            isMycelium
+              ? (t.gr_motion_hint_myc ?? "Slow 3D auto-orbit (3D view only)")
+              : (t.gr_motion_hint ?? "Auto-rotate, pulses, breathing")
+          }
           value={settings.ambientMotion}
           onChange={(v) => onChange({ ambientMotion: v })}
         />
-        <Toggle
-          label={t.gr_recency ?? "Recency glow"}
-          hint={t.gr_recency_hint ?? "Recently edited notes burn hotter"}
-          value={settings.recencyGlow}
-          onChange={(v) => onChange({ recencyGlow: v })}
-        />
-        <Toggle
-          label={t.gr_cinematic ?? "Cinematic finish"}
-          hint={
-            t.gr_cinematic_hint ?? "Film grain, vignette, lens streaks, anti-aliasing"
-          }
-          value={settings.cinematic}
-          onChange={(v) => onChange({ cinematic: v })}
-        />
-        <Toggle
-          label={t.gr_flow ?? "Edge flow"}
-          hint={t.gr_flow_hint ?? "Light pulses ride links source → target"}
-          value={settings.edgeFlow}
-          onChange={(v) => onChange({ edgeFlow: v })}
-        />
-        <Toggle
-          label={t.gr_minimap ?? "Minimap"}
-          hint={t.gr_minimap_hint ?? "Corner chart of the whole galaxy; click to fly"}
-          value={settings.minimap}
-          onChange={(v) => onChange({ minimap: v })}
-        />
-        <Toggle
-          label={t.gr_cosmic ?? "Cosmic events"}
-          hint={t.gr_cosmic_hint ?? "Black holes & wormholes (dark theme)"}
-          value={settings.cosmicEvents}
-          onChange={(v) => onChange({ cosmicEvents: v })}
-        />
-        {settings.cosmicEvents ? (
-          <Slider
-            label={t.gr_cosmic_freq ?? "Event frequency"}
-            value={settings.cosmicFrequency}
-            min={0.25}
-            max={4}
-            step={0.25}
-            onChange={(v) => onChange({ cosmicFrequency: v })}
-          />
+        {!isMycelium ? (
+          <>
+            <Toggle
+              label={t.gr_recency ?? "Recency glow"}
+              hint={t.gr_recency_hint ?? "Recently edited notes burn hotter"}
+              value={settings.recencyGlow}
+              onChange={(v) => onChange({ recencyGlow: v })}
+            />
+            <Toggle
+              label={t.gr_cinematic ?? "Cinematic finish"}
+              hint={
+                t.gr_cinematic_hint ?? "Film grain, vignette, lens streaks, anti-aliasing"
+              }
+              value={settings.cinematic}
+              onChange={(v) => onChange({ cinematic: v })}
+            />
+            <Toggle
+              label={t.gr_flow ?? "Edge flow"}
+              hint={t.gr_flow_hint ?? "Light pulses ride links source → target"}
+              value={settings.edgeFlow}
+              onChange={(v) => onChange({ edgeFlow: v })}
+            />
+            <Toggle
+              label={t.gr_minimap ?? "Minimap"}
+              hint={t.gr_minimap_hint ?? "Corner chart of the whole galaxy; click to fly"}
+              value={settings.minimap}
+              onChange={(v) => onChange({ minimap: v })}
+            />
+            <Toggle
+              label={t.gr_cosmic ?? "Cosmic events"}
+              hint={t.gr_cosmic_hint ?? "Black holes & wormholes (dark theme)"}
+              value={settings.cosmicEvents}
+              onChange={(v) => onChange({ cosmicEvents: v })}
+            />
+            {settings.cosmicEvents ? (
+              <Slider
+                label={t.gr_cosmic_freq ?? "Event frequency"}
+                value={settings.cosmicFrequency}
+                min={0.25}
+                max={4}
+                step={0.25}
+                onChange={(v) => onChange({ cosmicFrequency: v })}
+              />
+            ) : null}
+            <Toggle
+              label={t.gr_click_burst ?? "Click burst"}
+              hint={t.gr_click_burst_hint ?? "Supernova + ripple when you select a node"}
+              value={settings.clickBurst}
+              onChange={(v) => onChange({ clickBurst: v })}
+            />
+            <Toggle
+              label={t.gr_neural_firing ?? "Neural firing"}
+              hint={t.gr_neural_firing_hint ?? "Signals that periodically ripple the mesh"}
+              value={settings.neuralFiring}
+              onChange={(v) => onChange({ neuralFiring: v })}
+            />
+            <Toggle
+              label={t.gr_planets ?? "Near-field planets"}
+              hint={t.gr_planets_hint ?? "Close-up nodes become procedural planets (dark 3D)"}
+              value={settings.nearFieldPlanets}
+              onChange={(v) => onChange({ nearFieldPlanets: v })}
+            />
+            <Toggle
+              label={t.gr_mascot_cameo ?? "MYCO cameo"}
+              hint={t.gr_mascot_cameo_hint ?? "MYCO drifts in now and then with a feature tip"}
+              value={settings.mascotCameo}
+              onChange={(v) => onChange({ mascotCameo: v })}
+            />
+            <Toggle
+              label={t.gr_trace ?? "Trace path"}
+              hint={t.gr_trace_hint ?? "Click a start node, then an end node"}
+              value={traceMode}
+              onChange={onTraceMode}
+            />
+            <Toggle
+              label={t.gr_spaceship ?? "Spaceship"}
+              hint={
+                t.gr_spaceship_hint ??
+                "WASD fly · drag to steer · click a node for info · Esc exit"
+              }
+              value={flyMode}
+              onChange={onFlyMode}
+            />
+          </>
         ) : null}
-        <Toggle
-          label={t.gr_click_burst ?? "Click burst"}
-          hint={t.gr_click_burst_hint ?? "Supernova + ripple when you select a node"}
-          value={settings.clickBurst}
-          onChange={(v) => onChange({ clickBurst: v })}
-        />
-        <Toggle
-          label={t.gr_neural_firing ?? "Neural firing"}
-          hint={t.gr_neural_firing_hint ?? "Signals that periodically ripple the mesh"}
-          value={settings.neuralFiring}
-          onChange={(v) => onChange({ neuralFiring: v })}
-        />
-        <Toggle
-          label={t.gr_planets ?? "Near-field planets"}
-          hint={t.gr_planets_hint ?? "Close-up nodes become procedural planets (dark 3D)"}
-          value={settings.nearFieldPlanets}
-          onChange={(v) => onChange({ nearFieldPlanets: v })}
-        />
-        <Toggle
-          label={t.gr_mascot_cameo ?? "MYCO cameo"}
-          hint={t.gr_mascot_cameo_hint ?? "MYCO drifts in now and then with a feature tip"}
-          value={settings.mascotCameo}
-          onChange={(v) => onChange({ mascotCameo: v })}
-        />
-        <Toggle
-          label={t.gr_trace ?? "Trace path"}
-          hint={t.gr_trace_hint ?? "Click a start node, then an end node"}
-          value={traceMode}
-          onChange={onTraceMode}
-        />
-        <Toggle
-          label={t.gr_spaceship ?? "Spaceship"}
-          hint={
-            t.gr_spaceship_hint ??
-            "WASD fly · drag to steer · click a node for info · Esc exit"
-          }
-          value={flyMode}
-          onChange={onFlyMode}
-        />
       </Section>
 
       {/* ── Forces (expert layout tuning) ── */}
@@ -648,48 +675,68 @@ export default function GraphControls({
         open={openSections.forces}
         onToggle={() => toggle("forces")}
       >
-        <ChipRow
-          label={t.gr_preset ?? "Layout"}
-          value={matchPreset(settings) ?? ""}
-          onPick={(v) => onChange({ ...LAYOUT_PRESETS[v as LayoutPresetKey] })}
-          options={[
-            ["galaxy", t.gr_preset_galaxy ?? "Galaxy"],
-            ["loose", t.gr_preset_loose ?? "Loose web"],
-            ["dense", t.gr_preset_dense ?? "Dense"],
-          ]}
-        />
+        {!isMycelium ? (
+          <ChipRow
+            label={t.gr_preset ?? "Layout"}
+            value={matchPreset(settings) ?? ""}
+            onPick={(v) => onChange({ ...LAYOUT_PRESETS[v as LayoutPresetKey] })}
+            options={[
+              ["galaxy", t.gr_preset_galaxy ?? "Galaxy"],
+              ["loose", t.gr_preset_loose ?? "Loose web"],
+              ["dense", t.gr_preset_dense ?? "Dense"],
+            ]}
+          />
+        ) : null}
         <Section
           title={t.gr_advanced ?? "Advanced"}
           open={openSections.advanced}
           onToggle={() => toggle("advanced")}
         >
-          {/* Slider ranges match Obsidian's panel one-for-one. */}
+          {/* Mycelium is GROWN, not simulated — d3 force sliders have nothing
+              under them, so only the two knobs that actually reshape the
+              grown mat (mat density / branch density — see
+              graphSettings.ts's myceliumMaxNodes/myceliumBranchPct) show,
+              reusing the shared linkDistance/clusterForce fields. */}
+          {isMycelium ? (
+            <p className="muted">
+              {t.gr_myc_forces_hint ??
+                "Mycelium is grown, not simulated: these two sliders reshape the mat."}
+            </p>
+          ) : null}
+          {!isMycelium ? (
+            <>
+              <Slider
+                label={t.gr_center_force ?? "Center force"}
+                value={settings.centerForce}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={(v) => onChange({ centerForce: v })}
+              />
+              <Slider
+                label={t.gr_repel_force ?? "Repel force"}
+                value={settings.repelForce}
+                min={0}
+                max={50}
+                step={0.5}
+                onChange={(v) => onChange({ repelForce: v })}
+              />
+              <Slider
+                label={t.gr_link_force ?? "Link force"}
+                value={settings.linkForce}
+                min={0}
+                max={1}
+                step={0.01}
+                onChange={(v) => onChange({ linkForce: v })}
+              />
+            </>
+          ) : null}
           <Slider
-            label={t.gr_center_force ?? "Center force"}
-            value={settings.centerForce}
-            min={0}
-            max={1}
-            step={0.01}
-            onChange={(v) => onChange({ centerForce: v })}
-          />
-          <Slider
-            label={t.gr_repel_force ?? "Repel force"}
-            value={settings.repelForce}
-            min={0}
-            max={50}
-            step={0.5}
-            onChange={(v) => onChange({ repelForce: v })}
-          />
-          <Slider
-            label={t.gr_link_force ?? "Link force"}
-            value={settings.linkForce}
-            min={0}
-            max={1}
-            step={0.01}
-            onChange={(v) => onChange({ linkForce: v })}
-          />
-          <Slider
-            label={t.gr_link_distance ?? "Link distance"}
+            label={
+              isMycelium
+                ? (t.gr_myc_spread ?? "Mat spread")
+                : (t.gr_link_distance ?? "Link distance")
+            }
             value={settings.linkDistance}
             min={30}
             max={500}
@@ -697,7 +744,11 @@ export default function GraphControls({
             onChange={(v) => onChange({ linkDistance: v })}
           />
           <Slider
-            label={t.gr_cluster_force ?? "Cluster force"}
+            label={
+              isMycelium
+                ? (t.gr_myc_branch ?? "Branch density")
+                : (t.gr_cluster_force ?? "Cluster force")
+            }
             value={settings.clusterForce}
             min={0}
             max={1}

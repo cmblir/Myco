@@ -367,6 +367,12 @@ export interface Strings {
   gr_empty_post: string;
   gr_timelapse_play: string;
   gr_timelapse_pause: string;
+  // Mycelium-only relabels for the shared Motion/Forces controls (optional —
+  // components fall back to English).
+  gr_motion_hint_myc?: string;
+  gr_myc_forces_hint?: string;
+  gr_myc_spread?: string;
+  gr_myc_branch?: string;
   // Graph node inspector (optional — components fall back to English).
   gr_insp_type?: string;
   gr_insp_confidence?: string;
@@ -1153,6 +1159,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_link_force: "Link force",
     gr_link_distance: "Link distance",
     gr_cluster_force: "Cluster force",
+    gr_myc_spread: "Mat spread",
+    gr_myc_branch: "Branch density",
+    gr_myc_forces_hint: "Mycelium is grown, not simulated: these two sliders reshape the mat.",
     gr_reset: "Reset",
     gr_empty_pre: "No wikilinks found in the vault yet. Add some ",
     gr_empty_post: " to see the graph grow.",
@@ -1206,6 +1215,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_glow: "Glow",
     gr_motion: "Ambient motion",
     gr_motion_hint: "Auto-rotate, pulses, breathing",
+    gr_motion_hint_myc: "Slow 3D auto-orbit (3D view only)",
     gr_advanced: "Advanced",
     gr_loading: "aligning constellations…",
     gr_ctx_lost: "Graphics context was lost.",
@@ -1964,6 +1974,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_link_force: "링크 장력",
     gr_link_distance: "링크 거리",
     gr_cluster_force: "뭉침 강도",
+    gr_myc_spread: "균사 확산",
+    gr_myc_branch: "분기 밀도",
+    gr_myc_forces_hint: "균사는 시뮬레이션이 아니라 자라나는 방식입니다: 이 두 슬라이더가 균사체의 형태를 바꿉니다.",
     gr_reset: "초기화",
     gr_empty_pre: "아직 위키링크가 없습니다. ",
     gr_empty_post: " 를 추가하면 그래프가 자랍니다.",
@@ -2017,6 +2030,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_glow: "글로우",
     gr_motion: "잔잔한 움직임",
     gr_motion_hint: "자동 회전·펄스·깜빡임",
+    gr_motion_hint_myc: "느린 3D 자동 회전 (3D 보기에서만)",
     gr_advanced: "고급",
     gr_loading: "별자리를 정렬하는 중…",
     gr_ctx_lost: "그래픽 컨텍스트가 끊어졌습니다.",
@@ -2716,6 +2730,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_link_force: "リンク張力",
     gr_link_distance: "リンク距離",
     gr_cluster_force: "クラスター力",
+    gr_myc_spread: "菌糸の広がり",
+    gr_myc_branch: "分岐密度",
+    gr_myc_forces_hint: "菌糸はシミュレーションではなく成長する仕組みです。この2つのスライダーが菌糸マットの形を変えます。",
     gr_reset: "リセット",
     gr_empty_pre: "まだウィキリンクがありません。",
     gr_empty_post: " を追加するとグラフが育ちます。",
@@ -3206,6 +3223,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_glow: "グロー",
     gr_motion: "アンビエントモーション",
     gr_motion_hint: "自動回転・パルス・呼吸",
+    gr_motion_hint_myc: "ゆっくりした3D自動回転（3Dビューのみ）",
     gr_advanced: "詳細設定",
     gr_loading: "星座を整列中…",
     gr_ctx_lost: "グラフィックスコンテキストが失われました。",
