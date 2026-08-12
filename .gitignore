@@ -66,3 +66,15 @@ app/src-tauri/models/multilingual-e5-large-q4_k_m.gguf
 
 # subagent-driven-development scratch (ledgers, briefs, review packages)
 .superpowers/
+
+# Maintainer-local content, untracked for the public repo:
+# the personal multi-project vault, editor state, session logs,
+# internal working notes and design-reference images.
+/projects/
+/projects.json
+/.obsidian/
+/logs/
+/dev-status/
+/cosmic-refs/
+/plans/
+/docs/superpowers/
