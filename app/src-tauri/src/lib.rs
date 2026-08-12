@@ -178,6 +178,7 @@ pub fn run() {
             commands::mcp_connect,
             commands::local_classify,
             commands::local_query,
+            commands::local_chat_model_available,
             commands::reindex_embeddings,
             commands::semantic_search,
             commands::semantic_map,

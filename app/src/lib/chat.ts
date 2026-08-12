@@ -68,6 +68,14 @@ const VAULT_CONTEXT_BUDGET = 80_000;
 // small so the question (at the end) always survives backend truncation.
 const LOCAL_CONTEXT_BUDGET = 6_000;
 
+// Mirrors local_llm.rs's CHAT_MODEL_MISSING — the message generate() throws
+// on the Rust side for this provider. Kept in sync so the fast-fail below and
+// the (unreachable in practice, but still correct) slow-fail path read the
+// same to a caller.
+const CHAT_MODEL_MISSING =
+  "no local chat model is bundled: Ask answers extractively from your notes; " +
+  "classification and generation need a connected provider (Settings → Model)";
+
 /** Whether the given provider can read/write vault files via tools. */
 export async function complete(args: CompleteArgs): Promise<string> {
   const settings = await ipc.getSettings();
@@ -150,6 +158,16 @@ export async function complete(args: CompleteArgs): Promise<string> {
   // The embedded model has a 4k-token context window, so its budget is far
   // smaller than the cloud providers' (excess is truncated backend-side too).
   const isBuiltin = provider === "builtin-local";
+  // No chat GGUF has shipped since Ask went extractive (see BUILTIN_MODEL's
+  // doc comment) — generate() below always throws CHAT_MODEL_MISSING for this
+  // provider. Failing here, before retrieval, means a doomed call skips the
+  // ~418 MB embed-model load instead of paying for it and then throwing
+  // anyway. reflectStore's scheduler triggers this task automatically a few
+  // seconds after every launch, so without this check that load happened on
+  // every launch too.
+  if (isBuiltin && !(await ipc.localChatModelAvailable())) {
+    throw new Error(CHAT_MODEL_MISSING);
+  }
   let messages = args.messages;
   // Pages retrieval chose, carried to the `thinking` stage: the model call is
   // the long wait, and "these are the notes it is answering from" is what a

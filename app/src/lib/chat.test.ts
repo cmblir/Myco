@@ -39,6 +39,9 @@ describe("complete() ask stages", () => {
     vi.spyOn(ipc, "getSettings").mockResolvedValue(SETTINGS);
     vi.spyOn(ipc, "localQuery").mockResolvedValue("an answer");
     vi.spyOn(ipc, "readVaultContext").mockResolvedValue("");
+    // Existing tests exercise the generate path, so default to "available" —
+    // the fast-fail itself gets its own test below.
+    vi.spyOn(ipc, "localChatModelAvailable").mockResolvedValue(true);
   });
 
   it("reports the pages retrieval actually chose", async () => {
@@ -342,6 +345,31 @@ describe("complete() ask stages", () => {
     expect(fallback).toHaveBeenCalled(); // the fallback must still run
     expect(seen).toEqual([{ kind: "thinking", stems: [], stale: true }]);
     expect(out).toBe("an answer");
+  });
+
+  it("skips retrieval entirely when no chat model is bundled (builtin-local)", async () => {
+    // No chat GGUF ships anymore (Ask went extractive) — a builtin-local
+    // "query" task's generate() call is unconditionally doomed. Retrieval
+    // (which loads the ~418 MB embed model) must not run just to hit that
+    // error at the end: reflectStore's scheduler fires this automatically a
+    // few seconds after every launch, so a wasted load here means a wasted
+    // load on every launch.
+    vi.spyOn(ipc, "localChatModelAvailable").mockResolvedValue(false);
+    const status = vi.spyOn(ipc, "embeddingsStatus");
+    const search = vi.spyOn(ipc, "semanticSearch");
+    const localQuery = vi.spyOn(ipc, "localQuery");
+
+    await expect(
+      complete({
+        task: "query",
+        cwd: VAULT,
+        messages: [{ role: "user", content: "q" }],
+      }),
+    ).rejects.toThrow("no local chat model is bundled");
+
+    expect(status).not.toHaveBeenCalled();
+    expect(search).not.toHaveBeenCalled();
+    expect(localQuery).not.toHaveBeenCalled();
   });
 });
 

@@ -67,6 +67,19 @@ fn local_model_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Err("bundled model not found (models/gemma-3-1b-it-q4_k_m.gguf)".into())
 }
 
+/// Whether the bundled chat GGUF exists at all — a cheap `is_file()` check, no
+/// model load. Callers that need to complete a builtin-local "query" task use
+/// this to fail fast instead of paying for a full retrieval pass (which loads
+/// the ~418 MB embed model) only to hit [`CHAT_MODEL_MISSING`] at the end: no
+/// chat GGUF has shipped since Ask went extractive, so that generate call was
+/// unconditionally doomed. `runReflect`'s scheduler triggers it automatically
+/// a few seconds after every launch, which made the doomed load happen on
+/// every launch too.
+#[tauri::command]
+pub fn local_chat_model_available(app: tauri::AppHandle) -> bool {
+    local_model_path(&app).is_ok()
+}
+
 /// Path to the bundled purpose-built embedding model (winner of the 1a bake-off).
 /// `rel` is the spec's `EmbedSpec.file`, e.g. "models/bge-m3-Q4_K_M.gguf".
 fn local_embed_model_path(app: &tauri::AppHandle, rel: &str) -> Result<PathBuf, String> {
