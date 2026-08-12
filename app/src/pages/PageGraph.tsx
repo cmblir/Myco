@@ -18,6 +18,8 @@ import GraphLegend from "../components/GraphLegend";
 import {
   DEFAULT_GRAPH_SETTINGS,
   loadGraphSettings,
+  myceliumBranchPct,
+  myceliumMaxNodes,
   saveGraphSettings,
   type GraphSettings,
 } from "../lib/graphSettings";
@@ -137,6 +139,14 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   // and startGrowth() here.
   const myceliumFitRef = useRef<(() => void) | null>(null);
   const myceliumGrowthRef = useRef<(() => void) | null>(null);
+  // Mycelium "force" sliders (linkDistance/clusterForce, repurposed as mat
+  // density / branch density — see graphSettings.ts's myceliumMaxNodes/
+  // myceliumBranchPct) rebuild the grown mat, ~80ms at 1244 notes. Debounced
+  // so dragging the slider doesn't rebuild on every pixel of travel.
+  const [myceliumForceDeb, setMyceliumForceDeb] = useState({
+    linkDistance: DEFAULT_GRAPH_SETTINGS.linkDistance,
+    clusterForce: DEFAULT_GRAPH_SETTINGS.clusterForce,
+  });
   const graphRef = useRef<VaultGraph | null>(null);
   const settingsRef = useRef<GraphSettings>(DEFAULT_GRAPH_SETTINGS);
   const tlRafRef = useRef<number | null>(null);
@@ -163,6 +173,15 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const [settings, setSettings] = useState<GraphSettings>(() =>
     loadGraphSettings(),
   );
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setMyceliumForceDeb({
+        linkDistance: settings.linkDistance,
+        clusterForce: settings.clusterForce,
+      });
+    }, 250);
+    return () => window.clearTimeout(id);
+  }, [settings.linkDistance, settings.clusterForce]);
   // Transient "drilled into one universe" view-state — NOT persisted. Entering a
   // bubble shows that vault's single-vault graph while leaving the SAVED
   // Multiverse preference on (it used to be silently turned off on enter, which
@@ -1820,6 +1839,13 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 flat={settings.myceliumDim === "2d"}
                 nodeColor={settings.myceliumNodeColor}
                 hyphaColor={settings.myceliumHyphaColor}
+                nodeSizeScale={settings.nodeSize}
+                linkThicknessScale={settings.linkThickness}
+                textFadeThreshold={settings.textFadeThreshold}
+                ambientMotion={settings.ambientMotion}
+                growSpeed={settings.tlSpeed}
+                maxNodes={myceliumMaxNodes(myceliumForceDeb.linkDistance, counts.nodes)}
+                branchPct={myceliumBranchPct(myceliumForceDeb.clusterForce)}
                 fitRef={myceliumFitRef}
                 startGrowthRef={myceliumGrowthRef}
               />
@@ -1853,12 +1879,17 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             {/* MYCO cameo: a rare, dismissible feature-tip visit — MYCO drifts
                 through the cosmos AS a planet. Belongs to the 3D dark cosmos
                 only (a floating planet over a flat 2D chart or light paper is
-                incongruous), and never in the multiverse field. */}
+                incongruous), and never in the multiverse field. Also never
+                under the mycelium skin: it anchors to sceneRef's (hidden,
+                no-op) GraphScene camera, which doesn't track what's actually
+                on screen once MyceliumView owns its own camera — the toggle
+                is hidden under mycelium in GraphControls for the same reason. */}
             {!showMultiverse && counts.nodes > 0 ? (
               <MascotCameo
                 active={
                   settings.mascotCameo &&
                   !lightBg &&
+                  settings.skin !== "mycelium" &&
                   !FLAT_LAYOUTS.has(settings.layout)
                 }
                 sceneRef={sceneRef}
