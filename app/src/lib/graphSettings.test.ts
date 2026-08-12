@@ -2,9 +2,43 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_GRAPH_SETTINGS,
   LAYOUT_RECOMMENDED,
+  myceliumBranchPct,
+  myceliumMaxNodes,
   saveLook,
   VIBE_PRESETS,
 } from "./graphSettings";
+
+// The mycelium skin repurposes the shared linkDistance/clusterForce sliders
+// (see GraphControls.tsx's isMycelium gating) onto growMycelium's own
+// maxNodes/branchPct knobs. An untouched slider (the DEFAULT_GRAPH_SETTINGS
+// values) must reproduce growMycelium's own defaults exactly — otherwise the
+// mat's shape would silently change the moment a user switches to the
+// mycelium skin, before ever touching a slider.
+describe("mycelium force-slider mapping", () => {
+  it("default linkDistance reproduces growMycelium's own default node multiplier (10x)", () => {
+    expect(myceliumMaxNodes(DEFAULT_GRAPH_SETTINGS.linkDistance, 1244)).toBe(12440);
+  });
+
+  it("a wider link distance (more spread) yields a sparser mat", () => {
+    const dense = myceliumMaxNodes(30, 1244);
+    const sparse = myceliumMaxNodes(500, 1244);
+    expect(sparse).toBeLessThan(dense);
+  });
+
+  it("clamps to growMycelium's own [2250, 22500] node bounds", () => {
+    expect(myceliumMaxNodes(500, 1244)).toBeGreaterThanOrEqual(2250);
+    expect(myceliumMaxNodes(30, 1244)).toBeLessThanOrEqual(22500);
+  });
+
+  it("default clusterForce reproduces growMycelium's own default branchPct (3.2)", () => {
+    expect(myceliumBranchPct(DEFAULT_GRAPH_SETTINGS.clusterForce)).toBeCloseTo(3.2, 5);
+  });
+
+  it("branch density scales monotonically with clusterForce", () => {
+    expect(myceliumBranchPct(0)).toBe(0);
+    expect(myceliumBranchPct(1)).toBeGreaterThan(myceliumBranchPct(0.5));
+  });
+});
 
 describe("saveLook", () => {
   it("drops transient view/mode state so a recalled look never yanks the view", () => {

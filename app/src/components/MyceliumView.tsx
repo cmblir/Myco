@@ -49,6 +49,13 @@ export default function MyceliumView({
   flat,
   nodeColor,
   hyphaColor,
+  nodeSizeScale,
+  linkThicknessScale,
+  textFadeThreshold,
+  ambientMotion,
+  growSpeed,
+  maxNodes,
+  branchPct,
   fitRef,
   startGrowthRef,
 }: {
@@ -62,6 +69,22 @@ export default function MyceliumView({
   nodeColor: string;
   /** Flat hyphae colour (graphSettings.ts's myceliumHyphaColor). */
   hyphaColor: string;
+  /** "Node size" slider — septa point-size multiplier, live (no rebuild). */
+  nodeSizeScale: number;
+  /** "Link thickness" slider — hypha linewidth multiplier, live (no rebuild). */
+  linkThicknessScale: number;
+  /** "Text fade threshold" slider — hub-label visibility distance, live. */
+  textFadeThreshold: number;
+  /** "Ambient motion" toggle — slow 3D auto-orbit; no-op in 2D/reduced-motion. */
+  ambientMotion: boolean;
+  /** "Timelapse speed" slider — scales the grow-in duration. */
+  growSpeed: number;
+  /** "Link distance" slider, mapped (graphSettings.ts's myceliumMaxNodes) —
+   *  mat density. Rebuilds the mat, so the caller debounces this. */
+  maxNodes: number;
+  /** "Cluster force" slider, mapped (graphSettings.ts's myceliumBranchPct) —
+   *  branch density. Rebuilds the mat, so the caller debounces this. */
+  branchPct: number;
   /** Exposes this instance's fit() to the page's toolbar Fit button. */
   fitRef?: React.MutableRefObject<(() => void) | null>;
   /** Exposes this instance's startGrowth() to the page's toolbar timelapse
@@ -70,6 +93,15 @@ export default function MyceliumView({
   startGrowthRef?: React.MutableRefObject<(() => void) | null>;
 }): JSX.Element {
   const host = useRef<HTMLDivElement | null>(null);
+  // Handle to the live scene, for the small prop-driven effects below that
+  // must NOT rebuild the mat (size/width/fade/motion are uniform or
+  // OrbitControls updates, not geometry). Separate from the heavy build
+  // effect's own local `scene` so those effects don't have to re-run it.
+  const sceneRef = useRef<MyceliumScene | null>(null);
+  // Read inside startGrowth callbacks instead of a dependency, so dragging
+  // the timelapse-speed slider never re-triggers the (expensive) build effect.
+  const growSpeedRef = useRef(growSpeed);
+  growSpeedRef.current = growSpeed;
   // Hover label: a plain DOM element positioned at the cursor rather than a
   // CSS2DRenderer layer — one node, updated on pointer move, is cheap and
   // avoids pulling a whole label-renderer into a scene that otherwise has
@@ -112,6 +144,8 @@ export default function MyceliumView({
       targetRadius: TARGET_RADIUS,
       dim: flat ? "2d" : "3d",
       hyphaColor,
+      maxNodes,
+      branchPct,
     });
     // The 2D toggle flattens the grown mat itself (not just the notes) —
     // otherwise hyphae would draw in 3D under notes pinned to z=0.
@@ -222,9 +256,22 @@ export default function MyceliumView({
     scene.setMat(buckets);
     scene.setSepta(septa);
     scene.setPlanar(flat);
+    // Seed the live-adjustable knobs at their CURRENT slider values — this
+    // effect reruns on every flat/color/density change and rebuilds the
+    // scene from scratch, so without this a rebuild would silently reset
+    // "Node size"/"Link thickness"/"Text fade"/"Ambient motion" to defaults
+    // until the user nudged the slider again.
+    scene.setSizeScale(nodeSizeScale);
+    scene.setWidthScale(linkThicknessScale);
+    scene.setLabelFadeThreshold(textFadeThreshold);
     scene.fit();
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    scene.setAutoRotate(ambientMotion && !flat && !reduced);
+    sceneRef.current = scene;
     if (fitRef) fitRef.current = () => scene.fit();
-    if (startGrowthRef) startGrowthRef.current = () => scene.startGrowth(GROW_SECS);
+    if (startGrowthRef) {
+      startGrowthRef.current = () => scene.startGrowth(GROW_SECS / growSpeedRef.current);
+    }
 
     // Grow-in plays automatically only the FIRST time this view has ever
     // mounted (persisted — see useUIStore's myceliumGrown), same as the other
@@ -232,8 +279,7 @@ export default function MyceliumView({
     // grown mat instantly; the toolbar timelapse button (wired to
     // startGrowthRef above) replays it on demand regardless of this flag.
     const grownBefore = useUIStore.getState().myceliumGrown;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    scene.startGrowth(reduced || grownBefore ? 0 : GROW_SECS);
+    scene.startGrowth(reduced || grownBefore ? 0 : GROW_SECS / growSpeedRef.current);
     // Marking "seen" is DEFERRED, not immediate: switching to the mycelium
     // skin flips settings.skin a render before the graph-build effect (keyed
     // on settings.layout) catches up, so this view can mount once against
@@ -287,9 +333,31 @@ export default function MyceliumView({
       el.removeEventListener("pointermove", onPointerMove);
       if (fitRef) fitRef.current = null;
       if (startGrowthRef) startGrowthRef.current = null;
+      sceneRef.current = null;
       scene.dispose();
     };
-  }, [graph, vaultPath, flat, nodeColor, hyphaColor, setRoute, fitRef, startGrowthRef]);
+    // nodeSizeScale/linkThicknessScale/textFadeThreshold/ambientMotion are
+    // deliberately absent: they're live uniform/OrbitControls updates (see
+    // the effects below), not geometry, so they must not trigger a rebuild.
+    // maxNodes/branchPct DO belong here — they reshape the grown mat, and the
+    // caller (PageGraph) debounces them before they ever reach this prop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [graph, vaultPath, flat, nodeColor, hyphaColor, maxNodes, branchPct, setRoute, fitRef, startGrowthRef]);
+
+  // Live updates for the knobs the build effect intentionally excludes above.
+  useEffect(() => {
+    sceneRef.current?.setSizeScale(nodeSizeScale);
+  }, [nodeSizeScale]);
+  useEffect(() => {
+    sceneRef.current?.setWidthScale(linkThicknessScale);
+  }, [linkThicknessScale]);
+  useEffect(() => {
+    sceneRef.current?.setLabelFadeThreshold(textFadeThreshold);
+  }, [textFadeThreshold]);
+  useEffect(() => {
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    sceneRef.current?.setAutoRotate(ambientMotion && !flat && !reduced);
+  }, [ambientMotion, flat]);
 
   return (
     <div className="myc-view" ref={host}>

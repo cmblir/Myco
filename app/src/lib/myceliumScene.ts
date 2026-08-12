@@ -145,6 +145,21 @@ export class MyceliumScene {
    *  needs it on for near strands to actually occlude far ones. */
   private planar = false;
 
+  /** Per-bucket base linewidth (before the "Link thickness" multiplier) —
+   *  setWidthScale re-derives the live LineMaterial.linewidth from these
+   *  rather than compounding onto whatever the last scale left behind. */
+  private baseWidths: number[] = [];
+  private widthScale = 1;
+  private sizeScale = 1;
+  /** camera-to-target distance at fit() time — the reference "framed" zoom
+   *  level setLabelFadeThreshold's gate measures against (see
+   *  reportLabelFrame). 0 until the first fit(). */
+  private fitDist = 0;
+  /** "Text fade threshold" mapping: matches graphSettings.ts's default
+   *  (DEFAULT_GRAPH_SETTINGS.textFadeThreshold) so an untouched slider is a
+   *  no-op — labels show out to roughly the framed distance. */
+  private labelFadeThreshold = 1.1;
+
   constructor(container: HTMLElement, opts: MyceliumSceneOpts = {}) {
     this.container = container;
     this.opts = opts;
@@ -262,6 +277,7 @@ export class MyceliumScene {
     }
     this.mat = [];
     this.birth = [];
+    this.baseWidths = [];
     this.finalBox = new THREE.Box3();
     // Distances from the origin, subsampled — buildMyceliumMat normalises the
     // mat around the origin, so this is the mat's radial distribution and
@@ -294,7 +310,7 @@ export class MyceliumScene {
       const mtl = new LineMaterial({
         color: 0xffffff,
         vertexColors: true,
-        linewidth: b.width,
+        linewidth: b.width * this.widthScale,
         transparent: true,
         opacity: HYPHA_OPACITY,
         depthWrite: !this.planar,
@@ -306,6 +322,7 @@ export class MyceliumScene {
       this.scene.add(line);
       this.mat.push(line);
       this.birth.push(b.birth);
+      this.baseWidths.push(b.width);
     }
     radii.sort((a, z) => a - z);
     this.frameRadius = radii.length > 0 ? radii[Math.floor(radii.length * 0.88)] : 0;
@@ -359,13 +376,14 @@ export class MyceliumScene {
     const mtl = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: !this.planar, // see setPlanar — real occlusion only in 3D
-      uniforms: { u_t: { value: 0 }, u_dim: { value: 0 } },
+      uniforms: { u_t: { value: 0 }, u_dim: { value: 0 }, u_sizeScale: { value: this.sizeScale } },
       vertexShader: `
         attribute vec3 a_color;
         attribute float a_size;
         attribute float a_birth;
         attribute float a_hi;
         uniform float u_t;
+        uniform float u_sizeScale;
         varying vec3 v_color;
         varying float v_grown;
         varying float v_hi;
@@ -382,8 +400,10 @@ export class MyceliumScene {
           // Fixed screen-space size, not distance-attenuated — see a_size's
           // assignment in setSepta for why. A septum only needs to be findable
           // from a normal viewing distance, not shrink into invisibility on a
-          // big mat the way a physically-scaled marker would.
-          gl_PointSize = a_size * v_grown * sizeBoost;
+          // big mat the way a physically-scaled marker would. u_sizeScale is
+          // the live "Node size" slider (setSizeScale) — a uniform, not baked
+          // into a_size, so it updates without rebuilding the geometry.
+          gl_PointSize = a_size * u_sizeScale * v_grown * sizeBoost;
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `
@@ -492,6 +512,33 @@ export class MyceliumScene {
     this.labelIds = ids;
   }
 
+  /** "Node size" slider — live uniform update, no rebuild. */
+  setSizeScale(v: number): void {
+    this.sizeScale = v;
+    if (this.septa) (this.septa.material as THREE.ShaderMaterial).uniforms.u_sizeScale.value = v;
+  }
+
+  /** "Link thickness" slider — re-derives every bucket's LineMaterial.linewidth
+   *  from its stored base width, live, no rebuild. */
+  setWidthScale(v: number): void {
+    this.widthScale = v;
+    for (let i = 0; i < this.mat.length; i++) {
+      (this.mat[i].material as LineMaterial).linewidth = this.baseWidths[i] * v;
+    }
+  }
+
+  /** "Text fade threshold" slider — see reportLabelFrame's gate. */
+  setLabelFadeThreshold(v: number): void {
+    this.labelFadeThreshold = v;
+  }
+
+  /** "Ambient motion" toggle, 3D only — OrbitControls' own autoRotate, so
+   *  there is nothing bespoke to build. The caller (MyceliumView) is
+   *  responsible for never turning this on in planar/reduced-motion mode. */
+  setAutoRotate(on: boolean): void {
+    this.controls.autoRotate = on;
+  }
+
   /** Reveal the mat up to `t` (0..1) of its growth — hyphae by instance count
    *  (binary search on each bucket's ascending birth index) and septa by the
    *  same birth threshold on the GPU (see setSepta's shader). Nothing moves;
@@ -551,6 +598,10 @@ export class MyceliumScene {
     this.controls.enableRotate = !on;
     this.controls.minPolarAngle = on ? Math.PI / 2 : POLE_GUARD;
     this.controls.maxPolarAngle = on ? Math.PI / 2 : Math.PI - POLE_GUARD;
+    // OrbitControls applies autoRotate unconditionally in update(), regardless
+    // of enableRotate — without this, "Ambient motion" would still spin the
+    // 2D view's locked front-on camera out of its plane.
+    if (on) this.controls.autoRotate = false;
     this.planar = on;
     // Live-update whatever materials already exist (setMat/setSepta run
     // before this in MyceliumView's mount order) — see the depthWrite
@@ -612,6 +663,7 @@ export class MyceliumScene {
     this.camera.far = dist * 8;
     this.camera.updateProjectionMatrix();
     this.controls.update();
+    this.fitDist = dist; // reportLabelFrame's "framed zoom" reference
   }
 
   resize(): void {
@@ -656,6 +708,21 @@ export class MyceliumScene {
    *  O(n^2) stacking check is cheap even at 60fps. */
   private reportLabelFrame(): void {
     if (!this.septa) return;
+    // "Text fade threshold": the same zoomed-out-vs-zoomed-in semantics as
+    // graphScene's per-node label size gate, adapted to this scene's fixed
+    // screen-space labels (no per-node rendered-px to measure) — gate the
+    // whole always-on layer on camera-to-target distance relative to fit()'s
+    // framed distance. Higher threshold = must zoom in further before labels
+    // reappear; the default (1.1) leaves them visible at roughly the framed
+    // view, matching pre-slider behaviour.
+    if (this.fitDist > 0) {
+      const camDist = this.camera.position.distanceTo(this.controls.target);
+      const maxDist = this.fitDist * (1.1 / Math.max(0.1, this.labelFadeThreshold));
+      if (camDist > maxDist) {
+        this.opts.onFrame!([]);
+        return;
+      }
+    }
     const birthAttr = this.septa.geometry.getAttribute("a_birth") as THREE.BufferAttribute;
     const posAttr = this.septa.geometry.getAttribute("position") as THREE.BufferAttribute;
     const MIN_GAP = 22; // px — roughly one label's line height
