@@ -279,7 +279,12 @@ fn main() {
         let case = cases.iter().find(|c| c.stem == want).expect("case exists");
         let mut labels: Vec<&str> = case.labels.iter().map(String::as_str).collect();
         labels.sort();
-        println!("labels: {}\n\n--- easy ---\n{}\n\n--- hard ---\n{}", labels.join(", "), case.easy, case.hard);
+        println!(
+            "labels: {}\n\n--- easy ---\n{}\n\n--- hard ---\n{}",
+            labels.join(", "),
+            case.easy,
+            case.hard
+        );
         return;
     }
 
@@ -315,7 +320,11 @@ fn main() {
         let vecs = embed(EmbedRole::Document, &chunks);
         chunks_total += chunks.len();
         pages += 1;
-        store.upsert_page(&page.rel, &page.stem, hashes.into_iter().zip(vecs).collect());
+        store.upsert_page(
+            &page.rel,
+            &page.stem,
+            hashes.into_iter().zip(vecs).collect(),
+        );
         bm25.upsert_page(&page.rel, &page.stem, &chunks);
         eprint!("\rindexed {pages} pages / {chunks_total} chunks");
     }
@@ -340,7 +349,10 @@ fn main() {
         let mut chunks = embeddings::chunk_page(source_text);
         chunks.truncate(pipeline::MAX_CHUNKS);
         if chunks.is_empty() {
-            return Ranked { dense: Vec::new(), fused: Vec::new() };
+            return Ranked {
+                dense: Vec::new(),
+                fused: Vec::new(),
+            };
         }
         let vecs = embed(EmbedRole::Query, &chunks);
         let mut dense_per_chunk = Vec::with_capacity(chunks.len());
@@ -378,9 +390,9 @@ fn main() {
     }
 
     let evaluate = |subset: &[&Case],
-                     arm: fn(&Ranked) -> &Vec<String>,
-                     variant: &str,
-                     translation_aware: bool|
+                    arm: fn(&Ranked) -> &Vec<String>,
+                    variant: &str,
+                    translation_aware: bool|
      -> Metrics {
         let n = subset.len() as f64;
         let mut p_sum = [0.0f64; KS.len()];
@@ -402,11 +414,19 @@ fn main() {
                 // a list shorter than k is not penalised for slots that never
                 // existed. Empty list -> precision 0.
                 let returned = list.len().min(k) as f64;
-                let p = if returned > 0.0 { found / returned } else { 0.0 };
+                let p = if returned > 0.0 {
+                    found / returned
+                } else {
+                    0.0
+                };
                 let r = found / rel_n;
                 p_sum[ki] += p;
                 r_sum[ki] += r;
-                f_sum[ki] += if p + r > 0.0 { 2.0 * p * r / (p + r) } else { 0.0 };
+                f_sum[ki] += if p + r > 0.0 {
+                    2.0 * p * r / (p + r)
+                } else {
+                    0.0
+                };
                 if k == 10 {
                     recall_at_10.push(r);
                 }
@@ -484,7 +504,9 @@ fn main() {
     //     by construction — and is reported alongside strict, not instead of
     //     it, so the reader sees the artifact's size rather than a single
     //     number that hides it.
-    for (label_name, translation_aware) in [("strict labels", false), ("translation-aware labels", true)] {
+    for (label_name, translation_aware) in
+        [("strict labels", false), ("translation-aware labels", true)]
+    {
         let easy_dense = evaluate(&all, dense_arm, "easy", translation_aware);
         let easy_fused = evaluate(&all, fused_arm, "easy", translation_aware);
         let hard_dense = evaluate(&all, dense_arm, "hard", translation_aware);
@@ -506,12 +528,19 @@ fn main() {
             ("hard", &hard_dense, &hard_fused),
         ] {
             for (name, dv, fv) in [
-                ("precision@10", 100.0 * d.precision[ki10], 100.0 * f.precision[ki10]),
+                (
+                    "precision@10",
+                    100.0 * d.precision[ki10],
+                    100.0 * f.precision[ki10],
+                ),
                 ("recall@10", 100.0 * d.recall[ki10], 100.0 * f.recall[ki10]),
                 ("F1@10", d.f1[ki10], f.f1[ki10]),
                 ("MAP", d.map, f.map),
             ] {
-                println!("  {variant:<7}  {name:<12}  {dv:>6.3}  {fv:>7.3}  {:>+7.3}", fv - dv);
+                println!(
+                    "  {variant:<7}  {name:<12}  {dv:>6.3}  {fv:>7.3}  {:>+7.3}",
+                    fv - dv
+                );
             }
         }
         println!();
@@ -526,10 +555,19 @@ fn main() {
     // answer is a page that is NOT in its label set. Reported under both
     // label definitions so the translation-aware recovery on KO is visible
     // alongside the strict confound, not asserted separately.
-    let en: Vec<&Case> = cases.iter().filter(|c| !c.stem.starts_with("ko-")).collect();
+    let en: Vec<&Case> = cases
+        .iter()
+        .filter(|c| !c.stem.starts_with("ko-"))
+        .collect();
     let ko: Vec<&Case> = cases.iter().filter(|c| c.stem.starts_with("ko-")).collect();
-    println!(" ### by corpus language at k=10 (EN {} cases · KO {} cases) — post-hoc split\n", en.len(), ko.len());
-    println!("  labels                    lang  variant  arm     precision@10  recall@10  F1@10   MAP");
+    println!(
+        " ### by corpus language at k=10 (EN {} cases · KO {} cases) — post-hoc split\n",
+        en.len(),
+        ko.len()
+    );
+    println!(
+        "  labels                    lang  variant  arm     precision@10  recall@10  F1@10   MAP"
+    );
     for (label_name, translation_aware) in [("strict", false), ("translation-aware", true)] {
         for (lang, subset) in [("EN", &en), ("KO", &ko)] {
             for variant in ["easy", "hard"] {
@@ -572,7 +610,9 @@ fn main() {
         });
         // The fused top-5 is printed alongside: a bare recall figure cannot say
         // WHAT the retriever returned instead, which is the whole diagnosis.
-        println!("  worst 5 by fused recall@10 ({lang} · {variant}) — with the fused top-5 returned:");
+        println!(
+            "  worst 5 by fused recall@10 ({lang} · {variant}) — with the fused top-5 returned:"
+        );
         for (stem, r, labels) in worst.iter().take(5) {
             let top: Vec<&str> = ranked[&(variant, *stem)]
                 .fused
@@ -580,7 +620,11 @@ fn main() {
                 .take(5)
                 .map(String::as_str)
                 .collect();
-            println!("    {:>5.1}%  {stem} ({labels} labels) <- {}", 100.0 * r, top.join(", "));
+            println!(
+                "    {:>5.1}%  {stem} ({labels} labels) <- {}",
+                100.0 * r,
+                top.join(", ")
+            );
         }
         println!();
     }

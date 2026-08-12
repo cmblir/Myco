@@ -201,7 +201,9 @@ fn finish_text(s: &str, empty_msg: &str) -> Result<String, String> {
     }
     if t.len() > MAX_OUTPUT_BYTES {
         let cut = truncate_on_boundary(t, MAX_OUTPUT_BYTES);
-        return Ok(format!("{cut}\n…(truncated: document exceeds the extraction limit)…"));
+        return Ok(format!(
+            "{cut}\n…(truncated: document exceeds the extraction limit)…"
+        ));
     }
     Ok(t.to_string())
 }
@@ -216,9 +218,14 @@ fn extract_docx(p: &Path) -> Result<String, String> {
         let mut entry = zip
             .by_name("word/document.xml")
             .map_err(|_| "docx missing word/document.xml".to_string())?;
-        entry.read_to_string(&mut xml).map_err(|e| format!("read docx xml: {e}"))?;
+        entry
+            .read_to_string(&mut xml)
+            .map_err(|e| format!("read docx xml: {e}"))?;
     }
-    finish_text(&ooxml_runs(&xml, "<w:t", "</w:t>"), "no text found in the .docx")
+    finish_text(
+        &ooxml_runs(&xml, "<w:t", "</w:t>"),
+        "no text found in the .docx",
+    )
 }
 
 /// PowerPoint .pptx — text lives in `ppt/slides/slideN.xml` as `<a:t>` runs.
@@ -387,12 +394,11 @@ mod tests {
 
     // Build a minimal OOXML zip (one entry) and confirm the extractor reads it.
     fn ooxml_zip(name: &str, entry: &str, xml: &str) -> std::path::PathBuf {
-        let p =
-            std::env::temp_dir().join(format!("myco-extract-{}-{name}", std::process::id()));
+        let p = std::env::temp_dir().join(format!("myco-extract-{}-{name}", std::process::id()));
         let f = fs::File::create(&p).unwrap();
         let mut zw = zip::ZipWriter::new(f);
-        let opts: zip::write::SimpleFileOptions =
-            zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
         zw.start_file(entry, opts).unwrap();
         zw.write_all(xml.as_bytes()).unwrap();
         zw.finish().unwrap();

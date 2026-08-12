@@ -67,10 +67,7 @@ pub fn parse(json: &str) -> Result<Vec<Conversation>, String> {
 }
 
 fn convert(raw: RawConversation) -> Option<Conversation> {
-    let id = raw
-        .conversation_id
-        .or(raw.id)
-        .filter(|s| !s.is_empty())?;
+    let id = raw.conversation_id.or(raw.id).filter(|s| !s.is_empty())?;
 
     // Follow the ACTIVE branch: current_node → parent → … → root, then reverse.
     // A missing current_node (rare) yields no turns and the conversation drops.

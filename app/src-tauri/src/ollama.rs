@@ -115,7 +115,11 @@ pub async fn check() -> OllamaStatus {
                 Ok(models) => (true, models, None),
                 Err(e) => (true, Vec::new(), Some(e)),
             },
-            Err(e) => (true, Vec::new(), Some(format!("reading /api/tags body: {e}"))),
+            Err(e) => (
+                true,
+                Vec::new(),
+                Some(format!("reading /api/tags body: {e}")),
+            ),
         },
         Ok(resp) => (
             false,
@@ -179,7 +183,10 @@ mod tests {
         assert_eq!(models[0].name, "llama3:8b");
         assert_eq!(models[0].size, 4_700_000_000);
         // A missing size is tolerated (0), a missing name drops the entry.
-        assert_eq!(parse_tags(r#"{"models":[{"name":"x"}]}"#).unwrap()[0].size, 0);
+        assert_eq!(
+            parse_tags(r#"{"models":[{"name":"x"}]}"#).unwrap()[0].size,
+            0
+        );
     }
 
     #[test]

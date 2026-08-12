@@ -122,7 +122,13 @@ where
     tauri::async_runtime::spawn_blocking(move || {
         let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
-            let _ = app.emit("local-model-load", ModelLoadEvent { loading: true, ok: false });
+            let _ = app.emit(
+                "local-model-load",
+                ModelLoadEvent {
+                    loading: true,
+                    ok: false,
+                },
+            );
             let loaded = match &path {
                 Some(p) => LocalLlm::load(p),
                 None => LocalLlm::load_embed_host(),
@@ -131,7 +137,10 @@ where
             // "loading" would show a spinner forever.
             let _ = app.emit(
                 "local-model-load",
-                ModelLoadEvent { loading: false, ok: loaded.is_ok() },
+                ModelLoadEvent {
+                    loading: false,
+                    ok: loaded.is_ok(),
+                },
             );
             *guard = Some(loaded?);
         }
@@ -231,9 +240,11 @@ pub fn open_vault(
         claude::locate_bin("python3", "MYCO_PYTHON_PATH"),
         digest_script_path(&app),
     ) {
-        for warning in
-            crate::schedules::migrate_legacy_agents(std::path::Path::new(&meta.path), &python, &script)
-        {
+        for warning in crate::schedules::migrate_legacy_agents(
+            std::path::Path::new(&meta.path),
+            &python,
+            &script,
+        ) {
             eprintln!("launchd migration: {warning}");
         }
     }
@@ -729,16 +740,21 @@ fn run_import(
         if let Some(convs) = unchanged {
             skipped += convs;
         } else {
-            let res = (|| -> Result<(usize, usize, Vec<QuarantinedConversation>, String), String> {
-                let len = stamp.map(|(_, l)| l);
-                if let Some(len) = len {
-                    if len > MAX_BYTES {
-                        return Err(format!("too large ({} MB); split it first", len / (1024 * 1024)));
+            let res =
+                (|| -> Result<(usize, usize, Vec<QuarantinedConversation>, String), String> {
+                    let len = stamp.map(|(_, l)| l);
+                    if let Some(len) = len {
+                        if len > MAX_BYTES {
+                            return Err(format!(
+                                "too large ({} MB); split it first",
+                                len / (1024 * 1024)
+                            ));
+                        }
                     }
-                }
-                let content = std::fs::read_to_string(f).map_err(|e| format!("cannot read: {e}"))?;
-                apply_import(root, &mut ledger, &path_str, &content, dest)
-            })();
+                    let content =
+                        std::fs::read_to_string(f).map_err(|e| format!("cannot read: {e}"))?;
+                    apply_import(root, &mut ledger, &path_str, &content, dest)
+                })();
             match res {
                 Ok((i2, s2, q2, src)) => {
                     imported += i2;
@@ -757,7 +773,10 @@ fn run_import(
                         source = src;
                     }
                 }
-                Err(error) => failed.push(FailedImport { path: path_str, error }),
+                Err(error) => failed.push(FailedImport {
+                    path: path_str,
+                    error,
+                }),
             }
         }
         if i % 32 == 0 || i + 1 == total {
@@ -808,10 +827,15 @@ pub async fn import_conversations(
 ) -> Result<ImportOutcome, String> {
     let root = require_root(&state)?;
     tauri::async_runtime::spawn_blocking(move || {
-        Ok(run_import(&root, &[PathBuf::from(source_path)], DEST_INBOX, |p| {
-            use tauri::Emitter;
-            let _ = app.emit("import-progress", p);
-        }))
+        Ok(run_import(
+            &root,
+            &[PathBuf::from(source_path)],
+            DEST_INBOX,
+            |p| {
+                use tauri::Emitter;
+                let _ = app.emit("import-progress", p);
+            },
+        ))
     })
     .await
     .map_err(|e| format!("join failed: {e}"))?
@@ -930,8 +954,8 @@ pub async fn import_session_sweep(
 
 /// The on-disk session directory for a CLI tool.
 fn session_dir(kind: &str) -> Result<PathBuf, String> {
-    let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
-        .unwrap_or_default();
+    let home =
+        std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap_or_default();
     match kind {
         "claude-code" => Ok(PathBuf::from(home).join(".claude").join("projects")),
         "codex" => Ok(std::env::var("CODEX_HOME")
@@ -1497,9 +1521,7 @@ fn external_target_allowed(target: &str) -> bool {
 fn windows_opener_safe(target: &str) -> bool {
     // cmd.exe's metacharacters, plus % (environment expansion) and the control
     // characters that could split the command line.
-    !target.contains([
-        '&', '|', '<', '>', '^', '"', '%', '(', ')', '\n', '\r',
-    ])
+    !target.contains(['&', '|', '<', '>', '^', '"', '%', '(', ')', '\n', '\r'])
 }
 
 /// Opens an external URL in the user's default browser via `open` (macOS),
@@ -1598,7 +1620,11 @@ async fn embed_texts(
             .await
         }
         "ollama" => {
-            let m = if model.is_empty() { "nomic-embed-text" } else { model };
+            let m = if model.is_empty() {
+                "nomic-embed-text"
+            } else {
+                model
+            };
             embeddings::embed_ollama("http://localhost:11434", m, &texts).await
         }
         other => Err(format!("unsupported embedding provider: {other}")),
@@ -1607,7 +1633,11 @@ async fn embed_texts(
 
 /// Collect `wiki/**/*.md` pages as (relpath, stem, content).
 pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String, String)> {
-    fn walk(dir: &std::path::Path, root: &std::path::Path, out: &mut Vec<(String, String, String)>) {
+    fn walk(
+        dir: &std::path::Path,
+        root: &std::path::Path,
+        out: &mut Vec<(String, String, String)>,
+    ) {
         // Non-following walk: a symlinked directory under wiki/ must not pull
         // files from outside the vault into the embedding index.
         for (e, kind) in vault::vault_entries(dir) {
@@ -1616,8 +1646,16 @@ pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String,
                 walk(&p, root, out);
             } else if p.extension().and_then(|x| x.to_str()) == Some("md") {
                 if let Ok(content) = std::fs::read_to_string(&p) {
-                    let rel = p.strip_prefix(root).unwrap_or(&p).to_string_lossy().replace('\\', "/");
-                    let stem = p.file_stem().and_then(|s| s.to_str()).unwrap_or("").to_string();
+                    let rel = p
+                        .strip_prefix(root)
+                        .unwrap_or(&p)
+                        .to_string_lossy()
+                        .replace('\\', "/");
+                    let stem = p
+                        .file_stem()
+                        .and_then(|s| s.to_str())
+                        .unwrap_or("")
+                        .to_string();
                     out.push((rel, stem, content));
                 }
             }
@@ -1735,11 +1773,17 @@ pub(crate) async fn embed_one_page(
     let Some((chunks, hashes, dense_current)) =
         sync_bm25_for_page(content, rel, stem, existing, bm25, bm25_pages)
     else {
-        return Ok(EmbedOutcome { embedded: false, changed: false });
+        return Ok(EmbedOutcome {
+            embedded: false,
+            changed: false,
+        });
     };
     if dense_current {
         // Dense already matches; BM25 alone needed catching up. No re-embed.
-        return Ok(EmbedOutcome { embedded: false, changed: true });
+        return Ok(EmbedOutcome {
+            embedded: false,
+            changed: true,
+        });
     }
     let vecs = embed_texts(
         app.clone(),
@@ -1752,7 +1796,10 @@ pub(crate) async fn embed_one_page(
     .await?;
     let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
     store.upsert_page(rel, stem, entries);
-    Ok(EmbedOutcome { embedded: true, changed: true })
+    Ok(EmbedOutcome {
+        embedded: true,
+        changed: true,
+    })
 }
 
 /// Per-page progress for a running reindex. `done` counts pages *considered*
@@ -1825,7 +1872,16 @@ pub async fn reindex_embeddings(
         present.insert(rel.clone());
         let t_embed = std::time::Instant::now();
         let outcome = embed_one_page(
-            &app, &llm, &provider, &model, rel, stem, content, &existing, &mut store, &mut bm25,
+            &app,
+            &llm,
+            &provider,
+            &model,
+            rel,
+            stem,
+            content,
+            &existing,
+            &mut store,
+            &mut bm25,
             &bm25_pages,
         )
         .await?;
@@ -1944,7 +2000,9 @@ pub struct ScoredChunk {
 /// index was built with. `None` if `section` is out of range (e.g. the page was
 /// edited after indexing) — the caller drops such a hit.
 fn chunk_text_at(content: &str, section: usize) -> Option<String> {
-    crate::embeddings::chunk_page(content).into_iter().nth(section)
+    crate::embeddings::chunk_page(content)
+        .into_iter()
+        .nth(section)
 }
 
 /// Semantic search: embed the query, return top-`k` chunk hits from the index,
@@ -2095,7 +2153,10 @@ pub async fn classify_intent(
     let key = format!("{provider}:{model}");
     let cached = {
         let guard = exemplar_cache().lock().unwrap_or_else(|e| e.into_inner());
-        guard.as_ref().filter(|(k, _)| *k == key).map(|(_, v)| v.clone())
+        guard
+            .as_ref()
+            .filter(|(k, _)| *k == key)
+            .map(|(_, v)| v.clone())
     };
     let exemplar_vecs = match cached {
         Some(v) => v,
@@ -2125,10 +2186,12 @@ pub async fn classify_intent(
     .await?;
     let qv = q.pop().unwrap_or_default();
     let sims: Vec<f32> = exemplar_vecs.iter().map(|e| cosine(&qv, e)).collect();
-    Ok(crate::intent::best_intent(&sims).map(|(intent, similarity)| QueryIntent {
-        intent: intent.to_string(),
-        similarity,
-    }))
+    Ok(
+        crate::intent::best_intent(&sims).map(|(intent, similarity)| QueryIntent {
+            intent: intent.to_string(),
+            similarity,
+        }),
+    )
 }
 
 /// Embedded exemplars, keyed by `"{provider}:{model}"` so a model switch
@@ -2283,7 +2346,10 @@ pub async fn semantic_map(
     .map_err(|e| format!("semantic map task failed: {e}"))?;
     perf::log(
         "semantic_map",
-        &[("pages", out.len() as f64), ("total_ms", perf::ms(t0.elapsed()))],
+        &[
+            ("pages", out.len() as f64),
+            ("total_ms", perf::ms(t0.elapsed())),
+        ],
     );
     Ok(out)
 }
@@ -2456,10 +2522,16 @@ mod tests {
             &bm25_pages,
         );
 
-        let (_, _, dense_current) = outcome.expect("bm25 missing the page must still signal an update");
-        assert!(dense_current, "dense side was already current; only bm25 needed catching up");
+        let (_, _, dense_current) =
+            outcome.expect("bm25 missing the page must still signal an update");
         assert!(
-            bm25.search("self attention tokens", 10).iter().any(|h| h.page == "wiki/attention.md"),
+            dense_current,
+            "dense side was already current; only bm25 needed catching up"
+        );
+        assert!(
+            bm25.search("self attention tokens", 10)
+                .iter()
+                .any(|h| h.page == "wiki/attention.md"),
             "the page must be searchable in bm25 immediately after sync_bm25_for_page"
         );
     }
@@ -2486,15 +2558,24 @@ mod tests {
             &bm25_pages,
         );
 
-        assert!(outcome.is_none(), "both sides already current: nothing to do, no wasted embed");
-        assert!(bm25.is_empty(), "must not have upserted anything into bm25 in the both-current case");
+        assert!(
+            outcome.is_none(),
+            "both sides already current: nothing to do, no wasted embed"
+        );
+        assert!(
+            bm25.is_empty(),
+            "must not have upserted anything into bm25 in the both-current case"
+        );
     }
 
     #[test]
     fn chunk_text_at_indexes_sections() {
         // chunk_page splits on ATX headings; two sections here.
         let md = "# A\nalpha body text\n\n# B\nbeta body text\n";
-        assert_eq!(chunk_text_at(md, 0).as_deref(), Some("# A\nalpha body text"));
+        assert_eq!(
+            chunk_text_at(md, 0).as_deref(),
+            Some("# A\nalpha body text")
+        );
         assert!(chunk_text_at(md, 1).unwrap().contains("beta"));
         assert_eq!(chunk_text_at(md, 9), None); // out of range → None (page changed since index)
     }
@@ -2537,14 +2618,17 @@ mod tests {
         assert_eq!(outcome.source, "claude-code");
         // Two inbox docs written.
         let inbox = root.join("_inbox");
-        let n = std::fs::read_dir(&inbox).unwrap().filter(|e| {
-            e.as_ref()
-                .unwrap()
-                .path()
-                .extension()
-                .map(|x| x == "md")
-                .unwrap_or(false)
-        }).count();
+        let n = std::fs::read_dir(&inbox)
+            .unwrap()
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .map(|x| x == "md")
+                    .unwrap_or(false)
+            })
+            .count();
         assert_eq!(n, 2);
         // Progress reported, ending at done == total.
         assert!(!progress.is_empty());
@@ -2631,7 +2715,11 @@ mod tests {
         // The session grew (different length → the stamp no longer matches even
         // if the mtime clock is coarse): it must be read again and re-imported
         // as an update, not skipped.
-        std::fs::write(&f, session_line("s1", "hello there, a much longer continuation")).unwrap();
+        std::fs::write(
+            &f,
+            session_line("s1", "hello there, a much longer continuation"),
+        )
+        .unwrap();
         let second = run_import(root, &files, DEST_INBOX, |_| {});
         assert_eq!(second.imported, 1, "a changed session must re-import");
         assert_eq!(second.skipped, 0);
@@ -2751,16 +2839,34 @@ mod tests {
     #[test]
     fn semantic_search_glue_degrades_to_dense_order_when_bm25_is_empty() {
         let dense = vec![
-            Hit { page: "b.md".into(), stem: "b".into(), section: 0, score: 0.9 },
-            Hit { page: "a.md".into(), stem: "a".into(), section: 0, score: 0.5 },
-            Hit { page: "c.md".into(), stem: "c".into(), section: 1, score: 0.1 },
+            Hit {
+                page: "b.md".into(),
+                stem: "b".into(),
+                section: 0,
+                score: 0.9,
+            },
+            Hit {
+                page: "a.md".into(),
+                stem: "a".into(),
+                section: 0,
+                score: 0.5,
+            },
+            Hit {
+                page: "c.md".into(),
+                stem: "c".into(),
+                section: 1,
+                score: 0.1,
+            },
         ];
         let cache = Bm25Cache::default();
         // No `.mxb` was ever written at this path — same state a fresh vault
         // (or one mid-bootstrap) is in when `semantic_search` runs.
         let bm25_path = PathBuf::from("/nonexistent/does-not-exist.mxb");
         let bm25 = cache.get(&bm25_path);
-        assert!(bm25.is_empty(), "cache must not fabricate content for a missing file");
+        assert!(
+            bm25.is_empty(),
+            "cache must not fabricate content for a missing file"
+        );
         let lexical = bm25.search("self attention tokens", 50);
         assert!(lexical.is_empty());
 
@@ -2769,7 +2875,10 @@ mod tests {
         let capped = crate::retrieval::cap_per_page(fused, 2, dense.len());
         let fused_pages: Vec<&str> = capped.iter().map(|h| h.page.as_str()).collect();
         let dense_pages: Vec<&str> = dense.iter().map(|h| h.page.as_str()).collect();
-        assert_eq!(fused_pages, dense_pages, "empty BM25 arm must not reorder the dense hits");
+        assert_eq!(
+            fused_pages, dense_pages,
+            "empty BM25 arm must not reorder the dense hits"
+        );
     }
 
     // The per-page cap must not cost a distinct-page result its slot: with one
@@ -2803,7 +2912,10 @@ mod tests {
         let s = crate::local_llm::embed_spec_by_id("bge-m3").expect("winner spec present");
         assert_eq!(s.id, "bge-m3");
         assert_eq!(s.file, "models/bge-m3-Q4_K_M.gguf");
-        assert!(matches!(s.pooling, llama_cpp_2::context::params::LlamaPoolingType::Cls));
+        assert!(matches!(
+            s.pooling,
+            llama_cpp_2::context::params::LlamaPoolingType::Cls
+        ));
     }
 }
 
@@ -2824,7 +2936,10 @@ mod session_bucket_tests {
         let b = session_bucket("codex-019fdc04-c083-7f62-8be6");
         assert_eq!(b.len(), 7);
         let year: u16 = b[0..4].parse().unwrap();
-        assert!((2020..=2999).contains(&year), "fell back to a sane month, got {b}");
+        assert!(
+            (2020..=2999).contains(&year),
+            "fell back to a sane month, got {b}"
+        );
     }
 
     #[test]
@@ -2864,8 +2979,12 @@ mod session_bucket_tests {
 
         let (moved, skipped) = partition_sessions(&tmp).unwrap();
         assert_eq!((moved, skipped), (0, 1));
-        let kept = std::fs::read_to_string(sessions.join("2026-07").join("dup-2026-07-02.md")).unwrap();
-        assert_eq!(kept, "keep", "an archived session must never be overwritten");
+        let kept =
+            std::fs::read_to_string(sessions.join("2026-07").join("dup-2026-07-02.md")).unwrap();
+        assert_eq!(
+            kept, "keep",
+            "an archived session must never be overwritten"
+        );
         std::fs::remove_dir_all(&tmp).ok();
     }
 }

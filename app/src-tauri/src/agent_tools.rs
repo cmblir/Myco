@@ -264,7 +264,13 @@ mod tests {
     fn search_and_read_roundtrip() {
         let v = temp_vault();
         let root = v.to_string_lossy();
-        let hits = dispatch(&root, "search_vault", &json!({ "query": "attention" }), false).unwrap();
+        let hits = dispatch(
+            &root,
+            "search_vault",
+            &json!({ "query": "attention" }),
+            false,
+        )
+        .unwrap();
         assert!(!hits["hits"].as_array().unwrap().is_empty());
         let page = dispatch(
             &root,
@@ -273,7 +279,10 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(page["content"].as_str().unwrap().contains("Scaled dot-product"));
+        assert!(page["content"]
+            .as_str()
+            .unwrap()
+            .contains("Scaled dot-product"));
         fs::remove_dir_all(&v).ok();
     }
 

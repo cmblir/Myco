@@ -45,7 +45,9 @@ pub fn parse_clip_url(raw: &str) -> Result<Clip, String> {
     }
     // Accept both myco://clip?... (host) and myco:/clip?... (path) forms —
     // OS launchers normalize these differently.
-    let action = u.host_str().unwrap_or_else(|| u.path().trim_start_matches('/'));
+    let action = u
+        .host_str()
+        .unwrap_or_else(|| u.path().trim_start_matches('/'));
     if action != "clip" {
         return Err(format!("unsupported action: {action}"));
     }
@@ -81,7 +83,11 @@ pub fn parse_clip_url(raw: &str) -> Result<Clip, String> {
     if page_url.is_none() && selection.is_none() {
         return Err("clip carries neither url nor selection".to_string());
     }
-    Ok(Clip { title, url: page_url, selection })
+    Ok(Clip {
+        title,
+        url: page_url,
+        selection,
+    })
 }
 
 /// `_inbox/` filename: whitelisted slug from the title + a short content hash
@@ -97,7 +103,11 @@ pub fn clip_filename(clip: &Clip) -> String {
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("-");
-    let slug = if slug.is_empty() { "web".to_string() } else { slug.chars().take(50).collect() };
+    let slug = if slug.is_empty() {
+        "web".to_string()
+    } else {
+        slug.chars().take(50).collect()
+    };
     // FNV-1a over the whole clip — cheap, deterministic, no new deps.
     let mut h: u64 = 0xcbf29ce484222325;
     for b in format!("{}|{:?}|{:?}", clip.title, clip.url, clip.selection).bytes() {
@@ -222,7 +232,11 @@ mod tests {
     fn save_clip_writes_inside_inbox() {
         let dir = std::env::temp_dir().join(format!("myco-clip-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let c = Clip { title: "t".into(), url: Some("https://x.com".into()), selection: None };
+        let c = Clip {
+            title: "t".into(),
+            url: Some("https://x.com".into()),
+            selection: None,
+        };
         let p = save_clip(&dir, &c).unwrap();
         assert!(p.starts_with(dir.join("_inbox")));
         assert!(std::fs::read_to_string(&p).unwrap().contains("Source:"));

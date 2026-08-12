@@ -38,7 +38,10 @@ const QUERIES: &[(&str, &str)] = &[
     ("wiki", "What is tokenization and why does BPE matter?"),
     ("wiki", "batch normalization과 layer normalization의 차이"),
     ("wiki", "How is a language model pretrained?"),
-    ("session", "What did we decide about the abstention threshold?"),
+    (
+        "session",
+        "What did we decide about the abstention threshold?",
+    ),
     ("session", "인박스 스윕은 어떤 문제 때문에 껐지?"),
     ("ambiguous", "embedding model 선택 기준"),
     ("ambiguous", "How should retrieval rank results?"),
@@ -57,7 +60,10 @@ fn main() {
     let index_path = VectorStore::path_for(&root).expect("index path");
     let store = VectorStore::load(&index_path);
     if store.records.is_empty() {
-        eprintln!("index at {} is empty — nothing to measure", index_path.display());
+        eprintln!(
+            "index at {} is empty — nothing to measure",
+            index_path.display()
+        );
         return;
     }
 
@@ -68,11 +74,21 @@ fn main() {
         *corpus.entry(bucket(&r.page)).or_default() += 1;
     }
     let total = store.records.len();
-    println!("index: {} ({} chunks, model {})", index_path.display(), total, store.model);
+    println!(
+        "index: {} ({} chunks, model {})",
+        index_path.display(),
+        total,
+        store.model
+    );
     let mut rows: Vec<_> = corpus.iter().collect();
     rows.sort_by_key(|(_, n)| std::cmp::Reverse(**n));
     for (b, n) in &rows {
-        println!("  corpus {:<16} {:>6} chunks  {:>5.1}%", b, n, 100.0 * **n as f64 / total as f64);
+        println!(
+            "  corpus {:<16} {:>6} chunks  {:>5.1}%",
+            b,
+            n,
+            100.0 * **n as f64 / total as f64
+        );
     }
 
     let spec = embed_spec_by_id(&spec_id).unwrap_or_else(|| panic!("unknown embed spec {spec_id}"));
@@ -107,7 +123,10 @@ fn main() {
         // Fuse WIDER than k, then cap, then truncate — capping a list already
         // cut to k would only shrink it, never promote a distinct page.
         let fused = rrf_fuse(&dense, &lexical, pool);
-        let cap: usize = std::env::var("MYCO_PAGE_CAP").ok().and_then(|v| v.parse().ok()).unwrap_or(0);
+        let cap: usize = std::env::var("MYCO_PAGE_CAP")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(0);
         let hits = cap_per_page(fused, cap, k);
 
         let mut mix: HashMap<&str, usize> = HashMap::new();
@@ -116,7 +135,11 @@ fn main() {
             *agg.entry(bucket(&h.page).to_string()).or_default() += 1;
             agg_slots += 1;
         }
-        let distinct = hits.iter().map(|h| h.page.as_str()).collect::<std::collections::HashSet<_>>().len();
+        let distinct = hits
+            .iter()
+            .map(|h| h.page.as_str())
+            .collect::<std::collections::HashSet<_>>()
+            .len();
         agg_distinct += distinct;
         let mut m: Vec<_> = mix.into_iter().collect();
         m.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
@@ -132,7 +155,11 @@ fn main() {
         }
     }
 
-    println!("\naggregate over {} queries ({agg_slots} slots, {agg_distinct} distinct pages, cap={}):", QUERIES.len(), std::env::var("MYCO_PAGE_CAP").unwrap_or_else(|_| "0(off)".into()));
+    println!(
+        "\naggregate over {} queries ({agg_slots} slots, {agg_distinct} distinct pages, cap={}):",
+        QUERIES.len(),
+        std::env::var("MYCO_PAGE_CAP").unwrap_or_else(|_| "0(off)".into())
+    );
     let mut a: Vec<_> = agg.into_iter().collect();
     a.sort_by_key(|(_, n)| std::cmp::Reverse(*n));
     for (b, n) in a {
@@ -145,7 +172,11 @@ fn main() {
             n,
             100.0 * retrieved_share,
             100.0 * corpus_share,
-            if corpus_share > 0.0 { retrieved_share / corpus_share } else { 0.0 }
+            if corpus_share > 0.0 {
+                retrieved_share / corpus_share
+            } else {
+                0.0
+            }
         );
     }
 }

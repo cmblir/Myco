@@ -500,7 +500,11 @@ pub fn active_vault() -> Option<String> {
     let f = settings_dir().ok()?.join("active-vault");
     let raw = std::fs::read_to_string(f).ok()?;
     let t = raw.trim();
-    if t.is_empty() { None } else { Some(t.to_string()) }
+    if t.is_empty() {
+        None
+    } else {
+        Some(t.to_string())
+    }
 }
 
 /// Test-only app-data isolation, shared with every other module's tests.
@@ -652,8 +656,11 @@ mod tests {
             // Both a fresh install and a pre-feature settings.json must come up
             // with the sweep enabled — "myco pulls conversations in by itself"
             // only holds if nobody has to find a toggle first.
-            std::fs::write(dir.join("settings.json"), r#"{ "auto_ingest_enabled": true }"#)
-                .unwrap();
+            std::fs::write(
+                dir.join("settings.json"),
+                r#"{ "auto_ingest_enabled": true }"#,
+            )
+            .unwrap();
             let s = load();
             assert!(s.auto_import_enabled);
             assert_eq!(s.auto_import_interval_min, 30);
@@ -807,13 +814,19 @@ mod tests {
             std::env::set_var("MYCO_DATA_DIR", "/tmp/new-spelling");
             std::env::set_var("MEMEX_DATA_DIR", "/tmp/old-spelling");
         }
-        assert_eq!(data_dir_override(), Some(PathBuf::from("/tmp/new-spelling")));
+        assert_eq!(
+            data_dir_override(),
+            Some(PathBuf::from("/tmp/new-spelling"))
+        );
 
         // Old spelling alone still works — dev setups and scripts export it.
         unsafe {
             std::env::remove_var("MYCO_DATA_DIR");
         }
-        assert_eq!(data_dir_override(), Some(PathBuf::from("/tmp/old-spelling")));
+        assert_eq!(
+            data_dir_override(),
+            Some(PathBuf::from("/tmp/old-spelling"))
+        );
 
         unsafe {
             std::env::remove_var("MEMEX_DATA_DIR");

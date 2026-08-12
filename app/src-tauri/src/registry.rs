@@ -341,9 +341,7 @@ fn count_notes(root: &Path) -> usize {
             let Ok(ft) = e.file_type() else { continue };
             if ft.is_dir() {
                 stack.push(e.path());
-            } else if ft.is_file()
-                && e.path().extension().and_then(|s| s.to_str()) == Some("md")
-            {
+            } else if ft.is_file() && e.path().extension().and_then(|s| s.to_str()) == Some("md") {
                 count += 1;
             }
         }
@@ -515,10 +513,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn resolve_rejects_symlink_escaping_projects_dir() {
-        let tmp = scaffold(
-            r#"{"active": null, "projects": [{"slug": "escape"}]}"#,
-            &[],
-        );
+        let tmp = scaffold(r#"{"active": null, "projects": [{"slug": "escape"}]}"#, &[]);
         std::fs::create_dir_all(tmp.path().join("projects")).unwrap();
         let outside = tempfile::tempdir().unwrap();
         std::os::unix::fs::symlink(outside.path(), tmp.path().join("projects").join("escape"))

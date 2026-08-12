@@ -20,7 +20,7 @@ const DEFAULT_TIMEOUT_SECS: u64 = 900; // transcription can be slow
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Variant {
-    OpenAi,   // `whisper`
+    OpenAi,     // `whisper`
     WhisperCpp, // `whisper-cli`
 }
 
@@ -154,7 +154,12 @@ mod tests {
 
     #[test]
     fn whisper_cpp_args_shape() {
-        let (args, out) = build_args(Variant::WhisperCpp, "/a/talk.wav", "talk", Path::new("/tmp/x"));
+        let (args, out) = build_args(
+            Variant::WhisperCpp,
+            "/a/talk.wav",
+            "talk",
+            Path::new("/tmp/x"),
+        );
         assert_eq!(args[0], "-f");
         assert_eq!(args[1], "/a/talk.wav");
         assert!(args.contains(&"-otxt".to_string()));

@@ -186,5 +186,4 @@ mod tests {
         assert_eq!(c.turns.len(), 1);
         assert_eq!(c.turns[0].text, "real");
     }
-
 }

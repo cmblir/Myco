@@ -197,13 +197,18 @@ pub async fn embed_ollama(
         if !resp.status().is_success() {
             return Err(format!("ollama embed status {}", resp.status()));
         }
-        let body: serde_json::Value =
-            resp.json().await.map_err(|e| format!("ollama embed decode: {e}"))?;
+        let body: serde_json::Value = resp
+            .json()
+            .await
+            .map_err(|e| format!("ollama embed decode: {e}"))?;
         let arr = body
             .get("embedding")
             .and_then(|v| v.as_array())
             .ok_or("ollama embed: no 'embedding' in response")?;
-        let mut vec: Vec<f32> = arr.iter().filter_map(|x| x.as_f64().map(|f| f as f32)).collect();
+        let mut vec: Vec<f32> = arr
+            .iter()
+            .filter_map(|x| x.as_f64().map(|f| f as f32))
+            .collect();
         if vec.is_empty() {
             return Err("ollama embed: empty vector".into());
         }
@@ -239,14 +244,25 @@ mod tests {
         // Korean page did this at 6,419 chars / 1,501 tokens, which then
         // crashed the embed path.
         let wall = "지식 그래프는 노트 사이의 연결을 보여준다. ".repeat(200);
-        assert!(wall.len() > CHUNK_CHARS * 3, "fixture must exceed the limit");
+        assert!(
+            wall.len() > CHUNK_CHARS * 3,
+            "fixture must exceed the limit"
+        );
         let chunks = chunk_page(&wall);
         assert!(chunks.len() > 1);
         for c in &chunks {
-            assert!(c.len() <= CHUNK_CHARS, "chunk of {} chars exceeds limit", c.len());
+            assert!(
+                c.len() <= CHUNK_CHARS,
+                "chunk of {} chars exceeds limit",
+                c.len()
+            );
         }
         // No text is dropped on the floor.
-        let rejoined: String = chunks.join(" ").split_whitespace().collect::<Vec<_>>().join(" ");
+        let rejoined: String = chunks
+            .join(" ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ");
         let original: String = wall.split_whitespace().collect::<Vec<_>>().join(" ");
         assert_eq!(rejoined, original);
     }
@@ -273,7 +289,11 @@ mod tests {
         let md = format!("# Title\n{para}\n\n# Other\nshort body\n");
         let chunks = chunk_page(&md);
         for c in &chunks {
-            assert!(c.len() <= CHUNK_CHARS, "chunk of {} chars exceeds limit", c.len());
+            assert!(
+                c.len() <= CHUNK_CHARS,
+                "chunk of {} chars exceeds limit",
+                c.len()
+            );
         }
         assert!(chunks.iter().any(|c| c.contains("short body")));
     }
@@ -283,7 +303,10 @@ mod tests {
         let words = "alpha ".repeat(1000);
         for c in chunk_page(&words) {
             // Backing off to whitespace means no chunk ends mid-word.
-            assert!(!c.ends_with("alp") && !c.ends_with("alph"), "split mid-word: {c:?}");
+            assert!(
+                !c.ends_with("alp") && !c.ends_with("alph"),
+                "split mid-word: {c:?}"
+            );
         }
     }
 

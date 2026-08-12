@@ -241,7 +241,13 @@ mod tests {
         assert_eq!(KNOWN_ACCOUNTS.len(), expected.len());
         // The accounts every key-bearing provider uses today, spelled out so a
         // rename of one is caught here rather than in the field.
-        for id in ["anthropic-api", "openai-api", "google-api", "openrouter", "myco-pro"] {
+        for id in [
+            "anthropic-api",
+            "openai-api",
+            "google-api",
+            "openrouter",
+            "myco-pro",
+        ] {
             assert!(KNOWN_ACCOUNTS.contains(&id));
         }
     }
@@ -344,13 +350,27 @@ mod tests {
         assert!(warnings.is_empty(), "{warnings:?}");
         assert_eq!(s.new.get("openai-api").unwrap(), "sk-1");
         assert_eq!(s.new.get("myco-pro").unwrap(), "lic-2");
-        assert!(s.old.is_empty(), "old entries must be gone after a verified copy");
+        assert!(
+            s.old.is_empty(),
+            "old entries must be gone after a verified copy"
+        );
         // The write must precede the delete for every account.
-        let w = s.log.iter().position(|l| l == "write_new openai-api").unwrap();
-        let d = s.log.iter().position(|l| l == "delete_old openai-api").unwrap();
+        let w = s
+            .log
+            .iter()
+            .position(|l| l == "write_new openai-api")
+            .unwrap();
+        let d = s
+            .log
+            .iter()
+            .position(|l| l == "delete_old openai-api")
+            .unwrap();
         assert!(w < d, "delete ran before the copy: {:?}", s.log);
         // An account with nothing stored is never written or deleted.
-        assert!(!s.log.iter().any(|l| l.ends_with("google-api") && !l.starts_with("read_old")));
+        assert!(!s
+            .log
+            .iter()
+            .any(|l| l.ends_with("google-api") && !l.starts_with("read_old")));
 
         // Second run: nothing left under the old service, so it is a no-op.
         s.log.clear();
@@ -393,7 +413,10 @@ mod tests {
         );
         assert_eq!(warnings.len(), 1);
         assert!(warnings[0].contains("read-back"));
-        assert!(deleted.is_empty(), "old entry deleted without a verified copy");
+        assert!(
+            deleted.is_empty(),
+            "old entry deleted without a verified copy"
+        );
     }
 
     #[test]

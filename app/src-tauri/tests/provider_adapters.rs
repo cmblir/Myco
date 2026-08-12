@@ -240,10 +240,7 @@ async fn openrouter_list_models_takes_top_80() {
 #[serial_test::serial]
 async fn google_chat_uses_system_instruction_and_concatenates_parts() {
     let server = MockServer::start().await;
-    std::env::set_var(
-        "MYCO_GOOGLE_URL",
-        format!("{}/v1beta/models", server.uri()),
-    );
+    std::env::set_var("MYCO_GOOGLE_URL", format!("{}/v1beta/models", server.uri()));
     Mock::given(method("POST"))
         .and(path("/v1beta/models/gemini-2.0-flash:generateContent"))
         // The key must travel in the x-goog-api-key header, never the URL query

@@ -3,9 +3,9 @@
 // the Tauri runtime.
 
 pub mod agent_tools;
-pub mod clip;
 pub mod claude;
 pub mod cli_agent;
+pub mod clip;
 mod commands;
 pub mod embeddings;
 pub mod env;
@@ -36,8 +36,8 @@ pub mod tasks;
 pub mod validator;
 pub mod vault;
 pub mod vault_dir;
-pub mod webview_data;
 pub mod vector_index;
+pub mod webview_data;
 pub mod whisper;
 pub mod youtube;
 

@@ -64,7 +64,11 @@ const NEG_CONTENT: &[&str] = &[
     "LoRA 어댑터 원리",
 ];
 
-const NEG_OFFTOPIC: &[&str] = &["김치찌개 레시피", "내일 서울 날씨", "how to fix a leaking faucet"];
+const NEG_OFFTOPIC: &[&str] = &[
+    "김치찌개 레시피",
+    "내일 서울 날씨",
+    "how to fix a leaking faucet",
+];
 
 const FLOORS: [f32; 9] = [0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80];
 
@@ -118,7 +122,10 @@ fn main() {
         .expect("known embed spec (set MYCO_EMBED_SPEC=bge-m3, the only GGUF bundled)");
     let model_path = manifest.join(spec.file);
 
-    eprintln!("loading embed model {} (spec: {spec_id}) …", model_path.display());
+    eprintln!(
+        "loading embed model {} (spec: {spec_id}) …",
+        model_path.display()
+    );
     let llm = LocalLlm::load(&model_path).expect("load model");
 
     if spec.query_prefix.is_empty() && spec.doc_prefix.is_empty() {
@@ -203,7 +210,10 @@ fn main() {
     println!("--- threshold sweep (floor -> route to vault-files if max cosine >= floor) ---");
     println!(
         "  {:<6} {:>26} {:>26} {:>26}",
-        "floor", "positives ROUTED (want yes)", "content-Qs ROUTED (want no)", "off-topic ROUTED (want no)"
+        "floor",
+        "positives ROUTED (want yes)",
+        "content-Qs ROUTED (want no)",
+        "off-topic ROUTED (want no)"
     );
     let n_pos = pos_cos.len().max(1);
     let n_neg_content = neg_content_cos.len().max(1);

@@ -55,7 +55,9 @@ fn summarize(mut samples: Vec<Duration>) -> Stats {
     let n = samples.len();
     // Nearest-rank p95: with 5 samples this is the slowest, which is the honest
     // answer at this sample count rather than an interpolated invention.
-    let p95_idx = (((n as f64) * 0.95).ceil() as usize).saturating_sub(1).min(n - 1);
+    let p95_idx = (((n as f64) * 0.95).ceil() as usize)
+        .saturating_sub(1)
+        .min(n - 1);
     Stats {
         median: samples[n / 2],
         p95: samples[p95_idx],
@@ -109,7 +111,9 @@ fn prompt_of_tokens(llm: &LocalLlm, target: usize) -> (String, usize) {
 fn main() {
     let model_path =
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models/gemma-3-1b-it-q4_k_m.gguf");
-    let size_mb = std::fs::metadata(&model_path).map(|m| m.len() as f64 / 1e6).unwrap_or(f64::NAN);
+    let size_mb = std::fs::metadata(&model_path)
+        .map(|m| m.len() as f64 / 1e6)
+        .unwrap_or(f64::NAN);
     println!("model: {} ({size_mb:.0} MB)", model_path.display());
 
     // ---- cold load ---------------------------------------------------------

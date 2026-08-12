@@ -179,7 +179,10 @@ mod tests {
         let text = "# Notes\n\n- [ ] write the parser\n- [x] read the spec\nplain line\n* [ ] star bullet\n+ [X] plus bullet\n";
         let tasks = extract_tasks(text);
         assert_eq!(tasks.len(), 4);
-        assert_eq!(tasks[0], (3, TaskStatus::Todo, "write the parser".to_string()));
+        assert_eq!(
+            tasks[0],
+            (3, TaskStatus::Todo, "write the parser".to_string())
+        );
         assert_eq!(tasks[1], (4, TaskStatus::Done, "read the spec".to_string()));
         assert_eq!(tasks[2], (6, TaskStatus::Todo, "star bullet".to_string()));
         assert_eq!(tasks[3], (7, TaskStatus::Done, "plus bullet".to_string()));
@@ -196,7 +199,11 @@ mod tests {
         std::fs::write(root.join("raw/s.md"), "- [ ] from a source\n").unwrap();
         std::fs::write(root.join("_inbox/p.md"), "- [ ] pending source\n").unwrap();
         // A session transcript quoting a plan is not a task list.
-        std::fs::write(root.join("sessions/log.md"), "- [ ] Step 1: write the test\n").unwrap();
+        std::fs::write(
+            root.join("sessions/log.md"),
+            "- [ ] Step 1: write the test\n",
+        )
+        .unwrap();
 
         let tasks = scan_tasks(root.to_str().unwrap()).unwrap();
         assert_eq!(tasks.len(), 1);

@@ -26,6 +26,8 @@
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
+#[cfg(feature = "rerank")]
+use myco_lib::rerank::Reranker;
 use myco_lib::{
     embeddings,
     local_llm::{apply_prefix, embed_spec_by_id, EmbedRole, LocalLlm},
@@ -33,8 +35,6 @@ use myco_lib::{
     sample_vault,
     vector_index::VectorStore,
 };
-#[cfg(feature = "rerank")]
-use myco_lib::rerank::Reranker;
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -68,10 +68,9 @@ fn main() {
     };
     let eval_path = manifest.join("eval/retrieval-queries.json");
 
-    let set: EvalSet = serde_json::from_str(
-        &std::fs::read_to_string(&eval_path).expect("read eval set"),
-    )
-    .expect("parse eval set");
+    let set: EvalSet =
+        serde_json::from_str(&std::fs::read_to_string(&eval_path).expect("read eval set"))
+            .expect("parse eval set");
 
     eprintln!("loading model {} (spec: {spec_id}) …", model_path.display());
     let llm = LocalLlm::load(&model_path).expect("load model");
@@ -94,7 +93,10 @@ fn main() {
     };
     let query_vec = |llm: &LocalLlm, q: &str| -> Vec<f32> {
         if spec_id == "gemma" {
-            llm.embed(&[q.to_string()]).expect("embed query").pop().unwrap()
+            llm.embed(&[q.to_string()])
+                .expect("embed query")
+                .pop()
+                .unwrap()
         } else {
             let spec = embed_spec_by_id(&spec_id).expect("known spec");
             let prefixed = apply_prefix(spec, EmbedRole::Query, &[q.to_string()]);
@@ -178,7 +180,10 @@ fn main() {
         }
     }
 
-    eprintln!("\nindexed {pages} pages, {chunks_total} chunks. evaluating {} queries…\n", set.queries.len());
+    eprintln!(
+        "\nindexed {pages} pages, {chunks_total} chunks. evaluating {} queries…\n",
+        set.queries.len()
+    );
 
     // Aggregate metrics for one arm (dense-only or fused), computed from a
     // pre-ranked, deduped-by-stem list per query — the SAME function is
@@ -247,7 +252,12 @@ fn main() {
         println!("  --- {title} ---");
         println!("  k     hit@k    recall@k");
         for (ki, &k) in KS.iter().enumerate() {
-            println!("  {:<4}  {:>5.1}%   {:>5.1}%", k, 100.0 * m.hit[ki], 100.0 * m.recall[ki]);
+            println!(
+                "  {:<4}  {:>5.1}%   {:>5.1}%",
+                k,
+                100.0 * m.hit[ki],
+                100.0 * m.recall[ki]
+            );
         }
         println!();
         println!("  MRR       {:>6.3}", m.mrr);
@@ -322,8 +332,7 @@ fn main() {
             // scores keep their fused order and the result is reproducible.
             let mut order: Vec<(usize, f32)> = scores.iter().copied().enumerate().collect();
             order.sort_by(|a, b| b.1.total_cmp(&a.1));
-            let mut reordered: Vec<_> =
-                order.iter().map(|(i, _)| fused_hits[*i].clone()).collect();
+            let mut reordered: Vec<_> = order.iter().map(|(i, _)| fused_hits[*i].clone()).collect();
             reordered.extend_from_slice(&fused_hits[n..]);
             rerank_ranked.push(dedup_stems(&reordered));
         }
@@ -336,7 +345,10 @@ fn main() {
     println!("═══════════════════════════════════════════════════");
     println!(" Memex retrieval — {spec_id}");
     println!("═══════════════════════════════════════════════════");
-    println!(" corpus: {pages} wiki pages · {chunks_total} chunks · {} queries", set.queries.len());
+    println!(
+        " corpus: {pages} wiki pages · {chunks_total} chunks · {} queries",
+        set.queries.len()
+    );
     println!();
     print_block("dense", &dense);
     print_block("dense+bm25 (RRF)", &fused);
@@ -351,7 +363,13 @@ fn main() {
 
     // Every query whose first-relevant rank changed between the two arms —
     // gains and regressions must be equally visible, not just improvements.
-    let fmt_rank = |r: usize| if r == 0 { "MISS".to_string() } else { format!("@{r}") };
+    let fmt_rank = |r: usize| {
+        if r == 0 {
+            "MISS".to_string()
+        } else {
+            format!("@{r}")
+        }
+    };
     let mut changed: Vec<(&str, usize, usize)> = Vec::new();
     for (i, lab) in set.queries.iter().enumerate() {
         let d = dense.first_rel[i];
@@ -385,7 +403,10 @@ fn main() {
             }
             println!();
         }
-        let lost_first = moved.iter().filter(|(_, f, rr)| *f == 1 && *rr != 1).count();
+        let lost_first = moved
+            .iter()
+            .filter(|(_, f, rr)| *f == 1 && *rr != 1)
+            .count();
         println!("  queries pushed out of rank 1 by rerank: {lost_first}\n");
     }
 

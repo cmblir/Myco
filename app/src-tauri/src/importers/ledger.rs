@@ -129,7 +129,8 @@ impl Ledger {
     /// directory stays out of a vault that is itself a git repo).
     pub fn save(&self, vault_root: &Path) -> Result<(), String> {
         let dir = Self::dir(vault_root);
-        std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", crate::vault_dir::DIR_NAME))?;
+        std::fs::create_dir_all(&dir)
+            .map_err(|e| format!("create {}: {e}", crate::vault_dir::DIR_NAME))?;
         let ignore = dir.join(".gitignore");
         if !ignore.exists() {
             let _ = std::fs::write(&ignore, "*\n");
@@ -138,8 +139,8 @@ impl Ledger {
             entries: &self.entries,
             files: &self.files,
         };
-        let json = serde_json::to_string_pretty(&on_disk)
-            .map_err(|e| format!("serialize ledger: {e}"))?;
+        let json =
+            serde_json::to_string_pretty(&on_disk).map_err(|e| format!("serialize ledger: {e}"))?;
         std::fs::write(Self::path(vault_root), json).map_err(|e| format!("write ledger: {e}"))
     }
 }
@@ -171,7 +172,10 @@ mod tests {
         l.record("codex:s1".into(), "fp1".into());
         l.save(root).unwrap();
 
-        assert_eq!(std::fs::read_to_string(root.join(".myco/.gitignore")).unwrap(), "*\n");
+        assert_eq!(
+            std::fs::read_to_string(root.join(".myco/.gitignore")).unwrap(),
+            "*\n"
+        );
         let reloaded = Ledger::load(root);
         assert!(reloaded.seen("codex:s1", "fp1"));
     }

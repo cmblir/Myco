@@ -227,9 +227,20 @@ impl VectorStore {
                 .chunks_exact(4)
                 .map(|w| f32::from_le_bytes([w[0], w[1], w[2], w[3]]))
                 .collect();
-            records.push(Record { id, page, stem, section, hash, vector });
+            records.push(Record {
+                id,
+                page,
+                stem,
+                section,
+                hash,
+                vector,
+            });
         }
-        Some(VectorStore { model, dim, records })
+        Some(VectorStore {
+            model,
+            dim,
+            records,
+        })
     }
 
     /// Switch embedding model — a different model means incompatible vectors, so
@@ -253,8 +264,7 @@ impl VectorStore {
     /// this map while upserting into it); one short string per record is nothing
     /// against the scan it replaces.
     pub fn hashes_by_page(&self) -> std::collections::HashMap<String, Vec<u64>> {
-        let mut out: std::collections::HashMap<String, Vec<u64>> =
-            std::collections::HashMap::new();
+        let mut out: std::collections::HashMap<String, Vec<u64>> = std::collections::HashMap::new();
         for r in &self.records {
             out.entry(r.page.clone()).or_default().push(r.hash);
         }
@@ -307,7 +317,11 @@ impl VectorStore {
                 score: cosine(query, &r.vector),
             })
             .collect();
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scored.truncate(k);
         scored
     }
@@ -448,7 +462,11 @@ impl VectorStore {
             }
         }
         let mut hits: Vec<Hit> = best.into_values().collect();
-        hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        hits.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         hits.truncate(k);
         hits
     }
@@ -484,10 +502,7 @@ struct CacheEntry {
 
 /// Replace the entry unless it already holds this exact revision of `path`.
 /// Returns `None` when there is no index file to key freshness on.
-fn ensure_fresh<'a>(
-    slot: &'a mut Option<CacheEntry>,
-    path: &Path,
-) -> Option<&'a mut CacheEntry> {
+fn ensure_fresh<'a>(slot: &'a mut Option<CacheEntry>, path: &Path) -> Option<&'a mut CacheEntry> {
     let fp = fingerprint(path)?;
     let hit = slot
         .as_ref()
@@ -628,7 +643,12 @@ pub fn semantic_map_points(centroids: &[(String, Vec<f32>)]) -> Vec<SemanticPoin
     if n < 2 {
         return centroids
             .iter()
-            .map(|(p, _)| SemanticPoint { page: p.clone(), x: 0.0, y: 0.0, z: 0.0 })
+            .map(|(p, _)| SemanticPoint {
+                page: p.clone(),
+                x: 0.0,
+                y: 0.0,
+                z: 0.0,
+            })
             .collect();
     }
     let d = centroids[0].1.len();
@@ -727,7 +747,10 @@ mod tests {
     fn semantic_map_separates_clusters_and_is_deterministic() {
         // Two tight clusters along one axis + one along another, in 8-dim.
         let mk = |base: [f32; 8], jit: f32, name: &str| {
-            (name.to_string(), base.iter().map(|b| b + jit).collect::<Vec<f32>>())
+            (
+                name.to_string(),
+                base.iter().map(|b| b + jit).collect::<Vec<f32>>(),
+            )
         };
         let cents = vec![
             mk([5.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], 0.01, "a1"),
@@ -740,7 +763,9 @@ mod tests {
         let pts = semantic_map_points(&cents);
         assert_eq!(pts.len(), 6);
         let at = |n: &str| pts.iter().find(|p| p.page == n).unwrap();
-        let d = |a: &SemanticPoint, b: &SemanticPoint| ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt();
+        let d = |a: &SemanticPoint, b: &SemanticPoint| {
+            ((a.x - b.x).powi(2) + (a.y - b.y).powi(2)).sqrt()
+        };
         // Intra-cluster pairs sit close; inter-cluster pairs sit far.
         assert!(d(at("a1"), at("a2")) < 0.2);
         assert!(d(at("b1"), at("b2")) < 0.2);
@@ -831,9 +856,11 @@ mod tests {
         let edges = s.centroid_edges(1);
         // Each page's single best match, deduplicated: a-b (mutual) and b-c
         // (c's best is b, since b leans toward c more than a does).
-        assert!(edges.iter().all(|e| e.a < e.b), "pairs are ordered lexically");
-        let pairs: Vec<(&str, &str)> =
-            edges.iter().map(|e| (e.a.as_str(), e.b.as_str())).collect();
+        assert!(
+            edges.iter().all(|e| e.a < e.b),
+            "pairs are ordered lexically"
+        );
+        let pairs: Vec<(&str, &str)> = edges.iter().map(|e| (e.a.as_str(), e.b.as_str())).collect();
         assert!(pairs.contains(&("a.md", "b.md")));
         // No pair appears twice in either direction.
         let mut uniq = pairs.clone();
@@ -841,7 +868,10 @@ mod tests {
         uniq.dedup();
         assert_eq!(uniq.len(), pairs.len());
         // Scores are cosines of unit centroids.
-        let ab = edges.iter().find(|e| e.a == "a.md" && e.b == "b.md").unwrap();
+        let ab = edges
+            .iter()
+            .find(|e| e.a == "a.md" && e.b == "b.md")
+            .unwrap();
         assert!((ab.score - 0.96).abs() < 1e-2, "score was {}", ab.score);
     }
 
@@ -917,7 +947,7 @@ mod tests {
         let cache = VectorCache::default();
         let first = edges_via_cache(&cache, &path, 4);
         assert_eq!(first.len(), 1); // a-b, deduplicated
-        // Same allocation — the quadratic pass ran once.
+                                    // Same allocation — the quadratic pass ran once.
         assert!(Arc::ptr_eq(&first, &edges_via_cache(&cache, &path, 4)));
         // A different k is a different question, so it is computed separately.
         assert!(!Arc::ptr_eq(&first, &edges_via_cache(&cache, &path, 1)));
@@ -957,7 +987,11 @@ mod tests {
         let mut next = VectorStore::default();
         next.ensure_model("m");
         for i in 0..4 {
-            next.upsert_page(&format!("n{i}.md"), "n", vec![(i as u64, vec![1.0, i as f32])]);
+            next.upsert_page(
+                &format!("n{i}.md"),
+                "n",
+                vec![(i as u64, vec![1.0, i as f32])],
+            );
         }
         next.save(&path).unwrap();
         // Fault the new revision in, so the cache is holding a different store.
@@ -967,7 +1001,9 @@ mod tests {
         // The stale list must not be served for the new index.
         let fresh = edges_via_cache(&cache, &path, 4);
         assert!(
-            fresh.iter().all(|e| e.a.starts_with('n') && e.b.starts_with('n')),
+            fresh
+                .iter()
+                .all(|e| e.a.starts_with('n') && e.b.starts_with('n')),
             "edges from the superseded index leaked: {:?}",
             fresh.iter().map(|e| (&e.a, &e.b)).collect::<Vec<_>>()
         );
@@ -1015,8 +1051,7 @@ mod tests {
     /// A unique scratch dir per test — these touch the filesystem and run in
     /// parallel with each other.
     fn scratch(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir()
-            .join(format!("memex-vec-test-{}-{tag}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("memex-vec-test-{}-{tag}", std::process::id()));
         std::fs::remove_dir_all(&dir).ok();
         std::fs::create_dir_all(&dir).unwrap();
         dir
@@ -1074,7 +1109,10 @@ mod tests {
             // A save that did all its work must not report failure — the caller
             // (reindex) treats that as losing the whole run.
             for r in &results {
-                assert!(r.is_ok(), "a save failed while another was in flight: {r:?}");
+                assert!(
+                    r.is_ok(),
+                    "a save failed while another was in flight: {r:?}"
+                );
             }
             // Whoever won, the file on disk must be a COMPLETE index — one of
             // the two, never a mixture.
@@ -1262,7 +1300,10 @@ mod suggestion_scope_tests {
     use super::*;
 
     fn store_with(pages: &[&str]) -> VectorStore {
-        let mut s = VectorStore { dim: 2, ..Default::default() };
+        let mut s = VectorStore {
+            dim: 2,
+            ..Default::default()
+        };
         for (i, p) in pages.iter().enumerate() {
             s.records.push(Record {
                 id: format!("{p}#0"),

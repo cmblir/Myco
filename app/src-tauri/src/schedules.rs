@@ -90,7 +90,8 @@ pub fn load(root: &Path) -> Vec<Schedule> {
 /// Atomic write: stage to a temp file in the same dir, then rename over target.
 pub fn save(root: &Path, schedules: &[Schedule]) -> Result<(), String> {
     let d = dir(root);
-    std::fs::create_dir_all(&d).map_err(|e| format!("create {} dir: {e}", crate::vault_dir::DIR_NAME))?;
+    std::fs::create_dir_all(&d)
+        .map_err(|e| format!("create {} dir: {e}", crate::vault_dir::DIR_NAME))?;
     let raw = serde_json::to_string_pretty(schedules).map_err(|e| format!("serialize: {e}"))?;
     let target = schedules_path(root);
     let tmp = d.join(".schedules.json.tmp");
@@ -479,11 +480,7 @@ mod tests {
     }
 
     fn temp_root(tag: u64) -> PathBuf {
-        let base = std::env::temp_dir().join(format!(
-            "memex-sched-{}-{}",
-            std::process::id(),
-            tag
-        ));
+        let base = std::env::temp_dir().join(format!("memex-sched-{}-{}", std::process::id(), tag));
         let _ = std::fs::remove_dir_all(&base);
         std::fs::create_dir_all(&base).unwrap();
         base
@@ -518,7 +515,10 @@ mod tests {
 
     #[test]
     fn launch_label_is_dns_safe() {
-        assert_eq!(launch_label("sch-abc123"), "dev.cmblir.myco.digest.sch-abc123");
+        assert_eq!(
+            launch_label("sch-abc123"),
+            "dev.cmblir.myco.digest.sch-abc123"
+        );
         assert_eq!(launch_label("a/b c"), "dev.cmblir.myco.digest.a-b-c");
     }
 
@@ -530,7 +530,10 @@ mod tests {
             legacy_launch_label("sch-abc123"),
             "dev.cmblir.memex.digest.sch-abc123"
         );
-        assert_eq!(legacy_launch_label("a/b c"), "dev.cmblir.memex.digest.a-b-c");
+        assert_eq!(
+            legacy_launch_label("a/b c"),
+            "dev.cmblir.memex.digest.a-b-c"
+        );
         assert_ne!(legacy_launch_label("x"), launch_label("x"));
     }
 
@@ -596,7 +599,13 @@ mod tests {
             "--vault".to_string(),
             "/v & co".to_string(),
         ];
-        let xml = plist_xml("dev.cmblir.myco.digest.s1", &args, 86400, "/v/.memex/d.log", "/usr/bin:/bin");
+        let xml = plist_xml(
+            "dev.cmblir.myco.digest.s1",
+            &args,
+            86400,
+            "/v/.memex/d.log",
+            "/usr/bin:/bin",
+        );
         assert!(xml.contains("<key>PATH</key><string>/usr/bin:/bin</string>"));
         assert!(xml.contains("<key>Label</key><string>dev.cmblir.myco.digest.s1</string>"));
         assert!(xml.contains("<integer>86400</integer>"));

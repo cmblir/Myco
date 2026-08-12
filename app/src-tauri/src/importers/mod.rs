@@ -49,7 +49,10 @@ mod time_tests {
     #[test]
     fn parses_known_epochs() {
         assert_eq!(parse_iso8601("1970-01-01T00:00:00Z"), Some(0));
-        assert_eq!(parse_iso8601("2026-07-18T09:00:00.000Z"), Some(1_784_365_200));
+        assert_eq!(
+            parse_iso8601("2026-07-18T09:00:00.000Z"),
+            Some(1_784_365_200)
+        );
         assert_eq!(parse_iso8601("garbage"), None);
     }
 }
@@ -98,7 +101,6 @@ mod dispatch_tests {
         assert!(detect_and_parse("x.json", "{\"random\":\"object\"}").is_err());
     }
 
-
     /// A claude-code session line whose spoken text clears `MIN_SPOKEN_CHARS`.
     /// The old fixtures were a handful of words — shorter than any real
     /// exchange, and now indistinguishable from the `ping` noise the filter
@@ -138,7 +140,10 @@ mod dispatch_tests {
     #[test]
     fn plan_import_quarantines_a_conversation_with_a_secret() {
         // A prompt that pasted an API key must never reach _inbox/.
-        let jsonl = session("leak", "my key is sk-abcdefghijklmnopqrstuvwxyz012345 fix it");
+        let jsonl = session(
+            "leak",
+            "my key is sk-abcdefghijklmnopqrstuvwxyz012345 fix it",
+        );
         let jsonl = jsonl.as_str();
         let plan = plan_import("leak.jsonl", jsonl, &ledger::Ledger::default()).unwrap();
         assert!(plan.docs.is_empty(), "must not write a doc with a secret");
@@ -278,7 +283,11 @@ impl Conversation {
     /// frontmatter and turn headers, so a `ping` renders to ~200 bytes of
     /// scaffolding around 4 characters of content.
     pub fn is_substantial(&self) -> bool {
-        self.turns.iter().map(|t| t.text.trim().len()).sum::<usize>() >= MIN_SPOKEN_CHARS
+        self.turns
+            .iter()
+            .map(|t| t.text.trim().len())
+            .sum::<usize>()
+            >= MIN_SPOKEN_CHARS
     }
 
     /// A stable, filesystem-safe basename (no extension) for the source doc.
@@ -304,7 +313,11 @@ impl Conversation {
         out.push_str("---\n\n");
         out.push_str(&format!("# {}\n\n", self.title.trim()));
         for turn in &self.turns {
-            out.push_str(&format!("**{}:**\n\n{}\n\n", turn.role.label(), turn.text.trim()));
+            out.push_str(&format!(
+                "**{}:**\n\n{}\n\n",
+                turn.role.label(),
+                turn.text.trim()
+            ));
         }
         out
     }
@@ -412,7 +425,11 @@ pub struct ImportPlan {
 /// rendered doc matches any secret pattern is never written — a leaked key in a
 /// committed source is permanent. One already in `ledger` with the same content
 /// is skipped so re-importing an export is idempotent.
-pub fn plan_import(filename: &str, content: &str, ledger: &ledger::Ledger) -> Result<ImportPlan, String> {
+pub fn plan_import(
+    filename: &str,
+    content: &str,
+    ledger: &ledger::Ledger,
+) -> Result<ImportPlan, String> {
     let convs = detect_and_parse(filename, content)?;
     let source = convs
         .first()
@@ -444,7 +461,10 @@ pub fn plan_import(filename: &str, content: &str, ledger: &ledger::Ledger) -> Re
         } else {
             // Not recorded: a quarantined conversation is re-checked next time,
             // in case the user removed the secret at the source.
-            quarantined.push(Quarantined { title: c.title, secrets: hits });
+            quarantined.push(Quarantined {
+                title: c.title,
+                secrets: hits,
+            });
         }
     }
     Ok(ImportPlan {
@@ -458,6 +478,12 @@ pub fn plan_import(filename: &str, content: &str, ledger: &ledger::Ledger) -> Re
 /// Keep only characters that are safe and stable in a filename.
 fn sanitize(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect()
 }

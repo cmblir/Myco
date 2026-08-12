@@ -60,7 +60,11 @@ pub fn confine_parent(root: &Path, parent: &str) -> Result<PathBuf, String> {
     // lexically against the canonical root instead; `..` is refused outright
     // rather than normalized, since without an on-disk path there is no
     // symlink-safe way to prove where it would land.
-    let joined = if p.is_absolute() { p.to_path_buf() } else { root.join(p) };
+    let joined = if p.is_absolute() {
+        p.to_path_buf()
+    } else {
+        root.join(p)
+    };
     if joined
         .components()
         .any(|c| matches!(c, std::path::Component::ParentDir))
@@ -1077,19 +1081,18 @@ pub fn read_vault_context(root: &str, max_bytes: usize) -> Result<String, String
     // budget everything fits and lint keeps its schema rules, while a tight
     // budget now spends itself on pages instead of instructions.
     let mut files: Vec<std::path::PathBuf> = Vec::new();
-    let push_dir = |dir: std::path::PathBuf,
-                        out: &mut Vec<std::path::PathBuf>|
-     -> Result<(), String> {
-        if !dir.is_dir() {
-            return Ok(());
-        }
-        let mut found = Vec::new();
-        collect_markdown(&dir, &mut found).map_err(|e| format!("walk failed: {e}"))?;
-        found.sort();
-        found.dedup();
-        out.extend(found);
-        Ok(())
-    };
+    let push_dir =
+        |dir: std::path::PathBuf, out: &mut Vec<std::path::PathBuf>| -> Result<(), String> {
+            if !dir.is_dir() {
+                return Ok(());
+            }
+            let mut found = Vec::new();
+            collect_markdown(&dir, &mut found).map_err(|e| format!("walk failed: {e}"))?;
+            found.sort();
+            found.dedup();
+            out.extend(found);
+            Ok(())
+        };
     push_dir(root_path.join("wiki"), &mut files)?;
     let claude = root_path.join("CLAUDE.md");
     if claude.is_file() {
@@ -1365,12 +1368,19 @@ mod tests {
         // A length change changes it even within the same mtime second.
         fs::write(dir.join("wiki/b.md"), "beta plus more text").unwrap();
         let r3 = vault_revision(root).unwrap();
-        assert_ne!(r2, r3, "an edit that changes length must change the revision");
+        assert_ne!(
+            r2, r3,
+            "an edit that changes length must change the revision"
+        );
 
         // Deleting changes it back to something new (not necessarily r1: mtimes
         // of the remaining files are unchanged, so it should in fact equal r1).
         fs::remove_file(dir.join("wiki/b.md")).unwrap();
-        assert_eq!(r1, vault_revision(root).unwrap(), "removing the new page restores the revision");
+        assert_eq!(
+            r1,
+            vault_revision(root).unwrap(),
+            "removing the new page restores the revision"
+        );
 
         fs::remove_dir_all(&dir).ok();
     }
@@ -1456,7 +1466,10 @@ mod tests {
             .chain(adj.backward.keys())
             .filter(|k| k.contains("secret-note"))
             .collect();
-        assert!(escaped.is_empty(), "link graph escaped the vault: {escaped:?}");
+        assert!(
+            escaped.is_empty(),
+            "link graph escaped the vault: {escaped:?}"
+        );
 
         // READ: the file tree / mtimes / revision must not see outside either.
         let tree = format!("{:?}", list_files(root.to_str().unwrap()).unwrap());
@@ -1470,7 +1483,11 @@ mod tests {
         // The revision must not change when a file OUTSIDE the vault changes —
         // if it does, the walk is reaching out there.
         let rev_before = vault_revision(root.to_str().unwrap()).unwrap();
-        fs::write(&secret, "PRIVATE: links to [[old-name]] — edited, now longer").unwrap();
+        fs::write(
+            &secret,
+            "PRIVATE: links to [[old-name]] — edited, now longer",
+        )
+        .unwrap();
         assert_eq!(
             rev_before,
             vault_revision(root.to_str().unwrap()).unwrap(),
@@ -1504,7 +1521,10 @@ mod tests {
         std::os::unix::fs::symlink(&secret, vault.join("wiki/linked.md")).unwrap();
         let root = vault.canonicalize().unwrap();
 
-        assert!(search_vault(&root, "PRIVATE", 10).is_empty(), "search followed a file symlink");
+        assert!(
+            search_vault(&root, "PRIVATE", 10).is_empty(),
+            "search followed a file symlink"
+        );
         let before = fs::read_to_string(&secret).unwrap();
         rewrite_backlinks(&root, "old-name", "new-name");
         assert_eq!(
@@ -1550,7 +1570,10 @@ mod tests {
 
         // The wiki page is rewritten...
         let wiki_after = fs::read_to_string(dir.join("wiki/a.md")).unwrap();
-        assert!(wiki_after.contains("[[new-note]]"), "wiki backlinks still rewrite");
+        assert!(
+            wiki_after.contains("[[new-note]]"),
+            "wiki backlinks still rewrite"
+        );
         // ...and the immutable source is byte-for-byte untouched.
         assert_eq!(
             fs::read_to_string(dir.join("raw/source.md")).unwrap(),
@@ -1778,11 +1801,20 @@ mod tests {
         assert!(should_seed_frontmatter(root, Path::new("/v/projects/x.md")));
         // Excluded: non-markdown and format-owning / dot directories.
         assert!(!should_seed_frontmatter(root, Path::new("/v/wiki/a.txt")));
-        assert!(!should_seed_frontmatter(root, Path::new("/v/daily/2026-07-19.md")));
+        assert!(!should_seed_frontmatter(
+            root,
+            Path::new("/v/daily/2026-07-19.md")
+        ));
         assert!(!should_seed_frontmatter(root, Path::new("/v/raw/a.md")));
-        assert!(!should_seed_frontmatter(root, Path::new("/v/ingest-reports/r.md")));
+        assert!(!should_seed_frontmatter(
+            root,
+            Path::new("/v/ingest-reports/r.md")
+        ));
         assert!(!should_seed_frontmatter(root, Path::new("/v/_inbox/s.md")));
-        assert!(!should_seed_frontmatter(root, Path::new("/v/.obsidian/x.md")));
+        assert!(!should_seed_frontmatter(
+            root,
+            Path::new("/v/.obsidian/x.md")
+        ));
     }
 
     #[test]

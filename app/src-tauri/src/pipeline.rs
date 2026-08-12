@@ -186,7 +186,13 @@ mod tests {
         // page. Capping before filtering would return nothing; filtering first
         // must keep the knowledge page.
         let mut dense: Vec<Hit> = (0..=MAX_MATCHES)
-            .map(|i| hit(&format!("wiki/source-s{i}.md"), &format!("source-s{i}"), 0.9))
+            .map(|i| {
+                hit(
+                    &format!("wiki/source-s{i}.md"),
+                    &format!("source-s{i}"),
+                    0.9,
+                )
+            })
             .collect();
         dense.push(hit("wiki/a.md", "a", 0.1));
         let out = fuse_chunk_matches(&dense, &[]);
@@ -197,7 +203,13 @@ mod tests {
     #[test]
     fn fuse_chunk_matches_respects_cap() {
         let dense: Vec<Hit> = (0..MAX_MATCHES + 5)
-            .map(|i| hit(&format!("wiki/p{i:02}.md"), &format!("p{i:02}"), 1.0 - i as f32 * 0.01))
+            .map(|i| {
+                hit(
+                    &format!("wiki/p{i:02}.md"),
+                    &format!("p{i:02}"),
+                    1.0 - i as f32 * 0.01,
+                )
+            })
             .collect();
         let out = fuse_chunk_matches(&dense, &[]);
         assert_eq!(out.len(), MAX_MATCHES);
@@ -222,7 +234,13 @@ mod tests {
         // Same order-of-operations assertion as the fused variant, on the path
         // production actually ships.
         let mut dense: Vec<Hit> = (0..=MAX_MATCHES)
-            .map(|i| hit(&format!("wiki/source-s{i}.md"), &format!("source-s{i}"), 0.9))
+            .map(|i| {
+                hit(
+                    &format!("wiki/source-s{i}.md"),
+                    &format!("source-s{i}"),
+                    0.9,
+                )
+            })
             .collect();
         dense.push(hit("wiki/a.md", "a", 0.1));
         let out = dense_chunk_matches(&dense);
@@ -233,7 +251,13 @@ mod tests {
     #[test]
     fn dense_chunk_matches_respects_cap() {
         let dense: Vec<Hit> = (0..MAX_MATCHES + 5)
-            .map(|i| hit(&format!("wiki/p{i:02}.md"), &format!("p{i:02}"), 1.0 - i as f32 * 0.01))
+            .map(|i| {
+                hit(
+                    &format!("wiki/p{i:02}.md"),
+                    &format!("p{i:02}"),
+                    1.0 - i as f32 * 0.01,
+                )
+            })
             .collect();
         assert_eq!(dense_chunk_matches(&dense).len(), MAX_MATCHES);
     }
@@ -257,7 +281,10 @@ mod tests {
         assert_eq!(stems, vec!["b", "a", "c"]);
         let scores: Vec<f32> = out.iter().map(|h| h.score).collect();
         for (got, want) in scores.iter().zip([0.91f32, 0.52, 0.13]) {
-            assert!((got - want).abs() < 1e-6, "expected cosine {want}, got {got}");
+            assert!(
+                (got - want).abs() < 1e-6,
+                "expected cosine {want}, got {got}"
+            );
         }
 
         // Contrast: the fused helper returns RRF rank scores for the same input.

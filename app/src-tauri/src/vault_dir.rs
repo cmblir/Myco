@@ -89,7 +89,10 @@ mod tests {
             std::fs::read_to_string(root.join(".myco/schedules.json")).unwrap(),
             "NEW"
         );
-        assert!(root.join(".memex").exists(), "the old state is left, not deleted");
+        assert!(
+            root.join(".memex").exists(),
+            "the old state is left, not deleted"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 
@@ -97,7 +100,10 @@ mod tests {
     fn a_vault_that_never_had_one_is_untouched() {
         let root = vault("none");
         assert!(!migrate(&root).unwrap());
-        assert!(!root.join(".myco").exists(), "an empty dir must not be created");
+        assert!(
+            !root.join(".myco").exists(),
+            "an empty dir must not be created"
+        );
         let _ = std::fs::remove_dir_all(&root);
     }
 }

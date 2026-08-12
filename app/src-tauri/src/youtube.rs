@@ -15,7 +15,10 @@ pub fn video_id(url: &str) -> Option<String> {
     for marker in ["youtu.be/", "/embed/", "/shorts/", "/v/"] {
         if let Some(i) = u.find(marker) {
             let rest = &u[i + marker.len()..];
-            let id: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
+            let id: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+                .collect();
             if id.len() >= 10 {
                 return Some(id);
             }
@@ -24,7 +27,10 @@ pub fn video_id(url: &str) -> Option<String> {
     // watch?v=<id>
     if let Some(i) = u.find("v=") {
         let rest = &u[i + 2..];
-        let id: String = rest.chars().take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-').collect();
+        let id: String = rest
+            .chars()
+            .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '-')
+            .collect();
         if id.len() >= 10 {
             return Some(id);
         }
@@ -76,8 +82,9 @@ pub async fn fetch_transcript(url: &str) -> Result<String, String> {
         .text()
         .await
         .map_err(|e| format!("read watch page: {e}"))?;
-    let track = caption_url(&html)
-        .ok_or("no captions found for this video (auto-transcription via Whisper is not yet available)")?;
+    let track = caption_url(&html).ok_or(
+        "no captions found for this video (auto-transcription via Whisper is not yet available)",
+    )?;
     let xml = client
         .get(&track)
         .send()
@@ -97,7 +104,9 @@ pub fn transcript_from_xml(xml: &str) -> String {
         rest = &rest[i + 5..];
         let Some(gt) = rest.find('>') else { break };
         rest = &rest[gt + 1..];
-        let Some(end) = rest.find("</text>") else { break };
+        let Some(end) = rest.find("</text>") else {
+            break;
+        };
         let line = unescape(rest[..end].trim());
         if !line.is_empty() {
             out.push_str(&line);
@@ -118,9 +127,18 @@ mod tests {
 
     #[test]
     fn parses_video_id_shapes() {
-        assert_eq!(video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ").as_deref(), Some("dQw4w9WgXcQ"));
-        assert_eq!(video_id("https://youtu.be/dQw4w9WgXcQ?t=10").as_deref(), Some("dQw4w9WgXcQ"));
-        assert_eq!(video_id("https://www.youtube.com/shorts/abc123XYZ_-").as_deref(), Some("abc123XYZ_-"));
+        assert_eq!(
+            video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ").as_deref(),
+            Some("dQw4w9WgXcQ")
+        );
+        assert_eq!(
+            video_id("https://youtu.be/dQw4w9WgXcQ?t=10").as_deref(),
+            Some("dQw4w9WgXcQ")
+        );
+        assert_eq!(
+            video_id("https://www.youtube.com/shorts/abc123XYZ_-").as_deref(),
+            Some("abc123XYZ_-")
+        );
         assert_eq!(video_id("https://example.com/watch?v=short"), None);
     }
 

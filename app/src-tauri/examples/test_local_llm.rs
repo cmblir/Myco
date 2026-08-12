@@ -12,7 +12,10 @@ fn main() {
     let label = llm
         .classify("어텐션 메커니즘은 트랜스포머에서 토큰 간 관계를 계산하는 기법이다.")
         .expect("classify");
-    println!("CLASSIFY(ko) -> {label}  ({:.1}s)", t0.elapsed().as_secs_f32());
+    println!(
+        "CLASSIFY(ko) -> {label}  ({:.1}s)",
+        t0.elapsed().as_secs_f32()
+    );
     assert!(myco_lib::local_llm::WIKI_TYPES.contains(&label.as_str()));
 
     let t1 = std::time::Instant::now();
@@ -31,15 +34,27 @@ fn main() {
         .expect("repetition repro");
     println!("REPRO -> {rep:?}  ({:.1}s)", t3.elapsed().as_secs_f32());
     // A degenerate loop repeats one clause many times; assert it doesn't.
-    let tail: String = rep.chars().rev().take(24).collect::<Vec<_>>().into_iter().rev().collect();
-    assert!(tail.trim().is_empty() || rep.matches(&tail).count() < 3, "looping output");
+    let tail: String = rep
+        .chars()
+        .rev()
+        .take(24)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect();
+    assert!(
+        tail.trim().is_empty() || rep.matches(&tail).count() < 3,
+        "looping output"
+    );
 
     // Regression: a prompt far beyond 512 tokens (inlined vault context) used
     // to crash with "batch.add: Insufficient Space of 512".
     let filler = "지식 그래프는 노트 사이의 연결을 보여준다. ".repeat(400);
     let long_prompt = format!("{filler}\n\n위 내용과 관련해 한 문장으로: 위키의 장점은?");
     let t2 = std::time::Instant::now();
-    let out2 = llm.generate(&long_prompt, 60).expect("long-context generate");
+    let out2 = llm
+        .generate(&long_prompt, 60)
+        .expect("long-context generate");
     println!(
         "LONG(ctx≈{} chars) -> {:?}  ({:.1}s)",
         long_prompt.len(),

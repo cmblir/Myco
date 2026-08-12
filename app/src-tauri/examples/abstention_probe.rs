@@ -116,10 +116,9 @@ fn main() {
     };
     let eval_path = manifest.join("eval/retrieval-queries.json");
 
-    let set: EvalSet = serde_json::from_str(
-        &std::fs::read_to_string(&eval_path).expect("read eval set"),
-    )
-    .expect("parse eval set");
+    let set: EvalSet =
+        serde_json::from_str(&std::fs::read_to_string(&eval_path).expect("read eval set"))
+            .expect("parse eval set");
 
     eprintln!("loading model {} (spec: {spec_id}) …", model_path.display());
     let llm = LocalLlm::load(&model_path).expect("load model");
@@ -136,7 +135,10 @@ fn main() {
     };
     let query_vec = |llm: &LocalLlm, q: &str| -> Vec<f32> {
         if spec_id == "gemma" {
-            llm.embed(&[q.to_string()]).expect("embed query").pop().unwrap()
+            llm.embed(&[q.to_string()])
+                .expect("embed query")
+                .pop()
+                .unwrap()
         } else {
             let spec = embed_spec_by_id(&spec_id).expect("known spec");
             let prefixed = apply_prefix(spec, EmbedRole::Query, &[q.to_string()]);
@@ -261,10 +263,22 @@ fn main() {
         });
     }
 
-    let correct_cos: Vec<f32> = pos.iter().filter(|p| p.correct).map(|p| p.top1_cosine).collect();
-    let wrong_cos: Vec<f32> = pos.iter().filter(|p| !p.correct).map(|p| p.top1_cosine).collect();
+    let correct_cos: Vec<f32> = pos
+        .iter()
+        .filter(|p| p.correct)
+        .map(|p| p.top1_cosine)
+        .collect();
+    let wrong_cos: Vec<f32> = pos
+        .iter()
+        .filter(|p| !p.correct)
+        .map(|p| p.top1_cosine)
+        .collect();
     let neg_cos: Vec<f32> = neg.iter().map(|n| n.top1_cosine).collect();
-    let rank5_correct: Vec<f32> = pos.iter().filter(|p| p.correct).map(|p| p.rank5_cosine).collect();
+    let rank5_correct: Vec<f32> = pos
+        .iter()
+        .filter(|p| p.correct)
+        .map(|p| p.rank5_cosine)
+        .collect();
 
     println!("═══════════════════════════════════════════════════");
     println!(" Abstention probe — dense cosine ({spec_id})");

@@ -185,9 +185,11 @@ fn bench_edges(c: &mut Criterion) {
     for &pages in &[100usize, 300] {
         let store = synth_store(pages * CHUNKS_PER_PAGE);
         group.throughput(Throughput::Elements(pages as u64));
-        group.bench_with_input(BenchmarkId::new("best_chunk_baseline", pages), &store, |b, s| {
-            b.iter(|| black_box(edges_best_chunk(black_box(s), 5)))
-        });
+        group.bench_with_input(
+            BenchmarkId::new("best_chunk_baseline", pages),
+            &store,
+            |b, s| b.iter(|| black_box(edges_best_chunk(black_box(s), 5))),
+        );
         group.bench_with_input(BenchmarkId::new("centroid", pages), &store, |b, s| {
             b.iter(|| black_box(black_box(s).centroid_edges(5).len()))
         });

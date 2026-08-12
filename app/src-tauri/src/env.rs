@@ -32,7 +32,10 @@ mod tests {
     #[test]
     fn legacy_name_only_rewrites_the_prefix() {
         assert_eq!(legacy_name("MYCO_CLAUDE_PATH"), "MEMEX_CLAUDE_PATH");
-        assert_eq!(legacy_name("MYCO_OPENAI_MODELS_URL"), "MEMEX_OPENAI_MODELS_URL");
+        assert_eq!(
+            legacy_name("MYCO_OPENAI_MODELS_URL"),
+            "MEMEX_OPENAI_MODELS_URL"
+        );
         assert_eq!(legacy_name("PATH"), "PATH");
         // Not a prefix match — must not become "MEMEX_SOMETHING".
         assert_eq!(legacy_name("NOT_MYCO_THING"), "NOT_MYCO_THING");

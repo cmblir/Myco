@@ -17,15 +17,20 @@ fn patterns() -> &'static [(&'static str, Regex)] {
     static P: OnceLock<Vec<(&'static str, Regex)>> = OnceLock::new();
     P.get_or_init(|| {
         vec![
-            ("AWS access key", Regex::new(r"\bAKIA[0-9A-Z]{16}\b").unwrap()),
+            (
+                "AWS access key",
+                Regex::new(r"\bAKIA[0-9A-Z]{16}\b").unwrap(),
+            ),
             (
                 "OpenAI/Anthropic-style API key",
                 Regex::new(r"\bsk-[A-Za-z0-9_-]{20,}\b").unwrap(),
             ),
             (
                 "GitHub token",
-                Regex::new(r"\b(?:ghp|gho|ghu|ghs)_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{22,}\b")
-                    .unwrap(),
+                Regex::new(
+                    r"\b(?:ghp|gho|ghu|ghs)_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{22,}\b",
+                )
+                .unwrap(),
             ),
             (
                 "Slack token",
@@ -59,7 +64,9 @@ mod tests {
     #[test]
     fn flags_the_common_key_shapes() {
         assert!(scan("key: AKIAIOSFODNN7EXAMPLE here").contains(&"AWS access key"));
-        assert!(scan("sk-abcdefghijklmnopqrstuvwxyz012345").contains(&"OpenAI/Anthropic-style API key"));
+        assert!(
+            scan("sk-abcdefghijklmnopqrstuvwxyz012345").contains(&"OpenAI/Anthropic-style API key")
+        );
         assert!(scan("ghp_0123456789012345678901234567890123456789").contains(&"GitHub token"));
         assert!(scan("xoxb-0123456789-abcdef").contains(&"Slack token"));
         assert!(scan("AIzaAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA").contains(&"Google API key"));

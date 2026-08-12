@@ -324,7 +324,9 @@ impl Bm25Index {
             // term, so a doc's accumulation order is fixed by the query-term
             // order alone, not by this inner loop.
             for (&doc_idx, &tf) in postings {
-                let doc = self.slots[doc_idx].as_ref().expect("posting points at a live slot");
+                let doc = self.slots[doc_idx]
+                    .as_ref()
+                    .expect("posting points at a live slot");
                 let doc_len = doc.doc.len as f32;
                 let tf = tf as f32;
                 let denom = tf + K1 * (1.0 - B + B * doc_len / avg_len);
@@ -493,10 +495,21 @@ impl Bm25Index {
                 let tf = c.u32()?;
                 terms.insert(term, tf);
             }
-            slots.push(Some(Slot { doc: Bm25Doc { page, stem, section, len }, terms }));
+            slots.push(Some(Slot {
+                doc: Bm25Doc {
+                    page,
+                    stem,
+                    section,
+                    len,
+                },
+                terms,
+            }));
         }
 
-        let mut index = Bm25Index { slots, ..Default::default() };
+        let mut index = Bm25Index {
+            slots,
+            ..Default::default()
+        };
         index.rebuild_derived();
         Some(index)
     }
@@ -529,7 +542,9 @@ struct CacheEntry {
 /// Returns `None` when there is no index file to key freshness on.
 fn ensure_fresh<'a>(slot: &'a mut Option<CacheEntry>, path: &Path) -> Option<&'a mut CacheEntry> {
     let fp = fingerprint(path)?;
-    let hit = slot.as_ref().is_some_and(|e| e.path == *path && e.fingerprint == fp);
+    let hit = slot
+        .as_ref()
+        .is_some_and(|e| e.path == *path && e.fingerprint == fp);
     if !hit {
         *slot = Some(CacheEntry {
             path: path.to_path_buf(),
@@ -673,7 +688,12 @@ mod cap_tests {
     use super::*;
 
     fn hit(page: &str, section: usize, score: f32) -> Hit {
-        Hit { page: page.into(), stem: page.into(), section, score }
+        Hit {
+            page: page.into(),
+            stem: page.into(),
+            section,
+            score,
+        }
     }
 
     #[test]
@@ -686,8 +706,14 @@ mod cap_tests {
         ];
         let out = cap_per_page(hits, 2, 4);
         assert_eq!(
-            out.iter().map(|h| (h.page.as_str(), h.section)).collect::<Vec<_>>(),
-            vec![("sessions/a.md", 0), ("sessions/a.md", 1), ("wiki/self-attention.md", 0)],
+            out.iter()
+                .map(|h| (h.page.as_str(), h.section))
+                .collect::<Vec<_>>(),
+            vec![
+                ("sessions/a.md", 0),
+                ("sessions/a.md", 1),
+                ("wiki/self-attention.md", 0)
+            ],
         );
     }
 
@@ -742,7 +768,11 @@ mod tests {
     #[test]
     fn bm25_retrieves_exact_token_page() {
         let mut ix = Bm25Index::new();
-        ix.upsert_page("wiki/rlhf.md", "rlhf", &["policy optimized with PPO".into()]);
+        ix.upsert_page(
+            "wiki/rlhf.md",
+            "rlhf",
+            &["policy optimized with PPO".into()],
+        );
         ix.upsert_page("wiki/lora.md", "lora", &["low rank adapters".into()]);
         let hits = ix.search("PPO", 5);
         assert_eq!(hits[0].stem, "rlhf");
@@ -758,7 +788,10 @@ mod tests {
         ix.upsert_page("wiki/aaa.md", "aaa", &["qlora".into()]);
         let hits = ix.search("qlora", 5);
         assert_eq!(hits.len(), 2);
-        assert_eq!(hits[0].score, hits[1].score, "scores must be bit-identical for this test to pin the tie-break");
+        assert_eq!(
+            hits[0].score, hits[1].score,
+            "scores must be bit-identical for this test to pin the tie-break"
+        );
         // Deterministic total order: score desc, then page asc, then section asc.
         assert_eq!(hits[0].page, "wiki/aaa.md");
         assert_eq!(hits[1].page, "wiki/zzz.md");
@@ -838,7 +871,10 @@ mod tests {
         ix.upsert_page(
             "wiki/late.md",
             "late",
-            &["a late page with PPO and 정책 최적화 and rare7".to_string(), "second chunk".to_string()],
+            &[
+                "a late page with PPO and 정책 최적화 and rare7".to_string(),
+                "second chunk".to_string(),
+            ],
         );
 
         let before: Vec<Vec<_>> = EQUIVALENCE_QUERIES.iter().map(|q| ranked(&ix, q)).collect();
@@ -849,7 +885,10 @@ mod tests {
         assert_eq!(ix.len(), len_before);
         assert_eq!(ix.pages(), pages_before);
         for (qi, q) in EQUIVALENCE_QUERIES.iter().enumerate() {
-            assert_eq!(before[qi], after[qi], "query {q:?} differs from a full rebuild");
+            assert_eq!(
+                before[qi], after[qi],
+                "query {q:?} differs from a full rebuild"
+            );
         }
     }
 
@@ -869,7 +908,11 @@ mod tests {
         // Reverse order, with a throwaway page upserted and deleted between
         // every real one so `b` is riddled with recycled slots.
         for (i, (page, stem, chunks)) in corpus.iter().enumerate().rev() {
-            b.upsert_page("wiki/scratch.md", "scratch", &[format!("scratch {i} PPO 정책")]);
+            b.upsert_page(
+                "wiki/scratch.md",
+                "scratch",
+                &[format!("scratch {i} PPO 정책")],
+            );
             b.upsert_page(page, stem, chunks);
             b.upsert_page("wiki/scratch.md", "scratch", &[]);
         }
@@ -877,7 +920,11 @@ mod tests {
         assert_eq!(a.len(), b.len());
         assert_eq!(a.pages(), b.pages());
         for q in EQUIVALENCE_QUERIES {
-            assert_eq!(ranked(&a, q), ranked(&b, q), "query {q:?} depends on build order");
+            assert_eq!(
+                ranked(&a, q),
+                ranked(&b, q),
+                "query {q:?} depends on build order"
+            );
         }
     }
 
@@ -894,11 +941,24 @@ mod tests {
     fn rrf_fuse_empty_lexical_preserves_dense_order() {
         use crate::vector_index::Hit;
         let dense = vec![
-            Hit { page: "a.md".into(), stem: "a".into(), section: 0, score: 0.9 },
-            Hit { page: "b.md".into(), stem: "b".into(), section: 0, score: 0.8 },
+            Hit {
+                page: "a.md".into(),
+                stem: "a".into(),
+                section: 0,
+                score: 0.9,
+            },
+            Hit {
+                page: "b.md".into(),
+                stem: "b".into(),
+                section: 0,
+                score: 0.8,
+            },
         ];
         let fused = rrf_fuse(&dense, &[], 10);
-        assert_eq!(fused.iter().map(|h| h.stem.clone()).collect::<Vec<_>>(), vec!["a", "b"]);
+        assert_eq!(
+            fused.iter().map(|h| h.stem.clone()).collect::<Vec<_>>(),
+            vec!["a", "b"]
+        );
     }
     #[test]
     fn rrf_fuse_score_is_rank_based_not_a_confidence() {
@@ -908,8 +968,18 @@ mod tests {
         // 0.95 (a real answer) or 0.31 (nothing in the vault matched). Anything
         // thresholding or displaying confidence must use the cosine instead —
         // this test pins the property so that never silently changes.
-        let strong = vec![Hit { page: "a.md".into(), stem: "a".into(), section: 0, score: 0.95 }];
-        let weak = vec![Hit { page: "a.md".into(), stem: "a".into(), section: 0, score: 0.31 }];
+        let strong = vec![Hit {
+            page: "a.md".into(),
+            stem: "a".into(),
+            section: 0,
+            score: 0.95,
+        }];
+        let weak = vec![Hit {
+            page: "a.md".into(),
+            stem: "a".into(),
+            section: 0,
+            score: 0.31,
+        }];
         let fused_strong = rrf_fuse(&strong, &[], 10);
         let fused_weak = rrf_fuse(&weak, &[], 10);
         assert_eq!(fused_strong[0].score, fused_weak[0].score);
@@ -918,19 +988,36 @@ mod tests {
     fn rrf_fuse_lifts_agreed_chunk() {
         use crate::vector_index::Hit;
         let dense = vec![
-            Hit { page: "a.md".into(), stem: "a".into(), section: 0, score: 0.9 },
-            Hit { page: "b.md".into(), stem: "b".into(), section: 0, score: 0.8 },
+            Hit {
+                page: "a.md".into(),
+                stem: "a".into(),
+                section: 0,
+                score: 0.9,
+            },
+            Hit {
+                page: "b.md".into(),
+                stem: "b".into(),
+                section: 0,
+                score: 0.8,
+            },
         ];
-        let lex = vec![
-            Bm25Hit { page: "b.md".into(), stem: "b".into(), section: 0, score: 5.0 },
-        ];
+        let lex = vec![Bm25Hit {
+            page: "b.md".into(),
+            stem: "b".into(),
+            section: 0,
+            score: 5.0,
+        }];
         let fused = rrf_fuse(&dense, &lex, 10);
         assert_eq!(fused[0].stem, "b"); // b in both lists -> higher RRF than a
     }
     #[test]
     fn mxb_roundtrip_preserves_search() {
         let mut ix = Bm25Index::new();
-        ix.upsert_page("wiki/rlhf.md", "rlhf", &["policy optimized with PPO".into()]);
+        ix.upsert_page(
+            "wiki/rlhf.md",
+            "rlhf",
+            &["policy optimized with PPO".into()],
+        );
         let bytes = ix.encode();
         let ix2 = Bm25Index::decode(&bytes).expect("decode");
         assert_eq!(ix2.search("PPO", 5)[0].stem, "rlhf");
@@ -949,7 +1036,10 @@ mod tests {
         ix.upsert_page(
             "wiki/rlhf.md",
             "rlhf",
-            &["policy optimized with PPO".into(), "reward model training".into()],
+            &[
+                "policy optimized with PPO".into(),
+                "reward model training".into(),
+            ],
         );
         ix.upsert_page("wiki/lora.md", "lora", &["low rank adapters".into()]);
         ix.upsert_page(
@@ -959,12 +1049,19 @@ mod tests {
         );
         let before = ix.search("policy", 10);
         let bytes = ix.encode();
-        let after = Bm25Index::decode(&bytes).expect("decode").search("policy", 10);
+        let after = Bm25Index::decode(&bytes)
+            .expect("decode")
+            .search("policy", 10);
         assert_eq!(before.len(), after.len());
         for (b, a) in before.iter().zip(after.iter()) {
             assert_eq!(b.page, a.page);
             assert_eq!(b.section, a.section);
-            assert!((b.score - a.score).abs() < 1e-6, "{} vs {}", b.score, a.score);
+            assert!(
+                (b.score - a.score).abs() < 1e-6,
+                "{} vs {}",
+                b.score,
+                a.score
+            );
         }
         assert_eq!(after[0].stem, "rlhf");
     }
@@ -1015,7 +1112,11 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("idx.mxb");
         let mut ix = Bm25Index::new();
-        ix.upsert_page("wiki/rlhf.md", "rlhf", &["policy optimized with PPO".into()]);
+        ix.upsert_page(
+            "wiki/rlhf.md",
+            "rlhf",
+            &["policy optimized with PPO".into()],
+        );
         ix.save(&path).unwrap();
         let loaded = Bm25Index::load(&path);
         assert_eq!(loaded.search("PPO", 5)[0].stem, "rlhf");
@@ -1033,8 +1134,8 @@ mod tests {
 
     #[test]
     fn bm25_cache_get_miss_yields_empty_index() {
-        let dir = std::env::temp_dir()
-            .join(format!("memex-bm25-cache-test-miss-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("memex-bm25-cache-test-miss-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("idx.mxb");
         let cache = Bm25Cache::default();
@@ -1044,8 +1145,10 @@ mod tests {
 
     #[test]
     fn bm25_cache_reuses_parse_and_notices_a_rewrite() {
-        let dir = std::env::temp_dir()
-            .join(format!("memex-bm25-cache-test-reuse-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!(
+            "memex-bm25-cache-test-reuse-{}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("idx.mxb");
         let mut ix = Bm25Index::new();
@@ -1069,8 +1172,8 @@ mod tests {
 
     #[test]
     fn bm25_cache_put_adopts_a_freshly_written_index() {
-        let dir = std::env::temp_dir()
-            .join(format!("memex-bm25-cache-test-put-{}", std::process::id()));
+        let dir =
+            std::env::temp_dir().join(format!("memex-bm25-cache-test-put-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("idx.mxb");
         let mut ix = Bm25Index::new();
@@ -1093,8 +1196,18 @@ mod tests {
         // in lexical at rank 0 -> both score exactly 1/(RRF_K+0). The score
         // alone cannot order them; the tie-break (page asc, then section asc)
         // must, and must do so the same way every time.
-        let dense = vec![Hit { page: "b.md".into(), stem: "b".into(), section: 0, score: 0.5 }];
-        let lex = vec![Bm25Hit { page: "a.md".into(), stem: "a".into(), section: 0, score: 1.0 }];
+        let dense = vec![Hit {
+            page: "b.md".into(),
+            stem: "b".into(),
+            section: 0,
+            score: 0.5,
+        }];
+        let lex = vec![Bm25Hit {
+            page: "a.md".into(),
+            stem: "a".into(),
+            section: 0,
+            score: 1.0,
+        }];
         let expected = vec!["a.md".to_string(), "b.md".to_string()];
         for _ in 0..5 {
             let fused = rrf_fuse(&dense, &lex, 10);

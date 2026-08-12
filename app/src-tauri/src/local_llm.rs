@@ -36,8 +36,13 @@ use llama_cpp_2::sampling::LlamaSampler;
 
 /// The wiki page types the classifier maps a note to (matches the frontmatter
 /// `type` enum). Longest-match wins so "source-summary" beats a stray "source".
-pub const WIKI_TYPES: [&str; 5] =
-    ["concept", "entity", "technique", "source-summary", "analysis"];
+pub const WIKI_TYPES: [&str; 5] = [
+    "concept",
+    "entity",
+    "technique",
+    "source-summary",
+    "analysis",
+];
 
 const CTX_TOKENS: u32 = 4096;
 const CLASSIFY_MAX_TOKENS: i32 = 6;
@@ -158,9 +163,8 @@ impl LocalLlm {
     /// Load the bundled GGUF. Call once per process (backend init is global).
     pub fn load(model_path: &Path) -> Result<Self, String> {
         let backend = shared_backend()?;
-        let model =
-            LlamaModel::load_from_file(backend, model_path, &LlamaModelParams::default())
-                .map_err(|e| format!("load model {}: {e}", model_path.display()))?;
+        let model = LlamaModel::load_from_file(backend, model_path, &LlamaModelParams::default())
+            .map_err(|e| format!("load model {}: {e}", model_path.display()))?;
         let template = model.chat_template(None).ok();
         Ok(Self {
             backend,
@@ -184,7 +188,9 @@ impl LocalLlm {
 
     /// The chat model, or the canonical "not bundled" error.
     fn chat_model(&self) -> Result<&LlamaModel, String> {
-        self.chat.as_ref().ok_or_else(|| CHAT_MODEL_MISSING.to_string())
+        self.chat
+            .as_ref()
+            .ok_or_else(|| CHAT_MODEL_MISSING.to_string())
     }
 
     /// Load a purpose-built embedding model onto the SAME backend as the chat
@@ -313,7 +319,8 @@ impl LocalLlm {
                     .map_err(|e| format!("batch.add: {e}"))?;
                 pos += 1;
             }
-            ctx.decode(&mut batch).map_err(|e| format!("decode prompt: {e}"))?;
+            ctx.decode(&mut batch)
+                .map_err(|e| format!("decode prompt: {e}"))?;
         }
 
         // NOTE: llama-cpp-2's token_to_piece decodes into a String whose
@@ -364,9 +371,7 @@ impl LocalLlm {
                     Err(e) => e.valid_up_to(),
                 };
                 if valid > 0 {
-                    out.push_str(
-                        std::str::from_utf8(&pending[..valid]).expect("validated prefix"),
-                    );
+                    out.push_str(std::str::from_utf8(&pending[..valid]).expect("validated prefix"));
                     pending.drain(..valid);
                 }
                 // Fallback-path guard: cut fake dialogue turns.
@@ -380,8 +385,14 @@ impl LocalLlm {
                 // if the trailing 24 chars already appeared ≥2 more times, the
                 // model is looping one sentence — cut at the first occurrence.
                 if out.chars().count() > 120 {
-                    let tail: String =
-                        out.chars().rev().take(24).collect::<Vec<_>>().into_iter().rev().collect();
+                    let tail: String = out
+                        .chars()
+                        .rev()
+                        .take(24)
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .rev()
+                        .collect();
                     if !tail.trim().is_empty() && out.matches(&tail).count() >= 3 {
                         if let Some(i) = out.find(&tail) {
                             out.truncate(i + tail.len());
@@ -394,7 +405,8 @@ impl LocalLlm {
             batch
                 .add(token, n_cur, &[0], true)
                 .map_err(|e| format!("batch.add gen: {e}"))?;
-            ctx.decode(&mut batch).map_err(|e| format!("decode gen: {e}"))?;
+            ctx.decode(&mut batch)
+                .map_err(|e| format!("decode gen: {e}"))?;
             n_cur += 1;
         }
         Ok(out.trim().to_string())
@@ -535,7 +547,8 @@ impl LocalLlm {
                     .add(*tok, i as i32, &[0], true)
                     .map_err(|e| format!("embed batch.add: {e}"))?;
             }
-            ctx.decode(&mut batch).map_err(|e| format!("embed decode: {e}"))?;
+            ctx.decode(&mut batch)
+                .map_err(|e| format!("embed decode: {e}"))?;
             let emb = ctx
                 .embeddings_seq_ith(0)
                 .map_err(|e| format!("embeddings_seq_ith: {e}"))?;
@@ -602,11 +615,13 @@ mod tests {
     #[test]
     #[ignore]
     fn embed_spec_requires_loaded_embed_model() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("models/gemma-3-1b-it-q4_k_m.gguf");
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models/gemma-3-1b-it-q4_k_m.gguf");
         let llm = LocalLlm::load(&path).expect("load chat model");
         let bge = embed_spec_by_id("bge-m3").unwrap();
-        let err = llm.embed_spec(bge, EmbedRole::Query, &["x".into()]).unwrap_err();
+        let err = llm
+            .embed_spec(bge, EmbedRole::Query, &["x".into()])
+            .unwrap_err();
         assert!(err.contains("embed model not loaded"), "got: {err}");
     }
 
@@ -615,8 +630,8 @@ mod tests {
     #[test]
     #[ignore]
     fn builtin_embeddings_are_meaningful() {
-        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-            .join("models/gemma-3-1b-it-q4_k_m.gguf");
+        let path =
+            PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models/gemma-3-1b-it-q4_k_m.gguf");
         let llm = LocalLlm::load(&path).expect("load gemma model");
         let v = llm
             .embed(&[

@@ -123,10 +123,7 @@ fn url_openai() -> String {
     )
 }
 fn url_openai_models() -> String {
-    http_url_or(
-        "https://api.openai.com/v1/models",
-        "MYCO_OPENAI_MODELS_URL",
-    )
+    http_url_or("https://api.openai.com/v1/models", "MYCO_OPENAI_MODELS_URL")
 }
 fn url_openrouter() -> String {
     http_url_or(
@@ -888,8 +885,16 @@ fn parse_anthropic_agent_turn(v: &serde_json::Value) -> AgentTurn {
                     }
                 }
                 Some("tool_use") => tool_calls.push(AgentToolCall {
-                    id: b.get("id").and_then(|s| s.as_str()).unwrap_or("").to_string(),
-                    name: b.get("name").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+                    id: b
+                        .get("id")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    name: b
+                        .get("name")
+                        .and_then(|s| s.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     input: b.get("input").cloned().unwrap_or(serde_json::json!({})),
                 }),
                 _ => {}
@@ -904,7 +909,11 @@ fn parse_anthropic_agent_turn(v: &serde_json::Value) -> AgentTurn {
         text,
         tool_calls,
         usage,
-        stop: v.get("stop_reason").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+        stop: v
+            .get("stop_reason")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .to_string(),
     }
 }
 
@@ -929,7 +938,11 @@ async fn agent_chat_anthropic(
     let status = resp.status();
     let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
     if !status.is_success() {
-        return Err(format!("anthropic {}: {}", status, String::from_utf8_lossy(&bytes)));
+        return Err(format!(
+            "anthropic {}: {}",
+            status,
+            String::from_utf8_lossy(&bytes)
+        ));
     }
     let v: serde_json::Value =
         serde_json::from_slice(&bytes).map_err(|e| format!("anthropic parse: {e}"))?;
@@ -1011,13 +1024,26 @@ fn parse_openai_agent_turn(v: &serde_json::Value) -> AgentTurn {
         .unwrap_or("")
         .to_string();
     let mut tool_calls = Vec::new();
-    if let Some(calls) = msg.and_then(|m| m.get("tool_calls")).and_then(|c| c.as_array()) {
+    if let Some(calls) = msg
+        .and_then(|m| m.get("tool_calls"))
+        .and_then(|c| c.as_array())
+    {
         for c in calls {
-            let fname = c.pointer("/function/name").and_then(|s| s.as_str()).unwrap_or("");
-            let raw_args = c.pointer("/function/arguments").and_then(|s| s.as_str()).unwrap_or("{}");
+            let fname = c
+                .pointer("/function/name")
+                .and_then(|s| s.as_str())
+                .unwrap_or("");
+            let raw_args = c
+                .pointer("/function/arguments")
+                .and_then(|s| s.as_str())
+                .unwrap_or("{}");
             let input = serde_json::from_str(raw_args).unwrap_or(serde_json::json!({}));
             tool_calls.push(AgentToolCall {
-                id: c.get("id").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+                id: c
+                    .get("id")
+                    .and_then(|s| s.as_str())
+                    .unwrap_or("")
+                    .to_string(),
                 name: fname.to_string(),
                 input,
             });
@@ -1025,13 +1051,20 @@ fn parse_openai_agent_turn(v: &serde_json::Value) -> AgentTurn {
     }
     let usage = v.get("usage").map(|u| TokenUsage {
         input_tokens: u.get("prompt_tokens").and_then(|n| n.as_u64()).unwrap_or(0) as u32,
-        output_tokens: u.get("completion_tokens").and_then(|n| n.as_u64()).unwrap_or(0) as u32,
+        output_tokens: u
+            .get("completion_tokens")
+            .and_then(|n| n.as_u64())
+            .unwrap_or(0) as u32,
     });
     AgentTurn {
         text,
         tool_calls,
         usage,
-        stop: v.pointer("/choices/0/finish_reason").and_then(|s| s.as_str()).unwrap_or("").to_string(),
+        stop: v
+            .pointer("/choices/0/finish_reason")
+            .and_then(|s| s.as_str())
+            .unwrap_or("")
+            .to_string(),
     }
 }
 
@@ -1052,7 +1085,12 @@ async fn agent_chat_openai(
     let status = resp.status();
     let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
     if !status.is_success() {
-        return Err(format!("{} {}: {}", req.provider_id, status, String::from_utf8_lossy(&bytes)));
+        return Err(format!(
+            "{} {}: {}",
+            req.provider_id,
+            status,
+            String::from_utf8_lossy(&bytes)
+        ));
     }
     let v: serde_json::Value =
         serde_json::from_slice(&bytes).map_err(|e| format!("openai parse: {e}"))?;
@@ -1079,8 +1117,16 @@ pub fn b64_encode(bytes: &[u8]) -> String {
         let n = ((b[0] as u32) << 16) | ((b[1] as u32) << 8) | b[2] as u32;
         out.push(T[((n >> 18) & 63) as usize] as char);
         out.push(T[((n >> 12) & 63) as usize] as char);
-        out.push(if chunk.len() > 1 { T[((n >> 6) & 63) as usize] as char } else { '=' });
-        out.push(if chunk.len() > 2 { T[(n & 63) as usize] as char } else { '=' });
+        out.push(if chunk.len() > 1 {
+            T[((n >> 6) & 63) as usize] as char
+        } else {
+            '='
+        });
+        out.push(if chunk.len() > 2 {
+            T[(n & 63) as usize] as char
+        } else {
+            '='
+        });
     }
     out
 }
@@ -1180,7 +1226,11 @@ pub async fn describe_image(
             let status = resp.status();
             let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
             if !status.is_success() {
-                return Err(format!("anthropic {}: {}", status, String::from_utf8_lossy(&bytes)));
+                return Err(format!(
+                    "anthropic {}: {}",
+                    status,
+                    String::from_utf8_lossy(&bytes)
+                ));
             }
             let v: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
             Ok(v.get("content")
@@ -1204,22 +1254,34 @@ pub async fn describe_image(
             let status = resp.status();
             let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
             if !status.is_success() {
-                return Err(format!("openai {}: {}", status, String::from_utf8_lossy(&bytes)));
+                return Err(format!(
+                    "openai {}: {}",
+                    status,
+                    String::from_utf8_lossy(&bytes)
+                ));
             }
             let v: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
-            Ok(v.pointer("/choices/0/message/content").and_then(|c| c.as_str()).unwrap_or("").to_string())
+            Ok(v.pointer("/choices/0/message/content")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string())
         }
         "google-api" => {
             let key = api_key.ok_or_else(|| "missing Google API key".to_string())?;
             let body = build_google_vision_body(media_type, &data, prompt);
             let url = url_google(model);
-            let resp = send_with_retry(|| client.post(&url).header("x-goog-api-key", &key).json(&body))
-                .await
-                .map_err(|e| format!("gemini request: {e}"))?;
+            let resp =
+                send_with_retry(|| client.post(&url).header("x-goog-api-key", &key).json(&body))
+                    .await
+                    .map_err(|e| format!("gemini request: {e}"))?;
             let status = resp.status();
             let bytes = read_capped(resp, MAX_RESPONSE_BYTES).await?;
             if !status.is_success() {
-                return Err(format!("gemini {}: {}", status, String::from_utf8_lossy(&bytes)));
+                return Err(format!(
+                    "gemini {}: {}",
+                    status,
+                    String::from_utf8_lossy(&bytes)
+                ));
             }
             let v: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| e.to_string())?;
             Ok(v.pointer("/candidates/0/content/parts")
@@ -1435,7 +1497,10 @@ mod tests {
     fn vision_bodies_shape_per_provider() {
         let a = build_anthropic_vision_body("m", "image/png", "AAA", "describe");
         assert_eq!(a["messages"][0]["content"][0]["type"], "image");
-        assert_eq!(a["messages"][0]["content"][0]["source"]["media_type"], "image/png");
+        assert_eq!(
+            a["messages"][0]["content"][0]["source"]["media_type"],
+            "image/png"
+        );
         assert_eq!(a["messages"][0]["content"][1]["text"], "describe");
 
         let o = build_openai_vision_body("m", "image/jpeg", "BBB", "describe");
@@ -1446,7 +1511,10 @@ mod tests {
         );
 
         let g = build_google_vision_body("image/gif", "CCC", "describe");
-        assert_eq!(g["contents"][0]["parts"][0]["inline_data"]["mime_type"], "image/gif");
+        assert_eq!(
+            g["contents"][0]["parts"][0]["inline_data"]["mime_type"],
+            "image/gif"
+        );
         assert_eq!(g["contents"][0]["parts"][1]["text"], "describe");
     }
 }

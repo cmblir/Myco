@@ -156,8 +156,16 @@ mod tests {
 
     #[test]
     fn drops_id_less_or_empty_conversations() {
-        assert_eq!(parse(r#"[{"chat_messages":[{"sender":"human","text":"hi"}]}]"#).unwrap().len(), 0);
-        assert_eq!(parse(r#"[{"uuid":"x","chat_messages":[]}]"#).unwrap().len(), 0);
+        assert_eq!(
+            parse(r#"[{"chat_messages":[{"sender":"human","text":"hi"}]}]"#)
+                .unwrap()
+                .len(),
+            0
+        );
+        assert_eq!(
+            parse(r#"[{"uuid":"x","chat_messages":[]}]"#).unwrap().len(),
+            0
+        );
     }
 
     #[test]

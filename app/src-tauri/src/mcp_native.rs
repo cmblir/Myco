@@ -18,16 +18,16 @@ use std::sync::OnceLock;
 
 use regex::Regex;
 use rmcp::{
-    ErrorData as McpError, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
     model::{CallToolResult, ContentBlock},
     schemars, tool, tool_handler, tool_router,
     transport::streamable_http_server::{
-        StreamableHttpServerConfig, StreamableHttpService, session::local::LocalSessionManager,
+        session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     },
+    ErrorData as McpError, ServerHandler,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio_util::sync::CancellationToken;
 
@@ -314,7 +314,10 @@ fn rel_to(base: &Path, abs: &Path) -> String {
 }
 
 fn fm_str(fm: &Value, key: &str) -> String {
-    fm.get(key).and_then(|v| v.as_str()).unwrap_or("").to_string()
+    fm.get(key)
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string()
 }
 
 fn fm_opt(fm: &Value, key: &str) -> Option<String> {
@@ -330,7 +333,13 @@ fn read_parts(abs: &Path) -> Option<(Value, String)> {
 
 // ─── ported wiki-schema logic (mirrors the Python server, regex parity) ───────
 
-const VALID_TYPES: [&str; 5] = ["concept", "technique", "entity", "source-summary", "analysis"];
+const VALID_TYPES: [&str; 5] = [
+    "concept",
+    "technique",
+    "entity",
+    "source-summary",
+    "analysis",
+];
 const LINT_META_TYPES: [&str; 2] = ["overview", "meta"];
 const LINT_SKIP_NAMES: [&str; 2] = ["index.md", "log.md"];
 
@@ -408,8 +417,9 @@ fn extract_links(body: &str) -> BTreeSet<String> {
 /// `[[slug::page]]` cross-project links → (slug, page-without-.md).
 fn cross_links(body: &str) -> Vec<(String, String)> {
     static RE: OnceLock<Regex> = OnceLock::new();
-    let re = RE
-        .get_or_init(|| Regex::new(r"\[\[([a-z0-9][\w-]*?)::([^\]|]+?)(?:\|[^\]]*?)?\]\]").unwrap());
+    let re = RE.get_or_init(|| {
+        Regex::new(r"\[\[([a-z0-9][\w-]*?)::([^\]|]+?)(?:\|[^\]]*?)?\]\]").unwrap()
+    });
     re.captures_iter(body)
         .map(|m| {
             let slug = m[1].trim().to_string();
@@ -1008,13 +1018,22 @@ impl McpServer {
         let mut rows = Vec::new();
         let mut mismatches = 0usize;
         for abs in collect_md(&wiki) {
-            let name = abs.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            let name = abs
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
             if LINT_SKIP_NAMES.contains(&name.as_str()) {
                 continue;
             }
-            let Some((fm, body)) = read_parts(&abs) else { continue };
+            let Some((fm, body)) = read_parts(&abs) else {
+                continue;
+            };
             let empty = fm.as_object().map(|o| o.is_empty()).unwrap_or(true);
-            if empty || fm_opt(&fm, "type").map(|t| LINT_META_TYPES.contains(&t.as_str())).unwrap_or(false) {
+            if empty
+                || fm_opt(&fm, "type")
+                    .map(|t| LINT_META_TYPES.contains(&t.as_str()))
+                    .unwrap_or(false)
+            {
                 continue;
             }
             let stype = fm_opt(&fm, "source_type");
@@ -1035,7 +1054,9 @@ impl McpServer {
                 "mismatch": mismatch,
             }));
         }
-        json_result(json!({ "ok": true, "pages": rows.len(), "mismatches": mismatches, "rows": rows }))
+        json_result(
+            json!({ "ok": true, "pages": rows.len(), "mismatches": mismatches, "rows": rows }),
+        )
     }
 
     /// Structural + citation lint over every wiki page — no LLM, instant.
@@ -1052,12 +1073,17 @@ impl McpServer {
         let mut report = serde_json::Map::new();
         let (mut total, mut checked) = (0usize, 0usize);
         for abs in collect_md(&wiki) {
-            let name = abs.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            let name = abs
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
             if LINT_SKIP_NAMES.contains(&name.as_str()) {
                 continue;
             }
             checked += 1;
-            let Some((fm, body)) = read_parts(&abs) else { continue };
+            let Some((fm, body)) = read_parts(&abs) else {
+                continue;
+            };
             let problems = lint_page(&fm, &body);
             if !problems.is_empty() {
                 total += problems.len();
@@ -1112,11 +1138,16 @@ impl McpServer {
         let mut pages: std::collections::BTreeMap<String, (String, BTreeSet<String>)> =
             Default::default();
         for abs in collect_md(&wiki) {
-            let name = abs.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            let name = abs
+                .file_name()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
             if LINT_SKIP_NAMES.contains(&name.as_str()) {
                 continue;
             }
-            let Some((fm, body)) = read_parts(&abs) else { continue };
+            let Some((fm, body)) = read_parts(&abs) else {
+                continue;
+            };
             let status = fm_opt(&fm, "status").unwrap_or_else(|| "active".into());
             pages.insert(rel_to(&wiki, &abs), (status, extract_links(&body)));
         }
@@ -1131,7 +1162,11 @@ impl McpServer {
                 continue;
             }
             for tgt in links {
-                if pages.get(tgt).map(|(s, _)| s == "superseded").unwrap_or(false) {
+                if pages
+                    .get(tgt)
+                    .map(|(s, _)| s == "superseded")
+                    .unwrap_or(false)
+                {
                     let disp = tgt.strip_suffix(".md").unwrap_or(tgt);
                     found.push(json!({ "kind": "stale-link", "page": fnm, "detail": format!("links to superseded [[{disp}]]") }));
                 }
@@ -1168,7 +1203,12 @@ impl McpServer {
         for (slug, page) in cross_links(&body) {
             let tproj = projs.iter().find(|p| p.slug == slug);
             let exists = tproj
-                .map(|p| Path::new(&p.root).join("wiki").join(format!("{page}.md")).is_file())
+                .map(|p| {
+                    Path::new(&p.root)
+                        .join("wiki")
+                        .join(format!("{page}.md"))
+                        .is_file()
+                })
                 .unwrap_or(false);
             links.push(json!({
                 "project": slug, "page": page,
@@ -1192,14 +1232,19 @@ impl McpServer {
         let wiki = wiki_dir(&root);
         let mut metas: std::collections::BTreeMap<String, Value> = Default::default();
         for abs in collect_md(&wiki) {
-            let stem = abs.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            let stem = abs
+                .file_stem()
+                .map(|s| s.to_string_lossy().to_string())
+                .unwrap_or_default();
             if let Some((fm, _)) = read_parts(&abs) {
                 metas.insert(stem, fm);
             }
         }
         let mut pairs = Vec::new();
         for (stem, fm) in &metas {
-            let Some(tgt) = fm_opt(fm, "translation_of") else { continue };
+            let Some(tgt) = fm_opt(fm, "translation_of") else {
+                continue;
+            };
             let tgt_stem = tgt.strip_suffix(".md").unwrap_or(&tgt).to_string();
             let target_meta = metas.get(&tgt_stem);
             let reciprocal = target_meta
@@ -1259,15 +1304,30 @@ impl McpServer {
             parts.push("tags: []".into());
         } else {
             parts.push("tags:".into());
-            parts.push(a.tags.iter().map(|t| format!("  - {t}")).collect::<Vec<_>>().join("\n"));
+            parts.push(
+                a.tags
+                    .iter()
+                    .map(|t| format!("  - {t}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
         }
         if !a.sources.is_empty() {
             parts.push("sources:".into());
-            parts.push(a.sources.iter().map(|s| format!("  - {s}")).collect::<Vec<_>>().join("\n"));
+            parts.push(
+                a.sources
+                    .iter()
+                    .map(|s| format!("  - {s}"))
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            );
         }
         parts.push("---\n".into());
         let body = if a.content.is_empty() {
-            format!("# {}\n\n<!-- TODO: add content with inline [^src-*] citations -->", a.title)
+            format!(
+                "# {}\n\n<!-- TODO: add content with inline [^src-*] citations -->",
+                a.title
+            )
         } else {
             a.content.clone()
         };
@@ -1332,7 +1392,10 @@ impl McpServer {
         if let Err(e) = vault::write_file(&target.to_string_lossy(), &a.content) {
             return fail(e);
         }
-        let stem = target.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let stem = target
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
         let mut out = json!({
             "ok": true, "raw_path": rel_to(&root, &target), "src_slug": format!("src-{stem}"),
         });
@@ -1396,7 +1459,10 @@ impl McpServer {
         let raw = raw_dir(&root);
         let _ = std::fs::create_dir_all(&raw);
         let content = std::fs::read_to_string(&src).unwrap_or_default();
-        let stem = src.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let stem = src
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
         let slug = make_slug(&stem);
         let mut raw_path = raw.join(format!("{slug}.md"));
         let mut n = 2;
@@ -1408,9 +1474,15 @@ impl McpServer {
             return fail(e);
         }
         // Move the original out of the inbox so it is not re-ingested.
-        let archive = src.parent().map(|p| p.join(".archived")).unwrap_or_default();
+        let archive = src
+            .parent()
+            .map(|p| p.join(".archived"))
+            .unwrap_or_default();
         let _ = std::fs::create_dir_all(&archive);
-        let ext = src.extension().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let ext = src
+            .extension()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
         let mut dest = archive.join(src.file_name().unwrap_or_default());
         let mut m = 2;
         while dest.exists() {
@@ -1424,7 +1496,10 @@ impl McpServer {
         if let Err(e) = std::fs::rename(&src, &dest) {
             return fail(format!("archive move failed: {e}"));
         }
-        let raw_stem = raw_path.file_stem().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+        let raw_stem = raw_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
         json_result(json!({
             "ok": true, "raw_path": rel_to(&root, &raw_path),
             "archived": dest.file_name().map(|s| s.to_string_lossy().to_string()),
@@ -1441,7 +1516,11 @@ impl McpServer {
         if a.entry.trim().is_empty() {
             return fail("entry required");
         }
-        let section = if a.section.trim().is_empty() { "Changed" } else { a.section.trim() };
+        let section = if a.section.trim().is_empty() {
+            "Changed"
+        } else {
+            a.section.trim()
+        };
         let sec = capitalize(section);
         if !["Added", "Changed", "Fixed", "Removed"].contains(&sec.as_str()) {
             return fail(format!("invalid section: {}", a.section));
@@ -1464,7 +1543,10 @@ impl McpServer {
             text = format!("{}\n\n## [Unreleased]\n", text.trim_end());
         }
         let mut lines: Vec<String> = text.lines().map(|s| s.to_string()).collect();
-        let ur = lines.iter().position(|l| l.starts_with("## [Unreleased]")).unwrap_or(0);
+        let ur = lines
+            .iter()
+            .position(|l| l.starts_with("## [Unreleased]"))
+            .unwrap_or(0);
         let nxt = (ur + 1..lines.len())
             .find(|&i| lines[i].starts_with("## "))
             .unwrap_or(lines.len());
@@ -1473,7 +1555,10 @@ impl McpServer {
         if let Some(hi) = block_hdr {
             lines.insert(hi + 1, format!("- {}", a.entry.trim()));
         } else {
-            for (k, s) in ["".to_string(), hdr, format!("- {}", a.entry.trim())].into_iter().enumerate() {
+            for (k, s) in ["".to_string(), hdr, format!("- {}", a.entry.trim())]
+                .into_iter()
+                .enumerate()
+            {
                 lines.insert(nxt + k, s);
             }
         }
@@ -1524,7 +1609,10 @@ impl McpServer {
             .map(|r| r.projects_dir.join(".backups"))
             .unwrap_or_else(|| root.join(".backups"));
         let _ = std::fs::create_dir_all(&backups);
-        let base = root.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_else(|| "vault".into());
+        let base = root
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_else(|| "vault".into());
         let mut dest = backups.join(format!("{base}.zip"));
         let mut n = 2;
         while dest.exists() {
@@ -1621,8 +1709,16 @@ impl McpServer {
             }
             match git(&["add", p]) {
                 Ok(o) if !o.status.success() => {
-                    let msg = if o.stderr.is_empty() { &o.stdout } else { &o.stderr };
-                    let msg: String = String::from_utf8_lossy(msg).trim().chars().take(500).collect();
+                    let msg = if o.stderr.is_empty() {
+                        &o.stdout
+                    } else {
+                        &o.stderr
+                    };
+                    let msg: String = String::from_utf8_lossy(msg)
+                        .trim()
+                        .chars()
+                        .take(500)
+                        .collect();
                     return fail(format!("git add failed for {p}: {msg}"));
                 }
                 Err(e) => return fail(format!("git add failed for {p}: {e}")),
@@ -1642,8 +1738,16 @@ impl McpServer {
         }
         match git(&["commit", "-m", &a.message]) {
             Ok(o) if !o.status.success() => {
-                let msg = if o.stderr.is_empty() { &o.stdout } else { &o.stderr };
-                let msg: String = String::from_utf8_lossy(msg).trim().chars().take(500).collect();
+                let msg = if o.stderr.is_empty() {
+                    &o.stdout
+                } else {
+                    &o.stderr
+                };
+                let msg: String = String::from_utf8_lossy(msg)
+                    .trim()
+                    .chars()
+                    .take(500)
+                    .collect();
                 return fail(msg);
             }
             Err(e) => return fail(format!("git commit failed: {e}")),

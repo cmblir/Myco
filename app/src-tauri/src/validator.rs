@@ -75,10 +75,7 @@ pub fn validate_pages(root: &Path, changed_rels: &[String]) -> ValidationReport 
             continue;
         };
 
-        let name = confined
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let name = confined.file_name().and_then(|s| s.to_str()).unwrap_or("");
         if SKIP_NAMES.contains(&name) {
             continue; // structural page (index.md / log.md)
         }
@@ -183,7 +180,12 @@ pub fn validate_pages(root: &Path, changed_rels: &[String]) -> ValidationReport 
 
         // Wikilinks must resolve to a page in the vault (WARNING).
         for link in parser::parse_links_from_text(&text) {
-            let key = link.split('#').next().unwrap_or(&link).trim().to_lowercase();
+            let key = link
+                .split('#')
+                .next()
+                .unwrap_or(&link)
+                .trim()
+                .to_lowercase();
             if !key.is_empty() && !names.contains_key(&key) {
                 rep.warnings.push(Issue {
                     page: rel.clone(),
@@ -224,10 +226,16 @@ mod tests {
     fn dangling_citation_is_error() {
         let (_d, root) = vault(&[
             ("raw/real.md", "# Real\nbody"),
-            ("wiki/a.md", &format!("{GOOD_FM}\nBody claim.[^src-real]\nGhost claim.[^src-ghost]\n")),
+            (
+                "wiki/a.md",
+                &format!("{GOOD_FM}\nBody claim.[^src-real]\nGhost claim.[^src-ghost]\n"),
+            ),
         ]);
         let r = validate_pages(&root, &["wiki/a.md".into()]);
-        assert!(r.errors.iter().any(|e| e.kind == "dangling_citation" && e.detail.contains("ghost")));
+        assert!(r
+            .errors
+            .iter()
+            .any(|e| e.kind == "dangling_citation" && e.detail.contains("ghost")));
         assert!(!r.errors.iter().any(|e| e.detail.contains("real"))); // real resolves
     }
     #[test]
@@ -237,8 +245,14 @@ mod tests {
             ("wiki/c.md", "---\ntitle: C\ntype: concept\ncreated: 2026-01-01\nconfidence: sky-high\nstatus: active\n---\nx"), // bad confidence
         ]);
         let r = validate_pages(&root, &["wiki/b.md".into(), "wiki/c.md".into()]);
-        assert!(r.errors.iter().any(|e| e.page.contains("b.md") && e.kind == "missing_frontmatter"));
-        assert!(r.errors.iter().any(|e| e.page.contains("c.md") && e.kind == "invalid_frontmatter"));
+        assert!(r
+            .errors
+            .iter()
+            .any(|e| e.page.contains("b.md") && e.kind == "missing_frontmatter"));
+        assert!(r
+            .errors
+            .iter()
+            .any(|e| e.page.contains("c.md") && e.kind == "invalid_frontmatter"));
     }
     #[test]
     fn unresolved_wikilink_and_source_count_are_warnings_not_errors() {
@@ -250,27 +264,46 @@ mod tests {
         ]);
         let r = validate_pages(&root, &["wiki/d.md".into()]);
         assert!(r.errors.is_empty(), "no hard errors: {:?}", r.errors);
-        assert!(r.warnings.iter().any(|w| w.kind == "unresolved_wikilink" && w.detail.contains("nonexistent")));
+        assert!(r
+            .warnings
+            .iter()
+            .any(|w| w.kind == "unresolved_wikilink" && w.detail.contains("nonexistent")));
         assert!(r.warnings.iter().any(|w| w.kind == "source_count_mismatch"));
     }
     #[test]
     fn clean_page_has_no_issues_and_structural_pages_are_exempt() {
         let (_d, root) = vault(&[
             ("raw/real.md", "# Real"),
-            ("wiki/index.md", "---\ntype: overview\n---\n# Index\n[[whatever]]"),       // structural: exempt
+            (
+                "wiki/index.md",
+                "---\ntype: overview\n---\n# Index\n[[whatever]]",
+            ), // structural: exempt
             ("wiki/e.md", &format!("{GOOD_FM}\nClaim.[^src-real]\n")),
         ]);
         let r = validate_pages(&root, &["wiki/index.md".into(), "wiki/e.md".into()]);
-        assert!(r.errors.is_empty() && r.warnings.is_empty(), "clean+structural: {:?} {:?}", r.errors, r.warnings);
+        assert!(
+            r.errors.is_empty() && r.warnings.is_empty(),
+            "clean+structural: {:?} {:?}",
+            r.errors,
+            r.warnings
+        );
     }
     #[test]
     fn overview_type_exempts_knowledge_named_page_but_missing_type_still_errors() {
         // "summary" is not one of SKIP_NAMES ("index.md"/"log.md"), so this
         // exercises the `type: overview` exemption itself, not the file-name
         // short-circuit that `wiki/index.md` covers above.
-        let (_d1, root1) = vault(&[("wiki/summary.md", "---\ntype: overview\n---\n# Summary\n[[whatever]]")]);
+        let (_d1, root1) = vault(&[(
+            "wiki/summary.md",
+            "---\ntype: overview\n---\n# Summary\n[[whatever]]",
+        )]);
         let r = validate_pages(&root1, &["wiki/summary.md".into()]);
-        assert!(r.errors.is_empty() && r.warnings.is_empty(), "type:overview must fully exempt: {:?} {:?}", r.errors, r.warnings);
+        assert!(
+            r.errors.is_empty() && r.warnings.is_empty(),
+            "type:overview must fully exempt: {:?} {:?}",
+            r.errors,
+            r.warnings
+        );
 
         // Same page name, but no `type: overview` this time — proves the
         // exemption above is what did the work, not the page's name.
@@ -280,7 +313,9 @@ mod tests {
         )]);
         let r2 = validate_pages(&root2, &["wiki/summary.md".into()]);
         assert!(
-            r2.errors.iter().any(|e| e.kind == "missing_frontmatter" && e.detail.contains("type")),
+            r2.errors
+                .iter()
+                .any(|e| e.kind == "missing_frontmatter" && e.detail.contains("type")),
             "missing type must still error without the overview exemption: {:?}",
             r2.errors
         );
@@ -293,7 +328,10 @@ mod tests {
         let (_d, root) = vault(&[
             ("raw/real.md", "# Real"),
             ("wiki/target.md", GOOD_FM),
-            ("wiki/f.md", &format!("{GOOD_FM}\nClaim.[^src-real] See [[Target #Section]].\n")),
+            (
+                "wiki/f.md",
+                &format!("{GOOD_FM}\nClaim.[^src-real] See [[Target #Section]].\n"),
+            ),
         ]);
         let r = validate_pages(&root, &["wiki/f.md".into()]);
         assert!(

@@ -191,7 +191,11 @@ fn wiki_rel_of(root: &Path, abs: &Path) -> Option<String> {
     if abs.extension().and_then(|e| e.to_str()) != Some("md") {
         return None;
     }
-    let rel = abs.strip_prefix(root).ok()?.to_string_lossy().replace('\\', "/");
+    let rel = abs
+        .strip_prefix(root)
+        .ok()?
+        .to_string_lossy()
+        .replace('\\', "/");
     rel.starts_with("wiki/").then_some(rel)
 }
 
@@ -219,17 +223,15 @@ fn start_watcher(
 ) -> Option<notify::RecommendedWatcher> {
     use notify::{RecursiveMode, Watcher};
     let root_buf = root.to_path_buf();
-    let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        match res {
-            Ok(ev) => {
-                for p in ev.paths {
-                    if let Some(rel) = wiki_rel_of(&root_buf, &p) {
-                        let _ = tx.send(UpdateMsg::Dirty(rel));
-                    }
+    let mut w = notify::recommended_watcher(move |res: notify::Result<notify::Event>| match res {
+        Ok(ev) => {
+            for p in ev.paths {
+                if let Some(rel) = wiki_rel_of(&root_buf, &p) {
+                    let _ = tx.send(UpdateMsg::Dirty(rel));
                 }
             }
-            Err(e) => eprintln!("[index_updater] watch error: {e}"),
         }
+        Err(e) => eprintln!("[index_updater] watch error: {e}"),
     })
     .ok()?;
     let wiki = root.join("wiki");
@@ -410,7 +412,11 @@ mod tests {
         assert!(reconcile_requested(&["*".to_string()], false, false)); // rebind sentinel
         assert!(reconcile_requested(&[], true, false)); // stale index, even w/ an empty batch
         assert!(reconcile_requested(&["wiki/a.md".to_string()], true, false)); // stale + dirty
-        assert!(!reconcile_requested(&["wiki/a.md".to_string()], false, false)); // normal incremental batch
+        assert!(!reconcile_requested(
+            &["wiki/a.md".to_string()],
+            false,
+            false
+        )); // normal incremental batch
     }
 
     #[test]
@@ -468,12 +474,20 @@ mod tests {
         );
         bm25.save(&path).unwrap();
         let persisted = Bm25Index::load(&path);
-        assert_eq!(persisted.len(), 1, "this is the partial index that must never be saved");
+        assert_eq!(
+            persisted.len(),
+            1,
+            "this is the partial index that must never be saved"
+        );
 
         // A query the dense arm answers correctly, matching the stray page on
         // nothing but the stop-word "the".
-        let dense =
-            vec![Hit { page: "wiki/rlhf.md".into(), stem: "rlhf".into(), section: 0, score: 0.8 }];
+        let dense = vec![Hit {
+            page: "wiki/rlhf.md".into(),
+            stem: "rlhf".into(),
+            section: 0,
+            score: 0.8,
+        }];
         let lexical = persisted.search("what is the reward model in rlhf", 40);
         assert_eq!(lexical.len(), 1);
         let fused = rrf_fuse(&dense, &lexical, 10);
@@ -494,8 +508,13 @@ mod tests {
             Some("wiki/a.md")
         );
         assert_eq!(wiki_rel_of(root, std::path::Path::new("/v/raw/a.md")), None); // raw/ never
-        assert_eq!(wiki_rel_of(root, std::path::Path::new("/v/wiki/a.txt")), None); // non-md
-        assert!(should_index("wiki/a.md") && !should_index("raw/a.md") && !should_index("wiki/a.tmp"));
+        assert_eq!(
+            wiki_rel_of(root, std::path::Path::new("/v/wiki/a.txt")),
+            None
+        ); // non-md
+        assert!(
+            should_index("wiki/a.md") && !should_index("raw/a.md") && !should_index("wiki/a.tmp")
+        );
     }
 
     // `process_batch` needs a live `tauri::AppHandle` + a loaded embed model to
@@ -545,7 +564,10 @@ mod tests {
             &["a page that will be deleted next".to_string()],
         );
         bm25.save(&path).unwrap();
-        assert!(Bm25Index::load(&path).search("deleted next", 10).iter().any(|h| h.page == "wiki/gone.md"));
+        assert!(Bm25Index::load(&path)
+            .search("deleted next", 10)
+            .iter()
+            .any(|h| h.page == "wiki/gone.md"));
 
         // Mirrors process_batch's incremental delete path exactly.
         let mut bm25 = Bm25Index::load(&path);
@@ -554,7 +576,10 @@ mod tests {
 
         let reloaded = Bm25Index::load(&path);
         assert!(
-            !reloaded.search("deleted next", 10).iter().any(|h| h.page == "wiki/gone.md"),
+            !reloaded
+                .search("deleted next", 10)
+                .iter()
+                .any(|h| h.page == "wiki/gone.md"),
             "deleted page must not be searchable after save+reload"
         );
         assert!(reloaded.is_empty());
@@ -566,8 +591,16 @@ mod tests {
         let path = dir.path().join("test.mxb");
 
         let mut bm25 = Bm25Index::load(&path);
-        bm25.upsert_page("wiki/kept.md", "kept", &["this page still exists on disk".to_string()]);
-        bm25.upsert_page("wiki/removed.md", "removed", &["this page was deleted outside the app".to_string()]);
+        bm25.upsert_page(
+            "wiki/kept.md",
+            "kept",
+            &["this page still exists on disk".to_string()],
+        );
+        bm25.upsert_page(
+            "wiki/removed.md",
+            "removed",
+            &["this page was deleted outside the app".to_string()],
+        );
         bm25.save(&path).unwrap();
 
         // Mirrors process_batch's reconcile-branch prune: `present` is the set
@@ -579,7 +612,13 @@ mod tests {
         bm25.save(&path).unwrap();
 
         let reloaded = Bm25Index::load(&path);
-        assert!(reloaded.search("still exists", 10).iter().any(|h| h.page == "wiki/kept.md"));
-        assert!(!reloaded.search("deleted outside", 10).iter().any(|h| h.page == "wiki/removed.md"));
+        assert!(reloaded
+            .search("still exists", 10)
+            .iter()
+            .any(|h| h.page == "wiki/kept.md"));
+        assert!(!reloaded
+            .search("deleted outside", 10)
+            .iter()
+            .any(|h| h.page == "wiki/removed.md"));
     }
 }

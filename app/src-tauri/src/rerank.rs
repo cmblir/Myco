@@ -105,7 +105,10 @@ impl Reranker {
             sys::llama_model_load_from_file(c_path.as_ptr(), sys::llama_model_default_params())
         };
         if model.is_null() {
-            return Err(format!("load rerank model {}: llama.cpp returned null", path.display()));
+            return Err(format!(
+                "load rerank model {}: llama.cpp returned null",
+                path.display()
+            ));
         }
         Self::finish_load(model).inspect_err(|_| {
             // SAFETY: `model` is the non-null handle just returned by
@@ -176,7 +179,15 @@ impl Reranker {
             return Err("rerank: llama_batch_init failed".to_string());
         }
 
-        Ok(Self { ctx, batch, model, vocab, bos, eos, sep })
+        Ok(Self {
+            ctx,
+            batch,
+            model,
+            vocab,
+            bos,
+            eos,
+            sep,
+        })
     }
 
     /// Relevance score for one (query, passage) pair. Higher is better. The
@@ -200,7 +211,11 @@ impl Reranker {
         Ok(out)
     }
 
-    fn score_pair(&mut self, query_tokens: &[sys::llama_token], passage: &str) -> Result<f32, String> {
+    fn score_pair(
+        &mut self,
+        query_tokens: &[sys::llama_token],
+        passage: &str,
+    ) -> Result<f32, String> {
         let tokens = self.build_pair(query_tokens, passage)?;
         self.encode(&tokens)?;
         self.read_rank_score()
@@ -234,9 +249,8 @@ impl Reranker {
         // matched, and a reranker is expected to judge a truncated passage.
         passage_tokens.truncate(cap - specials - query_tokens.len());
 
-        let mut tokens = Vec::with_capacity(cap.min(
-            query_tokens.len() + passage_tokens.len() + specials,
-        ));
+        let mut tokens =
+            Vec::with_capacity(cap.min(query_tokens.len() + passage_tokens.len() + specials));
         if self.bos != TOKEN_NULL {
             tokens.push(self.bos);
         }
@@ -405,11 +419,17 @@ fn require_classification_head(path: &Path) -> Result<(), String> {
     let gguf = unsafe {
         sys::gguf_init_from_file(
             c_path.as_ptr(),
-            sys::gguf_init_params { no_alloc: true, ctx: std::ptr::null_mut() },
+            sys::gguf_init_params {
+                no_alloc: true,
+                ctx: std::ptr::null_mut(),
+            },
         )
     };
     if gguf.is_null() {
-        return Err(format!("rerank: cannot read GGUF header of {}", path.display()));
+        return Err(format!(
+            "rerank: cannot read GGUF header of {}",
+            path.display()
+        ));
     }
 
     let mut found = false;
@@ -446,10 +466,12 @@ mod tests {
     /// repo: `models/` is git-LFS tracked and this file must never enter the
     /// working tree. Overridable so another machine can point elsewhere.
     fn reranker_path() -> PathBuf {
-        crate::env::var("MYCO_RERANK_MODEL").map(PathBuf::from).unwrap_or_else(|| {
-            PathBuf::from(std::env::var("HOME").unwrap_or_default())
-                .join(".cache/memex-spike/bge-reranker-v2-m3-Q4_K_M.gguf")
-        })
+        crate::env::var("MYCO_RERANK_MODEL")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                PathBuf::from(std::env::var("HOME").unwrap_or_default())
+                    .join(".cache/memex-spike/bge-reranker-v2-m3-Q4_K_M.gguf")
+            })
     }
 
     fn bundled_embed_model() -> PathBuf {
@@ -527,6 +549,10 @@ mod tests {
                  model, trading a little reward for staying on-distribution.";
         let a = r.score(q, p).expect("score a");
         let b = r.score(q, p).expect("score b");
-        assert_eq!(a.to_bits(), b.to_bits(), "same pair must score identically: {a} vs {b}");
+        assert_eq!(
+            a.to_bits(),
+            b.to_bits(),
+            "same pair must score identically: {a} vs {b}"
+        );
     }
 }

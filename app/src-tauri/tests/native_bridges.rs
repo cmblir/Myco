@@ -30,9 +30,14 @@ fn keychain_set_get_delete_round_trip() {
     let secret = "sk-e2e-do-not-use-0123456789";
 
     // set -> get returns exactly what we stored.
-    secrets::set_key(TEST_PROVIDER, secret).expect("set_key should succeed on an unlocked keychain");
+    secrets::set_key(TEST_PROVIDER, secret)
+        .expect("set_key should succeed on an unlocked keychain");
     let got = secrets::get_key(TEST_PROVIDER).expect("get_key should not error");
-    assert_eq!(got.as_deref(), Some(secret), "round-tripped secret must match");
+    assert_eq!(
+        got.as_deref(),
+        Some(secret),
+        "round-tripped secret must match"
+    );
 
     // delete -> get now returns None (absent), not an error.
     secrets::delete_key(TEST_PROVIDER).expect("delete_key should succeed");
@@ -53,7 +58,8 @@ fn keychain_delete_absent_is_idempotent() {
 fn keychain_get_absent_returns_none() {
     // Reading a provider with no stored secret is Ok(None), the sentinel the
     // Settings screen uses to render the "not set" state.
-    let got = secrets::get_key("memex-e2e-definitely-absent").expect("get of absent key is Ok(None)");
+    let got =
+        secrets::get_key("memex-e2e-definitely-absent").expect("get of absent key is Ok(None)");
     assert_eq!(got, None);
 }
 

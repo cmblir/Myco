@@ -81,7 +81,7 @@ pub fn migrate_container_in(webkit_dir: &Path) -> Vec<String> {
             Some(false) => return Vec::new(),
             None => {
                 return vec![
-                    "webview container: cannot inspect the destination; skipped".to_string(),
+                    "webview container: cannot inspect the destination; skipped".to_string()
                 ]
             }
         }

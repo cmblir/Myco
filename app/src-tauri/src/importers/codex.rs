@@ -42,7 +42,9 @@ pub fn parse(jsonl: &str, fallback_id: &str) -> Option<Conversation> {
         if first_ts.is_none() {
             first_ts = line.timestamp.clone();
         }
-        let Some(payload) = &line.payload else { continue };
+        let Some(payload) = &line.payload else {
+            continue;
+        };
 
         if line.kind.as_deref() == Some("session_meta") {
             if id.is_none() {
@@ -75,7 +77,9 @@ pub fn parse(jsonl: &str, fallback_id: &str) -> Option<Conversation> {
         return None;
     }
     Some(Conversation {
-        id: id.filter(|s| !s.is_empty()).unwrap_or_else(|| fallback_id.to_string()),
+        id: id
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| fallback_id.to_string()),
         source: Source::Codex,
         title: title_from(&turns),
         created: first_ts.as_deref().and_then(super::parse_iso8601),
@@ -151,7 +155,10 @@ mod tests {
         assert_eq!(c.turns[1].role, Role::Assistant);
         assert_eq!(c.turns[1].text, "Checking the project structure first.");
         assert!(!c.turns.iter().any(|t| t.text.contains("permissions")));
-        assert!(!c.turns.iter().any(|t| t.text.contains("environment_context")));
+        assert!(!c
+            .turns
+            .iter()
+            .any(|t| t.text.contains("environment_context")));
         assert!(!c.turns.iter().any(|t| t.text.contains("secret thoughts")));
     }
 
