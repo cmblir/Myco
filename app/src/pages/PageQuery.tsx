@@ -52,6 +52,8 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const adjacency = useVaultStore((s) => s.adjacency);
   const openWikilink = useVaultStore((s) => s.openWikilink);
   const setRoute = useUIStore((s) => s.setRoute);
+  const route = useUIStore((s) => s.route);
+  const splitRoute = useUIStore((s) => s.splitRoute);
   const lang = useUIStore((s) => s.lang);
   const settings = useSettingsStore((s) => s.settings);
   const [mode, setMode] = useState<"ask" | "agent">("ask");
@@ -63,10 +65,14 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const markSeen = useQueryStore((s) => s.markSeen);
   const endRef = useRef<HTMLDivElement | null>(null);
 
-  // "Set up your profile" hint (Phase B, Task 5): checked once per vault —
-  // the effect's own dependency array is the "once per vault" gate (it does
-  // not re-run on every render, only when the vault path actually changes),
-  // so no extra ref is needed on top of it.
+  // "Set up your profile" hint (Phase B, Task 5): checked per vault, plus
+  // whenever either pane's route changes (final-review item 10). Normal
+  // navigation already re-checks for free — the primary pane is keyed by
+  // route, so coming back from Settings remounts this page — but in SPLIT
+  // view this page stays mounted while the profile editor saves in the other
+  // pane; re-running on route/splitRoute catches leaving Settings there. A
+  // profile saved externally (MCP) while sitting on Ask is still unseen
+  // until any navigation — accepted, nothing short of polling covers it.
   const [needsProfile, setNeedsProfile] = useState(false);
   const [hintDismissed, setHintDismissed] = useState<boolean>(() => {
     try {
@@ -85,7 +91,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [currentVault?.path]);
+  }, [currentVault?.path, route, splitRoute]);
   function dismissProfileHint(): void {
     try {
       localStorage.setItem(PROFILE_HINT_DISMISSED_KEY, "1");

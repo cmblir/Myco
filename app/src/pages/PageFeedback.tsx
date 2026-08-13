@@ -44,11 +44,19 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
   // to happen, so the confirm-then-apply flow here doesn't need to know which
   // case it's in.
   async function handleApprove(p: ProposalMeta): Promise<void> {
+    // draft-map proposals carry no `files` payload (cluster/members instead),
+    // so the generic count message would read "0 file(s)" — say what actually
+    // happens: one LLM call drafts the map.
+    const message =
+      p.action === "draft-map"
+        ? (t.pf_confirm_msg_draft_map ?? "Drafts the topic map (1 LLM call).")
+        : (t.pf_confirm_msg ?? "{n} file(s) will be moved or archived.").replace(
+            "{n}",
+            String(p.files.length),
+          );
     const ok = await confirmAction({
       title: t.pf_confirm_title ?? "Apply this proposal?",
-      message: (
-        t.pf_confirm_msg ?? "{n} file(s) will be moved or archived."
-      ).replace("{n}", String(p.files.length)),
+      message,
     });
     if (!ok) return;
     const summary = await apply(p.path);

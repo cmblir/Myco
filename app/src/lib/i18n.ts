@@ -761,6 +761,7 @@ export interface Strings {
   pf_dismiss?: string;
   pf_confirm_title?: string;
   pf_confirm_msg?: string; // {n}
+  pf_confirm_msg_draft_map?: string;
   pf_retry?: string;
   pf_apply_failed?: string;
   // Ingest page.
@@ -1641,6 +1642,7 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_dismiss: "Dismiss",
     pf_confirm_title: "Apply this proposal?",
     pf_confirm_msg: "{n} file(s) will be moved or archived.",
+    pf_confirm_msg_draft_map: "Drafts the topic map (1 LLM call).",
     pf_retry: "Retry",
     pf_apply_failed: "Apply failed — retry",
     ing_title_label: "Title",
@@ -2528,6 +2530,7 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_dismiss: "무시",
     pf_confirm_title: "이 제안을 적용할까요?",
     pf_confirm_msg: "{n}개 파일이 이동되거나 보관됩니다.",
+    pf_confirm_msg_draft_map: "지도 초안을 생성합니다 (LLM 호출 1회).",
     pf_retry: "재시도",
     pf_apply_failed: "적용 실패 — 재시도",
     ing_title_label: "제목",
@@ -3294,6 +3297,7 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_dismiss: "却下",
     pf_confirm_title: "この提案を適用しますか?",
     pf_confirm_msg: "{n}件のファイルが移動またはアーカイブされます。",
+    pf_confirm_msg_draft_map: "トピックマップの草稿を作成します（LLM呼び出し1回）。",
     pf_retry: "再試行",
     pf_apply_failed: "適用に失敗しました — 再試行",
     ing_title_label: "タイトル",
