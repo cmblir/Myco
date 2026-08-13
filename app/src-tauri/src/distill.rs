@@ -2771,6 +2771,14 @@ fn session_day(stem: &str, mtime: i64) -> String {
 /// ledger entry exists at all (tier doesn't matter — an unscored file has no
 /// verdict to digest around yet, but an already-summary/full/quarantine-tier
 /// session log is still a work log worth digesting).
+///
+/// A day is offered only once EVERY file walked for it is mature and scored —
+/// not as soon as one is. `scan`'s own run budget scores at most a few dozen
+/// items per pass, so a day with hundreds of session files would otherwise
+/// qualify (with a growing partial file list) on nearly every scan until the
+/// last straggler finally got scored, redigesting the same day's earlier
+/// files repeatedly at real LLM cost. Held back entirely, a day pays for
+/// exactly one digest call once it is actually complete.
 pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
     let cfg = config_load(root);
     let maturation_secs = cfg.maturation_hours as i64 * 3600;
@@ -2789,25 +2797,25 @@ pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
         &mut candidates,
     );
 
-    let mut by_day: HashMap<String, (Vec<String>, u64)> = HashMap::new();
+    // Every walked file lands in its day's bucket regardless of readiness —
+    // `ready` is per-file so the day-level filter below can require ALL of
+    // them, not just count how many made it in.
+    let mut by_day: HashMap<String, Vec<(String, bool, u64)>> = HashMap::new();
     for c in candidates {
-        if now - c.mtime < maturation_secs {
-            continue;
-        }
-        if !state.scored.contains_key(&c.rel) {
-            continue;
-        }
+        let mature = now - c.mtime >= maturation_secs;
+        let ready = mature && state.scored.contains_key(&c.rel);
         let stem = c.path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let day = session_day(stem, c.mtime);
         let bytes = std::fs::metadata(&c.path).map(|m| m.len()).unwrap_or(0);
-        let entry = by_day.entry(day).or_insert_with(|| (Vec::new(), 0));
-        entry.0.push(c.rel);
-        entry.1 += bytes;
+        by_day.entry(day).or_default().push((c.rel, ready, bytes));
     }
 
     let mut days: Vec<DigestDay> = by_day
         .into_iter()
-        .map(|(day, (mut files, bytes))| {
+        .filter(|(_, entries)| entries.iter().all(|(_, ready, _)| *ready))
+        .map(|(day, entries)| {
+            let bytes = entries.iter().map(|(_, _, b)| b).sum();
+            let mut files: Vec<String> = entries.into_iter().map(|(rel, _, _)| rel).collect();
             files.sort();
             DigestDay { day, files, bytes }
         })
@@ -3643,6 +3651,66 @@ mod tests {
                 ]
             );
         });
+    }
+
+    #[test]
+    fn digestable_days_withholds_a_day_until_every_walked_file_is_scored() {
+        crate::settings::test_support::with_isolated_data(
+            "distill-digestable-partial-day",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                std::fs::create_dir_all(root.join("sessions/2026-08")).unwrap();
+                let files = ["20260810-a.md", "20260810-b.md", "20260810-c.md"];
+                for f in files {
+                    std::fs::write(root.join(format!("sessions/2026-08/{f}")), PROSE).unwrap();
+                    set_mtime(&root.join(format!("sessions/2026-08/{f}")), old_mtime());
+                }
+
+                // a.md and b.md are scored; c.md is not — the day must not
+                // qualify at all, not appear with a partial (a, b) file list.
+                let mut state = DistillState::default();
+                for f in [
+                    "sessions/2026-08/20260810-a.md",
+                    "sessions/2026-08/20260810-b.md",
+                ] {
+                    state.scored.insert(
+                        f.to_string(),
+                        ScoredEntry {
+                            hash: 0,
+                            tier: "summary".into(),
+                            at: now_secs(),
+                        },
+                    );
+                }
+                state_save(root, &state).unwrap();
+                assert!(
+                    digestable_session_days(root).is_empty(),
+                    "a day with any unscored file must not be offered, even partially"
+                );
+
+                // Once c.md is scored too, the day qualifies with all three files.
+                state.scored.insert(
+                    "sessions/2026-08/20260810-c.md".to_string(),
+                    ScoredEntry {
+                        hash: 0,
+                        tier: "summary".into(),
+                        at: now_secs(),
+                    },
+                );
+                state_save(root, &state).unwrap();
+                let days = digestable_session_days(root);
+                assert_eq!(days.len(), 1);
+                assert_eq!(
+                    days[0].files,
+                    vec![
+                        "sessions/2026-08/20260810-a.md".to_string(),
+                        "sessions/2026-08/20260810-b.md".to_string(),
+                        "sessions/2026-08/20260810-c.md".to_string(),
+                    ]
+                );
+            },
+        );
     }
 
     #[test]
