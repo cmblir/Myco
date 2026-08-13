@@ -8,8 +8,11 @@
 // user being idle. It is not tied to any "distill"-kind schedule the user may
 // or may not have created. A due "distill"-kind schedule is ALSO idle-gated
 // below (the brief requires it) — unlike every other schedule kind, which
-// just runs on cadence. The manual "Run now"/"지금 증류" buttons are NOT
-// idle-gated anywhere: an explicit click is the user's own idle-override.
+// just runs on cadence. It is additionally skipped while the "자동 증류"
+// toggle (DistillConfig.enabled) is off: that toggle governs every automatic
+// distill trigger, not just the count-trigger below. The manual "Run now"/
+// "지금 증류" buttons are NOT gated anywhere: an explicit click is the
+// user's own override of both idle and enabled.
 
 import { useEffect } from "react";
 import { useScheduleStore, isDue } from "../stores/scheduleStore";
@@ -29,8 +32,10 @@ const COUNT_TRIGGER_COOLDOWN_MS = 60 * 60_000; // at most once per hour, per vau
 const lastCountTriggerRun = new Map<string, number>();
 
 /** Run all currently-due schedules for the vault, sequentially. A due
- * "distill" schedule that isn't idle yet is skipped without stamping
- * last_run, so the next poll retries it once the user goes idle. */
+ * "distill" schedule that isn't idle yet, or while distillation is disabled
+ * (DistillConfig.enabled === false), is skipped without stamping last_run,
+ * so the next poll retries it once the user goes idle / the toggle is back
+ * on. */
 export async function runDueSchedules(vaultPath: string): Promise<void> {
   const store = useScheduleStore.getState();
   if (store.runningId) return;
@@ -40,7 +45,10 @@ export async function runDueSchedules(vaultPath: string): Promise<void> {
   const cfg = await ipc.getDistillConfig(vaultPath).catch(() => null);
   for (const s of useScheduleStore.getState().schedules) {
     if (!isDue(s, now)) continue;
-    if (s.kind === "distill" && !isIdle(cfg?.idle_minutes ?? 10)) continue; // defer
+    if (s.kind === "distill") {
+      if (cfg?.enabled === false) continue; // defer — distillation toggle is off
+      if (!isIdle(cfg?.idle_minutes ?? 10)) continue; // defer
+    }
     await useScheduleStore.getState().runNow(vaultPath, s);
   }
   await maybeRunCountTrigger(vaultPath, cfg);

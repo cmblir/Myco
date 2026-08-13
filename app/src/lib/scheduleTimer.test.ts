@@ -1,4 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Isolates the "digest-kind schedules are unaffected" test below from the
+// real digest pipeline (file writes, prompt building) — only whether
+// scheduleStore.runNow reached it matters here.
+const runDigest = vi.fn();
+vi.mock("./digests", () => ({
+  runDigest: (...a: unknown[]) => runDigest(...a),
+}));
+
 import { useScheduleStore } from "../stores/scheduleStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { ipc } from "./ipc";
@@ -91,6 +100,56 @@ describe("runDueSchedules — idle-gated distill schedule", () => {
     vi.advanceTimersByTime(5 * 60_000);
     await runDueSchedules("/v");
     expect(runSpy).toHaveBeenCalledTimes(1);
+    expect(useScheduleStore.getState().schedules[0].last_run).not.toBeNull();
+  });
+});
+
+// Regression: DistillConfig.enabled was only consulted by the count-trigger
+// (maybeRunCountTrigger) — a due "distill"-kind schedule ran unconditionally
+// even with the "자동 증류" toggle off. It must defer like the idle case
+// above: no ipc call, last_run left untouched. Every other schedule kind
+// (routed through the digest pipeline, not distill_run) must stay unaffected.
+describe("runDueSchedules — distill schedules respect the enabled toggle", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    runDigest.mockReset();
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    markActivity();
+    // Idle long enough that the idle gate alone would let it through —
+    // isolates the enabled check from the idle check above.
+    vi.advanceTimersByTime(10 * 60_000);
+    useScheduleStore.setState({
+      schedules: [],
+      runningId: null,
+      error: null,
+      lastDigestPath: null,
+      loading: false,
+    });
+    useVaultStore.setState({ currentVault: null });
+    vi.spyOn(ipc, "listSchedules").mockResolvedValue([distillSchedule]);
+    vi.spyOn(ipc, "upsertSchedule").mockImplementation(async (_v, s) => [s]);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("defers a due distill schedule while disabled — no ipc call, last_run unstamped", async () => {
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue({ ...CFG, enabled: false });
+    const runSpy = vi.spyOn(ipc, "distillRun");
+    await runDueSchedules("/v");
+    expect(runSpy).not.toHaveBeenCalled();
+    expect(useScheduleStore.getState().schedules[0].last_run).toBeNull();
+  });
+
+  it("non-distill (digest-pipeline) schedules are unaffected by the distill enabled toggle", async () => {
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue({ ...CFG, enabled: false });
+    runDigest.mockResolvedValue("digests/x.md");
+    const digestSchedule: Schedule = { ...distillSchedule, id: "s1", kind: "query" };
+    vi.spyOn(ipc, "listSchedules").mockResolvedValue([digestSchedule]);
+    await runDueSchedules("/v");
+    expect(runDigest).toHaveBeenCalledTimes(1);
     expect(useScheduleStore.getState().schedules[0].last_run).not.toBeNull();
   });
 });
