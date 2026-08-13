@@ -441,29 +441,50 @@ fn threshold_at(c: &Cluster, target_pct: f32) -> f32 {
     c.p25 // unreachable given the anchor list above
 }
 
+/// Names the threshold that actually decided `natural_tier` — the `s_knn`-only
+/// verdict, before any entity-floor lift — so Reject/Quarantine cite `t_quar`,
+/// Summary cites the midpoint band, and Full cites `t_full`. An entity-floor
+/// lift is called out explicitly rather than silently reported as if `s_knn`
+/// had cleared the summary band on its own.
+#[allow(clippy::too_many_arguments)]
 fn describe(
-    tier: Tier,
+    natural_tier: Tier,
+    entity_lifted: bool,
     label: &str,
     s_knn: f32,
     t_full: f32,
-    t_full_pct: f32,
+    full_pct: f32,
+    t_summary: f32,
+    t_quar: f32,
+    quar_pct: f32,
     entity_count: usize,
 ) -> String {
-    let verdict = match tier {
-        Tier::Full => "full admission",
-        Tier::Summary => "summary only",
-        Tier::Quarantine => "quarantine",
-        Tier::Reject => "reject",
+    let threshold_clause = match natural_tier {
+        Tier::Full => format!("similarity {s_knn:.2} >= admission {t_full:.2} (p{full_pct:.0})"),
+        Tier::Summary => format!(
+            "similarity {s_knn:.2} >= summary {t_summary:.2} (midpoint p{quar_pct:.0}..p{full_pct:.0})"
+        ),
+        Tier::Quarantine => {
+            format!("similarity {s_knn:.2} >= quarantine {t_quar:.2} (p{quar_pct:.0})")
+        }
+        Tier::Reject => format!("similarity {s_knn:.2} < quarantine {t_quar:.2} (p{quar_pct:.0})"),
     };
-    let cmp = if s_knn >= t_full { ">=" } else { "<" };
+    let verdict = if entity_lifted {
+        "summary (entity floor)"
+    } else {
+        match natural_tier {
+            Tier::Full => "full admission",
+            Tier::Summary => "summary only",
+            Tier::Quarantine => "quarantine",
+            Tier::Reject => "reject",
+        }
+    };
     let entity_word = if entity_count == 1 {
         "entity"
     } else {
         "entities"
     };
-    format!(
-        "nearest topic '{label}' similarity {s_knn:.2} {cmp} admission {t_full:.2} (p{t_full_pct:.0}) -> {verdict}; {entity_count} known {entity_word}"
-    )
+    format!("nearest topic '{label}' {threshold_clause} -> {verdict}; {entity_count} known {entity_word}")
 }
 
 /// Decision tree (see `app/docs/specs/2026-08-13-ontology-distill-design.md`):
@@ -502,7 +523,7 @@ pub fn admit(o: &Ontology, item_vec: &[f32], item_text: &str, preset: &GatePrese
     let t_summary = (t_full + t_quar) / 2.0;
     let is_field = cluster.id == FIELD_CLUSTER_ID;
 
-    let mut tier = if s_knn >= t_full && !is_field {
+    let natural_tier = if s_knn >= t_full && !is_field {
         Tier::Full
     } else if s_knn >= t_summary {
         Tier::Summary
@@ -511,17 +532,25 @@ pub fn admit(o: &Ontology, item_vec: &[f32], item_text: &str, preset: &GatePrese
     } else {
         Tier::Reject
     };
-    if entity_hits.len() >= 2 && matches!(tier, Tier::Reject | Tier::Quarantine) {
-        tier = Tier::Summary;
-    }
+    let entity_lifted =
+        entity_hits.len() >= 2 && matches!(natural_tier, Tier::Reject | Tier::Quarantine);
+    let tier = if entity_lifted {
+        Tier::Summary
+    } else {
+        natural_tier
+    };
 
     let nearest_pages = cluster.members.iter().take(3).cloned().collect();
     let reason = describe(
-        tier,
+        natural_tier,
+        entity_lifted,
         &cluster.label,
         s_knn,
         t_full,
         full_pct,
+        t_summary,
+        t_quar,
+        quar_pct,
         entity_hits.len(),
     );
     Verdict {
@@ -593,15 +622,36 @@ mod tests {
             ],
         );
         let p = GatePreset::Normal;
-        // In-cluster item -> Full
-        assert!(matches!(
-            admit(&o, &unit(vec![1.0, 0.01, 0.0]), "", &p).tier,
-            Tier::Full
-        ));
-        // Orthogonal item -> Reject, and the reason names the nearest cluster + numbers
+        // In-cluster item -> Full; the reason cites the threshold that
+        // actually decided it (t_full == the winning cluster's p25, since
+        // GatePreset::Normal picks that anchor exactly).
+        let vf = admit(&o, &unit(vec![1.0, 0.01, 0.0]), "", &p);
+        assert!(matches!(vf.tier, Tier::Full));
+        let full_cluster = o
+            .clusters
+            .iter()
+            .find(|c| c.label == vf.nearest_cluster)
+            .unwrap();
+        assert!(
+            vf.reason.contains(&format!("{:.2}", full_cluster.p25)),
+            "reason: {}",
+            vf.reason
+        );
+        // Orthogonal item -> Reject, and the reason names the nearest cluster,
+        // and cites t_quar (== the cluster's p5) — the threshold it failed.
         let v = admit(&o, &unit(vec![0.0, 0.0, 1.0]), "", &p);
         assert!(matches!(v.tier, Tier::Reject));
         assert!(v.reason.contains(&v.nearest_cluster));
+        let reject_cluster = o
+            .clusters
+            .iter()
+            .find(|c| c.label == v.nearest_cluster)
+            .unwrap();
+        assert!(
+            v.reason.contains(&format!("{:.2}", reject_cluster.p5)),
+            "reason: {}",
+            v.reason
+        );
         // Two known entities lift an otherwise-rejected item to at least Summary
         let v2 = admit(
             &o,
@@ -611,6 +661,65 @@ mod tests {
         );
         assert!(!matches!(v2.tier, Tier::Reject) && !matches!(v2.tier, Tier::Quarantine));
         assert_eq!(v2.entity_hits.len(), 2);
+        // The lift is called out explicitly rather than reported as if s_knn
+        // alone had cleared the summary band.
+        assert!(v2.reason.contains("entity floor"), "reason: {}", v2.reason);
+    }
+
+    /// Hand-built ontology with clean, well-separated thresholds (p5=0.10,
+    /// p25=0.50, p40=0.90) so each of the four tiers is hit by construction,
+    /// rather than fought for in real geometry — a tight cluster's percentiles
+    /// bunch up within a hundredth of 1.0, making it impractical to land an
+    /// item exactly in a given band on purpose.
+    #[test]
+    fn admit_reason_cites_the_threshold_that_actually_decided_the_tier() {
+        let cluster = Cluster {
+            id: 0,
+            label: "topicx".into(),
+            members: vec!["wiki/topicx.md".into()],
+            centroid: vec![1.0, 0.0],
+            sim_mean: 0.9,
+            sim_std: 0.1,
+            p5: 0.10,
+            p25: 0.50,
+            p40: 0.90,
+            last_touched: 0,
+            override_widen: 0.0,
+        };
+        let o = Ontology {
+            model: "m".into(),
+            built_at: 0,
+            wiki_pages: 1,
+            clusters: vec![cluster],
+            entities: Vec::new(),
+        };
+        let p = GatePreset::Normal; // t_full=p25=0.50, t_quar=p5=0.10, t_summary=midpoint=0.30
+                                    // A unit vector at cosine `cos` from the centroid [1, 0].
+        let at = |cos: f32| vec![cos, (1.0 - cos * cos).sqrt()];
+
+        let full = admit(&o, &at(0.90), "", &p);
+        assert!(matches!(full.tier, Tier::Full));
+        assert!(full.reason.contains("0.50"), "reason: {}", full.reason);
+
+        let summary = admit(&o, &at(0.35), "", &p);
+        assert!(matches!(summary.tier, Tier::Summary));
+        assert!(
+            summary.reason.contains("midpoint"),
+            "reason: {}",
+            summary.reason
+        );
+
+        let quarantine = admit(&o, &at(0.15), "", &p);
+        assert!(matches!(quarantine.tier, Tier::Quarantine));
+        assert!(
+            quarantine.reason.contains("0.10"),
+            "reason: {}",
+            quarantine.reason
+        );
+
+        let reject = admit(&o, &at(0.05), "", &p);
+        assert!(matches!(reject.tier, Tier::Reject));
+        assert!(reject.reason.contains("0.10"), "reason: {}", reject.reason);
     }
 
     #[test]
