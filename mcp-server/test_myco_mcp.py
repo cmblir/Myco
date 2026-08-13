@@ -562,3 +562,48 @@ def test_distill_status_counts_quarantine_toward_backlog(tmp_path, monkeypatch):
     # The quarantined .md itself must not double-count as unscored _inbox
     # inflow — only its sidecar counts, once, via quarantine_item_count.
     assert distill_status()["backlog"] == 1
+
+
+def test_distill_status_invalid_json_state_degrades_to_defaults(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    (root / ".myco").mkdir()
+    (root / ".myco" / "distill-state.json").write_text("{not valid json", "utf-8")
+
+    assert distill_status() == {
+        "backlog": 0,
+        "pending_proposals": 0,
+        "last_run": None,
+        "trigger_exceeded": False,
+        "hint": None,
+    }
+
+
+def test_distill_status_non_utf8_state_file_does_not_raise(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    (root / ".myco").mkdir()
+    (root / ".myco" / "distill-state.json").write_bytes(b"\xff\xfe not utf-8 \x80\x81")
+
+    assert distill_status()["backlog"] == 0  # no exception, degrades to defaults
+
+
+def test_distill_report_invalid_json_sidecar_is_skipped(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    q = root / "_inbox" / "quarantine"
+    q.mkdir(parents=True)
+    (q / "bad.verdict.json").write_text("{not valid json", "utf-8")
+    (q / "good.verdict.json").write_text(json.dumps({"expires": time.time() + 3600}), "utf-8")
+
+    report = distill_report()  # no exception despite the corrupt sidecar
+    assert [e["path"] for e in report["quarantine_expiring_soon"]] == [
+        "_inbox/quarantine/good.verdict.json"
+    ]
+
+
+def test_distill_status_proposal_without_frontmatter_is_not_counted(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    feedback = root / "work" / "feedback"
+    feedback.mkdir(parents=True)
+    (feedback / "no-frontmatter.md").write_text("Just a plain note, no --- block.\n", "utf-8")
+
+    assert distill_status()["pending_proposals"] == 0
+    assert distill_report()["proposals"] == []

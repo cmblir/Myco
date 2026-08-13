@@ -1321,7 +1321,7 @@ def _distill_state(root: Path) -> dict:
     note above: unlike Rust's `state_load`, this never invalidates the ledger
     on an embedding-model change (no access to the live model here)."""
     try:
-        data = json.loads((root / ".myco" / "distill-state.json").read_text("utf-8"))
+        data = json.loads((root / ".myco" / "distill-state.json").read_text("utf-8", errors="replace"))
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
@@ -1332,7 +1332,7 @@ def _distill_config(root: Path) -> dict:
     anything missing, wrong-typed, or if the file is absent/corrupt."""
     cfg = dict(_DISTILL_CONFIG_DEFAULTS)
     try:
-        data = json.loads((root / ".myco" / "distill.json").read_text("utf-8"))
+        data = json.loads((root / ".myco" / "distill.json").read_text("utf-8", errors="replace"))
     except (OSError, json.JSONDecodeError):
         return cfg
     if not isinstance(data, dict):
@@ -1370,7 +1370,7 @@ def _distill_pending_proposals(root: Path) -> list[tuple[Path, dict, str]]:
         if e.is_symlink() or _is_hidden_name(e.name) or not e.is_file() or e.suffix != ".md":
             continue
         try:
-            content = e.read_text("utf-8")
+            content = e.read_text("utf-8", errors="replace")
         except OSError:
             continue
         meta, body = parse_fm(content)
@@ -1438,7 +1438,7 @@ def distill_report() -> dict:
     expiring_soon: list[dict] = []
     for sidecar in _distill_quarantine_sidecars(root):
         try:
-            data = json.loads(sidecar.read_text("utf-8"))
+            data = json.loads(sidecar.read_text("utf-8", errors="replace"))
         except (OSError, json.JSONDecodeError):
             continue
         expires = data.get("expires")
