@@ -195,8 +195,6 @@ pub fn run() {
             commands::install_background_schedule,
             commands::get_distill_config,
             commands::set_distill_config,
-            commands::build_ontology,
-            commands::distill_scan,
             commands::distill_run,
             commands::undo_distill_run,
             commands::distill_status,

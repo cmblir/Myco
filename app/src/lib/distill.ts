@@ -18,14 +18,9 @@ export interface DistillConfig {
   dormancy_decay: boolean;
 }
 
-// Task 3 — build_ontology's return summary (the full cache stays server-side).
-export interface OntologySummary {
-  clusters: number;
-  wiki_pages: number;
-  built_at: number;
-}
-
-// Task 4 — distill_scan's return summary.
+// scan()'s return summary — folded into RunReport below (Task 4/6, Phase A;
+// the standalone build_ontology/distill_scan commands were dead code, never
+// called outside run(), and were removed).
 export interface ScanOutcome {
   scored: number;
   quarantined: number;

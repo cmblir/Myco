@@ -498,9 +498,13 @@ fn backlog_converges_on_a_synthetic_firehose_vault() {
 
     // ---- 10. Undo round-trip -------------------------------------------------
     // A fresh archivable source added AFTER convergence, so the probe run
-    // below makes exactly one clean, undo-tracked move (the archive pass) and
-    // nothing scan-driven (which `distill::run` never records in the undo
-    // manifest — see `scan`'s doc comment on quarantine moves).
+    // below makes exactly one clean, undo-tracked move (the archive pass).
+    // Quarantine moves are undo-tracked too (`scan` threads the run's own
+    // manifest through them — see its doc comment); kept out of this probe
+    // deliberately, to isolate the archive-move assertions below from this
+    // synthetic vault's calibrated quarantine/TTL timing.
+    // `undo_restores_a_quarantined_file_and_removes_its_sidecar` in
+    // distill.rs covers the quarantine+undo path directly.
     let late_raw = root.join("raw/late0001.md");
     write_file(&late_raw, &prose("RAW_CORE_A", 9999));
     backdate(&late_raw, 2);
@@ -515,7 +519,8 @@ fn backlog_converges_on_a_synthetic_firehose_vault() {
     let probe = distill::run(&root, &cfg, &embed).expect("probe run should succeed");
     assert_eq!(
         probe.scan.quarantined, 0,
-        "probe run must not quarantine anything (undo-safety precondition)"
+        "probe run should not quarantine anything — isolates the assertions \
+         below to the archive move alone"
     );
     let after = list_all_files(&root);
     assert_ne!(

@@ -421,11 +421,14 @@ const GATE_MIN_WIKI_PAGES: usize = 50;
 /// or already scored at its current content hash, reject junk transcripts
 /// without spending an embedding, batch-embed the rest and run them through
 /// `ontology::admit`, then act on the verdict: quarantine moves the file into
-/// `_inbox/quarantine/` with a verdict sidecar, reject adds a
-/// `rejected_ttl` ledger entry (the file stays put — see that field's own
-/// doc comment: nothing sweeps it yet), full/summary are only recorded
-/// (Phase B consumes them). Every scored item — whatever its tier — is
-/// recorded in the ledger so an unchanged file is never re-scored.
+/// `_inbox/quarantine/` with a verdict sidecar — recorded into `manifest`
+/// (the file move as a `moves` entry, the sidecar as a `created` entry,
+/// `save_manifest`d after each, same incremental discipline as every other
+/// pass in `run`) so undo can reverse it — reject adds a `rejected_ttl`
+/// ledger entry (the file stays put — see that field's own doc comment:
+/// nothing sweeps it yet), full/summary are only recorded (Phase B consumes
+/// them). Every scored item — whatever its tier — is recorded in the ledger
+/// so an unchanged file is never re-scored.
 ///
 /// Below `GATE_MIN_WIKI_PAGES` wiki pages (`o.wiki_pages` — kept equal to
 /// the real on-disk count by `run`'s staleness check, since `scan` is only
@@ -433,12 +436,16 @@ const GATE_MIN_WIKI_PAGES: usize = 50;
 /// off: every candidate is a no-op, not scored, quarantined, or rejected —
 /// a 5-page vault must not build a field-only ontology and quarantine its
 /// own inflow into TTL-trash before it has anything to gate against.
-pub fn scan(
+// Module-private, not `pub`: `run` (same module) is the only caller left
+// now that the standalone `distill_scan` Tauri command is gone (Dead code
+// cleanup) — `RunManifest` in its signature is itself module-private.
+fn scan(
     root: &Path,
     o: &Ontology,
     cfg: &DistillConfig,
     budget: usize,
     embed: &dyn Fn(Vec<String>) -> Result<Vec<Vec<f32>>, String>,
+    manifest: &mut RunManifest,
 ) -> Result<ScanOutcome, String> {
     if o.wiki_pages < GATE_MIN_WIKI_PAGES {
         eprintln!(
@@ -532,6 +539,11 @@ pub fn scan(
                 let (target, sidecar) = free_quarantine_paths(&quarantine_dir, &file_name);
                 std::fs::rename(&item.path, &target)
                     .map_err(|e| format!("move to quarantine: {e}"))?;
+                manifest.moves.push(MoveEntry {
+                    from: item.rel.clone(),
+                    to: rel_string(root, &target),
+                });
+                save_manifest(root, manifest)?;
                 let vector = vectors.get(&i).cloned().unwrap_or_default();
                 let payload = QuarantineSidecar {
                     tier: &verdict.tier,
@@ -544,6 +556,8 @@ pub fn scan(
                 let raw = serde_json::to_string_pretty(&payload)
                     .map_err(|e| format!("serialize verdict: {e}"))?;
                 std::fs::write(&sidecar, raw).map_err(|e| format!("write verdict sidecar: {e}"))?;
+                manifest.created.push(rel_string(root, &sidecar));
+                save_manifest(root, manifest)?;
                 outcome.quarantined += 1;
             }
             Tier::Reject => {
@@ -1659,25 +1673,30 @@ pub fn apply_proposal(root: &Path, rel_path: &str) -> Result<String, String> {
 ///    since it was built — a deliberately simple staleness check (an exact
 ///    "did the wiki change" would need a content hash of every page; a page
 ///    count catches the common case — pages added/removed — cheaply).
-/// 3. `scan` new inflow against that ontology (Task 4).
-/// 4. Archive pass: a top-level `raw/<slug>.md` that is mature and already
+/// 3. The undo manifest (`.myco/distill-runs/<id>.json`) is created and
+///    persisted — empty, but on disk — BEFORE anything else moves a file, so
+///    even a crash on the very first move leaves a valid (empty) manifest
+///    rather than no manifest at all. `save_manifest` persists it again
+///    after every single successful move, trash, and proposal write from
+///    here on (including inside `scan` itself — see its own doc comment on
+///    quarantine moves), not once at the end: a mid-run I/O failure never
+///    loses the record of what already happened, only what would have
+///    happened next.
+/// 4. `scan` new inflow against that ontology (Task 4) — quarantine moves
+///    are recorded into this same manifest as they happen.
+/// 5. Archive pass: a top-level `raw/<slug>.md` that is mature and already
 ///    has a `wiki/source-<slug>.md` is "already represented" — move it to
 ///    `raw/archive/YYYY-MM/` (month from the file's own mtime). At
 ///    `Intensity::Conservative` this is a proposal instead of a move.
-/// 5. TTL pass: quarantine sidecars past their `expires` move (file +
+/// 6. TTL pass: quarantine sidecars past their `expires` move (file +
 ///    sidecar) to `.myco/trash/<run-id>/` at Standard/Aggressive, or propose
 ///    at Conservative. Trash dirs whose entire retention window has elapsed
 ///    are purged regardless of this run's intensity.
-/// 6. Emerging-cluster + proposal pass (Task 7): quarantined items whose
+/// 7. Emerging-cluster + proposal pass (Task 7): quarantined items whose
 ///    pairwise similarity clusters into a group are proposed as a new topic
 ///    (`propose_emerging_clusters`), and any proposal already resolved
 ///    (approved/dismissed/done) is archived out of the pending feedback inbox
 ///    (`archive_resolved_proposals`).
-/// 7. The undo manifest (`.myco/distill-runs/<id>.json`) — NOT a single write
-///    at the end: `save_manifest` persists it after every successful move,
-///    trash, and proposal in steps 4-6, so a mid-run I/O failure never loses
-///    the record of what already happened (only what would have happened
-///    next).
 /// 8. Write the human report (`ingest-reports/distill-<id>.md`).
 /// 9. Append this run's backlog to the rolling trend, and commit if the
 ///    vault is a git repo.
@@ -1709,19 +1728,27 @@ pub fn run(
         cached.expect("ontology_rebuilt is false only when `cached` is Some")
     };
 
-    let scan_outcome = scan(root, &ontology, cfg, cfg.run_budget_items, embed)?;
-
-    let conservative = matches!(cfg.intensity, Intensity::Conservative);
-    let maturation_secs = cfg.maturation_hours as i64 * 3600;
     let mut manifest = RunManifest {
         id: id.clone(),
         started_at: now,
         ..Default::default()
     };
-    // Persist immediately — the manifest exists on disk from before the
-    // first op, not just after it, so even a crash on the very first move
-    // leaves a valid (empty) manifest rather than no manifest at all.
+    // Persist immediately — before `scan` runs, not after — so a quarantine
+    // move `scan` makes is never undo-blind: the manifest `scan` threads
+    // through and saves into already exists on disk when that move happens.
     save_manifest(root, &manifest)?;
+
+    let scan_outcome = scan(
+        root,
+        &ontology,
+        cfg,
+        cfg.run_budget_items,
+        embed,
+        &mut manifest,
+    )?;
+
+    let conservative = matches!(cfg.intensity, Intensity::Conservative);
+    let maturation_secs = cfg.maturation_hours as i64 * 3600;
     let mut archived = 0usize;
     let mut proposals = 0usize;
 
@@ -1996,6 +2023,19 @@ mod tests {
         std::time::SystemTime::now() - std::time::Duration::from_secs(48 * 3600)
     }
 
+    /// A throwaway manifest for tests that call `scan` directly (outside
+    /// `run`, which builds its own). Its persisted `.myco/distill-runs/t.json`
+    /// is incidental — these tests assert on the returned `ScanOutcome` and/or
+    /// the manifest's in-memory contents, not the run orchestration `run`
+    /// itself covers.
+    fn test_manifest() -> RunManifest {
+        RunManifest {
+            id: "t".into(),
+            started_at: now_secs(),
+            ..Default::default()
+        }
+    }
+
     /// `n` minimal `wiki/` pages — tests that drive `run()` (which builds its
     /// own ontology straight off disk, unlike `tiny_ontology()`) need real
     /// wiki pages on disk to keep the cold-start gate active.
@@ -2079,8 +2119,10 @@ mod tests {
             panic!("cold-start gate must skip embedding entirely")
         };
 
-        let out = scan(root, &o, &cfg, 10, &embed).unwrap();
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
         assert_eq!(out, ScanOutcome::default());
+        assert!(manifest.moves.is_empty() && manifest.created.is_empty());
         assert!(
             root.join("_inbox/c.md").exists(),
             "must not move into quarantine"
@@ -2118,11 +2160,12 @@ mod tests {
             Ok(texts.iter().map(|_| vec![1.0, 0.0]).collect())
         };
 
-        let out = scan(root, &o, &cfg, 10, &embed).unwrap();
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
         assert_eq!(out.scored, 2, "a.md and c.md are mature and unscored");
         assert_eq!(out.skipped_immature, 1, "b.md is under the maturation gate");
 
-        let out2 = scan(root, &o, &cfg, 10, &embed).unwrap();
+        let out2 = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
         assert_eq!(out2.scored, 0, "unchanged content must not be rescored");
     }
 
@@ -2148,7 +2191,8 @@ mod tests {
         let embed =
             |_: Vec<String>| -> Result<Vec<Vec<f32>>, String> { panic!("must not embed junk") };
 
-        let out = scan(root, &o, &cfg, 10, &embed).unwrap();
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
         assert_eq!(out.scored, 2);
         assert_eq!(out.rejected, 2, "both junk items reject without embedding");
 
@@ -2178,7 +2222,8 @@ mod tests {
             Ok(texts.iter().map(|_| borderline.clone()).collect())
         };
 
-        let out = scan(root, &o, &cfg, 10, &embed).unwrap();
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
         assert_eq!(out.quarantined, 1);
         assert!(!root.join("_inbox/c.md").exists());
 
@@ -2193,6 +2238,12 @@ mod tests {
         assert!(sidecar["reason"].is_string());
         assert!(sidecar["expires"].is_number());
         assert_eq!(sidecar["vector"].as_array().unwrap().len(), 2);
+
+        // The move and the sidecar creation are both undo-tracked.
+        assert_eq!(manifest.moves.len(), 1);
+        assert_eq!(manifest.moves[0].from, "_inbox/c.md");
+        assert_eq!(manifest.moves[0].to, "_inbox/quarantine/c.md");
+        assert_eq!(manifest.created, vec!["_inbox/quarantine/c.verdict.json"]);
     }
 
     #[test]
@@ -2215,7 +2266,8 @@ mod tests {
             Ok(texts.iter().map(|_| borderline.clone()).collect())
         };
 
-        let out = scan(root, &o, &cfg, 10, &embed).unwrap();
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
         assert_eq!(out.quarantined, 1);
         assert!(
             !root.join("raw/paper.md").exists(),
@@ -2223,6 +2275,50 @@ mod tests {
         );
         assert!(root.join("_inbox/quarantine/paper.md").exists());
         assert!(root.join("_inbox/quarantine/paper.verdict.json").exists());
+        assert_eq!(manifest.moves[0].from, "raw/paper.md");
+    }
+
+    /// Critical 2 fix: `scan`'s quarantine move used to be undo-blind (the
+    /// manifest didn't exist yet when `scan` ran inside `run`). Proves the
+    /// move AND the sidecar creation both land in the manifest `scan` is
+    /// handed, and that `undo` reverses both — the file returns to its
+    /// origin, the quarantine copy and sidecar are gone.
+    #[test]
+    fn undo_restores_a_quarantined_file_and_removes_its_sidecar() {
+        assert!(PROSE.len() >= JUNK_MIN_BYTES);
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("_inbox")).unwrap();
+        std::fs::write(root.join("_inbox/c.md"), PROSE).unwrap();
+        set_mtime(&root.join("_inbox/c.md"), old_mtime());
+
+        let o = tiny_ontology();
+        let cfg = DistillConfig::default();
+        let borderline = vec![0.2_f32, (1.0 - 0.2_f32 * 0.2_f32).sqrt()]; // -> Quarantine
+        let embed = move |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            Ok(texts.iter().map(|_| borderline.clone()).collect())
+        };
+
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+        assert_eq!(out.quarantined, 1);
+        assert_eq!(manifest.moves.len(), 1, "quarantine move must be recorded");
+        assert_eq!(
+            manifest.created.len(),
+            1,
+            "verdict sidecar creation must be recorded"
+        );
+        assert!(root.join("_inbox/quarantine/c.md").exists());
+        assert!(root.join("_inbox/quarantine/c.verdict.json").exists());
+
+        let reversed = undo(root, &manifest.id).unwrap();
+        assert_eq!(reversed, 2, "1 file move + 1 sidecar deletion");
+        assert!(
+            root.join("_inbox/c.md").exists(),
+            "file must be restored to its origin"
+        );
+        assert!(!root.join("_inbox/quarantine/c.md").exists());
+        assert!(!root.join("_inbox/quarantine/c.verdict.json").exists());
     }
 
     #[test]
@@ -2262,7 +2358,8 @@ mod tests {
                 .collect())
         };
 
-        let out = scan(root, &o, &cfg, 10, &embed).unwrap();
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
         assert_eq!(out.full, 1);
         assert_eq!(out.quarantined, 1);
         assert_eq!(out.rejected, 1);
@@ -2278,7 +2375,7 @@ mod tests {
         // Delete a file outright (no gate involved) and rescan: its ledger
         // entries must be pruned too.
         std::fs::remove_file(root.join("_inbox/gone.md")).unwrap();
-        let out2 = scan(root, &o, &cfg, 10, &embed).unwrap();
+        let out2 = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
         assert_eq!(
             out2.scored, 0,
             "keep.md is unchanged; gone.md no longer exists to walk"

@@ -3,13 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type {
-  DistillConfig,
-  DistillStatus,
-  OntologySummary,
-  RunReport,
-  ScanOutcome,
-} from "./distill";
+import type { DistillConfig, DistillStatus, RunReport } from "./distill";
 
 export interface VaultMeta {
   path: string;
@@ -585,12 +579,6 @@ export const ipc = {
     invoke<DistillConfig>("get_distill_config", { vault }),
   setDistillConfig: (vault: string, config: DistillConfig) =>
     invoke<null>("set_distill_config", { vault, config }),
-  // Rebuild the ontology cache (Task 3, Phase A).
-  buildOntology: (vault: string) =>
-    invoke<OntologySummary>("build_ontology", { vault }),
-  // Score inflow against the ontology, quarantine, TTL-ledger (Task 4, Phase A).
-  distillScan: (vault: string) =>
-    invoke<ScanOutcome>("distill_scan", { vault }),
   // Idle-run orchestrator: archive, trash, manifest, undo (Task 6, Phase A).
   distillRun: (vault: string) => invoke<RunReport>("distill_run", { vault }),
   undoDistillRun: (vault: string, id: string) =>
