@@ -189,5 +189,14 @@ export async function draftMap(
   }
   const path = await freeMapPath(vaultPath, slugify(cluster));
   await ipc.writeFile(path, content);
-  return path.startsWith(`${vaultPath}/`) ? path.slice(vaultPath.length + 1) : path;
+  const rel = path.startsWith(`${vaultPath}/`) ? path.slice(vaultPath.length + 1) : path;
+  // Important 4 (Phase B whole-branch review): record the drafted file in an
+  // undo-manifest so "undo this run" can remove it — same best-effort rule as
+  // the other TS-step recordings (a bookkeeping failure must not fail the
+  // draft that already succeeded).
+  await ipc.appendDistillManifest(vaultPath, `llm-${Math.floor(Date.now() / 1000)}`, [], [rel])
+    .catch((e) => {
+      console.error(`[maps] manifest append failed for ${rel}:`, e);
+    });
+  return rel;
 }

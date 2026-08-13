@@ -1593,6 +1593,24 @@ pub fn full_tier_items(
     Ok(crate::distill::full_tier_items(std::path::Path::new(&root)))
 }
 
+/// TS-side distill steps (session-digest's daily-file create, full-tier
+/// ingest's `_inbox/` archive + `raw/` create, draftMap's map-file create)
+/// run outside Rust and would otherwise be invisible to `undo` — this is
+/// their one write path into the same `.myco/distill-runs/<id>.json`
+/// manifest shape Rust's own archive/trash/proposal passes already use. See
+/// `distill::append_distill_manifest`'s own doc comment.
+#[tauri::command]
+pub fn append_distill_manifest(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    id: String,
+    moves: Vec<crate::distill::MoveEntry>,
+    created: Vec<String>,
+) -> Result<(), String> {
+    let root = confine_root(&state, &vault)?;
+    crate::distill::append_distill_manifest(std::path::Path::new(&root), &id, moves, created)
+}
+
 /// The bundled digest runner script (falls back to the repo path in dev).
 fn digest_script_path(app: &tauri::AppHandle) -> Result<String, String> {
     const REL: &str = "automation/digest.py";

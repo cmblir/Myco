@@ -937,6 +937,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     // digestable_session_days: the real ledger is Rust-side and unit-tested there.
     case "full_tier_items":
       return Promise.resolve([]);
+    // TS-side LLM-step manifest bookkeeping (Important 4, Phase B whole-
+    // branch review) — no real undo manifest to extend under ?mock=1.
+    case "append_distill_manifest":
+      return Promise.resolve(null);
     case "get_settings":
       return Promise.resolve(
         AGENT_MODE

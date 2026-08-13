@@ -119,6 +119,14 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
   const profile = cfg?.profile_injection ? await loadProfile(vaultPath) : null;
   const profileInterests = profile?.interests.join(", ") ?? "";
 
+  // Important 4 (Phase B whole-branch review): one manifest per RUN — every
+  // _inbox/ archive-move + raw/ create this run performs lands in the SAME
+  // undo-manifest Rust's own passes already write incrementally, so "undo
+  // this run" can reverse them too. Recorded per item, right after the
+  // move/write (not batched at the end), to keep the manifest close to the
+  // actual file mtimes for undo's own "modified since the run" check.
+  const manifestId = `llm-${Math.floor(Date.now() / 1000)}`;
+
   let ingested = 0;
   const errors: string[] = [];
   for (const rel of items) {
@@ -129,9 +137,22 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
         content = (await ipc.readFile(`${vaultPath}/${rel}`)).raw;
         // Archive BEFORE writing the raw copy — see the archive-before-write
         // ordering note above for why this makes every failure mode safe.
-        await ipc.archiveInboxSource(`${vaultPath}/${rel}`);
+        const archivedAbs = await ipc.archiveInboxSource(`${vaultPath}/${rel}`);
         sourceRel = await ipc.availableRawPath(stemOf(rel));
         await ipc.writeFile(`${vaultPath}/${sourceRel}`, content);
+        const archivedRel = archivedAbs.startsWith(`${vaultPath}/`)
+          ? archivedAbs.slice(vaultPath.length + 1)
+          : archivedAbs;
+        await ipc
+          .appendDistillManifest(
+            vaultPath,
+            manifestId,
+            [{ from: rel, to: archivedRel }],
+            [sourceRel],
+          )
+          .catch((e) => {
+            console.error(`[distill] manifest append failed for ${rel}:`, e);
+          });
       } else {
         content = (await ipc.readFile(`${vaultPath}/${rel}`)).raw;
       }

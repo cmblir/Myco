@@ -53,16 +53,22 @@ function buildDayPrompt(files: string[], contents: string[]): string {
 
 /** Read-or-empty + append, following Sidebar's DailyNoteButton idiom. Avoids
  * duplicating the header on repeat runs the same day: a second run appends
- * its bullets under a "_run of <ISO date>_" sub-line instead. */
+ * its bullets under a "_run of <ISO date>_" sub-line instead. Returns
+ * whether this call created `daily/<day>.md` (vs. appending to one that
+ * already existed) — the caller only needs to record a manifest `created`
+ * entry (Important 4, Phase B whole-branch review) in the former case; an
+ * appended-to-existing file was already visible to undo/the run report
+ * before this run touched it. */
 async function appendDigest(
   vaultPath: string,
   day: string,
   bullets: string,
   fileCount: number,
-): Promise<void> {
+): Promise<boolean> {
   const dailyDir = `${vaultPath}/daily`;
   const filePath = `${dailyDir}/${day}.md`;
   let existing: string;
+  let created = false;
   try {
     existing = (await ipc.readFile(filePath)).raw;
   } catch {
@@ -77,11 +83,13 @@ async function appendDigest(
       /* race */
     }
     existing = `# ${day}\n\n`;
+    created = true;
   }
   const section = existing.includes(HEADER)
     ? `\n_run of ${new Date().toISOString()}_\n${bullets.trim()}\n`
     : `\n${HEADER}\n_from ${fileCount} session logs — low confidence_\n${bullets.trim()}\n`;
   await ipc.writeFile(filePath, existing + section);
+  return created;
 }
 
 /** Digests up to `llm_digest_days` of the oldest digestable session-log days
@@ -121,8 +129,21 @@ export async function runSessionDigest(vaultPath: string): Promise<DigestOutcome
       // the next run re-digests it (LLM cost + a second "_run of…_" sub-section).
       // Acceptable because the header check above appends a run sub-line rather
       // than duplicating; upgrade = persist a digested-day marker before archiving.
-      await appendDigest(vaultPath, day, bullets, files.length);
-      await ipc.archiveDigestedSessions(vaultPath, day, files);
+      const dailyCreated = await appendDigest(vaultPath, day, bullets, files.length);
+      const manifestId = await ipc.archiveDigestedSessions(vaultPath, day, files);
+      // Important 4 (Phase B whole-branch review): fold the daily-file
+      // create into the SAME manifest archiveDigestedSessions just wrote for
+      // this day's session-file moves, so "undo this run" reverses both —
+      // only when this run actually created the file (see appendDigest's
+      // doc comment). Best-effort: a bookkeeping failure here must not
+      // undo the digest/archive that already succeeded.
+      if (dailyCreated) {
+        await ipc
+          .appendDistillManifest(vaultPath, manifestId, [], [`daily/${day}.md`])
+          .catch((e) => {
+            console.error("[distill] manifest append failed for daily digest file", vaultPath, day, e);
+          });
+      }
     } catch (err) {
       console.error("[distill] session digest failed", vaultPath, day, err);
       break;

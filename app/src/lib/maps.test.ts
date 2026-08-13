@@ -7,12 +7,14 @@ const readFile = vi.fn();
 const writeFile = vi.fn();
 const createFolder = vi.fn();
 const listFiles = vi.fn();
+const appendDistillManifest = vi.fn();
 vi.mock("./ipc", () => ({
   ipc: {
     readFile: (...a: unknown[]) => readFile(...a),
     writeFile: (...a: unknown[]) => writeFile(...a),
     createFolder: (...a: unknown[]) => createFolder(...a),
     listFiles: (...a: unknown[]) => listFiles(...a),
+    appendDistillManifest: (...a: unknown[]) => appendDistillManifest(...a),
   },
 }));
 
@@ -23,6 +25,7 @@ beforeEach(() => {
   readFile.mockReset();
   writeFile.mockReset();
   createFolder.mockReset();
+  appendDistillManifest.mockReset().mockResolvedValue(null);
   // Default: no existing wiki/maps/ pages at all — the idempotency-check
   // tests below override this to exercise a hit.
   listFiles.mockReset().mockResolvedValue([]);
@@ -55,6 +58,45 @@ describe("draftMap", () => {
     expect(userMsg).toContain("[[a]]");
     expect(userMsg).toContain("[[b]]");
     expect(userMsg).not.toContain("wiki/a.md");
+  });
+
+  it("records the drafted file in an llm-<ts> undo-manifest", async () => {
+    complete.mockResolvedValue("body");
+    readFile.mockRejectedValue(new Error("not found"));
+    createFolder.mockResolvedValue("maps");
+    writeFile.mockResolvedValue(null);
+
+    await draftMap("/v", "topic", ["wiki/x.md"]);
+
+    expect(appendDistillManifest).toHaveBeenCalledWith(
+      "/v",
+      expect.stringMatching(/^llm-\d+$/),
+      [],
+      ["wiki/maps/topic.md"],
+    );
+  });
+
+  it("does not record a manifest entry when an existing map short-circuits the draft", async () => {
+    listFiles.mockResolvedValue([
+      {
+        kind: "directory",
+        name: "wiki",
+        path: "/v/wiki",
+        children: [
+          {
+            kind: "directory",
+            name: "maps",
+            path: "/v/wiki/maps",
+            children: [{ kind: "file", name: "topic.md", path: "/v/wiki/maps/topic.md" }],
+          },
+        ],
+      },
+    ]);
+    readFile.mockResolvedValue({ frontmatter: { cluster: "topic" } });
+
+    await draftMap("/v", "topic", ["wiki/x.md"]);
+
+    expect(appendDistillManifest).not.toHaveBeenCalled();
   });
 
   it("suffixes -2 on a filename collision", async () => {

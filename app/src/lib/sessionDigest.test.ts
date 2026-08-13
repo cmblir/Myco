@@ -11,6 +11,7 @@ vi.mock("./chat", () => ({
 const getDistillConfig = vi.fn();
 const digestableSessionDays = vi.fn();
 const archiveDigestedSessions = vi.fn();
+const appendDistillManifest = vi.fn();
 const readFile = vi.fn();
 const writeFile = vi.fn();
 const createFolder = vi.fn();
@@ -20,6 +21,7 @@ vi.mock("./ipc", () => ({
     getDistillConfig: (...a: unknown[]) => getDistillConfig(...a),
     digestableSessionDays: (...a: unknown[]) => digestableSessionDays(...a),
     archiveDigestedSessions: (...a: unknown[]) => archiveDigestedSessions(...a),
+    appendDistillManifest: (...a: unknown[]) => appendDistillManifest(...a),
     readFile: (...a: unknown[]) => readFile(...a),
     writeFile: (...a: unknown[]) => writeFile(...a),
     createFolder: (...a: unknown[]) => createFolder(...a),
@@ -65,6 +67,7 @@ beforeEach(() => {
   getDistillConfig.mockReset();
   digestableSessionDays.mockReset();
   archiveDigestedSessions.mockReset();
+  appendDistillManifest.mockReset();
   readFile.mockReset();
   writeFile.mockReset();
   createFolder.mockReset();
@@ -73,6 +76,7 @@ beforeEach(() => {
   createFile.mockResolvedValue("daily/x.md");
   writeFile.mockResolvedValue(null);
   archiveDigestedSessions.mockResolvedValue("digest-archived");
+  appendDistillManifest.mockResolvedValue(null);
 });
 
 describe("DIGEST_SYSTEM", () => {
@@ -137,6 +141,15 @@ describe("runSessionDigest", () => {
     expect(content).toContain("low confidence");
     expect(content).toContain("Decided to use X");
     expect(result).toEqual({ daysDigested: 1, filesArchived: 1, skipped: null });
+    // Important 4 (Phase B whole-branch review): the daily file was created
+    // fresh (mockReadFile()'s default "not found" for /daily/), so its
+    // creation is folded into archiveDigestedSessions' own manifest id.
+    expect(appendDistillManifest).toHaveBeenCalledWith(
+      "/v",
+      "digest-archived",
+      [],
+      ["daily/2026-08-10.md"],
+    );
   });
 
   it("marks files dropped by the shared 60k budget in the prompt sent to the model", async () => {
@@ -186,6 +199,8 @@ describe("runSessionDigest", () => {
     expect(content).toContain("_run of ");
     expect(content).toContain("New bullet");
     expect(content).toContain("Earlier bullet");
+    // Important 4: the daily file already existed — nothing new to record.
+    expect(appendDistillManifest).not.toHaveBeenCalled();
   });
 
   it("does not archive a day whose complete() call rejects, and stops there", async () => {

@@ -24,6 +24,7 @@ const writeFile = vi.fn();
 const availableRawPath = vi.fn();
 const archiveInboxSource = vi.fn();
 const claudeRun = vi.fn();
+const appendDistillManifest = vi.fn();
 vi.mock("./ipc", () => ({
   ipc: {
     getSettings: (...a: unknown[]) => getSettings(...a),
@@ -34,6 +35,7 @@ vi.mock("./ipc", () => ({
     availableRawPath: (...a: unknown[]) => availableRawPath(...a),
     archiveInboxSource: (...a: unknown[]) => archiveInboxSource(...a),
     claudeRun: (...a: unknown[]) => claudeRun(...a),
+    appendDistillManifest: (...a: unknown[]) => appendDistillManifest(...a),
   },
 }));
 
@@ -65,12 +67,14 @@ beforeEach(() => {
   availableRawPath.mockReset();
   archiveInboxSource.mockReset();
   claudeRun.mockReset();
+  appendDistillManifest.mockReset();
 
   getActiveModel.mockResolvedValue({ provider: "anthropic-api", model: "" });
   getDistillConfig.mockResolvedValue(CFG);
   readFile.mockResolvedValue({ raw: "# A title\n\nbody", content: "body", frontmatter: null, path: "" });
   runIngestProvider.mockResolvedValue("ok");
   archiveInboxSource.mockResolvedValue("");
+  appendDistillManifest.mockResolvedValue(null);
 });
 
 describe("runFullTierIngest", () => {
@@ -134,6 +138,7 @@ describe("runFullTierIngest", () => {
   it("promotes an _inbox/ item to raw/ before ingesting, then archives the original", async () => {
     fullTierItems.mockResolvedValue(["_inbox/clip.md"]);
     availableRawPath.mockResolvedValue("raw/clip.md");
+    archiveInboxSource.mockResolvedValue("/v/_inbox/.archived/clip.md");
     readFile.mockResolvedValue({ raw: "# Clipped\n\nbody", content: "body", frontmatter: null, path: "" });
 
     const result = await runFullTierIngest("/v");
@@ -145,6 +150,14 @@ describe("runFullTierIngest", () => {
       expect.objectContaining({ slug: "clip", title: "Clipped" }),
     );
     expect(result).toEqual({ ingested: 1, skipped: null, errors: [] });
+    // Important 4 (Phase B whole-branch review): the _inbox/ archive-move +
+    // raw/ create land in one "llm-<ts>" manifest for this run.
+    expect(appendDistillManifest).toHaveBeenCalledWith(
+      "/v",
+      expect.stringMatching(/^llm-\d+$/),
+      [{ from: "_inbox/clip.md", to: "_inbox/.archived/clip.md" }],
+      ["raw/clip.md"],
+    );
   });
 
   it("archives before promoting: an archiveInboxSource failure writes no raw copy and collects an error", async () => {

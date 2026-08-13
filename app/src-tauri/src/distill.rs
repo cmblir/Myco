@@ -752,10 +752,13 @@ pub struct DistillStatus {
     pub last_run_id: Option<String>,
 }
 
+/// `pub(crate)`: also the Tauri command param type `append_distill_manifest`
+/// deserializes IPC input into (`commands.rs`), reusing this shape rather
+/// than defining a second one.
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
-struct MoveEntry {
-    from: String,
-    to: String,
+pub(crate) struct MoveEntry {
+    pub(crate) from: String,
+    pub(crate) to: String,
 }
 
 /// Everything one `run` moved, trashed, or created — replayed in reverse by
@@ -798,6 +801,80 @@ fn save_manifest(root: &Path, m: &RunManifest) -> Result<(), String> {
     std::fs::write(&tmp, raw).map_err(|e| format!("write tmp manifest: {e}"))?;
     std::fs::rename(&tmp, &target).map_err(|e| format!("rename manifest: {e}"))?;
     Ok(())
+}
+
+/// `id` must be a manifest id this crate itself would have generated —
+/// `digest-<unix-seconds>` (a session-digest run) or `llm-<unix-seconds>`
+/// (a TS-side LLM chain run), optionally suffixed `-<n>` by
+/// `free_manifest_id`'s own collision guard. `id` is untrusted IPC input
+/// (`append_distill_manifest`'s caller-supplied argument) and gets joined
+/// straight into a `.myco/distill-runs/<id>.json` path, so this must reject
+/// anything that isn't exactly that shape rather than let a crafted id read
+/// or clobber an arbitrary file under `.myco/`.
+fn valid_manifest_id(id: &str) -> bool {
+    let rest = match id
+        .strip_prefix("digest-")
+        .or_else(|| id.strip_prefix("llm-"))
+    {
+        Some(r) => r,
+        None => return false,
+    };
+    let is_digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    let mut segs = rest.split('-');
+    is_digits(segs.next().unwrap_or(""))
+        && segs.next().map_or(true, is_digits)
+        && segs.next().is_none()
+}
+
+/// The one write path into `.myco/distill-runs/<id>.json` for TS-side steps
+/// that run outside Rust — session-digest's daily-file create, full-tier
+/// ingest's `_inbox/` archive + `raw/` create, draftMap's map-file create.
+/// Without this, those writes were invisible to `undo`: Rust's own
+/// archive/trash/proposal passes already call `save_manifest` after every
+/// step, but nothing let the TS chain add to the SAME manifest afterward, so
+/// "undo this run" never reversed the LLM steps that actually ran.
+///
+/// Creates-or-extends: a manifest already on disk under `id` (an earlier
+/// Rust-side pass, or an earlier TS append this same run) is read back and
+/// appended to; otherwise a fresh one is started with `started_at` set to
+/// now (this call's own instant is the closest available stand-in for "when
+/// the run this write belongs to began" — good enough for undo's "modified
+/// since the run" check, since nothing in the manifest predates it).
+///
+/// Every `from`/`to`/`created` path is confined via `myco_pro::safe_join`
+/// before anything is written — the same guard every other payload path in
+/// this file goes through (`confine_payload_file`). `undo` later joins
+/// manifest paths straight onto `root` and moves/deletes through them, so an
+/// unconfined string here (this command's whole purpose is accepting
+/// externally-supplied paths) would be a path-traversal write into an
+/// arbitrary undo entry, not merely a bad bookkeeping row.
+pub(crate) fn append_distill_manifest(
+    root: &Path,
+    id: &str,
+    moves: Vec<MoveEntry>,
+    created: Vec<String>,
+) -> Result<(), String> {
+    if !valid_manifest_id(id) {
+        return Err(format!("bad manifest id `{id}`"));
+    }
+    for m in &moves {
+        crate::myco_pro::safe_join(root, &m.from)?;
+        crate::myco_pro::safe_join(root, &m.to)?;
+    }
+    for c in &created {
+        crate::myco_pro::safe_join(root, c)?;
+    }
+    let mut manifest = std::fs::read_to_string(manifest_path(root, id))
+        .ok()
+        .and_then(|raw| serde_json::from_str::<RunManifest>(&raw).ok())
+        .unwrap_or_else(|| RunManifest {
+            id: id.to_string(),
+            started_at: now_secs(),
+            ..Default::default()
+        });
+    manifest.moves.extend(moves);
+    manifest.created.extend(created);
+    save_manifest(root, &manifest)
 }
 
 /// UTC (proleptic Gregorian) `(year, month, day, hour, minute, second)` from a
@@ -3752,6 +3829,91 @@ mod tests {
         // must be rejected too, not land a junk `sessions/archive/<day>/` dir.
         assert!(archive_digested_sessions(root, "abcd-ef-gh", &files).is_err());
         assert!(!root.join("sessions/archive/abcd-ef").exists());
+    }
+
+    #[test]
+    fn valid_manifest_id_accepts_only_the_prefixed_timestamp_shape() {
+        assert!(valid_manifest_id("digest-1699999999"));
+        assert!(valid_manifest_id("llm-1699999999"));
+        assert!(valid_manifest_id("digest-1699999999-2")); // free_manifest_id's collision suffix
+        assert!(!valid_manifest_id("digest-"));
+        assert!(!valid_manifest_id("digest-abc"));
+        assert!(!valid_manifest_id("digest-1699999999-2-3"));
+        assert!(!valid_manifest_id("../../etc/passwd"));
+        assert!(!valid_manifest_id("run-1699999999")); // not digest-/llm-
+    }
+
+    #[test]
+    fn append_distill_manifest_creates_then_extends() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        append_distill_manifest(
+            root,
+            "llm-1699999999",
+            vec![MoveEntry {
+                from: "_inbox/a.md".into(),
+                to: "_inbox/.archived/a.md".into(),
+            }],
+            vec!["raw/a.md".to_string()],
+        )
+        .unwrap();
+
+        let raw = std::fs::read_to_string(manifest_path(root, "llm-1699999999")).unwrap();
+        let manifest: RunManifest = serde_json::from_str(&raw).unwrap();
+        assert_eq!(manifest.id, "llm-1699999999");
+        assert_eq!(manifest.moves.len(), 1);
+        assert_eq!(manifest.created, vec!["raw/a.md".to_string()]);
+
+        // A second call under the same id extends rather than overwriting.
+        append_distill_manifest(
+            root,
+            "llm-1699999999",
+            vec![MoveEntry {
+                from: "_inbox/b.md".into(),
+                to: "_inbox/.archived/b.md".into(),
+            }],
+            vec!["raw/b.md".to_string()],
+        )
+        .unwrap();
+
+        let raw = std::fs::read_to_string(manifest_path(root, "llm-1699999999")).unwrap();
+        let manifest: RunManifest = serde_json::from_str(&raw).unwrap();
+        assert_eq!(manifest.moves.len(), 2);
+        assert_eq!(
+            manifest.created,
+            vec!["raw/a.md".to_string(), "raw/b.md".to_string()]
+        );
+
+        // Untrusted id: must be rejected outright, no file written.
+        assert!(append_distill_manifest(root, "../evil", vec![], vec!["x".into()]).is_err());
+        assert!(!manifest_path(root, "../evil").exists());
+    }
+
+    #[test]
+    fn append_distill_manifest_rejects_a_path_escaping_the_vault() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        // A `created` entry trying to escape root.
+        assert!(
+            append_distill_manifest(root, "llm-1699999999", vec![], vec!["../evil".into()])
+                .is_err()
+        );
+        assert!(!manifest_path(root, "llm-1699999999").exists());
+
+        // A `moves` entry's `to` trying to escape root.
+        assert!(append_distill_manifest(
+            root,
+            "llm-1699999999",
+            vec![MoveEntry {
+                from: "_inbox/a.md".into(),
+                to: "../../etc/passwd".into(),
+            }],
+            vec![],
+        )
+        .is_err());
+        assert!(!manifest_path(root, "llm-1699999999").exists());
     }
 
     #[test]

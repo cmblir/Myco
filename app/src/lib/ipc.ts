@@ -595,6 +595,17 @@ export const ipc = {
     invoke<string>("archive_digested_sessions", { vault, day, files }),
   // Gate-admitted Full-tier items ready for LLM ingest (Phase B, Task 3).
   fullTierItems: (vault: string) => invoke<string[]>("full_tier_items", { vault }),
+  // Records a TS-side LLM step's file moves/creates into the same
+  // .myco/distill-runs/<id>.json undo-manifest Rust's own passes already
+  // write incrementally (Important 4, Phase B whole-branch review) —
+  // session digest's daily-file create, full-tier ingest's inbox-archive +
+  // raw-create, draft-map's file write.
+  appendDistillManifest: (
+    vault: string,
+    id: string,
+    moves: { from: string; to: string }[],
+    created: string[],
+  ) => invoke<null>("append_distill_manifest", { vault, id, moves, created }),
   listProviderModels: (providerId: string) =>
     invoke<string[]>("list_provider_models", { providerId }),
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),
