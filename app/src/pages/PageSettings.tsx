@@ -1786,6 +1786,73 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
             min={0}
             onChange={(n) => void patch({ maturation_hours: n })}
           />
+          <DistillNumField
+            label={t.set_distill_llm_digest_days ?? "Digest days per run"}
+            value={cfg.llm_digest_days}
+            min={0}
+            onChange={(n) => void patch({ llm_digest_days: n })}
+          />
+          <DistillNumField
+            label={t.set_distill_llm_ingest_budget ?? "LLM ingest budget (items)"}
+            value={cfg.llm_ingest_budget}
+            min={0}
+            onChange={(n) => void patch({ llm_ingest_budget: n })}
+          />
+        </div>
+
+        {/* profile_injection — the privacy toggle profile.md's own header
+            comment points at ("Sent to configured AI providers when profile
+            injection is on"); without this row it was config-file-only. */}
+        <div
+          className="row"
+          style={{
+            marginTop: 14,
+            paddingTop: 12,
+            borderTop: "1px solid var(--line)",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 12,
+          }}
+        >
+          <div style={{ paddingRight: 8 }}>
+            <div style={{ fontSize: 13, fontWeight: 600 }}>
+              {t.set_distill_profile_injection_title ?? "Profile injection"}
+            </div>
+            <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+              {t.set_distill_profile_injection_desc ??
+                "Send profile.md to configured AI providers as Ask/ingest context. Off keeps the profile local-only."}
+            </div>
+          </div>
+          <button
+            role="switch"
+            aria-checked={cfg.profile_injection}
+            aria-label={t.set_distill_profile_injection_title ?? "Profile injection"}
+            data-testid="profile-injection-toggle"
+            onClick={() => void patch({ profile_injection: !cfg.profile_injection })}
+            style={{
+              width: 44,
+              height: 24,
+              borderRadius: 12,
+              border: "1px solid var(--line)",
+              background: cfg.profile_injection ? "var(--ink)" : "var(--bg-soft)",
+              position: "relative",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                top: 2,
+                left: cfg.profile_injection ? 22 : 2,
+                width: 18,
+                height: 18,
+                borderRadius: "50%",
+                background: cfg.profile_injection ? "var(--bg)" : "var(--ink-3)",
+                transition: "left 150ms",
+              }}
+            />
+          </button>
         </div>
       </div>
 
