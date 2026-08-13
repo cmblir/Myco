@@ -1777,7 +1777,7 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
           <DistillNumField
             label={t.set_distill_idle_minutes ?? "Idle minutes"}
             value={cfg.idle_minutes}
-            min={0}
+            min={1}
             onChange={(n) => void patch({ idle_minutes: n })}
           />
           <DistillNumField
