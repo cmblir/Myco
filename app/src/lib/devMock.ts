@@ -826,6 +826,8 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       mockDistillConfig = { ...config };
       return Promise.resolve(null);
     }
+    case "build_ontology":
+      return Promise.resolve({ clusters: 3, wiki_pages: 58, built_at: 0 });
     case "get_settings":
       return Promise.resolve(
         AGENT_MODE

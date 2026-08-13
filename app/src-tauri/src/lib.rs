@@ -20,6 +20,7 @@ pub mod local_llm;
 pub mod mcp_native;
 pub mod myco_pro;
 pub mod ollama;
+pub mod ontology;
 pub mod parser;
 pub mod perf;
 pub mod pipeline;
@@ -194,6 +195,7 @@ pub fn run() {
             commands::install_background_schedule,
             commands::get_distill_config,
             commands::set_distill_config,
+            commands::build_ontology,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path

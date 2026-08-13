@@ -15,3 +15,10 @@ export interface DistillConfig {
   maturation_hours: number;
   dormancy_decay: boolean;
 }
+
+// Task 3 — build_ontology's return summary (the full cache stays server-side).
+export interface OntologySummary {
+  clusters: number;
+  wiki_pages: number;
+  built_at: number;
+}

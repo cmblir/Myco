@@ -3,7 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { DistillConfig } from "./distill";
+import type { DistillConfig, OntologySummary } from "./distill";
 
 export interface VaultMeta {
   path: string;
@@ -579,6 +579,9 @@ export const ipc = {
     invoke<DistillConfig>("get_distill_config", { vault }),
   setDistillConfig: (vault: string, config: DistillConfig) =>
     invoke<null>("set_distill_config", { vault, config }),
+  // Rebuild the ontology cache (Task 3, Phase A).
+  buildOntology: (vault: string) =>
+    invoke<OntologySummary>("build_ontology", { vault }),
   listProviderModels: (providerId: string) =>
     invoke<string[]>("list_provider_models", { providerId }),
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),

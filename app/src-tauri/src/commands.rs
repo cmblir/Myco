@@ -1414,6 +1414,62 @@ pub fn set_distill_config(
     crate::distill::config_save(std::path::Path::new(&root), &config)
 }
 
+/// (stem, title) pairs for `ontology::build`'s entity dictionary. Only
+/// `wiki/` pages carry a frontmatter title worth matching — session logs
+/// (also walked by `collect_wiki_pages`) don't.
+fn wiki_titles(root: &std::path::Path) -> Vec<(String, String)> {
+    collect_wiki_pages(root)
+        .into_iter()
+        .filter(|(rel, _, _)| rel.starts_with("wiki/"))
+        .map(|(_, stem, content)| {
+            let title = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+                .parse(&content)
+                .ok()
+                .and_then(|p| p.data)
+                .and_then(|pod| match pod {
+                    gray_matter::Pod::Hash(map) => match map.get("title") {
+                        Some(gray_matter::Pod::String(s)) => Some(s.clone()),
+                        _ => None,
+                    },
+                    _ => None,
+                })
+                .unwrap_or_default();
+            (stem, title)
+        })
+        .collect()
+}
+
+#[derive(serde::Serialize)]
+pub struct OntologySummary {
+    pub clusters: usize,
+    pub wiki_pages: usize,
+    pub built_at: i64,
+}
+
+/// Rebuild the ontology cache (Task 3, Phase A): cluster the wiki's semantic
+/// graph, compute per-cluster admission stats, and save it to
+/// `<vault>/.myco/ontology.json` for the (future) admission gate to read.
+#[tauri::command]
+pub fn build_ontology(
+    vault_state: tauri::State<VaultRoot>,
+    cache: tauri::State<'_, VectorCache>,
+    vault: String,
+) -> Result<OntologySummary, String> {
+    let root = confine_root(&vault_state, &vault)?;
+    let root = std::path::Path::new(&root);
+    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    let store = cache.get(&index_path);
+    let titles = wiki_titles(root);
+    let mut ontology = crate::ontology::build(&store, &titles);
+    crate::ontology::stamp_last_touched(root, &mut ontology);
+    crate::ontology::save(root, &ontology)?;
+    Ok(OntologySummary {
+        clusters: ontology.clusters.len(),
+        wiki_pages: ontology.wiki_pages,
+        built_at: ontology.built_at,
+    })
+}
+
 /// The bundled digest runner script (falls back to the repo path in dev).
 fn digest_script_path(app: &tauri::AppHandle) -> Result<String, String> {
     const REL: &str = "automation/digest.py";
