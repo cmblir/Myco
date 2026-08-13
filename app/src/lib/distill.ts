@@ -32,3 +32,21 @@ export interface ScanOutcome {
   full: number;
   skipped_immature: number;
 }
+
+// Task 6 — distill_run's return summary.
+export interface RunReport {
+  id: string;
+  scan: ScanOutcome;
+  archived: number;
+  trashed: number;
+  proposals: number;
+  backlog_after: number;
+}
+
+// Task 6 — distill_status's return summary.
+export interface DistillStatus {
+  backlog: number;
+  pending_proposals: number;
+  last_run: number | null;
+  last_backlogs: number[];
+}

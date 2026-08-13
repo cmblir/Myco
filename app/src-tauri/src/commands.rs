@@ -1416,8 +1416,9 @@ pub fn set_distill_config(
 
 /// (stem, title) pairs for `ontology::build`'s entity dictionary. Only
 /// `wiki/` pages carry a frontmatter title worth matching — session logs
-/// (also walked by `collect_wiki_pages`) don't.
-fn wiki_titles(root: &std::path::Path) -> Vec<(String, String)> {
+/// (also walked by `collect_wiki_pages`) don't. `pub(crate)`: `distill::run`
+/// (Task 6) rebuilds the ontology itself and needs this too.
+pub(crate) fn wiki_titles(root: &std::path::Path) -> Vec<(String, String)> {
     collect_wiki_pages(root)
         .into_iter()
         .filter(|(rel, _, _)| rel.starts_with("wiki/"))
@@ -1470,18 +1471,45 @@ pub fn build_ontology(
     })
 }
 
+/// Build the `embed` closure `distill::scan`/`distill::run` want (a plain
+/// synchronous `Fn`, so their own tests can inject synthetic vectors) and run
+/// `f` with it on a blocking-pool thread — the closure's own
+/// `block_on(embed_texts(...))` call cannot run on the caller's async task
+/// without panicking ("cannot block the current thread from within a
+/// runtime"). Shared by `distill_scan` and `distill_run` so the bridge is
+/// written once.
+async fn with_distill_embed<T: Send + 'static>(
+    app: tauri::AppHandle,
+    provider: String,
+    model: String,
+    f: impl FnOnce(&dyn Fn(Vec<String>) -> Result<Vec<Vec<f32>>, String>) -> Result<T, String>
+        + Send
+        + 'static,
+) -> Result<T, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            let llm = app.state::<LocalLlmState>();
+            tauri::async_runtime::block_on(embed_texts(
+                app.clone(),
+                llm,
+                &provider,
+                &model,
+                crate::local_llm::EmbedRole::Query,
+                texts,
+            ))
+        };
+        f(&embed)
+    })
+    .await
+    .map_err(|e| format!("distill task join failed: {e}"))?
+}
+
 /// Score new inflow against the ontology cache (Task 4, Phase A): walk
 /// `_inbox/`, `raw/`, `sessions/`, gate each mature+unscored item through
 /// `ontology::admit`, quarantine what fits no known topic, and TTL-ledger
 /// straight rejects. No ontology yet (never built, or stale for the current
 /// embed model) degrades to a zero outcome rather than an error — same
 /// treatment as an empty/stale index elsewhere in this file.
-///
-/// `distill::scan` takes a plain synchronous embed closure (so its tests can
-/// inject synthetic vectors); bridging that to the real, async `embed_texts`
-/// needs a blocking-pool thread to `block_on` from — calling `block_on`
-/// directly on this command's own async task would panic ("cannot block the
-/// current thread from within a runtime").
 #[tauri::command]
 pub async fn distill_scan(
     app: tauri::AppHandle,
@@ -1508,22 +1536,80 @@ pub async fn distill_scan(
     let cfg = crate::distill::config_load(&root);
     let budget = cfg.run_budget_items;
 
-    tauri::async_runtime::spawn_blocking(move || {
-        let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
-            let llm = app.state::<LocalLlmState>();
-            tauri::async_runtime::block_on(embed_texts(
-                app.clone(),
-                llm,
-                &provider,
-                &model,
-                crate::local_llm::EmbedRole::Query,
-                texts,
-            ))
-        };
-        crate::distill::scan(&root, &ontology, &cfg, budget, &embed)
+    with_distill_embed(app, provider, model, move |embed| {
+        crate::distill::scan(&root, &ontology, &cfg, budget, embed)
     })
     .await
-    .map_err(|e| format!("distill scan task join failed: {e}"))?
+}
+
+/// Idle-run orchestrator (Task 6, Phase A): partitions sessions, freshens the
+/// ontology cache if the wiki moved, scores/quarantines/rejects new inflow,
+/// archives already-represented raw sources, sweeps expired quarantine past
+/// its TTL, and writes a run manifest + human report — see `distill::run`'s
+/// own doc comment for the full step list.
+///
+/// Same builtin-local-model staleness guard as `distill_scan`: `distill::run`
+/// resolves its OWN copy of the vault's `VectorStore` internally (it takes no
+/// cache/state, unlike this command — see its doc comment), so this
+/// duplicates one disk read against the cached copy just to pick the same
+/// embed model `run` will independently load. Degrading to a zero-valued
+/// report here, before `run` ever starts, keeps a stale index from failing
+/// mid-run instead of not running at all.
+#[tauri::command]
+pub async fn distill_run(
+    app: tauri::AppHandle,
+    vault_state: tauri::State<'_, VaultRoot>,
+    cache: tauri::State<'_, VectorCache>,
+    vault: String,
+) -> Result<crate::distill::RunReport, String> {
+    let root = confine_root(&vault_state, &vault)?;
+    let root = PathBuf::from(root);
+    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    let store = cache.get(&index_path);
+    let (provider, model) = store
+        .model
+        .split_once(':')
+        .map(|(p, m)| (p.to_string(), m.to_string()))
+        .unwrap_or((store.model.clone(), String::new()));
+    if builtin_index_is_stale(&provider, &model) {
+        return Ok(crate::distill::RunReport {
+            id: String::new(),
+            scan: crate::distill::ScanOutcome::default(),
+            archived: 0,
+            trashed: 0,
+            proposals: 0,
+            backlog_after: crate::distill::status(&root).backlog,
+        });
+    }
+    let cfg = crate::distill::config_load(&root);
+
+    with_distill_embed(app, provider, model, move |embed| {
+        crate::distill::run(&root, &cfg, embed)
+    })
+    .await
+}
+
+/// Mechanically reverse one `distill_run` — see `distill::undo`'s own doc
+/// comment. Returns the number of manifest entries actually reversed.
+#[tauri::command]
+pub fn undo_distill_run(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    id: String,
+) -> Result<usize, String> {
+    let root = confine_root(&state, &vault)?;
+    crate::distill::undo(std::path::Path::new(&root), &id)
+}
+
+/// Vault-wide distillation status for the settings tab / MCP `distill_status`
+/// — backlog count, pending proposals, last run, and the backlog trend.
+#[tauri::command]
+pub fn distill_status(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+) -> Result<crate::distill::DistillStatus, String> {
+    let root = confine_root(&state, &vault)?;
+    Ok(crate::distill::status(std::path::Path::new(&root)))
 }
 
 /// The bundled digest runner script (falls back to the repo path in dev).

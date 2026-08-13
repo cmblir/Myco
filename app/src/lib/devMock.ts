@@ -837,6 +837,31 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         full: 0,
         skipped_immature: 0,
       });
+    case "distill_run":
+      return Promise.resolve({
+        id: "19700101T000000",
+        scan: {
+          scored: 0,
+          quarantined: 0,
+          rejected: 0,
+          summaries: 0,
+          full: 0,
+          skipped_immature: 0,
+        },
+        archived: 0,
+        trashed: 0,
+        proposals: 0,
+        backlog_after: 0,
+      });
+    case "undo_distill_run":
+      return Promise.resolve(0);
+    case "distill_status":
+      return Promise.resolve({
+        backlog: 12,
+        pending_proposals: 2,
+        last_run: 1755000000,
+        last_backlogs: [40, 35, 30, 28, 22, 18, 15, 14, 13, 12],
+      });
     case "get_settings":
       return Promise.resolve(
         AGENT_MODE

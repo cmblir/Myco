@@ -151,6 +151,16 @@ pub struct DistillState {
     pub scored: HashMap<String, ScoredEntry>,
     #[serde(default)]
     pub rejected_ttl: HashMap<String, i64>,
+    /// Unix seconds of the last completed `run`, for the status view.
+    #[serde(default)]
+    pub last_run: Option<i64>,
+    /// Rolling window (capped at 10, oldest first) of the post-run backlog
+    /// count each `run` appended — the trend line the badge shows instead of
+    /// a raw count. Resets with the rest of the ledger on a model change,
+    /// same as `scored`/`rejected_ttl`: nothing here is model-independent
+    /// history worth special-casing.
+    #[serde(default)]
+    pub last_backlogs: Vec<usize>,
 }
 
 pub fn state_path(root: &Path) -> PathBuf {
@@ -548,6 +558,706 @@ fn compact_ledger(root: &Path, state: &mut DistillState) {
     state.rejected_ttl.retain(|rel, _| root.join(rel).exists());
 }
 
+// ---------------------------------------------------------------------------
+// Idle-run orchestrator (Task 6, Phase A): archive already-represented raw
+// sources, sweep expired quarantine into `.myco/trash/`, write an undo
+// manifest + human report every run, and undo one mechanically. See
+// `app/docs/specs/2026-08-13-ontology-distill-design.md` ("Automation loop").
+// ---------------------------------------------------------------------------
+
+/// Fixed retention for `.myco/trash/<run-id>/` dirs once an item lands there.
+/// NOT the same knob as `cfg.quarantine_ttl_days` — that one governs how long
+/// an item sits in quarantine before it is even eligible for trash; this is
+/// how long it sits in trash after that. Phase A hard-codes it rather than
+/// exposing yet another setting.
+const TRASH_RETENTION_DAYS: i64 = 30;
+
+/// Outcome of one `run` — returned to the Tauri command layer and rendered
+/// into the human report.
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct RunReport {
+    pub id: String,
+    pub scan: ScanOutcome,
+    pub archived: usize,
+    pub trashed: usize,
+    pub proposals: usize,
+    pub backlog_after: usize,
+}
+
+/// Vault-wide distillation status — the settings tab / MCP `distill_status`
+/// view. Cheap: no scoring, just a fs walk against the ledger already on disk.
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct DistillStatus {
+    pub backlog: usize,
+    pub pending_proposals: usize,
+    pub last_run: Option<i64>,
+    pub last_backlogs: Vec<usize>,
+}
+
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+struct MoveEntry {
+    from: String,
+    to: String,
+}
+
+/// Everything one `run` moved, trashed, or created — replayed in reverse by
+/// `undo`. `started_at` is this run's own unix-seconds clock reading (the
+/// same instant `id` is derived from), kept as a plain field rather than
+/// re-parsed out of `id` so undo's "was this touched since the run" check
+/// stays a straight integer comparison.
+#[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
+struct RunManifest {
+    id: String,
+    #[serde(default)]
+    started_at: i64,
+    #[serde(default)]
+    moves: Vec<MoveEntry>,
+    #[serde(default)]
+    trashed: Vec<MoveEntry>,
+    #[serde(default)]
+    created: Vec<String>,
+}
+
+fn manifest_path(root: &Path, id: &str) -> PathBuf {
+    dir(root).join("distill-runs").join(format!("{id}.json"))
+}
+
+/// UTC (proleptic Gregorian) `(year, month, day, hour, minute, second)` from a
+/// unix timestamp — Howard Hinnant's `civil_from_days` algorithm,
+/// the same one `commands::current_month` uses (that one is hardcoded to
+/// "now" and stops at the month; run ids and archive-month buckets need an
+/// arbitrary timestamp — a file's own mtime, not always "now" — plus
+/// time-of-day, so it is re-derived here rather than shared).
+fn civil_datetime(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
+    let days = secs.div_euclid(86_400);
+    let sod = secs.rem_euclid(86_400); // seconds of day, always in [0, 86400)
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let m = (if mp < 10 { mp + 3 } else { mp - 9 }) as u32;
+    let y = if m <= 2 { y + 1 } else { y };
+    let hh = (sod / 3600) as u32;
+    let mm = ((sod % 3600) / 60) as u32;
+    let ss = (sod % 60) as u32;
+    (y, m, d, hh, mm, ss)
+}
+
+/// Compact run id: `YYYYMMDDTHHMMSS`, UTC.
+fn run_id(secs: i64) -> String {
+    let (y, m, d, hh, mm, ss) = civil_datetime(secs);
+    format!("{y:04}{m:02}{d:02}T{hh:02}{mm:02}{ss:02}")
+}
+
+/// `YYYY-MM` bucket an archived file belongs in, from its own mtime.
+fn month_bucket(secs: i64) -> String {
+    let (y, m, ..) = civil_datetime(secs);
+    format!("{y:04}-{m:02}")
+}
+
+/// `run_id(now)`, or the same id suffixed `-2`, `-3`… if a run already wrote
+/// a manifest under that exact second — e.g. two runs kicked off back-to-back
+/// within the same wall-clock second.
+fn free_run_id(root: &Path, now: i64) -> String {
+    let base = run_id(now);
+    if !manifest_path(root, &base).exists() {
+        return base;
+    }
+    let mut n = 2u32;
+    loop {
+        let candidate = format!("{base}-{n}");
+        if !manifest_path(root, &candidate).exists() {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+/// `path`, or the same stem suffixed `-2`, `-3`… before the extension if it
+/// already exists — the collision guard the archive move, the trash move,
+/// and the proposal writer all share.
+fn free_path(path: &Path) -> PathBuf {
+    if !path.exists() {
+        return path.to_path_buf();
+    }
+    let parent = path.parent().unwrap_or_else(|| Path::new(""));
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("item")
+        .to_string();
+    let ext = path
+        .extension()
+        .and_then(|s| s.to_str())
+        .map(str::to_string);
+    let mut n = 2u32;
+    loop {
+        let name = match &ext {
+            Some(e) => format!("{stem}-{n}.{e}"),
+            None => format!("{stem}-{n}"),
+        };
+        let candidate = parent.join(name);
+        if !candidate.exists() {
+            return candidate;
+        }
+        n += 1;
+    }
+}
+
+/// Vault-relative, forward-slashed path — the one string form every manifest
+/// entry and report line uses.
+fn rel_string(root: &Path, path: &Path) -> String {
+    path.strip_prefix(root)
+        .unwrap_or(path)
+        .to_string_lossy()
+        .replace('\\', "/")
+}
+
+fn mtime_secs(path: &Path) -> Option<i64> {
+    std::fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs() as i64)
+}
+
+/// Minimal proposal writer — a seam Task 7's full proposal engine will reuse
+/// (or replace): `work/feedback/<date>-<slug>.md` with `type:
+/// distill-proposal`, `status: pending` frontmatter (the proposal-inbox
+/// format from the design spec) and a one-paragraph body. Returns the
+/// vault-relative path written.
+///
+/// ponytail: no de-dup against a previous proposal for the same item — an
+/// item that keeps missing its window every run (e.g. a Conservative-
+/// intensity TTL item) gets a fresh proposal file each run until Task 7's
+/// approve/dismiss lifecycle marks one resolved.
+fn write_proposal(
+    root: &Path,
+    now: i64,
+    slug: &str,
+    title: &str,
+    body: &str,
+) -> Result<String, String> {
+    let (y, m, d, ..) = civil_datetime(now);
+    let feedback_dir = root.join("work/feedback");
+    std::fs::create_dir_all(&feedback_dir).map_err(|e| format!("create work/feedback dir: {e}"))?;
+    let file_name = format!("{y:04}-{m:02}-{d:02}-{slug}.md");
+    let path = free_path(&feedback_dir.join(file_name));
+    let content =
+        format!("---\ntype: distill-proposal\nstatus: pending\n---\n\n# {title}\n\n{body}\n");
+    std::fs::write(&path, content).map_err(|e| format!("write proposal: {e}"))?;
+    Ok(rel_string(root, &path))
+}
+
+/// `type: distill-proposal` and no `status` other than `pending` yet — a
+/// proposal Task 7's future approve/dismiss lifecycle has not resolved.
+fn is_pending_proposal(content: &str) -> bool {
+    let Some(gray_matter::Pod::Hash(map)) = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+        .parse(content)
+        .ok()
+        .and_then(|p| p.data)
+    else {
+        return false;
+    };
+    let is_proposal =
+        matches!(map.get("type"), Some(gray_matter::Pod::String(s)) if s == "distill-proposal");
+    if !is_proposal {
+        return false;
+    }
+    !matches!(map.get("status"), Some(gray_matter::Pod::String(s)) if s != "pending")
+}
+
+fn pending_proposal_count(root: &Path) -> usize {
+    crate::vault::vault_entries(&root.join("work/feedback"))
+        .into_iter()
+        .filter(|(e, kind)| {
+            kind.is_file() && e.path().extension().and_then(|x| x.to_str()) == Some("md")
+        })
+        .filter(|(e, _)| {
+            std::fs::read_to_string(e.path())
+                .map(|c| is_pending_proposal(&c))
+                .unwrap_or(false)
+        })
+        .count()
+}
+
+fn quarantine_item_count(root: &Path) -> usize {
+    let quarantine_dir = root.join(crate::commands::DEST_INBOX).join(QUARANTINE_DIR);
+    crate::vault::vault_entries(&quarantine_dir)
+        .into_iter()
+        .filter(|(e, kind)| {
+            kind.is_file() && e.file_name().to_string_lossy().ends_with(".verdict.json")
+        })
+        .count()
+}
+
+/// Cheap backlog estimate: inflow candidates the ledger has not yet scored,
+/// plus everything currently sitting in quarantine. A fs walk, not a
+/// re-score — good enough for a trend line, not a substitute for `scan`'s own
+/// count.
+fn backlog_count(root: &Path, state: &DistillState) -> usize {
+    let unscored = collect_candidates(root)
+        .iter()
+        .filter(|c| !state.scored.contains_key(&c.rel))
+        .count();
+    unscored + quarantine_item_count(root)
+}
+
+/// Move the file currently at `entry.to` back to `entry.from`, unless it was
+/// modified since the run (the user touched it) or `entry.from` is now
+/// occupied by something else — either way this entry is skipped with a
+/// warning rather than silently overwriting user data. Returns whether the
+/// move happened.
+fn move_back(root: &Path, entry: &MoveEntry, run_id: &str, run_time: i64) -> bool {
+    let to_path = root.join(&entry.to);
+    let from_path = root.join(&entry.from);
+    let Some(mtime) = mtime_secs(&to_path) else {
+        return false; // nothing there to restore
+    };
+    if mtime > run_time {
+        eprintln!(
+            "distill undo {run_id}: skipping {} (modified since the run)",
+            entry.to
+        );
+        return false;
+    }
+    if from_path.exists() {
+        eprintln!(
+            "distill undo {run_id}: skipping {} (original path is occupied)",
+            entry.from
+        );
+        return false;
+    }
+    if let Some(parent) = from_path.parent() {
+        if std::fs::create_dir_all(parent).is_err() {
+            return false;
+        }
+    }
+    std::fs::rename(&to_path, &from_path).is_ok()
+}
+
+/// Commit this run's changes when the vault is itself a git repo — never
+/// initializes one. Best-effort: `git commit` exits non-zero when there is
+/// nothing staged (a run that moved/trashed/created nothing), which is not a
+/// failure worth surfacing.
+fn git_commit_run(root: &Path, run_id: &str) {
+    if !root.join(".git").exists() {
+        return;
+    }
+    if let Err(e) = std::process::Command::new("git")
+        .args(["add", "-A"])
+        .current_dir(root)
+        .output()
+    {
+        eprintln!("distill run {run_id}: git add failed: {e}");
+        return;
+    }
+    if let Err(e) = std::process::Command::new("git")
+        .args(["commit", "-m", &format!("distill: run {run_id}")])
+        .current_dir(root)
+        .output()
+    {
+        eprintln!("distill run {run_id}: git commit failed: {e}");
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_report(
+    id: &str,
+    cfg: &DistillConfig,
+    ontology_rebuilt: bool,
+    scan: &ScanOutcome,
+    archived: usize,
+    trashed: usize,
+    proposals: usize,
+    manifest: &RunManifest,
+    backlog_after: usize,
+) -> String {
+    let mut s = format!("# Distill run {id}\n\n");
+    s += &format!("Intensity: {:?}\n", cfg.intensity);
+    s += &format!(
+        "Ontology: {}\n\n",
+        if ontology_rebuilt {
+            "rebuilt this run"
+        } else {
+            "reused (wiki page count unchanged)"
+        }
+    );
+    s += "## Scan\n\n";
+    s += &format!("- scored: {}\n", scan.scored);
+    s += &format!("- quarantined: {}\n", scan.quarantined);
+    s += &format!("- rejected: {}\n", scan.rejected);
+    s += &format!("- summaries: {}\n", scan.summaries);
+    s += &format!("- full: {}\n", scan.full);
+    s += &format!("- skipped (immature): {}\n\n", scan.skipped_immature);
+
+    s += &format!("## Archive ({archived} moved)\n\n");
+    if manifest.moves.is_empty() {
+        s += "(none)\n";
+    } else {
+        for m in &manifest.moves {
+            s += &format!("- `{}` -> `{}`\n", m.from, m.to);
+        }
+    }
+    s += "\n";
+
+    s += &format!("## Trash ({trashed} quarantine items expired)\n\n");
+    if manifest.trashed.is_empty() {
+        s += "(none)\n";
+    } else {
+        for m in &manifest.trashed {
+            s += &format!("- `{}` -> `{}`\n", m.from, m.to);
+        }
+    }
+    s += "\n";
+
+    s += &format!("## Proposals ({proposals} written)\n\n");
+    if manifest.created.is_empty() {
+        s += "(none)\n";
+    } else {
+        for c in &manifest.created {
+            s += &format!("- `{c}`\n");
+        }
+    }
+    s += "\n";
+
+    s += &format!("Backlog after this run: {backlog_after}\n\n");
+    s += &format!(
+        "## Undo\n\nRun `undo_distill_run` with id `{id}` to reverse every move, trash, and \
+         proposal this run made.\n"
+    );
+    s
+}
+
+/// Idle-run orchestrator: the periodic batch the design spec calls "the
+/// distill run". In order:
+///
+/// 1. `partition_sessions` — fold any loose `sessions/*.md` into their month
+///    bucket before anything scores them (best-effort; a failure here does
+///    not stop the run).
+/// 2. Ontology: rebuild if there is none yet, or the wiki's page count moved
+///    since it was built — a deliberately simple staleness check (an exact
+///    "did the wiki change" would need a content hash of every page; a page
+///    count catches the common case — pages added/removed — cheaply).
+/// 3. `scan` new inflow against that ontology (Task 4).
+/// 4. Archive pass: a top-level `raw/<slug>.md` that is mature and already
+///    has a `wiki/source-<slug>.md` is "already represented" — move it to
+///    `raw/archive/YYYY-MM/` (month from the file's own mtime). At
+///    `Intensity::Conservative` this is a proposal instead of a move.
+/// 5. TTL pass: quarantine sidecars past their `expires` move (file +
+///    sidecar) to `.myco/trash/<run-id>/` at Standard/Aggressive, or propose
+///    at Conservative. Trash dirs whose entire retention window has elapsed
+///    are purged regardless of this run's intensity.
+/// 6. Emerging-cluster + proposal pass — Task 7's job; no call here yet.
+/// 7. Write the undo manifest (`.myco/distill-runs/<id>.json`).
+/// 8. Write the human report (`ingest-reports/distill-<id>.md`).
+/// 9. Append this run's backlog to the rolling trend, and commit if the
+///    vault is a git repo.
+pub fn run(
+    root: &Path,
+    cfg: &DistillConfig,
+    embed: &dyn Fn(Vec<String>) -> Result<Vec<Vec<f32>>, String>,
+) -> Result<RunReport, String> {
+    let now = now_secs();
+    let id = free_run_id(root, now);
+
+    if let Err(e) = crate::commands::partition_sessions(root) {
+        crate::perf::log("distill_partition_sessions_failed", &[]);
+        let _ = e;
+    }
+
+    let index_path = crate::vector_index::VectorStore::path_for(&root.to_string_lossy())?;
+    let store = crate::vector_index::VectorStore::load(&index_path);
+    let current_wiki_pages = crate::commands::wiki_titles(root).len();
+    let cached = crate::ontology::load(root, &store.model);
+    let ontology_rebuilt = !matches!(&cached, Some(o) if o.wiki_pages == current_wiki_pages);
+    let ontology = if ontology_rebuilt {
+        let titles = crate::commands::wiki_titles(root);
+        let mut o = crate::ontology::build(&store, &titles);
+        crate::ontology::stamp_last_touched(root, &mut o);
+        crate::ontology::save(root, &o)?;
+        o
+    } else {
+        cached.expect("ontology_rebuilt is false only when `cached` is Some")
+    };
+
+    let scan_outcome = scan(root, &ontology, cfg, cfg.run_budget_items, embed)?;
+
+    let conservative = matches!(cfg.intensity, Intensity::Conservative);
+    let maturation_secs = cfg.maturation_hours as i64 * 3600;
+    let mut manifest = RunManifest {
+        id: id.clone(),
+        started_at: now,
+        ..Default::default()
+    };
+    let mut archived = 0usize;
+    let mut proposals = 0usize;
+
+    // ④ Archive pass: top-level raw/*.md only — `vault_entries` already skips
+    // dotfiles/symlinks, and not recursing means `raw/archive/` (a directory,
+    // not a `.md` file) is never a candidate in the first place.
+    for (entry, kind) in crate::vault::vault_entries(&root.join("raw")) {
+        if !kind.is_file() {
+            continue;
+        }
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let Some(mtime) = mtime_secs(&path) else {
+            continue;
+        };
+        if now - mtime < maturation_secs {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let source_page = format!("wiki/source-{stem}.md");
+        if !root.join(&source_page).exists() {
+            continue;
+        }
+        let file_name = entry.file_name().to_string_lossy().into_owned();
+        let from_rel = format!("raw/{file_name}");
+
+        if conservative {
+            let month = month_bucket(mtime);
+            let rel = write_proposal(
+                root,
+                now,
+                stem,
+                &format!("Archive raw/{file_name}?"),
+                &format!(
+                    "`{source_page}` already represents this source. Standard/Aggressive \
+                     intensity would move it to `raw/archive/{month}/{file_name}`."
+                ),
+            )?;
+            manifest.created.push(rel);
+            proposals += 1;
+        } else {
+            let archive_dir = root.join("raw/archive").join(month_bucket(mtime));
+            std::fs::create_dir_all(&archive_dir)
+                .map_err(|e| format!("create archive dir: {e}"))?;
+            let to_path = free_path(&archive_dir.join(&file_name));
+            std::fs::rename(&path, &to_path).map_err(|e| format!("archive move: {e}"))?;
+            manifest.moves.push(MoveEntry {
+                from: from_rel,
+                to: rel_string(root, &to_path),
+            });
+            archived += 1;
+        }
+    }
+
+    // ⑤ TTL pass: quarantine sidecars past their expiry. Task 7's
+    // never-clustered check would additionally gate this — no sidecar
+    // carries cluster membership yet, so every expired one qualifies today.
+    let mut trashed = 0usize;
+    let quarantine_dir = root.join(crate::commands::DEST_INBOX).join(QUARANTINE_DIR);
+    let trash_dir = dir(root).join("trash").join(&id);
+    for (entry, kind) in crate::vault::vault_entries(&quarantine_dir) {
+        if !kind.is_file() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let Some(stem) = name.strip_suffix(".verdict.json") else {
+            continue;
+        };
+        let sidecar_path = entry.path();
+        let Ok(raw) = std::fs::read_to_string(&sidecar_path) else {
+            continue;
+        };
+        let Ok(sidecar) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        let Some(expires) = sidecar.get("expires").and_then(|v| v.as_i64()) else {
+            continue;
+        };
+        if now < expires {
+            continue;
+        }
+
+        let content_path = quarantine_dir.join(format!("{stem}.md"));
+        if !content_path.exists() {
+            let _ = std::fs::remove_file(&sidecar_path); // orphaned sidecar
+            continue;
+        }
+        let content_rel = format!("{}/{QUARANTINE_DIR}/{stem}.md", crate::commands::DEST_INBOX);
+        let sidecar_rel = format!("{}/{QUARANTINE_DIR}/{name}", crate::commands::DEST_INBOX);
+
+        if conservative {
+            let rel = write_proposal(
+                root,
+                now,
+                stem,
+                &format!("Delete expired quarantine item {stem}.md?"),
+                &format!(
+                    "Quarantine TTL expired at unix {expires}. Standard/Aggressive intensity \
+                     would move `{content_rel}` and its sidecar to `.myco/trash/{id}/`."
+                ),
+            )?;
+            manifest.created.push(rel);
+            proposals += 1;
+        } else {
+            std::fs::create_dir_all(&trash_dir).map_err(|e| format!("create trash dir: {e}"))?;
+            let to_content = free_path(&trash_dir.join(format!("{stem}.md")));
+            std::fs::rename(&content_path, &to_content).map_err(|e| format!("trash move: {e}"))?;
+            manifest.trashed.push(MoveEntry {
+                from: content_rel,
+                to: rel_string(root, &to_content),
+            });
+            let to_sidecar = free_path(&trash_dir.join(&name));
+            std::fs::rename(&sidecar_path, &to_sidecar)
+                .map_err(|e| format!("trash sidecar move: {e}"))?;
+            manifest.trashed.push(MoveEntry {
+                from: sidecar_rel,
+                to: rel_string(root, &to_sidecar),
+            });
+            trashed += 1;
+        }
+    }
+
+    // Purge trash dirs past their retention window, regardless of this run's
+    // intensity — housekeeping on already-committed deletions, not a new one.
+    let trash_root = dir(root).join("trash");
+    for (entry, kind) in crate::vault::vault_entries(&trash_root) {
+        if !kind.is_dir() {
+            continue;
+        }
+        if let Some(mtime) = mtime_secs(&entry.path()) {
+            if now - mtime > TRASH_RETENTION_DAYS * 86_400 {
+                let _ = std::fs::remove_dir_all(entry.path());
+            }
+        }
+    }
+
+    // ⑥ Emerging-cluster + proposal pass — Task 7's job (design spec:
+    // "≥5 quarantined items with pairwise similarity above threshold ->
+    // 'new topic forming' proposal"). Seam: Task 7 wires a
+    // `detect_emerging_clusters(root, &ontology, cfg, &mut manifest)` call in
+    // right here, between the TTL pass and the manifest write below.
+
+    // ⑦ Manifest.
+    let manifest_file = manifest_path(root, &id);
+    std::fs::create_dir_all(
+        manifest_file
+            .parent()
+            .ok_or("manifest path has no parent")?,
+    )
+    .map_err(|e| format!("create distill-runs dir: {e}"))?;
+    let manifest_raw =
+        serde_json::to_string_pretty(&manifest).map_err(|e| format!("serialize manifest: {e}"))?;
+    std::fs::write(&manifest_file, manifest_raw).map_err(|e| format!("write manifest: {e}"))?;
+
+    // ⑨ (backlog half) Append this run's backlog to the rolling trend, so the
+    // report below and the returned `RunReport` show the same number.
+    let mut state = state_load(root, &ontology.model);
+    let backlog_after = backlog_count(root, &state);
+    state.last_run = Some(now);
+    state.last_backlogs.push(backlog_after);
+    let overflow = state.last_backlogs.len().saturating_sub(10);
+    state.last_backlogs.drain(0..overflow);
+    state_save(root, &state)?;
+
+    // ⑧ Human report.
+    let report_rel = format!("ingest-reports/distill-{id}.md");
+    let report_path = root.join(&report_rel);
+    std::fs::create_dir_all(report_path.parent().ok_or("report path has no parent")?)
+        .map_err(|e| format!("create ingest-reports dir: {e}"))?;
+    let report = render_report(
+        &id,
+        cfg,
+        ontology_rebuilt,
+        &scan_outcome,
+        archived,
+        trashed,
+        proposals,
+        &manifest,
+        backlog_after,
+    );
+    std::fs::write(&report_path, report).map_err(|e| format!("write report: {e}"))?;
+
+    // ⑨ (commit half) Commit if the vault is a git repo.
+    git_commit_run(root, &id);
+
+    Ok(RunReport {
+        id,
+        scan: scan_outcome,
+        archived,
+        trashed,
+        proposals,
+        backlog_after,
+    })
+}
+
+/// Replay one run's manifest in reverse: restore every archived/trashed file
+/// to its pre-run location, and delete every proposal file that run created.
+/// An entry is skipped (with a warning to stderr, not silently) when the
+/// current file was modified since the run, or the restore destination is
+/// now occupied by something else — undo must never clobber data the user
+/// touched after the run. Returns the number of entries actually reversed.
+///
+/// Ledger entries for a restored path's pre-run location are not explicitly
+/// cleaned up here — they were already pruned by `compact_ledger` the moment
+/// this run's own `scan` ran (a ledger key for a path that no longer exists
+/// is dropped every scan; see that fn's doc comment), so nothing new is left
+/// dangling for undo to clean up. The one case undo DOES create — a file
+/// reappearing at a path with no ledger entry — self-heals on the next
+/// `scan`, which just treats it as fresh, unscored inflow.
+pub fn undo(root: &Path, run_id: &str) -> Result<usize, String> {
+    let path = manifest_path(root, run_id);
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("read manifest {}: {e}", path.display()))?;
+    let manifest: RunManifest =
+        serde_json::from_str(&raw).map_err(|e| format!("parse manifest: {e}"))?;
+
+    let mut reversed = 0usize;
+    for entry in manifest.trashed.iter().rev() {
+        if move_back(root, entry, run_id, manifest.started_at) {
+            reversed += 1;
+        }
+    }
+    for entry in manifest.moves.iter().rev() {
+        if move_back(root, entry, run_id, manifest.started_at) {
+            reversed += 1;
+        }
+    }
+    for rel in manifest.created.iter().rev() {
+        let p = root.join(rel);
+        let Some(mtime) = mtime_secs(&p) else {
+            continue; // already gone — nothing to reverse
+        };
+        if mtime > manifest.started_at {
+            eprintln!("distill undo {run_id}: skipping {rel} (modified since the run)");
+            continue;
+        }
+        if std::fs::remove_file(&p).is_ok() {
+            reversed += 1;
+        }
+    }
+    Ok(reversed)
+}
+
+/// Cheap vault-wide status for the settings tab / MCP `distill_status`: no
+/// scoring, just a fs walk against the ledger already on disk.
+pub fn status(root: &Path) -> DistillStatus {
+    let store = crate::vector_index::VectorStore::path_for(&root.to_string_lossy())
+        .map(|p| crate::vector_index::VectorStore::load(&p))
+        .unwrap_or_default();
+    let state = state_load(root, &store.model);
+    DistillStatus {
+        backlog: backlog_count(root, &state),
+        pending_proposals: pending_proposal_count(root),
+        last_run: state.last_run,
+        last_backlogs: state.last_backlogs.clone(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -801,5 +1511,212 @@ mod tests {
         c2.count_trigger = 10;
         config_save(d.path(), &c2).unwrap();
         assert_eq!(config_load(d.path()).count_trigger, 10);
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 6: run orchestrator. `run`/`status` reach `VectorStore::path_for`
+    // (via `settings::settings_dir`), which refuses to resolve the real
+    // app-data dir under `cfg(test)` — every test below must run inside
+    // `with_isolated_data` or it fails on that refusal, not on the logic
+    // under test.
+    // -----------------------------------------------------------------------
+
+    /// Embed closure for run() tests: the ontology these tests build is
+    /// always empty (no real `VectorStore` exists at the isolated test data
+    /// path), so `admit` never reaches `cosine` at all — the vector's
+    /// content is irrelevant, only its presence (so `scan`'s embed batching
+    /// has something to return).
+    fn dummy_embed(texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
+        Ok(texts.iter().map(|_| vec![1.0]).collect())
+    }
+
+    #[test]
+    fn run_archives_represented_raw_and_writes_manifest() {
+        crate::settings::test_support::with_isolated_data("distill-run-archive", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("raw")).unwrap();
+            std::fs::create_dir_all(root.join("wiki")).unwrap();
+            std::fs::write(root.join("raw/x.md"), PROSE).unwrap();
+            std::fs::write(root.join("wiki/source-x.md"), "a source summary page").unwrap();
+            set_mtime(&root.join("raw/x.md"), old_mtime());
+
+            let cfg = DistillConfig::default(); // Standard intensity
+            let report = run(root, &cfg, &dummy_embed).unwrap();
+            assert_eq!(report.archived, 1);
+            assert_eq!(report.proposals, 0);
+            assert!(
+                !root.join("raw/x.md").exists(),
+                "archived source must move out of raw/"
+            );
+
+            let manifest_raw = std::fs::read_to_string(manifest_path(root, &report.id)).unwrap();
+            let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).unwrap();
+            let moves = manifest["moves"].as_array().unwrap();
+            assert_eq!(moves.len(), 1);
+            assert_eq!(moves[0]["from"], "raw/x.md");
+            let to = moves[0]["to"].as_str().unwrap().to_string();
+            assert!(
+                to.starts_with("raw/archive/") && to.ends_with("/x.md"),
+                "unexpected archive path: {to}"
+            );
+            assert!(root.join(&to).exists());
+
+            let report_raw = std::fs::read_to_string(
+                root.join(format!("ingest-reports/distill-{}.md", report.id)),
+            )
+            .unwrap();
+            assert!(report_raw.contains(&report.id));
+            assert!(report_raw.contains("1 moved"));
+        });
+    }
+
+    #[test]
+    fn conservative_intensity_proposes_instead_of_moving() {
+        crate::settings::test_support::with_isolated_data("distill-run-conservative", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("raw")).unwrap();
+            std::fs::create_dir_all(root.join("wiki")).unwrap();
+            std::fs::write(root.join("raw/x.md"), PROSE).unwrap();
+            std::fs::write(root.join("wiki/source-x.md"), "a source summary page").unwrap();
+            set_mtime(&root.join("raw/x.md"), old_mtime());
+
+            let cfg = DistillConfig {
+                intensity: Intensity::Conservative,
+                ..DistillConfig::default()
+            };
+            let report = run(root, &cfg, &dummy_embed).unwrap();
+            assert_eq!(report.archived, 0);
+            assert_eq!(report.proposals, 1);
+            assert!(
+                root.join("raw/x.md").exists(),
+                "conservative intensity must not move the source"
+            );
+
+            let feedback_dir = root.join("work/feedback");
+            let entries: Vec<_> = std::fs::read_dir(&feedback_dir).unwrap().collect();
+            assert_eq!(entries.len(), 1);
+            let content = std::fs::read_to_string(entries[0].as_ref().unwrap().path()).unwrap();
+            assert!(content.contains("type: distill-proposal"));
+            assert!(content.contains("status: pending"));
+        });
+    }
+
+    #[test]
+    fn undo_restores_exact_layout() {
+        crate::settings::test_support::with_isolated_data("distill-run-undo", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("raw")).unwrap();
+            std::fs::create_dir_all(root.join("wiki")).unwrap();
+            std::fs::create_dir_all(root.join("_inbox/quarantine")).unwrap();
+            std::fs::write(root.join("raw/x.md"), PROSE).unwrap();
+            std::fs::write(root.join("wiki/source-x.md"), "a source summary page").unwrap();
+            set_mtime(&root.join("raw/x.md"), old_mtime());
+
+            std::fs::write(root.join("_inbox/quarantine/q.md"), PROSE).unwrap();
+            let expired = serde_json::json!({
+                "tier": "quarantine",
+                "s_knn": 0.2,
+                "nearest_cluster": "topic",
+                "reason": "test",
+                "expires": now_secs() - 1000,
+                "vector": [1.0, 0.0],
+            });
+            std::fs::write(
+                root.join("_inbox/quarantine/q.verdict.json"),
+                serde_json::to_string_pretty(&expired).unwrap(),
+            )
+            .unwrap();
+
+            // `.myco/` (state, ontology, run manifests) and `ingest-reports/`
+            // are the tool's own operational record, not the vault's CONTENT
+            // layout — undo restores content, it does not erase the fact
+            // that a run happened.
+            fn snapshot(root: &Path) -> Vec<String> {
+                fn walk(dir: &Path, root: &Path, out: &mut Vec<String>) {
+                    let Ok(entries) = std::fs::read_dir(dir) else {
+                        return;
+                    };
+                    for e in entries.flatten() {
+                        let path = e.path();
+                        let rel = path
+                            .strip_prefix(root)
+                            .unwrap()
+                            .to_string_lossy()
+                            .replace('\\', "/");
+                        if rel.starts_with(".myco") || rel.starts_with("ingest-reports") {
+                            continue;
+                        }
+                        if path.is_dir() {
+                            walk(&path, root, out);
+                        } else {
+                            out.push(rel);
+                        }
+                    }
+                }
+                let mut out = Vec::new();
+                walk(root, root, &mut out);
+                out.sort();
+                out
+            }
+
+            let before = snapshot(root);
+
+            let cfg = DistillConfig::default(); // Standard intensity
+            let report = run(root, &cfg, &dummy_embed).unwrap();
+            assert_eq!(report.archived, 1);
+            assert_eq!(report.trashed, 1);
+            assert!(!root.join("raw/x.md").exists());
+            assert!(!root.join("_inbox/quarantine/q.md").exists());
+            assert!(!root.join("_inbox/quarantine/q.verdict.json").exists());
+
+            let reversed = undo(root, &report.id).unwrap();
+            assert_eq!(
+                reversed, 3,
+                "1 archive move + 2 trash moves (content + verdict sidecar)"
+            );
+
+            assert_eq!(before, snapshot(root));
+        });
+    }
+
+    #[test]
+    fn status_reports_backlog_trend() {
+        crate::settings::test_support::with_isolated_data("distill-run-status", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("_inbox")).unwrap();
+            std::fs::write(root.join("_inbox/a.md"), PROSE).unwrap();
+            std::fs::write(root.join("_inbox/b.md"), PROSE).unwrap();
+            set_mtime(&root.join("_inbox/a.md"), old_mtime());
+            set_mtime(&root.join("_inbox/b.md"), old_mtime());
+
+            let cfg = DistillConfig::default();
+
+            let before = status(root);
+            assert_eq!(before.backlog, 2, "two unscored, mature inflow items");
+            assert!(before.last_run.is_none());
+            assert!(before.last_backlogs.is_empty());
+
+            let report1 = run(root, &cfg, &dummy_embed).unwrap();
+            assert_eq!(report1.backlog_after, 0, "scan ledgers both files this run");
+
+            let mid = status(root);
+            assert_eq!(mid.backlog, 0);
+            assert!(mid.last_run.is_some());
+            assert_eq!(mid.last_backlogs, vec![0]);
+
+            let report2 = run(root, &cfg, &dummy_embed).unwrap();
+            assert_ne!(
+                report1.id, report2.id,
+                "free_run_id must not collide within the same second"
+            );
+
+            let after = status(root);
+            assert_eq!(after.last_backlogs, vec![0, 0]);
+            assert_eq!(after.pending_proposals, 0);
+        });
     }
 }
