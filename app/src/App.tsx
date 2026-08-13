@@ -36,6 +36,7 @@ import { useAutoReflectScheduler } from "./lib/autoReflect";
 import { useAutoReindexScheduler } from "./lib/autoReindex";
 import { runInboxPass } from "./lib/autoIngest";
 import { useScheduleTimer } from "./lib/scheduleTimer";
+import { markActivity } from "./lib/idle";
 import { useIngestStore } from "./stores/ingestStore";
 import { ipc } from "./lib/ipc";
 import type { FileNode } from "./lib/ipc";
@@ -184,6 +185,19 @@ export default function App(): JSX.Element {
 
   // Recurring digest schedules while the app is open (Feature 7).
   useScheduleTimer(currentVault?.path);
+
+  // Track user activity globally (Task 8, Phase A) so the idle-gated distill
+  // trigger in scheduleTimer stays accurate no matter which page is open —
+  // scheduleTimer is not a component, so it reads the shared lastActivity
+  // timestamp via isIdle() rather than a hook.
+  useEffect(() => {
+    window.addEventListener("pointermove", markActivity);
+    window.addEventListener("keydown", markActivity);
+    return () => {
+      window.removeEventListener("pointermove", markActivity);
+      window.removeEventListener("keydown", markActivity);
+    };
+  }, []);
 
   // Auto-refresh the file tree + link graph so EXTERNAL changes (edits in
   // Obsidian/Finder, files written outside in-app operations) appear without a

@@ -50,3 +50,16 @@ export interface DistillStatus {
   last_run: number | null;
   last_backlogs: number[];
 }
+
+// Task 8 — direction of `last_backlogs` (oldest → newest, per Rust's
+// push+drain in distill.rs) for the Settings distill tab's status line.
+// Compares the oldest and newest samples rather than fitting a slope: the
+// window is short (last 10 runs) and callers only need a coarse signal.
+export function backlogTrend(last: number[]): "shrinking" | "growing" | "flat" {
+  if (last.length < 2) return "flat";
+  const oldest = last[0];
+  const newest = last[last.length - 1];
+  if (newest < oldest) return "shrinking";
+  if (newest > oldest) return "growing";
+  return "flat";
+}

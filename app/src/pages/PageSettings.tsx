@@ -33,6 +33,14 @@ import {
 } from "../lib/budget";
 import { isComposingKey } from "../lib/ime";
 import { useReindexStore } from "../stores/reindexStore";
+import { backlogTrend } from "../lib/distill";
+import type {
+  DistillConfig,
+  DistillStatus,
+  GatePreset,
+  Intensity,
+  RunReport,
+} from "../lib/distill";
 
 export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
@@ -41,7 +49,14 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const setTheme = useUIStore((s) => s.setTheme);
 
   const [tab, setTab] = useState<
-    "account" | "model" | "providers" | "mcp" | "lang" | "appearance" | "about"
+    | "account"
+    | "model"
+    | "providers"
+    | "mcp"
+    | "distill"
+    | "lang"
+    | "appearance"
+    | "about"
   >("model");
 
   // Below 768px the tab rail is a horizontally scrolling row. The default tab
@@ -60,6 +75,7 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
     { id: "model", label: t.s_model, icon: "sparkles" },
     { id: "providers", label: t.s_providers, icon: "link" },
     { id: "mcp", label: t.s_mcp, icon: "terminal" },
+    { id: "distill", label: t.s_distill ?? "Distill", icon: "bolt" },
     { id: "lang", label: t.s_lang, icon: "globe" },
     { id: "appearance", label: t.s_appearance, icon: "moon" },
     { id: "about", label: t.s_about, icon: "info" },
@@ -91,6 +107,7 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
           {tab === "model" ? <SettingsModel t={t} /> : null}
           {tab === "providers" ? <SettingsProviders t={t} /> : null}
           {tab === "mcp" ? <SettingsMcp t={t} /> : null}
+          {tab === "distill" ? <SettingsDistill t={t} /> : null}
           {tab === "lang" ? (
             <SettingsLang t={t} lang={lang} setLang={setLang} />
           ) : null}
@@ -1525,6 +1542,296 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
           {error}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+// Ontology distillation (Task 8, Phase A). Edits DistillConfig — every field
+// writes straight through setDistillConfig (no separate save button, matching
+// AutoReflect/AutoIngest above). "Distill now" runs distill_run directly and
+// shows the RunReport inline (no toast component exists in this app yet).
+function SettingsDistill({ t }: { t: Strings }): JSX.Element {
+  const vaultPath = useVaultStore((s) => s.currentVault?.path);
+  const [cfg, setCfg] = useState<DistillConfig | null>(null);
+  const [status, setStatus] = useState<DistillStatus | null>(null);
+  const [running, setRunning] = useState(false);
+  const [report, setReport] = useState<RunReport | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!vaultPath) return;
+    let cancelled = false;
+    ipc
+      .getDistillConfig(vaultPath)
+      .then((c) => {
+        if (!cancelled) setCfg(c);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      });
+    ipc
+      .distillStatus(vaultPath)
+      .then((s) => {
+        if (!cancelled) setStatus(s);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [vaultPath]);
+
+  async function patch(p: Partial<DistillConfig>): Promise<void> {
+    if (!vaultPath || !cfg) return;
+    const next = { ...cfg, ...p };
+    setCfg(next); // optimistic — setDistillConfig has no meaningful failure mode besides IO
+    try {
+      await ipc.setDistillConfig(vaultPath, next);
+    } catch (e) {
+      setError(String(e));
+    }
+  }
+
+  async function runNow(): Promise<void> {
+    if (!vaultPath || running) return;
+    setRunning(true);
+    setError(null);
+    try {
+      const r = await ipc.distillRun(vaultPath);
+      setReport(r);
+      setStatus(await ipc.distillStatus(vaultPath));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  if (!cfg) {
+    return <div className="muted">{t.set_distill_loading ?? "Loading…"}</div>;
+  }
+
+  const trend = status ? backlogTrend(status.last_backlogs) : "flat";
+  const trendLabel =
+    trend === "shrinking"
+      ? (t.set_distill_trend_shrinking ?? "shrinking")
+      : trend === "growing"
+        ? (t.set_distill_trend_growing ?? "growing")
+        : (t.set_distill_trend_flat ?? "flat");
+
+  return (
+    <div className="col" style={{ gap: 20 }}>
+      <div>
+        <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>
+          {t.s_distill ?? "Distill"}
+        </h2>
+        <p className="muted" style={{ margin: "6px 0 0", fontSize: 14 }}>
+          {t.set_distill_lede ??
+            "Periodically folds new pages into the wiki's ontology, archiving what's been absorbed and proposing merges for the rest."}
+        </p>
+      </div>
+
+      <div className="card">
+        <div
+          className="row"
+          style={{ justifyContent: "space-between", alignItems: "flex-start" }}
+        >
+          <div style={{ paddingRight: 16 }}>
+            <div style={{ fontWeight: 600 }}>
+              {t.set_distill_enabled_title ?? "Automatic distillation"}
+            </div>
+            <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+              {t.set_distill_enabled_desc ??
+                "While myco is open and you're idle, distill the backlog on its own schedule."}
+            </div>
+          </div>
+          <button
+            role="switch"
+            aria-checked={cfg.enabled}
+            aria-label={t.set_distill_enabled_title ?? "Automatic distillation"}
+            onClick={() => void patch({ enabled: !cfg.enabled })}
+            style={{
+              width: 44,
+              height: 24,
+              borderRadius: 12,
+              border: "1px solid var(--line)",
+              background: cfg.enabled ? "var(--ink)" : "var(--bg-soft)",
+              position: "relative",
+              cursor: "pointer",
+              flexShrink: 0,
+            }}
+          >
+            <span
+              style={{
+                position: "absolute",
+                top: 2,
+                left: cfg.enabled ? 22 : 2,
+                width: 18,
+                height: 18,
+                borderRadius: "50%",
+                background: cfg.enabled ? "var(--bg)" : "var(--ink-3)",
+                transition: "left 150ms",
+              }}
+            />
+          </button>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <label style={{ fontSize: 13, fontWeight: 500 }}>
+            {t.set_distill_intensity ?? "Intensity"}
+          </label>
+          <div className="row" style={{ gap: 6, marginTop: 6 }}>
+            {(
+              [
+                ["conservative", t.set_distill_intensity_conservative],
+                ["standard", t.set_distill_intensity_standard],
+                ["aggressive", t.set_distill_intensity_aggressive],
+              ] as [Intensity, string | undefined][]
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                className={"btn" + (cfg.intensity === v ? " btn-primary" : "")}
+                onClick={() => void patch({ intensity: v })}
+              >
+                {label ?? v}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          <label style={{ fontSize: 13, fontWeight: 500 }}>
+            {t.set_distill_gate ?? "Gate preset"}
+          </label>
+          <div className="row" style={{ gap: 6, marginTop: 6 }}>
+            {(
+              [
+                ["strict", t.set_distill_gate_strict],
+                ["normal", t.set_distill_gate_normal],
+                ["loose", t.set_distill_gate_loose],
+              ] as [GatePreset, string | undefined][]
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                className={"btn" + (cfg.gate_preset === v ? " btn-primary" : "")}
+                onClick={() => void patch({ gate_preset: v })}
+              >
+                {label ?? v}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="row" style={{ gap: 16, marginTop: 16, flexWrap: "wrap" }}>
+          <DistillNumField
+            label={t.set_distill_count_trigger ?? "Backlog count trigger"}
+            value={cfg.count_trigger}
+            min={0}
+            onChange={(n) => void patch({ count_trigger: n })}
+          />
+          <DistillNumField
+            label={t.set_distill_ttl ?? "Quarantine TTL (days)"}
+            value={cfg.quarantine_ttl_days}
+            min={1}
+            onChange={(n) => void patch({ quarantine_ttl_days: n })}
+          />
+          <DistillNumField
+            label={t.set_distill_budget ?? "Run budget (items)"}
+            value={cfg.run_budget_items}
+            min={1}
+            onChange={(n) => void patch({ run_budget_items: n })}
+          />
+          <DistillNumField
+            label={t.set_distill_idle_minutes ?? "Idle minutes"}
+            value={cfg.idle_minutes}
+            min={0}
+            onChange={(n) => void patch({ idle_minutes: n })}
+          />
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="row" style={{ justifyContent: "space-between" }}>
+          <div style={{ fontWeight: 600 }}>
+            {t.set_distill_status_title ?? "Status"}
+          </div>
+          <span className="muted" style={{ fontSize: 12 }}>
+            {status
+              ? (t.set_distill_backlog ?? "Backlog: {n}").replace(
+                  "{n}",
+                  String(status.backlog),
+                )
+              : "—"}
+          </span>
+        </div>
+        {status ? (
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+            {(t.set_distill_pending ?? "{n} pending proposals").replace(
+              "{n}",
+              String(status.pending_proposals),
+            )}{" "}
+            · {trendLabel}
+          </div>
+        ) : null}
+        <button
+          className="btn btn-primary"
+          style={{ marginTop: 12 }}
+          onClick={() => void runNow()}
+          disabled={running || !vaultPath}
+          aria-busy={running}
+          data-testid="distill-run-btn"
+        >
+          {running
+            ? (t.set_distill_running ?? "Distilling…")
+            : (t.set_distill_run_now ?? "Distill now")}
+        </button>
+        {report ? (
+          <div
+            style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }}
+            data-testid="distill-report"
+          >
+            {(
+              t.set_distill_report ??
+              "Archived {a}, trashed {tr}, {p} proposals — backlog now {b}"
+            )
+              .replace("{a}", String(report.archived))
+              .replace("{tr}", String(report.trashed))
+              .replace("{p}", String(report.proposals))
+              .replace("{b}", String(report.backlog_after))}
+          </div>
+        ) : null}
+        {error ? (
+          <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>
+            {error}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function DistillNumField({
+  label,
+  value,
+  min,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  onChange: (n: number) => void;
+}): JSX.Element {
+  return (
+    <div className="field" style={{ minWidth: 140 }}>
+      <label style={{ fontSize: 12.5 }}>{label}</label>
+      <input
+        className="input"
+        type="number"
+        min={min}
+        value={value}
+        onChange={(e) => onChange(Math.max(min, Number(e.target.value) || min))}
+      />
     </div>
   );
 }

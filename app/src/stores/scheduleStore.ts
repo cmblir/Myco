@@ -75,7 +75,15 @@ export const useScheduleStore = create<ScheduleState>((set, get) => ({
     if (get().runningId) return null;
     set({ runningId: s.id, error: null });
     try {
-      const path = await runDigest(vaultPath, s, new Date().toISOString());
+      // A "distill" schedule triggers the ontology distillation run (Task 8)
+      // instead of the LLM digest pipeline — it has no prompt and writes no
+      // digest note, so it must never reach runDigest.
+      let path: string | null = null;
+      if (s.kind === "distill") {
+        await ipc.distillRun(vaultPath);
+      } else {
+        path = await runDigest(vaultPath, s, new Date().toISOString());
+      }
       // Stamp last_run (epoch seconds) and persist.
       const stamped: Schedule = {
         ...s,
@@ -87,8 +95,10 @@ export const useScheduleStore = create<ScheduleState>((set, get) => ({
       // Opt-in native notification when the schedule requests it.
       if (s.notify) {
         void notify(
-          `Digest ready — ${s.title}`,
-          `A new ${s.kind} digest was written to your vault.`,
+          s.kind === "distill" ? `Distill run — ${s.title}` : `Digest ready — ${s.title}`,
+          s.kind === "distill"
+            ? "A distillation run completed for this schedule."
+            : `A new ${s.kind} digest was written to your vault.`,
         );
       }
       return path;

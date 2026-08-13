@@ -327,7 +327,7 @@ export interface AgentTurn {
 
 // --- Recurring schedules (Feature 7) ---
 
-export type ScheduleKind = "query" | "changed" | "stale" | "topic";
+export type ScheduleKind = "query" | "changed" | "stale" | "topic" | "distill";
 
 export interface Schedule {
   id: string;

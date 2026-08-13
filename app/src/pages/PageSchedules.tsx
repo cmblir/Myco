@@ -14,7 +14,14 @@ import { useScheduleStore } from "../stores/scheduleStore";
 import { ipc } from "../lib/ipc";
 import type { Schedule, ScheduleKind } from "../lib/ipc";
 
-const KINDS: ScheduleKind[] = ["query", "changed", "stale", "topic"];
+const KINDS: ScheduleKind[] = ["query", "changed", "stale", "topic", "distill"];
+
+// Only "distill" gets a translated label so far — the other kinds already
+// render their raw enum value (no i18n existed for them before this task);
+// widening that is out of this task's scope.
+function kindLabel(t: Strings, k: ScheduleKind): string {
+  return k === "distill" ? (t.sc_kind_distill ?? "distill") : k;
+}
 const CADENCES = ["daily", "weekly:1", "monthly:1", "every:6h"];
 
 function newSchedule(): Schedule {
@@ -110,7 +117,7 @@ export default function PageSchedules({ t }: { t: Strings }): JSX.Element {
             <div className="row" style={{ gap: 10 }}>
               <span className={"schedule-dot" + (s.enabled ? " on" : "")} />
               <b style={{ flex: 1 }}>{s.title}</b>
-              <span className="schedule-tag">{s.kind}</span>
+              <span className="schedule-tag">{kindLabel(t, s.kind)}</span>
               <span className="muted" style={{ fontSize: 12 }}>{s.cadence}</span>
             </div>
             <div className="row" style={{ gap: 10, marginTop: 8, flexWrap: "wrap" }}>
@@ -204,7 +211,7 @@ function ScheduleForm({
             onChange={(e) => set({ kind: e.target.value as ScheduleKind })}
           >
             {KINDS.map((k) => (
-              <option key={k} value={k}>{k}</option>
+              <option key={k} value={k}>{kindLabel(t, k)}</option>
             ))}
           </select>
           <label className="muted" style={{ fontSize: 12.5 }}>{t.sc_f_cadence ?? "Cadence"}</label>

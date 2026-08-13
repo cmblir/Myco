@@ -694,6 +694,34 @@ export interface Strings {
   sc_bg_install?: string;
   sc_bg_remove?: string;
   sc_bg_hint?: string;
+  sc_kind_distill?: string;
+  // Ontology distillation (Task 8, Phase A) — Settings tab.
+  s_distill?: string;
+  set_distill_loading?: string;
+  set_distill_lede?: string;
+  set_distill_enabled_title?: string;
+  set_distill_enabled_desc?: string;
+  set_distill_intensity?: string;
+  set_distill_intensity_conservative?: string;
+  set_distill_intensity_standard?: string;
+  set_distill_intensity_aggressive?: string;
+  set_distill_gate?: string;
+  set_distill_gate_strict?: string;
+  set_distill_gate_normal?: string;
+  set_distill_gate_loose?: string;
+  set_distill_count_trigger?: string;
+  set_distill_ttl?: string;
+  set_distill_budget?: string;
+  set_distill_idle_minutes?: string;
+  set_distill_status_title?: string;
+  set_distill_backlog?: string;
+  set_distill_pending?: string;
+  set_distill_trend_shrinking?: string;
+  set_distill_trend_growing?: string;
+  set_distill_trend_flat?: string;
+  set_distill_run_now?: string;
+  set_distill_running?: string;
+  set_distill_report?: string;
   // Ingest page.
   ing_title_label?: string;
   ing_title_ph?: string;
@@ -1499,6 +1527,36 @@ export const STRINGS: Record<Lang, Strings> = {
     sc_bg_install: "Run in background",
     sc_bg_remove: "Remove background",
     sc_bg_hint: "Run this schedule even when the app is closed (macOS launchd)",
+    sc_kind_distill: "Distill",
+    s_distill: "Distill",
+    set_distill_loading: "Loading…",
+    set_distill_lede:
+      "Periodically folds new pages into the wiki's ontology, archiving what's been absorbed and proposing merges for the rest.",
+    set_distill_enabled_title: "Automatic distillation",
+    set_distill_enabled_desc:
+      "While myco is open and you're idle, distill the backlog on its own schedule.",
+    set_distill_intensity: "Intensity",
+    set_distill_intensity_conservative: "Conservative",
+    set_distill_intensity_standard: "Standard",
+    set_distill_intensity_aggressive: "Aggressive",
+    set_distill_gate: "Gate preset",
+    set_distill_gate_strict: "Strict",
+    set_distill_gate_normal: "Normal",
+    set_distill_gate_loose: "Loose",
+    set_distill_count_trigger: "Backlog count trigger",
+    set_distill_ttl: "Quarantine TTL (days)",
+    set_distill_budget: "Run budget (items)",
+    set_distill_idle_minutes: "Idle minutes",
+    set_distill_status_title: "Status",
+    set_distill_backlog: "Backlog: {n}",
+    set_distill_pending: "{n} pending proposals",
+    set_distill_trend_shrinking: "shrinking",
+    set_distill_trend_growing: "growing",
+    set_distill_trend_flat: "flat",
+    set_distill_run_now: "Distill now",
+    set_distill_running: "Distilling…",
+    set_distill_report:
+      "Archived {a}, trashed {tr}, {p} proposals — backlog now {b}",
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
@@ -2313,6 +2371,34 @@ export const STRINGS: Record<Lang, Strings> = {
     sc_bg_install: "백그라운드 실행",
     sc_bg_remove: "백그라운드 해제",
     sc_bg_hint: "앱이 닫혀 있어도 이 스케줄을 실행 (macOS launchd)",
+    sc_kind_distill: "증류",
+    s_distill: "증류",
+    set_distill_loading: "불러오는 중…",
+    set_distill_lede:
+      "새로 들어온 페이지를 위키의 온톨로지에 주기적으로 편입시켜, 흡수된 것은 보관하고 나머지는 병합을 제안합니다.",
+    set_distill_enabled_title: "자동 증류",
+    set_distill_enabled_desc: "myco가 열려 있고 자리를 비웠을 때, 자체 일정에 따라 백로그를 증류합니다.",
+    set_distill_intensity: "강도",
+    set_distill_intensity_conservative: "보수",
+    set_distill_intensity_standard: "표준",
+    set_distill_intensity_aggressive: "적극",
+    set_distill_gate: "게이트 프리셋",
+    set_distill_gate_strict: "엄격",
+    set_distill_gate_normal: "보통",
+    set_distill_gate_loose: "느슨",
+    set_distill_count_trigger: "백로그 개수 트리거",
+    set_distill_ttl: "격리 TTL (일)",
+    set_distill_budget: "실행 예산 (항목 수)",
+    set_distill_idle_minutes: "유휴 시간 (분)",
+    set_distill_status_title: "상태",
+    set_distill_backlog: "백로그: {n}",
+    set_distill_pending: "대기 중인 제안 {n}건",
+    set_distill_trend_shrinking: "줄어드는 중",
+    set_distill_trend_growing: "늘어나는 중",
+    set_distill_trend_flat: "변화 없음",
+    set_distill_run_now: "지금 증류",
+    set_distill_running: "증류 중…",
+    set_distill_report: "보관 {a}건, 폐기 {tr}건, 제안 {p}건 — 백로그 {b}건",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
@@ -3007,6 +3093,34 @@ export const STRINGS: Record<Lang, Strings> = {
     sc_bg_install: "バックグラウンド実行",
     sc_bg_remove: "バックグラウンド解除",
     sc_bg_hint: "アプリが閉じていてもこのスケジュールを実行 (macOS launchd)",
+    sc_kind_distill: "蒸留",
+    s_distill: "蒸留",
+    set_distill_loading: "読み込み中…",
+    set_distill_lede:
+      "新しく入ったページを定期的にウィキのオントロジーへ取り込み、吸収済みのものはアーカイブし、残りは統合を提案します。",
+    set_distill_enabled_title: "自動蒸留",
+    set_distill_enabled_desc: "mycoが開いていてアイドル状態のとき、独自のスケジュールでバックログを蒸留します。",
+    set_distill_intensity: "強度",
+    set_distill_intensity_conservative: "保守的",
+    set_distill_intensity_standard: "標準",
+    set_distill_intensity_aggressive: "積極的",
+    set_distill_gate: "ゲートプリセット",
+    set_distill_gate_strict: "厳格",
+    set_distill_gate_normal: "通常",
+    set_distill_gate_loose: "緩め",
+    set_distill_count_trigger: "バックログ件数トリガー",
+    set_distill_ttl: "隔離TTL（日）",
+    set_distill_budget: "実行予算（件数）",
+    set_distill_idle_minutes: "アイドル時間（分）",
+    set_distill_status_title: "状態",
+    set_distill_backlog: "バックログ: {n}",
+    set_distill_pending: "保留中の提案 {n}件",
+    set_distill_trend_shrinking: "減少中",
+    set_distill_trend_growing: "増加中",
+    set_distill_trend_flat: "変化なし",
+    set_distill_run_now: "今すぐ蒸留",
+    set_distill_running: "蒸留中…",
+    set_distill_report: "アーカイブ{a}件、破棄{tr}件、提案{p}件 — バックログ{b}件",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",

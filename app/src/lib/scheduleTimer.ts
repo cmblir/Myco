@@ -2,11 +2,24 @@
 // the vault's schedules and runs any that are due (cadence vs last_run), one at
 // a time. Mirrors autoReflect/autoIngest. App-CLOSED runs (launchd/cron + the
 // Python runner) are a deferred, opt-in follow-up — see the feature spec.
+//
+// Task 8 (Phase A) adds a second, schedule-independent trigger: distillation
+// also runs on its own once the backlog crosses `count_trigger`, gated on the
+// user being idle. It is not tied to any "distill"-kind schedule the user may
+// or may not have created.
 
 import { useEffect } from "react";
 import { useScheduleStore, isDue } from "../stores/scheduleStore";
+import { ipc } from "./ipc";
+import { isIdle } from "./idle";
 
 const CHECK_INTERVAL_MS = 5 * 60_000; // re-check due schedules every 5 min
+const COUNT_TRIGGER_COOLDOWN_MS = 60 * 60_000; // at most once per hour
+
+// Module-level, so it resets on app restart — deliberate: a fresh session
+// re-evaluates the backlog trigger immediately rather than remembering a
+// cooldown across restarts.
+let lastCountTriggerRun = 0;
 
 /** Run all currently-due schedules for the vault, sequentially. */
 export async function runDueSchedules(vaultPath: string): Promise<void> {
@@ -19,6 +32,25 @@ export async function runDueSchedules(vaultPath: string): Promise<void> {
       await useScheduleStore.getState().runNow(vaultPath, s);
     }
   }
+  await maybeRunCountTrigger(vaultPath);
+}
+
+/** Idle-gated backlog trigger: if distillation is enabled, the backlog has
+ * reached count_trigger, and the user is idle, run distill_run directly
+ * (independent of any "distill"-kind schedule). At most once per hour. */
+async function maybeRunCountTrigger(vaultPath: string): Promise<void> {
+  if (useScheduleStore.getState().runningId) return;
+  if (Date.now() - lastCountTriggerRun < COUNT_TRIGGER_COOLDOWN_MS) return;
+  const cfg = await ipc.getDistillConfig(vaultPath).catch(() => null);
+  if (!cfg || !cfg.enabled) return;
+  // Task 2 ledger note (binding): count_trigger: 0 means disabled-by-count —
+  // this run mode is off, but a "distill"-kind schedule (if any) still fires.
+  if (cfg.count_trigger <= 0) return;
+  if (!isIdle(cfg.idle_minutes)) return;
+  const status = await ipc.distillStatus(vaultPath).catch(() => null);
+  if (!status || status.backlog < cfg.count_trigger) return;
+  lastCountTriggerRun = Date.now();
+  await ipc.distillRun(vaultPath).catch(() => undefined);
 }
 
 /** React hook: check for due schedules on an interval while a vault is open. */
