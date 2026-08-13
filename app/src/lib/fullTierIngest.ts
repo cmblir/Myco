@@ -52,28 +52,36 @@ function stemOf(rel: string): string {
  * `llm_digest_days`. Called from `runDistillGuarded` after the session
  * digest, inside the same guard window.
  *
- * DECISION (`_inbox/` items): promoted to `raw/<slug>.md` first — via the
- * same `availableRawPath` + `writeFile` + `archiveInboxSource` sequence
- * `autoIngest.ts`'s `runInboxPass` uses for its own inbox sources — rather
- * than ingested in place. `INGEST_PROMPT` hardcodes `raw/${slug}.md` as the
- * path it tells the model to read; ingesting an `_inbox/` file in place would
- * hand the model a path that does not exist. Promoting also means Phase A's
- * raw/-only archive pass (`distill::run`'s "already represented" step) can
- * retire it later like any other raw source — left in `_inbox/`, it would
- * never be swept (that pass never walks `_inbox/`), unlike the brief's
- * speculative "ingest in place" v1. `archiveInboxSource` already exists on
- * this app's ipc (unlike the brief's uncertainty about it) and the whole
- * sequence is three already-existing ipc calls, so this is not a bigger diff
- * than the in-place alternative — it is the smallest option that is also
- * correct. If `archiveInboxSource` fails after the raw copy is written, the
- * raw copy is deleted and the item is recorded as an error (see the inner
- * try/catch below) — this exact ordering (promote, THEN archive, THEN
- * ingest) is what makes that safe: nothing has read from the raw copy yet.
- * `autoIngest.ts`'s `runInboxPass` has the same `archiveInboxSource` failure
- * mode but a different order (ingest fully runs and writes wiki pages
- * BEFORE it archives), so the same rollback there would delete an
- * already-ingested source's only remaining copy — not a safe fix, and out
- * of scope here.
+ * DECISION (`_inbox/` items): promoted to `raw/<slug>.md` — via
+ * `archiveInboxSource` + `availableRawPath` + `writeFile`, same three ipc
+ * calls `autoIngest.ts`'s `runInboxPass` uses for its own inbox sources —
+ * rather than ingested in place. `INGEST_PROMPT` hardcodes `raw/${slug}.md`
+ * as the path it tells the model to read; ingesting an `_inbox/` file in
+ * place would hand the model a path that does not exist. Promoting also
+ * means Phase A's raw/-only archive pass (`distill::run`'s "already
+ * represented" step) can retire it later like any other raw source — left in
+ * `_inbox/`, it would never be swept (that pass never walks `_inbox/`).
+ *
+ * Order matters and is deliberately archive-BEFORE-write (not write-then-
+ * archive): `archiveInboxSource` moves the original into `_inbox/.archived/`
+ * — dot-prefixed, so `vault_entries`/`collect_candidates` never walk it, no
+ * second scoring possible once it lands there. That makes every failure mode
+ * safe with no rollback/delete needed at all (an earlier version of this
+ * function tried to roll back by deleting the raw copy on an archive
+ * failure — unworkable, because `delete_path` unconditionally refuses any
+ * `raw/` path, immutability rule, no "our own recent write" exception; the
+ * "rollback" silently never ran against the real backend):
+ *   - `archiveInboxSource` fails: nothing has been written yet — the item is
+ *     collected as an error, original untouched in `_inbox/`, retried next
+ *     pass exactly as before.
+ *   - `writeFile` fails after a successful archive: the original is already
+ *     safely in `_inbox/.archived/` (content preserved, walk-invisible) —
+ *     the item is collected as an error and effectively retired; a human can
+ *     recover it from `.archived/` by hand, but nothing duplicates.
+ *   - ingest itself fails after archive+write both succeeded: the raw copy
+ *     stays on disk and is a legitimate NEW, unscored `raw/` file — the next
+ *     scan scores and offers it again on its own. No duplicate, because the
+ *     `_inbox/` original is already archived (walk-invisible).
  *
  * No retry: an item whose read/promote/ingest throws is recorded in `errors`
  * and the loop moves to the next one. The next scan/ingest pass offers it
@@ -109,23 +117,11 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
       let content: string;
       if (rel.startsWith("_inbox/")) {
         content = (await ipc.readFile(`${vaultPath}/${rel}`)).raw;
+        // Archive BEFORE writing the raw copy — see the archive-before-write
+        // ordering note above for why this makes every failure mode safe.
+        await ipc.archiveInboxSource(`${vaultPath}/${rel}`);
         sourceRel = await ipc.availableRawPath(stemOf(rel));
         await ipc.writeFile(`${vaultPath}/${sourceRel}`, content);
-        try {
-          await ipc.archiveInboxSource(`${vaultPath}/${rel}`);
-        } catch (archiveErr) {
-          // Roll back the raw copy this run just wrote (never touch the
-          // _inbox/ original itself — that stays put, unchanged, to retry
-          // whole next pass). This is NOT a raw/ immutability violation: raw/
-          // is immutable against modifying EXISTING content, and this file
-          // did not exist before this very call — deleting our own
-          // just-created, not-yet-ingested artifact is a rollback, the same
-          // as never having written it. Without this, a failed archive would
-          // leave both copies alive, and a later scan would score the raw
-          // copy as a brand-new, unrelated item — a double-ingestion risk.
-          await ipc.deletePath(`${vaultPath}/${sourceRel}`).catch(() => undefined);
-          throw archiveErr;
-        }
       } else {
         content = (await ipc.readFile(`${vaultPath}/${rel}`)).raw;
       }

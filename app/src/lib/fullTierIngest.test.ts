@@ -19,7 +19,6 @@ const readFile = vi.fn();
 const writeFile = vi.fn();
 const availableRawPath = vi.fn();
 const archiveInboxSource = vi.fn();
-const deletePath = vi.fn();
 const claudeRun = vi.fn();
 vi.mock("./ipc", () => ({
   ipc: {
@@ -30,7 +29,6 @@ vi.mock("./ipc", () => ({
     writeFile: (...a: unknown[]) => writeFile(...a),
     availableRawPath: (...a: unknown[]) => availableRawPath(...a),
     archiveInboxSource: (...a: unknown[]) => archiveInboxSource(...a),
-    deletePath: (...a: unknown[]) => deletePath(...a),
     claudeRun: (...a: unknown[]) => claudeRun(...a),
   },
 }));
@@ -62,7 +60,6 @@ beforeEach(() => {
   writeFile.mockReset();
   availableRawPath.mockReset();
   archiveInboxSource.mockReset();
-  deletePath.mockReset();
   claudeRun.mockReset();
 
   getActiveModel.mockResolvedValue({ provider: "anthropic-api", model: "" });
@@ -70,7 +67,6 @@ beforeEach(() => {
   readFile.mockResolvedValue({ raw: "# A title\n\nbody", content: "body", frontmatter: null, path: "" });
   runIngestProvider.mockResolvedValue("ok");
   archiveInboxSource.mockResolvedValue("");
-  deletePath.mockResolvedValue(null);
 });
 
 describe("runFullTierIngest", () => {
@@ -147,20 +143,38 @@ describe("runFullTierIngest", () => {
     expect(result).toEqual({ ingested: 1, skipped: null, errors: [] });
   });
 
-  it("rolls back the just-written raw copy and collects an error when archiveInboxSource fails", async () => {
+  it("archives before promoting: an archiveInboxSource failure writes no raw copy and collects an error", async () => {
     fullTierItems.mockResolvedValue(["_inbox/clip.md"]);
-    availableRawPath.mockResolvedValue("raw/clip.md");
     archiveInboxSource.mockRejectedValue(new Error("locked"));
 
     const result = await runFullTierIngest("/v");
 
-    expect(writeFile).toHaveBeenCalledWith("/v/raw/clip.md", "# A title\n\nbody");
-    expect(deletePath).toHaveBeenCalledWith("/v/raw/clip.md");
+    expect(archiveInboxSource).toHaveBeenCalledWith("/v/_inbox/clip.md");
+    expect(availableRawPath).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
     expect(runIngestProvider).not.toHaveBeenCalled();
     expect(result).toEqual({
       ingested: 0,
       skipped: null,
       errors: ["_inbox/clip.md: Error: locked"],
+    });
+  });
+
+  it("collects an error with no rollback attempt when writeFile fails after a successful archive", async () => {
+    fullTierItems.mockResolvedValue(["_inbox/clip.md"]);
+    availableRawPath.mockResolvedValue("raw/clip.md");
+    writeFile.mockRejectedValue(new Error("disk full"));
+
+    const result = await runFullTierIngest("/v");
+
+    // The original is already safely archived by the time writeFile fails —
+    // there is nothing to roll back (see fullTierIngest.ts's doc comment).
+    expect(archiveInboxSource).toHaveBeenCalledWith("/v/_inbox/clip.md");
+    expect(runIngestProvider).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      ingested: 0,
+      skipped: null,
+      errors: ["_inbox/clip.md: Error: disk full"],
     });
   });
 
