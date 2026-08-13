@@ -162,17 +162,22 @@ const DEFAULT_INGEST_BUDGET = 3;
  * forever — and the Overview's "LLM steps waiting" note never showed,
  * because only digest/full-tier set a skipped flag), so it early-returns
  * `no-provider` the same way `runSessionDigest`/`runFullTierIngest` do. And
- * at Aggressive intensity every detected cluster arrives pre-approved, so
- * one run could otherwise fire an unbounded number of paid draft calls —
- * capped at `llm_ingest_budget`, the same per-run LLM-cost knob full-tier
- * ingest uses; the rest stay `approved` and drain on later runs. */
-async function applyApprovedDraftMaps(vaultPath: string): Promise<MapDraftOutcome> {
+ * at Aggressive intensity every detected cluster arrives pre-approved, so one
+ * run could otherwise fire an unbounded number of paid draft calls.
+ *
+ * `budget` is NOT `llm_ingest_budget` itself — it is the SHARE of it left
+ * over after full-tier ingest already spent its part of the same per-run cap
+ * (computed by `runDistillGuarded`, the only caller). Without this, a run
+ * could spend `llm_ingest_budget` on ingest AND `llm_ingest_budget` on draft
+ * maps — 2× the label the user set. */
+async function applyApprovedDraftMaps(
+  vaultPath: string,
+  budget: number,
+): Promise<MapDraftOutcome> {
   const { provider } = await getActiveModel("query");
   if (provider === "builtin-local") {
     return { drafted: 0, skipped: "no-provider" };
   }
-  const cfg = await ipc.getDistillConfig(vaultPath).catch(() => null);
-  const budget = cfg?.llm_ingest_budget ?? DEFAULT_INGEST_BUDGET;
 
   let drafted = 0;
   const tree = await ipc.listFiles(vaultPath).catch(() => []);
@@ -255,7 +260,14 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
       return null;
     });
     if (fullTierOutcome) lastFullTierOutcome.set(vault, fullTierOutcome);
-    const mapOutcome = await applyApprovedDraftMaps(vault).catch((e) => {
+    // Task 2 fix (settings audit): llm_ingest_budget is a SHARED per-run cap
+    // over ingest + draft maps, not one full budget for each — pass maps
+    // only what full-tier ingest didn't already spend. A failed fullTierOutcome
+    // (caught above) means nothing is known to have been spent.
+    const ingestCfg = await ipc.getDistillConfig(vault).catch(() => null);
+    const ingestBudget = ingestCfg?.llm_ingest_budget ?? DEFAULT_INGEST_BUDGET;
+    const mapBudget = Math.max(0, ingestBudget - (fullTierOutcome?.ingested ?? 0));
+    const mapOutcome = await applyApprovedDraftMaps(vault, mapBudget).catch((e) => {
       console.error("[distill] draft-map auto-apply failed", vault, e);
       return null;
     });

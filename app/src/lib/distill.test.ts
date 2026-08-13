@@ -9,6 +9,16 @@ vi.mock("./sessionDigest", () => ({
   runSessionDigest: (...a: unknown[]) => runSessionDigest(...a),
 }));
 
+// Controllable full-tier outcome — the shared llm_ingest_budget test below
+// needs a fixed "ingested" count without wiring up fullTierIngest's own ipc
+// calls (fullTierItems/readFile/claudeRun); every other test here only
+// needs its "self-skips on builtin-local" default (ingested: 0), same as
+// the real function's own no-provider path.
+const runFullTierIngest = vi.fn();
+vi.mock("./fullTierIngest", () => ({
+  runFullTierIngest: (...a: unknown[]) => runFullTierIngest(...a),
+}));
+
 import { backlogTrend, lastRunLabel, runDistillGuarded } from "./distill";
 import { ipc } from "./ipc";
 import { useVaultStore } from "../stores/vaultStore";
@@ -85,6 +95,7 @@ describe("runDistillGuarded", () => {
     // Default: digest resolves with nothing to report (a bare vi.fn() would
     // return undefined and break the chain's .catch()).
     runSessionDigest.mockReset().mockResolvedValue(null);
+    runFullTierIngest.mockReset().mockResolvedValue({ ingested: 0, skipped: null, errors: [] });
   });
 
   it("a second concurrent call for the same vault gets null and makes no second ipc call", async () => {
@@ -176,6 +187,7 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
     vi.restoreAllMocks();
     draftMap.mockReset();
     runSessionDigest.mockReset().mockResolvedValue(null);
+    runFullTierIngest.mockReset().mockResolvedValue({ ingested: 0, skipped: null, errors: [] });
   });
 
   it("applies an approved draft-map proposal and marks it done", async () => {
@@ -301,5 +313,32 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
 
     expect(draftMap).toHaveBeenCalledTimes(3);
     expect(writeFile).toHaveBeenCalledTimes(3);
+  });
+
+  // Settings audit item 2: llm_ingest_budget is a SHARED per-run cap over
+  // full-tier ingest AND draft-map auto-apply, not one full budget for each.
+  it("caps draft-map applies at what full-tier ingest left of the shared budget", async () => {
+    const names = ["p1.md", "p2.md", "p3.md", "p4.md", "p5.md"];
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("anthropic-api"));
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue(CFG); // budget 3
+    runFullTierIngest.mockResolvedValue({ ingested: 2, skipped: null, errors: [] });
+    vi.spyOn(ipc, "listFiles").mockResolvedValue(feedbackTree(names));
+    vi.spyOn(ipc, "readFile").mockImplementation((path: string) =>
+      Promise.resolve({
+        path,
+        raw: proposal("approved", path.split("/").pop()!.replace(".md", "")),
+        content: "",
+        frontmatter: {},
+      }),
+    );
+    const writeFile = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    draftMap.mockResolvedValue("wiki/maps/x.md");
+
+    await runDistillGuarded("/vmap");
+
+    // budget 3 - 2 already spent by full-tier ingest = 1 left for maps.
+    expect(draftMap).toHaveBeenCalledTimes(1);
+    expect(writeFile).toHaveBeenCalledTimes(1);
   });
 });

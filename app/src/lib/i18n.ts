@@ -1598,7 +1598,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_idle_minutes: "Idle minutes",
     set_distill_maturation: "Maturation (hours)",
     set_distill_llm_digest_days: "Digest days per run",
-    set_distill_llm_ingest_budget: "LLM ingest budget (items)",
+    set_distill_llm_ingest_budget: "LLM item budget per run (ingest + map drafts combined)",
     set_distill_profile_injection_title: "Profile injection",
     set_distill_profile_injection_desc:
       "Send profile.md to configured AI providers as Ask/ingest context. Off keeps the profile local-only.",
@@ -2490,7 +2490,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_idle_minutes: "유휴 시간 (분)",
     set_distill_maturation: "숙성 시간 (시간)",
     set_distill_llm_digest_days: "실행당 다이제스트 일수",
-    set_distill_llm_ingest_budget: "LLM 인제스트 예산 (항목 수)",
+    set_distill_llm_ingest_budget: "실행당 LLM 항목 예산 (인제스트 + 지도 초안 합산)",
     set_distill_profile_injection_title: "프로필 주입",
     set_distill_profile_injection_desc:
       "profile.md를 Ask/인제스트 컨텍스트로 설정된 AI 프로바이더에 전송합니다. 끄면 프로필은 로컬에만 남습니다.",
@@ -3260,7 +3260,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_idle_minutes: "アイドル時間（分）",
     set_distill_maturation: "熟成時間（時間）",
     set_distill_llm_digest_days: "実行あたりのダイジェスト日数",
-    set_distill_llm_ingest_budget: "LLMインジェスト予算（件数）",
+    set_distill_llm_ingest_budget: "実行あたりのLLM項目予算（インジェスト+マップ草案合算）",
     set_distill_profile_injection_title: "プロフィール注入",
     set_distill_profile_injection_desc:
       "profile.mdをAsk/インジェストのコンテキストとして設定済みのAIプロバイダーに送信します。オフにするとプロフィールはローカルのみに保持されます。",

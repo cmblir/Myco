@@ -1793,7 +1793,10 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
             onChange={(n) => void patch({ llm_digest_days: n })}
           />
           <DistillNumField
-            label={t.set_distill_llm_ingest_budget ?? "LLM ingest budget (items)"}
+            label={
+              t.set_distill_llm_ingest_budget ??
+              "LLM item budget per run (ingest + map drafts combined)"
+            }
             value={cfg.llm_ingest_budget}
             min={0}
             onChange={(n) => void patch({ llm_ingest_budget: n })}
