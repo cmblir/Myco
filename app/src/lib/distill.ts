@@ -74,7 +74,6 @@ export interface DistillStatus {
 export interface DigestDay {
   day: string; // YYYY-MM-DD
   files: string[]; // vault-relative rel paths
-  bytes: number;
 }
 
 // Task 8 — direction of `last_backlogs` (oldest → newest, per Rust's

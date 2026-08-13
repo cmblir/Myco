@@ -111,8 +111,8 @@ describe("runSessionDigest", () => {
     getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
     getDistillConfig.mockResolvedValue(CFG); // llm_digest_days: 1
     digestableSessionDays.mockResolvedValue([
-      { day: "2026-08-10", files: ["sessions/2026-08-10/a.md"], bytes: 100 },
-      { day: "2026-08-11", files: ["sessions/2026-08-11/b.md"], bytes: 100 },
+      { day: "2026-08-10", files: ["sessions/2026-08-10/a.md"] },
+      { day: "2026-08-11", files: ["sessions/2026-08-11/b.md"] },
     ]);
     mockReadFile();
     complete.mockResolvedValue("- Decided to use X\n- Shipped Y (uncertain)");
@@ -163,7 +163,6 @@ describe("runSessionDigest", () => {
           "sessions/2026-08-10/b.md",
           "sessions/2026-08-10/c.md",
         ],
-        bytes: 100,
       },
     ]);
     const big = "x".repeat(50_000); // two of these saturate the 60k pool
@@ -187,7 +186,7 @@ describe("runSessionDigest", () => {
     getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
     getDistillConfig.mockResolvedValue(CFG);
     digestableSessionDays.mockResolvedValue([
-      { day: "2026-08-10", files: ["sessions/2026-08-10/a.md"], bytes: 100 },
+      { day: "2026-08-10", files: ["sessions/2026-08-10/a.md"] },
     ]);
     mockReadFile("# 2026-08-10\n\n## Session digest (auto)\n_from 2 session logs — low confidence_\n- Earlier bullet\n");
     complete.mockResolvedValue("- New bullet");
@@ -207,8 +206,8 @@ describe("runSessionDigest", () => {
     getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
     getDistillConfig.mockResolvedValue({ ...CFG, llm_digest_days: 2 });
     digestableSessionDays.mockResolvedValue([
-      { day: "2026-08-10", files: ["sessions/2026-08-10/a.md"], bytes: 100 },
-      { day: "2026-08-11", files: ["sessions/2026-08-11/b.md"], bytes: 100 },
+      { day: "2026-08-10", files: ["sessions/2026-08-10/a.md"] },
+      { day: "2026-08-11", files: ["sessions/2026-08-11/b.md"] },
     ]);
     mockReadFile();
     complete.mockRejectedValue(new Error("provider boom"));

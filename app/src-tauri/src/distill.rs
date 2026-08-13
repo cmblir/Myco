@@ -2817,7 +2817,6 @@ pub fn full_tier_items(root: &Path) -> Vec<String> {
 pub struct DigestDay {
     pub day: String,
     pub files: Vec<String>,
-    pub bytes: u64,
 }
 
 /// `YYYY-MM-DD` for a swept session: extends `commands::session_bucket`'s
@@ -2878,24 +2877,22 @@ pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
     // Every walked file lands in its day's bucket regardless of readiness —
     // `ready` is per-file so the day-level filter below can require ALL of
     // them, not just count how many made it in.
-    let mut by_day: HashMap<String, Vec<(String, bool, u64)>> = HashMap::new();
+    let mut by_day: HashMap<String, Vec<(String, bool)>> = HashMap::new();
     for c in candidates {
         let mature = now - c.mtime >= maturation_secs;
         let ready = mature && state.scored.contains_key(&c.rel);
         let stem = c.path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let day = session_day(stem, c.mtime);
-        let bytes = std::fs::metadata(&c.path).map(|m| m.len()).unwrap_or(0);
-        by_day.entry(day).or_default().push((c.rel, ready, bytes));
+        by_day.entry(day).or_default().push((c.rel, ready));
     }
 
     let mut days: Vec<DigestDay> = by_day
         .into_iter()
-        .filter(|(_, entries)| entries.iter().all(|(_, ready, _)| *ready))
+        .filter(|(_, entries)| entries.iter().all(|(_, ready)| *ready))
         .map(|(day, entries)| {
-            let bytes = entries.iter().map(|(_, _, b)| b).sum();
-            let mut files: Vec<String> = entries.into_iter().map(|(rel, _, _)| rel).collect();
+            let mut files: Vec<String> = entries.into_iter().map(|(rel, _)| rel).collect();
             files.sort();
-            DigestDay { day, files, bytes }
+            DigestDay { day, files }
         })
         .collect();
     days.sort_by(|a, b| a.day.cmp(&b.day));
