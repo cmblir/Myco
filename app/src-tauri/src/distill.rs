@@ -747,50 +747,103 @@ fn mtime_secs(path: &Path) -> Option<i64> {
         .map(|d| d.as_secs() as i64)
 }
 
-/// Minimal proposal writer — a seam Task 7's full proposal engine will reuse
-/// (or replace): `work/feedback/<date>-<slug>.md` with `type:
-/// distill-proposal`, `status: pending` frontmatter (the proposal-inbox
-/// format from the design spec) and a one-paragraph body. Returns the
-/// vault-relative path written.
+/// Lowercase, dash-separated slug for a proposal filename: non-alphanumerics
+/// collapse to a single `-`, capped at 60 chars (plenty to stay readable
+/// without a long title ballooning the filename).
+fn slugify(s: &str) -> String {
+    let mut out = String::new();
+    let mut last_dash = false;
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c.to_ascii_lowercase());
+            last_dash = false;
+        } else if !last_dash {
+            out.push('-');
+            last_dash = true;
+        }
+    }
+    out.trim_matches('-').chars().take(60).collect::<String>()
+}
+
+/// Proposal writer: `work/feedback/<date>-<slug>.md` with `type:
+/// distill-proposal`, `action: <kind>` (`admit-cluster` | `archive-batch` |
+/// `delete-batch`), `status: pending`, `created: <date>`, and a `payload` JSON
+/// blob `apply_proposal` reads back to know what to act on — the
+/// proposal-inbox format from the design spec. Returns the vault-relative
+/// path written.
 ///
-/// ponytail: no de-dup against a previous proposal for the same item — an
-/// item that keeps missing its window every run (e.g. a Conservative-
-/// intensity TTL item) gets a fresh proposal file each run until Task 7's
-/// approve/dismiss lifecycle marks one resolved.
+/// ponytail: no de-dup here — a caller that wants "don't repeat this exact
+/// proposal" checks pending proposals itself before calling in (see
+/// `pending_admit_cluster_exists`, the fix Task 7 added for `admit-cluster`).
+/// `archive-batch`/`delete-batch` still get a fresh proposal every run an
+/// item keeps missing its window (e.g. a Conservative-intensity TTL item) —
+/// same ceiling Task 6 originally documented here, just narrowed.
 fn write_proposal(
     root: &Path,
-    now: i64,
-    slug: &str,
+    kind: &str,
     title: &str,
     body: &str,
+    payload: &serde_json::Value,
 ) -> Result<String, String> {
-    let (y, m, d, ..) = civil_datetime(now);
+    let (y, m, d, ..) = civil_datetime(now_secs());
     let feedback_dir = root.join("work/feedback");
     std::fs::create_dir_all(&feedback_dir).map_err(|e| format!("create work/feedback dir: {e}"))?;
-    let file_name = format!("{y:04}-{m:02}-{d:02}-{slug}.md");
+    let file_name = format!("{y:04}-{m:02}-{d:02}-{}.md", slugify(title));
     let path = free_path(&feedback_dir.join(file_name));
-    let content =
-        format!("---\ntype: distill-proposal\nstatus: pending\n---\n\n# {title}\n\n{body}\n");
+    let payload_json =
+        serde_json::to_string(payload).map_err(|e| format!("serialize payload: {e}"))?;
+    let content = format!(
+        "---\ntype: distill-proposal\naction: {kind}\nstatus: pending\ncreated: {y:04}-{m:02}-{d:02}\npayload: {payload_json}\n---\n\n# {title}\n\n{body}\n"
+    );
     std::fs::write(&path, content).map_err(|e| format!("write proposal: {e}"))?;
     Ok(rel_string(root, &path))
 }
 
-/// `type: distill-proposal` and no `status` other than `pending` yet — a
-/// proposal Task 7's future approve/dismiss lifecycle has not resolved.
-fn is_pending_proposal(content: &str) -> bool {
-    let Some(gray_matter::Pod::Hash(map)) = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+/// Parse a proposal file's YAML frontmatter into its raw `Pod` map, or `None`
+/// if it isn't `type: distill-proposal` frontmatter at all. Shared by every
+/// reader of the proposal lifecycle (pending check, dedup check, apply) so
+/// the frontmatter shape lives in one place.
+fn proposal_frontmatter(content: &str) -> Option<HashMap<String, gray_matter::Pod>> {
+    let gray_matter::Pod::Hash(map) = gray_matter::Matter::<gray_matter::engine::YAML>::new()
         .parse(content)
-        .ok()
-        .and_then(|p| p.data)
+        .ok()?
+        .data?
     else {
-        return false;
+        return None;
     };
     let is_proposal =
         matches!(map.get("type"), Some(gray_matter::Pod::String(s)) if s == "distill-proposal");
-    if !is_proposal {
-        return false;
-    }
+    is_proposal.then_some(map)
+}
+
+/// No `status` other than `pending` yet — a proposal the approve/dismiss
+/// lifecycle has not resolved.
+fn is_pending_map(map: &HashMap<String, gray_matter::Pod>) -> bool {
     !matches!(map.get("status"), Some(gray_matter::Pod::String(s)) if s != "pending")
+}
+
+fn is_pending_proposal(content: &str) -> bool {
+    proposal_frontmatter(content).is_some_and(|map| is_pending_map(&map))
+}
+
+/// A proposal's `payload.files` array as plain strings, or empty if the
+/// payload is missing/malformed — callers treat that the same as "nothing to
+/// act on" rather than a hard error.
+fn proposal_payload_files(map: &HashMap<String, gray_matter::Pod>) -> Vec<String> {
+    let payload = map
+        .get("payload")
+        .cloned()
+        .map(crate::vault::pod_to_json)
+        .unwrap_or(serde_json::Value::Null);
+    payload
+        .get("files")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn pending_proposal_count(root: &Path) -> usize {
@@ -1002,6 +1055,463 @@ fn render_report(
     s
 }
 
+// ---------------------------------------------------------------------------
+// Emerging-cluster detection + proposal lifecycle (Task 7, Phase A): group
+// quarantined items that look like a forming topic, propose admitting them,
+// and let an approved/dismissed proposal actually be applied or archived. See
+// `app/docs/specs/2026-08-13-ontology-distill-design.md` ("New topic forming").
+// ---------------------------------------------------------------------------
+
+/// Minimum cosine similarity for two quarantined items to union into the same
+/// emerging-topic group. A first guess, not yet measured against a real
+/// vault's quarantine pile — calibration-pending, same caveat the admission
+/// gate's own thresholds carry (see `ontology.rs`).
+const EMERGING_MIN_SIM: f32 = 0.55;
+
+/// Minimum group size before an emerging cluster is worth a proposal — below
+/// this it reads as coincidence, not a forming topic.
+const EMERGING_MIN_SIZE: usize = 5;
+
+/// One quarantined item's rel path and the fields of its verdict sidecar the
+/// clustering/proposal pass needs.
+struct SidecarInfo {
+    vector: Vec<f32>,
+    nearest_cluster: String,
+    s_knn: f32,
+}
+
+/// Read `_inbox/quarantine/<stem>.verdict.json` for a quarantined item given
+/// its content file's rel path (e.g. `_inbox/quarantine/a.md`) — `None` if the
+/// sidecar is missing, unparseable, or carries no vector.
+fn read_sidecar(root: &Path, content_rel: &str) -> Option<SidecarInfo> {
+    let content_path = root.join(content_rel);
+    let stem = content_path.file_stem().and_then(|s| s.to_str())?;
+    let sidecar_path = content_path.with_file_name(format!("{stem}.verdict.json"));
+    let raw = std::fs::read_to_string(&sidecar_path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    let vector: Vec<f32> = v
+        .get("vector")?
+        .as_array()?
+        .iter()
+        .filter_map(|x| x.as_f64().map(|f| f as f32))
+        .collect();
+    Some(SidecarInfo {
+        vector,
+        nearest_cluster: v
+            .get("nearest_cluster")
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .to_string(),
+        s_knn: v.get("s_knn").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
+    })
+}
+
+/// Every currently-quarantined item's rel path + embedding vector, sorted by
+/// path — the deterministic order `emerging_clusters` groups over.
+fn quarantine_vectors(root: &Path) -> Vec<(String, Vec<f32>)> {
+    let quarantine_dir = root.join(crate::commands::DEST_INBOX).join(QUARANTINE_DIR);
+    let mut out: Vec<(String, Vec<f32>)> = crate::vault::vault_entries(&quarantine_dir)
+        .into_iter()
+        .filter(|(_, kind)| kind.is_file())
+        .filter_map(|(entry, _)| {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            let stem = name.strip_suffix(".verdict.json")?;
+            let content_rel = format!("{}/{QUARANTINE_DIR}/{stem}.md", crate::commands::DEST_INBOX);
+            if !root.join(&content_rel).exists() {
+                return None;
+            }
+            let info = read_sidecar(root, &content_rel)?;
+            Some((content_rel, info.vector))
+        })
+        .collect();
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    out
+}
+
+/// Greedy connected-components clustering over quarantine sidecar vectors:
+/// union any pair whose cosine similarity clears `min_sim`, then keep only
+/// components with at least `min_size` members. Deterministic (items are
+/// walked in sorted-path order, ties in union direction always resolve
+/// toward the lower index) so the same quarantine pile always groups the
+/// same way.
+///
+/// ponytail: O(n^2) pairwise comparisons — fine at quarantine-pile sizes
+/// (tens to low hundreds); an ANN index would be the upgrade if quarantine
+/// ever grows into the thousands.
+pub fn emerging_clusters(root: &Path, min_size: usize, min_sim: f32) -> Vec<Vec<String>> {
+    let items = quarantine_vectors(root);
+    let n = items.len();
+
+    fn find(parent: &mut [usize], x: usize) -> usize {
+        if parent[x] != x {
+            parent[x] = find(parent, parent[x]);
+        }
+        parent[x]
+    }
+
+    let mut parent: Vec<usize> = (0..n).collect();
+    for i in 0..n {
+        for j in (i + 1)..n {
+            if crate::embeddings::cosine(&items[i].1, &items[j].1) >= min_sim {
+                let (ri, rj) = (find(&mut parent, i), find(&mut parent, j));
+                if ri != rj {
+                    parent[ri.max(rj)] = ri.min(rj);
+                }
+            }
+        }
+    }
+
+    let mut groups: HashMap<usize, Vec<String>> = HashMap::new();
+    for (i, item) in items.into_iter().enumerate() {
+        groups.entry(find(&mut parent, i)).or_default().push(item.0);
+    }
+    let mut out: Vec<Vec<String>> = groups
+        .into_values()
+        .filter(|g| g.len() >= min_size)
+        .collect();
+    out.sort_by(|a, b| a[0].cmp(&b[0])); // by first (already sorted) member
+    out
+}
+
+/// A handful of connective words worth ignoring in `label_cluster`'s crude
+/// token frequency count — not a real stopword list, just enough to keep the
+/// label from landing on "this"/"with" instead of a topical word.
+const LABEL_STOPWORDS: &[&str] = &[
+    "the", "and", "for", "with", "this", "that", "from", "are", "was", "were", "have", "has",
+    "not", "but", "its", "into",
+];
+
+/// Crude, deterministic label for a cluster of quarantined items: the most
+/// frequent word (>= 3 chars, past `LABEL_STOPWORDS`) across each member's
+/// file stem and the first non-empty line of its content — counted once per
+/// member so one repetitive file can't dominate — tie-broken alphabetically.
+/// Simple on purpose; swap for something smarter (e.g. TF-IDF against the
+/// ontology's own vocabulary) if this proves too crude in practice.
+fn label_cluster(root: &Path, members: &[String]) -> String {
+    fn tokens(s: &str) -> impl Iterator<Item = String> + '_ {
+        s.split(|c: char| !c.is_alphanumeric())
+            .map(str::to_lowercase)
+            .filter(|t| t.len() >= 3 && !LABEL_STOPWORDS.contains(&t.as_str()))
+    }
+
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for m in members {
+        let mut seen = std::collections::HashSet::new();
+        if let Some(stem) = Path::new(m).file_stem().and_then(|s| s.to_str()) {
+            seen.extend(tokens(stem));
+        }
+        if let Ok(content) = std::fs::read_to_string(root.join(m)) {
+            if let Some(first_line) = content.lines().find(|l| !l.trim().is_empty()) {
+                seen.extend(tokens(first_line));
+            }
+        }
+        for t in seen {
+            *counts.entry(t).or_insert(0) += 1;
+        }
+    }
+
+    let mut pairs: Vec<(String, usize)> = counts.into_iter().collect();
+    pairs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    pairs
+        .into_iter()
+        .next()
+        .map(|(t, _)| t)
+        .unwrap_or_else(|| "new topic".to_string())
+}
+
+/// True if a PENDING `admit-cluster` proposal already names this exact
+/// (sorted) file set — the no-dedup ceiling `write_proposal`'s doc comment
+/// used to accept for every proposal kind is now fixable for this one,
+/// because a proposal lifecycle exists to mark one resolved.
+fn pending_admit_cluster_exists(root: &Path, files: &[String]) -> bool {
+    let mut want = files.to_vec();
+    want.sort();
+    crate::vault::vault_entries(&root.join("work/feedback"))
+        .into_iter()
+        .filter(|(e, kind)| {
+            kind.is_file() && e.path().extension().and_then(|x| x.to_str()) == Some("md")
+        })
+        .any(|(e, _)| {
+            let Ok(content) = std::fs::read_to_string(e.path()) else {
+                return false;
+            };
+            let Some(map) = proposal_frontmatter(&content) else {
+                return false;
+            };
+            if !is_pending_map(&map) {
+                return false;
+            }
+            let is_admit =
+                matches!(map.get("action"), Some(gray_matter::Pod::String(s)) if s == "admit-cluster");
+            if !is_admit {
+                return false;
+            }
+            let mut existing = proposal_payload_files(&map);
+            existing.sort();
+            existing == want
+        })
+}
+
+/// Emerging-cluster + proposal pass (run() step ⑥): quarantined items whose
+/// pairwise similarity clusters into a group of at least `EMERGING_MIN_SIZE`
+/// are proposed as a new topic, unless a pending `admit-cluster` proposal for
+/// the exact same file set already exists. Returns the number of proposals
+/// written; `save_manifest`s after each one, same as every other pass.
+fn propose_emerging_clusters(root: &Path, manifest: &mut RunManifest) -> Result<usize, String> {
+    let mut written = 0usize;
+    for files in emerging_clusters(root, EMERGING_MIN_SIZE, EMERGING_MIN_SIM) {
+        if pending_admit_cluster_exists(root, &files) {
+            continue;
+        }
+        let infos: Vec<SidecarInfo> = files.iter().filter_map(|f| read_sidecar(root, f)).collect();
+
+        let mut sum = 0.0f32;
+        let mut pairs = 0u32;
+        for i in 0..infos.len() {
+            for j in (i + 1)..infos.len() {
+                sum += crate::embeddings::cosine(&infos[i].vector, &infos[j].vector);
+                pairs += 1;
+            }
+        }
+        let mean_sim = if pairs > 0 { sum / pairs as f32 } else { 0.0 };
+
+        let label = label_cluster(root, &files);
+        let mut body = format!(
+            "{} quarantined items cluster together (mean similarity {mean_sim:.2}). Admit as a \
+             new topic?\n\n",
+            files.len()
+        );
+        for (f, info) in files.iter().zip(&infos) {
+            body += &format!(
+                "- [[{f}]] — nearest '{}' {:.2}\n",
+                info.nearest_cluster, info.s_knn
+            );
+        }
+
+        let rel = write_proposal(
+            root,
+            "admit-cluster",
+            &format!("New topic forming: {label}"),
+            &body,
+            &serde_json::json!({ "files": files }),
+        )?;
+        manifest.created.push(rel);
+        save_manifest(root, manifest)?;
+        written += 1;
+    }
+    Ok(written)
+}
+
+/// Move any proposal whose `status` has moved past `pending` (approved and
+/// applied by `apply_proposal`, or dismissed client-side) out of the pending
+/// feedback inbox into `work/feedback/archive/` — housekeeping, not a new
+/// decision. Tracked in the run manifest like every other move, so `undo` can
+/// put a wrongly-archived proposal back.
+fn archive_resolved_proposals(root: &Path, manifest: &mut RunManifest) -> Result<usize, String> {
+    let feedback_dir = root.join("work/feedback");
+    let mut archived = 0usize;
+    for (entry, kind) in crate::vault::vault_entries(&feedback_dir) {
+        if !kind.is_file() {
+            continue;
+        }
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Some(map) = proposal_frontmatter(&content) else {
+            continue;
+        };
+        if is_pending_map(&map) {
+            continue;
+        }
+        let archive_dir = feedback_dir.join("archive");
+        std::fs::create_dir_all(&archive_dir)
+            .map_err(|e| format!("create work/feedback/archive dir: {e}"))?;
+        let from_rel = rel_string(root, &path);
+        let to_path = free_path(&archive_dir.join(entry.file_name()));
+        std::fs::rename(&path, &to_path).map_err(|e| format!("archive proposal: {e}"))?;
+        manifest.moves.push(MoveEntry {
+            from: from_rel,
+            to: rel_string(root, &to_path),
+        });
+        save_manifest(root, manifest)?;
+        archived += 1;
+    }
+    Ok(archived)
+}
+
+/// Rewrite a proposal file's `status:` line in place, leaving every other
+/// line (including the rest of the frontmatter and the body) untouched. Only
+/// touches the line inside the first `---`...`---` block — a `status:` -like
+/// line in the body is never mistaken for frontmatter.
+fn set_proposal_status(path: &Path, raw: &str, status: &str) -> Result<(), String> {
+    let mut out = String::with_capacity(raw.len());
+    let mut dashes = 0u32;
+    for line in raw.lines() {
+        if line.trim() == "---" {
+            dashes += 1;
+            out.push_str(line);
+            out.push('\n');
+            continue;
+        }
+        if dashes == 1 && line.starts_with("status:") {
+            out.push_str(&format!("status: {status}\n"));
+        } else {
+            out.push_str(line);
+            out.push('\n');
+        }
+    }
+    std::fs::write(path, out).map_err(|e| format!("write proposal status: {e}"))
+}
+
+/// Move a quarantined item's content file back to `_inbox/`, delete its
+/// verdict sidecar, and drop its scan-ledger entry so the next `scan` scores
+/// it fresh against the (hopefully now-wider) ontology. Ledger compaction
+/// would eventually drop the entry anyway (its key stops existing the moment
+/// the file moves — see `compact_ledger`), but dropping it here rather than
+/// waiting for the next scan keeps the ledger accurate immediately, not just
+/// eventually.
+fn apply_admit_cluster(root: &Path, files: &[String]) -> Result<(), String> {
+    let inbox_dir = root.join(crate::commands::DEST_INBOX);
+    std::fs::create_dir_all(&inbox_dir).map_err(|e| format!("create _inbox dir: {e}"))?;
+    for f in files {
+        let content_path = crate::myco_pro::safe_join(root, f)?;
+        let file_name = content_path
+            .file_name()
+            .ok_or_else(|| format!("bad proposal file path: {f}"))?;
+        let sidecar_path = content_path.with_file_name(format!(
+            "{}.verdict.json",
+            content_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("item")
+        ));
+        let dest = free_path(&inbox_dir.join(file_name));
+        std::fs::rename(&content_path, &dest).map_err(|e| format!("move {f} to _inbox: {e}"))?;
+        let _ = std::fs::remove_file(&sidecar_path); // best-effort; a missing sidecar isn't fatal
+    }
+    drop_ledger_entries(root, files)?;
+    Ok(())
+}
+
+/// Same move `run()`'s conservative archive pass would have made: top-level
+/// `raw/<file>.md` -> `raw/archive/<YYYY-MM>/<file>.md`, month from the
+/// file's own mtime. Reuses `month_bucket`/`free_path`, the same helpers that
+/// pass uses, rather than re-deriving the bucket/collision logic here.
+fn apply_archive_batch(root: &Path, files: &[String]) -> Result<(), String> {
+    for f in files {
+        let from_path = crate::myco_pro::safe_join(root, f)?;
+        let mtime = mtime_secs(&from_path).unwrap_or_else(now_secs);
+        let file_name = from_path
+            .file_name()
+            .ok_or_else(|| format!("bad proposal file path: {f}"))?;
+        let archive_dir = root.join("raw/archive").join(month_bucket(mtime));
+        std::fs::create_dir_all(&archive_dir).map_err(|e| format!("create archive dir: {e}"))?;
+        let to_path = free_path(&archive_dir.join(file_name));
+        std::fs::rename(&from_path, &to_path).map_err(|e| format!("archive move: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Same move `run()`'s conservative TTL pass would have made, except the
+/// destination is `.myco/trash/<proposal-slug>/` (the proposal's own file
+/// stem) rather than `.myco/trash/<run-id>/` — an applied proposal has no run
+/// id of its own to file its trash dir under. Reuses `dir()`/`free_path`, the
+/// same helpers that pass uses.
+fn apply_delete_batch(root: &Path, files: &[String], proposal_path: &Path) -> Result<(), String> {
+    let slug = proposal_path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("proposal");
+    let trash_dir = dir(root).join("trash").join(slug);
+    std::fs::create_dir_all(&trash_dir).map_err(|e| format!("create trash dir: {e}"))?;
+    for f in files {
+        let content_path = crate::myco_pro::safe_join(root, f)?;
+        let file_name = content_path
+            .file_name()
+            .ok_or_else(|| format!("bad proposal file path: {f}"))?;
+        let sidecar_path = content_path.with_file_name(format!(
+            "{}.verdict.json",
+            content_path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("item")
+        ));
+        let to_content = free_path(&trash_dir.join(file_name));
+        std::fs::rename(&content_path, &to_content).map_err(|e| format!("trash move: {e}"))?;
+        if sidecar_path.exists() {
+            let sidecar_name = sidecar_path
+                .file_name()
+                .ok_or_else(|| format!("bad sidecar path for {f}"))?;
+            let to_sidecar = free_path(&trash_dir.join(sidecar_name));
+            std::fs::rename(&sidecar_path, &to_sidecar)
+                .map_err(|e| format!("trash sidecar move: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// Best-effort removal of `rels`' scan-ledger entries (`scored`/
+/// `rejected_ttl`), regardless of which embed model the ledger on disk is
+/// currently stamped for — an `apply_proposal` call has no ontology/model
+/// context of its own, and the entries being dropped are being dropped
+/// because their file just moved, not because the model changed. A missing
+/// or corrupt ledger is a no-op: nothing to drop, and the next `scan` starts
+/// one fresh anyway.
+fn drop_ledger_entries(root: &Path, rels: &[String]) -> Result<(), String> {
+    let Ok(raw) = std::fs::read_to_string(state_path(root)) else {
+        return Ok(());
+    };
+    let Ok(mut state) = serde_json::from_str::<DistillState>(&raw) else {
+        return Ok(());
+    };
+    let mut changed = false;
+    for r in rels {
+        changed |= state.scored.remove(r).is_some();
+        changed |= state.rejected_ttl.remove(r).is_some();
+    }
+    if changed {
+        state_save(root, &state)?;
+    }
+    Ok(())
+}
+
+/// Execute a proposal's action and flip its `status` to `done`. The frontend
+/// (Task 9) flips `pending` -> `approved`/`dismissed` itself by rewriting the
+/// file directly; this is the one lifecycle step that actually touches the
+/// filesystem beyond that flip, so it is the one exposed as a command.
+///
+/// - `admit-cluster` -> `apply_admit_cluster`
+/// - `archive-batch` -> `apply_archive_batch`
+/// - `delete-batch` -> `apply_delete_batch`
+///
+/// Returns the vault-relative path of the proposal (now `status: done`).
+pub fn apply_proposal(root: &Path, rel_path: &str) -> Result<String, String> {
+    let path = crate::myco_pro::safe_join(root, rel_path)?;
+    let raw =
+        std::fs::read_to_string(&path).map_err(|e| format!("read proposal {rel_path}: {e}"))?;
+    let map = proposal_frontmatter(&raw)
+        .ok_or_else(|| format!("{rel_path} is not a distill-proposal"))?;
+    let action = match map.get("action") {
+        Some(gray_matter::Pod::String(s)) => s.clone(),
+        _ => return Err(format!("proposal {rel_path} missing `action`")),
+    };
+    let files = proposal_payload_files(&map);
+
+    match action.as_str() {
+        "admit-cluster" => apply_admit_cluster(root, &files)?,
+        "archive-batch" => apply_archive_batch(root, &files)?,
+        "delete-batch" => apply_delete_batch(root, &files, &path)?,
+        other => return Err(format!("proposal {rel_path} has unknown action `{other}`")),
+    }
+
+    set_proposal_status(&path, &raw, "done")?;
+    Ok(rel_string(root, &path))
+}
+
 /// Idle-run orchestrator: the periodic batch the design spec calls "the
 /// distill run". In order:
 ///
@@ -1021,7 +1531,11 @@ fn render_report(
 ///    sidecar) to `.myco/trash/<run-id>/` at Standard/Aggressive, or propose
 ///    at Conservative. Trash dirs whose entire retention window has elapsed
 ///    are purged regardless of this run's intensity.
-/// 6. Emerging-cluster + proposal pass — Task 7's job; no call here yet.
+/// 6. Emerging-cluster + proposal pass (Task 7): quarantined items whose
+///    pairwise similarity clusters into a group are proposed as a new topic
+///    (`propose_emerging_clusters`), and any proposal already resolved
+///    (approved/dismissed/done) is archived out of the pending feedback inbox
+///    (`archive_resolved_proposals`).
 /// 7. The undo manifest (`.myco/distill-runs/<id>.json`) — NOT a single write
 ///    at the end: `save_manifest` persists it after every successful move,
 ///    trash, and proposal in steps 4-6, so a mid-run I/O failure never loses
@@ -1105,13 +1619,13 @@ pub fn run(
             let month = month_bucket(mtime);
             let rel = write_proposal(
                 root,
-                now,
-                stem,
+                "archive-batch",
                 &format!("Archive raw/{file_name}?"),
                 &format!(
                     "`{source_page}` already represents this source. Standard/Aggressive \
                      intensity would move it to `raw/archive/{month}/{file_name}`."
                 ),
+                &serde_json::json!({ "files": [from_rel.clone()] }),
             )?;
             manifest.created.push(rel);
             save_manifest(root, &manifest)?;
@@ -1131,8 +1645,8 @@ pub fn run(
         }
     }
 
-    // ⑤ TTL pass: quarantine sidecars past their expiry. Task 7's
-    // never-clustered check would additionally gate this — no sidecar
+    // ⑤ TTL pass: quarantine sidecars past their expiry. A future
+    // never-clustered check could additionally gate this — no sidecar
     // carries cluster membership yet, so every expired one qualifies today.
     let mut trashed = 0usize;
     let quarantine_dir = root.join(crate::commands::DEST_INBOX).join(QUARANTINE_DIR);
@@ -1170,13 +1684,13 @@ pub fn run(
         if conservative {
             let rel = write_proposal(
                 root,
-                now,
-                stem,
+                "delete-batch",
                 &format!("Delete expired quarantine item {stem}.md?"),
                 &format!(
                     "Quarantine TTL expired at unix {expires}. Standard/Aggressive intensity \
                      would move `{content_rel}` and its sidecar to `.myco/trash/{id}/`."
                 ),
+                &serde_json::json!({ "files": [content_rel.clone()] }),
             )?;
             manifest.created.push(rel);
             save_manifest(root, &manifest)?;
@@ -1216,12 +1730,13 @@ pub fn run(
         }
     }
 
-    // ⑥ Emerging-cluster + proposal pass — Task 7's job (design spec:
-    // "≥5 quarantined items with pairwise similarity above threshold ->
-    // 'new topic forming' proposal"). Seam: Task 7 wires a
-    // `detect_emerging_clusters(root, &ontology, cfg, &mut manifest)` call in
-    // right here, between the TTL pass and step ⑨ below — it should call
-    // `save_manifest` after its own pushes too, same as every pass above.
+    // ⑥ Emerging-cluster + proposal pass (Task 7, design spec: "≥5
+    // quarantined items with pairwise similarity above threshold -> 'new
+    // topic forming' proposal"), plus archiving any proposal the lifecycle
+    // already resolved. Both `save_manifest` after their own pushes, same as
+    // every pass above.
+    proposals += propose_emerging_clusters(root, &mut manifest)?;
+    archive_resolved_proposals(root, &mut manifest)?;
 
     // ⑦ Manifest — already persisted incrementally after every successful
     // move/trash/proposal above (`save_manifest`); nothing left to write.
@@ -1370,6 +1885,28 @@ mod tests {
     }
 
     const PROSE: &str = "This is a normal note about quantization techniques and how they reduce model size while preserving accuracy across a range of benchmarks and downstream tasks in real deployments, and it keeps going a little further so the byte count clears the junk-heuristic floor.";
+
+    /// Write a quarantined item's content file + verdict sidecar directly
+    /// (bypassing `scan`) — the Task 7 clustering/proposal tests need control
+    /// over the sidecar's `vector` field, which `scan`'s own embed closure
+    /// does not expose per-file. `expires` is far in the future so the TTL
+    /// pass never sweeps these away out from under a same-run cluster test.
+    fn write_quarantine_item(dir: &Path, stem: &str, vector: Vec<f32>) {
+        std::fs::write(dir.join(format!("{stem}.md")), format!("{PROSE} ({stem})")).unwrap();
+        let sidecar = serde_json::json!({
+            "tier": "quarantine",
+            "s_knn": 0.2,
+            "nearest_cluster": "topic",
+            "reason": "test",
+            "expires": now_secs() + 1_000_000,
+            "vector": vector,
+        });
+        std::fs::write(
+            dir.join(format!("{stem}.verdict.json")),
+            serde_json::to_string_pretty(&sidecar).unwrap(),
+        )
+        .unwrap();
+    }
 
     #[test]
     fn scan_scores_only_mature_unscored_items_within_budget() {
@@ -1857,5 +2394,214 @@ mod tests {
             assert_eq!(after.last_backlogs, vec![0, 0]);
             assert_eq!(after.pending_proposals, 0);
         });
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 7: emerging-cluster detection + proposal lifecycle.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn emerging_clusters_ignores_dissimilar_and_undersized_groups() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let quarantine = root.join("_inbox/quarantine");
+        std::fs::create_dir_all(&quarantine).unwrap();
+
+        // 5 similar items -> one qualifying group.
+        for i in 0..5 {
+            write_quarantine_item(&quarantine, &format!("sim{i}"), vec![1.0, 0.0]);
+        }
+        // 4 similar-among-themselves items -> group exists but below min_size.
+        for i in 0..4 {
+            write_quarantine_item(&quarantine, &format!("small{i}"), vec![0.0, 1.0]);
+        }
+        // A singleton, dissimilar to both groups (cosine ~0.71 < 0.9 threshold).
+        write_quarantine_item(&quarantine, "lonely", vec![0.5, 0.5]);
+
+        let groups = emerging_clusters(root, 5, 0.9);
+        assert_eq!(groups.len(), 1, "only the 5-item group clears min_size");
+        assert_eq!(groups[0].len(), 5);
+        for i in 0..5 {
+            assert!(groups[0].contains(&format!("_inbox/quarantine/sim{i}.md")));
+        }
+    }
+
+    #[test]
+    fn five_similar_quarantined_items_produce_one_proposal() {
+        crate::settings::test_support::with_isolated_data("distill-emerging-cluster", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let quarantine = root.join("_inbox/quarantine");
+            std::fs::create_dir_all(&quarantine).unwrap();
+            for stem in ["a", "b", "c", "d", "e"] {
+                write_quarantine_item(&quarantine, stem, vec![1.0, 0.0]);
+            }
+
+            let cfg = DistillConfig::default();
+            let report = run(root, &cfg, &dummy_embed).unwrap();
+            assert_eq!(report.proposals, 1);
+
+            let proposal_files = |dir: &Path| -> Vec<std::fs::DirEntry> {
+                std::fs::read_dir(dir)
+                    .unwrap()
+                    .flatten()
+                    .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("md"))
+                    .collect()
+            };
+
+            let entries = proposal_files(&root.join("work/feedback"));
+            assert_eq!(entries.len(), 1);
+            let content = std::fs::read_to_string(entries[0].path()).unwrap();
+            assert!(content.contains("type: distill-proposal"));
+            assert!(content.contains("action: admit-cluster"));
+            assert!(content.contains("status: pending"));
+            for stem in ["a", "b", "c", "d", "e"] {
+                assert!(content.contains(&format!("_inbox/quarantine/{stem}.md")));
+            }
+
+            // Re-running without resolving the proposal must not duplicate it
+            // — the no-dedup ceiling `write_proposal` used to have for every
+            // proposal kind is fixed for `admit-cluster` specifically.
+            let report2 = run(root, &cfg, &dummy_embed).unwrap();
+            assert_eq!(
+                report2.proposals, 0,
+                "the same file set already has a pending proposal"
+            );
+            assert_eq!(
+                proposal_files(&root.join("work/feedback")).len(),
+                1,
+                "still exactly one proposal file"
+            );
+        });
+    }
+
+    #[test]
+    fn approved_admit_cluster_moves_files_back_to_inbox() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let quarantine = root.join("_inbox/quarantine");
+        std::fs::create_dir_all(&quarantine).unwrap();
+        write_quarantine_item(&quarantine, "a", vec![1.0, 0.0]);
+        write_quarantine_item(&quarantine, "b", vec![1.0, 0.0]);
+
+        let payload = serde_json::json!({
+            "files": ["_inbox/quarantine/a.md", "_inbox/quarantine/b.md"],
+        });
+        let rel = write_proposal(
+            root,
+            "admit-cluster",
+            "New topic forming: test",
+            "body",
+            &payload,
+        )
+        .unwrap();
+
+        // Simulate the frontend's pending -> approved flip (Task 9) before
+        // the apply command runs.
+        let raw = std::fs::read_to_string(root.join(&rel)).unwrap();
+        std::fs::write(
+            root.join(&rel),
+            raw.replace("status: pending", "status: approved"),
+        )
+        .unwrap();
+
+        let result = apply_proposal(root, &rel).unwrap();
+        assert_eq!(result, rel);
+
+        assert!(root.join("_inbox/a.md").exists());
+        assert!(root.join("_inbox/b.md").exists());
+        assert!(!root.join("_inbox/quarantine/a.md").exists());
+        assert!(!root.join("_inbox/quarantine/a.verdict.json").exists());
+        assert!(!root.join("_inbox/quarantine/b.verdict.json").exists());
+
+        let content = std::fs::read_to_string(root.join(&rel)).unwrap();
+        assert!(content.contains("status: done"));
+        assert!(
+            content.contains("action: admit-cluster"),
+            "rest of frontmatter is untouched"
+        );
+    }
+
+    #[test]
+    fn archive_batch_and_delete_batch_apply_the_same_move_semantics_as_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("raw")).unwrap();
+        std::fs::write(root.join("raw/paper.md"), PROSE).unwrap();
+        set_mtime(&root.join("raw/paper.md"), old_mtime());
+        let mtime = mtime_secs(&root.join("raw/paper.md")).unwrap();
+
+        let archive_rel = write_proposal(
+            root,
+            "archive-batch",
+            "Archive raw/paper.md?",
+            "body",
+            &serde_json::json!({ "files": ["raw/paper.md"] }),
+        )
+        .unwrap();
+        apply_proposal(root, &archive_rel).unwrap();
+        assert!(!root.join("raw/paper.md").exists());
+        let month = month_bucket(mtime);
+        assert!(root.join(format!("raw/archive/{month}/paper.md")).exists());
+
+        let quarantine = root.join("_inbox/quarantine");
+        std::fs::create_dir_all(&quarantine).unwrap();
+        write_quarantine_item(&quarantine, "old", vec![1.0, 0.0]);
+        let delete_rel = write_proposal(
+            root,
+            "delete-batch",
+            "Delete expired quarantine item old.md?",
+            "body",
+            &serde_json::json!({ "files": ["_inbox/quarantine/old.md"] }),
+        )
+        .unwrap();
+        apply_proposal(root, &delete_rel).unwrap();
+        assert!(!quarantine.join("old.md").exists());
+        assert!(!quarantine.join("old.verdict.json").exists());
+        let slug = Path::new(&delete_rel)
+            .file_stem()
+            .unwrap()
+            .to_str()
+            .unwrap();
+        let trash_dir = root.join(".myco/trash").join(slug);
+        assert!(trash_dir.join("old.md").exists());
+        assert!(trash_dir.join("old.verdict.json").exists());
+    }
+
+    #[test]
+    fn dismissed_proposals_are_archived_by_next_run() {
+        crate::settings::test_support::with_isolated_data(
+            "distill-dismissed-proposal-archive",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                std::fs::create_dir_all(root.join("_inbox")).unwrap();
+
+                let rel = write_proposal(
+                    root,
+                    "archive-batch",
+                    "Archive raw/x.md?",
+                    "body",
+                    &serde_json::json!({ "files": ["raw/x.md"] }),
+                )
+                .unwrap();
+                let raw = std::fs::read_to_string(root.join(&rel)).unwrap();
+                std::fs::write(
+                    root.join(&rel),
+                    raw.replace("status: pending", "status: dismissed"),
+                )
+                .unwrap();
+
+                let cfg = DistillConfig::default();
+                run(root, &cfg, &dummy_embed).unwrap();
+
+                assert!(
+                    !root.join(&rel).exists(),
+                    "resolved proposal must leave work/feedback/"
+                );
+                let file_name = Path::new(&rel).file_name().unwrap();
+                assert!(root.join("work/feedback/archive").join(file_name).exists());
+            },
+        );
     }
 }

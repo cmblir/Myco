@@ -862,6 +862,8 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         last_run: 1755000000,
         last_backlogs: [40, 35, 30, 28, 22, 18, 15, 14, 13, 12],
       });
+    case "apply_distill_proposal":
+      return Promise.resolve(String(args.path ?? ""));
     case "get_settings":
       return Promise.resolve(
         AGENT_MODE

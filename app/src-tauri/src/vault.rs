@@ -638,7 +638,10 @@ pub fn read_file(path: &str) -> Result<FileContent, String> {
     })
 }
 
-fn pod_to_json(pod: gray_matter::Pod) -> serde_json::Value {
+/// `pub(crate)`: also `distill::apply_proposal`'s frontmatter `payload` reader
+/// (Task 7) — a proposal file's `payload:` value is exactly this same
+/// gray_matter `Pod` needing the same conversion.
+pub(crate) fn pod_to_json(pod: gray_matter::Pod) -> serde_json::Value {
     pod_to_json_depth(pod, 0)
 }
 

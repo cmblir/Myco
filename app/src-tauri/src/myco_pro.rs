@@ -251,7 +251,12 @@ pub async fn login(proxy_url: &str, email: &str, password: &str) -> Result<Login
 
 /// Join a proxy-returned, vault-root-relative path under `root`, rejecting any
 /// path that could escape the vault (absolute, backslash, or `..` segment).
-fn safe_join(root: &Path, rel: &str) -> Result<PathBuf, String> {
+///
+/// `pub(crate)`: `distill::apply_proposal` (Task 7) reuses this to confine
+/// both the proposal's own path and the file paths named in its `payload` —
+/// same "vault-relative string that must not escape root" need this was
+/// already solving.
+pub(crate) fn safe_join(root: &Path, rel: &str) -> Result<PathBuf, String> {
     let r = rel.trim();
     if r.is_empty() || r.starts_with('/') || r.contains('\\') || r.contains('\0') {
         return Err(format!("unsafe operation path: {rel}"));

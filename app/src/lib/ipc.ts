@@ -597,6 +597,9 @@ export const ipc = {
     invoke<number>("undo_distill_run", { vault, id }),
   distillStatus: (vault: string) =>
     invoke<DistillStatus>("distill_status", { vault }),
+  // Execute a pending distill proposal (Task 7, Phase A).
+  applyDistillProposal: (vault: string, path: string) =>
+    invoke<string>("apply_distill_proposal", { vault, path }),
   listProviderModels: (providerId: string) =>
     invoke<string[]>("list_provider_models", { providerId }),
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),

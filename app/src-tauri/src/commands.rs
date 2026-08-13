@@ -1612,6 +1612,22 @@ pub fn distill_status(
     Ok(crate::distill::status(std::path::Path::new(&root)))
 }
 
+/// Execute a pending distill proposal (Task 7, Phase A) — `admit-cluster`,
+/// `archive-batch`, or `delete-batch`. The frontend flips `pending` to
+/// `approved`/`dismissed` itself by rewriting the proposal file (Task 9);
+/// this command does the one lifecycle step that actually touches the
+/// filesystem beyond that flip, and marks the proposal `done`. See
+/// `distill::apply_proposal`'s own doc comment.
+#[tauri::command]
+pub fn apply_distill_proposal(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    path: String,
+) -> Result<String, String> {
+    let root = confine_root(&state, &vault)?;
+    crate::distill::apply_proposal(std::path::Path::new(&root), &path)
+}
+
 /// The bundled digest runner script (falls back to the repo path in dev).
 fn digest_script_path(app: &tauri::AppHandle) -> Result<String, String> {
     const REL: &str = "automation/digest.py";

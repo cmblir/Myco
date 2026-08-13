@@ -200,6 +200,7 @@ pub fn run() {
             commands::distill_run,
             commands::undo_distill_run,
             commands::distill_status,
+            commands::apply_distill_proposal,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path
