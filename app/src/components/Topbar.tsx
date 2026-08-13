@@ -1,19 +1,23 @@
-// Topbar — breadcrumb + meta + language switch.
+// Topbar — breadcrumb + meta + model status + background-job chips.
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { JSX } from "react";
-import { Icon } from "../lib/icons";
-import type { IconName } from "../lib/icons";
-import type { Lang, Strings } from "../lib/i18n";
+import { Icon, ProviderGlyph } from "../lib/icons";
+import type { IconName, ProviderId } from "../lib/icons";
+import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
+import type { RouteId } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useIngestStore } from "../stores/ingestStore";
 import { useLintStore } from "../stores/lintStore";
 import { useQueryStore } from "../stores/queryStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { useEnabledProviders } from "../lib/providers";
-import ModelSelect from "./ModelSelect";
+import { useReindexStore } from "../stores/reindexStore";
+import { useDistillRunStore } from "../stores/distillRunStore";
+import { PROVIDERS } from "../lib/providers";
 import { ipc } from "../lib/ipc";
+import type { MycoSettings } from "../lib/ipc";
 import { formatTicker } from "../lib/time";
 
 export default function Topbar({ t }: { t: Strings }): JSX.Element {
@@ -22,8 +26,6 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
   const setSplitRoute = useUIStore((s) => s.setSplitRoute);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const toggleCmd = useUIStore((s) => s.toggleCmd);
-  const lang = useUIStore((s) => s.lang);
-  const setLang = useUIStore((s) => s.setLang);
   const currentVault = useVaultStore((s) => s.currentVault);
 
   const projectName = currentVault?.name ?? t.app_name;
@@ -64,6 +66,7 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
       <IngestChip t={t} />
       <LintChip t={t} />
       <QueryChip t={t} />
+      <BusyJobsChip t={t} />
       <button className="pill pill-search" onClick={toggleCmd}>
         <Icon name="search" size={14} />
         <span className="pill-label">{t.ph_search}</span>
@@ -72,16 +75,6 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
         </span>
       </button>
       <ModelChip t={t} />
-      <select
-        className="pill"
-        value={lang}
-        onChange={(e) => setLang(e.target.value as Lang)}
-        style={{ paddingRight: 18, cursor: "pointer", appearance: "none" }}
-      >
-        <option value="en">EN</option>
-        <option value="ko">한국어</option>
-        <option value="ja">日本語</option>
-      </select>
     </div>
   );
 }
@@ -89,113 +82,192 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
 // Interactive picker for the ACTIVE query model (not just the Claude CLI): a
 // pill showing the provider + a green/grey ready dot that opens a popover to
 // switch provider/model. Reads/writes settingsStore.query_provider|query_model,
-// so the choice persists to disk and stays in sync with Settings → Model.
+// so the choice persists to disk and stays in sync with Settings → Model. The
+// popover is a status + shortcut (both tasks' provider/model/readiness, and a
+// button into Settings) — full editing stays on the Model tab, not rebuilt
+// here.
+//
 // Readiness: builtin-local ships in the app (always ready); CLI/daemon providers
 // get a live probe; API providers count as ready when enabled (their key lives
 // in the keychain — no cheap liveness check).
+//
+// The popover renders through a portal (not as a DOM child of .topbar): the
+// topbar scrolls horizontally when many run-chips are live (see .topbar's
+// overflow-x), and CSS forces overflow-y into the same clipping behavior the
+// moment overflow-x isn't `visible` — so a popover anchored inside it was
+// being silently clipped to the bar's height. That was the dead click: the
+// popover DID open, it just rendered somewhere the user couldn't see.
+function probeProviderReady(
+  provider: string,
+  settings: MycoSettings,
+): Promise<boolean> {
+  if (!provider) return Promise.resolve(false);
+  if (provider === "builtin-local") return Promise.resolve(true); // bundled in the app binary
+  if (provider === "anthropic-cli")
+    return ipc.claudeCheck().then((r) => r.installed);
+  if (provider === "ollama")
+    return ipc.ollamaStatus().then((r) => r.daemon_running);
+  return Promise.resolve(
+    (settings.providers as Record<string, boolean>)[
+      provider.replace(/-/g, "_")
+    ] === true,
+  );
+}
+
+/** Display name for a provider id, from the full catalog (not just the
+ * enabled subset — the popover shows status even for a provider that got
+ * disconnected out from under the current selection). */
+function providerName(id: string): string {
+  return PROVIDERS.find((p) => p.id === id)?.name ?? id;
+}
+
+/** Compact form of a model id for the pill: the glyph + nickname already say
+ * WHO, so drop the leading provider-family word — "claude-sonnet-4-6" ->
+ * "sonnet-4-6". Single-word ids (CLI aliases like "sonnet", "(default)")
+ * pass through unchanged. */
+function shortModel(model: string): string {
+  const i = model.indexOf("-");
+  return i > 0 ? model.slice(i + 1) : model;
+}
+
 function ModelChip({ t }: { t: Strings }): JSX.Element | null {
   const settings = useSettingsStore((s) => s.settings);
-  const update = useSettingsStore((s) => s.update);
-  const providers = useEnabledProviders();
-  const [ready, setReady] = useState(false);
+  const setRoute = useUIStore((s) => s.setRoute);
+  const [queryReady, setQueryReady] = useState(false);
+  const [ingestReady, setIngestReady] = useState(false);
   const [open, setOpen] = useState(false);
+  const [popPos, setPopPos] = useState<{ top: number; right: number } | null>(
+    null,
+  );
   const wrapRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
 
   const provider = settings?.query_provider ?? "";
   const model = settings?.query_model ?? "";
+  const isLocal = provider === "builtin-local";
 
-  const label =
-    provider === "builtin-local"
-      ? "local"
-      : provider === "anthropic-cli"
-        ? "claude"
-        : provider === "ollama"
-          ? "ollama"
-          : provider.replace(/-(api|cli)$/, "");
+  const label = isLocal
+    ? "local"
+    : provider === "anthropic-cli"
+      ? "claude"
+      : provider === "ollama"
+        ? "ollama"
+        : provider.replace(/-(api|cli)$/, "");
 
-  // Re-probe readiness whenever the query provider changes.
+  // Re-probe readiness (both tasks) whenever settings change.
   useEffect(() => {
-    if (!settings || !provider) return;
+    if (!settings) return;
     let alive = true;
-    (async () => {
-      try {
-        let ok: boolean;
-        if (provider === "builtin-local") {
-          ok = true; // bundled in the app binary
-        } else if (provider === "anthropic-cli") {
-          ok = (await ipc.claudeCheck()).installed;
-        } else if (provider === "ollama") {
-          ok = (await ipc.ollamaStatus()).daemon_running;
-        } else {
-          ok =
-            (settings.providers as Record<string, boolean>)[
-              provider.replace(/-/g, "_")
-            ] === true;
-        }
-        if (alive) setReady(ok);
-      } catch {
-        if (alive) setReady(false);
-      }
-    })();
+    probeProviderReady(settings.query_provider, settings)
+      .then((ok) => alive && setQueryReady(ok))
+      .catch(() => alive && setQueryReady(false));
+    probeProviderReady(settings.ingest_provider, settings)
+      .then((ok) => alive && setIngestReady(ok))
+      .catch(() => alive && setIngestReady(false));
     return () => {
       alive = false;
     };
-  }, [provider, settings]);
+  }, [settings]);
 
-  // Close the popover on outside-click / Escape.
+  // Close the popover on outside-click / Escape / resize. `onDown` must check
+  // BOTH the pill (wrapRef) and the portal-rendered popover (popRef) — they
+  // are siblings in the DOM once the popover portals to <body>, so checking
+  // wrapRef alone would treat every click inside the popover as "outside".
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node))
-        setOpen(false);
+      const target = e.target as Node;
+      if (wrapRef.current?.contains(target)) return;
+      if (popRef.current?.contains(target)) return;
+      setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
+    // ponytail: closes rather than repositions on resize — the topbar is
+    // sticky at the viewport top, so this only fires on an actual window
+    // resize, and reopening after is one click.
+    const onResize = () => setOpen(false);
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
+    window.addEventListener("resize", onResize);
     return () => {
       document.removeEventListener("mousedown", onDown);
       document.removeEventListener("keydown", onKey);
+      window.removeEventListener("resize", onResize);
     };
   }, [open]);
 
   if (!settings) return null;
 
+  const openPopover = (): void => {
+    const r = wrapRef.current?.getBoundingClientRect();
+    if (r) {
+      setPopPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
+    }
+    setOpen(true);
+  };
+
+  const readyWord = (ok: boolean): string =>
+    ok ? (t.tb_model_ready ?? "ready") : (t.tb_model_offline ?? "offline");
+
   return (
     <div className="model-chip-wrap" ref={wrapRef}>
       <button
-        className="pill"
-        onClick={() => setOpen((v) => !v)}
-        title={`${provider} · ${model || "(default)"}`}
-        aria-label={t.tb_model_picker ?? "Switch query model"}
+        className="pill model-chip"
+        onClick={() => (open ? setOpen(false) : openPopover())}
+        title={`${providerName(provider)} · ${model || "(default)"} · ${readyWord(queryReady)}`}
+        aria-label={t.tb_model_picker ?? "Model status"}
         aria-expanded={open}
       >
-        <span
-          className="dot"
-          style={{ background: ready ? "#16a34a" : "var(--ink-4)" }}
-        ></span>
-        <span className="pill-label">
-          {label} {ready ? "ready" : "offline"}
-        </span>
+        <ProviderGlyph id={provider as ProviderId} size={14} />
+        <span className="pill-label">{label}</span>
+        {!isLocal && model ? (
+          <span className="model-chip-id">{shortModel(model)}</span>
+        ) : null}
+        <span className={"dot" + (queryReady ? " is-ready" : "")}></span>
         <Icon name="chevD" size={12} />
       </button>
-      {open ? (
-        <div className="model-chip-pop">
-          <div className="muted" style={{ fontSize: 12, marginBottom: 8 }}>
-            {t.s_model_query}
-          </div>
-          <ModelSelect
-            t={t}
-            providers={providers}
-            provider={provider}
-            model={model}
-            onPick={(p, m) =>
-              void update({ query_provider: p, query_model: m })
-            }
-          />
-        </div>
-      ) : null}
+      {open && popPos
+        ? createPortal(
+            <div
+              className="model-chip-pop"
+              ref={popRef}
+              style={{ top: popPos.top, right: popPos.right }}
+            >
+              <div className="muted" style={{ fontSize: 12 }}>
+                {t.s_model}
+              </div>
+              <div className="model-chip-rows">
+                <div className="status-row">
+                  <span className={"dot" + (queryReady ? " is-ready" : "")}></span>
+                  <b>{t.s_model_query}</b>
+                  <span className="sr-action">
+                    {providerName(provider)} · {model || "—"}
+                  </span>
+                </div>
+                <div className="status-row">
+                  <span className={"dot" + (ingestReady ? " is-ready" : "")}></span>
+                  <b>{t.s_model_ingest}</b>
+                  <span className="sr-action">
+                    {providerName(settings.ingest_provider)} · {settings.ingest_model || "—"}
+                  </span>
+                </div>
+              </div>
+              <button
+                className="btn"
+                style={{ width: "100%", justifyContent: "center" }}
+                onClick={() => {
+                  setOpen(false);
+                  setRoute("settings");
+                }}
+              >
+                {t.tb_model_open_settings ?? "Open model settings"}
+              </button>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
@@ -251,37 +323,19 @@ function IngestChip({ t }: { t: Strings }): JSX.Element | null {
   return null;
 }
 
-// Same pattern as IngestChip, for Ask runs: the chat lives in queryStore, so
-// an answer keeps computing when the user leaves the Query page — this chip
-// is how they see it running (and find their way back).
+// Same pattern as IngestChip, for a finished Ask run: the chat lives in
+// queryStore, so an answer keeps computing when the user leaves the Query
+// page. The BUSY half of this (spinner + elapsed while an answer is still
+// coming) now lives in BusyJobsChip below, folded in with distill/reindex so
+// the three don't each show their own live pill at once — this component
+// only covers the done/error pop once an answer lands.
 function QueryChip({ t }: { t: Strings }): JSX.Element | null {
   const busy = useQueryStore((s) => s.busy);
-  const startedAt = useQueryStore((s) => s.startedAt);
   const seen = useQueryStore((s) => s.seen);
   const turns = useQueryStore((s) => s.turns);
   const setRoute = useUIStore((s) => s.setRoute);
 
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!busy) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [busy]);
-
-  if (busy) {
-    return (
-      <button
-        className="pill chip-live"
-        onClick={() => setRoute("query")}
-        title={t.q_answering ?? "answering…"}
-      >
-        <span className="ingest-chip-spinner" />
-        <span>
-          {t.nav_query} {startedAt ? formatTicker(now - startedAt) : ""}
-        </span>
-      </button>
-    );
-  }
+  if (busy) return null;
   const last = turns[turns.length - 1];
   if (!seen && last) {
     const ok = !last.error;
@@ -300,6 +354,73 @@ function QueryChip({ t }: { t: Strings }): JSX.Element | null {
     );
   }
   return null;
+}
+
+// Ask / distill / reindex, unified into ONE live pill: each already gets its
+// own busy state from an existing store (queryStore / distillRunStore /
+// reindexStore) — this just picks the highest-priority one that's currently
+// running and shows it, with a "+N" badge for however many others are also
+// in flight, so three concurrent background jobs don't crowd the bar with
+// three separate pills. Priority (most to least urgent to surface): Ask,
+// since the user is actively waiting on it; distill; reindex.
+function BusyJobsChip({ t }: { t: Strings }): JSX.Element | null {
+  const askBusy = useQueryStore((s) => s.busy);
+  const askStartedAt = useQueryStore((s) => s.startedAt);
+  const distillBusy = useDistillRunStore((s) => s.running);
+  const reindexStage = useReindexStore((s) => s.stage);
+  const reindexDone = useReindexStore((s) => s.done);
+  const reindexTotal = useReindexStore((s) => s.total);
+  const reindexPage = useReindexStore((s) => s.page);
+  const setRoute = useUIStore((s) => s.setRoute);
+
+  const reindexBusy = reindexStage === "loading-model" || reindexStage === "indexing";
+  const anyBusy = askBusy || distillBusy || reindexBusy;
+
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!anyBusy) return;
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [anyBusy]);
+
+  if (!anyBusy) return null;
+
+  const jobs: { label: string; route: RouteId }[] = [];
+  if (askBusy) {
+    jobs.push({
+      label: `${t.nav_query} ${askStartedAt ? formatTicker(now - askStartedAt) : ""}`.trim(),
+      route: "query",
+    });
+  }
+  if (distillBusy) {
+    // Distill has no dedicated page of its own — its status card lives on
+    // Overview.
+    jobs.push({ label: t.set_distill_running ?? "Distilling…", route: "overview" });
+  }
+  if (reindexBusy) {
+    const label =
+      reindexStage === "loading-model"
+        ? (t.s_embeddings_loading_model ?? "Loading model…")
+        : `${t.s_embeddings_indexing ?? "Indexing…"} ${reindexDone}/${reindexTotal}${reindexPage ? " — " + reindexPage : ""}`;
+    // Settings opens on its "model" tab by default, where the reindex card
+    // lives — no tab deep-link needed.
+    jobs.push({ label, route: "settings" });
+  }
+
+  const top = jobs[0];
+  const extra = jobs.length - 1;
+
+  return (
+    <button
+      className="pill chip-live"
+      onClick={() => setRoute(top.route)}
+      title={jobs.map((j) => j.label).join(" · ")}
+    >
+      <span className="ingest-chip-spinner" />
+      <span className="job-chip-label">{top.label}</span>
+      {extra > 0 ? <span className="pill-badge">+{extra}</span> : null}
+    </button>
+  );
 }
 
 // Same pattern as IngestChip, for lint runs: spinner while running, then a

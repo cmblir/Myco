@@ -809,6 +809,9 @@ export interface Strings {
   tb_lint?: string;
   tb_toggle_sidebar?: string;
   tb_model_picker?: string;
+  tb_model_ready?: string;
+  tb_model_offline?: string;
+  tb_model_open_settings?: string;
   // Graph toolbar.
   gr_zoom_out?: string;
   gr_fit?: string;
@@ -1693,7 +1696,10 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_semantic: "Related (semantic)",
     tb_lint: "Lint",
     tb_toggle_sidebar: "Toggle sidebar (⌘B)",
-    tb_model_picker: "Switch query model",
+    tb_model_picker: "Model status",
+    tb_model_ready: "ready",
+    tb_model_offline: "offline",
+    tb_model_open_settings: "Open model settings",
     gr_zoom_out: "Zoom out",
     gr_fit: "Fit",
     gr_zoom_in: "Zoom in",
@@ -2579,7 +2585,10 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_semantic: "관련 (의미)",
     tb_lint: "린트",
     tb_toggle_sidebar: "사이드바 토글 (⌘B)",
-    tb_model_picker: "질문 모델 변경",
+    tb_model_picker: "모델 상태",
+    tb_model_ready: "준비됨",
+    tb_model_offline: "오프라인",
+    tb_model_open_settings: "모델 설정 열기",
     gr_zoom_out: "축소",
     gr_fit: "맞춤",
     gr_zoom_in: "확대",
@@ -3346,7 +3355,10 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_semantic: "関連（意味）",
     tb_lint: "リント",
     tb_toggle_sidebar: "サイドバー切替 (⌘B)",
-    tb_model_picker: "質問用モデルを変更",
+    tb_model_picker: "モデル状況",
+    tb_model_ready: "準備完了",
+    tb_model_offline: "オフライン",
+    tb_model_open_settings: "モデル設定を開く",
     gr_zoom_out: "ズームアウト",
     gr_fit: "全体表示",
     gr_zoom_in: "ズームイン",

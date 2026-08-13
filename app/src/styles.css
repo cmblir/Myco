@@ -420,6 +420,10 @@ select {
 .status-row b {
   color: var(--ink);
   font-weight: 500;
+  /* Never let a label wrap mid-word (the model popover's Korean "질문용
+     모델" broke between 모/델) — the row flexes, the label doesn't. */
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .sdot {
   width: 6px;
@@ -483,13 +487,17 @@ select {
 .pill {
   display: inline-flex;
   align-items: center;
+  height: 28px;
   gap: 6px;
-  padding: 4px 10px;
+  padding: 0 12px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--bg);
   color: var(--ink-2);
   font-size: 12.5px;
+  transition:
+    background var(--dur-quick),
+    border-color var(--dur-quick);
 }
 .pill:hover {
   background: var(--bg-hover);
@@ -499,7 +507,6 @@ select {
 .pill-icon {
   padding: 0;
   width: 28px;
-  height: 26px;
   justify-content: center;
   cursor: pointer;
   color: var(--ink-2);
@@ -512,11 +519,19 @@ select {
 .pill-icon.is-active:hover {
   background: var(--accent, var(--ink));
 }
-.pill .dot {
+/* Status dot, reused inside pills (ready/offline, run-outcome) and inside the
+   model popover's status rows. Defaults to the "off" tone; `.is-ready` (or an
+   inline background, for the red/green run-outcome chips) overrides it. */
+.dot {
   width: 6px;
   height: 6px;
-  background: #16a34a;
+  flex-shrink: 0;
+  background: var(--ink-4);
   border-radius: 50%;
+}
+.dot.is-ready {
+  background: #16a34a;
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.15);
 }
 .kbd {
   font-family: var(--font-mono);
@@ -527,7 +542,11 @@ select {
   padding: 1px 4px;
 }
 
-/* Topbar model picker: chip + anchored popover panel. */
+/* Topbar model picker: chip + a portal-rendered popover panel (see
+   TopBar.tsx's ModelChip comment — the popover can't be a DOM descendant of
+   .topbar without inheriting its scroll clipping). Position is set inline
+   (top/right, computed from the chip's own rect) since a portal has no CSS
+   anchor to the chip to position against. */
 .model-chip-wrap {
   position: relative;
   display: inline-flex;
@@ -535,17 +554,35 @@ select {
 .model-chip-wrap .pill {
   cursor: pointer;
 }
+.model-chip-id {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-3);
+  max-width: 92px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .model-chip-pop {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
+  position: fixed;
   z-index: 30;
   width: min(340px, 90vw);
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--r);
   background: var(--bg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+  box-shadow: var(--shadow-pop);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.model-chip-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+  border-top: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line-soft);
 }
 
 /* Workspace */
@@ -3736,6 +3773,25 @@ hr {
 }
 .chip-pop {
   animation: chip-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* BusyJobsChip: the live label can carry a page path (reindex), so it
+   ellipsizes instead of stretching the pill; the "+N" badge for however many
+   other jobs are also running sits right after it. */
+.job-chip-label {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pill-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--ink-4);
+  background: var(--bg-hover);
+  border-radius: 999px;
+  padding: 0 5px;
+  line-height: 1.4;
 }
 
 @media (prefers-reduced-motion: reduce) {

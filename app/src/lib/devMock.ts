@@ -899,7 +899,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(null);
     }
     case "distill_run":
-      return Promise.resolve({
+      // Paced like mockReindex above: instant would resolve within the same
+      // tick runDistillGuarded sets its in-flight flag, so nothing (a test,
+      // the Topbar's busy chip) could ever observe the run actually running.
+      return sleep(1200).then(() => ({
         id: "19700101T000000",
         scan: {
           scored: 0,
@@ -913,7 +916,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         trashed: 0,
         proposals: 0,
         backlog_after: 0,
-      });
+      }));
     case "undo_distill_run":
       return Promise.resolve(0);
     case "distill_status":
