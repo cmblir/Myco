@@ -622,6 +622,26 @@ fn manifest_path(root: &Path, id: &str) -> PathBuf {
     dir(root).join("distill-runs").join(format!("{id}.json"))
 }
 
+/// Atomically (over)write `.myco/distill-runs/<id>.json` — same tmp+rename
+/// pattern as `config_save`/`state_save`. Called after EVERY successful
+/// archive move, trash move, and proposal write in `run`, not once at the
+/// end: a mid-run I/O failure (the next op's `create_dir_all`/`rename`)
+/// aborts `run` via `?`, and without an incremental save every op that
+/// already succeeded would be recorded nowhere — invisible to `undo`, and
+/// invisible to the 30-day trash purge, which would then permanently delete
+/// trashed files with zero record they ever existed. The file on disk always
+/// covers exactly what has actually happened so far, never less.
+fn save_manifest(root: &Path, m: &RunManifest) -> Result<(), String> {
+    let target = manifest_path(root, &m.id);
+    let runs_dir = target.parent().ok_or("manifest path has no parent")?;
+    std::fs::create_dir_all(runs_dir).map_err(|e| format!("create distill-runs dir: {e}"))?;
+    let raw = serde_json::to_string_pretty(m).map_err(|e| format!("serialize manifest: {e}"))?;
+    let tmp = runs_dir.join(format!(".{}.json.tmp", m.id));
+    std::fs::write(&tmp, raw).map_err(|e| format!("write tmp manifest: {e}"))?;
+    std::fs::rename(&tmp, &target).map_err(|e| format!("rename manifest: {e}"))?;
+    Ok(())
+}
+
 /// UTC (proleptic Gregorian) `(year, month, day, hour, minute, second)` from a
 /// unix timestamp — Howard Hinnant's `civil_from_days` algorithm,
 /// the same one `commands::current_month` uses (that one is hardcoded to
@@ -842,27 +862,74 @@ fn move_back(root: &Path, entry: &MoveEntry, run_id: &str, run_time: i64) -> boo
     std::fs::rename(&to_path, &from_path).is_ok()
 }
 
+/// Paths `run` can touch — the only ones ever staged, so a distill commit
+/// never absorbs an unrelated user edit sitting elsewhere in the vault.
+/// Mirrors the `git_commit` MCP tool's approach (`mcp_native.rs`): check each
+/// path's existence before staging it, rather than pass a missing pathspec to
+/// git (which errors on one) or fall back to `git add -A`.
+const GIT_COMMIT_PATHS: &[&str] = &[
+    "raw",
+    crate::commands::DEST_INBOX,
+    crate::commands::DEST_SESSIONS,
+    "work",
+    "ingest-reports",
+];
+
 /// Commit this run's changes when the vault is itself a git repo — never
-/// initializes one. Best-effort: `git commit` exits non-zero when there is
-/// nothing staged (a run that moved/trashed/created nothing), which is not a
-/// failure worth surfacing.
+/// initializes one, and never stages anything outside `GIT_COMMIT_PATHS`
+/// plus `.myco` (and `.myco` only when `git ls-files` shows the vault
+/// already tracks it — a vault that gitignores its own state dir must not
+/// have it force-added just because this run happened to touch it). Best-
+/// effort: `git commit` exits non-zero when there is nothing staged (a run
+/// that moved/trashed/created nothing), which is not a failure worth
+/// surfacing — but a `git add` that fails on an existing, non-ignored path IS
+/// unexpected, so the commit is skipped (with a warning) rather than run
+/// against a possibly-incomplete stage.
 fn git_commit_run(root: &Path, run_id: &str) {
     if !root.join(".git").exists() {
         return;
     }
-    if let Err(e) = std::process::Command::new("git")
-        .args(["add", "-A"])
-        .current_dir(root)
-        .output()
-    {
-        eprintln!("distill run {run_id}: git add failed: {e}");
-        return;
+    let git = |args: &[&str]| {
+        std::process::Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+    };
+
+    let mut paths: Vec<&str> = GIT_COMMIT_PATHS
+        .iter()
+        .copied()
+        .filter(|p| root.join(p).exists())
+        .collect();
+    if root.join(".myco").exists() {
+        if let Ok(o) = git(&["ls-files", "--", ".myco"]) {
+            if o.status.success() && !o.stdout.is_empty() {
+                paths.push(".myco");
+            }
+        }
     }
-    if let Err(e) = std::process::Command::new("git")
-        .args(["commit", "-m", &format!("distill: run {run_id}")])
-        .current_dir(root)
-        .output()
-    {
+    if paths.is_empty() {
+        return; // nothing distill touches even exists yet
+    }
+
+    let mut add_args = vec!["add"];
+    add_args.extend(paths);
+    match git(&add_args) {
+        Ok(o) if !o.status.success() => {
+            eprintln!(
+                "distill run {run_id}: git add failed, skipping commit: {}",
+                String::from_utf8_lossy(&o.stderr).trim()
+            );
+            return;
+        }
+        Err(e) => {
+            eprintln!("distill run {run_id}: git add failed, skipping commit: {e}");
+            return;
+        }
+        _ => {}
+    }
+
+    if let Err(e) = git(&["commit", "-m", &format!("distill: run {run_id}")]) {
         eprintln!("distill run {run_id}: git commit failed: {e}");
     }
 }
@@ -955,7 +1022,11 @@ fn render_report(
 ///    at Conservative. Trash dirs whose entire retention window has elapsed
 ///    are purged regardless of this run's intensity.
 /// 6. Emerging-cluster + proposal pass — Task 7's job; no call here yet.
-/// 7. Write the undo manifest (`.myco/distill-runs/<id>.json`).
+/// 7. The undo manifest (`.myco/distill-runs/<id>.json`) — NOT a single write
+///    at the end: `save_manifest` persists it after every successful move,
+///    trash, and proposal in steps 4-6, so a mid-run I/O failure never loses
+///    the record of what already happened (only what would have happened
+///    next).
 /// 8. Write the human report (`ingest-reports/distill-<id>.md`).
 /// 9. Append this run's backlog to the rolling trend, and commit if the
 ///    vault is a git repo.
@@ -996,6 +1067,10 @@ pub fn run(
         started_at: now,
         ..Default::default()
     };
+    // Persist immediately — the manifest exists on disk from before the
+    // first op, not just after it, so even a crash on the very first move
+    // leaves a valid (empty) manifest rather than no manifest at all.
+    save_manifest(root, &manifest)?;
     let mut archived = 0usize;
     let mut proposals = 0usize;
 
@@ -1039,6 +1114,7 @@ pub fn run(
                 ),
             )?;
             manifest.created.push(rel);
+            save_manifest(root, &manifest)?;
             proposals += 1;
         } else {
             let archive_dir = root.join("raw/archive").join(month_bucket(mtime));
@@ -1050,6 +1126,7 @@ pub fn run(
                 from: from_rel,
                 to: rel_string(root, &to_path),
             });
+            save_manifest(root, &manifest)?;
             archived += 1;
         }
     }
@@ -1102,6 +1179,7 @@ pub fn run(
                 ),
             )?;
             manifest.created.push(rel);
+            save_manifest(root, &manifest)?;
             proposals += 1;
         } else {
             std::fs::create_dir_all(&trash_dir).map_err(|e| format!("create trash dir: {e}"))?;
@@ -1111,6 +1189,7 @@ pub fn run(
                 from: content_rel,
                 to: rel_string(root, &to_content),
             });
+            save_manifest(root, &manifest)?;
             let to_sidecar = free_path(&trash_dir.join(&name));
             std::fs::rename(&sidecar_path, &to_sidecar)
                 .map_err(|e| format!("trash sidecar move: {e}"))?;
@@ -1118,6 +1197,7 @@ pub fn run(
                 from: sidecar_rel,
                 to: rel_string(root, &to_sidecar),
             });
+            save_manifest(root, &manifest)?;
             trashed += 1;
         }
     }
@@ -1140,19 +1220,11 @@ pub fn run(
     // "≥5 quarantined items with pairwise similarity above threshold ->
     // 'new topic forming' proposal"). Seam: Task 7 wires a
     // `detect_emerging_clusters(root, &ontology, cfg, &mut manifest)` call in
-    // right here, between the TTL pass and the manifest write below.
+    // right here, between the TTL pass and step ⑨ below — it should call
+    // `save_manifest` after its own pushes too, same as every pass above.
 
-    // ⑦ Manifest.
-    let manifest_file = manifest_path(root, &id);
-    std::fs::create_dir_all(
-        manifest_file
-            .parent()
-            .ok_or("manifest path has no parent")?,
-    )
-    .map_err(|e| format!("create distill-runs dir: {e}"))?;
-    let manifest_raw =
-        serde_json::to_string_pretty(&manifest).map_err(|e| format!("serialize manifest: {e}"))?;
-    std::fs::write(&manifest_file, manifest_raw).map_err(|e| format!("write manifest: {e}"))?;
+    // ⑦ Manifest — already persisted incrementally after every successful
+    // move/trash/proposal above (`save_manifest`); nothing left to write.
 
     // ⑨ (backlog half) Append this run's backlog to the rolling trend, so the
     // report below and the returned `RunReport` show the same number.
@@ -1568,6 +1640,73 @@ mod tests {
             .unwrap();
             assert!(report_raw.contains(&report.id));
             assert!(report_raw.contains("1 moved"));
+        });
+    }
+
+    #[test]
+    fn crash_mid_run_preserves_manifest_for_completed_moves() {
+        crate::settings::test_support::with_isolated_data("distill-run-crash-safety", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("raw")).unwrap();
+            std::fs::create_dir_all(root.join("wiki")).unwrap();
+            std::fs::create_dir_all(root.join("_inbox/quarantine")).unwrap();
+            // Archive pass: one item that will complete successfully, and be
+            // persisted, BEFORE the TTL pass below hits its induced failure.
+            std::fs::write(root.join("raw/a.md"), PROSE).unwrap();
+            std::fs::write(root.join("wiki/source-a.md"), "a source summary page").unwrap();
+            set_mtime(&root.join("raw/a.md"), old_mtime());
+
+            // TTL pass: an expired quarantine item whose trash move will fail.
+            std::fs::write(root.join("_inbox/quarantine/q.md"), PROSE).unwrap();
+            let expired = serde_json::json!({
+                "tier": "quarantine",
+                "s_knn": 0.2,
+                "nearest_cluster": "topic",
+                "reason": "test",
+                "expires": now_secs() - 1000,
+                "vector": [1.0, 0.0],
+            });
+            std::fs::write(
+                root.join("_inbox/quarantine/q.verdict.json"),
+                serde_json::to_string_pretty(&expired).unwrap(),
+            )
+            .unwrap();
+
+            // Poison `.myco/trash` as a plain FILE (not a directory), so the
+            // TTL pass's `create_dir_all(&trash_dir)` fails for every id —
+            // deterministic, and independent of `_inbox` read_dir order
+            // (unlike colliding on one specific run id).
+            std::fs::create_dir_all(root.join(".myco")).unwrap();
+            std::fs::write(root.join(".myco/trash"), "not a directory").unwrap();
+
+            let cfg = DistillConfig::default(); // Standard intensity
+            let err = run(root, &cfg, &dummy_embed).unwrap_err();
+            assert!(err.contains("trash dir"), "unexpected error: {err}");
+
+            // The archive pass ran to completion (it precedes the TTL pass,
+            // which is where the induced failure lives), so a.md must
+            // actually be gone from raw/ ...
+            assert!(!root.join("raw/a.md").exists());
+            // ... and the crash must not have erased the record of it: the
+            // manifest on disk (persisted incrementally, not just at the end)
+            // still names that move.
+            let runs_dir = root.join(".myco/distill-runs");
+            let entries: Vec<_> = std::fs::read_dir(&runs_dir).unwrap().flatten().collect();
+            assert_eq!(entries.len(), 1, "exactly one manifest written");
+            let raw = std::fs::read_to_string(entries[0].path()).unwrap();
+            let manifest: serde_json::Value = serde_json::from_str(&raw).unwrap();
+            let moves = manifest["moves"].as_array().unwrap();
+            assert_eq!(moves.len(), 1);
+            assert_eq!(moves[0]["from"], "raw/a.md");
+            let to = moves[0]["to"].as_str().unwrap();
+            assert!(
+                root.join(to).exists(),
+                "the manifest's move must match reality on disk"
+            );
+            // The failed-halfway TTL item must not appear at all — it never
+            // got a chance to push into the manifest.
+            assert!(manifest["trashed"].as_array().unwrap().is_empty());
         });
     }
 
