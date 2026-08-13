@@ -69,6 +69,23 @@ pub struct Hit {
     pub score: f32,
 }
 
+/// True for a page the distillation gate's cold tier owns: archived sources
+/// (`raw/archive/YYYY-MM/`), gate-quarantined inflow (`_inbox/quarantine/`),
+/// and internal cache/state (`.myco/`). These are never indexed and any
+/// existing record for one is dropped on the next prune — see
+/// `app/docs/specs/2026-08-13-ontology-distill-design.md` ("Archive
+/// distilled sources ... drop from the active embedding index").
+///
+/// Distinct from `is_machine_written`: that one hides noisy-but-live pages
+/// (raw/sessions/_inbox) from the link-suggestions panel while leaving them
+/// fully indexed and searchable; this one says a page must not be in the
+/// active index at all. Do not merge the two.
+pub fn is_cold(page: &str) -> bool {
+    page.starts_with("raw/archive/")
+        || page.starts_with("_inbox/quarantine/")
+        || page.starts_with(".myco/")
+}
+
 impl VectorStore {
     /// Index file path for a given vault root, under `<app-data>/embeddings/`.
     pub fn path_for(vault_root: &str) -> Result<PathBuf, String> {
@@ -1346,5 +1363,24 @@ mod suggestion_scope_tests {
     fn a_vault_of_only_machine_pages_suggests_nothing_rather_than_noise() {
         let s = store_with(&["sessions/a.md", "sessions/b.md", "raw/c.md"]);
         assert!(s.centroid_edges(4).is_empty());
+    }
+
+    #[test]
+    fn cold_pages_are_excluded_and_pruned() {
+        assert!(is_cold("raw/archive/2026-08/x.md"));
+        assert!(is_cold("_inbox/quarantine/y.md"));
+        assert!(is_cold(".myco/ontology.json"));
+        assert!(!is_cold("raw/x.md"));
+        assert!(!is_cold("_inbox/y.md"));
+        assert!(!is_cold("wiki/a.md"));
+
+        let mut s = store_with(&["wiki/a.md", "raw/archive/2026-08/x.md"]);
+        let existing: HashSet<String> = ["wiki/a.md", "raw/archive/2026-08/x.md"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        let live: HashSet<String> = existing.iter().filter(|p| !is_cold(p)).cloned().collect();
+        s.prune(&live);
+        assert!(s.records.iter().all(|r| r.page == "wiki/a.md"));
     }
 }

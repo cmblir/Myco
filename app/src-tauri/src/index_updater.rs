@@ -16,7 +16,7 @@ use tauri::Manager as _;
 
 use crate::commands::LocalLlmState;
 use crate::retrieval::{Bm25Cache, Bm25Index};
-use crate::vector_index::{VectorCache, VectorStore};
+use crate::vector_index::{is_cold, VectorCache, VectorStore};
 
 /// A message for the actor. `Dirty` marks one vault-relative page path as
 /// needing re-embedding; `Rebind` points the actor at a (possibly new) vault
@@ -201,9 +201,13 @@ fn wiki_rel_of(root: &Path, abs: &Path) -> Option<String> {
 
 /// Whether a vault-relative path is eligible for indexing at all — the same
 /// check as `wiki_rel_of`, but for a path already known to be vault-relative
-/// (as dirty paths and rebind's "*" sentinel are).
+/// (as dirty paths and rebind's "*" sentinel are). The `is_cold` check is a
+/// no-op today (its prefixes are all outside `wiki/`, the only tree this
+/// already accepts) but keeps this predicate in lockstep with the reindex
+/// walk's cold filter (`collect_wiki_pages`) rather than two places silently
+/// agreeing by coincidence of today's folder layout.
 fn should_index(rel: &str) -> bool {
-    rel.starts_with("wiki/") && rel.ends_with(".md")
+    rel.starts_with("wiki/") && rel.ends_with(".md") && !is_cold(rel)
 }
 
 /// Start watching `root/wiki` for filesystem changes, marking each changed

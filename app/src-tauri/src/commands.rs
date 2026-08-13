@@ -1730,7 +1730,7 @@ pub async fn mcp_connect() -> Result<String, String> {
 
 use crate::embeddings;
 use crate::perf;
-use crate::vector_index::{EdgeLookup, Hit as VecHit, VectorCache, VectorStore};
+use crate::vector_index::{is_cold, EdgeLookup, Hit as VecHit, VectorCache, VectorStore};
 
 /// Embed a batch of texts with the chosen provider. `role` picks the query/doc
 /// instruction prefix for asymmetric embedding models (bge-m3 ignores it — see
@@ -1778,6 +1778,13 @@ async fn embed_texts(
 }
 
 /// Collect `wiki/**/*.md` pages as (relpath, stem, content).
+///
+/// This is the one walk both `reindex_embeddings` and `index_updater`'s
+/// reconcile pass use, so it is also the one place that decides what the
+/// active index may ever hold: `is_cold` pages (archived/quarantined/cache)
+/// are dropped here, which is what keeps them out of both the embed loop and
+/// the `existing`/`present` set each caller later hands to `prune` — a
+/// cold-tier record can never survive the next reindex.
 pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String, String)> {
     fn walk(
         dir: &std::path::Path,
@@ -1815,6 +1822,12 @@ pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String,
     // each session into a wiki page instead would spend a paid ingest per work
     // log to produce pages titled after prompt boilerplate.
     walk(&root.join(DEST_SESSIONS), root, &mut out);
+    // Cold-tier pages never belong in the active index — see this fn's doc
+    // comment. A no-op today (both walk roots above are structurally disjoint
+    // from every `is_cold` prefix), but this is the single choke point every
+    // (re)indexing caller routes through, so it is where the guard lives
+    // rather than duplicated at each caller.
+    out.retain(|(rel, _, _)| !is_cold(rel));
     out
 }
 
