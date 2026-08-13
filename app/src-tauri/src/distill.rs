@@ -149,6 +149,11 @@ pub struct DistillState {
     pub model: String,
     #[serde(default)]
     pub scored: HashMap<String, ScoredEntry>,
+    /// Reject-tier items' TTL ledger — `rel path -> expiry unix seconds`,
+    /// written by `scan` alongside `scored`. Nothing reads this map today:
+    /// `run`'s TTL pass only sweeps `_inbox/quarantine/` sidecars past their
+    /// own `expires`, never a rejected file. Kept as Phase B's planned
+    /// reject-TTL sweep input.
     #[serde(default)]
     pub rejected_ttl: HashMap<String, i64>,
     /// Unix seconds of the last completed `run`, for the status view.
@@ -412,10 +417,10 @@ struct Taken {
 /// without spending an embedding, batch-embed the rest and run them through
 /// `ontology::admit`, then act on the verdict: quarantine moves the file into
 /// `_inbox/quarantine/` with a verdict sidecar, reject adds a
-/// `rejected_ttl` ledger entry (the file stays put — Task 6's run trashes
-/// expired ones), full/summary are only recorded (Phase B consumes them).
-/// Every scored item — whatever its tier — is recorded in the ledger so an
-/// unchanged file is never re-scored.
+/// `rejected_ttl` ledger entry (the file stays put — see that field's own
+/// doc comment: nothing sweeps it yet), full/summary are only recorded
+/// (Phase B consumes them). Every scored item — whatever its tier — is
+/// recorded in the ledger so an unchanged file is never re-scored.
 pub fn scan(
     root: &Path,
     o: &Ontology,
