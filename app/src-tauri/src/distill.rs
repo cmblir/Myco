@@ -318,10 +318,27 @@ fn truncate_chars(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
+/// `line` with a leading ATX heading marker stripped, if it actually has
+/// one: 1-6 `#` characters followed by a space or nothing else on the line —
+/// the CommonMark ATX heading rule. Anything else starting with `#` (a
+/// hashtag, "#1 issue", 7+ `#`s) is not a heading and comes back unchanged;
+/// stripping any leading `#` run unconditionally turned "#hashtag trending"
+/// into "hashtag trending".
+fn strip_atx_heading(line: &str) -> &str {
+    let hashes = line.bytes().take_while(|&b| b == b'#').count();
+    let is_heading =
+        (1..=6).contains(&hashes) && matches!(line.as_bytes().get(hashes), None | Some(b' '));
+    if is_heading {
+        line[hashes..].trim_start()
+    } else {
+        line
+    }
+}
+
 /// First non-empty line of `content`'s BODY (frontmatter stripped, via the
 /// same `gray_matter` parse `proposal_frontmatter` uses — not hand-rolled),
-/// with a leading markdown heading marker (`#`, `##`, …) trimmed off, capped
-/// at 120 chars. A real `_inbox/` import always opens with a YAML
+/// with a leading ATX heading marker (`strip_atx_heading`) trimmed off,
+/// capped at 120 chars. A real `_inbox/` import always opens with a YAML
 /// frontmatter block (`importers::Conversation::to_inbox_doc`) followed by
 /// `# <title>` — without stripping both, a summary-tier digest line read
 /// "- --- — `path` (low confidence)" instead of the title. `None` only when
@@ -332,7 +349,7 @@ fn first_summary_line(content: &str) -> Option<String> {
         .map(|p| p.content)
         .unwrap_or_else(|_| content.to_string());
     let line = body.lines().find(|l| !l.trim().is_empty())?.trim();
-    let line = line.trim_start_matches('#').trim();
+    let line = strip_atx_heading(line);
     Some(truncate_chars(line, 120))
 }
 
@@ -2956,6 +2973,14 @@ mod tests {
             .iter()
             .map(|_| vec![0.4_f32, 0.0, (1.0 - 0.16_f32).sqrt()])
             .collect())
+    }
+
+    #[test]
+    fn strip_atx_heading_only_strips_real_headings() {
+        assert_eq!(strip_atx_heading("#hashtag trending"), "#hashtag trending");
+        assert_eq!(strip_atx_heading("#1 issue"), "#1 issue");
+        assert_eq!(strip_atx_heading("## Real heading"), "Real heading");
+        assert_eq!(strip_atx_heading("# Title"), "Title");
     }
 
     #[test]
