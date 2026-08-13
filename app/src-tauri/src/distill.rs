@@ -318,6 +318,24 @@ fn truncate_chars(s: &str, n: usize) -> String {
     s.chars().take(n).collect()
 }
 
+/// First non-empty line of `content`'s BODY (frontmatter stripped, via the
+/// same `gray_matter` parse `proposal_frontmatter` uses — not hand-rolled),
+/// with a leading markdown heading marker (`#`, `##`, …) trimmed off, capped
+/// at 120 chars. A real `_inbox/` import always opens with a YAML
+/// frontmatter block (`importers::Conversation::to_inbox_doc`) followed by
+/// `# <title>` — without stripping both, a summary-tier digest line read
+/// "- --- — `path` (low confidence)" instead of the title. `None` only when
+/// the body has no non-empty line at all (unreadable/empty file).
+fn first_summary_line(content: &str) -> Option<String> {
+    let body = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+        .parse::<gray_matter::Pod>(content)
+        .map(|p| p.content)
+        .unwrap_or_else(|_| content.to_string());
+    let line = body.lines().find(|l| !l.trim().is_empty())?.trim();
+    let line = line.trim_start_matches('#').trim();
+    Some(truncate_chars(line, 120))
+}
+
 fn tier_str(t: Tier) -> &'static str {
     match t {
         Tier::Full => "full",
@@ -1932,11 +1950,10 @@ pub fn run(
         let Some(mtime) = mtime_secs(&path) else {
             continue;
         };
-        let Some(first_line) = std::fs::read_to_string(&path).ok().and_then(|c| {
-            c.lines()
-                .find(|l| !l.trim().is_empty())
-                .map(|l| truncate_chars(l.trim(), 120))
-        }) else {
+        let Some(first_line) = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|c| first_summary_line(&c))
+        else {
             continue; // unreadable/empty — nothing to digest
         };
         let file_name = path
@@ -2388,9 +2405,17 @@ pub fn archive_digested_sessions(
     day: &str,
     files: &[String],
 ) -> Result<String, String> {
+    // Same digit-run + dash shape check `session_day`/`session_bucket` use —
+    // `day` is IPC input, so this must reject a non-numeric day string
+    // outright rather than let it become a junk `sessions/archive/<junk>/`
+    // directory.
+    let b = day.as_bytes();
     let valid_day = day.len() == 10
-        && day.as_bytes().get(4) == Some(&b'-')
-        && day.as_bytes().get(7) == Some(&b'-');
+        && b[0..4].iter().all(u8::is_ascii_digit)
+        && b[4] == b'-'
+        && b[5..7].iter().all(u8::is_ascii_digit)
+        && b[7] == b'-'
+        && b[8..10].iter().all(u8::is_ascii_digit);
     if !valid_day {
         return Err(format!("bad day `{day}`, expected YYYY-MM-DD"));
     }
@@ -2940,7 +2965,14 @@ mod tests {
             let root = dir.path();
             seed_wiki_pages(root, GATE_MIN_WIKI_PAGES);
             std::fs::create_dir_all(root.join("_inbox")).unwrap();
-            std::fs::write(root.join("_inbox/note.md"), PROSE).unwrap();
+            // Real shape of an imported _inbox doc (importers::Conversation::
+            // to_inbox_doc): YAML frontmatter, then `# <title>` — the digest
+            // line must skip both, not literally quote "---".
+            std::fs::write(
+                root.join("_inbox/note.md"),
+                format!("---\nsource: test\n---\n\n# Heading text\n\n{PROSE}"),
+            )
+            .unwrap();
             set_mtime(&root.join("_inbox/note.md"), old_mtime());
             crate::ontology::save(root, &ontology_two_clusters()).unwrap();
 
@@ -2956,6 +2988,14 @@ mod tests {
             assert!(daily.contains("## Distill summary (auto)"));
             assert!(daily.contains("(low confidence)"));
             assert!(daily.contains("_inbox/note.md"));
+            assert!(
+                daily.contains("Heading text"),
+                "digest line must skip frontmatter + heading marker, got: {daily}"
+            );
+            assert!(
+                !daily.contains("---"),
+                "digest line must not literally quote the frontmatter delimiter: {daily}"
+            );
 
             assert!(
                 !root.join("_inbox/note.md").exists(),
@@ -3088,6 +3128,11 @@ mod tests {
         // Untrusted path: outside sessions/ must be rejected outright.
         let bad = vec!["wiki/index.md".to_string()];
         assert!(archive_digested_sessions(root, "2026-08-10", &bad).is_err());
+
+        // Untrusted day: right shape (10 chars, dashes at 4/7) but non-numeric
+        // must be rejected too, not land a junk `sessions/archive/<day>/` dir.
+        assert!(archive_digested_sessions(root, "abcd-ef-gh", &files).is_err());
+        assert!(!root.join("sessions/archive/abcd-ef").exists());
     }
 
     #[test]
