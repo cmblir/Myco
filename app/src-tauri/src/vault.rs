@@ -525,6 +525,14 @@ pub struct FileContent {
 /// Read the bytes of a source file confined to the vault's `raw/` tree
 /// (Feature 6 PDF viewer). Rejects paths outside the vault or outside `raw/`,
 /// and files larger than `max`. Pure over `root` so it is unit-testable.
+///
+/// A `[[pdf::<stem>#p…]]` pinpoint link only carries the stem, so the caller
+/// hands back the flat `raw/<stem>.pdf` it was minted with — but distillation
+/// archives sources to `raw/archive/YYYY-MM/<stem>.pdf` and never deletes them
+/// (see the repo's Phase A distillation spec), so that literal path stops
+/// existing once a source is archived. When it does, fall back to a recursive
+/// by-filename search under `raw/` before giving up, mirroring how citations
+/// already resolve (`provenance::build_raw_index`).
 pub fn read_confined_raw(root: &Path, relpath: &str, max: u64) -> Result<Vec<u8>, String> {
     let abs = if Path::new(relpath).is_absolute() {
         relpath.to_string()
@@ -541,11 +549,39 @@ pub fn read_confined_raw(root: &Path, relpath: &str, max: u64) -> Result<Vec<u8>
     if !in_raw {
         return Err("read_raw_bytes only serves files under raw/".into());
     }
-    let meta = std::fs::metadata(&confined).map_err(|e| format!("stat failed: {e}"))?;
+    let resolved = if confined.is_file() {
+        confined
+    } else {
+        let name = confined
+            .file_name()
+            .ok_or_else(|| format!("no file name in {relpath}"))?;
+        find_in_raw_by_name(root, name)
+            .ok_or_else(|| format!("not found under raw/ (including raw/archive/): {relpath}"))?
+    };
+    let meta = std::fs::metadata(&resolved).map_err(|e| format!("stat failed: {e}"))?;
     if meta.len() > max {
         return Err("file is too large to open in the viewer".into());
     }
-    std::fs::read(&confined).map_err(|e| format!("read failed: {e}"))
+    std::fs::read(&resolved).map_err(|e| format!("read failed: {e}"))
+}
+
+/// Recursively search `root/raw/**` for a file whose name (not path) matches
+/// `name`, e.g. after it moved from `raw/<stem>.pdf` to an archive subfolder.
+/// Uses `vault_entries` so the search shares the same symlink/hidden-file
+/// safety as every other vault walker.
+fn find_in_raw_by_name(root: &Path, name: &std::ffi::OsStr) -> Option<PathBuf> {
+    let mut stack = vec![root.join("raw")];
+    while let Some(dir) = stack.pop() {
+        for (entry, kind) in vault_entries(&dir) {
+            let path = entry.path();
+            if kind.is_dir() {
+                stack.push(path);
+            } else if path.file_name() == Some(name) {
+                return Some(path);
+            }
+        }
+    }
+    None
 }
 
 pub fn read_file(path: &str) -> Result<FileContent, String> {
@@ -1311,6 +1347,29 @@ mod tests {
         assert!(read_confined_raw(&root, "raw/../wiki/note.md", 1_000).is_err());
         // Rejects a file over the size cap.
         assert!(read_confined_raw(&root, "raw/doc.pdf", 4).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_confined_raw_falls_back_to_archive_when_the_flat_path_is_gone() {
+        // A pinpoint PDF link only carries the stem, so the caller always asks
+        // for the flat `raw/<stem>.pdf` it was minted with. Once distillation
+        // archives the source to `raw/archive/YYYY-MM/`, that literal path no
+        // longer exists — the lookup must still find it by name.
+        let dir = temp_vault("rawbytes-archived");
+        let root = dir.canonicalize().unwrap();
+        fs::create_dir_all(root.join("raw/archive/2026-08")).unwrap();
+        fs::write(
+            root.join("raw/archive/2026-08/doc.pdf"),
+            b"%PDF-1.4 archived",
+        )
+        .unwrap();
+
+        let bytes = read_confined_raw(&root, "raw/doc.pdf", 1_000).unwrap();
+        assert_eq!(bytes, b"%PDF-1.4 archived");
+
+        // A name that truly doesn't exist anywhere under raw/ still errors.
+        assert!(read_confined_raw(&root, "raw/ghost.pdf", 1_000).is_err());
         let _ = fs::remove_dir_all(&dir);
     }
 
