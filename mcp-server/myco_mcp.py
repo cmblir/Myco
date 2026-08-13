@@ -1353,11 +1353,11 @@ def _distill_backlog_count(root: Path, state: dict) -> int:
     return unscored + len(_distill_quarantine_sidecars(root))
 
 
-def _distill_pending_proposals(root: Path) -> list[tuple[Path, dict, str]]:
-    """Pending (`status` missing or `pending`) `type: distill-proposal` files
-    directly under `work/feedback/` — mirrors `distill.rs::pending_proposal_count`
-    / `is_pending_proposal`. Returns (path, frontmatter, body) triples, in
-    filename order."""
+def _distill_feedback_proposals(root: Path) -> list[tuple[Path, dict, str]]:
+    """Every `type: distill-proposal` file directly under `work/feedback/`,
+    any status, in filename order — (path, frontmatter, body) triples. Shared
+    walk for `_distill_pending_proposals` and
+    `_distill_awaiting_resolution_count` below, which each filter by status."""
     fb = root / "work" / "feedback"
     if not fb.is_dir():
         return []
@@ -1376,10 +1376,32 @@ def _distill_pending_proposals(root: Path) -> list[tuple[Path, dict, str]]:
         meta, body = parse_fm(content)
         if meta.get("type") != "distill-proposal":
             continue
-        if meta.get("status") not in (None, "pending"):
-            continue
         out.append((e, meta, body))
     return out
+
+
+def _distill_pending_proposals(root: Path) -> list[tuple[Path, dict, str]]:
+    """Pending (`status` missing or `pending`) distill-proposal files —
+    mirrors `distill.rs::is_pending_map`. Used by `distill_report`'s listing
+    of proposals still awaiting a user decision (not `distill_status`'s
+    count — see `_distill_awaiting_resolution_count` for that one)."""
+    return [
+        t for t in _distill_feedback_proposals(root) if t[1].get("status") in (None, "pending")
+    ]
+
+
+def _distill_awaiting_resolution_count(root: Path) -> int:
+    """Pending OR approved distill-proposal count — mirrors
+    `distill.rs::pending_proposal_count`: both states await resolution
+    (approved means the frontend flagged it but `apply_proposal` hasn't run
+    yet, or ran and failed). Kept in parity with the Rust side so
+    `distill_status`'s count and the app's badge never disagree on a stuck
+    approved-but-unapplied proposal."""
+    return sum(
+        1
+        for _, meta, _ in _distill_feedback_proposals(root)
+        if meta.get("status") in (None, "pending", "approved")
+    )
 
 
 def _proposal_title(body: str) -> str:
@@ -1395,7 +1417,11 @@ def _proposal_title(body: str) -> str:
 @mcp.tool()
 def distill_status() -> dict:
     """Backlog counts, pending proposals, last run, and whether triggers are exceeded.
-    No-LLM: reads .myco/ state the desktop app maintains."""
+    No-LLM: reads .myco/ state the desktop app maintains.
+
+    `pending_proposals` counts `pending` OR `approved` proposals (parity with
+    `distill.rs::pending_proposal_count`) — approved-but-unapplied still
+    awaits resolution, not a new decision."""
     proj = _resolve("")
     root = proj.root
     cfg = _distill_config(root)
@@ -1412,7 +1438,7 @@ def distill_status() -> dict:
 
     return {
         "backlog": backlog,
-        "pending_proposals": len(_distill_pending_proposals(root)),
+        "pending_proposals": _distill_awaiting_resolution_count(root),
         "last_run": last_run_iso,
         "trigger_exceeded": trigger_exceeded,
         "hint": "run distillation in the myco app" if trigger_exceeded else None,

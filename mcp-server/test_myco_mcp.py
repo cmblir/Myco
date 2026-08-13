@@ -491,6 +491,20 @@ def test_distill_status_counts_pending_proposals(tmp_path, monkeypatch):
     assert distill_status()["pending_proposals"] == 2
 
 
+def test_distill_status_counts_approved_proposals_too(tmp_path, monkeypatch):
+    # A stuck approved-but-unapplied proposal (apply failed, or the frontend
+    # flipped it but apply_proposal hasn't run yet) still awaits resolution —
+    # it must not silently drop off the badge/status count.
+    root = _distill_vault(tmp_path, monkeypatch)
+    feedback = root / "work" / "feedback"
+    feedback.mkdir(parents=True)
+    _write_proposal(feedback / "one.md", "archive-batch", "Archive batch one")
+    _write_proposal(feedback / "two.md", "admit-cluster", "Approved, not yet applied", status="approved")
+    _write_proposal(feedback / "three.md", "delete-batch", "Dismissed", status="dismissed")
+
+    assert distill_status()["pending_proposals"] == 2
+
+
 def test_distill_report_lists_pending_proposals_with_title_and_action(tmp_path, monkeypatch):
     root = _distill_vault(tmp_path, monkeypatch)
     feedback = root / "work" / "feedback"

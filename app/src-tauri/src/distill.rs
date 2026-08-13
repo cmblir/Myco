@@ -628,6 +628,8 @@ pub struct RunReport {
 #[derive(Clone, Debug, Default, serde::Serialize)]
 pub struct DistillStatus {
     pub backlog: usize,
+    /// `pending` OR `approved` proposal count — both await resolution
+    /// (approved = apply pending/failed retry), see `is_awaiting_resolution_map`.
     pub pending_proposals: usize,
     pub last_run: Option<i64>,
     pub last_backlogs: Vec<usize>,
@@ -635,6 +637,10 @@ pub struct DistillStatus {
     /// is off and `scan` is a no-op on every candidate (see its own doc
     /// comment).
     pub gate_active: bool,
+    /// The most recently started run's id (`undo`'s `run_id` argument), or
+    /// `None` if no run has ever happened — for the settings tab's
+    /// "undo this run" button.
+    pub last_run_id: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -875,8 +881,17 @@ fn is_resolved_map(map: &HashMap<String, gray_matter::Pod>) -> bool {
     matches!(map.get("status"), Some(gray_matter::Pod::String(s)) if s == "done" || s == "dismissed")
 }
 
-fn is_pending_proposal(content: &str) -> bool {
-    proposal_frontmatter(content).is_some_and(|map| is_pending_map(&map))
+/// `pending` OR `approved` — both await resolution: pending needs a user
+/// decision, approved is flagged for `apply_proposal` but hasn't run yet (or
+/// ran and failed, awaiting a retry). Deliberately wider than `is_pending_map`
+/// — that one stays pending-only for `pending_admit_cluster_exists`'
+/// duplicate-proposal check, which must not match an already-approved one.
+fn is_awaiting_resolution_map(map: &HashMap<String, gray_matter::Pod>) -> bool {
+    !matches!(map.get("status"), Some(gray_matter::Pod::String(s)) if s != "pending" && s != "approved")
+}
+
+fn is_awaiting_resolution_proposal(content: &str) -> bool {
+    proposal_frontmatter(content).is_some_and(|map| is_awaiting_resolution_map(&map))
 }
 
 /// A proposal's `payload.files` array as plain strings, or empty if the
@@ -899,7 +914,10 @@ fn proposal_payload_files(map: &HashMap<String, gray_matter::Pod>) -> Vec<String
         .unwrap_or_default()
 }
 
-fn pending_proposal_count(root: &Path) -> usize {
+/// Proposals still awaiting resolution (`pending` or `approved`) — the
+/// settings-tab badge / Overview count. Feeds `DistillStatus::pending_proposals`;
+/// see `is_awaiting_resolution_map` for why `approved` counts too.
+fn awaiting_resolution_count(root: &Path) -> usize {
     crate::vault::vault_entries(&root.join("work/feedback"))
         .into_iter()
         .filter(|(e, kind)| {
@@ -907,7 +925,7 @@ fn pending_proposal_count(root: &Path) -> usize {
         })
         .filter(|(e, _)| {
             std::fs::read_to_string(e.path())
-                .map(|c| is_pending_proposal(&c))
+                .map(|c| is_awaiting_resolution_proposal(&c))
                 .unwrap_or(false)
         })
         .count()
@@ -1994,6 +2012,37 @@ pub fn undo(root: &Path, run_id: &str) -> Result<usize, String> {
     Ok(reversed)
 }
 
+/// The most recently started run's id, read by comparing each
+/// `.myco/distill-runs/*.json` manifest's own `started_at`, id as tie-break.
+/// Two runs kicked off within the same wall-clock second share a
+/// second-granularity `started_at` — `free_run_id`'s own `-2`, `-3`… suffix
+/// is exactly what orders those, and string-comparing `id` reproduces it
+/// (`"...T060028"` sorts before `"...T060028-2"`, its own prefix). Filename
+/// order isn't used at all: `std::fs::read_dir` makes no ordering guarantee.
+fn newest_run_id(root: &Path) -> Option<String> {
+    let runs_dir = dir(root).join("distill-runs");
+    let mut latest: Option<(i64, String)> = None;
+    for (entry, kind) in crate::vault::vault_entries(&runs_dir) {
+        if !kind.is_file() || entry.path().extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Ok(raw) = std::fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        let Ok(m) = serde_json::from_str::<RunManifest>(&raw) else {
+            continue;
+        };
+        let is_newer = match &latest {
+            Some((t, id)) => (m.started_at, m.id.as_str()) > (*t, id.as_str()),
+            None => true,
+        };
+        if is_newer {
+            latest = Some((m.started_at, m.id));
+        }
+    }
+    latest.map(|(_, id)| id)
+}
+
 /// Cheap vault-wide status for the settings tab / MCP `distill_status`: no
 /// scoring, just a fs walk against the ledger already on disk.
 pub fn status(root: &Path) -> DistillStatus {
@@ -2003,10 +2052,11 @@ pub fn status(root: &Path) -> DistillStatus {
     let state = state_load(root, &store.model);
     DistillStatus {
         backlog: backlog_count(root, &state),
-        pending_proposals: pending_proposal_count(root),
+        pending_proposals: awaiting_resolution_count(root),
         last_run: state.last_run,
         last_backlogs: state.last_backlogs.clone(),
         gate_active: crate::commands::wiki_titles(root).len() >= GATE_MIN_WIKI_PAGES,
+        last_run_id: newest_run_id(root),
     }
 }
 
@@ -2664,6 +2714,7 @@ mod tests {
             assert!(before.gate_active, "50 wiki pages meets the gate threshold");
             assert!(before.last_run.is_none());
             assert!(before.last_backlogs.is_empty());
+            assert!(before.last_run_id.is_none(), "no run has happened yet");
 
             let report1 = run(root, &cfg, &dummy_embed).unwrap();
             assert_eq!(report1.backlog_after, 0, "scan ledgers both files this run");
@@ -2672,6 +2723,7 @@ mod tests {
             assert_eq!(mid.backlog, 0);
             assert!(mid.last_run.is_some());
             assert_eq!(mid.last_backlogs, vec![0]);
+            assert_eq!(mid.last_run_id, Some(report1.id.clone()));
 
             let report2 = run(root, &cfg, &dummy_embed).unwrap();
             assert_ne!(
@@ -2682,6 +2734,11 @@ mod tests {
             let after = status(root);
             assert_eq!(after.last_backlogs, vec![0, 0]);
             assert_eq!(after.pending_proposals, 0);
+            assert_eq!(
+                after.last_run_id,
+                Some(report2.id),
+                "last_run_id tracks the most recently STARTED run, not filename order"
+            );
         });
     }
 
@@ -3002,6 +3059,61 @@ mod tests {
                 let file_name = Path::new(&rel).file_name().unwrap();
                 assert!(!root.join("work/feedback/archive").join(file_name).exists());
             },
+        );
+    }
+
+    /// Ledger-triage fix 7: a stuck `approved` proposal (apply failed, or the
+    /// frontend flipped it but `apply_proposal` hasn't run yet) must not drop
+    /// off the badge/Overview count — only `done`/`dismissed` are resolved.
+    #[test]
+    fn status_pending_proposals_counts_approved_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("_inbox")).unwrap();
+
+        write_proposal(
+            root,
+            "archive-batch",
+            "Archive raw/x.md?",
+            "body",
+            &serde_json::json!({ "files": ["raw/x.md"] }),
+        )
+        .unwrap();
+
+        let approved_rel = write_proposal(
+            root,
+            "admit-cluster",
+            "New topic forming",
+            "body",
+            &serde_json::json!({ "files": [] }),
+        )
+        .unwrap();
+        let raw = std::fs::read_to_string(root.join(&approved_rel)).unwrap();
+        std::fs::write(
+            root.join(&approved_rel),
+            raw.replace("status: pending", "status: approved"),
+        )
+        .unwrap();
+
+        let dismissed_rel = write_proposal(
+            root,
+            "delete-batch",
+            "Old, resolved",
+            "body",
+            &serde_json::json!({ "files": [] }),
+        )
+        .unwrap();
+        let raw = std::fs::read_to_string(root.join(&dismissed_rel)).unwrap();
+        std::fs::write(
+            root.join(&dismissed_rel),
+            raw.replace("status: pending", "status: dismissed"),
+        )
+        .unwrap();
+
+        assert_eq!(
+            status(root).pending_proposals,
+            2,
+            "pending + approved count; dismissed does not"
         );
     }
 }
