@@ -156,10 +156,13 @@ mod tests {
     }
 
     #[test]
+    // serial: cargo runs tests in parallel threads, and this test races
+    // endpoint_respects_env_override over the same process-wide env var —
+    // first observed as a Windows CI failure reading the other test's value.
+    #[serial_test::serial(myco_ollama_url)]
     fn endpoint_defaults_to_localhost() {
         // Snapshot then restore so we don't pollute env for other tests.
         let prev = std::env::var("MYCO_OLLAMA_URL").ok();
-        // SAFETY: tests are single-threaded by default for env mutation.
         unsafe {
             std::env::remove_var("MYCO_OLLAMA_URL");
         }
@@ -207,6 +210,8 @@ mod tests {
     }
 
     #[test]
+    // serial: see endpoint_defaults_to_localhost — same env var, same race.
+    #[serial_test::serial(myco_ollama_url)]
     fn endpoint_respects_env_override() {
         let prev = std::env::var("MYCO_OLLAMA_URL").ok();
         unsafe {
