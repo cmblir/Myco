@@ -173,7 +173,11 @@ model = ingest model (spend counts toward the existing monthly budget).
 
 - `distill_status` — backlog counts, pending proposals, last run; other tools
   append a one-line hint when triggers are exceeded.
-- `distill_report` — run the detection pass, write proposals.
+- `distill_report` — run the detection pass, write proposals. **Deviation
+  (Phase A):** ships read-only (counts + listing only, no writes) — the MCP
+  server stays stdlib-only per this doc's own binding principle above, and a
+  second clustering/proposal-writing implementation in Python would drift
+  from the Rust engine's; write-back is deferred.
 - `setup_profile` — returns the interview question set; accepts collected
   answers; writes/updates profile.md. (App-side entry: Ask preset
   "프로필 설정/갱신". Onboarding wizard step is v2.)
