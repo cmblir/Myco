@@ -1612,6 +1612,12 @@ fn existing_map_clusters(root: &Path) -> std::collections::HashSet<String> {
 /// is about a page already IN the wiki, not inflow being gated into it).
 /// `false` for a missing/unreadable/frontmatter-less page rather than an
 /// error: one bad member must not abort the whole cluster's evaluation.
+///
+/// ponytail: one `fs::read_to_string` per member, per run, with no cache —
+/// bounded by cluster size (only clusters already past `MAP_MIN_MEMBERS`
+/// reach here) so fine at today's scale; upgrade to a shared frontmatter
+/// cache (or reuse `scan`'s content-hash ledger) if this pass ever shows up
+/// in a run's wall time on a large vault.
 fn member_is_mature(root: &Path, member: &str, now: i64) -> bool {
     let path = root.join(member);
     let Ok(content) = std::fs::read_to_string(&path) else {
@@ -1659,9 +1665,20 @@ fn propose_map_candidates(
     let mut written = 0usize;
 
     for c in &o.clusters {
+        // Matched by ANY current member's stem, not just `c.label` — labels
+        // are medoid stems recomputed on every ontology rebuild, so a
+        // cluster's label can drift to a different member between the map
+        // being drafted and a later run (fix round 1). The original medoid
+        // is, by definition, still one of this cluster's members in the
+        // common drift case, so this keeps the map-exists dedup working
+        // without pretending to solve drift in general.
+        let has_map = c
+            .members
+            .iter()
+            .any(|m| existing.contains(&crate::ontology::stem_of(m)));
         if c.id == FIELD_CLUSTER_ID
             || c.members.len() < MAP_MIN_MEMBERS
-            || existing.contains(&c.label)
+            || has_map
             || pending_draft_map_exists(root, &c.label)
         {
             continue;
@@ -4335,6 +4352,39 @@ mod tests {
         assert!(
             !root.join("work/feedback").exists(),
             "no proposal was written at all"
+        );
+    }
+
+    #[test]
+    fn map_exists_check_matches_by_any_member_stem_not_just_the_current_label() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        // The cluster's label has drifted since its map was drafted — a new
+        // medoid won the recompute — but the original member ("old-medoid")
+        // is still one of this cluster's members.
+        let mut members: Vec<String> = vec!["wiki/old-medoid.md".into()];
+        for i in 0..7 {
+            members.push(format!("wiki/m{i}.md"));
+        }
+        for m in &members {
+            write_wiki_member(root, m, "active", "medium", map_mature_mtime());
+        }
+        let o = ontology_with_cluster(0, "new-medoid", members);
+
+        std::fs::create_dir_all(root.join("wiki/maps")).unwrap();
+        std::fs::write(
+            root.join("wiki/maps/old-medoid.md"),
+            "---\ntitle: \"Map: old-medoid\"\ntype: map\ncluster: old-medoid\ncreated: 2026-01-01\nconfidence: medium\nstatus: draft\n---\n\nbody\n",
+        )
+        .unwrap();
+
+        let cfg = DistillConfig::default();
+        let mut manifest = test_manifest();
+        let written = propose_map_candidates(root, &o, &cfg, &mut manifest).unwrap();
+        assert_eq!(
+            written, 0,
+            "the drifted label must still match via the old medoid, which is still a member"
         );
     }
 

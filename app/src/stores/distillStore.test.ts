@@ -1,4 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// `apply()`'s draft-map branch calls the REAL `draftMap` (not mocked) so
+// this exercises its actual idempotency check — only `complete` (the LLM
+// call inside it) is stubbed, mirroring `maps.test.ts`'s own mock.
+const complete = vi.fn();
+vi.mock("../lib/chat", () => ({ complete: (...a: unknown[]) => complete(...a) }));
+
 import { useDistillStore, parseProposal } from "./distillStore";
 import { useVaultStore } from "./vaultStore";
 import { ipc } from "../lib/ipc";
@@ -68,6 +75,7 @@ describe("parseProposal", () => {
 describe("useDistillStore", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    complete.mockReset();
     useVaultStore.setState({ currentVault: { path: "/v", name: "v" } });
     useDistillStore.setState({ status: null, proposals: [], loading: false });
   });
@@ -187,6 +195,57 @@ describe("useDistillStore", () => {
       expect.stringContaining("status: dismissed"),
     );
     expect(useDistillStore.getState().proposals).toHaveLength(0);
+  });
+
+  it("apply on a draft-map proposal for an already-mapped cluster skips the LLM call and still flips status to done", async () => {
+    // Retry scenario Important-1 fixes: the proposal is already `approved`
+    // (a prior attempt drafted the map, then crashed before this rewrite),
+    // AND a `wiki/maps/` page already carries this exact cluster label —
+    // draftMap's own idempotency check must return that page's path without
+    // calling complete(), and this call must still complete the proposal.
+    const draftMapProposalRaw = [
+      "---",
+      "type: distill-proposal",
+      "action: draft-map",
+      "status: approved",
+      "created: 2026-08-10",
+      'payload: {"cluster":"attention","members":["wiki/a.md","wiki/b.md"]}',
+      "---",
+      "",
+      "# Map candidate: attention",
+      "",
+      "Body text.",
+      "",
+    ].join("\n");
+    const proposalPath = "/v/work/feedback/2026-08-10-map.md";
+
+    vi.spyOn(ipc, "listFiles").mockResolvedValue([
+      {
+        kind: "directory",
+        name: "wiki",
+        path: "/v/wiki",
+        children: [
+          {
+            kind: "directory",
+            name: "maps",
+            path: "/v/wiki/maps",
+            children: [{ kind: "file", name: "attention.md", path: "/v/wiki/maps/attention.md" }],
+          },
+        ],
+      },
+    ]);
+    vi.spyOn(ipc, "readFile").mockImplementation(async (path: string) =>
+      path === proposalPath
+        ? { path, raw: draftMapProposalRaw, content: "", frontmatter: null }
+        : { path, raw: "", content: "", frontmatter: { cluster: "attention" } },
+    );
+    const writeSpy = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+
+    const rel = await useDistillStore.getState().apply("work/feedback/2026-08-10-map.md");
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(rel).toBe("wiki/maps/attention.md");
+    expect(writeSpy).toHaveBeenCalledWith(proposalPath, expect.stringContaining("status: done"));
   });
 
   it("does nothing without an open vault", async () => {

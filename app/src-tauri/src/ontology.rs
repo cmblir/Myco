@@ -90,7 +90,11 @@ fn now_secs() -> i64 {
         .unwrap_or(0)
 }
 
-fn stem_of(page: &str) -> String {
+/// `pub(crate)`: `distill::propose_map_candidates`'s widened map-exists check
+/// (Phase B, Task 4 fix round 1) needs the same page-path -> stem derivation
+/// this module already uses everywhere else, to compare against a cluster's
+/// CURRENT members rather than trusting its (possibly drifted) `label`.
+pub(crate) fn stem_of(page: &str) -> String {
     let name = page.rsplit('/').next().unwrap_or(page);
     name.strip_suffix(".md").unwrap_or(name).to_string()
 }
@@ -313,11 +317,24 @@ pub fn build(
     // Human-approved topic-map centroid > mean-of-members: a human confirmed
     // what this cluster is about by approving its map, which is a better
     // `admit` reference point than an unsupervised average of its members
-    // (design spec, "topic maps"). Only clusters an anchor's label actually
-    // names are touched; every other cluster keeps its computed centroid.
+    // (design spec, "topic maps"). Matched by ANY current member's stem, not
+    // just `c.label` — `label` is the medoid stem and can drift to a
+    // different member on a later rebuild (Phase B, Task 4 fix round 1); the
+    // anchor's `cluster:` value was recorded against whichever member was
+    // the medoid AT DRAFT TIME, which is by definition still one of this
+    // cluster's members in the common drift case. Only clusters an anchor
+    // actually names (by this widened match) are touched; every other
+    // cluster keeps its computed centroid. Residual case, left as-is by
+    // design: if the map's own page later migrates out of this cluster
+    // entirely (none of its current members match), the anchor silently
+    // stops applying — the map genuinely no longer describes this cluster,
+    // so falling back to the geometric mean is correct, not a bug.
     for c in &mut clusters {
-        if let Some((_, anchor)) = map_anchors.iter().find(|(label, _)| label == &c.label) {
-            c.centroid = anchor.clone();
+        let anchor = map_anchors
+            .iter()
+            .find(|(label, _)| c.members.iter().any(|m| stem_of(m) == *label));
+        if let Some((_, vector)) = anchor {
+            c.centroid = vector.clone();
         }
     }
 
@@ -768,6 +785,30 @@ mod tests {
         // The other cluster names no anchor — its centroid is untouched.
         let other = o.clusters.iter().find(|c| c.label != target_label).unwrap();
         assert_eq!(other.centroid, other_centroid_before);
+    }
+
+    #[test]
+    fn map_anchor_matches_by_any_member_stem_not_just_the_current_label() {
+        // Drift case: the anchor was recorded under a member that is NOT
+        // (any longer) this cluster's medoid/label, but is still a member.
+        let s = six_pages();
+        let plain = build(&s, &[], &[]);
+        let target = &plain.clusters[0];
+        let target_label = target.label.clone();
+        let drifted_member = target
+            .members
+            .iter()
+            .find(|m| stem_of(m) != target_label)
+            .expect("a 3-member cluster has a non-label member");
+        let anchor_key = stem_of(drifted_member);
+        let anchor = unit(vec![0.1, 0.2, 0.97]);
+
+        let o = build(&s, &[], &[(anchor_key, anchor.clone())]);
+        let c = o.clusters.iter().find(|c| c.label == target_label).unwrap();
+        assert_eq!(
+            c.centroid, anchor,
+            "an anchor keyed to a non-label member must still apply"
+        );
     }
 
     #[test]

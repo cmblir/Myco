@@ -6,11 +6,13 @@ vi.mock("./chat", () => ({ complete: (...a: unknown[]) => complete(...a) }));
 const readFile = vi.fn();
 const writeFile = vi.fn();
 const createFolder = vi.fn();
+const listFiles = vi.fn();
 vi.mock("./ipc", () => ({
   ipc: {
     readFile: (...a: unknown[]) => readFile(...a),
     writeFile: (...a: unknown[]) => writeFile(...a),
     createFolder: (...a: unknown[]) => createFolder(...a),
+    listFiles: (...a: unknown[]) => listFiles(...a),
   },
 }));
 
@@ -21,6 +23,9 @@ beforeEach(() => {
   readFile.mockReset();
   writeFile.mockReset();
   createFolder.mockReset();
+  // Default: no existing wiki/maps/ pages at all — the idempotency-check
+  // tests below override this to exercise a hit.
+  listFiles.mockReset().mockResolvedValue([]);
 });
 
 describe("draftMap", () => {
@@ -81,5 +86,49 @@ describe("draftMap", () => {
     expect(content.match(/^---$/gm)?.length).toBe(2);
     expect(content).toContain("Real body starts here.");
     expect(content).not.toContain("title: whatever");
+  });
+
+  it("returns an existing map's path without calling complete when the cluster is already mapped", async () => {
+    listFiles.mockResolvedValue([
+      {
+        kind: "directory",
+        name: "wiki",
+        path: "/v/wiki",
+        children: [
+          {
+            kind: "directory",
+            name: "maps",
+            path: "/v/wiki/maps",
+            children: [{ kind: "file", name: "topic.md", path: "/v/wiki/maps/topic.md" }],
+          },
+        ],
+      },
+    ]);
+    readFile.mockResolvedValue({ frontmatter: { cluster: "topic" } });
+
+    const rel = await draftMap("/v", "topic", ["wiki/x.md"]);
+
+    expect(rel).toBe("wiki/maps/topic.md");
+    expect(complete).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it("strips a hallucinated wikilink not in the member list and warns once", async () => {
+    complete.mockResolvedValue(
+      "Overview.\n\n- [[a]] — real member\n- [[not-a-member]] — hallucinated\n",
+    );
+    readFile.mockRejectedValue(new Error("not found"));
+    createFolder.mockResolvedValue("maps");
+    writeFile.mockResolvedValue(null);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await draftMap("/v", "topic", ["wiki/a.md", "wiki/b.md"]);
+
+    const content = writeFile.mock.calls[0][1] as string;
+    expect(content).toContain("[[a]]");
+    expect(content).not.toContain("[[not-a-member]]");
+    expect(content).toContain("hallucinated"); // display text kept as plain prose
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
   });
 });
