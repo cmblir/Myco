@@ -51,6 +51,9 @@ export interface DistillStatus {
   pending_proposals: number;
   last_run: number | null;
   last_backlogs: number[];
+  // Critical 1 fix — false below the cold-start threshold (50 wiki pages):
+  // scan() is a no-op on every candidate while this is false.
+  gate_active: boolean;
 }
 
 // Task 8 — direction of `last_backlogs` (oldest → newest, per Rust's

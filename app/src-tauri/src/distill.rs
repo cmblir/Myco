@@ -411,6 +411,11 @@ struct Taken {
     junk: Option<String>,
 }
 
+/// "Gate OFF until the vault has ≥50 wiki pages (or first map); profile.md
+/// serves as ontology until then." —
+/// `app/docs/specs/2026-08-13-ontology-distill-design.md`, "Admission gate".
+const GATE_MIN_WIKI_PAGES: usize = 50;
+
 /// Score new inflow against the ontology: walk `_inbox/`, `raw/`, `sessions/`
 /// oldest-mtime-first, skip anything not yet mature (`cfg.maturation_hours`)
 /// or already scored at its current content hash, reject junk transcripts
@@ -421,6 +426,13 @@ struct Taken {
 /// doc comment: nothing sweeps it yet), full/summary are only recorded
 /// (Phase B consumes them). Every scored item — whatever its tier — is
 /// recorded in the ledger so an unchanged file is never re-scored.
+///
+/// Below `GATE_MIN_WIKI_PAGES` wiki pages (`o.wiki_pages` — kept equal to
+/// the real on-disk count by `run`'s staleness check, since `scan` is only
+/// ever handed a freshly-built-or-confirmed-current ontology), the gate is
+/// off: every candidate is a no-op, not scored, quarantined, or rejected —
+/// a 5-page vault must not build a field-only ontology and quarantine its
+/// own inflow into TTL-trash before it has anything to gate against.
 pub fn scan(
     root: &Path,
     o: &Ontology,
@@ -428,6 +440,14 @@ pub fn scan(
     budget: usize,
     embed: &dyn Fn(Vec<String>) -> Result<Vec<Vec<f32>>, String>,
 ) -> Result<ScanOutcome, String> {
+    if o.wiki_pages < GATE_MIN_WIKI_PAGES {
+        eprintln!(
+            "distill gate off: {} wiki pages < {GATE_MIN_WIKI_PAGES}",
+            o.wiki_pages
+        );
+        return Ok(ScanOutcome::default());
+    }
+
     let mut state = state_load(root, &o.model);
     let now = now_secs();
     let maturation_secs = cfg.maturation_hours as i64 * 3600;
@@ -597,6 +617,10 @@ pub struct DistillStatus {
     pub pending_proposals: usize,
     pub last_run: Option<i64>,
     pub last_backlogs: Vec<usize>,
+    /// `false` below `GATE_MIN_WIKI_PAGES` wiki pages — the cold-start gate
+    /// is off and `scan` is a no-op on every candidate (see its own doc
+    /// comment).
+    pub gate_active: bool,
 }
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -1955,6 +1979,7 @@ pub fn status(root: &Path) -> DistillStatus {
         pending_proposals: pending_proposal_count(root),
         last_run: state.last_run,
         last_backlogs: state.last_backlogs.clone(),
+        gate_active: crate::commands::wiki_titles(root).len() >= GATE_MIN_WIKI_PAGES,
     }
 }
 
@@ -1971,6 +1996,17 @@ mod tests {
         std::time::SystemTime::now() - std::time::Duration::from_secs(48 * 3600)
     }
 
+    /// `n` minimal `wiki/` pages — tests that drive `run()` (which builds its
+    /// own ontology straight off disk, unlike `tiny_ontology()`) need real
+    /// wiki pages on disk to keep the cold-start gate active.
+    fn seed_wiki_pages(root: &Path, n: usize) {
+        let dir = root.join("wiki");
+        std::fs::create_dir_all(&dir).unwrap();
+        for i in 0..n {
+            std::fs::write(dir.join(format!("seed-{i}.md")), "seed page").unwrap();
+        }
+    }
+
     /// One cluster centred on `[1.0, 0.0]` with clean, well-separated
     /// thresholds (p5=0.10, p25=0.50, p40=0.90) — same shape as
     /// `ontology::tests::admit_reason_cites_the_threshold_that_actually_decided_the_tier`,
@@ -1979,7 +2015,9 @@ mod tests {
         Ontology {
             model: "test-model".to_string(),
             built_at: 0,
-            wiki_pages: 1,
+            // At/above GATE_MIN_WIKI_PAGES so scan()'s cold-start gate stays
+            // active — these tests exercise real scoring, not the gate.
+            wiki_pages: GATE_MIN_WIKI_PAGES,
             clusters: vec![crate::ontology::Cluster {
                 id: 0,
                 label: "topic".into(),
@@ -2019,6 +2057,45 @@ mod tests {
             serde_json::to_string_pretty(&sidecar).unwrap(),
         )
         .unwrap();
+    }
+
+    #[test]
+    fn cold_start_gate_skips_scoring_below_50_wiki_pages() {
+        assert!(PROSE.len() >= JUNK_MIN_BYTES);
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("_inbox")).unwrap();
+        std::fs::write(root.join("_inbox/c.md"), PROSE).unwrap();
+        set_mtime(&root.join("_inbox/c.md"), old_mtime());
+
+        // A 5-page vault — below GATE_MIN_WIKI_PAGES (50).
+        let mut o = tiny_ontology();
+        o.wiki_pages = 5;
+        let cfg = DistillConfig::default();
+        // Real, non-junk prose (see other scan tests using the same PROSE
+        // const) — mature, unscored, and normally embeddable — proves the
+        // gate short-circuits before scoring, not that the inbox is empty.
+        let embed = |_: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            panic!("cold-start gate must skip embedding entirely")
+        };
+
+        let out = scan(root, &o, &cfg, 10, &embed).unwrap();
+        assert_eq!(out, ScanOutcome::default());
+        assert!(
+            root.join("_inbox/c.md").exists(),
+            "must not move into quarantine"
+        );
+        assert!(!root.join("_inbox/quarantine").exists());
+
+        let state = state_load(root, &o.model);
+        assert!(
+            state.scored.is_empty(),
+            "nothing scored while the gate is off"
+        );
+        assert!(
+            state.rejected_ttl.is_empty(),
+            "nothing rejected while the gate is off"
+        );
     }
 
     #[test]
@@ -2477,6 +2554,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
             std::fs::create_dir_all(root.join("_inbox")).unwrap();
+            seed_wiki_pages(root, GATE_MIN_WIKI_PAGES); // keep the cold-start gate active
             std::fs::write(root.join("_inbox/a.md"), PROSE).unwrap();
             std::fs::write(root.join("_inbox/b.md"), PROSE).unwrap();
             set_mtime(&root.join("_inbox/a.md"), old_mtime());
@@ -2486,6 +2564,7 @@ mod tests {
 
             let before = status(root);
             assert_eq!(before.backlog, 2, "two unscored, mature inflow items");
+            assert!(before.gate_active, "50 wiki pages meets the gate threshold");
             assert!(before.last_run.is_none());
             assert!(before.last_backlogs.is_empty());
 

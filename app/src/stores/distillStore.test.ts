@@ -10,6 +10,7 @@ const STATUS: DistillStatus = {
   pending_proposals: 1,
   last_run: 1_755_000_000,
   last_backlogs: [10, 8, 5],
+  gate_active: true,
 };
 
 const PROPOSAL_RAW = [
