@@ -68,18 +68,33 @@ export function parseProfile(raw: string): Profile {
   return profile;
 }
 
+/** Collapses embedded newlines to a single space so a written field value
+ *  can never contain a line that reparses as a `##` heading or a `-`/`*`
+ *  bullet (review-caught bug: an interests/goals item — or role/style —
+ *  containing e.g. "foo\n## Working style\ninjected" corrupted the
+ *  round-trip: later items were dropped and the injected text landed under
+ *  the wrong field). The app's textarea can't produce embedded newlines in
+ *  a list item, but MCP's `setup_profile` takes raw strings straight
+ *  through, so this has to happen here at serialize, not at input time.
+ *  Applied to every field including Working style — `injectionText`'s
+ *  contract is one paragraph anyway, so collapsing a multi-line style
+ *  answer to one line loses nothing the format uses. */
+function sanitizeLine(s: string): string {
+  return s.replace(/\s*\n+\s*/g, " ").trim();
+}
+
 /** Inverse of `parseProfile` — the only writer of profile.md's shape,
  *  code-controlled (never model-written, matching every other Phase B
  *  content-writing convention: the model never writes files directly). */
 export function serializeProfile(p: Profile): string {
   const bullets = (items: string[]): string =>
-    items.length ? items.map((i) => `- ${i}`).join("\n") : "";
+    items.length ? items.map((i) => `- ${sanitizeLine(i)}`).join("\n") : "";
   return (
     `${HEADER}\n\n` +
-    `## Role\n${p.role}\n\n` +
+    `## Role\n${sanitizeLine(p.role)}\n\n` +
     `## Goals\n${bullets(p.goals)}\n\n` +
     `## Interests\n${bullets(p.interests)}\n\n` +
-    `## Working style\n${p.style}\n`
+    `## Working style\n${sanitizeLine(p.style)}\n`
   );
 }
 

@@ -787,6 +787,39 @@ mod tests {
         assert!(matches!(without.tier, Tier::Reject));
     }
 
+    #[test]
+    fn both_lifts_together_report_the_entity_floor() {
+        // Both signals independently qualify an otherwise-Reject item for
+        // Summary: >=2 entity hits AND a profile-interest match. The tier is
+        // Summary either way; only the reported reason differs — the entity
+        // floor's reason wins (the documented, stable tie-break in `admit`'s
+        // doc comment).
+        let s = six_pages();
+        let o = build(
+            &s,
+            &[
+                ("a".into(), "Alpha Topic".into()),
+                ("b".into(), "Beta".into()),
+            ],
+            &[],
+        );
+        let p = GatePreset::Normal;
+        let item = unit(vec![0.0, 0.0, 1.0]);
+        let profile_vecs = vec![unit(vec![0.0, 0.01, 1.0])];
+
+        let v = admit(
+            &o,
+            &item,
+            "discussing Alpha Topic and Beta today",
+            &p,
+            &profile_vecs,
+        );
+        assert!(matches!(v.tier, Tier::Summary));
+        assert_eq!(v.entity_hits.len(), 2);
+        assert!(v.reason.contains("entity floor"), "reason: {}", v.reason);
+        assert!(!v.reason.contains("profile"), "reason: {}", v.reason);
+    }
+
     /// Hand-built ontology with clean, well-separated thresholds (p5=0.10,
     /// p25=0.50, p40=0.90) so each of the four tiers is hit by construction,
     /// rather than fought for in real geometry — a tight cluster's percentiles

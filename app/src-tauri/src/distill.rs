@@ -2237,11 +2237,22 @@ pub fn run(
     // batch-embedded ONCE per run (not per item, unlike the per-candidate
     // embedding below) and handed to every `admit()` call `scan` makes.
     // Missing/interest-less profile.md costs nothing — no embed call at all.
+    // A failure here DEGRADES rather than fails the whole run (`unwrap_or_
+    // else`, not `?`) — same "log and proceed" precedent as
+    // `partition_sessions` above: personalisation is a nicety layered on
+    // top of the lifecycle engine, not a precondition for it, so one flaky
+    // embed-provider call must not take down scan/archive/TTL for the
+    // entire run. Degrading to `Vec::new()` means simply no profile lift
+    // this run (identical to no profile.md at all), never a corrupted one.
     let profile_interests = read_profile_interests(root);
     let profile_vecs: Vec<Vec<f32>> = if profile_interests.is_empty() {
         Vec::new()
     } else {
-        embed(profile_interests)?
+        embed(profile_interests).unwrap_or_else(|e| {
+            crate::perf::log("distill_profile_embed_failed", &[]);
+            eprintln!("distill profile embed failed (continuing without lift): {e}");
+            Vec::new()
+        })
     };
 
     let scan_outcome = scan(
@@ -3459,6 +3470,42 @@ mod tests {
     fn read_profile_interests_is_empty_without_a_profile_file() {
         let dir = tempfile::tempdir().unwrap();
         assert!(read_profile_interests(dir.path()).is_empty());
+    }
+
+    #[test]
+    fn profile_embed_failure_degrades_instead_of_failing_the_run() {
+        crate::settings::test_support::with_isolated_data("distill-profile-embed-fail", |_data| {
+            assert!(PROSE.len() >= JUNK_MIN_BYTES);
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            seed_wiki_pages(root, GATE_MIN_WIKI_PAGES);
+            std::fs::create_dir_all(root.join("_inbox")).unwrap();
+            std::fs::write(root.join("_inbox/note.md"), PROSE).unwrap();
+            set_mtime(&root.join("_inbox/note.md"), old_mtime());
+            std::fs::write(root.join("profile.md"), "## Interests\n- widgets\n").unwrap();
+            crate::ontology::save(root, &ontology_two_clusters()).unwrap();
+
+            let cfg = DistillConfig::default();
+            // Errors ONLY on the profile-interests batch (`["widgets"]`); the
+            // per-item batch below still succeeds, orthogonal to both cluster
+            // centroids (Reject, same as `admit_tiers_follow_the_decision_
+            // tree`'s Reject case) — so a lift (had one wrongly happened
+            // despite the embed failure) would flip this to Summary and the
+            // assertion below would catch it.
+            let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+                if texts == vec!["widgets".to_string()] {
+                    return Err("embed provider down".into());
+                }
+                Ok(texts.iter().map(|_| vec![0.0_f32, 0.0, 1.0]).collect())
+            };
+
+            let report = run(root, &cfg, &embed).unwrap(); // does not fail the run
+            assert_eq!(
+                report.scan.rejected, 1,
+                "no lift applied: item stayed Reject, same as no profile.md at all"
+            );
+            assert_eq!(report.scan.summaries, 0);
+        });
     }
 
     #[test]

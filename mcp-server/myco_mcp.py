@@ -1548,17 +1548,29 @@ def _parse_profile(text: str) -> dict:
     return profile
 
 
+def _sanitize_line(s: str) -> str:
+    """Collapses embedded newlines to a single space — mirrors the app's
+    `profile.ts::sanitizeLine` (review-caught bug: an interests/goals item,
+    or role/style, containing e.g. "foo\\n## Working style\\ninjected"
+    corrupted the round-trip: later items were dropped and the injected
+    text landed under the wrong field). `setup_profile` takes raw
+    strings/lists straight through — no textarea to rely on — so this has
+    to happen here at serialize. Applied to every field, including Working
+    style: `injectionText`'s contract is one paragraph anyway."""
+    return re.sub(r"\s*\n+\s*", " ", s).strip()
+
+
 def _serialize_profile(p: dict) -> str:
     """Inverse of `_parse_profile` — the only writer of profile.md's shape."""
     def bullets(items: list) -> str:
-        return "\n".join(f"- {i}" for i in items)
+        return "\n".join(f"- {_sanitize_line(i)}" for i in items)
 
     return (
         f"{_PROFILE_HEADER}\n\n"
-        f"## Role\n{p.get('role') or ''}\n\n"
+        f"## Role\n{_sanitize_line(p.get('role') or '')}\n\n"
         f"## Goals\n{bullets(p.get('goals') or [])}\n\n"
         f"## Interests\n{bullets(p.get('interests') or [])}\n\n"
-        f"## Working style\n{p.get('style') or ''}\n"
+        f"## Working style\n{_sanitize_line(p.get('style') or '')}\n"
     )
 
 

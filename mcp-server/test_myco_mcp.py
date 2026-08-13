@@ -9,6 +9,8 @@ from pathlib import Path
 import pytest
 
 from myco_mcp import (
+    _parse_profile,
+    _serialize_profile,
     distill_report,
     distill_status,
     extract_links,
@@ -681,3 +683,24 @@ def test_setup_profile_secret_scan_warns_but_does_not_block(tmp_path, monkeypatc
     assert result["ok"] is True
     assert "secret_warning" in result
     assert (root / "profile.md").exists()  # warn, not block
+
+
+def test_profile_serialize_sanitizes_embedded_heading_injection():
+    # Reviewer's exact repro: an interests item smuggling a fake "##"
+    # heading line corrupted the round-trip — a later legit item got
+    # dropped and the injected text landed under the wrong field.
+    evil = {
+        "role": "Engineer",
+        "goals": ["real goal"],
+        "interests": ["first", "evil\n## Working style\ninjected", "third"],
+        "style": "Concise",
+    }
+    round_trip = _parse_profile(_serialize_profile(evil))
+    assert round_trip["interests"] == [
+        "first",
+        "evil ## Working style injected",
+        "third",
+    ]
+    assert round_trip["goals"] == ["real goal"]
+    assert round_trip["role"] == "Engineer"
+    assert round_trip["style"] == "Concise"

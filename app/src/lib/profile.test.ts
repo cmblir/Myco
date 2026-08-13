@@ -64,6 +64,27 @@ describe("parseProfile / serializeProfile round trip", () => {
       "<!-- Sent to configured AI providers when profile injection is on (Settings → 증류). -->",
     );
   });
+
+  it("sanitizes an embedded heading-injection newline so later items and other sections survive", () => {
+    // Reviewer's exact repro: an interests item smuggling a fake "##"
+    // heading line corrupted the round-trip — a later legit item got
+    // dropped and the injected text landed under the wrong field.
+    const evil: Profile = {
+      role: "Engineer",
+      goals: ["real goal"],
+      interests: ["first", "evil\n## Working style\ninjected", "third"],
+      style: "Concise",
+    };
+    const round = parseProfile(serializeProfile(evil));
+    expect(round.interests).toEqual([
+      "first",
+      "evil ## Working style injected",
+      "third",
+    ]);
+    expect(round.goals).toEqual(["real goal"]);
+    expect(round.role).toBe("Engineer");
+    expect(round.style).toBe("Concise");
+  });
 });
 
 describe("injectionText", () => {
