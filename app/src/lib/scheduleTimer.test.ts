@@ -21,6 +21,9 @@ const CFG: DistillConfig = {
   idle_minutes: 5,
   maturation_hours: 24,
   dormancy_decay: false,
+  llm_digest_days: 3,
+  llm_ingest_budget: 3,
+  profile_injection: true,
 };
 
 const REPORT: RunReport = {

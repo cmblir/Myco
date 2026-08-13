@@ -279,6 +279,9 @@ let mockDistillConfig: DistillConfig = {
   idle_minutes: 10,
   maturation_hours: 24,
   dormancy_decay: false,
+  llm_digest_days: 3,
+  llm_ingest_budget: 3,
+  profile_injection: true,
 };
 
 // Task 9 — two pending work/feedback/*.md proposals, so PageFeedback and the
@@ -924,6 +927,12 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       });
     case "apply_distill_proposal":
       return Promise.resolve("moved 1, skipped 0 already-processed");
+    // Session-digest bookkeeping (Phase B, Task 1) — empty backlog / a fixed
+    // manifest id, matching the brief's "empty list / 'digest-mock' id".
+    case "digestable_session_days":
+      return Promise.resolve([]);
+    case "archive_digested_sessions":
+      return Promise.resolve("digest-mock");
     case "get_settings":
       return Promise.resolve(
         AGENT_MODE

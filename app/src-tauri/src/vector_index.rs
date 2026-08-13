@@ -71,10 +71,11 @@ pub struct Hit {
 
 /// True for a page the distillation gate's cold tier owns: archived sources
 /// (`raw/archive/YYYY-MM/`), gate-quarantined inflow (`_inbox/quarantine/`),
-/// and internal cache/state (`.myco/`). These are never indexed and any
-/// existing record for one is dropped on the next prune — see
-/// `app/docs/specs/2026-08-13-ontology-distill-design.md` ("Archive
-/// distilled sources ... drop from the active embedding index").
+/// digested sessions (`sessions/archive/YYYY-MM/`, Phase B's
+/// `archive_digested_sessions`), and internal cache/state (`.myco/`). These
+/// are never indexed and any existing record for one is dropped on the next
+/// prune — see `app/docs/specs/2026-08-13-ontology-distill-design.md`
+/// ("Archive distilled sources ... drop from the active embedding index").
 ///
 /// Distinct from `is_machine_written`: that one hides noisy-but-live pages
 /// (raw/sessions/_inbox) from the link-suggestions panel while leaving them
@@ -83,6 +84,7 @@ pub struct Hit {
 pub fn is_cold(page: &str) -> bool {
     page.starts_with("raw/archive/")
         || page.starts_with("_inbox/quarantine/")
+        || page.starts_with("sessions/archive/")
         || page.starts_with(".myco/")
 }
 
@@ -1370,9 +1372,11 @@ mod suggestion_scope_tests {
         assert!(is_cold("raw/archive/2026-08/x.md"));
         assert!(is_cold("_inbox/quarantine/y.md"));
         assert!(is_cold(".myco/ontology.json"));
+        assert!(is_cold("sessions/archive/2026-08/x.md"));
         assert!(!is_cold("raw/x.md"));
         assert!(!is_cold("_inbox/y.md"));
         assert!(!is_cold("wiki/a.md"));
+        assert!(!is_cold("sessions/2026-08/x.md"));
 
         let mut s = store_with(&["wiki/a.md", "raw/archive/2026-08/x.md"]);
         let existing: HashSet<String> = ["wiki/a.md", "raw/archive/2026-08/x.md"]

@@ -16,6 +16,10 @@ export interface DistillConfig {
   idle_minutes: number;
   maturation_hours: number;
   dormancy_decay: boolean;
+  // Phase B (LLM layer) groundwork.
+  llm_digest_days: number;
+  llm_ingest_budget: number;
+  profile_injection: boolean;
 }
 
 // scan()'s return summary — folded into RunReport below (Task 4/6, Phase A;
@@ -52,6 +56,14 @@ export interface DistillStatus {
   // Important 3 fix — the most recently started run's id (undoDistillRun's
   // `id` argument), or null if no run has happened yet.
   last_run_id: string | null;
+}
+
+// Phase B, Task 1 — digestableSessionDays's return: one day's worth of
+// sessions/ files ready for the LLM digest step.
+export interface DigestDay {
+  day: string; // YYYY-MM-DD
+  files: string[]; // vault-relative rel paths
+  bytes: number;
 }
 
 // Task 8 — direction of `last_backlogs` (oldest → newest, per Rust's

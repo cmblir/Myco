@@ -52,6 +52,21 @@ fn d_maturation() -> u32 {
     24
 }
 
+/// Phase B default: `sessions/` days become digest-eligible after this many
+/// days, independent of `maturation_hours` (that gate is per-item and much
+/// shorter; this one is per-day, letting a day's work logs settle before an
+/// LLM call summarizes them).
+fn d_digest_days() -> u32 {
+    3
+}
+
+/// Phase B default: how many `_inbox/`/quarantine items one `run` will spend
+/// a paid LLM ingest call on — bounds a single automatic run's LLM cost
+/// independent of `run_budget_items` (the no-LLM scan's own budget).
+fn d_ingest_budget() -> u32 {
+    3
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct DistillConfig {
     #[serde(default = "d_true")]
@@ -72,6 +87,17 @@ pub struct DistillConfig {
     pub maturation_hours: u32,
     #[serde(default)]
     pub dormancy_decay: bool,
+    /// Phase B: minimum age (days) before a `sessions/` day is offered to
+    /// `digestable_session_days`.
+    #[serde(default = "d_digest_days")]
+    pub llm_digest_days: u32,
+    /// Phase B: per-run cap on paid LLM ingest calls.
+    #[serde(default = "d_ingest_budget")]
+    pub llm_ingest_budget: u32,
+    /// Phase B: whether an LLM wiki-maintenance call gets the vault's
+    /// `profile.md` injected as extra context.
+    #[serde(default = "d_true")]
+    pub profile_injection: bool,
 }
 
 impl Default for DistillConfig {
@@ -86,6 +112,9 @@ impl Default for DistillConfig {
             idle_minutes: d_idle(),
             maturation_hours: d_maturation(),
             dormancy_decay: false,
+            llm_digest_days: d_digest_days(),
+            llm_ingest_budget: d_ingest_budget(),
+            profile_injection: d_true(),
         }
     }
 }
@@ -218,7 +247,10 @@ pub struct ScanOutcome {
 /// own output) — never walked, never re-scored.
 const QUARANTINE_DIR: &str = "quarantine";
 /// The one subdirectory of `raw/` that is NOT inflow (retired sources) — see
-/// `app/docs/specs/2026-08-13-distill-calibration.md`.
+/// `app/docs/specs/2026-08-13-distill-calibration.md`. Also reused as
+/// `sessions/`'s own archive subdirectory name (Phase B digest bookkeeping,
+/// `archive_digested_sessions`) — same "cold, never re-scored" shape, same
+/// literal name, no reason for a second constant.
 const RAW_ARCHIVE_DIR: &str = "archive";
 
 /// Minimum byte length before a file is even considered content — anything
@@ -343,8 +375,10 @@ fn walk_inflow(root: &Path, start: &str, exclude_top: &[&str], out: &mut Vec<Can
 
 /// Every inflow candidate across the three trees the gate watches, oldest
 /// mtime first (ties broken by path for a deterministic order). Never walks
-/// `.myco/` (not one of these trees at all), `_inbox/quarantine/`, or
-/// `raw/archive/`.
+/// `.myco/` (not one of these trees at all), `_inbox/quarantine/`,
+/// `raw/archive/`, or `sessions/archive/` (Phase B's digested-session
+/// archive — an archived session must never be re-scored, same reason
+/// `raw/archive/` is excluded).
 fn collect_candidates(root: &Path) -> Vec<Candidate> {
     let mut out = Vec::new();
     walk_inflow(
@@ -354,7 +388,12 @@ fn collect_candidates(root: &Path) -> Vec<Candidate> {
         &mut out,
     );
     walk_inflow(root, "raw", &[RAW_ARCHIVE_DIR], &mut out);
-    walk_inflow(root, crate::commands::DEST_SESSIONS, &[], &mut out);
+    walk_inflow(
+        root,
+        crate::commands::DEST_SESSIONS,
+        &[RAW_ARCHIVE_DIR],
+        &mut out,
+    );
     out.sort_by(|a, b| a.mtime.cmp(&b.mtime).then_with(|| a.rel.cmp(&b.rel)));
     out
 }
@@ -728,13 +767,13 @@ fn month_bucket(secs: i64) -> String {
     format!("{y:04}-{m:02}")
 }
 
-/// `run_id(now)`, or the same id suffixed `-2`, `-3`… if a run already wrote
-/// a manifest under that exact second — e.g. two runs kicked off back-to-back
-/// within the same wall-clock second.
-fn free_run_id(root: &Path, now: i64) -> String {
-    let base = run_id(now);
-    if !manifest_path(root, &base).exists() {
-        return base;
+/// `base`, or the same id suffixed `-2`, `-3`… if a manifest under that exact
+/// id already exists — the collision guard both `free_run_id` and
+/// `archive_digested_sessions`'s own digest-run id need, factored out so
+/// there is exactly one collision loop.
+fn free_manifest_id(root: &Path, base: &str) -> String {
+    if !manifest_path(root, base).exists() {
+        return base.to_string();
     }
     let mut n = 2u32;
     loop {
@@ -744,6 +783,13 @@ fn free_run_id(root: &Path, now: i64) -> String {
         }
         n += 1;
     }
+}
+
+/// `run_id(now)`, or the same id suffixed `-2`, `-3`… if a run already wrote
+/// a manifest under that exact second — e.g. two runs kicked off back-to-back
+/// within the same wall-clock second.
+fn free_run_id(root: &Path, now: i64) -> String {
+    free_manifest_id(root, &run_id(now))
 }
 
 /// `path`, or the same stem suffixed `-2`, `-3`… before the extension if it
@@ -846,6 +892,42 @@ fn write_proposal(
     );
     std::fs::write(&path, content).map_err(|e| format!("write proposal: {e}"))?;
     Ok(rel_string(root, &path))
+}
+
+/// Section header a summary-tier digest line lands under in `daily/<day>.md`
+/// — appended at most once per file (`append_daily_summary_line` checks for
+/// it before adding it again).
+const DAILY_SUMMARY_HEADER: &str = "## Distill summary (auto)";
+
+/// Ensure `daily/<day>.md` exists (seeded with `# <day>\n` if it doesn't) and
+/// carries `DAILY_SUMMARY_HEADER`, then append `line`. Returns whether THIS
+/// call is what created the file from nothing — the one signal `run`'s
+/// summary-tier step needs to decide whether the file belongs in its undo
+/// manifest: appending to a file that already existed before this run must
+/// never let `undo` delete the whole thing, only a file this run itself
+/// originated may be deleted wholesale on undo.
+fn append_daily_summary_line(root: &Path, day: &str, line: &str) -> Result<bool, String> {
+    let dir = root.join("daily");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create daily dir: {e}"))?;
+    let path = dir.join(format!("{day}.md"));
+    let created = !path.exists();
+    let mut content = if created {
+        format!("# {day}\n")
+    } else {
+        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?
+    };
+    if !content.contains(DAILY_SUMMARY_HEADER) {
+        if !content.ends_with('\n') {
+            content.push('\n');
+        }
+        content.push('\n');
+        content.push_str(DAILY_SUMMARY_HEADER);
+        content.push_str("\n\n");
+    }
+    content.push_str(line);
+    content.push('\n');
+    std::fs::write(&path, content).map_err(|e| format!("write {}: {e}", path.display()))?;
+    Ok(created)
 }
 
 /// Parse a proposal file's YAML frontmatter into its raw `Pod` map, or `None`
@@ -1323,6 +1405,33 @@ fn pending_admit_cluster_exists(root: &Path, files: &[String]) -> bool {
         })
 }
 
+/// True if a PENDING `summary-batch` proposal already names this exact file
+/// — the same de-dup `pending_admit_cluster_exists` gives `admit-cluster`,
+/// narrowed to a single file: unlike an emerging cluster, a summary-tier item
+/// gets its own proposal, mirroring the raw archive pass's per-file
+/// `archive-batch` proposals rather than grouping many files into one.
+fn pending_summary_batch_exists(root: &Path, rel: &str) -> bool {
+    crate::vault::vault_entries(&root.join("work/feedback"))
+        .into_iter()
+        .filter(|(e, kind)| {
+            kind.is_file() && e.path().extension().and_then(|x| x.to_str()) == Some("md")
+        })
+        .any(|(e, _)| {
+            let Ok(content) = std::fs::read_to_string(e.path()) else {
+                return false;
+            };
+            let Some(map) = proposal_frontmatter(&content) else {
+                return false;
+            };
+            if !is_pending_map(&map) {
+                return false;
+            }
+            let is_summary_batch =
+                matches!(map.get("action"), Some(gray_matter::Pod::String(s)) if s == "summary-batch");
+            is_summary_batch && proposal_payload_files(&map) == [rel.to_string()]
+        })
+}
+
 /// Emerging-cluster + proposal pass (run() step ⑥): quarantined items whose
 /// pairwise similarity clusters into a group of at least `EMERGING_MIN_SIZE`
 /// are proposed as a new topic, unless a pending `admit-cluster` proposal for
@@ -1495,6 +1604,17 @@ fn is_quarantine_payload_path(rel: &str) -> bool {
 fn is_raw_top_level_payload_path(rel: &str) -> bool {
     rel.strip_prefix("raw/")
         .is_some_and(|rest| !rest.is_empty() && !rest.contains('/'))
+}
+
+/// `sessions/...`, anywhere under it except already `sessions/archive/...` —
+/// the confine `archive_digested_sessions` applies to its caller-supplied
+/// `files` (IPC input, untrusted like every other payload-file list here).
+/// Unlike `is_quarantine_payload_path`/`is_raw_top_level_payload_path`,
+/// further nesting past the prefix is fine: a session lives in its own
+/// `YYYY-MM/` bucket, not flat.
+fn is_session_payload_path(rel: &str) -> bool {
+    let prefix = format!("{}/", crate::commands::DEST_SESSIONS);
+    rel.starts_with(&prefix) && !rel.starts_with(&format!("{prefix}{RAW_ARCHIVE_DIR}/"))
 }
 
 /// Move a quarantined item's content file back to `_inbox/`, delete its
@@ -1769,6 +1889,108 @@ pub fn run(
     let maturation_secs = cfg.maturation_hours as i64 * 3600;
     let mut archived = 0usize;
     let mut proposals = 0usize;
+
+    // ③.5 Summary-tier execution (Phase B, Task 1): a `scan` verdict of
+    // Tier::Summary is "too thin to admit, too topical to ignore" — record
+    // one low-confidence line in today's daily note and move the file out of
+    // the active inflow trees, the same cold-tier destination (`raw/archive/`)
+    // the "already represented" pass just below uses. Runs BEFORE that pass,
+    // not after: a raw/ item that is BOTH summary-tier AND already has a
+    // `wiki/source-<stem>.md` page must get its daily line here first — the
+    // archive pass below would otherwise move it under the "already
+    // represented" reason first, and this step would never see it again
+    // (its ledger entry, keyed by the pre-move path, is gone the moment the
+    // file moves).
+    //
+    // `sessions/` summary items are deliberately excluded: a per-session
+    // daily line would be one line per work log, not the day-level digest
+    // Phase B actually wants — see `digestable_session_days`/
+    // `archive_digested_sessions` below, the per-day path for those instead.
+    let summary_state = state_load(root, &ontology.model);
+    let mut summary_entries: Vec<String> = summary_state
+        .scored
+        .iter()
+        .filter(|(_, e)| e.tier == "summary")
+        .map(|(rel, _)| rel.clone())
+        .filter(|rel| {
+            is_raw_top_level_payload_path(rel)
+                || rel.starts_with(&format!("{}/", crate::commands::DEST_INBOX))
+        })
+        .collect();
+    summary_entries.sort();
+
+    let today = {
+        let (y, m, d, ..) = civil_datetime(now);
+        format!("{y:04}-{m:02}-{d:02}")
+    };
+
+    for rel in summary_entries {
+        let path = root.join(&rel);
+        if !path.exists() {
+            continue; // already moved/gone since scan recorded it
+        }
+        let Some(mtime) = mtime_secs(&path) else {
+            continue;
+        };
+        let Some(first_line) = std::fs::read_to_string(&path).ok().and_then(|c| {
+            c.lines()
+                .find(|l| !l.trim().is_empty())
+                .map(|l| truncate_chars(l.trim(), 120))
+        }) else {
+            continue; // unreadable/empty — nothing to digest
+        };
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("item.md")
+            .to_string();
+        let month = month_bucket(mtime);
+
+        if conservative {
+            if pending_summary_batch_exists(root, &rel) {
+                continue;
+            }
+            let proposal_rel = write_proposal(
+                root,
+                "summary-batch",
+                &format!("Digest summary item {file_name}?"),
+                &format!(
+                    "`{rel}` scored summary-tier (low confidence). Standard/Aggressive \
+                     intensity would append one line to `daily/{today}.md` and move it to \
+                     `raw/archive/{month}/{file_name}`."
+                ),
+                &serde_json::json!({ "files": [rel.clone()] }),
+            )?;
+            manifest.created.push(proposal_rel);
+            save_manifest(root, &manifest)?;
+            proposals += 1;
+        } else {
+            let line = format!("- {first_line} — `{rel}` (low confidence)");
+            // ponytail: no idempotency guard on the appended text itself — a
+            // run that crashes between this append and the move below would
+            // re-append the same line on retry (the item is still tier
+            // "summary" until the move happens). Upgrade if that proves to
+            // matter in practice; every other pass in `run` accepts the same
+            // duplicate-on-retry ceiling (see `write_proposal`'s doc comment).
+            let day_created = append_daily_summary_line(root, &today, &line)?;
+            if day_created {
+                manifest.created.push(format!("daily/{today}.md"));
+                save_manifest(root, &manifest)?;
+            }
+
+            let archive_dir = root.join("raw/archive").join(&month);
+            std::fs::create_dir_all(&archive_dir)
+                .map_err(|e| format!("create archive dir: {e}"))?;
+            let to_path = free_path(&archive_dir.join(&file_name));
+            std::fs::rename(&path, &to_path).map_err(|e| format!("archive summary item: {e}"))?;
+            manifest.moves.push(MoveEntry {
+                from: rel.clone(),
+                to: rel_string(root, &to_path),
+            });
+            save_manifest(root, &manifest)?;
+            archived += 1;
+        }
+    }
 
     // ④ Archive pass: top-level raw/*.md only — `vault_entries` already skips
     // dotfiles/symlinks, and not recursing means `raw/archive/` (a directory,
@@ -2058,6 +2280,156 @@ pub fn status(root: &Path) -> DistillStatus {
         gate_active: crate::commands::wiki_titles(root).len() >= GATE_MIN_WIKI_PAGES,
         last_run_id: newest_run_id(root),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Session-digest bookkeeping (Phase B, Task 1): group already-scored
+// `sessions/` files by day for the LLM digest step to summarize, then move a
+// digested day out of the active tree once that step is done. `run`'s own
+// summary-tier step above deliberately skips `sessions/` — this is that
+// tree's per-day path instead.
+// ---------------------------------------------------------------------------
+
+/// One day's worth of `sessions/` files ready for Phase B's LLM digest step.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct DigestDay {
+    pub day: String,
+    pub files: Vec<String>,
+    pub bytes: u64,
+}
+
+/// `YYYY-MM-DD` for a swept session: extends `commands::session_bucket`'s
+/// "prefer a date already in the stem" idea to day granularity — a plain
+/// `YYYYMMDD` run of digits rather than `YYYY-MM`, since importers name files
+/// after the full conversation date, not just its month. Falls back to the
+/// file's own mtime (UTC) when the stem carries no such run.
+fn session_day(stem: &str, mtime: i64) -> String {
+    if let Some(pos) = stem.find(|c: char| c.is_ascii_digit()) {
+        let tail = &stem[pos..];
+        let b = tail.as_bytes();
+        if b.len() >= 8 && b[0..8].iter().all(u8::is_ascii_digit) {
+            let y: u16 = tail[0..4].parse().unwrap_or(0);
+            let m: u8 = tail[4..6].parse().unwrap_or(0);
+            let d: u8 = tail[6..8].parse().unwrap_or(0);
+            if (1970..=2999).contains(&y) && (1..=12).contains(&m) && (1..=31).contains(&d) {
+                return format!("{y:04}-{m:02}-{d:02}");
+            }
+        }
+    }
+    let (y, m, d, ..) = civil_datetime(mtime);
+    format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// Groups mature, gate-scored `sessions/**/*.md` (excluding
+/// `sessions/archive/`, via `walk_inflow`'s own exclusion — same walk
+/// `collect_candidates` uses for this tree) by day, oldest day first. "Mature"
+/// is the same `maturation_hours` gate `scan` uses; "gate-scored" means a
+/// ledger entry exists at all (tier doesn't matter — an unscored file has no
+/// verdict to digest around yet, but an already-summary/full/quarantine-tier
+/// session log is still a work log worth digesting).
+pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
+    let cfg = config_load(root);
+    let maturation_secs = cfg.maturation_hours as i64 * 3600;
+    let now = now_secs();
+
+    let store = crate::vector_index::VectorStore::path_for(&root.to_string_lossy())
+        .map(|p| crate::vector_index::VectorStore::load(&p))
+        .unwrap_or_default();
+    let state = state_load(root, &store.model);
+
+    let mut candidates = Vec::new();
+    walk_inflow(
+        root,
+        crate::commands::DEST_SESSIONS,
+        &[RAW_ARCHIVE_DIR],
+        &mut candidates,
+    );
+
+    let mut by_day: HashMap<String, (Vec<String>, u64)> = HashMap::new();
+    for c in candidates {
+        if now - c.mtime < maturation_secs {
+            continue;
+        }
+        if !state.scored.contains_key(&c.rel) {
+            continue;
+        }
+        let stem = c.path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let day = session_day(stem, c.mtime);
+        let bytes = std::fs::metadata(&c.path).map(|m| m.len()).unwrap_or(0);
+        let entry = by_day.entry(day).or_insert_with(|| (Vec::new(), 0));
+        entry.0.push(c.rel);
+        entry.1 += bytes;
+    }
+
+    let mut days: Vec<DigestDay> = by_day
+        .into_iter()
+        .map(|(day, (mut files, bytes))| {
+            files.sort();
+            DigestDay { day, files, bytes }
+        })
+        .collect();
+    days.sort_by(|a, b| a.day.cmp(&b.day));
+    days
+}
+
+/// Moves each of `files` (already-digested `sessions/...` items) into
+/// `sessions/archive/<YYYY-MM>/`, bucketed by `day`'s own month rather than
+/// each file's individual mtime — every file in one call came from the same
+/// `DigestDay`, so they share one bucket. Writes a fresh `RunManifest` (id
+/// `digest-<unix-seconds>`), saved incrementally after each move —
+/// `undo(root, id)` reverses it with zero new code, the same manifest shape
+/// every other pass in `run` already produces. `files` is IPC input, so each
+/// entry is confined to `sessions/...` and rejected if already under
+/// `sessions/archive/` before it is ever joined onto `root`
+/// (`confine_payload_file`, the same pattern `apply_proposal`'s passes use
+/// for their own payload files).
+pub fn archive_digested_sessions(
+    root: &Path,
+    day: &str,
+    files: &[String],
+) -> Result<String, String> {
+    let valid_day = day.len() == 10
+        && day.as_bytes().get(4) == Some(&b'-')
+        && day.as_bytes().get(7) == Some(&b'-');
+    if !valid_day {
+        return Err(format!("bad day `{day}`, expected YYYY-MM-DD"));
+    }
+    let month = &day[..7];
+
+    let now = now_secs();
+    let id = free_manifest_id(root, &format!("digest-{now}"));
+    let mut manifest = RunManifest {
+        id: id.clone(),
+        started_at: now,
+        ..Default::default()
+    };
+    save_manifest(root, &manifest)?;
+
+    let archive_dir = root
+        .join(crate::commands::DEST_SESSIONS)
+        .join(RAW_ARCHIVE_DIR)
+        .join(month);
+    std::fs::create_dir_all(&archive_dir)
+        .map_err(|e| format!("create session archive dir: {e}"))?;
+
+    for f in files {
+        let from_path = confine_payload_file(root, f, is_session_payload_path, "sessions/")?;
+        if !from_path.exists() {
+            continue; // already moved/gone — idempotent, same as the apply_* passes
+        }
+        let from_rel = rel_string(root, &from_path);
+        let file_name = from_path
+            .file_name()
+            .ok_or_else(|| format!("bad session path: {f}"))?;
+        let to_path = free_path(&archive_dir.join(file_name));
+        std::fs::rename(&from_path, &to_path).map_err(|e| format!("archive session move: {e}"))?;
+        manifest.moves.push(MoveEntry {
+            from: from_rel,
+            to: rel_string(root, &to_path),
+        });
+        save_manifest(root, &manifest)?;
+    }
+    Ok(id)
 }
 
 #[cfg(test)]
@@ -2515,6 +2887,207 @@ mod tests {
             assert!(report_raw.contains(&report.id));
             assert!(report_raw.contains("1 moved"));
         });
+    }
+
+    /// Two clusters far enough apart (orthogonal centroids, plus a 3rd
+    /// dimension so neither competes for the other's similarity) that a
+    /// synthetic embed can land Tier::Summary against cluster 0 without
+    /// cluster 1 stealing "nearest" — same threshold shape as
+    /// `tiny_ontology`, just with model `""` so `run()`'s own staleness check
+    /// (`ontology::load(root, &store.model)`) reuses it rather than
+    /// rebuilding from the empty `VectorStore` an isolated-data test root has.
+    fn ontology_two_clusters() -> Ontology {
+        let cluster = |id: u32, label: &str, centroid: Vec<f32>| crate::ontology::Cluster {
+            id,
+            label: label.into(),
+            members: vec![format!("wiki/seed-{id}.md")],
+            centroid,
+            sim_mean: 0.9,
+            sim_std: 0.05,
+            p5: 0.10,
+            p25: 0.50,
+            p40: 0.90,
+            last_touched: 0,
+            override_widen: 0.0,
+        };
+        Ontology {
+            model: String::new(),
+            built_at: 0,
+            wiki_pages: GATE_MIN_WIKI_PAGES,
+            clusters: vec![
+                cluster(0, "topic-a", vec![1.0, 0.0, 0.0]),
+                cluster(1, "topic-b", vec![0.0, 1.0, 0.0]),
+            ],
+            entities: Vec::new(),
+        }
+    }
+
+    /// cosine 0.4 to cluster 0's centroid `[1,0,0]`, 0.0 to cluster 1's
+    /// `[0,1,0]` — clears `t_summary` (0.30) but not `t_full` (0.50) against
+    /// cluster 0 under `GatePreset::Normal`, and cluster 0 is the nearest
+    /// either way (0.4 > 0.0).
+    fn summary_tier_embed(texts: Vec<String>) -> Result<Vec<Vec<f32>>, String> {
+        Ok(texts
+            .iter()
+            .map(|_| vec![0.4_f32, 0.0, (1.0 - 0.16_f32).sqrt()])
+            .collect())
+    }
+
+    #[test]
+    fn summary_tier_items_get_a_daily_line_and_archive() {
+        crate::settings::test_support::with_isolated_data("distill-summary-tier", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            seed_wiki_pages(root, GATE_MIN_WIKI_PAGES);
+            std::fs::create_dir_all(root.join("_inbox")).unwrap();
+            std::fs::write(root.join("_inbox/note.md"), PROSE).unwrap();
+            set_mtime(&root.join("_inbox/note.md"), old_mtime());
+            crate::ontology::save(root, &ontology_two_clusters()).unwrap();
+
+            let cfg = DistillConfig::default(); // Standard intensity
+            let report = run(root, &cfg, &summary_tier_embed).unwrap();
+            assert_eq!(report.scan.summaries, 1);
+            assert_eq!(report.proposals, 0);
+
+            let (y, m, d, ..) = civil_datetime(now_secs());
+            let today = format!("{y:04}-{m:02}-{d:02}");
+            let daily =
+                std::fs::read_to_string(root.join("daily").join(format!("{today}.md"))).unwrap();
+            assert!(daily.contains("## Distill summary (auto)"));
+            assert!(daily.contains("(low confidence)"));
+            assert!(daily.contains("_inbox/note.md"));
+
+            assert!(
+                !root.join("_inbox/note.md").exists(),
+                "digested item must move out of _inbox/"
+            );
+            let month_dirs: Vec<_> = std::fs::read_dir(root.join("raw/archive"))
+                .unwrap()
+                .flatten()
+                .collect();
+            assert_eq!(month_dirs.len(), 1);
+            let moved = std::fs::read_dir(month_dirs[0].path())
+                .unwrap()
+                .flatten()
+                .next()
+                .unwrap();
+            assert_eq!(moved.file_name(), "note.md");
+
+            let manifest_raw = std::fs::read_to_string(manifest_path(root, &report.id)).unwrap();
+            assert!(manifest_raw.contains("_inbox/note.md"));
+        });
+
+        // Conservative: the file stays put and a summary-batch proposal
+        // appears instead.
+        crate::settings::test_support::with_isolated_data(
+            "distill-summary-tier-conservative",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                seed_wiki_pages(root, GATE_MIN_WIKI_PAGES);
+                std::fs::create_dir_all(root.join("_inbox")).unwrap();
+                std::fs::write(root.join("_inbox/note.md"), PROSE).unwrap();
+                set_mtime(&root.join("_inbox/note.md"), old_mtime());
+                crate::ontology::save(root, &ontology_two_clusters()).unwrap();
+
+                let cfg = DistillConfig {
+                    intensity: Intensity::Conservative,
+                    ..Default::default()
+                };
+                let report = run(root, &cfg, &summary_tier_embed).unwrap();
+                assert_eq!(report.scan.summaries, 1);
+                assert_eq!(report.proposals, 1);
+                assert!(
+                    root.join("_inbox/note.md").exists(),
+                    "conservative intensity must not move the file"
+                );
+
+                let feedback: Vec<_> = std::fs::read_dir(root.join("work/feedback"))
+                    .unwrap()
+                    .flatten()
+                    .collect();
+                assert_eq!(feedback.len(), 1);
+                let content = std::fs::read_to_string(feedback[0].path()).unwrap();
+                assert!(content.contains("action: summary-batch"));
+            },
+        );
+    }
+
+    #[test]
+    fn digestable_days_group_scored_mature_sessions() {
+        crate::settings::test_support::with_isolated_data("distill-digestable-days", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("sessions/2026-08")).unwrap();
+            let files = ["20260810-a.md", "20260810-b.md", "20260812-c.md"];
+            for f in files {
+                std::fs::write(root.join(format!("sessions/2026-08/{f}")), PROSE).unwrap();
+                set_mtime(&root.join(format!("sessions/2026-08/{f}")), old_mtime());
+            }
+
+            // a.md and b.md are already scored; c.md never was.
+            let mut state = DistillState::default();
+            for f in [
+                "sessions/2026-08/20260810-a.md",
+                "sessions/2026-08/20260810-b.md",
+            ] {
+                state.scored.insert(
+                    f.to_string(),
+                    ScoredEntry {
+                        hash: 0,
+                        tier: "summary".into(),
+                        at: now_secs(),
+                    },
+                );
+            }
+            state_save(root, &state).unwrap();
+
+            let days = digestable_session_days(root);
+            assert_eq!(days.len(), 1);
+            assert_eq!(days[0].day, "2026-08-10");
+            assert_eq!(
+                days[0].files,
+                vec![
+                    "sessions/2026-08/20260810-a.md".to_string(),
+                    "sessions/2026-08/20260810-b.md".to_string(),
+                ]
+            );
+        });
+    }
+
+    #[test]
+    fn archive_digested_sessions_moves_and_is_undoable() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("sessions/2026-08")).unwrap();
+        std::fs::write(root.join("sessions/2026-08/20260810-a.md"), PROSE).unwrap();
+        std::fs::write(root.join("sessions/2026-08/20260810-b.md"), PROSE).unwrap();
+
+        let files = vec![
+            "sessions/2026-08/20260810-a.md".to_string(),
+            "sessions/2026-08/20260810-b.md".to_string(),
+        ];
+        let id = archive_digested_sessions(root, "2026-08-10", &files).unwrap();
+
+        for name in ["20260810-a.md", "20260810-b.md"] {
+            assert!(root
+                .join(format!("sessions/archive/2026-08/{name}"))
+                .exists());
+            assert!(!root.join(format!("sessions/2026-08/{name}")).exists());
+        }
+
+        let undone = undo(root, &id).unwrap();
+        assert_eq!(undone, 2);
+        for name in ["20260810-a.md", "20260810-b.md"] {
+            assert!(root.join(format!("sessions/2026-08/{name}")).exists());
+            assert!(!root
+                .join(format!("sessions/archive/2026-08/{name}"))
+                .exists());
+        }
+
+        // Untrusted path: outside sessions/ must be rejected outright.
+        let bad = vec!["wiki/index.md".to_string()];
+        assert!(archive_digested_sessions(root, "2026-08-10", &bad).is_err());
     }
 
     #[test]

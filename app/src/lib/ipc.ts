@@ -3,7 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { DistillConfig, DistillStatus, RunReport } from "./distill";
+import type { DigestDay, DistillConfig, DistillStatus, RunReport } from "./distill";
 
 export interface VaultMeta {
   path: string;
@@ -588,6 +588,11 @@ export const ipc = {
   // Execute a pending distill proposal (Task 7, Phase A).
   applyDistillProposal: (vault: string, path: string) =>
     invoke<string>("apply_distill_proposal", { vault, path }),
+  // Session-digest bookkeeping (Phase B, Task 1).
+  digestableSessionDays: (vault: string) =>
+    invoke<DigestDay[]>("digestable_session_days", { vault }),
+  archiveDigestedSessions: (vault: string, day: string, files: string[]) =>
+    invoke<string>("archive_digested_sessions", { vault, day, files }),
   listProviderModels: (providerId: string) =>
     invoke<string[]>("list_provider_models", { providerId }),
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),

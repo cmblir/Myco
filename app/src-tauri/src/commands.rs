@@ -1556,6 +1556,32 @@ pub fn apply_distill_proposal(
     crate::distill::apply_proposal(std::path::Path::new(&root), &path)
 }
 
+/// `sessions/` days ready for Phase B's LLM digest step. See
+/// `distill::digestable_session_days`'s own doc comment.
+#[tauri::command]
+pub fn digestable_session_days(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+) -> Result<Vec<crate::distill::DigestDay>, String> {
+    let root = confine_root(&state, &vault)?;
+    Ok(crate::distill::digestable_session_days(
+        std::path::Path::new(&root),
+    ))
+}
+
+/// Move a digested day's `sessions/` files into `sessions/archive/`. See
+/// `distill::archive_digested_sessions`'s own doc comment.
+#[tauri::command]
+pub fn archive_digested_sessions(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    day: String,
+    files: Vec<String>,
+) -> Result<String, String> {
+    let root = confine_root(&state, &vault)?;
+    crate::distill::archive_digested_sessions(std::path::Path::new(&root), &day, &files)
+}
+
 /// The bundled digest runner script (falls back to the repo path in dev).
 fn digest_script_path(app: &tauri::AppHandle) -> Result<String, String> {
     const REL: &str = "automation/digest.py";
@@ -1853,10 +1879,12 @@ pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String,
     // log to produce pages titled after prompt boilerplate.
     walk(&root.join(DEST_SESSIONS), root, &mut out);
     // Cold-tier pages never belong in the active index — see this fn's doc
-    // comment. A no-op today (both walk roots above are structurally disjoint
-    // from every `is_cold` prefix), but this is the single choke point every
-    // (re)indexing caller routes through, so it is where the guard lives
-    // rather than duplicated at each caller.
+    // comment. Live since `is_cold` grew a `sessions/archive/` prefix (Phase
+    // B's `archive_digested_sessions`): the `sessions/` walk above is no
+    // longer structurally disjoint from every `is_cold` prefix, so a digested
+    // session actually gets dropped here. This is the single choke point
+    // every (re)indexing caller routes through, so it is where the guard
+    // lives rather than duplicated at each caller.
     out.retain(|(rel, _, _)| !is_cold(rel));
     out
 }
