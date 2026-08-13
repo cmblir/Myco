@@ -569,7 +569,17 @@ pub fn read_confined_raw(root: &Path, relpath: &str, max: u64) -> Result<Vec<u8>
 /// `name`, e.g. after it moved from `raw/<stem>.pdf` to an archive subfolder.
 /// Uses `vault_entries` so the search shares the same symlink/hidden-file
 /// safety as every other vault walker.
+///
+/// `std::fs::read_dir` order is platform/filesystem-dependent, so a stack walk
+/// that returned on first match would serve a non-deterministic file if the
+/// same name existed under two different `raw/archive/YYYY-MM/` folders —
+/// silent wrong-file substitution in the PDF viewer. Instead collect every
+/// match and deterministically pick the lexicographically LAST full path:
+/// zero-padded `YYYY-MM` archive folder names sort chronologically, so "last"
+/// is the newest archive month, i.e. the only sane "current" copy of a name
+/// that (should not, but did) end up duplicated.
 fn find_in_raw_by_name(root: &Path, name: &std::ffi::OsStr) -> Option<PathBuf> {
+    let mut matches = Vec::new();
     let mut stack = vec![root.join("raw")];
     while let Some(dir) = stack.pop() {
         for (entry, kind) in vault_entries(&dir) {
@@ -577,11 +587,12 @@ fn find_in_raw_by_name(root: &Path, name: &std::ffi::OsStr) -> Option<PathBuf> {
             if kind.is_dir() {
                 stack.push(path);
             } else if path.file_name() == Some(name) {
-                return Some(path);
+                matches.push(path);
             }
         }
     }
-    None
+    matches.sort();
+    matches.pop()
 }
 
 pub fn read_file(path: &str) -> Result<FileContent, String> {
@@ -1370,6 +1381,27 @@ mod tests {
 
         // A name that truly doesn't exist anywhere under raw/ still errors.
         assert!(read_confined_raw(&root, "raw/ghost.pdf", 1_000).is_err());
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_confined_raw_prefers_the_newest_archive_month_on_a_name_collision() {
+        // Should not happen in practice (archiving never overwrites), but the
+        // fallback search must still be deterministic rather than at the mercy
+        // of read_dir order: the same filename under two different
+        // raw/archive/YYYY-MM/ folders must always resolve to the newest month.
+        let dir = temp_vault("rawbytes-collision");
+        let root = dir.canonicalize().unwrap();
+        fs::create_dir_all(root.join("raw/archive/2026-01")).unwrap();
+        fs::create_dir_all(root.join("raw/archive/2026-07")).unwrap();
+        fs::write(root.join("raw/archive/2026-01/doc.pdf"), b"old copy").unwrap();
+        fs::write(root.join("raw/archive/2026-07/doc.pdf"), b"new copy").unwrap();
+
+        let bytes = read_confined_raw(&root, "raw/doc.pdf", 1_000).unwrap();
+        assert_eq!(
+            bytes, b"new copy",
+            "must deterministically prefer 2026-07 over 2026-01"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 

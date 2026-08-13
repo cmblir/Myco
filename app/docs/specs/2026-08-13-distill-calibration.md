@@ -37,7 +37,12 @@ that stops resolving is exactly the invariant this task exists to protect.
 under `root/raw/**` (new `find_in_raw_by_name`, reusing the existing
 symlink-safe `vault_entries` walker) when the literal confined path doesn't
 exist on disk. No frontend change was needed — the fix sits at the one choke
-point every caller already routes through. The PDF annotation sidecar
+point every caller already routes through. **Documented behavior, not an
+assumed guarantee:** filenames under `raw/**` are not guaranteed unique once
+archiving is in play, so the fallback is a deterministic rule, not a
+first-match scan — on a name collision across archive months it always
+serves the lexicographically last match (zero-padded `YYYY-MM` naming makes
+that the newest month), covered by a regression test. The PDF annotation sidecar
 (`wiki/.annotations/<stem>.json`) was checked too: it's keyed by stem, and its
 `source`/`relpath` field is stored for display only, never used to resolve a
 read, so it was never at risk.
