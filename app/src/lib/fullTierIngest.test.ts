@@ -8,7 +8,11 @@ vi.mock("./chat", () => ({
 
 const runIngestProvider = vi.fn();
 vi.mock("../stores/ingestStore", () => ({
-  INGEST_PROMPT: (slug: string, title: string) => `prompt for ${slug} (${title})`,
+  // Mirrors the real signature's 5th param so tests can see whether the
+  // profile-interests grounding line reached the prompt, without pulling in
+  // the real INGEST_PROMPT template.
+  INGEST_PROMPT: (slug: string, title: string, _c?: unknown, _p?: unknown, interests = "") =>
+    `prompt for ${slug} (${title})${interests ? ` | interests: ${interests}` : ""}`,
   runIngestProvider: (...a: unknown[]) => runIngestProvider(...a),
 }));
 
@@ -226,5 +230,47 @@ describe("runFullTierIngest", () => {
 
     expect(result.ingested).toBe(0);
     expect(result.errors).toEqual(["raw/a.md: Error: boom"]);
+  });
+});
+
+// Phase B, Task 6 (review-adjudicated): the interests grounding line is
+// governed by the same profile_injection toggle as chat.ts's full profile
+// paragraph — this is still profile content sent to the configured provider,
+// so "a profile exists" alone is not enough. Fail CLOSED when the toggle
+// can't be confirmed.
+describe("runFullTierIngest profile interests grounding", () => {
+  const PROFILE_MD = "## Role\nBackend engineer\n\n## Interests\n- rust\n- vector search\n";
+
+  it("includes the interests line when the toggle is on and a profile exists", async () => {
+    fullTierItems.mockResolvedValue(["raw/a.md"]);
+    readFile.mockResolvedValue({ raw: PROFILE_MD, content: "", frontmatter: null, path: "" });
+    // getDistillConfig default (beforeEach) already resolves CFG with profile_injection: true.
+
+    await runFullTierIngest("/v");
+
+    const call = runIngestProvider.mock.calls[0][0];
+    expect(call.prompt).toContain("interests: rust, vector search");
+  });
+
+  it("omits the interests line when the toggle is off, even with a profile present", async () => {
+    fullTierItems.mockResolvedValue(["raw/a.md"]);
+    getDistillConfig.mockResolvedValue({ ...CFG, profile_injection: false });
+    readFile.mockResolvedValue({ raw: PROFILE_MD, content: "", frontmatter: null, path: "" });
+
+    await runFullTierIngest("/v");
+
+    const call = runIngestProvider.mock.calls[0][0];
+    expect(call.prompt).not.toContain("interests");
+  });
+
+  it("fails closed (omits the interests line) when the distill config can't be read", async () => {
+    fullTierItems.mockResolvedValue(["raw/a.md"]);
+    getDistillConfig.mockRejectedValue(new Error("io error"));
+    readFile.mockResolvedValue({ raw: PROFILE_MD, content: "", frontmatter: null, path: "" });
+
+    await runFullTierIngest("/v");
+
+    const call = runIngestProvider.mock.calls[0][0];
+    expect(call.prompt).not.toContain("interests");
   });
 });

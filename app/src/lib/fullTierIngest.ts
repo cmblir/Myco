@@ -112,8 +112,11 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
 
   // Phase B, Task 6 — same grounding line startIngest passes, computed once
   // for the whole run rather than per item (the profile does not change
-  // mid-run).
-  const profile = await loadProfile(vaultPath);
+  // mid-run), and gated on the same `profile_injection` toggle for the same
+  // reason (see startIngest's comment): this line is still profile content
+  // sent to a provider. `cfg` above already failed CLOSED (`?? null` on a
+  // read error) — no profile, no interests line.
+  const profile = cfg?.profile_injection ? await loadProfile(vaultPath) : null;
   const profileInterests = profile?.interests.join(", ") ?? "";
 
   let ingested = 0;

@@ -147,12 +147,15 @@ describe("startIngest profile interests wiring", () => {
     } as never);
   });
 
-  it("passes profile interests into the ingest prompt when a profile exists", async () => {
-    vi.spyOn(ipc, "readFile").mockResolvedValue({
-      raw:
-        "## Role\nBackend engineer\n\n## Goals\n- Ship it\n\n" +
-        "## Interests\n- rust\n- vector search\n\n## Working style\nConcise\n",
+  const PROFILE_MD =
+    "## Role\nBackend engineer\n\n## Goals\n- Ship it\n\n" +
+    "## Interests\n- rust\n- vector search\n\n## Working style\nConcise\n";
+
+  it("passes profile interests into the ingest prompt when the toggle is on and a profile exists", async () => {
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue({
+      profile_injection: true,
     } as never);
+    vi.spyOn(ipc, "readFile").mockResolvedValue({ raw: PROFILE_MD } as never);
     const run = vi
       .spyOn(ipc, "claudeRunStream")
       .mockResolvedValue({ stdout: "ok", stderr: "", status: 0 } as never);
@@ -166,7 +169,41 @@ describe("startIngest profile interests wiring", () => {
   });
 
   it("omits the interests line when there is no profile", async () => {
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue({
+      profile_injection: true,
+    } as never);
     vi.spyOn(ipc, "readFile").mockRejectedValue(new Error("not found"));
+    const run = vi
+      .spyOn(ipc, "claudeRunStream")
+      .mockResolvedValue({ stdout: "ok", stderr: "", status: 0 } as never);
+
+    await useIngestStore.getState().startIngest("t", "b");
+
+    const [, prompt] = run.mock.calls[0];
+    expect(prompt).not.toContain("User interests");
+  });
+
+  it("omits the interests line when the toggle is off, even with a profile on disk", async () => {
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue({
+      profile_injection: false,
+    } as never);
+    const readFile = vi
+      .spyOn(ipc, "readFile")
+      .mockResolvedValue({ raw: PROFILE_MD } as never);
+    const run = vi
+      .spyOn(ipc, "claudeRunStream")
+      .mockResolvedValue({ stdout: "ok", stderr: "", status: 0 } as never);
+
+    await useIngestStore.getState().startIngest("t", "b");
+
+    const [, prompt] = run.mock.calls[0];
+    expect(prompt).not.toContain("User interests");
+    expect(readFile).not.toHaveBeenCalled();
+  });
+
+  it("fails closed (omits the interests line) when the distill config can't be read", async () => {
+    vi.spyOn(ipc, "getDistillConfig").mockRejectedValue(new Error("io error"));
+    vi.spyOn(ipc, "readFile").mockResolvedValue({ raw: PROFILE_MD } as never);
     const run = vi
       .spyOn(ipc, "claudeRunStream")
       .mockResolvedValue({ stdout: "ok", stderr: "", status: 0 } as never);

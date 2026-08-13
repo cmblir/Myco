@@ -332,10 +332,18 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       set({ stage: "claude" });
       const settings = await ipc.getSettings();
       // Phase B, Task 6: weight linking/tagging toward the user's stated
-      // interests, when they have a profile — separate from the query-side
-      // paragraph injection (chat.ts), and not gated on that toggle: this is
-      // a light grounding line, not the full profile paragraph.
-      const profile = await loadProfile(vault.path);
+      // interests — a lighter grounding line than chat.ts's full profile
+      // paragraph, but sent to the same configured provider, so it is
+      // governed by the same `profile_injection` toggle (review-caught: the
+      // brief's "when a profile exists" wording missed the master spec's
+      // privacy principle that the toggle covers every path that sends
+      // profile content to a provider). Fail CLOSED on a config-read error —
+      // omit the line rather than risk leaking interests past a toggle we
+      // couldn't confirm is on.
+      const distillCfg = await ipc.getDistillConfig(vault.path).catch(() => null);
+      const profile = distillCfg?.profile_injection
+        ? await loadProfile(vault.path)
+        : null;
       const prompt = INGEST_PROMPT(
         slug,
         finalTitle,

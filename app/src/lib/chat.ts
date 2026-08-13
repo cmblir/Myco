@@ -91,6 +91,11 @@ export async function complete(args: CompleteArgs): Promise<string> {
   // query-task caller (interactive Ask, digests/study/audioOverview, and the
   // ingest planning call, which is also task:"query") benefits equally, unlike
   // the retrieval block below which is further gated on `onStage`.
+  // Disclosed, not overlooked: the master spec frames the profile paragraph as
+  // Ask/Agent-only, but `complete()` has no distinct task type for "the
+  // ingest-planning call" vs. interactive Ask — both are `task:"query"`. The
+  // ingest-planning call getting the full paragraph too is an accepted
+  // architectural consequence of that, not a separate decision to relitigate.
   const profileCfg =
     args.task === "query"
       ? await ipc.getDistillConfig(args.cwd).catch(() => null)
