@@ -219,3 +219,20 @@ for a behaviour that doesn't exist yet would mislead, not help.
 - **v2 parking lot:** partial admission (extraction), dormancy decay,
   cross-vault routing, onboarding wizard interview step, typed relations,
   work/inbox|doing|done, frontmatter maturity writeback.
+
+## Deviations (Phase B)
+
+- **Automation loop step 2** ("wiki updates where a fact touches an existing
+  concept"): not implemented. Session-digest output lands in `daily/` only,
+  never in `wiki/` — the self-reinforcement guard (session-derived facts are
+  low-confidence by construction) argues against feeding them straight into
+  wiki pages with no human step in between.
+- **Automation loop step 5** ("profile interests weight detection priority"):
+  not implemented. Phase B wires profile interests into the admission gate
+  only, as a lift signal (`S_profile`, `ontology::admit`); using them to
+  prioritize which detection-pass items get processed first is unimplemented.
+  Recorded as a Phase C candidate.
+- **App-side profile entry point** ("MCP additions" above: "Ask preset
+  '프로필 설정/갱신'"): implemented instead as a dismissable hint chip in Ask
+  mode linking to Settings → 증류's profile editor, not an Ask preset. Smaller
+  surface, same discoverability goal — recorded as a substitution, not a gap.

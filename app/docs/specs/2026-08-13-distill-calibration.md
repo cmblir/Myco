@@ -268,6 +268,15 @@ by the same argument.
 Full gate set (frontend lint/tsc/vitest, Rust fmt/clippy/test incl.
 `distill_acceptance --ignored`, MCP pytest) results are in the Task 6 report.
 
+## 7. T_PROFILE (Phase B, unmeasured)
+
+`ontology::admit`'s profile-interest lift threshold `T_PROFILE = 0.60` (Task
+5) is a starting hypothesis, not a measured percentile — the same status
+`S_entity`'s `>= 2` floor already had in the design spec before any
+measurement ran (both are "picked, not measured" per the code comment on
+`T_PROFILE`). Not calibrated in this pass; a candidate for the same
+percentile-measurement treatment §§3-4 gave `T_full`/`T_quar`.
+
 ## Method notes
 
 - Measurement code was a throwaway `#[test] #[ignore]` in a scratch file
