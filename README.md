@@ -135,6 +135,13 @@ cards and generated quizzes in-app.
 **Schedules** — recurring digests: a standing query, "what changed", staleness
 sweeps, topic trackers. Each run writes a cited markdown note into `digests/`.
 
+**Distillation** — an idle-time housekeeping pass scores new raw/session
+inflow against the wiki's topic clusters: junk is filtered before it costs an
+embedding, near-duplicate or off-topic items are quarantined then trashed, and
+raw sources already folded into the wiki move to a dated archive. Review its
+proposals on the Feedback page; tune intensity, gate strictness, and schedule
+from Settings.
+
 **Reader** — CodeMirror source / live preview / split, `[[wikilink]]`
 autocomplete, backlinks and Related notes panels. `raw/` PDFs open in an
 in-app pdf.js viewer: select text → highlight & cite mints a pinpoint link;
