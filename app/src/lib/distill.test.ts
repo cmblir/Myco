@@ -3,10 +3,18 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const draftMap = vi.fn();
 vi.mock("./maps", () => ({ draftMap: (...a: unknown[]) => draftMap(...a) }));
 
+// Controllable digest outcome — the cold-tier prune trigger keys off it.
+const runSessionDigest = vi.fn();
+vi.mock("./sessionDigest", () => ({
+  runSessionDigest: (...a: unknown[]) => runSessionDigest(...a),
+}));
+
 import { backlogTrend, lastRunLabel, runDistillGuarded } from "./distill";
 import { ipc } from "./ipc";
+import { useVaultStore } from "../stores/vaultStore";
+import { useReindexStore } from "../stores/reindexStore";
 import type { DistillConfig, RunReport } from "./distill";
-import type { FileNode, MycoSettings } from "./ipc";
+import type { EmbeddingsStatus, FileNode, MycoSettings } from "./ipc";
 
 describe("backlogTrend", () => {
   it("flat with fewer than two samples", () => {
@@ -74,6 +82,9 @@ const REPORT: RunReport = {
 describe("runDistillGuarded", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    // Default: digest resolves with nothing to report (a bare vi.fn() would
+    // return undefined and break the chain's .catch()).
+    runSessionDigest.mockReset().mockResolvedValue(null);
   });
 
   it("a second concurrent call for the same vault gets null and makes no second ipc call", async () => {
@@ -164,6 +175,7 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
   beforeEach(() => {
     vi.restoreAllMocks();
     draftMap.mockReset();
+    runSessionDigest.mockReset().mockResolvedValue(null);
   });
 
   it("applies an approved draft-map proposal and marks it done", async () => {
@@ -218,6 +230,54 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
     expect(draftMap).not.toHaveBeenCalled();
     // Early return before the tree walk — not just before the LLM call.
     expect(listFiles).not.toHaveBeenCalled();
+  });
+
+  it("triggers a prune reindex after a digest that archived files (final-review Important 6)", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    // builtin-local everywhere: full-tier and draft-map self-skip, isolating
+    // the prune path.
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("builtin-local"));
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 42,
+      model: "builtin-local:m",
+    } as EmbeddingsStatus);
+    runSessionDigest.mockResolvedValue({ daysDigested: 1, filesArchived: 3, skipped: null });
+
+    const prevVault = useVaultStore.getState().currentVault;
+    const prevReindex = useReindexStore.getState().reindex;
+    const reindex = vi.fn().mockResolvedValue(undefined);
+    useVaultStore.setState({ currentVault: { path: "/vprune" } as never });
+    useReindexStore.setState({ reindex });
+    try {
+      await runDistillGuarded("/vprune");
+      expect(reindex).toHaveBeenCalledTimes(1);
+    } finally {
+      useVaultStore.setState({ currentVault: prevVault });
+      useReindexStore.setState({ reindex: prevReindex });
+    }
+  });
+
+  it("never triggers a FIRST index build as a prune side effect", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("builtin-local"));
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 0, // no index yet — the first build stays a deliberate action
+      model: "",
+    } as EmbeddingsStatus);
+    runSessionDigest.mockResolvedValue({ daysDigested: 1, filesArchived: 3, skipped: null });
+
+    const prevVault = useVaultStore.getState().currentVault;
+    const prevReindex = useReindexStore.getState().reindex;
+    const reindex = vi.fn();
+    useVaultStore.setState({ currentVault: { path: "/vprune" } as never });
+    useReindexStore.setState({ reindex });
+    try {
+      await runDistillGuarded("/vprune");
+      expect(reindex).not.toHaveBeenCalled();
+    } finally {
+      useVaultStore.setState({ currentVault: prevVault });
+      useReindexStore.setState({ reindex: prevReindex });
+    }
   });
 
   it("caps one run's draft applies at llm_ingest_budget", async () => {

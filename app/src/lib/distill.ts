@@ -14,6 +14,8 @@ import {
   rewriteStatus,
   toRelative,
 } from "../stores/distillStore";
+import { useVaultStore } from "../stores/vaultStore";
+import { useReindexStore } from "../stores/reindexStore";
 
 export type Intensity = "conservative" | "standard" | "aggressive";
 export type GatePreset = "strict" | "normal" | "loose";
@@ -191,6 +193,30 @@ async function applyApprovedDraftMaps(vaultPath: string): Promise<MapDraftOutcom
   return { drafted, skipped: null };
 }
 
+/** Cold-tier prune (final-review Important 6): after a digest run archives
+ * session files to `sessions/archive/`, the active embedding index still
+ * holds their records until the next reindex — `reindex_embeddings` is that
+ * next reindex, and it is prune-cheap here (VERIFIED by reading commands.rs):
+ * `collect_wiki_pages` drops cold paths, unchanged pages hash-skip without
+ * an embed call (no model load either), and `store.prune` drops the archived
+ * records. Routed through reindexStore.reindex(), which already owns
+ * re-entrancy and progress UI, with two guards:
+ *   - only for the currently-open vault — `reindex_embeddings` runs against
+ *     the CURRENT vault root, not a parameter, and the digest chain can run
+ *     for a different one;
+ *   - never on an empty index — that would be the FIRST build (minutes plus
+ *     a 769 MB model load), which stays the Settings button's deliberate
+ *     action (same rule as autoReindex's decidePoll). */
+async function pruneArchivedSessions(vault: string): Promise<void> {
+  if (useVaultStore.getState().currentVault?.path !== vault) return;
+  const status = await ipc.embeddingsStatus().catch(() => null);
+  if (!status || status.indexed_pages === 0) return;
+  // Fire-and-forget: reindexStore's own guard rejects a run already in
+  // flight, and holding the distill guard window for an index maintenance
+  // pass would serialize unrelated work behind it.
+  void useReindexStore.getState().reindex();
+}
+
 /** Runs distill_run for `vault`, unless one is already in flight for that
  * vault — in which case this resolves to null immediately and makes no ipc
  * call. All callers (schedule-due, count-trigger, manual button) must go
@@ -217,6 +243,11 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
       return null;
     });
     if (outcome) lastDigestOutcome.set(vault, outcome);
+    if (outcome && outcome.filesArchived > 0) {
+      await pruneArchivedSessions(vault).catch((e) => {
+        console.error("[distill] cold-tier prune failed", vault, e);
+      });
+    }
     const fullTierOutcome = await runFullTierIngest(vault).catch((e) => {
       console.error("[distill] full-tier ingest failed", vault, e);
       return null;
