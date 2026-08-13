@@ -14,6 +14,7 @@ import {
   backlogTrend,
   lastDigestOutcome,
   lastFullTierOutcome,
+  lastMapDraftOutcome,
   lastRunLabel,
   runDistillGuarded,
 } from "../lib/distill";
@@ -263,8 +264,11 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
     if (!currentVault) return;
     const digest = lastDigestOutcome.get(currentVault.path);
     const full = lastFullTierOutcome.get(currentVault.path);
+    const maps = lastMapDraftOutcome.get(currentVault.path);
     setLlmQueued(
-      digest?.skipped === "no-provider" || full?.skipped === "no-provider",
+      digest?.skipped === "no-provider" ||
+        full?.skipped === "no-provider" ||
+        maps?.skipped === "no-provider",
     );
   }
 

@@ -5,8 +5,8 @@ vi.mock("./maps", () => ({ draftMap: (...a: unknown[]) => draftMap(...a) }));
 
 import { backlogTrend, lastRunLabel, runDistillGuarded } from "./distill";
 import { ipc } from "./ipc";
-import type { RunReport } from "./distill";
-import type { FileNode } from "./ipc";
+import type { DistillConfig, RunReport } from "./distill";
+import type { FileNode, MycoSettings } from "./ipc";
 
 describe("backlogTrend", () => {
   it("flat with fewer than two samples", () => {
@@ -119,7 +119,7 @@ describe("runDistillGuarded", () => {
 // runDistillGuarded must apply them the same way PageFeedback's approve
 // button would, without waiting for a human click.
 describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () => {
-  const TREE: FileNode[] = [
+  const feedbackTree = (names: string[]): FileNode[] => [
     {
       kind: "directory",
       name: "work",
@@ -129,20 +129,37 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
           kind: "directory",
           name: "feedback",
           path: "/vmap/work/feedback",
-          children: [{ kind: "file", name: "p.md", path: "/vmap/work/feedback/p.md" }],
+          children: names.map((n) => ({
+            kind: "file" as const,
+            name: n,
+            path: `/vmap/work/feedback/${n}`,
+          })),
         },
       ],
     },
   ];
+  const TREE = feedbackTree(["p.md"]);
 
-  const proposal = (status: string): string =>
+  const proposal = (status: string, cluster = "attention"): string =>
     "---\n" +
     "type: distill-proposal\n" +
     "action: draft-map\n" +
     `status: ${status}\n` +
     "created: 2026-08-13\n" +
-    'payload: {"cluster":"attention","members":["wiki/a.md","wiki/b.md"]}\n' +
-    "---\n\n# Map candidate: attention\n\nbody\n";
+    `payload: {"cluster":"${cluster}","members":["wiki/a.md","wiki/b.md"]}\n` +
+    `---\n\n# Map candidate: ${cluster}\n\nbody\n`;
+
+  // query provider drives the draft-map gate; ingest stays builtin-local so
+  // the chain's full-tier step self-skips and the test only exercises maps.
+  const settings = (queryProvider: string): MycoSettings =>
+    ({
+      query_provider: queryProvider,
+      query_model: "",
+      ingest_provider: "builtin-local",
+      ingest_model: "",
+    }) as unknown as MycoSettings;
+
+  const CFG = { llm_ingest_budget: 3 } as unknown as DistillConfig;
 
   beforeEach(() => {
     vi.restoreAllMocks();
@@ -151,6 +168,8 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
 
   it("applies an approved draft-map proposal and marks it done", async () => {
     vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("anthropic-api"));
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue(CFG);
     vi.spyOn(ipc, "listFiles").mockResolvedValue(TREE);
     vi.spyOn(ipc, "readFile").mockResolvedValue({
       path: "/vmap/work/feedback/p.md",
@@ -172,6 +191,8 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
 
   it("leaves a pending draft-map proposal untouched", async () => {
     vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("anthropic-api"));
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue(CFG);
     vi.spyOn(ipc, "listFiles").mockResolvedValue(TREE);
     vi.spyOn(ipc, "readFile").mockResolvedValue({
       path: "/vmap/work/feedback/p.md",
@@ -185,5 +206,40 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
 
     expect(draftMap).not.toHaveBeenCalled();
     expect(writeFile).not.toHaveBeenCalled();
+  });
+
+  it("makes zero draft calls on builtin-local (final-review Important 3)", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("builtin-local"));
+    const listFiles = vi.spyOn(ipc, "listFiles");
+
+    await runDistillGuarded("/vmap");
+
+    expect(draftMap).not.toHaveBeenCalled();
+    // Early return before the tree walk — not just before the LLM call.
+    expect(listFiles).not.toHaveBeenCalled();
+  });
+
+  it("caps one run's draft applies at llm_ingest_budget", async () => {
+    const names = ["p1.md", "p2.md", "p3.md", "p4.md", "p5.md"];
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("anthropic-api"));
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue(CFG); // budget 3
+    vi.spyOn(ipc, "listFiles").mockResolvedValue(feedbackTree(names));
+    vi.spyOn(ipc, "readFile").mockImplementation((path: string) =>
+      Promise.resolve({
+        path,
+        raw: proposal("approved", path.split("/").pop()!.replace(".md", "")),
+        content: "",
+        frontmatter: {},
+      }),
+    );
+    const writeFile = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    draftMap.mockResolvedValue("wiki/maps/x.md");
+
+    await runDistillGuarded("/vmap");
+
+    expect(draftMap).toHaveBeenCalledTimes(3);
+    expect(writeFile).toHaveBeenCalledTimes(3);
   });
 });

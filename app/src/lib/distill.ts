@@ -2,6 +2,7 @@
 // (snake_case from the #[serde(rename_all)] directives).
 
 import { ipc } from "./ipc";
+import { getActiveModel } from "./chat";
 import { runSessionDigest } from "./sessionDigest";
 import type { DigestOutcome } from "./sessionDigest";
 import { runFullTierIngest } from "./fullTierIngest";
@@ -127,6 +128,19 @@ export const lastDigestOutcome = new Map<string, DigestOutcome>();
 // right above (RunReport itself gains no new field for it either).
 export const lastFullTierOutcome = new Map<string, FullTierOutcome>();
 
+// Phase B, Task 4 (final-review Important 3) — draft-map auto-apply's
+// outcome, same idiom as the two maps above; the Overview card's "LLM steps
+// waiting" note reads all three.
+export interface MapDraftOutcome {
+  drafted: number;
+  skipped: "no-provider" | null;
+}
+export const lastMapDraftOutcome = new Map<string, MapDraftOutcome>();
+
+// Fallback llm_ingest_budget when getDistillConfig is unavailable — mirrors
+// the Rust-side default, same idiom as fullTierIngest.ts's own copy.
+const DEFAULT_INGEST_BUDGET = 3;
+
 /** Phase B, Task 4 — the Aggressive-intensity bridge: at that intensity,
  * `distill_run` writes `draft-map` proposals straight to `status: approved`
  * (the LLM draft itself always runs TS-side, never in Rust), so this applies
@@ -138,10 +152,29 @@ export const lastFullTierOutcome = new Map<string, FullTierOutcome>();
  * "whichever vault is currently open" (same reason `runSessionDigest`/
  * `runFullTierIngest` take an explicit vault path too). Per-proposal
  * failures are logged and skipped, not thrown: one bad cluster must not
- * block the others or the run this follows. */
-async function applyApprovedDraftMaps(vaultPath: string): Promise<void> {
+ * block the others or the run this follows.
+ *
+ * Final-review Important 3: gated and capped like the other two LLM steps.
+ * builtin-local can't draft (`complete`'s query path throws per proposal,
+ * forever — and the Overview's "LLM steps waiting" note never showed,
+ * because only digest/full-tier set a skipped flag), so it early-returns
+ * `no-provider` the same way `runSessionDigest`/`runFullTierIngest` do. And
+ * at Aggressive intensity every detected cluster arrives pre-approved, so
+ * one run could otherwise fire an unbounded number of paid draft calls —
+ * capped at `llm_ingest_budget`, the same per-run LLM-cost knob full-tier
+ * ingest uses; the rest stay `approved` and drain on later runs. */
+async function applyApprovedDraftMaps(vaultPath: string): Promise<MapDraftOutcome> {
+  const { provider } = await getActiveModel("query");
+  if (provider === "builtin-local") {
+    return { drafted: 0, skipped: "no-provider" };
+  }
+  const cfg = await ipc.getDistillConfig(vaultPath).catch(() => null);
+  const budget = cfg?.llm_ingest_budget ?? DEFAULT_INGEST_BUDGET;
+
+  let drafted = 0;
   const tree = await ipc.listFiles(vaultPath).catch(() => []);
   for (const f of feedbackFileNodes(tree)) {
+    if (drafted >= budget) break;
     const file = await ipc.readFile(f.path).catch(() => null);
     if (!file) continue;
     const parsed = parseProposal(toRelative(vaultPath, f.path), file.raw);
@@ -150,10 +183,12 @@ async function applyApprovedDraftMaps(vaultPath: string): Promise<void> {
     try {
       await draftMap(vaultPath, parsed.cluster, parsed.members);
       await ipc.writeFile(f.path, rewriteStatus(file.raw, "done"));
+      drafted++;
     } catch (e) {
       console.error(`[distill] auto draft-map apply failed for ${f.path}:`, e);
     }
   }
+  return { drafted, skipped: null };
 }
 
 /** Runs distill_run for `vault`, unless one is already in flight for that
@@ -172,6 +207,11 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
   inFlight.add(vault);
   try {
     const report = await ipc.distillRun(vault);
+    // Idle is checked at entry only (by the callers' own triggers); the LLM
+    // chain below runs to completion once started — there is no abort
+    // mid-chain. Total work is bounded by the three per-step budgets
+    // (llm_digest_days, llm_ingest_budget ×2), so the tail is short by
+    // construction rather than interruptible.
     const outcome = await runSessionDigest(vault).catch((e) => {
       console.error("[distill] session digest failed", vault, e);
       return null;
@@ -182,9 +222,11 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
       return null;
     });
     if (fullTierOutcome) lastFullTierOutcome.set(vault, fullTierOutcome);
-    await applyApprovedDraftMaps(vault).catch((e) => {
+    const mapOutcome = await applyApprovedDraftMaps(vault).catch((e) => {
       console.error("[distill] draft-map auto-apply failed", vault, e);
+      return null;
     });
+    if (mapOutcome) lastMapDraftOutcome.set(vault, mapOutcome);
     return report;
   } finally {
     inFlight.delete(vault);
