@@ -933,6 +933,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve([]);
     case "archive_digested_sessions":
       return Promise.resolve("digest-mock");
+    // Full-tier ingest (Phase B, Task 3) — empty backlog, same convention as
+    // digestable_session_days: the real ledger is Rust-side and unit-tested there.
+    case "full_tier_items":
+      return Promise.resolve([]);
     case "get_settings":
       return Promise.resolve(
         AGENT_MODE

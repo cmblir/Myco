@@ -80,7 +80,10 @@ function groundingBlock(plan: PlanItem[], candidates: CandidatePage[]): string {
   return `\n\nA preliminary analysis produced this ingest plan. Follow it, adjusting only where the source clearly warrants — UPDATE/MERGE into the named existing pages with citations rather than creating duplicates:\n${lines}`;
 }
 
-const INGEST_PROMPT = (
+// Exported for fullTierIngest.ts (Phase B, Task 3) — the headless full-tier
+// ingest pass builds the identical prompt for its own candidates, rather than
+// a second hand-maintained copy.
+export const INGEST_PROMPT = (
   slug: string,
   title: string,
   candidates: CandidatePage[] = [],
@@ -96,6 +99,49 @@ const INGEST_PROMPT = (
 6. Write an ingest report at \`ingest-reports/<datetime>-${slug}.md\` summarising what was created/modified and why.${groundingBlock(plan, candidates)}
 
 When done, output a one-line confirmation.`;
+
+/** Args for the two non-streaming provider branches (see `runIngestProvider`'s
+ * own doc comment for why the third — anthropic-cli — is not here too). */
+export interface IngestProviderArgs {
+  provider: string;
+  vaultPath: string;
+  prompt: string;
+  slug: string;
+  title: string;
+  body: string;
+}
+
+/** Runs one already-built ingest `prompt` through myco Pro or a plain
+ * (non-streaming) provider call — a mechanical extraction of two of
+ * `startIngest`'s three original provider branches (myco-pro, and the
+ * catch-all `complete({task:"ingest"})`), same behavior, now shared with
+ * `fullTierIngest.ts` (Phase B, Task 3).
+ *
+ * The THIRD original branch — `anthropic-cli`, via `claudeRunStream` bound to
+ * a `runId` and the `claude-stream` event listener that feeds this store's
+ * `events`/`touched`/live-graph state — is deliberately NOT covered: it
+ * cannot be pulled out without either dragging that UI wiring along or
+ * changing what the interactive Ingest page shows mid-run, so `startIngest`
+ * keeps it inline. `fullTierIngest.ts` has no UI to stream into either; it
+ * calls `ipc.claudeRun` (the blocking variant) directly for that provider
+ * instead of going through here — see that module's own doc comment. */
+export async function runIngestProvider(args: IngestProviderArgs): Promise<string> {
+  if (args.provider === "myco-pro") {
+    // myco Pro: the proxy runs a cheap model server-side and returns the wiki
+    // file operations, which Rust applies (confined). No tool stream.
+    const result = await ipc.mycoProIngest(args.slug, args.title, args.body);
+    return `${result.summary}\n\n(${result.applied} wiki file${
+      result.applied === 1 ? "" : "s"
+    } updated via myco Pro)`;
+  }
+  // Other providers (gemini/codex CLIs, HTTP APIs, ollama) have no tool-event
+  // stream; blocking call.
+  return complete({
+    task: "ingest",
+    cwd: args.vaultPath,
+    messages: [{ role: "user", content: args.prompt }],
+  });
+}
 
 function slugify(s: string): string {
   return (
@@ -290,22 +336,17 @@ export const useIngestStore = create<IngestState>((set, get) => ({
         // Opt-in persistence: the streamed run accumulated a transcript in
         // `events` — write it to runs/ alongside the final output.
         await persistRunTranscript(vault.path, runId, out);
-      } else if (settings.ingest_provider === "myco-pro") {
-        // myco Pro: the proxy runs a cheap model server-side and returns the
-        // wiki file operations, which Rust applies (confined). The raw source
-        // was already written above; this fills in the wiki pages. No tool
-        // stream — stage UI only.
-        const result = await ipc.mycoProIngest(slug, finalTitle, body.trim());
-        out = `${result.summary}\n\n(${result.applied} wiki file${
-          result.applied === 1 ? "" : "s"
-        } updated via myco Pro)`;
       } else {
-        // Other providers (gemini/codex CLIs, HTTP APIs, ollama) have no
-        // tool-event stream; blocking call, stage UI only.
-        out = await complete({
-          task: "ingest",
-          cwd: vault.path,
-          messages: [{ role: "user", content: prompt }],
+        // myco Pro / other providers — no tool-event stream, stage UI only.
+        // See runIngestProvider's own doc comment for why anthropic-cli
+        // (above) is the one branch it does not cover.
+        out = await runIngestProvider({
+          provider: settings.ingest_provider,
+          vaultPath: vault.path,
+          prompt,
+          slug,
+          title: finalTitle,
+          body: body.trim(),
         });
       }
       set((st) => ({ log: `${st.log}\n\n${out}` }));

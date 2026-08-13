@@ -1,0 +1,178 @@
+import { describe, expect, it, vi, beforeEach } from "vitest";
+import type { DistillConfig } from "./distill";
+
+const getActiveModel = vi.fn();
+vi.mock("./chat", () => ({
+  getActiveModel: (...a: unknown[]) => getActiveModel(...a),
+}));
+
+const runIngestProvider = vi.fn();
+vi.mock("../stores/ingestStore", () => ({
+  INGEST_PROMPT: (slug: string, title: string) => `prompt for ${slug} (${title})`,
+  runIngestProvider: (...a: unknown[]) => runIngestProvider(...a),
+}));
+
+const getSettings = vi.fn();
+const getDistillConfig = vi.fn();
+const fullTierItems = vi.fn();
+const readFile = vi.fn();
+const writeFile = vi.fn();
+const availableRawPath = vi.fn();
+const archiveInboxSource = vi.fn();
+const claudeRun = vi.fn();
+vi.mock("./ipc", () => ({
+  ipc: {
+    getSettings: (...a: unknown[]) => getSettings(...a),
+    getDistillConfig: (...a: unknown[]) => getDistillConfig(...a),
+    fullTierItems: (...a: unknown[]) => fullTierItems(...a),
+    readFile: (...a: unknown[]) => readFile(...a),
+    writeFile: (...a: unknown[]) => writeFile(...a),
+    availableRawPath: (...a: unknown[]) => availableRawPath(...a),
+    archiveInboxSource: (...a: unknown[]) => archiveInboxSource(...a),
+    claudeRun: (...a: unknown[]) => claudeRun(...a),
+  },
+}));
+
+import { runFullTierIngest } from "./fullTierIngest";
+
+const CFG: DistillConfig = {
+  enabled: true,
+  count_trigger: 50,
+  intensity: "standard",
+  gate_preset: "normal",
+  quarantine_ttl_days: 30,
+  run_budget_items: 50,
+  idle_minutes: 5,
+  maturation_hours: 24,
+  dormancy_decay: false,
+  llm_digest_days: 3,
+  llm_ingest_budget: 3,
+  profile_injection: true,
+};
+
+beforeEach(() => {
+  getActiveModel.mockReset();
+  runIngestProvider.mockReset();
+  getSettings.mockReset();
+  getDistillConfig.mockReset();
+  fullTierItems.mockReset();
+  readFile.mockReset();
+  writeFile.mockReset();
+  availableRawPath.mockReset();
+  archiveInboxSource.mockReset();
+  claudeRun.mockReset();
+
+  getActiveModel.mockResolvedValue({ provider: "anthropic-api", model: "" });
+  getDistillConfig.mockResolvedValue(CFG);
+  readFile.mockResolvedValue({ raw: "# A title\n\nbody", content: "body", frontmatter: null, path: "" });
+  runIngestProvider.mockResolvedValue("ok");
+});
+
+describe("runFullTierIngest", () => {
+  it("skips with no-provider when the active ingest model is builtin-local, and never lists items", async () => {
+    getActiveModel.mockResolvedValue({ provider: "builtin-local", model: "" });
+
+    const result = await runFullTierIngest("/v");
+
+    expect(result).toEqual({ ingested: 0, skipped: "no-provider", errors: [] });
+    expect(fullTierItems).not.toHaveBeenCalled();
+  });
+
+  it("skips with no-provider when myco-pro is selected but not connected", async () => {
+    getActiveModel.mockResolvedValue({ provider: "myco-pro", model: "" });
+    getSettings.mockResolvedValue({ providers: { myco_pro: false } });
+
+    const result = await runFullTierIngest("/v");
+
+    expect(result).toEqual({ ingested: 0, skipped: "no-provider", errors: [] });
+    expect(fullTierItems).not.toHaveBeenCalled();
+  });
+
+  it("skips with nothing when there are no full-tier items", async () => {
+    fullTierItems.mockResolvedValue([]);
+
+    const result = await runFullTierIngest("/v");
+
+    expect(result).toEqual({ ingested: 0, skipped: "nothing", errors: [] });
+    expect(runIngestProvider).not.toHaveBeenCalled();
+  });
+
+  it("respects the budget: 5 items, budget 3 -> 3 runIngestProvider calls", async () => {
+    fullTierItems.mockResolvedValue([
+      "raw/a.md",
+      "raw/b.md",
+      "raw/c.md",
+      "raw/d.md",
+      "raw/e.md",
+    ]);
+
+    const result = await runFullTierIngest("/v");
+
+    expect(runIngestProvider).toHaveBeenCalledTimes(3);
+    expect(result).toEqual({ ingested: 3, skipped: null, errors: [] });
+  });
+
+  it("one item throwing collects an error and continues to the next", async () => {
+    fullTierItems.mockResolvedValue(["raw/a.md", "raw/b.md", "raw/c.md"]);
+    runIngestProvider
+      .mockResolvedValueOnce("ok")
+      .mockRejectedValueOnce(new Error("provider boom"))
+      .mockResolvedValueOnce("ok");
+
+    const result = await runFullTierIngest("/v");
+
+    expect(result.ingested).toBe(2);
+    expect(result.errors).toEqual(["raw/b.md: Error: provider boom"]);
+    expect(runIngestProvider).toHaveBeenCalledTimes(3);
+  });
+
+  it("promotes an _inbox/ item to raw/ before ingesting, then archives the original", async () => {
+    fullTierItems.mockResolvedValue(["_inbox/clip.md"]);
+    availableRawPath.mockResolvedValue("raw/clip.md");
+    readFile.mockResolvedValue({ raw: "# Clipped\n\nbody", content: "body", frontmatter: null, path: "" });
+
+    const result = await runFullTierIngest("/v");
+
+    expect(availableRawPath).toHaveBeenCalledWith("clip");
+    expect(writeFile).toHaveBeenCalledWith("/v/raw/clip.md", "# Clipped\n\nbody");
+    expect(archiveInboxSource).toHaveBeenCalledWith("/v/_inbox/clip.md");
+    expect(runIngestProvider).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: "clip", title: "Clipped" }),
+    );
+    expect(result).toEqual({ ingested: 1, skipped: null, errors: [] });
+  });
+
+  it("uses the file stem as the title when there is no ATX heading", async () => {
+    fullTierItems.mockResolvedValue(["raw/no-heading.md"]);
+    readFile.mockResolvedValue({ raw: "just a paragraph, no heading", content: "", frontmatter: null, path: "" });
+
+    await runFullTierIngest("/v");
+
+    expect(runIngestProvider).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: "no-heading", title: "no-heading" }),
+    );
+  });
+
+  it("uses ipc.claudeRun directly (not runIngestProvider) for the anthropic-cli provider", async () => {
+    getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
+    fullTierItems.mockResolvedValue(["raw/a.md"]);
+    claudeRun.mockResolvedValue({ stdout: "done", stderr: "", status: 0 });
+
+    const result = await runFullTierIngest("/v");
+
+    expect(claudeRun).toHaveBeenCalledWith(expect.any(String), "/v", "sonnet");
+    expect(runIngestProvider).not.toHaveBeenCalled();
+    expect(result).toEqual({ ingested: 1, skipped: null, errors: [] });
+  });
+
+  it("collects an error when the anthropic-cli claudeRun exits non-zero", async () => {
+    getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
+    fullTierItems.mockResolvedValue(["raw/a.md"]);
+    claudeRun.mockResolvedValue({ stdout: "", stderr: "boom", status: 1 });
+
+    const result = await runFullTierIngest("/v");
+
+    expect(result.ingested).toBe(0);
+    expect(result.errors).toEqual(["raw/a.md: Error: boom"]);
+  });
+});

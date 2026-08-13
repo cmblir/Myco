@@ -1582,6 +1582,17 @@ pub fn archive_digested_sessions(
     crate::distill::archive_digested_sessions(std::path::Path::new(&root), &day, &files)
 }
 
+/// Gate-admitted Full-tier items ready for the LLM ingest pipeline (Phase B,
+/// Task 3). Read-only. See `distill::full_tier_items`'s own doc comment.
+#[tauri::command]
+pub fn full_tier_items(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+) -> Result<Vec<String>, String> {
+    let root = confine_root(&state, &vault)?;
+    Ok(crate::distill::full_tier_items(std::path::Path::new(&root)))
+}
+
 /// The bundled digest runner script (falls back to the repo path in dev).
 fn digest_script_path(app: &tauri::AppHandle) -> Result<String, String> {
     const REL: &str = "automation/digest.py";

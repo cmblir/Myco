@@ -2316,6 +2316,47 @@ pub fn status(root: &Path) -> DistillStatus {
     }
 }
 
+/// Gate-admitted Full-tier ledger entries ready for the LLM ingest pipeline
+/// (Phase B, Task 3) — every `scored` entry whose tier is `"full"`, still
+/// sitting in `_inbox/` or `raw/`'s own top level, oldest file mtime first —
+/// the same order `collect_candidates` fills the ledger in, so ingest drains
+/// the queue in the order `scan` built it.
+///
+/// `raw/archive/` needs no explicit exclusion: `collect_candidates` never
+/// walks it as inflow, so no ledger key can ever point there. A raw/ item
+/// this run's later archive pass retires (moves its file away once
+/// `wiki/source-<slug>.md` exists) drops out on its own too — the missing-
+/// file check below fails for its now-stale ledger key, no separate
+/// archive-aware filtering needed. `sessions/` is excluded outright: Phase B
+/// routes it through the session digest instead of ingest, even on the rare
+/// transcript `admit` happens to score Full.
+pub fn full_tier_items(root: &Path) -> Vec<String> {
+    let store = crate::vector_index::VectorStore::path_for(&root.to_string_lossy())
+        .map(|p| crate::vector_index::VectorStore::load(&p))
+        .unwrap_or_default();
+    let state = state_load(root, &store.model);
+    let inbox_prefix = format!("{}/", crate::commands::DEST_INBOX);
+    let mut items: Vec<(String, i64)> = state
+        .scored
+        .iter()
+        .filter(|(rel, e)| {
+            e.tier == "full" && (rel.starts_with(&inbox_prefix) || rel.starts_with("raw/"))
+        })
+        .filter_map(|(rel, _)| {
+            let meta = std::fs::metadata(root.join(rel)).ok()?;
+            let mtime = meta
+                .modified()
+                .ok()?
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs() as i64)
+                .unwrap_or(0);
+            Some((rel.clone(), mtime))
+        })
+        .collect();
+    items.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+    items.into_iter().map(|(rel, _)| rel).collect()
+}
+
 // ---------------------------------------------------------------------------
 // Session-digest bookkeeping (Phase B, Task 1): group already-scored
 // `sessions/` files by day for the LLM digest step to summarize, then move a
@@ -3381,6 +3422,78 @@ mod tests {
                 after.last_run_id,
                 Some(report2.id),
                 "last_run_id tracks the most recently STARTED run, not filename order"
+            );
+        });
+    }
+
+    #[test]
+    fn full_tier_items_lists_inbox_and_raw_oldest_first_and_drops_missing_or_wrong_tier() {
+        crate::settings::test_support::with_isolated_data("distill-full-tier-items", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            std::fs::create_dir_all(root.join("_inbox")).unwrap();
+            std::fs::create_dir_all(root.join("raw")).unwrap();
+
+            let full_text = format!("{PROSE} FULL marker so this note lands the full tier.");
+            let quarantine_text =
+                format!("{PROSE} BORDERLINE marker so this note lands the quarantine tier.");
+            std::fs::write(root.join("_inbox/newer-full.md"), &full_text).unwrap();
+            std::fs::write(root.join("raw/older-full.md"), &full_text).unwrap();
+            std::fs::write(root.join("_inbox/quar.md"), &quarantine_text).unwrap();
+            for name in [
+                "_inbox/newer-full.md",
+                "raw/older-full.md",
+                "_inbox/quar.md",
+            ] {
+                set_mtime(&root.join(name), old_mtime());
+            }
+            // Strictly older than the other two, so it must sort first.
+            set_mtime(
+                &root.join("raw/older-full.md"),
+                old_mtime() - std::time::Duration::from_secs(3600),
+            );
+
+            // `full_tier_items` resolves its ledger's model the same way
+            // `status` does — off the on-disk VectorStore for `root`, which
+            // this test never writes, so it defaults to "". The scan below
+            // must ledger against that same "" or `state_load` sees a model
+            // mismatch and hands back an empty (fresh) ledger instead of the
+            // one just written.
+            let mut o = tiny_ontology();
+            o.model = String::new();
+            let cfg = DistillConfig::default();
+            let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+                Ok(texts
+                    .iter()
+                    .map(|t| {
+                        if t.contains("BORDERLINE") {
+                            vec![0.2_f32, (1.0 - 0.2_f32 * 0.2_f32).sqrt()] // -> Quarantine
+                        } else {
+                            vec![1.0_f32, 0.0_f32] // matches centroid -> Full
+                        }
+                    })
+                    .collect())
+            };
+            let mut manifest = test_manifest();
+            let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+            assert_eq!(out.full, 2);
+            assert_eq!(out.quarantined, 1);
+
+            let items = full_tier_items(root);
+            assert_eq!(
+                items,
+                vec!["raw/older-full.md", "_inbox/newer-full.md"],
+                "full-tier only, oldest mtime first; the quarantine-tier item is excluded"
+            );
+
+            // Phase A's later archive pass moves an ingested raw/ file away —
+            // the stale ledger key must drop out rather than point nowhere.
+            std::fs::remove_file(root.join("raw/older-full.md")).unwrap();
+            let items2 = full_tier_items(root);
+            assert_eq!(
+                items2,
+                vec!["_inbox/newer-full.md"],
+                "a retired raw file drops out even though its ledger entry remains"
             );
         });
     }

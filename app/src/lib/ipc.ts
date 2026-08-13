@@ -593,6 +593,8 @@ export const ipc = {
     invoke<DigestDay[]>("digestable_session_days", { vault }),
   archiveDigestedSessions: (vault: string, day: string, files: string[]) =>
     invoke<string>("archive_digested_sessions", { vault, day, files }),
+  // Gate-admitted Full-tier items ready for LLM ingest (Phase B, Task 3).
+  fullTierItems: (vault: string) => invoke<string[]>("full_tier_items", { vault }),
   listProviderModels: (providerId: string) =>
     invoke<string[]>("list_provider_models", { providerId }),
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),

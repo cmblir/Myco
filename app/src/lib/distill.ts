@@ -4,6 +4,8 @@
 import { ipc } from "./ipc";
 import { runSessionDigest } from "./sessionDigest";
 import type { DigestOutcome } from "./sessionDigest";
+import { runFullTierIngest } from "./fullTierIngest";
+import type { FullTierOutcome } from "./fullTierIngest";
 
 export type Intensity = "conservative" | "standard" | "aggressive";
 export type GatePreset = "strict" | "normal" | "loose";
@@ -114,16 +116,22 @@ const inFlight = new Set<string>();
 // run. Smallest option that works — no store, no event bus.
 export const lastDigestOutcome = new Map<string, DigestOutcome>();
 
+// Phase B, Task 3 — full-tier ingest's outcome, keyed by vault path. Same
+// "module-level map, no store, no event bus" idiom as lastDigestOutcome
+// right above (RunReport itself gains no new field for it either).
+export const lastFullTierOutcome = new Map<string, FullTierOutcome>();
+
 /** Runs distill_run for `vault`, unless one is already in flight for that
  * vault — in which case this resolves to null immediately and makes no ipc
  * call. All callers (schedule-due, count-trigger, manual button) must go
  * through this instead of calling ipc.distillRun directly.
  *
- * On success, also runs the session daily-digest for the same vault inside
- * this same guard window (Phase B, Task 2) — so all three trigger paths get
- * it for free and concurrency stays single-guarded. Digest failures are
- * logged, not thrown: they must never take down the distill_run result the
- * caller is waiting on. */
+ * On success, also runs the session daily-digest (Phase B, Task 2) and then
+ * full-tier ingest (Phase B, Task 3) for the same vault, inside this same
+ * guard window — so all three trigger paths get both for free and
+ * concurrency stays single-guarded. Both failures are logged, not thrown:
+ * neither must ever take down the distill_run result the caller is waiting
+ * on. */
 export async function runDistillGuarded(vault: string): Promise<RunReport | null> {
   if (inFlight.has(vault)) return null;
   inFlight.add(vault);
@@ -134,6 +142,11 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
       return null;
     });
     if (outcome) lastDigestOutcome.set(vault, outcome);
+    const fullTierOutcome = await runFullTierIngest(vault).catch((e) => {
+      console.error("[distill] full-tier ingest failed", vault, e);
+      return null;
+    });
+    if (fullTierOutcome) lastFullTierOutcome.set(vault, fullTierOutcome);
     return report;
   } finally {
     inFlight.delete(vault);
