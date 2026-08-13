@@ -85,6 +85,8 @@ pub struct DistillConfig {
     pub idle_minutes: u32,
     #[serde(default = "d_maturation")]
     pub maturation_hours: u32,
+    // v2 (dormancy decay) — deliberately unread in Phase B; kept so configs
+    // written now stay valid.
     #[serde(default)]
     pub dormancy_decay: bool,
     /// Phase B: max day-buckets digested per run (TS-side) — not a min-age
