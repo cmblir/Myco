@@ -2,6 +2,8 @@
 // (snake_case from the #[serde(rename_all)] directives).
 
 import { ipc } from "./ipc";
+import { runSessionDigest } from "./sessionDigest";
+import type { DigestOutcome } from "./sessionDigest";
 
 export type Intensity = "conservative" | "standard" | "aggressive";
 export type GatePreset = "strict" | "normal" | "loose";
@@ -105,15 +107,34 @@ export function lastRunLabel(
 // moves. One per-vault in-flight set, consulted and set by all three.
 const inFlight = new Set<string>();
 
+// Phase B, Task 2 — the session daily-digest's outcome, keyed by vault path.
+// runDistillGuarded fires it after every successful distill_run, but RunReport
+// itself gains no new field for it (callers destructure a stable shape); the
+// Overview note (Task 6) instead reads this module-level map for the latest
+// run. Smallest option that works — no store, no event bus.
+export const lastDigestOutcome = new Map<string, DigestOutcome>();
+
 /** Runs distill_run for `vault`, unless one is already in flight for that
  * vault — in which case this resolves to null immediately and makes no ipc
  * call. All callers (schedule-due, count-trigger, manual button) must go
- * through this instead of calling ipc.distillRun directly. */
+ * through this instead of calling ipc.distillRun directly.
+ *
+ * On success, also runs the session daily-digest for the same vault inside
+ * this same guard window (Phase B, Task 2) — so all three trigger paths get
+ * it for free and concurrency stays single-guarded. Digest failures are
+ * logged, not thrown: they must never take down the distill_run result the
+ * caller is waiting on. */
 export async function runDistillGuarded(vault: string): Promise<RunReport | null> {
   if (inFlight.has(vault)) return null;
   inFlight.add(vault);
   try {
-    return await ipc.distillRun(vault);
+    const report = await ipc.distillRun(vault);
+    const outcome = await runSessionDigest(vault).catch((e) => {
+      console.error("[distill] session digest failed", vault, e);
+      return null;
+    });
+    if (outcome) lastDigestOutcome.set(vault, outcome);
+    return report;
   } finally {
     inFlight.delete(vault);
   }
