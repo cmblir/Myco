@@ -2318,18 +2318,27 @@ pub fn status(root: &Path) -> DistillStatus {
 
 /// Gate-admitted Full-tier ledger entries ready for the LLM ingest pipeline
 /// (Phase B, Task 3) — every `scored` entry whose tier is `"full"`, still
-/// sitting in `_inbox/` or `raw/`'s own top level, oldest file mtime first —
+/// sitting in `_inbox/` or `raw/`'s own top level, has no `wiki/source-
+/// <stem>.md` yet, and is still present on disk — oldest file mtime first,
 /// the same order `collect_candidates` fills the ledger in, so ingest drains
 /// the queue in the order `scan` built it.
 ///
+/// The `wiki/source-<stem>.md` check (same "already represented" signal the
+/// raw/ archive pass itself checks — see its `source_page` lookup above) is
+/// the fix for a Conservative-intensity re-ingest loop: at Standard/
+/// Aggressive, the archive pass moves an ingested item's file away the very
+/// next run, so the missing-file check below would eventually drop it on its
+/// own; at Conservative it only ever writes a proposal and never moves the
+/// file, so without this check a full-tier item stays in the ledger forever
+/// and gets re-listed — and re-ingested, re-spending the LLM budget on it —
+/// every run until a human approves the proposal. Checking the source page
+/// directly closes the loop at every intensity, not just the ones that
+/// happen to move the file.
+///
 /// `raw/archive/` needs no explicit exclusion: `collect_candidates` never
-/// walks it as inflow, so no ledger key can ever point there. A raw/ item
-/// this run's later archive pass retires (moves its file away once
-/// `wiki/source-<slug>.md` exists) drops out on its own too — the missing-
-/// file check below fails for its now-stale ledger key, no separate
-/// archive-aware filtering needed. `sessions/` is excluded outright: Phase B
-/// routes it through the session digest instead of ingest, even on the rare
-/// transcript `admit` happens to score Full.
+/// walks it as inflow, so no ledger key can ever point there. `sessions/` is
+/// excluded outright: Phase B routes it through the session digest instead
+/// of ingest, even on the rare transcript `admit` happens to score Full.
 pub fn full_tier_items(root: &Path) -> Vec<String> {
     let store = crate::vector_index::VectorStore::path_for(&root.to_string_lossy())
         .map(|p| crate::vector_index::VectorStore::load(&p))
@@ -2341,6 +2350,13 @@ pub fn full_tier_items(root: &Path) -> Vec<String> {
         .iter()
         .filter(|(rel, e)| {
             e.tier == "full" && (rel.starts_with(&inbox_prefix) || rel.starts_with("raw/"))
+        })
+        .filter(|(rel, _)| {
+            let stem = Path::new(rel.as_str())
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or(rel.as_str());
+            !root.join(format!("wiki/source-{stem}.md")).exists()
         })
         .filter_map(|(rel, _)| {
             let meta = std::fs::metadata(root.join(rel)).ok()?;
@@ -3496,6 +3512,59 @@ mod tests {
                 "a retired raw file drops out even though its ledger entry remains"
             );
         });
+    }
+
+    #[test]
+    fn full_tier_items_skips_an_item_whose_source_page_already_exists() {
+        // Reproduces the Conservative-intensity re-ingest loop: `run`'s raw/
+        // archive pass only writes a proposal at Conservative, so an ingested
+        // full-tier item's file never moves and its ledger entry never goes
+        // stale — without the source-page check, it would be re-listed (and
+        // re-ingested) every run until a human approves the proposal.
+        crate::settings::test_support::with_isolated_data(
+            "distill-full-tier-already-represented",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                std::fs::create_dir_all(root.join("raw")).unwrap();
+                std::fs::create_dir_all(root.join("wiki")).unwrap();
+
+                let full_text = format!("{PROSE} FULL marker so this note lands the full tier.");
+                std::fs::write(root.join("raw/already-ingested.md"), &full_text).unwrap();
+                std::fs::write(root.join("raw/fresh.md"), &full_text).unwrap();
+                for name in ["raw/already-ingested.md", "raw/fresh.md"] {
+                    set_mtime(&root.join(name), old_mtime());
+                }
+                // The "already represented" signal `run`'s own archive pass
+                // checks (`source_page` above) — present here even though, at
+                // Conservative, nothing ever moved the raw file to match it.
+                std::fs::write(
+                    root.join("wiki/source-already-ingested.md"),
+                    "a source summary page",
+                )
+                .unwrap();
+
+                let mut o = tiny_ontology();
+                o.model = String::new();
+                let cfg = DistillConfig::default();
+                let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+                    Ok(texts.iter().map(|_| vec![1.0_f32, 0.0_f32]).collect())
+                };
+                let mut manifest = test_manifest();
+                let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+                assert_eq!(
+                    out.full, 2,
+                    "both score full tier — the check is not about scoring"
+                );
+
+                let items = full_tier_items(root);
+                assert_eq!(
+                    items,
+                    vec!["raw/fresh.md"],
+                    "already-ingested.md has a source page and must not be re-listed"
+                );
+            },
+        );
     }
 
     // -----------------------------------------------------------------------

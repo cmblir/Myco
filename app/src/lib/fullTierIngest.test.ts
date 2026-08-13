@@ -19,6 +19,7 @@ const readFile = vi.fn();
 const writeFile = vi.fn();
 const availableRawPath = vi.fn();
 const archiveInboxSource = vi.fn();
+const deletePath = vi.fn();
 const claudeRun = vi.fn();
 vi.mock("./ipc", () => ({
   ipc: {
@@ -29,6 +30,7 @@ vi.mock("./ipc", () => ({
     writeFile: (...a: unknown[]) => writeFile(...a),
     availableRawPath: (...a: unknown[]) => availableRawPath(...a),
     archiveInboxSource: (...a: unknown[]) => archiveInboxSource(...a),
+    deletePath: (...a: unknown[]) => deletePath(...a),
     claudeRun: (...a: unknown[]) => claudeRun(...a),
   },
 }));
@@ -60,12 +62,15 @@ beforeEach(() => {
   writeFile.mockReset();
   availableRawPath.mockReset();
   archiveInboxSource.mockReset();
+  deletePath.mockReset();
   claudeRun.mockReset();
 
   getActiveModel.mockResolvedValue({ provider: "anthropic-api", model: "" });
   getDistillConfig.mockResolvedValue(CFG);
   readFile.mockResolvedValue({ raw: "# A title\n\nbody", content: "body", frontmatter: null, path: "" });
   runIngestProvider.mockResolvedValue("ok");
+  archiveInboxSource.mockResolvedValue("");
+  deletePath.mockResolvedValue(null);
 });
 
 describe("runFullTierIngest", () => {
@@ -142,6 +147,23 @@ describe("runFullTierIngest", () => {
     expect(result).toEqual({ ingested: 1, skipped: null, errors: [] });
   });
 
+  it("rolls back the just-written raw copy and collects an error when archiveInboxSource fails", async () => {
+    fullTierItems.mockResolvedValue(["_inbox/clip.md"]);
+    availableRawPath.mockResolvedValue("raw/clip.md");
+    archiveInboxSource.mockRejectedValue(new Error("locked"));
+
+    const result = await runFullTierIngest("/v");
+
+    expect(writeFile).toHaveBeenCalledWith("/v/raw/clip.md", "# A title\n\nbody");
+    expect(deletePath).toHaveBeenCalledWith("/v/raw/clip.md");
+    expect(runIngestProvider).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      ingested: 0,
+      skipped: null,
+      errors: ["_inbox/clip.md: Error: locked"],
+    });
+  });
+
   it("uses the file stem as the title when there is no ATX heading", async () => {
     fullTierItems.mockResolvedValue(["raw/no-heading.md"]);
     readFile.mockResolvedValue({ raw: "just a paragraph, no heading", content: "", frontmatter: null, path: "" });
@@ -150,6 +172,22 @@ describe("runFullTierIngest", () => {
 
     expect(runIngestProvider).toHaveBeenCalledWith(
       expect.objectContaining({ slug: "no-heading", title: "no-heading" }),
+    );
+  });
+
+  it("strips a leading frontmatter block before searching for the title heading", async () => {
+    fullTierItems.mockResolvedValue(["raw/frontmattered.md"]);
+    readFile.mockResolvedValue({
+      raw: "---\n# not a title, a YAML comment\ntitle: ignored\n---\n\n# Real Title\n\nbody",
+      content: "",
+      frontmatter: null,
+      path: "",
+    });
+
+    await runFullTierIngest("/v");
+
+    expect(runIngestProvider).toHaveBeenCalledWith(
+      expect.objectContaining({ slug: "frontmattered", title: "Real Title" }),
     );
   });
 

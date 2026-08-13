@@ -15,6 +15,7 @@
 
 import { ipc } from "./ipc";
 import { getActiveModel } from "./chat";
+import { stripFrontmatter } from "./markdown";
 import { INGEST_PROMPT, runIngestProvider } from "../stores/ingestStore";
 
 export interface FullTierOutcome {
@@ -29,11 +30,15 @@ export interface FullTierOutcome {
 const DEFAULT_INGEST_BUDGET = 3;
 
 /** First ATX heading (`#`..`######`) in `content`, else `fallback` — TS-side
- * equivalent of distill.rs's strip_atx_heading, simplified: full-tier items
- * feed the ingest prompt's title, not the summary-tier digest line, so there
- * is no frontmatter-stripping/truncation need here. */
+ * equivalent of distill.rs's strip_atx_heading. Frontmatter is stripped
+ * first (reusing markdown.ts's own helper): a real `_inbox/` import always
+ * opens with a YAML block, and a `#`-led line inside it (a YAML comment, not
+ * a heading) would otherwise be mismatched as the title. Scans only the
+ * first 40 lines of the body — the title is always near the top, and this
+ * bounds the regex scan on a pathologically long source. */
 function titleFromContent(content: string, fallback: string): string {
-  const m = content.match(/^#{1,6}\s+(.+)$/m);
+  const body = stripFrontmatter(content).split("\n").slice(0, 40).join("\n");
+  const m = body.match(/^#{1,6}\s+(.+)$/m);
   return m ? m[1].trim() : fallback;
 }
 
@@ -60,7 +65,15 @@ function stemOf(rel: string): string {
  * this app's ipc (unlike the brief's uncertainty about it) and the whole
  * sequence is three already-existing ipc calls, so this is not a bigger diff
  * than the in-place alternative — it is the smallest option that is also
- * correct.
+ * correct. If `archiveInboxSource` fails after the raw copy is written, the
+ * raw copy is deleted and the item is recorded as an error (see the inner
+ * try/catch below) — this exact ordering (promote, THEN archive, THEN
+ * ingest) is what makes that safe: nothing has read from the raw copy yet.
+ * `autoIngest.ts`'s `runInboxPass` has the same `archiveInboxSource` failure
+ * mode but a different order (ingest fully runs and writes wiki pages
+ * BEFORE it archives), so the same rollback there would delete an
+ * already-ingested source's only remaining copy — not a safe fix, and out
+ * of scope here.
  *
  * No retry: an item whose read/promote/ingest throws is recorded in `errors`
  * and the loop moves to the next one. The next scan/ingest pass offers it
@@ -98,7 +111,21 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
         content = (await ipc.readFile(`${vaultPath}/${rel}`)).raw;
         sourceRel = await ipc.availableRawPath(stemOf(rel));
         await ipc.writeFile(`${vaultPath}/${sourceRel}`, content);
-        await ipc.archiveInboxSource(`${vaultPath}/${rel}`);
+        try {
+          await ipc.archiveInboxSource(`${vaultPath}/${rel}`);
+        } catch (archiveErr) {
+          // Roll back the raw copy this run just wrote (never touch the
+          // _inbox/ original itself — that stays put, unchanged, to retry
+          // whole next pass). This is NOT a raw/ immutability violation: raw/
+          // is immutable against modifying EXISTING content, and this file
+          // did not exist before this very call — deleting our own
+          // just-created, not-yet-ingested artifact is a rollback, the same
+          // as never having written it. Without this, a failed archive would
+          // leave both copies alive, and a later scan would score the raw
+          // copy as a brand-new, unrelated item — a double-ingestion risk.
+          await ipc.deletePath(`${vaultPath}/${sourceRel}`).catch(() => undefined);
+          throw archiveErr;
+        }
       } else {
         content = (await ipc.readFile(`${vaultPath}/${rel}`)).raw;
       }
