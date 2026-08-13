@@ -920,6 +920,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         last_run: 1755000000,
         last_backlogs: [40, 35, 30, 28, 22, 18, 15, 14, 13, 12],
         gate_active: true,
+        last_run_id: "20250812T120000",
       });
     case "apply_distill_proposal":
       return Promise.resolve("moved 1, skipped 0 already-processed");

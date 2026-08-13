@@ -713,6 +713,7 @@ export interface Strings {
   set_distill_ttl?: string;
   set_distill_budget?: string;
   set_distill_idle_minutes?: string;
+  set_distill_maturation?: string;
   set_distill_status_title?: string;
   set_distill_backlog?: string;
   set_distill_pending?: string;
@@ -723,6 +724,9 @@ export interface Strings {
   set_distill_running?: string;
   set_distill_report?: string;
   set_distill_busy?: string;
+  set_distill_undo?: string;
+  set_distill_undoing?: string;
+  set_distill_undo_result?: string;
   // Feedback surface — sidebar badge, Overview card, proposal page (Task 9).
   nav_feedback?: string;
   ov_distill_last_run?: string; // {t}
@@ -1567,6 +1571,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_ttl: "Quarantine TTL (days)",
     set_distill_budget: "Run budget (items)",
     set_distill_idle_minutes: "Idle minutes",
+    set_distill_maturation: "Maturation (hours)",
     set_distill_status_title: "Status",
     set_distill_backlog: "Backlog: {n}",
     set_distill_pending: "{n} pending proposals",
@@ -1578,6 +1583,9 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_report:
       "Archived {a}, trashed {tr}, {p} proposals — backlog now {b}",
     set_distill_busy: "A distill run is already in progress.",
+    set_distill_undo: "Undo this run",
+    set_distill_undoing: "Undoing…",
+    set_distill_undo_result: "Reversed {n} changes",
     nav_feedback: "Feedback",
     ov_distill_last_run: "Last run {t}",
     ov_distill_never: "No runs yet",
@@ -2430,6 +2438,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_ttl: "격리 TTL (일)",
     set_distill_budget: "실행 예산 (항목 수)",
     set_distill_idle_minutes: "유휴 시간 (분)",
+    set_distill_maturation: "숙성 시간 (시간)",
     set_distill_status_title: "상태",
     set_distill_backlog: "백로그: {n}",
     set_distill_pending: "대기 중인 제안 {n}건",
@@ -2440,6 +2449,9 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_running: "증류 중…",
     set_distill_report: "보관 {a}건, 폐기 {tr}건, 제안 {p}건 — 백로그 {b}건",
     set_distill_busy: "이미 증류가 진행 중입니다.",
+    set_distill_undo: "이 실행 되돌리기",
+    set_distill_undoing: "되돌리는 중…",
+    set_distill_undo_result: "{n}건 되돌림",
     nav_feedback: "피드백",
     ov_distill_last_run: "마지막 실행 {t}",
     ov_distill_never: "아직 실행 기록 없음",
@@ -3172,6 +3184,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_ttl: "隔離TTL（日）",
     set_distill_budget: "実行予算（件数）",
     set_distill_idle_minutes: "アイドル時間（分）",
+    set_distill_maturation: "熟成時間（時間）",
     set_distill_status_title: "状態",
     set_distill_backlog: "バックログ: {n}",
     set_distill_pending: "保留中の提案 {n}件",
@@ -3182,6 +3195,9 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_running: "蒸留中…",
     set_distill_report: "アーカイブ{a}件、破棄{tr}件、提案{p}件 — バックログ{b}件",
     set_distill_busy: "蒸留は既に実行中です。",
+    set_distill_undo: "この実行を元に戻す",
+    set_distill_undoing: "元に戻しています…",
+    set_distill_undo_result: "{n}件を元に戻しました",
     nav_feedback: "フィードバック",
     ov_distill_last_run: "最終実行 {t}",
     ov_distill_never: "まだ実行されていません",

@@ -161,6 +161,10 @@ auto-distill ON; count trigger 50; weekly schedule; intensity 표준; gate
 preset 보통; quarantine TTL 30d; run budget 50 items + 1 digest call; idle
 threshold 10 min; maturation 24h; dormancy decay OFF; profile injection ON;
 model = ingest model (spend counts toward the existing monthly budget).
+Phase A's Settings tab exposes a control for every field above except
+dormancy decay: that field persists (default OFF) but has no UI control
+yet, since its actual decay behaviour is v2 (see Phases below) — a toggle
+for a behaviour that doesn't exist yet would mislead, not help.
 
 ## Surfacing (why reflect reports died: nothing surfaced)
 

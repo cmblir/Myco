@@ -49,6 +49,9 @@ export interface DistillStatus {
   // Critical 1 fix — false below the cold-start threshold (50 wiki pages):
   // scan() is a no-op on every candidate while this is false.
   gate_active: boolean;
+  // Important 3 fix — the most recently started run's id (undoDistillRun's
+  // `id` argument), or null if no run has happened yet.
+  last_run_id: string | null;
 }
 
 // Task 8 — direction of `last_backlogs` (oldest → newest, per Rust's

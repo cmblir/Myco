@@ -11,6 +11,7 @@ const STATUS: DistillStatus = {
   last_run: 1_755_000_000,
   last_backlogs: [10, 8, 5],
   gate_active: true,
+  last_run_id: "20250812T120000",
 };
 
 const PROPOSAL_RAW = [

@@ -33,7 +33,7 @@ import {
 } from "../lib/budget";
 import { isComposingKey } from "../lib/ime";
 import { useReindexStore } from "../stores/reindexStore";
-import { backlogTrend, runDistillGuarded } from "../lib/distill";
+import { backlogTrend, lastRunLabel, runDistillGuarded } from "../lib/distill";
 import type {
   DistillConfig,
   DistillStatus,
@@ -1557,6 +1557,8 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
   const [running, setRunning] = useState(false);
   const [report, setReport] = useState<RunReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [undoing, setUndoing] = useState(false);
+  const [undoResult, setUndoResult] = useState<number | null>(null);
 
   useEffect(() => {
     if (!vaultPath) return;
@@ -1613,6 +1615,24 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       setError(String(e));
     } finally {
       setRunning(false);
+    }
+  }
+
+  // Important 3 fix: undo the last run — mechanical reversal via
+  // distill::undo, one button next to the last-run summary below.
+  async function undoLastRun(): Promise<void> {
+    if (!vaultPath || !status?.last_run_id || undoing) return;
+    setUndoing(true);
+    setError(null);
+    setUndoResult(null);
+    try {
+      const n = await ipc.undoDistillRun(vaultPath, status.last_run_id);
+      setUndoResult(n);
+      setStatus(await ipc.distillStatus(vaultPath));
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setUndoing(false);
     }
   }
 
@@ -1758,6 +1778,12 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
             min={0}
             onChange={(n) => void patch({ idle_minutes: n })}
           />
+          <DistillNumField
+            label={t.set_distill_maturation ?? "Maturation (hours)"}
+            value={cfg.maturation_hours}
+            min={0}
+            onChange={(n) => void patch({ maturation_hours: n })}
+          />
         </div>
       </div>
 
@@ -1782,6 +1808,48 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
               String(status.pending_proposals),
             )}{" "}
             · {trendLabel}
+          </div>
+        ) : null}
+        {status?.last_run_id ? (
+          <div
+            className="row"
+            style={{
+              gap: 10,
+              marginTop: 6,
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <span className="muted" style={{ fontSize: 12.5 }}>
+              {status.last_run !== null
+                ? (t.ov_distill_last_run ?? "Last run {t}").replace(
+                    "{t}",
+                    lastRunLabel(status.last_run) ?? "",
+                  )
+                : null}
+            </span>
+            <button
+              className="btn"
+              onClick={() => void undoLastRun()}
+              disabled={undoing || !vaultPath}
+              aria-busy={undoing}
+              data-testid="distill-undo-btn"
+            >
+              {undoing
+                ? (t.set_distill_undoing ?? "Undoing…")
+                : (t.set_distill_undo ?? "Undo this run")}
+            </button>
+          </div>
+        ) : null}
+        {undoResult !== null ? (
+          <div
+            style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }}
+            data-testid="distill-undo-result"
+          >
+            {(t.set_distill_undo_result ?? "Reversed {n} changes").replace(
+              "{n}",
+              String(undoResult),
+            )}
           </div>
         ) : null}
         <button
