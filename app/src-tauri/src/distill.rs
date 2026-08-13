@@ -822,6 +822,16 @@ fn is_pending_map(map: &HashMap<String, gray_matter::Pod>) -> bool {
     !matches!(map.get("status"), Some(gray_matter::Pod::String(s)) if s != "pending")
 }
 
+/// `status: done` or `status: dismissed` only — a proposal that has actually
+/// finished its lifecycle. Deliberately excludes `approved`: that status
+/// means the frontend has flagged this proposal for `apply_proposal` to act
+/// on next, not that it is resolved — if the idle run swept it into the
+/// archive here, a run firing in the gap between the frontend's flip and the
+/// apply call would silently orphan the user's decision.
+fn is_resolved_map(map: &HashMap<String, gray_matter::Pod>) -> bool {
+    matches!(map.get("status"), Some(gray_matter::Pod::String(s)) if s == "done" || s == "dismissed")
+}
+
 fn is_pending_proposal(content: &str) -> bool {
     proposal_frontmatter(content).is_some_and(|map| is_pending_map(&map))
 }
@@ -1302,11 +1312,12 @@ fn propose_emerging_clusters(root: &Path, manifest: &mut RunManifest) -> Result<
     Ok(written)
 }
 
-/// Move any proposal whose `status` has moved past `pending` (approved and
-/// applied by `apply_proposal`, or dismissed client-side) out of the pending
-/// feedback inbox into `work/feedback/archive/` — housekeeping, not a new
-/// decision. Tracked in the run manifest like every other move, so `undo` can
-/// put a wrongly-archived proposal back.
+/// Move any proposal whose lifecycle has actually finished (`status: done`
+/// or `status: dismissed`) out of the pending feedback inbox into
+/// `work/feedback/archive/` — housekeeping, not a new decision. A `status:
+/// approved` proposal is left alone: it is awaiting `apply_proposal`, not
+/// resolved (see `is_resolved_map`). Tracked in the run manifest like every
+/// other move, so `undo` can put a wrongly-archived proposal back.
 fn archive_resolved_proposals(root: &Path, manifest: &mut RunManifest) -> Result<usize, String> {
     let feedback_dir = root.join("work/feedback");
     let mut archived = 0usize;
@@ -1324,7 +1335,7 @@ fn archive_resolved_proposals(root: &Path, manifest: &mut RunManifest) -> Result
         let Some(map) = proposal_frontmatter(&content) else {
             continue;
         };
-        if is_pending_map(&map) {
+        if !is_resolved_map(&map) {
             continue;
         }
         let archive_dir = feedback_dir.join("archive");
@@ -1367,6 +1378,64 @@ fn set_proposal_status(path: &Path, raw: &str, status: &str) -> Result<(), Strin
     std::fs::write(path, out).map_err(|e| format!("write proposal status: {e}"))
 }
 
+/// How many of a proposal's payload files an `apply_*` pass actually moved
+/// vs. found already gone. A source missing at its payload path is treated
+/// as already-processed, not an error — a proposal action is idempotent per
+/// file, so a retry after a mid-loop failure (or a proposal applied twice)
+/// makes forward progress on whatever remains instead of re-failing forever
+/// on the first file a previous attempt already finished.
+struct ApplyOutcome {
+    moved: usize,
+    skipped: usize,
+}
+
+impl ApplyOutcome {
+    fn summary(&self) -> String {
+        format!(
+            "moved {}, skipped {} already-processed",
+            self.moved, self.skipped
+        )
+    }
+}
+
+/// Proposals are user-editable markdown: a hand-edited `payload.files` entry
+/// is untrusted input even though it is already vault-confined by
+/// `safe_join` — without a further check, a rewritten `admit-cluster` or
+/// `delete-batch` payload could point `apply_proposal` at, say,
+/// `wiki/index.md` and have a live wiki page silently relocated or trashed.
+/// `valid` restricts the path to the one directory shape the action is
+/// actually supposed to touch; `expected` names that shape in the error.
+fn confine_payload_file(
+    root: &Path,
+    rel: &str,
+    valid: fn(&str) -> bool,
+    expected: &str,
+) -> Result<PathBuf, String> {
+    if !valid(rel) {
+        return Err(format!(
+            "proposal payload path `{rel}` must be directly under `{expected}`"
+        ));
+    }
+    crate::myco_pro::safe_join(root, rel)
+}
+
+/// `_inbox/quarantine/<name>`, no further nesting — the one shape a
+/// quarantined item's content file ever has (`free_quarantine_paths`).
+fn is_quarantine_payload_path(rel: &str) -> bool {
+    rel.strip_prefix(&format!(
+        "{}/{QUARANTINE_DIR}/",
+        crate::commands::DEST_INBOX
+    ))
+    .is_some_and(|rest| !rest.is_empty() && !rest.contains('/'))
+}
+
+/// `raw/<name>`, no further nesting — the one shape `run()`'s own archive
+/// pass ever considers (never `raw/archive/...`, never a subdirectory).
+fn is_raw_top_level_payload_path(rel: &str) -> bool {
+    rel.strip_prefix("raw/")
+        .is_some_and(|rest| !rest.is_empty() && !rest.contains('/'))
+}
+
 /// Move a quarantined item's content file back to `_inbox/`, delete its
 /// verdict sidecar, and drop its scan-ledger entry so the next `scan` scores
 /// it fresh against the (hopefully now-wider) ontology. Ledger compaction
@@ -1374,11 +1443,20 @@ fn set_proposal_status(path: &Path, raw: &str, status: &str) -> Result<(), Strin
 /// the file moves — see `compact_ledger`), but dropping it here rather than
 /// waiting for the next scan keeps the ledger accurate immediately, not just
 /// eventually.
-fn apply_admit_cluster(root: &Path, files: &[String]) -> Result<(), String> {
+fn apply_admit_cluster(root: &Path, files: &[String]) -> Result<ApplyOutcome, String> {
     let inbox_dir = root.join(crate::commands::DEST_INBOX);
     std::fs::create_dir_all(&inbox_dir).map_err(|e| format!("create _inbox dir: {e}"))?;
+    let mut outcome = ApplyOutcome {
+        moved: 0,
+        skipped: 0,
+    };
     for f in files {
-        let content_path = crate::myco_pro::safe_join(root, f)?;
+        let content_path =
+            confine_payload_file(root, f, is_quarantine_payload_path, "_inbox/quarantine/")?;
+        if !content_path.exists() {
+            outcome.skipped += 1;
+            continue;
+        }
         let file_name = content_path
             .file_name()
             .ok_or_else(|| format!("bad proposal file path: {f}"))?;
@@ -1392,18 +1470,27 @@ fn apply_admit_cluster(root: &Path, files: &[String]) -> Result<(), String> {
         let dest = free_path(&inbox_dir.join(file_name));
         std::fs::rename(&content_path, &dest).map_err(|e| format!("move {f} to _inbox: {e}"))?;
         let _ = std::fs::remove_file(&sidecar_path); // best-effort; a missing sidecar isn't fatal
+        outcome.moved += 1;
     }
     drop_ledger_entries(root, files)?;
-    Ok(())
+    Ok(outcome)
 }
 
 /// Same move `run()`'s conservative archive pass would have made: top-level
 /// `raw/<file>.md` -> `raw/archive/<YYYY-MM>/<file>.md`, month from the
 /// file's own mtime. Reuses `month_bucket`/`free_path`, the same helpers that
 /// pass uses, rather than re-deriving the bucket/collision logic here.
-fn apply_archive_batch(root: &Path, files: &[String]) -> Result<(), String> {
+fn apply_archive_batch(root: &Path, files: &[String]) -> Result<ApplyOutcome, String> {
+    let mut outcome = ApplyOutcome {
+        moved: 0,
+        skipped: 0,
+    };
     for f in files {
-        let from_path = crate::myco_pro::safe_join(root, f)?;
+        let from_path = confine_payload_file(root, f, is_raw_top_level_payload_path, "raw/")?;
+        if !from_path.exists() {
+            outcome.skipped += 1;
+            continue;
+        }
         let mtime = mtime_secs(&from_path).unwrap_or_else(now_secs);
         let file_name = from_path
             .file_name()
@@ -1412,8 +1499,9 @@ fn apply_archive_batch(root: &Path, files: &[String]) -> Result<(), String> {
         std::fs::create_dir_all(&archive_dir).map_err(|e| format!("create archive dir: {e}"))?;
         let to_path = free_path(&archive_dir.join(file_name));
         std::fs::rename(&from_path, &to_path).map_err(|e| format!("archive move: {e}"))?;
+        outcome.moved += 1;
     }
-    Ok(())
+    Ok(outcome)
 }
 
 /// Same move `run()`'s conservative TTL pass would have made, except the
@@ -1421,15 +1509,28 @@ fn apply_archive_batch(root: &Path, files: &[String]) -> Result<(), String> {
 /// stem) rather than `.myco/trash/<run-id>/` — an applied proposal has no run
 /// id of its own to file its trash dir under. Reuses `dir()`/`free_path`, the
 /// same helpers that pass uses.
-fn apply_delete_batch(root: &Path, files: &[String], proposal_path: &Path) -> Result<(), String> {
+fn apply_delete_batch(
+    root: &Path,
+    files: &[String],
+    proposal_path: &Path,
+) -> Result<ApplyOutcome, String> {
     let slug = proposal_path
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("proposal");
     let trash_dir = dir(root).join("trash").join(slug);
     std::fs::create_dir_all(&trash_dir).map_err(|e| format!("create trash dir: {e}"))?;
+    let mut outcome = ApplyOutcome {
+        moved: 0,
+        skipped: 0,
+    };
     for f in files {
-        let content_path = crate::myco_pro::safe_join(root, f)?;
+        let content_path =
+            confine_payload_file(root, f, is_quarantine_payload_path, "_inbox/quarantine/")?;
+        if !content_path.exists() {
+            outcome.skipped += 1;
+            continue;
+        }
         let file_name = content_path
             .file_name()
             .ok_or_else(|| format!("bad proposal file path: {f}"))?;
@@ -1450,8 +1551,9 @@ fn apply_delete_batch(root: &Path, files: &[String], proposal_path: &Path) -> Re
             std::fs::rename(&sidecar_path, &to_sidecar)
                 .map_err(|e| format!("trash sidecar move: {e}"))?;
         }
+        outcome.moved += 1;
     }
-    Ok(())
+    Ok(outcome)
 }
 
 /// Best-effort removal of `rels`' scan-ledger entries (`scored`/
@@ -1488,7 +1590,13 @@ fn drop_ledger_entries(root: &Path, rels: &[String]) -> Result<(), String> {
 /// - `archive-batch` -> `apply_archive_batch`
 /// - `delete-batch` -> `apply_delete_batch`
 ///
-/// Returns the vault-relative path of the proposal (now `status: done`).
+/// Each is idempotent per payload file (see `ApplyOutcome`), so re-running
+/// this on a proposal a previous call only partly finished (it errored
+/// partway through the loop, before ever reaching the `status: done` flip
+/// below) picks up exactly where that call left off, and re-running it on an
+/// already-`done` proposal is a harmless no-op that reports every file
+/// skipped rather than erroring on the first missing source. Returns
+/// `"moved N, skipped M already-processed"`.
 pub fn apply_proposal(root: &Path, rel_path: &str) -> Result<String, String> {
     let path = crate::myco_pro::safe_join(root, rel_path)?;
     let raw =
@@ -1501,15 +1609,15 @@ pub fn apply_proposal(root: &Path, rel_path: &str) -> Result<String, String> {
     };
     let files = proposal_payload_files(&map);
 
-    match action.as_str() {
+    let outcome = match action.as_str() {
         "admit-cluster" => apply_admit_cluster(root, &files)?,
         "archive-batch" => apply_archive_batch(root, &files)?,
         "delete-batch" => apply_delete_batch(root, &files, &path)?,
         other => return Err(format!("proposal {rel_path} has unknown action `{other}`")),
-    }
+    };
 
     set_proposal_status(&path, &raw, "done")?;
-    Ok(rel_string(root, &path))
+    Ok(outcome.summary())
 }
 
 /// Idle-run orchestrator: the periodic batch the design spec calls "the
@@ -2506,7 +2614,7 @@ mod tests {
         .unwrap();
 
         let result = apply_proposal(root, &rel).unwrap();
-        assert_eq!(result, rel);
+        assert_eq!(result, "moved 2, skipped 0 already-processed");
 
         assert!(root.join("_inbox/a.md").exists());
         assert!(root.join("_inbox/b.md").exists());
@@ -2520,6 +2628,78 @@ mod tests {
             content.contains("action: admit-cluster"),
             "rest of frontmatter is untouched"
         );
+    }
+
+    #[test]
+    fn apply_proposal_resumes_after_a_half_applied_admit_cluster() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let quarantine = root.join("_inbox/quarantine");
+        std::fs::create_dir_all(&quarantine).unwrap();
+        write_quarantine_item(&quarantine, "a", vec![1.0, 0.0]);
+        write_quarantine_item(&quarantine, "b", vec![1.0, 0.0]);
+
+        let payload = serde_json::json!({
+            "files": ["_inbox/quarantine/a.md", "_inbox/quarantine/b.md"],
+        });
+        let rel = write_proposal(
+            root,
+            "admit-cluster",
+            "New topic forming: test",
+            "body",
+            &payload,
+        )
+        .unwrap();
+
+        // Simulate a prior `apply_proposal` call that finished `a` (moved +
+        // sidecar deleted, exactly what `apply_admit_cluster` itself does)
+        // but crashed before reaching `b` or the `status: done` flip.
+        std::fs::create_dir_all(root.join("_inbox")).unwrap();
+        std::fs::rename(quarantine.join("a.md"), root.join("_inbox/a.md")).unwrap();
+        std::fs::remove_file(quarantine.join("a.verdict.json")).unwrap();
+
+        let result = apply_proposal(root, &rel).unwrap();
+        assert_eq!(
+            result, "moved 1, skipped 1 already-processed",
+            "a.md is already gone from its payload path; only b.md is newly moved"
+        );
+        assert!(root.join("_inbox/b.md").exists());
+        assert!(!quarantine.join("b.md").exists());
+        let content = std::fs::read_to_string(root.join(&rel)).unwrap();
+        assert!(content.contains("status: done"));
+
+        // Applying an already-fully-done proposal again must not error —
+        // every file is now "already processed".
+        let result2 = apply_proposal(root, &rel).unwrap();
+        assert_eq!(result2, "moved 0, skipped 2 already-processed");
+    }
+
+    #[test]
+    fn apply_proposal_rejects_payload_paths_outside_the_actions_own_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("wiki")).unwrap();
+        std::fs::write(root.join("wiki/index.md"), "top page").unwrap();
+
+        for kind in ["admit-cluster", "archive-batch", "delete-batch"] {
+            let rel = write_proposal(
+                root,
+                kind,
+                &format!("{kind} escape attempt"),
+                "body",
+                &serde_json::json!({ "files": ["wiki/index.md"] }),
+            )
+            .unwrap();
+            let err = apply_proposal(root, &rel).unwrap_err();
+            assert!(
+                err.contains("wiki/index.md"),
+                "{kind}: unexpected error {err}"
+            );
+            assert!(
+                root.join("wiki/index.md").exists(),
+                "{kind} must not touch the file its payload was rejected on"
+            );
+        }
     }
 
     #[test]
@@ -2601,6 +2781,45 @@ mod tests {
                 );
                 let file_name = Path::new(&rel).file_name().unwrap();
                 assert!(root.join("work/feedback/archive").join(file_name).exists());
+            },
+        );
+    }
+
+    #[test]
+    fn run_does_not_archive_an_approved_but_unapplied_proposal() {
+        crate::settings::test_support::with_isolated_data(
+            "distill-approved-proposal-survives-run",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                std::fs::create_dir_all(root.join("_inbox")).unwrap();
+
+                let rel = write_proposal(
+                    root,
+                    "archive-batch",
+                    "Archive raw/x.md?",
+                    "body",
+                    &serde_json::json!({ "files": ["raw/x.md"] }),
+                )
+                .unwrap();
+                // Simulate the frontend's pending -> approved flip, then the
+                // idle run firing before `apply_proposal` is ever called.
+                let raw = std::fs::read_to_string(root.join(&rel)).unwrap();
+                std::fs::write(
+                    root.join(&rel),
+                    raw.replace("status: pending", "status: approved"),
+                )
+                .unwrap();
+
+                let cfg = DistillConfig::default();
+                run(root, &cfg, &dummy_embed).unwrap();
+
+                assert!(
+                    root.join(&rel).exists(),
+                    "an approved-but-unapplied proposal must not be swept into the archive"
+                );
+                let file_name = Path::new(&rel).file_name().unwrap();
+                assert!(!root.join("work/feedback/archive").join(file_name).exists());
             },
         );
     }
