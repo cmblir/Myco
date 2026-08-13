@@ -87,8 +87,8 @@ pub struct DistillConfig {
     pub maturation_hours: u32,
     #[serde(default)]
     pub dormancy_decay: bool,
-    /// Phase B: minimum age (days) before a `sessions/` day is offered to
-    /// `digestable_session_days`.
+    /// Phase B: max day-buckets digested per run (TS-side) — not a min-age
+    /// gate; maturity is `maturation_hours`, the same gate `scan` uses.
     #[serde(default = "d_digest_days")]
     pub llm_digest_days: u32,
     /// Phase B: per-run cap on paid LLM ingest calls.
