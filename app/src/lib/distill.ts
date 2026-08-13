@@ -16,6 +16,7 @@ import {
 } from "../stores/distillStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useReindexStore } from "../stores/reindexStore";
+import { useDistillRunStore } from "../stores/distillRunStore";
 
 export type Intensity = "conservative" | "standard" | "aggressive";
 export type GatePreset = "strict" | "normal" | "loose";
@@ -231,6 +232,7 @@ async function pruneArchivedSessions(vault: string): Promise<void> {
 export async function runDistillGuarded(vault: string): Promise<RunReport | null> {
   if (inFlight.has(vault)) return null;
   inFlight.add(vault);
+  useDistillRunStore.setState({ running: true });
   try {
     const report = await ipc.distillRun(vault);
     // Idle is checked at entry only (by the callers' own triggers); the LLM
@@ -261,5 +263,9 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
     return report;
   } finally {
     inFlight.delete(vault);
+    // Reflects "any vault still running", not just this one — the guard
+    // itself is per-vault (inFlight), but a single boolean is all the
+    // Topbar needs (see distillRunStore.ts).
+    useDistillRunStore.setState({ running: inFlight.size > 0 });
   }
 }
