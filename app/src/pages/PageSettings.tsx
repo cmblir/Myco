@@ -698,7 +698,7 @@ function AutoImportSetting({
           className="row"
           style={{ marginTop: 12, gap: 8, alignItems: "center" }}
         >
-          <label style={{ fontSize: 13 }}>{t.s_autoingest_interval}</label>
+          <label style={{ fontSize: 13 }}>{t.s_autoimport_interval ?? "Every"}</label>
           <input
             className="input"
             type="number"
