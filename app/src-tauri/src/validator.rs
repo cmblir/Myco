@@ -376,4 +376,21 @@ mod tests {
             r.errors
         );
     }
+    #[test]
+    fn type_map_passes_validator() {
+        // Phase B, Task 4: `type: map` (topic-map / MOC pages under
+        // `wiki/maps/`) is now in `WIKI_TYPES` — isolates that one field via
+        // GOOD_FM's otherwise-valid frontmatter (status stays `active` here;
+        // the actual freshly-drafted `status: draft` is a separate, disclosed
+        // gap since this validator's own STATUS enum has no `draft` value —
+        // moot in practice, as `maps.ts::draftMap` never calls validate_ingest).
+        let fm = GOOD_FM.replace("type: concept", "type: map");
+        let (_d, root) = vault(&[("wiki/maps/topic-a.md", fm.as_str())]);
+        let r = validate_pages(&root, &["wiki/maps/topic-a.md".into()]);
+        assert!(
+            r.errors.is_empty(),
+            "type: map must validate cleanly: {:?}",
+            r.errors
+        );
+    }
 }

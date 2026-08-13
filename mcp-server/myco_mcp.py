@@ -810,7 +810,10 @@ def archive_inbox_source(filename: str, project: str = "") -> dict:
 
 # ─── local lint (no LLM) ─────────────────────────────────────────────────────
 
-VALID_TYPES = {"concept", "technique", "entity", "source-summary", "analysis"}
+# Mirrors Rust's `local_llm::WIKI_TYPES` / `mcp_native::VALID_TYPES` — "map"
+# (Phase B, Task 4, myco app) added there too, for the same wiki/maps/ topic
+# map pages.
+VALID_TYPES = {"concept", "technique", "entity", "source-summary", "analysis", "map"}
 # Meta/scaffold pages the schema does not govern — index, log and any page
 # declaring a meta type. Content types stay strictly validated.
 LINT_SKIP_NAMES = {"index.md", "log.md"}

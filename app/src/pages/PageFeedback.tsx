@@ -18,6 +18,7 @@ import Viewer from "../components/Viewer";
 function kindLabel(t: Strings, action: ProposalAction): string {
   if (action === "admit-cluster") return t.pf_kind_admit ?? "Admit cluster";
   if (action === "archive-batch") return t.pf_kind_archive ?? "Archive batch";
+  if (action === "draft-map") return t.pf_kind_draft_map ?? "Draft topic map";
   return t.pf_kind_delete ?? "Delete batch";
 }
 

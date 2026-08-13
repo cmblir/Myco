@@ -155,7 +155,7 @@ pub fn config_save(root: &Path, c: &DistillConfig) -> Result<(), String> {
 // `app/docs/specs/2026-08-13-ontology-distill-design.md` ("Admission gate").
 // ---------------------------------------------------------------------------
 
-use crate::ontology::{admit, Ontology, Tier, Verdict};
+use crate::ontology::{admit, Ontology, Tier, Verdict, FIELD_CLUSTER_ID};
 use std::collections::HashMap;
 
 /// One item's last-scored fingerprint, so an unchanged file is never
@@ -965,11 +965,12 @@ fn append_daily_summary_line(root: &Path, day: &str, line: &str) -> Result<bool,
     Ok(created)
 }
 
-/// Parse a proposal file's YAML frontmatter into its raw `Pod` map, or `None`
-/// if it isn't `type: distill-proposal` frontmatter at all. Shared by every
-/// reader of the proposal lifecycle (pending check, dedup check, apply) so
-/// the frontmatter shape lives in one place.
-fn proposal_frontmatter(content: &str) -> Option<HashMap<String, gray_matter::Pod>> {
+/// Parse ANY markdown file's YAML frontmatter into its raw `Pod` map — `None`
+/// if there is none, or it isn't a `Hash` at the top level. Shared by every
+/// frontmatter reader in this module: proposals (`proposal_frontmatter`
+/// narrows further), and Phase B's map-candidate pass, which reads ordinary
+/// `wiki/` pages' `status`/`confidence`/`cluster` fields, not proposals'.
+fn page_frontmatter(content: &str) -> Option<HashMap<String, gray_matter::Pod>> {
     let gray_matter::Pod::Hash(map) = gray_matter::Matter::<gray_matter::engine::YAML>::new()
         .parse(content)
         .ok()?
@@ -977,6 +978,15 @@ fn proposal_frontmatter(content: &str) -> Option<HashMap<String, gray_matter::Po
     else {
         return None;
     };
+    Some(map)
+}
+
+/// Parse a proposal file's YAML frontmatter into its raw `Pod` map, or `None`
+/// if it isn't `type: distill-proposal` frontmatter at all. Shared by every
+/// reader of the proposal lifecycle (pending check, dedup check, apply) so
+/// the frontmatter shape lives in one place.
+fn proposal_frontmatter(content: &str) -> Option<HashMap<String, gray_matter::Pod>> {
+    let map = page_frontmatter(content)?;
     let is_proposal =
         matches!(map.get("type"), Some(gray_matter::Pod::String(s)) if s == "distill-proposal");
     is_proposal.then_some(map)
@@ -1029,6 +1039,21 @@ fn proposal_payload_files(map: &HashMap<String, gray_matter::Pod>) -> Vec<String
                 .collect()
         })
         .unwrap_or_default()
+}
+
+/// A proposal's `payload.cluster` field as a plain string, or `None` if the
+/// payload is missing/malformed — mirrors `proposal_payload_files`, narrowed
+/// to the scalar `draft-map` payload carries instead of a `files` array.
+fn proposal_payload_cluster(map: &HashMap<String, gray_matter::Pod>) -> Option<String> {
+    let payload = map
+        .get("payload")
+        .cloned()
+        .map(crate::vault::pod_to_json)
+        .unwrap_or(serde_json::Value::Null);
+    payload
+        .get("cluster")
+        .and_then(|v| v.as_str())
+        .map(String::from)
 }
 
 /// Proposals still awaiting resolution (`pending` or `approved`) — the
@@ -1467,6 +1492,35 @@ fn pending_summary_batch_exists(root: &Path, rel: &str) -> bool {
         })
 }
 
+/// True if a `draft-map` proposal for this exact cluster is already awaiting
+/// resolution (`pending` OR `approved` — see `is_awaiting_resolution_map`).
+/// Approved counts too, unlike `pending_admit_cluster_exists`'s pending-only
+/// check: at `Intensity::Aggressive`, `propose_map_candidates` writes
+/// `draft-map` straight to `status: approved` (the TS-side post-run
+/// auto-apply picks it up), so a run firing again before that apply happens
+/// must still see this cluster as already spoken for.
+fn pending_draft_map_exists(root: &Path, cluster_label: &str) -> bool {
+    crate::vault::vault_entries(&root.join("work/feedback"))
+        .into_iter()
+        .filter(|(e, kind)| {
+            kind.is_file() && e.path().extension().and_then(|x| x.to_str()) == Some("md")
+        })
+        .any(|(e, _)| {
+            let Ok(content) = std::fs::read_to_string(e.path()) else {
+                return false;
+            };
+            let Some(map) = proposal_frontmatter(&content) else {
+                return false;
+            };
+            if !is_awaiting_resolution_map(&map) {
+                return false;
+            }
+            let is_draft_map =
+                matches!(map.get("action"), Some(gray_matter::Pod::String(s)) if s == "draft-map");
+            is_draft_map && proposal_payload_cluster(&map).as_deref() == Some(cluster_label)
+        })
+}
+
 /// Emerging-cluster + proposal pass (run() step ⑥): quarantined items whose
 /// pairwise similarity clusters into a group of at least `EMERGING_MIN_SIZE`
 /// are proposed as a new topic, unless a pending `admit-cluster` proposal for
@@ -1510,6 +1564,141 @@ fn propose_emerging_clusters(root: &Path, manifest: &mut RunManifest) -> Result<
             &body,
             &serde_json::json!({ "files": files }),
         )?;
+        manifest.created.push(rel);
+        save_manifest(root, manifest)?;
+        written += 1;
+    }
+    Ok(written)
+}
+
+/// Minimum members (AFTER the maturity filter below) before a topic cluster
+/// is worth proposing as a map — bigger than `EMERGING_MIN_SIZE` because a
+/// map is a bigger commitment than a quarantine group: a whole page, drafted
+/// by a paid LLM call, once approved.
+const MAP_MIN_MEMBERS: usize = 8;
+
+/// How old (days) a member page must be before it counts toward a map
+/// candidate. Spec approximation of "settled" — the design spec's own
+/// wording is qualitative ("mature enough"); this hardcodes a concrete
+/// number rather than exposing yet another setting, the same call
+/// `TRASH_RETENTION_DAYS` makes.
+const MAP_MATURITY_DAYS: i64 = 7;
+
+/// `cluster:` frontmatter values already claimed by an existing `wiki/maps/`
+/// page — a cheap scan (frontmatter only, via `page_frontmatter`, the same
+/// parse every other proposal/page reader in this module shares) so a topic
+/// that already has a map is never proposed again.
+fn existing_map_clusters(root: &Path) -> std::collections::HashSet<String> {
+    crate::vault::vault_entries(&root.join("wiki/maps"))
+        .into_iter()
+        .filter(|(e, kind)| {
+            kind.is_file() && e.path().extension().and_then(|x| x.to_str()) == Some("md")
+        })
+        .filter_map(|(e, _)| {
+            let content = std::fs::read_to_string(e.path()).ok()?;
+            let map = page_frontmatter(&content)?;
+            match map.get("cluster") {
+                Some(gray_matter::Pod::String(s)) => Some(s.clone()),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+/// Whether a cluster member (a `wiki/`-relative page path) is mature enough
+/// to count toward a map candidate: `status: active`, `confidence` anything
+/// but `low`, and its own mtime older than `MAP_MATURITY_DAYS` — the spec's
+/// approximation of "settled", not a re-derivation of `admit`'s tiers (this
+/// is about a page already IN the wiki, not inflow being gated into it).
+/// `false` for a missing/unreadable/frontmatter-less page rather than an
+/// error: one bad member must not abort the whole cluster's evaluation.
+fn member_is_mature(root: &Path, member: &str, now: i64) -> bool {
+    let path = root.join(member);
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Some(map) = page_frontmatter(&content) else {
+        return false;
+    };
+    let is_active = matches!(map.get("status"), Some(gray_matter::Pod::String(s)) if s == "active");
+    let not_low = !matches!(map.get("confidence"), Some(gray_matter::Pod::String(s)) if s == "low");
+    if !is_active || !not_low {
+        return false;
+    }
+    let Some(mtime) = mtime_secs(&path) else {
+        return false;
+    };
+    now - mtime >= MAP_MATURITY_DAYS * 86_400
+}
+
+/// Map-candidate + proposal pass (Phase B, Task 4): a topic cluster that has
+/// grown to at least `MAP_MIN_MEMBERS` mature members, and has no
+/// `wiki/maps/` page yet, gets a `draft-map` proposal — see
+/// `app/docs/specs/2026-08-13-ontology-distill-design.md` ("topic maps").
+/// Excludes the synthetic "field" cluster (`FIELD_CLUSTER_ID`): it is a
+/// catch-all for pages that never earned a real topic of their own, so it is
+/// never a real topic worth mapping, however large it grows. The LLM draft
+/// itself runs TS-side (`maps.ts::draftMap`) — this only detects and
+/// proposes.
+///
+/// Intensity bridge: at `Intensity::Aggressive` the proposal is written
+/// straight to `status: approved` (rather than the usual `pending`) so the
+/// TS-side post-run auto-apply (`runDistillGuarded`) drafts it without a
+/// human click — the same "Aggressive skips the human gate" shape every
+/// other pass in `run` already has, just landing in TS instead of here
+/// because the draft itself is an LLM call.
+fn propose_map_candidates(
+    root: &Path,
+    o: &Ontology,
+    cfg: &DistillConfig,
+    manifest: &mut RunManifest,
+) -> Result<usize, String> {
+    let now = now_secs();
+    let existing = existing_map_clusters(root);
+    let aggressive = matches!(cfg.intensity, Intensity::Aggressive);
+    let mut written = 0usize;
+
+    for c in &o.clusters {
+        if c.id == FIELD_CLUSTER_ID
+            || c.members.len() < MAP_MIN_MEMBERS
+            || existing.contains(&c.label)
+            || pending_draft_map_exists(root, &c.label)
+        {
+            continue;
+        }
+        let kept: Vec<String> = c
+            .members
+            .iter()
+            .filter(|m| member_is_mature(root, m, now))
+            .cloned()
+            .collect();
+        if kept.len() < MAP_MIN_MEMBERS {
+            continue;
+        }
+
+        let mut body = format!(
+            "{} of the cluster's {} members are mature enough to map. Draft a topic map for \
+             '{}'?\n\n",
+            kept.len(),
+            c.members.len(),
+            c.label
+        );
+        for m in &kept {
+            body += &format!("- [[{m}]]\n");
+        }
+
+        let rel = write_proposal(
+            root,
+            "draft-map",
+            &format!("Map candidate: {}", c.label),
+            &body,
+            &serde_json::json!({ "cluster": c.label, "members": kept }),
+        )?;
+        if aggressive {
+            let path = root.join(&rel);
+            let raw = std::fs::read_to_string(&path).map_err(|e| format!("read {rel}: {e}"))?;
+            set_proposal_status(&path, &raw, "approved")?;
+        }
         manifest.created.push(rel);
         save_manifest(root, manifest)?;
         written += 1;
@@ -1836,6 +2025,30 @@ pub fn apply_proposal(root: &Path, rel_path: &str) -> Result<String, String> {
     Ok(outcome.summary())
 }
 
+/// `(cluster label, page centroid)` for every `wiki/maps/` page on disk whose
+/// `cluster:` frontmatter names a real cluster — `ontology::build`'s
+/// `map_anchors` parameter (Phase B, Task 4). Computed from `store`'s own
+/// per-page centroids (`page_centroids`, already computed for every other
+/// page) rather than re-embedding anything.
+fn map_anchors_from_store(
+    root: &Path,
+    store: &crate::vector_index::VectorStore,
+) -> Vec<(String, Vec<f32>)> {
+    store
+        .page_centroids()
+        .into_iter()
+        .filter(|(page, _)| page.starts_with("wiki/maps/"))
+        .filter_map(|(page, vector)| {
+            let content = std::fs::read_to_string(root.join(&page)).ok()?;
+            let map = page_frontmatter(&content)?;
+            match map.get("cluster") {
+                Some(gray_matter::Pod::String(s)) => Some((s.clone(), vector)),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
 /// Idle-run orchestrator: the periodic batch the design spec calls "the
 /// distill run". In order:
 ///
@@ -1870,9 +2083,13 @@ pub fn apply_proposal(root: &Path, rel_path: &str) -> Result<String, String> {
 ///    (`propose_emerging_clusters`), and any proposal already resolved
 ///    (approved/dismissed/done) is archived out of the pending feedback inbox
 ///    (`archive_resolved_proposals`).
-/// 8. Write the human report (`ingest-reports/distill-<id>.md`).
-/// 9. Append this run's backlog to the rolling trend, and commit if the
-///    vault is a git repo.
+/// 8. Map-candidate + proposal pass (Task 4, Phase B): a topic cluster that
+///    has grown to enough mature members, with no `wiki/maps/` page yet,
+///    gets a `draft-map` proposal (`propose_map_candidates`) — the LLM draft
+///    itself runs TS-side.
+/// 9. Write the human report (`ingest-reports/distill-<id>.md`).
+/// 10. Append this run's backlog to the rolling trend, and commit if the
+///     vault is a git repo.
 pub fn run(
     root: &Path,
     cfg: &DistillConfig,
@@ -1893,7 +2110,8 @@ pub fn run(
     let ontology_rebuilt = !matches!(&cached, Some(o) if o.wiki_pages == current_wiki_pages);
     let ontology = if ontology_rebuilt {
         let titles = crate::commands::wiki_titles(root);
-        let mut o = crate::ontology::build(&store, &titles);
+        let map_anchors = map_anchors_from_store(root, &store);
+        let mut o = crate::ontology::build(&store, &titles, &map_anchors);
         crate::ontology::stamp_last_touched(root, &mut o);
         crate::ontology::save(root, &o)?;
         o
@@ -2170,10 +2388,18 @@ pub fn run(
 
     // ⑥ Emerging-cluster + proposal pass (Task 7, design spec: "≥5
     // quarantined items with pairwise similarity above threshold -> 'new
-    // topic forming' proposal"), plus archiving any proposal the lifecycle
-    // already resolved. Both `save_manifest` after their own pushes, same as
-    // every pass above.
+    // topic forming' proposal"). `save_manifest` after its own pushes, same
+    // as every pass above.
     proposals += propose_emerging_clusters(root, &mut manifest)?;
+
+    // ⑥.5 Map-candidate + proposal pass (Task 4, Phase B): a topic cluster
+    // that has grown big and mature enough gets a `draft-map` proposal
+    // instead — see `propose_map_candidates`'s own doc comment for the
+    // Aggressive-intensity bridge to TS.
+    proposals += propose_map_candidates(root, &ontology, cfg, &mut manifest)?;
+
+    // Archive any proposal (of either kind above) the lifecycle already
+    // resolved (approved/dismissed/done).
     archive_resolved_proposals(root, &mut manifest)?;
 
     // ⑦ Manifest — already persisted incrementally after every successful
@@ -2544,6 +2770,13 @@ mod tests {
         std::time::SystemTime::now() - std::time::Duration::from_secs(48 * 3600)
     }
 
+    /// Safely past `MAP_MATURITY_DAYS` (7) — the map-candidate maturity
+    /// filter's "old enough" fixture, distinct from `old_mtime`'s 48h (which
+    /// only clears the much shorter default `maturation_hours`).
+    fn map_mature_mtime() -> std::time::SystemTime {
+        std::time::SystemTime::now() - std::time::Duration::from_secs(8 * 86_400)
+    }
+
     /// A throwaway manifest for tests that call `scan` directly (outside
     /// `run`, which builds its own). Its persisted `.myco/distill-runs/t.json`
     /// is incidental — these tests assert on the returned `ScanOutcome` and/or
@@ -2594,6 +2827,54 @@ mod tests {
             }],
             entities: Vec::new(),
         }
+    }
+
+    /// A one-cluster ontology whose only cluster is `id`/`label`/`members` —
+    /// the map-candidate tests' fixture; the similarity fields are unused by
+    /// `propose_map_candidates` (it never calls `admit`), so they're filled
+    /// with placeholders rather than `tiny_ontology`'s calibrated ones.
+    fn ontology_with_cluster(id: u32, label: &str, members: Vec<String>) -> Ontology {
+        Ontology {
+            model: "test-model".to_string(),
+            built_at: 0,
+            wiki_pages: members.len(),
+            clusters: vec![crate::ontology::Cluster {
+                id,
+                label: label.to_string(),
+                members,
+                centroid: vec![1.0, 0.0],
+                sim_mean: 0.9,
+                sim_std: 0.05,
+                p5: 0.10,
+                p25: 0.50,
+                p40: 0.90,
+                last_touched: 0,
+                override_widen: 0.0,
+            }],
+            entities: Vec::new(),
+        }
+    }
+
+    /// Write a `wiki/`-relative member page with the frontmatter fields
+    /// `member_is_mature` reads, then stamp its mtime — the map-candidate
+    /// maturity-filter tests' fixture.
+    fn write_wiki_member(
+        root: &Path,
+        rel: &str,
+        status: &str,
+        confidence: &str,
+        mtime: std::time::SystemTime,
+    ) {
+        let path = root.join(rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(
+            &path,
+            format!(
+                "---\ntitle: member\ntype: concept\nstatus: {status}\nconfidence: {confidence}\ncreated: 2026-01-01\n---\n\n# member\n"
+            ),
+        )
+        .unwrap();
+        set_mtime(&path, mtime);
     }
 
     const PROSE: &str = "This is a normal note about quantization techniques and how they reduce model size while preserving accuracy across a range of benchmarks and downstream tasks in real deployments, and it keeps going a little further so the byte count clears the junk-heuristic floor.";
@@ -3940,5 +4221,163 @@ mod tests {
             2,
             "pending + approved count; dismissed does not"
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // Task 4, Phase B: map-candidate detection + proposal.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn map_candidate_proposal_respects_min_members_and_maturity() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        // 7 mature members...
+        let mut members: Vec<String> = Vec::new();
+        for i in 0..7 {
+            let rel = format!("wiki/m{i}.md");
+            write_wiki_member(root, &rel, "active", "medium", map_mature_mtime());
+            members.push(rel);
+        }
+        // ...plus 3 disqualified ones: low confidence, non-active status, and
+        // too fresh — kept lands at 7, one short of MAP_MIN_MEMBERS (8).
+        write_wiki_member(root, "wiki/low.md", "active", "low", map_mature_mtime());
+        members.push("wiki/low.md".into());
+        write_wiki_member(
+            root,
+            "wiki/superseded.md",
+            "superseded",
+            "medium",
+            map_mature_mtime(),
+        );
+        members.push("wiki/superseded.md".into());
+        write_wiki_member(
+            root,
+            "wiki/fresh.md",
+            "active",
+            "medium",
+            std::time::SystemTime::now(),
+        );
+        members.push("wiki/fresh.md".into());
+
+        let o = ontology_with_cluster(0, "cluster-a", members);
+        let cfg = DistillConfig::default();
+        let mut manifest = test_manifest();
+
+        let proposal_files = |dir: &Path| -> Vec<std::fs::DirEntry> {
+            std::fs::read_dir(dir)
+                .into_iter()
+                .flatten()
+                .flatten()
+                .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("md"))
+                .collect()
+        };
+
+        let written = propose_map_candidates(root, &o, &cfg, &mut manifest).unwrap();
+        assert_eq!(written, 0, "7 mature members < MAP_MIN_MEMBERS (8)");
+        assert!(proposal_files(&root.join("work/feedback")).is_empty());
+
+        // Bring the low-confidence member up to mature — now exactly 8, the
+        // "all active" case: a proposal with the full kept-member payload.
+        write_wiki_member(root, "wiki/low.md", "active", "medium", map_mature_mtime());
+        let written2 = propose_map_candidates(root, &o, &cfg, &mut manifest).unwrap();
+        assert_eq!(written2, 1);
+        let entries = proposal_files(&root.join("work/feedback"));
+        assert_eq!(entries.len(), 1);
+        let content = std::fs::read_to_string(entries[0].path()).unwrap();
+        assert!(content.contains("action: draft-map"));
+        assert!(content.contains("status: pending"));
+        assert!(content.contains("cluster-a"));
+        for i in 0..7 {
+            assert!(content.contains(&format!("wiki/m{i}.md")));
+        }
+        assert!(content.contains("wiki/low.md"));
+        assert!(
+            !content.contains("wiki/superseded.md"),
+            "the non-active member must not be in the kept payload"
+        );
+        assert!(
+            !content.contains("wiki/fresh.md"),
+            "the too-fresh member must not be in the kept payload"
+        );
+
+        // Re-running must not duplicate — dedup on the cluster label.
+        let written3 = propose_map_candidates(root, &o, &cfg, &mut manifest).unwrap();
+        assert_eq!(
+            written3, 0,
+            "a pending draft-map proposal for this cluster already exists"
+        );
+        assert_eq!(proposal_files(&root.join("work/feedback")).len(), 1);
+    }
+
+    #[test]
+    fn field_cluster_never_becomes_a_map_candidate() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let mut members: Vec<String> = Vec::new();
+        for i in 0..10 {
+            let rel = format!("wiki/m{i}.md");
+            write_wiki_member(root, &rel, "active", "medium", map_mature_mtime());
+            members.push(rel);
+        }
+        // Real "field" clusters always carry this id (`assemble_cluster`'s
+        // `force_label` path) — 10 mature members clears MAP_MIN_MEMBERS on
+        // its own, so only the id check can be what stops this.
+        let o = ontology_with_cluster(FIELD_CLUSTER_ID, "field", members);
+        let cfg = DistillConfig::default();
+        let mut manifest = test_manifest();
+
+        let written = propose_map_candidates(root, &o, &cfg, &mut manifest).unwrap();
+        assert_eq!(
+            written, 0,
+            "the catch-all field cluster is not a real topic"
+        );
+        assert!(
+            !root.join("work/feedback").exists(),
+            "no proposal was written at all"
+        );
+    }
+
+    #[test]
+    fn map_anchors_from_store_reads_cluster_frontmatter_under_wiki_maps() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("wiki/maps")).unwrap();
+        std::fs::write(
+            root.join("wiki/maps/topic-a.md"),
+            "---\ntitle: \"Map: topic-a\"\ntype: map\ncluster: topic-a\ncreated: 2026-01-01\nconfidence: medium\nstatus: draft\n---\n\nbody\n",
+        )
+        .unwrap();
+        // A non-map wiki page must never contribute an anchor even if it
+        // happened to carry a `cluster:` field of its own.
+        std::fs::write(
+            root.join("wiki/other.md"),
+            "---\ntitle: Other\ntype: concept\ncluster: not-an-anchor\ncreated: 2026-01-01\nconfidence: medium\nstatus: active\n---\n\nbody\n",
+        )
+        .unwrap();
+
+        let mut store = crate::vector_index::VectorStore {
+            dim: 2,
+            ..Default::default()
+        };
+        store.records.push(crate::vector_index::Record {
+            id: "wiki/maps/topic-a.md#0".into(),
+            page: "wiki/maps/topic-a.md".into(),
+            stem: "topic-a".into(),
+            section: 0,
+            hash: 0,
+            vector: vec![0.6, 0.8],
+        });
+        store.records.push(crate::vector_index::Record {
+            id: "wiki/other.md#0".into(),
+            page: "wiki/other.md".into(),
+            stem: "other".into(),
+            section: 0,
+            hash: 0,
+            vector: vec![1.0, 0.0],
+        });
+
+        let anchors = map_anchors_from_store(root, &store);
+        assert_eq!(anchors, vec![("topic-a".to_string(), vec![0.6, 0.8])]);
     }
 }

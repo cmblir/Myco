@@ -333,12 +333,16 @@ fn read_parts(abs: &Path) -> Option<(Value, String)> {
 
 // ─── ported wiki-schema logic (mirrors the Python server, regex parity) ───────
 
-const VALID_TYPES: [&str; 5] = [
+// Mirrors `local_llm::WIKI_TYPES` and the Python `VALID_TYPES` — `"map"`
+// (Phase B, Task 4) added there too, so a `wiki/maps/` topic-map page lints
+// clean everywhere instead of only in one of the three copies.
+const VALID_TYPES: [&str; 6] = [
     "concept",
     "technique",
     "entity",
     "source-summary",
     "analysis",
+    "map",
 ];
 const LINT_META_TYPES: [&str; 2] = ["overview", "meta"];
 const LINT_SKIP_NAMES: [&str; 2] = ["index.md", "log.md"];

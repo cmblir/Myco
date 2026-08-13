@@ -36,12 +36,16 @@ use llama_cpp_2::sampling::LlamaSampler;
 
 /// The wiki page types the classifier maps a note to (matches the frontmatter
 /// `type` enum). Longest-match wins so "source-summary" beats a stray "source".
-pub const WIKI_TYPES: [&str; 5] = [
+/// `"map"` (Phase B, Task 4) is a topic map (MOC) page — `distill.rs`/`maps.ts`
+/// are the only writers, but the classifier may still land on it for an
+/// unrelated note and the validator must accept it either way.
+pub const WIKI_TYPES: [&str; 6] = [
     "concept",
     "entity",
     "technique",
     "source-summary",
     "analysis",
+    "map",
 ];
 
 const CTX_TOKENS: u32 = 4096;

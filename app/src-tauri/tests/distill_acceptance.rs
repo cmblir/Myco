@@ -255,7 +255,7 @@ fn backlog_converges_on_a_synthetic_firehose_vault() {
             vector: wp.vector.clone(),
         });
     }
-    let probe_ontology = ontology::build(&store, &[]);
+    let probe_ontology = ontology::build(&store, &[], &[]);
     assert_eq!(
         probe_ontology.clusters.len(),
         2,

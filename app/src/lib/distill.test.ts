@@ -1,7 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+
+const draftMap = vi.fn();
+vi.mock("./maps", () => ({ draftMap: (...a: unknown[]) => draftMap(...a) }));
+
 import { backlogTrend, lastRunLabel, runDistillGuarded } from "./distill";
 import { ipc } from "./ipc";
 import type { RunReport } from "./distill";
+import type { FileNode } from "./ipc";
 
 describe("backlogTrend", () => {
   it("flat with fewer than two samples", () => {
@@ -106,5 +111,79 @@ describe("runDistillGuarded", () => {
     expect(await runDistillGuarded("/b")).toBe(REPORT);
     release(REPORT);
     expect(await a).toBe(REPORT);
+  });
+});
+
+// Phase B, Task 4 — the Aggressive-intensity bridge: distill_run writes
+// `draft-map` proposals straight to `status: approved` at that intensity, so
+// runDistillGuarded must apply them the same way PageFeedback's approve
+// button would, without waiting for a human click.
+describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () => {
+  const TREE: FileNode[] = [
+    {
+      kind: "directory",
+      name: "work",
+      path: "/vmap/work",
+      children: [
+        {
+          kind: "directory",
+          name: "feedback",
+          path: "/vmap/work/feedback",
+          children: [{ kind: "file", name: "p.md", path: "/vmap/work/feedback/p.md" }],
+        },
+      ],
+    },
+  ];
+
+  const proposal = (status: string): string =>
+    "---\n" +
+    "type: distill-proposal\n" +
+    "action: draft-map\n" +
+    `status: ${status}\n` +
+    "created: 2026-08-13\n" +
+    'payload: {"cluster":"attention","members":["wiki/a.md","wiki/b.md"]}\n' +
+    "---\n\n# Map candidate: attention\n\nbody\n";
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    draftMap.mockReset();
+  });
+
+  it("applies an approved draft-map proposal and marks it done", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue(TREE);
+    vi.spyOn(ipc, "readFile").mockResolvedValue({
+      path: "/vmap/work/feedback/p.md",
+      raw: proposal("approved"),
+      content: "",
+      frontmatter: {},
+    });
+    const writeFile = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    draftMap.mockResolvedValue("wiki/maps/attention.md");
+
+    await runDistillGuarded("/vmap");
+
+    expect(draftMap).toHaveBeenCalledWith("/vmap", "attention", ["wiki/a.md", "wiki/b.md"]);
+    expect(writeFile).toHaveBeenCalledWith(
+      "/vmap/work/feedback/p.md",
+      expect.stringContaining("status: done"),
+    );
+  });
+
+  it("leaves a pending draft-map proposal untouched", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue(TREE);
+    vi.spyOn(ipc, "readFile").mockResolvedValue({
+      path: "/vmap/work/feedback/p.md",
+      raw: proposal("pending"),
+      content: "",
+      frontmatter: {},
+    });
+    const writeFile = vi.spyOn(ipc, "writeFile");
+
+    await runDistillGuarded("/vmap");
+
+    expect(draftMap).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
   });
 });

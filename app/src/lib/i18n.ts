@@ -737,6 +737,7 @@ export interface Strings {
   pf_kind_admit?: string;
   pf_kind_archive?: string;
   pf_kind_delete?: string;
+  pf_kind_draft_map?: string;
   pf_created?: string;
   pf_expand?: string;
   pf_collapse?: string;
@@ -1596,6 +1597,7 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_kind_admit: "Admit cluster",
     pf_kind_archive: "Archive batch",
     pf_kind_delete: "Delete batch",
+    pf_kind_draft_map: "Draft topic map",
     pf_created: "Created",
     pf_expand: "Expand",
     pf_collapse: "Collapse",
@@ -2462,6 +2464,7 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_kind_admit: "클러스터 수용",
     pf_kind_archive: "일괄 보관",
     pf_kind_delete: "일괄 삭제",
+    pf_kind_draft_map: "토픽 맵 작성",
     pf_created: "생성",
     pf_expand: "펼치기",
     pf_collapse: "접기",
@@ -3208,6 +3211,7 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_kind_admit: "クラスタの受け入れ",
     pf_kind_archive: "一括アーカイブ",
     pf_kind_delete: "一括削除",
+    pf_kind_draft_map: "トピックマップの作成",
     pf_created: "作成日",
     pf_expand: "展開",
     pf_collapse: "折りたたむ",

@@ -7,9 +7,14 @@ import { create } from "zustand";
 import { ipc } from "../lib/ipc";
 import type { FileNode } from "../lib/ipc";
 import type { DistillStatus } from "../lib/distill";
+import { draftMap } from "../lib/maps";
 import { useVaultStore } from "./vaultStore";
 
-export type ProposalAction = "admit-cluster" | "archive-batch" | "delete-batch";
+export type ProposalAction =
+  | "admit-cluster"
+  | "archive-batch"
+  | "delete-batch"
+  | "draft-map";
 export type ProposalStatus = "pending" | "approved" | "dismissed" | "done";
 
 export interface ProposalMeta {
@@ -24,6 +29,11 @@ export interface ProposalMeta {
    *  itself, so this can be handed to it directly for the "expand" preview. */
   raw: string;
   files: string[];
+  /** `draft-map` only — the cluster label and its kept member paths, straight
+   *  off `payload.cluster`/`payload.members` (`propose_map_candidates`'
+   *  payload shape, distinct from `files`). */
+  cluster?: string;
+  members?: string[];
 }
 
 /** Parse a `work/feedback/*.md` proposal's frontmatter + title. Line-based, not
@@ -45,9 +55,17 @@ export function parseProposal(path: string, raw: string): ProposalMeta | null {
   const title = /^#\s+(.+)$/m.exec(body)?.[1] ?? path;
 
   let files: string[] = [];
+  let cluster: string | undefined;
+  let members: string[] | undefined;
   try {
-    const payload = JSON.parse(meta.payload ?? "{}") as { files?: string[] };
+    const payload = JSON.parse(meta.payload ?? "{}") as {
+      files?: string[];
+      cluster?: string;
+      members?: string[];
+    };
     if (Array.isArray(payload.files)) files = payload.files;
+    if (typeof payload.cluster === "string") cluster = payload.cluster;
+    if (Array.isArray(payload.members)) members = payload.members;
   } catch {
     /* malformed payload — proposal still shows, just with no file list */
   }
@@ -60,14 +78,19 @@ export function parseProposal(path: string, raw: string): ProposalMeta | null {
     title,
     raw,
     files,
+    cluster,
+    members,
   };
 }
 
 /** The `.md` file children of `${root}/work/feedback` — NOT its nested
  *  `archive/` subfolder (run() auto-archives resolved proposals there), which
  *  is naturally excluded since only the feedback dir's own FILE children are
- *  taken, never its subdirectories. */
-function feedbackFileNodes(tree: FileNode[]): Extract<FileNode, { kind: "file" }>[] {
+ *  taken, never its subdirectories. Exported: `lib/distill.ts`'s post-run
+ *  auto-apply bridge (Task 4, Phase B) scans the same tree. */
+export function feedbackFileNodes(
+  tree: FileNode[],
+): Extract<FileNode, { kind: "file" }>[] {
   const work = tree.find((n) => n.kind === "directory" && n.name === "work");
   if (!work || work.kind !== "directory") return [];
   const feedback = work.children.find(
@@ -82,16 +105,18 @@ function feedbackFileNodes(tree: FileNode[]): Extract<FileNode, { kind: "file" }
 
 /** Absolute -> vault-relative, matching the idiom `lib/vaultPulse.ts` uses for
  *  the same conversion (mtimes come back absolute; the rest of the app keys
- *  vault content by relative path). */
-function toRelative(vaultRoot: string, absPath: string): string {
+ *  vault content by relative path). Exported for the same reason as
+ *  `feedbackFileNodes` above. */
+export function toRelative(vaultRoot: string, absPath: string): string {
   const prefix = vaultRoot.endsWith("/") ? vaultRoot : `${vaultRoot}/`;
   return absPath.startsWith(prefix) ? absPath.slice(prefix.length) : absPath;
 }
 
 /** Flip the proposal's frontmatter `status:` line in place — mirrors the
  *  Rust-side `set_proposal_status`'s "line-level rewrite inside the first
- *  `---`...`---` block only" contract, so no other frontmatter key is touched. */
-function rewriteStatus(raw: string, next: ProposalStatus): string {
+ *  `---`...`---` block only" contract, so no other frontmatter key is
+ *  touched. Exported for the same reason as `feedbackFileNodes` above. */
+export function rewriteStatus(raw: string, next: ProposalStatus): string {
   return raw.replace(/^status:\s*\S+\s*$/m, `status: ${next}`);
 }
 
@@ -169,8 +194,22 @@ export const useDistillStore = create<DistillState>((set, get) => ({
       // Only rewrite pending -> approved on the FIRST attempt. A retry (the
       // proposal is already `approved` because the previous applyDistillProposal
       // call failed after the rewrite succeeded) must not touch the file again.
+      let raw = file.raw;
       if (parsed?.status === "pending") {
-        await ipc.writeFile(full, rewriteStatus(file.raw, "approved"));
+        raw = rewriteStatus(file.raw, "approved");
+        await ipc.writeFile(full, raw);
+      }
+      // draft-map completes entirely TS-side (the query-model draft call
+      // lives in lib/maps.ts) — apply_proposal's Rust command only knows the
+      // three Phase A actions and errors on anything else, so this branch
+      // never reaches it.
+      if (parsed?.action === "draft-map") {
+        if (!parsed.cluster || !parsed.members) {
+          throw new Error(`draft-map proposal ${path} is missing its cluster/members payload`);
+        }
+        const rel = await draftMap(vault.path, parsed.cluster, parsed.members);
+        await ipc.writeFile(full, rewriteStatus(raw, "done"));
+        return rel;
       }
       return await ipc.applyDistillProposal(vault.path, path);
     } catch (err) {

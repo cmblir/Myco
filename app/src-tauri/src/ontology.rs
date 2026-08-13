@@ -68,8 +68,10 @@ pub struct Verdict {
 
 /// Cluster whose members never earned a group of their own (label propagation
 /// converged on fewer than 3 members) — a catch-all "misc" bucket. Never
-/// grants `Tier::Full`; `admit` checks this id explicitly.
-const FIELD_CLUSTER_ID: u32 = u32::MAX;
+/// grants `Tier::Full`; `admit` checks this id explicitly. `pub(crate)`: Phase
+/// B's map-candidate pass (`distill::propose_map_candidates`) checks it too —
+/// the catch-all bucket is not a real topic and must never get a topic map.
+pub(crate) const FIELD_CLUSTER_ID: u32 = u32::MAX;
 
 /// Sweeps of label propagation. Fixed rather than "until convergence" so
 /// `build` has a bounded cost on a large vault; the synthetic and real-vault
@@ -199,7 +201,18 @@ fn assemble_cluster(
 /// rotating between them sweep to sweep instead of ever settling. Letting
 /// each update see its predecessors' results turns that into a fast-growing
 /// majority within one pass.
-pub fn build(store: &VectorStore, wiki_titles: &[(String, String)]) -> Ontology {
+///
+/// `map_anchors` (Phase B, Task 4) is `(cluster label, page centroid)` for
+/// every `wiki/maps/` page the caller found on disk — once a cluster has a
+/// human-approved topic map, that page's own centroid replaces the cluster's
+/// geometric mean as the `admit` reference point (see the anchor-substitution
+/// loop below). Callers with no maps yet (including every test below) pass
+/// `&[]`.
+pub fn build(
+    store: &VectorStore,
+    wiki_titles: &[(String, String)],
+    map_anchors: &[(String, Vec<f32>)],
+) -> Ontology {
     let cents = store.page_centroids();
     let cent_map: std::collections::HashMap<&str, &Vec<f32>> =
         cents.iter().map(|(p, v)| (p.as_str(), v)).collect();
@@ -295,6 +308,17 @@ pub fn build(store: &VectorStore, wiki_titles: &[(String, String)]) -> Ontology 
             &cent_map,
             Some("field"),
         ));
+    }
+
+    // Human-approved topic-map centroid > mean-of-members: a human confirmed
+    // what this cluster is about by approving its map, which is a better
+    // `admit` reference point than an unsupervised average of its members
+    // (design spec, "topic maps"). Only clusters an anchor's label actually
+    // names are touched; every other cluster keeps its computed centroid.
+    for c in &mut clusters {
+        if let Some((_, anchor)) = map_anchors.iter().find(|(label, _)| label == &c.label) {
+            c.centroid = anchor.clone();
+        }
     }
 
     let mut entities: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
@@ -611,7 +635,7 @@ mod tests {
     fn label_propagation_finds_two_blobs() {
         // 6 pages: 3 near +x axis, 3 near +y axis -> exactly 2 clusters
         let s = six_pages();
-        let o = build(&s, &[]);
+        let o = build(&s, &[], &[]);
         assert_eq!(o.clusters.len(), 2);
         assert!(o.clusters.iter().all(|c| c.members.len() == 3));
     }
@@ -625,6 +649,7 @@ mod tests {
                 ("a".into(), "Alpha Topic".into()),
                 ("b".into(), "Beta".into()),
             ],
+            &[],
         );
         let p = GatePreset::Normal;
         // In-cluster item -> Full; the reason cites the threshold that
@@ -725,6 +750,24 @@ mod tests {
         let reject = admit(&o, &at(0.05), "", &p);
         assert!(matches!(reject.tier, Tier::Reject));
         assert!(reject.reason.contains("0.10"), "reason: {}", reject.reason);
+    }
+
+    #[test]
+    fn map_anchor_replaces_cluster_centroid() {
+        let s = six_pages();
+        let plain = build(&s, &[], &[]);
+        let target_label = plain.clusters[0].label.clone();
+        let other_centroid_before = plain.clusters[1].centroid.clone();
+        // Deliberately far from the natural mean, so a passing assertion can
+        // only mean the anchor was actually substituted, not coincidence.
+        let anchor = unit(vec![0.1, 0.2, 0.97]);
+
+        let o = build(&s, &[], &[(target_label.clone(), anchor.clone())]);
+        let target = o.clusters.iter().find(|c| c.label == target_label).unwrap();
+        assert_eq!(target.centroid, anchor);
+        // The other cluster names no anchor — its centroid is untouched.
+        let other = o.clusters.iter().find(|c| c.label != target_label).unwrap();
+        assert_eq!(other.centroid, other_centroid_before);
     }
 
     #[test]

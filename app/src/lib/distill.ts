@@ -6,6 +6,13 @@ import { runSessionDigest } from "./sessionDigest";
 import type { DigestOutcome } from "./sessionDigest";
 import { runFullTierIngest } from "./fullTierIngest";
 import type { FullTierOutcome } from "./fullTierIngest";
+import { draftMap } from "./maps";
+import {
+  feedbackFileNodes,
+  parseProposal,
+  rewriteStatus,
+  toRelative,
+} from "../stores/distillStore";
 
 export type Intensity = "conservative" | "standard" | "aggressive";
 export type GatePreset = "strict" | "normal" | "loose";
@@ -121,17 +128,46 @@ export const lastDigestOutcome = new Map<string, DigestOutcome>();
 // right above (RunReport itself gains no new field for it either).
 export const lastFullTierOutcome = new Map<string, FullTierOutcome>();
 
+/** Phase B, Task 4 — the Aggressive-intensity bridge: at that intensity,
+ * `distill_run` writes `draft-map` proposals straight to `status: approved`
+ * (the LLM draft itself always runs TS-side, never in Rust), so this applies
+ * every one still sitting in that state after the run, the same way a user
+ * clicking "approve" in PageFeedback would (`distillStore.apply`'s own
+ * draft-map branch). Uses `vaultPath` directly via `ipc`, never the
+ * `useVaultStore`/`useDistillStore` singletons — `runDistillGuarded` can run
+ * for a vault the UI isn't even showing, and those stores are bound to
+ * "whichever vault is currently open" (same reason `runSessionDigest`/
+ * `runFullTierIngest` take an explicit vault path too). Per-proposal
+ * failures are logged and skipped, not thrown: one bad cluster must not
+ * block the others or the run this follows. */
+async function applyApprovedDraftMaps(vaultPath: string): Promise<void> {
+  const tree = await ipc.listFiles(vaultPath).catch(() => []);
+  for (const f of feedbackFileNodes(tree)) {
+    const file = await ipc.readFile(f.path).catch(() => null);
+    if (!file) continue;
+    const parsed = parseProposal(toRelative(vaultPath, f.path), file.raw);
+    if (parsed?.action !== "draft-map" || parsed.status !== "approved") continue;
+    if (!parsed.cluster || !parsed.members) continue;
+    try {
+      await draftMap(vaultPath, parsed.cluster, parsed.members);
+      await ipc.writeFile(f.path, rewriteStatus(file.raw, "done"));
+    } catch (e) {
+      console.error(`[distill] auto draft-map apply failed for ${f.path}:`, e);
+    }
+  }
+}
+
 /** Runs distill_run for `vault`, unless one is already in flight for that
  * vault — in which case this resolves to null immediately and makes no ipc
  * call. All callers (schedule-due, count-trigger, manual button) must go
  * through this instead of calling ipc.distillRun directly.
  *
- * On success, also runs the session daily-digest (Phase B, Task 2) and then
- * full-tier ingest (Phase B, Task 3) for the same vault, inside this same
- * guard window — so all three trigger paths get both for free and
- * concurrency stays single-guarded. Both failures are logged, not thrown:
- * neither must ever take down the distill_run result the caller is waiting
- * on. */
+ * On success, also runs the session daily-digest (Phase B, Task 2), then
+ * full-tier ingest (Phase B, Task 3), then the draft-map auto-apply bridge
+ * (Phase B, Task 4) for the same vault, inside this same guard window — so
+ * all three trigger paths get all three for free and concurrency stays
+ * single-guarded. All three failures are logged, not thrown: none must ever
+ * take down the distill_run result the caller is waiting on. */
 export async function runDistillGuarded(vault: string): Promise<RunReport | null> {
   if (inFlight.has(vault)) return null;
   inFlight.add(vault);
@@ -147,6 +183,9 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
       return null;
     });
     if (fullTierOutcome) lastFullTierOutcome.set(vault, fullTierOutcome);
+    await applyApprovedDraftMaps(vault).catch((e) => {
+      console.error("[distill] draft-map auto-apply failed", vault, e);
+    });
     return report;
   } finally {
     inFlight.delete(vault);
