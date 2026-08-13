@@ -1496,6 +1496,120 @@ def distill_report() -> dict:
     }
 
 
+# ─── tools: profile (Phase B, Task 5) ────────────────────────────────────────
+
+# profile.md's header comment, written by every serializer, verbatim in every
+# language this personalisation surface has (the app's `profile.ts::
+# serializeProfile`, Rust's identity layer only READS the file so it has no
+# writer to keep in sync) — a fixed sentence, not localised to the caller.
+_PROFILE_HEADER = (
+    "<!-- Sent to configured AI providers when profile injection is on (Settings → 증류). -->"
+)
+
+# "## <heading>" text (lowercased) -> Profile field — the exact headings
+# `_serialize_profile` writes; `_parse_profile` matches case-insensitively so
+# a hand-edited file still parses.
+_PROFILE_HEADING_FIELD: dict[str, str] = {
+    "role": "role",
+    "goals": "goals",
+    "interests": "interests",
+    "working style": "style",
+}
+
+INTERVIEW_QUESTIONS: list[dict[str, str]] = [
+    {"field": "role", "question": "What is your role/profession?"},
+    {"field": "goals", "question": "What are you working toward right now — top 2-3 goals?"},
+    {"field": "interests", "question": "Which topics should this knowledge base prioritize? List 3-8."},
+    {"field": "style", "question": "How do you like answers — depth, format, tone?"},
+]
+
+
+def _parse_profile(text: str) -> dict:
+    """Tiny plain-string scan over profile.md's frontmatter-less sections —
+    independently mirrors the app's `profile.ts::parseProfile` and Rust's
+    `distill.rs::read_profile_interests`; no code is shared cross-language,
+    so keep all three in sync if the section format ever changes. "## Goals"/
+    "## Interests" collect bullet lines; "## Role"/"## Working style" join
+    every non-empty line under the heading into one line."""
+    profile: dict[str, Any] = {"role": "", "goals": [], "interests": [], "style": ""}
+    section: str | None = None
+    for line in text.splitlines():
+        s = line.strip()
+        m = re.match(r"^#{2}\s+(.+)$", s)
+        if m:
+            section = _PROFILE_HEADING_FIELD.get(m.group(1).strip().lower())
+            continue
+        if section in ("goals", "interests"):
+            bm = re.match(r"^[-*]\s+(.+)$", s)
+            if bm:
+                profile[section].append(bm.group(1).strip())
+        elif section in ("role", "style") and s:
+            profile[section] = f"{profile[section]} {s}".strip()
+    return profile
+
+
+def _serialize_profile(p: dict) -> str:
+    """Inverse of `_parse_profile` — the only writer of profile.md's shape."""
+    def bullets(items: list) -> str:
+        return "\n".join(f"- {i}" for i in items)
+
+    return (
+        f"{_PROFILE_HEADER}\n\n"
+        f"## Role\n{p.get('role') or ''}\n\n"
+        f"## Goals\n{bullets(p.get('goals') or [])}\n\n"
+        f"## Interests\n{bullets(p.get('interests') or [])}\n\n"
+        f"## Working style\n{p.get('style') or ''}\n"
+    )
+
+
+@mcp.tool()
+def setup_profile(role: str = "", goals: list[str] | None = None,
+                   interests: list[str] | None = None, style: str = "",
+                   project: str = "") -> dict:
+    """Interview-driven personalisation. Call with NO arguments to receive the interview
+    questions; ask the user conversationally, then call again with the collected answers
+    to write/update <vault>/profile.md (merges: empty args keep existing values).
+    The profile weights distillation priorities and, in the app, Ask/ingest context."""
+    proj = _resolve(project)
+    path = proj.root / "profile.md"
+    existing: dict | None = None
+    if path.exists():
+        try:
+            existing = _parse_profile(path.read_text(encoding="utf-8"))
+        except OSError:
+            existing = None
+
+    if not role and not goals and not interests and not style:
+        return {"questions": INTERVIEW_QUESTIONS, "existing": existing}
+
+    merged = dict(existing or {"role": "", "goals": [], "interests": [], "style": ""})
+    if role:
+        merged["role"] = role
+    if goals:
+        merged["goals"] = goals
+    if interests:
+        merged["interests"] = interests
+    if style:
+        merged["style"] = style
+
+    content = _serialize_profile(merged)
+    path.write_text(content, encoding="utf-8")
+    # Vault-root-relative, not `_rel_to_repo` (repo-root-relative): profile.md
+    # always lives at the vault root regardless of which project this is, so
+    # this is always exactly "profile.md" — the more useful and more stable
+    # answer for a caller that only knows `project`, not this server's repo
+    # layout.
+    out = {"ok": True, "path": str(path.relative_to(proj.root)), "profile": merged}
+    # SEC-03: warn (not block) — same precedent as add_raw_source.
+    hits = scan_secrets(content)
+    if hits:
+        out["secret_warning"] = (
+            "possible secrets detected: " + ", ".join(hits) + " — profile.md is sent "
+            "to configured AI providers when injection is on; redact and re-save if unintended."
+        )
+    return out
+
+
 # ─── entry point ─────────────────────────────────────────────────────────────
 
 

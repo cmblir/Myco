@@ -41,6 +41,8 @@ import type {
   Intensity,
   RunReport,
 } from "../lib/distill";
+import { loadProfile, saveProfile } from "../lib/profile";
+import type { Profile } from "../lib/profile";
 
 export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
@@ -1787,6 +1789,8 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
         </div>
       </div>
 
+      <SettingsProfile t={t} vaultPath={vaultPath} />
+
       <div className="card">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div style={{ fontWeight: 600 }}>
@@ -1885,6 +1889,127 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+const EMPTY_PROFILE: Profile = { role: "", goals: [], interests: [], style: "" };
+
+/** `profile.md` editor (Phase B, Task 5) — lives in the Distill tab, not its
+ *  own tab: the profile weights distillation priorities (identity layer,
+ *  `ontology::admit`) and, per its own header comment written to disk, the
+ *  same "Settings → 증류" surface, so a second top-level tab would just be a
+ *  second place to look for the one thing this file already covers. Goals
+ *  and interests are edited as one item per line — the round-trip with
+ *  `profile.ts`'s bullet-list format happens on save/load, not per keystroke. */
+function SettingsProfile({
+  t,
+  vaultPath,
+}: {
+  t: Strings;
+  vaultPath: string | undefined;
+}): JSX.Element | null {
+  const [profile, setProfile] = useState<Profile>(EMPTY_PROFILE);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!vaultPath) return;
+    let cancelled = false;
+    setLoaded(false);
+    loadProfile(vaultPath)
+      .then((p) => {
+        if (!cancelled) setProfile(p ?? EMPTY_PROFILE);
+      })
+      .catch((e) => {
+        if (!cancelled) setError(String(e));
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [vaultPath]);
+
+  async function save(): Promise<void> {
+    if (!vaultPath) return;
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await saveProfile(vaultPath, profile);
+      setSaved(true);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const linesOf = (s: string): string[] =>
+    s.split("\n").map((l) => l.trim()).filter(Boolean);
+
+  if (!vaultPath || !loaded) return null;
+
+  return (
+    <div className="card">
+      <div style={{ fontWeight: 600 }}>{t.set_profile_title ?? "Profile"}</div>
+      <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
+        {t.set_profile_lede ??
+          "Personalizes distillation and Ask/ingest context. Written to profile.md; sent to configured AI providers when injection is on."}
+      </p>
+      <div className="col" style={{ gap: 12, marginTop: 12 }}>
+        <div className="field">
+          <label>{t.set_profile_role ?? "Role"}</label>
+          <input
+            className="input"
+            value={profile.role}
+            onChange={(e) => setProfile({ ...profile, role: e.target.value })}
+          />
+        </div>
+        <div className="field">
+          <label>{t.set_profile_goals ?? "Goals (one per line)"}</label>
+          <textarea
+            className="textarea"
+            rows={3}
+            value={profile.goals.join("\n")}
+            onChange={(e) => setProfile({ ...profile, goals: linesOf(e.target.value) })}
+          />
+        </div>
+        <div className="field">
+          <label>{t.set_profile_interests ?? "Interests (one per line)"}</label>
+          <textarea
+            className="textarea"
+            rows={3}
+            value={profile.interests.join("\n")}
+            onChange={(e) => setProfile({ ...profile, interests: linesOf(e.target.value) })}
+          />
+        </div>
+        <div className="field">
+          <label>{t.set_profile_style ?? "Working style"}</label>
+          <input
+            className="input"
+            value={profile.style}
+            onChange={(e) => setProfile({ ...profile, style: e.target.value })}
+          />
+        </div>
+      </div>
+      <div className="row" style={{ gap: 10, marginTop: 12, alignItems: "center" }}>
+        <button className="btn btn-primary" disabled={saving} onClick={() => void save()}>
+          {saving ? (t.set_profile_saving ?? "Saving…") : (t.set_profile_save ?? "Save")}
+        </button>
+        {saved ? (
+          <span className="muted" style={{ fontSize: 12 }}>
+            {t.set_profile_saved ?? "Saved"}
+          </span>
+        ) : null}
+      </div>
+      {error ? (
+        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{error}</div>
+      ) : null}
     </div>
   );
 }

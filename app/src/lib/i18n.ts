@@ -727,6 +727,16 @@ export interface Strings {
   set_distill_undo?: string;
   set_distill_undoing?: string;
   set_distill_undo_result?: string;
+  // profile.md editor, in the Distill tab (Phase B, Task 5).
+  set_profile_title?: string;
+  set_profile_lede?: string;
+  set_profile_role?: string;
+  set_profile_goals?: string;
+  set_profile_interests?: string;
+  set_profile_style?: string;
+  set_profile_save?: string;
+  set_profile_saving?: string;
+  set_profile_saved?: string;
   // Feedback surface — sidebar badge, Overview card, proposal page (Task 9).
   nav_feedback?: string;
   ov_distill_last_run?: string; // {t}
@@ -767,6 +777,10 @@ export interface Strings {
   q_extractive_empty?: string;
   q_extractive_stale?: string;
   q_extractive_failed?: string;
+  // "Set up your profile" hint chip, Ask mode (Phase B, Task 5).
+  ask_profile_hint?: string;
+  ask_profile_hint_cta?: string;
+  ask_profile_hint_dismiss?: string;
   q_chip_done?: string;
   q_chip_error?: string;
   q_you?: string;
@@ -1587,6 +1601,16 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_undo: "Undo this run",
     set_distill_undoing: "Undoing…",
     set_distill_undo_result: "Reversed {n} changes",
+    set_profile_title: "Profile",
+    set_profile_lede:
+      "Personalizes distillation and Ask/ingest context. Written to profile.md; sent to configured AI providers when injection is on.",
+    set_profile_role: "Role",
+    set_profile_goals: "Goals (one per line)",
+    set_profile_interests: "Interests (one per line)",
+    set_profile_style: "Working style",
+    set_profile_save: "Save",
+    set_profile_saving: "Saving…",
+    set_profile_saved: "Saved",
     nav_feedback: "Feedback",
     ov_distill_last_run: "Last run {t}",
     ov_distill_never: "No runs yet",
@@ -1634,6 +1658,10 @@ export const STRINGS: Record<Lang, Strings> = {
       "The search index predates a model update, so it can't be searched. Run “Reindex now” under Model settings, then ask again.",
     q_extractive_failed:
       "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.",
+    ask_profile_hint:
+      "Set up your profile so Ask can tailor answers to your role and interests.",
+    ask_profile_hint_cta: "Set up profile",
+    ask_profile_hint_dismiss: "Dismiss",
     q_chip_done: "Answer ready",
     q_chip_error: "Answer failed",
     q_you: "you",
@@ -2454,6 +2482,16 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_undo: "이 실행 되돌리기",
     set_distill_undoing: "되돌리는 중…",
     set_distill_undo_result: "{n}건 되돌림",
+    set_profile_title: "프로필",
+    set_profile_lede:
+      "증류와 Ask/인제스트 컨텍스트를 개인화합니다. profile.md에 저장되며, 주입이 켜져 있으면 설정된 AI 프로바이더로 전송됩니다.",
+    set_profile_role: "역할",
+    set_profile_goals: "목표 (줄바꿈으로 구분)",
+    set_profile_interests: "관심사 (줄바꿈으로 구분)",
+    set_profile_style: "작업 스타일",
+    set_profile_save: "저장",
+    set_profile_saving: "저장 중…",
+    set_profile_saved: "저장됨",
     nav_feedback: "피드백",
     ov_distill_last_run: "마지막 실행 {t}",
     ov_distill_never: "아직 실행 기록 없음",
@@ -2500,6 +2538,9 @@ export const STRINGS: Record<Lang, Strings> = {
       "검색 인덱스가 모델 업데이트 이전에 만들어져 검색할 수 없습니다. 모델 설정에서 “지금 재인덱스”를 실행한 뒤 다시 질문해 주세요.",
     q_extractive_failed:
       "검색 인덱스에 접근할 수 없어 관련 구절을 가져오지 못했습니다. 계속되면 모델 설정에서 “지금 재인덱스”를 실행해 주세요.",
+    ask_profile_hint: "프로필을 설정하면 Ask가 역할과 관심사에 맞춰 답변합니다.",
+    ask_profile_hint_cta: "프로필 설정",
+    ask_profile_hint_dismiss: "닫기",
     q_chip_done: "답변 완료",
     q_chip_error: "답변 실패",
     q_you: "나",
@@ -3201,6 +3242,16 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_undo: "この実行を元に戻す",
     set_distill_undoing: "元に戻しています…",
     set_distill_undo_result: "{n}件を元に戻しました",
+    set_profile_title: "プロフィール",
+    set_profile_lede:
+      "蒸留とAsk/インジェストのコンテキストを個人化します。profile.mdに保存され、注入がオンの場合は設定済みのAIプロバイダーに送信されます。",
+    set_profile_role: "役割",
+    set_profile_goals: "目標（1行に1件）",
+    set_profile_interests: "興味・関心（1行に1件）",
+    set_profile_style: "作業スタイル",
+    set_profile_save: "保存",
+    set_profile_saving: "保存中…",
+    set_profile_saved: "保存しました",
     nav_feedback: "フィードバック",
     ov_distill_last_run: "最終実行 {t}",
     ov_distill_never: "まだ実行されていません",
@@ -3247,6 +3298,9 @@ export const STRINGS: Record<Lang, Strings> = {
       "検索インデックスがモデル更新前のものだったため、検索できませんでした。モデル設定の「今すぐ再インデックス」を実行してから、もう一度質問してください。",
     q_extractive_failed:
       "検索インデックスに接続できず、該当する箇所を取得できませんでした。続く場合は、モデル設定の「今すぐ再インデックス」を実行してください。",
+    ask_profile_hint: "プロフィールを設定すると、Askが役割や興味・関心に合わせて回答します。",
+    ask_profile_hint_cta: "プロフィールを設定",
+    ask_profile_hint_dismiss: "閉じる",
     q_chip_done: "回答完了",
     q_chip_error: "回答失敗",
     q_you: "あなた",

@@ -24,6 +24,12 @@ import MiniGalaxy from "../components/MiniGalaxy";
 import type { GalaxyLink, GalaxyNode } from "../components/MiniGalaxy";
 import NodePreview from "../components/NodePreview";
 import { isComposingKey } from "../lib/ime";
+import { loadProfile } from "../lib/profile";
+
+/** Dismissible flag for the "set up your profile" hint below — same
+ *  try/catch-guarded localStorage pattern as `App.tsx`'s onboarding flag
+ *  (localStorage can be unavailable or full). */
+const PROFILE_HINT_DISMISSED_KEY = "myco.profileHint.dismissed";
 
 // All [[wikilink]] targets in an answer, alias stripped, order kept, deduped.
 function extractWikilinks(text: string): string[] {
@@ -56,6 +62,38 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const askStore = useQueryStore((s) => s.ask);
   const markSeen = useQueryStore((s) => s.markSeen);
   const endRef = useRef<HTMLDivElement | null>(null);
+
+  // "Set up your profile" hint (Phase B, Task 5): checked once per vault —
+  // the effect's own dependency array is the "once per vault" gate (it does
+  // not re-run on every render, only when the vault path actually changes),
+  // so no extra ref is needed on top of it.
+  const [needsProfile, setNeedsProfile] = useState(false);
+  const [hintDismissed, setHintDismissed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(PROFILE_HINT_DISMISSED_KEY) === "1";
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    const vaultPath = currentVault?.path;
+    if (!vaultPath) return;
+    let cancelled = false;
+    void loadProfile(vaultPath).then((p) => {
+      if (!cancelled) setNeedsProfile(p === null);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentVault?.path]);
+  function dismissProfileHint(): void {
+    try {
+      localStorage.setItem(PROFILE_HINT_DISMISSED_KEY, "1");
+    } catch {
+      /* localStorage unavailable */
+    }
+    setHintDismissed(true);
+  }
 
   // Visiting this page acknowledges a finished answer (clears the Topbar
   // chip) — same pattern as lint on the Provenance page.
@@ -169,6 +207,40 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       </header>
 
       {mode === "agent" ? <AgentPanel t={t} /> : null}
+
+      {mode === "ask" && needsProfile && !hintDismissed ? (
+        <div
+          className="card"
+          style={{
+            padding: 10,
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            marginTop: 8,
+          }}
+        >
+          <Icon name="info" size={14} />
+          <span className="muted" style={{ fontSize: 12.5, flex: 1 }}>
+            {t.ask_profile_hint ??
+              "Set up your profile so Ask can tailor answers to your role and interests."}
+          </span>
+          <button
+            className="btn btn-ghost"
+            style={{ fontSize: 12, padding: "2px 8px" }}
+            onClick={() => setRoute("settings")}
+          >
+            {t.ask_profile_hint_cta ?? "Set up profile"} →
+          </button>
+          <button
+            className="btn btn-ghost"
+            style={{ fontSize: 12, padding: "2px 6px" }}
+            aria-label={t.ask_profile_hint_dismiss ?? "Dismiss"}
+            onClick={dismissProfileHint}
+          >
+            <Icon name="x" size={12} />
+          </button>
+        </div>
+      ) : null}
 
       <div
         className="card"

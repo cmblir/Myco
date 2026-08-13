@@ -17,6 +17,7 @@ from myco_mcp import (
     parse_cross_links,
     parse_fm,
     scan_secrets,
+    setup_profile,
     suggest_confidence,
 )
 from project_registry import _validate_slug, make_slug
@@ -621,3 +622,62 @@ def test_distill_status_proposal_without_frontmatter_is_not_counted(tmp_path, mo
 
     assert distill_status()["pending_proposals"] == 0
     assert distill_report()["proposals"] == []
+
+
+# ─── setup_profile (Phase B, Task 5) ──────────────────────────────────────────
+
+
+def test_setup_profile_no_args_returns_interview_questions(tmp_path, monkeypatch):
+    _distill_vault(tmp_path, monkeypatch)
+    result = setup_profile()
+    assert len(result["questions"]) == 4
+    assert {q["field"] for q in result["questions"]} == {
+        "role",
+        "goals",
+        "interests",
+        "style",
+    }
+    assert result["existing"] is None
+
+
+def test_setup_profile_no_args_reports_existing_profile(tmp_path, monkeypatch):
+    _distill_vault(tmp_path, monkeypatch)
+    setup_profile(role="Backend engineer")
+    result = setup_profile()
+    assert result["existing"]["role"] == "Backend engineer"
+
+
+def test_setup_profile_writes_to_vault_root_profile_md(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    result = setup_profile(role="Backend engineer", interests=["rust", "ontologies"])
+    assert result["ok"] is True
+    assert result["path"] == "profile.md"
+    written = (root / "profile.md").read_text("utf-8")
+    assert "Backend engineer" in written
+    assert "- rust" in written
+    assert "- ontologies" in written
+    assert "Settings → 증류" in written  # required header comment
+
+
+def test_setup_profile_merge_keeps_unspecified_fields(tmp_path, monkeypatch):
+    _distill_vault(tmp_path, monkeypatch)
+    setup_profile(role="Backend engineer", goals=["ship the gate"])
+    result = setup_profile(interests=["rust", "vector search"])
+    assert result["profile"]["role"] == "Backend engineer"
+    assert result["profile"]["goals"] == ["ship the gate"]
+    assert result["profile"]["interests"] == ["rust", "vector search"]
+
+
+def test_setup_profile_empty_args_do_not_clear_existing_values(tmp_path, monkeypatch):
+    _distill_vault(tmp_path, monkeypatch)
+    setup_profile(role="Backend engineer", style="Concise")
+    result = setup_profile(role="Backend engineer")  # goals/interests/style omitted
+    assert result["profile"]["style"] == "Concise"
+
+
+def test_setup_profile_secret_scan_warns_but_does_not_block(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    result = setup_profile(style="my key is sk-abcdefghijklmnopqrstuvwxyz0123456789")
+    assert result["ok"] is True
+    assert "secret_warning" in result
+    assert (root / "profile.md").exists()  # warn, not block

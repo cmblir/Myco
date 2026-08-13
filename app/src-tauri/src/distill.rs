@@ -353,6 +353,40 @@ fn first_summary_line(content: &str) -> Option<String> {
     Some(truncate_chars(line, 120))
 }
 
+/// `<root>/profile.md`'s `## Interests` bullets, via a plain string scan —
+/// profile.md is markdown with no YAML frontmatter (see `app/src/lib/
+/// profile.ts::parseProfile`, the TS mirror of this same section format), so
+/// a `gray_matter` parse does not apply here. Missing file or missing/empty
+/// section -> empty (the caller's zero-cost, no-lift path).
+fn read_profile_interests(root: &Path) -> Vec<String> {
+    let Ok(content) = std::fs::read_to_string(root.join("profile.md")) else {
+        return Vec::new();
+    };
+    let mut interests = Vec::new();
+    let mut in_interests = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') {
+            in_interests = trimmed.eq_ignore_ascii_case("## interests");
+            continue;
+        }
+        if !in_interests {
+            continue;
+        }
+        let Some(item) = trimmed
+            .strip_prefix("- ")
+            .or_else(|| trimmed.strip_prefix("* "))
+        else {
+            continue;
+        };
+        let item = item.trim();
+        if !item.is_empty() {
+            interests.push(item.to_string());
+        }
+    }
+    interests
+}
+
 fn tier_str(t: Tier) -> &'static str {
     match t {
         Tier::Full => "full",
@@ -519,6 +553,7 @@ fn scan(
     cfg: &DistillConfig,
     budget: usize,
     embed: &dyn Fn(Vec<String>) -> Result<Vec<Vec<f32>>, String>,
+    profile_vecs: &[Vec<f32>],
     manifest: &mut RunManifest,
 ) -> Result<ScanOutcome, String> {
     if o.wiki_pages < GATE_MIN_WIKI_PAGES {
@@ -596,7 +631,7 @@ fn scan(
             },
             None => {
                 let vector = vectors.get(&i).cloned().unwrap_or_default();
-                admit(o, &vector, &item.content, &cfg.gate_preset)
+                admit(o, &vector, &item.content, &cfg.gate_preset, profile_vecs)
             }
         };
 
@@ -2135,8 +2170,10 @@ fn map_anchors_from_store(
 ///    quarantine moves), not once at the end: a mid-run I/O failure never
 ///    loses the record of what already happened, only what would have
 ///    happened next.
-/// 4. `scan` new inflow against that ontology (Task 4) — quarantine moves
-///    are recorded into this same manifest as they happen.
+/// 4. `scan` new inflow against that ontology (Task 4) plus the identity
+///    layer — `profile.md`'s `## Interests` bullets, batch-embedded ONCE
+///    here (Phase B, Task 5) and passed through to every `admit()` call —
+///    quarantine moves are recorded into this same manifest as they happen.
 /// 5. Archive pass: a top-level `raw/<slug>.md` that is mature and already
 ///    has a `wiki/source-<slug>.md` is "already represented" — move it to
 ///    `raw/archive/YYYY-MM/` (month from the file's own mtime). At
@@ -2196,12 +2233,24 @@ pub fn run(
     // through and saves into already exists on disk when that move happens.
     save_manifest(root, &manifest)?;
 
+    // Identity layer (Phase B, Task 5): profile.md's `## Interests` bullets,
+    // batch-embedded ONCE per run (not per item, unlike the per-candidate
+    // embedding below) and handed to every `admit()` call `scan` makes.
+    // Missing/interest-less profile.md costs nothing — no embed call at all.
+    let profile_interests = read_profile_interests(root);
+    let profile_vecs: Vec<Vec<f32>> = if profile_interests.is_empty() {
+        Vec::new()
+    } else {
+        embed(profile_interests)?
+    };
+
     let scan_outcome = scan(
         root,
         &ontology,
         cfg,
         cfg.run_budget_items,
         embed,
+        &profile_vecs,
         &mut manifest,
     )?;
 
@@ -2989,7 +3038,7 @@ mod tests {
         };
 
         let mut manifest = test_manifest();
-        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
         assert_eq!(out, ScanOutcome::default());
         assert!(manifest.moves.is_empty() && manifest.created.is_empty());
         assert!(
@@ -3030,11 +3079,11 @@ mod tests {
         };
 
         let mut manifest = test_manifest();
-        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
         assert_eq!(out.scored, 2, "a.md and c.md are mature and unscored");
         assert_eq!(out.skipped_immature, 1, "b.md is under the maturation gate");
 
-        let out2 = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+        let out2 = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
         assert_eq!(out2.scored, 0, "unchanged content must not be rescored");
     }
 
@@ -3061,7 +3110,7 @@ mod tests {
             |_: Vec<String>| -> Result<Vec<Vec<f32>>, String> { panic!("must not embed junk") };
 
         let mut manifest = test_manifest();
-        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
         assert_eq!(out.scored, 2);
         assert_eq!(out.rejected, 2, "both junk items reject without embedding");
 
@@ -3092,7 +3141,7 @@ mod tests {
         };
 
         let mut manifest = test_manifest();
-        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
         assert_eq!(out.quarantined, 1);
         assert!(!root.join("_inbox/c.md").exists());
 
@@ -3136,7 +3185,7 @@ mod tests {
         };
 
         let mut manifest = test_manifest();
-        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
         assert_eq!(out.quarantined, 1);
         assert!(
             !root.join("raw/paper.md").exists(),
@@ -3169,7 +3218,7 @@ mod tests {
         };
 
         let mut manifest = test_manifest();
-        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
         assert_eq!(out.quarantined, 1);
         assert_eq!(manifest.moves.len(), 1, "quarantine move must be recorded");
         assert_eq!(
@@ -3228,7 +3277,7 @@ mod tests {
         };
 
         let mut manifest = test_manifest();
-        let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
         assert_eq!(out.full, 1);
         assert_eq!(out.quarantined, 1);
         assert_eq!(out.rejected, 1);
@@ -3244,7 +3293,7 @@ mod tests {
         // Delete a file outright (no gate involved) and rescan: its ledger
         // entries must be pruned too.
         std::fs::remove_file(root.join("_inbox/gone.md")).unwrap();
-        let out2 = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+        let out2 = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
         assert_eq!(
             out2.scored, 0,
             "keep.md is unchanged; gone.md no longer exists to walk"
@@ -3386,6 +3435,30 @@ mod tests {
         assert_eq!(strip_atx_heading("#1 issue"), "#1 issue");
         assert_eq!(strip_atx_heading("## Real heading"), "Real heading");
         assert_eq!(strip_atx_heading("# Title"), "Title");
+    }
+
+    #[test]
+    fn read_profile_interests_scans_only_the_interests_bullets() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::write(
+            root.join("profile.md"),
+            "<!-- header comment -->\n\n\
+             ## Role\n- not an interest\n\n\
+             ## Interests\n- rust\n* async runtimes\n\nnot a bullet\n\n\
+             ## Working style\n- concise\n",
+        )
+        .unwrap();
+        assert_eq!(
+            read_profile_interests(root),
+            vec!["rust".to_string(), "async runtimes".to_string()]
+        );
+    }
+
+    #[test]
+    fn read_profile_interests_is_empty_without_a_profile_file() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(read_profile_interests(dir.path()).is_empty());
     }
 
     #[test]
@@ -3839,7 +3912,7 @@ mod tests {
                     .collect())
             };
             let mut manifest = test_manifest();
-            let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+            let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
             assert_eq!(out.full, 2);
             assert_eq!(out.quarantined, 1);
 
@@ -3899,7 +3972,7 @@ mod tests {
                     Ok(texts.iter().map(|_| vec![1.0_f32, 0.0_f32]).collect())
                 };
                 let mut manifest = test_manifest();
-                let out = scan(root, &o, &cfg, 10, &embed, &mut manifest).unwrap();
+                let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
                 assert_eq!(
                     out.full, 2,
                     "both score full tier — the check is not about scoring"

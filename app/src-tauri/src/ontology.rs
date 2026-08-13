@@ -83,6 +83,13 @@ const LABEL_PROP_SWEEPS: usize = 10;
 /// dense enough that a handful of pages still forms one connected component.
 const CLUSTER_KNN_K: usize = 6;
 
+/// Identity layer (Phase B, Task 5): the cosine similarity a candidate item
+/// must clear against a profile interest vector to lift an otherwise
+/// Reject/Quarantine verdict to Summary — profile.md acting as a provisional
+/// ontology signal alongside the entity floor. Picked, not measured;
+/// calibration-pending like the entity floor's own `>= 2` count.
+const T_PROFILE: f32 = 0.60;
+
 fn now_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -488,14 +495,16 @@ fn threshold_at(c: &Cluster, target_pct: f32) -> f32 {
 }
 
 /// Names the threshold that actually decided `natural_tier` — the `s_knn`-only
-/// verdict, before any entity-floor lift — so Reject/Quarantine cite `t_quar`,
-/// Summary cites the midpoint band, and Full cites `t_full`. An entity-floor
-/// lift is called out explicitly rather than silently reported as if `s_knn`
-/// had cleared the summary band on its own.
+/// verdict, before any entity-floor or profile-interest lift — so
+/// Reject/Quarantine cite `t_quar`, Summary cites the midpoint band, and Full
+/// cites `t_full`. A lift is called out explicitly (which one, and — for a
+/// profile lift — the similarity that earned it) rather than silently
+/// reported as if `s_knn` had cleared the summary band on its own.
 #[allow(clippy::too_many_arguments)]
 fn describe(
     natural_tier: Tier,
     entity_lifted: bool,
+    profile_lift_sim: Option<f32>,
     label: &str,
     s_knn: f32,
     t_full: f32,
@@ -516,7 +525,9 @@ fn describe(
         Tier::Reject => format!("similarity {s_knn:.2} < quarantine {t_quar:.2} (p{quar_pct:.0})"),
     };
     let verdict = if entity_lifted {
-        "summary (entity floor)"
+        "summary (entity floor)".to_string()
+    } else if let Some(sim) = profile_lift_sim {
+        format!("summary (profile interest match {sim:.2})")
     } else {
         match natural_tier {
             Tier::Full => "full admission",
@@ -524,6 +535,7 @@ fn describe(
             Tier::Quarantine => "quarantine",
             Tier::Reject => "reject",
         }
+        .to_string()
     };
     let entity_word = if entity_count == 1 {
         "entity"
@@ -534,12 +546,23 @@ fn describe(
 }
 
 /// Decision tree (see `app/docs/specs/2026-08-13-ontology-distill-design.md`):
-/// an entity floor of >= 2 known entities lifts an otherwise Reject/Quarantine
-/// item to at least Summary; above that, `s_knn` (cosine to the nearest
-/// cluster's centroid) against that cluster's own calibrated thresholds picks
-/// Full / Summary / Quarantine / Reject. The synthetic "field" cluster
-/// (`FIELD_CLUSTER_ID`) can grant Summary/Quarantine/Reject but never Full.
-pub fn admit(o: &Ontology, item_vec: &[f32], item_text: &str, preset: &GatePreset) -> Verdict {
+/// an entity floor of >= 2 known entities, OR a profile-interest cosine of
+/// `>= T_PROFILE` against `profile_vecs` (the identity layer — empty when
+/// the vault has no `profile.md` interests, in which case this can never
+/// fire), lifts an otherwise Reject/Quarantine item to at least Summary;
+/// above that, `s_knn` (cosine to the nearest cluster's centroid) against
+/// that cluster's own calibrated thresholds picks Full / Summary /
+/// Quarantine / Reject. The synthetic "field" cluster (`FIELD_CLUSTER_ID`)
+/// can grant Summary/Quarantine/Reject but never Full. When both the entity
+/// floor and a profile match would fire, the entity floor's reason wins
+/// (arbitrary but stable tie-break — the tier is Summary either way).
+pub fn admit(
+    o: &Ontology,
+    item_vec: &[f32],
+    item_text: &str,
+    preset: &GatePreset,
+    profile_vecs: &[Vec<f32>],
+) -> Verdict {
     let item_text_lower = item_text.to_lowercase();
     let entity_hits = matched_entities(o, &item_text_lower);
 
@@ -580,7 +603,16 @@ pub fn admit(o: &Ontology, item_vec: &[f32], item_text: &str, preset: &GatePrese
     };
     let entity_lifted =
         entity_hits.len() >= 2 && matches!(natural_tier, Tier::Reject | Tier::Quarantine);
-    let tier = if entity_lifted {
+    // f32::MIN, not 0.0: an empty `profile_vecs` (no profile.md interests)
+    // must never accidentally clear T_PROFILE via a fold's start value.
+    let profile_sim = profile_vecs
+        .iter()
+        .map(|v| cosine(item_vec, v))
+        .fold(f32::MIN, f32::max);
+    let profile_lifted = !entity_lifted
+        && matches!(natural_tier, Tier::Reject | Tier::Quarantine)
+        && profile_sim >= T_PROFILE;
+    let tier = if entity_lifted || profile_lifted {
         Tier::Summary
     } else {
         natural_tier
@@ -590,6 +622,7 @@ pub fn admit(o: &Ontology, item_vec: &[f32], item_text: &str, preset: &GatePrese
     let reason = describe(
         natural_tier,
         entity_lifted,
+        profile_lifted.then_some(profile_sim),
         &cluster.label,
         s_knn,
         t_full,
@@ -672,7 +705,7 @@ mod tests {
         // In-cluster item -> Full; the reason cites the threshold that
         // actually decided it (t_full == the winning cluster's p25, since
         // GatePreset::Normal picks that anchor exactly).
-        let vf = admit(&o, &unit(vec![1.0, 0.01, 0.0]), "", &p);
+        let vf = admit(&o, &unit(vec![1.0, 0.01, 0.0]), "", &p, &[]);
         assert!(matches!(vf.tier, Tier::Full));
         let full_cluster = o
             .clusters
@@ -686,7 +719,7 @@ mod tests {
         );
         // Orthogonal item -> Reject, and the reason names the nearest cluster,
         // and cites t_quar (== the cluster's p5) — the threshold it failed.
-        let v = admit(&o, &unit(vec![0.0, 0.0, 1.0]), "", &p);
+        let v = admit(&o, &unit(vec![0.0, 0.0, 1.0]), "", &p, &[]);
         assert!(matches!(v.tier, Tier::Reject));
         assert!(v.reason.contains(&v.nearest_cluster));
         let reject_cluster = o
@@ -705,12 +738,53 @@ mod tests {
             &unit(vec![0.0, 0.0, 1.0]),
             "discussing Alpha Topic and Beta today",
             &p,
+            &[],
         );
         assert!(!matches!(v2.tier, Tier::Reject) && !matches!(v2.tier, Tier::Quarantine));
         assert_eq!(v2.entity_hits.len(), 2);
         // The lift is called out explicitly rather than reported as if s_knn
         // alone had cleared the summary band.
         assert!(v2.reason.contains("entity floor"), "reason: {}", v2.reason);
+    }
+
+    #[test]
+    fn profile_interests_lift_reject_to_summary() {
+        // Same geometry as `admit_tiers_follow_the_decision_tree`'s Reject
+        // case, but with a synthetic profile-interest vector planted right
+        // next to the (otherwise orthogonal, rejected) item.
+        let s = six_pages();
+        let o = build(&s, &[], &[]);
+        let p = GatePreset::Normal;
+        let item = unit(vec![0.0, 0.0, 1.0]);
+        let profile_vecs = vec![unit(vec![0.0, 0.01, 1.0])];
+
+        let baseline = admit(&o, &item, "", &p, &[]);
+        assert!(matches!(baseline.tier, Tier::Reject));
+
+        let lifted = admit(&o, &item, "", &p, &profile_vecs);
+        assert!(matches!(lifted.tier, Tier::Summary));
+        assert!(
+            lifted.reason.contains("profile"),
+            "reason: {}",
+            lifted.reason
+        );
+    }
+
+    #[test]
+    fn no_profile_means_no_lift() {
+        // An empty `profile_vecs` (no profile.md interests) must behave
+        // exactly like the pre-identity-layer signature — same tier, same
+        // reason — never accidentally clearing T_PROFILE.
+        let s = six_pages();
+        let o = build(&s, &[], &[]);
+        let p = GatePreset::Normal;
+        let item = unit(vec![0.0, 0.0, 1.0]);
+
+        let without = admit(&o, &item, "", &p, &[]);
+        let with_empty = admit(&o, &item, "", &p, &Vec::new());
+        assert_eq!(without.tier, with_empty.tier);
+        assert_eq!(without.reason, with_empty.reason);
+        assert!(matches!(without.tier, Tier::Reject));
     }
 
     /// Hand-built ontology with clean, well-separated thresholds (p5=0.10,
@@ -744,11 +818,11 @@ mod tests {
                                     // A unit vector at cosine `cos` from the centroid [1, 0].
         let at = |cos: f32| vec![cos, (1.0 - cos * cos).sqrt()];
 
-        let full = admit(&o, &at(0.90), "", &p);
+        let full = admit(&o, &at(0.90), "", &p, &[]);
         assert!(matches!(full.tier, Tier::Full));
         assert!(full.reason.contains("0.50"), "reason: {}", full.reason);
 
-        let summary = admit(&o, &at(0.35), "", &p);
+        let summary = admit(&o, &at(0.35), "", &p, &[]);
         assert!(matches!(summary.tier, Tier::Summary));
         assert!(
             summary.reason.contains("midpoint"),
@@ -756,7 +830,7 @@ mod tests {
             summary.reason
         );
 
-        let quarantine = admit(&o, &at(0.15), "", &p);
+        let quarantine = admit(&o, &at(0.15), "", &p, &[]);
         assert!(matches!(quarantine.tier, Tier::Quarantine));
         assert!(
             quarantine.reason.contains("0.10"),
@@ -764,7 +838,7 @@ mod tests {
             quarantine.reason
         );
 
-        let reject = admit(&o, &at(0.05), "", &p);
+        let reject = admit(&o, &at(0.05), "", &p, &[]);
         assert!(matches!(reject.tier, Tier::Reject));
         assert!(reject.reason.contains("0.10"), "reason: {}", reject.reason);
     }
