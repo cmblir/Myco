@@ -2702,7 +2702,8 @@ pub fn full_tier_items(root: &Path) -> Vec<String> {
         .scored
         .iter()
         .filter(|(rel, e)| {
-            e.tier == "full" && (rel.starts_with(&inbox_prefix) || rel.starts_with("raw/"))
+            e.tier == "full"
+                && (rel.starts_with(&inbox_prefix) || is_raw_top_level_payload_path(rel))
         })
         .filter(|(rel, _)| {
             let stem = Path::new(rel.as_str())
@@ -4048,6 +4049,50 @@ mod tests {
                 "a retired raw file drops out even though its ledger entry remains"
             );
         });
+    }
+
+    #[test]
+    fn full_tier_items_excludes_a_nested_raw_file() {
+        // `raw/` is walked recursively by `collect_candidates`, so a file at
+        // e.g. `raw/sub/x.md` can score full tier same as a top-level one —
+        // but `run`'s own archive pass and the ingest prompt both assume a
+        // flat `raw/<slug>.md`. Listing it here would hand ingest a path it
+        // can never actually act on.
+        crate::settings::test_support::with_isolated_data(
+            "distill-full-tier-nested-raw",
+            |_data| {
+                let dir = tempfile::tempdir().unwrap();
+                let root = dir.path();
+                std::fs::create_dir_all(root.join("raw/sub")).unwrap();
+
+                let full_text = format!("{PROSE} FULL marker so this note lands the full tier.");
+                std::fs::write(root.join("raw/sub/nested.md"), &full_text).unwrap();
+                std::fs::write(root.join("raw/top.md"), &full_text).unwrap();
+                for name in ["raw/sub/nested.md", "raw/top.md"] {
+                    set_mtime(&root.join(name), old_mtime());
+                }
+
+                let mut o = tiny_ontology();
+                o.model = String::new();
+                let cfg = DistillConfig::default();
+                let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+                    Ok(texts.iter().map(|_| vec![1.0_f32, 0.0_f32]).collect())
+                };
+                let mut manifest = test_manifest();
+                let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+                assert_eq!(
+                    out.full, 2,
+                    "both score full tier — the check is not about scoring"
+                );
+
+                let items = full_tier_items(root);
+                assert_eq!(
+                    items,
+                    vec!["raw/top.md"],
+                    "the nested raw file must not be listed"
+                );
+            },
+        );
     }
 
     #[test]
