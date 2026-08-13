@@ -723,6 +723,23 @@ export interface Strings {
   set_distill_running?: string;
   set_distill_report?: string;
   set_distill_busy?: string;
+  // Feedback surface — sidebar badge, Overview card, proposal page (Task 9).
+  nav_feedback?: string;
+  ov_distill_last_run?: string; // {t}
+  ov_distill_never?: string;
+  pf_title?: string;
+  pf_lede?: string;
+  pf_empty?: string;
+  pf_kind_admit?: string;
+  pf_kind_archive?: string;
+  pf_kind_delete?: string;
+  pf_created?: string;
+  pf_expand?: string;
+  pf_collapse?: string;
+  pf_approve?: string;
+  pf_dismiss?: string;
+  pf_confirm_title?: string;
+  pf_confirm_msg?: string; // {n}
   // Ingest page.
   ing_title_label?: string;
   ing_title_ph?: string;
@@ -1559,6 +1576,23 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_report:
       "Archived {a}, trashed {tr}, {p} proposals — backlog now {b}",
     set_distill_busy: "A distill run is already in progress.",
+    nav_feedback: "Feedback",
+    ov_distill_last_run: "Last run {t}",
+    ov_distill_never: "No runs yet",
+    pf_title: "Feedback",
+    pf_lede:
+      "Proposals the distillation engine wrote while folding new pages into the wiki — review and apply, or dismiss.",
+    pf_empty: "No pending proposals.",
+    pf_kind_admit: "Admit cluster",
+    pf_kind_archive: "Archive batch",
+    pf_kind_delete: "Delete batch",
+    pf_created: "Created",
+    pf_expand: "Expand",
+    pf_collapse: "Collapse",
+    pf_approve: "Approve",
+    pf_dismiss: "Dismiss",
+    pf_confirm_title: "Apply this proposal?",
+    pf_confirm_msg: "{n} file(s) will be moved or archived.",
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
@@ -2402,6 +2436,23 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_running: "증류 중…",
     set_distill_report: "보관 {a}건, 폐기 {tr}건, 제안 {p}건 — 백로그 {b}건",
     set_distill_busy: "이미 증류가 진행 중입니다.",
+    nav_feedback: "피드백",
+    ov_distill_last_run: "마지막 실행 {t}",
+    ov_distill_never: "아직 실행 기록 없음",
+    pf_title: "피드백",
+    pf_lede:
+      "증류 엔진이 새 페이지를 위키의 온톨로지에 접어넣으며 작성한 제안입니다 — 검토 후 적용하거나 무시하세요.",
+    pf_empty: "대기 중인 제안이 없습니다.",
+    pf_kind_admit: "클러스터 수용",
+    pf_kind_archive: "일괄 보관",
+    pf_kind_delete: "일괄 삭제",
+    pf_created: "생성",
+    pf_expand: "펼치기",
+    pf_collapse: "접기",
+    pf_approve: "승인",
+    pf_dismiss: "무시",
+    pf_confirm_title: "이 제안을 적용할까요?",
+    pf_confirm_msg: "{n}개 파일이 이동되거나 보관됩니다.",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
@@ -3125,6 +3176,23 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_running: "蒸留中…",
     set_distill_report: "アーカイブ{a}件、破棄{tr}件、提案{p}件 — バックログ{b}件",
     set_distill_busy: "蒸留は既に実行中です。",
+    nav_feedback: "フィードバック",
+    ov_distill_last_run: "最終実行 {t}",
+    ov_distill_never: "まだ実行されていません",
+    pf_title: "フィードバック",
+    pf_lede:
+      "蒸留エンジンが新しいページをウィキのオントロジーに取り込む際に書き出した提案です — レビューして適用するか、却下してください。",
+    pf_empty: "保留中の提案はありません。",
+    pf_kind_admit: "クラスタの受け入れ",
+    pf_kind_archive: "一括アーカイブ",
+    pf_kind_delete: "一括削除",
+    pf_created: "作成日",
+    pf_expand: "展開",
+    pf_collapse: "折りたたむ",
+    pf_approve: "承認",
+    pf_dismiss: "却下",
+    pf_confirm_title: "この提案を適用しますか?",
+    pf_confirm_msg: "{n}件のファイルが移動またはアーカイブされます。",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",

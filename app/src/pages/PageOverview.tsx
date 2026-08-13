@@ -9,6 +9,8 @@ import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useReflectStore } from "../stores/reflectStore";
+import { useDistillStore } from "../stores/distillStore";
+import { backlogTrend, lastRunLabel, runDistillGuarded } from "../lib/distill";
 import { ipc } from "../lib/ipc";
 import type { FileNode } from "../lib/ipc";
 import LinkSuggestions from "../components/LinkSuggestions";
@@ -128,6 +130,17 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
         ) : null}
 
         <RecentNotes t={t} entries={mtimes} vaultRoot={currentVault?.path ?? ""} />
+
+        {currentVault ? (
+          <section>
+            <div className="section-head">
+              <div className="section-title">{t.s_distill ?? "Distill"}</div>
+            </div>
+            <div className="card-grid">
+              <DistillCard t={t} />
+            </div>
+          </section>
+        ) : null}
       </div>
 
       <LinkSuggestions t={t} />
@@ -218,6 +231,91 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
         </pre>
       ) : null}
     </section>
+  );
+}
+
+// Overview's distill card (Task 9): backlog trend, pending-proposal count,
+// last run, and a [지금 증류] button. The button MUST go through
+// runDistillGuarded (not ipc.distillRun directly) — a due schedule or the
+// idle-gated count trigger can be running at the same moment (see distill.ts).
+function DistillCard({ t }: { t: Strings }): JSX.Element {
+  const currentVault = useVaultStore((s) => s.currentVault);
+  const status = useDistillStore((s) => s.status);
+  const refresh = useDistillStore((s) => s.refresh);
+  const [running, setRunning] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    void refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentVault]);
+
+  async function runNow(): Promise<void> {
+    if (!currentVault || running) return;
+    setRunning(true);
+    setBusy(false);
+    try {
+      const report = await runDistillGuarded(currentVault.path);
+      if (report === null) {
+        setBusy(true);
+        return;
+      }
+      await refresh();
+    } finally {
+      setRunning(false);
+    }
+  }
+
+  const trend = status ? backlogTrend(status.last_backlogs) : "flat";
+  const trendArrow = trend === "shrinking" ? "↓" : trend === "growing" ? "↑" : "→";
+  const trendLabel =
+    trend === "shrinking"
+      ? (t.set_distill_trend_shrinking ?? "shrinking")
+      : trend === "growing"
+        ? (t.set_distill_trend_growing ?? "growing")
+        : (t.set_distill_trend_flat ?? "flat");
+  const lastRun = status ? lastRunLabel(status.last_run) : null;
+
+  return (
+    <div className="card">
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div style={{ fontWeight: 600 }}>{t.s_distill ?? "Distill"}</div>
+        <span aria-hidden="true" style={{ fontSize: 15 }}>
+          {trendArrow}
+        </span>
+      </div>
+      {status ? (
+        <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+          {(t.set_distill_pending ?? "{n} pending proposals").replace(
+            "{n}",
+            String(status.pending_proposals),
+          )}{" "}
+          · {trendLabel}
+        </div>
+      ) : null}
+      <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
+        {lastRun
+          ? (t.ov_distill_last_run ?? "Last run {t}").replace("{t}", lastRun)
+          : (t.ov_distill_never ?? "No runs yet")}
+      </div>
+      <button
+        type="button"
+        className="btn btn-primary"
+        style={{ marginTop: 10 }}
+        onClick={() => void runNow()}
+        disabled={running || !currentVault}
+        aria-busy={running}
+      >
+        {running
+          ? (t.set_distill_running ?? "Distilling…")
+          : (t.set_distill_run_now ?? "Distill now")}
+      </button>
+      {busy ? (
+        <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+          {t.set_distill_busy ?? "A distill run is already in progress."}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

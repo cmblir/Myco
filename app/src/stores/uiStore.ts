@@ -28,6 +28,7 @@ export type RouteId =
   | "tags"
   | "views"
   | "study"
+  | "feedback"
   | "schedules"
   | "settings"
   | `page:${string}`;

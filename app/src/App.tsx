@@ -22,6 +22,7 @@ import PageReader from "./pages/PageReader";
 import PageTags from "./pages/PageTags";
 import PageViews from "./pages/PageViews";
 import PageStudy from "./pages/PageStudy";
+import PageFeedback from "./pages/PageFeedback";
 import PageSchedules from "./pages/PageSchedules";
 import { STRINGS } from "./lib/i18n";
 import type { Strings } from "./lib/i18n";
@@ -442,6 +443,7 @@ export default function App(): JSX.Element {
     if (r === "tags") return <PageTags t={t} />;
     if (r === "views") return <PageViews t={t} />;
     if (r === "study") return <PageStudy t={t} />;
+    if (r === "feedback") return <PageFeedback t={t} />;
     if (r === "schedules") return <PageSchedules t={t} />;
     if (r === "settings") return <PageSettings t={t} />;
     if (r.startsWith("page:")) return <PageReader t={t} pageRoute={r.slice(5)} />;

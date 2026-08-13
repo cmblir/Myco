@@ -281,6 +281,56 @@ let mockDistillConfig: DistillConfig = {
   dormancy_decay: false,
 };
 
+// Task 9 — two pending work/feedback/*.md proposals, so PageFeedback and the
+// Overview/Sidebar badge (distill_status.pending_proposals: 2 below) render
+// real content in ?mock=1. Format mirrors distill.rs's write_proposal exactly
+// (frontmatter keys + a `# title` heading), so parseProposal parses these the
+// same way it would parse the real file.
+const MOCK_PROPOSAL_1 = `${VAULT}/work/feedback/2026-08-10-emerging-cluster-rope.md`;
+const MOCK_PROPOSAL_2 = `${VAULT}/work/feedback/2026-08-11-archive-batch-stale.md`;
+const MOCK_PROPOSALS = new Map<string, string>([
+  [
+    MOCK_PROPOSAL_1,
+    [
+      "---",
+      "type: distill-proposal",
+      "action: admit-cluster",
+      "status: pending",
+      "created: 2026-08-10",
+      'payload: {"files":["_inbox/quarantine/rope-notes.md","_inbox/quarantine/rope-followup.md","_inbox/quarantine/rope-benchmarks.md","_inbox/quarantine/rope-impl.md","_inbox/quarantine/rope-ablation.md"]}',
+      "---",
+      "",
+      "# Emerging cluster: rope",
+      "",
+      "5 quarantined items look related (mean similarity 0.71):",
+      "",
+      "- nearest 'rope' 0.74 — _inbox/quarantine/rope-notes.md",
+      "- nearest 'rope' 0.69 — _inbox/quarantine/rope-followup.md",
+      "- nearest 'rope' 0.73 — _inbox/quarantine/rope-benchmarks.md",
+      "- nearest 'rope' 0.70 — _inbox/quarantine/rope-impl.md",
+      "- nearest 'rope' 0.68 — _inbox/quarantine/rope-ablation.md",
+      "",
+    ].join("\n"),
+  ],
+  [
+    MOCK_PROPOSAL_2,
+    [
+      "---",
+      "type: distill-proposal",
+      "action: archive-batch",
+      "status: pending",
+      "created: 2026-08-11",
+      'payload: {"files":["raw/old-clip-1.md","raw/old-clip-2.md"]}',
+      "---",
+      "",
+      "# Archive batch: 2 stale sources",
+      "",
+      "2 raw sources haven't been cited in 30+ days and are proposed for archive.",
+      "",
+    ].join("\n"),
+  ],
+]);
+
 function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);
@@ -540,6 +590,25 @@ function fileTree() {
       { kind: "file", name: `${MOCK_PDF_STEM}.pdf`, path: MOCK_PDF_PATH },
     ] },
     { kind: "directory", name: "wiki", path: `${VAULT}/wiki`, children: wikiChildren },
+    {
+      kind: "directory",
+      name: "work",
+      path: `${VAULT}/work`,
+      children: [
+        {
+          kind: "directory",
+          name: "feedback",
+          path: `${VAULT}/work/feedback`,
+          // Task 9 — two pending distill proposals so PageFeedback and the
+          // Overview/Sidebar badge have real content in ?mock=1.
+          children: [...MOCK_PROPOSALS.keys()].map((path) => ({
+            kind: "file" as const,
+            name: path.split("/").pop() ?? "proposal.md",
+            path,
+          })),
+        },
+      ],
+    },
   ];
 }
 
@@ -977,6 +1046,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       if (isCardsPath(p)) {
         const raw = mockDecks.get(p) ?? "";
         return Promise.resolve({ path: p, raw, content: raw, frontmatter: null });
+      }
+      const proposal = MOCK_PROPOSALS.get(p);
+      if (proposal !== undefined) {
+        return Promise.resolve({ path: p, raw: proposal, content: proposal, frontmatter: null });
       }
       if (p === MOCK_ANNOTATIONS_PATH) {
         return Promise.resolve({ path: p, raw: MOCK_SIDECAR, content: MOCK_SIDECAR, frontmatter: null });

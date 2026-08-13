@@ -9,6 +9,7 @@ import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useStudyStore } from "../stores/studyStore";
+import { useDistillStore } from "../stores/distillStore";
 import { ipc } from "../lib/ipc";
 import type { FileNode } from "../lib/ipc";
 import { promptText, confirmAction } from "../stores/dialogStore";
@@ -27,6 +28,8 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
   const dueTotal = useStudyStore((s) => s.dueTotal);
   const refreshStudy = useStudyStore((s) => s.refresh);
+  const pendingProposals = useDistillStore((s) => s.status?.pending_proposals ?? 0);
+  const refreshDistill = useDistillStore((s) => s.refresh);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
 
   // Keep the sidebar due badge current: refresh when the vault's files change
@@ -34,6 +37,12 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   useEffect(() => {
     void refreshStudy();
   }, [refreshStudy, fileTree]);
+
+  // Same trigger for the feedback badge — a distill run (or an apply/dismiss,
+  // both of which write under work/feedback/) changes the vault's file set too.
+  useEffect(() => {
+    void refreshDistill();
+  }, [refreshDistill, fileTree]);
 
   const totalFiles = countFiles(fileTree);
   const activePath = route.startsWith("page:") ? route.slice(5) : null;
@@ -130,6 +139,13 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
             active={route === "study"}
             onClick={() => setRoute("study")}
             badge={dueTotal > 0 ? String(dueTotal) : undefined}
+          />
+          <NavItem
+            label={t.nav_feedback ?? "Feedback"}
+            icon="inbox"
+            active={route === "feedback"}
+            onClick={() => setRoute("feedback")}
+            badge={pendingProposals > 0 ? String(pendingProposals) : undefined}
           />
           <NavItem
             label={t.nav_views ?? "Views"}

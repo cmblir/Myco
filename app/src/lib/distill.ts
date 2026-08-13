@@ -66,6 +66,24 @@ export function backlogTrend(last: number[]): "shrinking" | "growing" | "flat" {
   return "flat";
 }
 
+// Task 9 — Overview card's "last run" label. Auto-unit (seconds/minutes/
+// hours/days), unlike RecentNotes.tsx's day-only `relativeDay`: a distill run
+// can fire several times an hour (idle trigger, manual button), so day
+// granularity would flatten them all to "today".
+export function lastRunLabel(
+  lastRun: number | null,
+  nowMs: number = Date.now(),
+): string | null {
+  if (lastRun === null) return null;
+  const diffSec = Math.round(nowMs / 1000 - lastRun);
+  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const abs = Math.abs(diffSec);
+  if (abs < 60) return rtf.format(-diffSec, "second");
+  if (abs < 3600) return rtf.format(-Math.round(diffSec / 60), "minute");
+  if (abs < 86_400) return rtf.format(-Math.round(diffSec / 3600), "hour");
+  return rtf.format(-Math.round(diffSec / 86_400), "day");
+}
+
 // Task 8 fix (code review): three independent callers can decide to run
 // distill_run around the same moment — a due "distill" schedule, the
 // idle-gated backlog count trigger (scheduleTimer.ts), and the manual

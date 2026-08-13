@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { backlogTrend, runDistillGuarded } from "./distill";
+import { backlogTrend, lastRunLabel, runDistillGuarded } from "./distill";
 import { ipc } from "./ipc";
 import type { RunReport } from "./distill";
 
@@ -19,6 +19,30 @@ describe("backlogTrend", () => {
 
   it("flat when the oldest and newest samples are equal", () => {
     expect(backlogTrend([5, 9, 5])).toBe("flat");
+  });
+});
+
+describe("lastRunLabel", () => {
+  const now = Date.UTC(2026, 7, 13, 12, 0, 0); // 2026-08-13T12:00:00Z
+
+  it("null when never run", () => {
+    expect(lastRunLabel(null, now)).toBeNull();
+  });
+
+  it("seconds ago", () => {
+    expect(lastRunLabel(now / 1000 - 30, now)).toBe("30 seconds ago");
+  });
+
+  it("minutes ago", () => {
+    expect(lastRunLabel(now / 1000 - 5 * 60, now)).toBe("5 minutes ago");
+  });
+
+  it("hours ago", () => {
+    expect(lastRunLabel(now / 1000 - 3 * 3600, now)).toBe("3 hours ago");
+  });
+
+  it("days ago", () => {
+    expect(lastRunLabel(now / 1000 - 2 * 86_400, now)).toBe("2 days ago");
   });
 });
 
