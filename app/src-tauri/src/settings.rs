@@ -1,7 +1,7 @@
 // Persisted user settings — written to ~/Library/Application Support/dev.cmblir.myco/
 // (or platform equivalent). Stores non-secret data only: connection flags
-// (true/false), selected provider + model per task, language. API keys live
-// in the OS keychain (see secrets.rs).
+// (true/false), selected provider + model per task. API keys live in the OS
+// keychain (see secrets.rs). UI language is frontend-only state, not stored here.
 
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
