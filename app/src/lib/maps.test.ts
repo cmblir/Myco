@@ -113,6 +113,34 @@ describe("draftMap", () => {
     expect(writeFile).not.toHaveBeenCalled();
   });
 
+  it("finds an existing map by member-stem match when the cluster label drifted", async () => {
+    listFiles.mockResolvedValue([
+      {
+        kind: "directory",
+        name: "wiki",
+        path: "/v/wiki",
+        children: [
+          {
+            kind: "directory",
+            name: "maps",
+            path: "/v/wiki/maps",
+            children: [{ kind: "file", name: "old-label.md", path: "/v/wiki/maps/old-label.md" }],
+          },
+        ],
+      },
+    ]);
+    // The existing map's cluster: value is "old-label" — not the current
+    // (drifted) label "new-label" — but "old-label" is still one of the
+    // cluster's current members' stems (wiki/old-label.md).
+    readFile.mockResolvedValue({ frontmatter: { cluster: "old-label" } });
+
+    const rel = await draftMap("/v", "new-label", ["wiki/old-label.md", "wiki/x.md"]);
+
+    expect(rel).toBe("wiki/maps/old-label.md");
+    expect(complete).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+  });
+
   it("strips a hallucinated wikilink not in the member list and warns once", async () => {
     complete.mockResolvedValue(
       "Overview.\n\n- [[a]] — real member\n- [[not-a-member]] — hallucinated\n",

@@ -48,19 +48,29 @@ function mapFileNodes(tree: FileNode[]): Extract<FileNode, { kind: "file" }>[] {
 }
 
 /** An existing `wiki/maps/*.md` page whose `cluster:` frontmatter already
- *  equals `cluster`, if any — vault-relative path, or `null`. Checked before
+ *  matches this cluster, if any — vault-relative path, or `null`. Matched by
+ *  EITHER `cluster` (the label passed in) OR any of `memberStems` — the same
+ *  drift-tolerance widening as the Rust-side dedup/anchor match: a cluster's
+ *  label is its medoid stem, recomputed every ontology rebuild, so a map
+ *  drafted for an OLD medoid must still be found even after the label has
+ *  since drifted to a different (but still current) member. Checked before
  *  drafting so a crash between a previous draftMap's write and the caller's
  *  status->done rewrite never re-drafts the same cluster into a `-2` file on
  *  retry: "location is state," the same rule Rust's own map-exists dedup
  *  (`existing_map_clusters`) already applies. `ipc.readFile`'s `frontmatter`
  *  is already-parsed YAML (Rust's `vault::read_file`), so no hand-rolled
  *  frontmatter parsing is needed here. */
-async function findExistingMapPath(vaultPath: string, cluster: string): Promise<string | null> {
+async function findExistingMapPath(
+  vaultPath: string,
+  cluster: string,
+  memberStems: Set<string>,
+): Promise<string | null> {
   const tree = await ipc.listFiles(vaultPath).catch(() => []);
   for (const f of mapFileNodes(tree)) {
     const file = await ipc.readFile(f.path).catch(() => null);
     const fm = file?.frontmatter as { cluster?: unknown } | null | undefined;
-    if (typeof fm?.cluster === "string" && fm.cluster === cluster) {
+    if (typeof fm?.cluster !== "string") continue;
+    if (fm.cluster === cluster || memberStems.has(fm.cluster.toLowerCase())) {
       return f.path.startsWith(`${vaultPath}/`) ? f.path.slice(vaultPath.length + 1) : f.path;
     }
   }
@@ -137,7 +147,8 @@ export async function draftMap(
   cluster: string,
   members: string[],
 ): Promise<string> {
-  const existing = await findExistingMapPath(vaultPath, cluster);
+  const memberStems = new Set(members.map((m) => memberStem(m).toLowerCase()));
+  const existing = await findExistingMapPath(vaultPath, cluster, memberStems);
   if (existing) return existing;
 
   const body = await complete({
@@ -152,8 +163,7 @@ export async function draftMap(
   // still emit its own frontmatter fence out of habit — strip it so code's
   // own frontmatter block below is the only one in the file.
   const clean = stripFrontmatter(body).trim();
-  const allowedStems = new Set(members.map((m) => memberStem(m).toLowerCase()));
-  const { body: safeBody, strippedCount } = stripUnknownWikilinks(clean, allowedStems);
+  const { body: safeBody, strippedCount } = stripUnknownWikilinks(clean, memberStems);
   if (strippedCount > 0) {
     console.warn(
       `[maps] draftMap(${cluster}): stripped ${strippedCount} wikilink(s) not in the member list`,

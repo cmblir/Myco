@@ -1056,6 +1056,27 @@ fn proposal_payload_cluster(map: &HashMap<String, gray_matter::Pod>) -> Option<S
         .map(String::from)
 }
 
+/// A proposal's `payload.members` array as plain strings, or empty if the
+/// payload is missing/malformed — mirrors `proposal_payload_files`, the
+/// `draft-map` payload's list field (`payload.cluster` above is its scalar
+/// one).
+fn proposal_payload_members(map: &HashMap<String, gray_matter::Pod>) -> Vec<String> {
+    let payload = map
+        .get("payload")
+        .cloned()
+        .map(crate::vault::pod_to_json)
+        .unwrap_or(serde_json::Value::Null);
+    payload
+        .get("members")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(String::from))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Proposals still awaiting resolution (`pending` or `approved`) — the
 /// settings-tab badge / Overview count. Feeds `DistillStatus::pending_proposals`;
 /// see `is_awaiting_resolution_map` for why `approved` counts too.
@@ -1492,14 +1513,37 @@ fn pending_summary_batch_exists(root: &Path, rel: &str) -> bool {
         })
 }
 
-/// True if a `draft-map` proposal for this exact cluster is already awaiting
+/// `|a ∩ b| / min(|a|, |b|)` — min-based rather than union/Jaccard so a
+/// cluster that grew or shrank a little since a proposal was written, but
+/// kept its original core intact, still reads as "the same forming topic"
+/// instead of being diluted by members unique to either side. `0.0` if
+/// either side is empty (vacuously no overlap, not divide-by-zero).
+fn overlap_ratio(a: &[String], b: &[String]) -> f32 {
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    let b_set: std::collections::HashSet<&str> = b.iter().map(String::as_str).collect();
+    let shared = a.iter().filter(|x| b_set.contains(x.as_str())).count();
+    shared as f32 / a.len().min(b.len()) as f32
+}
+
+/// True if a `draft-map` proposal for this cluster is already awaiting
 /// resolution (`pending` OR `approved` — see `is_awaiting_resolution_map`).
 /// Approved counts too, unlike `pending_admit_cluster_exists`'s pending-only
 /// check: at `Intensity::Aggressive`, `propose_map_candidates` writes
 /// `draft-map` straight to `status: approved` (the TS-side post-run
 /// auto-apply picks it up), so a run firing again before that apply happens
 /// must still see this cluster as already spoken for.
-fn pending_draft_map_exists(root: &Path, cluster_label: &str) -> bool {
+///
+/// Matched two ways: the fast path is an exact `cluster_label` match against
+/// the proposal's `payload.cluster`; the fallback is `>= 50%` member overlap
+/// between `cluster_members` (the CURRENT cluster being evaluated) and the
+/// proposal's own `payload.members` — needed because the label is a medoid
+/// stem that can drift to a different member between when the proposal was
+/// written and this run, and an exact-label-only check would then miss it
+/// and write a second proposal for what is substantially the same topic
+/// (fix round 2; same drift-tolerance rule as the map-exists/anchor checks).
+fn pending_draft_map_exists(root: &Path, cluster_label: &str, cluster_members: &[String]) -> bool {
     crate::vault::vault_entries(&root.join("work/feedback"))
         .into_iter()
         .filter(|(e, kind)| {
@@ -1517,7 +1561,13 @@ fn pending_draft_map_exists(root: &Path, cluster_label: &str) -> bool {
             }
             let is_draft_map =
                 matches!(map.get("action"), Some(gray_matter::Pod::String(s)) if s == "draft-map");
-            is_draft_map && proposal_payload_cluster(&map).as_deref() == Some(cluster_label)
+            if !is_draft_map {
+                return false;
+            }
+            if proposal_payload_cluster(&map).as_deref() == Some(cluster_label) {
+                return true;
+            }
+            overlap_ratio(&proposal_payload_members(&map), cluster_members) >= 0.5
         })
 }
 
@@ -1679,7 +1729,7 @@ fn propose_map_candidates(
         if c.id == FIELD_CLUSTER_ID
             || c.members.len() < MAP_MIN_MEMBERS
             || has_map
-            || pending_draft_map_exists(root, &c.label)
+            || pending_draft_map_exists(root, &c.label, &c.members)
         {
             continue;
         }
@@ -4385,6 +4435,40 @@ mod tests {
         assert_eq!(
             written, 0,
             "the drifted label must still match via the old medoid, which is still a member"
+        );
+    }
+
+    #[test]
+    fn pending_draft_map_dedup_matches_by_member_overlap_when_the_label_drifted() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+
+        // 8 mature members — the exact set a PENDING proposal (written
+        // below, under an OLDER label) already names. The cluster's label
+        // has since drifted to a new medoid, but its members are unchanged.
+        let mut members: Vec<String> = Vec::new();
+        for i in 0..8 {
+            let rel = format!("wiki/m{i}.md");
+            write_wiki_member(root, &rel, "active", "medium", map_mature_mtime());
+            members.push(rel);
+        }
+        let o = ontology_with_cluster(0, "new-label", members.clone());
+
+        write_proposal(
+            root,
+            "draft-map",
+            "Map candidate: old-label",
+            "body",
+            &serde_json::json!({ "cluster": "old-label", "members": members }),
+        )
+        .unwrap();
+
+        let cfg = DistillConfig::default();
+        let mut manifest = test_manifest();
+        let written = propose_map_candidates(root, &o, &cfg, &mut manifest).unwrap();
+        assert_eq!(
+            written, 0,
+            "drifted label but >=50% overlapping members must not duplicate the pending proposal"
         );
     }
 
