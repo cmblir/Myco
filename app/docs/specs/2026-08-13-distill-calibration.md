@@ -195,6 +195,79 @@ every quarantined-then-trashed session page has left the active index
 honest substitution the task brief calls for, not a claim that it measures
 retrieval RANKING quality — only index membership.
 
+## 6. Phase B non-regression (Task 6)
+
+Task 6 (profile/maps injection into Ask and ingest) touches only
+`app/src/lib/chat.ts` (TypeScript) — the maps-first block-assembly reorder and
+the profile-paragraph prepend both operate purely on already-scored/ranked
+hits, after Rust has returned them. No file under `app/src-tauri/src/` (the
+`bge-m3` embedder, `VectorStore` cosine search, `Bm25Index`, or `rrf_fuse`)
+changed in this diff, so this section verifies "no code that affects scoring
+was touched" rather than measuring a new scoring change — the point of the
+run is that the numbers must be **identical** to the reference, not better.
+
+Ran `cd app/src-tauri && MYCO_EMBED_SPEC=bge-m3 cargo run --example
+retrieval_eval --release` twice (byte-identical between runs, per this
+harness's established determinism — see §"Determinism" in
+`eval/BASELINE.md`'s Phase 1b section).
+
+**Correction to the brief's command:** the brief and `eval/BASELINE.md`'s own
+prose both write `MEMEX_EMBED_SPEC=bge-m3`, but the harness (and every other
+`examples/*.rs` probe — `abstention_probe.rs`, `intent_probe.rs`,
+`wikify_eval.rs`, `corpus_mix_probe.rs`) reads `MYCO_EMBED_SPEC` — a stale
+`Memex`→`myco` rename that was never fixed in the docs. Run with
+`MEMEX_EMBED_SPEC` set, the var is simply unread, the harness silently falls
+back to its default (`"gemma"`, the bundled *chat* GGUF, unrelated to the
+embed model under test) and then panics because that chat GGUF is not
+present in this checkout (`models/gemma-3-1b-it-q4_k_m.gguf` does not exist —
+only `models/bge-m3-Q4_K_M.gguf` does). Re-run with the correct
+`MYCO_EMBED_SPEC=bge-m3` to get a real result.
+
+### Results — bge-m3 dense, cosine (71 pages · 142 chunks · 62 queries)
+
+| k  | hit@k  | recall@k |
+|----|--------|----------|
+| 1  | 72.6 % | 67.7 %   |
+| 3  | 91.9 % | 87.9 %   |
+| 5  | 96.8 % | 94.4 %   |
+| 10 | 98.4 % | 96.8 %   |
+
+**MRR 0.829 · nDCG@10 0.847**
+
+### Results — dense + BM25 (RRF fused)
+
+| k  | hit@k   | recall@k |
+|----|---------|----------|
+| 1  | 82.3 %  | 77.4 %   |
+| 3  | 100.0 % | 98.4 %   |
+| 5  | 100.0 % | 100.0 %  |
+| 10 | 100.0 % | 100.0 %  |
+
+**MRR 0.906 · nDCG@10 0.926**
+
+**Identical, metric-for-metric, to "Phase 1b — BM25 + RRF fusion" in
+`eval/BASELINE.md`** (hit@1 82.3 % · hit@3/@5/@10 100 % · MRR 0.906 · nDCG@10
+0.926), including the same per-query rank-change list (`DPO`/`RAG` @1→@2, the
+five weak-query rescues, etc.) and the same five dense weak queries
+(`RLAIF`, `PPO로 정책을 갱신하는 인간 선호 정렬`, the Korean scaling-laws
+paraphrase, the constitutional-AI paraphrase, `PPO`). This is exactly the
+expected outcome, not a surprise: scoring/ranking code was never touched by
+this task, so the numbers had no mechanism by which to move.
+
+**Maps-first is ordering-only.** The reorder in `semanticContext` happens
+*after* `retrieveChunks` returns its (unchanged) ranked hit list — it only
+changes which of those already-chosen hits' blocks get assembled first into
+the prompt string, never which hits are retrieved, their scores, or their
+rank order as reported to the caller (`stems`, `onStage`). None of that is
+observable to this harness, which measures retrieval (rank of the first
+relevant page), not prompt assembly — so "no measurable effect on this eval"
+is the correct and expected result for that change, and profile injection
+(a system-message paragraph appended after retrieval) is retrieval-invisible
+by the same argument.
+
+Full gate set (frontend lint/tsc/vitest, Rust fmt/clippy/test incl.
+`distill_acceptance --ignored`, MCP pytest) results are in the Task 6 report.
+
 ## Method notes
 
 - Measurement code was a throwaway `#[test] #[ignore]` in a scratch file
