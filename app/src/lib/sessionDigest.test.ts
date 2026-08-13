@@ -139,6 +139,37 @@ describe("runSessionDigest", () => {
     expect(result).toEqual({ daysDigested: 1, filesArchived: 1, skipped: null });
   });
 
+  it("marks files dropped by the shared 60k budget in the prompt sent to the model", async () => {
+    getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
+    getDistillConfig.mockResolvedValue(CFG);
+    digestableSessionDays.mockResolvedValue([
+      {
+        day: "2026-08-10",
+        files: [
+          "sessions/2026-08-10/a.md",
+          "sessions/2026-08-10/b.md",
+          "sessions/2026-08-10/c.md",
+        ],
+        bytes: 100,
+      },
+    ]);
+    const big = "x".repeat(50_000); // two of these saturate the 60k pool
+    readFile.mockImplementation(async (path: string) => {
+      if (path.includes("/daily/")) throw new Error("not found");
+      if (path.endsWith("c.md")) {
+        return { path, raw: "small tail content", content: "small tail content", frontmatter: null };
+      }
+      return { path, raw: big, content: big, frontmatter: null };
+    });
+    complete.mockResolvedValue("- bullet");
+
+    await runSessionDigest("/v");
+
+    const prompt = complete.mock.calls[0][0].messages[1].content as string;
+    expect(prompt).toContain("1 more session logs omitted for length");
+    expect(prompt).not.toContain("small tail content");
+  });
+
   it("appends under a sub-line instead of duplicating the header when one already exists for that day", async () => {
     getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
     getDistillConfig.mockResolvedValue(CFG);

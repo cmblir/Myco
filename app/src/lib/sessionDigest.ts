@@ -34,12 +34,19 @@ const DEFAULT_DIGEST_DAYS = 3;
 
 function buildDayPrompt(files: string[], contents: string[]): string {
   let out = "";
-  for (let i = 0; i < files.length; i++) {
+  let i = 0;
+  for (; i < files.length; i++) {
     const remaining = MAX_DAY_CHARS - out.length;
     if (remaining <= 0) break;
     const name = files[i].split("/").pop() ?? files[i];
     const header = `### ${name}\n`;
     out += header + contents[i].slice(0, Math.max(0, remaining - header.length)) + "\n\n";
+  }
+  // Files that never made it into the pool must say so — otherwise the model
+  // digests a partial day and has no way to signal it isn't the whole thing.
+  const omitted = files.length - i;
+  if (omitted > 0) {
+    out += `…(${omitted} more session logs omitted for length)\n`;
   }
   return out;
 }
@@ -109,6 +116,11 @@ export async function runSessionDigest(vaultPath: string): Promise<DigestOutcome
           { role: "user", content: buildDayPrompt(files, contents) },
         ],
       });
+      // ponytail: append-then-archive isn't atomic — if archiveDigestedSessions
+      // fails right after appendDigest succeeds, the day stays digestable and
+      // the next run re-digests it (LLM cost + a second "_run of…_" sub-section).
+      // Acceptable because the header check above appends a run sub-line rather
+      // than duplicating; upgrade = persist a digested-day marker before archiving.
       await appendDigest(vaultPath, day, bullets, files.length);
       await ipc.archiveDigestedSessions(vaultPath, day, files);
     } catch (err) {
