@@ -627,6 +627,19 @@ select {
 .workspace-pane--secondary {
   border-left: 1px solid var(--line);
 }
+/* The primary pane's page sits inside .route-fade (App.tsx's remount-key
+   wrapper for the navigation fade) instead of .pane-body — plain block boxes
+   by default. Without this, the flex rules below on .workspace/.workspace-wide
+   have no flex parent to grow against and collapse to their content's
+   shrink-to-fit height (0 for the graph, whose content is all absolutely
+   positioned), so the pane never really fills or scrolls. Mirrors .pane-body. */
+.workspace-pane .route-fade {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
 /* A page inside a pane drops its centered max-width and heavy horizontal
    padding and scrolls within the pane rather than the viewport. */
 .workspace-pane .workspace {
