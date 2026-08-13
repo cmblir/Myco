@@ -530,9 +530,22 @@ pub fn scan(
         outcome.scored += 1;
     }
 
+    compact_ledger(root, &mut state);
     state.model = o.model.clone();
     state_save(root, &state)?;
     Ok(outcome)
+}
+
+/// Ledger entries are cache lines for files that currently exist — not a
+/// permanent history. Location IS the state (the design spec explicitly
+/// rejects an ever-growing ledger: "state-as-location; only a small
+/// in-flight queue"). A quarantined file's entry (its key is the pre-move
+/// path, which stops existing the moment it moves) or an outright-deleted
+/// file's entry is pruned every scan, so the ledger stays O(current inflow)
+/// rather than O(everything ever seen).
+fn compact_ledger(root: &Path, state: &mut DistillState) {
+    state.scored.retain(|rel, _| root.join(rel).exists());
+    state.rejected_ttl.retain(|rel, _| root.join(rel).exists());
 }
 
 #[cfg(test)]
@@ -671,6 +684,104 @@ mod tests {
         assert!(sidecar["reason"].is_string());
         assert!(sidecar["expires"].is_number());
         assert_eq!(sidecar["vector"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn quarantine_from_raw_origin_moves_to_inbox_quarantine() {
+        // raw/ is immutable to edits/deletes, but the gate's quarantine move
+        // is a sanctioned transition (`app/docs/specs/2026-08-13-ontology-
+        // distill-design.md`: "Cleanup = state transition ... recorded in an
+        // undo manifest"), same as any other inflow tree.
+        assert!(PROSE.len() >= JUNK_MIN_BYTES);
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("raw")).unwrap();
+        std::fs::write(root.join("raw/paper.md"), PROSE).unwrap();
+        set_mtime(&root.join("raw/paper.md"), old_mtime());
+
+        let o = tiny_ontology();
+        let cfg = DistillConfig::default();
+        let borderline = vec![0.2_f32, (1.0 - 0.2_f32 * 0.2_f32).sqrt()];
+        let embed = move |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            Ok(texts.iter().map(|_| borderline.clone()).collect())
+        };
+
+        let out = scan(root, &o, &cfg, 10, &embed).unwrap();
+        assert_eq!(out.quarantined, 1);
+        assert!(
+            !root.join("raw/paper.md").exists(),
+            "raw/ source must be moved, never left behind after quarantine"
+        );
+        assert!(root.join("_inbox/quarantine/paper.md").exists());
+        assert!(root.join("_inbox/quarantine/paper.verdict.json").exists());
+    }
+
+    #[test]
+    fn ledger_compacts_away_entries_for_files_that_no_longer_exist() {
+        // The ledger must stay O(current inflow), not O(everything ever
+        // seen) — a moved (quarantined) or outright-deleted file's entry must
+        // not linger forever (see `compact_ledger`).
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("_inbox")).unwrap();
+
+        let full_text = format!("{PROSE} FULL marker so this note lands the full tier.");
+        let quarantine_text =
+            format!("{PROSE} BORDERLINE marker so this note lands the quarantine tier.");
+        let reject_text = format!("{PROSE} FAR marker so this note lands the reject tier.");
+        std::fs::write(root.join("_inbox/keep.md"), &full_text).unwrap();
+        std::fs::write(root.join("_inbox/quar.md"), &quarantine_text).unwrap();
+        std::fs::write(root.join("_inbox/gone.md"), &reject_text).unwrap();
+        for name in ["keep.md", "quar.md", "gone.md"] {
+            set_mtime(&root.join(format!("_inbox/{name}")), old_mtime());
+        }
+
+        let o = tiny_ontology();
+        let cfg = DistillConfig::default();
+        let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            Ok(texts
+                .iter()
+                .map(|t| {
+                    if t.contains("BORDERLINE") {
+                        vec![0.2_f32, (1.0 - 0.2_f32 * 0.2_f32).sqrt()] // -> Quarantine
+                    } else if t.contains("FAR") {
+                        vec![0.0_f32, 1.0_f32] // orthogonal -> Reject
+                    } else {
+                        vec![1.0_f32, 0.0_f32] // matches centroid -> Full
+                    }
+                })
+                .collect())
+        };
+
+        let out = scan(root, &o, &cfg, 10, &embed).unwrap();
+        assert_eq!(out.full, 1);
+        assert_eq!(out.quarantined, 1);
+        assert_eq!(out.rejected, 1);
+
+        // quar.md moved away this same run — its pre-move key must already be
+        // gone, not kept as a dead permanent record.
+        let state = state_load(root, &o.model);
+        assert!(!state.scored.contains_key("_inbox/quar.md"));
+        assert!(state.scored.contains_key("_inbox/keep.md"));
+        assert!(state.scored.contains_key("_inbox/gone.md"));
+        assert!(state.rejected_ttl.contains_key("_inbox/gone.md"));
+
+        // Delete a file outright (no gate involved) and rescan: its ledger
+        // entries must be pruned too.
+        std::fs::remove_file(root.join("_inbox/gone.md")).unwrap();
+        let out2 = scan(root, &o, &cfg, 10, &embed).unwrap();
+        assert_eq!(
+            out2.scored, 0,
+            "keep.md is unchanged; gone.md no longer exists to walk"
+        );
+
+        let state2 = state_load(root, &o.model);
+        assert!(!state2.scored.contains_key("_inbox/gone.md"));
+        assert!(!state2.rejected_ttl.contains_key("_inbox/gone.md"));
+        assert!(
+            state2.scored.contains_key("_inbox/keep.md"),
+            "still on disk, its entry must remain"
+        );
     }
 
     #[test]
