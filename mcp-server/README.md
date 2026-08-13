@@ -6,7 +6,7 @@ maintain the wiki directly, alongside the myco desktop app.
 
 ## What it gives Claude
 
-25 tools, all scoped to this repository's wiki and raw/ directories.
+28 tools, all scoped to this repository's wiki and raw/ directories.
 
 | Tool | Purpose |
 |---|---|
@@ -35,6 +35,8 @@ maintain the wiki directly, alongside the myco desktop app.
 | `translation_report` | KO/EN `translation_of` relation audit — dangling / non-reciprocal twins (FEAT-08). |
 | `append_changelog` | Append to the project CHANGELOG.md (Keep a Changelog, GOV-04). |
 | `export_project` | Zip a project's vault to projects/.backups/ (OPS-04). |
+| `distill_status` | Backlog/proposal counts, last run, trigger status — reads `.myco/` state, no LLM. |
+| `distill_report` | No-LLM detection pass: unscored counts by folder, quarantine expiring soon, proposal list. |
 
 The server **never** modifies anything under `raw/` after the file is first
 written. `update_page` and `create_folder` validate the resolved path is

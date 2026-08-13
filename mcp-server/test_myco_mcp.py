@@ -2,11 +2,15 @@
 (backlog DX-01). Run from mcp-server/:  .venv/bin/python -m pytest -q
 """
 
+import json
+import time
 from pathlib import Path
 
 import pytest
 
 from myco_mcp import (
+    distill_report,
+    distill_status,
     extract_links,
     find_contradictions,
     lint_page_text,
@@ -426,3 +430,135 @@ def test_env_var_only_rewrites_the_myco_prefix(monkeypatch):
 
     monkeypatch.setenv("NOT_MYCO_THING", "x")
     assert reg.env_var("NOT_MYCO_THING") == "x"
+
+
+# ─── distill_status / distill_report (Task 10, no-LLM cache reading) ─────────
+
+
+def _distill_vault(tmp_path, monkeypatch) -> Path:
+    """A throwaway vault root that project_registry (and myco_mcp's distill
+    tools, which resolve through it) treats as the active/legacy project."""
+    import importlib
+    import project_registry
+
+    monkeypatch.setenv("MYCO_PROJECT_ROOT", str(tmp_path))
+    importlib.reload(project_registry)
+    return tmp_path
+
+
+def _write_proposal(path: Path, action: str, title: str, status: str | None = "pending") -> None:
+    status_line = f"status: {status}\n" if status is not None else ""
+    path.write_text(
+        "---\n"
+        "type: distill-proposal\n"
+        f"action: {action}\n"
+        f"{status_line}"
+        "created: 2026-08-12\n"
+        'payload: {"files": []}\n'
+        "---\n\n"
+        f"# {title}\n\nBody.\n",
+        encoding="utf-8",
+    )
+
+
+def test_distill_status_empty_vault_is_all_zeros(tmp_path, monkeypatch):
+    _distill_vault(tmp_path, monkeypatch)
+    assert distill_status() == {
+        "backlog": 0,
+        "pending_proposals": 0,
+        "last_run": None,
+        "trigger_exceeded": False,
+        "hint": None,
+    }
+
+
+def test_distill_report_empty_vault_has_no_exception(tmp_path, monkeypatch):
+    _distill_vault(tmp_path, monkeypatch)
+    report = distill_report()
+    assert report["unscored_by_folder"] == {"_inbox": 0, "raw": 0, "sessions": 0}
+    assert report["quarantine_expiring_soon"] == []
+    assert report["proposals"] == []
+
+
+def test_distill_status_counts_pending_proposals(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    feedback = root / "work" / "feedback"
+    feedback.mkdir(parents=True)
+    _write_proposal(feedback / "one.md", "archive-batch", "Archive batch one")
+    _write_proposal(feedback / "two.md", "admit-cluster", "New topic forming")
+    _write_proposal(feedback / "done.md", "delete-batch", "Old, resolved", status="done")
+
+    assert distill_status()["pending_proposals"] == 2
+
+
+def test_distill_report_lists_pending_proposals_with_title_and_action(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    feedback = root / "work" / "feedback"
+    feedback.mkdir(parents=True)
+    _write_proposal(feedback / "one.md", "archive-batch", "Archive batch one")
+    _write_proposal(feedback / "resolved.md", "delete-batch", "Resolved", status="dismissed")
+
+    assert distill_report()["proposals"] == [
+        {"path": "work/feedback/one.md", "action": "archive-batch", "title": "Archive batch one"},
+    ]
+
+
+def test_distill_status_trigger_exceeded_when_backlog_meets_count_trigger(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    (root / ".myco").mkdir()
+    (root / ".myco" / "distill.json").write_text(json.dumps({"count_trigger": 1}), "utf-8")
+    inbox = root / "_inbox"
+    inbox.mkdir()
+    (inbox / "new.md").write_text("some fresh inflow content\n", "utf-8")
+
+    status = distill_status()
+    assert status["backlog"] == 1
+    assert status["trigger_exceeded"] is True
+    assert status["hint"] == "run distillation in the myco app"
+
+
+def test_distill_status_backlog_excludes_already_scored_files(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    inbox = root / "_inbox"
+    inbox.mkdir()
+    (inbox / "seen.md").write_text("already scored\n", "utf-8")
+    (root / ".myco").mkdir()
+    (root / ".myco" / "distill-state.json").write_text(
+        json.dumps({"model": "m", "scored": {"_inbox/seen.md": {"hash": 1, "tier": "full", "at": 0}}}),
+        "utf-8",
+    )
+
+    assert distill_status()["backlog"] == 0
+
+
+def test_distill_status_reports_last_run_as_iso(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    (root / ".myco").mkdir()
+    (root / ".myco" / "distill-state.json").write_text(
+        json.dumps({"model": "m", "scored": {}, "last_run": 1755000000}), "utf-8"
+    )
+    assert distill_status()["last_run"] == "2025-08-12T12:00:00+00:00"
+
+
+def test_distill_report_flags_quarantine_expiring_within_a_week(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    q = root / "_inbox" / "quarantine"
+    q.mkdir(parents=True)
+    now = time.time()
+    (q / "soon.verdict.json").write_text(json.dumps({"expires": now + 3600}), "utf-8")
+    (q / "later.verdict.json").write_text(json.dumps({"expires": now + 30 * 86400}), "utf-8")
+
+    expiring = distill_report()["quarantine_expiring_soon"]
+    assert [e["path"] for e in expiring] == ["_inbox/quarantine/soon.verdict.json"]
+
+
+def test_distill_status_counts_quarantine_toward_backlog(tmp_path, monkeypatch):
+    root = _distill_vault(tmp_path, monkeypatch)
+    q = root / "_inbox" / "quarantine"
+    q.mkdir(parents=True)
+    (q / "a.md").write_text("quarantined\n", "utf-8")
+    (q / "a.verdict.json").write_text(json.dumps({"expires": time.time() + 1_000_000}), "utf-8")
+
+    # The quarantined .md itself must not double-count as unscored _inbox
+    # inflow — only its sidecar counts, once, via quarantine_item_count.
+    assert distill_status()["backlog"] == 1

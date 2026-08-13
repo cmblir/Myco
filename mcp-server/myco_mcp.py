@@ -25,7 +25,8 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime
+import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -1209,6 +1210,261 @@ def export_project(project: str = "") -> dict:
                 count += 1
     return {"ok": True, "project": proj.slug,
             "archive": str(dest.relative_to(REPO_ROOT)), "files": count}
+
+
+# ─── tools: distill (no-LLM, cache-reading) ──────────────────────────────────
+#
+# Mirrors the read paths of the desktop app's Rust `distill` module
+# (app/src-tauri/src/distill.rs) — no scoring, no writes, no embeddings, just
+# the `.myco/` state the app already maintains. Two known divergences from
+# the Rust source, both because this server has no access to the app's
+# embedding pipeline:
+#   - `distill-state.json`'s `scored` ledger is read as-is. Rust invalidates
+#     the whole ledger when the embedding model changes (it compares
+#     `state.model` against the live `VectorStore`, which lives outside the
+#     vault in the app's own settings dir, not under `.myco/`); this server
+#     has no way to know the current model, so a ledger left stale by a model
+#     change is not detected here and can undercount the backlog.
+#   - `distill.json` fields are defaulted independently: a present field with
+#     the wrong JSON type falls back to just that field's default, where Rust
+#     fails the whole-struct parse and defaults every field.
+
+# (start dir, subdir excluded at that dir's own top level only) — mirrors
+# `distill.rs::collect_candidates`.
+_DISTILL_INFLOW_TREES: tuple[tuple[str, str | None], ...] = (
+    ("_inbox", "quarantine"),
+    ("raw", "archive"),
+    ("sessions", None),
+)
+
+# Mirrors `distill.rs` DistillConfig's `d_*` default fns.
+_DISTILL_CONFIG_DEFAULTS: dict[str, Any] = {
+    "enabled": True,
+    "count_trigger": 50,
+    "intensity": "standard",
+    "gate_preset": "normal",
+    "quarantine_ttl_days": 30,
+    "run_budget_items": 50,
+    "idle_minutes": 10,
+    "maturation_hours": 24,
+    "dormancy_decay": False,
+}
+
+_QUARANTINE_EXPIRING_WINDOW_SECS = 7 * 86_400
+
+
+def _is_hidden_name(name: str) -> bool:
+    """Mirror of the Rust vault walk's hidden-entry filter (index.rs
+    `is_hidden_name`): dotfiles plus node_modules/target."""
+    return name.startswith(".") or name in ("node_modules", "target")
+
+
+def _walk_inflow_tree(root: Path, start: str, exclude_top: str | None) -> list[str]:
+    """Vault-relative `.md` paths under `root/start`, recursive, skipping
+    hidden entries and symlinks, and (at `start`'s own top level only) a
+    directory named `exclude_top`. Mirrors `distill.rs::walk_inflow`."""
+    out: list[str] = []
+    base = root / start
+    if not base.is_dir():
+        return out
+
+    def walk(d: Path, top: bool) -> None:
+        try:
+            entries = sorted(d.iterdir())
+        except OSError:
+            return
+        for e in entries:
+            if e.is_symlink() or _is_hidden_name(e.name):
+                continue
+            if e.is_dir():
+                if top and exclude_top and e.name == exclude_top:
+                    continue
+                walk(e, False)
+            elif e.is_file() and e.suffix == ".md":
+                out.append(e.relative_to(root).as_posix())
+
+    walk(base, True)
+    return out
+
+
+def _distill_candidates(root: Path) -> list[str]:
+    """Every inflow candidate across `_inbox/`, `raw/`, `sessions/` — mirrors
+    `distill.rs::collect_candidates` (order doesn't matter here, only
+    membership; the Rust oldest-mtime-first order only matters for `scan`'s
+    own budget selection, not this read-only count)."""
+    out: list[str] = []
+    for start, exclude in _DISTILL_INFLOW_TREES:
+        out.extend(_walk_inflow_tree(root, start, exclude))
+    return out
+
+
+def _distill_quarantine_sidecars(root: Path) -> list[Path]:
+    """`.verdict.json` sidecars directly under `_inbox/quarantine/` (not
+    recursive) — mirrors `distill.rs::quarantine_item_count`."""
+    d = root / "_inbox" / "quarantine"
+    if not d.is_dir():
+        return []
+    try:
+        entries = sorted(d.iterdir())
+    except OSError:
+        return []
+    return [
+        e for e in entries
+        if e.is_file() and not e.is_symlink() and not _is_hidden_name(e.name)
+        and e.name.endswith(".verdict.json")
+    ]
+
+
+def _distill_state(root: Path) -> dict:
+    """Read `.myco/distill-state.json` as-is. Missing/corrupt -> `{}` (every
+    field then reads as its empty/zero value below). See the module-header
+    note above: unlike Rust's `state_load`, this never invalidates the ledger
+    on an embedding-model change (no access to the live model here)."""
+    try:
+        data = json.loads((root / ".myco" / "distill-state.json").read_text("utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _distill_config(root: Path) -> dict:
+    """Read `.myco/distill.json`, filling in Rust's per-field defaults for
+    anything missing, wrong-typed, or if the file is absent/corrupt."""
+    cfg = dict(_DISTILL_CONFIG_DEFAULTS)
+    try:
+        data = json.loads((root / ".myco" / "distill.json").read_text("utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return cfg
+    if not isinstance(data, dict):
+        return cfg
+    for key, default in _DISTILL_CONFIG_DEFAULTS.items():
+        value = data.get(key, default)
+        if isinstance(value, type(default)):
+            cfg[key] = value
+    return cfg
+
+
+def _distill_backlog_count(root: Path, state: dict) -> int:
+    """Unscored inflow candidates plus current quarantine size — mirrors
+    `distill.rs::backlog_count`."""
+    scored = state.get("scored")
+    scored = scored if isinstance(scored, dict) else {}
+    unscored = sum(1 for rel in _distill_candidates(root) if rel not in scored)
+    return unscored + len(_distill_quarantine_sidecars(root))
+
+
+def _distill_pending_proposals(root: Path) -> list[tuple[Path, dict, str]]:
+    """Pending (`status` missing or `pending`) `type: distill-proposal` files
+    directly under `work/feedback/` — mirrors `distill.rs::pending_proposal_count`
+    / `is_pending_proposal`. Returns (path, frontmatter, body) triples, in
+    filename order."""
+    fb = root / "work" / "feedback"
+    if not fb.is_dir():
+        return []
+    try:
+        entries = sorted(fb.iterdir())
+    except OSError:
+        return []
+    out: list[tuple[Path, dict, str]] = []
+    for e in entries:
+        if e.is_symlink() or _is_hidden_name(e.name) or not e.is_file() or e.suffix != ".md":
+            continue
+        try:
+            content = e.read_text("utf-8")
+        except OSError:
+            continue
+        meta, body = parse_fm(content)
+        if meta.get("type") != "distill-proposal":
+            continue
+        if meta.get("status") not in (None, "pending"):
+            continue
+        out.append((e, meta, body))
+    return out
+
+
+def _proposal_title(body: str) -> str:
+    """First `# ` heading in a proposal's body — `write_proposal` in
+    distill.rs always writes one right after the frontmatter."""
+    for line in body.splitlines():
+        line = line.strip()
+        if line.startswith("# "):
+            return line[2:].strip()
+    return ""
+
+
+@mcp.tool()
+def distill_status() -> dict:
+    """Backlog counts, pending proposals, last run, and whether triggers are exceeded.
+    No-LLM: reads .myco/ state the desktop app maintains."""
+    proj = _resolve("")
+    root = proj.root
+    cfg = _distill_config(root)
+    state = _distill_state(root)
+    backlog = _distill_backlog_count(root, state)
+    trigger_exceeded = cfg["enabled"] and backlog >= cfg["count_trigger"]
+
+    last_run_unix = state.get("last_run")
+    last_run_iso = (
+        datetime.fromtimestamp(last_run_unix, tz=timezone.utc).isoformat()
+        if isinstance(last_run_unix, (int, float))
+        else None
+    )
+
+    return {
+        "backlog": backlog,
+        "pending_proposals": len(_distill_pending_proposals(root)),
+        "last_run": last_run_iso,
+        "trigger_exceeded": trigger_exceeded,
+        "hint": "run distillation in the myco app" if trigger_exceeded else None,
+    }
+
+
+@mcp.tool()
+def distill_report() -> dict:
+    """No-LLM detection pass: unscored counts by folder, quarantine expiring soon,
+    proposals list. Writes nothing unless write=True is added later — v1 read-only."""
+    proj = _resolve("")
+    root = proj.root
+    state = _distill_state(root)
+    scored = state.get("scored")
+    scored = scored if isinstance(scored, dict) else {}
+
+    unscored_by_folder = {
+        start: sum(1 for rel in _walk_inflow_tree(root, start, exclude) if rel not in scored)
+        for start, exclude in _DISTILL_INFLOW_TREES
+    }
+
+    now = time.time()
+    expiring_soon: list[dict] = []
+    for sidecar in _distill_quarantine_sidecars(root):
+        try:
+            data = json.loads(sidecar.read_text("utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        expires = data.get("expires")
+        if not isinstance(expires, (int, float)):
+            continue
+        if expires - now <= _QUARANTINE_EXPIRING_WINDOW_SECS:
+            expiring_soon.append({
+                "path": sidecar.relative_to(root).as_posix(),
+                "expires": datetime.fromtimestamp(expires, tz=timezone.utc).isoformat(),
+            })
+    expiring_soon.sort(key=lambda x: x["expires"])
+
+    proposals = [
+        {
+            "path": path.relative_to(root).as_posix(),
+            "action": meta.get("action", ""),
+            "title": _proposal_title(body),
+        }
+        for path, meta, body in _distill_pending_proposals(root)
+    ]
+
+    return {
+        "unscored_by_folder": unscored_by_folder,
+        "quarantine_expiring_soon": expiring_soon,
+        "proposals": proposals,
+    }
 
 
 # ─── entry point ─────────────────────────────────────────────────────────────
