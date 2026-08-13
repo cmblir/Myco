@@ -2120,6 +2120,24 @@ pub async fn reindex_embeddings(
     let total = pages.len();
     for (i, (rel, stem, content)) in pages.iter().enumerate() {
         present.insert(rel.clone());
+        // Announce the page BEFORE embedding it, not only after: a large page
+        // (a long session log can be hundreds of chunks) embeds for minutes,
+        // and with only the post-embed emit the UI froze on the PREVIOUS
+        // page's name and count the whole time — indistinguishable from a
+        // hang (reported as exactly that). `done: i` keeps the bar honest;
+        // the post-embed emit below still advances it to `i + 1`.
+        {
+            use tauri::Emitter;
+            let _ = app.emit(
+                "reindex-progress",
+                ReindexProgress {
+                    done: i,
+                    total,
+                    page: rel.clone(),
+                    embedded: false,
+                },
+            );
+        }
         let t_embed = std::time::Instant::now();
         let outcome = embed_one_page(
             &app,
