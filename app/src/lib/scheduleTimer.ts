@@ -40,7 +40,7 @@ export async function runDueSchedules(vaultPath: string): Promise<void> {
   const cfg = await ipc.getDistillConfig(vaultPath).catch(() => null);
   for (const s of useScheduleStore.getState().schedules) {
     if (!isDue(s, now)) continue;
-    if (s.kind === "distill" && !isIdle(cfg?.idle_minutes ?? 1)) continue; // defer
+    if (s.kind === "distill" && !isIdle(cfg?.idle_minutes ?? 10)) continue; // defer
     await useScheduleStore.getState().runNow(vaultPath, s);
   }
   await maybeRunCountTrigger(vaultPath, cfg);
