@@ -312,7 +312,12 @@ pub fn build(store: &VectorStore, wiki_titles: &[(String, String)]) -> Ontology 
     Ontology {
         model: store.model.clone(),
         built_at: now_secs(),
-        wiki_pages: nodes.len(),
+        // The full wiki page count, not `nodes.len()` (pages that survived
+        // `centroid_edges`' filter) — `distill::run`'s staleness check
+        // compares this against `commands::wiki_titles(root).len()`, the
+        // same real disk count, so the two must be the same quantity or a
+        // rebuild triggers every run even when nothing changed.
+        wiki_pages: wiki_titles.len(),
         clusters,
         entities: entities.into_iter().collect(),
     }
