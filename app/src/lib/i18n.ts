@@ -722,6 +722,7 @@ export interface Strings {
   set_distill_run_now?: string;
   set_distill_running?: string;
   set_distill_report?: string;
+  set_distill_busy?: string;
   // Ingest page.
   ing_title_label?: string;
   ing_title_ph?: string;
@@ -1557,6 +1558,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_running: "Distilling…",
     set_distill_report:
       "Archived {a}, trashed {tr}, {p} proposals — backlog now {b}",
+    set_distill_busy: "A distill run is already in progress.",
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
@@ -2399,6 +2401,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_run_now: "지금 증류",
     set_distill_running: "증류 중…",
     set_distill_report: "보관 {a}건, 폐기 {tr}건, 제안 {p}건 — 백로그 {b}건",
+    set_distill_busy: "이미 증류가 진행 중입니다.",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
@@ -3121,6 +3124,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_run_now: "今すぐ蒸留",
     set_distill_running: "蒸留中…",
     set_distill_report: "アーカイブ{a}件、破棄{tr}件、提案{p}件 — バックログ{b}件",
+    set_distill_busy: "蒸留は既に実行中です。",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",

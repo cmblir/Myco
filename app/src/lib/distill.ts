@@ -1,6 +1,8 @@
 // TS mirror types for distillation config. Fields match the Rust serde output
 // (snake_case from the #[serde(rename_all)] directives).
 
+import { ipc } from "./ipc";
+
 export type Intensity = "conservative" | "standard" | "aggressive";
 export type GatePreset = "strict" | "normal" | "loose";
 
@@ -62,4 +64,26 @@ export function backlogTrend(last: number[]): "shrinking" | "growing" | "flat" {
   if (newest < oldest) return "shrinking";
   if (newest > oldest) return "growing";
   return "flat";
+}
+
+// Task 8 fix (code review): three independent callers can decide to run
+// distill_run around the same moment — a due "distill" schedule, the
+// idle-gated backlog count trigger (scheduleTimer.ts), and the manual
+// "Distill now" button (PageSettings.tsx). A run can outlive the timer's
+// 5-min poll, so without a shared guard two runs could interleave file
+// moves. One per-vault in-flight set, consulted and set by all three.
+const inFlight = new Set<string>();
+
+/** Runs distill_run for `vault`, unless one is already in flight for that
+ * vault — in which case this resolves to null immediately and makes no ipc
+ * call. All callers (schedule-due, count-trigger, manual button) must go
+ * through this instead of calling ipc.distillRun directly. */
+export async function runDistillGuarded(vault: string): Promise<RunReport | null> {
+  if (inFlight.has(vault)) return null;
+  inFlight.add(vault);
+  try {
+    return await ipc.distillRun(vault);
+  } finally {
+    inFlight.delete(vault);
+  }
 }

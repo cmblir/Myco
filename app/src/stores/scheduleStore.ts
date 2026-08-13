@@ -7,6 +7,7 @@ import { create } from "zustand";
 import { ipc, type Schedule } from "../lib/ipc";
 import { runDigest } from "../lib/digests";
 import { notify } from "../lib/notify";
+import { runDistillGuarded } from "../lib/distill";
 import { useVaultStore } from "./vaultStore";
 
 /** Seconds implied by a cadence — mirrors Rust schedules::interval_secs. */
@@ -77,10 +78,19 @@ export const useScheduleStore = create<ScheduleState>((set, get) => ({
     try {
       // A "distill" schedule triggers the ontology distillation run (Task 8)
       // instead of the LLM digest pipeline — it has no prompt and writes no
-      // digest note, so it must never reach runDigest.
+      // digest note, so it must never reach runDigest. Goes through the
+      // shared guard so it can't interleave with the count-trigger or the
+      // manual "Distill now" button running at the same moment.
       let path: string | null = null;
       if (s.kind === "distill") {
-        await ipc.distillRun(vaultPath);
+        const r = await runDistillGuarded(vaultPath);
+        if (r === null) {
+          // Another distill run is already in flight — this one didn't
+          // happen, so don't stamp last_run; the next due poll (or another
+          // manual click) picks it back up.
+          set({ error: "A distill run is already in progress", runningId: null });
+          return null;
+        }
       } else {
         path = await runDigest(vaultPath, s, new Date().toISOString());
       }

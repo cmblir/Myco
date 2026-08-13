@@ -33,7 +33,7 @@ import {
 } from "../lib/budget";
 import { isComposingKey } from "../lib/ime";
 import { useReindexStore } from "../stores/reindexStore";
-import { backlogTrend } from "../lib/distill";
+import { backlogTrend, runDistillGuarded } from "../lib/distill";
 import type {
   DistillConfig,
   DistillStatus,
@@ -1596,7 +1596,17 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
     setRunning(true);
     setError(null);
     try {
-      const r = await ipc.distillRun(vaultPath);
+      // Goes through the shared guard so this can't interleave with the
+      // idle-gated count trigger or a due "distill" schedule running at the
+      // same moment — an explicit click always wins the race by asking
+      // first, but two runs never overlap.
+      const r = await runDistillGuarded(vaultPath);
+      if (r === null) {
+        setError(
+          t.set_distill_busy ?? "A distill run is already in progress.",
+        );
+        return;
+      }
       setReport(r);
       setStatus(await ipc.distillStatus(vaultPath));
     } catch (e) {

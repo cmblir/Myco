@@ -1,10 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isIdle, markActivity } from "./idle";
 
-// Exercises the pure activity-tracking core (markActivity/isIdle) that both
-// scheduleTimer's poll and the useIdle hook build on. There is no
-// @testing-library/react in this repo, so the hook's window listener wiring
-// itself is verified by the headless screenshot / manual check, not here.
+// Exercises the activity-tracking core (markActivity/isIdle) that
+// scheduleTimer's poll relies on directly (it's a plain async function, not
+// a component, so it can't use a hook — see idle.ts).
 describe("idle", () => {
   beforeEach(() => {
     vi.useFakeTimers();
