@@ -13,6 +13,7 @@ import { ipc, type ScoredChunk } from "./ipc";
 import { BUILTIN_EMBED_MODEL } from "./providers";
 import { getBudgetThreshold, overBudget, recordUsage } from "./budget";
 import { log } from "./log";
+import { loadProfile, injectionText } from "./profile";
 
 export interface SimpleMessage {
   role: "system" | "user" | "assistant";
@@ -84,6 +85,23 @@ export async function complete(args: CompleteArgs): Promise<string> {
   const model =
     args.task === "query" ? settings.query_model : settings.ingest_model;
 
+  // Profile personalisation (Phase B, Task 6): read once per complete() call,
+  // gated to task:"query" only — ingest gets its own weighting (INGEST_PROMPT's
+  // `profileInterests` param) rather than a prepended paragraph, and every
+  // query-task caller (interactive Ask, digests/study/audioOverview, and the
+  // ingest planning call, which is also task:"query") benefits equally, unlike
+  // the retrieval block below which is further gated on `onStage`.
+  const profileCfg =
+    args.task === "query"
+      ? await ipc.getDistillConfig(args.cwd).catch(() => null)
+      : null;
+  const profile = profileCfg?.profile_injection
+    ? await loadProfile(args.cwd)
+    : null;
+  const profileSuffix = profile
+    ? `\n\nUser profile: ${injectionText(profile)}`
+    : "";
+
   const isCli =
     provider === "anthropic-cli" ||
     provider === "gemini-cli" ||
@@ -130,9 +148,15 @@ export async function complete(args: CompleteArgs): Promise<string> {
       });
     }
 
+    // Profile paragraph lands AFTER the retrieval block, before the user's
+    // actual turns — mirrors the non-CLI branch's rule (below) that the
+    // "answer ONLY from below" retrieval instruction must stay first; here
+    // there is no such instruction to protect, but the ordering is kept
+    // identical across both branches for one predictable contract.
+    const profileBlock = profileSuffix ? `${profileSuffix.trim()}\n\n` : "";
     const prompt = system
-      ? `${system.content}\n\n${retrievalBlock}${userTurns}`
-      : `${retrievalBlock}${userTurns}`;
+      ? `${system.content}\n\n${retrievalBlock}${profileBlock}${userTurns}`
+      : `${retrievalBlock}${profileBlock}${userTurns}`;
     const res =
       provider === "anthropic-cli"
         ? await ipc.claudeRun(prompt, args.cwd, model || undefined)
@@ -205,6 +229,13 @@ export async function complete(args: CompleteArgs): Promise<string> {
     }
   } catch {
     /* proceed without inlined context rather than blocking the request */
+  }
+  // Profile paragraph is appended AFTER the retrieval merge above, never
+  // before — withVaultContext's "answer ONLY from the content below" line
+  // must stay the first thing in the system message, or the model could read
+  // the profile paragraph as itself being part of "the content below".
+  if (profileSuffix) {
+    messages = appendSystemSuffix(messages, profileSuffix);
   }
   // Retrieval is done; everything after this is the model. On the builtin path
   // that means a possible one-time weight load (11.7 s cold) and then prefill,
@@ -378,11 +409,21 @@ async function semanticContext(
   if (r.stale || r.retrievalFailed || r.hits.length === 0) {
     return { ctx: "", stems: [], stale: r.stale, retrievalFailed: r.retrievalFailed };
   }
+  // Maps-first (Phase B, Task 6): a wiki/maps/ page summarizes its whole
+  // cluster, so front-load its block(s) within the same budget — the model
+  // sees the topic map before it drills into individual pages' details.
+  // Stable partition: relative order within each group is preserved, and
+  // `r.hits` itself (scores, ranking, which hits made the top-k cut) is
+  // untouched — this only reorders which blocks get assembled first.
+  const ordered = [
+    ...r.hits.filter((h) => h.page.startsWith("wiki/maps/")),
+    ...r.hits.filter((h) => !h.page.startsWith("wiki/maps/")),
+  ];
   const parts: string[] = [];
   const stems: string[] = [];
   let used = 0;
   let lastPage = "";
-  for (const h of r.hits) {
+  for (const h of ordered) {
     if (!h.text) continue;
     // One citeable header per page; later chunks of the same page just
     // append under it instead of repeating the citation.
@@ -420,6 +461,23 @@ function withVaultContext(
     );
   }
   return [{ role: "system", content: block }, ...messages];
+}
+
+// Appends `suffix` to the existing system message (or creates one, if none
+// exists) — same "merge into the single system message, don't add a second"
+// rule as withVaultContext, reused here for the profile paragraph so it lands
+// after whatever withVaultContext already merged in.
+function appendSystemSuffix(
+  messages: SimpleMessage[],
+  suffix: string,
+): SimpleMessage[] {
+  const sysIdx = messages.findIndex((m) => m.role === "system");
+  if (sysIdx >= 0) {
+    return messages.map((m, i) =>
+      i === sysIdx ? { ...m, content: `${m.content}${suffix}` } : m,
+    );
+  }
+  return [{ role: "system", content: suffix.trim() }, ...messages];
 }
 
 export async function getActiveModel(task: "query" | "ingest"): Promise<{

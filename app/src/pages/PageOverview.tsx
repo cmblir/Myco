@@ -10,7 +10,13 @@ import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useReflectStore } from "../stores/reflectStore";
 import { useDistillStore } from "../stores/distillStore";
-import { backlogTrend, lastRunLabel, runDistillGuarded } from "../lib/distill";
+import {
+  backlogTrend,
+  lastDigestOutcome,
+  lastFullTierOutcome,
+  lastRunLabel,
+  runDistillGuarded,
+} from "../lib/distill";
 import { ipc } from "../lib/ipc";
 import type { FileNode } from "../lib/ipc";
 import LinkSuggestions from "../components/LinkSuggestions";
@@ -244,9 +250,26 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
   const refresh = useDistillStore((s) => s.refresh);
   const [running, setRunning] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Phase B, Task 6: whether the latest session-digest or full-tier ingest
+  // pass for this vault skipped its LLM step for lack of a connected
+  // provider (lastDigestOutcome/lastFullTierOutcome — module maps in
+  // distill.ts, written by runDistillGuarded). Re-checked on the same
+  // refresh the card already does (mount + after "Distill now"), rather than
+  // polled separately.
+  const [llmQueued, setLlmQueued] = useState(false);
+
+  async function refreshAll(): Promise<void> {
+    await refresh();
+    if (!currentVault) return;
+    const digest = lastDigestOutcome.get(currentVault.path);
+    const full = lastFullTierOutcome.get(currentVault.path);
+    setLlmQueued(
+      digest?.skipped === "no-provider" || full?.skipped === "no-provider",
+    );
+  }
 
   useEffect(() => {
-    void refresh();
+    void refreshAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentVault]);
 
@@ -260,7 +283,7 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
         setBusy(true);
         return;
       }
-      await refresh();
+      await refreshAll();
     } finally {
       setRunning(false);
     }
@@ -298,6 +321,11 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
           ? (t.ov_distill_last_run ?? "Last run {t}").replace("{t}", lastRun)
           : (t.ov_distill_never ?? "No runs yet")}
       </div>
+      {llmQueued ? (
+        <div className="muted" style={{ fontSize: 12, marginTop: 2 }}>
+          {t.ov_distill_llm_queued ?? "LLM steps waiting — connect a provider"}
+        </div>
+      ) : null}
       <button
         type="button"
         className="btn btn-primary"

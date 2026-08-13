@@ -322,6 +322,39 @@ describe("complete() ask stages", () => {
     expect(seenPrompt).toContain("[[b]]");
   });
 
+  it("front-loads wiki/maps/ pages' blocks ahead of other pages within the same budget (ordering only)", async () => {
+    // The map page ranks 2nd by score but must be assembled FIRST — a map
+    // summarizes its cluster, so front-loading it gives the model the topic
+    // map before the details. Scoring/ranking (and which hits made the top-k
+    // cut) is untouched; only assembly order changes.
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 51,
+      model: CURRENT_INDEX_MODEL,
+    });
+    vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
+      { page: "wiki/a.md", stem: "a", section: 0, text: "AAA passage", score: 0.9, similarity: 0.7 },
+      { page: "wiki/maps/m.md", stem: "m", section: 0, text: "MAP passage", score: 0.8, similarity: 0.7 },
+      { page: "wiki/b.md", stem: "b", section: 0, text: "BBB passage", score: 0.7, similarity: 0.7 },
+    ]);
+    let seenPrompt = "";
+    vi.spyOn(ipc, "localQuery").mockImplementation(async (prompt: string) => {
+      seenPrompt = prompt;
+      return "an answer";
+    });
+
+    const { onStage } = stages();
+    await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "what is AAA?" }],
+      onStage,
+    });
+
+    expect(seenPrompt.indexOf("[[m]]")).toBeGreaterThanOrEqual(0);
+    expect(seenPrompt.indexOf("[[m]]")).toBeLessThan(seenPrompt.indexOf("[[a]]"));
+    expect(seenPrompt.indexOf("[[m]]")).toBeLessThan(seenPrompt.indexOf("[[b]]"));
+  });
+
   it("signals stale and skips retrieval when the index predates a bundled embed-model swap", async () => {
     // The bge-m3 swap (Task 4) leaves a pre-existing index tagged with the
     // retired model id — cosining a fresh query against it would be
@@ -514,6 +547,88 @@ describe("complete() CLI query retrieval (retrieval 1b)", () => {
     expect(seen).toEqual([]);
     const [prompt] = claudeRun.mock.calls[0];
     expect(prompt).toBe("Ingest instructions.\n\ningest raw/foo.txt");
+  });
+});
+
+describe("complete() profile injection (Phase B, Task 6)", () => {
+  // profile.md content that parses to a non-blank Profile (see profile.ts's
+  // parseProfile). Builtin-local keeps the fixture focused on the injection
+  // itself — retrieval short-circuits to "" via readVaultContext so the only
+  // thing under test is whether/where the profile paragraph lands.
+  const PROFILE_MD =
+    "## Role\nBackend engineer\n\n## Goals\n- Ship it\n\n" +
+    "## Interests\n- rust\n- vector search\n\n## Working style\nConcise\n";
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(SETTINGS);
+    vi.spyOn(ipc, "localChatModelAvailable").mockResolvedValue(true);
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({ indexed_pages: 0, model: "" });
+    vi.spyOn(ipc, "readVaultContext").mockResolvedValue("");
+  });
+
+  async function askAndCapturePrompt(): Promise<string> {
+    let seenPrompt = "";
+    vi.spyOn(ipc, "localQuery").mockImplementation(async (prompt: string) => {
+      seenPrompt = prompt;
+      return "an answer";
+    });
+    await complete({
+      task: "query",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "what should I read next?" }],
+    });
+    return seenPrompt;
+  }
+
+  it("prepends the profile paragraph when the toggle is on and a profile exists", async () => {
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue({ profile_injection: true } as never);
+    vi.spyOn(ipc, "readFile").mockResolvedValue({ raw: PROFILE_MD } as never);
+
+    const prompt = await askAndCapturePrompt();
+    expect(prompt).toContain("User profile:");
+    expect(prompt).toContain("Backend engineer");
+    expect(prompt).toContain("rust, vector search");
+  });
+
+  it("omits the profile paragraph when the toggle is off, even with a profile on disk", async () => {
+    const readFile = vi.spyOn(ipc, "readFile").mockResolvedValue({ raw: PROFILE_MD } as never);
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue({ profile_injection: false } as never);
+
+    const prompt = await askAndCapturePrompt();
+    expect(prompt).not.toContain("User profile:");
+    expect(readFile).not.toHaveBeenCalled();
+  });
+
+  it("omits the profile paragraph when the toggle is on but there is no profile", async () => {
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue({ profile_injection: true } as never);
+    vi.spyOn(ipc, "readFile").mockRejectedValue(new Error("not found"));
+
+    const prompt = await askAndCapturePrompt();
+    expect(prompt).not.toContain("User profile:");
+  });
+
+  it('never injects the profile paragraph for task:"ingest"', async () => {
+    // Ingest gets its own weighting (INGEST_PROMPT's profileInterests param)
+    // instead of a prepended paragraph. This suite's settings route ingest
+    // through the CLI branch (ingest_provider: "anthropic-cli"), so it is
+    // checked there — the toggle is never even consulted for this task.
+    const getDistillConfig = vi.spyOn(ipc, "getDistillConfig");
+    vi.spyOn(ipc, "readFile").mockResolvedValue({ raw: PROFILE_MD } as never);
+    let seenPrompt = "";
+    vi.spyOn(ipc, "claudeRun").mockImplementation(async (prompt: string) => {
+      seenPrompt = prompt;
+      return { stdout: "ingested", stderr: "", status: 0 };
+    });
+
+    await complete({
+      task: "ingest",
+      cwd: VAULT,
+      messages: [{ role: "user", content: "ingest raw/foo.txt" }],
+    });
+
+    expect(getDistillConfig).not.toHaveBeenCalled();
+    expect(seenPrompt).not.toContain("User profile:");
   });
 });
 

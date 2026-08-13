@@ -16,6 +16,7 @@
 import { ipc } from "./ipc";
 import { getActiveModel } from "./chat";
 import { stripFrontmatter } from "./markdown";
+import { loadProfile } from "./profile";
 import { INGEST_PROMPT, runIngestProvider } from "../stores/ingestStore";
 
 export interface FullTierOutcome {
@@ -109,6 +110,12 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
     return { ingested: 0, skipped: "nothing", errors: [] };
   }
 
+  // Phase B, Task 6 — same grounding line startIngest passes, computed once
+  // for the whole run rather than per item (the profile does not change
+  // mid-run).
+  const profile = await loadProfile(vaultPath);
+  const profileInterests = profile?.interests.join(", ") ?? "";
+
   let ingested = 0;
   const errors: string[] = [];
   for (const rel of items) {
@@ -128,7 +135,7 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
 
       const slug = stemOf(sourceRel);
       const title = titleFromContent(content, slug);
-      const prompt = INGEST_PROMPT(slug, title, [], []);
+      const prompt = INGEST_PROMPT(slug, title, [], [], profileInterests);
 
       if (provider === "anthropic-cli") {
         const res = await ipc.claudeRun(prompt, vaultPath, model || undefined);

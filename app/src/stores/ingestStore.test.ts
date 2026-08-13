@@ -37,7 +37,26 @@ vi.mock("../lib/log", () => ({
 }));
 
 import { ipc } from "../lib/ipc";
-import { useIngestStore } from "./ingestStore";
+import { useIngestStore, INGEST_PROMPT } from "./ingestStore";
+
+// Phase B, Task 6: INGEST_PROMPT's new 5th param weights linking/tagging
+// toward the user's profile interests. Pure function, no ipc involved.
+describe("INGEST_PROMPT profile interests grounding", () => {
+  it("keeps the pre-Task-6 shape when profileInterests is omitted (default '')", () => {
+    const prompt = INGEST_PROMPT("my-slug", "My Title");
+    expect(prompt).not.toContain("User interests");
+    expect(prompt).toContain(
+      'New source has been added at `raw/my-slug.md` (title: "My Title")',
+    );
+  });
+
+  it("adds one grounding line when profileInterests is non-empty", () => {
+    const prompt = INGEST_PROMPT("my-slug", "My Title", [], [], "rust, vector search");
+    expect(prompt).toContain(
+      "User interests (weight linking/tagging toward these): rust, vector search",
+    );
+  });
+});
 
 describe("startIngest concurrency", () => {
   beforeEach(() => {
@@ -101,6 +120,61 @@ describe("startIngest concurrency", () => {
     await useIngestStore.getState().startIngest("t", "b");
 
     expect(run).toHaveBeenCalledTimes(2);
+  });
+});
+
+// Phase B, Task 6: startIngest's own wiring of the profile-interests
+// grounding line (INGEST_PROMPT's pure-function behavior is covered above).
+describe("startIngest profile interests wiring", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    listenMock.mockClear();
+    useIngestStore.setState({ stage: "idle", runId: null });
+
+    vi.spyOn(ipc, "getSettings").mockResolvedValue({
+      ingest_provider: "anthropic-cli",
+      ingest_model: "",
+      query_provider: "builtin-local",
+      query_model: "gemma-3-1b",
+    } as never);
+    vi.spyOn(ipc, "createFolder").mockResolvedValue(undefined as never);
+    vi.spyOn(ipc, "writeFile").mockResolvedValue(undefined as never);
+    vi.spyOn(ipc, "fileMtimes").mockResolvedValue([]);
+    vi.spyOn(ipc, "readVaultContext").mockResolvedValue("");
+    vi.spyOn(ipc, "buildLinkGraph").mockResolvedValue({
+      nodes: [],
+      edges: [],
+    } as never);
+  });
+
+  it("passes profile interests into the ingest prompt when a profile exists", async () => {
+    vi.spyOn(ipc, "readFile").mockResolvedValue({
+      raw:
+        "## Role\nBackend engineer\n\n## Goals\n- Ship it\n\n" +
+        "## Interests\n- rust\n- vector search\n\n## Working style\nConcise\n",
+    } as never);
+    const run = vi
+      .spyOn(ipc, "claudeRunStream")
+      .mockResolvedValue({ stdout: "ok", stderr: "", status: 0 } as never);
+
+    await useIngestStore.getState().startIngest("t", "b");
+
+    const [, prompt] = run.mock.calls[0];
+    expect(prompt).toContain(
+      "User interests (weight linking/tagging toward these): rust, vector search",
+    );
+  });
+
+  it("omits the interests line when there is no profile", async () => {
+    vi.spyOn(ipc, "readFile").mockRejectedValue(new Error("not found"));
+    const run = vi
+      .spyOn(ipc, "claudeRunStream")
+      .mockResolvedValue({ stdout: "ok", stderr: "", status: 0 } as never);
+
+    await useIngestStore.getState().startIngest("t", "b");
+
+    const [, prompt] = run.mock.calls[0];
+    expect(prompt).not.toContain("User interests");
   });
 });
 

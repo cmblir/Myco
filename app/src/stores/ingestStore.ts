@@ -15,6 +15,7 @@ import type { Adjacency, CandidatePage, ClaudeStreamPayload } from "../lib/ipc";
 import { complete } from "../lib/chat";
 import { buildIngestPlanPrompt, parseIngestPlan } from "../lib/ingestPlan";
 import type { PlanItem } from "../lib/ingestPlan";
+import { loadProfile } from "../lib/profile";
 import { log } from "../lib/log";
 import { STRINGS } from "../lib/i18n";
 import { useUIStore } from "./uiStore";
@@ -80,6 +81,17 @@ function groundingBlock(plan: PlanItem[], candidates: CandidatePage[]): string {
   return `\n\nA preliminary analysis produced this ingest plan. Follow it, adjusting only where the source clearly warrants — UPDATE/MERGE into the named existing pages with citations rather than creating duplicates:\n${lines}`;
 }
 
+// A profile grounding line (Phase B, Task 6): weights linking/tagging toward
+// the user's stated interests without dictating specific decisions — the
+// plan/candidate blocks above already do that. Empty `interests` (no
+// profile, or a profile with no interests) keeps this exactly "" so every
+// existing caller/snapshot that doesn't pass it is untouched.
+function interestsLine(interests: string): string {
+  return interests
+    ? `\n\nUser interests (weight linking/tagging toward these): ${interests}`
+    : "";
+}
+
 // Exported for fullTierIngest.ts (Phase B, Task 3) — the headless full-tier
 // ingest pass builds the identical prompt for its own candidates, rather than
 // a second hand-maintained copy.
@@ -88,6 +100,7 @@ export const INGEST_PROMPT = (
   title: string,
   candidates: CandidatePage[] = [],
   plan: PlanItem[] = [],
+  profileInterests = "",
 ) =>
   `New source has been added at \`raw/${slug}.md\` (title: "${title}"). Please ingest it into the wiki following the workflow in CLAUDE.md:
 
@@ -96,7 +109,7 @@ export const INGEST_PROMPT = (
 3. Update existing pages with inline citations, or create new pages with required frontmatter.
 4. Create the source-summary page \`wiki/source-${slug}.md\`.
 5. Update \`wiki/index.md\` and append a \`wiki/log.md\` entry.
-6. Write an ingest report at \`ingest-reports/<datetime>-${slug}.md\` summarising what was created/modified and why.${groundingBlock(plan, candidates)}
+6. Write an ingest report at \`ingest-reports/<datetime>-${slug}.md\` summarising what was created/modified and why.${groundingBlock(plan, candidates)}${interestsLine(profileInterests)}
 
 When done, output a one-line confirmation.`;
 
@@ -318,7 +331,18 @@ export const useIngestStore = create<IngestState>((set, get) => ({
 
       set({ stage: "claude" });
       const settings = await ipc.getSettings();
-      const prompt = INGEST_PROMPT(slug, finalTitle, candidates, plan);
+      // Phase B, Task 6: weight linking/tagging toward the user's stated
+      // interests, when they have a profile — separate from the query-side
+      // paragraph injection (chat.ts), and not gated on that toggle: this is
+      // a light grounding line, not the full profile paragraph.
+      const profile = await loadProfile(vault.path);
+      const prompt = INGEST_PROMPT(
+        slug,
+        finalTitle,
+        candidates,
+        plan,
+        profile?.interests.join(", ") ?? "",
+      );
       let out: string;
       if (settings.ingest_provider === "anthropic-cli") {
         // Pass the chosen model (e.g. "haiku") so ingest can run on a cheaper
