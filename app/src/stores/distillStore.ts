@@ -99,12 +99,23 @@ export interface DistillState {
   status: DistillStatus | null;
   proposals: ProposalMeta[];
   loading: boolean;
+  /** Set when the last `apply()` failed. An `approved`-status proposal stays
+   *  listed for exactly this reason — on-disk it's a recoverable in-flight
+   *  decision, not a resolved one (`run()` deliberately never sweeps it), so
+   *  the retry affordance in PageFeedback needs it to still be there. */
+  error: string | null;
   refresh: () => Promise<void>;
-  /** Rewrites status pending -> approved, calls applyDistillProposal (which
-   *  flips it to done), then refreshes. Returns the "moved N, skipped M"
-   *  summary, or null if the vault-write/apply step failed. */
+  /** `pending` proposals: rewrites status pending -> approved, then calls
+   *  applyDistillProposal (which flips it to done on success). `approved`
+   *  proposals (a retry, after a prior applyDistillProposal rejected): skips
+   *  the rewrite — it's already approved — and just calls
+   *  applyDistillProposal again. Always refreshes afterward, success or not.
+   *  Returns the "moved N, skipped M" summary, or null on failure (with
+   *  `error` set — the proposal itself is left `approved` and still listed,
+   *  never silently dropped). */
   apply: (path: string) => Promise<string | null>;
-  /** Rewrites status pending -> dismissed, then refreshes. */
+  /** Rewrites status -> dismissed (from whatever it currently is), then
+   *  refreshes. */
   dismiss: (path: string) => Promise<void>;
 }
 
@@ -112,6 +123,7 @@ export const useDistillStore = create<DistillState>((set, get) => ({
   status: null,
   proposals: [],
   loading: false,
+  error: null,
 
   async refresh() {
     const vault = useVaultStore.getState().currentVault;
@@ -130,7 +142,12 @@ export const useDistillStore = create<DistillState>((set, get) => ({
         try {
           const file = await ipc.readFile(f.path);
           const parsed = parseProposal(toRelative(vault.path, f.path), file.raw);
-          if (parsed && parsed.status === "pending") proposals.push(parsed);
+          // `approved` stays listed too — it's an in-flight decision the user
+          // already made, not a resolved one; only `done`/`dismissed` (swept
+          // by run()'s own archive pass) drop off the list.
+          if (parsed && (parsed.status === "pending" || parsed.status === "approved")) {
+            proposals.push(parsed);
+          }
         } catch {
           /* one unreadable proposal file must not blank the whole list */
         }
@@ -145,14 +162,25 @@ export const useDistillStore = create<DistillState>((set, get) => ({
     const vault = useVaultStore.getState().currentVault;
     if (!vault) return null;
     const full = `${vault.path}/${path}`;
+    set({ error: null });
     try {
       const file = await ipc.readFile(full);
-      await ipc.writeFile(full, rewriteStatus(file.raw, "approved"));
-      const summary = await ipc.applyDistillProposal(vault.path, path);
-      await get().refresh();
-      return summary;
-    } catch {
+      const parsed = parseProposal(path, file.raw);
+      // Only rewrite pending -> approved on the FIRST attempt. A retry (the
+      // proposal is already `approved` because the previous applyDistillProposal
+      // call failed after the rewrite succeeded) must not touch the file again.
+      if (parsed?.status === "pending") {
+        await ipc.writeFile(full, rewriteStatus(file.raw, "approved"));
+      }
+      return await ipc.applyDistillProposal(vault.path, path);
+    } catch (err) {
+      set({ error: String(err) });
       return null;
+    } finally {
+      // Always — success or failure — so an `approved`-but-failed proposal's
+      // current on-disk state is what the list reflects, not what apply()
+      // hoped would happen.
+      await get().refresh();
     }
   },
 

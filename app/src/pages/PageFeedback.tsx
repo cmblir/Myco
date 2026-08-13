@@ -25,6 +25,7 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
   const proposals = useDistillStore((s) => s.proposals);
   const loading = useDistillStore((s) => s.loading);
+  const error = useDistillStore((s) => s.error);
   const refresh = useDistillStore((s) => s.refresh);
   const apply = useDistillStore((s) => s.apply);
   const dismiss = useDistillStore((s) => s.dismiss);
@@ -36,6 +37,11 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentVault]);
 
+  // Approve AND retry (an `approved`-status proposal whose previous
+  // applyDistillProposal call failed) both go through this — the store's
+  // apply() itself decides whether the pending->approved rewrite still needs
+  // to happen, so the confirm-then-apply flow here doesn't need to know which
+  // case it's in.
   async function handleApprove(p: ProposalMeta): Promise<void> {
     const ok = await confirmAction({
       title: t.pf_confirm_title ?? "Apply this proposal?",
@@ -59,6 +65,10 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
         </p>
       </header>
 
+      {error ? (
+        <div style={{ color: "#dc2626", fontSize: 12.5, marginTop: 12 }}>{error}</div>
+      ) : null}
+
       {loading && proposals.length === 0 ? (
         <p className="muted" style={{ marginTop: 16 }}>
           {t.set_distill_loading ?? "Loading…"}
@@ -71,6 +81,11 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
         <div className="col" style={{ gap: 12, marginTop: 16 }}>
           {proposals.map((p) => {
             const isOpen = expanded === p.path;
+            // Only reachable state for a still-listed `approved` proposal: a
+            // prior applyDistillProposal call failed after the pending->approved
+            // rewrite succeeded (refresh() only keeps pending/approved — a
+            // successful apply flips it to `done` server-side and it drops out).
+            const failedApply = p.status === "approved";
             return (
               <div key={p.path} className="card">
                 <div
@@ -100,13 +115,19 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
                   </div>
                 ) : null}
 
+                {failedApply ? (
+                  <div style={{ color: "#dc2626", fontSize: 12, marginTop: 10 }}>
+                    {t.pf_apply_failed ?? "Apply failed — retry"}
+                  </div>
+                ) : null}
+
                 <div className="row" style={{ gap: 8, marginTop: 10 }}>
                   <button
                     type="button"
                     className="btn btn-primary"
                     onClick={() => void handleApprove(p)}
                   >
-                    {t.pf_approve ?? "Approve"}
+                    {failedApply ? (t.pf_retry ?? "Retry") : (t.pf_approve ?? "Approve")}
                   </button>
                   <button
                     type="button"

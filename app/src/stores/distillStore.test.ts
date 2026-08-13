@@ -120,6 +120,50 @@ describe("useDistillStore", () => {
     expect(useDistillStore.getState().proposals).toHaveLength(0);
   });
 
+  it("apply surfaces an error and keeps the proposal listed as approved when applyDistillProposal rejects, then a retry completes it without re-rewriting status", async () => {
+    // A tiny in-memory fake for the proposal file: readFile/writeFile share
+    // this `raw` so a rewrite is actually visible on the next read, the same
+    // way the real vault-file round-trip behaves.
+    let raw = PROPOSAL_RAW;
+    vi.spyOn(ipc, "distillStatus").mockResolvedValue(STATUS);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue(tree());
+    vi.spyOn(ipc, "readFile").mockImplementation(async () => ({
+      path: "/v/work/feedback/2026-08-10-rope.md",
+      raw,
+      content: raw,
+      frontmatter: null,
+    }));
+    const writeSpy = vi.spyOn(ipc, "writeFile").mockImplementation(async (_p, content) => {
+      raw = content;
+      return null;
+    });
+    // First call: rejects (backend failure AFTER the pending->approved rewrite
+    // already landed on disk). Second call (the retry): succeeds and, like the
+    // real apply_proposal, flips status to done.
+    const applySpy = vi
+      .spyOn(ipc, "applyDistillProposal")
+      .mockRejectedValueOnce(new Error("backend boom"))
+      .mockImplementationOnce(async () => {
+        raw = raw.replace(/^status:\s*\S+\s*$/m, "status: done");
+        return "moved 2, skipped 0 already-processed";
+      });
+
+    const first = await useDistillStore.getState().apply("work/feedback/2026-08-10-rope.md");
+    expect(first).toBeNull();
+    expect(useDistillStore.getState().error).toContain("backend boom");
+    expect(useDistillStore.getState().proposals).toHaveLength(1);
+    expect(useDistillStore.getState().proposals[0].status).toBe("approved");
+    expect(writeSpy).toHaveBeenCalledTimes(1); // the one pending->approved rewrite
+
+    const second = await useDistillStore.getState().apply("work/feedback/2026-08-10-rope.md");
+    expect(second).toBe("moved 2, skipped 0 already-processed");
+    expect(useDistillStore.getState().error).toBeNull();
+    expect(applySpy).toHaveBeenCalledTimes(2);
+    // The retry must NOT re-rewrite — it was already approved.
+    expect(writeSpy).toHaveBeenCalledTimes(1);
+    expect(useDistillStore.getState().proposals).toHaveLength(0);
+  });
+
   it("dismiss rewrites status to dismissed and refreshes", async () => {
     vi.spyOn(ipc, "distillStatus").mockResolvedValue(STATUS);
     vi.spyOn(ipc, "listFiles").mockResolvedValue(tree());
