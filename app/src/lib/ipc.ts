@@ -3,6 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
+import type { DistillConfig } from "./distill";
 
 export interface VaultMeta {
   path: string;
@@ -573,6 +574,11 @@ export const ipc = {
   /** Install/remove a launchd LaunchAgent for app-closed digest runs (macOS). */
   installBackgroundSchedule: (vault: string, id: string, on: boolean) =>
     invoke<string>("install_background_schedule", { vault, id, on }),
+  // Distillation config (Task 2, Phase A).
+  getDistillConfig: (vault: string) =>
+    invoke<DistillConfig>("get_distill_config", { vault }),
+  setDistillConfig: (vault: string, config: DistillConfig) =>
+    invoke<null>("set_distill_config", { vault, config }),
   listProviderModels: (providerId: string) =>
     invoke<string[]>("list_provider_models", { providerId }),
   ollamaStatus: () => invoke<OllamaStatus>("ollama_status"),

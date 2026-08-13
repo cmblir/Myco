@@ -1393,6 +1393,27 @@ pub fn delete_schedule(
     crate::schedules::delete(std::path::Path::new(&root), &id)
 }
 
+// ---- Distillation config (Task 2, Phase A) ----
+
+#[tauri::command]
+pub fn get_distill_config(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+) -> Result<crate::distill::DistillConfig, String> {
+    let root = confine_root(&state, &vault)?;
+    Ok(crate::distill::config_load(std::path::Path::new(&root)))
+}
+
+#[tauri::command]
+pub fn set_distill_config(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    config: crate::distill::DistillConfig,
+) -> Result<(), String> {
+    let root = confine_root(&state, &vault)?;
+    crate::distill::config_save(std::path::Path::new(&root), &config)
+}
+
 /// The bundled digest runner script (falls back to the repo path in dev).
 fn digest_script_path(app: &tauri::AppHandle) -> Result<String, String> {
     const REL: &str = "automation/digest.py";

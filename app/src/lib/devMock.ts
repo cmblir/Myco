@@ -8,6 +8,8 @@
 // backed by the same sample-graph topology the Rust seed uses, so the Graph,
 // Overview, Provenance and Reader views render real-looking content.
 
+import type { DistillConfig } from "./distill";
+
 interface Node {
   s: string; // slug
   t: "concept" | "technique" | "entity" | "source-summary" | "analysis";
@@ -265,6 +267,19 @@ const MOCK_SIDECAR = JSON.stringify({
 
 // Feature 7 — in-memory schedules so the Schedules route + Run now work in mock.
 let mockSchedules: { id: string }[] = [];
+
+// Task 2 — in-memory distill config with defaults so ontology features work in mock.
+let mockDistillConfig: DistillConfig = {
+  enabled: true,
+  count_trigger: 50,
+  intensity: "standard",
+  gate_preset: "normal",
+  quarantine_ttl_days: 30,
+  run_budget_items: 50,
+  idle_minutes: 10,
+  maturation_hours: 24,
+  dormancy_decay: false,
+};
 
 function b64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -804,6 +819,13 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
           ? "(mock) background schedule installed"
           : "(mock) background schedule removed",
       );
+    case "get_distill_config":
+      return Promise.resolve({ ...mockDistillConfig });
+    case "set_distill_config": {
+      const config = args.config as DistillConfig;
+      mockDistillConfig = { ...config };
+      return Promise.resolve(null);
+    }
     case "get_settings":
       return Promise.resolve(
         AGENT_MODE

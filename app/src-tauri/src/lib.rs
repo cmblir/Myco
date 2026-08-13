@@ -7,6 +7,7 @@ pub mod claude;
 pub mod cli_agent;
 pub mod clip;
 mod commands;
+pub mod distill;
 pub mod embeddings;
 pub mod env;
 pub mod extract;
@@ -191,6 +192,8 @@ pub fn run() {
             commands::upsert_schedule,
             commands::delete_schedule,
             commands::install_background_schedule,
+            commands::get_distill_config,
+            commands::set_distill_config,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path
