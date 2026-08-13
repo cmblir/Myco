@@ -828,6 +828,15 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     }
     case "build_ontology":
       return Promise.resolve({ clusters: 3, wiki_pages: 58, built_at: 0 });
+    case "distill_scan":
+      return Promise.resolve({
+        scored: 0,
+        quarantined: 0,
+        rejected: 0,
+        summaries: 0,
+        full: 0,
+        skipped_immature: 0,
+      });
     case "get_settings":
       return Promise.resolve(
         AGENT_MODE

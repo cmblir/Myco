@@ -22,3 +22,13 @@ export interface OntologySummary {
   wiki_pages: number;
   built_at: number;
 }
+
+// Task 4 — distill_scan's return summary.
+export interface ScanOutcome {
+  scored: number;
+  quarantined: number;
+  rejected: number;
+  summaries: number;
+  full: number;
+  skipped_immature: number;
+}

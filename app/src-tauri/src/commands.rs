@@ -1470,6 +1470,62 @@ pub fn build_ontology(
     })
 }
 
+/// Score new inflow against the ontology cache (Task 4, Phase A): walk
+/// `_inbox/`, `raw/`, `sessions/`, gate each mature+unscored item through
+/// `ontology::admit`, quarantine what fits no known topic, and TTL-ledger
+/// straight rejects. No ontology yet (never built, or stale for the current
+/// embed model) degrades to a zero outcome rather than an error — same
+/// treatment as an empty/stale index elsewhere in this file.
+///
+/// `distill::scan` takes a plain synchronous embed closure (so its tests can
+/// inject synthetic vectors); bridging that to the real, async `embed_texts`
+/// needs a blocking-pool thread to `block_on` from — calling `block_on`
+/// directly on this command's own async task would panic ("cannot block the
+/// current thread from within a runtime").
+#[tauri::command]
+pub async fn distill_scan(
+    app: tauri::AppHandle,
+    vault_state: tauri::State<'_, VaultRoot>,
+    cache: tauri::State<'_, VectorCache>,
+    vault: String,
+) -> Result<crate::distill::ScanOutcome, String> {
+    let root = confine_root(&vault_state, &vault)?;
+    let root = PathBuf::from(root);
+    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    let store = cache.get(&index_path);
+    let Some(ontology) = crate::ontology::load(&root, &store.model) else {
+        return Ok(crate::distill::ScanOutcome::default());
+    };
+    // `store.model` is "{provider}:{model}" (see `wikify_candidates`).
+    let (provider, model) = store
+        .model
+        .split_once(':')
+        .map(|(p, m)| (p.to_string(), m.to_string()))
+        .unwrap_or((store.model.clone(), String::new()));
+    if builtin_index_is_stale(&provider, &model) {
+        return Ok(crate::distill::ScanOutcome::default());
+    }
+    let cfg = crate::distill::config_load(&root);
+    let budget = cfg.run_budget_items;
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            let llm = app.state::<LocalLlmState>();
+            tauri::async_runtime::block_on(embed_texts(
+                app.clone(),
+                llm,
+                &provider,
+                &model,
+                crate::local_llm::EmbedRole::Query,
+                texts,
+            ))
+        };
+        crate::distill::scan(&root, &ontology, &cfg, budget, &embed)
+    })
+    .await
+    .map_err(|e| format!("distill scan task join failed: {e}"))?
+}
+
 /// The bundled digest runner script (falls back to the repo path in dev).
 fn digest_script_path(app: &tauri::AppHandle) -> Result<String, String> {
     const REL: &str = "automation/digest.py";

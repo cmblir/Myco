@@ -196,6 +196,7 @@ pub fn run() {
             commands::get_distill_config,
             commands::set_distill_config,
             commands::build_ontology,
+            commands::distill_scan,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path
