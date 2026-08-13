@@ -187,7 +187,7 @@ Claude Desktop은 stdio — `claude_desktop_config.json`에 추가:
 }
 ```
 
-26개 도구: 읽기(`list_pages` `read_page` `search` `folder_tree` …),
+28개 도구: 읽기(`list_pages` `read_page` `search` `folder_tree` …),
 쓰기(`add_raw_source` `create_page` `update_page` `git_commit` …), 인박스,
 no-LLM 품질 검사(`lint_citations` `trust_report` `contradictions` …),
 멀티 프로젝트 거버넌스(`resolve_cross_links` `export_project` `register_vault`

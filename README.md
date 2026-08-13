@@ -193,7 +193,7 @@ Or stdio for Claude Desktop — add to `claude_desktop_config.json`:
 }
 ```
 
-26 tools: read (`list_pages` `read_page` `search` `folder_tree` …), write
+28 tools: read (`list_pages` `read_page` `search` `folder_tree` …), write
 (`add_raw_source` `create_page` `update_page` `git_commit` …), inbox, no-LLM
 quality checks (`lint_citations` `trust_report` `contradictions` …), and
 multi-project governance (`resolve_cross_links` `export_project`
