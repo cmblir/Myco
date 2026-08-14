@@ -416,6 +416,13 @@ uniform float u_spawnClock; // intro clock (s); <0 = intro off, all stars full
 uniform float u_birthMode; // 0 = condensation (fly-in), 1 = live-ingest birth (grow in place)
 uniform float u_dofAmp; // depth-of-field strength; 0 = off (pin-sharp field)
 uniform float u_focusDist; // camera distance of the focal plane (orbit target)
+// Pixel sprites can't honestly render bokeh (pixel_sprite()'s zones are a hard
+// per-pixel classification, not a blur) — blowing up a sharp 16x16 grid's
+// point size without blurring its content just reads as a wrong-sized node,
+// not "out of focus". DOF is skipped for the pixel path below; perspective
+// size falloff and the far-LOD dot swap (see NODE_FRAG) are the honest ways
+// this look expresses distance.
+uniform float u_pixelNodes;
 uniform float u_pixelRatio;
 uniform float u_sizeScale;
 uniform float u_fogNear;
@@ -495,9 +502,10 @@ void main() {
   // (the orbit-pivot distance) swell into faint bokeh discs — bigger AND
   // dimmer, so defocus reads as optics, not as importance. Quadratic CoC ramp
   // keeps a wide sharp band around the plane; the far field is already
-  // fog-faded so the effect mostly sculpts the near foreground.
+  // fog-faded so the effect mostly sculpts the near foreground. Skipped for
+  // pixel sprites (see u_pixelNodes above) — they cannot render actual blur.
   float coc = 0.0;
-  if (u_dofAmp > 0.0) {
+  if (u_dofAmp > 0.0 && u_pixelNodes < 0.5) {
     coc = clamp(abs(dist - u_focusDist) / max(60.0, u_focusDist), 0.0, 1.0);
     coc = coc * coc * u_dofAmp;
     gl_PointSize *= 1.0 + coc * 1.5;
@@ -552,7 +560,9 @@ uniform float u_flat;     // 1 = flat sigma discs (no glow profile, no spikes)
 uniform float u_saturate; // >1 boosts colour saturation (the vivid Gephi board)
 uniform float u_flare;    // 1 = anamorphic streaks on the brightest cores
 uniform float u_halo;     // 1 = analytic aura (bloom substitute for light bg)
-uniform float u_pixelNodes; // 1 = render nodes as 16x16 pixel-art sprites (graphSettings.pixelNodes)
+// highp: NODE_VERT now reads this too (DOF gate) with no precision qualifier,
+// which defaults to highp in a vertex shader — see the u_time comment above.
+uniform highp float u_pixelNodes; // 1 = render nodes as 16x16 pixel-art sprites (graphSettings.pixelNodes)
 varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
@@ -1035,6 +1045,28 @@ export class GraphScene {
   private skinNodeScale(): number {
     return this.webSkin ? WEB_NODE_SCALE : this.sigmaSkin ? SIGMA_NODE_SCALE : 1;
   }
+  // Node material blend/depth mode. Pixel-art sprites are meant to read as
+  // OPAQUE little worlds — overlapping sprites in a dense zoomed-in field must
+  // occlude each other, not sum into a wash — so they get NormalBlending +
+  // real depth test/write, like ordinary opaque geometry. The classic glow-dot
+  // look (pixelNodes off, or the sigma skin's flat data-viz discs, which never
+  // use pixel sprites regardless of the toggle) keeps the old treatment:
+  // additive-on-dark so dense clumps self-brighten into glowing cores, and no
+  // depth test/write because unsorted additive alpha blending doesn't need it.
+  private nodeBlendMode(pixelSprites: boolean): {
+    blending: THREE.Blending;
+    depthTest: boolean;
+    depthWrite: boolean;
+  } {
+    if (pixelSprites && !this.sigmaSkin) {
+      return { blending: THREE.NormalBlending, depthTest: true, depthWrite: true };
+    }
+    return {
+      blending: this.darkTheme && !this.sigmaSkin ? THREE.AdditiveBlending : THREE.NormalBlending,
+      depthTest: false,
+      depthWrite: false,
+    };
+  }
   private imposterEnabled = false; // dark-theme gate (LOD then controls visibility)
   private planets: PlanetLayer; // near-LOD: nearest nodes → procedural planet spheres
   private planetsEnabled = false; // dark-3D layout + nearFieldPlanets toggle
@@ -1373,12 +1405,9 @@ export class GraphScene {
       vertexShader: NODE_VERT,
       fragmentShader: NODE_FRAG,
       transparent: true,
-      depthWrite: false,
-      depthTest: false,
-      // Additive on dark themes so dense clumps self-brighten into glowing
-      // galaxy cores; normal on light themes (additive would wash to white) and
-      // on the sigma skin (flat discs must stay crisp, not bloom into glow).
-      blending: dark && settings.skin !== "sigma" ? THREE.AdditiveBlending : THREE.NormalBlending,
+      // See nodeBlendMode(): pixel sprites want opaque occlusion, the glow-dot
+      // look wants unsorted additive summing.
+      ...this.nodeBlendMode(settings.pixelNodes),
     });
     this.points = new THREE.Points(this.nodeGeom, this.nodeMat);
     this.points.frustumCulled = false;
@@ -3624,8 +3653,7 @@ export class GraphScene {
     // applyTheme runs on every theme AND skin change, so this lands live.
     this.renderer.toneMapping = this.lookToneMapping();
     this.renderer.toneMappingExposure = this.lookExposure();
-    this.nodeMat.blending =
-      dark && !this.sigmaSkin ? THREE.AdditiveBlending : THREE.NormalBlending;
+    Object.assign(this.nodeMat, this.nodeBlendMode(this.settings.pixelNodes));
     this.nodeMat.uniforms.u_darkTheme.value = dark ? 1 : 0;
     this.nodeMat.uniforms.u_flat.value = this.sigmaSkin ? 1 : 0;
     this.nodeMat.uniforms.u_saturate.value = this.sigmaSkin ? 1.45 : 1;
@@ -3823,6 +3851,7 @@ export class GraphScene {
     this.nodeMat.uniforms.u_recency.value = settings.recencyGlow ? 1 : 0;
     this.nodeMat.uniforms.u_flare.value = settings.cinematic ? 1 : 0;
     this.nodeMat.uniforms.u_pixelNodes.value = settings.pixelNodes ? 1 : 0;
+    Object.assign(this.nodeMat, this.nodeBlendMode(settings.pixelNodes));
     this.nodeMat.uniforms.u_dofAmp.value = this.dofAmpFor(settings);
     this.edgeFlowUniforms.u_flowAmp.value = this.flowAmpFor(settings);
     if (this.fxaaPass) this.fxaaPass.enabled = settings.cinematic;
