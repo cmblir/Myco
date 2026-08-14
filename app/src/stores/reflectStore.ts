@@ -9,7 +9,7 @@
 // bulleted output into a list of suggestions. It NEVER modifies files.
 
 import { create } from "zustand";
-import { complete } from "../lib/chat";
+import { complete, getActiveModel } from "../lib/chat";
 import { useVaultStore } from "./vaultStore";
 
 const REFLECT_PROMPT = `You are reviewing a personal knowledge wiki (markdown files in the current directory). Read the vault and propose concrete, actionable improvements.
@@ -21,7 +21,7 @@ Focus on:
 
 Output a SHORT bulleted list (one "- " item per line, at most 8 items). Each item names a specific file and a one-line action. This is read-only analysis — do NOT create, edit, or delete any files.`;
 
-export type ReflectStage = "idle" | "running" | "done" | "error";
+export type ReflectStage = "idle" | "running" | "done" | "error" | "blocked";
 
 interface ReflectState {
   stage: ReflectStage;
@@ -49,6 +49,24 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
   async runReflect() {
     const vault = useVaultStore.getState().currentVault;
     if (!vault || get().stage === "running") return;
+    // Reflect proposes wiki improvements, so it needs generation — the
+    // builtin-local provider only ever answers extractively and has no chat
+    // model to generate with (see chat.ts's CHAT_MODEL_MISSING). Checking here,
+    // before complete(), skips a call that would only fail after paying for the
+    // ~418MB embed-model load, and lets the panel show a calm "needs a
+    // provider" state instead of a raw error.
+    const { provider } = await getActiveModel("query");
+    if (provider === "builtin-local") {
+      set({
+        stage: "blocked",
+        report: null,
+        suggestions: [],
+        startedAt: Date.now(),
+        finishedAt: Date.now(),
+        seen: false,
+      });
+      return;
+    }
     set({
       stage: "running",
       report: null,
@@ -72,7 +90,10 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
     } catch (err) {
       set({
         stage: "error",
-        report: `ERROR: ${String(err)}`,
+        // err is an Error thrown by complete()/the provider — String(err) on an
+        // Error already yields "Error: <message>", so prefixing another "ERROR:"
+        // doubled it. Use the bare message instead.
+        report: err instanceof Error ? err.message : String(err),
         suggestions: [],
         finishedAt: Date.now(),
         seen: false,
