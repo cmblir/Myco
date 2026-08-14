@@ -424,6 +424,35 @@ export function inFolder(root: string, path: string, folder: string): boolean {
   return rel.startsWith(`${folder}/`) || rel.startsWith(`${folder}\\`);
 }
 
+// Top-level folders that hold machine-written / staging material, not
+// knowledge — mirrors vector_index.rs's `is_machine_written` folder set. The
+// wikilink graph (index.rs::is_staging_dir) already keeps `_inbox`/`sessions`
+// out of its adjacency, but that walk is Rust-side and doesn't touch the
+// separate, unfiltered vault-tree walk this graph uses for orphan-node
+// candidacy — so the other three folders (plus sessions/_inbox files with no
+// links) were still entering the graph as noise orphans.
+const NON_KNOWLEDGE_FOLDERS = new Set([
+  "daily",
+  "sessions",
+  "_inbox",
+  "ingest-reports",
+  "raw",
+]);
+// Generic structural pages, by stem (case-insensitive) — not knowledge notes
+// regardless of which folder they sit in.
+const STRUCTURAL_STEMS = new Set(["changelog", "readme", "log", "index"]);
+
+// Whether `path` is machine/structural rather than a knowledge page, so it
+// must never become a graph node — orphan or otherwise (see computeAllowed).
+export function isNonKnowledgePath(vaultRoot: string, path: string): boolean {
+  const root = vaultRoot.replace(/[\\/]+$/, "");
+  const rel = root && path.startsWith(root) ? path.slice(root.length) : path;
+  const top = rel.replace(/^[\\/]+/, "").split(/[\\/]/)[0] ?? "";
+  if (NON_KNOWLEDGE_FOLDERS.has(top)) return true;
+  const name = stem(path).toLowerCase();
+  return STRUCTURAL_STEMS.has(name) || name.startsWith("distill-");
+}
+
 // Flatten the recursive vault tree into every .md path — including link-less
 // files, so orphans render like they do in Obsidian.
 export function flattenMarkdown(tree: FileNode[]): string[] {
@@ -499,6 +528,7 @@ export function computeAllowed(
 
   const candidates = new Set<string>();
   for (const p of all) {
+    if (isNonKnowledgePath(o.vaultRoot, p)) continue;
     if (o.tagFilter && !(adjacency.tags[p] ?? []).includes(o.tagFilter)) continue;
     if (o.folderFilter && !inFolder(o.vaultRoot, p, o.folderFilter)) continue;
     if (o.existingOnly && !resolved.has(p)) continue;

@@ -11,6 +11,7 @@ import {
   flattenMarkdown,
   folderGroups,
   inFolder,
+  isNonKnowledgePath,
   recolorGraph,
   seededUnit,
   shortestPath,
@@ -84,6 +85,26 @@ describe("inFolder", () => {
   });
 });
 
+describe("isNonKnowledgePath", () => {
+  it("flags every machine/staging top-level folder", () => {
+    for (const folder of ["daily", "sessions", "_inbox", "ingest-reports", "raw"]) {
+      expect(isNonKnowledgePath("/vault", `/vault/${folder}/2026-07-12.md`)).toBe(true);
+    }
+  });
+
+  it("flags structural filenames regardless of folder", () => {
+    expect(isNonKnowledgePath("/vault", "/vault/CHANGELOG.md")).toBe(true);
+    expect(isNonKnowledgePath("/vault", "/vault/wiki/README.md")).toBe(true);
+    expect(isNonKnowledgePath("/vault", "/vault/wiki/log.md")).toBe(true);
+    expect(isNonKnowledgePath("/vault", "/vault/distill-20260813T163916.md")).toBe(true);
+  });
+
+  it("keeps real knowledge pages, even ones that merely mention a folder name", () => {
+    expect(isNonKnowledgePath("/vault", "/vault/wiki/lazyclaw.md")).toBe(false);
+    expect(isNonKnowledgePath("/vault", "/vault/wiki/daily-standup-notes.md")).toBe(false);
+  });
+});
+
 describe("computeAllowed", () => {
   const a = "/vault/a.md";
   const b = "/vault/b.md";
@@ -130,6 +151,22 @@ describe("computeAllowed", () => {
       tagFilter: "x",
     });
     expect(out).toEqual(new Set([a]));
+  });
+
+  it("excludes machine/structural files from the graph entirely (not just from orphan status)", () => {
+    // Reproduces the real-vault regression: daily/sessions/_inbox/ingest-reports/
+    // raw files (and CHANGELOG/README/log/index/distill-* pages) are real files
+    // on disk (allFiles), but must never become graph nodes — orphan or linked.
+    const daily = "/vault/daily/2026-07-12.md";
+    const session = "/vault/sessions/claude-code-abc123.md";
+    const changelog = "/vault/CHANGELOG.md";
+    const distillReport = "/vault/distill-20260813T163916.md";
+    const out = computeAllowed(
+      adj({}),
+      [a, b, daily, session, changelog, distillReport],
+      emptyFilters,
+    );
+    expect(out).toEqual(new Set([a, b]));
   });
 });
 
