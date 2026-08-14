@@ -60,7 +60,10 @@ export const PROVIDERS: ProviderDef[] = [
     kind: "cli",
     needsKey: false,
     desc: "Use your OpenAI subscription via the local `codex` CLI. No API key needed.",
-    catalog: ["(default)"],
+    // Slugs passed to `codex exec --model`; verified against a live `codex`
+    // install's model catalog (~/.codex/models_cache.json). "sol" is the
+    // current frontier/agentic-coding model, "mini" the cheap/fast one.
+    catalog: ["(default)", "gpt-5.6-sol", "gpt-5.4-mini"],
   },
   {
     id: "anthropic-api",

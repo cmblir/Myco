@@ -228,6 +228,16 @@ mod tests {
     }
 
     #[test]
+    fn codex_args_headless_with_model() {
+        let (args, stdin) =
+            build_args("codex-cli", "gpt-5.6-sol", "hello", "/tmp/out.txt").unwrap();
+        assert!(stdin);
+        assert_eq!(args[0], "exec");
+        assert!(args.contains(&"-m".to_string()));
+        assert!(args.contains(&"gpt-5.6-sol".to_string()));
+    }
+
+    #[test]
     fn codex_args_stdin_sandbox_and_outfile() {
         let (args, stdin) = build_args("codex-cli", "(default)", "hi", "/tmp/out.txt").unwrap();
         assert!(stdin);

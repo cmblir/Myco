@@ -680,7 +680,9 @@ interface ProvenanceSource {
 }
 
 const SETTINGS = {
-  providers: { anthropic_api: false, openai_api: false, google_api: false, ollama: false, openrouter: false, myco_pro: false, builtin_local: true },
+  // All three CLI providers connected so the Model tab's picker (and any
+  // screenshot of it) can show a real, non-"(default)"-only list for each.
+  providers: { anthropic_cli: true, gemini_cli: true, codex_cli: true, anthropic_api: false, openai_api: false, google_api: false, ollama: false, openrouter: false, myco_pro: false, builtin_local: true },
   query_provider: "anthropic-cli",
   query_model: "claude-sonnet-4-6",
   ingest_provider: "anthropic-cli",
