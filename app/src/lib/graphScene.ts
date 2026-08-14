@@ -938,6 +938,16 @@ export class GraphScene {
   // summing the sprites twice would fade the dark-core stars.
   private darkTheme = true;
   private bloom: UnrealBloomPass;
+  // Selective-bloom pixel ratio. Bloom is a blur, so on retina (pr >= 2) the
+  // nodes-only pass + mip chain run at half the device ratio — measured ~3.4ms
+  // of a ~16ms dpr-2 frame (M3, 1244 nodes) for a visually identical glow.
+  // render() swaps u_pixelRatio to this for the bloom pass so gl_PointSize
+  // (device px) stays proportionally correct in the smaller target.
+  private bloomPr = 1;
+  // godRaysWanted() latch — render-loop code may flip godPass.enabled per
+  // frame (amp 0 = pass-through copy, ~1ms/frame at dpr 2 for nothing), so
+  // the "is the effect on at all" decision needs its own home.
+  private godWanted = false;
   private baseBloom = 1.2; // theme-derived bloom strength before brightness scaling
   private labelRenderer: CSS2DRenderer;
 
@@ -1333,7 +1343,8 @@ export class GraphScene {
       // result stays a linear HDR texture the mix pass reads.
       this.bloomComposer = new EffectComposer(this.renderer, mkHdrTarget());
       this.bloomComposer.renderToScreen = false;
-      this.bloomComposer.setPixelRatio(pr);
+      this.bloomPr = pr >= 2 ? pr / 2 : pr;
+      this.bloomComposer.setPixelRatio(this.bloomPr);
       this.bloomComposer.setSize(w, h);
       this.bloomComposer.addPass(new RenderPass(this.scene, this.camera));
       this.bloomComposer.addPass(this.bloom);
@@ -2206,13 +2217,15 @@ export class GraphScene {
 
   /** Project the hub into screen space and drive the shaft uniforms. Amplitude
    * fades as the hub leaves the frame and cuts when it passes behind the
-   * camera — the pass early-outs to a plain copy at u_amp 0. */
+   * camera. At amp 0 the PASS itself is disabled — the shader's early-out is
+   * still a full-res read+write copy (~1ms/frame at dpr 2) for nothing. */
   private updateGodRays(): void {
     const pass = this.godPass;
-    if (!pass?.enabled) return;
+    if (!pass || !this.godWanted) return;
     const amp = pass.material.uniforms.u_amp as { value: number };
     if (this.hubIndex < 0 || this.hubIndex >= this.nodeIds.length) {
       amp.value = 0;
+      pass.enabled = false;
       return;
     }
     // An invisible star casts no shaft: writeNodes zeroes the buffered
@@ -2221,6 +2234,7 @@ export class GraphScene {
     const intn = this.nodeGeom.getAttribute("a_intensity") as THREE.BufferAttribute;
     if (intn.getX(this.hubIndex) <= 0) {
       amp.value = 0;
+      pass.enabled = false;
       return;
     }
     // Controls moved the camera this frame but the renderer hasn't refreshed
@@ -2233,11 +2247,13 @@ export class GraphScene {
       .applyMatrix4(this.camera.matrixWorldInverse);
     if (this.tmpVec.z >= -1e-3) {
       amp.value = 0; // behind (or at) the camera plane
+      pass.enabled = false;
       return;
     }
     const v = this.tmpVec.applyMatrix4(this.camera.projectionMatrix); // NDC
     const edge = Math.max(Math.abs(v.x), Math.abs(v.y));
     amp.value = 0.5 * (1 - THREE.MathUtils.smoothstep(edge, 0.9, 1.3));
+    pass.enabled = amp.value > 0.001;
     (pass.material.uniforms.u_center.value as THREE.Vector2).set(
       v.x * 0.5 + 0.5,
       v.y * 0.5 + 0.5,
@@ -3369,7 +3385,8 @@ export class GraphScene {
     const on = this.settings.cinematic;
     this.fxaaPass.enabled = on;
     this.cinePass.enabled = on;
-    this.godPass.enabled = this.godRaysWanted();
+    this.godWanted = this.godRaysWanted();
+    this.godPass.enabled = this.godWanted;
   }
 
   // Edge-density field, two personalities (see edgeDensity.ts):
@@ -3771,7 +3788,8 @@ export class GraphScene {
     // real bloom. God rays and DOF are dark-void effects — retire on light.
     this.nodeMat.uniforms.u_halo.value = dark ? 0 : 1;
     this.nodeMat.uniforms.u_dofAmp.value = this.dofAmpFor(this.settings);
-    if (this.godPass) this.godPass.enabled = this.godRaysWanted();
+    this.godWanted = this.godRaysWanted();
+    if (this.godPass) this.godPass.enabled = this.godWanted;
     this.edgeFlowUniforms.u_flowDark.value = dark && !this.sigmaSkin ? 1 : 0;
     // "auto" mono ink follows the background (white starlight ↔ dark ink).
     (this.nodeMat.uniforms.u_monoColor.value as THREE.Color).copy(
@@ -3966,7 +3984,8 @@ export class GraphScene {
     this.edgeFlowUniforms.u_flowAmp.value = this.flowAmpFor(settings);
     if (this.fxaaPass) this.fxaaPass.enabled = settings.cinematic;
     if (this.cinePass) this.cinePass.enabled = settings.cinematic;
-    if (this.godPass) this.godPass.enabled = this.godRaysWanted();
+    this.godWanted = this.godRaysWanted();
+    if (this.godPass) this.godPass.enabled = this.godWanted;
     this.setMinimap(settings.minimap);
     this.cosmic.setFrequency(settings.cosmicFrequency);
     // Sky style flip (star density / dotted grid / void) — rebuild the field.
@@ -4502,7 +4521,16 @@ export class GraphScene {
         const bg = this.scene.background;
         this.scene.background = null;
         this.camera.layers.set(BLOOM_LAYER);
+        // The bloom target runs at bloomPr (half device ratio on retina).
+        // gl_PointSize is a DEVICE-pixel size, so the node pass must see the
+        // target's own ratio or every core would render twice as large
+        // (relative to the frame) and the mixed-back glow would double in
+        // screen extent.
+        const prUniform = this.nodeMat.uniforms.u_pixelRatio as { value: number };
+        const fullPr = prUniform.value;
+        prUniform.value = this.bloomPr;
         this.bloomComposer.render();
+        prUniform.value = fullPr;
         this.camera.layers.mask = camMask; // restore (default: layer 0)
         this.scene.background = bg;
         this.mixPass.enabled = true;
