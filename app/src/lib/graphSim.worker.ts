@@ -49,10 +49,9 @@ import {
   ANCHOR_SCALE,
   ANCHOR_HUB_MUL,
   FLATTEN_SCALE,
-  NODE_RADIUS,
-  GLOW_SCALE,
 } from "./layoutConfig";
 import { computeLayoutMetrics } from "./layoutMetrics";
+import { NODE_MARGIN, renderedRadius, separateLayout } from "./layoutSeparation";
 
 // Deterministic RNG — copied from graphData so the worker bundle doesn't pull in
 // graphology. Must stay identical to graphData's so timelapse spawn jitter matches.
@@ -426,13 +425,14 @@ function build(
     .force("z", zF)
     .force(
       "collide",
-      // Collide against the radius the node is actually DRAWN at — the sprite
-      // is NODE_RADIUS × GLOW_SCALE wide per unit of `size`, so the old
-      // `size / 2` treated a 24-unit planet as a 1-unit dot and let bodies sit
-      // inside each other at rest.
-      forceCollide<SimNode>((n) => (n.size * NODE_RADIUS * GLOW_SCALE) / 2 + 1.5)
-        .strength(0.9)
-        .iterations(1),
+      // Collide against the radius the node is actually DRAWN at, PLUS half the
+      // shared clear-gap margin each — two touching bodies then sit exactly
+      // r_i + r_j + NODE_MARGIN apart, the app-wide no-overlap invariant (see
+      // layoutSeparation.ts). One relaxation iteration at strength 0.9 left the
+      // rest state visibly violating it, so the collide now actually resolves.
+      forceCollide<SimNode>((n) => renderedRadius(n.size) + NODE_MARGIN / 2)
+        .strength(1)
+        .iterations(3),
     )
     .force("cluster", clusterForce())
     .force("galaxy", galaxyForce())
@@ -483,6 +483,15 @@ function build(
     driverTimer = null;
     sim.tick();
     const settled = sim.alpha() < SIM_ALPHA_MIN;
+    if (settled) {
+      // The collide force only APPROACHES the no-overlap invariant (a force sim
+      // trades collide against link/charge/cluster, and cools before the last
+      // few percent resolve). At rest we enforce it exactly with the same
+      // deterministic post-process every static layout uses, so the state the
+      // user actually looks at has zero violating pairs. Mid-settle frames may
+      // still overlap — they are motion, not the picture.
+      separateLayout(tlActive ?? nodes);
+    }
     const nowMs = performance.now();
     if (settled || nowMs - lastPost >= POST_INTERVAL_MS) {
       postPositions();

@@ -62,13 +62,18 @@ describe("applyAtlasLayout (chunked)", () => {
     expect(seen.length).toBeGreaterThan(1); // really ran in multiple slices
     expect([...seen]).toEqual([...seen].sort((a, b) => a - b));
     expect(seen[seen.length - 1]).toBe(40);
-    // Bounding radius lands on the requested world size.
+    // Bounding radius lands on the requested world size — as a FLOOR, not a
+    // cap. targetRadius is what FA2 is fitted to; the no-overlap post-process
+    // (layoutSeparation) may then widen the map so no two 16x16 sprites merge,
+    // and on a ring of size-4 nodes that FA2 has bunched it does (measured
+    // ~2.8x). The upper bound here still guards the regression this test was
+    // written for: FA2's density singularity catapulting the map to ±150M.
     let r = 0;
     g.forEachNode((_id, a) => {
       r = Math.max(r, Math.hypot(a.x, a.y));
     });
     expect(r).toBeGreaterThan(400);
-    expect(r).toBeLessThan(600);
+    expect(r).toBeLessThan(500 * 5);
   });
 
   it("aborts between slices when shouldAbort flips", async () => {

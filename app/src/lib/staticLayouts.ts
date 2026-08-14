@@ -15,6 +15,7 @@
 
 import type { VaultGraph } from "./graphData";
 import { hexToRgb01, seededUnit } from "./graphData";
+import { separateGraphLayout } from "./layoutSeparation";
 
 // Box-Muller from two seeded uniforms — deterministic gaussian per (id, salt).
 function seededGauss(id: string, salt: number): number {
@@ -95,6 +96,11 @@ export function applySpiralLayout(g: VaultGraph, o: SpiralOpts): void {
       g.setNodeAttribute(id, "z", seededGauss(id, 17) * R * (0.05 - 0.032 * t));
     }
   }
+  // Arms are THIN (width ~0.085R tapering to 0.035R) — the shape's whole point —
+  // so an arm packs its own stars tighter than anything else here (measured at
+  // 1244 notes: 32 overlapping pairs). The sweeps widen the arm locally; the
+  // disc's overall extent is untouched, so the spiral still reads as a spiral.
+  separateGraphLayout(g);
 }
 
 export interface CelestialOpts {
@@ -168,6 +174,10 @@ export function applyCelestialLayout(g: VaultGraph, o: CelestialOpts): void {
     }
     ci++;
   }
+  // A constellation patch is a spherical cap sized by membership, so a big topic
+  // packs its members shoulder to shoulder (measured: 6 overlapping pairs).
+  // Separation nudges those apart along the shell.
+  separateGraphLayout(g);
 }
 
 export interface RadialOpts {
@@ -242,6 +252,11 @@ export function applyRadialLayout(g: VaultGraph, o: RadialOpts): void {
       g.setNodeAttribute(id, "z", Math.sin(a) * r * rad * wob);
     }
   }
+  // A BFS shell holding a big share of the vault has to fit all of them on one
+  // sphere. The mock vault's shells happen to clear (measured: 0 overlapping
+  // pairs), but a vault whose hub fans wide would not — the guarantee has to be
+  // structural, not a property of one vault.
+  separateGraphLayout(g);
 }
 
 export interface StrataOpts {
@@ -357,8 +372,16 @@ export function applyStrataLayout(g: VaultGraph, o: StrataOpts): StrataResult {
   if (unknown.length > 0) {
     ticks.unshift({ x: unknownX, label: "—", unknown: true });
   }
-  const yPad = bandSpan / Math.max(2, bands) + R * 0.12;
-  return { ticks, yTop: yMax + yPad, yBottom: -(yMax + yPad) };
+  // A busy week piles hundreds of notes into one narrow column — honest about
+  // the vault's rhythm, unreadable as bodies (measured at 1244 notes: 534
+  // overlapping pairs, the worst of any layout). Separation opens the column
+  // out. The time axis is LINEAR in x, so if the field DID have to grow it is
+  // still the same mapping at a different scale — hence the returned scale is
+  // applied to the ticks and the y-extent, which the scene draws in world units.
+  const { scale } = separateGraphLayout(g, { dims: 2 });
+  for (const t of ticks) t.x *= scale;
+  const yPad = (bandSpan / Math.max(2, bands) + R * 0.12) * scale;
+  return { ticks, yTop: yMax * scale + yPad, yBottom: -(yMax * scale + yPad) };
 }
 
 export interface WalrusOpts {
@@ -571,6 +594,11 @@ export function applyWalrusLayout(g: VaultGraph, o: WalrusOpts): void {
     g.setNodeAttribute(id, "y", p[1] * s);
     g.setNodeAttribute(id, "z", p[2] * s);
   }
+  // Deep fireworks bundle tightly by design (BURST_STEP decays with depth), so
+  // a bundle's own members collide even though the ball around them is wide
+  // (measured: 7 overlapping pairs). Separated AFTER the normalise — the CAIDA
+  // boundary sphere is drawn from the FINAL positions.
+  separateGraphLayout(g);
 }
 
 /** Hyphae grouped by stroke width. `LineMaterial` carries ONE width per set, so
@@ -1053,25 +1081,108 @@ export function buildMyceliumMat(g: VaultGraph, o: MyceliumOpts): MyceliumResult
   // assignment target — two notes must not land exactly on top of each other.
   const isAssignable = (i: number): boolean => mat[i].bridgeTo == null;
 
-  const used = new Set<number>();
-  // Nearest unused, assignable mat node to `start` — BFS outward, first match
-  // wins. `start` itself counts (a fresh spore, or a note's own mat node
-  // before any of ITS neighbours have claimed it).
-  const nearestFree = (start: number): number => {
-    if (isAssignable(start) && !used.has(start)) return start;
-    const seen = new Set([start]);
-    let frontier = [start];
-    while (frontier.length > 0) {
-      const next: number[] = [];
-      for (const cur of frontier) {
-        for (const nb of matAdj[cur]) {
-          if (seen.has(nb)) continue;
-          seen.add(nb);
-          if (isAssignable(nb) && !used.has(nb)) return nb;
-          next.push(nb);
+  // MIN ROOM PER SEPTUM. "unused and not a bridge" was not enough to keep two
+  // notes visibly apart: two tips that cross without fusing (a tip never fuses
+  // with its own fresh trail) lay down distinct mat nodes millimetres apart, so
+  // measured on the real vault shape the closest note pair sat 2.6 world units
+  // apart against a 21.7-unit growth step — one visual blob rather than two
+  // notes. So a note may only land on a SLOT: a mat node thinned to be at least
+  // one growth step from every other slot. The mat's own bead spacing is the
+  // yardstick, so this scales with whatever targetRadius/density the view runs
+  // at instead of being a magic world number.
+  //
+  // Thinned ONCE, up front, rather than clearance-checked per BFS candidate —
+  // the per-candidate version measured 6.5s on the real vault (searches get
+  // longer as the mat fills and each step paid a 27-cell scan) against a
+  // 2000ms budget; greedy thinning is a single O(mat) pass and the BFS goes
+  // back to a plain "is it free" test.
+  //
+  // (Unlike every other layout, mycelium septa are drawn at a FIXED SCREEN size
+  // — see myceliumScene's a_size — so layoutSeparation's world-radius invariant
+  // does not apply here and zooming always resolves two septa. This floor is
+  // what makes them distinguishable at the DEFAULT framing.)
+  const steps: number[] = [];
+  for (const h of mat) {
+    if (h.parent >= 0 && h.bridgeTo == null) {
+      steps.push(Math.hypot(h.x - mat[h.parent].x, h.y - mat[h.parent].y, h.z - mat[h.parent].z));
+    }
+  }
+  steps.sort((a, b) => a - b);
+  const minSep = steps.length > 0 ? steps[Math.floor(steps.length / 2)] : 0;
+
+  // Greedy Poisson-disk thinning over a uniform grid. Integer cell hash, not a
+  // `${x},${y},${z}` string — a hash collision only ADDS candidates to a bucket
+  // (each is distance-checked anyway) and a cell's own points are always in its
+  // own key's bucket.
+  const isSlot = new Uint8Array(mat.length);
+  {
+    const cell = Math.max(minSep, 1e-6);
+    // Bucket table as head/next typed arrays (no Map, no per-bucket array) —
+    // this walks 27 cells per mat node over ~12k nodes at the real vault's
+    // scale, and the build sits inside a 2000ms frame budget.
+    let tableSize = 1;
+    while (tableSize < mat.length * 2) tableSize <<= 1;
+    const mask = tableSize - 1;
+    const head = new Int32Array(tableSize).fill(-1);
+    const nextOf = new Int32Array(mat.length).fill(-1);
+    const slotAt = (ix: number, iy: number, iz: number): number =>
+      ((Math.imul(ix, 73856093) ^ Math.imul(iy, 19349663) ^ Math.imul(iz, 83492791)) | 0) & mask;
+    for (let i = 0; i < mat.length; i++) {
+      if (!isAssignable(i)) continue;
+      const p = mat[i];
+      const cx = Math.floor(p.x / cell);
+      const cy = Math.floor(p.y / cell);
+      const cz = Math.floor(p.z / cell);
+      let clear = true;
+      for (let ox = -1; ox <= 1 && clear; ox++) {
+        for (let oy = -1; oy <= 1 && clear; oy++) {
+          for (let oz = -1; oz <= 1 && clear; oz++) {
+            for (let j = head[slotAt(cx + ox, cy + oy, cz + oz)]; j >= 0; j = nextOf[j]) {
+              const q = mat[j];
+              if (Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) < minSep) {
+                clear = false;
+                break;
+              }
+            }
+          }
         }
       }
-      frontier = next;
+      if (!clear) continue;
+      isSlot[i] = 1;
+      const s = slotAt(cx, cy, cz);
+      nextOf[i] = head[s];
+      head[s] = i;
+    }
+  }
+
+  // free[i] = 1 while mat node i is an unclaimed slot. A flat byte array, not
+  // `isSlot[i] && !used.has(i)`: this is the innermost test of every search and
+  // the searches got longer once notes had to keep a step apart.
+  const free = isSlot; // (thinning wrote 1 for every slot; claiming clears it)
+  // Reused BFS scratch — one allocation instead of a Set plus two arrays per
+  // note. `stamp` marks the current search's visited nodes by generation, so
+  // there is nothing to clear between searches either.
+  const stamp = new Int32Array(mat.length);
+  const bfsQueue = new Int32Array(mat.length);
+  let gen = 0;
+  // Nearest unclaimed SLOT to `start` — BFS outward, first match wins. `start`
+  // itself counts (a fresh spore, or a note's own mat node before any of ITS
+  // neighbours have claimed it).
+  const nearestFree = (start: number): number => {
+    if (free[start] === 1) return start;
+    const g0 = ++gen;
+    stamp[start] = g0;
+    bfsQueue[0] = start;
+    let qHead = 0;
+    let qTail = 1;
+    while (qHead < qTail) {
+      const cur = bfsQueue[qHead++];
+      for (const nb of matAdj[cur]) {
+        if (stamp[nb] === g0) continue;
+        stamp[nb] = g0;
+        if (free[nb] === 1) return nb;
+        bfsQueue[qTail++] = nb;
+      }
     }
     // ponytail: mat exhausted (every reachable node already used) — reuse
     // `start` rather than crash. maxNodes scales with note count so this
@@ -1101,7 +1212,7 @@ export function buildMyceliumMat(g: VaultGraph, o: MyceliumOpts): MyceliumResult
     if (matIndexOf.has(root)) return;
     const seed = nearestFree(spores[sporeCursor % spores.length]);
     sporeCursor++;
-    used.add(seed);
+    free[seed] = 0;
     matIndexOf.set(root, seed);
     const queue = [root];
     let head = 0;
@@ -1111,7 +1222,7 @@ export function buildMyceliumMat(g: VaultGraph, o: MyceliumOpts): MyceliumResult
       for (const v of noteNeighbors(u)) {
         if (matIndexOf.has(v)) continue;
         const mv = nearestFree(mu);
-        used.add(mv);
+        free[mv] = 0;
         matIndexOf.set(v, mv);
         queue.push(v);
       }

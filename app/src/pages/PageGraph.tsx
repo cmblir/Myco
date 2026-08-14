@@ -44,6 +44,7 @@ import { setQueryPrefill } from "../lib/queryPrefill";
 import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
 import { createStaticDrag } from "../lib/staticDrag";
 import { applyAtlasLayout } from "../lib/atlasLayout";
+import { separateGraphLayout } from "../lib/layoutSeparation";
 import { bakeSeededSky } from "../lib/skyTexture";
 import {
   applyCelestialLayout,
@@ -830,6 +831,13 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 graph.setNodeAttribute(id, "z", (seededUnit(id, 37) - 0.5) * radius * 0.2);
               }
             });
+            // PCA puts near-synonymous notes on top of each other (that IS the
+            // signal) and parks every unembedded ghost on ONE ring radius, so
+            // the raw map violates the no-overlap invariant badly. Same shared
+            // post-process every other layout uses: local push-apart, so a tied
+            // pair separates just enough to read as two notes while the PC1/PC2
+            // map keeps its shape.
+            separateGraphLayout(graph);
           }
           finish();
         })

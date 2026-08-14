@@ -18,6 +18,7 @@ import forceAtlas2 from "graphology-layout-forceatlas2";
 import FA2LayoutSupervisor from "graphology-layout-forceatlas2/worker";
 import type { VaultGraph } from "./graphData";
 import { galaxyAnchorsBySize, galaxyFootprint } from "./galaxyLayout";
+import { separateGraphLayout } from "./layoutSeparation";
 
 // Centre a set of 2D points on the origin and scale so the bounding radius
 // lands near `targetRadius` world units. Pure — unit-tested. Returns the
@@ -224,6 +225,17 @@ export async function applyAtlasLayout(
     graph.setNodeAttribute(id, "x", Math.cos(t) * r);
     graph.setNodeAttribute(id, "y", Math.sin(t) * r);
   });
+
+  // FA2 packs nodes as POINTS — it has no notion of the 16x16 sprite each one
+  // is drawn as — so a converged map still stacks bodies inside each other,
+  // worst of all inside a tight ganglion core (measured at 1244 nodes: 229
+  // violating pairs on atlas, 942 on synapse). The push-apart sweeps let those
+  // cores breathe outward into the whitespace already around them, so the map's
+  // overall extent barely moves (2574 -> 2456 units) and nothing shrinks on
+  // screen. Flat (dims 2): the sub-unit z above is anti-moire jitter, not depth,
+  // and must not be relaxed into real 3D. Runs after the isolate scatter so
+  // those get separated too.
+  separateGraphLayout(graph, { dims: 2 });
   return true;
 }
 
