@@ -50,6 +50,13 @@ const FADE_PER_SEC = 3.0; // materialize / dissolve speed (~0.33 s swing)
 // planets doesn't visibly lock-step.
 const SPIN_RATE = (Math.PI * 2) / 60; // rad/s — ≈60s per full turn, base rate
 
+// Moon ORBIT rate (revolution around the host, distinct from SPIN_RATE which
+// is the host's own axial turn). Scales the 0.4-1.0 rad/s per-moon jitter
+// below down into the same calm register as SPIN_RATE: unscaled that range
+// is a 6-16s lap, which visibly outran a planet that itself takes a full
+// slow minute to turn — two different clocks in the same shot.
+const MOON_ORBIT_SCALE = 1 / 6;
+
 // Moons are small, flavour-neutral satellites (cratered rock or ice), not
 // tinted by the host's community hue — a fixed neutral hue keeps them reading
 // as generic background bodies instead of miniature copies of their planet.
@@ -424,7 +431,8 @@ export class PlanetLayer {
           for (let m = 0; m < MOONS_PER; m++) {
             const mi = s * MOONS_PER + m;
             this.moonAngle[mi] = seededUnit(id, 30 + m) * Math.PI * 2;
-            this.moonSpeed[mi] = (0.4 + seededUnit(id, 32 + m) * 0.6) * (m % 2 ? -1 : 1);
+            this.moonSpeed[mi] =
+              (0.4 + seededUnit(id, 32 + m) * 0.6) * MOON_ORBIT_SCALE * (m % 2 ? -1 : 1);
             this.moonOrbit[mi] = 1.9 + m * 0.7 + seededUnit(id, 34 + m) * 0.4;
             this.moonTilt[mi] = (seededUnit(id, 36 + m) - 0.5) * 1.4;
             this.moonSize[mi] = 0.20 + seededUnit(id, 38 + m) * 0.14;

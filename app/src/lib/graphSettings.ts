@@ -138,6 +138,12 @@ export interface GraphSettings {
   // by community hue; far nodes stay cheap star points. Dark 3D layouts only,
   // perf-gated. Off by default (novelty + fragment-cost sensitive).
   nearFieldPlanets: boolean;
+  // Node look: render every node as a 16x16 pixel-art sprite (archetype +
+  // community-hue ramp, see pixelPlanet.ts) instead of a soft glowing dot.
+  // Falls back to a flat hard dot below the readable-size threshold, and to
+  // the plain glow on the sigma skin's flat data-viz look regardless. On by
+  // default — the pixel look is the requested node identity, not a novelty.
+  pixelNodes: boolean;
   // Timelapse playback speed multiplier (0.25×..4×). Read live each frame, so
   // dragging the slider mid-replay speeds the assembly up or down in place.
   tlSpeed: number;
@@ -196,6 +202,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   clickBurst: true,
   neuralFiring: true,
   nearFieldPlanets: false,
+  pixelNodes: true,
   tlSpeed: 1,
   nodeColor: "community",
   monoBelow: 200,

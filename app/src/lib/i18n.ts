@@ -332,6 +332,8 @@ export interface Strings {
   gr_neural_firing_hint?: string;
   gr_planets?: string;
   gr_planets_hint?: string;
+  gr_pixel_nodes?: string;
+  gr_pixel_nodes_hint?: string;
   gr_color_depth?: string;
   gr_edge_tint?: string;
   gr_edge_tint_grey?: string;
@@ -1209,6 +1211,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_neural_firing_hint: "Signals that periodically ripple the mesh",
     gr_planets: "Near-field planets",
     gr_planets_hint: "Close-up nodes become procedural planets (dark 3D)",
+    gr_pixel_nodes: "Pixel nodes",
+    gr_pixel_nodes_hint: "16x16 pixel-art sprites instead of glowing dots",
     gr_color_depth: "Colour depth",
     gr_edge_tint: "Link colour",
     gr_edge_tint_grey: "Grey",
@@ -2105,6 +2109,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_neural_firing_hint: "주기적으로 메시를 타고 흐르는 신호",
     gr_planets: "근접 행성",
     gr_planets_hint: "가까운 노드가 절차적 행성이 됨 (다크 3D)",
+    gr_pixel_nodes: "픽셀 노드",
+    gr_pixel_nodes_hint: "발광 점 대신 16x16 픽셀아트 스프라이트로 표시",
     gr_color_depth: "색 짙기",
     gr_edge_tint: "링크 색상",
     gr_edge_tint_grey: "회색",
@@ -2939,6 +2945,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_neural_firing_hint: "定期的にメッシュを伝う信号",
     gr_planets: "近接プラネット",
     gr_planets_hint: "近づくとノードが手続き的な惑星になる (ダーク3D)",
+    gr_pixel_nodes: "ピクセルノード",
+    gr_pixel_nodes_hint: "光る点の代わりに16x16ピクセルアートで表示",
     gr_color_depth: "色の濃さ",
     gr_edge_tint: "リンク色",
     gr_edge_tint_grey: "グレー",

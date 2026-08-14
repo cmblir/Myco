@@ -64,12 +64,19 @@ import {
   SYNAPSE_MAX_EDGES,
   SYNAPSE_MAX_NODES,
 } from "./synapseFire";
+import { PIXEL_ARCHETYPES, PIXEL_SPRITE_GLSL, archetypeFor, rampFor } from "./pixelPlanet";
 
 // World radius (in sim units) per unit of node `size`, and how far the halo
 // extends past the core — mirrors the old GLOW_SCALE 2.6 intent in 3D.
 const NODE_RADIUS = 3.4;
 const GLOW_SCALE = 3.2;
 const PICK_BASE_PX = 14;
+
+// Below this on-screen point diameter (px) a 16x16 pixel-sprite grid has
+// sub-pixel logical pixels — it just aliases/shimmers instead of reading as
+// blocky pixel art. Nodes smaller than this fall back to a flat hard-edged
+// dot (see NODE_FRAG) so distant/far-field nodes stay crisp and cheap.
+const PIXEL_SPRITE_MIN_PX = 14;
 
 // Semantic zoom label budget: at the framed (zoomed-out) distance only the top
 // LABEL_MIN hubs may label; zooming in grows the candidate pool up to LABEL_MAX
@@ -222,9 +229,12 @@ const LOD_RESTORE_MS = 150;
 // its own seeded disc axis, alternating direction per group — the "several
 // living galaxies" motion. Rad/s; deliberately slower than the camera rotate.
 const SWIRL_SPEED = 0.05;
-// Orphan "moons": isolated notes orbit their nearest linked star, visibly
-// faster than the galactic swirl, and ease onto a close orbit radius.
-const MOON_SPEED = 0.35;
+// Orphan "moons": isolated notes orbit their nearest linked star, easing onto
+// a close orbit radius. Full orbit on the order of a minute — matches the
+// near-field planet spin register (planetLayer.ts's SPIN_RATE, 2π/60): the
+// old rate (0.35 rad/s, ≈18s/orbit) had a captured orphan visibly outrunning
+// the planet it now resembles at that LOD, two different clocks in one shot.
+const MOON_SPEED = (Math.PI * 2) / 60;
 const MOON_RADIUS_MIN = 4; // × host node's world radius
 const MOON_RADIUS_VAR = 4;
 
@@ -390,6 +400,18 @@ attribute float a_age; // days since last modified (9999 = unknown/old)
 attribute float a_hit; // 1 = current search match (pulse-in-phase highlight)
 attribute float a_spawn; // condensation intro: per-node birth delay (s)
 attribute float a_sel; // 1 = the inspector-selected node (anamorphic streak)
+// Pixel-sprite look (see NODE_FRAG / pixelPlanet.ts): archetype + seed + the
+// 5-stop community-hue-tinted ramp, packed to stay under WebGL's guaranteed
+// 16-attribute budget — this is a single Points cloud (thousands of nodes,
+// one vertex each, no instancing to hide behind like planetLayer.ts's quads),
+// so 7 more raw float/vec3 attributes on top of the existing 10 blew that
+// budget (confirmed: SwiftShader hard-fails the program at 17). a_meta packs
+// archetype (floor) + seed (fract) into one float; a_ramp01/a_ramp2 pack the
+// 5 RGB ramp stops 8-bit/channel into one vec4 + one float — see
+// pxs_packC/pxs_unpackC in NODE_FRAG.
+attribute float a_meta;
+attribute vec4 a_ramp01;
+attribute float a_ramp2;
 uniform float u_spawnClock; // intro clock (s); <0 = intro off, all stars full
 uniform float u_birthMode; // 0 = condensation (fly-in), 1 = live-ingest birth (grow in place)
 uniform float u_dofAmp; // depth-of-field strength; 0 = off (pin-sharp field)
@@ -409,6 +431,14 @@ varying float v_kind;
 varying float v_age;
 varying float v_hit;
 varying float v_sel;
+// highp: these carry packed 8-bit/channel colour + integer archetype data
+// (see a_meta/a_ramp01/a_ramp2 above) through a fragment shader whose default
+// precision is mediump — mediump's mantissa can't hold the packed values
+// exactly, which would corrupt the unpacked colour.
+varying highp float v_meta;
+varying highp vec4 v_ramp01;
+varying highp float v_ramp2;
+varying float v_pxSize; // final gl_PointSize (px) — NODE_FRAG's sprite/dot LOD switch
 uniform float u_driftAmp; // curl micro-drift amplitude (world units; 0 = off)
 void main() {
   // Curl micro-drift: once settled, every star orbits a frozen divergence-free
@@ -486,8 +516,12 @@ void main() {
   // Condensation intro (see birth offset above): grow in from nothing. Applied
   // after the clamp so a being-born star really is invisible, not floored.
   gl_PointSize *= birthE;
+  v_pxSize = gl_PointSize;
   gl_Position = projectionMatrix * mv;
   v_color = a_color;
+  v_meta = a_meta;
+  v_ramp01 = a_ramp01;
+  v_ramp2 = a_ramp2;
   // Defocused sprites spread the same light over more pixels — fade alpha with
   // the CoC so bokeh stays airy instead of stacking into bright shells.
   v_alpha = a_alpha * birthE / (1.0 + coc * 2.4);
@@ -504,6 +538,10 @@ void main() {
 
 const NODE_FRAG = /* glsl */ `
 precision mediump float;
+// highp: NODE_VERT declares this with no precision qualifier, which defaults
+// to highp in a vertex shader — a mismatched precision on the same uniform
+// name across stages is a link error.
+uniform highp float u_time; // pixel-sprite animation clock (surface scroll, hub ring tilt)
 uniform float u_lodFade; // cosmic-scale LOD: 1 near (nodes shown) → 0 far
 uniform float u_mono;    // 0 = community colour, 1 = monochrome ink
 uniform vec3 u_monoColor; // the ink — starlight white or near-black
@@ -514,6 +552,7 @@ uniform float u_flat;     // 1 = flat sigma discs (no glow profile, no spikes)
 uniform float u_saturate; // >1 boosts colour saturation (the vivid Gephi board)
 uniform float u_flare;    // 1 = anamorphic streaks on the brightest cores
 uniform float u_halo;     // 1 = analytic aura (bloom substitute for light bg)
+uniform float u_pixelNodes; // 1 = render nodes as 16x16 pixel-art sprites (graphSettings.pixelNodes)
 varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
@@ -523,7 +562,90 @@ varying float v_kind;
 varying float v_age;
 varying float v_hit;
 varying float v_sel;
+varying highp float v_meta;
+varying highp vec4 v_ramp01;
+varying highp float v_ramp2;
+varying float v_pxSize;
+
+${PIXEL_SPRITE_GLSL}
+
+// Unpack a_meta (archetype in floor, seed in fract — see NODE_VERT) and one
+// of the 8-bit/channel packed ramp colours (a_ramp01/a_ramp2). highp in and
+// out: the packed value needs its full 24-bit integer range exact (see the
+// v_meta/v_ramp* varying comments above) — a mediump intermediate anywhere
+// in this path would round the packed integer and corrupt the colour.
+vec3 pxs_unpackC(highp float p) {
+  highp float r = mod(p, 256.0);
+  highp float g = mod(floor(p / 256.0), 256.0);
+  highp float b = floor(p / 65536.0);
+  return vec3(r, g, b) / 255.0;
+}
+
+// Shared post-processing for the pixel-sprite / hard-dot paths below: the
+// encodings that must survive the pixel look regardless of silhouette —
+// monochrome ink, colour-depth gamma, recency warmth, active-search lift.
+// (Dispute/amber already rode in through the ramp's own hue — see
+// writeNodeSprites() — so it needs no separate handling here.)
+vec3 pxs_post(vec3 base) {
+  if (u_mono > 0.0) {
+    float peak = max(base.r, max(base.g, base.b));
+    base = mix(base, u_monoColor * max(peak, 0.55), u_mono);
+  }
+  base = pow(max(base, vec3(0.0)), vec3(u_colorDepth));
+  if (u_recency > 0.5) {
+    float rec = exp(-max(v_age, 0.0) / 14.0);
+    base *= 1.0 + 0.55 * rec;
+    base = mix(base, base * vec3(1.16, 0.97, 0.78), rec * 0.45);
+  }
+  if (u_searchOn > 0.5) base *= mix(0.45, 1.35, v_hit);
+  return base;
+}
+
 void main() {
+  // Pixel-sprite node look (default on — see graphSettings.pixelNodes). Off
+  // for the sigma skin's flat data-viz discs (u_flat) regardless of the
+  // toggle — that look is deliberately minimal, not pixel worlds — and off
+  // entirely when the user disables it, falling straight through to the
+  // original glow-star pipeline below unchanged.
+  if (u_pixelNodes > 0.5 && u_flat < 0.5) {
+    if (v_pxSize >= ${PIXEL_SPRITE_MIN_PX.toFixed(1)}) {
+      highp float variantF = floor(v_meta);
+      highp float seed = v_meta - variantF;
+      // pixel_sprite() wants a plain y-up 0..1 uv; gl_PointCoord is y-down.
+      vec2 sp_uv = vec2(gl_PointCoord.x, 1.0 - gl_PointCoord.y);
+      vec2 spr = pixel_sprite(sp_uv, int(variantF + 0.5), u_time, seed);
+      float a = spr.y * v_alpha * v_fade * u_lodFade;
+      if (u_searchOn > 0.5) a *= mix(0.5, 1.0, v_hit);
+      if (a < 0.004) discard;
+      int rampIdx = int(spr.x + 0.5);
+      highp float packedC = rampIdx == 0 ? v_ramp01.x : rampIdx == 1 ? v_ramp01.y :
+        rampIdx == 2 ? v_ramp01.z : rampIdx == 3 ? v_ramp01.w : v_ramp2;
+      vec3 base = pxs_unpackC(packedC);
+      // HDR bloom lift, gated to the sprite's own bright rim pixels (ramp
+      // index 0) only — lifting the WHOLE silhouette would let UnrealBloom's
+      // blur smear the pixel edges into mush. Proportional to intensity, so
+      // ordinary nodes (v_int ≈ 0) never cross the bloom threshold and only
+      // genuine hubs (and the selected node, so it stays findable after an
+      // orbit) bloom — dark theme only, matching the original core lift.
+      float core = spr.x < 0.5 ? 1.0 : 0.0;
+      vec3 col = base * (1.0 + core * max(v_int, v_sel) * v_dark * 1.6);
+      col = pxs_post(col);
+      col = min(col, vec3(3.0));
+      gl_FragColor = vec4(max(col, vec3(0.0)), a);
+      return;
+    }
+    // Far LOD: too small on screen for the 16x16 grid to read — a fast
+    // hard-edged flat dot (still AA'd at the pixel level, just no soft glow
+    // falloff, so it doesn't shimmer at a handful of screen pixels).
+    float ddFar = length(gl_PointCoord - vec2(0.5)) * 2.0;
+    float aaFar = max(0.05, fwidth(ddFar) * 1.1);
+    float bodyFar = 1.0 - smoothstep(0.86 - aaFar, 0.86 + aaFar, ddFar);
+    float aFar = bodyFar * v_alpha * v_fade * u_lodFade;
+    if (u_searchOn > 0.5) aFar *= mix(0.5, 1.0, v_hit);
+    if (aFar < 0.004) discard;
+    gl_FragColor = vec4(max(pxs_post(v_color), vec3(0.0)), aFar);
+    return;
+  }
   vec2 pc = gl_PointCoord - vec2(0.5);
   float d = length(pc) * 2.0;
   // Pixel-true edges (SDF discs): fwidth(d) is the screen-space footprint of
@@ -703,6 +825,26 @@ void main() {
   gl_FragColor = vec4(col, a);
 }
 `;
+
+// Pixel-sprite per-node buffer attributes (see NODE_VERT/NODE_FRAG): a_meta
+// packs archetype (floor) + seed (fract), a_ramp01/a_ramp2 pack the 5-stop
+// ramp — 3 attribute slots total, not 7 (see the packing note in NODE_VERT).
+// One set of vertex attributes shared by both nodeGeom build sites (ctor +
+// rebuild()).
+function addPixelSpriteAttrs(geom: THREE.BufferGeometry, n: number): void {
+  geom.setAttribute("a_meta", new THREE.BufferAttribute(new Float32Array(n), 1));
+  geom.setAttribute("a_ramp01", new THREE.BufferAttribute(new Float32Array(n * 4), 4));
+  geom.setAttribute("a_ramp2", new THREE.BufferAttribute(new Float32Array(n), 1));
+}
+
+// 8-bit/channel pack of a 0..1 RGB triple into one float (exact up to 2^24,
+// see NODE_FRAG's pxs_unpackC — must stay the inverse of that function).
+function packRampColor(c: readonly [number, number, number]): number {
+  const r = Math.floor(c[0] * 255 + 0.5);
+  const g = Math.floor(c[1] * 255 + 0.5);
+  const b = Math.floor(c[2] * 255 + 0.5);
+  return r + g * 256 + b * 65536;
+}
 
 export class GraphScene {
   private container: HTMLDivElement;
@@ -1199,6 +1341,7 @@ export class GraphScene {
       "a_sel",
       new THREE.BufferAttribute(new Float32Array(n), 1),
     );
+    addPixelSpriteAttrs(this.nodeGeom, n);
     this.nodeMat = new THREE.ShaderMaterial({
       uniforms: {
         u_pixelRatio: { value: pr },
@@ -1219,6 +1362,7 @@ export class GraphScene {
         u_saturate: { value: settings.skin === "sigma" ? 1.45 : 1 },
         u_flare: { value: settings.cinematic ? 1 : 0 },
         u_halo: { value: dark ? 0 : 1 },
+        u_pixelNodes: { value: settings.pixelNodes ? 1 : 0 },
         u_dofAmp: { value: this.dofAmpFor(settings) },
         u_focusDist: { value: 600 },
         // Sub-pixel at typical framing (~2 world units), so the GPU-only drift
@@ -1472,6 +1616,7 @@ export class GraphScene {
     }
 
     this.writeNodes();
+    this.writeNodeSprites();
     this.writeEdges();
     this.computeHub();
     this.initArrowMotion();
@@ -1753,6 +1898,46 @@ export class GraphScene {
     kind.needsUpdate = true;
     age.needsUpdate = true;
     hit.needsUpdate = true;
+  }
+
+  // Pixel-sprite identity cache (archetype + ramp, see NODE_VERT/NODE_FRAG):
+  // unlike writeNodes() this does NOT run on every hover/style push — the
+  // inputs (community hue, degree, hub-ness, theme) only change on rebuild()
+  // or a theme flip, so it is called from those two spots only (mirrors
+  // PlanetLayer's setNodeIds()/setDark(), the same per-node identity split).
+  private writeNodeSprites(): void {
+    const meta = this.nodeGeom.getAttribute("a_meta") as THREE.BufferAttribute;
+    const ramp01 = this.nodeGeom.getAttribute("a_ramp01") as THREE.BufferAttribute;
+    const ramp2 = this.nodeGeom.getAttribute("a_ramp2") as THREE.BufferAttribute;
+    const c = new THREE.Color();
+    const hsl = { h: 0, s: 0, l: 0 };
+    for (let i = 0; i < this.nodeIds.length; i++) {
+      const id = this.nodeIds[i];
+      const a = this.graph.getNodeAttributes(id);
+      const archetype = archetypeFor(id, a.deg, a.isHub);
+      // Salt distinct from planetLayer's own per-node seed (11) so the two
+      // LOD levels don't share an identical noise phase for the same node.
+      // seed is a fraction in [0,1) — safe to fold onto the archetype index
+      // in one float (see a_meta's unpack in NODE_FRAG).
+      meta.setX(i, PIXEL_ARCHETYPES.indexOf(archetype) + seededUnit(id, 91));
+      // Same hue the community-coloured glow already carries (dispute/superseded
+      // status rides along automatically — recolorGraph() blends it into
+      // a.color before this ever runs, see graphData.ts). Do NOT re-derive.
+      c.set(a.color);
+      c.getHSL(hsl);
+      const ramp = rampFor(archetype, hsl.h * 360, this.darkTheme);
+      ramp01.setXYZW(
+        i,
+        packRampColor(ramp[0]),
+        packRampColor(ramp[1]),
+        packRampColor(ramp[2]),
+        packRampColor(ramp[3]),
+      );
+      ramp2.setX(i, packRampColor(ramp[4]));
+    }
+    meta.needsUpdate = true;
+    ramp01.needsUpdate = true;
+    ramp2.needsUpdate = true;
   }
 
   // ── Condensation intro ────────────────────────────────────────────────
@@ -3296,6 +3481,7 @@ export class GraphScene {
     this.nodeGeom.setAttribute("a_hit", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.nodeGeom.setAttribute("a_spawn", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.nodeGeom.setAttribute("a_sel", new THREE.BufferAttribute(new Float32Array(n), 1));
+    addPixelSpriteAttrs(this.nodeGeom, n);
     this.points.geometry = this.nodeGeom;
     oldNodeGeom.dispose();
     this.writeSpawnDelays();
@@ -3391,6 +3577,7 @@ export class GraphScene {
     if (this.settings.edgeBundles) this.bundles.rebuild();
 
     this.writeNodes();
+    this.writeNodeSprites(); // refresh per-node pixel-sprite identity cache
     this.writeEdges();
     this.initArrowMotion();
     this.writeArrowColors();
@@ -3486,6 +3673,7 @@ export class GraphScene {
     this.imposterEnabled = false;
     this.planets.setDark(dark); // pixel-planet ramps are dark/light tinted (rampFor)
     this.updatePlanetGate(); // skin/theme flip may enable/disable planets
+    this.writeNodeSprites(); // node-sprite ramps are dark/light tinted too (rampFor)
     this.nebula.setDark(SHOW_NEBULA && amb.nebula && !this.flatLayout);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
     this.edgeNeutral = this.webSkin
@@ -3634,6 +3822,7 @@ export class GraphScene {
     this.nodeMat.uniforms.u_colorDepth.value = settings.nodeColorDepth;
     this.nodeMat.uniforms.u_recency.value = settings.recencyGlow ? 1 : 0;
     this.nodeMat.uniforms.u_flare.value = settings.cinematic ? 1 : 0;
+    this.nodeMat.uniforms.u_pixelNodes.value = settings.pixelNodes ? 1 : 0;
     this.nodeMat.uniforms.u_dofAmp.value = this.dofAmpFor(settings);
     this.edgeFlowUniforms.u_flowAmp.value = this.flowAmpFor(settings);
     if (this.fxaaPass) this.fxaaPass.enabled = settings.cinematic;

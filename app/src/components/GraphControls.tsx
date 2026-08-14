@@ -645,6 +645,12 @@ export default function GraphControls({
               onChange={(v) => onChange({ nearFieldPlanets: v })}
             />
             <Toggle
+              label={t.gr_pixel_nodes ?? "Pixel nodes"}
+              hint={t.gr_pixel_nodes_hint ?? "16x16 pixel-art sprites instead of glowing dots"}
+              value={settings.pixelNodes}
+              onChange={(v) => onChange({ pixelNodes: v })}
+            />
+            <Toggle
               label={t.gr_mascot_cameo ?? "MYCO cameo"}
               hint={t.gr_mascot_cameo_hint ?? "MYCO drifts in now and then with a feature tip"}
               value={settings.mascotCameo}
