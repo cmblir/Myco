@@ -4,11 +4,15 @@
 // into actionable gaps the user can jump to and fix:
 //
 //   missing       — [[wikilinks]] with no file yet (ghost nodes) → create it
+//   malformed     — unresolved link names that aren't real page names at all
+//                   (template placeholders, "...") → fix the SOURCE page
 //   orphans       — real pages with zero links → connect them
 //   underCited    — pages WITH frontmatter but source_count 0 → add citations
 //   lowConfidence — confidence: low
 //   disputed      — status: disputed / superseded
-//   islands       — small disconnected components (off the main graph)
+//   islands       — small disconnected MULTI-node components (off the main
+//                   graph); single-node components are already counted as
+//                   orphans, so they are excluded here to avoid double-counting
 //
 // Pure + synchronous so it is unit-testable and cheap to recompute on demand.
 
@@ -19,8 +23,29 @@ const GHOST = "ghost:";
 // "islands" — clusters that drifted off the main body of knowledge.
 const ISLAND_MAX = 6;
 
+// A ghost node's unresolved name is not always a real (if unwritten) page
+// name — some are template placeholders or parser noise that leaked past
+// normalisation: `source-<slug>` (an un-filled template), `...` (dots/
+// whitespace only). Those can't be "created" like a real missing page, so the
+// gap panel buckets them separately as fixes to make on the SOURCE page.
+function isMalformedLinkName(name: string): boolean {
+  if (/[<>]/.test(name)) return true;
+  if (/^[.\s]*$/.test(name)) return true;
+  return false;
+}
+
+export interface MalformedLink {
+  /** Ghost node id — still a real (dangling) node in the graph data. */
+  id: string;
+  /** Raw unresolved link text, e.g. "source-<slug>" or "...". */
+  name: string;
+  /** Pages that contain this malformed [[link]]. */
+  sources: string[];
+}
+
 export interface GapReport {
   missing: string[];
+  malformed: MalformedLink[];
   orphans: string[];
   underCited: string[];
   lowConfidence: string[];
@@ -57,6 +82,7 @@ export function connectedComponents(g: VaultGraph): string[][] {
 
 export function analyzeGaps(g: VaultGraph): GapReport {
   const missing: string[] = [];
+  const malformed: MalformedLink[] = [];
   const orphans: string[] = [];
   const underCited: string[] = [];
   const lowConfidence: string[] = [];
@@ -64,7 +90,11 @@ export function analyzeGaps(g: VaultGraph): GapReport {
 
   g.forEachNode((id, a) => {
     if (id.startsWith(GHOST)) {
-      missing.push(id);
+      if (isMalformedLinkName(a.label)) {
+        malformed.push({ id, name: a.label, sources: g.neighbors(id) });
+      } else {
+        missing.push(id);
+      }
       return;
     }
     if (g.degree(id) === 0) orphans.push(id);
@@ -79,10 +109,17 @@ export function analyzeGaps(g: VaultGraph): GapReport {
 
   const comps = connectedComponents(g);
   const giant = comps.reduce((m, c) => Math.max(m, c.length), 0);
-  const islands = comps.filter((c) => c.length <= ISLAND_MAX && c.length < giant);
+  // Size 1 excluded: a singleton component IS an orphan (degree 0), already
+  // counted above — keeping it here too double-counted every orphan into the
+  // badge total (the dominant cause of the badge wildly exceeding the sum of
+  // the panel's visible categories on a vault with many true orphans).
+  const islands = comps.filter(
+    (c) => c.length > 1 && c.length <= ISLAND_MAX && c.length < giant,
+  );
 
   return {
     missing,
+    malformed,
     orphans,
     underCited,
     lowConfidence,
@@ -92,10 +129,13 @@ export function analyzeGaps(g: VaultGraph): GapReport {
   };
 }
 
-// Total flagged items — drives the toolbar badge / empty-state.
+// Total flagged items — drives the toolbar badge / empty-state. Must equal the
+// sum of what the panel actually lists (GraphGaps.tsx renders every one of
+// these buckets), or the badge reads as noise itself.
 export function gapCount(r: GapReport): number {
   return (
     r.missing.length +
+    r.malformed.length +
     r.orphans.length +
     r.underCited.length +
     r.lowConfidence.length +

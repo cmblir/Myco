@@ -96,6 +96,36 @@ export default function GraphGaps({
         </div>
       ) : null}
 
+      {report.malformed.length > 0 ? (
+        <div className="graph-gaps__section">
+          <h4>
+            {t.gr_gap_malformed ?? "Malformed links"}{" "}
+            <span className="muted">({report.malformed.length})</span>
+          </h4>
+          <ul className="graph-gaps__links">
+            {report.malformed.slice(0, MAX_ROWS).map((m) => (
+              <li key={m.id}>
+                <button
+                  type="button"
+                  className="graph-gaps__link"
+                  title={m.sources.map((s) => stem(s)).join(", ")}
+                  // The fix lives on the SOURCE page, not the malformed name
+                  // itself — jump there so the user can edit the link.
+                  onClick={() => onSelect(m.sources[0] ?? m.id)}
+                >
+                  {m.name}
+                </button>
+              </li>
+            ))}
+            {report.malformed.length > MAX_ROWS ? (
+              <li className="graph-gaps__more">
+                +{report.malformed.length - MAX_ROWS} {t.gr_gap_more ?? "more"}
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
+
       {total === 0 && bridges.length === 0 ? (
         <p className="graph-gaps__none">{t.gr_gap_none ?? "No gaps found"}</p>
       ) : (

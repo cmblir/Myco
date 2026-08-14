@@ -44,9 +44,11 @@ describe("analyzeGaps", () => {
     const r = analyzeGaps(g);
     expect(r.orphans).toEqual([F]);
     expect(r.componentCount).toBe(3);
-    // giant component is {a,b,c} (3); {d,e} and {f} are smaller → islands.
+    // giant component is {a,b,c} (3); {d,e} is a smaller multi-node island.
+    // {f} is NOT also counted as an island — it's a singleton, already in
+    // `orphans`, and double-listing it there would double-count it in the badge.
     const islandSizes = r.islands.map((c) => c.length).sort();
-    expect(islandSizes).toEqual([1, 2]);
+    expect(islandSizes).toEqual([2]);
   });
 
   it("flags low-confidence, disputed and under-cited from frontmatter meta", () => {
@@ -82,9 +84,29 @@ describe("analyzeGaps", () => {
     );
     const r = analyzeGaps(g);
     expect(r.missing).toEqual(["ghost:nowhere"]);
+    expect(r.malformed).toEqual([]);
   });
 
-  it("gapCount sums every bucket including island members", () => {
+  it("buckets template placeholders and dots-only names as malformed, not missing", () => {
+    const g = buildGraph(
+      adj({
+        forward: { [A]: [B] },
+        unresolved: { [A]: ["source-<slug>", "..."], [B]: ["source-<slug>"] },
+      }),
+      new Set([A, B]),
+      { ...opts, showGhosts: true },
+    );
+    const r = analyzeGaps(g);
+    expect(r.missing).toEqual([]);
+    expect(r.malformed).toHaveLength(2);
+    const bySlug = r.malformed.find((m) => m.name === "source-<slug>");
+    // Both A and B link the same malformed name — one ghost node, both sources.
+    expect(bySlug?.sources.sort()).toEqual([A, B]);
+    const dots = r.malformed.find((m) => m.name === "...");
+    expect(dots?.sources).toEqual([A]);
+  });
+
+  it("gapCount sums every bucket including island members and malformed links", () => {
     const g = buildGraph(
       adj({ forward: { [A]: [B], [D]: [E] } }),
       new Set([A, B, D, E, F]),
@@ -92,6 +114,27 @@ describe("analyzeGaps", () => {
     );
     const r = analyzeGaps(g);
     expect(gapCount(r)).toBeGreaterThan(0);
+  });
+
+  it("gapCount never exceeds the sum of the panel's own categories (no double count)", () => {
+    // A vault dominated by real orphans (like structural files slipping in as
+    // singleton components) must not inflate the badge beyond what the panel
+    // actually lists — that was the pre-fix bug (2837 badge vs 59+1382 listed).
+    const g = buildGraph(
+      adj({ forward: { [A]: [B] } }),
+      new Set([A, B, C, D, E, F]),
+      opts,
+    );
+    const r = analyzeGaps(g);
+    const listed =
+      r.missing.length +
+      r.malformed.length +
+      r.orphans.length +
+      r.underCited.length +
+      r.lowConfidence.length +
+      r.disputed.length +
+      r.islands.reduce((n, c) => n + c.length, 0);
+    expect(gapCount(r)).toBe(listed);
   });
 });
 

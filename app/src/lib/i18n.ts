@@ -396,6 +396,7 @@ export interface Strings {
   gr_gaps_title?: string;
   gr_gaps_btn?: string;
   gr_gap_missing?: string;
+  gr_gap_malformed?: string;
   gr_gap_orphans?: string;
   gr_gap_undercited?: string;
   gr_gap_lowconf?: string;
@@ -1270,6 +1271,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_gaps_title: "Gaps",
     gr_gaps_btn: "Gap analysis",
     gr_gap_missing: "Missing pages",
+    gr_gap_malformed: "Malformed links",
     gr_gap_orphans: "Orphans",
     gr_gap_undercited: "Under-cited",
     gr_gap_lowconf: "Low confidence",
@@ -2168,6 +2170,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_gaps_title: "갭",
     gr_gaps_btn: "갭 분석",
     gr_gap_missing: "없는 페이지",
+    gr_gap_malformed: "형식 오류 링크",
     gr_gap_orphans: "고립 노드",
     gr_gap_undercited: "인용 부족",
     gr_gap_lowconf: "낮은 신뢰도",
@@ -3523,6 +3526,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_gaps_title: "ギャップ",
     gr_gaps_btn: "ギャップ分析",
     gr_gap_missing: "欠落ページ",
+    gr_gap_malformed: "不正な形式のリンク",
     gr_gap_orphans: "孤立ページ",
     gr_gap_undercited: "引用不足",
     gr_gap_lowconf: "低確信度",
