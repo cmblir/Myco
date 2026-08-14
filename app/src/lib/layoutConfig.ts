@@ -24,7 +24,26 @@ export const ORPHAN_GRAVITY_MUL = 0.04; // orphans barely pulled (drift check on
 export const CLUSTER_SCALE = 0.18; // slider clusterForce → ring correction gain
 export const HUB_PIN = 3; // hubs pinned to their cluster centroid this much harder
 export const ORBIT_BASE = 0.32; // × linkDistance — ring radius floor
-export const ORBIT_GROW = 0.06; // × linkDistance × √count — ring growth
+// × linkDistance × √count — ring growth. Raised from 0.06: these rings were
+// tuned when a node was a ~2px dot, and a node now draws as a body of world
+// DIAMETER size × NODE_DRAW_DIAMETER (≈24 units at the median). A 30-member
+// cluster on the old ring had ~15 units of mean spacing for a 24-unit body, so
+// the planets simply sat on top of each other ("따닥따닥 붙어있다"). At 0.15 the
+// same cluster's ring is ~51 units and mean spacing ~27 — bodies clear of each
+// other, with the cluster still reading as one puff.
+export const ORBIT_GROW = 0.15;
+// --- node draw size -------------------------------------------------------
+// A node of a_size 1 is drawn as a sprite of world DIAMETER
+// NODE_RADIUS × GLOW_SCALE. These live here, not in graphScene, because the
+// layout has to pack the body that actually gets drawn: the collide force below
+// used to size nodes as bare dots while the renderer drew them ~4.6× wider, and
+// that mismatch is why the planets overlapped at rest.
+export const NODE_RADIUS = 3.4;
+// 3.2 → 2.8: that halo scale was set for the old glow star, whose soft falloff
+// meant the visible core was far smaller than the point quad. A pixel sprite
+// fills its quad almost edge to edge, so the same number drew a body ~14%
+// wider than intended and the worlds ran into each other.
+export const GLOW_SCALE = 2.8;
 export const DUST_PULL = 0.18; // community-less dust drifts toward nearest cluster
 
 // --- inter-cluster / inter-galaxy link weakening --------------------------------

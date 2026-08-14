@@ -20,16 +20,20 @@ import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { stem, type VaultGraph } from "./graphData";
 import { resolveClusterTopic } from "./clusterTopics";
 
+const EMPTY_LABELS: ClusterLabel[] = [];
+
 const MAX_LABELS = 6; // matches the legend's top-6 communities
 const MIN_MEMBERS = 3;
 // Camera distance / framed distance above which cluster labels show. Below it
 // the per-node semantic-zoom labels are the detail layer.
 const SHOW_RATIO = 0.6;
 
-interface ClusterLabel {
+export interface ClusterLabel {
   obj: CSS2DObject;
   el: HTMLDivElement;
   memberIds: string[];
+  /** Community still has enough visible members to be worth naming. */
+  alive: boolean;
 }
 
 export class ClusterLabels {
@@ -90,7 +94,7 @@ export class ClusterLabels {
       const obj = new CSS2DObject(el);
       obj.visible = false;
       this.group.add(obj);
-      this.labels.push({ obj, el, memberIds: ids });
+      this.labels.push({ obj, el, memberIds: ids, alive: false });
       // v2: upgrade to an LLM topic when (if ever) one resolves. `el` keeps
       // the closure alive; if this label set was rebuilt/disposed meanwhile
       // the detached element updates harmlessly.
@@ -128,20 +132,29 @@ export class ClusterLabels {
       if (alive) {
         l.obj.position.set(cx / visible, cy / visible, cz / visible);
       }
-      // obj.visible (display:none) only for dead/hidden communities; the zoom
-      // gate is a CLASS so the CSS opacity transition can actually play.
+      // obj.visible (display:none) only for dead/hidden communities. The zoom
+      // gate + the scene's screen-space declutter own the `is-visible` CLASS,
+      // so the CSS opacity transition can actually play — see `shown` below.
       l.obj.visible = alive;
-      l.el.classList.toggle("is-visible", alive && this.zoomedOut);
+      l.alive = alive;
     }
   }
 
-  // Per-frame zoom gate — a no-op except on the show/hide transition, where
-  // update() re-derives visibility from the new flag.
+  /** Per-frame zoom gate: community names show while the camera is far. */
   setZoomRatio(camDistOverFramed: number): void {
-    const out = camDistOverFramed > SHOW_RATIO;
-    if (out === this.zoomedOut) return;
-    this.zoomedOut = out;
-    this.update();
+    this.zoomedOut = camDistOverFramed > SHOW_RATIO;
+  }
+
+  /**
+   * The labels eligible to draw this frame. The SCENE decides which of these
+   * actually get `is-visible`, because it is the only place that knows where
+   * every other label (node labels included) lands on screen — decluttering
+   * these six against each other in here would still let them pile onto the
+   * per-node labels.
+   */
+  get shown(): ClusterLabel[] {
+    if (!this.enabled || !this.zoomedOut) return EMPTY_LABELS;
+    return this.labels.filter((l) => l.alive);
   }
 
   private clear(): void {

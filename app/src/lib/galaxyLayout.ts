@@ -44,7 +44,11 @@ export function galaxyFootprint(count: number, linkDistance: number): number {
   // across a filled circle with dark GAPS between them (the dandelion-field
   // look), not crowd into one diffuse mass. Galaxy separation is the shell radius
   // on top of this.
-  return linkDistance * (0.6 + 0.32 * Math.sqrt(Math.max(1, count)));
+  // The constant term rose with ORBIT_GROW (0.6 → 1.0): a galaxy that IS a
+  // single small cluster must still contain that cluster's (now wider) orbit
+  // ring — see the containment invariant in galaxyLayout.test.ts. The √count
+  // term is untouched, so a big vault's overall extent is unchanged.
+  return linkDistance * (1.0 + 0.32 * Math.sqrt(Math.max(1, count)));
 }
 
 // Size-aware galaxy centres: fibonacci-sphere DIRECTIONS (flattened on y) at a

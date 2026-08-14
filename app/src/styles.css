@@ -2825,9 +2825,10 @@ hr {
   font-weight: 500;
   line-height: 1;
   white-space: nowrap;
-  /* CSS2DObject centres the div on the star; lift it just above the core and
-     keep it legible over the glow with a soft dark halo. */
-  transform: translateY(-12px);
+  /* Vertical placement is NOT set here: CSS2DRenderer overwrites this
+     element's `transform` every frame, so a translateY() rule silently did
+     nothing. The label hangs below its star via the CSS2DObject's `center` plus
+     a padding-top sized to the sprite — see ensureLabel()/updateLabels(). */
   text-shadow:
     0 0 3px rgba(0, 0, 0, 0.85),
     0 0 6px rgba(0, 0, 0, 0.6);

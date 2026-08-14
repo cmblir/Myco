@@ -49,6 +49,8 @@ import {
   ANCHOR_SCALE,
   ANCHOR_HUB_MUL,
   FLATTEN_SCALE,
+  NODE_RADIUS,
+  GLOW_SCALE,
 } from "./layoutConfig";
 import { computeLayoutMetrics } from "./layoutMetrics";
 
@@ -424,7 +426,11 @@ function build(
     .force("z", zF)
     .force(
       "collide",
-      forceCollide<SimNode>((n) => n.size / 2 + 1.5)
+      // Collide against the radius the node is actually DRAWN at — the sprite
+      // is NODE_RADIUS × GLOW_SCALE wide per unit of `size`, so the old
+      // `size / 2` treated a 24-unit planet as a 1-unit dot and let bodies sit
+      // inside each other at rest.
+      forceCollide<SimNode>((n) => (n.size * NODE_RADIUS * GLOW_SCALE) / 2 + 1.5)
         .strength(0.9)
         .iterations(1),
     )

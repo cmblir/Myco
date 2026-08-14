@@ -746,13 +746,23 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // once off the critical path. Deep-space skins only — web/sigma/black own
     // their voids, and paper stays paper.
     if (s.skin === "galaxy" || (s.skin === "auto" && !lightBg)) {
-      window.setTimeout(() => {
+      const bakeSky = (): void => {
         if (killed) return;
         const tex = bakeSeededSky(currentVault?.path ?? "memex", true);
         if (tex && !killed && sceneRef.current === scene) {
           scene.setSkyTexture(tex);
         }
-      }, 80);
+      };
+      // The bake is a single ~400ms main-thread block (measured on a 1244-node
+      // first load). At the old 80ms delay it landed squarely inside the
+      // condensation intro and froze it; an idle slot pushes it past the frames
+      // the user is actually watching. The timeout still guarantees a sky on a
+      // busy main thread, and older webviews without rIC just wait it out.
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(bakeSky, { timeout: 2500 });
+      } else {
+        window.setTimeout(bakeSky, 2500);
+      }
     }
     scene.setScaleListener((sc) => {
       const label = { cluster: "Galaxy cluster", galaxy: "Galaxy", system: "Star system", star: "Star" }[sc];

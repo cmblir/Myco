@@ -65,17 +65,23 @@ import {
   SYNAPSE_MAX_NODES,
 } from "./synapseFire";
 import { PIXEL_ARCHETYPES, PIXEL_SPRITE_GLSL, archetypeFor, rampFor } from "./pixelPlanet";
-
 // World radius (in sim units) per unit of node `size`, and how far the halo
-// extends past the core — mirrors the old GLOW_SCALE 2.6 intent in 3D.
-const NODE_RADIUS = 3.4;
-const GLOW_SCALE = 3.2;
+// extends past the core. Shared with the sim (layoutConfig) so the force layout
+// packs the body the renderer actually draws.
+import { GLOW_SCALE, NODE_RADIUS } from "./layoutConfig";
+
 const PICK_BASE_PX = 14;
 
-// Below this on-screen point diameter (px) a 16x16 pixel-sprite grid has
-// sub-pixel logical pixels — it just aliases/shimmers instead of reading as
-// blocky pixel art. Nodes smaller than this fall back to a flat hard-edged
-// dot (see NODE_FRAG) so distant/far-field nodes stay crisp and cheap.
+// Below this on-screen point diameter a 16x16 pixel-sprite grid has sub-pixel
+// logical pixels — it just aliases/shimmers instead of reading as blocky pixel
+// art. Nodes smaller than this fall back to a flat hard-edged dot (see
+// NODE_FRAG) so distant/far-field nodes stay crisp and cheap.
+//
+// CSS pixels, NOT device pixels: gl_PointSize is a device-pixel size, so on a
+// 2× display comparing it raw to 14 let the full sprite path run for nodes only
+// 7 CSS px across — a 16x16 grid squeezed into 7px, which reads as mush AND
+// costs the whole pattern + ramp per fragment. Measured on a 1244-node vault at
+// dpr 2, that was 811/1244 nodes on the sprite path instead of 145.
 const PIXEL_SPRITE_MIN_PX = 14;
 
 // Semantic zoom label budget: at the framed (zoomed-out) distance only the top
@@ -83,6 +89,28 @@ const PIXEL_SPRITE_MIN_PX = 14;
 // (top-degree first). Capped so updateLabels only ever visits a tiny set/frame.
 const LABEL_MIN = 12;
 const LABEL_MAX = 64;
+// Declutter box metrics per label class (see styles.css): advance width per
+// latin character, and the row height including a little air so two rows never
+// end up flush against each other.
+// .graph-label-3d: 11px / weight 500. .graph-cluster-label: 13px / weight 600 /
+// letter-spacing .14em / uppercase.
+const NODE_LABEL_CHAR_PX = 6.4;
+const NODE_LABEL_LINE_PX = 15;
+const CLUSTER_LABEL_CHAR_PX = 10;
+const CLUSTER_LABEL_LINE_PX = 20;
+
+// Estimated on-screen width of a label, WITHOUT touching the DOM — measuring
+// offsetWidth per candidate per frame would force a layout every frame, and the
+// declutter only needs a box that is roughly right. CJK/fullwidth glyphs are
+// about twice as wide as latin at the same size.
+function labelWidthPx(text: string, charPx: number): number {
+  let units = 0;
+  for (const ch of text) {
+    const c = ch.codePointAt(0) ?? 0;
+    units += c > 0x1100 && (c < 0x2000 || c > 0x2e7f) ? 2 : 1;
+  }
+  return units * charPx + 4;
+}
 
 // Edges carry the "neural mesh": each end is tinted by its node's community
 // colour (intra-cluster edges glow the cluster hue, inter-cluster edges gradient
@@ -563,6 +591,10 @@ uniform float u_halo;     // 1 = analytic aura (bloom substitute for light bg)
 // highp: NODE_VERT now reads this too (DOF gate) with no precision qualifier,
 // which defaults to highp in a vertex shader — see the u_time comment above.
 uniform highp float u_pixelNodes; // 1 = render nodes as 16x16 pixel-art sprites (graphSettings.pixelNodes)
+// Same highp-across-stages rule as u_pixelNodes/u_time above. Needed here to
+// turn PIXEL_SPRITE_MIN_PX (CSS px) into the device-pixel gl_PointSize v_pxSize
+// carries.
+uniform highp float u_pixelRatio;
 varying vec3 v_color;
 varying float v_alpha;
 varying float v_fade;
@@ -618,7 +650,7 @@ void main() {
   // entirely when the user disables it, falling straight through to the
   // original glow-star pipeline below unchanged.
   if (u_pixelNodes > 0.5 && u_flat < 0.5) {
-    if (v_pxSize >= ${PIXEL_SPRITE_MIN_PX.toFixed(1)}) {
+    if (v_pxSize >= ${PIXEL_SPRITE_MIN_PX.toFixed(1)} * u_pixelRatio) {
       highp float variantF = floor(v_meta);
       highp float seed = v_meta - variantF;
       // pixel_sprite() wants a plain y-up 0..1 uv; gl_PointCoord is y-down.
@@ -1106,6 +1138,9 @@ export class GraphScene {
   // labels (labelable + hovered) instead of looping all 10k nodes every frame.
   private shownLabels = new Set<string>();
   private labelCandidates = new Set<string>();
+  // Screen-space declutter scratch (reused each frame, never reallocated).
+  private labelBoxes: { id: string; x: number; y: number; w: number; gap: number }[] = [];
+  private placedBoxes: { x0: number; x1: number; y0: number; y1: number }[] = [];
 
   private style: SceneStyleState = EMPTY_STYLE;
   private raf: number | null = null;
@@ -1632,17 +1667,7 @@ export class GraphScene {
     // --- label allow-set (declutter) ---
     this.computeLabelable();
 
-    // --- labels ---
-    for (const id of this.nodeIds) {
-      const el = document.createElement("div");
-      el.className = "graph-label-3d";
-      el.textContent = this.graph.getNodeAttribute(id, "label");
-      el.style.color = theme.ink;
-      const obj = new CSS2DObject(el);
-      obj.visible = false;
-      this.scene.add(obj);
-      this.labels.set(id, obj);
-    }
+    // --- labels: created on demand, see ensureLabel() ---
 
     this.writeNodes();
     this.writeNodeSprites();
@@ -2469,27 +2494,113 @@ export class GraphScene {
     }
     this.shownLabels.clear();
 
-    for (const id of candidates) {
-      const obj = this.labels.get(id);
-      if (!obj) continue;
-      const a = this.graph.getNodeAttributes(id);
-      obj.position.set(a.x, a.y, a.z);
-      let vis: boolean;
-      if (a.hidden) {
-        vis = false;
-      } else if (hoveredNode) {
-        // On hover only the hovered node's label shows (sigma parity).
-        vis = id === hoveredNode;
-      } else {
-        // Size gate so distant hubs stay quiet until you orbit toward them.
-        this.tmpVec.set(a.x, a.y, a.z);
-        const dist = Math.max(1, this.camera.position.distanceTo(this.tmpVec));
-        const renderedPx = (a.size * NODE_RADIUS * scale) / dist;
-        vis = renderedPx > threshold;
-      }
-      obj.visible = vis;
-      if (vis) this.shownLabels.add(id);
+    this.placedBoxes.length = 0;
+    const w = Math.max(1, this.container.clientWidth);
+
+    // Community names claim their screen space FIRST — at the distance they
+    // show, they are the coarse layer and a per-node name must yield to them.
+    // Six labels sitting on six centroids of the same blob is exactly how they
+    // used to pile onto each other.
+    for (const l of this.clusterLabels.shown) {
+      this.tmpVec.copy(l.obj.position).project(this.camera);
+      const inFront = this.tmpVec.z >= -1 && this.tmpVec.z <= 1;
+      const ok =
+        inFront &&
+        this.claimLabelBox(
+          ((this.tmpVec.x + 1) / 2) * w,
+          ((1 - this.tmpVec.y) / 2) * h,
+          labelWidthPx(l.el.textContent ?? "", CLUSTER_LABEL_CHAR_PX),
+          CLUSTER_LABEL_LINE_PX,
+        );
+      l.el.classList.toggle("is-visible", ok);
     }
+
+    // Pass 1: which candidates pass the size gate, and where do they land on
+    // screen? Ranked by degree (labelRank order), hovered node first.
+    const boxes = this.labelBoxes;
+    boxes.length = 0;
+    for (const id of candidates) {
+      const a = this.graph.getNodeAttributes(id);
+      if (a.hidden) continue;
+      // On hover only the hovered node's label shows (sigma parity).
+      if (hoveredNode && id !== hoveredNode) continue;
+      this.tmpVec.set(a.x, a.y, a.z);
+      const dist = Math.max(1, this.camera.position.distanceTo(this.tmpVec));
+      const renderedPx = (a.size * NODE_RADIUS * scale) / dist;
+      if (!hoveredNode && renderedPx <= threshold) continue;
+      this.tmpVec.project(this.camera);
+      if (this.tmpVec.z < -1 || this.tmpVec.z > 1) continue;
+      // The sprite is drawn GLOW_SCALE× the plain node radius — the label hangs
+      // clear of that body (see the CSS2DObject center below), so its box has to
+      // start below it or the declutter would happily stack text over planets.
+      const gap = renderedPx * GLOW_SCALE * 0.5 + 3;
+      boxes.push({
+        id,
+        x: ((this.tmpVec.x + 1) / 2) * w,
+        y: ((1 - this.tmpVec.y) / 2) * h + gap,
+        w: labelWidthPx(this.graph.getNodeAttribute(id, "label"), NODE_LABEL_CHAR_PX),
+        gap,
+      });
+    }
+    // Pass 2: greedy screen-space declutter — a lower-ranked label that would
+    // land on top of one already placed is simply dropped for this frame.
+    for (const b of boxes) {
+      if (!this.claimLabelBox(b.x, b.y, b.w, NODE_LABEL_LINE_PX)) continue;
+      const obj = this.ensureLabel(b.id);
+      const a = this.graph.getNodeAttributes(b.id);
+      obj.position.set(a.x, a.y, a.z);
+      const pad = Math.round(b.gap);
+      if (obj.userData.pad !== pad) {
+        obj.userData.pad = pad;
+        (obj.element as HTMLElement).style.paddingTop = `${pad}px`;
+      }
+      obj.visible = true;
+      this.shownLabels.add(b.id);
+    }
+  }
+
+  /**
+   * Reserve a label-sized screen rect, centred on (x, y). Returns false — and
+   * reserves nothing — if it would overlap a rect already claimed THIS frame.
+   *
+   * Greedy, first-come-first-served, so callers must offer labels in priority
+   * order (community names, then node labels by degree). The candidate set is
+   * capped at LABEL_MAX + the six cluster names, so the O(n²) scan is trivial
+   * and beats maintaining a spatial index nobody else needs.
+   */
+  private claimLabelBox(x: number, y: number, w: number, lineH: number): boolean {
+    const x0 = x - w / 2;
+    const x1 = x + w / 2;
+    const y0 = y - lineH / 2;
+    const y1 = y + lineH / 2;
+    for (const p of this.placedBoxes) {
+      if (x1 > p.x0 && x0 < p.x1 && y1 > p.y0 && y0 < p.y1) return false;
+    }
+    this.placedBoxes.push({ x0, x1, y0, y1 });
+    return true;
+  }
+
+  /** The CSS2DObject for a node's label, created on first use.
+   *
+   * Deliberately lazy: at most LABEL_MAX+1 nodes ever label, but building one
+   * per node up front put thousands of always-invisible CSS2DObjects in the
+   * scene, and CSS2DRenderer walks EVERY one of them each frame to write
+   * `display:none` (measured: 487ms of `hideObject` self time across a 1244-node
+   * first load, plus the matching updateMatrixWorld cost of the extra children).
+   */
+  private ensureLabel(id: string): CSS2DObject {
+    const found = this.labels.get(id);
+    if (found) return found;
+    const el = document.createElement("div");
+    el.className = "graph-label-3d";
+    el.textContent = this.graph.getNodeAttribute(id, "label");
+    el.style.color = this.theme.ink;
+    const obj = new CSS2DObject(el);
+    obj.center.set(0.5, 0); // hang below the node, not over its body
+    obj.visible = false;
+    this.scene.add(obj);
+    this.labels.set(id, obj);
+    return obj;
   }
 
   // ---- public API ----
@@ -3560,25 +3671,16 @@ export class GraphScene {
     this.initArrowMotion();
     this.writeArrowColors();
 
-    // Labels: add any missing, drop any gone.
+    // Labels: drop any whose node is gone (survivors keep their DOM element;
+    // newcomers get one lazily the first time they actually label).
     const live = new Set(this.nodeIds);
     for (const [id, obj] of this.labels) {
       if (!live.has(id)) {
         obj.element.remove();
         this.scene.remove(obj);
         this.labels.delete(id);
+        this.shownLabels.delete(id);
       }
-    }
-    for (const id of this.nodeIds) {
-      if (this.labels.has(id)) continue;
-      const el = document.createElement("div");
-      el.className = "graph-label-3d";
-      el.textContent = this.graph.getNodeAttribute(id, "label");
-      el.style.color = this.theme.ink;
-      const obj = new CSS2DObject(el);
-      obj.visible = false;
-      this.scene.add(obj);
-      this.labels.set(id, obj);
     }
 
     // Nebula: re-snapshot the (changed) node id set so new galaxies get gas.
