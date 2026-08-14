@@ -1408,8 +1408,7 @@ export class GraphScene {
     // end). Constructed disabled; updatePlanetGate() flips it on for dark 3D
     // layouts when the user enables nearFieldPlanets.
     this.planets = new PlanetLayer(this.graph, this.nodeIds, this.camera, pr, dark, false);
-    this.scene.add(this.planets.sphere);
-    this.scene.add(this.planets.rings);
+    this.scene.add(this.planets.billboards);
     this.scene.add(this.planets.moons);
     this.updatePlanetGate();
     // Research-bridge hints: hidden until the gap panel supplies pairs.
@@ -3485,6 +3484,7 @@ export class GraphScene {
     this.coreGlow.setEnabled(false);
     this.band.points.visible = false;
     this.imposterEnabled = false;
+    this.planets.setDark(dark); // pixel-planet ramps are dark/light tinted (rampFor)
     this.updatePlanetGate(); // skin/theme flip may enable/disable planets
     this.nebula.setDark(SHOW_NEBULA && amb.nebula && !this.flatLayout);
     // Light theme legibility (edges pulled to dark slate + higher opacity/base).
@@ -4432,8 +4432,7 @@ export class GraphScene {
     this.imposter.dispose();
     this.scene.remove(this.imposter.points);
     this.planets.dispose();
-    this.scene.remove(this.planets.sphere);
-    this.scene.remove(this.planets.rings);
+    this.scene.remove(this.planets.billboards);
     this.scene.remove(this.planets.moons);
     this.bridgeLines.geometry.dispose();
     (this.bridgeLines.material as THREE.Material).dispose();
