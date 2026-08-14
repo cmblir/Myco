@@ -247,6 +247,7 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
 // idle-gated count trigger can be running at the same moment (see distill.ts).
 function DistillCard({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
+  const lang = useUIStore((s) => s.lang);
   const status = useDistillStore((s) => s.status);
   const refresh = useDistillStore((s) => s.refresh);
   const [running, setRunning] = useState(false);
@@ -301,7 +302,7 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
       : trend === "growing"
         ? (t.set_distill_trend_growing ?? "growing")
         : (t.set_distill_trend_flat ?? "flat");
-  const lastRun = status ? lastRunLabel(status.last_run) : null;
+  const lastRun = status ? lastRunLabel(status.last_run, lang) : null;
 
   return (
     <div className="card">

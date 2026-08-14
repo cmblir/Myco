@@ -1554,6 +1554,7 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
 // shows the RunReport inline (no toast component exists in this app yet).
 function SettingsDistill({ t }: { t: Strings }): JSX.Element {
   const vaultPath = useVaultStore((s) => s.currentVault?.path);
+  const lang = useUIStore((s) => s.lang);
   const [cfg, setCfg] = useState<DistillConfig | null>(null);
   const [status, setStatus] = useState<DistillStatus | null>(null);
   const [running, setRunning] = useState(false);
@@ -1898,7 +1899,7 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
               {status.last_run !== null
                 ? (t.ov_distill_last_run ?? "Last run {t}").replace(
                     "{t}",
-                    lastRunLabel(status.last_run) ?? "",
+                    lastRunLabel(status.last_run, lang) ?? "",
                   )
                 : null}
             </span>

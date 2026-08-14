@@ -3,6 +3,7 @@
 
 import { ipc } from "./ipc";
 import { getActiveModel } from "./chat";
+import type { Lang } from "./i18n";
 import { runSessionDigest } from "./sessionDigest";
 import type { DigestOutcome } from "./sessionDigest";
 import { runFullTierIngest } from "./fullTierIngest";
@@ -97,13 +98,20 @@ export function backlogTrend(last: number[]): "shrinking" | "growing" | "flat" {
 // hours/days), unlike RecentNotes.tsx's day-only `relativeDay`: a distill run
 // can fire several times an hour (idle trigger, manual button), so day
 // granularity would flatten them all to "today".
+//
+// Settings audit item 6: `lang` (the app's own UI language, not the OS
+// locale) drives the Intl locale — `undefined` let the OS locale leak
+// through, producing e.g. "마지막 실행 366 days ago" on a ko UI. myco's Lang
+// values ("en"/"ko"/"ja") are themselves valid BCP47 tags, so no separate
+// mapping table is needed.
 export function lastRunLabel(
   lastRun: number | null,
+  lang: Lang,
   nowMs: number = Date.now(),
 ): string | null {
   if (lastRun === null) return null;
   const diffSec = Math.round(nowMs / 1000 - lastRun);
-  const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: "auto" });
   const abs = Math.abs(diffSec);
   if (abs < 60) return rtf.format(-diffSec, "second");
   if (abs < 3600) return rtf.format(-Math.round(diffSec / 60), "minute");

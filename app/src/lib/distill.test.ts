@@ -49,23 +49,37 @@ describe("lastRunLabel", () => {
   const now = Date.UTC(2026, 7, 13, 12, 0, 0); // 2026-08-13T12:00:00Z
 
   it("null when never run", () => {
-    expect(lastRunLabel(null, now)).toBeNull();
+    expect(lastRunLabel(null, "en", now)).toBeNull();
   });
 
   it("seconds ago", () => {
-    expect(lastRunLabel(now / 1000 - 30, now)).toBe("30 seconds ago");
+    expect(lastRunLabel(now / 1000 - 30, "en", now)).toBe("30 seconds ago");
   });
 
   it("minutes ago", () => {
-    expect(lastRunLabel(now / 1000 - 5 * 60, now)).toBe("5 minutes ago");
+    expect(lastRunLabel(now / 1000 - 5 * 60, "en", now)).toBe("5 minutes ago");
   });
 
   it("hours ago", () => {
-    expect(lastRunLabel(now / 1000 - 3 * 3600, now)).toBe("3 hours ago");
+    expect(lastRunLabel(now / 1000 - 3 * 3600, "en", now)).toBe("3 hours ago");
   });
 
   it("days ago", () => {
-    expect(lastRunLabel(now / 1000 - 2 * 86_400, now)).toBe("2 days ago");
+    expect(lastRunLabel(now / 1000 - 2 * 86_400, "en", now)).toBe("2 days ago");
+  });
+
+  // Settings audit item 6: lang (not the OS locale) drives Intl's locale —
+  // regression guard against "마지막 실행 366 days ago" (English output on a
+  // ko UI when Intl.RelativeTimeFormat was called with `undefined`).
+  it("formats in Korean when lang is ko", () => {
+    // 3 days (not 1-2, which Intl's "auto" mode idiomizes to "어제"/"그저께")
+    // so the assertion targets the same "N일 전" pattern the bug produced in
+    // English ("N days ago").
+    expect(lastRunLabel(now / 1000 - 3 * 86_400, "ko", now)).toContain("일 전");
+  });
+
+  it("formats in Japanese when lang is ja", () => {
+    expect(lastRunLabel(now / 1000 - 5 * 60, "ja", now)).toContain("分前");
   });
 });
 
