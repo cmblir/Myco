@@ -130,13 +130,49 @@ function shortModel(model: string): string {
   return i > 0 ? model.slice(i + 1) : model;
 }
 
+/** Viewport-safe position for the model popover, given the pill's own rect
+ * (only the two edges this needs, not a full DOMRect — keeps this testable
+ * without a DOM). Anchors right-aligned to the pill (where it always lives,
+ * at the bar's right end) then clamps both edges into the viewport — so it
+ * holds at any window width, not just the ones the pill's usual position
+ * happens to fit. `viewport` defaults to the real window and is only ever
+ * overridden by tests. Pure otherwise, so it works identically whether
+ * called on open or on a later resize. Exported for its unit test. */
+export function computeModelPopPos(
+  anchor: { right: number; bottom: number },
+  viewport: { width: number; height: number } = {
+    width: window.innerWidth,
+    height: window.innerHeight,
+  },
+): {
+  top: number;
+  left: number;
+  width: number;
+  maxHeight: number;
+} {
+  const margin = 8;
+  const vw = viewport.width;
+  const vh = viewport.height;
+  // Never wider than the viewport minus both margins — the min(340px, ...)
+  // the CSS used to do, but computed here so the left-clamp below can use it.
+  const width = Math.min(340, vw - margin * 2);
+  let left = anchor.right - width; // right-align to the pill's right edge...
+  left = Math.min(left, vw - width - margin); // ...never past the right edge...
+  left = Math.max(left, margin); // ...never past the left edge either.
+  const top = anchor.bottom + 6;
+  // A short window must not clip the bottom — the popover scrolls internally
+  // past this instead (see .model-chip-pop's overflow-y).
+  const maxHeight = Math.max(80, vh - anchor.bottom - 12);
+  return { top, left, width, maxHeight };
+}
+
 function ModelChip({ t }: { t: Strings }): JSX.Element | null {
   const settings = useSettingsStore((s) => s.settings);
   const setRoute = useUIStore((s) => s.setRoute);
   const [queryReady, setQueryReady] = useState(false);
   const [ingestReady, setIngestReady] = useState(false);
   const [open, setOpen] = useState(false);
-  const [popPos, setPopPos] = useState<{ top: number; right: number } | null>(
+  const [popPos, setPopPos] = useState<ReturnType<typeof computeModelPopPos> | null>(
     null,
   );
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -169,10 +205,17 @@ function ModelChip({ t }: { t: Strings }): JSX.Element | null {
     };
   }, [settings]);
 
-  // Close the popover on outside-click / Escape / resize. `onDown` must check
-  // BOTH the pill (wrapRef) and the portal-rendered popover (popRef) — they
-  // are siblings in the DOM once the popover portals to <body>, so checking
-  // wrapRef alone would treat every click inside the popover as "outside".
+  // Close the popover on outside-click / Escape, reposition it on resize.
+  // `onDown` must check BOTH the pill (wrapRef) and the portal-rendered
+  // popover (popRef) — they are siblings in the DOM once the popover portals
+  // to <body>, so checking wrapRef alone would treat every click inside the
+  // popover as "outside".
+  //
+  // No scroll listener: the topbar is `position: sticky; top: 0`, so the
+  // pill's viewport-relative rect (what the popover is anchored to) never
+  // moves on a page/window scroll — recomputing would be a no-op, and the
+  // fixed-position popover already stays correctly placed as content scrolls
+  // underneath it.
   useEffect(() => {
     if (!open) return;
     const onDown = (e: MouseEvent) => {
@@ -184,10 +227,10 @@ function ModelChip({ t }: { t: Strings }): JSX.Element | null {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") setOpen(false);
     };
-    // ponytail: closes rather than repositions on resize — the topbar is
-    // sticky at the viewport top, so this only fires on an actual window
-    // resize, and reopening after is one click.
-    const onResize = () => setOpen(false);
+    const onResize = () => {
+      const r = wrapRef.current?.getBoundingClientRect();
+      if (r) setPopPos(computeModelPopPos(r));
+    };
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     window.addEventListener("resize", onResize);
@@ -202,9 +245,7 @@ function ModelChip({ t }: { t: Strings }): JSX.Element | null {
 
   const openPopover = (): void => {
     const r = wrapRef.current?.getBoundingClientRect();
-    if (r) {
-      setPopPos({ top: r.bottom + 6, right: Math.max(8, window.innerWidth - r.right) });
-    }
+    if (r) setPopPos(computeModelPopPos(r));
     setOpen(true);
   };
 
@@ -233,7 +274,12 @@ function ModelChip({ t }: { t: Strings }): JSX.Element | null {
             <div
               className="model-chip-pop"
               ref={popRef}
-              style={{ top: popPos.top, right: popPos.right }}
+              style={{
+                top: popPos.top,
+                left: popPos.left,
+                width: popPos.width,
+                maxHeight: popPos.maxHeight,
+              }}
             >
               <div className="muted" style={{ fontSize: 12 }}>
                 {t.s_model}

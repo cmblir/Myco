@@ -544,9 +544,9 @@ select {
 
 /* Topbar model picker: chip + a portal-rendered popover panel (see
    TopBar.tsx's ModelChip comment — the popover can't be a DOM descendant of
-   .topbar without inheriting its scroll clipping). Position is set inline
-   (top/right, computed from the chip's own rect) since a portal has no CSS
-   anchor to the chip to position against. */
+   .topbar without inheriting its scroll clipping). Position, width and
+   max-height are all set inline (computeModelPopPos, viewport-clamped) since
+   a portal has no CSS anchor to the chip to position against. */
 .model-chip-wrap {
   position: relative;
   display: inline-flex;
@@ -566,7 +566,6 @@ select {
 .model-chip-pop {
   position: fixed;
   z-index: 30;
-  width: min(340px, 90vw);
   padding: 12px;
   border: 1px solid var(--line);
   border-radius: var(--r);
@@ -575,6 +574,7 @@ select {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow-y: auto;
 }
 .model-chip-rows {
   display: flex;
