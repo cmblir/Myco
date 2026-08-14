@@ -79,61 +79,132 @@ function hslToRgb01(h: number, s: number, l: number): [number, number, number] {
   return [r + m, g + m, b + m];
 }
 
-// Shortest signed hue delta (degrees, -180..180) from `h` toward `target`.
-function hueDelta(h: number, target: number): number {
-  return ((target - h + 540) % 360) - 180;
+function hexToRgb01(hex: string): [number, number, number] {
+  const n = parseInt(hex.slice(1), 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
 }
 
-// A community can nudge an archetype's hue only this far — enough that a
-// community still "reads as one colour family" per the brief, not so much
-// that two archetypes converge on the same hue and stop being distinguishable.
-const MAX_HUE_ROTATE_DEG = 42;
+// Rec.709 relative luminance — used to keep the community tint from moving a
+// stop's brightness, so the 5-stop value curve (what makes the pixel shading
+// read as a lit sphere) survives tinting untouched.
+function luma([r, g, b]: [number, number, number]): number {
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
 
 // Light theme reads on white/paper instead of the near-black void these
 // ramps were tuned for — same move as graphData.ts's shadeHex() lightBg
 // branch: darker AND more saturated, so nodes stay legible instead of
-// washing out. Hue is untouched (the brief: theme adjusts value, not hue).
+// washing out. Hue is untouched (theme adjusts value, not hue).
 const LIGHT_THEME_LIGHTNESS_SCALE = 0.78;
 const LIGHT_THEME_SAT_BOOST = 1.15;
 
-// Each archetype's characteristic (hue, saturation, 5-stop lightness curve),
-// rim-lit brightest → shadow-rim darkest — the same shape NodeSingle.js's
-// PALETTES (Slate/Ion/Ember/Verdant/Amethyst) already use. One hue per
-// archetype (not a hue-drifting ramp like some Deep-Fold source ramps use)
-// keeps rotation toward a community hue a single, predictable operation.
-const ARCHETYPE_TONE: Record<
-  PixelArchetype,
-  { hue: number; sat: number; light: [number, number, number, number, number] }
-> = {
-  rock: { hue: 28, sat: 0.3, light: [0.82, 0.6, 0.4, 0.24, 0.12] },
-  ocean: { hue: 205, sat: 0.55, light: [0.88, 0.62, 0.4, 0.22, 0.1] },
-  ice: { hue: 195, sat: 0.18, light: [0.97, 0.85, 0.65, 0.42, 0.2] },
-  ember: { hue: 14, sat: 0.75, light: [0.85, 0.55, 0.3, 0.15, 0.07] },
-  gas: { hue: 34, sat: 0.42, light: [0.84, 0.64, 0.44, 0.26, 0.13] },
-  dead: { hue: 230, sat: 0.08, light: [0.74, 0.54, 0.36, 0.22, 0.11] },
-  hub: { hue: 46, sat: 0.45, light: [0.97, 0.82, 0.62, 0.4, 0.2] },
+// Per-stop weight of the community tint, rim → lit → mid → shadow → void.
+//
+// Why not a hue rotation of the whole ramp (what this file did until the
+// "every planet is pale pink" report): rotating all 5 stops toward the
+// community hue IS the community hue — Mars, Io and Jupiter all collapsed onto
+// one colour and only their value curves differed. The body's identity has to
+// win. So: the two stops that carry recognition — 0 (the sunlit rim / cloud /
+// polar cap / lava core) and 1 (the lit surface) — are barely touched, the mid
+// and shadow stops take most of the tint (a shadow is ambient light, which
+// really is whatever colour the surroundings are), and the void stop takes a
+// little so the terminator does not end on a colour foreign to the community.
+// Weights tuned in the archetype harness: at a flat 0.30 a green community
+// still turned Mars olive and Jupiter's belts green.
+const TINT_WEIGHT = [0.0, 0.08, 0.2, 0.26, 0.18];
+
+// ...and the weight is further scaled by how much chroma the stop already has.
+// A stop that is nearly neutral (lunar regolith, cloud white) has no colour
+// identity to defend, but that also means a tint lands on it undiluted and
+// screams — the Moon went visibly green under a green community at a weight
+// that left saturated stops looking untouched. Scaling by the stop's own chroma
+// makes the tint proportional to what is already there: grey bodies stay grey,
+// coloured bodies bend a little.
+function tintWeight(stop: number, base: [number, number, number]): number {
+  const chroma = Math.max(...base) - Math.min(...base);
+  return TINT_WEIGHT[stop] * (0.15 + 0.85 * chroma);
+}
+
+// Each archetype's 5-stop ramp, rim/highlight → lit → mid → shadow → void,
+// sampled from what the real body actually looks like rather than invented.
+// The stop *meanings* differ per archetype (see the GLSL below) because a
+// 5-entry indexed ramp has to carry both the lighting zones and the two or
+// three materials that make a body recognisable at 16-96px.
+//
+// References (checked 2026-08, not from memory):
+//  - Mars: en.wikipedia.org/wiki/Mars_surface_color — "butterscotch", nanophase
+//    ferric oxide dust over darker basalt; up to 50% of the iron is black
+//    magnetite, which is why Mars is dusty low-contrast rather than fire-red.
+//  - Earth: earthobservatory.nasa.gov/features/BlueMarble — deep blue ocean,
+//    green/brown-tan land, white cloud, blue Rayleigh limb.
+//  - Europa: open.edu "Icy bodies: Europa and elsewhere" + JPL PIA00275 — albedo
+//    ~0.68, bluish icy plains, brown/reddish tholin-stained lineae.
+//  - Io: planetary.org/articles/2629 (Jason Perry's true-colour reprocessing) —
+//    NOT the vivid pizza; muted yellow/white-pink crust, red deposits round the
+//    volcanic centres, grey-brown poles, black silicate paterae.
+//  - Jupiter: science.nasa.gov/jupiter/jupiter-facts + JPL PIA24818 — off-white
+//    ammonia-ice "zones", red-brown "belts", one much darker equatorial belt.
+//  - Moon: zmescience "the real color of the moon" / NASA "Colorful Moon" —
+//    near-neutral grey, bright anorthositic highlands vs dark iron-rich maria,
+//    albedo 0.03..0.12, hard terminator (no atmosphere).
+//  - Sun: en.wikipedia.org/wiki/Limb_darkening — the limb is ~30% of central
+//    intensity and cooler/redder; the photosphere itself is white, not yellow
+//    (the yellow is our atmosphere), so the core stop is white and the warmth
+//    only appears outward.
+const ARCHETYPE_RAMP: Record<PixelArchetype, string[]> = {
+  // polar cap / bright dust · sunlit butterscotch dust · rust plain · dark
+  // basaltic albedo feature (Syrtis Major) · night
+  rock: ["#efe6d8", "#c9834b", "#97562f", "#5e4633", "#2b1a12"],
+  // cloud white · Rayleigh limb haze · green-tan continent · deep sunlit ocean ·
+  // night ocean
+  ocean: ["#f4f7fb", "#a8cfe6", "#6f8a46", "#17548c", "#061a33"],
+  // specular ice · bright plain · blue-white shadowed ice · tan tholin lineae ·
+  // deep blue night limb
+  ice: ["#fdfeff", "#e5eef7", "#bed2e3", "#9c7f68", "#3d5468"],
+  // white-hot vent · incandescent orange fissure · sulphur crust · grey-brown
+  // crust · black silicate patera
+  ember: ["#ffe9a8", "#f2761f", "#9c8a4e", "#5a4630", "#211814"],
+  // zone core cream · pale zone · ochre transition · red-brown belt · dark belt
+  gas: ["#f7ead0", "#e3caa0", "#c39a63", "#96603a", "#452a1d"],
+  // highland regolith highlight · highland · regolith · mare basalt · night
+  dead: ["#d8d4cd", "#aaa49b", "#7b766f", "#494642", "#191817"],
+  // photosphere core · granulation · warm disc · limb darkening · corona
+  hub: ["#fffdf5", "#ffe9a8", "#ffc247", "#ee8a1e", "#a33d08"],
 };
 
-/** Derive the 5-entry ramp for an archetype, tinted toward a community hue. */
+/**
+ * Derive the 5-entry ramp for an archetype, lightly tinted toward a community
+ * hue. The archetype's own identity dominates — see TINT_WEIGHT for why.
+ */
 export function rampFor(
   a: PixelArchetype,
   hue: number,
   dark: boolean,
 ): PixelRamp {
-  const tone = ARCHETYPE_TONE[a];
-  const delta = Math.max(
-    -MAX_HUE_ROTATE_DEG,
-    Math.min(MAX_HUE_ROTATE_DEG, hueDelta(tone.hue, hue)),
-  );
-  const h = (tone.hue + delta + 360) % 360;
-  const s = dark ? tone.sat : Math.min(1, tone.sat * LIGHT_THEME_SAT_BOOST);
-  return tone.light.map((l) =>
-    hslToRgb01(
-      h,
-      s,
-      dark ? l : Math.max(0.04, l * LIGHT_THEME_LIGHTNESS_SCALE),
-    ),
-  );
+  const tint = hslToRgb01(((hue % 360) + 360) % 360, 1, 0.5);
+  return ARCHETYPE_RAMP[a].map((hex, i) => {
+    const base = hexToRgb01(hex);
+    const w = tintWeight(i, base);
+    // Mix toward the community hue, then restore the stop's original luminance
+    // so tinting can only shift chroma, never the shading curve.
+    const mixed = base.map((c, k) => c * (1 - w) + tint[k] * w) as [
+      number,
+      number,
+      number,
+    ];
+    const my = luma(mixed);
+    const k = my > 1e-4 ? luma(base) / my : 1;
+    let out = mixed.map((c) => c * k) as [number, number, number];
+    if (!dark) {
+      // Desaturate-safe light-theme move: pivot each channel about the stop's
+      // own luminance to add saturation, then darken the whole stop.
+      const y = luma(out);
+      out = out.map((c) =>
+        Math.max(0, (y + (c - y) * LIGHT_THEME_SAT_BOOST) * LIGHT_THEME_LIGHTNESS_SCALE),
+      ) as [number, number, number];
+    }
+    return out.map((c) => Math.min(1, c)) as [number, number, number];
+  });
 }
 
 // --- GLSL: node sprite (16x16, graph node icon LOD) --------------------
@@ -220,20 +291,25 @@ vec2 pixel_sprite(vec2 uv, int variant, float t, float seed) {
 	float z = sqrt(max(0.0, 1.0 - min(len * len, 1.0)));
 	vec2 sp = d / (z + 1.0);
 
-	// Index 0 is reserved for the lit rim (plus ice caps and ember glow) — spending it
-	// on ordinary surface pixels is what turned every archetype into the same white blob.
-	if (variant == 0) {              // rock: mid-value, lumpy, a couple of dark craters
-		float n = pxs_vnoise(sp * 4.2 + vec2(t * 0.06, 0.0), seed);
-		if (n > 0.62) idx = min(zone + 2, 4);
-	} else if (variant == 1) {       // ocean: dark water, a few mid-value islands
-		float n = pxs_vnoise(sp * 4.2 + vec2(t * 0.07, 0.0), seed);
-		idx = n > 0.60 ? zone : min(zone + 2, 4);
-	} else if (variant == 2) {       // ice: brightest body, white caps, dark equator
-		idx = max(zone - 1, 1);
-		if (abs(d.y) < 0.13) idx = zone + 1;
-		if (abs(d.y) > 0.50) idx = 0;
-		if (pxs_vnoise(sp * 4.5 + vec2(t * 0.04, 0.0), seed) > 0.72) idx = zone + 1;
-	} else if (variant == 3) {       // ember: near-black crust, glowing fissure
+	// Each branch spends the ramp on the ONE feature that makes its real
+	// referent recognisable at 16px — see ARCHETYPE_RAMP for what each stop is.
+	// Index 0 is a highlight stop (cap / cloud / lava core / star core), never an
+	// ordinary surface pixel: spending it on surface is what turned every
+	// archetype into the same white blob.
+	if (variant == 0) {              // rock — Mars: ochre dust, dark basalt, polar cap
+		idx = zone;
+		if (pxs_vnoise(sp * 3.6 + vec2(t * 0.05, 0.0), seed) > 0.64) idx = min(zone + 1, 3);
+		if (d.y > 0.62) idx = 0;     // the cap, the one thing that says Mars at this size
+	} else if (variant == 1) {       // ocean — Earth: blue sea, green land, white cloud
+		idx = zone < 3 ? 3 : 4;
+		if (pxs_vnoise(sp * 3.6 + vec2(t * 0.06, 0.0), seed) > 0.58) idx = zone < 3 ? 2 : 3;
+		if (zone == 1 && pxs_vnoise(sp * 2.4 + vec2(-t * 0.05, 0.0), seed) > 0.62) idx = 0;
+	} else if (variant == 2) {       // ice — Europa: albedo ~0.7, tan crack lineae
+		idx = zone == 1 ? 1 : 2;
+		if (zone == 1 && pxs_vnoise(sp * 2.2, seed) > 0.66) idx = 0;
+		if (abs(fract(sp.x * 1.7 + pxs_vnoise(sp * 1.6, seed) * 2.4) - 0.5) < 0.06) idx = 3;
+		if (zone == 3) idx = 4;
+	} else if (variant == 3) {       // ember — Io: dark crust, glowing fissure
 		idx = zone + 1;
 		float n = pxs_vnoise(sp * 3.0 + vec2(t * 0.08, 0.0), seed);
 		float fis = abs(d.y + 0.38 * (n - 0.5));
@@ -241,31 +317,39 @@ vec2 pixel_sprite(vec2 uv, int variant, float t, float seed) {
 		if (fis < pulse + 0.13) idx = 1;                   // 1px halo sells it as heat
 		if (fis < pulse) idx = 0;                           // core of the crack, ignores the terminator
 		if (n > 0.74) idx = 0;
-	} else if (variant == 4) {       // gas: horizontal bands
+	} else if (variant == 4) {       // gas — Jupiter: cream zones, red-brown belts
 		float y = d.y + 0.10 * pxs_vnoise(sp * 2.0 + vec2(t * 0.09, 0.0), seed);
 		float b = sin((y * 3.1 + 0.4) * 3.14159);
-		idx = clamp(zone + (b > 0.15 ? -1 : (b < -0.35 ? 1 : 0)), 1, 4);
-	} else if (variant == 5) {       // dead: flat, low contrast, pitted
-		idx = max(zone + 1, 2);
-		if (pxs_vnoise(sp * 3.8 + vec2(t * 0.02, 0.0), seed) > 0.66) idx = 4;
-	} else if (variant == 6) {       // hub: bright core
-		idx = max(zone - 1, 1);
+		idx = b > 0.35 ? 1 : (b > -0.2 ? 2 : 3);
+		if (b > 0.85) idx = 0;                              // brightest zone core
+		if (zone == 3) idx = min(idx + 1, 4);
+	} else if (variant == 5) {       // dead — the Moon: neutral grey, pitted
+		idx = zone;
+		if (pxs_vnoise(sp * 3.8 + vec2(t * 0.02, 0.0), seed) > 0.66) idx = min(zone + 1, 4);
+	} else if (variant == 6) {       // hub — a star: radial limb darkening, granulated
+		float rr = len / rl;                                // self-luminous: no terminator
+		idx = rr < 0.42 ? 0 : (rr < 0.68 ? 1 : (rr < 0.88 ? 2 : 3));
+		if (pxs_vnoise(sp * 4.5 + vec2(t * 0.2, 0.0), seed) > 0.70) idx = max(idx - 1, 0);
 	}
 
 	// --- 1px lit rim / 1px dark rim: short arcs, not half-rings ---
 	float edge = step(rl - ps * 1.05, len) * body;
-	if (edge > 0.5 && sh < -0.45 && variant != 3) idx = 0; // an ember world's only bright thing is its crack
-	if (edge > 0.5 && sh > 0.45) idx = 4;
+	// variant 3's only bright thing is its crack; variant 6 is a star, whose
+	// brightness is radial, so neither takes a directional rim.
+	if (edge > 0.5 && sh < -0.45 && variant != 3 && variant != 6) idx = 0;
+	if (edge > 0.5 && sh > 0.45 && variant != 6) idx = 4;
 
 	float a = body;
 
-	// hub's ring: exactly one pixel row per column (nearest row to a tilted line),
-	// drawn only outside the core so it reads as a ring seen near edge-on.
-	if (variant == 6) {
-		float tilt = -0.30 * sin(t * 0.25);
-		if (abs(d0.y - tilt * d0.x) < 0.0668 && abs(d0.x) < 1.0 && len > rl) {
+	// hub's corona: a dithered halo just outside the photosphere plus the four
+	// axis spikes a bright star shows. Replaces the tilted Saturn ring the hub
+	// used to wear — a star does not have rings.
+	if (variant == 6 && len > rl && len < rl * 1.45) {
+		bool spike = abs(d.x) < ps * 0.9 || abs(d.y) < ps * 0.9;
+		bool halo = mod(px.x + px.y, 2.0) < 1.0 && len < rl * 1.22;
+		if (spike || halo) {
 			a = 1.0;
-			idx = abs(d0.x) > 0.85 ? 2 : 0;
+			idx = 4;
 		}
 	}
 
@@ -399,70 +483,122 @@ vec4 pixel_planet(vec2 uv, int family, float t, float seed) {
 	int idx = 2;
 
 	if (family == 4) {
-		// --- gas: GasLayers.gdshader, band + turbulence composition, verbatim ---
+		// --- gas: Jupiter — off-white ammonia "zones" alternating with red-brown
+		// "belts", edges torn up by turbulence, one much darker belt and one storm
+		// oval (science.nasa.gov/jupiter/jupiter-facts, JPL PIA24818). The source
+		// GasLayers.gdshader fbm-of-fbm produced marbling rather than bands, so the
+		// band term is an explicit latitude sine now and the fbm only warps it.
 		float size = 10.107;
-		float band = pxp_fbm(vec2(0.0, sp.y * size * 0.892), seed, size);
 		float turb = 0.0;
-		for (int i = 0; i < 10; i++) {
-			turb += pxp_circleNoise((sp * size * 0.3) + (float(i + 1) + 10.0) + vec2(t * 0.05, 0.0), seed, size);
+		for (int i = 0; i < 6; i++) {
+			turb += pxp_circleNoise((sp * size * 0.3) + (float(i + 1) + 10.0) + vec2(t * 0.04, 0.0), seed, size);
 		}
-		float fbm1 = pxp_fbm(sp * size, seed, size);
-		float fbm2 = pxp_fbm(sp * vec2(1.0, 2.0) * size + fbm1 + vec2(-t * 0.05, 0.0) + turb, seed, size);
-		fbm2 *= pow(band, 2.0) * 7.0;
-		float light_d = distance(sp, PXP_LIGHT);
-		float light = fbm2 + light_d * 1.8;
-		fbm2 += light_d - 0.3;
-		fbm2 = smoothstep(-0.2, 4.0 - fbm2, light);
-		if (dith) fbm2 *= 1.1;
-		idx = int(clamp(floor(fbm2 * 5.0), 0.0, 4.0));
+		float lat = sp.y + 0.035 * pxp_fbm(sp * vec2(1.0, 3.0) * size + turb + vec2(-t * 0.05, 0.0), seed, size);
+		// ~5 belt/zone pairs; spherify() already crowds them toward the poles, as
+		// on the real planet.
+		float band = sin(lat * 34.0 + seed * 6.2831853);
+		idx = band > 0.35 ? 1 : (band > -0.1 ? 2 : 3);
+		if (band > 0.80) idx = 0;
+		// The one dark belt (Jupiter's NEB) — pinned to a seeded latitude so it
+		// does not move with the band phase.
+		if (abs(lat - (0.30 + 0.26 * fract(seed * 3.7))) < 0.030) idx = 4;
+		// Storm oval, wider than tall like the Great Red Spot.
+		vec2 storm = (sp - vec2(fract(seed * 7.3), 0.63)) * vec2(1.0, 2.4);
+		if (dot(storm, storm) < 0.0042) idx = 0;
+		// distance(sp, PXP_LIGHT) only spans ~0.16 (sub-solar) .. ~0.85 (far limb)
+		// after spherify(), so every threshold in this function is calibrated to
+		// that range, not to 0..1.
+		float d_light = distance(sp, PXP_LIGHT);
+		if (d_light > (dith ? 0.54 : 0.58)) idx = min(idx + 1, 4);
+		if (d_light > 0.74) idx = 4;
 	} else if (family == 1) {
-		// --- ocean: PlanetUnder water zone + PlanetLandmass land_cutoff mask ---
+		// --- ocean: Earth — deep blue sea, green/tan continents, white cloud
+		// swirls over both, and a bright Rayleigh-scattered limb on the day side
+		// (earthobservatory.nasa.gov/features/BlueMarble). The old version made
+		// land BRIGHTER than the sea by two whole stops and had no cloud at all.
 		float size = 5.228;
-		float d_light = distance(sp, PXP_LIGHT) + pxp_fbm(sp * size + vec2(t * 0.1, 0.0), seed, size) * 0.3;
-		idx = pxp_zoneIdx(d_light, 6.0, dith);
+		float d_light = distance(sp, PXP_LIGHT) + pxp_fbm(sp * size + vec2(t * 0.06, 0.0), seed, size) * 0.18;
+		if (dith) d_light += 0.04; // dithered terminator instead of a hard cut
+		int night = int(step(0.60, d_light));
+		idx = 3 + night; // ocean is the default surface — Earth is 70% water
 		float lsize = 4.292;
-		float fbm1 = pxp_fbm(sp * lsize + vec2(t * 0.2, 0.0), seed, lsize);
-		if (fbm1 > 0.62) idx = max(idx - 2, 0); // land_cutoff (0.633 in the source .tscn)
+		if (pxp_fbm(sp * lsize + vec2(t * 0.2, 0.0), seed, lsize) > 0.53) idx = 2 + night;
+		// Cloud only reads on the day side; at night it is just darker ocean.
+		if (night == 0 && pxp_fbm(sp * 3.1 + vec2(-t * 0.12, t * 0.02), seed, 3.1) > 0.57) idx = 0;
+		if (night == 0 && d_circle > 0.455) idx = 1; // atmospheric limb
 	} else if (family == 2) {
-		// --- ice: PlanetUnder land zone (bright ramp) + IceWorld lake_cutout ---
-		float size = 8.0;
-		float d_light = distance(sp, PXP_LIGHT) + pxp_fbm(sp * size + vec2(t * 0.25, 0.0), seed, size) * 0.3;
-		idx = min(pxp_zoneIdx(d_light, 4.0, dith), 3); // never reaches the darkest stop — ice stays pale
-		float lake = pxp_fbm(sp * 10.0 + vec2(t * 0.2, 0.0), seed, 10.0);
-		if (lake > 0.55) idx = min(idx + 2, 4); // IceWorld's lake_cutoff, darkened instead of cut out
+		// --- ice: Europa — albedo ~0.68, so the lit disc never leaves the top
+		// three stops; identity comes from the tan tholin-stained lineae criss-
+		// crossing the plains (open.edu "Icy bodies: Europa", JPL PIA00275).
+		float size = 7.0;
+		float d_light = distance(sp, PXP_LIGHT) + pxp_fbm(sp * size + vec2(t * 0.08, 0.0), seed, size) * 0.16;
+		idx = min(pxp_zoneIdx(d_light, 4.0, dith), 2);
+		// Lineae: a long straight-ish phase ramp, warped only slightly by fbm and
+		// thresholded near its own midline, so they come out as the long curved
+		// cracks Europa actually has rather than a contour-map scribble.
+		float warp = pxp_fbm(sp * 2.0 + vec2(t * 0.03, 0.0), seed, 2.0);
+		if (abs(fract(sp.x * 2.2 + warp * 3.4) - 0.5) < 0.028) idx = 3;
+		if (abs(fract(sp.y * 1.8 - warp * 2.8) - 0.5) < 0.020) idx = 3;
+		if (d_light > 0.70) idx = 4; // blue-white night limb
 	} else if (family == 3) {
-		// --- ember: NoAtmosphere-style crust + craters + LavaWorld river veins ---
-		float size = 10.0;
-		float d_light = distance(sp, PXP_LIGHT) + pxp_fbm(sp * size + vec2(t * 0.2, 0.0), seed, size) * 0.3;
-		// crust reads near-black but still varies with d_light — pxp_zoneIdx's
-		// own 0..4 clamp would swallow a large additive bias entirely (it did,
-		// until this was caught by the render-coverage check below), so the
+		// --- ember: Io — muted sulphur-yellow crust, grey-brown toward the poles,
+		// black silicate paterae, and incandescent fissures
+		// (planetary.org/articles/2629, true-colour reprocessing). The old
+		// river_cutoff test at 0.46 flooded whole discs with the glow stop (a solid
+		// glowing ball at seed 0.77 in the harness); a ridge test cannot flood.
+		float size = 9.0;
+		float d_light = distance(sp, PXP_LIGHT) + pxp_fbm(sp * size + vec2(t * 0.12, 0.0), seed, size) * 0.25;
+		// pxp_zoneIdx's own 0..4 clamp would swallow a large additive bias, so the
 		// crust's 2..4 sub-range is built directly instead of biasing zoneIdx.
-		float crustBand = d_light * 2.2;
+		float crustBand = d_light * 2.4;
 		if (dith && fract(crustBand) > 0.85) crustBand += 1.0;
 		idx = 2 + int(clamp(floor(crustBand), 0.0, 2.0));
-		if (pxp_crater(sp, seed, 3.5, t * 0.2) < 0.5) idx = min(idx + 1, 4);
+		if (pxp_crater(sp, seed, 4.0, t * 0.1) > 0.5) idx = 4; // black patera floors
 		float fbm1 = pxp_fbm(sp * size + vec2(t * 0.2, 0.0), seed, size);
-		float river = pxp_fbm(sp + fbm1 * 2.5, seed, size);
-		if (river > 0.46) idx = 0; // river_cutoff — glowing lava vein
+		float vein = abs(pxp_fbm(sp * 4.0 + fbm1 * 0.8, seed, 4.0) - 0.5);
+		float pulse = 0.020 + 0.006 * sin(t * 1.1);
+		if (vein < pulse + 0.030) idx = 1; // cooling orange margin
+		if (vein < pulse) idx = 0;         // white-hot core of the fissure
 	} else if (family == 6) {
-		// --- hub: no Deep-Fold source; same bright-core-plus-ring idea as
-		// pixel_sprite's variant 6, at this function's resolution ---
-		float size = 6.0;
-		float d_light = distance(sp, PXP_LIGHT) + pxp_fbm(sp * size + vec2(t * 0.15, 0.0), seed, size) * 0.2;
-		idx = min(pxp_zoneIdx(d_light, 3.0, dith), 2); // bright core, never reaches the dark stops
-		vec2 d0 = sp * 2.0 - 1.0;
-		float tilt = -0.3 * sin(t * 0.25);
-		if (abs(d0.y - tilt * d0.x) < 0.05 && length(d0) > 0.55) idx = 0; // the ring
+		// --- hub: a star. Self-luminous, so there is no terminator at all —
+		// brightness falls off RADIALLY (solar limb darkening: the limb is ~30% of
+		// central intensity, en.wikipedia.org/wiki/Limb_darkening), the surface is
+		// granulated, and a dithered corona rings the photosphere. The old version
+		// lit a star from the side and hung a Saturn ring on it.
+		float r = d_circle / 0.5;
+		float gran = pxp_fbm(sp * 16.0 + vec2(t * 0.15, t * 0.09), seed, 16.0);
+		float v = r * r * 4.2 + (gran - 0.5) * 2.2;
+		if (dith) v += 0.18;
+		idx = int(clamp(floor(v), 0.0, 3.0));
+		if (r > 0.88) {
+			idx = 4;
+			// The corona has no edge, so it is dithered away instead of ending on a
+			// hard ring — alpha is already a binary step, so half the pixels drop.
+			if (r > 0.94 && !dith) alpha = 0.0;
+		}
 	} else {
-		// --- rock / dead: shared NoAtmosphere-style crust + craters, dead flatter ---
+		// --- rock (Mars) / dead (the Moon): both cratered airless-looking crust,
+		// but the identity is opposite. Mars is dust: LOW contrast, a bright polar
+		// cap and broad dark basaltic albedo features (Syrtis Major), craters
+		// mostly buried (en.wikipedia.org/wiki/Mars_surface_color — the red is a
+		// millimetres-thick veneer over half-magnetite, half-hematite iron).
+		// The Moon is bare rock: high contrast, bright anorthositic highlands, dark
+		// iron-rich maria, dense sharp craters, hard terminator (no atmosphere).
 		bool dead = family == 5;
-		float size = 8.0;
-		float speed = dead ? 0.4 : 0.1;
-		float strength = dead ? 0.15 : 0.3;
-		float d_light = distance(sp, PXP_LIGHT) + pxp_fbm(sp * size + vec2(t * speed, 0.0), seed, size) * strength;
-		idx = pxp_zoneIdx(dead ? d_light + 0.2 : d_light, dead ? 4.0 : 5.0, dith);
-		if (pxp_crater(sp, seed, dead ? 5.0 : 3.5, t * 0.1) < 0.5) idx = min(idx + 1, 4);
+		float size = dead ? 7.0 : 6.0;
+		float d_light = distance(sp, PXP_LIGHT) + pxp_fbm(sp * size + vec2(t * (dead ? 0.02 : 0.06), 0.0), seed, size) * (dead ? 0.10 : 0.22);
+		// Mars keeps stop 0 for its polar cap alone, so its lighting starts at 1;
+		// the Moon's brightest highlands genuinely do reach the top stop.
+		idx = pxp_zoneIdx(d_light, dead ? 5.2 : 4.8, dith);
+		if (!dead) idx = max(idx, 1);
+		// Broad dark terrain: lunar maria / martian albedo features.
+		if (pxp_fbm(sp * (dead ? 2.2 : 2.4) + vec2(t * 0.03, 0.0), seed, dead ? 2.2 : 2.4) > (dead ? 0.58 : 0.56)) idx = min(idx + 1, 4);
+		float cr = pxp_crater(sp, seed, dead ? 6.0 : 3.0, t * (dead ? 0.02 : 0.06));
+		if (cr > (dead ? 0.5 : 0.72)) idx = min(idx + 1, 4); // shadowed crater floor
+		// Polar cap — Mars only; the Moon has no cap worth a stop at this size.
+		// spherify() crowds sp.y toward the middle, so the visible disc only spans
+		// roughly 0.27..0.73 — a cap threshold has to sit inside that.
+		if (!dead && abs(sp.y - 0.5) > 0.27 && idx < 4) idx = 0;
 	}
 
 	return vec4(colors[clamp(idx, 0, 4)], alpha);

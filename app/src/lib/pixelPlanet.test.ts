@@ -8,6 +8,10 @@ import {
   type PixelArchetype,
 } from "./pixelPlanet";
 
+/** Rec.709 relative luminance — the same measure rampFor() preserves. */
+const lum = ([r, g, b]: [number, number, number]): number =>
+  0.2126 * r + 0.7152 * g + 0.0722 * b;
+
 describe("archetypeFor", () => {
   it("is deterministic — same id/degree/isHub always gives the same archetype", () => {
     for (const id of [
@@ -85,6 +89,25 @@ describe("rampFor", () => {
     expect(dist).toBeGreaterThan(0.3);
   });
 
+  it("keeps a stop's luminance when a community hue tints it", () => {
+    // Tinting is allowed to move chroma but not the shading curve — the 5-stop
+    // value ladder is what makes the pixel shading read as a lit sphere.
+    for (const a of PIXEL_ARCHETYPES) {
+      const base = rampFor(a, 0, true).map(lum);
+      for (const hue of [90, 200, 300]) {
+        rampFor(a, hue, true).forEach((stop, i) => {
+          // Not exact: a stop with a channel already at 1.0 (hub's #ffc247 disc)
+          // cannot be restored upward, so the final clamp costs it a little
+          // brightness. Bounded well below anything visible in the value ladder.
+          expect(
+            Math.abs(lum(stop) - base[i]),
+            `${a} @ ${hue} stop ${i}`,
+          ).toBeLessThan(0.035);
+        });
+      }
+    }
+  });
+
   it("adjusts value (not hue) between dark and light theme", () => {
     const dark = rampFor("gas", 90, true);
     const light = rampFor("gas", 90, false);
@@ -92,6 +115,136 @@ describe("rampFor", () => {
     const sum = (ramp: typeof dark) =>
       ramp.reduce((s, [r, g, b]) => s + r + g + b, 0);
     expect(sum(light)).toBeLessThan(sum(dark));
+  });
+});
+
+// Each archetype's ramp is sampled from a real body (Mars, Earth, Europa, Io,
+// Jupiter, the Moon, the Sun — see ARCHETYPE_RAMP for the references), and the
+// point of that work is that a viewer recognises the body. These pin the
+// property that carries the recognition, and pin it for EVERY community hue:
+// the previous ramp rotated wholesale toward the community hue, which is how
+// Mars, Io and Jupiter all ended up the same pale pink.
+describe("archetype ramps stay in their real body's colour family", () => {
+  // Every hue a community can hand rampFor(), plus both themes.
+  const cases: [number, boolean][] = [];
+  for (let hue = 0; hue < 360; hue += 15)
+    cases.push([hue, true], [hue, false]);
+
+  function forEveryCommunity(
+    a: PixelArchetype,
+    assert: (ramp: ReturnType<typeof rampFor>, label: string) => void,
+  ): void {
+    for (const [hue, dark] of cases)
+      assert(rampFor(a, hue, dark), `${a} @ hue ${hue} dark=${dark}`);
+  }
+
+  it("rock is Mars — the lit surface stops are warm red-orange", () => {
+    forEveryCommunity("rock", (ramp, label) => {
+      for (const i of [1, 2]) {
+        const [r, g, b] = ramp[i];
+        expect(r, `${label} stop ${i} red > green`).toBeGreaterThan(g);
+        expect(g, `${label} stop ${i} green > blue`).toBeGreaterThan(b);
+        expect(r - b, `${label} stop ${i} warm spread`).toBeGreaterThan(0.1);
+      }
+    });
+  });
+
+  it("ocean is Earth — the sea stop is blue, the land stop is not", () => {
+    forEveryCommunity("ocean", (ramp, label) => {
+      const [r, g, b] = ramp[3];
+      expect(b, `${label} sea blue > red`).toBeGreaterThan(r);
+      expect(b, `${label} sea blue > green`).toBeGreaterThan(g);
+      const land = ramp[2];
+      expect(land[1], `${label} land green > blue`).toBeGreaterThan(land[2]);
+    });
+  });
+
+  it("ice is Europa — near-white plains above 0.8 luminance, tan lineae", () => {
+    forEveryCommunity("ice", (ramp, label) => {
+      // Light theme deliberately darkens everything, so only pin the dark ramp.
+      if (label.endsWith("dark=true")) {
+        expect(lum(ramp[0]), `${label} albedo`).toBeGreaterThan(0.85);
+        expect(lum(ramp[1]), `${label} albedo`).toBeGreaterThan(0.8);
+      }
+      const [r, , b] = ramp[3];
+      expect(r, `${label} lineae are tan, not blue`).toBeGreaterThan(b);
+    });
+  });
+
+  it("ember is Io — the fissure stops are hot orange, the crust is dark", () => {
+    forEveryCommunity("ember", (ramp, label) => {
+      const [r, g, b] = ramp[1];
+      expect(r, `${label} fissure red dominates`).toBeGreaterThan(0.7);
+      expect(r - g, `${label} fissure is orange`).toBeGreaterThan(0.2);
+      expect(g, `${label} fissure green > blue`).toBeGreaterThan(b);
+      expect(lum(ramp[4]), `${label} crust bottom is near-black`).toBeLessThan(
+        0.15,
+      );
+    });
+  });
+
+  it("gas is Jupiter — cream zone over red-brown belt, both warm", () => {
+    forEveryCommunity("gas", (ramp, label) => {
+      for (const i of [0, 1, 2, 3]) {
+        const [r, g, b] = ramp[i];
+        expect(r, `${label} stop ${i} red > green`).toBeGreaterThan(g);
+        expect(g, `${label} stop ${i} green > blue`).toBeGreaterThan(b);
+      }
+      // The zones really are much brighter than the belts — that contrast is
+      // the whole reason Jupiter reads as banded.
+      expect(lum(ramp[0]) - lum(ramp[3]), `${label} zone/belt`).toBeGreaterThan(
+        0.3,
+      );
+    });
+  });
+
+  it("dead is the Moon — every stop is near-neutral grey", () => {
+    forEveryCommunity("dead", (ramp, label) => {
+      ramp.forEach((stop, i) => {
+        const chroma = Math.max(...stop) - Math.min(...stop);
+        expect(chroma, `${label} stop ${i} chroma`).toBeLessThan(0.09);
+      });
+    });
+  });
+
+  it("hub is a star — white core, limb darkening down to orange", () => {
+    forEveryCommunity("hub", (ramp, label) => {
+      if (label.endsWith("dark=true")) {
+        const [r, g, b] = ramp[0];
+        expect(Math.min(r, g, b), `${label} core is white`).toBeGreaterThan(
+          0.88,
+        );
+      }
+      const limb = ramp[3];
+      expect(limb[0], `${label} limb is warm`).toBeGreaterThan(limb[2]);
+      expect(lum(ramp[0]), `${label} limb darkening`).toBeGreaterThan(
+        lum(ramp[3]),
+      );
+    });
+  });
+
+  it("keeps every archetype's ramp ordered bright → dark", () => {
+    for (const a of PIXEL_ARCHETYPES) {
+      // ember is the exception by design: its stop 1 is an incandescent fissure
+      // sitting next to a sulphur crust of near-equal luminance, so those two
+      // are told apart by hue, exactly as on Io.
+      const stops = rampFor(a, 210, true).map(lum);
+      const pairs: [number, number][] =
+        a === "ember"
+          ? [
+              [0, 1],
+              [2, 3],
+              [3, 4],
+            ]
+          : [
+              [0, 1],
+              [1, 2],
+              [2, 3],
+              [3, 4],
+            ];
+      for (const [i, j] of pairs)
+        expect(stops[i], `${a} stop ${i} > ${j}`).toBeGreaterThan(stops[j]);
+    }
   });
 });
 
