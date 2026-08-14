@@ -164,13 +164,15 @@ fn ingest_links(file: &Path, text: &str, names: &HashMap<String, PathBuf>, adj: 
     let mut seen_unresolved: HashSet<String> = HashSet::new();
     for target in parser::parse_links_from_text(text) {
         // Drop any `#heading` / `#^block` suffix — Obsidian resolves
-        // `[[Note#Section]]` to the note itself.
-        let key = target
-            .split('#')
-            .next()
-            .unwrap_or(&target)
-            .trim()
-            .to_lowercase();
+        // `[[Note#Section]]` to the note itself. Then drop any path prefix
+        // (`[[wiki/x]]`, `[[wiki/sub/x.md]]`) — this vault has a flat wikilink
+        // name index (build_name_index keys by stem/basename only, not full
+        // path), so a link written path-style must look up the same key as the
+        // bare stem `[[x]]` or it reads as a false "missing page" even though
+        // the file exists. Matches Obsidian's own basename resolution.
+        let base = target.split('#').next().unwrap_or(&target).trim();
+        let base = base.rsplit(['/', '\\']).next().unwrap_or(base);
+        let key = base.to_lowercase();
         match names.get(&key) {
             Some(resolved) => {
                 let target_path = resolved.to_string_lossy().into_owned();
@@ -401,6 +403,40 @@ mod tests {
         let src = src.to_string_lossy().into_owned();
         assert_eq!(adj.forward.get(&src).map(Vec::len), Some(1));
         assert_eq!(adj.unresolved.get(&src).map(Vec::len), Some(1));
+    }
+
+    #[test]
+    fn resolves_path_style_links_to_the_same_page_as_the_bare_stem() {
+        let dir = temp_vault("path-style");
+        fs::create_dir_all(dir.join("wiki/sub")).unwrap();
+        fs::write(
+            dir.join("wiki/a.md"),
+            "[[wiki/b]] [[wiki/b.md]] [[wiki/sub/b.md]] [[b.md]] [[b]]",
+        )
+        .unwrap();
+        fs::write(dir.join("wiki/b.md"), "# b").unwrap();
+        let adj = build_link_graph(dir.to_str().unwrap()).unwrap();
+        let src = dir
+            .join("wiki/a.md")
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        // All five spellings (bare stem, path+stem, path+ext, nested path+ext,
+        // bare filename) resolve to the SAME page — one deduped forward edge,
+        // nothing left unresolved.
+        assert_eq!(adj.forward.get(&src).map(Vec::len), Some(1));
+        assert!(adj.unresolved.is_empty());
+    }
+
+    #[test]
+    fn strips_trailing_backslash_before_resolving() {
+        let dir = temp_vault("backslash-resolve");
+        fs::write(dir.join("a.md"), "see [[b\\]]").unwrap();
+        fs::write(dir.join("b.md"), "# b").unwrap();
+        let adj = build_link_graph(dir.to_str().unwrap()).unwrap();
+        assert!(adj.unresolved.is_empty());
+        assert_eq!(adj.forward.len(), 1);
     }
 
     #[test]

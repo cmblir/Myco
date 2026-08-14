@@ -19,6 +19,12 @@ pub fn parse_links_from_text(text: &str) -> Vec<String> {
         if let Some(inner) = cap.get(1) {
             let raw = inner.as_str();
             let target = raw.split('|').next().unwrap_or(raw).trim();
+            // A source written as `[[name\]]` (escaped closing bracket) leaves the
+            // backslash INSIDE the capture, since the regex stops at the first
+            // literal `]`. Obsidian never treats `\` as part of a link name, so
+            // strip it here rather than let it become a permanently "missing"
+            // page named e.g. `transformer-decoder-only\` in the gap panel.
+            let target = target.trim_end_matches('\\').trim();
             if !target.is_empty() {
                 out.push(target.to_string());
             }
@@ -73,5 +79,12 @@ mod tests {
     fn skips_empty_targets() {
         let links = parse_links_from_text("[[ ]] and [[real]]");
         assert_eq!(links, vec!["real"]);
+    }
+
+    #[test]
+    fn strips_trailing_backslash_from_an_escaped_close_bracket() {
+        let links =
+            parse_links_from_text("see [[transformer-decoder-only\\]] and [[bookcorpus\\]]");
+        assert_eq!(links, vec!["transformer-decoder-only", "bookcorpus"]);
     }
 }
