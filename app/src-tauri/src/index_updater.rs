@@ -43,6 +43,16 @@ impl IndexUpdater {
         let watcher_tx = tx.clone();
         tauri::async_runtime::spawn(async move {
             const DEBOUNCE: std::time::Duration = std::time::Duration::from_millis(500);
+            // A rebind's "*" full-reconcile batch waits much longer than an
+            // edit's debounce. At launch it used to fire 500 ms in — walking
+            // every wiki/sessions page and embedding any session backlog
+            // (loading the 411 MB embed model) exactly while the webview,
+            // shaders, and first render compete for the same cores and GPU.
+            // The catch-up is not urgent: searches read the on-disk index
+            // either way until it lands. The window also coalesces the two
+            // launch rebinds (lib.rs pre-arm + the frontend's open_vault)
+            // into one reconcile instead of two back-to-back full walks.
+            const REBIND_CATCHUP_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
             let mut root: Option<PathBuf> = None;
             // Held only for its Drop side effect: reassigning on `Rebind` stops
             // the previous vault's watch. Never read directly, so both
@@ -58,7 +68,8 @@ impl IndexUpdater {
                     if dirty.is_empty() {
                         std::future::pending::<()>().await
                     } else {
-                        tokio::time::sleep(DEBOUNCE).await
+                        tokio::time::sleep(batch_delay(&dirty, DEBOUNCE, REBIND_CATCHUP_DELAY))
+                            .await
                     }
                 };
                 tokio::select! {
@@ -173,6 +184,22 @@ fn index_is_stale(store_model: &str) -> bool {
 /// instead, until the lexical index catches back up to the dense one.
 fn reconcile_requested(batch: &[String], stale: bool, bm25_incomplete: bool) -> bool {
     stale || bm25_incomplete || batch.iter().any(|r| r == "*")
+}
+
+/// How long the actor waits before processing the pending dirty set: the
+/// short edit debounce, unless the set holds the "*" rebind sentinel — a full
+/// reconcile (every page walked, session backlog embedded) that must not
+/// launch 500 ms into app boot. See `REBIND_CATCHUP_DELAY` in `spawn`.
+fn batch_delay(
+    dirty: &HashSet<String>,
+    debounce: std::time::Duration,
+    catchup: std::time::Duration,
+) -> std::time::Duration {
+    if dirty.contains("*") {
+        catchup
+    } else {
+        debounce
+    }
 }
 
 /// Whether the lexical index is missing pages the dense store already has —
@@ -421,6 +448,16 @@ mod tests {
             false,
             false
         )); // normal incremental batch
+    }
+
+    #[test]
+    fn rebind_sentinel_batches_wait_longer_than_edit_debounce() {
+        let debounce = std::time::Duration::from_millis(500);
+        let catchup = std::time::Duration::from_secs(30);
+        let edits: HashSet<String> = ["wiki/a.md".to_string()].into();
+        assert_eq!(batch_delay(&edits, debounce, catchup), debounce);
+        let rebind: HashSet<String> = ["*".to_string(), "wiki/a.md".to_string()].into();
+        assert_eq!(batch_delay(&rebind, debounce, catchup), catchup);
     }
 
     #[test]
