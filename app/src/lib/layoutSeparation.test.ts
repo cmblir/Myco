@@ -112,7 +112,14 @@ function bodies(g: VaultGraph): Body[] {
     x: g.getNodeAttribute(id, "x") as number,
     y: g.getNodeAttribute(id, "y") as number,
     z: g.getNodeAttribute(id, "z") as number,
-    r: renderedRadius(g.getNodeAttribute(id, "size") as number),
+    // Same radius separateGraphLayout actually packed against — see its own
+    // starKind/intensity read — so this checks the guarantee that was really
+    // made, not a looser stand-in that happens to also pass.
+    r: renderedRadius(
+      g.getNodeAttribute(id, "size") as number,
+      (g.getNodeAttribute(id, "starKind") as number | undefined) ?? 0,
+      (g.getNodeAttribute(id, "intensity") as number | undefined) ?? 0,
+    ),
   }));
 }
 
@@ -293,22 +300,27 @@ describe("no-overlap invariant", () => {
     // meaning there — zooming in always separates them. What the layout owes is
     // that no two notes are assigned the same mat node, and that assigned mat
     // nodes are a real hyphal step apart rather than adjacent points on one
-    // strand. Measured against the mat's own growth step.
+    // strand. Measured against the mat's own growth step, in whatever space
+    // the view actually PAINTS — MyceliumView flattens z to 0 for the "2d"
+    // dim (both septa and hyphae), so checking the un-flattened 3D distance
+    // here would pass even while two septa collapse onto the same point once
+    // z is squashed away (this is exactly how that regression shipped once).
     const g = makeVaultGraph();
     const { matIndexOf, mat } = buildMyceliumMat(g, { targetRadius: 1800, dim: "2d" });
     expect(matIndexOf.size).toBe(N);
     expect(new Set(matIndexOf.values()).size).toBe(N);
-    // The mat's growth step in world units (parent→child distance, median).
+    // The mat's growth step, xy-only (parent→child distance, median) — same
+    // dimensionality as the flattened render.
     const steps = mat
       .filter((h) => h.parent >= 0 && h.bridgeTo == null)
-      .map((h) => Math.hypot(h.x - mat[h.parent].x, h.y - mat[h.parent].y, h.z - mat[h.parent].z))
+      .map((h) => Math.hypot(h.x - mat[h.parent].x, h.y - mat[h.parent].y))
       .sort((a, b) => a - b);
     const step = steps[Math.floor(steps.length / 2)];
     const pts = [...matIndexOf.values()].map((i) => mat[i]);
     let closest = Infinity;
     for (let i = 0; i < pts.length; i++) {
       for (let j = i + 1; j < pts.length; j++) {
-        const d = Math.hypot(pts[j].x - pts[i].x, pts[j].y - pts[i].y, pts[j].z - pts[i].z);
+        const d = Math.hypot(pts[j].x - pts[i].x, pts[j].y - pts[i].y); // flattened: z omitted
         if (d < closest) closest = d;
       }
     }

@@ -19,6 +19,7 @@ import {
   bubbleRadius,
   universeAnchorsByRadius,
 } from "./multiverseLayout";
+import { separateGraphLayout } from "./layoutSeparation";
 
 // One universe's inputs to the scene — the subset of the store's UniverseData
 // the assembly needs (a loaded adjacency + its root for folder-galaxy grouping).
@@ -65,6 +66,25 @@ export function assembleMultiverse(
   }
 
   const graph = buildMultiverseGraph(built, o);
+
+  // Every universe's note bodies are buildGraph's raw seeded shell scatter —
+  // this view never runs a force sim or FA2 pass over them — so, exactly like
+  // the semantic PCA map, they need the same no-overlap post-process every
+  // other layout gets. Per-universe (not one global pass over the whole merged
+  // graph) so a body only ever gets pushed apart from its OWN universe's
+  // neighbours, never toward or through a different universe's cloud. Runs
+  // before universeRadii() below so the bubble packing reserves room for the
+  // cloud it actually measures, not the pre-separation one.
+  const idsByUniverse = new Map<string, string[]>();
+  graph.forEachNode((id, a) => {
+    const slug = (a.universe as string) ?? "";
+    const ids2 = idsByUniverse.get(slug) ?? [];
+    ids2.push(id);
+    idsByUniverse.set(slug, ids2);
+  });
+  for (const ids2 of idsByUniverse.values()) {
+    if (ids2.length > 1) separateGraphLayout(graph, { ids: ids2 });
+  }
 
   // Measure each universe's cloud from the positions buildMultiverseGraph just
   // produced, and pack by that. Node count is the wrong proxy here: the clouds

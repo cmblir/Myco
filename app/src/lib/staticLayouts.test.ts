@@ -65,6 +65,38 @@ function makeRealScaleGraph(): VaultGraph {
   return g;
 }
 
+// A denser vault shape (1244 notes / 1139 edges — the audit that flagged the
+// mycelium embedding regression measured on a fixture this size): many small
+// densely cross-linked topic pockets (not one long chain — a chain's own
+// graph diameter would dominate the hop measurement instead of the mat's slot
+// scarcity, which is the thing this fixture exists to stress) spread across
+// the id range, on top of the same 34-link hub as the sparse fixture above.
+function makeDenseRealScaleGraph(): VaultGraph {
+  const N = 1244;
+  const ids = Array.from({ length: N }, (_, i) => `note-${i}.md`);
+  const g = makeGraph(ids.map((id) => ({ id, community: 0 })));
+  const addEdge = (a: string, b: string): void => {
+    if (a !== b && !g.hasEdge(a, b)) g.addEdge(a, b);
+  };
+  for (let k = 1; k <= 34; k++) addEdge(ids[0], ids[k]);
+  let budget = 1139 - 34;
+  const CLUSTER = 20; // notes per densely cross-linked pocket
+  const GAP = 4; // notes left between pockets
+  for (let base = 40; base < N && budget > 0; base += CLUSTER + GAP) {
+    const end = Math.min(base + CLUSTER, N);
+    for (let i = base; i < end - 1 && budget > 0; i++) {
+      addEdge(ids[i], ids[i + 1]);
+      budget--;
+      if (i + 2 < end && budget > 0) {
+        addEdge(ids[i], ids[i + 2]);
+        budget--;
+      }
+    }
+  }
+  g.forEachNode((id) => g.setNodeAttribute(id, "deg", g.degree(id)));
+  return g;
+}
+
 // BFS hop distance between two mat-node indices, over parent/child + bridge
 // adjacency — built once and reused across many (a, b) queries.
 function matHopDistances(mat: HyphaNode[]): (a: number, b: number) => number {
@@ -618,11 +650,14 @@ describe("buildMyceliumMat", () => {
         `hub(34 links) only: n=${hubSampled.length} avg=${hubAvg.toFixed(2)} max=${Math.max(...hubSampled)} sample=${hubSampled.slice(0, 34)}`,
     );
     // A handful of hyphal hops, not "somewhere in the mat" — the embedding's
-    // whole job is to make this small. Measured: avg 1.21, max 5 (hub-only:
-    // avg 3.12, max 5) — thresholds below leave headroom, not padding out a
-    // known-bad number.
-    expect(avg).toBeLessThan(4);
-    expect(Math.max(...sampled)).toBeLessThan(15);
+    // whole job is to make this small. Measured on this sparse (1244/435-edge)
+    // fixture: avg 2.11, max 7 (hub-only: avg 5.09, max 7) — real headroom over
+    // that, not padding out a known-bad number. See the "dense" describe below
+    // for a fixture that actually stresses slot scarcity — these loose-looking
+    // numbers alone let a real regression through unnoticed (that is how the
+    // per-septum room fix shipped without anyone seeing its 2D cost).
+    expect(avg).toBeLessThan(3);
+    expect(Math.max(...sampled)).toBeLessThan(10);
   });
 
   it("is deterministic — same graph lays out identically twice", () => {
@@ -671,20 +706,29 @@ describe("buildMyceliumMat", () => {
     expect(samples[samples.length - 1]).toBeGreaterThan(samples[0]);
   });
 
-  it("real-scale (1244 notes / ~440 edges, one 34-link hub): grows and embeds inside a real frame budget", () => {
-    const g = makeRealScaleGraph();
-    const start = performance.now();
-    const { buckets, matIndexOf, mat } = buildMyceliumMat(g, { targetRadius: FIELD_R });
-    const ms = performance.now() - start;
-    const segCount = buckets.reduce((s, b) => s + b.birth.length, 0);
-    console.info(
-      `[mycelium] real scale: ${g.order} notes / ${g.size} edges -> ${mat.length} mat nodes, ` +
-        `${segCount} segments, ${matIndexOf.size} notes placed, ${ms.toFixed(1)}ms`,
-    );
-    expect(matIndexOf.size).toBe(g.order);
-    expect(mat.length).toBeGreaterThan(g.order); // the mat is denser than the note count on purpose
-    expect(ms).toBeLessThan(2000);
-  });
+  // retry: 2 — this budget is wall-clock, so a busy CI/dev machine can share a
+  // slow moment with this one run (measured: 2097ms vs the 2000ms budget on a
+  // loaded machine, passing on the very next run at ~340ms). The work itself
+  // is deterministic and O(mat), so a genuine regression (an accidental O(n^2)
+  // in the thinning/BFS above) fails every retry, not just the unlucky one.
+  it(
+    "real-scale (1244 notes / ~440 edges, one 34-link hub): grows and embeds inside a real frame budget",
+    { retry: 2 },
+    () => {
+      const g = makeRealScaleGraph();
+      const start = performance.now();
+      const { buckets, matIndexOf, mat } = buildMyceliumMat(g, { targetRadius: FIELD_R });
+      const ms = performance.now() - start;
+      const segCount = buckets.reduce((s, b) => s + b.birth.length, 0);
+      console.info(
+        `[mycelium] real scale: ${g.order} notes / ${g.size} edges -> ${mat.length} mat nodes, ` +
+          `${segCount} segments, ${matIndexOf.size} notes placed, ${ms.toFixed(1)}ms`,
+      );
+      expect(matIndexOf.size).toBe(g.order);
+      expect(mat.length).toBeGreaterThan(g.order); // the mat is denser than the note count on purpose
+      expect(ms).toBeLessThan(2000);
+    },
+  );
 
   // dim: "3d" — the volumetric mat. Same invariants as the planar (default)
   // mat above, re-measured: growing through a real ball must not quietly
@@ -742,17 +786,19 @@ describe("buildMyceliumMat", () => {
         `[mycelium] 3D linked-note mat-hop distance over ${sampled.length} real edges: ` +
           `avg=${avg.toFixed(2)} max=${Math.max(...sampled)}`,
       );
-      // Measured: avg 1.22, max 5 — matching the planar mat's 1.21/5. An
-      // earlier volumetric pass (4 spores, same as the planar default)
-      // measured avg 1.56 max 63: with node count fixed but the mat spread
-      // over a ~30x bigger volume, many of the vault's small/disconnected
-      // components round-robin onto the same 4 seed regions and exhaust them
-      // faster than the now-sparser mat can route around. More seed regions
-      // (16, see growMycelium's SPORES) fixed it directly and stayed stable
-      // across a spore-count sweep, unlike fuse-radius tuning, which was
-      // noisy. Thresholds below leave headroom, not padding a known-bad number.
-      expect(avg).toBeLessThan(4);
-      expect(Math.max(...sampled)).toBeLessThan(15);
+      // Measured on this sparse fixture: avg 1.79, max 9 — after the
+      // per-septum min-room fix (see buildMyceliumMat), a real cost over the
+      // pre-thinning 1.22/5 this comment used to cite, paid for turning a 2.6-
+      // unit closest note pair into a real gap. An earlier volumetric pass (4
+      // spores, same as the planar default) measured avg 1.56 max 63: with
+      // node count fixed but the mat spread over a ~30x bigger volume, many of
+      // the vault's small/disconnected components round-robin onto the same 4
+      // seed regions and exhaust them faster than the now-sparser mat can
+      // route around. More seed regions (16, see growMycelium's SPORES) fixed
+      // it directly and stayed stable across a spore-count sweep, unlike
+      // fuse-radius tuning, which was noisy.
+      expect(avg).toBeLessThan(2.5);
+      expect(Math.max(...sampled)).toBeLessThan(12);
     });
 
     it("is deterministic — same graph lays out identically twice", () => {
@@ -761,6 +807,80 @@ describe("buildMyceliumMat", () => {
       const b = buildMyceliumMat(g, { targetRadius: FIELD_R, dim: "3d" });
       expect(a.mat).toEqual(b.mat);
       expect([...a.matIndexOf.entries()]).toEqual([...b.matIndexOf.entries()]);
+    });
+  });
+
+  // The sparse real-vault fixture's hop numbers above are loose enough that a
+  // real regression in per-septum slot scarcity can pass unnoticed — that is
+  // exactly how the 2D flatten-collapse defect (finding D: closest flattened
+  // pair 1.87, WORSE than the 2.6 defect the min-room fix was for) shipped
+  // without failing anything. This fixture is dense enough that slot scarcity
+  // actually bites, so these thresholds have real teeth.
+  describe("dense graph (slot scarcity stress, 1244 notes / 1139 edges)", () => {
+    it("2D: closest flattened note pair keeps real room (not the 1.87-unit collapse the flatten bug caused)", () => {
+      const g = makeDenseRealScaleGraph();
+      const { matIndexOf, mat } = buildMyceliumMat(g, { targetRadius: FIELD_R, dim: "2d" });
+      const pts = [...matIndexOf.values()].map((i) => ({ x: mat[i].x, y: mat[i].y }));
+      let closest = Infinity;
+      for (let i = 0; i < pts.length; i++) {
+        for (let j = i + 1; j < pts.length; j++) {
+          const d = Math.hypot(pts[j].x - pts[i].x, pts[j].y - pts[i].y);
+          if (d < closest) closest = d;
+        }
+      }
+      console.info(`[mycelium] dense 2D flattened closest note pair: ${closest.toFixed(2)}`);
+      // Measured at this fixture's FIELD_R (900): 10.84 (the grown mat scales
+      // with targetRadius and depends only on note COUNT, which both fixtures
+      // share, so this is the sparse fixture's 21.68 at half the radius). A
+      // regression back to measuring "room" in the mat's un-flattened 3D
+      // coordinates collapses this to ~0.9.
+      expect(closest).toBeGreaterThan(8);
+    });
+
+    it("2D hop cost at real density", () => {
+      const g = makeDenseRealScaleGraph();
+      const { matIndexOf, mat } = buildMyceliumMat(g, { targetRadius: FIELD_R, dim: "2d" });
+      const hops = matHopDistances(mat);
+      const sampled: number[] = [];
+      g.forEachEdge((_e, _a, u, v) => {
+        const iu = matIndexOf.get(u);
+        const iv = matIndexOf.get(v);
+        if (iu == null || iv == null) return;
+        sampled.push(hops(iu, iv));
+      });
+      const avg = sampled.reduce((s, n) => s + n, 0) / sampled.length;
+      console.info(
+        `[mycelium] dense 2D linked-note mat-hop distance over ${sampled.length} real edges: ` +
+          `avg=${avg.toFixed(2)} max=${Math.max(...sampled)}`,
+      );
+      // Measured: avg 5.35, max 30 — real headroom over that, tight enough
+      // that a further slot-scarcity regression (the audit measured a much
+      // denser fixture blowing out to avg 11.01/max 67) would fail this.
+      expect(avg).toBeLessThan(7);
+      expect(Math.max(...sampled)).toBeLessThan(40);
+    });
+
+    it("3D hop cost at real density — the 2D flatten fix must not cost more than the volumetric view itself does", () => {
+      const g = makeDenseRealScaleGraph();
+      const { matIndexOf, mat } = buildMyceliumMat(g, { targetRadius: FIELD_R, dim: "3d" });
+      const hops = matHopDistances(mat);
+      const sampled: number[] = [];
+      g.forEachEdge((_e, _a, u, v) => {
+        const iu = matIndexOf.get(u);
+        const iv = matIndexOf.get(v);
+        if (iu == null || iv == null) return;
+        sampled.push(hops(iu, iv));
+      });
+      const avg = sampled.reduce((s, n) => s + n, 0) / sampled.length;
+      console.info(
+        `[mycelium] dense 3D linked-note mat-hop distance over ${sampled.length} real edges: ` +
+          `avg=${avg.toFixed(2)} max=${Math.max(...sampled)}`,
+      );
+      // Measured: avg 4.84, max 27 — unaffected by the 2D-only flatten fix
+      // (this path never took the flat2D branch), so this pins the dim:"3d"
+      // baseline the 2D cost above is judged against.
+      expect(avg).toBeLessThan(6);
+      expect(Math.max(...sampled)).toBeLessThan(35);
     });
   });
 });

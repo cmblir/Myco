@@ -46,6 +46,19 @@ export const NODE_RADIUS = 3.4;
 export const GLOW_SCALE = 2.8;
 export const DUST_PULL = 0.18; // community-less dust drifts toward nearest cluster
 
+// --- node body STATIC size multipliers (graphScene's gl_PointSize chain) ------
+// Every multiplier gl_PointSize applies that is fixed once a node/theme/skin is
+// chosen — as opposed to TRANSIENT ones (selection pop, search pulse, hover,
+// breathing, depth-of-field) that vary after a layout has already run. Shared
+// with layoutSeparation.ts's renderedRadius so the packing and the renderer
+// can never drift apart again (backlog: they did — see the no-overlap fix).
+export const INTENSITY_SIZE_COEF = 0.35; // gl_PointSize *= 1 + a_intensity * this
+// Stellar class scale, indexed by a_kind (0 main / 1 dwarf / 2 giant / 3 neutron).
+export const STAR_KIND_SCALE: readonly number[] = [1, 0.72, 1.5, 0.55];
+export const LIGHT_BG_SIZE_MUL = 1.85; // light-background sprite-area bump
+export const SIGMA_SKIN_NODE_SCALE = 1.15; // sigma skin's per-skin size multiplier
+export const WEB_SKIN_NODE_SCALE = 0.34; // web skin's per-skin size multiplier
+
 // --- inter-cluster / inter-galaxy link weakening --------------------------------
 export const INTER_LINK_DIST_MUL = 1.8; // cross-community links stretch longer
 // Links between DIFFERENT clusters attract almost not at all, so every cluster

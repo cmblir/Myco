@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Adjacency } from "./ipc";
+import { NODE_MARGIN, renderedRadius } from "./layoutSeparation";
 import {
   assembleMultiverse,
   multiverseSceneKey,
@@ -22,6 +23,20 @@ function universe(root: string): SceneUniverse {
     root,
     adjacency: adj({ forward: { [a]: [b, c], [b]: [c] } }),
   };
+}
+
+// A universe with enough notes that buildGraph's seeded shell scatter
+// (seededXYZ — never run through a force sim or FA2 for this view) reliably
+// produces raw overlaps before separation: a hub fanning out to N-1 leaves, so
+// every note is guaranteed at least one real edge.
+function bigUniverse(root: string, n: number): SceneUniverse {
+  const hub = `${root}/wiki/hub.md`;
+  const forward: Record<string, string[]> = { [hub]: [] };
+  for (let i = 0; i < n - 1; i++) {
+    const leaf = `${root}/wiki/n${i}.md`;
+    forward[hub].push(leaf);
+  }
+  return { slug: root.split("/").pop()!, root, adjacency: adj({ forward }) };
 }
 
 const OPTS = {
@@ -64,6 +79,37 @@ describe("assembleMultiverse", () => {
       }
     }
     expect(minCross).toBeGreaterThan(300);
+  });
+
+  // Finding A: assembleMultiverse used to translate each universe's raw
+  // buildGraph seed scatter as a rigid group WITHOUT separating it first —
+  // the same "unpacked raw layout" defect every other view was fixed for, so
+  // note bodies within one bubble could sit on top of each other (measured:
+  // 13 overlapping pairs on a 3-universe/1244-body field, worst 23.0 units).
+  it("separates note bodies WITHIN a universe's own cloud, not just across universes", () => {
+    const g = assembleMultiverse([bigUniverse("/reg/projects/gamma", 700)], OPTS).graph;
+    const bodies = g.nodes().map((id) => ({
+      x: g.getNodeAttribute(id, "x") as number,
+      y: g.getNodeAttribute(id, "y") as number,
+      z: g.getNodeAttribute(id, "z") as number,
+      r: renderedRadius(
+        g.getNodeAttribute(id, "size") as number,
+        g.getNodeAttribute(id, "starKind") as number | undefined,
+        g.getNodeAttribute(id, "intensity") as number | undefined,
+      ),
+    }));
+    let bad = 0;
+    for (let i = 0; i < bodies.length; i++) {
+      for (let j = i + 1; j < bodies.length; j++) {
+        const d = Math.hypot(
+          bodies[j].x - bodies[i].x,
+          bodies[j].y - bodies[i].y,
+          bodies[j].z - bodies[i].z,
+        );
+        if (d < bodies[i].r + bodies[j].r + NODE_MARGIN - 1e-6) bad++;
+      }
+    }
+    expect(bad).toBe(0);
   });
 
   it("drops a universe whose filter leaves no nodes", () => {

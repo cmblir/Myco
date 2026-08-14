@@ -68,7 +68,15 @@ import { PIXEL_ARCHETYPES, PIXEL_SPRITE_GLSL, archetypeFor, rampFor } from "./pi
 // World radius (in sim units) per unit of node `size`, and how far the halo
 // extends past the core. Shared with the sim (layoutConfig) so the force layout
 // packs the body the renderer actually draws.
-import { GLOW_SCALE, NODE_RADIUS } from "./layoutConfig";
+import {
+  GLOW_SCALE,
+  NODE_RADIUS,
+  INTENSITY_SIZE_COEF,
+  STAR_KIND_SCALE,
+  LIGHT_BG_SIZE_MUL,
+  SIGMA_SKIN_NODE_SCALE,
+  WEB_SKIN_NODE_SCALE,
+} from "./layoutConfig";
 
 const PICK_BASE_PX = 14;
 
@@ -162,10 +170,10 @@ const EDGE_BASE_SIGMA = 1.0;
 const EDGE_GREY_MIX_SIGMA = 0.05; // near-full community hue on the veil
 const EDGE_SAG_BOOST_SIGMA = 2.6;
 const EDGE_GREY_MIX_WEB = 0.85; // near-uniform filament tissue, faint hue hint
-const WEB_NODE_SCALE = 0.34; // node size multiplier on the web skin
-// Chunky Gephi dots — the reference reads as bold filled circles, not the
-// pin-pricks the deep-space skins use. Above 1 so sigma nodes out-weigh edges.
-const SIGMA_NODE_SCALE = 1.15;
+// WEB_NODE_SCALE / SIGMA_NODE_SCALE (node size multiplier on the web/sigma
+// skins — chunky Gephi dots read as bold filled circles, not the pin-pricks
+// the deep-space skins use) live in layoutConfig.ts, shared with
+// layoutSeparation's renderedRadius so the packing can't drift from the shader.
 // Midpoint-split edge treatment (spec A2, Holten-style): each edge renders as
 // TWO segments s→m, m→t so alpha can peak at the middle and fade at the ends —
 // N spokes converging on a hub no longer sum to a bright disc at the core.
@@ -511,12 +519,12 @@ void main() {
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
   float dist = max(1.0, -mv.z);
   gl_PointSize = a_size * ${NODE_RADIUS.toFixed(1)} * ${GLOW_SCALE.toFixed(1)} * u_sizeScale * u_pixelRatio / dist;
-  gl_PointSize *= (1.0 + a_intensity * 0.35); // hub cores a touch larger
+  gl_PointSize *= (1.0 + a_intensity * ${INTENSITY_SIZE_COEF.toFixed(2)}); // hub cores a touch larger
   // Stellar class scales the sprite: giants swell, dwarfs/neutrons shrink.
   v_kind = floor(a_kind + 0.5);
-  if (v_kind > 2.5) gl_PointSize *= 0.55;
-  else if (v_kind > 1.5) gl_PointSize *= 1.5;
-  else if (v_kind > 0.5) gl_PointSize *= 0.72;
+  if (v_kind > 2.5) gl_PointSize *= ${STAR_KIND_SCALE[3].toFixed(2)};
+  else if (v_kind > 1.5) gl_PointSize *= ${STAR_KIND_SCALE[2].toFixed(2)};
+  else if (v_kind > 0.5) gl_PointSize *= ${STAR_KIND_SCALE[1].toFixed(2)};
   // Gentle breathing — slow and subtle (motion budget: idle motion must not
   // grab the eye). Neutron stars pulse fast and a little deeper (pulsar wink).
   float bAmp = v_kind > 2.5 ? 0.07 : 0.025;
@@ -541,7 +549,7 @@ void main() {
   // Light bg (NormalBlending, no additive self-brightening): bump sprite size so
   // the dark stars have enough AREA to read on paper — a print map is filled
   // dots, not pin-pricks. Dark bg stays as-is (additive self-brightens there).
-  gl_PointSize *= mix(1.85, 1.0, u_darkTheme);
+  gl_PointSize *= mix(${LIGHT_BG_SIZE_MUL.toFixed(2)}, 1.0, u_darkTheme);
   // Floor so distant field stars are true pinpricks (higher on light so they
   // don't vanish); cap so a near hub can't fill the viewport with one sprite.
   gl_PointSize = clamp(gl_PointSize, mix(3.2, 1.3, u_darkTheme), 180.0);
@@ -1075,7 +1083,7 @@ export class GraphScene {
   }
   // Per-skin node size multiplier, folded into u_sizeScale wherever it is set.
   private skinNodeScale(): number {
-    return this.webSkin ? WEB_NODE_SCALE : this.sigmaSkin ? SIGMA_NODE_SCALE : 1;
+    return this.webSkin ? WEB_SKIN_NODE_SCALE : this.sigmaSkin ? SIGMA_SKIN_NODE_SCALE : 1;
   }
   // Node material blend/depth mode. Pixel-art sprites are meant to read as
   // OPAQUE little worlds — overlapping sprites in a dense zoomed-in field must

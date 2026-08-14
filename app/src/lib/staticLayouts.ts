@@ -1101,10 +1101,28 @@ export function buildMyceliumMat(g: VaultGraph, o: MyceliumOpts): MyceliumResult
   // — see myceliumScene's a_size — so layoutSeparation's world-radius invariant
   // does not apply here and zooming always resolves two septa. This floor is
   // what makes them distinguishable at the DEFAULT framing.)
+  //
+  // The 2D view flattens z to 0 at render for BOTH septa and hyphae (see
+  // MyceliumView.tsx) — z in the "2d" grown mat is never a deliberate 3rd
+  // dimension, just per-step wander noise (growMycelium's planar branch still
+  // jitters z a little every step, purely cosmetic, because the flatten below
+  // discards it anyway). Measuring "room apart" in the mat's raw 3D coordinates
+  // let two septa that only differ by that accumulated z-noise count as
+  // separated, then land on top of each other once z is squashed away
+  // (measured: closest flattened pair 1.87 units — worse than looking like no
+  // thinning ran at all). So the yardstick has to be measured in whatever
+  // space the caller is actually going to PAINT: xy-only when the mat will be
+  // flattened, full 3D for the real volumetric view.
+  const flat2D = o.dim !== "3d";
+  const stepDist = (
+    ax: number, ay: number, az: number,
+    bx: number, by: number, bz: number,
+  ): number => (flat2D ? Math.hypot(ax - bx, ay - by) : Math.hypot(ax - bx, ay - by, az - bz));
   const steps: number[] = [];
   for (const h of mat) {
     if (h.parent >= 0 && h.bridgeTo == null) {
-      steps.push(Math.hypot(h.x - mat[h.parent].x, h.y - mat[h.parent].y, h.z - mat[h.parent].z));
+      const p2 = mat[h.parent];
+      steps.push(stepDist(h.x, h.y, h.z, p2.x, p2.y, p2.z));
     }
   }
   steps.sort((a, b) => a - b);
@@ -1127,19 +1145,23 @@ export function buildMyceliumMat(g: VaultGraph, o: MyceliumOpts): MyceliumResult
     const nextOf = new Int32Array(mat.length).fill(-1);
     const slotAt = (ix: number, iy: number, iz: number): number =>
       ((Math.imul(ix, 73856093) ^ Math.imul(iy, 19349663) ^ Math.imul(iz, 83492791)) | 0) & mask;
+    // Flat mat: one z bucket, same as layoutSeparation's dims:2 — z carries no
+    // separation meaning here, so scanning it would only waste cells.
+    const oz0 = flat2D ? 0 : -1;
+    const oz1 = flat2D ? 0 : 1;
     for (let i = 0; i < mat.length; i++) {
       if (!isAssignable(i)) continue;
       const p = mat[i];
       const cx = Math.floor(p.x / cell);
       const cy = Math.floor(p.y / cell);
-      const cz = Math.floor(p.z / cell);
+      const cz = flat2D ? 0 : Math.floor(p.z / cell);
       let clear = true;
       for (let ox = -1; ox <= 1 && clear; ox++) {
         for (let oy = -1; oy <= 1 && clear; oy++) {
-          for (let oz = -1; oz <= 1 && clear; oz++) {
+          for (let oz = oz0; oz <= oz1 && clear; oz++) {
             for (let j = head[slotAt(cx + ox, cy + oy, cz + oz)]; j >= 0; j = nextOf[j]) {
               const q = mat[j];
-              if (Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z) < minSep) {
+              if (stepDist(p.x, p.y, p.z, q.x, q.y, q.z) < minSep) {
                 clear = false;
                 break;
               }

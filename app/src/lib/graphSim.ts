@@ -30,6 +30,10 @@ interface NodeInit {
   galaxy: number;
   isHub: boolean;
   rJitter: number;
+  /** Stellar class + HDR intensity — layoutSeparation.renderedRadius needs
+   *  both to size the settle-time collide/separation the same as the renderer. */
+  kind: number;
+  intensity: number;
 }
 
 export interface GraphSim {
@@ -74,6 +78,8 @@ function nodeInit(graph: VaultGraph, id: string): NodeInit {
     // Precompute the orbit-radius jitter here (the worker needs it but must not
     // import graphology); identical formula to the former in-sim value.
     rJitter: 0.4 + 0.6 * seededUnit(id, 14),
+    kind: a.starKind ?? 0,
+    intensity: a.intensity ?? 0,
   };
 }
 

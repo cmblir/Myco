@@ -78,6 +78,9 @@ interface SimNode {
   galaxy: number;
   isHub: boolean;
   rJitter: number;
+  /** Stellar class + HDR intensity — see layoutSeparation.renderedRadius. */
+  kind: number;
+  intensity: number;
   fx?: number | null;
   fy?: number | null;
   fz?: number | null;
@@ -101,6 +104,8 @@ interface NodeInit {
   galaxy: number;
   isHub: boolean;
   rJitter: number;
+  kind: number;
+  intensity: number;
 }
 
 // Physics constants live in layoutConfig.ts (single source of truth, backlog
@@ -430,7 +435,7 @@ function build(
       // r_i + r_j + NODE_MARGIN apart, the app-wide no-overlap invariant (see
       // layoutSeparation.ts). One relaxation iteration at strength 0.9 left the
       // rest state visibly violating it, so the collide now actually resolves.
-      forceCollide<SimNode>((n) => renderedRadius(n.size) + NODE_MARGIN / 2)
+      forceCollide<SimNode>((n) => renderedRadius(n.size, n.kind, n.intensity) + NODE_MARGIN / 2)
         .strength(1)
         .iterations(3),
     )

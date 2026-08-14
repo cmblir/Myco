@@ -26,7 +26,14 @@
 // Dependency-free apart from layoutConfig — it is imported by the sim worker
 // bundle, the static layouts, the FA2 atlas and vitest alike.
 
-import { GLOW_SCALE, NODE_RADIUS } from "./layoutConfig";
+import {
+  GLOW_SCALE,
+  NODE_RADIUS,
+  INTENSITY_SIZE_COEF,
+  STAR_KIND_SCALE,
+  LIGHT_BG_SIZE_MUL,
+  SIGMA_SKIN_NODE_SCALE,
+} from "./layoutConfig";
 // Type-only (fully erased at build) — the runtime dependency stays layoutConfig
 // alone, so the sim worker bundle never pulls graphology in.
 import type { VaultGraph } from "./graphData";
@@ -43,27 +50,63 @@ import type { VaultGraph } from "./graphData";
  *  enough for moons would shrink every world on screen for a satellite.) */
 export const NODE_MARGIN = 6;
 
-/** World RADIUS a node of the given `size` attribute is drawn at.
- *  graphScene: gl_PointSize = a_size * NODE_RADIUS * GLOW_SCALE * (px per world
- *  unit at unit distance) / dist — i.e. the sprite is a world-space quad of
- *  DIAMETER a_size * NODE_RADIUS * GLOW_SCALE. */
-export function renderedRadius(size: number): number {
-  return (size * NODE_RADIUS * GLOW_SCALE) / 2;
+// Worst-case STATIC multiplier graphScene's shader can apply on top of the
+// base a_size * NODE_RADIUS * GLOW_SCALE quad, for a theme/skin the layout
+// might be VIEWED under — not necessarily the one active when the layout ran.
+// A light/dark flip and a skin switch both recolour an ALREADY-LAID-OUT graph
+// IN PLACE (see PageGraph's theme effect: lightBg and settings.skin are
+// deliberately absent from the rebuild-triggering deps) — they never rerun
+// separation. So the margin reserved here has to cover the largest sprite the
+// node could be drawn at under ANY reachable theme/skin, or flipping themes
+// after a layout settles reintroduces the exact overlap this module exists to
+// prevent (this is what the shipped white-skin vibes — paper/atlas,
+// chronicle/strata — were actually hitting: the layout ran fine, the sprite
+// just grew past the room reserved for it once painted on paper).
+// web skin (0.34) is smaller, so it is not part of the worst case.
+const STATIC_SPRITE_SCALE = LIGHT_BG_SIZE_MUL * SIGMA_SKIN_NODE_SCALE;
+
+/** World RADIUS a node of the given `size`/stellar-`kind`/`intensity` is drawn
+ *  at, worst-case over theme/skin (see STATIC_SPRITE_SCALE above).
+ *  graphScene: gl_PointSize = a_size * NODE_RADIUS * GLOW_SCALE * u_sizeScale *
+ *  (1 + a_intensity*INTENSITY_SIZE_COEF) * STAR_KIND_SCALE[kind] *
+ *  lightBgMul * skinScale * (px per world unit at unit distance) / dist —
+ *  i.e. the sprite is a world-space quad of that same DIAMETER. `kind` and
+ *  `intensity` are per-node data (fixed at graph build, unlike theme/skin) so
+ *  they are read exactly rather than worst-cased. NOT modelled: transient
+ *  multipliers that only apply while a specific node is being interacted with
+ *  (selection ×1.35, search-hit ×1.22, hover pop ×1.3) or that animate every
+ *  frame (breathing ≤×1.07, depth-of-field — and DOF is skipped entirely for
+ *  the pixel-sprite planet look this module packs for). A transient overlap is
+ *  a graze that lasts a gesture or a frame, on whichever single node the user
+ *  is already looking at; a static one is the picture itself being wrong every
+ *  time the user looks. */
+export function renderedRadius(size: number, kind = 0, intensity = 0): number {
+  const kindScale = STAR_KIND_SCALE[kind] ?? 1;
+  const intensityScale = 1 + Math.max(0, intensity) * INTENSITY_SIZE_COEF;
+  return (size * NODE_RADIUS * GLOW_SCALE * kindScale * intensityScale * STATIC_SPRITE_SCALE) / 2;
 }
 
 /** The minimum a layout is allowed to put between two bodies' centres. */
-export function requiredGap(sizeA: number, sizeB: number, margin = NODE_MARGIN): number {
-  return renderedRadius(sizeA) + renderedRadius(sizeB) + margin;
+export function requiredGap(
+  a: { size: number; kind?: number; intensity?: number },
+  b: { size: number; kind?: number; intensity?: number },
+  margin = NODE_MARGIN,
+): number {
+  return renderedRadius(a.size, a.kind, a.intensity) + renderedRadius(b.size, b.kind, b.intensity) + margin;
 }
 
-/** A laid-out body: position plus the `size` attribute the renderer scales by.
+/** A laid-out body: position plus the attributes the renderer scales by.
  *  Deliberately structural so the sim worker's SimNode and a plain
- *  {x,y,z,size} record from graph attrs both satisfy it. */
+ *  {x,y,z,size} record from graph attrs both satisfy it. `kind`/`intensity`
+ *  default to main-sequence/0 when absent (test fixtures, ghosts). */
 export interface SizedPoint {
   x: number;
   y: number;
   z: number;
   size: number;
+  /** Stellar class — 0 main / 1 dwarf / 2 giant / 3 neutron (graphData's a.starKind). */
+  kind?: number;
+  intensity?: number;
 }
 
 export interface SeparateOpts {
@@ -76,6 +119,10 @@ export interface SeparateOpts {
   rounds?: number;
   /** Uniform blow-up applied when a round still leaves overlaps. */
   expand?: number;
+  /** separateGraphLayout only: separate just this subset of node ids (e.g. one
+   *  universe's cloud in the multiverse view) instead of every node in `g`.
+   *  Defaults to all of `g`'s nodes. */
+  ids?: string[];
 }
 
 export interface SeparateResult {
@@ -117,7 +164,7 @@ export function separateLayout(pts: SizedPoint[], o: SeparateOpts = {}): Separat
   const rad = new Float64Array(n);
   let maxR = 0;
   for (let i = 0; i < n; i++) {
-    rad[i] = renderedRadius(pts[i].size);
+    rad[i] = renderedRadius(pts[i].size, pts[i].kind, pts[i].intensity);
     if (rad[i] > maxR) maxR = rad[i];
   }
   // One cell holds the worst-case interaction range, so a colliding pair is
@@ -295,13 +342,15 @@ export function separateLayout(pts: SizedPoint[], o: SeparateOpts = {}): Separat
  *  caller that also emits WORLD-SPACE furniture derived from the same layout
  *  (strata's date-axis ticks) can scale it to match. */
 export function separateGraphLayout(g: VaultGraph, o: SeparateOpts = {}): SeparateResult {
-  const ids = g.nodes(); // insertion order — deterministic
+  const ids = o.ids ?? g.nodes(); // insertion order — deterministic
   if (ids.length < 2) return { scale: 1, overlaps: 0 };
   const pts: SizedPoint[] = ids.map((id) => ({
     x: g.getNodeAttribute(id, "x") ?? 0,
     y: g.getNodeAttribute(id, "y") ?? 0,
     z: g.getNodeAttribute(id, "z") ?? 0,
     size: g.getNodeAttribute(id, "size") ?? 1,
+    kind: g.getNodeAttribute(id, "starKind") ?? 0,
+    intensity: g.getNodeAttribute(id, "intensity") ?? 0,
   }));
   const res = separateLayout(pts, o);
   for (let i = 0; i < ids.length; i++) {
