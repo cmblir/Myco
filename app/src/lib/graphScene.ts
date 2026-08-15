@@ -3274,15 +3274,30 @@ export class GraphScene {
       lp.setXYZ(1, dir.x * b.r * 0.22, dir.y * b.r * 0.22, dir.z * b.r * 0.22);
       lp.needsUpdate = true;
     }
-    // Backdrops off — the chart is nodes/edges/bubbles only.
+    // Backdrops off — the chart is nodes/edges/bubbles only. Near-field planet
+    // billboards/moons off too: they're built to face the MAIN camera, not
+    // this one, and the minimap's bounds (minimapBounds, XY spread only) don't
+    // account for a 3D layout's Z depth, so a node's minimap-camera distance
+    // can shrink enough to also trip the shared node shader's own pixel-sprite
+    // LOD branch — force it off (u_pixelNodes) so every node falls back to the
+    // plain glow-dot path regardless of per-node distance. Both are transient,
+    // synchronous save/restore around this one render() call, same pattern as
+    // the backdrop toggles above — never observable outside this function, so
+    // nothing leaks into the main view.
     const sf = this.starfield.visible;
     const gb = this.gridBackdrop?.visible ?? false;
     const dq = this.edgeDensity?.quad.visible ?? false;
     const mt = this.meteor.lines.visible;
+    const pb = this.planets.billboards.visible;
+    const pm = this.planets.moons.visible;
+    const pn = this.nodeMat.uniforms.u_pixelNodes.value;
     this.starfield.visible = false;
     if (this.gridBackdrop) this.gridBackdrop.visible = false;
     if (this.edgeDensity) this.edgeDensity.quad.visible = false;
     this.meteor.lines.visible = false;
+    this.planets.billboards.visible = false;
+    this.planets.moons.visible = false;
+    this.nodeMat.uniforms.u_pixelNodes.value = 0;
 
     const r = this.renderer;
     const el = r.domElement;
@@ -3310,6 +3325,9 @@ export class GraphScene {
     if (this.gridBackdrop) this.gridBackdrop.visible = gb;
     if (this.edgeDensity) this.edgeDensity.quad.visible = dq;
     this.meteor.lines.visible = mt;
+    this.planets.billboards.visible = pb;
+    this.planets.moons.visible = pm;
+    this.nodeMat.uniforms.u_pixelNodes.value = pn;
   }
 
   /** If the pointer is inside the minimap, retarget the orbit pivot to the
