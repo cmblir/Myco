@@ -29,7 +29,7 @@ vi.mock("./ipc", () => ({
   },
 }));
 
-import { runSessionDigest, DIGEST_SYSTEM } from "./sessionDigest";
+import { runSessionDigest, DIGEST_SYSTEM, fingerprint } from "./sessionDigest";
 
 const CFG: DistillConfig = {
   enabled: true,
@@ -46,6 +46,8 @@ const CFG: DistillConfig = {
   profile_injection: true,
 };
 
+const SESSION_RAW = "user did X, decided Y";
+
 // Shared session-file content stub for readFile — used both for the session
 // logs (path under /sessions/) and the daily-note check (path under /daily/,
 // mocked to "not found" so the append path creates the file fresh).
@@ -57,7 +59,7 @@ function mockReadFile(dailyExisting: string | null = null): void {
       }
       throw new Error("not found");
     }
-    return { path, raw: "user did X, decided Y", content: "user did X, decided Y", frontmatter: null };
+    return { path, raw: SESSION_RAW, content: SESSION_RAW, frontmatter: null };
   });
 }
 
@@ -152,9 +154,10 @@ describe("runSessionDigest", () => {
     );
     // Defect C fix: the SAME write that carries the digest text names the
     // session files it covers, so there is no window where the digest is
-    // durable but the record of it isn't. Rust's digested_session_stems parses
-    // this line back.
-    expect(content).toContain("<!-- myco:digested-sessions a -->");
+    // durable but the record of it isn't. Rust's digested_session_entries
+    // parses this line back — stem AND content fingerprint, so a resumed
+    // conversation that keeps its stem does not match its own older record.
+    expect(content).toContain(`<!-- myco:digested-sessions a:${fingerprint(SESSION_RAW)} -->`);
     expect(writeFile).toHaveBeenCalledTimes(1);
   });
 
@@ -260,9 +263,10 @@ describe("runSessionDigest", () => {
 
     await runSessionDigest("/v");
 
+    const fp = fingerprint(SESSION_RAW);
     expect(writeFile).toHaveBeenCalledTimes(1);
     expect(writeFile.mock.calls[0][1]).toContain(
-      "<!-- myco:digested-sessions claude-code-aaa codex-bbb -->",
+      `<!-- myco:digested-sessions claude-code-aaa:${fp} codex-bbb:${fp} -->`,
     );
 
     // A session that lands on that day later is new knowledge: Rust hands
@@ -276,7 +280,7 @@ describe("runSessionDigest", () => {
     await runSessionDigest("/v");
 
     const second = writeFile.mock.calls[0][1] as string;
-    expect(second).toContain("<!-- myco:digested-sessions codex-ccc -->");
+    expect(second).toContain(`<!-- myco:digested-sessions codex-ccc:${fp} -->`);
     expect(second.match(/myco:digested-sessions/g)).toHaveLength(2);
   });
 
@@ -298,5 +302,16 @@ describe("runSessionDigest", () => {
     expect(result).toEqual({ daysDigested: 0, filesArchived: 0, skipped: null });
     expect(errSpy).toHaveBeenCalled();
     errSpy.mockRestore();
+  });
+});
+
+describe("fingerprint", () => {
+  // Parity vectors: distill.rs's content_fingerprint reads back what this
+  // writes, and its own test asserts these same two strings hash to these
+  // same hex values.
+  it("matches the Rust FNV-1a implementation over UTF-8 bytes", () => {
+    expect(fingerprint("myco")).toBe("b73bd5ad");
+    expect(fingerprint("한글 세션")).toBe("723f3e42");
+    expect(fingerprint("")).toBe("811c9dc5");
   });
 });

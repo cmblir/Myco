@@ -32,16 +32,36 @@ const HEADER = "## Session digest (auto)";
 // written into the same daily/<day>.md write as the bullets themselves — so
 // there is no window where the digest is durable but the record isn't, and a
 // crash can never re-charge the LLM for work already on disk.
-// Parsed by distill.rs's digested_session_stems (DIGEST_MARKER_OPEN /
+// Parsed by distill.rs's digested_session_entries (DIGEST_MARKER_OPEN /
 // DIGEST_MARKER_CLOSE); keep the literals in lockstep. Anchored on the FILES,
 // not the day: session_day derives the day from frontmatter/mtime, so the same
 // file can bucket into a different day on a later run.
 const MARKER_OPEN = "<!-- myco:digested-sessions ";
 const MARKER_CLOSE = " -->";
 
-function digestMarker(files: string[]): string {
-  const stems = files.map((f) => (f.split("/").pop() ?? f).replace(/\.md$/, ""));
-  return MARKER_OPEN + stems.join(" ") + MARKER_CLOSE;
+/** FNV-1a (32-bit) over `text`'s UTF-8 bytes, as 8 lowercase hex chars. Must
+ * stay byte-identical to distill.rs's `content_fingerprint`, which reads back
+ * what this writes. Not a cryptographic hash — it only has to notice that a
+ * session file changed since it was digested. */
+export function fingerprint(text: string): string {
+  let h = 0x811c9dc5;
+  for (const b of new TextEncoder().encode(text)) {
+    h = Math.imul(h ^ b, 0x01000193);
+  }
+  return (h >>> 0).toString(16).padStart(8, "0");
+}
+
+// `<stem>:<fingerprint>` per file. The stem alone is the CONVERSATION id and
+// survives a re-import unchanged, so a conversation the user resumed would
+// match its own earlier record and be archived without ever being digested;
+// binding the record to the content makes the grown file a miss. Accepted
+// trade: that file is then digested in full, duplicating its earlier turns in
+// a later daily note — cheaper than losing the new half of a conversation.
+function digestMarker(files: string[], contents: string[]): string {
+  const entries = files.map(
+    (f, i) => (f.split("/").pop() ?? f).replace(/\.md$/, "") + ":" + fingerprint(contents[i]),
+  );
+  return MARKER_OPEN + entries.join(" ") + MARKER_CLOSE;
 }
 
 // Fallback llm_digest_days when getDistillConfig is unavailable — mirrors
@@ -80,6 +100,7 @@ async function appendDigest(
   day: string,
   bullets: string,
   files: string[],
+  contents: string[],
 ): Promise<boolean> {
   const dailyDir = `${vaultPath}/daily`;
   const filePath = `${dailyDir}/${day}.md`;
@@ -101,7 +122,7 @@ async function appendDigest(
     existing = `# ${day}\n\n`;
     created = true;
   }
-  const marker = digestMarker(files);
+  const marker = digestMarker(files, contents);
   const section = existing.includes(HEADER)
     ? `\n_run of ${new Date().toISOString()}_\n${marker}\n${bullets.trim()}\n`
     : `\n${HEADER}\n_from ${files.length} session logs — low confidence_\n${marker}\n${bullets.trim()}\n`;
@@ -155,7 +176,7 @@ export async function runSessionDigest(vaultPath: string): Promise<DigestOutcome
         // digestableSessionDays reads that marker back, flags these files
         // already_digested, and takes the retry branch above — no re-paid LLM
         // call, no duplicate digest section, and no second write to lose.
-        const dailyCreated = await appendDigest(vaultPath, day, bullets, files);
+        const dailyCreated = await appendDigest(vaultPath, day, bullets, files, contents);
         const manifestId = await ipc.archiveDigestedSessions(vaultPath, day, files);
         // Important 4 (Phase B whole-branch review): fold the daily-file
         // create into the SAME manifest archiveDigestedSessions just wrote for

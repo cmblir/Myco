@@ -2890,8 +2890,8 @@ fn frontmatter_created(path: &Path) -> Option<i64> {
 
 /// The marker `appendDigest` (`src/lib/sessionDigest.ts`) writes into the SAME
 /// `daily/<day>.md` write as the digest bullets it belongs to, naming the
-/// session file stems that section covers:
-/// `<!-- myco:digested-sessions claude-code-abc claude-code-def -->`.
+/// session files that section covers as `<stem>:<fingerprint>`:
+/// `<!-- myco:digested-sessions claude-code-abc:1a2b3c4d codex-def:99887766 -->`.
 ///
 /// Idempotency is anchored on those FILES, not on the day string: `session_day`
 /// derives a day (frontmatter `created`, else mtime), so the same file can bucket
@@ -2901,16 +2901,33 @@ fn frontmatter_created(path: &Path) -> Option<i64> {
 const DIGEST_MARKER_OPEN: &str = "<!-- myco:digested-sessions ";
 const DIGEST_MARKER_CLOSE: &str = "-->";
 
-/// Session file stems recorded as digested by any existing `daily/*.md`
-/// marker. Reads every daily note on each call — there are ~one per active day
-/// and the alternative is a derived-key ledger that silently drifts.
+/// FNV-1a (32-bit) over a session file's bytes, as 8 lowercase hex chars.
+/// Deliberately not a cryptographic hash: it only has to notice that a file
+/// changed since it was digested, and it must be reproducible in four lines of
+/// TypeScript (`fingerprint` in `src/lib/sessionDigest.ts` writes the marker
+/// this side reads back). Keep the two implementations byte-identical — both
+/// hash the file's UTF-8 bytes.
+fn content_fingerprint(bytes: &[u8]) -> String {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in bytes {
+        h = (h ^ *b as u32).wrapping_mul(0x0100_0193);
+    }
+    format!("{h:08x}")
+}
+
+/// Session file entries recorded as digested by any existing `daily/*.md`
+/// marker, verbatim (`<stem>:<fingerprint>`, or a bare `<stem>` from a marker
+/// written before fingerprints existed). Reads every daily note on each call —
+/// there are ~one per active day and the alternative is a derived-key ledger
+/// that silently drifts.
 ///
 /// Stems, not paths: a stem survives the archive move, and importer-written
-/// session stems are `[A-Za-z0-9_-]` only (`importers::sanitize`), so the
-/// space-separated list can't be ambiguous. A hand-placed session file whose
-/// name contains whitespace simply never matches — it gets digested again,
-/// which is the pre-marker behaviour, never a false "already done".
-fn digested_session_stems(root: &Path) -> std::collections::HashSet<String> {
+/// session stems are `[A-Za-z0-9_-]` only (`importers::sanitize`), so neither
+/// the space-separated list nor the `:` separator can be ambiguous. A
+/// hand-placed session file whose name contains whitespace simply never
+/// matches — it gets digested again, which is the pre-marker behaviour, never
+/// a false "already done".
+fn digested_session_entries(root: &Path) -> std::collections::HashSet<String> {
     let mut out = std::collections::HashSet::new();
     let Ok(entries) = std::fs::read_dir(root.join("daily")) else {
         return out;
@@ -2932,6 +2949,34 @@ fn digested_session_stems(root: &Path) -> std::collections::HashSet<String> {
         }
     }
     out
+}
+
+/// Whether the session file at `path` is already covered by a digest.
+///
+/// A stem is the CONVERSATION id and is stable across re-imports: a
+/// conversation the user kept talking in comes back with the same stem but
+/// more turns (and an unchanged `created:`), so matching on the stem alone
+/// archived the whole continuation without ever digesting it. The record is
+/// therefore bound to the CONTENT: `<stem>:<fingerprint>` must match the
+/// file's current bytes.
+///
+/// Accepted trade: a resumed conversation is now digested again in full, so
+/// its earlier turns get summarized a second time in a later daily note.
+/// Partial duplication is cheap; silently dropping the new half of a
+/// conversation into cold storage is not.
+///
+/// A bare `<stem>` entry is a marker from before fingerprints existed and
+/// matches that stem regardless of content — otherwise upgrading would re-bill
+/// an LLM digest for every session already summarized.
+fn is_digested(entries: &std::collections::HashSet<String>, stem: &str, path: &Path) -> bool {
+    if entries.contains(stem) {
+        return true;
+    }
+    if entries.is_empty() {
+        return false; // nothing could match — skip reading the file at all
+    }
+    std::fs::read(path)
+        .is_ok_and(|bytes| entries.contains(&format!("{stem}:{}", content_fingerprint(&bytes))))
 }
 
 /// Groups mature, gate-scored `sessions/**/*.md` (excluding
@@ -2966,7 +3011,7 @@ pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
         &[RAW_ARCHIVE_DIR],
         &mut candidates,
     );
-    let digested = digested_session_stems(root);
+    let digested = digested_session_entries(root);
 
     struct DayEntry {
         rel: String,
@@ -2984,7 +3029,7 @@ pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
         let stem = c.path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let day = session_day(stem, &c.path, c.mtime);
         by_day.entry(day).or_default().push(DayEntry {
-            digested: digested.contains(stem),
+            digested: is_digested(&digested, stem, &c.path),
             rel: c.rel,
             ready,
         });
@@ -3990,8 +4035,19 @@ mod tests {
         rel
     }
 
+    /// The `<stem>:<fingerprint>` marker entry `appendDigest` would record for
+    /// a session file that is currently on disk at `rel`.
+    fn marker_entry(root: &Path, rel: &str) -> String {
+        let path = root.join(rel);
+        let stem = path.file_stem().unwrap().to_str().unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        format!("{stem}:{}", content_fingerprint(&bytes))
+    }
+
     /// The marker line `appendDigest` (src/lib/sessionDigest.ts) writes into
-    /// `daily/<day>.md` in the same write as its bullets.
+    /// `daily/<day>.md` in the same write as its bullets. Entries are
+    /// `<stem>:<fingerprint>` (see `marker_entry`); a bare `<stem>` is the
+    /// legacy pre-fingerprint format, which must keep matching.
     fn write_daily_with_marker(root: &Path, day: &str, stems: &[&str]) {
         std::fs::create_dir_all(root.join("daily")).unwrap();
         std::fs::write(
@@ -4006,12 +4062,23 @@ mod tests {
         .unwrap();
     }
 
+    /// Cross-language parity vectors: `fingerprint` in
+    /// src/lib/sessionDigest.ts writes the markers this side reads, so the two
+    /// FNV-1a implementations must agree byte for byte. Its own test asserts
+    /// the same two strings hash to the same hex.
+    #[test]
+    fn content_fingerprint_matches_the_typescript_implementation() {
+        assert_eq!(content_fingerprint(b"myco"), "b73bd5ad");
+        assert_eq!(content_fingerprint("한글 세션".as_bytes()), "723f3e42");
+        assert_eq!(content_fingerprint(b""), "811c9dc5");
+    }
+
     #[test]
     fn digested_session_stems_reads_markers_and_ignores_everything_else() {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         assert!(
-            digested_session_stems(root).is_empty(),
+            digested_session_entries(root).is_empty(),
             "no daily/ dir at all is empty, not an error"
         );
 
@@ -4034,7 +4101,7 @@ mod tests {
         .unwrap();
         std::fs::write(root.join("daily/notes.txt"), "claude-code-NOPE").unwrap();
 
-        let stems = digested_session_stems(root);
+        let stems = digested_session_entries(root);
         assert_eq!(stems.len(), 3, "{stems:?}");
         for s in ["claude-code-a", "claude-code-b", "claude-code-c"] {
             assert!(stems.contains(s), "missing {s} in {stems:?}");
@@ -4058,7 +4125,12 @@ mod tests {
 
             // The digest landed (marker + bullets, one write) but the archive
             // that follows it failed — the files are still in sessions/.
-            write_daily_with_marker(root, "2026-08-10", &["20260810-a", "20260810-b"]);
+            let entries: Vec<String> = files.iter().map(|f| marker_entry(root, f)).collect();
+            write_daily_with_marker(
+                root,
+                "2026-08-10",
+                &entries.iter().map(String::as_str).collect::<Vec<_>>(),
+            );
 
             // Defect C fix: the day must still be OFFERED (its files are
             // un-archived) but FLAGGED, so the caller retries only the archive
@@ -4090,15 +4162,18 @@ mod tests {
             // from mtime while there is no frontmatter.
             let rel = scored_session(root, "claude-code-abc.md", PROSE);
             let day_one = digestable_session_days(root)[0].day.clone();
-            write_daily_with_marker(root, &day_one, &["claude-code-abc"]);
+            write_daily_with_marker(root, &day_one, &[&marker_entry(root, &rel)]);
 
-            // Now the same file gains a `created:` frontmatter (a re-import,
-            // or an importer fix) and derives a DIFFERENT day. A day-keyed
-            // flag would miss here and buy a second LLM digest for content
-            // already summarized; the file-level marker still matches.
+            // Now the same UNCHANGED file derives a DIFFERENT day (a touch, a
+            // sync, a restore — session_day falls back to mtime here). A
+            // day-keyed flag would miss and buy a second LLM digest for
+            // content already summarized; the file-level marker still matches,
+            // because the content it fingerprinted did not move.
             let path = root.join(&rel);
-            std::fs::write(&path, format!("---\ncreated: 1000000000\n---\n\n{PROSE}")).unwrap();
-            set_mtime(&path, old_mtime());
+            set_mtime(
+                &path,
+                old_mtime() - std::time::Duration::from_secs(5 * 86_400),
+            );
 
             let days = digestable_session_days(root);
             assert_eq!(days.len(), 1);
@@ -4117,7 +4192,7 @@ mod tests {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
             let old = scored_session(root, "20260810-a.md", PROSE);
-            write_daily_with_marker(root, "2026-08-10", &["20260810-a"]);
+            write_daily_with_marker(root, "2026-08-10", &[&marker_entry(root, &old)]);
             let new = scored_session(root, "20260810-b.md", PROSE);
 
             // A genuinely new session for an already-digested day is new
@@ -4135,6 +4210,75 @@ mod tests {
             assert_eq!(days.len(), 1);
             assert!(days[0].already_digested);
             assert_eq!(days[0].files, vec![old]);
+        });
+    }
+
+    /// A stem is the conversation id, not a version of it: the sweep re-imports
+    /// a conversation the user kept talking in under the SAME stem (and the
+    /// same `created:`), so a stem-only record archived the whole continuation
+    /// without ever digesting it. The record is bound to the content instead.
+    #[test]
+    fn digestable_days_redigests_a_resumed_conversation_that_kept_its_stem() {
+        crate::settings::test_support::with_isolated_data("distill-digest-resumed", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            // What the first import looked like when it was digested and
+            // archived — its file is gone from sessions/, only its record left.
+            let first = format!("---\ncreated: 1000000000\n---\n\n{PROSE}");
+            let first_entry = format!("claude-code-abc:{}", content_fingerprint(first.as_bytes()));
+            // The re-import: same stem, same `created:`, more turns.
+            let rel = scored_session(
+                root,
+                "claude-code-abc.md",
+                &format!("{first}\n\nand then we also decided the other thing.\n"),
+            );
+            let day = digestable_session_days(root)[0].day.clone();
+            write_daily_with_marker(root, &day, &[&first_entry]);
+
+            let days = digestable_session_days(root);
+            assert_eq!(days.len(), 1);
+            assert!(
+                !days[0].already_digested,
+                "the grown file is not the file that was digested"
+            );
+            assert_eq!(days[0].files, vec![rel.clone()]);
+
+            // …and once THIS content is recorded, the day goes back to being a
+            // pure archive retry — no second LLM call.
+            write_daily_with_marker(root, &day, &[&first_entry, &marker_entry(root, &rel)]);
+            let days = digestable_session_days(root);
+            assert!(days[0].already_digested);
+            assert_eq!(days[0].files, vec![rel]);
+        });
+    }
+
+    /// Markers written before fingerprints existed are bare stems. They must
+    /// keep matching on the stem alone — otherwise the upgrade re-bills an LLM
+    /// digest for every session already summarized.
+    #[test]
+    fn digestable_days_still_honours_a_legacy_bare_stem_marker() {
+        crate::settings::test_support::with_isolated_data("distill-digest-legacy", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let rel = scored_session(root, "claude-code-abc.md", PROSE);
+            let day = digestable_session_days(root)[0].day.clone();
+            write_daily_with_marker(root, &day, &["claude-code-abc"]);
+
+            let days = digestable_session_days(root);
+            assert_eq!(days.len(), 1);
+            assert!(
+                days[0].already_digested,
+                "bare stem, no fingerprint to check"
+            );
+            assert_eq!(days[0].files, vec![rel.clone()]);
+
+            // Even after the file changes: a legacy record can't say WHICH
+            // content it covered, and re-billing every old session is worse
+            // than missing one continuation on the last pre-upgrade day.
+            let path = root.join(&rel);
+            std::fs::write(&path, format!("{PROSE}\n\nresumed later.\n")).unwrap();
+            set_mtime(&path, old_mtime());
+            assert!(digestable_session_days(root)[0].already_digested);
         });
     }
 
