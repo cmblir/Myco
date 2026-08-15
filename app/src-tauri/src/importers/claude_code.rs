@@ -12,8 +12,9 @@
 //!
 //! The CLI also injects its own control text INTO `user` messages that survive
 //! that filter — a caveat, a `/command` invocation, its stdout — none of which
-//! the user typed. `spoken_text` strips those (see `strip_injected`) before a
-//! message is counted or titled from.
+//! the user typed. A message that is nothing but that control text is dropped
+//! (see `strip_injected`) before anything is counted or titled from it; a
+//! message with real prose in it is kept verbatim.
 
 use super::{Conversation, Role, Source, Turn};
 use serde::Deserialize;
@@ -97,9 +98,9 @@ pub fn parse(jsonl: &str, fallback_id: &str) -> Option<Conversation> {
 
 /// The human-readable text of a message: a plain string as-is, or the joined
 /// `text` blocks of an array. Everything else (tool_use, tool_result, thinking,
-/// image) contributes nothing. Injected CLI wrappers (`<local-command-caveat>`
-/// etc — see `strip_injected`) are stripped before the result is returned, so
-/// they never reach the 800-char threshold or the title.
+/// image) contributes nothing. A message that is purely injected CLI wrappers
+/// (`<local-command-caveat>` etc — see `strip_injected`) comes back empty, so
+/// it never reaches the 800-char threshold or the title.
 fn spoken_text(content: &serde_json::Value) -> String {
     if let Some(s) = content.as_str() {
         return strip_injected(s.trim());
@@ -134,11 +135,20 @@ const INJECTED_TAGS: &[&str] = &[
     "system-reminder",
 ];
 
-/// Remove every occurrence of each `INJECTED_TAGS` element (open tag through
-/// its matching close tag, inclusive) from `text`, then trim. These tags are
-/// flat in every sample seen — no nesting — so a plain substring search per
-/// tag is enough; nothing here calls for an XML parser over a fixed, known
-/// set of wrapper names.
+/// All-or-nothing: `""` when `text` is nothing BUT `INJECTED_TAGS` blocks (and
+/// whitespace), otherwise `text` trimmed and byte-for-byte unchanged.
+///
+/// On every real `~/.claude/projects/**/*.jsonl` sampled, an injected block is
+/// the entire content of its user message (sometimes several concatenated) —
+/// never mixed into prose. Partial stripping would therefore buy nothing real
+/// while gutting any message that legitimately *quotes* these tag names, which
+/// is exactly what a user debugging this CLI's output writes; a gutted message
+/// can even empty out and drop, silently changing which turn titles the doc.
+/// So the removal only decides whether the message was pure control text.
+///
+/// The tags are flat in every sample seen — no nesting — so a plain substring
+/// search per tag is enough; nothing here calls for an XML parser over a fixed,
+/// known set of wrapper names.
 fn strip_injected(text: &str) -> String {
     let mut s = text.to_string();
     for tag in INJECTED_TAGS {
@@ -152,7 +162,11 @@ fn strip_injected(text: &str) -> String {
             s.replace_range(start..end, "");
         }
     }
-    s.trim().to_string()
+    if s.trim().is_empty() {
+        String::new()
+    } else {
+        text.trim().to_string()
+    }
 }
 
 /// A session has no title; use the first line of the first user prompt.
@@ -248,9 +262,31 @@ mod tests {
     }
 
     #[test]
-    fn strip_injected_leaves_real_text_around_a_wrapper_intact() {
+    fn strip_injected_leaves_a_message_that_also_holds_prose_completely_unchanged() {
+        // All-or-nothing: real prose alongside a wrapper means the message was
+        // never pure control text, so it is kept byte-for-byte rather than
+        // partially gutted.
         let text = "<system-reminder>housekeeping</system-reminder>\n\nWhat does attention do?";
-        assert_eq!(strip_injected(text), "What does attention do?");
+        assert_eq!(strip_injected(text), text);
+    }
+
+    #[test]
+    fn strip_injected_preserves_prose_that_quotes_the_tag_names() {
+        // myco's own users debug this exact CLI output, so a message ABOUT the
+        // wrappers is entirely plausible — and must survive byte-for-byte.
+        let prose = "Why is <system-reminder>foo</system-reminder> eating my text? \
+                     I only see <command-name>/clear</command-name> in the log.";
+        assert_eq!(strip_injected(prose), prose);
+
+        let fenced = "Repro:\n\n```\n<local-command-stdout>Set model to Opus 5</local-command-stdout>\n```\n\nThat whole turn vanished.";
+        assert_eq!(strip_injected(fenced), fenced);
+    }
+
+    #[test]
+    fn strip_injected_drops_several_concatenated_wrapper_blocks() {
+        // The observed multi-block shape: still nothing but control text.
+        let text = "<local-command-caveat>Caveat: ...</local-command-caveat>\n\n<command-name>/model</command-name>\n<command-args></command-args>";
+        assert_eq!(strip_injected(text), "");
     }
 
     #[test]
