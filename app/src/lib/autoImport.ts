@@ -14,6 +14,7 @@ import { ipc } from "./ipc";
 import { log } from "./log";
 import { useImportStore } from "../stores/importStore";
 import { useIngestStore } from "../stores/ingestStore";
+import { useDistillRunStore } from "../stores/distillRunStore";
 
 const KINDS = ["claude-code", "codex"] as const;
 
@@ -25,7 +26,13 @@ function busy(): boolean {
     imp === "sweeping" ||
     ing === "writing-raw" ||
     ing === "claude" ||
-    ing === "indexing"
+    ing === "indexing" ||
+    // Defence in depth for the session digest: a sweep that rewrites a
+    // resumed conversation's file mid-digest would have its new turns left
+    // behind in sessions/ (archive_digested_sessions re-checks fingerprints),
+    // costing a duplicate digest. Skipping the tick avoids the whole race —
+    // the next tick is minutes away and imports nothing that expires.
+    useDistillRunStore.getState().running
   );
 }
 

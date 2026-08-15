@@ -1594,9 +1594,15 @@ pub fn archive_digested_sessions(
     vault: String,
     day: String,
     files: Vec<String>,
+    fingerprints: Option<Vec<String>>,
 ) -> Result<String, String> {
     let root = confine_root(&state, &vault)?;
-    crate::distill::archive_digested_sessions(std::path::Path::new(&root), &day, &files)
+    crate::distill::archive_digested_sessions(
+        std::path::Path::new(&root),
+        &day,
+        &files,
+        fingerprints.as_deref(),
+    )
 }
 
 /// Gate-admitted Full-tier items ready for the LLM ingest pipeline (Phase B,

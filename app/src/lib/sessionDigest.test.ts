@@ -131,10 +131,14 @@ describe("runSessionDigest", () => {
       content: DIGEST_SYSTEM,
     });
     expect(archiveDigestedSessions).toHaveBeenCalledTimes(1);
+    // Race guard: the fingerprints handed to the archive step are the ones
+    // the marker recorded, so Rust can leave behind a file the auto-collect
+    // sweep rewrote between the read above and the move.
     expect(archiveDigestedSessions).toHaveBeenCalledWith(
       "/v",
       "2026-08-10",
       ["sessions/2026-08-10/a.md"],
+      [fingerprint(SESSION_RAW)],
     );
     expect(writeFile).toHaveBeenCalledTimes(1);
     const [path, content] = writeFile.mock.calls[0];
@@ -174,10 +178,13 @@ describe("runSessionDigest", () => {
     expect(readFile).not.toHaveBeenCalled();
     expect(writeFile).not.toHaveBeenCalled();
     expect(archiveDigestedSessions).toHaveBeenCalledTimes(1);
+    // No fingerprints on the retry path — this run read nothing; the marker
+    // an earlier run wrote is the record Rust re-checks against.
     expect(archiveDigestedSessions).toHaveBeenCalledWith(
       "/v",
       "2026-08-10",
       ["sessions/2026-08-10/a.md"],
+      null,
     );
     expect(result).toEqual({ daysDigested: 1, filesArchived: 1, skipped: null });
   });

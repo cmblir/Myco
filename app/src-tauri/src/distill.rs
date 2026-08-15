@@ -3074,10 +3074,24 @@ pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
 /// `sessions/archive/` before it is ever joined onto `root`
 /// (`confine_payload_file`, the same pattern `apply_proposal`'s passes use
 /// for their own payload files).
+///
+/// `fingerprints` is the caller's per-file record of the bytes it actually
+/// digested (parallel to `files`, the same values it wrote into the digest
+/// marker). Each file's fingerprint is recomputed here, immediately before
+/// its rename, and a mismatch LEAVES THE FILE IN `sessions/` and out of the
+/// manifest: the auto-collect sweep (src/lib/autoImport.ts) runs on its own
+/// timer and rewrites a resumed conversation's file in place, so bytes that
+/// arrived after the caller's read are undigested and must stay where the
+/// next run can see them — `walk_inflow` excludes `sessions/archive/`
+/// forever. `None` is the archive-retry path, whose digest was written by an
+/// earlier run and which therefore has no fingerprints of its own: the
+/// digest markers on disk are the record there, checked with the same
+/// `is_digested` that decided to offer the day at all.
 pub fn archive_digested_sessions(
     root: &Path,
     day: &str,
     files: &[String],
+    fingerprints: Option<&[String]>,
 ) -> Result<String, String> {
     // Same digit-run + dash shape check `session_day`/`session_bucket` use —
     // `day` is IPC input, so this must reject a non-numeric day string
@@ -3095,6 +3109,20 @@ pub fn archive_digested_sessions(
     }
     let month = &day[..7];
 
+    if let Some(fps) = fingerprints {
+        if fps.len() != files.len() {
+            return Err(format!(
+                "{} fingerprints for {} files",
+                fps.len(),
+                files.len()
+            ));
+        }
+    }
+    let recorded = match fingerprints {
+        Some(_) => Default::default(),
+        None => digested_session_entries(root),
+    };
+
     let now = now_secs();
     let id = free_manifest_id(root, &format!("digest-{now}"));
     let mut manifest = RunManifest {
@@ -3111,10 +3139,21 @@ pub fn archive_digested_sessions(
     std::fs::create_dir_all(&archive_dir)
         .map_err(|e| format!("create session archive dir: {e}"))?;
 
-    for f in files {
+    for (i, f) in files.iter().enumerate() {
         let from_path = confine_payload_file(root, f, is_session_payload_path, "sessions/")?;
         if !from_path.exists() {
             continue; // already moved/gone — idempotent, same as the apply_* passes
+        }
+        let stem = from_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let digested = match fingerprints {
+            Some(fps) => std::fs::read(&from_path).is_ok_and(|b| content_fingerprint(&b) == fps[i]),
+            None => is_digested(&recorded, stem, &from_path),
+        };
+        if !digested {
+            // Rewritten under us since it was digested. Leaving it in
+            // `sessions/` costs one duplicated digest of its earlier turns on
+            // the next run; archiving it loses the new ones for good.
+            continue;
         }
         let from_rel = rel_string(root, &from_path);
         let file_name = from_path
@@ -4035,13 +4074,18 @@ mod tests {
         rel
     }
 
+    /// The fingerprint `runSessionDigest` would hand `archive_digested_sessions`
+    /// for the session file currently on disk at `rel`.
+    fn file_fingerprint(root: &Path, rel: &str) -> String {
+        content_fingerprint(&std::fs::read(root.join(rel)).unwrap())
+    }
+
     /// The `<stem>:<fingerprint>` marker entry `appendDigest` would record for
     /// a session file that is currently on disk at `rel`.
     fn marker_entry(root: &Path, rel: &str) -> String {
         let path = root.join(rel);
         let stem = path.file_stem().unwrap().to_str().unwrap();
-        let bytes = std::fs::read(&path).unwrap();
-        format!("{stem}:{}", content_fingerprint(&bytes))
+        format!("{stem}:{}", file_fingerprint(root, rel))
     }
 
     /// The marker line `appendDigest` (src/lib/sessionDigest.ts) writes into
@@ -4143,12 +4187,12 @@ mod tests {
             // A failed archive attempt (a bad day string stands in for any
             // archive failure — see archive_digested_sessions's validation)
             // leaves the record where it is: in daily/, untouched.
-            assert!(archive_digested_sessions(root, "not-a-day", &files).is_err());
+            assert!(archive_digested_sessions(root, "not-a-day", &files, None).is_err());
             assert!(digestable_session_days(root)[0].already_digested);
 
             // Once the archive succeeds the files leave sessions/ and the day
             // disappears — nothing left to retry.
-            archive_digested_sessions(root, "2026-08-10", &files).unwrap();
+            archive_digested_sessions(root, "2026-08-10", &files, None).unwrap();
             assert!(digestable_session_days(root).is_empty());
         });
     }
@@ -4205,7 +4249,8 @@ mod tests {
 
             // Archiving that one leaves the earlier, already-recorded file —
             // which the next run picks up as a pure archive retry.
-            archive_digested_sessions(root, "2026-08-10", &[new]).unwrap();
+            let new_fp = file_fingerprint(root, &new);
+            archive_digested_sessions(root, "2026-08-10", &[new], Some(&[new_fp])).unwrap();
             let days = digestable_session_days(root);
             assert_eq!(days.len(), 1);
             assert!(days[0].already_digested);
@@ -4294,7 +4339,8 @@ mod tests {
             "sessions/2026-08/20260810-a.md".to_string(),
             "sessions/2026-08/20260810-b.md".to_string(),
         ];
-        let id = archive_digested_sessions(root, "2026-08-10", &files).unwrap();
+        let fps: Vec<String> = files.iter().map(|f| file_fingerprint(root, f)).collect();
+        let id = archive_digested_sessions(root, "2026-08-10", &files, Some(&fps)).unwrap();
 
         for name in ["20260810-a.md", "20260810-b.md"] {
             assert!(root
@@ -4314,12 +4360,66 @@ mod tests {
 
         // Untrusted path: outside sessions/ must be rejected outright.
         let bad = vec!["wiki/index.md".to_string()];
-        assert!(archive_digested_sessions(root, "2026-08-10", &bad).is_err());
+        assert!(archive_digested_sessions(root, "2026-08-10", &bad, None).is_err());
 
         // Untrusted day: right shape (10 chars, dashes at 4/7) but non-numeric
         // must be rejected too, not land a junk `sessions/archive/<day>/` dir.
-        assert!(archive_digested_sessions(root, "abcd-ef-gh", &files).is_err());
+        assert!(archive_digested_sessions(root, "abcd-ef-gh", &files, None).is_err());
         assert!(!root.join("sessions/archive/abcd-ef").exists());
+    }
+
+    /// The auto-collect sweep (src/lib/autoImport.ts) runs on its own timer and
+    /// rewrites a resumed conversation's file in place. If that lands between
+    /// the digest's read and this move, the new turns would be archived into a
+    /// tree `walk_inflow` excludes forever — digested never, error never.
+    #[test]
+    fn archive_leaves_behind_a_session_rewritten_since_it_was_digested() {
+        crate::settings::test_support::with_isolated_data("distill-digest-archive-race", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let stable = scored_session(root, "claude-code-aaa.md", PROSE);
+            let resumed = scored_session(root, "claude-code-bbb.md", PROSE);
+            let day = digestable_session_days(root)[0].day.clone();
+
+            // What the caller digested, and what it recorded for it.
+            let files = vec![stable.clone(), resumed.clone()];
+            let fps: Vec<String> = files.iter().map(|f| file_fingerprint(root, f)).collect();
+            let entries: Vec<String> = files.iter().map(|f| marker_entry(root, f)).collect();
+            write_daily_with_marker(
+                root,
+                &day,
+                &entries.iter().map(String::as_str).collect::<Vec<_>>(),
+            );
+
+            // …and then the sweep rewrites one of them, before the archive.
+            let path = root.join(&resumed);
+            std::fs::write(&path, format!("{PROSE}\n\nand then we resumed.\n")).unwrap();
+            set_mtime(&path, old_mtime());
+
+            let id = archive_digested_sessions(root, &day, &files, Some(&fps)).unwrap();
+
+            assert!(root
+                .join("sessions/archive")
+                .join(&day[..7])
+                .join("claude-code-aaa.md")
+                .exists());
+            assert!(!root.join(&stable).exists());
+            assert!(
+                root.join(&resumed).exists(),
+                "the rewritten file holds undigested turns — it must stay in sessions/"
+            );
+            let raw = std::fs::read_to_string(manifest_path(root, &id)).unwrap();
+            let manifest: RunManifest = serde_json::from_str(&raw).unwrap();
+            assert_eq!(manifest.moves.len(), 1, "{:?}", manifest.moves);
+            assert!(!manifest.moves[0].from.contains("bbb"));
+
+            // The next run sees it as new content: not digested, so offered
+            // for a real digest rather than a bare archive retry.
+            let days = digestable_session_days(root);
+            assert_eq!(days.len(), 1);
+            assert!(!days[0].already_digested);
+            assert_eq!(days[0].files, vec![resumed]);
+        });
     }
 
     #[test]

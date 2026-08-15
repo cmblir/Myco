@@ -57,9 +57,9 @@ export function fingerprint(text: string): string {
 // binding the record to the content makes the grown file a miss. Accepted
 // trade: that file is then digested in full, duplicating its earlier turns in
 // a later daily note — cheaper than losing the new half of a conversation.
-function digestMarker(files: string[], contents: string[]): string {
+function digestMarker(files: string[], fingerprints: string[]): string {
   const entries = files.map(
-    (f, i) => (f.split("/").pop() ?? f).replace(/\.md$/, "") + ":" + fingerprint(contents[i]),
+    (f, i) => (f.split("/").pop() ?? f).replace(/\.md$/, "") + ":" + fingerprints[i],
   );
   return MARKER_OPEN + entries.join(" ") + MARKER_CLOSE;
 }
@@ -100,7 +100,7 @@ async function appendDigest(
   day: string,
   bullets: string,
   files: string[],
-  contents: string[],
+  fingerprints: string[],
 ): Promise<boolean> {
   const filePath = `${vaultPath}/daily/${day}.md`;
   // Blank counts as missing: an earlier crash could leave a zero-byte
@@ -122,7 +122,7 @@ async function appendDigest(
     }
   }
   const existing = created ? `# ${day}\n\n` : existingRaw;
-  const marker = digestMarker(files, contents);
+  const marker = digestMarker(files, fingerprints);
   const section = existing.includes(HEADER)
     ? `\n_run of ${new Date().toISOString()}_\n${marker}\n${bullets.trim()}\n`
     : `\n${HEADER}\n_from ${files.length} session logs — low confidence_\n${marker}\n${bullets.trim()}\n`;
@@ -158,7 +158,9 @@ export async function runSessionDigest(vaultPath: string): Promise<DigestOutcome
         // digest in daily/<day>.md (its marker names them, which is how Rust
         // set this flag) but archiveDigestedSessions failed afterward — only
         // the file move needs retrying, never the LLM call or a second append.
-        await ipc.archiveDigestedSessions(vaultPath, day, files);
+        // No fingerprints of our own to hand over — the marker that run wrote
+        // is the record, and Rust re-checks each file against it.
+        await ipc.archiveDigestedSessions(vaultPath, day, files, null);
       } else {
         const contents = await Promise.all(
           files.map((f) => ipc.readFile(`${vaultPath}/${f}`).then((fc) => fc.raw)),
@@ -176,8 +178,14 @@ export async function runSessionDigest(vaultPath: string): Promise<DigestOutcome
         // digestableSessionDays reads that marker back, flags these files
         // already_digested, and takes the retry branch above — no re-paid LLM
         // call, no duplicate digest section, and no second write to lose.
-        const dailyCreated = await appendDigest(vaultPath, day, bullets, files, contents);
-        const manifestId = await ipc.archiveDigestedSessions(vaultPath, day, files);
+        const fingerprints = contents.map(fingerprint);
+        const dailyCreated = await appendDigest(vaultPath, day, bullets, files, fingerprints);
+        // Same fingerprints the marker just recorded: the auto-collect sweep
+        // has its own timer and can rewrite a resumed conversation's file
+        // between the read above and this move, so Rust archives only files
+        // still holding the bytes we digested (a changed one stays in
+        // sessions/ for the next run — see archive_digested_sessions).
+        const manifestId = await ipc.archiveDigestedSessions(vaultPath, day, files, fingerprints);
         // Important 4 (Phase B whole-branch review): fold the daily-file
         // create into the SAME manifest archiveDigestedSessions just wrote for
         // this day's session-file moves, so "undo this run" reverses both —

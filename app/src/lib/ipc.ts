@@ -607,8 +607,17 @@ export const ipc = {
   // Session-digest bookkeeping (Phase B, Task 1).
   digestableSessionDays: (vault: string) =>
     invoke<DigestDay[]>("digestable_session_days", { vault }),
-  archiveDigestedSessions: (vault: string, day: string, files: string[]) =>
-    invoke<string>("archive_digested_sessions", { vault, day, files }),
+  // `fingerprints` (parallel to `files`) is the content this caller actually
+  // digested: Rust re-checks each file against it just before the rename and
+  // leaves a file that changed since then in `sessions/`. `null` on the
+  // archive-retry path, whose digest came from an earlier run — Rust falls
+  // back to the on-disk digest markers there.
+  archiveDigestedSessions: (
+    vault: string,
+    day: string,
+    files: string[],
+    fingerprints: string[] | null,
+  ) => invoke<string>("archive_digested_sessions", { vault, day, files, fingerprints }),
   // Gate-admitted Full-tier items ready for LLM ingest (Phase B, Task 3).
   fullTierItems: (vault: string) => invoke<string[]>("full_tier_items", { vault }),
   // Records a TS-side LLM step's file moves/creates into the same
