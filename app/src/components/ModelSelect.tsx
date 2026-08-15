@@ -55,6 +55,7 @@ export default function ModelSelect({
     if (providers.length > 0 && !providers.some((p) => p.id === provider)) {
       const first = providers[0];
       onPick(first.id, first.catalog?.[0] ?? "");
+      onPickEffort?.(CLI_DEFAULT);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [providers, provider]);
@@ -99,7 +100,12 @@ export default function ModelSelect({
           value={provider}
           onChange={(e) => {
             const next = providers.find((p) => p.id === e.target.value);
-            if (next) onPick(next.id, next.catalog?.[0] ?? model);
+            if (!next) return;
+            onPick(next.id, next.catalog?.[0] ?? model);
+            // Effort levels are provider-specific ("ultra" exists only for
+            // codex): carrying one across a switch either shows a value the
+            // new select has no option for, or gets rejected by the CLI.
+            onPickEffort?.(CLI_DEFAULT);
           }}
           style={{ flex: 1 }}
         >
