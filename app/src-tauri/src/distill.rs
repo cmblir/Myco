@@ -2824,9 +2824,16 @@ pub struct DigestDay {
 /// `YYYY-MM-DD` for a swept session: extends `commands::session_bucket`'s
 /// "prefer a date already in the stem" idea to day granularity — a plain
 /// `YYYYMMDD` run of digits rather than `YYYY-MM`, since importers name files
-/// after the full conversation date, not just its month. Falls back to the
-/// file's own mtime (UTC) when the stem carries no such run.
-fn session_day(stem: &str, mtime: i64) -> String {
+/// after the full conversation date, not just its month. Session stems
+/// (`claude-code-<uuid>` / `codex-<uuid>`) never carry one, so this next reads
+/// the doc's own `created:` frontmatter (unix seconds, written by
+/// `importers::to_inbox_doc` at import time — see
+/// `importers::mod::Conversation::to_inbox_doc`) — the conversation's actual
+/// time, not whenever the sweep last wrote the file. Only when neither is
+/// available does it fall back to the file's own mtime (UTC), which is what
+/// every session used to be bucketed by and is wrong for a long-running or
+/// re-imported conversation.
+fn session_day(stem: &str, path: &Path, mtime: i64) -> String {
     if let Some(pos) = stem.find(|c: char| c.is_ascii_digit()) {
         let tail = &stem[pos..];
         let b = tail.as_bytes();
@@ -2839,8 +2846,20 @@ fn session_day(stem: &str, mtime: i64) -> String {
             }
         }
     }
-    let (y, m, d, ..) = civil_datetime(mtime);
+    let secs = frontmatter_created(path).unwrap_or(mtime);
+    let (y, m, d, ..) = civil_datetime(secs);
     format!("{y:04}-{m:02}-{d:02}")
+}
+
+/// The `created:` unix-seconds frontmatter a session doc carries from import
+/// (`importers::mod::Conversation::to_inbox_doc`), or `None` when the file is
+/// missing, unreadable, has no frontmatter, or `created` isn't an integer.
+fn frontmatter_created(path: &Path) -> Option<i64> {
+    let content = std::fs::read_to_string(path).ok()?;
+    match page_frontmatter(&content)?.get("created")? {
+        gray_matter::Pod::Integer(n) => Some(*n),
+        _ => None,
+    }
 }
 
 /// Groups mature, gate-scored `sessions/**/*.md` (excluding
@@ -2884,7 +2903,7 @@ pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
         let mature = now - c.mtime >= maturation_secs;
         let ready = mature && state.scored.contains_key(&c.rel);
         let stem = c.path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        let day = session_day(stem, c.mtime);
+        let day = session_day(stem, &c.path, c.mtime);
         by_day.entry(day).or_default().push((c.rel, ready));
     }
 
@@ -3686,6 +3705,55 @@ mod tests {
                 assert!(content.contains("action: summary-batch"));
             },
         );
+    }
+
+    #[test]
+    fn session_day_prefers_frontmatter_created_over_mtime() {
+        let dir = tempfile::tempdir().unwrap();
+        // A stem with no date run (the real shape: `claude-code-<uuid>`) and a
+        // mtime far from the conversation's actual `created` time — e.g. a
+        // long-running session the sweep only wrote after it ended.
+        let path = dir.path().join("claude-code-abc123.md");
+        std::fs::write(
+            &path,
+            "---\nsource: claude-code\ncreated: 1755000000\n---\n\nbody\n",
+        )
+        .unwrap();
+        // 1755000000 = 2025-08-12T12:00:00Z; mtime is a different day entirely.
+        let mtime = 1_760_000_000; // 2025-10-09
+        assert_eq!(
+            session_day("claude-code-abc123", &path, mtime),
+            "2025-08-12"
+        );
+    }
+
+    #[test]
+    fn session_day_falls_back_to_mtime_when_frontmatter_is_missing_or_corrupt() {
+        let dir = tempfile::tempdir().unwrap();
+        let mtime = 1_755_000_000; // 2025-08-12
+        let (y, m, d, ..) = civil_datetime(mtime);
+        let want = format!("{y:04}-{m:02}-{d:02}");
+
+        let no_frontmatter = dir.path().join("codex-a.md");
+        std::fs::write(&no_frontmatter, "just a body, no frontmatter\n").unwrap();
+        assert_eq!(session_day("codex-a", &no_frontmatter, mtime), want);
+
+        let bad_created = dir.path().join("codex-b.md");
+        std::fs::write(&bad_created, "---\ncreated: not-a-number\n---\n\nbody\n").unwrap();
+        assert_eq!(session_day("codex-b", &bad_created, mtime), want);
+
+        let missing_file = dir.path().join("codex-c.md");
+        assert_eq!(session_day("codex-c", &missing_file, mtime), want);
+    }
+
+    #[test]
+    fn session_day_still_honors_a_date_already_in_the_stem() {
+        // A stem-embedded date wins even when the file (or its frontmatter)
+        // would say otherwise — same precedence as before this change.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("20260810-x.md");
+        std::fs::write(&path, "---\ncreated: 1755000000\n---\n\nbody\n").unwrap();
+        assert_eq!(session_day("20260810-x", &path, 0), "2026-08-10");
     }
 
     #[test]
