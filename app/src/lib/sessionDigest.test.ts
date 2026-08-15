@@ -303,6 +303,35 @@ describe("runSessionDigest", () => {
     expect(errSpy).toHaveBeenCalled();
     errSpy.mockRestore();
   });
+
+  it("treats an existing-but-blank daily file as missing: seeds the title and still records the manifest", async () => {
+    getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
+    getDistillConfig.mockResolvedValue(CFG);
+    digestableSessionDays.mockResolvedValue([
+      { day: "2026-08-10", files: ["sessions/2026-08-10/a.md"] },
+    ]);
+    // A crash between the old create step and the write left a zero-byte
+    // daily/2026-08-10.md: readFile succeeds, so the retry used to skip the
+    // only branch that seeds the title and sets `created`.
+    mockReadFile("");
+    complete.mockResolvedValue("- New bullet");
+
+    await runSessionDigest("/v");
+
+    const content = writeFile.mock.calls[0][1] as string;
+    expect(content.startsWith("# 2026-08-10\n")).toBe(true);
+    expect(content).toContain("New bullet");
+    // `created` is what makes this run's daily file visible to undo.
+    expect(appendDistillManifest).toHaveBeenCalledWith(
+      "/v",
+      "digest-archived",
+      [],
+      ["daily/2026-08-10.md"],
+    );
+    // The atomic write creates the file itself — no separate create step to
+    // crash between any more.
+    expect(createFile).not.toHaveBeenCalled();
+  });
 });
 
 describe("fingerprint", () => {

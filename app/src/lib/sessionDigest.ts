@@ -102,26 +102,26 @@ async function appendDigest(
   files: string[],
   contents: string[],
 ): Promise<boolean> {
-  const dailyDir = `${vaultPath}/daily`;
-  const filePath = `${dailyDir}/${day}.md`;
-  let existing: string;
-  let created = false;
-  try {
-    existing = (await ipc.readFile(filePath)).raw;
-  } catch {
+  const filePath = `${vaultPath}/daily/${day}.md`;
+  // Blank counts as missing: an earlier crash could leave a zero-byte
+  // daily/<day>.md that reads back fine, and the retry would then skip the
+  // only place that seeds the title and sets `created` — producing an
+  // untitled daily note whose content undo never hears about. There is no
+  // separate create step any more; writeFile is tmpfile+fsync+rename and
+  // creates the file itself, so the window that made the blank file is gone.
+  const existingRaw = await ipc
+    .readFile(filePath)
+    .then((f) => f.raw)
+    .catch(() => "");
+  const created = existingRaw.trim() === "";
+  if (created) {
     try {
       await ipc.createFolder(vaultPath, "daily");
     } catch {
       /* already exists */
     }
-    try {
-      await ipc.createFile(dailyDir, `${day}.md`);
-    } catch {
-      /* race */
-    }
-    existing = `# ${day}\n\n`;
-    created = true;
   }
+  const existing = created ? `# ${day}\n\n` : existingRaw;
   const marker = digestMarker(files, contents);
   const section = existing.includes(HEADER)
     ? `\n_run of ${new Date().toISOString()}_\n${marker}\n${bullets.trim()}\n`
