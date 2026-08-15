@@ -212,8 +212,22 @@ fn bm25_is_incomplete(dense_page_count: usize, bm25_page_count: usize) -> bool {
     dense_page_count > 0 && bm25_page_count < dense_page_count
 }
 
-/// The vault-relative path for `abs`, iff it is a markdown file under
-/// `root/wiki` — `raw/` (immutable) and everything else is never indexed.
+/// Top-level trees the watcher attaches to and the incremental path accepts —
+/// kept in lockstep with `collect_wiki_pages`'s walk (`wiki/`, `sessions/`,
+/// `daily/`) so a change the reindex would pick up is also caught by the
+/// fast incremental path instead of waiting for the next reconcile. `raw/`
+/// (immutable) and everything else is never indexed.
+const WATCHED_TREES: [&str; 3] = ["wiki", "sessions", "daily"];
+
+/// Whether vault-relative `rel` falls under one of `WATCHED_TREES`.
+fn in_watched_tree(rel: &str) -> bool {
+    WATCHED_TREES
+        .iter()
+        .any(|t| rel.starts_with(t) && rel[t.len()..].starts_with('/'))
+}
+
+/// The vault-relative path for `abs`, iff it is a markdown file under one of
+/// `WATCHED_TREES`.
 fn wiki_rel_of(root: &Path, abs: &Path) -> Option<String> {
     if abs.extension().and_then(|e| e.to_str()) != Some("md") {
         return None;
@@ -223,27 +237,26 @@ fn wiki_rel_of(root: &Path, abs: &Path) -> Option<String> {
         .ok()?
         .to_string_lossy()
         .replace('\\', "/");
-    rel.starts_with("wiki/").then_some(rel)
+    in_watched_tree(&rel).then_some(rel)
 }
 
 /// Whether a vault-relative path is eligible for indexing at all — the same
 /// check as `wiki_rel_of`, but for a path already known to be vault-relative
-/// (as dirty paths and rebind's "*" sentinel are). The `is_cold` check is a
-/// no-op today (its prefixes are all outside `wiki/`, the only tree this
-/// already accepts) but keeps this predicate in lockstep with the reindex
-/// walk's cold filter (`collect_wiki_pages`) rather than two places silently
-/// agreeing by coincidence of today's folder layout.
+/// (as dirty paths and rebind's "*" sentinel are). Unlike `wiki_rel_of`, the
+/// `is_cold` check here is load-bearing: `sessions/` is a watched tree but
+/// `sessions/archive/` is cold, so a session's archive move (a create event
+/// under the archive subtree) must not re-embed it — this is what keeps that
+/// a cheap drop-from-index instead of live churn.
 fn should_index(rel: &str) -> bool {
-    rel.starts_with("wiki/") && rel.ends_with(".md") && !is_cold(rel)
+    rel.ends_with(".md") && in_watched_tree(rel) && !is_cold(rel)
 }
 
-/// Start watching `root/wiki` for filesystem changes, marking each changed
-/// markdown page dirty via `tx`. Returns `None` only if the watch backend
-/// itself couldn't be created, or (when `root/wiki` exists) couldn't attach
-/// to it. If `root/wiki` doesn't exist yet (e.g. an empty/new vault), the
-/// watcher is still created and returned `Some` — it just has nothing
-/// attached, so it silently watches nothing until the next `Rebind` replaces
-/// it.
+/// Start watching `root`'s `WATCHED_TREES` (`wiki/`, `sessions/`, `daily/`)
+/// for filesystem changes, marking each changed markdown page dirty via
+/// `tx`. Returns `None` only if the watch backend itself couldn't be
+/// created. A tree that doesn't exist under this vault root is skipped
+/// rather than failing the whole watcher — it silently watches nothing under
+/// that tree until the next `Rebind` replaces it.
 ///
 /// The callback runs on `notify`'s own (non-tokio) thread; `tx.send` is an
 /// unbounded, non-blocking, thread-safe send, so it never blocks that thread
@@ -265,9 +278,11 @@ fn start_watcher(
         Err(e) => eprintln!("[index_updater] watch error: {e}"),
     })
     .ok()?;
-    let wiki = root.join("wiki");
-    if wiki.is_dir() {
-        w.watch(&wiki, RecursiveMode::Recursive).ok()?;
+    for tree in WATCHED_TREES {
+        let dir = root.join(tree);
+        if dir.is_dir() {
+            w.watch(&dir, RecursiveMode::Recursive).ok()?;
+        }
     }
     Some(w)
 }
@@ -661,5 +676,44 @@ mod tests {
             .search("deleted outside", 10)
             .iter()
             .any(|h| h.page == "wiki/removed.md"));
+    }
+
+    // Defect B: the watcher used to attach only to `root/wiki`, so new/changed
+    // `sessions/` and `daily/` files never marked the index dirty until a
+    // manual reindex or vault rebind.
+
+    #[test]
+    fn watched_trees_cover_wiki_sessions_and_daily() {
+        assert_eq!(WATCHED_TREES, ["wiki", "sessions", "daily"]);
+    }
+
+    #[test]
+    fn wiki_rel_of_resolves_every_watched_tree_but_not_others() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for (sub, expect_indexed) in [
+            ("wiki/a.md", true),
+            ("sessions/2026-08/s.md", true),
+            ("daily/2026-08-10.md", true),
+            ("raw/a.md", false),
+        ] {
+            let abs = root.join(sub);
+            std::fs::create_dir_all(abs.parent().unwrap()).unwrap();
+            std::fs::write(&abs, "x").unwrap();
+            assert_eq!(wiki_rel_of(root, &abs).is_some(), expect_indexed, "{sub}");
+        }
+    }
+
+    #[test]
+    fn should_index_ignores_archived_and_quarantined_paths() {
+        assert!(should_index("wiki/a.md"));
+        assert!(should_index("sessions/2026-08/a.md"));
+        assert!(should_index("daily/2026-08-10.md"));
+        // Cold subtrees stay out even though their parent tree is watched —
+        // this is what keeps an archive move a cheap drop instead of churn.
+        assert!(!should_index("sessions/archive/2026-08/a.md"));
+        assert!(!should_index("_inbox/quarantine/a.md"));
+        assert!(!should_index("raw/a.md")); // never a watched tree
+        assert!(!should_index("wiki/a.txt")); // not markdown
     }
 }

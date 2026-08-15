@@ -405,10 +405,10 @@ impl VectorStore {
     /// sessions, so every suggestion was `codex-019fdc04-… ↔ codex-019fdc05-…`
     /// and not one row named something a person had written.
     fn is_machine_written(page: &str) -> bool {
-        // "daily" is a future-lock: daily/ is not indexed today (see
-        // commands::collect_wiki_pages — wiki/ + sessions/ only), but its
-        // distill digests are machine-written session summaries, and letting
-        // them into link suggestions would close a self-reinforcement loop.
+        // `daily/` digests are machine-written session summaries (searchable
+        // since `collect_wiki_pages` started walking `daily/` — see its doc
+        // comment), and letting them into link suggestions would close a
+        // self-reinforcement loop.
         matches!(
             page.split('/').next().unwrap_or(""),
             "sessions" | "_inbox" | "raw" | "ingest-reports" | "daily"

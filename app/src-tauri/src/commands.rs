@@ -1924,6 +1924,14 @@ pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String,
     // each session into a wiki page instead would spend a paid ingest per work
     // log to produce pages titled after prompt boilerplate.
     walk(&root.join(DEST_SESSIONS), root, &mut out);
+    // Distillation's own output: digests land in `daily/*.md` and are the
+    // only place the knowledge that was in a now-archived session still
+    // lives (see `is_cold`'s `sessions/archive/` prefix below) — walking
+    // `daily/` here is what makes that knowledge searchable again instead of
+    // vanishing from the index the moment its source session is archived.
+    // Deliberately NOT walked by the knowledge graph (`graphData.ts`'s
+    // `isNonKnowledgePath`): that stays search-only, on purpose.
+    walk(&root.join("daily"), root, &mut out);
     // Cold-tier pages never belong in the active index — see this fn's doc
     // comment. Live since `is_cold` grew a `sessions/archive/` prefix (Phase
     // B's `archive_digested_sessions`): the `sessions/` walk above is no
@@ -3275,5 +3283,40 @@ mod session_bucket_tests {
             "an archived session must never be overwritten"
         );
         std::fs::remove_dir_all(&tmp).ok();
+    }
+
+    #[test]
+    fn collect_wiki_pages_includes_daily_and_excludes_cold_subtrees() {
+        // Defect A: distillation writes digests to `daily/*.md`, and a
+        // digested session gets archived to `sessions/archive/...` (cold).
+        // Both `daily/` must be walked and `sessions/archive/` must still be
+        // dropped, or a digest's knowledge is unsearchable on both ends.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for sub in [
+            "wiki/a.md",
+            "sessions/2026-08/s.md",
+            "daily/2026-08-10.md",
+            "sessions/archive/2026-08/old.md",
+        ] {
+            let p = root.join(sub);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, "# content").unwrap();
+        }
+
+        let rels: Vec<String> = collect_wiki_pages(root)
+            .into_iter()
+            .map(|(r, _, _)| r)
+            .collect();
+        assert!(rels.contains(&"wiki/a.md".to_string()));
+        assert!(rels.contains(&"sessions/2026-08/s.md".to_string()));
+        assert!(
+            rels.contains(&"daily/2026-08-10.md".to_string()),
+            "daily/ digests must be indexed: {rels:?}"
+        );
+        assert!(
+            !rels.iter().any(|r| r.starts_with("sessions/archive/")),
+            "archived (cold) sessions must stay out of the active index: {rels:?}"
+        );
     }
 }
