@@ -20,7 +20,12 @@ import { getVersion } from "@tauri-apps/api/app";
 import { ipc } from "../lib/ipc";
 import type { ProjectInfo } from "../lib/ipc";
 import type { McpNativeInfo, MycoSettings, OllamaStatus } from "../lib/ipc";
-import { PROVIDERS, providerDesc, useEnabledProviders } from "../lib/providers";
+import {
+  CLI_DEFAULT,
+  PROVIDERS,
+  providerDesc,
+  useEnabledProviders,
+} from "../lib/providers";
 import type { ProviderDef } from "../lib/providers";
 import ModelSelect from "../components/ModelSelect";
 import OllamaSetup from "../components/OllamaSetup";
@@ -243,9 +248,11 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
         providers={enabled}
         provider={settings.query_provider}
         model={settings.query_model}
+        effort={settings.query_effort}
         onPick={(provider, model) =>
           void update({ query_provider: provider, query_model: model })
         }
+        onPickEffort={(effort) => void update({ query_effort: effort })}
       />
       <ModelPicker
         t={t}
@@ -253,9 +260,11 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
         providers={enabled}
         provider={settings.ingest_provider}
         model={settings.ingest_model}
+        effort={settings.ingest_effort}
         onPick={(provider, model) =>
           void update({ ingest_provider: provider, ingest_model: model })
         }
+        onPickEffort={(effort) => void update({ ingest_effort: effort })}
       />
       <AutoImportSetting t={t} settings={settings} update={update} />
       <AutoIngestSetting t={t} settings={settings} update={update} />
@@ -824,14 +833,18 @@ function ModelPicker({
   providers,
   provider,
   model,
+  effort,
   onPick,
+  onPickEffort,
 }: {
   t: Strings;
   label: string;
   providers: ProviderDef[];
   provider: string;
   model: string;
+  effort: string;
   onPick: (provider: string, model: string) => void;
+  onPickEffort: (effort: string) => void;
 }): JSX.Element {
   return (
     <div className="card">
@@ -839,6 +852,7 @@ function ModelPicker({
         <div style={{ fontWeight: 600 }}>{label}</div>
         <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
           {provider} · {model}
+          {effort && effort !== CLI_DEFAULT ? ` · ${effort}` : ""}
         </span>
       </div>
       <ModelSelect
@@ -847,6 +861,8 @@ function ModelPicker({
         provider={provider}
         model={model}
         onPick={onPick}
+        effort={effort}
+        onPickEffort={onPickEffort}
       />
     </div>
   );

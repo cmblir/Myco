@@ -1161,9 +1161,10 @@ pub async fn claude_run(
     prompt: String,
     cwd: String,
     model: Option<String>,
+    effort: Option<String>,
 ) -> Result<CliResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        claude::run_prompt(&prompt, &cwd, model.as_deref())
+        claude::run_prompt(&prompt, &cwd, model.as_deref(), effort.as_deref())
     })
     .await
     .map_err(|e| format!("join failed: {e}"))?
@@ -1179,19 +1180,28 @@ pub async fn claude_run_stream(
     prompt: String,
     cwd: String,
     model: Option<String>,
+    effort: Option<String>,
 ) -> Result<CliResult, String> {
     use tauri::Emitter;
     tauri::async_runtime::spawn_blocking(move || {
         let id = run_id.clone();
-        claude::run_prompt_stream(&run_id, &prompt, &cwd, model.as_deref(), move |event| {
-            let _ = app.emit(
-                "claude-stream",
-                claude::StreamEvent {
-                    run_id: id.clone(),
-                    event,
-                },
-            );
-        })
+        let effort = effort.as_deref();
+        claude::run_prompt_stream(
+            &run_id,
+            &prompt,
+            &cwd,
+            model.as_deref(),
+            effort,
+            move |event| {
+                let _ = app.emit(
+                    "claude-stream",
+                    claude::StreamEvent {
+                        run_id: id.clone(),
+                        event,
+                    },
+                );
+            },
+        )
     })
     .await
     .map_err(|e| format!("join failed: {e}"))?
@@ -1221,9 +1231,16 @@ pub async fn agent_run(
     model: String,
     prompt: String,
     cwd: String,
+    effort: Option<String>,
 ) -> Result<CliResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        cli_agent::run_prompt(&provider, &model, &prompt, &cwd)
+        cli_agent::run_prompt(
+            &provider,
+            &model,
+            effort.as_deref().unwrap_or_default(),
+            &prompt,
+            &cwd,
+        )
     })
     .await
     .map_err(|e| format!("join failed: {e}"))?

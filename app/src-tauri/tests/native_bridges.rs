@@ -95,7 +95,7 @@ fn agent_check_known_provider_returns_coherent_status() {
 
 #[test]
 fn agent_run_unknown_provider_errors_without_spawning() {
-    let res = cli_agent::run_prompt("not-a-real-cli", "(default)", "hi", "/tmp");
+    let res = cli_agent::run_prompt("not-a-real-cli", "(default)", "(default)", "hi", "/tmp");
     assert!(res.is_err(), "unknown provider must error");
 }
 
@@ -106,6 +106,12 @@ fn agent_run_rejects_nonexistent_cwd() {
     // we get the earlier "not found" error — also Err, which is what we assert.)
     let missing = std::env::temp_dir().join("memex-e2e-no-such-cwd-zzz");
     let _ = std::fs::remove_dir_all(&missing);
-    let res = cli_agent::run_prompt("codex-cli", "(default)", "hi", missing.to_str().unwrap());
+    let res = cli_agent::run_prompt(
+        "codex-cli",
+        "(default)",
+        "(default)",
+        "hi",
+        missing.to_str().unwrap(),
+    );
     assert!(res.is_err(), "missing cwd must error");
 }

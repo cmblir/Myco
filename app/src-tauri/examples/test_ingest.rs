@@ -21,7 +21,7 @@ fn main() {
     println!("Running ingest workflow through myco_lib::claude::run_prompt");
     println!("cwd: {vault}");
     let start = std::time::Instant::now();
-    match claude::run_prompt(PROMPT, &vault, None) {
+    match claude::run_prompt(PROMPT, &vault, None, None) {
         Ok(r) => {
             let elapsed = start.elapsed();
             println!("\n status: {}", r.status);

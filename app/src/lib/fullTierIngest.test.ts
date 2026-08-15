@@ -223,19 +223,33 @@ describe("runFullTierIngest", () => {
   });
 
   it("uses ipc.claudeRun directly (not runIngestProvider) for the anthropic-cli provider", async () => {
-    getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
+    getActiveModel.mockResolvedValue({
+      provider: "anthropic-cli",
+      model: "sonnet",
+      effort: "xhigh",
+    });
     fullTierItems.mockResolvedValue(["raw/a.md"]);
     claudeRun.mockResolvedValue({ stdout: "done", stderr: "", status: 0 });
 
     const result = await runFullTierIngest("/v");
 
-    expect(claudeRun).toHaveBeenCalledWith(expect.any(String), "/v", "sonnet");
+    // The role's effort rides along to the CLI (claude --effort).
+    expect(claudeRun).toHaveBeenCalledWith(
+      expect.any(String),
+      "/v",
+      "sonnet",
+      "xhigh",
+    );
     expect(runIngestProvider).not.toHaveBeenCalled();
     expect(result).toEqual({ ingested: 1, skipped: null, errors: [] });
   });
 
   it("collects an error when the anthropic-cli claudeRun exits non-zero", async () => {
-    getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
+    getActiveModel.mockResolvedValue({
+      provider: "anthropic-cli",
+      model: "sonnet",
+      effort: "xhigh",
+    });
     fullTierItems.mockResolvedValue(["raw/a.md"]);
     claudeRun.mockResolvedValue({ stdout: "", stderr: "boom", status: 1 });
 

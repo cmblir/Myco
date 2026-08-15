@@ -25,6 +25,8 @@ const BASE = {
   query_model: "sonnet",
   ingest_provider: "anthropic-cli",
   ingest_model: "haiku",
+  query_effort: "(default)",
+  ingest_effort: "(default)",
 } as unknown as MycoSettings;
 
 describe("settingsStore.update — model selection persistence", () => {
@@ -51,6 +53,27 @@ describe("settingsStore.update — model selection persistence", () => {
     expect(useSettingsStore.getState().settings?.query_model).toBe(model);
     expect(setSettings).toHaveBeenCalledWith(
       expect.objectContaining({ query_provider: provider, query_model: model }),
+    );
+  });
+
+  // Effort is picked in the same card and persisted the same way — the Rust
+  // side reads it back to build `claude --effort` / codex's
+  // `-c model_reasoning_effort=`.
+  it.each([
+    ["query_effort", "xhigh"],
+    ["ingest_effort", "low"],
+  ])("picking %s = %s persists to settings", async (key, level) => {
+    const setSettings = vi
+      .spyOn(ipc, "setSettings")
+      .mockResolvedValue(null as never);
+
+    await useSettingsStore.getState().update({ [key]: level });
+
+    expect(
+      useSettingsStore.getState().settings?.[key as keyof MycoSettings],
+    ).toBe(level);
+    expect(setSettings).toHaveBeenCalledWith(
+      expect.objectContaining({ [key]: level }),
     );
   });
 });

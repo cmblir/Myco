@@ -30,12 +30,11 @@ use std::path::Path;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use crate::claude::{augmented_path, locate_bin, run_with_timeout, CliResult, CliStatus};
+use crate::claude::{
+    augmented_path, locate_bin, run_with_timeout, CliResult, CliStatus, CLI_DEFAULT,
+};
 
 const DEFAULT_TIMEOUT_SECS: u64 = 600;
-
-/// Settings sentinel meaning "let the CLI use its configured default model".
-const DEFAULT_MODEL: &str = "(default)";
 
 pub fn provider_bin(provider: &str) -> Option<(&'static str, &'static str)> {
     match provider {
@@ -86,11 +85,12 @@ pub fn check(provider: &str) -> CliStatus {
 fn build_args(
     provider: &str,
     model: &str,
+    effort: &str,
     prompt: &str,
     out_file: &str,
 ) -> Option<(Vec<String>, bool)> {
     let model_flag = |flag: &str| -> Vec<String> {
-        if model.is_empty() || model == DEFAULT_MODEL {
+        if model.is_empty() || model == CLI_DEFAULT {
             vec![]
         } else {
             vec![flag.to_string(), model.to_string()]
@@ -108,6 +108,9 @@ fn build_args(
                 "--skip-trust".to_string(),
             ];
             args.extend(model_flag("-m"));
+            // No effort knob: gemini-cli has no reasoning flag or env var —
+            // thinkingLevel/thinkingBudget live in the user's own
+            // ~/.gemini/settings.json aliases, which myco does not write.
             Some((args, false))
         }
         "codex-cli" => {
@@ -123,6 +126,13 @@ fn build_args(
                 out_file.to_string(),
             ];
             args.extend(model_flag("-m"));
+            // Reasoning effort: codex has no dedicated flag, only the generic
+            // `-c key=value` override of the `model_reasoning_effort` key it
+            // would otherwise read from ~/.codex/config.toml.
+            if !effort.is_empty() && effort != CLI_DEFAULT {
+                args.push("-c".to_string());
+                args.push(format!("model_reasoning_effort={effort}"));
+            }
             Some((args, true))
         }
         _ => None,
@@ -132,6 +142,7 @@ fn build_args(
 pub fn run_prompt(
     provider: &str,
     model: &str,
+    effort: &str,
     prompt: &str,
     cwd: &str,
 ) -> Result<CliResult, String> {
@@ -154,7 +165,7 @@ pub fn run_prompt(
     ));
     let out_file_str = out_file.to_string_lossy().into_owned();
     let (args, prompt_on_stdin) =
-        build_args(provider, model, prompt, &out_file_str).ok_or("unsupported provider")?;
+        build_args(provider, model, effort, prompt, &out_file_str).ok_or("unsupported provider")?;
 
     let child = Command::new(&path)
         .args(&args)
@@ -212,7 +223,14 @@ mod tests {
 
     #[test]
     fn gemini_args_headless_with_model() {
-        let (args, stdin) = build_args("gemini-cli", "gemini-2.5-pro", "hello", "/tmp/x").unwrap();
+        let (args, stdin) = build_args(
+            "gemini-cli",
+            "gemini-2.5-pro",
+            "(default)",
+            "hello",
+            "/tmp/x",
+        )
+        .unwrap();
         assert!(!stdin);
         assert_eq!(args[0], "-p");
         assert_eq!(args[1], "hello");
@@ -223,23 +241,51 @@ mod tests {
 
     #[test]
     fn gemini_args_default_model_omits_flag() {
-        let (args, _) = build_args("gemini-cli", "(default)", "hi", "/tmp/x").unwrap();
+        let (args, _) = build_args("gemini-cli", "(default)", "(default)", "hi", "/tmp/x").unwrap();
         assert!(!args.contains(&"-m".to_string()));
     }
 
     #[test]
+    fn gemini_args_never_carry_an_effort_flag() {
+        // gemini-cli has no reasoning-effort flag; an effort value must not
+        // invent one (it is not offered in the UI for this provider either).
+        let (args, _) = build_args("gemini-cli", "pro", "high", "hi", "/tmp/x").unwrap();
+        assert!(!args
+            .iter()
+            .any(|a| a.contains("reasoning") || a.contains("effort")));
+        assert!(!args.contains(&"-c".to_string()));
+    }
+
+    #[test]
     fn codex_args_headless_with_model() {
-        let (args, stdin) =
-            build_args("codex-cli", "gpt-5.6-sol", "hello", "/tmp/out.txt").unwrap();
+        let (args, stdin) = build_args(
+            "codex-cli",
+            "gpt-5.6-sol",
+            "(default)",
+            "hello",
+            "/tmp/out.txt",
+        )
+        .unwrap();
         assert!(stdin);
         assert_eq!(args[0], "exec");
         assert!(args.contains(&"-m".to_string()));
         assert!(args.contains(&"gpt-5.6-sol".to_string()));
+        // "(default)" effort -> no -c override at all.
+        assert!(!args.contains(&"-c".to_string()));
+    }
+
+    #[test]
+    fn codex_args_carry_reasoning_effort_config_override() {
+        let (args, _) =
+            build_args("codex-cli", "gpt-5.6-sol", "xhigh", "hello", "/tmp/out.txt").unwrap();
+        let i = args.iter().position(|a| a == "-c").expect("-c override");
+        assert_eq!(args[i + 1], "model_reasoning_effort=xhigh");
     }
 
     #[test]
     fn codex_args_stdin_sandbox_and_outfile() {
-        let (args, stdin) = build_args("codex-cli", "(default)", "hi", "/tmp/out.txt").unwrap();
+        let (args, stdin) =
+            build_args("codex-cli", "(default)", "(default)", "hi", "/tmp/out.txt").unwrap();
         assert!(stdin);
         assert_eq!(args[0], "exec");
         assert_eq!(args[1], "-");
@@ -251,7 +297,7 @@ mod tests {
 
     #[test]
     fn run_prompt_rejects_unknown_provider() {
-        let res = run_prompt("nope", "", "hi", "/tmp");
+        let res = run_prompt("nope", "", "", "hi", "/tmp");
         assert!(res.is_err());
     }
 }

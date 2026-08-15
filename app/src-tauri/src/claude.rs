@@ -67,7 +67,17 @@ pub fn check() -> CliStatus {
     }
 }
 
-pub fn run_prompt(prompt: &str, cwd: &str, model: Option<&str>) -> Result<CliResult, String> {
+/// Settings sentinel meaning "pass nothing, let the CLI use its own default".
+/// Shared by the model and the effort selections (both come from the same
+/// picker in Settings → Model).
+pub const CLI_DEFAULT: &str = "(default)";
+
+pub fn run_prompt(
+    prompt: &str,
+    cwd: &str,
+    model: Option<&str>,
+    effort: Option<&str>,
+) -> Result<CliResult, String> {
     let path = locate().ok_or_else(|| {
         "claude CLI not found on PATH. Install: https://docs.claude.com/en/docs/claude-code"
             .to_string()
@@ -93,7 +103,7 @@ pub fn run_prompt(prompt: &str, cwd: &str, model: Option<&str>) -> Result<CliRes
     // --model selects the model for this run (alias like "haiku"/"sonnet"/"opus"
     // or a full id). Omitted -> the CLI's configured default. Lets the cheap
     // Haiku model be chosen for high-volume ingest.
-    add_model_arg(&mut cmd, model);
+    add_model_and_effort_args(&mut cmd, model, effort);
     let child = cmd
         .env("PATH", augmented_path(&path))
         .current_dir(dir)
@@ -111,12 +121,19 @@ pub fn run_prompt(prompt: &str, cwd: &str, model: Option<&str>) -> Result<CliRes
     )
 }
 
-/// Append `--model <model>` to a claude CLI command when a non-empty model is
-/// given. Shared by the streaming and non-streaming run paths.
-fn add_model_arg(cmd: &mut Command, model: Option<&str>) {
-    if let Some(m) = model {
-        if !m.trim().is_empty() {
-            cmd.arg("--model").arg(m);
+/// Append `--model <model>` and `--effort <level>` to a claude CLI command,
+/// skipping either when it is empty or the `(default)` sentinel (the CLI then
+/// uses its own configured default). Shared by the streaming and
+/// non-streaming run paths. `--effort` is a real flag on the installed CLI
+/// (`claude --help`: "Effort level for the current session (low, medium,
+/// high, xhigh, max)") and works alongside `--print`.
+fn add_model_and_effort_args(cmd: &mut Command, model: Option<&str>, effort: Option<&str>) {
+    for (flag, value) in [("--model", model), ("--effort", effort)] {
+        if let Some(v) = value {
+            let v = v.trim();
+            if !v.is_empty() && v != CLI_DEFAULT {
+                cmd.arg(flag).arg(v);
+            }
         }
     }
 }
@@ -233,6 +250,7 @@ pub fn run_prompt_stream<F>(
     prompt: &str,
     cwd: &str,
     model: Option<&str>,
+    effort: Option<&str>,
     on_event: F,
 ) -> Result<CliResult, String>
 where
@@ -259,7 +277,7 @@ where
         .arg("stream-json")
         .arg("--allowedTools")
         .arg(&allowed);
-    add_model_arg(&mut cmd, model);
+    add_model_and_effort_args(&mut cmd, model, effort);
     let mut child = cmd
         .env("PATH", augmented_path(&path))
         .current_dir(dir)
@@ -626,8 +644,33 @@ mod tests {
         // Independent of whether claude is on PATH — we want the error path.
         let unique = std::env::temp_dir().join("myco-claude-no-such-xyz");
         let _ = std::fs::remove_dir_all(&unique);
-        let res = run_prompt("hi", unique.to_str().unwrap(), None);
+        let res = run_prompt("hi", unique.to_str().unwrap(), None, None);
         assert!(res.is_err(), "expected error for missing cwd");
+    }
+
+    fn args_of(model: Option<&str>, effort: Option<&str>) -> Vec<String> {
+        let mut cmd = Command::new("claude");
+        add_model_and_effort_args(&mut cmd, model, effort);
+        cmd.get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect()
+    }
+
+    #[test]
+    fn claude_effort_flag_is_passed_and_defaults_omitted() {
+        assert_eq!(
+            args_of(Some("opus"), Some("xhigh")),
+            vec!["--model", "opus", "--effort", "xhigh"]
+        );
+        // The "(default)" sentinel (and an empty value) means: pass nothing.
+        assert!(args_of(Some("opus"), Some("(default)"))
+            .iter()
+            .all(|a| a != "--effort"));
+        assert!(args_of(Some("(default)"), Some("high"))
+            .iter()
+            .all(|a| a != "--model"));
+        assert!(args_of(None, None).is_empty());
+        assert!(args_of(Some(""), Some("  ")).is_empty());
     }
 
     #[test]

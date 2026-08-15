@@ -30,7 +30,15 @@ export interface ProviderDef {
   needsKey: boolean;
   desc: string;
   catalog?: string[]; // fallback model list when API list fails
+  /** Reasoning-effort levels this provider's CLI actually accepts, or absent
+   * when it has no effort knob (then no effort picker is shown and nothing is
+   * ever passed). "(default)" means "pass no effort flag at all". */
+  efforts?: string[];
 }
+
+/** The "let the tool decide" sentinel, shared by the model and effort pickers.
+ * Mirrors Rust's `claude::CLI_DEFAULT`. */
+export const CLI_DEFAULT = "(default)";
 
 export const PROVIDERS: ProviderDef[] = [
   {
@@ -40,9 +48,22 @@ export const PROVIDERS: ProviderDef[] = [
     kind: "cli",
     needsKey: false,
     desc: "Use your Claude Pro / Max subscription via the local `claude` CLI. No API key needed.",
-    // Aliases passed to `claude --model`; the CLI resolves each to its latest
-    // version. Haiku first so high-volume ingest defaults to the cheapest model.
-    catalog: ["haiku", "sonnet", "opus"],
+    // Passed to `claude --model`: the four aliases the CLI resolves to their
+    // latest version (fable is its own default), plus the one still-accepted
+    // legacy id that has no alias. Full ids like "claude-sonnet-5" are what the
+    // aliases resolve to, so they are left out as duplicates — "Custom…" takes
+    // any id verbatim.
+    catalog: [
+      CLI_DEFAULT,
+      "fable",
+      "opus",
+      "sonnet",
+      "haiku",
+      "claude-opus-4-5",
+    ],
+    // `claude --help`: "Effort level for the current session (low, medium,
+    // high, xhigh, max)".
+    efforts: [CLI_DEFAULT, "low", "medium", "high", "xhigh", "max"],
   },
   {
     id: "gemini-cli",
@@ -51,7 +72,30 @@ export const PROVIDERS: ProviderDef[] = [
     kind: "cli",
     needsKey: false,
     desc: "Use your Google subscription via the local `gemini` CLI. No API key needed.",
-    catalog: ["(default)", "gemini-2.5-pro", "gemini-2.5-flash"],
+    // The model registry the installed gemini CLI ships (modelConfigs.
+    // modelDefinitions) plus its aliases — every value `-m` recognises.
+    // No `efforts`: gemini-cli has no reasoning flag or env var, only
+    // thinkingLevel/thinkingBudget inside the user's own ~/.gemini/settings.json.
+    catalog: [
+      CLI_DEFAULT,
+      "auto",
+      "pro",
+      "flash",
+      "flash-lite",
+      "auto-gemini-3",
+      "auto-gemini-2.5",
+      "gemini-3.1-pro-preview",
+      "gemini-3.1-pro-preview-customtools",
+      "gemini-3.1-flash-lite",
+      "gemini-3-pro-preview",
+      "gemini-3-flash-preview",
+      "gemini-3.5-flash",
+      "gemini-2.5-pro",
+      "gemini-2.5-flash",
+      "gemini-2.5-flash-lite",
+      "gemma-4-31b-it",
+      "gemma-4-26b-a4b-it",
+    ],
   },
   {
     id: "codex-cli",
@@ -60,10 +104,25 @@ export const PROVIDERS: ProviderDef[] = [
     kind: "cli",
     needsKey: false,
     desc: "Use your OpenAI subscription via the local `codex` CLI. No API key needed.",
-    // Slugs passed to `codex exec --model`; verified against a live `codex`
-    // install's model catalog (~/.codex/models_cache.json). "sol" is the
-    // current frontier/agentic-coding model, "mini" the cheap/fast one.
-    catalog: ["(default)", "gpt-5.6-sol", "gpt-5.4-mini"],
+    // Slugs passed to `codex exec --model`. This is only the fallback: the
+    // picker asks the backend for the live list, which reads the CLI's own
+    // ~/.codex/models_cache.json. Order = the cache's own priority order.
+    catalog: [
+      CLI_DEFAULT,
+      "gpt-5.6-sol",
+      "gpt-5.6-sol-wm",
+      "gpt-5.6-terra",
+      "gpt-5.6-luna",
+      "gpt-5.5",
+      "gpt-5.4",
+      "gpt-5.4-mini",
+      "gpt-5.3-codex-spark",
+      "codex-auto-review",
+    ],
+    // Union of the per-model `supported_reasoning_levels` in that cache —
+    // the levels are model-dependent, so a level the chosen model doesn't
+    // support is rejected by codex itself, not here.
+    efforts: [CLI_DEFAULT, "low", "medium", "high", "xhigh", "max", "ultra"],
   },
   {
     id: "anthropic-api",

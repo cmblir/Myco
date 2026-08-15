@@ -22,7 +22,7 @@ fn main() {
     println!("\nCalling claude::run_prompt with cwd={vault}");
     println!("prompt={prompt:?}");
     let start = std::time::Instant::now();
-    let result = claude::run_prompt(prompt, &vault, None);
+    let result = claude::run_prompt(prompt, &vault, None, None);
     let elapsed = start.elapsed();
     match result {
         Ok(r) => {

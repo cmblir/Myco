@@ -84,6 +84,9 @@ export async function complete(args: CompleteArgs): Promise<string> {
     args.task === "query" ? settings.query_provider : settings.ingest_provider;
   const model =
     args.task === "query" ? settings.query_model : settings.ingest_model;
+  // Reasoning effort for this role — only the CLI branch below can use it.
+  const effort =
+    args.task === "query" ? settings.query_effort : settings.ingest_effort;
 
   // Profile personalisation (Phase B, Task 6): read once per complete() call,
   // gated to task:"query" only — ingest gets its own weighting (INGEST_PROMPT's
@@ -164,8 +167,8 @@ export async function complete(args: CompleteArgs): Promise<string> {
       : `${retrievalBlock}${profileBlock}${userTurns}`;
     const res =
       provider === "anthropic-cli"
-        ? await ipc.claudeRun(prompt, args.cwd, model || undefined)
-        : await ipc.agentRun(provider, model, prompt, args.cwd);
+        ? await ipc.claudeRun(prompt, args.cwd, model || undefined, effort)
+        : await ipc.agentRun(provider, model, prompt, args.cwd, effort);
     if (res.status !== 0) {
       throw new Error(res.stderr.trim() || `${provider} exit ${res.status}`);
     }
@@ -488,9 +491,14 @@ function appendSystemSuffix(
 export async function getActiveModel(task: "query" | "ingest"): Promise<{
   provider: string;
   model: string;
+  effort: string;
 }> {
   const s = await ipc.getSettings();
   return task === "query"
-    ? { provider: s.query_provider, model: s.query_model }
-    : { provider: s.ingest_provider, model: s.ingest_model };
+    ? { provider: s.query_provider, model: s.query_model, effort: s.query_effort }
+    : {
+        provider: s.ingest_provider,
+        model: s.ingest_model,
+        effort: s.ingest_effort,
+      };
 }

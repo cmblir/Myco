@@ -245,6 +245,11 @@ export interface MycoSettings {
   query_model: string;
   ingest_provider: string;
   ingest_model: string;
+  /** Reasoning effort per role, or the "(default)" sentinel meaning "pass no
+   *  effort flag". Only the CLIs that expose one use it (claude `--effort`,
+   *  codex `-c model_reasoning_effort=`). */
+  query_effort: string;
+  ingest_effort: string;
   /** myco Pro proxy base URL (the subscription ingest endpoint). */
   myco_pro_url: string;
   /** The myco Pro account email the app is logged in as (display only). */
@@ -524,16 +529,27 @@ export const ipc = {
   gitLog: (vaultPath: string, limit?: number) =>
     invoke<GitCommit[]>("git_log", { vaultPath, limit }),
   claudeCheck: () => invoke<ClaudeStatus>("claude_check"),
-  claudeRun: (prompt: string, cwd: string, model?: string) =>
-    invoke<ClaudeResult>("claude_run", { prompt, cwd, model }),
-  claudeRunStream: (runId: string, prompt: string, cwd: string, model?: string) =>
-    invoke<ClaudeResult>("claude_run_stream", { runId, prompt, cwd, model }),
+  claudeRun: (prompt: string, cwd: string, model?: string, effort?: string) =>
+    invoke<ClaudeResult>("claude_run", { prompt, cwd, model, effort }),
+  claudeRunStream: (
+    runId: string,
+    prompt: string,
+    cwd: string,
+    model?: string,
+    effort?: string,
+  ) =>
+    invoke<ClaudeResult>("claude_run_stream", { runId, prompt, cwd, model, effort }),
   claudeCancel: (runId: string) =>
     invoke<boolean>("claude_cancel", { runId }),
   agentCheck: (provider: string) =>
     invoke<ClaudeStatus>("agent_check", { provider }),
-  agentRun: (provider: string, model: string, prompt: string, cwd: string) =>
-    invoke<ClaudeResult>("agent_run", { provider, model, prompt, cwd }),
+  agentRun: (
+    provider: string,
+    model: string,
+    prompt: string,
+    cwd: string,
+    effort?: string,
+  ) => invoke<ClaudeResult>("agent_run", { provider, model, prompt, cwd, effort }),
   scanTasks: (vaultPath: string) =>
     invoke<TaskItem[]>("scan_tasks", { vaultPath }),
   scanProvenance: (vaultPath: string) =>

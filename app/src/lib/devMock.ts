@@ -693,6 +693,8 @@ const SETTINGS = {
   query_model: "claude-sonnet-4-6",
   ingest_provider: "anthropic-cli",
   ingest_model: "claude-sonnet-4-6",
+  query_effort: "(default)",
+  ingest_effort: "(default)",
   myco_pro_url: "",
   myco_pro_email: "",
   auto_import_enabled: true,
@@ -1089,7 +1091,24 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "read_vault_context":
       return Promise.resolve(NODES.map((d) => `===== wiki/${d.s}.md =====\n${body(d)}`).join("\n\n"));
     case "list_provider_models":
-      return Promise.resolve(["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"]);
+      // Mirrors the backend's per-provider lists so the Model tab (and any
+      // screenshot of it) shows what the real app would. codex-cli is the one
+      // CLI whose list is fetched live — from its own on-disk model cache.
+      return Promise.resolve(
+        args.providerId === "codex-cli"
+          ? [
+              "gpt-5.6-sol",
+              "gpt-5.6-sol-wm",
+              "gpt-5.6-terra",
+              "gpt-5.6-luna",
+              "gpt-5.5",
+              "gpt-5.4",
+              "gpt-5.4-mini",
+              "gpt-5.3-codex-spark",
+              "codex-auto-review",
+            ]
+          : ["claude-sonnet-4-6", "claude-opus-4-7", "claude-haiku-4-5"],
+      );
     // Mirrors the real command: no chat GGUF ships (Ask is extractive), so the
     // mock answers false too — the fast-fail path in chat.ts behaves the same
     // under ?mock=1 as in the app.

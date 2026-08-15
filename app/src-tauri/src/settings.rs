@@ -19,6 +19,14 @@ pub struct Settings {
     pub ingest_provider: String,
     #[serde(default = "default_ingest_model")]
     pub ingest_model: String,
+    /// Reasoning effort passed to the selected CLI for each role, or the
+    /// `(default)` sentinel meaning "pass nothing, let the CLI decide". Only
+    /// the CLIs that expose an effort knob use it (claude `--effort`, codex
+    /// `-c model_reasoning_effort=`); everything else ignores it.
+    #[serde(default = "default_effort")]
+    pub query_effort: String,
+    #[serde(default = "default_effort")]
+    pub ingest_effort: String,
     /// myco Pro proxy base URL (the subscription ingest endpoint). Empty until
     /// the user configures it; the license key lives in the keychain.
     ///
@@ -69,6 +77,8 @@ impl Default for Settings {
             query_model: default_query_model(),
             ingest_provider: default_ingest_provider(),
             ingest_model: default_ingest_model(),
+            query_effort: default_effort(),
+            ingest_effort: default_effort(),
             myco_pro_url: String::new(),
             myco_pro_email: String::new(),
             auto_import_enabled: true,
@@ -145,6 +155,9 @@ fn default_ingest_provider() -> String {
 fn default_ingest_model() -> String {
     // Cheapest CLI alias — ingest is high-volume, so default to Haiku.
     "haiku".to_string()
+}
+fn default_effort() -> String {
+    crate::claude::CLI_DEFAULT.to_string()
 }
 fn default_auto_ingest_interval() -> u32 {
     60

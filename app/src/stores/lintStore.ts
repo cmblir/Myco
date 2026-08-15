@@ -66,8 +66,11 @@ export const useLintStore = create<LintState>((set, get) => ({
       const settings = await ipc.getSettings();
       const out =
         settings.query_provider === "anthropic-cli"
-          ? await runStreaming(vault.path, settings.query_model, (chunk) =>
-              set((s) => ({ progress: s.progress + chunk })),
+          ? await runStreaming(
+              vault.path,
+              settings.query_model,
+              settings.query_effort,
+              (chunk) => set((s) => ({ progress: s.progress + chunk })),
             )
           : await complete({
               task: "query",
@@ -111,6 +114,7 @@ export const useLintStore = create<LintState>((set, get) => ({
 async function runStreaming(
   cwd: string,
   model: string,
+  effort: string,
   onChunk: (text: string) => void,
 ): Promise<string> {
   const runId = crypto.randomUUID();
@@ -130,6 +134,7 @@ async function runStreaming(
       LINT_PROMPT,
       cwd,
       model || undefined,
+      effort,
     );
     if (res.status !== 0) {
       throw new Error(res.stderr.trim() || `claude exit ${res.status}`);

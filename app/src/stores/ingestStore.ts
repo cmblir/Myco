@@ -360,6 +360,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
           prompt,
           vault.path,
           settings.ingest_model || undefined,
+          settings.ingest_effort,
         );
         if (res.status !== 0) {
           throw new Error(res.stderr.trim() || `claude exit ${res.status}`);

@@ -92,7 +92,7 @@ function stemOf(rel: string): string {
  * has no UI to surface a validation failure to, and the nightly distill lint
  * plus the CLI's own self-reported ingest report already catch problems. */
 export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutcome> {
-  const { provider, model } = await getActiveModel("ingest");
+  const { provider, model, effort } = await getActiveModel("ingest");
   if (provider === "builtin-local") {
     return { ingested: 0, skipped: "no-provider", errors: [] };
   }
@@ -162,7 +162,7 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
       const prompt = INGEST_PROMPT(slug, title, [], [], profileInterests);
 
       if (provider === "anthropic-cli") {
-        const res = await ipc.claudeRun(prompt, vaultPath, model || undefined);
+        const res = await ipc.claudeRun(prompt, vaultPath, model || undefined, effort);
         if (res.status !== 0) {
           throw new Error(res.stderr.trim() || `claude exit ${res.status}`);
         }

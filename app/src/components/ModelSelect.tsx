@@ -11,22 +11,33 @@
 import { useEffect, useId, useState } from "react";
 import type { JSX } from "react";
 import { ipc } from "../lib/ipc";
-import type { ProviderDef } from "../lib/providers";
+import { CLI_DEFAULT, type ProviderDef } from "../lib/providers";
 import type { Strings } from "../lib/i18n";
 
 const CUSTOM = "__custom__";
+
+// Providers whose model list is fetched live instead of using the static
+// catalog. codex-cli is local (its CLI caches the account's catalog on disk),
+// the rest are HTTP list endpoints.
+const LIVE_LIST = ["ollama", "openai-api", "openrouter", "codex-cli"];
 
 export default function ModelSelect({
   providers,
   provider,
   model,
   onPick,
+  effort,
+  onPickEffort,
   t,
 }: {
   providers: ProviderDef[];
   provider: string;
   model: string;
   onPick: (provider: string, model: string) => void;
+  /** Reasoning effort for this role. Omit both this and `onPickEffort` to hide
+   * the effort picker entirely (e.g. the topbar's compact model switch). */
+  effort?: string;
+  onPickEffort?: (effort: string) => void;
   t?: Strings;
 }): JSX.Element {
   const def = providers.find((p) => p.id === provider) ?? providers[0];
@@ -53,17 +64,17 @@ export default function ModelSelect({
     setModels(def.catalog ?? []);
     setError(null);
     setCustomMode(false); // a provider switch starts on its own list
-    // Try live list (ollama, openai, openrouter).
-    if (
-      def.id === "ollama" ||
-      def.id === "openai-api" ||
-      def.id === "openrouter"
-    ) {
+    if (LIVE_LIST.includes(def.id)) {
       setBusy(true);
       ipc
         .listProviderModels(def.id)
         .then((arr) => {
-          if (arr.length > 0) setModels(arr);
+          // A live list never carries the "(default)" sentinel — keep it in
+          // front when the provider's static catalog offers it.
+          if (arr.length > 0)
+            setModels(
+              def.catalog?.[0] === CLI_DEFAULT ? [CLI_DEFAULT, ...arr] : arr,
+            );
         })
         .catch((e: unknown) => setError(String(e)))
         .finally(() => setBusy(false));
@@ -124,6 +135,24 @@ export default function ModelSelect({
           ))}
           <option value={CUSTOM}>{t?.model_custom ?? "Custom…"}</option>
         </select>
+        {/* Effort: only for the CLIs that actually take one (see ProviderDef
+            .efforts). "(default)" passes no flag at all. */}
+        {def.efforts && onPickEffort ? (
+          <select
+            className="select"
+            aria-label={t?.model_effort ?? "Reasoning effort"}
+            title={t?.model_effort ?? "Reasoning effort"}
+            value={effort ?? CLI_DEFAULT}
+            onChange={(e) => onPickEffort(e.target.value)}
+            style={{ flex: 1, minWidth: 110 }}
+          >
+            {def.efforts.map((lv) => (
+              <option key={lv} value={lv}>
+                {lv}
+              </option>
+            ))}
+          </select>
+        ) : null}
       </div>
       {showCustomInput ? (
         <input

@@ -210,7 +210,16 @@ pub async fn list_models(
         // The Claude CLI takes a model alias (or full id) via --model. Offer the
         // aliases so high-volume ingest can run on the cheap "haiku" model; the
         // CLI resolves each alias to its latest version.
-        "anthropic-cli" => Ok(vec!["haiku".into(), "sonnet".into(), "opus".into()]),
+        "anthropic-cli" => Ok(vec![
+            "fable".into(),
+            "opus".into(),
+            "sonnet".into(),
+            "haiku".into(),
+            "claude-opus-4-5".into(),
+        ]),
+        // The codex CLI keeps its account's model catalog in a local cache file,
+        // so the live list needs no network call and no API key.
+        "codex-cli" => Ok(codex_models()),
         "anthropic-api" => Ok(vec![
             "claude-opus-4-8".into(),
             "claude-sonnet-4-6".into(),
@@ -223,6 +232,60 @@ pub async fn list_models(
         ]),
         "openrouter" => list_openrouter_models(&client).await,
         _ => Ok(Vec::new()),
+    }
+}
+
+// ---------- codex CLI model catalog ----------
+//
+// `codex` refreshes `~/.codex/models_cache.json` itself (it carries a
+// `fetched_at`/`etag` and the account's visible models), so reading that file is
+// the live list — no network call, no key. When it is missing (codex installed
+// but never run, or a future layout change) fall back to the catalog verified
+// against codex-cli 0.147.0.
+const CODEX_FALLBACK_MODELS: [&str; 9] = [
+    "gpt-5.6-sol",
+    "gpt-5.6-sol-wm",
+    "gpt-5.6-terra",
+    "gpt-5.6-luna",
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.3-codex-spark",
+    "codex-auto-review",
+];
+
+/// Model slugs from a `models_cache.json` document, in file order (already
+/// highest-priority first). Pure so it is testable without a home directory.
+fn parse_codex_models(json: &str) -> Vec<String> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(json) else {
+        return Vec::new();
+    };
+    v.get("models")
+        .and_then(|m| m.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| m.get("slug").and_then(|s| s.as_str()))
+                .map(String::from)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn codex_models() -> Vec<String> {
+    let home =
+        std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" }).unwrap_or_default();
+    let cached =
+        std::fs::read_to_string(std::path::Path::new(&home).join(".codex/models_cache.json"))
+            .ok()
+            .map(|s| parse_codex_models(&s))
+            .unwrap_or_default();
+    if cached.is_empty() {
+        CODEX_FALLBACK_MODELS
+            .iter()
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        cached
     }
 }
 
@@ -1304,7 +1367,33 @@ pub async fn describe_image(
 
 #[cfg(test)]
 mod tests {
-    use super::http_url_or;
+    use super::{http_url_or, parse_codex_models};
+
+    // A trimmed copy of a real ~/.codex/models_cache.json (codex-cli 0.147.0):
+    // same nesting, same field names, two entries.
+    const CODEX_CACHE: &str = r#"{
+      "fetched_at": "2026-08-14T18:00:27.965469Z",
+      "client_version": "0.147.0",
+      "models": [
+        {"slug": "gpt-5.6-sol", "default_reasoning_level": "low", "visibility": "list"},
+        {"slug": "codex-auto-review", "default_reasoning_level": "medium", "visibility": "hide"}
+      ]
+    }"#;
+
+    #[test]
+    fn parses_codex_model_slugs_in_file_order() {
+        assert_eq!(
+            parse_codex_models(CODEX_CACHE),
+            vec!["gpt-5.6-sol".to_string(), "codex-auto-review".to_string()]
+        );
+    }
+
+    #[test]
+    fn codex_cache_garbage_yields_no_models() {
+        // Both fall through to the static fallback in codex_models().
+        assert!(parse_codex_models("not json").is_empty());
+        assert!(parse_codex_models(r#"{"models": "nope"}"#).is_empty());
+    }
 
     // Use a dedicated env key so this test never collides with the production
     // MEMEX_*_URL keys the wiremock tests rely on (which run in the same process).
