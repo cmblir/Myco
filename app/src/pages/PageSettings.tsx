@@ -38,7 +38,14 @@ import {
 } from "../lib/budget";
 import { isComposingKey } from "../lib/ime";
 import { useReindexStore } from "../stores/reindexStore";
-import { backlogTrend, lastRunLabel, runDistillGuarded } from "../lib/distill";
+import {
+  backlogTrend,
+  GATE_MIN_WIKI_PAGES,
+  lastDigestOutcome,
+  lastRunLabel,
+  QUARANTINE_DIR,
+  runDistillGuarded,
+} from "../lib/distill";
 import type {
   DistillConfig,
   DistillStatus,
@@ -1590,6 +1597,12 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
   const [error, setError] = useState<string | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [undoResult, setUndoResult] = useState<number | null>(null);
+  // Defect E: whether the latest session-digest pass for this vault skipped
+  // its LLM step for lack of a connected query provider (lastDigestOutcome —
+  // module map in lib/distill.ts, written by runDistillGuarded). Re-read on
+  // the same occasions status itself refreshes, same idiom as Overview's
+  // DistillCard.
+  const [digestSkippedNoProvider, setDigestSkippedNoProvider] = useState(false);
 
   useEffect(() => {
     if (!vaultPath) return;
@@ -1608,6 +1621,7 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
         if (!cancelled) setStatus(s);
       })
       .catch(() => undefined);
+    setDigestSkippedNoProvider(lastDigestOutcome.get(vaultPath)?.skipped === "no-provider");
     return () => {
       cancelled = true;
     };
@@ -1642,6 +1656,7 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       }
       setReport(r);
       setStatus(await ipc.distillStatus(vaultPath));
+      setDigestSkippedNoProvider(lastDigestOutcome.get(vaultPath)?.skipped === "no-provider");
     } catch (e) {
       setError(String(e));
     } finally {
@@ -1911,6 +1926,34 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
               String(status.pending_proposals),
             )}{" "}
             · {trendLabel}
+          </div>
+        ) : null}
+        {status && !status.gate_active ? (
+          // Defect D fix: the cold-start gate (scan()'s early return) was
+          // previously an eprintln!-only no-op — this is the plain-language
+          // explanation with real numbers.
+          <div style={{ fontSize: 12.5, marginTop: 6 }} data-testid="distill-gate-pending">
+            {(t.set_distill_gate_pending ?? "Distill waiting: wiki pages {n}/{min}")
+              .replace("{n}", String(status.wiki_pages))
+              .replace("{min}", String(GATE_MIN_WIKI_PAGES))}
+          </div>
+        ) : null}
+        {digestSkippedNoProvider ? (
+          // Defect E fix: sessionDigest's "no-provider" skip (reads
+          // query_provider, confirmed by reading chat.ts's getActiveModel)
+          // was previously silent — name the setting the user must change.
+          <div style={{ fontSize: 12.5, marginTop: 6 }} data-testid="distill-digest-skipped">
+            {t.set_distill_digest_skipped ??
+              "Session digest skipped — no query provider connected. Set one under Settings → Model (Query)."}
+          </div>
+        ) : null}
+        {status && status.quarantined > 0 ? (
+          // Defect G fix: quarantined items were moved with no indication
+          // anywhere in the UI — read-only count + the folder path.
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }} data-testid="distill-quarantine-count">
+            {(t.set_distill_quarantined ?? "{n} items awaiting review in {path}")
+              .replace("{n}", String(status.quarantined))
+              .replace("{path}", QUARANTINE_DIR)}
           </div>
         ) : null}
         {status?.last_run_id ? (

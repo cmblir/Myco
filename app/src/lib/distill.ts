@@ -48,6 +48,9 @@ export interface ScanOutcome {
   summaries: number;
   full: number;
   skipped_immature: number;
+  // Defect D fix — set when scan() no-op'd because the cold-start gate is
+  // off: the wiki page count that fell short of GATE_MIN_WIKI_PAGES.
+  gate_wiki_pages: number | null;
 }
 
 // Task 6 — distill_run's return summary.
@@ -72,7 +75,19 @@ export interface DistillStatus {
   // Important 3 fix — the most recently started run's id (undoDistillRun's
   // `id` argument), or null if no run has happened yet.
   last_run_id: string | null;
+  // Defect D fix — wiki page count gate_active was computed from, so the UI
+  // can show "N/50" instead of a bare on/off flag.
+  wiki_pages: number;
+  // Defect G fix — _inbox/quarantine/ items awaiting human review.
+  quarantined: number;
 }
+
+// Mirrors distill.rs's GATE_MIN_WIKI_PAGES (Defect D) — the cold-start gate
+// threshold DistillStatus.wiki_pages/gate_active are compared against.
+export const GATE_MIN_WIKI_PAGES = 50;
+
+// Defect G fix — where quarantined items actually live, for the UI message.
+export const QUARANTINE_DIR = "_inbox/quarantine";
 
 // Phase B, Task 1 — digestableSessionDays's return: one day's worth of
 // sessions/ files ready for the LLM digest step.

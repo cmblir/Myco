@@ -243,6 +243,11 @@ pub struct ScanOutcome {
     pub summaries: usize,
     pub full: usize,
     pub skipped_immature: usize,
+    /// `Some(wiki_pages)` when `scan` no-op'd because the cold-start gate is
+    /// off (Defect D) — `wiki_pages` is the count that fell short of
+    /// `GATE_MIN_WIKI_PAGES`. `None` once the gate is active. Surfaces
+    /// distill.rs's `eprintln!`-only gate message to the run report/UI.
+    pub gate_wiki_pages: Option<usize>,
 }
 
 /// The one subdirectory of `_inbox/` that is NOT inflow (it holds this scan's
@@ -563,7 +568,10 @@ fn scan(
             "distill gate off: {} wiki pages < {GATE_MIN_WIKI_PAGES}",
             o.wiki_pages
         );
-        return Ok(ScanOutcome::default());
+        return Ok(ScanOutcome {
+            gate_wiki_pages: Some(o.wiki_pages),
+            ..Default::default()
+        });
     }
 
     let mut state = state_load(root, &o.model);
@@ -752,6 +760,16 @@ pub struct DistillStatus {
     /// `None` if no run has ever happened — for the settings tab's
     /// "undo this run" button.
     pub last_run_id: Option<String>,
+    /// Wiki page count `gate_active` was computed from (Defect D) — the same
+    /// count `scan`'s own cold-start gate compares against
+    /// `GATE_MIN_WIKI_PAGES`, so the UI can show "N/50" instead of a bare
+    /// on/off flag, without having to trigger a run to find out.
+    pub wiki_pages: usize,
+    /// `_inbox/quarantine/` items awaiting human review (Defect G) —
+    /// read-only count, also folded into `backlog` above; broken out as its
+    /// own field so the UI can point at them specifically instead of a
+    /// combined backlog number.
+    pub quarantined: usize,
 }
 
 /// `pub(crate)`: also the Tauri command param type `append_distill_manifest`
@@ -2738,13 +2756,16 @@ pub fn status(root: &Path) -> DistillStatus {
         .map(|p| crate::vector_index::VectorStore::load(&p))
         .unwrap_or_default();
     let state = state_load(root, &store.model);
+    let wiki_pages = crate::commands::wiki_titles(root).len();
     DistillStatus {
         backlog: backlog_count(root, &state),
         pending_proposals: awaiting_resolution_count(root),
         last_run: state.last_run,
         last_backlogs: state.last_backlogs.clone(),
-        gate_active: crate::commands::wiki_titles(root).len() >= GATE_MIN_WIKI_PAGES,
+        gate_active: wiki_pages >= GATE_MIN_WIKI_PAGES,
         last_run_id: newest_run_id(root),
+        wiki_pages,
+        quarantined: quarantine_item_count(root),
     }
 }
 
@@ -3231,7 +3252,16 @@ mod tests {
 
         let mut manifest = test_manifest();
         let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
-        assert_eq!(out, ScanOutcome::default());
+        // Defect D fix: the gate reason carries the actual page count now,
+        // not just a silent eprintln! — everything else about a gated-off
+        // scan stays a no-op.
+        assert_eq!(
+            out,
+            ScanOutcome {
+                gate_wiki_pages: Some(5),
+                ..Default::default()
+            }
+        );
         assert!(manifest.moves.is_empty() && manifest.created.is_empty());
         assert!(
             root.join("_inbox/c.md").exists(),
@@ -3354,6 +3384,9 @@ mod tests {
         assert_eq!(manifest.moves[0].from, "_inbox/c.md");
         assert_eq!(manifest.moves[0].to, "_inbox/quarantine/c.md");
         assert_eq!(manifest.created, vec!["_inbox/quarantine/c.verdict.json"]);
+
+        // Defect G fix — DistillStatus.quarantined counts it, read-only.
+        assert_eq!(status(root).quarantined, 1);
     }
 
     #[test]
@@ -4425,6 +4458,11 @@ mod tests {
             let before = status(root);
             assert_eq!(before.backlog, 2, "two unscored, mature inflow items");
             assert!(before.gate_active, "50 wiki pages meets the gate threshold");
+            assert_eq!(before.wiki_pages, GATE_MIN_WIKI_PAGES, "Defect D fix");
+            assert_eq!(
+                before.quarantined, 0,
+                "Defect G fix — nothing quarantined yet"
+            );
             assert!(before.last_run.is_none());
             assert!(before.last_backlogs.is_empty());
             assert!(before.last_run_id.is_none(), "no run has happened yet");

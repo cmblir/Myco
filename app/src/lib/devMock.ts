@@ -921,6 +921,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
           summaries: 0,
           full: 0,
           skipped_immature: 0,
+          gate_wiki_pages: null,
         },
         archived: 0,
         trashed: 0,
@@ -937,6 +938,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         last_backlogs: [40, 35, 30, 28, 22, 18, 15, 14, 13, 12],
         gate_active: true,
         last_run_id: "20250812T120000",
+        wiki_pages: 340,
+        // Defect G — nonzero so ?mock=1 demonstrates the pending-quarantine
+        // message without needing a real vault with something quarantined.
+        quarantined: 3,
       });
     case "apply_distill_proposal":
       return Promise.resolve("moved 1, skipped 0 already-processed");

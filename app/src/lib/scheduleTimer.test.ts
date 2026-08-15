@@ -44,6 +44,7 @@ const REPORT: RunReport = {
     summaries: 0,
     full: 0,
     skipped_immature: 0,
+    gate_wiki_pages: null,
   },
   archived: 0,
   trashed: 0,

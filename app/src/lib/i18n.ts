@@ -737,6 +737,10 @@ export interface Strings {
   set_distill_undo?: string;
   set_distill_undoing?: string;
   set_distill_undo_result?: string;
+  // Defects C/D/E/G (2026-08 distill visibility fixes).
+  set_distill_gate_pending?: string; // {n} {min}
+  set_distill_digest_skipped?: string;
+  set_distill_quarantined?: string; // {n} {path}
   // profile.md editor, in the Distill tab (Phase B, Task 5).
   set_profile_title?: string;
   set_profile_lede?: string;
@@ -1627,6 +1631,10 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_undo: "Undo this run",
     set_distill_undoing: "Undoing…",
     set_distill_undo_result: "Reversed {n} changes",
+    set_distill_gate_pending: "Distill waiting: wiki pages {n}/{min}",
+    set_distill_digest_skipped:
+      "Session digest skipped — no query provider connected. Set one under Settings → Model (Query).",
+    set_distill_quarantined: "{n} items awaiting review in {path}",
     set_profile_title: "Profile",
     set_profile_lede:
       "Personalizes distillation and Ask/ingest context. Written to profile.md; sent to configured AI providers when injection is on.",
@@ -2524,6 +2532,10 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_undo: "이 실행 되돌리기",
     set_distill_undoing: "되돌리는 중…",
     set_distill_undo_result: "{n}건 되돌림",
+    set_distill_gate_pending: "증류 대기: 위키 페이지 {n}/{min}",
+    set_distill_digest_skipped:
+      "세션 다이제스트 건너뜀 — 쿼리 프로바이더가 연결되지 않았습니다. 설정 → 모델(쿼리)에서 설정하세요.",
+    set_distill_quarantined: "{path}에 검토 대기 중인 항목 {n}건",
     set_profile_title: "프로필",
     set_profile_lede:
       "증류와 Ask/인제스트 컨텍스트를 개인화합니다. profile.md에 저장되며, 주입이 켜져 있으면 설정된 AI 프로바이더로 전송됩니다.",
@@ -3299,6 +3311,10 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_undo: "この実行を元に戻す",
     set_distill_undoing: "元に戻しています…",
     set_distill_undo_result: "{n}件を元に戻しました",
+    set_distill_gate_pending: "蒸留待機中: ウィキページ {n}/{min}",
+    set_distill_digest_skipped:
+      "セッションダイジェストをスキップしました — クエリプロバイダーが未接続です。設定 → モデル（クエリ）で設定してください。",
+    set_distill_quarantined: "{path} に確認待ちの項目が{n}件あります",
     set_profile_title: "プロフィール",
     set_profile_lede:
       "蒸留とAsk/インジェストのコンテキストを個人化します。profile.mdに保存され、注入がオンの場合は設定済みのAIプロバイダーに送信されます。",

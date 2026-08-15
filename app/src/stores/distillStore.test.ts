@@ -19,6 +19,8 @@ const STATUS: DistillStatus = {
   last_backlogs: [10, 8, 5],
   gate_active: true,
   last_run_id: "20250812T120000",
+  wiki_pages: 60,
+  quarantined: 4,
 };
 
 const PROPOSAL_RAW = [
