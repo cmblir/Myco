@@ -150,6 +150,49 @@ describe("runSessionDigest", () => {
       [],
       ["daily/2026-08-10.md"],
     );
+    // Defect C fix: the SAME write that carries the digest text names the
+    // session files it covers, so there is no window where the digest is
+    // durable but the record of it isn't. Rust's digested_session_stems parses
+    // this line back.
+    expect(content).toContain("<!-- myco:digested-sessions a -->");
+    expect(writeFile).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the LLM call and re-appending for a day whose files are already recorded, and only retries the archive", async () => {
+    getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
+    getDistillConfig.mockResolvedValue(CFG);
+    digestableSessionDays.mockResolvedValue([
+      { day: "2026-08-10", files: ["sessions/2026-08-10/a.md"], already_digested: true },
+    ]);
+
+    const result = await runSessionDigest("/v");
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(readFile).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(archiveDigestedSessions).toHaveBeenCalledTimes(1);
+    expect(archiveDigestedSessions).toHaveBeenCalledWith(
+      "/v",
+      "2026-08-10",
+      ["sessions/2026-08-10/a.md"],
+    );
+    expect(result).toEqual({ daysDigested: 1, filesArchived: 1, skipped: null });
+  });
+
+  it("stops (without re-running the LLM) when the retried archive for an already-digested day fails again", async () => {
+    getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
+    getDistillConfig.mockResolvedValue(CFG);
+    digestableSessionDays.mockResolvedValue([
+      { day: "2026-08-10", files: ["sessions/2026-08-10/a.md"], already_digested: true },
+    ]);
+    archiveDigestedSessions.mockRejectedValue(new Error("disk full"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    const result = await runSessionDigest("/v");
+
+    expect(complete).not.toHaveBeenCalled();
+    expect(result).toEqual({ daysDigested: 0, filesArchived: 0, skipped: null });
+    errSpy.mockRestore();
   });
 
   it("marks files dropped by the shared 60k budget in the prompt sent to the model", async () => {
@@ -200,6 +243,41 @@ describe("runSessionDigest", () => {
     expect(content).toContain("Earlier bullet");
     // Important 4: the daily file already existed — nothing new to record.
     expect(appendDistillManifest).not.toHaveBeenCalled();
+  });
+
+  it("records every session file stem of the digest in the same write, and only the new ones on a late-arrival re-run", async () => {
+    getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
+    getDistillConfig.mockResolvedValue(CFG);
+    digestableSessionDays.mockResolvedValue([
+      {
+        day: "2026-08-10",
+        files: ["sessions/2026-08/claude-code-aaa.md", "sessions/2026-08/codex-bbb.md"],
+        already_digested: false,
+      },
+    ]);
+    mockReadFile();
+    complete.mockResolvedValue("- bullet");
+
+    await runSessionDigest("/v");
+
+    expect(writeFile).toHaveBeenCalledTimes(1);
+    expect(writeFile.mock.calls[0][1]).toContain(
+      "<!-- myco:digested-sessions claude-code-aaa codex-bbb -->",
+    );
+
+    // A session that lands on that day later is new knowledge: Rust hands
+    // back only the un-recorded file, so the new section records only it.
+    writeFile.mockClear();
+    digestableSessionDays.mockResolvedValue([
+      { day: "2026-08-10", files: ["sessions/2026-08/codex-ccc.md"], already_digested: false },
+    ]);
+    mockReadFile("# 2026-08-10\n\n## Session digest (auto)\n<!-- myco:digested-sessions claude-code-aaa codex-bbb -->\n- bullet\n");
+
+    await runSessionDigest("/v");
+
+    const second = writeFile.mock.calls[0][1] as string;
+    expect(second).toContain("<!-- myco:digested-sessions codex-ccc -->");
+    expect(second.match(/myco:digested-sessions/g)).toHaveLength(2);
   });
 
   it("does not archive a day whose complete() call rejects, and stops there", async () => {

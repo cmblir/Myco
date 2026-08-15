@@ -79,6 +79,10 @@ export interface DistillStatus {
 export interface DigestDay {
   day: string; // YYYY-MM-DD
   files: string[]; // vault-relative rel paths
+  // Defect C fix — every file here is already named by a daily/*.md digest
+  // marker, so its digest text is durable and only the archive move failed:
+  // runSessionDigest must skip the LLM call and retry only the archive step.
+  already_digested: boolean;
 }
 
 // Task 8 — direction of `last_backlogs` (oldest → newest, per Rust's

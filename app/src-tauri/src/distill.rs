@@ -2819,6 +2819,11 @@ pub fn full_tier_items(root: &Path) -> Vec<String> {
 pub struct DigestDay {
     pub day: String,
     pub files: Vec<String>,
+    /// Every file in `files` is already named by a `daily/*.md` digest marker
+    /// (Defect C) — its digest text is durable, only the archive move failed.
+    /// The TS caller must skip straight to (re)trying
+    /// `archive_digested_sessions`, never the LLM call or a second append.
+    pub already_digested: bool,
 }
 
 /// `YYYY-MM-DD` for a swept session: extends `commands::session_bucket`'s
@@ -2862,6 +2867,52 @@ fn frontmatter_created(path: &Path) -> Option<i64> {
     }
 }
 
+/// The marker `appendDigest` (`src/lib/sessionDigest.ts`) writes into the SAME
+/// `daily/<day>.md` write as the digest bullets it belongs to, naming the
+/// session file stems that section covers:
+/// `<!-- myco:digested-sessions claude-code-abc claude-code-def -->`.
+///
+/// Idempotency is anchored on those FILES, not on the day string: `session_day`
+/// derives a day (frontmatter `created`, else mtime), so the same file can bucket
+/// into a different day on a later run — a day-keyed flag would miss, and the
+/// files would be digested (and paid for) twice. Keep these two literals in
+/// lockstep with the TS side.
+const DIGEST_MARKER_OPEN: &str = "<!-- myco:digested-sessions ";
+const DIGEST_MARKER_CLOSE: &str = "-->";
+
+/// Session file stems recorded as digested by any existing `daily/*.md`
+/// marker. Reads every daily note on each call — there are ~one per active day
+/// and the alternative is a derived-key ledger that silently drifts.
+///
+/// Stems, not paths: a stem survives the archive move, and importer-written
+/// session stems are `[A-Za-z0-9_-]` only (`importers::sanitize`), so the
+/// space-separated list can't be ambiguous. A hand-placed session file whose
+/// name contains whitespace simply never matches — it gets digested again,
+/// which is the pre-marker behaviour, never a false "already done".
+fn digested_session_stems(root: &Path) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    let Ok(entries) = std::fs::read_dir(root.join("daily")) else {
+        return out;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        for line in text.lines() {
+            if let Some(rest) = line.trim().strip_prefix(DIGEST_MARKER_OPEN) {
+                if let Some(list) = rest.strip_suffix(DIGEST_MARKER_CLOSE) {
+                    out.extend(list.split_whitespace().map(str::to_string));
+                }
+            }
+        }
+    }
+    out
+}
+
 /// Groups mature, gate-scored `sessions/**/*.md` (excluding
 /// `sessions/archive/`, via `walk_inflow`'s own exclusion — same walk
 /// `collect_candidates` uses for this tree) by day, oldest day first. "Mature"
@@ -2894,26 +2945,52 @@ pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
         &[RAW_ARCHIVE_DIR],
         &mut candidates,
     );
+    let digested = digested_session_stems(root);
+
+    struct DayEntry {
+        rel: String,
+        ready: bool,
+        digested: bool,
+    }
 
     // Every walked file lands in its day's bucket regardless of readiness —
     // `ready` is per-file so the day-level filter below can require ALL of
     // them, not just count how many made it in.
-    let mut by_day: HashMap<String, Vec<(String, bool)>> = HashMap::new();
+    let mut by_day: HashMap<String, Vec<DayEntry>> = HashMap::new();
     for c in candidates {
         let mature = now - c.mtime >= maturation_secs;
         let ready = mature && state.scored.contains_key(&c.rel);
         let stem = c.path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         let day = session_day(stem, &c.path, c.mtime);
-        by_day.entry(day).or_default().push((c.rel, ready));
+        by_day.entry(day).or_default().push(DayEntry {
+            digested: digested.contains(stem),
+            rel: c.rel,
+            ready,
+        });
     }
 
     let mut days: Vec<DigestDay> = by_day
         .into_iter()
-        .filter(|(_, entries)| entries.iter().all(|(_, ready)| *ready))
+        .filter(|(_, entries)| entries.iter().all(|e| e.ready))
         .map(|(day, entries)| {
-            let mut files: Vec<String> = entries.into_iter().map(|(rel, _)| rel).collect();
+            let already_digested = entries.iter().all(|e| e.digested);
+            let mut files: Vec<String> = entries
+                .into_iter()
+                // Fully recorded: hand back every file, the caller only has
+                // the archive move left to retry. Partly recorded (a late
+                // session landed on an already-digested day): hand back only
+                // the NEW files, so they get their own digest section for
+                // their own content; the stragglers already recorded are
+                // archived by the next run's retry path.
+                .filter(|e| already_digested || !e.digested)
+                .map(|e| e.rel)
+                .collect();
             files.sort();
-            DigestDay { day, files }
+            DigestDay {
+                day,
+                files,
+                already_digested,
+            }
         })
         .collect();
     days.sort_by(|a, b| a.day.cmp(&b.day));
@@ -3856,6 +3933,176 @@ mod tests {
                 );
             },
         );
+    }
+
+    /// Writes `sessions/2026-08/<name>` with `body`, matured and scored, and
+    /// returns its rel path — the shape `digestable_session_days` wants.
+    fn scored_session(root: &Path, name: &str, body: &str) -> String {
+        let rel = format!("sessions/2026-08/{name}");
+        let path = root.join(&rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, body).unwrap();
+        set_mtime(&path, old_mtime());
+
+        let mut state = state_load(root, "");
+        state.scored.insert(
+            rel.clone(),
+            ScoredEntry {
+                hash: 0,
+                tier: "summary".into(),
+                at: now_secs(),
+            },
+        );
+        state_save(root, &state).unwrap();
+        rel
+    }
+
+    /// The marker line `appendDigest` (src/lib/sessionDigest.ts) writes into
+    /// `daily/<day>.md` in the same write as its bullets.
+    fn write_daily_with_marker(root: &Path, day: &str, stems: &[&str]) {
+        std::fs::create_dir_all(root.join("daily")).unwrap();
+        std::fs::write(
+            root.join(format!("daily/{day}.md")),
+            format!(
+                "# {day}\n\n## Session digest (auto)\n{}{} {}\n- decided a thing\n",
+                DIGEST_MARKER_OPEN,
+                stems.join(" "),
+                DIGEST_MARKER_CLOSE,
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn digested_session_stems_reads_markers_and_ignores_everything_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        assert!(
+            digested_session_stems(root).is_empty(),
+            "no daily/ dir at all is empty, not an error"
+        );
+
+        std::fs::create_dir_all(root.join("daily")).unwrap();
+        write_daily_with_marker(root, "2026-08-10", &["claude-code-a", "claude-code-b"]);
+        // A second section in the same file (the late-arrival case) adds to it.
+        let p = root.join("daily/2026-08-10.md");
+        let mut text = std::fs::read_to_string(&p).unwrap();
+        text.push_str(&format!(
+            "\n_run of later_\n{}claude-code-c {}\n- another thing\n",
+            DIGEST_MARKER_OPEN, DIGEST_MARKER_CLOSE
+        ));
+        std::fs::write(&p, text).unwrap();
+        // Prose that merely mentions the marker's words, a different day's
+        // file, and a non-markdown file must not confuse it.
+        std::fs::write(
+            root.join("daily/2026-08-11.md"),
+            "# notes\nmyco:digested-sessions claude-code-NOPE\n<!-- unrelated comment -->\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("daily/notes.txt"), "claude-code-NOPE").unwrap();
+
+        let stems = digested_session_stems(root);
+        assert_eq!(stems.len(), 3, "{stems:?}");
+        for s in ["claude-code-a", "claude-code-b", "claude-code-c"] {
+            assert!(stems.contains(s), "missing {s} in {stems:?}");
+        }
+        assert!(!stems.contains("claude-code-NOPE"));
+    }
+
+    #[test]
+    fn digestable_days_routes_already_recorded_files_to_archive_retry() {
+        crate::settings::test_support::with_isolated_data("distill-digest-idempotent", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let files: Vec<String> = ["20260810-a.md", "20260810-b.md"]
+                .iter()
+                .map(|f| scored_session(root, f, PROSE))
+                .collect();
+
+            let days = digestable_session_days(root);
+            assert_eq!(days.len(), 1);
+            assert!(!days[0].already_digested, "nothing recorded yet");
+
+            // The digest landed (marker + bullets, one write) but the archive
+            // that follows it failed — the files are still in sessions/.
+            write_daily_with_marker(root, "2026-08-10", &["20260810-a", "20260810-b"]);
+
+            // Defect C fix: the day must still be OFFERED (its files are
+            // un-archived) but FLAGGED, so the caller retries only the archive
+            // step and never pays for a second LLM digest.
+            let days = digestable_session_days(root);
+            assert_eq!(days.len(), 1);
+            assert!(days[0].already_digested);
+            assert_eq!(days[0].files, files);
+
+            // A failed archive attempt (a bad day string stands in for any
+            // archive failure — see archive_digested_sessions's validation)
+            // leaves the record where it is: in daily/, untouched.
+            assert!(archive_digested_sessions(root, "not-a-day", &files).is_err());
+            assert!(digestable_session_days(root)[0].already_digested);
+
+            // Once the archive succeeds the files leave sessions/ and the day
+            // disappears — nothing left to retry.
+            archive_digested_sessions(root, "2026-08-10", &files).unwrap();
+            assert!(digestable_session_days(root).is_empty());
+        });
+    }
+
+    #[test]
+    fn digestable_days_does_not_redigest_a_file_whose_derived_day_changed() {
+        crate::settings::test_support::with_isolated_data("distill-digest-day-drift", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            // A stem with no date in it, so session_day derives the day —
+            // from mtime while there is no frontmatter.
+            let rel = scored_session(root, "claude-code-abc.md", PROSE);
+            let day_one = digestable_session_days(root)[0].day.clone();
+            write_daily_with_marker(root, &day_one, &["claude-code-abc"]);
+
+            // Now the same file gains a `created:` frontmatter (a re-import,
+            // or an importer fix) and derives a DIFFERENT day. A day-keyed
+            // flag would miss here and buy a second LLM digest for content
+            // already summarized; the file-level marker still matches.
+            let path = root.join(&rel);
+            std::fs::write(&path, format!("---\ncreated: 1000000000\n---\n\n{PROSE}")).unwrap();
+            set_mtime(&path, old_mtime());
+
+            let days = digestable_session_days(root);
+            assert_eq!(days.len(), 1);
+            assert_ne!(days[0].day, day_one, "the derived day must have moved");
+            assert!(
+                days[0].already_digested,
+                "idempotency is anchored on the FILE, not on the derived day"
+            );
+            assert_eq!(days[0].files, vec![rel]);
+        });
+    }
+
+    #[test]
+    fn digestable_days_offers_only_the_new_files_of_a_partly_recorded_day() {
+        crate::settings::test_support::with_isolated_data("distill-digest-late-session", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let old = scored_session(root, "20260810-a.md", PROSE);
+            write_daily_with_marker(root, "2026-08-10", &["20260810-a"]);
+            let new = scored_session(root, "20260810-b.md", PROSE);
+
+            // A genuinely new session for an already-digested day is new
+            // knowledge: it gets its own digest section, so the day comes back
+            // unflagged with ONLY the new file.
+            let days = digestable_session_days(root);
+            assert_eq!(days.len(), 1);
+            assert!(!days[0].already_digested);
+            assert_eq!(days[0].files, vec![new.clone()]);
+
+            // Archiving that one leaves the earlier, already-recorded file —
+            // which the next run picks up as a pure archive retry.
+            archive_digested_sessions(root, "2026-08-10", &[new]).unwrap();
+            let days = digestable_session_days(root);
+            assert_eq!(days.len(), 1);
+            assert!(days[0].already_digested);
+            assert_eq!(days[0].files, vec![old]);
+        });
     }
 
     #[test]

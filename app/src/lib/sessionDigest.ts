@@ -28,6 +28,22 @@ const MAX_DAY_CHARS = 60_000;
 // (Task 1, the summary tier) — this is a separate section in the same file.
 const HEADER = "## Session digest (auto)";
 
+// Machine-readable record of WHICH session files a digest section covers,
+// written into the same daily/<day>.md write as the bullets themselves — so
+// there is no window where the digest is durable but the record isn't, and a
+// crash can never re-charge the LLM for work already on disk.
+// Parsed by distill.rs's digested_session_stems (DIGEST_MARKER_OPEN /
+// DIGEST_MARKER_CLOSE); keep the literals in lockstep. Anchored on the FILES,
+// not the day: session_day derives the day from frontmatter/mtime, so the same
+// file can bucket into a different day on a later run.
+const MARKER_OPEN = "<!-- myco:digested-sessions ";
+const MARKER_CLOSE = " -->";
+
+function digestMarker(files: string[]): string {
+  const stems = files.map((f) => (f.split("/").pop() ?? f).replace(/\.md$/, ""));
+  return MARKER_OPEN + stems.join(" ") + MARKER_CLOSE;
+}
+
 // Fallback llm_digest_days when getDistillConfig is unavailable — mirrors
 // DistillConfig's Rust-side default.
 const DEFAULT_DIGEST_DAYS = 3;
@@ -63,7 +79,7 @@ async function appendDigest(
   vaultPath: string,
   day: string,
   bullets: string,
-  fileCount: number,
+  files: string[],
 ): Promise<boolean> {
   const dailyDir = `${vaultPath}/daily`;
   const filePath = `${dailyDir}/${day}.md`;
@@ -85,9 +101,12 @@ async function appendDigest(
     existing = `# ${day}\n\n`;
     created = true;
   }
+  const marker = digestMarker(files);
   const section = existing.includes(HEADER)
-    ? `\n_run of ${new Date().toISOString()}_\n${bullets.trim()}\n`
-    : `\n${HEADER}\n_from ${fileCount} session logs — low confidence_\n${bullets.trim()}\n`;
+    ? `\n_run of ${new Date().toISOString()}_\n${marker}\n${bullets.trim()}\n`
+    : `\n${HEADER}\n_from ${files.length} session logs — low confidence_\n${marker}\n${bullets.trim()}\n`;
+  // One atomic write (vault::write_file is tmpfile+fsync+rename) carrying both
+  // the digest text and the record of what it covers.
   await ipc.writeFile(filePath, existing + section);
   return created;
 }
@@ -111,38 +130,46 @@ export async function runSessionDigest(vaultPath: string): Promise<DigestOutcome
 
   let daysDigested = 0;
   let filesArchived = 0;
-  for (const { day, files } of days) {
+  for (const { day, files, already_digested } of days) {
     try {
-      const contents = await Promise.all(
-        files.map((f) => ipc.readFile(`${vaultPath}/${f}`).then((fc) => fc.raw)),
-      );
-      const bullets = await complete({
-        task: "query",
-        cwd: vaultPath,
-        messages: [
-          { role: "system", content: DIGEST_SYSTEM },
-          { role: "user", content: buildDayPrompt(files, contents) },
-        ],
-      });
-      // ponytail: append-then-archive isn't atomic — if archiveDigestedSessions
-      // fails right after appendDigest succeeds, the day stays digestable and
-      // the next run re-digests it (LLM cost + a second "_run of…_" sub-section).
-      // Acceptable because the header check above appends a run sub-line rather
-      // than duplicating; upgrade = persist a digested-day marker before archiving.
-      const dailyCreated = await appendDigest(vaultPath, day, bullets, files.length);
-      const manifestId = await ipc.archiveDigestedSessions(vaultPath, day, files);
-      // Important 4 (Phase B whole-branch review): fold the daily-file
-      // create into the SAME manifest archiveDigestedSessions just wrote for
-      // this day's session-file moves, so "undo this run" reverses both —
-      // only when this run actually created the file (see appendDigest's
-      // doc comment). Best-effort: a bookkeeping failure here must not
-      // undo the digest/archive that already succeeded.
-      if (dailyCreated) {
-        await ipc
-          .appendDistillManifest(vaultPath, manifestId, [], [`daily/${day}.md`])
-          .catch((e) => {
-            console.error("[distill] manifest append failed for daily digest file", vaultPath, day, e);
-          });
+      if (already_digested) {
+        // Retry: a prior run's appendDigest already put these exact files'
+        // digest in daily/<day>.md (its marker names them, which is how Rust
+        // set this flag) but archiveDigestedSessions failed afterward — only
+        // the file move needs retrying, never the LLM call or a second append.
+        await ipc.archiveDigestedSessions(vaultPath, day, files);
+      } else {
+        const contents = await Promise.all(
+          files.map((f) => ipc.readFile(`${vaultPath}/${f}`).then((fc) => fc.raw)),
+        );
+        const bullets = await complete({
+          task: "query",
+          cwd: vaultPath,
+          messages: [
+            { role: "system", content: DIGEST_SYSTEM },
+            { role: "user", content: buildDayPrompt(files, contents) },
+          ],
+        });
+        // The append itself records which files it covered (Defect C fix): if
+        // archiveDigestedSessions below fails, the next run's
+        // digestableSessionDays reads that marker back, flags these files
+        // already_digested, and takes the retry branch above — no re-paid LLM
+        // call, no duplicate digest section, and no second write to lose.
+        const dailyCreated = await appendDigest(vaultPath, day, bullets, files);
+        const manifestId = await ipc.archiveDigestedSessions(vaultPath, day, files);
+        // Important 4 (Phase B whole-branch review): fold the daily-file
+        // create into the SAME manifest archiveDigestedSessions just wrote for
+        // this day's session-file moves, so "undo this run" reverses both —
+        // only when this run actually created the file (see appendDigest's
+        // doc comment). Best-effort: a bookkeeping failure here must not
+        // undo the digest/archive that already succeeded.
+        if (dailyCreated) {
+          await ipc
+            .appendDistillManifest(vaultPath, manifestId, [], [`daily/${day}.md`])
+            .catch((e) => {
+              console.error("[distill] manifest append failed for daily digest file", vaultPath, day, e);
+            });
+        }
       }
     } catch (err) {
       console.error("[distill] session digest failed", vaultPath, day, err);
