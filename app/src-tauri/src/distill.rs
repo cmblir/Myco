@@ -2847,19 +2847,24 @@ pub struct DigestDay {
     pub already_digested: bool,
 }
 
-/// `YYYY-MM-DD` for a swept session: extends `commands::session_bucket`'s
-/// "prefer a date already in the stem" idea to day granularity — a plain
-/// `YYYYMMDD` run of digits rather than `YYYY-MM`, since importers name files
-/// after the full conversation date, not just its month. Session stems
-/// (`claude-code-<uuid>` / `codex-<uuid>`) never carry one, so this next reads
-/// the doc's own `created:` frontmatter (unix seconds, written by
-/// `importers::to_inbox_doc` at import time — see
-/// `importers::mod::Conversation::to_inbox_doc`) — the conversation's actual
-/// time, not whenever the sweep last wrote the file. Only when neither is
-/// available does it fall back to the file's own mtime (UTC), which is what
-/// every session used to be bucketed by and is wrong for a long-running or
-/// re-imported conversation.
+/// `YYYY-MM-DD` for a swept session, from the doc's own `created:` frontmatter
+/// (unix seconds, written by `importers::mod::Conversation::to_inbox_doc` at
+/// import time) — the conversation's actual time, not whenever the sweep last
+/// wrote the file, which is wrong for a long-running or re-imported one.
+///
+/// Only a doc without that frontmatter falls back to a `YYYYMMDD` run of digits
+/// in the stem (`commands::session_bucket`'s idea at day granularity), and then
+/// to mtime. The stem guess ranks BELOW the frontmatter because importer stems
+/// are `<source>-<uuid>` and a UUID's first group is sometimes eight digits that
+/// read as a plausible date: `claude-code-20970910-3580-…` filed its digest
+/// under `daily/2097-09-10.md`. A stem date later than the file's own mtime
+/// cannot be a conversation date either, so it is rejected outright.
 fn session_day(stem: &str, path: &Path, mtime: i64) -> String {
+    if let Some(secs) = frontmatter_created(path) {
+        let (y, m, d, ..) = civil_datetime(secs);
+        return format!("{y:04}-{m:02}-{d:02}");
+    }
+    let (mtime_year, ..) = civil_datetime(mtime);
     if let Some(pos) = stem.find(|c: char| c.is_ascii_digit()) {
         let tail = &stem[pos..];
         let b = tail.as_bytes();
@@ -2867,13 +2872,15 @@ fn session_day(stem: &str, path: &Path, mtime: i64) -> String {
             let y: u16 = tail[0..4].parse().unwrap_or(0);
             let m: u8 = tail[4..6].parse().unwrap_or(0);
             let d: u8 = tail[6..8].parse().unwrap_or(0);
-            if (1970..=2999).contains(&y) && (1..=12).contains(&m) && (1..=31).contains(&d) {
+            if (1970..=mtime_year).contains(&i64::from(y))
+                && (1..=12).contains(&m)
+                && (1..=31).contains(&d)
+            {
                 return format!("{y:04}-{m:02}-{d:02}");
             }
         }
     }
-    let secs = frontmatter_created(path).unwrap_or(mtime);
-    let (y, m, d, ..) = civil_datetime(secs);
+    let (y, m, d, ..) = civil_datetime(mtime);
     format!("{y:04}-{m:02}-{d:02}")
 }
 
@@ -3947,12 +3954,39 @@ mod tests {
 
     #[test]
     fn session_day_still_honors_a_date_already_in_the_stem() {
-        // A stem-embedded date wins even when the file (or its frontmatter)
-        // would say otherwise — same precedence as before this change.
+        // A stem-embedded date is used when the doc carries no `created:` of
+        // its own — but it no longer outranks one that does.
         let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("20260810-x.md");
-        std::fs::write(&path, "---\ncreated: 1755000000\n---\n\nbody\n").unwrap();
-        assert_eq!(session_day("20260810-x", &path, 0), "2026-08-10");
+        let bare = dir.path().join("20260810-x.md");
+        std::fs::write(&bare, "no frontmatter here\n").unwrap();
+        // mtime is later than the stem date, so the stem date stays plausible.
+        assert_eq!(
+            session_day("20260810-x", &bare, 1_786_800_000),
+            "2026-08-10"
+        );
+
+        let with_created = dir.path().join("20260810-y.md");
+        std::fs::write(&with_created, "---\ncreated: 1755000000\n---\n\nbody\n").unwrap();
+        assert_eq!(session_day("20260810-y", &with_created, 0), "2025-08-12");
+    }
+
+    #[test]
+    fn session_day_ignores_a_uuid_group_that_merely_looks_like_a_date() {
+        // Real vault regression: `claude-code-20970910-3580-4fb0-…` filed its
+        // digest under `daily/2097-09-10.md`, because the UUID's first group is
+        // eight digits that parse as a plausible date. A date after the file's
+        // own mtime can never be the conversation's date.
+        let dir = tempfile::tempdir().unwrap();
+        let stem = "claude-code-20970910-3580-4fb0-b7b9-79179a73be43";
+        let mtime = 1_786_800_000; // 2026-08-15
+
+        let bare = dir.path().join(format!("{stem}.md"));
+        std::fs::write(&bare, "no frontmatter\n").unwrap();
+        assert_eq!(session_day(stem, &bare, mtime), "2026-08-15");
+
+        let with_created = dir.path().join(format!("{stem}-b.md"));
+        std::fs::write(&with_created, "---\ncreated: 1755000000\n---\n\nx\n").unwrap();
+        assert_eq!(session_day(stem, &with_created, mtime), "2025-08-12");
     }
 
     #[test]
