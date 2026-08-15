@@ -2922,11 +2922,12 @@ fn content_fingerprint(bytes: &[u8]) -> String {
 /// that silently drifts.
 ///
 /// Stems, not paths: a stem survives the archive move, and importer-written
-/// session stems are `[A-Za-z0-9_-]` only (`importers::sanitize`), so neither
-/// the space-separated list nor the `:` separator can be ambiguous. A
-/// hand-placed session file whose name contains whitespace simply never
-/// matches — it gets digested again, which is the pre-marker behaviour, never
-/// a false "already done".
+/// session stems are `[A-Za-z0-9_-]` only (`importers::sanitize`), so the
+/// space-separated list is unambiguous for them. Hand-placed files are not
+/// bound by that: a name with whitespace simply never matches (it gets
+/// digested again, the pre-marker behaviour, never a false "already done"),
+/// and a name containing `:` is disambiguated by `is_digested` — see its
+/// legacy-entry rule.
 fn digested_session_entries(root: &Path) -> std::collections::HashSet<String> {
     let mut out = std::collections::HashSet::new();
     let Ok(entries) = std::fs::read_dir(root.join("daily")) else {
@@ -2967,9 +2968,13 @@ fn digested_session_entries(root: &Path) -> std::collections::HashSet<String> {
 ///
 /// A bare `<stem>` entry is a marker from before fingerprints existed and
 /// matches that stem regardless of content — otherwise upgrading would re-bill
-/// an LLM digest for every session already summarized.
+/// an LLM digest for every session already summarized. "Bare" means literally
+/// free of `:`, on both sides: `file_stem` splits on the LAST dot only, so a
+/// hand-placed `<stem>:<8 hex>.md` would otherwise exact-match a real
+/// `<stem>:<fingerprint>` record and be archived unsummarized. A stem
+/// containing `:` therefore only ever takes the fingerprint path.
 fn is_digested(entries: &std::collections::HashSet<String>, stem: &str, path: &Path) -> bool {
-    if entries.contains(stem) {
+    if !stem.contains(':') && entries.contains(stem) {
         return true;
     }
     if entries.is_empty() {
@@ -4419,6 +4424,34 @@ mod tests {
             assert_eq!(days.len(), 1);
             assert!(!days[0].already_digested);
             assert_eq!(days[0].files, vec![resumed]);
+        });
+    }
+
+    /// `file_stem` splits on the LAST dot, so a hand-placed
+    /// `<stem>:<8 hex>.md` yields a stem that exact-matches a real
+    /// `<stem>:<fingerprint>` record. Only a `:`-free entry is legacy.
+    #[test]
+    fn a_stem_shaped_like_stem_colon_fingerprint_never_matches_the_legacy_branch() {
+        crate::settings::test_support::with_isolated_data("distill-digest-spoof", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let rel = scored_session(root, "claude-code-abc:1a2b3c4d.md", PROSE);
+            let day = digestable_session_days(root)[0].day.clone();
+            // A genuine record for a DIFFERENT (already archived) file, whose
+            // fingerprint happens to be this hand-placed file's name tail.
+            write_daily_with_marker(root, &day, &["claude-code-abc:1a2b3c4d"]);
+
+            let days = digestable_session_days(root);
+            assert_eq!(days.len(), 1);
+            assert!(
+                !days[0].already_digested,
+                "a `:`-bearing stem must never take the legacy bare-stem path"
+            );
+            assert_eq!(days[0].files, vec![rel.clone()]);
+
+            // Its own content-bound record still works: <stem>:<fingerprint>.
+            write_daily_with_marker(root, &day, &[&marker_entry(root, &rel)]);
+            assert!(digestable_session_days(root)[0].already_digested);
         });
     }
 
