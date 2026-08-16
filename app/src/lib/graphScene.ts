@@ -3292,11 +3292,12 @@ export class GraphScene {
     }
     // Backdrops off — the chart is nodes/edges/bubbles only. Near-field planet
     // billboards/moons off too: they're built to face the MAIN camera, not
-    // this one, and the minimap's bounds (minimapBounds, XY spread only) don't
-    // account for a 3D layout's Z depth, so a node's minimap-camera distance
-    // can shrink enough to also trip the shared node shader's own pixel-sprite
-    // LOD branch — force it off (u_pixelNodes) so every node falls back to the
-    // plain glow-dot path regardless of per-node distance. Both are transient,
+    // this one. The camera now frames the full Z extent (computeMinimapBounds
+    // rz), but a node near the front of a deep 3D layout still sits closer to
+    // this camera than to the main one, which can trip the shared node
+    // shader's pixel-sprite LOD branch — force it off (u_pixelNodes) so every
+    // node falls back to the plain glow-dot path regardless of per-node
+    // distance. Both are transient,
     // synchronous save/restore around this one render() call, same pattern as
     // the backdrop toggles above — never observable outside this function, so
     // nothing leaks into the main view.

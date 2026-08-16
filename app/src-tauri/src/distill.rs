@@ -2453,9 +2453,14 @@ pub fn run(
             // reusing the same rel path within one day would be skipped.
             // Upgrade to a content-bound marker (see `DIGEST_MARKER_OPEN`,
             // the session-digest fix) if either proves to matter.
+            // Match the token only on a summary bullet line, so prose
+            // elsewhere in the note that merely mentions the same path
+            // (a user's own writing, a digest quote) can't suppress a
+            // legitimate append.
+            let token = format!("`{rel}`");
             let already_appended =
                 std::fs::read_to_string(root.join("daily").join(format!("{today}.md")))
-                    .map(|c| c.contains(&format!("`{rel}`")))
+                    .map(|c| c.lines().any(|l| l.starts_with("- ") && l.contains(&token)))
                     .unwrap_or(false);
             if !already_appended {
                 let day_created = append_daily_summary_line(root, &today, &line)?;

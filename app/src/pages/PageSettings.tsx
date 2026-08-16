@@ -1648,11 +1648,16 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
     }
   }
 
-  // Reset the stop latch whenever no chain is in flight anymore — the flag
-  // itself is cleared by runDistillGuarded's own finally.
+  // When the chain winds down — whatever started it (this button, a schedule,
+  // the count trigger) — reset the stop latch and read where (if anywhere)
+  // that run stopped. Deriving the confirmation here rather than in runNow()
+  // is what makes it show for externally-triggered runs too.
   useEffect(() => {
-    if (!chainRunning) setStopping(false);
-  }, [chainRunning]);
+    if (!chainRunning) {
+      setStopping(false);
+      if (vaultPath) setStoppedAfter(lastStopPoint.get(vaultPath) ?? null);
+    }
+  }, [chainRunning, vaultPath]);
 
   async function runNow(): Promise<void> {
     if (!vaultPath || running) return;
@@ -1672,7 +1677,6 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
         return;
       }
       setReport(r);
-      setStoppedAfter(lastStopPoint.get(vaultPath) ?? null);
       setStatus(await ipc.distillStatus(vaultPath));
       setDigestSkippedNoProvider(lastDigestOutcome.get(vaultPath)?.skipped === "no-provider");
     } catch (e) {
