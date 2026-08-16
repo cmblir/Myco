@@ -19,7 +19,13 @@ vi.mock("./fullTierIngest", () => ({
   runFullTierIngest: (...a: unknown[]) => runFullTierIngest(...a),
 }));
 
-import { backlogTrend, lastRunLabel, runDistillGuarded } from "./distill";
+import {
+  backlogTrend,
+  lastRunLabel,
+  lastStopPoint,
+  requestDistillStop,
+  runDistillGuarded,
+} from "./distill";
 import { ipc } from "./ipc";
 import { useVaultStore } from "../stores/vaultStore";
 import { useReindexStore } from "../stores/reindexStore";
@@ -148,6 +154,97 @@ describe("runDistillGuarded", () => {
     expect(await runDistillGuarded("/b")).toBe(REPORT);
     release(REPORT);
     expect(await a).toBe(REPORT);
+  });
+});
+
+// Cooperative stop: the flag is checked BETWEEN steps only — an in-flight
+// step always finishes, then the chain skips every later step and records
+// which step it stopped after (surfaced as "stopped after <step>" in the
+// Settings distill tab).
+describe("runDistillGuarded — cooperative stop", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    runSessionDigest.mockReset().mockResolvedValue(null);
+    runFullTierIngest.mockReset().mockResolvedValue({ ingested: 0, skipped: null, errors: [] });
+  });
+
+  it("a stop requested during the core run skips the whole LLM chain", async () => {
+    vi.spyOn(ipc, "distillRun").mockImplementation(async (v: string) => {
+      requestDistillStop(v); // e.g. the Stop button clicked mid-run
+      return REPORT;
+    });
+
+    const r = await runDistillGuarded("/vstop-run");
+
+    expect(r).toBe(REPORT); // the finished core run's report is kept
+    expect(runSessionDigest).not.toHaveBeenCalled();
+    expect(runFullTierIngest).not.toHaveBeenCalled();
+    expect(lastStopPoint.get("/vstop-run")).toBe("run");
+  });
+
+  it("a stop requested during the digest lets it finish, then skips ingest and maps", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    const listFiles = vi.spyOn(ipc, "listFiles");
+    runSessionDigest.mockImplementation(async (v: string) => {
+      requestDistillStop(v);
+      return null;
+    });
+
+    const r = await runDistillGuarded("/vstop-digest");
+
+    expect(r).toBe(REPORT);
+    expect(runSessionDigest).toHaveBeenCalledTimes(1);
+    expect(runFullTierIngest).not.toHaveBeenCalled();
+    expect(listFiles).not.toHaveBeenCalled(); // draft-map apply never starts
+    expect(lastStopPoint.get("/vstop-digest")).toBe("digest");
+  });
+
+  it("a stop requested during ingest skips only the draft-map step", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    const getSettings = vi.spyOn(ipc, "getSettings");
+    runFullTierIngest.mockImplementation(async (v: string) => {
+      requestDistillStop(v);
+      return { ingested: 0, skipped: null, errors: [] };
+    });
+
+    await runDistillGuarded("/vstop-ingest");
+
+    expect(runFullTierIngest).toHaveBeenCalledTimes(1);
+    expect(getSettings).not.toHaveBeenCalled(); // draft-map apply never starts
+    expect(lastStopPoint.get("/vstop-ingest")).toBe("ingest");
+  });
+
+  it("a run without a stop records null, and the flag never leaks into the next run", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue({
+      query_provider: "builtin-local",
+    } as never);
+
+    // Stop the first run mid-digest…
+    runSessionDigest.mockImplementationOnce(async (v: string) => {
+      requestDistillStop(v);
+      return null;
+    });
+    await runDistillGuarded("/vstop-clean");
+    expect(lastStopPoint.get("/vstop-clean")).toBe("digest");
+
+    // …the next run for the same vault runs the full chain again.
+    await runDistillGuarded("/vstop-clean");
+    expect(runFullTierIngest).toHaveBeenCalledTimes(1);
+    expect(lastStopPoint.get("/vstop-clean")).toBeNull();
+  });
+
+  it("a stop request while nothing is in flight is a no-op", async () => {
+    requestDistillStop("/vidle");
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue({
+      query_provider: "builtin-local",
+    } as never);
+
+    await runDistillGuarded("/vidle");
+
+    expect(runSessionDigest).toHaveBeenCalledTimes(1);
+    expect(lastStopPoint.get("/vidle")).toBeNull();
   });
 });
 

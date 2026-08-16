@@ -171,6 +171,25 @@ export const lastMapDraftOutcome = new Map<string, MapDraftOutcome>();
 // the Rust-side default, same idiom as fullTierIngest.ts's own copy.
 const DEFAULT_INGEST_BUDGET = 3;
 
+// Cooperative stop for the LLM chain (Settings 증류 tab's Stop button).
+// Checked BETWEEN steps only, never mid-LLM-call: an in-flight call always
+// finishes, so every step's own idempotency/undo story stays intact and the
+// vault is never left mid-step.
+const stopRequested = new Set<string>();
+
+/** The step the last run's chain stopped after ("run" = the Rust core pass;
+ * the chain never starts a later step once the flag is seen), or null when it
+ * ran to the end — same module-level map idiom as lastDigestOutcome above. */
+export type DistillStopPoint = "run" | "digest" | "ingest";
+export const lastStopPoint = new Map<string, DistillStopPoint | null>();
+
+/** Ask an in-flight distill chain for `vault` to stop before its next step.
+ * A no-op when nothing is running — the flag would otherwise leak into the
+ * next run. */
+export function requestDistillStop(vault: string): void {
+  if (inFlight.has(vault)) stopRequested.add(vault);
+}
+
 /** Phase B, Task 4 — the Aggressive-intensity bridge: at that intensity,
  * `distill_run` writes `draft-map` proposals straight to `status: approved`
  * (the LLM draft itself always runs TS-side, never in Rust), so this applies
@@ -270,11 +289,15 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
   useDistillRunStore.setState({ running: true });
   try {
     const report = await ipc.distillRun(vault);
-    // Idle is checked at entry only (by the callers' own triggers); the LLM
-    // chain below runs to completion once started — there is no abort
-    // mid-chain. Total work is bounded by the three per-step budgets
-    // (llm_digest_days, llm_ingest_budget ×2), so the tail is short by
-    // construction rather than interruptible.
+    // Idle is checked at entry only (by the callers' own triggers); once
+    // started, the chain can only be stopped cooperatively BETWEEN steps
+    // (requestDistillStop), never mid-LLM-call. Total work stays bounded by
+    // the per-step budgets (llm_digest_days, llm_ingest_budget ×2).
+    lastStopPoint.set(vault, null);
+    if (stopRequested.has(vault)) {
+      lastStopPoint.set(vault, "run");
+      return report;
+    }
     const outcome = await runSessionDigest(vault).catch((e) => {
       console.error("[distill] session digest failed", vault, e);
       return null;
@@ -285,11 +308,19 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
         console.error("[distill] cold-tier prune failed", vault, e);
       });
     }
+    if (stopRequested.has(vault)) {
+      lastStopPoint.set(vault, "digest");
+      return report;
+    }
     const fullTierOutcome = await runFullTierIngest(vault).catch((e) => {
       console.error("[distill] full-tier ingest failed", vault, e);
       return null;
     });
     if (fullTierOutcome) lastFullTierOutcome.set(vault, fullTierOutcome);
+    if (stopRequested.has(vault)) {
+      lastStopPoint.set(vault, "ingest");
+      return report;
+    }
     // Task 2 fix (settings audit): llm_ingest_budget is a SHARED per-run cap
     // over ingest + draft maps, not one full budget for each — pass maps
     // only what full-tier ingest didn't already spend. A failed fullTierOutcome
@@ -305,6 +336,7 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
     return report;
   } finally {
     inFlight.delete(vault);
+    stopRequested.delete(vault);
     // Reflects "any vault still running", not just this one — the guard
     // itself is per-vault (inFlight), but a single boolean is all the
     // Topbar needs (see distillRunStore.ts).

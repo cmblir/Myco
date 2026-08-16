@@ -741,6 +741,13 @@ export interface Strings {
   set_distill_gate_pending?: string; // {n} {min}
   set_distill_digest_skipped?: string;
   set_distill_quarantined?: string; // {n} {path}
+  // Cooperative stop for the LLM chain (Stop button, Settings distill tab).
+  set_distill_stop?: string;
+  set_distill_stopping?: string;
+  set_distill_stopped?: string; // {step}
+  set_distill_step_run?: string;
+  set_distill_step_digest?: string;
+  set_distill_step_ingest?: string;
   // profile.md editor, in the Distill tab (Phase B, Task 5).
   set_profile_title?: string;
   set_profile_lede?: string;
@@ -1635,6 +1642,12 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_digest_skipped:
       "Session digest skipped — no query provider connected. Set one under Settings → Model (Query).",
     set_distill_quarantined: "{n} items awaiting review in {path}",
+    set_distill_stop: "Stop",
+    set_distill_stopping: "Stopping after the current step…",
+    set_distill_stopped: "Stopped after {step}",
+    set_distill_step_run: "the core pass",
+    set_distill_step_digest: "the session digest",
+    set_distill_step_ingest: "the full-tier ingest",
     set_profile_title: "Profile",
     set_profile_lede:
       "Personalizes distillation and Ask/ingest context. Written to profile.md; sent to configured AI providers when injection is on.",
@@ -2536,6 +2549,12 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_digest_skipped:
       "세션 다이제스트 건너뜀 — 쿼리 프로바이더가 연결되지 않았습니다. 설정 → 모델(쿼리)에서 설정하세요.",
     set_distill_quarantined: "{path}에 검토 대기 중인 항목 {n}건",
+    set_distill_stop: "중지",
+    set_distill_stopping: "현재 단계 후 중지…",
+    set_distill_stopped: "{step} 후 중지됨",
+    set_distill_step_run: "코어 패스",
+    set_distill_step_digest: "세션 다이제스트",
+    set_distill_step_ingest: "전체 계층 인제스트",
     set_profile_title: "프로필",
     set_profile_lede:
       "증류와 Ask/인제스트 컨텍스트를 개인화합니다. profile.md에 저장되며, 주입이 켜져 있으면 설정된 AI 프로바이더로 전송됩니다.",
@@ -3315,6 +3334,12 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_digest_skipped:
       "セッションダイジェストをスキップしました — クエリプロバイダーが未接続です。設定 → モデル（クエリ）で設定してください。",
     set_distill_quarantined: "{path} に確認待ちの項目が{n}件あります",
+    set_distill_stop: "停止",
+    set_distill_stopping: "現在のステップの後に停止します…",
+    set_distill_stopped: "{step}の後に停止しました",
+    set_distill_step_run: "コアパス",
+    set_distill_step_digest: "セッションダイジェスト",
+    set_distill_step_ingest: "フル階層インジェスト",
     set_profile_title: "プロフィール",
     set_profile_lede:
       "蒸留とAsk/インジェストのコンテキストを個人化します。profile.mdに保存され、注入がオンの場合は設定済みのAIプロバイダーに送信されます。",

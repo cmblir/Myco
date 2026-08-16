@@ -43,16 +43,20 @@ import {
   GATE_MIN_WIKI_PAGES,
   lastDigestOutcome,
   lastRunLabel,
+  lastStopPoint,
   QUARANTINE_DIR,
+  requestDistillStop,
   runDistillGuarded,
 } from "../lib/distill";
 import type {
   DistillConfig,
   DistillStatus,
+  DistillStopPoint,
   GatePreset,
   Intensity,
   RunReport,
 } from "../lib/distill";
+import { useDistillRunStore } from "../stores/distillRunStore";
 import { loadProfile, saveProfile } from "../lib/profile";
 import type { Profile } from "../lib/profile";
 
@@ -1595,6 +1599,12 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
   const [running, setRunning] = useState(false);
   const [report, setReport] = useState<RunReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Cooperative stop: `chainRunning` covers a chain started by ANY trigger
+  // (schedule, count trigger, this button) — the Stop button must reach all
+  // of them; `stopping` is this tab's own "stop already requested" latch.
+  const chainRunning = useDistillRunStore((s) => s.running);
+  const [stopping, setStopping] = useState(false);
+  const [stoppedAfter, setStoppedAfter] = useState<DistillStopPoint | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [undoResult, setUndoResult] = useState<number | null>(null);
   // Defect E: whether the latest session-digest pass for this vault skipped
@@ -1638,10 +1648,17 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
     }
   }
 
+  // Reset the stop latch whenever no chain is in flight anymore — the flag
+  // itself is cleared by runDistillGuarded's own finally.
+  useEffect(() => {
+    if (!chainRunning) setStopping(false);
+  }, [chainRunning]);
+
   async function runNow(): Promise<void> {
     if (!vaultPath || running) return;
     setRunning(true);
     setError(null);
+    setStoppedAfter(null);
     try {
       // Goes through the shared guard so this can't interleave with the
       // idle-gated count trigger or a due "distill" schedule running at the
@@ -1655,6 +1672,7 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
         return;
       }
       setReport(r);
+      setStoppedAfter(lastStopPoint.get(vaultPath) ?? null);
       setStatus(await ipc.distillStatus(vaultPath));
       setDigestSkippedNoProvider(lastDigestOutcome.get(vaultPath)?.skipped === "no-provider");
     } catch (e) {
@@ -1998,18 +2016,53 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
             )}
           </div>
         ) : null}
-        <button
-          className="btn btn-primary"
-          style={{ marginTop: 12 }}
-          onClick={() => void runNow()}
-          disabled={running || !vaultPath}
-          aria-busy={running}
-          data-testid="distill-run-btn"
-        >
-          {running
-            ? (t.set_distill_running ?? "Distilling…")
-            : (t.set_distill_run_now ?? "Distill now")}
-        </button>
+        <div className="row" style={{ gap: 8, marginTop: 12 }}>
+          <button
+            className="btn btn-primary"
+            onClick={() => void runNow()}
+            disabled={running || !vaultPath}
+            aria-busy={running}
+            data-testid="distill-run-btn"
+          >
+            {running
+              ? (t.set_distill_running ?? "Distilling…")
+              : (t.set_distill_run_now ?? "Distill now")}
+          </button>
+          {chainRunning && vaultPath ? (
+            // Cooperative stop: sets a flag the chain checks BETWEEN steps
+            // (requestDistillStop) — the in-flight LLM call always finishes,
+            // hence "stopping after the current step", not "stopped".
+            <button
+              className="btn"
+              onClick={() => {
+                requestDistillStop(vaultPath);
+                setStopping(true);
+              }}
+              disabled={stopping}
+              data-testid="distill-stop-btn"
+            >
+              {stopping
+                ? (t.set_distill_stopping ?? "Stopping after the current step…")
+                : (t.set_distill_stop ?? "Stop")}
+            </button>
+          ) : null}
+        </div>
+        {stoppedAfter ? (
+          <div
+            className="muted"
+            style={{ fontSize: 12, marginTop: 8 }}
+            data-testid="distill-stopped"
+          >
+            {(t.set_distill_stopped ?? "Stopped after {step}").replace(
+              "{step}",
+              stoppedAfter === "run"
+                ? (t.set_distill_step_run ?? "the core pass")
+                : stoppedAfter === "digest"
+                  ? (t.set_distill_step_digest ?? "the session digest")
+                  : (t.set_distill_step_ingest ?? "the full-tier ingest"),
+            )}
+          </div>
+        ) : null}
         {report ? (
           <div
             style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }}
