@@ -1,12 +1,11 @@
-// Keep the embedding index up to date with the vault, while the app is open.
-//
-// Everything the semantic layer feeds — palette hits, the Related panel, the
-// graph's similarity edges, and what Ask retrieves before answering — reads an
-// index that only a button in Settings ever built. Edit a page and all of it
-// silently describes the vault as it was at the last manual reindex. The
-// expensive half of fixing that is already done: reindex skips a page whose
-// chunk hashes are unchanged, so maintaining an index costs one page's
-// embedding, not the vault's.
+// Automatically re-run a full "Reindex now" sweep a little while after the
+// vault goes quiet, as a backstop on top of the always-on incremental
+// re-embedding the backend's IndexUpdater actor already does live on every
+// write and filesystem change (index_updater.rs), regardless of this toggle.
+// This scheduler predates that actor (this file: 2026-07-17; IndexUpdater:
+// 2026-07-24) and used to be the only thing keeping the index current; it now
+// mostly re-does what IndexUpdater already keeps current, as a periodic
+// full-walk safety net rather than the primary mechanism.
 //
 // Opt-in and off by default, like the other background work here (auto-ingest,
 // auto-reflect). Not a default because the first run is genuinely expensive —
