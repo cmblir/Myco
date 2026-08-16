@@ -4464,6 +4464,10 @@ mod tests {
     /// `file_stem` splits on the LAST dot, so a hand-placed
     /// `<stem>:<8 hex>.md` yields a stem that exact-matches a real
     /// `<stem>:<fingerprint>` record. Only a `:`-free entry is legacy.
+    ///
+    /// Unix-only: Windows forbids `:` in a filename, so the spoof this guards
+    /// against cannot be created there and the fixture write itself fails.
+    #[cfg(not(windows))]
     #[test]
     fn a_stem_shaped_like_stem_colon_fingerprint_never_matches_the_legacy_branch() {
         crate::settings::test_support::with_isolated_data("distill-digest-spoof", |_data| {
