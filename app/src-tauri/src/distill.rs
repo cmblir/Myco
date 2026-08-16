@@ -2442,16 +2442,27 @@ pub fn run(
             proposals += 1;
         } else {
             let line = format!("- {first_line} — `{rel}` (low confidence)");
-            // ponytail: no idempotency guard on the appended text itself — a
-            // run that crashes between this append and the move below would
-            // re-append the same line on retry (the item is still tier
-            // "summary" until the move happens). Upgrade if that proves to
-            // matter in practice; every other pass in `run` accepts the same
-            // duplicate-on-retry ceiling (see `write_proposal`'s doc comment).
-            let day_created = append_daily_summary_line(root, &today, &line)?;
-            if day_created {
-                manifest.created.push(format!("daily/{today}.md"));
-                save_manifest(root, &manifest)?;
+            // Idempotency: a run that crashed between a previous append and
+            // the move below left this item's line in today's file already
+            // (the item stays tier "summary" until the move happens) — the
+            // line's own `` `<rel>` `` token marks it, so skip the append and
+            // retry only the move.
+            // ponytail: the dedup is bound to TODAY's file + the rel token —
+            // a retry landing on a later calendar day re-appends into the new
+            // day's file (yesterday's isn't checked), and a new file later
+            // reusing the same rel path within one day would be skipped.
+            // Upgrade to a content-bound marker (see `DIGEST_MARKER_OPEN`,
+            // the session-digest fix) if either proves to matter.
+            let already_appended =
+                std::fs::read_to_string(root.join("daily").join(format!("{today}.md")))
+                    .map(|c| c.contains(&format!("`{rel}`")))
+                    .unwrap_or(false);
+            if !already_appended {
+                let day_created = append_daily_summary_line(root, &today, &line)?;
+                if day_created {
+                    manifest.created.push(format!("daily/{today}.md"));
+                    save_manifest(root, &manifest)?;
+                }
             }
 
             let archive_dir = root.join("raw/archive").join(&month);
@@ -3911,6 +3922,54 @@ mod tests {
                 assert!(content.contains("action: summary-batch"));
             },
         );
+    }
+
+    /// Crash-retry idempotency for the summary tier: run once (append + move
+    /// done), then recreate the retry state a crash between the two leaves —
+    /// the daily line already written, the file still in `_inbox/` — and run
+    /// again. The line must not duplicate, and the move must still complete.
+    #[test]
+    fn summary_tier_retry_skips_the_already_appended_line_and_still_moves() {
+        crate::settings::test_support::with_isolated_data("distill-summary-retry", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            seed_wiki_pages(root, GATE_MIN_WIKI_PAGES);
+            std::fs::create_dir_all(root.join("_inbox")).unwrap();
+            std::fs::write(root.join("_inbox/note.md"), PROSE).unwrap();
+            set_mtime(&root.join("_inbox/note.md"), old_mtime());
+            crate::ontology::save(root, &ontology_two_clusters()).unwrap();
+
+            let cfg = DistillConfig::default(); // Standard intensity
+            let report = run(root, &cfg, &summary_tier_embed).unwrap();
+            assert_eq!(report.archived, 1);
+
+            // Simulate the crash-before-move retry state: the appended line is
+            // durable in daily/<today>.md, but the item is back in _inbox/
+            // (as if the archive rename never happened).
+            let month_dir = std::fs::read_dir(root.join("raw/archive"))
+                .unwrap()
+                .flatten()
+                .next()
+                .unwrap()
+                .path();
+            std::fs::rename(month_dir.join("note.md"), root.join("_inbox/note.md")).unwrap();
+
+            let report = run(root, &cfg, &summary_tier_embed).unwrap();
+            assert_eq!(report.archived, 1, "the retry must still complete the move");
+            assert!(!root.join("_inbox/note.md").exists());
+            assert!(month_dir.join("note.md").exists());
+
+            let (y, m, d, ..) = civil_datetime(now_secs());
+            let daily = std::fs::read_to_string(
+                root.join("daily").join(format!("{y:04}-{m:02}-{d:02}.md")),
+            )
+            .unwrap();
+            assert_eq!(
+                daily.matches("`_inbox/note.md`").count(),
+                1,
+                "retry must not re-append the same summary line: {daily}"
+            );
+        });
     }
 
     #[test]
