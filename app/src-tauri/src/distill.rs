@@ -4552,6 +4552,46 @@ mod tests {
         assert!(!manifest_path(root, "../evil").exists());
     }
 
+    /// The draftMap fragmentation fix's undo half: two proposals recorded by
+    /// one run under ONE shared id (the TS side now passes the same id per
+    /// run) are both reversed by a single `undo` of that id.
+    #[test]
+    fn undo_of_one_shared_llm_manifest_reverses_every_recorded_create() {
+        // `tmp`, not `dir`: the usual binding name would shadow this module's
+        // `dir()` fn, called below to find `.myco/distill-runs/`.
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("wiki/maps")).unwrap();
+        std::fs::write(root.join("wiki/maps/a.md"), "map a").unwrap();
+        std::fs::write(root.join("wiki/maps/b.md"), "map b").unwrap();
+
+        append_distill_manifest(
+            root,
+            "llm-1699999999",
+            vec![],
+            vec!["wiki/maps/a.md".into()],
+        )
+        .unwrap();
+        append_distill_manifest(
+            root,
+            "llm-1699999999",
+            vec![],
+            vec!["wiki/maps/b.md".into()],
+        )
+        .unwrap();
+
+        // One manifest on disk, not two.
+        let runs: Vec<_> = std::fs::read_dir(dir(root).join("distill-runs"))
+            .unwrap()
+            .flatten()
+            .collect();
+        assert_eq!(runs.len(), 1);
+
+        assert_eq!(undo(root, "llm-1699999999").unwrap(), 2);
+        assert!(!root.join("wiki/maps/a.md").exists());
+        assert!(!root.join("wiki/maps/b.md").exists());
+    }
+
     #[test]
     fn append_distill_manifest_rejects_a_path_escaping_the_vault() {
         let dir = tempfile::tempdir().unwrap();

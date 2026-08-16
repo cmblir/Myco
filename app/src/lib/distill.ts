@@ -207,6 +207,9 @@ async function applyApprovedDraftMaps(
   }
 
   let drafted = 0;
+  // One undo-manifest for ALL maps this run drafts — per-call ids fragmented
+  // a multi-map run so "undo this run" only reached the last map drafted.
+  const manifestId = `llm-${Math.floor(Date.now() / 1000)}`;
   const tree = await ipc.listFiles(vaultPath).catch(() => []);
   for (const f of feedbackFileNodes(tree)) {
     if (drafted >= budget) break;
@@ -216,7 +219,7 @@ async function applyApprovedDraftMaps(
     if (parsed?.action !== "draft-map" || parsed.status !== "approved") continue;
     if (!parsed.cluster || !parsed.members) continue;
     try {
-      await draftMap(vaultPath, parsed.cluster, parsed.members);
+      await draftMap(vaultPath, parsed.cluster, parsed.members, manifestId);
       await ipc.writeFile(f.path, rewriteStatus(file.raw, "done"));
       drafted++;
     } catch (e) {

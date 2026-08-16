@@ -76,6 +76,22 @@ describe("draftMap", () => {
     );
   });
 
+  it("records under the caller's manifest id so one run's maps share one manifest", async () => {
+    complete.mockResolvedValue("body");
+    readFile.mockRejectedValue(new Error("not found"));
+    createFolder.mockResolvedValue("maps");
+    writeFile.mockResolvedValue(null);
+
+    await draftMap("/v", "topic", ["wiki/x.md"], "llm-1699999999");
+
+    expect(appendDistillManifest).toHaveBeenCalledWith(
+      "/v",
+      "llm-1699999999",
+      [],
+      ["wiki/maps/topic.md"],
+    );
+  });
+
   it("does not record a manifest entry when an existing map short-circuits the draft", async () => {
     listFiles.mockResolvedValue([
       {

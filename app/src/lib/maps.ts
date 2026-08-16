@@ -141,11 +141,21 @@ async function freeMapPath(vaultPath: string, slug: string): Promise<string> {
  *  and write it to `wiki/maps/<slug(cluster)>.md`. Frontmatter is written by
  *  code, never by the model, with `status: draft` — a human still reviews
  *  the result before it counts as a settled wiki page. Returns the written
- *  vault-relative path. */
+ *  vault-relative path.
+ *
+ *  `manifestId` is the undo-manifest the drafted file is recorded under. A
+ *  caller drafting SEVERAL maps in one distill run must pass one shared id
+ *  (`runDistillGuarded`'s auto-apply does) so the whole run stays reachable
+ *  from a single "undo this run" — minting a fresh id per call fragmented a
+ *  multi-map run into manifests only undoable one id at a time, and the
+ *  Settings undo button only ever reaches the newest. The default (a fresh
+ *  `llm-<now>` id) fits the other caller, distillStore's manual per-click
+ *  approve, where one click IS the whole run. */
 export async function draftMap(
   vaultPath: string,
   cluster: string,
   members: string[],
+  manifestId = `llm-${Math.floor(Date.now() / 1000)}`,
 ): Promise<string> {
   const memberStems = new Set(members.map((m) => memberStem(m).toLowerCase()));
   const existing = await findExistingMapPath(vaultPath, cluster, memberStems);
@@ -194,7 +204,7 @@ export async function draftMap(
   // undo-manifest so "undo this run" can remove it — same best-effort rule as
   // the other TS-step recordings (a bookkeeping failure must not fail the
   // draft that already succeeded).
-  await ipc.appendDistillManifest(vaultPath, `llm-${Math.floor(Date.now() / 1000)}`, [], [rel])
+  await ipc.appendDistillManifest(vaultPath, manifestId, [], [rel])
     .catch((e) => {
       console.error(`[maps] manifest append failed for ${rel}:`, e);
     });

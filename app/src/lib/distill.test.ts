@@ -221,7 +221,12 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
 
     await runDistillGuarded("/vmap");
 
-    expect(draftMap).toHaveBeenCalledWith("/vmap", "attention", ["wiki/a.md", "wiki/b.md"]);
+    expect(draftMap).toHaveBeenCalledWith(
+      "/vmap",
+      "attention",
+      ["wiki/a.md", "wiki/b.md"],
+      expect.stringMatching(/^llm-\d+$/),
+    );
     expect(writeFile).toHaveBeenCalledWith(
       "/vmap/work/feedback/p.md",
       expect.stringContaining("status: done"),
@@ -328,6 +333,34 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
 
     expect(draftMap).toHaveBeenCalledTimes(3);
     expect(writeFile).toHaveBeenCalledTimes(3);
+  });
+
+  // Manifest fragmentation fix: every map one run drafts must land in ONE
+  // undo-manifest, or the Settings "undo last run" button (which only sees
+  // the newest manifest id) reverses just the last map.
+  it("passes one shared manifest id to every draftMap of a run", async () => {
+    const names = ["p1.md", "p2.md", "p3.md"];
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("anthropic-api"));
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue(CFG);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue(feedbackTree(names));
+    vi.spyOn(ipc, "readFile").mockImplementation((path: string) =>
+      Promise.resolve({
+        path,
+        raw: proposal("approved", path.split("/").pop()!.replace(".md", "")),
+        content: "",
+        frontmatter: {},
+      }),
+    );
+    vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    draftMap.mockResolvedValue("wiki/maps/x.md");
+
+    await runDistillGuarded("/vmap");
+
+    const ids = draftMap.mock.calls.map((c) => c[3]);
+    expect(ids).toHaveLength(3);
+    expect(ids[0]).toMatch(/^llm-\d+$/);
+    expect(new Set(ids).size).toBe(1);
   });
 
   // Settings audit item 2: llm_ingest_budget is a SHARED per-run cap over
