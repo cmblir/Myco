@@ -896,6 +896,35 @@ function packRampColor(c: readonly [number, number, number]): number {
   return r + g * 256 + b * 65536;
 }
 
+/** Bounding info for the galaxy-chart minimap: XY radius (frames the ortho
+ * frustum) and Z half-extent (frames camera near/far so a 3D layout's depth
+ * isn't clipped) around the node cloud's centroid. Exported for unit testing. */
+export function computeMinimapBounds(
+  pos: THREE.BufferAttribute,
+  n: number,
+): { cx: number; cy: number; cz: number; r: number; rz: number } {
+  let cx = 0;
+  let cy = 0;
+  let cz = 0;
+  for (let i = 0; i < n; i++) {
+    cx += pos.getX(i);
+    cy += pos.getY(i);
+    cz += pos.getZ(i);
+  }
+  cx /= n;
+  cy /= n;
+  cz /= n;
+  let r2 = 1;
+  let rz = 0;
+  for (let i = 0; i < n; i++) {
+    const dx = pos.getX(i) - cx;
+    const dy = pos.getY(i) - cy;
+    r2 = Math.max(r2, dx * dx + dy * dy);
+    rz = Math.max(rz, Math.abs(pos.getZ(i) - cz));
+  }
+  return { cx, cy, cz, r: Math.sqrt(r2), rz };
+}
+
 export class GraphScene {
   private container: HTMLDivElement;
   private graph: VaultGraph;
@@ -3154,7 +3183,7 @@ export class GraphScene {
   private minimapCam: THREE.OrthographicCamera | null = null;
   private minimapMarker: THREE.Group | null = null;
   private minimapMarkerLine: THREE.Line | null = null;
-  private minimapBounds = { cx: 0, cy: 0, cz: 0, r: 1 };
+  private minimapBounds = { cx: 0, cy: 0, cz: 0, r: 1, rz: 0 };
   private minimapBoundsTick = 0;
   private static readonly MINIMAP_MARGIN = 12;
 
@@ -3230,25 +3259,7 @@ export class GraphScene {
     if (this.minimapBoundsTick-- <= 0) {
       this.minimapBoundsTick = 20;
       const pos = this.nodeGeom.getAttribute("position") as THREE.BufferAttribute;
-      let cx = 0;
-      let cy = 0;
-      let cz = 0;
-      const n = this.nodeIds.length;
-      for (let i = 0; i < n; i++) {
-        cx += pos.getX(i);
-        cy += pos.getY(i);
-        cz += pos.getZ(i);
-      }
-      cx /= n;
-      cy /= n;
-      cz /= n;
-      let r2 = 1;
-      for (let i = 0; i < n; i++) {
-        const dx = pos.getX(i) - cx;
-        const dy = pos.getY(i) - cy;
-        r2 = Math.max(r2, dx * dx + dy * dy);
-      }
-      this.minimapBounds = { cx, cy, cz, r: Math.sqrt(r2) };
+      this.minimapBounds = computeMinimapBounds(pos, this.nodeIds.length);
     }
     const b = this.minimapBounds;
     const half = b.r * 1.15;
@@ -3257,9 +3268,14 @@ export class GraphScene {
     cam.right = half;
     cam.top = half;
     cam.bottom = -half;
-    cam.position.set(b.cx, b.cy, b.cz + b.r * 3 + 100);
+    // Camera sits b.r*3+100 beyond the farthest-toward-camera node (rz=0 for
+    // flat layouts reduces this to the original 2D distance exactly), so the
+    // near-plane clearance stays constant regardless of Z spread and no node
+    // clips or balloons past the pixel-sprite LOD threshold. far grows with
+    // rz so the farthest-away node in Z stays in frustum too.
+    cam.position.set(b.cx, b.cy, b.cz + b.r * 3 + b.rz + 100);
     cam.near = 0.1;
-    cam.far = b.r * 8 + 1000;
+    cam.far = b.r * 8 + b.rz * 2 + 1000;
     cam.lookAt(b.cx, b.cy, b.cz);
     cam.updateProjectionMatrix();
     // Camera marker: where the pilot is, and which way they face.
