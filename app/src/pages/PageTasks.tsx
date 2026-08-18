@@ -199,7 +199,19 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
         {t.tasks_notify ?? "Notify me about due tasks (morning digest + timed reminders)"}
       </label>
 
-      <div className="card" style={{ padding: 12, marginTop: 8, display: "flex", gap: 8, alignItems: "center" }}>
+      <div
+        className="card"
+        style={{
+          padding: 12,
+          marginTop: 8,
+          // The list/board/calendar below renders flush against this card
+          // otherwise — give the two blocks visible breathing room.
+          marginBottom: 16,
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
         <input
           className="input"
           style={{ border: "none", padding: "4px 0", boxShadow: "none", flex: 1 }}
