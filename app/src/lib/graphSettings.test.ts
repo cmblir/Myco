@@ -1,9 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   DEFAULT_GRAPH_SETTINGS,
   LAYOUT_RECOMMENDED,
+  loadGraphSettings,
+  matchMyceliumBg,
+  MYCELIUM_BG_PRESETS,
   myceliumBranchPct,
   myceliumMaxNodes,
+  saveGraphSettings,
   saveLook,
   VIBE_PRESETS,
 } from "./graphSettings";
@@ -138,5 +142,103 @@ describe("LAYOUT_RECOMMENDED", () => {
       expect(rec.nodeColor, `${layout}: a categorical map is unreadable mono`).toBe("community");
       expect(rec.nodeColorDepth ?? 0, `${layout}: flat maps need deepened dots`).toBeGreaterThanOrEqual(1.3);
     }
+  });
+});
+
+// Background presets are background+ink TRIPLES: strand colour is community
+// hue blended toward myceliumHyphaColor (staticLayouts' HYPHA_MIX), so a
+// light substrate needs dark inks or the mat vanishes. Luminance-gap guard
+// below is the testable form of that rule.
+describe("mycelium background presets", () => {
+  // Rec. 709 luma on gamma values — crude but monotone, all this needs.
+  const luma = (hex: string): number => {
+    const n = parseInt(hex.slice(1), 16);
+    return (
+      (0.2126 * ((n >> 16) & 0xff) + 0.7152 * ((n >> 8) & 0xff) + 0.0722 * (n & 0xff)) / 255
+    );
+  };
+
+  it("the loam preset IS the default triple (default preset stays default)", () => {
+    expect(MYCELIUM_BG_PRESETS.loam).toEqual({
+      myceliumBackground: DEFAULT_GRAPH_SETTINGS.myceliumBackground,
+      myceliumHyphaColor: DEFAULT_GRAPH_SETTINGS.myceliumHyphaColor,
+      myceliumNodeColor: DEFAULT_GRAPH_SETTINGS.myceliumNodeColor,
+    });
+  });
+
+  it("every preset keeps both inks legible against its own background", () => {
+    for (const [name, p] of Object.entries(MYCELIUM_BG_PRESETS)) {
+      const bg = luma(p.myceliumBackground);
+      for (const ink of [p.myceliumHyphaColor, p.myceliumNodeColor]) {
+        expect(
+          Math.abs(luma(ink) - bg),
+          `${name}: ink ${ink} too close to background ${p.myceliumBackground}`,
+        ).toBeGreaterThan(0.3);
+      }
+    }
+  });
+
+  it("matchMyceliumBg finds each preset by background (case-insensitive) and null for custom", () => {
+    for (const key of Object.keys(MYCELIUM_BG_PRESETS) as (keyof typeof MYCELIUM_BG_PRESETS)[]) {
+      const s = {
+        ...DEFAULT_GRAPH_SETTINGS,
+        myceliumBackground: MYCELIUM_BG_PRESETS[key].myceliumBackground.toUpperCase(),
+      };
+      expect(matchMyceliumBg(s)).toBe(key);
+    }
+    expect(
+      matchMyceliumBg({ ...DEFAULT_GRAPH_SETTINGS, myceliumBackground: "#123456" }),
+    ).toBeNull();
+  });
+});
+
+// Persistence round-trip — node env has no localStorage, so stand in a
+// minimal one (same pattern as budget.test.ts).
+describe("graph settings persistence", () => {
+  class MemoryStorage {
+    private store = new Map<string, string>();
+    getItem(key: string): string | null {
+      return this.store.has(key) ? (this.store.get(key) as string) : null;
+    }
+    setItem(key: string, value: string): void {
+      this.store.set(key, value);
+    }
+    removeItem(key: string): void {
+      this.store.delete(key);
+    }
+    clear(): void {
+      this.store.clear();
+    }
+  }
+
+  beforeEach(() => {
+    (globalThis as { localStorage: unknown }).localStorage = new MemoryStorage();
+  });
+  afterEach(() => {
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+
+  it("round-trips myceliumBackground with the other mycelium colours", () => {
+    saveGraphSettings({
+      ...DEFAULT_GRAPH_SETTINGS,
+      myceliumBackground: "#123456",
+      myceliumHyphaColor: "#654321",
+    });
+    const loaded = loadGraphSettings();
+    expect(loaded.myceliumBackground).toBe("#123456");
+    expect(loaded.myceliumHyphaColor).toBe("#654321");
+  });
+
+  it("back-fills myceliumBackground on a persisted blob predating the field", () => {
+    saveGraphSettings({ ...DEFAULT_GRAPH_SETTINGS });
+    // Simulate the pre-field blob: strip the new field from what was stored.
+    const raw = localStorage.getItem("myco.graph.settings.v26");
+    expect(raw).toBeTruthy();
+    const blob = JSON.parse(raw as string) as Record<string, unknown>;
+    delete blob.myceliumBackground;
+    localStorage.setItem("myco.graph.settings.v26", JSON.stringify(blob));
+    expect(loadGraphSettings().myceliumBackground).toBe(
+      DEFAULT_GRAPH_SETTINGS.myceliumBackground,
+    );
   });
 });

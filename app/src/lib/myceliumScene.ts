@@ -527,6 +527,11 @@ export class MyceliumScene {
     }
   }
 
+  /** "Background" picker — live scene.background swap, no rebuild. */
+  setGround(color: string): void {
+    this.scene.background = new THREE.Color(color);
+  }
+
   /** "Text fade threshold" slider — see reportLabelFrame's gate. */
   setLabelFadeThreshold(v: number): void {
     this.labelFadeThreshold = v;

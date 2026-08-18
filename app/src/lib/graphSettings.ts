@@ -61,6 +61,11 @@ export interface GraphSettings {
   // colour of any stretch with no nearby coloured note (community -1, or a
   // vault with no community structure at all).
   myceliumHyphaColor: string; // hex
+  // Mycelium view only: the substrate (scene background). Curated presets live
+  // in MYCELIUM_BG_PRESETS; a preset sets this TOGETHER with the two ink
+  // colours above because legibility is a background-and-ink pair — the
+  // default cream hyphae vanish on a light ground (see the paper preset).
+  myceliumBackground: string; // hex
   // Multiverse mode: instead of this one vault, show EVERY registered project
   // as its own glowing universe-bubble in one shared cosmos. Fly into a bubble
   // to switch the active vault (which turns this back off, landing you in that
@@ -181,6 +186,7 @@ export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
   // the Part 1 commit message for the luminance/contrast numbers.
   myceliumNodeColor: "#e1f1da",
   myceliumHyphaColor: "#d8d0bd", // the old flat cream, unchanged
+  myceliumBackground: "#0b0a08", // myceliumScene's GROUND loam, unchanged
   multiverse: false,
   skyStyle: "stars",
   arrows: false,
@@ -642,6 +648,67 @@ export function saveLook(name: string, s: GraphSettings): SavedLook[] {
   );
   looks.unshift({ name: trimmed, settings });
   return writeSavedLooks(looks.slice(0, MAX_SAVED_LOOKS));
+}
+
+// ── Mycelium background presets ──────────────────────────────────────────
+// Each preset is a FULL background+ink triple, not a background alone: strand
+// colour is community hue blended 30% toward myceliumHyphaColor (see
+// buildMyceliumMat's HYPHA_MIX), and those hues + the cream/mint defaults are
+// tuned for a dark substrate. On a light ground they wash out, so the paper
+// preset swaps the inks dark; the dark presets keep the default inks. The
+// custom <input type="color"> sets myceliumBackground alone (inks stay
+// independently settable, as before).
+export type MyceliumBgKey = "loam" | "void" | "soil" | "paper";
+export const MYCELIUM_BG_PRESETS: Record<
+  MyceliumBgKey,
+  Pick<
+    GraphSettings,
+    "myceliumBackground" | "myceliumHyphaColor" | "myceliumNodeColor"
+  >
+> = {
+  // The default: myceliumScene's original warm near-black loam.
+  loam: {
+    myceliumBackground: DEFAULT_GRAPH_SETTINGS.myceliumBackground,
+    myceliumHyphaColor: DEFAULT_GRAPH_SETTINGS.myceliumHyphaColor,
+    myceliumNodeColor: DEFAULT_GRAPH_SETTINGS.myceliumNodeColor,
+  },
+  // Near-black, a touch cool — maximum contrast for the light inks.
+  void: {
+    myceliumBackground: "#050506",
+    myceliumHyphaColor: DEFAULT_GRAPH_SETTINGS.myceliumHyphaColor,
+    myceliumNodeColor: DEFAULT_GRAPH_SETTINGS.myceliumNodeColor,
+  },
+  // Warm soil brown — still dark enough for the default light inks.
+  soil: {
+    myceliumBackground: "#241609",
+    myceliumHyphaColor: DEFAULT_GRAPH_SETTINGS.myceliumHyphaColor,
+    myceliumNodeColor: DEFAULT_GRAPH_SETTINGS.myceliumNodeColor,
+  },
+  // Light warm paper, for light-theme users. The default cream hyphae base is
+  // near the paper's own luminance, so this preset swaps the inks: a dark
+  // humus brown pulls every strand's community hue darker, and the septa go
+  // deep moss green (dark AND hue-distinct from the brown strands, same
+  // "never share a hue with the strand" rule as the dark default).
+  paper: {
+    myceliumBackground: "#efe8db",
+    myceliumHyphaColor: "#4a3a28",
+    myceliumNodeColor: "#245a38",
+  },
+};
+
+/** Which background preset the current settings sit on (background match
+ *  only — the inks stay user-adjustable after picking a preset), or null for
+ *  a custom colour. Drives the active state on the preset chips. */
+export function matchMyceliumBg(s: GraphSettings): MyceliumBgKey | null {
+  for (const key of Object.keys(MYCELIUM_BG_PRESETS) as MyceliumBgKey[]) {
+    if (
+      s.myceliumBackground.toLowerCase() ===
+      MYCELIUM_BG_PRESETS[key].myceliumBackground.toLowerCase()
+    ) {
+      return key;
+    }
+  }
+  return null;
 }
 
 // ── Mycelium "force" mapping ─────────────────────────────────────────────

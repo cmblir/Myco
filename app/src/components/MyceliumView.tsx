@@ -49,6 +49,7 @@ export default function MyceliumView({
   flat,
   nodeColor,
   hyphaColor,
+  background,
   nodeSizeScale,
   linkThicknessScale,
   textFadeThreshold,
@@ -69,6 +70,9 @@ export default function MyceliumView({
   nodeColor: string;
   /** Flat hyphae colour (graphSettings.ts's myceliumHyphaColor). */
   hyphaColor: string;
+  /** Substrate colour (graphSettings.ts's myceliumBackground) — live scene
+   *  background update, no rebuild. */
+  background: string;
   /** "Node size" slider — septa point-size multiplier, live (no rebuild). */
   nodeSizeScale: number;
   /** "Link thickness" slider — hypha linewidth multiplier, live (no rebuild). */
@@ -261,6 +265,7 @@ export default function MyceliumView({
     // scene from scratch, so without this a rebuild would silently reset
     // "Node size"/"Link thickness"/"Text fade"/"Ambient motion" to defaults
     // until the user nudged the slider again.
+    scene.setGround(background);
     scene.setSizeScale(nodeSizeScale);
     scene.setWidthScale(linkThicknessScale);
     scene.setLabelFadeThreshold(textFadeThreshold);
@@ -336,8 +341,9 @@ export default function MyceliumView({
       sceneRef.current = null;
       scene.dispose();
     };
-    // nodeSizeScale/linkThicknessScale/textFadeThreshold/ambientMotion are
-    // deliberately absent: they're live uniform/OrbitControls updates (see
+    // background/nodeSizeScale/linkThicknessScale/textFadeThreshold/
+    // ambientMotion are deliberately absent: they're live uniform/scene/
+    // OrbitControls updates (see
     // the effects below), not geometry, so they must not trigger a rebuild.
     // maxNodes/branchPct DO belong here — they reshape the grown mat, and the
     // caller (PageGraph) debounces them before they ever reach this prop.
@@ -345,6 +351,9 @@ export default function MyceliumView({
   }, [graph, vaultPath, flat, nodeColor, hyphaColor, maxNodes, branchPct, setRoute, fitRef, startGrowthRef]);
 
   // Live updates for the knobs the build effect intentionally excludes above.
+  useEffect(() => {
+    sceneRef.current?.setGround(background);
+  }, [background]);
   useEffect(() => {
     sceneRef.current?.setSizeScale(nodeSizeScale);
   }, [nodeSizeScale]);

@@ -232,6 +232,12 @@ export interface Strings {
   gr_mycelium_2d?: string;
   gr_myc_node_color?: string;
   gr_myc_hypha_color?: string;
+  gr_myc_bg?: string;
+  gr_myc_bg_loam?: string;
+  gr_myc_bg_void?: string;
+  gr_myc_bg_soil?: string;
+  gr_myc_bg_paper?: string;
+  gr_myc_bg_custom?: string;
   gr_vibes?: string;
   gr_vibe_living?: string;
   gr_vibe_sigma?: string;
@@ -1124,6 +1130,12 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_mycelium_2d: "2D",
     gr_myc_node_color: "Node colour",
     gr_myc_hypha_color: "Hyphae colour",
+    gr_myc_bg: "Background",
+    gr_myc_bg_loam: "Loam",
+    gr_myc_bg_void: "Void",
+    gr_myc_bg_soil: "Soil",
+    gr_myc_bg_paper: "Paper",
+    gr_myc_bg_custom: "Custom background",
     gr_vibes: "One-tap looks",
     gr_vibe_living: "Living galaxy",
     gr_vibe_sigma: "Sigma board",
@@ -2035,6 +2047,12 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_mycelium_2d: "2D",
     gr_myc_node_color: "노드 색상",
     gr_myc_hypha_color: "균사 색상",
+    gr_myc_bg: "배경",
+    gr_myc_bg_loam: "부엽토",
+    gr_myc_bg_void: "암흑",
+    gr_myc_bg_soil: "황토",
+    gr_myc_bg_paper: "종이",
+    gr_myc_bg_custom: "사용자 지정 배경",
     gr_vibes: "원탭 룩",
     gr_vibe_living: "살아있는 은하",
     gr_vibe_sigma: "시그마 보드",
@@ -2884,6 +2902,12 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_mycelium_2d: "2D",
     gr_myc_node_color: "ノードの色",
     gr_myc_hypha_color: "菌糸の色",
+    gr_myc_bg: "背景",
+    gr_myc_bg_loam: "腐葉土",
+    gr_myc_bg_void: "漆黒",
+    gr_myc_bg_soil: "黄土",
+    gr_myc_bg_paper: "紙",
+    gr_myc_bg_custom: "カスタム背景",
     gr_vibes: "ワンタップルック",
     gr_vibe_living: "生きた銀河",
     gr_vibe_sigma: "シグマボード",

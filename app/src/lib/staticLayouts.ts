@@ -1262,8 +1262,16 @@ export function buildMyceliumMat(g: VaultGraph, o: MyceliumOpts): MyceliumResult
   // their two colours instead of a second, invented palette. Blended toward
   // a flat base (HYPHA_MIX) so the mat still reads as one tinted organism
   // (and any community-less vault falls back to the old flat cream).
-  const HYPHA_MIX = 0.3;
   const base = hexToRgb01(o.hyphaColor ?? "#d8d0bd") ?? { r: 0.847, g: 0.816, b: 0.741 };
+  // Blend strength toward the flat base. 0.3 keeps the community-hue wash on
+  // the default light inks; a DARK ink (the paper background preset's humus
+  // brown — see graphSettings' MYCELIUM_BG_PRESETS) means the strands must
+  // land darker than the pastel community hues ever reach on their own, or
+  // the mat washes out on a light substrate — so pull harder. Keyed on the
+  // ink, not the background, so the background stays a live scene swap that
+  // never rebuilds the mat.
+  const HYPHA_MIX =
+    0.2126 * base.r + 0.7152 * base.g + 0.0722 * base.b < 0.5 ? 0.55 : 0.3;
   const matColor = new Float32Array(mat.length * 3);
   {
     const seen = new Uint8Array(mat.length);

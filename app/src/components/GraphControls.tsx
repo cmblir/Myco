@@ -9,13 +9,16 @@ import type { JSX } from "react";
 import { useState } from "react";
 import {
   LAYOUT_PRESETS,
+  MYCELIUM_BG_PRESETS,
   deleteLook,
   loadSavedLooks,
+  matchMyceliumBg,
   matchPreset,
   saveLook,
   VIBE_PRESETS,
   type GraphSettings,
   type LayoutPresetKey,
+  type MyceliumBgKey,
   type SavedLook,
   type VibeKey,
 } from "../lib/graphSettings";
@@ -417,6 +420,26 @@ export default function GraphControls({
               label={t.gr_myc_hypha_color ?? "Hyphae colour"}
               value={settings.myceliumHyphaColor}
               onChange={(v) => onChange({ myceliumHyphaColor: v })}
+            />
+            {/* A preset applies the full background+ink triple (the paper
+                preset MUST swap the inks dark or the cream strands vanish —
+                see MYCELIUM_BG_PRESETS); the custom picker moves the
+                background alone. */}
+            <ChipRow
+              label={t.gr_myc_bg ?? "Background"}
+              value={matchMyceliumBg(settings) ?? ""}
+              onPick={(v: MyceliumBgKey) => onChange({ ...MYCELIUM_BG_PRESETS[v] })}
+              options={[
+                ["loam", t.gr_myc_bg_loam ?? "Loam"],
+                ["void", t.gr_myc_bg_void ?? "Void"],
+                ["soil", t.gr_myc_bg_soil ?? "Soil"],
+                ["paper", t.gr_myc_bg_paper ?? "Paper"],
+              ]}
+            />
+            <ColorField
+              label={t.gr_myc_bg_custom ?? "Custom background"}
+              value={settings.myceliumBackground}
+              onChange={(v) => onChange({ myceliumBackground: v })}
             />
           </>
         ) : null}

@@ -1857,6 +1857,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 flat={settings.myceliumDim === "2d"}
                 nodeColor={settings.myceliumNodeColor}
                 hyphaColor={settings.myceliumHyphaColor}
+                background={settings.myceliumBackground}
                 nodeSizeScale={settings.nodeSize}
                 linkThicknessScale={settings.linkThickness}
                 textFadeThreshold={settings.textFadeThreshold}
