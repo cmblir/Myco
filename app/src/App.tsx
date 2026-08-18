@@ -213,6 +213,22 @@ export default function App(): JSX.Element {
   const splitRoute = useUIStore((s) => s.splitRoute);
   const setSplitRoute = useUIStore((s) => s.setSplitRoute);
   const splitRatio = useUIStore((s) => s.splitRatio);
+  // The drag/keyboard handlers clamp as they write, but a persisted ratio can
+  // predate a smaller window, and an OS resize while a split is open never
+  // goes through those handlers — so the RENDERED ratio re-clamps against the
+  // live container width. The store keeps the user's intent untouched; only
+  // the display bends, and it springs back when the window grows again.
+  const splitRef = useRef<HTMLDivElement | null>(null);
+  const [splitWidth, setSplitWidth] = useState(0);
+  useEffect(() => {
+    const el = splitRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      setSplitWidth(entries[0]?.contentRect.width ?? 0);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [splitRoute]);
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const lang = useUIStore((s) => s.lang);
   const theme = useUIStore((s) => s.theme);
@@ -570,15 +586,19 @@ export default function App(): JSX.Element {
 
   // flex-grow carries the drag ratio; flex-basis 0 stays in the stylesheet so
   // the two grow factors alone decide the pane sizes in either orientation.
+  // Below the 820px breakpoint the split stacks vertically and the width
+  // clamp no longer applies (matches SplitDivider's orientation flip).
+  const shownRatio =
+    splitWidth > 820 ? clampSplitRatio(splitRatio, splitWidth) : splitRatio;
   const body: JSX.Element = splitRoute ? (
-    <div className="workspace-split">
-      <section className="workspace-pane" style={{ flexGrow: splitRatio }}>
+    <div className="workspace-split" ref={splitRef}>
+      <section className="workspace-pane" style={{ flexGrow: shownRatio }}>
         {primaryContent}
       </section>
       <SplitDivider t={t} />
       <section
         className="workspace-pane workspace-pane--secondary"
-        style={{ flexGrow: 1 - splitRatio }}
+        style={{ flexGrow: 1 - shownRatio }}
       >
         <div className="pane-bar">
           <select
