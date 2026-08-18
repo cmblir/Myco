@@ -127,7 +127,13 @@ export default function DialogHost(): JSX.Element | null {
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => {
               if (isComposingKey(e)) return;
-              if (e.key === "Enter") submit();
+              if (e.key === "Enter") {
+                // preventDefault, or the keydown's default action ("click the
+                // focused element") lands on the opener button AFTER close()
+                // restores focus to it — instantly reopening the dialog.
+                e.preventDefault();
+                submit();
+              }
             }}
           />
         ) : null}

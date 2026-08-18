@@ -12,12 +12,11 @@ import { ipc } from "../lib/ipc";
 import { BUILTIN_EMBED_MODEL } from "../lib/providers";
 import type { FileNode, SearchHit, VecHit } from "../lib/ipc";
 import { isComposingKey } from "../lib/ime";
+import { promptNewNote } from "../lib/newNote";
 
-interface CmdEntry {
-  type: "nav" | "page";
-  label: string;
-  to: RouteId;
-}
+type CmdEntry =
+  | { type: "nav" | "page"; label: string; to: RouteId }
+  | { type: "action"; label: string; run: () => void };
 
 export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   const open = useUIStore((s) => s.cmdOpen);
@@ -81,6 +80,15 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   }, [q]);
 
   const all: CmdEntry[] = useMemo(() => {
+    // Actions first: creating a note is the one thing the palette can DO
+    // rather than merely navigate to.
+    const actions: CmdEntry[] = [
+      {
+        type: "action",
+        label: t.sb_new_note ?? "New note",
+        run: () => void promptNewNote(t),
+      },
+    ];
     const navs: CmdEntry[] = [
       { type: "nav", label: t.nav_overview, to: "overview" },
       { type: "nav", label: t.nav_ingest, to: "ingest" },
@@ -100,7 +108,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
       label: n.name.replace(/\.md$/i, ""),
       to: `page:${n.path}` as RouteId,
     }));
-    return [...navs, ...pages];
+    return [...actions, ...navs, ...pages];
   }, [t, fileTree]);
 
   if (!open) return null;
@@ -116,8 +124,9 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   const active = total > 0 ? Math.min(selected, total - 1) : 0;
 
   function go(entry: CmdEntry): void {
-    setRoute(entry.to);
     setCmdOpen(false);
+    if (entry.type === "action") entry.run();
+    else setRoute(entry.to);
   }
   function goPath(path: string): void {
     setRoute(`page:${path}` as RouteId);
@@ -222,7 +231,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
           ) : null}
           {filtered.map((r, i) => (
             <button
-              key={`${r.type}-${r.to}-${i}`}
+              key={`${r.type}-${r.label}-${i}`}
               id={rowId(i)}
               role="option"
               aria-selected={total > 0 && active === i}
@@ -233,9 +242,11 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
               <Icon name={iconFor(r)} size={13} />
               <span>{r.label}</span>
               <span className="cr-tag">
-                {r.type === "nav"
-                  ? (t.cb_tag_page ?? "page")
-                  : (t.cb_tag_file ?? "file")}
+                {r.type === "action"
+                  ? (t.cb_tag_action ?? "action")
+                  : r.type === "nav"
+                    ? (t.cb_tag_page ?? "page")
+                    : (t.cb_tag_file ?? "file")}
               </span>
             </button>
           ))}
@@ -294,6 +305,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
 }
 
 function iconFor(entry: CmdEntry): IconName {
+  if (entry.type === "action") return "plus";
   if (entry.type === "page") return "page";
   if (entry.to === "overview") return "home";
   if (entry.to === "graph") return "graph";

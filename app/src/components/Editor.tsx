@@ -80,6 +80,10 @@ export default function Editor({
     });
 
     const view = new EditorView({ state, parent: containerRef.current });
+    // A brand-new note routes straight here and should land with the cursor
+    // ready. Focus only when focus is idle on <body> (e.g. after the naming
+    // dialog closed), so mounting never steals focus from another input.
+    if (document.activeElement === document.body) view.focus();
 
     return () => {
       view.destroy();

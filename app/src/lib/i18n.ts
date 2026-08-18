@@ -819,13 +819,15 @@ export interface Strings {
   sb_new_folder?: string;
   sb_rename?: string;
   sb_today_note?: string;
-  sb_new_note_root?: string;
+  sb_new_note_msg?: string;
+  sb_new_note_ph?: string;
   sb_delete_folder_q?: string;
   sb_delete_file_q?: string;
   // Command bar.
   cb_no_results?: string;
   cb_tag_page?: string;
   cb_tag_file?: string;
+  cb_tag_action?: string;
   cb_in_contents?: string;
   cb_semantic?: string;
   // Topbar.
@@ -1732,12 +1734,14 @@ export const STRINGS: Record<Lang, Strings> = {
     sb_new_folder: "New folder",
     sb_rename: "Rename…",
     sb_today_note: "Today's note",
-    sb_new_note_root: "New note in vault root",
+    sb_new_note_msg: "Note title (.md is added automatically)",
+    sb_new_note_ph: "untitled",
     sb_delete_folder_q: "Delete folder?",
     sb_delete_file_q: "Delete file?",
     cb_no_results: "No results",
     cb_tag_page: "page",
     cb_tag_file: "file",
+    cb_tag_action: "action",
     cb_in_contents: "In page contents",
     cb_semantic: "Related (semantic)",
     tb_lint: "Lint",
@@ -2644,12 +2648,14 @@ export const STRINGS: Record<Lang, Strings> = {
     sb_new_folder: "새 폴더",
     sb_rename: "이름 바꾸기…",
     sb_today_note: "오늘의 노트",
-    sb_new_note_root: "vault 루트에 새 노트",
+    sb_new_note_msg: "노트 제목 (.md는 자동으로 붙습니다)",
+    sb_new_note_ph: "제목 없음",
     sb_delete_folder_q: "폴더를 삭제할까요?",
     sb_delete_file_q: "파일을 삭제할까요?",
     cb_no_results: "결과 없음",
     cb_tag_page: "페이지",
     cb_tag_file: "파일",
+    cb_tag_action: "동작",
     cb_in_contents: "페이지 본문에서",
     cb_semantic: "관련 (의미)",
     tb_lint: "린트",
@@ -3436,12 +3442,14 @@ export const STRINGS: Record<Lang, Strings> = {
     sb_new_folder: "新規フォルダ",
     sb_rename: "名前を変更…",
     sb_today_note: "今日のノート",
-    sb_new_note_root: "vault ルートに新規ノート",
+    sb_new_note_msg: "ノートのタイトル（.md は自動で付きます）",
+    sb_new_note_ph: "無題",
     sb_delete_folder_q: "フォルダを削除しますか?",
     sb_delete_file_q: "ファイルを削除しますか?",
     cb_no_results: "結果なし",
     cb_tag_page: "ページ",
     cb_tag_file: "ファイル",
+    cb_tag_action: "操作",
     cb_in_contents: "ページ本文内",
     cb_semantic: "関連（意味）",
     tb_lint: "リント",

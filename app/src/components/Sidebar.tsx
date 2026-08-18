@@ -13,6 +13,7 @@ import { useDistillStore } from "../stores/distillStore";
 import { ipc } from "../lib/ipc";
 import type { FileNode } from "../lib/ipc";
 import { promptText, confirmAction } from "../stores/dialogStore";
+import { promptNewNote } from "../lib/newNote";
 
 interface ContextMenuState {
   x: number;
@@ -164,7 +165,7 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
         <div className="nav-group">
           <div className="nav-group-label">
             <span>{t.nav_pages}</span>
-            <NewPageButton parentDir={currentVault?.path ?? ""} t={t} />
+            <NewPageButton disabled={!currentVault} t={t} />
           </div>
           {fileTree.length === 0 ? (
             <div className="muted" style={{ padding: "8px", fontSize: 12.5 }}>
@@ -341,29 +342,20 @@ function DirectoryRow({
 }
 
 function NewPageButton({
-  parentDir,
+  disabled,
   t,
 }: {
-  parentDir: string;
+  disabled: boolean;
   t: Strings;
 }): JSX.Element {
-  const createFile = useVaultStore((s) => s.createFile);
   return (
     <button
       className="ngl-add"
-      title={t.sb_new_note_root ?? "New note in vault root"}
-      disabled={!parentDir}
-      onClick={async (e) => {
+      title={t.sb_new_note ?? "New note"}
+      disabled={disabled}
+      onClick={(e) => {
         e.stopPropagation();
-        if (!parentDir) return;
-        const name = await promptText({
-          title: "New note",
-          message: "File name (.md will be added automatically)",
-          placeholder: "untitled",
-        });
-        if (!name) return;
-        const finalName = name.endsWith(".md") ? name : `${name}.md`;
-        await createFile(parentDir, finalName);
+        void promptNewNote(t);
       }}
     >
       <Icon name="plus" size={12} />
@@ -380,7 +372,6 @@ function ContextMenu({
   onClose: () => void;
   t: Strings;
 }): JSX.Element {
-  const createFile = useVaultStore((s) => s.createFile);
   const createFolder = useVaultStore((s) => s.createFolder);
   const deletePath = useVaultStore((s) => s.deletePath);
   const renamePath = useVaultStore((s) => s.renamePath);
@@ -394,14 +385,7 @@ function ContextMenu({
 
   async function handleNewFile(): Promise<void> {
     onClose();
-    const name = await promptText({
-      title: "New note",
-      message: "File name (.md will be added automatically)",
-      defaultValue: "untitled.md",
-    });
-    if (!name) return;
-    const finalName = name.endsWith(".md") ? name : `${name}.md`;
-    await createFile(parentDir(), finalName);
+    await promptNewNote(t, parentDir());
   }
 
   async function handleNewFolder(): Promise<void> {

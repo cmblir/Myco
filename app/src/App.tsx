@@ -32,6 +32,7 @@ import PageStudy from "./pages/PageStudy";
 import PageFeedback from "./pages/PageFeedback";
 import PageSchedules from "./pages/PageSchedules";
 import { STRINGS } from "./lib/i18n";
+import { promptNewNote } from "./lib/newNote";
 import type { Strings } from "./lib/i18n";
 import { useUIStore } from "./stores/uiStore";
 import type { RouteId } from "./stores/uiStore";
@@ -455,10 +456,15 @@ export default function App(): JSX.Element {
         e.preventDefault();
         toggleSidebar();
       }
+      // New note (⌘N) — same flow as the sidebar "+" and the palette entry.
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "n") {
+        e.preventDefault();
+        void promptNewNote(t);
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleCmd, toggleSidebar]);
+  }, [toggleCmd, toggleSidebar, t]);
 
   // Responsive sidebar: below 768px the sidebar is an off-canvas overlay, so it
   // must default to collapsed. Collapse when starting narrow (but don't force-

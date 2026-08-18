@@ -1341,6 +1341,9 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "open_external":
       return Promise.resolve(null);
     case "create_file":
+      // Echo the real path back so the create-note flow routes to the note the
+      // user actually named (read_file serves a sample body for unknown paths).
+      return Promise.resolve(`${String(args.parent)}/${String(args.name)}`);
     case "create_folder":
     case "rename_path":
       return Promise.resolve(`${VAULT}/wiki/new.md`);
