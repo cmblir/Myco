@@ -16,6 +16,7 @@ import GraphGaps from "../components/GraphGaps";
 import GraphHelp from "../components/GraphHelp";
 import GraphLegend from "../components/GraphLegend";
 import {
+  coupleMyceliumPatch,
   DEFAULT_GRAPH_SETTINGS,
   loadGraphSettings,
   myceliumBranchPct,
@@ -2034,7 +2035,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 return;
               }
               if (patch.multiverse) setEnteredUniverse(false);
-              setSettings((prev) => ({ ...prev, ...patch }));
+              // Keep skin/layout in lockstep across the mycelium renderer
+              // boundary — see coupleMyceliumPatch for the rule.
+              setSettings((prev) => ({ ...prev, ...coupleMyceliumPatch(prev, patch) }));
             }}
             onReset={() => {
               setEnteredUniverse(false);

@@ -711,6 +711,41 @@ export function matchMyceliumBg(s: GraphSettings): MyceliumBgKey | null {
   return null;
 }
 
+// ── Mycelium skin/layout coupling ────────────────────────────────────────
+// The mycelium view is a SEPARATE renderer mounted when skin === "mycelium"
+// (see PageGraph), while the layout chips only set `layout` — so picking
+// "천구 별자리" under the mycelium skin changed the drawer's selection but the
+// canvas kept rendering hyphae (and picking the mycelium layout under another
+// skin baked nothing at all). This keeps the pair in lockstep for SINGLE-key
+// patches so the drawer never shows a layout the canvas isn't rendering.
+// Patches that set both keys (vibes, saved looks) pass through untouched.
+export function coupleMyceliumPatch(
+  prev: Pick<GraphSettings, "skin" | "layout">,
+  patch: Partial<GraphSettings>,
+): Partial<GraphSettings> {
+  const hasSkin = patch.skin !== undefined;
+  const hasLayout = patch.layout !== undefined;
+  if (hasSkin === hasLayout) return patch; // both set (vibe/look) or neither
+  if (hasLayout) {
+    if (patch.layout === "mycelium" && prev.skin !== "mycelium") {
+      return { ...patch, skin: "mycelium" };
+    }
+    if (patch.layout !== "mycelium" && prev.skin === "mycelium") {
+      // Leave the mycelium renderer; "auto" is the default, theme-following skin.
+      return { ...patch, skin: DEFAULT_GRAPH_SETTINGS.skin };
+    }
+  } else {
+    if (patch.skin === "mycelium" && prev.layout !== "mycelium") {
+      return { ...patch, layout: "mycelium" };
+    }
+    if (patch.skin !== "mycelium" && prev.layout === "mycelium") {
+      // The mycelium layout is a no-op outside its renderer — land on the default.
+      return { ...patch, layout: DEFAULT_GRAPH_SETTINGS.layout };
+    }
+  }
+  return patch;
+}
+
 // ── Mycelium "force" mapping ─────────────────────────────────────────────
 // The mat is GROWN (space colonization), not force-simulated, so the shared
 // Forces sliders (which drive a d3 sim on every other layout) don't apply

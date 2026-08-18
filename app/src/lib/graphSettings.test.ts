@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  coupleMyceliumPatch,
   DEFAULT_GRAPH_SETTINGS,
   LAYOUT_RECOMMENDED,
   loadGraphSettings,
@@ -142,6 +143,50 @@ describe("LAYOUT_RECOMMENDED", () => {
       expect(rec.nodeColor, `${layout}: a categorical map is unreadable mono`).toBe("community");
       expect(rec.nodeColorDepth ?? 0, `${layout}: flat maps need deepened dots`).toBeGreaterThanOrEqual(1.3);
     }
+  });
+});
+
+// The mycelium view is a separate renderer mounted when skin === "mycelium",
+// while the layout chips only set `layout` — coupleMyceliumPatch keeps the
+// pair in lockstep so the drawer's selected state always matches the canvas
+// (the "천구 별자리 selected, hyphae rendered" bug).
+describe("coupleMyceliumPatch", () => {
+  const at = (skin: (typeof DEFAULT_GRAPH_SETTINGS)["skin"], layout: (typeof DEFAULT_GRAPH_SETTINGS)["layout"]) => ({ skin, layout });
+
+  it("leaving via a non-mycelium layout also flips the skin off mycelium", () => {
+    expect(coupleMyceliumPatch(at("mycelium", "mycelium"), { layout: "celestial" }))
+      .toEqual({ layout: "celestial", skin: DEFAULT_GRAPH_SETTINGS.skin });
+  });
+
+  it("picking the mycelium layout under another skin enters the mycelium view", () => {
+    expect(coupleMyceliumPatch(at("auto", "galaxy"), { layout: "mycelium" }))
+      .toEqual({ layout: "mycelium", skin: "mycelium" });
+  });
+
+  it("picking the mycelium skin under another layout brings the layout along", () => {
+    expect(coupleMyceliumPatch(at("white", "celestial"), { skin: "mycelium" }))
+      .toEqual({ skin: "mycelium", layout: "mycelium" });
+  });
+
+  it("leaving via a non-mycelium skin lands the layout on the default", () => {
+    expect(coupleMyceliumPatch(at("mycelium", "mycelium"), { skin: "black" }))
+      .toEqual({ skin: "black", layout: DEFAULT_GRAPH_SETTINGS.layout });
+  });
+
+  it("passes through patches that already set both keys (vibes/saved looks)", () => {
+    const vibe = VIBE_PRESETS.mycelium;
+    expect(coupleMyceliumPatch(at("auto", "galaxy"), vibe)).toBe(vibe);
+    const back = VIBE_PRESETS.living;
+    expect(coupleMyceliumPatch(at("mycelium", "mycelium"), back)).toBe(back);
+  });
+
+  it("leaves unrelated single-key patches untouched", () => {
+    expect(coupleMyceliumPatch(at("mycelium", "mycelium"), { nodeSize: 2 }))
+      .toEqual({ nodeSize: 2 });
+    expect(coupleMyceliumPatch(at("auto", "galaxy"), { skin: "white" }))
+      .toEqual({ skin: "white" });
+    expect(coupleMyceliumPatch(at("auto", "galaxy"), { layout: "atlas" }))
+      .toEqual({ layout: "atlas" });
   });
 });
 
