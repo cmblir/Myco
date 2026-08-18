@@ -563,7 +563,7 @@ export function loadGraphSettings(): GraphSettings {
     const raw = localStorage.getItem(KEY);
     if (!raw) return { ...DEFAULT_GRAPH_SETTINGS };
     const parsed = JSON.parse(raw) as Partial<GraphSettings>;
-    return { ...DEFAULT_GRAPH_SETTINGS, ...parsed };
+    return normalizeMyceliumPair({ ...DEFAULT_GRAPH_SETTINGS, ...parsed });
   } catch {
     return { ...DEFAULT_GRAPH_SETTINGS };
   }
@@ -754,6 +754,23 @@ export function coupleMyceliumPatch(
     }
   }
   return patch;
+}
+
+/** Repair an inconsistent skin/layout pair on a FULL settings object — stored
+ *  blobs written before the coupling existed, and two-key patches (vibes,
+ *  saved looks) that bypass `coupleMyceliumPatch`, can hold e.g.
+ *  `{skin: "mycelium", layout: "galaxy"}`. The renderer is keyed on the skin,
+ *  so the skin states what the user actually SAW — the layout follows it. */
+export function normalizeMyceliumPair<
+  T extends Pick<GraphSettings, "skin" | "layout">,
+>(s: T): T {
+  if (s.skin === "mycelium" && s.layout !== "mycelium") {
+    return { ...s, layout: "mycelium" };
+  }
+  if (s.skin !== "mycelium" && s.layout === "mycelium") {
+    return { ...s, layout: DEFAULT_GRAPH_SETTINGS.layout };
+  }
+  return s;
 }
 
 // ── Mycelium "force" mapping ─────────────────────────────────────────────

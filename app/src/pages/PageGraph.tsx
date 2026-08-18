@@ -17,6 +17,7 @@ import GraphHelp from "../components/GraphHelp";
 import GraphLegend from "../components/GraphLegend";
 import {
   coupleMyceliumPatch,
+  normalizeMyceliumPair,
   DEFAULT_GRAPH_SETTINGS,
   loadGraphSettings,
   matchMyceliumBg,
@@ -2038,8 +2039,15 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               }
               if (patch.multiverse) setEnteredUniverse(false);
               // Keep skin/layout in lockstep across the mycelium renderer
-              // boundary — see coupleMyceliumPatch for the rule.
-              setSettings((prev) => ({ ...prev, ...coupleMyceliumPatch(prev, patch) }));
+              // boundary — coupleMyceliumPatch handles single-key chips, the
+              // post-merge normalize repairs two-key patches (vibes, saved
+              // looks) that may carry an inconsistent stored pair.
+              setSettings((prev) =>
+                normalizeMyceliumPair({
+                  ...prev,
+                  ...coupleMyceliumPatch(prev, patch),
+                }),
+              );
             }}
             onReset={() => {
               setEnteredUniverse(false);

@@ -5,6 +5,7 @@ import {
   LAYOUT_RECOMMENDED,
   loadGraphSettings,
   matchMyceliumBg,
+  normalizeMyceliumPair,
   MYCELIUM_BG_PRESETS,
   myceliumBranchPct,
   myceliumMaxNodes,
@@ -284,6 +285,64 @@ describe("graph settings persistence", () => {
     localStorage.setItem("myco.graph.settings.v26", JSON.stringify(blob));
     expect(loadGraphSettings().myceliumBackground).toBe(
       DEFAULT_GRAPH_SETTINGS.myceliumBackground,
+    );
+  });
+});
+
+// A blob persisted before the skin/layout coupling existed (or written by a
+// two-key vibe/look patch) can hold an inconsistent pair. The renderer is
+// keyed on the skin, so the skin states what the user actually saw.
+describe("normalizeMyceliumPair", () => {
+  class MemoryStorage {
+    private store = new Map<string, string>();
+    getItem(key: string): string | null {
+      return this.store.has(key) ? (this.store.get(key) as string) : null;
+    }
+    setItem(key: string, value: string): void {
+      this.store.set(key, value);
+    }
+    removeItem(key: string): void {
+      this.store.delete(key);
+    }
+    clear(): void {
+      this.store.clear();
+    }
+  }
+  beforeEach(() => {
+    (globalThis as { localStorage: unknown }).localStorage = new MemoryStorage();
+  });
+  afterEach(() => {
+    delete (globalThis as { localStorage?: unknown }).localStorage;
+  });
+
+  it("repairs a stored mycelium-skin + non-mycelium-layout pair on load", () => {
+    saveGraphSettings({
+      ...DEFAULT_GRAPH_SETTINGS,
+      skin: "mycelium",
+      layout: "galaxy",
+    });
+    const loaded = loadGraphSettings();
+    expect(loaded.skin).toBe("mycelium");
+    expect(loaded.layout).toBe("mycelium");
+  });
+
+  it("repairs a stored mycelium-layout + non-mycelium-skin pair on load", () => {
+    saveGraphSettings({
+      ...DEFAULT_GRAPH_SETTINGS,
+      skin: "black",
+      layout: "mycelium",
+    });
+    const loaded = loadGraphSettings();
+    expect(loaded.skin).toBe("black");
+    expect(loaded.layout).toBe(DEFAULT_GRAPH_SETTINGS.layout);
+  });
+
+  it("leaves a consistent pair untouched", () => {
+    expect(
+      normalizeMyceliumPair({ skin: "mycelium", layout: "mycelium" }),
+    ).toEqual({ skin: "mycelium", layout: "mycelium" });
+    expect(normalizeMyceliumPair({ skin: "auto", layout: "celestial" })).toEqual(
+      { skin: "auto", layout: "celestial" },
     );
   });
 });
