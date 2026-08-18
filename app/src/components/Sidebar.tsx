@@ -358,7 +358,8 @@ function NewPageButton({
         void promptNewNote(t);
       }}
     >
-      <Icon name="plus" size={12} />
+      <Icon name="plus" size={13} />
+      <span className="ngl-add__label">{t.sb_new_note ?? "New note"}</span>
     </button>
   );
 }
