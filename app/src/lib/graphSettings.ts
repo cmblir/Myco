@@ -695,12 +695,12 @@ export const MYCELIUM_BG_PRESETS: Record<
     myceliumNodeColor: "#245a38",
   },
   // Blueprint / graph paper: a cool near-black slate over which the renderer
-  // draws a faint drafting grid (MyceliumScene.setGround's grid mode — keyed
-  // by matchMyceliumBg(...) === "grid", not by this hex). Dark enough that the
-  // default light inks stay legible; the grid lines themselves live in
-  // myceliumScene and are tuned far quieter than the hyphae.
+  // draws the same fullscreen dot grid as the main graph's 그리드 sky
+  // (MyceliumScene.setGround's grid mode — keyed by
+  // matchMyceliumBg(...) === "grid", not by this hex). Navy board to match
+  // that look; the default light inks stay legible on it.
   grid: {
-    myceliumBackground: "#0d1117",
+    myceliumBackground: "#202a4a",
     myceliumHyphaColor: DEFAULT_GRAPH_SETTINGS.myceliumHyphaColor,
     myceliumNodeColor: DEFAULT_GRAPH_SETTINGS.myceliumNodeColor,
   },
