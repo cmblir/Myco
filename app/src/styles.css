@@ -627,6 +627,20 @@ select {
 .workspace-pane--secondary {
   border-left: 1px solid var(--line);
 }
+/* Drag handle between the panes: a slim hit strip straddling the secondary
+   pane's border line. touch-action:none lets pointer events drive the drag
+   on touch/pen instead of scrolling. */
+.pane-divider {
+  flex: 0 0 8px;
+  margin: 0 -4px 0 -3px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 1;
+}
+.pane-divider:hover,
+.pane-divider:focus-visible {
+  background: var(--line);
+}
 /* The primary pane's page sits inside .route-fade (App.tsx's remount-key
    wrapper for the navigation fade) instead of .pane-body — plain block boxes
    by default. Without this, the flex rules below on .workspace/.workspace-wide
@@ -715,6 +729,10 @@ select {
   .workspace-pane--secondary {
     border-left: none;
     border-top: 1px solid var(--line);
+  }
+  .pane-divider {
+    margin: -4px 0 -3px;
+    cursor: row-resize;
   }
 }
 

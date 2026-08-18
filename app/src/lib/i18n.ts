@@ -110,6 +110,7 @@ export interface Strings {
   split_open?: string;
   split_close?: string;
   split_pick?: string;
+  split_resize?: string;
   // Multiverse overview (Phase 1)
   folder__root: string;
   folder_sources: string;
@@ -997,6 +998,7 @@ export const STRINGS: Record<Lang, Strings> = {
     split_open: "Split view",
     split_close: "Close split view",
     split_pick: "Second pane",
+    split_resize: "Resize panes",
     folder__root: "Root",
     folder_sources: "Sources",
     folder_entities: "Entities",
@@ -1907,6 +1909,7 @@ export const STRINGS: Record<Lang, Strings> = {
     split_open: "화면 분할",
     split_close: "분할 닫기",
     split_pick: "두 번째 창",
+    split_resize: "창 크기 조절",
     folder__root: "루트",
     folder_sources: "소스",
     folder_entities: "엔티티",
@@ -2752,6 +2755,7 @@ export const STRINGS: Record<Lang, Strings> = {
     split_open: "画面分割",
     split_close: "分割を閉じる",
     split_pick: "2つ目のペイン",
+    split_resize: "ペインのサイズ変更",
     folder__root: "ルート",
     folder_sources: "ソース",
     folder_entities: "エンティティ",

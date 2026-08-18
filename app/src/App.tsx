@@ -1,4 +1,11 @@
-import { Suspense, lazy, useEffect, useRef, useState } from "react";
+import {
+  Suspense,
+  lazy,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { JSX } from "react";
 import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
@@ -41,6 +48,7 @@ import { markActivity } from "./lib/idle";
 import { useIngestStore } from "./stores/ingestStore";
 import { ipc } from "./lib/ipc";
 import type { FileNode } from "./lib/ipc";
+import { SPLIT_DEFAULT_RATIO, clampSplitRatio } from "./lib/splitRatio";
 
 const ONBOARDED_KEY = "myco.onboarded";
 
@@ -105,10 +113,106 @@ function routeLabel(t: Strings, r: RouteId): string {
   }
 }
 
+// Mirrors the styles.css breakpoint where .workspace-split stacks vertically.
+const SPLIT_STACK_QUERY = "(max-width: 820px)";
+
+function useSplitStacked(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const m = window.matchMedia(SPLIT_STACK_QUERY);
+      m.addEventListener("change", cb);
+      return () => m.removeEventListener("change", cb);
+    },
+    () => window.matchMedia(SPLIT_STACK_QUERY).matches,
+  );
+}
+
+// Draggable divider between the two split panes. During a drag it writes
+// flex-grow onto its sibling panes directly (no React state per pointermove —
+// a re-render each move would churn both pages' trees) and commits the final
+// ratio to the ui store on release. Keyboard: arrows nudge, matching the
+// ARIA separator pattern. Double-click resets to 50:50.
+function SplitDivider({ t }: { t: Strings }): JSX.Element {
+  const ratio = useUIStore((s) => s.splitRatio);
+  const setSplitRatio = useUIStore((s) => s.setSplitRatio);
+  const stacked = useSplitStacked();
+  const ref = useRef<HTMLDivElement>(null);
+
+  const applyToPanes = (r: number): number => {
+    const el = ref.current;
+    const prev = el?.previousElementSibling as HTMLElement | null;
+    const next = el?.nextElementSibling as HTMLElement | null;
+    if (prev) prev.style.flexGrow = String(r);
+    if (next) next.style.flexGrow = String(1 - r);
+    return r;
+  };
+
+  // Container extent along the drag axis; 0 when unmeasurable (clamp then
+  // pins to the middle).
+  const axisSize = (): number => {
+    const parent = ref.current?.parentElement;
+    if (!parent) return 0;
+    const rect = parent.getBoundingClientRect();
+    return stacked ? rect.height : rect.width;
+  };
+
+  const onPointerDown = (e: React.PointerEvent<HTMLDivElement>): void => {
+    const el = ref.current;
+    const parent = el?.parentElement;
+    if (!el || !parent) return;
+    e.preventDefault();
+    el.setPointerCapture(e.pointerId);
+    const rect = parent.getBoundingClientRect();
+    const size = stacked ? rect.height : rect.width;
+    const start = stacked ? rect.top : rect.left;
+    let last = ratio;
+    const move = (ev: PointerEvent): void => {
+      const pos = stacked ? ev.clientY : ev.clientX;
+      last = applyToPanes(clampSplitRatio((pos - start) / size, size));
+    };
+    const up = (): void => {
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", up);
+      el.removeEventListener("pointercancel", up);
+      setSplitRatio(last);
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", up);
+    el.addEventListener("pointercancel", up);
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>): void => {
+    let delta = 0;
+    if (e.key === "ArrowLeft" || e.key === "ArrowUp") delta = -0.05;
+    else if (e.key === "ArrowRight" || e.key === "ArrowDown") delta = 0.05;
+    else return;
+    e.preventDefault();
+    setSplitRatio(clampSplitRatio(ratio + delta, axisSize()));
+  };
+
+  return (
+    <div
+      ref={ref}
+      className="pane-divider"
+      role="separator"
+      tabIndex={0}
+      aria-orientation={stacked ? "horizontal" : "vertical"}
+      aria-label={t.split_resize ?? "Resize panes"}
+      aria-valuenow={Math.round(ratio * 100)}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      onPointerDown={onPointerDown}
+      onDoubleClick={() => setSplitRatio(SPLIT_DEFAULT_RATIO)}
+      onKeyDown={onKeyDown}
+    />
+  );
+}
+
 export default function App(): JSX.Element {
   const route = useUIStore((s) => s.route);
   const splitRoute = useUIStore((s) => s.splitRoute);
   const setSplitRoute = useUIStore((s) => s.setSplitRoute);
+  const splitRatio = useUIStore((s) => s.splitRatio);
   const sidebarCollapsed = useUIStore((s) => s.sidebarCollapsed);
   const lang = useUIStore((s) => s.lang);
   const theme = useUIStore((s) => s.theme);
@@ -464,10 +568,18 @@ export default function App(): JSX.Element {
     </div>
   );
 
+  // flex-grow carries the drag ratio; flex-basis 0 stays in the stylesheet so
+  // the two grow factors alone decide the pane sizes in either orientation.
   const body: JSX.Element = splitRoute ? (
     <div className="workspace-split">
-      <section className="workspace-pane">{primaryContent}</section>
-      <section className="workspace-pane workspace-pane--secondary">
+      <section className="workspace-pane" style={{ flexGrow: splitRatio }}>
+        {primaryContent}
+      </section>
+      <SplitDivider t={t} />
+      <section
+        className="workspace-pane workspace-pane--secondary"
+        style={{ flexGrow: 1 - splitRatio }}
+      >
         <div className="pane-bar">
           <select
             className="pane-bar__pick"

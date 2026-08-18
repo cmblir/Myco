@@ -9,6 +9,7 @@ import {
   type OverviewThemeKey,
 } from "../lib/overviewThemes";
 import { persist } from "zustand/middleware";
+import { SPLIT_DEFAULT_RATIO } from "../lib/splitRatio";
 import type { Lang } from "../lib/i18n";
 
 export const SIDEBAR_MIN = 200;
@@ -39,6 +40,9 @@ export interface UIState {
   // Split view: when set, a SECOND pane shows this route beside the primary one
   // (e.g. Overview + Graph side by side). null = single pane.
   splitRoute: RouteId | null;
+  // Primary pane's share of the split container (0..1). Clamped at
+  // interaction time by clampSplitRatio; sanitized on rehydrate in merge.
+  splitRatio: number;
   // Layout
   sidebarCollapsed: boolean;
   cmdOpen: boolean;
@@ -65,6 +69,7 @@ export interface UIState {
 
   setRoute: (route: RouteId) => void;
   setSplitRoute: (route: RouteId | null) => void;
+  setSplitRatio: (ratio: number) => void;
   setSidebarCollapsed: (v: boolean) => void;
   toggleSidebar: () => void;
   setCmdOpen: (v: boolean) => void;
@@ -85,6 +90,7 @@ export const useUIStore = create<UIState>()(
     (set, get) => ({
       route: "overview",
       splitRoute: null,
+      splitRatio: SPLIT_DEFAULT_RATIO,
       sidebarCollapsed: false,
       cmdOpen: false,
       lang: "ko",
@@ -105,6 +111,7 @@ export const useUIStore = create<UIState>()(
         set((s) => ({ route, splitRoute: s.splitRoute === route ? null : s.splitRoute })),
       setSplitRoute: (route) =>
         set((s) => ({ splitRoute: route === s.route ? null : route })),
+      setSplitRatio: (ratio) => set({ splitRatio: ratio }),
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
       toggleSidebar: () => set({ sidebarCollapsed: !get().sidebarCollapsed }),
       setCmdOpen: (v) => set({ cmdOpen: v }),
@@ -141,6 +148,14 @@ export const useUIStore = create<UIState>()(
           overviewTheme: isOverviewTheme(p.overviewTheme)
             ? p.overviewTheme
             : DEFAULT_OVERVIEW_THEME,
+          // A hand-edited or corrupt persisted ratio would wedge a pane
+          // off-screen with no handle left to grab.
+          splitRatio:
+            typeof p.splitRatio === "number" &&
+            p.splitRatio > 0 &&
+            p.splitRatio < 1
+              ? p.splitRatio
+              : SPLIT_DEFAULT_RATIO,
         };
       },
     },
