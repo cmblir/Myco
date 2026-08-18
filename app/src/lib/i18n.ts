@@ -237,6 +237,7 @@ export interface Strings {
   gr_myc_bg_void?: string;
   gr_myc_bg_soil?: string;
   gr_myc_bg_paper?: string;
+  gr_myc_bg_grid?: string;
   gr_myc_bg_custom?: string;
   gr_vibes?: string;
   gr_vibe_living?: string;
@@ -1137,6 +1138,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_myc_bg_void: "Void",
     gr_myc_bg_soil: "Soil",
     gr_myc_bg_paper: "Paper",
+    gr_myc_bg_grid: "Grid",
     gr_myc_bg_custom: "Custom background",
     gr_vibes: "One-tap looks",
     gr_vibe_living: "Living galaxy",
@@ -2056,6 +2058,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_myc_bg_void: "암흑",
     gr_myc_bg_soil: "황토",
     gr_myc_bg_paper: "종이",
+    gr_myc_bg_grid: "그리드",
     gr_myc_bg_custom: "사용자 지정 배경",
     gr_vibes: "원탭 룩",
     gr_vibe_living: "살아있는 은하",
@@ -2913,6 +2916,7 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_myc_bg_void: "漆黒",
     gr_myc_bg_soil: "黄土",
     gr_myc_bg_paper: "紙",
+    gr_myc_bg_grid: "グリッド",
     gr_myc_bg_custom: "カスタム背景",
     gr_vibes: "ワンタップルック",
     gr_vibe_living: "生きた銀河",

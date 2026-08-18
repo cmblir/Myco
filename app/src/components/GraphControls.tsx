@@ -434,6 +434,7 @@ export default function GraphControls({
                 ["void", t.gr_myc_bg_void ?? "Void"],
                 ["soil", t.gr_myc_bg_soil ?? "Soil"],
                 ["paper", t.gr_myc_bg_paper ?? "Paper"],
+                ["grid", t.gr_myc_bg_grid ?? "Grid"],
               ]}
             />
             <ColorField

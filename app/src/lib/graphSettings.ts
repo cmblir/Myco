@@ -658,7 +658,7 @@ export function saveLook(name: string, s: GraphSettings): SavedLook[] {
 // preset swaps the inks dark; the dark presets keep the default inks. The
 // custom <input type="color"> sets myceliumBackground alone (inks stay
 // independently settable, as before).
-export type MyceliumBgKey = "loam" | "void" | "soil" | "paper";
+export type MyceliumBgKey = "loam" | "void" | "soil" | "paper" | "grid";
 export const MYCELIUM_BG_PRESETS: Record<
   MyceliumBgKey,
   Pick<
@@ -693,6 +693,16 @@ export const MYCELIUM_BG_PRESETS: Record<
     myceliumBackground: "#efe8db",
     myceliumHyphaColor: "#4a3a28",
     myceliumNodeColor: "#245a38",
+  },
+  // Blueprint / graph paper: a cool near-black slate over which the renderer
+  // draws a faint drafting grid (MyceliumScene.setGround's grid mode — keyed
+  // by matchMyceliumBg(...) === "grid", not by this hex). Dark enough that the
+  // default light inks stay legible; the grid lines themselves live in
+  // myceliumScene and are tuned far quieter than the hyphae.
+  grid: {
+    myceliumBackground: "#0d1117",
+    myceliumHyphaColor: DEFAULT_GRAPH_SETTINGS.myceliumHyphaColor,
+    myceliumNodeColor: DEFAULT_GRAPH_SETTINGS.myceliumNodeColor,
   },
 };
 

@@ -527,9 +527,53 @@ export class MyceliumScene {
     }
   }
 
-  /** "Background" picker — live scene.background swap, no rebuild. */
-  setGround(color: string): void {
+  /** "Background" picker — live scene.background swap, no rebuild of the mat.
+   *  `grid` (the "grid" preset) additionally lays a faint drafting grid into
+   *  the scene: a fine graph-paper mesh plus a quieter major line every 5th
+   *  cell, both far dimmer than the hyphae so the mat stays the picture. The
+   *  helpers are rebuilt on each call (cheap — two line objects, and this only
+   *  runs on a preset/colour change), which is what keeps this a live swap. */
+  setGround(color: string, grid = false): void {
     this.scene.background = new THREE.Color(color);
+    this.clearGrid();
+    if (!grid) return;
+    // Sized from the mat actually on screen so cells stay a legible density at
+    // any vault size; before setMat runs there is no mat to measure (or to
+    // upstage), so a nominal radius keeps the maths finite.
+    const r = this.frameRadius > 0 ? this.frameRadius : 1000;
+    const size = r * 5;
+    const make = (divisions: number, lineColor: number, opacity: number): THREE.GridHelper => {
+      const g = new THREE.GridHelper(size, divisions, lineColor, lineColor);
+      const m = g.material as THREE.Material;
+      m.transparent = true;
+      m.opacity = opacity;
+      m.depthWrite = false;
+      g.renderOrder = -1; // always behind the mat/septa
+      if (this.planar) {
+        // 2D: the mat is flattened to z=0 and viewed front-on — stand the
+        // (XZ-plane) grid up into XY, a touch behind the mat.
+        g.rotation.x = Math.PI / 2;
+        g.position.z = -r * 0.05;
+      } else {
+        // 3D: a floor under the grown ball, blueprint-desk style.
+        g.position.y = -r * 1.15;
+      }
+      this.scene.add(g);
+      return g;
+    };
+    // 5 fine cells per major cell — graph paper. Cool slate lines on the grid
+    // preset's near-black ground; deliberately far quieter than the hyphae.
+    this.gridHelpers = [make(100, 0x233048, 0.4), make(20, 0x3b4d73, 0.5)];
+  }
+
+  private gridHelpers: THREE.GridHelper[] = [];
+  private clearGrid(): void {
+    for (const g of this.gridHelpers) {
+      this.scene.remove(g);
+      g.geometry.dispose();
+      (g.material as THREE.Material).dispose();
+    }
+    this.gridHelpers = [];
   }
 
   /** "Text fade threshold" slider — see reportLabelFrame's gate. */
@@ -752,6 +796,7 @@ export class MyceliumScene {
 
   dispose(): void {
     this.stop();
+    this.clearGrid();
     this.ro.disconnect();
     this.renderer.domElement.removeEventListener("pointermove", this.onMove);
     this.renderer.domElement.removeEventListener("pointerleave", this.onLeave);

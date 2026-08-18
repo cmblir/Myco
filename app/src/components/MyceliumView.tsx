@@ -50,6 +50,7 @@ export default function MyceliumView({
   nodeColor,
   hyphaColor,
   background,
+  gridGround,
   nodeSizeScale,
   linkThicknessScale,
   textFadeThreshold,
@@ -73,6 +74,9 @@ export default function MyceliumView({
   /** Substrate colour (graphSettings.ts's myceliumBackground) — live scene
    *  background update, no rebuild. */
   background: string;
+  /** The "grid" background preset is active (matchMyceliumBg === "grid") —
+   *  draws the faint drafting grid, live like the colour (no rebuild). */
+  gridGround: boolean;
   /** "Node size" slider — septa point-size multiplier, live (no rebuild). */
   nodeSizeScale: number;
   /** "Link thickness" slider — hypha linewidth multiplier, live (no rebuild). */
@@ -265,7 +269,7 @@ export default function MyceliumView({
     // scene from scratch, so without this a rebuild would silently reset
     // "Node size"/"Link thickness"/"Text fade"/"Ambient motion" to defaults
     // until the user nudged the slider again.
-    scene.setGround(background);
+    scene.setGround(background, gridGround);
     scene.setSizeScale(nodeSizeScale);
     scene.setWidthScale(linkThicknessScale);
     scene.setLabelFadeThreshold(textFadeThreshold);
@@ -352,8 +356,8 @@ export default function MyceliumView({
 
   // Live updates for the knobs the build effect intentionally excludes above.
   useEffect(() => {
-    sceneRef.current?.setGround(background);
-  }, [background]);
+    sceneRef.current?.setGround(background, gridGround);
+  }, [background, gridGround]);
   useEffect(() => {
     sceneRef.current?.setSizeScale(nodeSizeScale);
   }, [nodeSizeScale]);

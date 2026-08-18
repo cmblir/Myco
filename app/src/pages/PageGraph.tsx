@@ -19,6 +19,7 @@ import {
   coupleMyceliumPatch,
   DEFAULT_GRAPH_SETTINGS,
   loadGraphSettings,
+  matchMyceliumBg,
   myceliumBranchPct,
   myceliumMaxNodes,
   saveGraphSettings,
@@ -1859,6 +1860,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 nodeColor={settings.myceliumNodeColor}
                 hyphaColor={settings.myceliumHyphaColor}
                 background={settings.myceliumBackground}
+                gridGround={matchMyceliumBg(settings) === "grid"}
                 nodeSizeScale={settings.nodeSize}
                 linkThicknessScale={settings.linkThickness}
                 textFadeThreshold={settings.textFadeThreshold}
