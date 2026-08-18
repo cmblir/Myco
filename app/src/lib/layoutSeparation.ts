@@ -63,6 +63,9 @@ export const NODE_MARGIN = 6;
 // chronicle/strata — were actually hitting: the layout ran fine, the sprite
 // just grew past the room reserved for it once painted on paper).
 // web skin (0.34) is smaller, so it is not part of the worst case.
+// Pixel sprites take the smaller LIGHT_BG_PIXEL_SIZE_MUL on light backgrounds,
+// but pixelNodes is itself a live toggle (no re-layout), so the glow-dot path's
+// full LIGHT_BG_SIZE_MUL stays reachable and stays the worst case here.
 const STATIC_SPRITE_SCALE = LIGHT_BG_SIZE_MUL * SIGMA_SKIN_NODE_SCALE;
 
 /** World RADIUS a node of the given `size`/stellar-`kind`/`intensity` is drawn

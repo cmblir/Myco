@@ -74,6 +74,7 @@ import {
   INTENSITY_SIZE_COEF,
   STAR_KIND_SCALE,
   LIGHT_BG_SIZE_MUL,
+  LIGHT_BG_PIXEL_SIZE_MUL,
   SIGMA_SKIN_NODE_SCALE,
   WEB_SKIN_NODE_SCALE,
 } from "./layoutConfig";
@@ -549,7 +550,13 @@ void main() {
   // Light bg (NormalBlending, no additive self-brightening): bump sprite size so
   // the dark stars have enough AREA to read on paper — a print map is filled
   // dots, not pin-pricks. Dark bg stays as-is (additive self-brightens there).
-  gl_PointSize *= mix(${LIGHT_BG_SIZE_MUL.toFixed(2)}, 1.0, u_darkTheme);
+  // Pixel sprites are OPAQUE worlds, not dim glow dots — the full area bump
+  // just ballooned them on the white skin, so they take the near-1 multiplier
+  // (see LIGHT_BG_PIXEL_SIZE_MUL). u_flat (sigma) never renders pixel sprites,
+  // but the sigma board is dark (u_darkTheme=1), so this mix is inert there.
+  gl_PointSize *= mix(
+    mix(${LIGHT_BG_SIZE_MUL.toFixed(2)}, ${LIGHT_BG_PIXEL_SIZE_MUL.toFixed(2)}, u_pixelNodes),
+    1.0, u_darkTheme);
   // Floor so distant field stars are true pinpricks (higher on light so they
   // don't vanish); cap so a near hub can't fill the viewport with one sprite.
   gl_PointSize = clamp(gl_PointSize, mix(3.2, 1.3, u_darkTheme), 180.0);

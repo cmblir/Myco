@@ -56,6 +56,12 @@ export const INTENSITY_SIZE_COEF = 0.35; // gl_PointSize *= 1 + a_intensity * th
 // Stellar class scale, indexed by a_kind (0 main / 1 dwarf / 2 giant / 3 neutron).
 export const STAR_KIND_SCALE: readonly number[] = [1, 0.72, 1.5, 0.55];
 export const LIGHT_BG_SIZE_MUL = 1.85; // light-background sprite-area bump
+// Light-bg bump for the PIXEL-sprite path. The 1.85 above exists so dim
+// translucent glow dots keep enough AREA to read on paper; a pixel sprite is
+// an opaque little world that reads fine at its dark-theme size, so the full
+// bump just ballooned every node on the white skin. A hair over 1 keeps the
+// slight ink-on-paper presence without the blow-up.
+export const LIGHT_BG_PIXEL_SIZE_MUL = 1.1;
 export const SIGMA_SKIN_NODE_SCALE = 1.15; // sigma skin's per-skin size multiplier
 export const WEB_SKIN_NODE_SCALE = 0.34; // web skin's per-skin size multiplier
 
