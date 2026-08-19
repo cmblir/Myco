@@ -53,10 +53,18 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
     };
   }, [adjacency]);
 
-  const suggestions = useMemo(
-    () => (adjacency && sem ? suggestLinks(adjacency, sem, dismissed, SHOW) : []),
+  // The list DISPLAYS a handful at a time, but "accept all" means all —
+  // accepting only the visible slice made the user re-click through the
+  // queue six at a time. So compute the full pending set once and slice
+  // for display.
+  const allPending = useMemo(
+    () =>
+      adjacency && sem
+        ? suggestLinks(adjacency, sem, dismissed, Number.POSITIVE_INFINITY)
+        : [],
     [adjacency, sem, dismissed],
   );
+  const suggestions = useMemo(() => allPending.slice(0, SHOW), [allPending]);
 
   function dismiss(s: LinkSuggestion): void {
     const next = new Set(dismissed);
@@ -85,9 +93,9 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
     if (bulk) return;
     setError(null);
     setBulkResult(null);
-    const total = suggestions.length;
+    const total = allPending.length;
     setBulk({ done: 0, total });
-    const { accepted, error: err } = await acceptAll(suggestions, ipc, (done) =>
+    const { accepted, error: err } = await acceptAll(allPending, ipc, (done) =>
       setBulk({ done, total }),
     );
     if (accepted.length > 0) {
@@ -123,7 +131,7 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
             ? (t.ls_accept_all_progress ?? "{done}/{total}")
                 .replace("{done}", String(bulk.done))
                 .replace("{total}", String(bulk.total))
-            : (t.ls_accept_all ?? "Accept all")}
+            : `${t.ls_accept_all ?? "Accept all"} (${allPending.length})`}
         </button>
       </div>
       <p className="muted link-suggestions__hint">

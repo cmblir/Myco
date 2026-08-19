@@ -697,10 +697,11 @@ export const MYCELIUM_BG_PRESETS: Record<
   // Blueprint / graph paper: a cool near-black slate over which the renderer
   // draws the same fullscreen dot grid as the main graph's 그리드 sky
   // (MyceliumScene.setGround's grid mode — keyed by
-  // matchMyceliumBg(...) === "grid", not by this hex). Navy board to match
-  // that look; the default light inks stay legible on it.
+  // matchMyceliumBg(...) === "grid", not by this hex). Near-black charcoal
+  // board under blue dots — matched to the main view's grid look the user
+  // pointed at; the default light inks stay legible on it.
   grid: {
-    myceliumBackground: "#202a4a",
+    myceliumBackground: "#141519",
     myceliumHyphaColor: DEFAULT_GRAPH_SETTINGS.myceliumHyphaColor,
     myceliumNodeColor: DEFAULT_GRAPH_SETTINGS.myceliumNodeColor,
   },
