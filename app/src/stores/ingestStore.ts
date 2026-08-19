@@ -196,6 +196,12 @@ interface IngestState {
   /** false after a run finishes until the user visits the Ingest page —
    * drives the "done/failed" Topbar chip. */
   seen: boolean;
+  /** Bumped AFTER an inbox source's archive move lands on disk — the pending
+   * _inbox list refetches on this, not on `stage` alone: the stage flips to
+   * "done" before the archive IPC completes, and a stage-keyed refetch races
+   * it into showing an already-consumed (soon-dead-path) row. */
+  inboxRev: number;
+  bumpInboxRev: () => void;
   startIngest: (title: string, body: string) => Promise<void>;
   cancelIngest: () => void;
   markSeen: () => void;
@@ -226,6 +232,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
   plan: [],
   liveAdjacency: null,
   seen: true,
+  inboxRev: 0,
 
   async startIngest(title: string, body: string) {
     const vault = useVaultStore.getState().currentVault;
@@ -496,6 +503,8 @@ export const useIngestStore = create<IngestState>((set, get) => ({
   },
 
   markSeen: () => set({ seen: true }),
+
+  bumpInboxRev: () => set((st) => ({ inboxRev: st.inboxRev + 1 })),
 
   reset: () =>
     set({

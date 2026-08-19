@@ -94,6 +94,9 @@ export async function runInboxPass(vaultPath: string): Promise<boolean> {
     // raw/<slug>.md now, but a preserved original matches the headless daemon
     // and means a later half-failure cannot lose it.
     await ipc.archiveInboxSource(f.path).catch(() => undefined);
+    // Only now is the file really gone from _inbox/ — signal the pending
+    // list (a stage-keyed refetch fires before this move lands).
+    useIngestStore.getState().bumpInboxRev();
     return true;
   }
   return false; // error / no-op: leave the source in _inbox to retry next pass

@@ -38,6 +38,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   const tRef = useRef(t);
   tRef.current = t;
   const stage = useIngestStore((s) => s.stage);
+  const inboxRev = useIngestStore((s) => s.inboxRev);
   const events = useIngestStore((s) => s.events);
   const log = useIngestStore((s) => s.log);
   const startedAt = useIngestStore((s) => s.startedAt);
@@ -68,7 +69,10 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [currentVault, stage]);
+    // inboxRev bumps only after the archive move LANDS — the stage flips to
+    // "done" earlier, and refetching on stage alone raced the move into
+    // showing an already-consumed row with a soon-dead path.
+  }, [currentVault, stage, inboxRev]);
 
   const running =
     stage === "writing-raw" || stage === "claude" || stage === "indexing";

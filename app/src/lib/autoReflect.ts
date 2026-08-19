@@ -7,7 +7,15 @@
 // there is no source file to consume or clean up afterwards.
 
 import { useEffect } from "react";
+import { ipc } from "./ipc";
 import { useReflectStore } from "../stores/reflectStore";
+import { useVaultStore } from "../stores/vaultStore";
+
+/** Vault revision at the last SCHEDULED pass, per vault path. A reflect run
+ * (LLM or extractive) reads the whole link graph — repeating that every
+ * interval against an unchanged vault is pure waste, so scheduled ticks skip
+ * when nothing changed. Manual runs (the Overview button) bypass this. */
+const lastTickRevision = new Map<string, number>();
 
 /** Run one reflect pass unless one is already in flight. The old
  * builtin-local pre-check is gone: that provider now runs the extractive
@@ -15,6 +23,17 @@ import { useReflectStore } from "../stores/reflectStore";
 export async function runReflectPass(): Promise<void> {
   if (useReflectStore.getState().stage === "running") return;
   await useReflectStore.getState().runReflect();
+}
+
+/** Scheduled-tick variant: skip when the vault hasn't changed since the last
+ * scheduled pass (vault_revision is a stat-only hash — ~free). */
+export async function runReflectTick(): Promise<void> {
+  const path = useVaultStore.getState().currentVault?.path;
+  if (!path) return;
+  const rev = await ipc.vaultRevision(path).catch(() => null);
+  if (rev !== null && lastTickRevision.get(path) === rev) return;
+  if (rev !== null) lastTickRevision.set(path, rev);
+  await runReflectPass();
 }
 
 /** React hook: drive runReflectPass on an interval while enabled. */
@@ -27,7 +46,7 @@ export function useAutoReflectScheduler(
     if (!enabled || !vaultPath || intervalMin <= 0) return;
     let cancelled = false;
     const tick = (): void => {
-      if (!cancelled) void runReflectPass();
+      if (!cancelled) void runReflectTick();
     };
     // A short kick after enabling, then on the interval.
     const kick = window.setTimeout(tick, 4000);
