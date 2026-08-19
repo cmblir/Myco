@@ -714,15 +714,14 @@ function AutoReflectSetting({
         </div>
       ) : null}
       {settings.query_provider === "builtin-local" ? (
-        // Same reason the scheduler no-ops (autoReflect.ts) and the Overview
-        // panel shows a blocked state instead of running: builtin-local can't
-        // generate, so the toggle above has nothing to drive. Explains why
-        // flipping it on visibly does nothing.
+        // builtin-local can't generate prose, so reflect runs the extractive
+        // variant (reflectStore.extractiveReflect): link-graph facts only.
+        // Tell the user up front what flipping the toggle will produce.
         <div
           className="row muted"
           style={{ marginTop: 8, gap: 6, fontSize: 12, alignItems: "center" }}
         >
-          <Icon name="info" size={12} /> {t.rf_blocked}
+          <Icon name="info" size={12} /> {t.rf_extractive}
         </div>
       ) : null}
     </div>

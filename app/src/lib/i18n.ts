@@ -900,7 +900,7 @@ export interface Strings {
   rf_run: string;
   rf_running: string;
   rf_empty: string;
-  rf_blocked: string;
+  rf_extractive: string;
   // First-run onboarding wizard (UX-01) — optional; components fall back to EN.
   ob_title?: string;
   ob_skip?: string;
@@ -1860,7 +1860,8 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_run: "Reflect",
     rf_running: "Reflecting…",
     rf_empty: "No suggestions — the vault looks well-connected.",
-    rf_blocked: "Reflect needs a connected AI provider to propose suggestions.",
+    rf_extractive:
+      "Extractive pass (built-in model, no LLM) — link-graph facts only: orphan pages and unresolved links.",
     ob_title: "Welcome to myco",
     ob_skip: "Skip",
     ob_back: "Back",
@@ -2820,7 +2821,8 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_run: "Reflect 실행",
     rf_running: "분석 중…",
     rf_empty: "제안이 없습니다 — vault가 잘 연결되어 있습니다.",
-    rf_blocked: "제안을 만들려면 AI 프로바이더가 필요합니다.",
+    rf_extractive:
+      "추출 기반 결과 (내장 모델, LLM 없음) — 링크 그래프 사실만: 고아 페이지와 미해결 링크.",
     ob_title: "myco에 오신 것을 환영합니다",
     ob_skip: "건너뛰기",
     ob_back: "이전",
@@ -3658,7 +3660,8 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_run: "Reflect 実行",
     rf_running: "分析中…",
     rf_empty: "提案はありません — vault は十分につながっています。",
-    rf_blocked: "提案を作成するには、接続されたAIプロバイダーが必要です。",
+    rf_extractive:
+      "抽出ベースの結果(内蔵モデル、LLMなし)— リンクグラフの事実のみ: 孤立ページと未解決リンク。",
     ob_title: "myco へようこそ",
     ob_skip: "スキップ",
     ob_back: "戻る",

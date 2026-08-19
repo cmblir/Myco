@@ -10,6 +10,8 @@
 
 import { create } from "zustand";
 import { complete, getActiveModel } from "../lib/chat";
+import { ipc } from "../lib/ipc";
+import { mmrSelect } from "../lib/sessionDigest";
 import { useVaultStore } from "./vaultStore";
 
 const REFLECT_PROMPT = `You are reviewing a personal knowledge wiki (markdown files in the current directory). Read the vault and propose concrete, actionable improvements.
@@ -21,10 +23,15 @@ Focus on:
 
 Output a SHORT bulleted list (one "- " item per line, at most 8 items). Each item names a specific file and a one-line action. This is read-only analysis — do NOT create, edit, or delete any files.`;
 
-export type ReflectStage = "idle" | "running" | "done" | "error" | "blocked";
+export type ReflectStage = "idle" | "running" | "done" | "error";
 
 interface ReflectState {
   stage: ReflectStage;
+  /** How the last run produced its suggestions: an LLM pass, or (builtin-local,
+   *  which has no generative model) mechanical link-graph facts — see
+   *  extractiveReflect. The panel labels extractive results so quoted facts
+   *  are never mistaken for model judgment. */
+  mode: "llm" | "extractive";
   /** Parsed bullet items from the last successful run. */
   suggestions: string[];
   /** Raw model output (or an error message when stage === "error"). */
@@ -40,6 +47,7 @@ interface ReflectState {
 
 export const useReflectStore = create<ReflectState>((set, get) => ({
   stage: "idle",
+  mode: "llm",
   suggestions: [],
   report: null,
   startedAt: null,
@@ -49,41 +57,39 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
   async runReflect() {
     const vault = useVaultStore.getState().currentVault;
     if (!vault || get().stage === "running") return;
-    // Reflect proposes wiki improvements, so it needs generation — the
-    // builtin-local provider only ever answers extractively and has no chat
-    // model to generate with (see chat.ts's CHAT_MODEL_MISSING). Checking here,
-    // before complete(), skips a call that would only fail after paying for the
-    // ~418MB embed-model load, and lets the panel show a calm "needs a
-    // provider" state instead of a raw error.
+    // builtin-local has no chat model to generate with (see chat.ts's
+    // CHAT_MODEL_MISSING) — it used to flip the panel into "blocked" here.
+    // It now reflects extractively instead (same move as sessionDigest's
+    // extractive digest): the link graph already knows the mechanical
+    // findings, no generation needed.
     const { provider } = await getActiveModel("query");
-    if (provider === "builtin-local") {
-      set({
-        stage: "blocked",
-        report: null,
-        suggestions: [],
-        startedAt: Date.now(),
-        finishedAt: Date.now(),
-        seen: false,
-      });
-      return;
-    }
+    const extractive = provider === "builtin-local";
     set({
       stage: "running",
+      mode: extractive ? "extractive" : "llm",
       report: null,
       startedAt: Date.now(),
       finishedAt: null,
       seen: true,
     });
     try {
-      const out = await complete({
-        task: "query",
-        cwd: vault.path,
-        messages: [{ role: "user", content: REFLECT_PROMPT }],
-      });
+      let out: string;
+      let suggestions: string[];
+      if (extractive) {
+        suggestions = await extractiveReflect(vault.path);
+        out = suggestions.join("\n");
+      } else {
+        out = await complete({
+          task: "query",
+          cwd: vault.path,
+          messages: [{ role: "user", content: REFLECT_PROMPT }],
+        });
+        suggestions = parseSuggestions(out);
+      }
       set({
         stage: "done",
         report: out || "(no output)",
-        suggestions: parseSuggestions(out),
+        suggestions,
         finishedAt: Date.now(),
         seen: false,
       });
@@ -106,6 +112,7 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
   dismiss: () =>
     set({
       stage: "idle",
+      mode: "llm",
       suggestions: [],
       report: null,
       startedAt: null,
@@ -113,6 +120,47 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
       seen: true,
     }),
 }));
+
+// Matches REFLECT_PROMPT's "at most 8 items".
+const MAX_SUGGESTIONS = 8;
+
+// Root-ish stems nothing is expected to link TO — flagging them as orphans
+// would be the same noise on every run.
+const ORPHAN_EXEMPT = new Set(["index", "home", "readme"]);
+
+/** Extractive reflect for builtin-local (no generative model): the
+ * REFLECT_PROMPT findings that are mechanical facts of the link graph —
+ * orphan pages and unresolved [[wikilinks]] — read from ipc.buildLinkGraph.
+ * Staleness and prose-mention cross-references need judgment over page
+ * content, so they are honestly out of scope here. When the graph yields
+ * more than MAX_SUGGESTIONS candidates, the bundled embedder plus
+ * centroid+MMR (mmrSelect, shared with the session digest) picks a diverse
+ * top 8 — deterministic given the same vault, like the extractive digest. */
+export async function extractiveReflect(vaultPath: string): Promise<string[]> {
+  const graph = await ipc.buildLinkGraph(vaultPath);
+  const rel = (p: string): string =>
+    p.startsWith(`${vaultPath}/`) ? p.slice(vaultPath.length + 1) : p;
+  const candidates: string[] = [];
+  for (const page of Object.keys(graph.forward).sort()) {
+    const stem = (page.split("/").pop() ?? page).replace(/\.md$/i, "").toLowerCase();
+    if (ORPHAN_EXEMPT.has(stem)) continue;
+    if ((graph.backward[page] ?? []).length === 0) {
+      candidates.push(
+        `${rel(page)}: orphan — no other page links to it; add a [[wikilink]] from a related page.`,
+      );
+    }
+  }
+  for (const page of Object.keys(graph.unresolved).sort()) {
+    for (const target of [...graph.unresolved[page]].sort()) {
+      candidates.push(
+        `${rel(page)}: links to [[${target}]], which has no page — create it or fix the link.`,
+      );
+    }
+  }
+  if (candidates.length <= MAX_SUGGESTIONS) return candidates;
+  const vectors = await ipc.embedLocalTexts(candidates);
+  return mmrSelect(vectors, MAX_SUGGESTIONS).map((i) => candidates[i]);
+}
 
 // Extract bullet items from the model's markdown. Accepts "-", "*", "•" and
 // numbered ("1.", "1)") markers; falls back to non-empty lines if nothing

@@ -166,8 +166,8 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
 // a run kicked here or by the scheduler shows up wherever the panel renders.
 function ReflectPanel({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
-  const setRoute = useUIStore((s) => s.setRoute);
   const stage = useReflectStore((s) => s.stage);
+  const mode = useReflectStore((s) => s.mode);
   const suggestions = useReflectStore((s) => s.suggestions);
   const report = useReflectStore((s) => s.report);
   const runReflect = useReflectStore((s) => s.runReflect);
@@ -195,7 +195,7 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
             <Icon name="sparkles" size={14} />{" "}
             {running ? t.rf_running : t.rf_run}
           </button>
-          {stage === "done" || stage === "error" || stage === "blocked" ? (
+          {stage === "done" || stage === "error" ? (
             <button type="button" className="btn-ghost btn" onClick={dismiss}>
               <Icon name="x" size={12} /> {t.p_dismiss ?? "dismiss"}
             </button>
@@ -213,23 +213,16 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
           <span className="ingest-chip-spinner" /> {t.rf_running}
         </div>
       ) : null}
-      {stage === "blocked" ? (
-        // Capability gap, not a failure — builtin-local can't generate (see
-        // reflectStore.runReflect), so this is a calm muted line with a way
-        // out, not the red error block below.
+      {stage === "done" && mode === "extractive" ? (
+        // Labeled like "Session digest (auto, extractive)": these are
+        // link-graph facts picked by the bundled embedder, not model prose —
+        // never let them read as LLM judgment.
         <div
           className="row muted"
           style={{ gap: 6, fontSize: 12.5, alignItems: "center", flexWrap: "wrap" }}
         >
           <Icon name="info" size={12} />
-          <span>{t.rf_blocked}</span>
-          <button
-            className="btn btn-ghost"
-            style={{ fontSize: 12, padding: "2px 8px" }}
-            onClick={() => setRoute("settings")}
-          >
-            {t.q_open_model_settings ?? "Model settings"} →
-          </button>
+          <span>{t.rf_extractive}</span>
         </div>
       ) : null}
       {stage === "done" ? (
