@@ -71,6 +71,10 @@ pub struct TrayStatus {
     pub suggested: String,
     #[serde(default)]
     pub mcp: String,
+    /// Today's-inflow block (translated lines + sparkbar buckets); None hides
+    /// the section and the native menu's summary row.
+    #[serde(default)]
+    pub inflow: Option<TrayInflow>,
     /// Action rows.
     #[serde(default)]
     pub ask: String,
@@ -80,6 +84,24 @@ pub struct TrayStatus {
     pub open: String,
     #[serde(default)]
     pub quit: String,
+}
+
+/// Pre-translated "today's inflow" lines for the tray-panel window, plus the
+/// hourly buckets its sparkbar draws. The native menu uses only `summary`.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct TrayInflow {
+    pub header: String,
+    pub sessions: String,
+    pub mcp: String,
+    #[serde(rename = "mcpSub")]
+    pub mcp_sub: String,
+    pub inbox: String,
+    /// One-line summary for the native right-click menu.
+    pub summary: String,
+    #[serde(rename = "hourlyFiles")]
+    pub hourly_files: Vec<u32>,
+    #[serde(rename = "hourlyMcp")]
+    pub hourly_mcp: Vec<u32>,
 }
 
 impl TrayStatus {
@@ -200,6 +222,13 @@ pub fn menu_rows(s: &TrayStatus) -> Vec<MenuRow> {
             true,
             Some(RowIcon::Mcp),
         ));
+    }
+    // Today's-inflow one-liner, right under the MCP row — a disabled info row,
+    // like the running rows (the full section lives in the popover surfaces).
+    if let Some(inflow) = &s.inflow {
+        if !inflow.summary.is_empty() {
+            standing.push(MenuRow::item("tray-inflow", &inflow.summary, false));
+        }
     }
     if !standing.is_empty() && !s.waiting_header.is_empty() {
         standing.insert(
@@ -602,6 +631,7 @@ mod tests {
             title: Some("2".into()),
             suggested: "3 suggested links".into(),
             mcp: "MCP server running".into(),
+            inflow: None,
             ask: "Ask the wiki".into(),
             distill: "Distill now".into(),
             open: "Open myco".into(),
@@ -656,6 +686,28 @@ mod tests {
         assert_eq!(icon_of("tray-distill"), Some(RowIcon::Distill));
         assert_eq!(icon_of("tray-open"), None);
         assert_eq!(icon_of("tray-quit"), None);
+    }
+
+    #[test]
+    fn inflow_summary_is_a_disabled_info_row_under_the_mcp_row() {
+        let s = TrayStatus {
+            inflow: Some(TrayInflow {
+                header: "Today's inflow".into(),
+                sessions: "Sessions swept +2".into(),
+                mcp: "MCP tool calls 7".into(),
+                mcp_sub: "top: search".into(),
+                inbox: "_inbox arrivals +3".into(),
+                summary: "Today: sessions +2 · MCP 7 · inbox +3".into(),
+                hourly_files: vec![0; 24],
+                hourly_mcp: vec![0; 24],
+            }),
+            ..full_status()
+        };
+        let rows = menu_rows(&s);
+        let i = rows.iter().position(|r| r.id == "tray-inflow").unwrap();
+        assert_eq!(rows[i - 1].id, "tray-settings");
+        assert!(!rows[i].enabled && rows[i].icon.is_none());
+        assert_eq!(rows[i].text, "Today: sessions +2 · MCP 7 · inbox +3");
     }
 
     #[test]

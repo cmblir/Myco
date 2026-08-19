@@ -17,6 +17,7 @@ const idle: TraySnapshot = {
   reindexTotal: 0,
   pendingLinks: 0,
   mcpRunning: true,
+  inflow: null,
 };
 
 describe("trayTitle", () => {
@@ -82,6 +83,57 @@ describe("buildTrayStatus", () => {
     expect(p.running).toEqual([]);
     expect(p.title).toBeNull();
     expect(p.mcp).toBe("MCP server off");
+    expect(p.inflow).toBeNull();
+  });
+
+  it("bakes translated inflow lines + hourly buckets into the payload", () => {
+    const hourlyFiles = Array<number>(24).fill(0);
+    hourlyFiles[9] = 2;
+    const hourlyMcp = Array<number>(24).fill(0);
+    hourlyMcp[14] = 7;
+    const p = buildTrayStatus(
+      {
+        ...idle,
+        inflow: {
+          sessionsToday: 2,
+          inboxToday: 3,
+          mcpCallsToday: 7,
+          mcpTopTool: "search",
+          hourlyFiles,
+          hourlyMcp,
+        },
+      },
+      t,
+    );
+    expect(p.inflow).toEqual({
+      header: "Today's inflow",
+      sessions: "Sessions swept +2",
+      mcp: "MCP tool calls 7",
+      mcpSub: "top: search · since app launch",
+      inbox: "_inbox arrivals +3",
+      summary: "Today: sessions +2 · MCP 7 · inbox +3",
+      hourlyFiles,
+      hourlyMcp,
+    });
+  });
+
+  it("sends a null inflow block when nothing arrived today", () => {
+    const zeros = Array<number>(24).fill(0);
+    const p = buildTrayStatus(
+      {
+        ...idle,
+        inflow: {
+          sessionsToday: 0,
+          inboxToday: 0,
+          mcpCallsToday: 0,
+          mcpTopTool: null,
+          hourlyFiles: zeros,
+          hourlyMcp: zeros,
+        },
+      },
+      t,
+    );
+    expect(p.inflow).toBeNull();
   });
 });
 

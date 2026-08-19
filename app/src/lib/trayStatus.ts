@@ -9,9 +9,10 @@
 
 import { listen } from "@tauri-apps/api/event";
 import { ipc } from "./ipc";
-import type { TrayRunningRow, TrayStatusPayload } from "./ipc";
+import type { InflowStats, TrayRunningRow, TrayStatusPayload } from "./ipc";
 import { STRINGS } from "./i18n";
 import type { Strings } from "./i18n";
+import { inflowLines } from "./inflow";
 import { pendingLinkCount } from "./linkSuggestions";
 import { runDistillGuarded } from "./distill";
 import { stepLabel } from "../components/ActivityChip";
@@ -37,6 +38,8 @@ export interface TraySnapshot {
   reindexTotal: number;
   pendingLinks: number;
   mcpRunning: boolean;
+  /** Today's inflow, or null before/without a probe — hides the section. */
+  inflow: InflowStats | null;
 }
 
 /** Icon-side title: nothing when idle, the reindex percent when indexing is
@@ -79,6 +82,7 @@ export function buildTrayStatus(s: TraySnapshot, t: Strings): TrayStatusPayload 
       text: `${t.s_embeddings_indexing ?? "Indexing…"} ${s.reindexDone}/${s.reindexTotal}`,
     });
   }
+  const lines = s.inflow ? inflowLines(s.inflow, t) : null;
   return {
     running,
     runningHeader: t.tray_hdr_running ?? "Now working on",
@@ -91,6 +95,14 @@ export function buildTrayStatus(s: TraySnapshot, t: Strings): TrayStatusPayload 
     mcp: s.mcpRunning
       ? (t.tb_activity_mcp_on ?? "MCP server running")
       : (t.tb_activity_mcp_off ?? "MCP server off"),
+    inflow:
+      lines && s.inflow
+        ? {
+            ...lines,
+            hourlyFiles: s.inflow.hourlyFiles,
+            hourlyMcp: s.inflow.hourlyMcp,
+          }
+        : null,
     ask: t.quick_ask,
     distill: t.set_distill_run_now ?? "Distill now",
     open: t.tray_open ?? "Open myco",
@@ -148,13 +160,21 @@ export class TraySender {
  * in-process call — so a toggled server corrects the row within a tick. */
 let mcpRunning = false;
 
+/** Today's-inflow cache, same lifecycle as `mcpRunning` above: probed at init
+ * and re-probed after every actual send (sends are already rate-limited to
+ * ~1/s), so the tray's inflow lines follow the vault without any polling. */
+let inflowStats: InflowStats | null = null;
+
 /** Wire the tray: store subscriptions → debounced update_tray_status calls,
  * plus the menu-action listener. Returns a cleanup. Call once from App. */
 export function initTrayIntegration(): () => void {
   const sender = new TraySender((p) => {
     void ipc
       .updateTrayStatus(p)
-      .then(() => probeMcp())
+      .then(() => {
+        probeMcp();
+        probeInflow();
+      })
       .catch(() => {
         /* plain-browser dev: no Tauri backend */
       });
@@ -182,6 +202,7 @@ export function initTrayIntegration(): () => void {
           reindexTotal: reindex.total,
           pendingLinks,
           mcpRunning,
+          inflow: inflowStats,
         },
         t,
       ),
@@ -194,6 +215,22 @@ export function initTrayIntegration(): () => void {
       .then((i) => {
         if (i.running !== mcpRunning) {
           mcpRunning = i.running;
+          recompute();
+        }
+      })
+      .catch(() => {
+        /* plain-browser dev: no Tauri backend */
+      });
+  };
+
+  const probeInflow = (): void => {
+    const path = useVaultStore.getState().currentVault?.path;
+    if (!path) return;
+    void ipc
+      .inflowStats(path)
+      .then((s) => {
+        if (JSON.stringify(s) !== JSON.stringify(inflowStats)) {
+          inflowStats = s;
           recompute();
         }
       })
@@ -237,6 +274,7 @@ export function initTrayIntegration(): () => void {
     });
 
   probeMcp();
+  probeInflow();
   recompute();
 
   return () => {

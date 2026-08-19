@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import ActivityPanel from "./ActivityPanel";
+import ActivityPanel, { InflowSparkbar } from "./ActivityPanel";
 import type { ActivityIconName, PanelRow, PanelSection } from "./ActivityPanel";
 import { ipc } from "../lib/ipc";
 import type { TrayStatusPayload } from "../lib/ipc";
@@ -37,6 +37,16 @@ const MOCK_STATUS: TrayStatusPayload = {
   title: "2",
   suggested: "제안된 링크 6개",
   mcp: "MCP 서버 실행 중",
+  inflow: {
+    header: "오늘 들어온 것",
+    sessions: "세션 수집 +4",
+    mcp: "MCP 도구 호출 17회",
+    mcpSub: "최다: search · 앱 실행 이후",
+    inbox: "_inbox 도착 +3",
+    summary: "오늘: 세션 +4 · MCP 17회 · 인박스 +3",
+    hourlyFiles: [0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0],
+    hourlyMcp: [0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 3, 0, 0, 2, 3, 1, 2, 0, 0, 0, 0, 0, 0, 0],
+  },
   ask: "위키에 질문하기",
   distill: "지금 증류",
   open: "myco 열기",
@@ -142,6 +152,34 @@ export default function TrayPanel(): JSX.Element {
     });
   }
 
+  // Today's inflow — Rust sends null (and no rows render) when nothing
+  // arrived today, so the section disappears exactly like the others.
+  const inflow: PanelRow[] = [];
+  if (s.inflow) {
+    inflow.push(
+      { key: "sessions", main: s.inflow.sessions },
+      {
+        key: "mcp-calls",
+        main: (
+          <>
+            {s.inflow.mcp}
+            <span className="activity-row-sub">{s.inflow.mcpSub}</span>
+          </>
+        ),
+      },
+      { key: "inbox", main: s.inflow.inbox },
+      {
+        key: "spark",
+        main: (
+          <InflowSparkbar
+            files={s.inflow.hourlyFiles}
+            mcp={s.inflow.hourlyMcp}
+          />
+        ),
+      },
+    );
+  }
+
   const actions: PanelRow[] = [];
   if (s.ask) {
     actions.push({ key: "ask", icon: "ask", main: s.ask, onClick: () => act("query") });
@@ -164,6 +202,7 @@ export default function TrayPanel(): JSX.Element {
   const sections: PanelSection[] = [
     { key: "running", header: s.runningHeader, rows: running },
     { key: "waiting", header: s.waitingHeader, rows: waiting },
+    { key: "inflow", header: s.inflow?.header, rows: inflow },
     { key: "actions", rows: actions },
   ];
 
