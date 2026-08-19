@@ -236,7 +236,7 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
               setResult(null); // a new run's list, not the last run's tally
               void runReflect();
             }}
-            disabled={!currentVault || running}
+            disabled={!currentVault || running || !!bulk}
           >
             <Icon name="sparkles" size={14} />{" "}
             {running ? t.rf_running : t.rf_run}
@@ -245,7 +245,7 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
             <button
               type="button"
               className="btn"
-              disabled={!!bulk}
+              disabled={!!bulk || running}
               onClick={() => void create()}
             >
               <Icon name="plus" size={13} />{" "}

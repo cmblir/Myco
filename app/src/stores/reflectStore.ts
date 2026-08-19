@@ -75,6 +75,11 @@ interface ReflectState {
   finishedAt: number | null;
   /** false after a run finishes until the user acknowledges the panel. */
   seen: boolean;
+  /** True while createMissingPages is mid-loop. A new RUN during that loop
+   *  would swap `suggestions` under it, leaving the progress UI and the
+   *  loop's own cleanup pointing at a dead suggestion generation — so both
+   *  entry points check this one flag instead of guarding per button. */
+  applying: boolean;
   runReflect: () => Promise<void>;
   /** Create the missing page for every unresolved-wikilink suggestion (or just
    *  the ones passed — the per-row button hands it one). Applied items leave
@@ -89,6 +94,7 @@ interface ReflectState {
 
 export const useReflectStore = create<ReflectState>((set, get) => ({
   stage: "idle",
+  applying: false,
   mode: "llm",
   suggestions: [],
   report: null,
@@ -98,7 +104,9 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
 
   async runReflect() {
     const vault = useVaultStore.getState().currentVault;
-    if (!vault || get().stage === "running") return;
+    // `applying`: a run mid-bulk-apply would replace `suggestions` under the
+    // loop, stranding its progress UI and cleanup on a dead generation.
+    if (!vault || get().stage === "running" || get().applying) return;
     // builtin-local has no chat model to generate with (see chat.ts's
     // CHAT_MODEL_MISSING) — it used to flip the panel into "blocked" here.
     // It now reflects extractively instead (same move as sessionDigest's
@@ -161,22 +169,29 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
     const targets = (items ?? get().suggestions).filter(isUnresolved);
     const applied = new Set<ReflectSuggestion>();
     let failed: string | null = null;
-    for (const s of targets) {
-      let path: string | null = null;
-      try {
-        path = await openWikilink(s.link);
-      } catch {
-        path = null;
+    // Held for the whole loop so runReflect (button OR scheduler tick) cannot
+    // swap the suggestion array we are walking and filtering against.
+    set({ applying: true });
+    try {
+      for (const s of targets) {
+        let path: string | null = null;
+        try {
+          path = await openWikilink(s.link);
+        } catch {
+          path = null;
+        }
+        if (!path) {
+          failed = s.link;
+          break; // stop on first error; the rest stay listed
+        }
+        applied.add(s);
+        onProgress?.(applied.size, targets.length);
       }
-      if (!path) {
-        failed = s.link;
-        break; // stop on first error; the rest stay listed
+      if (applied.size > 0) {
+        set({ suggestions: get().suggestions.filter((s) => !applied.has(s)) });
       }
-      applied.add(s);
-      onProgress?.(applied.size, targets.length);
-    }
-    if (applied.size > 0) {
-      set({ suggestions: get().suggestions.filter((s) => !applied.has(s)) });
+    } finally {
+      set({ applying: false });
     }
     return { created: applied.size, failed };
   },

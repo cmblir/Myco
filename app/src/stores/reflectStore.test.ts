@@ -364,3 +364,31 @@ describe("parseSuggestions", () => {
     ]);
   });
 });
+
+// A run started mid bulk-apply would replace `suggestions` under the loop,
+// stranding its progress UI and its own cleanup on a dead generation.
+describe("run vs bulk-apply exclusion", () => {
+  it("refuses to start a run while createMissingPages is in flight", async () => {
+    const store = useReflectStore;
+    store.setState({ applying: true, stage: "done" });
+    const before = store.getState().stage;
+    await store.getState().runReflect();
+    expect(store.getState().stage).toBe(before); // never entered "running"
+    store.setState({ applying: false });
+  });
+
+  it("clears the applying flag even when a creation fails", async () => {
+    const store = useReflectStore;
+    useVaultStore.setState({
+      currentVault: { path: "/v", name: "v" },
+      openWikilink: async () => null,
+    } as never);
+    store.setState({
+      applying: false,
+      suggestions: [{ text: "x", kind: "unresolved", link: "alpha" }],
+    });
+    const res = await store.getState().createMissingPages();
+    expect(res.failed).toBe("alpha");
+    expect(store.getState().applying).toBe(false);
+  });
+});

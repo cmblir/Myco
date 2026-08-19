@@ -21,7 +21,10 @@ const lastTickRevision = new Map<string, number>();
  * builtin-local pre-check is gone: that provider now runs the extractive
  * reflect variant (see reflectStore) instead of blocking. */
 export async function runReflectPass(): Promise<void> {
-  if (useReflectStore.getState().stage === "running") return;
+  const st = useReflectStore.getState();
+  // `applying`: runReflect refuses anyway, but skipping here keeps the tick
+  // from burning a vault_revision read during a bulk apply.
+  if (st.stage === "running" || st.applying) return;
   await useReflectStore.getState().runReflect();
 }
 
