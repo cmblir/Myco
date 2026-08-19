@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendTaskLine,
   monthGrid,
+  parseIsoDate,
   setLineDue,
   buildTaskLine,
   parseTaskMeta,
@@ -146,5 +147,52 @@ describe("monthGrid", () => {
       const lastWeek = g.slice(-7);
       expect(lastWeek.some((d) => d.getMonth() === m)).toBe(true);
     }
+  });
+
+  it("honours a Sunday week start (weekStart = 0)", () => {
+    // 2026-08-01 is a Saturday, so a Sunday-first grid opens on Sun 2026-07-26.
+    const g = monthGrid(new Date(2026, 7, 1), 0);
+    expect(iso(g[0])).toBe("2026-07-26");
+    expect(g[0].getDay()).toBe(0);
+    expect(g.length % 7).toBe(0);
+  });
+
+  it("includes Feb 29 in a leap year and stops at Feb 28 otherwise", () => {
+    expect(monthGrid(new Date(2024, 1, 1)).map(iso)).toContain("2024-02-29");
+    const g25 = monthGrid(new Date(2025, 1, 1)).map(iso);
+    expect(g25).toContain("2025-02-28");
+    expect(g25).not.toContain("2025-02-29");
+  });
+
+  it("covers both boundaries of a month that starts and ends mid-week", () => {
+    const g = monthGrid(new Date(2026, 8, 1)); // Sep 2026: Tue 1st – Wed 30th
+    const days = g.map(iso);
+    expect(days).toContain("2026-09-01");
+    expect(days).toContain("2026-09-30");
+    expect(g[0].getDay()).toBe(1);
+    expect(g[g.length - 1].getDay()).toBe(0);
+  });
+});
+
+describe("parseIsoDate / today round-trip", () => {
+  it("round-trips a picked day exactly", () => {
+    for (const day of ["2026-08-19", "2024-02-29", "2026-01-01", "2026-12-31"]) {
+      const d = parseIsoDate(day);
+      expect(d).not.toBeNull();
+      expect(today(d as Date)).toBe(day);
+    }
+  });
+
+  it("parses with local components, not Date.parse's UTC midnight", () => {
+    // In any zone west of UTC, Date.parse("2026-08-19") lands on the 18th
+    // locally. Component construction must not: local midnight, same day.
+    const d = parseIsoDate("2026-08-19") as Date;
+    expect([d.getFullYear(), d.getMonth(), d.getDate()]).toEqual([2026, 7, 19]);
+    expect(d.getHours()).toBe(0);
+  });
+
+  it("rejects non-dates", () => {
+    expect(parseIsoDate("")).toBeNull();
+    expect(parseIsoDate("tomorrow")).toBeNull();
   });
 });

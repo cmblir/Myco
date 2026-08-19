@@ -1151,6 +1151,62 @@ select {
   }
 }
 
+/* DatePicker — themed replacement for <input type="date"> (whose macOS
+   popover is a white system panel that ignores the app theme). The popover
+   reuses the .model-chip-pop chrome; these style the trigger and the month
+   grid inside it. */
+/* Two classes: .input alone sets width: 100% and is declared later in this
+   file, so the trigger needs the extra specificity to stay input-sized. */
+.input.dp-trigger {
+  width: 150px;
+  flex: none;
+  text-align: left;
+  cursor: pointer;
+}
+.dp-ph {
+  color: var(--ink-4);
+}
+.dp-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 2px;
+}
+.dp-wd {
+  font-size: 11px;
+  color: var(--ink-4);
+  text-align: center;
+  padding: 2px 0 4px;
+}
+.dp-day {
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  font-size: 12.5px;
+  padding: 5px 0;
+  border-radius: var(--r-sm);
+  text-align: center;
+  cursor: pointer;
+}
+.dp-day:hover {
+  background: var(--bg-hover);
+}
+.dp-day.is-outside {
+  color: var(--ink-4);
+}
+.dp-day.is-today {
+  box-shadow: inset 0 0 0 1px var(--line-strong);
+}
+.dp-day.is-selected {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.dp-foot {
+  display: flex;
+  justify-content: space-between;
+  border-top: 1px solid var(--line-soft);
+  padding-top: 8px;
+}
+
 /* Dashboard ambient layer. Everything animated here is transform or opacity —
    the two properties the compositor handles off the main thread. The three
    --vault-* custom properties are set from data in VaultPulse.tsx. */

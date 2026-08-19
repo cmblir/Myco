@@ -100,13 +100,15 @@ export function appendTaskLine(content: string, line: string): string {
 }
 
 /** The days of the calendar grid containing `month`, padded to whole weeks so
- * every row has seven cells. Monday-first, which is what a work week reads as
- * here. Pure and local-time throughout — a UTC-based grid puts tasks on the
- * wrong day for anyone east of Greenwich. */
-export function monthGrid(month: Date): Date[] {
+ * every row has seven cells. `weekStart` is the first column in getDay()
+ * terms (0 = Sunday … 6 = Saturday); it defaults to Monday, which is what a
+ * work week reads as here — the DatePicker passes the locale's own first day
+ * instead. Pure and local-time throughout — a UTC-based grid puts tasks on
+ * the wrong day for anyone east of Greenwich. */
+export function monthGrid(month: Date, weekStart = 1): Date[] {
   const first = new Date(month.getFullYear(), month.getMonth(), 1);
-  // getDay() is Sunday-0; shift so Monday is the first column.
-  const lead = (first.getDay() + 6) % 7;
+  // getDay() is Sunday-0; shift so `weekStart` is the first column.
+  const lead = (first.getDay() - weekStart + 7) % 7;
   const start = new Date(first.getFullYear(), first.getMonth(), 1 - lead);
   const days: Date[] = [];
   for (let i = 0; i < 42; i++) {
@@ -115,6 +117,16 @@ export function monthGrid(month: Date): Date[] {
   // Trim a trailing all-next-month week so a short month is not padded to six
   // rows of mostly greyed-out cells.
   return days.slice(0, days[35].getMonth() === month.getMonth() ? 42 : 35);
+}
+
+/** Parse a `YYYY-MM-DD` back into a Date at local midnight — the inverse of
+ * `today()`. Never `Date.parse`, which reads a bare date as UTC midnight and
+ * shifts it onto the previous day for anyone west of Greenwich. Returns null
+ * for anything that is not a date string. */
+export function parseIsoDate(iso: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso);
+  if (!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
 }
 
 /** Local `YYYY-MM-DD` — the user's calendar day, not UTC's, so a task written

@@ -101,6 +101,9 @@ export interface Strings {
   tasks_view_calendar?: string;
   tasks_cal_today?: string;
   tasks_cal_undated?: string;
+  dp_prev?: string;
+  dp_next?: string;
+  dp_clear?: string;
   tasks_open_n: string;
   tasks_done_n: string;
   tasks_all_done: string;
@@ -1020,6 +1023,9 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_view_calendar: "Calendar",
     tasks_cal_today: "Today",
     tasks_cal_undated: "No due date ({n})",
+    dp_prev: "Previous month",
+    dp_next: "Next month",
+    dp_clear: "Clear date",
     tasks_open_n: "{n} open",
     tasks_done_n: "{n} done",
     tasks_all_done: "All caught up — nothing open.",
@@ -1961,6 +1967,9 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_view_calendar: "캘린더",
     tasks_cal_today: "오늘",
     tasks_cal_undated: "마감일 없음 ({n})",
+    dp_prev: "이전 달",
+    dp_next: "다음 달",
+    dp_clear: "날짜 지우기",
     tasks_open_n: "미완 {n}개",
     tasks_done_n: "완료 {n}개",
     tasks_all_done: "모두 완료 — 남은 항목이 없습니다.",
@@ -2833,6 +2842,9 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_view_calendar: "カレンダー",
     tasks_cal_today: "今日",
     tasks_cal_undated: "期限なし ({n})",
+    dp_prev: "前の月",
+    dp_next: "次の月",
+    dp_clear: "日付をクリア",
     tasks_open_n: "未完了 {n}件",
     tasks_done_n: "完了 {n}件",
     tasks_all_done: "すべて完了 — 残りはありません。",

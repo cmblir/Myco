@@ -7,6 +7,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
+import DatePicker from "../components/DatePicker";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
@@ -225,17 +226,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           disabled={busy || !currentVault}
           data-testid="task-input"
         />
-        {/* Native date input: the platform already ships a picker, a calendar
-            popover and locale formatting. */}
-        <input
-          className="input"
-          type="date"
-          value={due}
-          onChange={(e) => setDue(e.target.value)}
-          disabled={busy || !currentVault}
-          style={{ width: 150 }}
-          aria-label={t.tasks_due ?? "Due date"}
-        />
+        <DatePicker t={t} value={due} onChange={setDue} disabled={busy || !currentVault} />
         <button
           className="btn btn-primary"
           onClick={() => void addTask()}
