@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alarmId, buildDigest, digestIsDue, dueAlarms } from "./taskNotify";
+import { alarmId, buildDigest, digestIsDue, dueAlarms, dueOpen } from "./taskNotify";
 import type { TaskItem } from "./ipc";
 
 const task = (text: string, over: Partial<TaskItem> = {}): TaskItem => ({
@@ -46,6 +46,26 @@ describe("buildDigest", () => {
 
   it("says nothing when nothing is due — no empty notification", () => {
     expect(buildDigest([task("later @2026-08-20")], NOW)).toBeNull();
+  });
+});
+
+describe("dueOpen", () => {
+  it("keeps only open tasks due today or earlier, most overdue first", () => {
+    const out = dueOpen(
+      [
+        task("today @2026-08-07"),
+        task("later @2026-08-20"),
+        task("no date"),
+        task("done late @2026-08-01", { done: true, status: "done" }),
+        task("late @2026-08-05"),
+      ],
+      NOW,
+    );
+    expect(out.map((x) => x.text)).toEqual(["late @2026-08-05", "today @2026-08-07"]);
+  });
+
+  it("counts a task due later TODAY as due, matching buildDigest", () => {
+    expect(dueOpen([task("this afternoon @2026-08-07T14:00")], NOW)).toHaveLength(1);
   });
 });
 

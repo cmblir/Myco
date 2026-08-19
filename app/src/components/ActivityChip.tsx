@@ -8,14 +8,18 @@
 // the Topbar model popover (computeModelPopPos) — anchoring it inside
 // .topbar would clip it, see the ModelChip comment there.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { JSX } from "react";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
+import type { TaskItem } from "../lib/ipc";
 import { formatTicker } from "../lib/time";
 import { requestDistillStop } from "../lib/distill";
 import { pendingLinkCount } from "../lib/linkSuggestions";
+import { dueOpen } from "../lib/taskNotify";
+import { parseTaskMeta } from "../lib/taskLine";
+import { writeTaskStatus } from "../lib/taskWrite";
 import { computeModelPopPos } from "./Topbar";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
@@ -135,6 +139,39 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const [mcpRunning, setMcpRunning] = useState<boolean | null>(null);
   // Same latch the Settings distill tab keeps: "stop already requested".
   const [stopping, setStopping] = useState(false);
+  // Due-today + overdue open tasks, loaded when the popover opens (and after a
+  // check-off) — no store and no polling, the popover is the only consumer.
+  // Tasks are a standing state: they never count toward the chip badge.
+  const [dueTasks, setDueTasks] = useState<TaskItem[] | null>(null);
+
+  const loadTasks = useCallback(async (): Promise<void> => {
+    if (!vaultPath) return;
+    try {
+      setDueTasks(dueOpen(await ipc.scanTasks(vaultPath)));
+    } catch {
+      // A failed scan just hides the block — a popover is no place for errors.
+      setDueTasks([]);
+    }
+  }, [vaultPath]);
+
+  useEffect(() => {
+    if (open) void loadTasks();
+  }, [open, loadTasks]);
+
+  /** Check a task off through the same write path as the Tasks page checkbox
+   * (taskWrite.ts). Optimistic: the row leaves immediately; any failure or
+   * stale line rescans, which restores it. */
+  const checkOff = async (task: TaskItem): Promise<void> => {
+    if (!vaultPath) return;
+    setDueTasks((s) => (s ? s.filter((x) => x !== task) : s));
+    try {
+      if ((await writeTaskStatus(vaultPath, task, "done")) === "stale") {
+        await loadTasks();
+      }
+    } catch {
+      await loadTasks();
+    }
+  };
 
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -240,7 +277,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
 
   const askQuestion = turns[turns.length - 1]?.q.split("\n")[0] ?? "";
 
-  const jump = (route: "query" | "overview" | "settings"): void => {
+  const jump = (route: "query" | "overview" | "settings" | "tasks"): void => {
     setOpen(false);
     setRoute(route);
   };
@@ -350,6 +387,68 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
                 </div>
               ) : null}
               <div className="activity-standing">
+                {dueTasks && dueTasks.length > 0 ? (
+                  <>
+                    <div className="muted" style={{ fontSize: 12 }}>
+                      {t.tb_activity_tasks ?? "Tasks due"}
+                    </div>
+                    {dueTasks.slice(0, 5).map((task) => (
+                      <div
+                        className="activity-row"
+                        key={`${task.page}:${task.line}`}
+                      >
+                        <button
+                          type="button"
+                          role="checkbox"
+                          aria-checked={false}
+                          aria-label={task.text}
+                          onClick={() => void checkOff(task)}
+                          style={{
+                            padding: 0,
+                            cursor: "pointer",
+                            width: 15,
+                            height: 15,
+                            borderRadius: 3,
+                            flexShrink: 0,
+                            border: "1.5px solid var(--ink-3)",
+                            background: "transparent",
+                          }}
+                        />
+                        <span className="activity-row-main">
+                          <span className="activity-row-sub">
+                            {parseTaskMeta(task.text).title}
+                          </span>
+                        </span>
+                        <span
+                          className="muted"
+                          style={{
+                            fontSize: 11,
+                            flexShrink: 0,
+                            maxWidth: "35%",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {task.stem}
+                        </span>
+                      </div>
+                    ))}
+                    {dueTasks.length > 5 ? (
+                      <button
+                        className="activity-row"
+                        onClick={() => jump("tasks")}
+                      >
+                        <span className="activity-row-main muted">
+                          {(t.tb_activity_tasks_more ?? "+{n} more").replace(
+                            "{n}",
+                            String(dueTasks.length - 5),
+                          )}
+                        </span>
+                      </button>
+                    ) : null}
+                  </>
+                ) : null}
                 <button className="activity-row" onClick={() => jump("overview")}>
                   <ActivityIcon name="link" />
                   <span className="activity-row-main">

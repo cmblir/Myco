@@ -853,6 +853,8 @@ export interface Strings {
   tb_activity_links?: string; // {n}
   tb_activity_mcp_on?: string;
   tb_activity_mcp_off?: string;
+  tb_activity_tasks?: string;
+  tb_activity_tasks_more?: string; // {n}
   // Menu bar tray + OS notifications.
   tray_open?: string;
   tray_quit?: string;
@@ -1790,6 +1792,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_links: "{n} suggested links",
     tb_activity_mcp_on: "MCP server running",
     tb_activity_mcp_off: "MCP server off",
+    tb_activity_tasks: "Tasks due",
+    tb_activity_tasks_more: "+{n} more",
     tray_open: "Open myco",
     tray_quit: "Quit myco",
     s_tray_resident_title: "Keep running in the menu bar",
@@ -2729,6 +2733,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_links: "제안된 링크 {n}개",
     tb_activity_mcp_on: "MCP 서버 실행 중",
     tb_activity_mcp_off: "MCP 서버 꺼짐",
+    tb_activity_tasks: "할 일",
+    tb_activity_tasks_more: "+{n}개 더",
     tray_open: "myco 열기",
     tray_quit: "myco 종료",
     s_tray_resident_title: "메뉴 막대에 상주",
@@ -3544,6 +3550,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_links: "リンク提案 {n}件",
     tb_activity_mcp_on: "MCPサーバー稼働中",
     tb_activity_mcp_off: "MCPサーバー停止",
+    tb_activity_tasks: "期限のタスク",
+    tb_activity_tasks_more: "+{n}件",
     tray_open: "mycoを開く",
     tray_quit: "mycoを終了",
     s_tray_resident_title: "メニューバーに常駐",

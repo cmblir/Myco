@@ -9,6 +9,7 @@
 // Overview, Provenance and Reader views render real-looking content.
 
 import type { DistillConfig } from "./distill";
+import { today } from "./taskLine";
 
 interface Node {
   s: string; // slug
@@ -871,7 +872,8 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     }
     case "scan_tasks":
       // Seeded checkbox items, plus anything written this session so add/toggle
-      // actually round-trips.
+      // actually round-trips. The due-dated pair lives in mockNotes (seeded at
+      // module init) so the activity popover's check-off round-trips too.
       return Promise.resolve([
         ...tasksFromMockNotes(),
         { page: "daily.md", stem: "daily", line: 3, text: "reindex embeddings before the demo", done: false },
@@ -1455,6 +1457,15 @@ const mockInbox = new Map<string, string>();
 /// is exercisable in mock mode: without this a write was dropped and the next
 /// scan returned the same seeded list, making a working feature look broken.
 const mockNotes = new Map<string, string>();
+
+// Seed one note with due-dated tasks (one overdue, one due today) so the Topbar
+// activity popover's due block has rows in mock mode — and, because read_file
+// serves mockNotes, checking one off actually round-trips through
+// writeTaskStatus's line rewrite instead of hitting the stale guard.
+mockNotes.set(
+  `${VAULT}/daily/tasks.md`,
+  `# tasks\n\n- [ ] prepare the demo vault @${today(new Date(Date.now() - 86_400_000))}\n- [ ] add the flash-attention variant @${today()}\n`,
+);
 
 /// Checkbox lines in a written note, in the shape scan_tasks returns.
 function tasksFromMockNotes(): {

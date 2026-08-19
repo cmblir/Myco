@@ -16,13 +16,13 @@ import { isComposingKey } from "../lib/ime";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { notifyEnabled, runTaskNotifyPass, setNotifyEnabled } from "../lib/taskNotifier";
+import { writeTaskStatus } from "../lib/taskWrite";
 import {
   appendTaskLine,
   buildTaskLine,
   monthGrid,
   parseTaskMeta,
   setLineDue,
-  setLineStatus,
   today,
   type TaskStatus,
 } from "../lib/taskLine";
@@ -113,24 +113,21 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
     }
   }
 
-  /// Move a task to `status` by rewriting just its line. Checking a box and
-  /// dropping a card on a board column are the same edit.
+  /// Move a task to `status` by rewriting just its line (taskWrite.ts — shared
+  /// with the activity popover). Checking a box and dropping a card on a board
+  /// column are the same edit.
   async function setStatus(task: TaskItem, status: TaskStatus): Promise<void> {
     if (!currentVault || busy) return;
     setBusy(true);
     setError(null);
-    const path = `${currentVault.path}/${task.page}`;
     try {
-      const { raw } = await ipc.readFile(path);
-      const next = setLineStatus(raw, task.line, status);
-      if (next === null) {
+      if ((await writeTaskStatus(currentVault.path, task, status)) === "stale") {
         // The note changed since the scan, so this line number no longer points
         // at that checkbox. Rescan instead of editing whatever is there now.
         await refresh();
         setError(t.tasks_stale ?? "That note changed — the list has been refreshed.");
         return;
       }
-      await ipc.writeFile(path, next);
       await refresh();
     } catch (e: unknown) {
       setError(String(e));

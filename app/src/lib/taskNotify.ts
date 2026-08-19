@@ -42,6 +42,22 @@ export function buildDigest(tasks: TaskItem[], now: Date = new Date()): Digest |
   return overdue === 0 && dueToday === 0 ? null : { overdue, dueToday };
 }
 
+/** Open tasks due today or earlier — the activity popover's standing list.
+ * Sorted by due date ascending so the most overdue reads first. Same
+ * done/due semantics as `buildDigest`, but the tasks themselves. */
+export function dueOpen(tasks: TaskItem[], now: Date = new Date()): TaskItem[] {
+  const day = today(now);
+  return tasks
+    .filter((task) => {
+      if (task.done) return false;
+      const dueDay = parseTaskMeta(task.text).due.slice(0, 10);
+      return dueDay !== "" && dueDay <= day;
+    })
+    .sort((a, b) =>
+      parseTaskMeta(a.text).due.localeCompare(parseTaskMeta(b.text).due),
+    );
+}
+
 /** Whether the digest for `now`'s day is still owed, given the last day one was
  * sent (`""` when never). Fires only once the chosen hour has arrived, so a
  * morning digest never lands the night before. */
