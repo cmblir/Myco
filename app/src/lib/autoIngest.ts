@@ -44,6 +44,36 @@ export async function listInboxFiles(
     .map((c) => ({ name: c.name, path: c.path }));
 }
 
+/** One row in the "waiting in _inbox" list, newest first. */
+export interface PendingInboxRow {
+  name: string;
+  path: string;
+  /** Epoch seconds; null when the vault walk had no time for this file. */
+  mtime: number | null;
+  /** Arrived today (caller-local date) — the row the inflow "+N" points at. */
+  today: boolean;
+}
+
+/** Pure derivation: sort pending files newest first and flag today's
+ *  arrivals. Files without a known mtime sort last. */
+export function pendingInboxRows(
+  files: { name: string; path: string }[],
+  mtimes: Map<string, number>,
+  now: Date = new Date(),
+): PendingInboxRow[] {
+  const todayKey = now.toDateString();
+  return files
+    .map((f) => {
+      const m = mtimes.get(f.path);
+      return {
+        ...f,
+        mtime: m ?? null,
+        today: m != null && new Date(m * 1000).toDateString() === todayKey,
+      };
+    })
+    .sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0));
+}
+
 /** Ingest the next pending inbox source, then remove it. Returns true if it ran
  *  a successful ingest. Skips when a run is already in flight. */
 export async function runInboxPass(vaultPath: string): Promise<boolean> {

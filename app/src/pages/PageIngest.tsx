@@ -14,6 +14,9 @@ import { sourceTextFor } from "../lib/mediaIngest";
 import { formatElapsed } from "../lib/time";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
+import { useUIStore } from "../stores/uiStore";
+import { listInboxFiles, pendingInboxRows } from "../lib/autoIngest";
+import type { PendingInboxRow } from "../lib/autoIngest";
 import ZoteroImport from "../components/ZoteroImport";
 import ConversationImport from "../components/ConversationImport";
 import { useIngestStore } from "../stores/ingestStore";
@@ -44,6 +47,28 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   const startIngest = useIngestStore((s) => s.startIngest);
   const markSeen = useIngestStore((s) => s.markSeen);
   const resetIngest = useIngestStore((s) => s.reset);
+
+  const setRoute = useUIStore((s) => s.setRoute);
+
+  // Pending _inbox sources — the list the inflow "View →" lands on. Refetched
+  // when a run finishes because ingest archives the consumed source.
+  const [inboxRows, setInboxRows] = useState<PendingInboxRow[] | null>(null);
+  useEffect(() => {
+    const root = currentVault?.path;
+    if (!root) {
+      setInboxRows(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const files = await listInboxFiles(root);
+      const times = new Map(await ipc.fileMtimes(root).catch(() => []));
+      if (!cancelled) setInboxRows(pendingInboxRows(files, times));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [currentVault, stage]);
 
   const running =
     stage === "writing-raw" || stage === "claude" || stage === "indexing";
@@ -171,6 +196,70 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
         <h1 className="page-title">{t.ing_title}</h1>
         <p className="page-lede">{t.ing_lede}</p>
       </header>
+
+      {inboxRows !== null ? (
+        <section
+          className="card"
+          style={{ marginTop: 4, marginBottom: 16, padding: 14 }}
+          data-testid="inbox-pending"
+        >
+          <div className="section-title" style={{ fontSize: 13.5, marginBottom: 8 }}>
+            {(t.ing_inbox_pending ?? "Waiting in _inbox ({n})").replace(
+              "{n}",
+              String(inboxRows.length),
+            )}
+          </div>
+          {inboxRows.length === 0 ? (
+            <div className="muted" style={{ fontSize: 13 }}>
+              {t.ing_inbox_empty ??
+                "Nothing waiting — arrivals have already been ingested."}
+            </div>
+          ) : (
+            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+              {inboxRows.map((r) => (
+                <li key={r.path}>
+                  <button
+                    className="btn"
+                    style={{
+                      width: "100%",
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      justifyContent: "flex-start",
+                      marginTop: 4,
+                    }}
+                    onClick={() => setRoute(`page:${r.path}`)}
+                  >
+                    <Icon name="inbox" size={13} />
+                    <span
+                      style={{
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {r.name}
+                    </span>
+                    {r.today ? (
+                      <span className="chip">{t.ing_inbox_today ?? "today"}</span>
+                    ) : null}
+                    <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
+                      {r.mtime != null
+                        ? new Date(r.mtime * 1000).toLocaleString([], {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })
+                        : ""}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      ) : null}
 
       <ConversationImport t={t} />
       <ZoteroImport t={t} />

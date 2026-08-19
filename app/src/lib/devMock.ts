@@ -631,10 +631,16 @@ function mtimes(): [string, number][] {
   // top of an old baseline (so timelapse ordering still spans a real range).
   const base = 1_700_000_000;
   const now = Math.floor(Date.now() / 1000);
-  return NODES.map(
-    (d, i) =>
-      [pathOf(d.s), i < 5 ? now - i * 43_200 : base + i * 3600] as [string, number],
-  );
+  return [
+    ...NODES.map(
+      (d, i) =>
+        [pathOf(d.s), i < 5 ? now - i * 43_200 : base + i * 3600] as [string, number],
+    ),
+    // Pending _inbox sources: first arrived "today", the rest earlier.
+    ...[...mockInbox.keys()].map(
+      (p, i) => [p, now - 600 - i * 100_000] as [string, number],
+    ),
+  ];
 }
 
 function provenance() {
@@ -1499,6 +1505,17 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
 /// fixed listing — otherwise `runInboxPass` always finds an empty inbox and the
 /// whole handoff is untestable.
 const mockInbox = new Map<string, string>();
+
+// Seed two pending sources so PageIngest's "waiting in _inbox" list (where the
+// inflow "View →" lands) has rows in ?mock=1 — one from today, one older.
+mockInbox.set(
+  `${VAULT}/_inbox/clipped-rope-scaling.md`,
+  "---\nsource_url: https://example.com/rope\n---\n\n# RoPE scaling notes\n\nClipped article about rotary embeddings.\n",
+);
+mockInbox.set(
+  `${VAULT}/_inbox/meeting-notes.md`,
+  "# Meeting notes\n\nRaw notes waiting to be ingested.\n",
+);
 
 /// Notes written through `write_file`, so the task page's add/toggle round-trip
 /// is exercisable in mock mode: without this a write was dropped and the next

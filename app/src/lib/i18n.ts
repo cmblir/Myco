@@ -145,6 +145,9 @@ export interface Strings {
   ing_drop_or: string;
   ing_browse: string;
   ing_drop_multi?: string; // {n} = count
+  ing_inbox_pending?: string; // {n} = pending file count
+  ing_inbox_empty?: string;
+  ing_inbox_today?: string;
   ing_yt_fetch?: string;
   ing_yt_fetching?: string;
   ing_paste_url_ph: string;
@@ -1086,6 +1089,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_drop_or: "or paste a URL",
     ing_browse: "Browse files…",
     ing_drop_multi: "Loaded the first of {n} files — this form takes one source at a time. Drop the rest one by one.",
+    ing_inbox_pending: "Waiting in _inbox ({n})",
+    ing_inbox_empty: "Nothing waiting — arrivals have already been ingested.",
+    ing_inbox_today: "today",
     ing_yt_fetch: "Fetch YouTube transcript",
     ing_yt_fetching: "Fetching transcript…",
     ing_paste_url_ph: "https://example.com/paper.pdf",
@@ -2050,6 +2056,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_drop_or: "또는 URL 붙여넣기",
     ing_browse: "파일 선택…",
     ing_drop_multi: "{n}개 중 첫 파일만 불러왔습니다 — 이 폼은 한 번에 하나의 소스만 처리합니다. 나머지는 하나씩 드롭하세요.",
+    ing_inbox_pending: "_inbox 대기 중 ({n})",
+    ing_inbox_empty: "대기 중인 파일이 없습니다 — 도착분은 이미 처리되었습니다.",
+    ing_inbox_today: "오늘",
     ing_yt_fetch: "YouTube 자막 가져오기",
     ing_yt_fetching: "자막 가져오는 중…",
     ing_paste_url_ph: "https://example.com/paper.pdf",
@@ -2944,6 +2953,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_drop_or: "または URL を貼り付け",
     ing_browse: "ファイルを選択…",
     ing_drop_multi: "{n} 件のうち最初のファイルのみ読み込みました — このフォームは一度に 1 つのソースだけ処理します。残りは 1 つずつドロップしてください。",
+    ing_inbox_pending: "_inbox 待機中（{n}）",
+    ing_inbox_empty: "待機中のファイルはありません — 到着分は取り込み済みです。",
+    ing_inbox_today: "今日",
     ing_yt_fetch: "YouTube字幕を取得",
     ing_yt_fetching: "字幕を取得中…",
     ing_paste_url_ph: "https://example.com/paper.pdf",
