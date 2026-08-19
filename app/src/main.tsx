@@ -45,6 +45,16 @@ async function bootstrap(): Promise<void> {
     throw new Error("Root element #root not found in index.html");
   }
 
+  // Dev-only: render the UI in a plain browser against an in-memory sample
+  // vault (for screenshots / visual QA). Installed BEFORE any render — the
+  // tray-panel branch below included, so ?window=tray&mock=1 exercises the
+  // real getTrayStatus path against the mock rather than needing a bespoke
+  // fixture. Stripped from production builds.
+  if (import.meta.env.DEV && new URLSearchParams(location.search).has("mock")) {
+    const { installTauriMock } = await import("./lib/devMock");
+    installTauriMock();
+  }
+
   // The tray popover window (Rust opens index.html?window=tray) renders ONLY
   // the activity panel — App and its schedulers never mount in that context.
   if (isTrayPanelWindow(location.search)) {
@@ -57,14 +67,6 @@ async function bootstrap(): Promise<void> {
       </React.StrictMode>,
     );
     return;
-  }
-
-  // Dev-only: render the UI in a plain browser against an in-memory sample
-  // vault (for screenshots / visual QA). Installed BEFORE render so the app's
-  // first IPC calls hit the mock. Stripped from production builds.
-  if (import.meta.env.DEV && new URLSearchParams(location.search).has("mock")) {
-    const { installTauriMock } = await import("./lib/devMock");
-    installTauriMock();
   }
 
   ReactDOM.createRoot(root).render(

@@ -354,9 +354,40 @@ pub fn panel_position(
     (x, y)
 }
 
+/// Wall-clock guards for the toggle/blur race, in ms since the unix epoch.
+/// A tray click that dismisses the panel often arrives right AFTER the OS
+/// already delivered the panel's focus-loss (which hid it) — a naive
+/// `is_visible()` check then reads false and re-shows the panel the user
+/// just tried to close. Symmetrically, a transient blur right after `show()`
+/// (focus still settling) must not instantly close a fresh panel.
+static PANEL_HIDDEN_BY_BLUR_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static PANEL_SHOWN_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+const PANEL_RACE_GRACE_MS: u64 = 300;
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Pure decision for a tray click on a currently-hidden panel: a hide that
+/// happened within the grace window was almost certainly the blur produced by
+/// THIS click's own focus shift — the click meant "close", so stay hidden.
+pub(crate) fn click_should_reshow(hidden_by_blur_at: u64, now: u64) -> bool {
+    now.saturating_sub(hidden_by_blur_at) > PANEL_RACE_GRACE_MS
+}
+
+/// Pure decision for a blur on a just-shown panel: ignore focus-loss inside
+/// the grace window (focus is still settling from our own show+set_focus).
+pub(crate) fn blur_should_hide(shown_at: u64, now: u64) -> bool {
+    now.saturating_sub(shown_at) > PANEL_RACE_GRACE_MS
+}
+
 /// Show (or hide, when already visible) the tray popover window, creating it
 /// lazily on first click. The window is reused: reposition + show afterwards.
 fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
+    use std::sync::atomic::Ordering;
     let win = match app.get_webview_window(PANEL_LABEL) {
         Some(w) => w,
         None => {
@@ -376,10 +407,14 @@ fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
             .build();
             match built {
                 Ok(w) => {
-                    // Focus loss dismisses the popover, like a native menu.
+                    // Focus loss dismisses the popover, like a native menu —
+                    // except inside the just-shown grace window (see above).
                     let hide = w.clone();
                     w.on_window_event(move |e| {
-                        if matches!(e, tauri::WindowEvent::Focused(false)) {
+                        if matches!(e, tauri::WindowEvent::Focused(false))
+                            && blur_should_hide(PANEL_SHOWN_AT.load(Ordering::Relaxed), now_ms())
+                        {
+                            PANEL_HIDDEN_BY_BLUR_AT.store(now_ms(), Ordering::Relaxed);
                             let _ = hide.hide();
                         }
                     });
@@ -396,6 +431,11 @@ fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
         let _ = win.hide();
         return;
     }
+    if !click_should_reshow(PANEL_HIDDEN_BY_BLUR_AT.load(Ordering::Relaxed), now_ms()) {
+        // The blur from this very click already hid the panel — the click
+        // meant "close"; re-showing would make the panel undismissable.
+        return;
+    }
     let scale = win.scale_factor().unwrap_or(1.0);
     let probe = rect.position.to_physical::<f64>(scale);
     let screen_right = app
@@ -405,6 +445,7 @@ fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
         .map(|m| f64::from(m.position().x) + f64::from(m.size().width));
     let (x, y) = panel_position(&rect, scale, PANEL_WIDTH, screen_right);
     let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
+    PANEL_SHOWN_AT.store(now_ms(), std::sync::atomic::Ordering::Relaxed);
     let _ = win.show();
     let _ = win.set_focus();
 }
@@ -503,6 +544,22 @@ mod tests {
             kind: kind.into(),
             text: text.into(),
         }
+    }
+
+    #[test]
+    fn a_click_right_after_a_blur_hide_means_close_not_reshow() {
+        // The blur produced by the click's own focus shift lands first.
+        assert!(!click_should_reshow(10_000, 10_050));
+        // Well past the grace window: a genuine re-open.
+        assert!(click_should_reshow(10_000, 10_500));
+        // No blur ever recorded (0) — always show.
+        assert!(click_should_reshow(0, 10_000));
+    }
+
+    #[test]
+    fn a_transient_blur_right_after_show_does_not_close_the_panel() {
+        assert!(!blur_should_hide(20_000, 20_100));
+        assert!(blur_should_hide(20_000, 20_400));
     }
 
     fn full_status() -> TrayStatus {
