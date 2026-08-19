@@ -351,7 +351,11 @@ fn handle_menu_id<R: Runtime>(app: &AppHandle<R>, id: &str) {
             let _ = app.emit(TRAY_ACTION_EVENT, route);
         }
         "tray-distill" => {
-            show_main_window(app);
+            // No show/focus: distilling needs the main WEBVIEW alive (a hidden
+            // window's webview keeps running), not the window in the user's
+            // face. From the popover this also keeps the panel focused and
+            // open, so the user watches it flip to "증류 중 — …" live via the
+            // status push instead of everything vanishing on click.
             let _ = app.emit(TRAY_ACTION_EVENT, "distill");
         }
         _ => {}
@@ -414,7 +418,13 @@ pub fn panel_position(
 /// (focus still settling) must not instantly close a fresh panel.
 static PANEL_HIDDEN_BY_BLUR_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static PANEL_SHOWN_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-const PANEL_RACE_GRACE_MS: u64 = 300;
+// Two different windows: the click-vs-blur race resolves in tens of ms (the
+// blur is delivered by the same click's focus shift), so a SHORT window
+// suffices — a long one eats a genuine quick re-open (blur-hide by clicking
+// another app, then immediately clicking the tray to bring the panel back).
+// The show-vs-transient-blur settle can take longer, so it keeps 300.
+const PANEL_CLICK_GRACE_MS: u64 = 150;
+const PANEL_SHOW_GRACE_MS: u64 = 300;
 
 fn now_ms() -> u64 {
     std::time::SystemTime::now()
@@ -427,13 +437,13 @@ fn now_ms() -> u64 {
 /// happened within the grace window was almost certainly the blur produced by
 /// THIS click's own focus shift — the click meant "close", so stay hidden.
 pub(crate) fn click_should_reshow(hidden_by_blur_at: u64, now: u64) -> bool {
-    now.saturating_sub(hidden_by_blur_at) > PANEL_RACE_GRACE_MS
+    now.saturating_sub(hidden_by_blur_at) > PANEL_CLICK_GRACE_MS
 }
 
 /// Pure decision for a blur on a just-shown panel: ignore focus-loss inside
 /// the grace window (focus is still settling from our own show+set_focus).
 pub(crate) fn blur_should_hide(shown_at: u64, now: u64) -> bool {
-    now.saturating_sub(shown_at) > PANEL_RACE_GRACE_MS
+    now.saturating_sub(shown_at) > PANEL_SHOW_GRACE_MS
 }
 
 /// Show (or hide, when already visible) the tray popover window, creating it
@@ -591,8 +601,14 @@ pub fn resize_tray_panel(app: AppHandle, height: f64) -> Result<(), String> {
 /// (including resident-mode show and quit). "dismiss" just hides the panel.
 #[tauri::command]
 pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
-    if let Some(win) = app.get_webview_window(PANEL_LABEL) {
-        let _ = win.hide();
+    // Navigation/quit actions close the popover (they move the user
+    // somewhere else). "distill" does NOT: the panel stays open and
+    // live-updates to show the run it just started — closing it read as
+    // "the button turned the app off".
+    if action != "distill" {
+        if let Some(win) = app.get_webview_window(PANEL_LABEL) {
+            let _ = win.hide();
+        }
     }
     let menu_id = match action.as_str() {
         "query" => "tray-query",
@@ -624,7 +640,8 @@ mod tests {
     fn a_click_right_after_a_blur_hide_means_close_not_reshow() {
         // The blur produced by the click's own focus shift lands first.
         assert!(!click_should_reshow(10_000, 10_050));
-        // Well past the grace window: a genuine re-open.
+        // A human re-open after app-switching is slower than the race window.
+        assert!(click_should_reshow(10_000, 10_200));
         assert!(click_should_reshow(10_000, 10_500));
         // No blur ever recorded (0) — always show.
         assert!(click_should_reshow(0, 10_000));
