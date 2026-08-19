@@ -760,6 +760,7 @@ export interface Strings {
   set_distill_step_run?: string;
   set_distill_step_digest?: string;
   set_distill_step_ingest?: string;
+  set_distill_step_maps?: string;
   // profile.md editor, in the Distill tab (Phase B, Task 5).
   set_profile_title?: string;
   set_profile_lede?: string;
@@ -842,6 +843,13 @@ export interface Strings {
   tb_model_ready?: string;
   tb_model_offline?: string;
   tb_model_open_settings?: string;
+  // Topbar activity chip + popover.
+  tb_activity_label?: string;
+  tb_activity_n?: string; // {n}
+  tb_activity_running?: string;
+  tb_activity_links?: string; // {n}
+  tb_activity_mcp_on?: string;
+  tb_activity_mcp_off?: string;
   // Graph toolbar.
   gr_zoom_out?: string;
   gr_fit?: string;
@@ -1674,6 +1682,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_run: "the core pass",
     set_distill_step_digest: "the session digest",
     set_distill_step_ingest: "the full-tier ingest",
+    set_distill_step_maps: "the map drafts",
     set_profile_title: "Profile",
     set_profile_lede:
       "Personalizes distillation and Ask/ingest context. Written to profile.md; sent to configured AI providers when injection is on.",
@@ -1760,6 +1769,12 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_model_ready: "ready",
     tb_model_offline: "offline",
     tb_model_open_settings: "Open model settings",
+    tb_activity_label: "Background activity",
+    tb_activity_n: "Activity {n}",
+    tb_activity_running: "Running",
+    tb_activity_links: "{n} suggested links",
+    tb_activity_mcp_on: "MCP server running",
+    tb_activity_mcp_off: "MCP server off",
     gr_zoom_out: "Zoom out",
     gr_fit: "Fit",
     gr_zoom_in: "Zoom in",
@@ -2595,6 +2610,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_run: "코어 패스",
     set_distill_step_digest: "세션 다이제스트",
     set_distill_step_ingest: "전체 계층 인제스트",
+    set_distill_step_maps: "맵 초안",
     set_profile_title: "프로필",
     set_profile_lede:
       "증류와 Ask/인제스트 컨텍스트를 개인화합니다. profile.md에 저장되며, 주입이 켜져 있으면 설정된 AI 프로바이더로 전송됩니다.",
@@ -2679,6 +2695,12 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_model_ready: "준비됨",
     tb_model_offline: "오프라인",
     tb_model_open_settings: "모델 설정 열기",
+    tb_activity_label: "백그라운드 활동",
+    tb_activity_n: "활동 {n}",
+    tb_activity_running: "진행 중",
+    tb_activity_links: "제안된 링크 {n}개",
+    tb_activity_mcp_on: "MCP 서버 실행 중",
+    tb_activity_mcp_off: "MCP 서버 꺼짐",
     gr_zoom_out: "축소",
     gr_fit: "맞춤",
     gr_zoom_in: "확대",
@@ -3391,6 +3413,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_run: "コアパス",
     set_distill_step_digest: "セッションダイジェスト",
     set_distill_step_ingest: "フル階層インジェスト",
+    set_distill_step_maps: "マップ下書き",
     set_profile_title: "プロフィール",
     set_profile_lede:
       "蒸留とAsk/インジェストのコンテキストを個人化します。profile.mdに保存され、注入がオンの場合は設定済みのAIプロバイダーに送信されます。",
@@ -3475,6 +3498,12 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_model_ready: "準備完了",
     tb_model_offline: "オフライン",
     tb_model_open_settings: "モデル設定を開く",
+    tb_activity_label: "バックグラウンド活動",
+    tb_activity_n: "活動 {n}",
+    tb_activity_running: "実行中",
+    tb_activity_links: "リンク提案 {n}件",
+    tb_activity_mcp_on: "MCPサーバー稼働中",
+    tb_activity_mcp_off: "MCPサーバー停止",
     gr_zoom_out: "ズームアウト",
     gr_fit: "全体表示",
     gr_zoom_in: "ズームイン",

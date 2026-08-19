@@ -3843,6 +3843,79 @@ hr {
   line-height: 1.4;
 }
 
+/* Topbar activity system (ActivityChip). The activity PNGs bake a dark
+   ground in, so a circle mask hides the square edge on light surfaces. A
+   RUNNING icon breathes via drop-shadow intensity — that glow is the whole
+   running signal; idle rows stay static. */
+.activity-icon {
+  display: block;
+  border-radius: 50%;
+  flex: none;
+}
+.activity-icon.is-active {
+  animation: activity-breathe 2.4s ease-in-out infinite;
+}
+@keyframes activity-breathe {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 1px rgba(120, 150, 255, 0.25));
+  }
+  50% {
+    filter: drop-shadow(0 0 7px rgba(120, 150, 255, 0.85));
+  }
+}
+.activity-chip .activity-num,
+.activity-pop .activity-num {
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.activity-pop .activity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  font-size: 13px;
+  color: inherit;
+  background: none;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 4px;
+}
+.activity-pop button.activity-row {
+  cursor: pointer;
+}
+.activity-pop button.activity-row:hover {
+  background: var(--bg-hover);
+}
+.activity-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.activity-row-main progress {
+  width: 100%;
+  height: 5px;
+  accent-color: var(--accent);
+}
+.activity-row-sub {
+  font-size: 12px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-stop {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ingest-orb-core,
   .ingest-orb-ring,
@@ -3850,7 +3923,8 @@ hr {
   .ingest-feed-row,
   .ingest-chip-spinner,
   .chip-live,
-  .chip-pop {
+  .chip-pop,
+  .activity-icon.is-active {
     animation: none;
   }
   .ingest-orb-ring {

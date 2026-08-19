@@ -4,6 +4,7 @@ import {
   acceptAll,
   appendWikilink,
   pairKey,
+  pendingLinkCount,
   suggestLinks,
   type LinkSuggestion,
 } from "./linkSuggestions";
@@ -48,6 +49,31 @@ describe("suggestLinks", () => {
     );
     expect(out).toHaveLength(1);
     expect(out[0].key).toBe(pairKey(A, C));
+  });
+});
+
+describe("pendingLinkCount", () => {
+  it("counts every pending pair, uncapped, minus linked and dismissed", () => {
+    // 15 novel pairs against an empty adjacency — past suggestLinks' display
+    // default of 12, which the count must ignore.
+    const empty: Adjacency = { forward: {}, backward: {}, unresolved: {}, tags: {} };
+    const sem = Array.from({ length: 15 }, (_, i) => ({
+      source: `/v/a${i}.md`,
+      target: `/v/b${i}.md`,
+      score: 0.9,
+    }));
+    expect(pendingLinkCount(empty, sem, new Set())).toBe(15);
+    // linked and dismissed pairs leave the count
+    expect(
+      pendingLinkCount(adj, [{ source: A, target: B, score: 0.95 }], new Set()),
+    ).toBe(0);
+    expect(
+      pendingLinkCount(
+        empty,
+        [{ source: A, target: C, score: 0.7 }],
+        new Set([pairKey(A, C)]),
+      ),
+    ).toBe(0);
   });
 });
 

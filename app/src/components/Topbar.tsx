@@ -7,14 +7,12 @@ import { Icon, ProviderGlyph } from "../lib/icons";
 import type { IconName, ProviderId } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
-import type { RouteId } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useIngestStore } from "../stores/ingestStore";
 import { useLintStore } from "../stores/lintStore";
 import { useQueryStore } from "../stores/queryStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { useReindexStore } from "../stores/reindexStore";
-import { useDistillRunStore } from "../stores/distillRunStore";
+import ActivityChip from "./ActivityChip";
 import { PROVIDERS } from "../lib/providers";
 import { ipc } from "../lib/ipc";
 import type { MycoSettings } from "../lib/ipc";
@@ -66,7 +64,7 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
       <IngestChip t={t} />
       <LintChip t={t} />
       <QueryChip t={t} />
-      <BusyJobsChip t={t} />
+      <ActivityChip t={t} />
       <button className="pill pill-search" onClick={toggleCmd}>
         <Icon name="search" size={14} />
         <span className="pill-label">{t.ph_search}</span>
@@ -371,10 +369,10 @@ function IngestChip({ t }: { t: Strings }): JSX.Element | null {
 
 // Same pattern as IngestChip, for a finished Ask run: the chat lives in
 // queryStore, so an answer keeps computing when the user leaves the Query
-// page. The BUSY half of this (spinner + elapsed while an answer is still
-// coming) now lives in BusyJobsChip below, folded in with distill/reindex so
-// the three don't each show their own live pill at once — this component
-// only covers the done/error pop once an answer lands.
+// page. The BUSY half of this (icon + elapsed while an answer is still
+// coming) lives in ActivityChip, folded in with distill/reindex so the three
+// don't each show their own live pill at once — this component only covers
+// the done/error pop once an answer lands.
 function QueryChip({ t }: { t: Strings }): JSX.Element | null {
   const busy = useQueryStore((s) => s.busy);
   const seen = useQueryStore((s) => s.seen);
@@ -400,73 +398,6 @@ function QueryChip({ t }: { t: Strings }): JSX.Element | null {
     );
   }
   return null;
-}
-
-// Ask / distill / reindex, unified into ONE live pill: each already gets its
-// own busy state from an existing store (queryStore / distillRunStore /
-// reindexStore) — this just picks the highest-priority one that's currently
-// running and shows it, with a "+N" badge for however many others are also
-// in flight, so three concurrent background jobs don't crowd the bar with
-// three separate pills. Priority (most to least urgent to surface): Ask,
-// since the user is actively waiting on it; distill; reindex.
-function BusyJobsChip({ t }: { t: Strings }): JSX.Element | null {
-  const askBusy = useQueryStore((s) => s.busy);
-  const askStartedAt = useQueryStore((s) => s.startedAt);
-  const distillBusy = useDistillRunStore((s) => s.running);
-  const reindexStage = useReindexStore((s) => s.stage);
-  const reindexDone = useReindexStore((s) => s.done);
-  const reindexTotal = useReindexStore((s) => s.total);
-  const reindexPage = useReindexStore((s) => s.page);
-  const setRoute = useUIStore((s) => s.setRoute);
-
-  const reindexBusy = reindexStage === "loading-model" || reindexStage === "indexing";
-  const anyBusy = askBusy || distillBusy || reindexBusy;
-
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!anyBusy) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [anyBusy]);
-
-  if (!anyBusy) return null;
-
-  const jobs: { label: string; route: RouteId }[] = [];
-  if (askBusy) {
-    jobs.push({
-      label: `${t.nav_query} ${askStartedAt ? formatTicker(now - askStartedAt) : ""}`.trim(),
-      route: "query",
-    });
-  }
-  if (distillBusy) {
-    // Distill has no dedicated page of its own — its status card lives on
-    // Overview.
-    jobs.push({ label: t.set_distill_running ?? "Distilling…", route: "overview" });
-  }
-  if (reindexBusy) {
-    const label =
-      reindexStage === "loading-model"
-        ? (t.s_embeddings_loading_model ?? "Loading model…")
-        : `${t.s_embeddings_indexing ?? "Indexing…"} ${reindexDone}/${reindexTotal}${reindexPage ? " — " + reindexPage : ""}`;
-    // Settings opens on its "model" tab by default, where the reindex card
-    // lives — no tab deep-link needed.
-    jobs.push({ label, route: "settings" });
-  }
-
-  const top = jobs[0];
-  const extra = jobs.length - 1;
-
-  return (
-    <button
-      className="pill chip-live"
-      onClick={() => setRoute(top.route)}
-      title={jobs.map((j) => j.label).join(" · ")}
-    >
-      <span className="ingest-chip-spinner" />
-      <span className="job-chip-label">{top.label}</span>
-      {extra > 0 ? <span className="pill-badge">+{extra}</span> : null}
-    </button>
-  );
 }
 
 // Same pattern as IngestChip, for lint runs: spinner while running, then a

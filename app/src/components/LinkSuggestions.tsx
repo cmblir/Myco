@@ -9,14 +9,13 @@ import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
-import { ipc, type SemEdge } from "../lib/ipc";
+import { ipc } from "../lib/ipc";
 import { stem } from "../lib/graphData";
 import { useVaultStore } from "../stores/vaultStore";
+import { useLinkSuggestStore } from "../stores/linkSuggestStore";
 import {
   acceptAll,
   acceptSuggestion,
-  loadDismissed,
-  saveDismissed,
   suggestLinks,
   type LinkSuggestion,
 } from "../lib/linkSuggestions";
@@ -26,8 +25,12 @@ const SHOW = 6;
 export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | null {
   const adjacency = useVaultStore((s) => s.adjacency);
   const refreshLinkGraph = useVaultStore((s) => s.refreshLinkGraph);
-  const [sem, setSem] = useState<SemEdge[] | null>(null);
-  const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed());
+  // sem + dismissed live in a shared store (not useState) so the Topbar
+  // activity popover shows the same pending count this card acts on.
+  const sem = useLinkSuggestStore((s) => s.sem);
+  const dismissed = useLinkSuggestStore((s) => s.dismissed);
+  const refreshSem = useLinkSuggestStore((s) => s.refresh);
+  const dismissKeys = useLinkSuggestStore((s) => s.dismiss);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
@@ -37,21 +40,10 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
   // semantic index is still reconciling, so a mount-time one-shot fetch came
   // back empty and the whole section silently never appeared. The link graph
   // refreshes when the vault settles (and after every accept), so it doubles
-  // as the retry signal.
+  // as the retry signal (the store dedupes by adjacency reference).
   useEffect(() => {
-    let killed = false;
-    ipc
-      .semanticEdges(4)
-      .then((edges) => {
-        if (!killed) setSem(edges);
-      })
-      .catch(() => {
-        if (!killed) setSem([]);
-      });
-    return () => {
-      killed = true;
-    };
-  }, [adjacency]);
+    void refreshSem(adjacency);
+  }, [adjacency, refreshSem]);
 
   // The list DISPLAYS a handful at a time, but "accept all" means all —
   // accepting only the visible slice made the user re-click through the
@@ -67,10 +59,7 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
   const suggestions = useMemo(() => allPending.slice(0, SHOW), [allPending]);
 
   function dismiss(s: LinkSuggestion): void {
-    const next = new Set(dismissed);
-    next.add(s.key);
-    setDismissed(next);
-    saveDismissed(next);
+    dismissKeys([s.key]);
   }
 
   async function accept(s: LinkSuggestion): Promise<void> {
@@ -99,10 +88,7 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
       setBulk({ done, total }),
     );
     if (accepted.length > 0) {
-      const next = new Set(dismissed);
-      for (const s of accepted) next.add(s.key);
-      setDismissed(next);
-      saveDismissed(next);
+      dismissKeys(accepted.map((s) => s.key));
       await refreshLinkGraph();
     }
     setBulk(null);

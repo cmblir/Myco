@@ -57,6 +57,10 @@ let mockIndexedPages: number | null = null;
 // Fingerprint of the mock vault. Fixed: nothing writes to it.
 const MOCK_REVISION = 0x5eed_1234;
 
+// ?mock=1&slow=1 stretches the paced mocks (reindex, distill) far enough to
+// inspect mid-run UI by hand — the Topbar activity chip/popover in particular.
+const MOCK_SLOW = new URLSearchParams(location.search).get("slow") === "1";
+
 /// Walk the sample pages the way the real reindex does, with the same events.
 ///
 /// Paced, not instant. The real command takes ~467 ms per embedded chunk — i.e.
@@ -72,7 +76,7 @@ async function mockReindex(): Promise<number> {
   emitMock("local-model-load", { loading: false, ok: true });
   const total = NODES.length;
   for (let i = 0; i < total; i++) {
-    await sleep(55);
+    await sleep(MOCK_SLOW ? 500 : 55);
     emitMock("reindex-progress", {
       done: i + 1,
       total,
@@ -912,7 +916,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // Paced like mockReindex above: instant would resolve within the same
       // tick runDistillGuarded sets its in-flight flag, so nothing (a test,
       // the Topbar's busy chip) could ever observe the run actually running.
-      return sleep(1200).then(() => ({
+      return sleep(MOCK_SLOW ? 20000 : 1200).then(() => ({
         id: "19700101T000000",
         scan: {
           scored: 0,

@@ -48,6 +48,17 @@ export function suggestLinks(
   return out;
 }
 
+/** Total pending suggestions — uncapped, unlike suggestLinks' display default.
+ * The one derivation both Overview's card ("Accept all (N)") and the Topbar
+ * activity popover count from. */
+export function pendingLinkCount(
+  adj: Adjacency,
+  sem: SemEdge[],
+  dismissed: ReadonlySet<string>,
+): number {
+  return suggestLinks(adj, sem, dismissed, Number.POSITIVE_INFINITY).length;
+}
+
 export interface LinkSuggestionIO {
   readFile: (path: string) => Promise<{ raw: string }>;
   writeFile: (path: string, content: string) => Promise<unknown>;

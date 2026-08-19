@@ -286,7 +286,7 @@ async function pruneArchivedSessions(vault: string): Promise<void> {
 export async function runDistillGuarded(vault: string): Promise<RunReport | null> {
   if (inFlight.has(vault)) return null;
   inFlight.add(vault);
-  useDistillRunStore.setState({ running: true });
+  useDistillRunStore.setState({ running: true, step: "run" });
   try {
     const report = await ipc.distillRun(vault);
     // Idle is checked at entry only (by the callers' own triggers); once
@@ -298,6 +298,7 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
       lastStopPoint.set(vault, "run");
       return report;
     }
+    useDistillRunStore.setState({ step: "digest" });
     const outcome = await runSessionDigest(vault).catch((e) => {
       console.error("[distill] session digest failed", vault, e);
       return null;
@@ -312,6 +313,7 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
       lastStopPoint.set(vault, "digest");
       return report;
     }
+    useDistillRunStore.setState({ step: "ingest" });
     const fullTierOutcome = await runFullTierIngest(vault).catch((e) => {
       console.error("[distill] full-tier ingest failed", vault, e);
       return null;
@@ -325,6 +327,7 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
     // over ingest + draft maps, not one full budget for each — pass maps
     // only what full-tier ingest didn't already spend. A failed fullTierOutcome
     // (caught above) means nothing is known to have been spent.
+    useDistillRunStore.setState({ step: "maps" });
     const ingestCfg = await ipc.getDistillConfig(vault).catch(() => null);
     const ingestBudget = ingestCfg?.llm_ingest_budget ?? DEFAULT_INGEST_BUDGET;
     const mapBudget = Math.max(0, ingestBudget - (fullTierOutcome?.ingested ?? 0));
@@ -340,6 +343,8 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
     // Reflects "any vault still running", not just this one — the guard
     // itself is per-vault (inFlight), but a single boolean is all the
     // Topbar needs (see distillRunStore.ts).
-    useDistillRunStore.setState({ running: inFlight.size > 0 });
+    useDistillRunStore.setState(
+      inFlight.size > 0 ? { running: true } : { running: false, step: null },
+    );
   }
 }
