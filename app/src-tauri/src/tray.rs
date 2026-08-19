@@ -448,49 +448,58 @@ pub(crate) fn blur_should_hide(shown_at: u64, now: u64) -> bool {
 
 /// Show (or hide, when already visible) the tray popover window, creating it
 /// lazily on first click. The window is reused: reposition + show afterwards.
+/// Create the (hidden) popover window if it does not exist yet. Called once
+/// at startup so the FIRST tray click shows a warm, already-populated panel
+/// instead of a blank card while the webview cold-loads; also the lazy path
+/// inside `toggle_panel` for resilience.
+pub(crate) fn ensure_panel(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+    use std::sync::atomic::Ordering;
+    if let Some(w) = app.get_webview_window(PANEL_LABEL) {
+        return Some(w);
+    }
+    let built = WebviewWindowBuilder::new(
+        app,
+        PANEL_LABEL,
+        WebviewUrl::App("index.html?window=tray".into()),
+    )
+    .decorations(false)
+    .transparent(true)
+    // OS shadow OFF: it hugs the transparent window RECT, not the
+    // rounded card inside it — the card carries a CSS shadow instead
+    // (inside the PANEL_MARGIN ring).
+    .shadow(false)
+    .always_on_top(true)
+    .resizable(false)
+    .skip_taskbar(true)
+    .visible(false)
+    .inner_size(PANEL_WIDTH, PANEL_HEIGHT)
+    .build();
+    match built {
+        Ok(w) => {
+            // Focus loss dismisses the popover, like a native menu —
+            // except inside the just-shown grace window (see above).
+            let hide = w.clone();
+            w.on_window_event(move |e| {
+                if matches!(e, tauri::WindowEvent::Focused(false))
+                    && blur_should_hide(PANEL_SHOWN_AT.load(Ordering::Relaxed), now_ms())
+                {
+                    PANEL_HIDDEN_BY_BLUR_AT.store(now_ms(), Ordering::Relaxed);
+                    let _ = hide.hide();
+                }
+            });
+            Some(w)
+        }
+        Err(e) => {
+            eprintln!("tray panel window failed: {e}");
+            None
+        }
+    }
+}
+
 fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
     use std::sync::atomic::Ordering;
-    let win = match app.get_webview_window(PANEL_LABEL) {
-        Some(w) => w,
-        None => {
-            let built = WebviewWindowBuilder::new(
-                app,
-                PANEL_LABEL,
-                WebviewUrl::App("index.html?window=tray".into()),
-            )
-            .decorations(false)
-            .transparent(true)
-            // OS shadow OFF: it hugs the transparent window RECT, not the
-            // rounded card inside it — the card carries a CSS shadow instead
-            // (inside the PANEL_MARGIN ring).
-            .shadow(false)
-            .always_on_top(true)
-            .resizable(false)
-            .skip_taskbar(true)
-            .visible(false)
-            .inner_size(PANEL_WIDTH, PANEL_HEIGHT)
-            .build();
-            match built {
-                Ok(w) => {
-                    // Focus loss dismisses the popover, like a native menu —
-                    // except inside the just-shown grace window (see above).
-                    let hide = w.clone();
-                    w.on_window_event(move |e| {
-                        if matches!(e, tauri::WindowEvent::Focused(false))
-                            && blur_should_hide(PANEL_SHOWN_AT.load(Ordering::Relaxed), now_ms())
-                        {
-                            PANEL_HIDDEN_BY_BLUR_AT.store(now_ms(), Ordering::Relaxed);
-                            let _ = hide.hide();
-                        }
-                    });
-                    w
-                }
-                Err(e) => {
-                    eprintln!("tray panel window failed: {e}");
-                    return;
-                }
-            }
-        }
+    let Some(win) = ensure_panel(app) else {
+        return;
     };
     if win.is_visible().unwrap_or(false) {
         let _ = win.hide();
@@ -543,6 +552,9 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         })
         .build(app)?;
     app.state::<TrayHandle>().0.lock().unwrap().replace(tray);
+    // Warm the popover now (hidden): the first click must show a populated
+    // card, not a blank webview mid cold-load. Best-effort like the tray.
+    let _ = ensure_panel(app);
     Ok(())
 }
 

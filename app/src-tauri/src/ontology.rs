@@ -449,7 +449,12 @@ fn contains_whole_word(haystack: &str, needle: &str) -> bool {
         if before_ok && after_ok {
             return true;
         }
-        start = abs + 1;
+        // Advance by the full character at `abs`, not one byte — `abs + 1`
+        // lands inside a multibyte char whenever the match site is CJK/Hangul
+        // ('테'), and the next `haystack[start..]` slice then panics, which
+        // release builds (panic = abort) turn into a whole-app crash the
+        // moment a distill scan touches such a file.
+        start = abs + haystack[abs..].chars().next().map_or(1, |c| c.len_utf8());
         if start >= haystack.len() {
             break;
         }
@@ -646,6 +651,19 @@ pub fn admit(
 mod tests {
     use super::*;
     use crate::vector_index::Record;
+
+    #[test]
+    fn whole_word_scan_survives_multibyte_text() {
+        // Real-vault crash: the scan advanced by one BYTE past a match site,
+        // landing inside a Hangul char, and the next slice aborted the app.
+        let hay = "테스트 rag 노트 — rag 파이프라인, 그리고 테테테 rag";
+        assert!(contains_whole_word(hay, "rag"));
+        // A needle that keeps matching inside Hangul-adjacent positions and
+        // never satisfies the word boundary — must terminate, not panic.
+        assert!(!contains_whole_word("테테테테테", "테테"));
+        // Match site directly followed by a multibyte char.
+        assert!(contains_whole_word("x 테스트", "테스트"));
+    }
 
     fn unit(v: Vec<f32>) -> Vec<f32> {
         let n = v.iter().map(|x| x * x).sum::<f32>().sqrt();
