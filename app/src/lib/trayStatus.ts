@@ -160,10 +160,14 @@ export class TraySender {
  * in-process call — so a toggled server corrects the row within a tick. */
 let mcpRunning = false;
 
-/** Today's-inflow cache, same lifecycle as `mcpRunning` above: probed at init
- * and re-probed after every actual send (sends are already rate-limited to
- * ~1/s), so the tray's inflow lines follow the vault without any polling. */
+/** Today's-inflow cache. Unlike `probeMcp` (a cheap in-process boolean),
+ * `inflow_stats` is a real multi-directory filesystem walk — riding it on
+ * EVERY send meant a ~1 Hz vault scan for the whole length of a reindex
+ * (whose progress ticks change the tray title every send). Throttled hard:
+ * inflow moves at file-arrival speed, not progress-tick speed. */
 let inflowStats: InflowStats | null = null;
+let inflowProbedAt = 0;
+const INFLOW_PROBE_MIN_MS = 120_000;
 
 /** Wire the tray: store subscriptions → debounced update_tray_status calls,
  * plus the menu-action listener. Returns a cleanup. Call once from App. */
@@ -173,7 +177,7 @@ export function initTrayIntegration(): () => void {
       .updateTrayStatus(p)
       .then(() => {
         probeMcp();
-        probeInflow();
+        if (Date.now() - inflowProbedAt >= INFLOW_PROBE_MIN_MS) probeInflow();
       })
       .catch(() => {
         /* plain-browser dev: no Tauri backend */
@@ -226,6 +230,7 @@ export function initTrayIntegration(): () => void {
   const probeInflow = (): void => {
     const path = useVaultStore.getState().currentVault?.path;
     if (!path) return;
+    inflowProbedAt = Date.now();
     void ipc
       .inflowStats(path)
       .then((s) => {
