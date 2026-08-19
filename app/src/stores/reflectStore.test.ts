@@ -62,8 +62,16 @@ describe("useReflectStore.runReflect", () => {
     expect(s.stage).toBe("done");
     expect(s.mode).toBe("extractive");
     expect(s.suggestions).toEqual([
-      "a.md: orphan — no other page links to it; add a [[wikilink]] from a related page.",
-      "b.md: links to [[ghost]], which has no page — create it or fix the link.",
+      {
+        text: "a.md: orphan — no other page links to it; add a [[wikilink]] from a related page.",
+        kind: "orphan",
+        page: "/v/a.md",
+      },
+      {
+        text: "b.md: links to [[ghost]], which has no page — create it or fix the link.",
+        kind: "unresolved",
+        link: "ghost",
+      },
     ]);
     expect(s.seen).toBe(false);
     // Few candidates: no need to pay for the embed-model load.
@@ -92,7 +100,12 @@ describe("useReflectStore.runReflect", () => {
     const s = useReflectStore.getState();
     expect(s.stage).toBe("done");
     expect(s.mode).toBe("llm");
-    expect(s.suggestions).toEqual(["link orphan-a from index", "revisit stale-b"]);
+    // Model prose carries no kind: nothing to apply, so the panel offers no
+    // action rather than parsing sentences back into structure.
+    expect(s.suggestions).toEqual([
+      { text: "link orphan-a from index" },
+      { text: "revisit stale-b" },
+    ]);
     expect(complete).toHaveBeenCalledTimes(1);
     expect(buildLinkGraph).not.toHaveBeenCalled();
   });
@@ -124,7 +137,11 @@ describe("extractiveReflect", () => {
     });
 
     expect(await extractiveReflect("/v")).toEqual([
-      "note.md: orphan — no other page links to it; add a [[wikilink]] from a related page.",
+      {
+        text: "note.md: orphan — no other page links to it; add a [[wikilink]] from a related page.",
+        kind: "orphan",
+        page: "/v/note.md",
+      },
     ]);
   });
 
@@ -199,11 +216,20 @@ describe("extractiveReflect", () => {
     const out = await extractiveReflect(V);
 
     expect(out).toEqual([
-      "wiki/island.md: orphan — no other page links to it; add a [[wikilink]] from a related page.",
-      "wiki/alpha.md: links to [[gamma]], which has no page — create it or fix the link.",
+      {
+        text: "wiki/island.md: orphan — no other page links to it; add a [[wikilink]] from a related page.",
+        kind: "orphan",
+        page: `${V}/wiki/island.md`,
+      },
+      {
+        text: "wiki/alpha.md: links to [[gamma]], which has no page — create it or fix the link.",
+        kind: "unresolved",
+        link: "gamma",
+      },
     ]);
-    // Paths render relative to the vault, never as raw absolute ids.
-    for (const s of out) expect(s).not.toContain(V);
+    // Paths render relative to the vault in the prose, never as raw absolute
+    // ids (the absolute path lives in `page`, where the open button needs it).
+    for (const s of out) expect(s.text).not.toContain(V);
     // Under MAX_SUGGESTIONS after filtering: no embed-model load needed.
     expect(embedLocalTexts).not.toHaveBeenCalled();
   });
@@ -228,7 +254,59 @@ describe("extractiveReflect", () => {
     expect(embedLocalTexts.mock.calls[0][0]).toHaveLength(10);
     // Deterministic: same inputs, same picks, same order.
     expect(second).toEqual(first);
-    for (const s of first) expect(s).toMatch(/^p\d\d\.md: orphan/);
+    for (const s of first) expect(s.text).toMatch(/^p\d\d\.md: orphan/);
+  });
+});
+
+describe("useReflectStore.createMissingPages", () => {
+  const orphan = { text: "o", kind: "orphan" as const, page: "/v/o.md" };
+  const gamma = { text: "g", kind: "unresolved" as const, link: "gamma" };
+  const delta = { text: "d", kind: "unresolved" as const, link: "delta" };
+  // The bulk apply goes through the ordinary new-note path — vaultStore's
+  // openWikilink, what createNoteAndOpen wraps — so stubbing that one seam is
+  // enough to prove nothing else writes pages.
+  let openWikilink: ReturnType<typeof vi.fn>;
+
+  beforeEach(() => {
+    openWikilink = vi.fn(async (name: string) => `/v/wiki/${name}.md`);
+    useVaultStore.setState({
+      currentVault: { path: "/v", name: "v" },
+      openWikilink: openWikilink as never,
+    });
+    useReflectStore.setState({ stage: "done", suggestions: [orphan, gamma, delta] });
+  });
+
+  it("creates one page per unresolved suggestion, never for orphans", async () => {
+    const progress: number[] = [];
+    const out = await useReflectStore
+      .getState()
+      .createMissingPages(undefined, (done) => progress.push(done));
+
+    expect(out).toEqual({ created: 2, failed: null });
+    expect(openWikilink.mock.calls.map((c) => c[0])).toEqual(["gamma", "delta"]);
+    expect(progress).toEqual([1, 2]);
+    // Applied findings leave the list; the orphan (nothing safe to write) stays.
+    expect(useReflectStore.getState().suggestions).toEqual([orphan]);
+  });
+
+  it("stops at the first failure with an honest partial count, leaving the rest listed", async () => {
+    openWikilink.mockImplementation(async (name: string) =>
+      name === "gamma" ? "/v/wiki/gamma.md" : null,
+    );
+
+    const out = await useReflectStore.getState().createMissingPages();
+
+    expect(out).toEqual({ created: 1, failed: "delta" });
+    expect(openWikilink).toHaveBeenCalledTimes(2); // stopped, did not go on
+    expect(useReflectStore.getState().suggestions).toEqual([orphan, delta]);
+  });
+
+  it("per-row apply creates only the row it was given", async () => {
+    const out = await useReflectStore.getState().createMissingPages([delta]);
+
+    expect(out).toEqual({ created: 1, failed: null });
+    expect(openWikilink.mock.calls.map((c) => c[0])).toEqual(["delta"]);
+    expect(useReflectStore.getState().suggestions).toEqual([orphan, gamma]);
   });
 });
 

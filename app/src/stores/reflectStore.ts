@@ -36,6 +36,29 @@ Output a SHORT bulleted list (one "- " item per line, at most 8 items). Each ite
 
 export type ReflectStage = "idle" | "running" | "done" | "error";
 
+/** One finding. `text` is the display line (localized prose, always present);
+ * the other fields say what the finding is ABOUT, which is the only reason a
+ * suggestion can be acted on at all. Only the extractive path fills them — it
+ * derives findings from the link graph, so it knows the page and the link name
+ * before it writes the sentence. The LLM path emits prose we would have to
+ * parse back into structure, which is exactly the fragile step worth skipping:
+ * those items carry `text` alone and the panel offers them no action. */
+export type ReflectSuggestion =
+  /** Model prose — display only. */
+  | { text: string; kind?: undefined }
+  /** A page nothing links to. Nothing can be auto-written here: choosing where
+   *  the link should come from is judgment. The honest action is opening it, so
+   *  `page` is the absolute path (a `page:` route id). */
+  | { text: string; kind: "orphan"; page: string }
+  /** A page links to `[[link]]`, which has no page. Creating that page is a
+   *  real, safe action — the whole point of the bulk button. */
+  | { text: string; kind: "unresolved"; link: string };
+
+type UnresolvedSuggestion = Extract<ReflectSuggestion, { kind: "unresolved" }>;
+
+const isUnresolved = (s: ReflectSuggestion): s is UnresolvedSuggestion =>
+  s.kind === "unresolved";
+
 interface ReflectState {
   stage: ReflectStage;
   /** How the last run produced its suggestions: an LLM pass, or (builtin-local,
@@ -43,8 +66,8 @@ interface ReflectState {
    *  extractiveReflect. The panel labels extractive results so quoted facts
    *  are never mistaken for model judgment. */
   mode: "llm" | "extractive";
-  /** Parsed bullet items from the last successful run. */
-  suggestions: string[];
+  /** Items from the last successful run. */
+  suggestions: ReflectSuggestion[];
   /** Raw model output (or an error message when stage === "error"). */
   report: string | null;
   startedAt: number | null;
@@ -52,6 +75,13 @@ interface ReflectState {
   /** false after a run finishes until the user acknowledges the panel. */
   seen: boolean;
   runReflect: () => Promise<void>;
+  /** Create the missing page for every unresolved-wikilink suggestion (or just
+   *  the ones passed — the per-row button hands it one). Applied items leave
+   *  the list; on the first failure it stops and leaves the rest listed. */
+  createMissingPages: (
+    items?: ReflectSuggestion[],
+    onProgress?: (done: number, total: number) => void,
+  ) => Promise<{ created: number; failed: string | null }>;
   markSeen: () => void;
   dismiss: () => void;
 }
@@ -85,17 +115,18 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
     });
     try {
       let out: string;
-      let suggestions: string[];
+      let suggestions: ReflectSuggestion[];
       if (extractive) {
         suggestions = await extractiveReflect(vault.path);
-        out = suggestions.join("\n");
+        out = suggestions.map((s) => s.text).join("\n");
       } else {
         out = await complete({
           task: "query",
           cwd: vault.path,
           messages: [{ role: "user", content: REFLECT_PROMPT }],
         });
-        suggestions = parseSuggestions(out);
+        // Prose only: no kind, so the panel shows these without an action.
+        suggestions = parseSuggestions(out).map((text) => ({ text }));
       }
       set({
         stage: "done",
@@ -116,6 +147,37 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
         seen: false,
       });
     }
+  },
+
+  async createMissingPages(items, onProgress) {
+    // Reuses the ordinary new-note path: vaultStore.openWikilink is exactly
+    // what newNote.ts's createNoteAndOpen wraps (minus the routing, which
+    // would navigate away from this panel mid-run), so a page created here is
+    // seeded by the same create_file command and born valid. It also returns
+    // the existing path when the name already resolves, making a repeat run a
+    // no-op rather than a duplicate.
+    const openWikilink = useVaultStore.getState().openWikilink;
+    const targets = (items ?? get().suggestions).filter(isUnresolved);
+    const applied = new Set<ReflectSuggestion>();
+    let failed: string | null = null;
+    for (const s of targets) {
+      let path: string | null = null;
+      try {
+        path = await openWikilink(s.link);
+      } catch {
+        path = null;
+      }
+      if (!path) {
+        failed = s.link;
+        break; // stop on first error; the rest stay listed
+      }
+      applied.add(s);
+      onProgress?.(applied.size, targets.length);
+    }
+    if (applied.size > 0) {
+      set({ suggestions: get().suggestions.filter((s) => !applied.has(s)) });
+    }
+    return { created: applied.size, failed };
   },
 
   markSeen: () => set({ seen: true }),
@@ -161,7 +223,9 @@ const ORPHAN_EXEMPT = new Set(["index", "home", "readme"]);
  *    identical `[[TASK_DONE]]` ghosts) and wiki/log.md crowded out the real
  *    findings — 12 of the 19. isNonKnowledgePath is the graph view's own
  *    filter for exactly this, imported rather than restated. */
-export async function extractiveReflect(vaultPath: string): Promise<string[]> {
+export async function extractiveReflect(
+  vaultPath: string,
+): Promise<ReflectSuggestion[]> {
   const graph = await ipc.buildLinkGraph(vaultPath);
   const rel = (p: string): string =>
     p.startsWith(`${vaultPath}/`) ? p.slice(vaultPath.length + 1) : p;
@@ -169,13 +233,17 @@ export async function extractiveReflect(vaultPath: string): Promise<string[]> {
     ...flattenMarkdown(useVaultStore.getState().fileTree),
     ...Object.keys(graph.forward),
   ]);
-  const candidates: string[] = [];
+  const candidates: ReflectSuggestion[] = [];
   for (const page of [...pages].sort()) {
     if (isNonKnowledgePath(vaultPath, page)) continue;
     const stem = (page.split("/").pop() ?? page).replace(/\.md$/i, "").toLowerCase();
     if (ORPHAN_EXEMPT.has(stem)) continue;
     if ((graph.backward[page] ?? []).length === 0) {
-      candidates.push(t().rf_item_orphan.replace("{page}", rel(page)));
+      candidates.push({
+        text: t().rf_item_orphan.replace("{page}", rel(page)),
+        kind: "orphan",
+        page,
+      });
     }
   }
   for (const page of Object.keys(graph.unresolved).sort()) {
@@ -185,15 +253,17 @@ export async function extractiveReflect(vaultPath: string): Promise<string[]> {
       // page anyone can create — the gap panel already buckets those away
       // from real missing pages, and reflect must not offer them either.
       if (isMalformedLinkName(target)) continue;
-      candidates.push(
-        t()
+      candidates.push({
+        text: t()
           .rf_item_unresolved.replace("{page}", rel(page))
           .replace("{target}", target),
-      );
+        kind: "unresolved",
+        link: target,
+      });
     }
   }
   if (candidates.length <= MAX_SUGGESTIONS) return candidates;
-  const vectors = await ipc.embedLocalTexts(candidates);
+  const vectors = await ipc.embedLocalTexts(candidates.map((c) => c.text));
   return mmrSelect(vectors, MAX_SUGGESTIONS).map((i) => candidates[i]);
 }
 

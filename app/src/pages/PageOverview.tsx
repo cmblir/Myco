@@ -9,6 +9,7 @@ import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useReflectStore } from "../stores/reflectStore";
+import type { ReflectSuggestion } from "../stores/reflectStore";
 import { useDistillStore } from "../stores/distillStore";
 import {
   backlogTrend,
@@ -164,15 +165,37 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
 // Read-only reflect pass (FEAT-06): a manual trigger plus a home for the
 // suggestions the scheduler (or this button) produces. Shares reflectStore, so
 // a run kicked here or by the scheduler shows up wherever the panel renders.
+// The pass itself stays read-only; APPLYING a finding is always a click, and
+// only the unresolved-wikilink kind has a safe mechanical fix (create the
+// missing page — in bulk, like the suggested-links accept-all). Orphans get an
+// open button, not a fake fix.
 function ReflectPanel({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
+  const setRoute = useUIStore((s) => s.setRoute);
   const stage = useReflectStore((s) => s.stage);
   const mode = useReflectStore((s) => s.mode);
   const suggestions = useReflectStore((s) => s.suggestions);
   const report = useReflectStore((s) => s.report);
   const runReflect = useReflectStore((s) => s.runReflect);
+  const createMissingPages = useReflectStore((s) => s.createMissingPages);
   const dismiss = useReflectStore((s) => s.dismiss);
   const running = stage === "running";
+  const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
+  const [result, setResult] = useState<{
+    created: number;
+    failed: string | null;
+  } | null>(null);
+  const missing = suggestions.filter((s) => s.kind === "unresolved");
+
+  // Same store action for one row and for all of them — one creation path.
+  async function create(items?: ReflectSuggestion[]): Promise<void> {
+    if (bulk) return;
+    const total = items ? items.length : missing.length;
+    setResult(null);
+    setBulk({ done: 0, total });
+    setResult(await createMissingPages(items, (done) => setBulk({ done, total })));
+    setBulk(null);
+  }
 
   return (
     <section
@@ -189,12 +212,30 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
         <div className="row" style={{ gap: 8 }}>
           <button
             className="btn"
-            onClick={() => void runReflect()}
+            onClick={() => {
+              setResult(null); // a new run's list, not the last run's tally
+              void runReflect();
+            }}
             disabled={!currentVault || running}
           >
             <Icon name="sparkles" size={14} />{" "}
             {running ? t.rf_running : t.rf_run}
           </button>
+          {missing.length > 0 || bulk ? (
+            <button
+              type="button"
+              className="btn"
+              disabled={!!bulk}
+              onClick={() => void create()}
+            >
+              <Icon name="plus" size={13} />{" "}
+              {bulk
+                ? t.rf_create_progress
+                    .replace("{done}", String(bulk.done))
+                    .replace("{total}", String(bulk.total))
+                : `${t.rf_create_missing} (${missing.length})`}
+            </button>
+          ) : null}
           {stage === "done" || stage === "error" ? (
             <button type="button" className="btn-ghost btn" onClick={dismiss}>
               <Icon name="x" size={12} /> {t.p_dismiss ?? "dismiss"}
@@ -225,12 +266,55 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
           <span>{t.rf_extractive}</span>
         </div>
       ) : null}
+      {result && stage === "done" ? (
+        <p className="muted" style={{ fontSize: 12.5, margin: "4px 0 0" }}>
+          {t.rf_create_result.replace("{n}", String(result.created))}
+          {result.failed
+            ? ` — ${t.rf_create_failed.replace("{target}", result.failed)}`
+            : ""}
+        </p>
+      ) : null}
       {stage === "done" ? (
         suggestions.length > 0 ? (
           <ul style={{ margin: "4px 0 0", paddingLeft: 18, fontSize: 13 }}>
             {suggestions.map((s, i) => (
               <li key={i} style={{ marginBottom: 4 }}>
-                {s}
+                {s.text}
+                {s.kind === "unresolved" ? (
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    style={{
+                      display: "inline-flex", // .icon-btn is display:flex — inline keeps the action on the finding's own line
+                      verticalAlign: "middle",
+                      padding: 2,
+                      marginLeft: 6,
+                    }}
+                    disabled={!!bulk}
+                    aria-label={t.rf_create_one}
+                    title={t.rf_create_one}
+                    onClick={() => void create([s])}
+                  >
+                    <Icon name="plus" size={13} />
+                  </button>
+                ) : null}
+                {s.kind === "orphan" ? (
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    style={{
+                      display: "inline-flex", // .icon-btn is display:flex — inline keeps the action on the finding's own line
+                      verticalAlign: "middle",
+                      padding: 2,
+                      marginLeft: 6,
+                    }}
+                    aria-label={t.rf_open_page}
+                    title={t.rf_open_page}
+                    onClick={() => setRoute(`page:${s.page}`)}
+                  >
+                    <Icon name="arrowR" size={13} />
+                  </button>
+                ) : null}
               </li>
             ))}
           </ul>

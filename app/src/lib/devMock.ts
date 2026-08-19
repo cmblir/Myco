@@ -521,8 +521,11 @@ function buildAdjacency() {
   // Gap-panel data (?mock=1 screenshot/QA): one genuine missing page and two
   // malformed unresolved names (a template placeholder + dots-only), so the
   // panel's "missing" vs. "malformed" bucketing is visible without a real vault.
+  // Two genuine missing pages (not one), so reflect's bulk "create missing
+  // pages" button has something to count and a per-row action to show.
   const unresolved: Record<string, string[]> = {
     [pathOf("attention-mechanism")]: ["flash-attention-3", "source-<slug>", "..."],
+    [pathOf("scaling-laws")]: ["chinchilla-optimal"],
   };
   return { forward, backward, unresolved, tags, meta };
 }

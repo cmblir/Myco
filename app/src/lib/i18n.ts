@@ -906,6 +906,15 @@ export interface Strings {
   // is a vault-relative path, {target} an unresolved [[wikilink]] name.
   rf_item_orphan: string; // {page}
   rf_item_unresolved: string; // {page} {target}
+  // Applying reflect findings. Only unresolved links are applyable (the page
+  // gets created); an orphan can only be opened, since where to link it from is
+  // judgment no rule supplies.
+  rf_create_missing: string;
+  rf_create_progress: string; // {done} {total}
+  rf_create_result: string; // {n}
+  rf_create_failed: string; // {target}
+  rf_create_one: string;
+  rf_open_page: string;
   // First-run onboarding wizard (UX-01) — optional; components fall back to EN.
   ob_title?: string;
   ob_skip?: string;
@@ -1871,6 +1880,12 @@ export const STRINGS: Record<Lang, Strings> = {
       "{page}: orphan — no other page links to it; add a [[wikilink]] from a related page.",
     rf_item_unresolved:
       "{page}: links to [[{target}]], which has no page — create it or fix the link.",
+    rf_create_missing: "Create missing pages",
+    rf_create_progress: "{done}/{total}",
+    rf_create_result: "Pages created: {n}",
+    rf_create_failed: "Stopped at [[{target}]] — could not create it.",
+    rf_create_one: "Create this page",
+    rf_open_page: "Open page",
     ob_title: "Welcome to myco",
     ob_skip: "Skip",
     ob_back: "Back",
@@ -2836,6 +2851,12 @@ export const STRINGS: Record<Lang, Strings> = {
       "{page}: 고아 페이지 — 아무 페이지도 이 페이지를 링크하지 않습니다. 관련 페이지에서 [[위키링크]]를 추가하세요.",
     rf_item_unresolved:
       "{page}: [[{target}]]를 링크하지만 그런 페이지가 없습니다. 페이지를 만들거나 링크를 고치세요.",
+    rf_create_missing: "빠진 페이지 만들기",
+    rf_create_progress: "{done}/{total}",
+    rf_create_result: "만든 페이지: {n}개",
+    rf_create_failed: "[[{target}]]에서 중단 — 만들지 못했습니다.",
+    rf_create_one: "이 페이지 만들기",
+    rf_open_page: "페이지 열기",
     ob_title: "myco에 오신 것을 환영합니다",
     ob_skip: "건너뛰기",
     ob_back: "이전",
@@ -3679,6 +3700,12 @@ export const STRINGS: Record<Lang, Strings> = {
       "{page}: 孤立ページ — どのページからもリンクされていません。関連ページから [[ウィキリンク]] を追加してください。",
     rf_item_unresolved:
       "{page}: [[{target}]] へリンクしていますが、そのページはありません。作成するか、リンクを修正してください。",
+    rf_create_missing: "不足しているページを作成",
+    rf_create_progress: "{done}/{total}",
+    rf_create_result: "作成したページ: {n}件",
+    rf_create_failed: "[[{target}]] で中断 — 作成できませんでした。",
+    rf_create_one: "このページを作成",
+    rf_open_page: "ページを開く",
     ob_title: "myco へようこそ",
     ob_skip: "スキップ",
     ob_back: "戻る",
