@@ -17,7 +17,6 @@ import { MyceliumScene, type Septum } from "../lib/myceliumScene";
 import { buildMatAdjacency, buildMyceliumMat, matPath } from "../lib/staticLayouts";
 import type { VaultGraph } from "../lib/graphData";
 import { useUIStore } from "../stores/uiStore";
-import type { RouteId } from "../stores/uiStore";
 
 const GROW_SECS = 3.2;
 // World radius of the grown mat. Independent of the hidden GraphScene's
@@ -45,7 +44,7 @@ const HUB_LABEL_CAP = 20;
 
 export default function MyceliumView({
   graph,
-  vaultPath,
+  onSelect,
   flat,
   nodeColor,
   hyphaColor,
@@ -60,9 +59,15 @@ export default function MyceliumView({
   branchPct,
   fitRef,
   startGrowthRef,
+  focusRef,
 }: {
   graph: VaultGraph | null;
-  vaultPath: string;
+  /** Node click → selection (the page opens the SAME GraphInspector panel the
+   *  main graph uses — z-index 5, over this view's z-index 2 canvas). A click
+   *  on empty substrate passes null = deselect, like clicking the void. Must
+   *  be referentially stable (PageGraph passes setSelected) — it sits in the
+   *  build effect's dependency list. */
+  onSelect: (id: string | null) => void;
   /** 2D: layout flattened to z=0, camera locked front-on. 3D: free orbit. */
   flat: boolean;
   /** Flat septa colour — independent of hyphaColor so a node never has to
@@ -99,6 +104,11 @@ export default function MyceliumView({
    *  button — the on-demand replay, independent of the auto-play-once rule
    *  below (see useUIStore's myceliumGrown). */
   startGrowthRef?: React.MutableRefObject<(() => void) | null>;
+  /** Exposes fly-to-a-note: the search box (Enter), the inspector's link rows
+   *  and gap analysis all call this — the mycelium counterpart of
+   *  GraphScene.focusNode. Also lights the note + its neighbours (the same
+   *  highlight hover draws) so the target is findable after arrival. */
+  focusRef?: React.MutableRefObject<((id: string) => void) | null>;
 }): JSX.Element {
   const host = useRef<HTMLDivElement | null>(null);
   // Handle to the live scene, for the small prop-driven effects below that
@@ -120,7 +130,6 @@ export default function MyceliumView({
   // hover label above, not React state: their count is capped (HUB_LABEL_CAP)
   // and they move every frame, so state-driven re-renders would be wasted work.
   const hubHostRef = useRef<HTMLDivElement | null>(null);
-  const setRoute = useUIStore((s) => s.setRoute);
 
   useEffect(() => {
     const el = host.current;
@@ -163,14 +172,43 @@ export default function MyceliumView({
     // Mat adjacency for the neighbour-highlight's path search — built once
     // and reused on every hover, not rebuilt per hover event.
     const matAdj = buildMatAdjacency(mat);
+    // Non-null capture: applyHighlight below is a hoisted function declaration,
+    // so the effect's early-return null check doesn't narrow `graph` inside it.
+    const g = graph;
+
+    // Light a note + its wikilink neighbours along real hyphal routes (matPath
+    // BFS over the mat — never a note-to-note chord), or clear with null.
+    // Shared by hover and by focusRef (search / inspector fly-to), so an
+    // arrived-at note is lit the same way a hovered one is.
+    function applyHighlight(id: string | null): void {
+      if (!id) {
+        scene.setHighlight(null, [], new Float32Array());
+        return;
+      }
+      const neighborIds = g.neighbors(id);
+      const fromIdx = matIndexOf.get(id);
+      const segPts: number[] = [];
+      if (fromIdx != null) {
+        for (const nid of neighborIds) {
+          const toIdx = matIndexOf.get(nid);
+          const path = toIdx != null ? matPath(matAdj, fromIdx, toIdx) : null;
+          if (!path) continue;
+          for (let i = 0; i + 1 < path.length; i++) {
+            const a = mat[path[i]];
+            const b = mat[path[i + 1]];
+            segPts.push(a.x, a.y, flat ? 0 : a.z, b.x, b.y, flat ? 0 : b.z);
+          }
+        }
+      }
+      scene.setHighlight(id, neighborIds, new Float32Array(segPts));
+    }
 
     const scene = new MyceliumScene(el, {
-      onPick: (id) => {
-        // The graph keys nodes by vault-relative path; the page route reads an
-        // ABSOLUTE one (it hands it to readFile), so rejoin the root.
-        const abs = id.startsWith(vaultPath) ? id : `${vaultPath}/${id}`;
-        setRoute(`page:${abs}` as RouteId);
-      },
+      // Selection, not navigation: parity with the main graph, where a click
+      // opens the GraphInspector (PageGraph renders it over this canvas) and
+      // opening the page is the inspector's own action. null = clicked empty
+      // substrate = deselect.
+      onPick: (id) => onSelect(id),
       onHover: (id) => {
         if (label) {
           if (id) {
@@ -183,30 +221,7 @@ export default function MyceliumView({
             label.style.display = "none";
           }
         }
-        if (!id) {
-          scene.setHighlight(null, [], new Float32Array());
-          return;
-        }
-        // Neighbours come from the wikilink GRAPH (graphology), never mat
-        // topology — but the line drawn between them is the real hyphal
-        // route (matPath, BFS over the mat), so "the hyphae between them" is
-        // never a note-to-note chord.
-        const neighborIds = graph.neighbors(id);
-        const fromIdx = matIndexOf.get(id);
-        const segPts: number[] = [];
-        if (fromIdx != null) {
-          for (const nid of neighborIds) {
-            const toIdx = matIndexOf.get(nid);
-            const path = toIdx != null ? matPath(matAdj, fromIdx, toIdx) : null;
-            if (!path) continue;
-            for (let i = 0; i + 1 < path.length; i++) {
-              const a = mat[path[i]];
-              const b = mat[path[i + 1]];
-              segPts.push(a.x, a.y, flat ? 0 : a.z, b.x, b.y, flat ? 0 : b.z);
-            }
-          }
-        }
-        scene.setHighlight(id, neighborIds, new Float32Array(segPts));
+        applyHighlight(id);
       },
       onFrame: (labels) => {
         const shown = new Set(labels.map((l) => l.id));
@@ -281,6 +296,12 @@ export default function MyceliumView({
     if (startGrowthRef) {
       startGrowthRef.current = () => scene.startGrowth(GROW_SECS / growSpeedRef.current);
     }
+    if (focusRef) {
+      focusRef.current = (id) => {
+        applyHighlight(id);
+        scene.focusNode(id);
+      };
+    }
 
     // Grow-in plays automatically only the FIRST time this view has ever
     // mounted (persisted — see useUIStore's myceliumGrown), same as the other
@@ -342,6 +363,7 @@ export default function MyceliumView({
       el.removeEventListener("pointermove", onPointerMove);
       if (fitRef) fitRef.current = null;
       if (startGrowthRef) startGrowthRef.current = null;
+      if (focusRef) focusRef.current = null;
       sceneRef.current = null;
       scene.dispose();
     };
@@ -352,7 +374,7 @@ export default function MyceliumView({
     // maxNodes/branchPct DO belong here — they reshape the grown mat, and the
     // caller (PageGraph) debounces them before they ever reach this prop.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [graph, vaultPath, flat, nodeColor, hyphaColor, maxNodes, branchPct, setRoute, fitRef, startGrowthRef]);
+  }, [graph, onSelect, flat, nodeColor, hyphaColor, maxNodes, branchPct, fitRef, startGrowthRef, focusRef]);
 
   // Live updates for the knobs the build effect intentionally excludes above.
   useEffect(() => {

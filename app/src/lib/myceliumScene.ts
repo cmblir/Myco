@@ -59,7 +59,10 @@ export interface FrameLabel {
 export interface MyceliumSceneOpts {
   /** Substrate colour. A warm near-black loam, not a blue void. */
   ground?: number;
-  onPick?: (id: string) => void;
+  /** A stationary click: the picked note id, or null for empty substrate
+   *  (the caller uses null to deselect, same as clicking the void in the
+   *  main graph). Drag-ends never fire this — see onClick's guard. */
+  onPick?: (id: string | null) => void;
   onHover?: (id: string | null) => void;
   /** Called once per rendered frame with the current screen position of every
    *  always-on label (see setLabelIds) that's grown in and on-screen — drives
@@ -91,6 +94,44 @@ const MIN_LABEL_OPACITY = 0.35;
 // the exact poles (not 0/pi) because OrbitControls' spherical basis is
 // degenerate exactly there.
 const POLE_GUARD = Math.PI * 0.02;
+// Focus flight (focusNode): duration of the eased camera move to a selected
+// note, and how long the travel line lingers (fading) after arrival. The line
+// shares the hover highlight's warm colour — one colour language for "the
+// answer" in this scene, matching the main view's fly-to-a-star story.
+const FOCUS_FLY_SECS = 0.75;
+const TRAVEL_FADE_SECS = 1.2;
+const TRAVEL_OPACITY = 0.9;
+
+/** Camera position for focusing a note: keep the current viewing direction
+ *  (or stay locked front-on in planar mode), pulled back `dist` from the
+ *  note. Pure — exported for the unit test; the scene passes its own state. */
+export function focusPose(
+  node: { x: number; y: number; z: number },
+  cam: { x: number; y: number; z: number },
+  planar: boolean,
+  dist: number,
+): { x: number; y: number; z: number } {
+  let dx = 0;
+  let dy = 0;
+  let dz = 1;
+  if (!planar) {
+    dx = cam.x - node.x;
+    dy = cam.y - node.y;
+    dz = cam.z - node.z;
+    let len = Math.hypot(dx, dy, dz);
+    if (len < 1) {
+      // Degenerate (camera on the node): same mild default as GraphScene.
+      dx = 0.3;
+      dy = 0.15;
+      dz = 1;
+      len = Math.hypot(dx, dy, dz);
+    }
+    dx /= len;
+    dy /= len;
+    dz /= len;
+  }
+  return { x: node.x + dx * dist, y: node.y + dy * dist, z: node.z + dz * dist };
+}
 
 export class MyceliumScene {
   private renderer: THREE.WebGLRenderer;
@@ -139,6 +180,26 @@ export class MyceliumScene {
   private last = 0;
   private ro: ResizeObserver;
   private hovered: string | null = null;
+  /** Where the pointer went down — onClick ignores drag-ends (see its guard). */
+  private downAt: { x: number; y: number } | null = null;
+  /** OS reduced-motion preference — focusNode snaps instead of flying, same
+   *  as GraphScene.startCamTween. Read once; a scene never outlives a mount. */
+  private reducedMotion = false;
+  /** In-flight focus move (focusNode) — eased in the render loop, cancelled
+   *  by a user gesture (see the controls "start" listener). */
+  private camTween: {
+    t: number;
+    dur: number;
+    p0: THREE.Vector3;
+    p1: THREE.Vector3;
+    a0: THREE.Vector3;
+    a1: THREE.Vector3;
+  } | null = null;
+  /** The focus travel line (previous focus point → target note) — same warm
+   *  colour as the hover overlay; fades out after arrival (see the loop). */
+  private travelLine: LineSegments2 | null = null;
+  /** Seconds of post-arrival fade left; -1 = idle (line hidden or in flight). */
+  private travelFade = -1;
   /** true = 2D (flat, camera locked). Gates depthWrite on every mat/septa/
    *  highlight material — see setPlanar. The flat map has no real depth to
    *  speak of, so it keeps the original depthWrite:false look; the 3D view
@@ -192,11 +253,17 @@ export class MyceliumScene {
     this.controls.maxPolarAngle = Math.PI - POLE_GUARD;
     this.controls.minPolarAngle = POLE_GUARD;
 
+    this.reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    // A user gesture takes the camera back — cancel any in-flight focus move
+    // (the travel line starts its fade rather than vanishing abruptly).
+    this.controls.addEventListener("start", this.onControlsStart);
+
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(container);
 
     this.renderer.domElement.addEventListener("pointermove", this.onMove);
     this.renderer.domElement.addEventListener("pointerleave", this.onLeave);
+    this.renderer.domElement.addEventListener("pointerdown", this.onDown);
     this.renderer.domElement.addEventListener("click", this.onClick);
   }
 
@@ -218,9 +285,20 @@ export class MyceliumScene {
       this.opts.onHover?.(null);
     }
   };
+  private onDown = (e: PointerEvent): void => {
+    this.downAt = { x: e.clientX, y: e.clientY };
+  };
   private onClick = (e: MouseEvent): void => {
-    const id = this.pick(e as unknown as PointerEvent);
-    if (id) this.opts.onPick?.(id);
+    // An orbit/pan drag ends in a click event too — only a stationary click
+    // picks (or, on empty substrate, deselects via a null id).
+    if (this.downAt && Math.hypot(e.clientX - this.downAt.x, e.clientY - this.downAt.y) > 5) return;
+    this.opts.onPick?.(this.pick(e as unknown as PointerEvent));
+  };
+  private onControlsStart = (): void => {
+    if (this.camTween) {
+      this.camTween = null;
+      this.travelFade = TRAVEL_FADE_SECS;
+    }
   };
 
   /** Nearest septum under the pointer, in screen space — cheaper and steadier
@@ -505,6 +583,70 @@ export class MyceliumScene {
     }
   }
 
+  /** Fly the camera to a note and draw a travel line from the previous focus
+   *  point to it — the mycelium counterpart of GraphScene.focusNode (search-
+   *  to-focus / inspector link walks). Reduced motion snaps with no line,
+   *  mirroring GraphScene.startCamTween's snap. */
+  focusNode(id: string): void {
+    if (!this.septa) return;
+    const idx = this.septaIndexOf.get(id);
+    if (idx == null) return;
+    const pos = this.septa.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const node = new THREE.Vector3(pos.getX(idx), pos.getY(idx), pos.getZ(idx));
+    // Close-up: a fixed fraction of fit()'s framed distance, so "focused"
+    // means the same zoom level on any mat size (fallback pre-first-fit).
+    const dist = this.fitDist > 0 ? this.fitDist * 0.25 : 350;
+    const p = focusPose(node, this.camera.position, this.planar, dist);
+    const toPos = new THREE.Vector3(p.x, p.y, p.z);
+    if (this.reducedMotion) {
+      this.camTween = null;
+      this.controls.target.copy(node);
+      this.camera.position.copy(toPos);
+      this.controls.update();
+      return;
+    }
+    this.setTravelLine(this.controls.target.clone(), node);
+    this.camTween = {
+      t: 0,
+      dur: FOCUS_FLY_SECS,
+      p0: this.camera.position.clone(),
+      p1: toPos,
+      a0: this.controls.target.clone(),
+      a1: node,
+    };
+  }
+
+  /** (Re)point the travel line — created lazily like the highlight overlay.
+   *  depthWrite/depthTest stay off: the beam is a UI cue over the mat, not a
+   *  strand of it, so it must stay readable through the ball in 3D. */
+  private setTravelLine(from: THREE.Vector3, to: THREE.Vector3): void {
+    if (!this.travelLine) {
+      const mtl = new LineMaterial({
+        color: 0xfff2d8, // the highlight overlay's colour — one "answer" hue
+        linewidth: 2.5,
+        transparent: true,
+        opacity: TRAVEL_OPACITY,
+        depthWrite: false,
+        depthTest: false,
+        worldUnits: false,
+      });
+      const res = new THREE.Vector2();
+      this.renderer.getSize(res);
+      mtl.resolution.copy(res);
+      this.travelLine = new LineSegments2(new LineSegmentsGeometry(), mtl);
+      this.travelLine.frustumCulled = false;
+      this.travelLine.renderOrder = 2; // over the mat and the hover overlay
+      this.scene.add(this.travelLine);
+    }
+    this.travelLine.geometry.dispose();
+    const geo = new LineSegmentsGeometry();
+    geo.setPositions([from.x, from.y, from.z, to.x, to.y, to.z]);
+    this.travelLine.geometry = geo;
+    (this.travelLine.material as LineMaterial).opacity = TRAVEL_OPACITY;
+    this.travelLine.visible = true;
+    this.travelFade = -1; // fade starts on arrival — see the render loop
+  }
+
   /** Note ids that should carry an always-on label (the caller caps this
    *  small — see MyceliumView's HUB_LABEL_CAP). Their screen positions are
    *  reported to opts.onFrame every rendered frame. */
@@ -735,6 +877,7 @@ export class MyceliumScene {
     // leaves every hypha the wrong weight after a resize.
     for (const m of this.mat) (m.material as LineMaterial).resolution.set(w, h);
     if (this.highlightLine) (this.highlightLine.material as LineMaterial).resolution.set(w, h);
+    if (this.travelLine) (this.travelLine.material as LineMaterial).resolution.set(w, h);
   }
 
   start(): void {
@@ -750,6 +893,28 @@ export class MyceliumScene {
         // Ease out — hyphae push hardest at the start and settle at the rim.
         this.setProgress(1 - Math.pow(1 - k, 2));
         if (k >= 1) this.clock = -1;
+      }
+      // Focus flight (focusNode): easeInOutCubic, same curve as GraphScene's
+      // camTweenTick; on arrival the travel line starts fading out.
+      if (this.camTween) {
+        const tw = this.camTween;
+        tw.t = Math.min(tw.dur, tw.t + dt);
+        const u = tw.t / tw.dur;
+        const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+        this.controls.target.lerpVectors(tw.a0, tw.a1, e);
+        this.camera.position.lerpVectors(tw.p0, tw.p1, e);
+        if (tw.t >= tw.dur) {
+          this.camTween = null;
+          this.travelFade = TRAVEL_FADE_SECS;
+        }
+      } else if (this.travelFade >= 0 && this.travelLine) {
+        this.travelFade -= dt;
+        const k2 = Math.max(0, this.travelFade / TRAVEL_FADE_SECS);
+        (this.travelLine.material as LineMaterial).opacity = TRAVEL_OPACITY * k2;
+        if (this.travelFade <= 0) {
+          this.travelFade = -1;
+          this.travelLine.visible = false;
+        }
       }
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
@@ -810,7 +975,9 @@ export class MyceliumScene {
     this.ro.disconnect();
     this.renderer.domElement.removeEventListener("pointermove", this.onMove);
     this.renderer.domElement.removeEventListener("pointerleave", this.onLeave);
+    this.renderer.domElement.removeEventListener("pointerdown", this.onDown);
     this.renderer.domElement.removeEventListener("click", this.onClick);
+    this.controls.removeEventListener("start", this.onControlsStart);
     this.controls.dispose();
     this.setMat([]);
     this.setSepta([]);
@@ -819,6 +986,12 @@ export class MyceliumScene {
       this.highlightLine.geometry.dispose();
       (this.highlightLine.material as THREE.Material).dispose();
       this.highlightLine = null;
+    }
+    if (this.travelLine) {
+      this.scene.remove(this.travelLine);
+      this.travelLine.geometry.dispose();
+      (this.travelLine.material as THREE.Material).dispose();
+      this.travelLine = null;
     }
     this.renderer.dispose();
     this.renderer.domElement.remove();

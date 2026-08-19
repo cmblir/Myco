@@ -143,6 +143,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   // and startGrowth() here.
   const myceliumFitRef = useRef<(() => void) | null>(null);
   const myceliumGrowthRef = useRef<(() => void) | null>(null);
+  // Fly-to-a-note for the mycelium renderer — search (Enter), the inspector's
+  // link rows and gap analysis all call it alongside sceneRef.focusNode (the
+  // hidden GraphScene's flight is a no-op on screen under the mycelium skin).
+  const myceliumFocusRef = useRef<((id: string) => void) | null>(null);
   // Mycelium "force" sliders (linkDistance/clusterForce, repurposed as mat
   // density / branch density — see graphSettings.ts's myceliumMaxNodes/
   // myceliumBranchPct) rebuild the grown mat, ~80ms at 1244 notes. Debounced
@@ -1582,6 +1586,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     if (best) {
       setSelected(best);
       scene.focusNode(best);
+      myceliumFocusRef.current?.(best);
     }
   };
 
@@ -1856,7 +1861,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               <MyceliumView
                 key={`${counts.nodes}-${counts.edges}-${settings.myceliumDim}-${settings.myceliumNodeColor}-${settings.myceliumHyphaColor}`}
                 graph={graphRef.current}
-                vaultPath={currentVault?.path ?? ""}
+                onSelect={setSelected}
                 flat={settings.myceliumDim === "2d"}
                 nodeColor={settings.myceliumNodeColor}
                 hyphaColor={settings.myceliumHyphaColor}
@@ -1871,6 +1876,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 branchPct={myceliumBranchPct(myceliumForceDeb.clusterForce)}
                 fitRef={myceliumFitRef}
                 startGrowthRef={myceliumGrowthRef}
+                focusRef={myceliumFocusRef}
               />
             ) : null}
             {/* Multiverse mode: an overlay scene of every project as a
@@ -1986,6 +1992,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 onSelect={(id) => {
                   setSelected(id);
                   sceneRef.current?.focusNode(id);
+                  myceliumFocusRef.current?.(id);
                 }}
                 onOpen={(id) => setRoute(`page:${id}`)}
                 onClose={() => setSelected(null)}
@@ -2007,6 +2014,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 onSelect={(id) => {
                   setSelected(id);
                   sceneRef.current?.focusNode(id);
+                  myceliumFocusRef.current?.(id);
                 }}
                 onAskBridge={askBridge}
                 onClose={() => setGapsOpen(false)}
