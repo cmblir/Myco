@@ -33,6 +33,11 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
   const [bulkResult, setBulkResult] = useState<number | null>(null);
 
+  // Keyed on `adjacency`, not fetched once: right after app launch the
+  // semantic index is still reconciling, so a mount-time one-shot fetch came
+  // back empty and the whole section silently never appeared. The link graph
+  // refreshes when the vault settles (and after every accept), so it doubles
+  // as the retry signal.
   useEffect(() => {
     let killed = false;
     ipc
@@ -46,7 +51,7 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
     return () => {
       killed = true;
     };
-  }, []);
+  }, [adjacency]);
 
   const suggestions = useMemo(
     () => (adjacency && sem ? suggestLinks(adjacency, sem, dismissed, SHOW) : []),
@@ -97,7 +102,10 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
     else setBulkResult(accepted.length);
   }
 
-  if (suggestions.length === 0) return null;
+  // Keep the section mounted right after an accept-all empties the queue —
+  // unmounting here also swallowed the "{n} linked" confirmation, which read
+  // as the feature silently breaking.
+  if (suggestions.length === 0 && bulkResult === null && !bulk) return null;
 
   return (
     <section className="card link-suggestions">
