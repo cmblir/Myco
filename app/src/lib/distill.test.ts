@@ -435,8 +435,10 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
     await runDistillGuarded("/vmap");
 
     expect(draftMap).not.toHaveBeenCalled();
-    // Early return before the tree walk — not just before the LLM call.
-    expect(listFiles).not.toHaveBeenCalled();
+    // The tree IS walked now — emptiness outranks the provider check, so
+    // the walk is what proves there is nothing approved (skipped: null on
+    // an empty tree, no-provider only with real approved proposals).
+    expect(listFiles).toHaveBeenCalled();
   });
 
   it("triggers a prune reindex after a digest that archived files (final-review Important 6)", async () => {

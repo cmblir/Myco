@@ -92,6 +92,16 @@ function stemOf(rel: string): string {
  * has no UI to surface a validation failure to, and the nightly distill lint
  * plus the CLI's own self-reported ingest report already catch problems. */
 export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutcome> {
+  // Emptiness is checked BEFORE the provider: "waiting for a provider" with
+  // an empty queue is a lie the Overview card would faithfully repeat — a
+  // vault with nothing to promote reports "nothing" whatever the provider.
+  const cfg = await ipc.getDistillConfig(vaultPath).catch(() => null);
+  const budget = cfg?.llm_ingest_budget ?? DEFAULT_INGEST_BUDGET;
+  const items = (await ipc.fullTierItems(vaultPath)).slice(0, budget);
+  if (items.length === 0) {
+    return { ingested: 0, skipped: "nothing", errors: [] };
+  }
+
   const { provider, model, effort } = await getActiveModel("ingest");
   if (provider === "builtin-local") {
     return { ingested: 0, skipped: "no-provider", errors: [] };
@@ -101,13 +111,6 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
     if (!settings.providers.myco_pro) {
       return { ingested: 0, skipped: "no-provider", errors: [] };
     }
-  }
-
-  const cfg = await ipc.getDistillConfig(vaultPath).catch(() => null);
-  const budget = cfg?.llm_ingest_budget ?? DEFAULT_INGEST_BUDGET;
-  const items = (await ipc.fullTierItems(vaultPath)).slice(0, budget);
-  if (items.length === 0) {
-    return { ingested: 0, skipped: "nothing", errors: [] };
   }
 
   // Phase B, Task 6 — same grounding line startIngest passes, computed once

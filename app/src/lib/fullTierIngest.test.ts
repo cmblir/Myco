@@ -78,23 +78,38 @@ beforeEach(() => {
 });
 
 describe("runFullTierIngest", () => {
-  it("skips with no-provider when the active ingest model is builtin-local, and never lists items", async () => {
+  it("skips with no-provider on builtin-local only when items are actually pending", async () => {
+    // Emptiness outranks the provider: "waiting for a provider" with an
+    // empty queue was a lie the Overview card repeated verbatim.
     getActiveModel.mockResolvedValue({ provider: "builtin-local", model: "" });
+    fullTierItems.mockResolvedValue([{ rel: "_inbox/a.md" }]);
 
     const result = await runFullTierIngest("/v");
 
     expect(result).toEqual({ ingested: 0, skipped: "no-provider", errors: [] });
-    expect(fullTierItems).not.toHaveBeenCalled();
+    expect(runIngestProvider).not.toHaveBeenCalled();
+  });
+
+  it("reports nothing (not no-provider) on builtin-local with an empty queue", async () => {
+    getActiveModel.mockResolvedValue({ provider: "builtin-local", model: "" });
+    fullTierItems.mockResolvedValue([]);
+
+    expect(await runFullTierIngest("/v")).toEqual({
+      ingested: 0,
+      skipped: "nothing",
+      errors: [],
+    });
   });
 
   it("skips with no-provider when myco-pro is selected but not connected", async () => {
     getActiveModel.mockResolvedValue({ provider: "myco-pro", model: "" });
     getSettings.mockResolvedValue({ providers: { myco_pro: false } });
+    fullTierItems.mockResolvedValue([{ rel: "_inbox/a.md" }]);
 
     const result = await runFullTierIngest("/v");
 
     expect(result).toEqual({ ingested: 0, skipped: "no-provider", errors: [] });
-    expect(fullTierItems).not.toHaveBeenCalled();
+    expect(runIngestProvider).not.toHaveBeenCalled();
   });
 
   it("skips with nothing when there are no full-tier items", async () => {

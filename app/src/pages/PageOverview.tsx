@@ -291,6 +291,16 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
   // count actually went down between observations (pendingShrank).
   const prevPending = useRef<number | null>(null);
   const [shrank, setShrank] = useState(false);
+  const [runError, setRunError] = useState<string | null>(null);
+
+  // Card-local state must not leak across a vault switch: one vault's
+  // completion line or pending-trend would show over another vault's card.
+  useEffect(() => {
+    setOutcome(null);
+    setRunError(null);
+    setShrank(false);
+    prevPending.current = null;
+  }, [currentVault?.path]);
 
   async function refreshAll(): Promise<void> {
     await refresh();
@@ -317,11 +327,15 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentVault]);
 
+  // Inline feedback covers runs started FROM THIS CARD; schedule- and
+  // tray-initiated runs surface through the OS notification instead
+  // (osNotify in distill.ts), so neither path ends invisibly.
   async function runNow(): Promise<void> {
     if (!currentVault || running) return;
     setRunning(true);
     setBusy(false);
     setOutcome(null);
+    setRunError(null);
     try {
       const report = await runDistillGuarded(currentVault.path);
       if (report === null) {
@@ -333,6 +347,9 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
         days: lastDigestOutcome.get(currentVault.path)?.daysDigested ?? 0,
       });
       await refreshAll();
+    } catch (e) {
+      // A failed run showing NOTHING reads as "the button is broken".
+      setRunError(String(e));
     } finally {
       setRunning(false);
     }
@@ -387,6 +404,11 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
           data-testid="ov-distill-report"
         >
           {formatRunOutcome(outcome.report, outcome.days, t)}
+        </div>
+      ) : null}
+      {runError ? (
+        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 6 }}>
+          {runError}
         </div>
       ) : null}
       {busy ? (

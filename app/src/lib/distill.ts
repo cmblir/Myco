@@ -270,6 +270,21 @@ async function applyApprovedDraftMaps(
   vaultPath: string,
   budget: number,
 ): Promise<MapDraftOutcome> {
+  // Collect the approved proposals BEFORE the provider check — "waiting for
+  // a provider" with nothing approved is a lie the Overview card would
+  // faithfully repeat (same ordering as runFullTierIngest).
+  const tree = await ipc.listFiles(vaultPath).catch(() => []);
+  const approved: { path: string; raw: string; cluster: string; members: string[] }[] = [];
+  for (const f of feedbackFileNodes(tree)) {
+    const file = await ipc.readFile(f.path).catch(() => null);
+    if (!file) continue;
+    const parsed = parseProposal(toRelative(vaultPath, f.path), file.raw);
+    if (parsed?.action !== "draft-map" || parsed.status !== "approved") continue;
+    if (!parsed.cluster || !parsed.members) continue;
+    approved.push({ path: f.path, raw: file.raw, cluster: parsed.cluster, members: parsed.members });
+  }
+  if (approved.length === 0) return { drafted: 0, skipped: null };
+
   const { provider } = await getActiveModel("query");
   if (provider === "builtin-local") {
     return { drafted: 0, skipped: "no-provider" };
@@ -279,20 +294,13 @@ async function applyApprovedDraftMaps(
   // One undo-manifest for ALL maps this run drafts — per-call ids fragmented
   // a multi-map run so "undo this run" only reached the last map drafted.
   const manifestId = `llm-${Math.floor(Date.now() / 1000)}`;
-  const tree = await ipc.listFiles(vaultPath).catch(() => []);
-  for (const f of feedbackFileNodes(tree)) {
-    if (drafted >= budget) break;
-    const file = await ipc.readFile(f.path).catch(() => null);
-    if (!file) continue;
-    const parsed = parseProposal(toRelative(vaultPath, f.path), file.raw);
-    if (parsed?.action !== "draft-map" || parsed.status !== "approved") continue;
-    if (!parsed.cluster || !parsed.members) continue;
+  for (const p of approved.slice(0, budget)) {
     try {
-      await draftMap(vaultPath, parsed.cluster, parsed.members, manifestId);
-      await ipc.writeFile(f.path, rewriteStatus(file.raw, "done"));
+      await draftMap(vaultPath, p.cluster, p.members, manifestId);
+      await ipc.writeFile(p.path, rewriteStatus(p.raw, "done"));
       drafted++;
     } catch (e) {
-      console.error(`[distill] auto draft-map apply failed for ${f.path}:`, e);
+      console.error(`[distill] auto draft-map apply failed for ${p.path}:`, e);
     }
   }
   return { drafted, skipped: null };
@@ -357,6 +365,10 @@ async function osNotify(title: string, body: string): Promise<void> {
 export async function runDistillGuarded(vault: string): Promise<RunReport | null> {
   if (inFlight.has(vault)) return null;
   inFlight.add(vault);
+  // Cleared up front so a digest step that THROWS cannot leave last run's
+  // outcome behind — formatRunOutcome would attribute stale digested-day
+  // counts to this run.
+  lastDigestOutcome.delete(vault);
   useDistillRunStore.setState({ running: true, step: "run" });
   try {
     const report = await ipc.distillRun(vault);
