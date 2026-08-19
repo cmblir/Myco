@@ -856,6 +856,8 @@ export interface Strings {
   tb_activity_tasks?: string;
   tb_activity_tasks_more?: string; // {n}
   // Menu bar tray + OS notifications.
+  tray_hdr_running?: string;
+  tray_hdr_waiting?: string;
   tray_open?: string;
   tray_quit?: string;
   s_tray_resident_title?: string;
@@ -1794,6 +1796,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_mcp_off: "MCP server off",
     tb_activity_tasks: "Tasks due",
     tb_activity_tasks_more: "+{n} more",
+    tray_hdr_running: "Now working on",
+    tray_hdr_waiting: "Waiting",
     tray_open: "Open myco",
     tray_quit: "Quit myco",
     s_tray_resident_title: "Keep running in the menu bar",
@@ -2735,6 +2739,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_mcp_off: "MCP 서버 꺼짐",
     tb_activity_tasks: "할 일",
     tb_activity_tasks_more: "+{n}개 더",
+    tray_hdr_running: "지금 하는 일",
+    tray_hdr_waiting: "대기",
     tray_open: "myco 열기",
     tray_quit: "myco 종료",
     s_tray_resident_title: "메뉴 막대에 상주",
@@ -3552,6 +3558,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_mcp_off: "MCPサーバー停止",
     tb_activity_tasks: "期限のタスク",
     tb_activity_tasks_more: "+{n}件",
+    tray_hdr_running: "作業中",
+    tray_hdr_waiting: "待機",
     tray_open: "mycoを開く",
     tray_quit: "mycoを終了",
     s_tray_resident_title: "メニューバーに常駐",

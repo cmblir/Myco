@@ -64,9 +64,11 @@ describe("buildTrayStatus", () => {
       t,
     );
     expect(p.running).toEqual([
-      "Distilling… — the session digest",
-      "Indexing… 218/302",
+      { kind: "distill", text: "Distilling… — the session digest" },
+      { kind: "index", text: "Indexing… 218/302" },
     ]);
+    expect(p.runningHeader).toBe("Now working on");
+    expect(p.waitingHeader).toBe("Waiting");
     expect(p.title).toBe("2");
     expect(p.suggested).toBe("3 suggested links");
     expect(p.mcp).toBe("MCP server running");
@@ -89,6 +91,8 @@ describe("TraySender", () => {
 
   const payload = (title: string | null): TrayStatusPayload => ({
     running: [],
+    runningHeader: "",
+    waitingHeader: "",
     title,
     suggested: "",
     mcp: "",

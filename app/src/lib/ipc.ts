@@ -274,9 +274,18 @@ export interface MycoSettings {
 
 /** Pre-translated tray snapshot (mirrors Rust tray::TrayStatus). The Rust
  *  side stores strings only — it owns no translations. */
+/** One running activity row; `kind` picks the native menu row icon. */
+export interface TrayRunningRow {
+  kind: "ask" | "distill" | "index";
+  text: string;
+}
+
 export interface TrayStatusPayload {
   /** Pre-formatted running rows, shown as disabled info items. */
-  running: string[];
+  running: TrayRunningRow[];
+  /** Section headers (disabled rows); empty string hides the header. */
+  runningHeader: string;
+  waitingHeader: string;
   /** Text next to the tray icon ("72%", "2"); null clears it. */
   title: string | null;
   suggested: string;

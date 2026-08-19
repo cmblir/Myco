@@ -9,7 +9,7 @@
 
 import { listen } from "@tauri-apps/api/event";
 import { ipc } from "./ipc";
-import type { TrayStatusPayload } from "./ipc";
+import type { TrayRunningRow, TrayStatusPayload } from "./ipc";
 import { STRINGS } from "./i18n";
 import type { Strings } from "./i18n";
 import { pendingLinkCount } from "./linkSuggestions";
@@ -56,24 +56,33 @@ export function trayTitle(s: TraySnapshot): string | null {
   return null;
 }
 
-/** Full pre-translated payload, mirroring the in-app popover's rows. */
+/** Full pre-translated payload, mirroring the in-app popover's rows.
+ * Reindex progress stays text ("218/302") — native menus can't draw the
+ * popover's progress bar, a deliberate platform difference. */
 export function buildTrayStatus(s: TraySnapshot, t: Strings): TrayStatusPayload {
-  const running: string[] = [];
-  if (s.askBusy) running.push(t.nav_query);
+  const running: TrayRunningRow[] = [];
+  if (s.askBusy) running.push({ kind: "ask", text: t.nav_query });
   if (s.distillRunning) {
-    running.push(
-      `${t.set_distill_running ?? "Distilling…"} — ${stepLabel(s.distillStep, t)}`,
-    );
+    running.push({
+      kind: "distill",
+      text: `${t.set_distill_running ?? "Distilling…"} — ${stepLabel(s.distillStep, t)}`,
+    });
   }
   if (s.reindexStage === "loading-model") {
-    running.push(t.s_embeddings_loading_model ?? "Loading model…");
+    running.push({
+      kind: "index",
+      text: t.s_embeddings_loading_model ?? "Loading model…",
+    });
   } else if (s.reindexStage === "indexing") {
-    running.push(
-      `${t.s_embeddings_indexing ?? "Indexing…"} ${s.reindexDone}/${s.reindexTotal}`,
-    );
+    running.push({
+      kind: "index",
+      text: `${t.s_embeddings_indexing ?? "Indexing…"} ${s.reindexDone}/${s.reindexTotal}`,
+    });
   }
   return {
     running,
+    runningHeader: t.tray_hdr_running ?? "Now working on",
+    waitingHeader: t.tray_hdr_waiting ?? "Waiting",
     title: trayTitle(s),
     suggested: (t.tb_activity_links ?? "{n} suggested links").replace(
       "{n}",
