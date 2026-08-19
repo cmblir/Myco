@@ -1453,6 +1453,34 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       });
     case "mcp_connect":
       return Promise.resolve("(mock) Connected myco over HTTP at http://localhost:22360/mcp");
+    // Today's inflow for the activity popover / tray panel. Plausible spread:
+    // activity clustered in the hours up to "now" so the sparkbar always has
+    // visible bars near the right edge of today, whatever the wall clock.
+    case "inflow_stats": {
+      const h = new Date().getHours();
+      const hourlyFiles = Array<number>(24).fill(0);
+      const hourlyMcp = Array<number>(24).fill(0);
+      const files = [2, 1, 0, 1, 2, 1]; // now, -1h, -2h, …
+      const mcp = [3, 4, 2, 0, 5, 3];
+      for (let back = 0; back < files.length; back++) {
+        const hour = h - back;
+        if (hour < 0) break; // earlier hours were "yesterday" — not today's bar
+        hourlyFiles[hour] = files[back];
+        hourlyMcp[hour] = mcp[back];
+      }
+      // hourlyFiles buckets sessions AND inbox files, so the two counts must
+      // sum to its total — same invariant the real collector keeps.
+      const filesTotal = hourlyFiles.reduce((a, b) => a + b, 0);
+      const inboxToday = Math.min(3, filesTotal);
+      return Promise.resolve({
+        sessionsToday: filesTotal - inboxToday,
+        inboxToday,
+        mcpCallsToday: hourlyMcp.reduce((a, b) => a + b, 0),
+        mcpTopTool: "search",
+        hourlyFiles,
+        hourlyMcp,
+      });
+    }
     default:
       // Reject, like the real Tauri does for a command that is not registered.
       // Resolving `undefined` instead is how the mock hid a broken feature for

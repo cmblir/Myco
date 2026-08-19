@@ -3984,6 +3984,42 @@ hr {
   font-size: 12px;
 }
 
+/* "Today's inflow" sparkbar — 24 hourly columns, files (blue) stacked under
+   MCP calls (purple). Pure divs; heights are inline percentages. */
+.inflow-spark {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  width: 100%;
+  height: 28px;
+  border-bottom: 1px solid var(--line);
+}
+.inflow-spark-col {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.inflow-spark-file {
+  background: var(--c-overview);
+  border-radius: 1px;
+}
+.inflow-spark-mcp {
+  background: var(--c-concept);
+  border-radius: 1px;
+}
+/* Dark tray card: hairline + lighter bar tones for contrast. */
+.tray-panel .inflow-spark {
+  border-bottom-color: #33363f;
+}
+.tray-panel .inflow-spark-file {
+  background: #6aa1ff;
+}
+.tray-panel .inflow-spark-mcp {
+  background: #a78bfa;
+}
+
 /* Tray popover window (?window=tray) — the approved menubar-v2 panel:
    rounded 12px dark card, 11px uppercase section headers, 20px circular row
    icons, hairline separators. The OS window is transparent + shadowed; only
@@ -4053,6 +4089,11 @@ html.tray-window body {
 }
 .tray-panel .activity-row-main {
   flex-direction: row;
+}
+/* Rows that carry a sub-line (the inflow MCP row) stack it below the main
+   text, like the in-app popover — side by side it reads as one run-on line. */
+.tray-panel .activity-row-main:has(.activity-row-sub) {
+  flex-direction: column;
 }
 
 @media (prefers-reduced-motion: reduce) {

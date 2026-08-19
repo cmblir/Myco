@@ -57,6 +57,39 @@ export function ActivityIcon({
   );
 }
 
+/** 24-hour inflow sparkbar — pure divs, one column per local hour, files
+ * stacked under MCP calls (two colors). Shared by the ActivityChip popover
+ * and the tray panel so both draw the identical bar. Decorative: the counts
+ * are in the rows above it, so it is hidden from assistive tech. */
+export function InflowSparkbar({
+  files,
+  mcp,
+}: {
+  files: number[];
+  mcp: number[];
+}): JSX.Element {
+  const max = Math.max(1, ...files.map((f, i) => f + (mcp[i] ?? 0)));
+  return (
+    <div className="inflow-spark" aria-hidden="true">
+      {files.map((f, i) => {
+        const m = mcp[i] ?? 0;
+        return (
+          <div className="inflow-spark-col" key={i}>
+            <div
+              className="inflow-spark-mcp"
+              style={{ height: `${(m / max) * 100}%` }}
+            />
+            <div
+              className="inflow-spark-file"
+              style={{ height: `${(f / max) * 100}%` }}
+            />
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export interface PanelRow {
   key: string;
   /** Circular row icon; `leading` (e.g. a task checkbox) replaces it. */

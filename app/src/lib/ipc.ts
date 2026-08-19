@@ -280,6 +280,35 @@ export interface TrayRunningRow {
   text: string;
 }
 
+/** What arrived in the vault today (Rust `inflow_stats`). "Today" is the
+ *  caller's local date; the MCP counter is in-memory, so after a restart it
+ *  counts since app launch — label it as such. */
+export interface InflowStats {
+  /** sessions/<month>/*.md written (swept) today, by mtime. */
+  sessionsToday: number;
+  /** Top-level _inbox/ files created today (birthtime, mtime fallback). */
+  inboxToday: number;
+  /** MCP tool calls recorded today (in-memory — since app launch). */
+  mcpCallsToday: number;
+  mcpTopTool: string | null;
+  /** 24 local-hour buckets: session+inbox files / MCP calls, for the sparkbar. */
+  hourlyFiles: number[];
+  hourlyMcp: number[];
+}
+
+/** Pre-translated inflow lines for the tray surfaces; the native menu shows
+ *  only `summary`, the tray panel renders every line plus the sparkbar. */
+export interface TrayInflowPayload {
+  header: string;
+  sessions: string;
+  mcp: string;
+  mcpSub: string;
+  inbox: string;
+  summary: string;
+  hourlyFiles: number[];
+  hourlyMcp: number[];
+}
+
 export interface TrayStatusPayload {
   /** Pre-formatted running rows, shown as disabled info items. */
   running: TrayRunningRow[];
@@ -290,6 +319,8 @@ export interface TrayStatusPayload {
   title: string | null;
   suggested: string;
   mcp: string;
+  /** Today's-inflow block; null/absent hides the section everywhere. */
+  inflow?: TrayInflowPayload | null;
   ask: string;
   distill: string;
   open: string;
@@ -681,6 +712,13 @@ export const ipc = {
   ollamaInstallUrl: () => invoke<string>("ollama_install_url"),
   openExternal: (url: string) => invoke<null>("open_external", { url }),
   mcpInfo: () => invoke<McpNativeInfo>("mcp_info"),
+  /** Today's inflow (sessions/inbox/MCP + hourly buckets). "Today" follows
+   *  the caller's clock — the tz offset crosses with the request. */
+  inflowStats: (root: string) =>
+    invoke<InflowStats>("inflow_stats", {
+      root,
+      tzOffsetMin: new Date().getTimezoneOffset(),
+    }),
   mcpConnect: () => invoke<string>("mcp_connect"),
   // Embedded local model (bundled Gemma 3 1B) — offline, no key. First call
   // lazily loads the weights, so it can take a few extra seconds.

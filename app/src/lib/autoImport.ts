@@ -18,6 +18,15 @@ import { useDistillRunStore } from "../stores/distillRunStore";
 
 const KINDS = ["claude-code", "codex"] as const;
 
+/** When the last sweep finished (any kind succeeded), ms epoch. Module-level
+ * because the scheduler keeps no other state; the inflow section's "last
+ * sweep" sub-line is its only reader. Null until a sweep completes. */
+let lastSweepAt: number | null = null;
+
+export function getLastSweepAt(): number | null {
+  return lastSweepAt;
+}
+
 function busy(): boolean {
   const imp = useImportStore.getState().stage;
   const ing = useIngestStore.getState().stage;
@@ -44,6 +53,7 @@ export async function runSessionSweep(): Promise<void> {
   for (const kind of KINDS) {
     try {
       const out = await ipc.importSessionSweep(kind);
+      lastSweepAt = Date.now();
       if (out.imported > 0) {
         log.info("auto_import.swept", {
           kind,

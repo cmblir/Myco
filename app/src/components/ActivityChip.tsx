@@ -13,15 +13,17 @@ import { createPortal } from "react-dom";
 import type { JSX } from "react";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
-import type { TaskItem } from "../lib/ipc";
+import type { InflowStats, TaskItem } from "../lib/ipc";
 import { formatTicker } from "../lib/time";
+import { inflowLines } from "../lib/inflow";
+import { getLastSweepAt } from "../lib/autoImport";
 import { requestDistillStop } from "../lib/distill";
 import { pendingLinkCount } from "../lib/linkSuggestions";
 import { dueOpen } from "../lib/taskNotify";
 import { parseTaskMeta } from "../lib/taskLine";
 import { writeTaskStatus } from "../lib/taskWrite";
 import { computeModelPopPos } from "./Topbar";
-import ActivityPanel, { ActivityIcon } from "./ActivityPanel";
+import ActivityPanel, { ActivityIcon, InflowSparkbar } from "./ActivityPanel";
 import type { ActivityIconName, PanelRow, PanelSection } from "./ActivityPanel";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
@@ -95,6 +97,9 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   // MCP server state, probed when the popover opens (it is global and
   // auto-started; no store holds it — same source the Settings MCP tab reads).
   const [mcpRunning, setMcpRunning] = useState<boolean | null>(null);
+  // Today's inflow, fetched when the popover opens (no polling) — the same
+  // open-probe pattern as the MCP row above.
+  const [inflow, setInflow] = useState<InflowStats | null>(null);
   // Same latch the Settings distill tab keeps: "stop already requested".
   const [stopping, setStopping] = useState(false);
   // Due-today + overdue open tasks, loaded when the popover opens (and after a
@@ -153,10 +158,16 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       .mcpInfo()
       .then((i) => alive && setMcpRunning(i.running))
       .catch(() => alive && setMcpRunning(false));
+    if (vaultPath) {
+      ipc
+        .inflowStats(vaultPath)
+        .then((s) => alive && setInflow(s))
+        .catch(() => alive && setInflow(null));
+    }
     return () => {
       alive = false;
     };
-  }, [open]);
+  }, [open, vaultPath]);
 
   // Outside-click / Escape / resize handling — same shape as ModelChip's
   // (the popover portals to <body>, so both refs must be checked).
@@ -375,6 +386,51 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
     });
   }
 
+  // Today's inflow — the whole section vanishes when nothing arrived today
+  // (inflowLines returns null) or before/without a successful fetch.
+  const lines = inflow ? inflowLines(inflow, t) : null;
+  const inflowRows: PanelRow[] = [];
+  if (inflow && lines) {
+    const sweepAt = getLastSweepAt();
+    inflowRows.push(
+      {
+        key: "sessions",
+        main: (
+          <>
+            {lines.sessions}
+            {sweepAt !== null ? (
+              <span className="activity-row-sub">
+                {(t.tb_inflow_last_sweep ?? "last sweep {t}").replace(
+                  "{t}",
+                  new Date(sweepAt).toLocaleTimeString([], {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  }),
+                )}
+              </span>
+            ) : null}
+          </>
+        ),
+      },
+      {
+        key: "mcp-calls",
+        main: (
+          <>
+            {lines.mcp}
+            <span className="activity-row-sub">{lines.mcpSub}</span>
+          </>
+        ),
+      },
+      { key: "inbox", main: lines.inbox },
+      {
+        key: "spark",
+        main: (
+          <InflowSparkbar files={inflow.hourlyFiles} mcp={inflow.hourlyMcp} />
+        ),
+      },
+    );
+  }
+
   const sections: PanelSection[] = [
     {
       key: "running",
@@ -382,6 +438,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       rows: runningRows,
     },
     { key: "tasks", header: t.tb_activity_tasks ?? "Tasks due", rows: taskRows },
+    { key: "inflow", header: lines?.header, rows: inflowRows },
     {
       key: "standing",
       rows: [
