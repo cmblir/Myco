@@ -3972,6 +3972,18 @@ hr {
   flex: none;
 }
 
+/* Shared panel sections (ActivityPanel). Inside the in-app popover the
+   section separator stays an invisible 0-height div (the popover's own gap
+   does the separating); the tray window skins it as a hairline below. */
+.activity-pop .activity-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.activity-hdr {
+  font-size: 12px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ingest-orb-core,
   .ingest-orb-ring,

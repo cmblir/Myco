@@ -21,6 +21,8 @@ import { dueOpen } from "../lib/taskNotify";
 import { parseTaskMeta } from "../lib/taskLine";
 import { writeTaskStatus } from "../lib/taskWrite";
 import { computeModelPopPos } from "./Topbar";
+import ActivityPanel, { ActivityIcon } from "./ActivityPanel";
+import type { ActivityIconName, PanelRow, PanelSection } from "./ActivityPanel";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useQueryStore } from "../stores/queryStore";
@@ -28,53 +30,9 @@ import { useReindexStore } from "../stores/reindexStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
-import askPng from "../assets/activity/ask.png";
-import distillPng from "../assets/activity/distill.png";
-import indexingPng from "../assets/activity/indexing.png";
-import linkPng from "../assets/activity/link.png";
-import mcpPng from "../assets/activity/mcp.png";
-import stopPng from "../assets/activity/stop.png";
 
-export type ActivityIconName =
-  | "ask"
-  | "distill"
-  | "indexing"
-  | "link"
-  | "mcp"
-  | "stop";
-
-const ICON_SRC: Record<ActivityIconName, string> = {
-  ask: askPng,
-  distill: distillPng,
-  indexing: indexingPng,
-  link: linkPng,
-  mcp: mcpPng,
-  stop: stopPng,
-};
-
-/** The one component every activity image goes through. The PNGs bake a dark
- * ground in, so a circle mask (border-radius) hides the square on light
- * surfaces. `active` = the breathing drop-shadow glow (CSS), nothing else. */
-export function ActivityIcon({
-  name,
-  size = 18,
-  active = false,
-}: {
-  name: ActivityIconName;
-  size?: number;
-  active?: boolean;
-}): JSX.Element {
-  return (
-    <img
-      src={ICON_SRC[name]}
-      width={size}
-      height={size}
-      alt=""
-      aria-hidden="true"
-      className={"activity-icon" + (active ? " is-active" : "")}
-    />
-  );
-}
+export { ActivityIcon };
+export type { ActivityIconName };
 
 export interface RunningActivity {
   icon: ActivityIconName;
@@ -282,6 +240,178 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
     setRoute(route);
   };
 
+  // Popover body, expressed as the shared panel's sections (ActivityPanel is
+  // the same component the tray popover window renders).
+  const runningRows: PanelRow[] = [];
+  if (askBusy) {
+    runningRows.push({
+      key: "ask",
+      icon: "ask",
+      iconActive: true,
+      onClick: () => jump("query"),
+      main: (
+        <>
+          <b>{t.nav_query}</b>
+          {askQuestion ? (
+            <span className="activity-row-sub">{askQuestion}</span>
+          ) : null}
+        </>
+      ),
+      trailing: (
+        <span className="activity-num">
+          {askStartedAt ? formatTicker(now - askStartedAt) : ""}
+        </span>
+      ),
+    });
+  }
+  if (distillRunning) {
+    runningRows.push({
+      key: "distill",
+      icon: "distill",
+      iconActive: true,
+      main: (
+        <>
+          <b>{t.set_distill_running ?? "Distilling…"}</b>
+          <span className="activity-row-sub">{stepLabel(distillStep, t)}</span>
+        </>
+      ),
+      trailing: (
+        <button
+          className="btn activity-stop"
+          disabled={stopping}
+          onClick={() => {
+            if (vaultPath) {
+              requestDistillStop(vaultPath);
+              setStopping(true);
+            }
+          }}
+        >
+          <ActivityIcon name="stop" size={13} />
+          {stopping
+            ? (t.set_distill_stopping ?? "Stopping after the current step…")
+            : (t.set_distill_stop ?? "Stop")}
+        </button>
+      ),
+    });
+  }
+  if (reindexBusy) {
+    runningRows.push({
+      key: "indexing",
+      icon: "indexing",
+      iconActive: true,
+      main: (
+        <>
+          <b>{t.s_embeddings_indexing ?? "Indexing…"}</b>
+          {reindexStage === "indexing" ? (
+            <progress value={reindexDone} max={reindexTotal || 1} />
+          ) : (
+            <span className="activity-row-sub">
+              {t.s_embeddings_loading_model ?? "Loading model…"}
+            </span>
+          )}
+        </>
+      ),
+      trailing:
+        reindexStage === "indexing" ? (
+          <span className="activity-num">
+            {reindexDone}/{reindexTotal}
+          </span>
+        ) : undefined,
+    });
+  }
+
+  const taskRows: PanelRow[] = (dueTasks ?? []).slice(0, 5).map((task) => ({
+    key: `${task.page}:${task.line}`,
+    leading: (
+      <button
+        type="button"
+        role="checkbox"
+        aria-checked={false}
+        aria-label={task.text}
+        onClick={() => void checkOff(task)}
+        style={{
+          padding: 0,
+          cursor: "pointer",
+          width: 15,
+          height: 15,
+          borderRadius: 3,
+          flexShrink: 0,
+          border: "1.5px solid var(--ink-3)",
+          background: "transparent",
+        }}
+      />
+    ),
+    main: (
+      <span className="activity-row-sub">{parseTaskMeta(task.text).title}</span>
+    ),
+    trailing: (
+      <span
+        className="muted"
+        style={{
+          fontSize: 11,
+          flexShrink: 0,
+          maxWidth: "35%",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {task.stem}
+      </span>
+    ),
+  }));
+  if (dueTasks && dueTasks.length > 5) {
+    taskRows.push({
+      key: "tasks-more",
+      onClick: () => jump("tasks"),
+      main: (
+        <span className="muted">
+          {(t.tb_activity_tasks_more ?? "+{n} more").replace(
+            "{n}",
+            String(dueTasks.length - 5),
+          )}
+        </span>
+      ),
+    });
+  }
+
+  const sections: PanelSection[] = [
+    {
+      key: "running",
+      header: t.tb_activity_running ?? "Running",
+      rows: runningRows,
+    },
+    { key: "tasks", header: t.tb_activity_tasks ?? "Tasks due", rows: taskRows },
+    {
+      key: "standing",
+      rows: [
+        {
+          key: "links",
+          icon: "link",
+          onClick: () => jump("overview"),
+          main: (t.tb_activity_links ?? "{n} suggested links").replace(
+            "{n}",
+            String(pending),
+          ),
+        },
+        {
+          key: "mcp",
+          icon: "mcp",
+          onClick: () => jump("settings"),
+          main:
+            mcpRunning === null
+              ? "…"
+              : mcpRunning
+                ? (t.tb_activity_mcp_on ?? "MCP server running")
+                : (t.tb_activity_mcp_off ?? "MCP server off"),
+          trailing: (
+            <span className={"dot" + (mcpRunning ? " is-ready" : "")}></span>
+          ),
+        },
+      ],
+    },
+  ];
+
   return (
     <div className="model-chip-wrap" ref={wrapRef}>
       <button
@@ -323,155 +453,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
                 maxHeight: popPos.maxHeight,
               }}
             >
-              <div className="muted" style={{ fontSize: 12 }}>
-                {t.tb_activity_running ?? "Running"}
-              </div>
-              {askBusy ? (
-                <button className="activity-row" onClick={() => jump("query")}>
-                  <ActivityIcon name="ask" active />
-                  <span className="activity-row-main">
-                    <b>{t.nav_query}</b>
-                    {askQuestion ? (
-                      <span className="activity-row-sub">{askQuestion}</span>
-                    ) : null}
-                  </span>
-                  <span className="activity-num">
-                    {askStartedAt ? formatTicker(now - askStartedAt) : ""}
-                  </span>
-                </button>
-              ) : null}
-              {distillRunning ? (
-                <div className="activity-row">
-                  <ActivityIcon name="distill" active />
-                  <span className="activity-row-main">
-                    <b>{t.set_distill_running ?? "Distilling…"}</b>
-                    <span className="activity-row-sub">
-                      {stepLabel(distillStep, t)}
-                    </span>
-                  </span>
-                  <button
-                    className="btn activity-stop"
-                    disabled={stopping}
-                    onClick={() => {
-                      if (vaultPath) {
-                        requestDistillStop(vaultPath);
-                        setStopping(true);
-                      }
-                    }}
-                  >
-                    <ActivityIcon name="stop" size={13} />
-                    {stopping
-                      ? (t.set_distill_stopping ?? "Stopping after the current step…")
-                      : (t.set_distill_stop ?? "Stop")}
-                  </button>
-                </div>
-              ) : null}
-              {reindexBusy ? (
-                <div className="activity-row">
-                  <ActivityIcon name="indexing" active />
-                  <span className="activity-row-main">
-                    <b>{t.s_embeddings_indexing ?? "Indexing…"}</b>
-                    {reindexStage === "indexing" ? (
-                      <progress value={reindexDone} max={reindexTotal || 1} />
-                    ) : (
-                      <span className="activity-row-sub">
-                        {t.s_embeddings_loading_model ?? "Loading model…"}
-                      </span>
-                    )}
-                  </span>
-                  {reindexStage === "indexing" ? (
-                    <span className="activity-num">
-                      {reindexDone}/{reindexTotal}
-                    </span>
-                  ) : null}
-                </div>
-              ) : null}
-              <div className="activity-standing">
-                {dueTasks && dueTasks.length > 0 ? (
-                  <>
-                    <div className="muted" style={{ fontSize: 12 }}>
-                      {t.tb_activity_tasks ?? "Tasks due"}
-                    </div>
-                    {dueTasks.slice(0, 5).map((task) => (
-                      <div
-                        className="activity-row"
-                        key={`${task.page}:${task.line}`}
-                      >
-                        <button
-                          type="button"
-                          role="checkbox"
-                          aria-checked={false}
-                          aria-label={task.text}
-                          onClick={() => void checkOff(task)}
-                          style={{
-                            padding: 0,
-                            cursor: "pointer",
-                            width: 15,
-                            height: 15,
-                            borderRadius: 3,
-                            flexShrink: 0,
-                            border: "1.5px solid var(--ink-3)",
-                            background: "transparent",
-                          }}
-                        />
-                        <span className="activity-row-main">
-                          <span className="activity-row-sub">
-                            {parseTaskMeta(task.text).title}
-                          </span>
-                        </span>
-                        <span
-                          className="muted"
-                          style={{
-                            fontSize: 11,
-                            flexShrink: 0,
-                            maxWidth: "35%",
-                            overflow: "hidden",
-                            textOverflow: "ellipsis",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {task.stem}
-                        </span>
-                      </div>
-                    ))}
-                    {dueTasks.length > 5 ? (
-                      <button
-                        className="activity-row"
-                        onClick={() => jump("tasks")}
-                      >
-                        <span className="activity-row-main muted">
-                          {(t.tb_activity_tasks_more ?? "+{n} more").replace(
-                            "{n}",
-                            String(dueTasks.length - 5),
-                          )}
-                        </span>
-                      </button>
-                    ) : null}
-                  </>
-                ) : null}
-                <button className="activity-row" onClick={() => jump("overview")}>
-                  <ActivityIcon name="link" />
-                  <span className="activity-row-main">
-                    {(t.tb_activity_links ?? "{n} suggested links").replace(
-                      "{n}",
-                      String(pending),
-                    )}
-                  </span>
-                </button>
-                <button className="activity-row" onClick={() => jump("settings")}>
-                  <ActivityIcon name="mcp" />
-                  <span className="activity-row-main">
-                    {mcpRunning === null
-                      ? "…"
-                      : mcpRunning
-                        ? (t.tb_activity_mcp_on ?? "MCP server running")
-                        : (t.tb_activity_mcp_off ?? "MCP server off")}
-                  </span>
-                  <span
-                    className={"dot" + (mcpRunning ? " is-ready" : "")}
-                  ></span>
-                </button>
-              </div>
+              <ActivityPanel sections={sections} />
             </div>,
             document.body,
           )
