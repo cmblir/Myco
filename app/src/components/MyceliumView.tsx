@@ -294,7 +294,10 @@ export default function MyceliumView({
     sceneRef.current = scene;
     if (fitRef) fitRef.current = () => scene.fit();
     if (startGrowthRef) {
-      startGrowthRef.current = () => scene.startGrowth(GROW_SECS / growSpeedRef.current);
+      // Replay (toolbar/drawer timelapse button): reduced-motion jumps
+      // straight to the grown state, same as the initial grow-in below.
+      startGrowthRef.current = () =>
+        scene.startGrowth(reduced ? 0 : GROW_SECS / growSpeedRef.current);
     }
     if (focusRef) {
       focusRef.current = (id) => {

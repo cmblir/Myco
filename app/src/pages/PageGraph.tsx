@@ -1535,6 +1535,20 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     setTlPlaying(false);
   };
 
+  // Play/pause the timelapse — shared by the toolbar's ▶ button and the
+  // settings drawer's footer button so neither can drift out of sync with
+  // the other. Mycelium is a separate renderer with its own growth clock,
+  // not the worker-sim timelapse this drives for every other layout —
+  // replay is a one-shot reveal, nothing to pause.
+  const toggleTimelapse = (): void => {
+    if (settings.skin === "mycelium") {
+      myceliumGrowthRef.current?.();
+      return;
+    }
+    if (tlPlaying) pauseTimelapse();
+    else startTimelapse();
+  };
+
   useEffect(() => {
     return () => {
       if (tlRafRef.current != null) cancelAnimationFrame(tlRafRef.current);
@@ -1706,17 +1720,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
           <button
             type="button"
             className="graph-toolbar__btn"
-            onClick={() => {
-              // Mycelium is a separate renderer with its own growth clock, not
-              // the worker-sim timelapse the button drives for every other
-              // layout — replay is a one-shot reveal, nothing to pause.
-              if (settings.skin === "mycelium") {
-                myceliumGrowthRef.current?.();
-                return;
-              }
-              if (tlPlaying) pauseTimelapse();
-              else startTimelapse();
-            }}
+            onClick={toggleTimelapse}
             aria-pressed={tlPlaying}
             aria-label={
               tlPlaying
@@ -2064,7 +2068,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             tags={tags}
             folders={folders}
             tlPlaying={tlPlaying}
-            onTimelapse={tlPlaying ? pauseTimelapse : startTimelapse}
+            onTimelapse={toggleTimelapse}
             traceMode={traceMode}
             onTraceMode={toggleTrace}
             flyMode={flyMode}
