@@ -24,6 +24,7 @@ import { useReindexStore } from "../stores/reindexStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
+import { useReflectStore } from "../stores/reflectStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
 /** Emitted by Rust when a tray menu action row is clicked. */
@@ -35,6 +36,10 @@ export interface TraySnapshot {
   askBusy: boolean;
   distillRunning: boolean;
   distillStep: DistillRunStep | null;
+  reflectRunning: boolean;
+  /** Unseen reflect findings; 0 hides the standing row (a standing state, so
+   *  it never counts toward the tray title). */
+  reflectUnseen: number;
   reindexStage: "idle" | "loading-model" | "indexing" | "done" | "error";
   reindexDone: number;
   reindexTotal: number;
@@ -56,7 +61,10 @@ export function trayTitle(s: TraySnapshot): string | null {
   const reindexBusy =
     s.reindexStage === "loading-model" || s.reindexStage === "indexing";
   const count =
-    (s.askBusy ? 1 : 0) + (s.distillRunning ? 1 : 0) + (reindexBusy ? 1 : 0);
+    (s.askBusy ? 1 : 0) +
+    (s.distillRunning ? 1 : 0) +
+    (s.reflectRunning ? 1 : 0) +
+    (reindexBusy ? 1 : 0);
   if (count === 0) return null;
   if (count >= 2) return String(count);
   if (s.reindexStage === "indexing" && s.reindexTotal > 0) {
@@ -75,6 +83,12 @@ export function buildTrayStatus(s: TraySnapshot, t: Strings): TrayStatusPayload 
     running.push({
       kind: "distill",
       text: `${t.set_distill_running ?? "Distilling…"} — ${stepLabel(s.distillStep, t)}`,
+    });
+  }
+  if (s.reflectRunning) {
+    running.push({
+      kind: "reflect",
+      text: t.rf_running_label ?? "Reflect running…",
     });
   }
   if (s.reindexStage === "loading-model") {
@@ -103,6 +117,13 @@ export function buildTrayStatus(s: TraySnapshot, t: Strings): TrayStatusPayload 
       "{n}",
       String(s.pendingLinks),
     ),
+    reflect:
+      s.reflectUnseen > 0
+        ? (t.tb_activity_reflect ?? "{n} reflect suggestions").replace(
+            "{n}",
+            String(s.reflectUnseen),
+          )
+        : "",
     mcp: s.mcpRunning
       ? (t.tb_activity_mcp_on ?? "MCP server running")
       : (t.tb_activity_mcp_off ?? "MCP server off"),
@@ -201,6 +222,7 @@ export function initTrayIntegration(): () => void {
     const query = useQueryStore.getState();
     const vault = useVaultStore.getState();
     const links = useLinkSuggestStore.getState();
+    const reflect = useReflectStore.getState();
     const settings = useSettingsStore.getState().settings;
     const t = STRINGS[useUIStore.getState().lang];
     const pendingLinks =
@@ -213,6 +235,8 @@ export function initTrayIntegration(): () => void {
           askBusy: query.busy,
           distillRunning: distill.running,
           distillStep: distill.step,
+          reflectRunning: reflect.stage === "running",
+          reflectUnseen: reflect.seen ? 0 : reflect.suggestions.length,
           reindexStage: reindex.stage,
           reindexDone: reindex.done,
           reindexTotal: reindex.total,
@@ -273,6 +297,7 @@ export function initTrayIntegration(): () => void {
       recompute();
     }),
     useLinkSuggestStore.subscribe(recompute),
+    useReflectStore.subscribe(recompute),
   ];
 
   // Tray menu actions: route jumps and the guarded distill entry. Rust has

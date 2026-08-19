@@ -14,6 +14,12 @@ const distill: RunningActivity = {
   label: "Distilling…",
   detail: "the core pass",
 };
+const reflect: RunningActivity = {
+  // Reflect borrows the distill icon — the set has no reflect art.
+  icon: "distill",
+  label: "Reflect running…",
+  detail: "",
+};
 const indexing: RunningActivity = {
   icon: "indexing",
   label: "Indexing…",
@@ -41,6 +47,25 @@ describe("chipMode", () => {
     expect(chipMode([ask, distill, indexing])).toEqual({
       kind: "multi",
       count: 3,
+      icon: "ask",
+    });
+  });
+
+  // Reflect is a running activity like any other: alone it gets its own chip,
+  // and it counts toward the collapsed badge.
+  it("gives a lone running reflect its own chip", () => {
+    expect(chipMode([reflect])).toEqual({ kind: "single", activity: reflect });
+  });
+
+  it("counts a running reflect in the collapsed badge", () => {
+    expect(chipMode([distill, reflect])).toEqual({
+      kind: "multi",
+      count: 2,
+      icon: "distill",
+    });
+    expect(chipMode([ask, distill, reflect, indexing])).toEqual({
+      kind: "multi",
+      count: 4,
       icon: "ask",
     });
   });

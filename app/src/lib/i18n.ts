@@ -856,6 +856,7 @@ export interface Strings {
   tb_activity_n?: string; // {n}
   tb_activity_running?: string;
   tb_activity_links?: string; // {n}
+  tb_activity_reflect?: string; // {n}
   tb_activity_mcp_on?: string;
   tb_activity_mcp_off?: string;
   tb_activity_tasks?: string;
@@ -899,6 +900,11 @@ export interface Strings {
   rf_lede: string;
   rf_run: string;
   rf_running: string;
+  /** Names reflect in the activity surfaces (topbar chip, tray) — rf_running
+   *  alone ("분석 중…") does not say WHAT is analysing. */
+  rf_running_label?: string;
+  /** Completion line on the panel, like the distill card's outcome line. */
+  rf_done?: string; // {n}
   rf_empty: string;
   rf_extractive: string;
   // Extractive reflect's two mechanical findings. Written by reflectStore (not
@@ -1831,6 +1837,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_n: "Activity {n}",
     tb_activity_running: "Running",
     tb_activity_links: "{n} suggested links",
+    tb_activity_reflect: "{n} reflect suggestions",
     tb_activity_mcp_on: "MCP server running",
     tb_activity_mcp_off: "MCP server off",
     tb_activity_tasks: "Tasks due",
@@ -1873,6 +1880,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "Claude's read-only pass over the vault: orphans to link, stale pages, and missing cross-references.",
     rf_run: "Reflect",
     rf_running: "Reflecting…",
+    rf_running_label: "Reflect running…",
+    rf_done: "Reflect finished — suggestions: {n}",
     rf_empty: "No suggestions — the vault looks well-connected.",
     rf_extractive:
       "Extractive pass (built-in model, no LLM) — link-graph facts only: orphan pages and unresolved links.",
@@ -2803,6 +2812,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_n: "활동 {n}",
     tb_activity_running: "진행 중",
     tb_activity_links: "제안된 링크 {n}개",
+    tb_activity_reflect: "Reflect 제안 {n}개",
     tb_activity_mcp_on: "MCP 서버 실행 중",
     tb_activity_mcp_off: "MCP 서버 꺼짐",
     tb_activity_tasks: "할 일",
@@ -2844,6 +2854,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "Claude가 vault를 읽기 전용으로 훑어 제안합니다: 연결할 고립 노드, 오래된 페이지, 빠진 교차 참조.",
     rf_run: "Reflect 실행",
     rf_running: "분석 중…",
+    rf_running_label: "Reflect 분석 중…",
+    rf_done: "Reflect 완료 — 제안 {n}개",
     rf_empty: "제안이 없습니다 — vault가 잘 연결되어 있습니다.",
     rf_extractive:
       "추출 기반 결과 (내장 모델, LLM 없음) — 링크 그래프 사실만: 고아 페이지와 미해결 링크.",
@@ -3652,6 +3664,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_n: "活動 {n}",
     tb_activity_running: "実行中",
     tb_activity_links: "リンク提案 {n}件",
+    tb_activity_reflect: "Reflect の提案 {n}件",
     tb_activity_mcp_on: "MCPサーバー稼働中",
     tb_activity_mcp_off: "MCPサーバー停止",
     tb_activity_tasks: "期限のタスク",
@@ -3693,6 +3706,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "Claude が vault を読み取り専用でざっと確認します: リンクすべき孤立ノード、古いページ、欠けた相互参照。",
     rf_run: "Reflect 実行",
     rf_running: "分析中…",
+    rf_running_label: "Reflect 分析中…",
+    rf_done: "Reflect 完了 — 提案 {n}件",
     rf_empty: "提案はありません — vault は十分につながっています。",
     rf_extractive:
       "抽出ベースの結果(内蔵モデル、LLMなし)— リンクグラフの事実のみ: 孤立ページと未解決リンク。",

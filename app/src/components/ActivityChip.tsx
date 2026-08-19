@@ -32,6 +32,7 @@ import { useReindexStore } from "../stores/reindexStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
+import { useReflectStore } from "../stores/reflectStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
 export { ActivityIcon };
@@ -75,6 +76,12 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const turns = useQueryStore((s) => s.turns);
   const distillRunning = useDistillRunStore((s) => s.running);
   const distillStep = useDistillRunStore((s) => s.step);
+  const reflectRunning = useReflectStore((s) => s.stage === "running");
+  // Unseen findings from the last reflect run — a STANDING state, like
+  // suggested links: it never counts toward the chip badge, it only lists.
+  const reflectUnseen = useReflectStore((s) =>
+    s.seen ? 0 : s.suggestions.length,
+  );
   const reindexStage = useReindexStore((s) => s.stage);
   const reindexDone = useReindexStore((s) => s.done);
   const reindexTotal = useReindexStore((s) => s.total);
@@ -88,7 +95,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
 
   const reindexBusy =
     reindexStage === "loading-model" || reindexStage === "indexing";
-  const anyBusy = askBusy || distillRunning || reindexBusy;
+  const anyBusy = askBusy || distillRunning || reflectRunning || reindexBusy;
 
   const [open, setOpen] = useState(false);
   const [popPos, setPopPos] = useState<ReturnType<typeof computeModelPopPos> | null>(
@@ -210,7 +217,10 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   );
 
   // Priority (most to least urgent to surface when collapsed): Ask — the
-  // user is actively waiting on it — then distill, then reindex.
+  // user is actively waiting on it — then distill, reflect, then reindex.
+  // Reflect borrows the distill icon: the set has no reflect art, and reflect
+  // is distill's read-only sibling (a whole-vault background pass), where the
+  // ask icon means "a human is waiting on this answer".
   const running: RunningActivity[] = [];
   if (askBusy) {
     running.push({
@@ -224,6 +234,13 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       icon: "distill",
       label: t.set_distill_running ?? "Distilling…",
       detail: stepLabel(distillStep, t),
+    });
+  }
+  if (reflectRunning) {
+    running.push({
+      icon: "distill",
+      label: t.rf_running_label ?? "Reflect running…",
+      detail: "",
     });
   }
   if (reindexBusy) {
@@ -307,6 +324,15 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
             : (t.set_distill_stop ?? "Stop")}
         </button>
       ),
+    });
+  }
+  if (reflectRunning) {
+    runningRows.push({
+      key: "reflect",
+      icon: "distill",
+      iconActive: true,
+      onClick: () => jump("overview"),
+      main: <b>{t.rf_running_label ?? "Reflect running…"}</b>,
     });
   }
   if (reindexBusy) {
@@ -431,6 +457,21 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
     {
       key: "standing",
       rows: [
+        // Reflect findings nobody has looked at yet — the panel that shows
+        // them lives on Overview, which is where the row goes.
+        ...(reflectUnseen > 0
+          ? [
+              {
+                key: "reflect",
+                icon: "distill" as ActivityIconName,
+                onClick: () => jump("overview"),
+                main: (t.tb_activity_reflect ?? "{n} reflect suggestions").replace(
+                  "{n}",
+                  String(reflectUnseen),
+                ),
+              },
+            ]
+          : []),
         {
           key: "links",
           icon: "link",

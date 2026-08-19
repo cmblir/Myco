@@ -13,6 +13,7 @@ import { complete, getActiveModel } from "../lib/chat";
 import { flattenMarkdown, isNonKnowledgePath } from "../lib/graphData";
 import { isMalformedLinkName } from "../lib/graphGaps";
 import { STRINGS } from "../lib/i18n";
+import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
 import { mmrSelect } from "../lib/sessionDigest";
 import { useUIStore } from "./uiStore";
@@ -193,6 +194,24 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
       seen: true,
     }),
 }));
+
+/** The panel's completion line — the same role the distill card's outcome line
+ * plays: after a run, say what came out of it and keep saying it until the run
+ * is dismissed. `found` is the count the RUN produced (frozen by the panel, so
+ * applying findings afterwards does not rewrite history); extractive runs carry
+ * their label here rather than in a second line, so the count is never read as
+ * model judgment. null → render nothing. */
+export function reflectDoneLine(
+  s: { stage: ReflectStage; mode: "llm" | "extractive"; found: number | null },
+  strings: Pick<Strings, "rf_done" | "rf_extractive">,
+): string | null {
+  if (s.stage !== "done" || s.found === null) return null;
+  const line = (strings.rf_done ?? "Reflect finished — suggestions: {n}").replace(
+    "{n}",
+    String(s.found),
+  );
+  return s.mode === "extractive" ? `${line} · ${strings.rf_extractive}` : line;
+}
 
 // Matches REFLECT_PROMPT's "at most 8 items".
 const MAX_SUGGESTIONS = 8;

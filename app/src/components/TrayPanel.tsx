@@ -22,6 +22,9 @@ export const TRAY_STATUS_EVENT = "myco://tray-status";
 const KIND_ICON: Record<string, ActivityIconName> = {
   ask: "ask",
   distill: "distill",
+  // Reflect has no icon of its own — it borrows distill's, as in the topbar
+  // popover (ActivityChip): same whole-vault pass, read-only.
+  reflect: "distill",
   index: "indexing",
 };
 
@@ -30,12 +33,14 @@ const KIND_ICON: Record<string, ActivityIconName> = {
 const MOCK_STATUS: TrayStatusPayload = {
   running: [
     { kind: "distill", text: "증류 중 — 코어 패스" },
+    { kind: "reflect", text: "Reflect 분석 중…" },
     { kind: "index", text: "재색인 218/302" },
   ],
   runningHeader: "지금 하는 일",
   waitingHeader: "대기",
-  title: "2",
+  title: "3",
   suggested: "제안된 링크 6개",
+  reflect: "Reflect 제안 8개",
   mcp: "MCP 서버 실행 중",
   inflow: {
     header: "오늘 들어온 것",
@@ -146,6 +151,14 @@ export default function TrayPanel(): JSX.Element {
       key: "links",
       icon: "link",
       main: s.suggested,
+      onClick: () => act("overview"),
+    });
+  }
+  if (s.reflect) {
+    waiting.push({
+      key: "reflect",
+      icon: "distill",
+      main: s.reflect,
       onClick: () => act("overview"),
     });
   }

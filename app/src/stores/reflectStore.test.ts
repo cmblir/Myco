@@ -22,7 +22,13 @@ vi.mock("../lib/ipc", () => ({
   },
 }));
 
-import { useReflectStore, parseSuggestions, extractiveReflect } from "./reflectStore";
+import {
+  useReflectStore,
+  parseSuggestions,
+  extractiveReflect,
+  reflectDoneLine,
+} from "./reflectStore";
+import { STRINGS } from "../lib/i18n";
 import { useUIStore } from "./uiStore";
 import { useVaultStore } from "./vaultStore";
 
@@ -307,6 +313,42 @@ describe("useReflectStore.createMissingPages", () => {
     expect(out).toEqual({ created: 1, failed: null });
     expect(openWikilink.mock.calls.map((c) => c[0])).toEqual(["delta"]);
     expect(useReflectStore.getState().suggestions).toEqual([orphan, gamma]);
+  });
+});
+
+// The panel's completion line — the distill card's outcome line for reflect.
+describe("reflectDoneLine", () => {
+  const t = STRINGS.en;
+
+  it("reports the run's count, and labels an extractive run", () => {
+    // Store fixture: a finished extractive run with two findings.
+    useReflectStore.setState({
+      stage: "done",
+      mode: "extractive",
+      suggestions: [
+        { text: "a", kind: "unresolved", link: "a" },
+        { text: "b", kind: "orphan", page: "/v/b.md" },
+      ],
+      seen: false,
+    });
+    const { stage, mode, suggestions } = useReflectStore.getState();
+
+    expect(reflectDoneLine({ stage, mode, found: suggestions.length }, t)).toBe(
+      `Reflect finished — suggestions: 2 · ${t.rf_extractive}`,
+    );
+  });
+
+  it("carries no extractive label for an LLM run", () => {
+    expect(reflectDoneLine({ stage: "done", mode: "llm", found: 3 }, t)).toBe(
+      "Reflect finished — suggestions: 3",
+    );
+  });
+
+  it("renders nothing while running, on error, or after a dismiss", () => {
+    expect(reflectDoneLine({ stage: "running", mode: "llm", found: null }, t)).toBeNull();
+    expect(reflectDoneLine({ stage: "error", mode: "llm", found: 0 }, t)).toBeNull();
+    // dismiss() → idle, and the panel clears its frozen count.
+    expect(reflectDoneLine({ stage: "idle", mode: "llm", found: null }, t)).toBeNull();
   });
 });
 

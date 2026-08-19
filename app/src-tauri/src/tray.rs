@@ -66,9 +66,12 @@ pub struct TrayStatus {
     /// Text next to the tray icon ("72%", "2"); None/absent clears it.
     #[serde(default)]
     pub title: Option<String>,
-    /// Standing rows: suggested-links count and MCP on/off.
+    /// Standing rows: suggested-links count, unseen reflect findings (empty
+    /// when there are none), and MCP on/off.
     #[serde(default)]
     pub suggested: String,
+    #[serde(default)]
+    pub reflect: String,
     #[serde(default)]
     pub mcp: String,
     /// Today's-inflow block (translated lines + sparkbar buckets); None hides
@@ -144,7 +147,8 @@ pub enum RowIcon {
 fn icon_for_kind(kind: &str) -> Option<RowIcon> {
     match kind {
         "ask" => Some(RowIcon::Ask),
-        "distill" => Some(RowIcon::Distill),
+        // Reflect borrows distill's icon — same whole-vault pass, read-only.
+        "distill" | "reflect" => Some(RowIcon::Distill),
         "index" => Some(RowIcon::Index),
         _ => None,
     }
@@ -227,6 +231,14 @@ pub fn menu_rows(s: &TrayStatus) -> Vec<MenuRow> {
             &s.suggested,
             true,
             Some(RowIcon::Link),
+        ));
+    }
+    if !s.reflect.is_empty() {
+        standing.push(MenuRow::icon_item(
+            "tray-reflect",
+            &s.reflect,
+            true,
+            Some(RowIcon::Distill),
         ));
     }
     if !s.mcp.is_empty() {
@@ -339,11 +351,13 @@ fn handle_menu_id<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         "tray-quit" => app.exit(0),
         "tray-open" => show_main_window(app),
-        "tray-overview" | "tray-settings" | "tray-query" | "tray-ingest" => {
+        // "tray-reflect" goes to Overview too — that is where the reflect
+        // panel lives.
+        "tray-overview" | "tray-reflect" | "tray-settings" | "tray-query" | "tray-ingest" => {
             show_main_window(app);
             // Route names match the frontend's RouteId values.
             let route = match id {
-                "tray-overview" => "overview",
+                "tray-overview" | "tray-reflect" => "overview",
                 "tray-settings" => "settings",
                 "tray-ingest" => "ingest",
                 _ => "query",
@@ -675,6 +689,7 @@ mod tests {
             waiting_header: "Waiting".into(),
             title: Some("2".into()),
             suggested: "3 suggested links".into(),
+            reflect: String::new(),
             mcp: "MCP server running".into(),
             inflow: None,
             ask: "Ask the wiki".into(),
@@ -731,6 +746,33 @@ mod tests {
         assert_eq!(icon_of("tray-distill"), Some(RowIcon::Distill));
         assert_eq!(icon_of("tray-open"), None);
         assert_eq!(icon_of("tray-quit"), None);
+    }
+
+    #[test]
+    fn unseen_reflect_findings_add_a_clickable_standing_row() {
+        let s = TrayStatus {
+            reflect: "8 reflect suggestions".into(),
+            ..full_status()
+        };
+        let rows = menu_rows(&s);
+        let i = rows.iter().position(|r| r.id == "tray-reflect").unwrap();
+        assert_eq!(rows[i - 1].id, "tray-overview");
+        assert_eq!(rows[i + 1].id, "tray-settings");
+        assert!(rows[i].enabled);
+        assert_eq!(rows[i].icon, Some(RowIcon::Distill));
+        // Empty (nothing unseen) → no row at all.
+        assert!(menu_rows(&full_status())
+            .iter()
+            .all(|r| r.id != "tray-reflect"));
+    }
+
+    #[test]
+    fn a_running_reflect_row_shows_the_distill_icon() {
+        let s = TrayStatus {
+            running: vec![run("reflect", "Reflect running…")],
+            ..full_status()
+        };
+        assert_eq!(menu_rows(&s)[1].icon, Some(RowIcon::Distill));
     }
 
     #[test]

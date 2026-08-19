@@ -8,7 +8,7 @@ import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
-import { useReflectStore } from "../stores/reflectStore";
+import { reflectDoneLine, useReflectStore } from "../stores/reflectStore";
 import type { ReflectSuggestion } from "../stores/reflectStore";
 import { useDistillStore } from "../stores/distillStore";
 import {
@@ -178,14 +178,34 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
   const report = useReflectStore((s) => s.report);
   const runReflect = useReflectStore((s) => s.runReflect);
   const createMissingPages = useReflectStore((s) => s.createMissingPages);
+  const markSeen = useReflectStore((s) => s.markSeen);
   const dismiss = useReflectStore((s) => s.dismiss);
   const running = stage === "running";
+  // How many findings the run itself produced — the completion line must keep
+  // reporting the RUN's number even after applying findings removes rows.
+  const [finished, setFinished] = useState<number | null>(null);
   const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
   const [result, setResult] = useState<{
     created: number;
     failed: string | null;
   } | null>(null);
   const missing = suggestions.filter((s) => s.kind === "unresolved");
+  const doneLine = reflectDoneLine({ stage, mode, found: finished }, t);
+
+  // A finished run is "seen" as soon as this panel is on screen (the
+  // PageIngest/PageQuery idiom) — that is what clears the activity surfaces'
+  // standing "N reflect suggestions" row, and it also freezes the count the
+  // completion line reports.
+  useEffect(() => {
+    if (stage === "running") {
+      setFinished(null);
+      return;
+    }
+    if (stage === "done" || stage === "error") {
+      setFinished(useReflectStore.getState().suggestions.length);
+      markSeen();
+    }
+  }, [stage, markSeen]);
 
   // Same store action for one row and for all of them — one creation path.
   async function create(items?: ReflectSuggestion[]): Promise<void> {
@@ -254,16 +274,25 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
           <span className="ingest-chip-spinner" /> {t.rf_running}
         </div>
       ) : null}
-      {stage === "done" && mode === "extractive" ? (
-        // Labeled like "Session digest (auto, extractive)": these are
-        // link-graph facts picked by the bundled embedder, not model prose —
-        // never let them read as LLM judgment.
+      {doneLine ? (
+        // Completion line, like the distill card's outcome line: it stays
+        // until the run is dismissed, so a run started from the topbar chip
+        // or the tray does not finish invisibly here. Extractive runs are
+        // labeled inside it — link-graph facts, not model judgment.
         <div
-          className="row muted"
-          style={{ gap: 6, fontSize: 12.5, alignItems: "center", flexWrap: "wrap" }}
+          className="row"
+          style={{
+            color: "#16a34a",
+            gap: 6,
+            fontSize: 12,
+            marginTop: 6,
+            alignItems: "center",
+            flexWrap: "wrap",
+          }}
+          data-testid="ov-reflect-done"
         >
           <Icon name="info" size={12} />
-          <span>{t.rf_extractive}</span>
+          <span>{doneLine}</span>
         </div>
       ) : null}
       {result && stage === "done" ? (

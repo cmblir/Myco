@@ -276,7 +276,7 @@ export interface MycoSettings {
  *  side stores strings only — it owns no translations. */
 /** One running activity row; `kind` picks the native menu row icon. */
 export interface TrayRunningRow {
-  kind: "ask" | "distill" | "index";
+  kind: "ask" | "distill" | "reflect" | "index";
   text: string;
 }
 
@@ -325,6 +325,8 @@ export interface TrayStatusPayload {
   /** Text next to the tray icon ("72%", "2"); null clears it. */
   title: string | null;
   suggested: string;
+  /** Unseen reflect findings ("6 reflect suggestions"); "" hides the row. */
+  reflect: string;
   mcp: string;
   /** Today's-inflow block; null/absent hides the section everywhere. */
   inflow?: TrayInflowPayload | null;

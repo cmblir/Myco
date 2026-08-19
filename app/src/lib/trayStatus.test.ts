@@ -12,6 +12,8 @@ const idle: TraySnapshot = {
   askBusy: false,
   distillRunning: false,
   distillStep: null,
+  reflectRunning: false,
+  reflectUnseen: 0,
   reindexStage: "idle",
   reindexDone: 0,
   reindexTotal: 0,
@@ -78,6 +80,26 @@ describe("buildTrayStatus", () => {
     expect(p.distill).toBe(t.set_distill_run_now);
     expect(p.open).toBe("Open myco");
     expect(p.quit).toBe("Quit myco");
+  });
+
+  it("gives a running reflect its own row and counts it in the title", () => {
+    const p = buildTrayStatus({ ...idle, reflectRunning: true }, t);
+    expect(p.running).toEqual([{ kind: "reflect", text: "Reflect running…" }]);
+    // One runner → no number (like a lone distill), two → the count.
+    expect(p.title).toBeNull();
+    expect(
+      trayTitle({ ...idle, reflectRunning: true, distillRunning: true }),
+    ).toBe("2");
+  });
+
+  it("lists unseen reflect findings as a standing row, and nothing when seen", () => {
+    expect(buildTrayStatus({ ...idle, reflectUnseen: 8 }, t).reflect).toBe(
+      "8 reflect suggestions",
+    );
+    // Seen (or no findings) → empty string, which hides the row everywhere.
+    expect(buildTrayStatus(idle, t).reflect).toBe("");
+    // Standing state: it never inflates the tray title.
+    expect(trayTitle({ ...idle, reflectUnseen: 8 })).toBeNull();
   });
 
   it("sends no running rows when idle", () => {
@@ -158,6 +180,7 @@ describe("TraySender", () => {
     waitingHeader: "",
     title,
     suggested: "",
+    reflect: "",
     mcp: "",
     ask: "a",
     distill: "d",
