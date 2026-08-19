@@ -513,6 +513,7 @@ export interface Strings {
   s_model_ingest: string;
   s_model_query: string;
   model_custom?: string;
+  model_disconnected?: string;
   model_custom_ph?: string;
   model_effort?: string;
   model_fetching?: string;
@@ -1420,6 +1421,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_model_ingest: "Ingest model",
     s_model_query: "Query model",
     model_custom: "Custom\u2026",
+    model_disconnected: "(not connected)",
     model_effort: "Reasoning effort",
     model_custom_ph: "model id",
     model_fetching: "fetching model list\u2026",
@@ -2340,6 +2342,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_model_ingest: "가져오기용 모델",
     s_model_query: "질문용 모델",
     model_custom: "직접 입력\u2026",
+    model_disconnected: "(연결 안 됨)",
     model_effort: "추론 강도",
     model_custom_ph: "모델 ID",
     model_fetching: "모델 목록 가져오는 중\u2026",
@@ -3134,6 +3137,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_model_ingest: "取り込み用モデル",
     s_model_query: "質問用モデル",
     model_custom: "カスタム\u2026",
+    model_disconnected: "(未接続)",
     model_effort: "推論の強度",
     model_custom_ph: "モデルID",
     model_fetching: "モデル一覧を取得中\u2026",

@@ -11,7 +11,7 @@
 import { useEffect, useId, useState } from "react";
 import type { JSX } from "react";
 import { ipc } from "../lib/ipc";
-import { CLI_DEFAULT, type ProviderDef } from "../lib/providers";
+import { CLI_DEFAULT, PROVIDERS, type ProviderDef } from "../lib/providers";
 import type { Strings } from "../lib/i18n";
 
 const CUSTOM = "__custom__";
@@ -40,7 +40,15 @@ export default function ModelSelect({
   onPickEffort?: (effort: string) => void;
   t?: Strings;
 }): JSX.Element {
-  const def = providers.find((p) => p.id === provider) ?? providers[0];
+  // The stored provider may not be in the connected list (a CLI uninstalled,
+  // a flag toggled off, a probe that hasn't finished). The full catalog still
+  // knows it — resolve against that so the row keeps showing the USER'S
+  // choice, marked disconnected, instead of silently jumping elsewhere.
+  const def =
+    providers.find((p) => p.id === provider) ??
+    PROVIDERS.find((p) => p.id === provider) ??
+    providers[0];
+  const connected = providers.some((p) => p.id === provider);
   const [models, setModels] = useState<string[]>(def?.catalog ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,17 +56,13 @@ export default function ModelSelect({
   const [customMode, setCustomMode] = useState(false);
   const selectId = useId();
 
-  // If the currently selected provider got disconnected, fall back to the
-  // first connected one (and persist it) so settings never point at a
-  // provider the picker can't show.
-  useEffect(() => {
-    if (providers.length > 0 && !providers.some((p) => p.id === provider)) {
-      const first = providers[0];
-      onPick(first.id, first.catalog?.[0] ?? "");
-      onPickEffort?.(CLI_DEFAULT);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [providers, provider]);
+  // A disconnected selection is NEVER silently rewritten. An earlier version
+  // auto-picked the first connected provider here and persisted it — which,
+  // fired during any window where the connected list was momentarily
+  // incomplete, overwrote the user's stored choice behind their back (a real
+  // vault lost its codex-cli query provider to exactly that). The row now
+  // shows the stored choice with a "(not connected)" marker instead; only an
+  // explicit user pick writes.
 
   useEffect(() => {
     if (!def) return;
@@ -114,6 +118,11 @@ export default function ModelSelect({
               {p.name}
             </option>
           ))}
+          {!connected && def ? (
+            <option value={def.id}>
+              {def.name} {t?.model_disconnected ?? "(not connected)"}
+            </option>
+          ) : null}
         </select>
         <select
           id={selectId}
