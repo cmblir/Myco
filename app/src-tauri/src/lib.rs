@@ -124,6 +124,8 @@ pub fn run() {
         .manage(retrieval::Bm25Cache::default())
         // Menu bar tray icon handle; populated by tray::init in setup.
         .manage(tray::TrayHandle::default())
+        // Last tray snapshot, served to the tray popover window on open.
+        .manage(tray::TrayStatusCache::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
             commands::ensure_default_vault,
@@ -208,6 +210,8 @@ pub fn run() {
             commands::full_tier_items,
             commands::append_distill_manifest,
             tray::update_tray_status,
+            tray::get_tray_status,
+            tray::tray_panel_action,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path

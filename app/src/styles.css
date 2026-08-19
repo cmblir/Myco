@@ -3984,6 +3984,69 @@ hr {
   font-size: 12px;
 }
 
+/* Tray popover window (?window=tray) — the approved menubar-v2 panel:
+   rounded 12px dark card, 11px uppercase section headers, 20px circular row
+   icons, hairline separators. The OS window is transparent + shadowed; only
+   this card paints, whatever the app theme (the panel is dark by design). */
+html.tray-window,
+html.tray-window body {
+  background: transparent;
+}
+.tray-panel {
+  box-sizing: border-box;
+  width: 100%;
+  background: rgba(34, 36, 43, 0.97);
+  border: 1px solid #33363f;
+  border-radius: 12px;
+  padding: 6px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  color: #e8eaee;
+  font:
+    13.5px/1.5 -apple-system,
+    "Pretendard",
+    "Apple SD Gothic Neo",
+    sans-serif;
+  user-select: none;
+}
+.tray-panel .activity-hdr {
+  font-size: 11px;
+  color: #7e848f;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 7px 12px 3px;
+}
+.tray-panel .activity-sep {
+  height: 1px;
+  background: #33363f;
+  margin: 5px 8px;
+}
+.tray-panel .activity-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  color: #e8eaee;
+  font-size: 13.5px;
+}
+.tray-panel button.activity-row {
+  cursor: pointer;
+}
+.tray-panel button.activity-row:hover {
+  background: rgba(122, 167, 255, 0.14);
+}
+.tray-panel .activity-icon {
+  width: 20px;
+  height: 20px;
+}
+.tray-panel .activity-row-main {
+  flex-direction: row;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ingest-orb-core,
   .ingest-orb-ring,

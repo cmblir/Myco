@@ -15,8 +15,9 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 # tray-icon: macOS menu bar tray; image-png: decode the tray glyph PNG at
-# compile time (Image::from_bytes).
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
+# compile time (Image::from_bytes); macos-private-api: transparent webview
+# for the frameless tray popover window (WebviewWindowBuilder::transparent).
+tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-deep-link = "2"

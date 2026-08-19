@@ -10,19 +10,30 @@
 // frontend routes through the same runDistillGuarded as every other trigger,
 // so there is exactly one distill entry point.
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::menu::{IconMenuItem, Menu, MenuItem, PredefinedMenuItem};
-use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, Runtime};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 
 /// Event the frontend listens on for tray menu actions. Payload is one of
 /// "overview" | "settings" | "query" | "distill".
 pub const TRAY_ACTION_EVENT: &str = "myco://tray-action";
 
+/// Event the tray-panel window listens on for live status pushes; the same
+/// payload `get_tray_status` returns on demand.
+pub const TRAY_STATUS_EVENT: &str = "myco://tray-status";
+
+/// The frameless popover window shown on tray LEFT-click (the native menu
+/// stays on right-click as the plain fallback).
+const PANEL_LABEL: &str = "tray-panel";
+const PANEL_WIDTH: f64 = 340.0; // logical px, matches the approved v2 panel
+const PANEL_HEIGHT: f64 = 440.0; // ponytail: fixed height; auto-size to content if the dead zone bothers
+const PANEL_GAP: f64 = 6.0; // logical px between the menu bar and the panel
+
 /// One running activity. `kind` picks the row icon ("ask" | "distill" |
 /// "index"); unknown kinds just render without an icon.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RunningRow {
     #[serde(default)]
     pub kind: String,
@@ -31,7 +42,7 @@ pub struct RunningRow {
 
 /// Snapshot the frontend sends. All strings arrive already translated
 /// (ko/en/ja per the app's own lang setting); empty strings hide their row.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct TrayStatus {
     /// Pre-formatted running rows ("Distilling — session digest", "Indexing
     /// 218/302" — progress stays text: native menus can't draw the in-app
@@ -302,6 +313,102 @@ fn handle_menu_id<R: Runtime>(app: &AppHandle<R>, id: &str) {
 #[derive(Default)]
 pub struct TrayHandle(pub Mutex<Option<tauri::tray::TrayIcon>>);
 
+/// Last snapshot the frontend pushed, kept so the tray-panel window (a
+/// separate JS context — it shares no zustand store with the main window)
+/// can ask for the current state on open via `get_tray_status`. Starts at
+/// the same boot menu the native tray shows before the first push.
+pub struct TrayStatusCache(pub Mutex<TrayStatus>);
+
+impl Default for TrayStatusCache {
+    fn default() -> Self {
+        Self(Mutex::new(TrayStatus::boot()))
+    }
+}
+
+/// Click routing: LEFT release opens the popover panel; every other click is
+/// ignored here (the native menu is bound to right-click by
+/// `show_menu_on_left_click(false)` + tray-icon's default right-click menu).
+pub fn tray_click_shows_panel(button: MouseButton, state: MouseButtonState) -> bool {
+    button == MouseButton::Left && state == MouseButtonState::Up
+}
+
+/// Top-left corner (physical px) for the panel: horizontally centred under
+/// the tray icon, just below the menu bar, clamped so the right edge never
+/// leaves the screen (tray icons live near the right edge). `rect` is the
+/// icon rect from TrayIconEvent (physical on macOS); widths are logical.
+pub fn panel_position(
+    rect: &tauri::Rect,
+    scale: f64,
+    panel_w_logical: f64,
+    screen_right: Option<f64>,
+) -> (f64, f64) {
+    let pos = rect.position.to_physical::<f64>(scale);
+    let size = rect.size.to_physical::<f64>(scale);
+    let w = panel_w_logical * scale;
+    let mut x = pos.x + size.width / 2.0 - w / 2.0;
+    if let Some(right) = screen_right {
+        x = x.min(right - w - PANEL_GAP * scale);
+    }
+    x = x.max(0.0);
+    let y = pos.y + size.height + PANEL_GAP * scale;
+    (x, y)
+}
+
+/// Show (or hide, when already visible) the tray popover window, creating it
+/// lazily on first click. The window is reused: reposition + show afterwards.
+fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
+    let win = match app.get_webview_window(PANEL_LABEL) {
+        Some(w) => w,
+        None => {
+            let built = WebviewWindowBuilder::new(
+                app,
+                PANEL_LABEL,
+                WebviewUrl::App("index.html?window=tray".into()),
+            )
+            .decorations(false)
+            .transparent(true)
+            .shadow(true)
+            .always_on_top(true)
+            .resizable(false)
+            .skip_taskbar(true)
+            .visible(false)
+            .inner_size(PANEL_WIDTH, PANEL_HEIGHT)
+            .build();
+            match built {
+                Ok(w) => {
+                    // Focus loss dismisses the popover, like a native menu.
+                    let hide = w.clone();
+                    w.on_window_event(move |e| {
+                        if matches!(e, tauri::WindowEvent::Focused(false)) {
+                            let _ = hide.hide();
+                        }
+                    });
+                    w
+                }
+                Err(e) => {
+                    eprintln!("tray panel window failed: {e}");
+                    return;
+                }
+            }
+        }
+    };
+    if win.is_visible().unwrap_or(false) {
+        let _ = win.hide();
+        return;
+    }
+    let scale = win.scale_factor().unwrap_or(1.0);
+    let probe = rect.position.to_physical::<f64>(scale);
+    let screen_right = app
+        .monitor_from_point(probe.x, probe.y)
+        .ok()
+        .flatten()
+        .map(|m| f64::from(m.position().x) + f64::from(m.size().width));
+    let (x, y) = panel_position(&rect, scale, PANEL_WIDTH, screen_right);
+    let _ = win.set_position(tauri::PhysicalPosition::new(x, y));
+    let _ = win.show();
+    let _ = win.set_focus();
+}
+
 /// Build the tray icon with the template glyph and the boot menu. Called once
 /// from setup; best-effort — a tray failure must never block app startup.
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
@@ -311,8 +418,23 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         .icon_as_template(true)
         .tooltip("myco")
         .menu(&build_menu(app, &TrayStatus::boot())?)
-        .show_menu_on_left_click(true)
+        // Left-click opens the React popover panel; the native menu stays on
+        // right-click (tray-icon's menu_on_right_click default) as fallback.
+        .show_menu_on_left_click(false)
         .on_menu_event(|app, event| handle_menu_id(app, event.id().as_ref()))
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button,
+                button_state,
+                rect,
+                ..
+            } = event
+            {
+                if tray_click_shows_panel(button, button_state) {
+                    toggle_panel(tray.app_handle(), rect);
+                }
+            }
+        })
         .build(app)?;
     app.state::<TrayHandle>().0.lock().unwrap().replace(tray);
     Ok(())
@@ -324,6 +446,10 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
 /// FROM the main thread could deadlock.
 #[tauri::command]
 pub async fn update_tray_status(app: AppHandle, status: TrayStatus) -> Result<(), String> {
+    // Cache + push first: the popover panel mirrors the same snapshot the
+    // native menu renders, even if the menu swap below fails.
+    *app.state::<TrayStatusCache>().0.lock().unwrap() = status.clone();
+    let _ = app.emit(TRAY_STATUS_EVENT, &status);
     let state = app.state::<TrayHandle>();
     let tray = {
         let guard = state.0.lock().unwrap();
@@ -336,6 +462,35 @@ pub async fn update_tray_status(app: AppHandle, status: TrayStatus) -> Result<()
     tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
     tray.set_title(status.title.as_deref())
         .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// The tray-panel window's data source: the last snapshot the main window
+/// pushed (boot defaults before the first push).
+#[tauri::command]
+pub fn get_tray_status(app: AppHandle) -> TrayStatus {
+    app.state::<TrayStatusCache>().0.lock().unwrap().clone()
+}
+
+/// Quick actions clicked in the tray-panel window. Routes through the same
+/// handler as the native menu rows so both surfaces behave identically
+/// (including resident-mode show and quit). "dismiss" just hides the panel.
+#[tauri::command]
+pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
+    if let Some(win) = app.get_webview_window(PANEL_LABEL) {
+        let _ = win.hide();
+    }
+    let menu_id = match action.as_str() {
+        "query" => "tray-query",
+        "distill" => "tray-distill",
+        "open" => "tray-open",
+        "quit" => "tray-quit",
+        "overview" => "tray-overview",
+        "settings" => "tray-settings",
+        "dismiss" => return Ok(()),
+        other => return Err(format!("unknown tray panel action: {other}")),
+    };
+    handle_menu_id(&app, menu_id);
     Ok(())
 }
 
@@ -466,6 +621,67 @@ mod tests {
         let rows = menu_rows(&TrayStatus::boot());
         let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
         assert_eq!(ids, vec!["tray-open", "tray-quit"]);
+    }
+
+    #[test]
+    fn left_release_opens_panel_everything_else_does_not() {
+        assert!(tray_click_shows_panel(
+            MouseButton::Left,
+            MouseButtonState::Up
+        ));
+        // Left press: wait for the release (native-menu-like feel).
+        assert!(!tray_click_shows_panel(
+            MouseButton::Left,
+            MouseButtonState::Down
+        ));
+        // Right clicks belong to the native fallback menu.
+        assert!(!tray_click_shows_panel(
+            MouseButton::Right,
+            MouseButtonState::Up
+        ));
+        assert!(!tray_click_shows_panel(
+            MouseButton::Middle,
+            MouseButtonState::Up
+        ));
+    }
+
+    fn icon_rect(x: f64, y: f64, w: f64, h: f64) -> tauri::Rect {
+        tauri::Rect {
+            position: tauri::Position::Physical(tauri::PhysicalPosition {
+                x: x as i32,
+                y: y as i32,
+            }),
+            size: tauri::Size::Physical(tauri::PhysicalSize {
+                width: w as u32,
+                height: h as u32,
+            }),
+        }
+    }
+
+    #[test]
+    fn panel_centres_under_the_icon_below_the_bar() {
+        // scale 2: panel is 680 physical px wide; icon centre at x=1000.
+        let (x, y) = panel_position(&icon_rect(978.0, 0.0, 44.0, 48.0), 2.0, 340.0, None);
+        assert_eq!(x, 1000.0 - 340.0); // centre - half panel width
+        assert_eq!(y, 48.0 + 6.0 * 2.0); // icon bottom + gap
+    }
+
+    #[test]
+    fn panel_clamps_to_the_right_screen_edge() {
+        // Icon 20px from the right edge of a 2000px-wide screen.
+        let (x, _) = panel_position(
+            &icon_rect(1936.0, 0.0, 44.0, 48.0),
+            2.0,
+            340.0,
+            Some(2000.0),
+        );
+        assert_eq!(x, 2000.0 - 680.0 - 12.0);
+    }
+
+    #[test]
+    fn panel_never_goes_off_the_left_edge() {
+        let (x, _) = panel_position(&icon_rect(0.0, 0.0, 44.0, 48.0), 2.0, 340.0, None);
+        assert_eq!(x, 0.0);
     }
 
     #[test]

@@ -603,6 +603,13 @@ export const ipc = {
   /** Refresh the macOS menu bar tray (menu rows + icon-side title). */
   updateTrayStatus: (status: TrayStatusPayload) =>
     invoke<null>("update_tray_status", { status }),
+  /** Last pushed tray snapshot — the tray popover window's data source. */
+  getTrayStatus: () => invoke<TrayStatusPayload>("get_tray_status"),
+  /** Tray popover quick action; same Rust routing as the native menu rows.
+   *  "query" | "distill" | "open" | "quit" | "overview" | "settings" |
+   *  "dismiss" (hide the panel only). */
+  trayPanelAction: (action: string) =>
+    invoke<null>("tray_panel_action", { action }),
   setSettings: (value: MycoSettings) =>
     invoke<null>("set_settings", { value }),
   chatComplete: (request: ChatRequest) =>

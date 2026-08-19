@@ -5,6 +5,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { isTrayPanelWindow } from "./lib/windowRoute";
 import "./styles.css";
 
 const ERROR_LOG_KEY = "myco.errorlog";
@@ -39,17 +40,31 @@ async function bootstrap(): Promise<void> {
     );
   });
 
+  const root = document.getElementById("root");
+  if (!root) {
+    throw new Error("Root element #root not found in index.html");
+  }
+
+  // The tray popover window (Rust opens index.html?window=tray) renders ONLY
+  // the activity panel — App and its schedulers never mount in that context.
+  if (isTrayPanelWindow(location.search)) {
+    const { default: TrayPanel } = await import("./components/TrayPanel");
+    ReactDOM.createRoot(root).render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <TrayPanel />
+        </ErrorBoundary>
+      </React.StrictMode>,
+    );
+    return;
+  }
+
   // Dev-only: render the UI in a plain browser against an in-memory sample
   // vault (for screenshots / visual QA). Installed BEFORE render so the app's
   // first IPC calls hit the mock. Stripped from production builds.
   if (import.meta.env.DEV && new URLSearchParams(location.search).has("mock")) {
     const { installTauriMock } = await import("./lib/devMock");
     installTauriMock();
-  }
-
-  const root = document.getElementById("root");
-  if (!root) {
-    throw new Error("Root element #root not found in index.html");
   }
 
   ReactDOM.createRoot(root).render(

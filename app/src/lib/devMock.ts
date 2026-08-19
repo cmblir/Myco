@@ -969,6 +969,23 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     // Menu bar tray refresh — no OS tray in a browser; accept and drop.
     case "update_tray_status":
       return Promise.resolve(null);
+    // Tray popover window: serve the boot snapshot (the ?window=tray mock
+    // panel has its own richer trayMock fixture) and swallow actions.
+    case "get_tray_status":
+      return Promise.resolve({
+        running: [],
+        runningHeader: "",
+        waitingHeader: "",
+        title: null,
+        suggested: "",
+        mcp: "",
+        ask: "",
+        distill: "",
+        open: "Open myco",
+        quit: "Quit myco",
+      });
+    case "tray_panel_action":
+      return Promise.resolve(null);
     case "get_settings":
       return Promise.resolve(
         AGENT_MODE
