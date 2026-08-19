@@ -85,6 +85,7 @@ describe("buildTrayStatus", () => {
     expect(p.running).toEqual([]);
     expect(p.title).toBeNull();
     expect(p.mcp).toBe("MCP server off");
+    // idle snapshot carries inflow: null (no probe yet) — block absent.
     expect(p.inflow).toBeNull();
   });
 
@@ -125,7 +126,7 @@ describe("buildTrayStatus", () => {
     });
   });
 
-  it("sends a null inflow block when nothing arrived today", () => {
+  it("keeps the inflow block (zeros shown) when nothing arrived today", () => {
     const zeros = Array<number>(24).fill(0);
     const p = buildTrayStatus(
       {
@@ -141,7 +142,9 @@ describe("buildTrayStatus", () => {
       },
       t,
     );
-    expect(p.inflow).toBeNull();
+    // Zero stats still render the block — only a missing probe hides it.
+    expect(p.inflow).not.toBeNull();
+    expect(p.inflow?.sessionsCount).toBe("+0");
   });
 });
 

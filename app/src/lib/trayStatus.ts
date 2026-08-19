@@ -265,7 +265,13 @@ export function initTrayIntegration(): () => void {
     useReindexStore.subscribe(recompute),
     useQueryStore.subscribe(recompute),
     useUIStore.subscribe(recompute),
-    useVaultStore.subscribe(recompute),
+    useVaultStore.subscribe(() => {
+      // The vault opens AFTER init — the init-time probe returned early with
+      // no path, so the first open must trigger the real one immediately or
+      // the panel's inflow section sits empty for the whole throttle window.
+      if (inflowStats === null) probeInflow();
+      recompute();
+    }),
     useLinkSuggestStore.subscribe(recompute),
   ];
 

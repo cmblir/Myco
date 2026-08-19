@@ -40,14 +40,18 @@ export interface InflowExtras {
   autoImportMin: number | null;
 }
 
-/** Translated lines for the inflow section, or null when nothing arrived
- * today — callers hide the whole section (and the menu row) on null. */
+/** Translated lines for the inflow section. Always returns lines — zeros
+ * included: hiding at all-zero made the panel's shape change between opens
+ * (right after launch vs later in the day), which read as broken. Callers
+ * hide the section only when they have NO stats at all (no probe yet). */
 export function inflowLines(
   s: InflowStats,
   t: Strings,
   extras?: InflowExtras,
-): InflowLines | null {
-  if (s.sessionsToday + s.inboxToday + s.mcpCallsToday === 0) return null;
+): InflowLines {
+  // All-zero used to hide the whole section — which made the panel's shape
+  // change between opens (booted-just-now vs later in the day) and read as
+  // broken. Zeros are honest data; the section always renders.
   const top = s.mcpTopTool
     ? (t.tb_inflow_mcp_top ?? "top: {tool}").replace("{tool}", s.mcpTopTool)
     : "";

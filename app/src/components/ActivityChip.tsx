@@ -390,10 +390,10 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
     });
   }
 
-  // Today's inflow — the whole section vanishes when nothing arrived today
-  // (inflowLines returns null) or before/without a successful fetch. Rows
-  // come from the shared builder so this popover and the tray panel stay
-  // structurally identical.
+  // Today's inflow — present whenever a probe succeeded (zeros render as
+  // "+0"); absent only before/without a successful fetch. Rows come from the
+  // shared builder so this popover and the tray panel stay structurally
+  // identical.
   const lines = inflow
     ? inflowLines(inflow, t, {
         sweepAt: getLastSweepAt(),

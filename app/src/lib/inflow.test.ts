@@ -57,13 +57,16 @@ describe("inflowLines", () => {
     expect(lines?.sessionsSub).toBe("");
   });
 
-  it("is null when nothing arrived today, hiding the section", () => {
-    expect(
-      inflowLines(
-        stats({ sessionsToday: 0, inboxToday: 0, mcpCallsToday: 0, mcpTopTool: null }),
-        STRINGS.en,
-      ),
-    ).toBeNull();
+  it("renders zeros instead of hiding when nothing arrived today", () => {
+    const lines = inflowLines(
+      stats({ sessionsToday: 0, inboxToday: 0, mcpCallsToday: 0, mcpTopTool: null }),
+      STRINGS.en,
+    );
+    // Hiding at all-zero made the panel change shape between opens — the
+    // section stays, the zeros are the honest data.
+    expect(lines).not.toBeNull();
+    expect(lines?.sessionsCount).toBe("+0");
+    expect(lines?.inboxCount).toBe("+0");
   });
 
   it("keeps only the since-launch caveat when there is no top tool", () => {
