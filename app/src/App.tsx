@@ -33,6 +33,7 @@ import PageFeedback from "./pages/PageFeedback";
 import PageSchedules from "./pages/PageSchedules";
 import { STRINGS } from "./lib/i18n";
 import { promptNewNote } from "./lib/newNote";
+import { initTrayIntegration } from "./lib/trayStatus";
 import type { Strings } from "./lib/i18n";
 import { useUIStore } from "./stores/uiStore";
 import type { RouteId } from "./stores/uiStore";
@@ -396,6 +397,10 @@ export default function App(): JSX.Element {
       if (unlisten) unlisten();
     };
   }, []);
+
+  // Menu bar tray: mirror the activity stores into the native tray menu and
+  // handle its action clicks. One subscription for the app's lifetime.
+  useEffect(() => initTrayIntegration(), []);
 
   // Track the OS colour scheme live so the "System" appearance option follows
   // light/dark changes at runtime (not just on app launch).

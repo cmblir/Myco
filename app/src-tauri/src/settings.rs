@@ -67,6 +67,10 @@ pub struct Settings {
     /// loads the bundled model and embeds every page.
     #[serde(default)]
     pub auto_reindex_enabled: bool,
+    /// Keep the menu bar tray (and the app) running when the window is
+    /// closed. Default OFF: closing the window quits, as it always did.
+    #[serde(default)]
+    pub tray_resident: bool,
 }
 
 impl Default for Settings {
@@ -88,6 +92,7 @@ impl Default for Settings {
             auto_reflect_enabled: false,
             auto_reflect_interval_min: default_auto_reflect_interval(),
             auto_reindex_enabled: false,
+            tray_resident: false,
         }
     }
 }

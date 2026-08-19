@@ -133,6 +133,7 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
             <div className="col" style={{ gap: 24 }}>
               <SettingsAppearance t={t} theme={theme} setTheme={setTheme} />
               <SettingsOverviewTheme t={t} />
+              <TrayResidentToggle t={t} />
             </div>
           ) : null}
           {tab === "about" ? <SettingsAbout t={t} /> : null}
@@ -479,6 +480,68 @@ function AutoReindexToggle({ t }: { t: Strings }): JSX.Element | null {
           }}
         />
       </button>
+    </div>
+  );
+}
+
+// Resident mode: closing the window hides it and myco stays in the menu bar
+// tray. Lives in the Appearance tab — the app has no dedicated "general" tab,
+// and this governs window behavior. Default OFF (close quits, as always).
+function TrayResidentToggle({ t }: { t: Strings }): JSX.Element | null {
+  const settings = useSettingsStore((s) => s.settings);
+  const update = useSettingsStore((s) => s.update);
+  if (!settings) return null;
+  const enabled = settings.tray_resident;
+  return (
+    <div className="card">
+      <div
+        className="row"
+        style={{
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 12,
+        }}
+      >
+        <div style={{ paddingRight: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            {t.s_tray_resident_title ?? "Keep running in the menu bar"}
+          </div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+            {t.s_tray_resident_desc ??
+              "Closing the window hides it instead of quitting — myco stays in the menu bar and background work keeps going. Quit from the tray menu."}
+          </div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={enabled}
+          aria-label={t.s_tray_resident_title ?? "Keep running in the menu bar"}
+          data-testid="tray-resident-toggle"
+          onClick={() => void update({ tray_resident: !enabled })}
+          style={{
+            width: 44,
+            height: 24,
+            borderRadius: 12,
+            border: "1px solid var(--line)",
+            background: enabled ? "var(--ink)" : "var(--bg-soft)",
+            position: "relative",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 2,
+              left: enabled ? 22 : 2,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: enabled ? "var(--bg)" : "var(--ink)",
+              transition: "left 150ms ease",
+            }}
+          />
+        </button>
+      </div>
     </div>
   );
 }

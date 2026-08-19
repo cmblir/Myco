@@ -267,6 +267,24 @@ export interface MycoSettings {
   /** Re-embed changed pages while the app is open (maintains an existing index
    *  only; the first build stays a deliberate action). */
   auto_reindex_enabled: boolean;
+  /** Keep the menu bar tray (and the app) running after the window closes.
+   *  Default OFF: closing the window quits, as it always did. */
+  tray_resident: boolean;
+}
+
+/** Pre-translated tray snapshot (mirrors Rust tray::TrayStatus). The Rust
+ *  side stores strings only — it owns no translations. */
+export interface TrayStatusPayload {
+  /** Pre-formatted running rows, shown as disabled info items. */
+  running: string[];
+  /** Text next to the tray icon ("72%", "2"); null clears it. */
+  title: string | null;
+  suggested: string;
+  mcp: string;
+  ask: string;
+  distill: string;
+  open: string;
+  quit: string;
 }
 
 export interface MycoProResult {
@@ -573,6 +591,9 @@ export const ipc = {
   deleteProviderKey: (providerId: string) =>
     invoke<null>("delete_provider_key", { providerId }),
   getSettings: () => invoke<MycoSettings>("get_settings"),
+  /** Refresh the macOS menu bar tray (menu rows + icon-side title). */
+  updateTrayStatus: (status: TrayStatusPayload) =>
+    invoke<null>("update_tray_status", { status }),
   setSettings: (value: MycoSettings) =>
     invoke<null>("set_settings", { value }),
   chatComplete: (request: ChatRequest) =>

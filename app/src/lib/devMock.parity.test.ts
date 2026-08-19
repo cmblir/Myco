@@ -25,7 +25,9 @@ function registered(): Set<string> {
   const src = read("../../src-tauri/src/lib.rs");
   const block = /generate_handler!\[(.*?)\]/s.exec(src);
   if (!block) throw new Error("could not find generate_handler! in lib.rs");
-  return new Set([...block[1].matchAll(/commands::(\w+)/g)].map((m) => m[1]));
+  // Handlers live in commands.rs plus a few sibling modules (tray.rs) — match
+  // any `module::command` entry inside the block.
+  return new Set([...block[1].matchAll(/\w+::(\w+)/g)].map((m) => m[1]));
 }
 
 /** Commands the frontend invokes. */

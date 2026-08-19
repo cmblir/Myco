@@ -35,6 +35,7 @@ pub mod schedules;
 pub mod secrets;
 pub mod settings;
 pub mod tasks;
+pub mod tray;
 pub mod validator;
 pub mod vault;
 pub mod vault_dir;
@@ -121,6 +122,8 @@ pub fn run() {
         // `VectorCache` above — avoids re-reading and re-parsing the `.mxb`
         // file on every lexical-search call.
         .manage(retrieval::Bm25Cache::default())
+        // Menu bar tray icon handle; populated by tray::init in setup.
+        .manage(tray::TrayHandle::default())
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
             commands::ensure_default_vault,
@@ -204,6 +207,7 @@ pub fn run() {
             commands::archive_digested_sessions,
             commands::full_tier_items,
             commands::append_distill_manifest,
+            tray::update_tray_status,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path
@@ -241,6 +245,27 @@ pub fn run() {
             let _ = INDEX_UPDATER.set(updater.clone());
             if let Some(root) = settings::active_vault() {
                 updater.rebind(std::path::PathBuf::from(root));
+            }
+            // Menu bar tray (activity mirror + quick actions). Best-effort:
+            // a tray failure must never block startup.
+            if let Err(e) = tray::init(app.handle()) {
+                eprintln!("tray init failed: {e}");
+            }
+            // Resident mode: with the settings toggle ON, closing the window
+            // hides it and the app stays in the menu bar; OFF (default) keeps
+            // today's behavior — the close proceeds and the app quits via the
+            // ExitRequested handler below. Settings are re-read per close so
+            // the toggle applies without a restart.
+            if let Some(win) = app.get_webview_window("main") {
+                let win_for_hide = win.clone();
+                win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        if settings::load().tray_resident {
+                            api.prevent_close();
+                            let _ = win_for_hide.hide();
+                        }
+                    }
+                });
             }
             // Web clipper: memx://clip?url=…&title=…&selection=… lands in the
             // open vault's _inbox/ (falling back to the persisted active-vault

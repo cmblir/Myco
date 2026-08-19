@@ -708,6 +708,7 @@ const SETTINGS = {
   auto_ingest_interval_min: 60,
   auto_reflect_enabled: false,
   auto_reflect_interval_min: 180,
+  tray_resident: false,
 };
 
 const bySlug = new Map(NODES.map((d) => [d.s, d]));
@@ -962,6 +963,9 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     // TS-side LLM-step manifest bookkeeping (Important 4, Phase B whole-
     // branch review) — no real undo manifest to extend under ?mock=1.
     case "append_distill_manifest":
+      return Promise.resolve(null);
+    // Menu bar tray refresh — no OS tray in a browser; accept and drop.
+    case "update_tray_status":
       return Promise.resolve(null);
     case "get_settings":
       return Promise.resolve(

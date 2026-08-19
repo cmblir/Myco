@@ -1,0 +1,148 @@
+// The tray's frontend half: the title/menu payload builders and the
+// debounced sender that keeps update_tray_status calls to state CHANGES
+// (never per progress tick — at most one send per second).
+
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { TraySender, buildTrayStatus, trayTitle } from "./trayStatus";
+import type { TraySnapshot } from "./trayStatus";
+import type { TrayStatusPayload } from "./ipc";
+import { STRINGS } from "./i18n";
+
+const idle: TraySnapshot = {
+  askBusy: false,
+  distillRunning: false,
+  distillStep: null,
+  reindexStage: "idle",
+  reindexDone: 0,
+  reindexTotal: 0,
+  pendingLinks: 0,
+  mcpRunning: true,
+};
+
+describe("trayTitle", () => {
+  it("is empty when nothing runs", () => {
+    expect(trayTitle(idle)).toBeNull();
+  });
+
+  it("shows the reindex percent when indexing is the only runner", () => {
+    expect(
+      trayTitle({ ...idle, reindexStage: "indexing", reindexDone: 218, reindexTotal: 302 }),
+    ).toBe("72%");
+  });
+
+  it("shows no number for a single non-reindex runner", () => {
+    expect(trayTitle({ ...idle, distillRunning: true, distillStep: "run" })).toBeNull();
+  });
+
+  it("shows the running count for two or more", () => {
+    expect(
+      trayTitle({
+        ...idle,
+        askBusy: true,
+        reindexStage: "indexing",
+        reindexDone: 1,
+        reindexTotal: 10,
+      }),
+    ).toBe("2");
+  });
+});
+
+describe("buildTrayStatus", () => {
+  const t = STRINGS.en;
+
+  it("mirrors the popover rows: running info, standing counts, actions", () => {
+    const p = buildTrayStatus(
+      {
+        ...idle,
+        distillRunning: true,
+        distillStep: "digest",
+        reindexStage: "indexing",
+        reindexDone: 218,
+        reindexTotal: 302,
+        pendingLinks: 3,
+      },
+      t,
+    );
+    expect(p.running).toEqual([
+      "Distilling… — the session digest",
+      "Indexing… 218/302",
+    ]);
+    expect(p.title).toBe("2");
+    expect(p.suggested).toBe("3 suggested links");
+    expect(p.mcp).toBe("MCP server running");
+    expect(p.distill).toBe(t.set_distill_run_now);
+    expect(p.open).toBe("Open myco");
+    expect(p.quit).toBe("Quit myco");
+  });
+
+  it("sends no running rows when idle", () => {
+    const p = buildTrayStatus({ ...idle, mcpRunning: false }, t);
+    expect(p.running).toEqual([]);
+    expect(p.title).toBeNull();
+    expect(p.mcp).toBe("MCP server off");
+  });
+});
+
+describe("TraySender", () => {
+  let sent: TrayStatusPayload[];
+  let sender: TraySender;
+
+  const payload = (title: string | null): TrayStatusPayload => ({
+    running: [],
+    title,
+    suggested: "",
+    mcp: "",
+    ask: "a",
+    distill: "d",
+    open: "o",
+    quit: "q",
+  });
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    sent = [];
+    sender = new TraySender((p) => sent.push(p));
+  });
+
+  afterEach(() => {
+    sender.dispose();
+    vi.useRealTimers();
+  });
+
+  it("coalesces a burst of pushes into one trailing send of the latest", () => {
+    sender.push(payload("1%"));
+    sender.push(payload("2%"));
+    sender.push(payload("3%"));
+    expect(sent).toEqual([]);
+    vi.advanceTimersByTime(300);
+    expect(sent).toEqual([payload("3%")]);
+  });
+
+  it("throttles progress ticks to at most one send per second", () => {
+    sender.push(payload("10%"));
+    vi.advanceTimersByTime(300); // first send at t=300
+    // A tick every 100ms for 2 seconds.
+    for (let i = 0; i < 20; i++) {
+      sender.push(payload(`${11 + i}%`));
+      vi.advanceTimersByTime(100);
+    }
+    vi.advanceTimersByTime(1000); // drain the trailing send
+    expect(sent.length).toBeLessThanOrEqual(4); // ~1/s over ~3s, not 21
+    expect(sent[sent.length - 1]).toEqual(payload("30%")); // latest always lands
+  });
+
+  it("drops identical payloads instead of re-sending", () => {
+    sender.push(payload("50%"));
+    vi.advanceTimersByTime(300);
+    sender.push(payload("50%"));
+    vi.advanceTimersByTime(2000);
+    expect(sent).toEqual([payload("50%")]);
+  });
+
+  it("sends nothing after dispose", () => {
+    sender.push(payload("1%"));
+    sender.dispose();
+    vi.advanceTimersByTime(2000);
+    expect(sent).toEqual([]);
+  });
+});

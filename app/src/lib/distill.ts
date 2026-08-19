@@ -1,9 +1,16 @@
 // TS mirror types for distillation config. Fields match the Rust serde output
 // (snake_case from the #[serde(rename_all)] directives).
 
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
 import { ipc } from "./ipc";
 import { getActiveModel } from "./chat";
+import { STRINGS } from "./i18n";
 import type { Lang } from "./i18n";
+import { useUIStore } from "../stores/uiStore";
 import { runSessionDigest } from "./sessionDigest";
 import type { DigestOutcome } from "./sessionDigest";
 import { runFullTierIngest } from "./fullTierIngest";
@@ -272,6 +279,27 @@ async function pruneArchivedSessions(vault: string): Promise<void> {
   void useReindexStore.getState().reindex();
 }
 
+// OS notification permission, asked once on first use (the design's two
+// notification kinds both come from the distill chain, so the latch lives
+// here). null = not asked yet.
+let notifyGranted: boolean | null = null;
+
+async function osNotify(title: string, body: string): Promise<void> {
+  try {
+    if (notifyGranted === null) {
+      notifyGranted = await isPermissionGranted();
+      if (!notifyGranted) {
+        notifyGranted = (await requestPermission()) === "granted";
+      }
+    }
+    if (notifyGranted) sendNotification({ title, body });
+  } catch (e) {
+    // Plain-browser dev has no notification plugin; a denied/broken
+    // notification must never fail the distill chain it decorates.
+    console.warn("[distill] os notification failed:", e);
+  }
+}
+
 /** Runs distill_run for `vault`, unless one is already in flight for that
  * vault — in which case this resolves to null immediately and makes no ipc
  * call. All callers (schedule-due, count-trigger, manual button) must go
@@ -289,6 +317,20 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
   useDistillRunStore.setState({ running: true, step: "run" });
   try {
     const report = await ipc.distillRun(vault);
+    // OS notification: new quarantine items. Fired here — the layer that
+    // already has the number — and only when this run actually moved
+    // something into quarantine, so a quiet run stays quiet.
+    if (report.scan.quarantined > 0) {
+      const t = STRINGS[useUIStore.getState().lang];
+      void osNotify(
+        t.notif_quarantine_title ?? "New quarantine items",
+        (t.notif_quarantine_body ??
+          "{n} items are waiting for review in _inbox/quarantine.").replace(
+          "{n}",
+          String(report.scan.quarantined),
+        ),
+      );
+    }
     // Idle is checked at entry only (by the callers' own triggers); once
     // started, the chain can only be stopped cooperatively BETWEEN steps
     // (requestDistillStop), never mid-LLM-call. Total work stays bounded by
@@ -336,6 +378,22 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
       return null;
     });
     if (mapOutcome) lastMapDraftOutcome.set(vault, mapOutcome);
+    // OS notification: distill complete, with the run's two headline counts.
+    // Only when the run produced something — the idle trigger fires this
+    // chain routinely, and a stream of "0 proposals" notifications would
+    // train the user to disable notifications entirely. Stopped-early runs
+    // (the returns above) skip it too: the user was watching the popover.
+    const days = outcome?.daysDigested ?? 0;
+    if (report.proposals > 0 || days > 0) {
+      const t = STRINGS[useUIStore.getState().lang];
+      void osNotify(
+        t.notif_distill_done_title ?? "Distill finished",
+        (t.notif_distill_done_body ??
+          "{p} proposals · {d} session days digested")
+          .replace("{p}", String(report.proposals))
+          .replace("{d}", String(days)),
+      );
+    }
     return report;
   } finally {
     inFlight.delete(vault);

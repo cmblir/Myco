@@ -95,7 +95,9 @@ export function chipMode<T extends { icon: ActivityIconName }>(
   return { kind: "multi", count: running.length, icon: running[0].icon };
 }
 
-function stepLabel(step: DistillRunStep | null, t: Strings): string {
+/** Human label for a distill chain phase — shared with the tray menu
+ * (lib/trayStatus.ts) so both surfaces name the step identically. */
+export function stepLabel(step: DistillRunStep | null, t: Strings): string {
   if (step === "digest") return t.set_distill_step_digest ?? "the session digest";
   if (step === "ingest") return t.set_distill_step_ingest ?? "the full-tier ingest";
   if (step === "maps") return t.set_distill_step_maps ?? "the map drafts";

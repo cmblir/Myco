@@ -850,6 +850,15 @@ export interface Strings {
   tb_activity_links?: string; // {n}
   tb_activity_mcp_on?: string;
   tb_activity_mcp_off?: string;
+  // Menu bar tray + OS notifications.
+  tray_open?: string;
+  tray_quit?: string;
+  s_tray_resident_title?: string;
+  s_tray_resident_desc?: string;
+  notif_distill_done_title?: string;
+  notif_distill_done_body?: string; // {p} {d}
+  notif_quarantine_title?: string;
+  notif_quarantine_body?: string; // {n}
   // Graph toolbar.
   gr_zoom_out?: string;
   gr_fit?: string;
@@ -1775,6 +1784,16 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_links: "{n} suggested links",
     tb_activity_mcp_on: "MCP server running",
     tb_activity_mcp_off: "MCP server off",
+    tray_open: "Open myco",
+    tray_quit: "Quit myco",
+    s_tray_resident_title: "Keep running in the menu bar",
+    s_tray_resident_desc:
+      "Closing the window hides it instead of quitting — myco stays in the menu bar and background work keeps going. Quit from the tray menu.",
+    notif_distill_done_title: "Distill finished",
+    notif_distill_done_body: "{p} proposals · {d} session days digested",
+    notif_quarantine_title: "New quarantine items",
+    notif_quarantine_body:
+      "{n} items are waiting for review in _inbox/quarantine.",
     gr_zoom_out: "Zoom out",
     gr_fit: "Fit",
     gr_zoom_in: "Zoom in",
@@ -2701,6 +2720,15 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_links: "제안된 링크 {n}개",
     tb_activity_mcp_on: "MCP 서버 실행 중",
     tb_activity_mcp_off: "MCP 서버 꺼짐",
+    tray_open: "myco 열기",
+    tray_quit: "myco 종료",
+    s_tray_resident_title: "메뉴 막대에 상주",
+    s_tray_resident_desc:
+      "창을 닫아도 종료하지 않고 숨깁니다 — myco가 메뉴 막대에 남아 백그라운드 작업을 계속합니다. 종료는 트레이 메뉴에서.",
+    notif_distill_done_title: "증류 완료",
+    notif_distill_done_body: "제안 {p}건 · 세션 다이제스트 {d}일치",
+    notif_quarantine_title: "새 격리 항목",
+    notif_quarantine_body: "{n}개 항목이 _inbox/quarantine에서 검토를 기다립니다.",
     gr_zoom_out: "축소",
     gr_fit: "맞춤",
     gr_zoom_in: "확대",
@@ -3504,6 +3532,15 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_links: "リンク提案 {n}件",
     tb_activity_mcp_on: "MCPサーバー稼働中",
     tb_activity_mcp_off: "MCPサーバー停止",
+    tray_open: "mycoを開く",
+    tray_quit: "mycoを終了",
+    s_tray_resident_title: "メニューバーに常駐",
+    s_tray_resident_desc:
+      "ウィンドウを閉じても終了せず隠します — mycoはメニューバーに残り、バックグラウンド処理を続けます。終了はトレイメニューから。",
+    notif_distill_done_title: "蒸留完了",
+    notif_distill_done_body: "提案 {p}件 · セッションダイジェスト {d}日分",
+    notif_quarantine_title: "新しい隔離アイテム",
+    notif_quarantine_body: "{n}件が _inbox/quarantine でレビュー待ちです。",
     gr_zoom_out: "ズームアウト",
     gr_fit: "全体表示",
     gr_zoom_in: "ズームイン",
