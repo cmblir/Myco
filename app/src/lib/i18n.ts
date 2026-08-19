@@ -19,6 +19,9 @@ export interface Strings {
   ls_hint?: string;
   ls_accept?: string;
   ls_dismiss?: string;
+  ls_accept_all?: string;
+  ls_accept_all_progress?: string;
+  ls_accept_all_result?: string;
   zi_title?: string;
   zi_hint?: string;
   zi_none?: string;
@@ -918,6 +921,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ls_hint: "Semantically close notes that aren't linked yet. Accept to add a [[wikilink]] under \u201c## Related\u201d.",
     ls_accept: "Link them",
     ls_dismiss: "Dismiss",
+    ls_accept_all: "Accept all",
+    ls_accept_all_progress: "{done}/{total}",
+    ls_accept_all_result: "{n} linked",
     zi_title: "Import from Zotero",
     zi_hint: "CSL-JSON or BibTeX export (highlights come along when present). Items land in _inbox/ as source docs for the ingest pipeline.",
     zi_none: "No importable items found in that file.",
@@ -1839,6 +1845,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ls_hint: "의미상 가깝지만 아직 연결되지 않은 노트들입니다. 수락하면 \u201c## Related\u201d 아래에 [[위키링크]]가 추가됩니다.",
     ls_accept: "연결하기",
     ls_dismiss: "무시",
+    ls_accept_all: "모두 수락",
+    ls_accept_all_progress: "{done}/{total}",
+    ls_accept_all_result: "{n}개 연결됨",
     zi_title: "Zotero에서 가져오기",
     zi_hint: "CSL-JSON 또는 BibTeX 내보내기 파일(하이라이트 포함 시 함께). 항목은 _inbox/에 소스 문서로 저장됩니다.",
     zi_none: "가져올 항목을 찾지 못했습니다.",
@@ -3539,6 +3548,9 @@ export const STRINGS: Record<Lang, Strings> = {
     ls_hint: "意味的に近いのにまだリンクされていないノートです。承認すると「## Related」の下に [[wikilink]] が追加されます。",
     ls_accept: "リンクする",
     ls_dismiss: "閉じる",
+    ls_accept_all: "すべて承認",
+    ls_accept_all_progress: "{done}/{total}",
+    ls_accept_all_result: "{n}件をリンクしました",
     zi_title: "Zotero からインポート",
     zi_hint: "CSL-JSON または BibTeX エクスポート（ハイライトがあれば一緒に取り込まれます）。項目はソース文書として _inbox/ に入り、取り込みパイプラインで処理されます。",
     zi_none: "そのファイルにインポート可能な項目が見つかりませんでした。",

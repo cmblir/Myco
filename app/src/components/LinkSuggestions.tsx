@@ -13,7 +13,8 @@ import { ipc, type SemEdge } from "../lib/ipc";
 import { stem } from "../lib/graphData";
 import { useVaultStore } from "../stores/vaultStore";
 import {
-  appendWikilink,
+  acceptAll,
+  acceptSuggestion,
   loadDismissed,
   saveDismissed,
   suggestLinks,
@@ -29,6 +30,8 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
   const [dismissed, setDismissed] = useState<Set<string>>(() => loadDismissed());
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
+  const [bulkResult, setBulkResult] = useState<number | null>(null);
 
   useEffect(() => {
     let killed = false;
@@ -61,9 +64,7 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
     setBusyKey(s.key);
     setError(null);
     try {
-      const file = await ipc.readFile(s.source);
-      const next = appendWikilink(file.raw, s.target);
-      if (next !== file.raw) await ipc.writeFile(s.source, next);
+      await acceptSuggestion(s, ipc);
       dismiss(s); // accepted pairs also leave the queue immediately
       await refreshLinkGraph();
     } catch (e) {
@@ -73,18 +74,60 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
     }
   }
 
+  // Same write path as a single ✓ (acceptSuggestion), just looped — no
+  // parallel or new way to land a wikilink.
+  async function acceptAllSuggestions(): Promise<void> {
+    if (bulk) return;
+    setError(null);
+    setBulkResult(null);
+    const total = suggestions.length;
+    setBulk({ done: 0, total });
+    const { accepted, error: err } = await acceptAll(suggestions, ipc, (done) =>
+      setBulk({ done, total }),
+    );
+    if (accepted.length > 0) {
+      const next = new Set(dismissed);
+      for (const s of accepted) next.add(s.key);
+      setDismissed(next);
+      saveDismissed(next);
+      await refreshLinkGraph();
+    }
+    setBulk(null);
+    if (err) setError(err);
+    else setBulkResult(accepted.length);
+  }
+
   if (suggestions.length === 0) return null;
 
   return (
     <section className="card link-suggestions">
-      <div className="section-title" style={{ fontSize: 14 }}>
-        {t.ls_title ?? "Suggested links"}
+      <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
+        <div className="section-title" style={{ fontSize: 14 }}>
+          {t.ls_title ?? "Suggested links"}
+        </div>
+        <button
+          type="button"
+          className="btn"
+          disabled={!!bulk}
+          onClick={() => void acceptAllSuggestions()}
+        >
+          {bulk
+            ? (t.ls_accept_all_progress ?? "{done}/{total}")
+                .replace("{done}", String(bulk.done))
+                .replace("{total}", String(bulk.total))
+            : (t.ls_accept_all ?? "Accept all")}
+        </button>
       </div>
       <p className="muted link-suggestions__hint">
         {t.ls_hint ??
           "Semantically close notes that aren't linked yet. Accept to add a [[wikilink]] under “## Related”."}
       </p>
       {error ? <p className="link-suggestions__error">{error}</p> : null}
+      {bulkResult !== null ? (
+        <p className="muted link-suggestions__hint">
+          {(t.ls_accept_all_result ?? "{n} linked").replace("{n}", String(bulkResult))}
+        </p>
+      ) : null}
       <ul className="link-suggestions__list">
         {suggestions.map((s) => (
           <li key={s.key}>
@@ -95,7 +138,7 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
             <button
               type="button"
               className="icon-btn"
-              disabled={busyKey === s.key}
+              disabled={busyKey === s.key || !!bulk}
               aria-label={t.ls_accept ?? "Link them"}
               title={t.ls_accept ?? "Link them"}
               onClick={() => void accept(s)}
@@ -105,6 +148,7 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
             <button
               type="button"
               className="icon-btn"
+              disabled={!!bulk}
               aria-label={t.ls_dismiss ?? "Dismiss"}
               title={t.ls_dismiss ?? "Dismiss"}
               onClick={() => dismiss(s)}

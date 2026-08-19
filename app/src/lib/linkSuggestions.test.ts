@@ -1,6 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { Adjacency } from "./ipc";
-import { appendWikilink, pairKey, suggestLinks } from "./linkSuggestions";
+import {
+  acceptAll,
+  appendWikilink,
+  pairKey,
+  suggestLinks,
+  type LinkSuggestion,
+} from "./linkSuggestions";
 
 const A = "/v/alpha.md";
 const B = "/v/beta.md";
@@ -64,5 +70,49 @@ describe("appendWikilink", () => {
   it("is a no-op when the link already exists", () => {
     const src = "# Alpha\n\nSee [[beta]].\n";
     expect(appendWikilink(src, "/v/beta.md")).toBe(src);
+  });
+});
+
+describe("acceptAll", () => {
+  const mk = (n: number): LinkSuggestion[] =>
+    Array.from({ length: n }, (_, i) => ({
+      source: `/v/s${i}.md`,
+      target: `/v/t${i}.md`,
+      score: 1,
+      key: `k${i}`,
+    }));
+
+  it("accepts every suggestion via one accept call each", async () => {
+    const suggestions = mk(3);
+    const readFile = vi.fn().mockResolvedValue({ raw: "# doc\n" });
+    const writeFile = vi.fn().mockResolvedValue(undefined);
+    const onProgress = vi.fn();
+
+    const result = await acceptAll(suggestions, { readFile, writeFile }, onProgress);
+
+    expect(readFile).toHaveBeenCalledTimes(3);
+    expect(writeFile).toHaveBeenCalledTimes(3);
+    expect(result.accepted).toEqual(suggestions);
+    expect(result.remaining).toEqual([]);
+    expect(result.error).toBeNull();
+    expect(onProgress).toHaveBeenLastCalledWith(3, 3);
+  });
+
+  it("stops at the first failure and leaves the rest as remaining", async () => {
+    const suggestions = mk(4);
+    const readFile = vi
+      .fn()
+      .mockResolvedValueOnce({ raw: "# a\n" })
+      .mockRejectedValueOnce(new Error("disk full"))
+      .mockResolvedValue({ raw: "# unreached\n" });
+    const writeFile = vi.fn().mockResolvedValue(undefined);
+
+    const result = await acceptAll(suggestions, { readFile, writeFile });
+
+    expect(result.accepted).toEqual([suggestions[0]]);
+    expect(result.remaining).toEqual(suggestions.slice(1));
+    expect(result.error).toBe("Error: disk full");
+    // the third and fourth suggestion were never attempted
+    expect(readFile).toHaveBeenCalledTimes(2);
   });
 });

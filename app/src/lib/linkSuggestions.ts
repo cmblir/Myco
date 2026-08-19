@@ -48,6 +48,45 @@ export function suggestLinks(
   return out;
 }
 
+export interface LinkSuggestionIO {
+  readFile: (path: string) => Promise<{ raw: string }>;
+  writeFile: (path: string, content: string) => Promise<unknown>;
+}
+
+/** Accept one suggestion: read the source, append the wikilink, write back
+ * only if it changed. The one write path — both a single ✓ and "accept all"
+ * call this and nothing else. */
+export async function acceptSuggestion(
+  s: LinkSuggestion,
+  io: LinkSuggestionIO,
+): Promise<void> {
+  const file = await io.readFile(s.source);
+  const next = appendWikilink(file.raw, s.target);
+  if (next !== file.raw) await io.writeFile(s.source, next);
+}
+
+/** Accept every suggestion in order through acceptSuggestion. Stops at the
+ * first failure so the remainder stays listed (and unattempted) rather than
+ * racing ahead past a broken one. */
+export async function acceptAll(
+  suggestions: LinkSuggestion[],
+  io: LinkSuggestionIO,
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ accepted: LinkSuggestion[]; remaining: LinkSuggestion[]; error: string | null }> {
+  const accepted: LinkSuggestion[] = [];
+  for (let i = 0; i < suggestions.length; i++) {
+    const s = suggestions[i];
+    try {
+      await acceptSuggestion(s, io);
+      accepted.push(s);
+      onProgress?.(accepted.length, suggestions.length);
+    } catch (e) {
+      return { accepted, remaining: suggestions.slice(i), error: String(e) };
+    }
+  }
+  return { accepted, remaining: [], error: null };
+}
+
 /** Append `- [[target]]` under a "## Related" section (created if absent).
  * Returns the original content unchanged if the wikilink is already there. */
 export function appendWikilink(content: string, targetPath: string): string {
