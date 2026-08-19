@@ -212,6 +212,7 @@ pub fn run() {
             tray::update_tray_status,
             tray::get_tray_status,
             tray::tray_panel_action,
+            tray::resize_tray_panel,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path

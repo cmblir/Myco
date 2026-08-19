@@ -986,6 +986,8 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       });
     case "tray_panel_action":
       return Promise.resolve(null);
+    case "resize_tray_panel":
+      return Promise.resolve(null);
     case "get_settings":
       return Promise.resolve(
         AGENT_MODE

@@ -3992,6 +3992,14 @@ html.tray-window,
 html.tray-window body {
   background: transparent;
 }
+/* The OS window is 24px larger than the card on every side (tray.rs
+   PANEL_MARGIN) — that ring is where this CSS shadow lives, since the OS
+   window shadow is off (it hugged the transparent rect, not the card). */
+html.tray-window body {
+  /* Mirrors tray.rs PANEL_MARGIN_TOP / PANEL_MARGIN — slim on top so the
+     card hugs the menu bar, room on the other sides for the shadow. */
+  padding: 8px 24px 24px;
+}
 .tray-panel {
   box-sizing: border-box;
   width: 100%;
@@ -3999,7 +4007,7 @@ html.tray-window body {
   border: 1px solid #33363f;
   border-radius: 12px;
   padding: 6px;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
   color: #e8eaee;
   font:
     13.5px/1.5 -apple-system,

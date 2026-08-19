@@ -610,6 +610,9 @@ export const ipc = {
    *  "dismiss" (hide the panel only). */
   trayPanelAction: (action: string) =>
     invoke<null>("tray_panel_action", { action }),
+  /** Fit the tray popover window to the card's measured height (logical px). */
+  resizeTrayPanel: (height: number) =>
+    invoke<null>("resize_tray_panel", { height }),
   setSettings: (value: MycoSettings) =>
     invoke<null>("set_settings", { value }),
   chatComplete: (request: ChatRequest) =>

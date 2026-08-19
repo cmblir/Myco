@@ -27,9 +27,15 @@ pub const TRAY_STATUS_EVENT: &str = "myco://tray-status";
 /// The frameless popover window shown on tray LEFT-click (the native menu
 /// stays on right-click as the plain fallback).
 const PANEL_LABEL: &str = "tray-panel";
-const PANEL_WIDTH: f64 = 340.0; // logical px, matches the approved v2 panel
-const PANEL_HEIGHT: f64 = 440.0; // ponytail: fixed height; auto-size to content if the dead zone bothers
-const PANEL_GAP: f64 = 6.0; // logical px between the menu bar and the panel
+// Window = the 340px panel + a transparent margin ring that gives the CSS
+// shadow room (the OS window shadow is OFF — drawn around the whole
+// transparent rect, it rendered as a ghost outline below the card whenever
+// the fixed window was taller than the content).
+const PANEL_MARGIN: f64 = 24.0; // sides + bottom (CSS shadow room)
+const PANEL_MARGIN_TOP: f64 = 8.0; // slim on top so the card hugs the menu bar
+const PANEL_WIDTH: f64 = 340.0 + PANEL_MARGIN * 2.0; // logical px
+const PANEL_HEIGHT: f64 = 440.0; // first-paint guess; resize_tray_panel fits it to content
+const PANEL_GAP: f64 = 2.0; // logical px between the menu bar and the window edge
 
 /// One running activity. `kind` picks the row icon ("ask" | "distill" |
 /// "index"); unknown kinds just render without an icon.
@@ -347,7 +353,9 @@ pub fn panel_position(
     let w = panel_w_logical * scale;
     let mut x = pos.x + size.width / 2.0 - w / 2.0;
     if let Some(right) = screen_right {
-        x = x.min(right - w - PANEL_GAP * scale);
+        // The window's own transparent margin keeps the CARD off the edge,
+        // so the window may touch the screen edge exactly.
+        x = x.min(right - w);
     }
     x = x.max(0.0);
     let y = pos.y + size.height + PANEL_GAP * scale;
@@ -398,7 +406,10 @@ fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
             )
             .decorations(false)
             .transparent(true)
-            .shadow(true)
+            // OS shadow OFF: it hugs the transparent window RECT, not the
+            // rounded card inside it — the card carries a CSS shadow instead
+            // (inside the PANEL_MARGIN ring).
+            .shadow(false)
             .always_on_top(true)
             .resizable(false)
             .skip_taskbar(true)
@@ -511,6 +522,24 @@ pub async fn update_tray_status(app: AppHandle, status: TrayStatus) -> Result<()
 #[tauri::command]
 pub fn get_tray_status(app: AppHandle) -> TrayStatus {
     app.state::<TrayStatusCache>().0.lock().unwrap().clone()
+}
+
+/// Fit the popover window to its rendered content — the panel measures
+/// itself (ResizeObserver) and reports the card height in logical px; the
+/// window becomes card + margin ring. Runs in Rust so no window-plugin
+/// capability is needed. Height is clamped to sane bounds so a broken
+/// measurement can't create a zero or screen-tall window.
+#[tauri::command]
+pub fn resize_tray_panel(app: AppHandle, height: f64) -> Result<(), String> {
+    let Some(win) = app.get_webview_window(PANEL_LABEL) else {
+        return Ok(()); // window not created yet — the builder size applies
+    };
+    let clamped = height.clamp(60.0, 800.0);
+    win.set_size(tauri::LogicalSize::new(
+        PANEL_WIDTH,
+        clamped + PANEL_MARGIN_TOP + PANEL_MARGIN,
+    ))
+    .map_err(|e| e.to_string())
 }
 
 /// Quick actions clicked in the tray-panel window. Routes through the same
@@ -720,7 +749,7 @@ mod tests {
         // scale 2: panel is 680 physical px wide; icon centre at x=1000.
         let (x, y) = panel_position(&icon_rect(978.0, 0.0, 44.0, 48.0), 2.0, 340.0, None);
         assert_eq!(x, 1000.0 - 340.0); // centre - half panel width
-        assert_eq!(y, 48.0 + 6.0 * 2.0); // icon bottom + gap
+        assert_eq!(y, 48.0 + 2.0 * 2.0); // icon bottom + gap
     }
 
     #[test]
@@ -732,7 +761,8 @@ mod tests {
             340.0,
             Some(2000.0),
         );
-        assert_eq!(x, 2000.0 - 680.0 - 12.0);
+        // Window may touch the edge — its transparent margin spaces the card.
+        assert_eq!(x, 2000.0 - 680.0);
     }
 
     #[test]

@@ -9,7 +9,7 @@
 // Rust handler as the native menu rows — one entry point for open/quit/
 // query/distill from both surfaces (resident-mode semantics included).
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import ActivityPanel from "./ActivityPanel";
 import type { ActivityIconName, PanelRow, PanelSection } from "./ActivityPanel";
@@ -84,6 +84,28 @@ export default function TrayPanel(): JSX.Element {
     };
   }, []);
 
+  // Fit the OS window to the card: rows come and go with activity, and a
+  // fixed-height transparent window drew a ghost outline below the card.
+  const cardRef = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let last = 0;
+    const ro = new ResizeObserver(() => {
+      const h = Math.ceil(el.offsetHeight);
+      if (h > 0 && h !== last) {
+        last = h;
+        void ipc.resizeTrayPanel(h).catch(() => {
+          /* plain-browser dev: no Tauri backend */
+        });
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+    // Mount-once: both render branches share the same root div, so the node
+    // the ref points at never changes and the observer follows every layout.
+  }, []);
+
   const act = (action: string): void => {
     void ipc.trayPanelAction(action).catch(() => {
       /* plain-browser dev: no Tauri backend */
@@ -91,7 +113,7 @@ export default function TrayPanel(): JSX.Element {
   };
 
   const s = status;
-  if (!s) return <div className="tray-panel" />;
+  if (!s) return <div className="tray-panel" ref={cardRef} />;
 
   const running: PanelRow[] = s.running
     .filter((r) => r.text !== "")
@@ -146,7 +168,7 @@ export default function TrayPanel(): JSX.Element {
   ];
 
   return (
-    <div className="tray-panel">
+    <div className="tray-panel" ref={cardRef}>
       <ActivityPanel sections={sections} />
     </div>
   );
