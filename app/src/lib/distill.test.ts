@@ -21,12 +21,16 @@ vi.mock("./fullTierIngest", () => ({
 
 import {
   backlogTrend,
+  formatRunOutcome,
   lastRunLabel,
   lastStopPoint,
+  llmStepsWaiting,
+  pendingShrank,
   requestDistillStop,
   runDistillGuarded,
 } from "./distill";
 import { ipc } from "./ipc";
+import { STRINGS } from "./i18n";
 import { useVaultStore } from "../stores/vaultStore";
 import { useReindexStore } from "../stores/reindexStore";
 import type { DistillConfig, RunReport } from "./distill";
@@ -48,6 +52,80 @@ describe("backlogTrend", () => {
 
   it("flat when the oldest and newest samples are equal", () => {
     expect(backlogTrend([5, 9, 5])).toBe("flat");
+  });
+});
+
+describe("formatRunOutcome", () => {
+  const report = (over: Partial<RunReport> = {}): RunReport => ({
+    id: "r1",
+    scan: {
+      scored: 0,
+      quarantined: 0,
+      rejected: 0,
+      summaries: 0,
+      full: 0,
+      skipped_immature: 0,
+      gate_wiki_pages: null,
+    },
+    archived: 0,
+    trashed: 0,
+    proposals: 0,
+    backlog_after: 0,
+    ...over,
+  });
+
+  const en = STRINGS.en;
+
+  it("says 'nothing to process' for a run that moved nothing", () => {
+    expect(formatRunOutcome(report(), 0, en)).toBe(
+      "Distill finished — nothing to process",
+    );
+  });
+
+  it("substitutes archived/digested/proposals counts", () => {
+    expect(formatRunOutcome(report({ archived: 4, proposals: 2 }), 3, en)).toBe(
+      "Distill finished — archived 4 · 3 days digested · 2 proposals",
+    );
+  });
+
+  it("a trashed-only run is not 'nothing to process'", () => {
+    expect(formatRunOutcome(report({ trashed: 1 }), 0, en)).toBe(
+      "Distill finished — archived 0 · 0 days digested · 0 proposals",
+    );
+  });
+});
+
+describe("llmStepsWaiting", () => {
+  it("false when both steps ran with a provider (whatever the pending count)", () => {
+    expect(
+      llmStepsWaiting(
+        { ingested: 2, skipped: null, errors: [] },
+        { drafted: 1, skipped: null },
+      ),
+    ).toBe(false);
+    expect(llmStepsWaiting(undefined, undefined)).toBe(false);
+  });
+
+  it("true when either step skipped for lack of a provider (builtin-local)", () => {
+    expect(
+      llmStepsWaiting({ ingested: 0, skipped: "no-provider", errors: [] }, undefined),
+    ).toBe(true);
+    expect(llmStepsWaiting(undefined, { drafted: 0, skipped: "no-provider" })).toBe(true);
+  });
+
+  it("a 'nothing' skip is not a provider wait", () => {
+    expect(
+      llmStepsWaiting({ ingested: 0, skipped: "nothing", errors: [] }, undefined),
+    ).toBe(false);
+  });
+});
+
+describe("pendingShrank", () => {
+  it("true only when the count actually decreased since the last observation", () => {
+    expect(pendingShrank(null, 3)).toBe(false); // no previous observation
+    expect(pendingShrank(3, 3)).toBe(false); // unchanged
+    expect(pendingShrank(3, 5)).toBe(false); // grew
+    expect(pendingShrank(3, 2)).toBe(true);
   });
 });
 

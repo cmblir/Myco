@@ -9,7 +9,7 @@ import {
 import { ipc } from "./ipc";
 import { getActiveModel } from "./chat";
 import { STRINGS } from "./i18n";
-import type { Lang } from "./i18n";
+import type { Lang, Strings } from "./i18n";
 import { useUIStore } from "../stores/uiStore";
 import { runSessionDigest } from "./sessionDigest";
 import type { DigestOutcome } from "./sessionDigest";
@@ -173,6 +173,49 @@ export interface MapDraftOutcome {
   skipped: "no-provider" | null;
 }
 export const lastMapDraftOutcome = new Map<string, MapDraftOutcome>();
+
+/** Whether the Overview card's "steps waiting — connect a provider" note
+ * should show: only full-tier ingest and draft maps still need a provider
+ * (the session digest runs extractively on builtin-local), so only their
+ * no-provider skips feed it. */
+export function llmStepsWaiting(
+  full: FullTierOutcome | undefined,
+  maps: MapDraftOutcome | undefined,
+): boolean {
+  return full?.skipped === "no-provider" || maps?.skipped === "no-provider";
+}
+
+/** "Shrinking" must be observed, not hoped: true only when the pending count
+ * actually decreased since the previous observation (null = none yet). */
+export function pendingShrank(prev: number | null, now: number): boolean {
+  return prev !== null && now < prev;
+}
+
+/** Overview card's inline outcome line for a finished manual run — an
+ * empty-backlog run resolves in under a second, too fast for the topbar
+ * activity chip to communicate anything, so the card itself says what
+ * happened. A run that moved nothing says so instead of showing zeros. */
+export function formatRunOutcome(
+  report: RunReport,
+  daysDigested: number,
+  t: Strings,
+): string {
+  const worked =
+    report.archived > 0 ||
+    report.trashed > 0 ||
+    report.proposals > 0 ||
+    daysDigested > 0;
+  if (!worked) {
+    return t.ov_distill_done_none ?? "Distill finished — nothing to process";
+  }
+  return (
+    t.ov_distill_done ??
+    "Distill finished — archived {a} · {d} days digested · {p} proposals"
+  )
+    .replace("{a}", String(report.archived))
+    .replace("{d}", String(daysDigested))
+    .replace("{p}", String(report.proposals));
+}
 
 // Fallback llm_ingest_budget when getDistillConfig is unavailable — mirrors
 // the Rust-side default, same idiom as fullTierIngest.ts's own copy.

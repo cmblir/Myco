@@ -2,7 +2,7 @@
 // recently. The hero copy renders only for an empty vault, where it is the
 // only true thing to show.
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
@@ -12,11 +12,16 @@ import { useReflectStore } from "../stores/reflectStore";
 import { useDistillStore } from "../stores/distillStore";
 import {
   backlogTrend,
+  formatRunOutcome,
+  lastDigestOutcome,
   lastFullTierOutcome,
   lastMapDraftOutcome,
   lastRunLabel,
+  llmStepsWaiting,
+  pendingShrank,
   runDistillGuarded,
 } from "../lib/distill";
+import type { RunReport } from "../lib/distill";
 import { ipc } from "../lib/ipc";
 import type { FileNode } from "../lib/ipc";
 import LinkSuggestions from "../components/LinkSuggestions";
@@ -278,6 +283,14 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
   // already does (mount + after "Distill now"), rather than polled
   // separately.
   const [llmQueued, setLlmQueued] = useState(false);
+  // Outcome of the last run started FROM THIS CARD — inline feedback for the
+  // "지금 증류" click (an empty-backlog run resolves faster than the topbar
+  // chip can register). Cleared when the next run starts.
+  const [outcome, setOutcome] = useState<{ report: RunReport; days: number } | null>(null);
+  // Previous observed pending count, so "shrinking" is only claimed when the
+  // count actually went down between observations (pendingShrank).
+  const prevPending = useRef<number | null>(null);
+  const [shrank, setShrank] = useState(false);
 
   async function refreshAll(): Promise<void> {
     await refresh();
@@ -285,10 +298,19 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
     // The session digest no longer waits on a provider (builtin-local digests
     // extractively — see sessionDigest.ts), so only full-tier ingest and
     // draft maps, which genuinely need generation, feed this note.
-    const full = lastFullTierOutcome.get(currentVault.path);
-    const maps = lastMapDraftOutcome.get(currentVault.path);
-    setLlmQueued(full?.skipped === "no-provider" || maps?.skipped === "no-provider");
+    setLlmQueued(
+      llmStepsWaiting(
+        lastFullTierOutcome.get(currentVault.path),
+        lastMapDraftOutcome.get(currentVault.path),
+      ),
+    );
   }
+
+  useEffect(() => {
+    if (!status) return;
+    setShrank(pendingShrank(prevPending.current, status.pending_proposals));
+    prevPending.current = status.pending_proposals;
+  }, [status]);
 
   useEffect(() => {
     void refreshAll();
@@ -299,12 +321,17 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
     if (!currentVault || running) return;
     setRunning(true);
     setBusy(false);
+    setOutcome(null);
     try {
       const report = await runDistillGuarded(currentVault.path);
       if (report === null) {
         setBusy(true);
         return;
       }
+      setOutcome({
+        report,
+        days: lastDigestOutcome.get(currentVault.path)?.daysDigested ?? 0,
+      });
       await refreshAll();
     } finally {
       setRunning(false);
@@ -313,12 +340,6 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
 
   const trend = status ? backlogTrend(status.last_backlogs) : "flat";
   const trendArrow = trend === "shrinking" ? "↓" : trend === "growing" ? "↑" : "→";
-  const trendLabel =
-    trend === "shrinking"
-      ? (t.set_distill_trend_shrinking ?? "shrinking")
-      : trend === "growing"
-        ? (t.set_distill_trend_growing ?? "growing")
-        : (t.set_distill_trend_flat ?? "flat");
   const lastRun = status ? lastRunLabel(status.last_run, lang) : null;
 
   return (
@@ -334,8 +355,8 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
           {(t.set_distill_pending ?? "{n} pending proposals").replace(
             "{n}",
             String(status.pending_proposals),
-          )}{" "}
-          · {trendLabel}
+          )}
+          {shrank ? <> · {t.set_distill_trend_shrinking ?? "shrinking"}</> : null}
         </div>
       ) : null}
       <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
@@ -360,6 +381,14 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
           ? (t.set_distill_running ?? "Distilling…")
           : (t.set_distill_run_now ?? "Distill now")}
       </button>
+      {outcome ? (
+        <div
+          style={{ color: "#16a34a", fontSize: 12, marginTop: 6 }}
+          data-testid="ov-distill-report"
+        >
+          {formatRunOutcome(outcome.report, outcome.days, t)}
+        </div>
+      ) : null}
       {busy ? (
         <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
           {t.set_distill_busy ?? "A distill run is already in progress."}

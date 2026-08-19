@@ -779,6 +779,8 @@ export interface Strings {
   ov_distill_last_run?: string; // {t}
   ov_distill_never?: string;
   ov_distill_llm_queued?: string;
+  ov_distill_done?: string; // {a} {d} {p}
+  ov_distill_done_none?: string;
   pf_title?: string;
   pf_lede?: string;
   pf_empty?: string;
@@ -1715,7 +1717,11 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_feedback: "Feedback",
     ov_distill_last_run: "Last run {t}",
     ov_distill_never: "No runs yet",
-    ov_distill_llm_queued: "LLM steps waiting — connect a provider",
+    ov_distill_llm_queued:
+      "Full-tier ingest & map drafts waiting — connect a provider (the digest runs locally)",
+    ov_distill_done:
+      "Distill finished — archived {a} · {d} days digested · {p} proposals",
+    ov_distill_done_none: "Distill finished — nothing to process",
     pf_title: "Feedback",
     pf_lede:
       "Proposals the distillation engine wrote while folding new pages into the wiki — review and apply, or dismiss.",
@@ -2660,7 +2666,10 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_feedback: "피드백",
     ov_distill_last_run: "마지막 실행 {t}",
     ov_distill_never: "아직 실행 기록 없음",
-    ov_distill_llm_queued: "LLM 단계 대기 — 프로바이더 연결 필요",
+    ov_distill_llm_queued:
+      "본문 승격·맵 제안 대기 — 프로바이더 연결 필요 (다이제스트는 로컬로 실행됨)",
+    ov_distill_done: "증류 완료 — 아카이브 {a}건 · 다이제스트 {d}일 · 제안 {p}건",
+    ov_distill_done_none: "증류 완료 — 처리할 항목 없음",
     pf_title: "피드백",
     pf_lede:
       "증류 엔진이 새 페이지를 위키의 온톨로지에 접어넣으며 작성한 제안입니다 — 검토 후 적용하거나 무시하세요.",
@@ -3479,7 +3488,11 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_feedback: "フィードバック",
     ov_distill_last_run: "最終実行 {t}",
     ov_distill_never: "まだ実行されていません",
-    ov_distill_llm_queued: "LLMステップ待機中 — プロバイダーの接続が必要",
+    ov_distill_llm_queued:
+      "フル階層インジェスト・マップ草案は待機中 — プロバイダーの接続が必要（ダイジェストはローカルで実行）",
+    ov_distill_done:
+      "蒸留完了 — アーカイブ{a}件 · ダイジェスト{d}日 · 提案{p}件",
+    ov_distill_done_none: "蒸留完了 — 処理する項目なし",
     pf_title: "フィードバック",
     pf_lede:
       "蒸留エンジンが新しいページをウィキのオントロジーに取り込む際に書き出した提案です — レビューして適用するか、却下してください。",
