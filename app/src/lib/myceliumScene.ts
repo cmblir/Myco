@@ -670,10 +670,14 @@ export class MyceliumScene {
   }
 
   /** "Background" picker — live scene.background swap, no rebuild of the mat.
-   *  `grid` (the "grid" preset) additionally lays the SAME fullscreen dot
-   *  grid the main graph view's 그리드 sky uses (graphScene.ts
-   *  ensureGridBackdrop: same cell count, dot color and alpha), so the two
-   *  views share one grid look. Rebuilt on each call (cheap — one fullscreen
+   *  `grid` (the "grid" preset) additionally paints the main graph view's
+   *  그리드 sky, AS COMPOSITED there: graphScene renders its grid backdrop
+   *  through AgX tone mapping + a vignette + filmic grain (CINE_FRAG), while
+   *  this renderer deliberately has no post chain — so reusing the raw
+   *  uniforms rendered visibly darker dots on a flatter, lighter board. This
+   *  quad instead paints the measured FINAL display-space colours and bakes
+   *  in the same vignette + (static) grain formulas, pixel-matched against
+   *  main-view screenshots. Rebuilt on each call (cheap — one fullscreen
    *  quad, and this only runs on a preset/colour change) = a live swap. */
   setGround(color: string, grid = false): void {
     this.scene.background = new THREE.Color(color);
@@ -681,11 +685,14 @@ export class MyceliumScene {
     if (!grid) return;
     const geo = new THREE.PlaneGeometry(2, 2);
     const mat = new THREE.ShaderMaterial({
-      transparent: true,
       depthTest: false,
       depthWrite: false,
       uniforms: {
-        u_color: { value: new THREE.Color(0x4a5a8c) },
+        // Display-space sRGB, deliberately NOT THREE.Color (which would
+        // convert to linear working space — this shader writes raw values,
+        // there is no output transform behind it).
+        u_bg: { value: new THREE.Vector3(2 / 255, 3 / 255, 4.5 / 255) },
+        u_color: { value: new THREE.Vector3(36 / 255, 97 / 255, 117 / 255) },
         u_alpha: { value: 0.5 },
         u_cells: { value: 46 },
         u_aspect: { value: this.container.clientWidth / Math.max(1, this.container.clientHeight) },
@@ -698,17 +705,31 @@ export class MyceliumScene {
         }
       `,
       fragmentShader: /* glsl */ `
-        uniform vec3 u_color; uniform float u_alpha; uniform float u_cells;
-        uniform float u_aspect;
+        uniform vec3 u_bg; uniform vec3 u_color; uniform float u_alpha;
+        uniform float u_cells; uniform float u_aspect;
         varying vec2 vUv;
+        // Same Hash-without-Sine as graphScene's CINE_FRAG (mediump-stable).
+        float hash12(vec2 p) {
+          vec3 p3 = fract(vec3(p.xyx) * 0.1031);
+          p3 += dot(p3, p3.yzx + 33.33);
+          return fract((p3.x + p3.y) * p3.z);
+        }
         void main() {
           vec2 uv = vUv;
           uv.x *= u_aspect; // square cells regardless of viewport
           vec2 c = fract(uv * u_cells) - 0.5;
           float d = length(c);
           float a = (1.0 - smoothstep(0.05, 0.11, d)) * u_alpha;
-          if (a < 0.01) discard;
-          gl_FragColor = vec4(u_color, a);
+          vec3 col = mix(u_bg, u_color, a);
+          // Vignette + shadow-weighted grain: same formulas/constants as the
+          // main view's cine pass (u_vig 0.26, u_grain 0.045), grain static.
+          vec2 cc = vUv - 0.5;
+          float r2 = dot(cc, cc);
+          col *= 1.0 - 0.26 * smoothstep(0.2, 0.72, r2);
+          float g = hash12(gl_FragCoord.xy) - 0.5;
+          float shadow = 1.0 - smoothstep(0.0, 0.55, dot(col, vec3(0.3333)));
+          col += g * 0.045 * (0.35 + 0.65 * shadow);
+          gl_FragColor = vec4(col, 1.0);
         }
       `,
     });
@@ -878,6 +899,11 @@ export class MyceliumScene {
     for (const m of this.mat) (m.material as LineMaterial).resolution.set(w, h);
     if (this.highlightLine) (this.highlightLine.material as LineMaterial).resolution.set(w, h);
     if (this.travelLine) (this.travelLine.material as LineMaterial).resolution.set(w, h);
+    // Keep the grid backdrop's cells square (the main view refreshes this on
+    // every ensureGridBackdrop call; here resize is the only aspect change).
+    if (this.gridMesh) {
+      (this.gridMesh.material as THREE.ShaderMaterial).uniforms.u_aspect.value = w / h;
+    }
   }
 
   start(): void {

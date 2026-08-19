@@ -694,14 +694,14 @@ export const MYCELIUM_BG_PRESETS: Record<
     myceliumHyphaColor: "#4a3a28",
     myceliumNodeColor: "#245a38",
   },
-  // Blueprint / graph paper: a cool near-black slate over which the renderer
-  // draws the same fullscreen dot grid as the main graph's 그리드 sky
+  // Blueprint / graph paper: the renderer draws the main graph's 그리드 sky
   // (MyceliumScene.setGround's grid mode — keyed by
-  // matchMyceliumBg(...) === "grid", not by this hex). Near-black charcoal
-  // board under blue dots — matched to the main view's grid look the user
-  // pointed at; the default light inks stay legible on it.
+  // matchMyceliumBg(...) === "grid", not by this hex). The hex matches the
+  // main view's FINAL composited backdrop tone (its scene bg 0x05060d comes
+  // out ≈#020304 after AgX + vignette), so the swatch chip and anything that
+  // shows scene.background agree with what the grid quad paints.
   grid: {
-    myceliumBackground: "#141519",
+    myceliumBackground: "#020304",
     myceliumHyphaColor: DEFAULT_GRAPH_SETTINGS.myceliumHyphaColor,
     myceliumNodeColor: DEFAULT_GRAPH_SETTINGS.myceliumNodeColor,
   },
