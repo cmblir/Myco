@@ -132,6 +132,37 @@ pub fn is_running() -> bool {
     RUNNING.load(Ordering::Relaxed)
 }
 
+// ─── tool-call log (inflow stats) ────────────────────────────────────────────
+
+/// In-memory tool-call log: (epoch secs, tool name). Process-lifetime only —
+/// the UI labels the derived count "since app launch", never persisted-today.
+/// Readers filter by their own local-midnight cutoff; writes prune anything
+/// older than 48h so a resident app can't grow it unbounded.
+static TOOL_CALLS: std::sync::Mutex<Vec<(u64, String)>> = std::sync::Mutex::new(Vec::new());
+
+const TOOL_CALL_RETENTION_SECS: u64 = 48 * 3600;
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+fn record_tool_call_at(log: &mut Vec<(u64, String)>, now: u64, name: &str) {
+    log.retain(|(t, _)| now.saturating_sub(*t) < TOOL_CALL_RETENTION_SECS);
+    log.push((now, name.to_string()));
+}
+
+fn record_tool_call(name: &str) {
+    record_tool_call_at(&mut TOOL_CALLS.lock().unwrap(), now_secs(), name);
+}
+
+/// Snapshot of the tool-call log for `inflow_stats`.
+pub(crate) fn tool_calls_snapshot() -> Vec<(u64, String)> {
+    TOOL_CALLS.lock().unwrap().clone()
+}
+
 /// What the Settings panel needs: the server is always running (no install),
 /// the connect command, and the desktop-config snippet.
 #[derive(Debug, Clone, Serialize)]
@@ -564,9 +595,8 @@ fn walk_all(dir: &Path) -> Vec<PathBuf> {
 
 #[derive(Clone)]
 pub struct McpServer {
-    // Read by the #[tool_handler] macro's generated dispatch, not by any code
-    // written here — dead-code analysis only sees the write in new().
-    #[allow(dead_code)]
+    // Read by the hand-written call_tool below and by the #[tool_handler]
+    // macro's generated list_tools.
     tool_router: ToolRouter<McpServer>,
 }
 
@@ -1774,8 +1804,20 @@ impl McpServer {
     }
 }
 
+// call_tool is written out (the macro skips a method that already exists) so
+// every dispatch passes the inflow tool-call log; list_tools stays generated.
 #[tool_handler]
-impl ServerHandler for McpServer {}
+impl ServerHandler for McpServer {
+    async fn call_tool(
+        &self,
+        request: rmcp::model::CallToolRequestParams,
+        context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<rmcp::model::CallToolResult, rmcp::ErrorData> {
+        record_tool_call(&request.name);
+        let tcc = rmcp::handler::server::tool::ToolCallContext::new(self, request, context);
+        self.tool_router.call(tcc).await
+    }
+}
 
 // ─── transport ───────────────────────────────────────────────────────────────
 
@@ -1818,4 +1860,25 @@ pub async fn serve(ct: CancellationToken) -> Result<(), String> {
         RUNNING.store(false, Ordering::Relaxed);
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::record_tool_call_at;
+
+    #[test]
+    fn tool_call_log_prunes_entries_older_than_retention() {
+        let mut log = vec![(0u64, "old".to_string())];
+        record_tool_call_at(&mut log, 60 * 3_600, "new"); // 60h later: past 48h
+        assert_eq!(log.len(), 1);
+        assert_eq!(log[0].1, "new");
+    }
+
+    #[test]
+    fn tool_call_log_keeps_recent_entries() {
+        let now = 100_000u64;
+        let mut log = vec![(now - 3_600, "recent".to_string())];
+        record_tool_call_at(&mut log, now, "new");
+        assert_eq!(log.len(), 2);
+    }
 }

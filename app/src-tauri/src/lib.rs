@@ -183,6 +183,7 @@ pub fn run() {
             commands::open_external,
             commands::mcp_info,
             commands::mcp_connect,
+            commands::inflow_stats,
             commands::local_classify,
             commands::local_query,
             commands::local_chat_model_available,

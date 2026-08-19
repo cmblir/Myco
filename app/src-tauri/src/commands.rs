@@ -1007,6 +1007,168 @@ fn collect_jsonl(dir: &std::path::Path, out: &mut Vec<PathBuf>, depth: u32) {
     }
 }
 
+// ---- Inflow stats (activity popover "today's inflow" section) ----
+
+/// What arrived in the vault today, for the activity popover and tray panel.
+/// All "today" filters use the caller's local date (via `tz_offset_min`).
+#[derive(Debug, Default, PartialEq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InflowStats {
+    /// `sessions/<month>/*.md` whose mtime falls on today — i.e. written or
+    /// rewritten by a sweep today (current + previous month buckets only).
+    pub sessions_today: u32,
+    /// Top-level `_inbox/*` files created today (birthtime, mtime fallback).
+    pub inbox_today: u32,
+    /// MCP tool calls recorded today. The log is in-memory only, so after an
+    /// app restart this counts since launch — the UI labels it as such.
+    pub mcp_calls_today: u32,
+    /// Most-called MCP tool today (ties break alphabetically); None when 0.
+    pub mcp_top_tool: Option<String>,
+    /// Per-local-hour buckets (24) of the session + inbox files counted above.
+    pub hourly_files: Vec<u32>,
+    /// Per-local-hour buckets (24) of the MCP calls counted above.
+    pub hourly_mcp: Vec<u32>,
+}
+
+/// Epoch second of the caller's local midnight. `tz_offset_min` is JS
+/// `Date.getTimezoneOffset()`: minutes to ADD to local time to reach UTC.
+fn local_day_start(now: u64, tz_offset_min: i32) -> u64 {
+    let local = now as i64 - i64::from(tz_offset_min) * 60;
+    let start_local = local - local.rem_euclid(86_400);
+    (start_local + i64::from(tz_offset_min) * 60).max(0) as u64
+}
+
+/// The caller's local hour (0–23) for an epoch second.
+fn local_hour(t: u64, tz_offset_min: i32) -> usize {
+    let local = t as i64 - i64::from(tz_offset_min) * 60;
+    (local.rem_euclid(86_400) / 3600) as usize
+}
+
+/// The `YYYY-MM` before `month` — a sweep today can touch last month's bucket
+/// when a conversation started late last month is still growing.
+fn prev_month(month: &str) -> String {
+    let (y, m) = month.split_once('-').unwrap_or(("1970", "01"));
+    let y: u16 = y.parse().unwrap_or(1970);
+    let m: u8 = m.parse().unwrap_or(1);
+    if m <= 1 {
+        format!("{:04}-12", y.saturating_sub(1))
+    } else {
+        format!("{y:04}-{:02}", m - 1)
+    }
+}
+
+fn epoch_secs(t: std::time::SystemTime) -> u64 {
+    t.duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Pure collector behind `inflow_stats` — deterministic given `now` and the
+/// MCP call log, so it is unit-testable against a tempdir vault.
+///
+/// Deliberately cheap: two flat `read_dir`s over the current and previous
+/// session month buckets (never `sessions/archive/`, structurally — only the
+/// two month dirs are opened) and one over top-level `_inbox/` (quarantine/
+/// and .archived/ are subdirectories, so files-only skips them).
+pub(crate) fn collect_inflow(
+    root: &std::path::Path,
+    now: u64,
+    tz_offset_min: i32,
+    mcp_calls: &[(u64, String)],
+) -> InflowStats {
+    let day_start = local_day_start(now, tz_offset_min);
+    let mut stats = InflowStats {
+        hourly_files: vec![0; 24],
+        hourly_mcp: vec![0; 24],
+        ..InflowStats::default()
+    };
+
+    let month = current_month();
+    for bucket in [month.clone(), prev_month(&month)] {
+        let Ok(entries) = std::fs::read_dir(root.join(DEST_SESSIONS).join(bucket)) else {
+            continue;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("md") {
+                continue;
+            }
+            let Ok(mtime) = entry.metadata().and_then(|m| m.modified()) else {
+                continue;
+            };
+            let t = epoch_secs(mtime);
+            if t >= day_start {
+                stats.sessions_today += 1;
+                stats.hourly_files[local_hour(t, tz_offset_min)] += 1;
+            }
+        }
+    }
+
+    if let Ok(entries) = std::fs::read_dir(root.join(DEST_INBOX)) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name();
+            if !path.is_file() || name.to_string_lossy().starts_with('.') {
+                continue;
+            }
+            let Ok(meta) = entry.metadata() else { continue };
+            // Creation time where the platform has it (macOS birthtime);
+            // mtime is the honest fallback, not an invention.
+            let Ok(created) = meta.created().or_else(|_| meta.modified()) else {
+                continue;
+            };
+            let t = epoch_secs(created);
+            if t >= day_start {
+                stats.inbox_today += 1;
+                stats.hourly_files[local_hour(t, tz_offset_min)] += 1;
+            }
+        }
+    }
+
+    let mut per_tool: std::collections::BTreeMap<&str, u32> = std::collections::BTreeMap::new();
+    for (t, name) in mcp_calls {
+        if *t >= day_start {
+            stats.mcp_calls_today += 1;
+            stats.hourly_mcp[local_hour(*t, tz_offset_min)] += 1;
+            *per_tool.entry(name.as_str()).or_insert(0) += 1;
+        }
+    }
+    // BTreeMap iteration is name-ascending, so max_by keeps the LAST maximum —
+    // take strictly-greater to break ties on the alphabetically first name.
+    let mut top: Option<(&str, u32)> = None;
+    for (name, n) in per_tool {
+        if top.map_or(true, |(_, best)| n > best) {
+            top = Some((name, n));
+        }
+    }
+    stats.mcp_top_tool = top.map(|(name, _)| name.to_string());
+    stats
+}
+
+/// "Today's inflow" for the activity popover / tray panel: sessions swept in,
+/// `_inbox` arrivals, MCP tool calls, plus hourly sparkbar buckets. Called
+/// when the popover opens — no polling. `tz_offset_min` is the frontend's
+/// `Date.getTimezoneOffset()` so "today" means the user's local date.
+#[tauri::command]
+pub async fn inflow_stats(
+    state: tauri::State<'_, VaultRoot>,
+    root: String,
+    tz_offset_min: i32,
+) -> Result<InflowStats, String> {
+    let root = confine_root(&state, &root)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let now = epoch_secs(std::time::SystemTime::now());
+        Ok(collect_inflow(
+            std::path::Path::new(&root),
+            now,
+            tz_offset_min,
+            &crate::mcp_native::tool_calls_snapshot(),
+        ))
+    })
+    .await
+    .map_err(|e| format!("join failed: {e}"))?
+}
+
 /// Full link graph for the open vault.
 ///
 /// Async + `spawn_blocking` because this is not a cheap read: it walks, reads
@@ -2821,6 +2983,103 @@ mod tests {
     use crate::vector_index::Hit;
     use std::collections::{HashMap, HashSet};
     use std::path::PathBuf;
+
+    // ---- inflow_stats -----------------------------------------------------
+
+    /// Write `path` then force its mtime to `secs` (epoch). Birthtime cannot
+    /// be back-dated, which is why the "old file excluded" case is exercised
+    /// through sessions/ (mtime-filtered), not _inbox/ (birthtime-filtered).
+    fn touch_at(path: &std::path::Path, secs: u64) {
+        std::fs::write(path, "x").unwrap();
+        let t = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(secs);
+        let f = std::fs::OpenOptions::new().write(true).open(path).unwrap();
+        f.set_times(std::fs::FileTimes::new().set_modified(t))
+            .unwrap();
+    }
+
+    #[test]
+    fn inflow_counts_todays_files_and_mcp_calls_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let old = now - 3 * 86_400;
+
+        let bucket = root.join("sessions").join(super::current_month());
+        std::fs::create_dir_all(&bucket).unwrap();
+        touch_at(&bucket.join("today.md"), now);
+        touch_at(&bucket.join("stale.md"), old);
+        // archive/ must never be opened — a today-mtime file there stays out.
+        let archive = root.join("sessions").join("archive");
+        std::fs::create_dir_all(&archive).unwrap();
+        touch_at(&archive.join("archived.md"), now);
+
+        let inbox = root.join("_inbox");
+        std::fs::create_dir_all(inbox.join("quarantine")).unwrap();
+        touch_at(&inbox.join("clip-today.md"), now);
+        touch_at(&inbox.join(".hidden.md"), now);
+        touch_at(&inbox.join("quarantine").join("q.md"), now);
+
+        let calls = vec![
+            (now, "search".to_string()),
+            (now, "search".to_string()),
+            (now, "read_page".to_string()),
+            (old, "old_tool".to_string()),
+        ];
+        let stats = super::collect_inflow(root, now, 0, &calls);
+
+        assert_eq!(stats.sessions_today, 1);
+        assert_eq!(stats.inbox_today, 1);
+        assert_eq!(stats.mcp_calls_today, 3);
+        assert_eq!(stats.mcp_top_tool.as_deref(), Some("search"));
+        assert_eq!(stats.hourly_files.iter().sum::<u32>(), 2);
+        assert_eq!(stats.hourly_mcp.iter().sum::<u32>(), 3);
+        let h = super::local_hour(now, 0);
+        assert_eq!(stats.hourly_files[h], 2);
+        assert_eq!(stats.hourly_mcp[h], 3);
+    }
+
+    #[test]
+    fn inflow_top_tool_breaks_ties_alphabetically() {
+        let dir = tempfile::tempdir().unwrap();
+        let now = 1_000_000_000u64;
+        let calls = vec![(now, "zeta".to_string()), (now, "alpha".to_string())];
+        let stats = super::collect_inflow(dir.path(), now, 0, &calls);
+        assert_eq!(stats.mcp_calls_today, 2);
+        assert_eq!(stats.mcp_top_tool.as_deref(), Some("alpha"));
+    }
+
+    #[test]
+    fn inflow_day_rolls_over_at_the_callers_local_midnight() {
+        // 16:00 UTC on epoch day 10 is 01:00 the NEXT local day in UTC+9
+        // (tz_offset_min = -540, the JS getTimezoneOffset convention).
+        let t = 10 * 86_400 + 16 * 3_600;
+        assert_eq!(super::local_hour(t, -540), 1);
+        assert_eq!(super::local_day_start(t, -540), 10 * 86_400 + 15 * 3_600);
+        // 02:00 UTC on day 10 is still 21:00 the PREVIOUS local day in UTC-5.
+        let t = 10 * 86_400 + 2 * 3_600;
+        assert_eq!(super::local_hour(t, 300), 21);
+        assert_eq!(super::local_day_start(t, 300), 9 * 86_400 + 5 * 3_600);
+        // A call made "yesterday" local time is excluded from today's count.
+        let now = 10 * 86_400 + 16 * 3_600; // 01:00 local, UTC+9
+        let yesterday = now - 2 * 3_600; // 23:00 the previous local day
+        let dir = tempfile::tempdir().unwrap();
+        let stats = super::collect_inflow(
+            dir.path(),
+            now,
+            -540,
+            &[(now, "a".to_string()), (yesterday, "a".to_string())],
+        );
+        assert_eq!(stats.mcp_calls_today, 1);
+    }
+
+    #[test]
+    fn prev_month_wraps_the_year() {
+        assert_eq!(super::prev_month("2026-08"), "2026-07");
+        assert_eq!(super::prev_month("2026-01"), "2025-12");
+    }
 
     // Covers the Critical fix: BM25 must be upserted even when the DENSE
     // side is already current, or `.mxb` never bootstraps on a vault whose
