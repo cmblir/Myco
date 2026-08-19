@@ -23,7 +23,7 @@ import { dueOpen } from "../lib/taskNotify";
 import { parseTaskMeta } from "../lib/taskLine";
 import { writeTaskStatus } from "../lib/taskWrite";
 import { computeModelPopPos } from "./Topbar";
-import ActivityPanel, { ActivityIcon, InflowSparkbar } from "./ActivityPanel";
+import ActivityPanel, { ActivityIcon, buildInflowRows } from "./ActivityPanel";
 import type { ActivityIconName, PanelRow, PanelSection } from "./ActivityPanel";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
@@ -32,6 +32,7 @@ import { useReindexStore } from "../stores/reindexStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
+import { useSettingsStore } from "../stores/settingsStore";
 
 export { ActivityIcon };
 export type { ActivityIconName };
@@ -82,6 +83,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const sem = useLinkSuggestStore((s) => s.sem);
   const dismissed = useLinkSuggestStore((s) => s.dismissed);
   const refreshSem = useLinkSuggestStore((s) => s.refresh);
+  const settings = useSettingsStore((s) => s.settings);
   const setRoute = useUIStore((s) => s.setRoute);
 
   const reindexBusy =
@@ -246,7 +248,9 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
 
   const askQuestion = turns[turns.length - 1]?.q.split("\n")[0] ?? "";
 
-  const jump = (route: "query" | "overview" | "settings" | "tasks"): void => {
+  const jump = (
+    route: "query" | "overview" | "settings" | "tasks" | "ingest",
+  ): void => {
     setOpen(false);
     setRoute(route);
   };
@@ -387,49 +391,34 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   }
 
   // Today's inflow — the whole section vanishes when nothing arrived today
-  // (inflowLines returns null) or before/without a successful fetch.
-  const lines = inflow ? inflowLines(inflow, t) : null;
-  const inflowRows: PanelRow[] = [];
-  if (inflow && lines) {
-    const sweepAt = getLastSweepAt();
-    inflowRows.push(
-      {
-        key: "sessions",
-        main: (
-          <>
-            {lines.sessions}
-            {sweepAt !== null ? (
-              <span className="activity-row-sub">
-                {(t.tb_inflow_last_sweep ?? "last sweep {t}").replace(
-                  "{t}",
-                  new Date(sweepAt).toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  }),
-                )}
-              </span>
-            ) : null}
-          </>
-        ),
-      },
-      {
-        key: "mcp-calls",
-        main: (
-          <>
-            {lines.mcp}
-            <span className="activity-row-sub">{lines.mcpSub}</span>
-          </>
-        ),
-      },
-      { key: "inbox", main: lines.inbox },
-      {
-        key: "spark",
-        main: (
-          <InflowSparkbar files={inflow.hourlyFiles} mcp={inflow.hourlyMcp} />
-        ),
-      },
-    );
-  }
+  // (inflowLines returns null) or before/without a successful fetch. Rows
+  // come from the shared builder so this popover and the tray panel stay
+  // structurally identical.
+  const lines = inflow
+    ? inflowLines(inflow, t, {
+        sweepAt: getLastSweepAt(),
+        autoImportMin: settings?.auto_import_enabled
+          ? settings.auto_import_interval_min
+          : null,
+      })
+    : null;
+  const inflowRows: PanelRow[] =
+    inflow && lines
+      ? buildInflowRows({
+          sessions: {
+            label: lines.sessions,
+            sub: lines.sessionsSub,
+            count: lines.sessionsCount,
+          },
+          mcp: { label: lines.mcp, sub: lines.mcpSub, count: lines.mcpCount },
+          inbox: { label: lines.inbox, sub: "", count: lines.inboxCount },
+          inboxView: lines.inboxView,
+          onInboxView: () => jump("ingest"),
+          sparkCaption: lines.sparkCaption,
+          hourlyFiles: inflow.hourlyFiles,
+          hourlyMcp: inflow.hourlyMcp,
+        })
+      : [];
 
   const sections: PanelSection[] = [
     {

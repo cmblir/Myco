@@ -859,12 +859,16 @@ export interface Strings {
   tb_activity_tasks_more?: string; // {n}
   // "Today's inflow" section (activity popover + tray panel + native menu).
   tb_inflow_header?: string;
-  tb_inflow_sessions?: string; // {n}
+  tb_inflow_sessions?: string;
   tb_inflow_last_sweep?: string; // {t}
-  tb_inflow_mcp?: string; // {n}
+  tb_inflow_auto?: string; // {m}
+  tb_inflow_mcp?: string;
+  tb_inflow_mcp_count?: string; // {n}
   tb_inflow_mcp_top?: string; // {tool}
   tb_inflow_since_launch?: string;
-  tb_inflow_inbox?: string; // {n}
+  tb_inflow_inbox?: string;
+  tb_inflow_view?: string;
+  tb_inflow_spark_caption?: string;
   tb_inflow_summary?: string; // {s} {m} {i}
   // Menu bar tray + OS notifications.
   tray_hdr_running?: string;
@@ -1812,12 +1816,16 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_tasks: "Tasks due",
     tb_activity_tasks_more: "+{n} more",
     tb_inflow_header: "Today's inflow",
-    tb_inflow_sessions: "Sessions swept +{n}",
+    tb_inflow_sessions: "Sessions swept",
     tb_inflow_last_sweep: "last sweep {t}",
-    tb_inflow_mcp: "MCP tool calls {n}",
+    tb_inflow_auto: "auto {m} min",
+    tb_inflow_mcp: "MCP tool calls",
+    tb_inflow_mcp_count: "{n}",
     tb_inflow_mcp_top: "top: {tool}",
     tb_inflow_since_launch: "since app launch",
-    tb_inflow_inbox: "_inbox arrivals +{n}",
+    tb_inflow_inbox: "_inbox arrivals",
+    tb_inflow_view: "View →",
+    tb_inflow_spark_caption: "Last 24h · purple = sessions/inbox · blue = MCP calls",
     tb_inflow_summary: "Today: sessions +{s} · MCP {m} · inbox +{i}",
     tray_hdr_running: "Now working on",
     tray_hdr_waiting: "Waiting",
@@ -2766,12 +2774,16 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_tasks: "할 일",
     tb_activity_tasks_more: "+{n}개 더",
     tb_inflow_header: "오늘 들어온 것",
-    tb_inflow_sessions: "세션 수집 +{n}",
+    tb_inflow_sessions: "세션 수집",
     tb_inflow_last_sweep: "마지막 수집 {t}",
-    tb_inflow_mcp: "MCP 도구 호출 {n}회",
+    tb_inflow_auto: "자동 {m}분",
+    tb_inflow_mcp: "MCP 도구 호출",
+    tb_inflow_mcp_count: "{n}회",
     tb_inflow_mcp_top: "최다: {tool}",
     tb_inflow_since_launch: "앱 실행 이후",
-    tb_inflow_inbox: "_inbox 도착 +{n}",
+    tb_inflow_inbox: "_inbox 도착",
+    tb_inflow_view: "보기 →",
+    tb_inflow_spark_caption: "최근 24시간 · 보라 = 세션/inbox · 파랑 = MCP 호출",
     tb_inflow_summary: "오늘: 세션 +{s} · MCP {m}회 · 인박스 +{i}",
     tray_hdr_running: "지금 하는 일",
     tray_hdr_waiting: "대기",
@@ -3597,12 +3609,16 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_tasks: "期限のタスク",
     tb_activity_tasks_more: "+{n}件",
     tb_inflow_header: "今日入ってきたもの",
-    tb_inflow_sessions: "セッション取り込み +{n}",
+    tb_inflow_sessions: "セッション取り込み",
     tb_inflow_last_sweep: "最終取り込み {t}",
-    tb_inflow_mcp: "MCPツール呼び出し {n}回",
+    tb_inflow_auto: "自動 {m}分",
+    tb_inflow_mcp: "MCPツール呼び出し",
+    tb_inflow_mcp_count: "{n}回",
     tb_inflow_mcp_top: "最多: {tool}",
     tb_inflow_since_launch: "アプリ起動後",
-    tb_inflow_inbox: "_inbox 到着 +{n}",
+    tb_inflow_inbox: "_inbox 到着",
+    tb_inflow_view: "表示 →",
+    tb_inflow_spark_caption: "直近24時間 · 紫 = セッション/inbox · 青 = MCP呼び出し",
     tb_inflow_summary: "今日: セッション +{s} · MCP {m}回 · インボックス +{i}",
     tray_hdr_running: "作業中",
     tray_hdr_waiting: "待機",

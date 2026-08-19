@@ -90,6 +90,78 @@ export function InflowSparkbar({
   );
 }
 
+/** One inflow metric: label + inline muted sub + right-aligned mono count. */
+export interface InflowRowContent {
+  label: string;
+  sub: string;
+  count: string;
+}
+
+function inflowMain(r: InflowRowContent): ReactNode {
+  return (
+    <span className="inflow-line">
+      {r.label}
+      {r.sub ? <span className="inflow-sub">{r.sub}</span> : null}
+    </span>
+  );
+}
+
+/** The "Today's inflow" section rows, built ONCE for both surfaces (the
+ * ActivityChip popover and the tray panel) so they match the approved
+ * artifact identically: icon badge per metric, label with the sub inline
+ * (muted, same line, wraps at narrow width), count in a right mono column,
+ * a "View →" action on the _inbox row, and the color-key caption under the
+ * sparkbar. Callers only supply the strings and the inbox navigation. */
+export function buildInflowRows(p: {
+  sessions: InflowRowContent;
+  mcp: InflowRowContent;
+  inbox: InflowRowContent;
+  inboxView: string;
+  onInboxView: () => void;
+  sparkCaption: string;
+  hourlyFiles: number[];
+  hourlyMcp: number[];
+}): PanelRow[] {
+  const count = (c: string): ReactNode => (
+    <span className="inflow-count">{c}</span>
+  );
+  return [
+    {
+      key: "sessions",
+      icon: "ask",
+      main: inflowMain(p.sessions),
+      trailing: count(p.sessions.count),
+    },
+    {
+      key: "mcp-calls",
+      icon: "mcp",
+      main: inflowMain(p.mcp),
+      trailing: count(p.mcp.count),
+    },
+    {
+      key: "inbox",
+      icon: "link",
+      main: inflowMain(p.inbox),
+      trailing: (
+        <>
+          {count(p.inbox.count)}
+          <span className="inflow-view">{p.inboxView}</span>
+        </>
+      ),
+      onClick: p.onInboxView,
+    },
+    {
+      key: "spark",
+      main: (
+        <span className="inflow-stack">
+          <InflowSparkbar files={p.hourlyFiles} mcp={p.hourlyMcp} />
+          <span className="inflow-caption">{p.sparkCaption}</span>
+        </span>
+      ),
+    },
+  ];
+}
+
 export interface PanelRow {
   key: string;
   /** Circular row icon; `leading` (e.g. a task checkbox) replaces it. */

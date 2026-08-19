@@ -11,7 +11,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import ActivityPanel, { InflowSparkbar } from "./ActivityPanel";
+import ActivityPanel, { buildInflowRows } from "./ActivityPanel";
 import type { ActivityIconName, PanelRow, PanelSection } from "./ActivityPanel";
 import { ipc } from "../lib/ipc";
 import type { TrayStatusPayload } from "../lib/ipc";
@@ -39,10 +39,16 @@ const MOCK_STATUS: TrayStatusPayload = {
   mcp: "MCP 서버 실행 중",
   inflow: {
     header: "오늘 들어온 것",
-    sessions: "세션 수집 +4",
-    mcp: "MCP 도구 호출 17회",
+    sessions: "세션 수집",
+    sessionsSub: "마지막 수집 12:40 · 자동 30분",
+    sessionsCount: "+4",
+    mcp: "MCP 도구 호출",
     mcpSub: "최다: search · 앱 실행 이후",
-    inbox: "_inbox 도착 +3",
+    mcpCount: "17회",
+    inbox: "_inbox 도착",
+    inboxCount: "+3",
+    inboxView: "보기 →",
+    sparkCaption: "최근 24시간 · 보라 = 세션/inbox · 파랑 = MCP 호출",
     summary: "오늘: 세션 +4 · MCP 17회 · 인박스 +3",
     hourlyFiles: [0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0],
     hourlyMcp: [0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 3, 0, 0, 2, 3, 1, 2, 0, 0, 0, 0, 0, 0, 0],
@@ -153,32 +159,33 @@ export default function TrayPanel(): JSX.Element {
   }
 
   // Today's inflow — Rust sends null (and no rows render) when nothing
-  // arrived today, so the section disappears exactly like the others.
-  const inflow: PanelRow[] = [];
-  if (s.inflow) {
-    inflow.push(
-      { key: "sessions", main: s.inflow.sessions },
-      {
-        key: "mcp-calls",
-        main: (
-          <>
-            {s.inflow.mcp}
-            <span className="activity-row-sub">{s.inflow.mcpSub}</span>
-          </>
-        ),
-      },
-      { key: "inbox", main: s.inflow.inbox },
-      {
-        key: "spark",
-        main: (
-          <InflowSparkbar
-            files={s.inflow.hourlyFiles}
-            mcp={s.inflow.hourlyMcp}
-          />
-        ),
-      },
-    );
-  }
+  // arrived today, so the section disappears exactly like the others. The
+  // rows themselves come from the shared builder so this panel and the
+  // in-app popover stay pixel-identical in structure.
+  const inflow: PanelRow[] = s.inflow
+    ? buildInflowRows({
+        sessions: {
+          label: s.inflow.sessions,
+          sub: s.inflow.sessionsSub,
+          count: s.inflow.sessionsCount,
+        },
+        mcp: {
+          label: s.inflow.mcp,
+          sub: s.inflow.mcpSub,
+          count: s.inflow.mcpCount,
+        },
+        inbox: {
+          label: s.inflow.inbox,
+          sub: "",
+          count: s.inflow.inboxCount,
+        },
+        inboxView: s.inflow.inboxView,
+        onInboxView: () => act("ingest"),
+        sparkCaption: s.inflow.sparkCaption,
+        hourlyFiles: s.inflow.hourlyFiles,
+        hourlyMcp: s.inflow.hourlyMcp,
+      })
+    : [];
 
   const actions: PanelRow[] = [];
   if (s.ask) {

@@ -18,6 +18,8 @@ const idle: TraySnapshot = {
   pendingLinks: 0,
   mcpRunning: true,
   inflow: null,
+  sweepAt: null,
+  autoImportMin: null,
 };
 
 describe("trayTitle", () => {
@@ -107,10 +109,16 @@ describe("buildTrayStatus", () => {
     );
     expect(p.inflow).toEqual({
       header: "Today's inflow",
-      sessions: "Sessions swept +2",
-      mcp: "MCP tool calls 7",
+      sessions: "Sessions swept",
+      sessionsSub: "",
+      sessionsCount: "+2",
+      mcp: "MCP tool calls",
       mcpSub: "top: search · since app launch",
-      inbox: "_inbox arrivals +3",
+      mcpCount: "7",
+      inbox: "_inbox arrivals",
+      inboxCount: "+3",
+      inboxView: "View →",
+      sparkCaption: "Last 24h · purple = sessions/inbox · blue = MCP calls",
       summary: "Today: sessions +2 · MCP 7 · inbox +3",
       hourlyFiles,
       hourlyMcp,

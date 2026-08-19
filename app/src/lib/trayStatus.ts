@@ -13,6 +13,7 @@ import type { InflowStats, TrayRunningRow, TrayStatusPayload } from "./ipc";
 import { STRINGS } from "./i18n";
 import type { Strings } from "./i18n";
 import { inflowLines } from "./inflow";
+import { getLastSweepAt } from "./autoImport";
 import { pendingLinkCount } from "./linkSuggestions";
 import { runDistillGuarded } from "./distill";
 import { stepLabel } from "../components/ActivityChip";
@@ -23,6 +24,7 @@ import { useReindexStore } from "../stores/reindexStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
+import { useSettingsStore } from "../stores/settingsStore";
 
 /** Emitted by Rust when a tray menu action row is clicked. */
 export const TRAY_ACTION_EVENT = "myco://tray-action";
@@ -40,6 +42,10 @@ export interface TraySnapshot {
   mcpRunning: boolean;
   /** Today's inflow, or null before/without a probe — hides the section. */
   inflow: InflowStats | null;
+  /** Last session-sweep completion (ms epoch) for the sessions sub-line. */
+  sweepAt: number | null;
+  /** Auto-import interval (minutes) when enabled; null when off. */
+  autoImportMin: number | null;
 }
 
 /** Icon-side title: nothing when idle, the reindex percent when indexing is
@@ -82,7 +88,12 @@ export function buildTrayStatus(s: TraySnapshot, t: Strings): TrayStatusPayload 
       text: `${t.s_embeddings_indexing ?? "Indexing…"} ${s.reindexDone}/${s.reindexTotal}`,
     });
   }
-  const lines = s.inflow ? inflowLines(s.inflow, t) : null;
+  const lines = s.inflow
+    ? inflowLines(s.inflow, t, {
+        sweepAt: s.sweepAt,
+        autoImportMin: s.autoImportMin,
+      })
+    : null;
   return {
     running,
     runningHeader: t.tray_hdr_running ?? "Now working on",
@@ -190,6 +201,7 @@ export function initTrayIntegration(): () => void {
     const query = useQueryStore.getState();
     const vault = useVaultStore.getState();
     const links = useLinkSuggestStore.getState();
+    const settings = useSettingsStore.getState().settings;
     const t = STRINGS[useUIStore.getState().lang];
     const pendingLinks =
       vault.adjacency && links.sem
@@ -207,6 +219,10 @@ export function initTrayIntegration(): () => void {
           pendingLinks,
           mcpRunning,
           inflow: inflowStats,
+          sweepAt: getLastSweepAt(),
+          autoImportMin: settings?.auto_import_enabled
+            ? settings.auto_import_interval_min
+            : null,
         },
         t,
       ),
@@ -259,7 +275,12 @@ export function initTrayIntegration(): () => void {
   let cancelled = false;
   void listen<string>(TRAY_ACTION_EVENT, (e) => {
     const action = e.payload;
-    if (action === "overview" || action === "settings" || action === "query") {
+    if (
+      action === "overview" ||
+      action === "settings" ||
+      action === "query" ||
+      action === "ingest"
+    ) {
       useUIStore.getState().setRoute(action);
       return;
     }

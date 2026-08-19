@@ -3984,8 +3984,55 @@ hr {
   font-size: 12px;
 }
 
-/* "Today's inflow" sparkbar — 24 hourly columns, files (blue) stacked under
-   MCP calls (purple). Pure divs; heights are inline percentages. */
+/* "Today's inflow" rows — label + inline muted sub, right mono count column,
+   the _inbox "View →" hint, and the sparkbar caption (approved artifact). */
+.inflow-line {
+  min-width: 0;
+}
+.inflow-sub {
+  font-size: 12px;
+  color: var(--ink-3);
+  margin-left: 6px;
+}
+.inflow-count {
+  font-family: "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 12px;
+  color: var(--ink-2);
+  white-space: nowrap;
+  flex: none;
+}
+.inflow-view {
+  font-size: 12.5px;
+  color: var(--accent);
+  white-space: nowrap;
+  flex: none;
+  margin-left: 8px;
+}
+.inflow-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  min-width: 0;
+}
+.inflow-caption {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.tray-panel .inflow-sub,
+.tray-panel .inflow-caption {
+  color: #7e848f;
+}
+.tray-panel .inflow-count {
+  color: #b9bec7;
+}
+.tray-panel .inflow-view {
+  color: #7aa7ff;
+}
+
+/* "Today's inflow" sparkbar — 24 hourly columns, session/inbox files (purple)
+   stacked under MCP calls (blue), matching the caption's color key. Pure
+   divs; heights are inline percentages. */
 .inflow-spark {
   display: flex;
   align-items: flex-end;
@@ -4002,11 +4049,11 @@ hr {
   justify-content: flex-end;
 }
 .inflow-spark-file {
-  background: var(--c-overview);
+  background: var(--c-concept);
   border-radius: 1px;
 }
 .inflow-spark-mcp {
-  background: var(--c-concept);
+  background: var(--c-overview);
   border-radius: 1px;
 }
 /* Dark tray card: hairline + lighter bar tones for contrast. */
@@ -4014,10 +4061,10 @@ hr {
   border-bottom-color: #33363f;
 }
 .tray-panel .inflow-spark-file {
-  background: #6aa1ff;
+  background: #a78bfa;
 }
 .tray-panel .inflow-spark-mcp {
-  background: #a78bfa;
+  background: #7aa7ff;
 }
 
 /* Tray popover window (?window=tray) — the approved menubar-v2 panel:
@@ -4089,11 +4136,6 @@ html.tray-window body {
 }
 .tray-panel .activity-row-main {
   flex-direction: row;
-}
-/* Rows that carry a sub-line (the inflow MCP row) stack it below the main
-   text, like the in-app popover — side by side it reads as one run-on line. */
-.tray-panel .activity-row-main:has(.activity-row-sub) {
-  flex-direction: column;
 }
 
 @media (prefers-reduced-motion: reduce) {

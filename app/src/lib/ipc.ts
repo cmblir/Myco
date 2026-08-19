@@ -297,13 +297,20 @@ export interface InflowStats {
 }
 
 /** Pre-translated inflow lines for the tray surfaces; the native menu shows
- *  only `summary`, the tray panel renders every line plus the sparkbar. */
+ *  only `summary`, the tray panel renders every row (label / sub / count)
+ *  plus the sparkbar and its caption. */
 export interface TrayInflowPayload {
   header: string;
   sessions: string;
+  sessionsSub: string;
+  sessionsCount: string;
   mcp: string;
   mcpSub: string;
+  mcpCount: string;
   inbox: string;
+  inboxCount: string;
+  inboxView: string;
+  sparkCaption: string;
   summary: string;
   hourlyFiles: number[];
   hourlyMcp: number[];

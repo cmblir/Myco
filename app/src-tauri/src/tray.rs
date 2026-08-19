@@ -88,14 +88,28 @@ pub struct TrayStatus {
 
 /// Pre-translated "today's inflow" lines for the tray-panel window, plus the
 /// hourly buckets its sparkbar draws. The native menu uses only `summary`.
-#[derive(Debug, Clone, Deserialize, Serialize)]
+/// Rows are split label / sub / count so the panel can right-align the counts
+/// (approved artifact); new fields default to "" for older cached payloads.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct TrayInflow {
     pub header: String,
     pub sessions: String,
+    #[serde(default, rename = "sessionsSub")]
+    pub sessions_sub: String,
+    #[serde(default, rename = "sessionsCount")]
+    pub sessions_count: String,
     pub mcp: String,
     #[serde(rename = "mcpSub")]
     pub mcp_sub: String,
+    #[serde(default, rename = "mcpCount")]
+    pub mcp_count: String,
     pub inbox: String,
+    #[serde(default, rename = "inboxCount")]
+    pub inbox_count: String,
+    #[serde(default, rename = "inboxView")]
+    pub inbox_view: String,
+    #[serde(default, rename = "sparkCaption")]
+    pub spark_caption: String,
     /// One-line summary for the native right-click menu.
     pub summary: String,
     #[serde(rename = "hourlyFiles")]
@@ -325,12 +339,13 @@ fn handle_menu_id<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         "tray-quit" => app.exit(0),
         "tray-open" => show_main_window(app),
-        "tray-overview" | "tray-settings" | "tray-query" => {
+        "tray-overview" | "tray-settings" | "tray-query" | "tray-ingest" => {
             show_main_window(app);
             // Route names match the frontend's RouteId values.
             let route = match id {
                 "tray-overview" => "overview",
                 "tray-settings" => "settings",
+                "tray-ingest" => "ingest",
                 _ => "query",
             };
             let _ = app.emit(TRAY_ACTION_EVENT, route);
@@ -586,6 +601,7 @@ pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
         "quit" => "tray-quit",
         "overview" => "tray-overview",
         "settings" => "tray-settings",
+        "ingest" => "tray-ingest",
         "dismiss" => return Ok(()),
         other => return Err(format!("unknown tray panel action: {other}")),
     };
@@ -693,13 +709,17 @@ mod tests {
         let s = TrayStatus {
             inflow: Some(TrayInflow {
                 header: "Today's inflow".into(),
-                sessions: "Sessions swept +2".into(),
-                mcp: "MCP tool calls 7".into(),
+                sessions: "Sessions swept".into(),
+                sessions_count: "+2".into(),
+                mcp: "MCP tool calls".into(),
                 mcp_sub: "top: search".into(),
-                inbox: "_inbox arrivals +3".into(),
+                mcp_count: "7".into(),
+                inbox: "_inbox arrivals".into(),
+                inbox_count: "+3".into(),
                 summary: "Today: sessions +2 · MCP 7 · inbox +3".into(),
                 hourly_files: vec![0; 24],
                 hourly_mcp: vec![0; 24],
+                ..TrayInflow::default()
             }),
             ..full_status()
         };
