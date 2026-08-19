@@ -12,7 +12,6 @@ import { useReflectStore } from "../stores/reflectStore";
 import { useDistillStore } from "../stores/distillStore";
 import {
   backlogTrend,
-  lastDigestOutcome,
   lastFullTierOutcome,
   lastMapDraftOutcome,
   lastRunLabel,
@@ -272,25 +271,23 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
   const refresh = useDistillStore((s) => s.refresh);
   const [running, setRunning] = useState(false);
   const [busy, setBusy] = useState(false);
-  // Phase B, Task 6: whether the latest session-digest or full-tier ingest
-  // pass for this vault skipped its LLM step for lack of a connected
-  // provider (lastDigestOutcome/lastFullTierOutcome — module maps in
-  // distill.ts, written by runDistillGuarded). Re-checked on the same
-  // refresh the card already does (mount + after "Distill now"), rather than
-  // polled separately.
+  // Phase B, Task 6: whether the latest full-tier ingest or draft-map pass
+  // for this vault skipped its LLM step for lack of a connected provider
+  // (lastFullTierOutcome/lastMapDraftOutcome — module maps in distill.ts,
+  // written by runDistillGuarded). Re-checked on the same refresh the card
+  // already does (mount + after "Distill now"), rather than polled
+  // separately.
   const [llmQueued, setLlmQueued] = useState(false);
 
   async function refreshAll(): Promise<void> {
     await refresh();
     if (!currentVault) return;
-    const digest = lastDigestOutcome.get(currentVault.path);
+    // The session digest no longer waits on a provider (builtin-local digests
+    // extractively — see sessionDigest.ts), so only full-tier ingest and
+    // draft maps, which genuinely need generation, feed this note.
     const full = lastFullTierOutcome.get(currentVault.path);
     const maps = lastMapDraftOutcome.get(currentVault.path);
-    setLlmQueued(
-      digest?.skipped === "no-provider" ||
-        full?.skipped === "no-provider" ||
-        maps?.skipped === "no-provider",
-    );
+    setLlmQueued(full?.skipped === "no-provider" || maps?.skipped === "no-provider");
   }
 
   useEffect(() => {

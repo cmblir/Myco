@@ -1240,6 +1240,19 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         "hello and welcome to this talk\ntoday we cover transformers and attention\n" +
           "the key idea is scaled dot-product attention\nthanks for watching",
       );
+    // Deterministic toy vectors — enough for the extractive session digest to
+    // rank/diversify under ?mock=1, no semantic meaning intended.
+    case "embed_local_texts": {
+      const texts = (args.texts ?? []) as string[];
+      return Promise.resolve(
+        texts.map((t) => {
+          const v = new Array(8).fill(0);
+          for (let i = 0; i < t.length; i++) v[i % 8] += t.charCodeAt(i) % 32;
+          const n = Math.hypot(...v) || 1;
+          return v.map((x: number) => x / n);
+        }),
+      );
+    }
     case "semantic_edges": {
       // Emit similarity edges between nodes that are NOT already wikilinked, so
       // the overlay adds new edges (mirrors the real dedup vs the wiki graph).

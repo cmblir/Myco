@@ -188,6 +188,7 @@ pub fn run() {
             commands::related_pages,
             commands::embeddings_status,
             commands::semantic_edges,
+            commands::embed_local_texts,
             commands::fetch_youtube_transcript,
             commands::list_schedules,
             commands::upsert_schedule,

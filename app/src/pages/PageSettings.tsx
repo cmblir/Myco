@@ -1607,12 +1607,12 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
   const [stoppedAfter, setStoppedAfter] = useState<DistillStopPoint | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [undoResult, setUndoResult] = useState<number | null>(null);
-  // Defect E: whether the latest session-digest pass for this vault skipped
-  // its LLM step for lack of a connected query provider (lastDigestOutcome —
-  // module map in lib/distill.ts, written by runDistillGuarded). Re-read on
-  // the same occasions status itself refreshes, same idiom as Overview's
-  // DistillCard.
-  const [digestSkippedNoProvider, setDigestSkippedNoProvider] = useState(false);
+  // Whether the latest session-digest pass for this vault ran EXTRACTIVELY
+  // (builtin-local has no generative model, so it quotes instead of
+  // summarizing — see sessionDigest.ts). Successor of Defect E's "skipped —
+  // no provider" note: the step no longer skips, so the note now says what
+  // ran instead. Same lastDigestOutcome map, same refresh occasions.
+  const [digestExtractive, setDigestExtractive] = useState(false);
 
   useEffect(() => {
     if (!vaultPath) return;
@@ -1631,7 +1631,8 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
         if (!cancelled) setStatus(s);
       })
       .catch(() => undefined);
-    setDigestSkippedNoProvider(lastDigestOutcome.get(vaultPath)?.skipped === "no-provider");
+    const digest = lastDigestOutcome.get(vaultPath);
+    setDigestExtractive(digest?.mode === "extractive" && digest.daysDigested > 0);
     return () => {
       cancelled = true;
     };
@@ -1678,7 +1679,8 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       }
       setReport(r);
       setStatus(await ipc.distillStatus(vaultPath));
-      setDigestSkippedNoProvider(lastDigestOutcome.get(vaultPath)?.skipped === "no-provider");
+      const digest = lastDigestOutcome.get(vaultPath);
+      setDigestExtractive(digest?.mode === "extractive" && digest.daysDigested > 0);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -1960,13 +1962,12 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
               .replace("{min}", String(GATE_MIN_WIKI_PAGES))}
           </div>
         ) : null}
-        {digestSkippedNoProvider ? (
-          // Defect E fix: sessionDigest's "no-provider" skip (reads
-          // query_provider, confirmed by reading chat.ts's getActiveModel)
-          // was previously silent — name the setting the user must change.
-          <div style={{ fontSize: 12.5, marginTop: 6 }} data-testid="distill-digest-skipped">
-            {t.set_distill_digest_skipped ??
-              "Session digest skipped — no query provider connected. Set one under Settings → Model (Query)."}
+        {digestExtractive ? (
+          // The digest ran, but extractively (quotes, no LLM) — say so, and
+          // name the setting that upgrades it to real summaries.
+          <div style={{ fontSize: 12.5, marginTop: 6 }} data-testid="distill-digest-extractive">
+            {t.set_distill_digest_extractive ??
+              "Session digest ran extractively (quoted highlights, no LLM). Connect a query provider under Settings → Model (Query) for summarized digests."}
           </div>
         ) : null}
         {status && status.quarantined > 0 ? (

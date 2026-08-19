@@ -748,7 +748,7 @@ export interface Strings {
   set_distill_undo_result?: string;
   // Defects C/D/E/G (2026-08 distill visibility fixes).
   set_distill_gate_pending?: string; // {n} {min}
-  set_distill_digest_skipped?: string;
+  set_distill_digest_extractive?: string;
   set_distill_quarantined?: string; // {n} {path}
   // Cooperative stop for the LLM chain (Stop button, Settings distill tab).
   set_distill_stop?: string;
@@ -1659,8 +1659,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_undoing: "Undoing…",
     set_distill_undo_result: "Reversed {n} changes",
     set_distill_gate_pending: "Distill waiting: wiki pages {n}/{min}",
-    set_distill_digest_skipped:
-      "Session digest skipped — no query provider connected. Set one under Settings → Model (Query).",
+    set_distill_digest_extractive:
+      "Session digest ran extractively (quoted highlights, no LLM). Connect a query provider under Settings → Model (Query) for summarized digests.",
     set_distill_quarantined: "{n} items awaiting review in {path}",
     set_distill_stop: "Stop",
     set_distill_stopping: "Stopping after the current step…",
@@ -2577,8 +2577,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_undoing: "되돌리는 중…",
     set_distill_undo_result: "{n}건 되돌림",
     set_distill_gate_pending: "증류 대기: 위키 페이지 {n}/{min}",
-    set_distill_digest_skipped:
-      "세션 다이제스트 건너뜀 — 쿼리 프로바이더가 연결되지 않았습니다. 설정 → 모델(쿼리)에서 설정하세요.",
+    set_distill_digest_extractive:
+      "세션 다이제스트를 추출 방식으로 실행했습니다 (LLM 없이 인용 발췌). 요약 다이제스트를 원하면 설정 → 모델(쿼리)에서 프로바이더를 연결하세요.",
     set_distill_quarantined: "{path}에 검토 대기 중인 항목 {n}건",
     set_distill_stop: "중지",
     set_distill_stopping: "현재 단계 후 중지…",
@@ -3373,8 +3373,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_undoing: "元に戻しています…",
     set_distill_undo_result: "{n}件を元に戻しました",
     set_distill_gate_pending: "蒸留待機中: ウィキページ {n}/{min}",
-    set_distill_digest_skipped:
-      "セッションダイジェストをスキップしました — クエリプロバイダーが未接続です。設定 → モデル（クエリ）で設定してください。",
+    set_distill_digest_extractive:
+      "セッションダイジェストを抽出方式で実行しました（LLMなしの引用抜粋）。要約ダイジェストには設定 → モデル（クエリ）でプロバイダーを接続してください。",
     set_distill_quarantined: "{path} に確認待ちの項目が{n}件あります",
     set_distill_stop: "停止",
     set_distill_stopping: "現在のステップの後に停止します…",

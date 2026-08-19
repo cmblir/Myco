@@ -1885,6 +1885,30 @@ async fn embed_texts(
     }
 }
 
+/// Embed arbitrary texts with the bundled local embedder (bge-m3).
+///
+/// Exists for the extractive session digest (`sessionDigest.ts`): when the
+/// query provider is builtin-local there is no generative model to summarize
+/// a day's session logs, so the frontend ranks candidate quotes by embedding
+/// instead — deliberately builtin-only, because it is needed exactly when no
+/// external provider is connected.
+#[tauri::command]
+pub async fn embed_local_texts(
+    app: tauri::AppHandle,
+    llm: tauri::State<'_, LocalLlmState>,
+    texts: Vec<String>,
+) -> Result<Vec<Vec<f32>>, String> {
+    embed_texts(
+        app,
+        llm,
+        "builtin-local",
+        crate::local_llm::BUILTIN_EMBED_MODEL,
+        crate::local_llm::EmbedRole::Document,
+        texts,
+    )
+    .await
+}
+
 /// Collect `wiki/**/*.md` pages as (relpath, stem, content).
 ///
 /// This is the one walk both `reindex_embeddings` and `index_updater`'s

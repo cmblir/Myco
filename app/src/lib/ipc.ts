@@ -446,6 +446,10 @@ export const ipc = {
     invoke<EmbeddingsStatus>("embeddings_status", {}),
   semanticEdges: (k: number) =>
     invoke<SemEdge[]>("semantic_edges", { k }),
+  /** Embed arbitrary texts with the bundled local embedder (bge-m3) — used by
+   *  the extractive session digest to rank candidate quotes offline. */
+  embedLocalTexts: (texts: string[]) =>
+    invoke<number[][]>("embed_local_texts", { texts }),
   createFile: (parent: string, name: string) =>
     invoke<string>("create_file", { parent, name }),
   createFolder: (parent: string, name: string) =>
