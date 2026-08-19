@@ -23,6 +23,7 @@ vi.mock("../lib/ipc", () => ({
 }));
 
 import { useReflectStore, parseSuggestions, extractiveReflect } from "./reflectStore";
+import { useUIStore } from "./uiStore";
 import { useVaultStore } from "./vaultStore";
 
 describe("useReflectStore.runReflect", () => {
@@ -31,7 +32,9 @@ describe("useReflectStore.runReflect", () => {
     getActiveModel.mockReset();
     buildLinkGraph.mockReset();
     embedLocalTexts.mockReset();
-    useVaultStore.setState({ currentVault: { path: "/v", name: "v" } });
+    useVaultStore.setState({ currentVault: { path: "/v", name: "v" }, fileTree: [] });
+    // Extractive findings are localized now — assert against the EN wording.
+    useUIStore.setState({ lang: "en" });
     useReflectStore.setState({
       stage: "idle",
       mode: "llm",
@@ -106,6 +109,10 @@ describe("extractiveReflect", () => {
   beforeEach(() => {
     buildLinkGraph.mockReset();
     embedLocalTexts.mockReset();
+    // Orphan candidacy now reads the vault's markdown tree — reset it so one
+    // case's fixture files can't become another's orphan candidates.
+    useVaultStore.setState({ fileTree: [] });
+    useUIStore.setState({ lang: "en" });
   });
 
   it("skips orphan-exempt root pages", async () => {
@@ -119,6 +126,86 @@ describe("extractiveReflect", () => {
     expect(await extractiveReflect("/v")).toEqual([
       "note.md: orphan — no other page links to it; add a [[wikilink]] from a related page.",
     ]);
+  });
+
+  // Regression for the real-vault reproduction (~/Documents/Memex, 180 walked
+  // .md): the first version derived orphans from graph.forward's KEYS — which
+  // Rust only writes for a page with a RESOLVED outgoing link — so link-less
+  // pages were invisible, and it applied no knowledge filter, so
+  // ingest-reports/ + five identical daily [[TASK_DONE]] ghosts crowded out the
+  // one actionable finding. Fixture mirrors that shape: absolute paths, machine
+  // folders present, one link-less knowledge page, one template placeholder.
+  it("real-vault shape: reports link-less pages, drops machine files and placeholders", async () => {
+    const V = "/Users/x/Documents/Memex";
+    useVaultStore.setState({
+      fileTree: [
+        { kind: "file", name: "CHANGELOG.md", path: `${V}/CHANGELOG.md` },
+        {
+          kind: "directory",
+          name: "wiki",
+          path: `${V}/wiki`,
+          children: [
+            { kind: "file", name: "index.md", path: `${V}/wiki/index.md` },
+            { kind: "file", name: "log.md", path: `${V}/wiki/log.md` },
+            { kind: "file", name: "alpha.md", path: `${V}/wiki/alpha.md` },
+            { kind: "file", name: "beta.md", path: `${V}/wiki/beta.md` },
+            // No links in or out: the case forward's keys could never show.
+            { kind: "file", name: "island.md", path: `${V}/wiki/island.md` },
+          ],
+        },
+        {
+          kind: "directory",
+          name: "daily",
+          path: `${V}/daily`,
+          children: [
+            { kind: "file", name: "2026-08-07.md", path: `${V}/daily/2026-08-07.md` },
+            { kind: "file", name: "2026-08-09.md", path: `${V}/daily/2026-08-09.md` },
+          ],
+        },
+        {
+          kind: "directory",
+          name: "ingest-reports",
+          path: `${V}/ingest-reports`,
+          children: [
+            { kind: "file", name: "2026-05-18-goals.md", path: `${V}/ingest-reports/2026-05-18-goals.md` },
+          ],
+        },
+        {
+          kind: "directory",
+          name: "raw",
+          path: `${V}/raw`,
+          children: [{ kind: "file", name: "paper.md", path: `${V}/raw/paper.md` }],
+        },
+      ],
+    });
+    buildLinkGraph.mockResolvedValue({
+      forward: {
+        [`${V}/wiki/index.md`]: [`${V}/wiki/alpha.md`],
+        [`${V}/wiki/alpha.md`]: [`${V}/wiki/beta.md`],
+      },
+      backward: {
+        [`${V}/wiki/alpha.md`]: [`${V}/wiki/index.md`],
+        [`${V}/wiki/beta.md`]: [`${V}/wiki/alpha.md`],
+      },
+      unresolved: {
+        [`${V}/wiki/alpha.md`]: ["gamma", "source-<slug>"],
+        [`${V}/daily/2026-08-07.md`]: ["TASK_DONE"],
+        [`${V}/daily/2026-08-09.md`]: ["TASK_DONE"],
+        [`${V}/ingest-reports/2026-05-18-goals.md`]: ["..."],
+      },
+      tags: {},
+    });
+
+    const out = await extractiveReflect(V);
+
+    expect(out).toEqual([
+      "wiki/island.md: orphan — no other page links to it; add a [[wikilink]] from a related page.",
+      "wiki/alpha.md: links to [[gamma]], which has no page — create it or fix the link.",
+    ]);
+    // Paths render relative to the vault, never as raw absolute ids.
+    for (const s of out) expect(s).not.toContain(V);
+    // Under MAX_SUGGESTIONS after filtering: no embed-model load needed.
+    expect(embedLocalTexts).not.toHaveBeenCalled();
   });
 
   it("past 8 candidates: embeds once and MMR-selects a deterministic top 8", async () => {

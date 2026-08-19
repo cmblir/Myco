@@ -28,7 +28,7 @@ const ISLAND_MAX = 6;
 // normalisation: `source-<slug>` (an un-filled template), `...` (dots/
 // whitespace only). Those can't be "created" like a real missing page, so the
 // gap panel buckets them separately as fixes to make on the SOURCE page.
-function isMalformedLinkName(name: string): boolean {
+export function isMalformedLinkName(name: string): boolean {
   if (/[<>]/.test(name)) return true;
   if (/^[.\s]*$/.test(name)) return true;
   return false;

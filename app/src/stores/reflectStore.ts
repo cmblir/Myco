@@ -10,9 +10,20 @@
 
 import { create } from "zustand";
 import { complete, getActiveModel } from "../lib/chat";
+import { flattenMarkdown, isNonKnowledgePath } from "../lib/graphData";
+import { isMalformedLinkName } from "../lib/graphGaps";
+import { STRINGS } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
 import { mmrSelect } from "../lib/sessionDigest";
+import { useUIStore } from "./uiStore";
 import { useVaultStore } from "./vaultStore";
+
+// Extractive findings are OUR prose, not a model's, so they follow the UI
+// language — read off uiStore directly, the ingestStore idiom for store-side
+// user-facing text.
+function t(): (typeof STRINGS)["en"] {
+  return STRINGS[useUIStore.getState().lang] ?? STRINGS.en;
+}
 
 const REFLECT_PROMPT = `You are reviewing a personal knowledge wiki (markdown files in the current directory). Read the vault and propose concrete, actionable improvements.
 
@@ -135,25 +146,49 @@ const ORPHAN_EXEMPT = new Set(["index", "home", "readme"]);
  * content, so they are honestly out of scope here. When the graph yields
  * more than MAX_SUGGESTIONS candidates, the bundled embedder plus
  * centroid+MMR (mmrSelect, shared with the session digest) picks a diverse
- * top 8 — deterministic given the same vault, like the extractive digest. */
+ * top 8 — deterministic given the same vault, like the extractive digest.
+ *
+ * Two things the first version got wrong, both measured on the real vault
+ * (180 .md → 19 candidates, only ONE of them actionable):
+ *
+ *  - It read orphan candidacy off `graph.forward`'s KEYS. Rust only records a
+ *    key for a page with at least one RESOLVED outgoing link, so the pages
+ *    with no links at all — the most orphaned pages there are, 81 of them —
+ *    were the ones it could never see. Candidacy now comes from the vault's
+ *    markdown files (flattenMarkdown, the same source the graph view uses for
+ *    orphan nodes), unioned with the graph keys in case the tree isn't loaded.
+ *  - It applied no knowledge filter, so ingest-reports/, daily/ (five
+ *    identical `[[TASK_DONE]]` ghosts) and wiki/log.md crowded out the real
+ *    findings — 12 of the 19. isNonKnowledgePath is the graph view's own
+ *    filter for exactly this, imported rather than restated. */
 export async function extractiveReflect(vaultPath: string): Promise<string[]> {
   const graph = await ipc.buildLinkGraph(vaultPath);
   const rel = (p: string): string =>
     p.startsWith(`${vaultPath}/`) ? p.slice(vaultPath.length + 1) : p;
+  const pages = new Set([
+    ...flattenMarkdown(useVaultStore.getState().fileTree),
+    ...Object.keys(graph.forward),
+  ]);
   const candidates: string[] = [];
-  for (const page of Object.keys(graph.forward).sort()) {
+  for (const page of [...pages].sort()) {
+    if (isNonKnowledgePath(vaultPath, page)) continue;
     const stem = (page.split("/").pop() ?? page).replace(/\.md$/i, "").toLowerCase();
     if (ORPHAN_EXEMPT.has(stem)) continue;
     if ((graph.backward[page] ?? []).length === 0) {
-      candidates.push(
-        `${rel(page)}: orphan — no other page links to it; add a [[wikilink]] from a related page.`,
-      );
+      candidates.push(t().rf_item_orphan.replace("{page}", rel(page)));
     }
   }
   for (const page of Object.keys(graph.unresolved).sort()) {
+    if (isNonKnowledgePath(vaultPath, page)) continue;
     for (const target of [...graph.unresolved[page]].sort()) {
+      // A template placeholder ("source-<slug>") or dots-only name is not a
+      // page anyone can create — the gap panel already buckets those away
+      // from real missing pages, and reflect must not offer them either.
+      if (isMalformedLinkName(target)) continue;
       candidates.push(
-        `${rel(page)}: links to [[${target}]], which has no page — create it or fix the link.`,
+        t()
+          .rf_item_unresolved.replace("{page}", rel(page))
+          .replace("{target}", target),
       );
     }
   }

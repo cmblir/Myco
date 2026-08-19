@@ -901,6 +901,11 @@ export interface Strings {
   rf_running: string;
   rf_empty: string;
   rf_extractive: string;
+  // Extractive reflect's two mechanical findings. Written by reflectStore (not
+  // a model), so unlike LLM output they must speak the UI's language. {page}
+  // is a vault-relative path, {target} an unresolved [[wikilink]] name.
+  rf_item_orphan: string; // {page}
+  rf_item_unresolved: string; // {page} {target}
   // First-run onboarding wizard (UX-01) — optional; components fall back to EN.
   ob_title?: string;
   ob_skip?: string;
@@ -1862,6 +1867,10 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_empty: "No suggestions — the vault looks well-connected.",
     rf_extractive:
       "Extractive pass (built-in model, no LLM) — link-graph facts only: orphan pages and unresolved links.",
+    rf_item_orphan:
+      "{page}: orphan — no other page links to it; add a [[wikilink]] from a related page.",
+    rf_item_unresolved:
+      "{page}: links to [[{target}]], which has no page — create it or fix the link.",
     ob_title: "Welcome to myco",
     ob_skip: "Skip",
     ob_back: "Back",
@@ -2823,6 +2832,10 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_empty: "제안이 없습니다 — vault가 잘 연결되어 있습니다.",
     rf_extractive:
       "추출 기반 결과 (내장 모델, LLM 없음) — 링크 그래프 사실만: 고아 페이지와 미해결 링크.",
+    rf_item_orphan:
+      "{page}: 고아 페이지 — 아무 페이지도 이 페이지를 링크하지 않습니다. 관련 페이지에서 [[위키링크]]를 추가하세요.",
+    rf_item_unresolved:
+      "{page}: [[{target}]]를 링크하지만 그런 페이지가 없습니다. 페이지를 만들거나 링크를 고치세요.",
     ob_title: "myco에 오신 것을 환영합니다",
     ob_skip: "건너뛰기",
     ob_back: "이전",
@@ -3662,6 +3675,10 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_empty: "提案はありません — vault は十分につながっています。",
     rf_extractive:
       "抽出ベースの結果(内蔵モデル、LLMなし)— リンクグラフの事実のみ: 孤立ページと未解決リンク。",
+    rf_item_orphan:
+      "{page}: 孤立ページ — どのページからもリンクされていません。関連ページから [[ウィキリンク]] を追加してください。",
+    rf_item_unresolved:
+      "{page}: [[{target}]] へリンクしていますが、そのページはありません。作成するか、リンクを修正してください。",
     ob_title: "myco へようこそ",
     ob_skip: "スキップ",
     ob_back: "戻る",

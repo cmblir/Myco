@@ -225,6 +225,13 @@ const pathOf = (s: string): string => `${VAULT}/wiki/${s}.md`;
 const AGENT_MODE =
   new URLSearchParams(location.search).get("agent") === "1";
 
+// ?mock=1&local=1 flips the query provider to builtin-local, the one provider
+// with no generative model — which is what routes Reflect (and the session
+// digest) down their EXTRACTIVE paths. Without it those paths are unreachable
+// in a browser run, which is how the extractive reflect shipped unlooked-at.
+const LOCAL_ONLY_MODE =
+  new URLSearchParams(location.search).get("local") === "1";
+
 // Feature 3 (study) — a mutable in-memory card store so the review flow can
 // grade → write → re-read and see due counts drop. Seeded with a deck of due
 // cards (two scheduled in the past + one brand-new) so PageStudy has content.
@@ -995,11 +1002,17 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "resize_tray_panel":
       return Promise.resolve(null);
     case "get_settings":
-      return Promise.resolve(
-        AGENT_MODE
-          ? { ...SETTINGS, query_provider: "anthropic-api", query_model: "claude-sonnet-4-6" }
-          : { ...SETTINGS },
-      );
+      if (AGENT_MODE) {
+        return Promise.resolve({
+          ...SETTINGS,
+          query_provider: "anthropic-api",
+          query_model: "claude-sonnet-4-6",
+        });
+      }
+      if (LOCAL_ONLY_MODE) {
+        return Promise.resolve({ ...SETTINGS, query_provider: "builtin-local", query_model: "" });
+      }
+      return Promise.resolve({ ...SETTINGS });
     case "agent_tools_schema":
       return Promise.resolve(MOCK_AGENT_TOOLS);
     case "agent_tool_call":
