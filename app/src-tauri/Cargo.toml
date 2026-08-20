@@ -4,7 +4,9 @@ version = "0.3.1"
 description = "myco — desktop wiki for plain markdown vaults"
 authors = ["myco contributors"]
 edition = "2021"
-rust-version = "1.77"
+# 1.77.2 is what tauri 2.11.1 and tauri-plugin-updater 2.10.1 both declare; the
+# old "1.77" here was below our own dependencies' floor.
+rust-version = "1.77.2"
 
 [lib]
 name = "myco_lib"
@@ -21,6 +23,10 @@ tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-ap
 tauri-plugin-dialog = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-deep-link = "2"
+# In-app updates (Settings → About). rustls-tls only: the default feature set
+# pulls native-tls, and reqwest above is already rustls-only — two TLS stacks in
+# one binary is pure size for no gain.
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls"] }
 url = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
