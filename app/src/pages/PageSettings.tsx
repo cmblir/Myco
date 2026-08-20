@@ -23,8 +23,10 @@ import type {
   McpNativeInfo,
   MycoSettings,
   OllamaStatus,
+  PanicEntry,
   SpotlightStatus,
 } from "../lib/ipc";
+import { formatCrashReport } from "../lib/crashReport";
 import {
   CLI_DEFAULT,
   PROVIDERS,
@@ -70,6 +72,7 @@ import type {
 import { useDistillRunStore } from "../stores/distillRunStore";
 import { loadProfile, saveProfile } from "../lib/profile";
 import type { Profile } from "../lib/profile";
+import { applySettingsBundle, buildSettingsBundle, validateSettingsBundle } from "../lib/settingsBundle";
 
 export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
@@ -2962,6 +2965,173 @@ function SettingsAbout({ t }: { t: Strings }): JSX.Element {
         </div>
       </div>
       <UpdateCheck t={t} />
+      <SettingsBackup t={t} appVersion={appVersion} />
+      <CrashReport t={t} appVersion={appVersion} />
+    </div>
+  );
+}
+
+// Settings/looks export+import: one JSON file bundling the portable
+// preferences (providers/models, automation toggles, appearance, graph
+// looks, saved views, dismissed suggestions) so moving to a new machine does
+// not mean re-clicking through every tab. API keys (keychain), the vault
+// path, the MCP token and window geometry never leave this machine.
+function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): JSX.Element {
+  const [busy, setBusy] = useState<"export" | "import" | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function doExport(): Promise<void> {
+    setBusy("export");
+    setMessage(null);
+    try {
+      const path = await ipc.pickSettingsExportPath();
+      if (!path) return;
+      const current = await ipc.getSettings();
+      const bundle = buildSettingsBundle(appVersion, current);
+      await ipc.writeSettingsExport(path, JSON.stringify(bundle, null, 2));
+      setMessage(t.s_backup_exported ?? "Settings exported.");
+    } catch (e) {
+      setMessage(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function doImport(): Promise<void> {
+    setBusy("import");
+    setMessage(null);
+    try {
+      const path = await ipc.pickSettingsImportPath();
+      if (!path) return;
+      const raw = await ipc.readSettingsImport(path);
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(raw);
+      } catch {
+        setMessage(t.s_backup_bad_json ?? "That file isn't valid JSON.");
+        return;
+      }
+      const current = await ipc.getSettings();
+      const result = validateSettingsBundle(parsed, current);
+      if (!result.ok) {
+        setMessage((t.s_backup_import_failed ?? "Import failed: {error}").replace("{error}", result.error));
+        return;
+      }
+      const sections = await applySettingsBundle(result.data, current, ipc.setSettings);
+      setMessage(
+        (t.s_backup_imported ?? "Restored: {sections}").replace("{sections}", sections.join(", ")),
+      );
+    } catch (e) {
+      setMessage(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="card col" style={{ padding: 20, gap: 12 }}>
+      <div style={{ fontWeight: 600, fontSize: 14 }}>{t.s_backup_title ?? "Settings & looks"}</div>
+      <p className="muted" style={{ fontSize: 13, margin: 0 }}>
+        {t.s_backup_hint ??
+          "Providers, automation, appearance and graph looks travel with this file. API keys, the vault path and this device's identity never do."}
+      </p>
+      <div className="row" style={{ gap: 8 }}>
+        <button type="button" className="btn" disabled={busy !== null} onClick={() => void doExport()}>
+          {busy === "export" ? (t.s_backup_busy ?? "Working…") : (t.s_backup_export ?? "Export…")}
+        </button>
+        <button type="button" className="btn" disabled={busy !== null} onClick={() => void doImport()}>
+          {busy === "import" ? (t.s_backup_busy ?? "Working…") : (t.s_backup_import ?? "Import…")}
+        </button>
+      </div>
+      {message ? (
+        <span className="muted" style={{ fontSize: 12 }} role="status">
+          {message}
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+// Last panic (if any) plus a one-click GitHub-issue-shaped bug report on the
+// clipboard. Hidden entirely when the log has never had an entry — this is
+// not a feature most users will ever see. Never sends anything anywhere; the
+// only actions are "copy to clipboard" and "delete the local log file".
+function CrashReport({ t, appVersion }: { t: Strings; appVersion: string }): JSX.Element | null {
+  const [entry, setEntry] = useState<PanicEntry | null | undefined>(undefined); // undefined = loading
+  const [note, setNote] = useState("");
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    ipc
+      .recentPanics(1)
+      .then((rows) => {
+        if (alive) setEntry(rows[0] ?? null);
+      })
+      .catch(() => {
+        if (alive) setEntry(null);
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  if (!entry) return null;
+
+  async function copyReport(): Promise<void> {
+    if (!entry) return;
+    const osVersion = await ipc.osVersion().catch(() => "unknown");
+    const report = formatCrashReport({ appVersion, osVersion, panicLine: entry.raw, note });
+    await navigator.clipboard.writeText(report);
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1500);
+  }
+
+  async function clearLog(): Promise<void> {
+    setBusy(true);
+    try {
+      await ipc.clearPanicLog();
+      setEntry(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const when = new Date(entry.unix_secs * 1000).toLocaleString();
+  const at = (t.cr_at ?? "{time} at {location}")
+    .replace("{time}", when)
+    .replace("{location}", entry.location);
+
+  return (
+    <div className="card col" style={{ padding: 20, gap: 12 }}>
+      <div style={{ fontWeight: 600, fontSize: 14 }}>{t.cr_last_crash ?? "Last crash"}</div>
+      <div className="muted" style={{ fontSize: 13 }}>
+        {at}
+      </div>
+      <div style={{ fontSize: 13, fontFamily: "var(--font-mono, monospace)" }}>
+        {entry.message}
+      </div>
+      <label className="col" style={{ gap: 4 }}>
+        <span className="muted" style={{ fontSize: 12 }}>
+          {t.cr_note_label ?? "What were you doing? (optional)"}
+        </span>
+        <input
+          type="text"
+          className="input"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder={t.cr_note_ph ?? "e.g. editing a page and hit save"}
+        />
+      </label>
+      <div className="row" style={{ gap: 8 }}>
+        <button type="button" className="btn" onClick={() => void copyReport()}>
+          {copied ? (t.cr_copied ?? "Copied") : (t.cr_copy ?? "Copy a bug report")}
+        </button>
+        <button type="button" className="btn" disabled={busy} onClick={() => void clearLog()}>
+          {t.cr_clear ?? "Clear crash log"}
+        </button>
+      </div>
     </div>
   );
 }

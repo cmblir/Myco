@@ -8,6 +8,7 @@ pub mod claude;
 pub mod cli_agent;
 pub mod clip;
 mod commands;
+pub mod crash;
 pub mod distill;
 pub mod embeddings;
 pub mod env;
@@ -192,6 +193,8 @@ pub fn run() {
             commands::delete_provider_key,
             commands::get_settings,
             commands::set_settings,
+            commands::write_settings_export,
+            commands::read_settings_import,
             commands::chat_complete,
             commands::agent_tools_schema,
             commands::agent_tool_call,
@@ -237,6 +240,9 @@ pub fn run() {
             commands::archive_usage,
             commands::compress_archives,
             commands::restore_archive_bucket,
+            commands::recent_panics,
+            commands::clear_panic_log,
+            commands::os_version,
             tray::update_tray_status,
             tray::get_tray_status,
             tray::tray_panel_action,

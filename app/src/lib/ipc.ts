@@ -2,7 +2,7 @@
 // reflect the Rust command signatures in src-tauri/src/commands.rs.
 
 import { invoke } from "@tauri-apps/api/core";
-import { open } from "@tauri-apps/plugin-dialog";
+import { open, save } from "@tauri-apps/plugin-dialog";
 import type {
   ArchiveTree,
   BucketUsage,
@@ -85,6 +85,15 @@ export interface ClaudeStatus {
   installed: boolean;
   version: string | null;
   path: string | null;
+}
+
+/** One parsed line from the panic log (crash.rs), oldest-first as returned. */
+export interface PanicEntry {
+  unix_secs: number;
+  location: string;
+  message: string;
+  /** The untouched log line — what "Copy a bug report" pastes verbatim. */
+  raw: string;
 }
 
 /// Native (in-process) MCP server info — no install, always running.
@@ -713,6 +722,31 @@ export const ipc = {
     invoke<null>("resize_spotlight", { height }),
   setSettings: (value: MycoSettings) =>
     invoke<null>("set_settings", { value }),
+  /** Write the settings/looks export bundle to a path the user chose via the
+   *  native save dialog. */
+  writeSettingsExport: (path: string, contents: string) =>
+    invoke<null>("write_settings_export", { path, contents }),
+  /** Read a settings/looks export file chosen via the native open dialog. */
+  readSettingsImport: (path: string) => invoke<string>("read_settings_import", { path }),
+  /** Where to write a settings/looks export — native save dialog, or null if
+   *  the user cancelled. */
+  pickSettingsExportPath: async (): Promise<string | null> => {
+    const path = await save({
+      defaultPath: "myco-settings.json",
+      filters: [{ name: "myco settings", extensions: ["json"] }],
+    });
+    return path ?? null;
+  },
+  /** Which settings/looks export file to import — native open dialog, or
+   *  null if the user cancelled. */
+  pickSettingsImportPath: async (): Promise<string | null> => {
+    const selection = await open({
+      directory: false,
+      multiple: false,
+      filters: [{ name: "myco settings", extensions: ["json"] }],
+    });
+    return typeof selection === "string" ? selection : null;
+  },
   chatComplete: (request: ChatRequest) =>
     invoke<ChatResponse>("chat_complete", { request }),
   // In-app agent (Feature 4).
@@ -827,4 +861,8 @@ export const ipc = {
   // Cheap `is_file()` check (no model load) — no chat GGUF has shipped since
   // Ask went extractive, so this is normally always false.
   localChatModelAvailable: () => invoke<boolean>("local_chat_model_available"),
+  // ROADMAP P2 — crash report viewer (Settings -> About).
+  recentPanics: (limit: number) => invoke<PanicEntry[]>("recent_panics", { limit }),
+  clearPanicLog: () => invoke<null>("clear_panic_log"),
+  osVersion: () => invoke<string>("os_version"),
 };

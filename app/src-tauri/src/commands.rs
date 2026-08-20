@@ -1577,6 +1577,60 @@ pub fn set_settings(value: Settings) -> Result<(), String> {
     settings::save(&value)
 }
 
+/// Write the settings/looks export bundle to a user-chosen path (the native
+/// save dialog is the frontend's only source of `path`).
+///
+/// "The dialog picks the path" is a frontend convention, not an enforced
+/// property — this command is invokable from the webview like any other, so
+/// it must guard itself. Two rules, both structural: the target must carry a
+/// `.json` extension, and it must never land inside the open vault's
+/// immutable `raw/` tree (the same predicate `write_file` refuses on). Every
+/// other write command in this file is confined; this one was not.
+#[tauri::command]
+pub fn write_settings_export(
+    state: tauri::State<VaultRoot>,
+    path: String,
+    contents: String,
+) -> Result<(), String> {
+    export_bundle_write(state.current().as_deref(), &path, &contents)
+}
+
+/// The guarded write itself, split out so the rules are unit-testable without
+/// a Tauri runtime. `root` is the open vault (None before one is opened —
+/// then there is no raw/ to protect and the extension rule is the whole
+/// guard).
+pub(crate) fn export_bundle_write(
+    root: Option<&std::path::Path>,
+    path: &str,
+    contents: &str,
+) -> Result<(), String> {
+    let p = std::path::Path::new(path);
+    if p.extension().and_then(|e| e.to_str()) != Some("json") {
+        return Err("export target must be a .json file".into());
+    }
+    if let Some(root) = root {
+        // Compare canonically where possible so `..` cannot walk into raw/;
+        // an unwritten path has no canonical form, so probe via its parent.
+        let probe = p
+            .parent()
+            .and_then(|d| d.canonicalize().ok())
+            .map(|d| d.join(p.file_name().unwrap_or_default()))
+            .unwrap_or_else(|| p.to_path_buf());
+        if crate::vault::is_raw_path(root, &probe) {
+            return Err("refusing to write into the immutable raw/ tree".into());
+        }
+    }
+    settings::atomic_write(p, contents.as_bytes()).map_err(|e| format!("write export file: {e}"))
+}
+
+/// Read a settings/looks export file back in, from a path the user chose via
+/// the native open dialog. Validation of the contents happens on the
+/// frontend, which also owns the localStorage half of the bundle.
+#[tauri::command]
+pub fn read_settings_import(path: String) -> Result<String, String> {
+    std::fs::read_to_string(&path).map_err(|e| format!("read import file: {e}"))
+}
+
 #[tauri::command]
 pub async fn chat_complete(request: ChatRequest) -> Result<ChatResponse, String> {
     let key = if request.provider_id == "ollama" {
@@ -3159,16 +3213,80 @@ pub async fn fetch_youtube_transcript(url: String) -> Result<String, String> {
     crate::youtube::fetch_transcript(&url).await
 }
 
+// ROADMAP P2 — crash report viewer (Settings -> About). The panic hook
+// (lib.rs) already writes a post-mortem line before every release-build
+// abort; these three commands are the read/report/clear surface over it.
+
+/// Last `limit` panic entries, oldest first. Empty when nothing has ever
+/// panicked.
+#[tauri::command]
+pub fn recent_panics(limit: usize) -> Vec<crate::crash::PanicEntry> {
+    crate::crash::recent_panics(&crate::panic_log_path(), limit)
+}
+
+/// Delete the panic log so a stale crash stops showing as "the last crash".
+#[tauri::command]
+pub fn clear_panic_log() -> Result<(), String> {
+    crate::crash::clear_log(&crate::panic_log_path())
+}
+
+/// OS name + version, for the "Copy a bug report" button. Read on demand
+/// (not cached) — it is one cheap local command, not worth persisting.
+#[tauri::command]
+pub fn os_version() -> String {
+    crate::crash::os_version()
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_index_is_stale, chunk_text_at, external_target_allowed, import_dest, run_import,
-        sync_bm25_for_page, windows_opener_safe, DEST_INBOX, DEST_SESSIONS,
+        builtin_index_is_stale, chunk_text_at, export_bundle_write, external_target_allowed,
+        import_dest, read_settings_import, run_import, sync_bm25_for_page, windows_opener_safe,
+        DEST_INBOX, DEST_SESSIONS,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
     use std::collections::{HashMap, HashSet};
     use std::path::PathBuf;
+
+    // ---- settings export/import file IO ------------------------------------
+
+    #[test]
+    fn settings_export_file_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("myco-settings.json").display().to_string();
+        export_bundle_write(None, &path, "{\"schemaVersion\":1}").unwrap();
+        assert_eq!(read_settings_import(path).unwrap(), "{\"schemaVersion\":1}");
+    }
+
+    #[test]
+    fn settings_export_refuses_the_raw_tree_and_non_json_targets() {
+        // The save dialog picking the path is a frontend convention, not an
+        // enforced property — the command is invokable from the webview.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        std::fs::create_dir_all(root.join("raw")).unwrap();
+        let into_raw = root.join("raw/attention.json").display().to_string();
+        let err =
+            export_bundle_write(Some(&root), &into_raw, "{}").expect_err("raw/ must be refused");
+        assert!(err.contains("raw/"), "{err}");
+        assert!(!root.join("raw/attention.json").exists());
+
+        let not_json = root.join("notes.md").display().to_string();
+        assert!(export_bundle_write(Some(&root), &not_json, "{}").is_err());
+
+        // A normal target outside raw/ still works.
+        let ok = root.join("bundle.json").display().to_string();
+        export_bundle_write(Some(&root), &ok, "{}").unwrap();
+        assert!(root.join("bundle.json").is_file());
+    }
+
+    #[test]
+    fn settings_import_missing_file_errors() {
+        let err = read_settings_import("/nonexistent/myco-settings.json".to_string())
+            .expect_err("missing file must error, not panic");
+        assert!(!err.is_empty());
+    }
 
     // ---- inflow_stats -----------------------------------------------------
 

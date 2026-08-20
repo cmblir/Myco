@@ -44,6 +44,15 @@ export interface Strings {
   q_empty?: string;
   s_mascot?: string;
   s_mascot_hint?: string;
+  s_backup_title?: string;
+  s_backup_hint?: string;
+  s_backup_export?: string;
+  s_backup_import?: string;
+  s_backup_busy?: string;
+  s_backup_exported?: string;
+  s_backup_imported?: string; // {sections}
+  s_backup_import_failed?: string; // {error}
+  s_backup_bad_json?: string;
   hw_title?: string;
   hw_sub?: string;
   hw_sc_cmd?: string;
@@ -508,6 +517,15 @@ export interface Strings {
   up_unavailable?: string;
   up_error?: string;
   up_dismiss?: string;
+  // Crash report viewer (Settings -> About, ROADMAP P2).
+  cr_last_crash?: string;
+  cr_at?: string; // "{time} at {location}" — {time} and {location}
+  cr_copy?: string;
+  cr_copied?: string;
+  cr_note_label?: string;
+  cr_note_ph?: string;
+  cr_clear?: string;
+  cr_cleared?: string;
   mcp_lede: string;
   mcp_status_installed: string;
   mcp_status_not_installed: string;
@@ -1096,6 +1114,16 @@ export const STRINGS: Record<Lang, Strings> = {
     q_empty: "Ask the wiki anything — answers cite your own pages.",
     s_mascot: "Show MYCO, the mascot",
     s_mascot_hint: "Loaders, empty states and the About page. Off = static logo.",
+    s_backup_title: "Settings & looks",
+    s_backup_hint:
+      "Providers, automation, appearance and graph looks travel with this file. API keys, the vault path and this device's identity never do.",
+    s_backup_export: "Export…",
+    s_backup_import: "Import…",
+    s_backup_busy: "Working…",
+    s_backup_exported: "Settings exported.",
+    s_backup_imported: "Restored: {sections}",
+    s_backup_import_failed: "Import failed: {error}",
+    s_backup_bad_json: "That file isn't valid JSON.",
     hw_title: "Help",
     hw_sub: "Tips for this page",
     hw_sc_cmd: "Command palette",
@@ -1562,6 +1590,14 @@ export const STRINGS: Record<Lang, Strings> = {
     up_unavailable: "No update channel for this platform yet",
     up_error: "Update check failed",
     up_dismiss: "Dismiss",
+    cr_last_crash: "Last crash",
+    cr_at: "{time} at {location}",
+    cr_copy: "Copy a bug report",
+    cr_copied: "Copied",
+    cr_note_label: "What were you doing? (optional)",
+    cr_note_ph: "e.g. editing a page and hit save",
+    cr_clear: "Clear crash log",
+    cr_cleared: "Cleared",
     s_mcp: "MCP Server",
     mcp_lede:
       "Expose this vault to Claude Code and Claude Desktop as MCP tools. Register once with the command below — it then works in every Claude session, even when this app is closed.",
@@ -2165,6 +2201,16 @@ export const STRINGS: Record<Lang, Strings> = {
     q_empty: "위키에 무엇이든 물어보세요 — 답변은 당신의 페이지를 인용합니다.",
     s_mascot: "마스코트 MYCO 표시",
     s_mascot_hint: "로더·빈 화면·정보 페이지에 등장합니다. 끄면 정적 로고로 대체됩니다.",
+    s_backup_title: "설정 및 룩",
+    s_backup_hint:
+      "공급자, 자동화, 외관, 그래프 룩이 이 파일에 담깁니다. API 키, 볼트 경로, 이 기기의 식별 정보는 담기지 않습니다.",
+    s_backup_export: "내보내기…",
+    s_backup_import: "가져오기…",
+    s_backup_busy: "처리 중…",
+    s_backup_exported: "설정을 내보냈습니다.",
+    s_backup_imported: "복원됨: {sections}",
+    s_backup_import_failed: "가져오기 실패: {error}",
+    s_backup_bad_json: "유효한 JSON 파일이 아닙니다.",
     hw_title: "도움말",
     hw_sub: "이 페이지의 팁",
     hw_sc_cmd: "커맨드 팔레트",
@@ -2631,6 +2677,14 @@ export const STRINGS: Record<Lang, Strings> = {
     up_unavailable: "이 플랫폼용 업데이트 채널이 아직 없습니다",
     up_error: "업데이트 확인 실패",
     up_dismiss: "닫기",
+    cr_last_crash: "마지막 충돌",
+    cr_at: "{time} · {location}",
+    cr_copy: "버그 리포트 복사",
+    cr_copied: "복사됨",
+    cr_note_label: "무엇을 하고 있었나요? (선택)",
+    cr_note_ph: "예: 페이지를 편집하다 저장 버튼을 눌렀어요",
+    cr_clear: "충돌 로그 지우기",
+    cr_cleared: "지워짐",
     s_mcp: "MCP 서버",
     mcp_lede:
       "이 vault를 Claude Code·Claude Desktop에 MCP 도구로 노출합니다. 아래 명령으로 한 번만 등록하면, 이 앱이 꺼져 있어도 모든 Claude 세션에서 동작합니다.",
@@ -3578,6 +3632,14 @@ export const STRINGS: Record<Lang, Strings> = {
     up_unavailable: "このプラットフォーム向けの更新チャンネルはまだありません",
     up_error: "更新の確認に失敗しました",
     up_dismiss: "閉じる",
+    cr_last_crash: "直近のクラッシュ",
+    cr_at: "{time} · {location}",
+    cr_copy: "バグレポートをコピー",
+    cr_copied: "コピーしました",
+    cr_note_label: "何をしていましたか？（任意）",
+    cr_note_ph: "例: ページを編集して保存を押した",
+    cr_clear: "クラッシュログを消去",
+    cr_cleared: "消去しました",
     s_mcp: "MCP サーバー",
     mcp_lede:
       "この vault を Claude Code・Claude Desktop に MCP ツールとして公開します。下のコマンドで一度登録すれば、このアプリを閉じていても全ての Claude セッションで動作します。",
@@ -4154,6 +4216,16 @@ export const STRINGS: Record<Lang, Strings> = {
     q_empty: "wiki に何でも質問できます — 回答はあなた自身のページを引用します。",
     s_mascot: "マスコット MYCO を表示",
     s_mascot_hint: "ローダー・空の状態・About ページに表示。オフにすると静的ロゴになります。",
+    s_backup_title: "設定とルック",
+    s_backup_hint:
+      "プロバイダー・自動化・外観・グラフのルックがこのファイルに含まれます。API キー、vault のパス、この端末の識別情報は含まれません。",
+    s_backup_export: "エクスポート…",
+    s_backup_import: "インポート…",
+    s_backup_busy: "処理中…",
+    s_backup_exported: "設定をエクスポートしました。",
+    s_backup_imported: "復元しました: {sections}",
+    s_backup_import_failed: "インポートに失敗しました: {error}",
+    s_backup_bad_json: "有効な JSON ファイルではありません。",
     hw_title: "ヘルプ",
     hw_sub: "このページのヒント",
     hw_sc_cmd: "コマンドパレット",

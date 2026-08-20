@@ -787,6 +787,9 @@ interface ProvenanceSource {
   resolved: boolean;
 }
 
+// In-memory settings/looks export file (mock mode has no real filesystem).
+let lastSettingsExport: string | null = null;
+
 const SETTINGS = {
   // All three CLI providers connected so the Model tab's picker (and any
   // screenshot of it) can show a real, non-"(default)"-only list for each.
@@ -1610,6 +1613,13 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // wrong key here reproduces exactly that silent no-op.
       Object.assign(SETTINGS, args.value ?? {});
       return Promise.resolve(null);
+    case "write_settings_export":
+      // In-memory only (no real fs in mock mode) — just enough for the
+      // export/import round trip to be exercisable in the mock.
+      lastSettingsExport = String(args.contents ?? "");
+      return Promise.resolve(null);
+    case "read_settings_import":
+      return Promise.resolve(lastSettingsExport ?? '{"schemaVersion":1}');
     case "set_provider_key":
     case "delete_provider_key":
     case "open_external":
@@ -1736,6 +1746,23 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         hourlyMcp,
       });
     }
+    // ROADMAP P2 — crash report viewer. One mocked entry (Hangul message,
+    // matching the real crash it was built to diagnose) so the About screen
+    // has something to show under ?mock=1.
+    case "recent_panics":
+      return Promise.resolve([
+        {
+          unix_secs: Math.floor(Date.now() / 1000) - 3600,
+          location: "src/vault.rs:88:15",
+          message:
+            "byte index 5 is not a char boundary; it is inside '한' (bytes 3..6) of `제목한글텍스트`",
+          raw: "[unix 1755000000] panic at src/vault.rs:88:15: byte index 5 is not a char boundary; it is inside '한' (bytes 3..6) of `제목한글텍스트`",
+        },
+      ]);
+    case "clear_panic_log":
+      return Promise.resolve(null);
+    case "os_version":
+      return Promise.resolve("macOS 14.5 (mock)");
     default:
       // Reject, like the real Tauri does for a command that is not registered.
       // Resolving `undefined` instead is how the mock hid a broken feature for

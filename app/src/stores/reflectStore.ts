@@ -121,7 +121,7 @@ export function loadIgnored(): Set<string> {
   }
 }
 
-function saveIgnored(keys: ReadonlySet<string>): void {
+export function saveIgnored(keys: ReadonlySet<string>): void {
   try {
     localStorage.setItem(
       IGNORED_KEY,

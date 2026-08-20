@@ -208,10 +208,39 @@ thread_local! {
 /// Returns `(files packed, loose bytes, zip bytes)`.
 fn pack_bucket(dir: &Path, zip_path: &Path) -> Result<(usize, u64, u64), String> {
     if zip_path.exists() {
-        return Err(format!(
-            "{} already exists — restore it before packing again",
-            zip_path.display()
-        ));
+        // A zip AND loose files means a previous pack was interrupted between
+        // "archive verified and renamed into place" and "originals removed"
+        // (SIGKILL, a read-only file). Refusing both ways left the bucket
+        // permanently stuck: pack said "restore first", restore said "already
+        // exists". The archive was verified before it got its final name, so
+        // finishing that deletion is the safe move — but re-verify against
+        // what is on disk NOW rather than trusting the earlier run.
+        let (files, has_subdir) = loose_files(dir)?;
+        if has_subdir || files.is_empty() {
+            return Err(format!(
+                "{} already exists — restore it before packing again",
+                zip_path.display()
+            ));
+        }
+        // Only the exact set the archive already holds may be dropped. A
+        // loose file that is NOT in the zip (e.g. a backdated session landed
+        // in a packed month) is new data — refuse and let the user restore.
+        if verify_pack(zip_path, &files).is_err() {
+            return Err(format!(
+                "{} already exists — restore it before packing again",
+                zip_path.display()
+            ));
+        }
+        let loose_bytes = files
+            .iter()
+            .filter_map(|f| std::fs::metadata(f).ok().map(|m| m.len()))
+            .sum();
+        for f in &files {
+            std::fs::remove_file(f).map_err(|e| format!("remove {}: {e}", f.display()))?;
+        }
+        let _ = std::fs::remove_dir(dir);
+        let zip_bytes = std::fs::metadata(zip_path).map(|m| m.len()).unwrap_or(0);
+        return Ok((files.len(), loose_bytes, zip_bytes));
     }
     let (files, has_subdir) = loose_files(dir)?;
     if has_subdir {
@@ -355,9 +384,31 @@ pub fn compress(root: &Path, older_than_months: u32, now: i64) -> PackReport {
     report
 }
 
-/// Unpack one bucket back into its directory and drop the zip. Same ordering
-/// discipline in reverse: every entry is written and its size confirmed
-/// before the archive is removed.
+/// Write `bytes` to `path` and fsync the file before returning — the caller
+/// deletes the only other copy right after.
+fn write_synced(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let mut f =
+        std::fs::File::create(path).map_err(|e| format!("write {}: {e}", path.display()))?;
+    f.write_all(bytes)
+        .map_err(|e| format!("write {}: {e}", path.display()))?;
+    f.sync_all()
+        .map_err(|e| format!("sync {}: {e}", path.display()))?;
+    Ok(())
+}
+
+/// Unpack one bucket back into its directory and drop the zip.
+///
+/// Same ordering discipline as `pack_bucket`, in reverse, and it has to be
+/// real: every entry is written, fsynced, and read back byte-for-byte before
+/// the zip is removed. Without the fsync the unlink is a journaled metadata
+/// op while the file bodies are still in page cache — power loss in that
+/// window leaves zero-length notes and no archive to restore from.
+///
+/// Restore is also RESUMABLE. An entry already on disk with exactly the
+/// archived bytes is treated as done (a retry after a mid-restore failure
+/// must not dead-end); an entry that exists with DIFFERENT bytes stops the
+/// restore rather than clobbering the user's file.
 pub fn restore(root: &Path, tree: &str, bucket: &str) -> Result<RestoreReport, String> {
     let (dir, zip_path) = bucket_paths(root, tree, bucket)?;
     let file =
@@ -379,19 +430,43 @@ pub fn restore(root: &Path, tree: &str, bucket: &str) -> Result<RestoreReport, S
             return Err(format!("archive entry `{name}` is not a plain file name"));
         }
         let dest = dir.join(&name);
-        if dest.exists() {
-            return Err(format!("{} already exists", dest.display()));
-        }
         let mut buf = Vec::with_capacity(entry.size() as usize);
         entry
             .read_to_end(&mut buf)
             .map_err(|e| format!("entry {name} unreadable: {e}"))?;
-        std::fs::write(&dest, &buf).map_err(|e| format!("write {}: {e}", dest.display()))?;
+        if dest.exists() {
+            match std::fs::read(&dest) {
+                // Already restored (a retry after a partial run) — skip it.
+                Ok(existing) if existing == buf => {
+                    bytes += buf.len() as u64;
+                    continue;
+                }
+                _ => {
+                    return Err(format!(
+                        "{} already exists with different contents",
+                        dest.display()
+                    ))
+                }
+            }
+        }
+        write_synced(&dest, &buf)?;
+        // Read back: the zip is about to be deleted, so "written" must mean
+        // "readable as these exact bytes", not "the write call returned".
+        match std::fs::read(&dest) {
+            Ok(back) if back == buf => {}
+            _ => {
+                return Err(format!(
+                    "{} did not read back as written — leaving the archive in place",
+                    dest.display()
+                ))
+            }
+        }
         bytes += buf.len() as u64;
     }
     let files = archive.len();
     drop(archive);
-    // Everything is back on disk — only now is the archive redundant.
+    // Everything is back on disk AND durable — only now is the archive
+    // redundant.
     std::fs::remove_file(&zip_path).map_err(|e| format!("remove {}: {e}", zip_path.display()))?;
     Ok(RestoreReport { files, bytes })
 }
@@ -602,6 +677,74 @@ mod tests {
         assert_eq!(packed.len(), 2, "{after:?}");
         assert!(packed.iter().all(|b| b.files == 1 && b.bytes > 0));
         assert_eq!(after.iter().filter(|b| !b.packed).count(), 1);
+    }
+
+    #[test]
+    fn an_interrupted_pack_finishes_instead_of_deadlocking() {
+        // Kill (or one failed unlink) between "archive renamed into place" and
+        // "originals removed" used to leave BOTH: pack said "restore first",
+        // restore said "already exists", and the bucket was stuck for good.
+        let tmp = vault();
+        let root = tmp.path();
+        let dir = root.join("sessions/archive/2026-01");
+        seed(
+            root,
+            "sessions/archive/2026-01",
+            &[("a.md", "one"), ("b.md", "two")],
+        );
+        let zip = root.join("sessions/archive/2026-01.zip");
+        pack_bucket(&dir, &zip).unwrap();
+        // Re-create exactly the archived files: the interrupted-unlink state.
+        seed(
+            root,
+            "sessions/archive/2026-01",
+            &[("a.md", "one"), ("b.md", "two")],
+        );
+        assert!(zip.is_file() && dir.join("a.md").is_file());
+
+        let (files, _, _) = pack_bucket(&dir, &zip).expect("must finish the interrupted pack");
+        assert_eq!(files, 2);
+        assert!(!dir.exists(), "loose files must be gone once verified");
+        assert!(zip.is_file());
+        // And the archive still restores.
+        let report = restore(root, "sessions", "2026-01").unwrap();
+        assert_eq!(report.files, 2);
+        assert_eq!(std::fs::read_to_string(dir.join("a.md")).unwrap(), "one");
+    }
+
+    #[test]
+    fn a_partial_restore_can_be_retried() {
+        // Disk full at file N left the already-written files in place and
+        // every retry failing on entry 0 ("already exists").
+        let tmp = vault();
+        let root = tmp.path();
+        let dir = root.join("sessions/archive/2026-02");
+        seed(
+            root,
+            "sessions/archive/2026-02",
+            &[("a.md", "one"), ("b.md", "two")],
+        );
+        pack_bucket(&dir, &root.join("sessions/archive/2026-02.zip")).unwrap();
+        // Simulate a restore that got one file out before dying.
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("a.md"), "one").unwrap();
+
+        let report = restore(root, "sessions", "2026-02").expect("retry must succeed");
+        assert_eq!(report.files, 2);
+        assert_eq!(std::fs::read_to_string(dir.join("b.md")).unwrap(), "two");
+
+        // But a file that exists with DIFFERENT bytes is the user's, not ours.
+        seed(root, "sessions/archive/2026-03", &[("c.md", "orig")]);
+        let dir3 = root.join("sessions/archive/2026-03");
+        pack_bucket(&dir3, &root.join("sessions/archive/2026-03.zip")).unwrap();
+        std::fs::create_dir_all(&dir3).unwrap();
+        std::fs::write(dir3.join("c.md"), "edited by hand").unwrap();
+        let err = restore(root, "sessions", "2026-03").expect_err("must refuse to clobber");
+        assert!(err.contains("different contents"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(dir3.join("c.md")).unwrap(),
+            "edited by hand"
+        );
     }
 
     #[test]

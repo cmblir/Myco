@@ -614,7 +614,7 @@ export function loadSavedLooks(): SavedLook[] {
   }
 }
 
-function writeSavedLooks(looks: SavedLook[]): SavedLook[] {
+export function writeSavedLooks(looks: SavedLook[]): SavedLook[] {
   try {
     localStorage.setItem(LOOKS_KEY, JSON.stringify(looks));
   } catch {
