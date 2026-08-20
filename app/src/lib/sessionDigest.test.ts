@@ -161,8 +161,11 @@ describe("runSessionDigest", () => {
     // Same heading contract as the LLM path, extractive label in the sub-line.
     expect(content).toContain("## Session digest (auto)");
     expect(content).toContain("extractive quotes (no LLM)");
-    // Quoted bullets attributed to the session stem.
-    expect(content).toMatch(/- ".+" — claude-code-abc/);
+    // Quoted bullets grouped under the session, which is named ONCE (ROADMAP
+    // P1) — not repeated as a `— <stem>` suffix on every line.
+    expect(content).toContain("**claude-code-abc**");
+    expect(content.match(/claude-code-abc\*\*/g)).toHaveLength(1);
+    expect(content).toMatch(/\*\*claude-code-abc\*\*\n- ".+"/);
     expect(content).toContain(
       `<!-- myco:digested-sessions claude-code-abc:${fingerprint(TURNED_RAW)} -->`,
     );
@@ -174,6 +177,40 @@ describe("runSessionDigest", () => {
       [fingerprint(TURNED_RAW)],
     );
     expect(result).toEqual({ daysDigested: 1, filesArchived: 1, skipped: null, mode: "extractive" });
+  });
+
+  it("strips leading filler before embedding, so a pure-acknowledgment turn is never a candidate", async () => {
+    getActiveModel.mockResolvedValue({ provider: "builtin-local", model: "bge-m3" });
+    getDistillConfig.mockResolvedValue(CFG);
+    digestableSessionDays.mockResolvedValue([
+      { day: "2026-08-10", files: ["sessions/2026-08-10/claude-code-kor.md"] },
+    ]);
+    const raw = [
+      "**User:**",
+      "",
+      "네, 감사합니다! 좋아요.",
+      "",
+      "**Assistant:**",
+      "",
+      "알겠습니다. 마커를 내용 지문에 묶었으므로 이어서 진행한 대화는 예전 기록과 일치하지 않습니다.",
+      "",
+    ].join("\n");
+    readFile.mockImplementation(async (path: string) => {
+      if (path.includes("/daily/")) throw new Error("not found");
+      return { path, raw, content: raw, frontmatter: null };
+    });
+
+    await runSessionDigest("/v");
+
+    const units = embedLocalTexts.mock.calls[0][0] as string[];
+    // The all-filler turn fell under MIN_UNIT_CHARS once stripped; the real
+    // turn kept its content but lost its "알겠습니다." preamble.
+    expect(units).toEqual([
+      "마커를 내용 지문에 묶었으므로 이어서 진행한 대화는 예전 기록과 일치하지 않습니다.",
+    ]);
+    const content = writeFile.mock.calls[0][1] as string;
+    expect(content).not.toContain("알겠습니다");
+    expect(content).not.toContain("감사합니다");
   });
 
   it("produces byte-identical extractive output for the same inputs", async () => {

@@ -13,6 +13,12 @@
 import { ipc } from "./ipc";
 import { complete, getActiveModel } from "./chat";
 import { fingerprint, mmrSelect } from "./sessionDigest";
+import {
+  dropNearDuplicates,
+  renderQuoteBullets,
+  stripFiller,
+  type QuoteUnit,
+} from "./quoteBullets";
 
 export interface RollupOutcome {
   weeksRolledUp: number;
@@ -84,11 +90,6 @@ const UNIT_CHARS = 400;
 const BULLET_CHARS = 220;
 const MAX_BULLETS = 10;
 
-interface QuoteUnit {
-  text: string;
-  day: string;
-}
-
 /** One daily note's candidate units: its markdown bullets, or — for a
  * hand-written daily note that has none — its paragraphs, so a rollup that is
  * about to archive that file never quotes nothing from it. */
@@ -106,34 +107,34 @@ function candidateUnits(files: string[], contents: string[]): QuoteUnit[] {
     const day = (files[i].split("/").pop() ?? files[i]).replace(/\.md$/, "");
     for (const line of splitDaily(contents[i])) {
       if (units.length >= MAX_UNITS) break;
-      const text = line.replace(/\s+/g, " ").trim();
+      // Filler comes off before the length filter and before embedding, same
+      // as the session digest — a daily note is partly hand-written, so its
+      // bullets carry acknowledgments too.
+      const text = stripFiller(line.replace(/\s+/g, " ").trim());
       // Skips the headings, the `_from N session logs_` labels and the markers
       // themselves — none of which is a week's outcome.
       if (text.length < MIN_UNIT_CHARS || text.startsWith("<!--") || text.startsWith("#")) {
         continue;
       }
-      units.push({ text: text.slice(0, UNIT_CHARS), day });
+      units.push({ text: text.slice(0, UNIT_CHARS), label: day });
     }
   }
   return units;
 }
 
-/** The extractive counterpart of the week's `complete()` call: quoted bullets,
- * `- "<quote>" — <day>`, top MAX_BULLETS by centroid+MMR. */
+/** The extractive counterpart of the week's `complete()` call: quoted bullets
+ * grouped under the day they came from, top MAX_BULLETS by centroid+MMR once
+ * near-duplicates are dropped. Grouping matters more here than one level down:
+ * a week restates itself across days, and the same point surviving Monday to
+ * Friday should not spend five bullets. */
 async function extractiveBullets(files: string[], contents: string[]): Promise<string> {
   const units = candidateUnits(files, contents);
   // A week of empty daily notes still gets a section — the marker in the same
   // write is what stops it being re-offered forever.
   if (units.length === 0) return "- (no quotable content)";
   const vectors = await ipc.embedLocalTexts(units.map((u) => u.text));
-  return mmrSelect(vectors, MAX_BULLETS)
-    .map((i) => {
-      const u = units[i];
-      const text =
-        u.text.length > BULLET_CHARS ? `${u.text.slice(0, BULLET_CHARS).trimEnd()}…` : u.text;
-      return `- "${text}" — ${u.day}`;
-    })
-    .join("\n");
+  const ranked = dropNearDuplicates(mmrSelect(vectors, MAX_BULLETS * 2), vectors);
+  return renderQuoteBullets(units, ranked.slice(0, MAX_BULLETS), BULLET_CHARS);
 }
 
 function buildWeekPrompt(files: string[], contents: string[]): string {

@@ -214,7 +214,9 @@ describe("runWeeklyRollup", () => {
     const content = writeFile.mock.calls[0][1] as string;
     expect(content).toContain("## Weekly rollup");
     expect(content).toContain("extractive quotes (no LLM)");
-    expect(content).toMatch(/- ".+" — 2026-08-10/);
+    // The day is named once as a group header, not suffixed onto each bullet.
+    expect(content).toMatch(/\*\*2026-08-10\*\*\n- ".+"/);
+    expect(content.match(/\*\*2026-08-10\*\*/g)).toHaveLength(1);
     expect(content).toContain(`<!-- myco:rolled-up-days 2026-08-10:${fingerprint(DAILY_RAW)} -->`);
     expect(result).toEqual({
       weeksRolledUp: 1,

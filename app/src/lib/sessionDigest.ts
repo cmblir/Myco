@@ -6,6 +6,13 @@
 
 import { ipc } from "./ipc";
 import { complete, getActiveModel } from "./chat";
+import {
+  cosine,
+  dropNearDuplicates,
+  renderQuoteBullets,
+  stripFiller,
+  type QuoteUnit,
+} from "./quoteBullets";
 
 export interface DigestOutcome {
   daysDigested: number;
@@ -96,11 +103,6 @@ const MAX_BULLETS = 8;
 // duplicate of an already-picked quote always loses to a distinct one.
 const MMR_LAMBDA = 0.6;
 
-interface QuoteUnit {
-  text: string;
-  stem: string;
-}
-
 /** Split one session doc into candidate quote units. Importer-written docs
  * (importers/mod.rs `to_inbox_doc`) delimit turns with `**Role:**` headers;
  * hand-placed files without them fall back to blank-line paragraphs. */
@@ -121,25 +123,15 @@ function candidateUnits(files: string[], contents: string[]): QuoteUnit[] {
     for (const turn of splitTurns(contents[i])) {
       if (units.length >= MAX_UNITS) break;
       // Collapse to one line — these render inside a single markdown bullet.
-      const text = turn.replace(/\s+/g, " ").trim();
+      // Filler is stripped BEFORE the length filter and before embedding, so
+      // "네, 알겠습니다" both stops polluting the vector and stops a
+      // pure-acknowledgment turn from clearing MIN_UNIT_CHARS on its own.
+      const text = stripFiller(turn.replace(/\s+/g, " ").trim());
       if (text.length < MIN_UNIT_CHARS) continue;
-      units.push({ text: text.slice(0, UNIT_CHARS), stem });
+      units.push({ text: text.slice(0, UNIT_CHARS), label: stem });
     }
   }
   return units;
-}
-
-function cosine(a: number[], b: number[]): number {
-  let dot = 0;
-  let na = 0;
-  let nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    dot += a[i] * b[i];
-    na += a[i] * a[i];
-    nb += b[i] * b[i];
-  }
-  const denom = Math.sqrt(na) * Math.sqrt(nb);
-  return denom === 0 ? 0 : dot / denom;
 }
 
 /** Indices of up to `k` vectors, MMR-selected against the (unnormalized)
@@ -171,22 +163,20 @@ export function mmrSelect(vectors: number[][], k: number, lambda = MMR_LAMBDA): 
   return picked;
 }
 
-/** The extractive counterpart of the day's `complete()` call: quoted bullets,
- * `- "<quote>" — <session stem>`, top MAX_BULLETS by centroid+MMR. */
+/** The extractive counterpart of the day's `complete()` call: quoted bullets
+ * grouped under the session that said them, top MAX_BULLETS by centroid+MMR
+ * once near-duplicates are dropped. */
 async function extractiveBullets(files: string[], contents: string[]): Promise<string> {
   const units = candidateUnits(files, contents);
   // A day of blank/trivial files still deserves a section — the marker in the
   // same write is what stops it being re-offered forever.
   if (units.length === 0) return "- (no quotable content)";
   const vectors = await ipc.embedLocalTexts(units.map((u) => u.text));
-  return mmrSelect(vectors, MAX_BULLETS)
-    .map((i) => {
-      const u = units[i];
-      const text =
-        u.text.length > BULLET_CHARS ? `${u.text.slice(0, BULLET_CHARS).trimEnd()}…` : u.text;
-      return `- "${text}" — ${u.stem}`;
-    })
-    .join("\n");
+  // Rank twice the target so the near-duplicate filter has replacements to
+  // fall through to: emitting 4 bullets because 4 restatements were dropped
+  // would lose content the day actually earned.
+  const ranked = dropNearDuplicates(mmrSelect(vectors, MAX_BULLETS * 2), vectors);
+  return renderQuoteBullets(units, ranked.slice(0, MAX_BULLETS), BULLET_CHARS);
 }
 
 function buildDayPrompt(files: string[], contents: string[]): string {

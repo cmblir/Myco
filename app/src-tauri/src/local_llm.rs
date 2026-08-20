@@ -659,4 +659,92 @@ mod tests {
             "cat~dog ({cat_dog}) should exceed cat~truck ({cat_truck})"
         );
     }
+
+    // Calibration for the extractive digest's near-duplicate cut
+    // (NEAR_DUP_COSINE in src/lib/quoteBullets.ts): with the real bge-m3, a
+    // restatement of one point must score ABOVE the threshold and two distinct
+    // points from the same day's work must score BELOW it — the hard case,
+    // since every turn in a session log shares vocabulary. Cross-language
+    // pairs are checked too: bge-m3 is multilingual, so a Korean turn and its
+    // English restatement land close, and a digest should not print both.
+    // Ignored by default (loads a 417 MB GGUF). Run with:
+    // cargo test --lib near_dup_threshold -- --ignored --nocapture
+    #[test]
+    #[ignore]
+    fn near_dup_threshold_separates_restatements_from_distinct_turns() {
+        const NEAR_DUP_COSINE: f32 = 0.80;
+        let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models/bge-m3-Q4_K_M.gguf");
+        let mut llm = LocalLlm::load_embed_host().expect("embed host");
+        llm.load_embed_model(&path).expect("load bge-m3");
+        let spec = embed_spec_by_id("bge-m3").expect("bge-m3 spec exists");
+        let texts: Vec<String> = [
+            // 0/1: one decision, said twice (English).
+            "bound the digest marker to each session file's content fingerprint, so a resumed conversation misses its own older record",
+            "the digest marker is now keyed on the content fingerprint of the session file, which means a conversation the user resumed no longer matches its earlier record",
+            // 2/3: one decision, said twice (Korean).
+            "다이제스트 마커를 세션 파일의 내용 지문에 묶었으므로, 이어서 진행한 대화는 예전 기록과 일치하지 않습니다",
+            "마커의 키를 세션 파일 내용 지문으로 바꿨습니다. 그래서 사용자가 이어서 진행한 대화는 이전 기록과 매칭되지 않습니다",
+            // 4/5: two DISTINCT decisions from the same day's work — same
+            // vocabulary, different outcome. These must stay under the cut.
+            "the weekly rollup archives rolled-up daily notes under daily/archive/<week>/, and that path joins the cold tier so the prune walk shrinks the index",
+            "ISO week numbers are computed by day arithmetic and brute-forced against Python's isocalendar for every day from 1990 to 2060",
+            // 6: the Korean restatement of 0/1, cross-language.
+            "세션 파일의 내용 지문으로 다이제스트 마커를 만들어 재개된 대화가 옛 기록과 일치하지 않게 했습니다",
+            // 7: the HARD negative — a different decision from the very same
+            // task as 0, sharing its vocabulary. The threshold has to sit
+            // above this or the digest loses real content.
+            "archive_digested_sessions re-checks every session file against the marker before moving it, so a file the collector rewrote mid-run stays in sessions/ for the next run",
+            // 8: a near-verbatim edit of 0 — the top of the range.
+            "bound the digest marker to each session file's content fingerprint, so a resumed conversation misses its own earlier record",
+        ]
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
+        let v = llm
+            .embed_spec(spec, EmbedRole::Document, &texts)
+            .expect("embed");
+
+        let dup_en = cos(&v[0], &v[1]);
+        let dup_ko = cos(&v[2], &v[3]);
+        let dup_cross = cos(&v[0], &v[6]);
+        let distinct = cos(&v[4], &v[5]);
+        let distinct_ko_en = cos(&v[2], &v[5]);
+        let near_distinct = cos(&v[0], &v[7]);
+        let dup_verbatim = cos(&v[0], &v[8]);
+        println!(
+            "dup_verbatim={dup_verbatim:.4} dup_en={dup_en:.4} dup_ko={dup_ko:.4} \
+             dup_cross={dup_cross:.4} near_distinct={near_distinct:.4} \
+             distinct={distinct:.4} distinct_ko_en={distinct_ko_en:.4}"
+        );
+        // Measured on this fixture set (bge-m3 Q4_K_M, CLS pooling, document
+        // role): verbatim 0.9929, reworded 0.8529 (en) / 0.8626 (ko),
+        // cross-language 0.7118, same-task-different-decision 0.6794,
+        // unrelated 0.4820 / 0.4530. 0.80 is the midpoint biased UP, because a
+        // false drop loses a real decision while a false keep only repeats one.
+        for (name, score) in [
+            ("dup_verbatim", dup_verbatim),
+            ("dup_en", dup_en),
+            ("dup_ko", dup_ko),
+        ] {
+            assert!(
+                score > NEAR_DUP_COSINE,
+                "{name}={score} must exceed the near-duplicate cut {NEAR_DUP_COSINE}"
+            );
+        }
+        for (name, score) in [
+            ("near_distinct", near_distinct),
+            ("distinct", distinct),
+            ("distinct_ko_en", distinct_ko_en),
+            // A Korean turn and its English restatement sit at 0.71, only 0.03
+            // above the hardest true negative — not separable, so the cut
+            // deliberately does NOT catch them. Asserted so the limitation is
+            // recorded rather than remembered.
+            ("dup_cross", dup_cross),
+        ] {
+            assert!(
+                score < NEAR_DUP_COSINE,
+                "{name}={score} must stay under the near-duplicate cut {NEAR_DUP_COSINE}"
+            );
+        }
+    }
 }
