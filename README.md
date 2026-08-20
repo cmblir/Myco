@@ -14,7 +14,7 @@ Your knowledge compounds — in plain markdown you own.
 </p>
 
 <p>
-<a href="https://github.com/cmblir/Myco/releases/latest"><img alt="Install" src="https://img.shields.io/badge/install-DMG%20%2F%20EXE-111?style=flat-square" /></a>
+<a href="https://github.com/cmblir/Memex/releases/latest"><img alt="Install" src="https://img.shields.io/badge/install-DMG%20%2F%20EXE-111?style=flat-square" /></a>
 &nbsp;
 <img alt="License" src="https://img.shields.io/badge/license-MIT-111?style=flat-square" />
 &nbsp;
@@ -63,7 +63,7 @@ Based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/4
 ## Install
 
 Grab the bundle for your platform from the
-**[latest release](https://github.com/cmblir/Myco/releases/latest)**:
+**[latest release](https://github.com/cmblir/Memex/releases/latest)**:
 
 - **macOS** (Apple Silicon): `myco_x.y.z_aarch64.dmg` — unsigned; Gatekeeper
   warns on first open (right-click the app → **Open** → **Open**, or
@@ -234,11 +234,11 @@ Issues and PRs welcome.
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=cmblir/Myco&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=cmblir/Memex&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cmblir/Myco&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cmblir/Myco&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cmblir/Myco&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cmblir/Memex&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cmblir/Memex&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cmblir/Memex&type=date&legend=top-left" />
  </picture>
 </a>
 

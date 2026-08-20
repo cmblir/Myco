@@ -14,7 +14,7 @@
 </p>
 
 <p>
-<a href="https://github.com/cmblir/Myco/releases/latest"><img alt="Install" src="https://img.shields.io/badge/install-DMG%20%2F%20EXE-111?style=flat-square" /></a>
+<a href="https://github.com/cmblir/Memex/releases/latest"><img alt="Install" src="https://img.shields.io/badge/install-DMG%20%2F%20EXE-111?style=flat-square" /></a>
 &nbsp;
 <img alt="License" src="https://img.shields.io/badge/license-MIT-111?style=flat-square" />
 &nbsp;
@@ -62,7 +62,7 @@
 
 ## 설치
 
-**[최신 릴리즈](https://github.com/cmblir/Myco/releases/latest)**에서 플랫폼에 맞는 번들을 받으세요:
+**[최신 릴리즈](https://github.com/cmblir/Memex/releases/latest)**에서 플랫폼에 맞는 번들을 받으세요:
 
 - **macOS** (Apple Silicon): `myco_x.y.z_aarch64.dmg` — 미서명; 첫 실행 시
   Gatekeeper 경고가 뜹니다 (앱 우클릭 → **열기** → **열기**, 또는
@@ -227,11 +227,11 @@ cd app/src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnin
 
 ## Star History
 
-<a href="https://www.star-history.com/?repos=cmblir/Myco&type=date&legend=top-left">
+<a href="https://www.star-history.com/?repos=cmblir/Memex&type=date&legend=top-left">
  <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cmblir/Myco&type=date&theme=dark&legend=top-left" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cmblir/Myco&type=date&legend=top-left" />
-   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cmblir/Myco&type=date&legend=top-left" />
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=cmblir/Memex&type=date&theme=dark&legend=top-left" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=cmblir/Memex&type=date&legend=top-left" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=cmblir/Memex&type=date&legend=top-left" />
  </picture>
 </a>
 
