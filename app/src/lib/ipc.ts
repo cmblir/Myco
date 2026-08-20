@@ -4,6 +4,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { DigestDay, DistillConfig, DistillStatus, RunReport } from "./distill";
+import type { QuarantineItem } from "./quarantine";
 
 export interface VaultMeta {
   path: string;
@@ -325,6 +326,8 @@ export interface TrayStatusPayload {
   /** Text next to the tray icon ("72%", "2"); null clears it. */
   title: string | null;
   suggested: string;
+  /** Quarantined items awaiting review; "" when there are none. */
+  quarantine?: string;
   /** Unseen reflect findings ("6 reflect suggestions"); "" hides the row. */
   reflect: string;
   mcp: string;
@@ -688,6 +691,16 @@ export const ipc = {
   // Execute a pending distill proposal (Task 7, Phase A).
   applyDistillProposal: (vault: string, path: string) =>
     invoke<string>("apply_distill_proposal", { vault, path }),
+  // Quarantine review (ROADMAP P0): list what the gate held back, and the two
+  // resolutions that need Rust — restore goes through the same re-admit path
+  // an approved admit-cluster proposal takes, keep-longer bumps the sidecar
+  // TTL. Delete is `deletePath` (OS trash), not a command of its own.
+  listQuarantine: (vault: string) =>
+    invoke<QuarantineItem[]>("list_quarantine", { vault }),
+  restoreQuarantine: (vault: string, files: string[]) =>
+    invoke<string>("restore_quarantine", { vault, files }),
+  extendQuarantine: (vault: string, files: string[], days: number) =>
+    invoke<number>("extend_quarantine", { vault, files, days }),
   // Session-digest bookkeeping (Phase B, Task 1).
   digestableSessionDays: (vault: string) =>
     invoke<DigestDay[]>("digestable_session_days", { vault }),

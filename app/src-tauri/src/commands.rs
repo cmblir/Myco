@@ -1719,6 +1719,60 @@ pub fn distill_status(
     Ok(crate::distill::status(std::path::Path::new(&root)))
 }
 
+/// One `_inbox/quarantine/` item as the review UI needs it: the verdict
+/// sidecar's fields plus a one-line body preview. `distill::quarantine_entries`
+/// returns the two halves as a tuple (its `preview` is read from the content
+/// file, not the sidecar); this flattens them into the single object the
+/// frontend consumes.
+#[derive(serde::Serialize)]
+pub struct QuarantineItem {
+    #[serde(flatten)]
+    pub entry: crate::distill::QuarantineEntry,
+    pub preview: String,
+}
+
+/// Everything sitting in `_inbox/quarantine/` awaiting human review. Read-only
+/// — see `distill::quarantine_entries` for the per-field degradation contract
+/// (a malformed sidecar still lists its item).
+#[tauri::command]
+pub fn list_quarantine(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+) -> Result<Vec<QuarantineItem>, String> {
+    let root = confine_root(&state, &vault)?;
+    Ok(
+        crate::distill::quarantine_entries(std::path::Path::new(&root))
+            .into_iter()
+            .map(|(entry, preview)| QuarantineItem { entry, preview })
+            .collect(),
+    )
+}
+
+/// Restore quarantined items to `_inbox/` through the existing re-admit path.
+/// See `distill::readmit_quarantine`.
+#[tauri::command]
+pub fn restore_quarantine(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    files: Vec<String>,
+) -> Result<String, String> {
+    let root = confine_root(&state, &vault)?;
+    crate::distill::readmit_quarantine(std::path::Path::new(&root), &files)
+}
+
+/// "Keep N more days" — push the quarantine TTL the sidecar already tracks.
+/// See `distill::extend_quarantine`.
+#[tauri::command]
+pub fn extend_quarantine(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    files: Vec<String>,
+    days: u32,
+) -> Result<usize, String> {
+    let root = confine_root(&state, &vault)?;
+    crate::distill::extend_quarantine(std::path::Path::new(&root), &files, days)
+}
+
 /// Execute a pending distill proposal (Task 7, Phase A) — `admit-cluster`,
 /// `archive-batch`, or `delete-batch`. The frontend flips `pending` to
 /// `approved`/`dismissed` itself by rewriting the proposal file (Task 9);

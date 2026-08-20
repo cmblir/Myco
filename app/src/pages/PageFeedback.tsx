@@ -1,18 +1,22 @@
-// Feedback — the pending distill-proposal inbox (Task 9, Phase A). Surfaces
-// what Task 6/7's idle run left in work/feedback/*.md: emerging clusters to
-// admit, stale batches to archive or delete. Approve rewrites the proposal's
-// frontmatter to `approved` then calls applyDistillProposal; dismiss rewrites
-// it to `dismissed`. Both just delegate to distillStore — this page is purely
-// presentational plus the confirm dialog on approve.
+// Feedback — the pending distill-proposal inbox (Task 9, Phase A) plus the
+// quarantine review tab (ROADMAP P0). Tab one surfaces what Task 6/7's idle
+// run left in work/feedback/*.md: emerging clusters to admit, stale batches to
+// archive or delete. Tab two lists _inbox/quarantine/ — items the admission
+// gate held back, which until now only ever showed up as a count. Every action
+// on both tabs delegates to distillStore; this page is presentational plus the
+// confirm dialogs.
 
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { useVaultStore } from "../stores/vaultStore";
+import { useUIStore } from "../stores/uiStore";
 import { useDistillStore } from "../stores/distillStore";
 import type { ProposalAction, ProposalMeta } from "../stores/distillStore";
 import { confirmAction } from "../stores/dialogStore";
+import { daysLeft, verdictSentence, KEEP_DAYS } from "../lib/quarantine";
+import type { QuarantineItem } from "../lib/quarantine";
 import Viewer from "../components/Viewer";
 
 function kindLabel(t: Strings, action: ProposalAction): string {
@@ -22,9 +26,127 @@ function kindLabel(t: Strings, action: ProposalAction): string {
   return t.pf_kind_delete ?? "Delete batch";
 }
 
+/** The TTL line: how long this item still has before the distill run's own TTL
+ *  pass becomes eligible to trash it. A malformed sidecar has no expiry at all
+ *  — say so rather than implying it is safe forever. */
+function ttlLine(item: QuarantineItem, t: Strings): string {
+  const left = daysLeft(item);
+  if (left === null) return t.qz_expires_unknown ?? "No expiry recorded";
+  if (left === 0)
+    return t.qz_expires_due ?? "Expired — the next run may move it to trash";
+  return (t.qz_expires_in ?? "{n} days left").replace("{n}", String(left));
+}
+
+function QuarantineTab({ t }: { t: Strings }): JSX.Element {
+  const items = useDistillStore((s) => s.quarantine);
+  const restore = useDistillStore((s) => s.restoreQuarantine);
+  const trash = useDistillStore((s) => s.trashQuarantine);
+  const keep = useDistillStore((s) => s.keepQuarantine);
+  // Which item currently has an action in flight — disables that card's three
+  // buttons so a double click can't fire two moves at the same file.
+  const [busy, setBusy] = useState<string | null>(null);
+
+  async function act(path: string, run: () => Promise<void>): Promise<void> {
+    setBusy(path);
+    try {
+      await run();
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function handleDelete(item: QuarantineItem): Promise<void> {
+    const ok = await confirmAction({
+      title: t.qz_confirm_delete_title ?? "Delete this item?",
+      message: (
+        t.qz_confirm_delete_msg ??
+        "{name} goes to the system trash (recoverable from there)."
+      ).replace("{name}", item.name),
+    });
+    if (!ok) return;
+    await act(item.path, () => trash(item.path));
+  }
+
+  if (items.length === 0) {
+    return (
+      <p className="muted" style={{ marginTop: 16 }}>
+        {t.qz_empty ?? "Nothing in quarantine."}
+      </p>
+    );
+  }
+
+  return (
+    <div className="col" style={{ gap: 12, marginTop: 16 }}>
+      <p className="muted" style={{ fontSize: 12.5 }}>
+        {t.qz_lede ??
+          "Items the admission gate judged off-topic. They are held, not deleted — restore what belongs, trash what doesn't."}
+      </p>
+      {items.map((item) => (
+        <div key={item.path} className="card" data-testid="quarantine-item">
+          <div style={{ fontWeight: 600 }}>{item.name}</div>
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 2 }}>
+            {verdictSentence(item, t)} · {ttlLine(item, t)}
+          </div>
+          {item.preview ? (
+            <p
+              className="muted"
+              style={{
+                fontSize: 12.5,
+                marginTop: 8,
+                // Two lines of the body is enough to recognise a note by; the
+                // full text is one restore (or a click in the sidebar) away.
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              }}
+            >
+              {item.preview}
+            </p>
+          ) : null}
+          <div className="row" style={{ gap: 8, marginTop: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy === item.path}
+              onClick={() => void act(item.path, () => restore(item.path))}
+            >
+              {t.qz_restore ?? "Restore to vault"}
+            </button>
+            <button
+              type="button"
+              className="btn-ghost btn"
+              disabled={busy === item.path}
+              onClick={() =>
+                void act(item.path, () => keep(item.path, KEEP_DAYS))
+              }
+            >
+              {(t.qz_keep ?? "Keep {n} more days").replace(
+                "{n}",
+                String(KEEP_DAYS),
+              )}
+            </button>
+            <button
+              type="button"
+              className="btn-ghost btn"
+              disabled={busy === item.path}
+              onClick={() => void handleDelete(item)}
+            >
+              {t.qz_delete ?? "Delete"}
+            </button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
+  const tab = useUIStore((s) => s.feedbackTab);
+  const setTab = useUIStore((s) => s.setFeedbackTab);
   const proposals = useDistillStore((s) => s.proposals);
+  const quarantineCount = useDistillStore((s) => s.quarantine.length);
   const loading = useDistillStore((s) => s.loading);
   const error = useDistillStore((s) => s.error);
   const refresh = useDistillStore((s) => s.refresh);
@@ -74,11 +196,39 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
         </p>
       </header>
 
+      <div
+        className="segmented"
+        role="tablist"
+        aria-label={t.nav_feedback ?? "Feedback"}
+        style={{ marginTop: 8 }}
+      >
+        <button
+          role="tab"
+          aria-selected={tab === "proposals"}
+          className={tab === "proposals" ? "active" : ""}
+          onClick={() => setTab("proposals")}
+        >
+          {t.pf_tab_proposals ?? "Proposals"}
+        </button>
+        <button
+          role="tab"
+          aria-selected={tab === "quarantine"}
+          className={tab === "quarantine" ? "active" : ""}
+          onClick={() => setTab("quarantine")}
+        >
+          {(t.pf_tab_quarantine ?? "Quarantine {n}")
+            .replace("{n}", quarantineCount > 0 ? String(quarantineCount) : "")
+            .trim()}
+        </button>
+      </div>
+
       {error ? (
         <div style={{ color: "#dc2626", fontSize: 12.5, marginTop: 12 }}>{error}</div>
       ) : null}
 
-      {loading && proposals.length === 0 ? (
+      {tab === "quarantine" ? (
+        <QuarantineTab t={t} />
+      ) : loading && proposals.length === 0 ? (
         <p className="muted" style={{ marginTop: 16 }}>
           {t.set_distill_loading ?? "Loading…"}
         </p>

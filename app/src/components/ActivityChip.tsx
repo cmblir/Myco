@@ -30,6 +30,7 @@ import { useVaultStore } from "../stores/vaultStore";
 import { useQueryStore } from "../stores/queryStore";
 import { useReindexStore } from "../stores/reindexStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
+import { useDistillStore } from "../stores/distillStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
 import { useReflectStore } from "../stores/reflectStore";
@@ -92,6 +93,10 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const refreshSem = useLinkSuggestStore((s) => s.refresh);
   const settings = useSettingsStore((s) => s.settings);
   const setRoute = useUIStore((s) => s.setRoute);
+  const setFeedbackTab = useUIStore((s) => s.setFeedbackTab);
+  // Quarantined items awaiting review — a standing count from the same
+  // distill_status the Settings tab and the sidebar badge read.
+  const quarantined = useDistillStore((s) => s.status?.quarantined ?? 0);
 
   const reindexBusy =
     reindexStage === "loading-model" || reindexStage === "indexing";
@@ -266,7 +271,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const askQuestion = turns[turns.length - 1]?.q.split("\n")[0] ?? "";
 
   const jump = (
-    route: "query" | "overview" | "settings" | "tasks" | "ingest",
+    route: "query" | "overview" | "settings" | "tasks" | "ingest" | "feedback",
   ): void => {
     setOpen(false);
     setRoute(route);
@@ -468,6 +473,24 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
                 main: (t.tb_activity_reflect ?? "{n} reflect suggestions").replace(
                   "{n}",
                   String(reflectFindings),
+                ),
+              },
+            ]
+          : []),
+        // Quarantined inflow nobody has reviewed yet (ROADMAP P0) — routes to
+        // the Feedback page's quarantine tab, the only place to resolve them.
+        ...(quarantined > 0
+          ? [
+              {
+                key: "quarantine",
+                icon: "distill" as ActivityIconName,
+                onClick: () => {
+                  setFeedbackTab("quarantine");
+                  jump("feedback");
+                },
+                main: (t.tb_activity_quarantine ?? "{n} awaiting review").replace(
+                  "{n}",
+                  String(quarantined),
                 ),
               },
             ]

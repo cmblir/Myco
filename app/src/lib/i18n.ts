@@ -812,6 +812,26 @@ export interface Strings {
   pf_confirm_msg_draft_map?: string;
   pf_retry?: string;
   pf_apply_failed?: string;
+  // Quarantine review tab (ROADMAP P0) — _inbox/quarantine/ items the
+  // admission gate held back, with their verdict sidecar rendered as prose.
+  pf_tab_proposals?: string;
+  pf_tab_quarantine?: string; // {n}
+  qz_empty?: string;
+  qz_lede?: string;
+  qz_verdict_offtopic?: string; // {numbers}
+  qz_verdict_sim?: string; // {sim}
+  qz_verdict_sim_vs?: string; // {sim} {min}
+  qz_verdict_nearest?: string; // {topic}
+  qz_verdict_unknown?: string;
+  qz_expires_in?: string; // {n}
+  qz_expires_due?: string;
+  qz_expires_unknown?: string;
+  qz_restore?: string;
+  qz_delete?: string;
+  qz_keep?: string; // {n}
+  qz_confirm_delete_title?: string;
+  qz_confirm_delete_msg?: string; // {name}
+  tb_activity_quarantine?: string; // {n}
   // Ingest page.
   ing_title_label?: string;
   ing_title_ph?: string;
@@ -1801,6 +1821,26 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_confirm_msg_draft_map: "Drafts the topic map (1 LLM call).",
     pf_retry: "Retry",
     pf_apply_failed: "Apply failed — retry",
+    pf_tab_proposals: "Proposals",
+    pf_tab_quarantine: "Quarantine {n}",
+    qz_empty: "Nothing in quarantine.",
+    qz_lede:
+      "Items the admission gate judged off-topic. They are held, not deleted — restore what belongs, trash what doesn't.",
+    qz_verdict_offtopic: "Off-topic: {numbers}",
+    qz_verdict_sim: "similarity {sim}",
+    qz_verdict_sim_vs: "similarity {sim} vs threshold {min}",
+    qz_verdict_nearest: "(nearest topic: {topic})",
+    qz_verdict_unknown: "No verdict recorded for this item.",
+    qz_expires_in: "{n} days left",
+    qz_expires_due: "Expired — the next run may move it to trash",
+    qz_expires_unknown: "No expiry recorded",
+    qz_restore: "Restore to vault",
+    qz_delete: "Delete",
+    qz_keep: "Keep {n} more days",
+    qz_confirm_delete_title: "Delete this item?",
+    qz_confirm_delete_msg:
+      "{name} goes to the system trash (recoverable from there).",
+    tb_activity_quarantine: "{n} awaiting review",
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
@@ -2789,6 +2829,25 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_confirm_msg_draft_map: "지도 초안을 생성합니다 (LLM 호출 1회).",
     pf_retry: "재시도",
     pf_apply_failed: "적용 실패 — 재시도",
+    pf_tab_proposals: "제안",
+    pf_tab_quarantine: "격리 {n}",
+    qz_empty: "격리된 항목이 없습니다.",
+    qz_lede:
+      "심사 게이트가 주제에서 벗어났다고 판단한 항목입니다. 삭제된 게 아니라 보관 중이니, 필요한 것은 되돌리고 아닌 것은 버리세요.",
+    qz_verdict_offtopic: "주제 불일치: {numbers}",
+    qz_verdict_sim: "유사도 {sim}",
+    qz_verdict_sim_vs: "유사도 {sim} · 기준 {min}",
+    qz_verdict_nearest: "(가장 가까운 주제: {topic})",
+    qz_verdict_unknown: "이 항목에는 판정 기록이 없습니다.",
+    qz_expires_in: "{n}일 남음",
+    qz_expires_due: "기한 만료 — 다음 실행에서 휴지통으로 옮겨질 수 있습니다",
+    qz_expires_unknown: "만료 기한 기록 없음",
+    qz_restore: "볼트로 복원",
+    qz_delete: "삭제",
+    qz_keep: "{n}일 더 보관",
+    qz_confirm_delete_title: "이 항목을 삭제할까요?",
+    qz_confirm_delete_msg: "{name}을(를) 시스템 휴지통으로 옮깁니다(복구 가능).",
+    tb_activity_quarantine: "검토 대기 {n}건",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
@@ -3652,6 +3711,25 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_confirm_msg_draft_map: "トピックマップの草稿を作成します（LLM呼び出し1回）。",
     pf_retry: "再試行",
     pf_apply_failed: "適用に失敗しました — 再試行",
+    pf_tab_proposals: "提案",
+    pf_tab_quarantine: "隔離 {n}",
+    qz_empty: "隔離中の項目はありません。",
+    qz_lede:
+      "審査ゲートがトピック外と判定した項目です。削除ではなく保留なので、必要なものは戻し、不要なものは破棄してください。",
+    qz_verdict_offtopic: "トピック外: {numbers}",
+    qz_verdict_sim: "類似度 {sim}",
+    qz_verdict_sim_vs: "類似度 {sim} · しきい値 {min}",
+    qz_verdict_nearest: "（最も近いトピック: {topic}）",
+    qz_verdict_unknown: "この項目には判定の記録がありません。",
+    qz_expires_in: "残り{n}日",
+    qz_expires_due: "期限切れ — 次回の実行でゴミ箱に移る可能性があります",
+    qz_expires_unknown: "期限の記録なし",
+    qz_restore: "ボルトへ復元",
+    qz_delete: "削除",
+    qz_keep: "さらに{n}日保管",
+    qz_confirm_delete_title: "この項目を削除しますか？",
+    qz_confirm_delete_msg: "{name} をシステムのゴミ箱に移動します（復元可能）。",
+    tb_activity_quarantine: "確認待ち{n}件",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",

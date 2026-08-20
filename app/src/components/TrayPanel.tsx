@@ -41,6 +41,7 @@ const MOCK_STATUS: TrayStatusPayload = {
   title: "3",
   suggested: "제안된 링크 6개",
   reflect: "Reflect 제안 8개",
+  quarantine: "검토 대기 2건",
   mcp: "MCP 서버 실행 중",
   inflow: {
     header: "오늘 들어온 것",
@@ -160,6 +161,14 @@ export default function TrayPanel(): JSX.Element {
       icon: "distill",
       main: s.reflect,
       onClick: () => act("overview"),
+    });
+  }
+  if (s.quarantine) {
+    waiting.push({
+      key: "quarantine",
+      icon: "distill",
+      main: s.quarantine,
+      onClick: () => act("quarantine"),
     });
   }
   if (s.mcp) {

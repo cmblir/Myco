@@ -25,6 +25,7 @@ import { useDistillRunStore } from "../stores/distillRunStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
 import { useReflectStore } from "../stores/reflectStore";
+import { useDistillStore } from "../stores/distillStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
 /** Emitted by Rust when a tray menu action row is clicked. */
@@ -47,6 +48,9 @@ export interface TraySnapshot {
   reindexDone: number;
   reindexTotal: number;
   pendingLinks: number;
+  /** `_inbox/quarantine/` items awaiting review; 0 hides the row. A standing
+   *  count like pendingLinks — never part of the tray title. */
+  quarantined: number;
   mcpRunning: boolean;
   /** Today's inflow, or null before/without a probe — hides the section. */
   inflow: InflowStats | null;
@@ -125,6 +129,13 @@ export function buildTrayStatus(s: TraySnapshot, t: Strings): TrayStatusPayload 
         ? (t.tb_activity_reflect ?? "{n} reflect suggestions").replace(
             "{n}",
             String(s.reflectFindings),
+          )
+        : "",
+    quarantine:
+      s.quarantined > 0
+        ? (t.tb_activity_quarantine ?? "{n} awaiting review").replace(
+            "{n}",
+            String(s.quarantined),
           )
         : "",
     mcp: s.mcpRunning
@@ -244,6 +255,7 @@ export function initTrayIntegration(): () => void {
           reindexDone: reindex.done,
           reindexTotal: reindex.total,
           pendingLinks,
+          quarantined: useDistillStore.getState().status?.quarantined ?? 0,
           mcpRunning,
           inflow: inflowStats,
           sweepAt: getLastSweepAt(),
@@ -301,6 +313,7 @@ export function initTrayIntegration(): () => void {
     }),
     useLinkSuggestStore.subscribe(recompute),
     useReflectStore.subscribe(recompute),
+    useDistillStore.subscribe(recompute),
   ];
 
   // Tray menu actions: route jumps and the guarded distill entry. Rust has
@@ -316,6 +329,13 @@ export function initTrayIntegration(): () => void {
       action === "ingest"
     ) {
       useUIStore.getState().setRoute(action);
+      return;
+    }
+    // Not a route of its own: the quarantine list is a TAB on the Feedback
+    // page, so the deep link sets both.
+    if (action === "quarantine") {
+      useUIStore.getState().setFeedbackTab("quarantine");
+      useUIStore.getState().setRoute("feedback");
       return;
     }
     if (action === "distill") {

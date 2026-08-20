@@ -1236,6 +1236,145 @@ fn quarantine_item_count(root: &Path) -> usize {
         .count()
 }
 
+/// One `_inbox/quarantine/` item for the review UI (P0 quarantine review):
+/// its content file's vault-relative path plus the verdict sidecar's own
+/// fields and a short body preview. Every sidecar field degrades
+/// independently — a missing, unparseable, or half-written sidecar still
+/// lists its item (with zeros and an empty `reason`) rather than hiding it,
+/// because the file is sitting in quarantine either way and the UI is the
+/// only way out of there. The sidecar's `vector` is deliberately NOT
+/// included: 384 floats per item, useless to a human reviewer.
+#[derive(Debug, Default, serde::Serialize)]
+pub struct QuarantineEntry {
+    /// Vault-relative, e.g. `_inbox/quarantine/some-note.md`.
+    pub path: String,
+    pub name: String,
+    /// Cosine similarity to the nearest cluster at scan time; 0.0 if unknown.
+    pub s_knn: f32,
+    pub nearest_cluster: String,
+    /// `ontology::describe`'s English sentence, verbatim — carries the
+    /// threshold `s_knn` was compared against, which the sidecar has no
+    /// field of its own for.
+    pub reason: String,
+    /// Unix seconds the TTL sweep becomes eligible to trash this; 0 if unknown.
+    pub expires: i64,
+}
+
+/// First `PREVIEW_CHARS` characters of `content`'s body (frontmatter stripped
+/// with the same `gray_matter` parse `first_summary_line` uses), whitespace
+/// collapsed to single spaces so a preview is one line whatever the markdown
+/// did.
+fn body_preview(content: &str) -> String {
+    const PREVIEW_CHARS: usize = 240;
+    let body = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+        .parse::<gray_matter::Pod>(content)
+        .map(|p| p.content)
+        .unwrap_or_else(|_| content.to_string());
+    truncate_chars(
+        &body.split_whitespace().collect::<Vec<_>>().join(" "),
+        PREVIEW_CHARS,
+    )
+}
+
+/// Every item currently in `_inbox/quarantine/`, newest-expiry-last, for the
+/// Feedback page's quarantine tab. Read-only: walks the content files (NOT the
+/// sidecars — an item whose sidecar write never landed must still be
+/// reviewable) and reads each one's sidecar best-effort. `preview` is returned
+/// alongside so the UI never needs a second read per item.
+pub fn quarantine_entries(root: &Path) -> Vec<(QuarantineEntry, String)> {
+    let quarantine_dir = root.join(crate::commands::DEST_INBOX).join(QUARANTINE_DIR);
+    let mut out: Vec<(QuarantineEntry, String)> = crate::vault::vault_entries(&quarantine_dir)
+        .into_iter()
+        .filter(|(_, kind)| kind.is_file())
+        .filter_map(|(e, _)| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            if name.ends_with(".verdict.json") {
+                return None;
+            }
+            let rel = format!("{}/{QUARANTINE_DIR}/{name}", crate::commands::DEST_INBOX);
+            let content = std::fs::read_to_string(e.path()).unwrap_or_default();
+            let sidecar = std::fs::read_to_string(sidecar_path(&e.path()))
+                .ok()
+                .and_then(|raw| serde_json::from_str::<serde_json::Value>(&raw).ok())
+                .unwrap_or(serde_json::Value::Null);
+            Some((
+                QuarantineEntry {
+                    path: rel,
+                    name,
+                    s_knn: sidecar.get("s_knn").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    nearest_cluster: sidecar
+                        .get("nearest_cluster")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    reason: sidecar
+                        .get("reason")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
+                    expires: sidecar.get("expires").and_then(|v| v.as_i64()).unwrap_or(0),
+                },
+                body_preview(&content),
+            ))
+        })
+        .collect();
+    out.sort_by(|a, b| {
+        a.0.expires
+            .cmp(&b.0.expires)
+            .then_with(|| a.0.path.cmp(&b.0.path))
+    });
+    out
+}
+
+/// `<stem>.verdict.json` beside a quarantined item's content file — the one
+/// naming rule `free_quarantine_paths` writes and every reader here follows.
+fn sidecar_path(content_path: &Path) -> PathBuf {
+    content_path.with_file_name(format!(
+        "{}.verdict.json",
+        content_path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("item")
+    ))
+}
+
+/// "Keep N more days": push each item's sidecar `expires` out by `days` from
+/// whichever is later, now or its current expiry, so extending a not-yet-
+/// expired item adds to its remaining time instead of shortening it. Only the
+/// `expires` key is rewritten — the vector and verdict fields are left exactly
+/// as scanned. Returns how many sidecars were actually rewritten (a missing or
+/// unparseable sidecar is skipped, not an error: the item stays listed and the
+/// TTL sweep already ignores it for the same reason).
+pub fn extend_quarantine(root: &Path, files: &[String], days: u32) -> Result<usize, String> {
+    let now = now_secs();
+    let mut extended = 0usize;
+    for f in files {
+        let content_path =
+            confine_payload_file(root, f, is_quarantine_payload_path, "_inbox/quarantine/")?;
+        let path = sidecar_path(&content_path);
+        let Ok(raw) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let Ok(mut sidecar) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        let Some(map) = sidecar.as_object_mut() else {
+            continue;
+        };
+        let current = map.get("expires").and_then(|v| v.as_i64()).unwrap_or(0);
+        let base = current.max(now);
+        map.insert(
+            "expires".into(),
+            serde_json::json!(base + days as i64 * 86_400),
+        );
+        let out = serde_json::to_string_pretty(&sidecar)
+            .map_err(|e| format!("serialize verdict: {e}"))?;
+        std::fs::write(&path, out).map_err(|e| format!("write verdict sidecar: {e}"))?;
+        extended += 1;
+    }
+    Ok(extended)
+}
+
 /// Cheap backlog estimate: inflow candidates the ledger has not yet scored,
 /// plus everything currently sitting in quarantine. A fs walk, not a
 /// re-score — good enough for a trend line, not a substitute for `scan`'s own
@@ -1451,9 +1590,7 @@ struct SidecarInfo {
 /// sidecar is missing, unparseable, or carries no vector.
 fn read_sidecar(root: &Path, content_rel: &str) -> Option<SidecarInfo> {
     let content_path = root.join(content_rel);
-    let stem = content_path.file_stem().and_then(|s| s.to_str())?;
-    let sidecar_path = content_path.with_file_name(format!("{stem}.verdict.json"));
-    let raw = std::fs::read_to_string(&sidecar_path).ok()?;
+    let raw = std::fs::read_to_string(sidecar_path(&content_path)).ok()?;
     let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
     let vector: Vec<f32> = v
         .get("vector")?
@@ -2064,20 +2201,22 @@ fn apply_admit_cluster(root: &Path, files: &[String]) -> Result<ApplyOutcome, St
         let file_name = content_path
             .file_name()
             .ok_or_else(|| format!("bad proposal file path: {f}"))?;
-        let sidecar_path = content_path.with_file_name(format!(
-            "{}.verdict.json",
-            content_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("item")
-        ));
         let dest = free_path(&inbox_dir.join(file_name));
         std::fs::rename(&content_path, &dest).map_err(|e| format!("move {f} to _inbox: {e}"))?;
-        let _ = std::fs::remove_file(&sidecar_path); // best-effort; a missing sidecar isn't fatal
+        // best-effort; a missing sidecar isn't fatal
+        let _ = std::fs::remove_file(sidecar_path(&content_path));
         outcome.moved += 1;
     }
     drop_ledger_entries(root, files)?;
     Ok(outcome)
+}
+
+/// "Restore to the vault" from the quarantine review UI — the SAME re-admit
+/// path an approved `admit-cluster` proposal takes (`apply_admit_cluster`),
+/// so a one-off manual restore and a cluster admit can never drift apart.
+/// Returns its `"moved N, skipped M already-processed"` summary.
+pub fn readmit_quarantine(root: &Path, files: &[String]) -> Result<String, String> {
+    Ok(apply_admit_cluster(root, files)?.summary())
 }
 
 /// Same move `run()`'s conservative archive pass would have made: top-level
@@ -2138,13 +2277,7 @@ fn apply_delete_batch(
         let file_name = content_path
             .file_name()
             .ok_or_else(|| format!("bad proposal file path: {f}"))?;
-        let sidecar_path = content_path.with_file_name(format!(
-            "{}.verdict.json",
-            content_path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("item")
-        ));
+        let sidecar_path = sidecar_path(&content_path);
         let to_content = free_path(&trash_dir.join(file_name));
         std::fs::rename(&content_path, &to_content).map_err(|e| format!("trash move: {e}"))?;
         if sidecar_path.exists() {
@@ -5109,6 +5242,71 @@ mod tests {
         for i in 0..5 {
             assert!(groups[0].contains(&format!("_inbox/quarantine/sim{i}.md")));
         }
+    }
+
+    #[test]
+    fn quarantine_entries_lists_verdicts_and_degrades_on_a_malformed_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let quarantine = root.join("_inbox/quarantine");
+        std::fs::create_dir_all(&quarantine).unwrap();
+        write_quarantine_item(&quarantine, "good", vec![1.0, 0.0]);
+        // Malformed: truncated JSON, the shape a half-written sidecar has.
+        std::fs::write(
+            quarantine.join("broken.md"),
+            "---\ntitle: b\n---\n\nBody text here.",
+        )
+        .unwrap();
+        std::fs::write(quarantine.join("broken.verdict.json"), "{\"s_knn\": 0.4,").unwrap();
+        // No sidecar at all — the move landed, the write never did.
+        std::fs::write(quarantine.join("orphan.md"), PROSE).unwrap();
+
+        let entries = quarantine_entries(root);
+        assert_eq!(
+            entries.len(),
+            3,
+            "every item lists, malformed sidecar or not"
+        );
+        let by_name = |n: &str| entries.iter().find(|(e, _)| e.name == n).expect("listed");
+
+        let (good, good_preview) = by_name("good.md");
+        assert_eq!(good.path, "_inbox/quarantine/good.md");
+        assert_eq!(good.nearest_cluster, "topic");
+        assert!((good.s_knn - 0.2).abs() < 1e-6);
+        assert!(good.expires > now_secs());
+        assert!(good_preview.starts_with(PROSE.split_whitespace().next().unwrap()));
+
+        // Degraded, not dropped: zeros/empties, and the preview still comes
+        // from the content file with its frontmatter stripped.
+        let (broken, broken_preview) = by_name("broken.md");
+        assert_eq!(broken.s_knn, 0.0);
+        assert_eq!(broken.reason, "");
+        assert_eq!(broken.expires, 0);
+        assert_eq!(broken_preview.as_str(), "Body text here.");
+        assert_eq!(by_name("orphan.md").0.expires, 0);
+
+        // "Keep 7 more days" pushes only the sidecar that parses; the other two
+        // are skipped rather than erroring the whole call.
+        let files = vec![
+            "_inbox/quarantine/good.md".to_string(),
+            "_inbox/quarantine/broken.md".to_string(),
+            "_inbox/quarantine/orphan.md".to_string(),
+        ];
+        let before = good.expires;
+        assert_eq!(extend_quarantine(root, &files, 7).unwrap(), 1);
+        let after = quarantine_entries(root)
+            .into_iter()
+            .find(|(e, _)| e.name == "good.md")
+            .unwrap()
+            .0
+            .expires;
+        assert_eq!(after, before + 7 * 86_400);
+        // The vector survives the rewrite — the clustering pass still sees it.
+        assert!(read_sidecar(root, "_inbox/quarantine/good.md")
+            .is_some_and(|s| s.vector == vec![1.0, 0.0]));
+
+        // Path confinement is the same one proposal payloads get.
+        assert!(extend_quarantine(root, &["wiki/index.md".to_string()], 7).is_err());
     }
 
     #[test]

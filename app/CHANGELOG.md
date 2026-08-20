@@ -8,6 +8,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **Quarantined items are reviewable.** When the distillation gate judges new
+  inflow off-topic it holds the file in `_inbox/quarantine/` — until now the app
+  only showed a count, so those items sat unseen. Feedback gained a Quarantine
+  tab listing each one with its verdict in plain language ("off-topic:
+  similarity 0.31 vs threshold 0.38"), the days left before it is trashed, and a
+  preview of the text, plus three actions: restore it to the vault, delete it to
+  the system trash, or keep it 30 more days. The menu bar's "N awaiting review"
+  row opens it directly. Available in English, 한국어 and 日本語.
 - **myco can now update itself.** Settings → About gained a "Check for updates"
   button, and the app checks once per launch on its own. A new version is
   downloaded quietly in the background and takes effect the next time you open

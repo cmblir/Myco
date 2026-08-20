@@ -18,6 +18,7 @@ const idle: TraySnapshot = {
   reindexDone: 0,
   reindexTotal: 0,
   pendingLinks: 0,
+  quarantined: 0,
   mcpRunning: true,
   inflow: null,
   sweepAt: null,

@@ -34,9 +34,15 @@ export type RouteId =
   | "settings"
   | `page:${string}`;
 
+export type FeedbackTab = "proposals" | "quarantine";
+
 export interface UIState {
   // Routing
   route: RouteId;
+  // Which tab the Feedback page opens on. Not persisted-meaningful state, but
+  // it lives here so the activity panel / tray "N awaiting review" row can
+  // deep-link straight to the quarantine tab (setRoute alone can't).
+  feedbackTab: FeedbackTab;
   // Split view: when set, a SECOND pane shows this route beside the primary one
   // (e.g. Overview + Graph side by side). null = single pane.
   splitRoute: RouteId | null;
@@ -68,6 +74,7 @@ export interface UIState {
   myceliumGrown: boolean;
 
   setRoute: (route: RouteId) => void;
+  setFeedbackTab: (tab: FeedbackTab) => void;
   setSplitRoute: (route: RouteId | null) => void;
   setSplitRatio: (ratio: number) => void;
   setSidebarCollapsed: (v: boolean) => void;
@@ -89,6 +96,7 @@ export const useUIStore = create<UIState>()(
   persist(
     (set, get) => ({
       route: "overview",
+      feedbackTab: "proposals",
       splitRoute: null,
       splitRatio: SPLIT_DEFAULT_RATIO,
       sidebarCollapsed: false,
@@ -109,6 +117,7 @@ export const useUIStore = create<UIState>()(
         // Never let the primary and split panes show the SAME route (two live
         // graph scenes, duplicate state) — clear the split if it would collide.
         set((s) => ({ route, splitRoute: s.splitRoute === route ? null : s.splitRoute })),
+      setFeedbackTab: (feedbackTab) => set({ feedbackTab }),
       setSplitRoute: (route) =>
         set((s) => ({ splitRoute: route === s.route ? null : route })),
       setSplitRatio: (ratio) => set({ splitRatio: ratio }),

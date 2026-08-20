@@ -72,6 +72,11 @@ pub struct TrayStatus {
     pub suggested: String,
     #[serde(default)]
     pub reflect: String,
+    /// Quarantined items awaiting review (ROADMAP P0); empty when there are
+    /// none. Routes to the Feedback page's quarantine tab, the only surface
+    /// that can resolve them.
+    #[serde(default)]
+    pub quarantine: String,
     #[serde(default)]
     pub mcp: String,
     /// Today's-inflow block (translated lines + sparkbar buckets); None hides
@@ -241,6 +246,14 @@ pub fn menu_rows(s: &TrayStatus) -> Vec<MenuRow> {
             Some(RowIcon::Distill),
         ));
     }
+    if !s.quarantine.is_empty() {
+        standing.push(MenuRow::icon_item(
+            "tray-quarantine",
+            &s.quarantine,
+            true,
+            Some(RowIcon::Distill),
+        ));
+    }
     if !s.mcp.is_empty() {
         standing.push(MenuRow::icon_item(
             "tray-settings",
@@ -353,13 +366,17 @@ fn handle_menu_id<R: Runtime>(app: &AppHandle<R>, id: &str) {
         "tray-open" => show_main_window(app),
         // "tray-reflect" goes to Overview too — that is where the reflect
         // panel lives.
-        "tray-overview" | "tray-reflect" | "tray-settings" | "tray-query" | "tray-ingest" => {
+        "tray-overview" | "tray-reflect" | "tray-settings" | "tray-query" | "tray-ingest"
+        | "tray-quarantine" => {
             show_main_window(app);
-            // Route names match the frontend's RouteId values.
+            // Route names match the frontend's RouteId values — except
+            // "quarantine", which the frontend expands into route `feedback`
+            // plus its quarantine tab (a tab is not a route of its own).
             let route = match id {
                 "tray-overview" | "tray-reflect" => "overview",
                 "tray-settings" => "settings",
                 "tray-ingest" => "ingest",
+                "tray-quarantine" => "quarantine",
                 _ => "query",
             };
             let _ = app.emit(TRAY_ACTION_EVENT, route);
@@ -644,6 +661,7 @@ pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
         "overview" => "tray-overview",
         "settings" => "tray-settings",
         "ingest" => "tray-ingest",
+        "quarantine" => "tray-quarantine",
         "dismiss" => return Ok(()),
         other => return Err(format!("unknown tray panel action: {other}")),
     };
@@ -690,6 +708,7 @@ mod tests {
             title: Some("2".into()),
             suggested: "3 suggested links".into(),
             reflect: String::new(),
+            quarantine: String::new(),
             mcp: "MCP server running".into(),
             inflow: None,
             ask: "Ask the wiki".into(),
@@ -764,6 +783,23 @@ mod tests {
         assert!(menu_rows(&full_status())
             .iter()
             .all(|r| r.id != "tray-reflect"));
+    }
+
+    #[test]
+    fn quarantined_items_add_a_clickable_standing_row_before_mcp() {
+        let s = TrayStatus {
+            quarantine: "2 awaiting review".into(),
+            ..full_status()
+        };
+        let rows = menu_rows(&s);
+        let i = rows.iter().position(|r| r.id == "tray-quarantine").unwrap();
+        assert_eq!(rows[i + 1].id, "tray-settings");
+        assert!(rows[i].enabled);
+        assert_eq!(rows[i].icon, Some(RowIcon::Distill));
+        // Nothing quarantined → no row at all.
+        assert!(menu_rows(&full_status())
+            .iter()
+            .all(|r| r.id != "tray-quarantine"));
     }
 
     #[test]

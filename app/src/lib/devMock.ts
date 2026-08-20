@@ -9,6 +9,7 @@
 // Overview, Provenance and Reader views render real-looking content.
 
 import type { DistillConfig } from "./distill";
+import type { QuarantineItem } from "./quarantine";
 import { today } from "./taskLine";
 
 interface Node {
@@ -295,6 +296,44 @@ let mockDistillConfig: DistillConfig = {
   llm_ingest_budget: 3,
   profile_injection: true,
 };
+
+// Quarantine review (ROADMAP P0) — seeded so ?mock=1 renders the Feedback
+// page's quarantine tab without a real vault that has something quarantined.
+// Mutable: restore/keep-longer in the mock behave like the real commands.
+const NOW_SECS = Math.floor(Date.now() / 1000);
+let mockQuarantine: QuarantineItem[] = [
+  {
+    path: "_inbox/quarantine/mortgage-rates-2026.md",
+    name: "mortgage-rates-2026.md",
+    s_knn: 0.31,
+    nearest_cluster: "transformers",
+    reason:
+      "nearest topic 'transformers' similarity 0.31 < quarantine 0.38 (p5) -> quarantine; 0 known entities",
+    expires: NOW_SECS + 12 * 86400,
+    preview:
+      "Notes from the bank call: 30-year fixed at 6.1%, points buy-down math, and the refinance break-even table I sketched on the back of the letter.",
+  },
+  {
+    path: "_inbox/quarantine/sourdough-log.md",
+    name: "sourdough-log.md",
+    s_knn: 0.22,
+    nearest_cluster: "rope",
+    reason:
+      "nearest topic 'rope' similarity 0.22 < quarantine 0.35 (p5) -> quarantine; 1 known entity",
+    expires: NOW_SECS - 3600,
+    preview:
+      "Day 9: starter doubles in 5h at 24C. Hydration 78% was too slack for the banneton, dropping to 72% next bake.",
+  },
+  {
+    path: "_inbox/quarantine/clipboard-fragment.md",
+    name: "clipboard-fragment.md",
+    s_knn: 0,
+    nearest_cluster: "",
+    reason: "",
+    expires: 0,
+    preview: "half a paste, no frontmatter, no verdict sidecar worth parsing",
+  },
+];
 
 // Task 9 — two pending work/feedback/*.md proposals, so PageFeedback and the
 // Overview/Sidebar badge (distill_status.pending_proposals: 2 below) render
@@ -968,6 +1007,26 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       });
     case "apply_distill_proposal":
       return Promise.resolve("moved 1, skipped 0 already-processed");
+    // Quarantine review (ROADMAP P0). Three items on purpose: a normal verdict,
+    // one already past its TTL, and one whose sidecar is malformed (no reason,
+    // no expiry) — the three states the tab has to render differently.
+    case "list_quarantine":
+      return Promise.resolve(mockQuarantine);
+    case "restore_quarantine": {
+      const files = (args.files as string[]) ?? [];
+      mockQuarantine = mockQuarantine.filter((q) => !files.includes(q.path));
+      return Promise.resolve(`moved ${files.length}, skipped 0 already-processed`);
+    }
+    case "extend_quarantine": {
+      const files = (args.files as string[]) ?? [];
+      const days = (args.days as number) ?? 0;
+      mockQuarantine = mockQuarantine.map((q) =>
+        files.includes(q.path) && q.expires
+          ? { ...q, expires: Math.max(q.expires, NOW_SECS) + days * 86400 }
+          : q,
+      );
+      return Promise.resolve(files.length);
+    }
     // Session-digest bookkeeping (Phase B, Task 1) — empty backlog / a fixed
     // manifest id, matching the brief's "empty list / 'digest-mock' id".
     case "digestable_session_days":
@@ -1343,11 +1402,19 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       else mockNotes.set(p, content);
       return Promise.resolve(null);
     }
-    case "delete_path":
+    case "delete_path": {
       // Consuming an inbox source removes it, which is how auto-ingest avoids
       // ingesting the same clip forever.
-      mockInbox.delete(String(args.path ?? ""));
+      const target = String(args.path ?? "");
+      mockInbox.delete(target);
+      // Quarantine delete goes through this same command (OS trash), so the
+      // mock list has to lose the item too — paths arrive absolute here.
+      const rel = target.startsWith(`${VAULT}/`)
+        ? target.slice(VAULT.length + 1)
+        : target;
+      mockQuarantine = mockQuarantine.filter((q) => q.path !== rel);
       return Promise.resolve(null);
+    }
     case "archive_inbox_source": {
       // Same effect on the inbox as delete_path — the source leaves the tray —
       // but it moves to .archived/ instead of vanishing.

@@ -7,6 +7,7 @@ import { create } from "zustand";
 import { ipc } from "../lib/ipc";
 import type { FileNode } from "../lib/ipc";
 import type { DistillStatus } from "../lib/distill";
+import type { QuarantineItem } from "../lib/quarantine";
 import { draftMap } from "../lib/maps";
 import { useVaultStore } from "./vaultStore";
 
@@ -123,6 +124,9 @@ export function rewriteStatus(raw: string, next: ProposalStatus): string {
 export interface DistillState {
   status: DistillStatus | null;
   proposals: ProposalMeta[];
+  /** `_inbox/quarantine/` items awaiting review (ROADMAP P0) — the Feedback
+   *  page's second tab. Loaded by the same refresh() as the proposals. */
+  quarantine: QuarantineItem[];
   loading: boolean;
   /** Set when the last `apply()` failed. An `approved`-status proposal stays
    *  listed for exactly this reason — on-disk it's a recoverable in-flight
@@ -142,25 +146,56 @@ export interface DistillState {
   /** Rewrites status -> dismissed (from whatever it currently is), then
    *  refreshes. */
   dismiss: (path: string) => Promise<void>;
+  /** Quarantine review, all three by vault-relative content path. `restore`
+   *  re-admits to `_inbox/` through the existing admit-cluster path; `trash`
+   *  moves the item (and its sidecar) to the OS trash via the same delete_path
+   *  the sidebar uses — never an unlink; `keepLonger` pushes the sidecar TTL.
+   *  Each refreshes afterwards and sets `error` instead of throwing. */
+  restoreQuarantine: (path: string) => Promise<void>;
+  trashQuarantine: (path: string) => Promise<void>;
+  keepQuarantine: (path: string, days: number) => Promise<void>;
+}
+
+/** Shared body of the three quarantine actions: needs an open vault, clears
+ *  the previous error, surfaces a failure as `error` rather than throwing at a
+ *  click handler, and always refreshes so the list reflects the disk. */
+async function runQuarantineAction(
+  set: (partial: Partial<DistillState>) => void,
+  get: () => DistillState,
+  act: (vaultPath: string) => Promise<unknown>,
+): Promise<void> {
+  const vault = useVaultStore.getState().currentVault;
+  if (!vault) return;
+  set({ error: null });
+  try {
+    await act(vault.path);
+  } catch (err) {
+    set({ error: String(err) });
+  } finally {
+    await get().refresh();
+  }
 }
 
 export const useDistillStore = create<DistillState>((set, get) => ({
   status: null,
   proposals: [],
+  quarantine: [],
   loading: false,
   error: null,
 
   async refresh() {
     const vault = useVaultStore.getState().currentVault;
     if (!vault) {
-      set({ status: null, proposals: [] });
+      set({ status: null, proposals: [], quarantine: [] });
       return;
     }
     set({ loading: true });
     try {
-      const [status, tree] = await Promise.all([
+      const [status, tree, quarantine] = await Promise.all([
         ipc.distillStatus(vault.path),
         ipc.listFiles(vault.path),
+        // An older backend without the command must not blank the proposals.
+        ipc.listQuarantine(vault.path).catch(() => [] as QuarantineItem[]),
       ]);
       const proposals: ProposalMeta[] = [];
       for (const f of feedbackFileNodes(tree)) {
@@ -177,7 +212,7 @@ export const useDistillStore = create<DistillState>((set, get) => ({
           /* one unreadable proposal file must not blank the whole list */
         }
       }
-      set({ status, proposals, loading: false });
+      set({ status, proposals, quarantine, loading: false });
     } catch {
       set({ loading: false });
     }
@@ -221,6 +256,29 @@ export const useDistillStore = create<DistillState>((set, get) => ({
       // hoped would happen.
       await get().refresh();
     }
+  },
+
+  async restoreQuarantine(path) {
+    await runQuarantineAction(set, get, (vault) =>
+      ipc.restoreQuarantine(vault, [path]),
+    );
+  },
+
+  async trashQuarantine(path) {
+    await runQuarantineAction(set, get, async (vault) => {
+      await ipc.deletePath(`${vault}/${path}`);
+      // The sidecar may legitimately not exist (a half-written quarantine
+      // move) — its absence must not report the delete as failed.
+      await ipc
+        .deletePath(`${vault}/${path.replace(/\.[^./]+$/, "")}.verdict.json`)
+        .catch(() => null);
+    });
+  },
+
+  async keepQuarantine(path, days) {
+    await runQuarantineAction(set, get, (vault) =>
+      ipc.extendQuarantine(vault, [path], days),
+    );
   },
 
   async dismiss(path) {
