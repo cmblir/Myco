@@ -355,3 +355,15 @@ describe("useDistillStore", () => {
     expect(useDistillStore.getState().status).toBeNull();
   });
 });
+
+// A draft-map apply dedups against existing maps BEFORE its LLM call, so two
+// overlapping applies of the same proposal used to write two pages for one
+// cluster (double-click, or the popover racing the tray panel).
+describe("apply is one-at-a-time per proposal", () => {
+  it("drops a second apply of the same proposal while the first is in flight", async () => {
+    const store = useDistillStore;
+    store.setState({ applying: new Set(["work/feedback/p.md"]) });
+    expect(await store.getState().apply("work/feedback/p.md")).toBeNull();
+    store.setState({ applying: new Set() });
+  });
+});

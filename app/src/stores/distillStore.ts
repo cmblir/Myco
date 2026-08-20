@@ -153,6 +153,11 @@ export interface DistillState {
    *  `error` set — the proposal itself is left `approved` and still listed,
    *  never silently dropped). */
   apply: (path: string) => Promise<string | null>;
+  /** Proposal paths with an apply in flight. A draft-map apply dedups against
+   *  existing maps BEFORE its LLM call, so two overlapping applies of the SAME
+   *  proposal (double-click, or the popover and the tray panel racing) both
+   *  passed that check and wrote two pages for one cluster. */
+  applying: Set<string>;
   /** Rewrites status -> dismissed (from whatever it currently is), then
    *  refreshes. */
   dismiss: (path: string) => Promise<void>;
@@ -192,6 +197,7 @@ export const useDistillStore = create<DistillState>((set, get) => ({
   quarantine: [],
   loading: false,
   error: null,
+  applying: new Set<string>(),
 
   async refresh() {
     const vault = useVaultStore.getState().currentVault;
@@ -231,8 +237,10 @@ export const useDistillStore = create<DistillState>((set, get) => ({
   async apply(path) {
     const vault = useVaultStore.getState().currentVault;
     if (!vault) return null;
+    // One apply per proposal at a time — see `applying`.
+    if (get().applying.has(path)) return null;
     const full = `${vault.path}/${path}`;
-    set({ error: null });
+    set({ error: null, applying: new Set(get().applying).add(path) });
     try {
       const file = await ipc.readFile(full);
       const parsed = parseProposal(path, file.raw);
@@ -261,6 +269,9 @@ export const useDistillStore = create<DistillState>((set, get) => ({
       set({ error: String(err) });
       return null;
     } finally {
+      const next = new Set(get().applying);
+      next.delete(path);
+      set({ applying: next });
       // Always — success or failure — so an `approved`-but-failed proposal's
       // current on-disk state is what the list reflects, not what apply()
       // hoped would happen.
