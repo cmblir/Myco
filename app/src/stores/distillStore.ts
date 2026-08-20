@@ -121,6 +121,16 @@ export function rewriteStatus(raw: string, next: ProposalStatus): string {
   return raw.replace(/^status:\s*\S+\s*$/m, `status: ${next}`);
 }
 
+/** The `draft-map` proposals still awaiting a decision — the rows the activity
+ *  surfaces (topbar popover + tray panel) offer approve/reject on. Only
+ *  `pending`: an `approved` one is already decided and merely waiting for the
+ *  draft-map generation step, so offering "approve" again would be a lie. */
+export function pendingMapProposals(proposals: ProposalMeta[]): ProposalMeta[] {
+  return proposals.filter(
+    (p) => p.action === "draft-map" && p.status === "pending",
+  );
+}
+
 export interface DistillState {
   status: DistillStatus | null;
   proposals: ProposalMeta[];

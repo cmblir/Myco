@@ -83,6 +83,21 @@ pub struct TrayStatus {
     /// the section and the native menu's summary row.
     #[serde(default)]
     pub inflow: Option<TrayInflow>,
+    /// Pending map proposals the PANEL can approve/reject inline (ROADMAP P0).
+    /// Panel-only: a native menu row cannot carry two buttons, so the native
+    /// menu keeps sending the user to the Feedback page instead.
+    #[serde(default)]
+    pub proposals: Vec<TrayProposal>,
+    #[serde(default, rename = "proposalsMore")]
+    pub proposals_more: String,
+    #[serde(default, rename = "proposalApprove")]
+    pub proposal_approve: String,
+    #[serde(default, rename = "proposalReject")]
+    pub proposal_reject: String,
+    /// Shown under the rows when the query provider can't draft a map;
+    /// empty otherwise.
+    #[serde(default, rename = "proposalNote")]
+    pub proposal_note: String,
     /// Action rows.
     #[serde(default)]
     pub ask: String,
@@ -92,6 +107,16 @@ pub struct TrayStatus {
     pub open: String,
     #[serde(default)]
     pub quit: String,
+}
+
+/// One pending map proposal for the panel: its vault-relative path (sent back
+/// with the approve/reject action) plus both lines pre-translated.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct TrayProposal {
+    pub path: String,
+    pub label: String,
+    #[serde(default)]
+    pub sub: String,
 }
 
 /// Pre-translated "today's inflow" lines for the tray-panel window, plus the
@@ -367,16 +392,17 @@ fn handle_menu_id<R: Runtime>(app: &AppHandle<R>, id: &str) {
         // "tray-reflect" goes to Overview too — that is where the reflect
         // panel lives.
         "tray-overview" | "tray-reflect" | "tray-settings" | "tray-query" | "tray-ingest"
-        | "tray-quarantine" => {
+        | "tray-quarantine" | "tray-proposals" => {
             show_main_window(app);
             // Route names match the frontend's RouteId values — except
-            // "quarantine", which the frontend expands into route `feedback`
-            // plus its quarantine tab (a tab is not a route of its own).
+            // "quarantine"/"proposals", which the frontend expands into route
+            // `feedback` plus that tab (a tab is not a route of its own).
             let route = match id {
                 "tray-overview" | "tray-reflect" => "overview",
                 "tray-settings" => "settings",
                 "tray-ingest" => "ingest",
                 "tray-quarantine" => "quarantine",
+                "tray-proposals" => "proposals",
                 _ => "query",
             };
             let _ = app.emit(TRAY_ACTION_EVENT, route);
@@ -648,10 +674,19 @@ pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
     // somewhere else). "distill" does NOT: the panel stays open and
     // live-updates to show the run it just started — closing it read as
     // "the button turned the app off".
-    if action != "distill" {
+    // Map-proposal decisions stay open too, for the same reason as "distill":
+    // the row leaves on the next status push, which is the feedback.
+    let is_proposal_decision = action.starts_with("proposal-");
+    if action != "distill" && !is_proposal_decision {
         if let Some(win) = app.get_webview_window(PANEL_LABEL) {
             let _ = win.hide();
         }
+    }
+    // The path travels in the action string; only the main window (which owns
+    // distillStore, the single writer) can act on it.
+    if is_proposal_decision {
+        let _ = app.emit(TRAY_ACTION_EVENT, action.as_str());
+        return Ok(());
     }
     let menu_id = match action.as_str() {
         "query" => "tray-query",
@@ -662,6 +697,7 @@ pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
         "settings" => "tray-settings",
         "ingest" => "tray-ingest",
         "quarantine" => "tray-quarantine",
+        "proposals" => "tray-proposals",
         "dismiss" => return Ok(()),
         other => return Err(format!("unknown tray panel action: {other}")),
     };
@@ -715,6 +751,8 @@ mod tests {
             distill: "Distill now".into(),
             open: "Open myco".into(),
             quit: "Quit myco".into(),
+            // Panel-only rows — `menu_rows` deliberately ignores them.
+            ..Default::default()
         }
     }
 

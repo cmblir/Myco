@@ -4005,6 +4005,34 @@ hr {
   gap: 6px;
   flex: none;
 }
+/* Approve/reject pair on a pending map-proposal row (both activity surfaces).
+   Lives in the row's trailing slot and never shrinks, so the cluster label
+   ellipsises instead of the buttons collapsing. */
+.activity-actions {
+  display: inline-flex;
+  gap: 6px;
+  flex: none;
+}
+.activity-actions .btn {
+  padding: 3px 8px;
+  font-size: 11.5px;
+}
+.tray-panel .activity-actions .btn {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #e8eaee;
+}
+.activity-sub-wrap {
+  white-space: normal;
+  overflow: visible;
+}
+/* The builtin-local caveat under those rows — wraps (unlike .activity-row-sub,
+   which is a single ellipsised line). */
+.activity-note {
+  font-size: 11.5px;
+  line-height: 1.35;
+  white-space: normal;
+}
 
 /* Shared panel sections (ActivityPanel). Inside the in-app popover the
    section separator stays an invisible 0-height div (the popover's own gap

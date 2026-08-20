@@ -19,6 +19,8 @@ const idle: TraySnapshot = {
   reindexTotal: 0,
   pendingLinks: 0,
   quarantined: 0,
+  mapProposals: [],
+  queryProvider: "anthropic-api",
   mcpRunning: true,
   inflow: null,
   sweepAt: null,
@@ -101,6 +103,38 @@ describe("buildTrayStatus", () => {
     expect(buildTrayStatus(idle, t).reflect).toBe("");
     // Standing state: it never inflates the tray title.
     expect(trayTitle({ ...idle, reflectFindings: 8 })).toBeNull();
+  });
+
+  it("caps the map-proposal rows, overflows into +N more, and keeps the builtin-local caveat", () => {
+    const maps = Array.from({ length: 7 }, (_, i) => ({
+      path: `work/feedback/map-${i}.md`,
+      action: "draft-map" as const,
+      status: "pending" as const,
+      created: "2026-08-12",
+      title: `Map candidate: c${i}`,
+      raw: "",
+      files: [],
+      cluster: `c${i}`,
+      members: ["wiki/a.md", "wiki/b.md"],
+    }));
+    const p = buildTrayStatus(
+      { ...idle, mapProposals: maps, queryProvider: "builtin-local" },
+      t,
+    );
+    expect(p.proposals).toHaveLength(5);
+    expect(p.proposals?.[0]).toEqual({
+      path: "work/feedback/map-0.md",
+      label: "c0",
+      sub: "Draft topic map · 2 notes",
+    });
+    expect(p.proposalsMore).toBe("+2 more");
+    expect(p.proposalApprove).toBe("Approve");
+    expect(p.proposalReject).toBe("Dismiss");
+    expect(p.proposalNote).toContain("needs a query model");
+    // A provider that CAN draft leaves the caveat off.
+    expect(
+      buildTrayStatus({ ...idle, mapProposals: maps }, t).proposalNote,
+    ).toBe("");
   });
 
   it("sends no running rows when idle", () => {

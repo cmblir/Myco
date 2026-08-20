@@ -162,6 +162,78 @@ export function buildInflowRows(p: {
   ];
 }
 
+/** One approvable map proposal, keyed by its vault-relative path with both
+ * lines already formatted (the tray panel receives them pre-translated in the
+ * TrayStatus payload; the popover formats them from distillStore). */
+export interface MapProposalRowContent {
+  path: string;
+  label: string;
+  sub: string;
+}
+
+/** The pending map-proposal rows, built ONCE for both activity surfaces so
+ * approve/reject reads the same in the popover and the tray panel. `note` is
+ * the builtin-local caveat — rendered, never hidden: the approval itself is
+ * real, but the draft-map step needs a query model to actually run. */
+export function buildMapProposalRows(p: {
+  items: MapProposalRowContent[];
+  approveLabel: string;
+  rejectLabel: string;
+  onApprove: (path: string) => void;
+  onReject: (path: string) => void;
+  /** "+N more" row text; "" for none. */
+  more: string;
+  onMore: () => void;
+  /** builtin-local caveat; "" when a generating provider is configured. */
+  note: string;
+}): PanelRow[] {
+  const rows: PanelRow[] = p.items.map((item) => ({
+    key: `map:${item.path}`,
+    icon: "distill",
+    main: (
+      <>
+        <b>{item.label}</b>
+        {/* Wraps rather than ellipsising: the member count is the whole
+            point of the line, and the two buttons leave it little room. */}
+        <span className="activity-row-sub activity-sub-wrap">{item.sub}</span>
+      </>
+    ),
+    trailing: (
+      <span className="activity-actions">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => p.onApprove(item.path)}
+        >
+          {p.approveLabel}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost btn"
+          onClick={() => p.onReject(item.path)}
+        >
+          {p.rejectLabel}
+        </button>
+      </span>
+    ),
+  }));
+  if (rows.length === 0) return rows;
+  if (p.note) {
+    rows.push({
+      key: "map-note",
+      main: <span className="activity-note muted">{p.note}</span>,
+    });
+  }
+  if (p.more) {
+    rows.push({
+      key: "map-more",
+      onClick: p.onMore,
+      main: <span className="muted">{p.more}</span>,
+    });
+  }
+  return rows;
+}
+
 export interface PanelRow {
   key: string;
   /** Circular row icon; `leading` (e.g. a task checkbox) replaces it. */

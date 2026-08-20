@@ -16,7 +16,7 @@ import { inflowLines } from "./inflow";
 import { getLastSweepAt } from "./autoImport";
 import { pendingLinkCount } from "./linkSuggestions";
 import { runDistillGuarded } from "./distill";
-import { stepLabel } from "../components/ActivityChip";
+import { MAP_ROW_CAP, mapRowContent, stepLabel } from "../components/ActivityChip";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useQueryStore } from "../stores/queryStore";
@@ -25,7 +25,8 @@ import { useDistillRunStore } from "../stores/distillRunStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
 import { useReflectStore } from "../stores/reflectStore";
-import { useDistillStore } from "../stores/distillStore";
+import { useDistillStore, pendingMapProposals } from "../stores/distillStore";
+import type { ProposalMeta } from "../stores/distillStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
 /** Emitted by Rust when a tray menu action row is clicked. */
@@ -51,6 +52,12 @@ export interface TraySnapshot {
   /** `_inbox/quarantine/` items awaiting review; 0 hides the row. A standing
    *  count like pendingLinks — never part of the tray title. */
   quarantined: number;
+  /** Pending map proposals awaiting a decision — the tray panel's approvable
+   *  rows (a standing state, never part of the tray title). */
+  mapProposals: ProposalMeta[];
+  /** Active query provider; "builtin-local" can't draft a map, which the rows
+   *  say out loud instead of letting an approval sit there silently. */
+  queryProvider: string;
   mcpRunning: boolean;
   /** Today's inflow, or null before/without a probe — hides the section. */
   inflow: InflowStats | null;
@@ -137,6 +144,23 @@ export function buildTrayStatus(s: TraySnapshot, t: Strings): TrayStatusPayload 
             "{n}",
             String(s.quarantined),
           )
+        : "",
+    proposals: s.mapProposals
+      .slice(0, MAP_ROW_CAP)
+      .map((p) => mapRowContent(p, t)),
+    proposalsMore:
+      s.mapProposals.length > MAP_ROW_CAP
+        ? (t.tb_activity_tasks_more ?? "+{n} more").replace(
+            "{n}",
+            String(s.mapProposals.length - MAP_ROW_CAP),
+          )
+        : "",
+    proposalApprove: t.pf_approve ?? "Approve",
+    proposalReject: t.pf_dismiss ?? "Dismiss",
+    proposalNote:
+      s.queryProvider === "builtin-local"
+        ? (t.tb_activity_map_wait ??
+          "Approving is saved, but the draft needs a query model.")
         : "",
     mcp: s.mcpRunning
       ? (t.tb_activity_mcp_on ?? "MCP server running")
@@ -256,6 +280,8 @@ export function initTrayIntegration(): () => void {
           reindexTotal: reindex.total,
           pendingLinks,
           quarantined: useDistillStore.getState().status?.quarantined ?? 0,
+          mapProposals: pendingMapProposals(useDistillStore.getState().proposals),
+          queryProvider: settings?.query_provider ?? "",
           mcpRunning,
           inflow: inflowStats,
           sweepAt: getLastSweepAt(),
@@ -329,6 +355,25 @@ export function initTrayIntegration(): () => void {
       action === "ingest"
     ) {
       useUIStore.getState().setRoute(action);
+      return;
+    }
+    // Map-proposal decisions from the tray panel: the panel has no store of
+    // its own, so it sends the vault-relative path back and the decision runs
+    // through distillStore — the same writer as the popover and the Feedback
+    // page, never a second one.
+    const approve = action.match(/^proposal-approve:(.+)$/);
+    if (approve) {
+      void useDistillStore.getState().apply(approve[1]);
+      return;
+    }
+    const reject = action.match(/^proposal-reject:(.+)$/);
+    if (reject) {
+      void useDistillStore.getState().dismiss(reject[1]);
+      return;
+    }
+    if (action === "proposals") {
+      useUIStore.getState().setFeedbackTab("proposals");
+      useUIStore.getState().setRoute("feedback");
       return;
     }
     // Not a route of its own: the quarantine list is a TAB on the Feedback

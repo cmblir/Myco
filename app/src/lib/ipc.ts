@@ -317,6 +317,14 @@ export interface TrayInflowPayload {
   hourlyMcp: number[];
 }
 
+/** One pending map proposal in the tray payload: its vault-relative path (the
+ *  approve/reject action carries it back) plus both lines pre-translated. */
+export interface TrayProposalPayload {
+  path: string;
+  label: string;
+  sub: string;
+}
+
 export interface TrayStatusPayload {
   /** Pre-formatted running rows, shown as disabled info items. */
   running: TrayRunningRow[];
@@ -333,6 +341,15 @@ export interface TrayStatusPayload {
   mcp: string;
   /** Today's-inflow block; null/absent hides the section everywhere. */
   inflow?: TrayInflowPayload | null;
+  /** Pending map proposals the panel can approve/reject inline (capped; the
+   *  overflow becomes `proposalsMore`). Absent/empty hides the rows. */
+  proposals?: TrayProposalPayload[];
+  /** "+N more" row text; "" when nothing overflowed. */
+  proposalsMore?: string;
+  proposalApprove?: string;
+  proposalReject?: string;
+  /** builtin-local caveat shown under the rows; "" when a provider can draft. */
+  proposalNote?: string;
   ask: string;
   distill: string;
   open: string;

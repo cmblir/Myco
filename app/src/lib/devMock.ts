@@ -335,13 +335,14 @@ let mockQuarantine: QuarantineItem[] = [
   },
 ];
 
-// Task 9 — two pending work/feedback/*.md proposals, so PageFeedback and the
-// Overview/Sidebar badge (distill_status.pending_proposals: 2 below) render
+// Task 9 — three pending work/feedback/*.md proposals, so PageFeedback and the
+// Overview/Sidebar badge (distill_status.pending_proposals: 3 below) render
 // real content in ?mock=1. Format mirrors distill.rs's write_proposal exactly
 // (frontmatter keys + a `# title` heading), so parseProposal parses these the
 // same way it would parse the real file.
 const MOCK_PROPOSAL_1 = `${VAULT}/work/feedback/2026-08-10-emerging-cluster-rope.md`;
 const MOCK_PROPOSAL_2 = `${VAULT}/work/feedback/2026-08-11-archive-batch-stale.md`;
+const MOCK_PROPOSAL_3 = `${VAULT}/work/feedback/2026-08-12-map-candidate-attention.md`;
 const MOCK_PROPOSALS = new Map<string, string>([
   [
     MOCK_PROPOSAL_1,
@@ -380,6 +381,26 @@ const MOCK_PROPOSALS = new Map<string, string>([
       "# Archive batch: 2 stale sources",
       "",
       "2 raw sources haven't been cited in 30+ days and are proposed for archive.",
+      "",
+    ].join("\n"),
+  ],
+  // A pending draft-map proposal: the one kind the activity popover and tray
+  // panel list with inline approve/reject (ROADMAP P0), so ?mock=1 has a row
+  // to click. Payload carries cluster/members, not files.
+  [
+    MOCK_PROPOSAL_3,
+    [
+      "---",
+      "type: distill-proposal",
+      "action: draft-map",
+      "status: pending",
+      "created: 2026-08-12",
+      'payload: {"cluster":"attention","members":["wiki/attention-mechanism.md","wiki/embeddings.md","wiki/tokenization.md","wiki/transformer.md"]}',
+      "---",
+      "",
+      "# Map candidate: attention",
+      "",
+      "4 wiki pages cluster tightly enough to deserve a topic map.",
       "",
     ].join("\n"),
   ],
@@ -995,7 +1016,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "distill_status":
       return Promise.resolve({
         backlog: 12,
-        pending_proposals: 2,
+        pending_proposals: 3,
         last_run: 1755000000,
         last_backlogs: [40, 35, 30, 28, 22, 18, 15, 14, 13, 12],
         gate_active: true,
@@ -1398,7 +1419,11 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "write_file": {
       const p = String(args.path ?? "");
       const content = String(args.content ?? "");
-      if (isCardsPath(p)) mockDecks.set(p, content);
+      // A proposal write (approve/dismiss rewrites its `status:` line) has to
+      // land back in MOCK_PROPOSALS — read_file checks that map first, so
+      // writing into mockNotes would leave the row stuck at `pending`.
+      if (MOCK_PROPOSALS.has(p)) MOCK_PROPOSALS.set(p, content);
+      else if (isCardsPath(p)) mockDecks.set(p, content);
       else mockNotes.set(p, content);
       return Promise.resolve(null);
     }

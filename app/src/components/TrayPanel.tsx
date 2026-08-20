@@ -11,7 +11,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import ActivityPanel, { buildInflowRows } from "./ActivityPanel";
+import ActivityPanel, {
+  buildInflowRows,
+  buildMapProposalRows,
+} from "./ActivityPanel";
 import type { ActivityIconName, PanelRow, PanelSection } from "./ActivityPanel";
 import { ipc } from "../lib/ipc";
 import type { TrayStatusPayload } from "../lib/ipc";
@@ -42,6 +45,14 @@ const MOCK_STATUS: TrayStatusPayload = {
   suggested: "제안된 링크 6개",
   reflect: "Reflect 제안 8개",
   quarantine: "검토 대기 2건",
+  proposals: [
+    { path: "work/feedback/2026-08-12-map-attention.md", label: "attention", sub: "토픽 맵 작성 · 노트 6개" },
+    { path: "work/feedback/2026-08-12-map-rope.md", label: "rope", sub: "토픽 맵 작성 · 노트 4개" },
+  ],
+  proposalsMore: "",
+  proposalApprove: "승인",
+  proposalReject: "무시",
+  proposalNote: "승인은 저장되지만 초안 작성에는 질의 모델이 필요합니다.",
   mcp: "MCP 서버 실행 중",
   inflow: {
     header: "오늘 들어온 것",
@@ -146,7 +157,19 @@ export default function TrayPanel(): JSX.Element {
       main: r.text,
     }));
 
-  const waiting: PanelRow[] = [];
+  // Pending map proposals, decided right here (ROADMAP P0). The action string
+  // carries the proposal path back to the main window, which owns the store
+  // that writes the status — this window has no store of its own.
+  const waiting: PanelRow[] = buildMapProposalRows({
+    items: s.proposals ?? [],
+    approveLabel: s.proposalApprove ?? "",
+    rejectLabel: s.proposalReject ?? "",
+    onApprove: (path) => act(`proposal-approve:${path}`),
+    onReject: (path) => act(`proposal-reject:${path}`),
+    more: s.proposalsMore ?? "",
+    onMore: () => act("proposals"),
+    note: s.proposalNote ?? "",
+  });
   if (s.suggested) {
     waiting.push({
       key: "links",

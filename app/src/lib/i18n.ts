@@ -892,6 +892,9 @@ export interface Strings {
   tb_activity_mcp_off?: string;
   tb_activity_tasks?: string;
   tb_activity_tasks_more?: string; // {n}
+  // Pending map proposals, approvable straight from the activity surfaces.
+  tb_activity_map_notes?: string; // {n}
+  tb_activity_map_wait?: string;
   // "Today's inflow" section (activity popover + tray panel + native menu).
   tb_inflow_header?: string;
   tb_inflow_sessions?: string;
@@ -1904,6 +1907,9 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_mcp_off: "MCP server off",
     tb_activity_tasks: "Tasks due",
     tb_activity_tasks_more: "+{n} more",
+    tb_activity_map_notes: "{n} notes",
+    tb_activity_map_wait:
+      "Approving is saved, but the draft needs a query model — the local one can't write maps.",
     tb_inflow_header: "Today's inflow",
     tb_inflow_sessions: "Sessions swept",
     tb_inflow_last_sweep: "last sweep {t}",
@@ -2909,6 +2915,9 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_mcp_off: "MCP 서버 꺼짐",
     tb_activity_tasks: "할 일",
     tb_activity_tasks_more: "+{n}개 더",
+    tb_activity_map_notes: "노트 {n}개",
+    tb_activity_map_wait:
+      "승인은 저장되지만 초안 작성에는 질의 모델이 필요합니다 — 로컬 모델은 맵을 쓰지 못합니다.",
     tb_inflow_header: "오늘 들어온 것",
     tb_inflow_sessions: "세션 수집",
     tb_inflow_last_sweep: "마지막 수집 {t}",
@@ -3791,6 +3800,9 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_mcp_off: "MCPサーバー停止",
     tb_activity_tasks: "期限のタスク",
     tb_activity_tasks_more: "+{n}件",
+    tb_activity_map_notes: "ノート{n}件",
+    tb_activity_map_wait:
+      "承認は保存されますが、草案の作成にはクエリモデルが必要です — ローカルモデルはマップを書けません。",
     tb_inflow_header: "今日入ってきたもの",
     tb_inflow_sessions: "セッション取り込み",
     tb_inflow_last_sweep: "最終取り込み {t}",

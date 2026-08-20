@@ -6,7 +6,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const complete = vi.fn();
 vi.mock("../lib/chat", () => ({ complete: (...a: unknown[]) => complete(...a) }));
 
-import { useDistillStore, parseProposal } from "./distillStore";
+import { useDistillStore, parseProposal, pendingMapProposals } from "./distillStore";
+import type { ProposalMeta } from "./distillStore";
 import { useVaultStore } from "./vaultStore";
 import { ipc } from "../lib/ipc";
 import type { FileNode } from "../lib/ipc";
@@ -71,6 +72,36 @@ describe("parseProposal", () => {
 
   it("returns null for non-proposal markdown", () => {
     expect(parseProposal("wiki/x.md", "# hi\n\nregular note\n")).toBeNull();
+  });
+});
+
+describe("pendingMapProposals", () => {
+  const proposal = (
+    over: Partial<ProposalMeta> & Pick<ProposalMeta, "path">,
+  ): ProposalMeta => ({
+    action: "draft-map",
+    status: "pending",
+    created: "2026-08-12",
+    title: "Map candidate",
+    raw: "",
+    files: [],
+    ...over,
+  });
+
+  it("keeps only pending draft-map proposals, in order", () => {
+    const rows = pendingMapProposals([
+      proposal({ path: "a.md", cluster: "attention" }),
+      // Other actions belong to the Feedback page, not the activity rows.
+      proposal({ path: "b.md", action: "admit-cluster" }),
+      // Already decided — it waits on the draft step, not on the user.
+      proposal({ path: "c.md", status: "approved" }),
+      proposal({ path: "d.md", cluster: "rope" }),
+    ]);
+    expect(rows.map((p) => p.path)).toEqual(["a.md", "d.md"]);
+  });
+
+  it("is empty for an empty list", () => {
+    expect(pendingMapProposals([])).toEqual([]);
   });
 });
 
@@ -248,6 +279,72 @@ describe("useDistillStore", () => {
     expect(complete).not.toHaveBeenCalled();
     expect(rel).toBe("wiki/maps/attention.md");
     expect(writeSpy).toHaveBeenCalledWith(proposalPath, expect.stringContaining("status: done"));
+  });
+
+  // The activity popover / tray panel approve buttons call this very action
+  // (there is no second writer), one row at a time.
+  it("approving two map rows rewrites each proposal's status exactly once", async () => {
+    const rawFor = (cluster: string, members: string[]): string =>
+      [
+        "---",
+        "type: distill-proposal",
+        "action: draft-map",
+        "status: pending",
+        "created: 2026-08-12",
+        `payload: {"cluster":"${cluster}","members":${JSON.stringify(members)}}`,
+        "---",
+        "",
+        `# Map candidate: ${cluster}`,
+        "",
+      ].join("\n");
+    const files = new Map<string, string>([
+      ["/v/work/feedback/map-attention.md", rawFor("attention", ["wiki/a.md"])],
+      ["/v/work/feedback/map-rope.md", rawFor("rope", ["wiki/b.md"])],
+    ]);
+    // Both clusters already have a wiki/maps page, so draftMap's idempotency
+    // check short-circuits and no LLM call happens — this test is about the
+    // status write, not the drafting.
+    vi.spyOn(ipc, "listFiles").mockResolvedValue([
+      {
+        kind: "directory",
+        name: "wiki",
+        path: "/v/wiki",
+        children: [
+          {
+            kind: "directory",
+            name: "maps",
+            path: "/v/wiki/maps",
+            children: [
+              { kind: "file", name: "attention.md", path: "/v/wiki/maps/attention.md" },
+              { kind: "file", name: "rope.md", path: "/v/wiki/maps/rope.md" },
+            ],
+          },
+        ],
+      },
+    ]);
+    vi.spyOn(ipc, "readFile").mockImplementation(async (path: string) => {
+      const raw = files.get(path);
+      if (raw !== undefined) return { path, raw, content: raw, frontmatter: null };
+      const cluster = path.includes("rope") ? "rope" : "attention";
+      return { path, raw: "", content: "", frontmatter: { cluster } };
+    });
+    const writeSpy = vi.spyOn(ipc, "writeFile").mockImplementation(async (p, content) => {
+      files.set(p, content);
+      return null;
+    });
+
+    await useDistillStore.getState().apply("work/feedback/map-attention.md");
+    await useDistillStore.getState().apply("work/feedback/map-rope.md");
+
+    expect(complete).not.toHaveBeenCalled();
+    for (const path of ["/v/work/feedback/map-attention.md", "/v/work/feedback/map-rope.md"]) {
+      const approvals = writeSpy.mock.calls.filter(
+        ([p, c]) => p === path && c.includes("status: approved"),
+      );
+      expect(approvals).toHaveLength(1);
+      // …and the row completes: the same file ends up `done`, never left mid-flight.
+      expect(files.get(path)).toContain("status: done");
+    }
   });
 
   it("does nothing without an open vault", async () => {
