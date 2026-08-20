@@ -140,9 +140,11 @@ inflow against the wiki's topic clusters: junk is filtered before it costs an
 embedding, near-duplicate or off-topic items are quarantined then trashed, and
 raw sources already folded into the wiki move to a dated archive. Review its
 proposals on the Feedback page; tune intensity, gate strictness, and schedule
-from Settings. It also writes daily session digests, drafts topic maps for
-its clusters, and — with an optional profile — personalises Ask and ingest
-toward your stated role and interests.
+from Settings. It also compresses in two layers — a day's session logs into
+`daily/`, then a settled week's daily digests into `weekly/`, each layer's
+source moving to a cold archive once summarised — drafts topic maps for its
+clusters, and, with an optional profile, personalises Ask and ingest toward
+your stated role and interests.
 
 **Reader** — CodeMirror source / live preview / split, `[[wikilink]]`
 autocomplete, backlinks and Related notes panels. `raw/` PDFs open in an
