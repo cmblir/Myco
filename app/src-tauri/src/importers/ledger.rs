@@ -108,6 +108,13 @@ impl Ledger {
         self.entries.contains_key(key)
     }
 
+    /// The value recorded for `key`. The clipper stores the file name its
+    /// clip wrote, so it can ask whether that doc is still in `_inbox/`
+    /// before calling a re-clip a duplicate.
+    pub fn entry(&self, key: &str) -> Option<&String> {
+        self.entries.get(key)
+    }
+
     pub fn record(&mut self, key: String, fingerprint: String) {
         self.entries.insert(key, fingerprint);
     }

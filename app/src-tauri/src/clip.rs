@@ -6,7 +6,7 @@
 // http(s)-only source URLs, control characters stripped, and the filename is
 // derived from a whitelisted slug — never from a caller-supplied path.
 
-use crate::importers::ledger::{fingerprint, Ledger};
+use crate::importers::ledger::Ledger;
 use std::path::{Path, PathBuf};
 
 const MAX_TITLE: usize = 300;
@@ -129,8 +129,50 @@ fn yaml_str(s: &str) -> String {
 
 /// Ledger key for a clipped page. Keyed on the URL alone: a re-clip with a
 /// different highlight is still the same page.
+/// Dedup key for a clipped page. The URL is normalised first so the SAME page
+/// arriving with tracking noise, a fragment, or a trailing slash is recognised
+/// as the same clip: `#section`, a trailing `/`, and `utm_*`/`fbclid`/`gclid`
+/// query params are dropped. Anything else in the query is kept — `?id=42` is
+/// a different page, not noise.
 fn ledger_key(url: &str) -> String {
-    format!("clipper:{url}")
+    format!("clipper:{}", normalize_clip_url(url))
+}
+
+pub(crate) fn normalize_clip_url(url: &str) -> String {
+    let no_frag = url.split('#').next().unwrap_or(url);
+    let (base, query) = match no_frag.split_once('?') {
+        Some((b, q)) => (b, Some(q)),
+        None => (no_frag, None),
+    };
+    let base = base.strip_suffix('/').unwrap_or(base);
+    let kept: Vec<&str> = query
+        .map(|q| {
+            q.split('&')
+                .filter(|p| {
+                    let name = p.split('=').next().unwrap_or(p);
+                    !(name.starts_with("utm_") || name == "fbclid" || name == "gclid")
+                })
+                .filter(|p| !p.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    if kept.is_empty() {
+        base.to_string()
+    } else {
+        format!("{base}?{}", kept.join("&"))
+    }
+}
+
+/// Whether the doc the previous clip of this URL wrote is still in `_inbox/`.
+/// The ledger stores that doc's file NAME (see `save_clip`'s record call), so
+/// this asks about the very file the earlier clip produced. A legacy entry
+/// from before that (a content fingerprint, not a name) is treated as
+/// present — the old refuse-the-duplicate behaviour, never a surprise rewrite.
+fn clip_still_present(root: &Path, recorded: Option<&String>) -> bool {
+    match recorded {
+        Some(name) if name.ends_with(".md") => root.join("_inbox").join(name).exists(),
+        _ => true,
+    }
 }
 
 /// Markdown source doc for the ingest pipeline.
@@ -189,7 +231,13 @@ pub enum Saved {
 pub fn save_clip(root: &Path, clip: &Clip) -> Result<Saved, String> {
     let mut ledger = Ledger::load(root);
     let key = clip.url.as_deref().map(ledger_key);
-    if key.as_deref().is_some_and(|k| ledger.seen_key(k)) {
+    // "Already clipped" must mean the earlier clip is still HERE. The ledger
+    // never forgets, so without this check a page consumed by ingest (its
+    // source archived) or deleted by hand could never be clipped again — the
+    // only recovery was hand-editing .myco/ledger.json.
+    if key.as_deref().is_some_and(|k| ledger.seen_key(k))
+        && clip_still_present(root, key.as_deref().and_then(|k| ledger.entry(k)))
+    {
         return Ok(Saved::Duplicate);
     }
     let inbox = root.join("_inbox");
@@ -206,7 +254,10 @@ pub fn save_clip(root: &Path, clip: &Clip) -> Result<Saved, String> {
     let body = clip_markdown(clip, now_secs());
     std::fs::write(&path, &body).map_err(|e| format!("write clip: {e}"))?;
     if let Some(k) = key {
-        ledger.record(k, fingerprint(&body));
+        // The doc's file name, not its content hash: dedup is URL-keyed, and
+        // the name is what `clip_still_present` needs to tell "already here"
+        // from "was here, then ingested or deleted".
+        ledger.record(k, clip_filename(clip));
         // Best effort: the doc is already on disk, and a ledger that failed to
         // save costs a duplicate next time, never the clip.
         if let Err(e) = ledger.save(root) {
@@ -379,6 +430,41 @@ mod tests {
         let body = std::fs::read_to_string(&p).unwrap();
         assert!(body.starts_with("---\nsource: clipper\n"));
         assert!(body.contains("Source:"));
+    }
+
+    #[test]
+    fn a_clip_whose_doc_is_gone_can_be_clipped_again() {
+        // Ingest archives the source out of _inbox/ (or the user deletes it).
+        // The ledger never forgets, so without a presence check the page could
+        // never be captured again except by hand-editing .myco/ledger.json.
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let clip = Clip {
+            title: "post".into(),
+            url: Some("https://example.com/post".into()),
+            selection: None,
+        };
+        let Saved::Written(first) = save_clip(root, &clip).unwrap() else {
+            panic!("first clip must be written");
+        };
+        assert_eq!(save_clip(root, &clip).unwrap(), Saved::Duplicate);
+        std::fs::remove_file(&first).unwrap(); // consumed by ingest
+        assert!(
+            matches!(save_clip(root, &clip).unwrap(), Saved::Written(_)),
+            "a page whose clip is gone must be clippable again"
+        );
+    }
+
+    #[test]
+    fn tracking_noise_does_not_make_a_new_clip() {
+        assert_eq!(
+            normalize_clip_url("https://example.com/post/?utm_source=x&id=42#top"),
+            "https://example.com/post?id=42"
+        );
+        assert_eq!(
+            normalize_clip_url("https://example.com/post"),
+            normalize_clip_url("https://example.com/post/#section"),
+        );
     }
 
     #[test]

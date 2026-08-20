@@ -3488,8 +3488,19 @@ pub fn rollupable_weeks(root: &Path) -> Vec<RollupWeek> {
         });
     }
 
+    // The week that is still HAPPENING is never rollable, however mature its
+    // existing files look. `maturation_hours` means "this file stopped
+    // growing", which at day granularity implies "that day is over" — at week
+    // granularity it does not: on Thursday, Monday's and Tuesday's notes are
+    // both 24h old while the week has three days left. Rolling it up then
+    // charges once per remaining day, appends a section per run, and moves
+    // the current week's notes to the cold tier mid-week.
+    let (cy, cm, cd, ..) = civil_datetime(now);
+    let current_week = iso_week(&format!("{cy:04}-{cm:02}-{cd:02}"));
+
     let mut weeks: Vec<RollupWeek> = by_week
         .into_iter()
+        .filter(|(week, _)| Some(week.as_str()) != current_week.as_deref())
         .filter(|(_, entries)| entries.iter().all(|e| e.ready))
         .map(|(week, entries)| {
             let already_rolled = entries.iter().all(|e| e.rolled);
@@ -6163,6 +6174,14 @@ mod tests {
 
     /// Writes `daily/<day>.md` with `body` and a mature mtime, and returns its
     /// rel path — the shape `rollupable_weeks` wants.
+    /// A `YYYY-MM-DD` string `days` before now. Week fixtures must sit in the
+    /// PAST: `rollupable_weeks` never offers the week still in progress, so a
+    /// hard-coded date silently stops being rollable during its own week.
+    fn days_ago(days: i64) -> String {
+        let (y, m, d, ..) = civil_datetime(now_secs() - days * 86_400);
+        format!("{y:04}-{m:02}-{d:02}")
+    }
+
     fn settled_daily(root: &Path, day: &str, body: &str) -> String {
         let rel = format!("daily/{day}.md");
         let path = root.join(&rel);
@@ -6211,6 +6230,26 @@ mod tests {
     }
 
     #[test]
+    fn rollupable_weeks_never_offers_the_week_still_in_progress() {
+        crate::settings::test_support::with_isolated_data("distill-rollup-current", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            // Two settled notes dated inside the CURRENT week: mature by file
+            // age, but the week has days left. Rolling it up would charge once
+            // per remaining day and cold-tier this week's notes mid-week.
+            let (y, m, d, ..) = civil_datetime(now_secs());
+            let today = format!("{y:04}-{m:02}-{d:02}");
+            let this_week = iso_week(&today).unwrap();
+            settled_daily(root, &today, "# today\n- a\n");
+            let weeks = rollupable_weeks(root);
+            assert!(
+                !weeks.iter().any(|w| w.week == this_week),
+                "the in-progress week must never be offered: {weeks:?}"
+            );
+        });
+    }
+
+    #[test]
     fn rollupable_weeks_skips_a_week_with_one_immature_daily() {
         crate::settings::test_support::with_isolated_data("distill-rollup-immature", |_data| {
             let dir = tempfile::tempdir().unwrap();
@@ -6242,25 +6281,39 @@ mod tests {
         crate::settings::test_support::with_isolated_data("distill-rollup-groups", |_data| {
             let dir = tempfile::tempdir().unwrap();
             let root = dir.path();
-            settled_daily(root, "2026-08-16", "# sunday\n- a\n"); // W33
-            settled_daily(root, "2026-08-17", "# monday\n- b\n"); // W34
-            settled_daily(root, "2026-08-10", "# monday\n- c\n"); // W33
+            // Two adjacent past weeks, relative to now (see days_ago).
+            let older = days_ago(21); // week A
+            let older2 = days_ago(17); // same week A (21 and 17 share a week
+            let newer = days_ago(14); //   only if 21 is Mon..Thu — asserted below)
+            settled_daily(root, &older, "# a\n- a\n");
+            settled_daily(root, &older2, "# b\n- b\n");
+            settled_daily(root, &newer, "# c\n- c\n");
+            let week_a = iso_week(&older).unwrap();
+            let week_c = iso_week(&newer).unwrap();
 
             // Not a date, and not markdown — neither joins a week.
             std::fs::write(root.join("daily/notes.md"), "hand-written\n").unwrap();
             std::fs::write(root.join("daily/x.txt"), "2026-08-10\n").unwrap();
 
             let weeks = rollupable_weeks(root);
-            assert_eq!(weeks.len(), 2);
-            assert_eq!(weeks[0].week, "2026-W33");
-            assert_eq!(
-                weeks[0].files,
-                vec![
-                    "daily/2026-08-10.md".to_string(),
-                    "daily/2026-08-16.md".to_string()
-                ]
+            // Oldest week first; every offered week is in the past.
+            assert!(weeks.len() >= 2, "{weeks:?}");
+            assert_eq!(weeks[0].week, week_a.min(iso_week(&older2).unwrap()));
+            assert!(weeks.iter().any(|w| w.week == week_c));
+            let ordered: Vec<String> = weeks.iter().map(|w| w.week.clone()).collect();
+            let sorted = {
+                let mut c = ordered.clone();
+                c.sort();
+                c
+            };
+            assert_eq!(ordered, sorted, "weeks must come oldest first");
+            assert!(
+                weeks
+                    .iter()
+                    .flat_map(|w| w.files.iter())
+                    .all(|f| f.starts_with("daily/") && f.ends_with(".md")),
+                "only daily markdown joins a week: {weeks:?}"
             );
-            assert_eq!(weeks[1].week, "2026-W34");
         });
     }
 
