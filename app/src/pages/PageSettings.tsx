@@ -19,7 +19,12 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { getVersion } from "@tauri-apps/api/app";
 import { ipc } from "../lib/ipc";
 import type { ProjectInfo } from "../lib/ipc";
-import type { McpNativeInfo, MycoSettings, OllamaStatus } from "../lib/ipc";
+import type {
+  McpNativeInfo,
+  MycoSettings,
+  OllamaStatus,
+  SpotlightStatus,
+} from "../lib/ipc";
 import {
   CLI_DEFAULT,
   PROVIDERS,
@@ -37,6 +42,7 @@ import {
   DEFAULT_MONTHLY_THRESHOLD_USD,
 } from "../lib/budget";
 import { isComposingKey } from "../lib/ime";
+import { accelFromEvent, formatAccel } from "../lib/shortcutAccel";
 import { useReindexStore } from "../stores/reindexStore";
 import { useUpdateStore } from "../stores/updateStore";
 import type { UpdateState } from "../stores/updateStore";
@@ -136,6 +142,7 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
               <SettingsAppearance t={t} theme={theme} setTheme={setTheme} />
               <SettingsOverviewTheme t={t} />
               <TrayResidentToggle t={t} />
+              <SpotlightShortcutRow t={t} />
             </div>
           ) : null}
           {tab === "about" ? <SettingsAbout t={t} /> : null}
@@ -543,6 +550,121 @@ function TrayResidentToggle({ t }: { t: Strings }): JSX.Element | null {
             }}
           />
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Global "ask from anywhere" shortcut. The row shows what the OS actually gave
+// us, not what we asked for: a combination another app already owns fails to
+// register, and hiding that would leave a key that silently does nothing.
+function SpotlightShortcutRow({ t }: { t: Strings }): JSX.Element {
+  const [status, setStatus] = useState<SpotlightStatus | null>(null);
+  const [recording, setRecording] = useState(false);
+  const isMac =
+    typeof navigator !== "undefined" && /Mac/i.test(navigator.platform || "");
+
+  useEffect(() => {
+    void ipc
+      .spotlightStatus()
+      .then(setStatus)
+      .catch(() => {
+        /* plain-browser dev: no Tauri backend */
+      });
+  }, []);
+
+  const send = (accel: string): void => {
+    setRecording(false);
+    void ipc
+      .setSpotlightShortcut(accel)
+      .then(setStatus)
+      .catch(() => {
+        /* plain-browser dev: no Tauri backend */
+      });
+  };
+
+  // While recording, the next full combination wins. Capture phase so the
+  // keystroke never also reaches the app underneath (e.g. the command bar).
+  useEffect(() => {
+    if (!recording) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setRecording(false);
+        return;
+      }
+      const accel = accelFromEvent(e);
+      if (!accel) return; // still holding modifiers, or no modifier at all
+      e.preventDefault();
+      send(accel);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [recording]);
+
+  const shortcut = status?.shortcut ?? "";
+  const shown = formatAccel(shortcut, isMac);
+  const state = ((): { text: string; bad: boolean } => {
+    if (!shortcut) {
+      return {
+        text: t.s_spot_off ?? "Off — no global shortcut is registered.",
+        bad: false,
+      };
+    }
+    if (status?.registered) {
+      return {
+        text: (t.s_spot_ok ?? "Registered — press {k} anywhere.").replace(
+          "{k}",
+          shown,
+        ),
+        bad: false,
+      };
+    }
+    const base = (
+      t.s_spot_failed ??
+      "{k} could NOT be registered — another app is most likely already using it. Pick a different combination."
+    ).replace("{k}", shown);
+    // The OS/parser message verbatim: it is the only detail we actually have.
+    return { text: status?.error ? `${base} (${status.error})` : base, bad: true };
+  })();
+
+  // The description is long enough that a title-left / control-right row always
+  // wraps, so the controls sit under it deliberately instead of by accident.
+  return (
+    <div className="card">
+      <div style={{ fontSize: 13, fontWeight: 600 }}>
+        {t.s_spot_title ?? "Ask from anywhere"}
+      </div>
+      <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+        {t.s_spot_desc ??
+          "A global shortcut opens a small ask window over whatever you are doing."}
+      </div>
+      <div className="row" style={{ gap: 8, marginTop: 10 }}>
+        <button
+          className="btn"
+          data-testid="spotlight-record"
+          onClick={() => setRecording((v) => !v)}
+        >
+          {recording
+            ? (t.s_spot_recording ?? "Press the new combination…")
+            : shown || (t.s_spot_record ?? "Change shortcut")}
+        </button>
+        {shortcut ? (
+          <button className="btn" onClick={() => send("")}>
+            {t.s_spot_disable ?? "Turn off"}
+          </button>
+        ) : null}
+      </div>
+      <div
+        className="muted"
+        style={{
+          fontSize: 12,
+          marginTop: 8,
+          color: state.bad ? "var(--danger, #c0392b)" : undefined,
+        }}
+        role={state.bad ? "alert" : undefined}
+      >
+        {state.text}
       </div>
     </div>
   );

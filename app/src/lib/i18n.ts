@@ -915,6 +915,21 @@ export interface Strings {
   tray_quit?: string;
   s_tray_resident_title?: string;
   s_tray_resident_desc?: string;
+  // Global-shortcut spotlight (the ask-from-anywhere window) + its Settings row.
+  spot_placeholder?: string;
+  spot_thinking?: string;
+  spot_hint_enter?: string;
+  spot_hint_open?: string;
+  spot_no_vault?: string;
+  spot_busy?: string;
+  s_spot_title?: string;
+  s_spot_desc?: string;
+  s_spot_record?: string;
+  s_spot_recording?: string;
+  s_spot_disable?: string;
+  s_spot_ok?: string; // {k}
+  s_spot_failed?: string; // {k}
+  s_spot_off?: string;
   notif_distill_done_title?: string;
   notif_distill_done_body?: string; // {p} {d}
   notif_quarantine_title?: string;
@@ -1929,6 +1944,22 @@ export const STRINGS: Record<Lang, Strings> = {
     s_tray_resident_title: "Keep running in the menu bar",
     s_tray_resident_desc:
       "Closing the window hides it instead of quitting — myco stays in the menu bar and background work keeps going. Quit from the tray menu.",
+    spot_placeholder: "Ask the wiki…",
+    spot_thinking: "asking…",
+    spot_hint_enter: "Enter to ask · Esc to close",
+    spot_hint_open: "Click a citation to open that note in myco.",
+    spot_no_vault: "Open a vault in myco first — there is nothing to ask yet.",
+    spot_busy: "myco is still answering the previous question.",
+    s_spot_title: "Ask from anywhere",
+    s_spot_desc:
+      "A global shortcut opens a small ask window over whatever you are doing. It answers through the same Ask path as the app, so citations open the note.",
+    s_spot_record: "Change shortcut",
+    s_spot_recording: "Press the new combination…",
+    s_spot_disable: "Turn off",
+    s_spot_ok: "Registered — press {k} anywhere.",
+    s_spot_failed:
+      "{k} could NOT be registered — another app is most likely already using it. Pick a different combination.",
+    s_spot_off: "Off — no global shortcut is registered.",
     notif_distill_done_title: "Distill finished",
     notif_distill_done_body: "{p} proposals · {d} session days digested",
     notif_quarantine_title: "New quarantine items",
@@ -2937,6 +2968,22 @@ export const STRINGS: Record<Lang, Strings> = {
     s_tray_resident_title: "메뉴 막대에 상주",
     s_tray_resident_desc:
       "창을 닫아도 종료하지 않고 숨깁니다 — myco가 메뉴 막대에 남아 백그라운드 작업을 계속합니다. 종료는 트레이 메뉴에서.",
+    spot_placeholder: "위키에 질문…",
+    spot_thinking: "질문 중…",
+    spot_hint_enter: "Enter로 질문 · Esc로 닫기",
+    spot_hint_open: "인용을 클릭하면 myco에서 해당 노트를 엽니다.",
+    spot_no_vault: "myco에서 볼트를 먼저 열어주세요 — 아직 질문할 대상이 없습니다.",
+    spot_busy: "myco가 이전 질문에 아직 답하고 있습니다.",
+    s_spot_title: "어디서나 질문",
+    s_spot_desc:
+      "전역 단축키로 지금 하던 작업 위에 작은 질문 창을 띄웁니다. 앱의 Ask와 완전히 같은 경로로 답하므로 인용을 누르면 노트가 열립니다.",
+    s_spot_record: "단축키 변경",
+    s_spot_recording: "새 조합을 눌러주세요…",
+    s_spot_disable: "사용 안 함",
+    s_spot_ok: "등록됨 — 어디서나 {k}를 누르세요.",
+    s_spot_failed:
+      "{k}를 등록하지 못했습니다 — 다른 앱이 이미 쓰고 있을 가능성이 큽니다. 다른 조합을 선택하세요.",
+    s_spot_off: "꺼짐 — 등록된 전역 단축키가 없습니다.",
     notif_distill_done_title: "증류 완료",
     notif_distill_done_body: "제안 {p}건 · 세션 다이제스트 {d}일치",
     notif_quarantine_title: "새 격리 항목",
@@ -3822,6 +3869,22 @@ export const STRINGS: Record<Lang, Strings> = {
     s_tray_resident_title: "メニューバーに常駐",
     s_tray_resident_desc:
       "ウィンドウを閉じても終了せず隠します — mycoはメニューバーに残り、バックグラウンド処理を続けます。終了はトレイメニューから。",
+    spot_placeholder: "ウィキに質問…",
+    spot_thinking: "質問中…",
+    spot_hint_enter: "Enterで質問 · Escで閉じる",
+    spot_hint_open: "引用をクリックすると myco でそのノートを開きます。",
+    spot_no_vault: "先に myco でボールトを開いてください — まだ質問する対象がありません。",
+    spot_busy: "myco はまだ前の質問に答えています。",
+    s_spot_title: "どこからでも質問",
+    s_spot_desc:
+      "グローバルショートカットで、作業中の画面の上に小さな質問ウィンドウを開きます。アプリの Ask と同じ経路で答えるため、引用をクリックするとノートが開きます。",
+    s_spot_record: "ショートカットを変更",
+    s_spot_recording: "新しい組み合わせを押してください…",
+    s_spot_disable: "オフにする",
+    s_spot_ok: "登録済み — どこでも {k} を押してください。",
+    s_spot_failed:
+      "{k} を登録できませんでした — 他のアプリが既に使用している可能性が高いです。別の組み合わせを選んでください。",
+    s_spot_off: "オフ — グローバルショートカットは登録されていません。",
     notif_distill_done_title: "蒸留完了",
     notif_distill_done_body: "提案 {p}件 · セッションダイジェスト {d}日分",
     notif_quarantine_title: "新しい隔離アイテム",

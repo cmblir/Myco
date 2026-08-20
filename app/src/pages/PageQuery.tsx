@@ -11,7 +11,7 @@ import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { useQueryStore } from "../stores/queryStore";
+import { askCopy, useQueryStore } from "../stores/queryStore";
 import { takeQueryPrefill } from "../lib/queryPrefill";
 import MascotClip from "../components/MascotClip";
 import { flattenMarkdown, stem } from "../lib/graphData";
@@ -173,17 +173,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
     const question = q.trim();
     if (!question || !currentVault || busy) return;
     setQ("");
-    await askStore(question, lang, {
-      extractiveStale:
-        t.q_extractive_stale ??
-        "The search index predates a model update, so it can't be searched. Run “Reindex now” under Model settings, then ask again.",
-      extractiveFailed:
-        t.q_extractive_failed ??
-        "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.",
-      extractiveEmpty:
-        t.q_extractive_empty ?? "Nothing relevant found in the wiki index.",
-      emptyResponse: t.q_empty_response ?? "(empty response)",
-    });
+    await askStore(question, lang, askCopy(t));
   }
 
   return (

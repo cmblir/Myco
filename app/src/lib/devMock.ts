@@ -786,7 +786,25 @@ const SETTINGS = {
   auto_reflect_enabled: false,
   auto_reflect_interval_min: 180,
   tray_resident: false,
+  spotlight_shortcut: "Alt+Space",
 };
+
+/// What the main window would emit back for a spotlight question: the
+/// extractive Ask format (page header + relevance + verbatim quote), so the
+/// citation links and the blockquote styling are both exercised.
+const MOCK_SPOTLIGHT_ANSWER = [
+  "**[[rotary-position-embedding]]** · 71%",
+  "",
+  "> RoPE encodes absolute position by rotating the query and key vectors in",
+  "> 2-D subspaces, so the dot product between them depends only on their",
+  "> relative offset. That is why it extrapolates further than learned",
+  "> absolute embeddings.",
+  "",
+  "**[[attention-is-all-you-need]]** · 58%",
+  "",
+  "> Positional information has to be injected explicitly: self-attention is",
+  "> permutation-invariant on its own.",
+].join("\n");
 
 const bySlug = new Map(NODES.map((d) => [d.s, d]));
 
@@ -1083,6 +1101,21 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "tray_panel_action":
       return Promise.resolve(null);
     case "resize_tray_panel":
+      return Promise.resolve(null);
+    case "spotlight_status":
+      return Promise.resolve({
+        shortcut: "Alt+Space",
+        registered: true,
+        error: null,
+      });
+    case "set_spotlight_shortcut":
+      return Promise.resolve({
+        shortcut: String(args.shortcut ?? ""),
+        registered: String(args.shortcut ?? "") !== "",
+        error: null,
+      });
+    case "close_spotlight":
+    case "resize_spotlight":
       return Promise.resolve(null);
     case "get_settings":
       if (AGENT_MODE) {
@@ -1526,6 +1559,25 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       list.push({ id, handler });
       mockListeners.set(name, list);
       return Promise.resolve(id);
+    }
+    // emit() is an invoke too. The mock bus is per-window in the real app but
+    // one bus here, which is exactly what makes the spotlight route checkable
+    // in a browser: its ask event is answered below the same way the main
+    // window answers it (lib/spotlight.ts), with a canned turn.
+    case "plugin:event|emit": {
+      const name = String(args.event ?? "");
+      emitMock(name, args.payload);
+      if (name === "myco://spotlight-ask") {
+        const question = String(args.payload ?? "");
+        void sleep(600).then(() =>
+          emitMock("myco://spotlight-answer", {
+            question,
+            answer: MOCK_SPOTLIGHT_ANSWER,
+            extractive: true,
+          }),
+        );
+      }
+      return Promise.resolve(undefined);
     }
     case "plugin:event|unlisten": {
       const name = String(args.event ?? "");

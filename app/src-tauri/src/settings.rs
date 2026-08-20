@@ -71,6 +71,13 @@ pub struct Settings {
     /// closed. Default OFF: closing the window quits, as it always did.
     #[serde(default)]
     pub tray_resident: bool,
+    /// Global shortcut that opens the spotlight ask window, in the
+    /// global-hotkey string format ("Alt+Space", "Control+Shift+KeyK").
+    /// EMPTY means the feature is disabled and nothing is registered.
+    /// Whether registration actually succeeded is runtime state, not a
+    /// setting — see `spotlight::ShortcutStatus`.
+    #[serde(default = "default_spotlight_shortcut")]
+    pub spotlight_shortcut: String,
 }
 
 impl Default for Settings {
@@ -93,6 +100,7 @@ impl Default for Settings {
             auto_reflect_interval_min: default_auto_reflect_interval(),
             auto_reindex_enabled: false,
             tray_resident: false,
+            spotlight_shortcut: default_spotlight_shortcut(),
         }
     }
 }
@@ -144,6 +152,10 @@ impl Default for ProviderFlags {
 
 fn default_true() -> bool {
     true
+}
+
+fn default_spotlight_shortcut() -> String {
+    crate::spotlight::DEFAULT_SHORTCUT.to_string()
 }
 
 fn default_query_provider() -> String {

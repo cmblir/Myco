@@ -1,8 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Default capabilities granted to the main and tray-panel windows",
-  "windows": ["main", "tray-panel"],
+  "description": "Default capabilities granted to the main, tray-panel and spotlight windows",
+  "windows": ["main", "tray-panel", "spotlight"],
   "permissions": [
     "core:default",
     "dialog:allow-open",

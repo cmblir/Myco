@@ -5229,3 +5229,106 @@ html.tray-window body {
   width: auto;
   height: auto;
 }
+
+/* ---- Global-shortcut spotlight (components/Spotlight.tsx) ----------------
+   Its own OS window: frameless and transparent, so only the card paints.
+   Palette is hardcoded dark like .tray-panel — a floating OS-level surface,
+   not a themed page. */
+html.spotlight-window,
+html.spotlight-window body {
+  background: transparent;
+}
+html.spotlight-window body {
+  /* Room for the CSS shadow; the OS window shadow is off (it hugs the
+     transparent rect, not the rounded card). */
+  padding: 12px 20px 20px;
+}
+.spotlight-card {
+  box-sizing: border-box;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  background: rgba(28, 30, 36, 0.98);
+  border: 1px solid #3a3e48;
+  border-radius: 14px;
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  color: #e8eaee;
+  font:
+    14px/1.55 -apple-system,
+    "Pretendard",
+    "Apple SD Gothic Neo",
+    sans-serif;
+  overflow: hidden;
+}
+.spotlight-input-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  flex: 0 0 auto;
+}
+.spotlight-glyph {
+  color: #8f96a3;
+  font-size: 16px;
+  line-height: 1;
+}
+.spotlight-input {
+  flex: 1;
+  min-width: 0;
+  background: none;
+  border: 0;
+  color: #f2f4f8;
+  font-size: 19px;
+  font-family: inherit;
+  padding: 2px 0;
+}
+.spotlight-input::placeholder {
+  color: #6d7480;
+}
+.spotlight-input:focus {
+  outline: none;
+}
+.spotlight-status {
+  flex: 0 0 auto;
+  font-size: 12px;
+  color: #8f96a3;
+}
+/* The answer scrolls INSIDE the card. A viewport-relative cap on the card
+   itself would deadlock: the card's height is what resize_spotlight sizes the
+   window to, so 100vh could never exceed the first-paint height. */
+.spotlight-body {
+  border-top: 1px solid #33363f;
+  padding: 12px 16px 14px;
+  max-height: 520px;
+  overflow-y: auto;
+  font-size: 13.5px;
+}
+.spotlight-label {
+  font-size: 11px;
+  color: #8f96a3;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  margin-bottom: 8px;
+}
+.spotlight-error {
+  color: #ffb4a2;
+}
+.spotlight-hint {
+  color: #6d7480;
+  font-size: 12px;
+}
+.spotlight-body .spotlight-hint {
+  margin-top: 10px;
+}
+.spotlight-body .myco-viewer {
+  font-size: 13.5px;
+}
+.spotlight-body .myco-viewer blockquote {
+  margin: 6px 0 10px;
+  padding-left: 10px;
+  border-left: 2px solid #4a4f5b;
+  color: #c3c9d3;
+}
+.spotlight-body .myco-viewer a {
+  color: #9dbcff;
+}

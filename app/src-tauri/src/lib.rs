@@ -34,6 +34,7 @@ pub mod sample_vault;
 pub mod schedules;
 pub mod secrets;
 pub mod settings;
+pub mod spotlight;
 pub mod tasks;
 pub mod tray;
 pub mod validator;
@@ -132,6 +133,13 @@ pub fn run() {
         .manage(tray::TrayHandle::default())
         // Last tray snapshot, served to the tray popover window on open.
         .manage(tray::TrayStatusCache::default())
+        // Whether the global ask shortcut is actually registered; Settings
+        // reads it so a combination another app holds is reported, not hidden.
+        .manage(spotlight::ShortcutRegistration::default())
+        // Global "ask the wiki from anywhere" shortcut. The plugin only
+        // provides the manager — registration happens in spotlight::init at
+        // runtime, so a refused key is a status instead of an init failure.
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
             commands::ensure_default_vault,
@@ -223,6 +231,10 @@ pub fn run() {
             tray::get_tray_status,
             tray::tray_panel_action,
             tray::resize_tray_panel,
+            spotlight::spotlight_status,
+            spotlight::set_spotlight_shortcut,
+            spotlight::close_spotlight,
+            spotlight::resize_spotlight,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path
@@ -266,6 +278,10 @@ pub fn run() {
             if let Err(e) = tray::init(app.handle()) {
                 eprintln!("tray init failed: {e}");
             }
+            // Global ask shortcut (option+space by default). Best-effort in the
+            // same sense as the tray: it reports failure into ShortcutState
+            // rather than returning an error that would abort startup.
+            spotlight::init(app.handle());
             // Resident mode: with the settings toggle ON, closing the window
             // hides it and the app stays in the menu bar; OFF (default) keeps
             // today's behavior — the close proceeds and the app quits via the

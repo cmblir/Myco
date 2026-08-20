@@ -17,7 +17,7 @@ import { log } from "../lib/log";
 
 /** Mirrors `intent::VAULT_FILES` on the Rust side. */
 const VAULT_FILES_INTENT = "vault-files";
-import type { Lang } from "../lib/i18n";
+import type { Lang, Strings } from "../lib/i18n";
 import { useVaultStore } from "./vaultStore";
 
 export interface ChatTurn {
@@ -56,6 +56,23 @@ export interface AskCopy {
   extractiveFailed: string;
   extractiveEmpty: string;
   emptyResponse: string;
+}
+
+/** The AskCopy every caller of `ask()` passes, in one place — the Ask page and
+ * the global-shortcut spotlight must bake identical copy into a turn, and two
+ * copies of these fallbacks would drift. */
+export function askCopy(t: Strings): AskCopy {
+  return {
+    extractiveStale:
+      t.q_extractive_stale ??
+      "The search index predates a model update, so it can't be searched. Run “Reindex now” under Model settings, then ask again.",
+    extractiveFailed:
+      t.q_extractive_failed ??
+      "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.",
+    extractiveEmpty:
+      t.q_extractive_empty ?? "Nothing relevant found in the wiki index.",
+    emptyResponse: t.q_empty_response ?? "(empty response)",
+  };
 }
 
 interface QueryState {

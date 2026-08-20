@@ -35,6 +35,7 @@ import PageSchedules from "./pages/PageSchedules";
 import { STRINGS } from "./lib/i18n";
 import { promptNewNote } from "./lib/newNote";
 import { initTrayIntegration } from "./lib/trayStatus";
+import { initSpotlightBridge } from "./lib/spotlight";
 import type { Strings } from "./lib/i18n";
 import { useUIStore } from "./stores/uiStore";
 import type { RouteId } from "./stores/uiStore";
@@ -403,6 +404,11 @@ export default function App(): JSX.Element {
   // Menu bar tray: mirror the activity stores into the native tray menu and
   // handle its action clicks. One subscription for the app's lifetime.
   useEffect(() => initTrayIntegration(), []);
+
+  // Global-shortcut spotlight: this window answers its questions (it has the
+  // vault and queryStore; the spotlight webview has neither) and follows its
+  // citation clicks. Mounted only here, so there is exactly one responder.
+  useEffect(() => initSpotlightBridge(), []);
 
   // One silent update check per launch. The store swallows every failure into a
   // status the Settings page shows on request, so a dead network or an

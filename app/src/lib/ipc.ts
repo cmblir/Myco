@@ -271,6 +271,19 @@ export interface MycoSettings {
   /** Keep the menu bar tray (and the app) running after the window closes.
    *  Default OFF: closing the window quits, as it always did. */
   tray_resident: boolean;
+  /** Global shortcut that opens the spotlight ask window ("Alt+Space"), or an
+   *  empty string when the feature is switched off. Whether the OS actually
+   *  granted it is runtime state — see `ipc.spotlightStatus`. */
+  spotlight_shortcut: string;
+}
+
+/** Honest global-shortcut state (mirrors Rust `spotlight::ShortcutStatus`).
+ *  `registered: false` with a non-empty `shortcut` means the app asked for it
+ *  and was refused — `error` carries the reason, shown as-is in Settings. */
+export interface SpotlightStatus {
+  shortcut: string;
+  registered: boolean;
+  error: string | null;
 }
 
 /** Pre-translated tray snapshot (mirrors Rust tray::TrayStatus). The Rust
@@ -673,6 +686,17 @@ export const ipc = {
   /** Fit the tray popover window to the card's measured height (logical px). */
   resizeTrayPanel: (height: number) =>
     invoke<null>("resize_tray_panel", { height }),
+  /** Is the global ask shortcut actually registered right now? */
+  spotlightStatus: () => invoke<SpotlightStatus>("spotlight_status"),
+  /** Change the global ask shortcut (empty string disables it). Persists and
+   *  re-registers in one step; the returned status says what really happened. */
+  setSpotlightShortcut: (shortcut: string) =>
+    invoke<SpotlightStatus>("set_spotlight_shortcut", { shortcut }),
+  /** Hide the spotlight window (its own webview is not allowed to). */
+  closeSpotlight: () => invoke<null>("close_spotlight"),
+  /** Fit the spotlight window to its measured card height (logical px). */
+  resizeSpotlight: (height: number) =>
+    invoke<null>("resize_spotlight", { height }),
   setSettings: (value: MycoSettings) =>
     invoke<null>("set_settings", { value }),
   chatComplete: (request: ChatRequest) =>

@@ -5,7 +5,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { isTrayPanelWindow } from "./lib/windowRoute";
+import { isSpotlightWindow, isTrayPanelWindow } from "./lib/windowRoute";
 import "./styles.css";
 
 const ERROR_LOG_KEY = "myco.errorlog";
@@ -63,6 +63,22 @@ async function bootstrap(): Promise<void> {
       <React.StrictMode>
         <ErrorBoundary>
           <TrayPanel />
+        </ErrorBoundary>
+      </React.StrictMode>,
+    );
+    return;
+  }
+
+  // The global-shortcut spotlight (Rust opens index.html?window=spotlight):
+  // one input and the answer. Like the tray window, App never mounts here, so
+  // none of its schedulers run in this third JS context — and the question is
+  // answered by the main window, not here (see lib/spotlight.ts).
+  if (isSpotlightWindow(location.search)) {
+    const { default: Spotlight } = await import("./components/Spotlight");
+    ReactDOM.createRoot(root).render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <Spotlight />
         </ErrorBoundary>
       </React.StrictMode>,
     );

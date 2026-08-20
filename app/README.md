@@ -100,6 +100,12 @@ can run e.g. Claude Sonnet for ingest and a local Llama for Q&A.
   language is independent of the UI.
 - `⌘K` command palette (jumps to any route or vault file).
 - `⌘B` toggles the sidebar.
+- `⌥Space` (global, works from any app) opens a spotlight window: type a
+  question, press Enter, and the answer appears with its citations —
+  clicking one opens that note in myco. It runs the same Ask path as the
+  in-app page. Change or switch it off under Settings → Appearance; if
+  another app already owns the combination, that row says so instead of
+  leaving a key that quietly does nothing.
 
 ## Install
 
