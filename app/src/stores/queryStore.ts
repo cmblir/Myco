@@ -5,7 +5,11 @@
 
 import { create } from "zustand";
 import { complete, retrieveChunks, type AskStage } from "../lib/chat";
-import { formatExtractiveAnswer } from "../lib/extractive";
+import {
+  citationsOf,
+  formatExtractiveAnswer,
+  type Citation,
+} from "../lib/extractive";
 import { ipc } from "../lib/ipc";
 import {
   formatActivityAnswer,
@@ -41,6 +45,11 @@ export interface ChatTurn {
   /// failure, or a legitimately empty hit list) — suppresses the "From your
   /// notes" label, since there is nothing to attribute to the notes.
   extractiveEmpty?: boolean;
+  /// The pages this answer quotes, with the retrieval numbers behind them, so
+  /// the UI can show per-citation confidence and source tier. Only the
+  /// extractive path has them: a provider-synthesized answer cites pages in
+  /// prose, with no per-citation similarity to report.
+  citations?: Citation[];
 }
 
 export const SYSTEM_PREAMBLE = `You are myco, the wiki maintainer for the user's local markdown vault.
@@ -194,6 +203,9 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           a: body,
           extractive: true,
           extractiveEmpty: !md,
+          // Same grouping/cap as the rendered answer, so every chip has a
+          // section above it. Empty answer -> no citations to describe.
+          citations: md ? citationsOf(r.hits) : undefined,
           stale: r.stale,
           retrievalFailed: r.retrievalFailed,
         });

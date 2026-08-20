@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatExtractiveAnswer } from "./extractive";
+import {
+  citationsOf,
+  confidenceBand,
+  formatExtractiveAnswer,
+  sourceTier,
+} from "./extractive";
 import type { ScoredChunk } from "./ipc";
 
 const chunk = (over: Partial<ScoredChunk> = {}): ScoredChunk => ({
@@ -95,5 +100,58 @@ describe("formatExtractiveAnswer", () => {
   it("returns empty string for no hits / text-less hits", () => {
     expect(formatExtractiveAnswer([])).toBe("");
     expect(formatExtractiveAnswer([chunk({ text: "" })])).toBe("");
+  });
+});
+
+describe("confidenceBand", () => {
+  it("bands a cosine at the measured boundaries (0.65 / 0.55 / floor)", () => {
+    expect(confidenceBand(0.72)).toBe("high");
+    expect(confidenceBand(0.65)).toBe("high");
+    expect(confidenceBand(0.6499)).toBe("medium");
+    expect(confidenceBand(0.55)).toBe("medium");
+    expect(confidenceBand(0.5499)).toBe("low");
+    expect(confidenceBand(0.5)).toBe("low");
+  });
+
+  it("says 'lexical' rather than inventing a band when there is no cosine", () => {
+    // A lexical-only hit carries similarity: null (chat.ts keeps it — exact
+    // term overlap is its own evidence) and must not be shown a fake band.
+    expect(confidenceBand(null)).toBe("lexical");
+  });
+});
+
+describe("sourceTier", () => {
+  it("names the vault layer a citation came from", () => {
+    expect(sourceTier("wiki/bpe.md")).toBe("note");
+    expect(sourceTier("wiki/maps/nlp.md")).toBe("note");
+    expect(sourceTier("daily/2026-08-19.md")).toBe("digest");
+    expect(sourceTier("weekly/2026-W33.md")).toBe("rollup");
+    expect(sourceTier("sessions/2026-08/codex-abc.md")).toBe("session");
+    expect(sourceTier("raw/paper.md")).toBe("source");
+    expect(sourceTier("_inbox/drop.md")).toBe("source");
+    // A bare top-level page is still the user's own writing.
+    expect(sourceTier("scratch.md")).toBe("note");
+  });
+});
+
+describe("citationsOf", () => {
+  it("carries each page's BEST cosine, capped like the rendered answer", () => {
+    const cites = citationsOf([
+      chunk({ page: "wiki/a.md", stem: "a", similarity: 0.52 }),
+      chunk({ page: "wiki/a.md", stem: "a", similarity: 0.71 }),
+      chunk({ page: "daily/2026-08-19.md", stem: "2026-08-19", similarity: null }),
+    ]);
+    expect(cites).toEqual([
+      { page: "wiki/a.md", stem: "a", similarity: 0.71 },
+      { page: "daily/2026-08-19.md", stem: "2026-08-19", similarity: null },
+    ]);
+  });
+
+  it("describes only the pages the answer actually quotes", () => {
+    const hits = Array.from({ length: 7 }, (_, i) =>
+      chunk({ page: `wiki/p${i}.md`, stem: `p${i}` }),
+    );
+    expect(citationsOf(hits)).toHaveLength(5);
+    expect(citationsOf([chunk({ text: "" })])).toEqual([]);
   });
 });

@@ -856,6 +856,19 @@ export interface Strings {
   q_extractive_empty?: string;
   q_extractive_stale?: string;
   q_extractive_failed?: string;
+  // Per-citation confidence band + source tier chips (ROADMAP P1).
+  q_cite_conf_high?: string;
+  q_cite_conf_medium?: string;
+  q_cite_conf_low?: string;
+  q_cite_conf_lexical?: string;
+  q_cite_conf_tip?: string;
+  q_cite_conf_lexical_tip?: string;
+  q_cite_tier_note?: string;
+  q_cite_tier_digest?: string;
+  q_cite_tier_rollup?: string;
+  q_cite_tier_session?: string;
+  q_cite_tier_source?: string;
+  q_cite_list_label?: string;
   // "Set up your profile" hint chip, Ask mode (Phase B, Task 5).
   ask_profile_hint?: string;
   ask_profile_hint_cta?: string;
@@ -1895,6 +1908,20 @@ export const STRINGS: Record<Lang, Strings> = {
       "The search index predates a model update, so it can't be searched. Run “Reindex now” under Model settings, then ask again.",
     q_extractive_failed:
       "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.",
+    q_cite_conf_high: "strong match",
+    q_cite_conf_medium: "moderate match",
+    q_cite_conf_low: "weak match",
+    q_cite_conf_lexical: "keyword match",
+    q_cite_conf_tip:
+      "{page} — similarity {sim} (dense cosine; passages below {floor} are not shown)",
+    q_cite_conf_lexical_tip:
+      "{page} — keyword match only, so there is no similarity score for it",
+    q_cite_tier_note: "your note",
+    q_cite_tier_digest: "daily digest",
+    q_cite_tier_rollup: "weekly rollup",
+    q_cite_tier_session: "session log",
+    q_cite_tier_source: "imported source",
+    q_cite_list_label: "Citation confidence and source",
     ask_profile_hint:
       "Set up your profile so Ask can tailor answers to your role and interests.",
     ask_profile_hint_cta: "Set up profile",
@@ -2926,6 +2953,20 @@ export const STRINGS: Record<Lang, Strings> = {
       "검색 인덱스가 모델 업데이트 이전에 만들어져 검색할 수 없습니다. 모델 설정에서 “지금 재인덱스”를 실행한 뒤 다시 질문해 주세요.",
     q_extractive_failed:
       "검색 인덱스에 접근할 수 없어 관련 구절을 가져오지 못했습니다. 계속되면 모델 설정에서 “지금 재인덱스”를 실행해 주세요.",
+    q_cite_conf_high: "일치도 높음",
+    q_cite_conf_medium: "일치도 보통",
+    q_cite_conf_low: "일치도 낮음",
+    q_cite_conf_lexical: "키워드 일치",
+    q_cite_conf_tip:
+      "{page} — 유사도 {sim} (임베딩 코사인, {floor} 미만 구절은 표시하지 않음)",
+    q_cite_conf_lexical_tip:
+      "{page} — 키워드로만 일치해 유사도 점수가 없습니다",
+    q_cite_tier_note: "내가 쓴 노트",
+    q_cite_tier_digest: "일일 요약",
+    q_cite_tier_rollup: "주간 요약",
+    q_cite_tier_session: "세션 로그",
+    q_cite_tier_source: "가져온 원문",
+    q_cite_list_label: "인용 신뢰도와 출처 종류",
     ask_profile_hint: "프로필을 설정하면 Ask가 역할과 관심사에 맞춰 답변합니다.",
     ask_profile_hint_cta: "프로필 설정",
     ask_profile_hint_dismiss: "닫기",
@@ -3832,6 +3873,20 @@ export const STRINGS: Record<Lang, Strings> = {
       "検索インデックスがモデル更新前のものだったため、検索できませんでした。モデル設定の「今すぐ再インデックス」を実行してから、もう一度質問してください。",
     q_extractive_failed:
       "検索インデックスに接続できず、該当する箇所を取得できませんでした。続く場合は、モデル設定の「今すぐ再インデックス」を実行してください。",
+    q_cite_conf_high: "一致度 高",
+    q_cite_conf_medium: "一致度 中",
+    q_cite_conf_low: "一致度 低",
+    q_cite_conf_lexical: "キーワード一致",
+    q_cite_conf_tip:
+      "{page} — 類似度 {sim}（埋め込みコサイン。{floor} 未満の箇所は表示しません）",
+    q_cite_conf_lexical_tip:
+      "{page} — キーワードのみの一致のため、類似度スコアはありません",
+    q_cite_tier_note: "自分のノート",
+    q_cite_tier_digest: "日次ダイジェスト",
+    q_cite_tier_rollup: "週次まとめ",
+    q_cite_tier_session: "セッションログ",
+    q_cite_tier_source: "取り込んだ原文",
+    q_cite_list_label: "引用の一致度と出典の種類",
     ask_profile_hint: "プロフィールを設定すると、Askが役割や興味・関心に合わせて回答します。",
     ask_profile_hint_cta: "プロフィールを設定",
     ask_profile_hint_dismiss: "閉じる",

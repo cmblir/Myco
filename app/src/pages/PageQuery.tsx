@@ -15,6 +15,14 @@ import { askCopy, useQueryStore } from "../stores/queryStore";
 import { takeQueryPrefill } from "../lib/queryPrefill";
 import MascotClip from "../components/MascotClip";
 import { flattenMarkdown, stem } from "../lib/graphData";
+import { RELEVANCE_FLOOR } from "../lib/chat";
+import {
+  confidenceBand,
+  sourceTier,
+  type Citation,
+  type ConfidenceBand,
+  type SourceTier,
+} from "../lib/extractive";
 import Viewer from "../components/Viewer";
 import AgentPanel from "../components/AgentPanel";
 import AudioOverviewPanel from "../components/AudioOverviewPanel";
@@ -332,6 +340,9 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 <ThinkingGalaxy pages={thinkingPages} label={thinkingLabel} />
               )}
             </div>
+            {turn.citations?.length ? (
+              <CitationChips t={t} citations={turn.citations} />
+            ) : null}
             {turn.stale && !turn.extractive ? (
               <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>
                 <Icon name="info" size={12} />{" "}
@@ -380,6 +391,83 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
 
       <AudioOverviewPanel t={t} />
     </div>
+  );
+}
+
+function bandLabel(t: Strings, band: ConfidenceBand): string {
+  switch (band) {
+    case "high":
+      return t.q_cite_conf_high ?? "strong match";
+    case "medium":
+      return t.q_cite_conf_medium ?? "moderate match";
+    case "low":
+      return t.q_cite_conf_low ?? "weak match";
+    case "lexical":
+      return t.q_cite_conf_lexical ?? "keyword match";
+  }
+}
+
+function tierLabel(t: Strings, tier: SourceTier): string {
+  switch (tier) {
+    case "digest":
+      return t.q_cite_tier_digest ?? "daily digest";
+    case "rollup":
+      return t.q_cite_tier_rollup ?? "weekly rollup";
+    case "session":
+      return t.q_cite_tier_session ?? "session log";
+    case "source":
+      return t.q_cite_tier_source ?? "imported source";
+    case "note":
+      return t.q_cite_tier_note ?? "your note";
+  }
+}
+
+// Per-citation confidence + source tier, under an extractive answer. Both are
+// words, never colour alone: the band is a label, and the exact cosine (and
+// the floor it cleared) lives in the chip's tooltip so the number is
+// available without shouting it at everyone.
+function CitationChips({
+  t,
+  citations,
+}: {
+  t: Strings;
+  citations: Citation[];
+}): JSX.Element {
+  return (
+    <ul
+      aria-label={t.q_cite_list_label ?? "Citation confidence and source"}
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 6,
+        listStyle: "none",
+        margin: "8px 0 0",
+        padding: 0,
+      }}
+    >
+      {citations.map((c) => {
+        const tip =
+          c.similarity == null
+            ? (
+                t.q_cite_conf_lexical_tip ??
+                "{page} — keyword match only, so there is no similarity score for it"
+              ).replace("{page}", c.page)
+            : (
+                t.q_cite_conf_tip ??
+                "{page} — similarity {sim} (dense cosine; passages below {floor} are not shown)"
+              )
+                .replace("{page}", c.page)
+                .replace("{sim}", c.similarity.toFixed(3))
+                .replace("{floor}", RELEVANCE_FLOOR.toFixed(2));
+        return (
+          <li key={c.page} className="chip" title={tip}>
+            <span style={{ fontWeight: 500 }}>{c.stem}</span>
+            <span>· {bandLabel(t, confidenceBand(c.similarity))}</span>
+            <span>· {tierLabel(t, sourceTier(c.page))}</span>
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 

@@ -10,6 +10,7 @@
 
 import type { DistillConfig } from "./distill";
 import type { QuarantineItem } from "./quarantine";
+import type { ScoredChunk } from "./ipc";
 import { today } from "./taskLine";
 
 interface Node {
@@ -1312,7 +1313,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // down the no-match fallback below — which now means "abstain", so
       // mock-driven tests could not reach the answer path at all.
       const terms = q.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 2);
-      const hits = NODES.filter((d) => {
+      const hits: ScoredChunk[] = NODES.filter((d) => {
         const hay = `${d.n} ${body(d)}`.toLowerCase();
         return terms.some((w) => hay.includes(w));
       })
@@ -1327,6 +1328,36 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
           // above RELEVANCE_FLOOR (0.5) and survive filtering.
           similarity: 0.68 - i * 0.02,
         }));
+      // The real index also holds machine-written pages (`daily/` digests are
+      // indexed — see collect_wiki_pages) and the lexical arm returns hits with
+      // NO cosine at all (similarity: null). Neither exists in the wiki-only
+      // sample graph, so a browser run could not see the citation chips'
+      // source-tier / "keyword match" states. Appended, never substituted, so
+      // the ranked wiki hits above stay first.
+      // Inserted mid-ranking (not appended): the extractive answer only renders
+      // the top 5 PAGES, so a tail entry would never be visible.
+      if (hits.length > 0) {
+        hits.splice(
+          2,
+          0,
+          {
+            page: "daily/2026-08-19.md",
+            stem: "2026-08-19",
+            section: 0,
+            text: `digest bullet mentioning ${terms[0]}`,
+            score: 0.8,
+            similarity: 0.58,
+          },
+          {
+            page: "sessions/2026-08/codex-019fdc04.md",
+            stem: "codex-019fdc04",
+            section: 0,
+            text: `session transcript line mentioning ${terms[0]}`,
+            score: 0.78,
+            similarity: null,
+          },
+        );
+      }
       // No keyword match: return weak hits the way the real backend does for an
       // off-vault question — below RELEVANCE_FLOOR, so the abstention path (not
       // the answer path) is what a mock-mode nonsense query exercises.
