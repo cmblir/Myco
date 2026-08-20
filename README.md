@@ -156,6 +156,11 @@ CLI (your Pro/Max subscription), Anthropic / OpenAI / Google AI / OpenRouter
 APIs, and local Ollama. Separate model pick for Query vs Ingest, monthly cost
 budget. API keys go to the OS keychain — never plaintext on disk.
 
+**Portable settings** — Settings → About → Export/Import bundles providers,
+automation toggles, appearance and graph looks into one JSON file, so moving
+to a new machine doesn't mean re-clicking through every tab. API keys, the
+vault path and this device's identity never leave.
+
 **Web clipper** — browser extension + bookmarklet (`clipper/`) that sends any
 page or selection into the vault inbox via a deep link.
 
