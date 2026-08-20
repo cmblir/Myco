@@ -1,6 +1,6 @@
 [package]
 name = "myco"
-version = "0.3.1"
+version = "0.4.0"
 description = "myco — desktop wiki for plain markdown vaults"
 authors = ["myco contributors"]
 edition = "2021"

@@ -2,7 +2,7 @@
   "name": "myco",
   "productName": "myco",
   "private": true,
-  "version": "0.3.1",
+  "version": "0.4.0",
   "type": "module",
   "description": "Cross-platform desktop wiki app for plain markdown vaults",
   "scripts": {
