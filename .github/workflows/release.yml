@@ -1,19 +1,22 @@
 name: release
 
-# Build the WINDOWS installer on a real runner and attach it to an existing
-# GitHub Release. NSIS .exe, one of the two bundle targets in tauri.conf.json.
+# Two jobs, one per trigger, because macOS and Windows reach a release by
+# genuinely different routes:
 #
-# WINDOWS ONLY, MANUAL ONLY, as of v0.3.0 — both on purpose:
-#
-# - macOS is built and signed locally (docs/SIGNING.md Part 1b). The Developer
-#   ID certificate lives in the maintainer's keychain, not in repo secrets, so a
-#   runner CANNOT produce a signed .dmg. Leaving the macOS job in this matrix
-#   would upload an UNSIGNED .dmg over the signed one — strictly worse than no
-#   macOS job at all.
-# - Firing on `push: tags` would race that same unsigned build against the local
-#   upload, so this is dispatch-only. Publish the release first (with the signed
-#   .dmg), then dispatch this to add the Windows installer to it.
+# - `push: tags` -> `macos-updater`. Builds the macOS .app + .dmg and the updater
+#   artifacts (.app.tar.gz + .sig) and opens a DRAFT release carrying latest.json,
+#   the channel tauri-plugin-updater polls. It is a DRAFT on purpose: the Apple
+#   Developer ID certificate lives in the maintainer's keychain, not in repo
+#   secrets, so the runner's .dmg is NOT signed or notarized. Swap in the locally
+#   signed .dmg (docs/SIGNING.md Part 1b), then publish. Until it is published,
+#   `releases/latest/download/latest.json` does not resolve, so no user is ever
+#   offered an update whose installer nobody signed.
+# - `workflow_dispatch` -> `publish-tauri`. The NSIS .exe, added to an existing
+#   release on demand. Manual since v0.3.0 and unchanged here.
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       tag:
@@ -21,7 +24,72 @@ on:
         required: true
 
 jobs:
+  # macOS + the updater channel. Everything the updater consumes is produced
+  # here: only this job has the signing key, so only artifacts built here carry a
+  # signature the shipped app will accept.
+  macos-updater:
+    if: github.event_name == 'push'
+    permissions:
+      contents: write # tauri-action creates the draft release + uploads assets
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Same reason as the Windows job: the bundled SEED model lives in Git
+          # LFS and a pointer file would ship as the "offline model".
+          lfs: true
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: app/src-tauri
+
+      - name: install frontend dependencies
+        run: npm ci
+        working-directory: app
+
+      - uses: tauri-apps/tauri-action@action-v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # C++17 std::filesystem in the bundled model's ggml — see the Windows
+          # job below for the full story.
+          MACOSX_DEPLOYMENT_TARGET: "10.15"
+          # The minisign key the updater verifies against. NOT the Apple
+          # Developer ID certificate — different key, different purpose. Generate
+          # it and set this secret per docs/SIGNING.md Part 4; without it this job
+          # fails at the signing step with "A public key has been found, but no
+          # private key."
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: app
+          tagName: ${{ github.ref_name }}
+          releaseName: "myco ${{ github.ref_name }}"
+          # Draft: the .dmg built here is unsigned. Replace it with the locally
+          # signed + notarized one before publishing.
+          releaseDraft: true
+          prerelease: false
+          releaseBody: >
+            DRAFT — replace the unsigned .dmg with the locally signed and
+            notarized one (docs/SIGNING.md Part 1b), then publish. latest.json
+            and the .app.tar.gz/.sig pair are the updater channel; leave them.
+          # `app` is required, not cosmetic: the bundler only emits the macOS
+          # updater artifact when the plain .app bundle is one of the built
+          # targets — a dmg-only build silently produces no .app.tar.gz. The
+          # inline --config turns updater artifacts (and their signing) on for
+          # CI only, so a local `tauri build` still needs no signing key.
+          args: '--bundles app,dmg --config {"bundle":{"createUpdaterArtifacts":true}}'
+          # includeUpdaterJson defaults to true — that is what writes latest.json.
+
   publish-tauri:
+    if: github.event_name == 'workflow_dispatch'
     permissions:
       contents: write # tauri-action creates the release + uploads assets
     strategy:
@@ -64,8 +132,8 @@ jobs:
           # std::filesystem, which is "unavailable before macOS 10.15". Tauri's
           # default deployment target (10.13) made the universal-darwin build
           # fail to compile. Pin 10.15 so the C++ has std::filesystem; matches
-          # bundle.macOS.minimumSystemVersion. Inert here (Windows-only job),
-          # kept so a macOS job restored later does not regress.
+          # bundle.macOS.minimumSystemVersion. Inert in this Windows job; the
+          # macos-updater job above is where it does the work.
           MACOSX_DEPLOYMENT_TARGET: "10.15"
           # Code signing is OFF for v0.1 (unsigned .dmg / .exe — see the release
           # body + README Gatekeeper/SmartScreen note). The APPLE_* signing env

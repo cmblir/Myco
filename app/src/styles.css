@@ -498,6 +498,40 @@ select {
 .topbar-spacer {
   flex: 1;
 }
+
+/* Update available: a strip under the topbar, never a modal. It wraps rather
+   than clipping its text at 320px, and the close button keeps a 44px touch
+   target while the strip itself stays thin. */
+.update-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+  font-size: 12.5px;
+}
+.update-banner__text {
+  font-weight: 500;
+}
+.update-banner__hint {
+  color: var(--ink-2);
+}
+.update-banner__close {
+  margin-left: auto;
+  width: 44px;
+  height: 28px;
+  border: 0;
+  background: none;
+  color: var(--ink-2);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.update-banner__close:hover {
+  color: var(--ink);
+}
 .pill {
   display: inline-flex;
   align-items: center;

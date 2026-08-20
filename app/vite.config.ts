@@ -15,10 +15,26 @@ const packageVersion = JSON.parse(
   readFileSync(new URL("./package.json", import.meta.url), "utf8"),
 ).version as string;
 
+// Does this build have an updater signing pubkey baked in? Without one the
+// updater can only ever fail signature verification, so the UI says "no update
+// channel configured" instead of pretending to check. Read from the very file
+// the bundler signs against, so the two cannot drift.
+const updaterConfigured = Boolean(
+  (
+    JSON.parse(
+      readFileSync(
+        new URL("./src-tauri/tauri.conf.json", import.meta.url),
+        "utf8",
+      ),
+    ) as { plugins?: { updater?: { pubkey?: string } } }
+  ).plugins?.updater?.pubkey,
+);
+
 export default defineConfig({
   define: {
     __BUILD_DATE__: JSON.stringify(buildDate),
     __PACKAGE_VERSION__: JSON.stringify(packageVersion),
+    __UPDATER_CONFIGURED__: JSON.stringify(updaterConfigured),
   },
   plugins: [react()],
   clearScreen: false,

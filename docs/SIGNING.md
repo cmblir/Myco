@@ -7,18 +7,18 @@ on real macOS + Windows runners with
 [`tauri-apps/tauri-action`](https://github.com/tauri-apps/tauri-action) and
 publishes the `.dmg` / `.exe` to a GitHub Release.
 
-> [!important] Current state as of v0.3.0: macOS is signed LOCALLY, Windows is not.
+> [!important] Current state as of v0.4.0: macOS is signed LOCALLY, Windows is not.
 > The Developer ID certificate lives in the maintainer's login keychain, not in
 > repo secrets, so the release `.dmg` is built and notarized on the maintainer's
-> Mac (see [Part 1b](#part-1b--signing-locally-what-v030-actually-does)) and
-> uploaded with `gh release create`. `.github/workflows/release.yml` is therefore
-> **manual-dispatch only** — if it still fired on a tag push it would race that
-> upload with an unsigned runner build of the same version.
+> Mac (see [Part 1b](#part-1b--signing-locally-what-v030-actually-does)).
 >
-> `.github/workflows/release.yml` is therefore **Windows-only**: a runner cannot
-> reach the certificate, so a macOS job there would upload an unsigned `.dmg`
-> over the signed one. Windows (`myco_x.y.z_x64-setup.exe`) is still unsigned;
-> users unblock it once (see the [README](../README.md)).
+> `.github/workflows/release.yml` has two jobs and never overwrites that signed
+> `.dmg`. On a `v*` tag push, `macos-updater` builds the macOS bundle and the
+> updater channel into a **draft** release, whose `.dmg` you replace with the
+> locally signed one before publishing ([Part 4](#part-4--updater-signing-key-in-app-updates)).
+> The Windows job stays manual-dispatch and its `.exe`
+> (`myco_x.y.z_x64-setup.exe`) is still unsigned; users unblock it once (see the
+> [README](../README.md)).
 >
 > The GitHub Actions route below (Part 1) stays documented and is what to use if
 > macOS signing ever moves to CI.
@@ -376,6 +376,82 @@ verified" with no errors means the Authenticode signature is good.
 
 ---
 
+## Part 4 — Updater signing key (in-app updates)
+
+This is a **different key from everything above**. Apple's Developer ID proves
+*who built the app* to macOS. The updater key proves *that an update came from
+you* to the already-installed app: `tauri-plugin-updater` refuses any download
+whose minisign signature does not match the public key baked into the running
+build. You need both; neither substitutes for the other.
+
+Until this key exists, the app is honest about it rather than broken:
+`plugins.updater.pubkey` in `app/src-tauri/tauri.conf.json` is an empty string,
+so **Settings → About → Check for updates** reports *"No update channel
+configured"* and never contacts the network. Nothing else changes, and a local
+`tauri build` needs no key at all (updater artifacts are switched on only by the
+`--config` flag in the `macos-updater` CI job).
+
+### The two commands
+
+**1. Generate the keypair — once, on your machine.**
+
+```bash
+cd app
+npm run tauri -- signer generate -w ~/.tauri/myco.key
+```
+
+Choose a password when prompted (or leave it empty). This writes
+`~/.tauri/myco.key` (**private — never commit, never paste into a file in this
+repo**) and `~/.tauri/myco.key.pub` (public, safe to commit).
+
+**2. Put the private key in a GitHub secret.**
+
+```bash
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/myco.key
+# Only if you chose a password in step 1:
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+```
+
+(Equivalently: **repo Settings → Secrets and variables → Actions → New
+repository secret**, name `TAURI_SIGNING_PRIVATE_KEY`, body = the whole contents
+of `~/.tauri/myco.key`.)
+
+### Then commit the public half
+
+Paste the single base64 line from `~/.tauri/myco.key.pub` into
+`app/src-tauri/tauri.conf.json` → `plugins.updater.pubkey`, replacing the empty
+string. That is the switch that turns the feature on: the About page starts
+checking, and `.github/workflows/release.yml`'s `macos-updater` job starts
+signing on every `v*` tag push.
+
+> [!warning] The private key is the whole channel.
+> Anyone holding it can ship an "update" that every myco install accepts and
+> runs. Keep the only copies in your password manager and the GitHub secret. If
+> it leaks, generate a new pair, commit the new pubkey, and cut a release — old
+> installs will need a manual reinstall to move to the new key.
+
+### Release flow once it is wired
+
+1. `git tag v0.4.0 && git push origin v0.4.0` → the `macos-updater` job builds
+   the `.app`, `.dmg`, `.app.tar.gz` + `.sig`, and `latest.json`, and opens a
+   **draft** release.
+2. Replace the draft's unsigned `.dmg` with your locally signed + notarized one
+   ([Part 1b](#part-1b--signing-locally-what-v030-actually-does)). Leave
+   `latest.json` and the `.app.tar.gz`/`.sig` pair alone — they are the channel.
+3. Publish the release. Only now does
+   `releases/latest/download/latest.json` resolve, so no user is ever offered an
+   update built from an unsigned `.dmg`.
+4. Optionally dispatch the `publish-tauri` job to attach the Windows `.exe`.
+
+The updater channel is macOS-aarch64 only for now: `latest.json` carries just the
+`darwin-aarch64` platform, and any other OS/arch shows *"No update channel for
+this platform yet"* instead of an error. Adding Windows means splitting the
+frontend's `downloadAndInstall()` into `download()` now / install-on-quit first —
+the NSIS updater restarts the app from `install()`, which would break the
+never-force-a-restart rule (see `app/src/stores/updateStore.ts`).
+
+---
+
 ## Quick reference — secret names to wire
 
 **macOS (6 secrets):**
@@ -395,6 +471,13 @@ APPLE_TEAM_ID
 AZURE_TENANT_ID
 AZURE_CLIENT_ID
 AZURE_CLIENT_SECRET
+```
+
+**In-app updater ([Part 4](#part-4--updater-signing-key-in-app-updates), 1–2 secrets):**
+
+```
+TAURI_SIGNING_PRIVATE_KEY
+TAURI_SIGNING_PRIVATE_KEY_PASSWORD   # only if the key has a password
 ```
 
 All added only in **repo Settings → Secrets and variables → Actions**. Never in

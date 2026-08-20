@@ -111,6 +111,12 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_deep_link::init())
+        // In-app updates. The plugin only exposes the check/download/install
+        // commands; deciding when to run them is the frontend's job (Settings ->
+        // About, plus one silent pass at startup). It needs `plugins.updater` to
+        // exist in tauri.conf.json — its config type has no default for
+        // `pubkey`, so a missing section fails app init rather than the check.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // Confinement root for filesystem commands; populated on open_vault.
         .manage(commands::VaultRoot::default())
         // Embedded local model — lazily loaded on first local_* command.

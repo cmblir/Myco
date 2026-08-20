@@ -496,6 +496,17 @@ export interface Strings {
   ov_theme_mycelium?: string;
   s_lang: string;
   s_about: string;
+  // In-app updater (Settings -> About + the app-wide banner). {v} = new version.
+  up_check?: string;
+  up_checking?: string;
+  up_current?: string;
+  up_downloading?: string; // {v}
+  up_ready?: string; // {v}
+  up_restart?: string;
+  up_unconfigured?: string;
+  up_unavailable?: string;
+  up_error?: string;
+  up_dismiss?: string;
   mcp_lede: string;
   mcp_status_installed: string;
   mcp_status_not_installed: string;
@@ -1464,6 +1475,16 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_theme_mycelium: "Mycelium",
     s_lang: "Language",
     s_about: "About",
+    up_check: "Check for updates",
+    up_checking: "Checking for updates…",
+    up_current: "myco is up to date",
+    up_downloading: "Downloading myco {v} in the background…",
+    up_ready: "myco {v} is ready",
+    up_restart: "Restart myco to apply",
+    up_unconfigured: "No update channel configured",
+    up_unavailable: "No update channel for this platform yet",
+    up_error: "Update check failed",
+    up_dismiss: "Dismiss",
     s_mcp: "MCP Server",
     mcp_lede:
       "Expose this vault to Claude Code and Claude Desktop as MCP tools. Register once with the command below — it then works in every Claude session, even when this app is closed.",
@@ -2446,6 +2467,16 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_theme_mycelium: "균사",
     s_lang: "언어",
     s_about: "정보",
+    up_check: "업데이트 확인",
+    up_checking: "업데이트 확인 중…",
+    up_current: "최신 버전입니다",
+    up_downloading: "myco {v} 를 백그라운드에서 내려받는 중…",
+    up_ready: "myco {v} 준비 완료",
+    up_restart: "다시 시작하면 적용됩니다",
+    up_unconfigured: "업데이트 채널이 설정되지 않았습니다",
+    up_unavailable: "이 플랫폼용 업데이트 채널이 아직 없습니다",
+    up_error: "업데이트 확인 실패",
+    up_dismiss: "닫기",
     s_mcp: "MCP 서버",
     mcp_lede:
       "이 vault를 Claude Code·Claude Desktop에 MCP 도구로 노출합니다. 아래 명령으로 한 번만 등록하면, 이 앱이 꺼져 있어도 모든 Claude 세션에서 동작합니다.",
@@ -3306,6 +3337,16 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_theme_mycelium: "菌糸",
     s_lang: "言語",
     s_about: "myco について",
+    up_check: "更新を確認",
+    up_checking: "更新を確認中…",
+    up_current: "myco は最新です",
+    up_downloading: "myco {v} をバックグラウンドでダウンロード中…",
+    up_ready: "myco {v} の準備ができました",
+    up_restart: "再起動すると適用されます",
+    up_unconfigured: "更新チャンネルが設定されていません",
+    up_unavailable: "このプラットフォーム向けの更新チャンネルはまだありません",
+    up_error: "更新の確認に失敗しました",
+    up_dismiss: "閉じる",
     s_mcp: "MCP サーバー",
     mcp_lede:
       "この vault を Claude Code・Claude Desktop に MCP ツールとして公開します。下のコマンドで一度登録すれば、このアプリを閉じていても全ての Claude セッションで動作します。",

@@ -7,6 +7,7 @@
     "core:default",
     "dialog:allow-open",
     "dialog:default",
-    "notification:default"
+    "notification:default",
+    "updater:default"
   ]
 }

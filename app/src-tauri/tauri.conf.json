@@ -53,6 +53,13 @@
     "longDescription": "myco is a cross-platform desktop wiki app for plain markdown vaults. Edit, link, and visualize a graph of your notes with native performance."
   },
   "plugins": {
+    "updater": {
+      "//": "pubkey is EMPTY ON PURPOSE — no update channel is live yet. Run `npm run tauri -- signer generate -w ~/.tauri/myco.key`, paste the PUBLIC key (the ~/.tauri/myco.key.pub contents, one base64 line) here, and put the PRIVATE key in the TAURI_SIGNING_PRIVATE_KEY GitHub secret. See docs/SIGNING.md 'Part 4 — Updater signing key'. NEVER commit the private key. While this stays empty the app reports 'no update channel configured' and never calls the updater.",
+      "pubkey": "",
+      "endpoints": [
+        "https://github.com/cmblir/Memex/releases/latest/download/latest.json"
+      ]
+    },
     "deep-link": {
       "desktop": {
         "schemes": [

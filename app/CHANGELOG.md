@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **myco can now update itself.** Settings → About gained a "Check for updates"
+  button, and the app checks once per launch on its own. A new version is
+  downloaded quietly in the background and takes effect the next time you open
+  myco — nothing ever restarts the app for you, and the banner announcing it has
+  a dismiss button. Available in English, 한국어 and 日本語.
+
+### Changed
+
+- The version is 0.4.0 in all three manifests that declare it, and a test now
+  fails if a future bump lands in only some of them. Every build up to here
+  reported 0.3.1, so About could not tell two installs apart.
+
+### Notes
+
+- In-app updates stay dormant until the release channel is signed: with no
+  updater public key configured, "Check for updates" reports *"No update channel
+  configured"* and the app makes no network call. See `docs/SIGNING.md` Part 4.
+
 ## [0.3.0] - 2026-07-29
 
 ### Added

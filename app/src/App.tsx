@@ -15,6 +15,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import OnboardingWizard from "./components/OnboardingWizard";
 import MascotClip from "./components/MascotClip";
 import HelpWidget from "./components/HelpWidget";
+import UpdateBanner from "./components/UpdateBanner";
 import PageOverview from "./pages/PageOverview";
 import PageIngest from "./pages/PageIngest";
 import PageQuery from "./pages/PageQuery";
@@ -48,6 +49,7 @@ import { runInboxPass } from "./lib/autoIngest";
 import { useScheduleTimer } from "./lib/scheduleTimer";
 import { markActivity } from "./lib/idle";
 import { useIngestStore } from "./stores/ingestStore";
+import { useUpdateStore } from "./stores/updateStore";
 import { ipc } from "./lib/ipc";
 import type { FileNode } from "./lib/ipc";
 import { SPLIT_DEFAULT_RATIO, clampSplitRatio } from "./lib/splitRatio";
@@ -402,6 +404,13 @@ export default function App(): JSX.Element {
   // handle its action clicks. One subscription for the app's lifetime.
   useEffect(() => initTrayIntegration(), []);
 
+  // One silent update check per launch. The store swallows every failure into a
+  // status the Settings page shows on request, so a dead network or an
+  // unconfigured channel is invisible here.
+  useEffect(() => {
+    void useUpdateStore.getState().checkForUpdates();
+  }, []);
+
   // Track the OS colour scheme live so the "System" appearance option follows
   // light/dark changes at runtime (not just on app launch).
   const [sysDark, setSysDark] = useState(
@@ -653,6 +662,7 @@ export default function App(): JSX.Element {
       />
       <main>
         <Topbar t={t} />
+        <UpdateBanner t={t} />
         {body}
       </main>
       <CommandBar t={t} />

@@ -38,6 +38,8 @@ import {
 } from "../lib/budget";
 import { isComposingKey } from "../lib/ime";
 import { useReindexStore } from "../stores/reindexStore";
+import { useUpdateStore } from "../stores/updateStore";
+import type { UpdateState } from "../stores/updateStore";
 import {
   backlogTrend,
   GATE_MIN_WIKI_PAGES,
@@ -2570,6 +2572,62 @@ function SettingsAbout({ t }: { t: Strings }): JSX.Element {
           </p>
         </div>
       </div>
+      <UpdateCheck t={t} />
+    </div>
+  );
+}
+
+/** The status line under "Check for updates" — every state says something. */
+function updateStatusText(t: Strings, s: UpdateState): string {
+  switch (s.status) {
+    case "idle":
+      return "";
+    case "checking":
+      return t.up_checking ?? "Checking…";
+    case "current":
+      return t.up_current ?? "myco is up to date";
+    case "unconfigured":
+      return t.up_unconfigured ?? "No update channel configured";
+    case "unavailable":
+      return t.up_unavailable ?? "No update channel for this platform yet";
+    case "downloading":
+      return (t.up_downloading ?? "Downloading myco {v}…").replace(
+        "{v}",
+        s.version ?? "",
+      );
+    case "ready":
+      return `${(t.up_ready ?? "myco {v} is ready").replace("{v}", s.version ?? "")} — ${t.up_restart ?? "Restart myco to apply"}`;
+    case "error":
+      return s.error
+        ? `${t.up_error ?? "Update check failed"}: ${s.error}`
+        : (t.up_error ?? "Update check failed");
+  }
+}
+
+// Manual update check. The download runs in the background and lands on the next
+// launch, so there is deliberately no "install now" here — nothing this button
+// does can close the app under the user.
+function UpdateCheck({ t }: { t: Strings }): JSX.Element {
+  const state = useUpdateStore();
+  const busy = state.status === "checking" || state.status === "downloading";
+  const status = updateStatusText(t, state);
+
+  return (
+    <div className="col" style={{ gap: 8 }}>
+      <button
+        type="button"
+        className="btn"
+        disabled={busy}
+        onClick={() => void state.checkForUpdates()}
+        style={{ alignSelf: "flex-start" }}
+      >
+        {t.up_check ?? "Check for updates"}
+      </button>
+      {status ? (
+        <span className="muted" style={{ fontSize: 12 }} role="status">
+          {status}
+        </span>
+      ) : null}
     </div>
   );
 }
