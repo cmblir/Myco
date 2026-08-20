@@ -61,6 +61,7 @@ tokio-util = "0.7"
 similar = "2"
 notify = "8.2.0"
 tauri-plugin-global-shortcut = "2"
+tauri-plugin-process = "2"
 
 [dev-dependencies]
 wiremock = "0.6"
