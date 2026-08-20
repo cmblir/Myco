@@ -1006,6 +1006,35 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // Mock vault has no citations/frontmatter to violate — clean pass so
       // ?mock=1 ingest runs are not blocked by the deterministic validator.
       return Promise.resolve({ errors: [], warnings: [] });
+    // The local (no-model) lint's per-page half. The mock vault's pages have
+    // no real frontmatter to check, so this returns one finding per tier —
+    // enough to exercise the report's Critical/Warning/Info rendering. The
+    // link-graph half (orphans, unresolved links) is real: it comes from
+    // buildAdjacency() like every other graph view in ?mock=1.
+    case "lint_local":
+      return Promise.resolve({
+        critical: [
+          {
+            page: "wiki/attention-mechanism.md",
+            kind: "dangling_citation",
+            detail: "[^src-ghost] has no raw/ghost.md",
+          },
+        ],
+        warning: [
+          {
+            page: "wiki/tokenization.md",
+            kind: "source_count_mismatch",
+            detail: "source_count=3 but 1 distinct citations",
+          },
+        ],
+        info: [
+          {
+            page: "wiki/positional-encoding.md",
+            kind: "stale_page",
+            detail: "status=active, not modified in 74 days",
+          },
+        ],
+      });
     case "list_schedules":
       return Promise.resolve(mockSchedules);
     case "upsert_schedule": {

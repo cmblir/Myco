@@ -198,6 +198,140 @@ pub fn validate_pages(root: &Path, changed_rels: &[String]) -> ValidationReport 
     rep
 }
 
+/// The wiki lint's findings, tiered the way the lint report renders them.
+/// `critical`/`warning` are the ingest validator's own errors/warnings; `info`
+/// is the freshness/hedging pass that only the lint runs.
+#[derive(Debug, Serialize, Clone, Default)]
+pub struct LintReport {
+    pub critical: Vec<Issue>,
+    pub warning: Vec<Issue>,
+    pub info: Vec<Issue>,
+}
+
+/// The hedge phrases the lint checklist names verbatim — a literal scan, no
+/// model involved.
+const HEDGES: [&str; 3] = ["대체로", "일반적으로", "in general"];
+const STALE_SECS: u64 = 30 * 24 * 60 * 60;
+
+/// Deterministic wiki lint over `pages` (vault-relative, already filtered to
+/// knowledge pages by the caller — the UI owns that classifier). Composes
+/// `validate_pages` with the checks the ingest gate has no reason to run:
+/// freshness, unsupported `confidence: high`, hedged single-source claims and
+/// a missing `## Disputed` section. `now` is epoch seconds, injected so the
+/// freshness check is testable.
+///
+/// Unresolved wikilinks are dropped from the validator's warnings on purpose:
+/// the UI re-derives link gaps from the link graph, where the
+/// malformed-placeholder filter (`isMalformedLinkName`) lives, so reporting
+/// them here too would double-count them AND re-list the placeholders the gap
+/// panel already buckets away.
+pub fn lint_local(root: &Path, pages: &[String], now: u64) -> LintReport {
+    let base = validate_pages(root, pages);
+    let mut rep = LintReport {
+        critical: base.errors,
+        warning: base
+            .warnings
+            .into_iter()
+            .filter(|w| w.kind != "unresolved_wikilink")
+            .collect(),
+        info: Vec::new(),
+    };
+
+    // ponytail: this re-reads each page that validate_pages just read. Kept
+    // that way so the ingest gate stays untouched; fold the two passes together
+    // only if a huge vault makes the double read measurable.
+    for rel in pages {
+        let rel = rel.replace('\\', "/");
+        if !rel.starts_with("wiki/") {
+            continue;
+        }
+        let abs = root.join(&rel);
+        let Ok(confined) = crate::vault::confine_path(root, &abs.to_string_lossy()) else {
+            continue; // traversal / outside vault root
+        };
+        let name = confined.file_name().and_then(|s| s.to_str()).unwrap_or("");
+        if SKIP_NAMES.contains(&name) {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&confined) else {
+            continue;
+        };
+        let Some(fm) = crate::vault::read_file(&confined.to_string_lossy())
+            .ok()
+            .map(|f| f.frontmatter)
+            .filter(|v| !v.is_null())
+        else {
+            continue; // no frontmatter: validate_pages already flagged it
+        };
+        let get = |k: &str| fm.get(k).and_then(|x| x.as_str()).map(str::to_string);
+        if get("type")
+            .map(|t| META_TYPES.contains(&t.as_str()))
+            .unwrap_or(false)
+        {
+            continue; // structural overview/meta page
+        }
+        let status = get("status").unwrap_or_default();
+        let sources = fm.get("source_count").and_then(|x| x.as_u64());
+
+        if status == "disputed" && !has_disputed_section(&text) {
+            rep.warning.push(Issue {
+                page: rel.clone(),
+                kind: "missing_disputed_section".into(),
+                detail: "status=disputed but no `## Disputed` heading".into(),
+            });
+        }
+        if get("confidence").as_deref() == Some("high") && sources.unwrap_or(0) < 2 {
+            rep.warning.push(Issue {
+                page: rel.clone(),
+                kind: "weak_confidence".into(),
+                detail: format!("confidence=high with source_count={}", sources.unwrap_or(0)),
+            });
+        }
+        if status == "active" {
+            if let Some(age) = age_secs(&confined, now) {
+                if age > STALE_SECS {
+                    rep.info.push(Issue {
+                        page: rel.clone(),
+                        kind: "stale_page".into(),
+                        detail: format!("status=active, not modified in {} days", age / 86_400),
+                    });
+                }
+            }
+        }
+        if sources == Some(1) {
+            if let Some(h) = HEDGES.iter().find(|h| text.contains(**h)) {
+                rep.info.push(Issue {
+                    page: rel.clone(),
+                    kind: "hedged_claim".into(),
+                    detail: format!("source_count=1 and the body says \"{h}\""),
+                });
+            }
+        }
+    }
+    rep
+}
+
+/// A `## Disputed` heading, in any language's wording as long as the word is
+/// there — matched on the heading line only, so a passing body mention of the
+/// word does not satisfy the check.
+fn has_disputed_section(text: &str) -> bool {
+    text.lines().any(|l| {
+        let t = l.trim_start();
+        t.starts_with('#') && t.to_lowercase().contains("disputed")
+    })
+}
+
+/// Seconds since the file was last modified, or None if the clock/metadata
+/// disagree (a file stamped in the future is not "stale").
+fn age_secs(path: &Path, now: u64) -> Option<u64> {
+    let modified = std::fs::metadata(path).ok()?.modified().ok()?;
+    let secs = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    now.checked_sub(secs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -391,6 +525,122 @@ mod tests {
             r.errors.is_empty(),
             "type: map must validate cleanly: {:?}",
             r.errors
+        );
+    }
+
+    // ---- lint_local: the checks only the wiki lint runs -------------------
+
+    fn now_secs() -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+    }
+
+    #[test]
+    fn lint_tiers_validator_findings_and_drops_wikilink_gaps() {
+        // Critical = validator errors; warnings keep source_count but NOT the
+        // unresolved wikilink (the UI derives link gaps from the link graph).
+        let (_d, root) = vault(&[
+            ("raw/real.md", "# Real"),
+            ("wiki/nofm.md", "no frontmatter here"),
+            ("wiki/d.md", "---\ntitle: D\ntype: concept\ncreated: 2026-01-01\nsource_count: 2\nconfidence: medium\nstatus: active\n---\nClaim.[^src-real] See [[nonexistent]].\n"),
+        ]);
+        let r = lint_local(
+            &root,
+            &["wiki/nofm.md".into(), "wiki/d.md".into()],
+            now_secs(),
+        );
+        assert!(r.critical.iter().any(|e| e.kind == "missing_frontmatter"));
+        assert!(r.warning.iter().any(|w| w.kind == "source_count_mismatch"));
+        assert!(
+            !r.warning.iter().any(|w| w.kind == "unresolved_wikilink"),
+            "link gaps belong to the graph pass: {:?}",
+            r.warning
+        );
+    }
+
+    #[test]
+    fn stale_active_page_is_info() {
+        let (_d, root) = vault(&[("wiki/a.md", GOOD_FM)]);
+        // The file was written a moment ago; move the CLOCK forward 40 days
+        // instead of trying to backdate the file.
+        let future = now_secs() + 40 * 24 * 60 * 60;
+        let r = lint_local(&root, &["wiki/a.md".into()], future);
+        assert!(
+            r.info
+                .iter()
+                .any(|i| i.kind == "stale_page" && i.detail.contains("40 days")),
+            "40-day-old active page must be info: {:?}",
+            r.info
+        );
+        // Fresh at the real clock — the same page must NOT be flagged.
+        let fresh = lint_local(&root, &["wiki/a.md".into()], now_secs());
+        assert!(!fresh.info.iter().any(|i| i.kind == "stale_page"));
+    }
+
+    #[test]
+    fn hedge_on_single_source_page_is_info() {
+        let (_d, root) = vault(&[
+            ("raw/real.md", "# Real"),
+            // source_count: 1 + a literal hedge from the checklist.
+            (
+                "wiki/h.md",
+                &format!("{GOOD_FM}\n일반적으로 이것은 사실이다.[^src-real]\n"),
+            ),
+            // Two sources: the same hedge is not flagged.
+            (
+                "wiki/i.md",
+                &format!(
+                    "{}\nin general this holds.[^src-real]\n",
+                    GOOD_FM.replace("source_count: 1", "source_count: 2")
+                ),
+            ),
+        ]);
+        let r = lint_local(&root, &["wiki/h.md".into(), "wiki/i.md".into()], now_secs());
+        assert!(
+            r.info
+                .iter()
+                .any(|i| i.kind == "hedged_claim" && i.page == "wiki/h.md"),
+            "hedged single-source page must be info: {:?}",
+            r.info
+        );
+        assert!(!r.info.iter().any(|i| i.page == "wiki/i.md"));
+    }
+
+    #[test]
+    fn weak_confidence_and_missing_disputed_section_are_warnings() {
+        let fm_disputed = GOOD_FM
+            .replace("status: active", "status: disputed")
+            .replace("confidence: high", "confidence: medium");
+        let (_d, root) = vault(&[
+            // confidence: high with source_count: 1
+            ("wiki/w.md", GOOD_FM),
+            ("wiki/x.md", &format!("{fm_disputed}\nbody, no heading\n")),
+            (
+                "wiki/y.md",
+                &format!("{fm_disputed}\n## Disputed\nboth sides.\n"),
+            ),
+        ]);
+        let r = lint_local(
+            &root,
+            &["wiki/w.md".into(), "wiki/x.md".into(), "wiki/y.md".into()],
+            now_secs(),
+        );
+        assert!(r
+            .warning
+            .iter()
+            .any(|w| w.kind == "weak_confidence" && w.page == "wiki/w.md"));
+        assert!(r
+            .warning
+            .iter()
+            .any(|w| w.kind == "missing_disputed_section" && w.page == "wiki/x.md"));
+        assert!(
+            !r.warning
+                .iter()
+                .any(|w| w.kind == "missing_disputed_section" && w.page == "wiki/y.md"),
+            "a page WITH the section must not be flagged: {:?}",
+            r.warning
         );
     }
 }

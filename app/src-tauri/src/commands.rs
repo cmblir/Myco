@@ -1479,6 +1479,30 @@ pub fn validate_ingest(
     ))
 }
 
+/// Deterministic wiki lint — the half of the lint checklist that needs no
+/// model, so builtin-local (which bundles no chat model) can still run it.
+/// `pages` are vault-relative and already filtered to knowledge pages by the
+/// UI's shared classifier; link-graph findings (orphans, unresolved links) are
+/// added on the UI side, which owns the malformed-placeholder filter.
+#[tauri::command]
+pub async fn lint_local(
+    state: tauri::State<'_, VaultRoot>,
+    vault_path: String,
+    pages: Vec<String>,
+) -> Result<crate::validator::LintReport, String> {
+    let root = confine_root(&state, &vault_path)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // Whole-wiki walk: off the UI thread, same as scan_tasks.
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::validator::lint_local(std::path::Path::new(&root), &pages, now)
+    })
+    .await
+    .map_err(|e| format!("join failed: {e}"))
+}
+
 /// Collect every markdown checkbox item across the vault into one task list.
 #[tauri::command]
 pub async fn scan_tasks(

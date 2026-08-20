@@ -185,6 +185,7 @@ pub fn run() {
             commands::agent_run,
             commands::scan_provenance,
             commands::validate_ingest,
+            commands::lint_local,
             commands::scan_tasks,
             commands::myco_pro_ingest,
             commands::myco_pro_login,

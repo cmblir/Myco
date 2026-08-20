@@ -626,6 +626,24 @@ export interface Strings {
   p_lint_run?: string;
   p_linting?: string;
   p_lint_report?: string;
+  // Local (no-model) lint report — our own fixed strings, never model prose.
+  lint_local_title?: string;
+  lint_local_note?: string;
+  lint_local_clean?: string;
+  lint_sec_critical?: string;
+  lint_sec_warning?: string;
+  lint_sec_info?: string;
+  lint_k_missing_frontmatter?: string;
+  lint_k_invalid_frontmatter?: string;
+  lint_k_dangling_citation?: string;
+  lint_k_source_count_mismatch?: string;
+  lint_k_missing_superseded_by?: string;
+  lint_k_missing_disputed_section?: string;
+  lint_k_weak_confidence?: string;
+  lint_k_stale_page?: string;
+  lint_k_hedged_claim?: string;
+  lint_k_orphan_page?: string;
+  lint_k_unresolved_link?: string;
   p_dismiss?: string;
   p_open_vault?: string;
   p_scanning?: string;
@@ -1708,6 +1726,35 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_run: "Run lint",
     p_linting: "Linting…",
     p_lint_report: "Lint report",
+    lint_local_title: "Wiki lint — local pass",
+    lint_local_note:
+      "Deterministic checks only — no model was used. Free-form fixes and " +
+      "\"concepts mentioned but not linked\" need a connected provider.",
+    lint_local_clean: "No issues found.",
+    lint_sec_critical: "Critical",
+    lint_sec_warning: "Warning",
+    lint_sec_info: "Info",
+    lint_k_missing_frontmatter:
+      "Frontmatter — add the required fields (title, type, created, confidence, status).",
+    lint_k_invalid_frontmatter:
+      "Invalid frontmatter value — use one of the allowed values.",
+    lint_k_dangling_citation:
+      "Dangling citation — add the raw/ source, or remove the [^src-…] reference.",
+    lint_k_source_count_mismatch:
+      "Stale source_count — set it to the number of distinct citations.",
+    lint_k_missing_superseded_by:
+      "Superseded page — add superseded_by pointing at the page that replaces it.",
+    lint_k_missing_disputed_section:
+      "Disputed page — add a `## Disputed` section explaining the conflict.",
+    lint_k_weak_confidence:
+      "confidence: high on fewer than two sources — cite another source, or lower the confidence.",
+    lint_k_stale_page:
+      "Active but untouched for over 30 days — revisit it, or change its status.",
+    lint_k_hedged_claim:
+      "General claim on a single source — add a source, or narrow the claim.",
+    lint_k_orphan_page: "Orphan — no page links here; link it from a related page.",
+    lint_k_unresolved_link:
+      "Unresolved wikilink — create the page, or fix the link name.",
     p_dismiss: "dismiss",
     p_open_vault: "Open a vault to scan provenance.",
     p_scanning: "Scanning vault…",
@@ -2795,6 +2842,36 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_run: "린트 실행",
     p_linting: "린트 중…",
     p_lint_report: "린트 보고서",
+    lint_local_title: "위키 린트 — 로컬 패스",
+    lint_local_note:
+      "모델 없이 규칙 기반 검사만 수행했습니다. 자유 서술형 수정 제안과 " +
+      "\"언급됐지만 링크되지 않은 개념\" 검사는 연결된 프로바이더가 필요합니다.",
+    lint_local_clean: "문제를 찾지 못했습니다.",
+    lint_sec_critical: "치명적",
+    lint_sec_warning: "경고",
+    lint_sec_info: "정보",
+    lint_k_missing_frontmatter:
+      "frontmatter — 필수 필드(title, type, created, confidence, status)를 추가하세요.",
+    lint_k_invalid_frontmatter:
+      "frontmatter 값이 잘못됨 — 허용된 값 중 하나를 사용하세요.",
+    lint_k_dangling_citation:
+      "끊어진 인용 — raw/ 원문을 추가하거나 [^src-…] 참조를 제거하세요.",
+    lint_k_source_count_mismatch:
+      "source_count가 실제와 다름 — 서로 다른 인용 개수로 맞추세요.",
+    lint_k_missing_superseded_by:
+      "대체된 문서 — 대체한 문서를 가리키는 superseded_by를 추가하세요.",
+    lint_k_missing_disputed_section:
+      "이견 있는 문서 — 충돌 내용을 설명하는 `## Disputed` 섹션을 추가하세요.",
+    lint_k_weak_confidence:
+      "출처 2개 미만인데 confidence: high — 출처를 더 인용하거나 confidence를 낮추세요.",
+    lint_k_stale_page:
+      "active인데 30일 넘게 수정 없음 — 다시 살펴보거나 status를 바꾸세요.",
+    lint_k_hedged_claim:
+      "출처 1개로 일반화한 서술 — 출처를 추가하거나 주장 범위를 좁히세요.",
+    lint_k_orphan_page:
+      "고아 문서 — 들어오는 링크가 없습니다. 관련 문서에서 링크하세요.",
+    lint_k_unresolved_link:
+      "해석되지 않는 위키링크 — 문서를 만들거나 링크 이름을 고치세요.",
     p_dismiss: "닫기",
     p_open_vault: "출처를 스캔하려면 vault를 여세요.",
     p_scanning: "vault 스캔 중…",
@@ -3741,6 +3818,36 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_run: "リント実行",
     p_linting: "リント中…",
     p_lint_report: "リントレポート",
+    lint_local_title: "Wiki リント — ローカルパス",
+    lint_local_note:
+      "モデルを使わない決定的なチェックのみです。自由記述の修正案と" +
+      "「言及されているのにリンクされていない概念」の検出には接続済みプロバイダーが必要です。",
+    lint_local_clean: "問題は見つかりませんでした。",
+    lint_sec_critical: "重大",
+    lint_sec_warning: "警告",
+    lint_sec_info: "情報",
+    lint_k_missing_frontmatter:
+      "frontmatter — 必須フィールド（title, type, created, confidence, status）を追加してください。",
+    lint_k_invalid_frontmatter:
+      "frontmatter の値が不正 — 許可された値のいずれかを使ってください。",
+    lint_k_dangling_citation:
+      "リンク切れの引用 — raw/ の原文を追加するか、[^src-…] 参照を削除してください。",
+    lint_k_source_count_mismatch:
+      "source_count が実態と不一致 — 異なる引用の数に合わせてください。",
+    lint_k_missing_superseded_by:
+      "置き換えられたページ — 置き換えたページを指す superseded_by を追加してください。",
+    lint_k_missing_disputed_section:
+      "異論のあるページ — 対立点を説明する `## Disputed` セクションを追加してください。",
+    lint_k_weak_confidence:
+      "出典 2 件未満で confidence: high — 出典を増やすか confidence を下げてください。",
+    lint_k_stale_page:
+      "active のまま 30 日以上未更新 — 見直すか status を変更してください。",
+    lint_k_hedged_claim:
+      "出典 1 件で一般化した記述 — 出典を追加するか主張の範囲を狭めてください。",
+    lint_k_orphan_page:
+      "孤立ページ — リンク元がありません。関連ページからリンクしてください。",
+    lint_k_unresolved_link:
+      "解決できない wikilink — ページを作成するか、リンク名を修正してください。",
     p_dismiss: "閉じる",
     p_open_vault: "出典をスキャンするには vault を開いてください。",
     p_scanning: "vault をスキャン中…",

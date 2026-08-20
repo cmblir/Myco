@@ -165,6 +165,14 @@ export interface ValidationReport {
   warnings: ValidationIssue[];
 }
 
+/** The deterministic wiki lint's findings, tiered as the report renders them.
+ *  Link gaps are NOT here — the UI derives those from the link graph. */
+export interface LintReport {
+  critical: ValidationIssue[];
+  warning: ValidationIssue[];
+  info: ValidationIssue[];
+}
+
 export interface SearchHit {
   path: string;
   name: string;
@@ -686,6 +694,11 @@ export const ipc = {
    *  source_count mismatch / missing superseded_by are warnings. */
   validateIngest: (vaultPath: string, changedPages: string[]) =>
     invoke<ValidationReport>("validate_ingest", { vaultPath, changedPages }),
+  /** Deterministic wiki lint (no model): the validator's findings plus
+   *  freshness / weak-confidence / hedged-claim checks. `pages` are
+   *  vault-relative and already filtered to knowledge pages by the caller. */
+  lintLocal: (vaultPath: string, pages: string[]) =>
+    invoke<LintReport>("lint_local", { vaultPath, pages }),
   mycoProIngest: (slug: string, title: string, text: string) =>
     invoke<MycoProResult>("myco_pro_ingest", { slug, title, text }),
   mycoProLogin: (email: string, password: string) =>
