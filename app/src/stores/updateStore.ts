@@ -8,6 +8,7 @@
 
 import { create } from "zustand";
 import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 
 export type UpdateStatus =
   /** Never checked in this session. */
@@ -34,6 +35,9 @@ export interface UpdateState {
   dismissed: boolean;
   checkForUpdates: () => Promise<void>;
   dismiss: () => void;
+  /** Relaunches the app to apply a staged update. Only ever called by the
+   * user clicking "Restart now" — never automatic. */
+  restartNow: () => Promise<void>;
 }
 
 /** What the app-wide banner should show, derived from the whole state. */
@@ -111,4 +115,6 @@ export const useUpdateStore = create<UpdateState>((set, get) => ({
   },
 
   dismiss: () => set({ dismissed: true }),
+
+  restartNow: () => relaunch(),
 }));

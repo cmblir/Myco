@@ -13,6 +13,7 @@ export default function UpdateBanner({ t }: { t: Strings }): JSX.Element | null 
   const version = useUpdateStore((s) => s.version);
   const dismissed = useUpdateStore((s) => s.dismissed);
   const dismiss = useUpdateStore((s) => s.dismiss);
+  const restartNow = useUpdateStore((s) => s.restartNow);
   const banner = updateBanner({ status, version, dismissed });
 
   if (banner.kind === "hidden") return null;
@@ -31,9 +32,20 @@ export default function UpdateBanner({ t }: { t: Strings }): JSX.Element | null 
           : (t.up_ready ?? "myco {v} is ready").replace("{v}", banner.version)}
       </span>
       {downloading ? null : (
-        <span className="update-banner__hint">
-          {t.up_restart ?? "Restart myco to apply"}
-        </span>
+        <>
+          {/* Passive wording stays as the fallback -- the button below is a
+              convenience, restarting is still the user's own choice. */}
+          <span className="update-banner__hint">
+            {t.up_restart ?? "Restart myco to apply"}
+          </span>
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => void restartNow()}
+          >
+            {t.up_restart_btn ?? "Restart now"}
+          </button>
+        </>
       )}
       <button
         type="button"

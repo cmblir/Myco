@@ -118,6 +118,10 @@ pub fn run() {
         // exist in tauri.conf.json — its config type has no default for
         // `pubkey`, so a missing section fails app init rather than the check.
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Exposes `relaunch` to the frontend, for the update banner's "Restart
+        // now" button. Restarting stays the user's choice — this only makes
+        // the action available, nothing calls it automatically.
+        .plugin(tauri_plugin_process::init())
         // Confinement root for filesystem commands; populated on open_vault.
         .manage(commands::VaultRoot::default())
         // Embedded local model — lazily loaded on first local_* command.

@@ -503,6 +503,7 @@ export interface Strings {
   up_downloading?: string; // {v}
   up_ready?: string; // {v}
   up_restart?: string;
+  up_restart_btn?: string;
   up_unconfigured?: string;
   up_unavailable?: string;
   up_error?: string;
@@ -1519,6 +1520,7 @@ export const STRINGS: Record<Lang, Strings> = {
     up_downloading: "Downloading myco {v} in the background…",
     up_ready: "myco {v} is ready",
     up_restart: "Restart myco to apply",
+    up_restart_btn: "Restart now",
     up_unconfigured: "No update channel configured",
     up_unavailable: "No update channel for this platform yet",
     up_error: "Update check failed",
@@ -2550,6 +2552,7 @@ export const STRINGS: Record<Lang, Strings> = {
     up_downloading: "myco {v} 를 백그라운드에서 내려받는 중…",
     up_ready: "myco {v} 준비 완료",
     up_restart: "다시 시작하면 적용됩니다",
+    up_restart_btn: "지금 다시 시작",
     up_unconfigured: "업데이트 채널이 설정되지 않았습니다",
     up_unavailable: "이 플랫폼용 업데이트 채널이 아직 없습니다",
     up_error: "업데이트 확인 실패",
@@ -3458,6 +3461,7 @@ export const STRINGS: Record<Lang, Strings> = {
     up_downloading: "myco {v} をバックグラウンドでダウンロード中…",
     up_ready: "myco {v} の準備ができました",
     up_restart: "再起動すると適用されます",
+    up_restart_btn: "今すぐ再起動",
     up_unconfigured: "更新チャンネルが設定されていません",
     up_unavailable: "このプラットフォーム向けの更新チャンネルはまだありません",
     up_error: "更新の確認に失敗しました",
