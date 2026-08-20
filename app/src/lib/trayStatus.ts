@@ -39,7 +39,10 @@ export interface TraySnapshot {
   reflectRunning: boolean;
   /** Unseen reflect findings; 0 hides the standing row (a standing state, so
    *  it never counts toward the tray title). */
-  reflectUnseen: number;
+  /** Reflect findings currently listed. A STANDING count like pendingLinks —
+   *  not gated on `seen`: the panel lives on Overview, so a seen-gate hid the
+   *  row the instant the app landed there and the tray never showed it. */
+  reflectFindings: number;
   reindexStage: "idle" | "loading-model" | "indexing" | "done" | "error";
   reindexDone: number;
   reindexTotal: number;
@@ -118,10 +121,10 @@ export function buildTrayStatus(s: TraySnapshot, t: Strings): TrayStatusPayload 
       String(s.pendingLinks),
     ),
     reflect:
-      s.reflectUnseen > 0
+      s.reflectFindings > 0
         ? (t.tb_activity_reflect ?? "{n} reflect suggestions").replace(
             "{n}",
-            String(s.reflectUnseen),
+            String(s.reflectFindings),
           )
         : "",
     mcp: s.mcpRunning
@@ -236,7 +239,7 @@ export function initTrayIntegration(): () => void {
           distillRunning: distill.running,
           distillStep: distill.step,
           reflectRunning: reflect.stage === "running",
-          reflectUnseen: reflect.seen ? 0 : reflect.suggestions.length,
+          reflectFindings: reflect.suggestions.length,
           reindexStage: reindex.stage,
           reindexDone: reindex.done,
           reindexTotal: reindex.total,

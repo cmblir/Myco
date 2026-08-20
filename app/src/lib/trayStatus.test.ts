@@ -13,7 +13,7 @@ const idle: TraySnapshot = {
   distillRunning: false,
   distillStep: null,
   reflectRunning: false,
-  reflectUnseen: 0,
+  reflectFindings: 0,
   reindexStage: "idle",
   reindexDone: 0,
   reindexTotal: 0,
@@ -93,13 +93,13 @@ describe("buildTrayStatus", () => {
   });
 
   it("lists unseen reflect findings as a standing row, and nothing when seen", () => {
-    expect(buildTrayStatus({ ...idle, reflectUnseen: 8 }, t).reflect).toBe(
+    expect(buildTrayStatus({ ...idle, reflectFindings: 8 }, t).reflect).toBe(
       "8 reflect suggestions",
     );
     // Seen (or no findings) → empty string, which hides the row everywhere.
     expect(buildTrayStatus(idle, t).reflect).toBe("");
     // Standing state: it never inflates the tray title.
-    expect(trayTitle({ ...idle, reflectUnseen: 8 })).toBeNull();
+    expect(trayTitle({ ...idle, reflectFindings: 8 })).toBeNull();
   });
 
   it("sends no running rows when idle", () => {

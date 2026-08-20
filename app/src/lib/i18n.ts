@@ -921,6 +921,7 @@ export interface Strings {
   rf_create_failed: string; // {target}
   rf_create_one: string;
   rf_open_page: string;
+  rf_ignore_one: string;
   // First-run onboarding wizard (UX-01) — optional; components fall back to EN.
   ob_title?: string;
   ob_skip?: string;
@@ -1895,6 +1896,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_create_failed: "Stopped at [[{target}]] — could not create it.",
     rf_create_one: "Create this page",
     rf_open_page: "Open page",
+    rf_ignore_one: "Stop reporting this",
     ob_title: "Welcome to myco",
     ob_skip: "Skip",
     ob_back: "Back",
@@ -2869,6 +2871,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_create_failed: "[[{target}]]에서 중단 — 만들지 못했습니다.",
     rf_create_one: "이 페이지 만들기",
     rf_open_page: "페이지 열기",
+    rf_ignore_one: "이 항목 다시 알리지 않기",
     ob_title: "myco에 오신 것을 환영합니다",
     ob_skip: "건너뛰기",
     ob_back: "이전",
@@ -3721,6 +3724,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rf_create_failed: "[[{target}]] で中断 — 作成できませんでした。",
     rf_create_one: "このページを作成",
     rf_open_page: "ページを開く",
+    rf_ignore_one: "この項目を今後表示しない",
     ob_title: "myco へようこそ",
     ob_skip: "スキップ",
     ob_back: "戻る",

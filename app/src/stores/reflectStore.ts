@@ -80,6 +80,10 @@ interface ReflectState {
    *  loop's own cleanup pointing at a dead suggestion generation — so both
    *  entry points check this one flag instead of guarding per button. */
   applying: boolean;
+  /** Suggestion keys the user told us to stop reporting (persisted). */
+  ignored: Set<string>;
+  /** Stop reporting these suggestions, now and on every future run. */
+  ignore: (items: ReflectSuggestion[]) => void;
   runReflect: () => Promise<void>;
   /** Create the missing page for every unresolved-wikilink suggestion (or just
    *  the ones passed — the per-row button hands it one). Applied items leave
@@ -92,9 +96,46 @@ interface ReflectState {
   dismiss: () => void;
 }
 
+/** Stable identity for "I already dealt with this / do not tell me again".
+ *  Orphan pages and dangling links are PERMANENT facts until the user acts,
+ *  so without this every run re-reports the same items forever. */
+export function suggestionKey(s: ReflectSuggestion): string {
+  if (s.kind === "orphan") return `orphan:${s.page}`;
+  if (s.kind === "unresolved") return `link:${s.link}`;
+  return `text:${s.text}`;
+}
+
+const IGNORED_KEY = "myco.reflect.ignored.v1";
+const MAX_IGNORED = 500; // bounded so localStorage cannot grow forever
+
+export function loadIgnored(): Set<string> {
+  try {
+    const raw = localStorage.getItem(IGNORED_KEY);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw) as unknown;
+    return new Set(
+      Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [],
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+function saveIgnored(keys: ReadonlySet<string>): void {
+  try {
+    localStorage.setItem(
+      IGNORED_KEY,
+      JSON.stringify([...keys].slice(-MAX_IGNORED)),
+    );
+  } catch {
+    /* quota or disabled — dismissal just won't persist */
+  }
+}
+
 export const useReflectStore = create<ReflectState>((set, get) => ({
   stage: "idle",
   applying: false,
+  ignored: loadIgnored(),
   mode: "llm",
   suggestions: [],
   report: null,
@@ -137,10 +178,14 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
         // Prose only: no kind, so the panel shows these without an action.
         suggestions = parseSuggestions(out).map((text) => ({ text }));
       }
+      // Ignored items are permanent facts (an orphan stays an orphan) — every
+      // run would re-report them, which is what made the panel feel stuck.
+      const ignored = get().ignored;
+      const kept = suggestions.filter((s) => !ignored.has(suggestionKey(s)));
       set({
         stage: "done",
         report: out || "(no output)",
-        suggestions,
+        suggestions: kept,
         finishedAt: Date.now(),
         seen: false,
       });
@@ -194,6 +239,16 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
       set({ applying: false });
     }
     return { created: applied.size, failed };
+  },
+
+  ignore: (items) => {
+    const next = new Set(get().ignored);
+    for (const s of items) next.add(suggestionKey(s));
+    saveIgnored(next);
+    set({
+      ignored: next,
+      suggestions: get().suggestions.filter((s) => !next.has(suggestionKey(s))),
+    });
   },
 
   markSeen: () => set({ seen: true }),

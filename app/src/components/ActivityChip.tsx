@@ -77,11 +77,11 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const distillRunning = useDistillRunStore((s) => s.running);
   const distillStep = useDistillRunStore((s) => s.step);
   const reflectRunning = useReflectStore((s) => s.stage === "running");
-  // Unseen findings from the last reflect run — a STANDING state, like
-  // suggested links: it never counts toward the chip badge, it only lists.
-  const reflectUnseen = useReflectStore((s) =>
-    s.seen ? 0 : s.suggestions.length,
-  );
+  // Findings from the last reflect run — a STANDING count, like suggested
+  // links: never part of the chip badge, and NOT gated on `seen` (the panel
+  // lives on Overview, so a seen-gate hid the row as soon as the app landed
+  // there and the tray never showed it).
+  const reflectFindings = useReflectStore((s) => s.suggestions.length);
   const reindexStage = useReindexStore((s) => s.stage);
   const reindexDone = useReindexStore((s) => s.done);
   const reindexTotal = useReindexStore((s) => s.total);
@@ -459,7 +459,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       rows: [
         // Reflect findings nobody has looked at yet — the panel that shows
         // them lives on Overview, which is where the row goes.
-        ...(reflectUnseen > 0
+        ...(reflectFindings > 0
           ? [
               {
                 key: "reflect",
@@ -467,7 +467,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
                 onClick: () => jump("overview"),
                 main: (t.tb_activity_reflect ?? "{n} reflect suggestions").replace(
                   "{n}",
-                  String(reflectUnseen),
+                  String(reflectFindings),
                 ),
               },
             ]

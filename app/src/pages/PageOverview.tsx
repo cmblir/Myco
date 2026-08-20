@@ -180,6 +180,7 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
   const createMissingPages = useReflectStore((s) => s.createMissingPages);
   const markSeen = useReflectStore((s) => s.markSeen);
   const dismiss = useReflectStore((s) => s.dismiss);
+  const ignore = useReflectStore((s) => s.ignore);
   const running = stage === "running";
   // How many findings the run itself produced — the completion line must keep
   // reporting the RUN's number even after applying findings removes rows.
@@ -344,6 +345,26 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
                     <Icon name="arrowR" size={13} />
                   </button>
                 ) : null}
+                {/* An orphan stays an orphan and a dangling link stays
+                    dangling, so every run re-reports the same findings until
+                    the user acts — this is how a finding you have decided
+                    about stops coming back. */}
+                <button
+                  type="button"
+                  className="icon-btn"
+                  style={{
+                    display: "inline-flex",
+                    verticalAlign: "middle",
+                    padding: 2,
+                    marginLeft: 4,
+                  }}
+                  disabled={!!bulk}
+                  aria-label={t.rf_ignore_one ?? "Stop reporting this"}
+                  title={t.rf_ignore_one ?? "Stop reporting this"}
+                  onClick={() => ignore([s])}
+                >
+                  <Icon name="x" size={12} />
+                </button>
               </li>
             ))}
           </ul>

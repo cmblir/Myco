@@ -27,6 +27,7 @@ import {
   parseSuggestions,
   extractiveReflect,
   reflectDoneLine,
+  suggestionKey,
 } from "./reflectStore";
 import { STRINGS } from "../lib/i18n";
 import { useUIStore } from "./uiStore";
@@ -390,5 +391,36 @@ describe("run vs bulk-apply exclusion", () => {
     const res = await store.getState().createMissingPages();
     expect(res.failed).toBe("alpha");
     expect(store.getState().applying).toBe(false);
+  });
+});
+
+// An orphan stays an orphan and a dangling link stays dangling, so every run
+// re-reports the same findings — that is what made the panel feel stuck.
+describe("ignored findings", () => {
+  it("drops ignored findings from the list and keeps them out of later runs", () => {
+    const store = useReflectStore;
+    const orphan = { text: "a", kind: "orphan" as const, page: "/v/wiki/a.md" };
+    const link = { text: "b", kind: "unresolved" as const, link: "gamma" };
+    store.setState({ ignored: new Set(), suggestions: [orphan, link] });
+
+    store.getState().ignore([orphan]);
+    expect(store.getState().suggestions).toEqual([link]);
+    expect(store.getState().ignored.has(suggestionKey(orphan))).toBe(true);
+    // Same page reported again by a later run must not resurface.
+    expect(
+      [orphan, link].filter(
+        (s) => !store.getState().ignored.has(suggestionKey(s)),
+      ),
+    ).toEqual([link]);
+    store.setState({ ignored: new Set() });
+  });
+
+  it("keys orphans by page and links by target", () => {
+    expect(suggestionKey({ text: "x", kind: "orphan", page: "/v/a.md" })).toBe(
+      "orphan:/v/a.md",
+    );
+    expect(suggestionKey({ text: "x", kind: "unresolved", link: "beta" })).toBe(
+      "link:beta",
+    );
   });
 });
