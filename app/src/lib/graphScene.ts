@@ -25,7 +25,7 @@ import {
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
-import { seededUnit, type VaultGraph } from "./graphData";
+import { seededUnit, type GraphNodeAttrs, type VaultGraph } from "./graphData";
 import type { GraphTheme } from "./graphTheme";
 import { skinAmbience } from "./graphSkins";
 import { galaxyNormal } from "./galaxyLayout";
@@ -207,6 +207,21 @@ const FILAMENT_CAP = 200; // max strands lit at once (a focus set is small)
 const FILAMENT_WIDTH = 2.0; // screen px (LineMaterial, worldUnits=false)
 const FILAMENT_BASE = 0.7; // per-end brightness of a lit strand
 const FILAMENT_PATH = 1.0; // shortest-path strands pop brightest
+
+/** Frame-invariant swirl lookups, rebuilt once per node set (see swirlArrays).
+ *  `n*` = each community's seeded disc axis; `s*` = scratch centroid sums,
+ *  refilled every frame so the tick allocates nothing. */
+interface FrameCache {
+  ids: string[];
+  attrs: GraphNodeAttrs[];
+  nx: Float64Array;
+  ny: Float64Array;
+  nz: Float64Array;
+  sx: Float64Array;
+  sy: Float64Array;
+  sz: Float64Array;
+  sn: Float64Array;
+}
 
 export interface GraphSceneCallbacks {
   /** additive = Cmd/Ctrl held → shortest-path gesture (spec B3), not a plain click. */
@@ -2922,8 +2937,9 @@ export class GraphScene {
   private writePositions(): void {
     const npos = this.nodeGeom.getAttribute("position") as THREE.BufferAttribute;
     const nArr = npos.array as Float32Array;
-    for (let i = 0; i < this.nodeIds.length; i++) {
-      const a = this.graph.getNodeAttributes(this.nodeIds[i]);
+    const attrs = this.frameCache().attrs;
+    for (let i = 0; i < attrs.length; i++) {
+      const a = attrs[i];
       const o = i * 3;
       nArr[o] = a.x;
       nArr[o + 1] = a.y;
@@ -2942,6 +2958,55 @@ export class GraphScene {
   private moonHosts: Map<string, string> | null = null;
   private rotAxis = new THREE.Vector3();
   private rotVec = new THREE.Vector3();
+  private frameCacheSlot: FrameCache | null = null;
+
+  /** Per-node/per-community lookups the hot per-frame loops (swirlTick,
+   *  writePositions, applyPositions) would otherwise redo every frame.
+   *
+   *  Measured at 10k nodes (real GPU, idle, perf-LOD forced off): swirlTick's
+   *  own cost was 2.1ms/frame, of which the graphology `getNodeAttributes`
+   *  calls (2 per node per frame), the four `Map<community, sum>` rebuilds and
+   *  one `galaxyNormal()` object allocation per node per frame were ~1.4ms.
+   *  A bare 10k-node `getNodeAttributes` sweep alone measured 0.33ms against
+   *  0.07ms for a cached reference array.
+   *
+   *  Caching the attribute OBJECTS is safe: graphology's mergeNodeAttributes
+   *  assigns INTO them and nothing here calls replace/updateNodeAttributes —
+   *  applyPositions and the swirl already mutate a.x/a.y/a.z through exactly
+   *  those objects. Keyed on `nodeIds` IDENTITY: every rebuild reassigns
+   *  `this.nodeIds`, so a changed node set can never be served a stale cache.
+   *  A community index beyond the cached range is skipped rather than trusted
+   *  (see swirlTick). */
+  private frameCache(): FrameCache {
+    const cached = this.frameCacheSlot;
+    if (cached && cached.ids === this.nodeIds) return cached;
+    const attrs = this.nodeIds.map((id) => this.graph.getNodeAttributes(id));
+    let maxC = -1;
+    for (const a of attrs) if (a.community > maxC) maxC = a.community;
+    const groups = maxC + 1;
+    const nx = new Float64Array(groups);
+    const ny = new Float64Array(groups);
+    const nz = new Float64Array(groups);
+    for (let c = 0; c < groups; c++) {
+      const nm = galaxyNormal(c); // same seeded axis the worker flattens onto
+      nx[c] = nm.x;
+      ny[c] = nm.y;
+      nz[c] = nm.z;
+    }
+    const fresh: FrameCache = {
+      ids: this.nodeIds,
+      attrs,
+      nx,
+      ny,
+      nz,
+      sx: new Float64Array(groups),
+      sy: new Float64Array(groups),
+      sz: new Float64Array(groups),
+      sn: new Float64Array(groups),
+    };
+    this.frameCacheSlot = fresh;
+    return fresh;
+  }
 
   // Nearest linked star for every isolated note — computed lazily once per
   // build (O(orphans × nodes), both small on the vaults this gate allows).
@@ -2978,37 +3043,40 @@ export class GraphScene {
   }
 
   private swirlTick(dt: number): void {
-    const cx = new Map<number, number>();
-    const cy = new Map<number, number>();
-    const cz = new Map<number, number>();
-    const cn = new Map<number, number>();
-    for (const id of this.nodeIds) {
-      const a = this.graph.getNodeAttributes(id);
+    const base = this.settings.folderGalaxies ? SWIRL_SPEED * dt : 0;
+    if (base !== 0) {
       // Spin per CLUSTER (community), each about its own seeded disc axis —
       // matching the worker, which now packs every cluster as its own clump
       // and flattens it onto galaxyNormal(community).
-      if (a.community < 0) continue;
-      cx.set(a.community, (cx.get(a.community) ?? 0) + a.x);
-      cy.set(a.community, (cy.get(a.community) ?? 0) + a.y);
-      cz.set(a.community, (cz.get(a.community) ?? 0) + a.z);
-      cn.set(a.community, (cn.get(a.community) ?? 0) + 1);
-    }
-    const base = this.settings.folderGalaxies ? SWIRL_SPEED * dt : 0;
-    for (const id of this.nodeIds) {
-      if (base === 0) break; // galaxy spin off — moons below still run
-      const a = this.graph.getNodeAttributes(id);
-      const c = a.community;
-      if (c < 0) continue;
-      const n = cn.get(c)!;
-      const nm = galaxyNormal(c); // same seeded axis the worker flattens onto
-      const delta = c % 2 === 0 ? base : -base; // alternate spin per galaxy
-      this.rotAxis.set(nm.x, nm.y, nm.z);
-      this.rotVec
-        .set(a.x - cx.get(c)! / n, a.y - cy.get(c)! / n, a.z - cz.get(c)! / n)
-        .applyAxisAngle(this.rotAxis, delta);
-      a.x = cx.get(c)! / n + this.rotVec.x;
-      a.y = cy.get(c)! / n + this.rotVec.y;
-      a.z = cz.get(c)! / n + this.rotVec.z;
+      const s = this.frameCache();
+      const { attrs, sx, sy, sz, sn } = s;
+      const groups = sn.length;
+      sx.fill(0);
+      sy.fill(0);
+      sz.fill(0);
+      sn.fill(0);
+      for (const a of attrs) {
+        const c = a.community;
+        if (c < 0 || c >= groups) continue;
+        sx[c] += a.x;
+        sy[c] += a.y;
+        sz[c] += a.z;
+        sn[c] += 1;
+      }
+      for (const a of attrs) {
+        const c = a.community;
+        if (c < 0 || c >= groups) continue;
+        const n = sn[c];
+        const mx = sx[c] / n;
+        const my = sy[c] / n;
+        const mz = sz[c] / n;
+        const delta = c % 2 === 0 ? base : -base; // alternate spin per galaxy
+        this.rotAxis.set(s.nx[c], s.ny[c], s.nz[c]);
+        this.rotVec.set(a.x - mx, a.y - my, a.z - mz).applyAxisAngle(this.rotAxis, delta);
+        a.x = mx + this.rotVec.x;
+        a.y = my + this.rotVec.y;
+        a.z = mz + this.rotVec.z;
+      }
     }
 
     // Orphan moons: orbit the nearest linked star on a seeded tilted plane,
@@ -3633,9 +3701,9 @@ export class GraphScene {
     nArr.set(pos.length <= nArr.length ? pos : pos.subarray(0, nArr.length));
     npos.needsUpdate = true;
 
-    const ids = this.nodeIds;
-    for (let i = 0; i < ids.length; i++) {
-      const a = this.graph.getNodeAttributes(ids[i]);
+    const attrs = this.frameCache().attrs;
+    for (let i = 0; i < attrs.length; i++) {
+      const a = attrs[i];
       const o = i * 3;
       a.x = pos[o];
       a.y = pos[o + 1];
