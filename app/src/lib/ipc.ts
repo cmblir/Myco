@@ -3,7 +3,7 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { DigestDay, DistillConfig, DistillStatus, RunReport } from "./distill";
+import type { DigestDay, DistillConfig, DistillStatus, RollupWeek, RunReport } from "./distill";
 import type { QuarantineItem } from "./quarantine";
 
 export interface VaultMeta {
@@ -756,6 +756,17 @@ export const ipc = {
     files: string[],
     fingerprints: string[] | null,
   ) => invoke<string>("archive_digested_sessions", { vault, day, files, fingerprints }),
+  // Weekly-rollup bookkeeping (ROADMAP P1) — the same pair one compression
+  // layer up: settled ISO weeks whose daily/ digests are ready to roll up, and
+  // the cold-tier move for a week that has been rolled up. `fingerprints`
+  // carries the same meaning as above (null = archive-retry path).
+  rollupableWeeks: (vault: string) => invoke<RollupWeek[]>("rollupable_weeks", { vault }),
+  archiveRolledDays: (
+    vault: string,
+    week: string,
+    files: string[],
+    fingerprints: string[] | null,
+  ) => invoke<string>("archive_rolled_days", { vault, week, files, fingerprints }),
   // Gate-admitted Full-tier items ready for LLM ingest (Phase B, Task 3).
   fullTierItems: (vault: string) => invoke<string[]>("full_tier_items", { vault }),
   // Records a TS-side LLM step's file moves/creates into the same

@@ -50,6 +50,7 @@ import {
   backlogTrend,
   GATE_MIN_WIKI_PAGES,
   lastDigestOutcome,
+  lastWeeklyOutcome,
   lastRunLabel,
   lastStopPoint,
   QUARANTINE_DIR,
@@ -1799,6 +1800,10 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
   // no provider" note: the step no longer skips, so the note now says what
   // ran instead. Same lastDigestOutcome map, same refresh occasions.
   const [digestExtractive, setDigestExtractive] = useState(false);
+  // ROADMAP P1 — how many ISO weeks the latest run rolled up, counted here
+  // the same way digested days are: the weekly step is a TS-side step, so it
+  // is absent from RunReport and read from its own module-level map.
+  const [weeksRolledUp, setWeeksRolledUp] = useState(0);
 
   useEffect(() => {
     if (!vaultPath) return;
@@ -1819,6 +1824,7 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       .catch(() => undefined);
     const digest = lastDigestOutcome.get(vaultPath);
     setDigestExtractive(digest?.mode === "extractive" && digest.daysDigested > 0);
+    setWeeksRolledUp(lastWeeklyOutcome.get(vaultPath)?.weeksRolledUp ?? 0);
     return () => {
       cancelled = true;
     };
@@ -1867,6 +1873,7 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       setStatus(await ipc.distillStatus(vaultPath));
       const digest = lastDigestOutcome.get(vaultPath);
       setDigestExtractive(digest?.mode === "extractive" && digest.daysDigested > 0);
+      setWeeksRolledUp(lastWeeklyOutcome.get(vaultPath)?.weeksRolledUp ?? 0);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -2156,6 +2163,16 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
               "Session digest ran extractively (quoted highlights, no LLM). Connect a query provider under Settings → Model (Query) for summarized digests."}
           </div>
         ) : null}
+        {weeksRolledUp > 0 ? (
+          // The second compression layer's own count — the report line below
+          // comes from RunReport, which the TS-side weekly step is not part of.
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }} data-testid="distill-weekly-rollups">
+            {(t.set_distill_weekly_rollups ?? "{n} weekly rollups written to weekly/").replace(
+              "{n}",
+              String(weeksRolledUp),
+            )}
+          </div>
+        ) : null}
         {status && status.quarantined > 0 ? (
           // Defect G fix: quarantined items were moved with no indication
           // anywhere in the UI — read-only count + the folder path.
@@ -2250,7 +2267,9 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
                 ? (t.set_distill_step_run ?? "the core pass")
                 : stoppedAfter === "digest"
                   ? (t.set_distill_step_digest ?? "the session digest")
-                  : (t.set_distill_step_ingest ?? "the full-tier ingest"),
+                  : stoppedAfter === "weekly"
+                    ? (t.set_distill_step_weekly ?? "the weekly rollup")
+                    : (t.set_distill_step_ingest ?? "the full-tier ingest"),
             )}
           </div>
         ) : null}

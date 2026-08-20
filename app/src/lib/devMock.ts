@@ -1072,6 +1072,12 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve([]);
     case "archive_digested_sessions":
       return Promise.resolve("digest-mock");
+    // Weekly rollup (ROADMAP P1) — same convention one layer up: nothing
+    // settled to roll up, a fixed manifest id when asked to archive.
+    case "rollupable_weeks":
+      return Promise.resolve([]);
+    case "archive_rolled_days":
+      return Promise.resolve("digest-mock");
     // Full-tier ingest (Phase B, Task 3) — empty backlog, same convention as
     // digestable_session_days: the real ledger is Rust-side and unit-tested there.
     case "full_tier_items":

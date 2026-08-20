@@ -433,6 +433,7 @@ export function inFolder(root: string, path: string, folder: string): boolean {
 // links) were still entering the graph as noise orphans.
 const NON_KNOWLEDGE_FOLDERS = new Set([
   "daily",
+  "weekly",
   "sessions",
   "_inbox",
   "ingest-reports",

@@ -14,6 +14,15 @@ vi.mock("./sessionDigest", () => ({
 // calls (fullTierItems/readFile/claudeRun); every other test here only
 // needs its "self-skips on builtin-local" default (ingested: 0), same as
 // the real function's own no-provider path.
+// Controllable weekly-rollup outcome — the second compression layer's own
+// cold-tier prune trigger keys off it, the same way the digest's does. Mocked
+// rather than exercised: weeklyRollup.ts imports from ./sessionDigest, which
+// is already mocked here.
+const runWeeklyRollup = vi.fn();
+vi.mock("./weeklyRollup", () => ({
+  runWeeklyRollup: (...a: unknown[]) => runWeeklyRollup(...a),
+}));
+
 const runFullTierIngest = vi.fn();
 vi.mock("./fullTierIngest", () => ({
   runFullTierIngest: (...a: unknown[]) => runFullTierIngest(...a),
@@ -77,20 +86,28 @@ describe("formatRunOutcome", () => {
   const en = STRINGS.en;
 
   it("says 'nothing to process' for a run that moved nothing", () => {
-    expect(formatRunOutcome(report(), 0, en)).toBe(
+    expect(formatRunOutcome(report(), 0, 0, en)).toBe(
       "Distill finished — nothing to process",
     );
   });
 
-  it("substitutes archived/digested/proposals counts", () => {
-    expect(formatRunOutcome(report({ archived: 4, proposals: 2 }), 3, en)).toBe(
-      "Distill finished — archived 4 · 3 days digested · 2 proposals",
+  it("substitutes archived/digested/rolled-up/proposals counts", () => {
+    expect(formatRunOutcome(report({ archived: 4, proposals: 2 }), 3, 1, en)).toBe(
+      "Distill finished — archived 4 · 3 days digested · 1 weeks rolled up · 2 proposals",
     );
   });
 
   it("a trashed-only run is not 'nothing to process'", () => {
-    expect(formatRunOutcome(report({ trashed: 1 }), 0, en)).toBe(
-      "Distill finished — archived 0 · 0 days digested · 0 proposals",
+    expect(formatRunOutcome(report({ trashed: 1 }), 0, 0, en)).toBe(
+      "Distill finished — archived 0 · 0 days digested · 0 weeks rolled up · 0 proposals",
+    );
+  });
+
+  // ROADMAP P1: a run whose ONLY work was the second compression layer must
+  // not report "nothing to process" — that was the whole run.
+  it("a weekly-rollup-only run is not 'nothing to process'", () => {
+    expect(formatRunOutcome(report(), 0, 2, en)).toBe(
+      "Distill finished — archived 0 · 0 days digested · 2 weeks rolled up · 0 proposals",
     );
   });
 });
@@ -194,6 +211,8 @@ describe("runDistillGuarded", () => {
     // Default: digest resolves with nothing to report (a bare vi.fn() would
     // return undefined and break the chain's .catch()).
     runSessionDigest.mockReset().mockResolvedValue(null);
+    runWeeklyRollup.mockReset().mockResolvedValue(null);
+    runWeeklyRollup.mockReset().mockResolvedValue(null);
     runFullTierIngest.mockReset().mockResolvedValue({ ingested: 0, skipped: null, errors: [] });
   });
 
@@ -243,6 +262,8 @@ describe("runDistillGuarded — cooperative stop", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
     runSessionDigest.mockReset().mockResolvedValue(null);
+    runWeeklyRollup.mockReset().mockResolvedValue(null);
+    runWeeklyRollup.mockReset().mockResolvedValue(null);
     runFullTierIngest.mockReset().mockResolvedValue({ ingested: 0, skipped: null, errors: [] });
   });
 
@@ -275,6 +296,22 @@ describe("runDistillGuarded — cooperative stop", () => {
     expect(runFullTierIngest).not.toHaveBeenCalled();
     expect(listFiles).not.toHaveBeenCalled(); // draft-map apply never starts
     expect(lastStopPoint.get("/vstop-digest")).toBe("digest");
+  });
+
+  it("a stop requested during the weekly rollup lets it finish, then skips ingest and maps", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    runWeeklyRollup.mockImplementation(async (v: string) => {
+      requestDistillStop(v);
+      return null;
+    });
+
+    const r = await runDistillGuarded("/vstop-weekly");
+
+    expect(r).toBe(REPORT);
+    expect(runSessionDigest).toHaveBeenCalledTimes(1);
+    expect(runWeeklyRollup).toHaveBeenCalledTimes(1);
+    expect(runFullTierIngest).not.toHaveBeenCalled();
+    expect(lastStopPoint.get("/vstop-weekly")).toBe("weekly");
   });
 
   it("a stop requested during ingest skips only the draft-map step", async () => {
@@ -377,6 +414,8 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
     vi.restoreAllMocks();
     draftMap.mockReset();
     runSessionDigest.mockReset().mockResolvedValue(null);
+    runWeeklyRollup.mockReset().mockResolvedValue(null);
+    runWeeklyRollup.mockReset().mockResolvedValue(null);
     runFullTierIngest.mockReset().mockResolvedValue({ ingested: 0, skipped: null, errors: [] });
   });
 
@@ -451,6 +490,36 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
       model: "builtin-local:m",
     } as EmbeddingsStatus);
     runSessionDigest.mockResolvedValue({ daysDigested: 1, filesArchived: 3, skipped: null });
+
+    const prevVault = useVaultStore.getState().currentVault;
+    const prevReindex = useReindexStore.getState().reindex;
+    const reindex = vi.fn().mockResolvedValue(undefined);
+    useVaultStore.setState({ currentVault: { path: "/vprune" } as never });
+    useReindexStore.setState({ reindex });
+    try {
+      await runDistillGuarded("/vprune");
+      expect(reindex).toHaveBeenCalledTimes(1);
+    } finally {
+      useVaultStore.setState({ currentVault: prevVault });
+      useReindexStore.setState({ reindex: prevReindex });
+    }
+  });
+
+  it("triggers a prune reindex after a weekly rollup that archived daily notes", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "getSettings").mockResolvedValue(settings("builtin-local"));
+    vi.spyOn(ipc, "embeddingsStatus").mockResolvedValue({
+      indexed_pages: 42,
+      model: "builtin-local:m",
+    } as EmbeddingsStatus);
+    // Only the weekly layer did anything: daily/archive/ is cold too, so the
+    // active index still holds those records until this prune.
+    runWeeklyRollup.mockResolvedValue({
+      weeksRolledUp: 1,
+      daysArchived: 7,
+      skipped: null,
+      mode: "extractive",
+    });
 
     const prevVault = useVaultStore.getState().currentVault;
     const prevReindex = useReindexStore.getState().reindex;

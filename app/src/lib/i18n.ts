@@ -779,6 +779,9 @@ export interface Strings {
   set_distill_step_digest?: string;
   set_distill_step_ingest?: string;
   set_distill_step_maps?: string;
+  set_distill_step_weekly?: string;
+  // ROADMAP P1 — weekly rollup count for the distill tab.
+  set_distill_weekly_rollups?: string; // {n}
   // profile.md editor, in the Distill tab (Phase B, Task 5).
   set_profile_title?: string;
   set_profile_lede?: string;
@@ -794,7 +797,7 @@ export interface Strings {
   ov_distill_last_run?: string; // {t}
   ov_distill_never?: string;
   ov_distill_llm_queued?: string;
-  ov_distill_done?: string; // {a} {d} {p}
+  ov_distill_done?: string; // {a} {d} {w} {p}
   ov_distill_done_none?: string;
   pf_title?: string;
   pf_lede?: string;
@@ -932,7 +935,7 @@ export interface Strings {
   s_spot_failed?: string; // {k}
   s_spot_off?: string;
   notif_distill_done_title?: string;
-  notif_distill_done_body?: string; // {p} {d}
+  notif_distill_done_body?: string; // {p} {d} {w}
   notif_quarantine_title?: string;
   notif_quarantine_body?: string; // {n}
   // Graph toolbar.
@@ -1805,6 +1808,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_digest: "the session digest",
     set_distill_step_ingest: "the full-tier ingest",
     set_distill_step_maps: "the map drafts",
+    set_distill_step_weekly: "the weekly rollup",
+    set_distill_weekly_rollups: "{n} weekly rollups written to weekly/",
     set_profile_title: "Profile",
     set_profile_lede:
       "Personalizes distillation and Ask/ingest context. Written to profile.md; sent to configured AI providers when injection is on.",
@@ -1821,7 +1826,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_distill_llm_queued:
       "Full-tier ingest & map drafts waiting — connect a provider (the digest runs locally)",
     ov_distill_done:
-      "Distill finished — archived {a} · {d} days digested · {p} proposals",
+      "Distill finished — archived {a} · {d} days digested · {w} weeks rolled up · {p} proposals",
     ov_distill_done_none: "Distill finished — nothing to process",
     pf_title: "Feedback",
     pf_lede:
@@ -1963,7 +1968,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "{k} could NOT be registered — another app is most likely already using it. Pick a different combination.",
     s_spot_off: "Off — no global shortcut is registered.",
     notif_distill_done_title: "Distill finished",
-    notif_distill_done_body: "{p} proposals · {d} session days digested",
+    notif_distill_done_body:
+      "{p} proposals · {d} session days digested · {w} weeks rolled up",
     notif_quarantine_title: "New quarantine items",
     notif_quarantine_body:
       "{n} items are waiting for review in _inbox/quarantine.",
@@ -2834,6 +2840,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_digest: "세션 다이제스트",
     set_distill_step_ingest: "전체 계층 인제스트",
     set_distill_step_maps: "맵 초안",
+    set_distill_step_weekly: "주간 롤업",
+    set_distill_weekly_rollups: "weekly/에 주간 롤업 {n}건 작성",
     set_profile_title: "프로필",
     set_profile_lede:
       "증류와 Ask/인제스트 컨텍스트를 개인화합니다. profile.md에 저장되며, 주입이 켜져 있으면 설정된 AI 프로바이더로 전송됩니다.",
@@ -2849,7 +2857,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_distill_never: "아직 실행 기록 없음",
     ov_distill_llm_queued:
       "본문 승격·맵 제안 대기 — 프로바이더 연결 필요 (다이제스트는 로컬로 실행됨)",
-    ov_distill_done: "증류 완료 — 아카이브 {a}건 · 다이제스트 {d}일 · 제안 {p}건",
+    ov_distill_done:
+      "증류 완료 — 아카이브 {a}건 · 다이제스트 {d}일 · 주간 롤업 {w}건 · 제안 {p}건",
     ov_distill_done_none: "증류 완료 — 처리할 항목 없음",
     pf_title: "피드백",
     pf_lede:
@@ -2988,7 +2997,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "{k}를 등록하지 못했습니다 — 다른 앱이 이미 쓰고 있을 가능성이 큽니다. 다른 조합을 선택하세요.",
     s_spot_off: "꺼짐 — 등록된 전역 단축키가 없습니다.",
     notif_distill_done_title: "증류 완료",
-    notif_distill_done_body: "제안 {p}건 · 세션 다이제스트 {d}일치",
+    notif_distill_done_body:
+      "제안 {p}건 · 세션 다이제스트 {d}일치 · 주간 롤업 {w}건",
     notif_quarantine_title: "새 격리 항목",
     notif_quarantine_body: "{n}개 항목이 _inbox/quarantine에서 검토를 기다립니다.",
     gr_zoom_out: "축소",
@@ -3735,6 +3745,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_digest: "セッションダイジェスト",
     set_distill_step_ingest: "フル階層インジェスト",
     set_distill_step_maps: "マップ下書き",
+    set_distill_step_weekly: "週次ロールアップ",
+    set_distill_weekly_rollups: "weekly/ に週次ロールアップを{n}件作成",
     set_profile_title: "プロフィール",
     set_profile_lede:
       "蒸留とAsk/インジェストのコンテキストを個人化します。profile.mdに保存され、注入がオンの場合は設定済みのAIプロバイダーに送信されます。",
@@ -3751,7 +3763,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_distill_llm_queued:
       "フル階層インジェスト・マップ草案は待機中 — プロバイダーの接続が必要（ダイジェストはローカルで実行）",
     ov_distill_done:
-      "蒸留完了 — アーカイブ{a}件 · ダイジェスト{d}日 · 提案{p}件",
+      "蒸留完了 — アーカイブ{a}件 · ダイジェスト{d}日 · 週次ロールアップ{w}件 · 提案{p}件",
     ov_distill_done_none: "蒸留完了 — 処理する項目なし",
     pf_title: "フィードバック",
     pf_lede:
@@ -3890,7 +3902,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "{k} を登録できませんでした — 他のアプリが既に使用している可能性が高いです。別の組み合わせを選んでください。",
     s_spot_off: "オフ — グローバルショートカットは登録されていません。",
     notif_distill_done_title: "蒸留完了",
-    notif_distill_done_body: "提案 {p}件 · セッションダイジェスト {d}日分",
+    notif_distill_done_body:
+      "提案 {p}件 · セッションダイジェスト {d}日分 · 週次ロールアップ {w}件",
     notif_quarantine_title: "新しい隔離アイテム",
     notif_quarantine_body: "{n}件が _inbox/quarantine でレビュー待ちです。",
     gr_zoom_out: "ズームアウト",

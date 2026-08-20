@@ -13,6 +13,8 @@ import type { Lang, Strings } from "./i18n";
 import { useUIStore } from "../stores/uiStore";
 import { runSessionDigest } from "./sessionDigest";
 import type { DigestOutcome } from "./sessionDigest";
+import { runWeeklyRollup } from "./weeklyRollup";
+import type { RollupOutcome } from "./weeklyRollup";
 import { runFullTierIngest } from "./fullTierIngest";
 import type { FullTierOutcome } from "./fullTierIngest";
 import { draftMap } from "./maps";
@@ -107,6 +109,17 @@ export interface DigestDay {
   already_digested: boolean;
 }
 
+// ROADMAP P1 — rollupableWeeks's return: one settled ISO week's daily/ files
+// ready for the weekly rollup, the same shape one compression layer up.
+export interface RollupWeek {
+  week: string; // YYYY-Www (ISO 8601)
+  files: string[]; // vault-relative daily/ rel paths
+  // Every file here is already named by a weekly/*.md rollup marker, so its
+  // rollup text is durable and only the archive move failed: runWeeklyRollup
+  // must skip the provider call and retry only the archive step.
+  already_rolled: boolean;
+}
+
 // Task 8 — direction of `last_backlogs` (oldest → newest, per Rust's
 // push+drain in distill.rs) for the Settings distill tab's status line.
 // Compares the oldest and newest samples rather than fitting a slope: the
@@ -160,6 +173,10 @@ const inFlight = new Set<string>();
 // run. Smallest option that works — no store, no event bus.
 export const lastDigestOutcome = new Map<string, DigestOutcome>();
 
+// ROADMAP P1 — the weekly rollup's outcome, keyed by vault path. Same
+// module-level map idiom as lastDigestOutcome directly above.
+export const lastWeeklyOutcome = new Map<string, RollupOutcome>();
+
 // Phase B, Task 3 — full-tier ingest's outcome, keyed by vault path. Same
 // "module-level map, no store, no event bus" idiom as lastDigestOutcome
 // right above (RunReport itself gains no new field for it either).
@@ -198,22 +215,25 @@ export function pendingShrank(prev: number | null, now: number): boolean {
 export function formatRunOutcome(
   report: RunReport,
   daysDigested: number,
+  weeksRolledUp: number,
   t: Strings,
 ): string {
   const worked =
     report.archived > 0 ||
     report.trashed > 0 ||
     report.proposals > 0 ||
-    daysDigested > 0;
+    daysDigested > 0 ||
+    weeksRolledUp > 0;
   if (!worked) {
     return t.ov_distill_done_none ?? "Distill finished — nothing to process";
   }
   return (
     t.ov_distill_done ??
-    "Distill finished — archived {a} · {d} days digested · {p} proposals"
+    "Distill finished — archived {a} · {d} days digested · {w} weeks rolled up · {p} proposals"
   )
     .replace("{a}", String(report.archived))
     .replace("{d}", String(daysDigested))
+    .replace("{w}", String(weeksRolledUp))
     .replace("{p}", String(report.proposals));
 }
 
@@ -230,7 +250,7 @@ const stopRequested = new Set<string>();
 /** The step the last run's chain stopped after ("run" = the Rust core pass;
  * the chain never starts a later step once the flag is seen), or null when it
  * ran to the end — same module-level map idiom as lastDigestOutcome above. */
-export type DistillStopPoint = "run" | "digest" | "ingest";
+export type DistillStopPoint = "run" | "digest" | "weekly" | "ingest";
 export const lastStopPoint = new Map<string, DistillStopPoint | null>();
 
 /** Ask an in-flight distill chain for `vault` to stop before its next step.
@@ -307,7 +327,9 @@ async function applyApprovedDraftMaps(
 }
 
 /** Cold-tier prune (final-review Important 6): after a digest run archives
- * session files to `sessions/archive/`, the active embedding index still
+ * session files to `sessions/archive/` — or a weekly rollup archives daily
+ * notes to `daily/archive/`, the same cold tier one layer up — the active
+ * embedding index still
  * holds their records until the next reindex — `reindex_embeddings` is that
  * next reindex, and it is prune-cheap here (VERIFIED by reading commands.rs):
  * `collect_wiki_pages` drops cold paths, unchanged pages hash-skip without
@@ -320,7 +342,7 @@ async function applyApprovedDraftMaps(
  *   - never on an empty index — that would be the FIRST build (minutes plus
  *     a 769 MB model load), which stays the Settings button's deliberate
  *     action (same rule as autoReindex's decidePoll). */
-async function pruneArchivedSessions(vault: string): Promise<void> {
+async function pruneColdTier(vault: string): Promise<void> {
   if (useVaultStore.getState().currentVault?.path !== vault) return;
   const status = await ipc.embeddingsStatus().catch(() => null);
   if (!status || status.indexed_pages === 0) return;
@@ -369,6 +391,7 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
   // outcome behind — formatRunOutcome would attribute stale digested-day
   // counts to this run.
   lastDigestOutcome.delete(vault);
+  lastWeeklyOutcome.delete(vault);
   useDistillRunStore.setState({ running: true, step: "run" });
   try {
     const report = await ipc.distillRun(vault);
@@ -402,12 +425,31 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
     });
     if (outcome) lastDigestOutcome.set(vault, outcome);
     if (outcome && outcome.filesArchived > 0) {
-      await pruneArchivedSessions(vault).catch((e) => {
+      await pruneColdTier(vault).catch((e) => {
         console.error("[distill] cold-tier prune failed", vault, e);
       });
     }
     if (stopRequested.has(vault)) {
       lastStopPoint.set(vault, "digest");
+      return report;
+    }
+    // ROADMAP P1 — the second compression layer, immediately after the first:
+    // the digest step above is what just appended to daily/, so this runs on
+    // the freshest possible view of it (a week whose last daily file was only
+    // written this run is still held back by its own maturity gate).
+    useDistillRunStore.setState({ step: "weekly" });
+    const weekly = await runWeeklyRollup(vault).catch((e) => {
+      console.error("[distill] weekly rollup failed", vault, e);
+      return null;
+    });
+    if (weekly) lastWeeklyOutcome.set(vault, weekly);
+    if (weekly && weekly.daysArchived > 0) {
+      await pruneColdTier(vault).catch((e) => {
+        console.error("[distill] cold-tier prune failed", vault, e);
+      });
+    }
+    if (stopRequested.has(vault)) {
+      lastStopPoint.set(vault, "weekly");
       return report;
     }
     useDistillRunStore.setState({ step: "ingest" });
@@ -439,14 +481,16 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
     // train the user to disable notifications entirely. Stopped-early runs
     // (the returns above) skip it too: the user was watching the popover.
     const days = outcome?.daysDigested ?? 0;
-    if (report.proposals > 0 || days > 0) {
+    const weeks = weekly?.weeksRolledUp ?? 0;
+    if (report.proposals > 0 || days > 0 || weeks > 0) {
       const t = STRINGS[useUIStore.getState().lang];
       void osNotify(
         t.notif_distill_done_title ?? "Distill finished",
         (t.notif_distill_done_body ??
-          "{p} proposals · {d} session days digested")
+          "{p} proposals · {d} session days digested · {w} weeks rolled up")
           .replace("{p}", String(report.proposals))
-          .replace("{d}", String(days)),
+          .replace("{d}", String(days))
+          .replace("{w}", String(weeks)),
       );
     }
     return report;
