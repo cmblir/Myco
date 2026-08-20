@@ -214,10 +214,10 @@ fn bm25_is_incomplete(dense_page_count: usize, bm25_page_count: usize) -> bool {
 
 /// Top-level trees the watcher attaches to and the incremental path accepts —
 /// kept in lockstep with `collect_wiki_pages`'s walk (`wiki/`, `sessions/`,
-/// `daily/`) so a change the reindex would pick up is also caught by the
+/// `daily/`, `weekly/`) so a change the reindex would pick up is also caught by the
 /// fast incremental path instead of waiting for the next reconcile. `raw/`
 /// (immutable) and everything else is never indexed.
-const WATCHED_TREES: [&str; 3] = ["wiki", "sessions", "daily"];
+const WATCHED_TREES: [&str; 4] = ["wiki", "sessions", "daily", "weekly"];
 
 /// Whether vault-relative `rel` falls under one of `WATCHED_TREES`.
 fn in_watched_tree(rel: &str) -> bool {
@@ -251,7 +251,8 @@ fn should_index(rel: &str) -> bool {
     rel.ends_with(".md") && in_watched_tree(rel) && !is_cold(rel)
 }
 
-/// Start watching `root`'s `WATCHED_TREES` (`wiki/`, `sessions/`, `daily/`)
+/// Start watching `root`'s `WATCHED_TREES` (`wiki/`, `sessions/`, `daily/`,
+/// `weekly/`)
 /// for filesystem changes, marking each changed markdown page dirty via
 /// `tx`. Returns `None` only if the watch backend itself couldn't be
 /// created. A tree that doesn't exist under this vault root is skipped
@@ -683,8 +684,8 @@ mod tests {
     // manual reindex or vault rebind.
 
     #[test]
-    fn watched_trees_cover_wiki_sessions_and_daily() {
-        assert_eq!(WATCHED_TREES, ["wiki", "sessions", "daily"]);
+    fn watched_trees_cover_wiki_sessions_and_both_digest_layers() {
+        assert_eq!(WATCHED_TREES, ["wiki", "sessions", "daily", "weekly"]);
     }
 
     #[test]
@@ -709,9 +710,11 @@ mod tests {
         assert!(should_index("wiki/a.md"));
         assert!(should_index("sessions/2026-08/a.md"));
         assert!(should_index("daily/2026-08-10.md"));
+        assert!(should_index("weekly/2026-W33.md"));
         // Cold subtrees stay out even though their parent tree is watched —
         // this is what keeps an archive move a cheap drop instead of churn.
         assert!(!should_index("sessions/archive/2026-08/a.md"));
+        assert!(!should_index("daily/archive/2026-W33/2026-08-10.md"));
         assert!(!should_index("_inbox/quarantine/a.md"));
         assert!(!should_index("raw/a.md")); // never a watched tree
         assert!(!should_index("wiki/a.txt")); // not markdown

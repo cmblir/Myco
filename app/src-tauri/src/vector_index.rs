@@ -72,7 +72,10 @@ pub struct Hit {
 /// True for a page the distillation gate's cold tier owns: archived sources
 /// (`raw/archive/YYYY-MM/`), gate-quarantined inflow (`_inbox/quarantine/`),
 /// digested sessions (`sessions/archive/YYYY-MM/`, Phase B's
-/// `archive_digested_sessions`), and internal cache/state (`.myco/`). These
+/// `archive_digested_sessions`), rolled-up daily digests
+/// (`daily/archive/YYYY-Www/`, ROADMAP P1's `archive_rolled_days` — the same
+/// shape one compression layer up, where `weekly/<week>.md` is now the live
+/// page carrying that knowledge), and internal cache/state (`.myco/`). These
 /// are never indexed and any existing record for one is dropped on the next
 /// prune — see `app/docs/specs/2026-08-13-ontology-distill-design.md`
 /// ("Archive distilled sources ... drop from the active embedding index").
@@ -85,6 +88,7 @@ pub fn is_cold(page: &str) -> bool {
     page.starts_with("raw/archive/")
         || page.starts_with("_inbox/quarantine/")
         || page.starts_with("sessions/archive/")
+        || page.starts_with("daily/archive/")
         || page.starts_with(".myco/")
 }
 
@@ -411,7 +415,7 @@ impl VectorStore {
         // self-reinforcement loop.
         matches!(
             page.split('/').next().unwrap_or(""),
-            "sessions" | "_inbox" | "raw" | "ingest-reports" | "daily"
+            "sessions" | "_inbox" | "raw" | "ingest-reports" | "daily" | "weekly"
         )
     }
 
@@ -1378,10 +1382,13 @@ mod suggestion_scope_tests {
         assert!(is_cold("_inbox/quarantine/y.md"));
         assert!(is_cold(".myco/ontology.json"));
         assert!(is_cold("sessions/archive/2026-08/x.md"));
+        assert!(is_cold("daily/archive/2026-W33/2026-08-10.md"));
         assert!(!is_cold("raw/x.md"));
         assert!(!is_cold("_inbox/y.md"));
         assert!(!is_cold("wiki/a.md"));
         assert!(!is_cold("sessions/2026-08/x.md"));
+        assert!(!is_cold("daily/2026-08-10.md"));
+        assert!(!is_cold("weekly/2026-W33.md"));
 
         let mut s = store_with(&["wiki/a.md", "raw/archive/2026-08/x.md"]);
         let existing: HashSet<String> = ["wiki/a.md", "raw/archive/2026-08/x.md"]

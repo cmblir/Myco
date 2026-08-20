@@ -229,6 +229,8 @@ pub fn run() {
             commands::extend_quarantine,
             commands::digestable_session_days,
             commands::archive_digested_sessions,
+            commands::rollupable_weeks,
+            commands::archive_rolled_days,
             commands::full_tier_items,
             commands::append_distill_manifest,
             tray::update_tray_status,

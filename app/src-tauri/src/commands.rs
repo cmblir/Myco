@@ -1821,6 +1821,38 @@ pub fn archive_digested_sessions(
     )
 }
 
+/// Settled ISO weeks whose `daily/` digests are ready for the weekly-rollup
+/// step (ROADMAP P1). See `distill::rollupable_weeks`'s own doc comment.
+#[tauri::command]
+pub fn rollupable_weeks(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+) -> Result<Vec<crate::distill::RollupWeek>, String> {
+    let root = confine_root(&state, &vault)?;
+    Ok(crate::distill::rollupable_weeks(std::path::Path::new(
+        &root,
+    )))
+}
+
+/// Move a rolled-up week's `daily/` notes into `daily/archive/<week>/`. See
+/// `distill::archive_rolled_days`'s own doc comment.
+#[tauri::command]
+pub fn archive_rolled_days(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    week: String,
+    files: Vec<String>,
+    fingerprints: Option<Vec<String>>,
+) -> Result<String, String> {
+    let root = confine_root(&state, &vault)?;
+    crate::distill::archive_rolled_days(
+        std::path::Path::new(&root),
+        &week,
+        &files,
+        fingerprints.as_deref(),
+    )
+}
+
 /// Gate-admitted Full-tier items ready for the LLM ingest pipeline (Phase B,
 /// Task 3). Read-only. See `distill::full_tier_items`'s own doc comment.
 #[tauri::command]
@@ -2178,6 +2210,12 @@ pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String,
     // Deliberately NOT walked by the knowledge graph (`graphData.ts`'s
     // `isNonKnowledgePath`): that stays search-only, on purpose.
     walk(&root.join("daily"), root, &mut out);
+    // The second compression layer (ROADMAP P1's `archive_rolled_days`): once
+    // a week's daily digests go cold under `daily/archive/`, `weekly/<week>.md`
+    // is the only live page holding that knowledge — so it has to be walked
+    // here for exactly the reason `daily/` is. Search-only too (see
+    // `graphData.ts`'s `isNonKnowledgePath`).
+    walk(&root.join("weekly"), root, &mut out);
     // Cold-tier pages never belong in the active index — see this fn's doc
     // comment. Live since `is_cold` grew a `sessions/archive/` prefix (Phase
     // B's `archive_digested_sessions`): the `sessions/` walk above is no
@@ -3629,18 +3667,22 @@ mod session_bucket_tests {
     }
 
     #[test]
-    fn collect_wiki_pages_includes_daily_and_excludes_cold_subtrees() {
+    fn collect_wiki_pages_includes_both_digest_layers_and_excludes_cold_subtrees() {
         // Defect A: distillation writes digests to `daily/*.md`, and a
         // digested session gets archived to `sessions/archive/...` (cold).
         // Both `daily/` must be walked and `sessions/archive/` must still be
         // dropped, or a digest's knowledge is unsearchable on both ends.
+        // ROADMAP P1 adds the same pair one layer up: `weekly/` is walked and
+        // `daily/archive/` is cold.
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path();
         for sub in [
             "wiki/a.md",
             "sessions/2026-08/s.md",
             "daily/2026-08-10.md",
+            "weekly/2026-W33.md",
             "sessions/archive/2026-08/old.md",
+            "daily/archive/2026-W32/2026-08-03.md",
         ] {
             let p = root.join(sub);
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -3658,8 +3700,16 @@ mod session_bucket_tests {
             "daily/ digests must be indexed: {rels:?}"
         );
         assert!(
+            rels.contains(&"weekly/2026-W33.md".to_string()),
+            "weekly/ rollups must be indexed: {rels:?}"
+        );
+        assert!(
             !rels.iter().any(|r| r.starts_with("sessions/archive/")),
             "archived (cold) sessions must stay out of the active index: {rels:?}"
+        );
+        assert!(
+            !rels.iter().any(|r| r.starts_with("daily/archive/")),
+            "rolled-up (cold) daily digests must stay out too: {rels:?}"
         );
     }
 }

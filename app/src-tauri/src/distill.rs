@@ -3085,8 +3085,23 @@ fn content_fingerprint(bytes: &[u8]) -> String {
 /// and a name containing `:` is disambiguated by `is_digested` — see its
 /// legacy-entry rule.
 fn digested_session_entries(root: &Path) -> std::collections::HashSet<String> {
+    marker_entries(&root.join("daily"), DIGEST_MARKER_OPEN)
+}
+
+/// Every entry recorded by an `<open> … -->` marker in any `*.md` directly
+/// inside `dir`. Shared by both compression layers: `daily/*.md` markers name
+/// the sessions they digest, `weekly/*.md` markers name the daily files they
+/// roll up (`ROLLUP_MARKER_OPEN`) — same format, same idempotency contract,
+/// one parser.
+///
+/// The walk is deliberately flat, which is also what keeps the cold tier out
+/// of it: `daily/archive/` is a directory, so it never matches the `.md`
+/// extension check and its markers stop counting the moment a day is rolled
+/// up. That is correct for the sessions those days recorded — they are already
+/// under `sessions/archive/`, which `walk_inflow` never offers again.
+fn marker_entries(dir: &Path, open: &str) -> std::collections::HashSet<String> {
     let mut out = std::collections::HashSet::new();
-    let Ok(entries) = std::fs::read_dir(root.join("daily")) else {
+    let Ok(entries) = std::fs::read_dir(dir) else {
         return out;
     };
     for entry in entries.flatten() {
@@ -3098,7 +3113,7 @@ fn digested_session_entries(root: &Path) -> std::collections::HashSet<String> {
             continue;
         };
         for line in text.lines() {
-            if let Some(rest) = line.trim().strip_prefix(DIGEST_MARKER_OPEN) {
+            if let Some(rest) = line.trim().strip_prefix(open) {
                 if let Some(list) = rest.strip_suffix(DIGEST_MARKER_CLOSE) {
                     out.extend(list.split_whitespace().map(str::to_string));
                 }
@@ -3108,7 +3123,10 @@ fn digested_session_entries(root: &Path) -> std::collections::HashSet<String> {
     out
 }
 
-/// Whether the session file at `path` is already covered by a digest.
+/// Whether the file at `path` is already covered by a marker in `entries` —
+/// a session file by a `daily/` digest marker, or (weekly rollup, one layer
+/// up) a daily file by a `weekly/` rollup marker. The rule is the same at
+/// both layers, so it is one function.
 ///
 /// A stem is the CONVERSATION id and is stable across re-imports: a
 /// conversation the user kept talking in comes back with the same stem but
@@ -3322,6 +3340,265 @@ pub fn archive_digested_sessions(
             .ok_or_else(|| format!("bad session path: {f}"))?;
         let to_path = free_path(&archive_dir.join(file_name));
         std::fs::rename(&from_path, &to_path).map_err(|e| format!("archive session move: {e}"))?;
+        manifest.moves.push(MoveEntry {
+            from: from_rel,
+            to: rel_string(root, &to_path),
+        });
+        save_manifest(root, &manifest)?;
+    }
+    Ok(id)
+}
+
+// ---------------------------------------------------------------------------
+// Weekly rollup (ROADMAP P1): the second compression layer. `sessions/`
+// compress into `daily/`, but `daily/` is a growing tree of its own, so a
+// settled ISO week's daily files roll up into `weekly/<YYYY-Www>.md` and go
+// cold under `daily/archive/` — the same shape one level up. Nothing here is
+// re-derived: the marker is `content_fingerprint` + `marker_entries` +
+// `is_digested`, the eligibility rule is `digestable_session_days`'s
+// all-files-ready rule, the archive is `archive_digested_sessions`'s
+// confine + fingerprint-recheck + incremental `RunManifest`.
+// ---------------------------------------------------------------------------
+
+/// One settled ISO week's `daily/` files, ready for the TS weekly-rollup step.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct RollupWeek {
+    /// ISO-8601 week, `YYYY-Www` — also the `weekly/<week>.md` stem.
+    pub week: String,
+    pub files: Vec<String>,
+    /// Every file in `files` is already named by a `weekly/*.md` rollup marker
+    /// — its rollup text is durable and only the archive move failed. The
+    /// exact `already_digested` contract, one level up.
+    pub already_rolled: bool,
+}
+
+/// The marker `appendRollup` (`src/lib/weeklyRollup.ts`) writes into the SAME
+/// `weekly/<week>.md` write as its bullets, naming the daily files that
+/// section covers as `<day>:<fingerprint>`:
+/// `<!-- myco:rolled-up-days 2026-08-10:1a2b3c4d 2026-08-11:99887766 -->`.
+///
+/// Bound to the daily files' CONTENT for the same reason `DIGEST_MARKER_OPEN`
+/// is: a daily note keeps its name (`YYYY-MM-DD`) while the session digest
+/// appends more sections to it and the user edits it by hand, so a name-keyed
+/// record would archive the grown file without ever rolling up the new half.
+/// Keep the literal in lockstep with the TS side; the close delimiter is
+/// `DIGEST_MARKER_CLOSE`, shared.
+const ROLLUP_MARKER_OPEN: &str = "<!-- myco:rolled-up-days ";
+
+/// Days since the Unix epoch for a civil (proleptic Gregorian) date —
+/// Hinnant's `days_from_civil`, the inverse of `civil_datetime`. An ISO week
+/// number is defined by day arithmetic (which Thursday the week contains),
+/// not by month/day, so the round trip is unavoidable.
+fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = (if y >= 0 { y } else { y - 399 }) / 400;
+    let yoe = y - era * 400;
+    let mp = i64::from(if m > 2 { m - 3 } else { m + 9 });
+    let doy = (153 * mp + 2) / 5 + i64::from(d) - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe - 719_468
+}
+
+/// `YYYY-Www` — the ISO-8601 week a `YYYY-MM-DD` daily-note stem belongs to,
+/// or `None` when the stem is not a real civil date (a hand-named file in
+/// `daily/`, which then simply never joins a rollup).
+///
+/// ISO's own rule, not "day-of-year / 7": the week's Thursday decides which
+/// year the week counts against, which is what makes 2026-12-31 fall in
+/// 2027-W01 and keeps a year's last and first weeks from being rolled up
+/// twice under two different names.
+fn iso_week(day: &str) -> Option<String> {
+    let b = day.as_bytes();
+    if day.len() != 10 || b[4] != b'-' || b[7] != b'-' {
+        return None;
+    }
+    let y: i64 = day[0..4].parse().ok()?;
+    let m: u32 = day[5..7].parse().ok()?;
+    let d: u32 = day[8..10].parse().ok()?;
+    let days = days_from_civil(y, m, d);
+    // Rejects an impossible date (`2026-02-31`) rather than silently letting
+    // it wrap into the following month's week.
+    let (ry, rm, rd, ..) = civil_datetime(days * 86_400);
+    if (ry, rm, rd) != (y, m, d) {
+        return None;
+    }
+    // 1970-01-01 was a Thursday, so `+3` puts Monday at 0.
+    let dow = (days + 3).rem_euclid(7);
+    let thursday = days - dow + 3;
+    let (wy, ..) = civil_datetime(thursday * 86_400);
+    let ordinal = thursday - days_from_civil(wy, 1, 1) + 1;
+    Some(format!("{wy:04}-W{:02}", (ordinal - 1) / 7 + 1))
+}
+
+/// `daily/<name>`, no further nesting — the one shape a daily note ever has
+/// (`daily/<YYYY-MM-DD>.md`), which excludes `daily/archive/...` for free.
+/// The confine `archive_rolled_days` applies to its caller-supplied `files`,
+/// same as `is_session_payload_path` one level down.
+fn is_daily_payload_path(rel: &str) -> bool {
+    rel.strip_prefix("daily/")
+        .is_some_and(|rest| !rest.is_empty() && !rest.contains('/'))
+}
+
+/// Groups mature, not-yet-rolled `daily/*.md` by ISO week, oldest week first.
+/// A flat `read_dir` (daily notes are never nested), so `daily/archive/` is
+/// skipped without an explicit exclusion.
+///
+/// "Settled" mirrors `digestable_session_days`'s fully-scored-day rule: a week
+/// is offered only once EVERY daily file in it is past `maturation_hours`, not
+/// as soon as one is. A daily file is still growing while that day's sessions
+/// keep arriving — the session digest appends another section per run — so
+/// rolling up a week containing a fresh file would summarize a half-written
+/// day and then have to pay for the same week again. There is no scored-ledger
+/// half to the check here: `daily/` is distillation's own output, not inflow,
+/// so it has no gate verdict to wait for.
+pub fn rollupable_weeks(root: &Path) -> Vec<RollupWeek> {
+    let cfg = config_load(root);
+    let maturation_secs = cfg.maturation_hours as i64 * 3600;
+    let now = now_secs();
+    let rolled = marker_entries(&root.join("weekly"), ROLLUP_MARKER_OPEN);
+
+    struct DayEntry {
+        rel: String,
+        ready: bool,
+        rolled: bool,
+    }
+
+    let Ok(entries) = std::fs::read_dir(root.join("daily")) else {
+        return Vec::new();
+    };
+    let mut by_week: HashMap<String, Vec<DayEntry>> = HashMap::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("md") {
+            continue;
+        }
+        let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+            continue;
+        };
+        let Some(week) = iso_week(stem) else {
+            continue;
+        };
+        let Some(mtime) = mtime_secs(&path) else {
+            continue;
+        };
+        by_week.entry(week).or_default().push(DayEntry {
+            ready: now - mtime >= maturation_secs,
+            rolled: is_digested(&rolled, stem, &path),
+            rel: rel_string(root, &path),
+        });
+    }
+
+    let mut weeks: Vec<RollupWeek> = by_week
+        .into_iter()
+        .filter(|(_, entries)| entries.iter().all(|e| e.ready))
+        .map(|(week, entries)| {
+            let already_rolled = entries.iter().all(|e| e.rolled);
+            let mut files: Vec<String> = entries
+                .into_iter()
+                // Same split as `digestable_session_days`: fully recorded ->
+                // hand back everything, only the archive move is left to
+                // retry; partly recorded (a late daily note reappeared in an
+                // already-rolled week) -> hand back only the new files, which
+                // get their own rollup section.
+                .filter(|e| already_rolled || !e.rolled)
+                .map(|e| e.rel)
+                .collect();
+            files.sort();
+            RollupWeek {
+                week,
+                files,
+                already_rolled,
+            }
+        })
+        .collect();
+    weeks.sort_by(|a, b| a.week.cmp(&b.week));
+    weeks
+}
+
+/// Moves each of `files` (already-rolled-up `daily/...` notes) into
+/// `daily/archive/<week>/`, the cold tier (`vector_index::is_cold`) — the
+/// literal counterpart of `archive_digested_sessions`, which is where every
+/// guard below comes from: `confine_payload_file` on untrusted IPC paths, a
+/// fingerprint recheck immediately before each rename so a file rewritten
+/// since it was read stays put, and a `digest-<unix-seconds>` `RunManifest`
+/// saved after every move so `undo(root, id)` reverses it with no new code.
+///
+/// The archive bucket is the ISO week itself rather than a month
+/// (`archive_digested_sessions` uses `YYYY-MM`): a rollup covers exactly one
+/// week, so one directory per rollup maps 1:1 onto the `weekly/<week>.md`
+/// that replaced it — and a week can straddle two months, which a month
+/// bucket would have to pick a side of anyway.
+///
+/// `fingerprints` is the caller's record of the bytes it actually rolled up.
+/// `None` is the archive-retry path (an earlier run wrote the rollup and this
+/// one only re-attempts the move), which falls back to the on-disk rollup
+/// markers via the same `is_digested` that offered the week.
+pub fn archive_rolled_days(
+    root: &Path,
+    week: &str,
+    files: &[String],
+    fingerprints: Option<&[String]>,
+) -> Result<String, String> {
+    // `week` is IPC input and becomes a directory name — reject anything that
+    // is not exactly `YYYY-Www` rather than create a junk archive bucket.
+    let b = week.as_bytes();
+    let valid_week = week.len() == 8
+        && b[0..4].iter().all(u8::is_ascii_digit)
+        && b[4] == b'-'
+        && b[5] == b'W'
+        && b[6..8].iter().all(u8::is_ascii_digit);
+    if !valid_week {
+        return Err(format!("bad week `{week}`, expected YYYY-Www"));
+    }
+
+    if let Some(fps) = fingerprints {
+        if fps.len() != files.len() {
+            return Err(format!(
+                "{} fingerprints for {} files",
+                fps.len(),
+                files.len()
+            ));
+        }
+    }
+    let recorded = match fingerprints {
+        Some(_) => Default::default(),
+        None => marker_entries(&root.join("weekly"), ROLLUP_MARKER_OPEN),
+    };
+
+    let now = now_secs();
+    let id = free_manifest_id(root, &format!("digest-{now}"));
+    let mut manifest = RunManifest {
+        id: id.clone(),
+        started_at: now,
+        ..Default::default()
+    };
+    save_manifest(root, &manifest)?;
+
+    let archive_dir = root.join("daily").join(RAW_ARCHIVE_DIR).join(week);
+    std::fs::create_dir_all(&archive_dir).map_err(|e| format!("create daily archive dir: {e}"))?;
+
+    for (i, f) in files.iter().enumerate() {
+        let from_path = confine_payload_file(root, f, is_daily_payload_path, "daily/")?;
+        if !from_path.exists() {
+            continue; // already moved/gone — idempotent, same as every other pass
+        }
+        let stem = from_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
+        let rolled = match fingerprints {
+            Some(fps) => std::fs::read(&from_path).is_ok_and(|b| content_fingerprint(&b) == fps[i]),
+            None => is_digested(&recorded, stem, &from_path),
+        };
+        if !rolled {
+            // Appended to (a later session digest) or hand-edited since it was
+            // read. Leaving it in `daily/` costs one duplicated rollup of its
+            // earlier bullets next run; archiving it loses the new ones.
+            continue;
+        }
+        let from_rel = rel_string(root, &from_path);
+        let file_name = from_path
+            .file_name()
+            .ok_or_else(|| format!("bad daily path: {f}"))?;
+        let to_path = free_path(&archive_dir.join(file_name));
+        std::fs::rename(&from_path, &to_path).map_err(|e| format!("archive daily move: {e}"))?;
         manifest.moves.push(MoveEntry {
             from: from_rel,
             to: rel_string(root, &to_path),
@@ -5877,5 +6154,262 @@ mod tests {
 
         let anchors = map_anchors_from_store(root, &store);
         assert_eq!(anchors, vec![("topic-a".to_string(), vec![0.6, 0.8])]);
+    }
+
+    // -----------------------------------------------------------------------
+    // Weekly rollup (ROADMAP P1) — the same five properties the session-digest
+    // suite above asserts, one compression layer up.
+    // -----------------------------------------------------------------------
+
+    /// Writes `daily/<day>.md` with `body` and a mature mtime, and returns its
+    /// rel path — the shape `rollupable_weeks` wants.
+    fn settled_daily(root: &Path, day: &str, body: &str) -> String {
+        let rel = format!("daily/{day}.md");
+        let path = root.join(&rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, body).unwrap();
+        set_mtime(&path, old_mtime());
+        rel
+    }
+
+    /// The rollup marker line `appendRollup` (src/lib/weeklyRollup.ts) writes
+    /// into `weekly/<week>.md` in the same write as its bullets.
+    fn write_weekly_with_marker(root: &Path, week: &str, entries: &[&str]) {
+        std::fs::create_dir_all(root.join("weekly")).unwrap();
+        std::fs::write(
+            root.join(format!("weekly/{week}.md")),
+            format!(
+                "# {week}\n\n## Weekly rollup\n{}{} {}\n- decided a thing\n",
+                ROLLUP_MARKER_OPEN,
+                entries.join(" "),
+                DIGEST_MARKER_CLOSE,
+            ),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn iso_week_follows_the_thursday_rule_and_rejects_non_dates() {
+        // Mid-week, both ends of a week, and the Monday that starts the next.
+        assert_eq!(iso_week("2026-08-12").as_deref(), Some("2026-W33"));
+        assert_eq!(iso_week("2026-08-10").as_deref(), Some("2026-W33")); // Monday
+        assert_eq!(iso_week("2026-08-16").as_deref(), Some("2026-W33")); // Sunday
+        assert_eq!(iso_week("2026-08-17").as_deref(), Some("2026-W34"));
+        // Year boundaries, which is the whole reason for the Thursday rule:
+        // 2027-01-01 (a Friday) still belongs to 2026-W53, and 2021-01-01
+        // (also a Friday) to 2020-W53 — so a straddling week is rolled up once,
+        // under one name, not twice under two.
+        assert_eq!(iso_week("2026-12-31").as_deref(), Some("2026-W53"));
+        assert_eq!(iso_week("2027-01-01").as_deref(), Some("2026-W53"));
+        assert_eq!(iso_week("2021-01-01").as_deref(), Some("2020-W53"));
+        assert_eq!(iso_week("2026-01-05").as_deref(), Some("2026-W02"));
+        // Anything that is not a real civil date never joins a rollup.
+        assert!(iso_week("2026-02-31").is_none());
+        assert!(iso_week("2026-13-01").is_none());
+        assert!(iso_week("notes").is_none());
+        assert!(iso_week("2026-08-1").is_none());
+    }
+
+    #[test]
+    fn rollupable_weeks_skips_a_week_with_one_immature_daily() {
+        crate::settings::test_support::with_isolated_data("distill-rollup-immature", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            settled_daily(root, "2026-08-10", "# 2026-08-10\n- a\n");
+            settled_daily(root, "2026-08-11", "# 2026-08-11\n- b\n");
+            assert_eq!(rollupable_weeks(root).len(), 1, "both mature");
+
+            // One fresh daily note in the same week holds the WHOLE week back —
+            // the fully-scored-day rule, one layer up: that file is still being
+            // appended to, and rolling it up now buys the same week twice.
+            let fresh = root.join("daily/2026-08-12.md");
+            std::fs::write(&fresh, "# 2026-08-12\n- c\n").unwrap();
+            assert!(
+                rollupable_weeks(root).is_empty(),
+                "one immature daily skips the week"
+            );
+
+            // A different week is unaffected by its neighbour's straggler.
+            settled_daily(root, "2026-08-03", "# 2026-08-03\n- old\n");
+            let weeks = rollupable_weeks(root);
+            assert_eq!(weeks.len(), 1);
+            assert_eq!(weeks[0].week, "2026-W32");
+        });
+    }
+
+    #[test]
+    fn rollupable_weeks_groups_by_iso_week_oldest_first() {
+        crate::settings::test_support::with_isolated_data("distill-rollup-groups", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            settled_daily(root, "2026-08-16", "# sunday\n- a\n"); // W33
+            settled_daily(root, "2026-08-17", "# monday\n- b\n"); // W34
+            settled_daily(root, "2026-08-10", "# monday\n- c\n"); // W33
+
+            // Not a date, and not markdown — neither joins a week.
+            std::fs::write(root.join("daily/notes.md"), "hand-written\n").unwrap();
+            std::fs::write(root.join("daily/x.txt"), "2026-08-10\n").unwrap();
+
+            let weeks = rollupable_weeks(root);
+            assert_eq!(weeks.len(), 2);
+            assert_eq!(weeks[0].week, "2026-W33");
+            assert_eq!(
+                weeks[0].files,
+                vec![
+                    "daily/2026-08-10.md".to_string(),
+                    "daily/2026-08-16.md".to_string()
+                ]
+            );
+            assert_eq!(weeks[1].week, "2026-W34");
+        });
+    }
+
+    #[test]
+    fn rollupable_weeks_routes_already_recorded_days_to_archive_retry() {
+        crate::settings::test_support::with_isolated_data("distill-rollup-idempotent", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let files: Vec<String> = ["2026-08-10", "2026-08-11"]
+                .iter()
+                .map(|d| settled_daily(root, d, &format!("# {d}\n- {d}\n")))
+                .collect();
+
+            let weeks = rollupable_weeks(root);
+            assert_eq!(weeks.len(), 1);
+            assert!(!weeks[0].already_rolled, "nothing recorded yet");
+
+            // The rollup landed (marker + bullets, one write) but the archive
+            // that follows it failed — the daily files are still in daily/.
+            let entries: Vec<String> = files.iter().map(|f| marker_entry(root, f)).collect();
+            write_weekly_with_marker(
+                root,
+                "2026-W33",
+                &entries.iter().map(String::as_str).collect::<Vec<_>>(),
+            );
+
+            // Still OFFERED (nothing archived yet) but FLAGGED, so the caller
+            // retries only the move and never pays for a second rollup.
+            let weeks = rollupable_weeks(root);
+            assert_eq!(weeks.len(), 1);
+            assert!(weeks[0].already_rolled);
+            assert_eq!(weeks[0].files, files);
+
+            // A failed archive attempt leaves the record in weekly/ untouched.
+            assert!(archive_rolled_days(root, "not-a-week", &files, None).is_err());
+            assert!(rollupable_weeks(root)[0].already_rolled);
+
+            // Once the move succeeds the days leave daily/ for the cold tier
+            // and the week disappears — nothing left to roll up or retry.
+            archive_rolled_days(root, "2026-W33", &files, None).unwrap();
+            assert!(rollupable_weeks(root).is_empty());
+            for f in &files {
+                assert!(!root.join(f).exists(), "{f} should have moved");
+                let cold = format!("daily/archive/2026-W33/{}", f.rsplit('/').next().unwrap());
+                assert!(root.join(&cold).exists(), "{cold} should exist");
+                assert!(
+                    crate::vector_index::is_cold(&cold),
+                    "{cold} must be cold so the next prune drops its records"
+                );
+            }
+        });
+    }
+
+    #[test]
+    fn rollupable_weeks_offers_only_the_new_days_of_a_partly_recorded_week() {
+        crate::settings::test_support::with_isolated_data("distill-rollup-late-day", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let old = settled_daily(root, "2026-08-10", "# a\n- a\n");
+            write_weekly_with_marker(root, "2026-W33", &[&marker_entry(root, &old)]);
+            let new = settled_daily(root, "2026-08-11", "# b\n- b\n");
+
+            let weeks = rollupable_weeks(root);
+            assert_eq!(weeks.len(), 1);
+            assert!(!weeks[0].already_rolled);
+            assert_eq!(weeks[0].files, vec![new.clone()]);
+        });
+    }
+
+    #[test]
+    fn rollupable_weeks_rerolls_a_daily_note_that_grew_after_it_was_recorded() {
+        crate::settings::test_support::with_isolated_data("distill-rollup-grew", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let rel = settled_daily(root, "2026-08-10", "# a\n- first section\n");
+            let recorded = marker_entry(root, &rel);
+            write_weekly_with_marker(root, "2026-W33", &[&recorded]);
+            assert!(rollupable_weeks(root)[0].already_rolled);
+
+            // A later session digest appended another section to the same day
+            // (or the user edited it). The name is unchanged, so a name-keyed
+            // record would archive the grown file with its new half never
+            // rolled up; the content-bound marker misses instead.
+            let path = root.join(&rel);
+            std::fs::write(&path, "# a\n- first section\n- second section\n").unwrap();
+            set_mtime(&path, old_mtime());
+            let weeks = rollupable_weeks(root);
+            assert_eq!(weeks.len(), 1);
+            assert!(!weeks[0].already_rolled);
+
+            // And the archive refuses to move it under the stale fingerprint,
+            // so the new half can never be lost to the cold tier.
+            archive_rolled_days(
+                root,
+                "2026-W33",
+                std::slice::from_ref(&rel),
+                Some(&[recorded.rsplit(':').next().unwrap().to_string()]),
+            )
+            .unwrap();
+            assert!(
+                root.join(&rel).exists(),
+                "a changed day must stay in daily/"
+            );
+        });
+    }
+
+    #[test]
+    fn archive_rolled_days_manifest_round_trips_through_undo() {
+        crate::settings::test_support::with_isolated_data("distill-rollup-undo", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            let rel = settled_daily(root, "2026-08-10", "# a\n- a\n");
+            let fp = file_fingerprint(root, &rel);
+            write_weekly_with_marker(root, "2026-W33", &[&marker_entry(root, &rel)]);
+
+            let id = archive_rolled_days(root, "2026-W33", std::slice::from_ref(&rel), Some(&[fp]))
+                .unwrap();
+            assert!(id.starts_with("digest-"), "{id}");
+            // The TS step folds the weekly file it created into the SAME
+            // manifest, exactly as the session digest does for its daily file.
+            append_distill_manifest(root, &id, vec![], vec!["weekly/2026-W33.md".to_string()])
+                .unwrap();
+            assert!(!root.join(&rel).exists());
+
+            assert_eq!(undo(root, &id).unwrap(), 2);
+            assert!(root.join(&rel).exists(), "the daily note came back");
+            assert!(
+                !root.join("weekly/2026-W33.md").exists(),
+                "the rollup this run created is gone"
+            );
+        });
+    }
+
+    #[test]
+    fn archive_rolled_days_rejects_a_path_outside_daily() {
+        crate::settings::test_support::with_isolated_data("distill-rollup-confine", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            for bad in [
+                "../outside.md",
+                "wiki/note.md",
+                "daily/archive/2026-W33/2026-08-10.md",
+                "daily/nested/2026-08-10.md",
+            ] {
+                assert!(
+                    archive_rolled_days(root, "2026-W33", &[bad.to_string()], None).is_err(),
+                    "{bad} must be rejected"
+                );
+            }
+        });
     }
 }

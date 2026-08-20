@@ -734,6 +734,7 @@ pub fn create_file(parent: &str, name: &str, content: &str) -> Result<String, St
 // etc.). Everything else that is markdown is a knowledge page.
 const NON_WIKI_DIRS: &[&str] = &[
     "daily",
+    "weekly",
     "raw",
     "ingest-reports",
     "_inbox",
