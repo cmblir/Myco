@@ -23,6 +23,8 @@ export interface InflowLines {
   mcpSub: string;
   mcpCount: string;
   inbox: string;
+  /** Per-source split of today's arrivals ("clipper 3 · unknown 1"). */
+  inboxSub: string;
   inboxCount: string;
   /** "View →" action label on the _inbox row. */
   inboxView: string;
@@ -38,6 +40,28 @@ export interface InflowExtras {
   sweepAt: number | null;
   /** Auto-import interval in minutes; null (or 0) when the toggle is off. */
   autoImportMin: number | null;
+}
+
+/** The `_inbox` row's sub-line: today's arrivals split by the writer that
+ * stamped them, biggest bucket first ("clipper 3 · claude-code 1").
+ *
+ * Derived from frontmatter only. A file that declares no `source` arrives here
+ * under the `unknown` key and is shown as such — the split would be a lie if
+ * every unstamped doc (anything written before the writers stamped one, plus
+ * whatever the user dropped into the folder by hand) were folded into the
+ * writer that happens to be busiest. Source slugs are the vault's own data, not
+ * UI copy, so only `unknown` is translated. Empty string when nothing arrived. */
+export function inboxSourceSub(
+  bySource: Record<string, number> | undefined,
+  t: Strings,
+): string {
+  const entries = Object.entries(bySource ?? {}).filter(([, n]) => n > 0);
+  if (entries.length === 0) return "";
+  const unknown = t.tb_inflow_source_unknown ?? "unknown";
+  return entries
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([key, n]) => `${key === "unknown" ? unknown : key} ${n}`)
+    .join(" · ");
 }
 
 /** Translated lines for the inflow section. Always returns lines — zeros
@@ -84,6 +108,7 @@ export function inflowLines(
       String(s.mcpCallsToday),
     ),
     inbox: t.tb_inflow_inbox ?? "_inbox arrivals",
+    inboxSub: inboxSourceSub(s.inboxBySource, t),
     inboxCount: `+${s.inboxToday}`,
     inboxView: t.tb_inflow_view ?? "View →",
     sparkCaption:

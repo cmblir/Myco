@@ -3,13 +3,14 @@
 // whole section", which is why the all-zeros case matters most here.
 
 import { describe, expect, it } from "vitest";
-import { inflowLines } from "./inflow";
+import { inboxSourceSub, inflowLines } from "./inflow";
 import type { InflowStats } from "./ipc";
 import { STRINGS } from "./i18n";
 
 const stats = (over: Partial<InflowStats> = {}): InflowStats => ({
   sessionsToday: 2,
   inboxToday: 3,
+  inboxBySource: { clipper: 2, unknown: 1 },
   mcpCallsToday: 7,
   mcpTopTool: "search",
   hourlyFiles: Array(24).fill(0),
@@ -29,6 +30,7 @@ describe("inflowLines", () => {
       mcpSub: "top: search · since app launch",
       mcpCount: "7",
       inbox: "_inbox arrivals",
+      inboxSub: "clipper 2 · unknown 1",
       inboxCount: "+3",
       inboxView: "View →",
       sparkCaption: "Last 24h · purple = sessions/inbox · blue = MCP calls",
@@ -74,6 +76,14 @@ describe("inflowLines", () => {
     expect(lines?.mcpSub).toBe("since app launch");
   });
 
+  it("leaves the inbox sub empty when nothing arrived today", () => {
+    const lines = inflowLines(
+      stats({ inboxToday: 0, inboxBySource: {} }),
+      STRINGS.en,
+    );
+    expect(lines?.inboxSub).toBe("");
+  });
+
   it("translates in Korean too (the ko/ja keys exist)", () => {
     const lines = inflowLines(stats(), STRINGS.ko);
     expect(lines?.header).toBe("오늘 들어온 것");
@@ -85,5 +95,41 @@ describe("inflowLines", () => {
       "최근 24시간 · 보라 = 세션/inbox · 파랑 = MCP 호출",
     );
     expect(lines?.summary).toBe("오늘: 세션 +2 · MCP 7회 · 인박스 +3");
+    // The source slugs are vault data, not UI copy — only `unknown` translates.
+    expect(lines?.inboxSub).toBe("clipper 2 · 출처 미표기 1");
+  });
+});
+
+// The whole reason the breakdown was left out until the clipper stamped
+// frontmatter: a vault holds files from before the stamping AND files dropped in
+// by hand, and neither may be attributed to a writer that didn't write them.
+describe("inboxSourceSub", () => {
+  it("mixes tagged and untagged files without mislabeling the untagged", () => {
+    expect(
+      inboxSourceSub({ clipper: 3, "claude-code": 2, unknown: 4 }, STRINGS.en),
+    ).toBe("unknown 4 · clipper 3 · claude-code 2");
+  });
+
+  it("shows only unknown when no file carries a source", () => {
+    expect(inboxSourceSub({ unknown: 5 }, STRINGS.en)).toBe("unknown 5");
+  });
+
+  it("shows only real sources when every file carries one", () => {
+    expect(inboxSourceSub({ clipper: 1, codex: 1 }, STRINGS.en)).toBe(
+      "clipper 1 · codex 1",
+    );
+  });
+
+  it("drops zero buckets and an absent map alike", () => {
+    expect(inboxSourceSub({ clipper: 0 }, STRINGS.en)).toBe("");
+    expect(inboxSourceSub({}, STRINGS.en)).toBe("");
+    // Rust always sends the map, but a stale cached payload might not.
+    expect(inboxSourceSub(undefined, STRINGS.en)).toBe("");
+  });
+
+  it("breaks count ties on the source name so the line is stable", () => {
+    expect(inboxSourceSub({ zeta: 2, alpha: 2 }, STRINGS.en)).toBe(
+      "alpha 2 · zeta 2",
+    );
   });
 });

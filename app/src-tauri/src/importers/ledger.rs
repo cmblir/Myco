@@ -100,6 +100,14 @@ impl Ledger {
         self.entries.get(key).is_some_and(|f| f == fingerprint)
     }
 
+    /// True when this key was recorded before, whatever its content. Used by
+    /// the web clipper, which dedups on the page URL alone: a re-clip with a
+    /// different highlight renders a different doc, so a fingerprint comparison
+    /// would not recognise it as the same page.
+    pub fn seen_key(&self, key: &str) -> bool {
+        self.entries.contains_key(key)
+    }
+
     pub fn record(&mut self, key: String, fingerprint: String) {
         self.entries.insert(key, fingerprint);
     }

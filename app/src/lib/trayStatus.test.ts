@@ -157,6 +157,7 @@ describe("buildTrayStatus", () => {
         inflow: {
           sessionsToday: 2,
           inboxToday: 3,
+          inboxBySource: { clipper: 2, unknown: 1 },
           mcpCallsToday: 7,
           mcpTopTool: "search",
           hourlyFiles,
@@ -174,6 +175,7 @@ describe("buildTrayStatus", () => {
       mcpSub: "top: search · since app launch",
       mcpCount: "7",
       inbox: "_inbox arrivals",
+      inboxSub: "clipper 2 · unknown 1",
       inboxCount: "+3",
       inboxView: "View →",
       sparkCaption: "Last 24h · purple = sessions/inbox · blue = MCP calls",
@@ -191,6 +193,7 @@ describe("buildTrayStatus", () => {
         inflow: {
           sessionsToday: 0,
           inboxToday: 0,
+          inboxBySource: {},
           mcpCallsToday: 0,
           mcpTopTool: null,
           hourlyFiles: zeros,

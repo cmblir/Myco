@@ -6,6 +6,7 @@
 // http(s)-only source URLs, control characters stripped, and the filename is
 // derived from a whitelisted slug — never from a caller-supplied path.
 
+use crate::importers::ledger::{fingerprint, Ledger};
 use std::path::{Path, PathBuf};
 
 const MAX_TITLE: usize = 300;
@@ -117,9 +118,40 @@ pub fn clip_filename(clip: &Clip) -> String {
     format!("clip-{slug}-{:08x}.md", (h >> 32) as u32)
 }
 
+/// A double-quoted YAML scalar. Titles and URLs come off a web page, so they
+/// can hold `:`, `#`, quotes and (after `clean`) newlines — any of which turns a
+/// bare scalar into frontmatter that fails to parse or, worse, parses to
+/// something else. JSON string syntax IS a valid YAML double-quoted scalar and
+/// escapes exactly those characters.
+fn yaml_str(s: &str) -> String {
+    serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
+}
+
+/// Ledger key for a clipped page. Keyed on the URL alone: a re-clip with a
+/// different highlight is still the same page.
+fn ledger_key(url: &str) -> String {
+    format!("clipper:{url}")
+}
+
 /// Markdown source doc for the ingest pipeline.
-pub fn clip_markdown(clip: &Clip) -> String {
-    let mut out = format!("# {}\n\n", clip.title);
+///
+/// The frontmatter follows the importers' idiom
+/// (`importers::Conversation::to_inbox_doc`) so the readers that already exist
+/// keep working unchanged: `provenance.rs` wants `source`/`title` as strings and
+/// `distill.rs` wants `created` as a unix integer. `url` and `clipped` are the
+/// clipper's own additions — which page a claim came from, and when it was
+/// captured. `clipped` names the same instant as `created`; `created` is the key
+/// the existing readers look for, `clipped` the one that says how it got here.
+pub fn clip_markdown(clip: &Clip, clipped_at: i64) -> String {
+    let mut out = String::from("---\nsource: clipper\n");
+    if let Some(u) = &clip.url {
+        out.push_str(&format!("url: {}\n", yaml_str(u)));
+    }
+    out.push_str(&format!("title: {}\n", yaml_str(&clip.title)));
+    out.push_str(&format!(
+        "created: {clipped_at}\nclipped: {clipped_at}\n---\n\n"
+    ));
+    out.push_str(&format!("# {}\n\n", clip.title));
     if let Some(u) = &clip.url {
         out.push_str(&format!("Source: {u}\n\n"));
     }
@@ -134,8 +166,32 @@ pub fn clip_markdown(clip: &Clip) -> String {
     out
 }
 
+/// What happened to a clip, so the caller can tell the user which.
+#[derive(Debug, PartialEq)]
+pub enum Saved {
+    Written(PathBuf),
+    /// This URL is already in the import ledger — nothing was written.
+    Duplicate,
+}
+
 /// Write the clip into `<root>/_inbox/`, creating the folder if needed.
-pub fn save_clip(root: &Path, clip: &Clip) -> Result<PathBuf, String> {
+///
+/// A URL already in the import ledger is NOT written again. Without the check,
+/// re-clipping a page you already have leaves a second `_inbox/` doc (the
+/// filename hash covers the selection, so a different highlight makes a
+/// different file) and the ingest pipeline cites the same page twice. The
+/// ledger is the same one the conversation importers dedup against, so a lost
+/// `.myco/ledger.json` costs one duplicate clip and nothing else.
+///
+/// ponytail: dedup is URL-only, so a second clip of a *different* passage on a
+/// page you already clipped is refused rather than appended. Key on
+/// `url + selection` if that turns out to bite.
+pub fn save_clip(root: &Path, clip: &Clip) -> Result<Saved, String> {
+    let mut ledger = Ledger::load(root);
+    let key = clip.url.as_deref().map(ledger_key);
+    if key.as_deref().is_some_and(|k| ledger.seen_key(k)) {
+        return Ok(Saved::Duplicate);
+    }
     let inbox = root.join("_inbox");
     std::fs::create_dir_all(&inbox).map_err(|e| format!("create _inbox: {e}"))?;
     let path = inbox.join(clip_filename(clip));
@@ -147,8 +203,24 @@ pub fn save_clip(root: &Path, clip: &Clip) -> Result<PathBuf, String> {
     if !canonical_parent.starts_with(root.canonicalize().map_err(|e| e.to_string())?) {
         return Err("inbox escapes vault root".to_string());
     }
-    std::fs::write(&path, clip_markdown(clip)).map_err(|e| format!("write clip: {e}"))?;
-    Ok(path)
+    let body = clip_markdown(clip, now_secs());
+    std::fs::write(&path, &body).map_err(|e| format!("write clip: {e}"))?;
+    if let Some(k) = key {
+        ledger.record(k, fingerprint(&body));
+        // Best effort: the doc is already on disk, and a ledger that failed to
+        // save costs a duplicate next time, never the clip.
+        if let Err(e) = ledger.save(root) {
+            eprintln!("clip ledger not saved: {e}");
+        }
+    }
+    Ok(Saved::Written(path))
+}
+
+fn now_secs() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -223,23 +295,149 @@ mod tests {
             url: Some("https://x.com".into()),
             selection: Some("line one\nline two".into()),
         };
-        let md = clip_markdown(&c);
+        let md = clip_markdown(&c, 1_700_000_000);
         assert!(md.contains("Source: https://x.com"));
         assert!(md.contains("> line one\n> line two\n"));
     }
 
+    /// The whole point of the frontmatter: the fields the existing readers look
+    /// for (`provenance::parse_source_ref` on source/title, `distill`'s
+    /// `frontmatter_created` on an integer `created`) must come back out.
+    #[test]
+    fn markdown_carries_provenance_frontmatter() {
+        let c = Clip {
+            title: "Attention: all you need".into(),
+            url: Some("https://arxiv.org/abs/1706.03762".into()),
+            selection: None,
+        };
+        let md = clip_markdown(&c, 1_700_000_000);
+        let parsed = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+            .parse(&md)
+            .unwrap();
+        let gray_matter::Pod::Hash(map) = parsed.data.unwrap() else {
+            panic!("frontmatter is not a mapping");
+        };
+        assert_eq!(
+            map.get("source"),
+            Some(&gray_matter::Pod::String("clipper".into()))
+        );
+        assert_eq!(
+            map.get("url"),
+            Some(&gray_matter::Pod::String(
+                "https://arxiv.org/abs/1706.03762".into()
+            ))
+        );
+        // A colon in the title would have broken a bare YAML scalar.
+        assert_eq!(
+            map.get("title"),
+            Some(&gray_matter::Pod::String("Attention: all you need".into()))
+        );
+        assert_eq!(
+            map.get("created"),
+            Some(&gray_matter::Pod::Integer(1_700_000_000))
+        );
+        assert_eq!(
+            map.get("clipped"),
+            Some(&gray_matter::Pod::Integer(1_700_000_000))
+        );
+    }
+
+    /// A page title can carry quotes and (via `clean`) a newline; neither may
+    /// escape the frontmatter block.
+    #[test]
+    fn a_hostile_title_stays_inside_its_scalar() {
+        let c = Clip {
+            title: "he said \"hi\"\n---\nsource: trusted".into(),
+            url: None,
+            selection: Some("s".into()),
+        };
+        let md = clip_markdown(&c, 1);
+        let parsed = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+            .parse(&md)
+            .unwrap();
+        let gray_matter::Pod::Hash(map) = parsed.data.unwrap() else {
+            panic!("frontmatter is not a mapping");
+        };
+        assert_eq!(
+            map.get("source"),
+            Some(&gray_matter::Pod::String("clipper".into()))
+        );
+    }
+
     #[test]
     fn save_clip_writes_inside_inbox() {
-        let dir = std::env::temp_dir().join(format!("myco-clip-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = tempfile::tempdir().unwrap();
         let c = Clip {
             title: "t".into(),
             url: Some("https://x.com".into()),
             selection: None,
         };
-        let p = save_clip(&dir, &c).unwrap();
-        assert!(p.starts_with(dir.join("_inbox")));
-        assert!(std::fs::read_to_string(&p).unwrap().contains("Source:"));
-        let _ = std::fs::remove_dir_all(&dir);
+        let Saved::Written(p) = save_clip(dir.path(), &c).unwrap() else {
+            panic!("first clip must be written");
+        };
+        assert!(p.starts_with(dir.path().join("_inbox")));
+        let body = std::fs::read_to_string(&p).unwrap();
+        assert!(body.starts_with("---\nsource: clipper\n"));
+        assert!(body.contains("Source:"));
+    }
+
+    #[test]
+    fn re_clipping_the_same_url_is_a_duplicate_even_with_a_new_selection() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = Clip {
+            title: "Paper".into(),
+            url: Some("https://x.com/a".into()),
+            selection: Some("first highlight".into()),
+        };
+        assert!(matches!(
+            save_clip(dir.path(), &first).unwrap(),
+            Saved::Written(_)
+        ));
+        // Different highlight → different filename and fingerprint, same page.
+        let again = Clip {
+            selection: Some("second highlight".into()),
+            ..first
+        };
+        assert_eq!(save_clip(dir.path(), &again).unwrap(), Saved::Duplicate);
+        let written = std::fs::read_dir(dir.path().join("_inbox"))
+            .unwrap()
+            .count();
+        assert_eq!(written, 1, "the duplicate must not reach _inbox/");
+    }
+
+    #[test]
+    fn a_different_url_is_not_a_duplicate() {
+        let dir = tempfile::tempdir().unwrap();
+        for u in ["https://x.com/a", "https://x.com/b"] {
+            let c = Clip {
+                title: "t".into(),
+                url: Some(u.into()),
+                selection: None,
+            };
+            assert!(matches!(
+                save_clip(dir.path(), &c).unwrap(),
+                Saved::Written(_)
+            ));
+        }
+    }
+
+    /// A selection-only clip has no URL to key on, so it can never be a
+    /// duplicate — refusing it would silently drop the clip.
+    #[test]
+    fn a_url_less_clip_always_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let c = Clip {
+            title: "notes".into(),
+            url: None,
+            selection: Some("some highlighted prose".into()),
+        };
+        assert!(matches!(
+            save_clip(dir.path(), &c).unwrap(),
+            Saved::Written(_)
+        ));
+        assert!(matches!(
+            save_clip(dir.path(), &c).unwrap(),
+            Saved::Written(_)
+        ));
     }
 }

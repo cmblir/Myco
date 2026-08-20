@@ -63,6 +63,7 @@ const MOCK_STATUS: TrayStatusPayload = {
     mcpSub: "최다: search · 앱 실행 이후",
     mcpCount: "17회",
     inbox: "_inbox 도착",
+    inboxSub: "clipper 2 · 출처 미표기 1",
     inboxCount: "+3",
     inboxView: "보기 →",
     sparkCaption: "최근 24시간 · 보라 = 세션/inbox · 파랑 = MCP 호출",
@@ -221,7 +222,7 @@ export default function TrayPanel(): JSX.Element {
         },
         inbox: {
           label: s.inflow.inbox,
-          sub: "",
+          sub: s.inflow.inboxSub,
           count: s.inflow.inboxCount,
         },
         inboxView: s.inflow.inboxView,

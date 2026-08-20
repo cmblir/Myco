@@ -909,6 +909,8 @@ export interface Strings {
   tb_inflow_mcp_top?: string; // {tool}
   tb_inflow_since_launch?: string;
   tb_inflow_inbox?: string;
+  /** Bucket label for an _inbox file whose frontmatter names no source. */
+  tb_inflow_source_unknown?: string;
   tb_inflow_view?: string;
   tb_inflow_spark_caption?: string;
   tb_inflow_summary?: string; // {s} {m} {i}
@@ -1941,6 +1943,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_inflow_mcp_top: "top: {tool}",
     tb_inflow_since_launch: "since app launch",
     tb_inflow_inbox: "_inbox arrivals",
+    tb_inflow_source_unknown: "unknown",
     tb_inflow_view: "View →",
     tb_inflow_spark_caption: "Last 24h · purple = sessions/inbox · blue = MCP calls",
     tb_inflow_summary: "Today: sessions +{s} · MCP {m} · inbox +{i}",
@@ -2970,6 +2973,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_inflow_mcp_top: "최다: {tool}",
     tb_inflow_since_launch: "앱 실행 이후",
     tb_inflow_inbox: "_inbox 도착",
+    tb_inflow_source_unknown: "출처 미표기",
     tb_inflow_view: "보기 →",
     tb_inflow_spark_caption: "최근 24시간 · 보라 = 세션/inbox · 파랑 = MCP 호출",
     tb_inflow_summary: "오늘: 세션 +{s} · MCP {m}회 · 인박스 +{i}",
@@ -3875,6 +3879,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_inflow_mcp_top: "最多: {tool}",
     tb_inflow_since_launch: "アプリ起動後",
     tb_inflow_inbox: "_inbox 到着",
+    tb_inflow_source_unknown: "出典なし",
     tb_inflow_view: "表示 →",
     tb_inflow_spark_caption: "直近24時間 · 紫 = セッション/inbox · 青 = MCP呼び出し",
     tb_inflow_summary: "今日: セッション +{s} · MCP {m}回 · インボックス +{i}",

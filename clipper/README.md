@@ -4,6 +4,24 @@ Sends the current page (URL, title, and any selected text) into your myco
 vault's `_inbox/` as a markdown source doc — the ingest pipeline turns it into
 a cited wiki page from there.
 
+The doc carries its provenance in frontmatter, so a clipped claim can be traced
+back to the page it came from:
+
+```yaml
+---
+source: clipper
+url: "https://example.com/article"
+title: "The article's title"
+created: 1755000000
+clipped: 1755000000
+---
+```
+
+`source`/`title`/`created` are the same fields the conversation importers write,
+so the citation and distill passes read a clip with no special case. A page you
+have already clipped is recognised (by URL, through the vault's import ledger)
+and reported as "Already clipped" instead of being written a second time.
+
 It works through a `myco://clip?...` deep link handled by the myco desktop
 app. The pre-rename `memx://` scheme is still registered and still accepted,
 so a bookmarklet or an unpacked extension you saved earlier keeps working. Nothing leaves your machine: no network requests, no storage, no

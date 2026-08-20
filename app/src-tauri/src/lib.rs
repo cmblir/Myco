@@ -331,7 +331,7 @@ pub fn run() {
                             continue;
                         };
                         match clip::save_clip(&root, &clip) {
-                            Ok(path) => {
+                            Ok(clip::Saved::Written(path)) => {
                                 let _ = handle
                                     .notification()
                                     .builder()
@@ -342,6 +342,20 @@ pub fn run() {
                                 // Nudge the frontend so the tree/inbox refreshes.
                                 use tauri::Emitter;
                                 let _ = handle.emit("myco://clip-saved", ());
+                            }
+                            // Told, not silently written twice: the page is
+                            // already in _inbox/ (or already ingested).
+                            Ok(clip::Saved::Duplicate) => {
+                                let _ = handle
+                                    .notification()
+                                    .builder()
+                                    .title("Already clipped")
+                                    .body(clip.title.clone())
+                                    .show();
+                                eprintln!(
+                                    "clip skipped as duplicate: {}",
+                                    clip.url.as_deref().unwrap_or("")
+                                );
                             }
                             Err(e) => eprintln!("clip save failed: {e}"),
                         }

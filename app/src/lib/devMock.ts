@@ -1647,6 +1647,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve({
         sessionsToday: filesTotal - inboxToday,
         inboxToday,
+        // Split by frontmatter `source:`, so the mock must also sum to
+        // inboxToday — and must include an unstamped file, since that is what
+        // the breakdown has to survive in a real vault.
+        inboxBySource: inboxToday > 0 ? { clipper: inboxToday - 1, unknown: 1 } : {},
         mcpCallsToday: hourlyMcp.reduce((a, b) => a + b, 0),
         mcpTopTool: "search",
         hourlyFiles,
@@ -1676,7 +1680,7 @@ const mockInbox = new Map<string, string>();
 // inflow "View →" lands) has rows in ?mock=1 — one from today, one older.
 mockInbox.set(
   `${VAULT}/_inbox/clipped-rope-scaling.md`,
-  "---\nsource_url: https://example.com/rope\n---\n\n# RoPE scaling notes\n\nClipped article about rotary embeddings.\n",
+  '---\nsource: clipper\nurl: "https://example.com/rope"\ntitle: "RoPE scaling notes"\ncreated: 1755000000\nclipped: 1755000000\n---\n\n# RoPE scaling notes\n\nClipped article about rotary embeddings.\n',
 );
 mockInbox.set(
   `${VAULT}/_inbox/meeting-notes.md`,
@@ -1729,7 +1733,7 @@ function tasksFromMockNotes(): {
 export function emitClipSaved(title = "clipped-article"): void {
   mockInbox.set(
     `${VAULT}/_inbox/${title}.md`,
-    `---\nsource_url: https://example.com/article\n---\n\n# ${title}\n\nClipped selection about attention and transformers.\n`,
+    `---\nsource: clipper\nurl: "https://example.com/article"\ntitle: "${title}"\ncreated: 1755000000\nclipped: 1755000000\n---\n\n# ${title}\n\nClipped selection about attention and transformers.\n`,
   );
   emitMock("myco://clip-saved", {});
 }

@@ -302,6 +302,9 @@ export interface InflowStats {
   sessionsToday: number;
   /** Top-level _inbox/ files created today (birthtime, mtime fallback). */
   inboxToday: number;
+  /** Today's _inbox arrivals by frontmatter `source:` — `unknown` for files
+   *  that carry none (legacy docs, hand-dropped notes). Never guessed. */
+  inboxBySource: Record<string, number>;
   /** MCP tool calls recorded today (in-memory — since app launch). */
   mcpCallsToday: number;
   mcpTopTool: string | null;
@@ -322,6 +325,7 @@ export interface TrayInflowPayload {
   mcpSub: string;
   mcpCount: string;
   inbox: string;
+  inboxSub: string;
   inboxCount: string;
   inboxView: string;
   sparkCaption: string;

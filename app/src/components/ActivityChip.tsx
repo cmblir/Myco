@@ -478,7 +478,11 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
             count: lines.sessionsCount,
           },
           mcp: { label: lines.mcp, sub: lines.mcpSub, count: lines.mcpCount },
-          inbox: { label: lines.inbox, sub: "", count: lines.inboxCount },
+          inbox: {
+            label: lines.inbox,
+            sub: lines.inboxSub,
+            count: lines.inboxCount,
+          },
           inboxView: lines.inboxView,
           onInboxView: () => jump("ingest"),
           sparkCaption: lines.sparkCaption,

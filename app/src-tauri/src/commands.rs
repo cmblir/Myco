@@ -1019,6 +1019,11 @@ pub struct InflowStats {
     pub sessions_today: u32,
     /// Top-level `_inbox/*` files created today (birthtime, mtime fallback).
     pub inbox_today: u32,
+    /// Today's `_inbox/` arrivals split by their frontmatter `source:` value
+    /// (`clipper`, `claude-code`, …). Files that carry no `source` are counted
+    /// under `unknown` — every doc written before the writers stamped one, plus
+    /// anything hand-dropped into the folder. Never guessed from the filename.
+    pub inbox_by_source: std::collections::BTreeMap<String, u32>,
     /// MCP tool calls recorded today. The log is in-memory only, so after an
     /// app restart this counts since launch — the UI labels it as such.
     pub mcp_calls_today: u32,
@@ -1063,13 +1068,52 @@ fn epoch_secs(t: std::time::SystemTime) -> u64 {
         .unwrap_or(0)
 }
 
+/// Bucket for an `_inbox/` file whose frontmatter names no `source`. Kept as a
+/// bare slug (not a translated label) so the frontend can localize it; the
+/// backend never invents a source for a file that doesn't declare one.
+pub(crate) const UNKNOWN_SOURCE: &str = "unknown";
+
+/// The `source:` frontmatter of an `_inbox/` doc, or `None` when it has none.
+///
+/// Reads a bounded prefix, not the file: frontmatter is at the top and tiny,
+/// while an imported conversation's body runs to megabytes and this is on the
+/// popover's open path. A frontmatter block that doesn't fit the prefix reads as
+/// `None` (→ `unknown`), which is the honest answer rather than a guess. The
+/// value is a vault-file string headed for the UI, so it is capped too.
+fn frontmatter_source(path: &std::path::Path) -> Option<String> {
+    use std::io::Read;
+    const PREFIX_BYTES: u64 = 4096;
+    const MAX_SOURCE_CHARS: usize = 40;
+    let mut buf = Vec::new();
+    std::fs::File::open(path)
+        .ok()?
+        .take(PREFIX_BYTES)
+        .read_to_end(&mut buf)
+        .ok()?;
+    let gray_matter::Pod::Hash(map) = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+        .parse(&String::from_utf8_lossy(&buf))
+        .ok()?
+        .data?
+    else {
+        return None;
+    };
+    match map.get("source") {
+        Some(gray_matter::Pod::String(s)) if !s.trim().is_empty() => {
+            Some(s.trim().chars().take(MAX_SOURCE_CHARS).collect())
+        }
+        _ => None,
+    }
+}
+
 /// Pure collector behind `inflow_stats` — deterministic given `now` and the
 /// MCP call log, so it is unit-testable against a tempdir vault.
 ///
 /// Deliberately cheap: two flat `read_dir`s over the current and previous
 /// session month buckets (never `sessions/archive/`, structurally — only the
 /// two month dirs are opened) and one over top-level `_inbox/` (quarantine/
-/// and .archived/ are subdirectories, so files-only skips them).
+/// and .archived/ are subdirectories, so files-only skips them). Only the
+/// `_inbox/` files that landed TODAY are opened, and only for a 4 KB prefix,
+/// to read their `source:` frontmatter.
 pub(crate) fn collect_inflow(
     root: &std::path::Path,
     now: u64,
@@ -1121,6 +1165,8 @@ pub(crate) fn collect_inflow(
             if t >= day_start {
                 stats.inbox_today += 1;
                 stats.hourly_files[local_hour(t, tz_offset_min)] += 1;
+                let key = frontmatter_source(&path).unwrap_or_else(|| UNKNOWN_SOURCE.to_string());
+                *stats.inbox_by_source.entry(key).or_insert(0) += 1;
             }
         }
     }
@@ -3131,6 +3177,71 @@ mod tests {
         let h = super::local_hour(now, 0);
         assert_eq!(stats.hourly_files[h], 2);
         assert_eq!(stats.hourly_mcp[h], 3);
+    }
+
+    /// The `_inbox` per-source split comes from frontmatter only: a clipped
+    /// page is `clipper`, an imported session is its importer's slug, and a
+    /// file with no frontmatter (every doc written before the writers stamped
+    /// one, plus hand-dropped notes) counts as `unknown` rather than being
+    /// attributed to whoever happens to write most.
+    #[test]
+    fn inflow_splits_todays_inbox_by_frontmatter_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let inbox = root.join("_inbox");
+        std::fs::create_dir_all(&inbox).unwrap();
+        std::fs::write(
+            inbox.join("clip-a.md"),
+            "---\nsource: clipper\nurl: \"https://x.com/a\"\n---\n\n# A\n",
+        )
+        .unwrap();
+        std::fs::write(
+            inbox.join("clip-b.md"),
+            "---\nsource: clipper\n---\n\n# B\n",
+        )
+        .unwrap();
+        std::fs::write(
+            inbox.join("session.md"),
+            "---\nsource: claude-code\nconversation_id: s1\n---\n\n# S\n",
+        )
+        .unwrap();
+        // Legacy / hand-dropped: no frontmatter at all.
+        std::fs::write(inbox.join("legacy.md"), "# Just notes\n").unwrap();
+        // Frontmatter without a `source` key is equally unknown.
+        std::fs::write(inbox.join("titled.md"), "---\ntitle: T\n---\n\n# T\n").unwrap();
+
+        let stats = super::collect_inflow(root, now, 0, &[]);
+        assert_eq!(stats.inbox_today, 5);
+        assert_eq!(
+            stats.inbox_by_source,
+            std::collections::BTreeMap::from([
+                ("clipper".to_string(), 2),
+                ("claude-code".to_string(), 1),
+                ("unknown".to_string(), 2),
+            ])
+        );
+    }
+
+    /// A clip written by the real writer must be classified by the real reader.
+    #[test]
+    fn a_saved_clip_lands_in_the_clipper_bucket() {
+        let dir = tempfile::tempdir().unwrap();
+        let clip = crate::clip::Clip {
+            title: "Attention: all you need".into(),
+            url: Some("https://arxiv.org/abs/1706.03762".into()),
+            selection: Some("scaled dot-product".into()),
+        };
+        crate::clip::save_clip(dir.path(), &clip).unwrap();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let stats = super::collect_inflow(dir.path(), now, 0, &[]);
+        assert_eq!(stats.inbox_by_source.get("clipper"), Some(&1));
     }
 
     #[test]
