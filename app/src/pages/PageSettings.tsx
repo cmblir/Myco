@@ -58,6 +58,8 @@ import {
   runDistillGuarded,
 } from "../lib/distill";
 import type {
+  ArchiveTree,
+  BucketUsage,
   DistillConfig,
   DistillStatus,
   DistillStopPoint,
@@ -2294,6 +2296,252 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
           </div>
         ) : null}
       </div>
+
+      <SettingsArchive t={t} lang={lang} vaultPath={vaultPath} />
+    </div>
+  );
+}
+
+/** Bytes in the viewer's locale — `Intl` picks the separator, not us. */
+function formatBytes(bytes: number, lang: Lang): string {
+  const useMb = bytes >= 1_000_000;
+  return new Intl.NumberFormat(lang, {
+    style: "unit",
+    unit: useMb ? "megabyte" : "kilobyte",
+    maximumFractionDigits: 1,
+  }).format(useMb ? bytes / 1_000_000 : bytes / 1000);
+}
+
+/**
+ * ROADMAP P2 — archive storage panel. Measures `sessions/archive/` and
+ * `daily/archive/`, and offers the two explicit actions over them: compress a
+ * bucket older than N months into one zip, and restore a compressed bucket.
+ * `raw/` is neither measured nor reachable from here (see archive_pack.rs).
+ *
+ * Measurement is on demand only — once when the tab mounts, and after an
+ * action changes the numbers. Never on render.
+ */
+function SettingsArchive({
+  t,
+  lang,
+  vaultPath,
+}: {
+  t: Strings;
+  lang: Lang;
+  vaultPath: string | undefined;
+}): JSX.Element {
+  const [usage, setUsage] = useState<BucketUsage[] | null>(null);
+  const [measuring, setMeasuring] = useState(false);
+  const [months, setMonths] = useState(3);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
+  const [failed, setFailed] = useState<string[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const measure = useMemo(
+    () => async (): Promise<void> => {
+      if (!vaultPath) return;
+      setMeasuring(true);
+      setError(null);
+      try {
+        setUsage(await ipc.archiveUsage(vaultPath));
+      } catch (e) {
+        setError(String(e));
+      } finally {
+        setMeasuring(false);
+      }
+    },
+    [vaultPath],
+  );
+
+  useEffect(() => {
+    void measure();
+  }, [measure]);
+
+  async function compress(): Promise<void> {
+    if (!vaultPath) return;
+    setBusy("compress");
+    setError(null);
+    setNote(null);
+    setFailed([]);
+    try {
+      const r = await ipc.compressArchives(vaultPath, months);
+      setFailed(r.failed);
+      setNote(
+        r.buckets === 0 && r.failed.length === 0
+          ? (t.set_archive_nothing_old ?? "Nothing is older than {n} months.").replace(
+              "{n}",
+              String(months),
+            )
+          : (
+              t.set_archive_compressed ??
+              "Compressed {buckets} buckets ({files} files), reclaimed {size}"
+            )
+              .replace("{buckets}", String(r.buckets))
+              .replace("{files}", String(r.files))
+              .replace("{size}", formatBytes(r.reclaimed, lang)),
+      );
+      await measure();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function restore(tree: ArchiveTree, bucket: string): Promise<void> {
+    if (!vaultPath) return;
+    setBusy(`${tree}/${bucket}`);
+    setError(null);
+    setNote(null);
+    setFailed([]);
+    try {
+      const r = await ipc.restoreArchiveBucket(vaultPath, tree, bucket);
+      setNote(
+        (t.set_archive_restored ?? "Restored {n} files to {bucket}")
+          .replace("{n}", String(r.files))
+          .replace("{bucket}", bucket),
+      );
+      await measure();
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const totals = (usage ?? []).reduce(
+    (acc, b) => ({ files: acc.files + b.files, bytes: acc.bytes + b.bytes }),
+    { files: 0, bytes: 0 },
+  );
+
+  return (
+    <div className="card">
+      <div className="row" style={{ justifyContent: "space-between" }}>
+        <div style={{ fontWeight: 600 }}>
+          {t.set_archive_title ?? "Archive storage"}
+        </div>
+        <button
+          className="btn"
+          onClick={() => void measure()}
+          disabled={measuring || !vaultPath}
+          aria-busy={measuring}
+          data-testid="archive-measure-btn"
+        >
+          {measuring
+            ? (t.set_archive_measuring ?? "Measuring…")
+            : (t.set_archive_measure ?? "Measure")}
+        </button>
+      </div>
+      <p className="muted" style={{ fontSize: 12.5, margin: "6px 0 0" }}>
+        {t.set_archive_lede ??
+          "Digested sessions and rolled-up daily notes are kept forever in sessions/archive/ and daily/archive/. Compressing an old bucket packs it into a single zip you can restore at any time. raw/ is never touched."}
+      </p>
+
+      {usage === null ? null : usage.length === 0 ? (
+        <div
+          className="muted"
+          style={{ fontSize: 12.5, marginTop: 10 }}
+          data-testid="archive-empty"
+        >
+          {t.set_archive_empty ?? "Nothing archived yet."}
+        </div>
+      ) : (
+        <>
+          <div
+            style={{ fontSize: 12.5, marginTop: 10, fontWeight: 600 }}
+            data-testid="archive-total"
+          >
+            {(t.set_archive_total ?? "{files} files, {size} across {buckets} buckets")
+              .replace("{files}", String(totals.files))
+              .replace("{size}", formatBytes(totals.bytes, lang))
+              .replace("{buckets}", String(usage.length))}
+          </div>
+          <ul
+            className="col"
+            style={{ gap: 4, margin: "8px 0 0", padding: 0, listStyle: "none" }}
+            data-testid="archive-buckets"
+          >
+            {usage.map((b) => (
+              <li
+                key={`${b.tree}/${b.bucket}`}
+                className="row"
+                style={{ gap: 8, alignItems: "center", fontSize: 12.5 }}
+              >
+                <span className="muted" style={{ minWidth: 72 }}>
+                  {b.tree === "sessions"
+                    ? (t.set_archive_tree_sessions ?? "Sessions")
+                    : (t.set_archive_tree_daily ?? "Daily")}
+                </span>
+                <span style={{ minWidth: 78 }}>{b.bucket}</span>
+                <span className="muted" style={{ flex: 1 }}>
+                  {b.files} · {formatBytes(b.bytes, lang)}
+                  {b.packed ? ` · ${t.set_archive_packed ?? "compressed"}` : ""}
+                </span>
+                {b.packed ? (
+                  <button
+                    className="btn"
+                    onClick={() => void restore(b.tree, b.bucket)}
+                    disabled={busy !== null || !vaultPath}
+                    aria-busy={busy === `${b.tree}/${b.bucket}`}
+                  >
+                    {busy === `${b.tree}/${b.bucket}`
+                      ? (t.set_archive_restoring ?? "Restoring…")
+                      : (t.set_archive_restore ?? "Restore")}
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+
+      <div
+        className="row"
+        style={{ gap: 10, marginTop: 12, alignItems: "flex-end" }}
+      >
+        <DistillNumField
+          label={(
+            t.set_archive_older_than ?? "Compress buckets older than {n} months"
+          ).replace("{n}", String(months))}
+          value={months}
+          min={1}
+          onChange={setMonths}
+        />
+        <button
+          className="btn"
+          onClick={() => void compress()}
+          disabled={busy !== null || !vaultPath}
+          aria-busy={busy === "compress"}
+          data-testid="archive-compress-btn"
+        >
+          {busy === "compress"
+            ? (t.set_archive_compressing ?? "Compressing…")
+            : (t.set_archive_compress ?? "Compress")}
+        </button>
+      </div>
+
+      {note ? (
+        <div
+          style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }}
+          data-testid="archive-note"
+        >
+          {note}
+        </div>
+      ) : null}
+      {failed.length > 0 ? (
+        <div style={{ fontSize: 12, marginTop: 6 }} data-testid="archive-failed">
+          {(t.set_archive_failed ?? "Left untouched: {list}").replace(
+            "{list}",
+            failed.join("; "),
+          )}
+        </div>
+      ) : null}
+      {error ? (
+        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>
+          {error}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -903,7 +903,7 @@ pub(crate) fn append_distill_manifest(
 /// "now" and stops at the month; run ids and archive-month buckets need an
 /// arbitrary timestamp — a file's own mtime, not always "now" — plus
 /// time-of-day, so it is re-derived here rather than shared).
-fn civil_datetime(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
+pub(crate) fn civil_datetime(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     let days = secs.div_euclid(86_400);
     let sod = secs.rem_euclid(86_400); // seconds of day, always in [0, 86400)
     let z = days + 719_468;
@@ -3407,7 +3407,7 @@ fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
 /// year the week counts against, which is what makes 2026-12-31 fall in
 /// 2027-W01 and keeps a year's last and first weeks from being rolled up
 /// twice under two different names.
-fn iso_week(day: &str) -> Option<String> {
+pub(crate) fn iso_week(day: &str) -> Option<String> {
     let b = day.as_bytes();
     if day.len() != 10 || b[4] != b'-' || b[7] != b'-' {
         return None;

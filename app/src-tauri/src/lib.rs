@@ -3,6 +3,7 @@
 // the Tauri runtime.
 
 pub mod agent_tools;
+pub mod archive_pack;
 pub mod claude;
 pub mod cli_agent;
 pub mod clip;
@@ -233,6 +234,9 @@ pub fn run() {
             commands::archive_rolled_days,
             commands::full_tier_items,
             commands::append_distill_manifest,
+            commands::archive_usage,
+            commands::compress_archives,
+            commands::restore_archive_bucket,
             tray::update_tray_status,
             tray::get_tray_status,
             tray::tray_panel_action,

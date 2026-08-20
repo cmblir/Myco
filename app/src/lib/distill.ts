@@ -72,6 +72,35 @@ export interface RunReport {
   backlog_after: number;
 }
 
+// ROADMAP P2 — archive lifecycle (src-tauri/src/archive_pack.rs). Only the
+// two cold trees the app writes: `raw/` is immutable and has no tree name.
+export type ArchiveTree = "sessions" | "daily";
+
+/** One `sessions/archive/<YYYY-MM>` or `daily/archive/<YYYY-Www>` bucket. */
+export interface BucketUsage {
+  tree: ArchiveTree;
+  bucket: string;
+  /** Loose files in the directory, or entries inside the zip. */
+  files: number;
+  /** Bytes on disk — the loose files' sum, or the zip's own size. */
+  bytes: number;
+  packed: boolean;
+}
+
+export interface PackReport {
+  buckets: number;
+  files: number;
+  /** Loose bytes removed minus zip bytes written. */
+  reclaimed: number;
+  /** `"<tree>/<bucket>: <error>"` — those buckets kept their originals. */
+  failed: string[];
+}
+
+export interface RestoreReport {
+  files: number;
+  bytes: number;
+}
+
 // Task 6 — distill_status's return summary.
 export interface DistillStatus {
   backlog: number;

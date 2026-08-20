@@ -782,6 +782,25 @@ export interface Strings {
   set_distill_step_weekly?: string;
   // ROADMAP P1 — weekly rollup count for the distill tab.
   set_distill_weekly_rollups?: string; // {n}
+  // ROADMAP P2 — archive storage panel (sessions/ + daily/ archives only).
+  set_archive_title?: string;
+  set_archive_lede?: string;
+  set_archive_measure?: string;
+  set_archive_measuring?: string;
+  set_archive_empty?: string;
+  set_archive_total?: string; // {files} {size} {buckets}
+  set_archive_tree_sessions?: string;
+  set_archive_tree_daily?: string;
+  set_archive_packed?: string;
+  set_archive_older_than?: string; // {n}
+  set_archive_compress?: string;
+  set_archive_compressing?: string;
+  set_archive_compressed?: string; // {buckets} {files} {size}
+  set_archive_nothing_old?: string; // {n}
+  set_archive_failed?: string; // {list}
+  set_archive_restore?: string;
+  set_archive_restoring?: string;
+  set_archive_restored?: string; // {n} {bucket}
   // profile.md editor, in the Distill tab (Phase B, Task 5).
   set_profile_title?: string;
   set_profile_lede?: string;
@@ -1825,6 +1844,25 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_maps: "the map drafts",
     set_distill_step_weekly: "the weekly rollup",
     set_distill_weekly_rollups: "{n} weekly rollups written to weekly/",
+    set_archive_title: "Archive storage",
+    set_archive_lede:
+      "Digested sessions and rolled-up daily notes are kept forever in sessions/archive/ and daily/archive/. Compressing an old bucket packs it into a single zip you can restore at any time. raw/ is never touched.",
+    set_archive_measure: "Measure",
+    set_archive_measuring: "Measuring…",
+    set_archive_empty: "Nothing archived yet.",
+    set_archive_total: "{files} files, {size} across {buckets} buckets",
+    set_archive_tree_sessions: "Sessions",
+    set_archive_tree_daily: "Daily",
+    set_archive_packed: "compressed",
+    set_archive_older_than: "Compress buckets older than {n} months",
+    set_archive_compress: "Compress",
+    set_archive_compressing: "Compressing…",
+    set_archive_compressed: "Compressed {buckets} buckets ({files} files), reclaimed {size}",
+    set_archive_nothing_old: "Nothing is older than {n} months.",
+    set_archive_failed: "Left untouched: {list}",
+    set_archive_restore: "Restore",
+    set_archive_restoring: "Restoring…",
+    set_archive_restored: "Restored {n} files to {bucket}",
     set_profile_title: "Profile",
     set_profile_lede:
       "Personalizes distillation and Ask/ingest context. Written to profile.md; sent to configured AI providers when injection is on.",
@@ -2872,6 +2910,25 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_maps: "맵 초안",
     set_distill_step_weekly: "주간 롤업",
     set_distill_weekly_rollups: "weekly/에 주간 롤업 {n}건 작성",
+    set_archive_title: "아카이브 용량",
+    set_archive_lede:
+      "다이제스트된 세션과 롤업된 일간 노트는 sessions/archive/, daily/archive/에 영구 보관됩니다. 오래된 버킷을 압축하면 zip 하나로 묶이며 언제든 복원할 수 있습니다. raw/는 건드리지 않습니다.",
+    set_archive_measure: "측정",
+    set_archive_measuring: "측정 중…",
+    set_archive_empty: "아직 보관된 항목이 없습니다.",
+    set_archive_total: "버킷 {buckets}개, 파일 {files}개, {size}",
+    set_archive_tree_sessions: "세션",
+    set_archive_tree_daily: "일간",
+    set_archive_packed: "압축됨",
+    set_archive_older_than: "{n}개월 이상 지난 버킷 압축",
+    set_archive_compress: "압축",
+    set_archive_compressing: "압축 중…",
+    set_archive_compressed: "버킷 {buckets}개(파일 {files}개) 압축, {size} 확보",
+    set_archive_nothing_old: "{n}개월 이상 지난 버킷이 없습니다.",
+    set_archive_failed: "그대로 둔 버킷: {list}",
+    set_archive_restore: "복원",
+    set_archive_restoring: "복원 중…",
+    set_archive_restored: "{bucket}에 파일 {n}개 복원",
     set_profile_title: "프로필",
     set_profile_lede:
       "증류와 Ask/인제스트 컨텍스트를 개인화합니다. profile.md에 저장되며, 주입이 켜져 있으면 설정된 AI 프로바이더로 전송됩니다.",
@@ -3792,6 +3849,25 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_maps: "マップ下書き",
     set_distill_step_weekly: "週次ロールアップ",
     set_distill_weekly_rollups: "weekly/ に週次ロールアップを{n}件作成",
+    set_archive_title: "アーカイブ容量",
+    set_archive_lede:
+      "ダイジェスト済みセッションとロールアップ済みデイリーノートは sessions/archive/ と daily/archive/ に永続保存されます。古いバケットを圧縮すると 1 つの zip にまとめられ、いつでも復元できます。raw/ には一切触れません。",
+    set_archive_measure: "測定",
+    set_archive_measuring: "測定中…",
+    set_archive_empty: "まだアーカイブはありません。",
+    set_archive_total: "バケット{buckets}個、ファイル{files}件、{size}",
+    set_archive_tree_sessions: "セッション",
+    set_archive_tree_daily: "デイリー",
+    set_archive_packed: "圧縮済み",
+    set_archive_older_than: "{n}ヶ月より古いバケットを圧縮",
+    set_archive_compress: "圧縮",
+    set_archive_compressing: "圧縮中…",
+    set_archive_compressed: "バケット{buckets}個（ファイル{files}件）を圧縮し、{size}を回収しました",
+    set_archive_nothing_old: "{n}ヶ月より古いバケットはありません。",
+    set_archive_failed: "そのままにしたバケット: {list}",
+    set_archive_restore: "復元",
+    set_archive_restoring: "復元中…",
+    set_archive_restored: "{bucket} にファイル{n}件を復元しました",
     set_profile_title: "プロフィール",
     set_profile_lede:
       "蒸留とAsk/インジェストのコンテキストを個人化します。profile.mdに保存され、注入がオンの場合は設定済みのAIプロバイダーに送信されます。",

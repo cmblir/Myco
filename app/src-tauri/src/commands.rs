@@ -1754,6 +1754,54 @@ pub fn undo_distill_run(
     crate::distill::undo(std::path::Path::new(&root), &id)
 }
 
+/// Files and bytes held by every `sessions/archive/` and `daily/archive/`
+/// bucket — the numbers behind the Settings → Distill storage panel. Computed
+/// on demand (this command), never on render. `raw/archive/` is deliberately
+/// not measured here: it is immutable, so its size is not actionable.
+#[tauri::command]
+pub fn archive_usage(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+) -> Result<Vec<crate::archive_pack::BucketUsage>, String> {
+    let root = confine_root(&state, &vault)?;
+    Ok(crate::archive_pack::usage(std::path::Path::new(&root)))
+}
+
+/// Pack every session/daily archive bucket older than `older_than_months`
+/// into one zip each. USER-TRIGGERED ONLY — no scheduler, no distill chain,
+/// no auto-run reaches this. `raw/` is never touched (see `archive_pack`'s
+/// module comment and its `TREES` list).
+#[tauri::command]
+pub fn compress_archives(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    older_than_months: u32,
+) -> Result<crate::archive_pack::PackReport, String> {
+    let root = confine_root(&state, &vault)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    Ok(crate::archive_pack::compress(
+        std::path::Path::new(&root),
+        older_than_months,
+        now,
+    ))
+}
+
+/// Unpack one compressed bucket back to its directory — the user-facing
+/// reverse of `compress_archives`.
+#[tauri::command]
+pub fn restore_archive_bucket(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    tree: String,
+    bucket: String,
+) -> Result<crate::archive_pack::RestoreReport, String> {
+    let root = confine_root(&state, &vault)?;
+    crate::archive_pack::restore(std::path::Path::new(&root), &tree, &bucket)
+}
+
 /// Vault-wide distillation status for the settings tab / MCP `distill_status`
 /// — backlog count, pending proposals, last run, and the backlog trend.
 #[tauri::command]

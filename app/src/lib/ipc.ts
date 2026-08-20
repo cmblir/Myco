@@ -3,7 +3,17 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { DigestDay, DistillConfig, DistillStatus, RollupWeek, RunReport } from "./distill";
+import type {
+  ArchiveTree,
+  BucketUsage,
+  DigestDay,
+  DistillConfig,
+  DistillStatus,
+  PackReport,
+  RestoreReport,
+  RollupWeek,
+  RunReport,
+} from "./distill";
 import type { QuarantineItem } from "./quarantine";
 
 export interface VaultMeta {
@@ -733,6 +743,17 @@ export const ipc = {
     invoke<number>("undo_distill_run", { vault, id }),
   distillStatus: (vault: string) =>
     invoke<DistillStatus>("distill_status", { vault }),
+  // ROADMAP P2 — archive lifecycle. `archiveUsage` is on-demand only (called
+  // from the Distill tab's storage panel when it mounts / after an action,
+  // never per render); `compressArchives` is only ever reached from its
+  // button. Both are confined to sessions/daily archives — raw/ is immutable
+  // and is not even nameable through `tree` (see archive_pack.rs).
+  archiveUsage: (vault: string) =>
+    invoke<BucketUsage[]>("archive_usage", { vault }),
+  compressArchives: (vault: string, olderThanMonths: number) =>
+    invoke<PackReport>("compress_archives", { vault, olderThanMonths }),
+  restoreArchiveBucket: (vault: string, tree: ArchiveTree, bucket: string) =>
+    invoke<RestoreReport>("restore_archive_bucket", { vault, tree, bucket }),
   // Execute a pending distill proposal (Task 7, Phase A).
   applyDistillProposal: (vault: string, path: string) =>
     invoke<string>("apply_distill_proposal", { vault, path }),

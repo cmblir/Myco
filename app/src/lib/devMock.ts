@@ -8,7 +8,7 @@
 // backed by the same sample-graph topology the Rust seed uses, so the Graph,
 // Overview, Provenance and Reader views render real-looking content.
 
-import type { DistillConfig } from "./distill";
+import type { BucketUsage, DistillConfig } from "./distill";
 import type { QuarantineItem } from "./quarantine";
 import type { ScoredChunk } from "./ipc";
 import { today } from "./taskLine";
@@ -297,6 +297,26 @@ let mockDistillConfig: DistillConfig = {
   llm_ingest_budget: 3,
   profile_injection: true,
 };
+
+// ROADMAP P2 — archive lifecycle. `?mock=1` is an all-wiki vault with no
+// sessions/ or daily/ on disk, so the storage panel would otherwise always be
+// empty; these are the shapes the real `archive_usage` returns.
+let mockArchiveBuckets: BucketUsage[] = [
+  { tree: "daily", bucket: "2026-W02", files: 7, bytes: 41_000, packed: false },
+  { tree: "daily", bucket: "2026-W31", files: 7, bytes: 38_400, packed: false },
+  { tree: "sessions", bucket: "2026-01", files: 214, bytes: 2_310_000, packed: false },
+  { tree: "sessions", bucket: "2026-04", files: 168, bytes: 1_870_000, packed: false },
+  { tree: "sessions", bucket: "2026-07", files: 121, bytes: 1_402_000, packed: false },
+];
+
+/** `YYYY-MM` `n` months back — the mock's stand-in for `archive_pack::cutoff`.
+ *  Weeks (`YYYY-Www`) sort below any `YYYY-MM` of the same year, so the daily
+ *  buckets simply compare against the same string. */
+function mockArchiveCutoff(months: number): string {
+  const d = new Date();
+  d.setUTCMonth(d.getUTCMonth() - months);
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
 
 // Quarantine review (ROADMAP P0) — seeded so ?mock=1 renders the Feedback
 // page's quarantine tab without a real vault that has something quarantined.
@@ -1047,6 +1067,34 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       });
     case "apply_distill_proposal":
       return Promise.resolve("moved 1, skipped 0 already-processed");
+    // ROADMAP P2 — archive lifecycle. The mock keeps `mockArchiveBuckets` as
+    // real state so compress/restore actually move a row between loose and
+    // packed in the browser, rather than returning a frozen list.
+    case "archive_usage":
+      return Promise.resolve(mockArchiveBuckets);
+    case "compress_archives": {
+      const cutoff = mockArchiveCutoff((args.olderThanMonths as number) ?? 3);
+      const old = mockArchiveBuckets.filter((b) => !b.packed && b.bucket < cutoff);
+      mockArchiveBuckets = mockArchiveBuckets.map((b) =>
+        old.includes(b) ? { ...b, packed: true, bytes: Math.round(b.bytes * 0.25) } : b,
+      );
+      return Promise.resolve({
+        buckets: old.length,
+        files: old.reduce((n, b) => n + b.files, 0),
+        reclaimed: old.reduce((n, b) => n + Math.round(b.bytes * 0.75), 0),
+        failed: [],
+      });
+    }
+    case "restore_archive_bucket": {
+      const target = mockArchiveBuckets.find(
+        (b) => b.tree === args.tree && b.bucket === args.bucket,
+      );
+      if (!target) return Promise.reject(new Error("no such archive bucket"));
+      mockArchiveBuckets = mockArchiveBuckets.map((b) =>
+        b === target ? { ...b, packed: false, bytes: b.bytes * 4 } : b,
+      );
+      return Promise.resolve({ files: target.files, bytes: target.bytes * 4 });
+    }
     // Quarantine review (ROADMAP P0). Three items on purpose: a normal verdict,
     // one already past its TTL, and one whose sidecar is malformed (no reason,
     // no expiry) — the three states the tab has to render differently.
