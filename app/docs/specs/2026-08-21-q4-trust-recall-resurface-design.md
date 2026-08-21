@@ -300,6 +300,63 @@ anything else does.
 Axis distribution: ② ≈ 26d, ④ ≈ 17d (the two success-criteria axes carry the
 weight), ③ ≈ 8d rider, ① ≈ 5d rider.
 
+## UI appendix (mockups approved 2026-08-21)
+
+Mockups: https://claude.ai/code/artifact/89bfa1e4-d787-4a8a-b419-aeb305cad270
+(M1–M10 feature surfaces, B1–B4 brand assets). Approved as the visual contract.
+All mockups use the app's real tokens and component recipes from
+`app/src/styles.css`; exactly one new component is introduced (word-diff), using
+existing status colors only. Binding decisions per item:
+
+- **Item 2 (M1)** — Overview reframed as "since you were last here": eyebrow +
+  headline stating what moved, three summary cards (distill outcome / suspect
+  pages / contradictions) above the existing DistillCard content, ritual section
+  below. Suspect-page count badge uses warn `#d97706`, contradiction badge uses
+  `--accent-soft`.
+- **Item 1 (M2)** — `.update-banner` strip (dismissable, never a modal) with
+  one-click enable; settings card copy explicitly states: local-only, no remote
+  push, no keys/device identity recorded, sync-interaction pointer.
+- **Items 3·6 (M3)** — run header (kind typebadge · time · pages · duration ·
+  model, WHY-report and revert buttons) → file rows with +/− counts in
+  tabular-nums → word-diff block: line tint `rgba(22,163,74,.10)` /
+  `rgba(220,38,38,.08)`, changed-word marks `.28`/`.25` alpha, del gets
+  line-through; ~100-line LCS renderer, mono 12.5px. Undo caption explains the
+  outcome, not a warning.
+- **Item 7 (M4)** — write-confirm is `.myco-modal` + the diff component +
+  "이번 런에서는 계속 허용" (per-run only) checkbox; ingest plan rows carry
+  ADD/UPDATE/MERGE/NOOP typebadges tinted with category hues, per-item
+  checkboxes, NOOP rows pre-unchecked at 60% opacity, footer "선택한 N개만 적용".
+- **Items 4·5·8·12 (M5)** — ⌘K shows an "정확 일치" group above semantic
+  results with `<mark>`-style highlight; the ⌥⏎ miss-log affordance is a single
+  muted line inside the palette (no separate screen). Time-anchored Ask promotes
+  the parsed range to a chip ("기간: 8.18–8.21") and cites only in-window
+  sources with tier typebadges; deep-storage is one labeled trailing row.
+- **Item 10 (M6)** — resurface proposals live in the Activity popover: title +
+  extractive why-quote (2px left rule) + resonance line with similarity, actions
+  열기 / 일주일 뒤 / 무시; the self-tuning threshold is disclosed in a footer
+  line. Entrance uses the existing chip-in keyframes.
+- **Item 9 (M7)** — recording overlay reuses the fixed-dark spotlight-card skin
+  with live partial transcript, waveform, elapsed time; menubar shows the
+  existing template icon plus a red recording dot; save feedback is a chip-live
+  pill naming the `_inbox` file (no toast system).
+- **Items 13·14 (M8)** — quarantine card has an amber border and states what
+  was caught, where it went, and that the rest proceeded; PII control is a
+  segmented "경고만 | 격리" defaulting to 경고만; audit card leads with the
+  green clean state and declares itself read-only.
+- **Item 16 (M9)** — authorship badge = typebadge shape + 64px two-tone bar
+  reusing VaultPulse's authored/ingested colors (`--ink-2` / `--line-strong`),
+  "사람 N% · 에이전트 N% · 마지막 사람 손길"; sidebar filter is a standard
+  active pill; the forward-only limit is disclosed in-UI ("이력을 켠 날 이후만
+  집계").
+- **Item 17 (M10)** — three steps: folder dropzone (demo-vault fallback copy) →
+  ingest-orb indexing with "이 기기에서만" line → final step IS the first
+  prefilled question with a cited answer; primary CTA "시작하기".
+- **Brand (B1–B4)** — menubar icon states idle/recording/disabled ship with
+  item 9; the flat light-mode mascot doubles as the app's first favicon and
+  ships with item 18 (index.html currently has none); wordmark lockups (plain /
+  spore-dot) both retained — final pick during item 18; spore spinner and
+  "에이전트 작성" glyph are optional garnish with no schedule impact.
+
 ## Verification cadence
 
 - Per item: its success check, plus the standard gates
