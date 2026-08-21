@@ -200,6 +200,28 @@ Semantic claim-conflict detection is explicitly next quarter.
 *Success:* scan findings resolve through the queue and vanish on rescan;
 validator passes.
 
+### Cross-cutting (scheduled into W3–10 slack)
+
+**20. Ingest format unification — M 4d · ④② (owner-requested 2026-08-21)**
+Manual ingest already handles pdf (native `pdf_extract`, `extract.rs:160`),
+docx/pptx/xlsx (native), html/csv/json (passthrough), images (vision, API-key
+providers), audio/video (installed whisper). This item closes the verified gaps
+only:
+(a) `_inbox` auto-ingest sees only `.md` (`vault::list_files` markdown-only
+filter) — non-md files sit invisibly forever, the app's one silent failure.
+Replace the listing with a real directory read routed through the existing
+`sourceTextFor` dispatch; unsupported files surface as a "N unsupported" count
+instead of vanishing. (M 2d)
+(b) HTML lands as raw markup — add tag-strip/readability text extraction in
+`extract.rs` so the model gets prose, not `<div>` soup. (S 1d)
+(c) Parity one-liners: add docx/pptx/xlsb to the daemon's `EXTRACT_EXTS`
+(`automation/autoingest.py:47`), add xlsm/xlsb to the browse picker
+(`ipc.ts:607-637`); wire the existing-but-unwired `whisper_check` preflight into
+the ingest UI (rides with item 9). (S 1d)
+*Success:* a pdf, an html file, and a png dropped into `_inbox/` all either
+ingest through the normal pipeline or appear in a visible unsupported count —
+nothing silent; daemon ingests a docx without manual steps.
+
 ### W11–12 — Recommendable + slack (9d, window 10d)
 
 **16. Authorship badge (forward-only) — M 3d · ②①**
@@ -251,6 +273,12 @@ documentation.
 - **Pricing ladder / payments** — off-repo hard rule; the public repo carries
   README positioning only.
 - **Chat-RAG centerpiece** — anti-goal.
+- **epub / rtf / legacy .doc / odt parsers** — no path supports them today; new
+  parser dependencies, deferred until demand shows.
+- **Scanned-PDF OCR** — `extract.rs` hard-errors on image-only PDFs by design;
+  OCR is a new engine dependency.
+- **Vision fallback for CLI providers** — image ingest requires an API-key
+  provider (`providers.rs:1360`); a local vision model is a separate bet.
 
 ## Budget
 
@@ -260,10 +288,14 @@ documentation.
 | W3–6 | 6(7d) 7(4d) 8(5d) 9(3d) | 19d | 20d |
 | W7–10 | 10(8d) 11(3d) 12(1d) 13(3d) 14(1d) 15(3d) | 19d | 20d |
 | W11–12 | 16(3d) 17(3d) 18(1d) 19(2d) | 9d | 10d |
-| **Total** | | **56d ≈ 11.2wk** | 60d |
+| W3–10 slack | 20(4d) — ingest format unification | 4d | — |
+| **Total** | | **60d ≈ 12wk** | 60d |
 
-Slack ~4d, first claim: item 6's diff rendering overrun (the largest L, flagged
-by all four reviews), then resurfacing tuning (item 10).
+Item 20 (owner-requested 2026-08-21) consumes the slack. Schedule risk is
+absorbed by item 20's own scope ladder: (c) parity one-liners ship first, then
+(b) HTML strip, then (a) inbox unification — if item 6's diff rendering overruns
+(the largest L, flagged by all four reviews), (a) slips to next quarter before
+anything else does.
 
 Axis distribution: ② ≈ 26d, ④ ≈ 17d (the two success-criteria axes carry the
 weight), ③ ≈ 8d rider, ① ≈ 5d rider.
