@@ -330,11 +330,16 @@ function isoWeekOf(d: Date): string {
  *  `YYYY-Www`) — comparing a `YYYY-Www` id against a `YYYY-MM` cutoff is
  *  apples to oranges lexicographically ('W' sorts above every digit), so it
  *  would never match and a daily bucket would never compress. */
-function mockArchiveCutoff(months: number): { month: string; week: string } {
-  const d = new Date();
-  d.setUTCMonth(d.getUTCMonth() - months);
-  const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-  return { month, week: isoWeekOf(d) };
+function mockArchiveCutoff(months: number, now = new Date()): { month: string; week: string } {
+  // Mirrors `archive_pack::cutoff` exactly: month arithmetic on the year*12+month
+  // index (never `setUTCMonth`, which overflows Mar 31 - 1 month into March), and
+  // the week taken from day 28 of the cutoff month so the subtraction can never
+  // land on a non-date.
+  const total = now.getUTCFullYear() * 12 + now.getUTCMonth() - months;
+  const cy = Math.floor(total / 12);
+  const cm = total - cy * 12; // 0-based
+  const month = `${String(cy).padStart(4, "0")}-${String(cm + 1).padStart(2, "0")}`;
+  return { month, week: isoWeekOf(new Date(Date.UTC(cy, cm, 28))) };
 }
 
 // Quarantine review (ROADMAP P0) — seeded so ?mock=1 renders the Feedback
