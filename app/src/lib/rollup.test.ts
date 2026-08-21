@@ -14,8 +14,8 @@ vi.mock("./chat", () => ({
 }));
 
 const getDistillConfig = vi.fn();
-const rollupableWeeks = vi.fn();
-const archiveRolledDays = vi.fn();
+const rollupableBuckets = vi.fn();
+const archiveRolled = vi.fn();
 const appendDistillManifest = vi.fn();
 const readFile = vi.fn();
 const writeFile = vi.fn();
@@ -24,8 +24,8 @@ const embedLocalTexts = vi.fn();
 vi.mock("./ipc", () => ({
   ipc: {
     getDistillConfig: (...a: unknown[]) => getDistillConfig(...a),
-    rollupableWeeks: (...a: unknown[]) => rollupableWeeks(...a),
-    archiveRolledDays: (...a: unknown[]) => archiveRolledDays(...a),
+    rollupableBuckets: (...a: unknown[]) => rollupableBuckets(...a),
+    archiveRolled: (...a: unknown[]) => archiveRolled(...a),
     appendDistillManifest: (...a: unknown[]) => appendDistillManifest(...a),
     readFile: (...a: unknown[]) => readFile(...a),
     writeFile: (...a: unknown[]) => writeFile(...a),
@@ -34,7 +34,7 @@ vi.mock("./ipc", () => ({
   },
 }));
 
-import { runWeeklyRollup, ROLLUP_SYSTEM } from "./weeklyRollup";
+import { MONTHLY_SYSTEM, runMonthlyRollup, runWeeklyRollup, ROLLUP_SYSTEM } from "./rollup";
 import { fingerprint } from "./sessionDigest";
 
 const CFG: DistillConfig = {
@@ -93,8 +93,8 @@ beforeEach(() => {
   complete.mockReset();
   getActiveModel.mockReset();
   getDistillConfig.mockReset();
-  rollupableWeeks.mockReset();
-  archiveRolledDays.mockReset();
+  rollupableBuckets.mockReset();
+  archiveRolled.mockReset();
   appendDistillManifest.mockReset();
   readFile.mockReset();
   writeFile.mockReset();
@@ -103,7 +103,7 @@ beforeEach(() => {
   embedLocalTexts.mockImplementation(async (texts: string[]) => mockEmbeddings(texts));
   createFolder.mockResolvedValue("weekly");
   writeFile.mockResolvedValue(null);
-  archiveRolledDays.mockResolvedValue("digest-archived");
+  archiveRolled.mockResolvedValue("digest-archived");
   appendDistillManifest.mockResolvedValue(null);
 });
 
@@ -117,21 +117,21 @@ describe("runWeeklyRollup", () => {
   it("skips with nothing when no week is settled", async () => {
     getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
     getDistillConfig.mockResolvedValue(CFG);
-    rollupableWeeks.mockResolvedValue([]);
+    rollupableBuckets.mockResolvedValue([]);
 
     const result = await runWeeklyRollup("/v");
 
-    expect(result).toEqual({ weeksRolledUp: 0, daysArchived: 0, skipped: "nothing", mode: "llm" });
+    expect(result).toEqual({ bucketsRolledUp: 0, sourcesArchived: 0, skipped: "nothing", mode: "llm" });
     expect(complete).not.toHaveBeenCalled();
-    expect(archiveRolledDays).not.toHaveBeenCalled();
+    expect(archiveRolled).not.toHaveBeenCalled();
   });
 
   it("rolls up only the first llm_digest_days weeks, one call each, and writes the marker in the same write", async () => {
     getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
     getDistillConfig.mockResolvedValue(CFG); // llm_digest_days: 1
-    rollupableWeeks.mockResolvedValue([
-      { week: "2026-W33", files: ["daily/2026-08-10.md", "daily/2026-08-11.md"] },
-      { week: "2026-W34", files: ["daily/2026-08-17.md"] },
+    rollupableBuckets.mockResolvedValue([
+      { bucket: "2026-W33", files: ["daily/2026-08-10.md", "daily/2026-08-11.md"] },
+      { bucket: "2026-W34", files: ["daily/2026-08-17.md"] },
     ]);
     mockReadDaily();
     complete.mockResolvedValue("- Week's decision: fingerprint the marker");
@@ -154,9 +154,10 @@ describe("runWeeklyRollup", () => {
     expect(content).toContain(`<!-- myco:rolled-up-days 2026-08-10:${fp} 2026-08-11:${fp} -->`);
     // Same fingerprints handed to the archive, so a daily note appended to
     // between the read and the move stays put.
-    expect(archiveRolledDays).toHaveBeenCalledTimes(1);
-    expect(archiveRolledDays).toHaveBeenCalledWith(
+    expect(archiveRolled).toHaveBeenCalledTimes(1);
+    expect(archiveRolled).toHaveBeenCalledWith(
       "/v",
+      "weekly",
       "2026-W33",
       ["daily/2026-08-10.md", "daily/2026-08-11.md"],
       [fp, fp],
@@ -170,14 +171,14 @@ describe("runWeeklyRollup", () => {
       ["weekly/2026-W33.md"],
     );
     expect(embedLocalTexts).not.toHaveBeenCalled();
-    expect(result).toEqual({ weeksRolledUp: 1, daysArchived: 2, skipped: null, mode: "llm" });
+    expect(result).toEqual({ bucketsRolledUp: 1, sourcesArchived: 2, skipped: null, mode: "llm" });
   });
 
   it("does not re-roll an already-recorded week — only the archive is retried", async () => {
     getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
     getDistillConfig.mockResolvedValue(CFG);
-    rollupableWeeks.mockResolvedValue([
-      { week: "2026-W33", files: ["daily/2026-08-10.md"], already_rolled: true },
+    rollupableBuckets.mockResolvedValue([
+      { bucket: "2026-W33", files: ["daily/2026-08-10.md"], already_rolled: true },
     ]);
 
     const result = await runWeeklyRollup("/v");
@@ -188,15 +189,15 @@ describe("runWeeklyRollup", () => {
     expect(writeFile).not.toHaveBeenCalled();
     // No fingerprints on the retry path — the marker an earlier run wrote is
     // the record Rust re-checks against.
-    expect(archiveRolledDays).toHaveBeenCalledWith("/v", "2026-W33", ["daily/2026-08-10.md"], null);
-    expect(result).toEqual({ weeksRolledUp: 1, daysArchived: 1, skipped: null, mode: "llm" });
+    expect(archiveRolled).toHaveBeenCalledWith("/v", "weekly", "2026-W33", ["daily/2026-08-10.md"], null);
+    expect(result).toEqual({ bucketsRolledUp: 1, sourcesArchived: 1, skipped: null, mode: "llm" });
   });
 
   it("rolls up extractively on builtin-local: quoted bullets attributed to the day, no LLM call", async () => {
     getActiveModel.mockResolvedValue({ provider: "builtin-local", model: "bge-m3" });
     getDistillConfig.mockResolvedValue(CFG);
-    rollupableWeeks.mockResolvedValue([
-      { week: "2026-W33", files: ["daily/2026-08-10.md"] },
+    rollupableBuckets.mockResolvedValue([
+      { bucket: "2026-W33", files: ["daily/2026-08-10.md"] },
     ]);
     mockReadDaily();
 
@@ -219,8 +220,8 @@ describe("runWeeklyRollup", () => {
     expect(content.match(/\*\*2026-08-10\*\*/g)).toHaveLength(1);
     expect(content).toContain(`<!-- myco:rolled-up-days 2026-08-10:${fingerprint(DAILY_RAW)} -->`);
     expect(result).toEqual({
-      weeksRolledUp: 1,
-      daysArchived: 1,
+      bucketsRolledUp: 1,
+      sourcesArchived: 1,
       skipped: null,
       mode: "extractive",
     });
@@ -229,8 +230,8 @@ describe("runWeeklyRollup", () => {
   it("produces byte-identical extractive output for the same inputs", async () => {
     getActiveModel.mockResolvedValue({ provider: "builtin-local", model: "bge-m3" });
     getDistillConfig.mockResolvedValue(CFG);
-    rollupableWeeks.mockResolvedValue([
-      { week: "2026-W33", files: ["daily/2026-08-10.md"] },
+    rollupableBuckets.mockResolvedValue([
+      { bucket: "2026-W33", files: ["daily/2026-08-10.md"] },
     ]);
     mockReadDaily();
 
@@ -245,8 +246,8 @@ describe("runWeeklyRollup", () => {
   it("quotes a bullet-free hand-written daily note by paragraph instead of dropping it", async () => {
     getActiveModel.mockResolvedValue({ provider: "builtin-local", model: "bge-m3" });
     getDistillConfig.mockResolvedValue(CFG);
-    rollupableWeeks.mockResolvedValue([
-      { week: "2026-W33", files: ["daily/2026-08-10.md"] },
+    rollupableBuckets.mockResolvedValue([
+      { bucket: "2026-W33", files: ["daily/2026-08-10.md"] },
     ]);
     const prose = "spent the day reasoning about why the archive retry loops, and wrote it down here";
     readFile.mockImplementation(async (path: string) => {
@@ -263,8 +264,8 @@ describe("runWeeklyRollup", () => {
   it("appends under a sub-line instead of duplicating the header, and records nothing new for undo", async () => {
     getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
     getDistillConfig.mockResolvedValue(CFG);
-    rollupableWeeks.mockResolvedValue([
-      { week: "2026-W33", files: ["daily/2026-08-12.md"] },
+    rollupableBuckets.mockResolvedValue([
+      { bucket: "2026-W33", files: ["daily/2026-08-12.md"] },
     ]);
     mockReadDaily(
       "# 2026-W33\n\n## Weekly rollup\n_from 2 daily digests — low confidence_\n- Earlier bullet\n",
@@ -285,9 +286,9 @@ describe("runWeeklyRollup", () => {
   it("marks daily files dropped by the prompt budget", async () => {
     getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
     getDistillConfig.mockResolvedValue(CFG);
-    rollupableWeeks.mockResolvedValue([
+    rollupableBuckets.mockResolvedValue([
       {
-        week: "2026-W33",
+        bucket: "2026-W33",
         files: ["daily/2026-08-10.md", "daily/2026-08-11.md", "daily/2026-08-12.md"],
       },
     ]);
@@ -311,9 +312,9 @@ describe("runWeeklyRollup", () => {
   it("does not archive a week whose provider call rejects, and stops there", async () => {
     getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
     getDistillConfig.mockResolvedValue({ ...CFG, llm_digest_days: 2 });
-    rollupableWeeks.mockResolvedValue([
-      { week: "2026-W33", files: ["daily/2026-08-10.md"] },
-      { week: "2026-W34", files: ["daily/2026-08-17.md"] },
+    rollupableBuckets.mockResolvedValue([
+      { bucket: "2026-W33", files: ["daily/2026-08-10.md"] },
+      { bucket: "2026-W34", files: ["daily/2026-08-17.md"] },
     ]);
     mockReadDaily();
     complete.mockRejectedValue(new Error("provider boom"));
@@ -321,9 +322,9 @@ describe("runWeeklyRollup", () => {
 
     const result = await runWeeklyRollup("/v");
 
-    expect(archiveRolledDays).not.toHaveBeenCalled();
+    expect(archiveRolled).not.toHaveBeenCalled();
     expect(writeFile).not.toHaveBeenCalled();
-    expect(result).toEqual({ weeksRolledUp: 0, daysArchived: 0, skipped: null, mode: "llm" });
+    expect(result).toEqual({ bucketsRolledUp: 0, sourcesArchived: 0, skipped: null, mode: "llm" });
     expect(errSpy).toHaveBeenCalled();
     errSpy.mockRestore();
   });
@@ -331,8 +332,8 @@ describe("runWeeklyRollup", () => {
   it("treats an existing-but-blank weekly file as missing: seeds the title and records the manifest", async () => {
     getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
     getDistillConfig.mockResolvedValue(CFG);
-    rollupableWeeks.mockResolvedValue([
-      { week: "2026-W33", files: ["daily/2026-08-10.md"] },
+    rollupableBuckets.mockResolvedValue([
+      { bucket: "2026-W33", files: ["daily/2026-08-10.md"] },
     ]);
     mockReadDaily("");
     complete.mockResolvedValue("- New bullet");
@@ -347,5 +348,98 @@ describe("runWeeklyRollup", () => {
       [],
       ["weekly/2026-W33.md"],
     );
+  });
+});
+
+describe("runMonthlyRollup", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    archiveRolled.mockResolvedValue("digest-archived");
+    appendDistillManifest.mockResolvedValue(null);
+    writeFile.mockResolvedValue(null);
+    createFolder.mockResolvedValue(null);
+  });
+
+  it("rolls weekly/ into monthly/<YYYY-MM>.md and archives the weeks it covered", async () => {
+    getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
+    getDistillConfig.mockResolvedValue(CFG);
+    rollupableBuckets.mockResolvedValue([
+      { bucket: "2026-07", files: ["weekly/2026-W27.md", "weekly/2026-W28.md"] },
+    ]);
+    const WEEKLY_RAW = [
+      "# 2026-W27",
+      "",
+      "## Weekly rollup",
+      "_from 5 daily digests — low confidence_",
+      "- Decided the rollup marker binds to content, not to the file name.",
+    ].join("\n");
+    readFile.mockImplementation(async (path: string) => {
+      if (path.includes("/monthly/")) throw new Error("not found");
+      return { raw: WEEKLY_RAW };
+    });
+    complete.mockResolvedValue("- The month's decision");
+
+    const result = await runMonthlyRollup("/v");
+
+    // The layer name travels on every IPC call — Rust picks the source tree
+    // (`weekly/`) and the archive bucket shape from it.
+    expect(rollupableBuckets).toHaveBeenCalledWith("/v", "monthly");
+    expect(complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        messages: [
+          { role: "system", content: MONTHLY_SYSTEM },
+          expect.objectContaining({ role: "user" }),
+        ],
+      }),
+    );
+
+    const [path, content] = writeFile.mock.calls[0] as [string, string];
+    expect(path).toBe("/v/monthly/2026-07.md");
+    expect(content).toContain("## Monthly rollup");
+    expect(content).toContain("_from 2 weekly rollups — low confidence_");
+    // Same marker literal as the layer below, over weekly stems — one
+    // `marker_entries` implementation serves both tiers.
+    const fp = fingerprint(WEEKLY_RAW);
+    expect(content).toContain(`<!-- myco:rolled-up-days 2026-W27:${fp} 2026-W28:${fp} -->`);
+
+    expect(archiveRolled).toHaveBeenCalledWith(
+      "/v",
+      "monthly",
+      "2026-07",
+      ["weekly/2026-W27.md", "weekly/2026-W28.md"],
+      [fp, fp],
+    );
+    expect(appendDistillManifest).toHaveBeenCalledWith(
+      "/v",
+      "digest-archived",
+      [],
+      ["monthly/2026-07.md"],
+    );
+    expect(result).toEqual({
+      bucketsRolledUp: 1,
+      sourcesArchived: 2,
+      skipped: null,
+      mode: "llm",
+    });
+  });
+
+  it("never archives a month whose rollup call failed", async () => {
+    getActiveModel.mockResolvedValue({ provider: "anthropic-cli", model: "sonnet" });
+    getDistillConfig.mockResolvedValue(CFG);
+    rollupableBuckets.mockResolvedValue([
+      { bucket: "2026-07", files: ["weekly/2026-W27.md"] },
+    ]);
+    readFile.mockResolvedValue({ raw: "# w\n- something worth quoting in a rollup" });
+    complete.mockRejectedValue(new Error("provider down"));
+
+    const result = await runMonthlyRollup("/v");
+
+    expect(archiveRolled).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      bucketsRolledUp: 0,
+      sourcesArchived: 0,
+      skipped: null,
+      mode: "llm",
+    });
   });
 });

@@ -214,10 +214,10 @@ fn bm25_is_incomplete(dense_page_count: usize, bm25_page_count: usize) -> bool {
 
 /// Top-level trees the watcher attaches to and the incremental path accepts —
 /// kept in lockstep with `collect_wiki_pages`'s walk (`wiki/`, `sessions/`,
-/// `daily/`, `weekly/`) so a change the reindex would pick up is also caught by the
+/// `daily/`, `weekly/`, `monthly/`) so a change the reindex would pick up is also caught by the
 /// fast incremental path instead of waiting for the next reconcile. `raw/`
 /// (immutable) and everything else is never indexed.
-const WATCHED_TREES: [&str; 4] = ["wiki", "sessions", "daily", "weekly"];
+const WATCHED_TREES: [&str; 5] = ["wiki", "sessions", "daily", "weekly", "monthly"];
 
 /// Whether vault-relative `rel` falls under one of `WATCHED_TREES`.
 fn in_watched_tree(rel: &str) -> bool {
@@ -685,7 +685,10 @@ mod tests {
 
     #[test]
     fn watched_trees_cover_wiki_sessions_and_both_digest_layers() {
-        assert_eq!(WATCHED_TREES, ["wiki", "sessions", "daily", "weekly"]);
+        assert_eq!(
+            WATCHED_TREES,
+            ["wiki", "sessions", "daily", "weekly", "monthly"]
+        );
     }
 
     #[test]

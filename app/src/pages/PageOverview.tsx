@@ -473,7 +473,7 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
       setOutcome({
         report,
         days: lastDigestOutcome.get(currentVault.path)?.daysDigested ?? 0,
-        weeks: lastWeeklyOutcome.get(currentVault.path)?.weeksRolledUp ?? 0,
+        weeks: lastWeeklyOutcome.get(currentVault.path)?.bucketsRolledUp ?? 0,
       });
       await refreshAll();
     } catch (e) {

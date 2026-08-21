@@ -53,6 +53,7 @@ import {
   backlogTrend,
   GATE_MIN_WIKI_PAGES,
   lastDigestOutcome,
+  lastMonthlyOutcome,
   lastWeeklyOutcome,
   lastRunLabel,
   lastStopPoint,
@@ -1818,6 +1819,8 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
   // the same way digested days are: the weekly step is a TS-side step, so it
   // is absent from RunReport and read from its own module-level map.
   const [weeksRolledUp, setWeeksRolledUp] = useState(0);
+  // Same, one layer further up: months rolled up out of weekly/.
+  const [monthsRolledUp, setMonthsRolledUp] = useState(0);
 
   useEffect(() => {
     if (!vaultPath) return;
@@ -1838,7 +1841,8 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       .catch(() => undefined);
     const digest = lastDigestOutcome.get(vaultPath);
     setDigestExtractive(digest?.mode === "extractive" && digest.daysDigested > 0);
-    setWeeksRolledUp(lastWeeklyOutcome.get(vaultPath)?.weeksRolledUp ?? 0);
+    setWeeksRolledUp(lastWeeklyOutcome.get(vaultPath)?.bucketsRolledUp ?? 0);
+    setMonthsRolledUp(lastMonthlyOutcome.get(vaultPath)?.bucketsRolledUp ?? 0);
     return () => {
       cancelled = true;
     };
@@ -1887,7 +1891,8 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       setStatus(await ipc.distillStatus(vaultPath));
       const digest = lastDigestOutcome.get(vaultPath);
       setDigestExtractive(digest?.mode === "extractive" && digest.daysDigested > 0);
-      setWeeksRolledUp(lastWeeklyOutcome.get(vaultPath)?.weeksRolledUp ?? 0);
+      setWeeksRolledUp(lastWeeklyOutcome.get(vaultPath)?.bucketsRolledUp ?? 0);
+      setMonthsRolledUp(lastMonthlyOutcome.get(vaultPath)?.bucketsRolledUp ?? 0);
     } catch (e) {
       setError(String(e));
     } finally {
@@ -2184,6 +2189,16 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
             {(t.set_distill_weekly_rollups ?? "{n} weekly rollups written to weekly/").replace(
               "{n}",
               String(weeksRolledUp),
+            )}
+          </div>
+        ) : null}
+        {monthsRolledUp > 0 ? (
+          // Third layer, reported on its own line: weekly and monthly count
+          // different units, so summing them would say neither.
+          <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }} data-testid="distill-monthly-rollups">
+            {(t.set_distill_monthly_rollups ?? "{n} monthly rollups written to monthly/").replace(
+              "{n}",
+              String(monthsRolledUp),
             )}
           </div>
         ) : null}

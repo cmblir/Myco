@@ -1993,33 +1993,43 @@ pub fn archive_digested_sessions(
     )
 }
 
-/// Settled ISO weeks whose `daily/` digests are ready for the weekly-rollup
-/// step (ROADMAP P1). See `distill::rollupable_weeks`'s own doc comment.
+/// Settled buckets ready for a rollup step: `layer` is `"weekly"` (ISO weeks
+/// of `daily/` digests, ROADMAP P1) or `"monthly"` (months of `weekly/`
+/// rollups). See `distill::rollupable_buckets`'s own doc comment.
 #[tauri::command]
-pub fn rollupable_weeks(
+pub fn rollupable_buckets(
     state: tauri::State<VaultRoot>,
     vault: String,
-) -> Result<Vec<crate::distill::RollupWeek>, String> {
+    layer: String,
+) -> Result<Vec<crate::distill::RollupBucket>, String> {
     let root = confine_root(&state, &vault)?;
-    Ok(crate::distill::rollupable_weeks(std::path::Path::new(
-        &root,
-    )))
+    let layer = crate::distill::rollup_layer(&layer)
+        .ok_or_else(|| format!("unknown rollup layer `{layer}`"))?;
+    Ok(crate::distill::rollupable_buckets(
+        std::path::Path::new(&root),
+        layer,
+    ))
 }
 
-/// Move a rolled-up week's `daily/` notes into `daily/archive/<week>/`. See
-/// `distill::archive_rolled_days`'s own doc comment.
+/// Move a rolled-up bucket's source notes into `<src>/archive/<bucket>/` —
+/// `daily/` for the weekly layer, `weekly/` for the monthly one. See
+/// `distill::archive_rolled`'s own doc comment.
 #[tauri::command]
-pub fn archive_rolled_days(
+pub fn archive_rolled(
     state: tauri::State<VaultRoot>,
     vault: String,
-    week: String,
+    layer: String,
+    bucket: String,
     files: Vec<String>,
     fingerprints: Option<Vec<String>>,
 ) -> Result<String, String> {
     let root = confine_root(&state, &vault)?;
-    crate::distill::archive_rolled_days(
+    let layer = crate::distill::rollup_layer(&layer)
+        .ok_or_else(|| format!("unknown rollup layer `{layer}`"))?;
+    crate::distill::archive_rolled(
         std::path::Path::new(&root),
-        &week,
+        layer,
+        &bucket,
         &files,
         fingerprints.as_deref(),
     )
@@ -2388,6 +2398,10 @@ pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String,
     // here for exactly the reason `daily/` is. Search-only too (see
     // `graphData.ts`'s `isNonKnowledgePath`).
     walk(&root.join("weekly"), root, &mut out);
+    // Third layer, same reason again: once a month's weekly rollups go cold
+    // under `weekly/archive/`, `monthly/<YYYY-MM>.md` is the only live page
+    // holding that knowledge.
+    walk(&root.join("monthly"), root, &mut out);
     // Cold-tier pages never belong in the active index — see this fn's doc
     // comment. Live since `is_cold` grew a `sessions/archive/` prefix (Phase
     // B's `archive_digested_sessions`): the `sessions/` walk above is no

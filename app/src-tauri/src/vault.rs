@@ -735,6 +735,7 @@ pub fn create_file(parent: &str, name: &str, content: &str) -> Result<String, St
 const NON_WIKI_DIRS: &[&str] = &[
     "daily",
     "weekly",
+    "monthly",
     "raw",
     "ingest-reports",
     "_inbox",

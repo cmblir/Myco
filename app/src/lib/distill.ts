@@ -13,8 +13,8 @@ import type { Lang, Strings } from "./i18n";
 import { useUIStore } from "../stores/uiStore";
 import { runSessionDigest } from "./sessionDigest";
 import type { DigestOutcome } from "./sessionDigest";
-import { runWeeklyRollup } from "./weeklyRollup";
-import type { RollupOutcome } from "./weeklyRollup";
+import { runMonthlyRollup, runWeeklyRollup } from "./rollup";
+import type { RollupOutcome } from "./rollup";
 import { runFullTierIngest } from "./fullTierIngest";
 import type { FullTierOutcome } from "./fullTierIngest";
 import { draftMap } from "./maps";
@@ -148,13 +148,14 @@ export interface DigestDay {
   already_digested: boolean;
 }
 
-// ROADMAP P1 — rollupableWeeks's return: one settled ISO week's daily/ files
-// ready for the weekly rollup, the same shape one compression layer up.
-export interface RollupWeek {
-  week: string; // YYYY-Www (ISO 8601)
-  files: string[]; // vault-relative daily/ rel paths
-  // Every file here is already named by a weekly/*.md rollup marker, so its
-  // rollup text is durable and only the archive move failed: runWeeklyRollup
+// rollupableBuckets's return: one settled bucket's source files ready for the
+// rollup step — an ISO week of daily/ notes (ROADMAP P1), or a month of
+// weekly/ rollups one layer further up.
+export interface RollupBucket {
+  bucket: string; // YYYY-Www (weekly layer) or YYYY-MM (monthly layer)
+  files: string[]; // vault-relative rel paths under daily/ or weekly/
+  // Every file here is already named by a rollup marker in the layer above,
+  // so its rollup text is durable and only the archive move failed: the run
   // must skip the provider call and retry only the archive step.
   already_rolled: boolean;
 }
@@ -215,6 +216,11 @@ export const lastDigestOutcome = new Map<string, DigestOutcome>();
 // ROADMAP P1 — the weekly rollup's outcome, keyed by vault path. Same
 // module-level map idiom as lastDigestOutcome directly above.
 export const lastWeeklyOutcome = new Map<string, RollupOutcome>();
+
+// The monthly rollup's outcome (weekly/ -> monthly/), same idiom again. Kept
+// separate from the weekly map rather than summed: the two layers report
+// different units, and the Settings tab shows each on its own line.
+export const lastMonthlyOutcome = new Map<string, RollupOutcome>();
 
 // Phase B, Task 3 — full-tier ingest's outcome, keyed by vault path. Same
 // "module-level map, no store, no event bus" idiom as lastDigestOutcome
@@ -289,7 +295,7 @@ const stopRequested = new Set<string>();
 /** The step the last run's chain stopped after ("run" = the Rust core pass;
  * the chain never starts a later step once the flag is seen), or null when it
  * ran to the end — same module-level map idiom as lastDigestOutcome above. */
-export type DistillStopPoint = "run" | "digest" | "weekly" | "ingest";
+export type DistillStopPoint = "run" | "digest" | "weekly" | "monthly" | "ingest";
 export const lastStopPoint = new Map<string, DistillStopPoint | null>();
 
 /** Ask an in-flight distill chain for `vault` to stop before its next step.
@@ -431,6 +437,7 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
   // counts to this run.
   lastDigestOutcome.delete(vault);
   lastWeeklyOutcome.delete(vault);
+  lastMonthlyOutcome.delete(vault);
   useDistillRunStore.setState({ running: true, step: "run" });
   try {
     const report = await ipc.distillRun(vault);
@@ -482,13 +489,32 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
       return null;
     });
     if (weekly) lastWeeklyOutcome.set(vault, weekly);
-    if (weekly && weekly.daysArchived > 0) {
+    if (weekly && weekly.sourcesArchived > 0) {
       await pruneColdTier(vault).catch((e) => {
         console.error("[distill] cold-tier prune failed", vault, e);
       });
     }
     if (stopRequested.has(vault)) {
       lastStopPoint.set(vault, "weekly");
+      return report;
+    }
+    // Third layer, immediately after the second for the same reason: the
+    // weekly step above is what just appended to weekly/, so a month whose
+    // last week was only written this run is still held back by that week's
+    // own maturity gate.
+    useDistillRunStore.setState({ step: "monthly" });
+    const monthly = await runMonthlyRollup(vault).catch((e) => {
+      console.error("[distill] monthly rollup failed", vault, e);
+      return null;
+    });
+    if (monthly) lastMonthlyOutcome.set(vault, monthly);
+    if (monthly && monthly.sourcesArchived > 0) {
+      await pruneColdTier(vault).catch((e) => {
+        console.error("[distill] cold-tier prune failed", vault, e);
+      });
+    }
+    if (stopRequested.has(vault)) {
+      lastStopPoint.set(vault, "monthly");
       return report;
     }
     useDistillRunStore.setState({ step: "ingest" });
@@ -520,7 +546,7 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
     // train the user to disable notifications entirely. Stopped-early runs
     // (the returns above) skip it too: the user was watching the popover.
     const days = outcome?.daysDigested ?? 0;
-    const weeks = weekly?.weeksRolledUp ?? 0;
+    const weeks = weekly?.bucketsRolledUp ?? 0;
     if (report.proposals > 0 || days > 0 || weeks > 0) {
       const t = STRINGS[useUIStore.getState().lang];
       void osNotify(

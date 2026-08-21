@@ -1,14 +1,16 @@
-// Weekly rollup (ROADMAP P1) — the second compression layer. Collapses one
-// settled ISO week's daily/ digests into a handful of bullets in
-// weekly/<YYYY-Www>.md, then moves the source daily notes to the cold tier via
-// ipc.archiveRolledDays. Structurally the same step as sessionDigest.ts one
-// level down (sessions/ -> daily/), and deliberately built out of that file's
-// parts rather than beside them: the fingerprint, the MMR selection, and the
+// Rollup layers of the compression pyramid. One function, two layers:
+//   weekly  (ROADMAP P1) — a settled ISO week's daily/ digests  -> weekly/<YYYY-Www>.md
+//   monthly              — a settled month's weekly/ rollups     -> monthly/<YYYY-MM>.md
+// and in both cases the source files then move to the cold tier via
+// ipc.archiveRolled. Structurally the same step as sessionDigest.ts one level
+// down (sessions/ -> daily/), and deliberately built out of that file's parts
+// rather than beside them: the fingerprint, the MMR selection, and the
 // marker-in-the-same-write contract are all imported, not reimplemented.
 //
 // Why it exists: sessions/ compressing into daily/ only moves the problem —
-// daily/ then grows one file per active day forever. The pyramid has to get
-// denser going up, so daily/ needs its own digest.
+// daily/ then grows one file per active day forever, and weekly/ grows one
+// file per active week for exactly the same reason. The pyramid has to get
+// denser going up, so each layer needs its own digest above it.
 
 import { ipc } from "./ipc";
 import { complete, getActiveModel } from "./chat";
@@ -21,13 +23,14 @@ import {
 } from "./quoteBullets";
 
 export interface RollupOutcome {
-  weeksRolledUp: number;
-  /** Daily notes moved to `daily/archive/<week>/` by this run. */
-  daysArchived: number;
+  /** Buckets (ISO weeks, or months one layer up) rolled up by this run. */
+  bucketsRolledUp: number;
+  /** Source files moved to `<src>/archive/<bucket>/` by this run. */
+  sourcesArchived: number;
   skipped: "nothing" | null;
   /** How the bullets were produced — an LLM summary, or (builtin-local, which
    *  has no generative model) extractive quotes ranked by embedding. Same
-   *  contract as DigestOutcome.mode: a marker-guarded week rolled up one way
+   *  contract as DigestOutcome.mode: a marker-guarded bucket rolled up one way
    *  is never re-rolled the other. */
   mode: "llm" | "extractive";
 }
@@ -38,16 +41,50 @@ export const ROLLUP_SYSTEM =
   "markdown bullets. No preamble. Drop anything a later day in the week " +
   "superseded; mark uncertain items with '(uncertain)'.";
 
+export const MONTHLY_SYSTEM =
+  "These are one month's weekly rollups of an engineer's work. Compress them " +
+  "into the month's durable decisions, facts and outcomes. Output 3-10 " +
+  "markdown bullets. No preamble. Drop anything a later week in the month " +
+  "superseded; mark uncertain items with '(uncertain)'.";
+
+/** What differs between the two layers. Everything else in this file — the
+ *  marker, the maturity contract, the retry split, the manifest fold-in — is
+ *  shared, which is the point: the monthly layer is the weekly one re-aimed,
+ *  not a second implementation to keep in sync. */
+interface RollupLayerSpec {
+  /** Rust's `rollup_layer` name, passed on every IPC call. */
+  layer: "weekly" | "monthly";
+  /** Directory the rollup files live in — also `<out>/<bucket>.md`. */
+  out: string;
+  /** What one source file is called in the `_from N …_` label. */
+  sourceLabel: string;
+  /** Section header, distinct per layer so a repeat run appends under the
+   *  right one (and so distill.rs's marker scan stays unambiguous). */
+  header: string;
+  system: string;
+}
+
+const WEEKLY_LAYER: RollupLayerSpec = {
+  layer: "weekly",
+  out: "weekly",
+  sourceLabel: "daily digests",
+  header: "## Weekly rollup",
+  system: ROLLUP_SYSTEM,
+};
+
+const MONTHLY_LAYER: RollupLayerSpec = {
+  layer: "monthly",
+  out: "monthly",
+  sourceLabel: "weekly rollups",
+  header: "## Monthly rollup",
+  system: MONTHLY_SYSTEM,
+};
+
 // Char ceiling shared across the week's daily files, the same cheap prompt
 // guard MAX_DAY_CHARS is for a day's session logs. Smaller than that one:
 // daily files are already digests, so a week of them should fit comfortably —
 // if it doesn't, the omission line says so rather than silently truncating.
 const MAX_WEEK_CHARS = 40_000;
-
-// Rollup section header. Distinct from daily/'s "## Session digest (auto)" and
-// "## Distill summary (auto)" — this section lives in a different file and a
-// different tier, and distill.rs keys its repeat-run detection on this string.
-const HEADER = "## Weekly rollup";
 
 // Machine-readable record of WHICH daily files a rollup section covers,
 // written in the same weekly/<week>.md write as the bullets — so a crash can
@@ -90,9 +127,10 @@ const UNIT_CHARS = 400;
 const BULLET_CHARS = 220;
 const MAX_BULLETS = 10;
 
-/** One daily note's candidate units: its markdown bullets, or — for a
+/** One source file's candidate units: its markdown bullets, or — for a
  * hand-written daily note that has none — its paragraphs, so a rollup that is
- * about to archive that file never quotes nothing from it. */
+ * about to archive that file never quotes nothing from it. A weekly rollup is
+ * bullets by construction, so the same split serves the layer above. */
 function splitDaily(doc: string): string[] {
   const bullets = doc
     .split("\n")
@@ -137,7 +175,7 @@ async function extractiveBullets(files: string[], contents: string[]): Promise<s
   return renderQuoteBullets(units, ranked.slice(0, MAX_BULLETS), BULLET_CHARS);
 }
 
-function buildWeekPrompt(files: string[], contents: string[]): string {
+function buildWeekPrompt(files: string[], contents: string[], sourceLabel: string): string {
   let out = "";
   let i = 0;
   for (; i < files.length; i++) {
@@ -149,7 +187,7 @@ function buildWeekPrompt(files: string[], contents: string[]): string {
   }
   const omitted = files.length - i;
   if (omitted > 0) {
-    out += `…(${omitted} more daily digests omitted for length)\n`;
+    out += `…(${omitted} more ${sourceLabel} omitted for length)\n`;
   }
   return out;
 }
@@ -162,13 +200,14 @@ function buildWeekPrompt(files: string[], contents: string[]): string {
  * that already existed was visible to undo before this run touched it. */
 async function appendRollup(
   vaultPath: string,
+  spec: RollupLayerSpec,
   week: string,
   bullets: string,
   files: string[],
   fingerprints: string[],
   extractive: boolean,
 ): Promise<boolean> {
-  const filePath = `${vaultPath}/weekly/${week}.md`;
+  const filePath = `${vaultPath}/${spec.out}/${week}.md`;
   // Blank counts as missing, for the same reason it does in appendDigest: a
   // zero-byte file left by an earlier crash reads back fine and would
   // otherwise skip the branch that seeds the title and sets `created`.
@@ -179,7 +218,7 @@ async function appendRollup(
   const created = existingRaw.trim() === "";
   if (created) {
     try {
-      await ipc.createFolder(vaultPath, "weekly");
+      await ipc.createFolder(vaultPath, spec.out);
     } catch {
       /* already exists */
     }
@@ -187,49 +226,49 @@ async function appendRollup(
   const existing = created ? `# ${week}\n\n` : existingRaw;
   const marker = rollupMarker(files, fingerprints);
   const label = extractive
-    ? `_from ${files.length} daily digests — extractive quotes (no LLM)_`
-    : `_from ${files.length} daily digests — low confidence_`;
+    ? `_from ${files.length} ${spec.sourceLabel} — extractive quotes (no LLM)_`
+    : `_from ${files.length} ${spec.sourceLabel} — low confidence_`;
   const runLine = extractive
     ? `_run of ${new Date().toISOString()} (extractive)_`
     : `_run of ${new Date().toISOString()}_`;
-  const section = existing.includes(HEADER)
+  const section = existing.includes(spec.header)
     ? `\n${runLine}\n${marker}\n${bullets.trim()}\n`
-    : `\n${HEADER}\n${label}\n${marker}\n${bullets.trim()}\n`;
+    : `\n${spec.header}\n${label}\n${marker}\n${bullets.trim()}\n`;
   // One atomic write (vault::write_file is tmpfile+fsync+rename) carrying both
   // the rollup text and the record of what it covers.
   await ipc.writeFile(filePath, existing + section);
   return created;
 }
 
-/** Rolls up to `llm_digest_days` of the oldest settled ISO weeks into
- * weekly/<week>.md, one provider call per week, then moves that week's daily
- * notes to `daily/archive/<week>/`. Stops at the first week that errors
- * (logged, not thrown) so a bad week never gets archived — everything before
- * it still did. Every branch here has a session-digest counterpart; see
- * runSessionDigest for the reasoning behind each. */
-export async function runWeeklyRollup(vaultPath: string): Promise<RollupOutcome> {
+/** Rolls up to `llm_digest_days` of the oldest settled buckets into
+ * `<out>/<bucket>.md`, one provider call per bucket, then moves that bucket's
+ * source files to `<src>/archive/<bucket>/`. Stops at the first bucket that
+ * errors (logged, not thrown) so a bad bucket never gets archived —
+ * everything before it still did. Every branch here has a session-digest
+ * counterpart; see runSessionDigest for the reasoning behind each. */
+async function runRollup(vaultPath: string, spec: RollupLayerSpec): Promise<RollupOutcome> {
   const { provider } = await getActiveModel("query");
   const extractive = provider === "builtin-local";
   const mode = extractive ? ("extractive" as const) : ("llm" as const);
 
   const cfg = await ipc.getDistillConfig(vaultPath).catch(() => null);
   const weekCap = cfg?.llm_digest_days ?? DEFAULT_DIGEST_DAYS;
-  const weeks = (await ipc.rollupableWeeks(vaultPath)).slice(0, weekCap);
-  if (weeks.length === 0) {
-    return { weeksRolledUp: 0, daysArchived: 0, skipped: "nothing", mode };
+  const buckets = (await ipc.rollupableBuckets(vaultPath, spec.layer)).slice(0, weekCap);
+  if (buckets.length === 0) {
+    return { bucketsRolledUp: 0, sourcesArchived: 0, skipped: "nothing", mode };
   }
 
-  let weeksRolledUp = 0;
-  let daysArchived = 0;
-  for (const { week, files, already_rolled } of weeks) {
+  let bucketsRolledUp = 0;
+  let sourcesArchived = 0;
+  for (const { bucket, files, already_rolled } of buckets) {
     try {
       if (already_rolled) {
         // Retry: a prior run's appendRollup already wrote these exact files'
         // rollup (its marker names them, which is how Rust set this flag) but
-        // archiveRolledDays failed afterward — only the move needs retrying.
+        // the archive move failed afterward — only the move needs retrying.
         // No fingerprints of our own to hand over; the marker on disk is the
         // record and Rust re-checks each file against it.
-        await ipc.archiveRolledDays(vaultPath, week, files, null);
+        await ipc.archiveRolled(vaultPath, spec.layer, bucket, files, null);
       } else {
         const contents = await Promise.all(
           files.map((f) => ipc.readFile(`${vaultPath}/${f}`).then((fc) => fc.raw)),
@@ -240,42 +279,62 @@ export async function runWeeklyRollup(vaultPath: string): Promise<RollupOutcome>
               task: "query",
               cwd: vaultPath,
               messages: [
-                { role: "system", content: ROLLUP_SYSTEM },
-                { role: "user", content: buildWeekPrompt(files, contents) },
+                { role: "system", content: spec.system },
+                { role: "user", content: buildWeekPrompt(files, contents, spec.sourceLabel) },
               ],
             });
         const fingerprints = contents.map(fingerprint);
-        const weeklyCreated = await appendRollup(
+        const rollupCreated = await appendRollup(
           vaultPath,
-          week,
+          spec,
+          bucket,
           bullets,
           files,
           fingerprints,
           extractive,
         );
-        // Same fingerprints the marker just recorded: a daily note can be
-        // appended to (a concurrent session digest) or hand-edited between the
-        // read above and the move, so Rust archives only files still holding
-        // the bytes we rolled up.
-        const manifestId = await ipc.archiveRolledDays(vaultPath, week, files, fingerprints);
-        // Fold the weekly-file create into the SAME manifest the archive just
-        // wrote, so "undo this run" reverses both. Best-effort: a bookkeeping
-        // failure must not undo the rollup/archive that already succeeded.
-        if (weeklyCreated) {
+        // Same fingerprints the marker just recorded: a source file can be
+        // appended to (a concurrent digest one layer down) or hand-edited
+        // between the read above and the move, so Rust archives only files
+        // still holding the bytes we rolled up.
+        const manifestId = await ipc.archiveRolled(
+          vaultPath,
+          spec.layer,
+          bucket,
+          files,
+          fingerprints,
+        );
+        // Fold the rollup file's create into the SAME manifest the archive
+        // just wrote, so "undo this run" reverses both. Best-effort: a
+        // bookkeeping failure must not undo the rollup/archive that already
+        // succeeded.
+        if (rollupCreated) {
           await ipc
-            .appendDistillManifest(vaultPath, manifestId, [], [`weekly/${week}.md`])
+            .appendDistillManifest(vaultPath, manifestId, [], [`${spec.out}/${bucket}.md`])
             .catch((e) => {
-              console.error("[distill] manifest append failed for weekly rollup", vaultPath, week, e);
+              console.error("[distill] manifest append failed for rollup", vaultPath, bucket, e);
             });
         }
       }
     } catch (err) {
-      console.error("[distill] weekly rollup failed", vaultPath, week, err);
+      console.error(`[distill] ${spec.layer} rollup failed`, vaultPath, bucket, err);
       break;
     }
-    weeksRolledUp++;
-    daysArchived += files.length;
+    bucketsRolledUp++;
+    sourcesArchived += files.length;
   }
 
-  return { weeksRolledUp, daysArchived, skipped: null, mode };
+  return { bucketsRolledUp, sourcesArchived, skipped: null, mode };
+}
+
+/** daily/ -> weekly/<YYYY-Www>.md (ROADMAP P1). */
+export function runWeeklyRollup(vaultPath: string): Promise<RollupOutcome> {
+  return runRollup(vaultPath, WEEKLY_LAYER);
+}
+
+/** weekly/ -> monthly/<YYYY-MM>.md — the same step one layer further up, run
+ *  immediately after the weekly one so a month whose last week was only just
+ *  rolled up is still held back by that week's own maturity gate. */
+export function runMonthlyRollup(vaultPath: string): Promise<RollupOutcome> {
+  return runRollup(vaultPath, MONTHLY_LAYER);
 }

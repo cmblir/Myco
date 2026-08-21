@@ -832,8 +832,10 @@ export interface Strings {
   set_distill_step_ingest?: string;
   set_distill_step_maps?: string;
   set_distill_step_weekly?: string;
+  set_distill_step_monthly?: string;
   // ROADMAP P1 — weekly rollup count for the distill tab.
-  set_distill_weekly_rollups?: string; // {n}
+  set_distill_weekly_rollups?: string;
+  set_distill_monthly_rollups?: string; // {n}
   // ROADMAP P2 — archive storage panel (sessions/ + daily/ archives only).
   set_archive_title?: string;
   set_archive_lede?: string;
@@ -1961,7 +1963,9 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_ingest: "the full-tier ingest",
     set_distill_step_maps: "the map drafts",
     set_distill_step_weekly: "the weekly rollup",
+    set_distill_step_monthly: "the monthly rollup",
     set_distill_weekly_rollups: "{n} weekly rollups written to weekly/",
+    set_distill_monthly_rollups: "{n} monthly rollups written to monthly/",
     set_archive_title: "Archive storage",
     set_archive_lede:
       "Digested sessions and rolled-up daily notes are kept forever in sessions/archive/ and daily/archive/. Compressing an old bucket packs it into a single zip you can restore at any time. raw/ is never touched.",
@@ -3094,7 +3098,9 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_ingest: "전체 계층 인제스트",
     set_distill_step_maps: "맵 초안",
     set_distill_step_weekly: "주간 롤업",
+    set_distill_step_monthly: "월간 롤업",
     set_distill_weekly_rollups: "weekly/에 주간 롤업 {n}건 작성",
+    set_distill_monthly_rollups: "monthly/에 월간 롤업 {n}건 작성",
     set_archive_title: "아카이브 용량",
     set_archive_lede:
       "다이제스트된 세션과 롤업된 일간 노트는 sessions/archive/, daily/archive/에 영구 보관됩니다. 오래된 버킷을 압축하면 zip 하나로 묶이며 언제든 복원할 수 있습니다. raw/는 건드리지 않습니다.",
@@ -4072,7 +4078,9 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_ingest: "フル階層インジェスト",
     set_distill_step_maps: "マップ下書き",
     set_distill_step_weekly: "週次ロールアップ",
+    set_distill_step_monthly: "月次ロールアップ",
     set_distill_weekly_rollups: "weekly/ に週次ロールアップを{n}件作成",
+    set_distill_monthly_rollups: "monthly/ に月次ロールアップを{n}件作成",
     set_archive_title: "アーカイブ容量",
     set_archive_lede:
       "ダイジェスト済みセッションとロールアップ済みデイリーノートは sessions/archive/ と daily/archive/ に永続保存されます。古いバケットを圧縮すると 1 つの zip にまとめられ、いつでも復元できます。raw/ には一切触れません。",

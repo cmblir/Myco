@@ -77,6 +77,7 @@ export function chipMode<T extends { icon: ActivityIconName }>(
 export function stepLabel(step: DistillRunStep | null, t: Strings): string {
   if (step === "digest") return t.set_distill_step_digest ?? "the session digest";
   if (step === "weekly") return t.set_distill_step_weekly ?? "the weekly rollup";
+  if (step === "monthly") return t.set_distill_step_monthly ?? "the monthly rollup";
   if (step === "ingest") return t.set_distill_step_ingest ?? "the full-tier ingest";
   if (step === "maps") return t.set_distill_step_maps ?? "the map drafts";
   return t.set_distill_step_run ?? "the core pass";

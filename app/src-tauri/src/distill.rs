@@ -3360,15 +3360,18 @@ pub fn archive_digested_sessions(
 // confine + fingerprint-recheck + incremental `RunManifest`.
 // ---------------------------------------------------------------------------
 
-/// One settled ISO week's `daily/` files, ready for the TS weekly-rollup step.
+/// One settled bucket's source files, ready for the TS rollup step: an ISO
+/// week of `daily/` notes, or a month of `weekly/` rollups one layer further
+/// up.
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
-pub struct RollupWeek {
-    /// ISO-8601 week, `YYYY-Www` — also the `weekly/<week>.md` stem.
-    pub week: String,
+pub struct RollupBucket {
+    /// The bucket, which is also the `<out>/<bucket>.md` stem: `YYYY-Www` for
+    /// the weekly layer, `YYYY-MM` for the monthly one.
+    pub bucket: String,
     pub files: Vec<String>,
-    /// Every file in `files` is already named by a `weekly/*.md` rollup marker
-    /// — its rollup text is durable and only the archive move failed. The
-    /// exact `already_digested` contract, one level up.
+    /// Every file in `files` is already named by a rollup marker in the layer
+    /// above — its rollup text is durable and only the archive move failed.
+    /// The exact `already_digested` contract, one level up.
     pub already_rolled: bool,
 }
 
@@ -3430,32 +3433,161 @@ pub(crate) fn iso_week(day: &str) -> Option<String> {
     Some(format!("{wy:04}-W{:02}", (ordinal - 1) / 7 + 1))
 }
 
+/// The `YYYY-MM` a `YYYY-Www` week counts against: the month holding the
+/// week's Thursday — ISO's own tiebreak, the same one `iso_week` uses to pick
+/// a week's year. A week that straddles two months therefore belongs to
+/// exactly one of them, so no `weekly/` file can roll up into two different
+/// `monthly/` files.
+fn month_of_iso_week(week: &str) -> Option<String> {
+    if !is_iso_week_name(week) {
+        return None;
+    }
+    let y: i64 = week[0..4].parse().ok()?;
+    let w: i64 = week[6..8].parse().ok()?;
+    let jan4 = days_from_civil(y, 1, 4);
+    // 1970-01-01 was a Thursday, so `+3` puts Monday at 0 — same shift as
+    // `iso_week`. Jan 4 is in W01 by definition, which anchors the rest.
+    let jan4_dow = (jan4 + 3).rem_euclid(7);
+    let thursday = jan4 - jan4_dow + 3 + (w - 1) * 7;
+    let (ty, tm, td, ..) = civil_datetime(thursday * 86_400);
+    // W53 does not exist in every year; when it doesn't, the arithmetic above
+    // lands in the NEXT year's W01 and this week name was never real. Round
+    // trip through `iso_week` rather than reimplementing the 52/53 rule.
+    if iso_week(&format!("{ty:04}-{tm:02}-{td:02}")).as_deref() != Some(week) {
+        return None;
+    }
+    Some(format!("{ty:04}-{tm:02}"))
+}
+
+/// `YYYY-Www`, the weekly layer's bucket shape — checked before a bucket name
+/// that arrived over IPC becomes a directory under `daily/archive/`.
+fn is_iso_week_name(bucket: &str) -> bool {
+    let b = bucket.as_bytes();
+    bucket.len() == 8
+        && b[0..4].iter().all(u8::is_ascii_digit)
+        && b[4] == b'-'
+        && b[5] == b'W'
+        && b[6..8].iter().all(u8::is_ascii_digit)
+}
+
+/// `YYYY-MM`, the monthly layer's bucket shape. Month is range-checked: `13`
+/// is digits but not a month, and it would become a directory name that no
+/// `weekly/` file can ever belong to.
+fn is_month_name(bucket: &str) -> bool {
+    let b = bucket.as_bytes();
+    bucket.len() == 7
+        && b[0..4].iter().all(u8::is_ascii_digit)
+        && b[4] == b'-'
+        && b[5..7].iter().all(u8::is_ascii_digit)
+        && matches!(bucket[5..7].parse::<u32>(), Ok(1..=12))
+}
+
+/// The ISO week `now` falls in — the week still happening.
+fn current_iso_week(now: i64) -> Option<String> {
+    let (y, m, d, ..) = civil_datetime(now);
+    iso_week(&format!("{y:04}-{m:02}-{d:02}"))
+}
+
+/// The month `now` falls in — the month still happening.
+fn current_month(now: i64) -> Option<String> {
+    let (y, m, ..) = civil_datetime(now);
+    Some(format!("{y:04}-{m:02}"))
+}
+
+/// One compression layer of the pyramid: which tier feeds it, where its
+/// rollups land, and how a source file's stem maps to a bucket. `daily/` ->
+/// `weekly/<YYYY-Www>.md` and `weekly/` -> `monthly/<YYYY-MM>.md` are the
+/// same algorithm over different names, so they are one function and two
+/// constants instead of two copies that drift apart.
+pub struct RollupLayer {
+    /// Directory holding the files that roll up.
+    pub src: &'static str,
+    /// Directory the rollup sections — and their markers — are written to.
+    pub out: &'static str,
+    /// The bucket a source file's stem belongs to; `None` for a stem this
+    /// layer does not understand (a hand-named file, which then simply never
+    /// joins a rollup).
+    bucket_of: fn(&str) -> Option<String>,
+    /// The bucket a unix time falls in — the one still in progress, never
+    /// offered however mature the files already in it look.
+    current: fn(i64) -> Option<String>,
+    /// Shape check for the IPC-supplied bucket, which becomes a directory
+    /// name under `<src>/archive/`.
+    valid_bucket: fn(&str) -> bool,
+    /// Confine for the caller-supplied file list.
+    payload_ok: fn(&str) -> bool,
+}
+
+/// `daily/` -> `weekly/` (ROADMAP P1).
+pub static WEEKLY: RollupLayer = RollupLayer {
+    src: "daily",
+    out: "weekly",
+    bucket_of: iso_week,
+    current: current_iso_week,
+    valid_bucket: is_iso_week_name,
+    payload_ok: is_daily_payload_path,
+};
+
+/// `weekly/` -> `monthly/` — the third layer. Weekly rollups accumulate one
+/// file per active week exactly the way daily digests accumulated one per
+/// active day, so the pyramid needs the same step again above them.
+pub static MONTHLY: RollupLayer = RollupLayer {
+    src: "weekly",
+    out: "monthly",
+    bucket_of: month_of_iso_week,
+    current: current_month,
+    valid_bucket: is_month_name,
+    payload_ok: is_weekly_payload_path,
+};
+
+/// The layer an IPC caller named. `None` for anything else — the command
+/// turns that into an error rather than defaulting, so a typo can never
+/// silently roll up (and archive) the wrong tier.
+pub fn rollup_layer(name: &str) -> Option<&'static RollupLayer> {
+    match name {
+        "weekly" => Some(&WEEKLY),
+        "monthly" => Some(&MONTHLY),
+        _ => None,
+    }
+}
+
 /// `daily/<name>`, no further nesting — the one shape a daily note ever has
 /// (`daily/<YYYY-MM-DD>.md`), which excludes `daily/archive/...` for free.
-/// The confine `archive_rolled_days` applies to its caller-supplied `files`,
+/// The confine `archive_rolled` applies to its caller-supplied `files`,
 /// same as `is_session_payload_path` one level down.
 fn is_daily_payload_path(rel: &str) -> bool {
     rel.strip_prefix("daily/")
         .is_some_and(|rest| !rest.is_empty() && !rest.contains('/'))
 }
 
-/// Groups mature, not-yet-rolled `daily/*.md` by ISO week, oldest week first.
-/// A flat `read_dir` (daily notes are never nested), so `daily/archive/` is
-/// skipped without an explicit exclusion.
+/// `weekly/<name>`, no further nesting — the monthly layer's source shape and
+/// the exact counterpart of `is_daily_payload_path`, which is likewise what
+/// keeps `weekly/archive/...` out of a caller-supplied file list.
+fn is_weekly_payload_path(rel: &str) -> bool {
+    rel.strip_prefix("weekly/")
+        .is_some_and(|rest| !rest.is_empty() && !rest.contains('/'))
+}
+
+/// Groups mature, not-yet-rolled `<layer.src>/*.md` by bucket, oldest first.
+/// A flat `read_dir` (neither daily notes nor weekly rollups are ever
+/// nested), so `<layer.src>/archive/` is skipped without an explicit
+/// exclusion.
 ///
-/// "Settled" mirrors `digestable_session_days`'s fully-scored-day rule: a week
-/// is offered only once EVERY daily file in it is past `maturation_hours`, not
-/// as soon as one is. A daily file is still growing while that day's sessions
-/// keep arriving — the session digest appends another section per run — so
-/// rolling up a week containing a fresh file would summarize a half-written
-/// day and then have to pay for the same week again. There is no scored-ledger
-/// half to the check here: `daily/` is distillation's own output, not inflow,
-/// so it has no gate verdict to wait for.
-pub fn rollupable_weeks(root: &Path) -> Vec<RollupWeek> {
+/// "Settled" mirrors `digestable_session_days`'s fully-scored-day rule: a
+/// bucket is offered only once EVERY file in it is past `maturation_hours`,
+/// not as soon as one is. A daily file is still growing while that day's
+/// sessions keep arriving — the session digest appends another section per
+/// run — and a weekly file grows the same way while its week's days are still
+/// rolling up, so rolling up a bucket containing a fresh file would summarize
+/// a half-written unit and then have to pay for the same bucket again. There
+/// is no scored-ledger half to the check here: everything under `daily/` and
+/// `weekly/` is distillation's own output, not inflow, so it has no gate
+/// verdict to wait for.
+pub fn rollupable_buckets(root: &Path, layer: &RollupLayer) -> Vec<RollupBucket> {
     let cfg = config_load(root);
     let maturation_secs = cfg.maturation_hours as i64 * 3600;
     let now = now_secs();
-    let rolled = marker_entries(&root.join("weekly"), ROLLUP_MARKER_OPEN);
+    let rolled = marker_entries(&root.join(layer.out), ROLLUP_MARKER_OPEN);
 
     struct DayEntry {
         rel: String,
@@ -3463,7 +3595,7 @@ pub fn rollupable_weeks(root: &Path) -> Vec<RollupWeek> {
         rolled: bool,
     }
 
-    let Ok(entries) = std::fs::read_dir(root.join("daily")) else {
+    let Ok(entries) = std::fs::read_dir(root.join(layer.src)) else {
         return Vec::new();
     };
     let mut by_week: HashMap<String, Vec<DayEntry>> = HashMap::new();
@@ -3475,7 +3607,7 @@ pub fn rollupable_weeks(root: &Path) -> Vec<RollupWeek> {
         let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
             continue;
         };
-        let Some(week) = iso_week(stem) else {
+        let Some(week) = (layer.bucket_of)(stem) else {
             continue;
         };
         let Some(mtime) = mtime_secs(&path) else {
@@ -3488,19 +3620,18 @@ pub fn rollupable_weeks(root: &Path) -> Vec<RollupWeek> {
         });
     }
 
-    // The week that is still HAPPENING is never rollable, however mature its
+    // The bucket that is still HAPPENING is never rollable, however mature its
     // existing files look. `maturation_hours` means "this file stopped
     // growing", which at day granularity implies "that day is over" — at week
-    // granularity it does not: on Thursday, Monday's and Tuesday's notes are
-    // both 24h old while the week has three days left. Rolling it up then
-    // charges once per remaining day, appends a section per run, and moves
-    // the current week's notes to the cold tier mid-week.
-    let (cy, cm, cd, ..) = civil_datetime(now);
-    let current_week = iso_week(&format!("{cy:04}-{cm:02}-{cd:02}"));
+    // or month granularity it does not: on Thursday, Monday's and Tuesday's
+    // notes are both 24h old while the week has three days left. Rolling it up
+    // then charges once per remaining unit, appends a section per run, and
+    // moves the current bucket's files to the cold tier mid-bucket.
+    let current = (layer.current)(now);
 
-    let mut weeks: Vec<RollupWeek> = by_week
+    let mut weeks: Vec<RollupBucket> = by_week
         .into_iter()
-        .filter(|(week, _)| Some(week.as_str()) != current_week.as_deref())
+        .filter(|(week, _)| Some(week.as_str()) != current.as_deref())
         .filter(|(_, entries)| entries.iter().all(|e| e.ready))
         .map(|(week, entries)| {
             let already_rolled = entries.iter().all(|e| e.rolled);
@@ -3515,51 +3646,49 @@ pub fn rollupable_weeks(root: &Path) -> Vec<RollupWeek> {
                 .map(|e| e.rel)
                 .collect();
             files.sort();
-            RollupWeek {
-                week,
+            RollupBucket {
+                bucket: week,
                 files,
                 already_rolled,
             }
         })
         .collect();
-    weeks.sort_by(|a, b| a.week.cmp(&b.week));
+    weeks.sort_by(|a, b| a.bucket.cmp(&b.bucket));
     weeks
 }
 
-/// Moves each of `files` (already-rolled-up `daily/...` notes) into
-/// `daily/archive/<week>/`, the cold tier (`vector_index::is_cold`) — the
-/// literal counterpart of `archive_digested_sessions`, which is where every
-/// guard below comes from: `confine_payload_file` on untrusted IPC paths, a
-/// fingerprint recheck immediately before each rename so a file rewritten
-/// since it was read stays put, and a `digest-<unix-seconds>` `RunManifest`
-/// saved after every move so `undo(root, id)` reverses it with no new code.
+/// Moves each of `files` (already-rolled-up `<layer.src>/...` notes) into
+/// `<layer.src>/archive/<bucket>/`, the cold tier (`vector_index::is_cold`) —
+/// the literal counterpart of `archive_digested_sessions`, which is where
+/// every guard below comes from: `confine_payload_file` on untrusted IPC
+/// paths, a fingerprint recheck immediately before each rename so a file
+/// rewritten since it was read stays put, and a `digest-<unix-seconds>`
+/// `RunManifest` saved after every move so `undo(root, id)` reverses it with
+/// no new code.
 ///
-/// The archive bucket is the ISO week itself rather than a month
-/// (`archive_digested_sessions` uses `YYYY-MM`): a rollup covers exactly one
-/// week, so one directory per rollup maps 1:1 onto the `weekly/<week>.md`
-/// that replaced it — and a week can straddle two months, which a month
-/// bucket would have to pick a side of anyway.
+/// The archive bucket is the rolled-up unit itself (an ISO week for the
+/// weekly layer, a month for the monthly one) rather than
+/// `archive_digested_sessions`'s fixed `YYYY-MM`: a rollup covers exactly one
+/// bucket, so one directory per rollup maps 1:1 onto the
+/// `<layer.out>/<bucket>.md` that replaced it — and a week can straddle two
+/// months, which a month bucket would have to pick a side of anyway.
 ///
 /// `fingerprints` is the caller's record of the bytes it actually rolled up.
 /// `None` is the archive-retry path (an earlier run wrote the rollup and this
 /// one only re-attempts the move), which falls back to the on-disk rollup
-/// markers via the same `is_digested` that offered the week.
-pub fn archive_rolled_days(
+/// markers via the same `is_digested` that offered the bucket.
+pub fn archive_rolled(
     root: &Path,
-    week: &str,
+    layer: &RollupLayer,
+    bucket: &str,
     files: &[String],
     fingerprints: Option<&[String]>,
 ) -> Result<String, String> {
-    // `week` is IPC input and becomes a directory name — reject anything that
-    // is not exactly `YYYY-Www` rather than create a junk archive bucket.
-    let b = week.as_bytes();
-    let valid_week = week.len() == 8
-        && b[0..4].iter().all(u8::is_ascii_digit)
-        && b[4] == b'-'
-        && b[5] == b'W'
-        && b[6..8].iter().all(u8::is_ascii_digit);
-    if !valid_week {
-        return Err(format!("bad week `{week}`, expected YYYY-Www"));
+    // `bucket` is IPC input and becomes a directory name — reject anything
+    // that is not this layer's exact bucket shape rather than create a junk
+    // archive directory.
+    if !(layer.valid_bucket)(bucket) {
+        return Err(format!("bad {} bucket `{bucket}`", layer.out));
     }
 
     if let Some(fps) = fingerprints {
@@ -3573,7 +3702,7 @@ pub fn archive_rolled_days(
     }
     let recorded = match fingerprints {
         Some(_) => Default::default(),
-        None => marker_entries(&root.join("weekly"), ROLLUP_MARKER_OPEN),
+        None => marker_entries(&root.join(layer.out), ROLLUP_MARKER_OPEN),
     };
 
     let now = now_secs();
@@ -3585,11 +3714,13 @@ pub fn archive_rolled_days(
     };
     save_manifest(root, &manifest)?;
 
-    let archive_dir = root.join("daily").join(RAW_ARCHIVE_DIR).join(week);
-    std::fs::create_dir_all(&archive_dir).map_err(|e| format!("create daily archive dir: {e}"))?;
+    let archive_dir = root.join(layer.src).join(RAW_ARCHIVE_DIR).join(bucket);
+    std::fs::create_dir_all(&archive_dir)
+        .map_err(|e| format!("create {} archive dir: {e}", layer.src))?;
 
+    let expected = format!("{}/", layer.src);
     for (i, f) in files.iter().enumerate() {
-        let from_path = confine_payload_file(root, f, is_daily_payload_path, "daily/")?;
+        let from_path = confine_payload_file(root, f, layer.payload_ok, &expected)?;
         if !from_path.exists() {
             continue; // already moved/gone — idempotent, same as every other pass
         }
@@ -3607,9 +3738,10 @@ pub fn archive_rolled_days(
         let from_rel = rel_string(root, &from_path);
         let file_name = from_path
             .file_name()
-            .ok_or_else(|| format!("bad daily path: {f}"))?;
+            .ok_or_else(|| format!("bad {} path: {f}", layer.src))?;
         let to_path = free_path(&archive_dir.join(file_name));
-        std::fs::rename(&from_path, &to_path).map_err(|e| format!("archive daily move: {e}"))?;
+        std::fs::rename(&from_path, &to_path)
+            .map_err(|e| format!("archive {} move: {e}", layer.src))?;
         manifest.moves.push(MoveEntry {
             from: from_rel,
             to: rel_string(root, &to_path),
@@ -6173,9 +6305,9 @@ mod tests {
     // -----------------------------------------------------------------------
 
     /// Writes `daily/<day>.md` with `body` and a mature mtime, and returns its
-    /// rel path — the shape `rollupable_weeks` wants.
+    /// rel path — the shape `rollupable_buckets` wants.
     /// A `YYYY-MM-DD` string `days` before now. Week fixtures must sit in the
-    /// PAST: `rollupable_weeks` never offers the week still in progress, so a
+    /// PAST: `rollupable_buckets` never offers the week still in progress, so a
     /// hard-coded date silently stops being rollable during its own week.
     fn days_ago(days: i64) -> String {
         let (y, m, d, ..) = civil_datetime(now_secs() - days * 86_400);
@@ -6184,6 +6316,17 @@ mod tests {
 
     fn settled_daily(root: &Path, day: &str, body: &str) -> String {
         let rel = format!("daily/{day}.md");
+        let path = root.join(&rel);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, body).unwrap();
+        set_mtime(&path, old_mtime());
+        rel
+    }
+
+    /// `weekly/<week>.md` with a mature mtime — the monthly layer's source
+    /// file, the exact counterpart of `settled_daily` one tier down.
+    fn settled_weekly(root: &Path, week: &str, body: &str) -> String {
+        let rel = format!("weekly/{week}.md");
         let path = root.join(&rel);
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(&path, body).unwrap();
@@ -6241,9 +6384,9 @@ mod tests {
             let today = format!("{y:04}-{m:02}-{d:02}");
             let this_week = iso_week(&today).unwrap();
             settled_daily(root, &today, "# today\n- a\n");
-            let weeks = rollupable_weeks(root);
+            let weeks = rollupable_buckets(root, &WEEKLY);
             assert!(
-                !weeks.iter().any(|w| w.week == this_week),
+                !weeks.iter().any(|w| w.bucket == this_week),
                 "the in-progress week must never be offered: {weeks:?}"
             );
         });
@@ -6256,7 +6399,7 @@ mod tests {
             let root = dir.path();
             settled_daily(root, "2026-08-10", "# 2026-08-10\n- a\n");
             settled_daily(root, "2026-08-11", "# 2026-08-11\n- b\n");
-            assert_eq!(rollupable_weeks(root).len(), 1, "both mature");
+            assert_eq!(rollupable_buckets(root, &WEEKLY).len(), 1, "both mature");
 
             // One fresh daily note in the same week holds the WHOLE week back —
             // the fully-scored-day rule, one layer up: that file is still being
@@ -6264,15 +6407,15 @@ mod tests {
             let fresh = root.join("daily/2026-08-12.md");
             std::fs::write(&fresh, "# 2026-08-12\n- c\n").unwrap();
             assert!(
-                rollupable_weeks(root).is_empty(),
+                rollupable_buckets(root, &WEEKLY).is_empty(),
                 "one immature daily skips the week"
             );
 
             // A different week is unaffected by its neighbour's straggler.
             settled_daily(root, "2026-08-03", "# 2026-08-03\n- old\n");
-            let weeks = rollupable_weeks(root);
+            let weeks = rollupable_buckets(root, &WEEKLY);
             assert_eq!(weeks.len(), 1);
-            assert_eq!(weeks[0].week, "2026-W32");
+            assert_eq!(weeks[0].bucket, "2026-W32");
         });
     }
 
@@ -6295,12 +6438,12 @@ mod tests {
             std::fs::write(root.join("daily/notes.md"), "hand-written\n").unwrap();
             std::fs::write(root.join("daily/x.txt"), "2026-08-10\n").unwrap();
 
-            let weeks = rollupable_weeks(root);
+            let weeks = rollupable_buckets(root, &WEEKLY);
             // Oldest week first; every offered week is in the past.
             assert!(weeks.len() >= 2, "{weeks:?}");
-            assert_eq!(weeks[0].week, week_a.min(iso_week(&older2).unwrap()));
-            assert!(weeks.iter().any(|w| w.week == week_c));
-            let ordered: Vec<String> = weeks.iter().map(|w| w.week.clone()).collect();
+            assert_eq!(weeks[0].bucket, week_a.min(iso_week(&older2).unwrap()));
+            assert!(weeks.iter().any(|w| w.bucket == week_c));
+            let ordered: Vec<String> = weeks.iter().map(|w| w.bucket.clone()).collect();
             let sorted = {
                 let mut c = ordered.clone();
                 c.sort();
@@ -6327,7 +6470,7 @@ mod tests {
                 .map(|d| settled_daily(root, d, &format!("# {d}\n- {d}\n")))
                 .collect();
 
-            let weeks = rollupable_weeks(root);
+            let weeks = rollupable_buckets(root, &WEEKLY);
             assert_eq!(weeks.len(), 1);
             assert!(!weeks[0].already_rolled, "nothing recorded yet");
 
@@ -6342,19 +6485,19 @@ mod tests {
 
             // Still OFFERED (nothing archived yet) but FLAGGED, so the caller
             // retries only the move and never pays for a second rollup.
-            let weeks = rollupable_weeks(root);
+            let weeks = rollupable_buckets(root, &WEEKLY);
             assert_eq!(weeks.len(), 1);
             assert!(weeks[0].already_rolled);
             assert_eq!(weeks[0].files, files);
 
             // A failed archive attempt leaves the record in weekly/ untouched.
-            assert!(archive_rolled_days(root, "not-a-week", &files, None).is_err());
-            assert!(rollupable_weeks(root)[0].already_rolled);
+            assert!(archive_rolled(root, &WEEKLY, "not-a-week", &files, None).is_err());
+            assert!(rollupable_buckets(root, &WEEKLY)[0].already_rolled);
 
             // Once the move succeeds the days leave daily/ for the cold tier
             // and the week disappears — nothing left to roll up or retry.
-            archive_rolled_days(root, "2026-W33", &files, None).unwrap();
-            assert!(rollupable_weeks(root).is_empty());
+            archive_rolled(root, &WEEKLY, "2026-W33", &files, None).unwrap();
+            assert!(rollupable_buckets(root, &WEEKLY).is_empty());
             for f in &files {
                 assert!(!root.join(f).exists(), "{f} should have moved");
                 let cold = format!("daily/archive/2026-W33/{}", f.rsplit('/').next().unwrap());
@@ -6376,7 +6519,7 @@ mod tests {
             write_weekly_with_marker(root, "2026-W33", &[&marker_entry(root, &old)]);
             let new = settled_daily(root, "2026-08-11", "# b\n- b\n");
 
-            let weeks = rollupable_weeks(root);
+            let weeks = rollupable_buckets(root, &WEEKLY);
             assert_eq!(weeks.len(), 1);
             assert!(!weeks[0].already_rolled);
             assert_eq!(weeks[0].files, vec![new.clone()]);
@@ -6391,7 +6534,7 @@ mod tests {
             let rel = settled_daily(root, "2026-08-10", "# a\n- first section\n");
             let recorded = marker_entry(root, &rel);
             write_weekly_with_marker(root, "2026-W33", &[&recorded]);
-            assert!(rollupable_weeks(root)[0].already_rolled);
+            assert!(rollupable_buckets(root, &WEEKLY)[0].already_rolled);
 
             // A later session digest appended another section to the same day
             // (or the user edited it). The name is unchanged, so a name-keyed
@@ -6400,14 +6543,15 @@ mod tests {
             let path = root.join(&rel);
             std::fs::write(&path, "# a\n- first section\n- second section\n").unwrap();
             set_mtime(&path, old_mtime());
-            let weeks = rollupable_weeks(root);
+            let weeks = rollupable_buckets(root, &WEEKLY);
             assert_eq!(weeks.len(), 1);
             assert!(!weeks[0].already_rolled);
 
             // And the archive refuses to move it under the stale fingerprint,
             // so the new half can never be lost to the cold tier.
-            archive_rolled_days(
+            archive_rolled(
                 root,
+                &WEEKLY,
                 "2026-W33",
                 std::slice::from_ref(&rel),
                 Some(&[recorded.rsplit(':').next().unwrap().to_string()]),
@@ -6429,8 +6573,14 @@ mod tests {
             let fp = file_fingerprint(root, &rel);
             write_weekly_with_marker(root, "2026-W33", &[&marker_entry(root, &rel)]);
 
-            let id = archive_rolled_days(root, "2026-W33", std::slice::from_ref(&rel), Some(&[fp]))
-                .unwrap();
+            let id = archive_rolled(
+                root,
+                &WEEKLY,
+                "2026-W33",
+                std::slice::from_ref(&rel),
+                Some(&[fp]),
+            )
+            .unwrap();
             assert!(id.starts_with("digest-"), "{id}");
             // The TS step folds the weekly file it created into the SAME
             // manifest, exactly as the session digest does for its daily file.
@@ -6447,6 +6597,126 @@ mod tests {
         });
     }
 
+    // -----------------------------------------------------------------------
+    // Monthly rollup — the same machinery a third time (`weekly/` ->
+    // `monthly/`). Only what differs from the weekly layer is retested here:
+    // the bucket mapping (a week belongs to the month of its Thursday), the
+    // in-progress-month exclusion, and the confine over `weekly/`.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn a_week_belongs_to_the_month_holding_its_thursday() {
+        // 2026-W40 runs Mon 2026-09-28 .. Sun 2026-10-04; its Thursday is
+        // 2026-10-01, so the whole week counts against October and can never
+        // be rolled up into September as well.
+        assert_eq!(month_of_iso_week("2026-W40").as_deref(), Some("2026-10"));
+        // 2026-W39 (Mon 09-21 .. Sun 09-27) sits wholly inside September.
+        assert_eq!(month_of_iso_week("2026-W39").as_deref(), Some("2026-09"));
+        // 2027-W01's Thursday is 2027-01-07 — the week that starts in the old
+        // year still counts against the new one, matching `iso_week`.
+        assert_eq!(month_of_iso_week("2026-W53").as_deref(), Some("2026-12"));
+        // 2026 has 52 ISO weeks, so W53 of 2025 is not a real week name.
+        assert_eq!(month_of_iso_week("2025-W53"), None);
+        for bad in ["2026-08", "not-a-week", "2026-W0a", "2026-W1"] {
+            assert_eq!(month_of_iso_week(bad), None, "{bad}");
+        }
+    }
+
+    #[test]
+    fn rollupable_months_never_offers_the_month_still_in_progress() {
+        crate::settings::test_support::with_isolated_data("distill-monthly-current", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            // This week's rollup file, mature on disk — its month is still
+            // running, so offering it would archive the current month's
+            // weeklies mid-month and re-charge every remaining week.
+            let this_week = iso_week(&days_ago(0)).unwrap();
+            settled_weekly(root, &this_week, "# w\n- a\n");
+            let (y, m, ..) = civil_datetime(now_secs());
+            let this_month = format!("{y:04}-{m:02}");
+
+            let months = rollupable_buckets(root, &MONTHLY);
+            assert!(
+                !months.iter().any(|b| b.bucket == this_month),
+                "the month in progress must never be offered: {months:?}"
+            );
+        });
+    }
+
+    #[test]
+    fn rollupable_months_group_weeklies_and_archive_them_under_weekly_archive() {
+        crate::settings::test_support::with_isolated_data("distill-monthly-roll", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            // Two weeks of a month that is already over — a hard-coded month
+            // would stop being rollable during its own month, the same trap
+            // `days_ago` exists for one layer down. Days 10 and 17 are far
+            // enough from either edge that each week's Thursday (within +-3
+            // days) is still inside the month.
+            let (cy, cm, ..) = civil_datetime(now_secs());
+            let total = cy * 12 + i64::from(cm) - 1 - 2;
+            let (py, pm) = (total.div_euclid(12), total.rem_euclid(12) as u32 + 1);
+            let month = format!("{py:04}-{pm:02}");
+            let week_a = iso_week(&format!("{month}-10")).unwrap();
+            let week_b = iso_week(&format!("{month}-17")).unwrap();
+            let a = settled_weekly(root, &week_a, "# w-a\n- a\n");
+            let b = settled_weekly(root, &week_b, "# w-b\n- b\n");
+
+            let months = rollupable_buckets(root, &MONTHLY);
+            let august = months
+                .iter()
+                .find(|m| m.bucket == month)
+                .unwrap_or_else(|| panic!("both weeks fall in {month}: {months:?}"));
+            assert_eq!(august.files, vec![a.clone(), b.clone()]);
+            assert!(!august.already_rolled);
+
+            let fps = vec![file_fingerprint(root, &a), file_fingerprint(root, &b)];
+            let id = archive_rolled(root, &MONTHLY, &month, &[a.clone(), b.clone()], Some(&fps))
+                .unwrap();
+            assert!(id.starts_with("digest-"), "{id}");
+            let moved = format!("weekly/archive/{month}/{week_a}.md");
+            assert!(
+                root.join(&moved).exists(),
+                "a rolled-up weekly goes cold under weekly/archive/<month>/"
+            );
+            assert!(!root.join(&a).exists() && !root.join(&b).exists());
+            // Cold tier, so the active index must drop it — the same rule
+            // `daily/archive/` gets one layer down.
+            assert!(crate::vector_index::is_cold(&moved));
+
+            assert_eq!(undo(root, &id).unwrap(), 2);
+            assert!(root.join(&a).exists() && root.join(&b).exists());
+        });
+    }
+
+    #[test]
+    fn archive_rolled_monthly_rejects_a_bad_bucket_or_a_path_outside_weekly() {
+        crate::settings::test_support::with_isolated_data("distill-monthly-confine", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            // A month bucket, not a week one — and `2026-13` is digits that
+            // are not a month.
+            for bad in ["2026-W33", "2026-13", "2026-8", "not-a-month"] {
+                assert!(
+                    archive_rolled(root, &MONTHLY, bad, &[], None).is_err(),
+                    "{bad} must be rejected as a month bucket"
+                );
+            }
+            for bad in [
+                "../outside.md",
+                "wiki/note.md",
+                "daily/2026-08-10.md",
+                "weekly/archive/2026-08/2026-W33.md",
+                "weekly/nested/2026-W33.md",
+            ] {
+                assert!(
+                    archive_rolled(root, &MONTHLY, "2026-08", &[bad.to_string()], None).is_err(),
+                    "{bad} must be rejected"
+                );
+            }
+        });
+    }
+
     #[test]
     fn archive_rolled_days_rejects_a_path_outside_daily() {
         crate::settings::test_support::with_isolated_data("distill-rollup-confine", |_data| {
@@ -6459,7 +6729,7 @@ mod tests {
                 "daily/nested/2026-08-10.md",
             ] {
                 assert!(
-                    archive_rolled_days(root, "2026-W33", &[bad.to_string()], None).is_err(),
+                    archive_rolled(root, &WEEKLY, "2026-W33", &[bad.to_string()], None).is_err(),
                     "{bad} must be rejected"
                 );
             }

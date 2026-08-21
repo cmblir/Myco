@@ -89,6 +89,7 @@ pub fn is_cold(page: &str) -> bool {
         || page.starts_with("_inbox/quarantine/")
         || page.starts_with("sessions/archive/")
         || page.starts_with("daily/archive/")
+        || page.starts_with("weekly/archive/")
         || page.starts_with(".myco/")
 }
 
@@ -415,7 +416,7 @@ impl VectorStore {
         // self-reinforcement loop.
         matches!(
             page.split('/').next().unwrap_or(""),
-            "sessions" | "_inbox" | "raw" | "ingest-reports" | "daily" | "weekly"
+            "sessions" | "_inbox" | "raw" | "ingest-reports" | "daily" | "weekly" | "monthly"
         )
     }
 

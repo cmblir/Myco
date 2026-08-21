@@ -434,6 +434,7 @@ export function inFolder(root: string, path: string, folder: string): boolean {
 const NON_KNOWLEDGE_FOLDERS = new Set([
   "daily",
   "weekly",
+  "monthly",
   "sessions",
   "_inbox",
   "ingest-reports",

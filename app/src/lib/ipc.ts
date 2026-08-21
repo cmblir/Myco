@@ -11,7 +11,7 @@ import type {
   DistillStatus,
   PackReport,
   RestoreReport,
-  RollupWeek,
+  RollupBucket,
   RunReport,
 } from "./distill";
 import type { QuarantineItem } from "./quarantine";
@@ -828,17 +828,20 @@ export const ipc = {
     files: string[],
     fingerprints: string[] | null,
   ) => invoke<string>("archive_digested_sessions", { vault, day, files, fingerprints }),
-  // Weekly-rollup bookkeeping (ROADMAP P1) — the same pair one compression
-  // layer up: settled ISO weeks whose daily/ digests are ready to roll up, and
-  // the cold-tier move for a week that has been rolled up. `fingerprints`
-  // carries the same meaning as above (null = archive-retry path).
-  rollupableWeeks: (vault: string) => invoke<RollupWeek[]>("rollupable_weeks", { vault }),
-  archiveRolledDays: (
+  // Rollup bookkeeping — the same pair one (`"weekly"`, ROADMAP P1) or two
+  // (`"monthly"`) compression layers up: settled buckets whose source files
+  // are ready to roll up, and the cold-tier move for a bucket that has been
+  // rolled up. `fingerprints` carries the same meaning as above (null =
+  // archive-retry path).
+  rollupableBuckets: (vault: string, layer: "weekly" | "monthly") =>
+    invoke<RollupBucket[]>("rollupable_buckets", { vault, layer }),
+  archiveRolled: (
     vault: string,
-    week: string,
+    layer: "weekly" | "monthly",
+    bucket: string,
     files: string[],
     fingerprints: string[] | null,
-  ) => invoke<string>("archive_rolled_days", { vault, week, files, fingerprints }),
+  ) => invoke<string>("archive_rolled", { vault, layer, bucket, files, fingerprints }),
   // Gate-admitted Full-tier items ready for LLM ingest (Phase B, Task 3).
   fullTierItems: (vault: string) => invoke<string[]>("full_tier_items", { vault }),
   // Records a TS-side LLM step's file moves/creates into the same

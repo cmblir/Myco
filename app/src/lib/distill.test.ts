@@ -16,11 +16,13 @@ vi.mock("./sessionDigest", () => ({
 // the real function's own no-provider path.
 // Controllable weekly-rollup outcome — the second compression layer's own
 // cold-tier prune trigger keys off it, the same way the digest's does. Mocked
-// rather than exercised: weeklyRollup.ts imports from ./sessionDigest, which
+// rather than exercised: rollup.ts imports from ./sessionDigest, which
 // is already mocked here.
 const runWeeklyRollup = vi.fn();
-vi.mock("./weeklyRollup", () => ({
+const runMonthlyRollup = vi.fn();
+vi.mock("./rollup", () => ({
   runWeeklyRollup: (...a: unknown[]) => runWeeklyRollup(...a),
+  runMonthlyRollup: (...a: unknown[]) => runMonthlyRollup(...a),
 }));
 
 const runFullTierIngest = vi.fn();
@@ -223,7 +225,7 @@ describe("runDistillGuarded", () => {
     // return undefined and break the chain's .catch()).
     runSessionDigest.mockReset().mockResolvedValue(null);
     runWeeklyRollup.mockReset().mockResolvedValue(null);
-    runWeeklyRollup.mockReset().mockResolvedValue(null);
+    runMonthlyRollup.mockReset().mockResolvedValue(null);
     runFullTierIngest.mockReset().mockResolvedValue({ ingested: 0, skipped: null, errors: [] });
   });
 
@@ -274,7 +276,7 @@ describe("runDistillGuarded — cooperative stop", () => {
     vi.restoreAllMocks();
     runSessionDigest.mockReset().mockResolvedValue(null);
     runWeeklyRollup.mockReset().mockResolvedValue(null);
-    runWeeklyRollup.mockReset().mockResolvedValue(null);
+    runMonthlyRollup.mockReset().mockResolvedValue(null);
     runFullTierIngest.mockReset().mockResolvedValue({ ingested: 0, skipped: null, errors: [] });
   });
 
@@ -426,7 +428,7 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
     draftMap.mockReset();
     runSessionDigest.mockReset().mockResolvedValue(null);
     runWeeklyRollup.mockReset().mockResolvedValue(null);
-    runWeeklyRollup.mockReset().mockResolvedValue(null);
+    runMonthlyRollup.mockReset().mockResolvedValue(null);
     runFullTierIngest.mockReset().mockResolvedValue({ ingested: 0, skipped: null, errors: [] });
   });
 
@@ -526,8 +528,8 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
     // Only the weekly layer did anything: daily/archive/ is cold too, so the
     // active index still holds those records until this prune.
     runWeeklyRollup.mockResolvedValue({
-      weeksRolledUp: 1,
-      daysArchived: 7,
+      bucketsRolledUp: 1,
+      sourcesArchived: 7,
       skipped: null,
       mode: "extractive",
     });
