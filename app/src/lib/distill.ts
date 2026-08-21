@@ -262,13 +262,15 @@ export function formatRunOutcome(
   daysDigested: number,
   weeksRolledUp: number,
   t: Strings,
+  monthsRolledUp = 0,
 ): string {
   const worked =
     report.archived > 0 ||
     report.trashed > 0 ||
     report.proposals > 0 ||
     daysDigested > 0 ||
-    weeksRolledUp > 0;
+    weeksRolledUp > 0 ||
+    monthsRolledUp > 0;
   if (!worked) {
     return t.ov_distill_done_none ?? "Distill finished — nothing to process";
   }
@@ -279,7 +281,18 @@ export function formatRunOutcome(
     .replace("{a}", String(report.archived))
     .replace("{d}", String(daysDigested))
     .replace("{w}", String(weeksRolledUp))
-    .replace("{p}", String(report.proposals));
+    .replace("{p}", String(report.proposals))
+    // A month rolls up about once a month, so its count is an appended clause
+    // rather than a fourth fixed slot: a permanent "0 monthly rollups" would
+    // be noise on every other run of the year.
+    .concat(
+      monthsRolledUp > 0
+        ? (t.ov_distill_done_months ?? " · {m} monthly rollups").replace(
+            "{m}",
+            String(monthsRolledUp),
+          )
+        : "",
+    );
 }
 
 // Fallback llm_ingest_budget when getDistillConfig is unavailable — mirrors
@@ -540,14 +553,15 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
       return null;
     });
     if (mapOutcome) lastMapDraftOutcome.set(vault, mapOutcome);
-    // OS notification: distill complete, with the run's two headline counts.
+    // OS notification: distill complete, with the run's headline counts.
     // Only when the run produced something — the idle trigger fires this
     // chain routinely, and a stream of "0 proposals" notifications would
     // train the user to disable notifications entirely. Stopped-early runs
     // (the returns above) skip it too: the user was watching the popover.
     const days = outcome?.daysDigested ?? 0;
     const weeks = weekly?.bucketsRolledUp ?? 0;
-    if (report.proposals > 0 || days > 0 || weeks > 0) {
+    const months = monthly?.bucketsRolledUp ?? 0;
+    if (report.proposals > 0 || days > 0 || weeks > 0 || months > 0) {
       const t = STRINGS[useUIStore.getState().lang];
       void osNotify(
         t.notif_distill_done_title ?? "Distill finished",
@@ -555,7 +569,16 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
           "{p} proposals · {d} session days digested · {w} weeks rolled up")
           .replace("{p}", String(report.proposals))
           .replace("{d}", String(days))
-          .replace("{w}", String(weeks)),
+          .replace("{w}", String(weeks))
+          // Same appended-clause rule as the Overview line above.
+          .concat(
+            months > 0
+              ? (t.notif_distill_done_months ?? " · {m} monthly rollups").replace(
+                  "{m}",
+                  String(months),
+                )
+              : "",
+          ),
       );
     }
     return report;

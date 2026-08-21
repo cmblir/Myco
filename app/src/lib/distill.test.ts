@@ -104,6 +104,18 @@ describe("formatRunOutcome", () => {
     );
   });
 
+  it("appends the monthly clause only when a month actually rolled up", () => {
+    // A month rolls up roughly once a month; the other runs must not carry a
+    // permanent "0 monthly rollups".
+    expect(formatRunOutcome(report({ archived: 1 }), 0, 0, en)).not.toContain("monthly");
+    expect(formatRunOutcome(report({ archived: 1 }), 0, 0, en, 1)).toBe(
+      "Distill finished — archived 1 · 0 days digested · 0 weeks rolled up · 0 proposals · 1 monthly rollups",
+    );
+    // A run whose ONLY work was the monthly rollup still reports it rather
+    // than claiming nothing happened.
+    expect(formatRunOutcome(report(), 0, 0, en, 2)).toContain("2 monthly rollups");
+  });
+
   it("substitutes archived/digested/rolled-up/proposals counts", () => {
     expect(formatRunOutcome(report({ archived: 4, proposals: 2 }), 3, 1, en)).toBe(
       "Distill finished — archived 4 · 3 days digested · 1 weeks rolled up · 2 proposals",

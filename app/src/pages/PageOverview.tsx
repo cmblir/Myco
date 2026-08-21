@@ -15,6 +15,7 @@ import {
   backlogTrend,
   formatRunOutcome,
   lastDigestOutcome,
+  lastMonthlyOutcome,
   lastWeeklyOutcome,
   lastFullTierOutcome,
   lastMapDraftOutcome,
@@ -414,7 +415,7 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
   // Outcome of the last run started FROM THIS CARD — inline feedback for the
   // "지금 증류" click (an empty-backlog run resolves faster than the topbar
   // chip can register). Cleared when the next run starts.
-  const [outcome, setOutcome] = useState<{ report: RunReport; days: number; weeks: number } | null>(null);
+  const [outcome, setOutcome] = useState<{ report: RunReport; days: number; weeks: number; months: number } | null>(null);
   // Previous observed pending count, so "shrinking" is only claimed when the
   // count actually went down between observations (pendingShrank).
   const prevPending = useRef<number | null>(null);
@@ -474,6 +475,7 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
         report,
         days: lastDigestOutcome.get(currentVault.path)?.daysDigested ?? 0,
         weeks: lastWeeklyOutcome.get(currentVault.path)?.bucketsRolledUp ?? 0,
+        months: lastMonthlyOutcome.get(currentVault.path)?.bucketsRolledUp ?? 0,
       });
       await refreshAll();
     } catch (e) {
@@ -532,7 +534,7 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
           style={{ color: "#16a34a", fontSize: 12, marginTop: 6 }}
           data-testid="ov-distill-report"
         >
-          {formatRunOutcome(outcome.report, outcome.days, outcome.weeks, t)}
+          {formatRunOutcome(outcome.report, outcome.days, outcome.weeks, t, outcome.months)}
         </div>
       ) : null}
       {runError ? (
