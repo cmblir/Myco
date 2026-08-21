@@ -74,7 +74,7 @@ export interface RunReport {
 
 // ROADMAP P2 — archive lifecycle (src-tauri/src/archive_pack.rs). Only the
 // two cold trees the app writes: `raw/` is immutable and has no tree name.
-export type ArchiveTree = "sessions" | "daily";
+export type ArchiveTree = "sessions" | "daily" | "weekly";
 
 /** One `sessions/archive/<YYYY-MM>` or `daily/archive/<YYYY-Www>` bucket. */
 export interface BucketUsage {

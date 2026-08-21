@@ -60,9 +60,18 @@ let mockIndexedPages: number | null = null;
 // Fingerprint of the mock vault. Fixed: nothing writes to it.
 const MOCK_REVISION = 0x5eed_1234;
 
+/** One `?mock=1&<name>=…` query flag. Guarded because this module is imported
+ * by unit tests too, where there is no `location` at all — a bare
+ * `location.search` at module scope made the whole file unimportable outside a
+ * browser. */
+function mockParam(name: string): string | null {
+  if (typeof location === "undefined") return null;
+  return new URLSearchParams(location.search).get(name);
+}
+
 // ?mock=1&slow=1 stretches the paced mocks (reindex, distill) far enough to
 // inspect mid-run UI by hand — the Topbar activity chip/popover in particular.
-const MOCK_SLOW = new URLSearchParams(location.search).get("slow") === "1";
+const MOCK_SLOW = mockParam("slow") === "1";
 
 /// Walk the sample pages the way the real reindex does, with the same events.
 ///
@@ -211,7 +220,7 @@ function synthNodes(target: number): Node[] {
 }
 {
   const stress = Number(
-    new URLSearchParams(location.search).get("stress") ?? 0,
+    mockParam("stress") ?? 0,
   );
   if (stress > 0) NODES.push(...synthNodes(stress));
 }
@@ -225,14 +234,14 @@ const pathOf = (s: string): string => `${VAULT}/wiki/${s}.md`;
 // (the CLI provider tool-loops natively and isn't driven by agentLoop). Scoped
 // to the flag so ordinary ?mock runs (query/study) keep the CLI provider.
 const AGENT_MODE =
-  new URLSearchParams(location.search).get("agent") === "1";
+  mockParam("agent") === "1";
 
 // ?mock=1&local=1 flips the query provider to builtin-local, the one provider
 // with no generative model — which is what routes Reflect (and the session
 // digest) down their EXTRACTIVE paths. Without it those paths are unreachable
 // in a browser run, which is how the extractive reflect shipped unlooked-at.
 const LOCAL_ONLY_MODE =
-  new URLSearchParams(location.search).get("local") === "1";
+  mockParam("local") === "1";
 
 // Feature 3 (study) — a mutable in-memory card store so the review flow can
 // grade → write → re-read and see due counts drop. Seeded with a deck of due
@@ -307,6 +316,10 @@ let mockArchiveBuckets: BucketUsage[] = [
   { tree: "sessions", bucket: "2026-01", files: 214, bytes: 2_310_000, packed: false },
   { tree: "sessions", bucket: "2026-04", files: 168, bytes: 1_870_000, packed: false },
   { tree: "sessions", bucket: "2026-07", files: 121, bytes: 1_402_000, packed: false },
+  // The third tier's archive: rolled-up weeklies, bucketed by month like
+  // sessions/ (not by week like daily/) — the mock carries one so the panel's
+  // per-tree cutoff is exercisable in ?mock=1.
+  { tree: "weekly", bucket: "2026-02", files: 4, bytes: 21_000, packed: false },
 ];
 
 /** Standard ISO-8601 week-of-year string (`YYYY-Www`), the mock's stand-in
@@ -505,7 +518,7 @@ function mockClaudeRun(prompt: string): { stdout: string; stderr: string; status
 // dev affordance — gated on the URL param, never reached in a packaged build.
 function bigCount(): number {
   if (typeof window === "undefined") return 0;
-  const v = new URLSearchParams(window.location.search).get("big");
+  const v = mockParam("big");
   if (v == null) return 0;
   return Math.min(20000, Math.max(0, parseInt(v, 10) || 3000));
 }
@@ -526,7 +539,7 @@ const BIG_FOLDERS = [
 // node-sprite overdraw and LOD far harder than the even 12-folder spread.
 function bigSkew(): boolean {
   if (typeof window === "undefined") return false;
-  return new URLSearchParams(window.location.search).get("skew") === "1";
+  return mockParam("skew") === "1";
 }
 export function bigPath(i: number): string {
   if (bigSkew()) {
@@ -1131,7 +1144,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "compress_archives": {
       const { month, week } = mockArchiveCutoff((args.olderThanMonths as number) ?? 3);
       const old = mockArchiveBuckets.filter(
-        (b) => !b.packed && b.bucket < (b.tree === "sessions" ? month : week),
+        (b) => !b.packed && b.bucket < (b.tree === "daily" ? week : month),
       );
       mockArchiveBuckets = mockArchiveBuckets.map((b) =>
         old.includes(b) ? { ...b, packed: true, bytes: Math.round(b.bytes * 0.25) } : b,
@@ -1283,7 +1296,7 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // ?mock=1&ollama=1 fakes a running daemon with installed models so the
       // model list + delete UI render without a real Ollama on the machine.
       return Promise.resolve(
-        new URLSearchParams(location.search).get("ollama") === "1"
+        mockParam("ollama") === "1"
           ? {
               binary_installed: true,
               binary_path: "/usr/local/bin/ollama",

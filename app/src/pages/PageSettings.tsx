@@ -2498,7 +2498,9 @@ function SettingsArchive({
                 <span className="muted" style={{ minWidth: 72 }}>
                   {b.tree === "sessions"
                     ? (t.set_archive_tree_sessions ?? "Sessions")
-                    : (t.set_archive_tree_daily ?? "Daily")}
+                    : b.tree === "weekly"
+                      ? (t.set_archive_tree_weekly ?? "Weekly")
+                      : (t.set_archive_tree_daily ?? "Daily")}
                 </span>
                 <span style={{ minWidth: 78 }}>{b.bucket}</span>
                 <span className="muted" style={{ flex: 1 }}>

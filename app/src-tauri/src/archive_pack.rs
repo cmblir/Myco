@@ -25,14 +25,19 @@ use std::path::{Path, PathBuf};
 
 /// The two archive trees this module owns, `(tree name, vault-relative dir)`.
 /// `raw` is NOT here and must never be added: `raw/` is immutable.
-const TREES: [(&str, &str); 2] = [("sessions", "sessions/archive"), ("daily", "daily/archive")];
+const TREES: [(&str, &str); 3] = [
+    ("sessions", "sessions/archive"),
+    ("daily", "daily/archive"),
+    ("weekly", "weekly/archive"),
+];
 
 /// One archive bucket, loose or already packed.
 #[derive(serde::Serialize, Debug, PartialEq)]
 pub struct BucketUsage {
-    /// `"sessions"` or `"daily"`.
+    /// `"sessions"`, `"daily"` or `"weekly"`.
     pub tree: String,
-    /// `YYYY-MM` (sessions) or `YYYY-Www` (daily).
+    /// `YYYY-Www` (daily, one bucket per rolled-up week) or `YYYY-MM`
+    /// (sessions and weekly, one per month).
     pub bucket: String,
     /// Loose files in the bucket directory, or entries in its zip.
     pub files: usize,
@@ -65,7 +70,7 @@ fn tree_dir(tree: &str) -> Result<&'static str, String> {
         .iter()
         .find(|(name, _)| *name == tree)
         .map(|(_, dir)| *dir)
-        .ok_or_else(|| format!("unknown archive tree `{tree}` (sessions|daily only)"))
+        .ok_or_else(|| format!("unknown archive tree `{tree}` (sessions|daily|weekly only)"))
 }
 
 /// Exact bucket shape per tree — these become directory and file names, so a
@@ -74,7 +79,10 @@ fn tree_dir(tree: &str) -> Result<&'static str, String> {
 fn valid_bucket(tree: &str, bucket: &str) -> bool {
     let b = bucket.as_bytes();
     match tree {
-        "sessions" => {
+        // `weekly/archive/` buckets are months, like `sessions/archive/`:
+        // `archive_rolled` names each one after the month whose weeklies it
+        // holds.
+        "sessions" | "weekly" => {
             bucket.len() == 7
                 && b[0..4].iter().all(u8::is_ascii_digit)
                 && b[4] == b'-'
@@ -361,10 +369,14 @@ pub fn compress(root: &Path, older_than_months: u32, now: i64) -> PackReport {
         if b.packed {
             continue;
         }
-        let cut = if b.tree == "sessions" {
-            &cut_month
-        } else {
+        // `daily/archive/` buckets are ISO weeks; every other tree's are
+        // months. Comparing a `YYYY-Www` id against a `YYYY-MM` cutoff would
+        // never match ('W' sorts above every digit), so each tree is compared
+        // against a cutoff in its own format.
+        let cut = if b.tree == "daily" {
             &cut_week
+        } else {
+            &cut_month
         };
         if cut.is_empty() || b.bucket.as_str() >= cut.as_str() {
             continue; // inside the retention window — untouched
@@ -521,6 +533,36 @@ mod tests {
             }
             assert!(!root.join(format!("{rel}.zip")).exists(), "zip not removed");
         }
+    }
+
+    #[test]
+    fn the_weekly_archive_tree_compresses_on_the_month_cutoff() {
+        let tmp = vault();
+        let root = tmp.path();
+        // `weekly/archive/` holds rolled-up weeklies bucketed by MONTH (see
+        // `distill::MONTHLY`), so it is compared against the month cutoff like
+        // `sessions/`, not against the week cutoff `daily/` uses.
+        seed(root, "weekly/archive/2026-02", &[("2026-W06.md", "# w6\n")]);
+        seed(
+            root,
+            "weekly/archive/2026-07",
+            &[("2026-W28.md", "# w28\n")],
+        );
+
+        let report = compress(root, 3, NOW);
+        assert_eq!(report.buckets, 1, "failed: {:?}", report.failed);
+        assert!(root.join("weekly/archive/2026-02.zip").is_file());
+        assert!(
+            root.join("weekly/archive/2026-07/2026-W28.md").is_file(),
+            "inside the retention window — untouched"
+        );
+
+        let out = restore(root, "weekly", "2026-02").unwrap();
+        assert_eq!(out.files, 1);
+        assert_eq!(
+            std::fs::read_to_string(root.join("weekly/archive/2026-02/2026-W06.md")).unwrap(),
+            "# w6\n"
+        );
     }
 
     #[test]

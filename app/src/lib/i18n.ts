@@ -845,6 +845,7 @@ export interface Strings {
   set_archive_total?: string; // {files} {size} {buckets}
   set_archive_tree_sessions?: string;
   set_archive_tree_daily?: string;
+  set_archive_tree_weekly?: string;
   set_archive_packed?: string;
   set_archive_older_than?: string; // {n}
   set_archive_compress?: string;
@@ -1975,6 +1976,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_archive_total: "{files} files, {size} across {buckets} buckets",
     set_archive_tree_sessions: "Sessions",
     set_archive_tree_daily: "Daily",
+    set_archive_tree_weekly: "Weekly",
     set_archive_packed: "compressed",
     set_archive_older_than: "Compress buckets older than {n} months",
     set_archive_compress: "Compress",
@@ -3110,6 +3112,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_archive_total: "버킷 {buckets}개, 파일 {files}개, {size}",
     set_archive_tree_sessions: "세션",
     set_archive_tree_daily: "일간",
+    set_archive_tree_weekly: "주간",
     set_archive_packed: "압축됨",
     set_archive_older_than: "{n}개월 이상 지난 버킷 압축",
     set_archive_compress: "압축",
@@ -4090,6 +4093,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_archive_total: "バケット{buckets}個、ファイル{files}件、{size}",
     set_archive_tree_sessions: "セッション",
     set_archive_tree_daily: "デイリー",
+    set_archive_tree_weekly: "ウィークリー",
     set_archive_packed: "圧縮済み",
     set_archive_older_than: "{n}ヶ月より古いバケットを圧縮",
     set_archive_compress: "圧縮",
