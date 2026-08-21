@@ -35,6 +35,17 @@ describe("formatCrashReport", () => {
     expect(out).toContain("_not specified_");
   });
 
+  it("keeps a multi-line panic payload whole inside the fence", () => {
+    const line =
+      "[unix 1] panic at src/vault.rs:1:1: assertion `left == right` failed\n  left: 1\n right: 2";
+    const out = formatCrashReport({
+      appVersion: "0.4.0",
+      osVersion: "macOS 14.5",
+      panicLine: line,
+    });
+    expect(out).toContain("```\n" + line + "\n```");
+  });
+
   it("survives a multi-byte panic message untouched", () => {
     const line = "[unix 1] panic at src/vault.rs:1:1: 제목한글텍스트";
     const out = formatCrashReport({

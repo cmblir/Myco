@@ -29,6 +29,7 @@ vi.mock("./fullTierIngest", () => ({
 }));
 
 import {
+  archiveBucketKey,
   backlogTrend,
   formatRunOutcome,
   lastRunLabel,
@@ -42,8 +43,18 @@ import { ipc } from "./ipc";
 import { STRINGS } from "./i18n";
 import { useVaultStore } from "../stores/vaultStore";
 import { useReindexStore } from "../stores/reindexStore";
-import type { DistillConfig, RunReport } from "./distill";
+import type { BucketUsage, DistillConfig, RunReport } from "./distill";
 import type { EmbeddingsStatus, FileNode, MycoSettings } from "./ipc";
+
+describe("archiveBucketKey", () => {
+  it("stays unique when a loose bucket and its own zip coexist (partial restore)", () => {
+    // Real shape `archive_usage` can return after a restore fails partway:
+    // the bucket exists as both a loose directory and its untouched zip.
+    const loose: BucketUsage = { tree: "daily", bucket: "2026-W02", files: 1, bytes: 100, packed: false };
+    const packed: BucketUsage = { tree: "daily", bucket: "2026-W02", files: 7, bytes: 41_000, packed: true };
+    expect(archiveBucketKey(loose)).not.toBe(archiveBucketKey(packed));
+  });
+});
 
 describe("backlogTrend", () => {
   it("flat with fewer than two samples", () => {

@@ -309,13 +309,32 @@ let mockArchiveBuckets: BucketUsage[] = [
   { tree: "sessions", bucket: "2026-07", files: 121, bytes: 1_402_000, packed: false },
 ];
 
-/** `YYYY-MM` `n` months back — the mock's stand-in for `archive_pack::cutoff`.
- *  Weeks (`YYYY-Www`) sort below any `YYYY-MM` of the same year, so the daily
- *  buckets simply compare against the same string. */
-function mockArchiveCutoff(months: number): string {
+/** Standard ISO-8601 week-of-year string (`YYYY-Www`), the mock's stand-in
+ *  for `distill::iso_week`'s Thursday rule: a date belongs to the week
+ *  containing its Thursday, so a week straddling a year boundary keeps one
+ *  name instead of splitting under two. */
+function isoWeekOf(d: Date): string {
+  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const dow = (date.getUTCDay() + 6) % 7; // Mon=0..Sun=6
+  date.setUTCDate(date.getUTCDate() - dow + 3); // nearest Thursday
+  const week1Thu = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
+  const w1dow = (week1Thu.getUTCDay() + 6) % 7;
+  week1Thu.setUTCDate(week1Thu.getUTCDate() - w1dow + 3);
+  const weekNum = 1 + Math.round((date.getTime() - week1Thu.getTime()) / (7 * 86_400_000));
+  return `${date.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
+}
+
+/** `{month, week}` cutoff `n` months back — the mock's stand-in for
+ *  `archive_pack::cutoff`. The real cutoff compares each tree's bucket id
+ *  against a cutoff in THAT tree's own format (sessions: `YYYY-MM`, daily:
+ *  `YYYY-Www`) — comparing a `YYYY-Www` id against a `YYYY-MM` cutoff is
+ *  apples to oranges lexicographically ('W' sorts above every digit), so it
+ *  would never match and a daily bucket would never compress. */
+function mockArchiveCutoff(months: number): { month: string; week: string } {
   const d = new Date();
   d.setUTCMonth(d.getUTCMonth() - months);
-  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  const month = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  return { month, week: isoWeekOf(d) };
 }
 
 // Quarantine review (ROADMAP P0) — seeded so ?mock=1 renders the Feedback
@@ -1105,8 +1124,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "archive_usage":
       return Promise.resolve(mockArchiveBuckets);
     case "compress_archives": {
-      const cutoff = mockArchiveCutoff((args.olderThanMonths as number) ?? 3);
-      const old = mockArchiveBuckets.filter((b) => !b.packed && b.bucket < cutoff);
+      const { month, week } = mockArchiveCutoff((args.olderThanMonths as number) ?? 3);
+      const old = mockArchiveBuckets.filter(
+        (b) => !b.packed && b.bucket < (b.tree === "sessions" ? month : week),
+      );
       mockArchiveBuckets = mockArchiveBuckets.map((b) =>
         old.includes(b) ? { ...b, packed: true, bytes: Math.round(b.bytes * 0.25) } : b,
       );

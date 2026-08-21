@@ -49,6 +49,7 @@ import { useReindexStore } from "../stores/reindexStore";
 import { useUpdateStore } from "../stores/updateStore";
 import type { UpdateState } from "../stores/updateStore";
 import {
+  archiveBucketKey,
   backlogTrend,
   GATE_MIN_WIKI_PAGES,
   lastDigestOutcome,
@@ -2467,7 +2468,7 @@ function SettingsArchive({
           >
             {usage.map((b) => (
               <li
-                key={`${b.tree}/${b.bucket}`}
+                key={archiveBucketKey(b)}
                 className="row"
                 style={{ gap: 8, alignItems: "center", fontSize: 12.5 }}
               >
@@ -3109,7 +3110,17 @@ function CrashReport({ t, appVersion }: { t: Strings; appVersion: string }): JSX
       <div className="muted" style={{ fontSize: 13 }}>
         {at}
       </div>
-      <div style={{ fontSize: 13, fontFamily: "var(--font-mono, monospace)" }}>
+      <div
+        style={{
+          fontSize: 13,
+          fontFamily: "var(--font-mono, monospace)",
+          // A Rust panic message can span lines (assert_eq!'s output, for
+          // one) — without this, the browser default collapses every
+          // newline into a space and it renders as one unreadable run-on.
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+        }}
+      >
         {entry.message}
       </div>
       <label className="col" style={{ gap: 4 }}>

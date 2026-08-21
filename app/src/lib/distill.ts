@@ -87,6 +87,16 @@ export interface BucketUsage {
   packed: boolean;
 }
 
+/** Unique React key for one archive bucket row. `${tree}/${bucket}` alone can
+ *  collide: a restore that fails partway (see the Rust `archive_pack::restore`
+ *  doc comment on its resumable contract) can leave a bucket as BOTH a loose
+ *  directory and its untouched zip at once, so `archive_usage` returns two
+ *  rows for the same tree+bucket — `packed` is the data field that actually
+ *  tells them apart. */
+export function archiveBucketKey(b: BucketUsage): string {
+  return `${b.tree}/${b.bucket}/${b.packed}`;
+}
+
 export interface PackReport {
   buckets: number;
   files: number;

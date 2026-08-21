@@ -36,6 +36,20 @@ export const SETTINGS_BUNDLE_VERSION = 1;
  * (see settings.rs's own header comment), so this is a block-list. */
 const SETTINGS_EXCLUDED_KEYS = ["myco_pro_url", "myco_pro_email"] as const;
 
+/** `providers.myco_pro` (the connected-provider flag) rides inside the nested
+ * `providers` object, so SETTINGS_EXCLUDED_KEYS above — which only strips
+ * top-level `settings` keys — never reaches it, and it travels whole. That
+ * flag must not travel without myco_pro_url/myco_pro_email, or an import
+ * leaves a machine with no working credential showing myco Pro as connected.
+ * Since those identity fields must not travel either (see comment above),
+ * the flag is stripped the same way instead of being made to travel with
+ * them. */
+function omitProvidersMycoPro(settings: Record<string, unknown>): Record<string, unknown> {
+  const providers = settings.providers;
+  if (typeof providers !== "object" || providers === null) return settings;
+  return { ...settings, providers: omit(providers as Record<string, unknown>, ["myco_pro"]) };
+}
+
 /** Graph-settings fields excluded: the live filter/mode state (search box,
  * tag/folder filter, multiverse toggle) is per-session, not part of a "look" —
  * mirrors exactly what saveLook() already strips when saving a named look. */
@@ -118,7 +132,9 @@ export function buildSettingsBundle(
     schemaVersion: SETTINGS_BUNDLE_VERSION,
     appVersion,
     exportedAt: new Date().toISOString(),
-    settings: omit(currentSettings as unknown as Record<string, unknown>, SETTINGS_EXCLUDED_KEYS),
+    settings: omitProvidersMycoPro(
+      omit(currentSettings as unknown as Record<string, unknown>, SETTINGS_EXCLUDED_KEYS),
+    ),
     ui: pick(useUIStore.getState() as unknown as Record<string, unknown>, UI_KEYS),
     graph: omit(loadGraphSettings() as unknown as Record<string, unknown>, GRAPH_EXCLUDED_KEYS),
     savedLooks: loadSavedLooks(),
@@ -257,6 +273,15 @@ export function validateSettingsBundle(raw: unknown, currentSettings: MycoSettin
   const graphTemplate = omit(loadGraphSettings() as unknown as Record<string, unknown>, GRAPH_EXCLUDED_KEYS);
 
   const settings = applyTemplate(settingsTemplate, r.settings, "settings", errors);
+  // Never let an import set providers.myco_pro — this machine's own value
+  // always wins, matching myco_pro_url/email above (which the flag is
+  // meaningless without). Enforced here too, not just at export, so a
+  // hand-edited or pre-fix export file can't smuggle it back in.
+  if (settings.providers && typeof settings.providers === "object") {
+    (settings.providers as Record<string, unknown>).myco_pro = (
+      currentSettings.providers as unknown as Record<string, unknown>
+    ).myco_pro;
+  }
   const ui = applyTemplate(uiTemplate, r.ui, "ui", errors);
   const graph = applyTemplate(graphTemplate, r.graph, "graph", errors);
   const savedLooks = savedLooksArray(r.savedLooks, "savedLooks", errors);

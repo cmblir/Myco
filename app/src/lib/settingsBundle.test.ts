@@ -82,6 +82,26 @@ describe("buildSettingsBundle / exclusion", () => {
     expect(JSON.stringify(bundle)).not.toContain("secret-tenant");
   });
 
+  it("never puts providers.myco_pro in the export either — it's meaningless without the identity fields above", () => {
+    const settings = fakeSettings({ providers: { ...fakeSettings().providers, myco_pro: true } });
+    const bundle = buildSettingsBundle("0.4.0", settings);
+    expect(bundle.settings.providers).not.toHaveProperty("myco_pro");
+  });
+
+  it("does not let an import flip providers.myco_pro on for a machine with no account", () => {
+    const source = fakeSettings({ providers: { ...fakeSettings().providers, myco_pro: true } });
+    const bundle = buildSettingsBundle("0.4.0", source);
+    const raw = JSON.parse(JSON.stringify(bundle)) as Record<string, unknown>;
+    // Simulate a hand-crafted or pre-fix export that still carries the flag.
+    (raw.settings as Record<string, unknown> & { providers: Record<string, unknown> }).providers.myco_pro = true;
+
+    const target = fakeSettings(); // myco_pro: false, no account on this machine
+    const result = validateSettingsBundle(raw, target);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect((result.data.settings.providers as Record<string, unknown>).myco_pro).toBe(false);
+  });
+
   it("does not carry the live graph filter/mode state (session, not a look)", () => {
     saveGraphSettings({
       ...loadGraphSettings(),

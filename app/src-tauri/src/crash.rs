@@ -59,7 +59,26 @@ pub fn recent_panics(path: &Path, limit: usize) -> Vec<PanicEntry> {
         return Vec::new();
     }
     let text = String::from_utf8_lossy(&buf);
-    let mut entries: Vec<PanicEntry> = text.lines().filter_map(parse_panic_line).collect();
+    let mut entries: Vec<PanicEntry> = Vec::new();
+    for line in text.lines() {
+        if let Some(entry) = parse_panic_line(line) {
+            entries.push(entry);
+        } else if !line.starts_with("[unix ") {
+            // A Rust panic payload can legitimately span lines (e.g.
+            // `assert_eq!`'s multi-line output), and the hook's `writeln!`
+            // writes it verbatim — so a line that doesn't even look like a
+            // new entry's header is a continuation of the previous one, not
+            // garbage. A line that DOES start with "[unix " but still fails
+            // to parse is a header clipped mid-write, and stays dropped like
+            // before rather than getting glued onto the prior message.
+            if let Some(last) = entries.last_mut() {
+                last.message.push('\n');
+                last.message.push_str(line);
+                last.raw.push('\n');
+                last.raw.push_str(line);
+            }
+        }
+    }
     if entries.len() > limit {
         entries.drain(0..entries.len() - limit);
     }
@@ -157,6 +176,35 @@ mod tests {
         let found = recent_panics(&path, 10);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].message, e.message);
+    }
+
+    #[test]
+    fn multiline_panic_message_is_kept_whole() {
+        // `assert_eq!`-shaped panics write a multi-line payload verbatim; the
+        // parser used to split on '\n' and keep only the header line.
+        let line = "[unix 1755000004] panic at src/vault.rs:9:1: assertion `left == right` failed\n  left: 1\n right: 2";
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_log(&dir, &format!("{line}\n"));
+        let found = recent_panics(&path, 10);
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            found[0].message,
+            "assertion `left == right` failed\n  left: 1\n right: 2"
+        );
+        assert_eq!(found[0].raw, line);
+    }
+
+    #[test]
+    fn a_clipped_header_after_a_multiline_message_is_still_dropped() {
+        // The continuation-line rule must not swallow a truncated NEXT
+        // entry's header into the PREVIOUS entry's message.
+        let good = "[unix 1755000005] panic at src/a.rs:1:1: line one\nline two\n";
+        let truncated = "[unix 1755000006] panic at src/b";
+        let dir = tempfile::tempdir().unwrap();
+        let path = write_log(&dir, &format!("{good}{truncated}"));
+        let found = recent_panics(&path, 10);
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].message, "line one\nline two");
     }
 
     #[test]
