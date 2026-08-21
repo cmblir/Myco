@@ -35,7 +35,9 @@
       "nsis"
     ],
     "macOS": {
-      "minimumSystemVersion": "10.15"
+      "minimumSystemVersion": "10.15",
+      "hardenedRuntime": true,
+      "signingIdentity": null
     },
     "resources": {
       "../../automation/digest.py": "automation/digest.py",

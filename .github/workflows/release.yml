@@ -3,14 +3,18 @@ name: release
 # Two jobs, one per trigger, because macOS and Windows reach a release by
 # genuinely different routes:
 #
-# - `push: tags` -> `macos-updater`. Builds the macOS .app + .dmg and the updater
-#   artifacts (.app.tar.gz + .sig) and opens a DRAFT release carrying latest.json,
-#   the channel tauri-plugin-updater polls. It is a DRAFT on purpose: the Apple
-#   Developer ID certificate lives in the maintainer's keychain, not in repo
-#   secrets, so the runner's .dmg is NOT signed or notarized. Swap in the locally
-#   signed .dmg (docs/SIGNING.md Part 1b), then publish. Until it is published,
+# - `push: tags` -> `macos-updater`. Builds the macOS .app + .dmg and, when the
+#   updater key secret exists, the updater artifacts (.app.tar.gz + .sig) and
+#   latest.json — the channel tauri-plugin-updater polls. It always opens a
+#   DRAFT release: signing and the updater key are both opt-in via secrets, so
+#   what the runner produced has to be checked (scripts/verify-macos-release.sh)
+#   before anyone is offered it. Until the draft is published,
 #   `releases/latest/download/latest.json` does not resolve, so no user is ever
-#   offered an update whose installer nobody signed.
+#   offered an update whose installer nobody verified.
+#
+#   Every secret in this file is optional. With none set the job still goes
+#   green: it builds an unsigned .dmg and no updater artifacts. That is what a
+#   fork or a contributor gets.
 # - `workflow_dispatch` -> `publish-tauri`. The NSIS .exe, added to an existing
 #   release on demand. Manual since v0.3.0 and unchanged here.
 on:
@@ -55,38 +59,110 @@ jobs:
         run: npm ci
         working-directory: app
 
+      # Turn signing / notarization / updater signing on ONLY for the secrets
+      # that actually exist, by exporting them through $GITHUB_ENV.
+      #
+      # Why not a plain `env:` block on the build step: an expression that
+      # resolves to a missing secret still DEFINES the variable, as an empty
+      # string, and every consumer here tests presence, not emptiness.
+      #   - tauri-bundler macos/sign.rs: `var_os("APPLE_CERTIFICATE")` ->
+      #     Some("") means "import this certificate", and `security import` of
+      #     zero bytes fails the whole bundle.
+      #   - notarize_auth(): APPLE_ID + APPLE_PASSWORD present but APPLE_TEAM_ID
+      #     absent is a HARD error (NotarizeAuthError::MissingTeamId), so the
+      #     notarization trio is all-or-nothing.
+      #   - tauri-cli bundle.rs: an empty TAURI_SIGNING_PRIVATE_KEY is still
+      #     `Ok("")` and dies later in "failed to decode secret key".
+      # Exporting only the non-empty ones leaves the rest genuinely UNSET, which
+      # is the state tauri reads as "don't sign".
+      - name: configure signing from secrets (skips what is not set)
+        id: signing
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+
+          # Heredoc form so a value with spaces, quotes or newlines cannot
+          # inject extra variables into the environment file.
+          export_secret() {
+            printf '%s<<MYCO_SECRET_EOF\n%s\nMYCO_SECRET_EOF\n' "$1" "$2" >> "$GITHUB_ENV"
+          }
+
+          signed=false
+          notarized=false
+          updater=false
+
+          if [ -n "$APPLE_CERTIFICATE" ] && [ -n "$APPLE_CERTIFICATE_PASSWORD" ]; then
+            export_secret APPLE_CERTIFICATE "$APPLE_CERTIFICATE"
+            export_secret APPLE_CERTIFICATE_PASSWORD "$APPLE_CERTIFICATE_PASSWORD"
+            # Optional: the imported certificate already carries its identity.
+            # When set, the bundler checks the two agree and fails if they don't.
+            if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+              export_secret APPLE_SIGNING_IDENTITY "$APPLE_SIGNING_IDENTITY"
+            fi
+            signed=true
+          fi
+
+          if [ "$signed" = true ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+            export_secret APPLE_ID "$APPLE_ID"
+            export_secret APPLE_PASSWORD "$APPLE_PASSWORD"
+            export_secret APPLE_TEAM_ID "$APPLE_TEAM_ID"
+            notarized=true
+          fi
+
+          if [ -n "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            export_secret TAURI_SIGNING_PRIVATE_KEY "$TAURI_SIGNING_PRIVATE_KEY"
+            if [ -n "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" ]; then
+              export_secret TAURI_SIGNING_PRIVATE_KEY_PASSWORD "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD"
+            fi
+            updater=true
+          fi
+
+          {
+            echo "signed=$signed"
+            echo "notarized=$notarized"
+            echo "updater=$updater"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "code signing: $signed | notarization: $notarized | updater artifacts: $updater"
+
       - uses: tauri-apps/tauri-action@action-v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # C++17 std::filesystem in the bundled model's ggml — see the Windows
           # job below for the full story.
           MACOSX_DEPLOYMENT_TARGET: "10.15"
-          # The minisign key the updater verifies against. NOT the Apple
-          # Developer ID certificate — different key, different purpose. Generate
-          # it and set this secret per docs/SIGNING.md Part 4; without it this job
-          # fails at the signing step with "A public key has been found, but no
-          # private key."
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # APPLE_* and TAURI_SIGNING_* deliberately do NOT appear here — the
+          # step above exported the ones that exist, and a step-level `env:`
+          # would shadow them back to empty. See its comment for why empty is
+          # worse than unset.
         with:
           projectPath: app
           tagName: ${{ github.ref_name }}
           releaseName: "myco ${{ github.ref_name }}"
-          # Draft: the .dmg built here is unsigned. Replace it with the locally
-          # signed + notarized one before publishing.
+          # Always a draft: verify the artifacts (scripts/verify-macos-release.sh)
+          # before anyone can download them.
           releaseDraft: true
           prerelease: false
-          releaseBody: >
-            DRAFT — replace the unsigned .dmg with the locally signed and
-            notarized one (docs/SIGNING.md Part 1b), then publish. latest.json
-            and the .app.tar.gz/.sig pair are the updater channel; leave them.
+          releaseBody: ${{ steps.signing.outputs.notarized == 'true' && 'DRAFT — the .dmg was signed and notarized on CI. Verify it with scripts/verify-macos-release.sh, then publish. latest.json and the .app.tar.gz/.sig pair are the updater channel; leave them.' || 'DRAFT — the .dmg built here is UNSIGNED (no Apple secrets in this repo). Replace it with a locally signed and notarized one (docs/SIGNING.md Part 1b), then publish. latest.json and the .app.tar.gz/.sig pair are the updater channel; leave them.' }}
           # `app` is required, not cosmetic: the bundler only emits the macOS
           # updater artifact when the plain .app bundle is one of the built
           # targets — a dmg-only build silently produces no .app.tar.gz. The
-          # inline --config turns updater artifacts (and their signing) on for
-          # CI only, so a local `tauri build` still needs no signing key.
-          args: '--bundles app,dmg --config {"bundle":{"createUpdaterArtifacts":true}}'
-          # includeUpdaterJson defaults to true — that is what writes latest.json.
+          # inline --config turns updater artifacts on for CI only, so a local
+          # `tauri build` still needs no signing key — and it is dropped entirely
+          # without the updater key, because signing the artifacts is not
+          # optional once they exist.
+          args: ${{ steps.signing.outputs.updater == 'true' && '--bundles app,dmg --config {"bundle":{"createUpdaterArtifacts":true}}' || '--bundles app,dmg' }}
+          # includeUpdaterJson defaults to true; latest.json is meaningless
+          # without the signed artifacts it points at.
+          includeUpdaterJson: ${{ steps.signing.outputs.updater }}
 
   publish-tauri:
     if: github.event_name == 'workflow_dispatch'
@@ -135,13 +211,12 @@ jobs:
           # bundle.macOS.minimumSystemVersion. Inert in this Windows job; the
           # macos-updater job above is where it does the work.
           MACOSX_DEPLOYMENT_TARGET: "10.15"
-          # Code signing is OFF for v0.1 (unsigned .dmg / .exe — see the release
-          # body + README Gatekeeper/SmartScreen note). The APPLE_* signing env
-          # vars are deliberately NOT passed: an unset secret resolves to an
-          # EMPTY string, and tauri-action treats a present-but-empty
-          # APPLE_CERTIFICATE as "sign" and runs `security import` with no data,
-          # which fails the whole macOS bundle. To enable signing later, add the
-          # secrets and restore the APPLE_* / AZURE_* env block per docs/SIGNING.md.
+          # Windows signing is OFF: no code-signing certificate exists yet, so
+          # the .exe ships unsigned (see the release body + the README
+          # SmartScreen note). No AZURE_* vars are passed for the same
+          # empty-string reason the macOS job explains at length — to enable
+          # Windows signing, add a gate step like that one and the
+          # bundle.windows config from docs/SIGNING.md Part 2.
         with:
           projectPath: app # the Tauri app lives in app/, not the repo root
           tagName: ${{ inputs.tag }}

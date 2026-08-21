@@ -7,21 +7,16 @@ on real macOS + Windows runners with
 [`tauri-apps/tauri-action`](https://github.com/tauri-apps/tauri-action) and
 publishes the `.dmg` / `.exe` to a GitHub Release.
 
-> [!important] Current state as of v0.4.0: macOS is signed LOCALLY, Windows is not.
-> The Developer ID certificate lives in the maintainer's login keychain, not in
-> repo secrets, so the release `.dmg` is built and notarized on the maintainer's
-> Mac (see [Part 1b](#part-1b--signing-locally-what-v030-actually-does)).
+> [!important] Current state as of v0.4.0: nothing is signed until you add the secrets.
+> The pipeline is **wired but idle**. `.github/workflows/release.yml` reads every
+> signing credential from GitHub secrets and turns each feature on only for the
+> secrets that exist — with none set it builds an unsigned `.dmg`, no updater
+> artifacts, and still goes green (so does a fork). Adding the secrets is the
+> whole switch; no workflow edit is needed.
 >
-> `.github/workflows/release.yml` has two jobs and never overwrites that signed
-> `.dmg`. On a `v*` tag push, `macos-updater` builds the macOS bundle and the
-> updater channel into a **draft** release, whose `.dmg` you replace with the
-> locally signed one before publishing ([Part 4](#part-4--updater-signing-key-in-app-updates)).
 > The Windows job stays manual-dispatch and its `.exe`
-> (`myco_x.y.z_x64-setup.exe`) is still unsigned; users unblock it once (see the
+> (`myco_x.y.z_x64-setup.exe`) is unsigned; users unblock it once (see the
 > [README](../README.md)).
->
-> The GitHub Actions route below (Part 1) stays documented and is what to use if
-> macOS signing ever moves to CI.
 
 > [!warning] Secrets are NEVER committed.
 > Every value below is a **GitHub Actions secret**, added only in
@@ -30,6 +25,97 @@ publishes the `.dmg` / `.exe` to a GitHub Release.
 > file that is tracked by Git. `tauri-action` reads them from `secrets.*` at run
 > time. If a private key or password appears in a committed file or a log, treat
 > it as compromised and revoke it.
+
+---
+
+## The checklist
+
+Follow this top to bottom. Steps 1–12 are **once, ever**. Steps 13–18 are **each
+release**. Every step links to the section that explains it.
+
+**One-time — macOS signing (steps 1–8)**
+
+1. Enroll in the [Apple Developer Program](https://developer.apple.com/programs/)
+   — $99 / year. Nothing below is issuable without it. ([1.1](#11-prerequisites))
+2. Create a **Developer ID Application** certificate at
+   <https://developer.apple.com/account> → Certificates, IDs & Profiles →
+   Certificates → **+**. Download the `.cer` and double-click it to import into
+   Keychain Access. ([1.2](#12-create-the-developer-id-application-certificate))
+3. Read back your identity and Team ID:
+   ```bash
+   security find-identity -v -p codesigning
+   ```
+   Copy the whole string — `Developer ID Application: Your Name (ABCDE12345)`.
+   The 10 characters in parentheses are the Team ID. ([1.4](#14-find-your-signing-identity-and-team-id))
+4. In Keychain Access, right-click the certificate → **Export** → *Personal
+   Information Exchange (.p12)*, expanded so the **private key** is included.
+   Set a strong password. ([1.3](#13-export-the-certificate-as-a-p12))
+5. Base64 the `.p12` onto one line:
+   ```bash
+   openssl base64 -A -in certificate.p12 -out certificate-base64.txt
+   ```
+6. Create an **app-specific password** at <https://account.apple.com> → Sign-In
+   and Security → App-Specific Passwords. This is *not* your Apple ID password.
+   ([1.6](#16-get-an-app-specific-password-for-the-apple-id-notarization-method))
+7. Set the six macOS secrets (names are exact — the bundler reads these env var
+   names, see [1.7](#17-macos-secrets-to-add-settings--secrets-and-variables--actions)):
+   ```bash
+   gh secret set APPLE_CERTIFICATE < certificate-base64.txt
+   gh secret set APPLE_CERTIFICATE_PASSWORD    # the .p12 password from step 4
+   gh secret set APPLE_SIGNING_IDENTITY        # the full string from step 3
+   gh secret set APPLE_ID                      # your Apple account email
+   gh secret set APPLE_PASSWORD                # the app-specific password from step 6
+   gh secret set APPLE_TEAM_ID                 # the 10-character team ID
+   ```
+8. **Delete the local key material** — it is now in GitHub and nowhere else:
+   ```bash
+   rm certificate.p12 certificate-base64.txt
+   ```
+
+**One-time — the updater key (steps 9–12). Different key, different job — see
+[Part 4](#part-4--updater-signing-key-in-app-updates). Skip if you do not want
+in-app updates yet; everything above still works.**
+
+9. Generate the minisign keypair:
+   ```bash
+   cd app && npm run tauri -- signer generate -w ~/.tauri/myco.key
+   ```
+10. Store the private half:
+    ```bash
+    gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/myco.key
+    gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD   # only if you chose a password
+    ```
+11. Paste the single base64 line from `~/.tauri/myco.key.pub` into
+    `app/src-tauri/tauri.conf.json` → `plugins.updater.pubkey` (currently `""`).
+    The public half is safe to commit; the private half never is.
+12. Commit that config change.
+
+**Each release (steps 13–18)**
+
+13. Bump `version` in `app/src-tauri/tauri.conf.json` and `app/package.json`,
+    commit.
+14. Tag and push — this is the only trigger:
+    ```bash
+    git tag v0.4.1 && git push origin v0.4.1
+    ```
+    The `macos-updater` job builds, signs, notarizes, and opens a **draft**
+    release. Its log line `code signing: … | notarization: … | updater
+    artifacts: …` tells you which secrets it found.
+15. Download the draft's `.dmg` and verify it before anyone else can:
+    ```bash
+    gh release download v0.4.1 --pattern '*.dmg' --dir /tmp/myco-release
+    ./scripts/verify-macos-release.sh /tmp/myco-release/myco_0.4.1_aarch64.dmg
+    ```
+    It must print **OK — safe to publish**. What each check means and what a
+    failure implies: [Part 3](#part-3--verify-the-signature).
+16. If step 14 reported `code signing: false` (no secrets yet), build and sign
+    locally instead and swap the `.dmg` into the draft
+    ([Part 1b](#part-1b--signing-locally-no-secrets-leave-your-machine)).
+17. Publish the draft. Only now does
+    `releases/latest/download/latest.json` resolve, so no user is ever offered
+    an update built from an artifact nobody verified.
+18. Optionally run the `release` workflow's **workflow_dispatch** with the same
+    tag to attach the (unsigned) Windows `.exe`.
 
 ---
 
@@ -143,45 +229,75 @@ as a repository secret with the **same name**:
 | `APPLE_PASSWORD` | The **app-specific password** from step 1.6 (not your login password). |
 | `APPLE_TEAM_ID` | Your 10-character Team ID, e.g. `ABCDE12345`. |
 
-### 1.8 Wire them into the workflow
+### 1.8 How the workflow consumes them (already wired — nothing to edit)
 
-In `.github/workflows/release.yml`, add the secrets to the **`env:` block of the
-`tauri-apps/tauri-action` step** (the existing step already passes
-`GITHUB_TOKEN`). `tauri-action` imports the certificate into a temporary keychain
-and runs notarization automatically when these are set:
+`.github/workflows/release.yml` has a `configure signing from secrets` step
+before the build. It exports each credential through `$GITHUB_ENV` **only when
+the secret is non-empty**, and reports what it turned on:
 
-```yaml
-- uses: tauri-apps/tauri-action@action-v0.6.2
-  env:
-    GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    # macOS signing + notarization — only consumed on the macOS runner.
-    APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-    APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-    APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-    APPLE_ID: ${{ secrets.APPLE_ID }}
-    APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-    APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-  with:
-    # ... existing inputs unchanged ...
+```
+code signing: true | notarization: true | updater artifacts: false
 ```
 
-These variables are harmless on the Windows runner — it ignores them — so the
-single shared `env:` block is fine for the current matrix.
+Adding the secrets from step 7 is the entire switch. With none set, the APPLE_\*
+variables stay unset, tauri skips signing, and the job still succeeds with an
+unsigned `.dmg`.
 
-> [!note] Manual-keychain variant.
-> Some setups add an explicit "import Apple Developer Certificate" step (using
-> `security create-keychain` / `security import`) plus a `KEYCHAIN_PASSWORD`
-> secret, and only pass `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID` to
-> `tauri-action`. That is equivalent but more verbose. The `env:`-block approach
-> above is the documented, lower-maintenance path for `tauri-action` and is what
-> myco should use unless a future need forces the manual variant.
+> [!warning] Why the secrets are not simply listed in the step's `env:` block.
+> A GitHub expression for a **missing** secret still *defines* the variable — as
+> an empty string — and every consumer tests presence, not emptiness:
+>
+> - `tauri-bundler` `macos/sign.rs` reads `var_os("APPLE_CERTIFICATE")`, so `""`
+>   means "import this certificate" and `security import` of zero bytes fails
+>   the whole bundle.
+> - `notarize_auth()` returns a **hard error** (`NotarizeAuthError::MissingTeamId`)
+>   when `APPLE_ID` + `APPLE_PASSWORD` are present without `APPLE_TEAM_ID` — so
+>   the notarization trio is all-or-nothing.
+> - `tauri-cli` `bundle.rs` reads `TAURI_SIGNING_PRIVATE_KEY` with `var()`, and
+>   an empty value survives to "failed to decode secret key".
+>
+> Unset and empty are different states, and only unset means "skip".
+
+`APPLE_SIGNING_IDENTITY` is the one optional member of the six: the imported
+certificate already carries its identity. When you do set it, the bundler checks
+the two agree and fails loudly if they do not — which is why it is worth setting.
+
+> [!note] Notarization credentials — the other accepted form.
+> Instead of `APPLE_ID` / `APPLE_PASSWORD` / `APPLE_TEAM_ID`, `tauri-bundler`
+> also accepts an App Store Connect API key via `APPLE_API_KEY`,
+> `APPLE_API_ISSUER` and `APPLE_API_KEY_PATH` (falling back to
+> `./private_keys`, `~/private_keys`, `~/.private_keys`,
+> `~/.appstoreconnect/private_keys` for an `AuthKey_<key-id>.p8`). The Apple ID
+> trio is checked first. This guide uses it because it needs no key file on the
+> runner; taking the API-key route means adding those three to the gate step.
+
+### 1.9 What `tauri.conf.json` contributes
+
+`bundle.macOS` in [`app/src-tauri/tauri.conf.json`](../app/src-tauri/tauri.conf.json)
+carries the two signing-relevant keys. **That block cannot hold explanatory
+comments** — Tauri deserializes it with `deny_unknown_fields`, so a `"//"` key
+(the trick used in `plugins.updater`) makes the build fail. The explanation
+lives here instead:
+
+| Key | Value now | What you may change |
+|-----|-----------|---------------------|
+| `hardenedRuntime` | `true` | Leave it. Notarization **requires** the hardened runtime; `true` is also tauri's default, and it is spelled out so nobody silently flips it. |
+| `signingIdentity` | `null` | Fill in only if you want **every local `tauri build`** to sign with a fixed identity. Leaving it `null` keeps `APPLE_SIGNING_IDENTITY` (env / secret) in charge. Never set it to `""` — an empty identity is not "off", it is `codesign -s ""` and fails. |
+
+There is deliberately **no `entitlements` file**. myco needs none: it is not
+sandboxed, loads no unsigned libraries, and asks for no JIT, so the default
+hardened runtime is enough — and claiming entitlements you are not entitled to
+is a notarization rejection. Add one (`"entitlements": "entitlements.plist"`)
+only if a future feature actually needs a specific `com.apple.security.cs.*`
+exception.
 
 ---
 
-## Part 1b — Signing locally (what v0.3.0 actually does)
+## Part 1b — Signing locally (no secrets leave your machine)
 
 With the Developer ID certificate already in your login keychain, no secret ever
-leaves the machine.
+leaves the machine. Use this when you do not want the certificate in GitHub at
+all, or when step 14 reported `code signing: false`.
 
 v0.3.0 ships **Apple Silicon only**. Every recorded download of a `universal`
 bundle across v0.1.0-v0.2.2 came from the single v0.1.0 release, so there is no
@@ -205,22 +321,18 @@ cd app && npm run tauri build -- --target aarch64-apple-darwin
 ```
 
 Tauri signs the bundle and submits it to Apple for notarization as part of the
-build. Verify before shipping, on the built `.app` and the `.dmg`:
+build. Verify before shipping — the script runs every check in
+[Part 3](#part-3--verify-the-signature) and defaults to exactly this target dir:
 
 ```bash
-codesign --verify --deep --strict --verbose=2 \
-  app/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/myco.app
-spctl --assess --type execute --verbose \
-  app/src-tauri/target/aarch64-apple-darwin/release/bundle/macos/myco.app
-xcrun stapler validate \
-  app/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/myco_*.dmg
+./scripts/verify-macos-release.sh
 ```
 
-`spctl` must say **accepted / source=Notarized Developer ID**. Then attach the
-`.dmg` to the release:
+It must print **OK — safe to publish**. Then attach the `.dmg` to the release:
 
 ```bash
-gh release create v0.3.0 <path-to-dmg> --title "myco v0.3.0" --notes-file <notes>
+gh release upload v0.4.1 \
+  app/src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/myco_*.dmg --clobber
 ```
 
 ---
@@ -345,22 +457,29 @@ Wire them into the same `tauri-action` step `env:` block:
 
 ## Part 3 — Verify the signature
 
-After a signed build, verify the artifacts locally before you trust the release.
+Never publish a release you have not run this against.
 
-### macOS
+### macOS — `scripts/verify-macos-release.sh`
 
 ```bash
-# Inspect the signature and the signing identity (Authority lines).
-codesign -dv --verbose=4 /Applications/myco.app
-
-# Assess against Gatekeeper policy — this is the real test users experience.
-# A notarized, correctly signed app prints: "accepted" and "source=Notarized Developer ID".
-spctl -a -vvv /Applications/myco.app
+./scripts/verify-macos-release.sh                      # the local signed build
+./scripts/verify-macos-release.sh /tmp/myco_0.4.1.dmg  # a draft release's .dmg
+./scripts/verify-macos-release.sh --dry-run            # print the checks, run nothing
 ```
 
-If `spctl` says `rejected` or `source=Unnotarized Developer ID`, signing
-succeeded but notarization did not — re-check `APPLE_ID`, `APPLE_PASSWORD`
-(app-specific!), and `APPLE_TEAM_ID`.
+It exits **0** only when every required check passes. `bundle.targets` is
+`["dmg", "nsis"]`, so a normal build leaves no loose `.app` — the script mounts
+the `.dmg` read-only and checks the copy inside, which is the one users run.
+
+| Check | Required | Meaning of a failure |
+|-------|----------|----------------------|
+| `codesign --verify --deep --strict` on the `.app` | yes | The signature is missing or a nested binary/resource was modified after signing. |
+| `codesign -dv` authority | info | Prints who signed it — confirm it is your Developer ID, not `adhoc`. |
+| `spctl --assess --type execute` on the `.app` | yes | Must say **accepted / source=Notarized Developer ID**. `source=Unnotarized Developer ID` means signing worked but notarization did not — re-check `APPLE_ID`, `APPLE_PASSWORD` (app-specific!) and `APPLE_TEAM_ID`. |
+| `xcrun stapler validate` on the `.app` | yes | No ticket attached, so a machine that has never seen the app and is offline will block it. |
+| `codesign --verify --strict` on the `.dmg` | yes | The disk image itself is unsigned — Tauri signs it right after building it. |
+| `spctl --assess --type open` on the `.dmg` | info | Tauri notarizes and staples the **`.app`**, then wraps it; the `.dmg` has no ticket of its own, so this can read `rejected` on a perfectly good release. Judge it together with the `.app` rows. |
+| `*.app.tar.gz` has a matching `.sig` | yes, when present | The updater tarball is unsigned and every installed myco will refuse it. |
 
 ### Windows
 
@@ -388,10 +507,13 @@ Until this key exists, the app is honest about it rather than broken:
 `plugins.updater.pubkey` in `app/src-tauri/tauri.conf.json` is an empty string,
 so **Settings → About → Check for updates** reports *"No update channel
 configured"* and never contacts the network. Nothing else changes, and a local
-`tauri build` needs no key at all (updater artifacts are switched on only by the
-`--config` flag in the `macos-updater` CI job).
+`tauri build` needs no key at all — CI switches updater artifacts on with a
+`--config` flag, and only when it finds `TAURI_SIGNING_PRIVATE_KEY`. Without the
+secret it drops `createUpdaterArtifacts` and `includeUpdaterJson` entirely, so a
+keyless build (a fork's, or yours before step 9) produces a `.dmg` and nothing
+else instead of failing at "A public key has been found, but no private key."
 
-### The two commands
+### The two commands (checklist steps 9–10)
 
 **1. Generate the keypair — once, on your machine.**
 
@@ -416,13 +538,18 @@ gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 repository secret**, name `TAURI_SIGNING_PRIVATE_KEY`, body = the whole contents
 of `~/.tauri/myco.key`.)
 
-### Then commit the public half
+### Then commit the public half (checklist steps 11–12)
 
 Paste the single base64 line from `~/.tauri/myco.key.pub` into
 `app/src-tauri/tauri.conf.json` → `plugins.updater.pubkey`, replacing the empty
 string. That is the switch that turns the feature on: the About page starts
 checking, and `.github/workflows/release.yml`'s `macos-updater` job starts
 signing on every `v*` tag push.
+
+> [!important] Commit the pubkey before the first tag after setting the secret.
+> The secret alone makes CI build updater artifacts, and signing them needs the
+> matching public key from the config — a tag pushed between step 10 and step 12
+> fails with "failed to decode pubkey". Steps 11–12 exist to be done first.
 
 > [!warning] The private key is the whole channel.
 > Anyone holding it can ship an "update" that every myco install accepts and
@@ -432,16 +559,12 @@ signing on every `v*` tag push.
 
 ### Release flow once it is wired
 
-1. `git tag v0.4.0 && git push origin v0.4.0` → the `macos-updater` job builds
-   the `.app`, `.dmg`, `.app.tar.gz` + `.sig`, and `latest.json`, and opens a
-   **draft** release.
-2. Replace the draft's unsigned `.dmg` with your locally signed + notarized one
-   ([Part 1b](#part-1b--signing-locally-what-v030-actually-does)). Leave
-   `latest.json` and the `.app.tar.gz`/`.sig` pair alone — they are the channel.
-3. Publish the release. Only now does
-   `releases/latest/download/latest.json` resolve, so no user is ever offered an
-   update built from an unsigned `.dmg`.
-4. Optionally dispatch the `publish-tauri` job to attach the Windows `.exe`.
+That is checklist steps 13–18: tag → the `macos-updater` job builds the `.app`,
+`.dmg`, `.app.tar.gz` + `.sig` and `latest.json` into a **draft** →
+`scripts/verify-macos-release.sh` the `.dmg` → publish → optionally dispatch the
+Windows `.exe`. Leave `latest.json` and the `.app.tar.gz`/`.sig` pair alone if
+you swap the `.dmg`; they are the channel, and they are signed with the updater
+key, not the Apple one.
 
 The updater channel is macOS-aarch64 only for now: `latest.json` carries just the
 `darwin-aarch64` platform, and any other OS/arch shows *"No update channel for
@@ -483,10 +606,19 @@ TAURI_SIGNING_PRIVATE_KEY_PASSWORD   # only if the key has a password
 All added only in **repo Settings → Secrets and variables → Actions**. Never in
 a tracked file.
 
+Every macOS and updater name above was read out of the pinned toolchain, not
+from memory — `tauri-bundler 2.9.4` `src/bundle/macos/sign.rs`, `tauri-cli
+2.11.1` `src/interface/rust.rs` and `src/bundle.rs`, and the `MacConfig` struct
+in `tauri-utils 2.9.x` `src/config.rs`. If you bump the Tauri toolchain, re-read
+those four files before trusting this table.
+
 ---
 
 ## Sources
 
+- `tauri-bundler` 2.9.4 — `src/bundle/macos/sign.rs` (`APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_ID`, `APPLE_PASSWORD`, `APPLE_TEAM_ID`, `APPLE_API_*`, the `MissingTeamId` hard error)
+- `tauri-cli` 2.11.1 — `src/interface/rust.rs` (`APPLE_SIGNING_IDENTITY`, `APPLE_PROVIDER_SHORT_NAME`), `src/bundle.rs` (`TAURI_SIGNING_PRIVATE_KEY[_PASSWORD]`)
+- `tauri-utils` 2.9.x — `src/config.rs` `MacConfig` (`signingIdentity`, `hardenedRuntime` default `true`, `entitlements`, `deny_unknown_fields`)
 - Tauri v2 — macOS Code Signing: <https://v2.tauri.app/distribute/sign/macos/>
 - Tauri v2 — Windows Code Signing: <https://v2.tauri.app/distribute/sign/windows/>
 - `tauri-apps/tauri-action` (signing example + inputs): <https://github.com/tauri-apps/tauri-action>
