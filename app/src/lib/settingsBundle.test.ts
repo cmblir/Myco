@@ -282,4 +282,27 @@ describe("import undo", () => {
     expect(pendingImportUndo()).toBeNull();
     expect(await undoSettingsImport(live, setSettings)).toBeNull();
   });
+
+  // The snapshot goes through the EXPORT shape, which deletes
+  // providers.myco_pro — so an undo used to write settings with the key
+  // absent, which Rust persists as false: a paying subscriber silently
+  // disconnected on their own machine.
+  it("undo keeps this machine's myco Pro connection", async () => {
+    const target = fakeSettings({});
+    target.providers = { ...target.providers, myco_pro: true };
+    const bundle = buildSettingsBundle("0.4.0", fakeSettings({}));
+    const res = validateSettingsBundle(JSON.parse(JSON.stringify(bundle)), target);
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+
+    let live: MycoSettings = target;
+    const write = async (s: MycoSettings) => {
+      live = s;
+    };
+    await applySettingsBundle(res.data, live, write);
+    expect(live.providers.myco_pro).toBe(true);
+    await undoSettingsImport(live, write);
+    expect(Object.keys(live.providers)).toContain("myco_pro");
+    expect(live.providers.myco_pro).toBe(true);
+  });
 });

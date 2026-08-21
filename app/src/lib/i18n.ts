@@ -53,6 +53,14 @@ export interface Strings {
   s_backup_imported?: string; // {sections}
   s_backup_import_failed?: string; // {error}
   s_backup_bad_json?: string;
+  s_backup_section_settings?: string;
+  s_backup_section_ui?: string;
+  s_backup_section_graph?: string;
+  s_backup_section_savedLooks?: string;
+  s_backup_section_queryViews?: string;
+  s_backup_section_dismissedLinkSuggestions?: string;
+  s_backup_section_reflectIgnored?: string;
+  s_backup_section_budgetThresholdUsd?: string;
   s_backup_confirm_title?: string;
   s_backup_confirm_body?: string; // {sections}
   s_backup_confirm_none?: string;
@@ -1151,6 +1159,14 @@ export const STRINGS: Record<Lang, Strings> = {
     s_backup_imported: "Restored: {sections}",
     s_backup_import_failed: "Import failed: {error}",
     s_backup_bad_json: "That file isn't valid JSON.",
+    s_backup_section_settings: "app settings",
+    s_backup_section_ui: "appearance",
+    s_backup_section_graph: "graph look",
+    s_backup_section_savedLooks: "saved graph looks",
+    s_backup_section_queryViews: "saved views",
+    s_backup_section_dismissedLinkSuggestions: "dismissed link suggestions",
+    s_backup_section_reflectIgnored: "reflect ignored items",
+    s_backup_section_budgetThresholdUsd: "budget alert threshold",
     s_backup_confirm_title: "Replace these settings?",
     s_backup_confirm_body:
       "This file replaces: {sections}. Everything it replaces is kept in memory, so you can undo it until you quit myco.",
@@ -2278,6 +2294,14 @@ export const STRINGS: Record<Lang, Strings> = {
     s_backup_imported: "복원됨: {sections}",
     s_backup_import_failed: "가져오기 실패: {error}",
     s_backup_bad_json: "유효한 JSON 파일이 아닙니다.",
+    s_backup_section_settings: "앱 설정",
+    s_backup_section_ui: "외관",
+    s_backup_section_graph: "그래프 룩",
+    s_backup_section_savedLooks: "저장된 그래프 룩",
+    s_backup_section_queryViews: "저장된 뷰",
+    s_backup_section_dismissedLinkSuggestions: "숨긴 링크 제안",
+    s_backup_section_reflectIgnored: "돌아보기 무시 항목",
+    s_backup_section_budgetThresholdUsd: "예산 알림 기준",
     s_backup_confirm_title: "이 설정들을 교체할까요?",
     s_backup_confirm_body:
       "이 파일이 교체하는 항목: {sections}. 교체되는 값은 메모리에 보관되므로 myco를 종료하기 전까지 되돌릴 수 있습니다.",
@@ -4365,6 +4389,14 @@ export const STRINGS: Record<Lang, Strings> = {
     s_backup_imported: "復元しました: {sections}",
     s_backup_import_failed: "インポートに失敗しました: {error}",
     s_backup_bad_json: "有効な JSON ファイルではありません。",
+    s_backup_section_settings: "アプリ設定",
+    s_backup_section_ui: "外観",
+    s_backup_section_graph: "グラフの見た目",
+    s_backup_section_savedLooks: "保存したグラフの見た目",
+    s_backup_section_queryViews: "保存したビュー",
+    s_backup_section_dismissedLinkSuggestions: "非表示にしたリンク提案",
+    s_backup_section_reflectIgnored: "リフレクトの非表示項目",
+    s_backup_section_budgetThresholdUsd: "予算アラートのしきい値",
     s_backup_confirm_title: "これらの設定を置き換えますか？",
     s_backup_confirm_body:
       "このファイルが置き換える対象: {sections}。置き換えられる値はメモリに保持されるため、myco を終了するまでは元に戻せます。",

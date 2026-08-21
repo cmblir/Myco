@@ -154,12 +154,17 @@ export function buildSettingsBundle(
   };
 }
 
-/** Human-readable names of the sections a bundle carries — what the confirm
- * step names before overwriting, and what the result line reports after. */
+/** Section KEYS a bundle carries, in display order. The confirm step names
+ *  what it is about to overwrite, so the names have to reach the user in the
+ *  app's own language — the caller maps these through `s_backup_section_*`.
+ *  `sectionLabels` keeps the English fallback for callers with no Strings
+ *  bundle (tests, logs). */
+export function sectionKeys(present: Set<string>): string[] {
+  return Object.keys(SECTION_LABELS).filter((k) => present.has(k));
+}
+
 export function sectionLabels(present: Set<string>): string[] {
-  return Object.keys(SECTION_LABELS)
-    .filter((k) => present.has(k))
-    .map((k) => SECTION_LABELS[k]);
+  return sectionKeys(present).map((k) => SECTION_LABELS[k]);
 }
 
 // ---- validation -------------------------------------------------------
@@ -343,7 +348,18 @@ async function writePortableState(
   currentSettings: MycoSettings,
   setSettings: (s: MycoSettings) => Promise<unknown>,
 ): Promise<void> {
-  await setSettings({ ...currentSettings, ...data.settings } as unknown as MycoSettings);
+  // `data.settings` came through the EXPORT shape, which deletes
+  // providers.myco_pro (it is meaningless without the identity fields, which
+  // never travel). The spread below replaces `providers` wholesale, so
+  // without re-forcing it here the key is simply absent and Rust's
+  // #[serde(default)] writes it back as false — an undo would quietly
+  // disconnect a paying subscriber on their own machine.
+  const settings = { ...currentSettings, ...data.settings } as MycoSettings;
+  settings.providers = {
+    ...(settings.providers as MycoSettings["providers"]),
+    myco_pro: currentSettings.providers.myco_pro,
+  };
+  await setSettings(settings);
   useUIStore.setState(data.ui as unknown as Partial<UIState>);
   saveGraphSettings({ ...loadGraphSettings(), ...data.graph } as unknown as GraphSettings);
   writeSavedLooks(data.savedLooks);

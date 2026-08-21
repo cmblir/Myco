@@ -77,7 +77,7 @@ import {
   applySettingsBundle,
   buildSettingsBundle,
   pendingImportUndo,
-  sectionLabels,
+  sectionKeys,
   undoSettingsImport,
   validateSettingsBundle,
   type ValidatedSettingsBundle,
@@ -3038,7 +3038,14 @@ function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): 
         setMessage((t.s_backup_import_failed ?? "Import failed: {error}").replace("{error}", result.error));
         return;
       }
-      setPending({ data: result.data, sections: sectionLabels(result.data.present) });
+      // Section names reach the user in the app's own language: the confirm
+      // step is naming what is about to be overwritten.
+      setPending({
+        data: result.data,
+        sections: sectionKeys(result.data.present).map(
+          (k) => (t as unknown as Record<string, string>)[`s_backup_section_${k}`] ?? k,
+        ),
+      });
     } catch (e) {
       setMessage(String(e));
     } finally {
