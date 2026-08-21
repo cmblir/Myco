@@ -110,7 +110,14 @@ export function confidenceBand(similarity: number | null): ConfidenceBand {
   return "low";
 }
 
-export type SourceTier = "note" | "map" | "digest" | "rollup" | "session" | "source";
+export type SourceTier =
+  | "note"
+  | "map"
+  | "digest"
+  | "rollup"
+  | "monthly"
+  | "session"
+  | "source";
 
 /** Which layer of the vault a citation came from, so an answer assembled out
  * of machine-written digests is not presented as the user's own writing.
@@ -138,6 +145,8 @@ export function sourceTier(page: string): SourceTier {
       return "digest";
     case "weekly":
       return "rollup";
+    case "monthly":
+      return "monthly";
     case "sessions":
       return "session";
     case "raw":

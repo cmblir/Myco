@@ -941,6 +941,7 @@ export interface Strings {
   q_cite_tier_map?: string;
   q_cite_tier_digest?: string;
   q_cite_tier_rollup?: string;
+  q_cite_tier_monthly?: string;
   q_cite_tier_session?: string;
   q_cite_tier_source?: string;
   q_cite_list_label?: string;
@@ -2082,6 +2083,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_tier_map: "drafted map",
     q_cite_tier_digest: "daily digest",
     q_cite_tier_rollup: "weekly rollup",
+    q_cite_tier_monthly: "monthly rollup",
     q_cite_tier_session: "session log",
     q_cite_tier_source: "imported source",
     q_cite_list_label: "Citation confidence and source",
@@ -3216,6 +3218,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_tier_map: "초안 지도",
     q_cite_tier_digest: "일일 요약",
     q_cite_tier_rollup: "주간 요약",
+    q_cite_tier_monthly: "월간 요약",
     q_cite_tier_session: "세션 로그",
     q_cite_tier_source: "가져온 원문",
     q_cite_list_label: "인용 신뢰도와 출처 종류",
@@ -4197,6 +4200,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_tier_map: "下書きマップ",
     q_cite_tier_digest: "日次ダイジェスト",
     q_cite_tier_rollup: "週次まとめ",
+    q_cite_tier_monthly: "月次まとめ",
     q_cite_tier_session: "セッションログ",
     q_cite_tier_source: "取り込んだ原文",
     q_cite_list_label: "引用の一致度と出典の種類",

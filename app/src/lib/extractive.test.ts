@@ -126,6 +126,7 @@ describe("sourceTier", () => {
     expect(sourceTier("wiki/bpe.md")).toBe("note");
     expect(sourceTier("daily/2026-08-19.md")).toBe("digest");
     expect(sourceTier("weekly/2026-W33.md")).toBe("rollup");
+    expect(sourceTier("monthly/2026-07.md")).toBe("monthly");
     expect(sourceTier("sessions/2026-08/codex-abc.md")).toBe("session");
     expect(sourceTier("raw/paper.md")).toBe("source");
     expect(sourceTier("_inbox/drop.md")).toBe("source");

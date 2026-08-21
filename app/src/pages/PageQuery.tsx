@@ -415,6 +415,8 @@ function tierLabel(t: Strings, tier: SourceTier): string {
       return t.q_cite_tier_digest ?? "daily digest";
     case "rollup":
       return t.q_cite_tier_rollup ?? "weekly rollup";
+    case "monthly":
+      return t.q_cite_tier_monthly ?? "monthly rollup";
     case "session":
       return t.q_cite_tier_session ?? "session log";
     case "source":
