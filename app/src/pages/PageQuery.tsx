@@ -409,6 +409,8 @@ function bandLabel(t: Strings, band: ConfidenceBand): string {
 
 function tierLabel(t: Strings, tier: SourceTier): string {
   switch (tier) {
+    case "map":
+      return t.q_cite_tier_map ?? "drafted map";
     case "digest":
       return t.q_cite_tier_digest ?? "daily digest";
     case "rollup":

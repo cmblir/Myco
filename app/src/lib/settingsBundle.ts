@@ -122,16 +122,11 @@ function pick(obj: Record<string, unknown>, keys: readonly string[]): Record<str
   return out;
 }
 
-/** Gather the whole portable bundle. `currentSettings` comes from `ipc.getSettings()`
- * — a Tauri round-trip, so it's the caller's job, not this (Tauri-free) module's. */
-export function buildSettingsBundle(
-  appVersion: string,
-  currentSettings: MycoSettings,
-): SettingsBundle {
+/** Everything portable, read straight out of the live stores — the payload
+ * half of an export, and (unchanged) the snapshot an import takes of the
+ * state it is about to overwrite. */
+function portableState(currentSettings: MycoSettings): Omit<ValidatedSettingsBundle, "present"> {
   return {
-    schemaVersion: SETTINGS_BUNDLE_VERSION,
-    appVersion,
-    exportedAt: new Date().toISOString(),
     settings: omitProvidersMycoPro(
       omit(currentSettings as unknown as Record<string, unknown>, SETTINGS_EXCLUDED_KEYS),
     ),
@@ -143,6 +138,28 @@ export function buildSettingsBundle(
     reflectIgnored: [...loadIgnored()],
     budgetThresholdUsd: getBudgetThreshold(),
   };
+}
+
+/** Gather the whole portable bundle. `currentSettings` comes from `ipc.getSettings()`
+ * — a Tauri round-trip, so it's the caller's job, not this (Tauri-free) module's. */
+export function buildSettingsBundle(
+  appVersion: string,
+  currentSettings: MycoSettings,
+): SettingsBundle {
+  return {
+    schemaVersion: SETTINGS_BUNDLE_VERSION,
+    appVersion,
+    exportedAt: new Date().toISOString(),
+    ...portableState(currentSettings),
+  };
+}
+
+/** Human-readable names of the sections a bundle carries — what the confirm
+ * step names before overwriting, and what the result line reports after. */
+export function sectionLabels(present: Set<string>): string[] {
+  return Object.keys(SECTION_LABELS)
+    .filter((k) => present.has(k))
+    .map((k) => SECTION_LABELS[k]);
 }
 
 // ---- validation -------------------------------------------------------
@@ -318,15 +335,14 @@ export function validateSettingsBundle(raw: unknown, currentSettings: MycoSettin
   };
 }
 
-/** Write a validated bundle to every backing store. `setSettings` is injected
+/** Write a portable state to every backing store. `setSettings` is injected
  * (rather than importing `ipc` here) so this module stays Tauri-free and
- * testable without mocking `invoke`. Returns the human-readable list of
- * sections that were present in the import (and so actually restored). */
-export async function applySettingsBundle(
-  data: ValidatedSettingsBundle,
+ * testable without mocking `invoke`. */
+async function writePortableState(
+  data: Omit<ValidatedSettingsBundle, "present">,
   currentSettings: MycoSettings,
   setSettings: (s: MycoSettings) => Promise<unknown>,
-): Promise<string[]> {
+): Promise<void> {
   await setSettings({ ...currentSettings, ...data.settings } as unknown as MycoSettings);
   useUIStore.setState(data.ui as unknown as Partial<UIState>);
   saveGraphSettings({ ...loadGraphSettings(), ...data.graph } as unknown as GraphSettings);
@@ -336,8 +352,51 @@ export async function applySettingsBundle(
   saveIgnored(new Set(data.reflectIgnored));
   useReflectStore.setState({ ignored: new Set(data.reflectIgnored) });
   setBudgetThreshold(data.budgetThresholdUsd);
+}
 
-  return Object.keys(SECTION_LABELS)
-    .filter((k) => data.present.has(k))
-    .map((k) => SECTION_LABELS[k]);
+/** The pre-import state, kept so the import can be taken back. IN MEMORY
+ * ONLY, and deliberately: unlike distill's undo manifest (a file in the
+ * vault, because it reverses writes to the user's notes), this reverses
+ * preferences that all live in localStorage/settings.json, and holding a
+ * "your old settings are also here" copy on disk indefinitely is a second
+ * source of truth nobody asked for. Lifetime: until the window reloads or
+ * the app quits — module scope, so it does survive leaving the Settings
+ * screen. The user is told this in the confirm step. */
+let importUndo: { state: Omit<ValidatedSettingsBundle, "present">; sections: string[] } | null =
+  null;
+
+/** The sections an available undo would put back, or null if there is
+ * nothing to undo (nothing imported yet this session). */
+export function pendingImportUndo(): string[] | null {
+  return importUndo?.sections ?? null;
+}
+
+/** Apply a validated import, snapshotting what it overwrites first. Returns
+ * the human-readable list of sections that were present in the import (and
+ * so actually restored). */
+export async function applySettingsBundle(
+  data: ValidatedSettingsBundle,
+  currentSettings: MycoSettings,
+  setSettings: (s: MycoSettings) => Promise<unknown>,
+): Promise<string[]> {
+  const sections = sectionLabels(data.present);
+  // Snapshot BEFORE the first write, so a failure partway through still
+  // leaves a complete "before" to go back to.
+  importUndo = { state: portableState(currentSettings), sections };
+  await writePortableState(data, currentSettings, setSettings);
+  return sections;
+}
+
+/** Put back the state the last import overwrote. Returns the sections it
+ * restored, or null if there was no snapshot. One shot: the snapshot is
+ * dropped, so undo cannot be used to bounce back and forth. */
+export async function undoSettingsImport(
+  currentSettings: MycoSettings,
+  setSettings: (s: MycoSettings) => Promise<unknown>,
+): Promise<string[] | null> {
+  const snapshot = importUndo;
+  if (!snapshot) return null;
+  importUndo = null;
+  await writePortableState(snapshot.state, currentSettings, setSettings);
+  return snapshot.sections;
 }

@@ -89,11 +89,10 @@ fn install_panic_hook() {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        if let Ok(mut file) = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(panic_log_path())
-        {
+        // Bounded by the writer (crash::open_log_for_append): a crash-looping
+        // build would otherwise append forever, since only the Settings
+        // "Clear crash log" button ever shrank this file.
+        if let Some(mut file) = crash::open_log_for_append(&panic_log_path()) {
             use std::io::Write;
             let _ = writeln!(file, "[unix {unix_secs}] panic at {location}: {message}");
         }

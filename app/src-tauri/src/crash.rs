@@ -85,6 +85,39 @@ pub fn recent_panics(path: &Path, limit: usize) -> Vec<PanicEntry> {
     entries
 }
 
+/// Cap on the panic log FILE, enforced by the writer (`install_panic_hook`).
+/// Same number as the read window above: bytes older than the last
+/// `MAX_READ_BYTES` are already invisible in the viewer, so a file past this
+/// size is carrying weight nobody can see.
+const MAX_LOG_BYTES: u64 = MAX_READ_BYTES;
+
+/// Open the panic log for the hook's append, rotating first if it has grown
+/// past `MAX_LOG_BYTES` — over the cap the file is truncated, and the panic
+/// about to be written starts a fresh log. Without this, only the explicit
+/// "Clear crash log" button ever shrinks the file, so a build that panics on
+/// every launch grows it without bound.
+///
+/// Rotation is a wipe, not a tail-preserving trim, deliberately: this runs
+/// inside the panic hook of a dying process, so the budget is calls that
+/// cannot themselves panic and do not allocate — one `metadata`, one `open`,
+/// both `Result`-checked, no unwrap, no lock, no buffer. Keeping the last N
+/// entries would mean reading the file back and rewriting it while the
+/// process is being torn down, and a kill mid-rewrite loses everything. The
+/// newest panic — the one the user is about to report — always survives,
+/// because the truncate and the `writeln!` share one open handle.
+pub fn open_log_for_append(path: &Path) -> Option<std::fs::File> {
+    let over_cap = std::fs::metadata(path)
+        .map(|m| m.len() >= MAX_LOG_BYTES)
+        .unwrap_or(false);
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(!over_cap)
+        .write(over_cap)
+        .truncate(over_cap)
+        .open(path)
+        .ok()
+}
+
 /// Delete the panic log. A file that is already gone is not an error.
 pub fn clear_log(path: &Path) -> Result<(), String> {
     match std::fs::remove_file(path) {
@@ -252,6 +285,43 @@ mod tests {
         // Last entry written must be last entry returned.
         assert_eq!(found[4].message, "iteration 19999");
         assert!(found[4].unix_secs > found[0].unix_secs);
+    }
+
+    #[test]
+    fn writer_rotates_the_log_once_it_passes_the_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("myco-panic.log");
+        // A crash-looping build: append until the file is over the cap.
+        for i in 0..20_000u64 {
+            let mut f = open_log_for_append(&path).unwrap();
+            writeln!(
+                f,
+                "[unix {}] panic at src/loop.rs:1:1: boom {i}",
+                1_700_000_000 + i
+            )
+            .unwrap();
+        }
+        let len = std::fs::metadata(&path).unwrap().len();
+        assert!(len < MAX_LOG_BYTES, "log grew past the cap: {len} bytes");
+        // The newest entry always survives the rotation.
+        let found = recent_panics(&path, 5);
+        assert_eq!(found.last().unwrap().message, "boom 19999");
+    }
+
+    #[test]
+    fn writer_appends_while_under_the_cap() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("myco-panic.log");
+        for i in 0..3u64 {
+            let mut f = open_log_for_append(&path).unwrap();
+            writeln!(
+                f,
+                "[unix {}] panic at src/a.rs:1:1: boom {i}",
+                1_700_000_000 + i
+            )
+            .unwrap();
+        }
+        assert_eq!(recent_panics(&path, 10).len(), 3);
     }
 
     #[test]

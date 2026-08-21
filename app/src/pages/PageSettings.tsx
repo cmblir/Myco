@@ -73,7 +73,15 @@ import type {
 import { useDistillRunStore } from "../stores/distillRunStore";
 import { loadProfile, saveProfile } from "../lib/profile";
 import type { Profile } from "../lib/profile";
-import { applySettingsBundle, buildSettingsBundle, validateSettingsBundle } from "../lib/settingsBundle";
+import {
+  applySettingsBundle,
+  buildSettingsBundle,
+  pendingImportUndo,
+  sectionLabels,
+  undoSettingsImport,
+  validateSettingsBundle,
+  type ValidatedSettingsBundle,
+} from "../lib/settingsBundle";
 
 export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
@@ -2980,6 +2988,14 @@ function SettingsAbout({ t }: { t: Strings }): JSX.Element {
 function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): JSX.Element {
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  // A validated import waiting for the user to confirm the overwrite, and
+  // the sections it would replace (named in the confirm text).
+  const [pending, setPending] = useState<{
+    data: ValidatedSettingsBundle;
+    sections: string[];
+  } | null>(null);
+  // Mirrors the module-level snapshot (settingsBundle.ts) into render state.
+  const [undoable, setUndoable] = useState<string[] | null>(() => pendingImportUndo());
 
   async function doExport(): Promise<void> {
     setBusy("export");
@@ -2998,9 +3014,13 @@ function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): 
     }
   }
 
+  // Step 1 of 2: read + validate, then hand the user a named confirmation.
+  // Nothing is written here — an import replaces settings the user spent
+  // time on, so it does not happen on the same click that picks the file.
   async function doImport(): Promise<void> {
     setBusy("import");
     setMessage(null);
+    setPending(null);
     try {
       const path = await ipc.pickSettingsImportPath();
       if (!path) return;
@@ -3018,10 +3038,45 @@ function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): 
         setMessage((t.s_backup_import_failed ?? "Import failed: {error}").replace("{error}", result.error));
         return;
       }
-      const sections = await applySettingsBundle(result.data, current, ipc.setSettings);
+      setPending({ data: result.data, sections: sectionLabels(result.data.present) });
+    } catch (e) {
+      setMessage(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  // Step 2 of 2: the confirmed overwrite. applySettingsBundle snapshots the
+  // current state first, which is what makes the Undo button below real.
+  async function confirmImport(): Promise<void> {
+    if (!pending) return;
+    setBusy("import");
+    try {
+      const current = await ipc.getSettings();
+      const sections = await applySettingsBundle(pending.data, current, ipc.setSettings);
+      setPending(null);
+      setUndoable(pendingImportUndo());
       setMessage(
         (t.s_backup_imported ?? "Restored: {sections}").replace("{sections}", sections.join(", ")),
       );
+    } catch (e) {
+      setMessage(String(e));
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function undoImport(): Promise<void> {
+    setBusy("import");
+    try {
+      const current = await ipc.getSettings();
+      const restored = await undoSettingsImport(current, ipc.setSettings);
+      setUndoable(pendingImportUndo());
+      if (restored) {
+        setMessage(
+          (t.s_backup_undone ?? "Put back: {sections}").replace("{sections}", restored.join(", ")),
+        );
+      }
     } catch (e) {
       setMessage(String(e));
     } finally {
@@ -3040,10 +3095,83 @@ function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): 
         <button type="button" className="btn" disabled={busy !== null} onClick={() => void doExport()}>
           {busy === "export" ? (t.s_backup_busy ?? "Working…") : (t.s_backup_export ?? "Export…")}
         </button>
-        <button type="button" className="btn" disabled={busy !== null} onClick={() => void doImport()}>
+        <button
+          type="button"
+          className="btn"
+          disabled={busy !== null}
+          onClick={() => void doImport()}
+          data-testid="settings-import-btn"
+        >
           {busy === "import" ? (t.s_backup_busy ?? "Working…") : (t.s_backup_import ?? "Import…")}
         </button>
+        {undoable && !pending ? (
+          <button
+            type="button"
+            className="btn"
+            disabled={busy !== null}
+            onClick={() => void undoImport()}
+            data-testid="settings-import-undo-btn"
+          >
+            {t.s_backup_undo ?? "Undo import"}
+          </button>
+        ) : null}
       </div>
+      {undoable && !pending ? (
+        <span className="muted" style={{ fontSize: 12 }}>
+          {t.s_backup_undo_hint ??
+            "Your previous settings are held in memory until you quit myco."}
+        </span>
+      ) : null}
+      {pending ? (
+        <div
+          className="col"
+          role="group"
+          aria-label={t.s_backup_confirm_title ?? "Replace these settings?"}
+          data-testid="settings-import-confirm"
+          style={{
+            gap: 8,
+            padding: 12,
+            borderRadius: 8,
+            border: "1px solid var(--line)",
+            background: "var(--bg-2)",
+          }}
+        >
+          <div style={{ fontWeight: 600, fontSize: 13 }}>
+            {t.s_backup_confirm_title ?? "Replace these settings?"}
+          </div>
+          <div style={{ fontSize: 13, color: "var(--ink-2)" }}>
+            {/* A file that parses but carries no section this version knows
+                would replace nothing — say that, rather than printing an
+                empty list into "This file replaces: ." */}
+            {pending.sections.length === 0
+              ? (t.s_backup_confirm_none ??
+                "This file carries no settings this version can restore — importing it would change nothing.")
+              : (
+                  t.s_backup_confirm_body ??
+                  "This file replaces: {sections}. Everything it replaces is kept in memory, so you can undo it until you quit myco."
+                ).replace("{sections}", pending.sections.join(", "))}
+          </div>
+          <div className="row" style={{ gap: 8 }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy !== null}
+              onClick={() => void confirmImport()}
+              data-testid="settings-import-confirm-btn"
+            >
+              {t.s_backup_confirm_apply ?? "Replace"}
+            </button>
+            <button
+              type="button"
+              className="btn"
+              disabled={busy !== null}
+              onClick={() => setPending(null)}
+            >
+              {t.s_backup_confirm_cancel ?? "Cancel"}
+            </button>
+          </div>
+        </div>
+      ) : null}
       {message ? (
         <span className="muted" style={{ fontSize: 12 }} role="status">
           {message}

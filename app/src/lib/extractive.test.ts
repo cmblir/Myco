@@ -5,6 +5,7 @@ import {
   formatExtractiveAnswer,
   sourceTier,
 } from "./extractive";
+import { isNonKnowledgePath } from "./graphData";
 import type { ScoredChunk } from "./ipc";
 
 const chunk = (over: Partial<ScoredChunk> = {}): ScoredChunk => ({
@@ -123,7 +124,6 @@ describe("confidenceBand", () => {
 describe("sourceTier", () => {
   it("names the vault layer a citation came from", () => {
     expect(sourceTier("wiki/bpe.md")).toBe("note");
-    expect(sourceTier("wiki/maps/nlp.md")).toBe("note");
     expect(sourceTier("daily/2026-08-19.md")).toBe("digest");
     expect(sourceTier("weekly/2026-W33.md")).toBe("rollup");
     expect(sourceTier("sessions/2026-08/codex-abc.md")).toBe("session");
@@ -131,6 +131,22 @@ describe("sourceTier", () => {
     expect(sourceTier("_inbox/drop.md")).toBe("source");
     // A bare top-level page is still the user's own writing.
     expect(sourceTier("scratch.md")).toBe("note");
+  });
+
+  it("does not credit a machine-drafted map to the user", () => {
+    // maps.ts writes these with the query model (`status: draft`), so
+    // quoting one back as "your note" is a lie about authorship.
+    expect(sourceTier("wiki/maps/nlp.md")).toBe("map");
+    // Only the maps folder — a page merely NAMED maps.md is hand-written.
+    expect(sourceTier("wiki/maps.md")).toBe("note");
+  });
+
+  it("still lets the graph treat that same map as a knowledge page", () => {
+    // The two classifiers answer different questions and are meant to
+    // disagree here: the map belongs in the graph, but it is not the
+    // user's writing. Locked down so a later "unify them" refactor fails.
+    expect(isNonKnowledgePath("/v", "/v/wiki/maps/nlp.md")).toBe(false);
+    expect(sourceTier("wiki/maps/nlp.md")).not.toBe("note");
   });
 });
 

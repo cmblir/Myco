@@ -53,6 +53,14 @@ export interface Strings {
   s_backup_imported?: string; // {sections}
   s_backup_import_failed?: string; // {error}
   s_backup_bad_json?: string;
+  s_backup_confirm_title?: string;
+  s_backup_confirm_body?: string; // {sections}
+  s_backup_confirm_none?: string;
+  s_backup_confirm_apply?: string;
+  s_backup_confirm_cancel?: string;
+  s_backup_undo?: string;
+  s_backup_undo_hint?: string;
+  s_backup_undone?: string; // {sections}
   hw_title?: string;
   hw_sub?: string;
   hw_sc_cmd?: string;
@@ -919,6 +927,7 @@ export interface Strings {
   q_cite_conf_tip?: string;
   q_cite_conf_lexical_tip?: string;
   q_cite_tier_note?: string;
+  q_cite_tier_map?: string;
   q_cite_tier_digest?: string;
   q_cite_tier_rollup?: string;
   q_cite_tier_session?: string;
@@ -1142,6 +1151,16 @@ export const STRINGS: Record<Lang, Strings> = {
     s_backup_imported: "Restored: {sections}",
     s_backup_import_failed: "Import failed: {error}",
     s_backup_bad_json: "That file isn't valid JSON.",
+    s_backup_confirm_title: "Replace these settings?",
+    s_backup_confirm_body:
+      "This file replaces: {sections}. Everything it replaces is kept in memory, so you can undo it until you quit myco.",
+    s_backup_confirm_none:
+      "This file carries no settings this version can restore — importing it would change nothing.",
+    s_backup_confirm_apply: "Replace",
+    s_backup_confirm_cancel: "Cancel",
+    s_backup_undo: "Undo import",
+    s_backup_undo_hint: "Your previous settings are held in memory until you quit myco.",
+    s_backup_undone: "Put back: {sections}",
     hw_title: "Help",
     hw_sub: "Tips for this page",
     hw_sc_cmd: "Command palette",
@@ -2038,6 +2057,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_conf_lexical_tip:
       "{page} — keyword match only, so there is no similarity score for it",
     q_cite_tier_note: "your note",
+    q_cite_tier_map: "drafted map",
     q_cite_tier_digest: "daily digest",
     q_cite_tier_rollup: "weekly rollup",
     q_cite_tier_session: "session log",
@@ -2258,6 +2278,16 @@ export const STRINGS: Record<Lang, Strings> = {
     s_backup_imported: "복원됨: {sections}",
     s_backup_import_failed: "가져오기 실패: {error}",
     s_backup_bad_json: "유효한 JSON 파일이 아닙니다.",
+    s_backup_confirm_title: "이 설정들을 교체할까요?",
+    s_backup_confirm_body:
+      "이 파일이 교체하는 항목: {sections}. 교체되는 값은 메모리에 보관되므로 myco를 종료하기 전까지 되돌릴 수 있습니다.",
+    s_backup_confirm_none:
+      "이 파일에는 이 버전이 복원할 수 있는 설정이 없습니다 — 가져와도 바뀌는 것이 없습니다.",
+    s_backup_confirm_apply: "교체",
+    s_backup_confirm_cancel: "취소",
+    s_backup_undo: "가져오기 되돌리기",
+    s_backup_undo_hint: "이전 설정은 myco를 종료할 때까지 메모리에 보관됩니다.",
+    s_backup_undone: "되돌림: {sections}",
     hw_title: "도움말",
     hw_sub: "이 페이지의 팁",
     hw_sc_cmd: "커맨드 팔레트",
@@ -3150,6 +3180,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_conf_lexical_tip:
       "{page} — 키워드로만 일치해 유사도 점수가 없습니다",
     q_cite_tier_note: "내가 쓴 노트",
+    q_cite_tier_map: "초안 지도",
     q_cite_tier_digest: "일일 요약",
     q_cite_tier_rollup: "주간 요약",
     q_cite_tier_session: "세션 로그",
@@ -4127,6 +4158,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_conf_lexical_tip:
       "{page} — キーワードのみの一致のため、類似度スコアはありません",
     q_cite_tier_note: "自分のノート",
+    q_cite_tier_map: "下書きマップ",
     q_cite_tier_digest: "日次ダイジェスト",
     q_cite_tier_rollup: "週次まとめ",
     q_cite_tier_session: "セッションログ",
@@ -4333,6 +4365,16 @@ export const STRINGS: Record<Lang, Strings> = {
     s_backup_imported: "復元しました: {sections}",
     s_backup_import_failed: "インポートに失敗しました: {error}",
     s_backup_bad_json: "有効な JSON ファイルではありません。",
+    s_backup_confirm_title: "これらの設定を置き換えますか？",
+    s_backup_confirm_body:
+      "このファイルが置き換える対象: {sections}。置き換えられる値はメモリに保持されるため、myco を終了するまでは元に戻せます。",
+    s_backup_confirm_none:
+      "このファイルには、このバージョンで復元できる設定が含まれていません — インポートしても何も変わりません。",
+    s_backup_confirm_apply: "置き換える",
+    s_backup_confirm_cancel: "キャンセル",
+    s_backup_undo: "インポートを元に戻す",
+    s_backup_undo_hint: "以前の設定は myco を終了するまでメモリに保持されます。",
+    s_backup_undone: "元に戻しました: {sections}",
     hw_title: "ヘルプ",
     hw_sub: "このページのヒント",
     hw_sc_cmd: "コマンドパレット",

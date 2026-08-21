@@ -1695,6 +1695,11 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         opts.directory ? `${VAULT}` : `${VAULT}/_inbox/picked-export.jsonl`,
       );
     }
+    // The native save dialog. Same fixed-path stand-in as |open above —
+    // without it the settings EXPORT half of the round trip never runs in
+    // the mock, so an import there always read the empty fallback bundle.
+    case "plugin:dialog|save":
+      return Promise.resolve(`${VAULT}/myco-settings.json`);
     case "plugin:event|listen": {
       const name = String(args.event ?? "");
       const handler = args.handler as MockEventHandler | undefined;

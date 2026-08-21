@@ -1,12 +1,19 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { MycoSettings } from "./ipc";
-import { applySettingsBundle, buildSettingsBundle, validateSettingsBundle } from "./settingsBundle";
+import {
+  applySettingsBundle,
+  buildSettingsBundle,
+  pendingImportUndo,
+  sectionLabels,
+  undoSettingsImport,
+  validateSettingsBundle,
+} from "./settingsBundle";
 import { useUIStore } from "../stores/uiStore";
 import { loadGraphSettings, saveGraphSettings } from "./graphSettings";
 import { loadDismissed } from "./linkSuggestions";
 import { loadIgnored } from "../stores/reflectStore";
 import { loadViews } from "./queryViews";
-import { getBudgetThreshold } from "./budget";
+import { getBudgetThreshold, setBudgetThreshold } from "./budget";
 
 // The unit-test env is node (no DOM) — stand in a minimal localStorage, same
 // shape as budget.test.ts / graphSettings.test.ts.
@@ -220,5 +227,59 @@ describe("rejection cases", () => {
     };
     const res = validateSettingsBundle(bad, target);
     expect(res.ok).toBe(false);
+  });
+});
+
+describe("import undo", () => {
+  it("puts back every section the import overwrote", async () => {
+    // "Before": the state the user actually wants back.
+    saveGraphSettings({ ...loadGraphSettings(), nodeSize: 3.25 });
+    useUIStore.setState({ theme: "light", accent: "#ff00aa" });
+    setBudgetThreshold(42);
+    let live = fakeSettings({ tray_resident: true });
+    const setSettings = async (s: MycoSettings): Promise<void> => {
+      live = s;
+    };
+
+    // Import something different, confirmed.
+    const incoming = buildSettingsBundle("0.4.0", fakeSettings({ tray_resident: false }));
+    incoming.graph.nodeSize = 1;
+    incoming.ui.theme = "dark";
+    incoming.budgetThresholdUsd = 5;
+    const result = validateSettingsBundle(JSON.parse(JSON.stringify(incoming)), live);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await applySettingsBundle(result.data, live, setSettings);
+    expect(loadGraphSettings().nodeSize).toBe(1);
+    expect(useUIStore.getState().theme).toBe("dark");
+    expect(getBudgetThreshold()).toBe(5);
+    expect(live.tray_resident).toBe(false);
+
+    // Undo names what it restored and actually restores it.
+    expect(pendingImportUndo()).toEqual(sectionLabels(result.data.present));
+    const restored = await undoSettingsImport(live, setSettings);
+    expect(restored).toEqual(sectionLabels(result.data.present));
+    expect(loadGraphSettings().nodeSize).toBe(3.25);
+    expect(useUIStore.getState().theme).toBe("light");
+    expect(useUIStore.getState().accent).toBe("#ff00aa");
+    expect(getBudgetThreshold()).toBe(42);
+    expect(live.tray_resident).toBe(true);
+  });
+
+  it("is one shot — nothing to undo until the next import", async () => {
+    let live = fakeSettings();
+    const setSettings = async (s: MycoSettings): Promise<void> => {
+      live = s;
+    };
+    const result = validateSettingsBundle(
+      JSON.parse(JSON.stringify(buildSettingsBundle("0.4.0", live))),
+      live,
+    );
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    await applySettingsBundle(result.data, live, setSettings);
+    expect(await undoSettingsImport(live, setSettings)).not.toBeNull();
+    expect(pendingImportUndo()).toBeNull();
+    expect(await undoSettingsImport(live, setSettings)).toBeNull();
   });
 });

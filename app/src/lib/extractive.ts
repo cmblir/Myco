@@ -110,7 +110,7 @@ export function confidenceBand(similarity: number | null): ConfidenceBand {
   return "low";
 }
 
-export type SourceTier = "note" | "digest" | "rollup" | "session" | "source";
+export type SourceTier = "note" | "map" | "digest" | "rollup" | "session" | "source";
 
 /** Which layer of the vault a citation came from, so an answer assembled out
  * of machine-written digests is not presented as the user's own writing.
@@ -120,9 +120,19 @@ export type SourceTier = "note" | "digest" | "rollup" | "session" | "source";
  * (src-tauri/src/vector_index.rs); this splits that single "not knowledge"
  * bucket into the layers the user can act on instead of merging them.
  * `raw`/`_inbox`/`ingest-reports` collapse into one "imported source" tier:
- * all three are material that was brought in, not written. `page` is
- * VAULT-RELATIVE. */
+ * all three are material that was brought in, not written.
+ *
+ * `wiki/maps/*` is the one place this classifier deliberately DISAGREES with
+ * the graph's `isNonKnowledgePath` / vector_index's `is_machine_written`, and
+ * it should: those two answer "is this a knowledge page?" — and a drafted map
+ * is one, it is a wiki page with real links and belongs in the graph and the
+ * index. This one answers a different question, "who wrote the words being
+ * quoted back at you?" — and maps.ts drafts them with the query model
+ * (`status: draft` frontmatter, a human has not signed off). Same file, two
+ * honest answers; the folder set above is not forked, only extended here.
+ * `page` is VAULT-RELATIVE. */
 export function sourceTier(page: string): SourceTier {
+  if (page.startsWith("wiki/maps/")) return "map";
   switch (page.split("/")[0]) {
     case "daily":
       return "digest";
