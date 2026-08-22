@@ -72,6 +72,9 @@ export interface UIState {
   // as the other layouts' one-shot intros. The toolbar timelapse button
   // replays it on demand regardless of this flag (see MyceliumView).
   myceliumGrown: boolean;
+  // Morning-Report band (Q4 item 2): when Overview was last opened, epoch ms.
+  // null until the first visit ever stamps it.
+  lastVisitAt: number | null;
 
   setRoute: (route: RouteId) => void;
   setFeedbackTab: (tab: FeedbackTab) => void;
@@ -90,6 +93,7 @@ export interface UIState {
   setOverviewTheme: (v: OverviewThemeKey) => void;
   toggleFolder: (id: string) => void;
   setMyceliumGrown: (v: boolean) => void;
+  stampVisit: () => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -112,6 +116,7 @@ export const useUIStore = create<UIState>()(
       // old slug-keyed seed never matched real paths and was inert.
       expandedFolders: {},
       myceliumGrown: false,
+      lastVisitAt: null,
 
       setRoute: (route) =>
         // Never let the primary and split panes show the SAME route (two live
@@ -142,6 +147,7 @@ export const useUIStore = create<UIState>()(
           },
         }),
       setMyceliumGrown: (v) => set({ myceliumGrown: v }),
+      stampVisit: () => set({ lastVisitAt: Date.now() }),
     }),
     {
       name: "myco-ui",

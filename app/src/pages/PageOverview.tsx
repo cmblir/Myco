@@ -31,6 +31,7 @@ import LinkSuggestions from "../components/LinkSuggestions";
 import VaultPulse from "../components/VaultPulse";
 import RecentNotes from "../components/RecentNotes";
 import VaultHistoryBanner from "../components/VaultHistoryBanner";
+import MorningBand from "../components/MorningBand";
 import { bucketByDay } from "../lib/vaultPulse";
 
 export default function PageOverview({ t }: { t: Strings }): JSX.Element {
@@ -39,6 +40,13 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
   const fileTree = useVaultStore((s) => s.fileTree);
   const adjacency = useVaultStore((s) => s.adjacency);
   const [mtimes, setMtimes] = useState<[string, number][]>([]);
+
+  // Morning-Report baseline: mark this visit AFTER MorningBand snapshots the
+  // previous stamp (its useState initializer runs during render, before this
+  // effect fires).
+  useEffect(() => {
+    useUIStore.getState().stampVisit();
+  }, []);
 
   useEffect(() => {
     if (!currentVault) return;
@@ -88,6 +96,7 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
   return (
     <div className="workspace">
       <VaultHistoryBanner t={t} />
+      <MorningBand t={t} />
       {stats.files === 0 ? (
         // For an empty vault this copy is the only true thing to show, and it
         // is the one moment it is genuinely useful. With pages present it is

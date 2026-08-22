@@ -1117,6 +1117,12 @@ export interface Strings {
   vh_later?: string;
   vh_setting_title?: string;
   vh_setting_desc?: string;
+  // Morning-Report band (Q4 item 2) — optional; fall back to English.
+  ov_since_eyebrow?: string;
+  ov_since_title?: string; // {runs} {pages}
+  ov_since_quiet?: string;
+  ov_suspect_title?: string;
+  ov_suspect_clean?: string;
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -2267,6 +2273,11 @@ export const STRINGS: Record<Lang, Strings> = {
     vh_setting_title: "Vault history (git)",
     vh_setting_desc:
       "Creates a local git repo inside the vault. Agent commits and your edits are recorded as different authors. Nothing leaves this machine.",
+    ov_since_eyebrow: "Since you were last here",
+    ov_since_title: "{runs} distill runs, {pages} pages moved",
+    ov_since_quiet: "All quiet since your last visit.",
+    ov_suspect_title: "Suspect pages",
+    ov_suspect_clean: "Every checked page looks sound.",
   },
   ko: {
     app_name: "myco",
@@ -3409,6 +3420,11 @@ export const STRINGS: Record<Lang, Strings> = {
     vh_setting_title: "볼트 이력 (git)",
     vh_setting_desc:
       "볼트 안에 로컬 git 저장소를 만듭니다. 에이전트 커밋과 직접 편집이 서로 다른 작성자로 기록되며, 이 기기를 떠나지 않습니다.",
+    ov_since_eyebrow: "다녀오신 사이",
+    ov_since_title: "증류 {runs}회, 페이지 {pages}개가 움직였습니다",
+    ov_since_quiet: "다녀오신 사이 조용했습니다.",
+    ov_suspect_title: "의심 페이지",
+    ov_suspect_clean: "점검한 페이지 모두 이상 없습니다.",
   },
   ja: {
     app_name: "myco",
@@ -4553,5 +4569,10 @@ export const STRINGS: Record<Lang, Strings> = {
     vh_setting_title: "ボールト履歴 (git)",
     vh_setting_desc:
       "ボールト内にローカル git リポジトリを作成します。エージェントのコミットとあなたの編集は別の作成者として記録され、この端末の外には出ません。",
+    ov_since_eyebrow: "前回から",
+    ov_since_title: "蒸留 {runs} 回、ページ {pages} 件が動きました",
+    ov_since_quiet: "前回から変化はありません。",
+    ov_suspect_title: "要確認ページ",
+    ov_suspect_clean: "確認したページに問題はありません。",
   },
 };
