@@ -229,6 +229,7 @@ pub fn run() {
             commands::undo_distill_run,
             commands::list_distill_runs,
             commands::distill_run_detail,
+            commands::distill_run_diff,
             commands::vault_history_status,
             commands::init_vault_history,
             commands::commit_human_edit,

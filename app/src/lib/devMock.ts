@@ -1157,6 +1157,19 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         report_rel: `ingest-reports/distill-${args.id as string}.md`,
         commit: null,
       });
+    // One modified file, before/after one sentence apart — seeds the diff-view
+    // UI without a git repo in the browser.
+    case "distill_run_diff":
+      return Promise.resolve([
+        {
+          path: "wiki/scaling-laws.md",
+          status: "modified",
+          before:
+            "# Scaling laws\n\nChinchilla lands at ~20 tokens per parameter. The relevance floor stays at 0.45 for now.\n",
+          after:
+            "# Scaling laws\n\nChinchilla lands at ~20 tokens per parameter. The relevance floor moves to 0.50 after the eval.\n",
+        },
+      ]);
     // Opt-in vault git history (Q4 item 1) — no repo in a browser; the flag
     // lives in the mock SETTINGS so the banner/settings card react to it.
     case "vault_history_status":

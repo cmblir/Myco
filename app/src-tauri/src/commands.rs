@@ -1874,6 +1874,81 @@ pub fn distill_run_detail(
     crate::distill::run_detail(std::path::Path::new(&root), &id)
 }
 
+/// One changed file in a run's commit, with full before/after content for
+/// the word-diff renderer (W3–6 item 6).
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct FileDiff {
+    pub path: String,
+    pub status: String,         // "added" | "modified" | "renamed" | "deleted"
+    pub before: Option<String>, // None for added
+    pub after: Option<String>,  // None for deleted
+}
+
+/// Neither side of a diff is sent to the webview above this size — the UI
+/// shows "too large to diff" instead of freezing on a megabyte LCS.
+const MAX_DIFF_SIDE_BYTES: usize = 256 * 1024;
+
+/// Per-file before/after for the `distill: run <id>` commit. `Err("no-commit")`
+/// when the run has no commit (history off / predates it) — callers fall back
+/// to the manifest file list. Content existence per side comes from git itself
+/// (`file_at` is `Ok(None)` for a path absent in that tree), so added/deleted
+/// need no special-casing; a root commit has no parent and every file reads
+/// as added. Renames (`R` rows) report the new path only — before is None.
+pub(crate) fn run_diff_core(root: &std::path::Path, id: &str) -> Result<Vec<FileDiff>, String> {
+    use crate::vault_history as vh;
+    let sha = vh::commit_for_message(root, &format!("distill: run {id}"))
+        .ok_or_else(|| "no-commit".to_string())?;
+    let parent = vh::git(root, &["rev-parse", &format!("{sha}^")])
+        .ok()
+        .filter(|o| o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string());
+    vh::changed_files(root, &sha)?
+        .into_iter()
+        .map(|(status, rel)| {
+            let mut before = match &parent {
+                Some(p) => vh::file_at(root, p, &rel)?,
+                None => None,
+            };
+            let mut after = vh::file_at(root, &sha, &rel)?;
+            if before
+                .as_ref()
+                .is_some_and(|s| s.len() > MAX_DIFF_SIDE_BYTES)
+                || after
+                    .as_ref()
+                    .is_some_and(|s| s.len() > MAX_DIFF_SIDE_BYTES)
+            {
+                before = None;
+                after = None;
+            }
+            Ok(FileDiff {
+                path: rel,
+                status: match status {
+                    'A' => "added",
+                    'D' => "deleted",
+                    'R' => "renamed",
+                    _ => "modified",
+                }
+                .to_string(),
+                before,
+                after,
+            })
+        })
+        .collect()
+}
+
+/// Async + `spawn_blocking`: one git call per changed file side.
+#[tauri::command]
+pub async fn distill_run_diff(
+    state: tauri::State<'_, VaultRoot>,
+    vault: String,
+    id: String,
+) -> Result<Vec<FileDiff>, String> {
+    let root = confine_root(&state, &vault)?;
+    tauri::async_runtime::spawn_blocking(move || run_diff_core(std::path::Path::new(&root), &id))
+        .await
+        .map_err(|e| format!("join failed: {e}"))?
+}
+
 // ---- vault history (Q4 item 1) --------------------------------------------
 
 #[tauri::command]
@@ -3415,8 +3490,8 @@ pub fn os_version() -> String {
 mod tests {
     use super::{
         append_recall_miss, builtin_index_is_stale, chunk_text_at, export_bundle_write,
-        external_target_allowed, import_dest, read_settings_import, run_import, sync_bm25_for_page,
-        windows_opener_safe, DEST_INBOX, DEST_SESSIONS,
+        external_target_allowed, import_dest, read_settings_import, run_diff_core, run_import,
+        sync_bm25_for_page, windows_opener_safe, DEST_INBOX, DEST_SESSIONS,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
@@ -3510,6 +3585,56 @@ mod tests {
             porcelain.contains("wiki/b.md"),
             "b.md stays uncommitted: {porcelain}"
         );
+    }
+
+    // ---- run diff (W3–6 item 6) --------------------------------------------
+
+    #[test]
+    fn run_diff_reports_before_and_after() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("wiki")).unwrap();
+        std::fs::write(root.join("wiki/a.md"), "v1 line\n").unwrap();
+        crate::vault_history::init(root).unwrap();
+
+        std::fs::write(root.join("wiki/a.md"), "v2 line\n").unwrap();
+        std::fs::write(root.join("wiki/b.md"), "brand new\n").unwrap();
+        assert!(crate::vault_history::commit_paths(
+            root,
+            &["wiki"],
+            "distill: run digest-9",
+            crate::vault_history::CommitIdentity::Agent,
+        )
+        .unwrap());
+
+        let diffs = run_diff_core(root, "digest-9").unwrap();
+        assert_eq!(diffs.len(), 2);
+        let a = diffs.iter().find(|d| d.path == "wiki/a.md").unwrap();
+        assert_eq!(a.status, "modified");
+        assert_eq!(a.before.as_deref(), Some("v1 line\n"));
+        assert_eq!(a.after.as_deref(), Some("v2 line\n"));
+        let b = diffs.iter().find(|d| d.path == "wiki/b.md").unwrap();
+        assert_eq!(b.status, "added");
+        assert_eq!(b.before, None);
+        assert_eq!(b.after.as_deref(), Some("brand new\n"));
+
+        // A run without a commit is a stated error, not an empty list — the
+        // UI catches "no-commit" and falls back to the manifest file list.
+        assert_eq!(run_diff_core(root, "digest-none").unwrap_err(), "no-commit");
+
+        // Oversized sides are dropped, status kept ("too large to diff").
+        std::fs::write(root.join("wiki/big.md"), "x".repeat(300 * 1024)).unwrap();
+        assert!(crate::vault_history::commit_paths(
+            root,
+            &["wiki"],
+            "distill: run digest-10",
+            crate::vault_history::CommitIdentity::Agent,
+        )
+        .unwrap());
+        let diffs = run_diff_core(root, "digest-10").unwrap();
+        assert_eq!(diffs.len(), 1);
+        assert_eq!(diffs[0].status, "added");
+        assert_eq!(diffs[0].after, None);
     }
 
     // ---- inflow_stats -----------------------------------------------------

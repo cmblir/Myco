@@ -344,6 +344,15 @@ export interface RunDetail {
   commit: string | null;
 }
 
+/** Mirrors Rust `commands::FileDiff` (W3–6 item 6). Both sides null when the
+ *  file is too large to diff (status still tells what happened). */
+export interface FileDiff {
+  path: string;
+  status: string; // "added" | "modified" | "renamed" | "deleted"
+  before: string | null;
+  after: string | null;
+}
+
 /** Honest global-shortcut state (mirrors Rust `spotlight::ShortcutStatus`).
  *  `registered: false` with a non-empty `shortcut` means the app asked for it
  *  and was refused — `error` carries the reason, shown as-is in Settings. */
@@ -834,6 +843,10 @@ export const ipc = {
   // Run drill-in: full manifest + WHY report + git commit (W3–6 item 6).
   distillRunDetail: (vault: string, id: string) =>
     invoke<RunDetail>("distill_run_detail", { vault, id }),
+  /** Per-file before/after for a run's commit; rejects "no-commit" when the
+   *  run has none — callers fall back to the manifest file list. */
+  distillRunDiff: (vault: string, id: string) =>
+    invoke<FileDiff[]>("distill_run_diff", { vault, id }),
   // Opt-in vault git history (Q4 item 1).
   vaultHistoryStatus: (vault: string) =>
     invoke<VaultHistoryStatus>("vault_history_status", { vault }),
