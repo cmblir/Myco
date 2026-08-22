@@ -18,6 +18,7 @@ import {
 } from "../lib/queryIntent";
 import { BUILTIN_EMBED_MODEL } from "../lib/providers";
 import { log } from "../lib/log";
+import { parseTimeQuery, type DateRange } from "../lib/timeQuery";
 
 /** Mirrors `intent::VAULT_FILES` on the Rust side. */
 const VAULT_FILES_INTENT = "vault-files";
@@ -50,6 +51,10 @@ export interface ChatTurn {
   /// extractive path has them: a provider-synthesized answer cites pages in
   /// prose, with no per-citation similarity to report.
   citations?: Citation[];
+  /// Date window parsed from the question (time-aware Ask, Q4 item 8) —
+  /// retrieval was restricted to that window's dated tiers; the UI shows it
+  /// as a chip beside the question.
+  range?: DateRange;
 }
 
 export const SYSTEM_PREAMBLE = `You are myco, the wiki maintainer for the user's local markdown vault.
@@ -64,6 +69,9 @@ export interface AskCopy {
   extractiveStale: string;
   extractiveFailed: string;
   extractiveEmpty: string;
+  /// Extractive empty copy while a date range is active — "nothing in that
+  /// period's record" is a different fact than "nothing relevant anywhere".
+  rangeEmpty: string;
   emptyResponse: string;
 }
 
@@ -80,6 +88,8 @@ export function askCopy(t: Strings): AskCopy {
       "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.",
     extractiveEmpty:
       t.q_extractive_empty ?? "Nothing relevant found in the wiki index.",
+    rangeEmpty:
+      t.q_range_empty ?? "No answer found in the records for that period.",
     emptyResponse: t.q_empty_response ?? "(empty response)",
   };
 }
@@ -164,6 +174,12 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       .then((s) => s.query_provider)
       .catch(() => "");
 
+    // Time-aware Ask (Q4 item 8): a time-anchored question ("이번 주에 뭐
+    // 결정했지") carries a date window. The extractive path retrieves with the
+    // cleaned question and filters to the window's dated tiers; the provider
+    // path only gets the window as a system-line hint (no filtering).
+    const tp = parseTimeQuery(question, new Date(), lang);
+
     // builtin-local: extractive answer. Retrieval is the measured strength of
     // this stack; a small model paraphrasing on top of it produced echo loops
     // (the reported bug), so render what retrieval found verbatim.
@@ -174,8 +190,11 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         // claimed "searching the wiki…" on a vault with NO index — a wait that
         // describes work not happening, which is the thing ask-stages-smoke
         // exists to catch.
-        const r = await retrieveChunks(question, 12, () =>
-          set({ stage: { kind: "retrieving" } }),
+        const r = await retrieveChunks(
+          tp.range ? tp.cleaned : question,
+          12,
+          () => set({ stage: { kind: "retrieving" } }),
+          tp.range ?? undefined,
         );
         const md = formatExtractiveAnswer(r.hits);
         // Pick the body by state: a stale/failed index means retrieval never
@@ -198,7 +217,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           ? copy.extractiveStale
           : r.retrievalFailed
             ? copy.extractiveFailed
-            : md || copy.extractiveEmpty;
+            : md || (tp.range ? copy.rangeEmpty : copy.extractiveEmpty);
         finishTurn({
           a: body,
           extractive: true,
@@ -208,6 +227,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           citations: md ? citationsOf(r.hits) : undefined,
           stale: r.stale,
           retrievalFailed: r.retrievalFailed,
+          range: tp.range ?? undefined,
         });
       } catch (err) {
         finishTurn({ a: "", error: String(err) });
@@ -232,7 +252,12 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           if (s.kind === "thinking" && s.retrievalFailed) retrievalFailed = true;
         },
         messages: [
-          { role: "system", content: SYSTEM_PREAMBLE },
+          {
+            role: "system",
+            content: tp.range
+              ? `${SYSTEM_PREAMBLE}\nFocus on sources dated ${tp.range.start}..${tp.range.end}.`
+              : SYSTEM_PREAMBLE,
+          },
           // Skip turns that errored or have no answer — replaying an empty
           // assistant message makes providers (e.g. Anthropic) reject the
           // request with a 400 on the next question.

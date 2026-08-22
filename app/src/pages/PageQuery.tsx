@@ -326,6 +326,16 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 {t.q_you ?? "you"}
               </span>
               <span style={{ fontWeight: 500 }}>{turn.q}</span>
+              {turn.range ? (
+                // Time-aware Ask (mockup M5-c): the parsed window, promoted to
+                // a chip so the applied filter is visible, not implicit.
+                <span className="chip">
+                  <Icon name="history" size={11} />{" "}
+                  {(t.q_range_chip ?? "Period: {s} – {e}")
+                    .replace("{s}", turn.range.start)
+                    .replace("{e}", turn.range.end)}
+                </span>
+              ) : null}
             </div>
             {turn.extractive && turn.a && !turn.error && !turn.extractiveEmpty ? (
               <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>

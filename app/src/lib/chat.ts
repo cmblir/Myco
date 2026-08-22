@@ -337,6 +337,9 @@ export async function retrieveChunks(
   question: string,
   k = 12,
   onRetrieving?: () => void,
+  /** Inclusive YYYY-MM-DD window (time-aware Ask) — threaded through to
+   * semantic_search's dated-tier filter. */
+  range?: { start: string; end: string },
 ): Promise<RetrievedChunks> {
   const none: RetrievedChunks = { hits: [], stale: false, retrievalFailed: false };
   const status = await ipc.embeddingsStatus().catch((err) => {
@@ -349,7 +352,7 @@ export async function retrieveChunks(
   onRetrieving?.();
   let searchRejected = false;
   const hits = await ipc
-    .semanticSearch(question, k, "builtin-local", BUILTIN_EMBED_MODEL)
+    .semanticSearch(question, k, "builtin-local", BUILTIN_EMBED_MODEL, range)
     .catch((err) => {
       log.warn("retrieve_chunks.semantic_search_failed", { error: String(err) });
       searchRejected = true;

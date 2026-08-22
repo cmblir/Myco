@@ -936,6 +936,9 @@ export interface Strings {
   q_extractive_empty?: string;
   q_extractive_stale?: string;
   q_extractive_failed?: string;
+  // Time-aware Ask (Q4 item 8): parsed-period chip + range-scoped empty copy.
+  q_range_chip?: string;
+  q_range_empty?: string;
   // Per-citation confidence band + source tier chips (ROADMAP P1).
   q_cite_conf_high?: string;
   q_cite_conf_medium?: string;
@@ -2117,6 +2120,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "The search index predates a model update, so it can't be searched. Run “Reindex now” under Model settings, then ask again.",
     q_extractive_failed:
       "The search index could not be reached, so no passages could be retrieved. If it keeps happening, run “Reindex now” under Model settings.",
+    q_range_chip: "Period: {s} – {e}",
+    q_range_empty: "No answer found in the records for that period.",
     q_cite_conf_high: "strong match",
     q_cite_conf_medium: "moderate match",
     q_cite_conf_low: "weak match",
@@ -3292,6 +3297,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "검색 인덱스가 모델 업데이트 이전에 만들어져 검색할 수 없습니다. 모델 설정에서 “지금 재인덱스”를 실행한 뒤 다시 질문해 주세요.",
     q_extractive_failed:
       "검색 인덱스에 접근할 수 없어 관련 구절을 가져오지 못했습니다. 계속되면 모델 설정에서 “지금 재인덱스”를 실행해 주세요.",
+    q_range_chip: "기간: {s} – {e}",
+    q_range_empty: "해당 기간의 기록에서 답을 찾지 못했습니다.",
     q_cite_conf_high: "일치도 높음",
     q_cite_conf_medium: "일치도 보통",
     q_cite_conf_low: "일치도 낮음",
@@ -4312,6 +4319,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "検索インデックスがモデル更新前のものだったため、検索できませんでした。モデル設定の「今すぐ再インデックス」を実行してから、もう一度質問してください。",
     q_extractive_failed:
       "検索インデックスに接続できず、該当する箇所を取得できませんでした。続く場合は、モデル設定の「今すぐ再インデックス」を実行してください。",
+    q_range_chip: "期間: {s} – {e}",
+    q_range_empty: "該当期間の記録から答えは見つかりませんでした。",
     q_cite_conf_high: "一致度 高",
     q_cite_conf_medium: "一致度 中",
     q_cite_conf_low: "一致度 低",
