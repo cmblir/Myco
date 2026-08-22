@@ -6,10 +6,13 @@ import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
-import { ipc } from "../lib/ipc";
+import { ipc, type RunSummary } from "../lib/ipc";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { flattenMarkdown } from "../lib/graphData";
+import { formatRunLine } from "../lib/runList";
+import { buildRunRows, type RunRows } from "../lib/runDetailView";
+import DiffView from "../components/DiffView";
 import Viewer from "../components/Viewer";
 
 interface ReportRow {
@@ -23,9 +26,16 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
   const fileTree = useVaultStore((s) => s.fileTree);
   const refreshTree = useVaultStore((s) => s.refreshTree);
   const setRoute = useUIStore((s) => s.setRoute);
+  const lang = useUIStore((s) => s.lang);
   const [mtimes, setMtimes] = useState<Map<string, number>>(new Map());
   const [openPath, setOpenPath] = useState<string | null>(null);
   const [content, setContent] = useState<string | null>(null);
+  // Run drill-in (W3–6 item 6).
+  const [runs, setRuns] = useState<RunSummary[]>([]);
+  const [openRun, setOpenRun] = useState<string | null>(null);
+  const [runRows, setRunRows] = useState<RunRows | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
+  const [undoingRun, setUndoingRun] = useState<string | null>(null);
 
   // Pick up reports a just-finished run may have written.
   useEffect(() => {
@@ -79,6 +89,64 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
     };
   }, [openPath]);
 
+  // The distill run list; section hides when empty or unavailable.
+  useEffect(() => {
+    if (!currentVault) return;
+    let cancelled = false;
+    ipc
+      .listDistillRuns(currentVault.path, 20)
+      .then((rs) => {
+        if (!cancelled) setRuns(rs);
+      })
+      .catch(() => {
+        /* run list unavailable — the Runs section stays hidden */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentVault]);
+
+  // Expanding a run fetches its manifest detail + git diff. A run without a
+  // commit rejects with "no-commit" — fall back to the manifest file list.
+  useEffect(() => {
+    setRunRows(null);
+    setRunError(null);
+    if (!openRun || !currentVault) return;
+    let cancelled = false;
+    const vault = currentVault.path;
+    void (async () => {
+      try {
+        const detail = await ipc.distillRunDetail(vault, openRun);
+        const diffs = await ipc.distillRunDiff(vault, openRun).catch((e: unknown) => {
+          if (String(e).includes("no-commit")) return null;
+          throw e;
+        });
+        if (!cancelled) setRunRows(buildRunRows(detail, diffs));
+      } catch (e: unknown) {
+        if (!cancelled) setRunError(String(e));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [openRun, currentVault]);
+
+  const undoRun = async (id: string): Promise<void> => {
+    if (!currentVault) return;
+    setUndoingRun(id);
+    setRunError(null);
+    try {
+      await ipc.undoDistillRun(currentVault.path, id);
+      setOpenRun(null);
+      setRuns(await ipc.listDistillRuns(currentVault.path, 20));
+      void refreshTree();
+    } catch (e: unknown) {
+      setRunError(String(e));
+    } finally {
+      setUndoingRun(null);
+    }
+  };
+
   const dateFmt = useMemo(
     () =>
       new Intl.DateTimeFormat(undefined, {
@@ -95,6 +163,167 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
         <h1 className="page-title">{t.h_title}</h1>
         <p className="page-lede">{t.h_lede}</p>
       </header>
+
+      {/* Distill runs (W3–6 item 6): expand → file rows + word diff; WHY →
+          the run's ingest report; undo → existing undo_distill_run. */}
+      {currentVault && runs.length > 0 ? (
+        <section style={{ marginTop: 16 }} data-testid="history-runs">
+          <div className="page-eyebrow">{t.history_runs_title}</div>
+          {runError ? (
+            <div style={{ color: "#dc2626", fontSize: 12.5, margin: "4px 0 8px" }}>
+              {runError}
+            </div>
+          ) : null}
+          <div className="col" style={{ marginTop: 8, gap: 0 }}>
+            {runs.map((r) => {
+              const open = openRun === r.id;
+              // Hide WHY only once the open run's detail proved the report absent.
+              const whyShown = !open || runRows === null || runRows.whyRel !== null;
+              return (
+                <div
+                  key={r.id}
+                  className="card"
+                  style={{ padding: 0, borderRadius: 10, marginBottom: 8 }}
+                >
+                  {/* Same three-sibling disclosure pattern as the report rows
+                      below — separately named buttons, no nesting. */}
+                  <div
+                    style={{
+                      display: "grid",
+                      gridTemplateColumns: "1fr auto auto auto",
+                      gap: 12,
+                      alignItems: "center",
+                      padding: "12px 16px",
+                    }}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => setOpenRun(open ? null : r.id)}
+                      aria-expanded={open}
+                      aria-label={r.id}
+                      style={{
+                        background: "transparent",
+                        border: 0,
+                        textAlign: "left",
+                        cursor: "pointer",
+                        padding: 0,
+                      }}
+                    >
+                      <div
+                        style={{
+                          fontWeight: 600,
+                          fontSize: 13.5,
+                          fontFamily: "var(--font-mono)",
+                        }}
+                      >
+                        {r.id}
+                      </div>
+                      <div className="muted" style={{ fontSize: 12 }}>
+                        {formatRunLine(r, lang)}
+                      </div>
+                    </button>
+                    {whyShown ? (
+                      <button
+                        type="button"
+                        className="btn"
+                        onClick={() =>
+                          setRoute(
+                            `page:${currentVault.path}/ingest-reports/distill-${r.id}.md`,
+                          )
+                        }
+                      >
+                        {t.history_run_open_why}
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => void undoRun(r.id)}
+                      disabled={undoingRun !== null}
+                      aria-busy={undoingRun === r.id}
+                    >
+                      {undoingRun === r.id
+                        ? (t.set_distill_undoing ?? "Undoing…")
+                        : (t.set_distill_undo ?? "Undo this run")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setOpenRun(open ? null : r.id)}
+                      aria-expanded={open}
+                      aria-label={
+                        open
+                          ? (t.hist_collapse ?? "Collapse")
+                          : (t.hist_expand ?? "Expand")
+                      }
+                      style={{
+                        background: "transparent",
+                        border: 0,
+                        cursor: "pointer",
+                        display: "grid",
+                        placeItems: "center",
+                        padding: 0,
+                      }}
+                    >
+                      <Icon name={open ? "chevD" : "chevR"} size={13} />
+                    </button>
+                  </div>
+                  {open ? (
+                    <div
+                      className="ingest-preview-body"
+                      style={{ borderTop: "1px solid var(--line-soft)" }}
+                    >
+                      {runRows === null ? (
+                        runError === null ? (
+                          <div className="muted" style={{ fontSize: 12 }}>
+                            …
+                          </div>
+                        ) : null
+                      ) : (
+                        <>
+                          {runRows.noCommit ? (
+                            <div
+                              className="muted"
+                              style={{ fontSize: 12.5, marginBottom: 8 }}
+                            >
+                              {t.history_no_commit}
+                            </div>
+                          ) : null}
+                          {runRows.files.map((f) => (
+                            <div key={f.rel} style={{ marginBottom: 10 }}>
+                              <div
+                                className="row"
+                                style={{ gap: 8, marginBottom: 4 }}
+                              >
+                                <span className="typebadge">{t[f.statusKey]}</span>
+                                <span
+                                  style={{
+                                    fontSize: 12.5,
+                                    fontFamily: "var(--font-mono)",
+                                  }}
+                                >
+                                  {f.rel}
+                                </span>
+                              </div>
+                              {f.tooLarge ? (
+                                <div className="muted" style={{ fontSize: 12 }}>
+                                  {t.history_diff_too_large}
+                                </div>
+                              ) : null}
+                              {f.diff !== null && f.diff.length > 0 ? (
+                                <DiffView lines={f.diff} />
+                              ) : null}
+                            </div>
+                          ))}
+                        </>
+                      )}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
 
       {!currentVault ? (
         <p className="muted">{t.h_open_vault ?? "Open a vault to see history."}</p>

@@ -5332,3 +5332,38 @@ html.spotlight-window body {
 .spotlight-body .myco-viewer a {
   color: #9dbcff;
 }
+
+/* Word-level diff (W3–6 item 6, mockup M3-c). Line tints + word marks per the
+   spec recipe; deleted words get line-through. Rendered by DiffView.tsx. */
+.diff {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.6;
+  overflow-x: auto;
+}
+.diff .dl {
+  padding: 0 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.diff .dl.add {
+  background: rgba(22, 163, 74, 0.1);
+}
+.diff .dl.del {
+  background: rgba(220, 38, 38, 0.08);
+}
+.diff .ln {
+  display: inline-block;
+  width: 14px;
+  color: var(--ink-3);
+  user-select: none;
+}
+.diff .wadd {
+  background: rgba(22, 163, 74, 0.28);
+  border-radius: 2px;
+}
+.diff .wdel {
+  background: rgba(220, 38, 38, 0.25);
+  border-radius: 2px;
+  text-decoration: line-through;
+}

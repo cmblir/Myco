@@ -1133,6 +1133,16 @@ export interface Strings {
   ov_since_quiet?: string;
   ov_suspect_title?: string;
   ov_suspect_clean?: string;
+  ov_view_runs?: string;
+  // Run drill-in on History (W3–6 item 6).
+  history_runs_title: string;
+  history_run_open_why: string;
+  history_no_commit: string;
+  history_diff_too_large: string;
+  history_status_added: string;
+  history_status_modified: string;
+  history_status_renamed: string;
+  history_status_deleted: string;
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -2299,6 +2309,18 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_since_quiet: "All quiet since your last visit.",
     ov_suspect_title: "Suspect pages",
     ov_suspect_clean: "Every checked page looks sound.",
+    ov_view_runs: "View runs",
+    history_runs_title: "Runs",
+    history_run_open_why: "WHY report",
+    history_no_commit:
+      "This run happened while history (git) was off — showing the file list only.",
+    history_diff_too_large: "Too large to diff",
+    history_status_added: "Added",
+    // Distill renames ARE moves (archive/trash relocations), so the label
+    // says what happened to the page, not the git status letter.
+    history_status_modified: "Modified",
+    history_status_renamed: "Moved",
+    history_status_deleted: "Deleted",
   },
   ko: {
     app_name: "myco",
@@ -3457,6 +3479,16 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_since_quiet: "다녀오신 사이 조용했습니다.",
     ov_suspect_title: "의심 페이지",
     ov_suspect_clean: "점검한 페이지 모두 이상 없습니다.",
+    ov_view_runs: "런 보기",
+    history_runs_title: "실행",
+    history_run_open_why: "WHY 리포트",
+    history_no_commit:
+      "이 실행은 이력(git)이 꺼진 상태에서 돌았습니다 — 파일 목록만 보여드립니다.",
+    history_diff_too_large: "파일이 커서 차이를 표시하지 못합니다",
+    history_status_added: "추가",
+    history_status_modified: "수정",
+    history_status_renamed: "이동",
+    history_status_deleted: "삭제",
   },
   ja: {
     app_name: "myco",
@@ -4617,5 +4649,15 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_since_quiet: "前回から変化はありません。",
     ov_suspect_title: "要確認ページ",
     ov_suspect_clean: "確認したページに問題はありません。",
+    ov_view_runs: "実行を見る",
+    history_runs_title: "実行",
+    history_run_open_why: "WHYレポート",
+    history_no_commit:
+      "この実行は履歴 (git) が無効の状態で行われました — ファイル一覧のみ表示します。",
+    history_diff_too_large: "ファイルが大きいため差分を表示できません",
+    history_status_added: "追加",
+    history_status_modified: "変更",
+    history_status_renamed: "移動",
+    history_status_deleted: "削除",
   },
 };

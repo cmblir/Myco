@@ -64,6 +64,15 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
     <section style={{ marginTop: 20 }} data-testid="morning-band">
       <div className="page-eyebrow">{t.ov_since_eyebrow ?? "Since you were last here"}</div>
       <div style={{ fontSize: 20, fontWeight: 650, letterSpacing: "-0.01em" }}>{headline}</div>
+      {/* Run drill-in lives on History (W3–6 item 6). */}
+      <button
+        type="button"
+        className="btn"
+        style={{ marginTop: 8 }}
+        onClick={() => setRoute("history")}
+      >
+        {t.ov_view_runs ?? "View runs"}
+      </button>
       <div className="card-grid" style={{ marginTop: 14 }}>
         <div className="card" style={{ padding: 16 }}>
           <div className="row" style={{ justifyContent: "space-between" }}>
