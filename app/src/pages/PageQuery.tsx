@@ -12,6 +12,7 @@ import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { askCopy, useQueryStore } from "../stores/queryStore";
+import { ipc } from "../lib/ipc";
 import { takeQueryPrefill } from "../lib/queryPrefill";
 import MascotClip from "../components/MascotClip";
 import { flattenMarkdown, stem } from "../lib/graphData";
@@ -342,6 +343,22 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
             </div>
             {turn.citations?.length ? (
               <CitationChips t={t} citations={turn.citations} />
+            ) : null}
+            {turn.a && !turn.error ? (
+              // Ghost action: log this question to the recall-miss eval set
+              // (Q4 item 5) when the answer missed what the user expected.
+              <button
+                className="btn btn-ghost"
+                style={{ padding: "3px 8px", fontSize: 11.5, marginTop: 6 }}
+                onClick={() => {
+                  if (currentVault)
+                    void ipc
+                      .recordRecallMiss(currentVault.path, turn.q)
+                      .catch(() => undefined);
+                }}
+              >
+                {t.q_miss_btn ?? "Not what you expected? Log it"}
+              </button>
             ) : null}
             {turn.stale && !turn.extractive ? (
               <div className="muted" style={{ fontSize: 12, marginTop: 4 }}>

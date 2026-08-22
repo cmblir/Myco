@@ -37,6 +37,8 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   // exactHits, contentHits, semanticHits). Keyboard arrows move it; Enter
   // activates the selected row.
   const [selected, setSelected] = useState(0);
+  // ⌥⏎ logged the current query as a recall miss — swaps the footer hint.
+  const [missLogged, setMissLogged] = useState(false);
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 30);
@@ -46,6 +48,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   // Reset selection to the top whenever the query changes.
   useEffect(() => {
     setSelected(0);
+    setMissLogged(false);
   }, [q]);
 
   // Full-text search across page contents, debounced. Names/routes are matched
@@ -219,6 +222,14 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       move(-1);
+    } else if (e.key === "Enter" && e.altKey) {
+      // ⌥⏎ — log the query to the recall-miss eval set (Q4 item 5).
+      e.preventDefault();
+      const vault = useVaultStore.getState().currentVault;
+      if (vault && q.trim().length >= 2) {
+        void ipc.recordRecallMiss(vault.path, q.trim()).catch(() => undefined);
+        setMissLogged(true);
+      }
     } else if (e.key === "Enter") {
       if (total > 0) activate(active);
     } else if (e.key === "Tab") {
@@ -360,7 +371,12 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
             );
           })}
           <div className="muted" style={{ fontSize: 11.5, padding: "6px 10px 4px" }}>
-            {t.cb_operator_hint ?? "Quotes for exact match · path: · tag:"}
+            {missLogged
+              ? (t.cb_miss_done ?? "Logged to the eval set.")
+              : `${t.cb_operator_hint ?? "Quotes for exact match · path: · tag:"} · ${
+                  t.cb_miss_hint ??
+                  "Didn't find it? ⌥⏎ logs this search to the eval set."
+                }`}
           </div>
         </div>
       </div>

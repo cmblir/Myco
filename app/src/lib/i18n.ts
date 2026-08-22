@@ -954,6 +954,7 @@ export interface Strings {
   q_chip_done?: string;
   q_chip_error?: string;
   q_you?: string;
+  q_miss_btn?: string;
   // Sidebar.
   sb_new_note?: string;
   sb_new_folder?: string;
@@ -972,6 +973,8 @@ export interface Strings {
   cb_semantic?: string;
   cb_exact?: string;
   cb_operator_hint?: string;
+  cb_miss_hint?: string;
+  cb_miss_done?: string;
   // Topbar.
   tb_lint?: string;
   tb_toggle_sidebar?: string;
@@ -2114,6 +2117,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_chip_done: "Answer ready",
     q_chip_error: "Answer failed",
     q_you: "you",
+    q_miss_btn: "Not what you expected? Log it",
     sb_new_note: "New note",
     sb_new_folder: "New folder",
     sb_rename: "Rename…",
@@ -2130,6 +2134,8 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_semantic: "Related (semantic)",
     cb_exact: "Exact match",
     cb_operator_hint: "Quotes for exact match · path: · tag:",
+    cb_miss_hint: "Didn't find it? ⌥⏎ logs this search to the eval set.",
+    cb_miss_done: "Logged to the eval set.",
     tb_lint: "Lint",
     tb_toggle_sidebar: "Toggle sidebar (⌘B)",
     tb_model_picker: "Model status",
@@ -3265,6 +3271,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_chip_done: "답변 완료",
     q_chip_error: "답변 실패",
     q_you: "나",
+    q_miss_btn: "기대한 답이 아니었나요? 기록하기",
     sb_new_note: "새 노트",
     sb_new_folder: "새 폴더",
     sb_rename: "이름 바꾸기…",
@@ -3281,6 +3288,8 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_semantic: "관련 (의미)",
     cb_exact: "정확 일치",
     cb_operator_hint: "따옴표는 정확 일치 · path: · tag:",
+    cb_miss_hint: "기대한 문서가 없나요? ⌥⏎ 로 이 검색을 평가 세트에 기록합니다.",
+    cb_miss_done: "평가 세트에 기록했습니다.",
     tb_lint: "린트",
     tb_toggle_sidebar: "사이드바 토글 (⌘B)",
     tb_model_picker: "모델 상태",
@@ -4264,6 +4273,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_chip_done: "回答完了",
     q_chip_error: "回答失敗",
     q_you: "あなた",
+    q_miss_btn: "期待した答えと違いますか？記録する",
     sb_new_note: "新規ノート",
     sb_new_folder: "新規フォルダ",
     sb_rename: "名前を変更…",
@@ -4280,6 +4290,8 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_semantic: "関連（意味）",
     cb_exact: "完全一致",
     cb_operator_hint: "引用符で完全一致 · path: · tag:",
+    cb_miss_hint: "見つかりませんか？ ⌥⏎ でこの検索を評価セットに記録します。",
+    cb_miss_done: "評価セットに記録しました。",
     tb_lint: "リント",
     tb_toggle_sidebar: "サイドバー切替 (⌘B)",
     tb_model_picker: "モデル状況",
