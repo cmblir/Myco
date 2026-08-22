@@ -42,6 +42,7 @@ pub mod tray;
 pub mod validator;
 pub mod vault;
 pub mod vault_dir;
+pub mod vault_history;
 pub mod vector_index;
 pub mod webview_data;
 pub mod whisper;
