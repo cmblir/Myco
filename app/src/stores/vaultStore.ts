@@ -4,9 +4,21 @@
 import { create } from "zustand";
 import { ipc } from "../lib/ipc";
 import type { Adjacency, FileContent, FileNode, VaultMeta } from "../lib/ipc";
+import { createDebouncedCommitter } from "../lib/humanCommit";
+import { useSettingsStore } from "./settingsStore";
 import { useUIStore } from "./uiStore";
 
 const LAST_VAULT_KEY = "myco.lastVaultPath";
+
+// One committer per app: coalesces the editor's rapid autosaves of a file
+// into a single human-authored history commit (Q4 item 1).
+const humanCommitter = createDebouncedCommitter((rel) => {
+  const vault = useVaultStore.getState().currentVault;
+  if (!vault) return;
+  void ipc.commitHumanEdit(vault.path, rel).catch(() => {
+    /* history commit is best-effort; the save itself already landed */
+  });
+});
 
 // Monotonic counter to guard against race conditions when openVault or
 // refreshLinkGraph is called multiple times in quick succession. Only the
@@ -147,6 +159,15 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   async saveFile(path, content) {
     try {
       await ipc.writeFile(path, content);
+      const vault = get().currentVault;
+      if (
+        vault &&
+        useSettingsStore.getState().settings?.vault_history_enabled &&
+        path.startsWith(vault.path)
+      ) {
+        const rel = path.slice(vault.path.length).replace(/^\/+/, "");
+        humanCommitter.touch(rel);
+      }
       // The editor saves the full raw document, so the saved string IS the new
       // `raw`. Keep `raw` in sync (the editor re-seeds from it); the stripped
       // `content` preview field is recomputed on the next fresh read_file.
