@@ -13,6 +13,7 @@ import { BUILTIN_EMBED_MODEL } from "../lib/providers";
 import type { FileNode, SearchHit, VecHit } from "../lib/ipc";
 import { isComposingKey } from "../lib/ime";
 import { promptNewNote } from "../lib/newNote";
+import { hitPassesFilters, parseSearchQuery } from "../lib/searchQuery";
 
 type CmdEntry =
   | { type: "nav" | "page"; label: string; to: RouteId }
@@ -27,11 +28,14 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const [q, setQ] = useState("");
+  // Hits for a "quoted phrase" — the substring scan run with the full phrase.
+  const [exactHits, setExactHits] = useState<SearchHit[]>([]);
   const [contentHits, setContentHits] = useState<SearchHit[]>([]);
   // Semantic (embedding) hits — meaning matches even when the exact words differ.
   const [semanticHits, setSemanticHits] = useState<VecHit[]>([]);
   // Index into the combined result list (filtered entries first, then
-  // contentHits). Keyboard arrows move it; Enter activates the selected row.
+  // exactHits, contentHits, semanticHits). Keyboard arrows move it; Enter
+  // activates the selected row.
   const [selected, setSelected] = useState(0);
 
   useEffect(() => {
@@ -49,23 +53,50 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   useEffect(() => {
     const needle = q.trim();
     if (needle.length < 2) {
+      setExactHits([]);
       setContentHits([]);
       setSemanticHits([]);
       return;
     }
     let cancelled = false;
     const id = setTimeout(() => {
+      const parsed = parseSearchQuery(needle);
+      const { currentVault: vault, adjacency } = useVaultStore.getState();
+      const passes = (path: string): boolean =>
+        hitPassesFilters(path, vault?.path ?? "", parsed, adjacency?.tags ?? {});
+      // Exact arm: the raw substring scan takes the whole quoted phrase as
+      // its needle, so every hit contains it verbatim.
+      const phrase = parsed.phrases[0];
+      if (phrase) {
+        ipc
+          .searchVault(phrase, 20)
+          .then((hits) => {
+            if (!cancelled) setExactHits(hits.filter((h) => passes(h.path)));
+          })
+          .catch(() => {
+            if (!cancelled) setExactHits([]);
+          });
+      } else {
+        setExactHits([]);
+      }
+      // Operator-only queries (e.g. just `path:wiki/`) leave nothing to scan.
+      const lexQuery = parsed.terms || parsed.phrases.join(" ");
+      if (!lexQuery) {
+        setContentHits([]);
+        setSemanticHits([]);
+        return;
+      }
       ipc
-        .searchVault(needle, 20)
+        .searchVault(lexQuery, 20)
         .then((hits) => {
-          if (!cancelled) setContentHits(hits);
+          if (!cancelled) setContentHits(hits.filter((h) => passes(h.path)));
         })
         .catch(() => {
           if (!cancelled) setContentHits([]);
         });
       // Semantic hits run in parallel; empty when no index is built (quiet fail).
       ipc
-        .semanticSearch(needle, 6, "builtin-local", BUILTIN_EMBED_MODEL)
+        .semanticSearch(lexQuery, 6, "builtin-local", BUILTIN_EMBED_MODEL)
         .then((hits) => {
           if (!cancelled) setSemanticHits(hits);
         })
@@ -118,9 +149,12 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
     ? all.filter((x) => x.label.toLowerCase().includes(q.toLowerCase())).slice(0, 50)
     : all.slice(0, 12);
 
-  // The two rendered groups form a single navigable list: nav/file entries
-  // first, then full-text content hits.
-  const total = filtered.length + contentHits.length + semanticHits.length;
+  // The rendered groups form a single navigable list: nav/file entries first,
+  // then exact-phrase hits, full-text content hits, semantic hits.
+  const exactBase = filtered.length;
+  const contentBase = exactBase + exactHits.length;
+  const semanticBase = contentBase + contentHits.length;
+  const total = semanticBase + semanticHits.length;
   const active = total > 0 ? Math.min(selected, total - 1) : 0;
 
   function go(entry: CmdEntry): void {
@@ -143,14 +177,17 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   }
   // Activate the row at the given combined index.
   function activate(index: number): void {
-    if (index < filtered.length) {
+    if (index < exactBase) {
       const entry = filtered[index];
       if (entry) go(entry);
-    } else if (index < filtered.length + contentHits.length) {
-      const hit = contentHits[index - filtered.length];
+    } else if (index < contentBase) {
+      const hit = exactHits[index - exactBase];
+      if (hit) goPath(hit.path);
+    } else if (index < semanticBase) {
+      const hit = contentHits[index - contentBase];
       if (hit) goPath(hit.path);
     } else {
-      const hit = semanticHits[index - filtered.length - contentHits.length];
+      const hit = semanticHits[index - semanticBase];
       if (hit) goIndexedPage(hit.page);
     }
   }
@@ -225,6 +262,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
         </div>
         <div className="cmd-list" id={listId} role="listbox" ref={listRef}>
           {filtered.length === 0 &&
+          exactHits.length === 0 &&
           contentHits.length === 0 &&
           semanticHits.length === 0 ? (
             <div className="cmd-row muted">{t.cb_no_results ?? "No results"}</div>
@@ -250,6 +288,29 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
               </span>
             </button>
           ))}
+          {exactHits.length > 0 ? (
+            <div className="cmd-group-label">
+              {t.cb_exact ?? "Exact match"}
+            </div>
+          ) : null}
+          {exactHits.map((h, i) => (
+            <button
+              key={`exact-${h.path}-${h.line}`}
+              id={rowId(exactBase + i)}
+              role="option"
+              aria-selected={active === exactBase + i}
+              tabIndex={-1}
+              className={`cmd-row${active === exactBase + i ? " active" : ""}`}
+              onClick={() => goPath(h.path)}
+            >
+              <Icon name="search" size={13} />
+              <span className="cmd-content-hit">
+                <span>{h.name.replace(/\.md$/i, "")}</span>
+                <span className="cmd-content-snippet">{h.snippet}</span>
+              </span>
+              <span className="cr-tag">L{h.line}</span>
+            </button>
+          ))}
           {contentHits.length > 0 ? (
             <div className="cmd-group-label">
               {t.cb_in_contents ?? "In page contents"}
@@ -258,12 +319,12 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
           {contentHits.map((h, i) => (
             <button
               key={`content-${h.path}-${h.line}`}
-              id={rowId(filtered.length + i)}
+              id={rowId(contentBase + i)}
               role="option"
-              aria-selected={active === filtered.length + i}
+              aria-selected={active === contentBase + i}
               tabIndex={-1}
               className={`cmd-row${
-                active === filtered.length + i ? " active" : ""
+                active === contentBase + i ? " active" : ""
               }`}
               onClick={() => goPath(h.path)}
             >
@@ -281,7 +342,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
             </div>
           ) : null}
           {semanticHits.map((h, i) => {
-            const idx = filtered.length + contentHits.length + i;
+            const idx = semanticBase + i;
             return (
               <button
                 key={`sem-${h.page}`}
@@ -298,6 +359,9 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
               </button>
             );
           })}
+          <div className="muted" style={{ fontSize: 11.5, padding: "6px 10px 4px" }}>
+            {t.cb_operator_hint ?? "Quotes for exact match · path: · tag:"}
+          </div>
         </div>
       </div>
     </div>

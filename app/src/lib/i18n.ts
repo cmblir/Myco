@@ -969,6 +969,8 @@ export interface Strings {
   cb_tag_action?: string;
   cb_in_contents?: string;
   cb_semantic?: string;
+  cb_exact?: string;
+  cb_operator_hint?: string;
   // Topbar.
   tb_lint?: string;
   tb_toggle_sidebar?: string;
@@ -2124,6 +2126,8 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_tag_action: "action",
     cb_in_contents: "In page contents",
     cb_semantic: "Related (semantic)",
+    cb_exact: "Exact match",
+    cb_operator_hint: "Quotes for exact match · path: · tag:",
     tb_lint: "Lint",
     tb_toggle_sidebar: "Toggle sidebar (⌘B)",
     tb_model_picker: "Model status",
@@ -3272,6 +3276,8 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_tag_action: "동작",
     cb_in_contents: "페이지 본문에서",
     cb_semantic: "관련 (의미)",
+    cb_exact: "정확 일치",
+    cb_operator_hint: "따옴표는 정확 일치 · path: · tag:",
     tb_lint: "린트",
     tb_toggle_sidebar: "사이드바 토글 (⌘B)",
     tb_model_picker: "모델 상태",
@@ -4268,6 +4274,8 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_tag_action: "操作",
     cb_in_contents: "ページ本文内",
     cb_semantic: "関連（意味）",
+    cb_exact: "完全一致",
+    cb_operator_hint: "引用符で完全一致 · path: · tag:",
     tb_lint: "リント",
     tb_toggle_sidebar: "サイドバー切替 (⌘B)",
     tb_model_picker: "モデル状況",
