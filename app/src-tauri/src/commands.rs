@@ -1862,6 +1862,18 @@ pub fn list_distill_runs(
     ))
 }
 
+/// One run's full manifest, WHY-report presence, and git commit — the run-log
+/// drill-in (W3–6 item 6). See `distill::run_detail`.
+#[tauri::command]
+pub fn distill_run_detail(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    id: String,
+) -> Result<crate::distill::RunDetail, String> {
+    let root = confine_root(&state, &vault)?;
+    crate::distill::run_detail(std::path::Path::new(&root), &id)
+}
+
 // ---- vault history (Q4 item 1) --------------------------------------------
 
 #[tauri::command]

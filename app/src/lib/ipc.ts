@@ -333,6 +333,17 @@ export interface RunSummary {
   created: number;
 }
 
+/** Mirrors Rust `distill::RunDetail` (W3–6 item 6). */
+export interface RunDetail {
+  id: string;
+  started_at: number;
+  moves: [string, string][];
+  trashed: [string, string][];
+  created: string[];
+  report_rel: string | null;
+  commit: string | null;
+}
+
 /** Honest global-shortcut state (mirrors Rust `spotlight::ShortcutStatus`).
  *  `registered: false` with a non-empty `shortcut` means the app asked for it
  *  and was refused — `error` carries the reason, shown as-is in Settings. */
@@ -820,6 +831,9 @@ export const ipc = {
   // Run list with per-row undo (Q4 item 3).
   listDistillRuns: (vault: string, limit?: number) =>
     invoke<RunSummary[]>("list_distill_runs", { vault, limit }),
+  // Run drill-in: full manifest + WHY report + git commit (W3–6 item 6).
+  distillRunDetail: (vault: string, id: string) =>
+    invoke<RunDetail>("distill_run_detail", { vault, id }),
   // Opt-in vault git history (Q4 item 1).
   vaultHistoryStatus: (vault: string) =>
     invoke<VaultHistoryStatus>("vault_history_status", { vault }),

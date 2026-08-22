@@ -2919,6 +2919,46 @@ pub fn list_runs(root: &Path, limit: usize) -> Vec<RunSummary> {
     out
 }
 
+/// One persisted run manifest in full — the run-log drill-in view (W3–6
+/// item 6). Public DTO for the module-private `RunManifest`, plus the two
+/// things the manifest itself doesn't record: whether the WHY report is on
+/// disk, and which git commit (if any) this run produced.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct RunDetail {
+    pub id: String,
+    pub started_at: i64,
+    pub moves: Vec<(String, String)>, // (from, to)
+    pub trashed: Vec<(String, String)>,
+    pub created: Vec<String>,
+    /// `ingest-reports/distill-<id>.md` — `Some` only when it exists.
+    pub report_rel: Option<String>,
+    /// Full SHA of the `distill: run <id>` commit, when history was on.
+    pub commit: Option<String>,
+}
+
+/// Read one run's manifest into a [`RunDetail`]. `id` is untrusted IPC input
+/// joined into a `.myco/distill-runs/` path — same `valid_manifest_id` guard
+/// as `append_distill_manifest`.
+pub fn run_detail(root: &Path, id: &str) -> Result<RunDetail, String> {
+    if !valid_manifest_id(id) {
+        return Err(format!("bad manifest id `{id}`"));
+    }
+    let path = manifest_path(root, id);
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| format!("read manifest {}: {e}", path.display()))?;
+    let m: RunManifest = serde_json::from_str(&raw).map_err(|e| format!("parse manifest: {e}"))?;
+    let report_rel = format!("ingest-reports/distill-{id}.md");
+    Ok(RunDetail {
+        id: m.id,
+        started_at: m.started_at,
+        moves: m.moves.into_iter().map(|e| (e.from, e.to)).collect(),
+        trashed: m.trashed.into_iter().map(|e| (e.from, e.to)).collect(),
+        created: m.created,
+        report_rel: root.join(&report_rel).exists().then_some(report_rel),
+        commit: crate::vault_history::commit_for_message(root, &format!("distill: run {id}")),
+    })
+}
+
 /// Cheap vault-wide status for the settings tab / MCP `distill_status`: no
 /// scoring, just a fs walk against the ledger already on disk.
 pub fn status(root: &Path) -> DistillStatus {
@@ -5211,6 +5251,64 @@ mod tests {
         // Untrusted id: must be rejected outright, no file written.
         assert!(append_distill_manifest(root, "../evil", vec![], vec!["x".into()]).is_err());
         assert!(!manifest_path(root, "../evil").exists());
+    }
+
+    #[test]
+    fn run_detail_reads_manifest_and_finds_report() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let manifest = RunManifest {
+            id: "digest-100".into(),
+            started_at: 1_755_000_000,
+            moves: vec![MoveEntry {
+                from: "_inbox/a.md".into(),
+                to: "_inbox/.archived/a.md".into(),
+            }],
+            trashed: vec![MoveEntry {
+                from: "_inbox/junk.md".into(),
+                to: ".myco/trash/digest-100/junk.md".into(),
+            }],
+            created: vec!["daily/2026-08-21.md".into()],
+        };
+        save_manifest(root, &manifest).unwrap();
+        std::fs::create_dir_all(root.join("ingest-reports")).unwrap();
+        std::fs::write(root.join("ingest-reports/distill-digest-100.md"), "# why").unwrap();
+
+        let d = run_detail(root, "digest-100").unwrap();
+        assert_eq!(d.id, "digest-100");
+        assert_eq!(d.started_at, 1_755_000_000);
+        assert_eq!(
+            d.moves,
+            vec![(
+                "_inbox/a.md".to_string(),
+                "_inbox/.archived/a.md".to_string()
+            )]
+        );
+        assert_eq!(
+            d.trashed,
+            vec![(
+                "_inbox/junk.md".to_string(),
+                ".myco/trash/digest-100/junk.md".to_string()
+            )]
+        );
+        assert_eq!(d.created, vec!["daily/2026-08-21.md".to_string()]);
+        assert_eq!(
+            d.report_rel.as_deref(),
+            Some("ingest-reports/distill-digest-100.md")
+        );
+        assert_eq!(d.commit, None, "no git repo — no commit");
+
+        // No report on disk → None, not a dangling path.
+        let bare = RunManifest {
+            id: "digest-101".into(),
+            started_at: 1,
+            ..Default::default()
+        };
+        save_manifest(root, &bare).unwrap();
+        assert_eq!(run_detail(root, "digest-101").unwrap().report_rel, None);
+
+        // Untrusted id shape is rejected before any path join.
+        assert!(run_detail(root, "../evil").is_err());
     }
 
     /// The draftMap fragmentation fix's undo half: two proposals recorded by

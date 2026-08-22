@@ -1139,6 +1139,24 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
           created: 0,
         },
       ]);
+    // Run drill-in (W3–6 item 6): commit null — no git repo in a browser, so
+    // ?mock=1 exercises the manifest-only (no-diff) fallback path.
+    case "distill_run_detail":
+      return Promise.resolve({
+        id: args.id as string,
+        started_at: Math.floor(Date.now() / 1000) - 7200,
+        moves: [
+          [
+            "sessions/2026-08/claude-code-aaa.md",
+            "sessions/archive/2026-08/claude-code-aaa.md",
+          ],
+          ["_inbox/clip-scaling-laws.md", "_inbox/.archived/clip-scaling-laws.md"],
+        ],
+        trashed: [],
+        created: ["daily/2026-08-21.md"],
+        report_rel: `ingest-reports/distill-${args.id as string}.md`,
+        commit: null,
+      });
     // Opt-in vault git history (Q4 item 1) — no repo in a browser; the flag
     // lives in the mock SETTINGS so the banner/settings card react to it.
     case "vault_history_status":

@@ -25,7 +25,7 @@ pub struct HistoryStatus {
     pub enabled: bool,
 }
 
-fn git(root: &Path, args: &[&str]) -> Result<std::process::Output, String> {
+pub(crate) fn git(root: &Path, args: &[&str]) -> Result<std::process::Output, String> {
     std::process::Command::new("git")
         .args(args)
         .current_dir(root)
@@ -109,6 +109,74 @@ pub fn commit_paths(
         ));
     }
     Ok(true)
+}
+
+/// Full SHA of the newest commit whose subject is exactly `message`.
+/// `None`: no repo, or no exact match. `--grep` is a substring match even
+/// with `--fixed-strings`, so every candidate's subject is compared for
+/// equality here instead of trusting grep's newest hit.
+pub fn commit_for_message(root: &Path, message: &str) -> Option<String> {
+    if !root.join(".git").exists() {
+        return None;
+    }
+    let out = git(
+        root,
+        &[
+            "log",
+            "--format=%H %s",
+            "--fixed-strings",
+            "--grep",
+            message,
+        ],
+    )
+    .ok()?;
+    if !out.status.success() {
+        return None; // empty repo, or anything else git refuses to log
+    }
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .find_map(|line| {
+            let (sha, subject) = line.split_once(' ')?;
+            (subject == message).then(|| sha.to_string())
+        })
+}
+
+/// File content at `<sha>:<rel>`; `Ok(None)` when the path didn't exist in
+/// that tree, `Err` for anything else (bad sha, no repo).
+pub fn file_at(root: &Path, sha: &str, rel: &str) -> Result<Option<String>, String> {
+    let spec = format!("{sha}:{rel}");
+    let out = git(root, &["show", &spec])?;
+    if out.status.success() {
+        return Ok(Some(String::from_utf8_lossy(&out.stdout).into_owned()));
+    }
+    let err = String::from_utf8_lossy(&out.stderr);
+    if err.contains("does not exist") || err.contains("exists on disk, but not in") {
+        return Ok(None);
+    }
+    Err(format!("git show {spec}: {}", err.trim()))
+}
+
+/// `git show --name-status` of `sha` vs its first parent: `(status, rel)`
+/// pairs in git's path order. Rename/copy rows (`R<score>\told\tnew`) emit
+/// the NEW path under the bare status letter. A root commit (no parent)
+/// lists every file as added.
+pub fn changed_files(root: &Path, sha: &str) -> Result<Vec<(char, String)>, String> {
+    let out = git(root, &["show", "--name-status", "--format=", sha])?;
+    if !out.status.success() {
+        return Err(format!(
+            "git show --name-status {sha}: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut cols = line.split('\t');
+            let status = cols.next()?.chars().next()?;
+            let rel = cols.next_back()?;
+            Some((status, rel.to_string()))
+        })
+        .collect())
 }
 
 /// Idempotent: creates the repo, seeds .gitignore, makes the initial commit.
@@ -221,5 +289,99 @@ mod tests {
         init(dir.path()).unwrap();
         assert!(!commit_paths(dir.path(), &["wiki"], "empty", CommitIdentity::Agent).unwrap());
         assert_eq!(git(dir.path(), &["log", "--oneline"]).lines().count(), 1);
+    }
+
+    #[test]
+    fn commit_for_message_finds_exact_subject() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("wiki")).unwrap();
+        std::fs::write(root.join("wiki/a.md"), "v1").unwrap();
+        init(root).unwrap();
+        std::fs::write(root.join("wiki/a.md"), "v2").unwrap();
+        assert!(
+            commit_paths(root, &["."], "distill: run digest-1", CommitIdentity::Agent).unwrap()
+        );
+
+        let sha = commit_for_message(root, "distill: run digest-1").expect("commit found");
+        assert_eq!(sha.len(), 40, "full sha, not abbreviated: {sha}");
+        assert_eq!(git(root, &["rev-parse", "HEAD"]).trim(), sha);
+
+        // A later unrelated commit must not shadow the match…
+        std::fs::write(root.join("wiki/a.md"), "v3").unwrap();
+        assert!(commit_paths(root, &["."], "edit: unrelated", CommitIdentity::Human).unwrap());
+        assert_eq!(commit_for_message(root, "distill: run digest-1"), Some(sha));
+        // …a substring of a real subject is not an exact match (grep is
+        // substring even with --fixed-strings)…
+        assert_eq!(commit_for_message(root, "distill: run"), None);
+        // …and no repo at all is None, not an error.
+        let empty = tempfile::tempdir().unwrap();
+        assert_eq!(
+            commit_for_message(empty.path(), "distill: run digest-1"),
+            None
+        );
+    }
+
+    #[test]
+    fn file_at_returns_versions_and_none_for_absent() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("wiki")).unwrap();
+        std::fs::write(root.join("wiki/a.md"), "v1 content\n").unwrap();
+        init(root).unwrap();
+        let sha1 = commit_for_message(root, "chore: start vault history").expect("initial");
+        std::fs::write(root.join("wiki/a.md"), "v2 content\n").unwrap();
+        assert!(commit_paths(
+            root,
+            &["wiki"],
+            "distill: run digest-2",
+            CommitIdentity::Agent
+        )
+        .unwrap());
+        let sha2 = commit_for_message(root, "distill: run digest-2").expect("second");
+
+        assert_eq!(
+            file_at(root, &sha2, "wiki/a.md").unwrap(),
+            Some("v2 content\n".to_string())
+        );
+        assert_eq!(
+            file_at(root, &sha1, "wiki/a.md").unwrap(),
+            Some("v1 content\n".to_string())
+        );
+        assert_eq!(file_at(root, &sha1, "wiki/absent.md").unwrap(), None);
+        assert!(file_at(root, "not-a-sha", "wiki/a.md").is_err());
+    }
+
+    #[test]
+    fn changed_files_lists_status_pairs() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("wiki")).unwrap();
+        std::fs::write(root.join("wiki/a.md"), "v1").unwrap();
+        init(root).unwrap();
+        std::fs::write(root.join("wiki/a.md"), "v2").unwrap();
+        std::fs::write(root.join("wiki/b.md"), "new").unwrap();
+        assert!(commit_paths(
+            root,
+            &["wiki"],
+            "distill: run digest-3",
+            CommitIdentity::Agent
+        )
+        .unwrap());
+        let sha = commit_for_message(root, "distill: run digest-3").unwrap();
+
+        assert_eq!(
+            changed_files(root, &sha).unwrap(),
+            vec![
+                ('M', "wiki/a.md".to_string()),
+                ('A', "wiki/b.md".to_string())
+            ]
+        );
+
+        // A root commit has no parent — git still lists its files as added.
+        let sha1 = commit_for_message(root, "chore: start vault history").unwrap();
+        assert!(changed_files(root, &sha1)
+            .unwrap()
+            .contains(&('A', "wiki/a.md".to_string())));
     }
 }
