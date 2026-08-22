@@ -318,7 +318,7 @@ fn safe_join(base: &Path, rel: &str) -> Option<PathBuf> {
 
 /// Collect every `.md` file under `dir` (recursively), returned as absolute
 /// paths. Missing dir → empty. Reuses the vault file walker.
-fn collect_md(dir: &Path) -> Vec<PathBuf> {
+pub(crate) fn collect_md(dir: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     if !dir.is_dir() {
         return out;
@@ -337,7 +337,7 @@ fn collect_md(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
-fn rel_to(base: &Path, abs: &Path) -> String {
+pub(crate) fn rel_to(base: &Path, abs: &Path) -> String {
     abs.strip_prefix(base)
         .unwrap_or(abs)
         .to_string_lossy()
@@ -351,12 +351,12 @@ fn fm_str(fm: &Value, key: &str) -> String {
         .to_string()
 }
 
-fn fm_opt(fm: &Value, key: &str) -> Option<String> {
+pub(crate) fn fm_opt(fm: &Value, key: &str) -> Option<String> {
     fm.get(key).and_then(|v| v.as_str()).map(|s| s.to_string())
 }
 
 /// (frontmatter, body) for a page, via the vault's frontmatter parser.
-fn read_parts(abs: &Path) -> Option<(Value, String)> {
+pub(crate) fn read_parts(abs: &Path) -> Option<(Value, String)> {
     vault::read_file(&abs.to_string_lossy())
         .ok()
         .map(|fc| (fc.frontmatter, fc.content))
@@ -375,8 +375,8 @@ const VALID_TYPES: [&str; 6] = [
     "analysis",
     "map",
 ];
-const LINT_META_TYPES: [&str; 2] = ["overview", "meta"];
-const LINT_SKIP_NAMES: [&str; 2] = ["index.md", "log.md"];
+pub(crate) const LINT_META_TYPES: [&str; 2] = ["overview", "meta"];
+pub(crate) const LINT_SKIP_NAMES: [&str; 2] = ["index.md", "log.md"];
 
 /// title → slug. Mirror of the Python `make_slug` (Unicode-aware; the regex
 /// crate's `\w` already matches Hangul, so Korean titles slug like Python's).
@@ -466,7 +466,7 @@ fn cross_links(body: &str) -> Vec<(String, String)> {
 
 /// Structural + citation lint of one page (frontmatter + body). Mirrors the
 /// Python `lint_page_text`. Empty = clean.
-fn lint_page(fm: &Value, body: &str) -> Vec<String> {
+pub(crate) fn lint_page(fm: &Value, body: &str) -> Vec<String> {
     let mut problems = Vec::new();
     let empty_fm = fm.as_object().map(|o| o.is_empty()).unwrap_or(true);
     if empty_fm {
@@ -522,7 +522,7 @@ fn lint_page(fm: &Value, body: &str) -> Vec<String> {
 }
 
 /// Source-type → trust weight (GOV-03). Unknown/absent → neutral 0.5.
-fn source_trust(stype: &str) -> f64 {
+pub(crate) fn source_trust(stype: &str) -> f64 {
     match stype.trim().to_lowercase().as_str() {
         "peer-reviewed" => 1.0,
         "paper" => 0.95,
@@ -537,7 +537,7 @@ fn source_trust(stype: &str) -> f64 {
     }
 }
 
-fn suggest_confidence(stype: Option<&str>, cites: usize) -> &'static str {
+pub(crate) fn suggest_confidence(stype: Option<&str>, cites: usize) -> &'static str {
     let trust = source_trust(stype.unwrap_or("unknown"));
     let cite_factor = (cites as f64 / 3.0).min(1.0);
     let score = trust * (0.5 + 0.5 * cite_factor);
@@ -547,6 +547,67 @@ fn suggest_confidence(stype: Option<&str>, cites: usize) -> &'static str {
         "medium"
     } else {
         "low"
+    }
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct SuspectPage {
+    pub page: String,
+    pub reasons: Vec<String>,
+}
+
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct SuspectReport {
+    pub pages_checked: usize,
+    pub suspects: Vec<SuspectPage>,
+}
+
+/// Pure scan behind both the MCP trust/lint tools and the app's
+/// Morning-Report suspect card (Q4 item 2). `wiki` is the wiki dir.
+pub(crate) fn suspect_scan(wiki: &Path) -> SuspectReport {
+    // list_files canonicalizes (`/var` -> `/private/var` on macOS); match it so
+    // rel_to can strip the base.
+    let wiki = &wiki.canonicalize().unwrap_or_else(|_| wiki.to_path_buf());
+    let mut checked = 0usize;
+    let mut suspects = Vec::new();
+    for abs in collect_md(wiki) {
+        let name = abs
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if LINT_SKIP_NAMES.contains(&name.as_str()) {
+            continue;
+        }
+        let Some((fm, body)) = read_parts(&abs) else {
+            continue;
+        };
+        if fm_opt(&fm, "type")
+            .map(|t| LINT_META_TYPES.contains(&t.as_str()))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        checked += 1;
+        let mut reasons = lint_page(&fm, &body);
+        let stype = fm_opt(&fm, "source_type");
+        let cites = footnote_refs(&body).len();
+        let declared = fm_opt(&fm, "confidence");
+        let suggested = suggest_confidence(stype.as_deref(), cites);
+        if let Some(d) = &declared {
+            if d != suggested {
+                reasons.push(format!("confidence: declared {d}, suggested {suggested}"));
+            }
+        }
+        if !reasons.is_empty() {
+            suspects.push(SuspectPage {
+                page: rel_to(wiki, &abs),
+                reasons,
+            });
+        }
+    }
+    SuspectReport {
+        pages_checked: checked,
+        suspects,
     }
 }
 
@@ -1865,6 +1926,60 @@ pub async fn serve(ct: CancellationToken) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::record_tool_call_at;
+    use super::suspect_scan;
+
+    #[test]
+    fn suspect_scan_flags_lint_problems_and_confidence_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+        let wiki = dir.path().join("wiki");
+        std::fs::create_dir_all(&wiki).unwrap();
+        // clean page: valid type, three citation refs+defs (paper + 3 cites
+        // suggests "high", so the declared confidence genuinely matches)
+        std::fs::write(
+            wiki.join("clean.md"),
+            "---\ntype: analysis\nsource_type: paper\nconfidence: high\n---\nA claim.[^src-a] Another.[^src-b] A third.[^src-c]\n\n[^src-a]: raw/a.md\n[^src-b]: raw/b.md\n[^src-c]: raw/c.md\n",
+        )
+        .unwrap();
+        // suspect 1: dangling citation ref (lint problem)
+        std::fs::write(
+            wiki.join("dangling.md"),
+            "---\ntype: analysis\nsource_type: paper\nconfidence: high\n---\nClaim.[^src-missing]\n",
+        )
+        .unwrap();
+        // suspect 2: declared high, zero citations from a forum source -> suggested low
+        std::fs::write(
+            wiki.join("overclaim.md"),
+            "---\ntype: analysis\nsource_type: forum\nconfidence: high\n---\nNo citations at all.\n",
+        )
+        .unwrap();
+
+        let report = suspect_scan(&wiki);
+        assert_eq!(report.pages_checked, 3);
+        let pages: Vec<&str> = report.suspects.iter().map(|s| s.page.as_str()).collect();
+        assert!(
+            pages.contains(&"dangling.md"),
+            "dangling ref flagged: {pages:?}"
+        );
+        assert!(
+            pages.contains(&"overclaim.md"),
+            "confidence mismatch flagged"
+        );
+        assert!(
+            !pages.contains(&"clean.md"),
+            "clean page stays clean: {:?}",
+            report.suspects
+        );
+        let over = report
+            .suspects
+            .iter()
+            .find(|s| s.page == "overclaim.md")
+            .unwrap();
+        assert!(
+            over.reasons.iter().any(|r| r.starts_with("confidence:")),
+            "{:?}",
+            over.reasons
+        );
+    }
 
     #[test]
     fn tool_call_log_prunes_entries_older_than_retention() {

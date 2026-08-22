@@ -1134,6 +1134,20 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(null);
     case "commit_human_edit":
       return Promise.resolve(false);
+    case "suspect_pages":
+      return Promise.resolve({
+        pages_checked: 12,
+        suspects: [
+          {
+            page: "analysis-rlhf-vs-dpo.md",
+            reasons: ["citation [^src-x] has no definition"],
+          },
+          {
+            page: "scaling-laws.md",
+            reasons: ["confidence: declared high, suggested low"],
+          },
+        ],
+      });
     case "distill_status":
       return Promise.resolve({
         backlog: 12,

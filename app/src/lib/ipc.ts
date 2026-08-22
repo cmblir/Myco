@@ -312,6 +312,18 @@ export interface VaultHistoryStatus {
   enabled: boolean;
 }
 
+/** Mirrors Rust `mcp_native::SuspectPage` (Q4 item 2). */
+export interface SuspectPage {
+  page: string;
+  reasons: string[];
+}
+
+/** Mirrors Rust `mcp_native::SuspectReport` (Q4 item 2). */
+export interface SuspectReport {
+  pages_checked: number;
+  suspects: SuspectPage[];
+}
+
 /** Honest global-shortcut state (mirrors Rust `spotlight::ShortcutStatus`).
  *  `registered: false` with a non-empty `shortcut` means the app asked for it
  *  and was refused — `error` carries the reason, shown as-is in Settings. */
@@ -803,6 +815,9 @@ export const ipc = {
     invoke<null>("init_vault_history", { vault }),
   commitHumanEdit: (vault: string, rel: string) =>
     invoke<boolean>("commit_human_edit", { vault, rel }),
+  // Morning-Report suspect scan (Q4 item 2).
+  suspectPages: (vault: string) =>
+    invoke<SuspectReport>("suspect_pages", { vault }),
   distillStatus: (vault: string) =>
     invoke<DistillStatus>("distill_status", { vault }),
   // ROADMAP P2 — archive lifecycle. `archiveUsage` is on-demand only (called

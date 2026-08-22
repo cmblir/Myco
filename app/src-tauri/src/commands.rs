@@ -1503,6 +1503,21 @@ pub async fn lint_local(
     .map_err(|e| format!("join failed: {e}"))
 }
 
+/// Whole-wiki suspect scan for the Morning-Report card (Q4 item 2):
+/// every `lint_page` problem plus declared-vs-suggested confidence mismatches.
+#[tauri::command]
+pub async fn suspect_pages(
+    state: tauri::State<'_, VaultRoot>,
+    vault: String,
+) -> Result<crate::mcp_native::SuspectReport, String> {
+    let root = confine_root(&state, &vault)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::mcp_native::suspect_scan(&std::path::Path::new(&root).join("wiki"))
+    })
+    .await
+    .map_err(|e| format!("join failed: {e}"))
+}
+
 /// Collect every markdown checkbox item across the vault into one task list.
 #[tauri::command]
 pub async fn scan_tasks(

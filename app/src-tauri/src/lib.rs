@@ -230,6 +230,7 @@ pub fn run() {
             commands::vault_history_status,
             commands::init_vault_history,
             commands::commit_human_edit,
+            commands::suspect_pages,
             commands::distill_status,
             commands::apply_distill_proposal,
             commands::list_quarantine,
