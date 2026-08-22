@@ -72,6 +72,7 @@ function fakeSettings(overrides: Partial<MycoSettings> = {}): MycoSettings {
     auto_reindex_enabled: false,
     tray_resident: false,
     spotlight_shortcut: "",
+    vault_history_enabled: false,
     ...overrides,
   };
 }

@@ -848,6 +848,7 @@ const SETTINGS = {
   auto_reflect_interval_min: 180,
   tray_resident: false,
   spotlight_shortcut: "Alt+Space",
+  vault_history_enabled: false,
 };
 
 /// What the main window would emit back for a spotlight question: the
@@ -1121,6 +1122,18 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       }));
     case "undo_distill_run":
       return Promise.resolve(0);
+    // Opt-in vault git history (Q4 item 1) — no repo in a browser; the flag
+    // lives in the mock SETTINGS so the banner/settings card react to it.
+    case "vault_history_status":
+      return Promise.resolve({
+        git_present: false,
+        enabled: SETTINGS.vault_history_enabled,
+      });
+    case "init_vault_history":
+      SETTINGS.vault_history_enabled = true;
+      return Promise.resolve(null);
+    case "commit_human_edit":
+      return Promise.resolve(false);
     case "distill_status":
       return Promise.resolve({
         backlog: 12,

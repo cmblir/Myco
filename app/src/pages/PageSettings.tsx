@@ -2325,6 +2325,83 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       </div>
 
       <SettingsArchive t={t} lang={lang} vaultPath={vaultPath} />
+
+      <VaultHistoryToggle t={t} vaultPath={vaultPath} />
+    </div>
+  );
+}
+
+// Opt-in vault git history (Q4 item 1, mockup M2-b). Turning ON initializes
+// the repo (idempotent, flips the flag Rust-side); turning OFF only stops
+// commits — the repo stays.
+function VaultHistoryToggle({
+  t,
+  vaultPath,
+}: {
+  t: Strings;
+  vaultPath?: string;
+}): JSX.Element | null {
+  const settings = useSettingsStore((s) => s.settings);
+  const update = useSettingsStore((s) => s.update);
+  const loadSettings = useSettingsStore((s) => s.load);
+  if (!settings) return null;
+  const enabled = settings.vault_history_enabled;
+  return (
+    <div className="card">
+      <div
+        className="row"
+        style={{
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 12,
+        }}
+      >
+        <div style={{ paddingRight: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            {t.vh_setting_title ?? "Vault history (git)"}
+          </div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+            {t.vh_setting_desc ??
+              "Creates a local git repo inside the vault. Agent commits and your edits are recorded as different authors. Nothing leaves this machine."}
+          </div>
+        </div>
+        <button
+          role="switch"
+          aria-checked={enabled}
+          aria-label={t.vh_setting_title ?? "Vault history (git)"}
+          data-testid="vault-history-toggle"
+          onClick={() => {
+            if (enabled) {
+              void update({ vault_history_enabled: false });
+            } else if (vaultPath) {
+              void ipc.initVaultHistory(vaultPath).then(() => loadSettings());
+            }
+          }}
+          style={{
+            width: 44,
+            height: 24,
+            borderRadius: 12,
+            border: "1px solid var(--line)",
+            background: enabled ? "var(--ink)" : "var(--bg-soft)",
+            position: "relative",
+            cursor: "pointer",
+            flexShrink: 0,
+          }}
+        >
+          <span
+            style={{
+              position: "absolute",
+              top: 2,
+              left: enabled ? 22 : 2,
+              width: 18,
+              height: 18,
+              borderRadius: "50%",
+              background: enabled ? "var(--bg)" : "var(--ink)",
+              transition: "left 150ms ease",
+            }}
+          />
+        </button>
+      </div>
     </div>
   );
 }

@@ -1110,6 +1110,13 @@ export interface Strings {
   s_provider_desc_ollama?: string;
   s_provider_desc_openrouter?: string;
   s_provider_desc_myco_pro?: string;
+  // Vault git history (Q4 item 1) — optional; fall back to English.
+  vh_banner_title?: string;
+  vh_banner_desc?: string;
+  vh_enable?: string;
+  vh_later?: string;
+  vh_setting_title?: string;
+  vh_setting_desc?: string;
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -2253,6 +2260,13 @@ export const STRINGS: Record<Lang, Strings> = {
       "One key for many providers (useful for model comparison).",
     s_provider_desc_myco_pro:
       "Unlimited ingest on a managed model — no API key or CLI needed. Sign in with your myco Pro account.",
+    vh_banner_title: "Vault history is off",
+    vh_banner_desc: "Turn it on to see agent changes word by word and undo them.",
+    vh_enable: "Turn on history",
+    vh_later: "Later",
+    vh_setting_title: "Vault history (git)",
+    vh_setting_desc:
+      "Creates a local git repo inside the vault. Agent commits and your edits are recorded as different authors. Nothing leaves this machine.",
   },
   ko: {
     app_name: "myco",
@@ -3388,6 +3402,13 @@ export const STRINGS: Record<Lang, Strings> = {
       "하나의 키로 여러 제공자 사용 (모델 비교에 유용).",
     s_provider_desc_myco_pro:
       "관리형 모델로 무제한 ingest — API 키나 CLI가 필요 없습니다. myco Pro 계정으로 로그인하세요.",
+    vh_banner_title: "볼트 이력이 아직 꺼져 있습니다",
+    vh_banner_desc: "켜면 에이전트가 바꾼 것을 단어 단위로 보고 되돌릴 수 있습니다.",
+    vh_enable: "이력 켜기",
+    vh_later: "나중에",
+    vh_setting_title: "볼트 이력 (git)",
+    vh_setting_desc:
+      "볼트 안에 로컬 git 저장소를 만듭니다. 에이전트 커밋과 직접 편집이 서로 다른 작성자로 기록되며, 이 기기를 떠나지 않습니다.",
   },
   ja: {
     app_name: "myco",
@@ -4525,5 +4546,12 @@ export const STRINGS: Record<Lang, Strings> = {
     mcp_start_btn: "サーバーを起動",
     mcp_stop_btn: "停止",
     mcp_registering: "登録中…",
+    vh_banner_title: "ボールト履歴はオフです",
+    vh_banner_desc: "オンにすると、エージェントの変更を単語単位で確認し、元に戻せます。",
+    vh_enable: "履歴をオンにする",
+    vh_later: "後で",
+    vh_setting_title: "ボールト履歴 (git)",
+    vh_setting_desc:
+      "ボールト内にローカル git リポジトリを作成します。エージェントのコミットとあなたの編集は別の作成者として記録され、この端末の外には出ません。",
   },
 };

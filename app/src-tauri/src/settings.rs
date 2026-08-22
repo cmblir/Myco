@@ -78,6 +78,9 @@ pub struct Settings {
     /// setting — see `spotlight::ShortcutStatus`.
     #[serde(default = "default_spotlight_shortcut")]
     pub spotlight_shortcut: String,
+    /// Q4 item 1 — opt-in local git history for the open vault.
+    #[serde(default)]
+    pub vault_history_enabled: bool,
 }
 
 impl Default for Settings {
@@ -101,6 +104,7 @@ impl Default for Settings {
             auto_reindex_enabled: false,
             tray_resident: false,
             spotlight_shortcut: default_spotlight_shortcut(),
+            vault_history_enabled: false,
         }
     }
 }

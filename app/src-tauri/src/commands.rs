@@ -1832,6 +1832,54 @@ pub fn undo_distill_run(
     crate::distill::undo(std::path::Path::new(&root), &id)
 }
 
+// ---- vault history (Q4 item 1) --------------------------------------------
+
+#[tauri::command]
+pub fn vault_history_status(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+) -> Result<crate::vault_history::HistoryStatus, String> {
+    let root = confine_root(&state, &vault)?;
+    let enabled = settings::load().vault_history_enabled;
+    Ok(crate::vault_history::status(
+        std::path::Path::new(&root),
+        enabled,
+    ))
+}
+
+#[tauri::command]
+pub fn init_vault_history(state: tauri::State<VaultRoot>, vault: String) -> Result<(), String> {
+    let root = confine_root(&state, &vault)?;
+    crate::vault_history::init(std::path::Path::new(&root))?;
+    let mut s = settings::load();
+    s.vault_history_enabled = true;
+    settings::save(&s)
+}
+
+#[tauri::command]
+pub fn commit_human_edit(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    rel: String,
+) -> Result<bool, String> {
+    let root = confine_root(&state, &vault)?;
+    let root = std::path::Path::new(&root);
+    if !settings::load().vault_history_enabled {
+        return Ok(false);
+    }
+    crate::myco_pro::safe_join(root, &rel)?; // reject path escape before git sees it
+    let stem = std::path::Path::new(&rel)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| rel.clone());
+    crate::vault_history::commit_paths(
+        root,
+        &[rel.as_str()],
+        &format!("edit: {stem}"),
+        crate::vault_history::CommitIdentity::Human,
+    )
+}
+
 /// Files and bytes held by every `sessions/archive/` and `daily/archive/`
 /// bucket — the numbers behind the Settings → Distill storage panel. Computed
 /// on demand (this command), never on render. `raw/archive/` is deliberately
@@ -3324,6 +3372,38 @@ mod tests {
         let err = read_settings_import("/nonexistent/myco-settings.json".to_string())
             .expect_err("missing file must error, not panic");
         assert!(!err.is_empty());
+    }
+
+    // ---- vault history (Q4 item 1) -----------------------------------------
+
+    #[test]
+    fn human_edit_commit_only_touches_the_named_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("wiki")).unwrap();
+        crate::vault_history::init(root).unwrap();
+        std::fs::write(root.join("wiki/a.md"), "one").unwrap();
+        std::fs::write(root.join("wiki/b.md"), "two").unwrap();
+
+        let made = crate::vault_history::commit_paths(
+            root,
+            &["wiki/a.md"],
+            "edit: a",
+            crate::vault_history::CommitIdentity::Human,
+        )
+        .unwrap();
+        assert!(made);
+
+        let out = std::process::Command::new("git")
+            .args(["status", "--porcelain"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        let porcelain = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            porcelain.contains("wiki/b.md"),
+            "b.md stays uncommitted: {porcelain}"
+        );
     }
 
     // ---- inflow_stats -----------------------------------------------------

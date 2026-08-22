@@ -302,6 +302,14 @@ export interface MycoSettings {
    *  empty string when the feature is switched off. Whether the OS actually
    *  granted it is runtime state — see `ipc.spotlightStatus`. */
   spotlight_shortcut: string;
+  /** Q4 item 1 — opt-in local git history for the open vault. */
+  vault_history_enabled: boolean;
+}
+
+/** Mirrors Rust `vault_history::HistoryStatus` (Q4 item 1). */
+export interface VaultHistoryStatus {
+  git_present: boolean;
+  enabled: boolean;
 }
 
 /** Honest global-shortcut state (mirrors Rust `spotlight::ShortcutStatus`).
@@ -788,6 +796,13 @@ export const ipc = {
   distillRun: (vault: string) => invoke<RunReport>("distill_run", { vault }),
   undoDistillRun: (vault: string, id: string) =>
     invoke<number>("undo_distill_run", { vault, id }),
+  // Opt-in vault git history (Q4 item 1).
+  vaultHistoryStatus: (vault: string) =>
+    invoke<VaultHistoryStatus>("vault_history_status", { vault }),
+  initVaultHistory: (vault: string) =>
+    invoke<null>("init_vault_history", { vault }),
+  commitHumanEdit: (vault: string, rel: string) =>
+    invoke<boolean>("commit_human_edit", { vault, rel }),
   distillStatus: (vault: string) =>
     invoke<DistillStatus>("distill_status", { vault }),
   // ROADMAP P2 — archive lifecycle. `archiveUsage` is on-demand only (called
