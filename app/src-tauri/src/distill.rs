@@ -3453,7 +3453,7 @@ const ROLLUP_MARKER_OPEN: &str = "<!-- myco:rolled-up-days ";
 /// Hinnant's `days_from_civil`, the inverse of `civil_datetime`. An ISO week
 /// number is defined by day arithmetic (which Thursday the week contains),
 /// not by month/day, so the round trip is unavoidable.
-fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+pub(crate) fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = (if y >= 0 { y } else { y - 399 }) / 400;
     let yoe = y - era * 400;
@@ -3522,7 +3522,7 @@ fn month_of_iso_week(week: &str) -> Option<String> {
 
 /// `YYYY-Www`, the weekly layer's bucket shape — checked before a bucket name
 /// that arrived over IPC becomes a directory under `daily/archive/`.
-fn is_iso_week_name(bucket: &str) -> bool {
+pub(crate) fn is_iso_week_name(bucket: &str) -> bool {
     let b = bucket.as_bytes();
     bucket.len() == 8
         && b[0..4].iter().all(u8::is_ascii_digit)
@@ -3534,7 +3534,7 @@ fn is_iso_week_name(bucket: &str) -> bool {
 /// `YYYY-MM`, the monthly layer's bucket shape. Month is range-checked: `13`
 /// is digits but not a month, and it would become a directory name that no
 /// `weekly/` file can ever belong to.
-fn is_month_name(bucket: &str) -> bool {
+pub(crate) fn is_month_name(bucket: &str) -> bool {
     let b = bucket.as_bytes();
     bucket.len() == 7
         && b[0..4].iter().all(u8::is_ascii_digit)

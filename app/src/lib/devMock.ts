@@ -1567,7 +1567,23 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
             similarity: 0.42 - i * 0.02,
           }))
         : hits;
-      return sleep(400).then(() => out);
+      // Time-anchored question: the real backend keeps only dated-tier pages
+      // overlapping the range (simplified here to the tiers the fixtures have —
+      // daily by day, sessions/monthly by month; undated wiki pages drop out).
+      const range = args.range as { start: string; end: string } | undefined;
+      const ranged = range
+        ? out.filter((h) => {
+            const day = /^daily\/(\d{4}-\d{2}-\d{2})\.md$/.exec(h.page)?.[1];
+            if (day) return range.start <= day && day <= range.end;
+            const month =
+              /^sessions\/(\d{4}-\d{2})\//.exec(h.page)?.[1] ??
+              /^monthly\/(\d{4}-\d{2})\.md$/.exec(h.page)?.[1];
+            if (month)
+              return range.start.slice(0, 7) <= month && month <= range.end.slice(0, 7);
+            return false;
+          })
+        : out;
+      return sleep(400).then(() => ranged);
     }
     case "classify_intent": {
       // No embedder in mock mode, so stand in with the shape of the real

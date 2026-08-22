@@ -2970,11 +2970,155 @@ fn chunk_text_at(content: &str, section: usize) -> Option<String> {
         .nth(section)
 }
 
+/// Inclusive `YYYY-MM-DD` day range a time-anchored Ask question resolved to
+/// (the frontend's `timeQuery.ts` builds it; serde leaves a missing IPC arg
+/// `None`, so existing callers are unaffected).
+#[derive(Clone, Debug, serde::Deserialize)]
+pub struct DateRange {
+    pub start: String,
+    pub end: String,
+}
+
+/// Monday of ISO week `YYYY-Www` as `(year, month, day)`. `None` for anything
+/// that isn't a real week name — wrong shape, or a week number the year does
+/// not have (W00, W60, W53 in a 52-week year).
+pub(crate) fn iso_week_monday(bucket: &str) -> Option<(i32, u32, u32)> {
+    if !crate::distill::is_iso_week_name(bucket) {
+        return None;
+    }
+    let y: i64 = bucket[0..4].parse().ok()?;
+    let w: i64 = bucket[6..8].parse().ok()?;
+    // Jan 4 is in W01 by ISO definition, which anchors week 1's Monday.
+    // 1970-01-01 was a Thursday, so `+3` puts Monday at 0 — the same shift
+    // `distill::iso_week` uses.
+    let jan4 = crate::distill::days_from_civil(y, 1, 4);
+    let monday = jan4 - (jan4 + 3).rem_euclid(7) + (w - 1) * 7;
+    let (my, mm, md, ..) = crate::distill::civil_datetime(monday * 86_400);
+    // Round-trip through `iso_week` (the fn that names weekly/ files): a week
+    // the year doesn't have lands on a Monday belonging to a differently-named
+    // week, rather than reimplementing the 52/53 rule here.
+    if crate::distill::iso_week(&format!("{my:04}-{mm:02}-{md:02}")).as_deref() != Some(bucket) {
+        return None;
+    }
+    Some((my as i32, mm, md))
+}
+
+/// True when a dated-tier page overlaps the inclusive `[start, end]` day range:
+///   `daily/YYYY-MM-DD.md`  — exact day in range
+///   `sessions/YYYY-MM/…`   — month overlaps (string compare on `YYYY-MM`)
+///   `weekly/YYYY-Www.md`   — the ISO week's Monday..Sunday overlaps
+///   `monthly/YYYY-MM.md`   — month overlaps
+/// Undated pages (wiki/, raw/, archives, everything else) are `false` — a
+/// time-anchored question wants the record of that window, not timeless notes.
+pub(crate) fn page_in_date_range(rel: &str, range: &DateRange) -> bool {
+    let (start, end) = (range.start.as_str(), range.end.as_str());
+    let month_overlaps = |month: &str| {
+        // The range arrives over IPC: a start/end too short to hold `YYYY-MM`
+        // matches nothing instead of panicking on the slice.
+        crate::distill::is_month_name(month)
+            && start.get(0..7).is_some_and(|s| s <= month)
+            && end.get(0..7).is_some_and(|e| month <= e)
+    };
+    if let Some(day) = rel
+        .strip_prefix("daily/")
+        .and_then(|r| r.strip_suffix(".md"))
+    {
+        // `iso_week` validates the civil date, so an impossible `2026-02-31`
+        // (or a short `2026-08-2`, which plain string compare would let
+        // through) is out; for real dates lexicographic order IS date order.
+        return crate::distill::iso_week(day).is_some() && start <= day && day <= end;
+    }
+    if let Some(rest) = rel.strip_prefix("sessions/") {
+        return rest
+            .split_once('/')
+            .is_some_and(|(month, _)| month_overlaps(month));
+    }
+    if let Some(week) = rel
+        .strip_prefix("weekly/")
+        .and_then(|r| r.strip_suffix(".md"))
+    {
+        let Some((y, m, d)) = iso_week_monday(week) else {
+            return false;
+        };
+        let sunday_days = crate::distill::days_from_civil(i64::from(y), m, d) + 6;
+        let (sy, sm, sd, ..) = crate::distill::civil_datetime(sunday_days * 86_400);
+        let monday = format!("{y:04}-{m:02}-{d:02}");
+        let sunday = format!("{sy:04}-{sm:02}-{sd:02}");
+        return monday.as_str() <= end && start <= sunday.as_str();
+    }
+    if let Some(month) = rel
+        .strip_prefix("monthly/")
+        .and_then(|r| r.strip_suffix(".md"))
+    {
+        return month_overlaps(month);
+    }
+    false
+}
+
+/// The sortable date string a dated-tier page derives its recency from:
+/// daily → the day, weekly → its ISO Monday, sessions/monthly → the month
+/// (`YYYY-MM` sorts before any full date inside that month — a month-level
+/// record reads as "at least as old as" its first day). `None`: undated.
+fn page_date(rel: &str) -> Option<String> {
+    if let Some(day) = rel
+        .strip_prefix("daily/")
+        .and_then(|r| r.strip_suffix(".md"))
+    {
+        return crate::distill::iso_week(day)
+            .is_some()
+            .then(|| day.to_string());
+    }
+    if let Some(rest) = rel.strip_prefix("sessions/") {
+        return rest
+            .split_once('/')
+            .map(|(month, _)| month)
+            .filter(|m| crate::distill::is_month_name(m))
+            .map(str::to_string);
+    }
+    if let Some(week) = rel
+        .strip_prefix("weekly/")
+        .and_then(|r| r.strip_suffix(".md"))
+    {
+        return iso_week_monday(week).map(|(y, m, d)| format!("{y:04}-{m:02}-{d:02}"));
+    }
+    if let Some(month) = rel
+        .strip_prefix("monthly/")
+        .and_then(|r| r.strip_suffix(".md"))
+    {
+        return crate::distill::is_month_name(month).then(|| month.to_string());
+    }
+    None
+}
+
+/// Recency tie-break for a range-filtered ranking: within each run of hits
+/// whose fused scores tie (neighbors within f32 epsilon), the more recent page
+/// wins and undated pages go to the back of the run. Runs never cross a real
+/// score gap, so ranking above/below a tie is untouched; the sort is stable,
+/// so equal dates keep fused order.
+pub(crate) fn recency_tie_break(hits: &mut [crate::vector_index::Hit]) {
+    let mut i = 0;
+    while i < hits.len() {
+        let mut j = i + 1;
+        while j < hits.len() && (hits[j - 1].score - hits[j].score).abs() <= f32::EPSILON {
+            j += 1;
+        }
+        if j - i > 1 {
+            hits[i..j].sort_by(|a, b| match (page_date(&a.page), page_date(&b.page)) {
+                (Some(da), Some(db)) => db.cmp(&da),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                (None, None) => std::cmp::Ordering::Equal,
+            });
+        }
+        i = j;
+    }
+}
+
 /// Semantic search: embed the query, return top-`k` chunk hits from the index,
 /// with each hit's chunk TEXT reconstructed so callers (e.g. Ask) can inline the
 /// passage instead of re-reading the whole page.
 // Four of the arguments are Tauri-injected state rather than things a caller
-// passes; the invocable surface is (query, k, provider, model).
+// passes; the invocable surface is (query, k, provider, model, range).
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn semantic_search(
@@ -2987,6 +3131,7 @@ pub async fn semantic_search(
     k: usize,
     provider: String,
     model: String,
+    range: Option<DateRange>,
 ) -> Result<Vec<ScoredChunk>, String> {
     let t0 = std::time::Instant::now();
     // Quoted phrases become an exact-match filter on the reconstructed chunk
@@ -3051,7 +3196,15 @@ pub async fn semantic_search(
     // straight to k and capping after would only shrink the list — the whole
     // point of the cap is to let a DISTINCT page take the slot a near-duplicate
     // would have held.
-    let fused = crate::retrieval::rrf_fuse(&dense_hits, &lexical_hits, pool);
+    let mut fused = crate::retrieval::rrf_fuse(&dense_hits, &lexical_hits, pool);
+    // Time-anchored question (Q4 item 8): keep only dated-tier pages that
+    // overlap the asked window, then let recency break exact score ties.
+    // BEFORE cap_per_page — the pool has headroom, so a surviving page can
+    // take the slot a filtered-out one would have burned. No range ⇒ inert.
+    if let Some(r) = &range {
+        fused.retain(|h| page_in_date_range(&h.page, r));
+        recency_tie_break(&mut fused);
+    }
     let hits = crate::retrieval::cap_per_page(fused, PAGE_CAP, k);
     let scan_ms = perf::ms(t_scan.elapsed());
     // Reconstruct each hit's chunk TEXT from its page (the index stores only
@@ -3490,8 +3643,9 @@ pub fn os_version() -> String {
 mod tests {
     use super::{
         append_recall_miss, builtin_index_is_stale, chunk_text_at, export_bundle_write,
-        external_target_allowed, import_dest, read_settings_import, run_diff_core, run_import,
-        sync_bm25_for_page, windows_opener_safe, DEST_INBOX, DEST_SESSIONS,
+        external_target_allowed, import_dest, iso_week_monday, page_in_date_range,
+        read_settings_import, recency_tie_break, run_diff_core, run_import, sync_bm25_for_page,
+        windows_opener_safe, DateRange, DEST_INBOX, DEST_SESSIONS,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
@@ -4205,6 +4359,118 @@ mod tests {
         assert_eq!(
             capped.iter().map(|h| h.page.as_str()).collect::<Vec<_>>(),
             vec!["a.md", "b.md", "c.md", "d.md"],
+        );
+    }
+
+    // ---- Ask date-range filter (Q4 item 8) ---------------------------------
+
+    fn dr(start: &str, end: &str) -> DateRange {
+        DateRange {
+            start: start.into(),
+            end: end.into(),
+        }
+    }
+
+    #[test]
+    fn iso_week_monday_uses_the_jan4_anchor_and_rejects_fake_weeks() {
+        // 2026-01-01 is a Thursday, so W01's Monday reaches back into 2025.
+        assert_eq!(iso_week_monday("2026-W01"), Some((2025, 12, 29)));
+        assert_eq!(iso_week_monday("2026-W34"), Some((2026, 8, 17)));
+        // 2026 has a W53 (Jan 1 is a Thursday); its Monday is late December.
+        assert_eq!(iso_week_monday("2026-W53"), Some((2026, 12, 28)));
+        // 2025 has no W53 — the arithmetic lands on 2026-W01's Monday, so the
+        // week name was never real.
+        assert_eq!(iso_week_monday("2025-W53"), None);
+        assert_eq!(iso_week_monday("2026-W00"), None);
+        assert_eq!(iso_week_monday("2026-W60"), None);
+        assert_eq!(iso_week_monday("2026-34"), None);
+        assert_eq!(iso_week_monday("garbage"), None);
+    }
+
+    #[test]
+    fn page_in_date_range_covers_the_dated_tiers_only() {
+        let r = dr("2026-08-17", "2026-08-22");
+        // daily/: exact day, inclusive on both ends.
+        assert!(page_in_date_range("daily/2026-08-19.md", &r));
+        assert!(page_in_date_range("daily/2026-08-17.md", &r));
+        assert!(page_in_date_range("daily/2026-08-22.md", &r));
+        assert!(!page_in_date_range("daily/2026-08-16.md", &r));
+        // sessions/: month granularity — a month straddling a range boundary
+        // still counts on both sides of it.
+        assert!(page_in_date_range("sessions/2026-08/codex-019fdc04.md", &r));
+        let straddle = dr("2026-07-28", "2026-08-02");
+        assert!(page_in_date_range("sessions/2026-08/x.md", &straddle));
+        assert!(page_in_date_range("sessions/2026-07/x.md", &straddle));
+        assert!(!page_in_date_range("sessions/2026-06/x.md", &straddle));
+        // weekly/: 2026-W34 spans Mon 08-17..Sun 08-23 — any overlap counts.
+        assert!(page_in_date_range(
+            "weekly/2026-W34.md",
+            &dr("2026-08-20", "2026-08-22")
+        ));
+        assert!(page_in_date_range(
+            "weekly/2026-W34.md",
+            &dr("2026-08-23", "2026-08-30")
+        ));
+        assert!(!page_in_date_range(
+            "weekly/2026-W34.md",
+            &dr("2026-08-24", "2026-08-30")
+        ));
+        // weekly year boundary: 2026-W01 spans 2025-12-29..2026-01-04.
+        assert!(page_in_date_range(
+            "weekly/2026-W01.md",
+            &dr("2025-12-30", "2025-12-31")
+        ));
+        // monthly/: month overlap, same rule as sessions.
+        assert!(page_in_date_range("monthly/2026-08.md", &r));
+        assert!(!page_in_date_range("monthly/2026-07.md", &r));
+        // Undated pages are out while a range is active.
+        assert!(!page_in_date_range("wiki/attention.md", &r));
+        assert!(!page_in_date_range("raw/paper.pdf.md", &r));
+        // Malformed or archived rels never pass. `2026-08-2` is the string-
+        // compare trap: lexicographically inside the range, not a real day.
+        assert!(!page_in_date_range("daily/2026-08-2.md", &r));
+        assert!(!page_in_date_range(
+            "daily/2026-02-31.md",
+            &dr("2026-02-01", "2026-03-01")
+        ));
+        assert!(!page_in_date_range(
+            "daily/archive/2026-W34/2026-08-19.md",
+            &r
+        ));
+        assert!(!page_in_date_range("sessions/archive/2026-08/x.md", &r));
+    }
+
+    fn scored(page: &str, score: f32) -> Hit {
+        Hit {
+            page: page.into(),
+            stem: String::new(),
+            section: 0,
+            score,
+        }
+    }
+
+    #[test]
+    fn recency_tie_break_reorders_only_score_ties_newest_first() {
+        let mut hits = vec![
+            scored("daily/2026-08-18.md", 0.9),
+            scored("daily/2026-08-20.md", 0.9), // exact tie → newer day first
+            scored("weekly/2026-W34.md", 0.9),  // tie; derives Monday 08-17 → last of the run
+            scored("daily/2026-08-21.md", 0.5), // newest page but NOT tied — must not climb
+            scored("wiki/attention.md", 0.5),   // tied and undated → back of its run
+            scored("sessions/2026-08/x.md", 0.5), // month date sorts before any full 08 day
+        ];
+        recency_tie_break(&mut hits);
+        let order: Vec<&str> = hits.iter().map(|h| h.page.as_str()).collect();
+        assert_eq!(
+            order,
+            vec![
+                "daily/2026-08-20.md",
+                "daily/2026-08-18.md",
+                "weekly/2026-W34.md",
+                "daily/2026-08-21.md",
+                "sessions/2026-08/x.md",
+                "wiki/attention.md",
+            ]
         );
     }
 

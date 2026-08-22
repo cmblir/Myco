@@ -613,8 +613,14 @@ export const ipc = {
   // Semantic layer (Feature 1): embedding index over wiki pages.
   reindexEmbeddings: (provider: string, model: string) =>
     invoke<number>("reindex_embeddings", { provider, model }),
-  semanticSearch: (query: string, k: number, provider: string, model: string) =>
-    invoke<ScoredChunk[]>("semantic_search", { query, k, provider, model }),
+  semanticSearch: (
+    query: string,
+    k: number,
+    provider: string,
+    model: string,
+    /** Inclusive YYYY-MM-DD day window — restricts hits to the dated tiers. */
+    range?: { start: string; end: string },
+  ) => invoke<ScoredChunk[]>("semantic_search", { query, k, provider, model, range }),
   /** 2D semantic-map coordinates (PCA over page embeddings) for every indexed page. */
   semanticMap: () => invoke<SemanticPoint[]>("semantic_map", {}),
   /** Existing pages a new source likely relates to — retrieval grounding for ingest. */
