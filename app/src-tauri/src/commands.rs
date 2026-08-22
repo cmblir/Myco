@@ -1910,6 +1910,43 @@ pub fn commit_human_edit(
     )
 }
 
+// ---- recall miss log (Q4 item 5) ------------------------------------------
+
+/// Append one recall miss to `.myco/eval/misses.jsonl` (Q4 item 5).
+pub(crate) fn append_recall_miss(
+    root: &std::path::Path,
+    query: &str,
+    expected: Option<&str>,
+) -> Result<(), String> {
+    let dir = root.join(".myco").join("eval");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create eval dir: {e}"))?;
+    let at = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let row = serde_json::json!({ "query": query, "expected": expected, "at": at });
+    let line = format!("{row}\n");
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(dir.join("misses.jsonl"))
+        .map_err(|e| format!("open misses.jsonl: {e}"))?;
+    f.write_all(line.as_bytes())
+        .map_err(|e| format!("append miss: {e}"))
+}
+
+#[tauri::command]
+pub fn record_recall_miss(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    query: String,
+    expected: Option<String>,
+) -> Result<(), String> {
+    let root = confine_root(&state, &vault)?;
+    append_recall_miss(std::path::Path::new(&root), &query, expected.as_deref())
+}
+
 /// Files and bytes held by every `sessions/archive/` and `daily/archive/`
 /// bucket — the numbers behind the Settings → Distill storage panel. Computed
 /// on demand (this command), never on render. `raw/archive/` is deliberately
@@ -3365,9 +3402,9 @@ pub fn os_version() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        builtin_index_is_stale, chunk_text_at, export_bundle_write, external_target_allowed,
-        import_dest, read_settings_import, run_import, sync_bm25_for_page, windows_opener_safe,
-        DEST_INBOX, DEST_SESSIONS,
+        append_recall_miss, builtin_index_is_stale, chunk_text_at, export_bundle_write,
+        external_target_allowed, import_dest, read_settings_import, run_import, sync_bm25_for_page,
+        windows_opener_safe, DEST_INBOX, DEST_SESSIONS,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
@@ -3411,6 +3448,24 @@ mod tests {
         let err = read_settings_import("/nonexistent/myco-settings.json".to_string())
             .expect_err("missing file must error, not panic");
         assert!(!err.is_empty());
+    }
+
+    // ---- recall miss log (Q4 item 5) ---------------------------------------
+
+    #[test]
+    fn append_recall_miss_creates_dirs_and_appends_jsonl() {
+        let dir = tempfile::tempdir().unwrap();
+        append_recall_miss(dir.path(), "first query", Some("expected-stem")).unwrap();
+        append_recall_miss(dir.path(), "second", None).unwrap();
+        let raw = std::fs::read_to_string(dir.path().join(".myco/eval/misses.jsonl")).unwrap();
+        let lines: Vec<&str> = raw.lines().collect();
+        assert_eq!(lines.len(), 2);
+        let first: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+        assert_eq!(first["query"], "first query");
+        assert_eq!(first["expected"], "expected-stem");
+        assert!(first["at"].as_i64().unwrap() > 0);
+        let second: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+        assert!(second["expected"].is_null());
     }
 
     // ---- vault history (Q4 item 1) -----------------------------------------

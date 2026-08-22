@@ -830,6 +830,9 @@ export const ipc = {
   // Morning-Report suspect scan (Q4 item 2).
   suspectPages: (vault: string) =>
     invoke<SuspectReport>("suspect_pages", { vault }),
+  // Recall miss log (Q4 item 5).
+  recordRecallMiss: (vault: string, query: string, expected?: string) =>
+    invoke<null>("record_recall_miss", { vault, query, expected }),
   distillStatus: (vault: string) =>
     invoke<DistillStatus>("distill_status", { vault }),
   // ROADMAP P2 — archive lifecycle. `archiveUsage` is on-demand only (called
