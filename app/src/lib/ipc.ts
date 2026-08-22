@@ -324,6 +324,15 @@ export interface SuspectReport {
   suspects: SuspectPage[];
 }
 
+/** Mirrors Rust `distill::RunSummary` (Q4 item 3). */
+export interface RunSummary {
+  id: string;
+  started_at: number;
+  moves: number;
+  trashed: number;
+  created: number;
+}
+
 /** Honest global-shortcut state (mirrors Rust `spotlight::ShortcutStatus`).
  *  `registered: false` with a non-empty `shortcut` means the app asked for it
  *  and was refused — `error` carries the reason, shown as-is in Settings. */
@@ -808,6 +817,9 @@ export const ipc = {
   distillRun: (vault: string) => invoke<RunReport>("distill_run", { vault }),
   undoDistillRun: (vault: string, id: string) =>
     invoke<number>("undo_distill_run", { vault, id }),
+  // Run list with per-row undo (Q4 item 3).
+  listDistillRuns: (vault: string, limit?: number) =>
+    invoke<RunSummary[]>("list_distill_runs", { vault, limit }),
   // Opt-in vault git history (Q4 item 1).
   vaultHistoryStatus: (vault: string) =>
     invoke<VaultHistoryStatus>("vault_history_status", { vault }),

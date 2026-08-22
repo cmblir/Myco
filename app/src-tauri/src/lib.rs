@@ -227,6 +227,7 @@ pub fn run() {
             commands::set_distill_config,
             commands::distill_run,
             commands::undo_distill_run,
+            commands::list_distill_runs,
             commands::vault_history_status,
             commands::init_vault_history,
             commands::commit_human_edit,

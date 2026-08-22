@@ -1122,6 +1122,23 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       }));
     case "undo_distill_run":
       return Promise.resolve(0);
+    case "list_distill_runs":
+      return Promise.resolve([
+        {
+          id: "digest-1755740000",
+          started_at: Math.floor(Date.now() / 1000) - 7200,
+          moves: 3,
+          trashed: 0,
+          created: 2,
+        },
+        {
+          id: "digest-1755650000",
+          started_at: Math.floor(Date.now() / 1000) - 93600,
+          moves: 1,
+          trashed: 1,
+          created: 0,
+        },
+      ]);
     // Opt-in vault git history (Q4 item 1) — no repo in a browser; the flag
     // lives in the mock SETTINGS so the banner/settings card react to it.
     case "vault_history_status":

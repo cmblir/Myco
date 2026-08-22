@@ -1847,6 +1847,21 @@ pub fn undo_distill_run(
     crate::distill::undo(std::path::Path::new(&root), &id)
 }
 
+/// Newest-first summaries of persisted run manifests — the Settings run list
+/// (Q4 item 3).
+#[tauri::command]
+pub fn list_distill_runs(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    limit: Option<usize>,
+) -> Result<Vec<crate::distill::RunSummary>, String> {
+    let root = confine_root(&state, &vault)?;
+    Ok(crate::distill::list_runs(
+        std::path::Path::new(&root),
+        limit.unwrap_or(20),
+    ))
+}
+
 // ---- vault history (Q4 item 1) --------------------------------------------
 
 #[tauri::command]

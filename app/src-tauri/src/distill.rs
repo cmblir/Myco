@@ -2882,6 +2882,43 @@ fn newest_run_id(root: &Path) -> Option<String> {
     latest.map(|(_, id)| id)
 }
 
+/// One persisted run manifest reduced to the counts the run-list UI shows.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct RunSummary {
+    pub id: String,
+    pub started_at: i64,
+    pub moves: usize,
+    pub trashed: usize,
+    pub created: usize,
+}
+
+/// Newest-first summaries of persisted run manifests (Q4 item 3). Same
+/// `(started_at, id)` ordering as `newest_run_id` — see its doc comment for
+/// why id string order is the correct same-second tie-break.
+pub fn list_runs(root: &Path, limit: usize) -> Vec<RunSummary> {
+    let runs_dir = dir(root).join("distill-runs");
+    let mut out: Vec<RunSummary> = crate::vault::vault_entries(&runs_dir)
+        .into_iter()
+        .filter(|(entry, kind)| {
+            kind.is_file() && entry.path().extension().and_then(|e| e.to_str()) == Some("json")
+        })
+        .filter_map(|(entry, _)| {
+            let raw = std::fs::read_to_string(entry.path()).ok()?;
+            let m: RunManifest = serde_json::from_str(&raw).ok()?;
+            Some(RunSummary {
+                id: m.id,
+                started_at: m.started_at,
+                moves: m.moves.len(),
+                trashed: m.trashed.len(),
+                created: m.created.len(),
+            })
+        })
+        .collect();
+    out.sort_by(|a, b| (b.started_at, &b.id).cmp(&(a.started_at, &a.id)));
+    out.truncate(limit);
+    out
+}
+
 /// Cheap vault-wide status for the settings tab / MCP `distill_status`: no
 /// scoring, just a fs walk against the ledger already on disk.
 pub fn status(root: &Path) -> DistillStatus {
@@ -5339,6 +5376,32 @@ mod tests {
             assert!(content.contains("type: distill-proposal"));
             assert!(content.contains("status: pending"));
         });
+    }
+
+    #[test]
+    fn list_runs_returns_newest_first_with_counts() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let mut older = test_manifest();
+        older.id = "digest-100".into();
+        older.started_at = 100;
+        older.moves = vec![MoveEntry {
+            from: "raw/a.md".into(),
+            to: "raw/archive/a.md".into(),
+        }];
+        save_manifest(root, &older).unwrap();
+        let mut newer = test_manifest();
+        newer.id = "digest-200".into();
+        newer.started_at = 200;
+        newer.created = vec!["wiki/x.md".into(), "wiki/y.md".into()];
+        save_manifest(root, &newer).unwrap();
+
+        let runs = list_runs(root, 10);
+        assert_eq!(runs.len(), 2);
+        assert_eq!(runs[0].id, "digest-200");
+        assert_eq!(runs[0].created, 2);
+        assert_eq!(runs[1].moves, 1);
+        assert_eq!(list_runs(root, 1).len(), 1);
     }
 
     #[test]
