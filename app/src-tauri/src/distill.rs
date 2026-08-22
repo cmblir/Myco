@@ -1427,6 +1427,7 @@ fn move_back(root: &Path, entry: &MoveEntry, run_id: &str, run_time: i64) -> boo
 /// git (which errors on one) or fall back to `git add -A`.
 const GIT_COMMIT_PATHS: &[&str] = &[
     "raw",
+    "wiki",
     crate::commands::DEST_INBOX,
     crate::commands::DEST_SESSIONS,
     "work",
@@ -1438,29 +1439,25 @@ const GIT_COMMIT_PATHS: &[&str] = &[
 /// plus `.myco` (and `.myco` only when `git ls-files` shows the vault
 /// already tracks it — a vault that gitignores its own state dir must not
 /// have it force-added just because this run happened to touch it). Best-
-/// effort: `git commit` exits non-zero when there is nothing staged (a run
-/// that moved/trashed/created nothing), which is not a failure worth
-/// surfacing — but a `git add` that fails on an existing, non-ignored path IS
-/// unexpected, so the commit is skipped (with a warning) rather than run
-/// against a possibly-incomplete stage.
+/// effort: the shared `vault_history::commit_paths` helper no-ops when
+/// nothing is staged and errors on a failed add/commit, which is only
+/// logged here — the commit is authored as the agent so distill's changes
+/// stay distinguishable from the user's own edits.
 fn git_commit_run(root: &Path, run_id: &str) {
     if !root.join(".git").exists() {
         return;
     }
-    let git = |args: &[&str]| {
-        std::process::Command::new("git")
-            .args(args)
-            .current_dir(root)
-            .output()
-    };
-
     let mut paths: Vec<&str> = GIT_COMMIT_PATHS
         .iter()
         .copied()
         .filter(|p| root.join(p).exists())
         .collect();
     if root.join(".myco").exists() {
-        if let Ok(o) = git(&["ls-files", "--", ".myco"]) {
+        if let Ok(o) = std::process::Command::new("git")
+            .args(["ls-files", "--", ".myco"])
+            .current_dir(root)
+            .output()
+        {
             if o.status.success() && !o.stdout.is_empty() {
                 paths.push(".myco");
             }
@@ -1469,26 +1466,13 @@ fn git_commit_run(root: &Path, run_id: &str) {
     if paths.is_empty() {
         return; // nothing distill touches even exists yet
     }
-
-    let mut add_args = vec!["add"];
-    add_args.extend(paths);
-    match git(&add_args) {
-        Ok(o) if !o.status.success() => {
-            eprintln!(
-                "distill run {run_id}: git add failed, skipping commit: {}",
-                String::from_utf8_lossy(&o.stderr).trim()
-            );
-            return;
-        }
-        Err(e) => {
-            eprintln!("distill run {run_id}: git add failed, skipping commit: {e}");
-            return;
-        }
-        _ => {}
-    }
-
-    if let Err(e) = git(&["commit", "-m", &format!("distill: run {run_id}")]) {
-        eprintln!("distill run {run_id}: git commit failed: {e}");
+    if let Err(e) = crate::vault_history::commit_paths(
+        root,
+        &paths,
+        &format!("distill: run {run_id}"),
+        crate::vault_history::CommitIdentity::Agent,
+    ) {
+        eprintln!("distill run {run_id}: {e}");
     }
 }
 
@@ -3754,6 +3738,29 @@ pub fn archive_rolled(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn git_commit_run_stages_wiki_with_agent_author() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("wiki")).unwrap();
+        crate::vault_history::init(root).unwrap();
+        std::fs::write(root.join("wiki/new-page.md"), "written by distill").unwrap();
+
+        git_commit_run(root, "digest-123");
+
+        let out = std::process::Command::new("git")
+            .args(["log", "-1", "--format=%an|%s", "--", "wiki/new-page.md"])
+            .current_dir(root)
+            .output()
+            .unwrap();
+        let line = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            line.starts_with(crate::vault_history::AGENT_NAME),
+            "agent author on distill commit, got: {line}"
+        );
+        assert!(line.contains("distill: run digest-123"));
+    }
 
     fn set_mtime(path: &Path, time: std::time::SystemTime) {
         let file = std::fs::OpenOptions::new().write(true).open(path).unwrap();
