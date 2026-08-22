@@ -2850,6 +2850,10 @@ pub async fn semantic_search(
     model: String,
 ) -> Result<Vec<ScoredChunk>, String> {
     let t0 = std::time::Instant::now();
+    // Quoted phrases become an exact-match filter on the reconstructed chunk
+    // text; the embed/BM25 arms run on the quote-stripped query (the phrase
+    // words stay in it, so unquoted ranking behavior is unchanged).
+    let (phrases, clean_query) = crate::retrieval::parse_phrases(&query);
     let root = require_root(&vault)?;
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
     let store = cache.get(&index_path);
@@ -2872,7 +2876,7 @@ pub async fn semantic_search(
         &provider,
         &model,
         crate::local_llm::EmbedRole::Query,
-        vec![query.clone()],
+        vec![clean_query.clone()],
     )
     .await?;
     let embed_ms = perf::ms(t_embed.elapsed());
@@ -2892,7 +2896,7 @@ pub async fn semantic_search(
     let dense_hits = store.search(&qv, pool);
     let bm25_path = crate::retrieval::Bm25Index::path_for(&root.to_string_lossy())?;
     let bm25 = bm25_cache.get(&bm25_path);
-    let lexical_hits = bm25.search(&query, pool);
+    let lexical_hits = bm25.search(&clean_query, pool);
     // If the lexical index is empty (fresh vault, or `.mxb` not yet
     // bootstrapped), `rrf_fuse` degrades to the dense order unchanged — see
     // `rrf_fuse_empty_lexical_preserves_dense_order` in retrieval.rs.
@@ -2922,15 +2926,20 @@ pub async fn semantic_search(
             continue;
         };
         match chunk_text_at(&content, h.section) {
-            Some(text) if !text.trim().is_empty() => out.push(ScoredChunk {
-                similarity: dense_by_id.get(&(h.page.clone(), h.section)).copied(),
-                page: h.page,
-                stem: h.stem,
-                section: h.section,
-                text,
-                score: h.score,
-            }),
-            _ => {} // missing file or stale section index → skip
+            Some(text)
+                if !text.trim().is_empty()
+                    && crate::retrieval::text_matches_phrases(&text, &phrases) =>
+            {
+                out.push(ScoredChunk {
+                    similarity: dense_by_id.get(&(h.page.clone(), h.section)).copied(),
+                    page: h.page,
+                    stem: h.stem,
+                    section: h.section,
+                    text,
+                    score: h.score,
+                })
+            }
+            _ => {} // missing file, stale section index, or phrase miss → skip
         }
     }
     perf::log(

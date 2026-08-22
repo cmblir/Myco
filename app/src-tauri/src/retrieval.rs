@@ -88,6 +88,47 @@ pub fn tokenize(text: &str) -> Vec<String> {
     tokens
 }
 
+/// Split `"quoted phrases"` out of a query. Returns (lowercased phrases,
+/// query with the quote characters removed). An unclosed quote is treated
+/// as plain text, not a phrase.
+pub fn parse_phrases(query: &str) -> (Vec<String>, String) {
+    let mut phrases = Vec::new();
+    let mut rest = String::with_capacity(query.len());
+    let mut buf = String::new();
+    let mut in_quote = false;
+    for c in query.chars() {
+        match (c, in_quote) {
+            ('"', false) => in_quote = true,
+            ('"', true) => {
+                let p = buf.trim();
+                if !p.is_empty() {
+                    phrases.push(p.to_lowercase());
+                    rest.push_str(p);
+                    rest.push(' ');
+                }
+                buf.clear();
+                in_quote = false;
+            }
+            (_, true) => buf.push(c),
+            (_, false) => rest.push(c),
+        }
+    }
+    if in_quote {
+        rest.push_str(&buf); // unclosed: back into the plain query
+    }
+    let rest = rest.split_whitespace().collect::<Vec<_>>().join(" ");
+    (phrases, rest)
+}
+
+/// True when `text` contains every phrase, case-insensitively.
+pub fn text_matches_phrases(text: &str, phrases: &[String]) -> bool {
+    if phrases.is_empty() {
+        return true;
+    }
+    let lower = text.to_lowercase();
+    phrases.iter().all(|p| lower.contains(p.as_str()))
+}
+
 /// One indexed chunk: identity is `(page, section)`, mirroring
 /// `VectorStore::Record` so lexical and dense hits refer to the same chunk.
 struct Bm25Doc {
@@ -764,6 +805,32 @@ mod tests {
     fn tokenize_mixed_and_single_cjk() {
         assert_eq!(tokenize("KV 캐시"), vec!["kv", "캐시"]); // 캐시 is a 2-char run -> one bigram
         assert_eq!(tokenize("A"), vec!["a"]);
+    }
+    #[test]
+    fn parse_phrases_extracts_quoted_and_keeps_remainder() {
+        let (phrases, rest) = parse_phrases(r#"deadlock "connection reset by peer" tokio"#);
+        assert_eq!(phrases, vec!["connection reset by peer"]);
+        assert_eq!(rest, "deadlock connection reset by peer tokio");
+    }
+    #[test]
+    fn parse_phrases_handles_no_quotes_and_unclosed_quote() {
+        assert_eq!(parse_phrases("plain query").0.len(), 0);
+        let (phrases, rest) = parse_phrases(r#"start "unclosed tail"#);
+        assert!(phrases.is_empty(), "unclosed quote is not a phrase");
+        assert_eq!(rest, "start unclosed tail");
+    }
+    #[test]
+    fn text_matches_phrases_is_case_insensitive_and_conjunctive() {
+        let text = "Retry loop hit Connection Reset By Peer after 30s.";
+        assert!(text_matches_phrases(
+            text,
+            &["connection reset by peer".into()]
+        ));
+        assert!(!text_matches_phrases(
+            text,
+            &["connection reset by peer".into(), "kernel panic".into()]
+        ));
+        assert!(text_matches_phrases(text, &[]));
     }
     #[test]
     fn bm25_retrieves_exact_token_page() {
