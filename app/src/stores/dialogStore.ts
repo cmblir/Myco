@@ -3,6 +3,7 @@
 // promises imperatively from anywhere in the app.
 
 import { create } from "zustand";
+import type { ReactNode } from "react";
 
 export type DialogKind = "prompt" | "confirm";
 
@@ -13,6 +14,8 @@ interface DialogRequest {
   defaultValue?: string;
   placeholder?: string;
   danger?: boolean;
+  /** Rendered between message and actions (e.g. a diff preview), scrollable. */
+  body?: ReactNode;
   resolve: (value: string | null) => void;
 }
 
@@ -55,6 +58,7 @@ export function confirmAction(opts: {
   title: string;
   message: string;
   danger?: boolean;
+  body?: ReactNode;
 }): Promise<boolean> {
   return new Promise((resolve) => {
     useDialogStore.getState().open({
@@ -62,6 +66,7 @@ export function confirmAction(opts: {
       title: opts.title,
       message: opts.message,
       danger: opts.danger,
+      body: opts.body,
       resolve: (v) => resolve(v === "ok"),
     });
   });

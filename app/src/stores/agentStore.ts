@@ -5,9 +5,13 @@
 // agent mode is gated to the tool-capable HTTP providers.
 
 import { create } from "zustand";
+import { createElement } from "react";
 import { runAgent, type AgentStep } from "../lib/agentLoop";
 import { confirmAction } from "./dialogStore";
+import { buildWritePreview } from "../lib/agentDiff";
+import DiffView from "../components/DiffView";
 import { ipc, type AgentToolCall, type AgentToolDescriptor } from "../lib/ipc";
+import type { Strings } from "../lib/i18n";
 
 /** HTTP providers whose API supports the tool-calling loop (see providers.rs). */
 export const AGENT_PROVIDERS = new Set([
@@ -27,6 +31,25 @@ export const DEFAULT_AGENT_PROMPT =
   "on inline as [[page-stem]]. If you cannot find something, say so rather than " +
   "guessing. Keep tool use focused — a handful of calls, not dozens.";
 
+/** Localized copy the write-confirm dialog bakes in. Passed per run from the
+ * panel's `t` so the store itself stays i18n-free (mirrors queryStore.askCopy). */
+export interface AgentCopy {
+  confirmTitle: string;
+  confirmCreateTitle: string;
+  confirmHint: string;
+  diffTooLarge: string;
+}
+
+/** The AgentCopy every caller of `start()` passes, in one place. */
+export function agentCopy(t: Strings): AgentCopy {
+  return {
+    confirmTitle: t.agent_confirm_title,
+    confirmCreateTitle: t.agent_confirm_create_title,
+    confirmHint: t.agent_confirm_hint,
+    diffTooLarge: t.history_diff_too_large,
+  };
+}
+
 export interface AgentStartOpts {
   provider: string;
   model: string;
@@ -36,6 +59,7 @@ export interface AgentStartOpts {
   systemPrompt?: string;
   /** Offer write tools (still confirmed per call). */
   allowWrite: boolean;
+  copy: AgentCopy;
 }
 
 export interface AgentState {
@@ -104,14 +128,40 @@ export const useAgentStore = create<AgentState>((set, get) => ({
         tools,
         allowWrite: opts.allowWrite,
         signal: abortController.signal,
-        confirmWrite: (call: AgentToolCall) =>
-          confirmAction({
-            title: "Allow the agent to write?",
-            message: `The agent wants to run ${call.name}(${
-              (call.input.path as string) ?? ""
-            }). Confirm to let it modify your vault.`,
+        confirmWrite: async (call: AgentToolCall) => {
+          const path = String(call.input.path ?? "");
+          const next = String(call.input.content ?? "");
+          // Current on-disk content; missing/unreadable ⇒ treated as a create.
+          const current = await ipc
+            .readFile(`${opts.vaultPath}/${path}`)
+            .then((f) => f.raw)
+            .catch(() => null);
+          const preview = buildWritePreview(path, current, next);
+          return confirmAction({
+            title:
+              preview.kind === "create"
+                ? opts.copy.confirmCreateTitle
+                : opts.copy.confirmTitle,
+            message: path,
+            body: createElement(
+              "div",
+              null,
+              preview.truncated
+                ? createElement(
+                    "p",
+                    { className: "muted", style: { fontSize: 12.5 } },
+                    opts.copy.diffTooLarge,
+                  )
+                : createElement(DiffView, { lines: preview.lines }),
+              createElement(
+                "p",
+                { className: "muted", style: { fontSize: 12.5, marginTop: 8 } },
+                opts.copy.confirmHint,
+              ),
+            ),
             danger: true,
-          }),
+          });
+        },
         onStep: (step) => set((s) => ({ steps: [...s.steps, step] })),
       });
       set({

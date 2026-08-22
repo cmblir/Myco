@@ -14,6 +14,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import {
   useAgentStore,
   agentSupported,
+  agentCopy,
   DEFAULT_AGENT_PROMPT,
 } from "../stores/agentStore";
 import {
@@ -73,6 +74,7 @@ export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
       question,
       systemPrompt: activePreset?.systemPrompt || DEFAULT_AGENT_PROMPT,
       allowWrite: activePreset ? activePreset.allowWrite : allowWrite,
+      copy: agentCopy(t),
     });
   }
 

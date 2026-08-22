@@ -117,6 +117,9 @@ export default function DialogHost(): JSX.Element | null {
         {request.message ? (
           <p className="myco-modal__message">{request.message}</p>
         ) : null}
+        {request.body ? (
+          <div style={{ maxHeight: 320, overflowY: "auto" }}>{request.body}</div>
+        ) : null}
         {request.kind === "prompt" ? (
           <input
             ref={inputRef}
