@@ -24,8 +24,10 @@ import type {
   MycoSettings,
   OllamaStatus,
   PanicEntry,
+  RunSummary,
   SpotlightStatus,
 } from "../lib/ipc";
+import { formatRunLine } from "../lib/runList";
 import { formatCrashReport } from "../lib/crashReport";
 import {
   CLI_DEFAULT,
@@ -1809,6 +1811,8 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
   const [stoppedAfter, setStoppedAfter] = useState<DistillStopPoint | null>(null);
   const [undoing, setUndoing] = useState(false);
   const [undoResult, setUndoResult] = useState<number | null>(null);
+  // Q4 item 3 — past runs, each with its own undo button.
+  const [runs, setRuns] = useState<RunSummary[]>([]);
   // Whether the latest session-digest pass for this vault ran EXTRACTIVELY
   // (builtin-local has no generative model, so it quotes instead of
   // summarizing — see sessionDigest.ts). Successor of Defect E's "skipped —
@@ -1837,6 +1841,12 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       .distillStatus(vaultPath)
       .then((s) => {
         if (!cancelled) setStatus(s);
+      })
+      .catch(() => undefined);
+    ipc
+      .listDistillRuns(vaultPath, 10)
+      .then((r) => {
+        if (!cancelled) setRuns(r);
       })
       .catch(() => undefined);
     const digest = lastDigestOutcome.get(vaultPath);
@@ -1900,22 +1910,28 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
     }
   }
 
-  // Important 3 fix: undo the last run — mechanical reversal via
-  // distill::undo, one button next to the last-run summary below.
-  async function undoLastRun(): Promise<void> {
-    if (!vaultPath || !status?.last_run_id || undoing) return;
+  // Important 3 fix + Q4 item 3: mechanical reversal via distill::undo —
+  // the last-run button and every past-run row share this one path.
+  async function undoRun(id: string): Promise<void> {
+    if (!vaultPath || undoing) return;
     setUndoing(true);
     setError(null);
     setUndoResult(null);
     try {
-      const n = await ipc.undoDistillRun(vaultPath, status.last_run_id);
+      const n = await ipc.undoDistillRun(vaultPath, id);
       setUndoResult(n);
       setStatus(await ipc.distillStatus(vaultPath));
+      setRuns(await ipc.listDistillRuns(vaultPath, 10));
     } catch (e) {
       setError(String(e));
     } finally {
       setUndoing(false);
     }
+  }
+
+  async function undoLastRun(): Promise<void> {
+    if (!status?.last_run_id) return;
+    await undoRun(status.last_run_id);
   }
 
   if (!cfg) {
@@ -2251,6 +2267,43 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
               "{n}",
               String(undoResult),
             )}
+          </div>
+        ) : null}
+        {runs.length > 0 ? (
+          <div style={{ marginTop: 10 }} data-testid="distill-run-list">
+            <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+              {t.set_runs_title ?? "Past runs"}
+            </div>
+            {runs.map((r) => (
+              <div
+                key={r.id}
+                className="row"
+                style={{
+                  justifyContent: "space-between",
+                  padding: "6px 0",
+                  borderBottom: "1px solid var(--line-soft)",
+                }}
+              >
+                <span
+                  className="muted"
+                  style={{ fontSize: 12.5, fontFamily: "var(--font-mono)" }}
+                >
+                  {r.id}
+                </span>
+                <span className="muted" style={{ fontSize: 12 }}>
+                  {formatRunLine(r, lang)}
+                </span>
+                <button
+                  className="btn"
+                  style={{ padding: "3px 8px", fontSize: 11.5 }}
+                  onClick={() => void undoRun(r.id)}
+                  disabled={undoing}
+                  data-testid={`run-undo-${r.id}`}
+                >
+                  {t.set_distill_undo ?? "Undo this run"}
+                </button>
+              </div>
+            ))}
           </div>
         ) : null}
         <div className="row" style={{ gap: 8, marginTop: 12 }}>

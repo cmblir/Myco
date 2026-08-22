@@ -819,6 +819,7 @@ export interface Strings {
   set_distill_undo?: string;
   set_distill_undoing?: string;
   set_distill_undo_result?: string;
+  set_runs_title?: string;
   // Defects C/D/E/G (2026-08 distill visibility fixes).
   set_distill_gate_pending?: string; // {n} {min}
   set_distill_digest_extractive?: string;
@@ -1970,6 +1971,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_undo: "Undo this run",
     set_distill_undoing: "Undoing…",
     set_distill_undo_result: "Reversed {n} changes",
+    set_runs_title: "Past runs",
     set_distill_gate_pending: "Distill waiting: wiki pages {n}/{min}",
     set_distill_digest_extractive:
       "Session digest ran extractively (quoted highlights, no LLM). Connect a query provider under Settings → Model (Query) for summarized digests.",
@@ -3123,6 +3125,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_undo: "이 실행 되돌리기",
     set_distill_undoing: "되돌리는 중…",
     set_distill_undo_result: "{n}건 되돌림",
+    set_runs_title: "지난 실행",
     set_distill_gate_pending: "증류 대기: 위키 페이지 {n}/{min}",
     set_distill_digest_extractive:
       "세션 다이제스트를 추출 방식으로 실행했습니다 (LLM 없이 인용 발췌). 요약 다이제스트를 원하면 설정 → 모델(쿼리)에서 프로바이더를 연결하세요.",
@@ -4121,6 +4124,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_undo: "この実行を元に戻す",
     set_distill_undoing: "元に戻しています…",
     set_distill_undo_result: "{n}件を元に戻しました",
+    set_runs_title: "過去の実行",
     set_distill_gate_pending: "蒸留待機中: ウィキページ {n}/{min}",
     set_distill_digest_extractive:
       "セッションダイジェストを抽出方式で実行しました（LLMなしの引用抜粋）。要約ダイジェストには設定 → モデル（クエリ）でプロバイダーを接続してください。",
