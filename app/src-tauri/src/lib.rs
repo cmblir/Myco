@@ -162,6 +162,7 @@ pub fn run() {
             commands::describe_image,
             commands::whisper_check,
             commands::transcribe_media,
+            commands::save_voice_capture,
             commands::create_file,
             commands::create_folder,
             commands::delete_path,

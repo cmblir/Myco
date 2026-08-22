@@ -1644,6 +1644,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       );
     case "whisper_check":
       return Promise.resolve({ installed: true, version: "whisper 1.0", path: "/usr/local/bin/whisper" });
+    // Voice quick-capture (W3–6 item 9): the delay exercises the "saving"
+    // state before the saved chip.
+    case "save_voice_capture":
+      return sleep(600).then(() => ({ rel: "_inbox/voice-2026-08-22-0912.md" }));
     case "transcribe_media":
       return Promise.resolve(
         "(mock) Transcript: today we cover attention and how scaled dot-product attention works.",

@@ -401,6 +401,109 @@ pub async fn transcribe_media(path: String) -> Result<String, String> {
         .map_err(|e| format!("transcription task failed: {e}"))?
 }
 
+// ---- voice quick-capture (W3–6 item 9) -------------------------------------
+
+/// `_inbox/` source doc for a voice capture. Frontmatter mirrors clip.rs
+/// (`source`/`title` via `yaml_str`, `created` as a unix int) so provenance
+/// and distill ingest it unchanged. The title is the transcript's opening
+/// words — a voice memo has no better name.
+pub(crate) fn voice_markdown(transcript: &str, captured_at: i64) -> String {
+    let first = transcript
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .unwrap_or("")
+        .trim();
+    let title: String = if first.is_empty() {
+        "Voice note".to_string()
+    } else {
+        first.chars().take(80).collect()
+    };
+    format!(
+        "---\nsource: voice\ntitle: {}\ncreated: {captured_at}\n---\n\n{}\n",
+        crate::clip::yaml_str(&title),
+        transcript.trim_end(),
+    )
+}
+
+/// First free `_inbox/voice-<YYYY-MM-DD-HHMM>.md` under `root` — a `-2`,
+/// `-3`… suffix when captures land in the same minute.
+pub(crate) fn voice_inbox_rel(root: &std::path::Path, now: i64) -> String {
+    let (y, mo, d, hh, mi, _) = crate::distill::civil_datetime(now);
+    let base = format!("_inbox/voice-{y:04}-{mo:02}-{d:02}-{hh:02}{mi:02}");
+    let mut rel = format!("{base}.md");
+    let mut n = 2;
+    while root.join(&rel).exists() {
+        rel = format!("{base}-{n}.md");
+        n += 1;
+    }
+    rel
+}
+
+/// The recording arrives as bytes from the webview — cap it like the other
+/// media commands (voice memos are tiny; anything near this is not one).
+const MAX_VOICE_BYTES: usize = 50 * 1024 * 1024;
+
+#[derive(Clone, serde::Serialize)]
+pub struct VoiceSaved {
+    pub rel: String,
+}
+
+/// Blocking core of `save_voice_capture`: temp audio file (cli_agent.rs's
+/// `myco-<purpose>-<pid>-<nanos>` pattern) → whisper → `_inbox/` note. The
+/// whisper check runs FIRST so a missing CLI writes nothing at all, and the
+/// temp file is deleted on every path (success and transcription failure).
+fn save_voice_core(root: &std::path::Path, bytes: &[u8]) -> Result<VoiceSaved, String> {
+    if !crate::whisper::check().installed {
+        return Err("whisper-missing".to_string());
+    }
+    if bytes.is_empty() {
+        return Err("empty recording".to_string());
+    }
+    if bytes.len() > MAX_VOICE_BYTES {
+        return Err("recording is too large (limit 50 MB)".to_string());
+    }
+    let tmp = std::env::temp_dir().join(format!(
+        "myco-voice-{}-{}.webm",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    ));
+    std::fs::write(&tmp, bytes).map_err(|e| format!("write temp audio: {e}"))?;
+    let transcribed = crate::whisper::transcribe(&tmp.to_string_lossy());
+    let _ = std::fs::remove_file(&tmp);
+    let transcript = transcribed?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let rel = voice_inbox_rel(root, now);
+    let path = crate::myco_pro::safe_join(root, &rel)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create _inbox: {e}"))?;
+    }
+    std::fs::write(&path, voice_markdown(&transcript, now))
+        .map_err(|e| format!("write voice note: {e}"))?;
+    Ok(VoiceSaved { rel })
+}
+
+/// Save a spotlight voice capture into the OPEN vault's `_inbox/`. Takes no
+/// vault arg: the spotlight webview has no vault open to name, so the target
+/// is `require_root` — the same root every other write command confines to.
+/// `Err("whisper-missing")` before anything is written when no whisper CLI is
+/// on PATH; the frontend shows install copy and stays in ask mode.
+#[tauri::command]
+pub async fn save_voice_capture(
+    state: tauri::State<'_, VaultRoot>,
+    bytes: Vec<u8>,
+) -> Result<VoiceSaved, String> {
+    let root = require_root(&state)?;
+    tauri::async_runtime::spawn_blocking(move || save_voice_core(&root, &bytes))
+        .await
+        .map_err(|e| format!("join failed: {e}"))?
+}
+
 /// Extract a dropped/picked file's text for ingest (not restricted to inside the
 /// vault — it's an external import). PDF and spreadsheets (xlsx/xls/ods) are
 /// parsed to text; CSV and other text-like files are read as-is. Refuses files
@@ -3645,7 +3748,7 @@ mod tests {
         append_recall_miss, builtin_index_is_stale, chunk_text_at, export_bundle_write,
         external_target_allowed, import_dest, iso_week_monday, page_in_date_range,
         read_settings_import, recency_tie_break, run_diff_core, run_import, sync_bm25_for_page,
-        windows_opener_safe, DateRange, DEST_INBOX, DEST_SESSIONS,
+        voice_inbox_rel, voice_markdown, windows_opener_safe, DateRange, DEST_INBOX, DEST_SESSIONS,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
@@ -4486,6 +4589,59 @@ mod tests {
             s.pooling,
             llama_cpp_2::context::params::LlamaPoolingType::Cls
         ));
+    }
+
+    // ---- voice quick-capture (W3–6 item 9) ---------------------------------
+
+    /// The whole point of the frontmatter: the readers that already exist
+    /// (`provenance` on source/title strings, `distill` on an integer
+    /// `created`) must ingest a voice note unchanged — clip.rs's contract.
+    #[test]
+    fn voice_markdown_has_clip_compatible_frontmatter() {
+        let md = voice_markdown("floor: moves to 0.50 tomorrow\nsecond line", 1_755_000_000);
+        let parsed = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+            .parse(&md)
+            .unwrap();
+        let gray_matter::Pod::Hash(map) = parsed.data.unwrap() else {
+            panic!("frontmatter is not a mapping");
+        };
+        assert_eq!(
+            map.get("source"),
+            Some(&gray_matter::Pod::String("voice".into()))
+        );
+        // A `:` in the transcript's opening words would have broken a bare
+        // YAML scalar — the title must survive via yaml_str.
+        assert_eq!(
+            map.get("title"),
+            Some(&gray_matter::Pod::String(
+                "floor: moves to 0.50 tomorrow".into()
+            ))
+        );
+        assert_eq!(
+            map.get("created"),
+            Some(&gray_matter::Pod::Integer(1_755_000_000))
+        );
+        assert!(md.contains("second line"), "body must carry the transcript");
+    }
+
+    /// Two captures in the same minute must not clobber each other: the second
+    /// gets a `-2` suffix, the third `-3`.
+    #[test]
+    fn voice_rel_gets_a_collision_suffix() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let now = 1_755_000_000;
+        let first = voice_inbox_rel(root, now);
+        assert!(
+            first.starts_with("_inbox/voice-") && first.ends_with(".md"),
+            "{first}"
+        );
+        std::fs::create_dir_all(root.join("_inbox")).unwrap();
+        std::fs::write(root.join(&first), "x").unwrap();
+        let second = voice_inbox_rel(root, now);
+        assert_eq!(second, first.replace(".md", "-2.md"));
+        std::fs::write(root.join(&second), "x").unwrap();
+        assert_eq!(voice_inbox_rel(root, now), first.replace(".md", "-3.md"));
     }
 }
 

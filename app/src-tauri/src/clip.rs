@@ -123,7 +123,11 @@ pub fn clip_filename(clip: &Clip) -> String {
 /// bare scalar into frontmatter that fails to parse or, worse, parses to
 /// something else. JSON string syntax IS a valid YAML double-quoted scalar and
 /// escapes exactly those characters.
-fn yaml_str(s: &str) -> String {
+///
+/// `pub(crate)`: `commands::voice_markdown` writes the same `_inbox/`
+/// frontmatter spine and has the same hostile-title problem (a transcript's
+/// opening words become the title).
+pub(crate) fn yaml_str(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".to_string())
 }
 

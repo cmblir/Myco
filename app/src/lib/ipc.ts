@@ -594,6 +594,11 @@ export const ipc = {
     invoke<string>("transcribe_media", { path }),
   /** Whether a whisper-family CLI is on PATH (gates the media-ingest button). */
   whisperCheck: () => invoke<ClaudeStatus>("whisper_check"),
+  /** Save a spotlight voice capture: whisper-transcribe the recorded audio
+   *  into the open vault's `_inbox/voice-<date>.md`. Plain number[] because
+   *  invoke args are JSON — a Uint8Array would not reach Rust as Vec<u8>. */
+  saveVoiceCapture: (bytes: number[]) =>
+    invoke<{ rel: string }>("save_voice_capture", { bytes }),
   buildLinkGraph: (root: string) =>
     invoke<Adjacency>("build_link_graph", { root }),
   /** Cheap hash of the vault's markdown (path+mtime+length per .md). Ask this

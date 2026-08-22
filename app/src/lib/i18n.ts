@@ -1031,6 +1031,12 @@ export interface Strings {
   spot_hint_open?: string;
   spot_no_vault?: string;
   spot_busy?: string;
+  // Spotlight voice quick-capture (W3–6 item 9).
+  voice_btn_label?: string;
+  voice_hint_recording?: string;
+  voice_saved_chip?: string; // {rel}
+  voice_whisper_missing?: string;
+  voice_mic_denied?: string;
   s_spot_title?: string;
   s_spot_desc?: string;
   s_spot_record?: string;
@@ -2208,6 +2214,13 @@ export const STRINGS: Record<Lang, Strings> = {
     spot_hint_open: "Click a citation to open that note in myco.",
     spot_no_vault: "Open a vault in myco first — there is nothing to ask yet.",
     spot_busy: "myco is still answering the previous question.",
+    voice_btn_label: "Voice capture",
+    voice_hint_recording: "⏎ save · esc cancel",
+    voice_saved_chip: "{rel} — joins the next ingest",
+    voice_whisper_missing:
+      "whisper is not installed — run brew install openai-whisper, then try again.",
+    voice_mic_denied:
+      "The microphone is not available — allow myco to use it in System Settings.",
     s_spot_title: "Ask from anywhere",
     s_spot_desc:
       "A global shortcut opens a small ask window over whatever you are doing. It answers through the same Ask path as the app, so citations open the note.",
@@ -3384,6 +3397,13 @@ export const STRINGS: Record<Lang, Strings> = {
     spot_hint_open: "인용을 클릭하면 myco에서 해당 노트를 엽니다.",
     spot_no_vault: "myco에서 볼트를 먼저 열어주세요 — 아직 질문할 대상이 없습니다.",
     spot_busy: "myco가 이전 질문에 아직 답하고 있습니다.",
+    voice_btn_label: "음성 캡처",
+    voice_hint_recording: "⏎ 저장 · esc 취소",
+    voice_saved_chip: "{rel} — 다음 인제스트에 합류합니다",
+    voice_whisper_missing:
+      "whisper가 설치되어 있지 않습니다 — brew install openai-whisper 후 다시 시도하세요.",
+    voice_mic_denied:
+      "마이크를 사용할 수 없습니다 — 시스템 설정에서 myco의 마이크 접근을 허용해주세요.",
     s_spot_title: "어디서나 질문",
     s_spot_desc:
       "전역 단축키로 지금 하던 작업 위에 작은 질문 창을 띄웁니다. 앱의 Ask와 완전히 같은 경로로 답하므로 인용을 누르면 노트가 열립니다.",
@@ -4406,6 +4426,13 @@ export const STRINGS: Record<Lang, Strings> = {
     spot_hint_open: "引用をクリックすると myco でそのノートを開きます。",
     spot_no_vault: "先に myco でボールトを開いてください — まだ質問する対象がありません。",
     spot_busy: "myco はまだ前の質問に答えています。",
+    voice_btn_label: "音声キャプチャ",
+    voice_hint_recording: "⏎ 保存 · esc キャンセル",
+    voice_saved_chip: "{rel} — 次のインジェストに合流します",
+    voice_whisper_missing:
+      "whisper がインストールされていません — brew install openai-whisper の後にもう一度お試しください。",
+    voice_mic_denied:
+      "マイクを使用できません — システム設定で myco のマイク使用を許可してください。",
     s_spot_title: "どこからでも質問",
     s_spot_desc:
       "グローバルショートカットで、作業中の画面の上に小さな質問ウィンドウを開きます。アプリの Ask と同じ経路で答えるため、引用をクリックするとノートが開きます。",
