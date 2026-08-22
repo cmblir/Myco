@@ -75,7 +75,10 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   }, [currentVault, stage, inboxRev]);
 
   const running =
-    stage === "writing-raw" || stage === "claude" || stage === "indexing";
+    stage === "writing-raw" ||
+    stage === "plan-gate" ||
+    stage === "claude" ||
+    stage === "indexing";
   // After the run ends the panel stays up as the result view (mini galaxy,
   // feed, counters) until the user starts another ingest. Streamless runs
   // (HTTP providers) have no events and fall back to the plain form+banner.

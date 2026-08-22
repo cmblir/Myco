@@ -205,6 +205,10 @@ export interface Strings {
   ing_grounded_hint: string;
   ing_plan: string;
   ing_plan_hint: string;
+  ingest_gate_title: string;
+  ingest_gate_apply: string; // {n}
+  ingest_gate_all: string;
+  ingest_gate_noop_hint: string;
   ing_cancel: string;
   ing_cancelled: string;
   ing_preview_open: string;
@@ -1340,6 +1344,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_plan: "Ingest plan ({n})",
     ing_plan_hint:
       "What the source will change — the agent follows this, updating existing pages instead of duplicating.",
+    ingest_gate_title: "Ingest plan — choose what to apply",
+    ingest_gate_apply: "Apply {n} selected",
+    ingest_gate_all: "Everything as planned",
+    ingest_gate_noop_hint:
+      "NOOP items are already covered by the wiki — unchecked by default.",
     ing_cancel: "Cancel",
     ing_cancelled: "Ingest cancelled",
     ing_preview_open: "Open page",
@@ -2499,6 +2508,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_plan: "인제스트 계획 {n}개",
     ing_plan_hint:
       "이 소스가 무엇을 바꿀지 — 에이전트가 이 계획을 따라 중복 대신 기존 페이지를 갱신합니다.",
+    ingest_gate_title: "인제스트 계획 — 적용할 항목을 고르세요",
+    ingest_gate_apply: "{n}개만 적용",
+    ingest_gate_all: "이 계획대로 전부",
+    ingest_gate_noop_hint:
+      "NOOP 항목은 이미 위키에 반영되어 있어 기본으로 해제되어 있습니다.",
     ing_cancel: "취소",
     ing_cancelled: "가져오기가 취소되었습니다",
     ing_preview_open: "페이지 열기",
@@ -3561,6 +3575,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_plan: "取り込み計画 {n}件",
     ing_plan_hint:
       "このソースが何を変えるか — エージェントはこの計画に従い、重複ではなく既存ページを更新します。",
+    ingest_gate_title: "取り込み計画 — 適用する項目を選んでください",
+    ingest_gate_apply: "{n}件のみ適用",
+    ingest_gate_all: "この計画どおりすべて",
+    ingest_gate_noop_hint:
+      "NOOP項目はすでにウィキに反映済みのため、初期状態では未選択です。",
     ing_cancel: "キャンセル",
     ing_cancelled: "取り込みをキャンセルしました",
     ing_preview_open: "ページを開く",

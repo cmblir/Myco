@@ -87,7 +87,9 @@ export async function runInboxPass(vaultPath: string): Promise<boolean> {
   const title = f.name.replace(/\.[^.]+$/, "");
 
   // startIngest writes raw/<slug>.md from this content and runs the model.
-  await useIngestStore.getState().startIngest(title, fc.raw);
+  // headless: this pass runs unattended — the plan gate (a checkbox review
+  // awaiting a user) would park the run forever, so it must never engage here.
+  await useIngestStore.getState().startIngest(title, fc.raw, { headless: true });
 
   if (useIngestStore.getState().stage === "done") {
     // Archive the consumed source (never delete) — its content is also in

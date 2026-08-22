@@ -11,6 +11,8 @@ import { Icon } from "../lib/icons";
 import type { IconName } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { formatTicker } from "../lib/time";
+import { defaultSelection } from "../lib/planGate";
+import type { PlanItem } from "../lib/ingestPlan";
 import { useIngestStore } from "../stores/ingestStore";
 import type { IngestEvent } from "../stores/ingestStore";
 import IngestMiniGraph from "./IngestMiniGraph";
@@ -63,7 +65,10 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
   const cancelIngest = useIngestStore((s) => s.cancelIngest);
 
   const running =
-    stage === "writing-raw" || stage === "claude" || stage === "indexing";
+    stage === "writing-raw" ||
+    stage === "plan-gate" ||
+    stage === "claude" ||
+    stage === "indexing";
 
   // 1 Hz elapsed ticker while the run is live.
   const [now, setNow] = useState(() => Date.now());
@@ -125,7 +130,7 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
           <button
             className="btn ingest-cancel"
             onClick={cancelIngest}
-            disabled={stage !== "claude"}
+            disabled={stage !== "claude" && stage !== "plan-gate"}
           >
             <Icon name="x" size={13} /> {t.ing_cancel}
           </button>
@@ -134,7 +139,9 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
 
       <IngestMiniGraph t={t} />
 
-      {plan.length > 0 ? (
+      {stage === "plan-gate" && plan.length > 0 ? (
+        <PlanGateCard t={t} plan={plan} />
+      ) : plan.length > 0 ? (
         <div className="card" data-testid="ingest-plan" style={{ padding: "10px 12px" }}>
           <div className="section-title" style={{ fontSize: 13, marginBottom: 2 }}>
             <Icon name="sparkles" size={12} />{" "}
@@ -237,6 +244,86 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
             <Icon name="history" size={11} /> {elapsed}
           </span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Plan gate card (mockup M4-b): the run is paused at stage "plan-gate" — one
+// checkbox per plan item (NOOP pre-unchecked, dimmed at 60% when off), primary
+// "apply {n}" resolves the gate with the reviewed selection, ghost "everything
+// as planned" resolves with the default (all non-NOOP). Mounted only while the
+// gate is open, so the initial selection is computed once on mount.
+function PlanGateCard({ t, plan }: { t: Strings; plan: PlanItem[] }): JSX.Element {
+  const resolvePlanGate = useIngestStore((s) => s.resolvePlanGate);
+  const skipPlanGate = useIngestStore((s) => s.skipPlanGate);
+  const [sel, setSel] = useState<boolean[]>(() => defaultSelection(plan));
+  const n = sel.filter(Boolean).length;
+
+  return (
+    <div className="card" data-testid="ingest-plan-gate" style={{ padding: "10px 12px" }}>
+      <div className="section-title" style={{ fontSize: 13, marginBottom: 2 }}>
+        <Icon name="sparkles" size={12} /> {t.ingest_gate_title}
+      </div>
+      {plan.some((p) => p.decision === "NOOP") ? (
+        <div className="muted" style={{ fontSize: 11.5, marginBottom: 8 }}>
+          {t.ingest_gate_noop_hint}
+        </div>
+      ) : null}
+      <div className="col" style={{ gap: 5 }}>
+        {plan.map((p, i) => (
+          <label
+            key={i}
+            className="row"
+            style={{
+              gap: 7,
+              alignItems: "baseline",
+              fontSize: 12.5,
+              flexWrap: "wrap",
+              cursor: "pointer",
+              opacity: sel[i] ? 1 : 0.6,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={sel[i] ?? false}
+              onChange={() =>
+                setSel((s) => s.map((v, j) => (j === i ? !v : v)))
+              }
+              style={{ flexShrink: 0 }}
+            />
+            <span
+              className="chip"
+              style={{
+                flexShrink: 0,
+                fontSize: 11,
+                fontWeight: 600,
+                background: DECISION_BG[p.decision] ?? "var(--bg-soft)",
+                color: DECISION_FG[p.decision] ?? "var(--ink-3)",
+              }}
+            >
+              {p.decision}
+            </span>
+            <span style={{ minWidth: 0, flex: 1 }}>
+              {p.subject}
+              {p.target ? <span className="muted"> → {p.target}</span> : null}
+              {p.reason ? (
+                <span className="muted" style={{ fontSize: 11.5 }}>
+                  {" "}
+                  · {p.reason}
+                </span>
+              ) : null}
+            </span>
+          </label>
+        ))}
+      </div>
+      <div className="row" style={{ gap: 8, marginTop: 10 }}>
+        <button className="btn btn-primary" onClick={() => resolvePlanGate(sel)}>
+          {t.ingest_gate_apply.replace("{n}", String(n))}
+        </button>
+        <button className="btn btn-ghost" onClick={skipPlanGate}>
+          {t.ingest_gate_all}
+        </button>
       </div>
     </div>
   );

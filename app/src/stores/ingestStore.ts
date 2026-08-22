@@ -15,6 +15,7 @@ import type { Adjacency, CandidatePage, ClaudeStreamPayload } from "../lib/ipc";
 import { complete } from "../lib/chat";
 import { buildIngestPlanPrompt, parseIngestPlan } from "../lib/ingestPlan";
 import type { PlanItem } from "../lib/ingestPlan";
+import { defaultSelection, selectedPlan } from "../lib/planGate";
 import { loadProfile } from "../lib/profile";
 import { log } from "../lib/log";
 import { STRINGS } from "../lib/i18n";
@@ -31,6 +32,7 @@ function t() {
 export type IngestStage =
   | "idle"
   | "writing-raw"
+  | "plan-gate"
   | "claude"
   | "indexing"
   | "done"
@@ -202,7 +204,17 @@ interface IngestState {
    * it into showing an already-consumed (soon-dead-path) row. */
   inboxRev: number;
   bumpInboxRev: () => void;
-  startIngest: (title: string, body: string) => Promise<void>;
+  /** `headless: true` skips the plan gate — unattended callers (autoIngest's
+   * inbox pass) have nobody at the wheel and would hang on it forever. */
+  startIngest: (
+    title: string,
+    body: string,
+    opts?: { headless?: boolean },
+  ) => Promise<void>;
+  /** Resolves a pending plan gate with the reviewed checkbox state. */
+  resolvePlanGate: (sel: boolean[]) => void;
+  /** Resolves a pending plan gate with the default selection (all non-NOOP). */
+  skipPlanGate: () => void;
   cancelIngest: () => void;
   markSeen: () => void;
   reset: () => void;
@@ -234,12 +246,13 @@ export const useIngestStore = create<IngestState>((set, get) => ({
   seen: true,
   inboxRev: 0,
 
-  async startIngest(title: string, body: string) {
+  async startIngest(title: string, body: string, opts?: { headless?: boolean }) {
     const vault = useVaultStore.getState().currentVault;
     if (!vault) return;
     const s = get();
     if (
       s.stage === "writing-raw" ||
+      s.stage === "plan-gate" ||
       s.stage === "claude" ||
       s.stage === "indexing"
     )
@@ -335,6 +348,29 @@ export const useIngestStore = create<IngestState>((set, get) => ({
         /* planner unavailable — proceed with candidate grounding only */
       }
       set({ plan });
+
+      // Plan gate (Q4 item 7): pause a manual run for a per-item checkbox
+      // review before the writing agent touches the wiki. Headless callers
+      // (autoIngest's inbox pass) skip it — nobody is watching, and an
+      // unresolved gate would park the run (and block future passes) forever.
+      // fullTierIngest.ts never reaches here at all: it builds INGEST_PROMPT
+      // directly and does not call startIngest.
+      if (plan.length > 0 && !opts?.headless) {
+        set({ stage: "plan-gate" });
+        const sel = await new Promise<boolean[] | null>((res) => {
+          planGateResolver = res;
+        });
+        planGateResolver = null;
+        if (sel === null) {
+          // Cancelled at the gate — nothing has run yet; back to the form.
+          // The raw/ copy already written stays (raw/ is immutable); the
+          // finally block below drops the stream listener.
+          set({ stage: "idle" });
+          return;
+        }
+        plan = selectedPlan(plan, sel);
+        set({ plan });
+      }
 
       set({ stage: "claude" });
       const settings = await ipc.getSettings();
@@ -494,8 +530,22 @@ export const useIngestStore = create<IngestState>((set, get) => ({
     }
   },
 
+  resolvePlanGate(sel: boolean[]) {
+    planGateResolver?.(sel);
+  },
+
+  skipPlanGate() {
+    planGateResolver?.(defaultSelection(get().plan));
+  },
+
   cancelIngest() {
     const { runId, stage } = get();
+    if (stage === "plan-gate") {
+      // No agent is running yet — resolving null makes startIngest abort
+      // cleanly back to idle instead of killing a nonexistent claude run.
+      planGateResolver?.(null);
+      return;
+    }
     if (!runId || stage !== "claude") return;
     // Backend kill makes claude_run_stream reject with "cancelled";
     // startIngest's catch handler then flips the stage.
@@ -525,6 +575,11 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       seen: true,
     }),
 }));
+
+// Pending plan-gate resolver (one gate at a time — the store runs one ingest at
+// a time). Set while startIngest awaits the review; `boolean[]` proceeds with
+// that selection, `null` aborts the run back to idle.
+let planGateResolver: ((sel: boolean[] | null) => void) | null = null;
 
 // Persist a finished streamed run to runs/<date>-<id>.log (opt-in, best effort).
 // Reconstructs the transcript from the accumulated stream events plus the final
