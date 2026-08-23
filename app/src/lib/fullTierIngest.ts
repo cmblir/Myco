@@ -17,12 +17,16 @@ import { ipc } from "./ipc";
 import { getActiveModel } from "./chat";
 import { stripFrontmatter } from "./markdown";
 import { loadProfile } from "./profile";
+import { shouldPromote } from "./redaction";
 import { INGEST_PROMPT, runIngestProvider } from "../stores/ingestStore";
 
 export interface FullTierOutcome {
   ingested: number;
   skipped: "no-provider" | "nothing" | null;
   errors: string[];
+  /** Q4 item 13 — sources left waiting in `_inbox/` because the redaction
+   *  scan flagged them (secrets always; PII when quarantine is on). */
+  held: number;
 }
 
 // Fallback llm_ingest_budget when getDistillConfig is unavailable — mirrors
@@ -99,19 +103,27 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
   const budget = cfg?.llm_ingest_budget ?? DEFAULT_INGEST_BUDGET;
   const items = (await ipc.fullTierItems(vaultPath)).slice(0, budget);
   if (items.length === 0) {
-    return { ingested: 0, skipped: "nothing", errors: [] };
+    return { ingested: 0, skipped: "nothing", errors: [], held: 0 };
   }
 
   const { provider, model, effort } = await getActiveModel("ingest");
   if (provider === "builtin-local") {
-    return { ingested: 0, skipped: "no-provider", errors: [] };
+    return { ingested: 0, skipped: "no-provider", errors: [], held: 0 };
   }
   if (provider === "myco-pro") {
     const settings = await ipc.getSettings();
     if (!settings.providers.myco_pro) {
-      return { ingested: 0, skipped: "no-provider", errors: [] };
+      return { ingested: 0, skipped: "no-provider", errors: [], held: 0 };
     }
   }
+
+  // Q4 item 13 — the PII response mode for _inbox/ promotions below (secrets
+  // always block). An unreadable settings file falls back to warn-only, the
+  // same default Rust's add_raw_source guard uses.
+  const piiQuarantine = await ipc
+    .getSettings()
+    .then((s) => s.pii_quarantine_enabled)
+    .catch(() => false);
 
   // Phase B, Task 6 — same grounding line startIngest passes, computed once
   // for the whole run rather than per item (the profile does not change
@@ -131,6 +143,7 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
   const manifestId = `llm-${Math.floor(Date.now() / 1000)}`;
 
   let ingested = 0;
+  let held = 0;
   const errors: string[] = [];
   for (const rel of items) {
     try {
@@ -138,6 +151,15 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
       let content: string;
       if (rel.startsWith("_inbox/")) {
         content = (await ipc.readFile(`${vaultPath}/${rel}`)).raw;
+        // Q4 item 13 — scan BEFORE the archive move + raw/ write (raw/ is
+        // immutable; a flagged write could never be unwound). A flagged
+        // source is held, not errored: it stays untouched in _inbox/ for the
+        // user to redact, and the next pass offers it again. raw/ items are
+        // not scanned here — they already passed their own entry boundary.
+        if (!shouldPromote(await ipc.scanTextSecrets(content), piiQuarantine)) {
+          held++;
+          continue;
+        }
         // Archive BEFORE writing the raw copy — see the archive-before-write
         // ordering note above for why this makes every failure mode safe.
         const archivedAbs = await ipc.archiveInboxSource(`${vaultPath}/${rel}`);
@@ -180,5 +202,5 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
       errors.push(`${rel}: ${String(err)}`);
     }
   }
-  return { ingested, skipped: null, errors };
+  return { ingested, skipped: null, errors, held };
 }

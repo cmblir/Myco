@@ -1139,6 +1139,11 @@ export interface Strings {
   vh_later?: string;
   vh_setting_title?: string;
   vh_setting_desc?: string;
+  // Redaction PII mode (Q4 item 13, mockup M8-b) — optional; fall back to English.
+  set_pii_title?: string;
+  set_pii_desc?: string;
+  set_pii_warn?: string;
+  set_pii_quarantine?: string;
   // Morning-Report band (Q4 item 2) — optional; fall back to English.
   ov_since_eyebrow?: string;
   ov_since_title?: string; // {runs} {pages}
@@ -2353,6 +2358,11 @@ export const STRINGS: Record<Lang, Strings> = {
     vh_setting_title: "Vault history (git)",
     vh_setting_desc:
       "Creates a local git repo inside the vault. Agent commits and your edits are recorded as different authors. Nothing leaves this machine.",
+    set_pii_title: "When PII is detected",
+    set_pii_desc:
+      "With Quarantine, sources containing emails or phone numbers stay in _inbox instead of being written to permanent storage. Secrets like API keys are always blocked either way.",
+    set_pii_warn: "Warn only",
+    set_pii_quarantine: "Quarantine",
     ov_since_eyebrow: "Since you were last here",
     ov_since_title: "{runs} distill runs, {pages} pages moved",
     ov_since_quiet: "All quiet since your last visit.",
@@ -3556,6 +3566,11 @@ export const STRINGS: Record<Lang, Strings> = {
     vh_setting_title: "볼트 이력 (git)",
     vh_setting_desc:
       "볼트 안에 로컬 git 저장소를 만듭니다. 에이전트 커밋과 직접 편집이 서로 다른 작성자로 기록되며, 이 기기를 떠나지 않습니다.",
+    set_pii_title: "개인정보(PII) 감지 시",
+    set_pii_desc:
+      "격리를 선택하면 이메일·전화번호가 감지된 소스는 영구 보관소에 기록되지 않고 _inbox에 남습니다. API 키 같은 시크릿은 선택과 무관하게 항상 차단됩니다.",
+    set_pii_warn: "경고만",
+    set_pii_quarantine: "격리",
     ov_since_eyebrow: "다녀오신 사이",
     ov_since_title: "증류 {runs}회, 페이지 {pages}개가 움직였습니다",
     ov_since_quiet: "다녀오신 사이 조용했습니다.",
@@ -4759,6 +4774,11 @@ export const STRINGS: Record<Lang, Strings> = {
     vh_setting_title: "ボールト履歴 (git)",
     vh_setting_desc:
       "ボールト内にローカル git リポジトリを作成します。エージェントのコミットとあなたの編集は別の作成者として記録され、この端末の外には出ません。",
+    set_pii_title: "個人情報(PII)検出時",
+    set_pii_desc:
+      "「隔離」を選ぶと、メールアドレスや電話番号を含むソースは恒久保存に書き込まれず _inbox に残ります。API キーなどのシークレットは選択に関係なく常にブロックされます。",
+    set_pii_warn: "警告のみ",
+    set_pii_quarantine: "隔離",
     ov_since_eyebrow: "前回から",
     ov_since_title: "蒸留 {runs} 回、ページ {pages} 件が動きました",
     ov_since_quiet: "前回から変化はありません。",

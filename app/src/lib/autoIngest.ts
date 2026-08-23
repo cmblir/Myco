@@ -12,6 +12,7 @@
 import { useEffect } from "react";
 import { ipc } from "./ipc";
 import type { FileNode } from "./ipc";
+import { shouldPromote } from "./redaction";
 import { useIngestStore } from "../stores/ingestStore";
 
 const INBOX = "_inbox";
@@ -74,34 +75,64 @@ export function pendingInboxRows(
     .sort((a, b) => (b.mtime ?? 0) - (a.mtime ?? 0));
 }
 
-/** Ingest the next pending inbox source, then remove it. Returns true if it ran
- *  a successful ingest. Skips when a run is already in flight. */
-export async function runInboxPass(vaultPath: string): Promise<boolean> {
-  if (isBusy()) return false;
+/** Outcome of one inbox pass. `ingested` is the old boolean ("ran a
+ *  successful ingest"); `held` counts sources left waiting in `_inbox/`
+ *  because the redaction scan flagged them (Q4 item 13). */
+export interface InboxPassOutcome {
+  ingested: boolean;
+  held: number;
+}
+
+/** Ingest the next pending inbox source that clears the redaction scan, then
+ *  remove it. At most one ingest per pass. Skips when a run is already in
+ *  flight. Flagged sources are skipped (left in `_inbox/`), not consumed, so
+ *  the pass walks past them instead of jamming on the first one. */
+export async function runInboxPass(vaultPath: string): Promise<InboxPassOutcome> {
+  if (isBusy()) return { ingested: false, held: 0 };
   const files = await listInboxFiles(vaultPath);
-  if (files.length === 0) return false;
+  if (files.length === 0) return { ingested: false, held: 0 };
 
-  const f = files[0];
-  const fc = await ipc.readFile(f.path).catch(() => null);
-  if (!fc) return false;
-  const title = f.name.replace(/\.[^.]+$/, "");
+  // Q4 item 13 — the PII response mode; secrets always block (redaction.ts).
+  // An unreadable settings file falls back to warn-only, the Rust default.
+  const piiQuarantine = await ipc
+    .getSettings()
+    .then((s) => s.pii_quarantine_enabled)
+    .catch(() => false);
 
-  // startIngest writes raw/<slug>.md from this content and runs the model.
-  // headless: this pass runs unattended — the plan gate (a checkbox review
-  // awaiting a user) would park the run forever, so it must never engage here.
-  await useIngestStore.getState().startIngest(title, fc.raw, { headless: true });
+  let held = 0;
+  for (const f of files) {
+    const fc = await ipc.readFile(f.path).catch(() => null);
+    if (!fc) return { ingested: false, held };
 
-  if (useIngestStore.getState().stage === "done") {
-    // Archive the consumed source (never delete) — its content is also in
-    // raw/<slug>.md now, but a preserved original matches the headless daemon
-    // and means a later half-failure cannot lose it.
-    await ipc.archiveInboxSource(f.path).catch(() => undefined);
-    // Only now is the file really gone from _inbox/ — signal the pending
-    // list (a stage-keyed refetch fires before this move lands).
-    useIngestStore.getState().bumpInboxRev();
-    return true;
+    // Scan BEFORE startIngest writes raw/<slug>.md — raw/ is immutable, so a
+    // flagged write could never be unwound. An unscannable source fails
+    // closed (held) for the same reason.
+    const scan = await ipc.scanTextSecrets(fc.raw).catch(() => null);
+    if (!scan || !shouldPromote(scan, piiQuarantine)) {
+      held++;
+      continue;
+    }
+
+    const title = f.name.replace(/\.[^.]+$/, "");
+    // startIngest writes raw/<slug>.md from this content and runs the model.
+    // headless: this pass runs unattended — the plan gate (a checkbox review
+    // awaiting a user) would park the run forever, so it must never engage here.
+    await useIngestStore.getState().startIngest(title, fc.raw, { headless: true });
+
+    if (useIngestStore.getState().stage === "done") {
+      // Archive the consumed source (never delete) — its content is also in
+      // raw/<slug>.md now, but a preserved original matches the headless daemon
+      // and means a later half-failure cannot lose it.
+      await ipc.archiveInboxSource(f.path).catch(() => undefined);
+      // Only now is the file really gone from _inbox/ — signal the pending
+      // list (a stage-keyed refetch fires before this move lands).
+      useIngestStore.getState().bumpInboxRev();
+      return { ingested: true, held };
+    }
+    // error / no-op: leave the source in _inbox to retry next pass
+    return { ingested: false, held };
   }
-  return false; // error / no-op: leave the source in _inbox to retry next pass
+  return { ingested: false, held };
 }
 
 /** React hook: drive runInboxPass on an interval while enabled. */

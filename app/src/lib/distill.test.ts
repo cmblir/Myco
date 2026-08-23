@@ -143,7 +143,7 @@ describe("llmStepsWaiting", () => {
   it("false when both steps ran with a provider (whatever the pending count)", () => {
     expect(
       llmStepsWaiting(
-        { ingested: 2, skipped: null, errors: [] },
+        { ingested: 2, skipped: null, errors: [], held: 0 },
         { drafted: 1, skipped: null },
       ),
     ).toBe(false);
@@ -152,14 +152,14 @@ describe("llmStepsWaiting", () => {
 
   it("true when either step skipped for lack of a provider (builtin-local)", () => {
     expect(
-      llmStepsWaiting({ ingested: 0, skipped: "no-provider", errors: [] }, undefined),
+      llmStepsWaiting({ ingested: 0, skipped: "no-provider", errors: [], held: 0 }, undefined),
     ).toBe(true);
     expect(llmStepsWaiting(undefined, { drafted: 0, skipped: "no-provider" })).toBe(true);
   });
 
   it("a 'nothing' skip is not a provider wait", () => {
     expect(
-      llmStepsWaiting({ ingested: 0, skipped: "nothing", errors: [] }, undefined),
+      llmStepsWaiting({ ingested: 0, skipped: "nothing", errors: [], held: 0 }, undefined),
     ).toBe(false);
   });
 });

@@ -25,6 +25,7 @@ const availableRawPath = vi.fn();
 const archiveInboxSource = vi.fn();
 const claudeRun = vi.fn();
 const appendDistillManifest = vi.fn();
+const scanTextSecrets = vi.fn();
 vi.mock("./ipc", () => ({
   ipc: {
     getSettings: (...a: unknown[]) => getSettings(...a),
@@ -36,6 +37,7 @@ vi.mock("./ipc", () => ({
     archiveInboxSource: (...a: unknown[]) => archiveInboxSource(...a),
     claudeRun: (...a: unknown[]) => claudeRun(...a),
     appendDistillManifest: (...a: unknown[]) => appendDistillManifest(...a),
+    scanTextSecrets: (...a: unknown[]) => scanTextSecrets(...a),
   },
 }));
 
@@ -68,9 +70,13 @@ beforeEach(() => {
   archiveInboxSource.mockReset();
   claudeRun.mockReset();
   appendDistillManifest.mockReset();
+  scanTextSecrets.mockReset();
 
   getActiveModel.mockResolvedValue({ provider: "anthropic-api", model: "" });
   getDistillConfig.mockResolvedValue(CFG);
+  // Q4 item 13 defaults: clean scan, warn-only PII mode.
+  scanTextSecrets.mockResolvedValue({ secrets: [], pii: [] });
+  getSettings.mockResolvedValue({ providers: {}, pii_quarantine_enabled: false });
   readFile.mockResolvedValue({ raw: "# A title\n\nbody", content: "body", frontmatter: null, path: "" });
   runIngestProvider.mockResolvedValue("ok");
   archiveInboxSource.mockResolvedValue("");
@@ -86,7 +92,7 @@ describe("runFullTierIngest", () => {
 
     const result = await runFullTierIngest("/v");
 
-    expect(result).toEqual({ ingested: 0, skipped: "no-provider", errors: [] });
+    expect(result).toEqual({ ingested: 0, skipped: "no-provider", errors: [], held: 0 });
     expect(runIngestProvider).not.toHaveBeenCalled();
   });
 
@@ -98,6 +104,7 @@ describe("runFullTierIngest", () => {
       ingested: 0,
       skipped: "nothing",
       errors: [],
+      held: 0,
     });
   });
 
@@ -108,7 +115,7 @@ describe("runFullTierIngest", () => {
 
     const result = await runFullTierIngest("/v");
 
-    expect(result).toEqual({ ingested: 0, skipped: "no-provider", errors: [] });
+    expect(result).toEqual({ ingested: 0, skipped: "no-provider", errors: [], held: 0 });
     expect(runIngestProvider).not.toHaveBeenCalled();
   });
 
@@ -117,7 +124,7 @@ describe("runFullTierIngest", () => {
 
     const result = await runFullTierIngest("/v");
 
-    expect(result).toEqual({ ingested: 0, skipped: "nothing", errors: [] });
+    expect(result).toEqual({ ingested: 0, skipped: "nothing", errors: [], held: 0 });
     expect(runIngestProvider).not.toHaveBeenCalled();
   });
 
@@ -133,7 +140,7 @@ describe("runFullTierIngest", () => {
     const result = await runFullTierIngest("/v");
 
     expect(runIngestProvider).toHaveBeenCalledTimes(3);
-    expect(result).toEqual({ ingested: 3, skipped: null, errors: [] });
+    expect(result).toEqual({ ingested: 3, skipped: null, errors: [], held: 0 });
   });
 
   it("one item throwing collects an error and continues to the next", async () => {
@@ -164,7 +171,7 @@ describe("runFullTierIngest", () => {
     expect(runIngestProvider).toHaveBeenCalledWith(
       expect.objectContaining({ slug: "clip", title: "Clipped" }),
     );
-    expect(result).toEqual({ ingested: 1, skipped: null, errors: [] });
+    expect(result).toEqual({ ingested: 1, skipped: null, errors: [], held: 0 });
     // Important 4 (Phase B whole-branch review): the _inbox/ archive-move +
     // raw/ create land in one "llm-<ts>" manifest for this run.
     expect(appendDistillManifest).toHaveBeenCalledWith(
@@ -189,6 +196,7 @@ describe("runFullTierIngest", () => {
       ingested: 0,
       skipped: null,
       errors: ["_inbox/clip.md: Error: locked"],
+      held: 0,
     });
   });
 
@@ -207,7 +215,51 @@ describe("runFullTierIngest", () => {
       ingested: 0,
       skipped: null,
       errors: ["_inbox/clip.md: Error: disk full"],
+      held: 0,
     });
+  });
+
+  // Q4 item 13 — the promotion guard: scan BEFORE the archive move + raw/
+  // write; a flagged source stays untouched in _inbox/ (held, not errored).
+  it("holds an _inbox/ item whose scan finds secrets: no archive, no raw write, no ingest", async () => {
+    fullTierItems.mockResolvedValue(["_inbox/leak.md"]);
+    scanTextSecrets.mockResolvedValue({ secrets: ["aws-access-key"], pii: [] });
+
+    const result = await runFullTierIngest("/v");
+
+    expect(archiveInboxSource).not.toHaveBeenCalled();
+    expect(writeFile).not.toHaveBeenCalled();
+    expect(runIngestProvider).not.toHaveBeenCalled();
+    expect(result).toEqual({ ingested: 0, skipped: null, errors: [], held: 1 });
+  });
+
+  it("holds a PII _inbox/ item only when pii_quarantine_enabled is on", async () => {
+    fullTierItems.mockResolvedValue(["_inbox/contact.md"]);
+    availableRawPath.mockResolvedValue("raw/contact.md");
+    scanTextSecrets.mockResolvedValue({ secrets: [], pii: ["email"] });
+
+    getSettings.mockResolvedValue({ providers: {}, pii_quarantine_enabled: true });
+    expect(await runFullTierIngest("/v")).toEqual({
+      ingested: 0,
+      skipped: null,
+      errors: [],
+      held: 1,
+    });
+    expect(writeFile).not.toHaveBeenCalled();
+
+    // Warn-only mode (the default) still promotes the same item.
+    getSettings.mockResolvedValue({ providers: {}, pii_quarantine_enabled: false });
+    expect((await runFullTierIngest("/v")).ingested).toBe(1);
+    expect(writeFile).toHaveBeenCalledWith("/v/raw/contact.md", expect.any(String));
+  });
+
+  it("does not scan raw/ items — they are already past the entry boundary", async () => {
+    fullTierItems.mockResolvedValue(["raw/a.md"]);
+
+    await runFullTierIngest("/v");
+
+    expect(scanTextSecrets).not.toHaveBeenCalled();
+    expect(runIngestProvider).toHaveBeenCalledTimes(1);
   });
 
   it("uses the file stem as the title when there is no ATX heading", async () => {
@@ -256,7 +308,7 @@ describe("runFullTierIngest", () => {
       "xhigh",
     );
     expect(runIngestProvider).not.toHaveBeenCalled();
-    expect(result).toEqual({ ingested: 1, skipped: null, errors: [] });
+    expect(result).toEqual({ ingested: 1, skipped: null, errors: [], held: 0 });
   });
 
   it("collects an error when the anthropic-cli claudeRun exits non-zero", async () => {

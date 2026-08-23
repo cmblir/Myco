@@ -2378,6 +2378,8 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       <SettingsArchive t={t} lang={lang} vaultPath={vaultPath} />
 
       <VaultHistoryToggle t={t} vaultPath={vaultPath} />
+
+      <PiiModeCard t={t} />
     </div>
   );
 }
@@ -2452,6 +2454,57 @@ function VaultHistoryToggle({
             }}
           />
         </button>
+      </div>
+    </div>
+  );
+}
+
+// Q4 item 13, mockup M8-b — what happens when a raw/-bound source contains
+// PII. Secrets are always refused; this segmented control only chooses the
+// PII response (warn-only vs quarantine), backed by `pii_quarantine_enabled`.
+function PiiModeCard({ t }: { t: Strings }): JSX.Element | null {
+  const settings = useSettingsStore((s) => s.settings);
+  const update = useSettingsStore((s) => s.update);
+  if (!settings) return null;
+  const quarantine = settings.pii_quarantine_enabled;
+  return (
+    <div className="card">
+      <div
+        className="row"
+        style={{
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: 12,
+        }}
+      >
+        <div style={{ paddingRight: 8 }}>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>
+            {t.set_pii_title ?? "When PII is detected"}
+          </div>
+          <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+            {t.set_pii_desc ??
+              "With Quarantine, sources containing emails or phone numbers stay in _inbox instead of being written to permanent storage. Secrets like API keys are always blocked either way."}
+          </div>
+        </div>
+        <div
+          className="segmented"
+          role="tablist"
+          aria-label={t.set_pii_title ?? "When PII is detected"}
+          data-testid="pii-mode-segmented"
+        >
+          <button
+            className={!quarantine ? "active" : ""}
+            onClick={() => void update({ pii_quarantine_enabled: false })}
+          >
+            {t.set_pii_warn ?? "Warn only"}
+          </button>
+          <button
+            className={quarantine ? "active" : ""}
+            onClick={() => void update({ pii_quarantine_enabled: true })}
+          >
+            {t.set_pii_quarantine ?? "Quarantine"}
+          </button>
+        </div>
       </div>
     </div>
   );
