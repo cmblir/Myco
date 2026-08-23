@@ -3215,8 +3215,15 @@ fn is_digested(entries: &std::collections::HashSet<String>, stem: &str, path: &P
     if entries.is_empty() {
         return false; // nothing could match — skip reading the file at all
     }
-    std::fs::read(path)
-        .is_ok_and(|bytes| entries.contains(&format!("{stem}:{}", content_fingerprint(&bytes))))
+    std::fs::read(path).is_ok_and(|bytes| is_recorded(entries, stem, &content_fingerprint(&bytes)))
+}
+
+/// The `is_digested` record rule over an already-computed fingerprint. The
+/// archive passes use this instead of `is_digested` so the check and the
+/// post-rename verify (`archive_one_verified`) anchor to ONE read's bytes —
+/// two separate reads would reopen the very race the verify closes.
+fn is_recorded(entries: &std::collections::HashSet<String>, stem: &str, fp: &str) -> bool {
+    (!stem.contains(':') && entries.contains(stem)) || entries.contains(&format!("{stem}:{fp}"))
 }
 
 /// Groups mature, gate-scored `sessions/**/*.md` (excluding
@@ -3303,6 +3310,41 @@ pub fn digestable_session_days(root: &Path) -> Vec<DigestDay> {
     days
 }
 
+/// Archives one already-digested payload file with the check→rename race
+/// closed: re-checks that `from` still fingerprints as `expected_fp`, renames
+/// it to `to`, then verifies the bytes that actually arrived. A writer that
+/// wins the microsecond window after the check (or keeps writing through an
+/// open fd) makes the verify fail; the rename is undone and `Ok(false)` says
+/// "defer" — the file stays where the next run can digest it. `Ok(true)`
+/// means the verified bytes are in the archive; only then may the caller
+/// record the move in its manifest.
+fn archive_one_verified(from: &Path, to: &Path, expected_fp: &str) -> Result<bool, String> {
+    archive_one_verified_with_hook(from, to, expected_fp, || {})
+}
+
+/// `archive_one_verified`, with `between` running inside the exact window the
+/// verify closes (after the check, before the rename) — the seam the TOCTOU
+/// regression test injects its concurrent writer through. Production callers
+/// go through `archive_one_verified`, whose no-op hook inlines away.
+fn archive_one_verified_with_hook(
+    from: &Path,
+    to: &Path,
+    expected_fp: &str,
+    between: impl Fn(),
+) -> Result<bool, String> {
+    let unchanged = std::fs::read(from).is_ok_and(|b| content_fingerprint(&b) == expected_fp);
+    if !unchanged {
+        return Ok(false);
+    }
+    between();
+    std::fs::rename(from, to).map_err(|e| format!("archive move: {e}"))?;
+    let verified = std::fs::read(to).is_ok_and(|b| content_fingerprint(&b) == expected_fp);
+    if !verified {
+        std::fs::rename(to, from).map_err(|e| format!("archive move rollback: {e}"))?;
+    }
+    Ok(verified)
+}
+
 /// Moves each of `files` (already-digested `sessions/...` items) into
 /// `sessions/archive/<YYYY-MM>/`, bucketed by `day`'s own month rather than
 /// each file's individual mtime — every file in one call came from the same
@@ -3385,22 +3427,35 @@ pub fn archive_digested_sessions(
             continue; // already moved/gone — idempotent, same as the apply_* passes
         }
         let stem = from_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        let digested = match fingerprints {
-            Some(fps) => std::fs::read(&from_path).is_ok_and(|b| content_fingerprint(&b) == fps[i]),
-            None => is_digested(&recorded, stem, &from_path),
+        let expected = match fingerprints {
+            Some(fps) => fps[i].clone(),
+            // Retry path: the expected fingerprint and the marker check come
+            // from ONE read, so the verify anchors to exactly the bytes that
+            // were found recorded.
+            None => match std::fs::read(&from_path) {
+                Ok(bytes) => {
+                    let fp = content_fingerprint(&bytes);
+                    if !is_recorded(&recorded, stem, &fp) {
+                        continue;
+                    }
+                    fp
+                }
+                Err(_) => continue,
+            },
         };
-        if !digested {
-            // Rewritten under us since it was digested. Leaving it in
-            // `sessions/` costs one duplicated digest of its earlier turns on
-            // the next run; archiving it loses the new ones for good.
-            continue;
-        }
         let from_rel = rel_string(root, &from_path);
         let file_name = from_path
             .file_name()
             .ok_or_else(|| format!("bad session path: {f}"))?;
         let to_path = free_path(&archive_dir.join(file_name));
-        std::fs::rename(&from_path, &to_path).map_err(|e| format!("archive session move: {e}"))?;
+        if !archive_one_verified(&from_path, &to_path, &expected)? {
+            // Rewritten under us since it was digested — before the re-check,
+            // or inside the check→rename window itself (the verify renamed it
+            // back). Leaving it in `sessions/` costs one duplicated digest of
+            // its earlier turns on the next run; archiving it loses the new
+            // ones for good.
+            continue;
+        }
         manifest.moves.push(MoveEntry {
             from: from_rel,
             to: rel_string(root, &to_path),
@@ -3786,23 +3841,34 @@ pub fn archive_rolled(
             continue; // already moved/gone — idempotent, same as every other pass
         }
         let stem = from_path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        let rolled = match fingerprints {
-            Some(fps) => std::fs::read(&from_path).is_ok_and(|b| content_fingerprint(&b) == fps[i]),
-            None => is_digested(&recorded, stem, &from_path),
+        let expected = match fingerprints {
+            Some(fps) => fps[i].clone(),
+            // Retry path: one read yields both the marker check and the
+            // expected fingerprint — same reasoning as the session archive.
+            None => match std::fs::read(&from_path) {
+                Ok(bytes) => {
+                    let fp = content_fingerprint(&bytes);
+                    if !is_recorded(&recorded, stem, &fp) {
+                        continue;
+                    }
+                    fp
+                }
+                Err(_) => continue,
+            },
         };
-        if !rolled {
-            // Appended to (a later session digest) or hand-edited since it was
-            // read. Leaving it in `daily/` costs one duplicated rollup of its
-            // earlier bullets next run; archiving it loses the new ones.
-            continue;
-        }
         let from_rel = rel_string(root, &from_path);
         let file_name = from_path
             .file_name()
             .ok_or_else(|| format!("bad {} path: {f}", layer.src))?;
         let to_path = free_path(&archive_dir.join(file_name));
-        std::fs::rename(&from_path, &to_path)
-            .map_err(|e| format!("archive {} move: {e}", layer.src))?;
+        if !archive_one_verified(&from_path, &to_path, &expected)? {
+            // Appended to (a later session digest) or hand-edited since it
+            // was read — before the re-check or inside the check→rename
+            // window (the verify renamed it back). Leaving it in `daily/`
+            // costs one duplicated rollup of its earlier bullets next run;
+            // archiving it loses the new ones.
+            continue;
+        }
         manifest.moves.push(MoveEntry {
             from: from_rel,
             to: rel_string(root, &to_path),
@@ -5160,6 +5226,56 @@ mod tests {
             assert!(!days[0].already_digested);
             assert_eq!(days[0].files, vec![resumed]);
         });
+    }
+
+    /// The TOCTOU inside the archive move itself: the pre-rename fingerprint
+    /// re-check passes, and THEN the sweep rewrites the file (or keeps
+    /// writing through an open fd) before/through the rename. The post-rename
+    /// verify must catch it: rename the file straight back, report
+    /// not-archived, and leave no manifest move — deferral, not loss.
+    #[test]
+    fn archive_defers_when_file_changes_between_check_and_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("sessions/2026-08")).unwrap();
+        std::fs::create_dir_all(root.join("sessions/archive/2026-08")).unwrap();
+        let rel = "sessions/2026-08/20260810-a.md".to_string();
+        let from = root.join(&rel);
+        let to = root.join("sessions/archive/2026-08/20260810-a.md");
+        std::fs::write(&from, PROSE).unwrap();
+        let fp = content_fingerprint(PROSE.as_bytes());
+
+        // The writer wins the window between the check and the rename.
+        let archived = archive_one_verified_with_hook(&from, &to, &fp, || {
+            std::fs::write(&from, format!("{PROSE}\n\nand then we resumed.\n")).unwrap();
+        })
+        .unwrap();
+        assert!(!archived);
+        assert!(
+            from.exists(),
+            "rewritten bytes must be renamed back into sessions/"
+        );
+        assert!(!to.exists());
+
+        // Caller contract on a deferral: no manifest move is recorded (the
+        // file still holds the rewritten bytes, so the archive defers again).
+        let id = archive_digested_sessions(
+            root,
+            "2026-08-10",
+            std::slice::from_ref(&rel),
+            Some(std::slice::from_ref(&fp)),
+        )
+        .unwrap();
+        let raw = std::fs::read_to_string(manifest_path(root, &id)).unwrap();
+        let manifest: RunManifest = serde_json::from_str(&raw).unwrap();
+        assert!(manifest.moves.is_empty(), "{:?}", manifest.moves);
+        assert!(from.exists());
+
+        // Clean case: nothing intervenes, the same helper archives.
+        std::fs::write(&from, PROSE).unwrap();
+        assert!(archive_one_verified_with_hook(&from, &to, &fp, || {}).unwrap());
+        assert!(!from.exists());
+        assert!(to.exists());
     }
 
     /// `file_stem` splits on the LAST dot, so a hand-placed
