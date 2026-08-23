@@ -235,6 +235,8 @@ pub fn run() {
             commands::vault_history_status,
             commands::init_vault_history,
             commands::commit_human_edit,
+            commands::page_authorship,
+            commands::authorship_index,
             commands::suspect_pages,
             commands::record_recall_miss,
             commands::record_page_open,

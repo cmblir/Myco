@@ -1183,6 +1183,16 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(null);
     case "commit_human_edit":
       return Promise.resolve(false);
+    // Authorship (Q4 item 16): no git in a browser — the fixture drives the
+    // 62/38 badge; the empty index means the human-only filter keeps everything.
+    case "page_authorship":
+      return Promise.resolve({
+        agent_lines: 38,
+        human_lines: 62,
+        last_human_at: Math.floor(Date.now() / 1000) - 2 * 86400,
+      });
+    case "authorship_index":
+      return Promise.resolve({});
     case "record_recall_miss":
       return Promise.resolve(null);
     case "record_page_open":

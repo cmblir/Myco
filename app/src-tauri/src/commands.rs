@@ -2100,6 +2100,33 @@ pub fn commit_human_edit(
     )
 }
 
+// ---- authorship (Q4 item 16) ----------------------------------------------
+
+/// Line ownership of one page — the reader's authorship badge. `None` when
+/// the vault has no history or the page is untracked: no history, no claim.
+#[tauri::command]
+pub fn page_authorship(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    rel: String,
+) -> Result<Option<crate::vault_history::PageAuthorship>, String> {
+    let root = confine_root(&state, &vault)?;
+    let root = std::path::Path::new(&root);
+    crate::myco_pro::safe_join(root, &rel)?; // reject path escape before git sees it
+    crate::vault_history::page_authorship(root, &rel)
+}
+
+/// wiki/ rel -> ever committed by the agent author — the sidebar's
+/// "human only" filter. One log walk; `{}` when the vault has no history.
+#[tauri::command]
+pub fn authorship_index(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+) -> Result<std::collections::HashMap<String, bool>, String> {
+    let root = confine_root(&state, &vault)?;
+    crate::vault_history::agent_touched_index(std::path::Path::new(&root))
+}
+
 // ---- recall miss log (Q4 item 5) ------------------------------------------
 
 /// Append one recall miss to `.myco/eval/misses.jsonl` (Q4 item 5).

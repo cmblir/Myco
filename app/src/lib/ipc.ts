@@ -353,6 +353,17 @@ export interface VaultHistoryStatus {
   enabled: boolean;
 }
 
+/** Mirrors Rust `vault_history::PageAuthorship` (Q4 item 16). */
+export interface PageAuthorship {
+  agent_lines: number;
+  human_lines: number;
+  last_human_at: number | null;
+}
+
+/** wiki/ rel -> ever committed by the agent author (Q4 item 16). Aliased:
+ *  a nested generic inside `invoke<…>` defeats the parity test's cheap regex. */
+export type AuthorshipIndex = Record<string, boolean>;
+
 /** Mirrors Rust `mcp_native::SuspectPage` (Q4 item 2). */
 export interface SuspectPage {
   page: string;
@@ -906,6 +917,13 @@ export const ipc = {
     invoke<null>("init_vault_history", { vault }),
   commitHumanEdit: (vault: string, rel: string) =>
     invoke<boolean>("commit_human_edit", { vault, rel }),
+  // Authorship badge + human-only filter (Q4 item 16).
+  /** Line ownership of one page; null = no history, no claim. */
+  pageAuthorship: (vault: string, rel: string) =>
+    invoke<PageAuthorship | null>("page_authorship", { vault, rel }),
+  /** wiki/ rel -> ever committed by the agent author. */
+  authorshipIndex: (vault: string) =>
+    invoke<AuthorshipIndex>("authorship_index", { vault }),
   // Morning-Report suspect scan (Q4 item 2).
   suspectPages: (vault: string) =>
     invoke<SuspectReport>("suspect_pages", { vault }),
