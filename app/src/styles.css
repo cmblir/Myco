@@ -1973,6 +1973,58 @@ hr {
   border-radius: 50%;
 }
 
+/* Authorship badge (Q4 item 16): the typebadge shape carrying a 64px two-tone
+   bar that reuses VaultPulse's authored/ingested colors — human fill = --ink-2,
+   agent remainder = --line-strong. */
+.auth-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line-soft);
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.auth-bar {
+  display: inline-block;
+  width: 64px;
+  height: 5px;
+  border-radius: 3px;
+  overflow: hidden;
+  background: var(--line-strong);
+}
+.auth-bar__human {
+  display: block;
+  height: 100%;
+  background: var(--ink-2);
+}
+/* The sidebar's human-only filter pill: a .pill resized to sit inside the
+   uppercase .nav-group-label row without inheriting its casing. */
+.auth-filter {
+  margin-left: 6px;
+  height: auto;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: normal;
+}
+.auth-filter:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.auth-filter.is-active {
+  background: var(--accent, var(--ink));
+  border-color: transparent;
+  color: var(--bg);
+}
+.auth-filter.is-active:hover {
+  background: var(--accent, var(--ink));
+}
+
 /* Modal */
 .myco-modal__backdrop {
   position: fixed;

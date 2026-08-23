@@ -13,6 +13,9 @@ import { useStudyStore } from "../stores/studyStore";
 import { useAudioStore } from "../stores/audioStore";
 import { generateCards } from "../lib/study";
 import { addCards, deckSlug } from "../lib/cardStore";
+import { ipc } from "../lib/ipc";
+import type { PageAuthorship } from "../lib/ipc";
+import { badgeView } from "../lib/authorship";
 import Editor from "../components/Editor";
 import AudioOverviewPanel from "../components/AudioOverviewPanel";
 import PdfViewer from "../components/PdfViewer";
@@ -169,7 +172,11 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const refreshTree = useVaultStore((s) => s.refreshTree);
   const error = useVaultStore((s) => s.error);
   const setRoute = useUIStore((s) => s.setRoute);
+  const lang = useUIStore((s) => s.lang);
   const [mode, setMode] = useState<"preview" | "source" | "split">("split");
+  // Authorship badge (Q4 item 16). Null = no repo / untracked / lookup failed —
+  // no history means no claim, so the header simply shows nothing.
+  const [authorship, setAuthorship] = useState<PageAuthorship | null>(null);
   const [draft, setDraft] = useState("");
   const [cardBusy, setCardBusy] = useState(false);
   const [cardMsg, setCardMsg] = useState<string | null>(null);
@@ -196,6 +203,26 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   useEffect(() => {
     void openFile(path);
   }, [path, openFile, currentVaultPath]);
+
+  useEffect(() => {
+    setAuthorship(null);
+    if (!currentVaultPath) return;
+    let cancelled = false;
+    // Same rel derivation as PdfPage: the tree hands us absolute paths.
+    const rel = path.startsWith(currentVaultPath + "/")
+      ? path.slice(currentVaultPath.length + 1)
+      : path;
+    ipc.pageAuthorship(currentVaultPath, rel).then(
+      (a) => {
+        if (!cancelled) setAuthorship(a);
+      },
+      // A failed lookup renders the same as no history: no badge, no claim.
+      () => undefined,
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [path, currentVaultPath]);
 
   useEffect(() => {
     if (activeFile?.path === path && seededPathRef.current !== path) {
@@ -298,6 +325,9 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   }
 
   const fileName = path.split(/[\\/]/).pop() ?? path;
+  const badge = authorship
+    ? badgeView(authorship, Math.floor(Date.now() / 1000), lang)
+    : null;
   return (
     <div className="workspace">
       <header className="page-head" style={{ paddingTop: 40 }}>
@@ -320,6 +350,28 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
           >
             {path}
           </span>
+          {badge ? (
+            <span className="auth-badge">
+              <span className="auth-bar" aria-hidden="true">
+                <span
+                  className="auth-bar__human"
+                  style={{ width: `${badge.humanPct}%` }}
+                />
+              </span>
+              <span>
+                {(t.auth_badge_human ?? "Human {h}% · Agent {a}%")
+                  .replace("{h}", String(badge.humanPct))
+                  .replace("{a}", String(badge.agentPct))}
+                {badge.lastHumanRel
+                  ? " · " +
+                    (t.auth_badge_last_human ?? "Last human touch {t}").replace(
+                      "{t}",
+                      badge.lastHumanRel,
+                    )
+                  : ""}
+              </span>
+            </span>
+          ) : null}
           <button
             className="btn btn-ghost"
             onClick={() => void makeCards()}

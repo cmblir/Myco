@@ -11,7 +11,8 @@ import { useVaultStore } from "../stores/vaultStore";
 import { useStudyStore } from "../stores/studyStore";
 import { useDistillStore } from "../stores/distillStore";
 import { ipc } from "../lib/ipc";
-import type { FileNode } from "../lib/ipc";
+import type { AuthorshipIndex, FileNode } from "../lib/ipc";
+import { filterHumanTree } from "../lib/authorship";
 import { promptText, confirmAction } from "../stores/dialogStore";
 import { promptNewNote } from "../lib/newNote";
 
@@ -32,6 +33,11 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   const pendingProposals = useDistillStore((s) => s.status?.pending_proposals ?? 0);
   const refreshDistill = useDistillStore((s) => s.refresh);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  // Human-only page filter (Q4 item 16): commit-granularity — hides pages the
+  // agent author ever committed. Untracked pages stay (unknown, not agent),
+  // hence the honest pill label "on record".
+  const [humanOnly, setHumanOnly] = useState(false);
+  const [agentTouched, setAgentTouched] = useState<AuthorshipIndex>({});
 
   // Keep the sidebar due badge current: refresh when the vault's files change
   // (a review or generation rewrites cards/<deck>.md, which refreshes the tree).
@@ -45,7 +51,30 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
     void refreshDistill();
   }, [refreshDistill, fileTree]);
 
+  // Refetch the index when the tree changes (a distill run or agent edit lands
+  // as file changes, which refreshes the tree) — but only while the filter is on.
+  useEffect(() => {
+    if (!humanOnly || !currentVault) return;
+    let cancelled = false;
+    ipc.authorshipIndex(currentVault.path).then(
+      (idx) => {
+        if (!cancelled) setAgentTouched(idx);
+      },
+      // No repo / lookup failure ⇒ empty index: the filter keeps everything.
+      () => {
+        if (!cancelled) setAgentTouched({});
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [humanOnly, currentVault, fileTree]);
+
   const totalFiles = countFiles(fileTree);
+  const visibleTree =
+    humanOnly && currentVault
+      ? filterHumanTree(fileTree, agentTouched, currentVault.path)
+      : fileTree;
   const activePath = route.startsWith("page:") ? route.slice(5) : null;
 
   function showMenu(e: MouseEvent, node: FileNode): void {
@@ -166,13 +195,21 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
           <div className="nav-group-label">
             <span>{t.nav_pages}</span>
             <NewPageButton disabled={!currentVault} t={t} />
+            <button
+              className={"pill auth-filter" + (humanOnly ? " is-active" : "")}
+              disabled={!currentVault}
+              aria-pressed={humanOnly}
+              onClick={() => setHumanOnly((v) => !v)}
+            >
+              {t.auth_filter_pill ?? "Human only (on record)"}
+            </button>
           </div>
-          {fileTree.length === 0 ? (
+          {visibleTree.length === 0 ? (
             <div className="muted" style={{ padding: "8px", fontSize: 12.5 }}>
               {currentVault ? "Empty vault" : "No vault selected"}
             </div>
           ) : (
-            fileTree.map((node) => (
+            visibleTree.map((node) => (
               <TreeNode
                 key={node.path}
                 node={node}

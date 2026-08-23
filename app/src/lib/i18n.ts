@@ -1190,6 +1190,10 @@ export interface Strings {
   history_status_modified: string;
   history_status_renamed: string;
   history_status_deleted: string;
+  // Authorship badge + human-only sidebar filter (Q4 item 16).
+  auth_badge_human?: string; // {h} {a}
+  auth_badge_last_human?: string; // {t}
+  auth_filter_pill?: string;
   // Agent write-confirm diff (W3–6 item 7).
   agent_confirm_title: string;
   agent_confirm_create_title: string;
@@ -2415,6 +2419,9 @@ export const STRINGS: Record<Lang, Strings> = {
     history_status_modified: "Modified",
     history_status_renamed: "Moved",
     history_status_deleted: "Deleted",
+    auth_badge_human: "Human {h}% · Agent {a}%",
+    auth_badge_last_human: "Last human touch {t}",
+    auth_filter_pill: "Human only (on record)",
     agent_confirm_title: "The agent wants to update a page",
     agent_confirm_create_title: "The agent wants to create a page",
     agent_confirm_hint: "Allowing this writes the change below to your vault.",
@@ -3629,6 +3636,9 @@ export const STRINGS: Record<Lang, Strings> = {
     history_status_modified: "수정",
     history_status_renamed: "이동",
     history_status_deleted: "삭제",
+    auth_badge_human: "사람 {h}% · 에이전트 {a}%",
+    auth_badge_last_human: "마지막 사람 손길 {t}",
+    auth_filter_pill: "기록상 사람만",
     agent_confirm_title: "에이전트가 페이지를 수정하려 합니다",
     agent_confirm_create_title: "에이전트가 새 페이지를 만들려 합니다",
     agent_confirm_hint: "허용하면 아래 변경이 볼트에 기록됩니다.",
@@ -4845,6 +4855,9 @@ export const STRINGS: Record<Lang, Strings> = {
     history_status_modified: "変更",
     history_status_renamed: "移動",
     history_status_deleted: "削除",
+    auth_badge_human: "人 {h}% · エージェント {a}%",
+    auth_badge_last_human: "人による最終編集 {t}",
+    auth_filter_pill: "記録上 人のみ",
     agent_confirm_title: "エージェントがページを更新しようとしています",
     agent_confirm_create_title: "エージェントが新しいページを作成しようとしています",
     agent_confirm_hint: "許可すると、以下の変更がボールトに書き込まれます。",
