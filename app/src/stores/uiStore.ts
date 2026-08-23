@@ -43,6 +43,11 @@ export interface UIState {
   // it lives here so the activity panel / tray "N awaiting review" row can
   // deep-link straight to the quarantine tab (setRoute alone can't).
   feedbackTab: FeedbackTab;
+  // Deck path the Study page should open directly (ritual card's 복습 시작 —
+  // Q4 item 11). Same deep-link idiom as feedbackTab, but consumed ONCE:
+  // PageStudy reads it on mount and clears it, so later Study visits start at
+  // the deck list as usual.
+  studyDeck: string | null;
   // Split view: when set, a SECOND pane shows this route beside the primary one
   // (e.g. Overview + Graph side by side). null = single pane.
   splitRoute: RouteId | null;
@@ -78,6 +83,7 @@ export interface UIState {
 
   setRoute: (route: RouteId) => void;
   setFeedbackTab: (tab: FeedbackTab) => void;
+  setStudyDeck: (path: string | null) => void;
   setSplitRoute: (route: RouteId | null) => void;
   setSplitRatio: (ratio: number) => void;
   setSidebarCollapsed: (v: boolean) => void;
@@ -101,6 +107,7 @@ export const useUIStore = create<UIState>()(
     (set, get) => ({
       route: "overview",
       feedbackTab: "proposals",
+      studyDeck: null,
       splitRoute: null,
       splitRatio: SPLIT_DEFAULT_RATIO,
       sidebarCollapsed: false,
@@ -123,6 +130,7 @@ export const useUIStore = create<UIState>()(
         // graph scenes, duplicate state) — clear the split if it would collide.
         set((s) => ({ route, splitRoute: s.splitRoute === route ? null : s.splitRoute })),
       setFeedbackTab: (feedbackTab) => set({ feedbackTab }),
+      setStudyDeck: (studyDeck) => set({ studyDeck }),
       setSplitRoute: (route) =>
         set((s) => ({ splitRoute: route === s.route ? null : route })),
       setSplitRatio: (ratio) => set({ splitRatio: ratio }),

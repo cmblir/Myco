@@ -4026,6 +4026,12 @@ hr {
   white-space: normal;
   overflow: visible;
 }
+/* Resurface why-quote (M6): the extractive snippet under a pick's title,
+   set off by a 2px left rule like a quotation. */
+.rs-quote {
+  border-left: 2px solid var(--line-strong);
+  padding-left: 8px;
+}
 /* The builtin-local caveat under those rows — wraps (unlike .activity-row-sub,
    which is a single ellipsised line). */
 .activity-note {

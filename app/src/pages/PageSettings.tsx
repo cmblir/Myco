@@ -39,6 +39,7 @@ import type { ProviderDef } from "../lib/providers";
 import ModelSelect from "../components/ModelSelect";
 import OllamaSetup from "../components/OllamaSetup";
 import MascotClip from "../components/MascotClip";
+import { stepLabel } from "../components/ActivityChip";
 import {
   getBudgetThreshold,
   getUsage,
@@ -2345,13 +2346,10 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
           >
             {(t.set_distill_stopped ?? "Stopped after {step}").replace(
               "{step}",
-              stoppedAfter === "run"
-                ? (t.set_distill_step_run ?? "the core pass")
-                : stoppedAfter === "digest"
-                  ? (t.set_distill_step_digest ?? "the session digest")
-                  : stoppedAfter === "weekly"
-                    ? (t.set_distill_step_weekly ?? "the weekly rollup")
-                    : (t.set_distill_step_ingest ?? "the full-tier ingest"),
+              // stepLabel (shared with the activity chip + tray) names every
+              // stop point — the old inline ternary mislabeled monthly/maps
+              // as the ingest step.
+              stepLabel(stoppedAfter, t),
             )}
           </div>
         ) : null}

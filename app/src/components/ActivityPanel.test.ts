@@ -6,7 +6,7 @@
 
 import { describe, expect, it, vi } from "vitest";
 import type { ReactElement } from "react";
-import { buildInflowRows } from "./ActivityPanel";
+import { buildInflowRows, buildResurfaceRows } from "./ActivityPanel";
 
 const rowsOf = (onInboxView: () => void = vi.fn()) =>
   buildInflowRows({
@@ -81,5 +81,66 @@ describe("buildInflowRows", () => {
     expect(caption.props.children).toBe(
       "Last 24h · purple = sessions/inbox · blue = MCP calls",
     );
+  });
+});
+
+// buildResurfaceRows shapes the resurface picks (Q4 item 10, mockup M6) for
+// the Activity popover: title + why-quote + resonance line, with the
+// 열기/일주일 뒤/무시 actions in the trailing slot and the self-tuning-floor
+// disclosure as a footer row. Same plain-object inspection as above.
+
+type ActionButton = ReactElement<{ onClick: () => void; children: string }>;
+
+const rsPick = (page: string) => ({
+  page,
+  title: "garden-notes",
+  snippet: "an extractive why-quote from the page",
+  meta: "similarity 0.82 · last opened 3 days ago",
+});
+
+const rsRows = (over: Partial<Parameters<typeof buildResurfaceRows>[0]> = {}) =>
+  buildResurfaceRows({
+    items: [rsPick("wiki/garden-notes.md")],
+    openLabel: "열기",
+    snoozeLabel: "일주일 뒤",
+    ignoreLabel: "무시",
+    onOpen: vi.fn(),
+    onSnooze: vi.fn(),
+    onIgnore: vi.fn(),
+    note: "",
+    ...over,
+  });
+
+describe("buildResurfaceRows", () => {
+  it("returns [] for an empty batch so the section vanishes", () => {
+    expect(rsRows({ items: [], note: "floor note" })).toEqual([]);
+  });
+
+  it("wires 열기 / 일주일 뒤 / 무시 to their callbacks with the row's page", () => {
+    const onOpen = vi.fn();
+    const onSnooze = vi.fn();
+    const onIgnore = vi.fn();
+    const [row] = rsRows({ onOpen, onSnooze, onIgnore });
+    const actions = (
+      row.trailing as ReactElement<{ children: ActionButton[] }>
+    ).props.children;
+    expect(actions.map((b) => b.props.children)).toEqual([
+      "열기",
+      "일주일 뒤",
+      "무시",
+    ]);
+    actions[0].props.onClick();
+    actions[1].props.onClick();
+    actions[2].props.onClick();
+    expect(onOpen).toHaveBeenCalledWith("wiki/garden-notes.md");
+    expect(onSnooze).toHaveBeenCalledWith("wiki/garden-notes.md");
+    expect(onIgnore).toHaveBeenCalledWith("wiki/garden-notes.md");
+  });
+
+  it("appends the floor-note footer row only when text is passed", () => {
+    const withNote = rsRows({ note: "raise the bar · now 0.70" });
+    expect(withNote.at(-1)?.key).toBe("rs-note");
+    const noNote = rsRows({ note: "" });
+    expect(noNote.at(-1)?.key).toBe("rs:wiki/garden-notes.md");
   });
 });

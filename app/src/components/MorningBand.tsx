@@ -1,5 +1,6 @@
-// Morning-Report band (Q4 item 2, mockup M1-a/b/c): a since-you-were-here
-// headline plus the suspect-pages and contradiction cards.
+// Morning-Report band (Q4 item 2, mockup M1-a/b/c/d): a since-you-were-here
+// headline, the suspect-pages and contradiction cards, and the daily ritual
+// section (Q4 item 11) below them — top resurface pick + FSRS due line.
 
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
@@ -19,12 +20,19 @@ import {
   type Contradiction,
 } from "../lib/contradictions";
 import { stem } from "../lib/graphData";
+import { useResurfaceStore } from "../stores/resurfaceStore";
+import { useStudyStore } from "../stores/studyStore";
 
 export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
   const vault = useVaultStore((s) => s.currentVault);
   const adjacency = useVaultStore((s) => s.adjacency);
   const lang = useUIStore((s) => s.lang);
   const setRoute = useUIStore((s) => s.setRoute);
+  const setStudyDeck = useUIStore((s) => s.setStudyDeck);
+  const resurfacePicks = useResurfaceStore((s) => s.picks);
+  const studyDecks = useStudyStore((s) => s.decks);
+  const dueTotal = useStudyStore((s) => s.dueTotal);
+  const refreshStudy = useStudyStore((s) => s.refresh);
   const [suspects, setSuspects] = useState<SuspectReport | null>(null);
   const [distill, setDistill] = useState<DistillStatus | null>(null);
   const [ignored, setIgnored] = useState<ReadonlySet<string>>(() => loadIgnored());
@@ -57,6 +65,12 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
       cancelled = true;
     };
   }, [vault]);
+
+  // FSRS due counts for the ritual card — same refresh PageStudy runs on
+  // mount, so the card is live even when Study was never visited.
+  useEffect(() => {
+    void refreshStudy();
+  }, [refreshStudy, vault?.path]);
 
   // Client-side scan over the already-loaded adjacency (spec item 15) —
   // recomputed whenever the link graph refreshes, so a flip below shows up
@@ -108,6 +122,21 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
       : 0;
   const headline = buildMorningHeadline({ runsSince, pagesMoved: 0, lang }, t);
   const top = suspects ? topSuspects(suspects, 3) : [];
+
+  // Ritual section (M1-d): top resurface pick + FSRS due line. Opening the
+  // pick counts as an accept (the store's self-tuning floor feeds on it);
+  // 복습 시작 deep-links Study straight into the first due deck.
+  const ritualPick = resurfacePicks[0];
+  const firstDueDeck = studyDecks.find((d) => d.due > 0);
+  const openRitualPick = () => {
+    if (!ritualPick) return;
+    useResurfaceStore.getState().open(ritualPick.page);
+    setRoute(`page:${vault.path}/${ritualPick.page}` as RouteId);
+  };
+  const startReview = () => {
+    if (firstDueDeck) setStudyDeck(firstDueDeck.path);
+    setRoute("study");
+  };
 
   return (
     <section style={{ marginTop: 20 }} data-testid="morning-band">
@@ -241,6 +270,41 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
           )}
         </div>
       </div>
+      {ritualPick || dueTotal > 0 ? (
+        <div className="card" style={{ padding: 16, marginTop: 14 }}>
+          <b style={{ fontSize: 13.5 }}>{t.ritual_title ?? "Today's reunions"}</b>
+          {ritualPick ? (
+            <div style={{ marginTop: 6 }}>
+              <button
+                type="button"
+                className="list-row recent-row"
+                onClick={openRitualPick}
+              >
+                <span style={{ fontWeight: 500, fontSize: 12.5 }}>
+                  {ritualPick.stem}
+                </span>
+                <span className="meta">{ritualPick.snippet}</span>
+              </button>
+            </div>
+          ) : null}
+          {dueTotal > 0 ? (
+            <div
+              className="row"
+              style={{ justifyContent: "space-between", marginTop: 8 }}
+            >
+              <span className="muted" style={{ fontSize: 12.5 }}>
+                {(t.ritual_due ?? "{n} review cards are due").replace(
+                  "{n}",
+                  String(dueTotal),
+                )}
+              </span>
+              <button type="button" className="btn" onClick={startReview}>
+                {t.ritual_start ?? "Start review"}
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </section>
   );
 }

@@ -27,6 +27,7 @@ import ActivityPanel, {
   ActivityIcon,
   buildInflowRows,
   buildMapProposalRows,
+  buildResurfaceRows,
 } from "./ActivityPanel";
 import type {
   ActivityIconName,
@@ -35,6 +36,9 @@ import type {
   PanelSection,
 } from "./ActivityPanel";
 import { useUIStore } from "../stores/uiStore";
+import type { RouteId } from "../stores/uiStore";
+import { useResurfaceStore } from "../stores/resurfaceStore";
+import type { ResurfacePick } from "../stores/resurfaceStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useQueryStore } from "../stores/queryStore";
 import { useReindexStore } from "../stores/reindexStore";
@@ -80,6 +84,8 @@ export function stepLabel(step: DistillRunStep | null, t: Strings): string {
   if (step === "monthly") return t.set_distill_step_monthly ?? "the monthly rollup";
   if (step === "ingest") return t.set_distill_step_ingest ?? "the full-tier ingest";
   if (step === "maps") return t.set_distill_step_maps ?? "the map drafts";
+  if (step === "resurface")
+    return t.set_distill_step_resurface ?? "the resurface picks";
   return t.set_distill_step_run ?? "the core pass";
 }
 
@@ -124,8 +130,13 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const dismissed = useLinkSuggestStore((s) => s.dismissed);
   const refreshSem = useLinkSuggestStore((s) => s.refresh);
   const settings = useSettingsStore((s) => s.settings);
+  const lang = useUIStore((s) => s.lang);
   const setRoute = useUIStore((s) => s.setRoute);
   const setFeedbackTab = useUIStore((s) => s.setFeedbackTab);
+  // Resurface picks (Q4 item 10) — a standing decision surface like the map
+  // proposals: recomputed by the distill chain, never part of the chip badge.
+  const resurfacePicks = useResurfaceStore((s) => s.picks);
+  const resurfaceFloor = useResurfaceStore((s) => s.floor);
   // Quarantined items awaiting review — a standing count from the same
   // distill_status the Settings tab and the sidebar badge read.
   const quarantined = useDistillStore((s) => s.status?.quarantined ?? 0);
@@ -522,6 +533,49 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
         : "",
   });
 
+  // Resurface rows (mockup M6): resonance line = similarity + relative last
+  // open (day granularity — dormancy starts at 30 days, finer units would be
+  // noise). A never-recorded lastOpen just drops that segment.
+  const rsMeta = (pick: ResurfacePick): string => {
+    const sim = (t.rs_similarity ?? "similarity {s}").replace(
+      "{s}",
+      pick.score.toFixed(2),
+    );
+    if (pick.lastOpen === null) return sim;
+    const days = Math.max(
+      1,
+      Math.round((Date.now() / 1000 - pick.lastOpen) / 86_400),
+    );
+    const rel = new Intl.RelativeTimeFormat(lang, { numeric: "auto" }).format(
+      -days,
+      "day",
+    );
+    return `${sim} · ${(t.rs_last_open ?? "last opened {t}").replace("{t}", rel)}`;
+  };
+  const resurfaceRows = buildResurfaceRows({
+    items: resurfacePicks.map((p) => ({
+      page: p.page,
+      title: p.stem,
+      snippet: p.snippet,
+      meta: rsMeta(p),
+    })),
+    openLabel: t.rs_open ?? "Open",
+    snoozeLabel: t.rs_snooze ?? "In a week",
+    ignoreLabel: t.rs_ignore ?? "Ignore",
+    onOpen: (page) => {
+      if (!vaultPath) return;
+      useResurfaceStore.getState().open(page);
+      setOpen(false);
+      setRoute(`page:${vaultPath}/${page}` as RouteId);
+    },
+    onSnooze: (page) => useResurfaceStore.getState().snooze(page),
+    onIgnore: (page) => useResurfaceStore.getState().ignore(page),
+    note: (t.rs_floor_note ?? "Frequent ignores raise the bar · now {f}").replace(
+      "{f}",
+      resurfaceFloor.toFixed(2),
+    ),
+  });
+
   const sections: PanelSection[] = [
     {
       key: "running",
@@ -530,6 +584,13 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
     },
     { key: "tasks", header: t.tb_activity_tasks ?? "Tasks due", rows: taskRows },
     { key: "inflow", header: lines?.header, rows: inflowRows },
+    // Resurface picks get their own headed section (M6 "다시 만나기") right
+    // above standing — decision rows, like the map proposals below them.
+    {
+      key: "resurface",
+      header: t.rs_header ?? "Meet again",
+      rows: resurfaceRows,
+    },
     {
       key: "standing",
       rows: [

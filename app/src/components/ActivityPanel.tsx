@@ -234,6 +234,79 @@ export function buildMapProposalRows(p: {
   return rows;
 }
 
+/** One resurface pick (Q4 item 10, mockup M6), pre-formatted by the caller:
+ * title, extractive why-quote, and the resonance line (similarity · last
+ * opened) — the builder only owns the row shape. */
+export interface ResurfaceRowContent {
+  page: string;
+  title: string;
+  snippet: string;
+  meta: string;
+}
+
+/** The resurface rows (mockup M6): title + why-quote with its 2px left rule +
+ * resonance line, actions 열기 / 일주일 뒤 / 무시. `note` is the self-tuning
+ * floor disclosure, appended as a footer only while picks exist — an empty
+ * batch returns [] so the section vanishes. */
+export function buildResurfaceRows(p: {
+  items: ResurfaceRowContent[];
+  openLabel: string;
+  snoozeLabel: string;
+  ignoreLabel: string;
+  onOpen: (page: string) => void;
+  onSnooze: (page: string) => void;
+  onIgnore: (page: string) => void;
+  /** Floor-disclosure footer; "" for none. */
+  note: string;
+}): PanelRow[] {
+  const rows: PanelRow[] = p.items.map((item) => ({
+    key: `rs:${item.page}`,
+    icon: "distill",
+    main: (
+      <>
+        <b>{item.title}</b>
+        <span className="activity-row-sub activity-sub-wrap rs-quote">
+          {item.snippet}
+        </span>
+        <span className="activity-row-sub">{item.meta}</span>
+      </>
+    ),
+    trailing: (
+      <span className="activity-actions">
+        <button
+          type="button"
+          className="btn btn-primary"
+          onClick={() => p.onOpen(item.page)}
+        >
+          {p.openLabel}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost btn"
+          onClick={() => p.onSnooze(item.page)}
+        >
+          {p.snoozeLabel}
+        </button>
+        <button
+          type="button"
+          className="btn-ghost btn"
+          onClick={() => p.onIgnore(item.page)}
+        >
+          {p.ignoreLabel}
+        </button>
+      </span>
+    ),
+  }));
+  if (rows.length === 0) return rows;
+  if (p.note) {
+    rows.push({
+      key: "rs-note",
+      main: <span className="activity-note muted">{p.note}</span>,
+    });
+  }
+  return rows;
+}
+
 export interface PanelRow {
   key: string;
   /** Circular row icon; `leading` (e.g. a task checkbox) replaces it. */

@@ -838,6 +838,7 @@ export interface Strings {
   set_distill_step_maps?: string;
   set_distill_step_weekly?: string;
   set_distill_step_monthly?: string;
+  set_distill_step_resurface?: string;
   // ROADMAP P1 — weekly rollup count for the distill tab.
   set_distill_weekly_rollups?: string;
   set_distill_monthly_rollups?: string; // {n}
@@ -1155,6 +1156,18 @@ export interface Strings {
   contra_open_target?: string;
   contra_ignore?: string;
   contra_clean?: string;
+  // Resurface rows + daily ritual card (Q4 items 10–11) — optional; fall back
+  // to English.
+  rs_header?: string;
+  rs_open?: string;
+  rs_snooze?: string;
+  rs_ignore?: string;
+  rs_similarity?: string; // {s}
+  rs_last_open?: string; // {t}
+  rs_floor_note?: string; // {f}
+  ritual_title?: string;
+  ritual_due?: string; // {n}
+  ritual_start?: string;
   // Run drill-in on History (W3–6 item 6).
   history_runs_title: string;
   history_run_open_why: string;
@@ -2032,6 +2045,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_maps: "the map drafts",
     set_distill_step_weekly: "the weekly rollup",
     set_distill_step_monthly: "the monthly rollup",
+    set_distill_step_resurface: "the resurface picks",
     set_distill_weekly_rollups: "{n} weekly rollups written to weekly/",
     set_distill_monthly_rollups: "{n} monthly rollups written to monthly/",
     set_archive_title: "Archive storage",
@@ -2354,6 +2368,16 @@ export const STRINGS: Record<Lang, Strings> = {
     contra_open_target: "Open target",
     contra_ignore: "Ignore",
     contra_clean: "No contradictions.",
+    rs_header: "Meet again",
+    rs_open: "Open",
+    rs_snooze: "In a week",
+    rs_ignore: "Ignore",
+    rs_similarity: "similarity {s}",
+    rs_last_open: "last opened {t}",
+    rs_floor_note: "Frequent ignores raise the bar · now {f}",
+    ritual_title: "Today's reunions",
+    ritual_due: "{n} review cards are due",
+    ritual_start: "Start review",
     history_runs_title: "Runs",
     history_run_open_why: "WHY report",
     history_no_commit:
@@ -3228,6 +3252,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_maps: "맵 초안",
     set_distill_step_weekly: "주간 롤업",
     set_distill_step_monthly: "월간 롤업",
+    set_distill_step_resurface: "다시 만나기 후보",
     set_distill_weekly_rollups: "weekly/에 주간 롤업 {n}건 작성",
     set_distill_monthly_rollups: "monthly/에 월간 롤업 {n}건 작성",
     set_archive_title: "아카이브 용량",
@@ -3546,6 +3571,16 @@ export const STRINGS: Record<Lang, Strings> = {
     contra_open_target: "대상 열기",
     contra_ignore: "무시",
     contra_clean: "모순이 없습니다.",
+    rs_header: "다시 만나기",
+    rs_open: "열기",
+    rs_snooze: "일주일 뒤",
+    rs_ignore: "무시",
+    rs_similarity: "유사도 {s}",
+    rs_last_open: "마지막 열람 {t}",
+    rs_floor_note: "무시가 잦으면 기준을 올립니다 · 현재 {f}",
+    ritual_title: "오늘의 재회",
+    ritual_due: "복습 카드 {n}장이 기한입니다",
+    ritual_start: "복습 시작",
     history_runs_title: "실행",
     history_run_open_why: "WHY 리포트",
     history_no_commit:
@@ -4267,6 +4302,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_step_maps: "マップ下書き",
     set_distill_step_weekly: "週次ロールアップ",
     set_distill_step_monthly: "月次ロールアップ",
+    set_distill_step_resurface: "再会候補",
     set_distill_weekly_rollups: "weekly/ に週次ロールアップを{n}件作成",
     set_distill_monthly_rollups: "monthly/ に月次ロールアップを{n}件作成",
     set_archive_title: "アーカイブ容量",
@@ -4738,6 +4774,16 @@ export const STRINGS: Record<Lang, Strings> = {
     contra_open_target: "対象を開く",
     contra_ignore: "無視",
     contra_clean: "矛盾はありません。",
+    rs_header: "再会",
+    rs_open: "開く",
+    rs_snooze: "1週間後",
+    rs_ignore: "無視",
+    rs_similarity: "類似度 {s}",
+    rs_last_open: "最終閲覧 {t}",
+    rs_floor_note: "無視が続くと基準を上げます · 現在 {f}",
+    ritual_title: "今日の再会",
+    ritual_due: "復習カード {n} 枚が期限です",
+    ritual_start: "復習を始める",
     history_runs_title: "実行",
     history_run_open_why: "WHYレポート",
     history_no_commit:

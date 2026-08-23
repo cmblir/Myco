@@ -23,6 +23,16 @@ export default function PageStudy({ t }: { t: Strings }): JSX.Element {
   const refresh = useStudyStore((s) => s.refresh);
   const [deckPath, setDeckPath] = useState<string | null>(null);
 
+  // Ritual-card deep link (Q4 item 11): consume uiStore.studyDeck once on
+  // mount and clear it, so the next plain Study visit starts at the deck list.
+  useEffect(() => {
+    const deep = useUIStore.getState().studyDeck;
+    if (deep) {
+      setDeckPath(deep);
+      useUIStore.getState().setStudyDeck(null);
+    }
+  }, []);
+
   // Refresh due counts on mount and whenever the vault (its cards) changes.
   useEffect(() => {
     void refresh();
