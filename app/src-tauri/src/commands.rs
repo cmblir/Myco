@@ -651,6 +651,67 @@ pub fn archive_inbox_source(
     vault::archive_inbox_source(&p.to_string_lossy())
 }
 
+/// One file waiting in `_inbox/` — every extension, not just `.md`. The
+/// markdown-only `list_files` walk hid PDFs/images/audio dropped in the inbox
+/// from the in-app auto-ingest; this listing makes them visible so the pass
+/// can route or at least count them.
+#[derive(Clone, serde::Serialize)]
+pub struct InboxEntry {
+    pub name: String,
+    pub rel: String,
+    pub ext: String,
+    pub bytes: u64,
+    pub mtime: i64,
+}
+
+/// Flat `read_dir` of `_inbox/` (mcp_native::list_inbox shape): top level
+/// only, dotfiles skipped (`.archived/`), directories skipped (`quarantine/`).
+fn inbox_entries(root: &std::path::Path) -> Vec<InboxEntry> {
+    let mut out = Vec::new();
+    let Ok(rd) = std::fs::read_dir(root.join("_inbox")) else {
+        return out;
+    };
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue;
+        }
+        let Ok(meta) = e.metadata() else { continue };
+        if !meta.is_file() {
+            continue;
+        }
+        let ext = std::path::Path::new(&name)
+            .extension()
+            .and_then(|x| x.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        out.push(InboxEntry {
+            rel: format!("_inbox/{name}"),
+            name,
+            ext,
+            bytes: meta.len(),
+            mtime,
+        });
+    }
+    out
+}
+
+/// Every file waiting in the open vault's `_inbox/`, any extension.
+#[tauri::command]
+pub fn list_inbox_entries(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+) -> Result<Vec<InboxEntry>, String> {
+    let root = confine_root(&state, &vault)?;
+    Ok(inbox_entries(std::path::Path::new(&root)))
+}
+
 /// One conversation held back from import for containing a secret.
 #[derive(serde::Serialize)]
 pub struct QuarantinedConversation {
@@ -4226,7 +4287,7 @@ pub fn os_version() -> String {
 mod tests {
     use super::{
         append_recall_miss, builtin_index_is_stale, chunk_text_at, export_bundle_write,
-        external_target_allowed, import_dest, iso_week_monday, page_in_date_range,
+        external_target_allowed, import_dest, inbox_entries, iso_week_monday, page_in_date_range,
         read_settings_import, recency_tie_break, resurface_core, run_diff_core, run_import,
         sync_bm25_for_page, voice_inbox_rel, voice_markdown, windows_opener_safe, DateRange,
         DEST_INBOX, DEST_SESSIONS,
@@ -4291,6 +4352,41 @@ mod tests {
         assert!(first["at"].as_i64().unwrap() > 0);
         let second: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
         assert!(second["expected"].is_null());
+    }
+
+    // ---- inbox format unification (Q4 item 20a) ----------------------------
+
+    #[test]
+    fn list_inbox_entries_lists_all_extensions_skips_dirs_dotfiles() {
+        let dir = tempfile::tempdir().unwrap();
+        let inbox = dir.path().join("_inbox");
+        std::fs::create_dir_all(inbox.join("quarantine")).unwrap();
+        std::fs::write(inbox.join("note.md"), "hello").unwrap();
+        std::fs::write(inbox.join("paper.PDF"), b"%PDF-").unwrap();
+        std::fs::write(inbox.join("shot.png"), b"png").unwrap();
+        std::fs::write(inbox.join(".hidden"), "x").unwrap();
+
+        let entries = inbox_entries(dir.path());
+        let mut rows: Vec<(String, String, String)> = entries
+            .iter()
+            .map(|e| (e.name.clone(), e.rel.clone(), e.ext.clone()))
+            .collect();
+        rows.sort();
+        assert_eq!(
+            rows,
+            vec![
+                ("note.md".into(), "_inbox/note.md".into(), "md".into()),
+                ("paper.PDF".into(), "_inbox/paper.PDF".into(), "pdf".into()),
+                ("shot.png".into(), "_inbox/shot.png".into(), "png".into()),
+            ]
+        );
+        assert!(entries.iter().all(|e| e.bytes > 0 && e.mtime > 0));
+    }
+
+    #[test]
+    fn list_inbox_entries_empty_when_inbox_missing() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(inbox_entries(dir.path()).is_empty());
     }
 
     // ---- vault history (Q4 item 1) -----------------------------------------

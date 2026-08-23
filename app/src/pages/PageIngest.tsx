@@ -10,12 +10,12 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
-import { sourceTextFor } from "../lib/mediaIngest";
+import { isMediaFile, sourceTextFor } from "../lib/mediaIngest";
 import { formatElapsed } from "../lib/time";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import { useUIStore } from "../stores/uiStore";
-import { listInboxFiles, pendingInboxRows } from "../lib/autoIngest";
+import { listInboxEntries, pendingInboxRows } from "../lib/autoIngest";
 import type { PendingInboxRow } from "../lib/autoIngest";
 import ZoteroImport from "../components/ZoteroImport";
 import ConversationImport from "../components/ConversationImport";
@@ -62,9 +62,8 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
     }
     let cancelled = false;
     void (async () => {
-      const files = await listInboxFiles(root);
-      const times = new Map(await ipc.fileMtimes(root).catch(() => []));
-      if (!cancelled) setInboxRows(pendingInboxRows(files, times));
+      const entries = await listInboxEntries(root);
+      if (!cancelled) setInboxRows(pendingInboxRows(entries, root));
     })();
     return () => {
       cancelled = true;
@@ -73,6 +72,11 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
     // "done" earlier, and refetching on stage alone raced the move into
     // showing an already-consumed row with a soon-dead path.
   }, [currentVault, stage, inboxRev]);
+
+  // Unsupported formats stay listed (and counted) rather than vanishing — the
+  // pass leaves them in place, and the count line says so.
+  const unsupportedCount =
+    inboxRows?.filter((r) => r.kind === "unsupported").length ?? 0;
 
   const running =
     stage === "writing-raw" ||
@@ -123,6 +127,15 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
             dropNoticeFor(paths.length, tRef.current.ing_drop_multi),
           );
           const base = first.split(/[\\/]/).pop() ?? "";
+          // Whisper preflight: media without the CLI used to fail late inside
+          // transcribe_media with a raw error — say so up front instead.
+          if (isMediaFile(first) && !(await whisperInstalled())) {
+            setDropError(
+              tRef.current.voice_whisper_missing ??
+                "whisper is not installed — run brew install openai-whisper, then try again.",
+            );
+            return;
+          }
           setTitle((prev) => prev || base.replace(/\.[^.]+$/, ""));
           try {
             const s = useSettingsStore.getState().settings;
@@ -183,6 +196,13 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
       return;
     }
     if (!path) return;
+    if (isMediaFile(path) && !(await whisperInstalled())) {
+      setDropError(
+        t.voice_whisper_missing ??
+          "whisper is not installed — run brew install openai-whisper, then try again.",
+      );
+      return;
+    }
     const base = path.split(/[\\/]/).pop() ?? "";
     setTitle((prev) => prev || base.replace(/\.[^.]+$/, ""));
     try {
@@ -247,6 +267,14 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
                     >
                       {r.name}
                     </span>
+                    {r.kind !== "md" ? (
+                      <span className="chip">{r.ext || "file"}</span>
+                    ) : null}
+                    {r.kind === "unsupported" ? (
+                      <span className="chip muted">
+                        {t.ing_inbox_unsupported_chip ?? "unsupported"}
+                      </span>
+                    ) : null}
                     {r.today ? (
                       <span className="chip">{t.ing_inbox_today ?? "today"}</span>
                     ) : null}
@@ -265,6 +293,14 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
               ))}
             </ul>
           )}
+          {unsupportedCount > 0 ? (
+            <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+              {(t.ing_inbox_unsupported_line ?? "{n} unsupported — left in place.").replace(
+                "{n}",
+                String(unsupportedCount),
+              )}
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -573,6 +609,15 @@ function StepRow({
       </div>
     </div>
   );
+}
+
+// Whether a whisper-family CLI is on PATH; an unreachable check reads as
+// missing so the preflight fails toward the actionable message.
+async function whisperInstalled(): Promise<boolean> {
+  return ipc
+    .whisperCheck()
+    .then((s) => s.installed)
+    .catch(() => false);
 }
 
 // A single pasted YouTube link (not a long body that merely mentions one).

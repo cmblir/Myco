@@ -173,6 +173,8 @@ export interface Strings {
   ing_inbox_pending?: string; // {n} = pending file count
   ing_inbox_empty?: string;
   ing_inbox_today?: string;
+  ing_inbox_unsupported_chip?: string;
+  ing_inbox_unsupported_line?: string; // {n} = unsupported file count
   ing_yt_fetch?: string;
   ing_yt_fetching?: string;
   ing_paste_url_ph: string;
@@ -1369,6 +1371,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_inbox_pending: "Waiting in _inbox ({n})",
     ing_inbox_empty: "Nothing waiting — arrivals have already been ingested.",
     ing_inbox_today: "today",
+    ing_inbox_unsupported_chip: "unsupported",
+    ing_inbox_unsupported_line: "{n} unsupported — left in place.",
     ing_yt_fetch: "Fetch YouTube transcript",
     ing_yt_fetching: "Fetching transcript…",
     ing_paste_url_ph: "https://example.com/paper.pdf",
@@ -2589,6 +2593,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_inbox_pending: "_inbox 대기 중 ({n})",
     ing_inbox_empty: "대기 중인 파일이 없습니다 — 도착분은 이미 처리되었습니다.",
     ing_inbox_today: "오늘",
+    ing_inbox_unsupported_chip: "미지원",
+    ing_inbox_unsupported_line: "미지원 {n}건 — 그대로 둡니다.",
     ing_yt_fetch: "YouTube 자막 가져오기",
     ing_yt_fetching: "자막 가져오는 중…",
     ing_paste_url_ph: "https://example.com/paper.pdf",
@@ -3710,6 +3716,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_inbox_pending: "_inbox 待機中（{n}）",
     ing_inbox_empty: "待機中のファイルはありません — 到着分は取り込み済みです。",
     ing_inbox_today: "今日",
+    ing_inbox_unsupported_chip: "未対応",
+    ing_inbox_unsupported_line: "未対応 {n} 件 — そのまま残します。",
     ing_yt_fetch: "YouTube字幕を取得",
     ing_yt_fetching: "字幕を取得中…",
     ing_paste_url_ph: "https://example.com/paper.pdf",

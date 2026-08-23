@@ -12,8 +12,10 @@ vi.mock("./ipc", () => ({
 }));
 
 import {
+  classifyInboxEntry,
   isImageFile,
   isMediaFile,
+  isSupportedSource,
   sourceTextFor,
   IMAGE_INGEST_PROMPT,
 } from "./mediaIngest";
@@ -34,6 +36,32 @@ describe("kind detection", () => {
     expect(isMediaFile("talk.mp3")).toBe(true);
     expect(isMediaFile("lecture.MP4")).toBe(true);
     expect(isMediaFile("paper.docx")).toBe(false);
+  });
+});
+
+// Q4 item 20a — one classification for every file the inbox can hold, so the
+// auto-ingest pass and the pending panel agree on what is routable.
+describe("classifyInboxEntry", () => {
+  it("classifies by extension, case-insensitively", () => {
+    expect(classifyInboxEntry("note.md")).toBe("md");
+    expect(classifyInboxEntry("paper.PDF")).toBe("extract");
+    expect(classifyInboxEntry("slides.pptx")).toBe("extract");
+    expect(classifyInboxEntry("page.html")).toBe("extract");
+    expect(classifyInboxEntry("notes.txt")).toBe("extract");
+    expect(classifyInboxEntry("shot.png")).toBe("image");
+    expect(classifyInboxEntry("talk.m4a")).toBe("media");
+    expect(classifyInboxEntry("clip.MOV")).toBe("media");
+  });
+
+  it("marks unknown formats unsupported (epub, zip, no extension)", () => {
+    expect(classifyInboxEntry("book.epub")).toBe("unsupported");
+    expect(classifyInboxEntry("bundle.zip")).toBe("unsupported");
+    expect(classifyInboxEntry("README")).toBe("unsupported");
+  });
+
+  it("isSupportedSource mirrors the classification", () => {
+    expect(isSupportedSource("paper.pdf")).toBe(true);
+    expect(isSupportedSource("book.epub")).toBe(false);
   });
 });
 

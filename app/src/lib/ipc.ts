@@ -30,6 +30,18 @@ export type FileNode =
       children: FileNode[];
     };
 
+/** One file waiting in `_inbox/`, any extension (Q4 item 20a). */
+export interface InboxEntry {
+  name: string;
+  /** Vault-relative path (`_inbox/<name>`). */
+  rel: string;
+  /** Lowercased extension without the dot; "" when the name has none. */
+  ext: string;
+  bytes: number;
+  /** Epoch seconds; 0 when the mtime could not be read. */
+  mtime: number;
+}
+
 export interface FileContent {
   path: string;
   /** Full unmodified file on disk. The editor edits and saves THIS so a
@@ -702,6 +714,10 @@ export const ipc = {
     invoke<string>("rename_path", { from, toName }),
   archiveInboxSource: (path: string) =>
     invoke<string>("archive_inbox_source", { path }),
+  /** Every file waiting in `_inbox/`, any extension — flat, dotfiles and
+   *  subdirectories (quarantine/, .archived/) skipped. */
+  listInboxEntries: (vault: string) =>
+    invoke<InboxEntry[]>("list_inbox_entries", { vault }),
   availableRawPath: (stem: string) =>
     invoke<string>("available_raw_path", { stem }),
   pickDirectory: async (): Promise<string | null> => {

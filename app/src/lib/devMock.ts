@@ -1782,6 +1782,24 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       const name = p.split("/").pop() ?? "source.md";
       return Promise.resolve(`${VAULT}/_inbox/.archived/${name}`);
     }
+    case "list_inbox_entries": {
+      // Every pending file, any extension — mirrors mtimes(): the first
+      // arrived "today", the rest earlier.
+      const now = Math.floor(Date.now() / 1000);
+      return Promise.resolve(
+        [...mockInbox.entries()].map(([p, content], i) => {
+          const name = p.split("/").pop() ?? "clip.md";
+          const dot = name.lastIndexOf(".");
+          return {
+            name,
+            rel: `_inbox/${name}`,
+            ext: dot > 0 ? name.slice(dot + 1).toLowerCase() : "",
+            bytes: content.length,
+            mtime: now - 600 - i * 100_000,
+          };
+        }),
+      );
+    }
     case "available_raw_path": {
       // The mock raw/ is a fixed fixture with no dynamic sources, so nothing
       // collides — return the plain path. (Real collision handling is Rust-side

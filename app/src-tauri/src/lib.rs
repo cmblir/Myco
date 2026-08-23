@@ -169,6 +169,7 @@ pub fn run() {
             commands::delete_path,
             commands::rename_path,
             commands::archive_inbox_source,
+            commands::list_inbox_entries,
             commands::available_raw_path,
             commands::import_conversations,
             commands::import_session_sweep,
