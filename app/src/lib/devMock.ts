@@ -952,6 +952,8 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
   switch (cmd) {
     case "ensure_default_vault":
       return Promise.resolve(VAULT);
+    case "seed_sample_vault":
+      return Promise.resolve(null);
     case "open_vault":
       return Promise.resolve({ path: VAULT, name: "myco" });
     case "list_files":

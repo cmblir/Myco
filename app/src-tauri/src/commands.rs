@@ -269,6 +269,14 @@ pub fn ensure_default_vault() -> Result<String, String> {
     vault::ensure_default_vault()
 }
 
+/// First-run offer (M10): fill a picked-but-empty vault with the demo notes.
+/// Refuses when `wiki/` already has pages — seeding is for empty vaults only.
+#[tauri::command]
+pub fn seed_sample_vault(state: tauri::State<VaultRoot>, vault: String) -> Result<(), String> {
+    let root = confine_root(&state, &vault)?;
+    vault::seed_sample(std::path::Path::new(&root))
+}
+
 /// The vault's file tree.
 ///
 /// Async: this is the other leg of the 4-second refresh poll, and the one the

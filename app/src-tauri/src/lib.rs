@@ -150,6 +150,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::open_vault,
             commands::ensure_default_vault,
+            commands::seed_sample_vault,
             commands::list_files,
             commands::file_mtimes,
             commands::classify_intent,

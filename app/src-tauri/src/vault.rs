@@ -318,6 +318,19 @@ fn seed_vault(target: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// First-run seeding of a user-picked folder (M10 step 1). Same idempotent
+/// scaffold as the default vault, but refuses when `wiki/` already holds pages:
+/// the offer exists for empty folders only, and must never mix demo notes into
+/// a vault someone already writes in.
+pub fn seed_sample(target: &Path) -> Result<(), String> {
+    let mut pages = Vec::new();
+    collect_md_files(&target.join("wiki"), &mut pages);
+    if !pages.is_empty() {
+        return Err("vault already has wiki pages — demo seeding is for empty vaults only".into());
+    }
+    seed_vault(target)
+}
+
 fn write_if_missing(path: &Path, content: &str) -> Result<(), String> {
     if path.exists() {
         return Ok(());
@@ -2006,6 +2019,26 @@ mod tests {
             adj.forward.values().any(|v| !v.is_empty()),
             "sample notes should form resolved graph edges"
         );
+    }
+
+    #[test]
+    fn seed_sample_vault_seeds_into_empty() {
+        let dir = temp_vault("seed-offer-empty");
+        seed_sample(&dir).unwrap();
+        // Same layout + starter notes as the default vault.
+        assert!(dir.join("wiki/index.md").is_file());
+        assert!(dir.join("wiki/transformer-architecture.md").is_file());
+    }
+
+    #[test]
+    fn seed_sample_vault_refuses_non_empty() {
+        let dir = temp_vault("seed-offer-refuse");
+        fs::create_dir_all(dir.join("wiki")).unwrap();
+        fs::write(dir.join("wiki/mine.md"), "# mine\n").unwrap();
+        assert!(seed_sample(&dir).is_err());
+        // The user's vault is left exactly as it was — no demo notes mixed in.
+        assert!(!dir.join("wiki/transformer-architecture.md").exists());
+        assert!(!dir.join("welcome.md").exists());
     }
 
     #[test]

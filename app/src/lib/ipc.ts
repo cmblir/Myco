@@ -621,6 +621,9 @@ export interface OllamaStatus {
 export const ipc = {
   openVault: (path: string) => invoke<VaultMeta>("open_vault", { path }),
   ensureDefaultVault: () => invoke<string>("ensure_default_vault"),
+  /** Fill a picked-but-empty vault with the demo notes (first-run offer). */
+  seedSampleVault: (vault: string) =>
+    invoke<null>("seed_sample_vault", { vault }),
   listFiles: (root: string) => invoke<FileNode[]>("list_files", { root }),
   fileMtimes: (root: string) =>
     invoke<[string, number][]>("file_mtimes", { root }),

@@ -1109,6 +1109,15 @@ export interface Strings {
   ob_s3_title?: string;
   ob_s3_body?: string;
   ob_s3_action?: string;
+  ob_demo_start?: string;
+  ob_seed_offer?: string;
+  ob_seed_do?: string;
+  ob_indexing_local?: string;
+  ob_s2_progress?: string; // {done} {total}
+  ob_s2_indexed?: string; // {n}
+  ob_s2_failed?: string;
+  ob_first_question?: string;
+  ob_ask_now?: string;
   // Budget guard (OPS-03) — optional; components fall back to English.
   s_budget_title?: string;
   s_budget_desc?: string;
@@ -2333,6 +2342,15 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_s3_body:
       "Ask the wiki anything. myco answers from your pages first and reaches into raw sources only when needed — every claim ships with a citation.",
     ob_s3_action: "Go to Ask",
+    ob_demo_start: "Start with a demo vault",
+    ob_seed_offer: "That folder is empty. Want a few demo notes to try things on?",
+    ob_seed_do: "Add demo notes",
+    ob_indexing_local: "The index is built on this device only.",
+    ob_s2_progress: "{done} of {total} notes",
+    ob_s2_indexed: "{n} notes indexed",
+    ob_s2_failed: "Indexing didn't finish",
+    ob_first_question: "What topics do these notes cover most?",
+    ob_ask_now: "Ask it",
     s_budget_title: "Monthly spend guard",
     s_budget_desc:
       "Estimated spend across paid API providers this month. A rough tripwire, not billing — set a threshold to get warned before you cross it.",
@@ -3552,6 +3570,15 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_s3_body:
       "위키에 무엇이든 물어보세요. myco는 먼저 당신의 페이지에서 답하고 필요할 때만 원본으로 들어갑니다 — 모든 주장에는 인용이 따라옵니다.",
     ob_s3_action: "질문으로 이동",
+    ob_demo_start: "데모 볼트로 시작",
+    ob_seed_offer: "그 폴더는 비어 있습니다. 데모 노트를 채워 둘까요?",
+    ob_seed_do: "데모 노트 채우기",
+    ob_indexing_local: "인덱스는 이 기기에서만 만들어집니다.",
+    ob_s2_progress: "노트 {total}개 중 {done}개",
+    ob_s2_indexed: "노트 {n}개를 인덱싱했습니다",
+    ob_s2_failed: "인덱싱을 마치지 못했습니다",
+    ob_first_question: "이 노트들에서 가장 자주 다룬 주제는?",
+    ob_ask_now: "물어보기",
     s_budget_title: "월 지출 가드",
     s_budget_desc:
       "이번 달 유료 API 제공자에서의 예상 지출입니다. 정확한 청구가 아닌 대략적 경보로, 임계값을 설정하면 초과 전에 경고합니다.",
@@ -4618,6 +4645,15 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_s3_body:
       "ウィキに何でも聞いてください。myco はまずあなたのページから答え、必要なときだけ原本に降ります — すべての主張に出典が付きます。",
     ob_s3_action: "質問へ",
+    ob_demo_start: "デモ・ボールトで始める",
+    ob_seed_offer: "そのフォルダは空です。デモノートを入れておきますか？",
+    ob_seed_do: "デモノートを追加",
+    ob_indexing_local: "インデックスはこの端末だけで作られます。",
+    ob_s2_progress: "ノート {total} 件中 {done} 件",
+    ob_s2_indexed: "ノート {n} 件をインデックスしました",
+    ob_s2_failed: "インデックス作成が完了しませんでした",
+    ob_first_question: "これらのノートで最も多く扱っている話題は？",
+    ob_ask_now: "質問する",
     s_budget_title: "月間支出ガード",
     s_budget_desc:
       "今月の有料 API プロバイダーでの推定支出です。正確な請求ではなくおおまかな警報 — しきい値を設定すると超過前に警告します。",
