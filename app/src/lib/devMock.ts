@@ -1191,6 +1191,16 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     // a clean report keeps the promotion paths flowing under ?mock=1.
     case "scan_text_secrets":
       return Promise.resolve({ secrets: [], pii: [] });
+    // Retro raw/ audit (Q4 item 14): the mock vault is clean, so ?mock=1 shows
+    // the green clean line with plausible counts.
+    case "scan_raw_audit":
+      return Promise.resolve({
+        files_scanned: 14,
+        history_files_scanned: 0,
+        secret_hits: [],
+        pii_hits: [],
+        truncated: false,
+      });
     // Resurface (Q4 item 10): two dormant wiki pages the seed echoes. Both
     // exist in the mock vault, so opening a candidate navigates somewhere.
     case "resurface_candidates":

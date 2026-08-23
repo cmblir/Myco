@@ -24,6 +24,7 @@ import type {
   MycoSettings,
   OllamaStatus,
   PanicEntry,
+  RawAuditReport,
   RunSummary,
   SpotlightStatus,
 } from "../lib/ipc";
@@ -2380,6 +2381,8 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       <VaultHistoryToggle t={t} vaultPath={vaultPath} />
 
       <PiiModeCard t={t} />
+
+      <RawAuditCard t={t} vaultPath={vaultPath} />
     </div>
   );
 }
@@ -2505,6 +2508,93 @@ function PiiModeCard({ t }: { t: Strings }): JSX.Element | null {
             {t.set_pii_quarantine ?? "Quarantine"}
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// Q4 item 14, mockup M8-c — read-only audit of raw/ (current files + git
+// history) for secrets and PII. Report only: the app never rewrites raw/;
+// remediation is the documented external procedure. History-only hits have no
+// file left on disk, so nothing here offers to open anything.
+function RawAuditCard({
+  t,
+  vaultPath,
+}: {
+  t: Strings;
+  vaultPath?: string;
+}): JSX.Element {
+  const [report, setReport] = useState<RawAuditReport | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const run = () => {
+    if (!vaultPath || busy) return;
+    setBusy(true);
+    setError(null);
+    ipc
+      .scanRawAudit(vaultPath)
+      .then(setReport)
+      .catch((e: unknown) => setError(String(e)))
+      .finally(() => setBusy(false));
+  };
+  const hits = report
+    ? [
+        ...report.secret_hits.map((h) => ({ ...h, tier: "secret" })),
+        ...report.pii_hits.map((h) => ({ ...h, tier: "pii" })),
+      ]
+    : [];
+  return (
+    <div className="card">
+      <div
+        className="row"
+        style={{ justifyContent: "space-between", alignItems: "center", gap: 12 }}
+      >
+        <div style={{ fontSize: 13, fontWeight: 600 }}>
+          {t.set_audit_title ?? "raw/ secret audit"}
+        </div>
+        <button
+          className="btn"
+          onClick={run}
+          disabled={busy || !vaultPath}
+          data-testid="raw-audit-rescan"
+        >
+          {t.set_audit_rescan ?? "Rescan"}
+        </button>
+      </div>
+      {report && hits.length === 0 ? (
+        <div
+          style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }}
+          data-testid="raw-audit-clean"
+        >
+          {(t.set_audit_clean ?? "{n} files · {m} in history — 0 secrets")
+            .replace("{n}", String(report.files_scanned))
+            .replace("{m}", String(report.history_files_scanned))}
+        </div>
+      ) : null}
+      {hits.length > 0 ? (
+        <div
+          style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}
+          data-testid="raw-audit-hits"
+        >
+          {hits.map((h) => (
+            <div key={`${h.tier}:${h.rel}`} style={{ fontSize: 12 }}>
+              <span>{h.rel}</span>
+              <span className="muted"> — {h.patterns.join(", ")}</span>
+              {h.in_history_only ? (
+                <span className="chip" style={{ marginLeft: 6 }}>
+                  {t.set_audit_history_only ?? "History only"}
+                </span>
+              ) : null}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {error ? (
+        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{error}</div>
+      ) : null}
+      <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
+        {t.set_audit_note ??
+          "The audit is read-only. The app never rewrites raw/; cleanup follows the documented procedure."}
       </div>
     </div>
   );

@@ -2162,6 +2162,247 @@ pub fn scan_text_secrets(text: String) -> SecretScanReport {
     }
 }
 
+// ---- retro raw/ audit (Q4 item 14) -----------------------------------------
+
+/// One flagged raw/ file. Mirrored in ipc.ts `RawAuditHit`.
+#[derive(Clone, serde::Serialize)]
+pub struct RawAuditHit {
+    /// Vault-relative path under `raw/`.
+    pub rel: String,
+    /// Pattern NAMES only — the matched text never leaves the scan.
+    pub patterns: Vec<String>,
+    /// True when the file no longer exists in the worktree (found in git
+    /// history only) — there is nothing left to open.
+    pub in_history_only: bool,
+}
+
+/// Mirrored in ipc.ts `RawAuditReport` (Q4 item 14).
+#[derive(Clone, serde::Serialize)]
+pub struct RawAuditReport {
+    pub files_scanned: usize,
+    /// Historical raw/ blobs read back; 0 when the vault has no git repo.
+    pub history_files_scanned: usize,
+    pub secret_hits: Vec<RawAuditHit>,
+    pub pii_hits: Vec<RawAuditHit>,
+    /// True when a history cap (2000 blobs, 256 KiB/blob) cut the scan short.
+    pub truncated: bool,
+}
+
+fn push_audit_hit(hits: &mut Vec<RawAuditHit>, rel: &str, patterns: Vec<&'static str>) {
+    if !patterns.is_empty() {
+        hits.push(RawAuditHit {
+            rel: rel.to_string(),
+            patterns: patterns.into_iter().map(String::from).collect(),
+            in_history_only: false,
+        });
+    }
+}
+
+/// Scan every file currently under `raw/`. Files that don't decode as UTF-8
+/// are counted but not pattern-scanned — the patterns are text shapes, and a
+/// photo can't leak a key through them. Pure disk walk, no git, no writes.
+pub(crate) fn audit_worktree(
+    root: &std::path::Path,
+) -> (usize, Vec<RawAuditHit>, Vec<RawAuditHit>) {
+    let mut files = 0usize;
+    let mut secret_hits = Vec::new();
+    let mut pii_hits = Vec::new();
+    let mut stack = vec![root.join("raw")];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            continue; // raw/ absent (or unreadable) => nothing to report
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            files += 1;
+            let Ok(bytes) = std::fs::read(&path) else {
+                continue;
+            };
+            let Ok(text) = String::from_utf8(bytes) else {
+                continue; // binary: counted above, not scanned
+            };
+            let rel = path
+                .strip_prefix(root)
+                .map(|r| r.to_string_lossy().replace('\\', "/"))
+                .unwrap_or_else(|_| path.to_string_lossy().into_owned());
+            push_audit_hit(
+                &mut secret_hits,
+                &rel,
+                crate::importers::secrets_scan::scan(&text),
+            );
+            push_audit_hit(
+                &mut pii_hits,
+                &rel,
+                crate::importers::secrets_scan::scan_pii(&text),
+            );
+        }
+    }
+    secret_hits.sort_by(|a, b| a.rel.cmp(&b.rel));
+    pii_hits.sort_by(|a, b| a.rel.cmp(&b.rel));
+    (files, secret_hits, pii_hits)
+}
+
+/// History cap: at most this many blobs are read back per audit.
+const AUDIT_MAX_BLOBS: usize = 2000;
+/// History cap: only the first 256 KiB of each blob is scanned.
+const AUDIT_BLOB_CAP: usize = 256 * 1024;
+
+/// `(adding commit, rel)` for every raw/ file ever committed — the
+/// `--diff-filter=A` arm of the audit. Deduped; a path re-added in several
+/// commits is read at each adding commit (its contents may differ).
+fn raw_history_pairs(root: &std::path::Path) -> Vec<(String, String)> {
+    let Ok(out) = crate::vault_history::git(
+        root,
+        &[
+            "-c",
+            "core.quotepath=off",
+            "log",
+            "--all",
+            "--diff-filter=A",
+            "--format=%H",
+            "--name-only",
+            "--",
+            "raw/",
+        ],
+    ) else {
+        return Vec::new();
+    };
+    if !out.status.success() {
+        return Vec::new(); // empty repo: git log refuses; degrade to worktree-only
+    }
+    let text = String::from_utf8_lossy(&out.stdout);
+    let mut sha = String::new();
+    let mut seen = std::collections::HashSet::new();
+    let mut pairs = Vec::new();
+    for line in text.lines() {
+        if line.len() == 40 && line.bytes().all(|b| b.is_ascii_hexdigit()) {
+            sha = line.to_string();
+        } else if line.starts_with("raw/")
+            && !sha.is_empty()
+            && seen.insert((sha.clone(), line.to_string()))
+        {
+            pairs.push((sha.clone(), line.to_string()));
+        }
+    }
+    pairs
+}
+
+/// Fold one history hit into the per-rel pattern union.
+fn note_history_hit(
+    map: &mut std::collections::BTreeMap<String, Vec<String>>,
+    rel: &str,
+    names: Vec<&'static str>,
+) {
+    if names.is_empty() {
+        return;
+    }
+    let entry = map.entry(rel.to_string()).or_default();
+    for n in names {
+        if !entry.iter().any(|e| e == n) {
+            entry.push(n.to_string());
+        }
+    }
+}
+
+/// Merge history findings into the worktree hit list. A rel the worktree scan
+/// already flagged gains any extra pattern names; a rel with no file left on
+/// disk becomes an `in_history_only` hit.
+fn merge_history_hits(
+    root: &std::path::Path,
+    hits: &mut Vec<RawAuditHit>,
+    hist: std::collections::BTreeMap<String, Vec<String>>,
+) {
+    for (rel, patterns) in hist {
+        if let Some(h) = hits.iter_mut().find(|h| h.rel == rel) {
+            for p in patterns {
+                if !h.patterns.contains(&p) {
+                    h.patterns.push(p);
+                }
+            }
+        } else {
+            let in_history_only = !root.join(&rel).exists();
+            hits.push(RawAuditHit {
+                rel,
+                patterns,
+                in_history_only,
+            });
+        }
+    }
+    hits.sort_by(|a, b| a.rel.cmp(&b.rel));
+}
+
+/// Worktree + git-history audit of `raw/`. Read-only in the strictest sense:
+/// nothing under `raw/` is written, moved, or deleted — remediation is the
+/// documented `git filter-repo` procedure, run by the owner outside the app.
+pub(crate) fn audit_vault(root: &std::path::Path) -> RawAuditReport {
+    let (files_scanned, mut secret_hits, mut pii_hits) = audit_worktree(root);
+    let mut history_files_scanned = 0usize;
+    let mut truncated = false;
+    let mut hist_secrets = std::collections::BTreeMap::new();
+    let mut hist_pii = std::collections::BTreeMap::new();
+    if root.join(".git").exists() {
+        for (sha, rel) in raw_history_pairs(root) {
+            if history_files_scanned == AUDIT_MAX_BLOBS {
+                truncated = true;
+                break;
+            }
+            // Blob gone or unreadable (shallow prune, odd object): skip — the
+            // audit is best-effort over what git can still show.
+            let Ok(Some(text)) = crate::vault_history::file_at(root, &sha, &rel) else {
+                continue;
+            };
+            history_files_scanned += 1;
+            let mut end = text.len().min(AUDIT_BLOB_CAP);
+            while !text.is_char_boundary(end) {
+                end -= 1;
+            }
+            if end < text.len() {
+                truncated = true;
+            }
+            let text = &text[..end];
+            note_history_hit(
+                &mut hist_secrets,
+                &rel,
+                crate::importers::secrets_scan::scan(text),
+            );
+            note_history_hit(
+                &mut hist_pii,
+                &rel,
+                crate::importers::secrets_scan::scan_pii(text),
+            );
+        }
+    }
+    merge_history_hits(root, &mut secret_hits, hist_secrets);
+    merge_history_hits(root, &mut pii_hits, hist_pii);
+    RawAuditReport {
+        files_scanned,
+        history_files_scanned,
+        secret_hits,
+        pii_hits,
+        truncated,
+    }
+}
+
+/// Read-only audit of `raw/` — current files AND every raw/ blob in vault git
+/// history (Q4 item 14). The app never modifies raw/; hits are reported for
+/// the owner to act on outside the app.
+///
+/// Async + `spawn_blocking`: a full worktree walk plus up to 2000 `git show`s.
+#[tauri::command]
+pub async fn scan_raw_audit(
+    state: tauri::State<'_, VaultRoot>,
+    vault: String,
+) -> Result<RawAuditReport, String> {
+    let root = confine_root(&state, &vault)?;
+    tauri::async_runtime::spawn_blocking(move || audit_vault(std::path::Path::new(&root)))
+        .await
+        .map_err(|e| format!("raw audit task failed: {e}"))
+}
+
 // ---- page-open tracking (Q4 item 10) ---------------------------------------
 
 /// Record that the frontend opened a vault page — feeds resurface dormancy.
@@ -5111,5 +5352,104 @@ mod session_bucket_tests {
             !rels.iter().any(|r| r.starts_with("daily/archive/")),
             "rolled-up (cold) daily digests must stay out too: {rels:?}"
         );
+    }
+
+    // ---- retro raw/ audit (Q4 item 14) -------------------------------------
+
+    #[test]
+    fn audit_worktree_flags_secrets_and_pii_and_counts_binaries() {
+        let dir = tempfile::tempdir().unwrap();
+        let raw = dir.path().join("raw");
+        std::fs::create_dir_all(raw.join("conv")).unwrap();
+        std::fs::write(
+            raw.join("leak.md"),
+            "here is sk-abcdefghijklmnopqrstuvwxyz012345 oops",
+        )
+        .unwrap();
+        std::fs::write(raw.join("conv/contact.md"), "mail someone@example.com").unwrap();
+        // Invalid UTF-8: skipped as binary, still counted.
+        std::fs::write(raw.join("photo.bin"), [0xffu8, 0xfe, 0x00, 0x9f]).unwrap();
+        std::fs::write(raw.join("clean.md"), "ordinary prose only").unwrap();
+
+        let (files, secrets, pii) = super::audit_worktree(dir.path());
+        assert_eq!(files, 4, "binaries are counted even though not scanned");
+        assert_eq!(secrets.len(), 1);
+        assert_eq!(secrets[0].rel, "raw/leak.md");
+        assert!(
+            secrets[0].patterns.iter().any(|p| p.contains("API key")),
+            "{:?}",
+            secrets[0].patterns
+        );
+        assert!(!secrets[0].in_history_only);
+        assert_eq!(pii.len(), 1);
+        assert_eq!(pii[0].rel, "raw/conv/contact.md");
+        assert!(!pii[0].in_history_only);
+    }
+
+    #[test]
+    fn audit_worktree_without_raw_dir_is_clean() {
+        let dir = tempfile::tempdir().unwrap();
+        let (files, secrets, pii) = super::audit_worktree(dir.path());
+        assert_eq!((files, secrets.len(), pii.len()), (0, 0, 0));
+    }
+
+    #[test]
+    fn audit_vault_history_arm_flags_deleted_raw_secret_as_history_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("raw")).unwrap();
+        // Fake, obviously synthetic key shapes — never real credentials.
+        std::fs::write(
+            root.join("raw/leak.md"),
+            "sk-abcdefghijklmnopqrstuvwxyz012345\n",
+        )
+        .unwrap();
+        std::fs::write(root.join("raw/keep.md"), "AKIAIOSFODNN7EXAMPLE stays\n").unwrap();
+        crate::vault_history::init(root).unwrap();
+        std::fs::remove_file(root.join("raw/leak.md")).unwrap();
+        assert!(crate::vault_history::commit_paths(
+            root,
+            &["raw"],
+            "delete leak",
+            crate::vault_history::CommitIdentity::Human,
+        )
+        .unwrap());
+
+        let report = super::audit_vault(root);
+        assert_eq!(report.files_scanned, 1, "only keep.md is left on disk");
+        assert!(
+            report.history_files_scanned >= 2,
+            "both raw/ adds read back: {}",
+            report.history_files_scanned
+        );
+        assert!(!report.truncated);
+        let gone = report
+            .secret_hits
+            .iter()
+            .find(|h| h.rel == "raw/leak.md")
+            .expect("deleted file surfaced via history");
+        assert!(
+            gone.in_history_only,
+            "worktree file is gone => history-only"
+        );
+        let kept: Vec<_> = report
+            .secret_hits
+            .iter()
+            .filter(|h| h.rel == "raw/keep.md")
+            .collect();
+        assert_eq!(kept.len(), 1, "history must not duplicate a live hit");
+        assert!(!kept[0].in_history_only);
+    }
+
+    #[test]
+    fn audit_vault_without_git_repo_reports_zero_history() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("raw")).unwrap();
+        std::fs::write(dir.path().join("raw/a.md"), "clean prose").unwrap();
+        let report = super::audit_vault(dir.path());
+        assert_eq!(report.files_scanned, 1);
+        assert_eq!(report.history_files_scanned, 0);
+        assert!(report.secret_hits.is_empty() && report.pii_hits.is_empty());
+        assert!(!report.truncated);
     }
 }

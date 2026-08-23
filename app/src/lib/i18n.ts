@@ -1144,6 +1144,12 @@ export interface Strings {
   set_pii_desc?: string;
   set_pii_warn?: string;
   set_pii_quarantine?: string;
+  // Retro raw/ audit (Q4 item 14, mockup M8-c) — optional; fall back to English.
+  set_audit_title?: string;
+  set_audit_rescan?: string;
+  set_audit_clean?: string; // {n} {m}
+  set_audit_history_only?: string;
+  set_audit_note?: string;
   // Morning-Report band (Q4 item 2) — optional; fall back to English.
   ov_since_eyebrow?: string;
   ov_since_title?: string; // {runs} {pages}
@@ -2363,6 +2369,12 @@ export const STRINGS: Record<Lang, Strings> = {
       "With Quarantine, sources containing emails or phone numbers stay in _inbox instead of being written to permanent storage. Secrets like API keys are always blocked either way.",
     set_pii_warn: "Warn only",
     set_pii_quarantine: "Quarantine",
+    set_audit_title: "raw/ secret audit",
+    set_audit_rescan: "Rescan",
+    set_audit_clean: "{n} files · {m} in history — 0 secrets",
+    set_audit_history_only: "History only",
+    set_audit_note:
+      "The audit is read-only. The app never rewrites raw/; cleanup follows the documented procedure.",
     ov_since_eyebrow: "Since you were last here",
     ov_since_title: "{runs} distill runs, {pages} pages moved",
     ov_since_quiet: "All quiet since your last visit.",
@@ -3571,6 +3583,12 @@ export const STRINGS: Record<Lang, Strings> = {
       "격리를 선택하면 이메일·전화번호가 감지된 소스는 영구 보관소에 기록되지 않고 _inbox에 남습니다. API 키 같은 시크릿은 선택과 무관하게 항상 차단됩니다.",
     set_pii_warn: "경고만",
     set_pii_quarantine: "격리",
+    set_audit_title: "raw/ 시크릿 감사",
+    set_audit_rescan: "다시 스캔",
+    set_audit_clean: "파일 {n}개 · 이력 {m}개 — 시크릿 0건",
+    set_audit_history_only: "이력에만 존재",
+    set_audit_note:
+      "감사는 읽기 전용입니다. raw/는 앱이 고쳐 쓰지 않으며, 정리는 문서의 절차를 따릅니다.",
     ov_since_eyebrow: "다녀오신 사이",
     ov_since_title: "증류 {runs}회, 페이지 {pages}개가 움직였습니다",
     ov_since_quiet: "다녀오신 사이 조용했습니다.",
@@ -4779,6 +4797,12 @@ export const STRINGS: Record<Lang, Strings> = {
       "「隔離」を選ぶと、メールアドレスや電話番号を含むソースは恒久保存に書き込まれず _inbox に残ります。API キーなどのシークレットは選択に関係なく常にブロックされます。",
     set_pii_warn: "警告のみ",
     set_pii_quarantine: "隔離",
+    set_audit_title: "raw/ シークレット監査",
+    set_audit_rescan: "再スキャン",
+    set_audit_clean: "ファイル {n} 件 · 履歴 {m} 件 — シークレット 0 件",
+    set_audit_history_only: "履歴のみに存在",
+    set_audit_note:
+      "監査は読み取り専用です。raw/ をアプリが書き換えることはなく、整理は文書の手順に従います。",
     ov_since_eyebrow: "前回から",
     ov_since_title: "蒸留 {runs} 回、ページ {pages} 件が動きました",
     ov_since_quiet: "前回から変化はありません。",

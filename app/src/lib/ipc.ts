@@ -329,6 +329,24 @@ export interface SecretScanReport {
   pii: string[];
 }
 
+/** Mirrors Rust `commands::RawAuditHit` (Q4 item 14) — one flagged raw/ file. */
+export interface RawAuditHit {
+  rel: string;
+  /** Pattern names only — the matched text never leaves the scan. */
+  patterns: string[];
+  /** File exists only in git history — nothing left on disk to open. */
+  in_history_only: boolean;
+}
+
+/** Mirrors Rust `commands::RawAuditReport` (Q4 item 14) — read-only audit. */
+export interface RawAuditReport {
+  files_scanned: number;
+  history_files_scanned: number;
+  secret_hits: RawAuditHit[];
+  pii_hits: RawAuditHit[];
+  truncated: boolean;
+}
+
 /** Mirrors Rust `vault_history::HistoryStatus` (Q4 item 1). */
 export interface VaultHistoryStatus {
   git_present: boolean;
@@ -900,6 +918,9 @@ export const ipc = {
   /** Redaction scan (Q4 item 13) — call before any raw/ write. */
   scanTextSecrets: (text: string) =>
     invoke<SecretScanReport>("scan_text_secrets", { text }),
+  /** Read-only raw/ + git-history audit (Q4 item 14) — never modifies raw/. */
+  scanRawAudit: (vault: string) =>
+    invoke<RawAuditReport>("scan_raw_audit", { vault }),
   /** Dormant wiki pages echoing `seedText` — resurface (Q4 item 10). */
   resurfaceCandidates: (vault: string, seedText: string, k: number, floor: number) =>
     invoke<ResurfaceCandidate[]>("resurface_candidates", {
