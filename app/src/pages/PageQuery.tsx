@@ -24,6 +24,7 @@ import {
   type ConfidenceBand,
   type SourceTier,
 } from "../lib/extractive";
+import type { DeepStorageHit } from "../lib/deepStorage";
 import Viewer from "../components/Viewer";
 import AgentPanel from "../components/AgentPanel";
 import AudioOverviewPanel from "../components/AudioOverviewPanel";
@@ -354,6 +355,13 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
             {turn.citations?.length ? (
               <CitationChips t={t} citations={turn.citations} />
             ) : null}
+            {turn.deepStorage && currentVault ? (
+              <DeepStorageRow
+                t={t}
+                hit={turn.deepStorage}
+                onOpen={(page) => setRoute(`page:${currentVault.path}/${page}`)}
+              />
+            ) : null}
             {turn.a && !turn.error ? (
               // Ghost action: log this question to the recall-miss eval set
               // (Q4 item 5) when the answer missed what the user expected.
@@ -499,6 +507,44 @@ function CitationChips({
         );
       })}
     </ul>
+  );
+}
+
+// One cold-tier hit under the citation chips (Q4 item 12) — sessions, raw
+// sources, or rollups echoing the question when the wiki-first citations
+// don't already show it. The dot is --c-concept so the row reads as a
+// deep-storage echo, not another citation; clicking opens the page.
+function DeepStorageRow({
+  t,
+  hit,
+  onOpen,
+}: {
+  t: Strings;
+  hit: DeepStorageHit;
+  onOpen: (page: string) => void;
+}): JSX.Element {
+  // Rendered as a percentage like the answer body's relevance figures. A hit
+  // without a cosine never becomes a deep-storage row (pickDeepStorage skips
+  // them), so the null arm is only type honesty.
+  const sim =
+    hit.similarity === null ? "–" : `${Math.round(hit.similarity * 100)}%`;
+  return (
+    <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+      <button
+        className="btn btn-ghost"
+        style={{ fontSize: 12, padding: "2px 8px" }}
+        title={hit.page}
+        onClick={() => onOpen(hit.page)}
+      >
+        <span
+          className="chip-dot"
+          style={{ background: "var(--c-concept)" }}
+        ></span>{" "}
+        {(t.q_deep_row ?? "From deep storage: {stem} — similarity {sim}")
+          .replace("{stem}", hit.stem)
+          .replace("{sim}", sim)}
+      </button>
+    </div>
   );
 }
 

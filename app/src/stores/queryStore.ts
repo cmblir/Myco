@@ -10,6 +10,7 @@ import {
   formatExtractiveAnswer,
   type Citation,
 } from "../lib/extractive";
+import { pickDeepStorage, type DeepStorageHit } from "../lib/deepStorage";
 import { ipc } from "../lib/ipc";
 import {
   formatActivityAnswer,
@@ -51,6 +52,10 @@ export interface ChatTurn {
   /// extractive path has them: a provider-synthesized answer cites pages in
   /// prose, with no per-citation similarity to report.
   citations?: Citation[];
+  /// One cold-tier hit (session/source/rollup/monthly) the citations don't
+  /// already show (Q4 item 12) — the vault's deep storage echoing the
+  /// question, surfaced as its own labeled row under the chips.
+  deepStorage?: DeepStorageHit;
   /// Date window parsed from the question (time-aware Ask, Q4 item 8) —
   /// retrieval was restricted to that window's dated tiers; the UI shows it
   /// as a chip beside the question.
@@ -218,13 +223,18 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           : r.retrievalFailed
             ? copy.extractiveFailed
             : md || (tp.range ? copy.rangeEmpty : copy.extractiveEmpty);
+        // Same grouping/cap as the rendered answer, so every chip has a
+        // section above it. Empty answer -> no citations to describe.
+        const citations = md ? citationsOf(r.hits) : undefined;
+        const deep = md
+          ? pickDeepStorage(r.hits, new Set(citations?.map((c) => c.page)))
+          : null;
         finishTurn({
           a: body,
           extractive: true,
           extractiveEmpty: !md,
-          // Same grouping/cap as the rendered answer, so every chip has a
-          // section above it. Empty answer -> no citations to describe.
-          citations: md ? citationsOf(r.hits) : undefined,
+          citations,
+          deepStorage: deep ?? undefined,
           stale: r.stale,
           retrievalFailed: r.retrievalFailed,
           range: tp.range ?? undefined,
