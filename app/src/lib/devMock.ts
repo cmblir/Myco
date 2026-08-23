@@ -1186,6 +1186,27 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(null);
     case "record_page_open":
       return Promise.resolve(null);
+    // Resurface (Q4 item 10): two dormant wiki pages the seed echoes. Both
+    // exist in the mock vault, so opening a candidate navigates somewhere.
+    case "resurface_candidates":
+      return Promise.resolve([
+        {
+          page: "wiki/positional-encoding.md",
+          stem: "positional-encoding",
+          score: 0.82,
+          snippet:
+            "RoPE는 위치를 더하는 대신 회전으로 새긴다 — 상대 위치가 내적에 그대로 보존된다는 점이 절대 위치 임베딩과의 결정적 차이다.",
+          last_open: Math.floor(Date.now() / 1000) - 45 * 86400,
+        },
+        {
+          page: "wiki/tokenization.md",
+          stem: "tokenization",
+          score: 0.74,
+          snippet:
+            "BPE 병합 규칙은 코퍼스 통계의 산물이라 한국어 조사가 어근에 붙은 채 토큰이 되는 경우가 많다. 어절 단위 평가로는 이 경계 오류가 보이지 않는다.",
+          last_open: null,
+        },
+      ]);
     case "suspect_pages":
       return Promise.resolve({
         pages_checked: 12,

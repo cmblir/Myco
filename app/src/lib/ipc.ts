@@ -206,6 +206,19 @@ export interface ScoredChunk {
   similarity: number | null;
 }
 
+/** A dormant wiki page whose content echoes the day's seed text — what
+ * `resurface_candidates` returns (Q4 item 10). */
+export interface ResurfaceCandidate {
+  page: string;
+  stem: string;
+  /** Cosine between the seed and the page's best chunk. */
+  score: number;
+  /** Best-matching chunk's text, trimmed to 240 chars. */
+  snippet: string;
+  /** Unix secs of the last recorded open; null = never recorded. */
+  last_open: number | null;
+}
+
 export interface SemanticPoint {
   page: string;
   x: number;
@@ -874,6 +887,14 @@ export const ipc = {
   // Page-open tracking (Q4 item 10) — feeds resurface dormancy.
   recordPageOpen: (vault: string, rel: string) =>
     invoke<null>("record_page_open", { vault, rel }),
+  /** Dormant wiki pages echoing `seedText` — resurface (Q4 item 10). */
+  resurfaceCandidates: (vault: string, seedText: string, k: number, floor: number) =>
+    invoke<ResurfaceCandidate[]>("resurface_candidates", {
+      vault,
+      seedText,
+      k,
+      floor,
+    }),
   distillStatus: (vault: string) =>
     invoke<DistillStatus>("distill_status", { vault }),
   // ROADMAP P2 — archive lifecycle. `archiveUsage` is on-demand only (called

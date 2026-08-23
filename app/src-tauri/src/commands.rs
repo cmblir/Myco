@@ -3574,6 +3574,174 @@ pub async fn wikify_candidates(
     Ok(out)
 }
 
+/// One dormant wiki page whose content echoes the day's seed text — what
+/// `resurface_candidates` returns (Q4 item 10).
+#[derive(Clone, serde::Serialize)]
+pub struct ResurfaceCandidate {
+    /// Vault-relative path, always under `wiki/`.
+    pub page: String,
+    pub stem: String,
+    /// Cosine between the seed and the page's best chunk.
+    pub score: f32,
+    /// The best-matching chunk's text, trimmed to 240 chars.
+    pub snippet: String,
+    /// Unix secs of the last recorded open; `None` = never recorded.
+    pub last_open: Option<i64>,
+}
+
+/// Pure resurface ranking: dormant `wiki/` pages by best-chunk cosine against
+/// `seed`. Dormant = (last_open absent AND mtime older than `dormant_secs`)
+/// OR (last_open older than `dormant_secs`) — a page with neither signal
+/// cannot be shown dormant and stays out. Never `is_cold` pages (belt over
+/// the wiki/ filter — cold tiers must not resurface even if a stale record
+/// slips into the index), only scores `>= floor`, at most `k`.
+///
+/// `chunk_text` resolves a (page, section) to its chunk's TEXT — the command
+/// passes the `chunk_text_at` file reader, tests pass a map, which is what
+/// keeps this core free of disk I/O. A page whose best chunk no longer
+/// reconstructs (file gone, stale section) is skipped, like semantic_search.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn resurface_core(
+    store: &VectorStore,
+    seed: &[f32],
+    opens: &std::collections::HashMap<String, i64>,
+    mtimes: &std::collections::HashMap<String, i64>,
+    now: i64,
+    dormant_secs: i64,
+    floor: f32,
+    k: usize,
+    chunk_text: &dyn Fn(&str, usize) -> Option<String>,
+) -> Vec<ResurfaceCandidate> {
+    // Best chunk per page: (cosine, section, stem).
+    let mut best: std::collections::HashMap<&str, (f32, usize, &str)> =
+        std::collections::HashMap::new();
+    for r in &store.records {
+        if !r.page.starts_with("wiki/") || is_cold(&r.page) {
+            continue;
+        }
+        let score = embeddings::cosine(seed, &r.vector);
+        let cur = best
+            .entry(r.page.as_str())
+            .or_insert((score, r.section, r.stem.as_str()));
+        if score > cur.0 {
+            *cur = (score, r.section, r.stem.as_str());
+        }
+    }
+    let dormant = |page: &str| match opens.get(page) {
+        Some(t) => now - t > dormant_secs,
+        None => mtimes.get(page).is_some_and(|m| now - m > dormant_secs),
+    };
+    let mut ranked: Vec<(f32, &str, usize, &str)> = best
+        .into_iter()
+        .filter(|(page, (score, _, _))| *score >= floor && dormant(page))
+        .map(|(page, (score, section, stem))| (score, page, section, stem))
+        .collect();
+    ranked.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut out = Vec::new();
+    for (score, page, section, stem) in ranked {
+        if out.len() == k {
+            break;
+        }
+        let Some(text) = chunk_text(page, section) else {
+            continue;
+        };
+        let text = text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        out.push(ResurfaceCandidate {
+            page: page.to_string(),
+            stem: stem.to_string(),
+            score,
+            snippet: text.chars().take(240).collect(),
+            last_open: opens.get(page).copied(),
+        });
+    }
+    out
+}
+
+/// Dormant wiki pages whose content echoes `seed_text` — the resurface layer
+/// (Q4 item 10). Embeds the seed with the model the index was built with and
+/// ranks via `resurface_core`; dormancy reads `.myco/page-opens.json` with
+/// file mtime as the never-opened fallback. Best-effort like
+/// `wikify_candidates`: an empty or stale index returns no candidates.
+#[tauri::command]
+pub async fn resurface_candidates(
+    app: tauri::AppHandle,
+    vault: tauri::State<'_, VaultRoot>,
+    llm: tauri::State<'_, LocalLlmState>,
+    cache: tauri::State<'_, VectorCache>,
+    seed_text: String,
+    k: usize,
+    floor: f32,
+) -> Result<Vec<ResurfaceCandidate>, String> {
+    // Not opened (or, failing that, not modified) for 30 days => dormant.
+    const DORMANT_SECS: i64 = 30 * 24 * 60 * 60;
+    let root = require_root(&vault)?;
+    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
+    let store = cache.get(&index_path);
+    if store.records.is_empty() {
+        return Ok(Vec::new());
+    }
+    // Embed with the index's own model (`store.model` is "{provider}:{model}"),
+    // degrading to empty on a stale bundled model — the wikify_candidates idiom.
+    let (provider, model) = store
+        .model
+        .split_once(':')
+        .map(|(p, m)| (p.to_string(), m.to_string()))
+        .unwrap_or((store.model.clone(), String::new()));
+    if builtin_index_is_stale(&provider, &model) {
+        return Ok(Vec::new());
+    }
+    let mut q = embed_texts(
+        app,
+        llm,
+        &provider,
+        &model,
+        crate::local_llm::EmbedRole::Query,
+        vec![seed_text],
+    )
+    .await?;
+    let seed = q.pop().unwrap_or_default();
+    let opens = crate::page_opens::load(&root);
+    // `vault::file_mtimes` walks the whole vault (same walk the 4 s refresh
+    // poll already pays) and returns ABSOLUTE paths under the canonicalized
+    // root — strip that root and keep `wiki/`.
+    let canon = root.canonicalize().unwrap_or_else(|_| root.clone());
+    let mtimes: std::collections::HashMap<String, i64> =
+        vault::file_mtimes(&root.to_string_lossy())
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|(abs, m)| {
+                let rel = std::path::Path::new(&abs)
+                    .strip_prefix(&canon)
+                    .ok()?
+                    .to_string_lossy()
+                    .replace('\\', "/");
+                rel.starts_with("wiki/").then_some((rel, m))
+            })
+            .collect();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    Ok(resurface_core(
+        &store,
+        &seed,
+        &opens,
+        &mtimes,
+        now,
+        DORMANT_SECS,
+        floor,
+        k,
+        &|page, section| {
+            std::fs::read_to_string(root.join(page))
+                .ok()
+                .and_then(|c| chunk_text_at(&c, section))
+        },
+    ))
+}
+
 /// 2D semantic-map coordinates for every indexed page — the "semantic" graph
 /// layout (notes cluster by meaning, not links). PCA runs here in Rust so the
 /// 1152-dim centroids never cross the IPC bridge; only (page, x, y) does.
@@ -3766,8 +3934,9 @@ mod tests {
     use super::{
         append_recall_miss, builtin_index_is_stale, chunk_text_at, export_bundle_write,
         external_target_allowed, import_dest, iso_week_monday, page_in_date_range,
-        read_settings_import, recency_tie_break, run_diff_core, run_import, sync_bm25_for_page,
-        voice_inbox_rel, voice_markdown, windows_opener_safe, DateRange, DEST_INBOX, DEST_SESSIONS,
+        read_settings_import, recency_tie_break, resurface_core, run_diff_core, run_import,
+        sync_bm25_for_page, voice_inbox_rel, voice_markdown, windows_opener_safe, DateRange,
+        DEST_INBOX, DEST_SESSIONS,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
@@ -4661,6 +4830,145 @@ mod tests {
         assert_eq!(second, first.replace(".md", "-2.md"));
         std::fs::write(root.join(&second), "x").unwrap();
         assert_eq!(voice_inbox_rel(root, now), first.replace(".md", "-3.md"));
+    }
+
+    // ---- resurface_core (Q4 item 10) ---------------------------------------
+
+    /// Hand-built in-memory store of 2-d unit vectors — `records` is pub, so
+    /// no disk or embedder is needed to exercise the ranking.
+    fn resurface_store(recs: &[(&str, usize, [f32; 2])]) -> crate::vector_index::VectorStore {
+        crate::vector_index::VectorStore {
+            model: "builtin-local:bge-m3".into(),
+            dim: 2,
+            records: recs
+                .iter()
+                .map(|(page, section, v)| crate::vector_index::Record {
+                    id: format!("{page}#{section}"),
+                    page: (*page).to_string(),
+                    stem: std::path::Path::new(page)
+                        .file_stem()
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned(),
+                    section: *section,
+                    hash: 0,
+                    vector: v.to_vec(),
+                })
+                .collect(),
+        }
+    }
+
+    const SEED: [f32; 2] = [1.0, 0.0];
+    const NOW: i64 = 1_000_000;
+    const DORMANT: i64 = 1_000;
+
+    /// Chunk-text lookup that answers for any (page, section).
+    fn any_text(page: &str, section: usize) -> Option<String> {
+        Some(format!("{page}#{section} text"))
+    }
+
+    #[test]
+    fn resurface_core_ranks_dormant_wiki_pages_by_cosine() {
+        let store = resurface_store(&[
+            ("wiki/echo.md", 0, [1.0, 0.0]),
+            ("wiki/faint.md", 0, [0.8, 0.6]),
+        ]);
+        // echo: never opened, mtime old enough. faint: opened, long ago.
+        let opens = HashMap::from([("wiki/faint.md".to_string(), NOW - 2 * DORMANT)]);
+        let mtimes = HashMap::from([("wiki/echo.md".to_string(), NOW - 2 * DORMANT)]);
+        let out = resurface_core(
+            &store, &SEED, &opens, &mtimes, NOW, DORMANT, 0.5, 10, &any_text,
+        );
+        let pages: Vec<&str> = out.iter().map(|c| c.page.as_str()).collect();
+        assert_eq!(pages, ["wiki/echo.md", "wiki/faint.md"]);
+        assert!(out[0].score > out[1].score);
+        assert_eq!(out[0].last_open, None);
+        assert_eq!(out[1].last_open, Some(NOW - 2 * DORMANT));
+        assert_eq!(out[0].stem, "echo");
+    }
+
+    #[test]
+    fn resurface_core_excludes_recent_non_wiki_and_cold_pages() {
+        let store = resurface_store(&[
+            ("wiki/fresh.md", 0, [1.0, 0.0]),            // opened just now
+            ("wiki/unknown.md", 0, [1.0, 0.0]),          // no open, no mtime
+            ("sessions/2026-08/log.md", 0, [1.0, 0.0]),  // non-wiki
+            ("raw/archive/2026-08/x.md", 0, [1.0, 0.0]), // cold tier
+        ]);
+        let opens = HashMap::from([("wiki/fresh.md".to_string(), NOW - 10)]);
+        let mtimes = HashMap::from([
+            ("sessions/2026-08/log.md".to_string(), NOW - 2 * DORMANT),
+            ("raw/archive/2026-08/x.md".to_string(), NOW - 2 * DORMANT),
+        ]);
+        let out = resurface_core(
+            &store, &SEED, &opens, &mtimes, NOW, DORMANT, 0.5, 10, &any_text,
+        );
+        assert!(
+            out.is_empty(),
+            "{:?}",
+            out.iter().map(|c| &c.page).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn resurface_core_floor_cuts_and_k_truncates() {
+        let store = resurface_store(&[
+            ("wiki/a.md", 0, [1.0, 0.0]),
+            ("wiki/b.md", 0, [0.8, 0.6]),
+            ("wiki/c.md", 0, [0.6, 0.8]),
+        ]);
+        let opens = HashMap::new();
+        let mtimes: HashMap<String, i64> = ["wiki/a.md", "wiki/b.md", "wiki/c.md"]
+            .iter()
+            .map(|p| (p.to_string(), NOW - 2 * DORMANT))
+            .collect();
+        // floor 0.7 cuts c (cosine 0.6).
+        let out = resurface_core(
+            &store, &SEED, &opens, &mtimes, NOW, DORMANT, 0.7, 10, &any_text,
+        );
+        assert_eq!(
+            out.iter().map(|c| c.page.as_str()).collect::<Vec<_>>(),
+            ["wiki/a.md", "wiki/b.md"]
+        );
+        // k = 1 truncates to the best.
+        let out = resurface_core(
+            &store, &SEED, &opens, &mtimes, NOW, DORMANT, 0.0, 1, &any_text,
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].page, "wiki/a.md");
+    }
+
+    #[test]
+    fn resurface_core_snippet_comes_from_the_best_chunk_trimmed_to_240() {
+        let store = resurface_store(&[
+            ("wiki/deep.md", 0, [0.6, 0.8]), // weaker chunk
+            ("wiki/deep.md", 1, [1.0, 0.0]), // best chunk
+        ]);
+        let mtimes = HashMap::from([("wiki/deep.md".to_string(), NOW - 2 * DORMANT)]);
+        let long = "밤".repeat(300);
+        let lookup = move |_: &str, section: usize| -> Option<String> {
+            match section {
+                1 => Some(long.clone()),
+                _ => Some("weaker chunk".to_string()),
+            }
+        };
+        let out = resurface_core(
+            &store,
+            &SEED,
+            &HashMap::new(),
+            &mtimes,
+            NOW,
+            DORMANT,
+            0.5,
+            10,
+            &lookup,
+        );
+        assert_eq!(out.len(), 1);
+        // The snippet is the BEST chunk's text (section 1), trimmed on a char
+        // boundary — 240 CHARS of Korean, not 240 bytes.
+        assert_eq!(out[0].snippet.chars().count(), 240);
+        assert!(out[0].snippet.starts_with('밤'));
+        assert!((out[0].score - 1.0).abs() < 1e-6);
     }
 }
 
