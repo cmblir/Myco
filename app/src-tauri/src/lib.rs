@@ -239,6 +239,7 @@ pub fn run() {
             commands::record_recall_miss,
             commands::record_page_open,
             commands::resurface_candidates,
+            commands::scan_text_secrets,
             commands::distill_status,
             commands::apply_distill_proposal,
             commands::list_quarantine,

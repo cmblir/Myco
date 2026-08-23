@@ -87,6 +87,58 @@ class TestAutoIngest(unittest.TestCase):
         self.assertFalse(res["ok"])
         self.assertIn("unsupported", res["error"])
 
+    def test_ingest_one_quarantines_secret_source(self):
+        v = make_vault()
+        src = v / "_inbox" / "leaky.md"
+        src.write_text("api key: sk-abcdefghijklmnopqrstuvwxyz012345", encoding="utf-8")
+        called = {"n": 0}
+
+        def fake_claude(vault, prompt, model, tools, timeout):
+            called["n"] += 1
+            return 0, "", ""
+
+        res = ai.ingest_one(v, src, run_claude=fake_claude)
+        self.assertFalse(res["ok"])
+        self.assertIn("quarantined", res)
+        # Source moved to _inbox/quarantine/, nothing written to raw/, no CLI run.
+        self.assertFalse(src.exists())
+        self.assertTrue((v / "_inbox" / "quarantine" / "leaky.md").is_file())
+        self.assertEqual(list((v / "raw").iterdir()), [])
+        self.assertEqual(called["n"], 0)
+
+    def test_quarantine_name_collision_gets_suffix(self):
+        v = make_vault()
+        qdir = v / "_inbox" / "quarantine"
+        qdir.mkdir()
+        (qdir / "leaky.md").write_text("earlier", encoding="utf-8")
+        src = v / "_inbox" / "leaky.md"
+        src.write_text("AKIAIOSFODNN7EXAMPLE", encoding="utf-8")
+        res = ai.ingest_one(v, src, run_claude=lambda *a: (0, "", ""))
+        self.assertIn("quarantined", res)
+        self.assertTrue((qdir / "leaky-2.md").is_file())
+
+    def test_ingest_one_pii_quarantine_flag(self):
+        v = make_vault()
+
+        def fake_claude(vault, prompt, model, tools, timeout):
+            (vault / "wiki" / f"c{len(list((vault / 'wiki').iterdir()))}.md").write_text(
+                "# c\n", encoding="utf-8"
+            )
+            return 0, "ok", ""
+
+        # Default: PII alone does not block the daemon — it still ingests.
+        src = v / "_inbox" / "contact.md"
+        src.write_text("mail: someone@example.com", encoding="utf-8")
+        res = ai.ingest_one(v, src, run_claude=fake_claude)
+        self.assertTrue(res["ok"], res)
+        # With the flag: PII quarantines like a secret.
+        src2 = v / "_inbox" / "contact2.md"
+        src2.write_text("mail: other@example.com", encoding="utf-8")
+        res2 = ai.ingest_one(v, src2, run_claude=fake_claude, pii_quarantine=True)
+        self.assertFalse(res2["ok"])
+        self.assertIn("quarantined", res2)
+        self.assertTrue((v / "_inbox" / "quarantine" / "contact2.md").is_file())
+
     def test_run_once_processes_all_pending(self):
         v = make_vault()
         for i in range(3):

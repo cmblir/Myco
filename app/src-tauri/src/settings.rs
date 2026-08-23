@@ -81,6 +81,10 @@ pub struct Settings {
     /// Q4 item 1 — opt-in local git history for the open vault.
     #[serde(default)]
     pub vault_history_enabled: bool,
+    /// Q4 item 13 — when on, PII-bearing content is refused/quarantined on
+    /// every raw/ entry path instead of written with a warning.
+    #[serde(default)]
+    pub pii_quarantine_enabled: bool,
 }
 
 impl Default for Settings {
@@ -105,6 +109,7 @@ impl Default for Settings {
             tray_resident: false,
             spotlight_shortcut: default_spotlight_shortcut(),
             vault_history_enabled: false,
+            pii_quarantine_enabled: false,
         }
     }
 }

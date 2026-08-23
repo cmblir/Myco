@@ -1482,6 +1482,14 @@ impl McpServer {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
+        // Q4 item 13 (scope decision 2): scan BEFORE the write — raw/ is
+        // immutable, so a secret must never touch disk. The caller still holds
+        // the content; a structured refusal lets it redact and retry.
+        let pii_warning =
+            match raw_source_guard(&a.content, crate::settings::load().pii_quarantine_enabled) {
+                Ok(w) => w,
+                Err(e) => return fail(e),
+            };
         let raw = raw_dir(&root);
         let _ = std::fs::create_dir_all(&raw);
         let Some(target) = safe_join(&raw, &a.filename) else {
@@ -1503,13 +1511,8 @@ impl McpServer {
         let mut out = json!({
             "ok": true, "raw_path": rel_to(&root, &target), "src_slug": format!("src-{stem}"),
         });
-        let hits = secrets_scan::scan(&a.content);
-        if !hits.is_empty() {
-            out["secret_warning"] = json!(format!(
-                "possible secrets detected: {} — raw/ is immutable and committed to git; \
-                 redact and re-add if unintended.",
-                hits.join(", ")
-            ));
+        if let Some(w) = pii_warning {
+            out["pii_warning"] = json!(w);
         }
         json_result(out)
     }
@@ -1923,10 +1926,72 @@ pub async fn serve(ct: CancellationToken) -> Result<(), String> {
     Ok(())
 }
 
+/// Scan-before-write gate for the raw/ entry path (Q4 item 13):
+/// secrets always refuse; PII refuses when quarantine mode is on, otherwise
+/// `Ok(Some(warning))` — the write proceeds and the warning is attached as
+/// `pii_warning`. Refusal strings kept in sync with mcp-server/myco_mcp.py
+/// (`add_raw_source`) and automation/autoingest.py (quarantine move).
+pub(crate) fn raw_source_guard(
+    content: &str,
+    pii_quarantine: bool,
+) -> Result<Option<String>, String> {
+    let secrets = secrets_scan::scan(content);
+    if !secrets.is_empty() {
+        return Err(format!(
+            "refused: possible secrets ({}) — redact and re-add. Nothing was written.",
+            secrets.join(", ")
+        ));
+    }
+    let pii = secrets_scan::scan_pii(content);
+    if pii.is_empty() {
+        return Ok(None);
+    }
+    if pii_quarantine {
+        return Err(format!(
+            "refused: possible PII ({}) — redact and re-add. Nothing was written.",
+            pii.join(", ")
+        ));
+    }
+    Ok(Some(format!(
+        "possible PII detected: {} — raw/ is immutable and committed to git; \
+         redact and re-add if unintended.",
+        pii.join(", ")
+    )))
+}
+
 #[cfg(test)]
 mod tests {
+    use super::raw_source_guard;
     use super::record_tool_call_at;
     use super::suspect_scan;
+
+    #[test]
+    fn raw_source_guard_refuses_secrets_before_any_write() {
+        let err = raw_source_guard("key: sk-abcdefghijklmnopqrstuvwxyz012345", false).unwrap_err();
+        assert!(err.starts_with("refused: possible secrets ("), "{err}");
+        assert!(err.contains("Nothing was written."), "{err}");
+    }
+
+    #[test]
+    fn raw_source_guard_pii_refuses_only_in_quarantine_mode() {
+        let text = "reach me at someone@example.com";
+        // Warn mode: the write proceeds and the warning is attached.
+        let warn = raw_source_guard(text, false).unwrap().unwrap();
+        assert!(warn.contains("possible PII detected"), "{warn}");
+        assert!(warn.contains("Email address"), "{warn}");
+        // Quarantine mode: refuse, same shape as the secrets refusal.
+        let err = raw_source_guard(text, true).unwrap_err();
+        assert!(err.starts_with("refused: possible PII ("), "{err}");
+        assert!(err.contains("Nothing was written."), "{err}");
+    }
+
+    #[test]
+    fn raw_source_guard_clean_text_passes_silently() {
+        assert_eq!(
+            raw_source_guard("plain prose, nothing sensitive", true).unwrap(),
+            None
+        );
+    }
 
     #[test]
     fn suspect_scan_flags_lint_problems_and_confidence_mismatch() {

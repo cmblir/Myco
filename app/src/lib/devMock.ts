@@ -849,6 +849,7 @@ const SETTINGS = {
   tray_resident: false,
   spotlight_shortcut: "Alt+Space",
   vault_history_enabled: false,
+  pii_quarantine_enabled: false,
 };
 
 /// What the main window would emit back for a spotlight question: the
@@ -1186,6 +1187,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(null);
     case "record_page_open":
       return Promise.resolve(null);
+    // Redaction scan (Q4 item 13): the mock vault holds no secrets or PII, so
+    // a clean report keeps the promotion paths flowing under ?mock=1.
+    case "scan_text_secrets":
+      return Promise.resolve({ secrets: [], pii: [] });
     // Resurface (Q4 item 10): two dormant wiki pages the seed echoes. Both
     // exist in the mock vault, so opening a candidate navigates somewhere.
     case "resurface_candidates":

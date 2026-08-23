@@ -317,6 +317,16 @@ export interface MycoSettings {
   spotlight_shortcut: string;
   /** Q4 item 1 — opt-in local git history for the open vault. */
   vault_history_enabled: boolean;
+  /** Q4 item 13 — when on, PII-bearing content is refused/quarantined on
+   *  every raw/ entry path instead of written with a warning. */
+  pii_quarantine_enabled: boolean;
+}
+
+/** Mirrors Rust `commands::SecretScanReport` (Q4 item 13) — pattern names,
+ *  never the matched text. */
+export interface SecretScanReport {
+  secrets: string[];
+  pii: string[];
 }
 
 /** Mirrors Rust `vault_history::HistoryStatus` (Q4 item 1). */
@@ -887,6 +897,9 @@ export const ipc = {
   // Page-open tracking (Q4 item 10) — feeds resurface dormancy.
   recordPageOpen: (vault: string, rel: string) =>
     invoke<null>("record_page_open", { vault, rel }),
+  /** Redaction scan (Q4 item 13) — call before any raw/ write. */
+  scanTextSecrets: (text: string) =>
+    invoke<SecretScanReport>("scan_text_secrets", { text }),
   /** Dormant wiki pages echoing `seedText` — resurface (Q4 item 10). */
   resurfaceCandidates: (vault: string, seedText: string, k: number, floor: number) =>
     invoke<ResurfaceCandidate[]>("resurface_candidates", {

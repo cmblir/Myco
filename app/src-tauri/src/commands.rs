@@ -2137,6 +2137,31 @@ pub fn record_recall_miss(
     append_recall_miss(std::path::Path::new(&root), &query, expected.as_deref())
 }
 
+// ---- redaction scan (Q4 item 13) -------------------------------------------
+
+/// Mirrored in ipc.ts `SecretScanReport` (Q4 item 13).
+#[derive(Clone, serde::Serialize)]
+pub struct SecretScanReport {
+    pub secrets: Vec<String>,
+    pub pii: Vec<String>,
+}
+
+/// Pattern names (never the matched text) found in `text` — the TS promotion
+/// paths call this before any raw/ write (Q4 item 13).
+#[tauri::command]
+pub fn scan_text_secrets(text: String) -> SecretScanReport {
+    SecretScanReport {
+        secrets: crate::importers::secrets_scan::scan(&text)
+            .into_iter()
+            .map(String::from)
+            .collect(),
+        pii: crate::importers::secrets_scan::scan_pii(&text)
+            .into_iter()
+            .map(String::from)
+            .collect(),
+    }
+}
+
 // ---- page-open tracking (Q4 item 10) ---------------------------------------
 
 /// Record that the frontend opened a vault page — feeds resurface dormancy.

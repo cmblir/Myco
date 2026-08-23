@@ -36,6 +36,35 @@ from typing import Callable
 
 INBOX_DIRNAME = "_inbox"
 ARCHIVE_DIRNAME = ".archived"
+QUARANTINE_DIRNAME = "quarantine"
+
+# Redaction gate (Q4 item 13). automation/ imports nothing from mcp-server/,
+# so this is a third copy — kept in sync with
+# app/src-tauri/src/importers/secrets_scan.rs and mcp-server/myco_mcp.py
+# (SECRET_PATTERNS / PII_PATTERNS).
+SECRET_PATTERNS: "list[tuple[str, re.Pattern]]" = [
+    ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
+    ("OpenAI/Anthropic-style API key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
+    ("GitHub token", re.compile(r"\b(?:ghp|gho|ghu|ghs)_[A-Za-z0-9]{36,}\b|\bgithub_pat_[A-Za-z0-9_]{22,}\b")),
+    ("Slack token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b")),
+    ("Google API key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}\b")),
+    ("Private key block", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+]
+PII_PATTERNS: "list[tuple[str, re.Pattern]]" = [
+    ("Email address", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
+    ("KR phone number", re.compile(r"\b01[016789][-. ]?\d{4}[-. ]?\d{4}\b")),
+    ("KR resident registration number", re.compile(r"\b\d{6}-[1-4]\d{6}\b")),
+]
+
+
+def scan_secrets(text: str) -> "list[str]":
+    """Names of secret patterns found in `text`. Pure; empty = clean."""
+    return [name for name, pat in SECRET_PATTERNS if pat.search(text)]
+
+
+def scan_pii(text: str) -> "list[str]":
+    """Names of PII patterns found in `text`. Pure; empty = clean."""
+    return [name for name, pat in PII_PATTERNS if pat.search(text)]
 # Tools the ingest agent may use. Deliberately NO Bash: _inbox content is
 # untrusted, mirroring the app's hardened default (see claude.rs).
 DEFAULT_TOOLS = "Read,Write,Edit,Glob,Grep"
@@ -151,11 +180,30 @@ def ingest_one(
     app_bin: str | None = None,
     timeout: int = DEFAULT_TIMEOUT,
     run_claude: RunClaude = default_run_claude,
+    pii_quarantine: bool = False,
 ) -> dict:
     """Ingest one inbox source. Returns a result dict (ok / error + details)."""
     text = _read_source(source, app_bin)
     if text is None:
         return {"ok": False, "source": source.name, "error": f"unsupported or unreadable: {source.name}"}
+
+    # Redaction gate (Q4 item 13): scan BEFORE anything touches raw/. Secrets
+    # always quarantine; PII quarantines only under --pii-quarantine. The
+    # source moves to _inbox/quarantine/ (it would otherwise loop every pass)
+    # and nothing is written to raw/, which is immutable and git-committed.
+    # Kept in sync with app/src-tauri/src/mcp_native.rs (raw_source_guard)
+    # and mcp-server/myco_mcp.py (add_raw_source).
+    hits, kind = scan_secrets(text), "secrets"
+    if not hits and pii_quarantine:
+        hits, kind = scan_pii(text), "PII"
+    if hits:
+        dest = _quarantine(source)
+        return {
+            "ok": False,
+            "quarantined": str(dest.relative_to(vault)),
+            "source": source.name,
+            "error": f"possible {kind} ({', '.join(hits)}) — moved to _inbox/{QUARANTINE_DIRNAME}/, nothing written to raw/",
+        }
 
     title = source.stem.replace("-", " ").replace("_", " ").strip().title() or source.stem
     raw_path = unique_raw_path(vault, slugify(source.stem))
@@ -198,6 +246,19 @@ def _archive(source: Path) -> None:
     source.rename(dest)
 
 
+def _quarantine(source: Path) -> Path:
+    """Move a flagged source into `_inbox/quarantine/` (never deleted)."""
+    qdir = source.parent / QUARANTINE_DIRNAME
+    qdir.mkdir(parents=True, exist_ok=True)
+    dest = qdir / source.name
+    n = 2
+    while dest.exists():
+        dest = qdir / f"{source.stem}-{n}{source.suffix}"
+        n += 1
+    source.rename(dest)
+    return dest
+
+
 def _safe_unlink(p: Path) -> None:
     try:
         p.unlink()
@@ -218,6 +279,8 @@ def run_once(vault: Path, *, logger: Callable[[str], None] | None = None, **kw) 
         results.append(res)
         if res["ok"]:
             log(f"{_now()}   ok    {res['source']} -> {res['raw']}")
+        elif "quarantined" in res:
+            log(f"{_now()}   quarantined  {res['source']} -> {res['quarantined']}")
         else:
             log(f"{_now()}   FAIL  {res['source']}: {res['error']}")
     _append_log(vault, results)
@@ -260,6 +323,11 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--tools", default=DEFAULT_TOOLS, help="claude --allowedTools (no Bash by default)")
     ap.add_argument("--app-bin", default=None, help="Path to the Memex binary for PDF/spreadsheet extraction")
     ap.add_argument("--timeout", type=int, default=DEFAULT_TIMEOUT, help="Per-ingest timeout seconds")
+    ap.add_argument(
+        "--pii-quarantine",
+        action="store_true",
+        help="Quarantine sources containing PII (email / KR phone / RRN), not just secrets",
+    )
     ap.add_argument("--interval", type=int, default=0, help="Seconds between passes (0 or --once = one pass)")
     ap.add_argument("--once", action="store_true", help="Run a single pass and exit")
     args = ap.parse_args(argv)
@@ -270,7 +338,13 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     (vault / INBOX_DIRNAME).mkdir(exist_ok=True)
 
-    kw = dict(model=args.model, tools=args.tools, app_bin=args.app_bin, timeout=args.timeout)
+    kw = dict(
+        model=args.model,
+        tools=args.tools,
+        app_bin=args.app_bin,
+        timeout=args.timeout,
+        pii_quarantine=args.pii_quarantine,
+    )
     if args.once or args.interval <= 0:
         results = run_once(vault, logger=print, **kw)
         ok = sum(1 for r in results if r["ok"])

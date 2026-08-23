@@ -80,6 +80,8 @@ WORD_RE = re.compile(r"[\w가-힣]+")
 
 # Secret patterns (SEC-03): high-signal token shapes only — generic "password="
 # style matches would drown real hits in prose false positives.
+# Kept in sync with app/src-tauri/src/importers/secrets_scan.rs and
+# automation/autoingest.py (SECRET_PATTERNS).
 SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
     ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("OpenAI/Anthropic-style API key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
@@ -93,6 +95,35 @@ SECRET_PATTERNS: list[tuple[str, re.Pattern]] = [
 def scan_secrets(text: str) -> list[str]:
     """Names of secret patterns found in `text` (SEC-03). Pure; empty = clean."""
     return [name for name, pat in SECRET_PATTERNS if pat.search(text)]
+
+
+# PII patterns (Q4 item 13) — a softer tier than credentials: written with a
+# warning by default, refused when the app's pii_quarantine_enabled setting is
+# on. Kept in sync with app/src-tauri/src/importers/secrets_scan.rs
+# (pii_patterns) and automation/autoingest.py (PII_PATTERNS).
+PII_PATTERNS: list[tuple[str, re.Pattern]] = [
+    ("Email address", re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")),
+    ("KR phone number", re.compile(r"\b01[016789][-. ]?\d{4}[-. ]?\d{4}\b")),
+    ("KR resident registration number", re.compile(r"\b\d{6}-[1-4]\d{6}\b")),
+]
+
+
+def scan_pii(text: str) -> list[str]:
+    """Names of PII patterns found in `text` (Q4 item 13). Pure; empty = clean."""
+    return [name for name, pat in PII_PATTERNS if pat.search(text)]
+
+
+def _pii_quarantine_enabled() -> bool:
+    """The app's `pii_quarantine_enabled` setting — one source of truth, read
+    from the same settings.json the desktop app writes. Missing/unreadable ⇒
+    warn-only, matching the Rust default."""
+    try:
+        cfg = json.loads(
+            (project_registry._app_data_dir() / "settings.json").read_text("utf-8")
+        )
+        return bool(cfg.get("pii_quarantine_enabled", False))
+    except (OSError, ValueError):
+        return False
 
 
 def parse_fm(text: str) -> tuple[dict, str]:
@@ -517,6 +548,25 @@ def add_raw_source(filename: str, content: str, project: str = "") -> dict:
     wiki/index.md and wiki/log.md, and call `git_commit`.
     """
     proj = _resolve(project)
+    # Q4 item 13 (scope decision 2): scan BEFORE the write — raw/ is immutable,
+    # so a secret must never touch disk. The caller still holds the content; a
+    # structured refusal lets it redact and retry. Refusal strings kept in sync
+    # with app/src-tauri/src/mcp_native.rs (raw_source_guard) and
+    # automation/autoingest.py (quarantine move).
+    secret_hits = scan_secrets(content)
+    if secret_hits:
+        return {
+            "ok": False,
+            "error": "refused: possible secrets (" + ", ".join(secret_hits)
+            + ") — redact and re-add. Nothing was written.",
+        }
+    pii_hits = scan_pii(content)
+    if pii_hits and _pii_quarantine_enabled():
+        return {
+            "ok": False,
+            "error": "refused: possible PII (" + ", ".join(pii_hits)
+            + ") — redact and re-add. Nothing was written.",
+        }
     proj.raw_dir.mkdir(parents=True, exist_ok=True)
     target = (proj.raw_dir / filename).resolve()
     base = proj.raw_dir.resolve()
@@ -532,12 +582,9 @@ def add_raw_source(filename: str, content: str, project: str = "") -> dict:
         "raw_path": str(target.relative_to(REPO_ROOT)),
         "src_slug": f"src-{target.stem}",
     }
-    # SEC-03: warn (not block — the operator may be archiving deliberately)
-    # when the source text looks like it contains live credentials.
-    hits = scan_secrets(content)
-    if hits:
-        out["secret_warning"] = (
-            "possible secrets detected: " + ", ".join(hits) + " — raw/ is "
+    if pii_hits:
+        out["pii_warning"] = (
+            "possible PII detected: " + ", ".join(pii_hits) + " — raw/ is "
             "immutable and committed to git; redact and re-add if unintended."
         )
     return out
@@ -1612,7 +1659,8 @@ def setup_profile(role: str = "", goals: list[str] | None = None,
     # answer for a caller that only knows `project`, not this server's repo
     # layout.
     out = {"ok": True, "path": str(path.relative_to(proj.root)), "profile": merged}
-    # SEC-03: warn (not block) — same precedent as add_raw_source.
+    # SEC-03: warn (not block) — profile.md is mutable, so a redact-and-resave
+    # fixes it (unlike raw/, where add_raw_source refuses before writing).
     hits = scan_secrets(content)
     if hits:
         out["secret_warning"] = (
