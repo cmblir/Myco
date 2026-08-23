@@ -10,6 +10,20 @@ myco is a Tauri 2 (Rust) + React desktop app over a plain-markdown Obsidian vaul
 
 > **Correction (2026-07-17).** This paragraph previously claimed "no folder watcher", "no scheduled auto-ingest", and that "the only ingest path is manual and single-file". All three were false — the watcher and the scheduler shipped and the paragraph was never updated. Since this section is the justification for the priority table below, check the code before trusting a row.
 
+> **Correction (2026-08-24).** Two more claims above are now stale, and most of the P0 table is built.
+> The in-app inbox pass **no longer sees only `.md`** and **no longer deletes the source**: `list_inbox_entries`
+> (`commands.rs`, flat directory read) lists every extension, `autoIngest.ts` routes non-markdown through the
+> existing `sourceTextFor` dispatch (extract / vision / whisper), unsupported extensions surface as a visible
+> "N unsupported" count instead of vanishing, and a consumed source is moved via `archive_inbox_source` — never
+> deleted. Of the P0 rows: **conversation parsers shipped** in Rust (`src-tauri/src/importers/{chatgpt,claude_web,claude_code,codex}.rs`),
+> the **dedup ledger shipped** (`importers/ledger.rs`, with file-level `(mtime, len)` skip), and the **batch
+> importer shipped as an in-app one** (`commands::run_import` / `import_paths` + `ConversationImport.tsx` with
+> progress, tally and retry-failed) rather than the standalone `mcp-server/myco_import.py` that row describes.
+> The **MCP import tools row is still unbuilt** (`import_conversation` / `import_session` / `wikify_pending` /
+> `ledger_status` do not exist in `myco_mcp.py`), and the parser-home open question below was answered by
+> building them in Rust only. This document is now a design record and parser reference; the active plan is
+> [`app/docs/specs/2026-08-21-q4-trust-recall-resurface-design.md`](../app/docs/specs/2026-08-21-q4-trust-recall-resurface-design.md).
+
 ## Prioritized roadmap
 
 > [!warning] The "Where it lives" column encodes an unmade decision.
@@ -171,3 +185,23 @@ Sessions carry `cwd`, `gitBranch`, tool calls, and file diffs. The session extra
 - **Branch handling in ChatGPT.** Walking `current_node`→root captures only the active branch; abandoned branches are dropped. Acceptable for a wiki, but worth confirming. **Open:** ever ingest non-active branches?
 - **Active-session churn.** Tailing a live Claude Code session re-ingests as UPDATE on every sweep; rapid edits could thrash the wiki/git history. **Open:** quiet-period gate (only ingest sessions idle > N minutes / marked complete)?
 - **MCP server is Python, app importers would be Rust.** Two parser implementations risk drift. **Open:** single source of truth — Python importers invoked by the app via subprocess, or a shared Rust crate the MCP server binds to?
+
+---
+
+## Known limitations (accepted)
+
+Two legacy items are settled as **wontfix**. Both are upgrade-boundary artifacts: the code is correct going
+forward, and the only way to "fix" the past would cost more than the defect.
+
+- **Caveat-titled session files are forward-only.** Claude Code injects wrapper messages
+  (`<local-command-caveat>`, `<command-name>`, …) that used to become a session's title. `strip_injected`
+  (`importers/claude_code.rs`) now drops them, so a wrapper-only message contributes no text and never reaches
+  the title. Sessions imported *before* that landed keep their caveat titles: `raw/` is immutable, and the
+  ledger makes a re-import of an unchanged session a no-op. Retitle the derived `wiki/` page if one bothers
+  you — the importer will not rewrite `raw/`.
+- **Bare-stem digest markers are content-agnostic.** Daily-digest markers written before content fingerprints
+  existed record only the session stem, so a legacy-marked day counts as already digested no matter what the
+  file now holds. Honouring them on the stem alone is deliberate: re-billing an LLM digest for every session
+  already summarized is worse than possibly missing one continuation written on the last pre-upgrade day.
+  Pinned by `digestable_days_still_honours_a_legacy_bare_stem_marker` (`distill.rs`); markers written since
+  carry a fingerprint and are re-checked normally.

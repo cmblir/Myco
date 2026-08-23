@@ -31,6 +31,16 @@ Your knowledge compounds — in plain markdown you own.
 
 <br />
 
+<p>
+<strong>Built to outlive its vendor.</strong> MIT-licensed, and the vault is plain markdown you can <code>grep</code> —<br/>
+every page stays readable, searchable and editable with myco uninstalled. Local git history is opt-in;<br/>
+turn it on and each edit carries its author, so you can tell your writing from the agent's and revert either.<br/>
+<code>raw/</code> is immutable — nothing here rewrites your sources. No server, no account, no sign-in:<br/>
+the app is the only moving part, and it is the part you can throw away.
+</p>
+
+<br />
+
 <img src="docs/screenshots/hero-mesh.png" width="100%" alt="myco knowledge graph — a vault rendered as a 3D cosmic web of glowing, community-colored stars with named clusters" />
 
 <sub><em>The Graph view. Every note is a star sized by its links, each community its own hue, <code>[[wikilinks]]</code> are the connective tissue.</em></sub>
@@ -57,6 +67,37 @@ Based on [Andrej Karpathy's LLM Wiki pattern](https://gist.github.com/karpathy/4
   myco desktop + Obsidian (optional) + your shell / git client
   All see the same files. myco never locks the vault.
 ```
+
+---
+
+## How it compares
+
+**NotebookLM** is the closest familiar thing: drop sources, ask questions, get
+grounded answers. It is very good at that one session. Where it stops:
+
+| Where NotebookLM stops | What myco does instead |
+|---|---|
+| **Answers stay in the tool.** Take one out and its citations stop pointing at anything you own. | Ingest writes the answer's substance into cited markdown pages in your own folder — `[^src-*]` footnotes resolve to the file sitting in `raw/`. |
+| **Every notebook is an island** — nothing carries across them. | One vault, one graph. A new source is merged into the pages that already exist, and claims that conflict with older pages get flagged instead of quietly duplicated. |
+| **No page-level citation history** — you cannot ask what a page was built from, or what changed it last night. | Provenance resolves every `[^src-*]` to its source and flags the dangling ones; the run log replays each run file by file — as a word-level diff once vault history is on — and reverts the whole run in one click. |
+| **No search across notebooks.** | `⌘K` searches the whole vault at once — `"exact phrase"`, `path:` / `tag:` filters, keyword and semantic results in one list. |
+| **Hard per-notebook source caps.** | No cap. Sources are just files; the ceiling is your disk. |
+
+**Versus Obsidian plus an agent plugin**, the files look identical — that is the
+point, and myco never locks the vault, so keep Obsidian open on the same folder.
+The difference is what you can *review*. The trust surfaces are native here: a run
+log that renders an agent's edit as a word-level diff with the revert next to it, an
+authorship badge on the page header (share of human vs agent lines, last human touch)
+with a human-authored filter in the sidebar, a redaction gate that stops secrets
+*before* they can land in immutable `raw/`, and a contradiction queue on the Overview
+that settles a disputed page in two clicks. Letting an agent edit your vault is the
+easy half; reading, attributing and undoing what it did is the half that has to be
+built in.
+
+**Flashcards that are actually scheduled.** Generating cards is table stakes —
+NotebookLM does it too. myco *schedules* them: FSRS state lives in the deck's plain
+markdown and round-trips with Obsidian's spaced-repetition plugin, so cards come due
+on a real curve instead of being a one-off study aid you export and forget.
 
 ---
 
@@ -102,6 +143,8 @@ Settings → Account → Change…
 <td align="center"><sub><strong>Reader</strong> — source / split / preview + backlinks</sub></td>
 <td align="center"><sub><strong>Settings</strong> — separate Query / Ingest models</sub></td>
 </tr>
+<!-- TODO(owner): trust-surface screenshots — run log word-diff + authorship badge
+     go here as a third row; both need a headed capture on a real vault. -->
 </table>
 
 ---
@@ -146,6 +189,46 @@ weekly rollups into `monthly/`, each layer's source moving to a cold archive
 once summarised — drafts topic maps for its
 clusters, and, with an optional profile, personalises Ask and ingest toward
 your stated role and interests.
+
+**Run log & undo** — distill and ingest runs are listed newest-first with what
+each one moved, created and trashed. Open one for per-file rows and, once vault
+history is on, a word-level diff of exactly which words changed. *Undo this run*
+replays the run's manifest backwards — un-trash, un-move, remove created pages —
+with or without git; content a run rewrote in place is shown by the diff rather
+than rolled back.
+
+**Authorship** — turn on vault history and agent commits get their own author,
+so a page header can show the human/agent split of its lines and the last human
+touch, and the sidebar can hide every page the agent has ever committed. It is
+forward-only and says so: no history means no badge. myco never guesses who
+wrote a line.
+
+**Resurfacing & ritual** — after a distill run, myco embeds the day's note and
+looks for wiki pages you haven't opened in a month whose content resonates with
+it. One or two arrive as *today's reunions* on the Overview, each with the
+snippet that made the match, beside the review cards that are due. Open, snooze
+a week, or ignore — the similarity floor tunes itself to how often you accept.
+
+**Redaction & audit** — nothing reaches immutable `raw/` unscanned. Anything
+shaped like a key (AWS, `sk-`, GitHub, Slack, Google, PEM blocks) blocks the
+write: the inbox pass, promotion out of `_inbox/`, conversation import, the
+headless daemon, and both MCP servers all scan before they write. Email, phone
+and resident numbers warn by default, with a quarantine mode in Settings for
+stricter vaults. A read-only audit card rescans all of `raw/` — and the git
+history behind it — reporting which patterns it found without touching a file.
+
+**Time-anchored Ask** — ask "what did I decide last week" and the window is
+parsed out of the question (EN / 한국어 / 日本語: today, last week, a named
+month, an explicit date), then local retrieval is restricted to sources actually
+dated inside it — daily notes, sessions, weekly and monthly rollups — ties
+broken by recency. The answer shows the window it used and says so plainly when
+nothing in it matched. On an external provider the range rides along as an
+instruction, not a filter.
+
+**Voice capture** — `⌥M` in Spotlight records, Enter saves: your installed
+`whisper` transcribes it and the note lands in `_inbox/` for the normal ingest
+pipeline to pick up. Whisper is not bundled — without it on your PATH myco says
+so and writes nothing.
 
 **Reader** — CodeMirror source / live preview / split, `[[wikilink]]`
 autocomplete, backlinks and Related notes panels. `raw/` PDFs open in an
