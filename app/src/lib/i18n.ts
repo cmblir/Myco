@@ -1145,6 +1145,16 @@ export interface Strings {
   ov_suspect_title?: string;
   ov_suspect_clean?: string;
   ov_view_runs?: string;
+  // Contradiction queue (Q4 item 15) — optional; fall back to English.
+  contra_title?: string;
+  contra_disputed?: string;
+  contra_stale?: string; // {t}
+  contra_mark_active?: string;
+  contra_mark_superseded?: string;
+  contra_open_page?: string;
+  contra_open_target?: string;
+  contra_ignore?: string;
+  contra_clean?: string;
   // Run drill-in on History (W3–6 item 6).
   history_runs_title: string;
   history_run_open_why: string;
@@ -2335,6 +2345,15 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_suspect_title: "Suspect pages",
     ov_suspect_clean: "Every checked page looks sound.",
     ov_view_runs: "View runs",
+    contra_title: "Contradictions",
+    contra_disputed: "Page is flagged disputed",
+    contra_stale: "Cites {t} (superseded)",
+    contra_mark_active: "Resolve: active",
+    contra_mark_superseded: "Mark superseded",
+    contra_open_page: "Open linking page",
+    contra_open_target: "Open target",
+    contra_ignore: "Ignore",
+    contra_clean: "No contradictions.",
     history_runs_title: "Runs",
     history_run_open_why: "WHY report",
     history_no_commit:
@@ -3518,6 +3537,15 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_suspect_title: "의심 페이지",
     ov_suspect_clean: "점검한 페이지 모두 이상 없습니다.",
     ov_view_runs: "런 보기",
+    contra_title: "모순",
+    contra_disputed: "분쟁 표시된 페이지입니다",
+    contra_stale: "{t}(superseded)를 인용 중입니다",
+    contra_mark_active: "해소: active",
+    contra_mark_superseded: "superseded로",
+    contra_open_page: "링크 페이지 열기",
+    contra_open_target: "대상 열기",
+    contra_ignore: "무시",
+    contra_clean: "모순이 없습니다.",
     history_runs_title: "실행",
     history_run_open_why: "WHY 리포트",
     history_no_commit:
@@ -4701,6 +4729,15 @@ export const STRINGS: Record<Lang, Strings> = {
     ov_suspect_title: "要確認ページ",
     ov_suspect_clean: "確認したページに問題はありません。",
     ov_view_runs: "実行を見る",
+    contra_title: "矛盾",
+    contra_disputed: "disputed と印されたページです",
+    contra_stale: "{t}(superseded)を引用しています",
+    contra_mark_active: "解消: active",
+    contra_mark_superseded: "superseded にする",
+    contra_open_page: "リンク元を開く",
+    contra_open_target: "対象を開く",
+    contra_ignore: "無視",
+    contra_clean: "矛盾はありません。",
     history_runs_title: "実行",
     history_run_open_why: "WHYレポート",
     history_no_commit:
