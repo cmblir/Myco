@@ -151,6 +151,13 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     try {
       const file = await ipc.readFile(path);
       set({ activeFile: file, isLoading: false });
+      const vault = get().currentVault;
+      if (vault && path.startsWith(vault.path)) {
+        const rel = path.slice(vault.path.length).replace(/^\/+/, "");
+        // Feeds resurface dormancy (Q4 item 10). Best-effort like the
+        // history commit in saveFile: the open itself already succeeded.
+        void ipc.recordPageOpen(vault.path, rel).catch(() => undefined);
+      }
     } catch (err) {
       set({ error: errorMessage(err), isLoading: false });
     }

@@ -2137,6 +2137,25 @@ pub fn record_recall_miss(
     append_recall_miss(std::path::Path::new(&root), &query, expected.as_deref())
 }
 
+// ---- page-open tracking (Q4 item 10) ---------------------------------------
+
+/// Record that the frontend opened a vault page — feeds resurface dormancy.
+#[tauri::command]
+pub fn record_page_open(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    rel: String,
+) -> Result<(), String> {
+    let root = confine_root(&state, &vault)?;
+    let root = std::path::Path::new(&root);
+    crate::myco_pro::safe_join(root, &rel)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    crate::page_opens::record(root, &rel, now)
+}
+
 /// Files and bytes held by every `sessions/archive/` and `daily/archive/`
 /// bucket — the numbers behind the Settings → Distill storage panel. Computed
 /// on demand (this command), never on render. `raw/archive/` is deliberately

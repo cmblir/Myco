@@ -1184,6 +1184,8 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       return Promise.resolve(false);
     case "record_recall_miss":
       return Promise.resolve(null);
+    case "record_page_open":
+      return Promise.resolve(null);
     case "suspect_pages":
       return Promise.resolve({
         pages_checked: 12,

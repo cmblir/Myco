@@ -871,6 +871,9 @@ export const ipc = {
   // Recall miss log (Q4 item 5).
   recordRecallMiss: (vault: string, query: string, expected?: string) =>
     invoke<null>("record_recall_miss", { vault, query, expected }),
+  // Page-open tracking (Q4 item 10) — feeds resurface dormancy.
+  recordPageOpen: (vault: string, rel: string) =>
+    invoke<null>("record_page_open", { vault, rel }),
   distillStatus: (vault: string) =>
     invoke<DistillStatus>("distill_status", { vault }),
   // ROADMAP P2 — archive lifecycle. `archiveUsage` is on-demand only (called

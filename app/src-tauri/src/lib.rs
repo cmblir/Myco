@@ -23,6 +23,7 @@ pub mod mcp_native;
 pub mod myco_pro;
 pub mod ollama;
 pub mod ontology;
+pub mod page_opens;
 pub mod parser;
 pub mod perf;
 pub mod pipeline;
@@ -236,6 +237,7 @@ pub fn run() {
             commands::commit_human_edit,
             commands::suspect_pages,
             commands::record_recall_miss,
+            commands::record_page_open,
             commands::distill_status,
             commands::apply_distill_proposal,
             commands::list_quarantine,
