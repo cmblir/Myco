@@ -87,6 +87,19 @@ class TestAutoIngest(unittest.TestCase):
         self.assertFalse(res["ok"])
         self.assertIn("unsupported", res["error"])
 
+    def test_read_source_docx_invokes_extract(self):
+        v = make_vault()
+        src = v / "_inbox" / "report.docx"
+        src.write_bytes(b"PK\x03\x04 not a real docx")
+        # Fake app binary: prove _read_source routes .docx through
+        # `<app_bin> --extract-text <path>` by echoing its invocation.
+        fake_bin = v / "fake-app"
+        fake_bin.write_text('#!/bin/sh\necho "extracted:$1:$2"\n', encoding="utf-8")
+        fake_bin.chmod(0o755)
+        text = ai._read_source(src, str(fake_bin))
+        self.assertIsNotNone(text, ".docx should route to the extract subprocess")
+        self.assertEqual(text.strip(), f"extracted:--extract-text:{src}")
+
     def test_ingest_one_quarantines_secret_source(self):
         v = make_vault()
         src = v / "_inbox" / "leaky.md"

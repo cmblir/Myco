@@ -73,7 +73,7 @@ DEFAULT_TIMEOUT = 600
 
 # Read straight through; extract via the app binary; or skip.
 TEXT_EXTS = {".md", ".txt", ".markdown", ".csv", ".tsv", ".json", ".yaml", ".yml", ".html", ""}
-EXTRACT_EXTS = {".pdf", ".xlsx", ".xls", ".xlsm", ".ods"}
+EXTRACT_EXTS = {".pdf", ".xlsx", ".xls", ".xlsm", ".xlsb", ".ods", ".docx", ".pptx"}
 
 # Type of the injectable CLI runner: (vault, prompt, model, tools, timeout)
 #   -> (returncode, stdout, stderr)
