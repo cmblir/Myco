@@ -136,9 +136,9 @@ fn read_capped<R: Read>(r: &mut R, max: usize) -> Result<Vec<u8>, String> {
 }
 
 /// Extract a file's textual content IN-PROCESS, dispatching on extension. PDF and
-/// spreadsheets are parsed to text; everything else (md/txt/csv/tsv/html/json/
-/// yaml…) is read as UTF-8. Prefer `extract_text_isolated` from the IPC layer so
-/// a parser crash can't take down the app.
+/// spreadsheets are parsed to text, HTML is reduced to prose; everything else
+/// (md/txt/csv/tsv/json/yaml…) is read as UTF-8. Prefer `extract_text_isolated`
+/// from the IPC layer so a parser crash can't take down the app.
 pub fn extract_text(path: &str) -> Result<String, String> {
     let p = Path::new(path);
     if !p.is_file() {
@@ -161,9 +161,163 @@ pub fn extract_text(path: &str) -> Result<String, String> {
         "xlsx" | "xls" | "xlsm" | "xlsb" | "ods" => extract_spreadsheet(p),
         "docx" => extract_docx(p),
         "pptx" => extract_pptx(p),
+        "html" | "htm" => extract_html(p),
         // csv/tsv and every text-like format: read straight through.
         _ => fs::read_to_string(p).map_err(|e| format!("read failed: {e}")),
     }
+}
+
+/// HTML → prose without a parser dependency: drop script/style/comment blocks,
+/// turn block-level tag boundaries into newlines, strip the remaining tags,
+/// decode common + numeric entities, collapse whitespace. Good enough for
+/// ingest text; not a browser.
+fn extract_html(p: &Path) -> Result<String, String> {
+    let html = fs::read_to_string(p).map_err(|e| format!("read failed: {e}"))?;
+    let text = collapse_whitespace(&decode_html_entities(&strip_html_tags(&drop_html_blocks(
+        &html,
+    ))));
+    finish_text(&text, "no text found in the HTML")
+}
+
+/// Remove `<!-- -->` comments and whole `<script>`/`<style>` elements,
+/// case-insensitively. An unterminated block drops everything to EOF (its body
+/// is code/markup noise, never prose).
+fn drop_html_blocks(html: &str) -> String {
+    // ASCII-lowercased copy for case-insensitive matching; byte offsets align
+    // with the original because ASCII lowering never changes lengths.
+    let lower = html.to_ascii_lowercase();
+    let mut out = String::with_capacity(html.len());
+    let mut i = 0;
+    while i < html.len() {
+        let rest = &lower[i..];
+        let (skip_open, close) = if rest.starts_with("<!--") {
+            (4, "-->")
+        } else if rest.starts_with("<script") {
+            (7, "</script>")
+        } else if rest.starts_with("<style") {
+            (6, "</style>")
+        } else {
+            // Copy through to the next '<' candidate (or a lone '<' itself).
+            let next = if rest.starts_with('<') {
+                i + 1
+            } else {
+                rest.find('<').map(|j| i + j).unwrap_or(html.len())
+            };
+            out.push_str(&html[i..next]);
+            i = next;
+            continue;
+        };
+        match lower[i + skip_open..].find(close) {
+            Some(j) => i += skip_open + j + close.len(),
+            None => break, // unterminated block: drop to EOF
+        }
+    }
+    out
+}
+
+/// Strip every remaining `<…>` tag, emitting a newline for block-level
+/// boundaries (`<br>`, `</p>`, `</div>`, `</li>`, `</h1..6>`, `</tr>`).
+fn strip_html_tags(html: &str) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    loop {
+        let Some(i) = rest.find('<') else {
+            out.push_str(rest);
+            break;
+        };
+        out.push_str(&rest[..i]);
+        let Some(j) = rest[i..].find('>') else {
+            break; // unterminated tag: drop to EOF
+        };
+        let inner = rest[i + 1..i + j].trim().to_ascii_lowercase();
+        let newline = if let Some(name) = inner.strip_prefix('/') {
+            matches!(
+                name.trim(),
+                "p" | "div" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+            )
+        } else {
+            inner == "br" || inner.starts_with("br ") || inner.starts_with("br/")
+        };
+        if newline {
+            out.push('\n');
+        }
+        rest = &rest[i + j + 1..];
+    }
+    out
+}
+
+/// Decode the named entities `&amp; &lt; &gt; &quot; &apos; &nbsp;` plus
+/// numeric `&#NNN;` / `&#xHH;`. Anything unrecognized is left verbatim.
+fn decode_html_entities(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        let after = &rest[i..];
+        // Entities are short; ';' is ASCII so a byte position is a char boundary.
+        let semi = after.as_bytes().iter().take(12).position(|&b| b == b';');
+        let decoded = semi.and_then(|j| {
+            let ent = &after[1..j];
+            match ent {
+                "amp" => Some("&".to_string()),
+                "lt" => Some("<".to_string()),
+                "gt" => Some(">".to_string()),
+                "quot" => Some("\"".to_string()),
+                "apos" => Some("'".to_string()),
+                "nbsp" => Some(" ".to_string()),
+                _ => ent.strip_prefix('#').and_then(|num| {
+                    let cp = match num.strip_prefix(['x', 'X']) {
+                        Some(hex) => u32::from_str_radix(hex, 16).ok(),
+                        None => num.parse::<u32>().ok(),
+                    };
+                    cp.and_then(char::from_u32).map(String::from)
+                }),
+            }
+        });
+        match (decoded, semi) {
+            (Some(d), Some(j)) => {
+                out.push_str(&d);
+                rest = &after[j + 1..];
+            }
+            _ => {
+                out.push('&');
+                rest = &after[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Collapse each whitespace run: no newline in the run ⇒ one space; otherwise
+/// its newlines capped at 2 (so ≥3 blank-separated breaks become one blank
+/// line, and indentation around newlines disappears).
+fn collapse_whitespace(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut in_run = false;
+    let mut newlines = 0usize;
+    for c in s.chars() {
+        if c == '\n' || c == ' ' || c == '\t' || c == '\r' {
+            in_run = true;
+            if c == '\n' {
+                newlines += 1;
+            }
+        } else {
+            if in_run {
+                if newlines == 0 {
+                    out.push(' ');
+                } else {
+                    for _ in 0..newlines.min(2) {
+                        out.push('\n');
+                    }
+                }
+                in_run = false;
+                newlines = 0;
+            }
+            out.push(c);
+        }
+    }
+    out
 }
 
 /// Minimal XML entity unescape for extracted OOXML text runs.
@@ -411,6 +565,65 @@ mod tests {
         let p = ooxml_zip("d.docx", "word/document.xml", xml);
         let out = extract_text(p.to_str().unwrap()).unwrap();
         assert!(out.contains("Quarterly report body"), "got: {out}");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn html_page_yields_prose_only() {
+        let html = br#"<!DOCTYPE html>
+<html><head>
+<title>Doc</title>
+<style type="text/css">body { color: red; }</style>
+<SCRIPT>var x = 1 < 2; document.write("junk");</SCRIPT>
+</head>
+<body>
+<!-- navigation -->
+<nav><ul><li>Home</li><li>About</li></ul></nav>
+<h1 class="hero">Quarterly Report</h1>
+<p class="lead">Revenue grew <b>fast</b> this year.</p>
+<div>Second paragraph.</div>
+</body></html>"#;
+        let p = tmp("page.html", html);
+        let out = extract_text(p.to_str().unwrap()).unwrap();
+        assert!(!out.contains('<'), "tags stripped: {out}");
+        assert!(out.contains("Quarterly Report"), "got: {out}");
+        assert!(out.contains("Revenue grew fast this year."), "got: {out}");
+        assert!(out.contains("Second paragraph."), "got: {out}");
+        assert!(!out.contains("color: red"), "style dropped: {out}");
+        assert!(!out.contains("junk"), "script dropped: {out}");
+        assert!(!out.contains("navigation"), "comment dropped: {out}");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn html_entities_decoded() {
+        let p = tmp(
+            "e.htm",
+            b"<p>A &amp; B &lt;tag&gt; &quot;q&quot; &#39;s&#39; caf&#233; &#x41;&nbsp;end</p>",
+        );
+        let out = extract_text(p.to_str().unwrap()).unwrap();
+        assert!(
+            out.contains("A & B <tag> \"q\" 's' caf\u{e9} A end"),
+            "got: {out}"
+        );
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn html_unterminated_script_drops_to_eof() {
+        let p = tmp("u.html", b"<p>Before</p><script>var q = 'never closed");
+        let out = extract_text(p.to_str().unwrap()).unwrap();
+        assert!(out.contains("Before"), "got: {out}");
+        assert!(!out.contains("never closed"), "got: {out}");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn html_pre_text_survives() {
+        let p = tmp("pre.html", b"<pre>line one\nline two</pre>");
+        let out = extract_text(p.to_str().unwrap()).unwrap();
+        assert!(!out.contains('<'), "tags stripped: {out}");
+        assert!(out.contains("line one\nline two"), "got: {out}");
         let _ = fs::remove_file(&p);
     }
 
