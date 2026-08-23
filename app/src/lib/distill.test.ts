@@ -34,6 +34,7 @@ import {
   archiveBucketKey,
   backlogTrend,
   formatRunOutcome,
+  lastResurfaceOutcome,
   lastRunLabel,
   lastStopPoint,
   llmStepsWaiting,
@@ -45,6 +46,7 @@ import { ipc } from "./ipc";
 import { STRINGS } from "./i18n";
 import { useVaultStore } from "../stores/vaultStore";
 import { useReindexStore } from "../stores/reindexStore";
+import { useResurfaceStore } from "../stores/resurfaceStore";
 import type { BucketUsage, DistillConfig, RunReport } from "./distill";
 import type { EmbeddingsStatus, FileNode, MycoSettings } from "./ipc";
 
@@ -659,5 +661,84 @@ describe("runDistillGuarded — draft-map auto-apply (Aggressive bridge)", () =>
     // budget 3 - 2 already spent by full-tier ingest = 1 left for maps.
     expect(draftMap).toHaveBeenCalledTimes(1);
     expect(writeFile).toHaveBeenCalledTimes(1);
+  });
+});
+
+// Q4 item 10 — the post-run resurface hook: today's daily note seeds
+// resurface_candidates, the store gets the surviving picks, and any failure
+// is the hook's own problem, never the run's.
+describe("runDistillGuarded — resurface hook", () => {
+  const DAILY = {
+    path: "/vres/daily/today.md",
+    raw: "---\ntitle: today\n---\nseed body",
+    content: "seed body",
+    frontmatter: {},
+  };
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    runSessionDigest.mockReset().mockResolvedValue(null);
+    runWeeklyRollup.mockReset().mockResolvedValue(null);
+    runMonthlyRollup.mockReset().mockResolvedValue(null);
+    runFullTierIngest.mockReset().mockResolvedValue({ ingested: 0, skipped: null, errors: [] });
+    useResurfaceStore.setState({ picks: [], computedAt: null, floor: 0.7 });
+  });
+
+  it("seeds resurface with today's daily note (frontmatter stripped) and stores the picks", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue([]); // no draft-map proposals
+    const readFile = vi.spyOn(ipc, "readFile").mockResolvedValue(DAILY);
+    const resurface = vi.spyOn(ipc, "resurfaceCandidates").mockResolvedValue([
+      { page: "wiki/a.md", stem: "a", score: 0.91, snippet: "s", last_open: null },
+    ]);
+
+    await runDistillGuarded("/vres");
+
+    expect(readFile).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/vres\/daily\/\d{4}-\d{2}-\d{2}\.md$/),
+    );
+    expect(resurface).toHaveBeenCalledWith("/vres", "seed body", 6, 0.7);
+    expect(useResurfaceStore.getState().picks).toEqual([
+      { page: "wiki/a.md", stem: "a", score: 0.91, snippet: "s", lastOpen: null },
+    ]);
+    expect(lastResurfaceOutcome.get("/vres")).toEqual({ shown: 1 });
+  });
+
+  it("skips quietly when today's daily note does not exist", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue([]);
+    vi.spyOn(ipc, "readFile").mockRejectedValue(new Error("not found"));
+    const resurface = vi.spyOn(ipc, "resurfaceCandidates");
+
+    await runDistillGuarded("/vres-none");
+
+    expect(resurface).not.toHaveBeenCalled();
+    expect(lastResurfaceOutcome.get("/vres-none")).toBeUndefined();
+  });
+
+  it("a resurface failure never fails the run", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue([]);
+    vi.spyOn(ipc, "readFile").mockResolvedValue(DAILY);
+    vi.spyOn(ipc, "resurfaceCandidates").mockRejectedValue(new Error("model gone"));
+
+    await expect(runDistillGuarded("/vres-err")).resolves.toBe(REPORT);
+  });
+
+  it("a stop requested during the maps step skips resurface and records 'maps'", async () => {
+    vi.spyOn(ipc, "distillRun").mockResolvedValue(REPORT);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue([]);
+    vi.spyOn(ipc, "getDistillConfig").mockImplementation(async (v: string) => {
+      requestDistillStop(v); // Stop clicked while the maps step runs
+      return { llm_ingest_budget: 3 } as DistillConfig;
+    });
+    const readFile = vi.spyOn(ipc, "readFile");
+    const resurface = vi.spyOn(ipc, "resurfaceCandidates");
+
+    await runDistillGuarded("/vstop-maps");
+
+    expect(readFile).not.toHaveBeenCalled();
+    expect(resurface).not.toHaveBeenCalled();
+    expect(lastStopPoint.get("/vstop-maps")).toBe("maps");
   });
 });

@@ -10,7 +10,14 @@
 
 import { create } from "zustand";
 
-export type DistillRunStep = "run" | "digest" | "weekly" | "monthly" | "ingest" | "maps";
+export type DistillRunStep =
+  | "run"
+  | "digest"
+  | "weekly"
+  | "monthly"
+  | "ingest"
+  | "maps"
+  | "resurface";
 
 interface DistillRunState {
   running: boolean;

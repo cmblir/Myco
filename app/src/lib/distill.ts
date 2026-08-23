@@ -27,6 +27,8 @@ import {
 import { useVaultStore } from "../stores/vaultStore";
 import { useReindexStore } from "../stores/reindexStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
+import { toPick, useResurfaceStore } from "../stores/resurfaceStore";
+import { stripFrontmatter } from "./markdown";
 
 export type Intensity = "conservative" | "standard" | "aggressive";
 export type GatePreset = "strict" | "normal" | "loose";
@@ -236,6 +238,14 @@ export interface MapDraftOutcome {
 }
 export const lastMapDraftOutcome = new Map<string, MapDraftOutcome>();
 
+// Q4 item 10 — the resurface hook's outcome, same module-level map idiom as
+// lastDigestOutcome above. `shown` is the pick count that survived the
+// store's ignore/snooze filter — what the popover actually shows.
+export interface ResurfaceOutcome {
+  shown: number;
+}
+export const lastResurfaceOutcome = new Map<string, ResurfaceOutcome>();
+
 /** Whether the Overview card's "steps waiting — connect a provider" note
  * should show: only full-tier ingest and draft maps still need a provider
  * (the session digest runs extractively on builtin-local), so only their
@@ -308,7 +318,13 @@ const stopRequested = new Set<string>();
 /** The step the last run's chain stopped after ("run" = the Rust core pass;
  * the chain never starts a later step once the flag is seen), or null when it
  * ran to the end — same module-level map idiom as lastDigestOutcome above. */
-export type DistillStopPoint = "run" | "digest" | "weekly" | "monthly" | "ingest";
+export type DistillStopPoint =
+  | "run"
+  | "digest"
+  | "weekly"
+  | "monthly"
+  | "ingest"
+  | "maps"; // a step exists AFTER maps now (resurface), so a stop can land here
 export const lastStopPoint = new Map<string, DistillStopPoint | null>();
 
 /** Ask an in-flight distill chain for `vault` to stop before its next step.
@@ -410,6 +426,14 @@ async function pruneColdTier(vault: string): Promise<void> {
   void useReindexStore.getState().reindex();
 }
 
+// Local YYYY-MM-DD — daily/<day>.md's own naming. Local rather than
+// toISOString(): UTC would read yesterday's note through the morning hours
+// west of Greenwich (the queryIntent.ts `localDate` pitfall).
+function localDay(now: Date = new Date()): string {
+  const pad = (n: number): string => String(n).padStart(2, "0");
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
 // OS notification permission, asked once on first use (the design's two
 // notification kinds both come from the distill chain, so the latch lives
 // here). null = not asked yet.
@@ -451,6 +475,7 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
   lastDigestOutcome.delete(vault);
   lastWeeklyOutcome.delete(vault);
   lastMonthlyOutcome.delete(vault);
+  lastResurfaceOutcome.delete(vault);
   useDistillRunStore.setState({ running: true, step: "run" });
   try {
     const report = await ipc.distillRun(vault);
@@ -553,6 +578,36 @@ export async function runDistillGuarded(vault: string): Promise<RunReport | null
       return null;
     });
     if (mapOutcome) lastMapDraftOutcome.set(vault, mapOutcome);
+    if (stopRequested.has(vault)) {
+      lastStopPoint.set(vault, "maps");
+      return report;
+    }
+    // Q4 item 10 — resurface: echo today's daily note against dormant wiki
+    // pages. Runs last because it writes nothing — it only refreshes the
+    // store the Activity popover reads. No daily note today means no seed,
+    // which is a quiet skip, not an error.
+    useDistillRunStore.setState({ step: "resurface" });
+    try {
+      const daily = await ipc
+        .readFile(`${vault}/daily/${localDay()}.md`)
+        .catch(() => null);
+      if (daily?.raw) {
+        const floor = useResurfaceStore.getState().floor;
+        const cands = await ipc.resurfaceCandidates(
+          vault,
+          stripFrontmatter(daily.raw).slice(0, 4000),
+          6,
+          floor,
+        );
+        useResurfaceStore.getState().refreshFrom(cands.map(toPick));
+        lastResurfaceOutcome.set(vault, {
+          shown: useResurfaceStore.getState().picks.length,
+        });
+      }
+    } catch (e) {
+      // Resurfacing must never fail the run it decorates.
+      console.warn("[distill] resurface failed:", vault, e);
+    }
     // OS notification: distill complete, with the run's headline counts.
     // Only when the run produced something — the idle trigger fires this
     // chain routinely, and a stream of "0 proposals" notifications would
