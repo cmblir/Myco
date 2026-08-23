@@ -177,6 +177,10 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
                   key={s.page}
                   type="button"
                   className="list-row recent-row"
+                  // `.list-row` is a 4-column grid (24px icon / 1fr / auto / auto);
+                  // without an icon cell the page name lands in the 24px column and
+                  // collides with the reason. These rows stack their own two lines.
+                  style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}
                   // Same navigation as RecentNotes rows: the route reads an
                   // ABSOLUTE path (it hands it to ipc.readFile).
                   onClick={() => setRoute(`page:${vault.path}/wiki/${s.page}` as RouteId)}
@@ -212,7 +216,14 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
                 <div
                   key={contradictionKey(c)}
                   className="list-row"
-                  style={{ flexDirection: "column", alignItems: "flex-start", gap: 4 }}
+                  // `.list-row` is a grid — the column stack needs an explicit
+                  // `display: flex` or the children fall into its icon column.
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "flex-start",
+                    gap: 4,
+                  }}
                 >
                   <span style={{ fontWeight: 500, fontSize: 12.5 }}>{stem(c.page)}</span>
                   <span className="meta">
@@ -278,6 +289,8 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
               <button
                 type="button"
                 className="list-row recent-row"
+                // Two stacked lines, not `.list-row`'s icon-first grid.
+                style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}
                 onClick={openRitualPick}
               >
                 <span style={{ fontWeight: 500, fontSize: 12.5 }}>
