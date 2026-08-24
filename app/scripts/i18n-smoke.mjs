@@ -33,7 +33,8 @@ async function settingsText(lang) {
     timeout: 60_000,
   });
   await page.waitForSelector(".side-nav .nav-item", { timeout: 30_000 });
-  await page.locator(".side-nav .nav-item", { hasText: /Settings|설정|設定/ })
+  // Settings is pinned in .side-tools, outside the scrolling .side-nav.
+  await page.locator(".side-tools .nav-item", { hasText: /Settings|설정|設定/ })
     .first()
     .click();
   await page.waitForTimeout(800);
