@@ -175,6 +175,15 @@ mycelium mat. 60 fps to ~10k nodes.
 scheduling that round-trip with Obsidian's spaced-repetition plugin. Review due
 cards and generated quizzes in-app.
 
+**Tasks** — every `- [ ] …` checkbox in the vault in one place: a list, a
+kanban board whose columns are the checkbox marks themselves, and a month
+calendar where a task with a start and a due draws as a bar across its days.
+Click one to open a panel for its dates, priority, estimate and repeat rule,
+written back as Obsidian Tasks' own markers (`🛫 ⏳ 📅 ✅ 🔁`) so the line still
+works in that plugin; completing a recurring task writes its next occurrence.
+A generated `wiki/tasks/<YYYY-MM>.md` per month puts the schedule in the graph
+next to the projects its tasks link to.
+
 **Schedules** — recurring digests: a standing query, "what changed", staleness
 sweeps, topic trackers. Each run writes a cited markdown note into `digests/`.
 
