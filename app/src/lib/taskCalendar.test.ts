@@ -120,3 +120,18 @@ describe("layoutMonthBars", () => {
     });
   });
 });
+
+describe("layoutMonthBars — maxLanes", () => {
+  it("stacks past three lanes when the caller raises the limit", () => {
+    const items = [1, 2, 3, 4, 5].map((n) => ({
+      key: `t${n}`,
+      start: "2026-08-03",
+      due: "2026-08-05",
+    }));
+    expect(layoutMonthBars(items, days).segments).toHaveLength(3);
+    const wide = layoutMonthBars(items, days, Infinity);
+    expect(wide.segments).toHaveLength(5);
+    expect(wide.overflow).toEqual({});
+    expect(wide.segments.map((s) => s.lane)).toEqual([0, 1, 2, 3, 4]);
+  });
+});

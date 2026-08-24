@@ -43,7 +43,10 @@ interface Span {
  *  Indices are deliberately left unclipped — the week loop does the clipping,
  *  and an endpoint outside the grid is exactly what makes a segment "continue".
  */
-function spanOf(item: BarInput, at: (iso: string) => number | null): Span | null {
+function spanOf(
+  item: BarInput,
+  at: (iso: string) => number | null,
+): Span | null {
   const start = item.start ? at(item.start) : null;
   const due = item.due ? at(item.due) : null;
   if (due === null) {
@@ -57,7 +60,13 @@ function spanOf(item: BarInput, at: (iso: string) => number | null): Span | null
   return { key: item.key, from: start, to: due };
 }
 
-export function layoutMonthBars(items: BarInput[], days: Date[]): BarLayout {
+/** `maxLanes` is how many bars one week stacks before the rest are counted as
+ *  overflow — the calendar raises it when the user expands a crowded month. */
+export function layoutMonthBars(
+  items: BarInput[],
+  days: Date[],
+  maxLanes: number = MAX_LANES,
+): BarLayout {
   const index = new Map(days.map((d, i): [string, number] => [today(d), i]));
   const firstIso = today(days[0]);
 
@@ -99,9 +108,11 @@ export function layoutMonthBars(items: BarInput[], days: Date[]): BarLayout {
       const to = Math.min(s.to, weekTo);
       const startCol = from - weekFrom;
       const span = to - from + 1;
-      let lane = lanes.findIndex((occupiedThrough) => occupiedThrough < startCol);
+      let lane = lanes.findIndex(
+        (occupiedThrough) => occupiedThrough < startCol,
+      );
       if (lane === -1) lane = lanes.length;
-      if (lane >= MAX_LANES) {
+      if (lane >= maxLanes) {
         // Counted, not drawn — and it must not claim a lane on the way out.
         for (let c = startCol; c < startCol + span; c++) {
           const cell = `${w}:${c}`;

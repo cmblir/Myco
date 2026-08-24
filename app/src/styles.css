@@ -1062,7 +1062,9 @@ select {
   min-height: 120px;
   max-height: 62vh;
   overflow-y: auto;
-  transition: background var(--dur-quick), border-color var(--dur-quick);
+  transition:
+    background var(--dur-quick),
+    border-color var(--dur-quick);
 }
 /* The drop target has to be obvious while a card is in the air. */
 .task-col.is-over {
@@ -1139,7 +1141,9 @@ select {
   border-radius: 6px;
   background: var(--bg-soft);
   cursor: pointer;
-  transition: background var(--dur-quick), border-color var(--dur-quick);
+  transition:
+    background var(--dur-quick),
+    border-color var(--dur-quick);
 }
 .task-cal-day.is-over {
   background: var(--bg-hover);
@@ -1178,6 +1182,115 @@ select {
 .task-cal-item.is-done {
   text-decoration: line-through;
   color: var(--ink-3);
+}
+/* One week: the day cells, plus a bar layer over them. The bars have to span
+   several cells, so they cannot live inside one — they are a second 7-column
+   grid laid over the first, sharing its column gap so the columns line up.
+   --lanes (set per week in TaskCalendar) is how many bars that week stacks. */
+.task-cal-week {
+  position: relative;
+}
+.task-cal-week .task-cal-day {
+  position: relative;
+  /* A floor so an empty week still reads as a calendar row, then one lane's
+     height per stacked bar. */
+  min-height: max(64px, calc(26px + var(--lanes, 0) * 20px));
+  max-height: none;
+  overflow: visible;
+}
+/* Rows sit one cell gap apart; the first clears the weekday header. */
+.task-cal-week .task-cal {
+  margin-top: 4px;
+}
+.task-cal-week:first-of-type .task-cal {
+  margin-top: 10px;
+}
+.task-cal-bars {
+  position: absolute;
+  /* Below the day number, inside the cell borders. */
+  top: 22px;
+  left: 0;
+  right: 0;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  grid-auto-rows: 18px;
+  gap: 2px 4px;
+  /* The cells underneath own the clicks on empty space and every drop. */
+  pointer-events: none;
+}
+.task-cal-bar {
+  pointer-events: auto;
+  min-width: 0;
+  margin: 0 3px;
+  padding: 1px 6px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--accent-soft);
+  /* Bars from adjacent days butt up against each other — the hairline is what
+     separates two tasks from one long one. */
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--ink);
+  font-size: 11.5px;
+  line-height: 16px;
+  text-align: left;
+  cursor: grab;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A bar clipped by the week boundary continues in the next row, so the cut
+   edge is square — a rounded one would read as the end of the task. */
+.task-cal-bar.is-cont-l {
+  margin-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.task-cal-bar.is-cont-r {
+  margin-right: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.task-cal-bar.is-done {
+  text-decoration: line-through;
+  color: var(--ink-3);
+  background: var(--bg-hover);
+}
+/* While a bar is in flight every other bar steps out of the way, so the drop
+   lands on the day cell underneath instead of on a sibling bar. */
+.task-cal-bars.is-dragging .task-cal-bar {
+  pointer-events: none;
+}
+/* Scheduled (⏳) — a faint dot per task, not a bar: it says when to work on
+   something, not that the work occupies the day. */
+.task-cal-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+}
+.task-cal-sched {
+  display: flex;
+  gap: 3px;
+}
+.task-cal-sched i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--ink-4);
+}
+.task-cal-more {
+  pointer-events: auto;
+  justify-self: end;
+  align-self: center;
+  padding: 0 4px;
+  margin-right: 3px;
+  border: 0;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  color: var(--ink-3);
+  font-size: 10.5px;
+  line-height: 15px;
+  cursor: pointer;
 }
 @media (prefers-reduced-motion: reduce) {
   .task-cal-day {
@@ -2281,7 +2394,9 @@ hr {
 }
 .cm-content {
   padding: 1rem 0;
-  caret-color: var(--ink); /* CodeMirror's default caret is black — invisible on dark */
+  caret-color: var(
+    --ink
+  ); /* CodeMirror's default caret is black — invisible on dark */
 }
 .cm-focused {
   outline: none !important;
@@ -2497,8 +2612,14 @@ hr {
   animation: graph-scale-in 0.3s ease;
 }
 @keyframes graph-scale-in {
-  from { opacity: 0; transform: translate(-50%, -6px); }
-  to { opacity: 1; transform: translate(-50%, 0); }
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
 }
 .ship-hud__speed {
   color: #e9edf6;
@@ -3046,7 +3167,11 @@ hr {
 .thinking-galaxy {
   border-radius: 8px;
   background:
-    radial-gradient(ellipse at center, rgba(120, 150, 220, 0.06), transparent 70%),
+    radial-gradient(
+      ellipse at center,
+      rgba(120, 150, 220, 0.06),
+      transparent 70%
+    ),
     #0a0c14;
   border: 1px solid var(--line);
   overflow: hidden;
@@ -3528,7 +3653,9 @@ hr {
   border: 1px solid var(--line);
   border-radius: 6px;
   cursor: pointer;
-  transition: background var(--dur-quick) var(--ease-out), color var(--dur-quick) var(--ease-out);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
 }
 .graph-recommend:hover {
   background: var(--bg-hover);
@@ -3571,7 +3698,9 @@ hr {
   background: var(--bg-soft);
   color: var(--ink);
   cursor: pointer;
-  transition: border-color var(--dur-quick) var(--ease-out), background var(--dur-quick) var(--ease-out);
+  transition:
+    border-color var(--dur-quick) var(--ease-out),
+    background var(--dur-quick) var(--ease-out);
 }
 .graph-vibe:hover {
   background: var(--bg-hover);
@@ -4694,7 +4823,9 @@ html.tray-window body {
 
 /* Study (Feature 3) — decks, review cards, quiz */
 .deck-row {
-  transition: background var(--dur-quick), border-color var(--dur-quick);
+  transition:
+    background var(--dur-quick),
+    border-color var(--dur-quick);
 }
 .deck-row:hover {
   background: var(--bg-hover);
@@ -4824,11 +4955,18 @@ html.tray-window body {
   margin-left: 4px;
 }
 @keyframes agent-pulse {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
+  0%,
+  100% {
+    opacity: 0.3;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .agent-spinner { animation: none; }
+  .agent-spinner {
+    animation: none;
+  }
 }
 .agent-steps {
   list-style: none;
@@ -5010,11 +5148,20 @@ html.tray-window body {
   animation: pdf-flash 1.2s ease-out;
 }
 @keyframes pdf-flash {
-  0%, 30% { outline: 2px solid var(--accent); opacity: 0.85; }
-  100% { outline: 0 solid transparent; opacity: 0.55; }
+  0%,
+  30% {
+    outline: 2px solid var(--accent);
+    opacity: 0.85;
+  }
+  100% {
+    outline: 0 solid transparent;
+    opacity: 0.55;
+  }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pdf-highlight.flash { animation: none; }
+  .pdf-highlight.flash {
+    animation: none;
+  }
 }
 .pdf-sel-toolbar {
   position: sticky;

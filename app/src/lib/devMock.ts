@@ -2040,9 +2040,26 @@ const mockNotes = new Map<string, string>();
 // activity popover's due block has rows in mock mode — and, because read_file
 // serves mockNotes, checking one off actually round-trips through
 // writeTaskStatus's line rewrite instead of hitting the stale guard.
+const day = (n: number): string => today(new Date(Date.now() + n * 86_400_000));
 mockNotes.set(
   `${VAULT}/daily/tasks.md`,
-  `# tasks\n\n- [ ] prepare the demo vault @${today(new Date(Date.now() - 86_400_000))}\n- [ ] add the flash-attention variant @${today()}\n`,
+  [
+    "# tasks",
+    "",
+    // The legacy `@due` dialect, still read: one overdue, one due today.
+    `- [ ] prepare the demo vault @${day(-1)}`,
+    `- [ ] add the flash-attention variant @${day(0)}`,
+    // Scheduling fields, so the calendar has bars to lay out and the detail
+    // panel has something in every field: a multi-day bar, a scheduled dot, an
+    // open-ended start, and four bars sharing days to push one into `+N`.
+    `- [/] rewrite the ingest guide 🛫 ${day(-2)} 📅 ${day(4)} ⏱ 1w !p1`,
+    `- [ ] reindex the demo vault ⏳ ${day(1)} 📅 ${day(2)}`,
+    `- [ ] read the retrieval survey 🛫 ${day(0)} ⏱ 2d`,
+    `- [ ] draft the release notes 🛫 ${day(1)} 📅 ${day(3)}`,
+    `- [ ] chase the signing certificate 🛫 ${day(1)} 📅 ${day(3)} !p2`,
+    `- [ ] tidy the screenshots 🛫 ${day(1)} 📅 ${day(3)} 🔁 every week`,
+    "",
+  ].join("\n"),
 );
 
 /// Checkbox lines in a written note, in the shape scan_tasks returns.
