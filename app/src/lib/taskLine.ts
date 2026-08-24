@@ -4,8 +4,10 @@
 // Tasks stay plain `- [ ] text` in the user's own notes rather than moving into
 // a database — the vault is the product, and a task written here is still
 // editable in Obsidian, greppable, and carried by git history. Metadata rides
-// along as conventions the scanner already tolerates: `@YYYY-MM-DD` for a due
-// date, `!p1`..`!p3` for priority.
+// along as conventions the scanner already tolerates: Obsidian Tasks' emoji
+// markers (`🛫` `⏳` `📅` `✅` `🔁`) plus `⏱` for an estimate, and the older
+// `@YYYY-MM-DD` due date this app wrote first. Read wide, write narrow: the
+// parser accepts both dialects, the writer emits emoji dates and `!p1`..`!p3`.
 
 /** Checkbox marks, in the Obsidian Tasks convention the scanner already reads. */
 export type TaskStatus = "todo" | "doing" | "blocked" | "done";
@@ -25,26 +27,114 @@ export function buildTaskLine(text: string, due = "", priority = 0): string {
   return `- [ ] ${parts.join(" ")}`;
 }
 
-export interface TaskMeta {
-  /** Task text with the `@due` / `!p` markers stripped, for display. */
-  title: string;
-  /** `YYYY-MM-DD`, or "" when the task has no due date. */
-  due: string;
-  /** 1 (highest) … 3, or 0 when unset. */
-  priority: number;
-}
-
 // `@` followed by a date, optionally with a time — the time is accepted so a
 // per-item reminder can be added later without changing what is already written.
 const DUE_RE = /@(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?)/;
 const PRIORITY_RE = /!p([1-3])\b/;
 
-/** Pull the conventions back out of a task's text. */
+/** Obsidian Tasks' own field markers, so a task written here reads correctly in
+ *  the plugin and vice versa. `⏱` is ours — Tasks has no estimate field, and it
+ *  leaves an unknown token in the description rather than dropping it. */
+const START_RE = /🛫\s*(\d{4}-\d{2}-\d{2})/u;
+const SCHEDULED_RE = /⏳\s*(\d{4}-\d{2}-\d{2})/u;
+const DUE_EMOJI_RE = /📅\s*(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?)/u;
+const DONE_RE = /✅\s*(\d{4}-\d{2}-\d{2})/u;
+const ESTIMATE_RE = /⏱\s*(\d+(?:\.\d+)?[mhdw])/u;
+// Greedy to the next field marker or end of line: "every 2 weeks" is one rule.
+const RECUR_RE = /🔁\s*([^🛫⏳📅✅⏱!\n]+)/u;
+const PRIORITY_EMOJI: Record<string, number> = { "🔺": 1, "⏫": 1, "🔼": 2, "🔽": 3, "⏬": 3 };
+const PRIORITY_EMOJI_RE = /(🔺|⏫|🔼|🔽|⏬)/u;
+
+export interface TaskMeta {
+  /** Task text with every known marker stripped, for display. Unknown text —
+   *  wikilinks, tags, anything the user wrote — stays. */
+  title: string;
+  start: string;
+  scheduled: string;
+  /** `YYYY-MM-DD`, optionally `THH:MM`, or "" when the task has no due date. */
+  due: string;
+  doneAt: string;
+  /** Raw rule text after 🔁 (`every week`), or "". Parsed by taskRecurrence. */
+  recur: string;
+  /** Raw duration token (`2d`), or "". Parsed by taskDuration. */
+  estimate: string;
+  /** 1 (highest) … 3, or 0 when unset. */
+  priority: number;
+}
+
+export type TaskField =
+  | "start"
+  | "scheduled"
+  | "due"
+  | "doneAt"
+  | "recur"
+  | "estimate"
+  | "priority";
+
+/** Pull the conventions back out of a task's text. Reads both the emoji set and
+ *  the older `@date` / `!pN` this app wrote first; `📅` wins when a line
+ *  somehow carries both. */
 export function parseTaskMeta(text: string): TaskMeta {
-  const due = DUE_RE.exec(text)?.[1] ?? "";
-  const priority = Number(PRIORITY_RE.exec(text)?.[1] ?? 0);
-  const title = text.replace(DUE_RE, "").replace(PRIORITY_RE, "").replace(/\s+/g, " ").trim();
-  return { title, due, priority };
+  const start = START_RE.exec(text)?.[1] ?? "";
+  const scheduled = SCHEDULED_RE.exec(text)?.[1] ?? "";
+  const due = DUE_EMOJI_RE.exec(text)?.[1] ?? DUE_RE.exec(text)?.[1] ?? "";
+  const doneAt = DONE_RE.exec(text)?.[1] ?? "";
+  const estimate = ESTIMATE_RE.exec(text)?.[1] ?? "";
+  const recur = RECUR_RE.exec(text)?.[1]?.trim() ?? "";
+  const emojiPriority = PRIORITY_EMOJI_RE.exec(text)?.[1];
+  const priority =
+    Number(PRIORITY_RE.exec(text)?.[1] ?? 0) ||
+    (emojiPriority ? PRIORITY_EMOJI[emojiPriority] : 0);
+  const title = text
+    .replace(START_RE, "")
+    .replace(SCHEDULED_RE, "")
+    .replace(DUE_EMOJI_RE, "")
+    .replace(DONE_RE, "")
+    .replace(ESTIMATE_RE, "")
+    .replace(RECUR_RE, "")
+    .replace(PRIORITY_EMOJI_RE, "")
+    .replace(DUE_RE, "")
+    .replace(PRIORITY_RE, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { title, start, scheduled, due, doneAt, recur, estimate, priority };
+}
+
+/** `meta` back to one line's text, markers in a fixed order so repeated edits
+ *  produce no diff churn. A legacy `@date` therefore becomes `📅` the first
+ *  time the line is edited — and only then. */
+export function serializeTaskText(meta: TaskMeta): string {
+  const parts = [meta.title.trim()];
+  if (meta.start) parts.push(`🛫 ${meta.start}`);
+  if (meta.scheduled) parts.push(`⏳ ${meta.scheduled}`);
+  if (meta.due) parts.push(`📅 ${meta.due}`);
+  if (meta.recur) parts.push(`🔁 ${meta.recur}`);
+  if (meta.estimate) parts.push(`⏱ ${meta.estimate}`);
+  if (meta.priority >= 1 && meta.priority <= 3) parts.push(`!p${meta.priority}`);
+  if (meta.doneAt) parts.push(`✅ ${meta.doneAt}`);
+  return parts.filter(Boolean).join(" ");
+}
+
+/** Rewrite line `lineNo`'s scheduling fields, leaving the bullet, indentation
+ * and checkbox mark exactly as written. An empty string clears a field.
+ *
+ * `null` for the same reason as `setLineStatus`: that line is no longer a
+ * checkbox, so the scan it came from is stale and rewriting would edit the
+ * wrong line. */
+export function setLineFields(
+  content: string,
+  lineNo: number,
+  patch: Partial<Pick<TaskMeta, TaskField>>,
+): string | null {
+  const lines = content.split("\n");
+  const idx = lineNo - 1;
+  const line = lines[idx];
+  if (line === undefined) return null;
+  const m = /^(\s*[-*+]\s*\[[^\]]\]\s*)(.*)$/.exec(line);
+  if (!m) return null;
+  const next = { ...parseTaskMeta(m[2]), ...patch };
+  lines[idx] = `${m[1]}${serializeTaskText(next)}`.trimEnd();
+  return lines.join("\n");
 }
 
 /** Rewrite line `lineNo` (1-based) of `content` to `status`, leaving every other

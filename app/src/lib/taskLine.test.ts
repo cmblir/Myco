@@ -3,7 +3,9 @@ import {
   appendTaskLine,
   monthGrid,
   parseIsoDate,
+  serializeTaskText,
   setLineDue,
+  setLineFields,
   buildTaskLine,
   parseTaskMeta,
   setLineStatus,
@@ -20,7 +22,12 @@ describe("buildTaskLine", () => {
     expect(line).toBe("- [ ] 배포 @2026-08-10 !p1");
     expect(parseTaskMeta(line.replace("- [ ] ", ""))).toEqual({
       title: "배포",
+      start: "",
+      scheduled: "",
       due: "2026-08-10",
+      doneAt: "",
+      recur: "",
+      estimate: "",
       priority: 1,
     });
   });
@@ -41,7 +48,16 @@ describe("parseTaskMeta", () => {
   });
 
   it("returns empty metadata for an ordinary task", () => {
-    expect(parseTaskMeta("just do it")).toEqual({ title: "just do it", due: "", priority: 0 });
+    expect(parseTaskMeta("just do it")).toEqual({
+      title: "just do it",
+      start: "",
+      scheduled: "",
+      due: "",
+      doneAt: "",
+      recur: "",
+      estimate: "",
+      priority: 0,
+    });
   });
 });
 
@@ -194,5 +210,73 @@ describe("parseIsoDate / today round-trip", () => {
   it("rejects non-dates", () => {
     expect(parseIsoDate("")).toBeNull();
     expect(parseIsoDate("tomorrow")).toBeNull();
+  });
+});
+
+describe("parseTaskMeta — scheduling fields", () => {
+  it("reads the emoji set", () => {
+    const m = parseTaskMeta("설계 문서 🛫 2026-08-25 ⏳ 2026-08-26 📅 2026-08-28 🔁 every week ⏱ 2d !p1");
+    expect(m.title).toBe("설계 문서");
+    expect(m.start).toBe("2026-08-25");
+    expect(m.scheduled).toBe("2026-08-26");
+    expect(m.due).toBe("2026-08-28");
+    expect(m.recur).toBe("every week");
+    expect(m.estimate).toBe("2d");
+    expect(m.priority).toBe(1);
+  });
+  it("still reads the legacy @due and keeps 📅 winning when both are present", () => {
+    expect(parseTaskMeta("리뷰 @2026-08-20").due).toBe("2026-08-20");
+    expect(parseTaskMeta("리뷰 @2026-08-20 📅 2026-08-28").due).toBe("2026-08-28");
+  });
+  it("reads Tasks' priority emoji, clamping the extremes", () => {
+    expect(parseTaskMeta("a 🔺").priority).toBe(1);
+    expect(parseTaskMeta("a ⏫").priority).toBe(1);
+    expect(parseTaskMeta("a 🔼").priority).toBe(2);
+    expect(parseTaskMeta("a 🔽").priority).toBe(3);
+    expect(parseTaskMeta("a ⏬").priority).toBe(3);
+  });
+  it("keeps unknown text — wikilinks and tags are the project, not noise", () => {
+    const m = parseTaskMeta("초안 [[myco-roadmap]] #work 📅 2026-08-28");
+    expect(m.title).toBe("초안 [[myco-roadmap]] #work");
+  });
+  it("reads a done date", () => {
+    expect(parseTaskMeta("배포 ✅ 2026-08-23").doneAt).toBe("2026-08-23");
+  });
+});
+
+describe("serializeTaskText", () => {
+  it("writes the fixed field order", () => {
+    const meta = parseTaskMeta("설계 ⏱ 2d 📅 2026-08-28 🛫 2026-08-25 !p1");
+    expect(serializeTaskText(meta)).toBe("설계 🛫 2026-08-25 📅 2026-08-28 ⏱ 2d !p1");
+  });
+  it("round-trips: parse → serialize → parse is stable", () => {
+    const line = "설계 [[proj]] 🛫 2026-08-25 ⏳ 2026-08-26 📅 2026-08-28 🔁 every 2 weeks ⏱ 90m !p2 ✅ 2026-08-29";
+    const once = serializeTaskText(parseTaskMeta(line));
+    expect(serializeTaskText(parseTaskMeta(once))).toBe(once);
+  });
+  it("migrates a legacy @due to 📅", () => {
+    expect(serializeTaskText(parseTaskMeta("리뷰 @2026-08-20"))).toBe("리뷰 📅 2026-08-20");
+  });
+});
+
+describe("setLineFields", () => {
+  const doc = ["# note", "", "- [/] 설계 문서 📅 2026-08-28", "- not a task"].join("\n");
+  it("edits only the named fields on only that line", () => {
+    const next = setLineFields(doc, 3, { start: "2026-08-25", estimate: "2d" }) as string;
+    expect(next.split("\n")[2]).toBe("- [/] 설계 문서 🛫 2026-08-25 📅 2026-08-28 ⏱ 2d");
+    expect(next.split("\n")[3]).toBe("- not a task");
+  });
+  it("clears a field with an empty string", () => {
+    const next = setLineFields(doc, 3, { due: "" }) as string;
+    expect(next.split("\n")[2]).toBe("- [/] 설계 문서");
+  });
+  it("keeps the checkbox mark and indentation", () => {
+    const nested = "  * [x] 배포 📅 2026-08-01";
+    const next = setLineFields(nested, 1, { doneAt: "2026-08-02" }) as string;
+    expect(next).toBe("  * [x] 배포 📅 2026-08-01 ✅ 2026-08-02");
+  });
+  it("returns null when that line is no longer a checkbox", () => {
+    expect(setLineFields(doc, 4, { due: "2026-09-01" })).toBeNull();
+    expect(setLineFields(doc, 99, { due: "2026-09-01" })).toBeNull();
   });
 });
