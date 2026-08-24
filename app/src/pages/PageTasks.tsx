@@ -24,7 +24,6 @@ import {
   appendTaskLine,
   buildTaskLine,
   parseTaskMeta,
-  setLineDue,
   today,
   type TaskField,
   type TaskMeta,
@@ -97,32 +96,9 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
     }
   }
 
-  /// Move a task to another day by rewriting just its line. Same stale-scan
-  /// guard as setStatus — a line number from an older scan must not be trusted.
-  async function reschedule(task: TaskItem, due: string): Promise<void> {
-    if (!currentVault || busy) return;
-    setBusy(true);
-    setError(null);
-    const path = `${currentVault.path}/${task.page}`;
-    try {
-      const { raw } = await ipc.readFile(path);
-      const next = setLineDue(raw, task.line, due);
-      if (next === null) {
-        await refresh();
-        setError(t.tasks_stale ?? "That note changed — the list has been refreshed.");
-        return;
-      }
-      await ipc.writeFile(path, next);
-      await refresh();
-    } catch (e: unknown) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  /// Change one task's scheduling fields from the detail panel. Same stale-scan
-  /// guard as every other writer here.
+  /// Change one task's scheduling fields — from the detail panel, or from a
+  /// calendar drop (which is just a due date). Same stale-scan guard as every
+  /// other writer here.
   async function patchTask(
     task: TaskItem,
     patch: Partial<Pick<TaskMeta, TaskField>>,
@@ -282,7 +258,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           t={t}
           tasks={tasks ?? []}
           busy={busy}
-          onReschedule={(task, day) => void reschedule(task, day)}
+          onReschedule={(task, day) => void patchTask(task, { due: day })}
           onPickDay={setDue}
           onOpen={(task) => setSelected(keyOf(task))}
         />

@@ -22,7 +22,7 @@ const MARK: Record<TaskStatus, string> = {
 /** A `- [ ] …` line for a new task. `due` is `YYYY-MM-DD`, empty for none. */
 export function buildTaskLine(text: string, due = "", priority = 0): string {
   const parts = [text.trim()];
-  if (due) parts.push(`@${due}`);
+  if (due) parts.push(`📅 ${due}`);
   if (priority >= 1 && priority <= 3) parts.push(`!p${priority}`);
   return `- [ ] ${parts.join(" ")}`;
 }
@@ -156,30 +156,6 @@ export function setLineStatus(
   const m = /^(\s*[-*+]\s*\[)([^\]])(\].*)$/.exec(line);
   if (!m) return null;
   lines[idx] = `${m[1]}${MARK[status]}${m[3]}`;
-  return lines.join("\n");
-}
-
-/** Rewrite line `lineNo`'s due date: sets `@YYYY-MM-DD` when `due` is given,
- * removes it when `due` is "". Any time suffix already on the line is dropped —
- * moving a task to another day should not silently keep 14:00 from the old one.
- *
- * `null` for the same reason as `setLineStatus`: that line is no longer a
- * checkbox, so the scan it came from is stale and rewriting would edit the
- * wrong line. */
-export function setLineDue(
-  content: string,
-  lineNo: number,
-  due: string,
-): string | null {
-  const lines = content.split("\n");
-  const idx = lineNo - 1;
-  const line = lines[idx];
-  if (line === undefined) return null;
-  if (!/^\s*[-*+]\s*\[[^\]]\]/.test(line)) return null;
-  // Drop the existing marker (with the space that preceded it) before adding
-  // the new one, so repeated moves cannot stack `@a @b @c`.
-  const bare = line.replace(/\s*@\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?/, "").trimEnd();
-  lines[idx] = due ? `${bare} @${due}` : bare;
   return lines.join("\n");
 }
 

@@ -4,7 +4,6 @@ import {
   monthGrid,
   parseIsoDate,
   serializeTaskText,
-  setLineDue,
   setLineFields,
   buildTaskLine,
   parseTaskMeta,
@@ -19,7 +18,7 @@ describe("buildTaskLine", () => {
 
   it("appends due date and priority in a form parseTaskMeta reads back", () => {
     const line = buildTaskLine("배포", "2026-08-10", 1);
-    expect(line).toBe("- [ ] 배포 @2026-08-10 !p1");
+    expect(line).toBe("- [ ] 배포 📅 2026-08-10 !p1");
     expect(parseTaskMeta(line.replace("- [ ] ", ""))).toEqual({
       title: "배포",
       start: "",
@@ -103,38 +102,6 @@ describe("today", () => {
   it("uses the local calendar day, not UTC", () => {
     // 23:30 local on the 9th is still the 9th, even where UTC has rolled over.
     expect(today(new Date(2026, 7, 9, 23, 30))).toBe("2026-08-09");
-  });
-});
-
-describe("setLineDue", () => {
-  const doc = ["- [ ] alpha", "- [/] beta @2026-08-10", "- [x] gamma @2026-08-12T14:00", "prose"].join("\n");
-
-  it("adds a due date to a task that had none", () => {
-    expect(setLineDue(doc, 1, "2026-08-09")?.split("\n")[0]).toBe("- [ ] alpha @2026-08-09");
-  });
-
-  it("replaces an existing one rather than stacking markers", () => {
-    const once = setLineDue(doc, 2, "2026-08-20");
-    const twice = setLineDue(once!, 2, "2026-08-21");
-    expect(twice?.split("\n")[1]).toBe("- [/] beta @2026-08-21");
-  });
-
-  it("drops a time when the day changes, instead of keeping the old hour", () => {
-    expect(setLineDue(doc, 3, "2026-08-20")?.split("\n")[2]).toBe("- [x] gamma @2026-08-20");
-  });
-
-  it("removes the due date when given an empty string", () => {
-    expect(setLineDue(doc, 2, "")?.split("\n")[1]).toBe("- [/] beta");
-  });
-
-  it("refuses a line that is not a checkbox", () => {
-    expect(setLineDue(doc, 4, "2026-08-09")).toBeNull();
-    expect(setLineDue(doc, 99, "2026-08-09")).toBeNull();
-  });
-
-  it("leaves every other line untouched", () => {
-    const out = setLineDue(doc, 1, "2026-08-09");
-    expect(out?.split("\n").slice(1)).toEqual(doc.split("\n").slice(1));
   });
 });
 
