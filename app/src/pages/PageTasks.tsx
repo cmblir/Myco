@@ -18,8 +18,14 @@ import type { TaskItem } from "../lib/ipc";
 import { isComposingKey } from "../lib/ime";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
-import { notifyEnabled, runTaskNotifyPass, setNotifyEnabled } from "../lib/taskNotifier";
+import {
+  notifyEnabled,
+  runTaskNotifyPass,
+  setNotifyEnabled,
+} from "../lib/taskNotifier";
 import { writeTaskFields, writeTaskStatus } from "../lib/taskWrite";
+import { writeTaskHubs } from "../lib/taskHub";
+import { nextOccurrence } from "../lib/taskRecurrence";
 import {
   appendTaskLine,
   buildTaskLine,
@@ -45,15 +51,22 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
   // views drag with. Held as a key rather than the task object so a rescan
   // re-resolves it against fresh text instead of showing a stale copy.
   const [selected, setSelected] = useState<string | null>(null);
+  // What the last hub regeneration did, shown until the next action.
+  const [notice, setNotice] = useState<string | null>(null);
 
-  const refresh = useCallback(async (): Promise<void> => {
-    if (!currentVault) return;
+  /// Rescan, and hand the fresh list back — the hub writer renders from the
+  /// lines as they now read, and `setTasks` cannot be read back this render.
+  const refresh = useCallback(async (): Promise<TaskItem[]> => {
+    if (!currentVault) return [];
     setLoading(true);
     setError(null);
     try {
-      setTasks(await ipc.scanTasks(currentVault.path));
+      const next = await ipc.scanTasks(currentVault.path);
+      setTasks(next);
+      return next;
     } catch (e: unknown) {
       setError(String(e));
+      return [];
     } finally {
       setLoading(false);
     }
@@ -80,11 +93,16 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
         content = (await ipc.readFile(path)).raw;
       } catch {
         // No note for today yet: create it seeded with its date heading.
-        await ipc.createFolder(currentVault.path, "daily").catch(() => undefined);
+        await ipc
+          .createFolder(currentVault.path, "daily")
+          .catch(() => undefined);
         await ipc.createFile(dir, `${day}.md`).catch(() => undefined);
         content = `# ${day}\n\n`;
       }
-      await ipc.writeFile(path, appendTaskLine(content, buildTaskLine(text, due)));
+      await ipc.writeFile(
+        path,
+        appendTaskLine(content, buildTaskLine(text, due)),
+      );
       setDraft("");
       setDue("");
       await refresh();
@@ -95,6 +113,57 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
       setBusy(false);
     }
   }
+
+  /// Copy for the generated month pages. Passed down so taskHub renders in the
+  /// app's language without reaching into the i18n table itself.
+  const hubLabels = {
+    heading: (month: string): string =>
+      (t.tasks_hub_heading ?? "{month} schedule").replace("{month}", month),
+    empty: t.tasks_hub_empty ?? "_Nothing scheduled this month._",
+  };
+
+  /// Regenerate the month hub pages. `months` narrows it to the ones a single
+  /// edit could have changed; without it every month with a task is rewritten,
+  /// plus any hub already on disk so an emptied month is corrected.
+  ///
+  /// A hub failure is reported, not rolled back: the task edit that triggered it
+  /// already succeeded, and undoing the user's edit to keep derived data tidy
+  /// would be the wrong trade.
+  async function syncHubs(fresh: TaskItem[], months?: string[]): Promise<void> {
+    if (!currentVault) return;
+    try {
+      const { written, kept } = await writeTaskHubs(
+        currentVault.path,
+        fresh,
+        hubLabels,
+        months,
+      );
+      const parts = [
+        (t.tasks_hub_written ?? "Updated {n} month page(s).").replace(
+          "{n}",
+          String(written.length),
+        ),
+      ];
+      if (kept.length > 0) {
+        parts.push(
+          (t.tasks_hub_kept ?? "Left {n} page(s) alone.").replace(
+            "{n}",
+            String(kept.length),
+          ),
+        );
+      }
+      setNotice(parts.join(" "));
+      if (written.length > 0) void useVaultStore.getState().refreshTree();
+    } catch (e: unknown) {
+      setError(String(e));
+    }
+  }
+
+  const monthsOf = (...isos: (string | undefined)[]): string[] => [
+    ...new Set(
+      isos.filter((x): x is string => !!x).map((iso) => iso.slice(0, 7)),
+    ),
+  ];
 
   /// Change one task's scheduling fields — from the detail panel, or from a
   /// calendar drop (which is just a due date). Same stale-scan guard as every
@@ -109,10 +178,24 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
     try {
       if ((await writeTaskFields(currentVault.path, task, patch)) === "stale") {
         await refresh();
-        setError(t.tasks_stale ?? "That note changed — the list has been refreshed.");
+        setError(
+          t.tasks_stale ?? "That note changed — the list has been refreshed.",
+        );
         return;
       }
-      await refresh();
+      const fresh = await refresh();
+      // A date moved, so the month pages that named this task are now wrong —
+      // both the month it left and the one it landed in.
+      const before = parseTaskMeta(task.text);
+      const months = monthsOf(
+        patch.start ?? before.start,
+        patch.scheduled ?? before.scheduled,
+        patch.due ?? before.due,
+        before.start,
+        before.scheduled,
+        before.due,
+      );
+      if (months.length > 0) await syncHubs(fresh, months);
     } catch (e: unknown) {
       setError(String(e));
     } finally {
@@ -128,14 +211,31 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
     setBusy(true);
     setError(null);
     try {
-      if ((await writeTaskStatus(currentVault.path, task, status)) === "stale") {
+      if (
+        (await writeTaskStatus(currentVault.path, task, status)) === "stale"
+      ) {
         // The note changed since the scan, so this line number no longer points
         // at that checkbox. Rescan instead of editing whatever is there now.
         await refresh();
-        setError(t.tasks_stale ?? "That note changed — the list has been refreshed.");
+        setError(
+          t.tasks_stale ?? "That note changed — the list has been refreshed.",
+        );
         return;
       }
-      await refresh();
+      const fresh = await refresh();
+      // Completing stamps a done date and may repeat the task into a later
+      // month, so both months' pages are regenerated.
+      const before = parseTaskMeta(task.text);
+      const next = nextOccurrence(before);
+      const months = monthsOf(
+        before.start,
+        before.scheduled,
+        before.due,
+        next?.start,
+        next?.scheduled,
+        next?.due,
+      );
+      if (months.length > 0) await syncHubs(fresh, months);
     } catch (e: unknown) {
       setError(String(e));
     } finally {
@@ -175,11 +275,22 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
         </p>
       </header>
 
-      <div className="segmented" role="tablist" aria-label={t.tasks_view ?? "View"} style={{ marginTop: 8 }}>
-        <button className={view === "list" ? "active" : ""} onClick={() => setView("list")}>
+      <div
+        className="segmented"
+        role="tablist"
+        aria-label={t.tasks_view ?? "View"}
+        style={{ marginTop: 8 }}
+      >
+        <button
+          className={view === "list" ? "active" : ""}
+          onClick={() => setView("list")}
+        >
           {t.tasks_view_list ?? "List"}
         </button>
-        <button className={view === "board" ? "active" : ""} onClick={() => setView("board")}>
+        <button
+          className={view === "board" ? "active" : ""}
+          onClick={() => setView("board")}
+        >
           {t.tasks_view_board ?? "Board"}
         </button>
         <button
@@ -190,24 +301,60 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
         </button>
       </div>
 
-      <label
-        className="muted"
-        style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, marginTop: 8 }}
+      <div
+        className="row"
+        style={{
+          gap: 10,
+          alignItems: "center",
+          marginTop: 8,
+          flexWrap: "wrap",
+        }}
       >
-        <input
-          type="checkbox"
-          checked={notifyOn}
-          onChange={(e) => {
-            const on = e.target.checked;
-            setNotifyEnabled(on);
-            setNotifyOn(on);
-            // Run one pass immediately so enabling it asks for the OS
-            // permission now, rather than silently at some later interval.
-            if (on && currentVault) void runTaskNotifyPass(currentVault.path);
+        <label
+          className="muted"
+          style={{
+            display: "flex",
+            gap: 6,
+            alignItems: "center",
+            fontSize: 12.5,
           }}
-        />
-        {t.tasks_notify ?? "Notify me about due tasks (morning digest + timed reminders)"}
-      </label>
+        >
+          <input
+            type="checkbox"
+            checked={notifyOn}
+            onChange={(e) => {
+              const on = e.target.checked;
+              setNotifyEnabled(on);
+              setNotifyOn(on);
+              // Run one pass immediately so enabling it asks for the OS
+              // permission now, rather than silently at some later interval.
+              if (on && currentVault) void runTaskNotifyPass(currentVault.path);
+            }}
+          />
+          {t.tasks_notify ??
+            "Notify me about due tasks (morning digest + timed reminders)"}
+        </label>
+        {/* Scheduling becomes a page — and therefore a graph node — only when it
+            is written out, so the regeneration is an action the user takes. */}
+        <button
+          className="btn btn-ghost"
+          style={{ fontSize: 12.5 }}
+          disabled={busy || !currentVault}
+          onClick={() => void syncHubs(tasks ?? [])}
+          data-testid="tasks-hub"
+        >
+          {t.tasks_hub ?? "Update month pages"}
+        </button>
+        {notice ? (
+          <span
+            className="muted"
+            style={{ fontSize: 12.5 }}
+            data-testid="tasks-hub-notice"
+          >
+            {notice}
+          </span>
+        ) : null}
+      </div>
 
       <div
         className="card"
@@ -224,7 +371,12 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
       >
         <input
           className="input"
-          style={{ border: "none", padding: "4px 0", boxShadow: "none", flex: 1 }}
+          style={{
+            border: "none",
+            padding: "4px 0",
+            boxShadow: "none",
+            flex: 1,
+          }}
           placeholder={t.tasks_ph ?? "What do you have to do?"}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -235,7 +387,12 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           disabled={busy || !currentVault}
           data-testid="task-input"
         />
-        <DatePicker t={t} value={due} onChange={setDue} disabled={busy || !currentVault} />
+        <DatePicker
+          t={t}
+          value={due}
+          onChange={setDue}
+          disabled={busy || !currentVault}
+        />
         <button
           className="btn btn-primary"
           onClick={() => void addTask()}
@@ -288,16 +445,25 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
             style={{ gap: 8, marginBottom: 12, fontSize: 13 }}
           >
             <span className="chip" style={{ background: "var(--bg-soft)" }}>
-              {(t.tasks_open_n ?? "{n} open").replace("{n}", String(open.length))}
+              {(t.tasks_open_n ?? "{n} open").replace(
+                "{n}",
+                String(open.length),
+              )}
             </span>
             <span className="chip" style={{ background: "var(--bg-soft)" }}>
-              {(t.tasks_done_n ?? "{n} done").replace("{n}", String(done.length))}
+              {(t.tasks_done_n ?? "{n} done").replace(
+                "{n}",
+                String(done.length),
+              )}
             </span>
           </div>
 
           <section data-testid="tasks-open">
             {open.length === 0 ? (
-              <div className="muted" style={{ fontSize: 13, padding: "4px 0 12px" }}>
+              <div
+                className="muted"
+                style={{ fontSize: 13, padding: "4px 0 12px" }}
+              >
                 {t.tasks_all_done ?? "All caught up — nothing open."}
               </div>
             ) : (
@@ -307,7 +473,9 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
                     key={`${task.page}:${task.line}`}
                     task={task}
                     onOpen={() => setSelected(keyOf(task))}
-                    onToggle={() => void setStatus(task, task.done ? "todo" : "done")}
+                    onToggle={() =>
+                      void setStatus(task, task.done ? "todo" : "done")
+                    }
                     busy={busy}
                   />
                 ))}
@@ -317,7 +485,13 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
 
           {done.length > 0 ? (
             <details style={{ marginTop: 14 }} data-testid="tasks-done">
-              <summary style={{ cursor: "pointer", fontSize: 13, color: "var(--ink-3)" }}>
+              <summary
+                style={{
+                  cursor: "pointer",
+                  fontSize: 13,
+                  color: "var(--ink-3)",
+                }}
+              >
                 {(t.tasks_completed ?? "Completed ({n})").replace(
                   "{n}",
                   String(done.length),
@@ -329,7 +503,9 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
                     key={`${task.page}:${task.line}`}
                     task={task}
                     onOpen={() => setSelected(keyOf(task))}
-                    onToggle={() => void setStatus(task, task.done ? "todo" : "done")}
+                    onToggle={() =>
+                      void setStatus(task, task.done ? "todo" : "done")
+                    }
                     busy={busy}
                   />
                 ))}
@@ -442,7 +618,8 @@ function TaskRow({
               fontSize: 11,
               flexShrink: 0,
               // Overdue reads red; everything else stays quiet.
-              color: !task.done && meta.due < today() ? "#dc2626" : "var(--ink-3)",
+              color:
+                !task.done && meta.due < today() ? "#dc2626" : "var(--ink-3)",
             }}
           >
             {meta.due.replace("T", " ")}
@@ -456,7 +633,14 @@ function TaskRow({
       </button>
       <span
         className="muted"
-        style={{ fontSize: 12, flexShrink: 0, maxWidth: "40%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+        style={{
+          fontSize: 12,
+          flexShrink: 0,
+          maxWidth: "40%",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+        }}
       >
         {task.stem}
       </span>

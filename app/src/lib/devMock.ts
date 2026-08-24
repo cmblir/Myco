@@ -1502,6 +1502,13 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
           `# PDF demo\n\nSee the source: [[pdf::${MOCK_PDF_STEM}#p1:seed1|Hello myco PDF]].\n`;
         return Promise.resolve({ path: p, raw: body, content: body, frontmatter: null });
       }
+      // Generated month hub pages are guarded by a marker the generator looks
+      // for in the EXISTING file, so the blanket "Sample note." fallback below
+      // would read as "a user took this page over" and stop every write. An
+      // unwritten hub has to miss, the way a real vault's would.
+      if (/\/wiki\/tasks\/\d{4}-\d{2}\.md$/.test(p)) {
+        return Promise.reject(new Error(`no such file: ${p}`));
+      }
       const slug = p.split("/").pop()?.replace(/\.md$/, "") ?? "";
       const d = bySlug.get(slug);
       if (d) {

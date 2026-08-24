@@ -139,6 +139,11 @@ export interface Strings {
   tasks_detail_recur_hint?: string;
   tasks_detail_start_after_due?: string;
   tasks_detail_open_note?: string;
+  tasks_hub?: string;
+  tasks_hub_heading?: string;
+  tasks_hub_empty?: string;
+  tasks_hub_written?: string;
+  tasks_hub_kept?: string;
   dp_prev?: string;
   dp_next?: string;
   dp_clear?: string;
@@ -1363,6 +1368,11 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_detail_recur_hint: "myco schedules \u201cevery day/week/month/year\u201d and \u201cevery 2 weeks\u201d. Any other rule stays in your note, untouched.",
     tasks_detail_start_after_due: "The start is after the due date, so this task shows on its due day. Your dates are left exactly as written.",
     tasks_detail_open_note: "Open {page}",
+    tasks_hub: "Update month pages",
+    tasks_hub_heading: "{month} schedule",
+    tasks_hub_empty: "_Nothing scheduled this month._",
+    tasks_hub_written: "Updated {n} month page(s).",
+    tasks_hub_kept: "Left {n} page(s) alone — you have taken them over.",
     dp_prev: "Previous month",
     dp_next: "Next month",
     dp_clear: "Clear date",
@@ -2610,6 +2620,11 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_detail_recur_hint: "myco가 계산하는 규칙은 \u201cevery day/week/month/year\u201d와 \u201cevery 2 weeks\u201d입니다. 그 밖의 규칙은 노트에 그대로 남습니다.",
     tasks_detail_start_after_due: "시작일이 마감일보다 늦어서 마감일에만 표시됩니다. 적어 둔 날짜는 그대로 둡니다.",
     tasks_detail_open_note: "{page} 열기",
+    tasks_hub: "일정 페이지 갱신",
+    tasks_hub_heading: "{month} 일정",
+    tasks_hub_empty: "_이 달에 예정된 일이 없습니다._",
+    tasks_hub_written: "월 페이지 {n}개를 갱신했습니다.",
+    tasks_hub_kept: "{n}개는 직접 관리하고 있어 그대로 두었습니다.",
     dp_prev: "이전 달",
     dp_next: "다음 달",
     dp_clear: "날짜 지우기",
@@ -3758,6 +3773,11 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_detail_recur_hint: "myco が計算できるのは \u201cevery day/week/month/year\u201d と \u201cevery 2 weeks\u201d です。それ以外の規則はノートにそのまま残ります。",
     tasks_detail_start_after_due: "開始日が期限より後なので、期限の日にのみ表示します。書かれた日付はそのままにします。",
     tasks_detail_open_note: "{page} を開く",
+    tasks_hub: "月ページを更新",
+    tasks_hub_heading: "{month} の予定",
+    tasks_hub_empty: "_この月に予定はありません。_",
+    tasks_hub_written: "月ページ {n} 件を更新しました。",
+    tasks_hub_kept: "{n} 件は自分で管理しているため、そのままにしました。",
     dp_prev: "前の月",
     dp_next: "次の月",
     dp_clear: "日付をクリア",
