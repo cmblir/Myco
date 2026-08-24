@@ -33,6 +33,7 @@ import { formatCrashReport } from "../lib/crashReport";
 import {
   CLI_DEFAULT,
   PROVIDERS,
+  providerCanIngest,
   providerDesc,
   useEnabledProviders,
 } from "../lib/providers";
@@ -298,7 +299,11 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
       <ModelPicker
         t={t}
         label={t.s_model_ingest}
-        providers={enabled}
+        // Ingest writes vault files; a text-only provider (builtin, HTTP APIs,
+        // ollama) can only fail after the raw/ copy is already written — so it
+        // is not offered here. A stored incapable choice still displays,
+        // marked not-connected (ModelSelect never silently rewrites).
+        providers={enabled.filter((p) => providerCanIngest(p.id))}
         provider={settings.ingest_provider}
         model={settings.ingest_model}
         effort={settings.ingest_effort}

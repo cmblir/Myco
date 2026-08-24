@@ -179,9 +179,10 @@ export async function complete(args: CompleteArgs): Promise<string> {
   // which these providers cannot do — fail loudly instead of pretending.
   if (args.task === "ingest") {
     throw new Error(
-      `Ingest writes new pages into your vault, which only Claude Code (CLI) can do. ` +
-        `The selected provider "${provider}" has no file access. Choose Claude Code (CLI) ` +
-        `for Ingest under Settings → Model, or connect it under Settings → Connections.`,
+      `Ingest writes new pages into your vault, which needs a provider with file ` +
+        `access — Claude Code, Gemini or Codex (CLI), or myco Pro. The selected ` +
+        `provider "${provider}" is text-only. Pick one of those for Ingest under ` +
+        `Settings → Model, or connect one under Settings → Connections.`,
     );
   }
 

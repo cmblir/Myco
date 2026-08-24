@@ -40,6 +40,15 @@ export interface ProviderDef {
  * Mirrors Rust's `claude::CLI_DEFAULT`. */
 export const CLI_DEFAULT = "(default)";
 
+/** Whether a provider can run Ingest, which writes files into the vault.
+ * The three CLIs have real file tools (chat.ts's isCli branch) and myco Pro
+ * applies file operations server-side (runIngestProvider); every other
+ * provider is text-in/text-out and `complete({task:"ingest"})` throws for it.
+ * Used to keep the Ingest picker from offering a provider that can only fail. */
+export function providerCanIngest(id: string): boolean {
+  return PROVIDERS.find((p) => p.id === id)?.kind === "cli" || id === "myco-pro";
+}
+
 export const PROVIDERS: ProviderDef[] = [
   {
     id: "anthropic-cli",
