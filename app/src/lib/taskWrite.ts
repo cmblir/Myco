@@ -6,15 +6,16 @@ import { ipc } from "./ipc";
 import type { TaskItem } from "./ipc";
 import {
   setLineFields,
-  setLineStatus,
   type TaskField,
   type TaskMeta,
   type TaskStatus,
 } from "./taskLine";
+import { setLineStatusWithRecurrence } from "./taskRecurrence";
 
-/** Rewrite `task`'s checkbox line to `status`. Returns "stale" when the note
- * changed since the scan (that line is no longer a checkbox), in which case
- * nothing is written and the caller must rescan. IO errors propagate. */
+/** Rewrite `task`'s checkbox line to `status`, stamping the `✅` done date and
+ * repeating a recurring task onto its next occurrence. Returns "stale" when the
+ * note changed since the scan (that line is no longer a checkbox), in which
+ * case nothing is written and the caller must rescan. IO errors propagate. */
 export async function writeTaskStatus(
   vaultPath: string,
   task: TaskItem,
@@ -22,7 +23,7 @@ export async function writeTaskStatus(
 ): Promise<"ok" | "stale"> {
   const path = `${vaultPath}/${task.page}`;
   const { raw } = await ipc.readFile(path);
-  const next = setLineStatus(raw, task.line, status);
+  const next = setLineStatusWithRecurrence(raw, task.line, status);
   if (next === null) return "stale";
   await ipc.writeFile(path, next);
   return "ok";

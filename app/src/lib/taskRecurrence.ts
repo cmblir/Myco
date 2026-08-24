@@ -6,8 +6,15 @@
 // cannot read would silently lose something the user wrote, and the same line
 // still works in Obsidian Tasks.
 
-import { parseIsoDate, today } from "./taskLine";
-import type { TaskMeta } from "./taskLine";
+import {
+  parseIsoDate,
+  parseTaskMeta,
+  serializeTaskText,
+  setLineStatus,
+  today,
+  type TaskMeta,
+  type TaskStatus,
+} from "./taskLine";
 
 export interface Recurrence {
   unit: "day" | "week" | "month" | "year";
@@ -66,4 +73,38 @@ export function nextOccurrence(meta: TaskMeta): TaskMeta | null {
     due: meta.due ? advance(meta.due, rule) : "",
     doneAt: "",
   };
+}
+
+/** Move line `lineNo` to `status`, stamp or clear its `✅` done date, and — when
+ *  a recurring task is completed — insert its next occurrence directly above,
+ *  unchecked. That placement is Obsidian Tasks' own, so a vault edited in both
+ *  places reads the same either way.
+ *
+ *  Rewriting the line normalizes its markers (a legacy `@date` becomes `📅`,
+ *  the fixed field order applies), which is the same "write narrow" contract
+ *  every other writer here follows.
+ *
+ *  `null` when that line is not a checkbox any more: the scan it came from is
+ *  stale, so the caller must rescan rather than edit by line number. */
+export function setLineStatusWithRecurrence(
+  content: string,
+  lineNo: number,
+  status: TaskStatus,
+  now: string = today(),
+): string | null {
+  const marked = setLineStatus(content, lineNo, status);
+  if (marked === null) return null;
+  const lines = marked.split("\n");
+  const m = /^(\s*[-*+]\s*\[[^\]]\]\s*)(.*)$/.exec(lines[lineNo - 1]);
+  if (!m) return null;
+  // Leaving "done" clears the date: a task moved back to doing was not
+  // completed today, and a stale `✅` would claim it was.
+  const meta = { ...parseTaskMeta(m[2]), doneAt: status === "done" ? now : "" };
+  lines[lineNo - 1] = `${m[1]}${serializeTaskText(meta)}`.trimEnd();
+  const next = status === "done" ? nextOccurrence(meta) : null;
+  if (next) {
+    const unchecked = m[1].replace(/\[[^\]]\]/, "[ ]");
+    lines.splice(lineNo - 1, 0, `${unchecked}${serializeTaskText(next)}`.trimEnd());
+  }
+  return lines.join("\n");
 }

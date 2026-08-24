@@ -11,6 +11,7 @@ vi.mock("./ipc", () => ({
 
 import { writeTaskFields, writeTaskStatus } from "./taskWrite";
 import type { TaskItem } from "./ipc";
+import { today } from "./taskLine";
 
 beforeEach(() => {
   readFile.mockReset();
@@ -31,9 +32,11 @@ describe("writeTaskStatus", () => {
     readFile.mockResolvedValue({ raw: "# day\n- [ ] ship it @2026-08-19\n- [ ] other" });
     expect(await writeTaskStatus("/v", TASK, "done")).toBe("ok");
     expect(readFile).toHaveBeenCalledWith("/v/daily.md");
+    // Completing stamps the done date, which also migrates the legacy `@` due
+    // marker — the same normalization every other writer here does.
     expect(writeFile).toHaveBeenCalledWith(
       "/v/daily.md",
-      "# day\n- [x] ship it @2026-08-19\n- [ ] other",
+      `# day\n- [x] ship it 📅 2026-08-19 ✅ ${today()}\n- [ ] other`,
     );
   });
 
