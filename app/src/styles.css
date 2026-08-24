@@ -1225,10 +1225,12 @@ select {
   padding: 1px 6px;
   border: 0;
   border-radius: 4px;
-  background: var(--accent-soft);
+  /* --bg-active, not --accent-soft: in dark the accent-soft (#2c2c2c) sits on
+     the #252525 day cell at barely 1.1:1 — the bars all but vanished. */
+  background: var(--bg-active);
   /* Bars from adjacent days butt up against each other — the hairline is what
      separates two tasks from one long one. */
-  box-shadow: inset 0 0 0 1px var(--line);
+  box-shadow: inset 0 0 0 1px var(--line-strong);
   color: var(--ink);
   font-size: 11.5px;
   line-height: 16px;
