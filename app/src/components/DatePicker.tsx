@@ -41,11 +41,15 @@ export default function DatePicker({
   value,
   onChange,
   disabled,
+  label: labelProp,
 }: {
   t: Strings;
   value: string;
   onChange: (iso: string) => void;
   disabled?: boolean;
+  /** What this picker names — its accessible name and its empty-state text.
+   *  Defaults to the due date, the only field there used to be. */
+  label?: string;
 }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const [open, setOpen] = useState(false);
@@ -58,7 +62,7 @@ export default function DatePicker({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popRef = useRef<HTMLDivElement>(null);
 
-  const label = t.tasks_due ?? "Due date";
+  const label = labelProp ?? t.tasks_due ?? "Due date";
 
   const openPopover = (): void => {
     const base = parseIsoDate(value) ?? new Date();

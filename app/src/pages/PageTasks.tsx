@@ -10,6 +10,7 @@ import type { JSX } from "react";
 import DatePicker from "../components/DatePicker";
 import TaskBoard from "../components/TaskBoard";
 import TaskCalendar from "../components/TaskCalendar";
+import TaskDetail from "../components/TaskDetail";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
@@ -18,13 +19,15 @@ import { isComposingKey } from "../lib/ime";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { notifyEnabled, runTaskNotifyPass, setNotifyEnabled } from "../lib/taskNotifier";
-import { writeTaskStatus } from "../lib/taskWrite";
+import { writeTaskFields, writeTaskStatus } from "../lib/taskWrite";
 import {
   appendTaskLine,
   buildTaskLine,
   parseTaskMeta,
   setLineDue,
   today,
+  type TaskField,
+  type TaskMeta,
   type TaskStatus,
 } from "../lib/taskLine";
 
@@ -39,6 +42,10 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState<"list" | "board" | "calendar">("list");
   const [notifyOn, setNotifyOn] = useState(notifyEnabled());
+  // The open task in the detail panel, as `page:line` — the same identity the
+  // views drag with. Held as a key rather than the task object so a rescan
+  // re-resolves it against fresh text instead of showing a stale copy.
+  const [selected, setSelected] = useState<string | null>(null);
 
   const refresh = useCallback(async (): Promise<void> => {
     if (!currentVault) return;
@@ -114,6 +121,29 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
     }
   }
 
+  /// Change one task's scheduling fields from the detail panel. Same stale-scan
+  /// guard as every other writer here.
+  async function patchTask(
+    task: TaskItem,
+    patch: Partial<Pick<TaskMeta, TaskField>>,
+  ): Promise<void> {
+    if (!currentVault || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if ((await writeTaskFields(currentVault.path, task, patch)) === "stale") {
+        await refresh();
+        setError(t.tasks_stale ?? "That note changed — the list has been refreshed.");
+        return;
+      }
+      await refresh();
+    } catch (e: unknown) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   /// Move a task to `status` by rewriting just its line (taskWrite.ts — shared
   /// with the activity popover). Checking a box and dropping a card on a board
   /// column are the same edit.
@@ -152,6 +182,11 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
   const openPage = (task: TaskItem): void => {
     if (currentVault) setRoute(`page:${currentVault.path}/${task.page}`);
   };
+
+  const keyOf = (task: TaskItem): string => `${task.page}:${task.line}`;
+  // Re-resolved on every render: after a write the list is rescanned, and the
+  // panel must show the line as it now reads (or close, if it is gone).
+  const selectedTask = (tasks ?? []).find((x) => keyOf(x) === selected) ?? null;
 
   return (
     <div className="workspace">
@@ -249,7 +284,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           busy={busy}
           onReschedule={(task, day) => void reschedule(task, day)}
           onPickDay={setDue}
-          onOpen={openPage}
+          onOpen={(task) => setSelected(keyOf(task))}
         />
       ) : view === "board" ? (
         <TaskBoard
@@ -258,7 +293,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           statusOf={statusOf}
           busy={busy}
           onMove={(task, status) => void setStatus(task, status)}
-          onOpen={openPage}
+          onOpen={(task) => setSelected(keyOf(task))}
         />
       ) : (tasks?.length ?? 0) === 0 ? (
         <div className="card" style={{ padding: 16 }} data-testid="tasks-empty">
@@ -295,7 +330,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
                   <TaskRow
                     key={`${task.page}:${task.line}`}
                     task={task}
-                    onOpen={() => openPage(task)}
+                    onOpen={() => setSelected(keyOf(task))}
                     onToggle={() => void setStatus(task, task.done ? "todo" : "done")}
                     busy={busy}
                   />
@@ -317,7 +352,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
                   <TaskRow
                     key={`${task.page}:${task.line}`}
                     task={task}
-                    onOpen={() => openPage(task)}
+                    onOpen={() => setSelected(keyOf(task))}
                     onToggle={() => void setStatus(task, task.done ? "todo" : "done")}
                     busy={busy}
                   />
@@ -327,6 +362,22 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           ) : null}
         </>
       )}
+
+      {selectedTask ? (
+        <TaskDetail
+          // Remount per task, so the free-text drafts inside start from the
+          // task that is actually open.
+          key={selected}
+          t={t}
+          task={selectedTask}
+          status={statusOf(selectedTask)}
+          busy={busy}
+          onPatch={(patch) => void patchTask(selectedTask, patch)}
+          onStatus={(status) => void setStatus(selectedTask, status)}
+          onOpenNote={() => openPage(selectedTask)}
+          onClose={() => setSelected(null)}
+        />
+      ) : null}
     </div>
   );
 }
@@ -379,8 +430,7 @@ function TaskRow({
       >
         {task.done ? <Icon name="check" size={10} /> : null}
       </button>
-      {/* The title opens the note the task lives in — that is still where you
-          edit its wording. */}
+      {/* The title opens the detail panel; the panel links on to the note. */}
       <button
         type="button"
         onClick={onOpen}

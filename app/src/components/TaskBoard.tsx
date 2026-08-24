@@ -73,7 +73,7 @@ export default function TaskBoard({
                     e.dataTransfer.setData("text/plain", `${task.page}:${task.line}`);
                     e.dataTransfer.effectAllowed = "move";
                   }}
-                  onDoubleClick={() => onOpen(task)}
+                  onClick={() => onOpen(task)}
                   title={`${task.page}:${task.line}`}
                 >
                   <div className="task-card-title">{meta.title}</div>

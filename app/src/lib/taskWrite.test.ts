@@ -9,7 +9,7 @@ vi.mock("./ipc", () => ({
   },
 }));
 
-import { writeTaskStatus } from "./taskWrite";
+import { writeTaskFields, writeTaskStatus } from "./taskWrite";
 import type { TaskItem } from "./ipc";
 
 beforeEach(() => {
@@ -46,5 +46,31 @@ describe("writeTaskStatus", () => {
   it("propagates IO errors instead of swallowing them", async () => {
     readFile.mockRejectedValue(new Error("boom"));
     await expect(writeTaskStatus("/v", TASK, "done")).rejects.toThrow("boom");
+  });
+});
+
+describe("writeTaskFields", () => {
+  it("writes the patched fields and leaves the mark and other lines alone", async () => {
+    readFile.mockResolvedValue({ raw: "# day\n- [/] ship it @2026-08-19\n- [ ] other" });
+    expect(await writeTaskFields("/v", TASK, { due: "2026-08-28", estimate: "2d" })).toBe(
+      "ok",
+    );
+    // The legacy `@date` migrates to the emoji marker on this first edit.
+    expect(writeFile).toHaveBeenCalledWith(
+      "/v/daily.md",
+      "# day\n- [/] ship it 📅 2026-08-28 ⏱ 2d\n- [ ] other",
+    );
+  });
+
+  it("clears a field given an empty string", async () => {
+    readFile.mockResolvedValue({ raw: "- [ ] a\n- [ ] ship it 📅 2026-08-19 !p1" });
+    expect(await writeTaskFields("/v", { ...TASK, line: 2 }, { due: "" })).toBe("ok");
+    expect(writeFile).toHaveBeenCalledWith("/v/daily.md", "- [ ] a\n- [ ] ship it !p1");
+  });
+
+  it("returns stale and writes nothing when the line is no longer a checkbox", async () => {
+    readFile.mockResolvedValue({ raw: "# day\nplain text now\n- [ ] other" });
+    expect(await writeTaskFields("/v", TASK, { due: "2026-08-28" })).toBe("stale");
+    expect(writeFile).not.toHaveBeenCalled();
   });
 });

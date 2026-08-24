@@ -4,7 +4,13 @@
 
 import { ipc } from "./ipc";
 import type { TaskItem } from "./ipc";
-import { setLineStatus, type TaskStatus } from "./taskLine";
+import {
+  setLineFields,
+  setLineStatus,
+  type TaskField,
+  type TaskMeta,
+  type TaskStatus,
+} from "./taskLine";
 
 /** Rewrite `task`'s checkbox line to `status`. Returns "stale" when the note
  * changed since the scan (that line is no longer a checkbox), in which case
@@ -17,6 +23,22 @@ export async function writeTaskStatus(
   const path = `${vaultPath}/${task.page}`;
   const { raw } = await ipc.readFile(path);
   const next = setLineStatus(raw, task.line, status);
+  if (next === null) return "stale";
+  await ipc.writeFile(path, next);
+  return "ok";
+}
+
+/** Rewrite `task`'s scheduling fields (an empty string clears one), leaving its
+ * checkbox mark and every other line alone. Same "stale" contract as
+ * `writeTaskStatus`: nothing is written and the caller must rescan. */
+export async function writeTaskFields(
+  vaultPath: string,
+  task: TaskItem,
+  patch: Partial<Pick<TaskMeta, TaskField>>,
+): Promise<"ok" | "stale"> {
+  const path = `${vaultPath}/${task.page}`;
+  const { raw } = await ipc.readFile(path);
+  const next = setLineFields(raw, task.line, patch);
   if (next === null) return "stale";
   await ipc.writeFile(path, next);
   return "ok";

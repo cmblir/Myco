@@ -126,6 +126,19 @@ export interface Strings {
   tasks_view_calendar?: string;
   tasks_cal_today?: string;
   tasks_cal_undated?: string;
+  tasks_detail?: string;
+  tasks_detail_close?: string;
+  tasks_detail_status?: string;
+  tasks_detail_start?: string;
+  tasks_detail_scheduled?: string;
+  tasks_detail_priority?: string;
+  tasks_detail_priority_none?: string;
+  tasks_detail_estimate?: string;
+  tasks_detail_estimate_hint?: string;
+  tasks_detail_recur?: string;
+  tasks_detail_recur_hint?: string;
+  tasks_detail_start_after_due?: string;
+  tasks_detail_open_note?: string;
   dp_prev?: string;
   dp_next?: string;
   dp_clear?: string;
@@ -1337,6 +1350,19 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_view_calendar: "Calendar",
     tasks_cal_today: "Today",
     tasks_cal_undated: "No due date ({n})",
+    tasks_detail: "Task",
+    tasks_detail_close: "Close",
+    tasks_detail_status: "Status",
+    tasks_detail_start: "Start",
+    tasks_detail_scheduled: "Scheduled",
+    tasks_detail_priority: "Priority",
+    tasks_detail_priority_none: "None",
+    tasks_detail_estimate: "Estimate",
+    tasks_detail_estimate_hint: "Use a duration like 90m, 1.5h, 2d or 1w.",
+    tasks_detail_recur: "Repeat",
+    tasks_detail_recur_hint: "myco schedules \u201cevery day/week/month/year\u201d and \u201cevery 2 weeks\u201d. Any other rule stays in your note, untouched.",
+    tasks_detail_start_after_due: "The start is after the due date, so this task shows on its due day. Your dates are left exactly as written.",
+    tasks_detail_open_note: "Open {page}",
     dp_prev: "Previous month",
     dp_next: "Next month",
     dp_clear: "Clear date",
@@ -2571,6 +2597,19 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_view_calendar: "캘린더",
     tasks_cal_today: "오늘",
     tasks_cal_undated: "마감일 없음 ({n})",
+    tasks_detail: "할 일",
+    tasks_detail_close: "닫기",
+    tasks_detail_status: "상태",
+    tasks_detail_start: "시작",
+    tasks_detail_scheduled: "작업 예정",
+    tasks_detail_priority: "우선순위",
+    tasks_detail_priority_none: "없음",
+    tasks_detail_estimate: "예상 시간",
+    tasks_detail_estimate_hint: "90m, 1.5h, 2d, 1w 같은 형식으로 적어 주세요.",
+    tasks_detail_recur: "반복",
+    tasks_detail_recur_hint: "myco가 계산하는 규칙은 \u201cevery day/week/month/year\u201d와 \u201cevery 2 weeks\u201d입니다. 그 밖의 규칙은 노트에 그대로 남습니다.",
+    tasks_detail_start_after_due: "시작일이 마감일보다 늦어서 마감일에만 표시됩니다. 적어 둔 날짜는 그대로 둡니다.",
+    tasks_detail_open_note: "{page} 열기",
     dp_prev: "이전 달",
     dp_next: "다음 달",
     dp_clear: "날짜 지우기",
@@ -3706,6 +3745,19 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_view_calendar: "カレンダー",
     tasks_cal_today: "今日",
     tasks_cal_undated: "期限なし ({n})",
+    tasks_detail: "タスク",
+    tasks_detail_close: "閉じる",
+    tasks_detail_status: "ステータス",
+    tasks_detail_start: "開始",
+    tasks_detail_scheduled: "着手予定",
+    tasks_detail_priority: "優先度",
+    tasks_detail_priority_none: "なし",
+    tasks_detail_estimate: "見積り",
+    tasks_detail_estimate_hint: "90m, 1.5h, 2d, 1w のような形式で入力してください。",
+    tasks_detail_recur: "繰り返し",
+    tasks_detail_recur_hint: "myco が計算できるのは \u201cevery day/week/month/year\u201d と \u201cevery 2 weeks\u201d です。それ以外の規則はノートにそのまま残ります。",
+    tasks_detail_start_after_due: "開始日が期限より後なので、期限の日にのみ表示します。書かれた日付はそのままにします。",
+    tasks_detail_open_note: "{page} を開く",
     dp_prev: "前の月",
     dp_next: "次の月",
     dp_clear: "日付をクリア",

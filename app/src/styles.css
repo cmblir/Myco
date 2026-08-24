@@ -1185,6 +1185,88 @@ select {
   }
 }
 
+/* Task detail panel — a right-side drawer over the Tasks page. Fixed rather
+   than in-flow: the page's three views have wildly different heights, and the
+   panel has to stay put while the list behind it scrolls. */
+.task-detail {
+  position: fixed;
+  top: 64px;
+  right: 16px;
+  bottom: 16px;
+  width: 300px;
+  max-width: calc(100vw - 32px);
+  /* Under .model-chip-pop (30): the DatePicker portals its month grid to
+     <body>, and a drawer stacked above it would swallow every click on a day. */
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+  font-size: 13px;
+}
+.task-detail:focus-visible {
+  outline: 2px solid var(--ink-3);
+  outline-offset: 2px;
+}
+.task-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.task-detail-title {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink);
+  /* A long task keeps its whole wording here — this is where you read it. */
+  overflow-wrap: anywhere;
+}
+.task-detail-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.task-detail-field > span {
+  color: var(--ink-3);
+  flex: none;
+}
+.task-detail-field .input {
+  width: 150px;
+  flex: none;
+}
+.task-detail-warn {
+  margin: -4px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  /* The palette's amber — a caution line, not an error. */
+  color: var(--c-source);
+}
+.task-detail-note {
+  margin-top: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-content: center;
+}
+/* Narrow window: a bottom sheet, because a 300px drawer would cover the view
+   it is meant to be read next to. */
+@media (max-width: 640px) {
+  .task-detail {
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: 8px;
+    width: auto;
+    max-height: 70vh;
+  }
+}
+
 /* DatePicker — themed replacement for <input type="date"> (whose macOS
    popover is a white system panel that ignores the app theme). The popover
    reuses the .model-chip-pop chrome; these style the trigger and the month
