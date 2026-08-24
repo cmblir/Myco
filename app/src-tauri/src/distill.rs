@@ -846,6 +846,34 @@ fn valid_manifest_id(id: &str) -> bool {
         && segs.next().is_none()
 }
 
+/// Read-side guard for a run id coming in over IPC (`run_detail`, and the
+/// run-diff command's commit lookup).
+///
+/// `valid_manifest_id` alone is the WRITE guard and deliberately admits only
+/// the two prefixed shapes an IPC caller may append to. Rust's own runs are
+/// named by `run_id` — `YYYYMMDDTHHMMSS`, no prefix — so validating a lookup
+/// with the write guard rejected every real run on a real vault while the
+/// `digest-`-shaped dev fixtures sailed through. Same traversal rule, both
+/// shapes.
+fn valid_lookup_id(id: &str) -> bool {
+    if valid_manifest_id(id) {
+        return true;
+    }
+    let is_digits = |s: &str| !s.is_empty() && s.bytes().all(|b| b.is_ascii_digit());
+    let mut segs = id.split('-');
+    let stamp = segs.next().unwrap_or("");
+    let (day, time) = match stamp.split_once('T') {
+        Some(p) => p,
+        None => return false,
+    };
+    day.len() == 8
+        && is_digits(day)
+        && time.len() == 6
+        && is_digits(time)
+        && segs.next().map_or(true, is_digits)
+        && segs.next().is_none()
+}
+
 /// The one write path into `.myco/distill-runs/<id>.json` for TS-side steps
 /// that run outside Rust — session-digest's daily-file create, full-tier
 /// ingest's `_inbox/` archive + `raw/` create, draftMap's map-file create.
@@ -2940,7 +2968,7 @@ pub struct RunDetail {
 /// joined into a `.myco/distill-runs/` path — same `valid_manifest_id` guard
 /// as `append_distill_manifest`.
 pub fn run_detail(root: &Path, id: &str) -> Result<RunDetail, String> {
-    if !valid_manifest_id(id) {
+    if !valid_lookup_id(id) {
         return Err(format!("bad manifest id `{id}`"));
     }
     let path = manifest_path(root, id);
@@ -5408,6 +5436,23 @@ mod tests {
             )]
         );
         assert_eq!(d.created, vec!["daily/2026-08-21.md".to_string()]);
+
+        // A run Rust itself named — `run_id`'s YYYYMMDDTHHMMSS, no prefix. This
+        // is what every real vault holds; validating it with the write-side
+        // guard rejected the lot while the prefixed dev fixtures passed.
+        let real = RunManifest {
+            id: free_run_id(root, 1_787_540_400),
+            started_at: 1_787_540_400,
+            created: vec!["wiki/agent-made.md".into()],
+            ..Default::default()
+        };
+        save_manifest(root, &real).unwrap();
+        let d2 = run_detail(root, &real.id).unwrap();
+        assert_eq!(d2.id, real.id);
+        assert_eq!(d2.created, vec!["wiki/agent-made.md".to_string()]);
+        // Traversal stays refused on both shapes.
+        assert!(run_detail(root, "../../etc/passwd").is_err());
+        assert!(run_detail(root, "2026-08-24").is_err());
         assert_eq!(
             d.report_rel.as_deref(),
             Some("ingest-reports/distill-digest-100.md")

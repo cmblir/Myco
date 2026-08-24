@@ -231,9 +231,37 @@ fn strip_html_tags(html: &str) -> String {
         };
         let inner = rest[i + 1..i + j].trim().to_ascii_lowercase();
         let newline = if let Some(name) = inner.strip_prefix('/') {
+            // Every block-level close, not just the obvious five: a real page
+            // wraps its chrome in <nav>/<header>/<section>, and without those
+            // the nav text ran straight into the heading that followed it.
             matches!(
                 name.trim(),
-                "p" | "div" | "li" | "tr" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
+                "p" | "div"
+                    | "li"
+                    | "tr"
+                    | "td"
+                    | "th"
+                    | "ul"
+                    | "ol"
+                    | "table"
+                    | "pre"
+                    | "blockquote"
+                    | "nav"
+                    | "header"
+                    | "footer"
+                    | "section"
+                    | "article"
+                    | "aside"
+                    | "main"
+                    | "figcaption"
+                    | "dt"
+                    | "dd"
+                    | "h1"
+                    | "h2"
+                    | "h3"
+                    | "h4"
+                    | "h5"
+                    | "h6"
             )
         } else {
             inner == "br" || inner.starts_with("br ") || inner.starts_with("br/")
@@ -592,6 +620,28 @@ mod tests {
         assert!(!out.contains("color: red"), "style dropped: {out}");
         assert!(!out.contains("junk"), "script dropped: {out}");
         assert!(!out.contains("navigation"), "comment dropped: {out}");
+        let _ = fs::remove_file(&p);
+    }
+
+    #[test]
+    fn html_block_chrome_does_not_glue_to_the_heading() {
+        // A real clipped page wraps its chrome in <nav>/<section> with no list
+        // items, so the block-level closes are the only thing separating the
+        // chrome text from the prose that follows.
+        let p = tmp(
+            "chrome.html",
+            b"<body><nav>Skip to content</nav><h1>Clipped page</h1><section>Body text.</section><footer>Legal</footer></body>",
+        );
+        let out = extract_text(p.to_str().unwrap()).unwrap();
+        assert!(
+            !out.contains("contentClipped"),
+            "nav must not glue to the heading: {out}"
+        );
+        assert!(out.contains("Clipped page"), "got: {out}");
+        assert!(
+            out.lines().any(|l| l.trim() == "Body text."),
+            "section text stands alone: {out}"
+        );
         let _ = fs::remove_file(&p);
     }
 
