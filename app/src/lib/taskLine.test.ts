@@ -5,37 +5,10 @@ import {
   parseIsoDate,
   serializeTaskText,
   setLineFields,
-  buildTaskLine,
   parseTaskMeta,
   setLineStatus,
   today,
 } from "./taskLine";
-
-describe("buildTaskLine", () => {
-  it("writes a plain checkbox when there is no metadata", () => {
-    expect(buildTaskLine("  배포 API 수정  ")).toBe("- [ ] 배포 API 수정");
-  });
-
-  it("appends due date and priority in a form parseTaskMeta reads back", () => {
-    const line = buildTaskLine("배포", "2026-08-10", 1);
-    expect(line).toBe("- [ ] 배포 📅 2026-08-10 !p1");
-    expect(parseTaskMeta(line.replace("- [ ] ", ""))).toEqual({
-      title: "배포",
-      start: "",
-      scheduled: "",
-      due: "2026-08-10",
-      doneAt: "",
-      recur: "",
-      estimate: "",
-      priority: 1,
-    });
-  });
-
-  it("ignores a priority outside 1..3 rather than writing a marker nothing reads", () => {
-    expect(buildTaskLine("x", "", 0)).toBe("- [ ] x");
-    expect(buildTaskLine("x", "", 9)).toBe("- [ ] x");
-  });
-});
 
 describe("parseTaskMeta", () => {
   it("strips the markers from the displayed title", () => {

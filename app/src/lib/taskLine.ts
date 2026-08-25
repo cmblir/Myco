@@ -19,14 +19,6 @@ const MARK: Record<TaskStatus, string> = {
   done: "x",
 };
 
-/** A `- [ ] …` line for a new task. `due` is `YYYY-MM-DD`, empty for none. */
-export function buildTaskLine(text: string, due = "", priority = 0): string {
-  const parts = [text.trim()];
-  if (due) parts.push(`📅 ${due}`);
-  if (priority >= 1 && priority <= 3) parts.push(`!p${priority}`);
-  return `- [ ] ${parts.join(" ")}`;
-}
-
 // `@` followed by a date, optionally with a time — the time is accepted so a
 // per-item reminder can be added later without changing what is already written.
 const DUE_RE = /@(\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2})?)/;
