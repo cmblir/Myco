@@ -602,64 +602,58 @@ fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
 
 // ─── icon animation ──────────────────────────────────────────────────────────
 //
-// The template glyph is the mascot; motion doubles as an activity light.
-// Every set_icon forces a WindowServer menu-bar redraw, and a continuous
-// always-on cycle measurably heated WindowServer on a loaded machine (owner
-// report: system-wide lag) — so motion is BUDGETED, not constant:
-//   idle    — one blink every ~4s (two swaps per cycle, nothing in between)
-//   working — a bob at ~3 fps while anything is running
-// Frames are pre-baked template PNGs (black + alpha) so dark/light menu bars
-// keep working; swapping goes through the same TrayHandle the menu updates use.
+// The template glyph is the mascot, and it HOPS — a real squash-and-stretch
+// cycle (RunCat-style), not a blink. Continuous icon swapping is fine when
+// each swap is cheap: frames are decoded once, the template flag is set once
+// (not per swap — re-asserting it every frame was the expensive part of the
+// first attempt), and each tick assigns a pre-built image. Working speeds the
+// hop up — the pace is the activity light.
 
 /// True while the status push says something is running (distill/ingest/…).
 static ANIM_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-const FRAME_BASE: &[u8] = include_bytes!("../icons/tray/frames/base.png");
-const FRAME_UP: &[u8] = include_bytes!("../icons/tray/frames/up.png");
-const FRAME_DOWN: &[u8] = include_bytes!("../icons/tray/frames/down.png");
-const FRAME_BLINK: &[u8] = include_bytes!("../icons/tray/frames/blink.png");
+/// The hop cycle: rest, squash, push-off, apex, fall, land.
+const HOP_FRAMES: [&[u8]; 6] = [
+    include_bytes!("../icons/tray/frames/h0.png"),
+    include_bytes!("../icons/tray/frames/h1.png"),
+    include_bytes!("../icons/tray/frames/h2.png"),
+    include_bytes!("../icons/tray/frames/h3.png"),
+    include_bytes!("../icons/tray/frames/h4.png"),
+    include_bytes!("../icons/tray/frames/h5.png"),
+];
 
 /// Spawn the animator. One task for the app's lifetime; ticks are no-ops when
 /// nothing changes (the same frame is never re-set).
 fn spawn_icon_animator(app: AppHandle) {
     use std::sync::atomic::Ordering;
     tauri::async_runtime::spawn(async move {
-        // Frame ids: 0 base, 1 up, 2 down, 3 blink. Decoded once — a PNG
-        // decode per swap was pure waste.
-        let frames: Vec<tauri::image::Image<'static>> =
-            [FRAME_BASE, FRAME_UP, FRAME_DOWN, FRAME_BLINK]
-                .iter()
-                .filter_map(|b| tauri::image::Image::from_bytes(b).ok())
-                .map(|i| i.to_owned())
-                .collect();
-        if frames.len() != 4 {
+        // Decoded once — a PNG decode per swap was pure waste.
+        let frames: Vec<tauri::image::Image<'static>> = HOP_FRAMES
+            .iter()
+            .filter_map(|b| tauri::image::Image::from_bytes(b).ok())
+            .map(|i| i.to_owned())
+            .collect();
+        if frames.len() != HOP_FRAMES.len() {
             return; // a frame failed to decode; keep the static glyph
         }
-        // Working bob: base, up, base, down.
-        const BOB: [usize; 4] = [0, 1, 0, 2];
         let mut tick: u64 = 0;
-        let mut last = usize::MAX;
         loop {
             let active = ANIM_ACTIVE.load(Ordering::Relaxed);
-            let (frame, sleep_ms) = if active {
-                (BOB[(tick % 4) as usize], 320u64)
-            } else if tick % 12 == 11 {
-                // Idle: blink once per 12 ticks (~4s), swap back next tick.
-                (3, 140)
-            } else {
-                // Long quiet holds between blinks — zero redraws while equal.
-                (0, 340)
-            };
-            if frame != last {
-                last = frame;
-                let tray = app
-                    .state::<TrayHandle>()
-                    .0
-                    .lock()
-                    .ok()
-                    .and_then(|g| g.as_ref().cloned());
-                if let Some(tray) = tray {
-                    let _ = tray.set_icon(Some(frames[frame].clone()));
+            let frame = (tick % frames.len() as u64) as usize;
+            // Idle hops at a relaxed ~7 fps; working roughly doubles it.
+            let sleep_ms: u64 = if active { 80 } else { 140 };
+            let tray = app
+                .state::<TrayHandle>()
+                .0
+                .lock()
+                .ok()
+                .and_then(|g| g.as_ref().cloned());
+            if let Some(tray) = tray {
+                let _ = tray.set_icon(Some(frames[frame].clone()));
+                // Template is asserted only while the flag hasn't stuck yet
+                // (macOS keeps it per status item; re-asserting per swap
+                // forced extra menu-bar work — the first attempt's lag).
+                if tick < frames.len() as u64 {
                     let _ = tray.set_icon_as_template(true);
                 }
             }
