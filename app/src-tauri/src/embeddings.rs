@@ -12,10 +12,37 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-/// Target chunk size in characters (~512 tokens). Sections larger than this are
-/// split further on paragraph boundaries so each embedded unit is retrieval-sized.
-const CHUNK_CHARS: usize = 1800;
-const CHUNK_MIN: usize = 120; // don't emit trailing scraps shorter than this alone
+/// Target chunk size in ESTIMATED TOKENS. The old byte budget (1800 bytes,
+/// "~512 tokens") was an English-only equation: XLM-R spends roughly one token
+/// per Hangul/CJK character, so a Korean-prose chunk under the byte budget
+/// could reach 4–5× the token estimate — and the Metal compute buffer scales
+/// at ~1 MiB per token of the widest text in an embed call (see
+/// `embed_pooled_with`), which on a memory-pressed machine turned every
+/// background page embed into a burst of transient GiB-scale allocation.
+/// 320 tokens caps that burst at ~320 MiB and is a better retrieval unit
+/// anyway (finer-grained chunks match queries more precisely).
+const CHUNK_TOKENS: usize = 320;
+const CHUNK_MIN_TOKENS: usize = 24; // don't emit trailing scraps alone
+
+/// Cheap per-char token estimate for the XLM-R tokenizer: Hangul/CJK runs at
+/// ~1 token per character (often merging two, sometimes splitting jamo — 1.0
+/// is the safe planning number), everything else at the classic ~4 chars per
+/// token. Only used for chunk budgeting, never for anything that must be
+/// exact; the embed path still hard-truncates at the model's real ctx.
+pub fn est_tokens(s: &str) -> usize {
+    let mut est = 0f32;
+    for c in s.chars() {
+        est += match c {
+            '\u{AC00}'..='\u{D7A3}' // Hangul syllables
+            | '\u{1100}'..='\u{11FF}' // Hangul jamo
+            | '\u{4E00}'..='\u{9FFF}' // CJK unified
+            | '\u{3040}'..='\u{30FF}' // kana
+            | '\u{F900}'..='\u{FAFF}' => 1.0,
+            _ => 0.25,
+        };
+    }
+    est.ceil() as usize
+}
 
 /// A non-cryptographic content hash — enough to detect a changed chunk so we skip
 /// re-embedding unchanged text. Not used for any security decision.
@@ -25,7 +52,7 @@ pub fn content_hash(s: &str) -> u64 {
     h.finish()
 }
 
-/// Emit `text` as one chunk, or as several if it is longer than `CHUNK_CHARS`.
+/// Emit `text` as one chunk, or as several if it is longer than `CHUNK_TOKENS`.
 ///
 /// The hard split is what keeps `chunk_page`'s size promise. Splitting on
 /// headings and blank lines only bounds a chunk when the text *has* those:
@@ -42,20 +69,37 @@ fn push_bounded(out: &mut Vec<String>, text: &str) {
     if text.is_empty() {
         return;
     }
-    if text.len() <= CHUNK_CHARS {
+    if est_tokens(text) <= CHUNK_TOKENS {
         out.push(text.to_string());
         return;
     }
     let mut rest = text;
-    while rest.len() > CHUNK_CHARS {
-        // Largest char boundary at or before the limit.
-        let mut end = CHUNK_CHARS;
-        while end > 0 && !rest.is_char_boundary(end) {
-            end -= 1;
+    while est_tokens(rest) > CHUNK_TOKENS {
+        // Walk chars until the token budget is spent — the byte offset of that
+        // point is the split candidate (never inside a codepoint by
+        // construction).
+        let mut est = 0f32;
+        let mut end = rest.len();
+        for (i, c) in rest.char_indices() {
+            est += match c {
+                '\u{AC00}'..='\u{D7A3}'
+                | '\u{1100}'..='\u{11FF}'
+                | '\u{4E00}'..='\u{9FFF}'
+                | '\u{3040}'..='\u{30FF}'
+                | '\u{F900}'..='\u{FAFF}' => 1.0,
+                _ => 0.25,
+            };
+            if est > CHUNK_TOKENS as f32 {
+                end = i;
+                break;
+            }
+        }
+        if end == rest.len() {
+            break; // estimate says it now fits — emit below
         }
         // Back off to the last whitespace, unless that leaves a scrap.
         if let Some(ws) = rest[..end].rfind(char::is_whitespace) {
-            if ws >= CHUNK_MIN {
+            if est_tokens(&rest[..ws]) >= CHUNK_MIN_TOKENS {
                 end = ws;
             }
         }
@@ -78,10 +122,10 @@ fn push_bounded(out: &mut Vec<String>, text: &str) {
 }
 
 /// Split a markdown page into retrieval-sized chunks. Splits first on ATX headings
-/// (`# ...`), then packs paragraphs up to CHUNK_CHARS, so a chunk stays topically
+/// (`# ...`), then packs paragraphs up to CHUNK_TOKENS, so a chunk stays topically
 /// coherent. Frontmatter and code fences are kept inline (cheap; good enough v1).
 ///
-/// Every emitted chunk is at most `CHUNK_CHARS` bytes; see `push_bounded`.
+/// Every emitted chunk is at most ~`CHUNK_TOKENS` estimated tokens; see `push_bounded`.
 pub fn chunk_page(text: &str) -> Vec<String> {
     // Split into heading-led sections.
     let mut sections: Vec<String> = Vec::new();
@@ -96,16 +140,18 @@ pub fn chunk_page(text: &str) -> Vec<String> {
     if !cur.trim().is_empty() {
         sections.push(cur);
     }
-    // Pack/emit each section under CHUNK_CHARS, splitting big ones on blank lines.
+    // Pack/emit each section under CHUNK_TOKENS, splitting big ones on blank lines.
     let mut out: Vec<String> = Vec::new();
     for sec in sections {
-        if sec.len() <= CHUNK_CHARS {
+        if est_tokens(&sec) <= CHUNK_TOKENS {
             push_bounded(&mut out, &sec);
             continue;
         }
         let mut buf = String::new();
         for para in sec.split("\n\n") {
-            if buf.len() + para.len() > CHUNK_CHARS && buf.len() >= CHUNK_MIN {
+            if est_tokens(&buf) + est_tokens(para) > CHUNK_TOKENS
+                && est_tokens(&buf) >= CHUNK_MIN_TOKENS
+            {
                 push_bounded(&mut out, &buf);
                 buf.clear();
             }
@@ -245,16 +291,16 @@ mod tests {
         // crashed the embed path.
         let wall = "지식 그래프는 노트 사이의 연결을 보여준다. ".repeat(200);
         assert!(
-            wall.len() > CHUNK_CHARS * 3,
+            est_tokens(&wall) > CHUNK_TOKENS * 3,
             "fixture must exceed the limit"
         );
         let chunks = chunk_page(&wall);
         assert!(chunks.len() > 1);
         for c in &chunks {
             assert!(
-                c.len() <= CHUNK_CHARS,
-                "chunk of {} chars exceeds limit",
-                c.len()
+                est_tokens(c) <= CHUNK_TOKENS + 8,
+                "chunk of ~{} tokens exceeds limit",
+                est_tokens(c)
             );
         }
         // No text is dropped on the floor.
@@ -275,7 +321,7 @@ mod tests {
         let chunks = chunk_page(&wall);
         assert!(chunks.len() > 1);
         for c in &chunks {
-            assert!(c.len() <= CHUNK_CHARS);
+            assert!(est_tokens(c) <= CHUNK_TOKENS + 8);
             assert!(!c.contains('\u{FFFD}'));
         }
         assert_eq!(chunks.concat(), wall);
@@ -290,9 +336,9 @@ mod tests {
         let chunks = chunk_page(&md);
         for c in &chunks {
             assert!(
-                c.len() <= CHUNK_CHARS,
-                "chunk of {} chars exceeds limit",
-                c.len()
+                est_tokens(c) <= CHUNK_TOKENS + 8,
+                "chunk of ~{} tokens exceeds limit",
+                est_tokens(c)
             );
         }
         assert!(chunks.iter().any(|c| c.contains("short body")));
@@ -338,5 +384,58 @@ mod tests {
     fn content_hash_changes_with_text() {
         assert_ne!(content_hash("a"), content_hash("b"));
         assert_eq!(content_hash("same"), content_hash("same"));
+    }
+}
+
+#[cfg(test)]
+mod token_budget_tests {
+    use super::*;
+
+    #[test]
+    fn korean_counts_a_token_per_syllable_and_ascii_a_quarter() {
+        assert_eq!(est_tokens("가나다라"), 4);
+        // 8 ASCII chars × 0.25 = 2.
+        assert_eq!(est_tokens("abcdefgh"), 2);
+        // ceil: one latin char still costs a token.
+        assert_eq!(est_tokens("a"), 1);
+    }
+
+    #[test]
+    fn korean_prose_chunks_stay_under_the_token_budget() {
+        // ~1500 Hangul chars in one unbroken paragraph — the exact shape that
+        // used to come out as ONE 1.5k-token chunk and allocate a GiB-scale
+        // Metal buffer per embed call.
+        let prose = "가나다라마바사아자차카타파하".repeat(110);
+        assert!(est_tokens(&prose) > 1000);
+        let chunks = chunk_page(&prose);
+        assert!(chunks.len() >= 4, "split into several: {}", chunks.len());
+        for c in &chunks {
+            assert!(
+                est_tokens(c) <= CHUNK_TOKENS + 8,
+                "chunk over budget: {} tokens",
+                est_tokens(c)
+            );
+        }
+    }
+
+    #[test]
+    fn english_prose_packs_more_characters_per_chunk_than_korean() {
+        let en = "the quick brown fox jumps over the lazy dog ".repeat(120); // ~5.3k chars
+        let ko = "빠른 갈색 여우가 게으른 개를 뛰어넘는다 ".repeat(120); // ~2.6k chars
+        let en_chunks = chunk_page(&en);
+        let ko_chunks = chunk_page(&ko);
+        let en_avg = en.len() / en_chunks.len().max(1);
+        let ko_avg = ko.chars().count() / ko_chunks.len().max(1);
+        // English fits ~4 chars/token, Korean ~1 — budgets must differ in kind.
+        assert!(en_avg > ko_avg, "en {} vs ko {}", en_avg, ko_avg);
+        for c in en_chunks.iter().chain(ko_chunks.iter()) {
+            assert!(est_tokens(c) <= CHUNK_TOKENS + 8);
+        }
+    }
+
+    #[test]
+    fn short_pages_stay_one_chunk() {
+        let chunks = chunk_page("# 제목\n\n짧은 노트.\n");
+        assert_eq!(chunks.len(), 1);
     }
 }

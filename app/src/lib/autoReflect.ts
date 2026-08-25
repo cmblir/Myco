@@ -51,8 +51,12 @@ export function useAutoReflectScheduler(
     const tick = (): void => {
       if (!cancelled) void runReflectTick();
     };
-    // A short kick after enabling, then on the interval.
-    const kick = window.setTimeout(tick, 4000);
+    // First kick rides AFTER the index updater's 180s launch catch-up
+    // window, not 4s into boot: reflect's retrieval loads the ~400 MB embed
+    // model, and on a memory-pressed machine that landed exactly on the
+    // launch spike (measured: the one remaining model load at t≈30s after
+    // every start). 4 minutes keeps launch clean; the interval unchanged.
+    const kick = window.setTimeout(tick, 240_000);
     const id = window.setInterval(tick, intervalMin * 60_000);
     return () => {
       cancelled = true;

@@ -110,6 +110,21 @@ impl IndexUpdater {
                             // (`rx.recv()` isn't polled until the next loop
                             // iteration) rather than landing in `dirty`, so
                             // removing exactly `batch` on success is correct.
+                            // Background embedding is deferrable by nature —
+                            // searches read the on-disk index either way — so
+                            // under system memory pressure the batch WAITS
+                            // rather than adding a transient multi-hundred-MB
+                            // compute buffer to a machine already evicting
+                            // pages. Interactive query embeds do not come
+                            // through this actor and are never gated.
+                            if memory_pressured() {
+                                eprintln!(
+                                    "[index_updater] memory pressure — deferring {} dirty path(s)",
+                                    dirty.len()
+                                );
+                                tokio::time::sleep(std::time::Duration::from_secs(120)).await;
+                                continue;
+                            }
                             let batch: Vec<String> = dirty.iter().cloned().collect();
                             match process_batch(&app, &r, batch.clone()).await {
                                 Ok(()) => {
@@ -189,6 +204,29 @@ fn index_is_stale(store_model: &str) -> bool {
 /// instead, until the lexical index catches back up to the dense one.
 fn reconcile_requested(batch: &[String], stale: bool, bm25_incomplete: bool) -> bool {
     stale || bm25_incomplete || batch.iter().any(|r| r == "*")
+}
+
+/// Whether the kernel reports elevated memory pressure
+/// (`kern.memorystatus_vm_pressure_level`: 1 normal, 2 warn, 4 critical).
+/// One `sysctl` spawn per BATCH — batches are debounced to at most one every
+/// few hundred ms and usually far rarer, so the spawn cost is nil and it
+/// avoids both an unsafe block and a direct libc dependency. Any failure
+/// (non-macOS, missing key) counts as "not pressured": the gate must never
+/// be able to wedge indexing off. Decision split out for the test below.
+fn memory_pressured() -> bool {
+    let level = std::process::Command::new("sysctl")
+        .args(["-n", "kern.memorystatus_vm_pressure_level"])
+        .output()
+        .ok()
+        .filter(|o| o.status.success())
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .and_then(|s| s.trim().parse::<i32>().ok());
+    pressure_gates(level)
+}
+
+/// 2 (warn) and above defer; unknown never defers.
+fn pressure_gates(level: Option<i32>) -> bool {
+    matches!(level, Some(l) if l >= 2)
 }
 
 /// How long the actor waits before processing the pending dirty set: the
@@ -726,5 +764,18 @@ mod tests {
         assert!(!should_index("_inbox/quarantine/a.md"));
         assert!(!should_index("raw/a.md")); // never a watched tree
         assert!(!should_index("wiki/a.txt")); // not markdown
+    }
+}
+
+#[cfg(test)]
+mod pressure_tests {
+    use super::pressure_gates;
+
+    #[test]
+    fn warn_and_critical_defer_normal_and_unknown_do_not() {
+        assert!(!pressure_gates(Some(1)));
+        assert!(pressure_gates(Some(2)));
+        assert!(pressure_gates(Some(4)));
+        assert!(!pressure_gates(None));
     }
 }
