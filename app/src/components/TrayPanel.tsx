@@ -18,6 +18,8 @@ import ActivityPanel, {
 import type { ActivityIconName, PanelRow, PanelSection } from "./ActivityPanel";
 import { ipc } from "../lib/ipc";
 import type { TrayStatusPayload } from "../lib/ipc";
+import mascotWebm from "../assets/mascot/idle.webm";
+import mascotPoster from "../assets/mascot/idle.poster.png";
 
 /** Pushed by Rust on every update_tray_status call. */
 export const TRAY_STATUS_EVENT = "myco://tray-status";
@@ -46,8 +48,16 @@ const MOCK_STATUS: TrayStatusPayload = {
   reflect: "Reflect 제안 8개",
   quarantine: "검토 대기 2건",
   proposals: [
-    { path: "work/feedback/2026-08-12-map-attention.md", label: "attention", sub: "토픽 맵 작성 · 노트 6개" },
-    { path: "work/feedback/2026-08-12-map-rope.md", label: "rope", sub: "토픽 맵 작성 · 노트 4개" },
+    {
+      path: "work/feedback/2026-08-12-map-attention.md",
+      label: "attention",
+      sub: "토픽 맵 작성 · 노트 6개",
+    },
+    {
+      path: "work/feedback/2026-08-12-map-rope.md",
+      label: "rope",
+      sub: "토픽 맵 작성 · 노트 4개",
+    },
   ],
   proposalsMore: "",
   proposalApprove: "승인",
@@ -68,9 +78,37 @@ const MOCK_STATUS: TrayStatusPayload = {
     inboxView: "보기 →",
     sparkCaption: "최근 24시간 · 보라 = 세션/inbox · 파랑 = MCP 호출",
     summary: "오늘: 세션 +4 · MCP 17회 · 인박스 +3",
-    hourlyFiles: [0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0],
-    hourlyMcp: [0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 3, 0, 0, 2, 3, 1, 2, 0, 0, 0, 0, 0, 0, 0],
+    hourlyFiles: [
+      0, 0, 0, 0, 0, 0, 0, 1, 0, 2, 1, 0, 0, 1, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0,
+    ],
+    hourlyMcp: [
+      0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 3, 0, 0, 2, 3, 1, 2, 0, 0, 0, 0, 0, 0, 0,
+    ],
   },
+  greeting: "오늘 마감 2건",
+  cards: [
+    {
+      id: "tasks",
+      label: "할 일",
+      value: "오늘 2",
+      sub: "지연 1",
+      accent: true,
+    },
+    {
+      id: "quarantine",
+      label: "검토 대기",
+      value: "4",
+      sub: "격리 3 · 제안 1",
+      accent: false,
+    },
+    {
+      id: "overview",
+      label: "엔진",
+      value: "대기",
+      sub: "MCP 실행 중",
+      accent: false,
+    },
+  ],
   ask: "위키에 질문하기",
   distill: "지금 증류",
   open: "myco 열기",
@@ -79,8 +117,7 @@ const MOCK_STATUS: TrayStatusPayload = {
 
 export default function TrayPanel(): JSX.Element {
   const [status, setStatus] = useState<TrayStatusPayload | null>(() =>
-    import.meta.env.DEV &&
-    new URLSearchParams(location.search).has("trayMock")
+    import.meta.env.DEV && new URLSearchParams(location.search).has("trayMock")
       ? MOCK_STATUS
       : null,
   );
@@ -98,7 +135,9 @@ export default function TrayPanel(): JSX.Element {
     let cancelled = false;
     void import("@tauri-apps/api/event")
       .then(({ listen }) =>
-        listen<TrayStatusPayload>(TRAY_STATUS_EVENT, (e) => setStatus(e.payload)),
+        listen<TrayStatusPayload>(TRAY_STATUS_EVENT, (e) =>
+          setStatus(e.payload),
+        ),
       )
       .then((u) => {
         if (cancelled) u();
@@ -235,7 +274,12 @@ export default function TrayPanel(): JSX.Element {
 
   const actions: PanelRow[] = [];
   if (s.ask) {
-    actions.push({ key: "ask", icon: "ask", main: s.ask, onClick: () => act("query") });
+    actions.push({
+      key: "ask",
+      icon: "ask",
+      main: s.ask,
+      onClick: () => act("query"),
+    });
   }
   if (s.distill) {
     actions.push({
@@ -261,6 +305,55 @@ export default function TrayPanel(): JSX.Element {
 
   return (
     <div className="tray-panel" ref={cardRef}>
+      <header className="tray-head">
+        {/* The mascot moves in the panel too — the same idle clip the app's
+            empty states play. Decorative; the greeting carries the words.
+            Reduced motion gets the still poster instead of a loop. */}
+        {window.matchMedia("(prefers-reduced-motion: reduce)").matches ? (
+          <img
+            className="tray-mascot"
+            src={mascotPoster}
+            alt=""
+            aria-hidden="true"
+          />
+        ) : (
+          <video
+            className="tray-mascot"
+            src={mascotWebm}
+            poster={mascotPoster}
+            autoPlay
+            loop
+            muted
+            playsInline
+            aria-hidden="true"
+          />
+        )}
+        <div className="tray-head-text">
+          <strong>myco</strong>
+          {s.greeting ? (
+            <span className="tray-greeting">{s.greeting}</span>
+          ) : null}
+        </div>
+      </header>
+
+      {(s.cards ?? []).length > 0 ? (
+        <div className="tray-cards">
+          {(s.cards ?? []).map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              className={"tray-card" + (c.accent ? " is-accent" : "")}
+              onClick={() => act(c.id)}
+              data-testid={`tray-card-${c.id}`}
+            >
+              <span className="tray-card-label">{c.label}</span>
+              <span className="tray-card-value">{c.value}</span>
+              <span className="tray-card-sub">{c.sub}</span>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
       <ActivityPanel sections={sections} />
     </div>
   );

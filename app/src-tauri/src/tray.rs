@@ -98,6 +98,12 @@ pub struct TrayStatus {
     /// empty otherwise.
     #[serde(default, rename = "proposalNote")]
     pub proposal_note: String,
+    /// Header line under the mascot in the panel; empty hides it.
+    #[serde(default)]
+    pub greeting: String,
+    /// Popover stat cards (panel-only; the native menu has no card idiom).
+    #[serde(default)]
+    pub cards: Vec<TrayCard>,
     /// Action rows.
     #[serde(default)]
     pub ask: String,
@@ -107,6 +113,18 @@ pub struct TrayStatus {
     pub open: String,
     #[serde(default)]
     pub quit: String,
+}
+
+/// One popover stat card; `id` doubles as the tray_panel_action on click.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct TrayCard {
+    pub id: String,
+    pub label: String,
+    pub value: String,
+    #[serde(default)]
+    pub sub: String,
+    #[serde(default)]
+    pub accent: bool,
 }
 
 /// One pending map proposal for the panel: its vault-relative path (sent back
@@ -392,7 +410,7 @@ fn handle_menu_id<R: Runtime>(app: &AppHandle<R>, id: &str) {
         // "tray-reflect" goes to Overview too — that is where the reflect
         // panel lives.
         "tray-overview" | "tray-reflect" | "tray-settings" | "tray-query" | "tray-ingest"
-        | "tray-quarantine" | "tray-proposals" => {
+        | "tray-quarantine" | "tray-proposals" | "tray-tasks" => {
             show_main_window(app);
             // Route names match the frontend's RouteId values — except
             // "quarantine"/"proposals", which the frontend expands into route
@@ -403,6 +421,7 @@ fn handle_menu_id<R: Runtime>(app: &AppHandle<R>, id: &str) {
                 "tray-ingest" => "ingest",
                 "tray-quarantine" => "quarantine",
                 "tray-proposals" => "proposals",
+                "tray-tasks" => "tasks",
                 _ => "query",
             };
             let _ = app.emit(TRAY_ACTION_EVENT, route);
@@ -581,6 +600,65 @@ fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
     let _ = win.set_focus();
 }
 
+// ─── icon animation ──────────────────────────────────────────────────────────
+//
+// The template glyph is the mascot; motion makes the menu bar read as alive
+// and doubles as an activity light. Two modes, both cheap:
+//   idle    — a blink every few seconds (one frame swap and back)
+//   working — a continuous 4-frame bob while anything is running
+// Frames are pre-baked template PNGs (black + alpha) so dark/light menu bars
+// keep working; swapping goes through the same TrayHandle the menu updates use.
+
+/// True while the status push says something is running (distill/ingest/…).
+static ANIM_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+const FRAME_BASE: &[u8] = include_bytes!("../icons/tray/frames/base.png");
+const FRAME_UP: &[u8] = include_bytes!("../icons/tray/frames/up.png");
+const FRAME_DOWN: &[u8] = include_bytes!("../icons/tray/frames/down.png");
+const FRAME_BLINK: &[u8] = include_bytes!("../icons/tray/frames/blink.png");
+
+/// Spawn the animator. One task for the app's lifetime; ticks are no-ops when
+/// nothing changes (the same frame is never re-set).
+fn spawn_icon_animator(app: AppHandle) {
+    use std::sync::atomic::Ordering;
+    tauri::async_runtime::spawn(async move {
+        // Idle blink: hold base ~4s, blink 140ms. Working bob: 160ms/frame.
+        // Frame ids: 0 base, 1 up, 2 down, 3 blink.
+        const FRAMES: [&[u8]; 4] = [FRAME_BASE, FRAME_UP, FRAME_DOWN, FRAME_BLINK];
+        const BOB: [usize; 4] = [0, 1, 0, 2];
+        let mut tick: u64 = 0;
+        let mut last = usize::MAX;
+        loop {
+            let active = ANIM_ACTIVE.load(Ordering::Relaxed);
+            let (frame, sleep_ms) = if active {
+                (BOB[(tick % 4) as usize], 160)
+            } else if tick % 26 == 25 {
+                // One blink per idle cycle (25 × 160ms ≈ 4s between blinks).
+                (3, 140)
+            } else {
+                (0, 160)
+            };
+            if frame != last {
+                last = frame;
+                let tray = app
+                    .state::<TrayHandle>()
+                    .0
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.as_ref().cloned());
+                if let Some(tray) = tray {
+                    if let Ok(img) = tauri::image::Image::from_bytes(FRAMES[frame]) {
+                        let _ = tray.set_icon(Some(img));
+                        let _ = tray.set_icon_as_template(true);
+                    }
+                }
+            }
+            tick = tick.wrapping_add(1);
+            tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
+        }
+    });
+}
+
 /// Build the tray icon with the template glyph and the boot menu. Called once
 /// from setup; best-effort — a tray failure must never block app startup.
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
@@ -609,6 +687,7 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         })
         .build(app)?;
     app.state::<TrayHandle>().0.lock().unwrap().replace(tray);
+    spawn_icon_animator(app.clone());
     // Warm the popover now (hidden): the first click must show a populated
     // card, not a blank webview mid cold-load. Best-effort like the tray.
     let _ = ensure_panel(app);
@@ -624,6 +703,11 @@ pub async fn update_tray_status(app: AppHandle, status: TrayStatus) -> Result<()
     // Cache + push first: the popover panel mirrors the same snapshot the
     // native menu renders, even if the menu swap below fails.
     *app.state::<TrayStatusCache>().0.lock().unwrap() = status.clone();
+    // The icon animator's mode: bob while anything runs, blink otherwise.
+    ANIM_ACTIVE.store(
+        !status.running.is_empty(),
+        std::sync::atomic::Ordering::Relaxed,
+    );
     let _ = app.emit(TRAY_STATUS_EVENT, &status);
     let state = app.state::<TrayHandle>();
     let tray = {
@@ -698,6 +782,7 @@ pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
         "ingest" => "tray-ingest",
         "quarantine" => "tray-quarantine",
         "proposals" => "tray-proposals",
+        "tasks" => "tray-tasks",
         "dismiss" => return Ok(()),
         other => return Err(format!("unknown tray panel action: {other}")),
     };

@@ -9,14 +9,24 @@
 
 import { listen } from "@tauri-apps/api/event";
 import { ipc } from "./ipc";
-import type { InflowStats, TrayRunningRow, TrayStatusPayload } from "./ipc";
+import type {
+  InflowStats,
+  TrayCardPayload,
+  TrayRunningRow,
+  TrayStatusPayload,
+} from "./ipc";
 import { STRINGS } from "./i18n";
 import type { Strings } from "./i18n";
 import { inflowLines } from "./inflow";
 import { getLastSweepAt } from "./autoImport";
+import { buildDigest } from "./taskNotify";
 import { pendingLinkCount } from "./linkSuggestions";
 import { runDistillGuarded } from "./distill";
-import { MAP_ROW_CAP, mapRowContent, stepLabel } from "../components/ActivityChip";
+import {
+  MAP_ROW_CAP,
+  mapRowContent,
+  stepLabel,
+} from "../components/ActivityChip";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useQueryStore } from "../stores/queryStore";
@@ -65,6 +75,9 @@ export interface TraySnapshot {
   sweepAt: number | null;
   /** Auto-import interval (minutes) when enabled; null when off. */
   autoImportMin: number | null;
+  /** Open tasks due today / overdue (throttled scan; 0/0 before a probe). */
+  dueToday: number;
+  overdue: number;
 }
 
 /** Icon-side title: nothing when idle, the reindex percent when indexing is
@@ -90,7 +103,10 @@ export function trayTitle(s: TraySnapshot): string | null {
 /** Full pre-translated payload, mirroring the in-app popover's rows.
  * Reindex progress stays text ("218/302") — native menus can't draw the
  * popover's progress bar, a deliberate platform difference. */
-export function buildTrayStatus(s: TraySnapshot, t: Strings): TrayStatusPayload {
+export function buildTrayStatus(
+  s: TraySnapshot,
+  t: Strings,
+): TrayStatusPayload {
   const running: TrayRunningRow[] = [];
   if (s.askBusy) running.push({ kind: "ask", text: t.nav_query });
   if (s.distillRunning) {
@@ -173,11 +189,88 @@ export function buildTrayStatus(s: TraySnapshot, t: Strings): TrayStatusPayload 
             hourlyMcp: s.inflow.hourlyMcp,
           }
         : null,
+    greeting: trayGreeting(s, t),
+    cards: trayCards(s, t),
     ask: t.quick_ask,
     distill: t.set_distill_run_now ?? "Distill now",
     open: t.tray_open ?? "Open myco",
     quit: t.tray_quit ?? "Quit myco",
   };
+}
+
+/** One line under the mascot: what deserves attention first. */
+export function trayGreeting(s: TraySnapshot, t: Strings): string {
+  const running =
+    (s.askBusy ? 1 : 0) +
+    (s.distillRunning ? 1 : 0) +
+    (s.reflectRunning ? 1 : 0) +
+    (s.reindexStage === "indexing" || s.reindexStage === "loading-model"
+      ? 1
+      : 0);
+  if (running > 0)
+    return (t.tray_greet_busy ?? "{n} running").replace("{n}", String(running));
+  if (s.overdue > 0)
+    return (t.tray_greet_overdue ?? "{n} overdue").replace(
+      "{n}",
+      String(s.overdue),
+    );
+  if (s.dueToday > 0)
+    return (t.tray_greet_due ?? "{n} due today").replace(
+      "{n}",
+      String(s.dueToday),
+    );
+  return t.tray_greet_idle ?? "All quiet";
+}
+
+/** The popover's stat cards — id doubles as the click action Rust routes. */
+export function trayCards(s: TraySnapshot, t: Strings): TrayCardPayload[] {
+  const review = s.quarantined + s.mapProposals.length + s.reflectFindings;
+  const runningCount =
+    (s.askBusy ? 1 : 0) +
+    (s.distillRunning ? 1 : 0) +
+    (s.reflectRunning ? 1 : 0) +
+    (s.reindexStage === "indexing" || s.reindexStage === "loading-model"
+      ? 1
+      : 0);
+  return [
+    {
+      id: "tasks",
+      label: t.tray_card_tasks ?? "Tasks",
+      value: (t.tray_card_tasks_v ?? "{n} today").replace(
+        "{n}",
+        String(s.dueToday),
+      ),
+      sub: (t.tray_card_tasks_sub ?? "{n} overdue").replace(
+        "{n}",
+        String(s.overdue),
+      ),
+      accent: s.overdue > 0,
+    },
+    {
+      id: "quarantine",
+      label: t.tray_card_review ?? "To review",
+      value: String(review),
+      sub: (t.tray_card_review_sub ?? "quarantine {q} · proposals {p}")
+        .replace("{q}", String(s.quarantined))
+        .replace("{p}", String(s.mapProposals.length)),
+      accent: false,
+    },
+    {
+      id: "overview",
+      label: t.tray_card_engine ?? "Engine",
+      value:
+        runningCount > 0
+          ? (t.tray_card_engine_busy ?? "{n} running").replace(
+              "{n}",
+              String(runningCount),
+            )
+          : (t.tray_card_engine_idle ?? "Idle"),
+      sub: s.mcpRunning
+        ? (t.tb_activity_mcp_on ?? "MCP server running")
+        : (t.tb_activity_mcp_off ?? "MCP server off"),
+      accent: runningCount > 0,
+    },
+  ];
 }
 
 /** Trailing-debounced, rate-limited sender. `push` may be called on every
@@ -239,6 +332,11 @@ let inflowStats: InflowStats | null = null;
 let inflowProbedAt = 0;
 const INFLOW_PROBE_MIN_MS = 120_000;
 
+/** Due-task counts, same throttle story as inflow: `scan_tasks` walks the
+ * vault, so it rides the send loop no more than once per window. */
+let dueCounts = { dueToday: 0, overdue: 0 };
+let dueProbedAt = 0;
+
 /** Wire the tray: store subscriptions → debounced update_tray_status calls,
  * plus the menu-action listener. Returns a cleanup. Call once from App. */
 export function initTrayIntegration(): () => void {
@@ -248,6 +346,7 @@ export function initTrayIntegration(): () => void {
       .then(() => {
         probeMcp();
         if (Date.now() - inflowProbedAt >= INFLOW_PROBE_MIN_MS) probeInflow();
+        if (Date.now() - dueProbedAt >= INFLOW_PROBE_MIN_MS) probeDue();
       })
       .catch(() => {
         /* plain-browser dev: no Tauri backend */
@@ -280,7 +379,9 @@ export function initTrayIntegration(): () => void {
           reindexTotal: reindex.total,
           pendingLinks,
           quarantined: useDistillStore.getState().status?.quarantined ?? 0,
-          mapProposals: pendingMapProposals(useDistillStore.getState().proposals),
+          mapProposals: pendingMapProposals(
+            useDistillStore.getState().proposals,
+          ),
           queryProvider: settings?.query_provider ?? "",
           mcpRunning,
           inflow: inflowStats,
@@ -288,6 +389,8 @@ export function initTrayIntegration(): () => void {
           autoImportMin: settings?.auto_import_enabled
             ? settings.auto_import_interval_min
             : null,
+          dueToday: dueCounts.dueToday,
+          overdue: dueCounts.overdue,
         },
         t,
       ),
@@ -300,6 +403,31 @@ export function initTrayIntegration(): () => void {
       .then((i) => {
         if (i.running !== mcpRunning) {
           mcpRunning = i.running;
+          recompute();
+        }
+      })
+      .catch(() => {
+        /* plain-browser dev: no Tauri backend */
+      });
+  };
+
+  const probeDue = (): void => {
+    const path = useVaultStore.getState().currentVault?.path;
+    if (!path) return;
+    dueProbedAt = Date.now();
+    void ipc
+      .scanTasks(path)
+      .then((tasks) => {
+        const digest = buildDigest(tasks);
+        const next = {
+          dueToday: digest?.dueToday ?? 0,
+          overdue: digest?.overdue ?? 0,
+        };
+        if (
+          next.dueToday !== dueCounts.dueToday ||
+          next.overdue !== dueCounts.overdue
+        ) {
+          dueCounts = next;
           recompute();
         }
       })
@@ -335,6 +463,7 @@ export function initTrayIntegration(): () => void {
       // no path, so the first open must trigger the real one immediately or
       // the panel's inflow section sits empty for the whole throttle window.
       if (inflowStats === null) probeInflow();
+      if (dueProbedAt === 0) probeDue();
       recompute();
     }),
     useLinkSuggestStore.subscribe(recompute),
@@ -352,7 +481,8 @@ export function initTrayIntegration(): () => void {
       action === "overview" ||
       action === "settings" ||
       action === "query" ||
-      action === "ingest"
+      action === "ingest" ||
+      action === "tasks"
     ) {
       useUIStore.getState().setRoute(action);
       return;

@@ -482,6 +482,15 @@ export interface TrayProposalPayload {
   sub: string;
 }
 
+/** One popover stat card; `id` doubles as the tray_panel_action on click. */
+export interface TrayCardPayload {
+  id: string;
+  label: string;
+  value: string;
+  sub: string;
+  accent: boolean;
+}
+
 export interface TrayStatusPayload {
   /** Pre-formatted running rows, shown as disabled info items. */
   running: TrayRunningRow[];
@@ -507,6 +516,10 @@ export interface TrayStatusPayload {
   proposalReject?: string;
   /** builtin-local caveat shown under the rows; "" when a provider can draft. */
   proposalNote?: string;
+  /** Header line under the mascot; absent on older payloads. */
+  greeting?: string;
+  /** Stat cards; absent/empty hides the grid. */
+  cards?: TrayCardPayload[];
   ask: string;
   distill: string;
   open: string;
@@ -654,8 +667,12 @@ export const ipc = {
   fetchYoutubeTranscript: (url: string) =>
     invoke<string>("fetch_youtube_transcript", { url }),
   /** Describe an image with a vision provider (Feature 2 image ingest). */
-  describeImage: (provider: string, model: string, path: string, prompt: string) =>
-    invoke<string>("describe_image", { provider, model, path, prompt }),
+  describeImage: (
+    provider: string,
+    model: string,
+    path: string,
+    prompt: string,
+  ) => invoke<string>("describe_image", { provider, model, path, prompt }),
   /** Transcribe an audio/video file via an installed whisper CLI (Feature 2). */
   transcribeMedia: (path: string) =>
     invoke<string>("transcribe_media", { path }),
@@ -692,7 +709,14 @@ export const ipc = {
     model: string,
     /** Inclusive YYYY-MM-DD day window — restricts hits to the dated tiers. */
     range?: { start: string; end: string },
-  ) => invoke<ScoredChunk[]>("semantic_search", { query, k, provider, model, range }),
+  ) =>
+    invoke<ScoredChunk[]>("semantic_search", {
+      query,
+      k,
+      provider,
+      model,
+      range,
+    }),
   /** 2D semantic-map coordinates (PCA over page embeddings) for every indexed page. */
   semanticMap: () => invoke<SemanticPoint[]>("semantic_map", {}),
   /** Existing pages a new source likely relates to — retrieval grounding for ingest. */
@@ -700,10 +724,8 @@ export const ipc = {
     invoke<CandidatePage[]>("wikify_candidates", { sourceText, k }),
   relatedPages: (page: string, k: number) =>
     invoke<VecHit[]>("related_pages", { page, k }),
-  embeddingsStatus: () =>
-    invoke<EmbeddingsStatus>("embeddings_status", {}),
-  semanticEdges: (k: number) =>
-    invoke<SemEdge[]>("semantic_edges", { k }),
+  embeddingsStatus: () => invoke<EmbeddingsStatus>("embeddings_status", {}),
+  semanticEdges: (k: number) => invoke<SemEdge[]>("semantic_edges", { k }),
   /** Embed arbitrary texts with the bundled local embedder (bge-m3) — used by
    *  the extractive session digest to rank candidate quotes offline. */
   embedLocalTexts: (texts: string[]) =>
@@ -806,9 +828,14 @@ export const ipc = {
     model?: string,
     effort?: string,
   ) =>
-    invoke<ClaudeResult>("claude_run_stream", { runId, prompt, cwd, model, effort }),
-  claudeCancel: (runId: string) =>
-    invoke<boolean>("claude_cancel", { runId }),
+    invoke<ClaudeResult>("claude_run_stream", {
+      runId,
+      prompt,
+      cwd,
+      model,
+      effort,
+    }),
+  claudeCancel: (runId: string) => invoke<boolean>("claude_cancel", { runId }),
   agentCheck: (provider: string) =>
     invoke<ClaudeStatus>("agent_check", { provider }),
   agentRun: (
@@ -817,7 +844,8 @@ export const ipc = {
     prompt: string,
     cwd: string,
     effort?: string,
-  ) => invoke<ClaudeResult>("agent_run", { provider, model, prompt, cwd, effort }),
+  ) =>
+    invoke<ClaudeResult>("agent_run", { provider, model, prompt, cwd, effort }),
   scanTasks: (vaultPath: string) =>
     invoke<TaskItem[]>("scan_tasks", { vaultPath }),
   scanProvenance: (vaultPath: string) =>
@@ -866,14 +894,14 @@ export const ipc = {
   /** Fit the spotlight window to its measured card height (logical px). */
   resizeSpotlight: (height: number) =>
     invoke<null>("resize_spotlight", { height }),
-  setSettings: (value: MycoSettings) =>
-    invoke<null>("set_settings", { value }),
+  setSettings: (value: MycoSettings) => invoke<null>("set_settings", { value }),
   /** Write the settings/looks export bundle to a path the user chose via the
    *  native save dialog. */
   writeSettingsExport: (path: string, contents: string) =>
     invoke<null>("write_settings_export", { path, contents }),
   /** Read a settings/looks export file chosen via the native open dialog. */
-  readSettingsImport: (path: string) => invoke<string>("read_settings_import", { path }),
+  readSettingsImport: (path: string) =>
+    invoke<string>("read_settings_import", { path }),
   /** Where to write a settings/looks export — native save dialog, or null if
    *  the user cancelled. */
   pickSettingsExportPath: async (): Promise<string | null> => {
@@ -898,8 +926,11 @@ export const ipc = {
   // In-app agent (Feature 4).
   agentToolsSchema: () =>
     invoke<AgentToolDescriptor[]>("agent_tools_schema", {}),
-  agentToolCall: (name: string, args: Record<string, unknown>, allowWrite: boolean) =>
-    invoke<unknown>("agent_tool_call", { name, args, allowWrite }),
+  agentToolCall: (
+    name: string,
+    args: Record<string, unknown>,
+    allowWrite: boolean,
+  ) => invoke<unknown>("agent_tool_call", { name, args, allowWrite }),
   agentChat: (request: AgentChatRequest) =>
     invoke<AgentTurn>("agent_chat", { request }),
   // Recurring schedules (Feature 7).
@@ -961,7 +992,12 @@ export const ipc = {
   scanRawAudit: (vault: string) =>
     invoke<RawAuditReport>("scan_raw_audit", { vault }),
   /** Dormant wiki pages echoing `seedText` — resurface (Q4 item 10). */
-  resurfaceCandidates: (vault: string, seedText: string, k: number, floor: number) =>
+  resurfaceCandidates: (
+    vault: string,
+    seedText: string,
+    k: number,
+    floor: number,
+  ) =>
     invoke<ResurfaceCandidate[]>("resurface_candidates", {
       vault,
       seedText,
@@ -1007,7 +1043,13 @@ export const ipc = {
     day: string,
     files: string[],
     fingerprints: string[] | null,
-  ) => invoke<string>("archive_digested_sessions", { vault, day, files, fingerprints }),
+  ) =>
+    invoke<string>("archive_digested_sessions", {
+      vault,
+      day,
+      files,
+      fingerprints,
+    }),
   // Rollup bookkeeping — the same pair one (`"weekly"`, ROADMAP P1) or two
   // (`"monthly"`) compression layers up: settled buckets whose source files
   // are ready to roll up, and the cold-tier move for a bucket that has been
@@ -1021,9 +1063,17 @@ export const ipc = {
     bucket: string,
     files: string[],
     fingerprints: string[] | null,
-  ) => invoke<string>("archive_rolled", { vault, layer, bucket, files, fingerprints }),
+  ) =>
+    invoke<string>("archive_rolled", {
+      vault,
+      layer,
+      bucket,
+      files,
+      fingerprints,
+    }),
   // Gate-admitted Full-tier items ready for LLM ingest (Phase B, Task 3).
-  fullTierItems: (vault: string) => invoke<string[]>("full_tier_items", { vault }),
+  fullTierItems: (vault: string) =>
+    invoke<string[]>("full_tier_items", { vault }),
   // Records a TS-side LLM step's file moves/creates into the same
   // .myco/distill-runs/<id>.json undo-manifest Rust's own passes already
   // write incrementally (Important 4, Phase B whole-branch review) —
@@ -1058,7 +1108,8 @@ export const ipc = {
   // Ask went extractive, so this is normally always false.
   localChatModelAvailable: () => invoke<boolean>("local_chat_model_available"),
   // ROADMAP P2 — crash report viewer (Settings -> About).
-  recentPanics: (limit: number) => invoke<PanicEntry[]>("recent_panics", { limit }),
+  recentPanics: (limit: number) =>
+    invoke<PanicEntry[]>("recent_panics", { limit }),
   clearPanicLog: () => invoke<null>("clear_panic_log"),
   osVersion: () => invoke<string>("os_version"),
 };

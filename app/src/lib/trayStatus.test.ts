@@ -25,6 +25,8 @@ const idle: TraySnapshot = {
   inflow: null,
   sweepAt: null,
   autoImportMin: null,
+  dueToday: 0,
+  overdue: 0,
 };
 
 describe("trayTitle", () => {
@@ -34,12 +36,19 @@ describe("trayTitle", () => {
 
   it("shows the reindex percent when indexing is the only runner", () => {
     expect(
-      trayTitle({ ...idle, reindexStage: "indexing", reindexDone: 218, reindexTotal: 302 }),
+      trayTitle({
+        ...idle,
+        reindexStage: "indexing",
+        reindexDone: 218,
+        reindexTotal: 302,
+      }),
     ).toBe("72%");
   });
 
   it("shows no number for a single non-reindex runner", () => {
-    expect(trayTitle({ ...idle, distillRunning: true, distillStep: "run" })).toBeNull();
+    expect(
+      trayTitle({ ...idle, distillRunning: true, distillStep: "run" }),
+    ).toBeNull();
   });
 
   it("shows the running count for two or more", () => {
