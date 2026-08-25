@@ -52,7 +52,12 @@ impl IndexUpdater {
             // either way until it lands. The window also coalesces the two
             // launch rebinds (lib.rs pre-arm + the frontend's open_vault)
             // into one reconcile instead of two back-to-back full walks.
-            const REBIND_CATCHUP_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
+            // 180s, not 30: the catch-up loads the ~400 MB embed model, and on
+            // a memory-pressed machine that landed exactly in the "app just
+            // launched" window the owner felt as a system-wide swap storm.
+            // A genuine search loads the model on demand regardless — this
+            // delay only moves background catch-up work off the launch spike.
+            const REBIND_CATCHUP_DELAY: std::time::Duration = std::time::Duration::from_secs(180);
             let mut root: Option<PathBuf> = None;
             // Held only for its Drop side effect: reassigning on `Rebind` stops
             // the previous vault's watch. Never read directly, so both

@@ -308,6 +308,9 @@ pub fn run() {
             if let Some(root) = settings::active_vault() {
                 updater.rebind(std::path::PathBuf::from(root));
             }
+            // Idle-unload janitor for the local embed model (~400 MB): a
+            // memory-pressed machine gets the RAM back after 10 quiet minutes.
+            commands::spawn_llm_janitor(app.handle().clone());
             // Menu bar tray (activity mirror + quick actions). Best-effort:
             // a tray failure must never block startup.
             if let Err(e) = tray::init(app.handle()) {

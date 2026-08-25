@@ -49,6 +49,48 @@ fn require_root(state: &tauri::State<VaultRoot>) -> Result<PathBuf, String> {
 #[derive(Default, Clone)]
 pub struct LocalLlmState(Arc<Mutex<Option<LocalLlm>>>);
 
+/// Seconds-since-epoch of the last `with_local_llm` call — the idle-unload
+/// janitor's clock. Process-global (one model cell per process).
+static LLM_LAST_USED: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn now_epoch_secs() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Whether the janitor should drop the model: loaded, and unused for longer
+/// than the idle window. Pure for the test below.
+pub(crate) fn llm_should_unload(loaded: bool, last_used: u64, now: u64, idle_secs: u64) -> bool {
+    loaded && last_used > 0 && now.saturating_sub(last_used) >= idle_secs
+}
+
+/// Drop the local model after 10 idle minutes. The weights are ~400 MB of RAM
+/// that a memory-pressed machine feels immediately (measured: launching the
+/// app pushed a 16 MB-free machine into a swap storm); the cost of coming
+/// back is one lazy reload on the next embed/search, announced on
+/// `local-model-load` like any first load. The llama BACKEND token is not
+/// touched — it is process-global and deliberately leaked (see
+/// `local_llm::shared_backend`).
+pub fn spawn_llm_janitor(app: tauri::AppHandle) {
+    const IDLE_SECS: u64 = 10 * 60;
+    tauri::async_runtime::spawn(async move {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+            let cell = app.state::<LocalLlmState>().0.clone();
+            let Ok(mut guard) = cell.try_lock() else {
+                continue; // in use right now — clearly not idle
+            };
+            let loaded = guard.is_some();
+            let last = LLM_LAST_USED.load(std::sync::atomic::Ordering::Relaxed);
+            if llm_should_unload(loaded, last, now_epoch_secs(), IDLE_SECS) {
+                *guard = None; // frees the model weights
+            }
+        }
+    });
+}
+
 /// Optional local chat-model path: the packaged resource dir, falling back to
 /// the source tree in dev. The file is NOT bundled anymore (Ask answers
 /// extractively), so a miss is normal — callers load an embed-only host then.
@@ -132,6 +174,7 @@ where
     // Chat consumers (classify/generate) then error per-call with a clear
     // "not bundled" message instead of failing every local_* command here.
     let path = local_model_path(&app).ok();
+    LLM_LAST_USED.store(now_epoch_secs(), std::sync::atomic::Ordering::Relaxed);
     tauri::async_runtime::spawn_blocking(move || {
         let mut guard = cell.lock().unwrap_or_else(|e| e.into_inner());
         if guard.is_none() {
@@ -5582,5 +5625,24 @@ mod session_bucket_tests {
         assert_eq!(report.history_files_scanned, 0);
         assert!(report.secret_hits.is_empty() && report.pii_hits.is_empty());
         assert!(!report.truncated);
+    }
+}
+
+#[cfg(test)]
+mod llm_janitor_tests {
+    use super::llm_should_unload;
+
+    #[test]
+    fn unloads_only_when_loaded_and_idle_past_the_window() {
+        let idle = 600;
+        assert!(llm_should_unload(true, 1_000, 1_600, idle));
+        assert!(llm_should_unload(true, 1_000, 2_000, idle));
+        // Not loaded — nothing to drop.
+        assert!(!llm_should_unload(false, 1_000, 2_000, idle));
+        // Used recently.
+        assert!(!llm_should_unload(true, 1_500, 1_600, idle));
+        // Never used since boot (0 sentinel): nothing was loaded through the
+        // accessor, so there is nothing the janitor should race.
+        assert!(!llm_should_unload(true, 0, 9_999, idle));
     }
 }
