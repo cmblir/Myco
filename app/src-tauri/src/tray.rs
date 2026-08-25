@@ -612,14 +612,21 @@ fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
 /// True while the status push says something is running (distill/ingest/…).
 static ANIM_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// The hop cycle: rest, squash, push-off, apex, fall, land.
-const HOP_FRAMES: [&[u8]; 6] = [
+/// The hop cycle, sine-interpolated: squash on the ground at both ends, a
+/// gentle stretch through the airborne arc. Ten frames whose neighbours
+/// differ by ≤2px, so the loop reads as one continuous motion — fewer,
+/// coarser frames read as flicker at menu-bar size.
+const HOP_FRAMES: [&[u8]; 10] = [
     include_bytes!("../icons/tray/frames/h0.png"),
     include_bytes!("../icons/tray/frames/h1.png"),
     include_bytes!("../icons/tray/frames/h2.png"),
     include_bytes!("../icons/tray/frames/h3.png"),
     include_bytes!("../icons/tray/frames/h4.png"),
     include_bytes!("../icons/tray/frames/h5.png"),
+    include_bytes!("../icons/tray/frames/h6.png"),
+    include_bytes!("../icons/tray/frames/h7.png"),
+    include_bytes!("../icons/tray/frames/h8.png"),
+    include_bytes!("../icons/tray/frames/h9.png"),
 ];
 
 /// Spawn the animator. One task for the app's lifetime; ticks are no-ops when
@@ -640,8 +647,8 @@ fn spawn_icon_animator(app: AppHandle) {
         loop {
             let active = ANIM_ACTIVE.load(Ordering::Relaxed);
             let frame = (tick % frames.len() as u64) as usize;
-            // Idle hops at a relaxed ~7 fps; working roughly doubles it.
-            let sleep_ms: u64 = if active { 80 } else { 140 };
+            // ~12 fps idle keeps the arc fluid; working speeds it up.
+            let sleep_ms: u64 = if active { 55 } else { 80 };
             let tray = app
                 .state::<TrayHandle>()
                 .0
