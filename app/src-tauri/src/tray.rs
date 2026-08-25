@@ -602,10 +602,10 @@ fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
 
 // ─── icon animation ──────────────────────────────────────────────────────────
 //
-// The template glyph is the mascot; motion makes the menu bar read as alive
-// and doubles as an activity light. Two modes, both cheap:
-//   idle    — a blink every few seconds (one frame swap and back)
-//   working — a continuous 4-frame bob while anything is running
+// The template glyph is the mascot; it is ALWAYS in motion (owner call) and
+// doubles as an activity light. Two speeds:
+//   idle    — a slow breathing bob (~2 fps) with a blink woven in every cycle
+//   working — the same bob, fast (~6 fps), while anything is running
 // Frames are pre-baked template PNGs (black + alpha) so dark/light menu bars
 // keep working; swapping goes through the same TrayHandle the menu updates use.
 
@@ -622,22 +622,17 @@ const FRAME_BLINK: &[u8] = include_bytes!("../icons/tray/frames/blink.png");
 fn spawn_icon_animator(app: AppHandle) {
     use std::sync::atomic::Ordering;
     tauri::async_runtime::spawn(async move {
-        // Idle blink: hold base ~4s, blink 140ms. Working bob: 160ms/frame.
-        // Frame ids: 0 base, 1 up, 2 down, 3 blink.
+        // Frame ids: 0 base, 1 up, 2 down, 3 blink. One 8-step cycle: a full
+        // bob, a beat of rest, a blink — readable at both speeds.
         const FRAMES: [&[u8]; 4] = [FRAME_BASE, FRAME_UP, FRAME_DOWN, FRAME_BLINK];
-        const BOB: [usize; 4] = [0, 1, 0, 2];
+        const CYCLE: [usize; 8] = [0, 1, 0, 2, 0, 0, 3, 0];
         let mut tick: u64 = 0;
         let mut last = usize::MAX;
         loop {
             let active = ANIM_ACTIVE.load(Ordering::Relaxed);
-            let (frame, sleep_ms) = if active {
-                (BOB[(tick % 4) as usize], 160)
-            } else if tick % 26 == 25 {
-                // One blink per idle cycle (25 × 160ms ≈ 4s between blinks).
-                (3, 140)
-            } else {
-                (0, 160)
-            };
+            let frame = CYCLE[(tick % 8) as usize];
+            // Working runs the same cycle ~3× faster — the speed IS the light.
+            let sleep_ms: u64 = if active { 160 } else { 480 };
             if frame != last {
                 last = frame;
                 let tray = app

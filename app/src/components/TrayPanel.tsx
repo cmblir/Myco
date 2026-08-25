@@ -18,8 +18,6 @@ import ActivityPanel, {
 import type { ActivityIconName, PanelRow, PanelSection } from "./ActivityPanel";
 import { ipc } from "../lib/ipc";
 import type { TrayStatusPayload } from "../lib/ipc";
-import mascotWebm from "../assets/mascot/idle.webm";
-import mascotPoster from "../assets/mascot/idle.poster.png";
 
 /** Pushed by Rust on every update_tray_status call. */
 export const TRAY_STATUS_EVENT = "myco://tray-status";
@@ -272,62 +270,17 @@ export default function TrayPanel(): JSX.Element {
       })
     : [];
 
-  const actions: PanelRow[] = [];
-  if (s.ask) {
-    actions.push({
-      key: "ask",
-      icon: "ask",
-      main: s.ask,
-      onClick: () => act("query"),
-    });
-  }
-  if (s.distill) {
-    actions.push({
-      key: "distill",
-      icon: "distill",
-      main: s.distill,
-      onClick: () => act("distill"),
-    });
-  }
-  if (s.open) {
-    actions.push({ key: "open", main: s.open, onClick: () => act("open") });
-  }
-  if (s.quit) {
-    actions.push({ key: "quit", main: s.quit, onClick: () => act("quit") });
-  }
-
   const sections: PanelSection[] = [
     { key: "running", header: s.runningHeader, rows: running },
     { key: "waiting", header: s.waitingHeader, rows: waiting },
     { key: "inflow", header: s.inflow?.header, rows: inflow },
-    { key: "actions", rows: actions },
   ];
 
   return (
     <div className="tray-panel" ref={cardRef}>
       <header className="tray-head">
-        {/* The mascot moves in the panel too — the same idle clip the app's
-            empty states play. Decorative; the greeting carries the words.
-            Reduced motion gets the still poster instead of a loop. */}
-        {window.matchMedia("(prefers-reduced-motion: reduce)").matches ? (
-          <img
-            className="tray-mascot"
-            src={mascotPoster}
-            alt=""
-            aria-hidden="true"
-          />
-        ) : (
-          <video
-            className="tray-mascot"
-            src={mascotWebm}
-            poster={mascotPoster}
-            autoPlay
-            loop
-            muted
-            playsInline
-            aria-hidden="true"
-          />
-        )}
+        {/* Text only — the animated character lives in the menu bar itself
+            (owner call: the in-panel mascot read as a dark blob). */}
         <div className="tray-head-text">
           <strong>myco</strong>
           {s.greeting ? (
@@ -355,6 +308,32 @@ export default function TrayPanel(): JSX.Element {
       ) : null}
 
       <ActivityPanel sections={sections} />
+
+      {/* Primary actions as buttons; open/quit demoted to a quiet footer. */}
+      <div className="tray-actions">
+        {s.ask ? (
+          <button type="button" onClick={() => act("query")}>
+            {s.ask}
+          </button>
+        ) : null}
+        {s.distill ? (
+          <button type="button" onClick={() => act("distill")}>
+            {s.distill}
+          </button>
+        ) : null}
+      </div>
+      <div className="tray-foot">
+        {s.open ? (
+          <button type="button" onClick={() => act("open")}>
+            {s.open}
+          </button>
+        ) : null}
+        {s.quit ? (
+          <button type="button" onClick={() => act("quit")}>
+            {s.quit}
+          </button>
+        ) : null}
+      </div>
     </div>
   );
 }

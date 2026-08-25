@@ -4410,10 +4410,12 @@ hr {
   border-bottom-color: #33363f;
 }
 .tray-panel .inflow-spark-file {
-  background: #a78bfa;
+  background: rgba(167, 139, 250, 0.75);
+  border-radius: 1.5px;
 }
 .tray-panel .inflow-spark-mcp {
-  background: #7aa7ff;
+  background: rgba(96, 165, 250, 0.75);
+  border-radius: 1.5px;
 }
 
 /* Tray popover window (?window=tray) — the approved menubar-v2 panel:
@@ -4432,17 +4434,14 @@ html.tray-window body {
      card hugs the menu bar, room on the other sides for the shadow. */
   padding: 8px 24px 24px;
 }
-/* Tray popover header — the mascot lives here and keeps moving. */
+/* Tray popover header — text only; the animated character is the menu-bar
+   glyph itself. Panel-LOCAL colors throughout this block: this webview gets
+   no app theme, and app tokens resolve to light values here (that is exactly
+   the white-cards-on-dark-panel bug this replaced). */
 .tray-head {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 2px 2px 8px;
-}
-.tray-mascot {
-  width: 44px;
-  height: 32px;
-  object-fit: contain;
+  padding: 4px 8px 8px;
 }
 .tray-head-text {
   display: flex;
@@ -4455,54 +4454,91 @@ html.tray-window body {
 }
 .tray-greeting {
   font-size: 11.5px;
-  color: var(--ink-3);
+  color: #979aa5;
 }
-/* Stat cards — the iStat-style grid: label / big value / sub line. */
+/* Stat cards — label / big value / sub line, all panel-local. */
 .tray-cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
-  margin-bottom: 8px;
+  margin: 0 2px 8px;
 }
 .tray-card {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
-  padding: 8px 9px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--bg-soft);
+  padding: 9px 10px 8px;
+  border: 1px solid #343846;
+  border-radius: 9px;
+  background: #262932;
   text-align: left;
   cursor: pointer;
   min-width: 0;
-  transition: background var(--dur-quick);
+  transition: border-color 120ms;
 }
 .tray-card:hover {
-  background: var(--bg-hover);
+  border-color: #4a4e60;
 }
 .tray-card-label {
-  font-size: 10.5px;
-  letter-spacing: 0.02em;
+  font-size: 10px;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: var(--ink-4);
+  color: #7e848f;
 }
 .tray-card-value {
-  font-size: 15px;
+  font-size: 16.5px;
   font-weight: 650;
-  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+  color: #e8eaee;
   white-space: nowrap;
 }
+/* Amber only when something needs attention (overdue / running). */
 .tray-card.is-accent .tray-card-value {
-  color: var(--c-source);
+  color: #f0b45c;
 }
 .tray-card-sub {
   font-size: 10.5px;
-  color: var(--ink-3);
+  color: #979aa5;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   max-width: 100%;
+}
+/* Primary actions as two buttons; open/quit demoted to a quiet footer. */
+.tray-actions {
+  display: flex;
+  gap: 6px;
+  padding: 6px 2px 2px;
+}
+.tray-actions button {
+  flex: 1;
+  background: #262932;
+  color: #e8eaee;
+  border: 1px solid #343846;
+  border-radius: 8px;
+  padding: 6px 0;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.tray-actions button:hover {
+  border-color: #4a4e60;
+}
+.tray-foot {
+  display: flex;
+  justify-content: space-between;
+  padding: 7px 8px 2px;
+}
+.tray-foot button {
+  background: none;
+  border: 0;
+  padding: 0;
+  font-size: 12px;
+  color: #979aa5;
+  cursor: pointer;
+}
+.tray-foot button:hover {
+  color: #e8eaee;
 }
 @media (prefers-reduced-motion: reduce) {
   .tray-card {
@@ -4513,8 +4549,8 @@ html.tray-window body {
 .tray-panel {
   box-sizing: border-box;
   width: 100%;
-  background: rgba(34, 36, 43, 0.97);
-  border: 1px solid #33363f;
+  background: rgba(30, 32, 38, 0.98);
+  border: 1px solid #343846;
   border-radius: 12px;
   padding: 6px;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
