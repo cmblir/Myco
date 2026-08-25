@@ -824,3 +824,28 @@ precision instrument for a recall problem this corpus no longer has.
 
 **Reference for the next increment is unchanged:** dense+BM25 RRF — hit@1
 82.3 % · hit@3/@5/@10 100 % · MRR 0.906 · nDCG@10 0.926.
+
+## 2026-08-25 — embed-model bake-off: e5-small-ko replaces bge-m3 as the builtin
+
+`MYCO_EMBED_SPEC=<id> ./target/release/examples/retrieval_eval`, bilingual set
+(62 queries, 71 pages), after the token-budget chunking change (320-token cap):
+
+| arm            | bge-m3 Q4_K_M (417 MB) | e5-small-ko Q8_0 (40 MB) |
+|----------------|------------------------|--------------------------|
+| dense MRR      | 0.831                  | **0.903**                |
+| dense hit@1    | 72.6%                  | **83.9%**                |
+| fused MRR      | 0.914                  | **0.917**                |
+| fused nDCG@10  | 0.931                  | 0.933                    |
+| fused hit@3    | 100%                   | 100%                     |
+
+e5-small-ko = dragonkue/multilingual-e5-small-ko-v2, jc-lab KO/EN-pruned
+Q8_0 GGUF (upstream verification: 0.9979 mean cosine vs sentence-transformers).
+Known trade: KO/EN-only vocabulary — Japanese/Chinese BODY text tokenizes to
+<unk> and retrieves poorly; MIRACL-ko open-domain stays bge-m3's win (-0.07 in
+the published numbers) even though this in-domain harness flips the other way.
+
+Floors recalibrated for the new cosine geometry (both probes re-run,
+distributions in the constants' own doc comments): RELEVANCE_FLOOR 0.50 → 0.42
+(positives 0.412…0.749 vs negatives ≤0.415 — ranges touch; 0.42 = 0/15 false
+accepts, 1/62 false reject, an acronym query BM25 covers), INTENT_FLOOR
+0.65 → 0.45 (gap 0.354…0.538, midpoint).

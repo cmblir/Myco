@@ -2508,7 +2508,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_google_api:
       "Gemini family via generativelanguage.googleapis.com.",
     s_provider_desc_builtin_local:
-      "bge-m3 embedder bundled inside the app. Works offline with zero setup; Ask answers extractively from your notes via semantic search. No local chat model ships — use a cloud provider for ingest, classification, and generation.",
+      "Compact multilingual embedder (e5-small-ko, 40 MB) bundled inside the app. Works offline with zero setup; Ask answers extractively from your notes via semantic search. No local chat model ships — use a cloud provider for ingest, classification, and generation.",
     s_provider_desc_ollama:
       "Run open-source models locally. Auto-detects http://localhost:11434.",
     s_provider_desc_openrouter:
@@ -3829,7 +3829,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_google_api:
       "generativelanguage.googleapis.com을 통한 Gemini 계열.",
     s_provider_desc_builtin_local:
-      "앱에 내장된 bge-m3 임베더. 설치 없이 오프라인으로 동작하며, Ask는 시맨틱 검색으로 내 노트 원문을 그대로 답변합니다. 로컬 챗 모델은 번들하지 않음 — ingest·분류·생성은 클라우드 제공자를 사용하세요.",
+      "앱에 내장된 경량 다국어 임베더(e5-small-ko, 40MB). 설치 없이 오프라인으로 동작하며, Ask는 시맨틱 검색으로 내 노트 원문을 그대로 답변합니다. 로컬 챗 모델은 번들하지 않음 — ingest·분류·생성은 클라우드 제공자를 사용하세요.",
     s_provider_desc_ollama:
       "오픈소스 모델을 로컬에서 실행합니다. http://localhost:11434를 자동 감지합니다.",
     s_provider_desc_openrouter:
@@ -4988,7 +4988,7 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_google_api:
       "generativelanguage.googleapis.com 経由の Gemini ファミリー。",
     s_provider_desc_builtin_local:
-      "アプリに同梱された bge-m3 エンベッダー。セットアップ不要でオフライン動作、Ask はセマンティック検索でノートの原文をそのまま回答します。ローカルチャットモデルは同梱されません — 取り込み・分類・生成にはクラウドプロバイダーを使用してください。",
+      "アプリに同梱された軽量多言語エンベッダー（e5-small-ko、40MB）。セットアップ不要でオフライン動作、Ask はセマンティック検索でノートの原文をそのまま回答します。ローカルチャットモデルは同梱されません — 取り込み・分類・生成にはクラウドプロバイダーを使用してください。",
     s_provider_desc_ollama:
       "オープンソースモデルをローカルで実行します。http://localhost:11434 を自動検出。",
     s_provider_desc_openrouter:

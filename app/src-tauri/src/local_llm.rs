@@ -87,6 +87,19 @@ pub const EMBED_SPECS: &[EmbedSpec] = &[
         doc_prefix: "",
         max_ctx: 2048,
     },
+    // multilingual-e5-small fine-tuned for Korean retrieval (dragonkue ko-v2,
+    // jc-lab KO/EN-pruned GGUF). 118M params / 40 MB Q8_0 / 384-d — the
+    // RAM-class-change candidate from the 2026-08 embed research: ~96% of
+    // bge-m3's Korean average (MIRACL-ko -0.07), MIT. Mean-pooled, E5
+    // prefixes REQUIRED (forgetting them silently degrades quality).
+    EmbedSpec {
+        id: "e5-small-ko",
+        file: "models/multilingual-e5-small-ko-v2-q8_0.gguf",
+        pooling: LlamaPoolingType::Mean,
+        query_prefix: "query: ",
+        doc_prefix: "passage: ",
+        max_ctx: 512,
+    },
     // XLM-RoBERTa, mean-pooled, asymmetric prefixes, 1024-d, 512-token limit.
     EmbedSpec {
         id: "e5-large",
@@ -113,7 +126,7 @@ pub fn embed_spec_by_id(id: &str) -> Option<&'static EmbedSpec> {
 
 /// The embed model the app currently bundles and tags new indexes with.
 /// Mirrors the frontend `BUILTIN_EMBED_MODEL` (app/src/lib/providers.ts).
-pub const BUILTIN_EMBED_MODEL: &str = "bge-m3";
+pub const BUILTIN_EMBED_MODEL: &str = "e5-small-ko";
 
 /// Prepend the role's instruction to each text (empty prefix = unchanged).
 pub fn apply_prefix(spec: &EmbedSpec, role: EmbedRole, texts: &[String]) -> Vec<String> {

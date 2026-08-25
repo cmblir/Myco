@@ -42,23 +42,24 @@ pub const EXEMPLARS: &[(&str, &[&str])] = &[(
 /// Cosine an exemplar match must clear before the question is routed away from
 /// content search.
 ///
-/// Measured (`examples/intent_probe.rs`, bge-m3):
+/// Measured (`examples/intent_probe.rs`) — and RE-measured on every embed-model
+/// swap, because the floor lives in that model's cosine geometry. Current
+/// calibration (e5-small-ko, the 2026-08 swap):
 ///
-///   time/file questions  n=8   max-cosine 0.762 … 0.904 (median 0.841)
-///   real content questions n=8            0.273 … 0.524 (median 0.343)
-///   off-topic questions  n=3             0.405 … 0.509
+///   time/file questions  n=8   max-cosine 0.538 … 0.779 (median ~0.68)
+///   real content questions n=8            0.171 … 0.285
+///   off-topic questions  n=3             0.226 … 0.354
 ///
-/// 0.65 is the middle of the empty 0.524–0.762 gap, so it has ~0.11 of margin on
-/// both sides. The whole clean band was 0.55–0.75 (100% of the time/file
-/// questions routed, zero content questions misrouted); 0.80 already drops 3 of
-/// 8 positives.
+/// 0.45 is the middle of the empty 0.354–0.538 gap (~0.09 margin both sides).
+/// The probe's own sweep: 0.40–0.50 route 8/8 positives with zero negatives;
+/// 0.55 already drops one positive, and bge-m3's old 0.65 would drop three.
 ///
 /// CAVEAT, stated because the numbers look better than the evidence: those
 /// samples are small, and the content-question set is all one domain (LLM/ML
 /// jargon). The margin is why the midpoint was chosen over the edge. Misrouting
 /// costs a content question its answer, so widen the negative set before ever
 /// lowering this.
-pub const INTENT_FLOOR: f32 = 0.65;
+pub const INTENT_FLOOR: f32 = 0.45;
 
 /// Every exemplar, flattened, in a fixed order — the order the embedder is
 /// handed them and the order [`intent_at`] indexes.

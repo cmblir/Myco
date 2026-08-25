@@ -16,11 +16,12 @@ import { useSettingsStore } from "../stores/settingsStore";
 // BUILTIN_EMBED_MODEL), so the "model" here names the retrieval stack.
 export const BUILTIN_MODEL = "extractive-retrieval";
 
-// The bundled offline embedding model's id (bge-m3, the retrieval-1a bake-off
-// winner). Used as the embedding-model key ("builtin-local:<id>") so a
+// The bundled offline embedding model's id (e5-small-ko — multilingual-e5-small
+// fine-tuned for Korean retrieval; won the 2026-08 bake-off over the 10x-larger
+// bge-m3 on the app's own harness). Used as the embedding-model key ("builtin-local:<id>") so a
 // bundled-model swap invalidates stale vector indexes (see semantic_search's
 // stale-index guard on the Rust side).
-export const BUILTIN_EMBED_MODEL = "bge-m3";
+export const BUILTIN_EMBED_MODEL = "e5-small-ko";
 
 export interface ProviderDef {
   id: ProviderId;

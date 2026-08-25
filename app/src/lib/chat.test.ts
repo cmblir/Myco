@@ -720,7 +720,14 @@ describe("retrieveChunks", () => {
     vi.spyOn(ipc, "semanticSearch").mockResolvedValue([
       { page: "wiki/a.md", stem: "a", section: 0, text: "strong", score: 0.9, similarity: 0.62 },
       { page: "wiki/b.md", stem: "b", section: 0, text: "borderline", score: 0.8, similarity: RELEVANCE_FLOOR },
-      { page: "wiki/c.md", stem: "c", section: 0, text: "weak", score: 0.7, similarity: 0.49 },
+      {
+        page: "wiki/c.md",
+        stem: "c",
+        section: 0,
+        text: "weak",
+        score: 0.7,
+        similarity: RELEVANCE_FLOOR - 0.01,
+      },
     ]);
     const r = await retrieveChunks("q");
     expect(r.hits.map((h) => h.stem)).toEqual(["a", "b"]); // floor is inclusive

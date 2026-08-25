@@ -365,24 +365,27 @@ export async function retrieveChunks(
 
 /** Dense-cosine floor a chunk must clear to count as an answer at all.
  *
- * Measured, not guessed (`examples/abstention_probe.rs` over the bilingual eval
- * corpus, 71 pages / 142 chunks, bge-m3):
+ * Measured, not guessed — and RE-measured for every embed-model swap, because
+ * the floor lives in that model's cosine geometry. Current calibration
+ * (`examples/abstention_probe.rs` over the bilingual eval corpus, 71 pages,
+ * e5-small-ko — the 2026-08 swap):
  *
- *   queries answerable from the corpus   n=45  top-1 cosine 0.543 … 0.721 (median 0.650)
- *   off-corpus queries                   n=15  top-1 cosine 0.305 … 0.491 (median 0.408)
+ *   queries answerable from the corpus   n=62  top-1 cosine 0.412 … 0.749 (median 0.601)
+ *   off-corpus queries                   n=15  top-1 cosine 0.200 … 0.415
  *
- * 0.50 sits in the empty gap between those ranges: it rejected 15/15 off-corpus
- * queries while costing 0/45 answerable ones. Raising it to 0.55 starts losing
- * real answers (3/45), lowering it to 0.45 lets a third of the nonsense through.
+ * Unlike bge-m3 (whose ranges left an empty 0.49–0.54 gap and put the floor at
+ * 0.50), these ranges TOUCH: the weakest answerable query (RLAIF, an
+ * acronym-only query at 0.412) sits just under the strongest off-corpus one
+ * (postgresql tuning, 0.415). 0.42 takes the least-bad trade — 0/15 off-corpus
+ * pass, 1/62 answerable rejected, and that one is exactly the acronym shape
+ * the BM25 lexical arm retrieves by exact term anyway.
  *
  * Retrieval never used to reject anything — top-k always came back, so an
  * off-vault question was answered with the least-bad chunks in the vault, shown
  * with the same confidence as a real hit. Filtering here rather than in the
  * formatter means BOTH consumers benefit: the extractive answer abstains, and
- * the CLI/API path stops spending prompt tokens on the weak tail (rank-5 cosine
- * is a median 0.528 — right at the floor, so the 5th passage was padding about
- * half the time). */
-export const RELEVANCE_FLOOR = 0.5;
+ * the CLI/API path stops spending prompt tokens on the weak tail. */
+export const RELEVANCE_FLOOR = 0.42;
 
 /** A lexical-only hit has no dense cosine (`similarity: null`); it earned its
  * place through exact-term overlap, which is its own relevance evidence, so it
