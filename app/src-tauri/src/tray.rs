@@ -602,12 +602,13 @@ fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
 
 // ─── icon animation ──────────────────────────────────────────────────────────
 //
-// The template glyph is the mascot, and it HOPS — a real squash-and-stretch
-// cycle (RunCat-style), not a blink. Continuous icon swapping is fine when
-// each swap is cheap: frames are decoded once, the template flag is set once
-// (not per swap — re-asserting it every frame was the expensive part of the
-// first attempt), and each tick assigns a pre-built image. Working speeds the
-// hop up — the pace is the activity light.
+// The mascot HOPS — a squash-and-stretch cycle (RunCat-style). The template
+// machinery is deliberately OUT of the animation loop: set_icon resets the
+// template flag (glyph went black), and re-asserting it per frame double-
+// updates the status item, which flashes. Instead the frames are pre-tinted —
+// a white set for a dark menu bar, a black set for a light one — and each
+// tick is a single set_icon of a pre-decoded image. The menu-bar appearance
+// is re-read every ~30s and on the rare change the other set takes over.
 
 /// True while the status push says something is running (distill/ingest/…).
 static ANIM_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
@@ -615,39 +616,70 @@ static ANIM_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 /// The hop cycle, sine-interpolated: squash on the ground at both ends, a
 /// gentle stretch through the airborne arc. Ten frames whose neighbours
 /// differ by ≤2px, so the loop reads as one continuous motion — fewer,
-/// coarser frames read as flicker at menu-bar size.
-const HOP_FRAMES: [&[u8]; 10] = [
-    include_bytes!("../icons/tray/frames/h0.png"),
-    include_bytes!("../icons/tray/frames/h1.png"),
-    include_bytes!("../icons/tray/frames/h2.png"),
-    include_bytes!("../icons/tray/frames/h3.png"),
-    include_bytes!("../icons/tray/frames/h4.png"),
-    include_bytes!("../icons/tray/frames/h5.png"),
-    include_bytes!("../icons/tray/frames/h6.png"),
-    include_bytes!("../icons/tray/frames/h7.png"),
-    include_bytes!("../icons/tray/frames/h8.png"),
-    include_bytes!("../icons/tray/frames/h9.png"),
+/// coarser frames read as flicker at menu-bar size. Two pre-tinted sets so
+/// no template call is ever needed mid-animation.
+const HOP_WHITE: [&[u8]; 10] = [
+    include_bytes!("../icons/tray/frames/h0w.png"),
+    include_bytes!("../icons/tray/frames/h1w.png"),
+    include_bytes!("../icons/tray/frames/h2w.png"),
+    include_bytes!("../icons/tray/frames/h3w.png"),
+    include_bytes!("../icons/tray/frames/h4w.png"),
+    include_bytes!("../icons/tray/frames/h5w.png"),
+    include_bytes!("../icons/tray/frames/h6w.png"),
+    include_bytes!("../icons/tray/frames/h7w.png"),
+    include_bytes!("../icons/tray/frames/h8w.png"),
+    include_bytes!("../icons/tray/frames/h9w.png"),
 ];
+const HOP_BLACK: [&[u8]; 10] = [
+    include_bytes!("../icons/tray/frames/h0b.png"),
+    include_bytes!("../icons/tray/frames/h1b.png"),
+    include_bytes!("../icons/tray/frames/h2b.png"),
+    include_bytes!("../icons/tray/frames/h3b.png"),
+    include_bytes!("../icons/tray/frames/h4b.png"),
+    include_bytes!("../icons/tray/frames/h5b.png"),
+    include_bytes!("../icons/tray/frames/h6b.png"),
+    include_bytes!("../icons/tray/frames/h7b.png"),
+    include_bytes!("../icons/tray/frames/h8b.png"),
+    include_bytes!("../icons/tray/frames/h9b.png"),
+];
+
+/// True when the menu bar is dark (glyph should be white). `defaults` is the
+/// stable way to read this from a plain process; the key is absent in light
+/// mode, so a non-zero exit means light.
+fn menu_bar_is_dark() -> bool {
+    std::process::Command::new("defaults")
+        .args(["read", "-g", "AppleInterfaceStyle"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(true)
+}
 
 /// Spawn the animator. One task for the app's lifetime; ticks are no-ops when
 /// nothing changes (the same frame is never re-set).
 fn spawn_icon_animator(app: AppHandle) {
     use std::sync::atomic::Ordering;
     tauri::async_runtime::spawn(async move {
-        // Decoded once — a PNG decode per swap was pure waste.
-        let frames: Vec<tauri::image::Image<'static>> = HOP_FRAMES
-            .iter()
-            .filter_map(|b| tauri::image::Image::from_bytes(b).ok())
-            .map(|i| i.to_owned())
-            .collect();
-        if frames.len() != HOP_FRAMES.len() {
+        let decode = |set: &[&[u8]; 10]| -> Vec<tauri::image::Image<'static>> {
+            set.iter()
+                .filter_map(|b| tauri::image::Image::from_bytes(b).ok())
+                .map(|i| i.to_owned())
+                .collect()
+        };
+        let white = decode(&HOP_WHITE);
+        let black = decode(&HOP_BLACK);
+        if white.len() != 10 || black.len() != 10 {
             return; // a frame failed to decode; keep the static glyph
         }
+        let mut dark = menu_bar_is_dark();
         let mut tick: u64 = 0;
         loop {
             let active = ANIM_ACTIVE.load(Ordering::Relaxed);
-            let frame = (tick % frames.len() as u64) as usize;
-            // ~12 fps idle keeps the arc fluid; working speeds it up.
+            // Appearance changes are rare; a re-read every ~30s is plenty.
+            if tick % 384 == 0 && tick > 0 {
+                dark = menu_bar_is_dark();
+            }
+            let frames = if dark { &white } else { &black };
+            let frame = (tick % 10) as usize;
             let sleep_ms: u64 = if active { 55 } else { 80 };
             let tray = app
                 .state::<TrayHandle>()
@@ -656,13 +688,9 @@ fn spawn_icon_animator(app: AppHandle) {
                 .ok()
                 .and_then(|g| g.as_ref().cloned());
             if let Some(tray) = tray {
+                // One call per frame, nothing else — the two-call
+                // icon+template sequence is what flashed.
                 let _ = tray.set_icon(Some(frames[frame].clone()));
-                // Template is asserted only while the flag hasn't stuck yet
-                // (macOS keeps it per status item; re-asserting per swap
-                // forced extra menu-bar work — the first attempt's lag).
-                if tick < frames.len() as u64 {
-                    let _ = tray.set_icon_as_template(true);
-                }
             }
             tick = tick.wrapping_add(1);
             tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
