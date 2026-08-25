@@ -182,7 +182,12 @@ Click one to open a panel for its dates, priority, estimate and repeat rule,
 written back as Obsidian Tasks' own markers (`🛫 ⏳ 📅 ✅ 🔁`) so the line still
 works in that plugin; completing a recurring task writes its next occurrence.
 A generated `wiki/tasks/<YYYY-MM>.md` per month puts the schedule in the graph
-next to the projects its tasks link to.
+next to the projects its tasks link to. Adding a task can carry a category
+(`#tag`, suggested from your existing tags), a project (`[[page]]`), and a
+target note — today's daily or a roadmap. A roadmap is a page
+(`wiki/roadmaps/<slug>.md`, milestones + checkboxes) with its own Tasks tab
+showing per-milestone progress; coding sessions read, check off and extend it
+over MCP (`list_tasks`, `set_task_status`, `add_task`).
 
 **Schedules** — recurring digests: a standing query, "what changed", staleness
 sweeps, topic trackers. Each run writes a cited markdown note into `digests/`.
