@@ -602,10 +602,12 @@ fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
 
 // ─── icon animation ──────────────────────────────────────────────────────────
 //
-// The template glyph is the mascot; it is ALWAYS in motion (owner call) and
-// doubles as an activity light. Two speeds:
-//   idle    — a slow breathing bob (~2 fps) with a blink woven in every cycle
-//   working — the same bob, fast (~6 fps), while anything is running
+// The template glyph is the mascot; motion doubles as an activity light.
+// Every set_icon forces a WindowServer menu-bar redraw, and a continuous
+// always-on cycle measurably heated WindowServer on a loaded machine (owner
+// report: system-wide lag) — so motion is BUDGETED, not constant:
+//   idle    — one blink every ~4s (two swaps per cycle, nothing in between)
+//   working — a bob at ~3 fps while anything is running
 // Frames are pre-baked template PNGs (black + alpha) so dark/light menu bars
 // keep working; swapping goes through the same TrayHandle the menu updates use.
 
@@ -622,17 +624,32 @@ const FRAME_BLINK: &[u8] = include_bytes!("../icons/tray/frames/blink.png");
 fn spawn_icon_animator(app: AppHandle) {
     use std::sync::atomic::Ordering;
     tauri::async_runtime::spawn(async move {
-        // Frame ids: 0 base, 1 up, 2 down, 3 blink. One 8-step cycle: a full
-        // bob, a beat of rest, a blink — readable at both speeds.
-        const FRAMES: [&[u8]; 4] = [FRAME_BASE, FRAME_UP, FRAME_DOWN, FRAME_BLINK];
-        const CYCLE: [usize; 8] = [0, 1, 0, 2, 0, 0, 3, 0];
+        // Frame ids: 0 base, 1 up, 2 down, 3 blink. Decoded once — a PNG
+        // decode per swap was pure waste.
+        let frames: Vec<tauri::image::Image<'static>> =
+            [FRAME_BASE, FRAME_UP, FRAME_DOWN, FRAME_BLINK]
+                .iter()
+                .filter_map(|b| tauri::image::Image::from_bytes(b).ok())
+                .map(|i| i.to_owned())
+                .collect();
+        if frames.len() != 4 {
+            return; // a frame failed to decode; keep the static glyph
+        }
+        // Working bob: base, up, base, down.
+        const BOB: [usize; 4] = [0, 1, 0, 2];
         let mut tick: u64 = 0;
         let mut last = usize::MAX;
         loop {
             let active = ANIM_ACTIVE.load(Ordering::Relaxed);
-            let frame = CYCLE[(tick % 8) as usize];
-            // Working runs the same cycle ~3× faster — the speed IS the light.
-            let sleep_ms: u64 = if active { 160 } else { 480 };
+            let (frame, sleep_ms) = if active {
+                (BOB[(tick % 4) as usize], 320u64)
+            } else if tick % 12 == 11 {
+                // Idle: blink once per 12 ticks (~4s), swap back next tick.
+                (3, 140)
+            } else {
+                // Long quiet holds between blinks — zero redraws while equal.
+                (0, 340)
+            };
             if frame != last {
                 last = frame;
                 let tray = app
@@ -642,10 +659,8 @@ fn spawn_icon_animator(app: AppHandle) {
                     .ok()
                     .and_then(|g| g.as_ref().cloned());
                 if let Some(tray) = tray {
-                    if let Ok(img) = tauri::image::Image::from_bytes(FRAMES[frame]) {
-                        let _ = tray.set_icon(Some(img));
-                        let _ = tray.set_icon_as_template(true);
-                    }
+                    let _ = tray.set_icon(Some(frames[frame].clone()));
+                    let _ = tray.set_icon_as_template(true);
                 }
             }
             tick = tick.wrapping_add(1);
