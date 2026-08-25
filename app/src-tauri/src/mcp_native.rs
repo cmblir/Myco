@@ -298,6 +298,39 @@ fn inbox_dir(root: &Path) -> PathBuf {
 
 /// Lexically resolve `rel` under `base`, rejecting any `..`/absolute escape.
 /// Works for not-yet-existing paths (no canonicalize of the leaf required).
+fn parse_task_status(s: &str) -> Option<crate::tasks::TaskStatus> {
+    use crate::tasks::TaskStatus::*;
+    match s.trim().to_lowercase().as_str() {
+        "todo" => Some(Todo),
+        "doing" => Some(Doing),
+        "blocked" => Some(Blocked),
+        "done" => Some(Done),
+        _ => None,
+    }
+}
+
+/// A vault-relative task page, confined to the vault and kept out of the
+/// folders that are not the user's own task list: `raw/` is immutable, and
+/// `_inbox/` / `sessions/` are skipped by the scanner, so a line number there
+/// could never have come from list_tasks.
+fn task_page_path(root: &Path, page: &str) -> Result<PathBuf, String> {
+    let first = Path::new(page)
+        .components()
+        .next()
+        .and_then(|c| c.as_os_str().to_str())
+        .unwrap_or("");
+    if matches!(first, "raw" | "_inbox" | "sessions") {
+        return Err(format!("tasks cannot be edited under {first}/"));
+    }
+    let Some(target) = safe_join(root, page) else {
+        return Err(format!("path escapes the vault: {page}"));
+    };
+    if !target.is_file() {
+        return Err(format!("page not found: {page}"));
+    }
+    Ok(target)
+}
+
 fn safe_join(base: &Path, rel: &str) -> Option<PathBuf> {
     let mut out = base.to_path_buf();
     for comp in Path::new(rel).components() {
@@ -759,6 +792,55 @@ struct UpdatePageArgs {
     content: String,
     #[serde(default)]
     project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ListTasksArgs {
+    /// Only tasks whose text links this project page, e.g. "myco-q4-roadmap"
+    /// (matched as `[[project]]`).
+    #[serde(default)]
+    project: String,
+    /// Only tasks carrying this category tag, e.g. "dev" (matched as `#dev`).
+    #[serde(default)]
+    tag: String,
+    /// Only this status: todo | doing | blocked | done.
+    #[serde(default)]
+    status: String,
+    /// Only tasks whose page path starts with this, e.g. "wiki/roadmaps/".
+    #[serde(default)]
+    path_prefix: String,
+    #[serde(default)]
+    vault_project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SetTaskStatusArgs {
+    /// Vault-relative page path, e.g. "wiki/roadmaps/q4.md" (from list_tasks).
+    page: String,
+    /// 1-based line number (from list_tasks).
+    line: u32,
+    /// todo | doing | blocked | done.
+    status: String,
+    /// The task text as last read — the stale guard: if the line no longer
+    /// says this, nothing is written and the current text is returned.
+    expect_text: String,
+    #[serde(default)]
+    vault_project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct AddTaskArgs {
+    /// Vault-relative page to append to, e.g. "wiki/roadmaps/q4.md" or
+    /// "daily/2026-08-25.md". Must exist; raw/, _inbox/ and sessions/ refuse.
+    page: String,
+    /// Task text; categories (`#dev`) and project links (`[[page]]`) ride
+    /// inside it as plain text.
+    text: String,
+    /// Optional due date `YYYY-MM-DD` — written as `📅 <due>`.
+    #[serde(default)]
+    due: String,
+    #[serde(default)]
+    vault_project: String,
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
@@ -1470,6 +1552,126 @@ impl McpServer {
             u.mark_dirty(rel_to(&root, &target).replace('\\', "/"));
         }
         json_result(json!({ "ok": true, "filename": rel_to(&wiki_dir(&root), &target) }))
+    }
+
+    /// Every markdown checkbox task in the vault, filtered.
+    #[tool(
+        description = "List markdown checkbox tasks across the vault. Filters: project (text contains [[project]]), tag (text contains #tag), status (todo|doing|blocked|done), path_prefix (e.g. wiki/roadmaps/ for roadmap items). Returns {page, line, status, text} rows — feed page/line/text to set_task_status."
+    )]
+    async fn list_tasks(
+        &self,
+        Parameters(a): Parameters<ListTasksArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.vault_project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let tasks = match crate::tasks::scan_tasks(&root.to_string_lossy()) {
+            Ok(t) => t,
+            Err(e) => return fail(e),
+        };
+        let status = a.status.trim().to_lowercase();
+        let link = format!("[[{}", a.project.trim());
+        let tag = format!("#{}", a.tag.trim());
+        let rows: Vec<Value> = tasks
+            .into_iter()
+            .filter(|t| a.path_prefix.is_empty() || t.page.starts_with(&a.path_prefix))
+            .filter(|t| a.project.trim().is_empty() || t.text.contains(&link))
+            .filter(|t| a.tag.trim().is_empty() || t.text.contains(&tag))
+            .filter(|t| {
+                status.is_empty()
+                    || serde_json::to_value(t.status)
+                        .ok()
+                        .and_then(|v| v.as_str().map(|s| s == status))
+                        .unwrap_or(false)
+            })
+            .map(|t| json!({ "page": t.page, "line": t.line, "status": t.status, "text": t.text }))
+            .collect();
+        json_result(json!({ "ok": true, "count": rows.len(), "tasks": rows }))
+    }
+
+    /// Rewrite one task's checkbox mark, with a stale guard.
+    #[tool(
+        description = "Set one task's status (todo|doing|blocked|done). page/line/expect_text come from list_tasks; expect_text must match the line's current text or nothing is written (the file changed — re-list and retry). Completing stamps ✅ <today>. A 🔁 recurring task is checked but its next occurrence is only inserted by the app."
+    )]
+    async fn set_task_status(
+        &self,
+        Parameters(a): Parameters<SetTaskStatusArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.vault_project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let status = match parse_task_status(&a.status) {
+            Some(st) => st,
+            None => return fail(format!("unknown status: {}", a.status)),
+        };
+        let target = match task_page_path(&root, &a.page) {
+            Ok(p) => p,
+            Err(e) => return fail(e),
+        };
+        let content = match std::fs::read_to_string(&target) {
+            Ok(c) => c,
+            Err(e) => return fail(format!("read failed for {}: {e}", a.page)),
+        };
+        let (next, recurring) =
+            match crate::tasks::set_line_status(&content, a.line, status, &a.expect_text) {
+                Ok(v) => v,
+                Err(e) => return fail(e),
+            };
+        if let Err(e) = vault::write_file(&target.to_string_lossy(), &next) {
+            return fail(e);
+        }
+        if let Some(u) = crate::INDEX_UPDATER.get() {
+            u.mark_dirty(a.page.replace('\\', "/"));
+        }
+        let mut out = json!({ "ok": true, "page": a.page, "line": a.line, "status": a.status });
+        if recurring && status == crate::tasks::TaskStatus::Done {
+            out["warning"] = json!(
+                "recurring task — the next occurrence is inserted only when completed in the app"
+            );
+        }
+        json_result(out)
+    }
+
+    /// Append a checkbox task line to an existing page.
+    #[tool(
+        description = "Append a task (`- [ ] text`) to an existing page, e.g. a wiki/roadmaps/ page or a daily note. Categories (#tag) and project links ([[page]]) go inside text; due becomes 📅 <date>. Creating a new roadmap page is create_page's job."
+    )]
+    async fn add_task(
+        &self,
+        Parameters(a): Parameters<AddTaskArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.vault_project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let text = a.text.trim();
+        if text.is_empty() {
+            return fail("text is empty");
+        }
+        let target = match task_page_path(&root, &a.page) {
+            Ok(p) => p,
+            Err(e) => return fail(e),
+        };
+        let content = match std::fs::read_to_string(&target) {
+            Ok(c) => c,
+            Err(e) => return fail(format!("page not found: {} ({e})", a.page)),
+        };
+        let due = a.due.trim();
+        let line = if due.is_empty() {
+            format!("- [ ] {text}")
+        } else {
+            format!("- [ ] {text} 📅 {due}")
+        };
+        let next = crate::tasks::append_task_line(&content, &line);
+        if let Err(e) = vault::write_file(&target.to_string_lossy(), &next) {
+            return fail(e);
+        }
+        if let Some(u) = crate::INDEX_UPDATER.get() {
+            u.mark_dirty(a.page.replace('\\', "/"));
+        }
+        json_result(json!({ "ok": true, "page": a.page, "line": next.trim_end().lines().count() }))
     }
 
     /// Add a new immutable source file to raw/ (never overwrites).

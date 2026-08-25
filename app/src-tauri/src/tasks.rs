@@ -1,7 +1,9 @@
 //! Task scanner. Collects GitHub-style markdown checkbox items — `- [ ] todo`,
 //! `- [/] doing`, `- [-] blocked`, `- [x] done` — from every note in the vault
 //! into one list, so open TODOs scattered across daily notes and pages are
-//! visible in one place. Read-only: it never edits a file. `raw/`, `_inbox/`
+//! visible in one place. Scanning never edits a file; the two writers at the
+//! bottom (`set_line_status`, `append_task_line`) exist for the MCP task
+//! tools and rewrite exactly one line / append exactly one. `raw/`, `_inbox/`
 //! and `sessions/` are skipped — none of them is the user's own task list — as
 //! are code fences (a checkbox inside a code sample is documentation, not a
 //! task).
@@ -170,6 +172,79 @@ fn collect_markdown(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
     Ok(out)
 }
 
+/// Today as `YYYY-MM-DD` for the `✅` stamp. UTC via the registry's existing
+/// helper — same trade the registry already made: a same-day discrepancy
+/// across a midnight boundary is not worth a chrono dependency.
+fn today_stamp() -> String {
+    crate::registry::today_utc()
+}
+
+/// Rewrite line `line_no` (1-based) of `content` to `status`, stamping
+/// `✅ <today>` on completion and removing the stamp when a task leaves done —
+/// the same contract as the app's own writer (taskWrite.ts).
+///
+/// `expect_text` is the stale guard: it must equal the line's current text
+/// after the checkbox mark, or nothing is written — a mismatch means the file
+/// changed since the caller read it, and rewriting by line number would edit
+/// the wrong task. Returns the new content and whether the line carries a
+/// `🔁` rule (the caller reports that recurrence is app-only).
+// ponytail: recurrence advance is TS-only (taskRecurrence.ts); port to Rust if
+// MCP check-off of recurring tasks becomes common.
+pub fn set_line_status(
+    content: &str,
+    line_no: u32,
+    status: TaskStatus,
+    expect_text: &str,
+) -> Result<(String, bool), String> {
+    let mut lines: Vec<String> = content.split('\n').map(str::to_string).collect();
+    let idx = (line_no as usize)
+        .checked_sub(1)
+        .filter(|i| *i < lines.len())
+        .ok_or_else(|| format!("line {line_no} does not exist"))?;
+    let line = &lines[idx];
+    let trimmed = line.trim_start();
+    let Some((_, text)) = parse_task_line(trimmed) else {
+        return Err(format!("line {line_no} is not a checkbox: {line:?}"));
+    };
+    if text != expect_text.trim() {
+        return Err(format!(
+            "line {line_no} changed since it was read — it now says {text:?}; re-read and retry"
+        ));
+    }
+    let mark = match status {
+        TaskStatus::Todo => ' ',
+        TaskStatus::Doing => '/',
+        TaskStatus::Blocked => '-',
+        TaskStatus::Done => 'x',
+    };
+    // Everything before the mark (indent + bullet + '[') survives verbatim.
+    let open = line.find('[').ok_or("no checkbox bracket")?;
+    let close = open + line[open..].find(']').ok_or("no closing bracket")?;
+    let mut body = line[close + 1..].trim().to_string();
+    // The done stamp: added on completion, dropped when leaving done. A task
+    // moved back to doing was not completed today, and a stale `✅` would
+    // claim it was.
+    let done_re = regex::Regex::new(r"\s*✅\s*\d{4}-\d{2}-\d{2}").unwrap();
+    body = done_re.replace_all(&body, "").trim().to_string();
+    if status == TaskStatus::Done {
+        body = format!("{body} ✅ {}", today_stamp());
+    }
+    let recurring = body.contains('🔁');
+    lines[idx] = format!("{}[{mark}] {body}", &line[..open]);
+    Ok((lines.join("\n"), recurring))
+}
+
+/// Append one checkbox line to `content`, keeping exactly one trailing
+/// newline (mirrors the frontend's `appendTaskLine`).
+pub fn append_task_line(content: &str, line: &str) -> String {
+    let body = content.trim_end();
+    if body.is_empty() {
+        format!("{line}\n")
+    } else {
+        format!("{body}\n{line}\n")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,5 +338,64 @@ mod tests {
         assert!(!tasks[0].done && !tasks[1].done); // open first
         assert!(tasks[2].done); // done last
         assert!(tasks.iter().any(|t| t.text == "daily todo"));
+    }
+}
+
+#[cfg(test)]
+mod writer_tests {
+    use super::*;
+
+    const DOC: &str = "# day\n- [ ] ship it 📅 2026-08-28\n- [x] old ✅ 2026-08-20\nprose";
+
+    #[test]
+    fn checks_a_line_and_stamps_the_done_date() {
+        let (out, recurring) =
+            set_line_status(DOC, 2, TaskStatus::Done, "ship it 📅 2026-08-28").unwrap();
+        let line = out.lines().nth(1).unwrap();
+        assert!(
+            line.starts_with("- [x] ship it 📅 2026-08-28 ✅ "),
+            "{line}"
+        );
+        assert!(!recurring);
+        // Every other line untouched.
+        assert_eq!(out.lines().next().unwrap(), "# day");
+        assert_eq!(out.lines().nth(3).unwrap(), "prose");
+    }
+
+    #[test]
+    fn leaving_done_clears_the_stamp() {
+        let (out, _) = set_line_status(DOC, 3, TaskStatus::Doing, "old ✅ 2026-08-20").unwrap();
+        assert_eq!(out.lines().nth(2).unwrap(), "- [/] old");
+    }
+
+    #[test]
+    fn refuses_a_stale_expect_text() {
+        let err = set_line_status(DOC, 2, TaskStatus::Done, "something else").unwrap_err();
+        assert!(err.contains("changed since it was read"), "{err}");
+        assert!(err.contains("ship it"), "the current text is named: {err}");
+    }
+
+    #[test]
+    fn refuses_a_non_checkbox_line_and_a_missing_line() {
+        assert!(set_line_status(DOC, 4, TaskStatus::Done, "prose").is_err());
+        assert!(set_line_status(DOC, 99, TaskStatus::Done, "x").is_err());
+    }
+
+    #[test]
+    fn keeps_indentation_and_bullet_and_flags_recurrence() {
+        let doc = "  * [ ] 주간 회고 🔁 every week";
+        let (out, recurring) =
+            set_line_status(doc, 1, TaskStatus::Done, "주간 회고 🔁 every week").unwrap();
+        assert!(
+            out.starts_with("  * [x] 주간 회고 🔁 every week ✅ "),
+            "{out}"
+        );
+        assert!(recurring);
+    }
+
+    #[test]
+    fn append_keeps_one_trailing_newline() {
+        assert_eq!(append_task_line("", "- [ ] a"), "- [ ] a\n");
+        assert_eq!(append_task_line("# t\n\n", "- [ ] a"), "# t\n- [ ] a\n");
     }
 }
