@@ -25,9 +25,16 @@ interface Node {
 // {event, id, payload}. Commands that emit progress in Rust emit here too, so
 // the browser build exercises the same listener code paths the app does.
 
-type MockEventHandler = (e: { event: string; id: number; payload: unknown }) => void;
+type MockEventHandler = (e: {
+  event: string;
+  id: number;
+  payload: unknown;
+}) => void;
 
-const mockListeners = new Map<string, { id: number; handler: MockEventHandler }[]>();
+const mockListeners = new Map<
+  string,
+  { id: number; handler: MockEventHandler }[]
+>();
 let mockEventId = 0;
 
 function emitMock(event: string, payload: unknown): void {
@@ -36,16 +43,37 @@ function emitMock(event: string, payload: unknown): void {
   }
 }
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> =>
+  new Promise((r) => setTimeout(r, ms));
 
 /// A plausible ingest transcript for the streaming CLI mock: the tool calls and
 /// prose a real run emits, paced so the live panel has states to show.
-const MOCK_STREAM_STEPS: { after: number; kind: string; payload: Record<string, unknown> }[] = [
+const MOCK_STREAM_STEPS: {
+  after: number;
+  kind: string;
+  payload: Record<string, unknown>;
+}[] = [
   { after: 120, kind: "text", payload: { text: "Reading the source…\n" } },
-  { after: 150, kind: "tool", payload: { tool: "Read", detail: "raw/source.md" } },
-  { after: 150, kind: "text", payload: { text: "Extracting concepts and entities.\n" } },
-  { after: 150, kind: "tool", payload: { tool: "Write", detail: "wiki/source-mock.md" } },
-  { after: 150, kind: "tool", payload: { tool: "Edit", detail: "wiki/index.md" } },
+  {
+    after: 150,
+    kind: "tool",
+    payload: { tool: "Read", detail: "raw/source.md" },
+  },
+  {
+    after: 150,
+    kind: "text",
+    payload: { text: "Extracting concepts and entities.\n" },
+  },
+  {
+    after: 150,
+    kind: "tool",
+    payload: { tool: "Write", detail: "wiki/source-mock.md" },
+  },
+  {
+    after: 150,
+    kind: "tool",
+    payload: { tool: "Edit", detail: "wiki/index.md" },
+  },
   { after: 120, kind: "result", payload: { text: "done" } },
 ];
 
@@ -129,65 +157,351 @@ async function mockImportSweep(source: string): Promise<unknown> {
     skipped,
     quarantined: [],
     failed: [
-      { path: "/Users/you/.claude/projects/x/live.jsonl", error: "cannot read: mid-write" },
-      { path: "/Users/you/.claude/projects/y/truncated.jsonl", error: "cannot read: unexpected EOF" },
+      {
+        path: "/Users/you/.claude/projects/x/live.jsonl",
+        error: "cannot read: mid-write",
+      },
+      {
+        path: "/Users/you/.claude/projects/y/truncated.jsonl",
+        error: "cannot read: unexpected EOF",
+      },
     ],
   };
 }
 
 // Same topology as src-tauri/src/sample_vault.rs (kept in sync as demo data).
 const NODES: Node[] = [
-  { s: "transformer-architecture", t: "concept", n: "Transformer Architecture", l: ["attention-mechanism", "embeddings", "tokenization", "positional-encoding", "residual-connections", "feedforward-network", "scaling-laws", "source-attention-is-all-you-need"] },
-  { s: "attention-mechanism", t: "technique", n: "Attention Mechanism", l: ["transformer-architecture", "self-attention", "multi-head-attention", "embeddings", "kv-cache", "source-attention-is-all-you-need"] },
-  { s: "self-attention", t: "technique", n: "Self-Attention", l: ["attention-mechanism", "multi-head-attention"] },
-  { s: "multi-head-attention", t: "technique", n: "Multi-Head Attention", l: ["attention-mechanism", "self-attention"] },
-  { s: "embeddings", t: "concept", n: "Embeddings", l: ["transformer-architecture", "tokenization", "attention-mechanism", "vector-database"] },
-  { s: "tokenization", t: "technique", n: "Tokenization", l: ["embeddings", "byte-pair-encoding", "transformer-architecture"] },
-  { s: "byte-pair-encoding", t: "technique", n: "Byte-Pair Encoding", l: ["tokenization"] },
-  { s: "positional-encoding", t: "technique", n: "Positional Encoding", l: ["transformer-architecture", "attention-mechanism"] },
-  { s: "residual-connections", t: "concept", n: "Residual Connections", l: ["transformer-architecture", "layer-normalization"] },
-  { s: "layer-normalization", t: "technique", n: "Layer Normalization", l: ["transformer-architecture", "residual-connections"] },
-  { s: "feedforward-network", t: "concept", n: "Feedforward Network", l: ["transformer-architecture"] },
-  { s: "scaling-laws", t: "concept", n: "Scaling Laws", l: ["transformer-architecture", "pretraining", "compute-budget", "source-scaling-laws-paper", "analysis-scaling-vs-data"] },
-  { s: "pretraining", t: "technique", n: "Pretraining", l: ["scaling-laws", "fine-tuning", "transformer-architecture"] },
-  { s: "compute-budget", t: "concept", n: "Compute Budget", l: ["scaling-laws", "quantization"] },
-  { s: "fine-tuning", t: "technique", n: "Fine-tuning", l: ["pretraining", "instruction-tuning", "rlhf", "lora"] },
-  { s: "instruction-tuning", t: "technique", n: "Instruction Tuning", l: ["fine-tuning", "rlhf"] },
-  { s: "rlhf", t: "technique", n: "RLHF", l: ["fine-tuning", "dpo", "reward-modeling", "alignment", "anthropic", "openai"] },
-  { s: "dpo", t: "technique", n: "Direct Preference Optimization", l: ["rlhf", "alignment", "analysis-rlhf-vs-dpo"] },
-  { s: "reward-modeling", t: "concept", n: "Reward Modeling", l: ["rlhf", "alignment"] },
+  {
+    s: "transformer-architecture",
+    t: "concept",
+    n: "Transformer Architecture",
+    l: [
+      "attention-mechanism",
+      "embeddings",
+      "tokenization",
+      "positional-encoding",
+      "residual-connections",
+      "feedforward-network",
+      "scaling-laws",
+      "source-attention-is-all-you-need",
+    ],
+  },
+  {
+    s: "attention-mechanism",
+    t: "technique",
+    n: "Attention Mechanism",
+    l: [
+      "transformer-architecture",
+      "self-attention",
+      "multi-head-attention",
+      "embeddings",
+      "kv-cache",
+      "source-attention-is-all-you-need",
+    ],
+  },
+  {
+    s: "self-attention",
+    t: "technique",
+    n: "Self-Attention",
+    l: ["attention-mechanism", "multi-head-attention"],
+  },
+  {
+    s: "multi-head-attention",
+    t: "technique",
+    n: "Multi-Head Attention",
+    l: ["attention-mechanism", "self-attention"],
+  },
+  {
+    s: "embeddings",
+    t: "concept",
+    n: "Embeddings",
+    l: [
+      "transformer-architecture",
+      "tokenization",
+      "attention-mechanism",
+      "vector-database",
+    ],
+  },
+  {
+    s: "tokenization",
+    t: "technique",
+    n: "Tokenization",
+    l: ["embeddings", "byte-pair-encoding", "transformer-architecture"],
+  },
+  {
+    s: "byte-pair-encoding",
+    t: "technique",
+    n: "Byte-Pair Encoding",
+    l: ["tokenization"],
+  },
+  {
+    s: "positional-encoding",
+    t: "technique",
+    n: "Positional Encoding",
+    l: ["transformer-architecture", "attention-mechanism"],
+  },
+  {
+    s: "residual-connections",
+    t: "concept",
+    n: "Residual Connections",
+    l: ["transformer-architecture", "layer-normalization"],
+  },
+  {
+    s: "layer-normalization",
+    t: "technique",
+    n: "Layer Normalization",
+    l: ["transformer-architecture", "residual-connections"],
+  },
+  {
+    s: "feedforward-network",
+    t: "concept",
+    n: "Feedforward Network",
+    l: ["transformer-architecture"],
+  },
+  {
+    s: "scaling-laws",
+    t: "concept",
+    n: "Scaling Laws",
+    l: [
+      "transformer-architecture",
+      "pretraining",
+      "compute-budget",
+      "source-scaling-laws-paper",
+      "analysis-scaling-vs-data",
+    ],
+  },
+  {
+    s: "pretraining",
+    t: "technique",
+    n: "Pretraining",
+    l: ["scaling-laws", "fine-tuning", "transformer-architecture"],
+  },
+  {
+    s: "compute-budget",
+    t: "concept",
+    n: "Compute Budget",
+    l: ["scaling-laws", "quantization"],
+  },
+  {
+    s: "fine-tuning",
+    t: "technique",
+    n: "Fine-tuning",
+    l: ["pretraining", "instruction-tuning", "rlhf", "lora"],
+  },
+  {
+    s: "instruction-tuning",
+    t: "technique",
+    n: "Instruction Tuning",
+    l: ["fine-tuning", "rlhf"],
+  },
+  {
+    s: "rlhf",
+    t: "technique",
+    n: "RLHF",
+    l: [
+      "fine-tuning",
+      "dpo",
+      "reward-modeling",
+      "alignment",
+      "anthropic",
+      "openai",
+    ],
+  },
+  {
+    s: "dpo",
+    t: "technique",
+    n: "Direct Preference Optimization",
+    l: ["rlhf", "alignment", "analysis-rlhf-vs-dpo"],
+  },
+  {
+    s: "reward-modeling",
+    t: "concept",
+    n: "Reward Modeling",
+    l: ["rlhf", "alignment"],
+  },
   { s: "lora", t: "technique", n: "LoRA", l: ["fine-tuning", "quantization"] },
-  { s: "quantization", t: "technique", n: "Quantization", l: ["lora", "distillation", "inference-optimization", "compute-budget"] },
-  { s: "distillation", t: "technique", n: "Knowledge Distillation", l: ["quantization", "fine-tuning"] },
-  { s: "inference-optimization", t: "concept", n: "Inference Optimization", l: ["quantization", "kv-cache"] },
-  { s: "kv-cache", t: "technique", n: "KV Cache", l: ["inference-optimization", "attention-mechanism"] },
-  { s: "alignment", t: "concept", n: "Alignment", l: ["rlhf", "constitutional-ai", "interpretability", "reward-modeling", "anthropic"] },
-  { s: "constitutional-ai", t: "technique", n: "Constitutional AI", l: ["alignment", "anthropic", "rlhf", "source-constitutional-ai-paper"] },
-  { s: "interpretability", t: "concept", n: "Interpretability", l: ["alignment", "anthropic"] },
-  { s: "in-context-learning", t: "concept", n: "In-Context Learning", l: ["transformer-architecture", "chain-of-thought", "prompting"] },
-  { s: "chain-of-thought", t: "technique", n: "Chain-of-Thought", l: ["in-context-learning", "prompting", "reasoning"] },
-  { s: "prompting", t: "technique", n: "Prompting", l: ["in-context-learning", "chain-of-thought", "rag"] },
-  { s: "rag", t: "technique", n: "Retrieval-Augmented Generation", l: ["embeddings", "vector-database", "prompting", "tool-use"] },
-  { s: "vector-database", t: "concept", n: "Vector Database", l: ["rag", "embeddings"] },
-  { s: "tool-use", t: "technique", n: "Tool Use", l: ["agents", "function-calling", "rag", "mcp"] },
-  { s: "function-calling", t: "technique", n: "Function Calling", l: ["tool-use", "agents"] },
-  { s: "agents", t: "concept", n: "Agents", l: ["tool-use", "mcp", "chain-of-thought", "planning", "reasoning"] },
-  { s: "mcp", t: "concept", n: "Model Context Protocol", l: ["tool-use", "agents", "anthropic"] },
+  {
+    s: "quantization",
+    t: "technique",
+    n: "Quantization",
+    l: ["lora", "distillation", "inference-optimization", "compute-budget"],
+  },
+  {
+    s: "distillation",
+    t: "technique",
+    n: "Knowledge Distillation",
+    l: ["quantization", "fine-tuning"],
+  },
+  {
+    s: "inference-optimization",
+    t: "concept",
+    n: "Inference Optimization",
+    l: ["quantization", "kv-cache"],
+  },
+  {
+    s: "kv-cache",
+    t: "technique",
+    n: "KV Cache",
+    l: ["inference-optimization", "attention-mechanism"],
+  },
+  {
+    s: "alignment",
+    t: "concept",
+    n: "Alignment",
+    l: [
+      "rlhf",
+      "constitutional-ai",
+      "interpretability",
+      "reward-modeling",
+      "anthropic",
+    ],
+  },
+  {
+    s: "constitutional-ai",
+    t: "technique",
+    n: "Constitutional AI",
+    l: ["alignment", "anthropic", "rlhf", "source-constitutional-ai-paper"],
+  },
+  {
+    s: "interpretability",
+    t: "concept",
+    n: "Interpretability",
+    l: ["alignment", "anthropic"],
+  },
+  {
+    s: "in-context-learning",
+    t: "concept",
+    n: "In-Context Learning",
+    l: ["transformer-architecture", "chain-of-thought", "prompting"],
+  },
+  {
+    s: "chain-of-thought",
+    t: "technique",
+    n: "Chain-of-Thought",
+    l: ["in-context-learning", "prompting", "reasoning"],
+  },
+  {
+    s: "prompting",
+    t: "technique",
+    n: "Prompting",
+    l: ["in-context-learning", "chain-of-thought", "rag"],
+  },
+  {
+    s: "rag",
+    t: "technique",
+    n: "Retrieval-Augmented Generation",
+    l: ["embeddings", "vector-database", "prompting", "tool-use"],
+  },
+  {
+    s: "vector-database",
+    t: "concept",
+    n: "Vector Database",
+    l: ["rag", "embeddings"],
+  },
+  {
+    s: "tool-use",
+    t: "technique",
+    n: "Tool Use",
+    l: ["agents", "function-calling", "rag", "mcp"],
+  },
+  {
+    s: "function-calling",
+    t: "technique",
+    n: "Function Calling",
+    l: ["tool-use", "agents"],
+  },
+  {
+    s: "agents",
+    t: "concept",
+    n: "Agents",
+    l: ["tool-use", "mcp", "chain-of-thought", "planning", "reasoning"],
+  },
+  {
+    s: "mcp",
+    t: "concept",
+    n: "Model Context Protocol",
+    l: ["tool-use", "agents", "anthropic"],
+  },
   { s: "planning", t: "concept", n: "Planning", l: ["agents", "reasoning"] },
-  { s: "reasoning", t: "concept", n: "Reasoning", l: ["chain-of-thought", "planning", "agents"] },
-  { s: "openai", t: "entity", n: "OpenAI", l: ["gpt-4", "scaling-laws", "rlhf"] },
-  { s: "anthropic", t: "entity", n: "Anthropic", l: ["claude", "constitutional-ai", "alignment", "mcp", "rlhf"] },
-  { s: "google-deepmind", t: "entity", n: "Google DeepMind", l: ["gemini", "transformer-architecture", "attention-mechanism"] },
+  {
+    s: "reasoning",
+    t: "concept",
+    n: "Reasoning",
+    l: ["chain-of-thought", "planning", "agents"],
+  },
+  {
+    s: "openai",
+    t: "entity",
+    n: "OpenAI",
+    l: ["gpt-4", "scaling-laws", "rlhf"],
+  },
+  {
+    s: "anthropic",
+    t: "entity",
+    n: "Anthropic",
+    l: ["claude", "constitutional-ai", "alignment", "mcp", "rlhf"],
+  },
+  {
+    s: "google-deepmind",
+    t: "entity",
+    n: "Google DeepMind",
+    l: ["gemini", "transformer-architecture", "attention-mechanism"],
+  },
   { s: "meta-ai", t: "entity", n: "Meta AI", l: ["llama", "lora"] },
-  { s: "gpt-4", t: "entity", n: "GPT-4", l: ["openai", "transformer-architecture", "rlhf"] },
-  { s: "claude", t: "entity", n: "Claude", l: ["anthropic", "constitutional-ai", "mcp"] },
-  { s: "gemini", t: "entity", n: "Gemini", l: ["google-deepmind", "transformer-architecture"] },
-  { s: "llama", t: "entity", n: "Llama", l: ["meta-ai", "fine-tuning", "lora"] },
-  { s: "source-attention-is-all-you-need", t: "source-summary", n: "Source: Attention Is All You Need", l: ["transformer-architecture", "attention-mechanism"] },
-  { s: "source-scaling-laws-paper", t: "source-summary", n: "Source: Scaling Laws for Neural Language Models", l: ["scaling-laws", "pretraining"] },
-  { s: "source-constitutional-ai-paper", t: "source-summary", n: "Source: Constitutional AI", l: ["constitutional-ai", "anthropic"] },
-  { s: "analysis-scaling-vs-data", t: "analysis", n: "Scaling vs. Data Quality", l: ["scaling-laws", "pretraining", "transformer-architecture"] },
-  { s: "analysis-rlhf-vs-dpo", t: "analysis", n: "RLHF vs. DPO", l: ["rlhf", "dpo", "alignment"] },
+  {
+    s: "gpt-4",
+    t: "entity",
+    n: "GPT-4",
+    l: ["openai", "transformer-architecture", "rlhf"],
+  },
+  {
+    s: "claude",
+    t: "entity",
+    n: "Claude",
+    l: ["anthropic", "constitutional-ai", "mcp"],
+  },
+  {
+    s: "gemini",
+    t: "entity",
+    n: "Gemini",
+    l: ["google-deepmind", "transformer-architecture"],
+  },
+  {
+    s: "llama",
+    t: "entity",
+    n: "Llama",
+    l: ["meta-ai", "fine-tuning", "lora"],
+  },
+  {
+    s: "source-attention-is-all-you-need",
+    t: "source-summary",
+    n: "Source: Attention Is All You Need",
+    l: ["transformer-architecture", "attention-mechanism"],
+  },
+  {
+    s: "source-scaling-laws-paper",
+    t: "source-summary",
+    n: "Source: Scaling Laws for Neural Language Models",
+    l: ["scaling-laws", "pretraining"],
+  },
+  {
+    s: "source-constitutional-ai-paper",
+    t: "source-summary",
+    n: "Source: Constitutional AI",
+    l: ["constitutional-ai", "anthropic"],
+  },
+  {
+    s: "analysis-scaling-vs-data",
+    t: "analysis",
+    n: "Scaling vs. Data Quality",
+    l: ["scaling-laws", "pretraining", "transformer-architecture"],
+  },
+  {
+    s: "analysis-rlhf-vs-dpo",
+    t: "analysis",
+    n: "RLHF vs. DPO",
+    l: ["rlhf", "dpo", "alignment"],
+  },
 ];
 
 // ?mock=1&stress=N grows the sample vault to ~N synthetic notes (community-
@@ -219,9 +533,7 @@ function synthNodes(target: number): Node[] {
   return out;
 }
 {
-  const stress = Number(
-    mockParam("stress") ?? 0,
-  );
+  const stress = Number(mockParam("stress") ?? 0);
   if (stress > 0) NODES.push(...synthNodes(stress));
 }
 
@@ -233,15 +545,13 @@ const pathOf = (s: string): string => `${VAULT}/wiki/${s}.md`;
 // the in-app agent loop (Feature 4) can be exercised end-to-end in the browser
 // (the CLI provider tool-loops natively and isn't driven by agentLoop). Scoped
 // to the flag so ordinary ?mock runs (query/study) keep the CLI provider.
-const AGENT_MODE =
-  mockParam("agent") === "1";
+const AGENT_MODE = mockParam("agent") === "1";
 
 // ?mock=1&local=1 flips the query provider to builtin-local, the one provider
 // with no generative model — which is what routes Reflect (and the session
 // digest) down their EXTRACTIVE paths. Without it those paths are unreachable
 // in a browser run, which is how the extractive reflect shipped unlooked-at.
-const LOCAL_ONLY_MODE =
-  mockParam("local") === "1";
+const LOCAL_ONLY_MODE = mockParam("local") === "1";
 
 // Feature 3 (study) — a mutable in-memory card store so the review flow can
 // grade → write → re-read and see due counts drop. Seeded with a deck of due
@@ -313,9 +623,27 @@ let mockDistillConfig: DistillConfig = {
 let mockArchiveBuckets: BucketUsage[] = [
   { tree: "daily", bucket: "2026-W02", files: 7, bytes: 41_000, packed: false },
   { tree: "daily", bucket: "2026-W31", files: 7, bytes: 38_400, packed: false },
-  { tree: "sessions", bucket: "2026-01", files: 214, bytes: 2_310_000, packed: false },
-  { tree: "sessions", bucket: "2026-04", files: 168, bytes: 1_870_000, packed: false },
-  { tree: "sessions", bucket: "2026-07", files: 121, bytes: 1_402_000, packed: false },
+  {
+    tree: "sessions",
+    bucket: "2026-01",
+    files: 214,
+    bytes: 2_310_000,
+    packed: false,
+  },
+  {
+    tree: "sessions",
+    bucket: "2026-04",
+    files: 168,
+    bytes: 1_870_000,
+    packed: false,
+  },
+  {
+    tree: "sessions",
+    bucket: "2026-07",
+    files: 121,
+    bytes: 1_402_000,
+    packed: false,
+  },
   // The third tier's archive: rolled-up weeklies, bucketed by month like
   // sessions/ (not by week like daily/) — the mock carries one so the panel's
   // per-tree cutoff is exercisable in ?mock=1.
@@ -327,13 +655,16 @@ let mockArchiveBuckets: BucketUsage[] = [
  *  containing its Thursday, so a week straddling a year boundary keeps one
  *  name instead of splitting under two. */
 function isoWeekOf(d: Date): string {
-  const date = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const date = new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()),
+  );
   const dow = (date.getUTCDay() + 6) % 7; // Mon=0..Sun=6
   date.setUTCDate(date.getUTCDate() - dow + 3); // nearest Thursday
   const week1Thu = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
   const w1dow = (week1Thu.getUTCDay() + 6) % 7;
   week1Thu.setUTCDate(week1Thu.getUTCDate() - w1dow + 3);
-  const weekNum = 1 + Math.round((date.getTime() - week1Thu.getTime()) / (7 * 86_400_000));
+  const weekNum =
+    1 + Math.round((date.getTime() - week1Thu.getTime()) / (7 * 86_400_000));
   return `${date.getUTCFullYear()}-W${String(weekNum).padStart(2, "0")}`;
 }
 
@@ -343,7 +674,10 @@ function isoWeekOf(d: Date): string {
  *  `YYYY-Www`) — comparing a `YYYY-Www` id against a `YYYY-MM` cutoff is
  *  apples to oranges lexicographically ('W' sorts above every digit), so it
  *  would never match and a daily bucket would never compress. */
-function mockArchiveCutoff(months: number, now = new Date()): { month: string; week: string } {
+function mockArchiveCutoff(
+  months: number,
+  now = new Date(),
+): { month: string; week: string } {
   // Mirrors `archive_pack::cutoff` exactly: month arithmetic on the year*12+month
   // index (never `setUTCMonth`, which overflows Mar 31 - 1 month into March), and
   // the week taken from day 28 of the cutoff month so the subtraction can never
@@ -474,7 +808,11 @@ function b64ToBytes(b64: string): Uint8Array {
 // Mock LLM output for study generation. claude_run is the CLI provider path; we
 // branch on the prompt so card/quiz generation returns valid JSON while ordinary
 // queries still get a plain answer.
-function mockClaudeRun(prompt: string): { stdout: string; stderr: string; status: number } {
+function mockClaudeRun(prompt: string): {
+  stdout: string;
+  stderr: string;
+  status: number;
+} {
   const p = prompt.toLowerCase();
   let stdout: string;
   if (p.includes("produce a plan") && p.includes("decision")) {
@@ -483,31 +821,84 @@ function mockClaudeRun(prompt: string): { stdout: string; stderr: string; status
     stdout =
       "```json\n" +
       JSON.stringify([
-        { subject: "scaled dot-product attention", decision: "UPDATE", target: "attention-mechanism", reason: "adds the scaling factor detail" },
-        { subject: "flash attention", decision: "ADD", target: null, reason: "not yet covered by any page" },
-        { subject: "token embeddings", decision: "MERGE", target: "embeddings", reason: "overlaps the existing page" },
-        { subject: "tokenization basics", decision: "NOOP", target: "tokenization", reason: "already fully covered" },
+        {
+          subject: "scaled dot-product attention",
+          decision: "UPDATE",
+          target: "attention-mechanism",
+          reason: "adds the scaling factor detail",
+        },
+        {
+          subject: "flash attention",
+          decision: "ADD",
+          target: null,
+          reason: "not yet covered by any page",
+        },
+        {
+          subject: "token embeddings",
+          decision: "MERGE",
+          target: "embeddings",
+          reason: "overlaps the existing page",
+        },
+        {
+          subject: "tokenization basics",
+          decision: "NOOP",
+          target: "tokenization",
+          reason: "already fully covered",
+        },
       ]) +
       "\n```";
   } else if (p.includes("flashcard")) {
     stdout = JSON.stringify([
-      { front: "Mock card A?", back: "Answer A.", sourceRef: "[^src-attention-is-all-you-need]" },
+      {
+        front: "Mock card A?",
+        back: "Answer A.",
+        sourceRef: "[^src-attention-is-all-you-need]",
+      },
       { front: "Mock card B?", back: "Answer B.", sourceRef: "[[embeddings]]" },
     ]);
   } else if (p.includes("multiple-choice")) {
     stdout = JSON.stringify([
-      { question: "Mock Q1?", choices: ["Right", "Wrong 1", "Wrong 2"], answer: 0, sourceRef: "[^src-1]", explanation: "The first option is correct." },
-      { question: "Mock Q2?", choices: ["Wrong", "Right"], answer: 1, sourceRef: "", explanation: "The second option is correct." },
+      {
+        question: "Mock Q1?",
+        choices: ["Right", "Wrong 1", "Wrong 2"],
+        answer: 0,
+        sourceRef: "[^src-1]",
+        explanation: "The first option is correct.",
+      },
+      {
+        question: "Mock Q2?",
+        choices: ["Wrong", "Right"],
+        answer: 1,
+        sourceRef: "",
+        explanation: "The second option is correct.",
+      },
     ]);
   } else if (p.includes("dialogue") || p.includes("two-host")) {
     stdout = JSON.stringify([
-      { speaker: "A", text: "Welcome — today we dig into attention.", cites: ["[[attention-mechanism]]"] },
-      { speaker: "B", text: "Right. At its core it's a weighted sum over value vectors.", cites: ["[[attention-mechanism]]"] },
-      { speaker: "A", text: "And multi-head attention runs several of these in parallel.", cites: ["[[multi-head-attention]]"] },
-      { speaker: "B", text: "Exactly, then concatenates the results. That's the key idea.", cites: [] },
+      {
+        speaker: "A",
+        text: "Welcome — today we dig into attention.",
+        cites: ["[[attention-mechanism]]"],
+      },
+      {
+        speaker: "B",
+        text: "Right. At its core it's a weighted sum over value vectors.",
+        cites: ["[[attention-mechanism]]"],
+      },
+      {
+        speaker: "A",
+        text: "And multi-head attention runs several of these in parallel.",
+        cites: ["[[multi-head-attention]]"],
+      },
+      {
+        speaker: "B",
+        text: "Exactly, then concatenates the results. That's the key idea.",
+        cites: [],
+      },
     ]);
   } else {
-    stdout = "(mock) Claude CLI reply — the real app shells `claude --print` here.";
+    stdout =
+      "(mock) Claude CLI reply — the real app shells `claude --print` here.";
   }
   return { stdout, stderr: "", status: 0 };
 }
@@ -530,9 +921,18 @@ function bigRand(n: number): number {
   return (x >>> 0) / 4294967296;
 }
 const BIG_FOLDERS = [
-  "neural-networks", "data-science", "keyboard-hobby", "spain-tech",
-  "deep-learning", "alignment", "distillation", "rag", "quantization",
-  "activation", "topics", "misc",
+  "neural-networks",
+  "data-science",
+  "keyboard-hobby",
+  "spain-tech",
+  "deep-learning",
+  "alignment",
+  "distillation",
+  "rag",
+  "quantization",
+  "activation",
+  "topics",
+  "misc",
 ];
 // `?big=N&skew=1` reproduces the real-vault shape: ONE dominant folder (~90%)
 // with a handful of small ones — a single giant galaxy, which stresses the
@@ -544,7 +944,8 @@ function bigSkew(): boolean {
 export function bigPath(i: number): string {
   if (bigSkew()) {
     // 90% in folder 0, the rest sprinkled across the next 5.
-    const f = bigRand(i * 7 + 3) < 0.9 ? BIG_FOLDERS[0] : BIG_FOLDERS[1 + (i % 5)];
+    const f =
+      bigRand(i * 7 + 3) < 0.9 ? BIG_FOLDERS[0] : BIG_FOLDERS[1 + (i % 5)];
     return `${VAULT}/${f}/note-${i}.md`;
   }
   return `${VAULT}/${BIG_FOLDERS[i % BIG_FOLDERS.length]}/note-${i}.md`;
@@ -580,7 +981,8 @@ function rerootAdjacency(
   adj: ReturnType<typeof buildAdjacency>,
   root: string,
 ): ReturnType<typeof buildAdjacency> {
-  const re = (p: string): string => (p.startsWith(VAULT) ? root + p.slice(VAULT.length) : p);
+  const re = (p: string): string =>
+    p.startsWith(VAULT) ? root + p.slice(VAULT.length) : p;
   const remapMap = (m: Record<string, string[]>): Record<string, string[]> => {
     const out: Record<string, string[]> = {};
     for (const [k, arr] of Object.entries(m)) out[re(k)] = arr.map(re);
@@ -642,7 +1044,11 @@ function buildAdjacency() {
   // Two genuine missing pages (not one), so reflect's bulk "create missing
   // pages" button has something to count and a per-row action to show.
   const unresolved: Record<string, string[]> = {
-    [pathOf("attention-mechanism")]: ["flash-attention-3", "source-<slug>", "..."],
+    [pathOf("attention-mechanism")]: [
+      "flash-attention-3",
+      "source-<slug>",
+      "...",
+    ],
     [pathOf("scaling-laws")]: ["chinchilla-optimal"],
   };
   return { forward, backward, unresolved, tags, meta };
@@ -671,7 +1077,10 @@ function fileTree() {
   // graph builder sees every generated note.
   const big = bigCount();
   if (big > 0) {
-    const byFolder = new Map<string, { kind: "file"; name: string; path: string }[]>();
+    const byFolder = new Map<
+      string,
+      { kind: "file"; name: string; path: string }[]
+    >();
     for (let i = 0; i < big; i++) {
       const p = bigPath(i);
       const folder = p.slice(0, p.lastIndexOf("/"));
@@ -692,8 +1101,29 @@ function fileTree() {
     { kind: "file", name: "index.md", path: `${VAULT}/wiki/index.md` },
     { kind: "file", name: "log.md", path: `${VAULT}/wiki/log.md` },
     { kind: "file", name: "pdf-demo.md", path: MOCK_PDF_LINK_NOTE },
-    ...NODES.map((d) => ({ kind: "file", name: `${d.s}.md`, path: pathOf(d.s) })),
+    ...NODES.map((d) => ({
+      kind: "file",
+      name: `${d.s}.md`,
+      path: pathOf(d.s),
+    })),
   ];
+  const roadmapChildren = [...mockNotes.keys()]
+    .filter((p) => p.includes("/wiki/roadmaps/"))
+    .map((p) => ({
+      kind: "file" as const,
+      name: p.split("/").pop() ?? "roadmap.md",
+      path: p,
+    }));
+  const roadmapDir = roadmapChildren.length
+    ? [
+        {
+          kind: "directory" as const,
+          name: "roadmaps",
+          path: `${VAULT}/wiki/roadmaps`,
+          children: roadmapChildren,
+        },
+      ]
+    : [];
   const cardsChildren = [...mockDecks.keys()].map((p) => ({
     kind: "file" as const,
     name: p.split("/").pop() ?? "deck.md",
@@ -709,10 +1139,22 @@ function fileTree() {
     { kind: "file", name: "welcome.md", path: `${VAULT}/welcome.md` },
     // Only when it has something in it, like the real scaffold's _inbox/.
     ...(inboxChildren.length
-      ? [{ kind: "directory" as const, name: "_inbox", path: `${VAULT}/_inbox`, children: inboxChildren }]
+      ? [
+          {
+            kind: "directory" as const,
+            name: "_inbox",
+            path: `${VAULT}/_inbox`,
+            children: inboxChildren,
+          },
+        ]
       : []),
     { kind: "directory", name: "audio", path: `${VAULT}/audio`, children: [] },
-    { kind: "directory", name: "cards", path: `${VAULT}/cards`, children: cardsChildren },
+    {
+      kind: "directory",
+      name: "cards",
+      path: `${VAULT}/cards`,
+      children: cardsChildren,
+    },
     { kind: "directory", name: "daily", path: `${VAULT}/daily`, children: [] },
     {
       kind: "directory",
@@ -728,10 +1170,20 @@ function fileTree() {
         },
       ],
     },
-    { kind: "directory", name: "raw", path: `${VAULT}/raw`, children: [
-      { kind: "file", name: `${MOCK_PDF_STEM}.pdf`, path: MOCK_PDF_PATH },
-    ] },
-    { kind: "directory", name: "wiki", path: `${VAULT}/wiki`, children: wikiChildren },
+    {
+      kind: "directory",
+      name: "raw",
+      path: `${VAULT}/raw`,
+      children: [
+        { kind: "file", name: `${MOCK_PDF_STEM}.pdf`, path: MOCK_PDF_PATH },
+      ],
+    },
+    {
+      kind: "directory",
+      name: "wiki",
+      path: `${VAULT}/wiki`,
+      children: [...wikiChildren, ...roadmapDir],
+    },
     {
       kind: "directory",
       name: "work",
@@ -762,7 +1214,10 @@ function mtimes(): [string, number][] {
   return [
     ...NODES.map(
       (d, i) =>
-        [pathOf(d.s), i < 5 ? now - i * 43_200 : base + i * 3600] as [string, number],
+        [pathOf(d.s), i < 5 ? now - i * 43_200 : base + i * 3600] as [
+          string,
+          number,
+        ],
     ),
     // Pending _inbox sources: first arrived "today", the rest earlier.
     ...[...mockInbox.keys()].map(
@@ -803,7 +1258,14 @@ function provenance() {
         created: "1699500000",
         resolved: true,
       },
-      { slug: "missing-source", kind: "", title: null, conversation_id: null, created: null, resolved: false },
+      {
+        slug: "missing-source",
+        kind: "",
+        title: null,
+        conversation_id: null,
+        created: null,
+        resolved: false,
+      },
     ],
   };
   return NODES.map((d) => ({
@@ -830,7 +1292,18 @@ let lastSettingsExport: string | null = null;
 const SETTINGS = {
   // All three CLI providers connected so the Model tab's picker (and any
   // screenshot of it) can show a real, non-"(default)"-only list for each.
-  providers: { anthropic_cli: true, gemini_cli: true, codex_cli: true, anthropic_api: false, openai_api: false, google_api: false, ollama: false, openrouter: false, myco_pro: false, builtin_local: true },
+  providers: {
+    anthropic_cli: true,
+    gemini_cli: true,
+    codex_cli: true,
+    anthropic_api: false,
+    openai_api: false,
+    google_api: false,
+    ollama: false,
+    openrouter: false,
+    myco_pro: false,
+    builtin_local: true,
+  },
   query_provider: "anthropic-cli",
   query_model: "claude-sonnet-4-6",
   ingest_provider: "anthropic-cli",
@@ -873,29 +1346,72 @@ const bySlug = new Map(NODES.map((d) => [d.s, d]));
 
 // ---- In-app agent (Feature 4) mock ----------------------------------------
 const MOCK_AGENT_TOOLS = [
-  { name: "search_vault", description: "Search the wiki", input_schema: { type: "object" }, write: false },
-  { name: "read_page", description: "Read a page", input_schema: { type: "object" }, write: false },
-  { name: "create_page", description: "Create a page", input_schema: { type: "object" }, write: true },
+  {
+    name: "search_vault",
+    description: "Search the wiki",
+    input_schema: { type: "object" },
+    write: false,
+  },
+  {
+    name: "read_page",
+    description: "Read a page",
+    input_schema: { type: "object" },
+    write: false,
+  },
+  {
+    name: "create_page",
+    description: "Create a page",
+    input_schema: { type: "object" },
+    write: true,
+  },
 ];
 
-function mockAgentToolCall(_cmd: string, args: Record<string, unknown>): unknown {
+function mockAgentToolCall(
+  _cmd: string,
+  args: Record<string, unknown>,
+): unknown {
   const name = String(args.name ?? "");
   const a = (args.args ?? {}) as Record<string, unknown>;
   switch (name) {
     case "search_vault": {
       const q = String(a.query ?? "").toLowerCase();
-      const hits = NODES.filter((d) => d.n.toLowerCase().includes(q) || d.s.includes(q))
+      const hits = NODES.filter(
+        (d) => d.n.toLowerCase().includes(q) || d.s.includes(q),
+      )
         .slice(0, 5)
-        .map((d) => ({ path: pathOf(d.s), name: `${d.s}.md`, line: 1, snippet: d.n }));
-      return { hits: hits.length ? hits : [{ path: pathOf(NODES[0].s), name: `${NODES[0].s}.md`, line: 1, snippet: NODES[0].n }] };
+        .map((d) => ({
+          path: pathOf(d.s),
+          name: `${d.s}.md`,
+          line: 1,
+          snippet: d.n,
+        }));
+      return {
+        hits: hits.length
+          ? hits
+          : [
+              {
+                path: pathOf(NODES[0].s),
+                name: `${NODES[0].s}.md`,
+                line: 1,
+                snippet: NODES[0].n,
+              },
+            ],
+      };
     }
     case "read_page": {
-      const slug = String(a.path ?? "").split("/").pop()?.replace(/\.md$/, "") ?? "";
+      const slug =
+        String(a.path ?? "")
+          .split("/")
+          .pop()
+          ?.replace(/\.md$/, "") ?? "";
       const d = bySlug.get(slug) ?? NODES[0];
       return { path: pathOf(d.s), content: `# ${d.n}\n\n${body(d)}` };
     }
     case "create_page":
-      return { written: String(a.path ?? "wiki/new.md"), bytes: String(a.content ?? "").length };
+      return {
+        written: String(a.path ?? "wiki/new.md"),
+        bytes: String(a.content ?? "").length,
+      };
     default:
       return { ok: true };
   }
@@ -916,16 +1432,25 @@ function mockAgentChat(args: Record<string, unknown>): unknown {
   const userText = messages.find((m) => m.role === "user") as
     | { content?: string }
     | undefined;
-  const wantsWrite = /write|create|draft|note|page/i.test(userText?.content ?? "");
+  const wantsWrite = /write|create|draft|note|page/i.test(
+    userText?.content ?? "",
+  );
   const hasWriteTool = tools.some((t) => t.name === "create_page");
 
   if (tools.length === 0) {
-    return { text: "Partial answer at the step limit.", tool_calls: [], usage, stop: "stop" };
+    return {
+      text: "Partial answer at the step limit.",
+      tool_calls: [],
+      usage,
+      stop: "stop",
+    };
   }
   if (toolResults === 0) {
     return {
       text: "",
-      tool_calls: [{ id: "call_1", name: "search_vault", input: { query: "attention" } }],
+      tool_calls: [
+        { id: "call_1", name: "search_vault", input: { query: "attention" } },
+      ],
       usage,
       stop: "tool_use",
     };
@@ -934,7 +1459,14 @@ function mockAgentChat(args: Record<string, unknown>): unknown {
     return {
       text: "",
       tool_calls: [
-        { id: "call_2", name: "create_page", input: { path: "wiki/agent-summary.md", content: "# Summary\n\nDraft." } },
+        {
+          id: "call_2",
+          name: "create_page",
+          input: {
+            path: "wiki/agent-summary.md",
+            content: "# Summary\n\nDraft.",
+          },
+        },
       ],
       usage,
       stop: "tool_use",
@@ -948,7 +1480,10 @@ function mockAgentChat(args: Record<string, unknown>): unknown {
   };
 }
 
-function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<unknown> {
+function mockInvoke(
+  cmd: string,
+  args: Record<string, unknown> = {},
+): Promise<unknown> {
   switch (cmd) {
     case "ensure_default_vault":
       return Promise.resolve(VAULT);
@@ -1007,7 +1542,9 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         },
       ]);
     case "build_universe_graph":
-      return Promise.resolve(rerootAdjacency(buildAdjacency(), String(args.root ?? "x")));
+      return Promise.resolve(
+        rerootAdjacency(buildAdjacency(), String(args.root ?? "x")),
+      );
     case "search_vault": {
       const needle = String(args.query ?? "")
         .trim()
@@ -1035,11 +1572,41 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // module init) so the activity popover's check-off round-trips too.
       return Promise.resolve([
         ...tasksFromMockNotes(),
-        { page: "daily.md", stem: "daily", line: 3, text: "reindex embeddings before the demo", done: false },
-        { page: "wiki/attention-mechanism.md", stem: "attention-mechanism", line: 42, text: "add the flash-attention variant", done: false },
-        { page: "wiki/embeddings.md", stem: "embeddings", line: 18, text: "cite the original word2vec paper", done: false },
-        { page: "daily.md", stem: "daily", line: 7, text: "skim the RoPE paper", done: true },
-        { page: "wiki/tokenization.md", stem: "tokenization", line: 25, text: "note the BPE merge order", done: true },
+        {
+          page: "daily.md",
+          stem: "daily",
+          line: 3,
+          text: "reindex embeddings before the demo",
+          done: false,
+        },
+        {
+          page: "wiki/attention-mechanism.md",
+          stem: "attention-mechanism",
+          line: 42,
+          text: "add the flash-attention variant",
+          done: false,
+        },
+        {
+          page: "wiki/embeddings.md",
+          stem: "embeddings",
+          line: 18,
+          text: "cite the original word2vec paper",
+          done: false,
+        },
+        {
+          page: "daily.md",
+          stem: "daily",
+          line: 7,
+          text: "skim the RoPE paper",
+          done: true,
+        },
+        {
+          page: "wiki/tokenization.md",
+          stem: "tokenization",
+          line: 25,
+          text: "note the BPE merge order",
+          done: true,
+        },
       ]);
     case "scan_provenance":
       return Promise.resolve(provenance());
@@ -1153,7 +1720,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
             "sessions/2026-08/claude-code-aaa.md",
             "sessions/archive/2026-08/claude-code-aaa.md",
           ],
-          ["_inbox/clip-scaling-laws.md", "_inbox/.archived/clip-scaling-laws.md"],
+          [
+            "_inbox/clip-scaling-laws.md",
+            "_inbox/.archived/clip-scaling-laws.md",
+          ],
         ],
         trashed: [],
         created: ["daily/2026-08-21.md"],
@@ -1269,12 +1839,16 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "archive_usage":
       return Promise.resolve(mockArchiveBuckets);
     case "compress_archives": {
-      const { month, week } = mockArchiveCutoff((args.olderThanMonths as number) ?? 3);
+      const { month, week } = mockArchiveCutoff(
+        (args.olderThanMonths as number) ?? 3,
+      );
       const old = mockArchiveBuckets.filter(
         (b) => !b.packed && b.bucket < (b.tree === "daily" ? week : month),
       );
       mockArchiveBuckets = mockArchiveBuckets.map((b) =>
-        old.includes(b) ? { ...b, packed: true, bytes: Math.round(b.bytes * 0.25) } : b,
+        old.includes(b)
+          ? { ...b, packed: true, bytes: Math.round(b.bytes * 0.25) }
+          : b,
       );
       return Promise.resolve({
         buckets: old.length,
@@ -1301,7 +1875,9 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "restore_quarantine": {
       const files = (args.files as string[]) ?? [];
       mockQuarantine = mockQuarantine.filter((q) => !files.includes(q.path));
-      return Promise.resolve(`moved ${files.length}, skipped 0 already-processed`);
+      return Promise.resolve(
+        `moved ${files.length}, skipped 0 already-processed`,
+      );
     }
     case "extend_quarantine": {
       const files = (args.files as string[]) ?? [];
@@ -1379,7 +1955,11 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         });
       }
       if (LOCAL_ONLY_MODE) {
-        return Promise.resolve({ ...SETTINGS, query_provider: "builtin-local", query_model: "" });
+        return Promise.resolve({
+          ...SETTINGS,
+          query_provider: "builtin-local",
+          query_model: "",
+        });
       }
       return Promise.resolve({ ...SETTINGS });
     case "agent_tools_schema":
@@ -1397,7 +1977,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "myco_pro_login":
       SETTINGS.myco_pro_email = String(args.email ?? "");
       SETTINGS.providers.myco_pro = true;
-      return Promise.resolve({ email: String(args.email ?? ""), connected: true });
+      return Promise.resolve({
+        email: String(args.email ?? ""),
+        connected: true,
+      });
     case "local_classify":
       return Promise.resolve("concept");
     case "local_query":
@@ -1407,14 +1990,19 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // developer — ever sees the wait states that exist because of those
       // numbers.
       return sleep(700).then(
-        () => "(mock) local model reply — the real app runs the bundled Gemma 3 1B here.",
+        () =>
+          "(mock) local model reply — the real app runs the bundled Gemma 3 1B here.",
       );
     case "myco_pro_logout":
       SETTINGS.myco_pro_email = "";
       SETTINGS.providers.myco_pro = false;
       return Promise.resolve(null);
     case "claude_check":
-      return Promise.resolve({ installed: true, version: "claude 1.0.0", path: "/usr/local/bin/claude" });
+      return Promise.resolve({
+        installed: true,
+        version: "claude 1.0.0",
+        path: "/usr/local/bin/claude",
+      });
     case "agent_check":
       // gemini-cli / codex-cli install probe — mock as not installed so the
       // Connections tab renders without an undefined-status crash in dev.
@@ -1436,15 +2024,41 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
               ],
               error: null,
             }
-          : { binary_installed: false, binary_path: null, version: null, daemon_running: false, endpoint: "http://localhost:11434", models: [], error: null },
+          : {
+              binary_installed: false,
+              binary_path: null,
+              version: null,
+              daemon_running: false,
+              endpoint: "http://localhost:11434",
+              models: [],
+              error: null,
+            },
       );
     case "ollama_install_url":
       return Promise.resolve("https://ollama.com/download");
     case "git_log":
       return Promise.resolve([
-        { hash: "a1b2c3d", date: "2024-03-01", subject: "ingest: transformer architecture", created: 42, modified: 6 },
-        { hash: "e4f5a6b", date: "2024-02-20", subject: "ingest: scaling laws", created: 30, modified: 3 },
-        { hash: "0c1d2e3", date: "2024-02-10", subject: "init: wiki bootstrap", created: 120, modified: 0 },
+        {
+          hash: "a1b2c3d",
+          date: "2024-03-01",
+          subject: "ingest: transformer architecture",
+          created: 42,
+          modified: 6,
+        },
+        {
+          hash: "e4f5a6b",
+          date: "2024-02-20",
+          subject: "ingest: scaling laws",
+          created: 30,
+          modified: 3,
+        },
+        {
+          hash: "0c1d2e3",
+          date: "2024-02-10",
+          subject: "init: wiki bootstrap",
+          created: 120,
+          modified: 0,
+        },
       ]);
     case "claude_run":
       return Promise.resolve(mockClaudeRun(String(args.prompt ?? "")));
@@ -1457,7 +2071,14 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "claude_run_stream": {
       const runId = String(args.runId ?? args.run_id ?? "");
       const emit = (kind: string, extra: Record<string, unknown>) =>
-        emitMock("claude-stream", { run_id: runId, kind, tool: null, detail: null, text: null, ...extra });
+        emitMock("claude-stream", {
+          run_id: runId,
+          kind,
+          tool: null,
+          detail: null,
+          text: null,
+          ...extra,
+        });
       void (async () => {
         emit("init", {});
         for (const step of MOCK_STREAM_STEPS) {
@@ -1475,32 +2096,66 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       if (p.includes("/ingest-reports/")) {
         const raw =
           "# Ingest report — attention\n\nAdded 3 facts, merged 1, cited 2 sources.\n";
-        return Promise.resolve({ path: p, raw, content: raw, frontmatter: null });
+        return Promise.resolve({
+          path: p,
+          raw,
+          content: raw,
+          frontmatter: null,
+        });
       }
       const written = mockNotes.get(p);
       if (written !== undefined) {
-        return Promise.resolve({ path: p, raw: written, content: written, frontmatter: null });
+        return Promise.resolve({
+          path: p,
+          raw: written,
+          content: written,
+          frontmatter: null,
+        });
       }
       // A clip waiting in _inbox/ — auto-ingest reads it before ingesting.
       const clip = mockInbox.get(p);
       if (clip !== undefined) {
-        return Promise.resolve({ path: p, raw: clip, content: clip, frontmatter: null });
+        return Promise.resolve({
+          path: p,
+          raw: clip,
+          content: clip,
+          frontmatter: null,
+        });
       }
       if (isCardsPath(p)) {
         const raw = mockDecks.get(p) ?? "";
-        return Promise.resolve({ path: p, raw, content: raw, frontmatter: null });
+        return Promise.resolve({
+          path: p,
+          raw,
+          content: raw,
+          frontmatter: null,
+        });
       }
       const proposal = MOCK_PROPOSALS.get(p);
       if (proposal !== undefined) {
-        return Promise.resolve({ path: p, raw: proposal, content: proposal, frontmatter: null });
+        return Promise.resolve({
+          path: p,
+          raw: proposal,
+          content: proposal,
+          frontmatter: null,
+        });
       }
       if (p === MOCK_ANNOTATIONS_PATH) {
-        return Promise.resolve({ path: p, raw: MOCK_SIDECAR, content: MOCK_SIDECAR, frontmatter: null });
+        return Promise.resolve({
+          path: p,
+          raw: MOCK_SIDECAR,
+          content: MOCK_SIDECAR,
+          frontmatter: null,
+        });
       }
       if (p === MOCK_PDF_LINK_NOTE) {
-        const body =
-          `# PDF demo\n\nSee the source: [[pdf::${MOCK_PDF_STEM}#p1:seed1|Hello myco PDF]].\n`;
-        return Promise.resolve({ path: p, raw: body, content: body, frontmatter: null });
+        const body = `# PDF demo\n\nSee the source: [[pdf::${MOCK_PDF_STEM}#p1:seed1|Hello myco PDF]].\n`;
+        return Promise.resolve({
+          path: p,
+          raw: body,
+          content: body,
+          frontmatter: null,
+        });
       }
       // Generated month hub pages are guarded by a marker the generator looks
       // for in the EXISTING file, so the blanket "Sample note." fallback below
@@ -1513,12 +2168,24 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       const d = bySlug.get(slug);
       if (d) {
         const content = `# ${d.n}\n\n${body(d)}`;
-        return Promise.resolve({ path: p, raw: content, content, frontmatter: frontmatter(d) });
+        return Promise.resolve({
+          path: p,
+          raw: content,
+          content,
+          frontmatter: frontmatter(d),
+        });
       }
-      return Promise.resolve({ path: p, raw: "# myco\n\nSample note.\n", content: "# myco\n\nSample note.\n", frontmatter: null });
+      return Promise.resolve({
+        path: p,
+        raw: "# myco\n\nSample note.\n",
+        content: "# myco\n\nSample note.\n",
+        frontmatter: null,
+      });
     }
     case "read_vault_context":
-      return Promise.resolve(NODES.map((d) => `===== wiki/${d.s}.md =====\n${body(d)}`).join("\n\n"));
+      return Promise.resolve(
+        NODES.map((d) => `===== wiki/${d.s}.md =====\n${body(d)}`).join("\n\n"),
+      );
     case "list_provider_models":
       // Mirrors the backend's per-provider lists so the Model tab (and any
       // screenshot of it) shows what the real app would. codex-cli is the one
@@ -1614,16 +2281,17 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // No keyword match: return weak hits the way the real backend does for an
       // off-vault question — below RELEVANCE_FLOOR, so the abstention path (not
       // the answer path) is what a mock-mode nonsense query exercises.
-      const out = hits.length === 0 && NODES.length
-        ? NODES.slice(0, k).map((d, i) => ({
-            page: `wiki/${d.s}.md`,
-            stem: d.s,
-            section: 0,
-            text: `passage from ${d.s}`,
-            score: 0.6 - i * 0.05,
-            similarity: 0.42 - i * 0.02,
-          }))
-        : hits;
+      const out =
+        hits.length === 0 && NODES.length
+          ? NODES.slice(0, k).map((d, i) => ({
+              page: `wiki/${d.s}.md`,
+              stem: d.s,
+              section: 0,
+              text: `passage from ${d.s}`,
+              score: 0.6 - i * 0.05,
+              similarity: 0.42 - i * 0.02,
+            }))
+          : hits;
       // Time-anchored question: the real backend keeps only dated-tier pages
       // overlapping the range (simplified here to the tiers the fixtures have —
       // daily by day, sessions/monthly by month; undated wiki pages drop out).
@@ -1636,7 +2304,10 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
               /^sessions\/(\d{4}-\d{2})\//.exec(h.page)?.[1] ??
               /^monthly\/(\d{4}-\d{2})\.md$/.exec(h.page)?.[1];
             if (month)
-              return range.start.slice(0, 7) <= month && month <= range.end.slice(0, 7);
+              return (
+                range.start.slice(0, 7) <= month &&
+                month <= range.end.slice(0, 7)
+              );
             return false;
           })
         : out;
@@ -1648,8 +2319,9 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // returns null (an ordinary content question).
       const q = String(args.query ?? "");
       const meta =
-        /오늘|어제|이번\s*주|최근|요즘|신규|today|yesterday|this week|recent|newest|latest/i.test(q) &&
-        /파일|노트|문서|md|file|note|page|doc/i.test(q);
+        /오늘|어제|이번\s*주|최근|요즘|신규|today|yesterday|this week|recent|newest|latest/i.test(
+          q,
+        ) && /파일|노트|문서|md|file|note|page|doc/i.test(q);
       return sleep(200).then(() =>
         meta ? { intent: "vault-files", similarity: 0.86 } : null,
       );
@@ -1691,7 +2363,11 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         .filter((x) => x.overlap > 0)
         .sort((a, b) => b.overlap - a.overlap)
         .slice(0, k)
-        .map((x, i) => ({ page: `wiki/${x.d.s}.md`, stem: x.d.s, score: 0.88 - i * 0.06 }));
+        .map((x, i) => ({
+          page: `wiki/${x.d.s}.md`,
+          stem: x.d.s,
+          score: 0.88 - i * 0.06,
+        }));
       return sleep(500).then(() => scored);
     }
     case "describe_image":
@@ -1700,11 +2376,17 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
           "encoder/decoder stacks, multi-head attention blocks, and positional encodings.",
       );
     case "whisper_check":
-      return Promise.resolve({ installed: true, version: "whisper 1.0", path: "/usr/local/bin/whisper" });
+      return Promise.resolve({
+        installed: true,
+        version: "whisper 1.0",
+        path: "/usr/local/bin/whisper",
+      });
     // Voice quick-capture (W3–6 item 9): the delay exercises the "saving"
     // state before the saved chip.
     case "save_voice_capture":
-      return sleep(600).then(() => ({ rel: "_inbox/voice-2026-08-22-0912.md" }));
+      return sleep(600).then(() => ({
+        rel: "_inbox/voice-2026-08-22-0912.md",
+      }));
     case "transcribe_media":
       return Promise.resolve(
         "(mock) Transcript: today we cover attention and how scaled dot-product attention works.",
@@ -1756,7 +2438,12 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       const k = Number(args.k ?? 8);
       const links = bySlug.get(slug)?.l ?? [];
       return Promise.resolve(
-        links.slice(0, k).map((s, i) => ({ page: `wiki/${s}.md`, stem: s, section: 0, score: 0.85 - i * 0.05 })),
+        links.slice(0, k).map((s, i) => ({
+          page: `wiki/${s}.md`,
+          stem: s,
+          section: 0,
+          score: 0.85 - i * 0.05,
+        })),
       );
     }
     case "write_file": {
@@ -1825,7 +2512,12 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         source: "claude-code",
         imported: 1,
         skipped: 2,
-        quarantined: [{ title: "a chat that pasted a key", secrets: ["OpenAI/Anthropic-style API key"] }],
+        quarantined: [
+          {
+            title: "a chat that pasted a key",
+            secrets: ["OpenAI/Anthropic-style API key"],
+          },
+        ],
         failed: [],
       });
     }
@@ -1923,7 +2615,11 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       const name = String(args.event ?? "");
       const id = Number(args.eventId);
       const list = mockListeners.get(name);
-      if (list) mockListeners.set(name, list.filter((l) => l.id !== id));
+      if (list)
+        mockListeners.set(
+          name,
+          list.filter((l) => l.id !== id),
+        );
       return Promise.resolve(undefined);
     }
     // The rest of the registered surface. Nothing here is interesting to look
@@ -1940,11 +2636,15 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
     case "agent_run":
       return Promise.resolve(mockClaudeRun(String(args.prompt ?? "")));
     case "chat_complete": {
-      const req = (args.request ?? {}) as { provider_id?: string; model?: string };
+      const req = (args.request ?? {}) as {
+        provider_id?: string;
+        model?: string;
+      };
       return Promise.resolve({
         provider_id: req.provider_id ?? "anthropic-api",
         model: req.model ?? "mock-model",
-        content: "(mock) provider reply — the real app calls the HTTP provider here.",
+        content:
+          "(mock) provider reply — the real app calls the HTTP provider here.",
         usage: { input_tokens: 120, output_tokens: 42 },
       });
     }
@@ -1958,7 +2658,9 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
           '{\n  "mcpServers": {\n    "myco": {\n      "url": "http://localhost:22360/mcp",\n      "headers": { "Authorization": "Bearer 0123456789abcdef0123456789abcdef" }\n    }\n  }\n}',
       });
     case "mcp_connect":
-      return Promise.resolve("(mock) Connected myco over HTTP at http://localhost:22360/mcp");
+      return Promise.resolve(
+        "(mock) Connected myco over HTTP at http://localhost:22360/mcp",
+      );
     // Today's inflow for the activity popover / tray panel. Plausible spread:
     // activity clustered in the hours up to "now" so the sparkbar always has
     // visible bars near the right edge of today, whatever the wall clock.
@@ -1984,7 +2686,8 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
         // Split by frontmatter `source:`, so the mock must also sum to
         // inboxToday — and must include an unstamped file, since that is what
         // the breakdown has to survive in a real vault.
-        inboxBySource: inboxToday > 0 ? { clipper: inboxToday - 1, unknown: 1 } : {},
+        inboxBySource:
+          inboxToday > 0 ? { clipper: inboxToday - 1, unknown: 1 } : {},
         mcpCallsToday: hourlyMcp.reduce((a, b) => a + b, 0),
         mcpTopTool: "search",
         hourlyFiles,
@@ -2016,7 +2719,9 @@ function mockInvoke(cmd: string, args: Record<string, unknown> = {}): Promise<un
       // in the mock every E2E suite runs against. A command that reaches here
       // is either a typo or an unmocked command, and both should be loud.
       return Promise.reject(
-        new Error(`devMock: no handler for command "${cmd}" — add one in devMock.ts`),
+        new Error(
+          `devMock: no handler for command "${cmd}" — add one in devMock.ts`,
+        ),
       );
   }
 }
@@ -2048,6 +2753,30 @@ const mockNotes = new Map<string, string>();
 // serves mockNotes, checking one off actually round-trips through
 // writeTaskStatus's line rewrite instead of hitting the stale guard.
 const day = (n: number): string => today(new Date(Date.now() + n * 86_400_000));
+// A roadmap page (wiki/roadmaps/) so the Roadmap tab, the composer's target
+// picker and MCP task tools have something real to bite on in mock mode.
+mockNotes.set(
+  `${VAULT}/wiki/roadmaps/memex-q4.md`,
+  [
+    "---",
+    'title: "memex Q4"',
+    "type: overview",
+    "source_type: primary",
+    "confidence: high",
+    "status: active",
+    "---",
+    "",
+    "# memex Q4 로드맵",
+    "",
+    "## M1 — trust",
+    "- [x] reader badge #dev [[attention-mechanism]] ✅ 2026-08-20",
+    `- [ ] provenance panel #dev 📅 ${day(9)}`,
+    "",
+    "## M2 — resurface",
+    "- [ ] reunion tuning #research",
+    "",
+  ].join("\n"),
+);
 mockNotes.set(
   `${VAULT}/daily/tasks.md`,
   [
@@ -2087,8 +2816,21 @@ function tasksFromMockNotes(): {
       if (m) {
         const mark = m[1];
         const status =
-          mark === "/" ? "doing" : mark === "-" ? "blocked" : /[xX]/.test(mark) ? "done" : "todo";
-        out.push({ page: rel, stem, line: i + 1, text: m[2], done: status === "done", status });
+          mark === "/"
+            ? "doing"
+            : mark === "-"
+              ? "blocked"
+              : /[xX]/.test(mark)
+                ? "done"
+                : "todo";
+        out.push({
+          page: rel,
+          stem,
+          line: i + 1,
+          text: m[2],
+          done: status === "done",
+          status,
+        });
       }
     });
   }
@@ -2112,11 +2854,15 @@ export function installTauriMock(): void {
     __TAURI_EVENT_PLUGIN_INTERNALS__?: unknown;
   };
   w.__TAURI_INTERNALS__ = {
-    invoke: (cmd: string, args?: Record<string, unknown>) => mockInvoke(cmd, args ?? {}),
+    invoke: (cmd: string, args?: Record<string, unknown>) =>
+      mockInvoke(cmd, args ?? {}),
     // The real Tauri registers the callback and hands back an id; the mock
     // passes the function through, and `plugin:event|listen` above stores it.
     transformCallback: (cb: unknown) => cb,
-    metadata: { currentWindow: { label: "main" }, currentWebview: { label: "main", windowLabel: "main" } },
+    metadata: {
+      currentWindow: { label: "main" },
+      currentWebview: { label: "main", windowLabel: "main" },
+    },
     plugins: {},
   };
   // @tauri-apps/api's _unlisten() reaches for this global directly rather than
@@ -2128,16 +2874,18 @@ export function installTauriMock(): void {
   w.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
     unregisterListener: (event: string, eventId: number) => {
       const list = mockListeners.get(event);
-      if (list) mockListeners.set(event, list.filter((l) => l.id !== eventId));
+      if (list)
+        mockListeners.set(
+          event,
+          list.filter((l) => l.id !== eventId),
+        );
     },
   };
   // Test surface for the mock itself. Exposed from HERE, inside the module the
   // app actually loaded: a Playwright `evaluate` that dynamic-imports this file
   // gets a SECOND module instance with its own empty listener registry, so
   // anything it emits reaches nobody.
-  (
-    window as unknown as { __mycoMock?: unknown }
-  ).__mycoMock = {
+  (window as unknown as { __mycoMock?: unknown }).__mycoMock = {
     emit: emitMock,
     clip: emitClipSaved,
     inbox: () => [...mockInbox.keys()],
@@ -2146,11 +2894,16 @@ export function installTauriMock(): void {
     /// vault configured for the CLI cannot be switched to the builtin model
     /// through the UI at all, and a flow that only runs on the non-tool path
     /// (Ask's staged status) is otherwise unreachable from a test.
-    settings: (patch: Record<string, unknown>) => Object.assign(SETTINGS, patch),
+    settings: (patch: Record<string, unknown>) =>
+      Object.assign(SETTINGS, patch),
     /// Pretend the index holds `n` pages (0 = never built).
     indexedPages: (n: number) => {
       mockIndexedPages = n;
     },
   };
-  console.info("[devMock] Tauri IPC mock installed with", NODES.length, "sample nodes");
+  console.info(
+    "[devMock] Tauri IPC mock installed with",
+    NODES.length,
+    "sample nodes",
+  );
 }

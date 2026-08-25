@@ -1300,6 +1300,22 @@ select {
   }
 }
 
+/* Roadmap progress bar — a quiet track with an accent fill. */
+.task-roadmap-bar {
+  display: inline-block;
+  width: 120px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg-active);
+  overflow: hidden;
+}
+.task-roadmap-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--c-entity);
+}
+
 /* Task detail panel — a right-side drawer over the Tasks page. Fixed rather
    than in-flow: the page's three views have wildly different heights, and the
    panel has to stay put while the list behind it scrolls. */

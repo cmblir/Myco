@@ -144,6 +144,17 @@ export interface Strings {
   tasks_hub_empty?: string;
   tasks_hub_written?: string;
   tasks_hub_kept?: string;
+  tasks_compose_more?: string;
+  tasks_compose_category?: string;
+  tasks_compose_project?: string;
+  tasks_compose_target?: string;
+  tasks_compose_daily?: string;
+  tasks_new_roadmap?: string;
+  tasks_new_roadmap_ph?: string;
+  tasks_view_roadmap?: string;
+  tasks_roadmap_empty?: string;
+  tasks_roadmap_empty_hint?: string;
+  tasks_roadmap_progress?: string;
   dp_prev?: string;
   dp_next?: string;
   dp_clear?: string;
@@ -1242,34 +1253,42 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_graph: "Graph",
     nav_views: "Views",
     ls_title: "Suggested links",
-    ls_hint: "Semantically close notes that aren't linked yet. Accept to add a [[wikilink]] under \u201c## Related\u201d.",
+    ls_hint:
+      "Semantically close notes that aren't linked yet. Accept to add a [[wikilink]] under \u201c## Related\u201d.",
     ls_accept: "Link them",
     ls_dismiss: "Dismiss",
     ls_accept_all: "Accept all",
     ls_accept_all_progress: "{done}/{total}",
     ls_accept_all_result: "{n} linked",
     zi_title: "Import from Zotero",
-    zi_hint: "CSL-JSON or BibTeX export (highlights come along when present). Items land in _inbox/ as source docs for the ingest pipeline.",
+    zi_hint:
+      "CSL-JSON or BibTeX export (highlights come along when present). Items land in _inbox/ as source docs for the ingest pipeline.",
     zi_none: "No importable items found in that file.",
-    zi_done: "Imported {n} item(s) into _inbox/ — run Ingest to turn them into wiki pages.",
+    zi_done:
+      "Imported {n} item(s) into _inbox/ — run Ingest to turn them into wiki pages.",
     ci_title: "Import a conversation",
-    ci_hint: "A ChatGPT export (conversations.json) or a Claude Code / Codex session (.jsonl). Each conversation lands in _inbox/ as a source doc for the ingest pipeline.",
+    ci_hint:
+      "A ChatGPT export (conversations.json) or a Claude Code / Codex session (.jsonl). Each conversation lands in _inbox/ as a source doc for the ingest pipeline.",
     ci_btn: "Choose a file…",
     ci_busy: "Importing…",
-    ci_done: "Imported {n} conversation(s) into _inbox/ — run Ingest to turn them into wiki pages.",
-    ci_quarantined: "{n} conversation(s) were held back because they contain what looks like a secret (API key, token). Review them at the source; they were not imported.",
+    ci_done:
+      "Imported {n} conversation(s) into _inbox/ — run Ingest to turn them into wiki pages.",
+    ci_quarantined:
+      "{n} conversation(s) were held back because they contain what looks like a secret (API key, token). Review them at the source; they were not imported.",
     ci_none: "No conversations found in that file.",
     ci_skipped: " ({n} already imported, skipped.)",
     ci_sweep_cc: "Import my Claude Code sessions",
     ci_sweep_cx: "Import my Codex sessions",
-    ci_sweep_hint: "Or import every session already on this machine — from ~/.claude and ~/.codex. Re-running only adds new and grown sessions.",
+    ci_sweep_hint:
+      "Or import every session already on this machine — from ~/.claude and ~/.codex. Re-running only adds new and grown sessions.",
     ci_sweep_progress: "Importing session {done} of {total}",
     ci_sweep_tally: "imported {i} · skipped {s} · {f} failed",
     ci_failed_summary: "{n} couldn’t be imported",
     ci_retry_failed: "Retry failed ({n})",
     q_empty: "Ask the wiki anything — answers cite your own pages.",
     s_mascot: "Show MYCO, the mascot",
-    s_mascot_hint: "Loaders, empty states and the About page. Off = static logo.",
+    s_mascot_hint:
+      "Loaders, empty states and the About page. Off = static logo.",
     s_backup_title: "Settings & looks",
     s_backup_hint:
       "Providers, automation, appearance and graph looks travel with this file. API keys, the vault path and this device's identity never do.",
@@ -1296,7 +1315,8 @@ export const STRINGS: Record<Lang, Strings> = {
     s_backup_confirm_apply: "Replace",
     s_backup_confirm_cancel: "Cancel",
     s_backup_undo: "Undo import",
-    s_backup_undo_hint: "Your previous settings are held in memory until you quit myco.",
+    s_backup_undo_hint:
+      "Your previous settings are held in memory until you quit myco.",
     s_backup_undone: "Put back: {sections}",
     hw_title: "Help",
     hw_sub: "Tips for this page",
@@ -1305,17 +1325,23 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_fly: "Fly mode (graph)",
     hw_sc_esc: "Close / deselect",
     hw_tip_graph1: "Drag a star and the simulation re-heats around it.",
-    hw_tip_graph2: "F flies the spaceship; the ⚠ badge opens gap analysis with research bridges.",
-    hw_tip_graph3: "Near-field planets (settings drawer) turn close-up notes into worlds.",
+    hw_tip_graph2:
+      "F flies the spaceship; the ⚠ badge opens gap analysis with research bridges.",
+    hw_tip_graph3:
+      "Near-field planets (settings drawer) turn close-up notes into worlds.",
     hw_tip_query1: "Answers cite wiki pages — click a citation to open it.",
-    hw_tip_query2: "The graph's gap panel can draft research questions into this box.",
+    hw_tip_query2:
+      "The graph's gap panel can draft research questions into this box.",
     hw_tip_ingest1: "Drop any file, paste text, or import a Zotero export.",
-    hw_tip_ingest2: "The web clipper sends pages here through _inbox/ (see clipper/).",
+    hw_tip_ingest2:
+      "The web clipper sends pages here through _inbox/ (see clipper/).",
     hw_tip_views1: "Filters compose — save the result as a named view chip.",
-    hw_tip_overview1: "Suggested links are semantic pairs with no wikilink yet — accept or dismiss.",
+    hw_tip_overview1:
+      "Suggested links are semantic pairs with no wikilink yet — accept or dismiss.",
     hw_tip_default: "⌘K jumps anywhere — pages, actions, semantic hits.",
     vw_title: "Query views",
-    vw_lede: "Filter the wiki by its frontmatter — type, confidence, status, tags, sources — and save the lenses you keep coming back to.",
+    vw_lede:
+      "Filter the wiki by its frontmatter — type, confidence, status, tags, sources — and save the lenses you keep coming back to.",
     vw_search: "Filter by name…",
     vw_any_type: "Any type",
     vw_any_conf: "Any confidence",
@@ -1339,11 +1365,13 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_lede: "Every checkbox item across your notes, gathered in one place.",
     tasks_loading: "Scanning notes…",
     tasks_empty: "No tasks yet",
-    tasks_empty_hint: "Add a `- [ ] …` checkbox to any note and it will show up here.",
+    tasks_empty_hint:
+      "Add a `- [ ] …` checkbox to any note and it will show up here.",
     tasks_ph: "What do you have to do?",
     tasks_due: "Due date",
     tasks_add: "Add",
-    tasks_stale: "That note changed since the list was built, so it has been refreshed. Try again.",
+    tasks_stale:
+      "That note changed since the list was built, so it has been refreshed. Try again.",
     tasks_view: "View",
     tasks_view_list: "List",
     tasks_view_board: "Board",
@@ -1351,7 +1379,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_col_doing: "In progress",
     tasks_col_blocked: "Blocked",
     tasks_col_done: "Done",
-    tasks_notify: "Notify me about due tasks — a morning digest, plus a reminder for tasks that name a time",
+    tasks_notify:
+      "Notify me about due tasks — a morning digest, plus a reminder for tasks that name a time",
     tasks_view_calendar: "Calendar",
     tasks_cal_today: "Today",
     tasks_cal_undated: "No due date ({n})",
@@ -1365,14 +1394,28 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_detail_estimate: "Estimate",
     tasks_detail_estimate_hint: "Use a duration like 90m, 1.5h, 2d or 1w.",
     tasks_detail_recur: "Repeat",
-    tasks_detail_recur_hint: "myco schedules \u201cevery day/week/month/year\u201d and \u201cevery 2 weeks\u201d. Any other rule stays in your note, untouched.",
-    tasks_detail_start_after_due: "The start is after the due date, so this task shows on its due day. Your dates are left exactly as written.",
+    tasks_detail_recur_hint:
+      "myco schedules \u201cevery day/week/month/year\u201d and \u201cevery 2 weeks\u201d. Any other rule stays in your note, untouched.",
+    tasks_detail_start_after_due:
+      "The start is after the due date, so this task shows on its due day. Your dates are left exactly as written.",
     tasks_detail_open_note: "Open {page}",
     tasks_hub: "Update month pages",
     tasks_hub_heading: "{month} schedule",
     tasks_hub_empty: "_Nothing scheduled this month._",
     tasks_hub_written: "Updated {n} month page(s).",
     tasks_hub_kept: "Left {n} page(s) alone — you have taken them over.",
+    tasks_compose_more: "Details",
+    tasks_compose_category: "Category",
+    tasks_compose_project: "Project",
+    tasks_compose_target: "Add to",
+    tasks_compose_daily: "Today's daily note",
+    tasks_new_roadmap: "＋ New roadmap…",
+    tasks_new_roadmap_ph: "Roadmap title",
+    tasks_view_roadmap: "Roadmap",
+    tasks_roadmap_empty: "No roadmaps yet",
+    tasks_roadmap_empty_hint:
+      "A roadmap is a wiki page (wiki/roadmaps/…) of milestones and checkboxes — create one and its items show up across Tasks.",
+    tasks_roadmap_progress: "{done}/{total} done",
     dp_prev: "Previous month",
     dp_next: "Next month",
     dp_clear: "Clear date",
@@ -1416,7 +1459,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_drop: "Drop a file here",
     ing_drop_or: "or paste a URL",
     ing_browse: "Browse files…",
-    ing_drop_multi: "Loaded the first of {n} files — this form takes one source at a time. Drop the rest one by one.",
+    ing_drop_multi:
+      "Loaded the first of {n} files — this form takes one source at a time. Drop the rest one by one.",
     ing_inbox_pending: "Waiting in _inbox ({n})",
     ing_inbox_empty: "Nothing waiting — arrivals have already been ingested.",
     ing_inbox_today: "today",
@@ -1549,7 +1593,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_vibe_nebula_desc: "Notes clustered by meaning (embeddings)",
     gr_vibe_walrus: "Walrus tree",
     gr_vibe_mycelium: "Mycelium",
-    gr_vibe_walrus_desc: "A hyperbolic spanning tree in a sphere (CAIDA Walrus)",
+    gr_vibe_walrus_desc:
+      "A hyperbolic spanning tree in a sphere (CAIDA Walrus)",
     gr_vibe_mycelium_desc: "A grown fungal mat, with the notes hung on it",
     gr_looks: "Looks",
     gr_appearance: "Appearance",
@@ -1558,16 +1603,26 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_mascot_cameo_hint: "MYCO drifts in now and then with a feature tip",
     mc_label: "MYCO tip",
     mc_dismiss: "Dismiss",
-    mc_tip_drag: "Drag any star and the simulation re-heats \u2014 its neighbours follow, then spring back.",
-    mc_tip_path: "Cmd/Ctrl-click two notes to light the shortest path between them.",
-    mc_tip_fly: "Press F to pilot a spaceship through your vault \u2014 WASD to fly, Esc to land.",
-    mc_tip_looks: "Open the settings panel and tap a Look \u2014 Sigma, Paper, Neural, Planetarium\u2026",
-    mc_tip_timelapse: "Play the Timelapse to watch your vault build itself in the order you wrote it.",
-    mc_tip_multiverse: "Turn on Multiverse to see every project as its own glowing universe-bubble.",
-    mc_tip_minimap: "That corner minimap? Click anywhere on it to fly the camera there.",
-    mc_tip_recency: "Recently edited notes burn hotter \u2014 the graph maps where your attention is.",
-    mc_tip_save: "Tuned a look you love? Name it under Saved looks and recall it with one tap.",
-    mc_tip_chronicle: "Try the Chronicle layout \u2014 your notes laid out along a real time axis.",
+    mc_tip_drag:
+      "Drag any star and the simulation re-heats \u2014 its neighbours follow, then spring back.",
+    mc_tip_path:
+      "Cmd/Ctrl-click two notes to light the shortest path between them.",
+    mc_tip_fly:
+      "Press F to pilot a spaceship through your vault \u2014 WASD to fly, Esc to land.",
+    mc_tip_looks:
+      "Open the settings panel and tap a Look \u2014 Sigma, Paper, Neural, Planetarium\u2026",
+    mc_tip_timelapse:
+      "Play the Timelapse to watch your vault build itself in the order you wrote it.",
+    mc_tip_multiverse:
+      "Turn on Multiverse to see every project as its own glowing universe-bubble.",
+    mc_tip_minimap:
+      "That corner minimap? Click anywhere on it to fly the camera there.",
+    mc_tip_recency:
+      "Recently edited notes burn hotter \u2014 the graph maps where your attention is.",
+    mc_tip_save:
+      "Tuned a look you love? Name it under Saved looks and recall it with one tap.",
+    mc_tip_chronicle:
+      "Try the Chronicle layout \u2014 your notes laid out along a real time axis.",
     gr_saved: "Saved looks",
     gr_saved_apply: "Apply this saved look",
     gr_saved_delete: "Delete",
@@ -1584,11 +1639,14 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_cinematic_hint: "Film grain, vignette, lens streaks, anti-aliasing",
     gr_flow: "Edge flow",
     gr_flow_hint: "Light pulses ride links source \u2192 target",
-    gr_semantic_missing: "Semantic map needs the embedding index — run Reindex under Settings \u2192 Model, then reopen. Showing the spiral instead.",
+    gr_semantic_missing:
+      "Semantic map needs the embedding index — run Reindex under Settings \u2192 Model, then reopen. Showing the spiral instead.",
     gr_galaxies: "Folder galaxies",
-    gr_galaxies_hint: "Split the vault into one slowly rotating galaxy per folder",
+    gr_galaxies_hint:
+      "Split the vault into one slowly rotating galaxy per folder",
     gr_multiverse: "Multiverse",
-    gr_multiverse_hint: "Show every project as its own universe-bubble; fly into one to open it",
+    gr_multiverse_hint:
+      "Show every project as its own universe-bubble; fly into one to open it",
     gr_mv_loading: "Charting universes…",
     gr_mv_none: "No vault to show yet.",
     gr_layout: "Layout",
@@ -1619,7 +1677,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_semantic_edges: "Semantic links",
     gr_semantic_edges_hint: "Overlay dim edges between similar notes",
     gr_edge_bundles: "Bundled strands",
-    gr_edge_bundles_hint: "Merge links between two topics into one weighted arc",
+    gr_edge_bundles_hint:
+      "Merge links between two topics into one weighted arc",
     gr_fly_btn: "Spaceship mode (F)",
     gr_timelapse_record: "Record timelapse (WebM)",
     gr_node_color_black: "Black",
@@ -1649,7 +1708,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_trace: "Trace path",
     gr_trace_hint: "Click a start node, then an end node",
     gr_spaceship: "Spaceship",
-    gr_spaceship_hint: "WASD fly · drag to steer · click a node for info · Esc exit",
+    gr_spaceship_hint:
+      "WASD fly · drag to steer · click a node for info · Esc exit",
     gr_spaceship_exit: "Exit",
     gr_speed: "Speed",
     gr_close: "Close",
@@ -1665,7 +1725,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_cluster_force: "Cluster force",
     gr_myc_spread: "Mat spread",
     gr_myc_branch: "Branch density",
-    gr_myc_forces_hint: "Mycelium is grown, not simulated: these two sliders reshape the mat.",
+    gr_myc_forces_hint:
+      "Mycelium is grown, not simulated: these two sliders reshape the mat.",
     gr_reset: "Reset",
     gr_empty_pre: "No wikilinks found in the vault yet. Add some ",
     gr_empty_post: " to see the graph grow.",
@@ -1742,7 +1803,8 @@ export const STRINGS: Record<Lang, Strings> = {
     p_sources: "Sources ({n})",
     p_src_manual: "Written source",
     p_src_missing: "raw source missing",
-    p_lint_running: "Lint is running — you can keep browsing; it continues in the background.",
+    p_lint_running:
+      "Lint is running — you can keep browsing; it continues in the background.",
     p_lint_done: "Lint done",
     p_lint_failed: "Lint failed",
     s_title: "Settings",
@@ -1760,21 +1822,25 @@ export const STRINGS: Record<Lang, Strings> = {
     s_workspace: "Workspace",
     s_model: "Model",
     s_embeddings: "Semantic search",
-    s_embeddings_lede: "Build an on-device embedding index for semantic search, related notes, and graph similarity. Runs offline.",
+    s_embeddings_lede:
+      "Build an on-device embedding index for semantic search, related notes, and graph similarity. Runs offline.",
     s_embeddings_indexed: "pages indexed",
     s_embeddings_reindex: "Reindex now",
     s_embeddings_indexing: "Indexing…",
     s_embeddings_empty: "Not indexed yet",
     s_embeddings_loading_model: "Loading model…",
-    s_embeddings_loading_model_hint: "First run loads the bundled model — this takes a few seconds.",
+    s_embeddings_loading_model_hint:
+      "First run loads the bundled model — this takes a few seconds.",
     s_embeddings_done: "Indexed {n} pages",
     s_autoreindex_title: "Keep the index up to date",
-    s_autoreindex_desc: "myco already re-embeds pages you edit in the background, live, whether this is on or off. Turning this on also re-runs a full \"Reindex now\" sweep automatically a little while after the vault goes quiet, as a backstop.",
+    s_autoreindex_desc:
+      'myco already re-embeds pages you edit in the background, live, whether this is on or off. Turning this on also re-runs a full "Reindex now" sweep automatically a little while after the vault goes quiet, as a backstop.',
     s_providers: "Connections",
     s_appearance: "Appearance",
     s_vault_known: "Vaults myco already knows",
     s_ov_theme: "Overview background",
-    s_ov_theme_lede: "The living background on the Overview page. Named after the graph's layouts; not linked to them.",
+    s_ov_theme_lede:
+      "The living background on the Overview page. Named after the graph's layouts; not linked to them.",
     ov_theme_mycelium: "Mycelium",
     s_lang: "Language",
     s_about: "About",
@@ -1910,7 +1976,7 @@ export const STRINGS: Record<Lang, Strings> = {
     lint_local_title: "Wiki lint — local pass",
     lint_local_note:
       "Deterministic checks only — no model was used. Free-form fixes and " +
-      "\"concepts mentioned but not linked\" need a connected provider.",
+      '"concepts mentioned but not linked" need a connected provider.',
     lint_local_clean: "No issues found.",
     lint_sec_critical: "Critical",
     lint_sec_warning: "Warning",
@@ -1933,7 +1999,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "Active but untouched for over 30 days — revisit it, or change its status.",
     lint_k_hedged_claim:
       "General claim on a single source — add a source, or narrow the claim.",
-    lint_k_orphan_page: "Orphan — no page links here; link it from a related page.",
+    lint_k_orphan_page:
+      "Orphan — no page links here; link it from a related page.",
     lint_k_unresolved_link:
       "Unresolved wikilink — create the page, or fix the link name.",
     p_dismiss: "dismiss",
@@ -1949,7 +2016,8 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_preview: "Preview",
     rd_backlinks_empty: "No notes link here yet.",
     rd_related: "Related",
-    rd_related_no_index: "Related notes come from an on-device index that hasn't been built yet.",
+    rd_related_no_index:
+      "Related notes come from an on-device index that hasn't been built yet.",
     rd_related_no_index_cta: "Set up semantic search",
     rd_make_cards: "Make cards",
     rd_making: "Generating…",
@@ -2077,7 +2145,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_idle_minutes: "Idle minutes",
     set_distill_maturation: "Maturation (hours)",
     set_distill_llm_digest_days: "Digest days per run",
-    set_distill_llm_ingest_budget: "LLM item budget per run (ingest + map drafts combined)",
+    set_distill_llm_ingest_budget:
+      "LLM item budget per run (ingest + map drafts combined)",
     set_distill_profile_injection_title: "Profile injection",
     set_distill_profile_injection_desc:
       "Send profile.md to configured AI providers as Ask/ingest context. Off keeps the profile local-only.",
@@ -2126,7 +2195,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_archive_older_than: "Compress buckets older than {n} months",
     set_archive_compress: "Compress",
     set_archive_compressing: "Compressing…",
-    set_archive_compressed: "Compressed {buckets} buckets ({files} files), reclaimed {size}",
+    set_archive_compressed:
+      "Compressed {buckets} buckets ({files} files), reclaimed {size}",
     set_archive_nothing_old: "Nothing is older than {n} months.",
     set_archive_failed: "Left untouched: {list}",
     set_archive_restore: "Restore",
@@ -2290,7 +2360,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_inflow_inbox: "_inbox arrivals",
     tb_inflow_source_unknown: "unknown",
     tb_inflow_view: "View →",
-    tb_inflow_spark_caption: "Last 24h · purple = sessions/inbox · blue = MCP calls",
+    tb_inflow_spark_caption:
+      "Last 24h · purple = sessions/inbox · blue = MCP calls",
     tb_inflow_summary: "Today: sessions +{s} · MCP {m} · inbox +{i}",
     tray_hdr_running: "Now working on",
     tray_hdr_waiting: "Waiting",
@@ -2379,7 +2450,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "Ask the wiki anything. myco answers from your pages first and reaches into raw sources only when needed — every claim ships with a citation.",
     ob_s3_action: "Go to Ask",
     ob_demo_start: "Start with a demo vault",
-    ob_seed_offer: "That folder is empty. Want a few demo notes to try things on?",
+    ob_seed_offer:
+      "That folder is empty. Want a few demo notes to try things on?",
     ob_seed_do: "Add demo notes",
     ob_indexing_local: "The index is built on this device only.",
     ob_s2_progress: "{done} of {total} notes",
@@ -2420,7 +2492,8 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_myco_pro:
       "Unlimited ingest on a managed model — no API key or CLI needed. Sign in with your myco Pro account.",
     vh_banner_title: "Vault history is off",
-    vh_banner_desc: "Turn it on to see agent changes word by word and undo them.",
+    vh_banner_desc:
+      "Turn it on to see agent changes word by word and undo them.",
     vh_enable: "Turn on history",
     vh_later: "Later",
     vh_setting_title: "Vault history (git)",
@@ -2494,34 +2567,42 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_graph: "그래프",
     nav_views: "뷰",
     ls_title: "제안된 연결",
-    ls_hint: "의미상 가깝지만 아직 연결되지 않은 노트들입니다. 수락하면 \u201c## Related\u201d 아래에 [[위키링크]]가 추가됩니다.",
+    ls_hint:
+      "의미상 가깝지만 아직 연결되지 않은 노트들입니다. 수락하면 \u201c## Related\u201d 아래에 [[위키링크]]가 추가됩니다.",
     ls_accept: "연결하기",
     ls_dismiss: "무시",
     ls_accept_all: "모두 수락",
     ls_accept_all_progress: "{done}/{total}",
     ls_accept_all_result: "{n}개 연결됨",
     zi_title: "Zotero에서 가져오기",
-    zi_hint: "CSL-JSON 또는 BibTeX 내보내기 파일(하이라이트 포함 시 함께). 항목은 _inbox/에 소스 문서로 저장됩니다.",
+    zi_hint:
+      "CSL-JSON 또는 BibTeX 내보내기 파일(하이라이트 포함 시 함께). 항목은 _inbox/에 소스 문서로 저장됩니다.",
     zi_none: "가져올 항목을 찾지 못했습니다.",
-    zi_done: "{n}개 항목을 _inbox/로 가져왔습니다 — Ingest를 실행해 위키 페이지로 만드세요.",
+    zi_done:
+      "{n}개 항목을 _inbox/로 가져왔습니다 — Ingest를 실행해 위키 페이지로 만드세요.",
     ci_title: "대화 가져오기",
-    ci_hint: "ChatGPT 내보내기(conversations.json) 또는 Claude Code / Codex 세션(.jsonl). 각 대화가 소스 문서로 _inbox/에 들어가 ingest 파이프라인이 처리합니다.",
+    ci_hint:
+      "ChatGPT 내보내기(conversations.json) 또는 Claude Code / Codex 세션(.jsonl). 각 대화가 소스 문서로 _inbox/에 들어가 ingest 파이프라인이 처리합니다.",
     ci_btn: "파일 선택…",
     ci_busy: "가져오는 중…",
-    ci_done: "{n}개 대화를 _inbox/로 가져왔습니다 — Ingest를 실행해 위키 페이지로 만드세요.",
-    ci_quarantined: "{n}개 대화가 시크릿(API 키·토큰)으로 보이는 내용을 포함해 제외됐습니다. 원본에서 확인하세요. 가져오지 않았습니다.",
+    ci_done:
+      "{n}개 대화를 _inbox/로 가져왔습니다 — Ingest를 실행해 위키 페이지로 만드세요.",
+    ci_quarantined:
+      "{n}개 대화가 시크릿(API 키·토큰)으로 보이는 내용을 포함해 제외됐습니다. 원본에서 확인하세요. 가져오지 않았습니다.",
     ci_none: "그 파일에서 대화를 찾지 못했습니다.",
     ci_skipped: " ({n}개는 이미 가져와 건너뜀.)",
     ci_sweep_cc: "내 Claude Code 세션 가져오기",
     ci_sweep_cx: "내 Codex 세션 가져오기",
-    ci_sweep_hint: "또는 이 컴퓨터에 이미 있는 모든 세션을 가져옵니다 — ~/.claude·~/.codex에서. 다시 실행해도 새로 생기거나 늘어난 세션만 추가됩니다.",
+    ci_sweep_hint:
+      "또는 이 컴퓨터에 이미 있는 모든 세션을 가져옵니다 — ~/.claude·~/.codex에서. 다시 실행해도 새로 생기거나 늘어난 세션만 추가됩니다.",
     ci_sweep_progress: "세션 가져오는 중 {done} / {total}",
     ci_sweep_tally: "가져옴 {i} · 건너뜀 {s} · 실패 {f}",
     ci_failed_summary: "{n}개를 가져오지 못했습니다",
     ci_retry_failed: "실패 재시도 ({n})",
     q_empty: "위키에 무엇이든 물어보세요 — 답변은 당신의 페이지를 인용합니다.",
     s_mascot: "마스코트 MYCO 표시",
-    s_mascot_hint: "로더·빈 화면·정보 페이지에 등장합니다. 끄면 정적 로고로 대체됩니다.",
+    s_mascot_hint:
+      "로더·빈 화면·정보 페이지에 등장합니다. 끄면 정적 로고로 대체됩니다.",
     s_backup_title: "설정 및 룩",
     s_backup_hint:
       "공급자, 자동화, 외관, 그래프 룩이 이 파일에 담깁니다. API 키, 볼트 경로, 이 기기의 식별 정보는 담기지 않습니다.",
@@ -2557,17 +2638,24 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_fly: "비행 모드 (그래프)",
     hw_sc_esc: "닫기 / 선택 해제",
     hw_tip_graph1: "별을 드래그하면 시뮬레이션이 주변에서 다시 살아납니다.",
-    hw_tip_graph2: "F는 우주선 비행, ⚠ 배지는 연구 다리가 포함된 갭 분석을 엽니다.",
+    hw_tip_graph2:
+      "F는 우주선 비행, ⚠ 배지는 연구 다리가 포함된 갭 분석을 엽니다.",
     hw_tip_graph3: "근접 행성(설정 서랍)을 켜면 가까운 노트가 행성이 됩니다.",
-    hw_tip_query1: "답변은 위키 페이지를 인용합니다 — 인용을 클릭해 열어보세요.",
-    hw_tip_query2: "그래프의 갭 패널이 연구 질문을 이 입력창에 담아줄 수 있습니다.",
-    hw_tip_ingest1: "파일 드롭, 텍스트 붙여넣기, Zotero 가져오기 모두 가능합니다.",
-    hw_tip_ingest2: "웹 클리퍼는 _inbox/를 통해 페이지를 이곳으로 보냅니다 (clipper/ 참고).",
+    hw_tip_query1:
+      "답변은 위키 페이지를 인용합니다 — 인용을 클릭해 열어보세요.",
+    hw_tip_query2:
+      "그래프의 갭 패널이 연구 질문을 이 입력창에 담아줄 수 있습니다.",
+    hw_tip_ingest1:
+      "파일 드롭, 텍스트 붙여넣기, Zotero 가져오기 모두 가능합니다.",
+    hw_tip_ingest2:
+      "웹 클리퍼는 _inbox/를 통해 페이지를 이곳으로 보냅니다 (clipper/ 참고).",
     hw_tip_views1: "필터는 조합됩니다 — 결과를 이름 있는 뷰로 저장하세요.",
-    hw_tip_overview1: "제안된 연결은 아직 링크되지 않은 의미상 유사 쌍입니다 — 수락하거나 무시하세요.",
+    hw_tip_overview1:
+      "제안된 연결은 아직 링크되지 않은 의미상 유사 쌍입니다 — 수락하거나 무시하세요.",
     hw_tip_default: "⌘K로 어디든 이동 — 페이지·액션·시맨틱 검색.",
     vw_title: "쿼리 뷰",
-    vw_lede: "프론트매터(종류·신뢰도·상태·태그·출처 수)로 위키를 필터링하고, 자주 쓰는 렌즈를 저장하세요.",
+    vw_lede:
+      "프론트매터(종류·신뢰도·상태·태그·출처 수)로 위키를 필터링하고, 자주 쓰는 렌즈를 저장하세요.",
     vw_search: "이름으로 필터…",
     vw_any_type: "모든 종류",
     vw_any_conf: "모든 신뢰도",
@@ -2591,11 +2679,13 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_lede: "노트 전체의 체크박스 항목을 한곳에 모았습니다.",
     tasks_loading: "노트 스캔 중…",
     tasks_empty: "아직 할 일이 없습니다",
-    tasks_empty_hint: "아무 노트에나 `- [ ] …` 체크박스를 추가하면 여기에 표시됩니다.",
+    tasks_empty_hint:
+      "아무 노트에나 `- [ ] …` 체크박스를 추가하면 여기에 표시됩니다.",
     tasks_ph: "무엇을 해야 하나요?",
     tasks_due: "마감일",
     tasks_add: "추가",
-    tasks_stale: "목록을 만든 뒤 노트가 바뀌어서 새로 읽었습니다. 다시 시도해 주세요.",
+    tasks_stale:
+      "목록을 만든 뒤 노트가 바뀌어서 새로 읽었습니다. 다시 시도해 주세요.",
     tasks_view: "보기",
     tasks_view_list: "목록",
     tasks_view_board: "보드",
@@ -2617,14 +2707,28 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_detail_estimate: "예상 시간",
     tasks_detail_estimate_hint: "90m, 1.5h, 2d, 1w 같은 형식으로 적어 주세요.",
     tasks_detail_recur: "반복",
-    tasks_detail_recur_hint: "myco가 계산하는 규칙은 \u201cevery day/week/month/year\u201d와 \u201cevery 2 weeks\u201d입니다. 그 밖의 규칙은 노트에 그대로 남습니다.",
-    tasks_detail_start_after_due: "시작일이 마감일보다 늦어서 마감일에만 표시됩니다. 적어 둔 날짜는 그대로 둡니다.",
+    tasks_detail_recur_hint:
+      "myco가 계산하는 규칙은 \u201cevery day/week/month/year\u201d와 \u201cevery 2 weeks\u201d입니다. 그 밖의 규칙은 노트에 그대로 남습니다.",
+    tasks_detail_start_after_due:
+      "시작일이 마감일보다 늦어서 마감일에만 표시됩니다. 적어 둔 날짜는 그대로 둡니다.",
     tasks_detail_open_note: "{page} 열기",
     tasks_hub: "일정 페이지 갱신",
     tasks_hub_heading: "{month} 일정",
     tasks_hub_empty: "_이 달에 예정된 일이 없습니다._",
     tasks_hub_written: "월 페이지 {n}개를 갱신했습니다.",
     tasks_hub_kept: "{n}개는 직접 관리하고 있어 그대로 두었습니다.",
+    tasks_compose_more: "자세히",
+    tasks_compose_category: "카테고리",
+    tasks_compose_project: "프로젝트",
+    tasks_compose_target: "추가할 위치",
+    tasks_compose_daily: "오늘 데일리 노트",
+    tasks_new_roadmap: "＋ 새 로드맵…",
+    tasks_new_roadmap_ph: "로드맵 제목",
+    tasks_view_roadmap: "로드맵",
+    tasks_roadmap_empty: "아직 로드맵이 없습니다",
+    tasks_roadmap_empty_hint:
+      "로드맵은 마일스톤과 체크박스로 된 위키 페이지(wiki/roadmaps/…)입니다 — 만들면 항목이 할 일 전체에 나타납니다.",
+    tasks_roadmap_progress: "{done}/{total} 완료",
     dp_prev: "이전 달",
     dp_next: "다음 달",
     dp_clear: "날짜 지우기",
@@ -2668,9 +2772,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_drop: "여기에 파일 드롭",
     ing_drop_or: "또는 URL 붙여넣기",
     ing_browse: "파일 선택…",
-    ing_drop_multi: "{n}개 중 첫 파일만 불러왔습니다 — 이 폼은 한 번에 하나의 소스만 처리합니다. 나머지는 하나씩 드롭하세요.",
+    ing_drop_multi:
+      "{n}개 중 첫 파일만 불러왔습니다 — 이 폼은 한 번에 하나의 소스만 처리합니다. 나머지는 하나씩 드롭하세요.",
     ing_inbox_pending: "_inbox 대기 중 ({n})",
-    ing_inbox_empty: "대기 중인 파일이 없습니다 — 도착분은 이미 처리되었습니다.",
+    ing_inbox_empty:
+      "대기 중인 파일이 없습니다 — 도착분은 이미 처리되었습니다.",
     ing_inbox_today: "오늘",
     ing_inbox_unsupported_chip: "미지원",
     ing_inbox_unsupported_line: "미지원 {n}건 — 그대로 둡니다.",
@@ -2810,16 +2916,25 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_mascot_cameo_hint: "가끔 MYCO가 기능 팁과 함께 등장",
     mc_label: "MYCO 팁",
     mc_dismiss: "닫기",
-    mc_tip_drag: "아무 별이나 드래그하면 시뮬레이션이 다시 데워집니다 \u2014 이웃이 따라오다 튕겨 돌아와요.",
+    mc_tip_drag:
+      "아무 별이나 드래그하면 시뮬레이션이 다시 데워집니다 \u2014 이웃이 따라오다 튕겨 돌아와요.",
     mc_tip_path: "두 노트를 Cmd/Ctrl-클릭하면 사이의 최단 경로가 빛납니다.",
-    mc_tip_fly: "F를 누르면 볼트를 우주선으로 비행 \u2014 WASD로 날고 Esc로 착륙.",
-    mc_tip_looks: "설정 패널을 열고 룩을 탭하세요 \u2014 Sigma, Paper, Neural, Planetarium\u2026",
-    mc_tip_timelapse: "타임랩스를 재생하면 작성한 순서대로 볼트가 스스로 자라납니다.",
-    mc_tip_multiverse: "멀티버스를 켜면 각 프로젝트가 저마다 빛나는 우주 버블로 보입니다.",
-    mc_tip_minimap: "구석의 미니맵 \u2014 아무 데나 클릭하면 카메라가 그곳으로 날아갑니다.",
-    mc_tip_recency: "최근 편집한 노트일수록 더 뜨겁게 타올라 \u2014 그래프가 당신의 관심을 지도로 그립니다.",
-    mc_tip_save: "마음에 드는 룩을 튜닝했나요? 저장된 룩에 이름을 붙여 한 번에 불러오세요.",
-    mc_tip_chronicle: "연대기 레이아웃을 써보세요 \u2014 노트가 실제 시간축을 따라 놓입니다.",
+    mc_tip_fly:
+      "F를 누르면 볼트를 우주선으로 비행 \u2014 WASD로 날고 Esc로 착륙.",
+    mc_tip_looks:
+      "설정 패널을 열고 룩을 탭하세요 \u2014 Sigma, Paper, Neural, Planetarium\u2026",
+    mc_tip_timelapse:
+      "타임랩스를 재생하면 작성한 순서대로 볼트가 스스로 자라납니다.",
+    mc_tip_multiverse:
+      "멀티버스를 켜면 각 프로젝트가 저마다 빛나는 우주 버블로 보입니다.",
+    mc_tip_minimap:
+      "구석의 미니맵 \u2014 아무 데나 클릭하면 카메라가 그곳으로 날아갑니다.",
+    mc_tip_recency:
+      "최근 편집한 노트일수록 더 뜨겁게 타올라 \u2014 그래프가 당신의 관심을 지도로 그립니다.",
+    mc_tip_save:
+      "마음에 드는 룩을 튜닝했나요? 저장된 룩에 이름을 붙여 한 번에 불러오세요.",
+    mc_tip_chronicle:
+      "연대기 레이아웃을 써보세요 \u2014 노트가 실제 시간축을 따라 놓입니다.",
     gr_saved: "저장된 룩",
     gr_saved_apply: "이 저장된 룩 적용",
     gr_saved_delete: "삭제",
@@ -2836,11 +2951,13 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_cinematic_hint: "필름 그레인·비네트·렌즈 스트릭·안티앨리어싱",
     gr_flow: "엣지 흐름",
     gr_flow_hint: "링크를 따라 빛 펄스가 출발\u2192도착 방향으로 흐름",
-    gr_semantic_missing: "의미 지도는 임베딩 인덱스가 필요합니다 — 설정 \u2192 모델에서 재색인 후 다시 열어주세요. 지금은 나선 배치로 표시합니다.",
+    gr_semantic_missing:
+      "의미 지도는 임베딩 인덱스가 필요합니다 — 설정 \u2192 모델에서 재색인 후 다시 열어주세요. 지금은 나선 배치로 표시합니다.",
     gr_galaxies: "폴더 은하계",
     gr_galaxies_hint: "폴더마다 하나씩, 천천히 자전하는 은하계로 분리",
     gr_multiverse: "멀티버스",
-    gr_multiverse_hint: "모든 프로젝트를 각자의 우주 버블로 표시. 하나로 날아 들어가면 그 프로젝트가 열림",
+    gr_multiverse_hint:
+      "모든 프로젝트를 각자의 우주 버블로 표시. 하나로 날아 들어가면 그 프로젝트가 열림",
     gr_mv_loading: "우주를 그리는 중…",
     gr_mv_none: "아직 표시할 볼트가 없습니다.",
     gr_layout: "레이아웃",
@@ -2901,7 +3018,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_trace: "경로 추적",
     gr_trace_hint: "시작 노드를 누른 뒤 끝 노드를 누르세요",
     gr_spaceship: "우주선 비행",
-    gr_spaceship_hint: "WASD 이동 · 드래그로 방향 · 노드 클릭해 정보 · Esc 종료",
+    gr_spaceship_hint:
+      "WASD 이동 · 드래그로 방향 · 노드 클릭해 정보 · Esc 종료",
     gr_spaceship_exit: "나가기",
     gr_speed: "속도",
     gr_close: "닫기",
@@ -2917,7 +3035,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_cluster_force: "뭉침 강도",
     gr_myc_spread: "균사 확산",
     gr_myc_branch: "분기 밀도",
-    gr_myc_forces_hint: "균사는 시뮬레이션이 아니라 자라나는 방식입니다: 이 두 슬라이더가 균사체의 형태를 바꿉니다.",
+    gr_myc_forces_hint:
+      "균사는 시뮬레이션이 아니라 자라나는 방식입니다: 이 두 슬라이더가 균사체의 형태를 바꿉니다.",
     gr_reset: "초기화",
     gr_empty_pre: "아직 위키링크가 없습니다. ",
     gr_empty_post: " 를 추가하면 그래프가 자랍니다.",
@@ -2994,7 +3113,8 @@ export const STRINGS: Record<Lang, Strings> = {
     p_sources: "출처 {n}개",
     p_src_manual: "직접 작성한 출처",
     p_src_missing: "raw 원본 없음",
-    p_lint_running: "Lint 실행 중 — 다른 페이지로 이동해도 백그라운드에서 계속됩니다.",
+    p_lint_running:
+      "Lint 실행 중 — 다른 페이지로 이동해도 백그라운드에서 계속됩니다.",
     p_lint_done: "Lint 완료",
     p_lint_failed: "Lint 실패",
     s_title: "설정",
@@ -3012,21 +3132,25 @@ export const STRINGS: Record<Lang, Strings> = {
     s_workspace: "워크스페이스",
     s_model: "모델",
     s_embeddings: "의미 검색",
-    s_embeddings_lede: "의미 검색·관련 노트·그래프 유사도를 위한 온디바이스 임베딩 인덱스를 만듭니다. 오프라인 동작.",
+    s_embeddings_lede:
+      "의미 검색·관련 노트·그래프 유사도를 위한 온디바이스 임베딩 인덱스를 만듭니다. 오프라인 동작.",
     s_embeddings_indexed: "페이지 인덱싱됨",
     s_embeddings_reindex: "지금 재인덱스",
     s_embeddings_indexing: "인덱싱 중…",
     s_embeddings_empty: "아직 인덱스 없음",
     s_embeddings_loading_model: "모델 로딩 중…",
-    s_embeddings_loading_model_hint: "첫 실행에는 내장 모델을 불러옵니다 — 몇 초 걸립니다.",
+    s_embeddings_loading_model_hint:
+      "첫 실행에는 내장 모델을 불러옵니다 — 몇 초 걸립니다.",
     s_embeddings_done: "{n}개 페이지 인덱싱 완료",
     s_autoreindex_title: "인덱스 자동 최신화",
-    s_autoreindex_desc: "이 설정과 무관하게 myco는 편집한 페이지를 이미 백그라운드에서 실시간으로 다시 임베딩합니다. 이 옵션을 켜면 볼트가 잠잠해진 뒤 잠시 후 \"지금 재인덱스\"와 같은 전체 재인덱스를 안전장치로 자동 실행합니다.",
+    s_autoreindex_desc:
+      '이 설정과 무관하게 myco는 편집한 페이지를 이미 백그라운드에서 실시간으로 다시 임베딩합니다. 이 옵션을 켜면 볼트가 잠잠해진 뒤 잠시 후 "지금 재인덱스"와 같은 전체 재인덱스를 안전장치로 자동 실행합니다.',
     s_providers: "연결",
     s_appearance: "테마",
     s_vault_known: "myco가 이미 아는 보관함",
     s_ov_theme: "개요 배경",
-    s_ov_theme_lede: "개요 페이지의 살아있는 배경입니다. 그래프 레이아웃 이름을 그대로 쓰지만 연동되지는 않습니다.",
+    s_ov_theme_lede:
+      "개요 페이지의 살아있는 배경입니다. 그래프 레이아웃 이름을 그대로 쓰지만 연동되지는 않습니다.",
     ov_theme_mycelium: "균사",
     s_lang: "언어",
     s_about: "정보",
@@ -3162,7 +3286,7 @@ export const STRINGS: Record<Lang, Strings> = {
     lint_local_title: "위키 린트 — 로컬 패스",
     lint_local_note:
       "모델 없이 규칙 기반 검사만 수행했습니다. 자유 서술형 수정 제안과 " +
-      "\"언급됐지만 링크되지 않은 개념\" 검사는 연결된 프로바이더가 필요합니다.",
+      '"언급됐지만 링크되지 않은 개념" 검사는 연결된 프로바이더가 필요합니다.',
     lint_local_clean: "문제를 찾지 못했습니다.",
     lint_sec_critical: "치명적",
     lint_sec_warning: "경고",
@@ -3202,7 +3326,8 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_preview: "미리보기",
     rd_backlinks_empty: "아직 여기로 연결된 노트가 없습니다.",
     rd_related: "관련 노트",
-    rd_related_no_index: "관련 노트는 아직 만들지 않은 온디바이스 인덱스에서 나옵니다.",
+    rd_related_no_index:
+      "관련 노트는 아직 만들지 않은 온디바이스 인덱스에서 나옵니다.",
     rd_related_no_index_cta: "의미 검색 설정하기",
     rd_make_cards: "카드 만들기",
     rd_making: "생성 중…",
@@ -3313,7 +3438,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_lede:
       "새로 들어온 페이지를 위키의 온톨로지에 주기적으로 편입시켜, 흡수된 것은 보관하고 나머지는 병합을 제안합니다.",
     set_distill_enabled_title: "자동 증류",
-    set_distill_enabled_desc: "myco가 열려 있고 자리를 비웠을 때, 자체 일정에 따라 백로그를 증류합니다.",
+    set_distill_enabled_desc:
+      "myco가 열려 있고 자리를 비웠을 때, 자체 일정에 따라 백로그를 증류합니다.",
     set_distill_intensity: "강도",
     set_distill_intensity_conservative: "보수",
     set_distill_intensity_standard: "표준",
@@ -3328,7 +3454,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_idle_minutes: "유휴 시간 (분)",
     set_distill_maturation: "숙성 시간 (시간)",
     set_distill_llm_digest_days: "실행당 다이제스트 일수",
-    set_distill_llm_ingest_budget: "실행당 LLM 항목 예산 (인제스트 + 지도 초안 합산)",
+    set_distill_llm_ingest_budget:
+      "실행당 LLM 항목 예산 (인제스트 + 지도 초안 합산)",
     set_distill_profile_injection_title: "프로필 주입",
     set_distill_profile_injection_desc:
       "profile.md를 Ask/인제스트 컨텍스트로 설정된 AI 프로바이더에 전송합니다. 끄면 프로필은 로컬에만 남습니다.",
@@ -3376,7 +3503,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_archive_older_than: "{n}개월 이상 지난 버킷 압축",
     set_archive_compress: "압축",
     set_archive_compressing: "압축 중…",
-    set_archive_compressed: "버킷 {buckets}개(파일 {files}개) 압축, {size} 확보",
+    set_archive_compressed:
+      "버킷 {buckets}개(파일 {files}개) 압축, {size} 확보",
     set_archive_nothing_old: "{n}개월 이상 지난 버킷이 없습니다.",
     set_archive_failed: "그대로 둔 버킷: {list}",
     set_archive_restore: "복원",
@@ -3436,7 +3564,8 @@ export const STRINGS: Record<Lang, Strings> = {
     qz_delete: "삭제",
     qz_keep: "{n}일 더 보관",
     qz_confirm_delete_title: "이 항목을 삭제할까요?",
-    qz_confirm_delete_msg: "{name}을(를) 시스템 휴지통으로 옮깁니다(복구 가능).",
+    qz_confirm_delete_msg:
+      "{name}을(를) 시스템 휴지통으로 옮깁니다(복구 가능).",
     tb_activity_quarantine: "검토 대기 {n}건",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
@@ -3447,7 +3576,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "인제스트 검증 실패 — 다음 문제를 해결해야 인제스트를 수락할 수 있습니다:",
     ingest_validation_warnings: "검증 경고(차단하지 않음):",
     q_via: "{provider} · {model} 사용",
-    q_via_retrieval: "로컬 시맨틱 검색 기반 — 답변은 내 노트 원문 인용 (모델 미사용)",
+    q_via_retrieval:
+      "로컬 시맨틱 검색 기반 — 답변은 내 노트 원문 인용 (모델 미사용)",
     q_builtin_note:
       "내장 오프라인 모델(Gemma 3 1B)은 작아서 부정확할 수 있습니다. 오프라인이라면 Ollama로 더 큰 모델(예: gemma3:4b)을 돌려보고, 가장 정확한 답변은 Claude를 쓰세요.",
     q_builtin_extractive_note:
@@ -3483,7 +3613,8 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_tier_source: "가져온 원문",
     q_cite_list_label: "인용 신뢰도와 출처 종류",
     q_deep_row: "깊은 보관소에서: {stem} — 유사도 {sim}",
-    ask_profile_hint: "프로필을 설정하면 Ask가 역할과 관심사에 맞춰 답변합니다.",
+    ask_profile_hint:
+      "프로필을 설정하면 Ask가 역할과 관심사에 맞춰 답변합니다.",
     ask_profile_hint_cta: "프로필 설정",
     ask_profile_hint_dismiss: "닫기",
     q_chip_done: "답변 완료",
@@ -3506,7 +3637,8 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_semantic: "관련 (의미)",
     cb_exact: "정확 일치",
     cb_operator_hint: "따옴표는 정확 일치 · path: · tag:",
-    cb_miss_hint: "기대한 문서가 없나요? ⌥⏎ 로 이 검색을 평가 세트에 기록합니다.",
+    cb_miss_hint:
+      "기대한 문서가 없나요? ⌥⏎ 로 이 검색을 평가 세트에 기록합니다.",
     cb_miss_done: "평가 세트에 기록했습니다.",
     tb_lint: "린트",
     tb_toggle_sidebar: "사이드바 토글 (⌘B)",
@@ -3537,7 +3669,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_inflow_inbox: "_inbox 도착",
     tb_inflow_source_unknown: "출처 미표기",
     tb_inflow_view: "보기 →",
-    tb_inflow_spark_caption: "최근 24시간 · 보라 = 세션/inbox · 파랑 = MCP 호출",
+    tb_inflow_spark_caption:
+      "최근 24시간 · 보라 = 세션/inbox · 파랑 = MCP 호출",
     tb_inflow_summary: "오늘: 세션 +{s} · MCP {m}회 · 인박스 +{i}",
     tray_hdr_running: "지금 하는 일",
     tray_hdr_waiting: "대기",
@@ -3550,7 +3683,8 @@ export const STRINGS: Record<Lang, Strings> = {
     spot_thinking: "질문 중…",
     spot_hint_enter: "Enter로 질문 · Esc로 닫기",
     spot_hint_open: "인용을 클릭하면 myco에서 해당 노트를 엽니다.",
-    spot_no_vault: "myco에서 볼트를 먼저 열어주세요 — 아직 질문할 대상이 없습니다.",
+    spot_no_vault:
+      "myco에서 볼트를 먼저 열어주세요 — 아직 질문할 대상이 없습니다.",
     spot_busy: "myco가 이전 질문에 아직 답하고 있습니다.",
     voice_btn_label: "음성 캡처",
     voice_hint_recording: "⏎ 저장 · esc 취소",
@@ -3574,7 +3708,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "제안 {p}건 · 세션 다이제스트 {d}일치 · 주간 롤업 {w}건",
     notif_distill_done_months: " · 월간 롤업 {m}건",
     notif_quarantine_title: "새 격리 항목",
-    notif_quarantine_body: "{n}개 항목이 _inbox/quarantine에서 검토를 기다립니다.",
+    notif_quarantine_body:
+      "{n}개 항목이 _inbox/quarantine에서 검토를 기다립니다.",
     gr_zoom_out: "축소",
     gr_fit: "맞춤",
     gr_zoom_in: "확대",
@@ -3666,7 +3801,8 @@ export const STRINGS: Record<Lang, Strings> = {
     s_provider_desc_myco_pro:
       "관리형 모델로 무제한 ingest — API 키나 CLI가 필요 없습니다. myco Pro 계정으로 로그인하세요.",
     vh_banner_title: "볼트 이력이 아직 꺼져 있습니다",
-    vh_banner_desc: "켜면 에이전트가 바꾼 것을 단어 단위로 보고 되돌릴 수 있습니다.",
+    vh_banner_desc:
+      "켜면 에이전트가 바꾼 것을 단어 단위로 보고 되돌릴 수 있습니다.",
     vh_enable: "이력 켜기",
     vh_later: "나중에",
     vh_setting_title: "볼트 이력 (git)",
@@ -3744,11 +3880,13 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_lede: "ノート全体のチェックボックス項目を一か所にまとめました。",
     tasks_loading: "ノートをスキャン中…",
     tasks_empty: "まだタスクがありません",
-    tasks_empty_hint: "任意のノートに `- [ ] …` チェックボックスを追加すると、ここに表示されます。",
+    tasks_empty_hint:
+      "任意のノートに `- [ ] …` チェックボックスを追加すると、ここに表示されます。",
     tasks_ph: "何をしますか？",
     tasks_due: "期限",
     tasks_add: "追加",
-    tasks_stale: "リスト作成後にノートが変更されたため、読み直しました。もう一度お試しください。",
+    tasks_stale:
+      "リスト作成後にノートが変更されたため、読み直しました。もう一度お試しください。",
     tasks_view: "表示",
     tasks_view_list: "リスト",
     tasks_view_board: "ボード",
@@ -3756,7 +3894,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_col_doing: "進行中",
     tasks_col_blocked: "保留",
     tasks_col_done: "完了",
-    tasks_notify: "期限の通知を受け取る — 朝のまとめと、時刻を書いた項目の個別リマインダー",
+    tasks_notify:
+      "期限の通知を受け取る — 朝のまとめと、時刻を書いた項目の個別リマインダー",
     tasks_view_calendar: "カレンダー",
     tasks_cal_today: "今日",
     tasks_cal_undated: "期限なし ({n})",
@@ -3768,16 +3907,31 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_detail_priority: "優先度",
     tasks_detail_priority_none: "なし",
     tasks_detail_estimate: "見積り",
-    tasks_detail_estimate_hint: "90m, 1.5h, 2d, 1w のような形式で入力してください。",
+    tasks_detail_estimate_hint:
+      "90m, 1.5h, 2d, 1w のような形式で入力してください。",
     tasks_detail_recur: "繰り返し",
-    tasks_detail_recur_hint: "myco が計算できるのは \u201cevery day/week/month/year\u201d と \u201cevery 2 weeks\u201d です。それ以外の規則はノートにそのまま残ります。",
-    tasks_detail_start_after_due: "開始日が期限より後なので、期限の日にのみ表示します。書かれた日付はそのままにします。",
+    tasks_detail_recur_hint:
+      "myco が計算できるのは \u201cevery day/week/month/year\u201d と \u201cevery 2 weeks\u201d です。それ以外の規則はノートにそのまま残ります。",
+    tasks_detail_start_after_due:
+      "開始日が期限より後なので、期限の日にのみ表示します。書かれた日付はそのままにします。",
     tasks_detail_open_note: "{page} を開く",
     tasks_hub: "月ページを更新",
     tasks_hub_heading: "{month} の予定",
     tasks_hub_empty: "_この月に予定はありません。_",
     tasks_hub_written: "月ページ {n} 件を更新しました。",
     tasks_hub_kept: "{n} 件は自分で管理しているため、そのままにしました。",
+    tasks_compose_more: "詳細",
+    tasks_compose_category: "カテゴリ",
+    tasks_compose_project: "プロジェクト",
+    tasks_compose_target: "追加先",
+    tasks_compose_daily: "今日のデイリーノート",
+    tasks_new_roadmap: "＋ 新しいロードマップ…",
+    tasks_new_roadmap_ph: "ロードマップのタイトル",
+    tasks_view_roadmap: "ロードマップ",
+    tasks_roadmap_empty: "ロードマップはまだありません",
+    tasks_roadmap_empty_hint:
+      "ロードマップはマイルストーンとチェックボックスの wiki ページ（wiki/roadmaps/…）です。作成すると項目がタスク全体に表示されます。",
+    tasks_roadmap_progress: "{done}/{total} 完了",
     dp_prev: "前の月",
     dp_next: "次の月",
     dp_clear: "日付をクリア",
@@ -3821,9 +3975,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_drop: "ここにファイルをドロップ",
     ing_drop_or: "または URL を貼り付け",
     ing_browse: "ファイルを選択…",
-    ing_drop_multi: "{n} 件のうち最初のファイルのみ読み込みました — このフォームは一度に 1 つのソースだけ処理します。残りは 1 つずつドロップしてください。",
+    ing_drop_multi:
+      "{n} 件のうち最初のファイルのみ読み込みました — このフォームは一度に 1 つのソースだけ処理します。残りは 1 つずつドロップしてください。",
     ing_inbox_pending: "_inbox 待機中（{n}）",
-    ing_inbox_empty: "待機中のファイルはありません — 到着分は取り込み済みです。",
+    ing_inbox_empty:
+      "待機中のファイルはありません — 到着分は取り込み済みです。",
     ing_inbox_today: "今日",
     ing_inbox_unsupported_chip: "未対応",
     ing_inbox_unsupported_line: "未対応 {n} 件 — そのまま残します。",
@@ -3966,16 +4122,25 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_mascot_cameo_hint: "時々 MYCO が機能ヒントと共に登場",
     mc_label: "MYCO ヒント",
     mc_dismiss: "閉じる",
-    mc_tip_drag: "どの星でもドラッグするとシミュレーションが再加熱 \u2014 隣接ノードが追従し弾んで戻ります。",
+    mc_tip_drag:
+      "どの星でもドラッグするとシミュレーションが再加熱 \u2014 隣接ノードが追従し弾んで戻ります。",
     mc_tip_path: "2つのノートを Cmd/Ctrl-クリックすると最短経路が光ります。",
-    mc_tip_fly: "F を押すとボルトを宇宙船で飛行 \u2014 WASD で飛び Esc で着陸。",
-    mc_tip_looks: "設定パネルを開いてルックをタップ \u2014 Sigma, Paper, Neural, Planetarium\u2026",
-    mc_tip_timelapse: "タイムラプスを再生すると書いた順にボルトが自ら育ちます。",
-    mc_tip_multiverse: "マルチバースをオンにすると各プロジェクトが輝く宇宙バブルに。",
-    mc_tip_minimap: "隅のミニマップ \u2014 どこでもクリックするとカメラがそこへ飛びます。",
-    mc_tip_recency: "最近編集したノートほど熱く燃える \u2014 グラフがあなたの関心を地図化します。",
-    mc_tip_save: "気に入ったルックを調整した？保存ルックに名前を付けてワンタップで呼び出し。",
-    mc_tip_chronicle: "年代記レイアウトを試して \u2014 ノートが実際の時間軸に沿って並びます。",
+    mc_tip_fly:
+      "F を押すとボルトを宇宙船で飛行 \u2014 WASD で飛び Esc で着陸。",
+    mc_tip_looks:
+      "設定パネルを開いてルックをタップ \u2014 Sigma, Paper, Neural, Planetarium\u2026",
+    mc_tip_timelapse:
+      "タイムラプスを再生すると書いた順にボルトが自ら育ちます。",
+    mc_tip_multiverse:
+      "マルチバースをオンにすると各プロジェクトが輝く宇宙バブルに。",
+    mc_tip_minimap:
+      "隅のミニマップ \u2014 どこでもクリックするとカメラがそこへ飛びます。",
+    mc_tip_recency:
+      "最近編集したノートほど熱く燃える \u2014 グラフがあなたの関心を地図化します。",
+    mc_tip_save:
+      "気に入ったルックを調整した？保存ルックに名前を付けてワンタップで呼び出し。",
+    mc_tip_chronicle:
+      "年代記レイアウトを試して \u2014 ノートが実際の時間軸に沿って並びます。",
     gr_saved: "保存したルック",
     gr_saved_apply: "この保存ルックを適用",
     gr_saved_delete: "削除",
@@ -3992,11 +4157,13 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_cinematic_hint: "フィルムグレイン・ビネット・レンズストリーク・AA",
     gr_flow: "エッジフロー",
     gr_flow_hint: "リンクに沿って光のパルスが始点\u2192終点へ流れる",
-    gr_semantic_missing: "意味マップには埋め込みインデックスが必要です — 設定 \u2192 モデルで再イン<デックス後に開き直してください。今は渦巻で表示します。",
+    gr_semantic_missing:
+      "意味マップには埋め込みインデックスが必要です — 設定 \u2192 モデルで再イン<デックス後に開き直してください。今は渦巻で表示します。",
     gr_galaxies: "フォルダー銀河",
     gr_galaxies_hint: "フォルダーごとにゆっくり自転する銀河へ分割",
     gr_multiverse: "マルチバース",
-    gr_multiverse_hint: "各プロジェクトを宇宙バブルとして表示。ひとつに飛び込むとそのプロジェクトが開く",
+    gr_multiverse_hint:
+      "各プロジェクトを宇宙バブルとして表示。ひとつに飛び込むとそのプロジェクトが開く",
     gr_mv_loading: "宇宙を描いています…",
     gr_mv_none: "まだ表示できるボルトがありません。",
     gr_layout: "レイアウト",
@@ -4027,7 +4194,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_semantic_edges: "セマンティックリンク",
     gr_semantic_edges_hint: "類似ノート間に淡いエッジを表示",
     gr_edge_bundles: "バンドルストランド",
-    gr_edge_bundles_hint: "2つのトピック間のリンクを1本の重み付きアークに束ねる",
+    gr_edge_bundles_hint:
+      "2つのトピック間のリンクを1本の重み付きアークに束ねる",
     gr_fly_btn: "宇宙船モード (F)",
     gr_timelapse_record: "タイムラプス録画 (WebM)",
     gr_node_color_black: "ブラック",
@@ -4057,7 +4225,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_trace: "経路トレース",
     gr_trace_hint: "開始ノードをクリックし、次に終了ノードをクリック",
     gr_spaceship: "宇宙船",
-    gr_spaceship_hint: "WASDで飛行 · ドラッグで方向 · ノードをクリックで情報 · Escで終了",
+    gr_spaceship_hint:
+      "WASDで飛行 · ドラッグで方向 · ノードをクリックで情報 · Escで終了",
     gr_spaceship_exit: "終了",
     gr_speed: "速度",
     gr_close: "閉じる",
@@ -4073,7 +4242,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_cluster_force: "クラスター力",
     gr_myc_spread: "菌糸の広がり",
     gr_myc_branch: "分岐密度",
-    gr_myc_forces_hint: "菌糸はシミュレーションではなく成長する仕組みです。この2つのスライダーが菌糸マットの形を変えます。",
+    gr_myc_forces_hint:
+      "菌糸はシミュレーションではなく成長する仕組みです。この2つのスライダーが菌糸マットの形を変えます。",
     gr_reset: "リセット",
     gr_empty_pre: "まだウィキリンクがありません。",
     gr_empty_post: " を追加するとグラフが育ちます。",
@@ -4095,7 +4265,8 @@ export const STRINGS: Record<Lang, Strings> = {
     p_sources: "出典 {n}件",
     p_src_manual: "手書きの出典",
     p_src_missing: "raw 原本なし",
-    p_lint_running: "Lint 実行中 — 他のページに移動してもバックグラウンドで続行します。",
+    p_lint_running:
+      "Lint 実行中 — 他のページに移動してもバックグラウンドで続行します。",
     p_lint_done: "Lint 完了",
     p_lint_failed: "Lint 失敗",
     s_title: "設定",
@@ -4113,21 +4284,25 @@ export const STRINGS: Record<Lang, Strings> = {
     s_workspace: "ワークスペース",
     s_model: "モデル",
     s_embeddings: "セマンティック検索",
-    s_embeddings_lede: "セマンティック検索・関連ノート・グラフ類似度のためのオンデバイス埋め込みインデックスを構築します。オフラインで動作。",
+    s_embeddings_lede:
+      "セマンティック検索・関連ノート・グラフ類似度のためのオンデバイス埋め込みインデックスを構築します。オフラインで動作。",
     s_embeddings_indexed: "ページをインデックス済み",
     s_embeddings_reindex: "今すぐ再インデックス",
     s_embeddings_indexing: "インデックス中…",
     s_embeddings_empty: "未インデックス",
     s_embeddings_loading_model: "モデル読み込み中…",
-    s_embeddings_loading_model_hint: "初回は内蔵モデルを読み込みます — 数秒かかります。",
+    s_embeddings_loading_model_hint:
+      "初回は内蔵モデルを読み込みます — 数秒かかります。",
     s_embeddings_done: "{n}ページをインデックスしました",
     s_autoreindex_title: "インデックスを自動更新",
-    s_autoreindex_desc: "この設定に関係なく、mycoは編集したページをすでにバックグラウンドでリアルタイムに再埋め込みしています。これをオンにすると、保管庫の変更が落ち着いてしばらくしてから「今すぐ再インデックス」と同じ全体の再インデックスを保険として自動実行します。",
+    s_autoreindex_desc:
+      "この設定に関係なく、mycoは編集したページをすでにバックグラウンドでリアルタイムに再埋め込みしています。これをオンにすると、保管庫の変更が落ち着いてしばらくしてから「今すぐ再インデックス」と同じ全体の再インデックスを保険として自動実行します。",
     s_providers: "接続",
     s_appearance: "外観",
     s_vault_known: "myco が把握しているヴォールト",
     s_ov_theme: "概要の背景",
-    s_ov_theme_lede: "概要ページの生きた背景です。グラフのレイアウト名をそのまま使いますが、連動はしません。",
+    s_ov_theme_lede:
+      "概要ページの生きた背景です。グラフのレイアウト名をそのまま使いますが、連動はしません。",
     ov_theme_mycelium: "菌糸",
     s_lang: "言語",
     s_about: "myco について",
@@ -4223,7 +4398,8 @@ export const STRINGS: Record<Lang, Strings> = {
       " からダウンロード — ワンクリックで小さなシステムデーモンとして動作します。インストール後、この画面に戻ってください。",
     ol_get: "Ollama を入手",
     ol_not_running_title: "Ollama はインストール済みですが起動していません",
-    ol_not_running_body_pre: "Spotlight から Ollama アプリを起動（またはターミナルで ",
+    ol_not_running_body_pre:
+      "Spotlight から Ollama アプリを起動（またはターミナルで ",
     ol_not_running_body_mid: " を実行）し、",
     ol_not_running_body_post: " をクリックしてください。",
     ol_recheck: "再確認",
@@ -4294,7 +4470,8 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_preview: "プレビュー",
     rd_backlinks_empty: "まだここにリンクするノートはありません。",
     rd_related: "関連ノート",
-    rd_related_no_index: "関連ノートは、まだ作成されていないオンデバイス索引から取得します。",
+    rd_related_no_index:
+      "関連ノートは、まだ作成されていないオンデバイス索引から取得します。",
     rd_related_no_index_cta: "セマンティック検索を設定",
     rd_make_cards: "カード作成",
     rd_making: "生成中…",
@@ -4305,7 +4482,8 @@ export const STRINGS: Record<Lang, Strings> = {
     st_lede:
       "ページから生成した間隔反復フラッシュカードとクイズで知識を復習しましょう。",
     st_no_decks: "デッキがありません",
-    st_generate_hint: "ページを開いて「カード作成」を選ぶとデッキを生成できます。",
+    st_generate_hint:
+      "ページを開いて「カード作成」を選ぶとデッキを生成できます。",
     st_browse_pages: "ページを見る",
     st_refresh: "更新",
     st_total: "{n}枚",
@@ -4347,7 +4525,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ag_preset_prompt: "システムプロンプト",
     ag_preset_prompt_hint: "このエージェントの役割は？",
     ag_allow_write: "書き込みを許可",
-    ag_write_hint: "エージェントによるページの作成/更新を許可（書き込みごとに確認）",
+    ag_write_hint:
+      "エージェントによるページの作成/更新を許可（書き込みごとに確認）",
     ag_ph: "エージェントに複数ステップのタスクを指示…",
     ag_run: "実行",
     ag_stop: "停止",
@@ -4406,7 +4585,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_lede:
       "新しく入ったページを定期的にウィキのオントロジーへ取り込み、吸収済みのものはアーカイブし、残りは統合を提案します。",
     set_distill_enabled_title: "自動蒸留",
-    set_distill_enabled_desc: "mycoが開いていてアイドル状態のとき、独自のスケジュールでバックログを蒸留します。",
+    set_distill_enabled_desc:
+      "mycoが開いていてアイドル状態のとき、独自のスケジュールでバックログを蒸留します。",
     set_distill_intensity: "強度",
     set_distill_intensity_conservative: "保守的",
     set_distill_intensity_standard: "標準",
@@ -4421,7 +4601,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_idle_minutes: "アイドル時間（分）",
     set_distill_maturation: "熟成時間（時間）",
     set_distill_llm_digest_days: "実行あたりのダイジェスト日数",
-    set_distill_llm_ingest_budget: "実行あたりのLLM項目予算（インジェスト+マップ草案合算）",
+    set_distill_llm_ingest_budget:
+      "実行あたりのLLM項目予算（インジェスト+マップ草案合算）",
     set_distill_profile_injection_title: "プロフィール注入",
     set_distill_profile_injection_desc:
       "profile.mdをAsk/インジェストのコンテキストとして設定済みのAIプロバイダーに送信します。オフにするとプロフィールはローカルのみに保持されます。",
@@ -4433,7 +4614,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_distill_trend_flat: "変化なし",
     set_distill_run_now: "今すぐ蒸留",
     set_distill_running: "蒸留中…",
-    set_distill_report: "アーカイブ{a}件、破棄{tr}件、提案{p}件 — バックログ{b}件",
+    set_distill_report:
+      "アーカイブ{a}件、破棄{tr}件、提案{p}件 — バックログ{b}件",
     set_distill_busy: "蒸留は既に実行中です。",
     set_distill_undo: "この実行を元に戻す",
     set_distill_undoing: "元に戻しています…",
@@ -4469,7 +4651,8 @@ export const STRINGS: Record<Lang, Strings> = {
     set_archive_older_than: "{n}ヶ月より古いバケットを圧縮",
     set_archive_compress: "圧縮",
     set_archive_compressing: "圧縮中…",
-    set_archive_compressed: "バケット{buckets}個（ファイル{files}件）を圧縮し、{size}を回収しました",
+    set_archive_compressed:
+      "バケット{buckets}個（ファイル{files}件）を圧縮し、{size}を回収しました",
     set_archive_nothing_old: "{n}ヶ月より古いバケットはありません。",
     set_archive_failed: "そのままにしたバケット: {list}",
     set_archive_restore: "復元",
@@ -4509,7 +4692,8 @@ export const STRINGS: Record<Lang, Strings> = {
     pf_dismiss: "却下",
     pf_confirm_title: "この提案を適用しますか?",
     pf_confirm_msg: "{n}件のファイルが移動またはアーカイブされます。",
-    pf_confirm_msg_draft_map: "トピックマップの草稿を作成します（LLM呼び出し1回）。",
+    pf_confirm_msg_draft_map:
+      "トピックマップの草稿を作成します（LLM呼び出し1回）。",
     pf_retry: "再試行",
     pf_apply_failed: "適用に失敗しました — 再試行",
     pf_tab_proposals: "提案",
@@ -4529,7 +4713,8 @@ export const STRINGS: Record<Lang, Strings> = {
     qz_delete: "削除",
     qz_keep: "さらに{n}日保管",
     qz_confirm_delete_title: "この項目を削除しますか？",
-    qz_confirm_delete_msg: "{name} をシステムのゴミ箱に移動します（復元可能）。",
+    qz_confirm_delete_msg:
+      "{name} をシステムのゴミ箱に移動します（復元可能）。",
     tb_activity_quarantine: "確認待ち{n}件",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
@@ -4540,7 +4725,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "取り込み検証に失敗しました — 次の問題を解決しないと取り込みは受け付けられません:",
     ingest_validation_warnings: "検証の警告(処理は続行されます):",
     q_via: "{provider} · {model} を使用",
-    q_via_retrieval: "ローカルセマンティック検索 — 回答はノートの原文引用（モデル不使用）",
+    q_via_retrieval:
+      "ローカルセマンティック検索 — 回答はノートの原文引用（モデル不使用）",
     q_builtin_note:
       "内蔵のオフラインモデル（Gemma 3 1B）は小さく不正確な場合があります。オフラインなら Ollama で大きめのモデル（例: gemma3:4b）を、最も正確な回答には Claude をお使いください。",
     q_builtin_extractive_note:
@@ -4576,7 +4762,8 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_tier_source: "取り込んだ原文",
     q_cite_list_label: "引用の一致度と出典の種類",
     q_deep_row: "深い保管庫から: {stem} — 類似度 {sim}",
-    ask_profile_hint: "プロフィールを設定すると、Askが役割や興味・関心に合わせて回答します。",
+    ask_profile_hint:
+      "プロフィールを設定すると、Askが役割や興味・関心に合わせて回答します。",
     ask_profile_hint_cta: "プロフィールを設定",
     ask_profile_hint_dismiss: "閉じる",
     q_chip_done: "回答完了",
@@ -4630,7 +4817,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_inflow_inbox: "_inbox 到着",
     tb_inflow_source_unknown: "出典なし",
     tb_inflow_view: "表示 →",
-    tb_inflow_spark_caption: "直近24時間 · 紫 = セッション/inbox · 青 = MCP呼び出し",
+    tb_inflow_spark_caption:
+      "直近24時間 · 紫 = セッション/inbox · 青 = MCP呼び出し",
     tb_inflow_summary: "今日: セッション +{s} · MCP {m}回 · インボックス +{i}",
     tray_hdr_running: "作業中",
     tray_hdr_waiting: "待機",
@@ -4643,7 +4831,8 @@ export const STRINGS: Record<Lang, Strings> = {
     spot_thinking: "質問中…",
     spot_hint_enter: "Enterで質問 · Escで閉じる",
     spot_hint_open: "引用をクリックすると myco でそのノートを開きます。",
-    spot_no_vault: "先に myco でボールトを開いてください — まだ質問する対象がありません。",
+    spot_no_vault:
+      "先に myco でボールトを開いてください — まだ質問する対象がありません。",
     spot_busy: "myco はまだ前の質問に答えています。",
     voice_btn_label: "音声キャプチャ",
     voice_hint_recording: "⏎ 保存 · esc キャンセル",
@@ -4761,34 +4950,43 @@ export const STRINGS: Record<Lang, Strings> = {
     // Backfilled ja (was English-fallback): suggested links, Zotero, help,
     // query views, graph inspector/gaps, MCP SSE.
     ls_title: "リンク候補",
-    ls_hint: "意味的に近いのにまだリンクされていないノートです。承認すると「## Related」の下に [[wikilink]] が追加されます。",
+    ls_hint:
+      "意味的に近いのにまだリンクされていないノートです。承認すると「## Related」の下に [[wikilink]] が追加されます。",
     ls_accept: "リンクする",
     ls_dismiss: "閉じる",
     ls_accept_all: "すべて承認",
     ls_accept_all_progress: "{done}/{total}",
     ls_accept_all_result: "{n}件をリンクしました",
     zi_title: "Zotero からインポート",
-    zi_hint: "CSL-JSON または BibTeX エクスポート（ハイライトがあれば一緒に取り込まれます）。項目はソース文書として _inbox/ に入り、取り込みパイプラインで処理されます。",
+    zi_hint:
+      "CSL-JSON または BibTeX エクスポート（ハイライトがあれば一緒に取り込まれます）。項目はソース文書として _inbox/ に入り、取り込みパイプラインで処理されます。",
     zi_none: "そのファイルにインポート可能な項目が見つかりませんでした。",
-    zi_done: "{n} 件を _inbox/ にインポートしました — 「取り込み」を実行して wiki ページに変換してください。",
+    zi_done:
+      "{n} 件を _inbox/ にインポートしました — 「取り込み」を実行して wiki ページに変換してください。",
     ci_title: "会話をインポート",
-    ci_hint: "ChatGPT エクスポート（conversations.json）または Claude Code / Codex セッション（.jsonl）。各会話はソース文書として _inbox/ に入り、取り込みパイプラインが処理します。",
+    ci_hint:
+      "ChatGPT エクスポート（conversations.json）または Claude Code / Codex セッション（.jsonl）。各会話はソース文書として _inbox/ に入り、取り込みパイプラインが処理します。",
     ci_btn: "ファイルを選択…",
     ci_busy: "インポート中…",
-    ci_done: "{n} 件の会話を _inbox/ にインポートしました — 「取り込み」を実行して wiki ページに変換してください。",
-    ci_quarantined: "{n} 件の会話はシークレット（API キー・トークン）と思われる内容を含むため除外されました。元データで確認してください。インポートされていません。",
+    ci_done:
+      "{n} 件の会話を _inbox/ にインポートしました — 「取り込み」を実行して wiki ページに変換してください。",
+    ci_quarantined:
+      "{n} 件の会話はシークレット（API キー・トークン）と思われる内容を含むため除外されました。元データで確認してください。インポートされていません。",
     ci_none: "そのファイルに会話が見つかりませんでした。",
     ci_skipped: "（{n} 件はインポート済みのためスキップ。）",
     ci_sweep_cc: "自分の Claude Code セッションをインポート",
     ci_sweep_cx: "自分の Codex セッションをインポート",
-    ci_sweep_hint: "またはこのマシンにある全セッションをインポート — ~/.claude・~/.codex から。再実行しても新規・増加分のみ追加されます。",
+    ci_sweep_hint:
+      "またはこのマシンにある全セッションをインポート — ~/.claude・~/.codex から。再実行しても新規・増加分のみ追加されます。",
     ci_sweep_progress: "セッションをインポート中 {done} / {total}",
     ci_sweep_tally: "インポート {i} · スキップ {s} · 失敗 {f}",
     ci_failed_summary: "{n} 件をインポートできませんでした",
     ci_retry_failed: "失敗を再試行 ({n})",
-    q_empty: "wiki に何でも質問できます — 回答はあなた自身のページを引用します。",
+    q_empty:
+      "wiki に何でも質問できます — 回答はあなた自身のページを引用します。",
     s_mascot: "マスコット MYCO を表示",
-    s_mascot_hint: "ローダー・空の状態・About ページに表示。オフにすると静的ロゴになります。",
+    s_mascot_hint:
+      "ローダー・空の状態・About ページに表示。オフにすると静的ロゴになります。",
     s_backup_title: "設定とルック",
     s_backup_hint:
       "プロバイダー・自動化・外観・グラフのルックがこのファイルに含まれます。API キー、vault のパス、この端末の識別情報は含まれません。",
@@ -4815,7 +5013,8 @@ export const STRINGS: Record<Lang, Strings> = {
     s_backup_confirm_apply: "置き換える",
     s_backup_confirm_cancel: "キャンセル",
     s_backup_undo: "インポートを元に戻す",
-    s_backup_undo_hint: "以前の設定は myco を終了するまでメモリに保持されます。",
+    s_backup_undo_hint:
+      "以前の設定は myco を終了するまでメモリに保持されます。",
     s_backup_undone: "元に戻しました: {sections}",
     hw_title: "ヘルプ",
     hw_sub: "このページのヒント",
@@ -4823,18 +5022,27 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_sidebar: "サイドバーの切り替え",
     hw_sc_fly: "フライモード（グラフ）",
     hw_sc_esc: "閉じる / 選択解除",
-    hw_tip_graph1: "星をドラッグするとシミュレーションがその周りで再加熱されます。",
-    hw_tip_graph2: "F で宇宙船を飛ばせます。⚠ バッジを押すとリサーチブリッジ付きのギャップ分析が開きます。",
+    hw_tip_graph1:
+      "星をドラッグするとシミュレーションがその周りで再加熱されます。",
+    hw_tip_graph2:
+      "F で宇宙船を飛ばせます。⚠ バッジを押すとリサーチブリッジ付きのギャップ分析が開きます。",
     hw_tip_graph3: "近接惑星（設定ドロワー）は間近のノートを惑星に変えます。",
-    hw_tip_query1: "回答は wiki ページを引用します — 引用をクリックすると開きます。",
-    hw_tip_query2: "グラフのギャップパネルからリサーチ質問をこの入力欄に下書きできます。",
-    hw_tip_ingest1: "任意のファイルをドロップ、テキストを貼り付け、または Zotero エクスポートをインポートできます。",
-    hw_tip_ingest2: "Web クリッパーは _inbox/ 経由でページをここに送ります（clipper/ を参照）。",
-    hw_tip_views1: "フィルターは組み合わせられます — 結果は名前付きビューチップとして保存できます。",
-    hw_tip_overview1: "リンク候補はまだ wikilink のない意味的なペアです — 承認または却下してください。",
+    hw_tip_query1:
+      "回答は wiki ページを引用します — 引用をクリックすると開きます。",
+    hw_tip_query2:
+      "グラフのギャップパネルからリサーチ質問をこの入力欄に下書きできます。",
+    hw_tip_ingest1:
+      "任意のファイルをドロップ、テキストを貼り付け、または Zotero エクスポートをインポートできます。",
+    hw_tip_ingest2:
+      "Web クリッパーは _inbox/ 経由でページをここに送ります（clipper/ を参照）。",
+    hw_tip_views1:
+      "フィルターは組み合わせられます — 結果は名前付きビューチップとして保存できます。",
+    hw_tip_overview1:
+      "リンク候補はまだ wikilink のない意味的なペアです — 承認または却下してください。",
     hw_tip_default: "⌘K でどこへでも移動 — ページ・アクション・意味的ヒット。",
     vw_title: "クエリビュー",
-    vw_lede: "フロントマター（タイプ・確信度・ステータス・タグ・ソース）で wiki を絞り込み、よく使うレンズを保存できます。",
+    vw_lede:
+      "フロントマター（タイプ・確信度・ステータス・タグ・ソース）で wiki を絞り込み、よく使うレンズを保存できます。",
     vw_search: "名前で絞り込み…",
     vw_any_type: "すべてのタイプ",
     vw_any_conf: "すべての確信度",
@@ -4880,7 +5088,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_gap_none: "ギャップは見つかりませんでした",
     gr_gap_bridges: "リサーチブリッジ",
     gr_gap_ask: "このギャップについて質問",
-    gr_bridge_question: "「{a}」と「{b}」に関する私のノートは意味的に関連していますが、まだリンクされていません。この 2 つのトピックを結びつけるものは何ですか？ 橋渡しとなるアイデアや、書くべきノートを提案してください。",
+    gr_bridge_question:
+      "「{a}」と「{b}」に関する私のノートは意味的に関連していますが、まだリンクされていません。この 2 つのトピックを結びつけるものは何ですか？ 橋渡しとなるアイデアや、書くべきノートを提案してください。",
     gr_gap_more: "もっと見る",
     gr_key_size: "サイズ = リンク数",
     gr_key_dim: "淡色 = 低確信度",
@@ -4901,7 +5110,8 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_loading: "星座を整列中…",
     gr_ctx_lost: "グラフィックスコンテキストが失われました。",
     gr_retry: "再構築",
-    gr_perf_mode: "パフォーマンスモード — 大きなグラフではアンビエントレイヤーをオフに",
+    gr_perf_mode:
+      "パフォーマンスモード — 大きなグラフではアンビエントレイヤーをオフに",
     mcp_serving: "MCP サーバー実行中",
     mcp_not_serving: "MCP サーバー停止中",
     mcp_starting: "MCP サーバー起動中…",
@@ -4912,7 +5122,8 @@ export const STRINGS: Record<Lang, Strings> = {
     mcp_stop_btn: "停止",
     mcp_registering: "登録中…",
     vh_banner_title: "ボールト履歴はオフです",
-    vh_banner_desc: "オンにすると、エージェントの変更を単語単位で確認し、元に戻せます。",
+    vh_banner_desc:
+      "オンにすると、エージェントの変更を単語単位で確認し、元に戻せます。",
     vh_enable: "履歴をオンにする",
     vh_later: "後で",
     vh_setting_title: "ボールト履歴 (git)",
@@ -4967,7 +5178,8 @@ export const STRINGS: Record<Lang, Strings> = {
     auth_badge_last_human: "人による最終編集 {t}",
     auth_filter_pill: "記録上 人のみ",
     agent_confirm_title: "エージェントがページを更新しようとしています",
-    agent_confirm_create_title: "エージェントが新しいページを作成しようとしています",
+    agent_confirm_create_title:
+      "エージェントが新しいページを作成しようとしています",
     agent_confirm_hint: "許可すると、以下の変更がボールトに書き込まれます。",
   },
 };
