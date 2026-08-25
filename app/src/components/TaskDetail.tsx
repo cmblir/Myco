@@ -15,11 +15,21 @@ import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import type { TaskItem } from "../lib/ipc";
 import { isComposingKey } from "../lib/ime";
-import { parseTaskMeta, type TaskField, type TaskMeta, type TaskStatus } from "../lib/taskLine";
+import {
+  parseTaskMeta,
+  type TaskField,
+  type TaskMeta,
+  type TaskStatus,
+} from "../lib/taskLine";
 import { parseDuration } from "../lib/taskDuration";
+import { extractLinks, extractTags, stripTokens } from "../lib/taskTokens";
 import { parseRecurrence } from "../lib/taskRecurrence";
 
-const STATUSES: { status: TaskStatus; labelKey: keyof Strings; fallback: string }[] = [
+const STATUSES: {
+  status: TaskStatus;
+  labelKey: keyof Strings;
+  fallback: string;
+}[] = [
   { status: "todo", labelKey: "tasks_col_todo", fallback: "To do" },
   { status: "doing", labelKey: "tasks_col_doing", fallback: "In progress" },
   { status: "blocked", labelKey: "tasks_col_blocked", fallback: "Blocked" },
@@ -62,11 +72,17 @@ export default function TaskDetail({
   const scheduledLabel = t.tasks_detail_scheduled ?? "Scheduled";
   const dueLabel = t.tasks_due ?? "Due date";
 
-  const estimateBad = estimate.trim() !== "" && parseDuration(estimate) === null;
+  const estimateBad =
+    estimate.trim() !== "" && parseDuration(estimate) === null;
   const recurBad = recur.trim() !== "" && parseRecurrence(recur) === null;
-  const startAfterDue = meta.start !== "" && meta.due !== "" && meta.start > meta.due.slice(0, 10);
+  const startAfterDue =
+    meta.start !== "" && meta.due !== "" && meta.start > meta.due.slice(0, 10);
 
-  const commit = (field: "estimate" | "recur", value: string, bad: boolean): void => {
+  const commit = (
+    field: "estimate" | "recur",
+    value: string,
+    bad: boolean,
+  ): void => {
     const next = value.trim();
     // An unreadable estimate would become a token nothing can read back, so it
     // is held in the field until it parses. An unreadable recurrence rule IS
@@ -111,7 +127,9 @@ export default function TaskDetail({
       }}
     >
       <header className="task-detail-head">
-        <strong style={{ flex: 1, minWidth: 0 }}>{t.tasks_detail ?? "Task"}</strong>
+        <strong style={{ flex: 1, minWidth: 0 }}>
+          {t.tasks_detail ?? "Task"}
+        </strong>
         <button
           className="btn btn-ghost"
           onClick={onClose}
@@ -121,9 +139,38 @@ export default function TaskDetail({
         </button>
       </header>
 
-      <p className="task-detail-title">{meta.title}</p>
+      <p className="task-detail-title">
+        {stripTokens(meta.title) || meta.title}
+      </p>
+      {(() => {
+        const tags = extractTags(meta.title);
+        const links = extractLinks(meta.title);
+        if (tags.length === 0 && links.length === 0) return null;
+        return (
+          <div className="row" style={{ gap: 4, flexWrap: "wrap" }}>
+            {tags.map((tag) => (
+              <span key={`#${tag}`} className="chip" style={{ fontSize: 11 }}>
+                #{tag}
+              </span>
+            ))}
+            {links.map((link) => (
+              <span
+                key={`[[${link}`}
+                className="chip"
+                style={{ fontSize: 11, color: "var(--c-overview)" }}
+              >
+                {link}
+              </span>
+            ))}
+          </div>
+        );
+      })()}
 
-      <div className="segmented" role="group" aria-label={t.tasks_detail_status ?? "Status"}>
+      <div
+        className="segmented"
+        role="group"
+        aria-label={t.tasks_detail_status ?? "Status"}
+      >
         {STATUSES.map((s) => (
           <button
             key={s.status}
@@ -198,7 +245,8 @@ export default function TaskDetail({
       </label>
       {estimateBad ? (
         <p className="task-detail-warn">
-          {t.tasks_detail_estimate_hint ?? "Use a duration like 90m, 1.5h, 2d or 1w."}
+          {t.tasks_detail_estimate_hint ??
+            "Use a duration like 90m, 1.5h, 2d or 1w."}
         </p>
       ) : null}
 
@@ -215,7 +263,10 @@ export default function TaskDetail({
 
       <button className="btn btn-ghost task-detail-note" onClick={onOpenNote}>
         <Icon name="file" size={12} />
-        {(t.tasks_detail_open_note ?? "Open {page}").replace("{page}", task.stem)}
+        {(t.tasks_detail_open_note ?? "Open {page}").replace(
+          "{page}",
+          task.stem,
+        )}
       </button>
     </div>
   );

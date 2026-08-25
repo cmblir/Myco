@@ -7,15 +7,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
-import DatePicker from "../components/DatePicker";
 import TaskBoard from "../components/TaskBoard";
 import TaskCalendar from "../components/TaskCalendar";
 import TaskDetail from "../components/TaskDetail";
+import TaskComposer from "../components/TaskComposer";
+import type { ComposedTask } from "../components/TaskComposer";
+import TaskRoadmap from "../components/TaskRoadmap";
+import { createRoadmap, roadmapPages } from "../lib/roadmap";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
 import type { TaskItem } from "../lib/ipc";
-import { isComposingKey } from "../lib/ime";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import {
@@ -24,11 +26,11 @@ import {
   setNotifyEnabled,
 } from "../lib/taskNotifier";
 import { writeTaskFields, writeTaskStatus } from "../lib/taskWrite";
+import { extractLinks, extractTags, stripTokens } from "../lib/taskTokens";
 import { writeTaskHubs } from "../lib/taskHub";
 import { nextOccurrence } from "../lib/taskRecurrence";
 import {
   appendTaskLine,
-  buildTaskLine,
   parseTaskMeta,
   today,
   type TaskField,
@@ -42,10 +44,12 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
   const [tasks, setTasks] = useState<TaskItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [draft, setDraft] = useState("");
-  const [due, setDue] = useState("");
   const [busy, setBusy] = useState(false);
-  const [view, setView] = useState<"list" | "board" | "calendar">("list");
+  // Prefilled by clicking an empty calendar day; consumed by the composer.
+  const [due, setDue] = useState("");
+  const [view, setView] = useState<"list" | "board" | "calendar" | "roadmap">(
+    "list",
+  );
   const [notifyOn, setNotifyOn] = useState(notifyEnabled());
   // The open task in the detail panel, as `page:line` — the same identity the
   // views drag with. Held as a key rather than the task object so a rescan
@@ -76,41 +80,54 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
     void refresh();
   }, [refresh]);
 
-  /// Append a task to TODAY's daily note — the calendar-shaped home for "things
-  /// I have to do", and a file that already exists in most vaults. The note is
-  /// created on first use rather than requiring the user to make it.
-  async function addTask(): Promise<void> {
-    const text = draft.trim();
-    if (!text || !currentVault || busy) return;
+  /// Append a composed task line. The daily target is created on first use
+  /// (calendar-shaped home for "things I have to do"); a roadmap target must
+  /// already exist — its file vanishing mid-compose is an error, not a reason
+  /// to silently write the task somewhere else.
+  async function addTask(task: ComposedTask): Promise<void> {
+    if (!currentVault || busy) return;
     setBusy(true);
     setError(null);
-    const day = today();
-    const dir = `${currentVault.path}/daily`;
-    const path = `${dir}/${day}.md`;
     try {
-      let content = "";
-      try {
+      let path: string;
+      let content: string;
+      if (task.target.kind === "daily") {
+        const day = today();
+        const dir = `${currentVault.path}/daily`;
+        path = `${dir}/${day}.md`;
+        try {
+          content = (await ipc.readFile(path)).raw;
+        } catch {
+          // No note for today yet: create it seeded with its date heading.
+          await ipc
+            .createFolder(currentVault.path, "daily")
+            .catch(() => undefined);
+          await ipc.createFile(dir, `${day}.md`).catch(() => undefined);
+          content = `# ${day}\n\n`;
+        }
+      } else {
+        path = `${currentVault.path}/${task.target.path}`;
         content = (await ipc.readFile(path)).raw;
-      } catch {
-        // No note for today yet: create it seeded with its date heading.
-        await ipc
-          .createFolder(currentVault.path, "daily")
-          .catch(() => undefined);
-        await ipc.createFile(dir, `${day}.md`).catch(() => undefined);
-        content = `# ${day}\n\n`;
       }
-      await ipc.writeFile(
-        path,
-        appendTaskLine(content, buildTaskLine(text, due)),
-      );
-      setDraft("");
-      setDue("");
+      await ipc.writeFile(path, appendTaskLine(content, task.line));
       await refresh();
       void useVaultStore.getState().refreshTree();
     } catch (e: unknown) {
       setError(String(e));
     } finally {
       setBusy(false);
+    }
+  }
+
+  async function newRoadmap(title: string): Promise<string | null> {
+    if (!currentVault) return null;
+    try {
+      const rel = await createRoadmap(currentVault.path, title);
+      void useVaultStore.getState().refreshTree();
+      return rel;
+    } catch (e: unknown) {
+      setError(String(e));
+      return null;
     }
   }
 
@@ -259,6 +276,9 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
     if (currentVault) setRoute(`page:${currentVault.path}/${task.page}`);
   };
 
+  const fileTree = useVaultStore((s) => s.fileTree);
+  const roadmaps = useMemo(() => roadmapPages(fileTree), [fileTree]);
+
   const keyOf = (task: TaskItem): string => `${task.page}:${task.line}`;
   // Re-resolved on every render: after a write the list is rescanned, and the
   // panel must show the line as it now reads (or close, if it is gone).
@@ -298,6 +318,12 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           onClick={() => setView("calendar")}
         >
           {t.tasks_view_calendar ?? "Calendar"}
+        </button>
+        <button
+          className={view === "roadmap" ? "active" : ""}
+          onClick={() => setView("roadmap")}
+        >
+          {t.tasks_view_roadmap ?? "Roadmap"}
         </button>
       </div>
 
@@ -356,51 +382,15 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
         ) : null}
       </div>
 
-      <div
-        className="card"
-        style={{
-          padding: 12,
-          marginTop: 8,
-          // The list/board/calendar below renders flush against this card
-          // otherwise — give the two blocks visible breathing room.
-          marginBottom: 16,
-          display: "flex",
-          gap: 8,
-          alignItems: "center",
-        }}
-      >
-        <input
-          className="input"
-          style={{
-            border: "none",
-            padding: "4px 0",
-            boxShadow: "none",
-            flex: 1,
-          }}
-          placeholder={t.tasks_ph ?? "What do you have to do?"}
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (isComposingKey(e)) return;
-            if (e.key === "Enter") void addTask();
-          }}
-          disabled={busy || !currentVault}
-          data-testid="task-input"
-        />
-        <DatePicker
-          t={t}
-          value={due}
-          onChange={setDue}
-          disabled={busy || !currentVault}
-        />
-        <button
-          className="btn btn-primary"
-          onClick={() => void addTask()}
-          disabled={busy || !currentVault || !draft.trim()}
-        >
-          {t.tasks_add ?? "Add"}
-        </button>
-      </div>
+      <TaskComposer
+        t={t}
+        busy={busy || !currentVault}
+        roadmaps={roadmaps}
+        due={due}
+        onDueChange={setDue}
+        onAdd={(task) => void addTask(task)}
+        onNewRoadmap={newRoadmap}
+      />
 
       {loading ? (
         <div className="muted" style={{ padding: 12 }}>
@@ -410,6 +400,21 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
         <div className="card" style={{ padding: 12, color: "#dc2626" }}>
           {error}
         </div>
+      ) : view === "roadmap" ? (
+        <TaskRoadmap
+          t={t}
+          tasks={tasks ?? []}
+          pages={roadmaps}
+          busy={busy}
+          onToggle={(task) => void setStatus(task, task.done ? "todo" : "done")}
+          onOpen={(task) => setSelected(keyOf(task))}
+          onNewRoadmap={() => {
+            const title = window.prompt(
+              t.tasks_new_roadmap_ph ?? "Roadmap title",
+            );
+            if (title?.trim()) void newRoadmap(title.trim());
+          }}
+        />
       ) : view === "calendar" ? (
         <TaskCalendar
           t={t}
@@ -546,6 +551,10 @@ function TaskRow({
   busy: boolean;
 }): JSX.Element {
   const meta = parseTaskMeta(task.text);
+  // Category (#tag) and project ([[link]]) read as chips, not inline noise.
+  const tags = extractTags(meta.title);
+  const links = extractLinks(meta.title);
+  const title = stripTokens(meta.title) || meta.title;
   return (
     // A row, not a button: the checkbox has to be clickable on its own, and a
     // button inside a button is invalid HTML (and unreachable by keyboard).
@@ -609,8 +618,26 @@ function TaskRow({
             color: task.done ? "var(--ink-3)" : "var(--ink)",
           }}
         >
-          {meta.title}
+          {title}
         </span>
+        {tags.map((tag) => (
+          <span
+            key={`#${tag}`}
+            className="chip"
+            style={{ fontSize: 11, flexShrink: 0 }}
+          >
+            #{tag}
+          </span>
+        ))}
+        {links.map((link) => (
+          <span
+            key={`[[${link}`}
+            className="chip"
+            style={{ fontSize: 11, flexShrink: 0, color: "var(--c-overview)" }}
+          >
+            {link}
+          </span>
+        ))}
         {meta.due ? (
           <span
             className="chip"
