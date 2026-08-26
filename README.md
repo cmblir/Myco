@@ -261,6 +261,13 @@ vault path and this device's identity never leave. An import names the
 sections it will replace before it touches anything, and can be undone for
 the rest of the session.
 
+**Notch drop surface** *(macOS, opt-in)* — a quiet drop target living under
+the MacBook notch. Drag a file at the top of the screen: the surface unfolds,
+the drop lands in `_inbox/`, ingest picks it up, and the panel folds back on
+its own. Sits above the menu bar without ever stealing focus; Macs without a
+notch get the same surface as a small menu-bar pill. Settings → Model →
+"Notch drop surface".
+
 **Web clipper** — browser extension + bookmarklet (`clipper/`) that sends any
 page or selection into the vault inbox via a deep link.
 
