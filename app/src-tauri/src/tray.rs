@@ -12,7 +12,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
-use tauri::menu::{IconMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 
@@ -182,219 +181,6 @@ impl TrayStatus {
     }
 }
 
-/// Which bundled icon a row shows (icons/tray/menu/*.png).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum RowIcon {
-    Ask,
-    Distill,
-    Index,
-    Link,
-    Mcp,
-}
-
-fn icon_for_kind(kind: &str) -> Option<RowIcon> {
-    match kind {
-        "ask" => Some(RowIcon::Ask),
-        // Reflect borrows distill's icon — same whole-vault pass, read-only.
-        "distill" | "reflect" => Some(RowIcon::Distill),
-        "index" => Some(RowIcon::Index),
-        _ => None,
-    }
-}
-
-/// One row of the tray menu, in display order. Pure data so the layout is
-/// unit-testable without a running app.
-#[derive(Debug, PartialEq)]
-pub struct MenuRow {
-    /// Stable id the menu-event handler matches on; empty for separators.
-    pub id: String,
-    pub text: String,
-    pub enabled: bool,
-    pub separator: bool,
-    pub icon: Option<RowIcon>,
-}
-
-impl MenuRow {
-    fn item(id: &str, text: &str, enabled: bool) -> Self {
-        Self {
-            id: id.into(),
-            text: text.into(),
-            enabled,
-            separator: false,
-            icon: None,
-        }
-    }
-    fn icon_item(id: &str, text: &str, enabled: bool, icon: Option<RowIcon>) -> Self {
-        Self {
-            icon,
-            ..Self::item(id, text, enabled)
-        }
-    }
-    fn separator() -> Self {
-        Self {
-            id: String::new(),
-            text: String::new(),
-            enabled: false,
-            separator: true,
-            icon: None,
-        }
-    }
-}
-
-/// Layout per the approved menubar-v2 design: "now working on" header +
-/// running rows (disabled), separator, "waiting" header + standing rows
-/// (suggested → Overview, MCP → Settings), separator, actions. A header is
-/// emitted only when its section is non-empty AND its label is non-empty;
-/// rows with an empty label are omitted, as are separators that would end
-/// up leading, trailing, or doubled.
-pub fn menu_rows(s: &TrayStatus) -> Vec<MenuRow> {
-    let mut sections: Vec<Vec<MenuRow>> = Vec::new();
-
-    let mut running: Vec<MenuRow> = s
-        .running
-        .iter()
-        .filter(|r| !r.text.is_empty())
-        .enumerate()
-        .map(|(i, r)| {
-            MenuRow::icon_item(
-                &format!("tray-run-{i}"),
-                &r.text,
-                false,
-                icon_for_kind(&r.kind),
-            )
-        })
-        .collect();
-    if !running.is_empty() && !s.running_header.is_empty() {
-        running.insert(
-            0,
-            MenuRow::item("tray-hdr-running", &s.running_header, false),
-        );
-    }
-    sections.push(running);
-
-    let mut standing = Vec::new();
-    if !s.suggested.is_empty() {
-        standing.push(MenuRow::icon_item(
-            "tray-overview",
-            &s.suggested,
-            true,
-            Some(RowIcon::Link),
-        ));
-    }
-    if !s.reflect.is_empty() {
-        standing.push(MenuRow::icon_item(
-            "tray-reflect",
-            &s.reflect,
-            true,
-            Some(RowIcon::Distill),
-        ));
-    }
-    if !s.quarantine.is_empty() {
-        standing.push(MenuRow::icon_item(
-            "tray-quarantine",
-            &s.quarantine,
-            true,
-            Some(RowIcon::Distill),
-        ));
-    }
-    if !s.mcp.is_empty() {
-        standing.push(MenuRow::icon_item(
-            "tray-settings",
-            &s.mcp,
-            true,
-            Some(RowIcon::Mcp),
-        ));
-    }
-    // Today's-inflow one-liner, right under the MCP row — a disabled info row,
-    // like the running rows (the full section lives in the popover surfaces).
-    if let Some(inflow) = &s.inflow {
-        if !inflow.summary.is_empty() {
-            standing.push(MenuRow::item("tray-inflow", &inflow.summary, false));
-        }
-    }
-    if !standing.is_empty() && !s.waiting_header.is_empty() {
-        standing.insert(
-            0,
-            MenuRow::item("tray-hdr-waiting", &s.waiting_header, false),
-        );
-    }
-    sections.push(standing);
-
-    let mut actions = Vec::new();
-    if !s.ask.is_empty() {
-        actions.push(MenuRow::icon_item(
-            "tray-query",
-            &s.ask,
-            true,
-            Some(RowIcon::Ask),
-        ));
-    }
-    if !s.distill.is_empty() {
-        actions.push(MenuRow::icon_item(
-            "tray-distill",
-            &s.distill,
-            true,
-            Some(RowIcon::Distill),
-        ));
-    }
-    if !s.open.is_empty() {
-        actions.push(MenuRow::item("tray-open", &s.open, true));
-    }
-    if !s.quit.is_empty() {
-        actions.push(MenuRow::item("tray-quit", &s.quit, true));
-    }
-    sections.push(actions);
-
-    let mut rows = Vec::new();
-    for section in sections.into_iter().filter(|s| !s.is_empty()) {
-        if !rows.is_empty() {
-            rows.push(MenuRow::separator());
-        }
-        rows.extend(section);
-    }
-    rows
-}
-
-/// Decode a bundled row icon. Cheap enough to do per menu rebuild (tiny
-/// PNGs, rebuilds are rate-limited to ~1/s by the frontend sender).
-fn row_icon_image(icon: RowIcon) -> tauri::Result<tauri::image::Image<'static>> {
-    let bytes: &[u8] = match icon {
-        RowIcon::Ask => include_bytes!("../icons/tray/menu/ask.png"),
-        RowIcon::Distill => include_bytes!("../icons/tray/menu/distill.png"),
-        RowIcon::Index => include_bytes!("../icons/tray/menu/index.png"),
-        RowIcon::Link => include_bytes!("../icons/tray/menu/link.png"),
-        RowIcon::Mcp => include_bytes!("../icons/tray/menu/mcp.png"),
-    };
-    tauri::image::Image::from_bytes(bytes)
-}
-
-fn build_menu<R: Runtime>(app: &AppHandle<R>, s: &TrayStatus) -> tauri::Result<Menu<R>> {
-    let menu = Menu::new(app)?;
-    for row in menu_rows(s) {
-        if row.separator {
-            menu.append(&PredefinedMenuItem::separator(app)?)?;
-        } else if let Some(icon) = row.icon {
-            menu.append(&IconMenuItem::with_id(
-                app,
-                row.id,
-                row.text,
-                row.enabled,
-                Some(row_icon_image(icon)?),
-                None::<&str>,
-            )?)?;
-        } else {
-            menu.append(&MenuItem::with_id(
-                app,
-                row.id,
-                row.text,
-                row.enabled,
-                None::<&str>,
-            )?)?;
-        }
-    }
-    Ok(menu)
-}
-
 fn show_main_window<R: Runtime>(app: &AppHandle<R>) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.show();
@@ -459,7 +245,10 @@ impl Default for TrayStatusCache {
 /// ignored here (the native menu is bound to right-click by
 /// `show_menu_on_left_click(false)` + tray-icon's default right-click menu).
 pub fn tray_click_shows_panel(button: MouseButton, state: MouseButtonState) -> bool {
-    button == MouseButton::Left && state == MouseButtonState::Up
+    // Left AND right: the native right-click menu is gone (owner call — two
+    // clicks showing two different UIs read as a bug), so every click path
+    // lands on the same styled panel.
+    (button == MouseButton::Left || button == MouseButton::Right) && state == MouseButtonState::Up
 }
 
 /// Top-left corner (physical px) for the panel: horizontally centred under
@@ -706,11 +495,10 @@ pub fn init(app: &AppHandle) -> tauri::Result<()> {
         .icon(icon)
         .icon_as_template(true)
         .tooltip("myco")
-        .menu(&build_menu(app, &TrayStatus::boot())?)
-        // Left-click opens the React popover panel; the native menu stays on
-        // right-click (tray-icon's menu_on_right_click default) as fallback.
+        // No native menu at all: left AND right click open the same React
+        // popover (tray_click_shows_panel). The old right-click fallback menu
+        // rendered a second, unstyled copy of the same rows.
         .show_menu_on_left_click(false)
-        .on_menu_event(|app, event| handle_menu_id(app, event.id().as_ref()))
         .on_tray_icon_event(|tray, event| {
             if let TrayIconEvent::Click {
                 button,
@@ -756,8 +544,8 @@ pub async fn update_tray_status(app: AppHandle, status: TrayStatus) -> Result<()
             None => return Ok(()), // tray never came up; nothing to update
         }
     };
-    let menu = build_menu(&app, &status).map_err(|e| e.to_string())?;
-    tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+    // No set_menu: the native menu is gone (both clicks open the panel), so
+    // the per-push rebuild would maintain UI nothing can display.
     tray.set_title(status.title.as_deref())
         .map_err(|e| e.to_string())?;
     Ok(())
@@ -833,13 +621,6 @@ pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
 mod tests {
     use super::*;
 
-    fn run(kind: &str, text: &str) -> RunningRow {
-        RunningRow {
-            kind: kind.into(),
-            text: text.into(),
-        }
-    }
-
     #[test]
     fn a_click_right_after_a_blur_hide_means_close_not_reshow() {
         // The blur produced by the click's own focus shift lands first.
@@ -852,219 +633,20 @@ mod tests {
     }
 
     #[test]
-    fn a_transient_blur_right_after_show_does_not_close_the_panel() {
-        assert!(!blur_should_hide(20_000, 20_100));
-        assert!(blur_should_hide(20_000, 20_400));
-    }
-
-    fn full_status() -> TrayStatus {
-        TrayStatus {
-            running: vec![
-                run("distill", "Distilling — digest"),
-                run("index", "Indexing 218/302"),
-            ],
-            running_header: "Now working on".into(),
-            waiting_header: "Waiting".into(),
-            title: Some("2".into()),
-            suggested: "3 suggested links".into(),
-            reflect: String::new(),
-            quarantine: String::new(),
-            mcp: "MCP server running".into(),
-            inflow: None,
-            ask: "Ask the wiki".into(),
-            distill: "Distill now".into(),
-            open: "Open myco".into(),
-            quit: "Quit myco".into(),
-            // Panel-only rows — `menu_rows` deliberately ignores them.
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn full_layout_matches_approved_design_order() {
-        let rows = menu_rows(&full_status());
-        let ids: Vec<&str> = rows
-            .iter()
-            .map(|r| if r.separator { "---" } else { r.id.as_str() })
-            .collect();
-        assert_eq!(
-            ids,
-            vec![
-                "tray-hdr-running",
-                "tray-run-0",
-                "tray-run-1",
-                "---",
-                "tray-hdr-waiting",
-                "tray-overview",
-                "tray-settings",
-                "---",
-                "tray-query",
-                "tray-distill",
-                "tray-open",
-                "tray-quit",
-            ]
-        );
-    }
-
-    #[test]
-    fn headers_are_disabled_and_iconless_running_rows_disabled_with_icons() {
-        let rows = menu_rows(&full_status());
-        let hdr = &rows[0];
-        assert!(!hdr.enabled && hdr.icon.is_none());
-        assert_eq!(rows[1].icon, Some(RowIcon::Distill));
-        assert!(!rows[1].enabled);
-        assert_eq!(rows[2].icon, Some(RowIcon::Index));
-        assert!(!rows[2].enabled);
-    }
-
-    #[test]
-    fn standing_and_action_rows_carry_their_icons() {
-        let rows = menu_rows(&full_status());
-        let icon_of = |id: &str| rows.iter().find(|r| r.id == id).unwrap().icon;
-        assert_eq!(icon_of("tray-overview"), Some(RowIcon::Link));
-        assert_eq!(icon_of("tray-settings"), Some(RowIcon::Mcp));
-        assert_eq!(icon_of("tray-query"), Some(RowIcon::Ask));
-        assert_eq!(icon_of("tray-distill"), Some(RowIcon::Distill));
-        assert_eq!(icon_of("tray-open"), None);
-        assert_eq!(icon_of("tray-quit"), None);
-    }
-
-    #[test]
-    fn unseen_reflect_findings_add_a_clickable_standing_row() {
-        let s = TrayStatus {
-            reflect: "8 reflect suggestions".into(),
-            ..full_status()
-        };
-        let rows = menu_rows(&s);
-        let i = rows.iter().position(|r| r.id == "tray-reflect").unwrap();
-        assert_eq!(rows[i - 1].id, "tray-overview");
-        assert_eq!(rows[i + 1].id, "tray-settings");
-        assert!(rows[i].enabled);
-        assert_eq!(rows[i].icon, Some(RowIcon::Distill));
-        // Empty (nothing unseen) → no row at all.
-        assert!(menu_rows(&full_status())
-            .iter()
-            .all(|r| r.id != "tray-reflect"));
-    }
-
-    #[test]
-    fn quarantined_items_add_a_clickable_standing_row_before_mcp() {
-        let s = TrayStatus {
-            quarantine: "2 awaiting review".into(),
-            ..full_status()
-        };
-        let rows = menu_rows(&s);
-        let i = rows.iter().position(|r| r.id == "tray-quarantine").unwrap();
-        assert_eq!(rows[i + 1].id, "tray-settings");
-        assert!(rows[i].enabled);
-        assert_eq!(rows[i].icon, Some(RowIcon::Distill));
-        // Nothing quarantined → no row at all.
-        assert!(menu_rows(&full_status())
-            .iter()
-            .all(|r| r.id != "tray-quarantine"));
-    }
-
-    #[test]
-    fn a_running_reflect_row_shows_the_distill_icon() {
-        let s = TrayStatus {
-            running: vec![run("reflect", "Reflect running…")],
-            ..full_status()
-        };
-        assert_eq!(menu_rows(&s)[1].icon, Some(RowIcon::Distill));
-    }
-
-    #[test]
-    fn inflow_summary_is_a_disabled_info_row_under_the_mcp_row() {
-        let s = TrayStatus {
-            inflow: Some(TrayInflow {
-                header: "Today's inflow".into(),
-                sessions: "Sessions swept".into(),
-                sessions_count: "+2".into(),
-                mcp: "MCP tool calls".into(),
-                mcp_sub: "top: search".into(),
-                mcp_count: "7".into(),
-                inbox: "_inbox arrivals".into(),
-                inbox_count: "+3".into(),
-                summary: "Today: sessions +2 · MCP 7 · inbox +3".into(),
-                hourly_files: vec![0; 24],
-                hourly_mcp: vec![0; 24],
-                ..TrayInflow::default()
-            }),
-            ..full_status()
-        };
-        let rows = menu_rows(&s);
-        let i = rows.iter().position(|r| r.id == "tray-inflow").unwrap();
-        assert_eq!(rows[i - 1].id, "tray-settings");
-        assert!(!rows[i].enabled && rows[i].icon.is_none());
-        assert_eq!(rows[i].text, "Today: sessions +2 · MCP 7 · inbox +3");
-    }
-
-    #[test]
-    fn unknown_running_kind_renders_without_icon() {
-        let s = TrayStatus {
-            running: vec![run("mystery", "Doing something")],
-            ..full_status()
-        };
-        assert_eq!(menu_rows(&s)[1].icon, None);
-    }
-
-    #[test]
-    fn empty_running_section_drops_its_header_entirely() {
-        let s = TrayStatus {
-            running: vec![],
-            ..full_status()
-        };
-        let rows = menu_rows(&s);
-        assert!(!rows[0].separator, "no leading separator");
-        assert_eq!(rows[0].id, "tray-hdr-waiting");
-        assert!(rows.iter().all(|r| r.id != "tray-hdr-running"));
-        assert_eq!(rows.iter().filter(|r| r.separator).count(), 1);
-    }
-
-    #[test]
-    fn empty_waiting_section_drops_its_header_entirely() {
-        let s = TrayStatus {
-            suggested: String::new(),
-            mcp: String::new(),
-            ..full_status()
-        };
-        let rows = menu_rows(&s);
-        assert!(rows.iter().all(|r| r.id != "tray-hdr-waiting"));
-    }
-
-    #[test]
-    fn empty_header_label_is_omitted_but_rows_stay() {
-        let s = TrayStatus {
-            running_header: String::new(),
-            ..full_status()
-        };
-        let rows = menu_rows(&s);
-        assert_eq!(rows[0].id, "tray-run-0");
-        assert!(rows.iter().all(|r| r.id != "tray-hdr-running"));
-    }
-
-    #[test]
-    fn boot_menu_is_actions_only() {
-        let rows = menu_rows(&TrayStatus::boot());
-        let ids: Vec<&str> = rows.iter().map(|r| r.id.as_str()).collect();
-        assert_eq!(ids, vec!["tray-open", "tray-quit"]);
-    }
-
-    #[test]
-    fn left_release_opens_panel_everything_else_does_not() {
+    fn either_button_release_opens_panel_press_and_middle_do_not() {
         assert!(tray_click_shows_panel(
             MouseButton::Left,
             MouseButtonState::Up
         ));
-        // Left press: wait for the release (native-menu-like feel).
+        // Right now opens the SAME panel — the native fallback menu is gone.
+        assert!(tray_click_shows_panel(
+            MouseButton::Right,
+            MouseButtonState::Up
+        ));
+        // Press: wait for the release (native-menu-like feel).
         assert!(!tray_click_shows_panel(
             MouseButton::Left,
             MouseButtonState::Down
-        ));
-        // Right clicks belong to the native fallback menu.
-        assert!(!tray_click_shows_panel(
-            MouseButton::Right,
-            MouseButtonState::Up
         ));
         assert!(!tray_click_shows_panel(
             MouseButton::Middle,
@@ -1110,24 +692,5 @@ mod tests {
     fn panel_never_goes_off_the_left_edge() {
         let (x, _) = panel_position(&icon_rect(0.0, 0.0, 44.0, 48.0), 2.0, 340.0, None);
         assert_eq!(x, 0.0);
-    }
-
-    #[test]
-    fn empty_labels_and_empty_running_entries_are_dropped() {
-        let mut s = full_status();
-        s.running = vec![run("ask", "")];
-        s.suggested = String::new();
-        s.mcp = String::new();
-        let rows = menu_rows(&s);
-        let ids: Vec<&str> = rows
-            .iter()
-            .filter(|r| !r.separator)
-            .map(|r| r.id.as_str())
-            .collect();
-        assert_eq!(
-            ids,
-            vec!["tray-query", "tray-distill", "tray-open", "tray-quit"]
-        );
-        assert_eq!(rows.iter().filter(|r| r.separator).count(), 0);
     }
 }
