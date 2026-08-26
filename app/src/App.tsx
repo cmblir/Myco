@@ -436,6 +436,13 @@ export default function App(): JSX.Element {
     document.documentElement.setAttribute("data-theme", effectiveTheme);
   }, [effectiveTheme]);
 
+  // index.html ships lang="ko" (the default UI language); the app switches
+  // en/ko/ja at runtime, and a screen reader picks pronunciation from this
+  // attribute — a static tag mispronounces the other two.
+  useEffect(() => {
+    document.documentElement.lang = lang;
+  }, [lang]);
+
   useEffect(() => {
     const r = document.documentElement;
     if (density === "compact") {
