@@ -172,7 +172,10 @@ export function reduceNotch(
       // Refine the predicted name with what actually landed ("-2" suffixing
       // happens at write time) — unless the surface has already moved on.
       return panel.kind === "accepted"
-        ? { panel: { kind: "accepted", rel: event.summary }, runningSince: null }
+        ? {
+            panel: { kind: "accepted", rel: event.summary },
+            runningSince: null,
+          }
         : current;
     case "writeFail":
       return panel.kind === "accepted"
@@ -267,10 +270,7 @@ async function persistDrop(
     },
   );
   if (outcome.written.length === 0) return null;
-  return batchLabel(
-    basename(outcome.written[0]),
-    outcome.written.length,
-  );
+  return batchLabel(basename(outcome.written[0]), outcome.written.length);
 }
 
 export interface NotchDrive {
@@ -287,6 +287,12 @@ export interface NotchDrive {
  * state — which in a plain browser without Tauri simply stays idle, exactly
  * what the surface showed before it had a driver.
  */
+/** How much of the collapsed surface peeks BELOW the hardware notch. Without
+ * it the idle window sits exactly behind the cutout and is invisible — the
+ * first live test's actual finding: nothing to aim a drop at. The mascot cap
+ * renders inside this strip. */
+export const NOTCH_PEEK_PX = 14;
+
 export function useNotchDriver(): NotchDrive | null {
   // Read once at first render, like NotchPanel's readMockParams.
   const [mocking] = useState(
@@ -442,7 +448,7 @@ export function useNotchDriver(): NotchDrive | null {
           : Math.ceil(el.offsetWidth);
       const h =
         !open && hasNotch
-          ? (geom as NotchGeometry).notch_h
+          ? (geom as NotchGeometry).notch_h + NOTCH_PEEK_PX
           : Math.ceil(el.offsetHeight);
       const key = `${w}x${h}`;
       if (w > 0 && h > 0 && key !== last) {
@@ -455,6 +461,16 @@ export function useNotchDriver(): NotchDrive | null {
     ro.observe(el);
     return () => ro.disconnect();
   }, [mocking, open, geom]);
+
+  // Content below the hardware cutout: the panel's lip offsets by the real
+  // notch height (0 on a notchless Mac, where the whole pill is visible).
+  useEffect(() => {
+    if (mocking) return;
+    document.documentElement.style.setProperty(
+      "--notch-cutout",
+      `${geom?.has_notch ? geom.notch_h : 0}px`,
+    );
+  }, [mocking, geom]);
 
   if (mocking) return null;
   return {

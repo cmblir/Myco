@@ -249,12 +249,30 @@ mod imp {
         }
         // Safe: Tauri hands out the live NSWindow, and we are on the main thread.
         let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
-        let mut frame = w.frame();
-        frame.size.width = width;
-        frame.size.height = height;
-        frame.origin.x = sf.origin.x + (sf.size.width - width) / 2.0;
-        frame.origin.y = sf.origin.y + sf.size.height - height;
-        w.setFrame_display(frame, true);
+        // setContentSize + setFrameTopLeftPoint instead of hand-built frame
+        // math: the first live run ended with the panel at y=832 mid-screen —
+        // whatever produced that, pinning the TOP-left through AppKit's own
+        // API removes the bottom-left-origin arithmetic from this code
+        // entirely. The top-left point's y is the screen's top edge
+        // (origin.y + height, in AppKit's bottom-up coords).
+        w.setContentSize(objc2_foundation::NSSize { width, height });
+        let top = objc2_foundation::NSPoint {
+            x: sf.origin.x + (sf.size.width - width) / 2.0,
+            y: sf.origin.y + sf.size.height,
+        };
+        w.setFrameTopLeftPoint(top);
+        let placed = w.frame();
+        eprintln!(
+            "notch: placed {}x{} at bottom-left ({}, {}) on screen {}x{}+{}+{}",
+            placed.size.width,
+            placed.size.height,
+            placed.origin.x,
+            placed.origin.y,
+            sf.size.width,
+            sf.size.height,
+            sf.origin.x,
+            sf.origin.y
+        );
         Ok(())
     }
 

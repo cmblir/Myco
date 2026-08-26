@@ -5924,6 +5924,10 @@ html.notch-window body {
   height: 26px;
   width: 100%;
   flex: none;
+  /* The hardware cutout covers the top --notch-cutout px of this window; the
+     lip (mascot cap) must sit in the strip that peeks below it, or idle is
+     invisible — the first live test's actual finding. 0 on notchless Macs. */
+  margin-top: var(--notch-cutout, 0px);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -5931,8 +5935,7 @@ html.notch-window body {
   padding: 0 12px;
 }
 .notch-lip-label {
-  font:
-    600 9.5px/1 var(--font-mono);
+  font: 600 9.5px/1 var(--font-mono);
   letter-spacing: 0.1em;
   color: #8f8a83;
   white-space: nowrap;
