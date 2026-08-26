@@ -920,6 +920,20 @@ export const ipc = {
    *  pattern, plus width: the panel unfolds from the cap to a 300px body. */
   notchResize: (width: number, height: number) =>
     invoke<null>("notch_resize", { width, height }),
+  /** Notch S7: append `- HH:MM <text>` to today's daily note (seeded with its
+   *  date heading on first use — PageTasks' addTask convention). The offset
+   *  ships the webview's LOCAL clock: daily notes bucket on the user's
+   *  calendar day (taskLine.today), and Rust alone only knows UTC. Returns
+   *  the vault-relative path written. */
+  captureNote: (text: string) =>
+    invoke<string>("capture_note", {
+      text,
+      tzOffsetMin: -new Date().getTimezoneOffset(),
+    }),
+  /** Ask the notch NSPanel to take key focus so the S7 input can type.
+   *  Resolves whether it really became the key window — a nonactivating
+   *  panel may refuse; the caller logs the answer either way. */
+  notchFocusCapture: () => invoke<boolean>("notch_focus_capture"),
   /** Apply the notch toggle live (show/hide the window). Persisting the flag
    *  itself goes through set_settings like every other setting. */
   updateNotchEnabled: (enabled: boolean) =>

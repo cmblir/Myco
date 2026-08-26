@@ -166,6 +166,7 @@ pub fn run() {
             commands::whisper_check,
             commands::transcribe_media,
             commands::save_voice_capture,
+            commands::capture_note,
             commands::create_file,
             commands::create_folder,
             commands::delete_path,
@@ -274,6 +275,7 @@ pub fn run() {
             spotlight::resize_spotlight,
             notch::notch_geometry,
             notch::notch_resize,
+            notch::notch_focus_capture,
             notch::update_notch_enabled,
         ])
         .setup(|app| {

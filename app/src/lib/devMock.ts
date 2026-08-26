@@ -1970,6 +1970,17 @@ function mockInvoke(
     // No OS window to size or show in a browser; accept and drop.
     case "notch_resize":
       return Promise.resolve(null);
+    case "capture_note": {
+      // Mirrors the real command's contract: empty text is refused, and the
+      // return is the local day's vault-relative daily-note path.
+      if (String(args.text ?? "").trim() === "") {
+        return Promise.reject(new Error("empty capture"));
+      }
+      return Promise.resolve(`daily/${today()}.md`);
+    }
+    // No NSPanel in a browser; claim key so the capture flow proceeds.
+    case "notch_focus_capture":
+      return Promise.resolve(true);
     case "update_notch_enabled":
       SETTINGS.notch_enabled = Boolean(args.enabled);
       return Promise.resolve(null);

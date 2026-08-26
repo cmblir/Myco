@@ -6039,6 +6039,10 @@ html.notch-window body {
   height: 100%;
   background: #a78bfa;
 }
+/* A real <input> since S7 went live: the panel is hardcoded dark, so the
+   browser's default white input chrome has to go; the purple border replaces
+   the default focus ring rather than removing it (same accent as the caret
+   the fake field used to draw). */
 .notch-field {
   border: 1px solid #3a352f;
   border-radius: 8px;
@@ -6046,13 +6050,14 @@ html.notch-window body {
   color: #ece7df;
   font-size: 12.5px;
   text-align: left;
+  background: transparent;
+  width: 100%;
+  font-family: inherit;
+  caret-color: #a78bfa;
 }
-.notch-caret {
-  display: inline-block;
-  width: 1px;
-  height: 13px;
-  background: #a78bfa;
-  vertical-align: -2px;
+.notch-field:focus {
+  outline: none;
+  border-color: #a78bfa;
 }
 /* Sheet's type rule: paths, slugs and sizes are mono + tabular without
    exception, while prose beside them stays in the body face. (The design

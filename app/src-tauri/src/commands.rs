@@ -555,6 +555,82 @@ pub async fn save_voice_capture(
         .map_err(|e| format!("join failed: {e}"))?
 }
 
+// ---- notch quick text capture (notch S7) ------------------------------------
+
+/// Append one `- HH:MM <text>` line to the LOCAL day's `daily/YYYY-MM-DD.md`,
+/// seeding a missing file with its `# date` heading — the exact convention
+/// PageTasks' addTask + taskLine::appendTaskLine established (trailing
+/// whitespace collapsed to exactly one newline before the append).
+/// `tz_offset_min` is the webview's local-time offset: daily notes bucket on
+/// the user's calendar day (taskLine::today is local), and Rust std only
+/// knows UTC. Returns the vault-relative path that was written.
+pub(crate) fn capture_note_at(
+    root: &std::path::Path,
+    text: &str,
+    now_utc: i64,
+    tz_offset_min: i32,
+) -> Result<String, String> {
+    // One line only: the field is a single-line input, but IPC is a boundary —
+    // collapsing all whitespace keeps a hostile payload from injecting lines.
+    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if text.is_empty() {
+        return Err("empty capture".into());
+    }
+    // Real offsets live within ±14h; anything else is a broken caller.
+    if !(-16 * 60..=16 * 60).contains(&tz_offset_min) {
+        return Err(format!("implausible tz offset: {tz_offset_min}"));
+    }
+    let local = now_utc + i64::from(tz_offset_min) * 60;
+    let (y, mo, d, hh, mi, _) = crate::distill::civil_datetime(local);
+    let day = format!("{y:04}-{mo:02}-{d:02}");
+    let rel = format!("daily/{day}.md");
+    let path = crate::myco_pro::safe_join(root, &rel)?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create daily/: {e}"))?;
+    }
+    // NotFound seeds; any other read error must NOT fall through to a write
+    // that would replace a file we could not read.
+    let existing = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => format!("# {day}\n\n"),
+        Err(e) => return Err(format!("read {rel}: {e}")),
+    };
+    let line = format!("- {hh:02}:{mi:02} {text}");
+    let body = existing.trim_end();
+    let content = if body.is_empty() {
+        format!("{line}\n")
+    } else {
+        format!("{body}\n{line}\n")
+    };
+    std::fs::write(&path, content).map_err(|e| format!("write {rel}: {e}"))?;
+    Ok(rel)
+}
+
+/// Notch S7 quick capture (⏎ in the notch input). Vault-required like every
+/// other write — the notch webview never learns the vault path.
+#[tauri::command]
+pub fn capture_note(
+    state: tauri::State<VaultRoot>,
+    text: String,
+    tz_offset_min: i32,
+) -> Result<String, String> {
+    let root = require_root(&state)?;
+    // One quick line is the feature; a megabyte through this door is a bug or
+    // an abuse of the IPC boundary. 4 KiB fits any real capture.
+    if text.len() > 4096 {
+        return Err("capture too long (limit 4 KiB) — use a note instead".into());
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let rel = capture_note_at(&root, &text, now, tz_offset_min)?;
+    if let Some(u) = crate::INDEX_UPDATER.get() {
+        u.mark_dirty(rel.clone());
+    }
+    Ok(rel)
+}
+
 /// Extract a dropped/picked file's text for ingest (not restricted to inside the
 /// vault — it's an external import). PDF and spreadsheets (xlsx/xls/ods) are
 /// parsed to text; CSV and other text-like files are read as-is. Refuses files
@@ -4390,11 +4466,12 @@ pub fn os_version() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_recall_miss, builtin_index_is_stale, chunk_text_at, copy_into_inbox_at,
-        export_bundle_write, external_target_allowed, import_dest, inbox_entries, iso_week_monday,
-        page_in_date_range, read_settings_import, recency_tie_break, resurface_core, run_diff_core,
-        run_import, sync_bm25_for_page, voice_inbox_rel, voice_markdown, windows_opener_safe,
-        DateRange, DEST_INBOX, DEST_SESSIONS, INBOX_COPY_MAX_BYTES,
+        append_recall_miss, builtin_index_is_stale, capture_note_at, chunk_text_at,
+        copy_into_inbox_at, export_bundle_write, external_target_allowed, import_dest,
+        inbox_entries, iso_week_monday, page_in_date_range, read_settings_import,
+        recency_tie_break, resurface_core, run_diff_core, run_import, sync_bm25_for_page,
+        voice_inbox_rel, voice_markdown, windows_opener_safe, DateRange, DEST_INBOX, DEST_SESSIONS,
+        INBOX_COPY_MAX_BYTES,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
@@ -5332,6 +5409,58 @@ mod tests {
             s.pooling,
             llama_cpp_2::context::params::LlamaPoolingType::Cls
         ));
+    }
+
+    // ---- notch quick text capture (notch S7) --------------------------------
+
+    // 1_000_000_000 = 2001-09-09 01:46:40 UTC — a fixed, human-checkable clock.
+    const CAPTURE_TS: i64 = 1_000_000_000;
+
+    #[test]
+    fn capture_note_seeds_a_missing_daily_note() {
+        let dir = tempfile::tempdir().unwrap();
+        let rel = capture_note_at(dir.path(), "buy milk", CAPTURE_TS, 0).unwrap();
+        assert_eq!(rel, "daily/2001-09-09.md");
+        let content = std::fs::read_to_string(dir.path().join(&rel)).unwrap();
+        // Seed heading + line, blank seed line collapsed — appendTaskLine's
+        // exact trailing convention ("# day\n\n" + line → "# day\n<line>\n").
+        assert_eq!(content, "# 2001-09-09\n- 01:46 buy milk\n");
+    }
+
+    #[test]
+    fn capture_note_appends_to_an_existing_daily_note() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("daily")).unwrap();
+        std::fs::write(
+            dir.path().join("daily/2001-09-09.md"),
+            "# 2001-09-09\n\n- 01:00 first\n",
+        )
+        .unwrap();
+        // A newline in the payload must not become a second markdown line.
+        capture_note_at(dir.path(), "second\nthought", CAPTURE_TS, 0).unwrap();
+        let content = std::fs::read_to_string(dir.path().join("daily/2001-09-09.md")).unwrap();
+        assert_eq!(
+            content,
+            "# 2001-09-09\n\n- 01:00 first\n- 01:46 second thought\n"
+        );
+    }
+
+    #[test]
+    fn capture_note_rejects_empty_text_and_wild_offsets() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(capture_note_at(dir.path(), "  \n ", CAPTURE_TS, 0).is_err());
+        assert!(capture_note_at(dir.path(), "x", CAPTURE_TS, 100_000).is_err());
+        assert!(!dir.path().join("daily").exists(), "nothing may be written");
+    }
+
+    #[test]
+    fn capture_note_buckets_on_the_local_day_not_utc() {
+        let dir = tempfile::tempdir().unwrap();
+        // 01:46 UTC minus two hours is 23:46 the previous LOCAL day.
+        let rel = capture_note_at(dir.path(), "late note", CAPTURE_TS, -120).unwrap();
+        assert_eq!(rel, "daily/2001-09-08.md");
+        let content = std::fs::read_to_string(dir.path().join(&rel)).unwrap();
+        assert!(content.ends_with("- 23:46 late note\n"), "{content}");
     }
 
     // ---- voice quick-capture (W3–6 item 9) ---------------------------------

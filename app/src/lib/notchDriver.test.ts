@@ -15,8 +15,10 @@ import {
   extLabel,
   reduceNotch,
   runningPercent,
+  waveLevels,
 } from "./notchDriver";
 import type { NotchDriverState, NotchEvent } from "./notchDriver";
+import { today } from "./taskLine";
 import { DONE_DWELL_MS } from "../components/NotchPanel";
 
 const T0 = 1_756_000_000_000;
@@ -185,9 +187,9 @@ describe("reduceNotch — what must NOT be interrupted", () => {
     const dragging = walk(NOTCH_IDLE, [
       { type: "dragEnter", paths: ["/tmp/b.md"] },
     ]);
-    expect(reduceNotch(dragging, { type: "writeOk", summary: "a.pdf" }, T0)).toBe(
-      dragging,
-    );
+    expect(
+      reduceNotch(dragging, { type: "writeOk", summary: "a.pdf" }, T0),
+    ).toBe(dragging);
   });
 
   it("a stale idleTimeout cannot kill a state with a live owner", () => {
@@ -206,18 +208,156 @@ describe("reduceNotch — what must NOT be interrupted", () => {
   });
 });
 
+describe("reduceNotch — S7 text capture", () => {
+  const capture = walk(NOTCH_IDLE, [{ type: "captureOpen" }]);
+
+  it("captureOpen opens the input from idle, and from idle only", () => {
+    expect(capture.panel).toEqual({ kind: "capture", text: "" });
+    const done: NotchDriverState = {
+      panel: { kind: "done", summary: "x" },
+      runningSince: null,
+    };
+    expect(reduceNotch(done, { type: "captureOpen" }, T0)).toBe(done);
+  });
+
+  it("submit shows the predicted daily path at once; the save refines it", () => {
+    const submitted = reduceNotch(capture, { type: "captureSubmit" }, T0);
+    expect(submitted.panel).toEqual({
+      kind: "captured",
+      rel: `daily/${today(new Date(T0))}.md`,
+    });
+    const saved = reduceNotch(
+      submitted,
+      { type: "captureSaved", rel: "daily/2026-08-25.md" },
+      T0,
+    );
+    expect(saved.panel).toEqual({
+      kind: "captured",
+      rel: "daily/2026-08-25.md",
+    });
+  });
+
+  it("a failed save becomes a rejection carrying the translated reason", () => {
+    const submitted = reduceNotch(capture, { type: "captureSubmit" }, T0);
+    const failed = reduceNotch(
+      submitted,
+      { type: "captureFail", reason: "no vault open" },
+      T0,
+    );
+    expect(failed.panel).toEqual({
+      kind: "rejected",
+      ext: "",
+      reason: "no vault open",
+    });
+  });
+
+  it("esc folds the input back to idle — but never a bystander state", () => {
+    expect(reduceNotch(capture, { type: "captureCancel" }, T0)).toBe(
+      NOTCH_IDLE,
+    );
+    const done: NotchDriverState = {
+      panel: { kind: "done", summary: "x" },
+      runningSince: null,
+    };
+    expect(reduceNotch(done, { type: "captureCancel" }, T0)).toBe(done);
+  });
+
+  it("a background run never talks over the capture input", () => {
+    expect(
+      reduceNotch(capture, { type: "statusPush", running: "reindex" }, T0),
+    ).toBe(capture);
+  });
+});
+
+describe("reduceNotch — S8 voice capture", () => {
+  const capture = walk(NOTCH_IDLE, [{ type: "captureOpen" }]);
+  const recording = walk(NOTCH_IDLE, [
+    { type: "captureOpen" },
+    { type: "recStart" },
+  ]);
+
+  it("recStart opens the take; recTick walks the clock and the waveform", () => {
+    expect(recording.panel).toEqual({
+      kind: "recording",
+      elapsedMs: 0,
+      levels: waveLevels(0),
+    });
+    expect(recording.runningSince).toBe(T0);
+    const ticked = reduceNotch(recording, { type: "recTick" }, T0 + 7000);
+    expect(ticked.panel).toEqual({
+      kind: "recording",
+      elapsedMs: 7000,
+      levels: waveLevels(7000),
+    });
+    // The walk must be visibly alive: consecutive seconds differ.
+    expect(waveLevels(7000)).not.toEqual(waveLevels(8000));
+  });
+
+  it("recStop holds the last frame while the whisper save is in flight", () => {
+    expect(reduceNotch(recording, { type: "recStop" }, T0)).toBe(recording);
+  });
+
+  it("recSaved lands on S4 — a voice note is an _inbox arrival", () => {
+    const saved = reduceNotch(
+      recording,
+      { type: "recSaved", rel: "voice-2026-08-25-0912.md" },
+      T0,
+    );
+    expect(saved.panel).toEqual({
+      kind: "accepted",
+      rel: "voice-2026-08-25-0912.md",
+    });
+    expect(saved.runningSince).toBeNull();
+  });
+
+  it("recFail rejects from recording AND from the preflight still in capture", () => {
+    const fromRecording = reduceNotch(
+      recording,
+      { type: "recFail", reason: "whisper is not installed" },
+      T0,
+    );
+    expect(fromRecording.panel).toEqual({
+      kind: "rejected",
+      ext: "",
+      reason: "whisper is not installed",
+    });
+    const fromCapture = reduceNotch(
+      capture,
+      { type: "recFail", reason: "whisper is not installed" },
+      T0,
+    );
+    expect(fromCapture.panel.kind).toBe("rejected");
+    const done: NotchDriverState = {
+      panel: { kind: "done", summary: "x" },
+      runningSince: null,
+    };
+    expect(reduceNotch(done, { type: "recFail", reason: "x" }, T0)).toBe(done);
+  });
+
+  it("esc cancels a live take back to idle", () => {
+    expect(reduceNotch(recording, { type: "captureCancel" }, T0)).toBe(
+      NOTCH_IDLE,
+    );
+  });
+
+  it("a background run never talks over a live mic", () => {
+    expect(
+      reduceNotch(recording, { type: "statusPush", running: "reindex" }, T0),
+    ).toBe(recording);
+  });
+});
+
 describe("dwellMsFor", () => {
   it("done keeps the sheet's 4s; accepted and rejected fold later", () => {
     expect(dwellMsFor({ kind: "done", summary: "" })).toBe(DONE_DWELL_MS);
+    expect(dwellMsFor({ kind: "captured", rel: "" })).toBe(DONE_DWELL_MS);
     expect(dwellMsFor({ kind: "accepted", rel: "" })).toBe(ACCEPTED_DWELL_MS);
     expect(dwellMsFor({ kind: "rejected", ext: "" })).toBe(REJECTED_DWELL_MS);
   });
 
   it("live-owner states never self-collapse", () => {
     expect(dwellMsFor({ kind: "idle" })).toBeNull();
-    expect(
-      dwellMsFor({ kind: "dragging", name: "a", meta: "" }),
-    ).toBeNull();
+    expect(dwellMsFor({ kind: "dragging", name: "a", meta: "" })).toBeNull();
     expect(
       dwellMsFor({ kind: "running", percent: 0, detail: "", elapsedMs: 0 }),
     ).toBeNull();

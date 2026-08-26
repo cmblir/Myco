@@ -1266,6 +1266,7 @@ export interface Strings {
   notch_capture?: string;
   notch_capture_save?: string;
   notch_capture_voice?: string;
+  notch_capture_saved?: string;
   notch_recording?: string; // {t}
   notch_rejected?: string;
   notch_rejected_body?: string; // {ext}
@@ -2619,6 +2620,7 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_capture: "Quick note",
     notch_capture_save: "⏎ daily note",
     notch_capture_voice: "⌥M voice",
+    notch_capture_saved: "Saved",
     notch_recording: "Recording · {t}",
     notch_rejected: "Could not take it",
     notch_rejected_body: "This format is not readable yet ({ext})",
@@ -3963,6 +3965,7 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_capture: "빠른 기록",
     notch_capture_save: "⏎ 데일리 노트",
     notch_capture_voice: "⌥M 음성",
+    notch_capture_saved: "저장했습니다",
     notch_recording: "녹음 중 · {t}",
     notch_rejected: "받지 못했습니다",
     notch_rejected_body: "이 형식은 아직 읽지 못합니다 ({ext})",
@@ -5322,6 +5325,7 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_capture: "クイックメモ",
     notch_capture_save: "⏎ デイリーノート",
     notch_capture_voice: "⌥M 音声",
+    notch_capture_saved: "保存しました",
     notch_recording: "録音中 · {t}",
     notch_rejected: "受け取れませんでした",
     notch_rejected_body: "この形式はまだ読めません ({ext})",

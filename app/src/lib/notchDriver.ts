@@ -7,8 +7,14 @@
 // mirrors open/collapsed into the OS window size.
 //
 // Drops arrive as absolute file paths only — Tauri's DragDrop event carries
-// nothing else — so the url/text arms of notchDrop never fire here (S7/S8
-// capture ship with the native key-focus work, not this driver).
+// nothing else — so the url/text arms of notchDrop never fire here.
+//
+// S7/S8 quick capture also lives here: a lip click (mouse events reach a
+// non-activating panel — P0 measured it) opens the capture input and asks the
+// native side for key focus (notch_focus_capture); ⏎ appends to today's daily
+// note via capture_note, ⌥M hands the take to lib/voiceCapture's machine and
+// save_voice_capture — the same recorder the spotlight uses, mic release
+// included.
 
 import { useEffect, useReducer, useRef, useState } from "react";
 import {
@@ -23,6 +29,9 @@ import { LAST_VAULT_KEY } from "../stores/vaultStore";
 import type { NotchGeometry, TrayStatusPayload } from "./ipc";
 import { STRINGS } from "./i18n";
 import { classifyDrop, writeDrop } from "./notchDrop";
+import { today } from "./taskLine";
+import { createVoiceMachine } from "./voiceCapture";
+import type { VoiceMachine, VoiceState } from "./voiceCapture";
 import { useUIStore } from "../stores/uiStore";
 
 /** `.notch.notch-open` is 300px in styles.css; the window must match. */
@@ -38,7 +47,11 @@ export const REJECTED_DWELL_MS = 6000;
 /** What the driver reacts to. `writeOk`/`writeFail` report the async
  *  `_inbox/` write that follows a drop; `statusPush` is the first running row
  *  of a tray-status push (null = nothing running); `tick` re-times the S5
- *  clock; `idleTimeout` is the dwell timer firing. */
+ *  clock; `idleTimeout` is the dwell timer firing. The capture/rec family is
+ *  S7/S8: open/submit/save/cancel for the text input, start/tick/stop/saved
+ *  for the voice take (`captureCancel` also folds a cancelled recording —
+ *  both gestures are the same esc). `reason` members arrive translated, like
+ *  every free-text member of NotchState. */
 export type NotchEvent =
   | { type: "dragEnter"; paths: string[] }
   | { type: "dragOver" }
@@ -48,13 +61,23 @@ export type NotchEvent =
   | { type: "writeFail"; reason: string }
   | { type: "statusPush"; running: string | null }
   | { type: "tick" }
-  | { type: "idleTimeout" };
+  | { type: "idleTimeout" }
+  | { type: "captureOpen" }
+  | { type: "captureSubmit" }
+  | { type: "captureSaved"; rel: string }
+  | { type: "captureFail"; reason: string }
+  | { type: "captureCancel" }
+  | { type: "recStart" }
+  | { type: "recTick" }
+  | { type: "recStop" }
+  | { type: "recSaved"; rel: string }
+  | { type: "recFail"; reason: string };
 
 export interface NotchDriverState {
   panel: NotchState;
-  /** Epoch ms when the current running span began; null outside `running`.
-   *  Kept beside the panel because S5's `elapsedMs` cannot be re-derived from
-   *  itself when the next push or tick arrives. */
+  /** Epoch ms when the current timed span — S5 `running` or S8 `recording` —
+   *  began; null elsewhere. Kept beside the panel because an `elapsedMs`
+   *  cannot be re-derived from itself when the next push or tick arrives. */
   runningSince: number | null;
 }
 
@@ -108,6 +131,7 @@ export function runningPercent(text: string): number {
 export function dwellMsFor(panel: NotchState): number | null {
   switch (panel.kind) {
     case "done":
+    case "captured":
       return DONE_DWELL_MS;
     case "accepted":
       return ACCEPTED_DWELL_MS;
@@ -116,6 +140,13 @@ export function dwellMsFor(panel: NotchState): number | null {
     default:
       return null;
   }
+}
+
+/** S8's waveform, display-only by design: twelve deterministic bars walked
+ *  from the elapsed seconds — alive on every tick without a mic analyser. */
+export function waveLevels(elapsedMs: number): number[] {
+  const step = Math.floor(elapsedMs / 1000);
+  return Array.from({ length: 12 }, (_, i) => 25 + ((step * 7 + i * 13) % 66));
 }
 
 /**
@@ -133,7 +164,12 @@ export function reduceNotch(
   const panel = current.panel;
   switch (event.type) {
     case "dragEnter": {
-      // A drag is the user, present right now — it outranks everything.
+      // A drag is the user, present right now — it outranks passive states.
+      // NOT capture or recording: those hold live user state (typed text, a
+      // hot microphone), and the review's worst finding was a drag flipping
+      // the panel away mid-recording with no UI left to stop the mic.
+      if (panel.kind === "capture" || panel.kind === "recording")
+        return current;
       const { name, meta } = dragLabel(event.paths);
       return { panel: { kind: "dragging", name, meta }, runningSince: null };
     }
@@ -228,6 +264,80 @@ export function reduceNotch(
       // Guard on dwellMsFor so a stale timer cannot kill a state that has a
       // live owner (a drag that started after the timer was armed).
       return dwellMsFor(panel) !== null ? NOTCH_IDLE : current;
+    case "captureOpen":
+      // Only an idle surface opens for typing — a click during any other
+      // state is aimed at what that state is showing, not at capture.
+      return panel.kind === "idle"
+        ? { panel: { kind: "capture", text: "" }, runningSince: null }
+        : current;
+    case "captureSubmit":
+      // Optimistic, like drop→accepted: the predicted landing is shown at
+      // once (no saving spinner on a lip), and captureSaved/captureFail
+      // refine or refute it when capture_note answers.
+      return panel.kind === "capture"
+        ? {
+            panel: {
+              kind: "captured",
+              rel: `daily/${today(new Date(now))}.md`,
+            },
+            runningSince: null,
+          }
+        : current;
+    case "captureSaved":
+      return panel.kind === "captured"
+        ? { panel: { kind: "captured", rel: event.rel }, runningSince: null }
+        : current;
+    case "captureFail":
+      // From "captured" (the optimistic toast) — but also from idle: a save
+      // slower than the 4s dwell would otherwise fail into the void after the
+      // toast already collapsed, leaving the user believing it landed.
+      return panel.kind === "captured" || panel.kind === "idle"
+        ? {
+            panel: { kind: "rejected", ext: "", reason: event.reason },
+            runningSince: null,
+          }
+        : current;
+    case "captureCancel":
+      // esc in the input, or a cancelled recording (the machine's mic release
+      // already happened — this only folds the surface).
+      return panel.kind === "capture" || panel.kind === "recording"
+        ? NOTCH_IDLE
+        : current;
+    case "recStart":
+      // Unguarded on purpose: this event means the mic IS live (the machine
+      // said so), and a live mic must be shown wherever the panel was.
+      return {
+        panel: { kind: "recording", elapsedMs: 0, levels: waveLevels(0) },
+        runningSince: now,
+      };
+    case "recTick": {
+      if (panel.kind !== "recording" || current.runningSince === null) {
+        return current;
+      }
+      const elapsedMs = Math.max(0, now - current.runningSince);
+      return {
+        panel: { kind: "recording", elapsedMs, levels: waveLevels(elapsedMs) },
+        runningSince: current.runningSince,
+      };
+    }
+    case "recStop":
+      // Stop → whisper save is in flight; the last recording frame holds (the
+      // hook stops the ticker) until recSaved/recFail replaces it.
+      return current;
+    case "recSaved":
+      // The voice note landed in _inbox/ — exactly what S4 announces.
+      return panel.kind === "recording"
+        ? { panel: { kind: "accepted", rel: event.rel }, runningSince: null }
+        : current;
+    case "recFail":
+      // Covers both the whisper preflight (still in capture) and a failed
+      // save (recording) — either way the refusal must name its reason.
+      return panel.kind === "capture" || panel.kind === "recording"
+        ? {
+            panel: { kind: "rejected", ext: "", reason: event.reason },
+            runningSince: null,
+          }
+        : current;
   }
 }
 
@@ -279,6 +389,12 @@ export interface NotchDrive {
   pill: boolean;
   /** OS-measured notch width for `--notch-collapsed`; null until known. */
   collapsedWidth: number | null;
+  /** S7 ⏎: append to today's daily note; the panel hands up trimmed text. */
+  onCaptureSubmit: (text: string) => void;
+  /** S7/S8 esc: fold the capture away (and release the mic mid-take). */
+  onCaptureCancel: () => void;
+  /** S7 ⌥M: whisper preflight, then the S8 voice take. */
+  onCaptureVoice: () => void;
 }
 
 /**
@@ -314,6 +430,10 @@ export function useNotchDriver(): NotchDrive | null {
   templateRef.current = t.notch_unsupported;
   const writeFailedRef = useRef(t.notch_write_failed);
   writeFailedRef.current = t.notch_write_failed;
+  const whisperMissingRef = useRef(t.voice_whisper_missing);
+  whisperMissingRef.current = t.voice_whisper_missing;
+  const micDeniedRef = useRef(t.voice_mic_denied);
+  micDeniedRef.current = t.voice_mic_denied;
 
   useEffect(() => {
     if (mocking) return;
@@ -419,6 +539,131 @@ export function useNotchDriver(): NotchDrive | null {
     return () => window.clearInterval(id);
   }, [kind]);
 
+  // ---- S7/S8 quick capture --------------------------------------------------
+
+  // Mirrors the voice machine's own state: the ticker and the recording-mode
+  // keys follow the MACHINE (which owns the mic), not the panel, so a stopped
+  // take stops its clock even while the last frame is still displayed.
+  const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  const machineRef = useRef<VoiceMachine | null>(null);
+  const kindRef = useRef(kind);
+  kindRef.current = kind;
+
+  const machine = (): VoiceMachine => {
+    machineRef.current ??= createVoiceMachine({
+      getStream: () => navigator.mediaDevices.getUserMedia({ audio: true }),
+      makeRecorder: (s) => new MediaRecorder(s),
+      save: async (bytes) => {
+        const saved = await ipc.saveVoiceCapture(Array.from(bytes));
+        // The machine's onChange("saved") carries no rel — announce it here.
+        raise({ type: "recSaved", rel: basename(saved.rel) });
+        return saved;
+      },
+      onChange: (state, error) => {
+        setVoiceState(state);
+        if (state === "recording") raise({ type: "recStart" });
+        else if (state === "saving") raise({ type: "recStop" });
+        else if (state === "idle") raise({ type: "captureCancel" });
+        else if (state === "error") {
+          // The machine's two sentinel errors become the translated lines the
+          // spotlight already ships; anything else is a real backend message.
+          raise({
+            type: "recFail",
+            reason:
+              error === "mic-denied"
+                ? (micDeniedRef.current ?? "The microphone is not available")
+                : error === "whisper-missing"
+                  ? (whisperMissingRef.current ?? "whisper is not installed")
+                  : (error ?? "Recording failed"),
+          });
+        }
+      },
+    });
+    return machineRef.current;
+  };
+
+  // Lip click opens capture — mouse events reach the non-activating panel
+  // (P0) — and asks the native side for KEY so the input can actually type.
+  // The outcome is logged either way: on hardware this line is the honest
+  // record of whether makeKeyWindow / the fallback took (see notch.rs).
+  useEffect(() => {
+    if (mocking) return;
+    const onClick = (): void => {
+      if (kindRef.current !== "idle") return;
+      raise({ type: "captureOpen" });
+      void ipc.notchFocusCapture().then(
+        (key) =>
+          console.log(`notch: focus capture → isKeyWindow=${String(key)}`),
+        (err: unknown) => console.error("notch: focus capture failed:", err),
+      );
+    };
+    window.addEventListener("click", onClick);
+    return () => window.removeEventListener("click", onClick);
+  }, [mocking]);
+
+  // Recording mode has no input to hang keys on: ⏎/⌥M stop-and-save, esc
+  // cancels (mic release is the machine's job, never re-done here).
+  useEffect(() => {
+    if (kind !== "recording") return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Enter" || (e.altKey && e.code === "KeyM")) {
+        e.preventDefault();
+        void machine().stop();
+      } else if (e.key === "Escape") {
+        e.preventDefault();
+        machine().cancel();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [kind]);
+
+  // S8's lip clock + waveform walk, while the mic is actually live.
+  useEffect(() => {
+    if (voiceState !== "recording") return;
+    const id = window.setInterval(() => raise({ type: "recTick" }), 1000);
+    return () => window.clearInterval(id);
+  }, [voiceState]);
+
+  // Never leave the mic held by an unmounted webview.
+  useEffect(() => {
+    return () => machineRef.current?.cancel();
+  }, []);
+
+  const onCaptureSubmit = (text: string): void => {
+    raise({ type: "captureSubmit" });
+    void ipc.captureNote(text).then(
+      (rel) => raise({ type: "captureSaved", rel }),
+      (err: unknown) => {
+        console.error("notch capture write failed:", err);
+        raise({
+          type: "captureFail",
+          reason: writeFailedRef.current ?? "Could not save the drop",
+        });
+      },
+    );
+  };
+
+  const onCaptureCancel = (): void => {
+    if (kindRef.current === "recording") machine().cancel();
+    else raise({ type: "captureCancel" });
+  };
+
+  const onCaptureVoice = (): void => {
+    const missing = (): void =>
+      raise({
+        type: "recFail",
+        reason: whisperMissingRef.current ?? "whisper is not installed",
+      });
+    void ipc.whisperCheck().then((s) => {
+      if (!s.installed) {
+        missing();
+        return;
+      }
+      return machine().start();
+    }, missing);
+  };
+
   // Self-collapse: arm the state's dwell, if it has one. `drv.panel` is a new
   // object only when the reducer actually moved, so no-op pushes do not rearm.
   useEffect(() => {
@@ -477,5 +722,8 @@ export function useNotchDriver(): NotchDrive | null {
     state: drv.panel,
     pill,
     collapsedWidth: geom?.has_notch ? geom.notch_w : null,
+    onCaptureSubmit,
+    onCaptureCancel,
+    onCaptureVoice,
   };
 }

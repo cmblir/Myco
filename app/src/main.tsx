@@ -107,6 +107,9 @@ async function bootstrap(): Promise<void> {
           state={drive.state}
           pill={drive.pill}
           collapsedWidth={drive.collapsedWidth}
+          onCaptureSubmit={drive.onCaptureSubmit}
+          onCaptureCancel={drive.onCaptureCancel}
+          onCaptureVoice={drive.onCaptureVoice}
         />
       );
     }

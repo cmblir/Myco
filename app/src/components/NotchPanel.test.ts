@@ -88,6 +88,13 @@ describe("describeNotch", () => {
     expect(view.open).toBe(true);
   });
 
+  it("S7 saved goes green and folds on S6's 4s clock", () => {
+    const view = describeNotch({ kind: "captured", rel: "daily/2026-08-25.md" }, t);
+    expect(view.lip).toBe(t.notch_capture_saved);
+    expect(view.tone).toBe("ok");
+    expect(view.dwellMs).toBe(DONE_DWELL_MS);
+  });
+
   it("S8 recording interpolates its own clock", () => {
     const view = describeNotch(
       { kind: "recording", elapsedMs: 7000, levels: [30, 62] },
@@ -105,11 +112,11 @@ describe("describeNotch", () => {
     expect(view.open).toBe(true);
   });
 
-  it("only S6 self-collapses", () => {
+  it("only the finished states — S6 and S7-saved — self-collapse", () => {
     const dwelling = MOCK_FRAMES.filter(
       (f) => describeNotch(f.state, t, f.pill).dwellMs !== null,
     );
-    expect(dwelling.map((f) => f.state.kind)).toEqual(["done"]);
+    expect(dwelling.map((f) => f.state.kind)).toEqual(["done", "captured"]);
   });
 
   it("every state but idle unfolds the body", () => {
@@ -134,7 +141,7 @@ describe("describeNotch", () => {
 });
 
 describe("MOCK_FRAMES", () => {
-  it("walks the design sheet's ten states in order", () => {
+  it("walks the design sheet's states in order (plus S7's saved outcome)", () => {
     expect(MOCK_FRAMES.map((f) => f.state.kind)).toEqual([
       "idle",
       "peek",
@@ -143,6 +150,7 @@ describe("MOCK_FRAMES", () => {
       "running",
       "done",
       "capture",
+      "captured",
       "recording",
       "rejected",
       "idle",
@@ -161,6 +169,7 @@ describe("MOCK_FRAMES", () => {
       "running",
       "done",
       "capture",
+      "captured",
       "recording",
       "rejected",
     ];

@@ -224,8 +224,54 @@ mod imp {
                 | NSWindowCollectionBehavior::Stationary
                 | NSWindowCollectionBehavior::FullScreenAuxiliary,
         );
+        // S7 typing: let the panel become key, but only when a view asks for
+        // it (public NSPanel bit; the capture entry then asks explicitly via
+        // `focus_capture`). Sound cast: the isa-swap above made this an
+        // NSPanel, and NSPanel adds no ivars over NSWindow.
+        let panel: &NSPanel = unsafe { &*(ptr as *const NSPanel) };
+        panel.setBecomesKeyOnlyIfNeeded(true);
         let _ = mtm;
         Ok(())
+    }
+
+    /// Give the panel key focus for S7 text capture, WITHOUT activating the
+    /// app. Two public paths, both attempted and logged, because WKWebView is
+    /// not guaranteed to answer `needsPanelToBecomeKey` (so the
+    /// `becomesKeyOnlyIfNeeded` route alone may never fire — owner verifies
+    /// the logs on hardware):
+    /// 1. `makeKeyWindow` — the direct ask;
+    /// 2. `makeKeyAndOrderFront` — the fallback; on a nonactivating NSPanel
+    ///    key is granted without app activation.
+    ///
+    /// Returns whether the panel IS the key window afterwards — the honest
+    /// answer even when both paths refuse.
+    // ponytail: if canBecomeKey logs false on-device, both paths are dead —
+    // upgrade path is an isa-swap to a runtime NSPanel subclass overriding
+    // canBecomeKeyWindow (tauri-nspanel's approach).
+    pub fn focus_capture(
+        window: &tauri::WebviewWindow,
+        _mtm: MainThreadMarker,
+    ) -> Result<bool, String> {
+        let ptr = window.ns_window().map_err(|e| e.to_string())?;
+        if ptr.is_null() {
+            return Err("ns_window returned null".into());
+        }
+        // Safe: Tauri hands out the live NSWindow, and we are on the main thread.
+        let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+        let can = w.canBecomeKeyWindow();
+        w.makeKeyWindow();
+        let mut key = w.isKeyWindow();
+        if !key {
+            w.makeKeyAndOrderFront(None);
+            key = w.isKeyWindow();
+            eprintln!(
+                "notch: makeKeyWindow refused (canBecomeKey={can}); \
+                 makeKeyAndOrderFront fallback → isKeyWindow={key}"
+            );
+        } else {
+            eprintln!("notch: makeKeyWindow ok (canBecomeKey={can})");
+        }
+        Ok(key)
     }
 
     /// Size the window and park it flush against the top of the notched
@@ -450,6 +496,26 @@ pub fn notch_resize(app: AppHandle, width: f64, height: f64) -> Result<(), Strin
 #[tauri::command]
 pub fn notch_resize(_app: AppHandle, _width: f64, _height: f64) -> Result<(), String> {
     Ok(())
+}
+
+/// S7 capture entry: the frontend asks the panel to take key focus so its
+/// input can type. Resolves whether the panel actually became key — the
+/// caller logs it; a nonactivating panel is allowed to refuse (see
+/// `imp::focus_capture`).
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn notch_focus_capture(app: AppHandle) -> Result<bool, String> {
+    use tauri::Manager as _;
+    let Some(win) = app.get_webview_window(NOTCH_LABEL) else {
+        return Err("notch window does not exist".into());
+    };
+    imp::on_main(&app, move |mtm| imp::focus_capture(&win, mtm))?
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn notch_focus_capture(_app: AppHandle) -> Result<bool, String> {
+    Ok(false)
 }
 
 /// The Settings toggle, applied at runtime: persist the flag (read-modify-write

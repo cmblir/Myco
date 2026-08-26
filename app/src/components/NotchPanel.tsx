@@ -26,6 +26,7 @@ import { useEffect, useState } from "react";
 import type { CSSProperties, JSX } from "react";
 import { STRINGS } from "../lib/i18n";
 import type { Strings } from "../lib/i18n";
+import { isComposingKey } from "../lib/ime";
 import { formatTicker } from "../lib/time";
 import { useUIStore } from "../stores/uiStore";
 
@@ -45,6 +46,9 @@ export type NotchState =
   | { kind: "running"; percent: number; detail: string; elapsedMs: number }
   | { kind: "done"; summary: string }
   | { kind: "capture"; text: string }
+  // S7's success: the daily line landed at `rel`. Green like S6, and folds
+  // itself away on the same 4s clock.
+  | { kind: "captured"; rel: string }
   | { kind: "recording"; elapsedMs: number; levels: number[] }
   // `reason` (already translated, like every free-text member) overrides the
   // {ext}-templated line — a write failure has a reason but no extension.
@@ -148,6 +152,13 @@ export function describeNotch(
         open: true,
         dwellMs: null,
       };
+    case "captured":
+      return {
+        lip: t.notch_capture_saved ?? "Saved",
+        tone: "ok",
+        open: true,
+        dwellMs: DONE_DWELL_MS,
+      };
     case "recording":
       return {
         lip: (t.notch_recording ?? "Recording · {t}").replace(
@@ -198,6 +209,7 @@ export const MOCK_FRAMES: readonly NotchFrame[] = [
     state: { kind: "capture", text: "why we picked OTP over magic links" },
     pill: false,
   },
+  { state: { kind: "captured", rel: "daily/2026-08-25.md" }, pill: false },
   {
     state: {
       kind: "recording",
@@ -246,12 +258,21 @@ export interface NotchPanelProps {
   /** OS-measured notch width (points) for the collapsed cap — overrides the
    *  stylesheet's 172px default (`--notch-collapsed`). */
   collapsedWidth?: number | null;
+  /** S7 wiring, driver-owned like everything else here: ⏎ hands the trimmed
+   *  text up, esc hands the dismissal up, ⌥M asks for the S8 voice take.
+   *  All optional — the mock walk and plain-browser view stay handler-free. */
+  onCaptureSubmit?: (text: string) => void;
+  onCaptureCancel?: () => void;
+  onCaptureVoice?: () => void;
 }
 
 export default function NotchPanel({
   state,
   pill = false,
   collapsedWidth = null,
+  onCaptureSubmit,
+  onCaptureCancel,
+  onCaptureVoice,
 }: NotchPanelProps): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const t = STRINGS[lang];
@@ -303,7 +324,13 @@ export default function NotchPanel({
       {view.open ? (
         // Keyed by state so the 160ms fade replays on every transition.
         <div className="notch-body" key={frame.state.kind}>
-          <NotchBody state={frame.state} t={t} />
+          <NotchBody
+            state={frame.state}
+            t={t}
+            onCaptureSubmit={onCaptureSubmit}
+            onCaptureCancel={onCaptureCancel}
+            onCaptureVoice={onCaptureVoice}
+          />
         </div>
       ) : null}
     </div>
@@ -313,9 +340,15 @@ export default function NotchPanel({
 function NotchBody({
   state,
   t,
+  onCaptureSubmit,
+  onCaptureCancel,
+  onCaptureVoice,
 }: {
   state: NotchState;
   t: Strings;
+  onCaptureSubmit?: (text: string) => void;
+  onCaptureCancel?: () => void;
+  onCaptureVoice?: () => void;
 }): JSX.Element | null {
   switch (state.kind) {
     case "idle":
@@ -388,15 +421,33 @@ function NotchBody({
         </>
       );
     case "capture":
-      // ponytail: display-only field — a webview cannot take key focus until
-      // the native notch window exists to give it. Wire it to an <input> and a
-      // save command in the same change that lands the Rust window.
+      // A real input: the native side grants key focus on capture entry
+      // (notch_focus_capture). Uncontrolled on purpose — the driver only
+      // needs the text at submit time, not a keystroke-by-keystroke state.
       return (
         <>
-          <div className="notch-field">
-            {state.text}
-            <i aria-hidden className="notch-caret" />
-          </div>
+          <input
+            className="notch-field"
+            autoFocus
+            defaultValue={state.text}
+            aria-label={t.notch_capture ?? "Quick note"}
+            onKeyDown={(e) => {
+              // The IME guard first: committing Korean/Japanese input fires
+              // Enter too, and that one must never submit (lib/ime.ts).
+              if (isComposingKey(e)) return;
+              if (e.altKey && e.code === "KeyM") {
+                e.preventDefault();
+                onCaptureVoice?.();
+              } else if (e.key === "Enter") {
+                e.preventDefault();
+                const text = e.currentTarget.value.trim();
+                if (text) onCaptureSubmit?.(text);
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                onCaptureCancel?.();
+              }
+            }}
+          />
           <div className="notch-hint">
             <span className="notch-mono">
               {t.notch_capture_save ?? "⏎ daily note"}
@@ -406,6 +457,13 @@ function NotchBody({
             </span>
           </div>
         </>
+      );
+    case "captured":
+      // Where it landed is the whole message — same green row shape as S6.
+      return (
+        <div className="notch-row notch-ok" role="status">
+          <span className="notch-grow notch-path">{state.rel}</span>
+        </div>
       );
     case "recording":
       return (

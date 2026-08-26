@@ -27,7 +27,13 @@ export function createVoiceMachine(deps: VoiceDeps): VoiceMachine {
   let rec: MediaRecorder | null = null;
   let chunks: Blob[] = [];
 
-  const machine: VoiceMachine = { state: "idle", error: null, start, stop, cancel };
+  const machine: VoiceMachine = {
+    state: "idle",
+    error: null,
+    start,
+    stop,
+    cancel,
+  };
 
   function set(state: VoiceState, error: string | null = null): void {
     machine.state = state;
@@ -40,12 +46,20 @@ export function createVoiceMachine(deps: VoiceDeps): VoiceMachine {
     stream = null;
   }
 
+  let starting = false;
   async function start(): Promise<void> {
-    if (machine.state === "recording" || machine.state === "saving") return;
+    // `starting` closes the gap the state check leaves open: state only flips
+    // to "recording" AFTER the getUserMedia await, so a rapid second start()
+    // (⌥M mashed) used to run concurrently — the first MediaStream got
+    // overwritten and its tracks were never stopped (mic indicator stuck on).
+    if (starting || machine.state === "recording" || machine.state === "saving")
+      return;
+    starting = true;
     chunks = [];
     try {
       stream = await deps.getStream();
     } catch {
+      starting = false;
       set("error", "mic-denied");
       return;
     }
@@ -54,6 +68,7 @@ export function createVoiceMachine(deps: VoiceDeps): VoiceMachine {
       if (e.data.size > 0) chunks.push(e.data);
     };
     rec.start();
+    starting = false; // the state check guards from here on
     set("recording");
   }
 
