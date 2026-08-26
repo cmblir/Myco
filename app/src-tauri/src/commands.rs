@@ -763,6 +763,59 @@ pub fn list_inbox_entries(
     Ok(inbox_entries(std::path::Path::new(&root)))
 }
 
+/// Byte ceiling on a single dropped file — extract.rs's `MAX_BYTES`, for the
+/// same reason: everything in `_inbox/` is ingest input, and the extract stage
+/// refuses anything larger anyway, so a bigger copy only parks bytes the
+/// pipeline will never read. Deliberately no media exception yet: a >25MB
+/// audio/video drop is refused with a clear error rather than accepted into a
+/// pipeline that cannot digest it — raise the cap when a real drop hits it.
+const INBOX_COPY_MAX_BYTES: u64 = 25 * 1024 * 1024;
+
+/// The copy behind `copy_into_inbox`, split out so the rules are testable
+/// without a Tauri runtime (the `export_bundle_write` pattern). The source may
+/// live anywhere on disk — it is the file the user dropped, and it is COPIED,
+/// never moved. The destination is confined to `_inbox/` (safe_join), and an
+/// existing file is an error, never overwritten: collision-free naming is the
+/// frontend's job (notchDrop.ts `inboxFilename`).
+pub(crate) fn copy_into_inbox_at(
+    root: &std::path::Path,
+    src_abs: &str,
+    dest_name: &str,
+) -> Result<String, String> {
+    let src = std::path::Path::new(src_abs);
+    let meta = std::fs::metadata(src).map_err(|e| format!("unreadable source {src_abs}: {e}"))?;
+    if !meta.is_file() {
+        return Err(format!("not a file: {src_abs}"));
+    }
+    if meta.len() > INBOX_COPY_MAX_BYTES {
+        return Err(format!(
+            "file too large: {} bytes (max {} MB)",
+            meta.len(),
+            INBOX_COPY_MAX_BYTES / (1024 * 1024)
+        ));
+    }
+    let dest = crate::myco_pro::safe_join(&root.join(DEST_INBOX), dest_name)?;
+    if dest.exists() {
+        return Err(format!("already in {DEST_INBOX}: {dest_name}"));
+    }
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create {DEST_INBOX}: {e}"))?;
+    }
+    std::fs::copy(src, &dest).map_err(|e| format!("copy failed: {e}"))?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+/// COPY a file dropped on the notch surface into the open vault's `_inbox/`.
+#[tauri::command]
+pub fn copy_into_inbox(
+    state: tauri::State<VaultRoot>,
+    src_abs: String,
+    dest_name: String,
+) -> Result<String, String> {
+    let root = require_root(&state)?;
+    copy_into_inbox_at(&root, &src_abs, &dest_name)
+}
+
 /// One conversation held back from import for containing a secret.
 #[derive(serde::Serialize)]
 pub struct QuarantinedConversation {
@@ -4337,11 +4390,11 @@ pub fn os_version() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_recall_miss, builtin_index_is_stale, chunk_text_at, export_bundle_write,
-        external_target_allowed, import_dest, inbox_entries, iso_week_monday, page_in_date_range,
-        read_settings_import, recency_tie_break, resurface_core, run_diff_core, run_import,
-        sync_bm25_for_page, voice_inbox_rel, voice_markdown, windows_opener_safe, DateRange,
-        DEST_INBOX, DEST_SESSIONS,
+        append_recall_miss, builtin_index_is_stale, chunk_text_at, copy_into_inbox_at,
+        export_bundle_write, external_target_allowed, import_dest, inbox_entries, iso_week_monday,
+        page_in_date_range, read_settings_import, recency_tie_break, resurface_core, run_diff_core,
+        run_import, sync_bm25_for_page, voice_inbox_rel, voice_markdown, windows_opener_safe,
+        DateRange, DEST_INBOX, DEST_SESSIONS, INBOX_COPY_MAX_BYTES,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
@@ -4438,6 +4491,62 @@ mod tests {
     fn list_inbox_entries_empty_when_inbox_missing() {
         let dir = tempfile::tempdir().unwrap();
         assert!(inbox_entries(dir.path()).is_empty());
+    }
+
+    // ---- notch drop → _inbox copy -------------------------------------------
+
+    #[test]
+    fn copy_into_inbox_copies_confines_and_never_overwrites() {
+        let vault = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let src = outside.path().join("paper.pdf");
+        std::fs::write(&src, b"%PDF- dropped").unwrap();
+        let src_str = src.display().to_string();
+
+        // A source OUTSIDE the vault is the normal drop, and must work.
+        let dest = copy_into_inbox_at(vault.path(), &src_str, "paper.pdf").unwrap();
+        assert!(std::path::Path::new(&dest).starts_with(vault.path().join(DEST_INBOX)));
+        assert_eq!(std::fs::read(&dest).unwrap(), b"%PDF- dropped");
+        // COPY, not move: the user's original stays where it was.
+        assert!(src.is_file());
+
+        // Never overwrite — collision-free names are inboxFilename's job.
+        let err = copy_into_inbox_at(vault.path(), &src_str, "paper.pdf")
+            .expect_err("existing dest must be refused");
+        assert!(err.contains("already"), "{err}");
+
+        // Escapes are refused before any IO touches the vault.
+        for bad in ["../evil.pdf", "/abs.pdf", "a/../../evil.pdf", ""] {
+            assert!(
+                copy_into_inbox_at(vault.path(), &src_str, bad).is_err(),
+                "{bad:?} must be refused"
+            );
+        }
+        assert!(!vault.path().join("evil.pdf").exists());
+
+        // A missing source errors; a directory is not a file.
+        assert!(copy_into_inbox_at(vault.path(), "/nonexistent/x.pdf", "x.pdf").is_err());
+        assert!(copy_into_inbox_at(
+            vault.path(),
+            &outside.path().display().to_string(),
+            "dir.pdf"
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn copy_into_inbox_refuses_oversized_files() {
+        let vault = tempfile::tempdir().unwrap();
+        let src = vault.path().join("big.bin");
+        // Sparse: set_len allocates no real 25MB on APFS.
+        let f = std::fs::File::create(&src).unwrap();
+        f.set_len(INBOX_COPY_MAX_BYTES + 1).unwrap();
+        drop(f);
+
+        let err = copy_into_inbox_at(vault.path(), &src.display().to_string(), "big.bin")
+            .expect_err("oversized file must be refused");
+        assert!(err.contains("too large"), "{err}");
+        assert!(!vault.path().join("_inbox/big.bin").exists());
     }
 
     // ---- vault history (Q4 item 1) -----------------------------------------

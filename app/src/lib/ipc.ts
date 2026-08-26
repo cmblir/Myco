@@ -332,6 +332,11 @@ export interface MycoSettings {
   /** Q4 item 13 — when on, PII-bearing content is refused/quarantined on
    *  every raw/ entry path instead of written with a warning. */
   pii_quarantine_enabled: boolean;
+  /** Menu-bar notch drop surface (macOS). Default OFF — a panel over the menu
+   *  bar is opt-in. update_notch_enabled PERSISTS the flag itself and
+   *  creates/destroys the window — do not also route it through set_settings
+   *  (two writers of the same file). */
+  notch_enabled: boolean;
 }
 
 /** Mirrors Rust `commands::SecretScanReport` (Q4 item 13) — pattern names,
@@ -906,6 +911,19 @@ export const ipc = {
     invoke<null>("resize_spotlight", { height }),
   /** Notch geometry of the built-in display, read from NSScreen. */
   notchGeometry: () => invoke<NotchGeometry>("notch_geometry"),
+  /** COPY a dropped file into the open vault's `_inbox/<destName>` — the notch
+   *  drop path. Vault-confined on the Rust side (VaultRoot), so the calling
+   *  webview never needs the vault path. Returns what was written. */
+  copyIntoInbox: (srcAbs: string, destName: string) =>
+    invoke<string>("copy_into_inbox", { srcAbs, destName }),
+  /** Fit the notch window to the surface (logical px) — resize_tray_panel's
+   *  pattern, plus width: the panel unfolds from the cap to a 300px body. */
+  notchResize: (width: number, height: number) =>
+    invoke<null>("notch_resize", { width, height }),
+  /** Apply the notch toggle live (show/hide the window). Persisting the flag
+   *  itself goes through set_settings like every other setting. */
+  updateNotchEnabled: (enabled: boolean) =>
+    invoke<null>("update_notch_enabled", { enabled }),
   setSettings: (value: MycoSettings) => invoke<null>("set_settings", { value }),
   /** Write the settings/looks export bundle to a path the user chose via the
    *  native save dialog. */

@@ -1271,6 +1271,11 @@ export interface Strings {
   notch_rejected_body?: string; // {ext}
   notch_rejected_accepts?: string;
   notch_rejected_list?: string;
+  notch_unsupported?: string; // {ext} — notchDrop's unsupported-drop reason
+  notch_write_failed?: string;
+  // Settings toggle for the notch surface (macOS).
+  s_notch_title?: string;
+  s_notch_desc?: string;
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -2619,6 +2624,11 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_rejected_body: "This format is not readable yet ({ext})",
     notch_rejected_accepts: "accepts",
     notch_rejected_list: "PDF · documents · sheets · HTML · images · audio",
+    notch_unsupported: "This format is not readable yet ({ext})",
+    notch_write_failed: "Could not save the drop — try again or use 소스 가져오기",
+    s_notch_title: "Notch drop surface",
+    s_notch_desc:
+      "Show a drop target under the menu-bar notch — files dropped there land in _inbox for ingest to read.",
   },
   ko: {
     app_name: "myco",
@@ -3958,6 +3968,11 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_rejected_body: "이 형식은 아직 읽지 못합니다 ({ext})",
     notch_rejected_accepts: "가능",
     notch_rejected_list: "PDF · 문서 · 표 · HTML · 이미지 · 음성",
+    notch_unsupported: "이 형식은 아직 읽지 못합니다 ({ext})",
+    notch_write_failed: "저장하지 못했습니다 — 다시 시도하거나 소스 가져오기를 사용하세요",
+    s_notch_title: "노치 드롭 표면",
+    s_notch_desc:
+      "메뉴 막대 노치 아래에 드롭 표면을 표시합니다 — 떨어뜨린 파일은 _inbox로 들어가 인제스트가 읽습니다.",
   },
   ja: {
     app_name: "myco",
@@ -5312,5 +5327,10 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_rejected_body: "この形式はまだ読めません ({ext})",
     notch_rejected_accepts: "対応",
     notch_rejected_list: "PDF · 文書 · 表 · HTML · 画像 · 音声",
+    notch_unsupported: "この形式はまだ読めません ({ext})",
+    notch_write_failed: "保存できませんでした — もう一度試すか、ソース取り込みを使用してください",
+    s_notch_title: "ノッチのドロップ面",
+    s_notch_desc:
+      "メニューバーのノッチ下にドロップ面を表示します — ドロップしたファイルは _inbox に入り、取り込みが読みます。",
   },
 };

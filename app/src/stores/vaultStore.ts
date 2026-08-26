@@ -8,7 +8,10 @@ import { createDebouncedCommitter } from "../lib/humanCommit";
 import { useSettingsStore } from "./settingsStore";
 import { useUIStore } from "./uiStore";
 
-const LAST_VAULT_KEY = "myco.lastVaultPath";
+/** Shared with notchDriver (a separate webview that cannot reach this
+ * store's state): the notch panel reads the last vault path for best-effort
+ * inbox-name prediction. */
+export const LAST_VAULT_KEY = "myco.lastVaultPath";
 
 // One committer per app: coalesces the editor's rapid autosaves of a file
 // into a single human-authored history commit (Q4 item 1).

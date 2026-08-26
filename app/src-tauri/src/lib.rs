@@ -172,6 +172,7 @@ pub fn run() {
             commands::rename_path,
             commands::archive_inbox_source,
             commands::list_inbox_entries,
+            commands::copy_into_inbox,
             commands::available_raw_path,
             commands::import_conversations,
             commands::import_session_sweep,
@@ -272,6 +273,8 @@ pub fn run() {
             spotlight::close_spotlight,
             spotlight::resize_spotlight,
             notch::notch_geometry,
+            notch::notch_resize,
+            notch::update_notch_enabled,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path
@@ -325,6 +328,12 @@ pub fn run() {
             // P0 notch spike probe. Compiled out unless the `notch-probe`
             // feature is on; even then it needs MYCO_NOTCH_PROBE=1 to open.
             notch::spawn_probe(app.handle());
+            // Notch drop surface (opt-in; macOS only — a no-op elsewhere).
+            // Best-effort like the tray: a failure logs, never blocks startup.
+            // Runtime toggling goes through notch::update_notch_enabled.
+            if settings::load().notch_enabled {
+                notch::ensure_notch_window(app.handle());
+            }
             // Resident mode: with the settings toggle ON, closing the window
             // hides it and the app stays in the menu bar; OFF (default) keeps
             // today's behavior — the close proceeds and the app quits via the

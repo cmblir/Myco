@@ -23,7 +23,7 @@
 // sheet's, verbatim.
 
 import { useEffect, useState } from "react";
-import type { JSX } from "react";
+import type { CSSProperties, JSX } from "react";
 import { STRINGS } from "../lib/i18n";
 import type { Strings } from "../lib/i18n";
 import { formatTicker } from "../lib/time";
@@ -46,7 +46,9 @@ export type NotchState =
   | { kind: "done"; summary: string }
   | { kind: "capture"; text: string }
   | { kind: "recording"; elapsedMs: number; levels: number[] }
-  | { kind: "rejected"; ext: string };
+  // `reason` (already translated, like every free-text member) overrides the
+  // {ext}-templated line — a write failure has a reason but no extension.
+  | { kind: "rejected"; ext: string; reason?: string };
 
 export interface NotchView {
   /** Lip label. Empty renders the bare cap (S1) — an idle notch has to look
@@ -241,11 +243,15 @@ export interface NotchPanelProps {
   /** S10: no notch on this Mac (`safeAreaInsets.top == 0`). Same panel, all
    *  four corners rounded, floating just under the menu bar. */
   pill?: boolean;
+  /** OS-measured notch width (points) for the collapsed cap — overrides the
+   *  stylesheet's 172px default (`--notch-collapsed`). */
+  collapsedWidth?: number | null;
 }
 
 export default function NotchPanel({
   state,
   pill = false,
+  collapsedWidth = null,
 }: NotchPanelProps): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const t = STRINGS[lang];
@@ -281,6 +287,11 @@ export default function NotchPanel({
     <div
       className={`notch${view.open ? " notch-open" : ""}${frame.pill ? " notch-pill" : ""}`}
       data-state={frame.state.kind}
+      style={
+        collapsedWidth
+          ? ({ "--notch-collapsed": `${collapsedWidth}px` } as CSSProperties)
+          : undefined
+      }
     >
       <div className="notch-lip">
         <i aria-hidden className={`notch-cap notch-cap-${view.tone}`} />
@@ -419,9 +430,11 @@ function NotchBody({
         <>
           <div className="notch-row notch-warn" role="alert">
             <span className="notch-grow">
-              {(
-                t.notch_rejected_body ?? "This format is not readable yet ({ext})"
-              ).replace("{ext}", state.ext)}
+              {state.reason ??
+                (
+                  t.notch_rejected_body ??
+                  "This format is not readable yet ({ext})"
+                ).replace("{ext}", state.ext)}
             </span>
           </div>
           <div className="notch-row">

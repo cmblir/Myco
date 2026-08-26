@@ -1323,6 +1323,7 @@ const SETTINGS = {
   spotlight_shortcut: "Alt+Space",
   vault_history_enabled: false,
   pii_quarantine_enabled: false,
+  notch_enabled: false,
 };
 
 /// What the main window would emit back for a spotlight question: the
@@ -1954,6 +1955,24 @@ function mockInvoke(
         notch_h: 37,
         screen_w: 1512,
       });
+    case "copy_into_inbox": {
+      // Land the copy in the mock inbox so the pending list gains the row; a
+      // browser cannot read the source file, so a stub body stands in.
+      const name = String(args.destName ?? "drop");
+      mockInbox.set(
+        `${VAULT}/_inbox/${name}`,
+        `(dev mock) copied from ${String(args.srcAbs ?? "")}`,
+      );
+      // ABSOLUTE path, matching the real command's return (notchDriver treats
+      // it as the landed location).
+      return Promise.resolve(`${VAULT}/_inbox/${name}`);
+    }
+    // No OS window to size or show in a browser; accept and drop.
+    case "notch_resize":
+      return Promise.resolve(null);
+    case "update_notch_enabled":
+      SETTINGS.notch_enabled = Boolean(args.enabled);
+      return Promise.resolve(null);
     case "get_settings":
       if (AGENT_MODE) {
         return Promise.resolve({

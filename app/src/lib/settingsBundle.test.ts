@@ -74,6 +74,7 @@ function fakeSettings(overrides: Partial<MycoSettings> = {}): MycoSettings {
     spotlight_shortcut: "",
     vault_history_enabled: false,
     pii_quarantine_enabled: false,
+    notch_enabled: false,
     ...overrides,
   };
 }

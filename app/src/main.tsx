@@ -90,15 +90,30 @@ async function bootstrap(): Promise<void> {
   }
 
   // The menu-bar notch surface (`index.html?window=notch`): the drop target and
-  // its run HUD. Like the two above, App never mounts here. Without the native
-  // shell it renders idle, so `?window=notch&notchMock=1` in a plain browser is
-  // how the ten states are looked at.
+  // its run HUD. Like the two above, App never mounts here. The driver feeds
+  // the panel real state (drag-drop, tray-status pushes, window sizing) and
+  // stands down under `?window=notch&notchMock=1`, where the panel's own dev
+  // walk still cycles the ten states in a plain browser.
   if (isNotchWindow(location.search)) {
-    const { default: NotchPanel } = await import("./components/NotchPanel");
+    const [{ default: NotchPanel }, { useNotchDriver }] = await Promise.all([
+      import("./components/NotchPanel"),
+      import("./lib/notchDriver"),
+    ]);
+    function NotchHost(): React.JSX.Element {
+      const drive = useNotchDriver();
+      if (!drive) return <NotchPanel />;
+      return (
+        <NotchPanel
+          state={drive.state}
+          pill={drive.pill}
+          collapsedWidth={drive.collapsedWidth}
+        />
+      );
+    }
     ReactDOM.createRoot(root).render(
       <React.StrictMode>
         <ErrorBoundary>
-          <NotchPanel />
+          <NotchHost />
         </ErrorBoundary>
       </React.StrictMode>,
     );

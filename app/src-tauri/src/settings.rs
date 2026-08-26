@@ -85,6 +85,10 @@ pub struct Settings {
     /// every raw/ entry path instead of written with a warning.
     #[serde(default)]
     pub pii_quarantine_enabled: bool,
+    /// macOS notch drop surface: a non-activating panel hidden behind the
+    /// notch that takes file/link drops into `_inbox/`. Opt-in, default OFF.
+    #[serde(default)]
+    pub notch_enabled: bool,
 }
 
 impl Default for Settings {
@@ -110,6 +114,7 @@ impl Default for Settings {
             spotlight_shortcut: default_spotlight_shortcut(),
             vault_history_enabled: false,
             pii_quarantine_enabled: false,
+            notch_enabled: false,
         }
     }
 }
@@ -679,6 +684,15 @@ mod tests {
             assert!(!s.providers.gemini_cli);
             assert!(s.providers.ollama);
         });
+    }
+
+    #[test]
+    fn notch_defaults_off() {
+        // Opt-in: a fresh install AND any pre-notch settings.json (field
+        // absent) must come up with the surface disabled.
+        assert!(!Settings::default().notch_enabled);
+        let s: Settings = serde_json::from_str("{}").unwrap();
+        assert!(!s.notch_enabled);
     }
 
     #[test]

@@ -75,19 +75,16 @@ mod imp {
     use objc2_app_kit::NSScreen;
     use tauri::AppHandle;
 
-    // Everything the window-promotion probe needs, and nothing the geometry
-    // read does — so it follows the probe behind the feature.
-    #[cfg(feature = "notch-probe")]
     use objc2::runtime::AnyObject;
-    #[cfg(feature = "notch-probe")]
     use objc2::ClassType;
+    use objc2_app_kit::{NSPanel, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask};
+
+    // Only the probe's diagnostics look at the drag types.
     #[cfg(feature = "notch-probe")]
-    use objc2_app_kit::{NSPanel, NSView, NSWindow, NSWindowCollectionBehavior, NSWindowStyleMask};
+    use objc2_app_kit::NSView;
 
     /// NSStatusWindowLevel. The menu bar is NSMainMenuWindowLevel (24), so 25
     /// is the lowest level that covers it.
-    // Probe-only (see `spawn_probe`): compiled out of a normal build.
-    #[cfg(feature = "notch-probe")]
     const NS_STATUS_WINDOW_LEVEL: isize = 25;
 
     /// Run `f` on the main thread and wait for its value. Every AppKit call in
@@ -202,11 +199,10 @@ mod imp {
 
     /// Raise the window above the menu bar and stop clicks on it from
     /// activating myco. See the module docs for why the class swap is needed.
-    /// Returns the resulting AppKit state — the flags are set behind Tauri's
-    /// back, so a caller that cannot see them has no way to tell it worked.
-    // Probe-only (see `spawn_probe`): compiled out of a normal build.
-    #[cfg(feature = "notch-probe")]
-    pub fn promote(window: &tauri::WebviewWindow, mtm: MainThreadMarker) -> Result<String, String> {
+    /// Public AppKit bits only — the private `_setPreventsActivation:` lever
+    /// stays behind `notch-probe` (module docs: unproven whether the public
+    /// bits suffice alone, so ship without it and re-measure if they don't).
+    pub fn promote(window: &tauri::WebviewWindow, mtm: MainThreadMarker) -> Result<(), String> {
         let ptr = window.ns_window().map_err(|e| e.to_string())?;
         if ptr.is_null() {
             return Err("ns_window returned null".into());
@@ -229,6 +225,52 @@ mod imp {
                 | NSWindowCollectionBehavior::FullScreenAuxiliary,
         );
         let _ = mtm;
+        Ok(())
+    }
+
+    /// Size the window and park it flush against the top of the notched
+    /// screen, horizontally centred — the notch is centred in the screen, so
+    /// screen-centre IS notch-centre (and the menu-bar centre on a notch-less
+    /// Mac). One AppKit `setFrame:` in screen coordinates: Tauri's
+    /// `set_position` ran a multi-display conversion that placed the window
+    /// off-screen on this machine (see `pin_to_top`), and a separate resize
+    /// would let AppKit's bottom-left origin drop the top edge for a frame.
+    pub fn place_over_notch(
+        window: &tauri::WebviewWindow,
+        mtm: MainThreadMarker,
+        width: f64,
+        height: f64,
+    ) -> Result<(), String> {
+        let screen = notch_screen(mtm).ok_or("no screen")?;
+        let sf = screen.frame();
+        let ptr = window.ns_window().map_err(|e| e.to_string())?;
+        if ptr.is_null() {
+            return Err("ns_window returned null".into());
+        }
+        // Safe: Tauri hands out the live NSWindow, and we are on the main thread.
+        let w: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+        let mut frame = w.frame();
+        frame.size.width = width;
+        frame.size.height = height;
+        frame.origin.x = sf.origin.x + (sf.size.width - width) / 2.0;
+        frame.origin.y = sf.origin.y + sf.size.height - height;
+        w.setFrame_display(frame, true);
+        Ok(())
+    }
+
+    /// The probe's promotion: the production `promote` plus the spike A/B
+    /// levers (env-gated) and the AppKit state string the spike logs.
+    // Probe-only (see `spawn_probe`): compiled out of a normal build.
+    #[cfg(feature = "notch-probe")]
+    pub fn probe_promote(
+        window: &tauri::WebviewWindow,
+        mtm: MainThreadMarker,
+    ) -> Result<String, String> {
+        promote(window, mtm)?;
+        let ptr = window.ns_window().map_err(|e| e.to_string())?;
+        // Safe: promote() above already validated this pointer.
+        let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
+        let obj: &AnyObject = unsafe { &*(ptr as *const AnyObject) };
         // Spike A/B levers, env-gated so one build can bisect what actually
         // stops the app from activating on a click.
         if std::env::var("MYCO_NOTCH_REORDER").as_deref() == Ok("1") {
@@ -281,6 +323,132 @@ pub fn notch_geometry(app: AppHandle) -> Result<NotchGeometry, String> {
 #[tauri::command]
 pub fn notch_geometry(_app: AppHandle) -> Result<NotchGeometry, String> {
     Ok(NotchGeometry::default())
+}
+
+// ─── production notch window ─────────────────────────────────────────────────
+
+/// Window label for the notch drop surface (frontend routes on `?window=notch`;
+/// `capabilities/default.json` already lists it).
+pub const NOTCH_LABEL: &str = "notch";
+
+/// Collapsed size on a Mac WITHOUT a notch: a small pill centred in the menu
+/// bar (the frontend renders it via NotchPanel's pill fallback). A notched Mac
+/// collapses to exactly the notch's own size instead — invisible behind it.
+#[cfg(target_os = "macos")]
+const PILL_W: f64 = 172.0;
+#[cfg(target_os = "macos")]
+const PILL_H: f64 = 26.0;
+
+/// Create (once) the notch drop surface: spotlight's window recipe, promoted
+/// above the menu bar as a non-activating NSPanel (the P0-proven promotion,
+/// public bits only) and parked flush over the notch. Returns the live window,
+/// or None when it cannot be built — like the tray, a failure here must never
+/// take the app down.
+#[cfg(target_os = "macos")]
+pub fn ensure_notch_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
+    use tauri::{Manager as _, WebviewUrl, WebviewWindowBuilder};
+    if let Some(w) = app.get_webview_window(NOTCH_LABEL) {
+        return Some(w);
+    }
+    let geometry = imp::on_main(app, imp::read_geometry).unwrap_or_default();
+    let (width, height) = if geometry.has_notch {
+        (geometry.notch_w, geometry.notch_h)
+    } else {
+        (PILL_W, PILL_H)
+    };
+    // Drag-drop must reach this window. Tauri's drag-drop handler is ON by
+    // default (verified in tauri-runtime 2.11.1: `WebviewAttributes::new` sets
+    // `drag_drop_handler_enabled: true`; the only knobs are the opt-out
+    // `disable_drag_drop_handler()` and a Windows-only `drag_and_drop()`,
+    // neither used here), so the frontend receives Enter/Over/Drop through
+    // `onDragDropEvent` — exactly what the P0 spike measured.
+    let built = WebviewWindowBuilder::new(
+        app,
+        NOTCH_LABEL,
+        WebviewUrl::App("index.html?window=notch".into()),
+    )
+    .decorations(false)
+    .transparent(true)
+    // OS shadow OFF, same reason as the tray panel: it hugs the transparent
+    // window rect, not what the webview draws inside it.
+    .shadow(false)
+    .always_on_top(true)
+    .resizable(false)
+    .skip_taskbar(true)
+    // Built hidden, shown only after promotion below — a frame drawn at the
+    // ordinary window level would flash below the menu bar first.
+    .visible(false)
+    .inner_size(width, height)
+    .build();
+    let window = match built {
+        Ok(w) => w,
+        Err(e) => {
+            eprintln!("notch window failed: {e}");
+            return None;
+        }
+    };
+    let outcome = imp::on_main(app, {
+        let win = window.clone();
+        move |mtm| {
+            imp::promote(&win, mtm)?;
+            imp::place_over_notch(&win, mtm, width, height)
+        }
+    });
+    if let Ok(Err(e)) | Err(e) = outcome {
+        // Still shown: an unpromoted window floats below the menu bar, which
+        // is degraded but usable — and the failure is logged, not swallowed.
+        eprintln!("notch window promote/place failed: {e}");
+    }
+    let _ = window.show();
+    Some(window)
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn ensure_notch_window(_app: &AppHandle) -> Option<tauri::WebviewWindow> {
+    None
+}
+
+/// Fit the notch window to the frontend's collapsed/expanded state — the same
+/// contract as `resize_tray_panel` (logical px from the webview's measurement)
+/// — while keeping it notch-centred (x = (screen_w - width) / 2) and flush
+/// with the top of the screen.
+#[cfg(target_os = "macos")]
+#[tauri::command]
+pub fn notch_resize(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    use tauri::Manager as _;
+    let Some(win) = app.get_webview_window(NOTCH_LABEL) else {
+        return Ok(()); // window not created yet — the builder size applies
+    };
+    // Clamped like resize_tray_panel: a broken measurement must not produce a
+    // zero-size or screen-swallowing invisible surface.
+    let width = width.clamp(24.0, 1200.0);
+    let height = height.clamp(20.0, 800.0);
+    imp::on_main(&app, move |mtm| {
+        imp::place_over_notch(&win, mtm, width, height)
+    })?
+}
+
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub fn notch_resize(_app: AppHandle, _width: f64, _height: f64) -> Result<(), String> {
+    Ok(())
+}
+
+/// The Settings toggle, applied at runtime: persist the flag (read-modify-write
+/// of the one field, like `set_spotlight_shortcut`), then create or destroy the
+/// window to match — no restart needed.
+#[tauri::command]
+pub fn update_notch_enabled(app: AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri::Manager as _;
+    let mut settings = crate::settings::load();
+    settings.notch_enabled = enabled;
+    crate::settings::save(&settings)?;
+    if enabled {
+        ensure_notch_window(&app);
+    } else if let Some(win) = app.get_webview_window(NOTCH_LABEL) {
+        win.destroy().map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 /// P0 spike probe: opens a small window over the notch, promotes it above the
@@ -370,7 +538,7 @@ pub fn spawn_probe(app: &AppHandle) {
     } else {
         match imp::on_main(app, {
             let window = window.clone();
-            move |mtm| imp::promote(&window, mtm)
+            move |mtm| imp::probe_promote(&window, mtm)
         }) {
             Ok(Ok(state)) => eprintln!("notch-probe: promoted — {state}"),
             Ok(Err(e)) | Err(e) => eprintln!("notch-probe: promote failed: {e}"),
