@@ -37,7 +37,22 @@
     "macOS": {
       "minimumSystemVersion": "10.15",
       "hardenedRuntime": true,
-      "signingIdentity": null
+      "signingIdentity": null,
+      "dmg": {
+        "background": "dmg-background.png",
+        "windowSize": {
+          "width": 600,
+          "height": 400
+        },
+        "appPosition": {
+          "x": 170,
+          "y": 200
+        },
+        "applicationFolderPosition": {
+          "x": 430,
+          "y": 200
+        }
+      }
     },
     "resources": {
       "../../automation/digest.py": "automation/digest.py",
