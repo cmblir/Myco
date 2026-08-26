@@ -14,6 +14,22 @@
 //!    menu-bar app, including tauri-nspanel, does).
 //!
 //! Non-macOS targets get an inert stub so the crate still builds.
+//!
+//! ## P0 spike verdict (2026-08-26, measured on a notched M3 / macOS 26)
+//!
+//! All three questions passed, so P1 builds on a real notch window:
+//! 1. geometry — `{ has_notch: true, notch_w: 208.0, notch_h: 37.0,
+//!    screen_w: 1920.0 }` (points, at the user's "more space" scaling);
+//! 2. layering + non-activation — isa-swap to NSPanel at level 25 with
+//!    styleMask 0x80 (nonactivating); a click on the panel left the
+//!    frontmost app unchanged. `_setPreventsActivation:` (private) was ALSO
+//!    on during the probe, so whether the public bits suffice alone is
+//!    unproven — P1 should try without it first;
+//! 3. drag receipt — a real Finder file drag delivered the full
+//!    Enter{paths}/Over/Drop{paths} sequence to the non-activating panel.
+//!    (Synthetic-drag footnote: CGEvent drags only start a file drag when the
+//!    pointer moves in small interpolated steps; instant teleports rubber-band
+//!    instead. Matters for test automation, not for users.)
 
 use serde::Serialize;
 use tauri::AppHandle;
