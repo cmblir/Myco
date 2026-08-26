@@ -63,6 +63,14 @@ notify = "8.2.0"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-process = "2"
 
+# macOS notch surface (src/notch.rs): NSScreen safe-area/auxiliary-area
+# geometry, and promoting a Tauri window to a status-level non-activating
+# NSPanel. Both crates are already in the lockfile as tao/wry dependencies, so
+# naming them here adds no new compilation beyond the extra class features.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", features = ["NSPanel", "NSPasteboard", "NSResponder", "NSScreen", "NSView", "NSWindow"] }
+
 [dev-dependencies]
 wiremock = "0.6"
 tokio = { version = "1", features = ["full"] }
@@ -75,6 +83,10 @@ custom-protocol = ["tauri/custom-protocol"]
 # experiment (see eval/BASELINE.md). Off by default so a normal build compiles
 # none of it and does not pull llama-cpp-sys-2 in as a direct dependency.
 rerank = ["dep:llama-cpp-sys-2"]
+# P0 notch spike probe (src/notch.rs::spawn_probe) — a debug window plus one
+# private AppKit selector, kept for the spike and compiled out of every normal
+# build. The notch GEOMETRY command is not gated; only the probe is.
+notch-probe = []
 
 [[bench]]
 name = "vector_store"

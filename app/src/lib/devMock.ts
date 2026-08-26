@@ -1946,6 +1946,14 @@ function mockInvoke(
     case "close_spotlight":
     case "resize_spotlight":
       return Promise.resolve(null);
+    case "notch_geometry":
+      // 14" MacBook Pro shape, so the browser mock exercises the notched path.
+      return Promise.resolve({
+        has_notch: true,
+        notch_w: 204,
+        notch_h: 37,
+        screen_w: 1512,
+      });
     case "get_settings":
       if (AGENT_MODE) {
         return Promise.resolve({

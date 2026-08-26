@@ -21,6 +21,7 @@ pub mod intent;
 pub mod local_llm;
 pub mod mcp_native;
 pub mod myco_pro;
+pub mod notch;
 pub mod ollama;
 pub mod ontology;
 pub mod page_opens;
@@ -270,6 +271,7 @@ pub fn run() {
             spotlight::set_spotlight_shortcut,
             spotlight::close_spotlight,
             spotlight::resize_spotlight,
+            notch::notch_geometry,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path
@@ -320,6 +322,9 @@ pub fn run() {
             // same sense as the tray: it reports failure into ShortcutState
             // rather than returning an error that would abort startup.
             spotlight::init(app.handle());
+            // P0 notch spike probe. Compiled out unless the `notch-probe`
+            // feature is on; even then it needs MYCO_NOTCH_PROBE=1 to open.
+            notch::spawn_probe(app.handle());
             // Resident mode: with the settings toggle ON, closing the window
             // hides it and the app stays in the menu bar; OFF (default) keeps
             // today's behavior — the close proceeds and the app quits via the

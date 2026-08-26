@@ -426,6 +426,16 @@ export interface SpotlightStatus {
   error: string | null;
 }
 
+/** macOS notch metrics in AppKit points (mirrors Rust `notch::NotchGeometry`).
+ *  `has_notch: false` — an external display or a pre-2021 Mac — leaves the two
+ *  notch dimensions at 0; only `screen_w` is meaningful then. */
+export interface NotchGeometry {
+  has_notch: boolean;
+  notch_w: number;
+  notch_h: number;
+  screen_w: number;
+}
+
 /** Pre-translated tray snapshot (mirrors Rust tray::TrayStatus). The Rust
  *  side stores strings only — it owns no translations. */
 /** One running activity row; `kind` picks the native menu row icon. */
@@ -894,6 +904,8 @@ export const ipc = {
   /** Fit the spotlight window to its measured card height (logical px). */
   resizeSpotlight: (height: number) =>
     invoke<null>("resize_spotlight", { height }),
+  /** Notch geometry of the built-in display, read from NSScreen. */
+  notchGeometry: () => invoke<NotchGeometry>("notch_geometry"),
   setSettings: (value: MycoSettings) => invoke<null>("set_settings", { value }),
   /** Write the settings/looks export bundle to a path the user chose via the
    *  native save dialog. */
