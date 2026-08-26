@@ -491,7 +491,13 @@ mod tests {
 
     #[test]
     fn stale_detection_matches_current_model() {
-        assert!(!index_is_stale("builtin-local:bge-m3"));
+        assert!(!index_is_stale(&format!(
+            "builtin-local:{}",
+            crate::local_llm::BUILTIN_EMBED_MODEL
+        )));
+        // Every retired builtin, newest first (bge-m3 lost the 2026-08
+        // bake-off to e5-small-ko; gemma-3-1b predates both).
+        assert!(index_is_stale("builtin-local:bge-m3"));
         assert!(index_is_stale("builtin-local:gemma-3-1b"));
         assert!(index_is_stale("")); // empty/new index
         assert!(index_is_stale("ollama:nomic-embed-text"));

@@ -4995,13 +4995,19 @@ mod tests {
 
     #[test]
     fn builtin_index_is_stale_only_accepts_the_bundled_model() {
-        // A store still tagged with the model the bge-m3 swap retired (Task 4)
-        // must report stale — `wikify_candidates` degrades to Ok(empty) for
-        // this, rather than propagating embed_texts's "unknown builtin embed
-        // model" error.
+        // A store tagged with a model a swap retired must report stale —
+        // `wikify_candidates` degrades to Ok(empty) for this, rather than
+        // propagating embed_texts's "unknown builtin embed model" error.
+        // Both retired ids: gemma-3-1b (pre-bge-m3) and bge-m3 itself, which
+        // the 2026-08 e5-small-ko bake-off retired.
         assert!(builtin_index_is_stale("builtin-local", "gemma-3-1b"));
-        // The current bundled winner is not stale.
-        assert!(!builtin_index_is_stale("builtin-local", "bge-m3"));
+        assert!(builtin_index_is_stale("builtin-local", "bge-m3"));
+        // Whatever is bundled NOW is not stale — read the constant rather than
+        // pinning a literal, so the next swap does not silently invalidate this.
+        assert!(!builtin_index_is_stale(
+            "builtin-local",
+            crate::local_llm::BUILTIN_EMBED_MODEL
+        ));
         // A known-but-unbundled EmbedSpec id (a bake-off candidate the app
         // doesn't currently ship) must ALSO report stale: pre-fix, this used
         // to pass as "fresh" because `embed_spec_by_id` resolved it, which

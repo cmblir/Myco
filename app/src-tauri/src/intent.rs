@@ -137,9 +137,12 @@ mod tests {
 
     #[test]
     fn best_intent_rejects_everything_below_the_floor() {
-        // The measured content-question ceiling was 0.524 — just under the
-        // floor, and the case that must NOT route.
-        let sims = vec![0.524; exemplar_texts().len()];
+        // The measured content-question ceiling under the current embed model
+        // (e5-small-ko: content questions topped out at 0.285) — the case that
+        // must NOT route. Re-measure with `examples/intent_probe.rs` on every
+        // embed-model swap; the old 0.524 here was bge-m3's ceiling and became
+        // a false failure the moment the floor moved to 0.45.
+        let sims = vec![0.285; exemplar_texts().len()];
         assert_eq!(best_intent(&sims), None);
     }
 
