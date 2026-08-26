@@ -5,7 +5,11 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
-import { isSpotlightWindow, isTrayPanelWindow } from "./lib/windowRoute";
+import {
+  isNotchWindow,
+  isSpotlightWindow,
+  isTrayPanelWindow,
+} from "./lib/windowRoute";
 import "./styles.css";
 
 const ERROR_LOG_KEY = "myco.errorlog";
@@ -79,6 +83,22 @@ async function bootstrap(): Promise<void> {
       <React.StrictMode>
         <ErrorBoundary>
           <Spotlight />
+        </ErrorBoundary>
+      </React.StrictMode>,
+    );
+    return;
+  }
+
+  // The menu-bar notch surface (`index.html?window=notch`): the drop target and
+  // its run HUD. Like the two above, App never mounts here. Without the native
+  // shell it renders idle, so `?window=notch&notchMock=1` in a plain browser is
+  // how the ten states are looked at.
+  if (isNotchWindow(location.search)) {
+    const { default: NotchPanel } = await import("./components/NotchPanel");
+    ReactDOM.createRoot(root).render(
+      <React.StrictMode>
+        <ErrorBoundary>
+          <NotchPanel />
         </ErrorBoundary>
       </React.StrictMode>,
     );

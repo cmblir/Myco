@@ -1248,6 +1248,29 @@ export interface Strings {
   agent_confirm_title: string;
   agent_confirm_create_title: string;
   agent_confirm_hint: string;
+  // Menu-bar notch surface (components/NotchPanel.tsx), design sheet S1–S10.
+  // Chrome only — filenames, progress detail and result summaries arrive as
+  // data, already translated by whoever produced them.
+  notch_peek?: string;
+  notch_peek_body?: string;
+  notch_drop?: string;
+  notch_accepted?: string;
+  notch_accepted_next?: string;
+  notch_accepted_next_sub?: string;
+  notch_running?: string; // {t}
+  notch_running_read?: string;
+  notch_running_pages?: string;
+  notch_done?: string;
+  notch_done_open?: string;
+  notch_done_collapse?: string;
+  notch_capture?: string;
+  notch_capture_save?: string;
+  notch_capture_voice?: string;
+  notch_recording?: string; // {t}
+  notch_rejected?: string;
+  notch_rejected_body?: string; // {ext}
+  notch_rejected_accepts?: string;
+  notch_rejected_list?: string;
 }
 
 export const STRINGS: Record<Lang, Strings> = {
@@ -2576,6 +2599,26 @@ export const STRINGS: Record<Lang, Strings> = {
     agent_confirm_title: "The agent wants to update a page",
     agent_confirm_create_title: "The agent wants to create a page",
     agent_confirm_hint: "Allowing this writes the change below to your vault.",
+    notch_peek: "Drop it here",
+    notch_peek_body: "Files · links · selected text",
+    notch_drop: "Release to drop",
+    notch_accepted: "Got it",
+    notch_accepted_next: "next",
+    notch_accepted_next_sub: "ingest reads it shortly",
+    notch_running: "Ingesting · {t}",
+    notch_running_read: "reading",
+    notch_running_pages: "pages",
+    notch_done: "Done",
+    notch_done_open: "⏎ open",
+    notch_done_collapse: "closes in 4s",
+    notch_capture: "Quick note",
+    notch_capture_save: "⏎ daily note",
+    notch_capture_voice: "⌥M voice",
+    notch_recording: "Recording · {t}",
+    notch_rejected: "Could not take it",
+    notch_rejected_body: "This format is not readable yet ({ext})",
+    notch_rejected_accepts: "accepts",
+    notch_rejected_list: "PDF · documents · sheets · HTML · images · audio",
   },
   ko: {
     app_name: "myco",
@@ -3895,6 +3938,26 @@ export const STRINGS: Record<Lang, Strings> = {
     agent_confirm_title: "에이전트가 페이지를 수정하려 합니다",
     agent_confirm_create_title: "에이전트가 새 페이지를 만들려 합니다",
     agent_confirm_hint: "허용하면 아래 변경이 볼트에 기록됩니다.",
+    notch_peek: "떨구면 받습니다",
+    notch_peek_body: "파일 · 링크 · 선택한 텍스트",
+    notch_drop: "여기에 놓으세요",
+    notch_accepted: "받았습니다",
+    notch_accepted_next: "다음",
+    notch_accepted_next_sub: "인제스트가 곧 읽습니다",
+    notch_running: "인제스트 중 · {t}",
+    notch_running_read: "읽는 중",
+    notch_running_pages: "페이지",
+    notch_done: "완료",
+    notch_done_open: "⏎ 열기",
+    notch_done_collapse: "4초 후 접힘",
+    notch_capture: "빠른 기록",
+    notch_capture_save: "⏎ 데일리 노트",
+    notch_capture_voice: "⌥M 음성",
+    notch_recording: "녹음 중 · {t}",
+    notch_rejected: "받지 못했습니다",
+    notch_rejected_body: "이 형식은 아직 읽지 못합니다 ({ext})",
+    notch_rejected_accepts: "가능",
+    notch_rejected_list: "PDF · 문서 · 표 · HTML · 이미지 · 음성",
   },
   ja: {
     app_name: "myco",
@@ -5229,5 +5292,25 @@ export const STRINGS: Record<Lang, Strings> = {
     agent_confirm_create_title:
       "エージェントが新しいページを作成しようとしています",
     agent_confirm_hint: "許可すると、以下の変更がボールトに書き込まれます。",
+    notch_peek: "ドロップで受け取ります",
+    notch_peek_body: "ファイル · リンク · 選択テキスト",
+    notch_drop: "ここに置いてください",
+    notch_accepted: "受け取りました",
+    notch_accepted_next: "次",
+    notch_accepted_next_sub: "まもなく取り込みが読みます",
+    notch_running: "取り込み中 · {t}",
+    notch_running_read: "読み込み中",
+    notch_running_pages: "ページ",
+    notch_done: "完了",
+    notch_done_open: "⏎ 開く",
+    notch_done_collapse: "4秒後に閉じます",
+    notch_capture: "クイックメモ",
+    notch_capture_save: "⏎ デイリーノート",
+    notch_capture_voice: "⌥M 音声",
+    notch_recording: "録音中 · {t}",
+    notch_rejected: "受け取れませんでした",
+    notch_rejected_body: "この形式はまだ読めません ({ext})",
+    notch_rejected_accepts: "対応",
+    notch_rejected_list: "PDF · 文書 · 表 · HTML · 画像 · 音声",
   },
 };

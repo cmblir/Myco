@@ -5866,3 +5866,235 @@ html.spotlight-window body {
   border-radius: 2px;
   text-decoration: line-through;
 }
+
+/* ---- Menu-bar notch surface (components/NotchPanel.tsx) -------------------
+   Its own OS window: frameless, transparent, pinned under the notch, so only
+   the black panel paints. Palette is hardcoded dark like .tray-panel and
+   .spotlight-card — a device-chrome surface is not a themed page, and the app
+   tokens resolve to LIGHT values in this webview (the same bug the tray
+   popover hit). Colors and timings are the 2026-08-25 design sheet's. */
+html.notch-window,
+html.notch-window body {
+  background: transparent;
+}
+html.notch-window body {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 0;
+}
+.notch {
+  /* Collapsed width is whatever the OS reports the notch to be; 172px is the
+     14"/16" MacBook Pro figure and the default until the native side measures
+     it. Height grows DOWNWARD only — widening sideways shoves the menu-bar
+     icons out of the way. */
+  --notch-collapsed: 172px;
+  box-sizing: border-box;
+  width: var(--notch-collapsed);
+  min-height: 26px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  background: #000;
+  color: #ece7df;
+  border-radius: 0 0 13px 13px;
+  font:
+    14px/1.55 -apple-system,
+    "Pretendard",
+    "Apple SD Gothic Neo",
+    sans-serif;
+  /* Slight overshoot — the panel should feel like it is being drawn out of
+     the notch, not scaled. */
+  transition:
+    width 260ms cubic-bezier(0.2, 0.9, 0.3, 1.1),
+    min-height 260ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+}
+.notch.notch-open {
+  width: 300px;
+}
+/* S10 — no notch on this Mac (safeAreaInsets.top == 0): the same panel as a
+   rounded pill floating just below the menu bar. Only the top corners differ. */
+.notch.notch-pill {
+  border-radius: 13px;
+  margin-top: 4px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+}
+.notch-lip {
+  height: 26px;
+  width: 100%;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 12px;
+}
+.notch-lip-label {
+  font:
+    600 9.5px/1 var(--font-mono);
+  letter-spacing: 0.1em;
+  color: #8f8a83;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The mascot cap. Lit purple = something is alive; this is the only saturated
+   thing on the surface, so colour alone never carries meaning without the lip
+   text beside it. */
+.notch-cap {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex: none;
+  background: radial-gradient(circle at 34% 30%, #cdbdfb, #a78bfa 62%, #2b1e56);
+  box-shadow: 0 0 8px rgba(167, 139, 250, 0.5);
+}
+.notch-cap-dim {
+  background: radial-gradient(circle at 34% 30%, #6a6a72, #3b3b44 62%, #16161b);
+  box-shadow: none;
+}
+.notch-cap-ok {
+  background: radial-gradient(circle at 34% 30%, #a8f0c4, #34c97a 62%, #10402a);
+  box-shadow: 0 0 8px rgba(52, 201, 122, 0.45);
+}
+.notch-cap-warn {
+  background: radial-gradient(circle at 34% 30%, #f6d5a4, #e0a458 62%, #4a3213);
+  box-shadow: 0 0 8px rgba(224, 164, 88, 0.45);
+}
+.notch-body {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 0 13px 13px;
+  /* 160ms, shorter than the 260ms unfold, so the text never arrives late. */
+  animation: notch-fade-in 160ms linear;
+}
+@keyframes notch-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.notch-dz {
+  border: 1.5px dashed #4b4640;
+  border-radius: 9px;
+  padding: 12px 10px;
+  text-align: center;
+  color: #cfc8bf;
+  font-size: 12px;
+  line-height: 1.5;
+}
+/* S3 — armed. Solid purple edge and a 9% tint: this WILL be taken. */
+.notch-dz-hot {
+  border-style: solid;
+  border-color: #a78bfa;
+  background: rgba(167, 139, 250, 0.09);
+  color: #e6dcff;
+}
+.notch-dz b {
+  display: block;
+  color: #ece7df;
+  font-weight: 650;
+  font-size: 12.5px;
+}
+.notch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #cfc8bf;
+  font-size: 12px;
+}
+.notch-row + .notch-row {
+  margin-top: 7px;
+}
+.notch-grow {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Numbers, paths and clocks are mono + tabular without exception — a progress
+   readout that jitters is worse than one that is plain. */
+.notch-mono {
+  font: 10.5px/1.4 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: #8f8a83;
+  flex: none;
+}
+.notch-meter {
+  flex: 1;
+  height: 5px;
+  border-radius: 3px;
+  background: #2a2622;
+  overflow: hidden;
+}
+.notch-meter i {
+  display: block;
+  height: 100%;
+  background: #a78bfa;
+}
+.notch-field {
+  border: 1px solid #3a352f;
+  border-radius: 8px;
+  padding: 8px 10px;
+  color: #ece7df;
+  font-size: 12.5px;
+  text-align: left;
+}
+.notch-caret {
+  display: inline-block;
+  width: 1px;
+  height: 13px;
+  background: #a78bfa;
+  vertical-align: -2px;
+}
+/* Sheet's type rule: paths, slugs and sizes are mono + tabular without
+   exception, while prose beside them stays in the body face. (The design
+   sheet's own plates render everything mono only because the fake menu-bar
+   wrapper leaks its font down — `.dz b { font-weight: 650 }` is a variable
+   sans weight, so sans is what was meant.) */
+.notch-path {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 11.5px;
+}
+.notch-wave {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 22px;
+  flex: 1;
+}
+.notch-wave i {
+  flex: 1;
+  background: #a78bfa;
+  border-radius: 1px;
+  opacity: 0.8;
+}
+.notch-hint {
+  margin-top: 8px;
+  display: flex;
+  gap: 10px;
+}
+.notch-hint-end {
+  margin-left: auto;
+}
+.notch-ok {
+  color: #7ee0a6;
+}
+/* Amber is for attention only. */
+.notch-warn {
+  color: #e0a458;
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Straight cut to the new size — the state still reads, it just arrives. */
+  .notch {
+    transition: none;
+  }
+  .notch-body {
+    animation: none;
+  }
+}
