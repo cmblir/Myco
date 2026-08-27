@@ -19,9 +19,12 @@ myco is a Tauri 2 (Rust) + React desktop app over a plain-markdown Obsidian vaul
 > the **dedup ledger shipped** (`importers/ledger.rs`, with file-level `(mtime, len)` skip), and the **batch
 > importer shipped as an in-app one** (`commands::run_import` / `import_paths` + `ConversationImport.tsx` with
 > progress, tally and retry-failed) rather than the standalone `mcp-server/myco_import.py` that row describes.
-> The **MCP import tools row is still unbuilt** (`import_conversation` / `import_session` / `wikify_pending` /
-> `ledger_status` do not exist in `myco_mcp.py`), and the parser-home open question below was answered by
-> building them in Rust only. This document is now a design record and parser reference; the active plan is
+> ~~The **MCP import tools row is still unbuilt**~~ **Built 2026-08-28**: `import_conversation` /
+> `import_session` / `wikify_pending` / `ledger_status` now exist in `myco_mcp.py`. They re-implement no
+> vendor parsing (the parser home stayed Rust): import_conversation takes transcript text the agent already
+> holds, import_session reads one session `.jsonl`, both funnel through the `add_raw_source` guards and
+> record into the Rust importers' ledger; wikify state lives in `.myco/wikify-pending.json`.
+> The parser-home open question below was answered by building the vendor parsers in Rust only. This document is now a design record and parser reference; the active plan is
 > [`app/docs/specs/2026-08-21-q4-trust-recall-resurface-design.md`](../app/docs/specs/2026-08-21-q4-trust-recall-resurface-design.md).
 
 ## Prioritized roadmap
