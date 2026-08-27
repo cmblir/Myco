@@ -518,11 +518,17 @@ fn spawn_hover_watch(app: &AppHandle) {
     let app = app.clone();
     tauri::async_runtime::spawn(async move {
         let mut inside = false;
+        let mut outside_streak: u32 = 0;
         loop {
             tokio::time::sleep(std::time::Duration::from_millis(125)).await;
             let Some(win) = app.get_webview_window(NOTCH_LABEL) else {
                 continue;
             };
+            // Hysteresis: leaving tests a frame INFLATED by a 12px slop, so a
+            // pointer wobbling on the exact edge cannot strobe the panel
+            // open/closed (the headed "버벅임", worst on the left where the
+            // window is wider than the drawn card).
+            let slop = if inside { 12.0 } else { 0.0 };
             let probe = imp::on_main(&app, {
                 let win = win.clone();
                 move |_mtm| {
@@ -534,14 +540,24 @@ fn spawn_hover_watch(app: &AppHandle) {
                     let f = nsw.frame();
                     let p = objc2_app_kit::NSEvent::mouseLocation();
                     Some(
-                        p.x >= f.origin.x
-                            && p.x <= f.origin.x + f.size.width
-                            && p.y >= f.origin.y
-                            && p.y <= f.origin.y + f.size.height,
+                        p.x >= f.origin.x - slop
+                            && p.x <= f.origin.x + f.size.width + slop
+                            && p.y >= f.origin.y - slop
+                            && p.y <= f.origin.y + f.size.height + slop,
                     )
                 }
             });
-            let now = matches!(probe, Ok(Some(true)));
+            let raw = matches!(probe, Ok(Some(true)));
+            // Enter fires on the first inside sample; leave needs three
+            // consecutive outside ones (~375ms), so grazing the edge on the
+            // way in never folds a panel that just grew under the pointer.
+            let now = if raw {
+                outside_streak = 0;
+                true
+            } else {
+                outside_streak = outside_streak.saturating_add(1);
+                inside && outside_streak < 3
+            };
             if now != inside {
                 inside = now;
                 let _ = win.emit(NOTCH_HOVER_EVENT, inside);

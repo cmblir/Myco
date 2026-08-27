@@ -35,7 +35,10 @@ import type { VoiceMachine, VoiceState } from "./voiceCapture";
 import { useUIStore } from "../stores/uiStore";
 
 /** `.notch.notch-open` is 300px in styles.css; the window must match. */
-export const NOTCH_OPEN_WIDTH = 300;
+// Widest open card is capture (collapsed + 20) plus a 12px transparent slop
+// per side; 300 left ~40px of invisible hover surface hanging off each edge,
+// which read as the panel flapping open over nothing (worst on the left).
+export const NOTCH_OPEN_WIDTH = 252;
 
 /** How long S4/S9 hold before folding away. The sheet says only S6
  *  self-collapses, but this panel is non-activating — there is no click or key

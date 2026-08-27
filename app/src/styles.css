@@ -5923,6 +5923,23 @@ html.notch-window body {
   width: calc(var(--notch-collapsed) + 16px);
   background: #000;
   border-radius: 0 0 22px 22px;
+  /* The card's height is content-driven and lands in one frame; the unfurl
+     is what makes opening read as growth instead of a snap. */
+  transform-origin: 50% 0;
+  animation: notch-unfurl 340ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes notch-unfurl {
+  from {
+    transform: scaleY(0.3);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .notch.notch-open {
+    animation: none;
+  }
 }
 .notch.notch-open[data-state="capture"],
 .notch.notch-open[data-state="recording"] {
