@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into the generated Info.plist by the tauri bundler. Without the
+     microphone usage description macOS denies getUserMedia outright — no
+     prompt, no Settings row — which broke voice capture in packaged builds. -->
+<plist version="1.0">
+<dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>myco records short voice notes and transcribes them on this device. Audio never leaves your Mac.</string>
+</dict>
+</plist>
