@@ -5908,29 +5908,26 @@ html.notch-window body {
     "Pretendard",
     "Apple SD Gothic Neo",
     sans-serif;
-  /* Slight overshoot — the panel should feel like it is being drawn out of
-     the notch, not scaled. */
+  /* v2: no overshoot — the black shape should feel PUSHED out of the
+     cutout, one body with the hardware. Width, height and radius grow
+     together. */
   transition:
-    width 260ms cubic-bezier(0.2, 0.9, 0.3, 1.1),
-    min-height 260ms cubic-bezier(0.2, 0.9, 0.3, 1.1);
+    width 340ms cubic-bezier(0.32, 0.72, 0, 1),
+    min-height 340ms cubic-bezier(0.32, 0.72, 0, 1),
+    border-radius 340ms cubic-bezier(0.32, 0.72, 0, 1);
 }
 .notch.notch-open {
-  width: 300px;
+  /* Grow FROM the cutout: +16px over the measured notch width, +20px for
+     the capture state (approved v2 spec) — not a fixed 300px that ignores
+     the hardware it extends. */
+  width: calc(var(--notch-collapsed) + 16px);
   background: #000;
+  border-radius: 0 0 22px 22px;
 }
-/* The idle handle: a small round-bottomed tab hugging the cutout's centre,
-   just wide enough for the cap dot. This — not a full-width strip — is what
-   peeks below the hardware notch. */
-.notch-tab {
-  margin-top: var(--notch-cutout, 0px);
-  width: 56px;
-  height: 15px;
-  flex: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #000;
-  border-radius: 0 0 9px 9px;
+.notch.notch-open[data-state="capture"],
+.notch.notch-open[data-state="recording"] {
+  width: calc(var(--notch-collapsed) + 20px);
+  border-radius: 0 0 24px 24px;
 }
 /* S10 — no notch on this Mac (safeAreaInsets.top == 0): the same panel as a
    rounded pill floating just below the menu bar. Only the top corners differ. */
@@ -5989,8 +5986,9 @@ html.notch-window body {
   box-sizing: border-box;
   width: 100%;
   padding: 0 13px 13px;
-  /* 160ms, shorter than the 260ms unfold, so the text never arrives late. */
-  animation: notch-fade-in 160ms linear;
+  /* Content arrives AFTER the shape: 120ms delay then 200ms — glyphs that
+     land before the black body finishes growing read as a glitch. */
+  animation: notch-fade-in 200ms 120ms both linear;
 }
 @keyframes notch-fade-in {
   from {

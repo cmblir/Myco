@@ -213,11 +213,9 @@ mod imp {
         use std::sync::OnceLock;
         static CLASS: OnceLock<&'static objc2::runtime::AnyClass> = OnceLock::new();
         CLASS.get_or_init(|| {
-            let mut builder = objc2::runtime::ClassBuilder::new(
-                c"MycoNotchPanel",
-                NSPanel::class(),
-            )
-            .expect("class name free");
+            let mut builder =
+                objc2::runtime::ClassBuilder::new(c"MycoNotchPanel", NSPanel::class())
+                    .expect("class name free");
             extern "C-unwind" fn can_become_key(
                 _this: &AnyObject,
                 _sel: objc2::runtime::Sel,

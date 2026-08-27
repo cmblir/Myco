@@ -327,14 +327,11 @@ export default function NotchPanel({
             <span className="notch-lip-label">{view.lip}</span>
           ) : null}
         </div>
-      ) : (
-        // Collapsed: the whole surface is transparent except this small
-        // round-bottomed tab under the cutout — the first headed run showed
-        // that a full-width strip reads as a broken black slab.
-        <div className="notch-tab">
-          <i aria-hidden className={`notch-cap notch-cap-${view.tone}`} />
-        </div>
-      )}
+      ) : // Collapsed v2: NOTHING is drawn (owner call from the second headed
+      // run — any always-visible attachment reads as a foreign widget). The
+      // window is a transparent hit area; the hardware notch itself is the
+      // surface, and it GROWS on hover.
+      null}
       {view.open ? (
         // Keyed by state so the 160ms fade replays on every transition.
         <div className="notch-body" key={frame.state.kind}>

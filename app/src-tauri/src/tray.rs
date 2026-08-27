@@ -402,35 +402,38 @@ fn toggle_panel(app: &AppHandle, rect: tauri::Rect) {
 /// True while the status push says something is running (distill/ingest/…).
 static ANIM_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// The hop cycle, sine-interpolated: squash on the ground at both ends, a
-/// gentle stretch through the airborne arc. Ten frames whose neighbours
-/// differ by ≤2px, so the loop reads as one continuous motion — fewer,
-/// coarser frames read as flicker at menu-bar size. Two pre-tinted sets so
+/// The spore-birth cycle (approved icon A): a spore beads, a thread grows
+/// out of it, a second spore, a second thread, a third — the finished
+/// three-node glyph holds, then fades and repeats. The finished frame (s6)
+/// IS the idle icon: motion only plays while work runs (plus once at
+/// launch), so an idle menu bar costs zero redraws. Two pre-tinted sets so
 /// no template call is ever needed mid-animation.
-const HOP_WHITE: [&[u8]; 10] = [
-    include_bytes!("../icons/tray/frames/h0w.png"),
-    include_bytes!("../icons/tray/frames/h1w.png"),
-    include_bytes!("../icons/tray/frames/h2w.png"),
-    include_bytes!("../icons/tray/frames/h3w.png"),
-    include_bytes!("../icons/tray/frames/h4w.png"),
-    include_bytes!("../icons/tray/frames/h5w.png"),
-    include_bytes!("../icons/tray/frames/h6w.png"),
-    include_bytes!("../icons/tray/frames/h7w.png"),
-    include_bytes!("../icons/tray/frames/h8w.png"),
-    include_bytes!("../icons/tray/frames/h9w.png"),
+const SPORE_WHITE: [&[u8]; 8] = [
+    include_bytes!("../icons/tray/spore/s0w.png"),
+    include_bytes!("../icons/tray/spore/s1w.png"),
+    include_bytes!("../icons/tray/spore/s2w.png"),
+    include_bytes!("../icons/tray/spore/s3w.png"),
+    include_bytes!("../icons/tray/spore/s4w.png"),
+    include_bytes!("../icons/tray/spore/s5w.png"),
+    include_bytes!("../icons/tray/spore/s6w.png"),
+    include_bytes!("../icons/tray/spore/s7w.png"),
 ];
-const HOP_BLACK: [&[u8]; 10] = [
-    include_bytes!("../icons/tray/frames/h0b.png"),
-    include_bytes!("../icons/tray/frames/h1b.png"),
-    include_bytes!("../icons/tray/frames/h2b.png"),
-    include_bytes!("../icons/tray/frames/h3b.png"),
-    include_bytes!("../icons/tray/frames/h4b.png"),
-    include_bytes!("../icons/tray/frames/h5b.png"),
-    include_bytes!("../icons/tray/frames/h6b.png"),
-    include_bytes!("../icons/tray/frames/h7b.png"),
-    include_bytes!("../icons/tray/frames/h8b.png"),
-    include_bytes!("../icons/tray/frames/h9b.png"),
+const SPORE_BLACK: [&[u8]; 8] = [
+    include_bytes!("../icons/tray/spore/s0b.png"),
+    include_bytes!("../icons/tray/spore/s1b.png"),
+    include_bytes!("../icons/tray/spore/s2b.png"),
+    include_bytes!("../icons/tray/spore/s3b.png"),
+    include_bytes!("../icons/tray/spore/s4b.png"),
+    include_bytes!("../icons/tray/spore/s5b.png"),
+    include_bytes!("../icons/tray/spore/s6b.png"),
+    include_bytes!("../icons/tray/spore/s7b.png"),
 ];
+
+/// The frame each 200ms step of one 1.8s cycle shows: birth, holds on the
+/// finished glyph, one fade step, repeat.
+const SPORE_CYCLE: [usize; 9] = [0, 1, 2, 3, 4, 5, 6, 6, 7];
+/// The finished glyph — the idle icon.
+const SPORE_IDLE: usize = 6;
 
 /// True when the menu bar is dark (glyph should be white). `defaults` is the
 /// stable way to read this from a plain process; the key is absent in light
@@ -443,46 +446,58 @@ fn menu_bar_is_dark() -> bool {
         .unwrap_or(true)
 }
 
-/// Spawn the animator. One task for the app's lifetime; ticks are no-ops when
-/// nothing changes (the same frame is never re-set).
+/// Spawn the animator. One task for the app's lifetime. Idle shows the
+/// finished glyph and swaps NOTHING (the always-on lesson: every set_icon is
+/// a WindowServer menu-bar redraw); the birth cycle loops only while work
+/// runs, plus one greeting cycle at launch.
 fn spawn_icon_animator(app: AppHandle) {
     use std::sync::atomic::Ordering;
     tauri::async_runtime::spawn(async move {
-        let decode = |set: &[&[u8]; 10]| -> Vec<tauri::image::Image<'static>> {
+        let decode = |set: &[&[u8]; 8]| -> Vec<tauri::image::Image<'static>> {
             set.iter()
                 .filter_map(|b| tauri::image::Image::from_bytes(b).ok())
                 .map(|i| i.to_owned())
                 .collect()
         };
-        let white = decode(&HOP_WHITE);
-        let black = decode(&HOP_BLACK);
-        if white.len() != 10 || black.len() != 10 {
+        let white = decode(&SPORE_WHITE);
+        let black = decode(&SPORE_BLACK);
+        if white.len() != 8 || black.len() != 8 {
             return; // a frame failed to decode; keep the static glyph
         }
         let mut dark = menu_bar_is_dark();
         let mut tick: u64 = 0;
+        // Launch greeting: one full cycle even though nothing is running yet.
+        let mut greeting = SPORE_CYCLE.len() as u64;
+        let mut last = usize::MAX;
         loop {
             let active = ANIM_ACTIVE.load(Ordering::Relaxed);
-            // Appearance changes are rare; a re-read every ~30s is plenty.
-            if tick % 384 == 0 && tick > 0 {
+            if tick % 150 == 0 && tick > 0 {
+                // Appearance changes are rare; a re-read every ~30s is plenty.
                 dark = menu_bar_is_dark();
             }
             let frames = if dark { &white } else { &black };
-            let frame = (tick % 10) as usize;
-            let sleep_ms: u64 = if active { 55 } else { 80 };
-            let tray = app
-                .state::<TrayHandle>()
-                .0
-                .lock()
-                .ok()
-                .and_then(|g| g.as_ref().cloned());
-            if let Some(tray) = tray {
-                // One call per frame, nothing else — the two-call
-                // icon+template sequence is what flashed.
-                let _ = tray.set_icon(Some(frames[frame].clone()));
+            let frame = if active || greeting > 0 {
+                greeting = greeting.saturating_sub(1);
+                SPORE_CYCLE[(tick % SPORE_CYCLE.len() as u64) as usize]
+            } else {
+                SPORE_IDLE
+            };
+            if frame != last {
+                last = frame;
+                let tray = app
+                    .state::<TrayHandle>()
+                    .0
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.as_ref().cloned());
+                if let Some(tray) = tray {
+                    // One call per frame, nothing else — the two-call
+                    // icon+template sequence is what flashed.
+                    let _ = tray.set_icon(Some(frames[frame].clone()));
+                }
             }
             tick = tick.wrapping_add(1);
-            tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
+            tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         }
     });
 }
@@ -490,7 +505,7 @@ fn spawn_icon_animator(app: AppHandle) {
 /// Build the tray icon with the template glyph and the boot menu. Called once
 /// from setup; best-effort — a tray failure must never block app startup.
 pub fn init(app: &AppHandle) -> tauri::Result<()> {
-    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray/tray.png"))?;
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray/spore/s6.png"))?;
     let tray = TrayIconBuilder::with_id("myco-tray")
         .icon(icon)
         .icon_as_template(true)

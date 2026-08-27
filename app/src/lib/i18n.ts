@@ -2605,7 +2605,7 @@ export const STRINGS: Record<Lang, Strings> = {
     agent_confirm_title: "The agent wants to update a page",
     agent_confirm_create_title: "The agent wants to create a page",
     agent_confirm_hint: "Allowing this writes the change below to your vault.",
-    notch_peek: "Drop it here",
+    notch_peek: "Drop it — or click to jot",
     notch_peek_body: "Files · links · selected text",
     notch_drop: "Release to drop",
     notch_accepted: "Got it",
@@ -2627,7 +2627,8 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_rejected_accepts: "accepts",
     notch_rejected_list: "PDF · documents · sheets · HTML · images · audio",
     notch_unsupported: "This format is not readable yet ({ext})",
-    notch_write_failed: "Could not save the drop — try again or use 소스 가져오기",
+    notch_write_failed:
+      "Could not save the drop — try again or use 소스 가져오기",
     s_notch_title: "Notch drop surface",
     s_notch_desc:
       "Show a drop target under the menu-bar notch — files dropped there land in _inbox for ingest to read.",
@@ -3950,7 +3951,7 @@ export const STRINGS: Record<Lang, Strings> = {
     agent_confirm_title: "에이전트가 페이지를 수정하려 합니다",
     agent_confirm_create_title: "에이전트가 새 페이지를 만들려 합니다",
     agent_confirm_hint: "허용하면 아래 변경이 볼트에 기록됩니다.",
-    notch_peek: "떨구면 받습니다",
+    notch_peek: "떨구거나, 클릭해서 메모",
     notch_peek_body: "파일 · 링크 · 선택한 텍스트",
     notch_drop: "여기에 놓으세요",
     notch_accepted: "받았습니다",
@@ -3972,7 +3973,8 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_rejected_accepts: "가능",
     notch_rejected_list: "PDF · 문서 · 표 · HTML · 이미지 · 음성",
     notch_unsupported: "이 형식은 아직 읽지 못합니다 ({ext})",
-    notch_write_failed: "저장하지 못했습니다 — 다시 시도하거나 소스 가져오기를 사용하세요",
+    notch_write_failed:
+      "저장하지 못했습니다 — 다시 시도하거나 소스 가져오기를 사용하세요",
     s_notch_title: "노치 드롭 표면",
     s_notch_desc:
       "메뉴 막대 노치 아래에 드롭 표면을 표시합니다 — 떨어뜨린 파일은 _inbox로 들어가 인제스트가 읽습니다.",
@@ -5310,7 +5312,7 @@ export const STRINGS: Record<Lang, Strings> = {
     agent_confirm_create_title:
       "エージェントが新しいページを作成しようとしています",
     agent_confirm_hint: "許可すると、以下の変更がボールトに書き込まれます。",
-    notch_peek: "ドロップで受け取ります",
+    notch_peek: "ドロップ — またはクリックでメモ",
     notch_peek_body: "ファイル · リンク · 選択テキスト",
     notch_drop: "ここに置いてください",
     notch_accepted: "受け取りました",
@@ -5332,7 +5334,8 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_rejected_accepts: "対応",
     notch_rejected_list: "PDF · 文書 · 表 · HTML · 画像 · 音声",
     notch_unsupported: "この形式はまだ読めません ({ext})",
-    notch_write_failed: "保存できませんでした — もう一度試すか、ソース取り込みを使用してください",
+    notch_write_failed:
+      "保存できませんでした — もう一度試すか、ソース取り込みを使用してください",
     s_notch_title: "ノッチのドロップ面",
     s_notch_desc:
       "メニューバーのノッチ下にドロップ面を表示します — ドロップしたファイルは _inbox に入り、取り込みが読みます。",
