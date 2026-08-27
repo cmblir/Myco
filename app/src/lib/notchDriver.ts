@@ -617,6 +617,14 @@ export function useNotchDriver(): NotchDrive | null {
     };
     const onLeave = (): void => {
       if (kindRef.current === "peek") raise({ type: "hoverLeave" });
+      // A hover-grown surface must also fold when the pointer leaves an
+      // UNUSED capture — otherwise a stray click pins it open with no mouse
+      // way out (and no keyboard way out either, if key focus was refused).
+      // Typed text keeps it open: leaving must never destroy content.
+      else if (kindRef.current === "capture") {
+        const field = document.querySelector<HTMLInputElement>(".notch-field");
+        if (!field?.value.trim()) raise({ type: "captureCancel" });
+      }
     };
     window.addEventListener("click", onClick);
     document.documentElement.addEventListener("mouseenter", onEnter);
