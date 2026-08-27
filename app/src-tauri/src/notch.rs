@@ -260,6 +260,10 @@ mod imp {
         // NSPanel, and NSPanel adds no ivars over NSWindow.
         let panel: &NSPanel = unsafe { &*(ptr as *const NSPanel) };
         panel.setBecomesKeyOnlyIfNeeded(true);
+        // Hover growth needs mouse-MOVED events, which a non-key panel does
+        // not track by default — clicks arrived while hover stayed dead, the
+        // exact signature the second headed run reported.
+        ns_window.setAcceptsMouseMovedEvents(true);
         let _ = mtm;
         Ok(())
     }

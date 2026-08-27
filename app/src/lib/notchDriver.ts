@@ -620,10 +620,15 @@ export function useNotchDriver(): NotchDrive | null {
     };
     window.addEventListener("click", onClick);
     document.documentElement.addEventListener("mouseenter", onEnter);
+    // mousemove as well: enter alone missed on the non-key panel (pointer can
+    // already be inside when tracking starts). Same idle gate, so it costs
+    // one no-op comparison per move once grown.
+    document.documentElement.addEventListener("mousemove", onEnter);
     document.documentElement.addEventListener("mouseleave", onLeave);
     return () => {
       window.removeEventListener("click", onClick);
       document.documentElement.removeEventListener("mouseenter", onEnter);
+      document.documentElement.removeEventListener("mousemove", onEnter);
       document.documentElement.removeEventListener("mouseleave", onLeave);
     };
   }, [mocking]);
