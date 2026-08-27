@@ -443,11 +443,11 @@ pub fn whisper_check() -> CliStatus {
     crate::whisper::check()
 }
 
-/// Transcribe an audio/video file with an installed whisper CLI (Feature 2).
+/// Transcribe an audio/video file with the bundled whisper (or a PATH one).
 /// Runs off the async pool so the long transcription doesn't block the UI.
 #[tauri::command]
-pub async fn transcribe_media(path: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || crate::whisper::transcribe(&path))
+pub async fn transcribe_media(app: tauri::AppHandle, path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || crate::whisper::transcribe(&app, &path))
         .await
         .map_err(|e| format!("transcription task failed: {e}"))?
 }
@@ -503,7 +503,11 @@ pub struct VoiceSaved {
 /// `myco-<purpose>-<pid>-<nanos>` pattern) → whisper → `_inbox/` note. The
 /// whisper check runs FIRST so a missing CLI writes nothing at all, and the
 /// temp file is deleted on every path (success and transcription failure).
-fn save_voice_core(root: &std::path::Path, bytes: &[u8]) -> Result<VoiceSaved, String> {
+fn save_voice_core(
+    app: &tauri::AppHandle,
+    root: &std::path::Path,
+    bytes: &[u8],
+) -> Result<VoiceSaved, String> {
     if !crate::whisper::check().installed {
         return Err("whisper-missing".to_string());
     }
@@ -522,7 +526,7 @@ fn save_voice_core(root: &std::path::Path, bytes: &[u8]) -> Result<VoiceSaved, S
             .unwrap_or(0)
     ));
     std::fs::write(&tmp, bytes).map_err(|e| format!("write temp audio: {e}"))?;
-    let transcribed = crate::whisper::transcribe(&tmp.to_string_lossy());
+    let transcribed = crate::whisper::transcribe(app, &tmp.to_string_lossy());
     let _ = std::fs::remove_file(&tmp);
     let transcript = transcribed?;
     let now = std::time::SystemTime::now()
@@ -546,11 +550,12 @@ fn save_voice_core(root: &std::path::Path, bytes: &[u8]) -> Result<VoiceSaved, S
 /// on PATH; the frontend shows install copy and stays in ask mode.
 #[tauri::command]
 pub async fn save_voice_capture(
+    app: tauri::AppHandle,
     state: tauri::State<'_, VaultRoot>,
     bytes: Vec<u8>,
 ) -> Result<VoiceSaved, String> {
     let root = require_root(&state)?;
-    tauri::async_runtime::spawn_blocking(move || save_voice_core(&root, &bytes))
+    tauri::async_runtime::spawn_blocking(move || save_voice_core(&app, &root, &bytes))
         .await
         .map_err(|e| format!("join failed: {e}"))?
 }

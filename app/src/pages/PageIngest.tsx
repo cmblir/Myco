@@ -132,7 +132,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
           if (isMediaFile(first) && !(await whisperInstalled())) {
             setDropError(
               tRef.current.voice_whisper_missing ??
-                "whisper is not installed — run brew install openai-whisper, then try again.",
+                "preparing voice recognition — the speech model downloads once (~190 MB) on first use. If this keeps failing, reinstall myco.",
             );
             return;
           }
@@ -199,7 +199,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
     if (isMediaFile(path) && !(await whisperInstalled())) {
       setDropError(
         t.voice_whisper_missing ??
-          "whisper is not installed — run brew install openai-whisper, then try again.",
+          "preparing voice recognition — the speech model downloads once (~190 MB) on first use. If this keeps failing, reinstall myco.",
       );
       return;
     }

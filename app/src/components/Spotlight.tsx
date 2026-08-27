@@ -235,7 +235,7 @@ export default function Spotlight(): JSX.Element {
   const noticeText =
     voiceNotice === "whisper-missing"
       ? (t.voice_whisper_missing ??
-        "whisper is not installed — run brew install openai-whisper, then try again.")
+        "preparing voice recognition — the speech model downloads once (~190 MB) on first use. If this keeps failing, reinstall myco.")
       : voiceNotice === "mic-denied"
         ? (t.voice_mic_denied ??
           "The microphone is not available — allow myco to use it in System Settings.")

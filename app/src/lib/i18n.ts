@@ -2433,7 +2433,7 @@ export const STRINGS: Record<Lang, Strings> = {
     voice_hint_recording: "⏎ save · esc cancel",
     voice_saved_chip: "{rel} — joins the next ingest",
     voice_whisper_missing:
-      "whisper is not installed — run brew install openai-whisper, then try again.",
+      "preparing voice recognition — the speech model downloads once (~190 MB) on first use. If this keeps failing, reinstall myco.",
     voice_mic_denied:
       "The microphone is not available — allow myco to use it in System Settings.",
     s_spot_title: "Ask from anywhere",
@@ -3782,7 +3782,7 @@ export const STRINGS: Record<Lang, Strings> = {
     voice_hint_recording: "⏎ 저장 · esc 취소",
     voice_saved_chip: "{rel} — 다음 인제스트에 합류합니다",
     voice_whisper_missing:
-      "whisper가 설치되어 있지 않습니다 — brew install openai-whisper 후 다시 시도하세요.",
+      "음성 인식 준비 중 — 첫 사용 시 음성 모델(~190MB)을 한 번만 내려받습니다. 계속 실패하면 myco를 재설치해 주세요.",
     voice_mic_denied:
       "마이크를 사용할 수 없습니다 — 시스템 설정에서 myco의 마이크 접근을 허용해주세요.",
     s_spot_title: "어디서나 질문",
@@ -4969,7 +4969,7 @@ export const STRINGS: Record<Lang, Strings> = {
     voice_hint_recording: "⏎ 保存 · esc キャンセル",
     voice_saved_chip: "{rel} — 次のインジェストに合流します",
     voice_whisper_missing:
-      "whisper がインストールされていません — brew install openai-whisper の後にもう一度お試しください。",
+      "音声認識を準備中 — 初回のみ音声モデル(~190MB)をダウンロードします。失敗が続く場合は myco を再インストールしてください。",
     voice_mic_denied:
       "マイクを使用できません — システム設定で myco のマイク使用を許可してください。",
     s_spot_title: "どこからでも質問",
