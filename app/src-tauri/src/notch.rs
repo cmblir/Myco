@@ -498,7 +498,56 @@ pub fn ensure_notch_window(app: &AppHandle) -> Option<tauri::WebviewWindow> {
         eprintln!("notch window promote/place failed: {e}");
     }
     let _ = window.show();
+    spawn_hover_watch(app);
     Some(window)
+}
+
+/// Event sent to the notch webview whenever the pointer crosses the panel's
+/// frame. WKWebView's own hover tracking runs only while THIS app is active,
+/// and the notch lives over other apps' sessions — clicks arrived, hover
+/// never did (both headed runs). So the pointer is polled natively instead:
+/// NSEvent.mouseLocation and NSWindow.frame share the same bottom-left screen
+/// space, making containment one rect test. 8 Hz, no drawing — the panel only
+/// redraws when the state actually flips.
+#[cfg(target_os = "macos")]
+const NOTCH_HOVER_EVENT: &str = "notch-hover";
+
+#[cfg(target_os = "macos")]
+fn spawn_hover_watch(app: &AppHandle) {
+    use tauri::{Emitter as _, Manager as _};
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        let mut inside = false;
+        loop {
+            tokio::time::sleep(std::time::Duration::from_millis(125)).await;
+            let Some(win) = app.get_webview_window(NOTCH_LABEL) else {
+                continue;
+            };
+            let probe = imp::on_main(&app, {
+                let win = win.clone();
+                move |_mtm| {
+                    let ptr = win.ns_window().ok()?;
+                    if ptr.is_null() {
+                        return None;
+                    }
+                    let nsw: &objc2_app_kit::NSWindow = unsafe { &*(ptr as *const _) };
+                    let f = nsw.frame();
+                    let p = objc2_app_kit::NSEvent::mouseLocation();
+                    Some(
+                        p.x >= f.origin.x
+                            && p.x <= f.origin.x + f.size.width
+                            && p.y >= f.origin.y
+                            && p.y <= f.origin.y + f.size.height,
+                    )
+                }
+            });
+            let now = matches!(probe, Ok(Some(true)));
+            if now != inside {
+                inside = now;
+                let _ = win.emit(NOTCH_HOVER_EVENT, inside);
+            }
+        }
+    });
 }
 
 #[cfg(not(target_os = "macos"))]

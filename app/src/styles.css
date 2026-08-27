@@ -4301,7 +4301,7 @@ hr {
 .tray-panel .activity-actions .btn {
   background: rgba(255, 255, 255, 0.1);
   border-color: rgba(255, 255, 255, 0.18);
-  color: #e8eaee;
+  color: #ece7df;
 }
 .activity-sub-wrap {
   white-space: normal;
@@ -4370,13 +4370,13 @@ hr {
 }
 .tray-panel .inflow-sub,
 .tray-panel .inflow-caption {
-  color: #7e848f;
+  color: #7a7580;
 }
 .tray-panel .inflow-count {
-  color: #b9bec7;
+  color: #b8b3ac;
 }
 .tray-panel .inflow-view {
-  color: #7aa7ff;
+  color: #a78bfa;
 }
 
 /* "Today's inflow" sparkbar — 24 hourly columns, session/inbox files (purple)
@@ -4407,7 +4407,7 @@ hr {
 }
 /* Dark tray card: hairline + lighter bar tones for contrast. */
 .tray-panel .inflow-spark {
-  border-bottom-color: #33363f;
+  border-bottom-color: #222227;
 }
 .tray-panel .inflow-spark-file {
   background: rgba(167, 139, 250, 0.75);
@@ -4454,7 +4454,7 @@ html.tray-window body {
 }
 .tray-greeting {
   font-size: 11.5px;
-  color: #979aa5;
+  color: #928d96;
 }
 /* Stat cards — label / big value / sub line, all panel-local. */
 .tray-cards {
@@ -4469,28 +4469,28 @@ html.tray-window body {
   align-items: flex-start;
   gap: 2px;
   padding: 9px 10px 8px;
-  border: 1px solid #343846;
+  border: 1px solid #26262b;
   border-radius: 9px;
-  background: #262932;
+  background: #141416;
   text-align: left;
   cursor: pointer;
   min-width: 0;
   transition: border-color 120ms;
 }
 .tray-card:hover {
-  border-color: #4a4e60;
+  border-color: #3a3a42;
 }
 .tray-card-label {
   font-size: 10px;
   letter-spacing: 0.07em;
   text-transform: uppercase;
-  color: #7e848f;
+  color: #7a7580;
 }
 .tray-card-value {
   font-size: 16.5px;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
-  color: #e8eaee;
+  color: #ece7df;
   white-space: nowrap;
 }
 /* Amber only when something needs attention (overdue / running). */
@@ -4499,7 +4499,7 @@ html.tray-window body {
 }
 .tray-card-sub {
   font-size: 10.5px;
-  color: #979aa5;
+  color: #928d96;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -4513,16 +4513,16 @@ html.tray-window body {
 }
 .tray-actions button {
   flex: 1;
-  background: #262932;
-  color: #e8eaee;
-  border: 1px solid #343846;
+  background: #141416;
+  color: #ece7df;
+  border: 1px solid #26262b;
   border-radius: 8px;
   padding: 6px 0;
   font-size: 12.5px;
   cursor: pointer;
 }
 .tray-actions button:hover {
-  border-color: #4a4e60;
+  border-color: #3a3a42;
 }
 .tray-foot {
   display: flex;
@@ -4534,11 +4534,11 @@ html.tray-window body {
   border: 0;
   padding: 0;
   font-size: 12px;
-  color: #979aa5;
+  color: #928d96;
   cursor: pointer;
 }
 .tray-foot button:hover {
-  color: #e8eaee;
+  color: #ece7df;
 }
 @media (prefers-reduced-motion: reduce) {
   .tray-card {
@@ -4549,12 +4549,12 @@ html.tray-window body {
 .tray-panel {
   box-sizing: border-box;
   width: 100%;
-  background: rgba(30, 32, 38, 0.98);
-  border: 1px solid #343846;
+  background: rgba(8, 8, 10, 0.97);
+  border: 1px solid #26262b;
   border-radius: 12px;
   padding: 6px;
   box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
-  color: #e8eaee;
+  color: #ece7df;
   font:
     13.5px/1.5 -apple-system,
     "Pretendard",
@@ -4564,14 +4564,14 @@ html.tray-window body {
 }
 .tray-panel .activity-hdr {
   font-size: 11px;
-  color: #7e848f;
+  color: #7a7580;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   padding: 7px 12px 3px;
 }
 .tray-panel .activity-sep {
   height: 1px;
-  background: #33363f;
+  background: #222227;
   margin: 5px 8px;
 }
 .tray-panel .activity-row {
@@ -4584,14 +4584,14 @@ html.tray-window body {
   border: 0;
   border-radius: 8px;
   background: none;
-  color: #e8eaee;
+  color: #ece7df;
   font-size: 13.5px;
 }
 .tray-panel button.activity-row {
   cursor: pointer;
 }
 .tray-panel button.activity-row:hover {
-  background: rgba(122, 167, 255, 0.14);
+  background: rgba(167, 139, 250, 0.14);
 }
 .tray-panel .activity-icon {
   width: 20px;
@@ -5667,11 +5667,11 @@ html.spotlight-window body {
   width: 100%;
   display: flex;
   flex-direction: column;
-  background: rgba(28, 30, 36, 0.98);
-  border: 1px solid #3a3e48;
+  background: rgba(8, 8, 10, 0.97);
+  border: 1px solid #26262b;
   border-radius: 14px;
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
-  color: #e8eaee;
+  color: #ece7df;
   font:
     14px/1.55 -apple-system,
     "Pretendard",
@@ -5687,7 +5687,7 @@ html.spotlight-window body {
   flex: 0 0 auto;
 }
 .spotlight-glyph {
-  color: #8f96a3;
+  color: #928d96;
   font-size: 16px;
   line-height: 1;
 }
@@ -5696,13 +5696,13 @@ html.spotlight-window body {
   min-width: 0;
   background: none;
   border: 0;
-  color: #f2f4f8;
+  color: #ece7df;
   font-size: 19px;
   font-family: inherit;
   padding: 2px 0;
 }
 .spotlight-input::placeholder {
-  color: #6d7480;
+  color: #7a7580;
 }
 .spotlight-input:focus {
   outline: none;
@@ -5710,13 +5710,13 @@ html.spotlight-window body {
 .spotlight-status {
   flex: 0 0 auto;
   font-size: 12px;
-  color: #8f96a3;
+  color: #928d96;
 }
 /* The answer scrolls INSIDE the card. A viewport-relative cap on the card
    itself would deadlock: the card's height is what resize_spotlight sizes the
    window to, so 100vh could never exceed the first-paint height. */
 .spotlight-body {
-  border-top: 1px solid #33363f;
+  border-top: 1px solid #222227;
   padding: 12px 16px 14px;
   max-height: 520px;
   overflow-y: auto;
@@ -5724,7 +5724,7 @@ html.spotlight-window body {
 }
 .spotlight-label {
   font-size: 11px;
-  color: #8f96a3;
+  color: #928d96;
   text-transform: uppercase;
   letter-spacing: 0.07em;
   margin-bottom: 8px;
@@ -5733,7 +5733,7 @@ html.spotlight-window body {
   color: #ffb4a2;
 }
 .spotlight-hint {
-  color: #6d7480;
+  color: #7a7580;
   font-size: 12px;
 }
 .spotlight-body .spotlight-hint {
@@ -5745,11 +5745,11 @@ html.spotlight-window body {
 .spotlight-body .myco-viewer blockquote {
   margin: 6px 0 10px;
   padding-left: 10px;
-  border-left: 2px solid #4a4f5b;
-  color: #c3c9d3;
+  border-left: 2px solid #3a3a42;
+  color: #b8b3ac;
 }
 .spotlight-body .myco-viewer a {
-  color: #9dbcff;
+  color: #a78bfa;
 }
 
 /* Spotlight voice quick-capture (W3–6 item 9, mockup M7-b/c). The waveform is
@@ -5762,11 +5762,11 @@ html.spotlight-window body {
   min-height: 27px;
 }
 .spotlight-mic {
-  color: #8f96a3;
+  color: #928d96;
 }
 .spotlight-mic:hover {
   background: rgba(255, 255, 255, 0.08);
-  color: #f2f4f8;
+  color: #ece7df;
 }
 .voice-glyph {
   display: flex;

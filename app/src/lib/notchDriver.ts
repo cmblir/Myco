@@ -633,7 +633,29 @@ export function useNotchDriver(): NotchDrive | null {
     // one no-op comparison per move once grown.
     document.documentElement.addEventListener("mousemove", onEnter);
     document.documentElement.addEventListener("mouseleave", onLeave);
+    // The load-bearing hover source: DOM enter/leave only fire while THIS app
+    // is active, and the notch is hovered mid-someone-else's-app. The native
+    // side polls the pointer against the panel frame and emits transitions
+    // (notch.rs spawn_hover_watch); the DOM pair above stays as the fast path.
+    let unlistenHover: (() => void) | null = null;
+    let hoverGone = false;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen<boolean>("notch-hover", (e) => {
+          if (e.payload) onEnter();
+          else onLeave();
+        }),
+      )
+      .then((u) => {
+        if (hoverGone) u();
+        else unlistenHover = u;
+      })
+      .catch((err: unknown) =>
+        console.error("notch: hover listen failed:", err),
+      );
     return () => {
+      hoverGone = true;
+      if (unlistenHover) unlistenHover();
       window.removeEventListener("click", onClick);
       document.documentElement.removeEventListener("mouseenter", onEnter);
       document.documentElement.removeEventListener("mousemove", onEnter);

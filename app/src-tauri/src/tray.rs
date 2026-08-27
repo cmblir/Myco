@@ -404,36 +404,51 @@ static ANIM_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBoo
 
 /// The spore-birth cycle (approved icon A): a spore beads, a thread grows
 /// out of it, a second spore, a second thread, a third — the finished
-/// three-node glyph holds, then fades and repeats. The finished frame (s6)
-/// IS the idle icon: motion only plays while work runs (plus once at
-/// launch), so an idle menu bar costs zero redraws. Two pre-tinted sets so
-/// no template call is ever needed mid-animation.
-const SPORE_WHITE: [&[u8]; 8] = [
-    include_bytes!("../icons/tray/spore/s0w.png"),
-    include_bytes!("../icons/tray/spore/s1w.png"),
-    include_bytes!("../icons/tray/spore/s2w.png"),
-    include_bytes!("../icons/tray/spore/s3w.png"),
-    include_bytes!("../icons/tray/spore/s4w.png"),
-    include_bytes!("../icons/tray/spore/s5w.png"),
-    include_bytes!("../icons/tray/spore/s6w.png"),
-    include_bytes!("../icons/tray/spore/s7w.png"),
+/// three-node glyph holds, then fades and repeats. Two lives (the owner's
+/// second headed call — constant motion, colour when something happens):
+/// while work runs the cycle plays in the brand purple; idle plays a slow
+/// mono BREATH on the finished glyph instead of freezing. All sets are
+/// pre-tinted so no template call is ever needed mid-animation.
+const BIRTH_DARKBAR: [&[u8]; 8] = [
+    include_bytes!("../icons/tray/spore/pd0.png"),
+    include_bytes!("../icons/tray/spore/pd1.png"),
+    include_bytes!("../icons/tray/spore/pd2.png"),
+    include_bytes!("../icons/tray/spore/pd3.png"),
+    include_bytes!("../icons/tray/spore/pd4.png"),
+    include_bytes!("../icons/tray/spore/pd5.png"),
+    include_bytes!("../icons/tray/spore/pd6.png"),
+    include_bytes!("../icons/tray/spore/pd7.png"),
 ];
-const SPORE_BLACK: [&[u8]; 8] = [
-    include_bytes!("../icons/tray/spore/s0b.png"),
-    include_bytes!("../icons/tray/spore/s1b.png"),
-    include_bytes!("../icons/tray/spore/s2b.png"),
-    include_bytes!("../icons/tray/spore/s3b.png"),
-    include_bytes!("../icons/tray/spore/s4b.png"),
-    include_bytes!("../icons/tray/spore/s5b.png"),
-    include_bytes!("../icons/tray/spore/s6b.png"),
-    include_bytes!("../icons/tray/spore/s7b.png"),
+const BIRTH_LIGHTBAR: [&[u8]; 8] = [
+    include_bytes!("../icons/tray/spore/pl0.png"),
+    include_bytes!("../icons/tray/spore/pl1.png"),
+    include_bytes!("../icons/tray/spore/pl2.png"),
+    include_bytes!("../icons/tray/spore/pl3.png"),
+    include_bytes!("../icons/tray/spore/pl4.png"),
+    include_bytes!("../icons/tray/spore/pl5.png"),
+    include_bytes!("../icons/tray/spore/pl6.png"),
+    include_bytes!("../icons/tray/spore/pl7.png"),
+];
+const BREATH_WHITE: [&[u8]; 6] = [
+    include_bytes!("../icons/tray/spore/bw0.png"),
+    include_bytes!("../icons/tray/spore/bw1.png"),
+    include_bytes!("../icons/tray/spore/bw2.png"),
+    include_bytes!("../icons/tray/spore/bw3.png"),
+    include_bytes!("../icons/tray/spore/bw4.png"),
+    include_bytes!("../icons/tray/spore/bw5.png"),
+];
+const BREATH_BLACK: [&[u8]; 6] = [
+    include_bytes!("../icons/tray/spore/bb0.png"),
+    include_bytes!("../icons/tray/spore/bb1.png"),
+    include_bytes!("../icons/tray/spore/bb2.png"),
+    include_bytes!("../icons/tray/spore/bb3.png"),
+    include_bytes!("../icons/tray/spore/bb4.png"),
+    include_bytes!("../icons/tray/spore/bb5.png"),
 ];
 
 /// The frame each 200ms step of one 1.8s cycle shows: birth, holds on the
 /// finished glyph, one fade step, repeat.
 const SPORE_CYCLE: [usize; 9] = [0, 1, 2, 3, 4, 5, 6, 6, 7];
-/// The finished glyph — the idle icon.
-const SPORE_IDLE: usize = 6;
 
 /// True when the menu bar is dark (glyph should be white). `defaults` is the
 /// stable way to read this from a plain process; the key is absent in light
@@ -446,44 +461,56 @@ fn menu_bar_is_dark() -> bool {
         .unwrap_or(true)
 }
 
-/// Spawn the animator. One task for the app's lifetime. Idle shows the
-/// finished glyph and swaps NOTHING (the always-on lesson: every set_icon is
-/// a WindowServer menu-bar redraw); the birth cycle loops only while work
-/// runs, plus one greeting cycle at launch.
+/// Spawn the animator. One task for the app's lifetime. Two registers:
+/// work (or the launch greeting) plays the PURPLE birth cycle at 200ms —
+/// colour is the "something is happening" signal — and idle breathes the
+/// finished mono glyph at 400ms. The breath is a 22px status-item composite
+/// at 2.5 fps; the WindowServer lesson was about full-window layers, and
+/// this is nowhere near it.
 fn spawn_icon_animator(app: AppHandle) {
     use std::sync::atomic::Ordering;
     tauri::async_runtime::spawn(async move {
-        let decode = |set: &[&[u8]; 8]| -> Vec<tauri::image::Image<'static>> {
+        fn decode<const N: usize>(set: &[&[u8]; N]) -> Vec<tauri::image::Image<'static>> {
             set.iter()
                 .filter_map(|b| tauri::image::Image::from_bytes(b).ok())
                 .map(|i| i.to_owned())
                 .collect()
-        };
-        let white = decode(&SPORE_WHITE);
-        let black = decode(&SPORE_BLACK);
-        if white.len() != 8 || black.len() != 8 {
-            return; // a frame failed to decode; keep the static glyph
+        }
+        let birth_dark = decode(&BIRTH_DARKBAR);
+        let birth_light = decode(&BIRTH_LIGHTBAR);
+        let breath_white = decode(&BREATH_WHITE);
+        let breath_black = decode(&BREATH_BLACK);
+        if birth_dark.len() != 8
+            || birth_light.len() != 8
+            || breath_white.len() != 6
+            || breath_black.len() != 6
+        {
+            return; // a frame failed to decode; keep the static boot glyph
         }
         let mut dark = menu_bar_is_dark();
         let mut tick: u64 = 0;
-        // Launch greeting: one full cycle even though nothing is running yet.
+        // Launch greeting: one full birth cycle even though nothing runs yet.
         let mut greeting = SPORE_CYCLE.len() as u64;
-        let mut last = usize::MAX;
+        // (set identity, frame) — a same-image tick must not call set_icon.
+        let mut last = (usize::MAX, usize::MAX);
         loop {
             let active = ANIM_ACTIVE.load(Ordering::Relaxed);
             if tick % 150 == 0 && tick > 0 {
                 // Appearance changes are rare; a re-read every ~30s is plenty.
                 dark = menu_bar_is_dark();
             }
-            let frames = if dark { &white } else { &black };
-            let frame = if active || greeting > 0 {
+            let (frames, frame) = if active || greeting > 0 {
                 greeting = greeting.saturating_sub(1);
-                SPORE_CYCLE[(tick % SPORE_CYCLE.len() as u64) as usize]
+                let set = if dark { &birth_dark } else { &birth_light };
+                (set, SPORE_CYCLE[(tick % SPORE_CYCLE.len() as u64) as usize])
             } else {
-                SPORE_IDLE
+                // 400ms per breath frame: the cycle advances every 2nd tick.
+                let set = if dark { &breath_white } else { &breath_black };
+                (set, ((tick / 2) % breath_white.len() as u64) as usize)
             };
-            if frame != last {
-                last = frame;
+            let key = (frames.as_ptr() as usize, frame);
+            if key != last {
+                last = key;
                 let tray = app
                     .state::<TrayHandle>()
                     .0

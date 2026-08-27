@@ -72,7 +72,7 @@ objc2 = "0.6"
 # Already in the graph via objc2-app-kit; direct so notch.rs can name
 # NSPoint/NSSize for the top-left placement call.
 objc2-foundation = "0.3"
-objc2-app-kit = { version = "0.3", features = ["NSPanel", "NSPasteboard", "NSResponder", "NSScreen", "NSView", "NSWindow"] }
+objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSPanel", "NSPasteboard", "NSResponder", "NSScreen", "NSView", "NSWindow"] }
 
 [dev-dependencies]
 wiremock = "0.6"
