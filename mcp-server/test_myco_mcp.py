@@ -704,3 +704,151 @@ def test_profile_serialize_sanitizes_embedded_heading_injection():
     assert round_trip["goals"] == ["real goal"]
     assert round_trip["role"] == "Engineer"
     assert round_trip["style"] == "Concise"
+
+
+# ─── import tools (roadmap P0 — agent-native import path) ────────────────────
+
+
+def _import_vault(tmp_path, monkeypatch):
+    """A throwaway vault + fake project, with REPO_ROOT pinned so raw_path
+    round-trips relative."""
+    import types
+
+    import myco_mcp
+
+    vault = tmp_path / "vault"
+    (vault / "raw").mkdir(parents=True)
+    (vault / "wiki").mkdir()
+    proj = types.SimpleNamespace(
+        root=vault, raw_dir=vault / "raw", wiki_dir=vault / "wiki", slug="t"
+    )
+    monkeypatch.setattr(myco_mcp, "REPO_ROOT", vault)
+    monkeypatch.setattr(myco_mcp, "_resolve", lambda p=None: proj)
+    return vault, proj
+
+
+def test_import_conversation_writes_ledger_and_queue(tmp_path, monkeypatch):
+    from myco_mcp import import_conversation, ledger_status
+
+    vault, _ = _import_vault(tmp_path, monkeypatch)
+    out = import_conversation(
+        "User: hi\nAssistant: hello", "chatgpt", title="Greeting", conversation_id="abc123"
+    )
+    assert out["ok"] and out["status"] == "imported"
+    raw = vault / "raw" / "conversations" / "chatgpt" / "abc123.md"
+    assert raw.is_file()
+    body = raw.read_text()
+    assert "source: chatgpt" in body and "Assistant: hello" in body
+    ledger = json.loads((vault / ".myco" / "ledger.json").read_text())
+    assert ledger["entries"]["chatgpt:abc123"].startswith("py-")
+    status = ledger_status()
+    assert status["conversations_recorded"] == 1
+    assert status["per_source"] == {"chatgpt": 1}
+    assert status["wikify_pending"] == 1
+
+
+def test_import_conversation_duplicate_skips_changed_appends_revision(
+    tmp_path, monkeypatch
+):
+    from myco_mcp import import_conversation
+
+    vault, _ = _import_vault(tmp_path, monkeypatch)
+    import_conversation("same text", "claude", conversation_id="c1")
+    again = import_conversation("same text", "claude", conversation_id="c1")
+    assert again["status"] == "skipped_duplicate"
+    changed = import_conversation("the chat continued", "claude", conversation_id="c1")
+    assert changed["status"] == "reimported_update"
+    # raw/ immutable: the original file is untouched, the revision is new.
+    assert (vault / "raw" / "conversations" / "claude" / "c1.md").is_file()
+    assert (vault / "raw" / "conversations" / "claude" / "c1.r1.md").is_file()
+
+
+def test_import_conversation_refuses_bad_source_and_empty_text(tmp_path, monkeypatch):
+    from myco_mcp import import_conversation
+
+    _import_vault(tmp_path, monkeypatch)
+    assert not import_conversation("text", "Not A Slug!")["ok"]
+    assert not import_conversation("   ", "chatgpt")["ok"]
+
+
+def test_import_session_parses_claude_code_jsonl(tmp_path, monkeypatch):
+    from myco_mcp import import_session
+
+    vault, _ = _import_vault(tmp_path, monkeypatch)
+    session = tmp_path / "s1.jsonl"
+    lines = [
+        {"type": "user", "cwd": "/repo", "gitBranch": "main", "sessionId": "sess-9",
+         "timestamp": "2026-08-01T10:00:00Z",
+         "message": {"role": "user", "content": [{"type": "text", "text": "fix the bug"}]}},
+        {"type": "assistant",
+         "message": {"role": "assistant", "content": [{"type": "text", "text": "done"}]}},
+        {"type": "tool_result", "noise": True},
+    ]
+    session.write_text("\n".join(json.dumps(x) for x in lines))
+    out = import_session(str(session))
+    assert out["ok"] and out["status"] == "imported"
+    raw = vault / "raw" / "conversations" / "claude-code" / "sess-9.md"
+    body = raw.read_text()
+    assert "## User" in body and "fix the bug" in body
+    assert "cwd: /repo" in body and "git_branch: main" in body
+    assert "created: 2026-08-01" in body
+
+
+def test_import_session_parses_codex_rollout(tmp_path, monkeypatch):
+    from myco_mcp import import_session
+
+    vault, _ = _import_vault(tmp_path, monkeypatch)
+    session = tmp_path / "rollout-1.jsonl"
+    lines = [
+        {"type": "message", "role": "user",
+         "content": [{"type": "input_text", "text": "explain rope"}]},
+        {"type": "message", "role": "assistant",
+         "content": [{"type": "output_text", "text": "rotary embeddings"}]},
+    ]
+    session.write_text("\n".join(json.dumps(x) for x in lines))
+    out = import_session(str(session))
+    assert out["ok"]
+    raw = vault / "raw" / "conversations" / "codex" / "rollout-1.md"
+    assert "rotary embeddings" in raw.read_text()
+
+
+def test_import_session_rejects_unrecognized_file(tmp_path, monkeypatch):
+    from myco_mcp import import_session
+
+    _import_vault(tmp_path, monkeypatch)
+    bad = tmp_path / "notes.jsonl"
+    bad.write_text('{"just": "noise"}\n')
+    out = import_session(str(bad))
+    assert not out["ok"] and "no user/assistant turns" in out["error"]
+    assert not import_session(str(tmp_path / "missing.jsonl"))["ok"]
+
+
+def test_wikify_pending_lists_then_checks_off(tmp_path, monkeypatch):
+    from myco_mcp import import_conversation, wikify_pending
+
+    _import_vault(tmp_path, monkeypatch)
+    import_conversation("alpha talk", "chatgpt", conversation_id="a")
+    import_conversation("beta talk", "chatgpt", conversation_id="b")
+    out = wikify_pending(limit=1)
+    assert out["pending_total"] == 2 and len(out["items"]) == 1
+    first = out["items"][0]
+    assert first["key"] == "chatgpt:a" and "alpha talk" in first["excerpt"]
+    after = wikify_pending(done=["chatgpt:a"])
+    assert after["pending_total"] == 1 and after["wikified_total"] == 1
+    assert after["items"][0]["key"] == "chatgpt:b"
+
+
+def test_ledger_status_reads_rust_shaped_ledger(tmp_path, monkeypatch):
+    from myco_mcp import ledger_status
+
+    vault, _ = _import_vault(tmp_path, monkeypatch)
+    (vault / ".myco").mkdir()
+    (vault / ".myco" / "ledger.json").write_text(json.dumps({
+        "entries": {"chatgpt:x": "0011223344556677", "codex:y": "8899aabbccddeeff"},
+        "files": {"/home/u/.claude/projects/a.jsonl": {"mtime_ns": 1, "len": 2, "convs": 1}},
+    }))
+    s = ledger_status()
+    assert s["conversations_recorded"] == 2
+    assert s["per_source"] == {"chatgpt": 1, "codex": 1}
+    assert s["session_files_stamped"] == 1
+    assert s["wikify_pending"] == 0

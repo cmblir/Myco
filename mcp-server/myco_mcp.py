@@ -548,11 +548,20 @@ def add_raw_source(filename: str, content: str, project: str = "") -> dict:
     wiki/index.md and wiki/log.md, and call `git_commit`.
     """
     proj = _resolve(project)
-    # Q4 item 13 (scope decision 2): scan BEFORE the write — raw/ is immutable,
-    # so a secret must never touch disk. The caller still holds the content; a
-    # structured refusal lets it redact and retry. Refusal strings kept in sync
-    # with app/src-tauri/src/mcp_native.rs (raw_source_guard) and
-    # automation/autoingest.py (quarantine move).
+    return _write_raw_guarded(proj, filename, content)
+
+
+def _write_raw_guarded(proj, filename: str, content: str) -> dict:
+    """The one raw/ write funnel: secret/PII scan → traversal check →
+    immutability check → write. Shared by `add_raw_source` and the import
+    tools so every path into raw/ carries identical guards.
+
+    Q4 item 13 (scope decision 2): scan BEFORE the write — raw/ is immutable,
+    so a secret must never touch disk. The caller still holds the content; a
+    structured refusal lets it redact and retry. Refusal strings kept in sync
+    with app/src-tauri/src/mcp_native.rs (raw_source_guard) and
+    automation/autoingest.py (quarantine move).
+    """
     secret_hits = scan_secrets(content)
     if secret_hits:
         return {
@@ -588,6 +597,389 @@ def add_raw_source(filename: str, content: str, project: str = "") -> dict:
             "immutable and committed to git; redact and re-add if unintended."
         )
     return out
+
+
+# ─── import tools (roadmap P0 — the agent-native import path) ────────────────
+#
+# Vendor-format PARSING lives in Rust (src-tauri/src/importers/) by decision;
+# these tools deliberately re-implement none of it. `import_conversation`
+# takes transcript text the calling agent already has; `import_session` reads
+# one session .jsonl with a minimal turn extractor (the one format an MCP
+# client cannot reasonably paste inline). Both funnel through
+# `_write_raw_guarded` — the same guards as add_raw_source — and record into
+# the Rust importers' ledger (`.myco/ledger.json`).
+#
+# Fingerprints: Rust stamps entries with a DefaultHasher digest that Python
+# cannot reproduce; ours are prefixed "py-". A cross-runtime re-import of the
+# same conversation therefore sees a fingerprint MISMATCH and treats it as an
+# update — the raw pre-existence check still makes that a no-op write, so the
+# worst case is an honest "reimported_update" tally, never a duplicate page.
+#
+# Wikify state lives in `.myco/wikify-pending.json`, NOT in ledger.json:
+# the Rust ledger writer drops unknown keys on save, so anything we added
+# there would be silently erased by the next in-app import.
+
+_IMPORT_SOURCE_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
+_IMPORT_ID_RE = re.compile(r"[^a-zA-Z0-9._-]+")
+
+
+def _ledger_paths(proj) -> tuple[Path, Path]:
+    myco_dir = proj.root / ".myco"
+    return myco_dir / "ledger.json", myco_dir / "wikify-pending.json"
+
+
+def _load_json_or(path: Path, default):
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return default
+
+
+def _py_fingerprint(text: str) -> str:
+    import hashlib
+
+    return "py-" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
+
+
+def _load_ledger(proj) -> dict:
+    ledger_path, _ = _ledger_paths(proj)
+    data = _load_json_or(ledger_path, {})
+    if not isinstance(data, dict):
+        data = {}
+    entries = data.get("entries")
+    # Legacy flat map (string values at top level) — same upgrade read as
+    # ledger.rs::load.
+    if not isinstance(entries, dict):
+        entries = {
+            k: v for k, v in data.items() if isinstance(v, str)
+        } or {}
+    files = data.get("files")
+    if not isinstance(files, dict):
+        files = {}
+    return {"entries": entries, "files": files}
+
+
+def _save_ledger(proj, ledger: dict) -> None:
+    ledger_path, _ = _ledger_paths(proj)
+    ledger_path.parent.mkdir(parents=True, exist_ok=True)
+    ledger_path.write_text(
+        json.dumps(
+            {"entries": ledger["entries"], "files": ledger["files"]},
+            indent=1,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _load_pending(proj) -> dict:
+    _, pending_path = _ledger_paths(proj)
+    data = _load_json_or(pending_path, {})
+    if not isinstance(data, dict):
+        data = {}
+    pending = data.get("pending")
+    return {
+        "pending": pending if isinstance(pending, list) else [],
+        "done_count": int(data.get("done_count") or 0),
+    }
+
+
+def _save_pending(proj, state: dict) -> None:
+    _, pending_path = _ledger_paths(proj)
+    pending_path.parent.mkdir(parents=True, exist_ok=True)
+    pending_path.write_text(
+        json.dumps(state, indent=1, ensure_ascii=False), encoding="utf-8"
+    )
+
+
+def _import_transcript(
+    proj,
+    raw_text: str,
+    source: str,
+    title: str,
+    conversation_id: str,
+    created: str,
+    extra_fm: dict | None = None,
+) -> dict:
+    """Shared funnel for both import tools: dedup → guarded raw write →
+    ledger record → wikify queue."""
+    import hashlib
+
+    source = (source or "").strip().lower()
+    if not _IMPORT_SOURCE_RE.match(source):
+        return {
+            "ok": False,
+            "error": "source must be a short slug like 'chatgpt', 'claude', "
+            "'claude-code', 'codex' (got: " + repr(source) + ")",
+        }
+    text = (raw_text or "").strip()
+    if not text:
+        return {"ok": False, "error": "raw_text is empty"}
+    conv_id = _IMPORT_ID_RE.sub("-", (conversation_id or "").strip()).strip("-")
+    if not conv_id:
+        conv_id = hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+    key = f"{source}:{conv_id}"
+    fp = _py_fingerprint(text)
+
+    ledger = _load_ledger(proj)
+    prior = ledger["entries"].get(key)
+    if prior == fp:
+        return {"ok": True, "status": "skipped_duplicate", "key": key}
+
+    # A changed conversation (same id, new content) imports as an appended
+    # revision — raw/ is immutable, so the original is never touched.
+    rel = f"conversations/{source}/{conv_id}.md"
+    rev = 0
+    while (proj.raw_dir / rel).exists():
+        rev += 1
+        rel = f"conversations/{source}/{conv_id}.r{rev}.md"
+    if prior is not None and rev == 0:
+        # Ledger says imported but the file is gone (vault moved/pruned):
+        # fall through and write it fresh.
+        pass
+
+    safe_title = _sanitize_line(title.strip()) if title.strip() else conv_id
+    day = (created or "").strip() or _today()
+    fm_lines = [
+        "---",
+        f'title: "{safe_title}"',
+        f"source: {source}",
+        f"conversation_id: {conv_id}",
+        f"created: {day}",
+        f"imported: {_today()}",
+        "via: mcp",
+    ]
+    for k, v in (extra_fm or {}).items():
+        fm_lines.append(f"{k}: {_sanitize_line(str(v))}")
+    fm_lines.append("---")
+    content = "\n".join(fm_lines) + "\n\n" + text + "\n"
+
+    wrote = _write_raw_guarded(proj, rel, content)
+    if not wrote.get("ok"):
+        return wrote
+
+    ledger["entries"][key] = fp
+    _save_ledger(proj, ledger)
+    state = _load_pending(proj)
+    state["pending"] = [p for p in state["pending"] if p.get("key") != key]
+    state["pending"].append(
+        {
+            "key": key,
+            "raw_path": wrote["raw_path"],
+            "src_slug": wrote["src_slug"],
+            "title": safe_title,
+            "imported": _today(),
+        }
+    )
+    _save_pending(proj, state)
+    out = {
+        "ok": True,
+        "status": "reimported_update" if prior is not None or rev > 0 else "imported",
+        "key": key,
+        "raw_path": wrote["raw_path"],
+        "src_slug": wrote["src_slug"],
+        "pending_total": len(state["pending"]),
+        "next": "call wikify_pending() to turn imported transcripts into wiki pages",
+    }
+    if "pii_warning" in wrote:
+        out["pii_warning"] = wrote["pii_warning"]
+    return out
+
+
+@mcp.tool()
+def import_conversation(
+    raw_text: str,
+    source: str,
+    title: str = "",
+    conversation_id: str = "",
+    created: str = "",
+    project: str = "",
+) -> dict:
+    """Import one conversation transcript into raw/conversations/<source>/.
+
+    `raw_text` is the transcript as text (you already have it — paste it, do
+    not describe it). `source` is a short slug: chatgpt, claude, claude-code,
+    codex, or another lowercase slug. `conversation_id` keeps re-imports
+    idempotent; omit it and a content hash is used. Duplicate content is
+    skipped; changed content under the same id is appended as a revision
+    (raw/ is immutable). Imported items queue for `wikify_pending`.
+    """
+    proj = _resolve(project)
+    return _import_transcript(proj, raw_text, source, title, conversation_id, created)
+
+
+@mcp.tool()
+def import_session(jsonl_path: str, project: str = "") -> dict:
+    """Import a coding-session .jsonl (Claude Code project session or Codex
+    rollout) into raw/conversations/.
+
+    Reads the file from disk, extracts the user/assistant turns (plus cwd and
+    git branch when present) into a clean transcript, and funnels it through
+    the same dedup + guards as import_conversation. Point it at files under
+    ~/.claude/projects/**.jsonl or ~/.codex/sessions/**.jsonl.
+    """
+    p = Path(jsonl_path).expanduser()
+    if not p.is_file():
+        return {"ok": False, "error": f"not a file: {jsonl_path}"}
+    if p.suffix != ".jsonl":
+        return {"ok": False, "error": "expected a .jsonl session file"}
+    if p.stat().st_size > 50 * 1024 * 1024:
+        return {"ok": False, "error": "session file over 50 MB"}
+    turns, meta = _parse_session_jsonl(p)
+    if not turns:
+        return {
+            "ok": False,
+            "error": "no user/assistant turns recognized — supported shapes: "
+            "Claude Code project sessions and Codex rollouts",
+        }
+    body_parts = []
+    for role, text in turns:
+        body_parts.append(f"## {role.capitalize()}\n\n{text.strip()}")
+    transcript = "\n\n".join(body_parts)
+    extra = {"turn_count": len(turns)}
+    if meta.get("cwd"):
+        extra["cwd"] = meta["cwd"]
+    if meta.get("git_branch"):
+        extra["git_branch"] = meta["git_branch"]
+    proj = _resolve(project)
+    return _import_transcript(
+        proj,
+        transcript,
+        meta.get("source") or "claude-code",
+        meta.get("title") or p.stem,
+        meta.get("session_id") or p.stem,
+        meta.get("created") or "",
+        extra_fm=extra,
+    )
+
+
+def _session_text_blocks(content) -> str:
+    """Flatten a message content field: plain string, or a list of typed
+    blocks whose text lives under 'text' (Claude Code / Codex alike)."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for block in content:
+            if isinstance(block, dict) and isinstance(block.get("text"), str):
+                parts.append(block["text"])
+        return "\n".join(parts)
+    return ""
+
+
+def _parse_session_jsonl(p: Path) -> tuple[list[tuple[str, str]], dict]:
+    """Minimal turn extractor for the two session formats. Returns
+    ([(role, text)...], meta). Unknown lines are skipped, not fatal — a
+    session file full of tool events still yields its prose turns."""
+    turns: list[tuple[str, str]] = []
+    meta: dict = {}
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if not isinstance(row, dict):
+            continue
+        for k_src, k_dst in (
+            ("cwd", "cwd"),
+            ("gitBranch", "git_branch"),
+            ("sessionId", "session_id"),
+        ):
+            if isinstance(row.get(k_src), str) and row[k_src] and k_dst not in meta:
+                meta[k_dst] = row[k_src]
+        if "created" not in meta and isinstance(row.get("timestamp"), str):
+            meta["created"] = row["timestamp"][:10]
+        # Claude Code shape: {type: "user"|"assistant", message: {role, content}}
+        msg = row.get("message")
+        if row.get("type") in ("user", "assistant") and isinstance(msg, dict):
+            meta.setdefault("source", "claude-code")
+            text = _session_text_blocks(msg.get("content"))
+            if text.strip():
+                turns.append((row["type"], text))
+            continue
+        # Codex rollout shape: {type: "message", role, content: [...]}
+        if row.get("type") == "message" and row.get("role") in ("user", "assistant"):
+            meta.setdefault("source", "codex")
+            text = _session_text_blocks(row.get("content"))
+            if text.strip():
+                turns.append((row["role"], text))
+    return turns, meta
+
+
+@mcp.tool()
+def wikify_pending(limit: int = 3, done: list[str] | None = None, project: str = "") -> dict:
+    """List imported-but-not-yet-wikified transcripts, oldest first.
+
+    Returns up to `limit` pending items with the transcript text (truncated)
+    so you can create/update wiki pages citing their [^src-*] slugs — the
+    CLAUDE.md ingest workflow. When a transcript's pages are written and
+    committed, call this again with done=[<key>, ...] to check it off. An
+    empty result means the import queue is fully wikified.
+    """
+    proj = _resolve(project)
+    state = _load_pending(proj)
+    if done:
+        before = len(state["pending"])
+        state["pending"] = [p for p in state["pending"] if p.get("key") not in set(done)]
+        state["done_count"] += before - len(state["pending"])
+        _save_pending(proj, state)
+    limit = max(1, min(int(limit or 3), 10))
+    items = []
+    for row in state["pending"][:limit]:
+        raw_rel = row.get("raw_path") or ""
+        full = (REPO_ROOT / raw_rel) if raw_rel else None
+        excerpt = ""
+        if full is not None and full.is_file():
+            excerpt = full.read_text(encoding="utf-8", errors="replace")[:2400]
+        items.append(
+            {
+                "key": row.get("key"),
+                "raw_path": raw_rel,
+                "src_slug": row.get("src_slug"),
+                "title": row.get("title"),
+                "excerpt": excerpt,
+            }
+        )
+    return {
+        "pending_total": len(state["pending"]),
+        "wikified_total": state["done_count"],
+        "items": items,
+        "instructions": (
+            "For each item: read the full raw file if the excerpt is not "
+            "enough, create or update wiki pages with inline [^" + "src-*] "
+            "citations to its src_slug, update wiki/index.md, git_commit, "
+            "then call wikify_pending(done=[key])."
+            if items
+            else "Nothing pending — the import queue is fully wikified."
+        ),
+    }
+
+
+@mcp.tool()
+def ledger_status(project: str = "") -> dict:
+    """Report the import dedup ledger: how many conversations are recorded
+    per source, how many session files are stamped, and how much of the
+    import queue is still waiting for wikification."""
+    proj = _resolve(project)
+    ledger = _load_ledger(proj)
+    per_source: dict[str, int] = {}
+    for key in ledger["entries"]:
+        src = key.split(":", 1)[0] if ":" in key else "unknown"
+        per_source[src] = per_source.get(src, 0) + 1
+    state = _load_pending(proj)
+    ledger_path, pending_path = _ledger_paths(proj)
+    return {
+        "conversations_recorded": len(ledger["entries"]),
+        "per_source": per_source,
+        "session_files_stamped": len(ledger["files"]),
+        "wikify_pending": len(state["pending"]),
+        "wikified_total": state["done_count"],
+        "ledger_path": _rel_to_repo(ledger_path),
+        "pending_path": _rel_to_repo(pending_path),
+    }
 
 
 @mcp.tool()
