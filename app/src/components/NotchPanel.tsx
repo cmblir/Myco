@@ -204,7 +204,10 @@ export const MOCK_FRAMES: readonly NotchFrame[] = [
     },
     pill: false,
   },
-  { state: { kind: "done", summary: "3 pages updated · 1 created" }, pill: false },
+  {
+    state: { kind: "done", summary: "3 pages updated · 1 created" },
+    pill: false,
+  },
   {
     state: { kind: "capture", text: "why we picked OTP over magic links" },
     pill: false,
@@ -314,13 +317,24 @@ export default function NotchPanel({
           : undefined
       }
     >
-      <div className="notch-lip">
-        <i aria-hidden className={`notch-cap notch-cap-${view.tone}`} />
-        {/* No live region here: the lip TICKS ("Ingesting · 00:42"), so
-            aria-live would re-announce every second, and the rows that matter
-            (done at :367, rejected at :419) carry their own status/alert. */}
-        {view.lip ? <span className="notch-lip-label">{view.lip}</span> : null}
-      </div>
+      {view.open ? (
+        <div className="notch-lip">
+          <i aria-hidden className={`notch-cap notch-cap-${view.tone}`} />
+          {/* No live region here: the lip TICKS ("Ingesting · 00:42"), so
+              aria-live would re-announce every second, and the rows that
+              matter (done/rejected) carry their own status/alert. */}
+          {view.lip ? (
+            <span className="notch-lip-label">{view.lip}</span>
+          ) : null}
+        </div>
+      ) : (
+        // Collapsed: the whole surface is transparent except this small
+        // round-bottomed tab under the cutout — the first headed run showed
+        // that a full-width strip reads as a broken black slab.
+        <div className="notch-tab">
+          <i aria-hidden className={`notch-cap notch-cap-${view.tone}`} />
+        </div>
+      )}
       {view.open ? (
         // Keyed by state so the 160ms fade replays on every transition.
         <div className="notch-body" key={frame.state.kind}>
@@ -377,7 +391,9 @@ function NotchBody({
             <span className="notch-grow notch-path">{state.rel}</span>
           </div>
           <div className="notch-row">
-            <span className="notch-mono">{t.notch_accepted_next ?? "next"}</span>
+            <span className="notch-mono">
+              {t.notch_accepted_next ?? "next"}
+            </span>
             <span className="notch-grow">
               {t.notch_accepted_next_sub ?? "ingest reads it shortly"}
             </span>

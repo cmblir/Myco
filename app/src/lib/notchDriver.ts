@@ -62,6 +62,8 @@ export type NotchEvent =
   | { type: "statusPush"; running: string | null }
   | { type: "tick" }
   | { type: "idleTimeout" }
+  | { type: "hoverEnter" }
+  | { type: "hoverLeave" }
   | { type: "captureOpen" }
   | { type: "captureSubmit" }
   | { type: "captureSaved"; rel: string }
@@ -264,10 +266,20 @@ export function reduceNotch(
       // Guard on dwellMsFor so a stale timer cannot kill a state that has a
       // live owner (a drag that started after the timer was armed).
       return dwellMsFor(panel) !== null ? NOTCH_IDLE : current;
-    case "captureOpen":
-      // Only an idle surface opens for typing — a click during any other
-      // state is aimed at what that state is showing, not at capture.
+    case "hoverEnter":
+      // Pointer over the collapsed tab unfolds the peek hint — the owner's
+      // headed-run call: hover discovery instead of hunting for a dot.
       return panel.kind === "idle"
+        ? { panel: { kind: "peek" }, runningSince: null }
+        : current;
+    case "hoverLeave":
+      return panel.kind === "peek"
+        ? { panel: { kind: "idle" }, runningSince: null }
+        : current;
+    case "captureOpen":
+      // From idle or the hover peek — a click during any other state is
+      // aimed at what that state is showing, not at capture.
+      return panel.kind === "idle" || panel.kind === "peek"
         ? { panel: { kind: "capture", text: "" }, runningSince: null }
         : current;
     case "captureSubmit":
@@ -589,7 +601,7 @@ export function useNotchDriver(): NotchDrive | null {
   useEffect(() => {
     if (mocking) return;
     const onClick = (): void => {
-      if (kindRef.current !== "idle") return;
+      if (kindRef.current !== "idle" && kindRef.current !== "peek") return;
       raise({ type: "captureOpen" });
       void ipc.notchFocusCapture().then(
         (key) =>
@@ -597,8 +609,23 @@ export function useNotchDriver(): NotchDrive | null {
         (err: unknown) => console.error("notch: focus capture failed:", err),
       );
     };
+    // Hover unfolds the peek hint; leaving folds it back. document-level
+    // enter/leave, because collapsed the window is mostly transparent and the
+    // whole surface should react, not just the 56px tab.
+    const onEnter = (): void => {
+      if (kindRef.current === "idle") raise({ type: "hoverEnter" });
+    };
+    const onLeave = (): void => {
+      if (kindRef.current === "peek") raise({ type: "hoverLeave" });
+    };
     window.addEventListener("click", onClick);
-    return () => window.removeEventListener("click", onClick);
+    document.documentElement.addEventListener("mouseenter", onEnter);
+    document.documentElement.addEventListener("mouseleave", onLeave);
+    return () => {
+      window.removeEventListener("click", onClick);
+      document.documentElement.removeEventListener("mouseenter", onEnter);
+      document.documentElement.removeEventListener("mouseleave", onLeave);
+    };
   }, [mocking]);
 
   // Recording mode has no input to hang keys on: ⏎/⌥M stop-and-save, esc

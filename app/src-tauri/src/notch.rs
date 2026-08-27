@@ -202,6 +202,38 @@ mod imp {
     /// Public AppKit bits only — the private `_setPreventsActivation:` lever
     /// stays behind `notch-probe` (module docs: unproven whether the public
     /// bits suffice alone, so ship without it and re-measure if they don't).
+    /// The runtime NSPanel subclass the notch window is isa-swapped to.
+    /// One override: `canBecomeKeyWindow` returns YES. A plain NSPanel with
+    /// the non-activating mask refuses key (measured live:
+    /// "makeKeyWindow refused (canBecomeKey=false)"), which left the capture
+    /// input deaf. Overriding the getter is what tauri-nspanel does; the
+    /// panel still never ACTIVATES the app — non-activation comes from the
+    /// style mask, not from refusing key status.
+    fn notch_panel_class() -> &'static objc2::runtime::AnyClass {
+        use std::sync::OnceLock;
+        static CLASS: OnceLock<&'static objc2::runtime::AnyClass> = OnceLock::new();
+        CLASS.get_or_init(|| {
+            let mut builder = objc2::runtime::ClassBuilder::new(
+                c"MycoNotchPanel",
+                NSPanel::class(),
+            )
+            .expect("class name free");
+            extern "C-unwind" fn can_become_key(
+                _this: &AnyObject,
+                _sel: objc2::runtime::Sel,
+            ) -> objc2::runtime::Bool {
+                objc2::runtime::Bool::YES
+            }
+            unsafe {
+                builder.add_method(
+                    objc2::sel!(canBecomeKeyWindow),
+                    can_become_key as extern "C-unwind" fn(_, _) -> _,
+                );
+            }
+            builder.register()
+        })
+    }
+
     pub fn promote(window: &tauri::WebviewWindow, mtm: MainThreadMarker) -> Result<(), String> {
         let ptr = window.ns_window().map_err(|e| e.to_string())?;
         if ptr.is_null() {
@@ -211,7 +243,7 @@ mod imp {
         // on the main thread (MainThreadMarker).
         let ns_window: &NSWindow = unsafe { &*(ptr as *const NSWindow) };
         let obj: &AnyObject = unsafe { &*(ptr as *const AnyObject) };
-        unsafe { AnyObject::set_class(obj, NSPanel::class()) };
+        unsafe { AnyObject::set_class(obj, notch_panel_class()) };
         ns_window.setLevel(NS_STATUS_WINDOW_LEVEL);
         // Replace, not OR: the mask must be exactly the non-activating panel
         // (Borderless is 0). Leaving Titled/FullSizeContentView in place keeps

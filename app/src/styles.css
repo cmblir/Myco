@@ -5896,7 +5896,11 @@ html.notch-window body {
   flex-direction: column;
   align-items: center;
   overflow: hidden;
-  background: #000;
+  /* TRANSPARENT while collapsed: the first headed run showed a full-width
+     black slab with square ends hanging under the cutout. Idle paints only
+     the small rounded tab below (.notch-tab); the black card ground returns
+     with the open state. */
+  background: transparent;
   color: #ece7df;
   border-radius: 0 0 13px 13px;
   font:
@@ -5912,12 +5916,28 @@ html.notch-window body {
 }
 .notch.notch-open {
   width: 300px;
+  background: #000;
+}
+/* The idle handle: a small round-bottomed tab hugging the cutout's centre,
+   just wide enough for the cap dot. This — not a full-width strip — is what
+   peeks below the hardware notch. */
+.notch-tab {
+  margin-top: var(--notch-cutout, 0px);
+  width: 56px;
+  height: 15px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  border-radius: 0 0 9px 9px;
 }
 /* S10 — no notch on this Mac (safeAreaInsets.top == 0): the same panel as a
    rounded pill floating just below the menu bar. Only the top corners differ. */
 .notch.notch-pill {
   border-radius: 13px;
   margin-top: 4px;
+  background: #000;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
 }
 .notch-lip {

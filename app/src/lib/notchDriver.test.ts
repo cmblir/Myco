@@ -33,6 +33,43 @@ function walk(
   );
 }
 
+describe("hover peek", () => {
+  it("hover unfolds idle into peek and folds back on leave", () => {
+    const t0 = 1_000;
+    let st = reduceNotch(NOTCH_IDLE, { type: "hoverEnter" }, t0);
+    expect(st.panel.kind).toBe("peek");
+    st = reduceNotch(st, { type: "hoverLeave" }, t0 + 100);
+    expect(st.panel.kind).toBe("idle");
+  });
+
+  it("hover never interrupts capture, recording, or a running HUD", () => {
+    for (const panel of [
+      { kind: "capture", text: "x" },
+      { kind: "recording", startedAt: 1 },
+      { kind: "running", label: "l", percent: null, detail: "", startedAt: 1 },
+    ] as const) {
+      const st = reduceNotch(
+        { panel, runningSince: null } as never,
+        { type: "hoverEnter" },
+        5_000,
+      );
+      expect(st.panel.kind).toBe(panel.kind);
+    }
+  });
+
+  it("a click from the peek opens capture", () => {
+    let st = reduceNotch(NOTCH_IDLE, { type: "hoverEnter" }, 1);
+    st = reduceNotch(st, { type: "captureOpen" }, 2);
+    expect(st.panel.kind).toBe("capture");
+  });
+
+  it("a drag entering the peek still shows the drop zone", () => {
+    let st = reduceNotch(NOTCH_IDLE, { type: "hoverEnter" }, 1);
+    st = reduceNotch(st, { type: "dragEnter", paths: ["/a/b.pdf"] }, 2);
+    expect(st.panel.kind).toBe("dragging");
+  });
+});
+
 describe("reduceNotch — the happy S1→S6 walk", () => {
   it("dragEnter opens S3 with the first file's name", () => {
     const s = reduceNotch(
