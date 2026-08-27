@@ -39,6 +39,10 @@ import { useUIStore } from "../stores/uiStore";
 // per side; 300 left ~40px of invisible hover surface hanging off each edge,
 // which read as the panel flapping open over nothing (worst on the left).
 export const NOTCH_OPEN_WIDTH = 252;
+// Tallest open card (capture ~139) plus slop. The OS window opens straight to
+// this fixed size so the card never has to wait on a second resize; the
+// unused remainder is transparent.
+export const NOTCH_OPEN_MAX_H = 170;
 
 /** How long S4/S9 hold before folding away. The sheet says only S6
  *  self-collapses, but this panel is non-activating — there is no click or key
@@ -738,28 +742,56 @@ export function useNotchDriver(): NotchDrive | null {
     return () => window.clearTimeout(id);
   }, [drv.panel]);
 
-  // Fit the OS window to the surface (resize_tray_panel's pattern): unfolded,
-  // the CSS-fixed 300px body × measured height; collapsed with a real notch,
-  // the OS-measured cap so the panel hides inside the hardware; pill, measured
-  // both ways.
+  // Fit the OS window to the surface. With a real notch this is TWO-PHASE:
+  // grow the transparent OS window first, unfurl the card only after the
+  // resize acked. The state flip is synchronous but the resize is an IPC +
+  // main-thread hop away, and the recorded jank was exactly that gap — one
+  // frame of the open card painted clipped inside the collapsed window, then
+  // a lateral jump as the window recentred under it.
   const pill = geom !== null && !geom.has_notch;
   const open = describeNotch(drv.panel, t, pill).open;
+  const hasNotch = geom?.has_notch ?? false;
+  const [grown, setGrown] = useState(false);
   useEffect(() => {
-    if (mocking) return;
+    if (mocking || !hasNotch) return;
+    const g = geom as NotchGeometry;
+    if (open) {
+      let live = true;
+      const unfurl = (): void => {
+        if (live) setGrown(true);
+      };
+      // Fixed open size: the card's exact height is unknowable before it
+      // renders, and rendering is what must wait. The spare rows stay
+      // transparent (and inside the hover watcher's leave slop).
+      void ipc.notchResize(NOTCH_OPEN_WIDTH, NOTCH_OPEN_MAX_H).then(
+        unfurl,
+        unfurl, // plain-browser dev: no Tauri backend
+      );
+      return () => {
+        live = false;
+      };
+    }
+    setGrown(false);
+    // Collapse order is the mirror: card folds instantly (render), the OS
+    // window shrinks after it. Also the boot pass — this arms on mount and
+    // corrects the builder's pill-sized default to the measured cutout.
+    const id = window.setTimeout(() => {
+      void ipc.notchResize(g.notch_w, g.notch_h + NOTCH_PEEK_PX).catch(() => {
+        /* plain-browser dev: no Tauri backend */
+      });
+    }, 420);
+    return () => window.clearTimeout(id);
+  }, [mocking, hasNotch, open, geom]);
+  // Notchless pill fallback: no hardware to hide behind and no recentring
+  // cutout math — the measured-size follower is still the right tool there.
+  useEffect(() => {
+    if (mocking || hasNotch) return;
     const el = document.querySelector<HTMLElement>(".notch");
     if (!el || typeof ResizeObserver === "undefined") return;
     let last = "";
     const ro = new ResizeObserver(() => {
-      const hasNotch = geom?.has_notch ?? false;
-      const w = open
-        ? NOTCH_OPEN_WIDTH
-        : hasNotch
-          ? (geom as NotchGeometry).notch_w
-          : Math.ceil(el.offsetWidth);
-      const h =
-        !open && hasNotch
-          ? (geom as NotchGeometry).notch_h + NOTCH_PEEK_PX
-          : Math.ceil(el.offsetHeight);
+      const w = Math.ceil(el.offsetWidth);
+      const h = Math.ceil(el.offsetHeight);
       const key = `${w}x${h}`;
       if (w > 0 && h > 0 && key !== last) {
         last = key;
@@ -770,7 +802,7 @@ export function useNotchDriver(): NotchDrive | null {
     });
     ro.observe(el);
     return () => ro.disconnect();
-  }, [mocking, open, geom]);
+  }, [mocking, hasNotch]);
 
   // Content below the hardware cutout: the panel's lip offsets by the real
   // notch height (0 on a notchless Mac, where the whole pill is visible).
@@ -784,7 +816,9 @@ export function useNotchDriver(): NotchDrive | null {
 
   if (mocking) return null;
   return {
-    state: drv.panel,
+    // Until the OS window has grown, the panel RENDERS collapsed even though
+    // the reducer already moved — the other half of the two-phase open.
+    state: hasNotch && open && !grown ? NOTCH_IDLE.panel : drv.panel,
     pill,
     collapsedWidth: geom?.has_notch ? geom.notch_w : null,
     onCaptureSubmit,
