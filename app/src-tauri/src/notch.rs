@@ -315,6 +315,52 @@ mod imp {
     /// `set_position` ran a multi-display conversion that placed the window
     /// off-screen on this machine (see `pin_to_top`), and a separate resize
     /// would let AppKit's bottom-left origin drop the top edge for a frame.
+    /// Is the pointer on the notch (or, once open, still on the card)?
+    ///
+    /// Opening is decided by the HARDWARE CUTOUT rect alone — screen-top,
+    /// `notch_w × notch_h` — never by the window frame. The frame is 252×170
+    /// while open and stays that size through the fold delay, so testing it
+    /// made a region far below the notch re-open the panel on the way past:
+    /// the owner's "노치보다 멀리 있는데도 켜져서 업무에 방해가 돼".
+    ///
+    /// Staying open is the generous test (`inside` = true): the frame plus a
+    /// 12pt slop, unioned with the cutout, so the card the pointer walked
+    /// down into never folds under it.
+    pub fn hover_hit(
+        window: &tauri::WebviewWindow,
+        mtm: MainThreadMarker,
+        inside: bool,
+    ) -> Option<bool> {
+        use objc2_app_kit::NSEvent;
+        let screen = notch_screen(mtm)?;
+        let sf = screen.frame();
+        let geom = read_geometry(mtm);
+        let (tw, th) = if geom.has_notch {
+            (geom.notch_w, geom.notch_h)
+        } else {
+            (super::PILL_W, super::PILL_H)
+        };
+        let p = NSEvent::mouseLocation();
+        // AppKit is bottom-up: the screen's top edge is origin.y + height.
+        let top = sf.origin.y + sf.size.height;
+        let tx = sf.origin.x + (sf.size.width - tw) / 2.0;
+        let on_cutout = p.x >= tx && p.x <= tx + tw && p.y >= top - th && p.y <= top;
+        if !inside {
+            return Some(on_cutout);
+        }
+        let ptr = window.ns_window().ok()?;
+        if ptr.is_null() {
+            return None;
+        }
+        let f = unsafe { &*(ptr as *const NSWindow) }.frame();
+        const SLOP: f64 = 12.0;
+        let on_card = p.x >= f.origin.x - SLOP
+            && p.x <= f.origin.x + f.size.width + SLOP
+            && p.y >= f.origin.y - SLOP
+            && p.y <= f.origin.y + f.size.height + SLOP;
+        Some(on_cutout || on_card)
+    }
+
     pub fn place_over_notch(
         window: &tauri::WebviewWindow,
         mtm: MainThreadMarker,
@@ -524,28 +570,13 @@ fn spawn_hover_watch(app: &AppHandle) {
             let Some(win) = app.get_webview_window(NOTCH_LABEL) else {
                 continue;
             };
-            // Hysteresis: leaving tests a frame INFLATED by a 12px slop, so a
-            // pointer wobbling on the exact edge cannot strobe the panel
-            // open/closed (the headed "버벅임", worst on the left where the
-            // window is wider than the drawn card).
-            let slop = if inside { 12.0 } else { 0.0 };
+            // Opening tests the cutout only; staying open tests the card too
+            // (see `imp::hover_hit`). The 12pt slop lives on the staying-open
+            // side, where an edge wobble would otherwise strobe the panel.
+            let was_inside = inside;
             let probe = imp::on_main(&app, {
                 let win = win.clone();
-                move |_mtm| {
-                    let ptr = win.ns_window().ok()?;
-                    if ptr.is_null() {
-                        return None;
-                    }
-                    let nsw: &objc2_app_kit::NSWindow = unsafe { &*(ptr as *const _) };
-                    let f = nsw.frame();
-                    let p = objc2_app_kit::NSEvent::mouseLocation();
-                    Some(
-                        p.x >= f.origin.x - slop
-                            && p.x <= f.origin.x + f.size.width + slop
-                            && p.y >= f.origin.y - slop
-                            && p.y <= f.origin.y + f.size.height + slop,
-                    )
-                }
+                move |mtm| imp::hover_hit(&win, mtm, was_inside)
             });
             let raw = matches!(probe, Ok(Some(true)));
             // Enter fires on the first inside sample; leave needs three
