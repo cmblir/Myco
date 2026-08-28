@@ -58,11 +58,22 @@ export default function HelpWidget({ t }: { t: Strings }): JSX.Element {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
+  // The app registers far more than the four keys this list used to admit to,
+  // so half of them were effectively undiscoverable. Only the ones a user can
+  // press from anywhere (or on the page they are already looking at) belong
+  // here — panel-local keys stay documented by the panel that owns them.
   const shortcuts: [string, string][] = [
     ["⌘K", t.hw_sc_cmd ?? "Command palette"],
     ["⌘B", t.hw_sc_sidebar ?? "Toggle sidebar"],
-    ["F", t.hw_sc_fly ?? "Fly mode (graph)"],
+    ["⌘N", t.hw_sc_new ?? "New note"],
+    ["⌥Space", t.hw_sc_spotlight ?? "Ask from anywhere"],
+    ["⌥M", t.hw_sc_voice ?? "Voice capture (Spotlight / notch)"],
+    ["⌥⏎", t.hw_sc_miss ?? "Log a search that missed"],
     ["Esc", t.hw_sc_esc ?? "Close / deselect"],
+  ];
+  const graphShortcuts: [string, string][] = [
+    ["F", t.hw_sc_fly ?? "Fly mode (graph)"],
+    ["⌘click", t.hw_sc_path ?? "Shortest path between two notes (graph)"],
   ];
 
   return (
@@ -92,12 +103,17 @@ export default function HelpWidget({ t }: { t: Strings }): JSX.Element {
             ))}
           </ul>
           <div className="help-widget__sc">
-            {shortcuts.map(([key, label]) => (
-              <div key={key} className="help-widget__sc-row">
-                <kbd>{key}</kbd>
-                <span>{label}</span>
-              </div>
-            ))}
+            {/* Graph keys only where they can be pressed — listing fly mode on
+                the Tasks page is noise, and hiding it on the graph is the bug
+                this list had. */}
+            {[...shortcuts, ...(route === "graph" ? graphShortcuts : [])].map(
+              ([key, label]) => (
+                <div key={key} className="help-widget__sc-row">
+                  <kbd>{key}</kbd>
+                  <span>{label}</span>
+                </div>
+              ),
+            )}
           </div>
         </div>
       ) : null}

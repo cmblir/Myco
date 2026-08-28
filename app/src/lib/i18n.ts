@@ -75,6 +75,11 @@ export interface Strings {
   hw_sc_sidebar?: string;
   hw_sc_fly?: string;
   hw_sc_esc?: string;
+  hw_sc_new?: string;
+  hw_sc_spotlight?: string;
+  hw_sc_voice?: string;
+  hw_sc_miss?: string;
+  hw_sc_path?: string;
   hw_tip_graph1?: string;
   hw_tip_graph2?: string;
   hw_tip_graph3?: string;
@@ -1376,6 +1381,11 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_sidebar: "Toggle sidebar",
     hw_sc_fly: "Fly mode (graph)",
     hw_sc_esc: "Close / deselect",
+    hw_sc_new: "New note",
+    hw_sc_spotlight: "Ask from anywhere",
+    hw_sc_voice: "Voice capture (Spotlight / notch)",
+    hw_sc_miss: "Log a search that missed",
+    hw_sc_path: "Shortest path between two notes (graph)",
     hw_tip_graph1: "Drag a star and the simulation re-heats around it.",
     hw_tip_graph2:
       "F flies the spaceship; the ⚠ badge opens gap analysis with research bridges.",
@@ -2740,6 +2750,11 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_sidebar: "사이드바 토글",
     hw_sc_fly: "비행 모드 (그래프)",
     hw_sc_esc: "닫기 / 선택 해제",
+    hw_sc_new: "새 노트",
+    hw_sc_spotlight: "어디서나 질문",
+    hw_sc_voice: "음성 캡처 (Spotlight / 노치)",
+    hw_sc_miss: "놓친 검색 기록",
+    hw_sc_path: "두 노트 사이 최단 경로 (그래프)",
     hw_tip_graph1: "별을 드래그하면 시뮬레이션이 주변에서 다시 살아납니다.",
     hw_tip_graph2:
       "F는 우주선 비행, ⚠ 배지는 연구 다리가 포함된 갭 분석을 엽니다.",
@@ -5200,6 +5215,11 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_sidebar: "サイドバーの切り替え",
     hw_sc_fly: "フライモード（グラフ）",
     hw_sc_esc: "閉じる / 選択解除",
+    hw_sc_new: "新規ノート",
+    hw_sc_spotlight: "どこからでも質問",
+    hw_sc_voice: "音声キャプチャ (Spotlight / ノッチ)",
+    hw_sc_miss: "外れた検索を記録",
+    hw_sc_path: "2つのノート間の最短経路 (グラフ)",
     hw_tip_graph1:
       "星をドラッグするとシミュレーションがその周りで再加熱されます。",
     hw_tip_graph2:

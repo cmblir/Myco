@@ -10,6 +10,7 @@ import {
   NOTCH_IDLE,
   REJECTED_DWELL_MS,
   batchLabel,
+  digitsIn,
   dragLabel,
   dwellMsFor,
   extLabel,
@@ -19,7 +20,8 @@ import {
 } from "./notchDriver";
 import type { NotchDriverState, NotchEvent } from "./notchDriver";
 import { today } from "./taskLine";
-import { DONE_DWELL_MS } from "../components/NotchPanel";
+import { DONE_DWELL_MS, describeNotch } from "../components/NotchPanel";
+import { STRINGS } from "./i18n";
 
 const T0 = 1_756_000_000_000;
 
@@ -432,5 +434,54 @@ describe("runningPercent", () => {
     expect(runningPercent("재색인 218/302")).toBe(72);
     expect(runningPercent("Reflect 분석 중…")).toBe(0);
     expect(runningPercent("done 5/0")).toBe(0);
+  });
+});
+
+describe("peek reports the day's work", () => {
+  it("shows today's and overdue counts on the lip instead of the drop hint", () => {
+    // The notch is passed over every day; a vault with work due should not get
+    // a generic invitation. Counts come off the same tray push the popover uses.
+    const s = reduceNotch(
+      NOTCH_IDLE,
+      { type: "hoverEnter", due: { today: 2, overdue: 1 } },
+      T0,
+    );
+    expect(s.panel).toEqual({ kind: "peek", due: { today: 2, overdue: 1 } });
+    const view = describeNotch(s.panel, STRINGS.en);
+    expect(view.lip).toBe("2 today · 1 overdue");
+    expect(view.tone).toBe("warn");
+  });
+
+  it("omits the overdue half when nothing is late", () => {
+    const s = reduceNotch(
+      NOTCH_IDLE,
+      { type: "hoverEnter", due: { today: 3, overdue: 0 } },
+      T0,
+    );
+    const view = describeNotch(s.panel, STRINGS.en);
+    expect(view.lip).toBe("3 today");
+    expect(view.tone).toBe("live");
+  });
+
+  it("falls back to the drop hint with nothing due, or no push yet", () => {
+    for (const due of [{ today: 0, overdue: 0 }, undefined]) {
+      const s = reduceNotch(NOTCH_IDLE, { type: "hoverEnter", due }, T0);
+      expect(describeNotch(s.panel, STRINGS.en).lip).toBe(
+        STRINGS.en.notch_peek ?? "Drop it here",
+      );
+    }
+  });
+});
+
+describe("digitsIn", () => {
+  it("reads the count out of a rendered tray label", () => {
+    expect(digitsIn("2 today")).toBe(2);
+    expect(digitsIn("오늘 12")).toBe(12);
+    expect(digitsIn("지연 0")).toBe(0);
+  });
+
+  it("reads an unparseable label as zero rather than NaN", () => {
+    expect(digitsIn("—")).toBe(0);
+    expect(digitsIn("")).toBe(0);
   });
 });

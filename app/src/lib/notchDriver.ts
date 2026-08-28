@@ -77,7 +77,7 @@ export type NotchEvent =
   | { type: "statusPush"; running: string | null }
   | { type: "tick" }
   | { type: "idleTimeout" }
-  | { type: "hoverEnter" }
+  | { type: "hoverEnter"; due?: { today: number; overdue: number } }
   | { type: "hoverLeave" }
   | { type: "captureOpen" }
   | { type: "captureSubmit" }
@@ -142,6 +142,15 @@ export function runningPercent(text: string): number {
     return clampPercent((Number(frac[1]) / Number(frac[2])) * 100);
   }
   return 0;
+}
+
+/** First run of digits in a pre-formatted tray label ("오늘 2", "{n} overdue"
+ *  already substituted). The payload carries rendered strings, not numbers, and
+ *  re-deriving the counts here would mean a second vault scan for data the push
+ *  already did the work for. Nothing parseable reads as 0. */
+export function digitsIn(text: string): number {
+  const m = /(\d+)/.exec(text ?? "");
+  return m ? Number(m[1]) : 0;
 }
 
 /** How long a state holds before the driver folds it away; null = holds until
@@ -284,9 +293,11 @@ export function reduceNotch(
       return dwellMsFor(panel) !== null ? NOTCH_IDLE : current;
     case "hoverEnter":
       // Pointer over the collapsed tab unfolds the peek hint — the owner's
-      // headed-run call: hover discovery instead of hunting for a dot.
+      // headed-run call: hover discovery instead of hunting for a dot. The
+      // day's task counts ride along when there are any (the same numbers the
+      // tray card shows, off the same push).
       return panel.kind === "idle"
-        ? { panel: { kind: "peek" }, runningSince: null }
+        ? { panel: { kind: "peek", due: event.due }, runningSince: null }
         : current;
     case "hoverLeave":
       return panel.kind === "peek"
@@ -469,6 +480,9 @@ export function useNotchDriver(): NotchDrive | null {
   whisperMissingRef.current = t.voice_whisper_missing;
   const modelProgressRef = useRef(t.voice_model_progress);
   modelProgressRef.current = t.voice_model_progress;
+  // Today's task counts, last seen on a tray-status push. Null until one
+  // arrives (or when the payload predates the tasks card).
+  const dueRef = useRef<{ today: number; overdue: number } | null>(null);
   const micDeniedRef = useRef(t.voice_mic_denied);
   micDeniedRef.current = t.voice_mic_denied;
 
@@ -574,6 +588,12 @@ export function useNotchDriver(): NotchDrive | null {
     const push = (s: TrayStatusPayload): void => {
       const live = s.running.find((r) => r.text !== "");
       raise({ type: "statusPush", running: live ? live.text : null });
+      // The tasks card already carries today's numbers; the notch reads the
+      // same push rather than running its own vault scan.
+      const card = s.cards?.find((c) => c.id === "tasks");
+      dueRef.current = card
+        ? { today: digitsIn(card.value), overdue: digitsIn(card.sub) }
+        : null;
     };
     void ipc
       .getTrayStatus()
@@ -670,7 +690,8 @@ export function useNotchDriver(): NotchDrive | null {
     // enter/leave, because collapsed the window is mostly transparent and the
     // whole surface should react, not just the 56px tab.
     const onEnter = (): void => {
-      if (kindRef.current === "idle") raise({ type: "hoverEnter" });
+      if (kindRef.current === "idle")
+        raise({ type: "hoverEnter", due: dueRef.current ?? undefined });
     };
     const onLeave = (): void => {
       if (kindRef.current === "peek") raise({ type: "hoverLeave" });

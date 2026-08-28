@@ -40,7 +40,10 @@ export type NotchTone = "dim" | "live" | "ok" | "warn";
  *  they are produced by whoever ran the work, not by this webview. */
 export type NotchState =
   | { kind: "idle" }
-  | { kind: "peek" }
+  // `due` rides along when today has tasks: the notch is the surface the owner
+  // passes over every day, and it was showing a generic hint into a vault with
+  // dormant task counts. Absent = nothing due, and the hint stays.
+  | { kind: "peek"; due?: { today: number; overdue: number } }
   | { kind: "dragging"; name: string; meta: string }
   | { kind: "accepted"; rel: string }
   | { kind: "running"; percent: number; detail: string; elapsedMs: number }
@@ -108,14 +111,31 @@ export function describeNotch(
             dwellMs: null,
           }
         : { lip: "", tone: "dim", open: false, dwellMs: null };
-    case "peek":
+    case "peek": {
       // S2 invites, it does not accept — nothing is read in this state.
+      // With work due, the lip reports it instead of repeating the invitation.
+      const due = state.due;
+      const lip =
+        due && due.today + due.overdue > 0
+          ? [
+              (t.tray_card_tasks_v ?? "{n} today").replace("{n}", String(due.today)),
+              due.overdue > 0
+                ? (t.tray_card_tasks_sub ?? "{n} overdue").replace(
+                    "{n}",
+                    String(due.overdue),
+                  )
+                : "",
+            ]
+              .filter(Boolean)
+              .join(" · ")
+          : (t.notch_peek ?? "Drop it here");
       return {
-        lip: t.notch_peek ?? "Drop it here",
-        tone: "live",
+        lip,
+        tone: due && due.overdue > 0 ? "warn" : "live",
         open: true,
         dwellMs: null,
       };
+    }
     case "dragging":
       return {
         lip: t.notch_drop ?? "Release to drop",
@@ -376,6 +396,8 @@ function NotchBody({
     case "idle":
       return null;
     case "peek":
+      // With work due the lip already carries the counts; the body keeps the
+      // drop hint, so the surface still says what it accepts.
       return (
         <div className="notch-dz">
           {t.notch_peek_body ?? "Files · links · selected text"}
