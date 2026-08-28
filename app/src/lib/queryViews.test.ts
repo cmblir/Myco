@@ -167,3 +167,25 @@ describe("built-in lenses", () => {
     expect(rows.map((r) => r.name)).toEqual([...rows.map((r) => r.name)].sort());
   });
 });
+
+describe("the unsourced lens judges claims, not scaffolding", () => {
+  it("skips index.md and log.md, which cite nothing by design", () => {
+    const files = ["/v/wiki/index.md", "/v/wiki/log.md", "/v/wiki/claim.md"];
+    const a: Adjacency = {
+      forward: {},
+      backward: {},
+      unresolved: {},
+      tags: {},
+      meta: {
+        "/v/wiki/index.md": { sourceCount: 0 },
+        "/v/wiki/log.md": { sourceCount: 0 },
+        "/v/wiki/claim.md": { sourceCount: 0 },
+      },
+    };
+    expect(runView(a, files, { unsourcedOnly: true }).map((r) => r.name)).toEqual([
+      "claim",
+    ]);
+    // They are still ordinary rows in an unfiltered table.
+    expect(runView(a, files, {})).toHaveLength(3);
+  });
+});

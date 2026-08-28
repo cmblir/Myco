@@ -48,6 +48,16 @@ export interface ViewRow {
   modified: number;
 }
 
+/** Pages that exist to organise the wiki rather than to claim anything:
+ *  the table of contents and the changelog. Mirrors contradictions.ts's
+ *  SKIP_NAMES (and mcp_native::LINT_SKIP_NAMES) — every scan that judges a
+ *  page's substance has to agree on which pages are not making claims. */
+const STRUCTURAL_NAMES = new Set(["index.md", "log.md"]);
+
+function isStructural(path: string): boolean {
+  return STRUCTURAL_NAMES.has(path.slice(path.lastIndexOf("/") + 1));
+}
+
 function anyOf(value: string | undefined, wanted?: string[]): boolean {
   if (!wanted || wanted.length === 0) return true;
   return value != null && wanted.includes(value);
@@ -94,7 +104,11 @@ export function runView(
       continue;
     if (filter.minSources != null && (meta?.sourceCount ?? 0) < filter.minSources) continue;
     if (filter.orphansOnly && links > 0) continue;
-    if (filter.unsourcedOnly && (meta?.sourceCount ?? 0) > 0) continue;
+    // "No sources" asks which CLAIMS are unbacked, so index.md and log.md —
+    // which cite nothing by design — are not answers to it. They stay in the
+    // unfiltered table; only this lens skips them.
+    if (filter.unsourcedOnly && ((meta?.sourceCount ?? 0) > 0 || isStructural(path)))
+      continue;
     const name = stem(path);
     if (text && !name.toLowerCase().includes(text)) continue;
     rows.push({
