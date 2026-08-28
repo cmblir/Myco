@@ -76,11 +76,18 @@ fn ensure_builtin_model(app: &tauri::AppHandle) -> Result<PathBuf, String> {
             .timeout(Duration::from_secs(3600))
             .build()
             .map_err(|e| format!("http client: {e}"))?;
-        let resp = client
-            .get(BUILTIN_MODEL_URL)
-            .send()
-            .await
-            .map_err(|e| format!("model download request: {e}"))?;
+        let resp = client.get(BUILTIN_MODEL_URL).send().await.map_err(|e| {
+            // Flatten the source chain: reqwest's Display hides the real
+            // cause (the headed failure printed nothing but the URL, while
+            // the cause was a corporate-proxy cert rustls didn't trust).
+            let mut msg = format!("model download request: {e}");
+            let mut src = std::error::Error::source(&e);
+            while let Some(s) = src {
+                msg.push_str(&format!(" — {s}"));
+                src = s.source();
+            }
+            msg
+        })?;
         if !resp.status().is_success() {
             return Err(format!("model download status {}", resp.status()));
         }
