@@ -206,17 +206,6 @@ where
     .map_err(|e| format!("local model task failed: {e}"))?
 }
 
-/// Classify a note into a wiki page type with the embedded model. Offline,
-/// no key; output is post-validated against the type enum.
-#[tauri::command]
-pub async fn local_classify(
-    app: tauri::AppHandle,
-    state: tauri::State<'_, LocalLlmState>,
-    note: String,
-) -> Result<String, String> {
-    with_local_llm(app, state, move |llm| llm.classify(&note)).await
-}
-
 /// Light free-form generation with the embedded model. The caller inlines any
 /// vault context; factual accuracy is limited at 1B (paid tiers for ingest).
 #[tauri::command]
@@ -849,10 +838,29 @@ pub fn list_inbox_entries(
 /// Byte ceiling on a single dropped file — extract.rs's `MAX_BYTES`, for the
 /// same reason: everything in `_inbox/` is ingest input, and the extract stage
 /// refuses anything larger anyway, so a bigger copy only parks bytes the
-/// pipeline will never read. Deliberately no media exception yet: a >25MB
-/// audio/video drop is refused with a clear error rather than accepted into a
-/// pipeline that cannot digest it — raise the cap when a real drop hits it.
+/// pipeline will never read.
 const INBOX_COPY_MAX_BYTES: u64 = 25 * 1024 * 1024;
+
+/// Media gets its own, much larger ceiling. The document limit exists because
+/// the extract stage will not parse past it; audio and video never go through
+/// that stage at all — they go to whisper, which streams a file of any length.
+/// An hour of recorded meeting is ~60 MB, which the old shared 25 MB cap
+/// refused outright. Now that speech recognition ships in the app (rather than
+/// depending on a CLI the user may not have), that refusal has no reason left.
+const INBOX_COPY_MAX_MEDIA_BYTES: u64 = 500 * 1024 * 1024;
+
+/// Extensions routed to transcription instead of text extraction. Mirrors
+/// `app/src/lib/mediaIngest.ts::isMediaFile` — a format added there without
+/// being added here would be refused for size before it ever reached whisper.
+const MEDIA_EXTS: &[&str] = &[
+    "mp3", "m4a", "wav", "flac", "ogg", "mp4", "mov", "webm", "mkv", "aac",
+];
+
+fn is_media_name(name: &str) -> bool {
+    name.rsplit_once('.')
+        .map(|(_, ext)| MEDIA_EXTS.contains(&ext.to_ascii_lowercase().as_str()))
+        .unwrap_or(false)
+}
 
 /// The copy behind `copy_into_inbox`, split out so the rules are testable
 /// without a Tauri runtime (the `export_bundle_write` pattern). The source may
@@ -870,11 +878,16 @@ pub(crate) fn copy_into_inbox_at(
     if !meta.is_file() {
         return Err(format!("not a file: {src_abs}"));
     }
-    if meta.len() > INBOX_COPY_MAX_BYTES {
+    let cap = if is_media_name(dest_name) {
+        INBOX_COPY_MAX_MEDIA_BYTES
+    } else {
+        INBOX_COPY_MAX_BYTES
+    };
+    if meta.len() > cap {
         return Err(format!(
             "file too large: {} bytes (max {} MB)",
             meta.len(),
-            INBOX_COPY_MAX_BYTES / (1024 * 1024)
+            cap / (1024 * 1024)
         ));
     }
     let dest = crate::myco_pro::safe_join(&root.join(DEST_INBOX), dest_name)?;
@@ -4517,10 +4530,10 @@ mod tests {
     use super::{
         append_recall_miss, builtin_index_is_stale, capture_note_at, chunk_text_at,
         copy_into_inbox_at, export_bundle_write, external_target_allowed, import_dest,
-        inbox_entries, iso_week_monday, page_in_date_range, read_settings_import,
+        inbox_entries, is_media_name, iso_week_monday, page_in_date_range, read_settings_import,
         recency_tie_break, resurface_core, run_diff_core, run_import, sync_bm25_for_page,
         voice_inbox_rel, voice_markdown, windows_opener_safe, write_inbox_note_at, DateRange,
-        DEST_INBOX, DEST_SESSIONS, INBOX_COPY_MAX_BYTES,
+        DEST_INBOX, DEST_SESSIONS, INBOX_COPY_MAX_BYTES, INBOX_COPY_MAX_MEDIA_BYTES,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
@@ -4658,6 +4671,36 @@ mod tests {
             "dir.pdf"
         )
         .is_err());
+    }
+
+    #[test]
+    fn media_gets_a_larger_ceiling_than_documents() {
+        // The document cap exists because extract.rs will not parse past it;
+        // audio never reaches that stage, it goes to whisper. An hour of
+        // recorded meeting (~60MB) used to be refused outright.
+        assert!(is_media_name("standup.m4a"));
+        assert!(
+            is_media_name("Demo.MP4"),
+            "extension match is case-insensitive"
+        );
+        assert!(!is_media_name("paper.pdf"));
+        assert!(!is_media_name("no-extension"));
+        const _: () = assert!(INBOX_COPY_MAX_MEDIA_BYTES > INBOX_COPY_MAX_BYTES);
+
+        let vault = tempfile::tempdir().unwrap();
+        let src = vault.path().join("meeting.m4a");
+        let f = std::fs::File::create(&src).unwrap();
+        f.set_len(INBOX_COPY_MAX_BYTES + 1).unwrap(); // sparse
+        drop(f);
+        copy_into_inbox_at(vault.path(), &src.display().to_string(), "meeting.m4a")
+            .expect("a 25MB+ recording is accepted now that transcription ships");
+
+        // A document of the same size is still refused.
+        let doc = vault.path().join("big.pdf");
+        let f = std::fs::File::create(&doc).unwrap();
+        f.set_len(INBOX_COPY_MAX_BYTES + 1).unwrap();
+        drop(f);
+        assert!(copy_into_inbox_at(vault.path(), &doc.display().to_string(), "big.pdf").is_err());
     }
 
     #[test]

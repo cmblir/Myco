@@ -82,9 +82,12 @@ pub async fn fetch_transcript(url: &str) -> Result<String, String> {
         .text()
         .await
         .map_err(|e| format!("read watch page: {e}"))?;
-    let track = caption_url(&html).ok_or(
-        "no captions found for this video (auto-transcription via Whisper is not yet available)",
-    )?;
+    // Speech recognition now ships in the app, but that is not what blocks
+    // this path: getting at YouTube's audio stream needs signature-deciphered
+    // URLs (or yt-dlp), which is a fragile dependency of its own. Say what is
+    // actually missing rather than blaming a component that is present.
+    let track = caption_url(&html)
+        .ok_or("this video has no captions, and myco cannot download its audio to transcribe")?;
     let xml = client
         .get(&track)
         .send()

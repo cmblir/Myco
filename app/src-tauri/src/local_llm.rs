@@ -49,7 +49,6 @@ pub const WIKI_TYPES: [&str; 6] = [
 ];
 
 const CTX_TOKENS: u32 = 4096;
-const CLASSIFY_MAX_TOKENS: i32 = 6;
 // Belt-and-braces stops for the no-template fallback path, where the base LM
 // may start inventing new dialogue turns.
 const STOP_MARKERS: [&str; 4] = ["\nUser:", "\nAssistant:", "\nQ:", "\n질문:"];
@@ -431,27 +430,6 @@ impl LocalLlm {
             n_cur += 1;
         }
         Ok(out.trim().to_string())
-    }
-
-    /// Classify a note into one of [`WIKI_TYPES`]. The output is validated
-    /// against the label set (longest match wins). Uses a RAW completion prompt
-    /// (no chat template): the "Type:" cue reliably elicits a bare label, while
-    /// the chat path made the model answer conversationally / echo the note.
-    pub fn classify(&self, note: &str) -> Result<String, String> {
-        let prompt = format!(
-            "You are a wiki classifier. Reply with exactly one of: {}.\nNote: {note}\nType:",
-            WIKI_TYPES.join(", ")
-        );
-        let raw = self.run_prompt(&prompt, AddBos::Always, CLASSIFY_MAX_TOKENS, false)?;
-        let low = raw.to_lowercase();
-        let mut best: Option<&str> = None;
-        for t in WIKI_TYPES {
-            if low.contains(t) && best.map_or(true, |b| t.len() > b.len()) {
-                best = Some(t);
-            }
-        }
-        best.map(str::to_string)
-            .ok_or_else(|| format!("no known label in model output: {raw:?}"))
     }
 
     /// Embed texts with the bundled model in embeddings mode (pooled per

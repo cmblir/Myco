@@ -1173,7 +1173,6 @@ export const ipc = {
   mcpConnect: () => invoke<string>("mcp_connect"),
   // Embedded local model (bundled Gemma 3 1B) — offline, no key. First call
   // lazily loads the weights, so it can take a few extra seconds.
-  localClassify: (note: string) => invoke<string>("local_classify", { note }),
   localQuery: (prompt: string, maxTokens?: number) =>
     invoke<string>("local_query", { prompt, maxTokens }),
   // Cheap `is_file()` check (no model load) — no chat GGUF has shipped since

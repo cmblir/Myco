@@ -2042,8 +2042,6 @@ function mockInvoke(
         email: String(args.email ?? ""),
         connected: true,
       });
-    case "local_classify":
-      return Promise.resolve("concept");
     case "local_query":
       // Paced, like the real thing. Measured: prefill dominates a local answer
       // (~0.67 ms/token, ~2.7 s over a full context) and a cold weight load adds
