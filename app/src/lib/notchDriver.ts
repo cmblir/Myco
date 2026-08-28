@@ -818,19 +818,18 @@ export function useNotchDriver(): NotchDrive | null {
     return () => window.clearTimeout(id);
   }, [drv.panel]);
 
-  // Fit the OS window to the surface. With a real notch this is TWO-PHASE:
-  // grow the transparent OS window first, unfurl the card only after the
-  // resize acked. The state flip is synchronous but the resize is an IPC +
-  // main-thread hop away, and the recorded jank was exactly that gap — one
-  // frame of the open card painted clipped inside the collapsed window, then
-  // a lateral jump as the window recentred under it.
+  // Fit the OS window to the surface — TWO-PHASE on both the notch and the
+  // pill: grow the transparent OS window first, unfurl the card only after
+  // the resize acked. The state flip is synchronous but the resize is an
+  // IPC + main-thread hop away, and the recorded jank was exactly that gap —
+  // one frame of the open card painted clipped inside the collapsed window,
+  // then a lateral jump as the window recentred under it. (The pill's old
+  // ResizeObserver follower had the same gap; it just lacked a recording.)
   const pill = geom !== null && !geom.has_notch;
   const open = describeNotch(drv.panel, t, pill).open;
-  const hasNotch = geom?.has_notch ?? false;
   const [grown, setGrown] = useState(false);
   useEffect(() => {
-    if (mocking || !hasNotch) return;
-    const g = geom as NotchGeometry;
+    if (mocking || geom === null) return;
     if (open) {
       let live = true;
       const unfurl = (): void => {
@@ -850,35 +849,26 @@ export function useNotchDriver(): NotchDrive | null {
     setGrown(false);
     // Collapse order is the mirror: card folds instantly (render), the OS
     // window shrinks after it. Also the boot pass — this arms on mount and
-    // corrects the builder's pill-sized default to the measured cutout.
+    // corrects the builder's default size. The pill has no OS-measured cap,
+    // so its collapsed size is the folded card itself, measured after the
+    // fold has rendered (the 172×26 fallback is the builder's PILL_W/H).
     const id = window.setTimeout(() => {
-      void ipc.notchResize(g.notch_w, g.notch_h + NOTCH_PEEK_PX).catch(() => {
+      const w = geom.has_notch
+        ? geom.notch_w
+        : Math.ceil(
+            document.querySelector<HTMLElement>(".notch")?.offsetWidth ?? 172,
+          );
+      const h = geom.has_notch
+        ? geom.notch_h + NOTCH_PEEK_PX
+        : Math.ceil(
+            document.querySelector<HTMLElement>(".notch")?.offsetHeight ?? 26,
+          );
+      void ipc.notchResize(w, h).catch(() => {
         /* plain-browser dev: no Tauri backend */
       });
     }, 420);
     return () => window.clearTimeout(id);
-  }, [mocking, hasNotch, open, geom]);
-  // Notchless pill fallback: no hardware to hide behind and no recentring
-  // cutout math — the measured-size follower is still the right tool there.
-  useEffect(() => {
-    if (mocking || hasNotch) return;
-    const el = document.querySelector<HTMLElement>(".notch");
-    if (!el || typeof ResizeObserver === "undefined") return;
-    let last = "";
-    const ro = new ResizeObserver(() => {
-      const w = Math.ceil(el.offsetWidth);
-      const h = Math.ceil(el.offsetHeight);
-      const key = `${w}x${h}`;
-      if (w > 0 && h > 0 && key !== last) {
-        last = key;
-        void ipc.notchResize(w, h).catch(() => {
-          /* plain-browser dev: no Tauri backend */
-        });
-      }
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [mocking, hasNotch]);
+  }, [mocking, open, geom]);
 
   // Content below the hardware cutout: the panel's lip offsets by the real
   // notch height (0 on a notchless Mac, where the whole pill is visible).
@@ -894,7 +884,9 @@ export function useNotchDriver(): NotchDrive | null {
   return {
     // Until the OS window has grown, the panel RENDERS collapsed even though
     // the reducer already moved — the other half of the two-phase open.
-    state: hasNotch && open && !grown ? NOTCH_IDLE.panel : drv.panel,
+    // Applies wherever a real backend measured the display (notch OR pill);
+    // a plain browser (geom null) never gates.
+    state: geom !== null && open && !grown ? NOTCH_IDLE.panel : drv.panel,
     pill,
     collapsedWidth: geom?.has_notch ? geom.notch_w : null,
     onCaptureSubmit,
