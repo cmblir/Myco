@@ -13,7 +13,7 @@ const MAX_TITLE: usize = 300;
 const MAX_URL: usize = 2048;
 const MAX_SELECTION: usize = 20_000;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Clip {
     pub title: String,
     pub url: Option<String>,
@@ -142,6 +142,19 @@ fn ledger_key(url: &str) -> String {
     format!("clipper:{}", normalize_clip_url(url))
 }
 
+/// Dedup key for a clip that highlighted a passage. Keying the whole page was
+/// too coarse: a second clip of a DIFFERENT passage on a page already clipped
+/// was refused, so a long article could only ever contribute one excerpt.
+/// Same page + same passage still collides, which is the case dedup is for.
+fn ledger_key_with_selection(url: &str, selection: &str) -> String {
+    let mut h: u64 = 0xcbf29ce484222325;
+    for b in selection.trim().bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x100000001b3);
+    }
+    format!("{}#{:08x}", ledger_key(url), (h >> 32) as u32)
+}
+
 pub(crate) fn normalize_clip_url(url: &str) -> String {
     let no_frag = url.split('#').next().unwrap_or(url);
     let (base, query) = match no_frag.split_once('?') {
@@ -229,18 +242,31 @@ pub enum Saved {
 /// ledger is the same one the conversation importers dedup against, so a lost
 /// `.myco/ledger.json` costs one duplicate clip and nothing else.
 ///
-/// ponytail: dedup is URL-only, so a second clip of a *different* passage on a
-/// page you already clipped is refused rather than appended. Key on
-/// `url + selection` if that turns out to bite.
+/// A highlighted clip is keyed on `url + selection`, so a second passage from
+/// the same article is new material rather than a refused duplicate; a whole-
+/// page clip stays keyed on the URL alone.
 pub fn save_clip(root: &Path, clip: &Clip) -> Result<Saved, String> {
     let mut ledger = Ledger::load(root);
-    let key = clip.url.as_deref().map(ledger_key);
+    let url_key = clip.url.as_deref().map(ledger_key);
+    let key = match (clip.url.as_deref(), clip.selection.as_deref()) {
+        (Some(u), Some(sel)) if !sel.trim().is_empty() => Some(ledger_key_with_selection(u, sel)),
+        _ => url_key.clone(),
+    };
     // "Already clipped" must mean the earlier clip is still HERE. The ledger
     // never forgets, so without this check a page consumed by ingest (its
     // source archived) or deleted by hand could never be clipped again — the
     // only recovery was hand-editing .myco/ledger.json.
-    if key.as_deref().is_some_and(|k| ledger.seen_key(k))
-        && clip_still_present(root, key.as_deref().and_then(|k| ledger.entry(k)))
+    let is_dup = |k: &str| ledger.seen_key(k) && clip_still_present(root, ledger.entry(k));
+    if key.as_deref().is_some_and(&is_dup) {
+        return Ok(Saved::Duplicate);
+    }
+    // Entries written before clips were keyed per passage live under the bare
+    // URL key. `clip_filename` already hashes title+url+selection, so an
+    // identical re-clip matches that older entry exactly — recognised as the
+    // duplicate it is instead of landing a second copy on upgrade.
+    if url_key
+        .as_deref()
+        .is_some_and(|k| is_dup(k) && ledger.entry(k) == Some(&clip_filename(clip)))
     {
         return Ok(Saved::Duplicate);
     }
@@ -472,7 +498,9 @@ mod tests {
     }
 
     #[test]
-    fn re_clipping_the_same_url_is_a_duplicate_even_with_a_new_selection() {
+    fn a_second_passage_from_the_same_page_is_new_material() {
+        // URL-only dedup meant a long article could contribute exactly one
+        // excerpt ever; the second highlight was refused as a duplicate.
         let dir = tempfile::tempdir().unwrap();
         let first = Clip {
             title: "Paper".into(),
@@ -483,16 +511,58 @@ mod tests {
             save_clip(dir.path(), &first).unwrap(),
             Saved::Written(_)
         ));
-        // Different highlight → different filename and fingerprint, same page.
-        let again = Clip {
+        let second = Clip {
             selection: Some("second highlight".into()),
-            ..first
+            ..first.clone()
         };
-        assert_eq!(save_clip(dir.path(), &again).unwrap(), Saved::Duplicate);
+        assert!(matches!(
+            save_clip(dir.path(), &second).unwrap(),
+            Saved::Written(_)
+        ));
+        // The SAME passage twice is still the duplicate dedup exists for.
+        assert_eq!(save_clip(dir.path(), &first).unwrap(), Saved::Duplicate);
         let written = std::fs::read_dir(dir.path().join("_inbox"))
             .unwrap()
             .count();
-        assert_eq!(written, 1, "the duplicate must not reach _inbox/");
+        assert_eq!(written, 2, "two passages, two docs, no third");
+    }
+
+    #[test]
+    fn a_whole_page_re_clip_is_still_a_duplicate() {
+        let dir = tempfile::tempdir().unwrap();
+        let page = Clip {
+            title: "Paper".into(),
+            url: Some("https://x.com/a".into()),
+            selection: None,
+        };
+        assert!(matches!(
+            save_clip(dir.path(), &page).unwrap(),
+            Saved::Written(_)
+        ));
+        assert_eq!(save_clip(dir.path(), &page).unwrap(), Saved::Duplicate);
+    }
+
+    #[test]
+    fn a_clip_recorded_under_the_old_url_only_key_is_recognised() {
+        // Upgrade path: entries written before per-passage keys exist under the
+        // bare URL. An identical re-clip must not land a second copy.
+        let dir = tempfile::tempdir().unwrap();
+        let clip = Clip {
+            title: "Paper".into(),
+            url: Some("https://x.com/a".into()),
+            selection: Some("only highlight".into()),
+        };
+        let mut ledger = Ledger::load(dir.path());
+        ledger.record(ledger_key("https://x.com/a"), clip_filename(&clip));
+        ledger.save(dir.path()).unwrap();
+        std::fs::create_dir_all(dir.path().join("_inbox")).unwrap();
+        std::fs::write(
+            dir.path().join("_inbox").join(clip_filename(&clip)),
+            "old clip",
+        )
+        .unwrap();
+
+        assert_eq!(save_clip(dir.path(), &clip).unwrap(), Saved::Duplicate);
     }
 
     #[test]
