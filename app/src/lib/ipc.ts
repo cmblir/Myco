@@ -916,6 +916,11 @@ export const ipc = {
    *  webview never needs the vault path. Returns what was written. */
   copyIntoInbox: (srcAbs: string, destName: string) =>
     invoke<string>("copy_into_inbox", { srcAbs, destName }),
+  /** WRITE a composed note (pasted link/selection on the notch) into the open
+   *  vault's `_inbox/<destName>` — copy_into_inbox's sibling for content with
+   *  no file behind it. Same confinement; returns what was written. */
+  writeInboxNote: (destName: string, content: string) =>
+    invoke<string>("write_inbox_note", { destName, content }),
   /** Fit the notch window to the surface (logical px) — resize_tray_panel's
    *  pattern, plus width: the panel unfolds from the cap to a 300px body. */
   notchResize: (width: number, height: number) =>

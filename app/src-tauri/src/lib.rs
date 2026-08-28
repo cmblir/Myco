@@ -174,6 +174,7 @@ pub fn run() {
             commands::archive_inbox_source,
             commands::list_inbox_entries,
             commands::copy_into_inbox,
+            commands::write_inbox_note,
             commands::available_raw_path,
             commands::import_conversations,
             commands::import_session_sweep,

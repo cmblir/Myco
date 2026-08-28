@@ -1967,6 +1967,13 @@ function mockInvoke(
       // it as the landed location).
       return Promise.resolve(`${VAULT}/_inbox/${name}`);
     }
+    case "write_inbox_note": {
+      // The pasted-note sibling of copy_into_inbox: same mock inbox, the
+      // composed content lands as-is.
+      const name = String(args.destName ?? "drop.md");
+      mockInbox.set(`${VAULT}/_inbox/${name}`, String(args.content ?? ""));
+      return Promise.resolve(`${VAULT}/_inbox/${name}`);
+    }
     // No OS window to size or show in a browser; accept and drop.
     case "notch_resize":
       return Promise.resolve(null);

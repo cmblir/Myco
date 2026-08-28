@@ -29,6 +29,7 @@ import { LAST_VAULT_KEY } from "../stores/vaultStore";
 import type { NotchGeometry, TrayStatusPayload } from "./ipc";
 import { STRINGS } from "./i18n";
 import { classifyDrop, writeDrop } from "./notchDrop";
+import type { DropPayload } from "./notchDrop";
 import { today } from "./taskLine";
 import { createVoiceMachine } from "./voiceCapture";
 import type { VoiceMachine, VoiceState } from "./voiceCapture";
@@ -63,7 +64,13 @@ export type NotchEvent =
   | { type: "dragEnter"; paths: string[] }
   | { type: "dragOver" }
   | { type: "dragLeave" }
-  | { type: "drop"; paths: string[]; unsupportedTemplate?: string }
+  | {
+      type: "drop";
+      paths: string[];
+      /** A pasted link/selection — no file behind it. Wins over `paths`. */
+      payload?: DropPayload;
+      unsupportedTemplate?: string;
+    }
   | { type: "writeOk"; summary: string }
   | { type: "writeFail"; reason: string }
   | { type: "statusPush"; running: string | null }
@@ -188,7 +195,7 @@ export function reduceNotch(
       return panel.kind === "dragging" ? NOTCH_IDLE : current;
     case "drop": {
       const verdicts = classifyDrop(
-        { type: "files", paths: event.paths },
+        event.payload ?? { type: "files", paths: event.paths },
         event.unsupportedTemplate,
       );
       if (verdicts.length === 0) return NOTCH_IDLE;
@@ -364,7 +371,7 @@ export function reduceNotch(
  *  or resolve null when nothing was writable (the reducer already showed the
  *  rejection at drop time). */
 async function persistDrop(
-  paths: string[],
+  payload: DropPayload,
   unsupportedTemplate?: string,
 ): Promise<string | null> {
   const outcome = await writeDrop(
@@ -372,7 +379,7 @@ async function persistDrop(
     // strips back to a basename — copy_into_inbox confines to the active
     // vault's _inbox/ on the Rust side, so this webview never needs the path.
     "",
-    { type: "files", paths },
+    payload,
     {
       inboxNames: async () => {
         // Best-effort collision list: list_inbox_entries needs the vault path,
@@ -389,12 +396,9 @@ async function persistDrop(
         }
       },
       copyFile: (from, to) => ipc.copyIntoInbox(from, basename(to)),
-      // Unreachable for drag-drop (paths only) — reached only if a url/text
-      // payload is ever fed in before a vault-confined note write exists.
-      writeFile: () =>
-        Promise.reject(
-          new Error("notch cannot write notes yet — file drops only"),
-        ),
+      // A pasted link/selection: the composed note goes through the
+      // vault-confined sibling of copy_into_inbox.
+      writeFile: (to, content) => ipc.writeInboxNote(basename(to), content),
       unsupportedTemplate,
     },
   );
@@ -414,6 +418,10 @@ export interface NotchDrive {
   onCaptureCancel: () => void;
   /** S7 ⌥M: whisper preflight, then the S8 voice take. */
   onCaptureVoice: () => void;
+  /** S7 paste: a lone URL or an oversized selection is a SOURCE, not a
+   *  daily-note line — it lands in `_inbox/` as a note instead of the input.
+   *  Returns true when intercepted (the panel preventDefaults). */
+  onCapturePaste: (text: string) => boolean;
 }
 
 /**
@@ -487,7 +495,7 @@ export function useNotchDriver(): NotchDrive | null {
               paths: p.paths,
               unsupportedTemplate: templateRef.current,
             });
-            void persistDrop(p.paths, templateRef.current).then(
+            void persistDrop({ type: "files", paths: p.paths }, templateRef.current).then(
               (summary) => {
                 if (summary) raise({ type: "writeOk", summary });
               },
@@ -718,6 +726,33 @@ export function useNotchDriver(): NotchDrive | null {
     else raise({ type: "captureCancel" });
   };
 
+  // Paste-to-inbox threshold: past this a selection is reference material,
+  // not a "- HH:MM" daily line (capture_note refuses >4 KiB anyway).
+  const PASTE_NOTE_CHARS = 1000;
+  const onCapturePaste = (text: string): boolean => {
+    const trimmed = text.trim();
+    const isUrl =
+      /^https?:\/\/\S+$/.test(trimmed) && !trimmed.includes("\n");
+    if (!isUrl && trimmed.length <= PASTE_NOTE_CHARS) return false;
+    const payload: DropPayload = isUrl
+      ? { type: "url", url: trimmed }
+      : { type: "text", text: trimmed };
+    raise({ type: "drop", paths: [], payload });
+    void persistDrop(payload, templateRef.current).then(
+      (summary) => {
+        if (summary) raise({ type: "writeOk", summary });
+      },
+      (err: unknown) => {
+        console.error("notch paste write failed:", err);
+        raise({
+          type: "writeFail",
+          reason: writeFailedRef.current ?? "Could not save the drop",
+        });
+      },
+    );
+    return true;
+  };
+
   const onCaptureVoice = (): void => {
     const missing = (): void =>
       raise({
@@ -824,5 +859,6 @@ export function useNotchDriver(): NotchDrive | null {
     onCaptureSubmit,
     onCaptureCancel,
     onCaptureVoice,
+    onCapturePaste,
   };
 }

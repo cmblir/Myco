@@ -267,6 +267,9 @@ export interface NotchPanelProps {
   onCaptureSubmit?: (text: string) => void;
   onCaptureCancel?: () => void;
   onCaptureVoice?: () => void;
+  /** S7 paste: true = the driver took it (a URL/large selection became an
+   *  _inbox note) and the input must not receive the text. */
+  onCapturePaste?: (text: string) => boolean;
 }
 
 export default function NotchPanel({
@@ -276,6 +279,7 @@ export default function NotchPanel({
   onCaptureSubmit,
   onCaptureCancel,
   onCaptureVoice,
+  onCapturePaste,
 }: NotchPanelProps): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const t = STRINGS[lang];
@@ -341,6 +345,7 @@ export default function NotchPanel({
             onCaptureSubmit={onCaptureSubmit}
             onCaptureCancel={onCaptureCancel}
             onCaptureVoice={onCaptureVoice}
+            onCapturePaste={onCapturePaste}
           />
         </div>
       ) : null}
@@ -354,12 +359,14 @@ function NotchBody({
   onCaptureSubmit,
   onCaptureCancel,
   onCaptureVoice,
+  onCapturePaste,
 }: {
   state: NotchState;
   t: Strings;
   onCaptureSubmit?: (text: string) => void;
   onCaptureCancel?: () => void;
   onCaptureVoice?: () => void;
+  onCapturePaste?: (text: string) => boolean;
 }): JSX.Element | null {
   switch (state.kind) {
     case "idle":
@@ -444,6 +451,12 @@ function NotchBody({
             autoFocus
             defaultValue={state.text}
             aria-label={t.notch_capture ?? "Quick note"}
+            onPaste={(e) => {
+              // A lone URL / oversized selection is reference material, not a
+              // daily line — the driver files it into _inbox and says where.
+              const text = e.clipboardData.getData("text/plain");
+              if (text && onCapturePaste?.(text)) e.preventDefault();
+            }}
             onKeyDown={(e) => {
               // The IME guard first: committing Korean/Japanese input fires
               // Enter too, and that one must never submit (lib/ime.ts).

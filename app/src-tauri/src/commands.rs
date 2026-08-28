@@ -897,6 +897,48 @@ pub fn copy_into_inbox(
     copy_into_inbox_at(&root, &src_abs, &dest_name)
 }
 
+/// A pasted link/selection is a note the webview COMPOSED, not a file on
+/// disk — 1 MB is generous for one; anything bigger is a mispaste.
+const INBOX_NOTE_MAX_BYTES: usize = 1024 * 1024;
+
+pub(crate) fn write_inbox_note_at(
+    root: &std::path::Path,
+    dest_name: &str,
+    content: &str,
+) -> Result<String, String> {
+    if content.trim().is_empty() {
+        return Err("empty note".into());
+    }
+    if content.len() > INBOX_NOTE_MAX_BYTES {
+        return Err(format!(
+            "note too large: {} bytes (max 1 MB)",
+            content.len()
+        ));
+    }
+    let dest = crate::myco_pro::safe_join(&root.join(DEST_INBOX), dest_name)?;
+    if dest.exists() {
+        return Err(format!("already in {DEST_INBOX}: {dest_name}"));
+    }
+    if let Some(parent) = dest.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create {DEST_INBOX}: {e}"))?;
+    }
+    std::fs::write(&dest, content).map_err(|e| format!("write failed: {e}"))?;
+    Ok(dest.to_string_lossy().into_owned())
+}
+
+/// WRITE a composed markdown note (a pasted link or text selection on the
+/// notch) into the open vault's `_inbox/` — copy_into_inbox's sibling, same
+/// confinement (safe_join, no overwrite), for content with no file behind it.
+#[tauri::command]
+pub fn write_inbox_note(
+    state: tauri::State<VaultRoot>,
+    dest_name: String,
+    content: String,
+) -> Result<String, String> {
+    let root = require_root(&state)?;
+    write_inbox_note_at(&root, &dest_name, &content)
+}
+
 /// One conversation held back from import for containing a secret.
 #[derive(serde::Serialize)]
 pub struct QuarantinedConversation {
@@ -4475,8 +4517,8 @@ mod tests {
         copy_into_inbox_at, export_bundle_write, external_target_allowed, import_dest,
         inbox_entries, iso_week_monday, page_in_date_range, read_settings_import,
         recency_tie_break, resurface_core, run_diff_core, run_import, sync_bm25_for_page,
-        voice_inbox_rel, voice_markdown, windows_opener_safe, DateRange, DEST_INBOX, DEST_SESSIONS,
-        INBOX_COPY_MAX_BYTES,
+        voice_inbox_rel, voice_markdown, windows_opener_safe, write_inbox_note_at, DateRange,
+        DEST_INBOX, DEST_SESSIONS, INBOX_COPY_MAX_BYTES,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
@@ -4629,6 +4671,31 @@ mod tests {
             .expect_err("oversized file must be refused");
         assert!(err.contains("too large"), "{err}");
         assert!(!vault.path().join("_inbox/big.bin").exists());
+    }
+
+    #[test]
+    fn write_inbox_note_confines_and_never_overwrites() {
+        let vault = tempfile::tempdir().unwrap();
+        let dest = write_inbox_note_at(vault.path(), "drop-link.md", "# t\n\nSource: x\n")
+            .expect("first write lands");
+        assert!(dest.ends_with("drop-link.md"));
+        assert_eq!(
+            std::fs::read_to_string(vault.path().join("_inbox/drop-link.md")).unwrap(),
+            "# t\n\nSource: x\n"
+        );
+        // Immutable once landed — the driver suffixes -2 instead.
+        assert!(write_inbox_note_at(vault.path(), "drop-link.md", "other").is_err());
+        // Same escape set as the copy sibling; nothing lands outside _inbox/.
+        for bad in ["../evil.md", "/abs.md", "a/../../evil.md", ""] {
+            assert!(
+                write_inbox_note_at(vault.path(), bad, "x").is_err(),
+                "{bad:?} must be refused"
+            );
+        }
+        assert!(!vault.path().join("evil.md").exists());
+        // Empty and oversized notes are refused before IO.
+        assert!(write_inbox_note_at(vault.path(), "e.md", "  \n").is_err());
+        assert!(write_inbox_note_at(vault.path(), "b.md", &"x".repeat(1024 * 1024 + 1)).is_err());
     }
 
     // ---- vault history (Q4 item 1) -----------------------------------------

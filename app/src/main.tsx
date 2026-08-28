@@ -110,6 +110,7 @@ async function bootstrap(): Promise<void> {
           onCaptureSubmit={drive.onCaptureSubmit}
           onCaptureCancel={drive.onCaptureCancel}
           onCaptureVoice={drive.onCaptureVoice}
+          onCapturePaste={drive.onCapturePaste}
         />
       );
     }
