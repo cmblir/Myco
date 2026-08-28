@@ -421,8 +421,21 @@ async function persistDrop(
       unsupportedTemplate,
     },
   );
-  if (outcome.written.length === 0) return null;
-  return batchLabel(basename(outcome.written[0]), outcome.written.length);
+  if (outcome.written.length === 0) {
+    // Everything acceptable failed to land: raise the first reason rather than
+    // reporting a silent no-op the way an empty summary would.
+    if (outcome.failed.length > 0) throw new Error(outcome.failed[0].error);
+    return null;
+  }
+  // A partial drop says so on the lip: "paper.pdf +2 · 1 failed" beats
+  // reporting success for a gesture that lost a file.
+  const summary = batchLabel(
+    basename(outcome.written[0]),
+    outcome.written.length,
+  );
+  return outcome.failed.length > 0
+    ? `${summary} · ${outcome.failed.length}✕`
+    : summary;
 }
 
 export interface NotchDrive {

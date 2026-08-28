@@ -167,7 +167,11 @@ describe("writeDrop", () => {
       "/v/_inbox/attention.pdf",
     );
     expect(d.writeFile).not.toHaveBeenCalled();
-    expect(out).toEqual({ written: ["/v/_inbox/attention.pdf"], rejected: [] });
+    expect(out).toEqual({
+      written: ["/v/_inbox/attention.pdf"],
+      rejected: [],
+      failed: [],
+    });
   });
 
   it("does not clobber a file of the same name already waiting", async () => {
@@ -241,5 +245,51 @@ describe("writeDrop", () => {
     );
     expect(out.written).toEqual(["/v/_inbox/plan.md"]);
     expect(out.rejected).toHaveLength(1);
+  });
+});
+
+describe("a failing item does not take the rest of the drop with it", () => {
+  it("keeps going and reports what failed", async () => {
+    // Five files where one is unreadable used to land the first and abort,
+    // leaving the user to guess which three never arrived.
+    const copyFile = vi.fn(async (from: string) => {
+      if (from.includes("locked")) throw new Error("permission denied");
+      return undefined;
+    });
+    const out = await writeDrop(
+      "/v",
+      {
+        type: "files",
+        paths: ["/u/a.pdf", "/u/locked.pdf", "/u/c.pdf"],
+      },
+      {
+        inboxNames: async () => [],
+        copyFile,
+        writeFile: vi.fn(),
+        now: () => 0,
+      },
+    );
+    expect(out.written).toEqual(["/v/_inbox/a.pdf", "/v/_inbox/c.pdf"]);
+    expect(out.failed).toEqual([
+      { title: "locked.pdf", error: "Error: permission denied" },
+    ]);
+    expect(copyFile).toHaveBeenCalledTimes(3);
+  });
+
+  it("reports nothing written when every acceptable item failed", async () => {
+    const out = await writeDrop(
+      "/v",
+      { type: "files", paths: ["/u/a.pdf"] },
+      {
+        inboxNames: async () => [],
+        copyFile: vi.fn(async () => {
+          throw new Error("disk full");
+        }),
+        writeFile: vi.fn(),
+        now: () => 0,
+      },
+    );
+    expect(out.written).toEqual([]);
+    expect(out.failed).toHaveLength(1);
   });
 });

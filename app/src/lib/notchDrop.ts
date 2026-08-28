@@ -223,6 +223,9 @@ export interface DropOutcome {
   written: string[];
   /** What nothing can read — each carries the reason to show. */
   rejected: DropVerdict[];
+  /** Items the pipeline WOULD take but whose write failed (a permission
+   *  error, a vanished source). Empty on a clean drop. */
+  failed: { title: string; error: string }[];
 }
 
 /**
@@ -230,9 +233,10 @@ export interface DropOutcome {
  * selections written as markdown notes. Nothing is written when nothing is
  * readable — an unsupported drop reaches the disk not at all.
  *
- * ponytail: a failing copy/write aborts the rest of a multi-file drop rather
- * than reporting per item. One file is the normal drop; add per-item failure
- * rows if batch drops turn out to matter.
+ * One item's failure no longer takes the rest down with it: a drop of five
+ * files where the second is unreadable used to land ONE file and report an
+ * error for the whole gesture, leaving the user to guess which three were
+ * lost. Each failure is collected and the walk continues.
  */
 export async function writeDrop(
   vaultPath: string,
@@ -242,25 +246,30 @@ export async function writeDrop(
   const verdicts = classifyDrop(payload, deps.unsupportedTemplate);
   const rejected = verdicts.filter((v) => v.kind === "unsupported");
   const accepted = verdicts.filter((v) => v.kind !== "unsupported");
-  if (accepted.length === 0) return { written: [], rejected };
+  if (accepted.length === 0) return { written: [], rejected, failed: [] };
 
   const ms = deps.now?.() ?? Date.now();
   const at = new Date(ms);
   const created = Math.floor(ms / 1000);
   const taken = new Set(await deps.inboxNames());
   const written: string[] = [];
+  const failed: { title: string; error: string }[] = [];
   for (const verdict of accepted) {
     const name = inboxFilename(verdict.kind, verdict.title, at, taken);
     // Claim it before the next one is named — two files of the same name in
     // ONE drop collide with each other, not just with the folder.
     taken.add(name);
     const dest = `${vaultPath}/_inbox/${name}`;
-    if (verdict.kind === "url" || verdict.kind === "text") {
-      await deps.writeFile(dest, noteBody(verdict, created));
-    } else {
-      await deps.copyFile(verdict.source, dest);
+    try {
+      if (verdict.kind === "url" || verdict.kind === "text") {
+        await deps.writeFile(dest, noteBody(verdict, created));
+      } else {
+        await deps.copyFile(verdict.source, dest);
+      }
+      written.push(dest);
+    } catch (err) {
+      failed.push({ title: verdict.title, error: String(err) });
     }
-    written.push(dest);
   }
-  return { written, rejected };
+  return { written, rejected, failed };
 }
