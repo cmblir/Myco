@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Adjacency } from "./ipc";
-import { facetValues, runView } from "./queryViews";
+import { facetValues, runView, wikiPagesOnly } from "./queryViews";
 
 const A = "/v/alpha.md";
 const B = "/v/beta.md";
@@ -70,5 +70,40 @@ describe("facetValues", () => {
     expect(f.confidence).toEqual(["high", "low"]);
     expect(f.status).toEqual(["disputed"]);
     expect(f.tags).toContain("ml");
+  });
+});
+
+describe("wikiPagesOnly", () => {
+  const files = [
+    "/v/wiki/attention.md",
+    "/v/wiki/maps/nlp.md",
+    "/v/sessions/2026-08/claude-code-abc.md",
+    "/v/daily/2026-08-28.md",
+    "/v/raw/paper.md",
+    "/v/CLAUDE.md",
+  ];
+
+  it("keeps only pages under wiki/", () => {
+    // Every filter on the Views page reads wiki frontmatter, which nothing
+    // outside wiki/ carries: the owner's vault rendered 1,647 rows for 92
+    // real pages, the rest dashes and zeroes.
+    expect(wikiPagesOnly(files, "/v")).toEqual([
+      "/v/wiki/attention.md",
+      "/v/wiki/maps/nlp.md",
+    ]);
+  });
+
+  it("accepts a root with a trailing slash", () => {
+    expect(wikiPagesOnly(files, "/v/")).toHaveLength(2);
+  });
+
+  it("passes everything through when no vault root is known", () => {
+    // A caller without a root (tests, the mock browser) must not silently
+    // end up with an empty table.
+    expect(wikiPagesOnly(files)).toEqual(files);
+  });
+
+  it("does not match a directory that merely starts with wiki", () => {
+    expect(wikiPagesOnly(["/v/wikipedia/x.md"], "/v")).toEqual([]);
   });
 });

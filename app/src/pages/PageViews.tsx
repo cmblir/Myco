@@ -16,6 +16,7 @@ import {
   loadViews,
   runView,
   saveViews,
+  wikiPagesOnly,
   type SavedView,
   type ViewFilter,
   type ViewSort,
@@ -26,6 +27,7 @@ const EMPTY: ViewFilter = {};
 export default function PageViews({ t }: { t: Strings }): JSX.Element {
   const setRoute = useUIStore((s) => s.setRoute);
   const adjacency = useVaultStore((s) => s.adjacency);
+  const vaultPath = useVaultStore((s) => s.currentVault?.path);
   const fileTree = useVaultStore((s) => s.fileTree);
 
   const [filter, setFilter] = useState<ViewFilter>(EMPTY);
@@ -34,7 +36,13 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
   const [views, setViews] = useState<SavedView[]>(() => loadViews());
   const [activeView, setActiveView] = useState<string | null>(null);
 
-  const files = useMemo(() => flattenMarkdown(fileTree), [fileTree]);
+  // Wiki pages only: every filter on this page reads wiki frontmatter, and
+  // the vault's sessions/ + daily/ notes carry none — they used to fill the
+  // table with rows of dashes (1,647 rows for 92 real pages).
+  const files = useMemo(
+    () => wikiPagesOnly(flattenMarkdown(fileTree), vaultPath),
+    [fileTree, vaultPath],
+  );
   const facets = useMemo(
     () => (adjacency ? facetValues(adjacency, files) : null),
     [adjacency, files],

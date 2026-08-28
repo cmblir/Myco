@@ -49,6 +49,23 @@ function anyOf(value: string | undefined, wanted?: string[]): boolean {
 }
 
 /** Run a view over the live adjacency. `files` = absolute markdown paths. */
+/** Wiki pages only, out of every markdown file in the vault.
+ *
+ *  The page filters on wiki frontmatter (type / confidence / status / tags /
+ *  sources), which nothing outside `wiki/` carries — so handing it the whole
+ *  tree buried the 92 real pages of the owner's vault under 1,428 session
+ *  transcripts and a pile of daily notes, every one of them rendering as a
+ *  row of dashes and zeroes. Same scope rule the lint and the contradiction
+ *  scan already use.
+ *
+ *  `vaultRoot` is optional so a caller without one (tests, the mock browser)
+ *  keeps the old unfiltered behaviour rather than silently emptying. */
+export function wikiPagesOnly(files: string[], vaultRoot?: string): string[] {
+  if (!vaultRoot) return files;
+  const prefix = vaultRoot.endsWith("/") ? vaultRoot : `${vaultRoot}/`;
+  return files.filter((f) => f.startsWith(`${prefix}wiki/`));
+}
+
 export function runView(
   adj: Adjacency,
   files: string[],
