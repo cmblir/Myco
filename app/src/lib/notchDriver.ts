@@ -32,6 +32,7 @@ import { classifyDrop, writeDrop } from "./notchDrop";
 import type { DropPayload } from "./notchDrop";
 import { today } from "./taskLine";
 import { createVoiceMachine } from "./voiceCapture";
+import { createWavRecorder } from "./wavRecorder";
 import type { VoiceMachine, VoiceState } from "./voiceCapture";
 import { useUIStore } from "../stores/uiStore";
 
@@ -620,7 +621,7 @@ export function useNotchDriver(): NotchDrive | null {
   const machine = (): VoiceMachine => {
     machineRef.current ??= createVoiceMachine({
       getStream: () => navigator.mediaDevices.getUserMedia({ audio: true }),
-      makeRecorder: (s) => new MediaRecorder(s),
+      makeRecorder: (s) => createWavRecorder(s),
       save: async (bytes) => {
         const saved = await ipc.saveVoiceCapture(Array.from(bytes));
         // The machine's onChange("saved") carries no rel — announce it here.

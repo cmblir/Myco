@@ -35,6 +35,7 @@ import {
   type VoiceMachine,
   type VoiceState,
 } from "../lib/voiceCapture";
+import { createWavRecorder } from "../lib/wavRecorder";
 import { useUIStore } from "../stores/uiStore";
 
 /** In a plain browser, `?window=spotlight&mock=1` makes devMock answer the ask
@@ -89,7 +90,7 @@ export default function Spotlight(): JSX.Element {
   const machine = (): VoiceMachine => {
     machineRef.current ??= createVoiceMachine({
       getStream: () => navigator.mediaDevices.getUserMedia({ audio: true }),
-      makeRecorder: (s) => new MediaRecorder(s),
+      makeRecorder: (s) => createWavRecorder(s),
       save: async (bytes) => {
         const saved = await ipc.saveVoiceCapture(Array.from(bytes));
         setSavedRel(saved.rel);

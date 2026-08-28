@@ -4,6 +4,8 @@
 // machine's other job is releasing the mic: stream tracks are stopped on
 // every exit path (save, failure, cancel), never left glowing in the menubar.
 
+import type { RecorderLike } from "./wavRecorder";
+
 export type VoiceState = "idle" | "recording" | "saving" | "saved" | "error";
 
 export interface VoiceMachine {
@@ -17,14 +19,17 @@ export interface VoiceMachine {
 
 export interface VoiceDeps {
   getStream: () => Promise<MediaStream>;
-  makeRecorder: (s: MediaStream) => MediaRecorder;
+  /** Anything MediaRecorder-shaped; production injects the WAV capturer
+   *  (wavRecorder.ts) because the bundled whisper cannot read WKWebView's
+   *  AAC-in-MP4 MediaRecorder output. */
+  makeRecorder: (s: MediaStream) => RecorderLike;
   save: (bytes: Uint8Array) => Promise<{ rel: string }>;
   onChange: (state: VoiceState, error: string | null) => void;
 }
 
 export function createVoiceMachine(deps: VoiceDeps): VoiceMachine {
   let stream: MediaStream | null = null;
-  let rec: MediaRecorder | null = null;
+  let rec: RecorderLike | null = null;
   let chunks: Blob[] = [];
 
   const machine: VoiceMachine = {
@@ -64,7 +69,7 @@ export function createVoiceMachine(deps: VoiceDeps): VoiceMachine {
       return;
     }
     rec = deps.makeRecorder(stream);
-    rec.ondataavailable = (e: BlobEvent): void => {
+    rec.ondataavailable = (e: { data: Blob }): void => {
       if (e.data.size > 0) chunks.push(e.data);
     };
     rec.start();

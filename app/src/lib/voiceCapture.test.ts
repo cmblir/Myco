@@ -32,7 +32,7 @@ function fakes(
   const getStream = vi.fn(() => Promise.resolve(stream));
   const machine = createVoiceMachine({
     getStream,
-    makeRecorder: () => rec as unknown as MediaRecorder,
+    makeRecorder: () => rec,
     save,
     onChange: (s) => states.push(s),
   });
@@ -82,7 +82,7 @@ describe("createVoiceMachine", () => {
     const save = vi.fn(() => Promise.resolve({ rel: "x" }));
     const machine = createVoiceMachine({
       getStream: () => Promise.reject(new Error("NotAllowedError")),
-      makeRecorder: () => ({}) as unknown as MediaRecorder,
+      makeRecorder: () => ({}) as unknown as import("./wavRecorder").RecorderLike,
       save,
       onChange: () => undefined,
     });

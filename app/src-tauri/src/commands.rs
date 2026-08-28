@@ -518,7 +518,9 @@ fn save_voice_core(
         return Err("recording is too large (limit 50 MB)".to_string());
     }
     let tmp = std::env::temp_dir().join(format!(
-        "myco-voice-{}-{}.webm",
+        // .wav since the webview records WAV itself (wavRecorder.ts) — the
+        // bundled whisper.cpp cannot read MediaRecorder's AAC-in-MP4.
+        "myco-voice-{}-{}.wav",
         std::process::id(),
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
