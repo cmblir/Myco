@@ -4,14 +4,16 @@
 // result as a sortable table, and pin the composition as a named saved view
 // (localStorage). Everything is pure and in-memory — lib/queryViews.ts.
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
+import { ipc } from "../lib/ipc";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { flattenMarkdown } from "../lib/graphData";
 import {
+  BUILTIN_LENSES,
   facetValues,
   loadViews,
   runView,
@@ -24,10 +26,21 @@ import {
 
 const EMPTY: ViewFilter = {};
 
+/** Short local date for the Modified column; an em dash while the mtime map
+ *  is still loading (or for a file that vanished). Intl, not a hand-rolled
+ *  format — the app ships in three languages. */
+function formatDay(unixSecs: number, lang: string): string {
+  if (!unixSecs) return "—";
+  return new Intl.DateTimeFormat(lang, { month: "short", day: "numeric" }).format(
+    new Date(unixSecs * 1000),
+  );
+}
+
 export default function PageViews({ t }: { t: Strings }): JSX.Element {
   const setRoute = useUIStore((s) => s.setRoute);
   const adjacency = useVaultStore((s) => s.adjacency);
   const vaultPath = useVaultStore((s) => s.currentVault?.path);
+  const lang = useUIStore((s) => s.lang);
   const fileTree = useVaultStore((s) => s.fileTree);
 
   const [filter, setFilter] = useState<ViewFilter>(EMPTY);
@@ -35,6 +48,9 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
   const [desc, setDesc] = useState(false);
   const [views, setViews] = useState<SavedView[]>(() => loadViews());
   const [activeView, setActiveView] = useState<string | null>(null);
+  // Which built-in lens is showing, if any. Cleared by any hand edit — the
+  // chip must never claim to describe a table the user has since changed.
+  const [activeLens, setActiveLens] = useState<string | null>(null);
 
   // Wiki pages only: every filter on this page reads wiki frontmatter, and
   // the vault's sessions/ + daily/ notes carry none — they used to fill the
@@ -47,14 +63,35 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
     () => (adjacency ? facetValues(adjacency, files) : null),
     [adjacency, files],
   );
+  // Modified dates: the one column that answers "what changed lately", which
+  // adjacency does not carry. One call per vault, refreshed when it changes.
+  const [mtimes, setMtimes] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    if (!vaultPath) return;
+    let cancelled = false;
+    void ipc
+      .fileMtimes(vaultPath)
+      .then((pairs) => {
+        if (!cancelled) setMtimes(new Map(pairs));
+      })
+      .catch(() => {
+        // A missing mtime map costs the column its values, nothing else.
+        if (!cancelled) setMtimes(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [vaultPath]);
+
   const rows = useMemo(
-    () => (adjacency ? runView(adjacency, files, filter, sort, desc) : []),
-    [adjacency, files, filter, sort, desc],
+    () => (adjacency ? runView(adjacency, files, filter, sort, desc, mtimes) : []),
+    [adjacency, files, filter, sort, desc, mtimes],
   );
 
   function patch(p: Partial<ViewFilter>): void {
     setFilter((f) => ({ ...f, ...p }));
     setActiveView(null);
+    setActiveLens(null);
   }
 
   function applyView(v: SavedView): void {
@@ -62,6 +99,7 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
     setSort(v.sort);
     setDesc(v.desc);
     setActiveView(v.id);
+    setActiveLens(null);
   }
 
   function saveCurrent(): void {
@@ -123,6 +161,28 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
         </p>
       </header>
 
+      <div className="views-saved views-lenses">
+        {BUILTIN_LENSES.map((lens) => (
+          <span
+            key={lens.key}
+            className={"views-chip" + (activeLens === lens.key ? " active" : "")}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setFilter(lens.filter);
+                setSort(lens.sort);
+                setDesc(lens.desc);
+                setActiveLens(lens.key);
+                setActiveView(null);
+              }}
+            >
+              {t[lens.labelKey as keyof Strings]?.toString() ?? lens.fallback}
+            </button>
+          </span>
+        ))}
+      </div>
+
       {views.length > 0 ? (
         <div className="views-saved">
           {views.map((v) => (
@@ -156,9 +216,9 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
           onChange={(e) => patch({ types: asList(e.target.value) })}
         >
           <option value="">{t.vw_any_type ?? "Any type"}</option>
-          {facets?.types.map((v) => (
-            <option key={v} value={v}>
-              {v}
+          {facets?.types.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.value} ({f.count})
             </option>
           ))}
         </select>
@@ -168,9 +228,9 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
           onChange={(e) => patch({ confidence: asList(e.target.value) })}
         >
           <option value="">{t.vw_any_conf ?? "Any confidence"}</option>
-          {facets?.confidence.map((v) => (
-            <option key={v} value={v}>
-              {v}
+          {facets?.confidence.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.value} ({f.count})
             </option>
           ))}
         </select>
@@ -180,9 +240,9 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
           onChange={(e) => patch({ status: asList(e.target.value) })}
         >
           <option value="">{t.vw_any_status ?? "Any status"}</option>
-          {facets?.status.map((v) => (
-            <option key={v} value={v}>
-              {v}
+          {facets?.status.map((f) => (
+            <option key={f.value} value={f.value}>
+              {f.value} ({f.count})
             </option>
           ))}
         </select>
@@ -192,9 +252,9 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
           onChange={(e) => patch({ tags: asList(e.target.value) })}
         >
           <option value="">{t.vw_any_tag ?? "Any tag"}</option>
-          {facets?.tags.map((v) => (
-            <option key={v} value={v}>
-              #{v}
+          {facets?.tags.map((f) => (
+            <option key={f.value} value={f.value}>
+              #{f.value} ({f.count})
             </option>
           ))}
         </select>
@@ -225,8 +285,12 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
                 {header(t.vw_col_name ?? "Page", "name")}
                 {header(t.vw_col_type ?? "Type", "type")}
                 <th>{t.vw_col_conf ?? "Confidence"}</th>
+                {/* Status was filterable but invisible — you narrowed by a
+                    value the table would not show you. */}
+                <th>{t.vw_col_status ?? "Status"}</th>
                 {header(t.vw_col_sources ?? "Sources", "sources")}
                 {header(t.vw_col_links ?? "Links", "links")}
+                {header(t.vw_col_modified ?? "Modified", "modified")}
                 <th>{t.vw_col_tags ?? "Tags"}</th>
               </tr>
             </thead>
@@ -245,8 +309,10 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
                   </td>
                   <td>{r.type ?? "—"}</td>
                   <td>{r.confidence ?? "—"}</td>
+                  <td>{r.status ?? "—"}</td>
                   <td className="num">{r.sourceCount}</td>
                   <td className="num">{r.links}</td>
+                  <td className="num">{formatDay(r.modified, lang)}</td>
                   <td className="views-tags">{r.tags.map((x) => `#${x}`).join(" ")}</td>
                 </tr>
               ))}

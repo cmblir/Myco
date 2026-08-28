@@ -5346,6 +5346,17 @@ html.tray-window body {
   gap: 6px;
   margin-bottom: 14px;
 }
+/* Built-in lenses vs the user's own saved views: same chip, but the starter
+   row is quieter so a saved lens still reads as "mine". */
+.views-saved.views-lenses {
+  margin-bottom: 8px;
+}
+.views-lenses .views-chip {
+  border-style: dashed;
+}
+.views-lenses .views-chip.active {
+  border-style: solid;
+}
 .views-chip {
   display: inline-flex;
   align-items: center;

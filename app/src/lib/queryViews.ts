@@ -20,9 +20,11 @@ export interface ViewFilter {
   minSources?: number;
   /** Only pages with zero wikilinks in either direction. */
   orphansOnly?: boolean;
+  /** Only pages citing nothing — a claim with no source behind it. */
+  unsourcedOnly?: boolean;
 }
 
-export type ViewSort = "name" | "sources" | "links" | "type";
+export type ViewSort = "name" | "sources" | "links" | "type" | "modified";
 
 export interface SavedView {
   id: string;
@@ -41,6 +43,9 @@ export interface ViewRow {
   sourceCount: number;
   tags: string[];
   links: number;
+  /** Unix seconds; 0 when the vault's mtimes have not loaded (or the file
+   *  vanished between the scan and the read). */
+  modified: number;
 }
 
 function anyOf(value: string | undefined, wanted?: string[]): boolean {
@@ -72,6 +77,9 @@ export function runView(
   filter: ViewFilter,
   sort: ViewSort = "name",
   desc = false,
+  /** path → unix seconds. Absent until `file_mtimes` resolves; rows then read
+   *  0 and the "modified" sort degrades to name order rather than erroring. */
+  mtimes?: Map<string, number>,
 ): ViewRow[] {
   const text = filter.text?.trim().toLowerCase();
   const rows: ViewRow[] = [];
@@ -86,6 +94,7 @@ export function runView(
       continue;
     if (filter.minSources != null && (meta?.sourceCount ?? 0) < filter.minSources) continue;
     if (filter.orphansOnly && links > 0) continue;
+    if (filter.unsourcedOnly && (meta?.sourceCount ?? 0) > 0) continue;
     const name = stem(path);
     if (text && !name.toLowerCase().includes(text)) continue;
     rows.push({
@@ -97,6 +106,7 @@ export function runView(
       sourceCount: meta?.sourceCount ?? 0,
       tags,
       links,
+      modified: mtimes?.get(path) ?? 0,
     });
   }
   const dir = desc ? -1 : 1;
@@ -108,6 +118,8 @@ export function runView(
         return (a.links - b.links) * dir || a.name.localeCompare(b.name);
       case "type":
         return (a.type ?? "").localeCompare(b.type ?? "") * dir || a.name.localeCompare(b.name);
+      case "modified":
+        return (a.modified - b.modified) * dir || a.name.localeCompare(b.name);
       default:
         return a.name.localeCompare(b.name) * dir;
     }
@@ -115,28 +127,112 @@ export function runView(
   return rows;
 }
 
-/** Distinct values present in the vault for each filterable facet — drives the
- * filter dropdowns so they only offer values that exist. */
-export function facetValues(adj: Adjacency, files: string[]): {
-  types: string[];
-  confidence: string[];
-  status: string[];
-  tags: string[];
+/** One filter-dropdown entry: the value and how many pages carry it. */
+export interface Facet {
+  value: string;
+  count: number;
+}
+
+/** Values present in the vault for each filterable facet, WITH counts — the
+ * dropdowns then say how the vault is actually distributed ("concept (34)")
+ * instead of listing bare labels you have to try one by one. Only values that
+ * exist are offered, so no filter can return an empty table by construction.
+ *
+ * Counts sort first (descending), then the label: the biggest bucket is the
+ * one worth looking at, and a stable tiebreak keeps the list from reshuffling
+ * between renders. */
+export function facetValues(
+  adj: Adjacency,
+  files: string[],
+): {
+  types: Facet[];
+  confidence: Facet[];
+  status: Facet[];
+  tags: Facet[];
 } {
-  const types = new Set<string>();
-  const confidence = new Set<string>();
-  const status = new Set<string>();
-  const tags = new Set<string>();
+  const types = new Map<string, number>();
+  const confidence = new Map<string, number>();
+  const status = new Map<string, number>();
+  const tags = new Map<string, number>();
+  const bump = (m: Map<string, number>, k?: string): void => {
+    if (k) m.set(k, (m.get(k) ?? 0) + 1);
+  };
   for (const path of files) {
     const m = adj.meta?.[path];
-    if (m?.type) types.add(m.type);
-    if (m?.confidence) confidence.add(m.confidence);
-    if (m?.status) status.add(m.status);
-    for (const t of adj.tags[path] ?? []) tags.add(t);
+    bump(types, m?.type);
+    bump(confidence, m?.confidence);
+    bump(status, m?.status);
+    for (const t of adj.tags[path] ?? []) bump(tags, t);
   }
-  const sorted = (s: Set<string>): string[] => [...s].sort((a, b) => a.localeCompare(b));
-  return { types: sorted(types), confidence: sorted(confidence), status: sorted(status), tags: sorted(tags) };
+  const ranked = (m: Map<string, number>): Facet[] =>
+    [...m.entries()]
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
+  return {
+    types: ranked(types),
+    confidence: ranked(confidence),
+    status: ranked(status),
+    tags: ranked(tags),
+  };
 }
+
+/** Lenses the page opens with, so the first click asks a real question
+ *  instead of leaving the visitor to invent one against five dropdowns.
+ *  Each is a question the vault can only answer through this table:
+ *
+ *  - unsourced: a wiki claim with nothing behind it (the trust question)
+ *  - orphans:   written, then never linked from anywhere (the lost-page one)
+ *  - disputed:  flagged as contradicting another page, awaiting a decision
+ *  - recent:    what changed lately, newest first
+ *
+ *  Built-ins are not saved views: they carry no id, cannot be deleted, and
+ *  do not touch localStorage. Saving one after tweaking it makes a real
+ *  saved view, which is the intended path from "browse" to "my lens".
+ */
+export interface BuiltinLens {
+  key: string;
+  /** i18n key for the chip label; the page falls back to `fallback`. */
+  labelKey: string;
+  fallback: string;
+  filter: ViewFilter;
+  sort: ViewSort;
+  desc: boolean;
+}
+
+export const BUILTIN_LENSES: BuiltinLens[] = [
+  {
+    key: "unsourced",
+    labelKey: "vw_lens_unsourced",
+    fallback: "No sources",
+    filter: { unsourcedOnly: true },
+    sort: "name",
+    desc: false,
+  },
+  {
+    key: "orphans",
+    labelKey: "vw_lens_orphans",
+    fallback: "Orphans",
+    filter: { orphansOnly: true },
+    sort: "name",
+    desc: false,
+  },
+  {
+    key: "disputed",
+    labelKey: "vw_lens_disputed",
+    fallback: "Disputed",
+    filter: { status: ["disputed"] },
+    sort: "name",
+    desc: false,
+  },
+  {
+    key: "recent",
+    labelKey: "vw_lens_recent",
+    fallback: "Recently changed",
+    filter: {},
+    sort: "modified",
+    desc: true,
+  },
+];
 
 // --- persistence -----------------------------------------------------------
 

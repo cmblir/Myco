@@ -108,6 +108,12 @@ export interface Strings {
   vw_col_sources?: string;
   vw_col_links?: string;
   vw_col_tags?: string;
+  vw_col_status?: string;
+  vw_col_modified?: string;
+  vw_lens_unsourced?: string;
+  vw_lens_orphans?: string;
+  vw_lens_disputed?: string;
+  vw_lens_recent?: string;
   nav_history: string;
   nav_provenance: string;
   nav_tasks: string;
@@ -1420,6 +1426,12 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_col_sources: "Sources",
     vw_col_links: "Links",
     vw_col_tags: "Tags",
+    vw_col_status: "Status",
+    vw_col_modified: "Modified",
+    vw_lens_unsourced: "No sources",
+    vw_lens_orphans: "Orphans",
+    vw_lens_disputed: "Disputed",
+    vw_lens_recent: "Recently changed",
     nav_history: "History",
     nav_provenance: "Provenance",
     nav_tasks: "Tasks",
@@ -2790,6 +2802,12 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_col_sources: "출처",
     vw_col_links: "링크",
     vw_col_tags: "태그",
+    vw_col_status: "상태",
+    vw_col_modified: "수정",
+    vw_lens_unsourced: "출처 없음",
+    vw_lens_orphans: "고립",
+    vw_lens_disputed: "분쟁 중",
+    vw_lens_recent: "최근 변경",
     nav_history: "히스토리",
     nav_provenance: "출처",
     nav_tasks: "할 일",
@@ -5257,6 +5275,12 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_col_sources: "ソース",
     vw_col_links: "リンク",
     vw_col_tags: "タグ",
+    vw_col_status: "状態",
+    vw_col_modified: "更新",
+    vw_lens_unsourced: "出典なし",
+    vw_lens_orphans: "孤立",
+    vw_lens_disputed: "係争中",
+    vw_lens_recent: "最近の変更",
     gr_insp_type: "タイプ",
     gr_insp_confidence: "確信度",
     gr_insp_status: "ステータス",

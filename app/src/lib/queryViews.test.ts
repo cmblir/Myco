@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Adjacency } from "./ipc";
-import { facetValues, runView, wikiPagesOnly } from "./queryViews";
+import {
+  BUILTIN_LENSES,
+  facetValues,
+  runView,
+  wikiPagesOnly,
+} from "./queryViews";
 
 const A = "/v/alpha.md";
 const B = "/v/beta.md";
@@ -64,12 +69,24 @@ describe("runView", () => {
 });
 
 describe("facetValues", () => {
-  it("collects only values that exist, sorted", () => {
+  const names = (f: { value: string }[]): string[] => f.map((x) => x.value);
+
+  it("collects only values that exist", () => {
     const f = facetValues(adj(), FILES);
-    expect(f.types).toEqual(["concept", "technique"]);
-    expect(f.confidence).toEqual(["high", "low"]);
-    expect(f.status).toEqual(["disputed"]);
-    expect(f.tags).toContain("ml");
+    expect(names(f.types).sort()).toEqual(["concept", "technique"]);
+    expect(names(f.confidence).sort()).toEqual(["high", "low"]);
+    expect(names(f.status)).toEqual(["disputed"]);
+    expect(names(f.tags)).toContain("ml");
+  });
+
+  it("counts each value, biggest bucket first", () => {
+    // The dropdowns show the distribution, so a visitor can see where the
+    // vault actually is instead of trying values one at a time.
+    const f = facetValues(adj(), FILES);
+    const concept = f.types.find((x) => x.value === "concept");
+    expect(concept?.count).toBeGreaterThan(0);
+    const counts = f.types.map((x) => x.count);
+    expect([...counts].sort((a, b) => b - a)).toEqual(counts);
   });
 });
 
@@ -105,5 +122,48 @@ describe("wikiPagesOnly", () => {
 
   it("does not match a directory that merely starts with wiki", () => {
     expect(wikiPagesOnly(["/v/wikipedia/x.md"], "/v")).toEqual([]);
+  });
+});
+
+describe("built-in lenses", () => {
+  it("each one narrows the table to a question the page exists to answer", () => {
+    const a = adj();
+    const byKey = Object.fromEntries(BUILTIN_LENSES.map((l) => [l.key, l]));
+
+    // Unsourced: a wiki claim with nothing behind it.
+    const unsourced = runView(a, FILES, byKey.unsourced.filter);
+    expect(unsourced.every((r) => r.sourceCount === 0)).toBe(true);
+
+    // Orphans: written, never linked from anywhere.
+    const orphans = runView(a, FILES, byKey.orphans.filter);
+    expect(orphans.every((r) => r.links === 0)).toBe(true);
+
+    // Disputed: flagged as contradicting another page.
+    const disputed = runView(a, FILES, byKey.disputed.filter);
+    expect(disputed.every((r) => r.status === "disputed")).toBe(true);
+
+    // Recent: no filter, newest first — the ordering IS the lens.
+    expect(byKey.recent.filter).toEqual({});
+    expect(byKey.recent.sort).toBe("modified");
+    expect(byKey.recent.desc).toBe(true);
+  });
+
+  it("sorts by modified date when the mtime map is supplied", () => {
+    const mtimes = new Map([
+      [A, 300],
+      [B, 100],
+      [C, 200],
+      [D, 400],
+    ]);
+    const rows = runView(adj(), FILES, {}, "modified", true, mtimes);
+    expect(rows.map((r) => r.modified)).toEqual([400, 300, 200, 100]);
+  });
+
+  it("degrades to name order when no mtimes have loaded", () => {
+    // Every row reads 0, so the tiebreak (name) decides — an empty column,
+    // never a scrambled table.
+    const rows = runView(adj(), FILES, {}, "modified", true);
+    expect(rows.map((r) => r.modified)).toEqual([0, 0, 0, 0]);
+    expect(rows.map((r) => r.name)).toEqual([...rows.map((r) => r.name)].sort());
   });
 });
