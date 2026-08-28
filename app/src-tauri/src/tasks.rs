@@ -187,9 +187,8 @@ fn today_stamp() -> String {
 /// after the checkbox mark, or nothing is written — a mismatch means the file
 /// changed since the caller read it, and rewriting by line number would edit
 /// the wrong task. Returns the new content and whether the line carries a
-/// `🔁` rule (the caller reports that recurrence is app-only).
-// ponytail: recurrence advance is TS-only (taskRecurrence.ts); port to Rust if
-// MCP check-off of recurring tasks becomes common.
+/// `🔁` rule — and a completed recurring task gets its next occurrence
+/// inserted above it (`next_occurrence_line`), the same as the app's writer.
 pub fn set_line_status(
     content: &str,
     line_no: u32,

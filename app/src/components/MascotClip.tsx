@@ -163,9 +163,18 @@ export default function MascotClip({
         flexShrink: 0,
       }}
     >
-      {/* The poster is always mounted underneath. It is what shows before the
-          first frame arrives, and what remains if the clip never plays. */}
-      <img src={c.poster} alt="" draggable={false} style={mediaStyle} />
+      {/* The poster is what shows before the first frame arrives, and what
+          remains if the clip never plays. It stays MOUNTED once playback
+          starts (so a stall falls back to it without a flash) but must go
+          INVISIBLE: the clip is alpha-keyed, so a lit poster shows through
+          every transparent pixel and the character reads as two overlapping
+          copies of itself the moment it moves. */}
+      <img
+        src={c.poster}
+        alt=""
+        draggable={false}
+        style={{ ...mediaStyle, opacity: playing ? 0 : 1 }}
+      />
       {reduced || failed || ended ? null : (
         <video
           ref={videoRef}

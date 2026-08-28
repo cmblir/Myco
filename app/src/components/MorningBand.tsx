@@ -5,8 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
 import type { Strings } from "../lib/i18n";
-import { ipc, type SuspectReport } from "../lib/ipc";
-import type { DistillStatus } from "../lib/distill";
+import { ipc, type RunSummary, type SuspectReport } from "../lib/ipc";
 import { useVaultStore } from "../stores/vaultStore";
 import { useUIStore } from "../stores/uiStore";
 import type { RouteId } from "../stores/uiStore";
@@ -34,7 +33,7 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
   const dueTotal = useStudyStore((s) => s.dueTotal);
   const refreshStudy = useStudyStore((s) => s.refresh);
   const [suspects, setSuspects] = useState<SuspectReport | null>(null);
-  const [distill, setDistill] = useState<DistillStatus | null>(null);
+  const [runs, setRuns] = useState<RunSummary[]>([]);
   const [ignored, setIgnored] = useState<ReadonlySet<string>>(() => loadIgnored());
   const [contraError, setContraError] = useState<string | null>(null);
   // Snapshot the PREVIOUS visit once at mount — PageOverview stamps the new
@@ -53,13 +52,16 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
       .catch(() => {
         if (!cancelled) setSuspects(null);
       });
+    // Real run counts for the headline. `list_distill_runs` (Task 8) landed
+    // after this band was written, so the numbers below no longer have to be
+    // guessed from `last_run` alone.
     ipc
-      .distillStatus(vault.path)
-      .then((s) => {
-        if (!cancelled) setDistill(s);
+      .listDistillRuns(vault.path, 20)
+      .then((r) => {
+        if (!cancelled) setRuns(r);
       })
       .catch(() => {
-        if (!cancelled) setDistill(null);
+        if (!cancelled) setRuns([]);
       });
     return () => {
       cancelled = true;
@@ -111,16 +113,17 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
     saveIgnored(next);
     setIgnored(next);
   };
-  // DistillStatus has no runs-since counter, only last_run (epoch seconds):
-  // report "a run happened since your visit" as 1, else 0. pagesMoved is not
-  // derivable from DistillStatus yet, so it stays 0 and the headline leans on
-  // the runs count. ponytail: 0/1 recency signal, real counts when
-  // list_distill_runs (Task 8) lands.
-  const runsSince =
-    distill?.last_run != null && (visitedAt === null || distill.last_run * 1000 > visitedAt)
-      ? 1
-      : 0;
-  const headline = buildMorningHeadline({ runsSince, pagesMoved: 0, lang }, t);
+  // Runs since the last visit, and how many pages they actually moved. The
+  // run log is the source: this used to report a 0/1 recency flag with
+  // pagesMoved pinned to 0, because DistillStatus carries only `last_run`.
+  // A first visit (no stamp) counts every run the log still holds rather
+  // than claiming the vault was idle.
+  const sinceRuns = runs.filter(
+    (r) => visitedAt === null || r.started_at * 1000 > visitedAt,
+  );
+  const runsSince = sinceRuns.length;
+  const pagesMoved = sinceRuns.reduce((n, r) => n + r.moves, 0);
+  const headline = buildMorningHeadline({ runsSince, pagesMoved, lang }, t);
   const top = suspects ? topSuspects(suspects, 3) : [];
 
   // Ritual section (M1-d): top resurface pick + FSRS due line. Opening the
