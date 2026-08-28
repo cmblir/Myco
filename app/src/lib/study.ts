@@ -92,7 +92,7 @@ async function generateArray(
 ): Promise<unknown[]> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const reply = await complete({
-      task: "query",
+      task: "generate",
       cwd: vaultPath,
       messages: [
         { role: "system", content: system },

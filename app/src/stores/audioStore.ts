@@ -9,7 +9,26 @@ import {
   type AudioScript,
 } from "../lib/audioOverview";
 import { speakTurns, ttsAvailable, type SpeechController } from "../lib/tts";
+import { canGenerate } from "../lib/chat";
+import { ipc } from "../lib/ipc";
+import { STRINGS } from "../lib/i18n";
+import { useUIStore } from "./uiStore";
 import { useVaultStore } from "./vaultStore";
+
+/** This store surfaces plain user-facing text, so it reads the language off
+ *  uiStore rather than taking a `Strings` prop (ingestStore's convention). */
+function t(): (typeof STRINGS)["en"] {
+  return STRINGS[useUIStore.getState().lang] ?? STRINGS.en;
+}
+
+/** No provider anywhere can write prose. Reported instead of the backend's
+ *  English CHAT_MODEL_MISSING, which is what the owner actually saw. */
+function needsProviderText(): string {
+  return (
+    t().au_needs_provider ??
+    "Audio overview writes new prose, so it needs an AI provider. Pick one under Settings → Model."
+  );
+}
 
 /** Local ISO timestamp (yyyy-mm-ddThh:mm). App-side date is fine here. */
 function nowIso(): string {
@@ -55,6 +74,14 @@ export const useAudioStore = create<AudioState>((set, get) => ({
       currentTurn: -1,
     });
     try {
+      // Fail fast and legibly when nothing can generate: the backend's
+      // refusal is an English sentence about bundled chat models, which is
+      // neither actionable nor translated.
+      const s = await ipc.getSettings().catch(() => null);
+      if (s && !canGenerate(s.query_provider) && !canGenerate(s.ingest_provider)) {
+        set({ error: needsProviderText(), generating: false });
+        return;
+      }
       const script = await generateScript(vault.path, pages, title);
       // Persist the transcript immediately so a later playback issue never
       // loses the generated artifact.
@@ -64,7 +91,13 @@ export const useAudioStore = create<AudioState>((set, get) => ({
       set({ script, transcriptPath: path, generating: false });
       void useVaultStore.getState().refreshTree();
     } catch (err) {
-      set({ error: String(err), generating: false });
+      const msg = String(err);
+      set({
+        error: msg.includes("no local chat model is bundled")
+          ? needsProviderText()
+          : msg,
+        generating: false,
+      });
     }
   },
 

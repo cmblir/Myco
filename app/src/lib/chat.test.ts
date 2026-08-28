@@ -1,8 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  canGenerate,
   complete,
   isIndexStale,
   retrieveChunks,
+  roleFor,
   RELEVANCE_FLOOR,
   type AskStage,
 } from "./chat";
@@ -761,5 +763,52 @@ describe("retrieveChunks", () => {
     ]);
     const r = await retrieveChunks("BPE");
     expect(r.hits.map((h) => h.stem)).toEqual(["bpe"]);
+  });
+});
+
+describe("roleFor", () => {
+  const settings = {
+    query_provider: "builtin-local",
+    query_model: "extractive-retrieval",
+    query_effort: "low",
+    ingest_provider: "anthropic-cli",
+    ingest_model: "haiku",
+    ingest_effort: "medium",
+  } as unknown as Parameters<typeof roleFor>[1];
+
+  it("leaves interactive Ask on the query role even when it cannot generate", () => {
+    // Extractive Ask is a deliberate setting, not a degraded state.
+    expect(roleFor("query", settings).provider).toBe("builtin-local");
+  });
+
+  it("sends generation to the ingest role when the query role is extractive", () => {
+    const r = roleFor("generate", settings);
+    expect(r.provider).toBe("anthropic-cli");
+    expect(r.model).toBe("haiku");
+    expect(r.effort).toBe("medium");
+  });
+
+  it("prefers the query role for generation when it can generate", () => {
+    const s = { ...settings, query_provider: "anthropic-api", query_model: "sonnet" };
+    expect(roleFor("generate", s).provider).toBe("anthropic-api");
+    expect(roleFor("generate", s).model).toBe("sonnet");
+  });
+
+  it("falls back to the query role when nothing can generate", () => {
+    // complete() then raises CHAT_MODEL_MISSING — the honest answer when no
+    // generation provider is connected anywhere.
+    const s = { ...settings, ingest_provider: "builtin-local" };
+    expect(roleFor("generate", s).provider).toBe("builtin-local");
+  });
+
+  it("ingest always takes the ingest role", () => {
+    expect(roleFor("ingest", settings).provider).toBe("anthropic-cli");
+  });
+
+  it("canGenerate: only the extractive built-in (and unset) cannot", () => {
+    expect(canGenerate("builtin-local")).toBe(false);
+    expect(canGenerate("")).toBe(false);
+    expect(canGenerate("ollama")).toBe(true);
+    expect(canGenerate("anthropic-cli")).toBe(true);
   });
 });

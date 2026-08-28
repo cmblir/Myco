@@ -9,7 +9,7 @@
 //     providers we inline the vault content so the model has real context
 //     instead of answering blind.
 
-import { ipc, type ScoredChunk } from "./ipc";
+import { ipc, type MycoSettings, type ScoredChunk } from "./ipc";
 import { BUILTIN_EMBED_MODEL } from "./providers";
 import { getBudgetThreshold, overBudget, recordUsage } from "./budget";
 import { log } from "./log";
@@ -50,7 +50,22 @@ export type AskStage =
   | { kind: "thinking"; stems: string[]; stale?: boolean; retrievalFailed?: boolean };
 
 export interface CompleteArgs {
-  task: "query" | "ingest";
+  /**
+   * Which settings role picks the provider.
+   *
+   * - `"query"` — interactive Ask. Honours the query role exactly, including
+   *   `builtin-local`, because answering extractively from the notes is a
+   *   deliberate choice there, not a degraded state.
+   * - `"ingest"` — the ingest role, as before.
+   * - `"generate"` — everything that must WRITE new prose (audio overview,
+   *   digests, maps, study cards, reflect, lint, the ingest planner). These
+   *   used to ride the query role and so died with `CHAT_MODEL_MISSING` the
+   *   moment Ask was set to extractive: the owner's audio overview stopped
+   *   working while a perfectly good ingest provider sat connected. Now they
+   *   take the query role when it can generate and fall back to the ingest
+   *   role when it cannot.
+   */
+  task: "query" | "ingest" | "generate";
   messages: SimpleMessage[];
   cwd: string;
   /// Called as the run moves between stages. The non-tool provider path always
@@ -80,13 +95,11 @@ const CHAT_MODEL_MISSING =
 /** Whether the given provider can read/write vault files via tools. */
 export async function complete(args: CompleteArgs): Promise<string> {
   const settings = await ipc.getSettings();
-  const provider =
-    args.task === "query" ? settings.query_provider : settings.ingest_provider;
-  const model =
-    args.task === "query" ? settings.query_model : settings.ingest_model;
+  const role = roleFor(args.task, settings);
+  const provider = role.provider;
+  const model = role.model;
   // Reasoning effort for this role — only the CLI branch below can use it.
-  const effort =
-    args.task === "query" ? settings.query_effort : settings.ingest_effort;
+  const effort = role.effort;
 
   // Profile personalisation (Phase B, Task 6): read once per complete() call,
   // gated to task:"query" only — ingest gets its own weighting (INGEST_PROMPT's
@@ -495,17 +508,49 @@ function appendSystemSuffix(
   return [{ role: "system", content: suffix.trim() }, ...messages];
 }
 
-export async function getActiveModel(task: "query" | "ingest"): Promise<{
+export async function getActiveModel(
+  task: "query" | "ingest" | "generate",
+): Promise<{
   provider: string;
   model: string;
   effort: string;
 }> {
-  const s = await ipc.getSettings();
-  return task === "query"
-    ? { provider: s.query_provider, model: s.query_model, effort: s.query_effort }
-    : {
-        provider: s.ingest_provider,
-        model: s.ingest_model,
-        effort: s.ingest_effort,
-      };
+  return roleFor(task, await ipc.getSettings());
+}
+
+/** The only provider that cannot write prose: it ships an embedder, no chat
+ *  weights. Everything else — CLI bridges, API providers, Ollama — can. */
+export function canGenerate(provider: string): boolean {
+  return provider !== "builtin-local" && provider !== "";
+}
+
+/**
+ * Settings role → provider/model/effort. Pure, so the fallback rule is
+ * testable without a backend.
+ *
+ * `generate` prefers the query role (a user who pointed Ask at Claude wants
+ * their overviews from Claude too) and falls back to the ingest role when the
+ * query role is the extractive built-in. If NEITHER can generate it returns
+ * the query role unchanged — `complete()` then fails with the same
+ * CHAT_MODEL_MISSING it always did, which is the honest answer when no
+ * generation provider is connected anywhere.
+ */
+export function roleFor(
+  task: "query" | "ingest" | "generate",
+  s: MycoSettings,
+): { provider: string; model: string; effort: string } {
+  const query = {
+    provider: s.query_provider,
+    model: s.query_model,
+    effort: s.query_effort,
+  };
+  const ingest = {
+    provider: s.ingest_provider,
+    model: s.ingest_model,
+    effort: s.ingest_effort,
+  };
+  if (task === "ingest") return ingest;
+  if (task === "query") return query;
+  if (canGenerate(query.provider)) return query;
+  return canGenerate(ingest.provider) ? ingest : query;
 }

@@ -276,7 +276,7 @@ async function runRollup(vaultPath: string, spec: RollupLayerSpec): Promise<Roll
         const bullets = extractive
           ? await extractiveBullets(files, contents)
           : await complete({
-              task: "query",
+              task: "generate",
               cwd: vaultPath,
               messages: [
                 { role: "system", content: spec.system },

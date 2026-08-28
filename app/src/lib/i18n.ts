@@ -788,6 +788,7 @@ export interface Strings {
   au_title?: string;
   au_close?: string;
   au_generating?: string;
+  au_needs_provider?: string;
   au_play?: string;
   au_pause?: string;
   au_stop?: string;
@@ -2139,6 +2140,8 @@ export const STRINGS: Record<Lang, Strings> = {
     au_title: "Audio overview",
     au_close: "Close",
     au_generating: "Writing the dialogue…",
+    au_needs_provider:
+      "Audio overview writes new prose, so it needs an AI provider. Pick one under Settings → Model.",
     au_play: "Play",
     au_pause: "Pause",
     au_stop: "Stop",
@@ -3488,6 +3491,8 @@ export const STRINGS: Record<Lang, Strings> = {
     au_title: "오디오 개요",
     au_close: "닫기",
     au_generating: "대화 작성 중…",
+    au_needs_provider:
+      "오디오 개요는 글을 새로 쓰는 기능이라 AI 프로바이더가 필요합니다. 설정 → 모델에서 선택하세요.",
     au_play: "재생",
     au_pause: "일시정지",
     au_stop: "정지",
@@ -4675,6 +4680,8 @@ export const STRINGS: Record<Lang, Strings> = {
     au_title: "音声概要",
     au_close: "閉じる",
     au_generating: "対話を作成中…",
+    au_needs_provider:
+      "音声概要は文章を新しく書く機能なので、AIプロバイダーが必要です。設定 → モデルで選択してください。",
     au_play: "再生",
     au_pause: "一時停止",
     au_stop: "停止",

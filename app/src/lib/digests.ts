@@ -81,7 +81,7 @@ export async function runDigest(
 ): Promise<string> {
   const prompt = await buildPrompt(vaultPath, schedule);
   const body = await complete({
-    task: "query",
+    task: "generate",
     cwd: vaultPath,
     messages: [
       { role: "system", content: SYSTEM },

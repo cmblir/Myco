@@ -290,7 +290,7 @@ export async function runSessionDigest(vaultPath: string): Promise<DigestOutcome
         const bullets = extractive
           ? await extractiveBullets(files, contents)
           : await complete({
-              task: "query",
+              task: "generate",
               cwd: vaultPath,
               messages: [
                 { role: "system", content: DIGEST_SYSTEM },

@@ -113,7 +113,7 @@ describe("useLintStore.runLint", () => {
       cwd: string;
       messages: { role: string; content: string }[];
     };
-    expect(arg.task).toBe("query");
+    expect(arg.task).toBe("generate");
     expect(arg.cwd).toBe("/v");
     expect(arg.messages[0].content).toContain("Run the wiki lint checklist");
     expect(useLintStore.getState().report).toBe("## Critical\n- something");

@@ -171,7 +171,7 @@ export const useReflectStore = create<ReflectState>((set, get) => ({
         out = suggestions.map((s) => s.text).join("\n");
       } else {
         out = await complete({
-          task: "query",
+          task: "generate",
           cwd: vault.path,
           messages: [{ role: "user", content: REFLECT_PROMPT }],
         });

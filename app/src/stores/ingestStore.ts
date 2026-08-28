@@ -334,7 +334,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       let plan: PlanItem[] = [];
       try {
         const planReply = await complete({
-          task: "query",
+          task: "generate",
           cwd: vault.path,
           messages: [
             {

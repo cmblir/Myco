@@ -162,7 +162,7 @@ export async function draftMap(
   if (existing) return existing;
 
   const body = await complete({
-    task: "query",
+    task: "generate",
     cwd: vaultPath,
     messages: [
       { role: "system", content: mapSystemPrompt(cluster) },

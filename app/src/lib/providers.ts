@@ -167,7 +167,7 @@ export const PROVIDERS: ProviderDef[] = [
     name: "Built-in (offline)",
     kind: "local",
     needsKey: false,
-    desc: "bge-m3 embedder bundled inside the app. Works offline with zero setup; Ask answers extractively from your notes via semantic search. No local chat model ships — use a cloud provider for ingest, classification, and generation.",
+    desc: "Korean-aware e5 embedder bundled inside the app. Works offline with zero setup; Ask answers extractively from your notes via semantic search. No local chat model ships — features that write prose (ingest, overviews, digests) fall back to your ingest provider.",
     catalog: [BUILTIN_MODEL],
   },
   {

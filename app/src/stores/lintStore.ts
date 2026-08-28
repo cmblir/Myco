@@ -93,7 +93,7 @@ export const useLintStore = create<LintState>((set, get) => ({
               (chunk) => set((s) => ({ progress: s.progress + chunk })),
             )
           : await complete({
-              task: "query",
+              task: "generate",
               cwd: vault.path,
               messages: [{ role: "user", content: LINT_PROMPT }],
             });

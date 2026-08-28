@@ -94,7 +94,7 @@ export async function generateScript(
   let turns: DialogueTurn[] = [];
   for (let attempt = 0; attempt < 2 && turns.length === 0; attempt++) {
     const reply = await complete({
-      task: "query",
+      task: "generate",
       cwd: vaultPath,
       messages: [
         { role: "system", content: SYSTEM },

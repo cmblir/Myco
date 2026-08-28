@@ -267,7 +267,7 @@ describe("runSessionDigest", () => {
 
     expect(complete).toHaveBeenCalledTimes(1);
     expect(complete.mock.calls[0][0]).toMatchObject({
-      task: "query",
+      task: "generate",
       cwd: "/v",
     });
     expect(complete.mock.calls[0][0].messages[0]).toEqual({

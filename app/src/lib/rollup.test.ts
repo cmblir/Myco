@@ -139,7 +139,7 @@ describe("runWeeklyRollup", () => {
     const result = await runWeeklyRollup("/v");
 
     expect(complete).toHaveBeenCalledTimes(1);
-    expect(complete.mock.calls[0][0]).toMatchObject({ task: "query", cwd: "/v" });
+    expect(complete.mock.calls[0][0]).toMatchObject({ task: "generate", cwd: "/v" });
     expect(complete.mock.calls[0][0].messages[0]).toEqual({
       role: "system",
       content: ROLLUP_SYSTEM,
