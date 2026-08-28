@@ -362,8 +362,9 @@ pub(crate) fn today_utc() -> String {
 }
 
 /// Days-since-epoch → proleptic Gregorian (y, m, d). Howard Hinnant's
-/// `civil_from_days` algorithm.
-fn civil_from_days(z: i64) -> (i64, u32, u32) {
+/// `civil_from_days` algorithm. `pub(crate)` so tasks.rs's recurrence advance
+/// shares this one implementation instead of carrying a second copy.
+pub(crate) fn civil_from_days(z: i64) -> (i64, u32, u32) {
     let z = z + 719_468;
     let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
     let doe = (z - era * 146_097) as u64;

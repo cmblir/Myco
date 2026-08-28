@@ -1592,7 +1592,7 @@ impl McpServer {
 
     /// Rewrite one task's checkbox mark, with a stale guard.
     #[tool(
-        description = "Set one task's status (todo|doing|blocked|done). page/line/expect_text come from list_tasks; expect_text must match the line's current text or nothing is written (the file changed — re-list and retry). Completing stamps ✅ <today>. A 🔁 recurring task is checked but its next occurrence is only inserted by the app."
+        description = "Set one task's status (todo|doing|blocked|done). page/line/expect_text come from list_tasks; expect_text must match the line's current text or nothing is written (the file changed — re-list and retry). Completing stamps ✅ <today>. Completing a 🔁 recurring task also inserts its next occurrence above, unchecked."
     )]
     async fn set_task_status(
         &self,
@@ -1627,9 +1627,10 @@ impl McpServer {
         }
         let mut out = json!({ "ok": true, "page": a.page, "line": a.line, "status": a.status });
         if recurring && status == crate::tasks::TaskStatus::Done {
-            out["warning"] = json!(
-                "recurring task — the next occurrence is inserted only when completed in the app"
-            );
+            // Reported, not warned about: the successor is written now (it was
+            // app-only before), and a caller that just ticked a repeating task
+            // should be told another one exists.
+            out["recurrence"] = json!("next occurrence inserted above, unchecked");
         }
         json_result(out)
     }

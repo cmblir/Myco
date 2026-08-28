@@ -231,7 +231,140 @@ pub fn set_line_status(
     }
     let recurring = body.contains('🔁');
     lines[idx] = format!("{}[{mark}] {body}", &line[..open]);
+    // A completed recurring task schedules its successor directly above,
+    // unchecked — Obsidian Tasks' own placement, so a vault edited in the app
+    // and through MCP reads the same either way.
+    if recurring && status == TaskStatus::Done {
+        if let Some(next) = next_occurrence_line(&lines[idx]) {
+            lines.insert(idx, next);
+        }
+    }
     Ok((lines.join("\n"), recurring))
+}
+
+// ---- recurrence (🔁) --------------------------------------------------------
+//
+// Ported from `app/src/lib/taskRecurrence.ts` so an MCP check-off schedules the
+// next occurrence too. The advertised roadmap flow is a coding session ticking
+// tasks off through MCP; before this, a recurring task ticked that way simply
+// stopped recurring.
+//
+// One DELIBERATE difference from the TS writer: that one re-serializes the task
+// (normalizing marker order), while this advances the dates in place and leaves
+// everything else in the line byte-identical. Both produce valid Obsidian Tasks
+// lines, and preserving the user's text is the safer half of the trade for a
+// writer driven by an agent.
+
+/// `every 2 weeks` → `("week", 2)`. Anything else is None, and an unreadable
+/// rule leaves the line alone — dropping a rule the app cannot parse would
+/// silently lose something the user wrote.
+fn parse_recurrence(rule: &str) -> Option<(String, i64)> {
+    let m = regex::Regex::new(r"(?i)^every\s+(?:(\d+)\s+)?(day|week|month|year)s?$")
+        .ok()?
+        .captures(rule.trim())?;
+    let count: i64 = match m.get(1) {
+        Some(n) => n.as_str().parse().ok()?,
+        None => 1,
+    };
+    if count < 1 {
+        return None;
+    }
+    Some((m.get(2)?.as_str().to_lowercase(), count))
+}
+
+/// Proleptic Gregorian (y, m, d) → days since epoch. Hinnant's
+/// `days_from_civil`, the inverse of registry.rs's `civil_from_days`.
+fn days_from_civil(y: i64, m: u32, d: u32) -> i64 {
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = (y - era * 400) as u64;
+    let mp = if m > 2 { m - 3 } else { m + 9 } as u64;
+    let doy = (153 * mp + 2) / 5 + d as u64 - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    era * 146_097 + doe as i64 - 719_468
+}
+
+fn days_in_month(y: i64, m: u32) -> u32 {
+    match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        _ if (y % 4 == 0 && y % 100 != 0) || y % 400 == 0 => 29,
+        _ => 28,
+    }
+}
+
+/// Advance one `YYYY-MM-DD` by the rule. Months keep the day where it exists
+/// and clamp where it does not: Jan 31 + 1 month is Feb 28, never Mar 3.
+fn advance_date(date: &str, unit: &str, count: i64) -> Option<String> {
+    let (y, m, d) = parse_ymd(date)?;
+    let (ny, nm, nd) = match unit {
+        "day" | "week" => {
+            let step = if unit == "week" { count * 7 } else { count };
+            crate::registry::civil_from_days(days_from_civil(y, m, d) + step)
+        }
+        "month" | "year" => {
+            let months = if unit == "year" { count * 12 } else { count };
+            let total = (y * 12 + (m as i64 - 1)) + months;
+            let ny = total.div_euclid(12);
+            let nm = (total.rem_euclid(12) + 1) as u32;
+            (ny, nm, d.min(days_in_month(ny, nm)))
+        }
+        _ => return None,
+    };
+    Some(format!("{ny:04}-{nm:02}-{nd:02}"))
+}
+
+fn parse_ymd(date: &str) -> Option<(i64, u32, u32)> {
+    let b = date.as_bytes();
+    if b.len() < 10 || b[4] != b'-' || b[7] != b'-' {
+        return None;
+    }
+    Some((
+        date[0..4].parse().ok()?,
+        date[5..7].parse().ok()?,
+        date[8..10].parse().ok()?,
+    ))
+}
+
+/// The next occurrence of a completed recurring task, as a full line ready to
+/// sit above it: unchecked, done-stamp gone, every date marker advanced.
+///
+/// None when there is nothing to schedule — no rule, an unreadable rule, or a
+/// rule with no date to advance. A rule alone cannot invent a date, so such a
+/// task simply stays completed (the TS writer's rule, kept).
+pub fn next_occurrence_line(line: &str) -> Option<String> {
+    let rule_re = regex::Regex::new(r"🔁\s*([^📅⏳🛫✅🔁]+)").ok()?;
+    let rule = rule_re.captures(line)?.get(1)?.as_str().trim().to_string();
+    let (unit, count) = parse_recurrence(&rule)?;
+
+    // 🛫 start, ⏳ scheduled, 📅 due — the markers Obsidian Tasks dates live on.
+    let date_re = regex::Regex::new(r"([🛫⏳📅])\s*(\d{4}-\d{2}-\d{2})").ok()?;
+    if !date_re.is_match(line) {
+        return None;
+    }
+    let mut advanced_any = false;
+    let next = date_re.replace_all(line, |c: &regex::Captures| {
+        match advance_date(&c[2], &unit, count) {
+            Some(d) => {
+                advanced_any = true;
+                format!("{} {}", &c[1], d)
+            }
+            None => c[0].to_string(),
+        }
+    });
+    if !advanced_any {
+        return None;
+    }
+    // Uncheck it and drop the completion stamp the caller just wrote.
+    let done_re = regex::Regex::new(r"\s*✅\s*\d{4}-\d{2}-\d{2}").ok()?;
+    let next = done_re.replace_all(&next, "");
+    let open = next.find('[')?;
+    let close = open + next[open..].find(']')?;
+    Some(format!(
+        "{}[ ]{}",
+        &next[..open],
+        next[close + 1..].trim_end()
+    ))
 }
 
 /// Append one checkbox line to `content`, keeping exactly one trailing
@@ -397,5 +530,89 @@ mod writer_tests {
     fn append_keeps_one_trailing_newline() {
         assert_eq!(append_task_line("", "- [ ] a"), "- [ ] a\n");
         assert_eq!(append_task_line("# t\n\n", "- [ ] a"), "# t\n- [ ] a\n");
+    }
+
+    // ---- recurrence (ported from taskRecurrence.ts) ------------------------
+
+    #[test]
+    fn every_unit_advances_the_way_the_app_does() {
+        assert_eq!(advance_date("2026-08-28", "day", 1).unwrap(), "2026-08-29");
+        assert_eq!(advance_date("2026-08-28", "week", 2).unwrap(), "2026-09-11");
+        assert_eq!(
+            advance_date("2026-08-28", "month", 1).unwrap(),
+            "2026-09-28"
+        );
+        assert_eq!(advance_date("2026-08-28", "year", 1).unwrap(), "2027-08-28");
+        // Month-end clamps instead of overflowing: Jan 31 + 1 month is Feb 28.
+        assert_eq!(
+            advance_date("2027-01-31", "month", 1).unwrap(),
+            "2027-02-28"
+        );
+        // Leap day + 1 year clamps the same way.
+        assert_eq!(advance_date("2028-02-29", "year", 1).unwrap(), "2029-02-28");
+        // Into a leap February it does not clamp.
+        assert_eq!(
+            advance_date("2028-01-31", "month", 1).unwrap(),
+            "2028-02-29"
+        );
+    }
+
+    #[test]
+    fn parse_recurrence_reads_the_supported_rules_only() {
+        assert_eq!(parse_recurrence("every week"), Some(("week".into(), 1)));
+        assert_eq!(parse_recurrence("every 3 days"), Some(("day".into(), 3)));
+        assert_eq!(parse_recurrence("EVERY Month"), Some(("month".into(), 1)));
+        // Unsupported rules parse to None, and the caller leaves the line be
+        // rather than dropping something the user wrote.
+        assert!(parse_recurrence("every weekday").is_none());
+        assert!(parse_recurrence("every 0 weeks").is_none());
+        assert!(parse_recurrence("weekly").is_none());
+    }
+
+    #[test]
+    fn completing_a_recurring_task_writes_the_next_one_above() {
+        let doc = "# Tasks\n- [ ] 주간 회고 🔁 every week 📅 2026-08-28\n";
+        let (out, recurring) = set_line_status(
+            doc,
+            2,
+            TaskStatus::Done,
+            "주간 회고 🔁 every week 📅 2026-08-28",
+        )
+        .unwrap();
+        assert!(recurring);
+        let lines: Vec<&str> = out.split('\n').collect();
+        // Successor first (Obsidian Tasks' placement), completed line after.
+        assert_eq!(lines[1], "- [ ] 주간 회고 🔁 every week 📅 2026-09-04");
+        assert!(lines[2].starts_with("- [x] 주간 회고 🔁 every week 📅 2026-08-28 ✅"));
+    }
+
+    #[test]
+    fn every_date_marker_on_the_line_advances() {
+        let line =
+            "- [x] 점검 🛫 2026-08-01 ⏳ 2026-08-10 📅 2026-08-28 🔁 every month ✅ 2026-08-28";
+        let next = next_occurrence_line(line).unwrap();
+        assert_eq!(
+            next,
+            "- [ ] 점검 🛫 2026-09-01 ⏳ 2026-09-10 📅 2026-09-28 🔁 every month"
+        );
+    }
+
+    #[test]
+    fn a_rule_with_no_date_or_no_rule_schedules_nothing() {
+        // A rule cannot invent a date out of thin air; the task stays done.
+        assert!(next_occurrence_line("- [x] 뭔가 🔁 every week ✅ 2026-08-28").is_none());
+        // Unreadable rule: left alone rather than guessed at.
+        assert!(next_occurrence_line("- [x] 뭔가 🔁 every weekday 📅 2026-08-28").is_none());
+        // No rule at all.
+        assert!(next_occurrence_line("- [x] 한 번뿐 📅 2026-08-28").is_none());
+    }
+
+    #[test]
+    fn a_non_recurring_completion_still_inserts_nothing() {
+        let doc = "- [ ] 한 번뿐 📅 2026-08-28\n";
+        let (out, recurring) =
+            set_line_status(doc, 1, TaskStatus::Done, "한 번뿐 📅 2026-08-28").unwrap();
+        assert!(!recurring);
+        assert_eq!(out.split('\n').filter(|l| l.contains("한 번뿐")).count(), 1);
     }
 }
