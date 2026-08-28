@@ -154,8 +154,8 @@ Settings → Account → Change…
 **Ingest** — drop a file or paste text; it lands in `raw/` and the active model
 integrates it into `wiki/` with citations, a log entry, and a WHY report.
 Inputs are multimodal: PDF, Office docs, spreadsheets, images (vision
-provider), audio/video (installed `whisper` CLI), YouTube URLs. A bundled
-offline embedding index (bge-m3, in-process llama.cpp) powers semantic search
+provider), audio/video (built-in speech recognition), YouTube URLs. A bundled
+offline embedding index (e5-small-ko, in-process llama.cpp) powers semantic search
 and per-page Related notes.
 
 **Ask & Agent mode** — chat over your wiki with any connected model. Agent
@@ -239,10 +239,12 @@ broken by recency. The answer shows the window it used and says so plainly when
 nothing in it matched. On an external provider the range rides along as an
 instruction, not a filter.
 
-**Voice capture** — `⌥M` in Spotlight records, Enter saves: your installed
-`whisper` transcribes it and the note lands in `_inbox/` for the normal ingest
-pipeline to pick up. Whisper is not bundled — without it on your PATH myco says
-so and writes nothing.
+**Voice capture** — `⌥M` in Spotlight or on the notch records, Enter saves: the
+transcript lands in `_inbox/` for the normal ingest pipeline to pick up. Speech
+recognition is built in — myco ships whisper.cpp and fetches its model (~190 MB)
+once, on your first recording, showing the progress on the capture surface.
+Nothing to install, and the audio never leaves the machine. A `whisper` already
+on your PATH is used instead, if you have one you prefer.
 
 **Reader** — CodeMirror source / live preview / split, `[[wikilink]]`
 autocomplete, backlinks and Related notes panels. `raw/` PDFs open in an
