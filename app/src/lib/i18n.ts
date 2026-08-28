@@ -1082,6 +1082,7 @@ export interface Strings {
   voice_hint_recording?: string;
   voice_saved_chip?: string; // {rel}
   voice_whisper_missing?: string;
+  voice_model_progress?: string;
   voice_mic_denied?: string;
   s_spot_title?: string;
   s_spot_desc?: string;
@@ -2434,6 +2435,7 @@ export const STRINGS: Record<Lang, Strings> = {
     voice_saved_chip: "{rel} — joins the next ingest",
     voice_whisper_missing:
       "preparing voice recognition — the speech model downloads once (~190 MB) on first use. If this keeps failing, reinstall myco.",
+    voice_model_progress: "downloading the voice model — one time, {pct}%",
     voice_mic_denied:
       "The microphone is not available — allow myco to use it in System Settings.",
     s_spot_title: "Ask from anywhere",
@@ -3783,6 +3785,7 @@ export const STRINGS: Record<Lang, Strings> = {
     voice_saved_chip: "{rel} — 다음 인제스트에 합류합니다",
     voice_whisper_missing:
       "음성 인식 준비 중 — 첫 사용 시 음성 모델(~190MB)을 한 번만 내려받습니다. 계속 실패하면 myco를 재설치해 주세요.",
+    voice_model_progress: "음성 모델 받는 중 — 최초 1회, {pct}%",
     voice_mic_denied:
       "마이크를 사용할 수 없습니다 — 시스템 설정에서 myco의 마이크 접근을 허용해주세요.",
     s_spot_title: "어디서나 질문",
@@ -4970,6 +4973,7 @@ export const STRINGS: Record<Lang, Strings> = {
     voice_saved_chip: "{rel} — 次のインジェストに合流します",
     voice_whisper_missing:
       "音声認識を準備中 — 初回のみ音声モデル(~190MB)をダウンロードします。失敗が続く場合は myco を再インストールしてください。",
+    voice_model_progress: "音声モデルを取得中 — 初回のみ、{pct}%",
     voice_mic_denied:
       "マイクを使用できません — システム設定で myco のマイク使用を許可してください。",
     s_spot_title: "どこからでも質問",

@@ -49,7 +49,9 @@ export type NotchState =
   // S7's success: the daily line landed at `rel`. Green like S6, and folds
   // itself away on the same 4s clock.
   | { kind: "captured"; rel: string }
-  | { kind: "recording"; elapsedMs: number; levels: number[] }
+  // `note` overrides the lip clock — the one-time whisper model download
+  // narrates its percent there instead of freezing on the last second.
+  | { kind: "recording"; elapsedMs: number; levels: number[]; note?: string }
   // `reason` (already translated, like every free-text member) overrides the
   // {ext}-templated line — a write failure has a reason but no extension.
   | { kind: "rejected"; ext: string; reason?: string };
@@ -161,10 +163,12 @@ export function describeNotch(
       };
     case "recording":
       return {
-        lip: (t.notch_recording ?? "Recording · {t}").replace(
-          "{t}",
-          clock(state.elapsedMs),
-        ),
+        lip:
+          state.note ??
+          (t.notch_recording ?? "Recording · {t}").replace(
+            "{t}",
+            clock(state.elapsedMs),
+          ),
         tone: "live",
         open: true,
         dwellMs: null,

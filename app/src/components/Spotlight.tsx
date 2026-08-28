@@ -47,6 +47,33 @@ export default function Spotlight(): JSX.Element {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<SpotlightAnswer | null>(null);
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
+  // First-use whisper model download percent; null outside that window.
+  const [modelPct, setModelPct] = useState<number | null>(null);
+  useEffect(() => {
+    if (voiceState !== "saving") {
+      setModelPct(null);
+      return;
+    }
+    let gone = false;
+    let unlisten: (() => void) | null = null;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen<{ pct: number }>("whisper-model-progress", (e) =>
+          setModelPct(e.payload.pct),
+        ),
+      )
+      .then((u) => {
+        if (gone) u();
+        else unlisten = u;
+      })
+      .catch(() => {
+        /* plain-browser dev: no Tauri backend */
+      });
+    return () => {
+      gone = true;
+      if (unlisten) unlisten();
+    };
+  }, [voiceState]);
   /** "whisper-missing" / "mic-denied" / a save failure — shown in ask mode. */
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
   const [savedRel, setSavedRel] = useState<string | null>(null);
@@ -269,7 +296,12 @@ export default function Spotlight(): JSX.Element {
               </span>
               <span className="spotlight-hint">
                 {voiceState === "saving"
-                  ? "…"
+                  ? modelPct !== null
+                    ? (
+                        t.voice_model_progress ??
+                        "downloading the voice model — one time, {pct}%"
+                      ).replace("{pct}", String(modelPct))
+                    : "…"
                   : (t.voice_hint_recording ?? "⏎ save · esc cancel")}
               </span>
             </>

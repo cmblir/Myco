@@ -86,6 +86,7 @@ export type NotchEvent =
   | { type: "recStart" }
   | { type: "recTick" }
   | { type: "recStop" }
+  | { type: "recNote"; note: string }
   | { type: "recSaved"; rel: string }
   | { type: "recFail"; reason: string };
 
@@ -350,6 +351,12 @@ export function reduceNotch(
       // Stop → whisper save is in flight; the last recording frame holds (the
       // hook stops the ticker) until recSaved/recFail replaces it.
       return current;
+    case "recNote":
+      // The one-time model download narrating its percent on the lip. Only a
+      // live recording surface has anywhere to show it.
+      return panel.kind === "recording"
+        ? { panel: { ...panel, note: event.note }, runningSince: current.runningSince }
+        : current;
     case "recSaved":
       // The voice note landed in _inbox/ — exactly what S4 announces.
       return panel.kind === "recording"
@@ -459,6 +466,8 @@ export function useNotchDriver(): NotchDrive | null {
   writeFailedRef.current = t.notch_write_failed;
   const whisperMissingRef = useRef(t.voice_whisper_missing);
   whisperMissingRef.current = t.voice_whisper_missing;
+  const modelProgressRef = useRef(t.voice_model_progress);
+  modelProgressRef.current = t.voice_model_progress;
   const micDeniedRef = useRef(t.voice_mic_denied);
   micDeniedRef.current = t.voice_mic_denied;
 
@@ -521,6 +530,38 @@ export function useNotchDriver(): NotchDrive | null {
       });
     return () => {
       cancelled = true;
+      if (unlisten) unlisten();
+    };
+  }, [mocking]);
+
+  // First-use whisper model download → the recording lip narrates its percent
+  // instead of freezing on the last second for minutes (whisper.rs emits
+  // whisper-model-progress only while that one-time download runs).
+  useEffect(() => {
+    if (mocking) return;
+    let gone = false;
+    let unlisten: (() => void) | null = null;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen<{ pct: number }>("whisper-model-progress", (e) => {
+          const template =
+            modelProgressRef.current ??
+            "downloading the voice model — one time, {pct}%";
+          raise({
+            type: "recNote",
+            note: template.replace("{pct}", String(e.payload.pct)),
+          });
+        }),
+      )
+      .then((u) => {
+        if (gone) u();
+        else unlisten = u;
+      })
+      .catch(() => {
+        /* plain-browser dev: no Tauri backend */
+      });
+    return () => {
+      gone = true;
       if (unlisten) unlisten();
     };
   }, [mocking]);
