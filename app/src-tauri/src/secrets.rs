@@ -3,6 +3,7 @@
 // myco-specific service name and are looked up by provider id.
 
 use keyring::Entry;
+use std::path::PathBuf;
 
 const SERVICE: &str = "dev.cmblir.myco";
 
@@ -154,17 +155,46 @@ fn migrate_accounts(
     warnings
 }
 
+/// Marker written beside settings.json once a clean migration pass finishes.
+/// Its presence means every account has already been moved, so the walk can be
+/// skipped entirely on later launches.
+const MIGRATION_DONE_MARKER: &str = "keychain-migrated";
+
+fn migration_marker_path() -> Option<PathBuf> {
+    crate::settings::settings_dir()
+        .ok()
+        .map(|d| d.join(MIGRATION_DONE_MARKER))
+}
+
 /// Run the keychain service migration against the real keychain. Best effort:
 /// every failure is reported as a warning line, never an error that blocks app
 /// startup.
 ///
-/// DEFERRED (I2): this runs unconditionally on EVERY launch and does
-/// `KNOWN_ACCOUNTS.len()` keychain reads before the window appears. On a locked
-/// keychain each of those can raise a system prompt or block, so startup can
-/// stall long after the migration has nothing left to do. A later stage should
-/// write a done-marker (next to settings.json) once a full pass completes with
-/// no warnings, and skip the whole walk when it is present.
+/// Was DEFERRED (I2), closed here: the walk used to run unconditionally on
+/// EVERY launch, doing `KNOWN_ACCOUNTS.len()` keychain reads before the window
+/// appeared — and on a locked keychain each of those can prompt or block, so
+/// startup stalled long after there was nothing left to move. A pass that
+/// completes with no warnings now writes a done-marker next to settings.json
+/// and every later launch returns immediately. A pass that DID warn leaves no
+/// marker, so it retries next time (the failure may have been a transient
+/// locked keychain).
 pub fn migrate_legacy_service() -> Vec<String> {
+    if let Some(marker) = migration_marker_path() {
+        if marker.exists() {
+            return Vec::new();
+        }
+    }
+    let warnings = migrate_legacy_service_inner();
+    if warnings.is_empty() {
+        if let Some(marker) = migration_marker_path() {
+            // Best-effort: an unwritable marker only costs another walk.
+            let _ = std::fs::write(&marker, "1");
+        }
+    }
+    warnings
+}
+
+fn migrate_legacy_service_inner() -> Vec<String> {
     let write = |service: &str, a: &str, v: &str| -> Result<(), String> {
         Entry::new(service, a)
             .map_err(|e| e.to_string())?
@@ -207,6 +237,20 @@ pub fn migrate_legacy_service() -> Vec<String> {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    /// The I5/I2 startup fix: once a clean pass has run, later launches must
+    /// not touch the keychain at all (a locked one can prompt or block before
+    /// the window appears).
+    #[test]
+    fn a_done_marker_skips_the_whole_keychain_walk() {
+        crate::settings::test_support::with_isolated_data("keychain-marker", |dir| {
+            std::fs::write(dir.join(MIGRATION_DONE_MARKER), "1").unwrap();
+            // Returns without consulting the keychain: any real read here
+            // would be a system call this test is not allowed to make.
+            assert!(migrate_legacy_service().is_empty());
+            assert!(migration_marker_path().unwrap().exists());
+        });
+    }
 
     #[test]
     fn service_name_is_renamed_and_legacy_kept_for_migration() {

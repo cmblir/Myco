@@ -286,22 +286,22 @@ pub fn open_vault(
     // Skipped when python3 or the digest runner can't be resolved — better to
     // leave the old agent working than to remove it with no replacement.
     //
-    // DEFERRED (I5): `locate_bin` shells out to a LOGIN shell to find python3,
-    // which costs a shell startup on EVERY open_vault even for the overwhelming
-    // majority of vaults that have no legacy plist at all. Reorder later so the
-    // cheap check (does any legacy plist exist for this vault's schedules?) runs
-    // first and the binary is only resolved when there is work to do.
+    // The cheap plist check gates the expensive one: `locate_bin` spawns a
+    // LOGIN shell to find python3, and it used to do so on EVERY open_vault
+    // even though almost no vault has a legacy plist (closes DEFERRED I5).
     #[cfg(target_os = "macos")]
-    if let (Some(python), Ok(script)) = (
-        claude::locate_bin("python3", "MYCO_PYTHON_PATH"),
-        digest_script_path(&app),
-    ) {
-        for warning in crate::schedules::migrate_legacy_agents(
-            std::path::Path::new(&meta.path),
-            &python,
-            &script,
+    if crate::schedules::has_legacy_agents(std::path::Path::new(&meta.path)) {
+        if let (Some(python), Ok(script)) = (
+            claude::locate_bin("python3", "MYCO_PYTHON_PATH"),
+            digest_script_path(&app),
         ) {
-            eprintln!("launchd migration: {warning}");
+            for warning in crate::schedules::migrate_legacy_agents(
+                std::path::Path::new(&meta.path),
+                &python,
+                &script,
+            ) {
+                eprintln!("launchd migration: {warning}");
+            }
         }
     }
     Ok(meta)

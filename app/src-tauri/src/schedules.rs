@@ -390,6 +390,27 @@ pub fn install_background(
     ))
 }
 
+/// Does this vault have ANY schedule still installed under the pre-rename
+/// label? Pure filesystem checks — no shell, no binary resolution. Callers run
+/// this FIRST so the expensive `locate_bin("python3")` (which spawns a login
+/// shell) only happens for the rare vault that has migration work. Closes
+/// DEFERRED (I5): that shell used to start on every single vault open.
+#[cfg(target_os = "macos")]
+pub fn has_legacy_agents(root: &Path) -> bool {
+    let Ok(dir) = launch_agents_dir() else {
+        return false;
+    };
+    load(root).iter().any(|s| {
+        dir.join(format!("{}.plist", legacy_launch_label(&s.id)))
+            .exists()
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn has_legacy_agents(_root: &Path) -> bool {
+    false
+}
+
 /// Retire every pre-rename LaunchAgent in this vault and re-install it under the
 /// new label (M3). Called on vault open; a no-op once no legacy plist is left.
 ///
