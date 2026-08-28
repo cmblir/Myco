@@ -789,6 +789,15 @@ export interface Strings {
   au_close?: string;
   au_generating?: string;
   au_needs_provider?: string;
+  bf_title?: string;
+  bf_desc?: string;
+  bf_waiting?: string;
+  bf_done?: string;
+  bf_skipped?: string;
+  bf_held?: string;
+  bf_promote?: string;
+  bf_promoted?: string;
+  bf_held_note?: string;
   au_play?: string;
   au_pause?: string;
   au_stop?: string;
@@ -2142,6 +2151,15 @@ export const STRINGS: Record<Lang, Strings> = {
     au_generating: "Writing the dialogue…",
     au_needs_provider:
       "Audio overview writes new prose, so it needs an AI provider. Pick one under Settings → Model.",
+    bf_title: "Session backfill",
+    bf_desc: "Your coding sessions are archived but never became wiki pages. Promote a batch into the ingest queue — the normal pass turns them into cited notes.",
+    bf_waiting: "waiting",
+    bf_done: "wikified",
+    bf_skipped: "too short",
+    bf_held: "too large",
+    bf_promote: "Queue the next {n}",
+    bf_promoted: "{n} sessions queued for ingest",
+    bf_held_note: "{n} sessions are too large for a single pass and are being held, not skipped.",
     au_play: "Play",
     au_pause: "Pause",
     au_stop: "Stop",
@@ -3493,6 +3511,15 @@ export const STRINGS: Record<Lang, Strings> = {
     au_generating: "대화 작성 중…",
     au_needs_provider:
       "오디오 개요는 글을 새로 쓰는 기능이라 AI 프로바이더가 필요합니다. 설정 → 모델에서 선택하세요.",
+    bf_title: "세션 백필",
+    bf_desc: "코딩 세션이 아카이브에만 쌓이고 위키가 되지 못했습니다. 한 묶음씩 ingest 큐로 올리면 평소 파이프라인이 인용된 노트로 만듭니다.",
+    bf_waiting: "대기",
+    bf_done: "위키화됨",
+    bf_skipped: "너무 짧음",
+    bf_held: "너무 큼",
+    bf_promote: "다음 {n}개 올리기",
+    bf_promoted: "세션 {n}개를 ingest 큐에 올렸습니다",
+    bf_held_note: "{n}개는 한 번에 처리하기엔 너무 커서 건너뛴 게 아니라 보류 중입니다.",
     au_play: "재생",
     au_pause: "일시정지",
     au_stop: "정지",
@@ -4682,6 +4709,15 @@ export const STRINGS: Record<Lang, Strings> = {
     au_generating: "対話を作成中…",
     au_needs_provider:
       "音声概要は文章を新しく書く機能なので、AIプロバイダーが必要です。設定 → モデルで選択してください。",
+    bf_title: "セッション・バックフィル",
+    bf_desc: "コーディングセッションはアーカイブされるだけでウィキになっていません。一括で ingest キューへ送ると、通常のパスが引用付きノートにします。",
+    bf_waiting: "待機",
+    bf_done: "ウィキ化済み",
+    bf_skipped: "短すぎ",
+    bf_held: "大きすぎ",
+    bf_promote: "次の {n} 件を送る",
+    bf_promoted: "{n} 件を ingest キューに送りました",
+    bf_held_note: "{n} 件は一度に処理するには大きすぎるため、スキップではなく保留しています。",
     au_play: "再生",
     au_pause: "一時停止",
     au_stop: "停止",

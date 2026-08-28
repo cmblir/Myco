@@ -280,6 +280,22 @@ export interface SemEdge {
   score: number;
 }
 
+/** Counts behind the Ingest page's session-backfill card. */
+export interface BackfillStatus {
+  total: number;
+  promoted: number;
+  eligible: number;
+  too_small: number;
+  /** Held, not hidden — sessions past the per-run size ceiling. */
+  too_large: number;
+}
+
+export interface BackfillPromotion {
+  /** `_inbox/` names that now hold a copy. */
+  promoted: string[];
+  remaining: number;
+}
+
 export interface MycoSettings {
   providers: {
     anthropic_cli: boolean;
@@ -921,6 +937,13 @@ export const ipc = {
    *  no file behind it. Same confinement; returns what was written. */
   writeInboxNote: (destName: string, content: string) =>
     invoke<string>("write_inbox_note", { destName, content }),
+  /** Session backfill (spec 2026-08-28): how much of the `sessions/` archive
+   *  is still un-wikified, and what the size buckets hold. */
+  backfillStatus: () => invoke<BackfillStatus>("backfill_status"),
+  /** Copy the next `limit` eligible sessions into `_inbox/`; the normal
+   *  auto-ingest pass turns them into wiki pages from there. */
+  promoteSessions: (limit: number) =>
+    invoke<BackfillPromotion>("promote_sessions", { limit }),
   /** Fit the notch window to the surface (logical px) — resize_tray_panel's
    *  pattern, plus width: the panel unfolds from the cap to a 300px body. */
   notchResize: (width: number, height: number) =>

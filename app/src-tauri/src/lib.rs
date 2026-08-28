@@ -4,6 +4,7 @@
 
 pub mod agent_tools;
 pub mod archive_pack;
+pub mod backfill;
 pub mod claude;
 pub mod cli_agent;
 pub mod clip;
@@ -175,6 +176,8 @@ pub fn run() {
             commands::list_inbox_entries,
             commands::copy_into_inbox,
             commands::write_inbox_note,
+            backfill::backfill_status,
+            backfill::promote_sessions,
             commands::available_raw_path,
             commands::import_conversations,
             commands::import_session_sweep,

@@ -1967,6 +1967,22 @@ function mockInvoke(
       // it as the landed location).
       return Promise.resolve(`${VAULT}/_inbox/${name}`);
     }
+    case "backfill_status":
+      // Mirrors the real buckets so the Ingest card renders in a browser.
+      return Promise.resolve({
+        total: 1428,
+        promoted: 0,
+        eligible: 175,
+        too_small: 1231,
+        too_large: 22,
+      });
+    case "promote_sessions": {
+      const limit = Number(args.limit ?? 10);
+      return Promise.resolve({
+        promoted: Array.from({ length: limit }, (_, i) => `session-${i + 1}.md`),
+        remaining: Math.max(0, 175 - limit),
+      });
+    }
     case "write_inbox_note": {
       // The pasted-note sibling of copy_into_inbox: same mock inbox, the
       // composed content lands as-is.

@@ -37,7 +37,7 @@ impl VaultRoot {
     }
 }
 
-fn require_root(state: &tauri::State<VaultRoot>) -> Result<PathBuf, String> {
+pub(crate) fn require_root(state: &tauri::State<VaultRoot>) -> Result<PathBuf, String> {
     state.get().ok_or_else(|| "no vault is open".to_string())
 }
 
