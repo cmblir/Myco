@@ -2586,27 +2586,34 @@ pub fn run(
             save_manifest(root, &manifest)?;
             proposals += 1;
         } else {
-            let line = format!("- {first_line} — `{rel}` (low confidence)");
+            // The marker is bound to the item's CONTENT, not just its path:
+            // `_inbox/` names get reused (a second clip or drop of the same
+            // slug), and a path-only token made the second one's summary
+            // vanish — a silent loss, where the worst case now is a duplicate
+            // line. Same `content_fingerprint` the session digest writes.
+            let stamp = std::fs::read(&path)
+                .map(|b| content_fingerprint(&b))
+                .unwrap_or_else(|_| "00000000".into());
+            let line = format!("- {first_line} — `{rel}` (low confidence) <!-- {stamp} -->");
             // Idempotency: a run that crashed between a previous append and
-            // the move below left this item's line in today's file already
-            // (the item stays tier "summary" until the move happens) — the
-            // line's own `` `<rel>` `` token marks it, so skip the append and
-            // retry only the move.
-            // ponytail: the dedup is bound to TODAY's file + the rel token —
-            // a retry landing on a later calendar day re-appends into the new
-            // day's file (yesterday's isn't checked), and a new file later
-            // reusing the same rel path within one day would be skipped.
-            // Upgrade to a content-bound marker (see `DIGEST_MARKER_OPEN`,
-            // the session-digest fix) if either proves to matter.
+            // the move below left this item's line in a daily file already
+            // (the item stays tier "summary" until the move happens), so skip
+            // the append and retry only the move.
+            //
+            // Yesterday is checked too. `today` is the run's own date, so a
+            // retry that crosses midnight used to look at a fresh, empty file
+            // and append the same summary a second time.
             // Match the token only on a summary bullet line, so prose
             // elsewhere in the note that merely mentions the same path
             // (a user's own writing, a digest quote) can't suppress a
             // legitimate append.
-            let token = format!("`{rel}`");
-            let already_appended =
-                std::fs::read_to_string(root.join("daily").join(format!("{today}.md")))
+            let token = format!("`{rel}` (low confidence) <!-- {stamp} -->");
+            let seen_in = |day: &str| {
+                std::fs::read_to_string(root.join("daily").join(format!("{day}.md")))
                     .map(|c| c.lines().any(|l| l.starts_with("- ") && l.contains(&token)))
-                    .unwrap_or(false);
+                    .unwrap_or(false)
+            };
+            let already_appended = seen_in(&today) || seen_in(&day_before(&today));
             if !already_appended {
                 let day_created = append_daily_summary_line(root, &today, &line)?;
                 if day_created {
@@ -3145,6 +3152,21 @@ fn frontmatter_created(path: &Path) -> Option<i64> {
 /// lockstep with the TS side.
 const DIGEST_MARKER_OPEN: &str = "<!-- myco:digested-sessions ";
 const DIGEST_MARKER_CLOSE: &str = "-->";
+
+/// The calendar day before `day` (`YYYY-MM-DD`), or `day` itself when it does
+/// not parse. Only used to widen the summary-digest idempotency check across
+/// midnight: a retry that starts on a new date must still see the line a
+/// crashed run appended minutes earlier.
+fn day_before(day: &str) -> String {
+    let parse = |r: std::ops::Range<usize>| day.get(r).and_then(|s| s.parse::<i64>().ok());
+    let (Some(y), Some(m), Some(d)) = (parse(0..4), parse(5..7), parse(8..10)) else {
+        return day.to_string();
+    };
+    // Reuses the registry's civil-date pair rather than carrying month lengths.
+    let days = crate::tasks::days_from_civil(y, m as u32, d as u32) - 1;
+    let (py, pm, pd) = crate::registry::civil_from_days(days);
+    format!("{py:04}-{pm:02}-{pd:02}")
+}
 
 /// FNV-1a (32-bit) over a session file's bytes, as 8 lowercase hex chars.
 /// Deliberately not a cryptographic hash: it only has to notice that a file
@@ -4664,6 +4686,57 @@ mod tests {
     /// done), then recreate the retry state a crash between the two leaves —
     /// the daily line already written, the file still in `_inbox/` — and run
     /// again. The line must not duplicate, and the move must still complete.
+
+    #[test]
+    fn day_before_walks_across_month_and_year_ends() {
+        assert_eq!(day_before("2026-08-28"), "2026-08-27");
+        assert_eq!(day_before("2026-09-01"), "2026-08-31");
+        assert_eq!(day_before("2026-01-01"), "2025-12-31");
+        assert_eq!(day_before("2028-03-01"), "2028-02-29"); // leap
+                                                            // Unparseable input is returned as-is rather than guessed at; the
+                                                            // caller only loses the extra idempotency window.
+        assert_eq!(day_before("nonsense"), "nonsense");
+    }
+
+    #[test]
+    fn a_reused_inbox_name_with_new_content_still_gets_its_summary() {
+        // The dedup token used to be the path alone, so a SECOND file landing
+        // under a name already digested today had its summary silently
+        // dropped. _inbox/ names repeat (a re-clip, a re-drop), which made
+        // that a real loss; the worst case now is a duplicate line.
+        crate::settings::test_support::with_isolated_data("distill-summary-reuse", |_data| {
+            let dir = tempfile::tempdir().unwrap();
+            let root = dir.path();
+            seed_wiki_pages(root, GATE_MIN_WIKI_PAGES);
+            crate::ontology::save(root, &ontology_two_clusters()).unwrap();
+            std::fs::create_dir_all(root.join("_inbox")).unwrap();
+            let cfg = DistillConfig::default();
+
+            for body in ["# First heading\n\n", "# Second heading\n\n"] {
+                std::fs::write(
+                    root.join("_inbox/note.md"),
+                    format!("---\nsource: test\n---\n\n{body}{PROSE}"),
+                )
+                .unwrap();
+                set_mtime(&root.join("_inbox/note.md"), old_mtime());
+                run(root, &cfg, &summary_tier_embed).unwrap();
+            }
+
+            let (y, m, d, ..) = civil_datetime(now_secs());
+            let today = format!("{y:04}-{m:02}-{d:02}");
+            let daily =
+                std::fs::read_to_string(root.join("daily").join(format!("{today}.md"))).unwrap();
+            assert!(
+                daily.contains("First heading"),
+                "the first file's summary must survive: {daily}"
+            );
+            assert!(
+                daily.contains("Second heading"),
+                "a different file reusing the name must not be skipped: {daily}"
+            );
+        });
+    }
+
     #[test]
     fn summary_tier_retry_skips_the_already_appended_line_and_still_moves() {
         crate::settings::test_support::with_isolated_data("distill-summary-retry", |_data| {
