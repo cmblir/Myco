@@ -184,7 +184,13 @@ export async function runFullTierIngest(vaultPath: string): Promise<FullTierOutc
 
       const slug = stemOf(sourceRel);
       const title = titleFromContent(content, slug);
-      const prompt = INGEST_PROMPT(slug, title, [], [], profileInterests);
+      // Same grounding the manual ingest path builds (ingestStore:
+      // wikifyCandidates → groundingBlock): without it the headless pass told
+      // the LLM nothing about existing pages, so voice notes and promoted
+      // sessions grew fresh near-duplicate pages instead of updating the page
+      // they echo. Best-effort — an empty list just omits the block.
+      const candidates = await ipc.wikifyCandidates(content.trim(), 8).catch(() => []);
+      const prompt = INGEST_PROMPT(slug, title, candidates, [], profileInterests);
 
       if (provider === "anthropic-cli") {
         const res = await ipc.claudeRun(prompt, vaultPath, model || undefined, effort);

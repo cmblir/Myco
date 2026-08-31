@@ -711,9 +711,10 @@ export const ipc = {
   whisperCheck: () => invoke<ClaudeStatus>("whisper_check"),
   /** Save a spotlight voice capture: whisper-transcribe the recorded audio
    *  into the open vault's `_inbox/voice-<date>.md`. Plain number[] because
-   *  invoke args are JSON — a Uint8Array would not reach Rust as Vec<u8>. */
+   *  invoke args are JSON — a Uint8Array would not reach Rust as Vec<u8>.
+   *  `related`: wiki stems the transcript echoes (best-effort, may be []). */
   saveVoiceCapture: (bytes: number[]) =>
-    invoke<{ rel: string }>("save_voice_capture", { bytes }),
+    invoke<{ rel: string; related: string[] }>("save_voice_capture", { bytes }),
   buildLinkGraph: (root: string) =>
     invoke<Adjacency>("build_link_graph", { root }),
   /** Cheap hash of the vault's markdown (path+mtime+length per .md). Ask this

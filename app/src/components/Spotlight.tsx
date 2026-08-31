@@ -78,6 +78,7 @@ export default function Spotlight(): JSX.Element {
   /** "whisper-missing" / "mic-denied" / a save failure — shown in ask mode. */
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
   const [savedRel, setSavedRel] = useState<string | null>(null);
+  const [savedRelated, setSavedRelated] = useState<string[]>([]);
   const [elapsedMs, setElapsedMs] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -94,6 +95,7 @@ export default function Spotlight(): JSX.Element {
       save: async (bytes) => {
         const saved = await ipc.saveVoiceCapture(Array.from(bytes));
         setSavedRel(saved.rel);
+        setSavedRelated(saved.related ?? []);
         return saved;
       },
       onChange: (state, error) => {
@@ -282,6 +284,13 @@ export default function Spotlight(): JSX.Element {
                 "{rel}",
                 savedRel ?? "",
               )}
+              {savedRelated.length > 0
+                ? " · " +
+                  (t.voice_saved_related ?? "related: {stems}").replace(
+                    "{stems}",
+                    savedRelated.join(", "),
+                  )
+                : ""}
             </span>
           ) : (
             <>

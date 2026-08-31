@@ -26,6 +26,8 @@ const archiveInboxSource = vi.fn();
 const claudeRun = vi.fn();
 const appendDistillManifest = vi.fn();
 const scanTextSecrets = vi.fn();
+// Grounding lookup is best-effort in prod; tests default it to "no candidates".
+const wikifyCandidates = vi.fn(() => Promise.resolve([]));
 vi.mock("./ipc", () => ({
   ipc: {
     getSettings: (...a: unknown[]) => getSettings(...a),
@@ -38,6 +40,7 @@ vi.mock("./ipc", () => ({
     claudeRun: (...a: unknown[]) => claudeRun(...a),
     appendDistillManifest: (...a: unknown[]) => appendDistillManifest(...a),
     scanTextSecrets: (...a: unknown[]) => scanTextSecrets(...a),
+    wikifyCandidates: (...a: unknown[]) => wikifyCandidates(...a),
   },
 }));
 

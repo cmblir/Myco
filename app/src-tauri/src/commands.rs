@@ -447,7 +447,13 @@ pub async fn transcribe_media(app: tauri::AppHandle, path: String) -> Result<Str
 /// (`source`/`title` via `yaml_str`, `created` as a unix int) so provenance
 /// and distill ingest it unchanged. The title is the transcript's opening
 /// words — a voice memo has no better name.
-pub(crate) fn voice_markdown(transcript: &str, captured_at: i64) -> String {
+///
+/// `related` is ADDITIVE on top of the clip contract: the wiki stems whose
+/// content the transcript echoes (dense lookup at save time), so whichever
+/// consumer picks the note up first — auto-ingest or the distill gate — gets
+/// the routing hint for free. Empty = the key is omitted and the frontmatter
+/// is byte-identical to the pre-related format.
+pub(crate) fn voice_markdown(transcript: &str, captured_at: i64, related: &[String]) -> String {
     let first = transcript
         .lines()
         .find(|l| !l.trim().is_empty())
@@ -458,8 +464,15 @@ pub(crate) fn voice_markdown(transcript: &str, captured_at: i64) -> String {
     } else {
         first.chars().take(80).collect()
     };
+    let mut related_block = String::new();
+    if !related.is_empty() {
+        related_block.push_str("related:\n");
+        for stem in related {
+            related_block.push_str(&format!("  - {}\n", crate::clip::yaml_str(stem)));
+        }
+    }
     format!(
-        "---\nsource: voice\ntitle: {}\ncreated: {captured_at}\n---\n\n{}\n",
+        "---\nsource: voice\ntitle: {}\ncreated: {captured_at}\n{related_block}---\n\n{}\n",
         crate::clip::yaml_str(&title),
         transcript.trim_end(),
     )
@@ -486,17 +499,25 @@ const MAX_VOICE_BYTES: usize = 50 * 1024 * 1024;
 #[derive(Clone, serde::Serialize)]
 pub struct VoiceSaved {
     pub rel: String,
+    /// Wiki stems the transcript echoes (dense lookup, best-effort — empty on
+    /// any lookup failure). The note's frontmatter carries the same list.
+    pub related: Vec<String>,
 }
 
-/// Blocking core of `save_voice_capture`: temp audio file (cli_agent.rs's
-/// `myco-<purpose>-<pid>-<nanos>` pattern) → whisper → `_inbox/` note. The
-/// whisper check runs FIRST so a missing CLI writes nothing at all, and the
-/// temp file is deleted on every path (success and transcription failure).
-fn save_voice_core(
-    app: &tauri::AppHandle,
-    root: &std::path::Path,
-    bytes: &[u8],
-) -> Result<VoiceSaved, String> {
+/// Cosine floor for a "related page" suggestion on a voice note — the same
+/// measured relevance floor Ask uses to reject irrelevant hits (chat.ts
+/// RELEVANCE_FLOOR, e5-small-ko abstention probe). Below it a suggestion is
+/// noise, and a wrong "related" line teaches the user to ignore the feature.
+const VOICE_RELATED_FLOOR: f32 = 0.42;
+/// How many related stems a voice note carries at most.
+const VOICE_RELATED_K: usize = 3;
+
+/// Blocking transcription half of `save_voice_capture`: temp audio file
+/// (cli_agent.rs's `myco-<purpose>-<pid>-<nanos>` pattern) → whisper →
+/// transcript. Writes nothing to the vault. The whisper check runs FIRST so
+/// a missing CLI writes nothing at all, and the temp file is deleted on
+/// every path (success and transcription failure).
+fn transcribe_voice_core(app: &tauri::AppHandle, bytes: &[u8]) -> Result<String, String> {
     if !crate::whisper::check().installed {
         return Err("whisper-missing".to_string());
     }
@@ -519,7 +540,16 @@ fn save_voice_core(
     std::fs::write(&tmp, bytes).map_err(|e| format!("write temp audio: {e}"))?;
     let transcribed = crate::whisper::transcribe(app, &tmp.to_string_lossy());
     let _ = std::fs::remove_file(&tmp);
-    let transcript = transcribed?;
+    transcribed
+}
+
+/// Blocking write half: `_inbox/voice-<date>.md` carrying the transcript and
+/// the related stems.
+fn write_voice_note(
+    root: &std::path::Path,
+    transcript: &str,
+    related: &[String],
+) -> Result<VoiceSaved, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -529,9 +559,12 @@ fn save_voice_core(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("create _inbox: {e}"))?;
     }
-    std::fs::write(&path, voice_markdown(&transcript, now))
+    std::fs::write(&path, voice_markdown(transcript, now, related))
         .map_err(|e| format!("write voice note: {e}"))?;
-    Ok(VoiceSaved { rel })
+    Ok(VoiceSaved {
+        rel,
+        related: related.to_vec(),
+    })
 }
 
 /// Save a spotlight voice capture into the OPEN vault's `_inbox/`. Takes no
@@ -539,14 +572,45 @@ fn save_voice_core(
 /// is `require_root` — the same root every other write command confines to.
 /// `Err("whisper-missing")` before anything is written when no whisper CLI is
 /// on PATH; the frontend shows install copy and stays in ask mode.
+///
+/// Between transcription and the write, the transcript runs through the same
+/// dense lookup ingest grounding uses (`wikify_candidates`) to stamp the
+/// note with the wiki pages it echoes. Advisory only: any lookup failure —
+/// stale index, cold vault, no model — degrades to an empty list, because a
+/// voice memo is unreproducible and must never be lost to a suggestion.
 #[tauri::command]
 pub async fn save_voice_capture(
     app: tauri::AppHandle,
     state: tauri::State<'_, VaultRoot>,
+    llm: tauri::State<'_, LocalLlmState>,
+    cache: tauri::State<'_, VectorCache>,
     bytes: Vec<u8>,
 ) -> Result<VoiceSaved, String> {
     let root = require_root(&state)?;
-    tauri::async_runtime::spawn_blocking(move || save_voice_core(&app, &root, &bytes))
+    let transcribe_app = app.clone();
+    let transcript = tauri::async_runtime::spawn_blocking(move || {
+        transcribe_voice_core(&transcribe_app, &bytes)
+    })
+    .await
+    .map_err(|e| format!("join failed: {e}"))??;
+    let related: Vec<String> = match wikify_candidates(
+        app,
+        state,
+        llm,
+        cache,
+        transcript.clone(),
+        VOICE_RELATED_K,
+    )
+    .await
+    {
+        Ok(cands) => cands
+            .into_iter()
+            .filter(|c| c.score >= VOICE_RELATED_FLOOR)
+            .map(|c| c.stem)
+            .collect(),
+        Err(_) => Vec::new(),
+    };
+    tauri::async_runtime::spawn_blocking(move || write_voice_note(&root, &transcript, &related))
         .await
         .map_err(|e| format!("join failed: {e}"))?
 }
@@ -5587,7 +5651,11 @@ mod tests {
     /// `created`) must ingest a voice note unchanged — clip.rs's contract.
     #[test]
     fn voice_markdown_has_clip_compatible_frontmatter() {
-        let md = voice_markdown("floor: moves to 0.50 tomorrow\nsecond line", 1_755_000_000);
+        let md = voice_markdown(
+            "floor: moves to 0.50 tomorrow\nsecond line",
+            1_755_000_000,
+            &[],
+        );
         let parsed = gray_matter::Matter::<gray_matter::engine::YAML>::new()
             .parse(&md)
             .unwrap();
@@ -5611,6 +5679,33 @@ mod tests {
             Some(&gray_matter::Pod::Integer(1_755_000_000))
         );
         assert!(md.contains("second line"), "body must carry the transcript");
+    }
+
+    /// The related stems land as a YAML sequence the same parser reads back,
+    /// and an empty list leaves the frontmatter without the key at all — the
+    /// clip contract byte-for-byte.
+    #[test]
+    fn voice_markdown_related_is_additive_yaml() {
+        let related = vec!["kv-cache".to_string(), "속도: 최적화".to_string()];
+        let md = voice_markdown("메모입니다", 1_755_000_000, &related);
+        let parsed = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+            .parse(&md)
+            .unwrap();
+        let gray_matter::Pod::Hash(map) = parsed.data.unwrap() else {
+            panic!("frontmatter is not a mapping");
+        };
+        let Some(gray_matter::Pod::Array(items)) = map.get("related") else {
+            panic!("related is not a sequence");
+        };
+        assert_eq!(
+            items,
+            &vec![
+                gray_matter::Pod::String("kv-cache".into()),
+                // A `:` in a stem must survive via yaml_str, like titles do.
+                gray_matter::Pod::String("속도: 최적화".into()),
+            ]
+        );
+        assert!(!voice_markdown("메모", 1, &[]).contains("related"));
     }
 
     /// Two captures in the same minute must not clobber each other: the second
