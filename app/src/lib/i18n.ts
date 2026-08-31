@@ -15,20 +15,44 @@ export interface Strings {
   nav_query: string;
   nav_graph: string;
   nav_views?: string;
-  nav_dashboard?: string;
-  db_title?: string;
-  db_lede?: string;
-  db_add?: string;
-  db_reset?: string;
-  db_w_stats?: string;
-  db_w_activity?: string;
-  db_w_distribution?: string;
-  db_w_tags?: string;
-  db_w_tasks?: string;
-  db_stat_pages?: string;
-  db_stat_open?: string;
-  db_stat_week?: string;
   db_empty?: string;
+  bd_title?: string;
+  bd_range?: string;
+  bd_range_all?: string;
+  bd_edit?: string;
+  bd_done?: string;
+  bd_add?: string;
+  bd_custom?: string;
+  bd_text?: string;
+  bd_heading?: string;
+  bd_compact?: string;
+  bd_compact_v?: string;
+  bd_compact_none?: string;
+  bd_empty?: string;
+  bd_drag?: string;
+  bd_configure?: string;
+  bd_duplicate?: string;
+  bd_field_title?: string;
+  bd_field_source?: string;
+  bd_field_group?: string;
+  bd_field_filter?: string;
+  bd_field_view?: string;
+  bd_field_time?: string;
+  bd_field_rule?: string;
+  bd_filter_none?: string;
+  bd_time_auto?: string;
+  bd_rule_risk?: string;
+  bd_rule_ok?: string;
+  bd_src_inflow?: string;
+  bd_src_notes?: string;
+  bd_src_tasks?: string;
+  bd_preset_mcp_daily?: string;
+  bd_preset_channels_daily?: string;
+  bd_preset_notes_by_type?: string;
+  bd_preset_top_tags?: string;
+  bd_preset_edits_daily?: string;
+  bd_preset_tasks_by_status?: string;
+  bd_preset_unsourced_stat?: string;
   ls_title?: string;
   ls_hint?: string;
   ls_accept?: string;
@@ -1349,21 +1373,44 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_query: "Ask",
     nav_graph: "Graph",
     nav_views: "Views",
-    nav_dashboard: "Dashboard",
-    db_title: "Chart dashboard",
-    db_lede:
-      "Your vault as charts — compose the board from the widgets below; it remembers your arrangement.",
-    db_add: "Add widget",
-    db_reset: "Restore defaults",
-    db_w_stats: "At a glance",
-    db_w_activity: "Weekly edits",
-    db_w_distribution: "Distribution",
-    db_w_tags: "Top tags",
-    db_w_tasks: "Tasks by status",
-    db_stat_pages: "Wiki pages",
-    db_stat_open: "Open tasks",
-    db_stat_week: "Edited this week",
     db_empty: "Nothing to chart yet.",
+    bd_title: "My board",
+    bd_range: "Range",
+    bd_range_all: "All",
+    bd_edit: "Edit board",
+    bd_done: "Done",
+    bd_add: "Add widget",
+    bd_custom: "Custom question…",
+    bd_text: "Text (markdown)",
+    bd_heading: "Heading",
+    bd_compact: "Layout",
+    bd_compact_v: "Pack upward",
+    bd_compact_none: "Keep whitespace",
+    bd_empty: "Add your first chart — MCP inflow, tags, tasks…",
+    bd_drag: "Drag",
+    bd_configure: "Configure",
+    bd_duplicate: "Duplicate",
+    bd_field_title: "Title",
+    bd_field_source: "Source",
+    bd_field_group: "Group by",
+    bd_field_filter: "Filter",
+    bd_field_view: "View",
+    bd_field_time: "Range",
+    bd_field_rule: "Color rule",
+    bd_filter_none: "None",
+    bd_time_auto: "Auto (board)",
+    bd_rule_risk: "red",
+    bd_rule_ok: "green",
+    bd_src_inflow: "Inflow",
+    bd_src_notes: "Notes",
+    bd_src_tasks: "Tasks",
+    bd_preset_mcp_daily: "MCP inflow by day",
+    bd_preset_channels_daily: "Inflow by channel (stacked)",
+    bd_preset_notes_by_type: "Notes by type",
+    bd_preset_top_tags: "Top tags",
+    bd_preset_edits_daily: "Edits per day",
+    bd_preset_tasks_by_status: "Tasks by status",
+    bd_preset_unsourced_stat: "Unsourced pages (stat)",
     ls_title: "Suggested links",
     ls_hint:
       "Semantically close notes that aren't linked yet. Accept to add a [[wikilink]] under \u201c## Related\u201d.",
@@ -2761,21 +2808,44 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_query: "질문",
     nav_graph: "그래프",
     nav_views: "뷰",
-    nav_dashboard: "대시보드",
-    db_title: "차트 대시보드",
-    db_lede:
-      "vault를 차트로 — 아래 위젯으로 보드를 구성하세요. 배치는 기억됩니다.",
-    db_add: "위젯 추가",
-    db_reset: "기본 구성 복원",
-    db_w_stats: "한눈에",
-    db_w_activity: "주간 활동",
-    db_w_distribution: "분포",
-    db_w_tags: "자주 쓴 태그",
-    db_w_tasks: "작업 상태",
-    db_stat_pages: "위키 페이지",
-    db_stat_open: "열린 작업",
-    db_stat_week: "이번 주 수정",
     db_empty: "아직 그릴 데이터가 없습니다.",
+    bd_title: "내 보드",
+    bd_range: "기간",
+    bd_range_all: "전체",
+    bd_edit: "보드 편집",
+    bd_done: "완료",
+    bd_add: "위젯 추가",
+    bd_custom: "직접 질문 만들기…",
+    bd_text: "텍스트 (마크다운)",
+    bd_heading: "제목 구분",
+    bd_compact: "배치",
+    bd_compact_v: "위로 붙이기",
+    bd_compact_none: "여백 유지",
+    bd_empty: "첫 차트를 추가하세요 — MCP 유입, 태그, 작업…",
+    bd_drag: "끌기",
+    bd_configure: "설정",
+    bd_duplicate: "복제",
+    bd_field_title: "제목",
+    bd_field_source: "소스",
+    bd_field_group: "그룹",
+    bd_field_filter: "필터",
+    bd_field_view: "보기",
+    bd_field_time: "기간",
+    bd_field_rule: "색 규칙",
+    bd_filter_none: "없음",
+    bd_time_auto: "자동 (보드 기간)",
+    bd_rule_risk: "빨강",
+    bd_rule_ok: "초록",
+    bd_src_inflow: "유입",
+    bd_src_notes: "노트",
+    bd_src_tasks: "작업",
+    bd_preset_mcp_daily: "MCP 일별 유입",
+    bd_preset_channels_daily: "채널별 유입 (스택)",
+    bd_preset_notes_by_type: "종류별 노트",
+    bd_preset_top_tags: "자주 쓴 태그",
+    bd_preset_edits_daily: "일별 수정",
+    bd_preset_tasks_by_status: "작업 상태",
+    bd_preset_unsourced_stat: "출처 없는 페이지 (숫자)",
     ls_title: "제안된 연결",
     ls_hint:
       "의미상 가깝지만 아직 연결되지 않은 노트들입니다. 수락하면 \u201c## Related\u201d 아래에 [[위키링크]]가 추가됩니다.",
@@ -4166,21 +4236,44 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_query: "質問",
     nav_graph: "グラフ",
     nav_views: "ビュー",
-    nav_dashboard: "ダッシュボード",
-    db_title: "チャートダッシュボード",
-    db_lede:
-      "vault をチャートで — 下のウィジェットでボードを構成します。配置は記憶されます。",
-    db_add: "ウィジェット追加",
-    db_reset: "既定の構成に戻す",
-    db_w_stats: "ひと目で",
-    db_w_activity: "週間アクティビティ",
-    db_w_distribution: "分布",
-    db_w_tags: "よく使うタグ",
-    db_w_tasks: "タスク状況",
-    db_stat_pages: "ウィキページ",
-    db_stat_open: "未完了タスク",
-    db_stat_week: "今週の編集",
     db_empty: "まだ描くデータがありません。",
+    bd_title: "マイボード",
+    bd_range: "期間",
+    bd_range_all: "全体",
+    bd_edit: "ボードを編集",
+    bd_done: "完了",
+    bd_add: "ウィジェット追加",
+    bd_custom: "カスタム質問…",
+    bd_text: "テキスト (マークダウン)",
+    bd_heading: "見出し",
+    bd_compact: "配置",
+    bd_compact_v: "上に詰める",
+    bd_compact_none: "余白を保つ",
+    bd_empty: "最初のチャートを追加 — MCP流入・タグ・タスク…",
+    bd_drag: "ドラッグ",
+    bd_configure: "設定",
+    bd_duplicate: "複製",
+    bd_field_title: "タイトル",
+    bd_field_source: "ソース",
+    bd_field_group: "グループ",
+    bd_field_filter: "フィルタ",
+    bd_field_view: "表示",
+    bd_field_time: "期間",
+    bd_field_rule: "色ルール",
+    bd_filter_none: "なし",
+    bd_time_auto: "自動 (ボード期間)",
+    bd_rule_risk: "赤",
+    bd_rule_ok: "緑",
+    bd_src_inflow: "流入",
+    bd_src_notes: "ノート",
+    bd_src_tasks: "タスク",
+    bd_preset_mcp_daily: "MCP 日別流入",
+    bd_preset_channels_daily: "チャネル別流入 (積み上げ)",
+    bd_preset_notes_by_type: "種類別ノート",
+    bd_preset_top_tags: "よく使うタグ",
+    bd_preset_edits_daily: "日別編集",
+    bd_preset_tasks_by_status: "タスク状況",
+    bd_preset_unsourced_stat: "出典なしページ (数値)",
     nav_history: "履歴",
     nav_provenance: "出典",
     nav_tasks: "タスク",

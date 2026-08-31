@@ -6169,67 +6169,6 @@ html.notch-window body {
 /* ---- Chart dashboard (PageDashboard) --------------------------------------
    Marks per the dataviz spec: thin bars, 4px rounded data-ends, 2px gaps,
    values in ink text (never in the series color), recessive tracks. */
-.dash-toolbar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 16px;
-}
-.dash-toolbar .input {
-  width: auto;
-}
-.dash-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 14px;
-}
-.dash-card {
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bg-elev);
-  padding: 14px 16px 16px;
-  min-width: 0;
-}
-.dash-card__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.dash-card__head b {
-  font-size: 13px;
-}
-.dash-card__spacer {
-  flex: 1;
-}
-.dash-card__btn {
-  padding: 2px 6px;
-  font-size: 11px;
-}
-.dash-config {
-  width: auto;
-  padding: 2px 6px;
-  font-size: 12px;
-}
-.dash-tiles {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 10px;
-}
-.dash-tile {
-  display: grid;
-  gap: 2px;
-}
-.dash-tile__value {
-  font-size: 26px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
-}
-.dash-tile__label {
-  font-size: 12px;
-  color: var(--ink-3);
-}
 .dash-hbars {
   display: grid;
   gap: 6px;
@@ -6298,3 +6237,82 @@ html.notch-window body {
   color: var(--ink-3);
   margin-top: 4px;
 }
+
+/* ---- Overview board (OverviewBoard) ----------------------------------------
+   react-grid-layout supplies drag/resize/placeholder mechanics; these styles
+   dress the widgets. Values stay in ink; series color lives on marks only. */
+.board { margin-top: 24px; }
+.board-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.board-title { font-size: 16px; margin: 0; }
+.board-spacer { flex: 1; }
+.board-range button { font-size: 12px; }
+.board-add { width: auto; font-size: 12px; padding: 3px 6px; }
+.board-empty {
+  width: 100%;
+  border: 1.5px dashed var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink-3);
+  padding: 28px 16px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.board-empty:hover { color: var(--ink-2); border-color: var(--ink-3); }
+.bw {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.bw-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; min-height: 18px; }
+.bw-grip { cursor: grab; color: var(--ink-3); font-size: 12px; user-select: none; }
+.bw-title {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.bw-actions { display: flex; gap: 2px; }
+.bw-btn {
+  border: none;
+  background: none;
+  color: var(--ink-3);
+  font-size: 12px;
+  padding: 1px 4px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.bw-btn:hover { color: var(--ink); background: var(--bg-hover); }
+.bw-stat { flex: 1; display: grid; place-items: center; }
+.bw-stat__num { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.bw-stat[data-tone="risk"] .bw-stat__num { color: #dc2626; }
+.bw-stat[data-tone="ok"] .bw-stat__num { color: #16a34a; }
+.bw-heading { font-size: 15px; font-weight: 700; align-self: center; margin: auto 0; }
+.bw-text { font-size: 12.5px; overflow-y: auto; }
+.bw-empty { font-size: 12px; margin: auto 0; }
+.bw-editor { display: grid; gap: 6px; overflow-y: auto; font-size: 12px; }
+.bw-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.bw-field > span:first-child { color: var(--ink-3); flex: none; font-size: 11.5px; }
+.bw-field .input { width: 150px; flex: none; font-size: 12px; padding: 2px 6px; }
+.bw-field--stack { flex-direction: column; align-items: stretch; }
+.bw-field--stack .input { width: 100%; resize: vertical; }
+.bw-filter { display: flex; gap: 4px; }
+.bw-filter .input { width: auto; max-width: 110px; }
+.bw-rule-num { max-width: 64px; }
+.dash-fill { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.dash-fill .dash-weeks { flex: 1; height: auto; min-height: 48px; }
+.dash-week__stack { width: 100%; display: flex; flex-direction: column-reverse; gap: 2px; border-radius: 4px 4px 0 0; overflow: hidden; }
+.dash-week__stack i { display: block; min-height: 1px; }
+.dash-legend { display: flex; gap: 10px; font-size: 10.5px; color: var(--ink-2); margin-top: 5px; flex-wrap: wrap; }
+.dash-legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 4px; vertical-align: -1px; }
+.dash-line { width: 100%; flex: 1; min-height: 44px; }
+.dash-cattable { border-collapse: collapse; width: 100%; font-size: 12px; overflow-y: auto; }
+.dash-cattable td { padding: 3px 4px; border-bottom: 1px solid var(--line); }
+.dash-cattable td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
+/* rgl placeholder tint on our palette */
+.react-grid-placeholder { background: var(--accent-soft) !important; border-radius: 10px; opacity: 0.5; }

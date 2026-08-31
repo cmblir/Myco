@@ -551,6 +551,27 @@ def add_raw_source(filename: str, content: str, project: str = "") -> dict:
     return _write_raw_guarded(proj, filename, content)
 
 
+def _record_inflow(proj, kind: str, n: int = 1) -> None:
+    """Append one line to the vault's inflow ledger (.myco/inflow-log.jsonl).
+
+    Mirrors app/src-tauri/src/inflow_log.rs — same file, same shape, both MCP
+    servers rule (Q4 item 13 precedent). Strictly best-effort: the ledger is
+    telemetry about an ingest, never a participant in it.
+    """
+    if n <= 0:
+        return
+    try:
+        path = proj.root / ".myco" / "inflow-log.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {"at": int(time.time()), "ch": "mcp", "kind": kind}
+        if n != 1:
+            entry["n"] = n
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry) + "\n")
+    except OSError:
+        pass
+
+
 def _write_raw_guarded(proj, filename: str, content: str) -> dict:
     """The one raw/ write funnel: secret/PII scan → traversal check →
     immutability check → write. Shared by `add_raw_source` and the import
@@ -585,6 +606,7 @@ def _write_raw_guarded(proj, filename: str, content: str) -> dict:
         return {"ok": False, "error": f"raw/ file exists (immutable): {filename}"}
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(content, encoding="utf-8")
+    _record_inflow(proj, "add_raw_source")
     out = {
         "ok": True,
         "project": proj.slug,
@@ -1046,6 +1068,7 @@ def create_page(
     fm_parts.append("---\n")
     body = content or f"# {title}\n\n<!-- TODO: add content with inline [^src-*] citations -->"
     target.write_text("\n".join(fm_parts) + "\n" + body + "\n", encoding="utf-8")
+    _record_inflow(proj, "create_page")
     return {
         "ok": True,
         "project": proj.slug,
@@ -1071,6 +1094,7 @@ def update_page(filename: str, content: str, project: str = "") -> dict:
     if not target.exists():
         return {"ok": False, "error": f"page not found: {filename}"}
     target.write_text(content, encoding="utf-8")
+    _record_inflow(proj, "update_page")
     return {
         "ok": True,
         "project": proj.slug,

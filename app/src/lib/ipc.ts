@@ -468,6 +468,15 @@ export interface TrayRunningRow {
 /** What arrived in the vault today (Rust `inflow_stats`). "Today" is the
  *  caller's local date; the MCP counter is in-memory, so after a restart it
  *  counts since app launch — label it as such. */
+/** One local day's arrivals by channel — mirrors Rust `inflow_log::InflowDay`. */
+export interface InflowDay {
+  day: string; // YYYY-MM-DD
+  mcp: number;
+  clipper: number;
+  voice: number;
+  import: number;
+}
+
 export interface InflowStats {
   /** sessions/<month>/*.md written (swept) today, by mtime. */
   sessionsToday: number;
@@ -1171,6 +1180,17 @@ export const ipc = {
       root,
       tzOffsetMin: new Date().getTimezoneOffset(),
     }),
+  /** Daily inflow by channel from the persistent ledger
+   *  (.myco/inflow-log.jsonl) — the overview board's volume charts. Days are
+   *  the caller's local days, zero-filled, oldest first. */
+  inflowDaily: (days: number) =>
+    invoke<InflowDay[]>("inflow_daily", {
+      days,
+      tzOffsetMin: new Date().getTimezoneOffset(),
+    }),
+  /** Write the overview board doc (creates .myco/dashboards/ on first save). */
+  saveDashboard: (content: string) =>
+    invoke<void>("save_dashboard", { content }),
   mcpConnect: () => invoke<string>("mcp_connect"),
   // Embedded local model (bundled Gemma 3 1B) — offline, no key. First call
   // lazily loads the weights, so it can take a few extra seconds.

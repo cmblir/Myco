@@ -18,6 +18,7 @@ pub mod git_log;
 pub mod importers;
 pub mod index;
 mod index_updater;
+pub mod inflow_log;
 pub mod intent;
 pub mod local_llm;
 pub mod mcp_native;
@@ -219,6 +220,8 @@ pub fn run() {
             commands::mcp_info,
             commands::mcp_connect,
             commands::inflow_stats,
+            commands::inflow_daily,
+            commands::save_dashboard,
             commands::local_query,
             commands::local_chat_model_available,
             commands::reindex_embeddings,

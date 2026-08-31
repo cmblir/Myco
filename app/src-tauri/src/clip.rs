@@ -283,6 +283,7 @@ pub fn save_clip(root: &Path, clip: &Clip) -> Result<Saved, String> {
     }
     let body = clip_markdown(clip, now_secs());
     std::fs::write(&path, &body).map_err(|e| format!("write clip: {e}"))?;
+    crate::inflow_log::record(root, "clipper", "clip");
     if let Some(k) = key {
         // The doc's file name, not its content hash: dedup is URL-keyed, and
         // the name is what `clip_still_present` needs to tell "already here"

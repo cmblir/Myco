@@ -561,6 +561,7 @@ fn write_voice_note(
     }
     std::fs::write(&path, voice_markdown(transcript, now, related))
         .map_err(|e| format!("write voice note: {e}"))?;
+    crate::inflow_log::record(root, "voice", "capture");
     Ok(VoiceSaved {
         rel,
         related: related.to_vec(),
@@ -1280,6 +1281,9 @@ fn run_import(
         // Best effort: a ledger that fails to save just costs a re-import.
         let _ = ledger.save(root);
     }
+    // One inflow-ledger line per batch (dest names the flavor) — this single
+    // point covers conversations, session sweeps, and retries alike.
+    crate::inflow_log::record_n(root, "import", dest, imported as u32);
     ImportOutcome {
         source,
         imported,
@@ -1665,6 +1669,41 @@ pub(crate) fn collect_inflow(
 /// `_inbox` arrivals, MCP tool calls, plus hourly sparkbar buckets. Called
 /// when the popover opens — no polling. `tz_offset_min` is the frontend's
 /// `Date.getTimezoneOffset()` so "today" means the user's local date.
+/// Persist the overview board document (`.myco/dashboards/overview.json`).
+/// Its own command rather than `write_file` because the generic writer
+/// refuses to create parent directories, and the board's directory does not
+/// exist until the first save.
+#[tauri::command]
+pub fn save_dashboard(state: tauri::State<VaultRoot>, content: String) -> Result<(), String> {
+    let root = require_root(&state)?;
+    let dir = root.join(".myco/dashboards");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create dashboards dir: {e}"))?;
+    vault::write_file(&dir.join("overview.json").to_string_lossy(), &content)
+}
+
+/// Daily inflow by channel from the persistent ledger (`inflow_log`), for the
+/// overview board's volume charts. `tz_offset_min` = JS `getTimezoneOffset()`,
+/// the same convention as `inflow_stats` above.
+#[tauri::command]
+pub async fn inflow_daily(
+    state: tauri::State<'_, VaultRoot>,
+    days: u32,
+    tz_offset_min: i32,
+) -> Result<Vec<crate::inflow_log::InflowDay>, String> {
+    let root = require_root(&state)?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let now = epoch_secs(std::time::SystemTime::now());
+        Ok(crate::inflow_log::read_daily(
+            &root,
+            days,
+            tz_offset_min,
+            now,
+        ))
+    })
+    .await
+    .map_err(|e| format!("join failed: {e}"))?
+}
+
 #[tauri::command]
 pub async fn inflow_stats(
     state: tauri::State<'_, VaultRoot>,

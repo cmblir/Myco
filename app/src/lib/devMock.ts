@@ -2723,6 +2723,30 @@ function mockInvoke(
     // Today's inflow for the activity popover / tray panel. Plausible spread:
     // activity clustered in the hours up to "now" so the sparkbar always has
     // visible bars near the right edge of today, whatever the wall clock.
+    case "save_dashboard":
+      // Mock vault: the board just doesn't persist across reloads.
+      return Promise.resolve(null);
+    case "inflow_daily": {
+      // Deterministic-ish seeded ledger so the board's inflow charts render
+      // in the mock browser: activity clusters on recent weekdays.
+      const days = (args as { days?: number }).days ?? 30;
+      const out = [];
+      const now = Date.now();
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(now - i * 86_400_000);
+        const day = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+        const wk = d.getDay() === 0 || d.getDay() === 6;
+        const wave = i > 45 ? 0 : (i * 7) % 5; // ledger "starts" 45 days ago
+        out.push({
+          day,
+          mcp: wk ? 0 : wave,
+          clipper: wk ? 1 : (i % 3 === 0 ? 2 : 0),
+          voice: i % 5 === 0 ? 1 : 0,
+          import: i % 11 === 0 ? 14 : 0,
+        });
+      }
+      return Promise.resolve(out);
+    }
     case "inflow_stats": {
       const h = new Date().getHours();
       const hourlyFiles = Array<number>(24).fill(0);

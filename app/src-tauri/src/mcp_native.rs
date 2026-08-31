@@ -1524,6 +1524,7 @@ impl McpServer {
         if let Some(u) = crate::INDEX_UPDATER.get() {
             u.mark_dirty(rel_to(&root, &target).replace('\\', "/"));
         }
+        crate::inflow_log::record(&root, "mcp", "create_page");
         json_result(json!({
             "ok": true, "filename": rel_to(&wiki, &target), "path": rel_to(&root, &target),
         }))
@@ -1551,6 +1552,7 @@ impl McpServer {
         if let Some(u) = crate::INDEX_UPDATER.get() {
             u.mark_dirty(rel_to(&root, &target).replace('\\', "/"));
         }
+        crate::inflow_log::record(&root, "mcp", "update_page");
         json_result(json!({ "ok": true, "filename": rel_to(&wiki_dir(&root), &target) }))
     }
 
@@ -1711,6 +1713,8 @@ impl McpServer {
             .file_stem()
             .map(|s| s.to_string_lossy().to_string())
             .unwrap_or_default();
+        // Inflow ledger (daily MCP volume chart) — after the write succeeded.
+        crate::inflow_log::record(&root, "mcp", "add_raw_source");
         let mut out = json!({
             "ok": true, "raw_path": rel_to(&root, &target), "src_slug": format!("src-{stem}"),
         });

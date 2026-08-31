@@ -32,6 +32,7 @@ import VaultPulse from "../components/VaultPulse";
 import RecentNotes from "../components/RecentNotes";
 import VaultHistoryBanner from "../components/VaultHistoryBanner";
 import MorningBand from "../components/MorningBand";
+import OverviewBoard from "../components/OverviewBoard";
 import { bucketByDay } from "../lib/vaultPulse";
 
 export default function PageOverview({ t }: { t: Strings }): JSX.Element {
@@ -124,6 +125,8 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
           <Icon name="msg" size={14} /> {t.ov_cta_ask}
         </button>
       </div>
+
+      <OverviewBoard t={t} />
 
       <div className="ov-bands">
         {recentLeaves.length > 0 ? (
