@@ -50,29 +50,38 @@ export default function Spotlight(): JSX.Element {
   const [voiceState, setVoiceState] = useState<VoiceState>("idle");
   // First-use whisper model download percent; null outside that window.
   const [modelPct, setModelPct] = useState<number | null>(null);
+  // Transcription percent (whisper -pp via run_streaming); null until the
+  // first progress line. Distinct from the one-time model download above.
+  const [transcribePct, setTranscribePct] = useState<number | null>(null);
   useEffect(() => {
     if (voiceState !== "saving") {
       setModelPct(null);
+      setTranscribePct(null);
       return;
     }
     let gone = false;
-    let unlisten: (() => void) | null = null;
+    const unlisteners: (() => void)[] = [];
     void import("@tauri-apps/api/event")
       .then(({ listen }) =>
-        listen<{ pct: number }>("whisper-model-progress", (e) =>
-          setModelPct(e.payload.pct),
-        ),
+        Promise.all([
+          listen<{ pct: number }>("whisper-model-progress", (e) =>
+            setModelPct(e.payload.pct),
+          ),
+          listen<{ pct: number }>("whisper-transcribe-progress", (e) =>
+            setTranscribePct(e.payload.pct),
+          ),
+        ]),
       )
-      .then((u) => {
-        if (gone) u();
-        else unlisten = u;
+      .then((us) => {
+        if (gone) us.forEach((u) => u());
+        else unlisteners.push(...us);
       })
       .catch(() => {
         /* plain-browser dev: no Tauri backend */
       });
     return () => {
       gone = true;
-      if (unlisten) unlisten();
+      unlisteners.forEach((u) => u());
     };
   }, [voiceState]);
   /** "whisper-missing" / "mic-denied" / a save failure — shown in ask mode. */
@@ -311,7 +320,12 @@ export default function Spotlight(): JSX.Element {
                         t.voice_model_progress ??
                         "downloading the voice model — one time, {pct}%"
                       ).replace("{pct}", String(modelPct))
-                    : "…"
+                    : transcribePct !== null
+                      ? (t.voice_transcribe_progress ?? "transcribing… {pct}%").replace(
+                          "{pct}",
+                          String(transcribePct),
+                        )
+                      : "…"
                   : (t.voice_hint_recording ?? "⏎ save · esc cancel")}
               </span>
             </>

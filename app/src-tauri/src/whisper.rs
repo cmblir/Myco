@@ -7,11 +7,12 @@
 //
 // Invocation shapes:
 //   - bundled `whisper-cli` (whisper.cpp): `-f <audio> -m <model> -l auto
-//                     -otxt -of <tmp>/<stem>` → <tmp>/<stem>.txt
+//                     -pp -otxt -of <tmp>/<stem>` → <tmp>/<stem>.txt
 //   - PATH `whisper` (openai-whisper): `whisper <audio> --output_format txt
 //                     --output_dir <tmp> --model base` → <tmp>/<stem>.txt
 //   - PATH `whisper-cli`: as bundled, minus -m/-l (their own default model)
 
+use std::io::BufRead as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -20,7 +21,20 @@ use tauri::Emitter as _;
 
 use crate::claude::{augmented_path, locate_bin, run_with_timeout, CliResult, CliStatus};
 
-const DEFAULT_TIMEOUT_SECS: u64 = 900; // transcription can be slow
+/// Floor, not ceiling: `transcribe_timeout` scales the deadline with the
+/// audio's size, and this floor keeps short clips from a too-tight budget.
+/// The old fixed 900s silently killed hour-plus meeting recordings.
+const DEFAULT_TIMEOUT_SECS: u64 = 900;
+
+/// Emitted while a transcription runs: `{pct}` (0–100), parsed from
+/// whisper.cpp's `-pp` progress lines. Only the bundled run emits it — a
+/// user's own PATH binary is invoked with their flags untouched.
+pub const TRANSCRIBE_PROGRESS_EVENT: &str = "whisper-transcribe-progress";
+
+/// The only audio containers the whisper.cpp sidecar decodes itself (its
+/// --help states them). Everything else ingest accepts (m4a/aac/mp4/mov…)
+/// must be converted first — there is no ffmpeg in this app on purpose.
+const SIDECAR_AUDIO_EXTS: [&str; 4] = ["flac", "mp3", "ogg", "wav"];
 
 /// The bundled model: whisper small, q5_1. `base` was measurably poor at
 /// Korean — the e5 lesson again — and 190 MB once beats bad transcripts
@@ -159,6 +173,127 @@ pub fn check() -> CliStatus {
     }
 }
 
+fn sidecar_reads_natively(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| SIDECAR_AUDIO_EXTS.contains(&e.to_ascii_lowercase().as_str()))
+        .unwrap_or(false)
+}
+
+/// Convert `src` to the 16 kHz mono 16-bit WAV the sidecar (and its model)
+/// expects, using macOS's built-in `afconvert` (CoreAudio) — zero new
+/// dependencies, nothing for the user to install, which is the same rule the
+/// bundled sidecar itself follows. Covers the m4a/aac/mp4 recordings that
+/// meeting apps and phones actually produce; a container CoreAudio cannot
+/// read (webm/mkv) fails here with the tool named, never silently.
+fn afconvert_to_wav(src: &Path, out_dir: &Path) -> Result<PathBuf, String> {
+    let stem = src.file_stem().and_then(|s| s.to_str()).unwrap_or("audio");
+    let dst = out_dir.join(format!("{stem}.wav"));
+    let child = Command::new("afconvert")
+        .args([
+            "-f",
+            "WAVE",
+            "-d",
+            "LEI16@16000",
+            "-c",
+            "1",
+            &src.to_string_lossy(),
+            &dst.to_string_lossy(),
+        ])
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| format!("spawn afconvert failed (audio format needs conversion): {e}"))?;
+    let res = run_with_timeout(child, Vec::new(), Duration::from_secs(600), "afconvert")?;
+    if res.status != 0 || !dst.is_file() {
+        return Err(format!(
+            "afconvert could not read this audio (exit {}): {}",
+            res.status,
+            res.stderr.trim()
+        ));
+    }
+    Ok(dst)
+}
+
+/// Deadline scaled to the audio: bytes/32k ≈ seconds for our 16 kHz mono WAV,
+/// and an over-estimate for compressed input (denser bytes → shorter audio) —
+/// over is the safe direction for a timeout. ×6 allows well below real-time
+/// transcription on an old CPU; DEFAULT_TIMEOUT_SECS floors short clips.
+fn transcribe_timeout(audio_bytes: u64) -> Duration {
+    let est_secs = audio_bytes / 32_000;
+    Duration::from_secs(DEFAULT_TIMEOUT_SECS.max(est_secs.saturating_mul(6)))
+}
+
+/// The percent in a whisper.cpp `-pp` stderr line
+/// (`whisper_print_progress_callback: progress =   5%`), if this is one.
+fn parse_progress_line(line: &str) -> Option<u8> {
+    let rest = line.split("progress =").nth(1)?;
+    let digits: String = rest.chars().filter(|c| c.is_ascii_digit()).collect();
+    digits.parse::<u8>().ok().filter(|p| *p <= 100)
+}
+
+/// Like claude::run_with_timeout, but stderr is read LINE-WISE so progress
+/// can be reported mid-run — the buffering runner cannot say anything until
+/// the process exits, which for an hour of audio reads as a hang. Every
+/// stderr line is kept for error reporting; lines that parse as progress are
+/// re-emitted as TRANSCRIBE_PROGRESS_EVENT.
+fn run_streaming(
+    app: &tauri::AppHandle,
+    mut child: std::process::Child,
+    timeout: Duration,
+) -> Result<CliResult, String> {
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let stdout_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(mut so) = stdout {
+            let _ = std::io::Read::read_to_end(&mut so, &mut buf);
+        }
+        buf
+    });
+    let emit_app = app.clone();
+    let stderr_handle = std::thread::spawn(move || {
+        let mut all = String::new();
+        if let Some(se) = stderr {
+            for line in std::io::BufReader::new(se).lines() {
+                let Ok(line) = line else { break };
+                if let Some(pct) = parse_progress_line(&line) {
+                    let _ =
+                        emit_app.emit(TRANSCRIBE_PROGRESS_EVENT, serde_json::json!({ "pct": pct }));
+                }
+                all.push_str(&line);
+                all.push('\n');
+            }
+        }
+        all
+    });
+    let start = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(st)) => break st,
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = stdout_handle.join();
+                    let _ = stderr_handle.join();
+                    return Err(format!("whisper timed out after {}s", timeout.as_secs()));
+                }
+                std::thread::sleep(Duration::from_millis(80));
+            }
+            Err(e) => return Err(format!("wait for whisper failed: {e}")),
+        }
+    };
+    let stdout = String::from_utf8_lossy(&stdout_handle.join().unwrap_or_default()).into_owned();
+    let stderr = stderr_handle.join().unwrap_or_default();
+    Ok(CliResult {
+        stdout,
+        stderr,
+        status: status.code().unwrap_or(-1),
+    })
+}
+
 /// Build the CLI args + the .txt path the run is expected to produce. Pure, so
 /// the invocation shape is unit-testable without the binary present.
 pub fn build_args(
@@ -187,11 +322,14 @@ pub fn build_args(
             let mut args = vec!["-f".to_string(), audio.to_string()];
             if let Some(m) = model {
                 // Bundled run: OUR model, and `-l auto` — whisper-cli defaults
-                // to English, which silently garbles Korean notes.
+                // to English, which silently garbles Korean notes. `-pp`
+                // prints progress lines that run_streaming re-emits as
+                // events; only injected here, never into a user's own setup.
                 args.push("-m".into());
                 args.push(m.to_string_lossy().into_owned());
                 args.push("-l".into());
                 args.push("auto".into());
+                args.push("-pp".into());
             }
             args.push("-otxt".into());
             args.push("-of".into());
@@ -231,8 +369,20 @@ pub fn transcribe(app: &tauri::AppHandle, path: &str) -> Result<String, String> 
         .to_string();
     let out_dir = std::env::temp_dir().join(format!("memex-whisper-{}", std::process::id()));
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("mkdir: {e}"))?;
-    let (args, out_txt) = build_args(variant, path, &stem, &out_dir, model.as_deref());
+    // whisper.cpp (bundled OR the user's PATH whisper-cli) reads only
+    // flac/mp3/ogg/wav — but ingest accepts the m4a/mp4 that meeting apps
+    // and phones produce. Convert those with the OS's own afconvert first.
+    // openai-whisper decodes via its own ffmpeg and is left alone.
+    let audio: String = if variant == Variant::WhisperCpp && !sidecar_reads_natively(file) {
+        afconvert_to_wav(file, &out_dir)?
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        path.to_string()
+    };
+    let (args, out_txt) = build_args(variant, &audio, &stem, &out_dir, model.as_deref());
 
+    let timeout = transcribe_timeout(std::fs::metadata(&audio).map(|m| m.len()).unwrap_or(0));
     let child = Command::new(&bin)
         .args(&args)
         .env("PATH", augmented_path(&bin))
@@ -241,12 +391,7 @@ pub fn transcribe(app: &tauri::AppHandle, path: &str) -> Result<String, String> 
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("spawn whisper failed: {e}"))?;
-    let res: CliResult = run_with_timeout(
-        child,
-        Vec::new(),
-        Duration::from_secs(DEFAULT_TIMEOUT_SECS),
-        "whisper",
-    )?;
+    let res: CliResult = run_streaming(app, child, timeout)?;
     let text = std::fs::read_to_string(&out_txt)
         .ok()
         .map(|s| s.trim().to_string())
@@ -325,5 +470,45 @@ mod tests {
         let l = args.iter().position(|a| a == "-l").unwrap();
         // auto, not the whisper-cli default (en): Korean garbles otherwise.
         assert_eq!(args[l + 1], "auto");
+        // Progress lines for run_streaming — bundled runs only.
+        assert!(args.contains(&"-pp".to_string()));
+    }
+
+    #[test]
+    fn progress_lines_parse_and_noise_does_not() {
+        assert_eq!(
+            parse_progress_line("whisper_print_progress_callback: progress =   5%"),
+            Some(5)
+        );
+        assert_eq!(
+            parse_progress_line("whisper_print_progress_callback: progress = 100%"),
+            Some(100)
+        );
+        assert_eq!(
+            parse_progress_line("whisper_init_from_file_with_params"),
+            None
+        );
+        assert_eq!(parse_progress_line("[00:00:14.320] 안녕하세요"), None);
+    }
+
+    #[test]
+    fn timeout_scales_with_audio_but_never_below_the_floor() {
+        // A 30s voice memo (16 kHz mono ≈ 0.96 MB) keeps the 900s floor.
+        assert_eq!(transcribe_timeout(960_000), Duration::from_secs(900));
+        // An hour of 16 kHz mono WAV (~115 MB) gets ~6h — the fixed 900s
+        // used to kill exactly this case.
+        assert_eq!(
+            transcribe_timeout(115_200_000),
+            Duration::from_secs(3600 * 6)
+        );
+    }
+
+    #[test]
+    fn sidecar_native_formats_skip_conversion_and_m4a_does_not() {
+        assert!(sidecar_reads_natively(Path::new("/a/clip.WAV")));
+        assert!(sidecar_reads_natively(Path::new("/a/clip.mp3")));
+        assert!(!sidecar_reads_natively(Path::new("/a/meeting.m4a")));
+        assert!(!sidecar_reads_natively(Path::new("/a/screen.mov")));
+        assert!(!sidecar_reads_natively(Path::new("/a/noext")));
     }
 }
