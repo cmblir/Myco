@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createVoiceMachine, type VoiceState } from "./voiceCapture";
+import type { RecorderLike } from "./wavRecorder";
 
 // Fake MediaStream/MediaRecorder pair: `stop()` synchronously delivers one
 // data chunk and fires onstop, which is enough for the machine's await-onstop
@@ -82,7 +83,7 @@ describe("createVoiceMachine", () => {
     const save = vi.fn(() => Promise.resolve({ rel: "x" }));
     const machine = createVoiceMachine({
       getStream: () => Promise.reject(new Error("NotAllowedError")),
-      makeRecorder: () => ({}) as unknown as import("./wavRecorder").RecorderLike,
+      makeRecorder: () => ({}) as unknown as RecorderLike,
       save,
       onChange: () => undefined,
     });
