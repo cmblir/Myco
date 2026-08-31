@@ -1065,6 +1065,7 @@ export interface Strings {
   tb_activity_running?: string;
   tb_activity_links?: string; // {n}
   tb_activity_reflect?: string; // {n}
+  tb_activity_applying?: string;
   tb_activity_mcp_on?: string;
   tb_activity_mcp_off?: string;
   tb_activity_tasks?: string;
@@ -2461,6 +2462,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_running: "Running",
     tb_activity_links: "{n} suggested links",
     tb_activity_reflect: "{n} reflect suggestions",
+    tb_activity_applying: "Applying proposal…",
     tb_activity_mcp_on: "MCP server running",
     tb_activity_mcp_off: "MCP server off",
     tb_activity_tasks: "Tasks due",
@@ -3852,6 +3854,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_running: "진행 중",
     tb_activity_links: "제안된 링크 {n}개",
     tb_activity_reflect: "Reflect 제안 {n}개",
+    tb_activity_applying: "제안 적용 중…",
     tb_activity_mcp_on: "MCP 서버 실행 중",
     tb_activity_mcp_off: "MCP 서버 꺼짐",
     tb_activity_tasks: "할 일",
@@ -5071,6 +5074,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_activity_running: "実行中",
     tb_activity_links: "リンク提案 {n}件",
     tb_activity_reflect: "Reflect の提案 {n}件",
+    tb_activity_applying: "提案を適用中…",
     tb_activity_mcp_on: "MCPサーバー稼働中",
     tb_activity_mcp_off: "MCPサーバー停止",
     tb_activity_tasks: "期限のタスク",

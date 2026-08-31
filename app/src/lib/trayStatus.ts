@@ -65,6 +65,10 @@ export interface TraySnapshot {
   /** Pending map proposals awaiting a decision — the tray panel's approvable
    *  rows (a standing state, never part of the tray title). */
   mapProposals: ProposalMeta[];
+  /** Proposal applies in flight (draft-map = a minutes-long query-model call).
+   *  A RUNNING state: counted in the title, shown as a running row, and the
+   *  notch lip narrates it like any other runner. */
+  applyingProposals: number;
   /** Active query provider; "builtin-local" can't draft a map, which the rows
    *  say out loud instead of letting an approval sit there silently. */
   queryProvider: string;
@@ -91,6 +95,7 @@ export function trayTitle(s: TraySnapshot): string | null {
     (s.askBusy ? 1 : 0) +
     (s.distillRunning ? 1 : 0) +
     (s.reflectRunning ? 1 : 0) +
+    (s.applyingProposals > 0 ? 1 : 0) +
     (reindexBusy ? 1 : 0);
   if (count === 0) return null;
   if (count >= 2) return String(count);
@@ -119,6 +124,14 @@ export function buildTrayStatus(
     running.push({
       kind: "reflect",
       text: t.rf_running_label ?? "Reflect running…",
+    });
+  }
+  if (s.applyingProposals > 0) {
+    running.push({
+      kind: "distill",
+      text:
+        (t.tb_activity_applying ?? "Applying proposal…") +
+        (s.applyingProposals > 1 ? ` ×${s.applyingProposals}` : ""),
     });
   }
   if (s.reindexStage === "loading-model") {
@@ -382,6 +395,7 @@ export function initTrayIntegration(): () => void {
           mapProposals: pendingMapProposals(
             useDistillStore.getState().proposals,
           ),
+          applyingProposals: useDistillStore.getState().applying.size,
           queryProvider: settings?.query_provider ?? "",
           mcpRunning,
           inflow: inflowStats,

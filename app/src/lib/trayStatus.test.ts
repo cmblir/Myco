@@ -20,6 +20,7 @@ const idle: TraySnapshot = {
   pendingLinks: 0,
   quarantined: 0,
   mapProposals: [],
+  applyingProposals: 0,
   queryProvider: "anthropic-api",
   mcpRunning: true,
   inflow: null,
@@ -281,5 +282,22 @@ describe("TraySender", () => {
     sender.dispose();
     vi.advanceTimersByTime(2000);
     expect(sent).toEqual([]);
+  });
+});
+
+describe("applying proposals", () => {
+  const t = STRINGS.en;
+
+  it("counts as a runner in the title and narrates as a running row", () => {
+    // Two runners (ask + applying) → the icon-side title shows the count.
+    expect(trayTitle({ ...idle, askBusy: true, applyingProposals: 1 })).toBe("2");
+    const p = buildTrayStatus({ ...idle, applyingProposals: 1 }, t);
+    expect(p.running.map((r) => r.kind)).toEqual(["distill"]);
+    expect(p.running[0].text).toBe("Applying proposal…");
+  });
+
+  it("more than one apply shows the multiplier", () => {
+    const p = buildTrayStatus({ ...idle, applyingProposals: 3 }, t);
+    expect(p.running[0].text).toBe("Applying proposal… ×3");
   });
 });

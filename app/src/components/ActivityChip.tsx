@@ -140,6 +140,9 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   // Quarantined items awaiting review — a standing count from the same
   // distill_status the Settings tab and the sidebar badge read.
   const quarantined = useDistillStore((s) => s.status?.quarantined ?? 0);
+  // Proposal applies in flight (draft-map runs a whole query-model call TS-side
+  // — minutes, not ms). Size only: the Set identity churns per apply.
+  const applyingCount = useDistillStore((s) => s.applying.size);
   // Pending map proposals, approvable right here (ROADMAP P0) — the same
   // store actions the Feedback page's buttons call, so there is one writer.
   const proposals = useDistillStore((s) => s.proposals);
@@ -296,6 +299,13 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       detail: "",
     });
   }
+  if (applyingCount > 0) {
+    running.push({
+      icon: "distill",
+      label: t.tb_activity_applying ?? "Applying proposal…",
+      detail: applyingCount > 1 ? String(applyingCount) : "",
+    });
+  }
   if (reindexBusy) {
     running.push({
       icon: "indexing",
@@ -386,6 +396,19 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       iconActive: true,
       onClick: () => jump("overview"),
       main: <b>{t.rf_running_label ?? "Reflect running…"}</b>,
+    });
+  }
+  if (applyingCount > 0) {
+    runningRows.push({
+      key: "applying",
+      icon: "distill",
+      iconActive: true,
+      onClick: () => jump("feedback"),
+      main: <b>{t.tb_activity_applying ?? "Applying proposal…"}</b>,
+      trailing:
+        applyingCount > 1 ? (
+          <span className="activity-num">{applyingCount}</span>
+        ) : undefined,
     });
   }
   if (reindexBusy) {
