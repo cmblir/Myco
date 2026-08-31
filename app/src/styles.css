@@ -6245,11 +6245,22 @@ html.notch-window body {
    react-grid-layout supplies drag/resize/placeholder mechanics; these styles
    dress the widgets. Values stay in ink; series color lives on marks only. */
 .board { margin-top: 24px; }
-.board-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.board-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
 .board-title { font-size: 16px; margin: 0; }
 .board-spacer { flex: 1; }
-.board-range button { font-size: 12px; }
-.board-add { width: auto; font-size: 12px; padding: 3px 6px; }
+/* One control height across the toolbar — selects, buttons and the range
+   segment were each bringing their own padding and read as a jumble. */
+.board-head .btn,
+.board-head .input,
+.board-head .segmented {
+  height: 30px;
+  box-sizing: border-box;
+}
+.board-head .btn { padding: 0 12px; font-size: 12.5px; }
+.board-head .input { padding: 0 8px; font-size: 12.5px; }
+.board-head .segmented { padding: 2px; }
+.board-head .segmented button { padding: 0 10px; font-size: 12px; }
+.board-add { width: auto; }
 .board-empty {
   width: 100%;
   border: 1.5px dashed var(--line);
