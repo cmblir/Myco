@@ -79,9 +79,12 @@ const dayLabel = (lang: string, day: string): string =>
 export function DayBars({
   days,
   lang,
+  color,
 }: {
   days: DayPoint[];
   lang: string;
+  /** Single-series override; stacked (parts) days keep channel identity. */
+  color?: string;
 }): JSX.Element {
   const max = Math.max(1, ...days.map((d) => d.total));
   const peak = days.reduce((a, b) => (b.total > a.total ? b : a), days[0]);
@@ -137,7 +140,10 @@ export function DayBars({
               ) : (
                 <span
                   className={"dash-week__fill" + (last ? " is-current" : "")}
-                  style={{ height: `${Math.max(d.total > 0 ? 2 : 1, (d.total / max) * 100)}%` }}
+                  style={{
+                    height: `${Math.max(d.total > 0 ? 2 : 1, (d.total / max) * 100)}%`,
+                    background: color,
+                  }}
                 />
               )}
             </div>
@@ -166,9 +172,11 @@ export function DayBars({
 export function DayLine({
   days,
   lang,
+  color,
 }: {
   days: DayPoint[];
   lang: string;
+  color?: string;
 }): JSX.Element {
   const max = Math.max(1, ...days.map((d) => d.total));
   const W = 100;
@@ -192,11 +200,11 @@ export function DayLine({
         <polyline
           points={pts.join(" ")}
           fill="none"
-          stroke="var(--accent)"
+          stroke={color ?? "var(--accent)"}
           strokeWidth="1.5"
           vectorEffect="non-scaling-stroke"
         />
-        <circle cx={lx} cy={ly} r="1.6" fill="var(--accent)" />
+        <circle cx={lx} cy={ly} r="1.6" fill={color ?? "var(--accent)"} />
       </svg>
       <div className="dash-weeks__axis">
         <span>{days[0] ? dayLabel(lang, days[0].day) : ""}</span>

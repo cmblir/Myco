@@ -56,6 +56,16 @@ export interface BoardWidget {
   /** "auto" follows the board's global range (Grafana's one-global rule). */
   time?: "auto" | BoardRange;
   colorRules?: ColorRule[];
+  /** Visibility condition (HA-style, data flavor): in view mode a widget
+   *  whose total is 0 disappears and frees its grid space — the quiet board.
+   *  Edit mode always shows it. */
+  hideWhenZero?: boolean;
+  /** Single-series color override — one of the validated hues (a CSS var).
+   *  Identity colors (type/channel) still win: color follows the entity. */
+  color?: string;
+  /** Display aliases for row labels ("source-summary" → "요약"). Applied at
+   *  render only — the underlying data keeps its real names. */
+  aliases?: Record<string, string>;
 }
 
 export interface BoardLayoutItem {
@@ -391,6 +401,11 @@ export function runBoardQuery(
   return { kind: "cat", rows: rows.slice(0, q.limit ?? 24) };
 }
 
+/** Display aliases applied at render time (widget.aliases). */
+export function aliasLabel(w: BoardWidget, label: string): string {
+  return w.aliases?.[label] ?? label;
+}
+
 /** A stat widget's single number = the query's total. */
 export function statValue(r: QueryResult): number {
   return r.kind === "cat"
@@ -464,11 +479,35 @@ export function migrateLegacy(raw: string | null): BoardDoc | null {
   }
 }
 
+/** Clamp a saved layout back onto the 12-column grid and heal widget/layout
+ *  mismatches. A hand-edited file, a corrupt save, or a future column change
+ *  must degrade to a sane board — never to widgets hanging off the viewport. */
+export function sanitizeBoard(doc: BoardDoc): BoardDoc {
+  const ids = new Set(doc.widgets.map((w) => w.id));
+  let layout = doc.layout
+    .filter((l) => ids.has(l.i))
+    .map((l) => {
+      const w = Math.min(Math.max(1, Math.round(l.w) || 1), BOARD_COLS);
+      const x = Math.min(Math.max(0, Math.round(l.x) || 0), BOARD_COLS - w);
+      const y = Math.max(0, Math.round(l.y) || 0);
+      const h = Math.max(1, Math.round(l.h) || 1);
+      return { i: l.i, x, y, w, h };
+    });
+  // A widget the layout lost still needs a slot — park it at the bottom.
+  const placed = new Set(layout.map((l) => l.i));
+  for (const w of doc.widgets) {
+    if (placed.has(w.id)) continue;
+    const bottom = layout.reduce((m, l) => Math.max(m, l.y + l.h), 0);
+    layout = [...layout, { i: w.id, x: 0, y: bottom, ...defaultSize(w) }];
+  }
+  return { ...doc, layout };
+}
+
 export async function loadBoard(vaultPath: string): Promise<BoardDoc> {
   try {
     const { raw } = await ipc.readFile(`${vaultPath}/${BOARD_REL}`);
     const parsed = JSON.parse(raw) as unknown;
-    if (isBoardDoc(parsed)) return parsed;
+    if (isBoardDoc(parsed)) return sanitizeBoard(parsed);
   } catch {
     /* no board file yet */
   }

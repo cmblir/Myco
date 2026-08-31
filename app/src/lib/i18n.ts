@@ -53,6 +53,30 @@ export interface Strings {
   bd_preset_edits_daily?: string;
   bd_preset_tasks_by_status?: string;
   bd_preset_unsourced_stat?: string;
+  bd_g_day?: string;
+  bd_g_channel?: string;
+  bd_g_type?: string;
+  bd_g_confidence?: string;
+  bd_g_status?: string;
+  bd_g_tag?: string;
+  bd_v_bar?: string;
+  bd_v_line?: string;
+  bd_v_hbar?: string;
+  bd_v_stat?: string;
+  bd_v_table?: string;
+  bd_hide_zero?: string;
+  bd_json_form?: string;
+  bd_json_bad?: string;
+  bd_unknown?: string; // {kind}
+  bd_field_color?: string;
+  bd_color_default?: string;
+  bd_color_blue?: string;
+  bd_color_green?: string;
+  bd_color_purple?: string;
+  bd_color_amber?: string;
+  bd_color_cyan?: string;
+  bd_color_red?: string;
+  bd_detail_total?: string; // {n}
   ls_title?: string;
   ls_hint?: string;
   ls_accept?: string;
@@ -1411,6 +1435,30 @@ export const STRINGS: Record<Lang, Strings> = {
     bd_preset_edits_daily: "Edits per day",
     bd_preset_tasks_by_status: "Tasks by status",
     bd_preset_unsourced_stat: "Unsourced pages (stat)",
+    bd_g_day: "By day",
+    bd_g_channel: "By channel",
+    bd_g_type: "By type",
+    bd_g_confidence: "By confidence",
+    bd_g_status: "By status",
+    bd_g_tag: "By tag",
+    bd_v_bar: "Bars",
+    bd_v_line: "Line",
+    bd_v_hbar: "Rows",
+    bd_v_stat: "Number",
+    bd_v_table: "Table",
+    bd_hide_zero: "Hide when zero",
+    bd_json_form: "Form",
+    bd_json_bad: "Not valid JSON — fix it or switch back to the form.",
+    bd_unknown: "Unknown widget type “{kind}” — kept as saved.",
+    bd_field_color: "Color",
+    bd_color_default: "Default",
+    bd_color_blue: "Blue",
+    bd_color_green: "Green",
+    bd_color_purple: "Purple",
+    bd_color_amber: "Amber",
+    bd_color_cyan: "Cyan",
+    bd_color_red: "Red",
+    bd_detail_total: "Total {n}",
     ls_title: "Suggested links",
     ls_hint:
       "Semantically close notes that aren't linked yet. Accept to add a [[wikilink]] under \u201c## Related\u201d.",
@@ -2846,6 +2894,30 @@ export const STRINGS: Record<Lang, Strings> = {
     bd_preset_edits_daily: "일별 수정",
     bd_preset_tasks_by_status: "작업 상태",
     bd_preset_unsourced_stat: "출처 없는 페이지 (숫자)",
+    bd_g_day: "일별",
+    bd_g_channel: "채널별",
+    bd_g_type: "종류별",
+    bd_g_confidence: "신뢰도별",
+    bd_g_status: "상태별",
+    bd_g_tag: "태그별",
+    bd_v_bar: "막대",
+    bd_v_line: "선",
+    bd_v_hbar: "가로 막대",
+    bd_v_stat: "숫자",
+    bd_v_table: "표",
+    bd_hide_zero: "0이면 숨김",
+    bd_json_form: "폼",
+    bd_json_bad: "JSON이 올바르지 않습니다 — 고치거나 폼으로 돌아가세요.",
+    bd_unknown: "알 수 없는 위젯 타입 “{kind}” — 저장된 그대로 보존됩니다.",
+    bd_field_color: "색",
+    bd_color_default: "기본",
+    bd_color_blue: "파랑",
+    bd_color_green: "초록",
+    bd_color_purple: "보라",
+    bd_color_amber: "앰버",
+    bd_color_cyan: "시안",
+    bd_color_red: "빨강",
+    bd_detail_total: "합계 {n}",
     ls_title: "제안된 연결",
     ls_hint:
       "의미상 가깝지만 아직 연결되지 않은 노트들입니다. 수락하면 \u201c## Related\u201d 아래에 [[위키링크]]가 추가됩니다.",
@@ -4274,6 +4346,30 @@ export const STRINGS: Record<Lang, Strings> = {
     bd_preset_edits_daily: "日別編集",
     bd_preset_tasks_by_status: "タスク状況",
     bd_preset_unsourced_stat: "出典なしページ (数値)",
+    bd_g_day: "日別",
+    bd_g_channel: "チャネル別",
+    bd_g_type: "種類別",
+    bd_g_confidence: "信頼度別",
+    bd_g_status: "状態別",
+    bd_g_tag: "タグ別",
+    bd_v_bar: "棒",
+    bd_v_line: "線",
+    bd_v_hbar: "横棒",
+    bd_v_stat: "数値",
+    bd_v_table: "表",
+    bd_hide_zero: "0なら非表示",
+    bd_json_form: "フォーム",
+    bd_json_bad: "JSON が不正です — 修正するかフォームに戻ってください。",
+    bd_unknown: "不明なウィジェット型 “{kind}” — 保存どおり保持します。",
+    bd_field_color: "色",
+    bd_color_default: "既定",
+    bd_color_blue: "青",
+    bd_color_green: "緑",
+    bd_color_purple: "紫",
+    bd_color_amber: "琥珀",
+    bd_color_cyan: "シアン",
+    bd_color_red: "赤",
+    bd_detail_total: "合計 {n}",
     nav_history: "履歴",
     nav_provenance: "出典",
     nav_tasks: "タスク",

@@ -202,3 +202,28 @@ describe("rules and board ops", () => {
     expect(migrateLegacy("not json")).toBeNull();
   });
 });
+
+describe("sanitizeBoard / aliases", () => {
+  it("clamps off-grid layout items back onto the 12 columns", async () => {
+    const { sanitizeBoard, aliasLabel } = await import("./board");
+    const w: BoardWidget = { id: "a", kind: "query", view: "bar" };
+    const doc = {
+      version: 1 as const,
+      range: "30d" as const,
+      compact: "vertical" as const,
+      widgets: [w, { id: "lost", kind: "text" as const, text: "" }],
+      layout: [{ i: "a", x: 10, y: -2, w: 8, h: 0 }, { i: "ghost", x: 0, y: 0, w: 2, h: 2 }],
+    };
+    const out = sanitizeBoard(doc);
+    const a = out.layout.find((l) => l.i === "a")!;
+    expect(a.x + a.w).toBeLessThanOrEqual(12);
+    expect(a.y).toBeGreaterThanOrEqual(0);
+    expect(a.h).toBeGreaterThanOrEqual(1);
+    // Ghost entries drop; a widget the layout lost gets parked at the bottom.
+    expect(out.layout.some((l) => l.i === "ghost")).toBe(false);
+    expect(out.layout.some((l) => l.i === "lost")).toBe(true);
+    // Aliases rename at render only.
+    expect(aliasLabel({ ...w, aliases: { x: "엑스" } }, "x")).toBe("엑스");
+    expect(aliasLabel(w, "x")).toBe("x");
+  });
+});

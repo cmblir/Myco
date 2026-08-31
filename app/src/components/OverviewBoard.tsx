@@ -27,6 +27,7 @@ import { flattenMarkdown } from "../lib/graphData";
 import { facetValues, wikiPagesOnly } from "../lib/queryViews";
 import Viewer from "./Viewer";
 import {
+  aliasLabel,
   appendWidget,
   BOARD_COLS,
   BOARD_PRESETS,
@@ -63,11 +64,32 @@ function presetLabel(t: Strings, key: string): string {
   return (t[k] as string | undefined) ?? key;
 }
 
-/** Generated fallback title: "inflow · day · mcp" beats an unnamed card. */
-function autoTitle(w: BoardWidget): string {
+function sourceLabel(t: Strings, s: BoardSource): string {
+  return s === "inflow"
+    ? (t.bd_src_inflow ?? "Inflow")
+    : s === "tasks"
+      ? (t.bd_src_tasks ?? "Tasks")
+      : (t.bd_src_notes ?? "Notes");
+}
+
+function groupLabel(t: Strings, g: string): string {
+  const k = `bd_g_${g}` as keyof Strings;
+  return (t[k] as string | undefined) ?? g;
+}
+
+function viewLabel(t: Strings, v: BoardView): string {
+  const k = `bd_v_${v}` as keyof Strings;
+  return (t[k] as string | undefined) ?? v;
+}
+
+/** Generated fallback title, in the UI language — "유입 · 일별 · mcp", not
+ *  raw English tokens beside Korean chrome. */
+function autoTitle(t: Strings, w: BoardWidget): string {
   if (w.kind !== "query" || !w.query) return "";
   const f = w.query.filters.map((x) => x.value).join(" ");
-  return [w.query.source, w.query.groupBy, f].filter(Boolean).join(" · ");
+  return [sourceLabel(t, w.query.source), groupLabel(t, w.query.groupBy), f]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null {
@@ -81,6 +103,9 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
   const [edit, setEdit] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [addPick, setAddPick] = useState<string>(BOARD_PRESETS[0].key);
+  /** Widget opened in the detail modal (view-mode click) — full-size chart
+   *  plus the numbers behind it. */
+  const [detailId, setDetailId] = useState<string | null>(null);
 
   // --- data the queries read ------------------------------------------------
   const files = useMemo(
@@ -147,10 +172,32 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
 
   if (!vaultPath) return null;
 
-  const layout = doc.layout.map((l) => {
-    const w = doc.widgets.find((x) => x.id === l.i);
-    return w ? { ...l, ...minSize(w) } : l;
-  });
+  // Visibility conditions (HA-style): in view mode a zero-total widget
+  // disappears AND frees its grid space (the compactor reflows around it);
+  // edit mode always shows everything so the condition can be changed.
+  const hiddenIds = new Set(
+    edit
+      ? []
+      : doc.widgets
+          .filter(
+            (w) =>
+              w.kind === "query" &&
+              w.query &&
+              w.hideWhenZero &&
+              statValue(
+                runBoardQuery(data, w.query, effectiveRange(w, doc.range), Date.now()),
+              ) === 0,
+          )
+          .map((w) => w.id),
+  );
+  const visibleWidgets = doc.widgets.filter((w) => !hiddenIds.has(w.id));
+
+  const layout = doc.layout
+    .filter((l) => !hiddenIds.has(l.i))
+    .map((l) => {
+      const w = doc.widgets.find((x) => x.id === l.i);
+      return w ? { ...l, ...minSize(w) } : l;
+    });
 
   const addWidget = (): void => {
     let widget: BoardWidget;
@@ -179,6 +226,19 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
   };
 
   function widgetBody(w: BoardWidget): JSX.Element | null {
+    // A board file written by a newer version (or hand-edited) may carry a
+    // kind this build doesn't know. Render a config-preserving notice, never
+    // drop it — the data outlives the app version (HA's red-card rule).
+    if (w.kind !== "query" && w.kind !== "text" && w.kind !== "heading") {
+      return (
+        <p className="muted bw-empty">
+          {(t.bd_unknown ?? "Unknown widget type “{kind}” — kept as saved.").replace(
+            "{kind}",
+            String(w.kind),
+          )}
+        </p>
+      );
+    }
     if (w.kind === "heading") {
       return <div className="bw-heading">{w.text || "—"}</div>;
     }
@@ -202,23 +262,34 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
       );
     }
     if (r.kind === "series") {
-      if (view === "line") return <DayLine days={r.days} lang={lang} />;
+      if (view === "line") return <DayLine days={r.days} lang={lang} color={w.color} />;
       if (view === "table")
         return (
           <CatTable rows={r.days.filter((d) => d.total > 0).map((d) => ({ label: d.day, value: d.total })).reverse()} />
         );
-      return <DayBars days={r.days} lang={lang} />;
+      return <DayBars days={r.days} lang={lang} color={w.color} />;
     }
     if (r.rows.length === 0) {
       return <p className="muted bw-empty">{t.db_empty ?? "Nothing to chart yet."}</p>;
     }
-    if (view === "table") return <CatTable rows={r.rows} />;
+    if (view === "table")
+      return (
+        <CatTable
+          rows={r.rows.map((x) => ({ label: aliasLabel(w, x.label), value: x.value }))}
+        />
+      );
     return (
       <HBars
         rows={r.rows.map((x) => ({
-          label: w.query?.groupBy === "tag" ? `#${x.label}` : x.label,
+          label: aliasLabel(w, w.query?.groupBy === "tag" ? `#${x.label}` : x.label),
           count: x.value,
-          color: w.query?.groupBy === "type" ? TYPE_COLORS[x.label] : undefined,
+          // Identity colors (type) win over the widget's custom color —
+          // color follows the entity. A 7th category (map, custom types)
+          // folds to a muted neutral per the palette rule, never the accent.
+          color:
+            w.query?.groupBy === "type"
+              ? (TYPE_COLORS[x.label] ?? "var(--ink-3)")
+              : w.color,
         }))}
       />
     );
@@ -312,21 +383,30 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
               resizeConfig={{ enabled: edit }}
               compactor={doc.compact === "none" ? noCompactor : verticalCompactor}
               onLayoutChange={(l) => {
+                // Edit mode never hides widgets, so `l` is complete there; a
+                // view-mode reflow (hidden widgets filtered out) must not be
+                // saved or the hidden items' positions would be dropped.
                 if (!edit) return;
                 const next = l.map(({ i, x, y, w, h }) => ({ i, x, y, w, h }));
                 if (JSON.stringify(next) !== JSON.stringify(doc.layout))
                   update({ ...doc, layout: next });
               }}
             >
-              {doc.widgets.map((w) => (
-                <div key={w.id} className="bw">
+              {visibleWidgets.map((w) => (
+                <div
+                  key={w.id}
+                  className={"bw" + (!edit && w.kind === "query" ? " bw--clickable" : "")}
+                  onClick={
+                    !edit && w.kind === "query" ? () => setDetailId(w.id) : undefined
+                  }
+                >
                   <header className="bw-head">
                     {edit ? (
                       <span className="bw-grip" title={t.bd_drag ?? "Drag"}>
                         ⠿
                       </span>
                     ) : null}
-                    <b className="bw-title">{w.title || autoTitle(w) || " "}</b>
+                    <b className="bw-title">{w.title || autoTitle(t, w) || " "}</b>
                     {edit ? (
                       <span className="bw-actions">
                         <button
@@ -374,6 +454,83 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
           ) : null}
         </div>
       )}
+      {detailId
+        ? (() => {
+            const w = doc.widgets.find((x) => x.id === detailId);
+            if (!w || w.kind !== "query" || !w.query) return null;
+            const r = runBoardQuery(data, w.query, effectiveRange(w, doc.range), Date.now());
+            const rows =
+              r.kind === "cat"
+                ? r.rows.map((x) => ({
+                    label: aliasLabel(w, w.query?.groupBy === "tag" ? `#${x.label}` : x.label),
+                    value: x.value,
+                  }))
+                : r.days
+                    .filter((d) => d.total > 0)
+                    .map((d) => ({ label: d.day, value: d.total }))
+                    .reverse();
+            return (
+              <div
+                className="myco-modal__backdrop"
+                role="dialog"
+                aria-modal="true"
+                aria-label={w.title || autoTitle(t, w)}
+                onClick={() => setDetailId(null)}
+                onKeyDown={(e) => {
+                  if (e.key === "Escape") setDetailId(null);
+                }}
+              >
+                <div
+                  className="myco-modal board-detail"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <header className="bw-head">
+                    <b style={{ fontSize: 15 }}>{w.title || autoTitle(t, w)}</b>
+                    <span className="bw-actions" style={{ marginLeft: "auto" }}>
+                      <button
+                        className="bw-btn"
+                        aria-label={t.ui_close ?? "Close"}
+                        onClick={() => setDetailId(null)}
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  </header>
+                  <p className="muted board-detail__meta">
+                    {autoTitle(t, w)} · {rangeLabel(t, effectiveRange(w, doc.range))} ·{" "}
+                    {(t.bd_detail_total ?? "Total {n}").replace(
+                      "{n}",
+                      String(statValue(r)),
+                    )}
+                  </p>
+                  <div className="board-detail__chart">
+                    {r.kind === "series" ? (
+                      (w.view ?? "bar") === "line" ? (
+                        <DayLine days={r.days} lang={lang} color={w.color} />
+                      ) : (
+                        <DayBars days={r.days} lang={lang} color={w.color} />
+                      )
+                    ) : (
+                      <HBars
+                        rows={rows.map((x) => ({
+                          label: x.label,
+                          count: x.value,
+                          color:
+                            w.query?.groupBy === "type"
+                              ? (TYPE_COLORS[x.label] ?? "var(--ink-3)")
+                              : w.color,
+                        }))}
+                      />
+                    )}
+                  </div>
+                  <div className="board-detail__table">
+                    <CatTable rows={rows} />
+                  </div>
+                </div>
+              </div>
+            );
+          })()
+        : null}
     </section>
   );
 }
@@ -398,9 +555,63 @@ function WidgetEditor({
   facets: ReturnType<typeof facetValues> | null;
   onChange: (w: BoardWidget) => void;
 }): JSX.Element {
+  // Raw-JSON escape hatch (HA's "Show code editor"): whatever the form
+  // cannot express stays reachable, and the widget's full definition is
+  // copy-pasteable. Draft commits on blur; a parse failure keeps the draft
+  // and the warning instead of eating the edit.
+  const [showJson, setShowJson] = useState(false);
+  const [jsonDraft, setJsonDraft] = useState<string | null>(null);
+  const [jsonBad, setJsonBad] = useState(false);
+  const jsonToggle = (
+    <div className="bw-jsonbar">
+      <button
+        type="button"
+        className="bw-btn"
+        aria-pressed={showJson}
+        onClick={() => {
+          setJsonDraft(null);
+          setJsonBad(false);
+          setShowJson((v) => !v);
+        }}
+      >
+        {showJson ? (t.bd_json_form ?? "Form") : "JSON"}
+      </button>
+    </div>
+  );
+  if (showJson) {
+    return (
+      <div className="bw-editor">
+        {jsonToggle}
+        <textarea
+          className="input bw-json"
+          rows={9}
+          spellCheck={false}
+          value={jsonDraft ?? JSON.stringify(w, null, 2)}
+          onChange={(e) => setJsonDraft(e.target.value)}
+          onBlur={() => {
+            if (jsonDraft === null) return;
+            try {
+              const parsed = JSON.parse(jsonDraft) as BoardWidget;
+              onChange({ ...parsed, id: w.id }); // the id is the grid's key
+              setJsonDraft(null);
+              setJsonBad(false);
+            } catch {
+              setJsonBad(true);
+            }
+          }}
+        />
+        {jsonBad ? (
+          <p className="task-detail-warn">
+            {t.bd_json_bad ?? "Not valid JSON — fix it or switch back to the form."}
+          </p>
+        ) : null}
+      </div>
+    );
+  }
   if (w.kind !== "query" || !w.query) {
     return (
       <div className="bw-editor">
+        {jsonToggle}
         <label className="bw-field">
           <span>{t.bd_field_title ?? "Title"}</span>
           <input
@@ -442,11 +653,12 @@ function WidgetEditor({
   const rule = w.colorRules?.[0] ?? null;
   return (
     <div className="bw-editor">
+      {jsonToggle}
       <label className="bw-field">
         <span>{t.bd_field_title ?? "Title"}</span>
         <input
           className="input"
-          placeholder={autoTitle(w)}
+          placeholder={autoTitle(t, w)}
           value={w.title ?? ""}
           onChange={(e) => onChange({ ...w, title: e.target.value || undefined })}
         />
@@ -475,7 +687,7 @@ function WidgetEditor({
         >
           {GROUPS[q.source].map((g) => (
             <option key={g} value={g}>
-              {g}
+              {groupLabel(t, g)}
             </option>
           ))}
         </select>
@@ -526,7 +738,7 @@ function WidgetEditor({
         >
           {VIEWS.map((v) => (
             <option key={v} value={v}>
-              {v}
+              {viewLabel(t, v)}
             </option>
           ))}
         </select>
@@ -545,6 +757,32 @@ function WidgetEditor({
             </option>
           ))}
         </select>
+      </label>
+      <label className="bw-field">
+        <span>{t.bd_field_color ?? "Color"}</span>
+        <select
+          className="input"
+          value={w.color ?? ""}
+          onChange={(e) => onChange({ ...w, color: e.target.value || undefined })}
+        >
+          <option value="">{t.bd_color_default ?? "Default"}</option>
+          <option value="var(--c-overview)">{t.bd_color_blue ?? "Blue"}</option>
+          <option value="var(--c-entity)">{t.bd_color_green ?? "Green"}</option>
+          <option value="var(--c-concept)">{t.bd_color_purple ?? "Purple"}</option>
+          <option value="var(--c-source)">{t.bd_color_amber ?? "Amber"}</option>
+          <option value="var(--c-analysis)">{t.bd_color_cyan ?? "Cyan"}</option>
+          <option value="var(--c-technique)">{t.bd_color_red ?? "Red"}</option>
+        </select>
+      </label>
+      <label className="bw-field">
+        <span>{t.bd_hide_zero ?? "Hide when zero"}</span>
+        <input
+          type="checkbox"
+          checked={w.hideWhenZero ?? false}
+          onChange={(e) =>
+            onChange({ ...w, hideWhenZero: e.target.checked || undefined })
+          }
+        />
       </label>
       {(w.view ?? "hbar") === "stat" ? (
         <label className="bw-field">

@@ -6224,11 +6224,14 @@ html.notch-window body {
 }
 .dash-week__fill {
   width: 100%;
-  background: var(--accent-soft);
+  /* One series, one color: accent at slight rest opacity, full for today.
+     The old accent-soft fill was invisible on the dark card surface. */
+  background: var(--accent);
+  opacity: 0.72;
   border-radius: 4px 4px 0 0;
 }
 .dash-week__fill.is-current {
-  background: var(--accent);
+  opacity: 1;
 }
 .dash-weeks__axis {
   display: flex;
@@ -6316,3 +6319,49 @@ html.notch-window body {
 .dash-cattable td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
 /* rgl placeholder tint on our palette */
 .react-grid-placeholder { background: var(--accent-soft) !important; border-radius: 10px; opacity: 0.5; }
+
+/* Resize handle: react-resizable's default is a faint gray glyph that
+   disappears on the dark surface — replace it with the app's own corner
+   mark, visible on both themes, larger hit area. */
+.bw > .react-resizable-handle {
+  width: 18px;
+  height: 18px;
+  background-image: none;
+  right: 2px;
+  bottom: 2px;
+}
+.bw > .react-resizable-handle::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 9px;
+  height: 9px;
+  border-right: 2px solid var(--ink-3);
+  border-bottom: 2px solid var(--ink-3);
+  border-radius: 0 0 3px 0;
+}
+.bw:hover > .react-resizable-handle::after {
+  border-color: var(--ink);
+}
+.bw-jsonbar { display: flex; justify-content: flex-end; }
+.bw-json {
+  width: 100%;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.bw--clickable { cursor: pointer; }
+.bw--clickable:hover { border-color: var(--ink-3); }
+.board-detail {
+  width: min(760px, 92vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.board-detail__meta { font-size: 12px; margin: 0; }
+.board-detail__chart { min-height: 180px; display: flex; flex-direction: column; }
+.board-detail__chart .dash-weeks { height: 160px; }
+.board-detail__table { overflow-y: auto; min-height: 0; }
