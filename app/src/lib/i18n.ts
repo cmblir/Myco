@@ -1166,6 +1166,7 @@ export interface Strings {
   ob_s1_title?: string;
   ob_s1_body?: string;
   ob_s1_action?: string;
+  ob_sovereignty?: string;
   ob_s2_title?: string;
   ob_s2_body?: string;
   ob_s2_action?: string;
@@ -1180,7 +1181,20 @@ export interface Strings {
   ob_s2_indexed?: string; // {n}
   ob_s2_failed?: string;
   ob_first_question?: string;
+  ob_first_question_sessions?: string;
   ob_ask_now?: string;
+  // Import-first onboarding (steps 1 and 3 of the 5-step wizard).
+  ob_imp_title?: string;
+  ob_imp_body?: string;
+  ob_imp_claude?: string;
+  ob_imp_codex?: string;
+  ob_imp_progress?: string; // {done} {total}
+  ob_imp_done?: string; // {n}
+  ob_imp_quarantined?: string; // {n}
+  ob_imp_skip_hint?: string;
+  ob_hist_title?: string;
+  ob_hist_already?: string;
+  ob_hist_skip_hint?: string;
   // Budget guard (OPS-03) — optional; components fall back to English.
   s_budget_title?: string;
   s_budget_desc?: string;
@@ -2539,6 +2553,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_s1_body:
       "myco keeps every page as plain markdown in a folder you control. Open an existing folder, or keep the default vault myco just created for you.",
     ob_s1_action: "Open a folder…",
+    ob_sovereignty:
+      "Plain markdown · raw/ is never modified · shares a folder with Obsidian — delete myco and keep everything.",
     ob_s2_title: "Add your first source",
     ob_s2_body:
       "Drop a file, paste a URL, or write a note. myco reads it, extracts entities and concepts, and weaves a cited page into your graph.",
@@ -2556,7 +2572,20 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_s2_indexed: "{n} notes indexed",
     ob_s2_failed: "Indexing didn't finish",
     ob_first_question: "What topics do these notes cover most?",
+    ob_first_question_sessions: "What did I work on last week?",
     ob_ask_now: "Ask it",
+    ob_imp_title: "Bring your history",
+    ob_imp_body:
+      "myco can import your Claude Code and Codex sessions. They index on this device only — searching and asking about them is free.",
+    ob_imp_claude: "Import Claude Code sessions",
+    ob_imp_codex: "Import Codex sessions",
+    ob_imp_progress: "{done} of {total} files",
+    ob_imp_done: "{n} sessions imported",
+    ob_imp_quarantined: "{n} held back (possible secrets)",
+    ob_imp_skip_hint: "Nothing to import? Just continue.",
+    ob_hist_title: "Keep a history?",
+    ob_hist_already: "History is already on for this vault.",
+    ob_hist_skip_hint: "You can turn this on later from Overview.",
     s_budget_title: "Monthly spend guard",
     s_budget_desc:
       "Estimated spend across paid API providers this month. A rough tripwire, not billing — set a threshold to get warned before you cross it.",
@@ -3911,6 +3940,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_s1_body:
       "myco는 모든 페이지를 당신이 관리하는 폴더에 마크다운으로 보관합니다. 기존 폴더를 열거나, 방금 만들어진 기본 vault를 그대로 사용하세요.",
     ob_s1_action: "폴더 열기…",
+    ob_sovereignty:
+      "플레인 마크다운 · raw/는 절대 수정되지 않음 · Obsidian과 같은 폴더 공유 — myco를 지워도 전부 남습니다.",
     ob_s2_title: "첫 소스 추가하기",
     ob_s2_body:
       "파일을 드롭하거나 URL을 붙여넣거나 메모를 쓰세요. myco가 읽고, 엔티티와 개념을 추출해 인용이 달린 페이지를 그래프에 엮습니다.",
@@ -3927,7 +3958,20 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_s2_indexed: "노트 {n}개를 인덱싱했습니다",
     ob_s2_failed: "인덱싱을 마치지 못했습니다",
     ob_first_question: "이 노트들에서 가장 자주 다룬 주제는?",
+    ob_first_question_sessions: "지난주에 무슨 작업을 했지?",
     ob_ask_now: "물어보기",
+    ob_imp_title: "쌓아둔 기록 가져오기",
+    ob_imp_body:
+      "Claude Code·Codex 세션을 가져올 수 있습니다. 이 기기에서만 인덱싱되며, 검색과 질문에는 비용이 들지 않습니다.",
+    ob_imp_claude: "Claude Code 세션 가져오기",
+    ob_imp_codex: "Codex 세션 가져오기",
+    ob_imp_progress: "파일 {total}개 중 {done}개",
+    ob_imp_done: "세션 {n}개를 가져왔습니다",
+    ob_imp_quarantined: "{n}건 보류 (시크릿 의심)",
+    ob_imp_skip_hint: "가져올 게 없다면 그냥 계속하세요.",
+    ob_hist_title: "변경 이력을 남길까요?",
+    ob_hist_already: "이 vault는 이미 이력이 켜져 있습니다.",
+    ob_hist_skip_hint: "나중에 개요 화면에서 켤 수 있습니다.",
     s_budget_title: "월 지출 가드",
     s_budget_desc:
       "이번 달 유료 API 제공자에서의 예상 지출입니다. 정확한 청구가 아닌 대략적 경보로, 임계값을 설정하면 초과 전에 경고합니다.",
@@ -5109,6 +5153,8 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_s1_body:
       "myco はすべてのページを、あなたが管理するフォルダにマークダウンで保存します。既存のフォルダを開くか、作成された既定の vault をそのまま使ってください。",
     ob_s1_action: "フォルダを開く…",
+    ob_sovereignty:
+      "プレーンなマークダウン · raw/ は決して変更されません · Obsidian と同じフォルダを共有 — myco を消してもすべて残ります。",
     ob_s2_title: "最初のソースを追加",
     ob_s2_body:
       "ファイルをドロップ、URL を貼り付け、あるいはメモを書く。myco が読み、エンティティと概念を抽出し、出典付きのページをグラフに織り込みます。",
@@ -5125,7 +5171,20 @@ export const STRINGS: Record<Lang, Strings> = {
     ob_s2_indexed: "ノート {n} 件をインデックスしました",
     ob_s2_failed: "インデックス作成が完了しませんでした",
     ob_first_question: "これらのノートで最も多く扱っている話題は？",
+    ob_first_question_sessions: "先週は何の作業をした？",
     ob_ask_now: "質問する",
+    ob_imp_title: "これまでの記録を取り込む",
+    ob_imp_body:
+      "Claude Code・Codex のセッションを取り込めます。この端末だけでインデックスされ、検索や質問は無料です。",
+    ob_imp_claude: "Claude Code セッションを取り込む",
+    ob_imp_codex: "Codex セッションを取り込む",
+    ob_imp_progress: "ファイル {total} 件中 {done} 件",
+    ob_imp_done: "セッション {n} 件を取り込みました",
+    ob_imp_quarantined: "{n} 件を保留（シークレットの疑い）",
+    ob_imp_skip_hint: "取り込むものがなければそのまま進んでください。",
+    ob_hist_title: "変更履歴を残しますか？",
+    ob_hist_already: "この vault では履歴が既に有効です。",
+    ob_hist_skip_hint: "後で概要画面から有効にできます。",
     s_budget_title: "月間支出ガード",
     s_budget_desc:
       "今月の有料 API プロバイダーでの推定支出です。正確な請求ではなくおおまかな警報 — しきい値を設定すると超過前に警告します。",
