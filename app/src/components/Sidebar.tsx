@@ -184,6 +184,12 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
             onClick={() => setRoute("views")}
           />
           <NavItem
+            label={t.nav_dashboard ?? "Dashboard"}
+            icon="chart"
+            active={route === "dashboard"}
+            onClick={() => setRoute("dashboard")}
+          />
+          <NavItem
             label={t.nav_tasks ?? "Tasks"}
             icon="check"
             active={route === "tasks"}

@@ -15,6 +15,20 @@ export interface Strings {
   nav_query: string;
   nav_graph: string;
   nav_views?: string;
+  nav_dashboard?: string;
+  db_title?: string;
+  db_lede?: string;
+  db_add?: string;
+  db_reset?: string;
+  db_w_stats?: string;
+  db_w_activity?: string;
+  db_w_distribution?: string;
+  db_w_tags?: string;
+  db_w_tasks?: string;
+  db_stat_pages?: string;
+  db_stat_open?: string;
+  db_stat_week?: string;
+  db_empty?: string;
   ls_title?: string;
   ls_hint?: string;
   ls_accept?: string;
@@ -1335,6 +1349,21 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_query: "Ask",
     nav_graph: "Graph",
     nav_views: "Views",
+    nav_dashboard: "Dashboard",
+    db_title: "Chart dashboard",
+    db_lede:
+      "Your vault as charts — compose the board from the widgets below; it remembers your arrangement.",
+    db_add: "Add widget",
+    db_reset: "Restore defaults",
+    db_w_stats: "At a glance",
+    db_w_activity: "Weekly edits",
+    db_w_distribution: "Distribution",
+    db_w_tags: "Top tags",
+    db_w_tasks: "Tasks by status",
+    db_stat_pages: "Wiki pages",
+    db_stat_open: "Open tasks",
+    db_stat_week: "Edited this week",
+    db_empty: "Nothing to chart yet.",
     ls_title: "Suggested links",
     ls_hint:
       "Semantically close notes that aren't linked yet. Accept to add a [[wikilink]] under \u201c## Related\u201d.",
@@ -2732,6 +2761,21 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_query: "질문",
     nav_graph: "그래프",
     nav_views: "뷰",
+    nav_dashboard: "대시보드",
+    db_title: "차트 대시보드",
+    db_lede:
+      "vault를 차트로 — 아래 위젯으로 보드를 구성하세요. 배치는 기억됩니다.",
+    db_add: "위젯 추가",
+    db_reset: "기본 구성 복원",
+    db_w_stats: "한눈에",
+    db_w_activity: "주간 활동",
+    db_w_distribution: "분포",
+    db_w_tags: "자주 쓴 태그",
+    db_w_tasks: "작업 상태",
+    db_stat_pages: "위키 페이지",
+    db_stat_open: "열린 작업",
+    db_stat_week: "이번 주 수정",
+    db_empty: "아직 그릴 데이터가 없습니다.",
     ls_title: "제안된 연결",
     ls_hint:
       "의미상 가깝지만 아직 연결되지 않은 노트들입니다. 수락하면 \u201c## Related\u201d 아래에 [[위키링크]]가 추가됩니다.",
@@ -4122,6 +4166,21 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_query: "質問",
     nav_graph: "グラフ",
     nav_views: "ビュー",
+    nav_dashboard: "ダッシュボード",
+    db_title: "チャートダッシュボード",
+    db_lede:
+      "vault をチャートで — 下のウィジェットでボードを構成します。配置は記憶されます。",
+    db_add: "ウィジェット追加",
+    db_reset: "既定の構成に戻す",
+    db_w_stats: "ひと目で",
+    db_w_activity: "週間アクティビティ",
+    db_w_distribution: "分布",
+    db_w_tags: "よく使うタグ",
+    db_w_tasks: "タスク状況",
+    db_stat_pages: "ウィキページ",
+    db_stat_open: "未完了タスク",
+    db_stat_week: "今週の編集",
+    db_empty: "まだ描くデータがありません。",
     nav_history: "履歴",
     nav_provenance: "出典",
     nav_tasks: "タスク",

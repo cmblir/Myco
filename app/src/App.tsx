@@ -29,6 +29,7 @@ import PageSettings from "./pages/PageSettings";
 import PageReader from "./pages/PageReader";
 import PageTags from "./pages/PageTags";
 import PageViews from "./pages/PageViews";
+import PageDashboard from "./pages/PageDashboard";
 import PageStudy from "./pages/PageStudy";
 import PageFeedback from "./pages/PageFeedback";
 import PageSchedules from "./pages/PageSchedules";
@@ -84,6 +85,7 @@ const SPLIT_ROUTES: RouteId[] = [
   "provenance",
   "tags",
   "views",
+  "dashboard",
   "tasks",
   "study",
   "schedules",
@@ -107,6 +109,8 @@ function routeLabel(t: Strings, r: RouteId): string {
       return t.nav_tags;
     case "views":
       return t.nav_views ?? "Views";
+    case "dashboard":
+      return t.nav_dashboard ?? "Dashboard";
     case "tasks":
       return t.nav_tasks;
     case "study":
@@ -595,6 +599,7 @@ export default function App(): JSX.Element {
     if (r === "tasks") return <PageTasks t={t} />;
     if (r === "tags") return <PageTags t={t} />;
     if (r === "views") return <PageViews t={t} />;
+    if (r === "dashboard") return <PageDashboard t={t} />;
     if (r === "study") return <PageStudy t={t} />;
     if (r === "feedback") return <PageFeedback t={t} />;
     if (r === "schedules") return <PageSchedules t={t} />;

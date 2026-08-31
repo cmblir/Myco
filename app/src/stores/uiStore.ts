@@ -28,6 +28,7 @@ export type RouteId =
   | "tasks"
   | "tags"
   | "views"
+  | "dashboard"
   | "study"
   | "feedback"
   | "schedules"

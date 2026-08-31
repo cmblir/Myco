@@ -6165,3 +6165,136 @@ html.notch-window body {
     animation: none;
   }
 }
+
+/* ---- Chart dashboard (PageDashboard) --------------------------------------
+   Marks per the dataviz spec: thin bars, 4px rounded data-ends, 2px gaps,
+   values in ink text (never in the series color), recessive tracks. */
+.dash-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.dash-toolbar .input {
+  width: auto;
+}
+.dash-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 14px;
+}
+.dash-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg-elev);
+  padding: 14px 16px 16px;
+  min-width: 0;
+}
+.dash-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.dash-card__head b {
+  font-size: 13px;
+}
+.dash-card__spacer {
+  flex: 1;
+}
+.dash-card__btn {
+  padding: 2px 6px;
+  font-size: 11px;
+}
+.dash-config {
+  width: auto;
+  padding: 2px 6px;
+  font-size: 12px;
+}
+.dash-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.dash-tile {
+  display: grid;
+  gap: 2px;
+}
+.dash-tile__value {
+  font-size: 26px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.dash-tile__label {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.dash-hbars {
+  display: grid;
+  gap: 6px;
+}
+.dash-hbar {
+  display: grid;
+  grid-template-columns: minmax(70px, auto) 1fr 32px;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+}
+.dash-hbar__label {
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dash-hbar__track {
+  display: block;
+  height: 10px;
+}
+.dash-hbar__fill {
+  display: block;
+  height: 100%;
+  border-radius: 0 4px 4px 0;
+  min-width: 2px;
+}
+.dash-hbar__num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.dash-weeks {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 96px;
+}
+.dash-week {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  align-items: center;
+  height: 100%;
+  gap: 2px;
+  min-width: 3px;
+}
+.dash-week__num {
+  font-size: 10.5px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.dash-week__fill {
+  width: 100%;
+  background: var(--accent-soft);
+  border-radius: 4px 4px 0 0;
+}
+.dash-week__fill.is-current {
+  background: var(--accent);
+}
+.dash-weeks__axis {
+  display: flex;
+  justify-content: space-between;
+  font-size: 10.5px;
+  color: var(--ink-3);
+  margin-top: 4px;
+}

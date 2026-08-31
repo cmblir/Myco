@@ -49,7 +49,8 @@ export type IconName =
   | "book"
   | "save"
   | "shield"
-  | "mic";
+  | "mic"
+  | "chart";
 
 export function Icon({
   name,
@@ -243,6 +244,11 @@ export function Icon({
       <>
         <rect x="9" y="3" width="6" height="12" rx="3" />
         <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
+      </>
+    ),
+    chart: (
+      <>
+        <path d="M4 20V10M10 20V4M16 20v-7M21 20H3" />
       </>
     ),
   };
