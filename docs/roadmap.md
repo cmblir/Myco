@@ -27,6 +27,22 @@ myco is a Tauri 2 (Rust) + React desktop app over a plain-markdown Obsidian vaul
 > The parser-home open question below was answered by building the vendor parsers in Rust only. This document is now a design record and parser reference; the active plan is
 > [`app/docs/specs/2026-08-21-q4-trust-recall-resurface-design.md`](../app/docs/specs/2026-08-21-q4-trust-recall-resurface-design.md).
 
+> **Correction (2026-08-31).** Three more table rows have been overtaken by shipped code:
+> the **P2 session-directory sweep is built** — `import_session_sweep` walks `~/.claude/projects`
+> and `~/.codex/sessions` into `sessions/<YYYY-MM>/`, runs automatically every 30 minutes while
+> the app is open (`autoImport.ts`, on by default), and is offered as a one-click step in the
+> first-run wizard (import-first onboarding). The **P1 coding-session wikifier** is covered by a
+> different shape than the row imagined: session digests (`sessionDigest`), the session backfill
+> (`backfill.rs`, batch promote into `_inbox/`), and full-tier ingest now grounded with
+> `wikify_candidates` — no session-specific extractor was built, and none is planned while that
+> stack holds. The **P2 contradiction row shipped its structural half** as the in-app review
+> queue (Q4 item 15); semantic claim-conflict detection remains next quarter's decision.
+> As of this date every Q4-spec item 1–17 and 20 is verified in code; what remains of the
+> quarter is item 18's screenshots (needs a headed session) and item 19's visual-verification
+> backlog. Korean-search NFC normalization, import-first onboarding, voice auto-classification,
+> the Ask coverage row, and meeting-length transcription shipped 2026-08-31 outside the Q4 spec
+> (market-research follow-ups; see the 2026-08 research/implementation-design records).
+
 ## Prioritized roadmap
 
 > [!warning] The "Where it lives" column encodes an unmade decision.
