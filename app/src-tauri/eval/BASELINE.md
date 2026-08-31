@@ -849,3 +849,34 @@ distributions in the constants' own doc comments): RELEVANCE_FLOOR 0.50 → 0.42
 (positives 0.412…0.749 vs negatives ≤0.415 — ranges touch; 0.42 = 0/15 false
 accepts, 1/62 false reject, an acronym query BM25 covers), INTENT_FLOOR
 0.65 → 0.45 (gap 0.354…0.538, midpoint).
+
+## 2026-08-31 — NFC normalization, band re-measurement, particle-strip verdict
+
+**NFC normalization shipped** (`norm::nfc` at tokenize / chunk_page /
+apply_prefix / link keys / keyword search; MXB v2). Re-run of the 62-query
+bilingual set matches the table above exactly — dense MRR 0.903 / fused MRR
+0.917 / nDCG@10 0.933 — as expected: the eval corpus is already NFC, and the
+change only rescues NFD inputs (macOS filenames, decomposed pastes) that
+previously missed everything.
+
+**confidenceBand re-measured on e5-small-ko** (`abstention_probe`, 52 correct
+/ 10 wrong / 15 negatives): correct-positive top-1 median 0.603 (p10 0.555,
+p90 0.679); threshold sweep — 0.45 rejects 1/52 positives + 15/15 negatives,
+0.55 rejects 5/52 (9.6%). Bands moved: **high 0.65 → 0.60** (median rule),
+medium stays 0.55 (4/52 = 7.7% of real hits sit in 0.50–0.55, same shape
+bge-m3 showed), floor stays 0.42. `extractive.ts` updated.
+
+**Korean particle-strip: measured and REJECTED.** `strip_ko_particles`
+(query-side, BM25 arm only, longest-match 조사 list, ≥3-syllable guard) via
+`MYCO_KO_STRIP=1` in `retrieval_eval`:
+
+| fused          | baseline | KO strip |
+|----------------|----------|----------|
+| MRR            | **0.917**| 0.909    |
+| hit@1          | **83.9%**| 82.3%    |
+| nDCG@10        | **0.933**| 0.927    |
+
+Worse across the board — the CJK bigram tokenizer already credits partial
+matches ("정책은" shares the "정책" bigram with "정책"), so stripping removed
+ranking signal without adding recall. Not wired into the app; the function
+and the env hook stay in-tree so the next attempt reproduces this verdict.

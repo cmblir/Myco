@@ -96,6 +96,76 @@ pub fn tokenize(text: &str) -> Vec<String> {
     tokens
 }
 
+/// Korean particles (조사) worth stripping from the END of a query word,
+/// longest first so `에서는` never half-strips as `는`. Deliberately short —
+/// every entry is a common attachment whose removal leaves the content word
+/// the writer indexed ("정책은" → "정책").
+const KO_PARTICLES: [&str; 27] = [
+    "에서는",
+    "에서도",
+    "으로는",
+    "으로도",
+    "까지는",
+    "부터는",
+    "에서",
+    "에게",
+    "한테",
+    "부터",
+    "까지",
+    "조차",
+    "마저",
+    "처럼",
+    "보다",
+    "으로",
+    "은",
+    "는",
+    "이",
+    "가",
+    "을",
+    "를",
+    "의",
+    "에",
+    "와",
+    "과",
+    "도",
+];
+
+/// QUERY-side only: strip one trailing particle from each all-Hangul word of
+/// ≥3 syllables. Never applied to indexed text — the wikify experiment
+/// already showed lexical noise on long Korean text hurts recall, so the
+/// index keeps the writer's exact words and only the query normalizes toward
+/// them. The ≥3-syllable guard (2 must remain) keeps real words intact:
+/// "나이"/"높이" are 2 syllables and never touched, and a stripped remainder
+/// is always ≥2 syllables so it still produces a bigram.
+///
+/// MEASURED AND REJECTED (2026-08-31, eval/BASELINE.md): with
+/// `MYCO_KO_STRIP=1` the fused arm dropped across the board — MRR 0.917 →
+/// 0.909, hit@1 83.9% → 82.3%, nDCG@10 0.933 → 0.927 on the 62-query
+/// bilingual set. The bigram tokenizer already gives partial-match credit
+/// ("정책은" shares the "정책" bigram), so stripping only removed signal.
+/// NOT wired into the app; kept (with the harness's env hook) so the next
+/// attempt reproduces the verdict instead of re-arguing it.
+pub fn strip_ko_particles(query: &str) -> String {
+    query
+        .split_whitespace()
+        .map(|w| {
+            let all_hangul = w.chars().all(|c| matches!(c, '\u{AC00}'..='\u{D7A3}'));
+            if !all_hangul || w.chars().count() < 3 {
+                return w.to_string();
+            }
+            for p in KO_PARTICLES {
+                if let Some(rest) = w.strip_suffix(p) {
+                    if rest.chars().count() >= 2 {
+                        return rest.to_string();
+                    }
+                }
+            }
+            w.to_string()
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Split `"quoted phrases"` out of a query. Returns (lowercased phrases,
 /// query with the quote characters removed). An unclosed quote is treated
 /// as plain text, not a phrase.
@@ -816,6 +886,18 @@ mod tests {
         assert_eq!(tokenize("KV 캐시"), vec!["kv", "캐시"]); // 캐시 is a 2-char run -> one bigram
         assert_eq!(tokenize("A"), vec!["a"]);
     }
+    #[test]
+    fn particle_strip_takes_one_trailing_josa_and_guards_short_words() {
+        assert_eq!(strip_ko_particles("정책은 최적화를"), "정책 최적화");
+        assert_eq!(strip_ko_particles("회의에서는 결정"), "회의 결정");
+        // 2-syllable words never touched: 나이/높이 are words, not stems+josa.
+        assert_eq!(strip_ko_particles("나이 높이"), "나이 높이");
+        // Mixed-script and Latin words pass through untouched.
+        assert_eq!(strip_ko_particles("KV캐시는 rrf"), "KV캐시는 rrf");
+        // Longest particle wins — no half-strip of 에서는 into ...에서 + 는.
+        assert_eq!(strip_ko_particles("서울에서는"), "서울");
+    }
+
     #[test]
     fn tokenize_nfd_hangul_matches_nfc() {
         // "정책" decomposed to jamo, as macOS file APIs hand it back. Without

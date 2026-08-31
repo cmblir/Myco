@@ -106,13 +106,14 @@ describe("formatExtractiveAnswer", () => {
 });
 
 describe("confidenceBand", () => {
-  it("bands a cosine at the measured boundaries (0.65 / 0.55 / floor)", () => {
+  it("bands a cosine at the measured boundaries (0.60 / 0.55 / floor)", () => {
+    // e5-small-ko probe, 2026-08-31: median correct top-1 = 0.603.
     expect(confidenceBand(0.72)).toBe("high");
-    expect(confidenceBand(0.65)).toBe("high");
-    expect(confidenceBand(0.6499)).toBe("medium");
+    expect(confidenceBand(0.6)).toBe("high");
+    expect(confidenceBand(0.5999)).toBe("medium");
     expect(confidenceBand(0.55)).toBe("medium");
     expect(confidenceBand(0.5499)).toBe("low");
-    expect(confidenceBand(0.5)).toBe("low");
+    expect(confidenceBand(0.43)).toBe("low");
   });
 
   it("says 'lexical' rather than inventing a band when there is no cosine", () => {

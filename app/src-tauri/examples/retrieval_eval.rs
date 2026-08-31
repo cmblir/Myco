@@ -300,10 +300,20 @@ fn main() {
     #[cfg(not(feature = "rerank"))]
     let rerank_time = std::time::Duration::ZERO;
 
+    // A/B hook for the Korean particle-strip experiment: MYCO_KO_STRIP=1
+    // strips trailing 조사 from the BM25 query only (dense untouched). Kept
+    // out of the app until this harness shows it beats the recorded fused
+    // baseline (eval/BASELINE.md discipline).
+    let ko_strip = std::env::var("MYCO_KO_STRIP").is_ok();
     for lab in &set.queries {
         let qvec = query_vec(&llm, &lab.q);
         let dense_hits = store.search(&qvec, 40);
-        let lexical_hits = bm25.search(&lab.q, 40);
+        let bm25_query = if ko_strip {
+            myco_lib::retrieval::strip_ko_particles(&lab.q)
+        } else {
+            lab.q.clone()
+        };
+        let lexical_hits = bm25.search(&bm25_query, 40);
         let fused_hits = rrf_fuse(&dense_hits, &lexical_hits, 40);
 
         dense_ranked.push(dedup_stems(&dense_hits));

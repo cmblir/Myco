@@ -104,17 +104,19 @@ export type ConfidenceBand = "high" | "medium" | "low" | "lexical";
 
 /** Which confidence band a citation's dense cosine falls in.
  *
- * The boundaries are READ OFF the measurement already recorded in chat.ts's
- * RELEVANCE_FLOOR comment (`examples/abstention_probe.rs`, bilingual eval
- * corpus, 71 pages / 142 chunks, bge-m3) — not picked by feel, and not
- * re-measured here:
+ * Boundaries are measured on the CURRENT embed model — re-measured 2026-08-31
+ * for e5-small-ko (`examples/abstention_probe.rs`, bilingual eval corpus,
+ * 71 pages / 146 chunks, 62 labeled queries), replacing the bge-m3 numbers
+ * this shipped with:
  *
- *   0.65  median top-1 cosine of the 45 answerable queries, so at/above it a
- *         hit is as strong as a typical real match.
- *   0.55  raising the floor to 0.55 cost 3/45 answerable queries — the bottom
- *         ~7% of real hits sit between 0.50 and 0.55.
- *   0.50  RELEVANCE_FLOOR itself. chat.ts already drops everything below it,
- *         so "low" is the floor band and not a reject band.
+ *   0.60  median top-1 cosine of the 52 correctly-answered queries is 0.603,
+ *         so at/above it a hit is as strong as a typical real match. (bge-m3
+ *         measured 0.65 here — the swap moved the whole geometry down.)
+ *   0.55  4/52 correct hits (7.7%) sit between 0.50 and 0.55 — the same
+ *         bottom-of-the-real-distribution band bge-m3 showed, so this
+ *         boundary survives the model swap unchanged.
+ *   0.42  RELEVANCE_FLOOR (chat.ts, same probe). chat.ts already drops
+ *         everything below it, so "low" is the floor band, not a reject band.
  *
  * What is NOT measured is the split into three buckets or the words attached
  * to them — that is presentation over one measured distribution. */
@@ -122,7 +124,7 @@ export function confidenceBand(similarity: number | null): ConfidenceBand {
   // A lexical-only hit has no cosine at all (see chat.ts's isRelevant): it
   // gets its own honest label instead of a band it never earned.
   if (similarity == null) return "lexical";
-  if (similarity >= 0.65) return "high";
+  if (similarity >= 0.6) return "high";
   if (similarity >= 0.55) return "medium";
   return "low";
 }
