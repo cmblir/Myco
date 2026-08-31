@@ -148,6 +148,8 @@ export interface Strings {
   tasks_detail_estimate_hint?: string;
   tasks_detail_recur?: string;
   tasks_detail_recur_hint?: string;
+  tasks_detail_notes?: string;
+  tasks_detail_notes_ph?: string;
   tasks_detail_start_after_due?: string;
   tasks_detail_open_note?: string;
   tasks_hub?: string;
@@ -1485,6 +1487,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_detail_estimate: "Estimate",
     tasks_detail_estimate_hint: "Use a duration like 90m, 1.5h, 2d or 1w.",
     tasks_detail_recur: "Repeat",
+    tasks_detail_notes: "Notes",
+    tasks_detail_notes_ph: "Details, links, context…",
     tasks_detail_recur_hint:
       "myco schedules \u201cevery day/week/month/year\u201d and \u201cevery 2 weeks\u201d. Any other rule stays in your note, untouched.",
     tasks_detail_start_after_due:
@@ -2878,6 +2882,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_detail_estimate: "예상 시간",
     tasks_detail_estimate_hint: "90m, 1.5h, 2d, 1w 같은 형식으로 적어 주세요.",
     tasks_detail_recur: "반복",
+    tasks_detail_notes: "상세 내용",
+    tasks_detail_notes_ph: "세부 내용, 링크, 맥락…",
     tasks_detail_recur_hint:
       "myco가 계산하는 규칙은 \u201cevery day/week/month/year\u201d와 \u201cevery 2 weeks\u201d입니다. 그 밖의 규칙은 노트에 그대로 남습니다.",
     tasks_detail_start_after_due:
@@ -4150,6 +4156,8 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_detail_estimate_hint:
       "90m, 1.5h, 2d, 1w のような形式で入力してください。",
     tasks_detail_recur: "繰り返し",
+    tasks_detail_notes: "詳細メモ",
+    tasks_detail_notes_ph: "詳細・リンク・文脈…",
     tasks_detail_recur_hint:
       "myco が計算できるのは \u201cevery day/week/month/year\u201d と \u201cevery 2 weeks\u201d です。それ以外の規則はノートにそのまま残ります。",
     tasks_detail_start_after_due:

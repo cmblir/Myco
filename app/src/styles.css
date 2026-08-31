@@ -1371,6 +1371,19 @@ select {
   width: 150px;
   flex: none;
 }
+/* The notes textarea stacks under its label and takes the panel's width —
+   a 150px column would make prose unreadable. */
+.task-detail-field--stack {
+  flex-direction: column;
+  align-items: stretch;
+}
+.task-detail-field--stack .input {
+  width: 100%;
+  resize: vertical;
+  min-height: 90px;
+  font: inherit;
+  line-height: 1.5;
+}
 .task-detail-warn {
   margin: -4px 0 0;
   font-size: 12px;

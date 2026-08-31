@@ -41,8 +41,10 @@ export default function TaskDetail({
   task,
   status,
   busy,
+  notes,
   onPatch,
   onStatus,
+  onNotes,
   onOpenNote,
   onClose,
 }: {
@@ -50,8 +52,11 @@ export default function TaskDetail({
   task: TaskItem;
   status: TaskStatus;
   busy: boolean;
+  /** Detail notes under the checkbox; null while the note file is loading. */
+  notes: string | null;
   onPatch: (patch: Partial<Pick<TaskMeta, TaskField>>) => void;
   onStatus: (status: TaskStatus) => void;
+  onNotes: (notes: string) => void;
   onOpenNote: () => void;
   onClose: () => void;
 }): JSX.Element {
@@ -60,6 +65,12 @@ export default function TaskDetail({
   // not fire on every keystroke (and a half-typed `2` is never saved as `2m`).
   const [estimate, setEstimate] = useState(meta.estimate);
   const [recur, setRecur] = useState(meta.recur);
+  // Notes arrive async (the page reads the source file after selection), so
+  // the draft seeds once when they land and never re-seeds over typed text.
+  const [notesDraft, setNotesDraft] = useState<string | null>(null);
+  useEffect(() => {
+    if (notes !== null) setNotesDraft((d) => (d === null ? notes : d));
+  }, [notes]);
   const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -260,6 +271,28 @@ export default function TaskDetail({
             "myco schedules “every day/week/month/year” and “every 2 weeks”. Other rules stay in the note untouched."}
         </p>
       ) : null}
+
+      <label className="task-detail-field task-detail-field--stack">
+        <span>{t.tasks_detail_notes ?? "Notes"}</span>
+        <textarea
+          className="input"
+          rows={5}
+          value={notesDraft ?? ""}
+          placeholder={
+            notes === null
+              ? "…"
+              : (t.tasks_detail_notes_ph ?? "Details, links, context…")
+          }
+          disabled={busy || notes === null}
+          onChange={(e) => setNotesDraft(e.target.value)}
+          onBlur={() => {
+            // Commit on blur, like estimate/recur — a write per keystroke
+            // would rewrite the note file mid-thought.
+            if (notesDraft !== null && notes !== null && notesDraft !== notes)
+              onNotes(notesDraft);
+          }}
+        />
+      </label>
 
       <button className="btn btn-ghost task-detail-note" onClick={onOpenNote}>
         <Icon name="file" size={12} />

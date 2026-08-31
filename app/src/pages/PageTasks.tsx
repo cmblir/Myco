@@ -25,7 +25,8 @@ import {
   runTaskNotifyPass,
   setNotifyEnabled,
 } from "../lib/taskNotifier";
-import { writeTaskFields, writeTaskStatus } from "../lib/taskWrite";
+import { writeTaskFields, writeTaskNotes, writeTaskStatus } from "../lib/taskWrite";
+import { readTaskNotes } from "../lib/taskNotes";
 import { extractLinks, extractTags, stripTokens } from "../lib/taskTokens";
 import { writeTaskHubs } from "../lib/taskHub";
 import { nextOccurrence } from "../lib/taskRecurrence";
@@ -284,6 +285,56 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
   // panel must show the line as it now reads (or close, if it is gone).
   const selectedTask = (tasks ?? []).find((x) => keyOf(x) === selected) ?? null;
 
+  // Detail notes for the open task — the scan carries only the checkbox line,
+  // so the block indented under it is read from the source file on selection.
+  // null = loading; "" = none. Keyed on `selected` so a rescan that moves the
+  // line re-reads at the fresh line number.
+  const [taskNotes, setTaskNotes] = useState<string | null>(null);
+  const selectedLine = selectedTask?.line;
+  const selectedPage = selectedTask?.page;
+  useEffect(() => {
+    setTaskNotes(null);
+    if (!currentVault || !selectedPage || !selectedLine) return;
+    let cancelled = false;
+    void ipc
+      .readFile(`${currentVault.path}/${selectedPage}`)
+      .then(({ raw }) => {
+        if (!cancelled) setTaskNotes(readTaskNotes(raw, selectedLine) ?? "");
+      })
+      .catch(() => {
+        if (!cancelled) setTaskNotes("");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentVault, selectedPage, selectedLine]);
+
+  /// Replace the open task's detail-notes block. Same stale-scan contract as
+  /// the other writers; on success the fresh text is kept locally so the
+  /// textarea does not flash back to the old value while the rescan runs.
+  async function saveNotes(task: TaskItem, value: string): Promise<void> {
+    if (!currentVault || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if ((await writeTaskNotes(currentVault.path, task, value)) === "stale") {
+        await refresh();
+        setError(
+          t.tasks_stale ?? "That note changed — the list has been refreshed.",
+        );
+        return;
+      }
+      setTaskNotes(value);
+      // Notes lines shift every checkbox below them — rescan so line numbers
+      // stay truthful for the next write.
+      await refresh();
+    } catch (e: unknown) {
+      setError(String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <div className="workspace">
       <header className="page-head">
@@ -529,8 +580,10 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           task={selectedTask}
           status={statusOf(selectedTask)}
           busy={busy}
+          notes={taskNotes}
           onPatch={(patch) => void patchTask(selectedTask, patch)}
           onStatus={(status) => void setStatus(selectedTask, status)}
+          onNotes={(notes) => void saveNotes(selectedTask, notes)}
           onOpenNote={() => openPage(selectedTask)}
           onClose={() => setSelected(null)}
         />

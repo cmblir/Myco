@@ -11,6 +11,7 @@ import {
   type TaskStatus,
 } from "./taskLine";
 import { setLineStatusWithRecurrence } from "./taskRecurrence";
+import { setTaskNotes } from "./taskNotes";
 
 /** Rewrite `task`'s checkbox line to `status`, stamping the `✅` done date and
  * repeating a recurring task onto its next occurrence. Returns "stale" when the
@@ -24,6 +25,22 @@ export async function writeTaskStatus(
   const path = `${vaultPath}/${task.page}`;
   const { raw } = await ipc.readFile(path);
   const next = setLineStatusWithRecurrence(raw, task.line, status);
+  if (next === null) return "stale";
+  await ipc.writeFile(path, next);
+  return "ok";
+}
+
+/** Replace the detail-notes block indented under `task`'s checkbox (empty
+ * string removes it), leaving the checkbox line itself untouched. Same
+ * "stale" contract as `writeTaskStatus`. */
+export async function writeTaskNotes(
+  vaultPath: string,
+  task: TaskItem,
+  notes: string,
+): Promise<"ok" | "stale"> {
+  const path = `${vaultPath}/${task.page}`;
+  const { raw } = await ipc.readFile(path);
+  const next = setTaskNotes(raw, task.line, notes);
   if (next === null) return "stale";
   await ipc.writeFile(path, next);
   return "ok";
