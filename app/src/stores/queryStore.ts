@@ -8,6 +8,7 @@ import { complete, retrieveChunks, type AskStage } from "../lib/chat";
 import {
   citationsOf,
   formatExtractiveAnswer,
+  uncitedOf,
   type Citation,
 } from "../lib/extractive";
 import { pickDeepStorage, type DeepStorageHit } from "../lib/deepStorage";
@@ -56,6 +57,13 @@ export interface ChatTurn {
   /// already show (Q4 item 12) — the vault's deep storage echoing the
   /// question, surfaced as its own labeled row under the chips.
   deepStorage?: DeepStorageHit;
+  /// Pages retrieval surfaced that the answer does NOT quote — the coverage
+  /// complement of `citations`. Grounded answers fail by omission more than
+  /// hallucination; this makes "considered and left out" inspectable.
+  /// Extractive-only, like citations, and NEVER mixed into the answer text:
+  /// prior turns are re-sent verbatim as provider history, so metadata in
+  /// `a` would leak into the next question's prompt.
+  uncited?: Citation[];
   /// Date window parsed from the question (time-aware Ask, Q4 item 8) —
   /// retrieval was restricted to that window's dated tiers; the UI shows it
   /// as a chip beside the question.
@@ -229,11 +237,18 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         const deep = md
           ? pickDeepStorage(r.hits, new Set(citations?.map((c) => c.page)))
           : null;
+        // Everything retrieval surfaced that neither the chips nor the
+        // deep-storage row will show — r.hits is alive only in this scope,
+        // so the coverage split must happen here or the data is gone.
+        const shown = new Set(citations?.map((c) => c.page) ?? []);
+        if (deep) shown.add(deep.page);
+        const uncited = md ? uncitedOf(r.hits, shown) : [];
         finishTurn({
           a: body,
           extractive: true,
           extractiveEmpty: !md,
           citations,
+          uncited: uncited.length > 0 ? uncited : undefined,
           deepStorage: deep ?? undefined,
           stale: r.stale,
           retrievalFailed: r.retrievalFailed,

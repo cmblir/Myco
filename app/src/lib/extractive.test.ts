@@ -4,6 +4,7 @@ import {
   confidenceBand,
   formatExtractiveAnswer,
   sourceTier,
+  uncitedOf,
 } from "./extractive";
 import { isNonKnowledgePath } from "./graphData";
 import type { ScoredChunk } from "./ipc";
@@ -170,5 +171,41 @@ describe("citationsOf", () => {
     );
     expect(citationsOf(hits)).toHaveLength(5);
     expect(citationsOf([chunk({ text: "" })])).toEqual([]);
+  });
+});
+
+describe("uncitedOf", () => {
+  it("returns exactly the retrieved pages the answer does not show", () => {
+    const hits = [
+      chunk({}),
+      chunk({ page: "wiki/lora.md", stem: "lora", similarity: 0.6 }),
+      chunk({ page: "sessions/2026-08/log.md", stem: "log", similarity: 0.58 }),
+    ];
+    const shown = new Set(["wiki/bpe.md", "sessions/2026-08/log.md"]);
+    expect(uncitedOf(hits, shown)).toEqual([
+      { page: "wiki/lora.md", stem: "lora", similarity: 0.6 },
+    ]);
+  });
+
+  it("splits exactly: cited ∪ deep ∪ uncited covers every retrieved page once", () => {
+    // 7 distinct pages -> 5 cited (cap), 2 left for the complement.
+    const hits = Array.from({ length: 7 }, (_, i) =>
+      chunk({ page: `wiki/p${i}.md`, stem: `p${i}`, similarity: 0.7 - i * 0.01 }),
+    );
+    const cited = citationsOf(hits);
+    const uncited = uncitedOf(hits, new Set(cited.map((c) => c.page)));
+    expect(cited).toHaveLength(5);
+    expect(uncited.map((c) => c.stem)).toEqual(["p5", "p6"]);
+  });
+
+  it("keeps lexical-only pages (similarity null) rather than dropping them", () => {
+    const hits = [chunk({ page: "wiki/lex.md", stem: "lex", similarity: null })];
+    expect(uncitedOf(hits, new Set())).toEqual([
+      { page: "wiki/lex.md", stem: "lex", similarity: null },
+    ]);
+  });
+
+  it("empty-text chunks never become coverage rows (same rule as citations)", () => {
+    expect(uncitedOf([chunk({ text: "" })], new Set())).toEqual([]);
   });
 });

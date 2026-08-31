@@ -83,6 +83,23 @@ export function citationsOf(
   }));
 }
 
+/** Pages retrieval surfaced that the answer does NOT show: everything past
+ * the citation cap and the deep-storage pick. Grounded answers' most common
+ * failure is omission — confidently answering while skipping a relevant
+ * source — and citations can only ever show "what backs the said"; this is
+ * the complement that shows "what was considered and left out", so the
+ * reader can judge coverage instead of trusting silence.
+ *
+ * Shares groupByPage with citationsOf so the split is exact: every retrieved
+ * page is in the citations, the deep-storage row, or here — never two of
+ * them, never dropped. `shownPages` is the union of cited pages and the
+ * deep-storage page. */
+export function uncitedOf(hits: ScoredChunk[], shownPages: ReadonlySet<string>): Citation[] {
+  return groupByPage(hits, Number.POSITIVE_INFINITY)
+    .filter((g) => !shownPages.has(g.page))
+    .map(({ page, stem, best }) => ({ page, stem, similarity: best }));
+}
+
 export type ConfidenceBand = "high" | "medium" | "low" | "lexical";
 
 /** Which confidence band a citation's dense cosine falls in.

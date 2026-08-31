@@ -355,6 +355,13 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
             {turn.citations?.length ? (
               <CitationChips t={t} citations={turn.citations} />
             ) : null}
+            {turn.uncited?.length && currentVault ? (
+              <UncitedRow
+                t={t}
+                uncited={turn.uncited}
+                onOpen={(page) => setRoute(`page:${currentVault.path}/${page}`)}
+              />
+            ) : null}
             {turn.deepStorage && currentVault ? (
               <DeepStorageRow
                 t={t}
@@ -507,6 +514,68 @@ function CitationChips({
         );
       })}
     </ul>
+  );
+}
+
+// Coverage row: pages retrieval surfaced that the answer does NOT quote.
+// Grounded answers' most common failure is omission — the citation chips can
+// only show what backs the said, never what was considered and left out.
+// Collapsed to one line by default (it is an audit surface, not a second
+// answer); expanding shows the same chip anatomy as CitationChips, dashed so
+// the eye never reads them as citations. Clicking a chip opens the page.
+function UncitedRow({
+  t,
+  uncited,
+  onOpen,
+}: {
+  t: Strings;
+  uncited: Citation[];
+  onOpen: (page: string) => void;
+}): JSX.Element {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
+      <button
+        className="btn btn-ghost"
+        style={{ fontSize: 12, padding: "2px 8px" }}
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        {open ? "▾" : "▸"}{" "}
+        {(t.q_uncited_row ?? "Reviewed but not quoted · {n}").replace(
+          "{n}",
+          String(uncited.length),
+        )}
+      </button>
+      {open ? (
+        <ul
+          aria-label={t.q_uncited_row ?? "Reviewed but not quoted"}
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 6,
+            listStyle: "none",
+            margin: "6px 0 0",
+            padding: 0,
+          }}
+        >
+          {uncited.map((c) => (
+            <li key={c.page}>
+              <button
+                className="chip"
+                title={c.page}
+                style={{ borderStyle: "dashed", cursor: "pointer", opacity: 0.75 }}
+                onClick={() => onOpen(c.page)}
+              >
+                <span style={{ fontWeight: 500 }}>{c.stem}</span>
+                <span>· {bandLabel(t, confidenceBand(c.similarity))}</span>
+                <span>· {tierLabel(t, sourceTier(c.page))}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 

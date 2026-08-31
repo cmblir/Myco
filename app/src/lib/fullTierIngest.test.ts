@@ -27,7 +27,7 @@ const claudeRun = vi.fn();
 const appendDistillManifest = vi.fn();
 const scanTextSecrets = vi.fn();
 // Grounding lookup is best-effort in prod; tests default it to "no candidates".
-const wikifyCandidates = vi.fn(() => Promise.resolve([]));
+const wikifyCandidates = vi.fn((..._a: unknown[]) => Promise.resolve([]));
 vi.mock("./ipc", () => ({
   ipc: {
     getSettings: (...a: unknown[]) => getSettings(...a),

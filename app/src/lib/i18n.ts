@@ -1021,6 +1021,7 @@ export interface Strings {
   q_cite_list_label?: string;
   // Deep-storage row under the citation chips (Q4 item 12).
   q_deep_row?: string;
+  q_uncited_row?: string; // {n}
   // "Set up your profile" hint chip, Ask mode (Phase B, Task 5).
   ask_profile_hint?: string;
   ask_profile_hint_cta?: string;
@@ -2417,6 +2418,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_tier_source: "imported source",
     q_cite_list_label: "Citation confidence and source",
     q_deep_row: "From deep storage: {stem} — similarity {sim}",
+    q_uncited_row: "Reviewed but not quoted · {n}",
     ask_profile_hint:
       "Set up your profile so Ask can tailor answers to your role and interests.",
     ask_profile_hint_cta: "Set up profile",
@@ -3803,6 +3805,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_tier_source: "가져온 원문",
     q_cite_list_label: "인용 신뢰도와 출처 종류",
     q_deep_row: "깊은 보관소에서: {stem} — 유사도 {sim}",
+    q_uncited_row: "검토했지만 인용하지 않음 · {n}",
     ask_profile_hint:
       "프로필을 설정하면 Ask가 역할과 관심사에 맞춰 답변합니다.",
     ask_profile_hint_cta: "프로필 설정",
@@ -5019,6 +5022,7 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_tier_source: "取り込んだ原文",
     q_cite_list_label: "引用の一致度と出典の種類",
     q_deep_row: "深い保管庫から: {stem} — 類似度 {sim}",
+    q_uncited_row: "確認したが引用せず · {n}",
     ask_profile_hint:
       "プロフィールを設定すると、Askが役割や興味・関心に合わせて回答します。",
     ask_profile_hint_cta: "プロフィールを設定",
