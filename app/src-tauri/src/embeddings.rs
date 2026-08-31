@@ -127,6 +127,12 @@ fn push_bounded(out: &mut Vec<String>, text: &str) {
 ///
 /// Every emitted chunk is at most ~`CHUNK_TOKENS` estimated tokens; see `push_bounded`.
 pub fn chunk_page(text: &str) -> Vec<String> {
+    // NFC before anything else. Indexing hashes/embeds these chunks and
+    // `chunk_text_at` re-derives them from the file at query time — both go
+    // through here, so normalizing at this one point keeps section indices,
+    // content hashes, and phrase comparisons aligned regardless of the form
+    // the file was written in (macOS hands back NFD Hangul).
+    let text = crate::norm::nfc(text);
     // Split into heading-led sections.
     let mut sections: Vec<String> = Vec::new();
     let mut cur = String::new();
@@ -437,5 +443,17 @@ mod token_budget_tests {
     fn short_pages_stay_one_chunk() {
         let chunks = chunk_page("# 제목\n\n짧은 노트.\n");
         assert_eq!(chunks.len(), 1);
+    }
+
+    #[test]
+    fn nfd_and_nfc_pages_chunk_identically() {
+        // Same page in composed and decomposed form must produce the same
+        // chunks — indexing hashes these and `chunk_text_at` re-derives them
+        // at query time, so any divergence is a silent retrieval miss.
+        let nfc = "# 한글 제목\n\n한글 본문입니다.\n";
+        let nfd = "# \u{1112}\u{1161}\u{11AB}\u{1100}\u{1173}\u{11AF} \
+                   \u{110C}\u{1166}\u{1106}\u{1169}\u{11A8}\n\n\
+                   \u{1112}\u{1161}\u{11AB}\u{1100}\u{1173}\u{11AF} 본문입니다.\n";
+        assert_eq!(chunk_page(nfd), chunk_page(nfc));
     }
 }

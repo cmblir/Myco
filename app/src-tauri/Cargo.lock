@@ -2984,6 +2984,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "trash",
+ "unicode-normalization",
  "url",
  "wiremock",
  "zip 4.6.1",

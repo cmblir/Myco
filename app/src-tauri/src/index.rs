@@ -144,12 +144,15 @@ pub(crate) fn is_hidden_name(name: &std::ffi::OsStr) -> bool {
 /// matchable in either form.
 pub(crate) fn build_name_index(files: &[PathBuf]) -> HashMap<String, PathBuf> {
     let mut idx = HashMap::with_capacity(files.len() * 2);
+    // NFC on the keys: macOS file APIs return NFD Hangul filenames, while a
+    // typed `[[wikilink]]` is NFC — without normalization the same name never
+    // matches and the link reads as a missing page.
     for f in files {
         if let Some(stem) = f.file_stem().and_then(|s| s.to_str()) {
-            idx.insert(stem.to_lowercase(), f.clone());
+            idx.insert(crate::norm::nfc(stem).to_lowercase(), f.clone());
         }
         if let Some(name) = f.file_name().and_then(|s| s.to_str()) {
-            idx.insert(name.to_lowercase(), f.clone());
+            idx.insert(crate::norm::nfc(name).to_lowercase(), f.clone());
         }
     }
     idx
@@ -172,7 +175,9 @@ fn ingest_links(file: &Path, text: &str, names: &HashMap<String, PathBuf>, adj: 
         // the file exists. Matches Obsidian's own basename resolution.
         let base = target.split('#').next().unwrap_or(&target).trim();
         let base = base.rsplit(['/', '\\']).next().unwrap_or(base);
-        let key = base.to_lowercase();
+        // Same normalization as build_name_index's keys — both sides must
+        // agree or NFD-vs-NFC pairs miss.
+        let key = crate::norm::nfc(base).to_lowercase();
         match names.get(&key) {
             Some(resolved) => {
                 let target_path = resolved.to_string_lossy().into_owned();
@@ -306,6 +311,30 @@ mod tests {
         assert!(names.contains(&"sessions.md".to_string()));
         assert!(!names.contains(&"pending.md".to_string()));
         assert!(!names.contains(&"log.md".to_string()));
+    }
+
+    /// An NFD-named file (macOS file APIs) must resolve a typed NFC
+    /// [[wikilink]] — the name index and the lookup key both normalize.
+    #[test]
+    fn nfd_filename_resolves_nfc_wikilink() {
+        let root = temp_vault("nfd-link");
+        fs::create_dir_all(root.join("wiki")).unwrap();
+        let nfd_stem = "\u{1112}\u{1161}\u{11AB}\u{1100}\u{1173}\u{11AF}"; // "한글" decomposed
+        fs::write(root.join(format!("wiki/{nfd_stem}.md")), "# 한글\n").unwrap();
+        fs::write(root.join("wiki/linker.md"), "본문 [[한글]] 링크\n").unwrap();
+
+        let adj = build_link_graph(&root.to_string_lossy()).unwrap();
+        // build_link_graph canonicalizes the root (macOS: /var → /private/var),
+        // so the expected key must be canonical too.
+        let linker = root
+            .canonicalize()
+            .unwrap()
+            .join("wiki/linker.md")
+            .to_string_lossy()
+            .into_owned();
+        let forward = adj.forward.get(&linker).cloned().unwrap_or_default();
+        assert_eq!(forward.len(), 1, "NFC link must resolve the NFD file");
+        assert!(!adj.unresolved.contains_key(&linker));
     }
 
     /// Regression: one unreadable .md must not blank the whole graph.

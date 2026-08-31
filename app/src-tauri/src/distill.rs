@@ -1040,12 +1040,17 @@ fn mtime_secs(path: &Path) -> Option<i64> {
 /// Lowercase, dash-separated slug for a proposal filename: non-alphanumerics
 /// collapse to a single `-`, capped at 60 chars (plenty to stay readable
 /// without a long title ballooning the filename).
+///
+/// Unicode-alphanumeric (mirrors `clip_filename`), not ASCII-only: an
+/// ASCII-only slug collapsed every pure-Hangul title to an empty string,
+/// leaving filenames that were just a date. NFC first so the filename is
+/// written in the composed form the link index keys by.
 fn slugify(s: &str) -> String {
     let mut out = String::new();
     let mut last_dash = false;
-    for c in s.chars() {
-        if c.is_ascii_alphanumeric() {
-            out.push(c.to_ascii_lowercase());
+    for c in crate::norm::nfc(s).chars() {
+        if c.is_alphanumeric() {
+            out.extend(c.to_lowercase());
             last_dash = false;
         } else if !last_dash {
             out.push('-');
@@ -3931,6 +3936,19 @@ pub fn archive_rolled(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn slugify_keeps_hangul_titles() {
+        // The ASCII-only version collapsed pure-Hangul titles to "" and the
+        // proposal filename degenerated to just its date.
+        assert_eq!(slugify("한글 제목"), "한글-제목");
+        assert_eq!(slugify("Mixed 한글 Title!"), "mixed-한글-title");
+        // NFD input composes before slugging.
+        assert_eq!(
+            slugify("\u{1112}\u{1161}\u{11AB}\u{1100}\u{1173}\u{11AF}"),
+            "한글"
+        );
+    }
 
     #[test]
     fn git_commit_run_stages_wiki_with_agent_author() {

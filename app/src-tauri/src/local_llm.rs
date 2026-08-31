@@ -127,16 +127,20 @@ pub fn embed_spec_by_id(id: &str) -> Option<&'static EmbedSpec> {
 /// Mirrors the frontend `BUILTIN_EMBED_MODEL` (app/src/lib/providers.ts).
 pub const BUILTIN_EMBED_MODEL: &str = "e5-small-ko";
 
-/// Prepend the role's instruction to each text (empty prefix = unchanged).
+/// Prepend the role's instruction to each text, NFC-normalized. Every embed
+/// input funnels through here (documents, queries, intent probes, wikify), so
+/// this is the single point that keeps NFD text out of the vector space —
+/// an NFD query would otherwise tokenize differently from the NFC chunks it
+/// is compared against.
 pub fn apply_prefix(spec: &EmbedSpec, role: EmbedRole, texts: &[String]) -> Vec<String> {
     let prefix = match role {
         EmbedRole::Query => spec.query_prefix,
         EmbedRole::Document => spec.doc_prefix,
     };
-    if prefix.is_empty() {
-        return texts.to_vec();
-    }
-    texts.iter().map(|t| format!("{prefix}{t}")).collect()
+    texts
+        .iter()
+        .map(|t| format!("{prefix}{}", crate::norm::nfc(t)))
+        .collect()
 }
 
 /// The one llama.cpp backend for this process, initialized on first use and

@@ -90,7 +90,11 @@ pub struct SearchHit {
 /// `limit` hits — the first matching line per file — skipping files larger than
 /// 2 MB. Files are visited in sorted order for stable results.
 pub fn search_vault(root: &Path, query: &str, limit: usize) -> Vec<SearchHit> {
-    let needle = query.trim().to_lowercase();
+    // NFC both the needle and each line: an NFD-form file (pasted text,
+    // synced from a mac path) is invisible to an NFC query without it. The
+    // quick-check fast path keeps the per-line cost at a scan for the
+    // overwhelmingly common already-NFC case.
+    let needle = crate::norm::nfc(query.trim()).to_lowercase();
     if needle.is_empty() || limit == 0 {
         return Vec::new();
     }
@@ -111,7 +115,7 @@ pub fn search_vault(root: &Path, query: &str, limit: usize) -> Vec<SearchHit> {
             continue;
         };
         for (i, raw_line) in content.lines().enumerate() {
-            if raw_line.to_lowercase().contains(&needle) {
+            if crate::norm::nfc(raw_line).to_lowercase().contains(&needle) {
                 hits.push(SearchHit {
                     path: path.to_string_lossy().into_owned(),
                     name: path
@@ -1255,6 +1259,20 @@ mod tests {
     #[test]
     fn open_vault_rejects_empty() {
         assert!(open_vault("").is_err());
+    }
+
+    #[test]
+    fn search_finds_nfd_content_with_nfc_query() {
+        let dir = tempfile::tempdir().unwrap();
+        // "한글 검색" with the Hangul decomposed to jamo, as pasted-from-mac
+        // text sometimes is. The NFC query must still hit.
+        let nfd = "\u{1112}\u{1161}\u{11AB}\u{1100}\u{1173}\u{11AF} \
+                   \u{1100}\u{1165}\u{11B7}\u{1109}\u{1162}\u{11A8}";
+        fs::write(dir.path().join("note.md"), format!("메모: {nfd} 테스트\n")).unwrap();
+
+        let hits = search_vault(dir.path(), "한글 검색", 5);
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].line, 1);
     }
 
     #[test]

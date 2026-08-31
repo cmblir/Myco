@@ -20,7 +20,10 @@ use crate::vector_index::Hit;
 /// format: BM25 is purely lexical, so it survives an embed-model swap that
 /// would otherwise wipe the vector index.
 const MXB_MAGIC: &[u8; 4] = b"MXB1";
-const MXB_VERSION: u8 = 1;
+// v2: `tokenize` NFC-normalizes its input, so terms stored by a v1 index
+// (which could contain NFD jamo bigrams) no longer match query tokens. The
+// bump forces a rebuild instead of a silent permanent miss.
+const MXB_VERSION: u8 = 2;
 
 /// BM25 term-frequency saturation parameter.
 const K1: f32 = 1.2;
@@ -41,6 +44,11 @@ pub(crate) const RRF_K: f32 = 60.0;
 /// whitespace-delimit words (a run of length 1 is emitted as-is). Everything
 /// else is a boundary and is dropped.
 pub fn tokenize(text: &str) -> Vec<String> {
+    // NFC first: NFD Hangul (macOS filenames, some pasted text) is a jamo
+    // sequence whose bigrams never match the NFC syllable bigrams the same
+    // word produces when typed. Normalizing here covers both index and query
+    // arms — they route through this one function.
+    let text = crate::norm::nfc(text);
     fn is_cjk(c: char) -> bool {
         matches!(c,
             '\u{AC00}'..='\u{D7A3}' // Hangul syllables
@@ -102,7 +110,9 @@ pub fn parse_phrases(query: &str) -> (Vec<String>, String) {
             ('"', true) => {
                 let p = buf.trim();
                 if !p.is_empty() {
-                    phrases.push(p.to_lowercase());
+                    // NFC so the phrase filter compares in the same form as
+                    // reconstructed chunk text (chunk_page normalizes).
+                    phrases.push(crate::norm::nfc(p).to_lowercase());
                     rest.push_str(p);
                     rest.push(' ');
                 }
@@ -805,6 +815,13 @@ mod tests {
     fn tokenize_mixed_and_single_cjk() {
         assert_eq!(tokenize("KV 캐시"), vec!["kv", "캐시"]); // 캐시 is a 2-char run -> one bigram
         assert_eq!(tokenize("A"), vec!["a"]);
+    }
+    #[test]
+    fn tokenize_nfd_hangul_matches_nfc() {
+        // "정책" decomposed to jamo, as macOS file APIs hand it back. Without
+        // NFC the jamo run bigrams to garbage that never matches typed text.
+        let nfd = "\u{110C}\u{1165}\u{11BC}\u{110E}\u{1162}\u{11A8}";
+        assert_eq!(tokenize(nfd), tokenize("정책"));
     }
     #[test]
     fn parse_phrases_extracts_quoted_and_keeps_remainder() {

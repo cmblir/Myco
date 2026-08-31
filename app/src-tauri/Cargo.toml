@@ -54,6 +54,10 @@ llama-cpp-2 = "0.1.150"
 # of a silent disaster. Bump both lines together, never one alone.
 llama-cpp-sys-2 = { version = "=0.1.150", optional = true }
 zip = { version = "4.2.0", default-features = false, features = ["deflate"] }
+# NFC normalization for search/link/filename text. macOS file APIs hand back
+# NFD Hangul (decomposed jamo), which silently misses NFC query text in every
+# lexical comparison — see norm.rs. Already in the lockfile transitively.
+unicode-normalization = "0.1"
 # Recoverable deletes: delete_path moves entries to the OS trash instead of
 # unlinking them, so a mis-click never permanently destroys notes.
 trash = "5.2.3"

@@ -22,6 +22,7 @@ pub mod intent;
 pub mod local_llm;
 pub mod mcp_native;
 pub mod myco_pro;
+pub mod norm;
 pub mod notch;
 pub mod ollama;
 pub mod ontology;
