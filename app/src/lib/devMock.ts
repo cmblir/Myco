@@ -2726,6 +2726,10 @@ function mockInvoke(
     case "save_dashboard":
       // Mock vault: the board just doesn't persist across reloads.
       return Promise.resolve(null);
+    case "list_dashboards":
+      return Promise.resolve(["overview"]);
+    case "delete_dashboard":
+      return Promise.resolve(null);
     case "inflow_daily": {
       // Deterministic-ish seeded ledger so the board's inflow charts render
       // in the mock browser: activity clusters on recent weekdays.

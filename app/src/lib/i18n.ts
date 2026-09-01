@@ -77,6 +77,11 @@ export interface Strings {
   bd_color_cyan?: string;
   bd_color_red?: string;
   bd_detail_total?: string; // {n}
+  bd_board_pick?: string;
+  bd_new_board?: string;
+  bd_new_board_prompt?: string;
+  bd_delete_board?: string;
+  bd_delete_confirm?: string; // {name}
   ls_title?: string;
   ls_hint?: string;
   ls_accept?: string;
@@ -1459,6 +1464,11 @@ export const STRINGS: Record<Lang, Strings> = {
     bd_color_cyan: "Cyan",
     bd_color_red: "Red",
     bd_detail_total: "Total {n}",
+    bd_board_pick: "Board",
+    bd_new_board: "New board",
+    bd_new_board_prompt: "Board name:",
+    bd_delete_board: "Delete board",
+    bd_delete_confirm: "Delete board “{name}”?",
     ls_title: "Suggested links",
     ls_hint:
       "Semantically close notes that aren't linked yet. Accept to add a [[wikilink]] under \u201c## Related\u201d.",
@@ -2918,6 +2928,11 @@ export const STRINGS: Record<Lang, Strings> = {
     bd_color_cyan: "시안",
     bd_color_red: "빨강",
     bd_detail_total: "합계 {n}",
+    bd_board_pick: "보드",
+    bd_new_board: "새 보드",
+    bd_new_board_prompt: "보드 이름:",
+    bd_delete_board: "보드 삭제",
+    bd_delete_confirm: "“{name}” 보드를 삭제할까요?",
     ls_title: "제안된 연결",
     ls_hint:
       "의미상 가깝지만 아직 연결되지 않은 노트들입니다. 수락하면 \u201c## Related\u201d 아래에 [[위키링크]]가 추가됩니다.",
@@ -4370,6 +4385,11 @@ export const STRINGS: Record<Lang, Strings> = {
     bd_color_cyan: "シアン",
     bd_color_red: "赤",
     bd_detail_total: "合計 {n}",
+    bd_board_pick: "ボード",
+    bd_new_board: "新しいボード",
+    bd_new_board_prompt: "ボード名:",
+    bd_delete_board: "ボードを削除",
+    bd_delete_confirm: "ボード“{name}”を削除しますか？",
     nav_history: "履歴",
     nav_provenance: "出典",
     nav_tasks: "タスク",

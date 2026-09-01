@@ -1669,16 +1669,67 @@ pub(crate) fn collect_inflow(
 /// `_inbox` arrivals, MCP tool calls, plus hourly sparkbar buckets. Called
 /// when the popover opens — no polling. `tz_offset_min` is the frontend's
 /// `Date.getTimezoneOffset()` so "today" means the user's local date.
-/// Persist the overview board document (`.myco/dashboards/overview.json`).
-/// Its own command rather than `write_file` because the generic writer
-/// refuses to create parent directories, and the board's directory does not
-/// exist until the first save.
+/// A dashboard's on-disk path under `.myco/dashboards/`. Names come from the
+/// user (board picker), so they are validated as bare filenames — no
+/// separators, no dot-tricks — rather than trusted into a join.
+fn dashboard_path(root: &std::path::Path, name: &str) -> Result<std::path::PathBuf, String> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 60 {
+        return Err("board name must be 1-60 characters".into());
+    }
+    if name.contains(['/', '\\']) || name.contains("..") || name.starts_with('.') {
+        return Err(format!("invalid board name: {name}"));
+    }
+    Ok(root.join(".myco/dashboards").join(format!("{name}.json")))
+}
+
+/// Persist one board document (`.myco/dashboards/<name>.json`). Its own
+/// command rather than `write_file` because the generic writer refuses to
+/// create parent directories, and the board's directory does not exist until
+/// the first save.
 #[tauri::command]
-pub fn save_dashboard(state: tauri::State<VaultRoot>, content: String) -> Result<(), String> {
+pub fn save_dashboard(
+    state: tauri::State<VaultRoot>,
+    name: String,
+    content: String,
+) -> Result<(), String> {
+    let root = require_root(&state)?;
+    let path = dashboard_path(&root, &name)?;
+    if let Some(dir) = path.parent() {
+        std::fs::create_dir_all(dir).map_err(|e| format!("create dashboards dir: {e}"))?;
+    }
+    vault::write_file(&path.to_string_lossy(), &content)
+}
+
+/// The saved boards, by name (file stem), sorted — the file listing IS the
+/// board list, so backup/copy/hand-authoring all show up without ceremony.
+#[tauri::command]
+pub fn list_dashboards(state: tauri::State<VaultRoot>) -> Result<Vec<String>, String> {
     let root = require_root(&state)?;
     let dir = root.join(".myco/dashboards");
-    std::fs::create_dir_all(&dir).map_err(|e| format!("create dashboards dir: {e}"))?;
-    vault::write_file(&dir.join("overview.json").to_string_lossy(), &content)
+    let mut out = Vec::new();
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|x| x.to_str()) == Some("json") {
+                if let Some(stem) = p.file_stem().and_then(|x| x.to_str()) {
+                    out.push(stem.to_string());
+                }
+            }
+        }
+    }
+    out.sort();
+    Ok(out)
+}
+
+/// Delete one board file. The UI confirms first; the file is small,
+/// app-state (not user notes), and recreatable — a direct remove, mirroring
+/// how the other `.myco/` state files are managed.
+#[tauri::command]
+pub fn delete_dashboard(state: tauri::State<VaultRoot>, name: String) -> Result<(), String> {
+    let root = require_root(&state)?;
+    let path = dashboard_path(&root, &name)?;
+    std::fs::remove_file(&path).map_err(|e| format!("delete board: {e}"))
 }
 
 /// Daily inflow by channel from the persistent ledger (`inflow_log`), for the

@@ -33,6 +33,7 @@ import {
   BOARD_PRESETS,
   BOARD_ROW_PX,
   CHANNELS,
+  DEFAULT_BOARD,
   duplicateWidget,
   effectiveRange,
   emptyBoard,
@@ -100,6 +101,34 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
 
   const [doc, setDoc] = useState<BoardDoc>(() => emptyBoard());
   const [loaded, setLoaded] = useState(false);
+  // Which board file is open. Boards are files (.myco/dashboards/*.json);
+  // the listing IS the list, and the active pick survives restarts.
+  const [boardName, setBoardName] = useState<string>(() => {
+    try {
+      return localStorage.getItem("myco.board.active") ?? DEFAULT_BOARD;
+    } catch {
+      return DEFAULT_BOARD;
+    }
+  });
+  const [boards, setBoards] = useState<string[]>([DEFAULT_BOARD]);
+  const refreshBoards = (): void => {
+    void ipc
+      .listDashboards()
+      .then((names) => {
+        const all = [...new Set([DEFAULT_BOARD, ...names])];
+        setBoards(all);
+      })
+      .catch(() => setBoards([DEFAULT_BOARD]));
+  };
+  const switchBoard = (name: string): void => {
+    setBoardName(name);
+    setEditing(null);
+    try {
+      localStorage.setItem("myco.board.active", name);
+    } catch {
+      /* localStorage unavailable */
+    }
+  };
   const [edit, setEdit] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [addPick, setAddPick] = useState<string>(BOARD_PRESETS[0].key);
@@ -146,7 +175,8 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
     if (!vaultPath) return;
     let gone = false;
     setLoaded(false);
-    void loadBoard(vaultPath).then((d) => {
+    refreshBoards();
+    void loadBoard(vaultPath, boardName).then((d) => {
       if (!gone) {
         setDoc(d);
         setLoaded(true);
@@ -155,7 +185,7 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
     return () => {
       gone = true;
     };
-  }, [vaultPath]);
+  }, [vaultPath, boardName]);
 
   // Debounced persist — a drag emits many layout changes; the file gets one.
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -164,7 +194,7 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
     if (!loaded) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
-      void saveBoard(next).catch(() => undefined);
+      void saveBoard(boardName, next).catch(() => undefined);
     }, 400);
   };
 
@@ -299,6 +329,20 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
     <section className="board" aria-label={t.bd_title ?? "My board"}>
       <div className="board-head">
         <h2 className="board-title">{t.bd_title ?? "My board"}</h2>
+        {boards.length > 1 || edit ? (
+          <select
+            className="input board-add"
+            value={boardName}
+            aria-label={t.bd_board_pick ?? "Board"}
+            onChange={(e) => switchBoard(e.target.value)}
+          >
+            {boards.map((b) => (
+              <option key={b} value={b}>
+                {b}
+              </option>
+            ))}
+          </select>
+        ) : null}
         <div className="segmented board-range" role="group" aria-label={t.bd_range ?? "Range"}>
           {RANGES.map((r) => (
             <button
@@ -343,6 +387,45 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
               <option value="vertical">{t.bd_compact_v ?? "Pack upward"}</option>
               <option value="none">{t.bd_compact_none ?? "Keep whitespace"}</option>
             </select>
+            <button
+              className="btn"
+              onClick={() => {
+                const name = window
+                  .prompt(t.bd_new_board_prompt ?? "Board name:")
+                  ?.trim();
+                if (!name) return;
+                if (name.includes("/") || name.includes("\\") || name.includes("..")) return;
+                void saveBoard(name, emptyBoard())
+                  .then(() => {
+                    refreshBoards();
+                    switchBoard(name);
+                  })
+                  .catch(() => undefined);
+              }}
+            >
+              {t.bd_new_board ?? "New board"}
+            </button>
+            {boardName !== DEFAULT_BOARD ? (
+              <button
+                className="btn"
+                onClick={() => {
+                  const msg = (t.bd_delete_confirm ?? "Delete board “{name}”?").replace(
+                    "{name}",
+                    boardName,
+                  );
+                  if (!window.confirm(msg)) return;
+                  void ipc
+                    .deleteDashboard(boardName)
+                    .then(() => {
+                      refreshBoards();
+                      switchBoard(DEFAULT_BOARD);
+                    })
+                    .catch(() => undefined);
+                }}
+              >
+                {t.bd_delete_board ?? "Delete board"}
+              </button>
+            ) : null}
             <button
               className="btn btn-primary"
               onClick={() => {

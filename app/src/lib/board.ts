@@ -87,7 +87,10 @@ export interface BoardDoc {
 
 export const BOARD_COLS = 12;
 export const BOARD_ROW_PX = 48;
-export const BOARD_REL = ".myco/dashboards/overview.json";
+export const DEFAULT_BOARD = "overview";
+export function boardRel(name: string): string {
+  return `.myco/dashboards/${name}.json`;
+}
 
 /** Per-view floor sizes (grid units) — the widget declares what it needs to
  *  not break, the grid enforces it (Home Assistant's getGridOptions contract,
@@ -503,23 +506,28 @@ export function sanitizeBoard(doc: BoardDoc): BoardDoc {
   return { ...doc, layout };
 }
 
-export async function loadBoard(vaultPath: string): Promise<BoardDoc> {
+export async function loadBoard(vaultPath: string, name: string): Promise<BoardDoc> {
   try {
-    const { raw } = await ipc.readFile(`${vaultPath}/${BOARD_REL}`);
+    const { raw } = await ipc.readFile(`${vaultPath}/${boardRel(name)}`);
     const parsed = JSON.parse(raw) as unknown;
     if (isBoardDoc(parsed)) return sanitizeBoard(parsed);
   } catch {
     /* no board file yet */
   }
-  let legacy: string | null = null;
-  try {
-    legacy = localStorage.getItem(LEGACY_KEY);
-  } catch {
-    /* localStorage unavailable */
+  // The one-time localStorage migration only ever seeds the default board.
+  if (name === DEFAULT_BOARD) {
+    let legacy: string | null = null;
+    try {
+      legacy = localStorage.getItem(LEGACY_KEY);
+    } catch {
+      /* localStorage unavailable */
+    }
+    const migrated = migrateLegacy(legacy);
+    if (migrated) return migrated;
   }
-  return migrateLegacy(legacy) ?? emptyBoard();
+  return emptyBoard();
 }
 
-export async function saveBoard(doc: BoardDoc): Promise<void> {
-  await ipc.saveDashboard(JSON.stringify(doc, null, 2));
+export async function saveBoard(name: string, doc: BoardDoc): Promise<void> {
+  await ipc.saveDashboard(name, JSON.stringify(doc, null, 2));
 }

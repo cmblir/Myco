@@ -1188,9 +1188,13 @@ export const ipc = {
       days,
       tzOffsetMin: new Date().getTimezoneOffset(),
     }),
-  /** Write the overview board doc (creates .myco/dashboards/ on first save). */
-  saveDashboard: (content: string) =>
-    invoke<void>("save_dashboard", { content }),
+  /** Write one board doc (creates .myco/dashboards/ on first save). */
+  saveDashboard: (name: string, content: string) =>
+    invoke<void>("save_dashboard", { name, content }),
+  /** Saved board names (file stems) — the file listing IS the list. */
+  listDashboards: () => invoke<string[]>("list_dashboards"),
+  deleteDashboard: (name: string) =>
+    invoke<void>("delete_dashboard", { name }),
   mcpConnect: () => invoke<string>("mcp_connect"),
   // Embedded local model (bundled Gemma 3 1B) — offline, no key. First call
   // lazily loads the weights, so it can take a few extra seconds.
