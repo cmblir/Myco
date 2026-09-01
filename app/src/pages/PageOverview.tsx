@@ -126,7 +126,12 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
         </button>
       </div>
 
-      <OverviewBoard t={t} />
+      {/* Keyed on the vault: OverviewBoard mounts at boot before a vault is
+          open and returns null, which permanently strands useContainerWidth's
+          one-shot ResizeObserver attach on a null ref (width stuck at its
+          1280 default — the off-pane widget bug). Remounting on vault open
+          gives the hook a first commit where the measured div really exists. */}
+      <OverviewBoard key={currentVault?.path ?? "no-vault"} t={t} />
 
       <div className="ov-bands">
         {recentLeaves.length > 0 ? (

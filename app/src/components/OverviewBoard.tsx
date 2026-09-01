@@ -443,21 +443,28 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
         )}
       </div>
 
-      {doc.widgets.length === 0 ? (
-        <button
-          type="button"
-          className="board-empty"
-          onClick={() => {
-            setEdit(true);
-          }}
-        >
-          ＋ {t.bd_empty ?? "Add your first chart — MCP inflow, tags, tasks…"}
-        </button>
-      ) : (
-        /* The hook types its ref for React 19's nullable RefObject; this app
-           is on React 18 whose div ref wants the non-null flavor — same object. */
-        <div ref={containerRef as RefObject<HTMLDivElement>}>
-          {mounted ? (
+      {/* The measuring div renders UNCONDITIONALLY: useContainerWidth only
+          attaches its ResizeObserver on the effect run where the ref is
+          non-null, and never retries. Mounting it lazily (only once widgets
+          existed) left the width stuck at the hook's 1280px default — every
+          board that started empty laid out for a phantom double-wide grid,
+          pushing the second column off the pane. (Ref cast: the hook types
+          for React 19's nullable RefObject; React 18's div ref wants the
+          non-null flavor — same object.) */}
+      <div ref={containerRef as RefObject<HTMLDivElement>}>
+        {doc.widgets.length === 0 ? (
+          <button
+            type="button"
+            className="board-empty"
+            onClick={() => {
+              setEdit(true);
+            }}
+          >
+            ＋ {t.bd_empty ?? "Add your first chart — MCP inflow, tags, tasks…"}
+          </button>
+        ) : (
+          <>
+          {mounted && width > 0 ? (
             <GridLayout
               width={width}
               layout={layout}
@@ -535,8 +542,9 @@ export default function OverviewBoard({ t }: { t: Strings }): JSX.Element | null
               ))}
             </GridLayout>
           ) : null}
-        </div>
-      )}
+          </>
+        )}
+      </div>
       {detailId
         ? (() => {
             const w = doc.widgets.find((x) => x.id === detailId);
