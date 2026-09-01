@@ -436,7 +436,7 @@ pub fn whisper_check() -> CliStatus {
 /// Runs off the async pool so the long transcription doesn't block the UI.
 #[tauri::command]
 pub async fn transcribe_media(app: tauri::AppHandle, path: String) -> Result<String, String> {
-    tokio::task::spawn_blocking(move || crate::whisper::transcribe(&app, &path))
+    tokio::task::spawn_blocking(move || crate::whisper::transcribe_auto(&app, &path))
         .await
         .map_err(|e| format!("transcription task failed: {e}"))?
 }

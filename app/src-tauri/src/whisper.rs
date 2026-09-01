@@ -302,6 +302,7 @@ pub fn build_args(
     stem: &str,
     out_dir: &Path,
     model: Option<&Path>,
+    json: bool,
 ) -> (Vec<String>, PathBuf) {
     let out_txt = out_dir.join(format!("{stem}.txt"));
     match variant {
@@ -330,6 +331,12 @@ pub fn build_args(
                 args.push("-l".into());
                 args.push("auto".into());
                 args.push("-pp".into());
+                if json {
+                    // Meeting-length audio: segment offsets for the
+                    // timestamped transcript. Alongside -otxt, so a parse
+                    // failure still has the plain text to fall back on.
+                    args.push("-oj".into());
+                }
             }
             args.push("-otxt".into());
             args.push("-of".into());
@@ -339,7 +346,108 @@ pub fn build_args(
     }
 }
 
+// ---- meeting-length output (F3) ---------------------------------------------
+//
+// Speaker diarization stays a SEPARATE slice: the spike (2026-08-31, web)
+// confirmed whisper.cpp's tinydiarize ships an English-only small.en-tdrz
+// model — unusable for Korean meetings — while sherpa-onnx offers local,
+// language-independent diarization (pyannote-segmentation-3.0 onnx + a
+// speaker-embedding model, standalone CLI). Adopting that means a second
+// sidecar + two model downloads + merging its turns with these segments,
+// so F4 builds on the Segment type below when it lands.
+
+/// One transcript segment from whisper.cpp's `-oj` output.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Segment {
+    pub from_ms: u64,
+    pub to_ms: u64,
+    pub text: String,
+}
+
+/// Parse whisper.cpp's `-oj` JSON (`{"transcription":[{"offsets":{"from","to"},
+/// "text"}]}`). Unknown shapes yield an empty list — the caller falls back to
+/// the plain-text output rather than failing a finished transcription.
+pub fn parse_whisper_json(raw: &str) -> Vec<Segment> {
+    let Ok(v) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
+    let Some(items) = v.get("transcription").and_then(|t| t.as_array()) else {
+        return Vec::new();
+    };
+    items
+        .iter()
+        .filter_map(|it| {
+            let text = it.get("text")?.as_str()?.trim().to_string();
+            if text.is_empty() {
+                return None;
+            }
+            let off = it.get("offsets")?;
+            Some(Segment {
+                from_ms: off.get("from")?.as_u64()?,
+                to_ms: off.get("to")?.as_u64()?,
+                text,
+            })
+        })
+        .collect()
+}
+
+fn hhmmss(ms: u64) -> String {
+    let s = ms / 1000;
+    format!("{:02}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
+}
+
+/// Render segments as timestamped paragraphs. A new block starts on a ≥2s
+/// silence or once a block spans a minute — the two natural paragraph
+/// boundaries a meeting transcript has. Each block leads with `[HH:MM:SS]`,
+/// so a citation into an hour of audio is seekable.
+pub fn format_timestamped(segments: &[Segment]) -> String {
+    const GAP_MS: u64 = 2_000;
+    const BLOCK_MS: u64 = 60_000;
+    let mut blocks: Vec<String> = Vec::new();
+    let mut cur: Vec<&str> = Vec::new();
+    let mut cur_start = 0u64;
+    let mut prev_end = 0u64;
+    for seg in segments {
+        let boundary = !cur.is_empty()
+            && (seg.from_ms.saturating_sub(prev_end) >= GAP_MS
+                || seg.to_ms.saturating_sub(cur_start) >= BLOCK_MS);
+        if boundary {
+            blocks.push(format!("[{}] {}", hhmmss(cur_start), cur.join(" ")));
+            cur.clear();
+        }
+        if cur.is_empty() {
+            cur_start = seg.from_ms;
+        }
+        cur.push(&seg.text);
+        prev_end = seg.to_ms;
+    }
+    if !cur.is_empty() {
+        blocks.push(format!("[{}] {}", hhmmss(cur_start), cur.join(" ")));
+    }
+    blocks.join("\n\n")
+}
+
+/// Audio length (secs) worth timestamping — short clips read better plain.
+const TIMESTAMP_MIN_SECS: u64 = 600;
+
+/// Plain transcript — quick voice captures and short clips.
 pub fn transcribe(app: &tauri::AppHandle, path: &str) -> Result<String, String> {
+    transcribe_inner(app, path, false)
+}
+
+/// Media-file transcript: meeting-length audio (>10 min, bundled runs) comes
+/// back as `[HH:MM:SS]`-led paragraphs; anything shorter stays plain. PATH
+/// binaries keep their own output shape — no flags are injected into a
+/// user's setup, so those never timestamp.
+pub fn transcribe_auto(app: &tauri::AppHandle, path: &str) -> Result<String, String> {
+    transcribe_inner(app, path, true)
+}
+
+fn transcribe_inner(
+    app: &tauri::AppHandle,
+    path: &str,
+    want_timestamps: bool,
+) -> Result<String, String> {
     // A PATH whisper is an explicit user choice and wins; otherwise the
     // bundled sidecar runs with the (auto-fetched) bundled model.
     let (bin, variant, model) = match locate() {
@@ -380,9 +488,13 @@ pub fn transcribe(app: &tauri::AppHandle, path: &str) -> Result<String, String> 
     } else {
         path.to_string()
     };
-    let (args, out_txt) = build_args(variant, &audio, &stem, &out_dir, model.as_deref());
+    // Timestamp only what is actually long: bytes/32k ≈ seconds for our
+    // 16 kHz mono WAV and a conservative floor for compressed input.
+    let audio_bytes = std::fs::metadata(&audio).map(|m| m.len()).unwrap_or(0);
+    let json = want_timestamps && model.is_some() && audio_bytes / 32_000 >= TIMESTAMP_MIN_SECS;
+    let (args, out_txt) = build_args(variant, &audio, &stem, &out_dir, model.as_deref(), json);
 
-    let timeout = transcribe_timeout(std::fs::metadata(&audio).map(|m| m.len()).unwrap_or(0));
+    let timeout = transcribe_timeout(audio_bytes);
     let child = Command::new(&bin)
         .args(&args)
         .env("PATH", augmented_path(&bin))
@@ -392,12 +504,22 @@ pub fn transcribe(app: &tauri::AppHandle, path: &str) -> Result<String, String> 
         .spawn()
         .map_err(|e| format!("spawn whisper failed: {e}"))?;
     let res: CliResult = run_streaming(app, child, timeout)?;
-    let text = std::fs::read_to_string(&out_txt)
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        // Some builds print the transcript to stdout instead of a file.
-        .unwrap_or_else(|| res.stdout.trim().to_string());
+    // Prefer the timestamped rendering when segments were asked for and
+    // parsed; any JSON hiccup falls back to the plain text, never to an
+    // error — the transcription itself succeeded.
+    let timestamped = json
+        .then(|| std::fs::read_to_string(out_txt.with_extension("json")).ok())
+        .flatten()
+        .map(|raw| format_timestamped(&parse_whisper_json(&raw)))
+        .filter(|s| !s.is_empty());
+    let text = timestamped.unwrap_or_else(|| {
+        std::fs::read_to_string(&out_txt)
+            .ok()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            // Some builds print the transcript to stdout instead of a file.
+            .unwrap_or_else(|| res.stdout.trim().to_string())
+    });
     let _ = std::fs::remove_dir_all(&out_dir);
     if text.is_empty() {
         return Err(format!(
@@ -421,6 +543,7 @@ mod tests {
             "talk",
             Path::new("/tmp/x"),
             None,
+            false,
         );
         assert_eq!(args[0], "/a/talk.mp3");
         assert!(args.contains(&"--output_format".to_string()));
@@ -437,6 +560,7 @@ mod tests {
             "talk",
             Path::new("/tmp/x"),
             None,
+            false,
         );
         assert_eq!(args[0], "-f");
         assert_eq!(args[1], "/a/talk.wav");
@@ -464,6 +588,7 @@ mod tests {
             "talk",
             Path::new("/tmp/x"),
             Some(Path::new("/data/models/ggml-small-q5_1.bin")),
+            false,
         );
         let m = args.iter().position(|a| a == "-m").unwrap();
         assert_eq!(args[m + 1], "/data/models/ggml-small-q5_1.bin");
@@ -472,6 +597,69 @@ mod tests {
         assert_eq!(args[l + 1], "auto");
         // Progress lines for run_streaming — bundled runs only.
         assert!(args.contains(&"-pp".to_string()));
+    }
+
+    #[test]
+    fn json_flag_rides_only_on_bundled_runs() {
+        let model = Path::new("/m/ggml-small-q5_1.bin");
+        let (args, _) = build_args(
+            Variant::WhisperCpp,
+            "/a/mtg.wav",
+            "mtg",
+            Path::new("/tmp/x"),
+            Some(model),
+            true,
+        );
+        assert!(args.contains(&"-oj".to_string()));
+        assert!(args.contains(&"-otxt".to_string()), "plain fallback stays");
+        // A user's own PATH whisper-cli never gets extra flags injected.
+        let (args, _) = build_args(
+            Variant::WhisperCpp,
+            "/a/mtg.wav",
+            "mtg",
+            Path::new("/tmp/x"),
+            None,
+            true,
+        );
+        assert!(!args.contains(&"-oj".to_string()));
+    }
+
+    #[test]
+    fn whisper_json_parses_offsets_and_skips_junk() {
+        let raw = r#"{"transcription":[
+            {"offsets":{"from":0,"to":4000},"text":" 회의를 시작하겠습니다."},
+            {"offsets":{"from":4000,"to":9000},"text":" 첫 안건은 유입 원장."},
+            {"offsets":{"from":9000,"to":9500},"text":"   "},
+            {"bogus": true}
+        ]}"#;
+        let segs = parse_whisper_json(raw);
+        assert_eq!(segs.len(), 2);
+        assert_eq!(segs[0].from_ms, 0);
+        assert_eq!(segs[1].text, "첫 안건은 유입 원장.");
+        assert!(parse_whisper_json("not json").is_empty());
+        assert!(parse_whisper_json("{}").is_empty());
+    }
+
+    #[test]
+    fn timestamped_blocks_break_on_silence_and_length() {
+        let seg = |from: u64, to: u64, text: &str| Segment {
+            from_ms: from,
+            to_ms: to,
+            text: text.into(),
+        };
+        let out = format_timestamped(&[
+            seg(0, 3_000, "하나"),
+            seg(3_200, 6_000, "둘"),     // continues (gap < 2s)
+            seg(9_000, 12_000, "셋"),    // 3s silence → new block
+            seg(12_000, 80_000, "넷"),   // joining would span >60s → own block
+            seg(80_500, 81_000, "다섯"), // ditto (previous block already 68s)
+        ]);
+        let blocks: Vec<&str> = out.split("\n\n").collect();
+        assert_eq!(blocks.len(), 4, "{out}");
+        assert!(blocks[0].starts_with("[00:00:00] 하나 둘"));
+        assert!(blocks[1].starts_with("[00:00:09] 셋"));
+        assert!(blocks[2].starts_with("[00:00:12] 넷"));
+        assert!(blocks[3].starts_with("[00:01:20] 다섯"));
     }
 
     #[test]
