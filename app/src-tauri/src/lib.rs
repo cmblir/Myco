@@ -10,6 +10,7 @@ pub mod cli_agent;
 pub mod clip;
 mod commands;
 pub mod crash;
+pub mod diarize;
 pub mod distill;
 pub mod embeddings;
 pub mod env;

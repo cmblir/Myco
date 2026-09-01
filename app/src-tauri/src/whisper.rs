@@ -427,6 +427,49 @@ pub fn format_timestamped(segments: &[Segment]) -> String {
     blocks.join("\n\n")
 }
 
+/// Like `format_timestamped`, with each block owned by one speaker: a block
+/// also breaks when the diarizer says the voice changed, and leads with
+/// `[HH:MM:SS] 화자 N:`. A segment the diarizer could not place (None)
+/// inherits the running block's speaker rather than forcing a break.
+pub fn format_timestamped_speakers(segments: &[Segment], turns: &[crate::diarize::Turn]) -> String {
+    const GAP_MS: u64 = 2_000;
+    const BLOCK_MS: u64 = 60_000;
+    let mut blocks: Vec<String> = Vec::new();
+    let mut cur: Vec<&str> = Vec::new();
+    let mut cur_start = 0u64;
+    let mut cur_speaker: Option<u32> = None;
+    let mut prev_end = 0u64;
+    let flush = |blocks: &mut Vec<String>, cur: &mut Vec<&str>, start: u64, sp: Option<u32>| {
+        if cur.is_empty() {
+            return;
+        }
+        let who = sp.map(|n| format!("화자 {}: ", n + 1)).unwrap_or_default();
+        blocks.push(format!("[{}] {}{}", hhmmss(start), who, cur.join(" ")));
+        cur.clear();
+    };
+    for seg in segments {
+        let sp = crate::diarize::speaker_at(turns, seg.from_ms, seg.to_ms);
+        let speaker_changed = sp.is_some() && cur_speaker.is_some() && sp != cur_speaker;
+        let boundary = !cur.is_empty()
+            && (speaker_changed
+                || seg.from_ms.saturating_sub(prev_end) >= GAP_MS
+                || seg.to_ms.saturating_sub(cur_start) >= BLOCK_MS);
+        if boundary {
+            flush(&mut blocks, &mut cur, cur_start, cur_speaker);
+        }
+        if cur.is_empty() {
+            cur_start = seg.from_ms;
+            cur_speaker = sp;
+        } else if cur_speaker.is_none() {
+            cur_speaker = sp;
+        }
+        cur.push(&seg.text);
+        prev_end = seg.to_ms;
+    }
+    flush(&mut blocks, &mut cur, cur_start, cur_speaker);
+    blocks.join("\n\n")
+}
+
 /// Audio length (secs) worth timestamping — short clips read better plain.
 const TIMESTAMP_MIN_SECS: u64 = 600;
 
@@ -506,11 +549,32 @@ fn transcribe_inner(
     let res: CliResult = run_streaming(app, child, timeout)?;
     // Prefer the timestamped rendering when segments were asked for and
     // parsed; any JSON hiccup falls back to the plain text, never to an
-    // error — the transcription itself succeeded.
+    // error — the transcription itself succeeded. When segments exist,
+    // speaker diarization runs on top (sherpa-onnx sidecar, fetched on
+    // first use) — best-effort: any failure there means timestamps
+    // without speakers, silently.
     let timestamped = json
         .then(|| std::fs::read_to_string(out_txt.with_extension("json")).ok())
         .flatten()
-        .map(|raw| format_timestamped(&parse_whisper_json(&raw)))
+        .map(|raw| {
+            let segs = parse_whisper_json(&raw);
+            if segs.is_empty() {
+                return String::new();
+            }
+            // The diarizer wants a 16 kHz mono WAV; a natively-readable
+            // mp3/flac input skipped afconvert above, so convert here.
+            let wav = if audio.to_lowercase().ends_with(".wav") {
+                Some(audio.clone())
+            } else {
+                afconvert_to_wav(Path::new(&audio), &out_dir)
+                    .ok()
+                    .map(|p| p.to_string_lossy().into_owned())
+            };
+            match wav.and_then(|w| crate::diarize::diarize(app, &w).ok()) {
+                Some(turns) => format_timestamped_speakers(&segs, &turns),
+                None => format_timestamped(&segs),
+            }
+        })
         .filter(|s| !s.is_empty());
     let text = timestamped.unwrap_or_else(|| {
         std::fs::read_to_string(&out_txt)
