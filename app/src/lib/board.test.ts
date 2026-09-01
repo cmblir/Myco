@@ -227,3 +227,24 @@ describe("sanitizeBoard / aliases", () => {
     expect(aliasLabel(w, "x")).toBe("x");
   });
 });
+
+describe("bucketWeekly", () => {
+  it("folds the all-range's daily series into Monday weeks, parts included", async () => {
+    const { bucketWeekly, runBoardQuery: run } = await import("./board");
+    // 2026-08-31 is a Monday; the prior Mon is 08-24.
+    const daily = [
+      { day: "2026-08-28", total: 2, parts: [{ channel: "mcp" as const, value: 2 }] },
+      { day: "2026-08-30", total: 1, parts: [{ channel: "voice" as const, value: 1 }] },
+      { day: "2026-08-31", total: 5, parts: [{ channel: "mcp" as const, value: 5 }] },
+    ];
+    const weeks = bucketWeekly(daily);
+    expect(weeks.map((w) => w.day)).toEqual(["2026-08-24", "2026-08-31"]);
+    expect(weeks[0].total).toBe(3);
+    expect(weeks[0].parts?.find((p) => p.channel === "mcp")?.value).toBe(2);
+    expect(weeks[1].total).toBe(5);
+    // The engine buckets automatically past 120 days.
+    const r = run(data, { source: "inflow", groupBy: "day", filters: [] }, "all", NOW);
+    if (r.kind !== "series") throw new Error("expected series");
+    expect(r.days.length).toBeLessThan(60);
+  });
+});

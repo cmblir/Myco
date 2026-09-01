@@ -642,8 +642,11 @@ select {
   max-width: 1100px;
   margin: 0 auto;
   /* Belt to the grid's braces: a wide descendant scrolls itself rather than
-     stretching this column. */
+     stretching this column — and the page NEVER scrolls sideways: a rogue
+     absolutely-positioned child (a grid item sized off a stale width) clips
+     here instead of dragging the whole overview off-viewport. */
   min-width: 0;
+  overflow-x: clip;
 }
 .workspace-wide {
   padding: 0 40px;
@@ -6215,7 +6218,9 @@ html.notch-window body {
   align-items: center;
   height: 100%;
   gap: 2px;
-  min-width: 3px;
+  /* No floor: 365 one-day columns must shrink to fit the card, not force a
+     ~1.8k px min-content width that overflows the pane. */
+  min-width: 0;
 }
 .dash-week__num {
   font-size: 10.5px;

@@ -311,6 +311,36 @@ function dayWindow(days: number, nowMs: number): string[] {
   return out;
 }
 
+/** Fold a daily series into Monday-led weekly buckets — the "all" range's
+ *  365 one-day columns are unreadable and unrenderable in a card; ~52 weekly
+ *  bars say the same thing legibly. */
+export function bucketWeekly(days: DayPoint[]): DayPoint[] {
+  const out: DayPoint[] = [];
+  for (const d of days) {
+    // Monday of d's week, from the date string alone (no TZ surprises).
+    const date = new Date(`${d.day}T00:00:00`);
+    date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const wk = `${date.getFullYear()}-${m}-${String(date.getDate()).padStart(2, "0")}`;
+    const last = out[out.length - 1];
+    if (last && last.day === wk) {
+      last.total += d.total;
+      if (d.parts) {
+        const parts = last.parts ?? [];
+        for (const p of d.parts) {
+          const hit = parts.find((x) => x.channel === p.channel);
+          if (hit) hit.value += p.value;
+          else parts.push({ ...p });
+        }
+        last.parts = parts;
+      }
+    } else {
+      out.push({ day: wk, total: d.total, parts: d.parts?.map((p) => ({ ...p })) });
+    }
+  }
+  return out;
+}
+
 export function runBoardQuery(
   data: BoardData,
   q: BoardQuery,
@@ -332,19 +362,17 @@ export function runBoardQuery(
       };
     }
     // day series; split by channel only when no single channel is asked for.
-    return {
-      kind: "series",
-      days: dayWindow(days, nowMs).map((day) => {
-        const d = data.inflow.find((x) => x.day === day);
-        if (!d) return { day, total: 0 };
-        if (ch) return { day, total: d[ch] };
-        return {
-          day,
-          total: CHANNELS.reduce((s, c) => s + d[c], 0),
-          parts: CHANNELS.map((c) => ({ channel: c, value: d[c] })),
-        };
-      }),
-    };
+    const series = dayWindow(days, nowMs).map((day) => {
+      const d = data.inflow.find((x) => x.day === day);
+      if (!d) return { day, total: 0 } as DayPoint;
+      if (ch) return { day, total: d[ch] } as DayPoint;
+      return {
+        day,
+        total: CHANNELS.reduce((s, c) => s + d[c], 0),
+        parts: CHANNELS.map((c) => ({ channel: c, value: d[c] })),
+      } as DayPoint;
+    });
+    return { kind: "series", days: days > 120 ? bucketWeekly(series) : series };
   }
 
   if (q.source === "tasks") {
@@ -384,10 +412,8 @@ export function runBoardQuery(
       const day = localDayString(secs);
       if (counts.has(day)) counts.set(day, (counts.get(day) ?? 0) + 1);
     }
-    return {
-      kind: "series",
-      days: window.map((day) => ({ day, total: counts.get(day) ?? 0 })),
-    };
+    const series = window.map((day) => ({ day, total: counts.get(day) ?? 0 }));
+    return { kind: "series", days: days > 120 ? bucketWeekly(series) : series };
   }
   const bump = (m: Map<string, number>, k?: string): void => {
     if (k) m.set(k, (m.get(k) ?? 0) + 1);
