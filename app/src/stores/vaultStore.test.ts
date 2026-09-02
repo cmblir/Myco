@@ -137,3 +137,63 @@ describe("openWikilink (resolve or create)", () => {
     expect(await useVaultStore.getState().openWikilink("x")).toBeNull();
   });
 });
+
+describe("saveFile / patchPages", () => {
+  const A = "/v/wiki/a.md";
+  const B = "/v/wiki/b.md";
+  const files: Record<string, string> = {
+    [A]: "---\ntype: concept\ntags:\n  - x\n---\nA\n",
+    [B]: "---\ntype: entity\n---\nB\n",
+  };
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    useVaultStore.setState({ currentVault: VAULT, adjacency: null, activeFile: null, error: null });
+    vi.spyOn(ipc, "buildLinkGraph").mockResolvedValue(ADJ);
+    vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    vi.spyOn(ipc, "readFile").mockImplementation(async (p) => ({
+      path: p,
+      raw: files[p],
+      content: "",
+      frontmatter: null,
+    }));
+  });
+
+  it("saveFile rebuilds the graph unless asked to skip", async () => {
+    await useVaultStore.getState().saveFile(A, "x", { skipRefresh: true });
+    expect(ipc.buildLinkGraph).not.toHaveBeenCalled();
+    await useVaultStore.getState().saveFile(A, "x");
+    expect(ipc.buildLinkGraph).toHaveBeenCalledTimes(1);
+  });
+
+  it("patchPages writes only the pages the patch changes, then refreshes once", async () => {
+    useVaultStore.setState({
+      activeFile: { path: A, raw: files[A], content: "", frontmatter: null },
+    });
+    await useVaultStore.getState().patchPages([A, B], () => ({ type: "entity" }));
+    const patched = "---\ntype: entity\ntags:\n  - x\n---\nA\n";
+    expect(ipc.writeFile).toHaveBeenCalledTimes(1);
+    expect(ipc.writeFile).toHaveBeenCalledWith(A, patched);
+    expect(ipc.buildLinkGraph).toHaveBeenCalledTimes(1);
+    // The open note's baseline follows, so the reader can re-seed a clean draft.
+    expect(useVaultStore.getState().activeFile?.raw).toBe(patched);
+    expect(useVaultStore.getState().error).toBeNull();
+  });
+
+  it("patchPages stops at the first unreadable page and reports it", async () => {
+    vi.spyOn(ipc, "readFile").mockRejectedValue(new Error("EACCES"));
+    await useVaultStore.getState().patchPages([A, B], () => ({ type: "entity" }));
+    expect(ipc.readFile).toHaveBeenCalledTimes(1);
+    expect(ipc.writeFile).not.toHaveBeenCalled();
+    expect(useVaultStore.getState().error).toBe("EACCES");
+  });
+
+  it("patchPages stops at the first failed write and skips the graph rebuild", async () => {
+    vi.spyOn(ipc, "writeFile").mockRejectedValueOnce(new Error("EROFS"));
+    await useVaultStore.getState().patchPages([A, B], () => ({ type: "x" }));
+    expect(ipc.readFile).toHaveBeenCalledTimes(1);
+    expect(ipc.writeFile).toHaveBeenCalledTimes(1);
+    expect(useVaultStore.getState().error).toBe("EROFS");
+    // Nothing landed on disk, so the link graph has nothing to pick up.
+    expect(ipc.buildLinkGraph).not.toHaveBeenCalled();
+  });
+});

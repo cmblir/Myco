@@ -83,6 +83,8 @@ export interface UIState {
   // Morning-Report band (Q4 item 2): when Overview was last opened, epoch ms.
   // null until the first visit ever stamps it.
   lastVisitAt: number | null;
+  // Reader properties panel (frontmatter form) folded shut. Default open.
+  propsCollapsed: boolean;
 
   setRoute: (route: RouteId) => void;
   setFeedbackTab: (tab: FeedbackTab) => void;
@@ -104,6 +106,7 @@ export interface UIState {
   toggleFolder: (id: string) => void;
   setMyceliumGrown: (v: boolean) => void;
   stampVisit: () => void;
+  setPropsCollapsed: (v: boolean) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -129,6 +132,7 @@ export const useUIStore = create<UIState>()(
       expandedFolders: {},
       myceliumGrown: false,
       lastVisitAt: null,
+      propsCollapsed: false,
 
       setRoute: (route) =>
         // Never let the primary and split panes show the SAME route (two live
@@ -162,6 +166,7 @@ export const useUIStore = create<UIState>()(
         }),
       setMyceliumGrown: (v) => set({ myceliumGrown: v }),
       stampVisit: () => set({ lastVisitAt: Date.now() }),
+      setPropsCollapsed: (v) => set({ propsCollapsed: v }),
     }),
     {
       name: "myco-ui",

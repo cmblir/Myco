@@ -5,6 +5,12 @@ import { create } from "zustand";
 import { ipc } from "../lib/ipc";
 import type { Adjacency, FileContent, FileNode, VaultMeta } from "../lib/ipc";
 import { createDebouncedCommitter } from "../lib/humanCommit";
+import {
+  parseFrontmatter,
+  patchFrontmatter,
+  type FmPatch,
+  type Frontmatter,
+} from "../lib/frontmatter";
 import { useSettingsStore } from "./settingsStore";
 import { useUIStore } from "./uiStore";
 
@@ -45,7 +51,18 @@ export interface VaultState {
   error: string | null;
   openVault: (path: string) => Promise<void>;
   openFile: (path: string) => Promise<void>;
-  saveFile: (path: string, content: string) => Promise<void>;
+  /** `skipRefresh` defers the link-graph rebuild to the caller (bulk writes). */
+  saveFile: (
+    path: string,
+    content: string,
+    opts?: { skipRefresh?: boolean },
+  ) => Promise<void>;
+  /** Read → patch → saveFile({skipRefresh}) per path, one refreshLinkGraph at
+   *  the end; the first failure stops the loop and lands in `error`. */
+  patchPages: (
+    paths: string[],
+    make: (fm: Frontmatter | null) => FmPatch,
+  ) => Promise<void>;
   /** `ifChanged` skips the rebuild when the vault fingerprint is unmoved
    *  (background poll only — a caller that just wrote should force). */
   refreshLinkGraph: (opts?: { ifChanged?: boolean }) => Promise<void>;
@@ -166,7 +183,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     }
   },
 
-  async saveFile(path, content) {
+  async saveFile(path, content, opts) {
     try {
       await ipc.writeFile(path, content);
       const vault = get().currentVault;
@@ -186,9 +203,28 @@ export const useVaultStore = create<VaultState>((set, get) => ({
           ? { activeFile: { ...state.activeFile, raw: content }, error: null }
           : { error: null },
       );
-      void get().refreshLinkGraph();
+      if (!opts?.skipRefresh) void get().refreshLinkGraph();
     } catch (err) {
       set({ error: errorMessage(err) });
+    }
+  },
+
+  async patchPages(paths, make) {
+    let wrote = false;
+    try {
+      for (const path of paths) {
+        const { raw } = await ipc.readFile(path);
+        const edit = patchFrontmatter(raw, make(parseFrontmatter(raw)));
+        if (edit.raw === raw) continue;
+        await get().saveFile(path, edit.raw, { skipRefresh: true });
+        // saveFile swallows its own write failure into `error`.
+        if (get().error) return;
+        wrote = true;
+      }
+    } catch (err) {
+      set({ error: errorMessage(err) });
+    } finally {
+      if (wrote) await get().refreshLinkGraph();
     }
   },
 

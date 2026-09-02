@@ -42,6 +42,7 @@
   --accent: #181715;
   --accent-soft: #ebe9e3;
   --accent-ink: #ffffff;
+  --danger: #dc2626;
 
   --c-overview: #1f6feb;
   --c-source: #ad6800;
@@ -85,6 +86,7 @@
   --accent: #ededec;
   --accent-soft: #2c2c2c;
   --accent-ink: #181715;
+  --danger: #f87171;
 
   --shadow-1: 0 1px 0 rgba(0, 0, 0, 0.4);
   --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.5);
@@ -6386,3 +6388,50 @@ html.notch-window body {
 .board-detail__chart { min-height: 180px; display: flex; flex-direction: column; }
 .board-detail__chart .dash-weeks { height: 160px; }
 .board-detail__table { overflow-y: auto; min-height: 0; }
+
+/* Reader properties panel: frontmatter as a form above the editor. */
+.props {
+  margin-bottom: 16px;
+  padding: 10px 16px;
+}
+.props summary {
+  cursor: pointer;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.props__row {
+  display: grid;
+  grid-template-columns: 140px 1fr auto;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.props__row > * {
+  min-width: 0;
+}
+.props__key {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.props__alert {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 12px;
+  color: var(--danger);
+}
+details.props > .btn {
+  margin-top: 8px;
+}
+/* Native select/number/checkbox chrome rendered light on the dark theme. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+}
+.props input[type="checkbox"],
+.views-check input {
+  accent-color: var(--ink);
+}

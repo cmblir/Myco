@@ -809,6 +809,17 @@ export interface Strings {
   rd_cards_none?: string;
   rd_cards_made?: string;
   rd_open_study?: string;
+  // Reader properties panel.
+  props_title?: string;
+  props_add?: string;
+  props_key_ph?: string;
+  props_value_ph?: string;
+  props_add_confirm?: string;
+  props_remove?: string;
+  props_bad_key?: string;
+  props_complex?: string;
+  props_tags_ph?: string;
+  props_tag_remove?: string;
   // Study page (Feature 3).
   st_title?: string;
   st_lede?: string;
@@ -2268,6 +2279,17 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_cards_none: "No cards generated.",
     rd_cards_made: "{n} cards added",
     rd_open_study: "Open study",
+    props_title: "Properties",
+    props_add: "Add property",
+    props_key_ph: "key",
+    props_value_ph: "value",
+    props_add_confirm: "Add",
+    props_remove: "Remove {key}",
+    props_bad_key:
+      "Key must start with a letter, use only letters, digits, _ or -, and not already exist",
+    props_complex: "Complex value — edit in source",
+    props_tags_ph: "Add tag…",
+    props_tag_remove: "Remove tag",
     st_title: "Study",
     st_lede:
       "Review your knowledge with spaced-repetition flashcards and quizzes generated from your pages.",
@@ -3729,6 +3751,16 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_cards_none: "생성된 카드가 없습니다.",
     rd_cards_made: "카드 {n}개 추가됨",
     rd_open_study: "학습 열기",
+    props_title: "속성",
+    props_add: "속성 추가",
+    props_key_ph: "키",
+    props_value_ph: "값",
+    props_add_confirm: "추가",
+    props_remove: "{key} 제거",
+    props_bad_key: "키는 영문자로 시작해 영문·숫자·_·-만 사용할 수 있으며 이미 있는 키는 쓸 수 없습니다",
+    props_complex: "복합 값 — 소스에서 편집하세요",
+    props_tags_ph: "태그 추가…",
+    props_tag_remove: "태그 제거",
     st_title: "학습",
     st_lede:
       "페이지에서 생성한 간격 반복 플래시카드와 퀴즈로 지식을 복습하세요.",
@@ -5013,6 +5045,16 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_cards_none: "生成されたカードがありません。",
     rd_cards_made: "カードを{n}枚追加しました",
     rd_open_study: "学習を開く",
+    props_title: "プロパティ",
+    props_add: "プロパティを追加",
+    props_key_ph: "キー",
+    props_value_ph: "値",
+    props_add_confirm: "追加",
+    props_remove: "{key} を削除",
+    props_bad_key: "キーは英字で始まり英数字・_・-のみ使用でき、既存のキーは使えません",
+    props_complex: "複合値 — ソースで編集してください",
+    props_tags_ph: "タグを追加…",
+    props_tag_remove: "タグを削除",
     st_title: "学習",
     st_lede:
       "ページから生成した間隔反復フラッシュカードとクイズで知識を復習しましょう。",

@@ -2,8 +2,9 @@
 // preview mode renders markdown-it (with wikilinks). The `sample/<id>`
 // pseudo-route falls through to the design's mock content.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
+import type { EditorView } from "@codemirror/view";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { SAMPLE } from "../lib/sample";
@@ -16,7 +17,14 @@ import { addCards, deckSlug } from "../lib/cardStore";
 import { ipc } from "../lib/ipc";
 import type { PageAuthorship } from "../lib/ipc";
 import { badgeView } from "../lib/authorship";
+import {
+  parseFrontmatter,
+  patchFrontmatter,
+  type FmPatch,
+} from "../lib/frontmatter";
+import { tagCandidates } from "../lib/tagIndex";
 import Editor from "../components/Editor";
+import PropertiesPanel from "../components/PropertiesPanel";
 import AudioOverviewPanel from "../components/AudioOverviewPanel";
 import PdfViewer from "../components/PdfViewer";
 import { usePdfStore } from "../stores/pdfStore";
@@ -178,6 +186,18 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   // no history means no claim, so the header simply shows nothing.
   const [authorship, setAuthorship] = useState<PageAuthorship | null>(null);
   const [draft, setDraft] = useState("");
+  // 0 until the first seed lands (no editor before then — it reads
+  // initialValue once); bumped when a clean draft is re-seeded from disk so
+  // the editor remounts on the new text.
+  const [seedGen, setSeedGen] = useState(0);
+  const editorViewRef = useRef<EditorView | null>(null);
+  const fm = useMemo(() => parseFrontmatter(draft), [draft]);
+  const allTags = useMemo(
+    () => tagCandidates(adjacency?.tags ?? {}, "", Infinity),
+    [adjacency],
+  );
+  const isRaw =
+    !!currentVaultPath && path.startsWith(`${currentVaultPath}/raw/`);
   const [cardBusy, setCardBusy] = useState(false);
   const [cardMsg, setCardMsg] = useState<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -225,13 +245,28 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   }, [path, currentVaultPath]);
 
   useEffect(() => {
-    if (activeFile?.path === path && seededPathRef.current !== path) {
+    if (activeFile?.path !== path) return;
+    if (seededPathRef.current !== path) {
       seededPathRef.current = path;
       // Seed from `raw` (the full file incl. frontmatter), not the stripped
       // `content`, so editing + autosave round-trips the frontmatter losslessly.
       setDraft(activeFile.raw);
       draftRef.current = activeFile.raw;
       seededRawRef.current = activeFile.raw;
+      setSeedGen((g) => g + 1);
+    } else if (
+      activeFile.raw !== seededRawRef.current &&
+      draftRef.current === seededRawRef.current
+    ) {
+      // Another surface (Views bulk edit, a move) rewrote this note while the
+      // draft is clean: adopt it. ponytail: a dirty draft is left alone — its
+      // pending autosave wins. Autosave sets seededRawRef before saveFile, so
+      // its own activeFile.raw update never lands here.
+      const raw = activeFile.raw;
+      setDraft(raw);
+      draftRef.current = raw;
+      seededRawRef.current = raw;
+      setSeedGen((g) => g + 1);
     }
   }, [activeFile?.path, activeFile?.raw, path]);
 
@@ -271,6 +306,26 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     }
     seededRawRef.current = c;
     void saveFile(path, c);
+  }
+
+  function patchProps(patch: FmPatch): void {
+    const edit = patchFrontmatter(draftRef.current, patch);
+    const v = editorViewRef.current;
+    // One transaction over the frontmatter range keeps cursor/scroll, makes
+    // ⌘Z undo the property edit, and reaches autosave via updateListener →
+    // onChange. Without an editor (Preview) patch the draft directly.
+    if (v) {
+      v.dispatch({
+        changes: {
+          from: 0,
+          to: Math.min(edit.to, v.state.doc.length),
+          insert: edit.insert,
+        },
+      });
+    } else {
+      setDraft(edit.raw);
+      scheduleSave(edit.raw);
+    }
   }
 
   async function makeCards(): Promise<void> {
@@ -429,6 +484,14 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
           </div>
         ) : null}
       </header>
+      {!isRaw && seedGen > 0 ? (
+        <PropertiesPanel fm={fm} allTags={allTags} onPatch={patchProps} t={t} />
+      ) : null}
+      {error ? (
+        <p role="alert" className="muted" style={{ fontSize: 12.5 }}>
+          {error}
+        </p>
+      ) : null}
       <section
         style={{
           display: "flex",
@@ -439,15 +502,21 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       >
         {mode !== "preview" ? (
           <div style={{ flex: 1, minHeight: "60vh", display: "flex" }}>
-            <Editor
-              docKey={path}
-              initialValue={activeFile.raw}
-              onChange={(c) => {
-                setDraft(c);
-                scheduleSave(c);
-              }}
-              onSave={(c) => flushSave(c)}
-            />
+            {seedGen > 0 ? (
+              <Editor
+                docKey={`${path}#${seedGen}`}
+                // `draft`, not `activeFile.raw`: a Preview-mode property edit
+                // must survive a Preview → Source switch inside the autosave
+                // window.
+                initialValue={draft}
+                viewRef={editorViewRef}
+                onChange={(c) => {
+                  setDraft(c);
+                  scheduleSave(c);
+                }}
+                onSave={(c) => flushSave(c)}
+              />
+            ) : null}
           </div>
         ) : null}
         {mode !== "source" ? (

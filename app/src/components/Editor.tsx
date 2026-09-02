@@ -5,7 +5,7 @@
 // files.
 
 import { useEffect, useRef } from "react";
-import type { JSX } from "react";
+import type { JSX, MutableRefObject } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
@@ -22,6 +22,8 @@ import type { FileNode } from "../lib/ipc";
 export interface EditorProps {
   docKey: string;
   initialValue: string;
+  /** Live handle to the view, for callers that dispatch their own transactions. */
+  viewRef?: MutableRefObject<EditorView | null>;
   onChange?: (value: string) => void;
   onSave?: (value: string) => void;
 }
@@ -29,6 +31,7 @@ export interface EditorProps {
 export default function Editor({
   docKey,
   initialValue,
+  viewRef,
   onChange,
   onSave,
 }: EditorProps): JSX.Element {
@@ -80,12 +83,14 @@ export default function Editor({
     });
 
     const view = new EditorView({ state, parent: containerRef.current });
+    if (viewRef) viewRef.current = view;
     // A brand-new note routes straight here and should land with the cursor
     // ready. Focus only when focus is idle on <body> (e.g. after the naming
     // dialog closed), so mounting never steals focus from another input.
     if (document.activeElement === document.body) view.focus();
 
     return () => {
+      if (viewRef) viewRef.current = null;
       view.destroy();
     };
     // We intentionally remount on docKey change rather than diffing doc.

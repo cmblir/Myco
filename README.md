@@ -247,7 +247,11 @@ Nothing to install, and the audio never leaves the machine. A `whisper` already
 on your PATH is used instead, if you have one you prefer.
 
 **Reader** — CodeMirror source / live preview / split, `[[wikilink]]`
-autocomplete, backlinks and Related notes panels. `raw/` PDFs open in an
+autocomplete, backlinks and Related notes panels. Frontmatter is a
+**Properties** form above the editor — dropdowns for `type` / `status` /
+`confidence`, a number for `source_count`, chips for `tags`, key/value rows
+for the rest; each change is one undoable edit to the YAML block only.
+`raw/` PDFs open in an
 in-app pdf.js viewer: select text → highlight & cite mints a pinpoint link;
 highlights live in a sidecar so `raw/` stays immutable.
 
