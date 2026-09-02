@@ -21,10 +21,24 @@ import {
   wikiPagesOnly,
   type SavedView,
   type ViewFilter,
+  type ViewRow,
   type ViewSort,
 } from "../lib/queryViews";
+import {
+  FM_STATUS,
+  FM_TYPES,
+  normalizeTag,
+  tagsOf,
+  type FmPatch,
+  type Frontmatter,
+} from "../lib/frontmatter";
+import { isComposingKey } from "../lib/ime";
+import { confirmAction } from "../stores/dialogStore";
+import ChipInput from "../components/ChipInput";
 
 const EMPTY: ViewFilter = {};
+
+type CellKey = "type" | "status" | "tags";
 
 /** Short local date for the Modified column; an em dash while the mtime map
  *  is still loading (or for a file that vanished). Intl, not a hand-rolled
@@ -51,6 +65,13 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
   // Which built-in lens is showing, if any. Cleared by any hand edit — the
   // chip must never claim to describe a table the user has since changed.
   const [activeLens, setActiveLens] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState<{ path: string; key: CellKey } | null>(null);
+  // Cell whose button re-mounts with autoFocus once its editor closes.
+  const [focusBack, setFocusBack] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const patchPages = useVaultStore((s) => s.patchPages);
+  const storeErr = useVaultStore((s) => s.error);
 
   // Wiki pages only: every filter on this page reads wiki frontmatter, and
   // the vault's sessions/ + daily/ notes carry none — they used to fill the
@@ -87,6 +108,119 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
     () => (adjacency ? runView(adjacency, files, filter, sort, desc, mtimes) : []),
     [adjacency, files, filter, sort, desc, mtimes],
   );
+
+  // Only visible rows take part in a bulk edit, even if a filter change hid
+  // some rows that were ticked earlier.
+  const chosen = rows.filter((r) => selected.has(r.path)).map((r) => r.path);
+  const tagList = facets?.tags.map((f) => f.value) ?? [];
+
+  function closeCell(): void {
+    if (editing) setFocusBack(`${editing.path}:${editing.key}`);
+    setEditing(null);
+  }
+
+  /** Canonical values first, then whatever the vault already uses. */
+  function options(key: "type" | "status", current?: string): string[] {
+    const canon = key === "type" ? FM_TYPES : FM_STATUS;
+    const present = (key === "type" ? facets?.types : facets?.status) ?? [];
+    return [
+      ...new Set([...canon, ...present.map((f) => f.value), ...(current ? [current] : [])]),
+    ];
+  }
+
+  async function bulk(make: (fm: Frontmatter | null) => FmPatch): Promise<void> {
+    const ok = await confirmAction({
+      title: t.vw_bulk_title ?? "Bulk edit",
+      message: (t.vw_bulk_confirm ?? "Apply to {n} pages?").replace(
+        "{n}",
+        String(chosen.length),
+      ),
+    });
+    if (!ok) return;
+    setBusy(true);
+    try {
+      await patchPages(chosen, make);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function cell(r: ViewRow, key: CellKey): JSX.Element {
+    const id = `${r.path}:${key}`;
+    if (editing?.path === r.path && editing.key === key) {
+      if (key === "tags")
+        return (
+          <>
+            <ChipInput
+              autoFocus
+              chips={r.tags}
+              setChips={(next) => {
+                // Delta over the re-read file, not a snapshot: r.tags lags until the
+                // graph refresh, so a second quick add must not replay the stale list.
+                const gone = r.tags.filter((x) => !next.includes(x));
+                const added = next.filter((x) => !r.tags.includes(x));
+                void patchPages([r.path], (fm) => ({
+                  tags: [
+                    ...new Set([
+                      ...tagsOf(fm).filter((x) => !gone.includes(x)),
+                      ...added,
+                    ]),
+                  ],
+                }));
+              }}
+              suggestions={tagList}
+              placeholder={t.props_tags_ph ?? "Add tag…"}
+              listId="views-cell-tags"
+              disabled={busy}
+              prefix="#"
+              removeTitle={t.props_tag_remove ?? "Remove tag"}
+            />
+            <button type="button" className="btn" onClick={closeCell}>
+              {t.vw_edit_done ?? "Done"}
+            </button>
+          </>
+        );
+      return (
+        <select
+          autoFocus
+          className="input"
+          value={r[key] ?? ""}
+          onChange={(e) => {
+            // Read now: React restores the controlled value before `make` runs.
+            const v = e.target.value || undefined;
+            void patchPages([r.path], () => ({ [key]: v }));
+            closeCell();
+          }}
+          onBlur={closeCell}
+          onKeyDown={(e) => {
+            if (e.key === "Escape") closeCell();
+          }}
+        >
+          <option value="">{t.vw_unset ?? "(none)"}</option>
+          {options(key, r[key]).map((v) => (
+            <option key={v} value={v}>
+              {v}
+            </option>
+          ))}
+        </select>
+      );
+    }
+    const text = key === "tags" ? r.tags.map((x) => `#${x}`).join(" ") : r[key];
+    return (
+      <button
+        type="button"
+        className="views-cell"
+        title={t.vw_edit_cell ?? "Click to edit"}
+        autoFocus={focusBack === id}
+        onFocus={() => {
+          if (focusBack === id) setFocusBack(null);
+        }}
+        onClick={() => setEditing({ path: r.path, key })}
+      >
+        {text || "—"}
+      </button>
+    );
+  }
 
   function patch(p: Partial<ViewFilter>): void {
     setFilter((f) => ({ ...f, ...p }));
@@ -271,6 +405,85 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
         </button>
       </div>
 
+      {chosen.length > 0 ? (
+        <div
+          role="toolbar"
+          className="views-filters"
+          aria-label={t.vw_bulk_title ?? "Bulk edit"}
+        >
+          <span className="views-chip">
+            {(t.vw_selected_n ?? "{n} selected").replace("{n}", String(chosen.length))}
+            <button
+              type="button"
+              className="views-chip__x"
+              aria-label={t.vw_clear_sel ?? "Clear selection"}
+              disabled={busy}
+              onClick={() => setSelected(new Set())}
+            >
+              <Icon name="x" size={11} />
+            </button>
+          </span>
+          <select
+            className="input"
+            value=""
+            disabled={busy}
+            aria-label={t.vw_bulk_type ?? "Set type…"}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v) void bulk(() => ({ type: v }));
+            }}
+          >
+            <option value="">{t.vw_bulk_type ?? "Set type…"}</option>
+            {options("type").map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <select
+            className="input"
+            value=""
+            disabled={busy}
+            aria-label={t.vw_bulk_status ?? "Set status…"}
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v) void bulk(() => ({ status: v }));
+            }}
+          >
+            <option value="">{t.vw_bulk_status ?? "Set status…"}</option>
+            {options("status").map((v) => (
+              <option key={v} value={v}>
+                {v}
+              </option>
+            ))}
+          </select>
+          <input
+            className="input"
+            list="views-bulk-tags"
+            placeholder={t.vw_bulk_add_tag ?? "Add tag…"}
+            aria-label={t.vw_bulk_add_tag ?? "Add tag…"}
+            disabled={busy}
+            onKeyDown={(e) => {
+              if (isComposingKey(e) || e.key !== "Enter") return;
+              const tag = normalizeTag(e.currentTarget.value);
+              if (!tag) return;
+              e.currentTarget.value = "";
+              void bulk((fm) => ({ tags: [...new Set([...tagsOf(fm), tag])] }));
+            }}
+          />
+          <datalist id="views-bulk-tags">
+            {tagList.map((v) => (
+              <option key={v} value={v} />
+            ))}
+          </datalist>
+          {storeErr ? (
+            <span role="alert" className="muted">
+              {(t.vw_edit_failed ?? "Could not save: {msg}").replace("{msg}", storeErr)}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
       <p className="muted views-count">
         {rows.length} {t.vw_pages ?? "pages"}
       </p>
@@ -282,6 +495,16 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
           <table className="views-table">
             <thead>
               <tr>
+                <th>
+                  <input
+                    type="checkbox"
+                    aria-label={t.vw_select_all ?? "Select all rows"}
+                    checked={chosen.length === rows.length}
+                    onChange={(e) =>
+                      setSelected(e.target.checked ? new Set(rows.map((r) => r.path)) : new Set())
+                    }
+                  />
+                </th>
                 {header(t.vw_col_name ?? "Page", "name")}
                 {header(t.vw_col_type ?? "Type", "type")}
                 <th>{t.vw_col_conf ?? "Confidence"}</th>
@@ -298,6 +521,22 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
               {rows.map((r) => (
                 <tr key={r.path}>
                   <td>
+                    <input
+                      type="checkbox"
+                      aria-label={(t.vw_select_row ?? "Select {name}").replace("{name}", r.name)}
+                      checked={selected.has(r.path)}
+                      onChange={(e) => {
+                        const on = e.target.checked;
+                        setSelected((prev) => {
+                          const next = new Set(prev);
+                          if (on) next.add(r.path);
+                          else next.delete(r.path);
+                          return next;
+                        });
+                      }}
+                    />
+                  </td>
+                  <td>
                     <button
                       type="button"
                       className="views-page"
@@ -307,13 +546,13 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
                       {r.name}
                     </button>
                   </td>
-                  <td>{r.type ?? "—"}</td>
+                  <td>{cell(r, "type")}</td>
                   <td>{r.confidence ?? "—"}</td>
-                  <td>{r.status ?? "—"}</td>
+                  <td>{cell(r, "status")}</td>
                   <td className="num">{r.sourceCount}</td>
                   <td className="num">{r.links}</td>
                   <td className="num">{formatDay(r.modified, lang)}</td>
-                  <td className="views-tags">{r.tags.map((x) => `#${x}`).join(" ")}</td>
+                  <td className="views-tags">{cell(r, "tags")}</td>
                 </tr>
               ))}
             </tbody>

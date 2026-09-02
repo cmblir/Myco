@@ -15,6 +15,7 @@ export default function ChipInput({
   disabled,
   prefix,
   removeTitle = "remove",
+  autoFocus,
 }: {
   chips: string[];
   setChips: (next: string[]) => void;
@@ -24,6 +25,7 @@ export default function ChipInput({
   disabled: boolean;
   prefix: string;
   removeTitle?: string;
+  autoFocus?: boolean;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
   const commit = (): void => {
@@ -53,6 +55,7 @@ export default function ChipInput({
       <input
         className="input"
         style={{ flex: 1, minWidth: 120 }}
+        autoFocus={autoFocus}
         list={listId}
         value={draft}
         placeholder={placeholder}

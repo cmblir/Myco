@@ -5493,6 +5493,23 @@ html.tray-window body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Editable cell: a dashed underline on hover/focus says "click to edit"
+   without relying on colour alone. */
+.views-cell {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-align: left;
+  text-decoration: underline dashed transparent;
+  text-underline-offset: 3px;
+}
+.views-cell:hover,
+.views-cell:focus-visible {
+  text-decoration-color: var(--ink-3);
+}
 
 /* --- Suggested links (Overview review queue) ----------------------------- */
 .link-suggestions {
@@ -6432,6 +6449,7 @@ details.props > .btn {
   color-scheme: dark;
 }
 .props input[type="checkbox"],
-.views-check input {
+.views-check input,
+.views-table input[type="checkbox"] {
   accent-color: var(--ink);
 }

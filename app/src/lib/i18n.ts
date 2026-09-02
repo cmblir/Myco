@@ -180,6 +180,19 @@ export interface Strings {
   vw_lens_orphans?: string;
   vw_lens_disputed?: string;
   vw_lens_recent?: string;
+  vw_select_all?: string;
+  vw_select_row?: string;
+  vw_selected_n?: string;
+  vw_bulk_title?: string;
+  vw_bulk_confirm?: string;
+  vw_bulk_type?: string;
+  vw_bulk_status?: string;
+  vw_bulk_add_tag?: string;
+  vw_clear_sel?: string;
+  vw_edit_cell?: string;
+  vw_unset?: string;
+  vw_edit_done?: string;
+  vw_edit_failed?: string;
   nav_history: string;
   nav_provenance: string;
   nav_tasks: string;
@@ -1597,6 +1610,19 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_lens_orphans: "Orphans",
     vw_lens_disputed: "Disputed",
     vw_lens_recent: "Recently changed",
+    vw_select_all: "Select all rows",
+    vw_select_row: "Select {name}",
+    vw_selected_n: "{n} selected",
+    vw_bulk_title: "Bulk edit",
+    vw_bulk_confirm: "Apply to {n} pages?",
+    vw_bulk_type: "Set type…",
+    vw_bulk_status: "Set status…",
+    vw_bulk_add_tag: "Add tag…",
+    vw_clear_sel: "Clear selection",
+    vw_edit_cell: "Click to edit",
+    vw_unset: "(none)",
+    vw_edit_done: "Done",
+    vw_edit_failed: "Could not save: {msg}",
     nav_history: "History",
     nav_provenance: "Provenance",
     nav_tasks: "Tasks",
@@ -3073,6 +3099,19 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_lens_orphans: "고립",
     vw_lens_disputed: "분쟁 중",
     vw_lens_recent: "최근 변경",
+    vw_select_all: "모든 행 선택",
+    vw_select_row: "{name} 선택",
+    vw_selected_n: "{n}개 선택됨",
+    vw_bulk_title: "일괄 편집",
+    vw_bulk_confirm: "{n}개 페이지에 적용할까요?",
+    vw_bulk_type: "유형 설정…",
+    vw_bulk_status: "상태 설정…",
+    vw_bulk_add_tag: "태그 추가…",
+    vw_clear_sel: "선택 해제",
+    vw_edit_cell: "클릭하여 편집",
+    vw_unset: "(없음)",
+    vw_edit_done: "완료",
+    vw_edit_failed: "저장 실패: {msg}",
     nav_history: "히스토리",
     nav_provenance: "출처",
     nav_tasks: "할 일",
@@ -5678,6 +5717,19 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_lens_orphans: "孤立",
     vw_lens_disputed: "係争中",
     vw_lens_recent: "最近の変更",
+    vw_select_all: "すべての行を選択",
+    vw_select_row: "{name} を選択",
+    vw_selected_n: "{n} 件選択中",
+    vw_bulk_title: "一括編集",
+    vw_bulk_confirm: "{n} ページに適用しますか？",
+    vw_bulk_type: "タイプを設定…",
+    vw_bulk_status: "ステータスを設定…",
+    vw_bulk_add_tag: "タグを追加…",
+    vw_clear_sel: "選択を解除",
+    vw_edit_cell: "クリックして編集",
+    vw_unset: "(なし)",
+    vw_edit_done: "完了",
+    vw_edit_failed: "保存できませんでした: {msg}",
     gr_insp_type: "タイプ",
     gr_insp_confidence: "確信度",
     gr_insp_status: "ステータス",
