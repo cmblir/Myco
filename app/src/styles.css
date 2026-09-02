@@ -894,6 +894,11 @@ select {
   gap: 32px;
   margin-top: 16px;
 }
+/* Settings search: a card whose text does not match. !important beats
+   .card.row/.col and MycoProCard's inline grid. */
+.s-hide {
+  display: none !important;
+}
 .grow {
   flex: 1;
 }

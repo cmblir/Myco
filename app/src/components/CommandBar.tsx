@@ -131,6 +131,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
       { type: "nav", label: t.nav_history, to: "history" },
       { type: "nav", label: t.nav_provenance, to: "provenance" },
       { type: "nav", label: t.nav_tasks ?? "Tasks", to: "tasks" },
+      { type: "nav", label: t.nav_views ?? "Views", to: "views" },
       { type: "nav", label: t.nav_tags, to: "tags" },
       { type: "nav", label: t.nav_study, to: "study" },
       { type: "nav", label: t.nav_feedback ?? "Feedback", to: "feedback" },
@@ -396,6 +397,7 @@ function iconFor(entry: CmdEntry): IconName {
   if (entry.to === "tags") return "book";
   if (entry.to === "study") return "sparkles";
   if (entry.to === "feedback") return "inbox";
+  if (entry.to === "views") return "eye";
   if (entry.to === "schedules") return "history";
   if (entry.to === "settings") return "settings";
   return "arrowR";

@@ -5,7 +5,6 @@ export type Lang = "en" | "ko" | "ja";
 export interface Strings {
   app_name: string;
   quick_search: string;
-  quick_ingest: string;
   quick_ask: string;
   nav_workspace: string;
   nav_pages: string;
@@ -615,6 +614,8 @@ export interface Strings {
   p_lint_failed: string;
   h_empty: string;
   s_title: string;
+  s_search_ph?: string;
+  s_search_empty?: string; // {q}
   s_account: string;
   s_local_user?: string;
   s_no_vault?: string;
@@ -1392,7 +1393,6 @@ export const STRINGS: Record<Lang, Strings> = {
   en: {
     app_name: "myco",
     quick_search: "Search or jump to…",
-    quick_ingest: "Ingest a source",
     quick_ask: "Ask the wiki",
     nav_workspace: "Workspace",
     nav_pages: "Pages",
@@ -2050,6 +2050,8 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_done: "Lint done",
     p_lint_failed: "Lint failed",
     s_title: "Settings",
+    s_search_ph: "Search settings",
+    s_search_empty: "No settings match “{q}”",
     s_account: "Account",
     s_local_user: "Local user",
     s_no_vault: "no vault",
@@ -2856,7 +2858,6 @@ export const STRINGS: Record<Lang, Strings> = {
   ko: {
     app_name: "myco",
     quick_search: "검색하거나 이동…",
-    quick_ingest: "소스 가져오기",
     quick_ask: "위키에 질문하기",
     nav_workspace: "워크스페이스",
     nav_pages: "페이지",
@@ -3510,6 +3511,8 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_done: "Lint 완료",
     p_lint_failed: "Lint 실패",
     s_title: "설정",
+    s_search_ph: "설정 검색",
+    s_search_empty: "“{q}”에 해당하는 설정이 없습니다",
     s_account: "계정",
     s_local_user: "로컬 사용자",
     s_no_vault: "볼트 없음",
@@ -4313,7 +4316,6 @@ export const STRINGS: Record<Lang, Strings> = {
   ja: {
     app_name: "myco",
     quick_search: "検索 / 移動…",
-    quick_ingest: "ソースを取り込む",
     quick_ask: "ウィキに質問",
     nav_workspace: "ワークスペース",
     nav_pages: "ページ",
@@ -4801,6 +4803,8 @@ export const STRINGS: Record<Lang, Strings> = {
     p_lint_done: "Lint 完了",
     p_lint_failed: "Lint 失敗",
     s_title: "設定",
+    s_search_ph: "設定を検索",
+    s_search_empty: "「{q}」に一致する設定はありません",
     s_account: "アカウント",
     s_local_user: "ローカルユーザー",
     s_no_vault: "ボールトなし",

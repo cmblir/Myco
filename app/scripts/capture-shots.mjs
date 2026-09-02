@@ -20,7 +20,7 @@ const browser = await chromium.launch({ headless: false });
 const page = await browser.newPage({ viewport: VP, deviceScaleFactor: 2 });
 
 // Workspace nav is the first .nav-group's .nav-item buttons, in order:
-// overview(0) graph(1) history(2) provenance(3) tags(4).
+// overview(0) ask(1) ingest(2) graph(3) tasks(4) views(5).
 const nav = (i) =>
   page.locator(".side-nav .nav-group").first().locator(".nav-item").nth(i);
 
@@ -43,13 +43,15 @@ await nav(0).click();
 await page.waitForSelector(".page-title", { timeout: 20_000 });
 await shot("overview.png");
 
-// Provenance
-await nav(3).click();
+// Provenance / Tags fold under the Tools disclosure — open it, then pick by
+// label (their position depends on the badge rows above them).
+await page.locator(".side-nav .nav-item[aria-expanded]").first().click();
+await page.locator(".side-nav .nav-item", { hasText: "Provenance" }).first().click();
 await page.waitForSelector(".page-title", { timeout: 20_000 });
 await shot("provenance.png");
 
-// Tags (new)
-await nav(4).click();
+// Tags
+await page.locator(".side-nav .nav-item", { hasText: "Tags" }).first().click();
 await page.waitForSelector(".page-title", { timeout: 20_000 });
 await shot("tags.png");
 
@@ -73,7 +75,7 @@ await page.goto(BASE, { waitUntil: "domcontentloaded" });
 // lands on nothing, the app stays on Overview, and the graph wait below times
 // out after 90s having never navigated.
 await page.waitForSelector(".side-nav .nav-item", { timeout: 30_000 });
-await nav(1).click();
+await nav(3).click();
 await page.waitForSelector(".graph-canvas.graph-ready", { timeout: 90_000 });
 await page.waitForTimeout(9000); // settle + a bit of auto-orbit
 // Park the cursor outside the canvas. Whatever node sat under the pointer

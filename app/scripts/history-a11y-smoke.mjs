@@ -26,6 +26,8 @@ for (const vp of VIEWPORTS) {
     await page.locator(".topbar .icon-btn").first().click();
     await page.waitForTimeout(300);
   }
+  // History folds under the Tools disclosure — open it first.
+  await page.locator(".side-nav .nav-item[aria-expanded]").first().click();
   await page.locator(".side-nav .nav-item", { hasText: /History|히스토리/ }).first().click();
   await page.waitForTimeout(1000);
   const at = (n) => `[${vp.name}] ${n}`;

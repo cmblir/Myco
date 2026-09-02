@@ -33,8 +33,8 @@ await page.addInitScript(() => {
 await page.goto(BASE, { waitUntil: "domcontentloaded", timeout: 60_000 });
 await page.waitForSelector(".side-nav .nav-item", { timeout: 30_000 });
 
-// Open Ask page (quick-nav "Ask the wiki" button in the sidebar).
-await page.locator(".side-quick .qbtn", { hasText: "Ask" }).first().click();
+// Open Ask page (Workspace nav in the sidebar).
+await page.locator(".side-nav .nav-item", { hasText: /^Ask$|질문|質問/ }).first().click();
 await page.waitForSelector(".page-title", { timeout: 20_000 });
 
 // Switch to Agent mode.

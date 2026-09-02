@@ -56,6 +56,9 @@ export interface UIState {
   splitRatio: number;
   // Layout
   sidebarCollapsed: boolean;
+  // Sidebar Tools disclosure (History … Schedules). Per device — not in the
+  // settings bundle.
+  toolsOpen: boolean;
   cmdOpen: boolean;
   // Theme & i18n
   lang: Lang;
@@ -88,6 +91,7 @@ export interface UIState {
   setSplitRatio: (ratio: number) => void;
   setSidebarCollapsed: (v: boolean) => void;
   toggleSidebar: () => void;
+  toggleTools: () => void;
   setCmdOpen: (v: boolean) => void;
   toggleCmd: () => void;
   setLang: (lang: Lang) => void;
@@ -111,6 +115,7 @@ export const useUIStore = create<UIState>()(
       splitRoute: null,
       splitRatio: SPLIT_DEFAULT_RATIO,
       sidebarCollapsed: false,
+      toolsOpen: false,
       cmdOpen: false,
       lang: "ko",
       theme: "dark",
@@ -136,6 +141,7 @@ export const useUIStore = create<UIState>()(
       setSplitRatio: (ratio) => set({ splitRatio: ratio }),
       setSidebarCollapsed: (v) => set({ sidebarCollapsed: v }),
       toggleSidebar: () => set({ sidebarCollapsed: !get().sidebarCollapsed }),
+      toggleTools: () => set({ toolsOpen: !get().toolsOpen }),
       setCmdOpen: (v) => set({ cmdOpen: v }),
       toggleCmd: () => set({ cmdOpen: !get().cmdOpen }),
       setLang: (lang) => set({ lang }),

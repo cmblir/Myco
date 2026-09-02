@@ -32,7 +32,7 @@ for (const vp of VIEWPORTS) {
     await page.locator(".topbar .icon-btn").first().click();
     await page.waitForTimeout(300);
   }
-  await page.locator(".qbtn", { hasText: /Ingest|가져오기|取り込み/ }).first().click();
+  await page.locator(".side-nav .nav-item", { hasText: /Ingest|가져오기|取り込み/ }).first().click();
   await page.waitForTimeout(800);
   const at = (n) => `[${vp.name}] ${n}`;
 

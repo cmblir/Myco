@@ -99,6 +99,10 @@ can run e.g. Claude Sonnet for ingest and a local Llama for Q&A.
 - Three UI languages: English / 한국어 / 日本語. The model's drafting
   language is independent of the UI.
 - `⌘K` command palette (jumps to any route or vault file).
+- Sidebar: six primary routes (Overview · Ask · Ingest · Graph · Tasks ·
+  Views); History, Provenance, Tags, Study, Feedback and Schedules fold
+  under a Tools row. Settings has a search box that narrows its tabs and
+  cards to matching labels.
 - `⌘B` toggles the sidebar.
 - `⌥Space` (global, works from any app) opens a spotlight window: type a
   question, press Enter, and the answer appears with its citations —

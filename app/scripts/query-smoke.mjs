@@ -23,7 +23,7 @@ await page.addInitScript(() => {
 });
 await page.goto(BASE, { waitUntil: "domcontentloaded", timeout: 60_000 });
 await page.waitForSelector(".side-nav .nav-item", { timeout: 30_000 });
-await page.locator(".side-quick .qbtn", { hasText: "위키에 질문" }).first().click();
+await page.locator(".side-nav .nav-item", { hasText: /^Ask$|질문|質問/ }).first().click();
 await page.waitForSelector(".input", { timeout: 20_000 });
 
 // --- Activity question → git-log answer (no model) ---

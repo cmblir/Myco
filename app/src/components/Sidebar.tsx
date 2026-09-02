@@ -7,6 +7,7 @@ import type { JSX, MouseEvent } from "react";
 import { Icon, MycoMark } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
+import type { RouteId } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useStudyStore } from "../stores/studyStore";
 import { useDistillStore } from "../stores/distillStore";
@@ -22,10 +23,22 @@ interface ContextMenuState {
   node: FileNode;
 }
 
+// Routes folded under the sidebar's Tools disclosure.
+const TOOL_ROUTES: RouteId[] = [
+  "history",
+  "provenance",
+  "tags",
+  "study",
+  "feedback",
+  "schedules",
+];
+
 export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   const route = useUIStore((s) => s.route);
   const setRoute = useUIStore((s) => s.setRoute);
   const toggleCmd = useUIStore((s) => s.toggleCmd);
+  const toolsOpen = useUIStore((s) => s.toolsOpen);
+  const toggleTools = useUIStore((s) => s.toggleTools);
   const fileTree = useVaultStore((s) => s.fileTree);
   const currentVault = useVaultStore((s) => s.currentVault);
   const dueTotal = useStudyStore((s) => s.dueTotal);
@@ -76,6 +89,9 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
       ? filterHumanTree(fileTree, agentTouched, currentVault.path)
       : fileTree;
   const activePath = route.startsWith("page:") ? route.slice(5) : null;
+  // Collapsed Tools row carries the badges of the rows it hides, summed.
+  const toolsBadge = dueTotal + pendingProposals;
+  const toolsBadgeLabel = `${t.nav_study} ${dueTotal} · ${t.nav_feedback ?? "Feedback"} ${pendingProposals}`;
 
   function showMenu(e: MouseEvent, node: FileNode): void {
     e.preventDefault();
@@ -110,24 +126,6 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
           <span className="qkbd">⌘K</span>
         </button>
         <DailyNoteButton vaultPath={currentVault?.path ?? ""} t={t} />
-        <button
-          className={"qbtn" + (route === "ingest" ? " active" : "")}
-          onClick={() => setRoute("ingest")}
-        >
-          <span className="qicon">
-            <Icon name="upload" />
-          </span>
-          <span>{t.quick_ingest}</span>
-        </button>
-        <button
-          className={"qbtn" + (route === "query" ? " active" : "")}
-          onClick={() => setRoute("query")}
-        >
-          <span className="qicon">
-            <Icon name="msg" />
-          </span>
-          <span>{t.quick_ask}</span>
-        </button>
       </div>
 
       <nav className="side-nav">
@@ -140,48 +138,22 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
             onClick={() => setRoute("overview")}
           />
           <NavItem
+            label={t.nav_query}
+            icon="msg"
+            active={route === "query"}
+            onClick={() => setRoute("query")}
+          />
+          <NavItem
+            label={t.nav_ingest}
+            icon="upload"
+            active={route === "ingest"}
+            onClick={() => setRoute("ingest")}
+          />
+          <NavItem
             label={t.nav_graph}
             icon="graph"
             active={route === "graph"}
             onClick={() => setRoute("graph")}
-          />
-          <NavItem
-            label={t.nav_history}
-            icon="history"
-            active={route === "history"}
-            onClick={() => setRoute("history")}
-          />
-          <NavItem
-            label={t.nav_provenance}
-            icon="quote"
-            active={route === "provenance"}
-            onClick={() => setRoute("provenance")}
-          />
-          <NavItem
-            label={t.nav_tags}
-            icon="book"
-            active={route === "tags"}
-            onClick={() => setRoute("tags")}
-          />
-          <NavItem
-            label={t.nav_study}
-            icon="sparkles"
-            active={route === "study"}
-            onClick={() => setRoute("study")}
-            badge={dueTotal > 0 ? String(dueTotal) : undefined}
-          />
-          <NavItem
-            label={t.nav_feedback ?? "Feedback"}
-            icon="inbox"
-            active={route === "feedback"}
-            onClick={() => setRoute("feedback")}
-            badge={pendingProposals > 0 ? String(pendingProposals) : undefined}
-          />
-          <NavItem
-            label={t.nav_views ?? "Views"}
-            icon="eye"
-            active={route === "views"}
-            onClick={() => setRoute("views")}
           />
           <NavItem
             label={t.nav_tasks ?? "Tasks"}
@@ -189,6 +161,92 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
             active={route === "tasks"}
             onClick={() => setRoute("tasks")}
           />
+          <NavItem
+            label={t.nav_views ?? "Views"}
+            icon="eye"
+            active={route === "views"}
+            onClick={() => setRoute("views")}
+          />
+        </div>
+
+        <div className="nav-group">
+          {/* Folder-row disclosure. Collapsed, it stands in for the routes it
+              hides: active when one is open, badged with their summed counts. */}
+          <button
+            className={
+              "nav-item" +
+              (!toolsOpen && TOOL_ROUTES.includes(route) ? " active" : "")
+            }
+            aria-expanded={toolsOpen}
+            onClick={toggleTools}
+          >
+            <span className={"ni-caret" + (toolsOpen ? " open" : "")}>
+              <Icon name="chevR" size={10} />
+            </span>
+            <span className="ni-icon">
+              <Icon name="dotMore" size={15} />
+            </span>
+            <span className="ni-text">{t.nav_tools}</span>
+            {!toolsOpen && toolsBadge > 0 ? (
+              <span
+                className="nav-badge"
+                title={toolsBadgeLabel}
+                aria-label={toolsBadgeLabel}
+              >
+                {toolsBadge}
+              </span>
+            ) : null}
+          </button>
+          {toolsOpen ? (
+            <>
+              <NavItem
+                indent
+                label={t.nav_history}
+                icon="history"
+                active={route === "history"}
+                onClick={() => setRoute("history")}
+              />
+              <NavItem
+                indent
+                label={t.nav_provenance}
+                icon="quote"
+                active={route === "provenance"}
+                onClick={() => setRoute("provenance")}
+              />
+              <NavItem
+                indent
+                label={t.nav_tags}
+                icon="book"
+                active={route === "tags"}
+                onClick={() => setRoute("tags")}
+              />
+              <NavItem
+                indent
+                label={t.nav_study}
+                icon="sparkles"
+                active={route === "study"}
+                onClick={() => setRoute("study")}
+                badge={dueTotal > 0 ? String(dueTotal) : undefined}
+              />
+              <NavItem
+                indent
+                label={t.nav_feedback ?? "Feedback"}
+                icon="inbox"
+                active={route === "feedback"}
+                onClick={() => setRoute("feedback")}
+                badge={
+                  pendingProposals > 0 ? String(pendingProposals) : undefined
+                }
+              />
+              <NavItem
+                indent
+                label={t.nav_schedules}
+                icon="history"
+                active={route === "schedules"}
+                onClick={() => setRoute("schedules")}
+              />
+            </>
+          ) : null}
         </div>
 
         <div className="nav-group">
@@ -227,13 +285,6 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
       {/* Pinned OUTSIDE the scrolling nav: these used to sit below the page
           tree, so a 1121-file vault put 설정 an endless scroll away. */}
       <div className="side-tools">
-        <div className="nav-group-label">{t.nav_tools}</div>
-        <NavItem
-          label={t.nav_schedules}
-          icon="history"
-          active={route === "schedules"}
-          onClick={() => setRoute("schedules")}
-        />
         <NavItem
           label={t.nav_settings}
           icon="settings"
@@ -267,16 +318,20 @@ function NavItem({
   active,
   onClick,
   badge,
+  indent,
 }: {
   label: string;
   icon: Parameters<typeof Icon>[0]["name"];
   active: boolean;
   onClick: () => void;
   badge?: string;
+  // Depth-1 tree indent, for rows nested under the Tools disclosure.
+  indent?: boolean;
 }): JSX.Element {
   return (
     <button
       className={"nav-item" + (active ? " active" : "")}
+      style={indent ? { paddingLeft: 18 } : undefined}
       onClick={onClick}
     >
       <span className="ni-caret"></span>

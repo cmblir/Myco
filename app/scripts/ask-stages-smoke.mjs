@@ -48,7 +48,7 @@ async function askAndWatch({ indexed }) {
     indexed,
   );
 
-  await page.locator(".side-quick .qbtn", { hasText: "Ask the wiki" }).first().click();
+  await page.locator(".side-nav .nav-item", { hasText: /^Ask$|질문|質問/ }).first().click();
   await page.waitForSelector("input.input", { timeout: 20_000 });
 
   // The label is an aria-label on the status element — ThinkingGalaxy paints the

@@ -49,6 +49,12 @@ import {
   DEFAULT_MONTHLY_THRESHOLD_USD,
 } from "../lib/budget";
 import { isComposingKey } from "../lib/ime";
+import {
+  matchSettings,
+  normalizeQuery,
+  SETTINGS_INDEX,
+  type SettingsTab,
+} from "../lib/settingsSearch";
 import { accelFromEvent, formatAccel } from "../lib/shortcutAccel";
 import { useReindexStore } from "../stores/reindexStore";
 import { useUpdateStore } from "../stores/updateStore";
@@ -95,16 +101,45 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const theme = useUIStore((s) => s.theme);
   const setTheme = useUIStore((s) => s.setTheme);
 
-  const [tab, setTab] = useState<
-    | "account"
-    | "model"
-    | "providers"
-    | "mcp"
-    | "distill"
-    | "lang"
-    | "appearance"
-    | "about"
-  >("model");
+  const [tab, setTab] = useState<SettingsTab>("model");
+  const [q, setQ] = useState("");
+  // The last value typed outside an IME composition: matching on every
+  // keystroke of a Hangul syllable would flip the tab mid-character.
+  const [applied, setApplied] = useState("");
+  const matches = useMemo(() => matchSettings(t, applied), [t, applied]);
+  const bodyRef = useRef<HTMLDivElement>(null);
+
+  function applyQuery(v: string): void {
+    setApplied(v);
+    // Current tab dropped out → the first tab that still matches. Done here,
+    // not in an effect, so the switch sticks after the query is cleared.
+    const hit = matchSettings(t, v);
+    const first = hit.keys().next();
+    if (!first.done && !hit.has(tab)) setTab(first.value);
+  }
+
+  // Cards filter by their OWN text (not the index), so an un-indexed card
+  // fails open; a tab-title match shows every card of that tab.
+  useEffect(() => {
+    const root = bodyRef.current;
+    if (!root) return;
+    const nq = normalizeQuery(applied);
+    const showAll =
+      !nq || (matches.get(tab) ?? []).includes(t[SETTINGS_INDEX[tab][0]] ?? "");
+    const apply = () =>
+      root.querySelectorAll<HTMLElement>(".card").forEach((el) =>
+        el.classList.toggle(
+          "s-hide",
+          !showAll && !normalizeQuery(el.textContent ?? "").includes(nq),
+        ),
+      );
+    apply();
+    // Cards that render after an IPC load. childList only: toggling a class
+    // never retriggers.
+    const mo = new MutationObserver(apply);
+    mo.observe(root, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  }, [applied, matches, tab, t]);
 
   // Below 768px the tab rail is a horizontally scrolling row. The default tab
   // is "model", which is not the first one, so without this the rail opens
@@ -134,41 +169,76 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
         <div className="page-eyebrow">{t.nav_settings}</div>
         <h1 className="page-title">{t.s_title}</h1>
       </header>
+      <input
+        type="search"
+        className="input"
+        style={{ maxWidth: 360 }}
+        value={q}
+        placeholder={t.s_search_ph}
+        aria-label={t.s_search_ph}
+        onChange={(e) => {
+          setQ(e.target.value);
+          // Mid-composition keystrokes only update the field; `applied`
+          // follows on compositionend.
+          if (!(e.nativeEvent as InputEvent).isComposing) {
+            applyQuery(e.target.value);
+          }
+        }}
+        onCompositionEnd={(e) => applyQuery(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (isComposingKey(e)) return;
+          if (e.key === "Escape") {
+            setQ("");
+            applyQuery("");
+          }
+        }}
+      />
       <div className="settings-grid">
         <nav className="col" style={{ gap: 1 }} ref={railRef}>
-          {tabs.map((x) => (
-            <button
-              key={x.id}
-              className={"qbtn" + (tab === x.id ? " active" : "")}
-              onClick={() => setTab(x.id)}
-            >
-              <span className="qicon">
-                <Icon name={x.icon} size={14} />
-              </span>
-              <span>{x.label}</span>
-            </button>
-          ))}
+          {tabs
+            .filter((x) => matches.has(x.id))
+            .map((x) => (
+              <button
+                key={x.id}
+                className={"qbtn" + (tab === x.id ? " active" : "")}
+                onClick={() => setTab(x.id)}
+              >
+                <span className="qicon">
+                  <Icon name={x.icon} size={14} />
+                </span>
+                <span>{x.label}</span>
+              </button>
+            ))}
         </nav>
-        <div>
-          {tab === "account" ? <SettingsAccount t={t} /> : null}
-          {tab === "model" ? <SettingsModel t={t} /> : null}
-          {tab === "providers" ? <SettingsProviders t={t} /> : null}
-          {tab === "mcp" ? <SettingsMcp t={t} /> : null}
-          {tab === "distill" ? <SettingsDistill t={t} /> : null}
-          {tab === "lang" ? (
-            <SettingsLang t={t} lang={lang} setLang={setLang} />
-          ) : null}
-          {tab === "appearance" ? (
-            <div className="col" style={{ gap: 24 }}>
-              <SettingsAppearance t={t} theme={theme} setTheme={setTheme} />
-              <SettingsOverviewTheme t={t} />
-              <TrayResidentToggle t={t} />
-              <NotchToggle t={t} />
-              <SpotlightShortcutRow t={t} />
-            </div>
-          ) : null}
-          {tab === "about" ? <SettingsAbout t={t} /> : null}
-        </div>
+        {matches.size === 0 ? (
+          <div className="muted" role="status">
+            {(t.s_search_empty ?? "No settings match “{q}”").replace(
+              "{q}",
+              applied,
+            )}
+          </div>
+        ) : (
+          <div ref={bodyRef}>
+            {tab === "account" ? <SettingsAccount t={t} /> : null}
+            {tab === "model" ? <SettingsModel t={t} /> : null}
+            {tab === "providers" ? <SettingsProviders t={t} /> : null}
+            {tab === "mcp" ? <SettingsMcp t={t} /> : null}
+            {tab === "distill" ? <SettingsDistill t={t} /> : null}
+            {tab === "lang" ? (
+              <SettingsLang t={t} lang={lang} setLang={setLang} />
+            ) : null}
+            {tab === "appearance" ? (
+              <div className="col" style={{ gap: 24 }}>
+                <SettingsAppearance t={t} theme={theme} setTheme={setTheme} />
+                <SettingsOverviewTheme t={t} />
+                <TrayResidentToggle t={t} />
+                <NotchToggle t={t} />
+                <SpotlightShortcutRow t={t} />
+              </div>
+            ) : null}
+            {tab === "about" ? <SettingsAbout t={t} /> : null}
+          </div>
+        )}
       </div>
     </div>
   );
