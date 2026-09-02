@@ -22,10 +22,14 @@ interface InlineToken {
 // while the source editor still shows and round-trips it.
 const FRONTMATTER_RE = /^---[ \t]*\r?\n[\s\S]*?\r?\n---[ \t]*(?:\r?\n|$)/;
 
+/** Length of the leading frontmatter block, 0 if none. */
+export function frontmatterLength(md: string): number {
+  return FRONTMATTER_RE.exec(md)?.[0].length ?? 0;
+}
+
 /** Strip a leading YAML frontmatter block so previews render only the body. */
 export function stripFrontmatter(md: string): string {
-  const match = FRONTMATTER_RE.exec(md);
-  return match ? md.slice(match[0].length) : md;
+  return md.slice(frontmatterLength(md));
 }
 
 function wikilinkRule(state: InlineState, silent: boolean): boolean {
