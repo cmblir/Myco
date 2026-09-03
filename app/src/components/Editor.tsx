@@ -20,7 +20,9 @@ import {
 } from "@codemirror/autocomplete";
 import { search, searchKeymap } from "@codemirror/search";
 import { useVaultStore } from "../stores/vaultStore";
+import { ipc } from "../lib/ipc";
 import type { FileNode } from "../lib/ipc";
+import { assetFileName, imageExtFor } from "../lib/assets";
 import type { Strings } from "../lib/i18n";
 import { liveExtension } from "../lib/editorLive";
 import {
@@ -43,6 +45,8 @@ export interface EditorProps {
   onSave?: (value: string) => void;
   /** Mod-click on a wikilink in Live mode. */
   onLinkClick?: (target: string) => void;
+  /** A paste that could not become an image (unsupported type, IPC failure). */
+  onError?: (message: string) => void;
 }
 
 export default function Editor({
@@ -54,15 +58,18 @@ export default function Editor({
   onChange,
   onSave,
   onLinkClick,
+  onError,
 }: EditorProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const localViewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
   const onLinkClickRef = useRef(onLinkClick);
+  const onErrorRef = useRef(onError);
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
   onLinkClickRef.current = onLinkClick;
+  onErrorRef.current = onError;
   // Identity token only; the same Compartment reconfigures every view we make.
   const liveComp = useRef(new Compartment()).current;
 
@@ -133,6 +140,35 @@ export default function Editor({
         autocompletion({
           override: [slashCompletion(t), wikilinkCompletion, tagCompletion],
         }),
+        // Image paste → assets/. A clipboard holding text AND an image pastes
+        // the image (Obsidian/Notion); with no files CM's text paste proceeds.
+        EditorView.domEventHandlers({
+          paste: (e, view) => {
+            const files = Array.from(e.clipboardData?.files ?? []);
+            if (files.length === 0) return false;
+            e.preventDefault();
+            const images = files.flatMap((f) => {
+              const ext = imageExtFor(f.type, f.name);
+              return ext ? [[f, ext] as const] : [];
+            });
+            if (images.length === 0) {
+              onErrorRef.current?.(
+                t.img_unsupported ??
+                  "Only PNG, JPEG, GIF and WebP images can be inserted",
+              );
+              return true;
+            }
+            void insertImages(view, images, (err) =>
+              onErrorRef.current?.(
+                (t.img_failed ?? "Image could not be saved: {error}").replace(
+                  "{error}",
+                  String(err),
+                ),
+              ),
+            );
+            return true;
+          },
+        }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             onChangeRef.current?.(update.state.doc.toString());
@@ -187,6 +223,39 @@ export default function Editor({
       className={live ? "myco-editor live" : "myco-editor"}
     />
   );
+}
+
+/** Save each image under assets/ and insert `![|](assets/…)` at the caret. */
+async function insertImages(
+  view: EditorView,
+  files: readonly (readonly [File, string])[],
+  onError: (err: unknown) => void,
+): Promise<void> {
+  // Track the insert point ourselves: the first image replaces the selection
+  // (caret lands inside its `[]`), later ones append after it. Re-reading the
+  // selection after each insert would nest the next link in that alt text.
+  let { from, to } = view.state.selection.main;
+  let inserted = false;
+  for (const [f, ext] of files) {
+    try {
+      const rel = await ipc.writeAsset(
+        assetFileName(new Date(), ext),
+        new Uint8Array(await f.arrayBuffer()),
+      );
+      // The view was destroyed while the bytes were in flight (note switched).
+      if (!view.dom.isConnected) return;
+      const md = (inserted ? "\n" : "") + "![](" + rel + ")";
+      view.dispatch({
+        changes: { from, to, insert: md },
+        selection: inserted ? undefined : { anchor: from + 2 },
+        scrollIntoView: true,
+      });
+      from = to = from + md.length;
+      inserted = true;
+    } catch (err) {
+      onError(err);
+    }
+  }
 }
 
 /** CodeMirror search/autocomplete UI phrase → its `t.cm_*` key. */

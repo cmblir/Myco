@@ -871,6 +871,8 @@ export interface Strings {
   sl_table?: string;
   sl_divider?: string;
   sl_date?: string;
+  img_unsupported?: string;
+  img_failed?: string;
   // Reader properties panel.
   props_title?: string;
   props_add?: string;
@@ -2406,6 +2408,8 @@ export const STRINGS: Record<Lang, Strings> = {
     sl_table: "Table",
     sl_divider: "Divider",
     sl_date: "Today's date",
+    img_unsupported: "Only PNG, JPEG, GIF and WebP images can be inserted",
+    img_failed: "Image could not be saved: {error}",
     props_title: "Properties",
     props_add: "Add property",
     props_key_ph: "key",
@@ -3943,6 +3947,8 @@ export const STRINGS: Record<Lang, Strings> = {
     sl_table: "표",
     sl_divider: "구분선",
     sl_date: "오늘 날짜",
+    img_unsupported: "PNG, JPEG, GIF, WebP 이미지만 넣을 수 있습니다",
+    img_failed: "이미지를 저장하지 못했습니다: {error}",
     props_title: "속성",
     props_add: "속성 추가",
     props_key_ph: "키",
@@ -5270,6 +5276,8 @@ export const STRINGS: Record<Lang, Strings> = {
     sl_table: "表",
     sl_divider: "区切り線",
     sl_date: "今日の日付",
+    img_unsupported: "挿入できるのはPNG・JPEG・GIF・WebP画像のみです",
+    img_failed: "画像を保存できませんでした: {error}",
     props_title: "プロパティ",
     props_add: "プロパティを追加",
     props_key_ph: "キー",

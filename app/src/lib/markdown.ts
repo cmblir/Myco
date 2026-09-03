@@ -3,17 +3,29 @@
 // resolution to the application layer.
 
 import MarkdownIt from "markdown-it";
+import { imageExtFor, resolveImageSrc } from "./assets";
 import { escapeHtml, matchWikilinkAt } from "./wikilinks";
 
 interface InlineState {
   src: string;
   pos: number;
   push(type: string, tag: string, nesting: number): InlineToken;
+  Token: new (type: string, tag: string, nesting: -1 | 0 | 1) => InlineToken;
 }
 
 interface InlineToken {
   content: string;
+  children: InlineToken[] | null;
   attrSet(name: string, value: string): void;
+}
+
+/** Per-render context: lets the image rule map vault paths to webview URLs. */
+export interface RenderEnv {
+  vaultRoot?: string;
+  /** Directory of the note being rendered; `./x` resolves against it. */
+  noteDir?: string;
+  /** Absolute vault path → URL the webview may load (Tauri's convertFileSrc). */
+  toUrl?: (absPath: string) => string;
 }
 
 // A leading YAML frontmatter fence: `---` on its own line, any body, a closing
@@ -50,6 +62,31 @@ function wikilinkRule(state: InlineState, silent: boolean): boolean {
   return true;
 }
 
+// Obsidian's `![[shot.png]]` embed → an image token for `assets/shot.png`.
+// Anything else after `![[` falls through, so `![[note]]` keeps rendering as
+// `!` + wikilink.
+function embedRule(state: InlineState, silent: boolean): boolean {
+  if (!state.src.startsWith("![[", state.pos)) return false;
+  const match = matchWikilinkAt(state.src, state.pos + 1);
+  if (!match || !imageExtFor("", match.target)) return false;
+
+  if (!silent) {
+    const token = state.push("image", "img", 0);
+    // `![[assets/shot.png]]` (Obsidian's path-style links) names its folder.
+    token.attrSet(
+      "src",
+      /[\\/]/.test(match.target) ? match.target : `assets/${match.target}`,
+    );
+    token.attrSet("alt", "");
+    const alt = new state.Token("text", "", 0);
+    alt.content = match.display;
+    token.children = [alt];
+  }
+
+  state.pos = match.end;
+  return true;
+}
+
 export function createRenderer(): MarkdownIt {
   const md = new MarkdownIt({
     html: false,
@@ -59,6 +96,7 @@ export function createRenderer(): MarkdownIt {
   });
 
   md.inline.ruler.before("link", "wikilink", wikilinkRule);
+  md.inline.ruler.before("image", "embed", embedRule);
   md.renderer.rules.wikilink = (tokens, idx) => {
     const token = tokens[idx];
     const target = token.attrGet("data-link") ?? "";
@@ -77,6 +115,33 @@ export function createRenderer(): MarkdownIt {
       token.attrSet("rel", "noopener noreferrer");
       token.attrSet("target", "_blank");
     }
+    return self.renderToken(tokens, idx, options);
+  };
+
+  // Vault-relative image sources become asset-protocol URLs when the caller
+  // supplies a RenderEnv; without one (tests, Ask previews) the src is left
+  // as written. Then markdown-it's default image rule: alt from the children.
+  md.renderer.rules.image = (
+    tokens,
+    idx,
+    options,
+    env: RenderEnv | undefined,
+    self,
+  ) => {
+    const token = tokens[idx];
+    const src = token.attrGet("src");
+    if (src && env?.vaultRoot && env.toUrl) {
+      const abs = resolveImageSrc(
+        src,
+        env.vaultRoot,
+        env.noteDir ?? env.vaultRoot,
+      );
+      if (abs) token.attrSet("src", env.toUrl(abs));
+    }
+    token.attrSet(
+      "alt",
+      self.renderInlineAsText(token.children ?? [], options, env),
+    );
     return self.renderToken(tokens, idx, options);
   };
 

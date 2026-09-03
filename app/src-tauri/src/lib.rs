@@ -161,6 +161,7 @@ pub fn run() {
             commands::classify_intent,
             commands::read_file,
             commands::read_raw_bytes,
+            commands::write_asset,
             commands::read_vault_context,
             commands::write_file,
             commands::write_run_log,

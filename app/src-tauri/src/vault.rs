@@ -825,7 +825,7 @@ pub fn scaffold_obsidian_vault(vault: &Path) -> Result<String, String> {
     }
     let app_json = dir.join("app.json");
     if !app_json.exists() {
-        std::fs::write(&app_json, "{\"attachmentFolderPath\":\"raw/assets\"}")
+        std::fs::write(&app_json, "{\"attachmentFolderPath\":\"assets\"}")
             .map_err(|e| format!("write app.json failed: {e}"))?;
     }
     Ok(dir.to_string_lossy().into_owned())
@@ -948,6 +948,40 @@ fn validate_name(name: &str) -> Result<(), String> {
         return Err("name reserved".into());
     }
     Ok(())
+}
+
+pub const MAX_ASSET_BYTES: usize = 20 * 1024 * 1024;
+const ASSET_EXTS: [&str; 5] = ["png", "jpg", "jpeg", "gif", "webp"];
+
+/// Write `bytes` as `<root>/assets/<name>`, creating `assets/` and suffixing
+/// `-2`, `-3`, … on collision (the archive_inbox_source idiom). `name` is a bare
+/// `stem.ext` whose extension must be an allow-listed image type. Plain
+/// `std::fs::write`: a fresh, unique file needs none of write_file's overwrite
+/// atomicity. Never touches raw/. Returns the vault-relative `assets/<name>`.
+pub fn write_asset(root: &Path, name: &str, bytes: &[u8]) -> Result<String, String> {
+    validate_name(name)?;
+    let (stem, ext) = name
+        .rsplit_once('.')
+        .filter(|(stem, ext)| {
+            !stem.is_empty() && ASSET_EXTS.iter().any(|a| a.eq_ignore_ascii_case(ext))
+        })
+        .ok_or_else(|| format!("unsupported asset type: {name}"))?;
+    if bytes.len() > MAX_ASSET_BYTES {
+        return Err(format!(
+            "asset is larger than {} MB",
+            MAX_ASSET_BYTES / (1024 * 1024)
+        ));
+    }
+    let dir = root.join("assets");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("mkdir assets failed: {e}"))?;
+    let mut final_name = name.to_string();
+    let mut n = 2;
+    while dir.join(&final_name).exists() {
+        final_name = format!("{stem}-{n}.{ext}");
+        n += 1;
+    }
+    std::fs::write(dir.join(&final_name), bytes).map_err(|e| format!("write asset failed: {e}"))?;
+    Ok(format!("assets/{final_name}"))
 }
 
 pub fn write_file(path: &str, content: &str) -> Result<(), String> {
@@ -1900,6 +1934,32 @@ mod tests {
         let p = dir.join("brand-new.md");
         write_file(p.to_str().unwrap(), "fresh").unwrap();
         assert_eq!(fs::read_to_string(&p).unwrap(), "fresh");
+    }
+
+    #[test]
+    fn write_asset_creates_dir_and_suffixes_collisions() {
+        let dir = tempfile::tempdir().unwrap();
+        assert_eq!(
+            write_asset(dir.path(), "x.png", b"one").unwrap(),
+            "assets/x.png"
+        );
+        assert_eq!(
+            write_asset(dir.path(), "x.png", b"two").unwrap(),
+            "assets/x-2.png"
+        );
+        assert_eq!(fs::read(dir.path().join("assets/x.png")).unwrap(), b"one");
+        assert_eq!(fs::read(dir.path().join("assets/x-2.png")).unwrap(), b"two");
+    }
+
+    #[test]
+    fn write_asset_refuses_bad_names_types_and_size() {
+        let dir = tempfile::tempdir().unwrap();
+        for bad in ["a/b.png", "..", "x.svg", "x", ".png"] {
+            assert!(write_asset(dir.path(), bad, b"x").is_err(), "{bad}");
+        }
+        let err = write_asset(dir.path(), "big.png", &vec![0; MAX_ASSET_BYTES + 1]).unwrap_err();
+        assert!(err.contains("20 MB"), "{err}");
+        assert!(!dir.path().join("assets").exists());
     }
 
     #[test]

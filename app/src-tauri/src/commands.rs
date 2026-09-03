@@ -238,7 +238,7 @@ fn confine_root(state: &tauri::State<VaultRoot>, arg: &str) -> Result<String, St
 
 #[tauri::command]
 pub fn open_vault(
-    #[allow(unused_variables)] app: tauri::AppHandle,
+    app: tauri::AppHandle,
     state: tauri::State<VaultRoot>,
     path: String,
 ) -> Result<VaultMeta, String> {
@@ -258,6 +258,11 @@ pub fn open_vault(
     }
     // meta.path is canonical; record it as the confinement root for fs commands.
     state.set(PathBuf::from(&meta.path));
+    // Let the preview load this vault's images through the asset protocol —
+    // the same trust boundary read_file already grants the webview.
+    if let Err(e) = app.asset_protocol_scope().allow_directory(&meta.path, true) {
+        eprintln!("asset scope: {e}");
+    }
     // Rebind the background index updater to the newly-opened vault, so it
     // watches the right wiki/ and catches up a fresh/stale index.
     if let Some(u) = crate::INDEX_UPDATER.get() {
@@ -356,6 +361,25 @@ pub fn read_raw_bytes(
     let root = require_root(&state)?;
     let bytes = vault::read_confined_raw(&root, &relpath, MAX_PDF_BYTES)?;
     Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Save pasted image bytes under the vault's `assets/`. Raw-body twin of
+/// read_raw_bytes: the body is the file, the name rides in `x-myco-name`.
+#[tauri::command]
+pub fn write_asset(
+    state: tauri::State<VaultRoot>,
+    request: tauri::ipc::Request<'_>,
+) -> Result<String, String> {
+    let root = require_root(&state)?;
+    let name = request
+        .headers()
+        .get("x-myco-name")
+        .and_then(|v| v.to_str().ok())
+        .ok_or("missing x-myco-name header")?;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected a raw body".into());
+    };
+    vault::write_asset(&root, name, bytes)
 }
 
 /// Concatenate vault markdown (CLAUDE.md + wiki/ + raw/) up to `max_bytes`,

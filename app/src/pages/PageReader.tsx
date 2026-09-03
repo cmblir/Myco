@@ -191,8 +191,11 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   // initialValue once); bumped when a clean draft is re-seeded from disk so
   // the editor remounts on the new text.
   const [seedGen, setSeedGen] = useState(0);
+  const [editorError, setEditorError] = useState<string | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
   const fm = useMemo(() => parseFrontmatter(draft), [draft]);
+  // A paste error lasts until the next edit (a successful paste inserts text).
+  useEffect(() => setEditorError(null), [draft]);
   const allTags = useMemo(
     () => tagCandidates(adjacency?.tags ?? {}, "", Infinity),
     [adjacency],
@@ -525,6 +528,11 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
           {error}
         </p>
       ) : null}
+      {editorError ? (
+        <p role="alert" className="muted" style={{ fontSize: 12.5 }}>
+          {editorError}
+        </p>
+      ) : null}
       <section
         style={{
           display: "flex",
@@ -551,13 +559,19 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
                 }}
                 onSave={(c) => flushSave(c)}
                 onLinkClick={handleLinkClick}
+                onError={setEditorError}
               />
             ) : null}
           </div>
         ) : null}
         {mode === "split" || mode === "preview" ? (
           <div className="prose" style={{ flex: 1 }}>
-            <Viewer content={draft} onLinkClick={handleLinkClick} />
+            <Viewer
+              content={draft}
+              vaultRoot={currentVaultPath}
+              notePath={path}
+              onLinkClick={handleLinkClick}
+            />
           </div>
         ) : null}
       </section>

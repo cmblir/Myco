@@ -2169,6 +2169,8 @@ function mockInvoke(
     case "read_raw_bytes":
       // Serve the seeded PDF bytes for any raw/*.pdf (real Rust confines to raw/).
       return Promise.resolve(b64ToBytes(MOCK_PDF_B64).buffer);
+    case "write_asset":
+      return Promise.resolve("assets/20260101-000000.png");
     case "read_file": {
       const p = String(args.path ?? "");
       if (p.includes("/ingest-reports/")) {
@@ -2981,6 +2983,9 @@ export function installTauriMock(): void {
   w.__TAURI_INTERNALS__ = {
     invoke: (cmd: string, args?: Record<string, unknown>) =>
       mockInvoke(cmd, args ?? {}),
+    // The preview maps vault image paths through this; a browser has no asset
+    // protocol, so the path passes through (and the image shows broken).
+    convertFileSrc: (p: string) => p,
     // The real Tauri registers the callback and hands back an id; the mock
     // passes the function through, and `plugin:event|listen` above stores it.
     transformCallback: (cb: unknown) => cb,

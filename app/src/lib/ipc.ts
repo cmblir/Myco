@@ -694,6 +694,9 @@ export const ipc = {
   /** Raw bytes of a `raw/`-confined source file (PDF viewer, Feature 6). */
   readRawBytes: (relpath: string) =>
     invoke<ArrayBuffer>("read_raw_bytes", { relpath }),
+  /** Save image bytes under `assets/`; resolves to the vault-relative path. */
+  writeAsset: (name: string, bytes: Uint8Array) =>
+    invoke<string>("write_asset", bytes, { headers: { "x-myco-name": name } }),
   readVaultContext: (root: string, maxBytes: number) =>
     invoke<string>("read_vault_context", { root, maxBytes }),
   writeFile: (path: string, content: string) =>
