@@ -16,6 +16,7 @@ import { STRINGS } from "./i18n";
 import { askCopy, useQueryStore } from "../stores/queryStore";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
+import { wikilinkBase } from "./wikilinks";
 
 /** Spotlight → main window: the question, verbatim. */
 export const SPOTLIGHT_ASK_EVENT = "myco://spotlight-ask";
@@ -107,11 +108,12 @@ export function initSpotlightBridge(): () => void {
   });
 
   subscribe<string>(SPOTLIGHT_OPEN_EVENT, (target) => {
-    if (!target) return;
+    const base = target ? wikilinkBase(target) : "";
+    if (!base) return;
     // Same resolve-or-create behaviour a wikilink click has anywhere else.
     void useVaultStore
       .getState()
-      .openWikilink(target)
+      .openWikilink(base)
       .then((path) => {
         if (path) useUIStore.getState().setRoute(`page:${path}`);
       });

@@ -11,15 +11,25 @@ import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import {
+  acceptCompletion,
   autocompletion,
   completionKeymap,
+  snippetCompletion,
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
+import { search, searchKeymap } from "@codemirror/search";
 import { useVaultStore } from "../stores/vaultStore";
 import type { FileNode } from "../lib/ipc";
 import type { Strings } from "../lib/i18n";
 import { liveExtension } from "../lib/editorLive";
+import {
+  filterSlash,
+  slashItems,
+  slashQueryAt,
+  tagQueryAt,
+} from "../lib/editorCompletions";
+import { tagCandidates } from "../lib/tagIndex";
 
 export interface EditorProps {
   docKey: string;
@@ -63,6 +73,8 @@ export default function Editor({
       doc: initialValue,
       extensions: [
         history(),
+        search({ top: true }),
+        EditorState.phrases.of(cmPhrases(t)),
         keymap.of([
           {
             key: "Mod-s",
@@ -72,6 +84,10 @@ export default function Editor({
             },
             preventDefault: true,
           },
+          // completionKeymap binds Enter only; Tab applies too (Obsidian/Notion).
+          // Returns false with no completion open, so Tab is otherwise unchanged.
+          { key: "Tab", run: acceptCompletion },
+          ...searchKeymap,
           ...defaultKeymap,
           ...historyKeymap,
           ...completionKeymap,
@@ -89,8 +105,34 @@ export default function Editor({
           ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--ink)" },
           "&.cm-focused .cm-selectionBackground, .cm-selectionBackground":
             { background: "var(--bg-hover)" },
+          // Search panel and completion tooltip follow the app theme (dark too).
+          ".cm-panels": {
+            background: "var(--bg-soft)",
+            color: "var(--ink)",
+            borderColor: "var(--line)",
+          },
+          ".cm-textfield, .cm-button": {
+            background: "var(--bg-elev)",
+            borderColor: "var(--line)",
+            color: "var(--ink)",
+          },
+          ".cm-tooltip": {
+            background: "var(--bg-elev)",
+            borderColor: "var(--line)",
+            boxShadow: "var(--shadow-pop)",
+          },
+          ".cm-tooltip-autocomplete ul li[aria-selected]": {
+            background: "var(--bg-active)",
+            color: "var(--ink)",
+          },
+          ".cm-searchMatch": { background: "var(--accent-soft)" },
+          ".cm-searchMatch.cm-searchMatch-selected": {
+            background: "var(--bg-active)",
+          },
         }),
-        autocompletion({ override: [wikilinkCompletion] }),
+        autocompletion({
+          override: [slashCompletion(t), wikilinkCompletion, tagCompletion],
+        }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
             onChangeRef.current?.(update.state.doc.toString());
@@ -145,6 +187,67 @@ export default function Editor({
       className={live ? "myco-editor live" : "myco-editor"}
     />
   );
+}
+
+/** CodeMirror search/autocomplete UI phrase → its `t.cm_*` key. */
+const CM_PHRASES: Record<string, keyof Strings> = {
+  Find: "cm_find",
+  Replace: "cm_replace_field",
+  next: "cm_next",
+  previous: "cm_previous",
+  all: "cm_all",
+  "match case": "cm_match_case",
+  "by word": "cm_by_word",
+  regexp: "cm_regexp",
+  replace: "cm_replace",
+  "replace all": "cm_replace_all",
+  close: "cm_close",
+  "current match": "cm_current_match",
+  "replaced $ matches": "cm_replaced_matches",
+  "replaced match on line $": "cm_replaced_on_line",
+  "on line": "cm_on_line",
+  "Go to line": "cm_goto_line",
+  go: "cm_go",
+  Completions: "cm_completions",
+};
+
+/** Translations for EditorState.phrases; a missing key keeps CM's English. */
+function cmPhrases(t: Strings): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [phrase, key] of Object.entries(CM_PHRASES)) {
+    const v = t[key];
+    if (v) out[phrase] = v;
+  }
+  return out;
+}
+
+/** `/` blocks. Unfiltered: filterSlash already matched label OR localized detail. */
+function slashCompletion(t: Strings) {
+  return (context: CompletionContext): CompletionResult | null => {
+    const line = context.state.doc.lineAt(context.pos);
+    const m = slashQueryAt(line.text.slice(0, context.pos - line.from));
+    if (!m) return null;
+    return {
+      from: line.from + m.from,
+      filter: false,
+      options: filterSlash(slashItems(t), m.query).map((i) =>
+        snippetCompletion(i.template, { label: i.label, detail: i.detail }),
+      ),
+    };
+  };
+}
+
+/** Frontmatter `tags:` values from the vault's indexed tags. */
+function tagCompletion(context: CompletionContext): CompletionResult | null {
+  const m = tagQueryAt(context.state.doc.sliceString(0, context.pos));
+  if (!m) return null;
+  const tags = useVaultStore.getState().adjacency?.tags ?? {};
+  const options = tagCandidates(tags, m.query);
+  if (options.length === 0) return null;
+  return {
+    from: m.from,
+    options: options.map((label) => ({ label, type: "text" })),
+  };
 }
 
 function wikilinkCompletion(

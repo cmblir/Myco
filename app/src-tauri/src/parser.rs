@@ -18,7 +18,9 @@ pub fn parse_links_from_text(text: &str) -> Vec<String> {
     for cap in wikilink_regex().captures_iter(text) {
         if let Some(inner) = cap.get(1) {
             let raw = inner.as_str();
-            let target = raw.split('|').next().unwrap_or(raw).trim();
+            let target = raw.split('|').next().unwrap_or(raw);
+            // `[[Note#Heading]]` links to Note; a bare `[[#Heading]]` links nowhere.
+            let target = target.split('#').next().unwrap_or(target).trim();
             // A source written as `[[name\]]` (escaped closing bracket) leaves the
             // backslash INSIDE the capture, since the regex stops at the first
             // literal `]`. Obsidian never treats `\` as part of a link name, so
@@ -86,5 +88,12 @@ mod tests {
         let links =
             parse_links_from_text("see [[transformer-decoder-only\\]] and [[bookcorpus\\]]");
         assert_eq!(links, vec!["transformer-decoder-only", "bookcorpus"]);
+    }
+
+    #[test]
+    fn strips_heading_anchor() {
+        assert_eq!(parse_links_from_text("[[note#Sec]]"), vec!["note"]);
+        assert_eq!(parse_links_from_text("[[note#Sec|alias]]"), vec!["note"]);
+        assert!(parse_links_from_text("[[#only]]").is_empty());
     }
 }

@@ -37,6 +37,15 @@ export function matchWikilinkAt(
   };
 }
 
+/**
+ * Note a followed wikilink points at: `Note#Heading` → `Note`; a bare
+ * `#Heading` → `""` (links nowhere). Only for link targets — a typed title
+ * such as `C# basics` keeps its `#`. Heading navigation is a follow-up.
+ */
+export function wikilinkBase(target: string): string {
+  return target.split("#")[0].trim();
+}
+
 // --- PDF pinpoint links (Feature 6) ----------------------------------------
 // A pinpoint citation into a source PDF, resolvable like a wikilink but routed
 // to the in-app PDF viewer + a specific highlight anchor. Canonical form:

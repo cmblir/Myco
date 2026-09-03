@@ -26,6 +26,7 @@ import { promptText } from "../stores/dialogStore";
 import type { AgentStep } from "../lib/agentLoop";
 import Viewer from "./Viewer";
 import { isComposingKey } from "../lib/ime";
+import { wikilinkBase } from "../lib/wikilinks";
 
 export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
@@ -104,12 +105,14 @@ export default function AgentPanel({ t }: { t: Strings }): JSX.Element {
   }
 
   const openByStem = (target: string): void => {
-    const abs = resolveWikilink(target);
+    const base = wikilinkBase(target);
+    if (!base) return;
+    const abs = resolveWikilink(base);
     if (abs) {
       setRoute(`page:${abs}`);
       return;
     }
-    void openWikilink(target).then((p) => {
+    void openWikilink(base).then((p) => {
       if (p) setRoute(`page:${p}`);
     });
   };

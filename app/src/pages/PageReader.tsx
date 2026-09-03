@@ -28,7 +28,7 @@ import PropertiesPanel from "../components/PropertiesPanel";
 import AudioOverviewPanel from "../components/AudioOverviewPanel";
 import PdfViewer from "../components/PdfViewer";
 import { usePdfStore } from "../stores/pdfStore";
-import { parsePdfTarget } from "../lib/wikilinks";
+import { parsePdfTarget, wikilinkBase } from "../lib/wikilinks";
 import Viewer from "../components/Viewer";
 import BacklinksPanel from "../components/BacklinksPanel";
 import RelatedPanel from "../components/RelatedPanel";
@@ -347,8 +347,10 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     // Resolve, or create the note next to the current file and open
     // it (Obsidian-style create-on-click) — same as Ask and the
     // agent panel, via the shared store method.
+    const base = wikilinkBase(target);
+    if (!base) return;
     const dir = path.replace(/[\\/][^\\/]+$/, "");
-    void openWikilink(target, dir).then((p) => {
+    void openWikilink(base, dir).then((p) => {
       if (p) setRoute(`page:${p}`);
     });
   }

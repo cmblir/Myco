@@ -841,6 +841,36 @@ export interface Strings {
   rd_cards_none?: string;
   rd_cards_made?: string;
   rd_open_study?: string;
+  // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
+  cm_find?: string;
+  cm_replace_field?: string;
+  cm_next?: string;
+  cm_previous?: string;
+  cm_all?: string;
+  cm_match_case?: string;
+  cm_by_word?: string;
+  cm_regexp?: string;
+  cm_replace?: string;
+  cm_replace_all?: string;
+  cm_close?: string;
+  cm_current_match?: string;
+  cm_replaced_matches?: string;
+  cm_replaced_on_line?: string;
+  cm_on_line?: string;
+  cm_goto_line?: string;
+  cm_go?: string;
+  cm_completions?: string;
+  sl_h1?: string;
+  sl_h2?: string;
+  sl_h3?: string;
+  sl_bullet?: string;
+  sl_numbered?: string;
+  sl_todo?: string;
+  sl_code?: string;
+  sl_quote?: string;
+  sl_table?: string;
+  sl_divider?: string;
+  sl_date?: string;
   // Reader properties panel.
   props_title?: string;
   props_add?: string;
@@ -2346,6 +2376,36 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_cards_none: "No cards generated.",
     rd_cards_made: "{n} cards added",
     rd_open_study: "Open study",
+    // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
+    cm_find: "Find",
+    cm_replace_field: "Replace",
+    cm_next: "next",
+    cm_previous: "previous",
+    cm_all: "all",
+    cm_match_case: "match case",
+    cm_by_word: "by word",
+    cm_regexp: "regexp",
+    cm_replace: "replace",
+    cm_replace_all: "replace all",
+    cm_close: "close",
+    cm_current_match: "current match",
+    cm_replaced_matches: "replaced $ matches",
+    cm_replaced_on_line: "replaced match on line $",
+    cm_on_line: "on line",
+    cm_goto_line: "Go to line",
+    cm_go: "go",
+    cm_completions: "Completions",
+    sl_h1: "Heading 1",
+    sl_h2: "Heading 2",
+    sl_h3: "Heading 3",
+    sl_bullet: "Bulleted list",
+    sl_numbered: "Numbered list",
+    sl_todo: "To-do",
+    sl_code: "Code block",
+    sl_quote: "Quote",
+    sl_table: "Table",
+    sl_divider: "Divider",
+    sl_date: "Today's date",
     props_title: "Properties",
     props_add: "Add property",
     props_key_ph: "key",
@@ -3853,6 +3913,36 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_cards_none: "생성된 카드가 없습니다.",
     rd_cards_made: "카드 {n}개 추가됨",
     rd_open_study: "학습 열기",
+    // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
+    cm_find: "찾기",
+    cm_replace_field: "바꾸기",
+    cm_next: "다음",
+    cm_previous: "이전",
+    cm_all: "모두",
+    cm_match_case: "대소문자 구분",
+    cm_by_word: "단어 단위",
+    cm_regexp: "정규식",
+    cm_replace: "바꾸기",
+    cm_replace_all: "모두 바꾸기",
+    cm_close: "닫기",
+    cm_current_match: "현재 일치 항목",
+    cm_replaced_matches: "$개 항목을 바꿨습니다",
+    cm_replaced_on_line: "$번째 줄의 항목을 바꿨습니다",
+    cm_on_line: "줄",
+    cm_goto_line: "줄 이동",
+    cm_go: "이동",
+    cm_completions: "자동 완성",
+    sl_h1: "제목 1",
+    sl_h2: "제목 2",
+    sl_h3: "제목 3",
+    sl_bullet: "글머리 기호 목록",
+    sl_numbered: "번호 목록",
+    sl_todo: "할 일",
+    sl_code: "코드 블록",
+    sl_quote: "인용",
+    sl_table: "표",
+    sl_divider: "구분선",
+    sl_date: "오늘 날짜",
     props_title: "속성",
     props_add: "속성 추가",
     props_key_ph: "키",
@@ -5150,6 +5240,36 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_cards_none: "生成されたカードがありません。",
     rd_cards_made: "カードを{n}枚追加しました",
     rd_open_study: "学習を開く",
+    // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
+    cm_find: "検索",
+    cm_replace_field: "置換",
+    cm_next: "次",
+    cm_previous: "前",
+    cm_all: "すべて",
+    cm_match_case: "大文字小文字を区別",
+    cm_by_word: "単語単位",
+    cm_regexp: "正規表現",
+    cm_replace: "置換",
+    cm_replace_all: "すべて置換",
+    cm_close: "閉じる",
+    cm_current_match: "現在の一致",
+    cm_replaced_matches: "$件を置換しました",
+    cm_replaced_on_line: "$行目の一致を置換しました",
+    cm_on_line: "行",
+    cm_goto_line: "行へ移動",
+    cm_go: "移動",
+    cm_completions: "補完",
+    sl_h1: "見出し1",
+    sl_h2: "見出し2",
+    sl_h3: "見出し3",
+    sl_bullet: "箇条書き",
+    sl_numbered: "番号付きリスト",
+    sl_todo: "チェックボックス",
+    sl_code: "コードブロック",
+    sl_quote: "引用",
+    sl_table: "表",
+    sl_divider: "区切り線",
+    sl_date: "今日の日付",
     props_title: "プロパティ",
     props_add: "プロパティを追加",
     props_key_ph: "キー",

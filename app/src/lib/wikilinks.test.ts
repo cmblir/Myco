@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { escapeHtml, matchWikilinkAt } from "./wikilinks";
+import { escapeHtml, matchWikilinkAt, wikilinkBase } from "./wikilinks";
 
 describe("matchWikilinkAt", () => {
   it("matches a bare target anchored at pos", () => {
@@ -48,6 +48,15 @@ describe("matchWikilinkAt", () => {
 
   it("returns null for a newline inside the inner", () => {
     expect(matchWikilinkAt("[[a\nb]]", 0)).toBeNull();
+  });
+});
+
+describe("wikilinkBase", () => {
+  it("drops a heading anchor; a bare anchor links nowhere", () => {
+    expect(wikilinkBase("Note#Sec")).toBe("Note");
+    expect(wikilinkBase(" Note #Sec")).toBe("Note");
+    expect(wikilinkBase("#Sec")).toBe("");
+    expect(wikilinkBase("Note")).toBe("Note");
   });
 });
 

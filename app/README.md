@@ -41,7 +41,9 @@ Settings → Account.
 
 | | |
 | --- | --- |
-| `[[wikilink]]` autocomplete | Type `[[` in the editor, every file stem in the vault appears in a popup |
+| `[[wikilink]]` autocomplete | Type `[[` in the editor, every file stem in the vault appears in a popup. In Source mode, frontmatter `tags:` values complete from the vault's tags |
+| `/` blocks | `/` at the start of a line (or after a space) opens 11 snippet blocks — headings, bullet / numbered / to-do lists, code, quote, table, divider, today's date — filtered by the keyword or the localized name (`/h2`, `/표`); Enter or Tab applies |
+| Find / replace | `⌘F` in the editor (`⌘G` / `⇧⌘G` next / previous, `Esc` closes); not available in Preview mode |
 | Live / Source / Split / Preview | Four modes in the editor header, remembered per device. Live (default) renders headings, bullets, task checkboxes and links in place and reveals the raw marks on the caret line; preview wraps the live document so wikilinks resolve in real time |
 | Save | `⌘S` or automatic 2-second debounce; atomic write (tempfile + rename) so you never see a half-saved file |
 | Backlinks | Every page shows inbound links at the bottom |
