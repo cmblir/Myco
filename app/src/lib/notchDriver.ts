@@ -36,6 +36,12 @@ import type { DropPayload } from "./notchDrop";
 import { today } from "./taskLine";
 import { createVoiceMachine } from "./voiceCapture";
 import { createLevelHistory, createSilenceWatch } from "./voiceLevel";
+
+/** A dead input reads as digital zeros; a live mic in a quiet room still
+ *  carries room tone well above this. 0.01 was tuned on speech peaks and
+ *  called a normal voice silent. */
+const SILENCE_RMS = 0.003;
+const SILENCE_HOLD_MS = 2500;
 import type { LevelHistory, SilenceWatch } from "./voiceLevel";
 import { createWavRecorder } from "./wavRecorder";
 import type { VoiceMachine, VoiceState } from "./voiceCapture";
@@ -787,8 +793,8 @@ export function useNotchDriver(): NotchDrive | null {
           // prevent.
           levelsRef.current = createLevelHistory();
           silenceRef.current = createSilenceWatch({
-            threshold: 0.01,
-            holdMs: 2000,
+            threshold: SILENCE_RMS,
+            holdMs: SILENCE_HOLD_MS,
           });
           lastFrameAtRef.current = Date.now();
           noInputRef.current = false;

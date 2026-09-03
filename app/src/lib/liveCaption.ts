@@ -72,9 +72,17 @@ export function startPartialLoop(opts: PartialLoopOptions): () => void {
       busy = false;
     }
   };
+  // The first partial runs early: at the full interval the first words land
+  // ~5 s in (interval + whisper), which reads as "it is not listening". Only
+  // when it is genuinely earlier — a lead equal to the interval would fire
+  // twice at the same instant.
+  const lead = 1200;
+  const first =
+    lead < intervalMs ? setTimeout(() => void tick(), lead) : undefined;
   const id = setInterval(() => void tick(), intervalMs);
   return () => {
     stopped = true;
+    if (first !== undefined) clearTimeout(first);
     clearInterval(id);
   };
 }

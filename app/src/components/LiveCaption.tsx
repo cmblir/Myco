@@ -18,19 +18,24 @@ export default function LiveCaption({
   const box = useRef<HTMLDivElement | null>(null);
   const text = useRef<HTMLSpanElement | null>(null);
   const [shift, setShift] = useState(0);
+  // The warning never hides words: once the take has text, "no sound" belongs
+  // on the lip alone (the owner saw it cover a caption that was working).
+  const warn = noInputText && caption.confirmed.length + caption.interim.length === 0
+    ? noInputText
+    : null;
 
   useLayoutEffect(() => {
     const over = (text.current?.scrollWidth ?? 0) - (box.current?.clientWidth ?? 0);
     // Never slide the warning: it is one fixed sentence, `.live-caption-warn`
     // kills the fade, and shifting it left would clip the HEAD of the one
     // message that has to be readable — with no fade to say so.
-    setShift(noInputText ? 0 : Math.max(0, over));
-  }, [caption, noInputText]);
+    setShift(warn ? 0 : Math.max(0, over));
+  }, [caption, warn]);
 
   return (
     <div
       ref={box}
-      className={`live-caption${shift > 0 ? " is-overflow" : ""}${noInputText ? " live-caption-warn" : ""}`}
+      className={`live-caption${shift > 0 ? " is-overflow" : ""}${warn ? " live-caption-warn" : ""}`}
       role="status"
     >
       <span
@@ -38,7 +43,7 @@ export default function LiveCaption({
         className="live-caption-text"
         style={shift > 0 ? { transform: `translateX(-${shift}px)` } : undefined}
       >
-        {noInputText ?? (
+        {warn ?? (
           <>
             {caption.confirmed.join(" ")}
             {caption.confirmed.length > 0 && caption.interim.length > 0 ? " " : ""}

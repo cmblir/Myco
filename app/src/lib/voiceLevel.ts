@@ -13,8 +13,11 @@ export function rms(samples: Float32Array): number {
 }
 
 export interface SilenceWatch {
-  /** Feed one level reading; `silent` flips true only after `holdMs` of
-   *  continuous sub-threshold input, and any loud frame resets the clock. */
+  /** Feed one level reading. `silent` means NO SOUND HAS EVER ARRIVED in this
+   *  take (a dead, muted or wrong input), not "the speaker paused": once one
+   *  frame clears the threshold the watch latches open for good. Pauses
+   *  between sentences used to raise the warning — and the warning covers the
+   *  live caption, so speaking normally looked like a broken mic. */
   push(level: number, nowMs: number): { silent: boolean };
 }
 
@@ -23,12 +26,11 @@ export function createSilenceWatch(opts: {
   holdMs: number;
 }): SilenceWatch {
   let quietSince: number | null = null;
+  let heard = false;
   return {
     push(level, nowMs) {
-      if (level >= opts.threshold) {
-        quietSince = null;
-        return { silent: false };
-      }
+      if (level >= opts.threshold) heard = true;
+      if (heard) return { silent: false };
       quietSince ??= nowMs;
       return { silent: nowMs - quietSince >= opts.holdMs };
     },

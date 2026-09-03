@@ -47,6 +47,11 @@ import {
   type LevelHistory,
   type SilenceWatch,
 } from "../lib/voiceLevel";
+
+/** Same figures as the notch (lib/notchDriver): a dead input is zeros, a live
+ *  mic is not, and a pause must never read as "no sound". */
+const SILENCE_RMS = 0.003;
+const SILENCE_HOLD_MS = 2500;
 import { createWavRecorder } from "../lib/wavRecorder";
 import { useUIStore } from "../stores/uiStore";
 
@@ -148,7 +153,7 @@ export default function Spotlight(): JSX.Element {
         if (state === "recording") {
           setVoiceNotice(null);
           setCaption(EMPTY_CAPTION);
-          silenceRef.current = createSilenceWatch({ threshold: 0.01, holdMs: 2000 });
+          silenceRef.current = createSilenceWatch({ threshold: SILENCE_RMS, holdMs: SILENCE_HOLD_MS });
           lastFrameAtRef.current = Date.now();
         }
         // Whisper is now reading the whole take: nothing more will change, so

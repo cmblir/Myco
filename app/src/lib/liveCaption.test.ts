@@ -93,7 +93,8 @@ describe("startPartialLoop", () => {
       maxMs: 2500,
     });
     await vi.advanceTimersByTimeAsync(5000);
-    // Ticks at 1 s and 2 s ran; 3 s and later are past the cap.
+    // Ticks at 1 s and 2 s ran; 3 s and later are past the cap. (No leading
+    // tick here: the 1.2 s lead is not earlier than this test's 1 s interval.)
     expect(transcribe).toHaveBeenCalledTimes(2);
     expect(onCaption).toHaveBeenCalledTimes(2);
 
