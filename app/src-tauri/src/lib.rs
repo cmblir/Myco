@@ -172,6 +172,7 @@ pub fn run() {
             commands::whisper_check,
             commands::transcribe_media,
             commands::save_voice_capture,
+            commands::transcribe_partial,
             commands::capture_note,
             commands::create_file,
             commands::create_folder,

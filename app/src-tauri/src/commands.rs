@@ -560,8 +560,13 @@ fn emit_voice_stage(app: &tauri::AppHandle, stage: &str) {
 /// (cli_agent.rs's `myco-<purpose>-<pid>-<nanos>` pattern) → whisper →
 /// transcript. Writes nothing to the vault. The whisper check runs FIRST so
 /// a missing CLI writes nothing at all, and the temp file is deleted on
-/// every path (success and transcription failure).
-fn transcribe_voice_core(app: &tauri::AppHandle, bytes: &[u8]) -> Result<String, String> {
+/// every path (success and transcription failure). `quiet` skips whisper's
+/// progress events (live-caption partials, which must not drive the meter).
+fn transcribe_voice_core(
+    app: &tauri::AppHandle,
+    bytes: &[u8],
+    quiet: bool,
+) -> Result<String, String> {
     if !crate::whisper::check().installed {
         return Err("whisper-missing".to_string());
     }
@@ -582,9 +587,30 @@ fn transcribe_voice_core(app: &tauri::AppHandle, bytes: &[u8]) -> Result<String,
             .unwrap_or(0)
     ));
     std::fs::write(&tmp, bytes).map_err(|e| format!("write temp audio: {e}"))?;
-    let transcribed = crate::whisper::transcribe(app, &tmp.to_string_lossy());
+    let path = tmp.to_string_lossy();
+    let transcribed = if quiet {
+        crate::whisper::transcribe_quiet(app, &path)
+    } else {
+        crate::whisper::transcribe(app, &path)
+    };
     let _ = std::fs::remove_file(&tmp);
     transcribed
+}
+
+/// Live captions while a voice memo records: the webview snapshots the WAV
+/// so far every few seconds and asks for its plain transcript. Raw body like
+/// `write_asset` (a 45 s take is ~1.4 MB — too much for a JSON number
+/// array every tick). Writes nothing and needs no vault; `command(async)`
+/// so the blocking whisper run stays off the main thread.
+#[tauri::command(async)]
+pub fn transcribe_partial(
+    app: tauri::AppHandle,
+    request: tauri::ipc::Request<'_>,
+) -> Result<String, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("expected a raw body".into());
+    };
+    transcribe_voice_core(&app, bytes, true)
 }
 
 /// Blocking write half: `_inbox/voice-<date>.md` carrying the transcript;
@@ -666,7 +692,7 @@ pub async fn save_voice_capture(
     emit_voice_stage(&app, "transcribing");
     let transcribe_app = app.clone();
     let transcript = tauri::async_runtime::spawn_blocking(move || {
-        transcribe_voice_core(&transcribe_app, &bytes)
+        transcribe_voice_core(&transcribe_app, &bytes, false)
     })
     .await
     .map_err(|e| format!("join failed: {e}"))??;

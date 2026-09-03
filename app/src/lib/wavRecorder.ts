@@ -15,6 +15,9 @@ export interface RecorderLike {
   onLevel?: ((rms: number) => void) | null;
   start: () => void;
   stop: () => void;
+  /** WAV of everything captured so far, chunks untouched — the live-caption
+   *  partials feed on this while the take keeps running. */
+  snapshot?: () => Blob;
 }
 
 import { rms } from "./voiceLevel";
@@ -116,6 +119,7 @@ export function createWavRecorder(stream: MediaStream): RecorderLike {
       chunks.length = 0;
       recorder.onstop?.();
     },
+    snapshot: () => wavBlobFrom(chunks, ctx.sampleRate),
   };
   return recorder;
 }

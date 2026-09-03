@@ -2477,6 +2477,13 @@ function mockInvoke(
       return sleep(600).then(() => ({
         rel: "_inbox/voice-2026-08-22-0912.md",
       }));
+    case "transcribe_partial": {
+      // The raw body IS the WAV (16 kHz mono 16-bit = 32 kB/s); one more word
+      // per recorded second, so `?mock=1` captions visibly grow.
+      const secs = ((args as unknown as { byteLength?: number }).byteLength ?? 0) / 32_000;
+      const words = "오늘 회의에서 정리한 내용을 잊기 전에 짧게 메모로 남겨 둡니다".split(" ");
+      return sleep(400).then(() => words.slice(0, 1 + Math.floor(secs)).join(" "));
+    }
     case "transcribe_media":
       return Promise.resolve(
         "(mock) Transcript: today we cover attention and how scaled dot-product attention works.",

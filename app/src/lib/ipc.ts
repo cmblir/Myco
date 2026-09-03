@@ -729,6 +729,11 @@ export const ipc = {
    *  invoke args are JSON — a Uint8Array would not reach Rust as Vec<u8>. */
   saveVoiceCapture: (bytes: number[]) =>
     invoke<{ rel: string }>("save_voice_capture", { bytes }),
+  /** Live captions: plain transcript of a WAV snapshot of the take so far.
+   *  Raw body like writeAsset — a 45 s snapshot is ~1.4 MB every few seconds,
+   *  too much for a JSON number array. Emits no progress events. */
+  transcribePartial: (bytes: Uint8Array) =>
+    invoke<string>("transcribe_partial", bytes),
   buildLinkGraph: (root: string) =>
     invoke<Adjacency>("build_link_graph", { root }),
   /** Cheap hash of the vault's markdown (path+mtime+length per .md). Ask this

@@ -237,11 +237,12 @@ fn parse_progress_line(line: &str) -> Option<u8> {
 /// can be reported mid-run — the buffering runner cannot say anything until
 /// the process exits, which for an hour of audio reads as a hang. Every
 /// stderr line is kept for error reporting; lines that parse as progress are
-/// re-emitted as TRANSCRIBE_PROGRESS_EVENT.
+/// re-emitted as TRANSCRIBE_PROGRESS_EVENT (unless `quiet`).
 fn run_streaming(
     app: &tauri::AppHandle,
     mut child: std::process::Child,
     timeout: Duration,
+    quiet: bool,
 ) -> Result<CliResult, String> {
     let stdout = child.stdout.take();
     let stderr = child.stderr.take();
@@ -258,9 +259,11 @@ fn run_streaming(
         if let Some(se) = stderr {
             for line in std::io::BufReader::new(se).lines() {
                 let Ok(line) = line else { break };
-                if let Some(pct) = parse_progress_line(&line) {
-                    let _ =
-                        emit_app.emit(TRANSCRIBE_PROGRESS_EVENT, serde_json::json!({ "pct": pct }));
+                if !quiet {
+                    if let Some(pct) = parse_progress_line(&line) {
+                        let _ = emit_app
+                            .emit(TRANSCRIBE_PROGRESS_EVENT, serde_json::json!({ "pct": pct }));
+                    }
                 }
                 all.push_str(&line);
                 all.push('\n');
@@ -475,7 +478,14 @@ const TIMESTAMP_MIN_SECS: u64 = 600;
 
 /// Plain transcript — quick voice captures and short clips.
 pub fn transcribe(app: &tauri::AppHandle, path: &str) -> Result<String, String> {
-    transcribe_inner(app, path, false)
+    transcribe_inner(app, path, false, false)
+}
+
+/// Plain transcript with NO progress events: the live-caption partials run
+/// every few seconds beside a recording, and their `-pp` lines would drive
+/// the spotlight/notch save meter while nothing is being saved.
+pub fn transcribe_quiet(app: &tauri::AppHandle, path: &str) -> Result<String, String> {
+    transcribe_inner(app, path, false, true)
 }
 
 /// Media-file transcript: meeting-length audio (>10 min, bundled runs) comes
@@ -483,13 +493,14 @@ pub fn transcribe(app: &tauri::AppHandle, path: &str) -> Result<String, String> 
 /// binaries keep their own output shape — no flags are injected into a
 /// user's setup, so those never timestamp.
 pub fn transcribe_auto(app: &tauri::AppHandle, path: &str) -> Result<String, String> {
-    transcribe_inner(app, path, true)
+    transcribe_inner(app, path, true, false)
 }
 
 fn transcribe_inner(
     app: &tauri::AppHandle,
     path: &str,
     want_timestamps: bool,
+    quiet: bool,
 ) -> Result<String, String> {
     // A PATH whisper is an explicit user choice and wins; otherwise the
     // bundled sidecar runs with the (auto-fetched) bundled model.
@@ -546,7 +557,7 @@ fn transcribe_inner(
         .stderr(Stdio::piped())
         .spawn()
         .map_err(|e| format!("spawn whisper failed: {e}"))?;
-    let res: CliResult = run_streaming(app, child, timeout)?;
+    let res: CliResult = run_streaming(app, child, timeout, quiet)?;
     // Prefer the timestamped rendering when segments were asked for and
     // parsed; any JSON hiccup falls back to the plain text, never to an
     // error — the transcription itself succeeded. When segments exist,
