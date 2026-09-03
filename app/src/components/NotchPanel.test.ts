@@ -134,9 +134,9 @@ describe("describeNotch", () => {
     expect(CANCELLED_DWELL_MS).toBe(800);
   });
 
-  it("S8 saving freezes the clock where the take ended", () => {
-    // Not the live tone's problem: the lip still ticks nothing, and the body
-    // row (not the lip) names whisper's stage.
+  it("S8 saving names the stage on the lip, never 'Recording'", () => {
+    // A ticking "Recording · 00:07" beside "Transcribing… 40%" reads as a mic
+    // still running; the frozen clock stays in the body row.
     const view = describeNotch(
       {
         kind: "saving",
@@ -147,9 +147,21 @@ describe("describeNotch", () => {
       },
       t,
     );
-    expect(view.lip).toBe("Recording · 00:07");
+    expect(view.lip).toBe(t.voice_stage_transcribing);
     expect(view.tone).toBe("live");
     expect(view.dwellMs).toBeNull();
+    expect(
+      describeNotch(
+        {
+          kind: "saving",
+          elapsedMs: 7000,
+          caption: EMPTY_CAPTION,
+          stage: "saving",
+          pct: 100,
+        },
+        t,
+      ).lip,
+    ).toBe(t.voice_stage_saving);
   });
 
   it("S9 rejection is the only amber state", () => {

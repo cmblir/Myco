@@ -20,6 +20,10 @@ export function mergeCaption(prev: CaptionState, nextText: string): CaptionState
   const seen = [...prev.confirmed, ...prev.interim];
   let n = 0;
   while (n < words.length && n < seen.length && words[n] === seen[n]) n++;
+  // A partial that is a strict PREFIX of what we already have is no news —
+  // whisper re-decoding the take can come back shorter, and folding it in
+  // would retract words already shown as confirmed.
+  if (n === words.length && seen.length > words.length) return prev;
   return { confirmed: words.slice(0, n), interim: words.slice(n) };
 }
 

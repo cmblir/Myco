@@ -600,17 +600,27 @@ fn transcribe_voice_core(
 /// Live captions while a voice memo records: the webview snapshots the WAV
 /// so far every few seconds and asks for its plain transcript. Raw body like
 /// `write_asset` (a 45 s take is ~1.4 MB — too much for a JSON number
-/// array every tick). Writes nothing and needs no vault; `command(async)`
-/// so the blocking whisper run stays off the main thread.
-#[tauri::command(async)]
-pub fn transcribe_partial(
+/// array every tick). Writes nothing and needs no vault.
+///
+/// `spawn_blocking` like `save_voice_capture`, NOT `command(async)`: that
+/// runs the sync body inline on a tokio worker, and on first voice use
+/// `ensure_builtin_model`'s `block_on` inside the runtime panics — the invoke
+/// promise then never settles, `startPartialLoop`'s `busy` flag stays true,
+/// and captions are dead for the rest of the take.
+#[tauri::command]
+pub async fn transcribe_partial(
     app: tauri::AppHandle,
     request: tauri::ipc::Request<'_>,
 ) -> Result<String, String> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("expected a raw body".into());
     };
-    transcribe_voice_core(&app, bytes, true)
+    // Copied out because the request borrows the invoke, which cannot outlive
+    // this frame while the blocking half runs on another thread.
+    let bytes = bytes.clone();
+    tauri::async_runtime::spawn_blocking(move || transcribe_voice_core(&app, &bytes, true))
+        .await
+        .map_err(|e| format!("join failed: {e}"))?
 }
 
 /// Blocking write half: `_inbox/voice-<date>.md` carrying the transcript;

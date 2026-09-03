@@ -34,6 +34,13 @@ describe("mergeCaption", () => {
     });
   });
 
+  it("a shorter partial that is a prefix retracts nothing", () => {
+    // whisper re-decoding the take can hand back less than last time; folding
+    // that in would un-say words the user already watched settle.
+    const prev: CaptionState = { confirmed: ["오늘", "회의에서", "정리한"], interim: [] };
+    expect(mergeCaption(prev, "오늘 회의에서")).toBe(prev);
+  });
+
   it("empty text leaves the caption alone", () => {
     const prev: CaptionState = { confirmed: ["오늘"], interim: [] };
     expect(mergeCaption(prev, "   ")).toBe(prev);

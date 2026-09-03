@@ -389,6 +389,19 @@ describe("reduceNotch — S8 voice capture", () => {
     expect(writing.panel).toMatchObject({ kind: "saving", stage: "saving" });
   });
 
+  it("recStage never touches a LIVE take", () => {
+    // whisper-transcribe-progress is app-wide: an ingest running in the main
+    // window must not tear down the recording surface (and with it the ⏎/esc
+    // keys) while the mic is still open.
+    expect(
+      reduceNotch(
+        recording,
+        { type: "recStage", stage: "transcribing", pct: 10 },
+        T0,
+      ),
+    ).toBe(recording);
+  });
+
   it("esc on a live take says so for 800ms before folding", () => {
     const cancelled = reduceNotch(recording, { type: "recCancelled" }, T0);
     expect(cancelled.panel).toEqual({ kind: "cancelled" });
@@ -454,6 +467,19 @@ describe("reduceNotch — S8 voice capture", () => {
       runningSince: null,
     };
     expect(reduceNotch(done, { type: "recFail", reason: "x" }, T0)).toBe(done);
+  });
+
+  it("recFail from peek — S2's one-click Record fails before any take exists", () => {
+    const peek = walk(NOTCH_IDLE, [{ type: "hoverEnter" }]);
+    expect(peek.panel.kind).toBe("peek");
+    expect(
+      reduceNotch(peek, { type: "recFail", reason: "mic denied" }, T0).panel,
+    ).toEqual({ kind: "rejected", ext: "", reason: "mic denied" });
+    // And from idle, for a refusal slower than the peek's hover-out.
+    expect(
+      reduceNotch(NOTCH_IDLE, { type: "recFail", reason: "mic denied" }, T0)
+        .panel.kind,
+    ).toBe("rejected");
   });
 
   it("esc cancels a live take back to idle", () => {

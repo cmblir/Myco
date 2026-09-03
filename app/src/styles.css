@@ -6115,8 +6115,13 @@ html.notch-window body {
     animation: none;
   }
 }
+/* The whole capture flow is one width: pressing ⏎ moves recording → saving →
+   cancelled, and narrowing the card (and changing its radius) mid-flow read as
+   the surface flinching away from the gesture. */
 .notch.notch-open[data-state="capture"],
-.notch.notch-open[data-state="recording"] {
+.notch.notch-open[data-state="recording"],
+.notch.notch-open[data-state="saving"],
+.notch.notch-open[data-state="cancelled"] {
   width: calc(var(--notch-collapsed) + 20px);
   border-radius: 0 0 24px 24px;
 }
@@ -6172,6 +6177,16 @@ html.notch-window body {
 .notch-cap-warn {
   background: radial-gradient(circle at 34% 30%, #f6d5a4, #e0a458 62%, #4a3213);
   box-shadow: 0 0 8px rgba(224, 164, 88, 0.45);
+}
+/* Announcement only — the visible copy of this text lives in the body row.
+   Clipped rather than display:none, which screen readers skip. */
+.notch-live {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .notch-body {
   box-sizing: border-box;
@@ -6296,7 +6311,7 @@ html.notch-window body {
   cursor: pointer;
 }
 .notch-act:hover {
-  background: #17171a;
+  background: rgba(255, 255, 255, 0.06);
 }
 .notch-act:active {
   transform: scale(0.96);
@@ -6361,7 +6376,10 @@ html.notch-window body {
    was refused there is no keyboard way to cancel or save a take. */
 .notch-key {
   border: 0;
-  padding: 2px 4px;
+  /* On a non-activating panel these buttons may be the ONLY way to save or
+     cancel a take, so they cannot stay a 15px-tall strip of text. */
+  padding: 6px 8px;
+  min-height: 24px;
   border-radius: 5px;
   background: transparent;
   font: 9.5px/1.4 var(--font-mono);
@@ -6369,7 +6387,7 @@ html.notch-window body {
   cursor: pointer;
 }
 .notch-key:hover {
-  background: #17171a;
+  background: rgba(255, 255, 255, 0.06);
   color: #ece7df;
 }
 .notch-key:active {

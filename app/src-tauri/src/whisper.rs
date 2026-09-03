@@ -15,6 +15,7 @@
 use std::io::BufRead as _;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
 use tauri::Emitter as _;
@@ -529,7 +530,17 @@ fn transcribe_inner(
         .and_then(|s| s.to_str())
         .unwrap_or("audio")
         .to_string();
-    let out_dir = std::env::temp_dir().join(format!("memex-whisper-{}", std::process::id()));
+    // Per RUN, not per process: live captions transcribe a partial while the
+    // same take's save_voice_capture may already be running, and the shared
+    // directory made the two races each other — whichever finished first ran
+    // remove_dir_all and deleted the other's `-otxt` output, so the survivor
+    // fell back to stdout or empty, errored, and the memo's audio was lost.
+    static RUN: AtomicU64 = AtomicU64::new(0);
+    let out_dir = std::env::temp_dir().join(format!(
+        "memex-whisper-{}-{}",
+        std::process::id(),
+        RUN.fetch_add(1, Ordering::Relaxed)
+    ));
     std::fs::create_dir_all(&out_dir).map_err(|e| format!("mkdir: {e}"))?;
     // whisper.cpp (bundled OR the user's PATH whisper-cli) reads only
     // flac/mp3/ogg/wav — but ingest accepts the m4a/mp4 that meeting apps

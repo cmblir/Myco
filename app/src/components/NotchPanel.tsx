@@ -233,14 +233,16 @@ export function describeNotch(
         dwellMs: CANCELLED_DWELL_MS,
       };
     case "saving":
-      // The clock freezes where the take ended; the body row names the stage.
+      // The lip names the STAGE, not the take: reusing notch_recording put a
+      // ticking "Recording · 00:07" beside a body saying "Transcribing… 40%",
+      // which reads as a mic still running. The frozen clock stays in the
+      // body row, where it belongs.
       return {
         lip:
           state.note ??
-          (t.notch_recording ?? "Recording · {t}").replace(
-            "{t}",
-            clock(state.elapsedMs),
-          ),
+          (state.stage === "saving"
+            ? (t.voice_stage_saving ?? "Saving note…")
+            : (t.voice_stage_transcribing ?? "Transcribing…")),
         tone: "live",
         open: true,
         dwellMs: null,
@@ -435,6 +437,13 @@ export default function NotchPanel({
       // window is a transparent hit area; the hardware notch itself is the
       // surface, and it GROWS on hover.
       null}
+      {/* OUTSIDE the keyed body on purpose: `.notch-body` remounts on every
+          state change, so a live region declared inside it is created in the
+          same commit as its first text and the opening "Transcribing…" is
+          never announced. This one survives recording → saving. */}
+      <div className="notch-live" role="status">
+        {frame.state.kind === "saving" ? stageLabel(frame.state, t) : ""}
+      </div>
       {view.open ? (
         // Keyed by state so the 160ms fade replays on every transition.
         <div className="notch-body" key={frame.state.kind}>
@@ -453,6 +462,21 @@ export default function NotchPanel({
       ) : null}
     </div>
   );
+}
+
+/** What the save half is doing right now. Shared by the visible row and the
+ *  live region that announces it — one string, two places. */
+function stageLabel(
+  state: Extract<NotchState, { kind: "saving" }>,
+  t: Strings,
+): string {
+  if (state.stage === "saving") return t.voice_stage_saving ?? "Saving note…";
+  return state.pct !== null
+    ? (t.voice_transcribe_progress ?? "Transcribing… {pct}%").replace(
+        "{pct}",
+        String(clampPercent(state.pct)),
+      )
+    : (t.voice_stage_transcribing ?? "Transcribing…");
 }
 
 function NotchBody({
@@ -636,9 +660,9 @@ function NotchBody({
           <LiveCaption
             caption={state.caption}
             noInputText={
-              state.noInput
-                ? (t.voice_no_input ?? "No sound is coming in — check the microphone")
-                : null
+              // The short line: the caption box is ~226px, and the spotlight's
+              // full sentence overflows it here.
+              state.noInput ? (t.notch_no_sound ?? "No sound") : null
             }
           />
           <div className="notch-hint">
@@ -661,15 +685,7 @@ function NotchBody({
     case "saving": {
       // The caption settles (everything confirmed) while whisper reads the
       // whole take; the meter is whisper's -pp, the row names the stage.
-      const label =
-        state.stage === "saving"
-          ? (t.voice_stage_saving ?? "Saving note…")
-          : state.pct !== null
-            ? (t.voice_transcribe_progress ?? "Transcribing… {pct}%").replace(
-                "{pct}",
-                String(clampPercent(state.pct)),
-              )
-            : (t.voice_stage_transcribing ?? "Transcribing…");
+      const label = stageLabel(state, t);
       return (
         <>
           <LiveCaption caption={state.caption} />
@@ -681,9 +697,9 @@ function NotchBody({
                 }}
               />
             </span>
-            <span className="notch-mono" role="status">
-              {label}
-            </span>
+            {/* No role here — the announcement comes from the live region
+                NotchPanel keeps outside its keyed body (see below). */}
+            <span className="notch-mono">{label}</span>
           </div>
         </>
       );

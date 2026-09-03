@@ -46,9 +46,11 @@ import { useUIStore } from "../stores/uiStore";
 // per side; 300 left ~40px of invisible hover surface hanging off each edge,
 // which read as the panel flapping open over nothing (worst on the left).
 export const NOTCH_OPEN_WIDTH = 252;
-// Tallest open card (capture ~139) plus slop. The OS window opens straight to
-// this fixed size so the card never has to wait on a second resize; the
-// unused remainder is transparent.
+// Tallest open card plus slop. Peek is now the tallest, not capture: from
+// styles.css, 37 cutout + 26 lip + (2 x 31 .notch-act + 4 + 16 .notch-peek-sub
+// + 13 body padding) = ~158. Capture is ~132 and recording ~149. The OS window
+// opens straight to this fixed size so the card never has to wait on a second
+// resize; the unused remainder is transparent.
 export const NOTCH_OPEN_MAX_H = 170;
 
 /** How long S4/S9 hold before folding away. The sheet says only S6
@@ -424,26 +426,19 @@ export function reduceNotch(
           }
         : current;
     case "recStage":
-      // Arrives during the save; from `recording` too, because the Rust stage
-      // event can beat the machine's own "saving" transition.
+      // ONLY from `saving`. whisper-transcribe-progress is an app-wide emit —
+      // an ingest in the main window fires it too — and a `recording` arm let
+      // an unrelated run tear down a LIVE take's surface, unbinding the ⏎/esc
+      // effect and leaving the mic running with no UI and no way to stop it.
+      // Nothing is lost: the machine raises recStop synchronously in
+      // onChange("saving"), before save_voice_capture is even invoked, so the
+      // panel is always `saving` by the time our own stage event can arrive.
       return panel.kind === "saving"
         ? {
             panel: { ...panel, stage: event.stage, pct: event.pct },
             runningSince: null,
           }
-        : panel.kind === "recording"
-          ? {
-              panel: {
-                kind: "saving",
-                elapsedMs: panel.elapsedMs,
-                caption: panel.caption,
-                stage: event.stage,
-                pct: event.pct,
-                note: panel.note,
-              },
-              runningSince: null,
-            }
-          : current;
+        : current;
     case "recNote":
       // The one-time model download narrating its percent on the lip. It can
       // land in either half of the take — the download happens on first use,
@@ -457,11 +452,17 @@ export function reduceNotch(
         ? { panel: { kind: "accepted", rel: event.rel }, runningSince: null }
         : current;
     case "recFail":
-      // Covers the whisper preflight (still in capture), a failed recording,
-      // and a failed transcribe/write — either way the refusal names a reason.
+      // Covers the whisper preflight, a failed recording, and a failed
+      // transcribe/write — either way the refusal names a reason. `peek` and
+      // `idle` count too (like captureFail): S2's one-click ● Record starts
+      // the mic straight from peek, so both of ITS failure paths — whisper
+      // missing, mic denied — arrive before any recording state exists, and
+      // narrowing this guard swallowed them into a button that did nothing.
       return panel.kind === "capture" ||
         panel.kind === "recording" ||
-        panel.kind === "saving"
+        panel.kind === "saving" ||
+        panel.kind === "peek" ||
+        panel.kind === "idle"
         ? {
             panel: { kind: "rejected", ext: "", reason: event.reason },
             runningSince: null,
@@ -780,6 +781,11 @@ export function useNotchDriver(): NotchDrive | null {
       onChange: (state, error) => {
         setVoiceState(state);
         if (state === "recording") {
+          // Fresh ring per take, like the spotlight's: reusing it opened take
+          // 2 with take 1's waveform still scrolling — a surface that looks
+          // alive while the mic is dead is the exact failure it exists to
+          // prevent.
+          levelsRef.current = createLevelHistory();
           silenceRef.current = createSilenceWatch({
             threshold: 0.01,
             holdMs: 2000,

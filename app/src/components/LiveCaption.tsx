@@ -21,7 +21,10 @@ export default function LiveCaption({
 
   useLayoutEffect(() => {
     const over = (text.current?.scrollWidth ?? 0) - (box.current?.clientWidth ?? 0);
-    setShift(over > 0 ? over : 0);
+    // Never slide the warning: it is one fixed sentence, `.live-caption-warn`
+    // kills the fade, and shifting it left would clip the HEAD of the one
+    // message that has to be readable — with no fade to say so.
+    setShift(noInputText ? 0 : Math.max(0, over));
   }, [caption, noInputText]);
 
   return (
