@@ -9,7 +9,7 @@ import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { SAMPLE } from "../lib/sample";
 import { useUIStore } from "../stores/uiStore";
-import { useVaultStore } from "../stores/vaultStore";
+import { pendingDrafts, useVaultStore } from "../stores/vaultStore";
 import { useStudyStore } from "../stores/studyStore";
 import { useAudioStore } from "../stores/audioStore";
 import { generateCards } from "../lib/study";
@@ -300,7 +300,13 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       // NOT the global activeFile: a rename / delete / interleaved openFile can
       // move activeFile off this path before this cleanup runs, and gating on it
       // would silently drop the pending keystrokes for this file.
-      if (draftRef.current !== seededRawRef.current) {
+      // `delete` is false when a rename/move already carried the draft to the
+      // new path (vaultStore afterPathChange): writing it here would recreate
+      // the old file.
+      if (
+        pendingDrafts.delete(path) &&
+        draftRef.current !== seededRawRef.current
+      ) {
         void saveFile(path, draftRef.current);
         seededRawRef.current = draftRef.current;
       }
@@ -310,10 +316,12 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
 
   function scheduleSave(c: string): void {
     draftRef.current = c;
+    pendingDrafts.set(path, c);
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null;
       seededRawRef.current = c;
+      pendingDrafts.delete(path);
       void saveFile(path, c);
     }, AUTOSAVE_MS);
   }
@@ -324,6 +332,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       saveTimerRef.current = null;
     }
     seededRawRef.current = c;
+    pendingDrafts.delete(path);
     void saveFile(path, c);
   }
 

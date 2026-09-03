@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useVaultStore } from "./vaultStore";
+import { pendingDrafts, useVaultStore } from "./vaultStore";
 import { useUIStore } from "./uiStore";
 import { ipc } from "../lib/ipc";
 
@@ -268,6 +268,35 @@ describe("deletePath / movePaths / favorites", () => {
     expect(useVaultStore.getState().favorites).toEqual(["notes/a.md", "wiki/b.md"]);
     expect(ipc.saveFavorites).toHaveBeenCalledWith(["notes/a.md", "wiki/b.md"]);
     expect(ipc.listFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it("renamePath carries a pending draft to the new path: one write, none to the old path", async () => {
+    vi.spyOn(ipc, "renamePath").mockResolvedValue("/v/wiki/b.md");
+    const write = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    useVaultStore.setState({
+      activeFile: { path: A, raw: "old", content: "old", frontmatter: null },
+    });
+    useUIStore.setState({ route: `page:${A}`, navHistory: { entries: [`page:${A}`], idx: 0 } });
+    // The reader's autosave debounce is pending with unsaved keystrokes.
+    pendingDrafts.set(A, "old + typed");
+    expect(await useVaultStore.getState().renamePath(A, "b.md")).toBe("/v/wiki/b.md");
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith("/v/wiki/b.md", "old + typed");
+    // Consumed: the unmounting reader's flush has nothing left to write to A.
+    expect(pendingDrafts.has(A)).toBe(false);
+    // The remounted reader seeds from activeFile.raw, so the draft must be there.
+    expect(useVaultStore.getState().activeFile).toMatchObject({ path: "/v/wiki/b.md", raw: "old + typed" });
+    expect(useUIStore.getState().route).toBe("page:/v/wiki/b.md");
+  });
+
+  it("movePaths leaves a pending draft of an unrelated note alone", async () => {
+    vi.spyOn(ipc, "movePath").mockResolvedValue("/v/notes/a.md");
+    const write = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    pendingDrafts.set("/v/wiki/other.md", "x");
+    await useVaultStore.getState().movePaths([A], "/v/notes");
+    expect(write).not.toHaveBeenCalled();
+    expect(pendingDrafts.get("/v/wiki/other.md")).toBe("x");
+    pendingDrafts.clear();
   });
 
   it("movePaths continues past a refused move and surfaces the error", async () => {

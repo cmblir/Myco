@@ -43,6 +43,13 @@ let refreshSeq = 0;
 let lastRevision: number | null = null;
 let lastRevisionVault: string | null = null;
 
+/** Unsaved editor text by absolute path, published by the reader while its
+ *  autosave debounce is pending and removed once that text is written. A
+ *  rename/move consumes the entry (afterPathChange) so the draft follows the
+ *  note instead of being flushed to the old path. Kept out of store state:
+ *  it changes on every keystroke and no view renders it. */
+export const pendingDrafts = new Map<string, string>();
+
 export interface VaultState {
   currentVault: VaultMeta | null;
   fileTree: FileNode[];
@@ -401,6 +408,19 @@ async function afterPathChange(from: string, to: string) {
   if (activeFile) {
     const path = rewritePrefix(activeFile.path, from, to);
     if (path) useVaultStore.setState({ activeFile: { ...activeFile, path } });
+  }
+  // A dirty draft follows the note. The reader that holds it unmounts on the
+  // route change below with its flush still closed over the OLD path, which
+  // would recreate the old file (ghost duplicate) while the new path re-seeds
+  // from disk and drops the last keystrokes. Write the draft to the new path
+  // here and drop the entry so that flush becomes a no-op. Awaited after the
+  // activeFile rewrite so saveFile lands the text in activeFile.raw and the
+  // remounted reader seeds from it; the callers refresh the graph once.
+  for (const [path, draft] of pendingDrafts) {
+    const moved = rewritePrefix(path, from, to);
+    if (!moved) continue;
+    pendingDrafts.delete(path);
+    await useVaultStore.getState().saveFile(moved, draft, { skipRefresh: true });
   }
   const ui = useUIStore.getState();
   if (ui.route.startsWith("page:")) {
