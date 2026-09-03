@@ -240,7 +240,8 @@ nothing in it matched. On an external provider the range rides along as an
 instruction, not a filter.
 
 **Voice capture** — `⌥M` in Spotlight or on the notch records, Enter saves: the
-transcript lands in `_inbox/` for the normal ingest pipeline to pick up. Speech
+words appear as a live caption while you speak, and the transcript lands in
+`_inbox/` for the normal ingest pipeline to pick up. Speech
 recognition is built in — myco ships whisper.cpp and fetches its model (~190 MB)
 once, on your first recording, showing the progress on the capture surface.
 Nothing to install, and the audio never leaves the machine. A `whisper` already
@@ -274,7 +275,8 @@ with it.
 **Notch drop surface** *(macOS, opt-in)* — a quiet drop target living under
 the MacBook notch. Drag a file at the top of the screen: the surface unfolds,
 the drop lands in `_inbox/`, ingest picks it up, and the panel folds back on
-its own. Sits above the menu bar without ever stealing focus; Macs without a
+its own. Hovering it also offers Record and Note, so a voice memo starts right
+there instead of in the app. Sits above the menu bar without ever stealing focus; Macs without a
 notch get the same surface as a small menu-bar pill. Settings → Model →
 "Notch drop surface".
 

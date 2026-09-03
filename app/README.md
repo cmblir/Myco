@@ -117,9 +117,10 @@ can run e.g. Claude Sonnet for ingest and a local Llama for Q&A.
   in-app page. Change or switch it off under Settings → Appearance; if
   another app already owns the combination, that row says so instead of
   leaving a key that quietly does nothing. In the same window, `⌥M` (or the
-  mic button) records a voice memo into `_inbox/`: the bars are a live
-  level meter (flat bars plus a "no sound is coming in" hint mean the mic
-  is not being heard), the row names each stage (transcribing → saving)
+  mic button) records a voice memo into `_inbox/`: the waveform is drawn
+  from the real mic level (a flat line plus a "no sound is coming in" hint
+  mean the mic is not being heard) and the words appear under it as a live
+  caption while you speak, the row names each stage (transcribing → saving)
   while whisper runs, and the note is saved as soon as the transcript
   exists — related-page stamping happens afterwards in the background.
 

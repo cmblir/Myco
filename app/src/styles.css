@@ -5959,9 +5959,9 @@ html.spotlight-window body {
   color: #a78bfa;
 }
 
-/* Spotlight voice quick-capture (W3–6 item 9, mockup M7-b/c). The five bars
-   are a real level meter: Spotlight.tsx sets each bar's scaleY from the mic
-   RMS, so a silent mic shows flat bars instead of a reassuring animation. */
+/* Spotlight voice quick-capture (W3–6 item 9, mockup M7-b/c). The waveform and
+   the transcript line are the notch's shared components (.voice-wave-canvas,
+   .live-caption*, further down) — only the column that stacks them is local. */
 .spotlight-voice {
   display: flex;
   align-items: center;
@@ -5980,20 +5980,13 @@ html.spotlight-window body {
   display: flex;
   color: #ff6b5e;
 }
-.voice-wave {
+/* Wave over caption, between the mic glyph and the clock. */
+.voice-live {
   flex: 1;
+  min-width: 0;
   display: flex;
-  align-items: center;
-  gap: 3px;
-  height: 18px;
-}
-.voice-wave i {
-  width: 3px;
-  height: 100%;
-  border-radius: 2px;
-  background: #ff6b5e;
-  transform: scaleY(0.15);
-  transition: transform 80ms linear;
+  flex-direction: column;
+  justify-content: center;
 }
 .voice-elapsed {
   font-variant-numeric: tabular-nums;
@@ -6013,12 +6006,6 @@ html.spotlight-window body {
   border-radius: 999px;
   padding: 3px 10px;
 }
-@media (prefers-reduced-motion: reduce) {
-  .voice-wave i {
-    transition: none;
-  }
-}
-
 /* Word-level diff (W3–6 item 6, mockup M3-c). Line tints + word marks per the
    spec recipe; deleted words get line-through. Rendered by DiffView.tsx. */
 .diff {

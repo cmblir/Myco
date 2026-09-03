@@ -5,10 +5,12 @@
 // lib/spotlight.ts); this file only renders what comes back.
 //
 // Voice quick-capture (W3–6 item 9, mockup M7): the mic button or ⌥M flips the
-// card into a recording row (waveform, elapsed, ⏎ save / esc cancel); the
-// audio goes to `save_voice_capture`, which whisper-transcribes it into the
-// open vault's `_inbox/`. The recorder itself is lib/voiceCapture's injected
-// state machine, so the walk is unit-tested without a mic.
+// card into a recording row (waveform, live caption, elapsed, ⏎ save / esc
+// cancel); the audio goes to `save_voice_capture`, which whisper-transcribes it
+// into the open vault's `_inbox/`. The recorder itself is lib/voiceCapture's
+// injected state machine, so the walk is unit-tested without a mic. The
+// waveform and the caption line are the notch's components (VoiceWave,
+// LiveCaption) — one implementation of the recording surface.
 //
 // Palette is hardcoded dark, like the tray popover: a floating OS-level card is
 // its own surface, not a themed page, and that keeps the app's theme/accent
@@ -17,11 +19,15 @@
 
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
+import LiveCaption from "./LiveCaption";
 import Viewer from "./Viewer";
+import VoiceWave from "./VoiceWave";
 import { ipc } from "../lib/ipc";
 import { STRINGS } from "../lib/i18n";
 import { Icon } from "../lib/icons";
 import { isComposingKey } from "../lib/ime";
+import { EMPTY_CAPTION, startPartialLoop } from "../lib/liveCaption";
+import type { CaptionState } from "../lib/liveCaption";
 import {
   SPOTLIGHT_ANSWER_EVENT,
   SPOTLIGHT_ASK_EVENT,
@@ -35,13 +41,14 @@ import {
   type VoiceMachine,
   type VoiceState,
 } from "../lib/voiceCapture";
-import { createSilenceWatch, type SilenceWatch } from "../lib/voiceLevel";
+import {
+  createLevelHistory,
+  createSilenceWatch,
+  type LevelHistory,
+  type SilenceWatch,
+} from "../lib/voiceLevel";
 import { createWavRecorder } from "../lib/wavRecorder";
 import { useUIStore } from "../stores/uiStore";
-
-/** Per-bar RMS→scale gain: speech sits around 0.05–0.2 RMS, so the middle
- *  bar peaks near 0.15 and the outer ones stay shorter for the wave look. */
-const WAVE_BAR_GAIN = [4, 5.5, 7, 5.5, 4];
 
 /** In a plain browser, `?window=spotlight&mock=1` makes devMock answer the ask
  *  event with a canned extractive turn — that is how this window is looked at
@@ -101,12 +108,16 @@ export default function Spotlight(): JSX.Element {
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
   const [savedRel, setSavedRel] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState(0);
-  // Live mic RMS (0..~1) and the "nothing is coming in" verdict. A muted or
-  // wrong mic used to look identical to a working one; the bars now follow
-  // the real signal and go flat when it is silent.
-  const [level, setLevel] = useState(0);
+  // The "nothing is coming in" verdict. A muted or wrong mic used to look
+  // identical to a working one; the waveform follows the real signal and goes
+  // flat when it is silent, and this says so in words.
   const [noInput, setNoInput] = useState(false);
-  const levelAtRef = useRef(0);
+  // Live transcript of the take so far (lib/liveCaption).
+  const [caption, setCaption] = useState<CaptionState>(EMPTY_CAPTION);
+  // Waveform data. A ref, not state: it is written ~12×/s and VoiceWave reads
+  // it on its own rAF, so the audio path never pumps React.
+  const levelsRef = useRef<LevelHistory | null>(null);
+  levelsRef.current ??= createLevelHistory();
   // When the ScriptProcessor last fired; the ticker feeds the silence watch
   // itself if frames stop, so a dead input still flips `noInput`.
   const lastFrameAtRef = useRef(0);
@@ -129,27 +140,31 @@ export default function Spotlight(): JSX.Element {
         return saved;
       },
       onChange: (state, error) => {
+        // Fresh ring per state: the wave must not keep scrolling the last
+        // take's levels next to "Transcribing…".
+        levelsRef.current = createLevelHistory();
         setVoiceState(state);
-        // Meter reset outside recording too: bars must not stay frozen at
-        // arbitrary heights next to "Transcribing…".
-        setLevel(0);
         setNoInput(false);
         if (state === "recording") {
           setVoiceNotice(null);
+          setCaption(EMPTY_CAPTION);
           silenceRef.current = createSilenceWatch({ threshold: 0.01, holdMs: 2000 });
           lastFrameAtRef.current = Date.now();
+        }
+        // Whisper is now reading the whole take: nothing more will change, so
+        // the caption stops churning (all bright) rather than being cleared —
+        // what was said is the one thing worth reading during the save.
+        if (state === "saving") {
+          setCaption((c) => ({ confirmed: [...c.confirmed, ...c.interim], interim: [] }));
         }
         if (state === "error") setVoiceNotice(error);
       },
       onLevel: (rms) => {
         const now = Date.now();
         lastFrameAtRef.current = now;
-        const silent = silenceRef.current?.push(rms, now).silent ?? false;
-        // ~10 buffers/s at 48 kHz; re-rendering on each is pointless.
-        if (now - levelAtRef.current < 80) return;
-        levelAtRef.current = now;
-        setLevel(rms);
-        setNoInput(silent);
+        levelsRef.current?.push(rms);
+        // Same value re-set ~12×/s is a React bailout; only the flip renders.
+        setNoInput(silenceRef.current?.push(rms, now).silent ?? false);
       },
     });
     return machineRef.current;
@@ -230,6 +245,22 @@ export default function Spotlight(): JSX.Element {
       }
     }, 500);
     return () => window.clearInterval(id);
+  }, [voiceState]);
+
+  // Live captions: whisper has no streaming mode, so the take's WAV-so-far is
+  // re-transcribed every few seconds (lib/liveCaption). Bound to the machine's
+  // recording state, so the loop stops on stop/cancel/unmount; startPartialLoop
+  // itself drops a result that lands after its own stop().
+  useEffect(() => {
+    if (voiceState !== "recording") return;
+    return startPartialLoop({
+      // Non-null throughout this effect (the machine is recording); the empty
+      // fallback covers only the tick racing the stop, and whisper reading
+      // nothing simply leaves the caption where it was.
+      snapshot: () => machine().snapshot() ?? new Blob(),
+      transcribe: ipc.transcribePartial,
+      onCaption: setCaption,
+    });
   }, [voiceState]);
 
   // Saved chip shown, then the window puts itself away (mockup M7-c).
@@ -342,25 +373,27 @@ export default function Spotlight(): JSX.Element {
             </span>
           ) : (
             <>
-              <span aria-hidden className="voice-wave">
-                {WAVE_BAR_GAIN.map((gain, i) => (
-                  <i
-                    key={i}
-                    style={{
-                      transform: `scaleY(${Math.max(0.15, Math.min(1, level * gain))})`,
-                    }}
-                  />
-                ))}
+              {/* Wave over transcript, the notch's stack — the caption needs
+                  the row's full width, and the mic glyph and clock frame it. */}
+              <span className="voice-live">
+                <VoiceWave history={levelsRef.current} color="#ff6b5e" />
+                <LiveCaption
+                  caption={caption}
+                  noInputText={
+                    noInput
+                      ? (t.voice_no_input ??
+                        "No sound is coming in — check the microphone")
+                      : null
+                  }
+                />
               </span>
               <span className="voice-elapsed" role="timer">
                 {formatTicker(elapsedMs)}
               </span>
               {/* Permanent live region: one created in the same render as its
-                  text change is not announced. */}
-              <span
-                className={noInput ? "spotlight-hint spotlight-error" : "spotlight-hint"}
-                role="status"
-              >
+                  text change is not announced. The keys stay put now that the
+                  caption line carries the no-input warning. */}
+              <span className="spotlight-hint" role="status">
                 {voiceState === "saving"
                   ? modelPct !== null
                     ? (
@@ -375,10 +408,7 @@ export default function Spotlight(): JSX.Element {
                             String(transcribePct),
                           )
                         : (t.voice_stage_transcribing ?? "Transcribing…")
-                  : noInput
-                    ? (t.voice_no_input ??
-                      "No sound is coming in — check the microphone")
-                    : (t.voice_hint_recording ?? "⏎ save · esc cancel")}
+                  : (t.voice_hint_recording ?? "⏎ save · esc cancel")}
               </span>
             </>
           )}
