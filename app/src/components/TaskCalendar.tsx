@@ -4,6 +4,7 @@ import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import type { TaskItem } from "../lib/ipc";
 import { useUIStore } from "../stores/uiStore";
+import { usePointerDrag } from "../lib/pointerDrag";
 import { monthGrid, parseTaskMeta, today } from "../lib/taskLine";
 import { layoutMonthBars, MAX_LANES } from "../lib/taskCalendar";
 
@@ -33,14 +34,9 @@ export default function TaskCalendar({
   // Which month is shown, as an offset from the current one, so "today" stays
   // correct across a session that runs past midnight.
   const [offset, setOffset] = useState(0);
-  const [over, setOver] = useState<string | null>(null);
   // A crowded week hides its extra bars behind a +N chip; clicking one lets
   // every lane through instead of opening a second surface to read them in.
   const [allLanes, setAllLanes] = useState(false);
-  // A bar being dragged must not have the other bars intercepting the drop:
-  // while a drag is in flight the whole bar layer stops taking pointer events,
-  // and the day cells underneath receive the dragover/drop as usual.
-  const [dragging, setDragging] = useState(false);
   const now = new Date();
   const month = new Date(now.getFullYear(), now.getMonth() + offset, 1);
   const days = monthGrid(month);
@@ -74,29 +70,25 @@ export default function TaskCalendar({
     if (!meta?.start && !meta?.due && !task.done) undated.push(task);
   }
 
+  // Pointer-based drag (see pointerDrag.ts for why not HTML5). A bar being
+  // dragged must not have the other bars intercepting the drop: while a drag is
+  // in flight the whole bar layer stops taking pointer events, so hit-testing
+  // finds the day cell underneath.
+  const drag = usePointerDrag((id, day) => {
+    const task = byId.get(id);
+    if (task) onReschedule(task, day);
+  }, !busy);
+  const over = drag.live?.target ?? null;
+  const dragging = drag.live !== null;
+
   const dragProps = (
     task: TaskItem,
-  ): Partial<React.HTMLAttributes<HTMLElement>> & {
-    draggable: boolean;
-  } => ({
-    draggable: !busy,
-    onDragStart: (e: React.DragEvent) => {
-      e.dataTransfer.setData("text/plain", keyOf(task));
-      e.dataTransfer.effectAllowed = "move";
-      setDragging(true);
+  ): Pick<React.HTMLAttributes<HTMLElement>, "onPointerDown" | "onClick"> => ({
+    onPointerDown: drag.start(keyOf(task)),
+    onClick: () => {
+      if (!drag.consumeClick()) onOpen(task);
     },
-    onDragEnd: () => setDragging(false),
   });
-
-  const drop =
-    (day: string) =>
-    (e: React.DragEvent): void => {
-      e.preventDefault();
-      setOver(null);
-      setDragging(false);
-      const task = byId.get(e.dataTransfer.getData("text/plain"));
-      if (task) onReschedule(task, day);
-    };
 
   // Month name and weekday initials come from Intl in the app's own language —
   // not the OS locale, which is a different setting the user did not change here.
@@ -175,12 +167,7 @@ export default function TaskCalendar({
                       (over === iso ? " is-over" : "")
                     }
                     data-testid={`day-${iso}`}
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setOver(iso);
-                    }}
-                    onDragLeave={() => setOver((s) => (s === iso ? null : s))}
-                    onDrop={drop(iso)}
+                    data-drop={iso}
                     // Clicking empty space in a day prefills the add form's date,
                     // so "add something on the 12th" is one click plus typing.
                     onClick={(e) => {
@@ -221,6 +208,7 @@ export default function TaskCalendar({
                     className={
                       "task-cal-bar" +
                       (task.done ? " is-done" : "") +
+                      (drag.live?.id === s.key ? " is-dragging" : "") +
                       (s.continuesLeft ? " is-cont-l" : "") +
                       (s.continuesRight ? " is-cont-r" : "")
                     }
@@ -229,7 +217,6 @@ export default function TaskCalendar({
                       gridRow: s.lane + 1,
                     }}
                     {...dragProps(task)}
-                    onClick={() => onOpen(task)}
                     title={meta.title}
                   >
                     {openEnded ? "▷ " : ""}
@@ -270,9 +257,11 @@ export default function TaskCalendar({
             {undated.map((task) => (
               <button
                 key={keyOf(task)}
-                className="task-cal-item"
+                className={
+                  "task-cal-item" +
+                  (drag.live?.id === keyOf(task) ? " is-dragging" : "")
+                }
                 {...dragProps(task)}
-                onClick={() => onOpen(task)}
               >
                 {metaById.get(keyOf(task))?.title}
               </button>

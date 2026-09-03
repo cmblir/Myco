@@ -1101,6 +1101,18 @@ select {
 .task-card:active {
   cursor: grabbing;
 }
+/* Pointer drags, not HTML5 (see pointerDrag.ts): the source stays in place and
+   goes translucent, and its text must not start a selection under the pointer. */
+.task-card,
+.task-cal-bar,
+.task-cal-item {
+  user-select: none;
+}
+.task-card.is-dragging,
+.task-cal-bar.is-dragging,
+.task-cal-item.is-dragging {
+  opacity: 0.5;
+}
 .task-card-title {
   font-size: 13.5px;
   line-height: 1.4;

@@ -1,7 +1,7 @@
-import { useState } from "react";
 import type { JSX } from "react";
 import type { Strings } from "../lib/i18n";
 import type { TaskItem } from "../lib/ipc";
+import { usePointerDrag } from "../lib/pointerDrag";
 import { parseTaskMeta, today, type TaskStatus } from "../lib/taskLine";
 import { extractLinks, extractTags, stripTokens } from "../lib/taskTokens";
 
@@ -19,8 +19,9 @@ const COLUMNS: {
   { status: "done", labelKey: "tasks_col_done", fallback: "Done" },
 ];
 
-/// Kanban over the same scanned tasks. Drag is the platform's own HTML5 drag —
-/// a card carries `page:line`, which is all a drop needs to rewrite one line.
+/// Kanban over the same scanned tasks. Drag is pointer-based (see pointerDrag.ts
+/// for why not HTML5) — a card carries `page:line`, which is all a drop needs to
+/// rewrite one line.
 export default function TaskBoard({
   t,
   tasks,
@@ -36,18 +37,14 @@ export default function TaskBoard({
   onMove: (task: TaskItem, status: TaskStatus) => void;
   onOpen: (task: TaskItem) => void;
 }): JSX.Element {
-  const [over, setOver] = useState<TaskStatus | null>(null);
   const byId = new Map(tasks.map((x) => [`${x.page}:${x.line}`, x]));
 
-  const drop =
-    (status: TaskStatus) =>
-    (e: React.DragEvent): void => {
-      e.preventDefault();
-      setOver(null);
-      const task = byId.get(e.dataTransfer.getData("text/plain"));
-      // Dropping a card back where it started is a no-op, not a rewrite.
-      if (task && statusOf(task) !== status) onMove(task, status);
-    };
+  const drag = usePointerDrag((id, status) => {
+    const task = byId.get(id);
+    // Dropping a card back where it started is a no-op, not a rewrite.
+    if (task && statusOf(task) !== status) onMove(task, status as TaskStatus);
+  }, !busy);
+  const over = drag.live?.target ?? null;
 
   return (
     <div className="task-board" data-testid="task-board">
@@ -58,12 +55,7 @@ export default function TaskBoard({
             key={col.status}
             className={`task-col${over === col.status ? " is-over" : ""}`}
             data-testid={`col-${col.status}`}
-            onDragOver={(e) => {
-              e.preventDefault();
-              setOver(col.status);
-            }}
-            onDragLeave={() => setOver((s) => (s === col.status ? null : s))}
-            onDrop={drop(col.status)}
+            data-drop={col.status}
           >
             <header className="task-col-head">
               <span>
@@ -75,19 +67,15 @@ export default function TaskBoard({
               const meta = parseTaskMeta(task.text);
               const tags = extractTags(meta.title);
               const links = extractLinks(meta.title);
+              const id = `${task.page}:${task.line}`;
               return (
                 <article
-                  key={`${task.page}:${task.line}`}
-                  className="task-card"
-                  draggable={!busy}
-                  onDragStart={(e) => {
-                    e.dataTransfer.setData(
-                      "text/plain",
-                      `${task.page}:${task.line}`,
-                    );
-                    e.dataTransfer.effectAllowed = "move";
+                  key={id}
+                  className={`task-card${drag.live?.id === id ? " is-dragging" : ""}`}
+                  onPointerDown={drag.start(id)}
+                  onClick={() => {
+                    if (!drag.consumeClick()) onOpen(task);
                   }}
-                  onClick={() => onOpen(task)}
                   title={`${task.page}:${task.line}`}
                 >
                   <div className="task-card-title">
