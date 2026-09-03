@@ -69,7 +69,8 @@ export default function TaskBoard({
               const links = extractLinks(meta.title);
               const id = `${task.page}:${task.line}`;
               return (
-                <article
+                <button
+                  type="button"
                   key={id}
                   className={`task-card${drag.live?.id === id ? " is-dragging" : ""}`}
                   onPointerDown={drag.start(id)}
@@ -78,10 +79,10 @@ export default function TaskBoard({
                   }}
                   title={`${task.page}:${task.line}`}
                 >
-                  <div className="task-card-title">
+                  <span className="task-card-title">
                     {stripTokens(meta.title) || meta.title}
-                  </div>
-                  <div className="task-card-meta">
+                  </span>
+                  <span className="task-card-meta">
                     {meta.due ? (
                       <span
                         className="chip"
@@ -114,8 +115,8 @@ export default function TaskBoard({
                     ))}
                     {/* The note a task lives in IS its project — no extra syntax. */}
                     <span className="chip task-card-page">{task.stem}</span>
-                  </div>
-                </article>
+                  </span>
+                </button>
               );
             })}
           </section>

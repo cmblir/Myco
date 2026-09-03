@@ -1091,6 +1091,11 @@ select {
   margin-bottom: 8px;
 }
 .task-card {
+  /* A <button> so cards are tabbable and open with Enter/Space; undo the UA
+     inline-block, shrink-to-fit, centered-text defaults. */
+  display: block;
+  width: 100%;
+  text-align: left;
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1114,6 +1119,7 @@ select {
   opacity: 0.5;
 }
 .task-card-title {
+  display: block;
   font-size: 13.5px;
   line-height: 1.4;
   color: var(--ink);
