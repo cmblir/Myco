@@ -16,6 +16,7 @@ import type { AuthorshipIndex, FileNode } from "../lib/ipc";
 import { filterHumanTree } from "../lib/authorship";
 import { promptText, confirmAction } from "../stores/dialogStore";
 import { promptNewNote } from "../lib/newNote";
+import { newNoteFromTemplate } from "./TemplatePicker";
 import { today } from "../lib/taskLine";
 
 interface ContextMenuState {
@@ -492,6 +493,11 @@ function ContextMenu({
     await createFolder(parentDir(), name);
   }
 
+  async function handleNewFromTemplate(): Promise<void> {
+    onClose();
+    await newNoteFromTemplate(t, parentDir());
+  }
+
   async function handleRename(): Promise<void> {
     const target = menu.node;
     onClose();
@@ -534,6 +540,11 @@ function ContextMenu({
       <li>
         <button type="button" onClick={() => void handleNewFolder()}>
           {t.sb_new_folder ?? "New folder"}
+        </button>
+      </li>
+      <li>
+        <button type="button" onClick={() => void handleNewFromTemplate()}>
+          {t.tpl_new_from ?? "New note from template…"}
         </button>
       </li>
       <li className="myco-menu__sep" />

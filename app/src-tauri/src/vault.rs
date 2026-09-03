@@ -759,6 +759,7 @@ const NON_WIKI_DIRS: &[&str] = &[
     "cards",
     "audio",
     "runs",
+    "templates",
 ];
 
 /// Whether a NEW markdown file at `path` should be seeded with the wiki page
@@ -1944,6 +1945,11 @@ mod tests {
             Path::new("/v/ingest-reports/r.md")
         ));
         assert!(!should_seed_frontmatter(root, Path::new("/v/_inbox/s.md")));
+        // A template is a scaffold with `{{title}}` placeholders, not a page.
+        assert!(!should_seed_frontmatter(
+            root,
+            Path::new("/v/templates/note.md")
+        ));
         assert!(!should_seed_frontmatter(
             root,
             Path::new("/v/.obsidian/x.md")

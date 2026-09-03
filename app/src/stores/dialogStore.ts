@@ -5,7 +5,7 @@
 import { create } from "zustand";
 import type { ReactNode } from "react";
 
-export type DialogKind = "prompt" | "confirm";
+export type DialogKind = "prompt" | "confirm" | "pick";
 
 interface DialogRequest {
   kind: DialogKind;
@@ -69,5 +69,17 @@ export function confirmAction(opts: {
       body: opts.body,
       resolve: (v) => resolve(v === "ok"),
     });
+  });
+}
+
+/** List-style dialog: `body` renders the choices and calls
+ *  useDialogStore.getState().close(value) itself; no primary button. */
+export function pickDialog(opts: {
+  title: string;
+  message?: string;
+  body: ReactNode;
+}): Promise<string | null> {
+  return new Promise((resolve) => {
+    useDialogStore.getState().open({ kind: "pick", ...opts, resolve });
   });
 }

@@ -312,7 +312,12 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   },
 
   resolveWikilink: (target: string) => {
-    return findFileByStem(get().fileTree, target.toLowerCase());
+    // Top-level templates/ holds scaffolds, not notes (index.rs is_staging_dir
+    // skips it too): a note titled "note" must not resolve to templates/note.md.
+    const tree = get().fileTree.filter(
+      (n) => !(n.kind === "directory" && n.name === "templates"),
+    );
+    return findFileByStem(tree, target.toLowerCase());
   },
 
   openWikilink: async (target: string, contextDir?: string) => {

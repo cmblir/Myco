@@ -46,6 +46,7 @@ Settings → Account.
 | Save | `⌘S` or automatic 2-second debounce; atomic write (tempfile + rename) so you never see a half-saved file |
 | Backlinks | Every page shows inbound links at the bottom |
 | Today's note | Sidebar button creates / opens `daily/YYYY-MM-DD.md` |
+| Templates | Right-click → "New note from template…" (also in `⌘K`) picks a plain `.md` file from `templates/` in your vault; `{{date}}`, `{{time}}` and `{{title}}` are filled in. With no folder yet, one click creates it with two editable starters (note, meeting) |
 | Right-click | New note / new folder / rename / delete on any tree node |
 
 ### Knowledge wiki

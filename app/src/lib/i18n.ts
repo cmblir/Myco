@@ -197,6 +197,18 @@ export interface Strings {
   vw_load_error?: string;
   vw_io_error?: string;
   vw_overwrite_q?: string;
+  tpl_new_from?: string;
+  tpl_pick_title?: string;
+  tpl_pick_msg?: string;
+  tpl_empty?: string;
+  tpl_create_starters?: string;
+  tpl_creating?: string;
+  tpl_create_error?: string;
+  tpl_note_error?: string;
+  tpl_starter_note?: string;
+  tpl_starter_meeting?: string;
+  tpl_starter_note_body?: string;
+  tpl_starter_meeting_body?: string;
   nav_history: string;
   nav_provenance: string;
   nav_tasks: string;
@@ -1634,6 +1646,21 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_load_error: "Saved views could not be read from .myco/views/.",
     vw_io_error: "Could not update saved views: {err}",
     vw_overwrite_q: "Replace the saved view “{name}”?",
+    tpl_new_from: "New note from template…",
+    tpl_pick_title: "Choose a template",
+    tpl_pick_msg:
+      "Templates are plain .md files in templates/ in your vault. {{date}}, {{time}} and {{title}} are filled in.",
+    tpl_empty:
+      "No templates yet. Create templates/ with two starters (note, meeting) you can edit.",
+    tpl_create_starters: "Create templates folder",
+    tpl_creating: "Creating…",
+    tpl_create_error: "Could not create templates: {err}",
+    tpl_note_error: "Could not create the note from the template: {err}",
+    tpl_starter_note: "note",
+    tpl_starter_meeting: "meeting",
+    tpl_starter_note_body: "## Summary\n\n## Details\n\n## Sources\n",
+    tpl_starter_meeting_body:
+      "> {{date}} {{time}}\n\n## Attendees\n\n## Agenda\n\n## Notes\n\n## Action items\n\n- [ ] \n",
     nav_history: "History",
     nav_provenance: "Provenance",
     nav_tasks: "Tasks",
@@ -3130,6 +3157,21 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_load_error: "저장된 뷰를 .myco/views/에서 읽지 못했습니다.",
     vw_io_error: "저장된 뷰를 갱신하지 못했습니다: {err}",
     vw_overwrite_q: "저장된 뷰 “{name}”을(를) 덮어쓸까요?",
+    tpl_new_from: "템플릿으로 새 노트…",
+    tpl_pick_title: "템플릿 선택",
+    tpl_pick_msg:
+      "템플릿은 볼트의 templates/ 폴더에 있는 .md 파일입니다. {{date}}, {{time}}, {{title}}이 채워집니다.",
+    tpl_empty:
+      "아직 템플릿이 없습니다. templates/ 폴더와 수정 가능한 시작 템플릿 2개(노트, 회의록)를 만듭니다.",
+    tpl_create_starters: "템플릿 폴더 만들기",
+    tpl_creating: "만드는 중…",
+    tpl_create_error: "템플릿을 만들지 못했습니다: {err}",
+    tpl_note_error: "템플릿으로 노트를 만들지 못했습니다: {err}",
+    tpl_starter_note: "노트",
+    tpl_starter_meeting: "회의록",
+    tpl_starter_note_body: "## 요약\n\n## 내용\n\n## 출처\n",
+    tpl_starter_meeting_body:
+      "> {{date}} {{time}}\n\n## 참석자\n\n## 안건\n\n## 논의 내용\n\n## 액션 아이템\n\n- [ ] \n",
     nav_history: "히스토리",
     nav_provenance: "출처",
     nav_tasks: "할 일",
@@ -5758,6 +5800,21 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_load_error: "保存したビューを .myco/views/ から読み込めませんでした。",
     vw_io_error: "保存したビューを更新できませんでした: {err}",
     vw_overwrite_q: "保存したビュー「{name}」を置き換えますか？",
+    tpl_new_from: "テンプレートから新規ノート…",
+    tpl_pick_title: "テンプレートを選択",
+    tpl_pick_msg:
+      "テンプレートはボールトの templates/ にある .md ファイルです。{{date}}、{{time}}、{{title}} が置き換えられます。",
+    tpl_empty:
+      "テンプレートはまだありません。編集できる2つのスターター（ノート、会議メモ）と templates/ を作成します。",
+    tpl_create_starters: "テンプレートフォルダを作成",
+    tpl_creating: "作成中…",
+    tpl_create_error: "テンプレートを作成できませんでした: {err}",
+    tpl_note_error: "テンプレートからノートを作成できませんでした: {err}",
+    tpl_starter_note: "ノート",
+    tpl_starter_meeting: "会議メモ",
+    tpl_starter_note_body: "## 要約\n\n## 詳細\n\n## 出典\n",
+    tpl_starter_meeting_body:
+      "> {{date}} {{time}}\n\n## 参加者\n\n## アジェンダ\n\n## メモ\n\n## アクションアイテム\n\n- [ ] \n",
     gr_insp_type: "タイプ",
     gr_insp_confidence: "確信度",
     gr_insp_status: "ステータス",

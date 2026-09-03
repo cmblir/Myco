@@ -84,13 +84,16 @@ pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
 /// which the link graph turned into one ghost node with 596 spokes. That hub is
 /// what made the graph unusable at load, so the fix is to not walk them at all.
 ///
+/// `templates/` holds note scaffolds with `{{title}}` placeholders — not
+/// knowledge either, so they stay out of the graph, Tags and lint.
+///
 /// Top-level only (compared against the vault root), so a legitimate
 /// `wiki/sessions.md` page or a `wiki/x/_inbox/` folder is untouched.
 pub(crate) fn is_staging_dir(root: &Path, path: &Path) -> bool {
     path.parent() == Some(root)
         && matches!(
             path.file_name().and_then(|n| n.to_str()),
-            Some("_inbox") | Some("sessions")
+            Some("_inbox") | Some("sessions") | Some("templates")
         )
 }
 
@@ -311,6 +314,27 @@ mod tests {
         assert!(names.contains(&"sessions.md".to_string()));
         assert!(!names.contains(&"pending.md".to_string()));
         assert!(!names.contains(&"log.md".to_string()));
+    }
+
+    /// `templates/*.md` are scaffolds full of `{{title}}` placeholders; walking
+    /// them would put placeholder nodes in the graph. Only the top-level folder
+    /// is skipped — `wiki/templates/` is an ordinary user folder.
+    #[test]
+    fn collect_files_skips_top_level_templates() {
+        let root = temp_vault("templates");
+        for d in ["templates", "wiki/templates"] {
+            fs::create_dir_all(root.join(d)).unwrap();
+        }
+        fs::write(root.join("templates/note.md"), "# {{title}}\n").unwrap();
+        fs::write(root.join("wiki/templates/real.md"), "# real\n").unwrap();
+
+        let (sources, linkables) = collect_files(&root).unwrap();
+        let names: Vec<String> = sources
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(names, vec!["real.md".to_string()]);
+        assert_eq!(linkables.len(), 1);
     }
 
     /// An NFD-named file (macOS file APIs) must resolve a typed NFC

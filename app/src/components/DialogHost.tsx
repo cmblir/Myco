@@ -31,13 +31,17 @@ export default function DialogHost(): JSX.Element | null {
     previouslyFocused.current =
       document.activeElement instanceof HTMLElement ? document.activeElement : null;
     setValue(request.defaultValue ?? "");
-    // Focus the text input for prompts, otherwise the primary action button.
+    // Focus the text input for prompts, otherwise the primary action button —
+    // or, when there is none (pick), the first focusable element in the body.
     setTimeout(() => {
       if (request.kind === "prompt") {
         inputRef.current?.focus();
         inputRef.current?.select();
       } else {
-        primaryRef.current?.focus();
+        (
+          primaryRef.current ??
+          dialogRef.current?.querySelector<HTMLElement>(FOCUSABLE)
+        )?.focus();
       }
     }, 0);
     // Restore focus to the previously-focused element when the dialog closes.
@@ -144,16 +148,18 @@ export default function DialogHost(): JSX.Element | null {
           <button type="button" className="myco-modal__btn" onClick={cancel}>
             {t.dlg_cancel}
           </button>
-          <button
-            ref={primaryRef}
-            type="button"
-            className={`myco-modal__btn myco-modal__btn--primary${
-              request.danger ? " myco-modal__btn--danger" : ""
-            }`}
-            onClick={submit}
-          >
-            {primaryLabel}
-          </button>
+          {request.kind !== "pick" ? (
+            <button
+              ref={primaryRef}
+              type="button"
+              className={`myco-modal__btn myco-modal__btn--primary${
+                request.danger ? " myco-modal__btn--danger" : ""
+              }`}
+              onClick={submit}
+            >
+              {primaryLabel}
+            </button>
+          ) : null}
         </div>
       </div>
     </div>

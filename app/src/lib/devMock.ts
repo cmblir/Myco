@@ -1134,6 +1134,15 @@ function fileTree() {
     name: p.split("/").pop() ?? "clip.md",
     path: p,
   }));
+  // Starts empty so the template picker's empty state → create → list flow is
+  // exercisable; createStarterTemplates writes into mockNotes.
+  const templatesChildren = [...mockNotes.keys()]
+    .filter((p) => p.startsWith(`${VAULT}/templates/`))
+    .map((p) => ({
+      kind: "file" as const,
+      name: p.split("/").pop() ?? "template.md",
+      path: p,
+    }));
   return [
     { kind: "file", name: "CLAUDE.md", path: `${VAULT}/CLAUDE.md` },
     { kind: "file", name: "welcome.md", path: `${VAULT}/welcome.md` },
@@ -1178,6 +1187,16 @@ function fileTree() {
         { kind: "file", name: `${MOCK_PDF_STEM}.pdf`, path: MOCK_PDF_PATH },
       ],
     },
+    ...(templatesChildren.length
+      ? [
+          {
+            kind: "directory" as const,
+            name: "templates",
+            path: `${VAULT}/templates`,
+            children: templatesChildren,
+          },
+        ]
+      : []),
     {
       kind: "directory",
       name: "wiki",

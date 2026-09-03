@@ -14,6 +14,7 @@ import type { FileNode, SearchHit, VecHit } from "../lib/ipc";
 import { isComposingKey } from "../lib/ime";
 import { promptNewNote } from "../lib/newNote";
 import { hitPassesFilters, parseSearchQuery } from "../lib/searchQuery";
+import { newNoteFromTemplate } from "./TemplatePicker";
 
 type CmdEntry =
   | { type: "nav" | "page"; label: string; to: RouteId }
@@ -121,6 +122,11 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
         type: "action",
         label: t.sb_new_note ?? "New note",
         run: () => void promptNewNote(t),
+      },
+      {
+        type: "action",
+        label: t.tpl_new_from ?? "New note from template…",
+        run: () => void newNoteFromTemplate(t),
       },
     ];
     const navs: CmdEntry[] = [
