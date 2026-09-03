@@ -1,0 +1,36 @@
+// Mic level for the spotlight's recording row. The old waveform was a CSS
+// keyframe — a muted or wrong mic looked exactly like a working one, and the
+// owner could not tell whether a 13 s take had captured anything. RMS per
+// ScriptProcessor buffer drives the bars; the silence watch turns a long run
+// of near-zero frames into a "no sound is coming in" hint.
+
+/** Root-mean-square of one PCM buffer (0 for silence, ~1 for full scale). */
+export function rms(samples: Float32Array): number {
+  if (samples.length === 0) return 0;
+  let sum = 0;
+  for (const s of samples) sum += s * s;
+  return Math.sqrt(sum / samples.length);
+}
+
+export interface SilenceWatch {
+  /** Feed one level reading; `silent` flips true only after `holdMs` of
+   *  continuous sub-threshold input, and any loud frame resets the clock. */
+  push(level: number, nowMs: number): { silent: boolean };
+}
+
+export function createSilenceWatch(opts: {
+  threshold: number;
+  holdMs: number;
+}): SilenceWatch {
+  let quietSince: number | null = null;
+  return {
+    push(level, nowMs) {
+      if (level >= opts.threshold) {
+        quietSince = null;
+        return { silent: false };
+      }
+      quietSince ??= nowMs;
+      return { silent: nowMs - quietSince >= opts.holdMs };
+    },
+  };
+}

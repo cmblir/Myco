@@ -35,8 +35,13 @@ import {
   type VoiceMachine,
   type VoiceState,
 } from "../lib/voiceCapture";
+import { createSilenceWatch, type SilenceWatch } from "../lib/voiceLevel";
 import { createWavRecorder } from "../lib/wavRecorder";
 import { useUIStore } from "../stores/uiStore";
+
+/** Per-bar RMS→scale gain: speech sits around 0.05–0.2 RMS, so the middle
+ *  bar peaks near 0.15 and the outer ones stay shorter for the wave look. */
+const WAVE_BAR_GAIN = [4, 5.5, 7, 5.5, 4];
 
 /** In a plain browser, `?window=spotlight&mock=1` makes devMock answer the ask
  *  event with a canned extractive turn — that is how this window is looked at
@@ -89,6 +94,13 @@ export default function Spotlight(): JSX.Element {
   const [savedRel, setSavedRel] = useState<string | null>(null);
   const [savedRelated, setSavedRelated] = useState<string[]>([]);
   const [elapsedMs, setElapsedMs] = useState(0);
+  // Live mic RMS (0..~1) and the "nothing is coming in" verdict. A muted or
+  // wrong mic used to look identical to a working one; the bars now follow
+  // the real signal and go flat when it is silent.
+  const [level, setLevel] = useState(0);
+  const [noInput, setNoInput] = useState(false);
+  const levelAtRef = useRef(0);
+  const silenceRef = useRef<SilenceWatch | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
   const machineRef = useRef<VoiceMachine | null>(null);
@@ -109,8 +121,22 @@ export default function Spotlight(): JSX.Element {
       },
       onChange: (state, error) => {
         setVoiceState(state);
-        if (state === "recording") setVoiceNotice(null);
+        if (state === "recording") {
+          setVoiceNotice(null);
+          silenceRef.current = createSilenceWatch({ threshold: 0.01, holdMs: 2000 });
+          setLevel(0);
+          setNoInput(false);
+        }
         if (state === "error") setVoiceNotice(error);
+      },
+      onLevel: (rms) => {
+        const now = Date.now();
+        const silent = silenceRef.current?.push(rms, now).silent ?? false;
+        // ~10 buffers/s at 48 kHz; re-rendering on each is pointless.
+        if (now - levelAtRef.current < 80) return;
+        levelAtRef.current = now;
+        setLevel(rms);
+        setNoInput(silent);
       },
     });
     return machineRef.current;
@@ -304,16 +330,19 @@ export default function Spotlight(): JSX.Element {
           ) : (
             <>
               <span aria-hidden className="voice-wave">
-                <i />
-                <i />
-                <i />
-                <i />
-                <i />
+                {WAVE_BAR_GAIN.map((gain, i) => (
+                  <i
+                    key={i}
+                    style={{
+                      transform: `scaleY(${Math.max(0.15, Math.min(1, level * gain))})`,
+                    }}
+                  />
+                ))}
               </span>
               <span className="voice-elapsed" role="timer">
                 {formatTicker(elapsedMs)}
               </span>
-              <span className="spotlight-hint">
+              <span className="spotlight-hint" role={noInput ? "status" : undefined}>
                 {voiceState === "saving"
                   ? modelPct !== null
                     ? (
@@ -326,7 +355,10 @@ export default function Spotlight(): JSX.Element {
                           String(transcribePct),
                         )
                       : "…"
-                  : (t.voice_hint_recording ?? "⏎ save · esc cancel")}
+                  : noInput
+                    ? (t.voice_no_input ??
+                      "No sound is coming in — check the microphone")
+                    : (t.voice_hint_recording ?? "⏎ save · esc cancel")}
               </span>
             </>
           )}

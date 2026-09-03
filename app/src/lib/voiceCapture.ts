@@ -25,6 +25,8 @@ export interface VoiceDeps {
   makeRecorder: (s: MediaStream) => RecorderLike;
   save: (bytes: Uint8Array) => Promise<{ rel: string }>;
   onChange: (state: VoiceState, error: string | null) => void;
+  /** Per-buffer mic RMS while recording (see voiceLevel.ts); optional. */
+  onLevel?: (rms: number) => void;
 }
 
 export function createVoiceMachine(deps: VoiceDeps): VoiceMachine {
@@ -72,6 +74,7 @@ export function createVoiceMachine(deps: VoiceDeps): VoiceMachine {
     rec.ondataavailable = (e: { data: Blob }): void => {
       if (e.data.size > 0) chunks.push(e.data);
     };
+    if (deps.onLevel) rec.onLevel = deps.onLevel;
     rec.start();
     starting = false; // the state check guards from here on
     set("recording");

@@ -11,9 +11,13 @@
 export interface RecorderLike {
   ondataavailable: ((e: { data: Blob }) => void) | null;
   onstop: (() => void) | null;
+  /** RMS of each captured buffer — the live meter's only data source. */
+  onLevel?: ((rms: number) => void) | null;
   start: () => void;
   stop: () => void;
 }
+
+import { rms } from "./voiceLevel";
 
 /** whisper.cpp's native rate; producing it here skips any CLI-side resample. */
 export const WAV_RATE = 16000;
@@ -92,7 +96,10 @@ export function createWavRecorder(stream: MediaStream): RecorderLike {
     start() {
       live = true;
       tap.onaudioprocess = (e): void => {
-        if (live) chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+        if (!live) return;
+        const pcm = e.inputBuffer.getChannelData(0);
+        chunks.push(new Float32Array(pcm));
+        recorder.onLevel?.(rms(pcm));
       };
       source.connect(tap);
       // A ScriptProcessor only fires while wired to the destination; the tap

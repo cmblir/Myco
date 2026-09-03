@@ -49,6 +49,21 @@ describe("createVoiceMachine", () => {
     expect(states).toEqual(["recording"]);
   });
 
+  it("start wires onLevel through to the recorder", async () => {
+    const onLevel = vi.fn();
+    const { rec } = fakes();
+    const machine = createVoiceMachine({
+      getStream: () => Promise.resolve({ getTracks: () => [] } as unknown as MediaStream),
+      makeRecorder: () => rec as unknown as RecorderLike,
+      save: () => Promise.resolve({ rel: "x" }),
+      onChange: () => undefined,
+      onLevel,
+    });
+    await machine.start();
+    (rec as unknown as RecorderLike).onLevel?.(0.3);
+    expect(onLevel).toHaveBeenCalledWith(0.3);
+  });
+
   it("a second start while recording is a no-op", async () => {
     const { machine, getStream } = fakes();
     await machine.start();
