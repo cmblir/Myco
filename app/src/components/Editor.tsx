@@ -26,6 +26,7 @@ import { assetFileName, imageExtFor } from "../lib/assets";
 import type { Strings } from "../lib/i18n";
 import { liveExtension } from "../lib/editorLive";
 import {
+  bodyTagQueryAt,
   filterSlash,
   slashItems,
   slashQueryAt,
@@ -317,10 +318,16 @@ function slashCompletion(t: Strings) {
   };
 }
 
-/** Frontmatter `tags:` values from the vault's indexed tags. */
+/** Frontmatter `tags:` values and body `#tag`s from the vault's indexed tags.
+ *  Both apply the bare tag, so the typed `#` stays in place. */
 function tagCompletion(context: CompletionContext): CompletionResult | null {
-  const m = tagQueryAt(context.state.doc.sliceString(0, context.pos));
+  const prefix = context.state.doc.sliceString(0, context.pos);
+  const inFrontmatter = tagQueryAt(prefix);
+  const m = inFrontmatter ?? bodyTagQueryAt(prefix);
   if (!m) return null;
+  // A bare `#` in the body is usually a heading being typed: wait for one
+  // character (or an explicit Ctrl-Space) before offering tags.
+  if (!inFrontmatter && m.query === "" && !context.explicit) return null;
   const tags = useVaultStore.getState().adjacency?.tags ?? {};
   const options = tagCandidates(tags, m.query);
   if (options.length === 0) return null;

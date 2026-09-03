@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  bodyTagQueryAt,
   filterSlash,
   slashItems,
   slashQueryAt,
@@ -25,6 +26,23 @@ describe("tagQueryAt", () => {
   it("never triggers in the body or without an opening fence", () => {
     expect(tagQueryAt("---\na: 1\n---\nbody #ta")).toBeNull();
     expect(tagQueryAt("tags: a")).toBeNull();
+  });
+});
+
+describe("bodyTagQueryAt", () => {
+  it("matches # at line start or after whitespace, query without the #", () => {
+    expect(bodyTagQueryAt("#")).toEqual({ from: 1, query: "" });
+    expect(bodyTagQueryAt("x #fo")).toEqual({ from: 3, query: "fo" });
+    expect(bodyTagQueryAt("---\na: 1\n---\nbody #ta")).toMatchObject({
+      query: "ta",
+    });
+  });
+
+  it("ignores headings, glued hashes and open frontmatter", () => {
+    expect(bodyTagQueryAt("# ")).toBeNull();
+    expect(bodyTagQueryAt("## x")).toBeNull();
+    expect(bodyTagQueryAt("a#b")).toBeNull();
+    expect(bodyTagQueryAt("---\ntags: #fo")).toBeNull();
   });
 });
 

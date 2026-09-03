@@ -216,19 +216,78 @@ fn ingest_frontmatter(file: &Path, text: &str, adj: &mut Adjacency) {
         Ok(p) => p,
         Err(_) => return,
     };
+    let key = file.to_string_lossy().into_owned();
+    // Frontmatter `tags:` first, then inline body `#tags` (the Obsidian/Notion
+    // habit). `parsed.content` is the text after the frontmatter block, so a
+    // `tags:` key is never re-read as a body tag. Deduped case-insensitively,
+    // first spelling wins, so `Rust` in frontmatter absorbs a body `#rust`.
+    let mut tags = parsed
+        .data
+        .as_ref()
+        .and_then(extract_tags)
+        .unwrap_or_default();
+    tags.extend(body_tags(&parsed.content));
+    let mut seen = HashSet::new();
+    tags.retain(|t| seen.insert(t.to_lowercase()));
+    if !tags.is_empty() {
+        adj.tags.insert(key.clone(), tags);
+    }
     let Some(data) = parsed.data else {
         return;
     };
-    let key = file.to_string_lossy().into_owned();
-    if let Some(tags) = extract_tags(&data) {
-        if !tags.is_empty() {
-            adj.tags.insert(key.clone(), tags);
-        }
-    }
     let meta = extract_meta(&data);
     if !meta.is_empty() {
         adj.meta.insert(key, meta);
     }
+}
+
+/// Inline `#tag`s in a markdown body, close to Obsidian's rule: `#` at line
+/// start or after whitespace / an opening bracket or quote, followed by a token
+/// of letters (any script), digits, `_`, `-`, `/` with at least one non-digit.
+/// Skips fenced code blocks, inline code spans, ATX headings (`# Title` — a
+/// space after `#` leaves an empty token) and URL fragments (`…/y#frag` — the
+/// `#` is preceded by a non-space).
+fn body_tags(body: &str) -> Vec<String> {
+    let is_tag_char = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '/');
+    let mut out = Vec::new();
+    let mut in_fence = false;
+    for line in body.lines() {
+        let lead = line.trim_start();
+        if lead.starts_with("```") || lead.starts_with("~~~") {
+            in_fence = !in_fence;
+            continue;
+        }
+        if in_fence {
+            continue;
+        }
+        // Even segments are outside backticks. An unclosed backtick swallows
+        // the rest of the line — acceptable, a stray `#` there is rare.
+        for (i, seg) in line.split('`').enumerate() {
+            if i % 2 == 1 {
+                continue;
+            }
+            // A segment after a code span starts right after the closing
+            // backtick, which is not a valid tag boundary.
+            let mut prev = if i == 0 { ' ' } else { '`' };
+            let mut rest = seg;
+            while let Some(hash) = rest.find('#') {
+                if hash > 0 {
+                    prev = rest[..hash].chars().next_back().unwrap_or(' ');
+                }
+                let after = &rest[hash + 1..];
+                let end = after.find(|c: char| !is_tag_char(c)).unwrap_or(after.len());
+                let token = &after[..end];
+                let boundary = prev.is_whitespace() || matches!(prev, '(' | '[' | '{' | '"' | '\'');
+                if boundary && !token.is_empty() && token.chars().any(|c| !c.is_ascii_digit()) {
+                    out.push(token.to_string());
+                }
+                // `##` — the second `#` follows a `#`, so it is not a boundary.
+                prev = token.chars().next_back().unwrap_or('#');
+                rest = &after[end..];
+            }
+        }
+    }
+    out
 }
 
 fn extract_meta(pod: &gray_matter::Pod) -> NodeMeta {
@@ -539,5 +598,55 @@ mod tests {
             .to_string_lossy()
             .into_owned();
         assert!(!adj.meta.contains_key(&bkey));
+    }
+
+    #[test]
+    fn body_tags_ignore_headings_but_take_inline_tags() {
+        assert_eq!(body_tags("# Title\n## Sub\n#\n"), Vec::<String>::new());
+        assert_eq!(
+            body_tags("#todo\nsee #rust and (#ml)"),
+            ["todo", "rust", "ml"]
+        );
+    }
+
+    #[test]
+    fn body_tags_skip_code_fences_and_inline_code() {
+        let body = "#a\n```sh\n#b comment\n```\n~~~\n#c\n~~~\nuse `#d` not #e\n";
+        assert_eq!(body_tags(body), ["a", "e"]);
+    }
+
+    #[test]
+    fn body_tags_skip_url_fragments_and_glued_hashes() {
+        assert_eq!(body_tags("https://x/y#frag a#b &#39; #ok"), ["ok"]);
+    }
+
+    #[test]
+    fn body_tags_accept_hangul_and_nested_but_not_digits_only() {
+        assert_eq!(
+            body_tags("#회의록 #tag/sub #123 #v2 #2024-plan"),
+            ["회의록", "tag/sub", "v2", "2024-plan"]
+        );
+    }
+
+    #[test]
+    fn body_tags_merge_with_frontmatter_and_dedupe_case_insensitively() {
+        let dir = temp_vault("body-tags");
+        fs::write(
+            dir.join("a.md"),
+            "---\ntags: [Rust, ml]\n---\n# Title\nbody #rust #ML #new\n",
+        )
+        .unwrap();
+        // No frontmatter at all: body tags alone still index the page.
+        fs::write(dir.join("b.md"), "plain note #solo").unwrap();
+        let adj = build_link_graph(dir.to_str().unwrap()).unwrap();
+        let key = |n: &str| {
+            dir.join(n)
+                .canonicalize()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        assert_eq!(adj.tags[&key("a.md")], ["Rust", "ml", "new"]);
+        assert_eq!(adj.tags[&key("b.md")], ["solo"]);
     }
 }

@@ -1,4 +1,4 @@
-// Editor completion triggers: `/` blocks and frontmatter `tags:` values.
+// Editor completion triggers: `/` blocks, frontmatter `tags:` values and body `#tags`.
 // Pure functions (no CodeMirror imports) so vitest covers them in node;
 // Editor.tsx wraps them into autocompletion sources.
 
@@ -20,10 +20,15 @@ const TAGS_INLINE_RE = /(?:^|\n)tags:(?:[ \t]+\[?|\[)([^\n]*)$/;
 const TAGS_LIST_RE =
   /(?:^|\n)tags:[ \t]*\r?\n(?:[ \t]+-[ \t][^\n]*\n)*[ \t]+-[ \t]+([^\n]*)$/;
 
+/** Cursor is inside a still-open frontmatter block (fence started, not closed). */
+function inOpenFrontmatter(prefix: string): boolean {
+  return FENCE_OPEN_RE.test(prefix) && frontmatterLength(prefix) === 0;
+}
+
 /** `prefix` = doc text up to the cursor. Frontmatter only: the block must be
- *  open (fence started, not yet closed) — body `#tag`s are not indexed. */
+ *  open — body `#tag`s are handled by {@link bodyTagQueryAt}. */
 export function tagQueryAt(prefix: string): TriggerMatch | null {
-  if (!FENCE_OPEN_RE.test(prefix) || frontmatterLength(prefix) !== 0) {
+  if (!inOpenFrontmatter(prefix)) {
     return null;
   }
   const inline = TAGS_INLINE_RE.exec(prefix);
@@ -36,6 +41,21 @@ export function tagQueryAt(prefix: string): TriggerMatch | null {
   return list
     ? { from: prefix.length - list[1].length, query: list[1] }
     : null;
+}
+
+// `#tag` at line start or after whitespace, no space after `#` (so `# ` and
+// `## ` headings never trigger); the query excludes the `#`.
+const BODY_TAG_RE = /(?:^|\s)#([^\s#]*)$/;
+
+/** Body `#tag` completion. `prefix` = doc text up to the cursor; only the
+ *  cursor line matters, except that an open frontmatter block is skipped
+ *  (tagQueryAt owns it). `from` = the char after `#`, so applying a bare
+ *  tag keeps the `#`. */
+export function bodyTagQueryAt(prefix: string): TriggerMatch | null {
+  if (inOpenFrontmatter(prefix)) return null;
+  const lineBefore = prefix.slice(prefix.lastIndexOf("\n") + 1);
+  const m = BODY_TAG_RE.exec(lineBefore);
+  return m ? { from: prefix.length - m[1].length, query: m[1] } : null;
 }
 
 const SLASH_RE = /(?:^|\s)\/(\S*)$/;
