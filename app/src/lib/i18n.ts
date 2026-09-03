@@ -147,6 +147,8 @@ export interface Strings {
   hw_sc_miss?: string;
   hw_sc_path?: string;
   hw_sc_live_link?: string;
+  hw_sc_back?: string;
+  hw_sc_fwd?: string;
   hw_tip_graph1?: string;
   hw_tip_graph2?: string;
   hw_tip_graph3?: string;
@@ -1188,6 +1190,23 @@ export interface Strings {
   sb_new_note_ph?: string;
   sb_delete_folder_q?: string;
   sb_delete_file_q?: string;
+  sb_favorites?: string;
+  sb_recent?: string;
+  sb_fav_add?: string;
+  sb_fav_remove?: string;
+  sb_move_to?: string;
+  sb_move_title?: string;
+  sb_move_root?: string;
+  sb_delete_n?: string;
+  sb_delete_n_q?: string;
+  sb_delete_msg?: string;
+  sb_delete_one_msg?: string;
+  sb_selected?: string;
+  sb_clear_selection?: string;
+  sb_new_folder_msg?: string;
+  sb_rename_msg?: string;
+  sb_empty_vault?: string;
+  sb_no_vault?: string;
   // Command bar.
   cb_no_results?: string;
   cb_tag_page?: string;
@@ -1202,6 +1221,8 @@ export interface Strings {
   // Topbar.
   tb_lint?: string;
   tb_toggle_sidebar?: string;
+  tb_back?: string;
+  tb_forward?: string;
   tb_model_picker?: string;
   tb_model_ready?: string;
   tb_model_offline?: string;
@@ -1626,6 +1647,8 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_miss: "Log a search that missed",
     hw_sc_path: "Shortest path between two notes (graph)",
     hw_sc_live_link: "Open the wikilink under the pointer (Live editor)",
+    hw_sc_back: "Back",
+    hw_sc_fwd: "Forward",
     hw_tip_graph1: "Drag a star and the simulation re-heats around it.",
     hw_tip_graph2:
       "F flies the spaceship; the ⚠ badge opens gap analysis with research bridges.",
@@ -2738,6 +2761,23 @@ export const STRINGS: Record<Lang, Strings> = {
     sb_new_note_ph: "untitled",
     sb_delete_folder_q: "Delete folder?",
     sb_delete_file_q: "Delete file?",
+    sb_favorites: "Favorites",
+    sb_recent: "Recently edited",
+    sb_fav_add: "Add to favorites",
+    sb_fav_remove: "Remove from favorites",
+    sb_move_to: "Move to…",
+    sb_move_title: "Move {n} item(s) to",
+    sb_move_root: "Vault root",
+    sb_delete_n: "Delete {n} items",
+    sb_delete_n_q: "Delete {n} items?",
+    sb_delete_msg: "{n} item(s) will move to the Trash.",
+    sb_delete_one_msg: "“{name}” will move to the Trash.",
+    sb_selected: "{n} selected",
+    sb_clear_selection: "Clear selection",
+    sb_new_folder_msg: "Folder name",
+    sb_rename_msg: "Rename “{name}” to:",
+    sb_empty_vault: "Empty vault",
+    sb_no_vault: "No vault selected",
     cb_no_results: "No results",
     cb_tag_page: "page",
     cb_tag_file: "file",
@@ -2750,6 +2790,8 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_miss_done: "Logged to the eval set.",
     tb_lint: "Lint",
     tb_toggle_sidebar: "Toggle sidebar (⌘B)",
+    tb_back: "Back (⌘[)",
+    tb_forward: "Forward (⌘])",
     tb_model_picker: "Model status",
     tb_model_ready: "ready",
     tb_model_offline: "offline",
@@ -3172,6 +3214,8 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_miss: "놓친 검색 기록",
     hw_sc_path: "두 노트 사이 최단 경로 (그래프)",
     hw_sc_live_link: "포인터 아래 위키링크 열기 (실시간 편집기)",
+    hw_sc_back: "뒤로",
+    hw_sc_fwd: "앞으로",
     hw_tip_graph1: "별을 드래그하면 시뮬레이션이 주변에서 다시 살아납니다.",
     hw_tip_graph2:
       "F는 우주선 비행, ⚠ 배지는 연구 다리가 포함된 갭 분석을 엽니다.",
@@ -4278,6 +4322,23 @@ export const STRINGS: Record<Lang, Strings> = {
     sb_new_note_ph: "제목 없음",
     sb_delete_folder_q: "폴더를 삭제할까요?",
     sb_delete_file_q: "파일을 삭제할까요?",
+    sb_favorites: "즐겨찾기",
+    sb_recent: "최근 수정",
+    sb_fav_add: "즐겨찾기에 추가",
+    sb_fav_remove: "즐겨찾기에서 제거",
+    sb_move_to: "이동…",
+    sb_move_title: "항목 {n}개 이동",
+    sb_move_root: "볼트 루트",
+    sb_delete_n: "{n}개 항목 삭제",
+    sb_delete_n_q: "{n}개 항목을 삭제할까요?",
+    sb_delete_msg: "항목 {n}개가 휴지통으로 이동합니다.",
+    sb_delete_one_msg: "“{name}”이(가) 휴지통으로 이동합니다.",
+    sb_selected: "{n}개 선택",
+    sb_clear_selection: "선택 해제",
+    sb_new_folder_msg: "폴더 이름",
+    sb_rename_msg: "“{name}”의 새 이름:",
+    sb_empty_vault: "빈 볼트",
+    sb_no_vault: "선택된 볼트가 없습니다",
     cb_no_results: "결과 없음",
     cb_tag_page: "페이지",
     cb_tag_file: "파일",
@@ -4291,6 +4352,8 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_miss_done: "평가 세트에 기록했습니다.",
     tb_lint: "린트",
     tb_toggle_sidebar: "사이드바 토글 (⌘B)",
+    tb_back: "뒤로 (⌘[)",
+    tb_forward: "앞으로 (⌘])",
     tb_model_picker: "모델 상태",
     tb_model_ready: "준비됨",
     tb_model_offline: "오프라인",
@@ -5616,6 +5679,23 @@ export const STRINGS: Record<Lang, Strings> = {
     sb_new_note_ph: "無題",
     sb_delete_folder_q: "フォルダを削除しますか?",
     sb_delete_file_q: "ファイルを削除しますか?",
+    sb_favorites: "お気に入り",
+    sb_recent: "最近編集",
+    sb_fav_add: "お気に入りに追加",
+    sb_fav_remove: "お気に入りから削除",
+    sb_move_to: "移動…",
+    sb_move_title: "{n}件を移動",
+    sb_move_root: "ボルトのルート",
+    sb_delete_n: "{n}件を削除",
+    sb_delete_n_q: "{n}件を削除しますか?",
+    sb_delete_msg: "{n}件をゴミ箱に移動します。",
+    sb_delete_one_msg: "「{name}」をゴミ箱に移動します。",
+    sb_selected: "{n}件選択",
+    sb_clear_selection: "選択解除",
+    sb_new_folder_msg: "フォルダー名",
+    sb_rename_msg: "「{name}」の新しい名前:",
+    sb_empty_vault: "空のボルト",
+    sb_no_vault: "ボルトが選択されていません",
     cb_no_results: "結果なし",
     cb_tag_page: "ページ",
     cb_tag_file: "ファイル",
@@ -5628,6 +5708,8 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_miss_done: "評価セットに記録しました。",
     tb_lint: "リント",
     tb_toggle_sidebar: "サイドバー切替 (⌘B)",
+    tb_back: "戻る (⌘[)",
+    tb_forward: "進む (⌘])",
     tb_model_picker: "モデル状況",
     tb_model_ready: "準備完了",
     tb_model_offline: "オフライン",
@@ -5885,6 +5967,8 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_miss: "外れた検索を記録",
     hw_sc_path: "2つのノート間の最短経路 (グラフ)",
     hw_sc_live_link: "ポインター下のウィキリンクを開く（ライブ編集）",
+    hw_sc_back: "戻る",
+    hw_sc_fwd: "進む",
     hw_tip_graph1:
       "星をドラッグするとシミュレーションがその周りで再加熱されます。",
     hw_tip_graph2:

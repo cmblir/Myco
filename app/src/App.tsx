@@ -241,6 +241,8 @@ export default function App(): JSX.Element {
   const accent = useUIStore((s) => s.accent);
   const toggleCmd = useUIStore((s) => s.toggleCmd);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
+  const goBack = useUIStore((s) => s.goBack);
+  const goForward = useUIStore((s) => s.goForward);
   const setSidebarCollapsed = useUIStore((s) => s.setSidebarCollapsed);
   const currentVault = useVaultStore((s) => s.currentVault);
   const fileTree = useVaultStore((s) => s.fileTree);
@@ -488,10 +490,21 @@ export default function App(): JSX.Element {
         e.preventDefault();
         void promptNewNote(t);
       }
+      // Back / forward (⌘[ / ⌘]). CodeMirror binds Mod-[ / Mod-] to indent and
+      // preventDefaults before this listener runs, so an editor keystroke
+      // never navigates.
+      if (
+        (e.metaKey || e.ctrlKey) &&
+        !e.defaultPrevented &&
+        (e.key === "[" || e.key === "]")
+      ) {
+        e.preventDefault();
+        (e.key === "[" ? goBack : goForward)();
+      }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [toggleCmd, toggleSidebar, t]);
+  }, [toggleCmd, toggleSidebar, goBack, goForward, t]);
 
   // Responsive sidebar: below 768px the sidebar is an off-canvas overlay, so it
   // must default to collapsed. Collapse when starting narrow (but don't force-

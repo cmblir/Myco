@@ -285,6 +285,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   },
 
   deletePath: async (paths) => {
+    set({ error: null });
     try {
       for (const path of typeof paths === "string"
         ? [paths]
@@ -321,6 +322,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   },
 
   movePaths: async (paths, destDir) => {
+    set({ error: null });
     let error: string | null = null;
     for (const p of filterMovable(paths, destDir)) {
       try {
@@ -337,6 +339,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   toggleFavorite: async (path) => {
     const vault = get().currentVault;
     if (!vault) return;
+    set({ error: null });
     const rel = path.slice(vault.path.length + 1);
     const prev = get().favorites;
     const next = prev.includes(rel) ? prev.filter((f) => f !== rel) : [...prev, rel];

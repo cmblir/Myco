@@ -3,8 +3,9 @@
 // its state per absolute path.
 
 import { useEffect, useState } from "react";
-import type { JSX, MouseEvent } from "react";
+import type { JSX, KeyboardEvent, MouseEvent } from "react";
 import { Icon, MycoMark } from "../lib/icons";
+import type { IconName } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import type { RouteId } from "../stores/uiStore";
@@ -14,8 +15,17 @@ import { useDistillStore } from "../stores/distillStore";
 import { ipc } from "../lib/ipc";
 import type { AuthorshipIndex, FileNode } from "../lib/ipc";
 import { filterHumanTree } from "../lib/authorship";
+import { flattenMarkdown } from "../lib/graphData";
 import { promptNewNote } from "../lib/newNote";
 import { today } from "../lib/taskLine";
+import {
+  FAVORITES_ID,
+  RECENT_ID,
+  flattenVisible,
+  rangeBetween,
+  syntheticGroup,
+} from "../lib/treeOps";
+import { recentAuthored } from "../lib/vaultPulse";
 import { ContextMenu } from "./SidebarMenu";
 import type { ContextMenuState } from "./SidebarMenu";
 
@@ -29,19 +39,41 @@ const TOOL_ROUTES: RouteId[] = [
   "schedules",
 ];
 
+// Synthetic group rows above the file tree: never selectable, no context menu.
+const GROUP_ICON: Partial<Record<string, IconName>> = {
+  [FAVORITES_ID]: "star",
+  [RECENT_ID]: "history",
+};
+const isGroup = (path: string): boolean => path === FAVORITES_ID || path === RECENT_ID;
+
+type RowClick = (e: MouseEvent, node: FileNode) => "handled" | "pass";
+
+// Space toggles selection on keydown; some engines fire a button's click on
+// keyup, so that must be prevented too or the row would also open/expand.
+function preventSpaceClick(e: KeyboardEvent<HTMLButtonElement>): void {
+  if (e.key === " ") e.preventDefault();
+}
+type RowKey = (e: KeyboardEvent<HTMLButtonElement>, node: FileNode) => void;
+
 export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   const route = useUIStore((s) => s.route);
   const setRoute = useUIStore((s) => s.setRoute);
   const toggleCmd = useUIStore((s) => s.toggleCmd);
   const toolsOpen = useUIStore((s) => s.toolsOpen);
   const toggleTools = useUIStore((s) => s.toggleTools);
+  const recentOpen = useUIStore((s) => s.expandedFolders[RECENT_ID] ?? false);
   const fileTree = useVaultStore((s) => s.fileTree);
   const currentVault = useVaultStore((s) => s.currentVault);
+  const favorites = useVaultStore((s) => s.favorites);
+  const error = useVaultStore((s) => s.error);
   const dueTotal = useStudyStore((s) => s.dueTotal);
   const refreshStudy = useStudyStore((s) => s.refresh);
   const pendingProposals = useDistillStore((s) => s.status?.pending_proposals ?? 0);
   const refreshDistill = useDistillStore((s) => s.refresh);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
+  const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
+  const [anchor, setAnchor] = useState<string | null>(null);
+  const [mtimes, setMtimes] = useState<[string, number][]>([]);
   // Human-only page filter (Q4 item 16): commit-granularity — hides pages the
   // agent author ever committed. Untracked pages stay (unknown, not agent),
   // hence the honest pill label "on record".
@@ -79,6 +111,37 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
     };
   }, [humanOnly, currentVault, fileTree]);
 
+  // Selection is per vault.
+  useEffect(() => {
+    setSelected(new Set());
+    setAnchor(null);
+  }, [currentVault]);
+
+  // Drop selected paths the tree no longer holds (moved, deleted, external edit).
+  useEffect(() => {
+    const live = allPaths(fileTree);
+    setSelected((s) => {
+      const next = new Set(Array.from(s).filter((p) => live.has(p)));
+      return next.size === s.size ? s : next;
+    });
+  }, [fileTree]);
+
+  // Recently edited is fed by file mtimes, fetched only while the group is
+  // open so a collapsed group never walks the vault.
+  useEffect(() => {
+    if (!recentOpen || !currentVault) return;
+    let cancelled = false;
+    ipc
+      .fileMtimes(currentVault.path)
+      .catch(() => [])
+      .then((m) => {
+        if (!cancelled) setMtimes(m);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [recentOpen, currentVault, fileTree]);
+
   const totalFiles = countFiles(fileTree);
   const visibleTree =
     humanOnly && currentVault
@@ -89,14 +152,107 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   const toolsBadge = dueTotal + pendingProposals;
   const toolsBadgeLabel = `${t.nav_study} ${dueTotal} · ${t.nav_feedback ?? "Feedback"} ${pendingProposals}`;
 
+  // Favorites (starred files that still exist, star order) and Recently edited
+  // (5 newest mtimes) as directory nodes, so TreeNode renders them like folders.
+  const root = currentVault?.path ?? "";
+  const existing = new Set(flattenMarkdown(fileTree));
+  const favPaths = favorites
+    .map((rel) => `${root}/${rel}`)
+    .filter((p) => existing.has(p));
+  const groups: FileNode[] = [];
+  if (favPaths.length > 0) {
+    groups.push(syntheticGroup(FAVORITES_ID, t.sb_favorites ?? "Favorites", favPaths));
+  }
+  if (currentVault) {
+    groups.push(
+      syntheticGroup(
+        RECENT_ID,
+        t.sb_recent ?? "Recently edited",
+        recentAuthored(mtimes, root, 5).map((r) => `${root}/${r.rel}`),
+      ),
+    );
+  }
+  const displayTree = [...groups, ...visibleTree];
+
+  function clearSelection(): void {
+    setSelected(new Set());
+    setAnchor(null);
+  }
+
+  function toggleSelected(path: string): void {
+    setSelected((s) => {
+      const next = new Set(s);
+      if (!next.delete(path)) next.add(path);
+      return next;
+    });
+    setAnchor(path);
+  }
+
+  // Modifier clicks select; a plain click clears the selection and lets the
+  // row's own behaviour (open / expand) run. Group rows never select.
+  const onRowClick: RowClick = (e, node) => {
+    if (isGroup(node.path)) return "pass";
+    if (e.metaKey || e.ctrlKey) {
+      toggleSelected(node.path);
+      return "handled";
+    }
+    if (e.shiftKey) {
+      // Rendered order of the real tree only, so a collapsed folder's children
+      // are never included and a starred/recent copy of a file never aliases
+      // the range to the group row. A Shift-click on a group leaf yields [target].
+      const order = flattenVisible(visibleTree, useUIStore.getState().expandedFolders);
+      setSelected(new Set(rangeBetween(order, anchor, node.path)));
+      return "handled";
+    }
+    setSelected(new Set());
+    setAnchor(node.path);
+    return "pass";
+  };
+
+  const onRowKey: RowKey = (e, node) => {
+    if (isGroup(node.path)) return;
+    if (e.key === " ") {
+      e.preventDefault();
+      toggleSelected(node.path);
+    } else if ((e.key === "F10" && e.shiftKey) || e.key === "ContextMenu") {
+      e.preventDefault();
+      const r = e.currentTarget.getBoundingClientRect();
+      openMenu(r.left + 12, r.bottom, node, e.currentTarget);
+    }
+  };
+
+  function openMenu(x: number, y: number, node: FileNode, opener: Element | null): void {
+    setMenu({
+      x,
+      y,
+      node,
+      // The bulk items act on the selection only when the row is part of it.
+      paths: selected.has(node.path) ? Array.from(selected) : [node.path],
+      opener: opener instanceof HTMLElement ? opener : null,
+    });
+  }
+
   function showMenu(e: MouseEvent, node: FileNode): void {
     e.preventDefault();
     e.stopPropagation();
-    setMenu({ x: e.clientX, y: e.clientY, node });
+    if (isGroup(node.path)) return;
+    // Re-targeting from inside the open menu: keep the original opener so focus
+    // returns to the row, not to a menu button that is about to unmount.
+    const inMenu = document.activeElement?.closest(".myco-menu");
+    openMenu(e.clientX, e.clientY, node, inMenu ? (menu?.opener ?? null) : document.activeElement);
   }
 
   return (
-    <aside className="sidebar" onClick={() => setMenu(null)}>
+    <aside
+      className="sidebar"
+      onClick={() => setMenu(null)}
+      onKeyDown={(e) => {
+        if (e.key === "Escape") {
+          setMenu(null);
+          clearSelection();
+        }
+      }}
+    >
       <div className="side-head">
         {/* The mark goes HOME. It used to toggle the sidebar, duplicating the
             Topbar's collapse button — two controls for one action, and the
@@ -248,6 +404,16 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
         <div className="nav-group">
           <div className="nav-group-label">
             <span>{t.nav_pages}</span>
+            {selected.size > 0 ? (
+              <button
+                className="pill sb-sel"
+                title={t.sb_clear_selection ?? "Clear selection"}
+                aria-label={t.sb_clear_selection ?? "Clear selection"}
+                onClick={clearSelection}
+              >
+                {(t.sb_selected ?? "{n} selected").replace("{n}", String(selected.size))} ×
+              </button>
+            ) : null}
             <NewPageButton disabled={!currentVault} t={t} />
             <button
               className={"pill auth-filter" + (humanOnly ? " is-active" : "")}
@@ -258,22 +424,31 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
               {t.auth_filter_pill ?? "Human only (on record)"}
             </button>
           </div>
+          {displayTree.map((node) => (
+            <TreeNode
+              key={node.path}
+              node={node}
+              depth={0}
+              activePath={activePath}
+              selected={selected}
+              onSelect={(p) => setRoute(`page:${p}`)}
+              onRowClick={onRowClick}
+              onRowKey={onRowKey}
+              onContextMenu={showMenu}
+            />
+          ))}
           {visibleTree.length === 0 ? (
             <div className="muted" style={{ padding: "8px", fontSize: 12.5 }}>
-              {currentVault ? "Empty vault" : "No vault selected"}
+              {currentVault
+                ? (t.sb_empty_vault ?? "Empty vault")
+                : (t.sb_no_vault ?? "No vault selected")}
             </div>
-          ) : (
-            visibleTree.map((node) => (
-              <TreeNode
-                key={node.path}
-                node={node}
-                depth={0}
-                activePath={activePath}
-                onSelect={(p) => setRoute(`page:${p}`)}
-                onContextMenu={showMenu}
-              />
-            ))
-          )}
+          ) : null}
+          {error ? (
+            <div className="sb-error" role="alert">
+              {error}
+            </div>
+          ) : null}
         </div>
 
       </nav>
@@ -302,7 +477,13 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
       </div>
 
       {menu ? (
-        <ContextMenu menu={menu} onClose={() => setMenu(null)} t={t} />
+        <ContextMenu
+          key={menu.node.path}
+          menu={menu}
+          onClose={() => setMenu(null)}
+          clearSelection={clearSelection}
+          t={t}
+        />
       ) : null}
     </aside>
   );
@@ -340,72 +521,68 @@ function NavItem({
   );
 }
 
-function TreeNode({
-  node,
-  depth,
-  activePath,
-  onSelect,
-  onContextMenu,
-}: {
-  node: FileNode;
+interface RowProps {
   depth: number;
   activePath: string | null;
+  selected: ReadonlySet<string>;
   onSelect: (path: string) => void;
+  onRowClick: RowClick;
+  onRowKey: RowKey;
   onContextMenu: (e: MouseEvent, node: FileNode) => void;
-}): JSX.Element {
+}
+
+function TreeNode({ node, ...row }: RowProps & { node: FileNode }): JSX.Element {
   if (node.kind === "file") {
-    const active = activePath === node.path;
+    const active = row.activePath === node.path;
+    const isSel = row.selected.has(node.path);
     return (
       <button
-        className={"nav-leaf" + (active ? " active" : "")}
-        style={{ paddingLeft: `${depth * 12 + 8}px` }}
-        onClick={() => onSelect(node.path)}
-        onContextMenu={(e) => onContextMenu(e, node)}
+        className={
+          "nav-leaf" + (active ? " active" : "") + (isSel ? " is-selected" : "")
+        }
+        style={{ paddingLeft: `${row.depth * 12 + 8}px` }}
+        aria-pressed={isSel}
+        onClick={(e) => {
+          if (row.onRowClick(e, node) === "pass") row.onSelect(node.path);
+        }}
+        onKeyDown={(e) => row.onRowKey(e, node)}
+        onKeyUp={preventSpaceClick}
+        onContextMenu={(e) => row.onContextMenu(e, node)}
       >
-        <Icon name="page" size={13} />
+        <Icon name={isSel ? "check" : "page"} size={13} />
         <span className="nl-text">{stripExt(node.name)}</span>
       </button>
     );
   }
-  return (
-    <DirectoryRow
-      node={node}
-      depth={depth}
-      activePath={activePath}
-      onSelect={onSelect}
-      onContextMenu={onContextMenu}
-    />
-  );
+  return <DirectoryRow node={node} {...row} />;
 }
 
 function DirectoryRow({
   node,
-  depth,
-  activePath,
-  onSelect,
-  onContextMenu,
-}: {
-  node: Extract<FileNode, { kind: "directory" }>;
-  depth: number;
-  activePath: string | null;
-  onSelect: (path: string) => void;
-  onContextMenu: (e: MouseEvent, node: FileNode) => void;
-}): JSX.Element {
+  ...row
+}: RowProps & { node: Extract<FileNode, { kind: "directory" }> }): JSX.Element {
   const expanded = useUIStore((s) => s.expandedFolders[node.path] ?? false);
   const toggle = useUIStore((s) => s.toggleFolder);
+  const groupIcon = GROUP_ICON[node.path];
+  const isSel = row.selected.has(node.path);
   return (
     <>
       <button
-        className="nav-item"
-        style={{ paddingLeft: `${depth * 12 + 6}px` }}
-        onClick={() => toggle(node.path)}
-        onContextMenu={(e) => onContextMenu(e, node)}
+        className={"nav-item" + (isSel ? " is-selected" : "")}
+        style={{ paddingLeft: `${row.depth * 12 + 6}px` }}
+        aria-pressed={groupIcon ? undefined : isSel}
+        onClick={(e) => {
+          if (row.onRowClick(e, node) === "pass") toggle(node.path);
+        }}
+        onKeyDown={(e) => row.onRowKey(e, node)}
+        onKeyUp={preventSpaceClick}
+        onContextMenu={(e) => row.onContextMenu(e, node)}
       >
         <span className={"ni-caret" + (expanded ? " open" : "")}>
           <Icon name="chevR" size={10} />
         </span>
         <span className="ni-icon">
-          <Icon name="folder" size={14} />
+          <Icon name={isSel ? "check" : (groupIcon ?? "folder")} size={14} />
         </span>
         <span className="ni-text">{node.name}</span>
         {/* How many notes a folder hides, so a row that detonates into 985 says
@@ -415,14 +592,7 @@ function DirectoryRow({
       </button>
       {expanded
         ? node.children.map((child) => (
-            <TreeNode
-              key={child.path}
-              node={child}
-              depth={depth + 1}
-              activePath={activePath}
-              onSelect={onSelect}
-              onContextMenu={onContextMenu}
-            />
+            <TreeNode key={child.path} node={child} {...row} depth={row.depth + 1} />
           ))
         : null}
     </>
@@ -503,6 +673,19 @@ function DailyNoteButton({
       <span>{t.sb_today_note ?? "Today's note"}</span>
     </button>
   );
+}
+
+/** Every file and directory path in the tree. */
+function allPaths(tree: FileNode[]): Set<string> {
+  const out = new Set<string>();
+  const stack = [...tree];
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node) continue;
+    out.add(node.path);
+    if (node.kind === "directory") stack.push(...node.children);
+  }
+  return out;
 }
 
 function countFiles(tree: FileNode[]): number {

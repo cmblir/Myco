@@ -51,7 +51,9 @@ Settings → Account.
 | Backlinks | Every page shows inbound links at the bottom |
 | Today's note | Sidebar button creates / opens `daily/YYYY-MM-DD.md` |
 | Templates | Right-click → "New note from template…" (also in `⌘K`) picks a plain `.md` file from `templates/` in your vault; `{{date}}`, `{{time}}` and `{{title}}` are filled in. With no folder yet, one click creates it with two editable starters (note, meeting) |
-| Right-click | New note / new folder / rename / delete on any tree node |
+| Right-click | New note / new note from template / new folder / add to favorites / Move to… / rename / delete on any tree node (also `⇧F10` on a focused row). `⌘`-click and `⇧`-click select several rows; Move to… and Delete then act on all of them |
+| Favorites / Recently edited | Two groups above the file tree: starred pages in star order, and the five most recently edited notes |
+| Back / forward | `⌘[` / `⌘]`, or the two arrows in the top bar, walk the pages you visited |
 
 ### Knowledge wiki
 

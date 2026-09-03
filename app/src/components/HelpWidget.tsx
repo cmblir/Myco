@@ -65,6 +65,8 @@ export default function HelpWidget({ t }: { t: Strings }): JSX.Element {
   const shortcuts: [string, string][] = [
     ["⌘K", t.hw_sc_cmd ?? "Command palette"],
     ["⌘B", t.hw_sc_sidebar ?? "Toggle sidebar"],
+    ["⌘[", t.hw_sc_back ?? "Back"],
+    ["⌘]", t.hw_sc_fwd ?? "Forward"],
     ["⌘N", t.hw_sc_new ?? "New note"],
     ["⌥Space", t.hw_sc_spotlight ?? "Ask from anywhere"],
     ["⌥M", t.hw_sc_voice ?? "Voice capture (Spotlight / notch)"],

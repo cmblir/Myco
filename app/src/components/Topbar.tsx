@@ -24,6 +24,12 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
   const setSplitRoute = useUIStore((s) => s.setSplitRoute);
   const toggleSidebar = useUIStore((s) => s.toggleSidebar);
   const toggleCmd = useUIStore((s) => s.toggleCmd);
+  const goBack = useUIStore((s) => s.goBack);
+  const goForward = useUIStore((s) => s.goForward);
+  const canBack = useUIStore((s) => s.navHistory.idx > 0);
+  const canFwd = useUIStore(
+    (s) => s.navHistory.idx < s.navHistory.entries.length - 1,
+  );
   const currentVault = useVaultStore((s) => s.currentVault);
 
   const projectName = currentVault?.name ?? t.app_name;
@@ -37,6 +43,24 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
         title={t.tb_toggle_sidebar ?? "Toggle sidebar (⌘B)"}
       >
         <Icon name="sidebar" />
+      </button>
+      <button
+        className="icon-btn"
+        onClick={goBack}
+        disabled={!canBack}
+        title={t.tb_back ?? "Back (⌘[)"}
+        aria-label={t.tb_back ?? "Back (⌘[)"}
+      >
+        <Icon name="arrowL" size={14} />
+      </button>
+      <button
+        className="icon-btn"
+        onClick={goForward}
+        disabled={!canFwd}
+        title={t.tb_forward ?? "Forward (⌘])"}
+        aria-label={t.tb_forward ?? "Forward (⌘])"}
+      >
+        <Icon name="arrowR" size={14} />
       </button>
       <div className="breadcrumb">
         <Icon name={icon} size={14} />
