@@ -39,8 +39,9 @@ export function matchWikilinkAt(
 
 /**
  * Note a followed wikilink points at: `Note#Heading` → `Note`; a bare
- * `#Heading` → `""` (links nowhere). Only for link targets — a typed title
- * such as `C# basics` keeps its `#`. Heading navigation is a follow-up.
+ * `#Heading` → `""` (same note). Only for link targets — a typed title
+ * such as `C# basics` keeps its `#`. The anchor itself is handled by the
+ * reader (see lib/pendingAnchor.ts).
  */
 export function wikilinkBase(target: string): string {
   return target.split("#")[0].trim();

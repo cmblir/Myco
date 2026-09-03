@@ -29,6 +29,11 @@ import {
   extractHeadings,
   type OutlineHeading,
 } from "../lib/outline";
+import {
+  matchHeading,
+  setPendingAnchor,
+  takePendingAnchor,
+} from "../lib/pendingAnchor";
 import Editor, { scrollEditorToLine } from "../components/Editor";
 import OutlinePanel from "../components/OutlinePanel";
 import PropertiesPanel from "../components/PropertiesPanel";
@@ -289,6 +294,16 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     }
   }, [activeFile?.path, activeFile?.raw, path]);
 
+  // `[[Note#Heading]]`: once this note's draft is seeded, scroll to the anchor
+  // the link recorded. Keyed on seedGen (not draft) so typing never re-scrolls;
+  // take() consumes the anchor, so later re-seeds find nothing.
+  useEffect(() => {
+    if (seedGen === 0) return;
+    const anchor = takePendingAnchor(path);
+    if (anchor) scrollToAnchor(anchor);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [path, seedGen]);
+
   useEffect(
     () => () => {
       if (saveTimerRef.current) {
@@ -366,6 +381,15 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       ?.scrollIntoView({ block: "start" });
   }
 
+  // Anchor not found → nothing happens (Obsidian does the same, no error UI).
+  function scrollToAnchor(anchor: string): void {
+    const h = matchHeading(
+      extractHeadings(stripFrontmatter(draftRef.current)),
+      anchor,
+    );
+    if (h) scrollToHeading(h);
+  }
+
   function handleLinkClick(target: string): void {
     // Pinpoint PDF link → open the viewer at the page/anchor.
     const pdf = parsePdfTarget(target);
@@ -385,10 +409,23 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     // it (Obsidian-style create-on-click) — same as Ask and the
     // agent panel, via the shared store method.
     const base = wikilinkBase(target);
-    if (!base) return;
+    const hash = target.indexOf("#");
+    const anchor = hash < 0 ? "" : target.slice(hash + 1).trim();
+    // `[[#Heading]]` and `[[ThisNote#Heading]]` stay on this page: the seed
+    // effect will not re-run, so scroll right away.
+    if (!base) {
+      if (anchor) scrollToAnchor(anchor);
+      return;
+    }
     const dir = path.replace(/[\\/][^\\/]+$/, "");
     void openWikilink(base, dir).then((p) => {
-      if (p) setRoute(`page:${p}`);
+      if (!p) return;
+      if (p === path) {
+        if (anchor) scrollToAnchor(anchor);
+        return;
+      }
+      if (anchor) setPendingAnchor(p, anchor);
+      setRoute(`page:${p}`);
     });
   }
 

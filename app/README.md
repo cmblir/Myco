@@ -41,7 +41,7 @@ Settings → Account.
 
 | | |
 | --- | --- |
-| `[[wikilink]]` autocomplete | Type `[[` in the editor, every file stem in the vault appears in a popup. In Source mode, frontmatter `tags:` values complete from the vault's tags |
+| `[[wikilink]]` autocomplete | Type `[[` in the editor, every file stem in the vault appears in a popup. In Source mode, frontmatter `tags:` values complete from the vault's tags. `[[Note#Heading]]` opens the note and scrolls to that heading (`[[#Heading]]` scrolls within the current note) |
 | `/` blocks | `/` at the start of a line (or after a space) opens 11 snippet blocks — headings, bullet / numbered / to-do lists, code, quote, table, divider, today's date — filtered by the keyword or the localized name (`/h2`, `/표`); Enter or Tab applies |
 | Find / replace | `⌘F` in the editor (`⌘G` / `⇧⌘G` next / previous, `Esc` closes); not available in Preview mode |
 | Image paste | Paste a PNG / JPEG / GIF / WebP into the editor — it is saved as `assets/YYYYMMDD-HHMMSS.<ext>` in the vault and `![](assets/…)` is inserted; the preview renders vault images, including Obsidian `![[shot.png]]` embeds from `assets/` |
