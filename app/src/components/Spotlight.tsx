@@ -58,10 +58,15 @@ export default function Spotlight(): JSX.Element {
   // Transcription percent (whisper -pp via run_streaming); null until the
   // first progress line. Distinct from the one-time model download above.
   const [transcribePct, setTranscribePct] = useState<number | null>(null);
+  // Which half of save_voice_capture is running (Rust `voice-capture-stage`).
+  // Defaults to transcribing so the row never shows a bare "…" while the
+  // model loads before whisper's first progress line.
+  const [stage, setStage] = useState<"transcribing" | "saving">("transcribing");
   useEffect(() => {
     if (voiceState !== "saving") {
       setModelPct(null);
       setTranscribePct(null);
+      setStage("transcribing");
       return;
     }
     let gone = false;
@@ -74,6 +79,9 @@ export default function Spotlight(): JSX.Element {
           ),
           listen<{ pct: number }>("whisper-transcribe-progress", (e) =>
             setTranscribePct(e.payload.pct),
+          ),
+          listen<{ stage: "transcribing" | "saving" }>("voice-capture-stage", (e) =>
+            setStage(e.payload.stage),
           ),
         ]),
       )
@@ -349,12 +357,14 @@ export default function Spotlight(): JSX.Element {
                         t.voice_model_progress ??
                         "downloading the voice model — one time, {pct}%"
                       ).replace("{pct}", String(modelPct))
-                    : transcribePct !== null
-                      ? (t.voice_transcribe_progress ?? "transcribing… {pct}%").replace(
-                          "{pct}",
-                          String(transcribePct),
-                        )
-                      : "…"
+                    : stage === "saving"
+                      ? (t.voice_stage_saving ?? "Saving note…")
+                      : transcribePct !== null
+                        ? (t.voice_transcribe_progress ?? "transcribing… {pct}%").replace(
+                            "{pct}",
+                            String(transcribePct),
+                          )
+                        : (t.voice_stage_transcribing ?? "Transcribing…")
                   : noInput
                     ? (t.voice_no_input ??
                       "No sound is coming in — check the microphone")

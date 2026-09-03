@@ -548,6 +548,17 @@ const VOICE_RELATED_FLOOR: f32 = 0.42;
 /// How many related stems a voice note carries at most.
 const VOICE_RELATED_K: usize = 3;
 
+/// Emitted by `save_voice_capture` at the start of each phase
+/// (`{ stage: "transcribing" | "saving" }`) so the spotlight can name what
+/// it is waiting on — whisper's own `-pp` progress only starts once the model
+/// is loaded, which left a bare "…" for most of the wait.
+const VOICE_STAGE_EVENT: &str = "voice-capture-stage";
+
+fn emit_voice_stage(app: &tauri::AppHandle, stage: &str) {
+    use tauri::Emitter;
+    let _ = app.emit(VOICE_STAGE_EVENT, serde_json::json!({ "stage": stage }));
+}
+
 /// Blocking transcription half of `save_voice_capture`: temp audio file
 /// (cli_agent.rs's `myco-<purpose>-<pid>-<nanos>` pattern) → whisper →
 /// transcript. Writes nothing to the vault. The whisper check runs FIRST so
@@ -624,6 +635,7 @@ pub async fn save_voice_capture(
     bytes: Vec<u8>,
 ) -> Result<VoiceSaved, String> {
     let root = require_root(&state)?;
+    emit_voice_stage(&app, "transcribing");
     let transcribe_app = app.clone();
     let transcript = tauri::async_runtime::spawn_blocking(move || {
         transcribe_voice_core(&transcribe_app, &bytes)
@@ -631,7 +643,7 @@ pub async fn save_voice_capture(
     .await
     .map_err(|e| format!("join failed: {e}"))??;
     let related: Vec<String> = match wikify_candidates(
-        app,
+        app.clone(),
         state,
         llm,
         cache,
@@ -647,6 +659,7 @@ pub async fn save_voice_capture(
             .collect(),
         Err(_) => Vec::new(),
     };
+    emit_voice_stage(&app, "saving");
     tauri::async_runtime::spawn_blocking(move || write_voice_note(&root, &transcript, &related))
         .await
         .map_err(|e| format!("join failed: {e}"))?

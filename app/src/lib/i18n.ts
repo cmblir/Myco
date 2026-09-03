@@ -1280,6 +1280,8 @@ export interface Strings {
   voice_transcribe_progress?: string; // {pct}
   voice_mic_denied?: string;
   voice_no_input?: string;
+  voice_stage_transcribing?: string;
+  voice_stage_saving?: string;
   s_spot_title?: string;
   s_spot_desc?: string;
   s_spot_record?: string;
@@ -2848,6 +2850,8 @@ export const STRINGS: Record<Lang, Strings> = {
     voice_mic_denied:
       "The microphone is not available — allow myco to use it in System Settings.",
     voice_no_input: "No sound is coming in — check the microphone",
+    voice_stage_transcribing: "Transcribing…",
+    voice_stage_saving: "Saving note…",
     s_spot_title: "Ask from anywhere",
     s_spot_desc:
       "A global shortcut opens a small ask window over whatever you are doing. It answers through the same Ask path as the app, so citations open the note.",
@@ -4412,6 +4416,8 @@ export const STRINGS: Record<Lang, Strings> = {
     voice_mic_denied:
       "마이크를 사용할 수 없습니다 — 시스템 설정에서 myco의 마이크 접근을 허용해주세요.",
     voice_no_input: "소리가 들어오지 않습니다 — 마이크를 확인하세요",
+    voice_stage_transcribing: "받아쓰는 중…",
+    voice_stage_saving: "노트 저장 중…",
     s_spot_title: "어디서나 질문",
     s_spot_desc:
       "전역 단축키로 지금 하던 작업 위에 작은 질문 창을 띄웁니다. 앱의 Ask와 완전히 같은 경로로 답하므로 인용을 누르면 노트가 열립니다.",
@@ -5769,6 +5775,8 @@ export const STRINGS: Record<Lang, Strings> = {
     voice_mic_denied:
       "マイクを使用できません — システム設定で myco のマイク使用を許可してください。",
     voice_no_input: "音声が入力されていません — マイクを確認してください",
+    voice_stage_transcribing: "文字起こし中…",
+    voice_stage_saving: "ノートを保存中…",
     s_spot_title: "どこからでも質問",
     s_spot_desc:
       "グローバルショートカットで、作業中の画面の上に小さな質問ウィンドウを開きます。アプリの Ask と同じ経路で答えるため、引用をクリックするとノートが開きます。",
