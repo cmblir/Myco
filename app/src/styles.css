@@ -6291,18 +6291,109 @@ html.notch-window body {
   font-variant-numeric: tabular-nums;
   font-size: 11.5px;
 }
-.notch-wave {
+/* Peek's one-click rows. The complaint they answer: starting a recording took
+   hover → click → ⌥M, three steps to reach a mic. Full-width buttons, because
+   the target is the whole row on a 252px surface, not a glyph. */
+.notch-act {
   display: flex;
+  gap: 6px;
   align-items: center;
-  gap: 2px;
-  height: 22px;
-  flex: 1;
+  width: 100%;
+  padding: 7px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #ece7df;
+  font: 12px/1.4 inherit;
+  text-align: left;
+  cursor: pointer;
 }
-.notch-wave i {
-  flex: 1;
+.notch-act:hover {
+  background: #17171a;
+}
+.notch-act:active {
+  transform: scale(0.96);
+}
+.notch-act:focus-visible {
+  outline: 1px solid #a78bfa;
+  outline-offset: 1px;
+}
+/* Purple = alive, by the sheet's one colour rule: this dot IS the mic. */
+.notch-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
   background: #a78bfa;
-  border-radius: 1px;
-  opacity: 0.8;
+  flex: none;
+}
+.notch-act-glyph {
+  width: 7px;
+  color: #8f8a83;
+  flex: none;
+  text-align: center;
+}
+.notch-peek-sub {
+  margin-top: 4px;
+  text-align: center;
+  font-size: 10.5px;
+  color: #8f8a83;
+}
+/* The take's own waveform: a canvas, drawn from the real mic RMS. */
+.voice-wave-canvas {
+  display: block;
+  width: 100%;
+}
+/* One scrolling line of live transcript. Fixed height so the card does not
+   resize as words arrive (the OS window is sized once per state). */
+.live-caption {
+  height: 18px;
+  overflow: hidden;
+  white-space: nowrap;
+  font: 12px/18px inherit;
+  color: #ece7df;
+}
+/* The fade is only earned once the line is actually clipped — on a short
+   caption it would just dim the first word. */
+.live-caption.is-overflow {
+  mask-image: linear-gradient(90deg, transparent 0, #000 14px, #000 100%);
+}
+.live-caption-text {
+  display: inline-block;
+  transition: transform 300ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+/* Whisper's still-churning tail: dim, because it may still change. */
+.live-caption-dim {
+  color: #8f8a83;
+}
+/* A silent mic is the one thing here that needs attention. */
+.live-caption-warn {
+  color: #e0a458;
+  mask-image: none;
+}
+/* The key hints are BUTTONS: this panel is non-activating, so if key focus
+   was refused there is no keyboard way to cancel or save a take. */
+.notch-key {
+  border: 0;
+  padding: 2px 4px;
+  border-radius: 5px;
+  background: transparent;
+  font: 9.5px/1.4 var(--font-mono);
+  color: #8f8a83;
+  cursor: pointer;
+}
+.notch-key:hover {
+  background: #17171a;
+  color: #ece7df;
+}
+.notch-key:active {
+  transform: scale(0.95);
+}
+.notch-key:focus-visible {
+  outline: 1px solid #a78bfa;
+  outline-offset: 1px;
+}
+.notch-key-bright {
+  color: #ece7df;
 }
 .notch-hint {
   margin-top: 8px;
@@ -6326,6 +6417,15 @@ html.notch-window body {
   }
   .notch-body {
     animation: none;
+  }
+  /* The caption still slides to keep the newest words in view; it just jumps
+     there. Same for the press feedback on the two button families. */
+  .live-caption-text {
+    transition: none;
+  }
+  .notch-act:active,
+  .notch-key:active {
+    transform: none;
   }
 }
 

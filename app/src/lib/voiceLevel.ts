@@ -34,3 +34,28 @@ export function createSilenceWatch(opts: {
     },
   };
 }
+
+export interface LevelHistory {
+  push(level: number): void;
+  /** Oldest → newest, always `size` long (zeros before the first push). */
+  read(): Float32Array;
+}
+
+/** Ring buffer of recent RMS readings — the waveform's scrolling history.
+ *  ~12 ScriptProcessor buffers/s at 48 kHz, so 160 samples is ~13 s. */
+export function createLevelHistory(size = 160): LevelHistory {
+  const ring = new Float32Array(size);
+  const out = new Float32Array(size);
+  let head = 0;
+  return {
+    push(level) {
+      ring[head] = level;
+      head = (head + 1) % size;
+    },
+    read() {
+      out.set(ring.subarray(head));
+      out.set(ring.subarray(0, head), size - head);
+      return out;
+    },
+  };
+}

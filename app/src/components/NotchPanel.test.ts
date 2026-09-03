@@ -9,6 +9,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  CANCELLED_DWELL_MS,
   DONE_DWELL_MS,
   MOCK_FRAMES,
   clampPercent,
@@ -17,6 +18,7 @@ import {
   type NotchState,
 } from "./NotchPanel";
 import { STRINGS } from "../lib/i18n";
+import { EMPTY_CAPTION } from "../lib/liveCaption";
 
 const t = STRINGS.en;
 
@@ -97,11 +99,57 @@ describe("describeNotch", () => {
 
   it("S8 recording interpolates its own clock", () => {
     const view = describeNotch(
-      { kind: "recording", elapsedMs: 7000, levels: [30, 62] },
+      {
+        kind: "recording",
+        elapsedMs: 7000,
+        caption: EMPTY_CAPTION,
+        noInput: false,
+      },
       t,
     );
     expect(view.lip).toBe("Recording · 00:07");
     expect(view.tone).toBe("live");
+  });
+
+  it("a silent mic replaces the clock — the lip is the only place it shows", () => {
+    // The complaint this whole pass answers: a muted or wrong mic looked
+    // exactly like a working one, so a 13 s take could capture nothing.
+    const view = describeNotch(
+      {
+        kind: "recording",
+        elapsedMs: 7000,
+        caption: EMPTY_CAPTION,
+        noInput: true,
+      },
+      t,
+    );
+    expect(view.lip).toBe(t.notch_no_sound);
+  });
+
+  it("S8 cancelled goes amber and folds itself after 800ms", () => {
+    const view = describeNotch({ kind: "cancelled" }, t);
+    expect(view.lip).toBe(t.notch_cancelled);
+    expect(view.tone).toBe("warn");
+    expect(view.dwellMs).toBe(CANCELLED_DWELL_MS);
+    expect(CANCELLED_DWELL_MS).toBe(800);
+  });
+
+  it("S8 saving freezes the clock where the take ended", () => {
+    // Not the live tone's problem: the lip still ticks nothing, and the body
+    // row (not the lip) names whisper's stage.
+    const view = describeNotch(
+      {
+        kind: "saving",
+        elapsedMs: 7000,
+        caption: EMPTY_CAPTION,
+        stage: "transcribing",
+        pct: 40,
+      },
+      t,
+    );
+    expect(view.lip).toBe("Recording · 00:07");
+    expect(view.tone).toBe("live");
+    expect(view.dwellMs).toBeNull();
   });
 
   it("S9 rejection is the only amber state", () => {
@@ -112,11 +160,15 @@ describe("describeNotch", () => {
     expect(view.open).toBe(true);
   });
 
-  it("only the finished states — S6 and S7-saved — self-collapse", () => {
+  it("only the finished states — and the cancelled beat — self-collapse", () => {
     const dwelling = MOCK_FRAMES.filter(
       (f) => describeNotch(f.state, t, f.pill).dwellMs !== null,
     );
-    expect(dwelling.map((f) => f.state.kind)).toEqual(["done", "captured"]);
+    expect(dwelling.map((f) => f.state.kind)).toEqual([
+      "done",
+      "captured",
+      "cancelled",
+    ]);
   });
 
   it("every state but idle unfolds the body", () => {
@@ -152,6 +204,8 @@ describe("MOCK_FRAMES", () => {
       "capture",
       "captured",
       "recording",
+      "saving",
+      "cancelled",
       "rejected",
       "idle",
     ]);
@@ -171,6 +225,8 @@ describe("MOCK_FRAMES", () => {
       "capture",
       "captured",
       "recording",
+      "saving",
+      "cancelled",
       "rejected",
     ];
     const seen = new Set(MOCK_FRAMES.map((f) => f.state.kind));

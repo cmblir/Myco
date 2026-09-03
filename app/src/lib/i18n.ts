@@ -1480,6 +1480,16 @@ export interface Strings {
   notch_capture_voice?: string;
   notch_capture_saved?: string;
   notch_recording?: string; // {t}
+  // Peek's two one-click actions, and the recording card's own chrome: the
+  // silent-mic lip, the 800 ms cancelled beat, and the two key hints, which
+  // are BUTTONS now (the notch panel is non-activating — a hint the mouse
+  // cannot press leaves an esc-less surface if key focus was refused).
+  notch_rec?: string;
+  notch_note?: string;
+  notch_cancelled?: string;
+  notch_no_sound?: string;
+  notch_hint_cancel?: string;
+  notch_hint_save?: string;
   notch_rejected?: string;
   notch_rejected_body?: string; // {ext}
   notch_rejected_accepts?: string;
@@ -3051,6 +3061,12 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_capture_voice: "⌥M voice",
     notch_capture_saved: "Saved",
     notch_recording: "Recording · {t}",
+    notch_rec: "Record",
+    notch_note: "Note",
+    notch_cancelled: "Cancelled",
+    notch_no_sound: "No sound",
+    notch_hint_cancel: "esc cancel",
+    notch_hint_save: "⏎ save",
     notch_rejected: "Could not take it",
     notch_rejected_body: "This format is not readable yet ({ext})",
     notch_rejected_accepts: "accepts",
@@ -4613,6 +4629,12 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_capture_voice: "⌥M 음성",
     notch_capture_saved: "저장했습니다",
     notch_recording: "녹음 중 · {t}",
+    notch_rec: "녹음",
+    notch_note: "메모",
+    notch_cancelled: "취소됨",
+    notch_no_sound: "소리가 없습니다",
+    notch_hint_cancel: "esc 취소",
+    notch_hint_save: "⏎ 저장",
     notch_rejected: "받지 못했습니다",
     notch_rejected_body: "이 형식은 아직 읽지 못합니다 ({ext})",
     notch_rejected_accepts: "가능",
@@ -6190,6 +6212,12 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_capture_voice: "⌥M 音声",
     notch_capture_saved: "保存しました",
     notch_recording: "録音中 · {t}",
+    notch_rec: "録音",
+    notch_note: "メモ",
+    notch_cancelled: "キャンセル",
+    notch_no_sound: "音がありません",
+    notch_hint_cancel: "esc キャンセル",
+    notch_hint_save: "⏎ 保存",
     notch_rejected: "受け取れませんでした",
     notch_rejected_body: "この形式はまだ読めません ({ext})",
     notch_rejected_accepts: "対応",

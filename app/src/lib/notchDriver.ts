@@ -18,6 +18,7 @@
 
 import { useEffect, useReducer, useRef, useState } from "react";
 import {
+  CANCELLED_DWELL_MS,
   DONE_DWELL_MS,
   clampPercent,
   describeNotch,
@@ -28,10 +29,14 @@ import { ipc } from "./ipc";
 import { LAST_VAULT_KEY } from "../stores/vaultStore";
 import type { NotchGeometry, TrayStatusPayload } from "./ipc";
 import { STRINGS } from "./i18n";
+import { EMPTY_CAPTION, startPartialLoop } from "./liveCaption";
+import type { CaptionState } from "./liveCaption";
 import { classifyDrop, writeDrop } from "./notchDrop";
 import type { DropPayload } from "./notchDrop";
 import { today } from "./taskLine";
 import { createVoiceMachine } from "./voiceCapture";
+import { createLevelHistory, createSilenceWatch } from "./voiceLevel";
+import type { LevelHistory, SilenceWatch } from "./voiceLevel";
 import { createWavRecorder } from "./wavRecorder";
 import type { VoiceMachine, VoiceState } from "./voiceCapture";
 import { useUIStore } from "../stores/uiStore";
@@ -87,6 +92,20 @@ export type NotchEvent =
   | { type: "recStart" }
   | { type: "recTick" }
   | { type: "recStop" }
+  /** The partial-transcript loop's latest fold (lib/liveCaption). */
+  | { type: "recCaption"; caption: CaptionState }
+  /** The silence watch's verdict: the mic has been quiet for 2 s. */
+  | { type: "recNoInput"; noInput: boolean }
+  /** esc on a live take — distinct from captureCancel, which folds the text
+   *  input at once: a cancelled RECORDING says so for 800 ms first. */
+  | { type: "recCancelled" }
+  /** save_voice_capture's own progress: which half is running, and whisper's
+   *  percent within the transcribe half (null before its first line). */
+  | {
+      type: "recStage";
+      stage: "transcribing" | "saving";
+      pct: number | null;
+    }
   | { type: "recNote"; note: string }
   | { type: "recSaved"; rel: string }
   | { type: "recFail"; reason: string };
@@ -160,6 +179,8 @@ export function dwellMsFor(panel: NotchState): number | null {
     case "done":
     case "captured":
       return DONE_DWELL_MS;
+    case "cancelled":
+      return CANCELLED_DWELL_MS;
     case "accepted":
       return ACCEPTED_DWELL_MS;
     case "rejected":
@@ -167,13 +188,6 @@ export function dwellMsFor(panel: NotchState): number | null {
     default:
       return null;
   }
-}
-
-/** S8's waveform, display-only by design: twelve deterministic bars walked
- *  from the elapsed seconds — alive on every tick without a mic analyser. */
-export function waveLevels(elapsedMs: number): number[] {
-  const step = Math.floor(elapsedMs / 1000);
-  return Array.from({ length: 12 }, (_, i) => 25 + ((step * 7 + i * 13) % 66));
 }
 
 /**
@@ -194,8 +208,14 @@ export function reduceNotch(
       // A drag is the user, present right now — it outranks passive states.
       // NOT capture or recording: those hold live user state (typed text, a
       // hot microphone), and the review's worst finding was a drag flipping
-      // the panel away mid-recording with no UI left to stop the mic.
-      if (panel.kind === "capture" || panel.kind === "recording")
+      // the panel away mid-recording with no UI left to stop the mic. Nor
+      // `saving`: that surface is the only report a take is still being
+      // transcribed, and losing it reads as the note having vanished.
+      if (
+        panel.kind === "capture" ||
+        panel.kind === "recording" ||
+        panel.kind === "saving"
+      )
         return current;
       const { name, meta } = dragLabel(event.paths);
       return { panel: { kind: "dragging", name, meta }, runningSince: null };
@@ -255,6 +275,7 @@ export function reduceNotch(
           panel.kind === "dragging" ||
           panel.kind === "capture" ||
           panel.kind === "recording" ||
+          panel.kind === "saving" ||
           panel.kind === "rejected"
         ) {
           return current;
@@ -346,38 +367,101 @@ export function reduceNotch(
       // Unguarded on purpose: this event means the mic IS live (the machine
       // said so), and a live mic must be shown wherever the panel was.
       return {
-        panel: { kind: "recording", elapsedMs: 0, levels: waveLevels(0) },
+        panel: {
+          kind: "recording",
+          elapsedMs: 0,
+          caption: EMPTY_CAPTION,
+          noInput: false,
+        },
         runningSince: now,
       };
     case "recTick": {
+      // Clock only: the caption and the silence verdict have their own events
+      // and must survive a tick that knows nothing about either.
       if (panel.kind !== "recording" || current.runningSince === null) {
         return current;
       }
-      const elapsedMs = Math.max(0, now - current.runningSince);
       return {
-        panel: { kind: "recording", elapsedMs, levels: waveLevels(elapsedMs) },
+        panel: { ...panel, elapsedMs: Math.max(0, now - current.runningSince) },
         runningSince: current.runningSince,
       };
     }
-    case "recStop":
-      // Stop → whisper save is in flight; the last recording frame holds (the
-      // hook stops the ticker) until recSaved/recFail replaces it.
-      return current;
-    case "recNote":
-      // The one-time model download narrating its percent on the lip. Only a
-      // live recording surface has anywhere to show it.
+    case "recCaption":
       return panel.kind === "recording"
+        ? {
+            panel: { ...panel, caption: event.caption },
+            runningSince: current.runningSince,
+          }
+        : current;
+    case "recNoInput":
+      return panel.kind === "recording"
+        ? {
+            panel: { ...panel, noInput: event.noInput },
+            runningSince: current.runningSince,
+          }
+        : current;
+    case "recCancelled":
+      // Only a live take has anything to cancel; the text input's esc is
+      // captureCancel, which folds without a beat.
+      return panel.kind === "recording"
+        ? { panel: { kind: "cancelled" }, runningSince: null }
+        : current;
+    case "recStop":
+      // Stop → whisper is reading the take. The panel says so (with the clock
+      // frozen where the take ended and the caption held) instead of leaving
+      // the last recording frame up, which read as a mic still running.
+      return panel.kind === "recording"
+        ? {
+            panel: {
+              kind: "saving",
+              elapsedMs: panel.elapsedMs,
+              caption: panel.caption,
+              stage: "transcribing",
+              pct: null,
+              note: panel.note,
+            },
+            runningSince: null,
+          }
+        : current;
+    case "recStage":
+      // Arrives during the save; from `recording` too, because the Rust stage
+      // event can beat the machine's own "saving" transition.
+      return panel.kind === "saving"
+        ? {
+            panel: { ...panel, stage: event.stage, pct: event.pct },
+            runningSince: null,
+          }
+        : panel.kind === "recording"
+          ? {
+              panel: {
+                kind: "saving",
+                elapsedMs: panel.elapsedMs,
+                caption: panel.caption,
+                stage: event.stage,
+                pct: event.pct,
+                note: panel.note,
+              },
+              runningSince: null,
+            }
+          : current;
+    case "recNote":
+      // The one-time model download narrating its percent on the lip. It can
+      // land in either half of the take — the download happens on first use,
+      // which is after the stop, not during the recording.
+      return panel.kind === "recording" || panel.kind === "saving"
         ? { panel: { ...panel, note: event.note }, runningSince: current.runningSince }
         : current;
     case "recSaved":
       // The voice note landed in _inbox/ — exactly what S4 announces.
-      return panel.kind === "recording"
+      return panel.kind === "recording" || panel.kind === "saving"
         ? { panel: { kind: "accepted", rel: event.rel }, runningSince: null }
         : current;
     case "recFail":
-      // Covers both the whisper preflight (still in capture) and a failed
-      // save (recording) — either way the refusal must name its reason.
-      return panel.kind === "capture" || panel.kind === "recording"
+      // Covers the whisper preflight (still in capture), a failed recording,
+      // and a failed transcribe/write — either way the refusal names a reason.
+      return panel.kind === "capture" ||
+        panel.kind === "recording" ||
+        panel.kind === "saving"
         ? {
             panel: { kind: "rejected", ext: "", reason: event.reason },
             runningSince: null,
@@ -450,10 +534,30 @@ export interface NotchDrive {
   onCaptureCancel: () => void;
   /** S7 ⌥M: whisper preflight, then the S8 voice take. */
   onCaptureVoice: () => void;
+  /** Peek's "note" row — the same gesture as the lip click. */
+  onCaptureOpen: () => void;
+  /** S8 ⏎ / the save button: stop the take and hand it to whisper. */
+  onRecordStop: () => void;
   /** S7 paste: a lone URL or an oversized selection is a SOURCE, not a
    *  daily-note line — it lands in `_inbox/` as a note instead of the input.
    *  Returns true when intercepted (the panel preventDefaults). */
   onCapturePaste: (text: string) => boolean;
+  /** Mic RMS ring buffer the waveform reads every frame. Owned here because
+   *  it is written ~12×/s: routing it through the reducer would re-render the
+   *  whole panel on every audio buffer for a canvas that already redraws. */
+  levels: LevelHistory;
+}
+
+/** Open the text capture and ask the native side for key focus — the lip
+ *  click and peek's "note" row are the same gesture, and the panel is
+ *  non-activating, so without notch_focus_capture the input cannot type.
+ *  Free function so the mount-once click listener can call it too. */
+function openCapture(raise: (event: NotchEvent) => void): void {
+  raise({ type: "captureOpen" });
+  void ipc.notchFocusCapture().then(
+    (key) => console.log(`notch: focus capture → isKeyWindow=${String(key)}`),
+    (err: unknown) => console.error("notch: focus capture failed:", err),
+  );
 }
 
 /**
@@ -650,6 +754,18 @@ export function useNotchDriver(): NotchDrive | null {
   const machineRef = useRef<VoiceMachine | null>(null);
   const kindRef = useRef(kind);
   kindRef.current = kind;
+  // Waveform data: one ring buffer for the window's whole life. A ref, not
+  // state — it is written ~12×/s and nothing re-renders on it, and keeping it
+  // out of the reactive graph is what lets `machine()` stay a stable accessor.
+  const levelsRef = useRef<LevelHistory | null>(null);
+  levelsRef.current ??= createLevelHistory();
+  // "Nothing is coming in" verdict, exactly as the spotlight computes it.
+  const silenceRef = useRef<SilenceWatch | null>(null);
+  // When the ScriptProcessor last fired; with a dead input there are no
+  // frames at all, so the 1 s ticker below feeds the watch a zero itself.
+  const lastFrameAtRef = useRef(0);
+  /** Last verdict raised, so only the flip reaches the reducer. */
+  const noInputRef = useRef(false);
 
   const machine = (): VoiceMachine => {
     machineRef.current ??= createVoiceMachine({
@@ -663,9 +779,18 @@ export function useNotchDriver(): NotchDrive | null {
       },
       onChange: (state, error) => {
         setVoiceState(state);
-        if (state === "recording") raise({ type: "recStart" });
-        else if (state === "saving") raise({ type: "recStop" });
-        else if (state === "idle") raise({ type: "captureCancel" });
+        if (state === "recording") {
+          silenceRef.current = createSilenceWatch({
+            threshold: 0.01,
+            holdMs: 2000,
+          });
+          lastFrameAtRef.current = Date.now();
+          noInputRef.current = false;
+          raise({ type: "recStart" });
+        } else if (state === "saving") raise({ type: "recStop" });
+        // The machine only reaches "idle" through cancel(), so this IS esc on
+        // a live take — the 800 ms beat, not the text input's silent fold.
+        else if (state === "idle") raise({ type: "recCancelled" });
         else if (state === "error") {
           // The machine's two sentinel errors become the translated lines the
           // spotlight already ships; anything else is a real backend message.
@@ -680,24 +805,34 @@ export function useNotchDriver(): NotchDrive | null {
           });
         }
       },
+      onLevel: (rms) => {
+        const at = Date.now();
+        lastFrameAtRef.current = at;
+        // Straight into the ring buffer — no React state on the audio path;
+        // VoiceWave reads it on its own rAF.
+        levelsRef.current?.push(rms);
+        // Only the FLIP is raised: the reducer rebuilds the panel object on
+        // every event, and re-rendering ~12×/s for an unchanged verdict would
+        // be the whole audio path pumping React.
+        const silent = silenceRef.current?.push(rms, at).silent ?? false;
+        if (silent !== noInputRef.current) {
+          noInputRef.current = silent;
+          raise({ type: "recNoInput", noInput: silent });
+        }
+      },
     });
     return machineRef.current;
   };
 
   // Lip click opens capture — mouse events reach the non-activating panel
-  // (P0) — and asks the native side for KEY so the input can actually type.
-  // The outcome is logged either way: on hardware this line is the honest
+  // (P0). openCapture also asks the native side for KEY so the input can
+  // actually type, and logs the outcome: on hardware that line is the honest
   // record of whether makeKeyWindow / the fallback took (see notch.rs).
   useEffect(() => {
     if (mocking) return;
     const onClick = (): void => {
       if (kindRef.current !== "idle" && kindRef.current !== "peek") return;
-      raise({ type: "captureOpen" });
-      void ipc.notchFocusCapture().then(
-        (key) =>
-          console.log(`notch: focus capture → isKeyWindow=${String(key)}`),
-        (err: unknown) => console.error("notch: focus capture failed:", err),
-      );
+      openCapture(raise);
     };
     // Hover unfolds the peek hint; leaving folds it back. document-level
     // enter/leave, because collapsed the window is mostly transparent and the
@@ -771,12 +906,86 @@ export function useNotchDriver(): NotchDrive | null {
     return () => window.removeEventListener("keydown", onKey);
   }, [kind]);
 
-  // S8's lip clock + waveform walk, while the mic is actually live.
+  // S8's lip clock, while the mic is actually live.
   useEffect(() => {
     if (voiceState !== "recording") return;
-    const id = window.setInterval(() => raise({ type: "recTick" }), 1000);
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      raise({ type: "recTick" });
+      // No audio frames for a tick: a dead input produces NO callbacks at
+      // all, so the watch has to be fed a zero here or it never flips (the
+      // spotlight's ticker does the same).
+      if (now - lastFrameAtRef.current > 500 && silenceRef.current) {
+        const silent = silenceRef.current.push(0, now).silent;
+        if (silent !== noInputRef.current) {
+          noInputRef.current = silent;
+          raise({ type: "recNoInput", noInput: silent });
+        }
+      }
+    }, 1000);
     return () => window.clearInterval(id);
   }, [voiceState]);
+
+  // Live captions: whisper has no streaming mode, so the take's WAV-so-far is
+  // re-transcribed every few seconds (lib/liveCaption). Bound to the MACHINE's
+  // recording state, so the loop stops on stop/cancel/unmount. No generation
+  // counter is needed — startPartialLoop drops a result that lands after its
+  // own stop(), and recCaption is a no-op unless the panel is still recording.
+  useEffect(() => {
+    if (voiceState !== "recording") return;
+    return startPartialLoop({
+      // Non-null throughout this effect (the machine is recording); the empty
+      // fallback covers only the tick racing the stop, and whisper reading
+      // nothing simply leaves the caption where it was.
+      snapshot: () => machine().snapshot() ?? new Blob(),
+      transcribe: ipc.transcribePartial,
+      onCaption: (caption) => raise({ type: "recCaption", caption }),
+    });
+  }, [voiceState]);
+
+  // save_voice_capture's own progress → the saving meter. Subscribed only
+  // while a take is live or being written, so the notch webview is not
+  // holding two listeners for the 99% of its life that it is idle.
+  // One boolean, not `kind`: recording→saving must NOT tear the subscription
+  // down and re-create it, or the first stage event lands in the gap while
+  // the dynamic import re-resolves.
+  const watchingSave = kind === "recording" || kind === "saving";
+  useEffect(() => {
+    if (mocking || !watchingSave) return;
+    let gone = false;
+    let unlisteners: (() => void)[] = [];
+    // The two events are halves of one row: the stage names it, the percent
+    // fills it, and each has to re-raise the other's last value.
+    let stage: "transcribing" | "saving" = "transcribing";
+    let pct: number | null = null;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        Promise.all([
+          listen<{ stage: "transcribing" | "saving" }>(
+            "voice-capture-stage",
+            (e) => {
+              stage = e.payload.stage;
+              raise({ type: "recStage", stage, pct });
+            },
+          ),
+          listen<{ pct: number }>("whisper-transcribe-progress", (e) => {
+            pct = e.payload.pct;
+            raise({ type: "recStage", stage, pct });
+          }),
+        ]),
+      )
+      .then((us) => {
+        if (gone) us.forEach((u) => u());
+        else unlisteners = us;
+      })
+      .catch(() => {
+        /* plain-browser dev: no Tauri event bus */
+      });
+    return () => {
+      gone = true;
+      unlisteners.forEach((u) => u());
+    };
+  }, [mocking, watchingSave]);
 
   // Never leave the mic held by an unmounted webview.
   useEffect(() => {
@@ -927,6 +1136,9 @@ export function useNotchDriver(): NotchDrive | null {
     onCaptureSubmit,
     onCaptureCancel,
     onCaptureVoice,
+    onCaptureOpen: () => openCapture(raise),
+    onRecordStop: () => void machine().stop(),
     onCapturePaste,
+    levels: levelsRef.current,
   };
 }

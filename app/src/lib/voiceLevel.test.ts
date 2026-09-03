@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createSilenceWatch, rms } from "./voiceLevel";
+import { createLevelHistory, createSilenceWatch, rms } from "./voiceLevel";
 
 describe("rms", () => {
   it("is 0 for silence and an empty buffer", () => {
@@ -32,5 +32,18 @@ describe("createSilenceWatch", () => {
     expect(w.push(loud, 2600).silent).toBe(false);
     expect(w.push(quiet, 4000).silent).toBe(false);
     expect(w.push(quiet, 6000).silent).toBe(true);
+  });
+});
+
+describe("createLevelHistory", () => {
+  it("reads oldest → newest and wraps", () => {
+    const h = createLevelHistory(3);
+    expect(Array.from(h.read())).toEqual([0, 0, 0]);
+    h.push(1);
+    h.push(2);
+    expect(Array.from(h.read())).toEqual([0, 1, 2]);
+    h.push(3);
+    h.push(4);
+    expect(Array.from(h.read())).toEqual([2, 3, 4]);
   });
 });

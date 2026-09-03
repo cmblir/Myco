@@ -8,6 +8,8 @@
 // capture, S9 unsupported reject, and S10 — the no-notch fallback, which is
 // not a state of its own but the same panel with all four corners rounded
 // (`safeAreaInsets.top == 0`), hence the `pill` prop rather than a tenth kind.
+// The v2 voice pass split S8 into recording → saving (whisper meter) and
+// added the 800 ms `cancelled` beat after esc.
 //
 // This file drives NOTHING and imports no Tauri command: it renders the `state`
 // it is handed, and idles when handed none. Whoever owns the native window
@@ -24,10 +26,15 @@
 
 import { useEffect, useState } from "react";
 import type { CSSProperties, JSX } from "react";
+import LiveCaption from "./LiveCaption";
+import VoiceWave from "./VoiceWave";
 import { STRINGS } from "../lib/i18n";
 import type { Strings } from "../lib/i18n";
 import { isComposingKey } from "../lib/ime";
+import type { CaptionState } from "../lib/liveCaption";
 import { formatTicker } from "../lib/time";
+import { createLevelHistory } from "../lib/voiceLevel";
+import type { LevelHistory } from "../lib/voiceLevel";
 import { useUIStore } from "../stores/uiStore";
 
 /** Cap colors, by the sheet's one color rule: purple = alive, amber = needs
@@ -54,7 +61,28 @@ export type NotchState =
   | { kind: "captured"; rel: string }
   // `note` overrides the lip clock — the one-time whisper model download
   // narrates its percent there instead of freezing on the last second.
-  | { kind: "recording"; elapsedMs: number; levels: number[]; note?: string }
+  // `caption` is the live transcript (partials every few seconds); `noInput`
+  // flips after 2 s of a silent mic. The waveform itself is not state: the
+  // driver hands the panel a level ring buffer, redrawn per frame.
+  | {
+      kind: "recording";
+      elapsedMs: number;
+      caption: CaptionState;
+      noInput: boolean;
+      note?: string;
+    }
+  // esc on a take: the mic is released, and the surface says so for 800 ms.
+  | { kind: "cancelled" }
+  // ⏎ on a take: whisper is transcribing, then the note is written. `pct` is
+  // whisper's own progress (null before its first line).
+  | {
+      kind: "saving";
+      elapsedMs: number;
+      caption: CaptionState;
+      stage: "transcribing" | "saving";
+      pct: number | null;
+      note?: string;
+    }
   // `reason` (already translated, like every free-text member) overrides the
   // {ext}-templated line — a write failure has a reason but no extension.
   | { kind: "rejected"; ext: string; reason?: string };
@@ -74,6 +102,8 @@ export interface NotchView {
 /** S6 folds away on its own — the sheet's rule is that a finished surface
  *  never asks to be dismissed. */
 export const DONE_DWELL_MS = 4000;
+/** A cancelled take says so, briefly, then folds. */
+export const CANCELLED_DWELL_MS = 800;
 
 /** mm:ss, zero-padded. formatTicker gives "0:42"; the sheet's DATA MONO rule
  *  is tabular, and an unpadded minute shifts the whole lip when it rolls over
@@ -185,6 +215,28 @@ export function describeNotch(
       return {
         lip:
           state.note ??
+          (state.noInput
+            ? (t.notch_no_sound ?? "No sound")
+            : (t.notch_recording ?? "Recording · {t}").replace(
+                "{t}",
+                clock(state.elapsedMs),
+              )),
+        tone: "live",
+        open: true,
+        dwellMs: null,
+      };
+    case "cancelled":
+      return {
+        lip: t.notch_cancelled ?? "Cancelled",
+        tone: "warn",
+        open: true,
+        dwellMs: CANCELLED_DWELL_MS,
+      };
+    case "saving":
+      // The clock freezes where the take ended; the body row names the stage.
+      return {
+        lip:
+          state.note ??
           (t.notch_recording ?? "Recording · {t}").replace(
             "{t}",
             clock(state.elapsedMs),
@@ -241,10 +293,22 @@ export const MOCK_FRAMES: readonly NotchFrame[] = [
     state: {
       kind: "recording",
       elapsedMs: 7000,
-      levels: [30, 62, 88, 45, 72, 96, 38, 66, 52, 84, 28, 58],
+      caption: { confirmed: ["오늘", "회의에서", "정리한"], interim: ["내용을"] },
+      noInput: false,
     },
     pill: false,
   },
+  {
+    state: {
+      kind: "saving",
+      elapsedMs: 7000,
+      caption: { confirmed: ["오늘", "회의에서", "정리한", "내용을"], interim: [] },
+      stage: "transcribing",
+      pct: 40,
+    },
+    pill: false,
+  },
+  { state: { kind: "cancelled" }, pill: false },
   { state: { kind: "rejected", ext: ".epub" }, pill: false },
   { state: { kind: "idle" }, pill: true },
 ];
@@ -291,9 +355,16 @@ export interface NotchPanelProps {
   onCaptureSubmit?: (text: string) => void;
   onCaptureCancel?: () => void;
   onCaptureVoice?: () => void;
+  /** Peek "note" row: open the text capture (the lip click does the same). */
+  onCaptureOpen?: () => void;
+  /** S8 ⏎ / the save button: stop the take and transcribe it. */
+  onRecordStop?: () => void;
   /** S7 paste: true = the driver took it (a URL/large selection became an
    *  _inbox note) and the input must not receive the text. */
   onCapturePaste?: (text: string) => boolean;
+  /** Mic RMS history for the recording waveform; the driver owns and fills
+   *  it. Omitted (mock walk, plain browser) → a flat line. */
+  levels?: LevelHistory;
 }
 
 export default function NotchPanel({
@@ -303,12 +374,16 @@ export default function NotchPanel({
   onCaptureSubmit,
   onCaptureCancel,
   onCaptureVoice,
+  onCaptureOpen,
+  onRecordStop,
   onCapturePaste,
+  levels,
 }: NotchPanelProps): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const t = STRINGS[lang];
   const [mock] = useState(readMockParams);
   const [step, setStep] = useState(0);
+  const [flat] = useState(createLevelHistory);
 
   const mocking = state === undefined && mock.on;
   const frame: NotchFrame =
@@ -369,7 +444,10 @@ export default function NotchPanel({
             onCaptureSubmit={onCaptureSubmit}
             onCaptureCancel={onCaptureCancel}
             onCaptureVoice={onCaptureVoice}
+            onCaptureOpen={onCaptureOpen}
+            onRecordStop={onRecordStop}
             onCapturePaste={onCapturePaste}
+            levels={levels ?? flat}
           />
         </div>
       ) : null}
@@ -383,25 +461,59 @@ function NotchBody({
   onCaptureSubmit,
   onCaptureCancel,
   onCaptureVoice,
+  onCaptureOpen,
+  onRecordStop,
   onCapturePaste,
+  levels,
 }: {
   state: NotchState;
   t: Strings;
   onCaptureSubmit?: (text: string) => void;
   onCaptureCancel?: () => void;
   onCaptureVoice?: () => void;
+  onCaptureOpen?: () => void;
+  onRecordStop?: () => void;
   onCapturePaste?: (text: string) => boolean;
+  levels: LevelHistory;
 }): JSX.Element | null {
   switch (state.kind) {
     case "idle":
       return null;
     case "peek":
-      // With work due the lip already carries the counts; the body keeps the
-      // drop hint, so the surface still says what it accepts.
+      // Two one-click actions (record starts the mic directly — no detour
+      // through the text capture), then what a drop accepts. stopPropagation:
+      // the driver's window-level click is the lip's "open capture", and a
+      // button press must not fire it as well.
       return (
-        <div className="notch-dz">
-          {t.notch_peek_body ?? "Files · links · selected text"}
-        </div>
+        <>
+          <button
+            type="button"
+            className="notch-act"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCaptureVoice?.();
+            }}
+          >
+            <i aria-hidden className="notch-dot" />
+            <span className="notch-grow">{t.notch_rec ?? "Record"}</span>
+            <span className="notch-mono">⌥M</span>
+          </button>
+          <button
+            type="button"
+            className="notch-act"
+            onClick={(e) => {
+              e.stopPropagation();
+              onCaptureOpen?.();
+            }}
+          >
+            <span aria-hidden className="notch-act-glyph">✎</span>
+            <span className="notch-grow">{t.notch_note ?? "Note"}</span>
+            <span className="notch-mono">⏎</span>
+          </button>
+          <div className="notch-peek-sub">
+            {t.notch_peek_body ?? "Files · links · selected text"}
+          </div>
+        </>
       );
     case "dragging":
       // Reading back the name is the confirmation that it CAN be taken.
@@ -520,20 +632,62 @@ function NotchBody({
     case "recording":
       return (
         <>
-          <div className="notch-row">
-            <span aria-hidden className="notch-wave">
-              {state.levels.map((level, i) => (
-                <i key={i} style={{ height: `${clampPercent(level)}%` }} />
-              ))}
-            </span>
-          </div>
+          <VoiceWave history={levels} />
+          <LiveCaption
+            caption={state.caption}
+            noInputText={
+              state.noInput
+                ? (t.voice_no_input ?? "No sound is coming in — check the microphone")
+                : null
+            }
+          />
           <div className="notch-hint">
-            <span className="notch-mono">
-              {t.voice_hint_recording ?? "⏎ save · esc cancel"}
+            <button type="button" className="notch-key" onClick={onCaptureCancel}>
+              {t.notch_hint_cancel ?? "esc cancel"}
+            </button>
+            <button
+              type="button"
+              className="notch-key notch-key-bright notch-hint-end"
+              onClick={onRecordStop}
+            >
+              {t.notch_hint_save ?? "⏎ save"}
+            </button>
+          </div>
+        </>
+      );
+    case "cancelled":
+      // The lip says it all; nothing to read in the body.
+      return null;
+    case "saving": {
+      // The caption settles (everything confirmed) while whisper reads the
+      // whole take; the meter is whisper's -pp, the row names the stage.
+      const label =
+        state.stage === "saving"
+          ? (t.voice_stage_saving ?? "Saving note…")
+          : state.pct !== null
+            ? (t.voice_transcribe_progress ?? "Transcribing… {pct}%").replace(
+                "{pct}",
+                String(clampPercent(state.pct)),
+              )
+            : (t.voice_stage_transcribing ?? "Transcribing…");
+      return (
+        <>
+          <LiveCaption caption={state.caption} />
+          <div className="notch-row">
+            <span className="notch-meter">
+              <i
+                style={{
+                  width: `${state.stage === "saving" ? 100 : clampPercent(state.pct ?? 0)}%`,
+                }}
+              />
+            </span>
+            <span className="notch-mono" role="status">
+              {label}
             </span>
           </div>
         </>
       );
+    }
     case "rejected":
       // What failed AND what would work, on the same screen.
       return (

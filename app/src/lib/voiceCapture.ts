@@ -15,6 +15,11 @@ export interface VoiceMachine {
   start(): Promise<void>;
   stop(): Promise<void>;
   cancel(): void;
+  /** WAV of the take so far, for the live-caption partials (liveCaption.ts).
+   *  Null outside recording, or with a recorder that cannot snapshot — the
+   *  recorder is the machine's private field, and the caption loop must not
+   *  have to reach around it to a second reference to the same object. */
+  snapshot(): Blob | null;
 }
 
 export interface VoiceDeps {
@@ -40,6 +45,8 @@ export function createVoiceMachine(deps: VoiceDeps): VoiceMachine {
     start,
     stop,
     cancel,
+    snapshot: () =>
+      machine.state === "recording" ? (rec?.snapshot?.() ?? null) : null,
   };
 
   function set(state: VoiceState, error: string | null = null): void {

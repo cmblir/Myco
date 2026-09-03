@@ -16,11 +16,15 @@ import {
   extLabel,
   reduceNotch,
   runningPercent,
-  waveLevels,
 } from "./notchDriver";
 import type { NotchDriverState, NotchEvent } from "./notchDriver";
 import { today } from "./taskLine";
-import { DONE_DWELL_MS, describeNotch } from "../components/NotchPanel";
+import { EMPTY_CAPTION } from "./liveCaption";
+import {
+  CANCELLED_DWELL_MS,
+  DONE_DWELL_MS,
+  describeNotch,
+} from "../components/NotchPanel";
 import { STRINGS } from "./i18n";
 
 const T0 = 1_756_000_000_000;
@@ -315,25 +319,104 @@ describe("reduceNotch — S8 voice capture", () => {
     { type: "recStart" },
   ]);
 
-  it("recStart opens the take; recTick walks the clock and the waveform", () => {
+  it("recStart opens the take empty; recTick walks the clock", () => {
     expect(recording.panel).toEqual({
       kind: "recording",
       elapsedMs: 0,
-      levels: waveLevels(0),
+      caption: EMPTY_CAPTION,
+      noInput: false,
     });
     expect(recording.runningSince).toBe(T0);
     const ticked = reduceNotch(recording, { type: "recTick" }, T0 + 7000);
     expect(ticked.panel).toEqual({
       kind: "recording",
       elapsedMs: 7000,
-      levels: waveLevels(7000),
+      caption: EMPTY_CAPTION,
+      noInput: false,
     });
-    // The walk must be visibly alive: consecutive seconds differ.
-    expect(waveLevels(7000)).not.toEqual(waveLevels(8000));
   });
 
-  it("recStop holds the last frame while the whisper save is in flight", () => {
-    expect(reduceNotch(recording, { type: "recStop" }, T0)).toBe(recording);
+  it("the caption and the silence verdict survive the clock tick", () => {
+    // The ticker knows nothing about either — a tick that dropped them would
+    // blank the transcript once a second.
+    const caption = { confirmed: ["오늘"], interim: ["회의"] };
+    const live = walk(recording, [
+      { type: "recCaption", caption },
+      { type: "recNoInput", noInput: true },
+    ]);
+    const ticked = reduceNotch(live, { type: "recTick" }, T0 + 3000);
+    expect(ticked.panel).toEqual({
+      kind: "recording",
+      elapsedMs: 3000,
+      caption,
+      noInput: true,
+    });
+  });
+
+  it("recStop reports the transcribe, holding the clock and the caption", () => {
+    const caption = { confirmed: ["오늘"], interim: [] };
+    const stopped = reduceNotch(
+      walk(reduceNotch(recording, { type: "recTick" }, T0 + 7000), [
+        { type: "recCaption", caption },
+      ]),
+      { type: "recStop" },
+      T0 + 7000,
+    );
+    expect(stopped.panel).toEqual({
+      kind: "saving",
+      elapsedMs: 7000,
+      caption,
+      stage: "transcribing",
+      pct: null,
+      note: undefined,
+    });
+    expect(stopped.runningSince).toBeNull();
+  });
+
+  it("recStage fills whisper's meter, then names the write half", () => {
+    const saving = reduceNotch(recording, { type: "recStop" }, T0);
+    const at40 = reduceNotch(
+      saving,
+      { type: "recStage", stage: "transcribing", pct: 40 },
+      T0,
+    );
+    expect(at40.panel).toMatchObject({ kind: "saving", pct: 40 });
+    const writing = reduceNotch(
+      at40,
+      { type: "recStage", stage: "saving", pct: 100 },
+      T0,
+    );
+    expect(writing.panel).toMatchObject({ kind: "saving", stage: "saving" });
+  });
+
+  it("esc on a live take says so for 800ms before folding", () => {
+    const cancelled = reduceNotch(recording, { type: "recCancelled" }, T0);
+    expect(cancelled.panel).toEqual({ kind: "cancelled" });
+    expect(dwellMsFor(cancelled.panel)).toBe(CANCELLED_DWELL_MS);
+    expect(CANCELLED_DWELL_MS).toBe(800);
+    // The dwell timer then folds it through the same idleTimeout path as S6.
+    expect(reduceNotch(cancelled, { type: "idleTimeout" }, T0)).toBe(
+      NOTCH_IDLE,
+    );
+    // Nothing else has a take to cancel.
+    const done: NotchDriverState = {
+      panel: { kind: "done", summary: "x" },
+      runningSince: null,
+    };
+    expect(reduceNotch(done, { type: "recCancelled" }, T0)).toBe(done);
+  });
+
+  it("recSaved lands on S4 from the saving half too", () => {
+    const saving = reduceNotch(recording, { type: "recStop" }, T0);
+    const saved = reduceNotch(
+      saving,
+      { type: "recSaved", rel: "voice-2026-08-25-0912.md" },
+      T0,
+    );
+    expect(saved.panel).toEqual({
+      kind: "accepted",
+      rel: "voice-2026-08-25-0912.md",
+    });
   });
 
   it("recSaved lands on S4 — a voice note is an _inbox arrival", () => {
