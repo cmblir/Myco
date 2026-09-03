@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useVaultStore } from "./vaultStore";
+import { useUIStore } from "./uiStore";
 import { ipc } from "../lib/ipc";
 
 // The background poll asks for a link-graph refresh every few seconds to catch
@@ -195,5 +196,128 @@ describe("saveFile / patchPages", () => {
     expect(useVaultStore.getState().error).toBe("EROFS");
     // Nothing landed on disk, so the link graph has nothing to pick up.
     expect(ipc.buildLinkGraph).not.toHaveBeenCalled();
+  });
+});
+
+describe("deletePath / movePaths / favorites", () => {
+  const A = "/v/wiki/a.md";
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    useVaultStore.setState({
+      currentVault: VAULT,
+      fileTree: [],
+      adjacency: null,
+      activeFile: null,
+      favorites: [],
+      error: null,
+    });
+    useUIStore.setState({ route: "overview", navHistory: { entries: ["overview"], idx: 0 } });
+    vi.spyOn(ipc, "buildLinkGraph").mockResolvedValue(ADJ);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue([]);
+  });
+
+  it("deletePath with a list deletes each, refreshes once and drops an open file under a deleted folder", async () => {
+    const del = vi.spyOn(ipc, "deletePath").mockResolvedValue(null);
+    useVaultStore.setState({
+      activeFile: { path: "/v/wiki/sub/x.md", raw: "", content: "", frontmatter: null },
+    });
+    await useVaultStore.getState().deletePath([A, "/v/wiki/sub"]);
+    expect(del).toHaveBeenCalledTimes(2);
+    expect(del).toHaveBeenNthCalledWith(1, A);
+    expect(del).toHaveBeenNthCalledWith(2, "/v/wiki/sub");
+    expect(ipc.listFiles).toHaveBeenCalledTimes(1);
+    expect(useVaultStore.getState().activeFile).toBeNull();
+  });
+
+  it("deletePath skips paths under a listed folder and still refreshes when a delete fails", async () => {
+    const del = vi
+      .spyOn(ipc, "deletePath")
+      .mockResolvedValueOnce(null)
+      .mockRejectedValueOnce(new Error("EPERM"));
+    await useVaultStore
+      .getState()
+      .deletePath(["/v/wiki/sub", "/v/wiki/sub/x.md", A]);
+    expect(del).toHaveBeenCalledTimes(2);
+    expect(del).toHaveBeenNthCalledWith(1, "/v/wiki/sub");
+    expect(del).toHaveBeenNthCalledWith(2, A);
+    expect(useVaultStore.getState().error).toBe("EPERM");
+    expect(ipc.listFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it("movePaths skips non-movable paths, follows the open note and replaces the route without a history entry", async () => {
+    const move = vi
+      .spyOn(ipc, "movePath")
+      .mockImplementation(async (from, toDir) => `${toDir}/${from.split("/").pop()}`);
+    useVaultStore.setState({
+      activeFile: { path: A, raw: "", content: "", frontmatter: null },
+      favorites: ["wiki/a.md", "wiki/b.md"],
+    });
+    useUIStore.setState({
+      route: `page:${A}`,
+      navHistory: { entries: ["overview", `page:${A}`], idx: 1 },
+    });
+    vi.spyOn(ipc, "saveFavorites").mockResolvedValue(null);
+    // /v/notes/c.md already lives in the destination; /v/notes is the destination itself.
+    await useVaultStore.getState().movePaths([A, "/v/notes/c.md", "/v/notes"], "/v/notes");
+    expect(move).toHaveBeenCalledTimes(1);
+    expect(move).toHaveBeenCalledWith(A, "/v/notes");
+    expect(useVaultStore.getState().activeFile?.path).toBe("/v/notes/a.md");
+    const ui = useUIStore.getState();
+    expect(ui.route).toBe("page:/v/notes/a.md");
+    expect(ui.navHistory).toEqual({ entries: ["overview", "page:/v/notes/a.md"], idx: 1 });
+    expect(useVaultStore.getState().favorites).toEqual(["notes/a.md", "wiki/b.md"]);
+    expect(ipc.saveFavorites).toHaveBeenCalledWith(["notes/a.md", "wiki/b.md"]);
+    expect(ipc.listFiles).toHaveBeenCalledTimes(1);
+  });
+
+  it("movePaths continues past a refused move and surfaces the error", async () => {
+    vi.spyOn(ipc, "movePath")
+      .mockRejectedValueOnce(new Error("destination exists"))
+      .mockResolvedValueOnce("/v/notes/b.md");
+    await useVaultStore.getState().movePaths([A, "/v/wiki/b.md"], "/v/notes");
+    expect(ipc.movePath).toHaveBeenCalledTimes(2);
+    expect(useVaultStore.getState().error).toBe("destination exists");
+  });
+
+  it("toggleFavorite adds then removes, saving vault-relative paths", async () => {
+    const save = vi.spyOn(ipc, "saveFavorites").mockResolvedValue(null);
+    await useVaultStore.getState().toggleFavorite(A);
+    expect(useVaultStore.getState().favorites).toEqual(["wiki/a.md"]);
+    expect(save).toHaveBeenLastCalledWith(["wiki/a.md"]);
+    await useVaultStore.getState().toggleFavorite("/v/wiki/b.md");
+    expect(save).toHaveBeenLastCalledWith(["wiki/a.md", "wiki/b.md"]);
+    await useVaultStore.getState().toggleFavorite(A);
+    expect(useVaultStore.getState().favorites).toEqual(["wiki/b.md"]);
+    expect(save).toHaveBeenLastCalledWith(["wiki/b.md"]);
+  });
+
+  it("toggleFavorite reverts and reports when the save fails", async () => {
+    vi.spyOn(ipc, "saveFavorites").mockRejectedValue(new Error("EROFS"));
+    await useVaultStore.getState().toggleFavorite(A);
+    expect(useVaultStore.getState().favorites).toEqual([]);
+    expect(useVaultStore.getState().error).toBe("EROFS");
+  });
+
+  it("openVault reads favorites best-effort: corrupt JSON and non-strings are dropped", async () => {
+    vi.spyOn(ipc, "openVault").mockResolvedValue(VAULT);
+    const read = vi.spyOn(ipc, "readFile").mockResolvedValue({
+      path: "/v/.myco/favorites.json",
+      raw: "{not json",
+      content: "",
+      frontmatter: null,
+    });
+    await useVaultStore.getState().openVault("/v");
+    expect(read).toHaveBeenCalledWith("/v/.myco/favorites.json");
+    expect(useVaultStore.getState().favorites).toEqual([]);
+    expect(useVaultStore.getState().error).toBeNull();
+
+    read.mockResolvedValue({
+      path: "/v/.myco/favorites.json",
+      raw: '["wiki/a.md", 3, null]',
+      content: "",
+      frontmatter: null,
+    });
+    await useVaultStore.getState().openVault("/v");
+    expect(useVaultStore.getState().favorites).toEqual(["wiki/a.md"]);
   });
 });

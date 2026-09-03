@@ -2173,6 +2173,14 @@ function mockInvoke(
       return Promise.resolve("assets/20260101-000000.png");
     case "read_file": {
       const p = String(args.path ?? "");
+      if (p.endsWith("/.myco/favorites.json")) {
+        return Promise.resolve({
+          path: p,
+          raw: JSON.stringify(mockFavorites),
+          content: "",
+          frontmatter: null,
+        });
+      }
       if (p.includes("/ingest-reports/")) {
         const raw =
           "# Ingest report — attention\n\nAdded 3 facts, merged 1, cited 2 sources.\n";
@@ -2643,6 +2651,13 @@ function mockInvoke(
     case "create_folder":
     case "rename_path":
       return Promise.resolve(`${VAULT}/wiki/new.md`);
+    case "move_path":
+      return Promise.resolve(
+        `${String(args.toDir)}/${String(args.from).split("/").pop()}`,
+      );
+    case "save_favorites":
+      mockFavorites = args.paths as string[];
+      return Promise.resolve(null);
     // ---- event bus -------------------------------------------------------
     // @tauri-apps/api/event's listen()/unlisten() are themselves invokes, so
     // the mock has to answer them or every listener in the app silently never
@@ -2874,6 +2889,10 @@ mockInbox.set(
 /// is exercisable in mock mode: without this a write was dropped and the next
 /// scan returned the same seeded list, making a working feature look broken.
 const mockNotes = new Map<string, string>();
+
+/// Starred paths (vault-relative) as `save_favorites` last wrote them; served
+/// back by `read_file` of `.myco/favorites.json` so a star survives a vault reopen.
+let mockFavorites: string[] = [];
 
 // Seed one note with due-dated tasks (one overdue, one due today) so the Topbar
 // activity popover's due block has rows in mock mode — and, because read_file

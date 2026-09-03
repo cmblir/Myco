@@ -781,6 +781,12 @@ export const ipc = {
   deletePath: (path: string) => invoke<null>("delete_path", { path }),
   renamePath: (from: string, toName: string) =>
     invoke<string>("rename_path", { from, toName }),
+  /** Move a file or folder into `toDir` (same name); resolves to the new path. */
+  movePath: (from: string, toDir: string) =>
+    invoke<string>("move_path", { from, toDir }),
+  /** Overwrite `.myco/favorites.json` with vault-relative paths, in star order. */
+  saveFavorites: (paths: string[]) =>
+    invoke<null>("save_favorites", { paths }),
   archiveInboxSource: (path: string) =>
     invoke<string>("archive_inbox_source", { path }),
   /** Every file waiting in `_inbox/`, any extension — flat, dotfiles and

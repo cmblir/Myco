@@ -176,6 +176,8 @@ pub fn run() {
             commands::create_folder,
             commands::delete_path,
             commands::rename_path,
+            commands::move_path,
+            commands::save_favorites,
             commands::archive_inbox_source,
             commands::list_inbox_entries,
             commands::copy_into_inbox,

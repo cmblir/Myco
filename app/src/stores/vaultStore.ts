@@ -11,6 +11,7 @@ import {
   type FmPatch,
   type Frontmatter,
 } from "../lib/frontmatter";
+import { dropNested, filterMovable, rewritePrefix } from "../lib/treeOps";
 import { useSettingsStore } from "./settingsStore";
 import { useUIStore } from "./uiStore";
 
@@ -47,6 +48,8 @@ export interface VaultState {
   fileTree: FileNode[];
   activeFile: FileContent | null;
   adjacency: Adjacency | null;
+  /** Starred files, vault-relative, in star order (`.myco/favorites.json`). */
+  favorites: string[];
   isLoading: boolean;
   error: string | null;
   openVault: (path: string) => Promise<void>;
@@ -69,8 +72,13 @@ export interface VaultState {
   refreshTree: () => Promise<void>;
   createFile: (parentDir: string, name: string) => Promise<string | null>;
   createFolder: (parentDir: string, name: string) => Promise<string | null>;
-  deletePath: (path: string) => Promise<void>;
+  deletePath: (paths: string | string[]) => Promise<void>;
   renamePath: (from: string, toName: string) => Promise<string | null>;
+  /** Move each path into `destDir` (no-ops and impossible moves skipped); the
+   *  rest continues past a failure and the last error surfaces. */
+  movePaths: (paths: string[], destDir: string) => Promise<void>;
+  /** Optimistic star/unstar of an absolute path; reverted with `error` on failure. */
+  toggleFavorite: (path: string) => Promise<void>;
   resolveWikilink: (target: string) => string | null;
   /**
    * Resolve a wikilink to an existing page, or CREATE it and open it
@@ -87,6 +95,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
   fileTree: [],
   activeFile: null,
   adjacency: null,
+  favorites: [],
   isLoading: false,
   error: null,
 
@@ -97,12 +106,21 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       const meta = await ipc.openVault(path);
       const tree = await ipc.listFiles(meta.path);
       const adjacency = await ipc.buildLinkGraph(meta.path);
+      // Best effort: a missing or corrupt favorites file just means none.
+      const favorites = await ipc
+        .readFile(`${meta.path}/.myco/favorites.json`)
+        .then((f) => {
+          const v: unknown = JSON.parse(f.raw);
+          return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : [];
+        })
+        .catch(() => []);
       if (seq !== openSeq) return; // a newer openVault won; discard.
       set({
         currentVault: meta,
         fileTree: tree,
         adjacency,
         activeFile: null,
+        favorites,
         isLoading: false,
       });
       try {
@@ -266,48 +284,67 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     }
   },
 
-  deletePath: async (path: string) => {
+  deletePath: async (paths) => {
     try {
-      await ipc.deletePath(path);
-      const active = get().activeFile;
-      if (
-        active &&
-        (active.path === path || active.path.startsWith(`${path}/`))
-      ) {
-        set({ activeFile: null });
+      for (const path of typeof paths === "string"
+        ? [paths]
+        : dropNested(paths)) {
+        await ipc.deletePath(path);
+        const active = get().activeFile;
+        if (
+          active &&
+          (active.path === path || active.path.startsWith(`${path}/`))
+        ) {
+          set({ activeFile: null });
+        }
       }
-      await get().refreshTree();
-      void get().refreshLinkGraph();
     } catch (err) {
       set({ error: errorMessage(err) });
+    } finally {
+      // A failure mid-list has already trashed earlier items: always refresh.
+      await get().refreshTree();
+      void get().refreshLinkGraph();
     }
   },
 
   renamePath: async (from: string, toName: string) => {
     try {
       const newPath = await ipc.renamePath(from, toName);
-      // Rewrite the open file's path for an exact match AND for descendants
-      // (renaming a parent folder of the open file), mirroring deletePath.
-      const active = get().activeFile;
-      if (active) {
-        let rewritten: string | null = null;
-        if (active.path === from) rewritten = newPath;
-        else if (active.path.startsWith(`${from}/`))
-          rewritten = newPath + active.path.slice(from.length);
-        if (rewritten) set({ activeFile: { ...active, path: rewritten } });
-      }
-      // Keep the open route in sync so autosave/navigation target the new path.
-      const ui = useUIStore.getState();
-      const oldRoute = `page:${from}`;
-      if (ui.route === oldRoute) ui.setRoute(`page:${newPath}`);
-      else if (ui.route.startsWith(`${oldRoute}/`))
-        ui.setRoute(`page:${newPath}${ui.route.slice(oldRoute.length)}`);
+      await afterPathChange(from, newPath);
       await get().refreshTree();
       void get().refreshLinkGraph();
       return newPath;
     } catch (err) {
       set({ error: errorMessage(err) });
       return null;
+    }
+  },
+
+  movePaths: async (paths, destDir) => {
+    let error: string | null = null;
+    for (const p of filterMovable(paths, destDir)) {
+      try {
+        await afterPathChange(p, await ipc.movePath(p, destDir));
+      } catch (err) {
+        error = errorMessage(err);
+      }
+    }
+    if (error) set({ error });
+    await get().refreshTree();
+    void get().refreshLinkGraph();
+  },
+
+  toggleFavorite: async (path) => {
+    const vault = get().currentVault;
+    if (!vault) return;
+    const rel = path.slice(vault.path.length + 1);
+    const prev = get().favorites;
+    const next = prev.includes(rel) ? prev.filter((f) => f !== rel) : [...prev, rel];
+    set({ favorites: next });
+    try {
+      await ipc.saveFavorites(next);
+    } catch (err) {
+      set({ favorites: prev, error: errorMessage(err) });
     }
   },
 
@@ -346,11 +383,37 @@ export const useVaultStore = create<VaultState>((set, get) => ({
       fileTree: [],
       activeFile: null,
       adjacency: null,
+      favorites: [],
       isLoading: false,
       error: null,
     });
   },
 }));
+
+/** A path was renamed or moved: follow it (exact match and descendants) in the
+ *  open file, the route — without a history entry, so autosave/navigation
+ *  target the new path — and the favorites list. */
+async function afterPathChange(from: string, to: string) {
+  const { activeFile, favorites, currentVault } = useVaultStore.getState();
+  if (activeFile) {
+    const path = rewritePrefix(activeFile.path, from, to);
+    if (path) useVaultStore.setState({ activeFile: { ...activeFile, path } });
+  }
+  const ui = useUIStore.getState();
+  if (ui.route.startsWith("page:")) {
+    const path = rewritePrefix(ui.route.slice("page:".length), from, to);
+    if (path) ui.replaceRoute(`page:${path}`);
+  }
+  if (!currentVault) return;
+  const rel = (p: string) => p.slice(currentVault.path.length + 1);
+  const next = favorites.map((f) => rewritePrefix(f, rel(from), rel(to)) ?? f);
+  if (next.some((f, i) => f !== favorites[i])) {
+    useVaultStore.setState({ favorites: next });
+    // Best effort, like the history commit: the move itself already landed.
+    // Awaited so successive moves never have two writes in flight.
+    await ipc.saveFavorites(next).catch(() => undefined);
+  }
+}
 
 export function getLastVaultPath(): string | null {
   try {

@@ -11,6 +11,13 @@ import {
 import { persist } from "zustand/middleware";
 import { SPLIT_DEFAULT_RATIO } from "../lib/splitRatio";
 import type { Lang } from "../lib/i18n";
+import {
+  pushRoute,
+  replaceCurrent,
+  sanitizeHistory,
+  step,
+  type NavHistory,
+} from "../lib/navHistory";
 
 export const SIDEBAR_MIN = 200;
 export const SIDEBAR_MAX = 600;
@@ -41,6 +48,8 @@ const EDITOR_MODES: readonly EditorMode[] = ["live", "source", "split", "preview
 export interface UIState {
   // Routing
   route: RouteId;
+  // Back/forward stack of primary routes; `route` always sits at `idx`.
+  navHistory: NavHistory;
   // Which tab the Feedback page opens on. Not persisted-meaningful state, but
   // it lives here so the activity panel / tray "N awaiting review" row can
   // deep-link straight to the quarantine tab (setRoute alone can't).
@@ -93,6 +102,10 @@ export interface UIState {
   outlineOpen: boolean;
 
   setRoute: (route: RouteId) => void;
+  /** Route sync after a rename/move: swaps the current entry, no history entry. */
+  replaceRoute: (route: RouteId) => void;
+  goBack: () => void;
+  goForward: () => void;
   setFeedbackTab: (tab: FeedbackTab) => void;
   setStudyDeck: (path: string | null) => void;
   setSplitRoute: (route: RouteId | null) => void;
@@ -121,6 +134,7 @@ export const useUIStore = create<UIState>()(
   persist(
     (set, get) => ({
       route: "overview",
+      navHistory: { entries: ["overview"], idx: 0 },
       feedbackTab: "proposals",
       studyDeck: null,
       splitRoute: null,
@@ -135,19 +149,20 @@ export const useUIStore = create<UIState>()(
       accent: "#181715",
       showCitations: true,
       mascotEnabled: true,
-      // Keyed by absolute folder path; empty by default (all collapsed). The
-      // old slug-keyed seed never matched real paths and was inert.
-      expandedFolders: {},
+      // Keyed by absolute folder path (synthetic groups by id); all collapsed
+      // except Favorites. The old slug-keyed seed never matched real paths.
+      expandedFolders: { __favorites: true },
       myceliumGrown: false,
       lastVisitAt: null,
       propsCollapsed: false,
       editorMode: "live",
       outlineOpen: true,
 
-      setRoute: (route) =>
-        // Never let the primary and split panes show the SAME route (two live
-        // graph scenes, duplicate state) — clear the split if it would collide.
-        set((s) => ({ route, splitRoute: s.splitRoute === route ? null : s.splitRoute })),
+      setRoute: (route) => set((s) => routePatch(s, route, pushRoute(s.navHistory, route))),
+      replaceRoute: (route) =>
+        set((s) => routePatch(s, route, replaceCurrent(s.navHistory, route))),
+      goBack: () => set((s) => stepPatch(s, -1)),
+      goForward: () => set((s) => stepPatch(s, 1)),
       setFeedbackTab: (feedbackTab) => set({ feedbackTab }),
       setStudyDeck: (studyDeck) => set({ studyDeck }),
       setSplitRoute: (route) =>
@@ -205,8 +220,22 @@ export const useUIStore = create<UIState>()(
           editorMode: EDITOR_MODES.includes(p.editorMode as EditorMode)
             ? (p.editorMode as EditorMode)
             : "live",
+          navHistory: sanitizeHistory(p.navHistory, p.route ?? current.route),
+          // Favorites default open even for a store persisted before the group existed.
+          expandedFolders: { __favorites: true, ...p.expandedFolders },
         };
       },
     },
   ),
 );
+
+// Never let the primary and split panes show the SAME route (two live graph
+// scenes, duplicate state) — clear the split if it would collide.
+function routePatch(s: UIState, route: RouteId, navHistory: NavHistory): Partial<UIState> {
+  return { route, navHistory, splitRoute: s.splitRoute === route ? null : s.splitRoute };
+}
+
+function stepPatch(s: UIState, delta: -1 | 1): Partial<UIState> {
+  const h = step(s.navHistory, delta);
+  return h ? routePatch(s, h.entries[h.idx], h) : s;
+}

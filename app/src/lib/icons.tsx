@@ -49,7 +49,8 @@ export type IconName =
   | "book"
   | "save"
   | "shield"
-  | "mic";
+  | "mic"
+  | "star";
 
 export function Icon({
   name,
@@ -244,6 +245,9 @@ export function Icon({
         <rect x="9" y="3" width="6" height="12" rx="3" />
         <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
       </>
+    ),
+    star: (
+      <path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.2 1 5.9L12 17l-5.2 2.8 1-5.9-4.3-4.2 5.9-.8z" />
     ),
   };
   return <svg {...props}>{paths[name] ?? null}</svg>;

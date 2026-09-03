@@ -838,6 +838,57 @@ pub fn rename_path(
     Ok(new_path)
 }
 
+/// Confinement + raw/ guard, root-injected so it is testable without a Tauri
+/// State (the copy_into_inbox_at idiom). No mark_dirty, like rename_path: the
+/// watcher picks up moves; wikilinks resolve by stem, so backlinks need no rewrite.
+pub(crate) fn move_path_at(
+    root: &std::path::Path,
+    from: &str,
+    to_dir: &str,
+) -> Result<String, String> {
+    let src = vault::confine_path(root, from)?;
+    let dest = vault::confine_path(root, to_dir)?;
+    if vault::is_raw_path(root, &src) || vault::is_raw_path(root, &dest) {
+        return Err("refused: raw/ is immutable — sources cannot be moved in or out".into());
+    }
+    vault::move_path(&src.to_string_lossy(), &dest.to_string_lossy())
+}
+
+#[tauri::command]
+pub fn move_path(
+    state: tauri::State<VaultRoot>,
+    from: String,
+    to_dir: String,
+) -> Result<String, String> {
+    let root = require_root(&state)?;
+    move_path_at(&root, &from, &to_dir)
+}
+
+/// `.myco/favorites.json`: validates every entry (non-empty, relative, no `..`
+/// component, no `\`), dedups in order, then writes atomically.
+pub(crate) fn save_favorites_at(root: &std::path::Path, paths: &[String]) -> Result<(), String> {
+    let mut kept: Vec<&String> = Vec::with_capacity(paths.len());
+    for p in paths {
+        if p.is_empty() || p.starts_with('/') || p.contains('\\') || p.split('/').any(|c| c == "..")
+        {
+            return Err(format!("invalid favorite path: {p}"));
+        }
+        if !kept.contains(&p) {
+            kept.push(p);
+        }
+    }
+    let dir = crate::vault_dir::dir(root);
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create .myco dir: {e}"))?;
+    let json = serde_json::to_string(&kept).map_err(|e| e.to_string())?;
+    vault::write_file(&dir.join("favorites.json").to_string_lossy(), &json)
+}
+
+#[tauri::command]
+pub fn save_favorites(state: tauri::State<VaultRoot>, paths: Vec<String>) -> Result<(), String> {
+    let root = require_root(&state)?;
+    save_favorites_at(&root, &paths)
+}
+
 /// A free `raw/<stem>.md` path (suffixed on collision) for a new ingest source,
 /// so a second source under the same title never overwrites the first's
 /// immutable original.
@@ -4744,11 +4795,12 @@ mod tests {
     use super::{
         append_recall_miss, builtin_index_is_stale, capture_note_at, chunk_text_at,
         copy_into_inbox_at, delete_myco_json, export_bundle_write, external_target_allowed,
-        import_dest, inbox_entries, is_media_name, iso_week_monday, list_myco_json, myco_json_path,
-        page_in_date_range, read_settings_import, recency_tie_break, resurface_core, run_diff_core,
-        run_import, save_myco_json, sync_bm25_for_page, voice_inbox_rel, voice_markdown,
-        windows_opener_safe, write_inbox_note_at, DateRange, DEST_INBOX, DEST_SESSIONS,
-        INBOX_COPY_MAX_BYTES, INBOX_COPY_MAX_MEDIA_BYTES,
+        import_dest, inbox_entries, is_media_name, iso_week_monday, list_myco_json, move_path_at,
+        myco_json_path, page_in_date_range, read_settings_import, recency_tie_break,
+        resurface_core, run_diff_core, run_import, save_favorites_at, save_myco_json,
+        sync_bm25_for_page, voice_inbox_rel, voice_markdown, windows_opener_safe,
+        write_inbox_note_at, DateRange, DEST_INBOX, DEST_SESSIONS, INBOX_COPY_MAX_BYTES,
+        INBOX_COPY_MAX_MEDIA_BYTES,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
@@ -4784,6 +4836,55 @@ mod tests {
         delete_myco_json(root, "views", "a").unwrap();
         assert_eq!(list_myco_json(root, "views"), ["b"]);
         assert!(delete_myco_json(root, "views", "a").is_err());
+    }
+
+    // ---- move_path / favorites ---------------------------------------------
+
+    #[test]
+    fn move_path_at_refuses_raw_on_either_side() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        for d in ["raw", "wiki", "notes"] {
+            std::fs::create_dir_all(root.join(d)).unwrap();
+        }
+        std::fs::write(root.join("raw/a.md"), "src").unwrap();
+        std::fs::write(root.join("wiki/a.md"), "note").unwrap();
+        let s = |p: &str| root.join(p).display().to_string();
+
+        let err = move_path_at(&root, &s("raw/a.md"), &s("wiki")).expect_err("out of raw/");
+        assert!(err.contains("raw/"), "{err}");
+        let err = move_path_at(&root, &s("wiki/a.md"), &s("raw")).expect_err("into raw/");
+        assert!(err.contains("raw/"), "{err}");
+        assert!(root.join("raw/a.md").is_file() && root.join("wiki/a.md").is_file());
+
+        let moved = move_path_at(&root, &s("wiki/a.md"), &s("notes")).unwrap();
+        assert_eq!(moved, s("notes/a.md"));
+        assert!(root.join("notes/a.md").is_file());
+        assert!(!root.join("wiki/a.md").exists());
+    }
+
+    #[test]
+    fn save_favorites_at_dedups_validates_and_round_trips() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let favs: Vec<String> = ["wiki/b.md", "wiki/a.md", "wiki/b.md"]
+            .iter()
+            .map(|s| s.to_string())
+            .collect();
+        save_favorites_at(root, &favs).unwrap();
+        let raw = std::fs::read_to_string(root.join(".myco/favorites.json")).unwrap();
+        let back: Vec<String> = serde_json::from_str(&raw).unwrap();
+        assert_eq!(back, ["wiki/b.md", "wiki/a.md"]);
+
+        for bad in ["", "../x.md", "/abs/x.md", "wiki/../x.md", "wiki\\x.md"] {
+            let err = save_favorites_at(root, &[bad.to_string()]).expect_err(bad);
+            assert!(err.contains("invalid favorite path"), "{bad:?}: {err}");
+        }
+        // A rejected list leaves the file untouched.
+        assert_eq!(
+            std::fs::read_to_string(root.join(".myco/favorites.json")).unwrap(),
+            raw
+        );
     }
 
     // ---- settings export/import file IO ------------------------------------

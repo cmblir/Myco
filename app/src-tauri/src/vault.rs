@@ -879,6 +879,33 @@ pub fn rename_path(from: &str, to_name: &str) -> Result<String, String> {
     Ok(target.to_string_lossy().into_owned())
 }
 
+/// Move `from` into directory `to_dir`, keeping its file name. Refuses an
+/// existing target and moving a directory into itself or a descendant. Both
+/// paths are canonical (confined by the caller), so starts_with is a real
+/// ancestry test.
+pub fn move_path(from: &str, to_dir: &str) -> Result<String, String> {
+    let src = Path::new(from);
+    if !src.exists() {
+        return Err(format!("not found: {from}"));
+    }
+    let dest = Path::new(to_dir);
+    if !dest.is_dir() {
+        return Err(format!("not a directory: {to_dir}"));
+    }
+    if dest.starts_with(src) {
+        return Err("cannot move a folder into itself".into());
+    }
+    let name = src
+        .file_name()
+        .ok_or_else(|| format!("no file name in {from}"))?;
+    let target = dest.join(name);
+    if target.exists() {
+        return Err(format!("destination exists: {}", target.display()));
+    }
+    std::fs::rename(src, &target).map_err(|e| format!("move failed: {e}"))?;
+    Ok(target.to_string_lossy().into_owned())
+}
+
 /// A `raw/<stem>.md` path that does not exist yet, suffixing `-2`, `-3`, … on
 /// collision. Returned vault-relative.
 ///
@@ -2060,6 +2087,68 @@ mod tests {
         let new_path = rename_path(dir.join("old.md").to_str().unwrap(), "new.md").unwrap();
         assert!(std::path::Path::new(&new_path).exists());
         assert!(!dir.join("old.md").exists());
+    }
+
+    #[test]
+    fn move_path_moves_file_into_dir() {
+        let dir = temp_vault("mv");
+        fs::write(dir.join("a.md"), "x").unwrap();
+        fs::create_dir_all(dir.join("notes")).unwrap();
+        let new_path = move_path(
+            dir.join("a.md").to_str().unwrap(),
+            dir.join("notes").to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(std::path::Path::new(&new_path), dir.join("notes/a.md"));
+        assert!(dir.join("notes/a.md").is_file());
+        assert!(!dir.join("a.md").exists());
+    }
+
+    #[test]
+    fn move_path_refuses_existing_target() {
+        let dir = temp_vault("mv-exists");
+        fs::write(dir.join("a.md"), "x").unwrap();
+        fs::create_dir_all(dir.join("notes")).unwrap();
+        fs::write(dir.join("notes/a.md"), "y").unwrap();
+        let err = move_path(
+            dir.join("a.md").to_str().unwrap(),
+            dir.join("notes").to_str().unwrap(),
+        )
+        .unwrap_err();
+        assert!(err.contains("destination exists"), "{err}");
+        assert_eq!(fs::read_to_string(dir.join("notes/a.md")).unwrap(), "y");
+        assert!(dir.join("a.md").exists());
+    }
+
+    #[test]
+    fn move_path_refuses_dir_into_itself_or_descendant() {
+        let dir = temp_vault("mv-self");
+        fs::create_dir_all(dir.join("a/b")).unwrap();
+        let a = dir.join("a");
+        for dest in [a.clone(), a.join("b")] {
+            let err = move_path(a.to_str().unwrap(), dest.to_str().unwrap()).unwrap_err();
+            assert!(err.contains("into itself"), "{err}");
+        }
+        assert!(dir.join("a/b").is_dir());
+    }
+
+    #[test]
+    fn move_path_refuses_non_directory_dest() {
+        let dir = temp_vault("mv-nodir");
+        fs::write(dir.join("a.md"), "x").unwrap();
+        fs::write(dir.join("b.md"), "y").unwrap();
+        assert!(move_path(
+            dir.join("a.md").to_str().unwrap(),
+            dir.join("b.md").to_str().unwrap()
+        )
+        .is_err());
+        assert!(move_path(
+            dir.join("a.md").to_str().unwrap(),
+            dir.join("missing").to_str().unwrap()
+        )
+        .is_err());
+        assert!(move_path(dir.join("nope.md").to_str().unwrap(), dir.to_str().unwrap()).is_err());
+        assert!(dir.join("a.md").exists());
     }
 
     #[test]
