@@ -382,6 +382,18 @@ pub fn write_asset(
     vault::write_asset(&root, name, bytes)
 }
 
+/// Copy a Finder-dropped image into the vault's `assets/` (drop twin of
+/// write_asset: the file already has a path, so no raw body crosses IPC).
+#[tauri::command]
+pub fn copy_asset(
+    state: tauri::State<VaultRoot>,
+    name: String,
+    src: String,
+) -> Result<String, String> {
+    let root = require_root(&state)?;
+    vault::copy_asset(&root, &name, &src)
+}
+
 /// Concatenate vault markdown (CLAUDE.md + wiki/ + raw/) up to `max_bytes`,
 /// so non-tool LLM providers can answer queries / run lint against real vault
 /// content (the Claude CLI reads files itself and does not use this).

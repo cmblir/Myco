@@ -23,6 +23,7 @@ import { useVaultStore } from "../stores/vaultStore";
 import { ipc } from "../lib/ipc";
 import type { FileNode } from "../lib/ipc";
 import { assetFileName, imageExtFor } from "../lib/assets";
+import { getCurrentWebview } from "@tauri-apps/api/webview";
 import type { Strings } from "../lib/i18n";
 import { liveExtension } from "../lib/editorLive";
 import {
@@ -73,6 +74,18 @@ export default function Editor({
   onErrorRef.current = onError;
   // Identity token only; the same Compartment reconfigures every view we make.
   const liveComp = useRef(new Compartment()).current;
+  const reportUnsupported = () =>
+    onErrorRef.current?.(
+      t.img_unsupported ??
+        "Only PNG, JPEG, GIF and WebP images can be inserted",
+    );
+  const reportFailed = (err: unknown) =>
+    onErrorRef.current?.(
+      (t.img_failed ?? "Image could not be saved: {error}").replace(
+        "{error}",
+        String(err),
+      ),
+    );
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -153,19 +166,20 @@ export default function Editor({
               return ext ? [[f, ext] as const] : [];
             });
             if (images.length === 0) {
-              onErrorRef.current?.(
-                t.img_unsupported ??
-                  "Only PNG, JPEG, GIF and WebP images can be inserted",
-              );
+              reportUnsupported();
               return true;
             }
-            void insertImages(view, images, (err) =>
-              onErrorRef.current?.(
-                (t.img_failed ?? "Image could not be saved: {error}").replace(
-                  "{error}",
-                  String(err),
-                ),
+            void insertImages(
+              view,
+              images.map(
+                ([f, ext]) =>
+                  async () =>
+                    ipc.writeAsset(
+                      assetFileName(new Date(), ext),
+                      new Uint8Array(await f.arrayBuffer()),
+                    ),
               ),
+              reportFailed,
             );
             return true;
           },
@@ -218,6 +232,73 @@ export default function Editor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, docKey]);
 
+  // Image drop from Finder → assets/. HTML5 drop never reaches WebKit under
+  // Tauri on macOS (wry claims the drag), so listen to Tauri's native event and
+  // hit-test its position against this container: PageIngest subscribes to the
+  // same event while mounted (split view), and drops outside the editor stay its.
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    // wry (wkwebview/drag_drop.rs) reports NSView draggingLocation — view
+    // points, i.e. CSS px from the webview's top-left — wrapped as a
+    // PhysicalPosition unscaled, so it compares directly with the client rect.
+    // ponytail: Windows/Linux really are physical; divide by devicePixelRatio there.
+    const hits = (pos: { x: number; y: number }): boolean => {
+      const r = el.getBoundingClientRect();
+      return (
+        pos.x >= r.left &&
+        pos.x <= r.right &&
+        pos.y >= r.top &&
+        pos.y <= r.bottom
+      );
+    };
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    void (async () => {
+      const u = await getCurrentWebview().onDragDropEvent((event) => {
+        const p = event.payload;
+        if (p.type === "leave") {
+          el.classList.remove("is-drop-target");
+          return;
+        }
+        const hit = hits(p.position);
+        if (p.type !== "drop") {
+          el.classList.toggle("is-drop-target", hit);
+          return;
+        }
+        el.classList.remove("is-drop-target");
+        const view = localViewRef.current;
+        if (!hit || !view) return;
+        const images = p.paths.flatMap((path) => {
+          const ext = imageExtFor("", path);
+          return ext ? [[path, ext] as const] : [];
+        });
+        if (images.length === 0) {
+          reportUnsupported();
+          return;
+        }
+        void insertImages(
+          view,
+          images.map(
+            ([path, ext]) =>
+              () =>
+                ipc.copyAsset(assetFileName(new Date(), ext), path),
+          ),
+          reportFailed,
+        );
+      });
+      // Unmounted before the listener resolved (note switched): drop it now.
+      if (cancelled) u();
+      else unlisten = u;
+    })();
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+    };
+    // Error labels refresh on the next file open, like the paste path.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div
       ref={containerRef}
@@ -237,10 +318,13 @@ export function scrollEditorToLine(view: EditorView, line1: number): void {
   view.focus();
 }
 
-/** Save each image under assets/ and insert `![|](assets/…)` at the caret. */
+/**
+ * Run each `save` (resolves to the vault-relative `assets/…` path) and insert
+ * `![|](assets/…)` at the caret. Shared by paste (bytes) and drop (path).
+ */
 async function insertImages(
   view: EditorView,
-  files: readonly (readonly [File, string])[],
+  saves: readonly (() => Promise<string>)[],
   onError: (err: unknown) => void,
 ): Promise<void> {
   // Track the insert point ourselves: the first image replaces the selection
@@ -248,12 +332,9 @@ async function insertImages(
   // selection after each insert would nest the next link in that alt text.
   let { from, to } = view.state.selection.main;
   let inserted = false;
-  for (const [f, ext] of files) {
+  for (const save of saves) {
     try {
-      const rel = await ipc.writeAsset(
-        assetFileName(new Date(), ext),
-        new Uint8Array(await f.arrayBuffer()),
-      );
+      const rel = await save();
       // The view was destroyed while the bytes were in flight (note switched).
       if (!view.dom.isConnected) return;
       const md = (inserted ? "\n" : "") + "![](" + rel + ")";

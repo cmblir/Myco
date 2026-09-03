@@ -2171,6 +2171,8 @@ function mockInvoke(
       return Promise.resolve(b64ToBytes(MOCK_PDF_B64).buffer);
     case "write_asset":
       return Promise.resolve("assets/20260101-000000.png");
+    case "copy_asset":
+      return Promise.resolve("assets/20260101-000000.png");
     case "read_file": {
       const p = String(args.path ?? "");
       if (p.endsWith("/.myco/favorites.json")) {

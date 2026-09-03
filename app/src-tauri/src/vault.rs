@@ -1011,6 +1011,30 @@ pub fn write_asset(root: &Path, name: &str, bytes: &[u8]) -> Result<String, Stri
     Ok(format!("assets/{final_name}"))
 }
 
+/// Copy a Finder-dropped image at `src` into `assets/<name>` under write_asset's
+/// rules (allow-list, size cap, collision suffix). `src` is an arbitrary path the
+/// user dropped, so it is not confined — reading it is harmless and the write
+/// still lands only in assets/ — but it must resolve to a regular file. The size
+/// is checked on metadata first so an oversize file is refused without reading it.
+pub fn copy_asset(root: &Path, name: &str, src: &str) -> Result<String, String> {
+    let src = Path::new(src)
+        .canonicalize()
+        .map_err(|e| format!("cannot read {src}: {e}"))?;
+    let meta =
+        std::fs::metadata(&src).map_err(|e| format!("cannot read {}: {e}", src.display()))?;
+    if !meta.is_file() {
+        return Err(format!("not a regular file: {}", src.display()));
+    }
+    if meta.len() > MAX_ASSET_BYTES as u64 {
+        return Err(format!(
+            "asset is larger than {} MB",
+            MAX_ASSET_BYTES / (1024 * 1024)
+        ));
+    }
+    let bytes = std::fs::read(&src).map_err(|e| format!("cannot read {}: {e}", src.display()))?;
+    write_asset(root, name, &bytes)
+}
+
 pub fn write_file(path: &str, content: &str) -> Result<(), String> {
     let target = Path::new(path);
     let parent = target
@@ -1987,6 +2011,49 @@ mod tests {
         let err = write_asset(dir.path(), "big.png", &vec![0; MAX_ASSET_BYTES + 1]).unwrap_err();
         assert!(err.contains("20 MB"), "{err}");
         assert!(!dir.path().join("assets").exists());
+    }
+
+    #[test]
+    fn copy_asset_copies_and_suffixes_collisions() {
+        let vault = tempfile::tempdir().unwrap();
+        let src_dir = tempfile::tempdir().unwrap();
+        let src = src_dir.path().join("shot.png");
+        fs::write(&src, b"pixels").unwrap();
+        let src = src.to_str().unwrap();
+        assert_eq!(
+            copy_asset(vault.path(), "x.png", src).unwrap(),
+            "assets/x.png"
+        );
+        assert_eq!(
+            copy_asset(vault.path(), "x.png", src).unwrap(),
+            "assets/x-2.png"
+        );
+        assert_eq!(
+            fs::read(vault.path().join("assets/x-2.png")).unwrap(),
+            b"pixels"
+        );
+        // Source untouched.
+        assert_eq!(fs::read(src).unwrap(), b"pixels");
+    }
+
+    #[test]
+    fn copy_asset_refuses_bad_type_dir_missing_and_oversize() {
+        let vault = tempfile::tempdir().unwrap();
+        let src_dir = tempfile::tempdir().unwrap();
+        let svg = src_dir.path().join("v.svg");
+        fs::write(&svg, b"<svg/>").unwrap();
+        assert!(copy_asset(vault.path(), "v.svg", svg.to_str().unwrap()).is_err());
+        assert!(copy_asset(vault.path(), "d.png", src_dir.path().to_str().unwrap()).is_err());
+        assert!(copy_asset(vault.path(), "m.png", "/nonexistent/m.png").is_err());
+        // Sparse file: set_len allocates no blocks, so the cap is cheap to test.
+        let big = src_dir.path().join("big.png");
+        fs::File::create(&big)
+            .unwrap()
+            .set_len(MAX_ASSET_BYTES as u64 + 1)
+            .unwrap();
+        let err = copy_asset(vault.path(), "big.png", big.to_str().unwrap()).unwrap_err();
+        assert!(err.contains("20 MB"), "{err}");
+        assert!(!vault.path().join("assets").exists());
     }
 
     #[test]

@@ -697,6 +697,9 @@ export const ipc = {
   /** Save image bytes under `assets/`; resolves to the vault-relative path. */
   writeAsset: (name: string, bytes: Uint8Array) =>
     invoke<string>("write_asset", bytes, { headers: { "x-myco-name": name } }),
+  /** Copy a dropped image file at `src` under `assets/`; resolves like writeAsset. */
+  copyAsset: (name: string, src: string) =>
+    invoke<string>("copy_asset", { name, src }),
   readVaultContext: (root: string, maxBytes: number) =>
     invoke<string>("read_vault_context", { root, maxBytes }),
   writeFile: (path: string, content: string) =>

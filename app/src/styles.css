@@ -2518,6 +2518,11 @@ hr {
 .cm-focused {
   outline: none !important;
 }
+/* A Finder image drag hovering the editor (native onDragDropEvent, see Editor.tsx). */
+.myco-editor.is-drop-target .cm-editor {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
 /* The blink caret is a separate element whose colour comes from border-left;
    the CM default is black, so force it to the theme ink for both themes. */
 .cm-editor .cm-cursor,
