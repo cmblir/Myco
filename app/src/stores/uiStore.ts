@@ -35,6 +35,8 @@ export type RouteId =
   | `page:${string}`;
 
 export type FeedbackTab = "proposals" | "quarantine";
+export type EditorMode = "live" | "source" | "split" | "preview";
+const EDITOR_MODES: readonly EditorMode[] = ["live", "source", "split", "preview"];
 
 export interface UIState {
   // Routing
@@ -85,6 +87,8 @@ export interface UIState {
   lastVisitAt: number | null;
   // Reader properties panel (frontmatter form) folded shut. Default open.
   propsCollapsed: boolean;
+  // Reader editor mode; per device, no longer reset per file.
+  editorMode: EditorMode;
 
   setRoute: (route: RouteId) => void;
   setFeedbackTab: (tab: FeedbackTab) => void;
@@ -107,6 +111,7 @@ export interface UIState {
   setMyceliumGrown: (v: boolean) => void;
   stampVisit: () => void;
   setPropsCollapsed: (v: boolean) => void;
+  setEditorMode: (mode: EditorMode) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -133,6 +138,7 @@ export const useUIStore = create<UIState>()(
       myceliumGrown: false,
       lastVisitAt: null,
       propsCollapsed: false,
+      editorMode: "live",
 
       setRoute: (route) =>
         // Never let the primary and split panes show the SAME route (two live
@@ -167,6 +173,7 @@ export const useUIStore = create<UIState>()(
       setMyceliumGrown: (v) => set({ myceliumGrown: v }),
       stampVisit: () => set({ lastVisitAt: Date.now() }),
       setPropsCollapsed: (v) => set({ propsCollapsed: v }),
+      setEditorMode: (editorMode) => set({ editorMode }),
     }),
     {
       name: "myco-ui",
@@ -190,6 +197,9 @@ export const useUIStore = create<UIState>()(
             p.splitRatio < 1
               ? p.splitRatio
               : SPLIT_DEFAULT_RATIO,
+          editorMode: EDITOR_MODES.includes(p.editorMode as EditorMode)
+            ? (p.editorMode as EditorMode)
+            : "live",
         };
       },
     },

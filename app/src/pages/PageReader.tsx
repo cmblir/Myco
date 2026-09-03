@@ -181,7 +181,8 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const error = useVaultStore((s) => s.error);
   const setRoute = useUIStore((s) => s.setRoute);
   const lang = useUIStore((s) => s.lang);
-  const [mode, setMode] = useState<"preview" | "source" | "split">("split");
+  const mode = useUIStore((s) => s.editorMode);
+  const setMode = useUIStore((s) => s.setEditorMode);
   // Authorship badge (Q4 item 16). Null = no repo / untracked / lookup failed —
   // no history means no claim, so the header simply shows nothing.
   const [authorship, setAuthorship] = useState<PageAuthorship | null>(null);
@@ -328,6 +329,30 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     }
   }
 
+  function handleLinkClick(target: string): void {
+    // Pinpoint PDF link → open the viewer at the page/anchor.
+    const pdf = parsePdfTarget(target);
+    if (pdf && currentVaultPath) {
+      usePdfStore.getState().openPdf(
+        {
+          relpath: `raw/${pdf.stem}.pdf`,
+          stem: pdf.stem,
+          citingNote: path,
+        },
+        pdf.page,
+        pdf.anchorId,
+      );
+      return;
+    }
+    // Resolve, or create the note next to the current file and open
+    // it (Obsidian-style create-on-click) — same as Ask and the
+    // agent panel, via the shared store method.
+    const dir = path.replace(/[\\/][^\\/]+$/, "");
+    void openWikilink(target, dir).then((p) => {
+      if (p) setRoute(`page:${p}`);
+    });
+  }
+
   async function makeCards(): Promise<void> {
     if (!currentVaultPath || !activeFile || cardBusy) return;
     const stem = (path.split(/[\\/]/).pop() ?? path).replace(/\.md$/i, "");
@@ -449,6 +474,12 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
           </button>
           <div className="segmented">
             <button
+              className={mode === "live" ? "active" : ""}
+              onClick={() => setMode("live")}
+            >
+              <Icon name="sparkles" size={12} /> {t.rd_live ?? "Live"}
+            </button>
+            <button
               className={mode === "source" ? "active" : ""}
               onClick={() => setMode("source")}
             >
@@ -509,44 +540,22 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
                 // must survive a Preview → Source switch inside the autosave
                 // window.
                 initialValue={draft}
+                t={t}
+                live={mode === "live"}
                 viewRef={editorViewRef}
                 onChange={(c) => {
                   setDraft(c);
                   scheduleSave(c);
                 }}
                 onSave={(c) => flushSave(c)}
+                onLinkClick={handleLinkClick}
               />
             ) : null}
           </div>
         ) : null}
-        {mode !== "source" ? (
+        {mode === "split" || mode === "preview" ? (
           <div className="prose" style={{ flex: 1 }}>
-            <Viewer
-              content={draft}
-              onLinkClick={(target) => {
-                // Pinpoint PDF link → open the viewer at the page/anchor.
-                const pdf = parsePdfTarget(target);
-                if (pdf && currentVaultPath) {
-                  usePdfStore.getState().openPdf(
-                    {
-                      relpath: `raw/${pdf.stem}.pdf`,
-                      stem: pdf.stem,
-                      citingNote: path,
-                    },
-                    pdf.page,
-                    pdf.anchorId,
-                  );
-                  return;
-                }
-                // Resolve, or create the note next to the current file and open
-                // it (Obsidian-style create-on-click) — same as Ask and the
-                // agent panel, via the shared store method.
-                const dir = path.replace(/[\\/][^\\/]+$/, "");
-                void openWikilink(target, dir).then((p) => {
-                  if (p) setRoute(`page:${p}`);
-                });
-              }}
-            />
+            <Viewer content={draft} onLinkClick={handleLinkClick} />
           </div>
         ) : null}
       </section>

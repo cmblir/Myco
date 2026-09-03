@@ -146,6 +146,7 @@ export interface Strings {
   hw_sc_voice?: string;
   hw_sc_miss?: string;
   hw_sc_path?: string;
+  hw_sc_live_link?: string;
   hw_tip_graph1?: string;
   hw_tip_graph2?: string;
   hw_tip_graph3?: string;
@@ -813,6 +814,9 @@ export interface Strings {
   rd_source?: string;
   rd_split?: string;
   rd_preview?: string;
+  rd_live?: string;
+  rd_task_toggle?: string;
+  rd_frontmatter_hidden?: string;
   rd_backlinks_empty?: string;
   rd_related?: string;
   rd_related_no_index?: string;
@@ -1570,6 +1574,7 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_voice: "Voice capture (Spotlight / notch)",
     hw_sc_miss: "Log a search that missed",
     hw_sc_path: "Shortest path between two notes (graph)",
+    hw_sc_live_link: "Open the wikilink under the pointer (Live editor)",
     hw_tip_graph1: "Drag a star and the simulation re-heats around it.",
     hw_tip_graph2:
       "F flies the spaceship; the ⚠ badge opens gap analysis with research bridges.",
@@ -2295,6 +2300,9 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_source: "Source",
     rd_split: "Split",
     rd_preview: "Preview",
+    rd_live: "Live",
+    rd_task_toggle: "Toggle task",
+    rd_frontmatter_hidden: "Frontmatter hidden — edit in Properties or Source",
     rd_backlinks_empty: "No notes link here yet.",
     rd_related: "Related",
     rd_related_no_index:
@@ -3058,6 +3066,7 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_voice: "음성 캡처 (Spotlight / 노치)",
     hw_sc_miss: "놓친 검색 기록",
     hw_sc_path: "두 노트 사이 최단 경로 (그래프)",
+    hw_sc_live_link: "포인터 아래 위키링크 열기 (실시간 편집기)",
     hw_tip_graph1: "별을 드래그하면 시뮬레이션이 주변에서 다시 살아납니다.",
     hw_tip_graph2:
       "F는 우주선 비행, ⚠ 배지는 연구 다리가 포함된 갭 분석을 엽니다.",
@@ -3780,6 +3789,9 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_source: "소스",
     rd_split: "분할",
     rd_preview: "미리보기",
+    rd_live: "실시간",
+    rd_task_toggle: "할 일 완료 전환",
+    rd_frontmatter_hidden: "frontmatter 숨김 — 속성 패널 또는 소스에서 편집",
     rd_backlinks_empty: "아직 여기로 연결된 노트가 없습니다.",
     rd_related: "관련 노트",
     rd_related_no_index:
@@ -5074,6 +5086,9 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_source: "ソース",
     rd_split: "分割",
     rd_preview: "プレビュー",
+    rd_live: "ライブ",
+    rd_task_toggle: "タスクの完了を切り替え",
+    rd_frontmatter_hidden: "frontmatter は非表示 — プロパティまたはソースで編集",
     rd_backlinks_empty: "まだここにリンクするノートはありません。",
     rd_related: "関連ノート",
     rd_related_no_index:
@@ -5674,6 +5689,7 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_voice: "音声キャプチャ (Spotlight / ノッチ)",
     hw_sc_miss: "外れた検索を記録",
     hw_sc_path: "2つのノート間の最短経路 (グラフ)",
+    hw_sc_live_link: "ポインター下のウィキリンクを開く（ライブ編集）",
     hw_tip_graph1:
       "星をドラッグするとシミュレーションがその周りで再加熱されます。",
     hw_tip_graph2:

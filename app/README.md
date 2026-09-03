@@ -42,7 +42,7 @@ Settings → Account.
 | | |
 | --- | --- |
 | `[[wikilink]]` autocomplete | Type `[[` in the editor, every file stem in the vault appears in a popup |
-| Source / Split / Preview | Three modes in the editor header; preview wraps the live document so wikilinks resolve in real time |
+| Live / Source / Split / Preview | Four modes in the editor header, remembered per device. Live (default) renders headings, bullets, task checkboxes and links in place and reveals the raw marks on the caret line; preview wraps the live document so wikilinks resolve in real time |
 | Save | `⌘S` or automatic 2-second debounce; atomic write (tempfile + rename) so you never see a half-saved file |
 | Backlinks | Every page shows inbound links at the bottom |
 | Today's note | Sidebar button creates / opens `daily/YYYY-MM-DD.md` |

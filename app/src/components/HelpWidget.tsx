@@ -70,6 +70,10 @@ export default function HelpWidget({ t }: { t: Strings }): JSX.Element {
     ["⌥M", t.hw_sc_voice ?? "Voice capture (Spotlight / notch)"],
     ["⌥⏎", t.hw_sc_miss ?? "Log a search that missed"],
     ["Esc", t.hw_sc_esc ?? "Close / deselect"],
+    [
+      "⌘click",
+      t.hw_sc_live_link ?? "Open the wikilink under the pointer (Live editor)",
+    ],
   ];
   const graphShortcuts: [string, string][] = [
     ["F", t.hw_sc_fly ?? "Fly mode (graph)"],

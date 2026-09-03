@@ -6,10 +6,10 @@
 
 import { useEffect, useRef } from "react";
 import type { JSX, MutableRefObject } from "react";
-import { EditorState } from "@codemirror/state";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
-import { markdown } from "@codemirror/lang-markdown";
+import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import {
   autocompletion,
   completionKeymap,
@@ -18,28 +18,43 @@ import {
 } from "@codemirror/autocomplete";
 import { useVaultStore } from "../stores/vaultStore";
 import type { FileNode } from "../lib/ipc";
+import type { Strings } from "../lib/i18n";
+import { liveExtension } from "../lib/editorLive";
 
 export interface EditorProps {
   docKey: string;
   initialValue: string;
+  t: Strings;
+  /** Live preview: marks hidden off the caret line, tasks/bullets rendered. */
+  live: boolean;
   /** Live handle to the view, for callers that dispatch their own transactions. */
   viewRef?: MutableRefObject<EditorView | null>;
   onChange?: (value: string) => void;
   onSave?: (value: string) => void;
+  /** Mod-click on a wikilink in Live mode. */
+  onLinkClick?: (target: string) => void;
 }
 
 export default function Editor({
   docKey,
   initialValue,
+  t,
+  live,
   viewRef,
   onChange,
   onSave,
+  onLinkClick,
 }: EditorProps): JSX.Element {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const localViewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onSaveRef = useRef(onSave);
+  const onLinkClickRef = useRef(onLinkClick);
   onChangeRef.current = onChange;
   onSaveRef.current = onSave;
+  onLinkClickRef.current = onLinkClick;
+  // Identity token only; the same Compartment reconfigures every view we make.
+  const liveComp = useRef(new Compartment()).current;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -61,7 +76,9 @@ export default function Editor({
           ...historyKeymap,
           ...completionKeymap,
         ]),
-        markdown(),
+        // GFM base: Task/Strikethrough nodes exist only here (Live relies on them).
+        markdown({ base: markdownLanguage }),
+        liveComp.of([]),
         EditorView.lineWrapping,
         // CodeMirror's default caret is black — invisible on the dark theme. A
         // theme extension wins over CM's injected base styles (a plain stylesheet
@@ -83,6 +100,7 @@ export default function Editor({
     });
 
     const view = new EditorView({ state, parent: containerRef.current });
+    localViewRef.current = view;
     if (viewRef) viewRef.current = view;
     // A brand-new note routes straight here and should land with the cursor
     // ready. Focus only when focus is idle on <body> (e.g. after the naming
@@ -90,6 +108,7 @@ export default function Editor({
     if (document.activeElement === document.body) view.focus();
 
     return () => {
+      localViewRef.current = null;
       if (viewRef) viewRef.current = null;
       view.destroy();
     };
@@ -97,7 +116,35 @@ export default function Editor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docKey]);
 
-  return <div ref={containerRef} className="myco-editor" />;
+  // One configuration path for Live: reconfiguring the compartment keeps the
+  // cursor, scroll and undo history that a remount would lose. Runs after the
+  // mount effect above on every new view (same docKey dependency).
+  useEffect(() => {
+    const v = viewRef?.current ?? localViewRef.current;
+    if (!v) return;
+    v.dispatch({
+      effects: liveComp.reconfigure(
+        live
+          ? liveExtension({
+              onLinkClick: (x) => onLinkClickRef.current?.(x),
+              taskLabel: t.rd_task_toggle ?? "Toggle task",
+              fmLabel:
+                t.rd_frontmatter_hidden ??
+                "Frontmatter hidden — edit in Properties or Source",
+            })
+          : [],
+      ),
+    });
+    // Labels refresh on the next file open, not on a language switch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, docKey]);
+
+  return (
+    <div
+      ref={containerRef}
+      className={live ? "myco-editor live" : "myco-editor"}
+    />
+  );
 }
 
 function wikilinkCompletion(

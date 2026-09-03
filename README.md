@@ -247,7 +247,9 @@ Nothing to install, and the audio never leaves the machine. A `whisper` already
 on your PATH is used instead, if you have one you prefer.
 
 **Reader** — CodeMirror source / live preview / split, `[[wikilink]]`
-autocomplete, backlinks and Related notes panels. Frontmatter is a
+autocomplete, backlinks and Related notes panels. Live editing (the default)
+renders headings, bullets, task checkboxes and links in place and shows the
+raw markdown only on the caret line; ⌘-click opens a wikilink. Frontmatter is a
 **Properties** form above the editor — dropdowns for `type` / `status` /
 `confidence`, a number for `source_count`, chips for `tags`, key/value rows
 for the rest; each change is one undoable edit to the YAML block only.

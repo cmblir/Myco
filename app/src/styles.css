@@ -2454,6 +2454,81 @@ hr {
   background: var(--bg-hover);
 }
 
+/* Live preview */
+.myco-editor.live .live-h1 {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+.myco-editor.live .live-h2 {
+  font-size: 22px;
+  font-weight: 600;
+}
+.myco-editor.live .live-h3 {
+  font-size: 17px;
+  font-weight: 600;
+}
+.myco-editor.live .live-h4,
+.myco-editor.live .live-h5,
+.myco-editor.live .live-h6 {
+  font-weight: 600;
+}
+.myco-editor.live .live-strong {
+  font-weight: 700;
+}
+.myco-editor.live .live-em {
+  font-style: italic;
+}
+.myco-editor.live .live-strike {
+  text-decoration: line-through;
+}
+.myco-editor.live .live-code,
+.myco-editor.live .live-code-inline {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--bg-soft);
+}
+.myco-editor.live .live-code-inline {
+  padding: 1px 4px;
+  border-radius: 3px;
+  color: var(--c-source);
+}
+.myco-editor.live .live-quote {
+  border-left: 3px solid var(--line-strong);
+  padding-left: 12px;
+  color: var(--ink-3);
+}
+.myco-editor.live .live-bullet {
+  display: inline-block;
+  width: 1ch;
+  text-align: center;
+  color: var(--ink-4);
+}
+.myco-editor.live .live-task {
+  width: 14px;
+  height: 14px;
+  margin: 0 2px;
+  vertical-align: -2px;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+.myco-editor.live .live-task:focus-visible {
+  outline: 2px solid var(--ink);
+  outline-offset: 2px;
+}
+.myco-editor.live .live-link,
+.myco-editor.live .live-wikilink {
+  text-decoration: underline;
+  text-decoration-color: var(--ink-5);
+  text-underline-offset: 2px;
+}
+.myco-editor.live .live-fm {
+  display: block;
+  padding: 4px 0;
+  font-size: 12.5px;
+  color: var(--ink-4);
+}
+
 /* ============================================================
    Graph view — Obsidian-style canvas + right-side controls drawer
    ============================================================ */
