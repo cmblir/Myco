@@ -535,10 +535,6 @@ const MAX_VOICE_BYTES: usize = 50 * 1024 * 1024;
 #[derive(Clone, serde::Serialize)]
 pub struct VoiceSaved {
     pub rel: String,
-    /// Wiki stems the transcript echoes. Always empty at return time since the
-    /// lookup runs AFTER the note is written (`stamp_related` patches the
-    /// frontmatter in the background); kept so the IPC shape is unchanged.
-    pub related: Vec<String>,
 }
 
 /// Cosine floor for a "related page" suggestion on a voice note — the same
@@ -591,13 +587,9 @@ fn transcribe_voice_core(app: &tauri::AppHandle, bytes: &[u8]) -> Result<String,
     transcribed
 }
 
-/// Blocking write half: `_inbox/voice-<date>.md` carrying the transcript and
-/// the related stems.
-fn write_voice_note(
-    root: &std::path::Path,
-    transcript: &str,
-    related: &[String],
-) -> Result<VoiceSaved, String> {
+/// Blocking write half: `_inbox/voice-<date>.md` carrying the transcript;
+/// `related:` is stamped afterwards by `stamp_related`.
+fn write_voice_note(root: &std::path::Path, transcript: &str) -> Result<VoiceSaved, String> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
@@ -607,13 +599,10 @@ fn write_voice_note(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("create _inbox: {e}"))?;
     }
-    std::fs::write(&path, voice_markdown(transcript, now, related))
+    std::fs::write(&path, voice_markdown(transcript, now, &[]))
         .map_err(|e| format!("write voice note: {e}"))?;
     crate::inflow_log::record(root, "voice", "capture");
-    Ok(VoiceSaved {
-        rel,
-        related: related.to_vec(),
-    })
+    Ok(VoiceSaved { rel })
 }
 
 /// Replace (or add) the `related:` sequence in a voice note's frontmatter,
@@ -649,7 +638,8 @@ pub(crate) fn stamp_related(path: &std::path::Path, related: &[String]) -> Resul
     for stem in related {
         kept.push_str(&format!("  - {}\n", crate::clip::yaml_str(stem)));
     }
-    std::fs::write(path, format!("---\n{kept}{}", &rest[end + 1..]))
+    // Atomic: a crash mid-rewrite must not truncate the just-saved memo.
+    crate::settings::atomic_write(path, format!("---\n{kept}{}", &rest[end + 1..]).as_bytes())
         .map_err(|e| format!("write voice note: {e}"))
 }
 
@@ -684,7 +674,7 @@ pub async fn save_voice_capture(
     let write_root = root.clone();
     let write_transcript = transcript.clone();
     let saved = tauri::async_runtime::spawn_blocking(move || {
-        write_voice_note(&write_root, &write_transcript, &[])
+        write_voice_note(&write_root, &write_transcript)
     })
     .await
     .map_err(|e| format!("join failed: {e}"))??;

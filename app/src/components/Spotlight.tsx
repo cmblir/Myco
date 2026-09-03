@@ -100,7 +100,6 @@ export default function Spotlight(): JSX.Element {
   /** "whisper-missing" / "mic-denied" / a save failure — shown in ask mode. */
   const [voiceNotice, setVoiceNotice] = useState<string | null>(null);
   const [savedRel, setSavedRel] = useState<string | null>(null);
-  const [savedRelated, setSavedRelated] = useState<string[]>([]);
   const [elapsedMs, setElapsedMs] = useState(0);
   // Live mic RMS (0..~1) and the "nothing is coming in" verdict. A muted or
   // wrong mic used to look identical to a working one; the bars now follow
@@ -108,6 +107,9 @@ export default function Spotlight(): JSX.Element {
   const [level, setLevel] = useState(0);
   const [noInput, setNoInput] = useState(false);
   const levelAtRef = useRef(0);
+  // When the ScriptProcessor last fired; the ticker feeds the silence watch
+  // itself if frames stop, so a dead input still flips `noInput`.
+  const lastFrameAtRef = useRef(0);
   const silenceRef = useRef<SilenceWatch | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const cardRef = useRef<HTMLDivElement | null>(null);
@@ -124,21 +126,24 @@ export default function Spotlight(): JSX.Element {
       save: async (bytes) => {
         const saved = await ipc.saveVoiceCapture(Array.from(bytes));
         setSavedRel(saved.rel);
-        setSavedRelated(saved.related ?? []);
         return saved;
       },
       onChange: (state, error) => {
         setVoiceState(state);
+        // Meter reset outside recording too: bars must not stay frozen at
+        // arbitrary heights next to "Transcribing…".
+        setLevel(0);
+        setNoInput(false);
         if (state === "recording") {
           setVoiceNotice(null);
           silenceRef.current = createSilenceWatch({ threshold: 0.01, holdMs: 2000 });
-          setLevel(0);
-          setNoInput(false);
+          lastFrameAtRef.current = Date.now();
         }
         if (state === "error") setVoiceNotice(error);
       },
       onLevel: (rms) => {
         const now = Date.now();
+        lastFrameAtRef.current = now;
         const silent = silenceRef.current?.push(rms, now).silent ?? false;
         // ~10 buffers/s at 48 kHz; re-rendering on each is pointless.
         if (now - levelAtRef.current < 80) return;
@@ -216,7 +221,14 @@ export default function Spotlight(): JSX.Element {
     if (voiceState !== "recording") return;
     const t0 = Date.now();
     setElapsedMs(0);
-    const id = window.setInterval(() => setElapsedMs(Date.now() - t0), 500);
+    const id = window.setInterval(() => {
+      const now = Date.now();
+      setElapsedMs(now - t0);
+      // No audio frames for a tick: feed the watch ourselves so it can flip.
+      if (now - lastFrameAtRef.current > 500 && silenceRef.current) {
+        setNoInput(silenceRef.current.push(0, now).silent);
+      }
+    }, 500);
     return () => window.clearInterval(id);
   }, [voiceState]);
 
@@ -327,13 +339,6 @@ export default function Spotlight(): JSX.Element {
                 "{rel}",
                 savedRel ?? "",
               )}
-              {savedRelated.length > 0
-                ? " · " +
-                  (t.voice_saved_related ?? "related: {stems}").replace(
-                    "{stems}",
-                    savedRelated.join(", "),
-                  )
-                : ""}
             </span>
           ) : (
             <>
@@ -350,7 +355,12 @@ export default function Spotlight(): JSX.Element {
               <span className="voice-elapsed" role="timer">
                 {formatTicker(elapsedMs)}
               </span>
-              <span className="spotlight-hint" role={noInput ? "status" : undefined}>
+              {/* Permanent live region: one created in the same render as its
+                  text change is not announced. */}
+              <span
+                className={noInput ? "spotlight-hint spotlight-error" : "spotlight-hint"}
+                role="status"
+              >
                 {voiceState === "saving"
                   ? modelPct !== null
                     ? (
@@ -360,7 +370,7 @@ export default function Spotlight(): JSX.Element {
                     : stage === "saving"
                       ? (t.voice_stage_saving ?? "Saving note…")
                       : transcribePct !== null
-                        ? (t.voice_transcribe_progress ?? "transcribing… {pct}%").replace(
+                        ? (t.voice_transcribe_progress ?? "Transcribing… {pct}%").replace(
                             "{pct}",
                             String(transcribePct),
                           )
