@@ -535,8 +535,9 @@ const MAX_VOICE_BYTES: usize = 50 * 1024 * 1024;
 #[derive(Clone, serde::Serialize)]
 pub struct VoiceSaved {
     pub rel: String,
-    /// Wiki stems the transcript echoes (dense lookup, best-effort — empty on
-    /// any lookup failure). The note's frontmatter carries the same list.
+    /// Wiki stems the transcript echoes. Always empty at return time since the
+    /// lookup runs AFTER the note is written (`stamp_related` patches the
+    /// frontmatter in the background); kept so the IPC shape is unchanged.
     pub related: Vec<String>,
 }
 
@@ -615,23 +616,60 @@ fn write_voice_note(
     })
 }
 
+/// Replace (or add) the `related:` sequence in a voice note's frontmatter,
+/// producing exactly what `voice_markdown` would have written with the same
+/// stems — the block sits last, right before the closing `---`. Idempotent;
+/// an empty list leaves the file untouched.
+pub(crate) fn stamp_related(path: &std::path::Path, related: &[String]) -> Result<(), String> {
+    if related.is_empty() {
+        return Ok(());
+    }
+    let text = std::fs::read_to_string(path).map_err(|e| format!("read voice note: {e}"))?;
+    let rest = text
+        .strip_prefix("---\n")
+        .ok_or("voice note has no frontmatter")?;
+    let end = rest
+        .find("\n---\n")
+        .ok_or("voice note frontmatter is unterminated")?;
+    let mut kept = String::new();
+    let mut in_related = false;
+    for line in rest[..end].lines() {
+        if line == "related:" {
+            in_related = true;
+            continue;
+        }
+        if in_related && line.starts_with("  - ") {
+            continue;
+        }
+        in_related = false;
+        kept.push_str(line);
+        kept.push('\n');
+    }
+    kept.push_str("related:\n");
+    for stem in related {
+        kept.push_str(&format!("  - {}\n", crate::clip::yaml_str(stem)));
+    }
+    std::fs::write(path, format!("---\n{kept}{}", &rest[end + 1..]))
+        .map_err(|e| format!("write voice note: {e}"))
+}
+
 /// Save a spotlight voice capture into the OPEN vault's `_inbox/`. Takes no
 /// vault arg: the spotlight webview has no vault open to name, so the target
 /// is `require_root` — the same root every other write command confines to.
 /// `Err("whisper-missing")` before anything is written when no whisper CLI is
 /// on PATH; the frontend shows install copy and stays in ask mode.
 ///
-/// Between transcription and the write, the transcript runs through the same
-/// dense lookup ingest grounding uses (`wikify_candidates`) to stamp the
-/// note with the wiki pages it echoes. Advisory only: any lookup failure —
-/// stale index, cold vault, no model — degrades to an empty list, because a
-/// voice memo is unreproducible and must never be lost to a suggestion.
+/// Returns as soon as the transcript is on disk. The related-pages lookup
+/// (`wikify_candidates`: cold embed-model load + vector store + embedding)
+/// used to sit between transcription and the write and dominated the wait —
+/// whisper itself does a 13 s clip in ~2 s here. It now runs in a detached
+/// task that patches the note's `related:` afterwards. Advisory only: any
+/// failure is logged and the memo is already safe, because a voice memo is
+/// unreproducible and must never be lost to a suggestion.
 #[tauri::command]
 pub async fn save_voice_capture(
     app: tauri::AppHandle,
     state: tauri::State<'_, VaultRoot>,
-    llm: tauri::State<'_, LocalLlmState>,
-    cache: tauri::State<'_, VectorCache>,
     bytes: Vec<u8>,
 ) -> Result<VoiceSaved, String> {
     let root = require_root(&state)?;
@@ -642,27 +680,41 @@ pub async fn save_voice_capture(
     })
     .await
     .map_err(|e| format!("join failed: {e}"))??;
-    let related: Vec<String> = match wikify_candidates(
-        app.clone(),
-        state,
-        llm,
-        cache,
-        transcript.clone(),
-        VOICE_RELATED_K,
-    )
-    .await
-    {
-        Ok(cands) => cands
-            .into_iter()
-            .filter(|c| c.score >= VOICE_RELATED_FLOOR)
-            .map(|c| c.stem)
-            .collect(),
-        Err(_) => Vec::new(),
-    };
     emit_voice_stage(&app, "saving");
-    tauri::async_runtime::spawn_blocking(move || write_voice_note(&root, &transcript, &related))
+    let write_root = root.clone();
+    let write_transcript = transcript.clone();
+    let saved = tauri::async_runtime::spawn_blocking(move || {
+        write_voice_note(&write_root, &write_transcript, &[])
+    })
+    .await
+    .map_err(|e| format!("join failed: {e}"))??;
+    let note_path = crate::myco_pro::safe_join(&root, &saved.rel)?;
+    tauri::async_runtime::spawn(async move {
+        let related: Vec<String> = match wikify_candidates(
+            app.clone(),
+            app.state(),
+            app.state(),
+            app.state(),
+            transcript,
+            VOICE_RELATED_K,
+        )
         .await
-        .map_err(|e| format!("join failed: {e}"))?
+        {
+            Ok(cands) => cands
+                .into_iter()
+                .filter(|c| c.score >= VOICE_RELATED_FLOOR)
+                .map(|c| c.stem)
+                .collect(),
+            Err(e) => {
+                eprintln!("voice: related lookup skipped: {e}");
+                return;
+            }
+        };
+        if let Err(e) = stamp_related(&note_path, &related) {
+            eprintln!("voice: related stamp failed: {e}");
+        }
+    });
+    Ok(saved)
 }
 
 // ---- notch quick text capture (notch S7) ------------------------------------
@@ -4823,7 +4875,7 @@ mod tests {
         import_dest, inbox_entries, is_media_name, iso_week_monday, list_myco_json, move_path_at,
         myco_json_path, page_in_date_range, read_settings_import, recency_tie_break,
         resurface_core, run_diff_core, run_import, save_favorites_at, save_myco_json,
-        sync_bm25_for_page, voice_inbox_rel, voice_markdown, windows_opener_safe,
+        stamp_related, sync_bm25_for_page, voice_inbox_rel, voice_markdown, windows_opener_safe,
         write_inbox_note_at, DateRange, DEST_INBOX, DEST_SESSIONS, INBOX_COPY_MAX_BYTES,
         INBOX_COPY_MAX_MEDIA_BYTES,
     };
@@ -6014,6 +6066,39 @@ mod tests {
             ]
         );
         assert!(!voice_markdown("메모", 1, &[]).contains("related"));
+    }
+
+    /// The background lookup patches `related:` into a note written without
+    /// one; the result must equal what a synchronous write would have produced,
+    /// applying twice must not stack blocks, and an empty list is a no-op.
+    #[test]
+    fn stamp_related_matches_voice_markdown_and_is_idempotent() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("voice.md");
+        let transcript = "floor: moves to 0.50 tomorrow\nsecond line";
+        std::fs::write(&path, voice_markdown(transcript, 1_755_000_000, &[])).unwrap();
+        let stems = vec!["kv-cache".to_string(), "속도: 최적화".to_string()];
+
+        stamp_related(&path, &[]).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            voice_markdown(transcript, 1_755_000_000, &[])
+        );
+
+        stamp_related(&path, &stems).unwrap();
+        stamp_related(&path, &stems).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            voice_markdown(transcript, 1_755_000_000, &stems)
+        );
+
+        // A later run with different stems replaces rather than appends.
+        let other = vec!["attention".to_string()];
+        stamp_related(&path, &other).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            voice_markdown(transcript, 1_755_000_000, &other)
+        );
     }
 
     /// Two captures in the same minute must not clobber each other: the second
