@@ -3,7 +3,9 @@ import type { Adjacency } from "./ipc";
 import {
   BUILTIN_LENSES,
   facetValues,
+  parseSavedView,
   runView,
+  viewRel,
   wikiPagesOnly,
 } from "./queryViews";
 
@@ -187,5 +189,39 @@ describe("the unsourced lens judges claims, not scaffolding", () => {
     ]);
     // They are still ordinary rows in an unfiltered table.
     expect(runView(a, files, {})).toHaveLength(3);
+  });
+});
+
+describe("saved view files", () => {
+  it("live under .myco/views by name", () => {
+    expect(viewRel("x")).toBe(".myco/views/x.json");
+  });
+
+  it("takes id and name from the stem, not the file", () => {
+    const raw = JSON.stringify({
+      id: "old",
+      name: "Old",
+      filter: { types: ["concept"] },
+      sort: "links",
+      desc: true,
+    });
+    expect(parseSavedView(raw, "mine")).toEqual({
+      id: "mine",
+      name: "mine",
+      filter: { types: ["concept"] },
+      sort: "links",
+      desc: true,
+    });
+  });
+
+  it("rejects invalid JSON and a missing filter", () => {
+    expect(parseSavedView("{nope", "a")).toBeNull();
+    expect(parseSavedView(JSON.stringify({ sort: "name" }), "a")).toBeNull();
+  });
+
+  it("falls back on an unknown sort and a non-boolean desc", () => {
+    const v = parseSavedView(JSON.stringify({ filter: {}, sort: "bogus", desc: "yes" }), "a");
+    expect(v?.sort).toBe("name");
+    expect(v?.desc).toBe(false);
   });
 });

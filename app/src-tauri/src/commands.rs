@@ -1669,46 +1669,42 @@ pub(crate) fn collect_inflow(
 /// `_inbox` arrivals, MCP tool calls, plus hourly sparkbar buckets. Called
 /// when the popover opens — no polling. `tz_offset_min` is the frontend's
 /// `Date.getTimezoneOffset()` so "today" means the user's local date.
-/// A dashboard's on-disk path under `.myco/dashboards/`. Names come from the
-/// user (board picker), so they are validated as bare filenames — no
+/// A JSON document under `.myco/<kind>/`. Names come from the user (board
+/// picker, "Save view"), so they are validated as bare filenames — no
 /// separators, no dot-tricks — rather than trusted into a join.
-fn dashboard_path(root: &std::path::Path, name: &str) -> Result<std::path::PathBuf, String> {
+fn myco_json_path(root: &std::path::Path, kind: &str, name: &str) -> Result<PathBuf, String> {
     let name = name.trim();
-    if name.is_empty() || name.len() > 60 {
-        return Err("board name must be 1-60 characters".into());
+    // Chars, not bytes: a 21-character Korean name is 63 bytes.
+    let len = name.chars().count();
+    if len == 0 || len > 60 {
+        return Err("name must be 1-60 characters".into());
     }
     if name.contains(['/', '\\']) || name.contains("..") || name.starts_with('.') {
-        return Err(format!("invalid board name: {name}"));
+        return Err(format!("invalid name: {name}"));
     }
-    Ok(root.join(".myco/dashboards").join(format!("{name}.json")))
+    Ok(root.join(".myco").join(kind).join(format!("{name}.json")))
 }
 
-/// Persist one board document (`.myco/dashboards/<name>.json`). Its own
-/// command rather than `write_file` because the generic writer refuses to
-/// create parent directories, and the board's directory does not exist until
-/// the first save.
-#[tauri::command]
-pub fn save_dashboard(
-    state: tauri::State<VaultRoot>,
-    name: String,
-    content: String,
+/// Persist one document, creating `.myco/<kind>/` on first save — the generic
+/// `write_file` refuses to create parent directories.
+fn save_myco_json(
+    root: &std::path::Path,
+    kind: &str,
+    name: &str,
+    content: &str,
 ) -> Result<(), String> {
-    let root = require_root(&state)?;
-    let path = dashboard_path(&root, &name)?;
+    let path = myco_json_path(root, kind, name)?;
     if let Some(dir) = path.parent() {
-        std::fs::create_dir_all(dir).map_err(|e| format!("create dashboards dir: {e}"))?;
+        std::fs::create_dir_all(dir).map_err(|e| format!("create {kind} dir: {e}"))?;
     }
-    vault::write_file(&path.to_string_lossy(), &content)
+    vault::write_file(&path.to_string_lossy(), content)
 }
 
-/// The saved boards, by name (file stem), sorted — the file listing IS the
-/// board list, so backup/copy/hand-authoring all show up without ceremony.
-#[tauri::command]
-pub fn list_dashboards(state: tauri::State<VaultRoot>) -> Result<Vec<String>, String> {
-    let root = require_root(&state)?;
-    let dir = root.join(".myco/dashboards");
+/// Sorted `.json` stems under `.myco/<kind>/` — the file listing IS the list,
+/// so backup/copy/hand-authoring all show up without ceremony. Missing dir → [].
+fn list_myco_json(root: &std::path::Path, kind: &str) -> Vec<String> {
     let mut out = Vec::new();
-    if let Ok(entries) = std::fs::read_dir(&dir) {
+    if let Ok(entries) = std::fs::read_dir(root.join(".myco").join(kind)) {
         for e in entries.flatten() {
             let p = e.path();
             if p.extension().and_then(|x| x.to_str()) == Some("json") {
@@ -1719,17 +1715,57 @@ pub fn list_dashboards(state: tauri::State<VaultRoot>) -> Result<Vec<String>, St
         }
     }
     out.sort();
-    Ok(out)
+    out
 }
 
-/// Delete one board file. The UI confirms first; the file is small,
-/// app-state (not user notes), and recreatable — a direct remove, mirroring
-/// how the other `.myco/` state files are managed.
+/// Delete one document. The UI confirms first; the file is small, app-state
+/// (not user notes), and recreatable — a direct remove, mirroring how the
+/// other `.myco/` state files are managed.
+fn delete_myco_json(root: &std::path::Path, kind: &str, name: &str) -> Result<(), String> {
+    let path = myco_json_path(root, kind, name)?;
+    std::fs::remove_file(&path).map_err(|e| format!("delete {kind}: {e}"))
+}
+
+/// Persist one board document (`.myco/dashboards/<name>.json`).
+#[tauri::command]
+pub fn save_dashboard(
+    state: tauri::State<VaultRoot>,
+    name: String,
+    content: String,
+) -> Result<(), String> {
+    save_myco_json(&require_root(&state)?, "dashboards", &name, &content)
+}
+
+/// The saved boards, by name (file stem), sorted.
+#[tauri::command]
+pub fn list_dashboards(state: tauri::State<VaultRoot>) -> Result<Vec<String>, String> {
+    Ok(list_myco_json(&require_root(&state)?, "dashboards"))
+}
+
 #[tauri::command]
 pub fn delete_dashboard(state: tauri::State<VaultRoot>, name: String) -> Result<(), String> {
-    let root = require_root(&state)?;
-    let path = dashboard_path(&root, &name)?;
-    std::fs::remove_file(&path).map_err(|e| format!("delete board: {e}"))
+    delete_myco_json(&require_root(&state)?, "dashboards", &name)
+}
+
+/// Persist one saved Views lens (`.myco/views/<name>.json`); the stem is the
+/// view's name, so the vault carries its views with it.
+#[tauri::command]
+pub fn save_view(
+    state: tauri::State<VaultRoot>,
+    name: String,
+    content: String,
+) -> Result<(), String> {
+    save_myco_json(&require_root(&state)?, "views", &name, &content)
+}
+
+#[tauri::command]
+pub fn list_views(state: tauri::State<VaultRoot>) -> Result<Vec<String>, String> {
+    Ok(list_myco_json(&require_root(&state)?, "views"))
+}
+
+#[tauri::command]
+pub fn delete_view(state: tauri::State<VaultRoot>, name: String) -> Result<(), String> {
+    delete_myco_json(&require_root(&state)?, "views", &name)
 }
 
 /// Daily inflow by channel from the persistent ledger (`inflow_log`), for the
@@ -4683,16 +4719,48 @@ pub fn os_version() -> String {
 mod tests {
     use super::{
         append_recall_miss, builtin_index_is_stale, capture_note_at, chunk_text_at,
-        copy_into_inbox_at, export_bundle_write, external_target_allowed, import_dest,
-        inbox_entries, is_media_name, iso_week_monday, page_in_date_range, read_settings_import,
-        recency_tie_break, resurface_core, run_diff_core, run_import, sync_bm25_for_page,
-        voice_inbox_rel, voice_markdown, windows_opener_safe, write_inbox_note_at, DateRange,
-        DEST_INBOX, DEST_SESSIONS, INBOX_COPY_MAX_BYTES, INBOX_COPY_MAX_MEDIA_BYTES,
+        copy_into_inbox_at, delete_myco_json, export_bundle_write, external_target_allowed,
+        import_dest, inbox_entries, is_media_name, iso_week_monday, list_myco_json, myco_json_path,
+        page_in_date_range, read_settings_import, recency_tie_break, resurface_core, run_diff_core,
+        run_import, save_myco_json, sync_bm25_for_page, voice_inbox_rel, voice_markdown,
+        windows_opener_safe, write_inbox_note_at, DateRange, DEST_INBOX, DEST_SESSIONS,
+        INBOX_COPY_MAX_BYTES, INBOX_COPY_MAX_MEDIA_BYTES,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
     use std::collections::{HashMap, HashSet};
     use std::path::PathBuf;
+
+    // ---- .myco kind-scoped JSON ---------------------------------------------
+
+    #[test]
+    fn myco_json_path_validates_bare_names() {
+        let root = PathBuf::from("/v");
+        let long = "x".repeat(61);
+        for bad in ["", long.as_str(), "a/b", "a\\b", "..", ".hidden"] {
+            assert!(myco_json_path(&root, "views", bad).is_err(), "{bad:?}");
+        }
+        // 21 chars = 63 bytes: the old byte cap rejected real Korean names.
+        let name = "가나다라마바사아자차카타파하가나다라마바사";
+        assert_eq!(name.chars().count(), 21);
+        assert_eq!(
+            myco_json_path(&root, "views", name).unwrap(),
+            root.join(".myco/views").join(format!("{name}.json"))
+        );
+    }
+
+    #[test]
+    fn myco_json_round_trip_is_kind_scoped() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        save_myco_json(root, "views", "b", "{}").unwrap();
+        save_myco_json(root, "views", "a", "{}").unwrap();
+        assert_eq!(list_myco_json(root, "views"), ["a", "b"]);
+        assert!(list_myco_json(root, "dashboards").is_empty());
+        delete_myco_json(root, "views", "a").unwrap();
+        assert_eq!(list_myco_json(root, "views"), ["b"]);
+        assert!(delete_myco_json(root, "views", "a").is_err());
+    }
 
     // ---- settings export/import file IO ------------------------------------
 

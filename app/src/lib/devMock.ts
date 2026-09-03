@@ -2730,6 +2730,25 @@ function mockInvoke(
       return Promise.resolve(["overview"]);
     case "delete_dashboard":
       return Promise.resolve(null);
+    // Saved Views round-trip through mockNotes, which read_file serves.
+    case "save_view":
+      mockNotes.set(
+        `${VAULT}/.myco/views/${String(args.name)}.json`,
+        String(args.content),
+      );
+      return Promise.resolve(null);
+    case "list_views": {
+      const prefix = `${VAULT}/.myco/views/`;
+      return Promise.resolve(
+        [...mockNotes.keys()]
+          .filter((k) => k.startsWith(prefix))
+          .map((k) => k.slice(prefix.length, -".json".length))
+          .sort(),
+      );
+    }
+    case "delete_view":
+      mockNotes.delete(`${VAULT}/.myco/views/${String(args.name)}.json`);
+      return Promise.resolve(null);
     case "inflow_daily": {
       // Deterministic-ish seeded ledger so the board's inflow charts render
       // in the mock browser: activity clusters on recent weekdays.

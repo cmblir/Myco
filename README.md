@@ -267,7 +267,9 @@ automation toggles, appearance and graph looks into one JSON file, so moving
 to a new machine doesn't mean re-clicking through every tab. API keys, the
 vault path and this device's identity never leave. An import names the
 sections it will replace before it touches anything, and can be undone for
-the rest of the session.
+the rest of the session. Saved Views are not in the bundle because they live
+in the vault itself (`.myco/views/*.json`, beside the dashboards) and travel
+with it.
 
 **Notch drop surface** *(macOS, opt-in)* — a quiet drop target living under
 the MacBook notch. Drag a file at the top of the screen: the surface unfolds,

@@ -6,7 +6,7 @@
 // cover the questions people actually ask of their vault ("low-confidence
 // techniques", "under-sourced claims", "untagged orphans").
 
-import type { Adjacency } from "./ipc";
+import { ipc, type Adjacency } from "./ipc";
 import { stem } from "./graphData";
 
 export interface ViewFilter {
@@ -249,6 +249,45 @@ export const BUILTIN_LENSES: BuiltinLens[] = [
 ];
 
 // --- persistence -----------------------------------------------------------
+
+/** Vault-relative path of a saved view — the stem IS the view's id and name. */
+export function viewRel(name: string): string {
+  return `.myco/views/${name}.json`;
+}
+
+const SORTS: ViewSort[] = ["name", "sources", "links", "type", "modified"];
+
+/** Stem is authoritative for id AND name; tolerant of hand-written files: an
+ *  object with an object `filter`, sort ∈ SORTS else "name", desc === true. */
+export function parseSavedView(raw: string, stem: string): SavedView | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed !== "object" || parsed == null) return null;
+  const v = parsed as Partial<SavedView>;
+  if (typeof v.filter !== "object" || v.filter == null) return null;
+  return {
+    id: stem,
+    name: stem,
+    filter: v.filter,
+    sort: SORTS.includes(v.sort as ViewSort) ? (v.sort as ViewSort) : "name",
+    desc: v.desc === true,
+  };
+}
+
+export function saveVaultView(v: SavedView): Promise<void> {
+  return ipc.saveView(v.name, JSON.stringify(v, null, 2));
+}
+
+/** Every `.myco/views/*.json` the vault holds, corrupt files skipped. */
+export async function loadVaultViews(vaultRoot: string): Promise<SavedView[]> {
+  const names = await ipc.listViews();
+  const files = await Promise.all(names.map((n) => ipc.readFile(`${vaultRoot}/${viewRel(n)}`)));
+  return files.flatMap((f, i) => parseSavedView(f.raw, names[i]) ?? []);
+}
 
 const KEY = "myco.queryViews.v1";
 

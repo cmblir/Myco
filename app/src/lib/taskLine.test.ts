@@ -76,6 +76,20 @@ describe("today", () => {
     // 23:30 local on the 9th is still the 9th, even where UTC has rolled over.
     expect(today(new Date(2026, 7, 9, 23, 30))).toBe("2026-08-09");
   });
+
+  it("disagrees with the UTC day just after local midnight", () => {
+    const tz = process.env.TZ;
+    process.env.TZ = "Asia/Seoul";
+    try {
+      const d = new Date(2026, 2, 1, 0, 5);
+      // What the sidebar's daily-note button used to compute.
+      expect(d.toISOString().slice(0, 10)).toBe("2026-02-28");
+      expect(today(d)).toBe("2026-03-01");
+    } finally {
+      if (tz === undefined) delete process.env.TZ;
+      else process.env.TZ = tz;
+    }
+  });
 });
 
 describe("monthGrid", () => {

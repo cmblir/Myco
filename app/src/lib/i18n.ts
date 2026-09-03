@@ -194,6 +194,9 @@ export interface Strings {
   vw_unset?: string;
   vw_edit_done?: string;
   vw_edit_failed?: string;
+  vw_load_error?: string;
+  vw_io_error?: string;
+  vw_overwrite_q?: string;
   nav_history: string;
   nav_provenance: string;
   nav_tasks: string;
@@ -1628,6 +1631,9 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_unset: "(none)",
     vw_edit_done: "Done",
     vw_edit_failed: "Could not save: {msg}",
+    vw_load_error: "Saved views could not be read from .myco/views/.",
+    vw_io_error: "Could not update saved views: {err}",
+    vw_overwrite_q: "Replace the saved view “{name}”?",
     nav_history: "History",
     nav_provenance: "Provenance",
     nav_tasks: "Tasks",
@@ -3121,6 +3127,9 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_unset: "(없음)",
     vw_edit_done: "완료",
     vw_edit_failed: "저장 실패: {msg}",
+    vw_load_error: "저장된 뷰를 .myco/views/에서 읽지 못했습니다.",
+    vw_io_error: "저장된 뷰를 갱신하지 못했습니다: {err}",
+    vw_overwrite_q: "저장된 뷰 “{name}”을(를) 덮어쓸까요?",
     nav_history: "히스토리",
     nav_provenance: "출처",
     nav_tasks: "할 일",
@@ -5746,6 +5755,9 @@ export const STRINGS: Record<Lang, Strings> = {
     vw_unset: "(なし)",
     vw_edit_done: "完了",
     vw_edit_failed: "保存できませんでした: {msg}",
+    vw_load_error: "保存したビューを .myco/views/ から読み込めませんでした。",
+    vw_io_error: "保存したビューを更新できませんでした: {err}",
+    vw_overwrite_q: "保存したビュー「{name}」を置き換えますか？",
     gr_insp_type: "タイプ",
     gr_insp_confidence: "確信度",
     gr_insp_status: "ステータス",

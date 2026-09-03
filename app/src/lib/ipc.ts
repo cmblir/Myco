@@ -1195,6 +1195,11 @@ export const ipc = {
   listDashboards: () => invoke<string[]>("list_dashboards"),
   deleteDashboard: (name: string) =>
     invoke<void>("delete_dashboard", { name }),
+  /** Saved Views (`.myco/views/<name>.json`) — same name rules as boards. */
+  saveView: (name: string, content: string) =>
+    invoke<void>("save_view", { name, content }),
+  listViews: () => invoke<string[]>("list_views"),
+  deleteView: (name: string) => invoke<void>("delete_view", { name }),
   mcpConnect: () => invoke<string>("mcp_connect"),
   // Embedded local model (bundled Gemma 3 1B) — offline, no key. First call
   // lazily loads the weights, so it can take a few extra seconds.

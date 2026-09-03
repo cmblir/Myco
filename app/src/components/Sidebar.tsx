@@ -16,6 +16,7 @@ import type { AuthorshipIndex, FileNode } from "../lib/ipc";
 import { filterHumanTree } from "../lib/authorship";
 import { promptText, confirmAction } from "../stores/dialogStore";
 import { promptNewNote } from "../lib/newNote";
+import { today } from "../lib/taskLine";
 
 interface ContextMenuState {
   x: number;
@@ -569,9 +570,9 @@ function DailyNoteButton({
 
   async function handle(): Promise<void> {
     if (!vaultPath) return;
-    const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+    const day = today();
     const dailyDir = `${vaultPath}/daily`;
-    const filePath = `${dailyDir}/${today}.md`;
+    const filePath = `${dailyDir}/${day}.md`;
     try {
       await ipc.readFile(filePath);
       // exists — just open
@@ -582,8 +583,8 @@ function DailyNoteButton({
         /* exists */
       }
       try {
-        await ipc.createFile(dailyDir, `${today}.md`);
-        const content = `# ${today}\n\n`;
+        await ipc.createFile(dailyDir, `${day}.md`);
+        const content = `# ${day}\n\n`;
         await ipc.writeFile(filePath, content);
       } catch {
         /* race */

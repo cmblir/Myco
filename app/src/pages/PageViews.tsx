@@ -2,7 +2,7 @@
 // filters (type / confidence / status / tag / sources / orphans / text) over
 // the metadata the link scanner already ships (adjacency.meta + tags), see the
 // result as a sortable table, and pin the composition as a named saved view
-// (localStorage). Everything is pure and in-memory — lib/queryViews.ts.
+// (.myco/views/*.json). Everything is pure and in-memory — lib/queryViews.ts.
 
 import { useEffect, useMemo, useState } from "react";
 import type { JSX } from "react";
@@ -15,9 +15,9 @@ import { flattenMarkdown } from "../lib/graphData";
 import {
   BUILTIN_LENSES,
   facetValues,
-  loadViews,
+  loadVaultViews,
   runView,
-  saveViews,
+  saveVaultView,
   wikiPagesOnly,
   type SavedView,
   type ViewFilter,
@@ -33,7 +33,8 @@ import {
   type Frontmatter,
 } from "../lib/frontmatter";
 import { isComposingKey } from "../lib/ime";
-import { confirmAction } from "../stores/dialogStore";
+import { confirmAction, promptText } from "../stores/dialogStore";
+import { sanitizeNoteName } from "../lib/newNote";
 import ChipInput from "../components/ChipInput";
 
 const EMPTY: ViewFilter = {};
@@ -60,7 +61,10 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
   const [filter, setFilter] = useState<ViewFilter>(EMPTY);
   const [sort, setSort] = useState<ViewSort>("name");
   const [desc, setDesc] = useState(false);
-  const [views, setViews] = useState<SavedView[]>(() => loadViews());
+  const [views, setViews] = useState<SavedView[]>([]);
+  const [viewsState, setViewsState] = useState<"loading" | "ready" | "error">("loading");
+  // Last save/delete failure; Rust's name validation lands here too.
+  const [ioError, setIoError] = useState<string | null>(null);
   const [activeView, setActiveView] = useState<string | null>(null);
   // Which built-in lens is showing, if any. Cleared by any hand edit — the
   // chip must never claim to describe a table the user has since changed.
@@ -98,6 +102,25 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
       .catch(() => {
         // A missing mtime map costs the column its values, nothing else.
         if (!cancelled) setMtimes(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [vaultPath]);
+
+  // Saved views are files in the vault, so they follow the vault, not the app.
+  useEffect(() => {
+    if (!vaultPath) return;
+    let cancelled = false;
+    setViewsState("loading");
+    loadVaultViews(vaultPath)
+      .then((list) => {
+        if (cancelled) return;
+        setViews(list);
+        setViewsState("ready");
+      })
+      .catch(() => {
+        if (!cancelled) setViewsState("error");
       });
     return () => {
       cancelled = true;
@@ -236,27 +259,44 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
     setActiveLens(null);
   }
 
-  function saveCurrent(): void {
-    const name = window.prompt(t.vw_save_prompt ?? "Name this view:");
-    if (!name?.trim()) return;
-    const v: SavedView = {
-      id: `${Date.now().toString(36)}`,
-      name: name.trim(),
-      filter,
-      sort,
-      desc,
-    };
-    const next = [...views, v];
-    setViews(next);
-    saveViews(next);
-    setActiveView(v.id);
+  async function saveCurrent(): Promise<void> {
+    const raw = await promptText({
+      title: t.vw_save ?? "Save view",
+      message: t.vw_save_prompt ?? "Name this view:",
+    });
+    // The file stem is the view's id and name, so it obeys note-name rules
+    // (and Rust's 60-char cap; trimmed again so the stem matches the name).
+    const name = raw == null ? null : sanitizeNoteName(raw)?.slice(0, 60).trim();
+    if (!name) return;
+    if (views.some((v) => v.id === name)) {
+      const ok = await confirmAction({
+        title: t.vw_save ?? "Save view",
+        message: (t.vw_overwrite_q ?? "Replace the saved view “{name}”?").replace("{name}", name),
+      });
+      if (!ok) return;
+    }
+    const v: SavedView = { id: name, name, filter, sort, desc };
+    try {
+      await saveVaultView(v);
+    } catch (e) {
+      setIoError(String(e));
+      return;
+    }
+    setIoError(null);
+    setViews((prev) => [...prev.filter((x) => x.id !== name), v]);
+    setActiveView(name);
   }
 
-  function removeView(id: string): void {
-    const next = views.filter((v) => v.id !== id);
-    setViews(next);
-    saveViews(next);
-    if (activeView === id) setActiveView(null);
+  async function removeView(v: SavedView): Promise<void> {
+    try {
+      await ipc.deleteView(v.name);
+    } catch (e) {
+      setIoError(String(e));
+      return;
+    }
+    setIoError(null);
+    setViews((prev) => prev.filter((x) => x.id !== v.id));
+    if (activeView === v.id) setActiveView(null);
   }
 
   function header(label: string, key: ViewSort): JSX.Element {
@@ -317,7 +357,11 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
         ))}
       </div>
 
-      {views.length > 0 ? (
+      {viewsState === "error" ? (
+        <p role="alert" className="muted">
+          {t.vw_load_error ?? "Saved views could not be read from .myco/views/."}
+        </p>
+      ) : views.length > 0 ? (
         <div className="views-saved">
           {views.map((v) => (
             <span key={v.id} className={"views-chip" + (activeView === v.id ? " active" : "")}>
@@ -328,13 +372,18 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
                 type="button"
                 className="views-chip__x"
                 aria-label={t.ui_close ?? "Remove"}
-                onClick={() => removeView(v.id)}
+                onClick={() => void removeView(v)}
               >
                 <Icon name="x" size={11} />
               </button>
             </span>
           ))}
         </div>
+      ) : null}
+      {ioError ? (
+        <p role="alert" className="muted">
+          {(t.vw_io_error ?? "Could not update saved views: {err}").replace("{err}", ioError)}
+        </p>
       ) : null}
 
       <div className="views-filters">
@@ -400,7 +449,7 @@ export default function PageViews({ t }: { t: Strings }): JSX.Element {
           />
           {t.vw_orphans ?? "Orphans only"}
         </label>
-        <button type="button" className="btn" onClick={saveCurrent}>
+        <button type="button" className="btn" onClick={() => void saveCurrent()}>
           <Icon name="save" size={13} /> {t.vw_save ?? "Save view"}
         </button>
       </div>
