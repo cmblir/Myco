@@ -50,6 +50,17 @@ describe("frontmatterLength", () => {
   });
 });
 
+describe("headings", () => {
+  it("stamps the 0-based source line on each heading", () => {
+    const html = markdownRenderer.render(
+      "# One\n\ntext\n\n## Two\n\nSet\n===",
+    );
+    expect(html).toContain('<h1 data-line="0">One</h1>');
+    expect(html).toContain('<h2 data-line="4">Two</h2>');
+    expect(html).toContain('<h1 data-line="6">Set</h1>');
+  });
+});
+
 describe("images", () => {
   const env = { vaultRoot: "/v", toUrl: (p: string) => "u:" + p };
 

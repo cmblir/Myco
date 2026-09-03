@@ -225,6 +225,17 @@ export default function Editor({
   );
 }
 
+/** Put the caret on 1-based `line1` (clamped) and scroll that line to the top. */
+export function scrollEditorToLine(view: EditorView, line1: number): void {
+  const { doc } = view.state;
+  const line = doc.line(Math.max(1, Math.min(line1, doc.lines)));
+  view.dispatch({
+    selection: { anchor: line.from },
+    effects: EditorView.scrollIntoView(line.from, { y: "start" }),
+  });
+  view.focus();
+}
+
 /** Save each image under assets/ and insert `![|](assets/…)` at the caret. */
 async function insertImages(
   view: EditorView,

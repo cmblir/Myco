@@ -6528,3 +6528,73 @@ details.props > .btn {
 .views-table input[type="checkbox"] {
   accent-color: var(--ink);
 }
+
+/* Reader outline (P1c): a sticky 180px heading list right of the editor /
+   preview. Below 900px the column is too narrow to share, so the pane and its
+   toggle disappear. */
+.reader-body--outline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 24px;
+  align-items: start;
+}
+.reader-side {
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+}
+.outline {
+  font-size: 12.5px;
+}
+.outline ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.outline .muted {
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 12.5px;
+}
+.outline__item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-3);
+  padding: 4px 8px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.outline__item:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.outline-toggle[aria-pressed="true"] {
+  background: var(--bg-active);
+  color: var(--ink);
+}
+@media (max-width: 899px) {
+  .reader-body--outline {
+    display: block;
+  }
+  .reader-side,
+  .outline-toggle {
+    display: none;
+  }
+}
+/* A split-workspace pane is ~354px at an 1100px window regardless of the
+   viewport, so the pane hides the outline the same way. */
+.workspace-pane .reader-body--outline {
+  display: block;
+}
+.workspace-pane .reader-side,
+.workspace-pane .outline-toggle {
+  display: none;
+}

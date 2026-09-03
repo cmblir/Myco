@@ -89,6 +89,8 @@ export interface UIState {
   propsCollapsed: boolean;
   // Reader editor mode; per device, no longer reset per file.
   editorMode: EditorMode;
+  // Reader outline pane (headings) shown beside the editor. Per device.
+  outlineOpen: boolean;
 
   setRoute: (route: RouteId) => void;
   setFeedbackTab: (tab: FeedbackTab) => void;
@@ -112,6 +114,7 @@ export interface UIState {
   stampVisit: () => void;
   setPropsCollapsed: (v: boolean) => void;
   setEditorMode: (mode: EditorMode) => void;
+  toggleOutline: () => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -139,6 +142,7 @@ export const useUIStore = create<UIState>()(
       lastVisitAt: null,
       propsCollapsed: false,
       editorMode: "live",
+      outlineOpen: true,
 
       setRoute: (route) =>
         // Never let the primary and split panes show the SAME route (two live
@@ -174,6 +178,7 @@ export const useUIStore = create<UIState>()(
       stampVisit: () => set({ lastVisitAt: Date.now() }),
       setPropsCollapsed: (v) => set({ propsCollapsed: v }),
       setEditorMode: (editorMode) => set({ editorMode }),
+      toggleOutline: () => set({ outlineOpen: !get().outlineOpen }),
     }),
     {
       name: "myco-ui",

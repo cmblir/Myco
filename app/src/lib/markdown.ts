@@ -118,6 +118,13 @@ export function createRenderer(): MarkdownIt {
     return self.renderToken(tokens, idx, options);
   };
 
+  // Source line on every heading so the outline can scroll the preview to it.
+  md.renderer.rules.heading_open = (tokens, idx, options, _env, self) => {
+    const token = tokens[idx];
+    if (token.map) token.attrSet("data-line", String(token.map[0]));
+    return self.renderToken(tokens, idx, options);
+  };
+
   // Vault-relative image sources become asset-protocol URLs when the caller
   // supplies a RenderEnv; without one (tests, Ask previews) the src is left
   // as written. Then markdown-it's default image rule: alt from the children.

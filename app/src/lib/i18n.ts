@@ -873,6 +873,10 @@ export interface Strings {
   sl_date?: string;
   img_unsupported?: string;
   img_failed?: string;
+  ol_title?: string;
+  ol_empty?: string;
+  ol_untitled?: string;
+  ol_toggle?: string;
   // Reader properties panel.
   props_title?: string;
   props_add?: string;
@@ -2410,6 +2414,10 @@ export const STRINGS: Record<Lang, Strings> = {
     sl_date: "Today's date",
     img_unsupported: "Only PNG, JPEG, GIF and WebP images can be inserted",
     img_failed: "Image could not be saved: {error}",
+    ol_title: "Outline",
+    ol_empty: "No headings yet",
+    ol_untitled: "(untitled)",
+    ol_toggle: "Show or hide the outline",
     props_title: "Properties",
     props_add: "Add property",
     props_key_ph: "key",
@@ -3949,6 +3957,10 @@ export const STRINGS: Record<Lang, Strings> = {
     sl_date: "오늘 날짜",
     img_unsupported: "PNG, JPEG, GIF, WebP 이미지만 넣을 수 있습니다",
     img_failed: "이미지를 저장하지 못했습니다: {error}",
+    ol_title: "개요",
+    ol_empty: "아직 제목이 없습니다",
+    ol_untitled: "(제목 없음)",
+    ol_toggle: "개요 표시/숨기기",
     props_title: "속성",
     props_add: "속성 추가",
     props_key_ph: "키",
@@ -5278,6 +5290,10 @@ export const STRINGS: Record<Lang, Strings> = {
     sl_date: "今日の日付",
     img_unsupported: "挿入できるのはPNG・JPEG・GIF・WebP画像のみです",
     img_failed: "画像を保存できませんでした: {error}",
+    ol_title: "アウトライン",
+    ol_empty: "見出しはまだありません",
+    ol_untitled: "(無題)",
+    ol_toggle: "アウトラインの表示/非表示",
     props_title: "プロパティ",
     props_add: "プロパティを追加",
     props_key_ph: "キー",

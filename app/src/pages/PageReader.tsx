@@ -23,7 +23,14 @@ import {
   type FmPatch,
 } from "../lib/frontmatter";
 import { tagCandidates } from "../lib/tagIndex";
-import Editor from "../components/Editor";
+import { stripFrontmatter } from "../lib/markdown";
+import {
+  bodyLineOffset,
+  extractHeadings,
+  type OutlineHeading,
+} from "../lib/outline";
+import Editor, { scrollEditorToLine } from "../components/Editor";
+import OutlinePanel from "../components/OutlinePanel";
 import PropertiesPanel from "../components/PropertiesPanel";
 import AudioOverviewPanel from "../components/AudioOverviewPanel";
 import PdfViewer from "../components/PdfViewer";
@@ -183,6 +190,8 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const mode = useUIStore((s) => s.editorMode);
   const setMode = useUIStore((s) => s.setEditorMode);
+  const outlineOpen = useUIStore((s) => s.outlineOpen);
+  const toggleOutline = useUIStore((s) => s.toggleOutline);
   // Authorship badge (Q4 item 16). Null = no repo / untracked / lookup failed —
   // no history means no claim, so the header simply shows nothing.
   const [authorship, setAuthorship] = useState<PageAuthorship | null>(null);
@@ -193,7 +202,13 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const [seedGen, setSeedGen] = useState(0);
   const [editorError, setEditorError] = useState<string | null>(null);
   const editorViewRef = useRef<EditorView | null>(null);
+  const previewRef = useRef<HTMLDivElement | null>(null);
   const fm = useMemo(() => parseFrontmatter(draft), [draft]);
+  const headings = useMemo(
+    () => (outlineOpen ? extractHeadings(stripFrontmatter(draft)) : []),
+    [draft, outlineOpen],
+  );
+  const lineOffset = useMemo(() => bodyLineOffset(draft), [draft]);
   // A paste error lasts until the next edit (a successful paste inserts text).
   useEffect(() => setEditorError(null), [draft]);
   const allTags = useMemo(
@@ -330,6 +345,16 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       setDraft(edit.raw);
       scheduleSave(edit.raw);
     }
+  }
+
+  // Scroll whichever panes the current mode shows: the editor by line (body
+  // line + frontmatter lines), the preview by the heading's data-line.
+  function scrollToHeading(h: OutlineHeading): void {
+    const v = editorViewRef.current;
+    if (v) scrollEditorToLine(v, h.line + 1 + lineOffset);
+    previewRef.current
+      ?.querySelector(`[data-line="${h.line}"]`)
+      ?.scrollIntoView({ block: "start" });
   }
 
   function handleLinkClick(target: string): void {
@@ -503,6 +528,15 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
               <Icon name="eye" size={12} /> {t.rd_preview ?? "Preview"}
             </button>
           </div>
+          <button
+            className="btn btn-ghost outline-toggle"
+            aria-pressed={outlineOpen}
+            aria-label={t.ol_toggle ?? "Show or hide the outline"}
+            title={t.ol_toggle ?? "Show or hide the outline"}
+            onClick={toggleOutline}
+          >
+            <Icon name="columns" size={13} />
+          </button>
         </div>
         <h1 className="page-title">{fileName.replace(/\.md$/i, "")}</h1>
         {cardMsg ? (
@@ -533,48 +567,63 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
           {editorError}
         </p>
       ) : null}
-      <section
-        style={{
-          display: "flex",
-          flexDirection: mode === "split" ? "row" : "column",
-          gap: mode === "split" ? 16 : 0,
-          minHeight: "60vh",
-        }}
+      <div
+        className={
+          "reader-body" + (outlineOpen ? " reader-body--outline" : "")
+        }
       >
-        {mode !== "preview" ? (
-          <div style={{ flex: 1, minHeight: "60vh", display: "flex" }}>
-            {seedGen > 0 ? (
-              <Editor
-                docKey={`${path}#${seedGen}`}
-                // `draft`, not `activeFile.raw`: a Preview-mode property edit
-                // must survive a Preview → Source switch inside the autosave
-                // window.
-                initialValue={draft}
-                t={t}
-                live={mode === "live"}
-                viewRef={editorViewRef}
-                onChange={(c) => {
-                  setDraft(c);
-                  scheduleSave(c);
-                }}
-                onSave={(c) => flushSave(c)}
+        <section
+          style={{
+            display: "flex",
+            flexDirection: mode === "split" ? "row" : "column",
+            gap: mode === "split" ? 16 : 0,
+            minHeight: "60vh",
+          }}
+        >
+          {mode !== "preview" ? (
+            <div style={{ flex: 1, minHeight: "60vh", display: "flex" }}>
+              {seedGen > 0 ? (
+                <Editor
+                  docKey={`${path}#${seedGen}`}
+                  // `draft`, not `activeFile.raw`: a Preview-mode property edit
+                  // must survive a Preview → Source switch inside the autosave
+                  // window.
+                  initialValue={draft}
+                  t={t}
+                  live={mode === "live"}
+                  viewRef={editorViewRef}
+                  onChange={(c) => {
+                    setDraft(c);
+                    scheduleSave(c);
+                  }}
+                  onSave={(c) => flushSave(c)}
+                  onLinkClick={handleLinkClick}
+                  onError={setEditorError}
+                />
+              ) : null}
+            </div>
+          ) : null}
+          {mode === "split" || mode === "preview" ? (
+            <div className="prose" style={{ flex: 1 }} ref={previewRef}>
+              <Viewer
+                content={draft}
+                vaultRoot={currentVaultPath}
+                notePath={path}
                 onLinkClick={handleLinkClick}
-                onError={setEditorError}
               />
-            ) : null}
-          </div>
-        ) : null}
-        {mode === "split" || mode === "preview" ? (
-          <div className="prose" style={{ flex: 1 }}>
-            <Viewer
-              content={draft}
-              vaultRoot={currentVaultPath}
-              notePath={path}
-              onLinkClick={handleLinkClick}
+            </div>
+          ) : null}
+        </section>
+        {outlineOpen ? (
+          <aside className="reader-side">
+            <OutlinePanel
+              t={t}
+              headings={headings}
+              onSelect={scrollToHeading}
             />
-          </div>
+          </aside>
         ) : null}
-      </section>
+      </div>
       <BacklinksPanel filePath={path} t={t} />
       <RelatedPanel filePath={path} t={t} />
       <AudioOverviewPanel t={t} />
