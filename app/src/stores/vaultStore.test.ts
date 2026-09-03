@@ -289,6 +289,16 @@ describe("deletePath / movePaths / favorites", () => {
     expect(useUIStore.getState().route).toBe("page:/v/wiki/b.md");
   });
 
+  it("deletePath drops the pending draft so the reader cannot resurrect the file", async () => {
+    vi.spyOn(ipc, "deletePath").mockResolvedValue(null);
+    pendingDrafts.set(A, "typed");
+    pendingDrafts.set("/v/wiki/other.md", "x");
+    await useVaultStore.getState().deletePath(A);
+    expect(pendingDrafts.has(A)).toBe(false);
+    expect(pendingDrafts.get("/v/wiki/other.md")).toBe("x");
+    pendingDrafts.clear();
+  });
+
   it("movePaths leaves a pending draft of an unrelated note alone", async () => {
     vi.spyOn(ipc, "movePath").mockResolvedValue("/v/notes/a.md");
     const write = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);

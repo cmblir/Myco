@@ -298,6 +298,13 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         ? [paths]
         : dropNested(paths)) {
         await ipc.deletePath(path);
+        // Drop pending autosaves under the trashed path: the unmounting
+        // reader's flush would otherwise recreate the file we just deleted.
+        for (const pending of [...pendingDrafts.keys()]) {
+          if (pending === path || pending.startsWith(`${path}/`)) {
+            pendingDrafts.delete(pending);
+          }
+        }
         const active = get().activeFile;
         if (
           active &&
