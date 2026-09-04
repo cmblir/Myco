@@ -307,6 +307,7 @@ pub fn build_args(
     out_dir: &Path,
     model: Option<&Path>,
     json: bool,
+    fast: bool,
 ) -> (Vec<String>, PathBuf) {
     let out_txt = out_dir.join(format!("{stem}.txt"));
     match variant {
@@ -327,14 +328,29 @@ pub fn build_args(
             let mut args = vec!["-f".to_string(), audio.to_string()];
             if let Some(m) = model {
                 // Bundled run: OUR model, and `-l auto` — whisper-cli defaults
-                // to English, which silently garbles Korean notes. `-pp`
-                // prints progress lines that run_streaming re-emits as
-                // events; only injected here, never into a user's own setup.
+                // to English, which silently garbles Korean notes.
                 args.push("-m".into());
                 args.push(m.to_string_lossy().into_owned());
                 args.push("-l".into());
                 args.push("auto".into());
-                args.push("-pp".into());
+                if fast {
+                    // Live captions: greedy decoding instead of the default
+                    // beam search. Measured on this model (small-q5_1, Metal):
+                    // 13 s of speech 2.65 s → 1.64 s, 27 s 3.64 s → 2.14 s.
+                    // The words are provisional — the saved note is written by
+                    // the ordinary beam-search run — so ~40% of the wait is
+                    // worth an occasional worse guess. `-pp` is dropped too:
+                    // nothing renders a partial's percent.
+                    args.push("-bs".into());
+                    args.push("1".into());
+                    args.push("-bo".into());
+                    args.push("1".into());
+                } else {
+                    // `-pp` prints progress lines that run_streaming re-emits
+                    // as events; only injected here, never into a user's own
+                    // setup.
+                    args.push("-pp".into());
+                }
                 if json {
                     // Meeting-length audio: segment offsets for the
                     // timestamped transcript. Alongside -otxt, so a parse
@@ -557,7 +573,15 @@ fn transcribe_inner(
     // 16 kHz mono WAV and a conservative floor for compressed input.
     let audio_bytes = std::fs::metadata(&audio).map(|m| m.len()).unwrap_or(0);
     let json = want_timestamps && model.is_some() && audio_bytes / 32_000 >= TIMESTAMP_MIN_SECS;
-    let (args, out_txt) = build_args(variant, &audio, &stem, &out_dir, model.as_deref(), json);
+    let (args, out_txt) = build_args(
+        variant,
+        &audio,
+        &stem,
+        &out_dir,
+        model.as_deref(),
+        json,
+        quiet,
+    );
 
     let timeout = transcribe_timeout(audio_bytes);
     let child = Command::new(&bin)
@@ -630,6 +654,7 @@ mod tests {
             Path::new("/tmp/x"),
             None,
             false,
+            false,
         );
         assert_eq!(args[0], "/a/talk.mp3");
         assert!(args.contains(&"--output_format".to_string()));
@@ -646,6 +671,7 @@ mod tests {
             "talk",
             Path::new("/tmp/x"),
             None,
+            false,
             false,
         );
         assert_eq!(args[0], "-f");
@@ -675,6 +701,7 @@ mod tests {
             Path::new("/tmp/x"),
             Some(Path::new("/data/models/ggml-small-q5_1.bin")),
             false,
+            false,
         );
         let m = args.iter().position(|a| a == "-m").unwrap();
         assert_eq!(args[m + 1], "/data/models/ggml-small-q5_1.bin");
@@ -683,6 +710,28 @@ mod tests {
         assert_eq!(args[l + 1], "auto");
         // Progress lines for run_streaming — bundled runs only.
         assert!(args.contains(&"-pp".to_string()));
+    }
+
+    #[test]
+    fn fast_runs_decode_greedily_and_skip_progress() {
+        let model = Path::new("/m/ggml-small-q5_1.bin");
+        let (args, _) = build_args(
+            Variant::WhisperCpp,
+            "/a/partial.wav",
+            "partial",
+            Path::new("/tmp/x"),
+            Some(model),
+            false,
+            true,
+        );
+        // Greedy: measured ~40% off the wall time, and a live caption is
+        // provisional — the saved note comes from the ordinary run.
+        let bs = args.iter().position(|a| a == "-bs").unwrap();
+        assert_eq!(args[bs + 1], "1");
+        let bo = args.iter().position(|a| a == "-bo").unwrap();
+        assert_eq!(args[bo + 1], "1");
+        // Nothing renders a partial's percent, so no progress chatter.
+        assert!(!args.contains(&"-pp".to_string()));
     }
 
     #[test]
@@ -695,6 +744,7 @@ mod tests {
             Path::new("/tmp/x"),
             Some(model),
             true,
+            false,
         );
         assert!(args.contains(&"-oj".to_string()));
         assert!(args.contains(&"-otxt".to_string()), "plain fallback stays");
@@ -706,6 +756,7 @@ mod tests {
             Path::new("/tmp/x"),
             None,
             true,
+            false,
         );
         assert!(!args.contains(&"-oj".to_string()));
     }

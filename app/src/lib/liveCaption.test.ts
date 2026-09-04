@@ -53,31 +53,34 @@ describe("startPartialLoop", () => {
 
   const snapshot = (): Blob => new Blob([new Uint8Array([1, 2, 3])]);
 
-  it("skips a tick while a partial is still in flight, then resumes", async () => {
+  it("chains: the next pass starts a gap after the previous one finished", async () => {
     let release: (() => void) | null = null;
-    const calls: number[] = [];
-    const transcribe = vi.fn((_bytes: Uint8Array) => {
-      calls.push(Date.now());
-      return new Promise<string>((resolve) => {
-        release = (): void => resolve("a b");
-      });
-    });
+    const transcribe = vi.fn(
+      (_bytes: Uint8Array) =>
+        new Promise<string>((resolve) => {
+          release = (): void => resolve("a b");
+        }),
+    );
     const captions: CaptionState[] = [];
     const stop = startPartialLoop({
       snapshot,
       transcribe,
       onCaption: (c) => captions.push(c),
-      intervalMs: 1000,
+      leadMs: 900,
+      gapMs: 500,
     });
-    await vi.advanceTimersByTimeAsync(1000);
+    await vi.advanceTimersByTimeAsync(900);
     expect(transcribe).toHaveBeenCalledTimes(1);
-    // Second and third ticks fire while the first is pending: skipped.
-    await vi.advanceTimersByTimeAsync(2000);
+    // Time passing does not queue a second decode: the chain waits.
+    await vi.advanceTimersByTimeAsync(5000);
     expect(transcribe).toHaveBeenCalledTimes(1);
     release!();
     await vi.advanceTimersByTimeAsync(0);
     expect(captions).toEqual([{ confirmed: [], interim: ["a", "b"] }]);
-    await vi.advanceTimersByTimeAsync(1000);
+    // …and the next one starts a gap after that result, not on a fixed clock.
+    await vi.advanceTimersByTimeAsync(499);
+    expect(transcribe).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
     expect(transcribe).toHaveBeenCalledTimes(2);
     stop();
   });
@@ -89,12 +92,13 @@ describe("startPartialLoop", () => {
       snapshot,
       transcribe,
       onCaption,
-      intervalMs: 1000,
+      leadMs: 1000,
+      gapMs: 1000,
       maxMs: 2500,
     });
-    await vi.advanceTimersByTimeAsync(5000);
-    // Ticks at 1 s and 2 s ran; 3 s and later are past the cap. (No leading
-    // tick here: the 1.2 s lead is not earlier than this test's 1 s interval.)
+    await vi.advanceTimersByTimeAsync(10_000);
+    // Passes at 1 s and 2 s ran; the 3 s pass is past the cap and the chain
+    // ends there rather than freezing the surface with a stale decode.
     expect(transcribe).toHaveBeenCalledTimes(2);
     expect(onCaption).toHaveBeenCalledTimes(2);
 
@@ -110,7 +114,7 @@ describe("startPartialLoop", () => {
       snapshot,
       transcribe: slow,
       onCaption: late,
-      intervalMs: 1000,
+      leadMs: 1000,
     });
     await vi.advanceTimersByTimeAsync(1000);
     expect(slow).toHaveBeenCalledTimes(1);

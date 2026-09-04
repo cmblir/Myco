@@ -32,33 +32,36 @@ export interface PartialLoopOptions {
   snapshot: () => Blob;
   transcribe: (bytes: Uint8Array) => Promise<string>;
   onCaption: (caption: CaptionState) => void;
-  intervalMs?: number;
+  /** Gap between the END of one partial and the start of the next. The loop
+   *  is self-pacing rather than fixed-interval: a partial re-decodes the take
+   *  from the start, so its cost grows with the take and a fixed interval
+   *  either idles on a fast machine or piles up on a slow one. */
+  gapMs?: number;
+  /** Delay before the first partial. */
+  leadMs?: number;
   /** Past this elapsed time the caption freezes on its last text. */
   maxMs?: number;
 }
 
 /**
- * Snapshot + transcribe on a timer while a take records. One partial in
- * flight at a time — a tick that fires while one is running is skipped, so a
- * slow whisper never queues up behind itself. Returns stop(); a result that
+ * Snapshot + transcribe repeatedly while a take records, each pass starting
+ * `gapMs` after the previous one finished, so only one decode is ever in
+ * flight and the cadence follows the machine. Returns stop(); a result that
  * lands after stop() is dropped.
  */
 export function startPartialLoop(opts: PartialLoopOptions): () => void {
-  const { intervalMs = 3500, maxMs = 45_000 } = opts;
+  const { gapMs = 500, leadMs = 900, maxMs = 45_000 } = opts;
   const started = Date.now();
   let caption = EMPTY_CAPTION;
-  let busy = false;
   let stopped = false;
-  const tick = async (): Promise<void> => {
-    if (busy || stopped) return;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+
+  const run = async (): Promise<void> => {
+    if (stopped) return;
     // ponytail: the notch/spotlight memo is short-form; past 45 s each
-    // snapshot is >1.4 MB re-decoded from the start every tick, so the
+    // snapshot is >1.4 MB re-decoded from the start every pass, so the
     // caption freezes and meeting-length audio stays on the file-drop path.
-    if (Date.now() - started > maxMs) {
-      clearInterval(id);
-      return;
-    }
-    busy = true;
+    if (Date.now() - started > maxMs) return;
     try {
       const bytes = new Uint8Array(await opts.snapshot().arrayBuffer());
       const text = await opts.transcribe(bytes);
@@ -66,23 +69,18 @@ export function startPartialLoop(opts: PartialLoopOptions): () => void {
       caption = mergeCaption(caption, text);
       opts.onCaption(caption);
     } catch {
-      // A failed partial only costs this tick's caption; the recording and
+      // A failed partial only costs this pass's caption; the recording and
       // the final save_voice_capture transcript are untouched.
-    } finally {
-      busy = false;
     }
+    // Chained, not an interval: one decode is always in flight at most, and
+    // the next starts as soon as the last finished — the lag the owner felt
+    // was the fixed wait ADDED to the decode, not the decode alone.
+    if (!stopped) timer = setTimeout(() => void run(), gapMs);
   };
-  // The first partial runs early: at the full interval the first words land
-  // ~5 s in (interval + whisper), which reads as "it is not listening". Only
-  // when it is genuinely earlier — a lead equal to the interval would fire
-  // twice at the same instant.
-  const lead = 1200;
-  const first =
-    lead < intervalMs ? setTimeout(() => void tick(), lead) : undefined;
-  const id = setInterval(() => void tick(), intervalMs);
+
+  timer = setTimeout(() => void run(), leadMs);
   return () => {
     stopped = true;
-    if (first !== undefined) clearTimeout(first);
-    clearInterval(id);
+    if (timer !== undefined) clearTimeout(timer);
   };
 }
