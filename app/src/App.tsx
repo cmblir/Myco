@@ -338,7 +338,10 @@ export default function App(): JSX.Element {
   const currentVaultPath = currentVault?.path ?? null;
   useEffect(() => {
     if (!currentVaultPath) return;
-    const INGEST_RUNNING = ["writing-raw", "claude", "indexing"];
+    // "plan-gate" belongs here too: the user is reading the plan, the run is
+    // mid-flight, and a 30 s refreshTree + revision stat over the whole vault
+    // buys nothing while nothing is being written.
+    const INGEST_RUNNING = ["writing-raw", "plan-gate", "claude", "indexing"];
     const refresh = (): void => {
       if (document.visibilityState !== "visible") return;
       if (INGEST_RUNNING.includes(useIngestStore.getState().stage)) return;
