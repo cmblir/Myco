@@ -2992,6 +2992,7 @@ dependencies = [
  "trash",
  "unicode-normalization",
  "url",
+ "window-vibrancy",
  "wiremock",
  "zip 4.6.1",
 ]

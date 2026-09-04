@@ -79,6 +79,11 @@ objc2 = "0.6"
 # NSPoint/NSSize for the top-left placement call.
 objc2-foundation = "0.3"
 objc2-app-kit = { version = "0.3", features = ["NSEvent", "NSPanel", "NSPasteboard", "NSResponder", "NSScreen", "NSView", "NSWindow"] }
+# Real glass behind the tray popover (src/tray.rs::ensure_panel): an
+# NSVisualEffectView under the transparent webview. CSS backdrop-filter cannot
+# blur the desktop behind a WKWebView. 0.6 is the version tauri 2.11 itself
+# depends on, so this adds no new crate to the build.
+window-vibrancy = "0.6"
 
 [dev-dependencies]
 wiremock = "0.6"
