@@ -26,14 +26,15 @@ pub const TRAY_STATUS_EVENT: &str = "myco://tray-status";
 /// The frameless popover window shown on tray LEFT-click (the native menu
 /// stays on right-click as the plain fallback).
 const PANEL_LABEL: &str = "tray-panel";
-// Window = the 324px panel + a transparent margin ring that gives the CSS
-// shadow room (the OS window shadow is OFF — drawn around the whole
-// transparent rect, it rendered as a ghost outline below the card whenever
-// the fixed window was taller than the content).
-const PANEL_MARGIN: f64 = 24.0; // sides + bottom (CSS shadow room)
-const PANEL_MARGIN_TOP: f64 = 8.0; // slim on top so the card hugs the menu bar
-const PANEL_WIDTH: f64 = 324.0 + PANEL_MARGIN * 2.0; // logical px
+// Window == the 324px card, no margin ring: the macOS vibrancy view frosts
+// the WHOLE window rect, so a transparent ring around the card would render
+// as a frosted halo. The OS shadow follows the effect view's rounded shape
+// (the old ghost outline came from a fixed window taller than the card;
+// resize_tray_panel keeps them equal now).
+const PANEL_WIDTH: f64 = 324.0; // logical px
 const PANEL_HEIGHT: f64 = 520.0; // first-paint guess; resize_tray_panel fits it to content
+/// Must match `.tray-panel { border-radius }` in styles.css.
+const PANEL_RADIUS: f64 = 22.0;
 const PANEL_GAP: f64 = 2.0; // logical px between the menu bar and the window edge
 
 /// One running activity. `kind` picks the row icon ("ask" | "distill" |
@@ -256,8 +257,6 @@ pub fn panel_position(
     let w = panel_w_logical * scale;
     let mut x = pos.x + size.width / 2.0 - w / 2.0;
     if let Some(right) = screen_right {
-        // The window's own transparent margin keeps the CARD off the edge,
-        // so the window may touch the screen edge exactly.
         x = x.min(right - w);
     }
     x = x.max(0.0);
@@ -319,10 +318,6 @@ pub(crate) fn ensure_panel(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     )
     .decorations(false)
     .transparent(true)
-    // OS shadow OFF: it hugs the transparent window RECT, not the
-    // rounded card inside it — the card carries a CSS shadow instead
-    // (inside the PANEL_MARGIN ring).
-    .shadow(false)
     .always_on_top(true)
     .resizable(false)
     .skip_taskbar(true)
@@ -331,6 +326,19 @@ pub(crate) fn ensure_panel(app: &AppHandle) -> Option<tauri::WebviewWindow> {
     .build();
     match built {
         Ok(w) => {
+            // Real glass: an NSVisualEffectView under the transparent webview
+            // blurs the desktop, which CSS backdrop-filter cannot reach.
+            // HudWindow over Popover: the card is dark by design, and Popover
+            // turns light under a light menu bar and fights the dark tint.
+            #[cfg(target_os = "macos")]
+            if let Err(e) = window_vibrancy::apply_vibrancy(
+                &w,
+                window_vibrancy::NSVisualEffectMaterial::HudWindow,
+                Some(window_vibrancy::NSVisualEffectState::Active),
+                Some(PANEL_RADIUS),
+            ) {
+                eprintln!("tray panel vibrancy failed: {e}");
+            }
             // Focus loss dismisses the popover, like a native menu —
             // except inside the just-shown grace window (see above).
             let hide = w.clone();
@@ -592,7 +600,7 @@ pub fn get_tray_status(app: AppHandle) -> TrayStatus {
 
 /// Fit the popover window to its rendered content — the panel measures
 /// itself (ResizeObserver) and reports the card height in logical px; the
-/// window becomes card + margin ring. Runs in Rust so no window-plugin
+/// window becomes exactly the card. Runs in Rust so no window-plugin
 /// capability is needed. Height is clamped to sane bounds so a broken
 /// measurement can't create a zero or screen-tall window.
 #[tauri::command]
@@ -605,11 +613,8 @@ pub fn resize_tray_panel(app: AppHandle, height: f64) -> Result<(), String> {
     // footer ~96 + panel padding/gaps ~60 ≈ 780. 860 leaves a line of slack
     // and still fits a 13" display (900 logical) under the menu bar.
     let clamped = height.clamp(60.0, 860.0);
-    win.set_size(tauri::LogicalSize::new(
-        PANEL_WIDTH,
-        clamped + PANEL_MARGIN_TOP + PANEL_MARGIN,
-    ))
-    .map_err(|e| e.to_string())
+    win.set_size(tauri::LogicalSize::new(PANEL_WIDTH, clamped))
+        .map_err(|e| e.to_string())
 }
 
 /// Quick actions clicked in the tray-panel window. Routes through the same
@@ -720,7 +725,6 @@ mod tests {
             340.0,
             Some(2000.0),
         );
-        // Window may touch the edge — its transparent margin spaces the card.
         assert_eq!(x, 2000.0 - 680.0);
     }
 

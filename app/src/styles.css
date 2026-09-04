@@ -4578,21 +4578,18 @@ html.tray-window,
 html.tray-window body {
   background: transparent;
 }
-/* The OS window is larger than the card (tray.rs PANEL_MARGIN_TOP /
-   PANEL_MARGIN) — that ring is where the CSS shadow lives, since the OS
-   window shadow is off (it hugged the transparent rect, not the card). */
-html.tray-window body {
-  padding: 8px 24px 24px;
-}
+/* The OS window is exactly the card (tray.rs PANEL_WIDTH + resize_tray_panel):
+   the native vibrancy view frosts the whole window rect, so no margin ring,
+   and the OS shadow follows the effect view's rounded edge. */
 
 /* Tray v3 — glass popover: mascot header, one now-card, two tiles, folded
    24h chart. Palette: #a78bfa live · #7ee0a6 ok · #e0a458 warn · ink
    #ece7df · dim #7a7580, plus the glass whites below.
-   ponytail: true glass needs window-vibrancy (NSVisualEffectView);
-   backdrop-filter cannot blur the desktop behind a transparent WKWebView —
-   it only blurs this webview's own layers. The background alpha is
-   therefore near-solid so the panel reads right today; the filter lines
-   stay so a later vibrancy pass only has to lower the alpha. */
+   ponytail: the glass is native — tray.rs applies window-vibrancy
+   (NSVisualEffectView HudWindow, radius 22) under this transparent webview,
+   so the gradient below is a tint over the OS blur. backdrop-filter cannot
+   reach the desktop behind a WKWebView; it stays only as a no-op fallback
+   for non-mac builds, where the panel simply reads darker. */
 .tray-panel {
   box-sizing: border-box;
   position: relative;
@@ -4604,13 +4601,12 @@ html.tray-window body {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: linear-gradient(
     180deg,
-    rgba(30, 30, 36, 0.97),
-    rgba(16, 16, 20, 0.98)
+    rgba(30, 30, 36, 0.72),
+    rgba(16, 16, 20, 0.78)
   );
   -webkit-backdrop-filter: blur(36px) saturate(1.5);
   backdrop-filter: blur(36px) saturate(1.5);
   box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.55),
     inset 0 1px 0 rgba(255, 255, 255, 0.14),
     inset 0 -1px 0 rgba(255, 255, 255, 0.04);
   color: #ece7df;
