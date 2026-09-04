@@ -116,8 +116,14 @@ can run e.g. Claude Sonnet for ingest and a local Llama for Q&A.
   clicking one opens that note in myco. It runs the same Ask path as the
   in-app page. Change or switch it off under Settings → Appearance; if
   another app already owns the combination, that row says so instead of
-  leaving a key that quietly does nothing. In the same window, `⌥M` (or the
-  mic button) records a voice memo into `_inbox/`: the waveform is drawn
+  leaving a key that quietly does nothing.
+- `⌥M` (global, works from any app) records a voice memo into `_inbox/`. It
+  starts the take on the notch; with the notch switched off (Settings →
+  Appearance) it opens the spotlight window and records there, so the key
+  always has a surface. Pressing it again saves the take — it never
+  discards one. If another app already owns `⌥M`, the key still works
+  inside the notch or the spotlight window itself, and the reason is logged
+  at startup. In either surface (or via the mic button): the waveform is drawn
   from the real mic level (a flat line plus a "no sound is coming in" hint
   mean the mic is not being heard) and the words appear under it as a live
   caption while you speak, the row names each stage (transcribing → saving)

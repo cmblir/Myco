@@ -16,10 +16,12 @@ import {
   extLabel,
   reduceNotch,
   runningPercent,
+  voiceHotkeyAction,
 } from "./notchDriver";
 import type { NotchDriverState, NotchEvent } from "./notchDriver";
 import { today } from "./taskLine";
 import { EMPTY_CAPTION } from "./liveCaption";
+import { createHotkeyGate } from "./voiceCapture";
 import {
   CANCELLED_DWELL_MS,
   DONE_DWELL_MS,
@@ -592,5 +594,43 @@ describe("digitsIn", () => {
   it("reads an unparseable label as zero rather than NaN", () => {
     expect(digitsIn("—")).toBe(0);
     expect(digitsIn("")).toBe(0);
+  });
+});
+
+describe("the global ⌥M", () => {
+  it("starts a take from the states that can begin one", () => {
+    for (const kind of ["idle", "peek", "capture"] as const) {
+      expect(voiceHotkeyAction(kind)).toBe("start");
+    }
+  });
+
+  it("SAVES a live take instead of discarding it", () => {
+    expect(voiceHotkeyAction("recording")).toBe("stop");
+  });
+
+  it("leaves states that are reporting something alone", () => {
+    for (const kind of [
+      "dragging",
+      "accepted",
+      "running",
+      "done",
+      "captured",
+      "cancelled",
+      "saving",
+      "rejected",
+    ] as const) {
+      expect(voiceHotkeyAction(kind)).toBe("ignore");
+    }
+  });
+});
+
+describe("the ⌥M double-fire gate", () => {
+  it("drops a second delivery of the same press, then reopens", () => {
+    const gate = createHotkeyGate(400);
+    expect(gate(1_000)).toBe(true);
+    // The window keydown listener firing alongside the OS hotkey event.
+    expect(gate(1_005)).toBe(false);
+    // A deliberate second press is not a double fire.
+    expect(gate(1_500)).toBe(true);
   });
 });

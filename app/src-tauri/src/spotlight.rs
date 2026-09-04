@@ -153,6 +153,13 @@ fn toggle(app: &AppHandle) {
         let _ = win.hide();
         return;
     }
+    place_and_show(app, &win);
+}
+
+/// Park the window on the monitor the cursor is on and raise it. Split out of
+/// `toggle` so the voice hotkey's fallback can raise the spotlight WITHOUT the
+/// hide half — ⌥M must never close the surface it is about to record into.
+fn place_and_show(app: &AppHandle, win: &tauri::WebviewWindow) {
     let scale = win.scale_factor().unwrap_or(1.0);
     let monitor = app
         .cursor_position()
@@ -180,6 +187,79 @@ fn toggle(app: &AppHandle) {
 /// Emitted to the spotlight webview each time the window is shown, so it can
 /// reset and focus its input.
 pub const SPOTLIGHT_OPENED_EVENT: &str = "myco://spotlight-opened";
+
+/// Rust → the voice surface: ⌥M was pressed anywhere; toggle a take. Payload
+/// free — the surface, not the key, knows whether it is starting or saving.
+pub const VOICE_HOTKEY_EVENT: &str = "myco://voice-hotkey";
+
+/// The voice quick-capture hotkey. Fixed, unlike the ask shortcut: it is not
+/// in Settings yet, and the notch peek row and the spotlight both print it.
+pub const VOICE_SHORTCUT: &str = "Alt+KeyM";
+
+/// Which webview a ⌥M press belongs to. Pure so the fallback rule is testable
+/// without a running app.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoiceTarget {
+    /// The notch panel — the surface the hotkey was designed for.
+    Notch,
+    /// The notch surface is off in Settings (its window is destroyed, not
+    /// hidden), so the spotlight — which owns the same recorder — takes the
+    /// take instead. The hotkey must never be a key that does nothing.
+    Spotlight,
+}
+
+pub fn voice_target(notch_window_exists: bool) -> VoiceTarget {
+    if notch_window_exists {
+        VoiceTarget::Notch
+    } else {
+        VoiceTarget::Spotlight
+    }
+}
+
+/// Hand the press to whichever voice surface exists.
+fn toggle_voice(app: &AppHandle) {
+    match voice_target(app.get_webview_window(crate::notch::NOTCH_LABEL).is_some()) {
+        VoiceTarget::Notch => {
+            let _ = app.emit_to(crate::notch::NOTCH_LABEL, VOICE_HOTKEY_EVENT, ());
+        }
+        VoiceTarget::Spotlight => {
+            let Some(win) = ensure_window(app) else {
+                return;
+            };
+            // Raise it only if it is down: an already-open spotlight keeps its
+            // question and its scroll, and re-showing would reset the input.
+            if !win.is_visible().unwrap_or(false) {
+                place_and_show(app, &win);
+            }
+            // ponytail: on the FIRST press after launch this emit races the
+            // webview's load, so that press only opens the window and the next
+            // one records. Pre-creating the spotlight at startup (or carrying
+            // the intent in its URL) is the fix if that ever matters.
+            let _ = app.emit_to(SPOTLIGHT_LABEL, VOICE_HOTKEY_EVENT, ());
+        }
+    }
+}
+
+/// Register the voice hotkey. Best-effort in exactly the sense `apply` is: a
+/// combination another app already owns is logged and skipped, never a panic
+/// and never a startup failure. No status is stored — see the log line.
+fn init_voice_hotkey(app: &AppHandle) {
+    let handle = app.clone();
+    let result =
+        app.global_shortcut()
+            .on_shortcut(VOICE_SHORTCUT, move |_app, _shortcut, event| {
+                // Press only, like the ask shortcut: release would toggle twice.
+                if event.state == KeyState::Pressed {
+                    toggle_voice(&handle);
+                }
+            });
+    if let Err(e) = result {
+        eprintln!(
+            "voice hotkey '{VOICE_SHORTCUT}' not registered: {e} — ⌥M will only \
+             work while the notch or spotlight webview has keyboard focus"
+        );
+    }
+}
 
 /// (Re)register the global shortcut and report what happened. Unregisters
 /// whatever we currently hold first, so changing the shortcut in Settings can
@@ -236,6 +316,9 @@ pub fn apply(app: &AppHandle, requested: &str) -> ShortcutStatus {
 /// Register the persisted shortcut at startup. Best-effort, like tray::init —
 /// a shortcut we cannot get must never block launch; Settings shows why.
 pub fn init(app: &AppHandle) {
+    // Same lifecycle as the ask shortcut, so there is one place where this app
+    // asks the OS for keys and one place a refusal is logged.
+    init_voice_hotkey(app);
     let status = apply(app, &crate::settings::load().spotlight_shortcut);
     if let Some(e) = &status.error {
         eprintln!(
@@ -338,6 +421,17 @@ mod tests {
             plan_shortcut("Alt+Nope"),
             ShortcutPlan::Invalid(_)
         ));
+    }
+
+    #[test]
+    fn the_voice_hotkey_parses_and_falls_back_to_the_spotlight() {
+        assert_eq!(
+            plan_shortcut(VOICE_SHORTCUT),
+            ShortcutPlan::Register("Alt+KeyM".into())
+        );
+        assert_eq!(voice_target(true), VoiceTarget::Notch);
+        // Notch surface off in Settings ⇒ the key still has somewhere to go.
+        assert_eq!(voice_target(false), VoiceTarget::Spotlight);
     }
 
     #[test]

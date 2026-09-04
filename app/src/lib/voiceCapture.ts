@@ -6,6 +6,32 @@
 
 import type { RecorderLike } from "./wavRecorder";
 
+/** Rust → the notch / spotlight webview: the global ⌥M was pressed (see
+ *  spotlight.rs `VOICE_HOTKEY_EVENT`). Payload free — only the surface knows
+ *  whether that means start or save. */
+export const VOICE_HOTKEY_EVENT = "myco://voice-hotkey";
+
+/** One ⌥M press must move a take exactly once.
+ *
+ *  The OS hotkey normally swallows the key (Carbon's RegisterEventHotKey,
+ *  which global-hotkey uses on macOS, consumes it before the focused app sees
+ *  it), so the window-level keydown listeners should never fire alongside the
+ *  event. "Should" is not verifiable without a headed run, and a double fire
+ *  would start-then-stop a take on one keystroke — so both paths pass through
+ *  this gate and the second delivery inside the window is dropped. */
+export function createHotkeyGate(gapMs = 400): (now?: number) => boolean {
+  let last = -Infinity;
+  return (now = Date.now()) => {
+    if (now - last < gapMs) return false;
+    last = now;
+    return true;
+  };
+}
+
+/** The gate the ⌥M paths share. Per webview — the notch and the spotlight are
+ *  separate JS contexts, and only one of them is ever the hotkey's target. */
+export const voiceHotkeyGate = createHotkeyGate();
+
 export type VoiceState = "idle" | "recording" | "saving" | "saved" | "error";
 
 export interface VoiceMachine {

@@ -34,7 +34,11 @@ import type { CaptionState } from "./liveCaption";
 import { classifyDrop, writeDrop } from "./notchDrop";
 import type { DropPayload } from "./notchDrop";
 import { today } from "./taskLine";
-import { createVoiceMachine } from "./voiceCapture";
+import {
+  VOICE_HOTKEY_EVENT,
+  createVoiceMachine,
+  voiceHotkeyGate,
+} from "./voiceCapture";
 import { createLevelHistory, createSilenceWatch } from "./voiceLevel";
 
 /** A dead input reads as digital zeros; a live mic in a quiet room still
@@ -529,6 +533,20 @@ async function persistDrop(
     : summary;
 }
 
+/** What a ⌥M press means for the panel's current state. Pure so the one rule
+ *  that matters — a toggle NEVER discards a live take, it saves it — is tested
+ *  without a mic. States that are already showing a result (a drop landing, a
+ *  running job, a save in flight) are left alone: the key belongs to whatever
+ *  they are reporting, not to a new recording. */
+export function voiceHotkeyAction(
+  kind: NotchState["kind"],
+): "start" | "stop" | "ignore" {
+  if (kind === "recording") return "stop";
+  return kind === "idle" || kind === "peek" || kind === "capture"
+    ? "start"
+    : "ignore";
+}
+
 export interface NotchDrive {
   state: NotchState;
   /** S10: no notch on this display — same panel, floating pill. */
@@ -598,6 +616,10 @@ export function useNotchDriver(): NotchDrive | null {
   // ref so a language change does not tear the listener down mid-drag.
   const templateRef = useRef(t.notch_unsupported);
   templateRef.current = t.notch_unsupported;
+  // The ⌥M toggle, reachable from the mount-once global-hotkey listener below.
+  // A ref, not a dep: the listener must outlive every re-render (a torn-down
+  // subscription mid-take is a hotkey that stops working).
+  const voiceToggleRef = useRef<() => void>(() => undefined);
   const writeFailedRef = useRef(t.notch_write_failed);
   writeFailedRef.current = t.notch_write_failed;
   const whisperMissingRef = useRef(t.voice_whisper_missing);
@@ -906,7 +928,10 @@ export function useNotchDriver(): NotchDrive | null {
   useEffect(() => {
     if (kind !== "recording") return;
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Enter" || (e.altKey && e.code === "KeyM")) {
+      if (e.altKey && e.code === "KeyM") {
+        e.preventDefault();
+        voiceToggleRef.current();
+      } else if (e.key === "Enter") {
         e.preventDefault();
         void machine().stop();
       } else if (e.key === "Escape") {
@@ -917,6 +942,31 @@ export function useNotchDriver(): NotchDrive | null {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [kind]);
+
+  // The GLOBAL ⌥M (registered in spotlight.rs). The keydown listeners above
+  // only fire while this non-activating panel holds keyboard focus, which it
+  // does not from inside another app — that is the whole reason the key
+  // appeared dead everywhere except the notch itself.
+  useEffect(() => {
+    if (mocking) return;
+    let gone = false;
+    let unlisten: (() => void) | null = null;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen(VOICE_HOTKEY_EVENT, () => voiceToggleRef.current()),
+      )
+      .then((u) => {
+        if (gone) u();
+        else unlisten = u;
+      })
+      .catch((err: unknown) =>
+        console.error("notch: voice hotkey listen failed:", err),
+      );
+    return () => {
+      gone = true;
+      if (unlisten) unlisten();
+    };
+  }, [mocking]);
 
   // S8's lip clock, while the mic is actually live.
   useEffect(() => {
@@ -1063,6 +1113,13 @@ export function useNotchDriver(): NotchDrive | null {
       }
       return machine().start();
     }, missing);
+  };
+
+  voiceToggleRef.current = (): void => {
+    if (!voiceHotkeyGate()) return;
+    const action = voiceHotkeyAction(kindRef.current);
+    if (action === "stop") void machine().stop();
+    else if (action === "start") onCaptureVoice();
   };
 
   // Self-collapse: arm the state's dwell, if it has one. `drv.panel` is a new

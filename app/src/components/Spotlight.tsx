@@ -37,7 +37,9 @@ import {
 } from "../lib/spotlight";
 import { formatTicker } from "../lib/time";
 import {
+  VOICE_HOTKEY_EVENT,
   createVoiceMachine,
+  voiceHotkeyGate,
   type VoiceMachine,
   type VoiceState,
 } from "../lib/voiceCapture";
@@ -316,15 +318,49 @@ export default function Spotlight(): JSX.Element {
       .catch(() => setVoiceNotice("whisper-missing"));
   };
 
-  // ⌥M toggles anywhere in the card: start when idle, stop-and-save while
-  // recording (same as ⏎ — a toggle that discarded would lose the take).
-  // Record mode has no input, so ⏎/esc are window-level here.
+  // ⌥M: start when idle, stop-and-save while recording (same as ⏎ — a toggle
+  // that discarded would lose the take). Re-made every render (it reads
+  // voiceState) and mirrored into a ref, so the mount-once hotkey listener
+  // below reaches the current one without re-subscribing.
+  const toggleVoice = (): void => {
+    if (!voiceHotkeyGate()) return;
+    if (voiceState === "recording") void machine().stop();
+    else startRecording();
+  };
+  const toggleVoiceRef = useRef(toggleVoice);
+  toggleVoiceRef.current = toggleVoice;
+
+  // The GLOBAL ⌥M (registered in spotlight.rs) lands here when the notch
+  // surface is off: this window is then the only voice surface there is.
+  // Mount-once — a subscription torn down and rebuilt on every state change
+  // has a gap in it, and the gap would eat presses mid-take.
+  useEffect(() => {
+    let gone = false;
+    let unlisten: (() => void) | null = null;
+    void import("@tauri-apps/api/event")
+      .then(({ listen }) =>
+        listen(VOICE_HOTKEY_EVENT, () => toggleVoiceRef.current()),
+      )
+      .then((u) => {
+        if (gone) u();
+        else unlisten = u;
+      })
+      .catch(() => {
+        /* plain-browser dev: no Tauri event bus */
+      });
+    return () => {
+      gone = true;
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  // Record mode has no input, so ⏎/esc are window-level here; ⌥M works
+  // anywhere in the card even when the global registration was refused.
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       if (e.altKey && e.code === "KeyM") {
         e.preventDefault();
-        if (voiceState === "recording") void machine().stop();
-        else startRecording();
+        toggleVoice();
         return;
       }
       if (voiceState === "recording") {

@@ -33,6 +33,7 @@ import type { Strings } from "../lib/i18n";
 import { isComposingKey } from "../lib/ime";
 import type { CaptionState } from "../lib/liveCaption";
 import { formatTicker } from "../lib/time";
+import { voiceHotkeyGate } from "../lib/voiceCapture";
 import { createLevelHistory } from "../lib/voiceLevel";
 import type { LevelHistory } from "../lib/voiceLevel";
 import { useUIStore } from "../stores/uiStore";
@@ -625,7 +626,10 @@ function NotchBody({
               if (isComposingKey(e)) return;
               if (e.altKey && e.code === "KeyM") {
                 e.preventDefault();
-                onCaptureVoice?.();
+                // Fallback for a REFUSED global registration: normally the OS
+                // hotkey swallows this key. The gate makes a double delivery
+                // a no-op instead of a start-then-stop.
+                if (voiceHotkeyGate()) onCaptureVoice?.();
               } else if (e.key === "Enter") {
                 e.preventDefault();
                 const text = e.currentTarget.value.trim();

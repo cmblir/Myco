@@ -239,11 +239,12 @@ broken by recency. The answer shows the window it used and says so plainly when
 nothing in it matched. On an external provider the range rides along as an
 instruction, not a filter.
 
-**Voice capture** — `⌥M` in Spotlight or on the notch records, Enter saves: the
+**Voice capture** — `⌥M` (global, works from any app) records, Enter saves: the
 words appear as a live caption while you speak, and the transcript lands in
-`_inbox/` for the normal ingest pipeline to pick up. Speech
-recognition is built in — myco ships whisper.cpp and fetches its model (~190 MB)
-once, on your first recording, showing the progress on the capture surface.
+`_inbox/` for the normal ingest pipeline to pick up. The take goes to the notch;
+with the notch surface switched off it opens Spotlight and records there
+instead. Speech recognition is built in — myco ships whisper.cpp and fetches
+its model (~190 MB) once, on your first recording, showing the progress on the capture surface.
 Nothing to install, and the audio never leaves the machine. A `whisper` already
 on your PATH is used instead, if you have one you prefer.
 
