@@ -398,7 +398,7 @@ export default function TrayPanel(): JSX.Element {
           <button
             type="button"
             className="tray-b"
-            onClick={() => act(isTask ? "tasks" : "overview")}
+            onClick={() => act(isTask ? "tasks" : "links")}
           >
             {labels.view}
           </button>
@@ -456,7 +456,9 @@ export default function TrayPanel(): JSX.Element {
           <TileRow
             icon="link"
             label={labels.links}
-            onClick={() => act("overview")}
+            // "links"/"reflect", not "overview": both sections sit below the
+            // fold, so the plain route left the user nowhere near the tile.
+            onClick={() => act("links")}
             badge={
               <Badge
                 tone={counts.links === 0 ? "z" : undefined}
@@ -469,7 +471,7 @@ export default function TrayPanel(): JSX.Element {
           <TileRow
             icon="distill"
             label={labels.reflect}
-            onClick={() => act("overview")}
+            onClick={() => act("reflect")}
             badge={
               <Badge
                 tone={counts.reflect === 0 ? "z" : undefined}

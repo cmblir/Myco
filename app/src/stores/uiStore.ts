@@ -11,6 +11,7 @@ import {
 import { persist } from "zustand/middleware";
 import { SPLIT_DEFAULT_RATIO } from "../lib/splitRatio";
 import type { Lang } from "../lib/i18n";
+import type { SettingsTab } from "../lib/settingsSearch";
 import {
   pushRoute,
   replaceCurrent,
@@ -54,6 +55,13 @@ export interface UIState {
   // it lives here so the activity panel / tray "N awaiting review" row can
   // deep-link straight to the quarantine tab (setRoute alone can't).
   feedbackTab: FeedbackTab;
+  // Which tab the Settings page shows. Same story as feedbackTab: the chip's
+  // MCP row / Ask's profile CTA name something that lives on a specific tab,
+  // and setRoute("settings") alone dropped the user on the default one — with
+  // nothing it named in sight, and no effect at all when Settings was already
+  // the route. Single source of truth: the rail writes it too, so a second
+  // deep link after a manual tab switch still moves.
+  settingsTab: SettingsTab;
   // Deck path the Study page should open directly (ritual card's 복습 시작 —
   // Q4 item 11). Same deep-link idiom as feedbackTab, but consumed ONCE:
   // PageStudy reads it on mount and clears it, so later Study visits start at
@@ -113,6 +121,7 @@ export interface UIState {
   goBack: () => void;
   goForward: () => void;
   setFeedbackTab: (tab: FeedbackTab) => void;
+  setSettingsTab: (tab: SettingsTab) => void;
   setStudyDeck: (path: string | null) => void;
   /** Point the next paint at a section (see focusTarget). */
   focusSection: (id: string) => void;
@@ -145,6 +154,7 @@ export const useUIStore = create<UIState>()(
       route: "overview",
       navHistory: { entries: ["overview"], idx: 0 },
       feedbackTab: "proposals",
+      settingsTab: "model",
       studyDeck: null,
       focusTarget: null,
       splitRoute: null,
@@ -174,6 +184,7 @@ export const useUIStore = create<UIState>()(
       goBack: () => set((s) => stepPatch(s, -1)),
       goForward: () => set((s) => stepPatch(s, 1)),
       setFeedbackTab: (feedbackTab) => set({ feedbackTab }),
+      setSettingsTab: (settingsTab) => set({ settingsTab }),
       setStudyDeck: (studyDeck) => set({ studyDeck }),
       focusSection: (id) =>
         set((s) => ({

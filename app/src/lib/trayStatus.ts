@@ -330,6 +330,62 @@ const INFLOW_PROBE_MIN_MS = 120_000;
 let dueCounts = { dueToday: 0, overdue: 0 };
 let dueProbedAt = 0;
 
+/** A tray menu / panel action, expanded into store calls. Exported for the
+ *  tests: the listener above is a one-liner around it. */
+export function applyTrayAction(action: string): void {
+  if (
+    action === "overview" ||
+    action === "settings" ||
+    action === "query" ||
+    action === "ingest" ||
+    action === "tasks"
+  ) {
+    useUIStore.getState().setRoute(action);
+    return;
+  }
+  // Sections of Overview, not routes: the suggested-links and reflect tiles
+  // both used to send "overview", which parked the user at the page TOP with
+  // the thing they clicked far below the fold (and did nothing at all when
+  // Overview was already open). Route + focus the named section instead.
+  if (action === "links" || action === "reflect") {
+    useUIStore.getState().setRoute("overview");
+    useUIStore.getState().focusSection(action);
+    return;
+  }
+  // Map-proposal decisions from the tray panel: the panel has no store of
+  // its own, so it sends the vault-relative path back and the decision runs
+  // through distillStore — the same writer as the popover and the Feedback
+  // page, never a second one.
+  const approve = action.match(/^proposal-approve:(.+)$/);
+  if (approve) {
+    void useDistillStore.getState().apply(approve[1]);
+    return;
+  }
+  const reject = action.match(/^proposal-reject:(.+)$/);
+  if (reject) {
+    void useDistillStore.getState().dismiss(reject[1]);
+    return;
+  }
+  if (action === "proposals") {
+    useUIStore.getState().setFeedbackTab("proposals");
+    useUIStore.getState().setRoute("feedback");
+    return;
+  }
+  // Not a route of its own: the quarantine list is a TAB on the Feedback
+  // page, so the deep link sets both.
+  if (action === "quarantine") {
+    useUIStore.getState().setFeedbackTab("quarantine");
+    useUIStore.getState().setRoute("feedback");
+    return;
+  }
+  if (action === "distill") {
+    const path = useVaultStore.getState().currentVault?.path;
+    // Same single entry as the schedule/idle/manual triggers; the guard
+    // makes a click during a run a no-op.
+    if (path) void runDistillGuarded(path);
+  }
+}
+
 /** Wire the tray: store subscriptions → debounced update_tray_status calls,
  * plus the menu-action listener. Returns a cleanup. Call once from App. */
 export function initTrayIntegration(): () => void {
@@ -468,51 +524,7 @@ export function initTrayIntegration(): () => void {
   // already shown/focused the window before emitting.
   let unlisten: (() => void) | null = null;
   let cancelled = false;
-  void listen<string>(TRAY_ACTION_EVENT, (e) => {
-    const action = e.payload;
-    if (
-      action === "overview" ||
-      action === "settings" ||
-      action === "query" ||
-      action === "ingest" ||
-      action === "tasks"
-    ) {
-      useUIStore.getState().setRoute(action);
-      return;
-    }
-    // Map-proposal decisions from the tray panel: the panel has no store of
-    // its own, so it sends the vault-relative path back and the decision runs
-    // through distillStore — the same writer as the popover and the Feedback
-    // page, never a second one.
-    const approve = action.match(/^proposal-approve:(.+)$/);
-    if (approve) {
-      void useDistillStore.getState().apply(approve[1]);
-      return;
-    }
-    const reject = action.match(/^proposal-reject:(.+)$/);
-    if (reject) {
-      void useDistillStore.getState().dismiss(reject[1]);
-      return;
-    }
-    if (action === "proposals") {
-      useUIStore.getState().setFeedbackTab("proposals");
-      useUIStore.getState().setRoute("feedback");
-      return;
-    }
-    // Not a route of its own: the quarantine list is a TAB on the Feedback
-    // page, so the deep link sets both.
-    if (action === "quarantine") {
-      useUIStore.getState().setFeedbackTab("quarantine");
-      useUIStore.getState().setRoute("feedback");
-      return;
-    }
-    if (action === "distill") {
-      const path = useVaultStore.getState().currentVault?.path;
-      // Same single entry as the schedule/idle/manual triggers; the guard
-      // makes a click during a run a no-op.
-      if (path) void runDistillGuarded(path);
-    }
-  })
+  void listen<string>(TRAY_ACTION_EVENT, (e) => applyTrayAction(e.payload))
     .then((u) => {
       if (cancelled) u();
       else unlisten = u;

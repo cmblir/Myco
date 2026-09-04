@@ -101,7 +101,16 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const theme = useUIStore((s) => s.theme);
   const setTheme = useUIStore((s) => s.setTheme);
 
-  const [tab, setTab] = useState<SettingsTab>("model");
+  // The store owns the tab so a deep link can name one (see uiStore.settingsTab).
+  const tab = useUIStore((s) => s.settingsTab);
+  const setTab = useUIStore((s) => s.setSettingsTab);
+  // Distinguishes our own tab switches (rail click, search) from a deep link
+  // arriving from elsewhere; see the effect below.
+  const ownTabChange = useRef(false);
+  const selectTab = (next: SettingsTab): void => {
+    ownTabChange.current = true;
+    setTab(next);
+  };
   const [q, setQ] = useState("");
   // The last value typed outside an IME composition: matching on every
   // keystroke of a Hangul syllable would flip the tab mid-character.
@@ -115,8 +124,20 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
     // not in an effect, so the switch sticks after the query is cleared.
     const hit = matchSettings(t, v);
     const first = hit.keys().next();
-    if (!first.done && !hit.has(tab)) setTab(first.value);
+    if (!first.done && !hit.has(tab)) selectTab(first.value);
   }
+
+  // A tab set from outside (chip's MCP row, Ask's profile CTA) must win over
+  // the search state: a leftover query hides every card that does not match
+  // it, so the deep link would land on a tab with nothing on it.
+  useEffect(() => {
+    if (ownTabChange.current) {
+      ownTabChange.current = false;
+      return;
+    }
+    setQ("");
+    setApplied("");
+  }, [tab]);
 
   // Cards filter by their OWN text (not the index), so an un-indexed card
   // fails open; a tab-title match shows every card of that tab.
@@ -201,7 +222,7 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
               <button
                 key={x.id}
                 className={"qbtn" + (tab === x.id ? " active" : "")}
-                onClick={() => setTab(x.id)}
+                onClick={() => selectTab(x.id)}
               >
                 <span className="qicon">
                   <Icon name={x.icon} size={14} />

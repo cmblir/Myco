@@ -63,6 +63,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const adjacency = useVaultStore((s) => s.adjacency);
   const openWikilink = useVaultStore((s) => s.openWikilink);
   const setRoute = useUIStore((s) => s.setRoute);
+  const setSettingsTab = useUIStore((s) => s.setSettingsTab);
   const route = useUIStore((s) => s.route);
   const splitRoute = useUIStore((s) => s.splitRoute);
   const lang = useUIStore((s) => s.lang);
@@ -236,7 +237,12 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
           <button
             className="btn btn-ghost"
             style={{ fontSize: 12, padding: "2px 8px" }}
-            onClick={() => setRoute("settings")}
+            // The profile form lives on the Distill tab; settings opens on
+            // the model tab, where this CTA named nothing.
+            onClick={() => {
+              setSettingsTab("distill");
+              setRoute("settings");
+            }}
           >
             {t.ask_profile_hint_cta ?? "Set up profile"} →
           </button>

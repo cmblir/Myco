@@ -5,6 +5,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   TraySender,
+  applyTrayAction,
   buildTrayStatus,
   bumpedKeys,
   pickNowCard,
@@ -12,6 +13,7 @@ import {
 } from "./trayStatus";
 import type { TraySnapshot } from "./trayStatus";
 import type { TrayStatusPayload } from "./ipc";
+import { useUIStore } from "../stores/uiStore";
 import { STRINGS } from "./i18n";
 
 const idle: TraySnapshot = {
@@ -375,5 +377,40 @@ describe("tray v3 panel", () => {
     expect(bumpedKeys({ a: 1, b: 2, c: 5 }, { a: 2, b: 2, c: 4 })).toEqual([
       "a",
     ]);
+  });
+});
+
+describe("applyTrayAction", () => {
+  beforeEach(() => {
+    useUIStore.setState({ route: "query", focusTarget: null, feedbackTab: "proposals" });
+  });
+
+  it("a plain route action just routes", () => {
+    applyTrayAction("overview");
+    expect(useUIStore.getState().route).toBe("overview");
+    expect(useUIStore.getState().focusTarget).toBeNull();
+  });
+
+  it("links / reflect route to Overview AND point at their section", () => {
+    applyTrayAction("links");
+    expect(useUIStore.getState().route).toBe("overview");
+    expect(useUIStore.getState().focusTarget).toEqual({ id: "links", nonce: 1 });
+    // Already on Overview: the route call is a no-op, the nonce is the only
+    // thing that makes the tile's second click do anything.
+    applyTrayAction("reflect");
+    expect(useUIStore.getState().route).toBe("overview");
+    expect(useUIStore.getState().focusTarget).toEqual({ id: "reflect", nonce: 1 });
+  });
+
+  it("quarantine is a tab, not a route", () => {
+    applyTrayAction("quarantine");
+    expect(useUIStore.getState().route).toBe("feedback");
+    expect(useUIStore.getState().feedbackTab).toBe("quarantine");
+  });
+
+  it("an unknown action changes nothing", () => {
+    applyTrayAction("nope");
+    expect(useUIStore.getState().route).toBe("query");
+    expect(useUIStore.getState().focusTarget).toBeNull();
   });
 });

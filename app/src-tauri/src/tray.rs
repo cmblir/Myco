@@ -15,8 +15,9 @@ use std::sync::Mutex;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindowBuilder};
 
-/// Event the frontend listens on for tray menu actions. Payload is one of
-/// "overview" | "settings" | "query" | "distill".
+/// Event the frontend listens on for tray menu actions. Payload is an opaque
+/// string the frontend expands, e.g. "overview" | "links" | "settings" |
+/// "query" | "distill".
 pub const TRAY_ACTION_EVENT: &str = "myco://tray-action";
 
 /// Event the tray-panel window listens on for live status pushes; the same
@@ -184,16 +185,17 @@ fn handle_menu_id<R: Runtime>(app: &AppHandle<R>, id: &str) {
     match id {
         "tray-quit" => app.exit(0),
         "tray-open" => show_main_window(app),
-        // "tray-reflect" goes to Overview too — that is where the reflect
-        // panel lives.
-        "tray-overview" | "tray-reflect" | "tray-settings" | "tray-query" | "tray-ingest"
-        | "tray-quarantine" | "tray-proposals" | "tray-tasks" => {
+        "tray-overview" | "tray-reflect" | "tray-links" | "tray-settings" | "tray-query"
+        | "tray-ingest" | "tray-quarantine" | "tray-proposals" | "tray-tasks" => {
             show_main_window(app);
             // Route names match the frontend's RouteId values — except
-            // "quarantine"/"proposals", which the frontend expands into route
-            // `feedback` plus that tab (a tab is not a route of its own).
+            // "quarantine"/"proposals" (route `feedback` plus that tab) and
+            // "links"/"reflect" (route `overview` plus that section), which
+            // the frontend expands; neither a tab nor a section is a route.
             let route = match id {
-                "tray-overview" | "tray-reflect" => "overview",
+                "tray-overview" => "overview",
+                "tray-reflect" => "reflect",
+                "tray-links" => "links",
                 "tray-settings" => "settings",
                 "tray-ingest" => "ingest",
                 "tray-quarantine" => "quarantine",
@@ -646,6 +648,8 @@ pub fn tray_panel_action(app: AppHandle, action: String) -> Result<(), String> {
         "open" => "tray-open",
         "quit" => "tray-quit",
         "overview" => "tray-overview",
+        "links" => "tray-links",
+        "reflect" => "tray-reflect",
         "settings" => "tray-settings",
         "ingest" => "tray-ingest",
         "quarantine" => "tray-quarantine",

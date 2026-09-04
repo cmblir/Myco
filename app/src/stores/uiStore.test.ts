@@ -20,6 +20,7 @@ describe("uiStore navigation history", () => {
       navHistory: { entries: ["overview"], idx: 0 },
       splitRoute: null,
       focusTarget: null,
+      settingsTab: "model",
     });
   });
 
@@ -74,6 +75,12 @@ describe("uiStore navigation history", () => {
     expect(useUIStore.getState().focusTarget).toEqual({ id: "reflect", nonce: 1 });
     s.clearFocusTarget();
     expect(useUIStore.getState().focusTarget).toBeNull();
+  });
+
+  it("settingsTab defaults to the model tab and the setter deep-links", () => {
+    expect(useUIStore.getState().settingsTab).toBe("model");
+    useUIStore.getState().setSettingsTab("mcp");
+    expect(useUIStore.getState().settingsTab).toBe("mcp");
   });
 
   it("rehydrating a stale persisted stack falls back to the route alone and keeps Favorites open", async () => {

@@ -183,6 +183,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const setRoute = useUIStore((s) => s.setRoute);
   const setFeedbackTab = useUIStore((s) => s.setFeedbackTab);
   const focusSection = useUIStore((s) => s.focusSection);
+  const setSettingsTab = useUIStore((s) => s.setSettingsTab);
   // Resurface picks (Q4 item 10) — a standing decision surface like the map
   // proposals: recomputed by the distill chain, never part of the chip badge.
   const resurfacePicks = useResurfaceStore((s) => s.picks);
@@ -802,7 +803,12 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
         {
           key: "mcp",
           icon: "mcp",
-          onClick: () => jump("settings"),
+          // The MCP block is one tab of Settings, not its default one — route
+          // alone showed the model tab with no MCP anywhere on it.
+          onClick: () => {
+            setSettingsTab("mcp");
+            jump("settings");
+          },
           main:
             mcpRunning === null
               ? "…"
