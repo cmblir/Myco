@@ -111,11 +111,11 @@ can run e.g. Claude Sonnet for ingest and a local Llama for Q&A.
   under a Tools row. Settings has a search box that narrows its tabs and
   cards to matching labels.
 - `⌘B` toggles the sidebar.
-- Menu bar tray: left-click opens a glass popover — the mascot with a
+- Menu bar tray: left- or right-click opens a glass popover — the mascot with a
   one-line status, at most one card for the thing awaiting a decision
   (approve/dismiss a map proposal inline), the waiting counts and today's
   inflow as tiles with the 24-hour chart folded behind a disclosure, and
-  Ask / Distill buttons; right-click keeps the plain native menu.
+  Ask / Distill buttons.
 - Notices: work in progress lives in the top-right activity chip (a ring
   fills as reindex, distill or a link "accept all" advances; the label swaps
   per step; the ring turns green for a beat when done), and results arrive as

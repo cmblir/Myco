@@ -4760,6 +4760,10 @@ html.tray-window body {
   background: #a78bfa;
   box-shadow: 0 0 8px #a78bfa;
 }
+.tray-pill.is-off i {
+  background: #4a4650;
+  box-shadow: none;
+}
 
 /* Now-card: the one pending decision. Collapses (max-height + opacity)
    once decided; the next status push removes it. */
@@ -6334,7 +6338,7 @@ html.tray-window body {
   padding: 2px;
   border-radius: 50%;
   background: var(--c-entity);
-  color: #fff;
+  color: var(--bg);
   box-shadow: 0 0 0 1.5px var(--bg);
 }
 .notice-check path {
@@ -6424,6 +6428,10 @@ html.tray-window body {
   }
   .notice-check path {
     stroke-dashoffset: 0;
+  }
+  .notice-life {
+    animation: none;
+    transform: none;
   }
   .activity-ring-arc.is-indeterminate {
     animation: none;

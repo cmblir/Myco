@@ -46,6 +46,7 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
   // lives in noticeStore's chip slot, the result arrives as a toast.
   const bulk = useNoticeStore((s) => s.progress?.key === PROGRESS_KEY);
   const setProgress = useNoticeStore((s) => s.setProgress);
+  const endProgress = useNoticeStore((s) => s.endProgress);
 
   // Keyed on `adjacency`, not fetched once: right after app launch the
   // semantic index is still reconciling, so a mount-time one-shot fetch came
@@ -104,24 +105,31 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
     const total = list.length;
     const label = t.ls_linking ?? "Linking…";
     setProgress({ key: PROGRESS_KEY, label, done: 0, total });
-    const { accepted, remaining, error: err } = await acceptAll(list, ipc, (done) =>
-      setProgress({ key: PROGRESS_KEY, label, done, total }),
-    );
-    if (accepted.length > 0) {
-      dismissKeys(accepted.map((s) => s.key));
-      await refreshLinkGraph();
+    // The slot is cleared in `finally` so the chip can never stay on "Linking…"
+    // if refreshLinkGraph or the toast throws; `ok` decides the green beat.
+    let ok = false;
+    try {
+      const { accepted, remaining, error: err } = await acceptAll(list, ipc, (done) =>
+        setProgress({ key: PROGRESS_KEY, label, done, total }),
+      );
+      if (accepted.length > 0) {
+        dismissKeys(accepted.map((s) => s.key));
+        await refreshLinkGraph();
+      }
+      if (err) {
+        failed(err, () => void acceptAllSuggestions(remaining));
+        return;
+      }
+      ok = true;
+      // No undo: acceptSuggestion has no inverse (the wikilink stays), so the
+      // toast states the result and offers nothing it cannot do.
+      notice.ok(
+        (t.ls_toast_linked ?? "{n} links added").replace("{n}", String(accepted.length)),
+        { sub: t.ls_toast_linked_sub ?? "[[wikilink]] under ## Related", icon: "link" },
+      );
+    } finally {
+      endProgress(ok);
     }
-    setProgress(null);
-    if (err) {
-      failed(err, () => void acceptAllSuggestions(remaining));
-      return;
-    }
-    // No undo: acceptSuggestion has no inverse (the wikilink stays), so the
-    // toast states the result and offers nothing it cannot do.
-    notice.ok(
-      (t.ls_toast_linked ?? "{n} links added").replace("{n}", String(accepted.length)),
-      { sub: t.ls_toast_linked_sub ?? "[[wikilink]] under ## Related", icon: "link" },
-    );
   }
 
   if (suggestions.length === 0) return null;

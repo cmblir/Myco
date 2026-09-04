@@ -7,7 +7,22 @@ import { NOTICE_TTL_MS, notice } from "../lib/notice";
 
 describe("noticeStore", () => {
   beforeEach(() => {
-    useNoticeStore.setState({ notices: [], progress: null });
+    useNoticeStore.setState({ notices: [], progress: null, lastProgressOk: true });
+  });
+
+  it("records how the progress job ended; a new job resets it", () => {
+    const store = useNoticeStore.getState();
+    const job = { key: "k", label: "l", done: 0, total: 2 };
+    store.setProgress(job);
+    store.endProgress(false);
+    expect(useNoticeStore.getState()).toMatchObject({ progress: null, lastProgressOk: false });
+    store.setProgress(job);
+    expect(useNoticeStore.getState().lastProgressOk).toBe(true);
+    store.endProgress(true);
+    expect(useNoticeStore.getState().lastProgressOk).toBe(true);
+    store.setProgress(job);
+    store.setProgress(null); // silent clear keeps the last outcome
+    expect(useNoticeStore.getState()).toMatchObject({ progress: null, lastProgressOk: true });
   });
 
   it("keeps at most three, dropping the oldest first", () => {

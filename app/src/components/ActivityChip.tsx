@@ -388,6 +388,8 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   // Completion beat: when the last runner finishes, the chip stays 600 ms
   // with a full green ring, then plays chip-out (220 ms) before unmounting.
   // A new runner during the beat cancels it and takes the chip back over.
+  // No beat when the progress job ended in an error (its warn toast is the
+  // result; a green ring above it would lie) — the chip just unmounts.
   const lastMode = useRef<ActivityChipMode<RunningActivity> | null>(null);
   if (liveMode.kind !== "none") lastMode.current = liveMode;
   const [linger, setLinger] = useState<{
@@ -398,6 +400,12 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   useEffect(() => {
     const prev = lastMode.current;
     if (!idle || !prev) {
+      setLinger(null);
+      return;
+    }
+    if (!useNoticeStore.getState().lastProgressOk) {
+      // Consume the flag so a later runner (distill, reindex) beats again.
+      useNoticeStore.setState({ lastProgressOk: true });
       setLinger(null);
       return;
     }

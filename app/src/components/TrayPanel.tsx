@@ -167,8 +167,9 @@ function TileRow({
 }
 
 /** 24 hourly columns, files stacked under MCP calls, growing from the
- * baseline on mount (the disclosure remounts it on every open). The native
- * `title` is the value tooltip. Decorative — the totals are in the rows. */
+ * baseline on mount (only rendered while the disclosure is open, so every
+ * open remounts it). The native `title` is the value tooltip. Decorative —
+ * the totals are in the rows. */
 function HourBars({
   files,
   mcp,
@@ -298,6 +299,15 @@ export default function TrayPanel(): JSX.Element {
   const [reaction, setReaction] = useState<Reaction>(null);
   const [mood, setMood] = useState<Mood>(null);
   const [gone, setGone] = useState<Set<string>>(() => new Set());
+  const [chartOpen, setChartOpen] = useState(false);
+  useEffect(() => {
+    // Drop collapsed cards once the push no longer lists their proposal.
+    const live = new Set((status?.proposals ?? []).map((p) => p.path));
+    setGone((g) => {
+      const next = new Set([...g].filter((path) => live.has(path)));
+      return next.size === g.size ? g : next;
+    });
+  }, [status]);
   const [toast, setToast] = useState<{ text: string; out: boolean } | null>(
     null,
   );
@@ -438,12 +448,10 @@ export default function TrayPanel(): JSX.Element {
             </span>
           ) : null}
         </div>
-        {panel?.mcpRunning ? (
-          <span className="tray-pill">
-            <i />
-            MCP
-          </span>
-        ) : null}
+        <span className={"tray-pill" + (panel?.mcpRunning ? "" : " is-off")}>
+          <i />
+          MCP
+        </span>
       </header>
 
       {nowCard}
@@ -527,7 +535,10 @@ export default function TrayPanel(): JSX.Element {
               </Badge>
             }
           />
-          <details className="tray-flow">
+          <details
+            className="tray-flow"
+            onToggle={(e) => setChartOpen(e.currentTarget.open)}
+          >
             <summary>
               <span>{labels.last24}</span>
               <span className="tray-flow-r">
@@ -537,12 +548,14 @@ export default function TrayPanel(): JSX.Element {
                 <span className="tray-chev">›</span>
               </span>
             </summary>
-            <HourBars
-              files={s.inflow.hourlyFiles}
-              mcp={s.inflow.hourlyMcp}
-              legendFiles={labels.sessions}
-              legendHours={labels.hourly}
-            />
+            {chartOpen ? (
+              <HourBars
+                files={s.inflow.hourlyFiles}
+                mcp={s.inflow.hourlyMcp}
+                legendFiles={labels.sessions}
+                legendHours={labels.hourly}
+              />
+            ) : null}
           </details>
         </section>
       ) : null}

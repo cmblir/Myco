@@ -36,9 +36,13 @@ interface NoticeState {
   /** Oldest first — push appends, the stack renders it reversed. */
   notices: Notice[];
   progress: NoticeProgress | null;
+  /** How the last progress job ended; the chip skips its green beat on false. */
+  lastProgressOk: boolean;
   push: (notice: Omit<Notice, "id">) => string;
   dismiss: (id: string) => void;
   setProgress: (progress: NoticeProgress | null) => void;
+  /** Clear the slot with an outcome (setProgress(null) is the silent form). */
+  endProgress: (ok: boolean) => void;
 }
 
 let seq = 0;
@@ -46,6 +50,7 @@ let seq = 0;
 export const useNoticeStore = create<NoticeState>((set) => ({
   notices: [],
   progress: null,
+  lastProgressOk: true,
 
   push(notice) {
     const id = `notice-${++seq}`;
@@ -58,6 +63,10 @@ export const useNoticeStore = create<NoticeState>((set) => ({
   },
 
   setProgress(progress) {
-    set({ progress });
+    set(progress ? { progress, lastProgressOk: true } : { progress });
+  },
+
+  endProgress(ok) {
+    set({ progress: null, lastProgressOk: ok });
   },
 }));
