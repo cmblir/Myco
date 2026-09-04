@@ -658,39 +658,63 @@ async function stopStreamListener(): Promise<void> {
   }
 }
 
-// Debounced link-graph rescan after streamed writes. Write tool events fire
+// Self-paced link-graph rescan after streamed writes. Write tool events fire
 // when the call STARTS, so wait ~2s for the file to land on disk. Rust
 // resolves wikilinks by stem against current disk state — files created
 // mid-run resolve correctly.
-let scanTimer: number | null = null;
+//
+// Self-paced, not debounced: the next scan starts 2s AFTER the previous one
+// finished, so a burst of writes queues exactly one follow-up instead of
+// either overlapping scans or (with a reset-on-every-event debounce) never
+// scanning at all during a busy run.
+const SCAN_GAP_MS = 2000;
+let scanTimer: ReturnType<typeof setTimeout> | null = null;
 let scanInFlight = false;
+let scanQueued = false;
+// Last applied graph, per run: a new run resets liveAdjacency to null, so the
+// rev only means "already showing this" within the same runId.
+let lastScan: { runId: string | null; rev: number } | null = null;
 
 function scheduleLiveScan(): void {
-  if (scanTimer != null) window.clearTimeout(scanTimer);
-  scanTimer = window.setTimeout(() => {
+  if (scanInFlight) {
+    scanQueued = true;
+    return;
+  }
+  if (scanTimer != null) return;
+  // Bare setTimeout, not window.setTimeout: identical in the browser, and it
+  // lets the node-environment unit tests drive this loop with fake timers.
+  scanTimer = setTimeout(() => {
     scanTimer = null;
     void runLiveScan();
-  }, 2000);
+  }, SCAN_GAP_MS);
 }
 
 async function runLiveScan(): Promise<void> {
   const st = useIngestStore.getState();
   if (!st.vaultPath || st.stage !== "claude") return;
-  if (scanInFlight) {
-    scheduleLiveScan();
-    return;
-  }
   scanInFlight = true;
   try {
     const adj = await ipc.buildLinkGraph(st.vaultPath);
     // Run may have finished or been reset while scanning.
-    if (useIngestStore.getState().runId === st.runId) {
+    // Skip the write when the graph is byte-identical: a fresh object identity
+    // every scan rebuilds the whole MiniGalaxy for nothing.
+    if (
+      useIngestStore.getState().runId === st.runId &&
+      (adj.rev == null ||
+        lastScan?.runId !== st.runId ||
+        lastScan.rev !== adj.rev)
+    ) {
+      lastScan = adj.rev == null ? null : { runId: st.runId, rev: adj.rev };
       useIngestStore.setState({ liveAdjacency: adj });
     }
   } catch {
     /* scan failed — the next write event retries */
   } finally {
     scanInFlight = false;
+    if (scanQueued) {
+      scanQueued = false;
+      scheduleLiveScan();
+    }
   }
 }
 

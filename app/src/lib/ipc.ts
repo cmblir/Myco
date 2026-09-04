@@ -68,6 +68,11 @@ export interface Adjacency {
   tags: Record<string, string[]>;
   /** Keyed by the same absolute path as `forward`. Absent for older backends. */
   meta?: Record<string, NodeMeta>;
+  /**
+   * Hash of the whole graph. Equal revs mean an identical graph, so a poller
+   * can skip re-rendering. Absent for older backends.
+   */
+  rev?: number;
 }
 
 /** One registered project ("universe") from the multi-project registry. */

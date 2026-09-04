@@ -6,6 +6,8 @@ use crate::parser;
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex, OnceLock};
+use std::time::SystemTime;
 
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct Adjacency {
@@ -17,6 +19,9 @@ pub struct Adjacency {
     /// status / source_count). Keyed by the same absolute file path as `forward`.
     /// Only files that declare at least one of these fields appear here.
     pub meta: BTreeMap<String, NodeMeta>,
+    /// Hash of everything above, so a poller can skip re-rendering an
+    /// identical graph. See [`fingerprint`].
+    pub rev: u64,
 }
 
 /// Subset of a page's YAML frontmatter the graph view encodes into the node's
@@ -52,29 +57,129 @@ pub fn build_link_graph(root: &str) -> Result<Adjacency, String> {
         collect_files(&root_path).map_err(|e| format!("walk failed: {e}"))?;
     let names = build_name_index(&linkables);
 
+    let mut cache = parse_cache().lock().unwrap_or_else(|e| e.into_inner());
+    // Take the previous generation out; whatever we don't carry over below is
+    // a deleted file and drops with it.
+    let prev = cache.remove(&root_path).unwrap_or_default();
+    let mut cur: HashMap<PathBuf, Arc<CachedFile>> = HashMap::with_capacity(sources.len());
+
     let mut adj = Adjacency::default();
     for file in &sources {
+        // Stat only. `stamp` is None when metadata is unreadable, which forces
+        // a re-read (and never caches) — the conservative side.
+        let stamp = std::fs::metadata(file)
+            .ok()
+            .and_then(|m| Some((m.modified().ok()?, m.len())));
         // Skip pathologically large files so one file can't dominate a full-vault
         // scan (matches the 2 MB cap search_vault uses). A failed metadata read
         // (len 0) falls through to read_to_string, preserving its error behaviour.
-        if std::fs::metadata(file).map(|m| m.len()).unwrap_or(0) > 2 * 1024 * 1024 {
+        if stamp.is_some_and(|(_, len)| len > 2 * 1024 * 1024) {
             continue;
         }
-        // Skip what we cannot read instead of failing the build. One bad file —
-        // a dangling symlink, an un-downloaded iCloud placeholder, a
-        // permission-denied note, something that is not UTF-8 — used to abort
-        // the whole adjacency, which blanks the Graph view and every multiverse
-        // bubble for the vault. The user cannot see which file did it, and a
-        // graph missing one note is enormously better than no graph at all.
-        // This matches how search_vault (vault.rs) already degrades.
-        let Ok(raw) = std::fs::read_to_string(file) else {
-            continue;
+        let parsed = match prev.get(file) {
+            // Same mtime+len as last build: reuse the parse, don't touch the disk.
+            Some(hit) if stamp.is_some() && hit.stamp == stamp => Arc::clone(hit),
+            _ => {
+                // Skip what we cannot read instead of failing the build. One bad file —
+                // a dangling symlink, an un-downloaded iCloud placeholder, a
+                // permission-denied note, something that is not UTF-8 — used to abort
+                // the whole adjacency, which blanks the Graph view and every multiverse
+                // bubble for the vault. The user cannot see which file did it, and a
+                // graph missing one note is enormously better than no graph at all.
+                // This matches how search_vault (vault.rs) already degrades.
+                let Ok(raw) = std::fs::read_to_string(file) else {
+                    continue;
+                };
+                Arc::new(parse_file(stamp, &raw))
+            }
         };
-        ingest_links(file, &raw, &names, &mut adj);
-        ingest_frontmatter(file, &raw, &mut adj);
+        // Resolution is redone every build even for unchanged files: creating or
+        // deleting ANY note changes what an untouched note's [[links]] resolve to.
+        resolve_links(file, &parsed.links, &names, &mut adj);
+        let key = file.to_string_lossy().into_owned();
+        if !parsed.tags.is_empty() {
+            adj.tags.insert(key.clone(), parsed.tags.clone());
+        }
+        if !parsed.meta.is_empty() {
+            adj.meta.insert(key, parsed.meta.clone());
+        }
+        cur.insert(file.clone(), parsed);
     }
+    cache.insert(root_path, cur);
+    adj.rev = fingerprint(&adj);
 
     Ok(adj)
+}
+
+/// One file's parse, kept between builds so a rescan re-reads only what
+/// changed. `links` are the RAW wikilink targets as written; they are resolved
+/// against the name index on every build (see above).
+struct CachedFile {
+    /// (mtime, len) at parse time — `None` when metadata was unreadable, which
+    /// never matches and so always forces a re-read.
+    stamp: Option<(SystemTime, u64)>,
+    links: Vec<String>,
+    tags: Vec<String>,
+    meta: NodeMeta,
+}
+
+/// Per-vault parse cache, keyed by canonical root.
+///
+/// WHY: during an ingest run the UI rescanned the link graph every 2 s, and
+/// each scan read and parsed the whole vault — 1747 files / 26 MB, ~309 ms of
+/// I/O warm — to see the one file the agent had just written. Now the walk only
+/// stats, and only changed/new files are read.
+///
+/// ponytail: one global mutex, so two builds (different vaults included)
+/// serialise. Per-root locks only if that ever shows up in a profile.
+fn parse_cache() -> &'static Mutex<ParseCache> {
+    static CACHE: OnceLock<Mutex<ParseCache>> = OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+/// Canonical vault root -> its files' parses.
+type ParseCache = HashMap<PathBuf, HashMap<PathBuf, Arc<CachedFile>>>;
+
+// Files actually read from disk, so a test can assert the cache is used.
+// Thread-local because cargo runs tests in parallel threads and each test only
+// ever counts its own builds.
+#[cfg(test)]
+thread_local! {
+    static PARSE_COUNT: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// Reads and resets the parse counter for the current test.
+#[cfg(test)]
+fn take_parse_count() -> usize {
+    PARSE_COUNT.with(|c| c.replace(0))
+}
+
+fn parse_file(stamp: Option<(SystemTime, u64)>, text: &str) -> CachedFile {
+    #[cfg(test)]
+    PARSE_COUNT.with(|c| c.set(c.get() + 1));
+    let (tags, meta) = parse_frontmatter(text);
+    CachedFile {
+        stamp,
+        links: parser::parse_links_from_text(text),
+        tags,
+        meta,
+    }
+}
+
+/// Hash of the whole adjacency, so a poller can tell "nothing changed" from a
+/// rebuilt-but-identical graph and skip re-rendering. Truncated to 53 bits
+/// because it crosses IPC into a JS `number`.
+fn fingerprint(adj: &Adjacency) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    for map in [&adj.forward, &adj.backward, &adj.unresolved, &adj.tags] {
+        map.hash(&mut h);
+    }
+    for (k, m) in &adj.meta {
+        k.hash(&mut h);
+        (&m.node_type, &m.confidence, &m.status, m.source_count).hash(&mut h);
+    }
+    h.finish() & ((1u64 << 53) - 1)
 }
 
 /// Whether `path` is a top-level staging directory the KNOWLEDGE graph must not
@@ -161,14 +266,19 @@ pub(crate) fn build_name_index(files: &[PathBuf]) -> HashMap<String, PathBuf> {
     idx
 }
 
-fn ingest_links(file: &Path, text: &str, names: &HashMap<String, PathBuf>, adj: &mut Adjacency) {
+fn resolve_links(
+    file: &Path,
+    targets: &[String],
+    names: &HashMap<String, PathBuf>,
+    adj: &mut Adjacency,
+) {
     let source = file.to_string_lossy().into_owned();
     // Dedup per source so a page that links the same target twice produces one
     // edge — otherwise forward/backward lists (and the link counts derived from
     // them) are inflated by repeated [[wikilinks]].
     let mut seen_resolved: HashSet<String> = HashSet::new();
     let mut seen_unresolved: HashSet<String> = HashSet::new();
-    for target in parser::parse_links_from_text(text) {
+    for target in targets {
         // Drop any `#heading` / `#^block` suffix — Obsidian resolves
         // `[[Note#Section]]` to the note itself. Then drop any path prefix
         // (`[[wiki/x]]`, `[[wiki/sub/x.md]]`) — this vault has a flat wikilink
@@ -176,7 +286,7 @@ fn ingest_links(file: &Path, text: &str, names: &HashMap<String, PathBuf>, adj: 
         // path), so a link written path-style must look up the same key as the
         // bare stem `[[x]]` or it reads as a false "missing page" even though
         // the file exists. Matches Obsidian's own basename resolution.
-        let base = target.split('#').next().unwrap_or(&target).trim();
+        let base = target.split('#').next().unwrap_or(target).trim();
         let base = base.rsplit(['/', '\\']).next().unwrap_or(base);
         // Same normalization as build_name_index's keys — both sides must
         // agree or NFD-vs-NFC pairs miss.
@@ -203,20 +313,19 @@ fn ingest_links(file: &Path, text: &str, names: &HashMap<String, PathBuf>, adj: 
                 adj.unresolved
                     .entry(source.clone())
                     .or_default()
-                    .push(target);
+                    .push(target.clone());
             }
         }
     }
 }
 
-// Parse a file's YAML frontmatter ONCE and fill both the tag list and the
+// Parse a file's YAML frontmatter ONCE and return both the tag list and the
 // visual-encoding meta (type / confidence / status / source_count).
-fn ingest_frontmatter(file: &Path, text: &str, adj: &mut Adjacency) {
+fn parse_frontmatter(text: &str) -> (Vec<String>, NodeMeta) {
     let parsed = match gray_matter::Matter::<gray_matter::engine::YAML>::new().parse(text) {
         Ok(p) => p,
-        Err(_) => return,
+        Err(_) => return Default::default(),
     };
-    let key = file.to_string_lossy().into_owned();
     // Frontmatter `tags:` first, then inline body `#tags` (the Obsidian/Notion
     // habit). `parsed.content` is the text after the frontmatter block, so a
     // `tags:` key is never re-read as a body tag. Deduped case-insensitively,
@@ -229,16 +338,8 @@ fn ingest_frontmatter(file: &Path, text: &str, adj: &mut Adjacency) {
     tags.extend(body_tags(&parsed.content));
     let mut seen = HashSet::new();
     tags.retain(|t| seen.insert(t.to_lowercase()));
-    if !tags.is_empty() {
-        adj.tags.insert(key.clone(), tags);
-    }
-    let Some(data) = parsed.data else {
-        return;
-    };
-    let meta = extract_meta(&data);
-    if !meta.is_empty() {
-        adj.meta.insert(key, meta);
-    }
+    let meta = parsed.data.as_ref().map(extract_meta).unwrap_or_default();
+    (tags, meta)
 }
 
 /// Inline `#tag`s in a markdown body, close to Obsidian's rule: `#` at line
@@ -648,5 +749,97 @@ mod tests {
         };
         assert_eq!(adj.tags[&key("a.md")], ["Rust", "ml", "new"]);
         assert_eq!(adj.tags[&key("b.md")], ["solo"]);
+    }
+
+    /// The incremental cache: a second build with nothing changed must not
+    /// read a single file, and a changed/new/deleted file must be picked up.
+    /// This is the whole point of the cache — a live ingest rescan re-read the
+    /// owner's 1747-file / 26 MB vault every 2 s to see one written file.
+    #[test]
+    fn a_rescan_reparses_only_what_changed() {
+        let root = temp_vault("incremental");
+        fs::write(root.join("a.md"), "# a\n[[b]]\n").unwrap();
+        fs::write(root.join("b.md"), "# b\n").unwrap();
+
+        let key = |n: &str| {
+            root.canonicalize()
+                .unwrap()
+                .join(n)
+                .to_string_lossy()
+                .into_owned()
+        };
+        let build = || build_link_graph(root.to_str().unwrap()).unwrap();
+
+        take_parse_count();
+        let first = build();
+        assert_eq!(take_parse_count(), 2, "first build parses everything");
+        assert_eq!(first.forward[&key("a.md")], [key("b.md")]);
+
+        let second = build();
+        assert_eq!(take_parse_count(), 0, "unchanged vault re-parses nothing");
+        assert_eq!(second.rev, first.rev, "identical graph, identical rev");
+        assert_eq!(second.forward, first.forward);
+
+        // Changed file — different length, so mtime granularity cannot hide it.
+        fs::write(root.join("a.md"), "# a\n[[b]] and [[c]] too\n").unwrap();
+        let third = build();
+        assert_eq!(take_parse_count(), 1, "only the touched file is re-read");
+        assert_eq!(third.unresolved[&key("a.md")], ["c"]);
+        assert_ne!(third.rev, second.rev);
+
+        // New file — resolves a link that an UNCHANGED file already had.
+        fs::write(root.join("c.md"), "# c\n").unwrap();
+        let fourth = build();
+        assert_eq!(take_parse_count(), 1, "only the new file is read");
+        assert_eq!(fourth.forward[&key("a.md")], [key("b.md"), key("c.md")]);
+        assert!(!fourth.unresolved.contains_key(&key("a.md")));
+
+        // Deleted file — gone from the graph, and nothing re-read for it.
+        fs::remove_file(root.join("b.md")).unwrap();
+        let fifth = build();
+        assert_eq!(take_parse_count(), 0);
+        assert!(!fifth.backward.contains_key(&key("b.md")));
+        assert_eq!(fifth.unresolved[&key("a.md")], ["b"]);
+    }
+
+    /// Before/after for the cache. Ignored by default (it writes ~1700 files);
+    /// run with `cargo test --release -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "timing benchmark, not a correctness check"]
+    fn bench_full_vs_incremental_rescan() {
+        let root = temp_vault("bench");
+        fs::create_dir_all(root.join("wiki")).unwrap();
+        for i in 0..1700 {
+            let body = format!(
+                "---\ntags: [t{}]\n---\n# n{}\n[[n{}]] [[n{}]]\n{}\n",
+                i % 20,
+                i,
+                (i + 1) % 1700,
+                (i + 7) % 1700,
+                "lorem ipsum dolor sit amet ".repeat(500)
+            );
+            fs::write(root.join(format!("wiki/n{i}.md")), body).unwrap();
+        }
+        let path = root.to_str().unwrap();
+        let cold = std::time::Instant::now();
+        build_link_graph(path).unwrap();
+        let cold = cold.elapsed();
+        // BEFORE: what every rescan used to cost — full read+parse with the OS
+        // page cache warm. Dropping the cache entry reproduces the old path.
+        parse_cache().lock().unwrap().clear();
+        let full = std::time::Instant::now();
+        build_link_graph(path).unwrap();
+        let full = full.elapsed();
+        // AFTER: nothing changed since the last build.
+        let warm = std::time::Instant::now();
+        build_link_graph(path).unwrap();
+        let warm = warm.elapsed();
+        fs::write(root.join("wiki/n0.md"), "# n0\n[[n1]]\n").unwrap();
+        let one = std::time::Instant::now();
+        build_link_graph(path).unwrap();
+        let one = one.elapsed();
+        println!(
+            "cold {cold:?} | warm FULL parse (before) {full:?} | no-change rescan {warm:?} | one-file rescan {one:?}"
+        );
     }
 }
