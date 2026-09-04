@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { downsample, wavBytes, WAV_RATE } from "./wavRecorder";
+import { downsample, tailChunks, wavBytes, WAV_RATE } from "./wavRecorder";
 
 describe("downsample", () => {
   it("passes 16k input through untouched", () => {
@@ -42,5 +42,27 @@ describe("wavBytes", () => {
     // Full-scale samples clip to int16 bounds instead of wrapping.
     expect(dv.getInt16(44 + 3 * 2, true)).toBe(0x7fff);
     expect(dv.getInt16(44 + 4 * 2, true)).toBe(-0x8000);
+  });
+});
+
+describe("tailChunks", () => {
+  const chunks = [
+    new Float32Array([0, 1, 2, 3]),
+    new Float32Array([4, 5, 6, 7]),
+    new Float32Array([8, 9]),
+  ];
+
+  it("takes the trailing samples across chunk boundaries", () => {
+    expect(Array.from(tailChunks(chunks, 5).flatMap((c) => Array.from(c)))).toEqual([
+      5, 6, 7, 8, 9,
+    ]);
+  });
+
+  it("returns everything when the window is longer than the take", () => {
+    expect(tailChunks(chunks, 999)).toEqual(chunks);
+  });
+
+  it("returns nothing for a zero window", () => {
+    expect(tailChunks(chunks, 0)).toEqual([]);
   });
 });

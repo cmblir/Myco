@@ -26,7 +26,7 @@ import { ipc } from "../lib/ipc";
 import { STRINGS } from "../lib/i18n";
 import { Icon } from "../lib/icons";
 import { isComposingKey } from "../lib/ime";
-import { EMPTY_CAPTION, startPartialLoop } from "../lib/liveCaption";
+import { EMPTY_CAPTION, PARTIAL_WINDOW_SECS, startPartialLoop } from "../lib/liveCaption";
 import type { CaptionState } from "../lib/liveCaption";
 import {
   SPOTLIGHT_ANSWER_EVENT,
@@ -264,7 +264,7 @@ export default function Spotlight(): JSX.Element {
       // Non-null throughout this effect (the machine is recording); the empty
       // fallback covers only the tick racing the stop, and whisper reading
       // nothing simply leaves the caption where it was.
-      snapshot: () => machine().snapshot() ?? new Blob(),
+      snapshot: () => machine().snapshotTail(PARTIAL_WINDOW_SECS) ?? new Blob(),
       transcribe: ipc.transcribePartial,
       onCaption: setCaption,
     });

@@ -1,9 +1,10 @@
 // Live captions for a voice take (spotlight ⌥M and the notch). Whisper has no
-// streaming mode, so the recorder's WAV-so-far is re-transcribed every few
-// seconds and each result is diffed against the last: a word that came back
-// at the same position twice in a row is "confirmed" (bright), the rest is
-// "interim" (dim) — whisper re-decodes the tail as more context arrives, and
-// showing that churn as settled text would read as the app changing its mind.
+// streaming mode, so a WAV window of the take is re-transcribed every few
+// seconds and each result is stitched onto the last by word OVERLAP: a word
+// the newest pass did not just introduce is "confirmed" (bright), the newest
+// pass's un-matched tail is "interim" (dim) — whisper re-decodes the tail as
+// more context arrives, and showing that churn as settled text would read as
+// the app changing its mind.
 
 export interface CaptionState {
   confirmed: string[];
@@ -12,30 +13,58 @@ export interface CaptionState {
 
 export const EMPTY_CAPTION: CaptionState = { confirmed: [], interim: [] };
 
-/** Fold the next partial transcript into the caption. Empty text leaves the
- *  caption untouched (whisper says nothing for a silent clip). */
+/** Seconds of audio each partial decodes — the window the loop's caller
+ *  snapshots (RecorderLike.snapshotTail). Fixed, so the per-pass cost stops
+ *  growing with the take: measured ~1.1 s per pass at 12 s with the adaptive
+ *  audio context, against 1.6 s and climbing when re-decoding the whole take. */
+export const PARTIAL_WINDOW_SECS = 12;
+
+/** Longest line kept. A sliding window has no end, and the surfaces show one
+ *  or two lines anyway — without a cap the array grows for the whole take. */
+const MAX_WORDS = 60;
+
+/** whisper marks silence and noise with bracketed pseudo-words —
+ *  `[BLANK_AUDIO]`, `[SOUND]`, `[MUSIC]`, `(음악)`, `[_BEG_]`. They are not
+ *  speech, and the owner saw `[BLANK_AUDIO]` as the first thing the caption
+ *  ever showed. Anything wholly inside one bracket pair goes. */
+const NON_SPEECH = /^[[(（【][^\])）】]*[\])）】]$/u;
+
+/**
+ * Fold the next partial transcript into the caption. The window means `next`
+ * no longer starts at the take's first word, so the two are joined at their
+ * largest word overlap rather than a common prefix. Nothing to say — an empty
+ * or all-non-speech result — leaves the caption untouched.
+ */
 export function mergeCaption(prev: CaptionState, nextText: string): CaptionState {
-  const words = nextText.trim().split(/\s+/).filter(Boolean);
+  const words = nextText
+    .trim()
+    .split(/\s+/)
+    .filter((w) => w.length > 0 && !NON_SPEECH.test(w));
   if (words.length === 0) return prev;
   const seen = [...prev.confirmed, ...prev.interim];
-  let n = 0;
-  while (n < words.length && n < seen.length && words[n] === seen[n]) n++;
-  // A partial that is a strict PREFIX of what we already have is no news —
-  // whisper re-decoding the take can come back shorter, and folding it in
-  // would retract words already shown as confirmed.
-  if (n === words.length && seen.length > words.length) return prev;
-  return { confirmed: words.slice(0, n), interim: words.slice(n) };
+  // Largest k where the last k of `seen` are the first k of `words`. k === 0
+  // with a non-empty line means the window slid past everything we had, so
+  // the new text is appended whole rather than thrown away.
+  let k = Math.min(seen.length, words.length);
+  while (k > 0 && !words.slice(0, k).every((w, i) => w === seen[seen.length - k + i])) k--;
+  const merged = [...seen, ...words.slice(k)];
+  const line = merged.slice(-MAX_WORDS);
+  const fresh = Math.min(words.length - k, line.length);
+  return {
+    confirmed: line.slice(0, line.length - fresh),
+    interim: line.slice(line.length - fresh),
+  };
 }
 
 export interface PartialLoopOptions {
-  /** WAV of the take so far (RecorderLike.snapshot). */
+  /** WAV of the take's last PARTIAL_WINDOW_SECS (RecorderLike.snapshotTail). */
   snapshot: () => Blob;
   transcribe: (bytes: Uint8Array) => Promise<string>;
   onCaption: (caption: CaptionState) => void;
   /** Gap between the END of one partial and the start of the next. The loop
-   *  is self-pacing rather than fixed-interval: a partial re-decodes the take
-   *  from the start, so its cost grows with the take and a fixed interval
-   *  either idles on a fast machine or piles up on a slow one. */
+   *  is self-pacing rather than fixed-interval: whisper's wall time is the
+   *  machine's business, and a fixed interval either idles on a fast machine
+   *  or piles up on a slow one. */
   gapMs?: number;
   /** Delay before the first partial. */
   leadMs?: number;
@@ -50,7 +79,7 @@ export interface PartialLoopOptions {
  * lands after stop() is dropped.
  */
 export function startPartialLoop(opts: PartialLoopOptions): () => void {
-  const { gapMs = 500, leadMs = 900, maxMs = 45_000 } = opts;
+  const { gapMs = 250, leadMs = 900, maxMs = 300_000 } = opts;
   const started = Date.now();
   let caption = EMPTY_CAPTION;
   let stopped = false;
@@ -58,9 +87,10 @@ export function startPartialLoop(opts: PartialLoopOptions): () => void {
 
   const run = async (): Promise<void> => {
     if (stopped) return;
-    // ponytail: the notch/spotlight memo is short-form; past 45 s each
-    // snapshot is >1.4 MB re-decoded from the start every pass, so the
-    // caption freezes and meeting-length audio stays on the file-drop path.
+    // 5 minutes, not the old 45 s: that cap was about COST — every pass
+    // re-decoded the whole take — and a fixed window costs the same at
+    // minute five as at second five. What is left is a memo-length sanity
+    // bound, so a take left running overnight is not still decoding.
     if (Date.now() - started > maxMs) return;
     try {
       const bytes = new Uint8Array(await opts.snapshot().arrayBuffer());

@@ -298,6 +298,18 @@ fn run_streaming(
     })
 }
 
+/// Encoder context for a fast (live-caption) run, in whisper frames. The
+/// encoder dominates a pass's wall time and its cost scales with the context,
+/// not with the clip: 1500 frames = 30 s, so `seconds * 50` covers the clip
+/// and the extra 20% is headroom — too small a context makes whisper emit
+/// garbage bytes rather than fail. Rounded up to a multiple of 64 and clamped
+/// to whisper's own maximum. Measured (small-q5_1, Metal): 2 s 1.62 s → 0.61 s
+/// at 256, 10 s 1.63 s → 1.14 s at 640.
+pub fn fast_audio_ctx(seconds: u64) -> u64 {
+    let frames = seconds.saturating_mul(60);
+    (frames.div_ceil(64) * 64).clamp(256, 1500)
+}
+
 /// Build the CLI args + the .txt path the run is expected to produce. Pure, so
 /// the invocation shape is unit-testable without the binary present.
 pub fn build_args(
@@ -307,7 +319,9 @@ pub fn build_args(
     out_dir: &Path,
     model: Option<&Path>,
     json: bool,
-    fast: bool,
+    // Some(audio bytes) for a live-caption partial — greedy decoding and an
+    // encoder context sized for the clip; None for an ordinary run.
+    fast: Option<u64>,
 ) -> (Vec<String>, PathBuf) {
     let out_txt = out_dir.join(format!("{stem}.txt"));
     match variant {
@@ -333,7 +347,7 @@ pub fn build_args(
                 args.push(m.to_string_lossy().into_owned());
                 args.push("-l".into());
                 args.push("auto".into());
-                if fast {
+                if let Some(bytes) = fast {
                     // Live captions: greedy decoding instead of the default
                     // beam search. Measured on this model (small-q5_1, Metal):
                     // 13 s of speech 2.65 s → 1.64 s, 27 s 3.64 s → 2.14 s.
@@ -345,6 +359,11 @@ pub fn build_args(
                     args.push("1".into());
                     args.push("-bo".into());
                     args.push("1".into());
+                    // Only here: a context too small for the clip corrupts the
+                    // output, and we know neither the clip length nor the
+                    // model of a user's own PATH whisper-cli.
+                    args.push("-ac".into());
+                    args.push(fast_audio_ctx(bytes / 32_000).to_string());
                 } else {
                     // `-pp` prints progress lines that run_streaming re-emits
                     // as events; only injected here, never into a user's own
@@ -580,7 +599,7 @@ fn transcribe_inner(
         &out_dir,
         model.as_deref(),
         json,
-        quiet,
+        quiet.then_some(audio_bytes),
     );
 
     let timeout = transcribe_timeout(audio_bytes);
@@ -654,7 +673,7 @@ mod tests {
             Path::new("/tmp/x"),
             None,
             false,
-            false,
+            None,
         );
         assert_eq!(args[0], "/a/talk.mp3");
         assert!(args.contains(&"--output_format".to_string()));
@@ -672,7 +691,7 @@ mod tests {
             Path::new("/tmp/x"),
             None,
             false,
-            false,
+            None,
         );
         assert_eq!(args[0], "-f");
         assert_eq!(args[1], "/a/talk.wav");
@@ -701,7 +720,7 @@ mod tests {
             Path::new("/tmp/x"),
             Some(Path::new("/data/models/ggml-small-q5_1.bin")),
             false,
-            false,
+            None,
         );
         let m = args.iter().position(|a| a == "-m").unwrap();
         assert_eq!(args[m + 1], "/data/models/ggml-small-q5_1.bin");
@@ -722,7 +741,7 @@ mod tests {
             Path::new("/tmp/x"),
             Some(model),
             false,
-            true,
+            Some(32_000 * 12),
         );
         // Greedy: measured ~40% off the wall time, and a live caption is
         // provisional — the saved note comes from the ordinary run.
@@ -732,6 +751,43 @@ mod tests {
         assert_eq!(args[bo + 1], "1");
         // Nothing renders a partial's percent, so no progress chatter.
         assert!(!args.contains(&"-pp".to_string()));
+        // 12 s window → an encoder context sized for it, not the full 30 s.
+        let ac = args.iter().position(|a| a == "-ac").unwrap();
+        assert_eq!(args[ac + 1], "768");
+    }
+
+    #[test]
+    fn audio_ctx_tracks_the_clip_and_rides_only_on_fast_runs() {
+        // seconds * 50 for the clip, +20% headroom, up to a 64 multiple,
+        // clamped to whisper's [256, 1500].
+        assert_eq!(fast_audio_ctx(2), 256, "floor: too small returns garbage");
+        assert_eq!(fast_audio_ctx(10), 640);
+        assert_eq!(fast_audio_ctx(20), 1216);
+        assert_eq!(fast_audio_ctx(60), 1500, "capped at whisper's own maximum");
+
+        // A normal run decodes the whole file: never shrink its context.
+        let (args, _) = build_args(
+            Variant::WhisperCpp,
+            "/a/talk.wav",
+            "talk",
+            Path::new("/tmp/x"),
+            Some(Path::new("/m/ggml-small-q5_1.bin")),
+            false,
+            None,
+        );
+        assert!(!args.contains(&"-ac".to_string()));
+
+        // Nor a user's own PATH whisper-cli, whose model we do not know.
+        let (args, _) = build_args(
+            Variant::WhisperCpp,
+            "/a/talk.wav",
+            "talk",
+            Path::new("/tmp/x"),
+            None,
+            false,
+            Some(32_000 * 12),
+        );
+        assert!(!args.contains(&"-ac".to_string()));
     }
 
     #[test]
@@ -744,7 +800,7 @@ mod tests {
             Path::new("/tmp/x"),
             Some(model),
             true,
-            false,
+            None,
         );
         assert!(args.contains(&"-oj".to_string()));
         assert!(args.contains(&"-otxt".to_string()), "plain fallback stays");
@@ -756,7 +812,7 @@ mod tests {
             Path::new("/tmp/x"),
             None,
             true,
-            false,
+            None,
         );
         assert!(!args.contains(&"-oj".to_string()));
     }

@@ -29,7 +29,7 @@ import { ipc } from "./ipc";
 import { LAST_VAULT_KEY } from "../stores/vaultStore";
 import type { NotchGeometry, TrayStatusPayload } from "./ipc";
 import { STRINGS } from "./i18n";
-import { EMPTY_CAPTION, startPartialLoop } from "./liveCaption";
+import { EMPTY_CAPTION, PARTIAL_WINDOW_SECS, startPartialLoop } from "./liveCaption";
 import type { CaptionState } from "./liveCaption";
 import { classifyDrop, writeDrop } from "./notchDrop";
 import type { DropPayload } from "./notchDrop";
@@ -999,7 +999,7 @@ export function useNotchDriver(): NotchDrive | null {
       // Non-null throughout this effect (the machine is recording); the empty
       // fallback covers only the tick racing the stop, and whisper reading
       // nothing simply leaves the caption where it was.
-      snapshot: () => machine().snapshot() ?? new Blob(),
+      snapshot: () => machine().snapshotTail(PARTIAL_WINDOW_SECS) ?? new Blob(),
       transcribe: ipc.transcribePartial,
       onCaption: (caption) => raise({ type: "recCaption", caption }),
     });

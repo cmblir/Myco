@@ -15,9 +15,13 @@ export interface RecorderLike {
   onLevel?: ((rms: number) => void) | null;
   start: () => void;
   stop: () => void;
-  /** WAV of everything captured so far, chunks untouched — the live-caption
-   *  partials feed on this while the take keeps running. */
+  /** WAV of everything captured so far, chunks untouched. */
   snapshot?: () => Blob;
+  /** WAV of only the LAST `seconds` of the take — what the live-caption
+   *  partials feed on. Re-decoding the whole take made every pass cost more
+   *  than the last (measured 1.1 s at 5 s of audio, 2.1 s at 27 s, and the
+   *  lag the owner felt was that growth); a fixed window is ~1.1 s forever. */
+  snapshotTail?: (seconds: number) => Blob;
 }
 
 import { rms } from "./voiceLevel";
@@ -83,6 +87,20 @@ export function wavBlobFrom(chunks: Float32Array[], inRate: number): Blob {
   });
 }
 
+/** The trailing `samples` of the captured chunks, chunk boundaries ignored.
+ *  Input-rate samples — the WAV is written at WAV_RATE by wavBlobFrom, which
+ *  downsamples afterwards. */
+export function tailChunks(chunks: Float32Array[], samples: number): Float32Array[] {
+  const tail: Float32Array[] = [];
+  let want = Math.max(0, Math.floor(samples));
+  for (let i = chunks.length - 1; i >= 0 && want > 0; i--) {
+    const c = chunks[i];
+    tail.unshift(c.length <= want ? c : c.subarray(c.length - want));
+    want -= Math.min(c.length, want);
+  }
+  return tail;
+}
+
 export function createWavRecorder(stream: MediaStream): RecorderLike {
   // ScriptProcessor over AudioWorklet on purpose: no module file to load,
   // and a 4096 buffer at mic rates is far below anything a voice note could
@@ -120,6 +138,8 @@ export function createWavRecorder(stream: MediaStream): RecorderLike {
       recorder.onstop?.();
     },
     snapshot: () => wavBlobFrom(chunks, ctx.sampleRate),
+    snapshotTail: (seconds) =>
+      wavBlobFrom(tailChunks(chunks, seconds * ctx.sampleRate), ctx.sampleRate),
   };
   return recorder;
 }

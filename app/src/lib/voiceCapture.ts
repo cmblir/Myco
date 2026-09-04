@@ -46,6 +46,8 @@ export interface VoiceMachine {
    *  recorder is the machine's private field, and the caption loop must not
    *  have to reach around it to a second reference to the same object. */
   snapshot(): Blob | null;
+  /** WAV of the take's last `seconds`, the live-caption partials' window. */
+  snapshotTail(seconds: number): Blob | null;
 }
 
 export interface VoiceDeps {
@@ -73,6 +75,8 @@ export function createVoiceMachine(deps: VoiceDeps): VoiceMachine {
     cancel,
     snapshot: () =>
       machine.state === "recording" ? (rec?.snapshot?.() ?? null) : null,
+    snapshotTail: (seconds) =>
+      machine.state === "recording" ? (rec?.snapshotTail?.(seconds) ?? null) : null,
   };
 
   function set(state: VoiceState, error: string | null = null): void {
