@@ -37,7 +37,7 @@ vi.mock("../lib/log", () => ({
 }));
 
 import { ipc } from "../lib/ipc";
-import { useIngestStore, INGEST_PROMPT } from "./ingestStore";
+import { useIngestStore, INGEST_PROMPT, applyStreamEvent } from "./ingestStore";
 
 // Phase B, Task 6: INGEST_PROMPT's new 5th param weights linking/tagging
 // toward the user's profile interests. Pure function, no ipc involved.
@@ -291,5 +291,63 @@ describe("ingest validation gate", () => {
 
     expect(validate).not.toHaveBeenCalled();
     expect(useIngestStore.getState().stage).toBe("error");
+  });
+});
+
+// Feed-render perf: the panel re-rendered 500 rows per stream event because
+// every event handed subscribers new array identities. Rows are now keyed by
+// `seq`, and `touched` must keep its identity when nothing about it changed.
+describe("applyStreamEvent identity + seq", () => {
+  const ev = (
+    kind: "text" | "tool",
+    over: { tool?: string; detail?: string; text?: string } = {},
+  ) => ({
+    run_id: "r",
+    kind,
+    tool: over.tool ?? null,
+    detail: over.detail ?? null,
+    text: over.text ?? null,
+  });
+
+  beforeEach(() => {
+    // Write events schedule the debounced live rescan through `window`, which
+    // the node test env does not provide.
+    vi.stubGlobal("window", {
+      setTimeout: () => 0,
+      clearTimeout: () => undefined,
+    });
+    useIngestStore.setState({ events: [], touched: [], readCount: 0, writeCount: 0 });
+  });
+
+  it("gives every event a strictly increasing seq", () => {
+    applyStreamEvent(ev("text", { text: "a" }));
+    applyStreamEvent(ev("text", { text: "b" }));
+    const { events } = useIngestStore.getState();
+    expect(events).toHaveLength(2);
+    expect(events[1].seq).toBeGreaterThan(events[0].seq);
+  });
+
+  it("keeps the touched array identity when the same page is read twice", () => {
+    applyStreamEvent(ev("tool", { tool: "Read", detail: "wiki/a.md" }));
+    const first = useIngestStore.getState().touched;
+    applyStreamEvent(ev("tool", { tool: "Read", detail: "wiki/a.md" }));
+    expect(useIngestStore.getState().touched).toBe(first);
+    expect(useIngestStore.getState().readCount).toBe(2);
+  });
+
+  it("replaces it only when a page flips read → written", () => {
+    applyStreamEvent(ev("tool", { tool: "Read", detail: "wiki/a.md" }));
+    const first = useIngestStore.getState().touched;
+    applyStreamEvent(ev("tool", { tool: "Write", detail: "wiki/a.md" }));
+    const second = useIngestStore.getState().touched;
+    expect(second).not.toBe(first);
+    expect(second[0].write).toBe(true);
+  });
+
+  it("keeps identity when a plain text event arrives", () => {
+    applyStreamEvent(ev("tool", { tool: "Read", detail: "wiki/a.md" }));
+    const first = useIngestStore.getState().touched;
+    applyStreamEvent(ev("text", { text: "thinking" }));
+    expect(useIngestStore.getState().touched).toBe(first);
   });
 });

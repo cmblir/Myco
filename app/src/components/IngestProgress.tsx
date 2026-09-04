@@ -5,7 +5,7 @@
 // cancel button. All data comes from ingestStore so the panel resumes
 // seamlessly after navigating away and back.
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { IconName } from "../lib/icons";
@@ -16,6 +16,14 @@ import type { PlanItem } from "../lib/ingestPlan";
 import { useIngestStore } from "../stores/ingestStore";
 import type { IngestEvent } from "../stores/ingestStore";
 import IngestMiniGraph from "./IngestMiniGraph";
+
+// Only the tail of the capped 500-event feed is rendered. Rendering all 500
+// rows on every stream event was the ingest lag: 500 React elements rebuilt
+// per event, inside a live region WebKit then re-serialised in full. The feed
+// is append-only and auto-scrolled to the newest row, so the older rows are
+// off-screen history — a count stands in for them. Slicing costs three lines;
+// a virtualiser would need scroll math and a dependency for the same result.
+const FEED_ROWS = 120;
 
 const TOOL_ICONS: Record<string, IconName> = {
   Read: "book",
@@ -105,8 +113,15 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
         ? t.ing_cancelled
         : t.ing_chip_error;
 
+  const visibleEvents =
+    events.length > FEED_ROWS ? events.slice(-FEED_ROWS) : events;
+  const earlier = events.length - visibleEvents.length;
+
   return (
-    <div className="ingest-live" role="status" aria-live="polite">
+    // No live region on the wrapper: it used to announce the whole panel —
+    // 500 feed rows plus a 1 Hz ticker — on every event. Only the current
+    // action line is announced now.
+    <div className="ingest-live">
       <div className="ingest-live-hero">
         <div
           className={"ingest-orb" + (running ? "" : " idle")}
@@ -118,7 +133,12 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
         </div>
         <div className="ingest-live-headline">
           <div className="ingest-live-title">{title}</div>
-          <div className="ingest-live-action" title={currentAction}>
+          <div
+            className="ingest-live-action"
+            title={currentAction}
+            role="status"
+            aria-live="polite"
+          >
             {currentAction}
           </div>
           <div className="ingest-live-meta muted">
@@ -230,7 +250,16 @@ export default function IngestProgress({ t }: { t: Strings }): JSX.Element {
               {t.ing_live_warmup}
             </div>
           ) : (
-            events.map((ev, i) => <FeedRow key={i} ev={ev} />)
+            <>
+              {earlier > 0 ? (
+                <div className="muted" style={{ fontSize: 11.5 }}>
+                  {t.ing_live_earlier.replace("{n}", String(earlier))}
+                </div>
+              ) : null}
+              {visibleEvents.map((ev) => (
+                <FeedRow key={ev.seq} ev={ev} />
+              ))}
+            </>
           )}
         </div>
         <div className="ingest-live-stats">
@@ -329,7 +358,9 @@ function PlanGateCard({ t, plan }: { t: Strings; plan: PlanItem[] }): JSX.Elemen
   );
 }
 
-function FeedRow({ ev }: { ev: IngestEvent }): JSX.Element {
+// memo + a stable `ev` identity from the store means an append re-renders one
+// row, not the whole feed.
+const FeedRow = memo(function FeedRow({ ev }: { ev: IngestEvent }): JSX.Element {
   const icon: IconName =
     ev.kind === "tool"
       ? (TOOL_ICONS[ev.tool ?? ""] ?? "bolt")
@@ -348,5 +379,4 @@ function FeedRow({ ev }: { ev: IngestEvent }): JSX.Element {
       <span className="ingest-feed-text">{describe(ev)}</span>
     </div>
   );
-}
-
+});

@@ -40,6 +40,11 @@ export type IngestStage =
   | "error";
 
 export interface IngestEvent {
+  /** Monotonic id, unique for the process lifetime. React keys the feed rows
+   * by this: keying by array index made every append re-render (and re-mount
+   * the icon of) all 500 capped rows, because the index of every row shifts
+   * once the cap starts dropping the oldest event. */
+  seq: number;
   at: number;
   kind: ClaudeStreamPayload["kind"];
   tool?: string;
@@ -689,9 +694,14 @@ async function runLiveScan(): Promise<void> {
   }
 }
 
-function applyStreamEvent(p: ClaudeStreamPayload): void {
+let eventSeq = 0;
+
+// Exported for the unit test — production callers go through the
+// `claude-stream` listener above.
+export function applyStreamEvent(p: ClaudeStreamPayload): void {
   useIngestStore.setState((st) => {
     const ev: IngestEvent = {
+      seq: ++eventSeq,
       at: Date.now(),
       kind: p.kind,
       tool: p.tool ?? undefined,
@@ -710,6 +720,9 @@ function applyStreamEvent(p: ClaudeStreamPayload): void {
       if (isWrite || isRead) {
         if (isWrite) next.writeCount = st.writeCount + 1;
         else next.readCount = st.readCount + 1;
+        // `next.touched` is left unset unless the list actually changes, so
+        // subscribers that only watch `touched` (mini graph, PageGraph glow)
+        // keep the old array identity and do not re-render per event.
         const existing = st.touched.find((f) => f.path === ev.detail);
         if (existing) {
           if (isWrite && !existing.write) {

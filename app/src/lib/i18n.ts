@@ -357,6 +357,7 @@ export interface Strings {
   ing_live_title: string;
   ing_live_warmup: string;
   ing_live_activity: string;
+  ing_live_earlier: string;
   ing_live_files: string;
   ing_live_reads: string;
   ing_live_writes: string;
@@ -1888,6 +1889,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_live_title: "Writing your wiki…",
     ing_live_warmup: "Starting Claude…",
     ing_live_activity: "Live activity",
+    ing_live_earlier: "…{n} earlier",
     ing_live_files: "Pages touched",
     ing_live_reads: "read",
     ing_live_writes: "written",
@@ -3467,6 +3469,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_live_title: "LLM 위키 작성 중…",
     ing_live_warmup: "Claude 시작 중…",
     ing_live_activity: "실시간 활동",
+    ing_live_earlier: "이전 {n}건",
     ing_live_files: "작업한 페이지",
     ing_live_reads: "읽음",
     ing_live_writes: "작성",
@@ -4886,6 +4889,7 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_live_title: "LLM がウィキを作成中…",
     ing_live_warmup: "Claude を起動中…",
     ing_live_activity: "ライブアクティビティ",
+    ing_live_earlier: "以前の {n} 件",
     ing_live_files: "作業したページ",
     ing_live_reads: "読込",
     ing_live_writes: "作成",

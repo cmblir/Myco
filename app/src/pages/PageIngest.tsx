@@ -40,7 +40,9 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   tRef.current = t;
   const stage = useIngestStore((s) => s.stage);
   const inboxRev = useIngestStore((s) => s.inboxRev);
-  const events = useIngestStore((s) => s.events);
+  // Only "are there any events?" is needed here; subscribing to the array
+  // itself re-rendered this whole page on every stream event.
+  const hasEvents = useIngestStore((s) => s.events.length > 0);
   const log = useIngestStore((s) => s.log);
   const startedAt = useIngestStore((s) => s.startedAt);
   const finishedAt = useIngestStore((s) => s.finishedAt);
@@ -87,7 +89,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   // After the run ends the panel stays up as the result view (mini galaxy,
   // feed, counters) until the user starts another ingest. Streamless runs
   // (HTTP providers) have no events and fall back to the plain form+banner.
-  const showResults = running || events.length > 0;
+  const showResults = running || hasEvents;
 
   // Visiting this page acknowledges a finished run (clears the Topbar chip).
   useEffect(() => {

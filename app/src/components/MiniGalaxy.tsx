@@ -6,7 +6,7 @@
 // charge force. Drag tows a star (the sim reheats), hover shows its label,
 // a precise click reports the node to the caller (for an in-place preview).
 
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import {
   forceCollide,
@@ -54,7 +54,10 @@ function endpointId(e: SimNode | string): string {
 const clamp = (v: number, lo: number, hi: number): number =>
   Math.min(hi, Math.max(lo, v));
 
-export default function MiniGalaxy({
+// Memoised: the ingest panel above re-renders on every stream event, while
+// `nodes`/`links` only change when a page is actually touched — without this
+// the whole SVG (up to ~50 stars) was rebuilt per event.
+function MiniGalaxy({
   nodes,
   links,
   selected,
@@ -351,3 +354,5 @@ export default function MiniGalaxy({
     </svg>
   );
 }
+
+export default memo(MiniGalaxy);
