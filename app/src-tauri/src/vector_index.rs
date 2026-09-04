@@ -295,6 +295,18 @@ impl VectorStore {
         out
     }
 
+    /// This page's stored vectors, keyed by chunk content hash, so a re-index
+    /// can reuse the ones whose text did not change instead of re-embedding
+    /// the whole page (see `commands::chunks_needing_embed`). Duplicate chunks
+    /// within a page collapse to one entry — they embed identically anyway.
+    pub fn page_vectors(&self, page: &str) -> std::collections::HashMap<u64, Vec<f32>> {
+        self.records
+            .iter()
+            .filter(|r| r.page == page)
+            .map(|r| (r.hash, r.vector.clone()))
+            .collect()
+    }
+
     /// Replace all records for one page with a fresh set.
     pub fn upsert_page(&mut self, page: &str, stem: &str, chunks: Vec<(u64, Vec<f32>)>) {
         self.records.retain(|r| r.page != page);
@@ -1051,6 +1063,21 @@ mod tests {
         assert_eq!(by_page["b.md"], vec![33]);
         assert!(!by_page.contains_key("never-indexed.md"));
         assert!(VectorStore::default().hashes_by_page().is_empty());
+    }
+
+    #[test]
+    fn page_vectors_hands_back_this_pages_vectors_by_hash() {
+        // The reuse map behind the chunk-level re-embed skip: only this page's
+        // records, keyed by content hash.
+        let mut s = VectorStore::default();
+        s.upsert_page("a.md", "a", vec![(11, vec![1.0]), (22, vec![0.0])]);
+        s.upsert_page("b.md", "b", vec![(33, vec![0.5])]);
+        let v = s.page_vectors("a.md");
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[&11], vec![1.0]);
+        assert_eq!(v[&22], vec![0.0]);
+        assert!(!v.contains_key(&33));
+        assert!(s.page_vectors("never-indexed.md").is_empty());
     }
 
     #[test]

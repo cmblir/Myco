@@ -73,8 +73,13 @@ impl IndexUpdater {
                     if dirty.is_empty() {
                         std::future::pending::<()>().await
                     } else {
-                        tokio::time::sleep(batch_delay(&dirty, DEBOUNCE, REBIND_CATCHUP_DELAY))
-                            .await
+                        tokio::time::sleep(batch_delay(
+                            &dirty,
+                            root.as_deref(),
+                            DEBOUNCE,
+                            REBIND_CATCHUP_DELAY,
+                        ))
+                        .await
                     }
                 };
                 tokio::select! {
@@ -117,7 +122,15 @@ impl IndexUpdater {
                             // compute buffer to a machine already evicting
                             // pages. Interactive query embeds do not come
                             // through this actor and are never gated.
-                            if memory_pressured() {
+                            // `sysctl` is spawned via `spawn_blocking` rather
+                            // than inline: it is a process spawn + wait on the
+                            // actor's tokio worker thread, once per batch,
+                            // which is exactly the kind of stall that delays
+                            // unrelated IPC responses.
+                            if tauri::async_runtime::spawn_blocking(memory_pressured)
+                                .await
+                                .unwrap_or(false)
+                            {
                                 eprintln!(
                                     "[index_updater] memory pressure — deferring {} dirty path(s)",
                                     dirty.len()
@@ -229,20 +242,62 @@ fn pressure_gates(level: Option<i32>) -> bool {
     matches!(level, Some(l) if l >= 2)
 }
 
+/// Byte size at which a dirty page is treated as an actively-appended
+/// transcript rather than a note someone is typing. Size, not chunk count, is
+/// the signal here because it costs one `stat` instead of reading and chunking
+/// the file on the actor's own thread. ~256 KB is roughly where a page reaches
+/// `commands::MAX_PAGE_CHUNKS` for English prose (320 tokens/chunk at ~4
+/// chars/token) — the owner's three worst session logs are 645, 770 and 626 KB.
+const LONG_PAGE_BYTES: u64 = 256 * 1024;
+
+/// Debounce for such a page. An ingest agent appends to a session mirror
+/// repeatedly over a run, and each append used to start an embed pass that the
+/// next append invalidated before it finished — it never converged. 30 s means
+/// the transcript is embedded once after the writing settles. Wiki pages stay
+/// on the 500 ms debounce so ordinary edits still show up in search promptly.
+const LONG_PAGE_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// Pure decision behind the debounce choice: the largest dirty page's size
+/// picks the delay.
+fn size_debounce(
+    max_bytes: u64,
+    debounce: std::time::Duration,
+    long: std::time::Duration,
+) -> std::time::Duration {
+    if max_bytes >= LONG_PAGE_BYTES {
+        long
+    } else {
+        debounce
+    }
+}
+
 /// How long the actor waits before processing the pending dirty set: the
 /// short edit debounce, unless the set holds the "*" rebind sentinel — a full
 /// reconcile (every page walked, session backlog embedded) that must not
-/// launch 500 ms into app boot. See `REBIND_CATCHUP_DELAY` in `spawn`.
+/// launch 500 ms into app boot (see `REBIND_CATCHUP_DELAY` in `spawn`) — or
+/// holds a page big enough to be an append-in-progress transcript, which waits
+/// `LONG_PAGE_DEBOUNCE`.
 fn batch_delay(
     dirty: &HashSet<String>,
+    root: Option<&Path>,
     debounce: std::time::Duration,
     catchup: std::time::Duration,
 ) -> std::time::Duration {
     if dirty.contains("*") {
-        catchup
-    } else {
-        debounce
+        return catchup;
     }
+    // One `stat` per dirty path per timer arm — microseconds, and the dirty
+    // set is a handful of paths.
+    let max_bytes = root
+        .map(|r| {
+            dirty
+                .iter()
+                .filter_map(|rel| std::fs::metadata(r.join(rel)).ok().map(|m| m.len()))
+                .max()
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
+    size_debounce(max_bytes, debounce, LONG_PAGE_DEBOUNCE)
 }
 
 /// Whether the lexical index is missing pages the dense store already has —
@@ -363,14 +418,23 @@ async fn process_batch(
     batch: Vec<String>,
 ) -> Result<(), String> {
     let index_path = VectorStore::path_for(&root.to_string_lossy())?;
-    let mut store = VectorStore::load(&index_path);
     let bm25_path = Bm25Index::path_for(&root.to_string_lossy())?;
+    // Both loads are synchronous multi-MB reads + decodes (7.7 MB `.mxv`,
+    // 6.3 MB `.mxb` on the owner's vault) and this runs inside a
+    // `tauri::async_runtime::spawn` task, so doing them inline blocked a tokio
+    // worker and delayed unrelated IPC responses. Off to the blocking pool.
+    //
     // BM25 has no model field and is never wiped by `ensure_model` below: it
     // is derived from raw chunk text, not embedding geometry, so it stays
     // valid across an embed-model migration. Re-upserting every page during
     // the reconcile pass a stale store forces is what keeps it correct then
     // — not a wipe.
-    let mut bm25 = Bm25Index::load(&bm25_path);
+    let (mut store, mut bm25) = {
+        let (ip, bp) = (index_path.clone(), bm25_path.clone());
+        tauri::async_runtime::spawn_blocking(move || (VectorStore::load(&ip), Bm25Index::load(&bp)))
+            .await
+            .map_err(|e| format!("index load join: {e}"))?
+    };
     // Snapshot once, same spirit as `store.hashes_by_page()` below: lets
     // `embed_one_page` detect "BM25 doesn't have this page yet" (e.g.
     // bootstrapping a fresh/dropped `.mxb` against an already-current
@@ -476,9 +540,21 @@ async fn process_batch(
     // retry still sees stale hashes, re-embeds, and re-upserts both indexes.
     // A failed `.mxb` save surfaces as a batch error, retried with backoff
     // by the caller, exactly like a failed `store.save` already does.
+    //
+    // Both saves are multi-MB encodes + writes, off the tokio worker for the
+    // same reason as the loads above; the indexes come back so the caches can
+    // still be primed with them.
     if changed {
-        bm25.save(&bm25_path)?;
-        store.save(&index_path)?;
+        let (ip, bp) = (index_path.clone(), bm25_path.clone());
+        let (bm25, store) = tauri::async_runtime::spawn_blocking(
+            move || -> Result<(Bm25Index, VectorStore), String> {
+                bm25.save(&bp)?;
+                store.save(&ip)?;
+                Ok((bm25, store))
+            },
+        )
+        .await
+        .map_err(|e| format!("index save join: {e}"))??;
         app.state::<Bm25Cache>().put(&bm25_path, bm25);
         app.state::<VectorCache>().put(&index_path, store);
     }
@@ -520,9 +596,68 @@ mod tests {
         let debounce = std::time::Duration::from_millis(500);
         let catchup = std::time::Duration::from_secs(30);
         let edits: HashSet<String> = ["wiki/a.md".to_string()].into();
-        assert_eq!(batch_delay(&edits, debounce, catchup), debounce);
+        assert_eq!(batch_delay(&edits, None, debounce, catchup), debounce);
         let rebind: HashSet<String> = ["*".to_string(), "wiki/a.md".to_string()].into();
-        assert_eq!(batch_delay(&rebind, debounce, catchup), catchup);
+        assert_eq!(batch_delay(&rebind, None, debounce, catchup), catchup);
+    }
+
+    #[test]
+    fn size_debounce_holds_big_pages_back_and_lets_small_ones_through() {
+        let short = std::time::Duration::from_millis(500);
+        assert_eq!(size_debounce(0, short, LONG_PAGE_DEBOUNCE), short);
+        assert_eq!(
+            size_debounce(LONG_PAGE_BYTES - 1, short, LONG_PAGE_DEBOUNCE),
+            short
+        );
+        assert_eq!(
+            size_debounce(LONG_PAGE_BYTES, short, LONG_PAGE_DEBOUNCE),
+            LONG_PAGE_DEBOUNCE
+        );
+        // A real session log from the owner's vault (645 KB).
+        assert_eq!(
+            size_debounce(645 * 1024, short, LONG_PAGE_DEBOUNCE),
+            LONG_PAGE_DEBOUNCE
+        );
+    }
+
+    #[test]
+    fn an_actively_appended_session_log_gets_the_long_debounce() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let debounce = std::time::Duration::from_millis(500);
+        let catchup = std::time::Duration::from_secs(180);
+
+        std::fs::create_dir_all(root.join("wiki")).unwrap();
+        std::fs::write(root.join("wiki/note.md"), "a short note").unwrap();
+        std::fs::create_dir_all(root.join("sessions/2026-08")).unwrap();
+        std::fs::write(
+            root.join("sessions/2026-08/claude-code.md"),
+            "x".repeat((LONG_PAGE_BYTES + 1) as usize),
+        )
+        .unwrap();
+
+        let small: HashSet<String> = ["wiki/note.md".to_string()].into();
+        assert_eq!(
+            batch_delay(&small, Some(root), debounce, catchup),
+            debounce,
+            "an ordinary wiki edit must keep the short debounce"
+        );
+
+        // The mixed batch is what a real ingest run produces: the transcript
+        // decides, so the whole batch waits for it to settle.
+        let mixed: HashSet<String> = [
+            "wiki/note.md".to_string(),
+            "sessions/2026-08/claude-code.md".to_string(),
+        ]
+        .into();
+        assert_eq!(
+            batch_delay(&mixed, Some(root), debounce, catchup),
+            LONG_PAGE_DEBOUNCE
+        );
+
+        // The rebind sentinel still outranks everything.
+        let rebind: HashSet<String> = ["*".to_string()].into();
+        assert_eq!(batch_delay(&rebind, Some(root), debounce, catchup), catchup);
     }
 
     #[test]

@@ -3715,6 +3715,38 @@ pub(crate) struct EmbedOutcome {
     pub changed: bool,
 }
 
+/// Hard ceiling on how many chunks a single page contributes to either index.
+///
+/// Measured on the owner's real vault: 3988 of 4451 indexed chunks (90%)
+/// belong to `sessions/*.md`, with single transcripts at 1053, 831 and 757
+/// chunks. Those are append-only agent transcripts, and an ingest run appends
+/// to them continuously — so before this cap every append re-embedded the
+/// whole file (8–40 s of local inference under the global `with_local_llm`
+/// mutex, starving Ask and spotlight) and the file had usually grown again
+/// before that finished, so it never converged. 200 chunks ≈ 64k tokens of a
+/// transcript, far more than any answer quotes, and it bounds the worst-case
+/// first index of a session log at 200 embeds instead of 1053.
+///
+// ponytail: flat head-of-file ceiling — the tail of a long transcript is
+// simply not indexed. Upgrade path when that bites: window the chunks (keep
+// the newest N as well as the first N), or summarise older transcript
+// sections into a digest page that is indexed in full.
+const MAX_PAGE_CHUNKS: usize = 200;
+
+/// What `sync_bm25_for_page` decided for one page.
+pub(crate) struct PageSync {
+    /// The page's chunk texts, already capped at `MAX_PAGE_CHUNKS`.
+    pub chunks: Vec<String>,
+    /// Content hash per chunk, index-aligned with `chunks`.
+    pub hashes: Vec<u64>,
+    /// True when the dense store already holds exactly these hashes — only
+    /// BM25 needed catching up, so no embedding is required at all.
+    pub dense_current: bool,
+    /// True when the page had more than `MAX_PAGE_CHUNKS` chunks and its tail
+    /// was dropped from both indexes.
+    pub truncated: bool,
+}
+
 /// Sync core of `embed_one_page`: decides whether either index needs
 /// updating and, if so, upserts `bm25` — the one part of this decision with
 /// no dependency on a live app/loaded model, split out so it is directly
@@ -3722,11 +3754,12 @@ pub(crate) struct EmbedOutcome {
 ///
 /// Returns `None` when nothing needs doing (no chunks, or both indexes
 /// already current for this page — the caller should report
-/// `EmbedOutcome { embedded: false, changed: false }`). Returns
-/// `Some((chunks, hashes, dense_current))` otherwise, having already
-/// upserted `bm25` as needed; `dense_current` tells the caller whether it
-/// must still embed and upsert `store`, or whether BM25 alone needed
-/// catching up.
+/// `EmbedOutcome { embedded: false, changed: false }`). Returns a `PageSync`
+/// otherwise, having already upserted `bm25` as needed.
+///
+/// BM25 receives the same truncated chunk list the dense side will, so
+/// `(page, section)` identity stays aligned between the two indexes — which
+/// RRF fusion depends on.
 fn sync_bm25_for_page(
     content: &str,
     rel: &str,
@@ -3734,11 +3767,13 @@ fn sync_bm25_for_page(
     existing: &std::collections::HashMap<String, Vec<u64>>,
     bm25: &mut crate::retrieval::Bm25Index,
     bm25_pages: &std::collections::HashSet<String>,
-) -> Option<(Vec<String>, Vec<u64>, bool)> {
-    let chunks = embeddings::chunk_page(content);
+) -> Option<PageSync> {
+    let mut chunks = embeddings::chunk_page(content);
     if chunks.is_empty() {
         return None; // nothing to index on either side
     }
+    let truncated = chunks.len() > MAX_PAGE_CHUNKS;
+    chunks.truncate(MAX_PAGE_CHUNKS);
     let hashes: Vec<u64> = chunks.iter().map(|c| embeddings::content_hash(c)).collect();
     let dense_current = existing.get(rel) == Some(&hashes);
     let bm25_current = bm25_pages.contains(rel);
@@ -3751,7 +3786,32 @@ fn sync_bm25_for_page(
     // (re-embed case) and "dense is current but BM25 never had this page"
     // (bootstrap case).
     bm25.upsert_page(rel, stem, &chunks);
-    Some((chunks, hashes, dense_current))
+    Some(PageSync {
+        chunks,
+        hashes,
+        dense_current,
+        truncated,
+    })
+}
+
+/// Indices of `new_hashes` whose text the index does not already hold for this
+/// page, i.e. exactly the chunks that must be embedded.
+///
+/// This is the fix for the ingest stall: the old code compared the page's hash
+/// *list* and, on any difference, re-embedded every chunk of the page. For an
+/// append-only session transcript that meant 831 embeds to index one new
+/// paragraph. Matching per chunk instead makes an append cost one embed.
+///
+/// Hash-set membership, not positional comparison, so an insertion or a
+/// reorder in the middle of a page also reuses everything it did not change.
+pub(crate) fn chunks_needing_embed(old_hashes: &[u64], new_hashes: &[u64]) -> Vec<usize> {
+    let have: std::collections::HashSet<u64> = old_hashes.iter().copied().collect();
+    new_hashes
+        .iter()
+        .enumerate()
+        .filter(|(_, h)| !have.contains(h))
+        .map(|(i, _)| i)
+        .collect()
 }
 
 /// Bring one page's chunks up to date in both `store` (dense) and `bm25`
@@ -3803,34 +3863,69 @@ pub(crate) async fn embed_one_page(
     bm25: &mut crate::retrieval::Bm25Index,
     bm25_pages: &std::collections::HashSet<String>,
 ) -> Result<EmbedOutcome, String> {
-    let Some((chunks, hashes, dense_current)) =
-        sync_bm25_for_page(content, rel, stem, existing, bm25, bm25_pages)
-    else {
+    let Some(sync) = sync_bm25_for_page(content, rel, stem, existing, bm25, bm25_pages) else {
         return Ok(EmbedOutcome {
             embedded: false,
             changed: false,
         });
     };
-    if dense_current {
+    if sync.dense_current {
         // Dense already matches; BM25 alone needed catching up. No re-embed.
         return Ok(EmbedOutcome {
             embedded: false,
             changed: true,
         });
     }
-    let vecs = embed_texts(
-        app.clone(),
-        (*llm).clone(),
-        provider,
-        model,
-        crate::local_llm::EmbedRole::Document,
-        chunks,
-    )
-    .await?;
-    let entries: Vec<(u64, Vec<f32>)> = hashes.into_iter().zip(vecs).collect();
+    if sync.truncated {
+        eprintln!(
+            "[embed] {rel}: indexing the first {MAX_PAGE_CHUNKS} chunks only (page exceeds the cap)"
+        );
+    }
+    // Reuse the vectors already stored for chunks whose text did not change —
+    // the whole point of the fix. Keyed by content hash and read from the
+    // store itself (not from the `existing` snapshot) so the reuse set can
+    // never disagree with the vectors actually available. Cloning ~200
+    // vectors is a sub-millisecond memcpy against seconds of inference.
+    let reusable = store.page_vectors(rel);
+    let old_hashes: Vec<u64> = reusable.keys().copied().collect();
+    let todo = chunks_needing_embed(&old_hashes, &sync.hashes);
+    let PageSync { chunks, hashes, .. } = sync;
+    let mut by_hash = reusable;
+    if !todo.is_empty() {
+        let texts: Vec<String> = todo.iter().map(|&i| chunks[i].clone()).collect();
+        let want = texts.len();
+        let vecs = embed_texts(
+            app.clone(),
+            (*llm).clone(),
+            provider,
+            model,
+            crate::local_llm::EmbedRole::Document,
+            texts,
+        )
+        .await?;
+        if vecs.len() != want {
+            return Err(format!(
+                "embed returned {} vectors for {want} chunks of {rel}",
+                vecs.len()
+            ));
+        }
+        for (&i, v) in todo.iter().zip(vecs) {
+            by_hash.insert(hashes[i], v);
+        }
+    }
+    // Rebuild the page's records in chunk order, so section indices (and thus
+    // `(page, section)` identity against BM25) are unchanged for a page whose
+    // text did not move.
+    let mut entries: Vec<(u64, Vec<f32>)> = Vec::with_capacity(hashes.len());
+    for h in &hashes {
+        let v = by_hash
+            .get(h)
+            .ok_or_else(|| format!("embed: no vector for a chunk of {rel}"))?;
+        entries.push((*h, v.clone()));
+    }
     store.upsert_page(rel, stem, entries);
     Ok(EmbedOutcome {
-        embedded: true,
+        embedded: !todo.is_empty(),
         changed: true,
     })
 }
@@ -4897,13 +4992,13 @@ pub fn os_version() -> String {
 mod tests {
     use super::{
         append_recall_miss, builtin_index_is_stale, capture_note_at, chunk_text_at,
-        copy_into_inbox_at, delete_myco_json, export_bundle_write, external_target_allowed,
-        import_dest, inbox_entries, is_media_name, iso_week_monday, list_myco_json, move_path_at,
-        myco_json_path, page_in_date_range, read_settings_import, recency_tie_break,
-        resurface_core, run_diff_core, run_import, save_favorites_at, save_myco_json,
-        stamp_related, sync_bm25_for_page, voice_inbox_rel, voice_markdown, windows_opener_safe,
-        write_inbox_note_at, DateRange, DEST_INBOX, DEST_SESSIONS, INBOX_COPY_MAX_BYTES,
-        INBOX_COPY_MAX_MEDIA_BYTES,
+        chunks_needing_embed, copy_into_inbox_at, delete_myco_json, export_bundle_write,
+        external_target_allowed, import_dest, inbox_entries, is_media_name, iso_week_monday,
+        list_myco_json, move_path_at, myco_json_path, page_in_date_range, read_settings_import,
+        recency_tie_break, resurface_core, run_diff_core, run_import, save_favorites_at,
+        save_myco_json, stamp_related, sync_bm25_for_page, voice_inbox_rel, voice_markdown,
+        windows_opener_safe, write_inbox_note_at, DateRange, DEST_INBOX, DEST_SESSIONS,
+        INBOX_COPY_MAX_BYTES, INBOX_COPY_MAX_MEDIA_BYTES, MAX_PAGE_CHUNKS,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
     use crate::vector_index::Hit;
@@ -5464,10 +5559,9 @@ mod tests {
             &bm25_pages,
         );
 
-        let (_, _, dense_current) =
-            outcome.expect("bm25 missing the page must still signal an update");
+        let sync = outcome.expect("bm25 missing the page must still signal an update");
         assert!(
-            dense_current,
+            sync.dense_current,
             "dense side was already current; only bm25 needed catching up"
         );
         assert!(
@@ -5508,6 +5602,126 @@ mod tests {
             bm25.is_empty(),
             "must not have upserted anything into bm25 in the both-current case"
         );
+    }
+
+    // ---- the ingest-lag fix ------------------------------------------------
+    // `embed_one_page` itself needs a live AppHandle and a loaded embed model,
+    // so what is tested here is the decision it delegates to:
+    // `chunks_needing_embed` (which chunks actually reach `embed_texts`) and
+    // `sync_bm25_for_page`'s page ceiling. The wiring between them —
+    // reuse-by-hash from `VectorStore::page_vectors`, records rebuilt in chunk
+    // order — is verified by inspection only.
+
+    /// Chunk hashes for a page, exactly as `sync_bm25_for_page` computes them.
+    fn hashes_of(content: &str) -> Vec<u64> {
+        let mut chunks = crate::embeddings::chunk_page(content);
+        chunks.truncate(MAX_PAGE_CHUNKS);
+        chunks
+            .iter()
+            .map(|c| crate::embeddings::content_hash(c))
+            .collect()
+    }
+
+    #[test]
+    fn appending_to_a_page_embeds_only_the_new_chunks() {
+        // The bug: an ingest agent appends one entry to an 831-chunk session
+        // mirror and the old code re-embedded all 831 (8–40 s of local
+        // inference, restarted by the next append). Only the appended chunks
+        // may reach the embedder.
+        let before =
+            "# log\n\n".to_string() + &"an earlier entry in the transcript\n\n".repeat(400);
+        let after = before.clone() + "a brand new entry the agent just appended\n";
+
+        let old = hashes_of(&before);
+        let new = hashes_of(&after);
+        assert!(old.len() > 1, "fixture must be a multi-chunk page");
+
+        let todo = chunks_needing_embed(&old, &new);
+        assert!(
+            todo.len() <= 2,
+            "an append must re-embed only the tail chunk(s), got {} of {}",
+            todo.len(),
+            new.len()
+        );
+        // And every index it names is a real chunk of the new page.
+        assert!(todo.iter().all(|&i| i < new.len()));
+        // Everything it did NOT name is reusable, i.e. already in the index.
+        let have: HashSet<u64> = old.iter().copied().collect();
+        for (i, h) in new.iter().enumerate() {
+            if !todo.contains(&i) {
+                assert!(have.contains(h), "chunk {i} was skipped but is not stored");
+            }
+        }
+    }
+
+    #[test]
+    fn an_unchanged_page_embeds_nothing() {
+        let content = "# Attention\n\ntransformers use self attention to weigh tokens\n";
+        let hashes = hashes_of(content);
+        assert!(chunks_needing_embed(&hashes, &hashes).is_empty());
+        // A pure reorder is free too: same texts, no new vectors needed.
+        let mut reordered = hashes.clone();
+        reordered.reverse();
+        assert!(chunks_needing_embed(&hashes, &reordered).is_empty());
+    }
+
+    #[test]
+    fn a_first_index_embeds_every_chunk() {
+        let hashes = hashes_of("# A\n\nalpha body\n\n# B\n\nbeta body\n");
+        assert_eq!(
+            chunks_needing_embed(&[], &hashes),
+            (0..hashes.len()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_page_over_the_cap_is_truncated_and_flagged() {
+        // A transcript far past the ceiling — the owner's worst is 1053 chunks.
+        // Headings, so the chunk count is exactly the entry count.
+        let huge: String = (0..MAX_PAGE_CHUNKS + 100)
+            .map(|i| format!("# entry {i}\na paragraph of transcript text\n\n"))
+            .collect();
+        assert!(
+            crate::embeddings::chunk_page(&huge).len() > MAX_PAGE_CHUNKS,
+            "fixture must exceed the cap"
+        );
+
+        let mut bm25 = Bm25Index::new();
+        let sync = sync_bm25_for_page(
+            &huge,
+            "sessions/2026-08/claude-code.md",
+            "claude-code",
+            &HashMap::new(),
+            &mut bm25,
+            &HashSet::new(),
+        )
+        .expect("an unindexed page needs indexing");
+
+        assert!(sync.truncated);
+        assert_eq!(sync.chunks.len(), MAX_PAGE_CHUNKS);
+        assert_eq!(sync.hashes.len(), MAX_PAGE_CHUNKS);
+        // BM25 gets the same truncated list, so (page, section) identity stays
+        // aligned with the dense side that RRF fuses against.
+        assert!(bm25
+            .search("paragraph of transcript text", 10)
+            .iter()
+            .all(|h| h.section < MAX_PAGE_CHUNKS));
+    }
+
+    #[test]
+    fn a_normal_wiki_page_is_never_truncated() {
+        let mut bm25 = Bm25Index::new();
+        let sync = sync_bm25_for_page(
+            "# A\n\nalpha body\n\n# B\n\nbeta body\n",
+            "wiki/a.md",
+            "a",
+            &HashMap::new(),
+            &mut bm25,
+            &HashSet::new(),
+        )
+        .expect("an unindexed page needs indexing");
+        assert!(!sync.truncated);
+        assert_eq!(sync.chunks.len(), 2);
     }
 
     #[test]
