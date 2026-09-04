@@ -47,6 +47,7 @@ import { useDistillStore, pendingMapProposals } from "../stores/distillStore";
 import type { ProposalMeta } from "../stores/distillStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
+import { useNoticeStore } from "../stores/noticeStore";
 import { useReflectStore } from "../stores/reflectStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
@@ -58,6 +59,8 @@ export interface RunningActivity {
   label: string;
   /** Live number/step beside the name ("218/302", the distill step, elapsed). */
   detail: string;
+  /** 0..1 when the job knows how far along it is; absent = indeterminate. */
+  fraction?: number;
 }
 
 export type ActivityChipMode<T extends { icon: ActivityIconName }> =
@@ -87,6 +90,52 @@ export function stepLabel(step: DistillRunStep | null, t: Strings): string {
   if (step === "resurface")
     return t.set_distill_step_resurface ?? "the resurface picks";
   return t.set_distill_step_run ?? "the core pass";
+}
+
+/** Chain phases in run order — the ring fills one notch per phase. */
+const DISTILL_STEPS: readonly DistillRunStep[] = [
+  "run",
+  "digest",
+  "weekly",
+  "monthly",
+  "ingest",
+  "maps",
+  "resurface",
+];
+
+/** Position of the running phase in the chain, 0..1. Pure; unit-tested. */
+export function distillFraction(step: DistillRunStep | null): number {
+  const i = step ? DISTILL_STEPS.indexOf(step) : -1;
+  return i < 0 ? 0 : i / DISTILL_STEPS.length;
+}
+
+/** Circumference of the chip ring (r=6 in a 16-unit box) — the dash maths
+ * below and `.activity-ring` in styles.css share this number. */
+const RING_C = 37.7;
+
+/** 14px ring drawn before the chip icon: a filling arc when the activity
+ * reports a fraction, a rotating dash when it does not. Decorative — the
+ * number beside the label carries the same information as text. */
+function ProgressRing({ fraction }: { fraction: number | undefined }): JSX.Element {
+  const determinate = fraction !== undefined;
+  return (
+    <svg className="activity-ring" viewBox="0 0 16 16" aria-hidden="true">
+      <circle className="activity-ring-track" cx="8" cy="8" r="6" />
+      <circle
+        className={
+          "activity-ring-arc" + (determinate ? "" : " is-indeterminate")
+        }
+        cx="8"
+        cy="8"
+        r="6"
+        style={
+          determinate
+            ? { strokeDashoffset: RING_C * (1 - Math.min(1, Math.max(0, fraction))) }
+            : undefined
+        }
+      />
+    </svg>
+  );
 }
 
 /** How many pending map proposals either activity surface lists before the
@@ -143,6 +192,9 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   // Proposal applies in flight (draft-map runs a whole query-model call TS-side
   // — minutes, not ms). Size only: the Set identity churns per apply.
   const applyingCount = useDistillStore((s) => s.applying.size);
+  // Determinate progress for a job with no store of its own (link "accept
+  // all") — the one slot noticeStore keeps for the chip.
+  const progress = useNoticeStore((s) => s.progress);
   // Pending map proposals, approvable right here (ROADMAP P0) — the same
   // store actions the Feedback page's buttons call, so there is one writer.
   const proposals = useDistillStore((s) => s.proposals);
@@ -151,7 +203,8 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
 
   const reindexBusy =
     reindexStage === "loading-model" || reindexStage === "indexing";
-  const anyBusy = askBusy || distillRunning || reflectRunning || reindexBusy;
+  const anyBusy =
+    askBusy || distillRunning || reflectRunning || reindexBusy || progress !== null;
 
   const [open, setOpen] = useState(false);
   const [popPos, setPopPos] = useState<ReturnType<typeof computeModelPopPos> | null>(
@@ -290,6 +343,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       icon: "distill",
       label: t.set_distill_running ?? "Distilling…",
       detail: stepLabel(distillStep, t),
+      fraction: distillFraction(distillStep),
     });
   }
   if (reflectRunning) {
@@ -297,6 +351,14 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       icon: "distill",
       label: t.rf_running_label ?? "Reflect running…",
       detail: "",
+    });
+  }
+  if (progress) {
+    running.push({
+      icon: "link",
+      label: progress.label,
+      detail: `${progress.done}/${progress.total}`,
+      fraction: progress.total > 0 ? progress.done / progress.total : 0,
     });
   }
   if (applyingCount > 0) {
@@ -314,13 +376,48 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
         reindexStage === "loading-model"
           ? (t.s_embeddings_loading_model ?? "Loading model…")
           : `${reindexDone}/${reindexTotal}`,
+      fraction:
+        reindexStage === "indexing" && reindexTotal > 0
+          ? reindexDone / reindexTotal
+          : undefined,
     });
   }
 
-  const mode = chipMode(running);
+  const liveMode = chipMode(running);
+
+  // Completion beat: when the last runner finishes, the chip stays 600 ms
+  // with a full green ring, then plays chip-out (220 ms) before unmounting.
+  // A new runner during the beat cancels it and takes the chip back over.
+  const lastMode = useRef<ActivityChipMode<RunningActivity> | null>(null);
+  if (liveMode.kind !== "none") lastMode.current = liveMode;
+  const [linger, setLinger] = useState<{
+    mode: ActivityChipMode<RunningActivity>;
+    phase: "done" | "out";
+  } | null>(null);
+  const idle = liveMode.kind === "none";
+  useEffect(() => {
+    const prev = lastMode.current;
+    if (!idle || !prev) {
+      setLinger(null);
+      return;
+    }
+    setLinger({ mode: prev, phase: "done" });
+    const toOut = window.setTimeout(
+      () => setLinger({ mode: prev, phase: "out" }),
+      600,
+    );
+    const toGone = window.setTimeout(() => setLinger(null), 820);
+    return () => {
+      window.clearTimeout(toOut);
+      window.clearTimeout(toGone);
+    };
+  }, [idle]);
+
+  const mode = liveMode.kind === "none" && linger ? linger.mode : liveMode;
   if (mode.kind === "none") return null;
 
   const openPopover = (): void => {
+    if (linger) return; // nothing left to list during the completion beat
     const r = wrapRef.current?.getBoundingClientRect();
     if (r) setPopPos(computeModelPopPos(r));
     setOpen(true);
@@ -396,6 +493,25 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       iconActive: true,
       onClick: () => jump("overview"),
       main: <b>{t.rf_running_label ?? "Reflect running…"}</b>,
+    });
+  }
+  if (progress) {
+    runningRows.push({
+      key: "linking",
+      icon: "link",
+      iconActive: true,
+      onClick: () => jump("overview"),
+      main: (
+        <>
+          <b>{progress.label}</b>
+          <progress value={progress.done} max={progress.total || 1} />
+        </>
+      ),
+      trailing: (
+        <span className="activity-num">
+          {progress.done}/{progress.total}
+        </span>
+      ),
     });
   }
   if (applyingCount > 0) {
@@ -682,24 +798,33 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   return (
     <div className="model-chip-wrap" ref={wrapRef}>
       <button
-        className="pill activity-chip"
+        className={
+          "pill activity-chip" +
+          (linger ? ` is-${linger.phase}` : "")
+        }
         onClick={() => (open ? setOpen(false) : openPopover())}
         aria-label={t.tb_activity_label ?? "Background activity"}
         aria-expanded={open}
         title={running.map((r) => `${r.label} ${r.detail}`.trim()).join(" · ")}
       >
+        {/* The label is keyed on its text so a change remounts the span and
+            replays the slide-up (`.activity-chip .pill-label`). */}
         {mode.kind === "single" ? (
           <>
-            <ActivityIcon name={mode.activity.icon} size={16} active />
-            <span className="pill-label">{mode.activity.label}</span>
+            <ProgressRing fraction={linger ? 1 : mode.activity.fraction} />
+            <ActivityIcon name={mode.activity.icon} size={16} active={!linger} />
+            <span className="pill-label" key={mode.activity.label}>
+              {mode.activity.label}
+            </span>
             {mode.activity.detail ? (
               <span className="activity-num">{mode.activity.detail}</span>
             ) : null}
           </>
         ) : (
           <>
-            <ActivityIcon name={mode.icon} size={16} active />
-            <span className="pill-label">
+            <ProgressRing fraction={linger ? 1 : undefined} />
+            <ActivityIcon name={mode.icon} size={16} active={!linger} />
+            <span className="pill-label" key={`n${mode.count}`}>
               {(t.tb_activity_n ?? "Activity {n}").replace(
                 "{n}",
                 String(mode.count),

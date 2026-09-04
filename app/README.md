@@ -111,6 +111,13 @@ can run e.g. Claude Sonnet for ingest and a local Llama for Q&A.
   under a Tools row. Settings has a search box that narrows its tabs and
   cards to matching labels.
 - `⌘B` toggles the sidebar.
+- Notices: work in progress lives in the top-right activity chip (a ring
+  fills as reindex, distill or a link "accept all" advances; the label swaps
+  per step; the ring turns green for a beat when done), and results arrive as
+  toasts that drop in directly under that chip — at most three, each with one
+  action, paused while hovered, `Esc` dismisses the newest. The same event
+  never appears in both. Accepting a single suggested link animates the ✓ in
+  place instead of raising a toast.
 - `⌥Space` (global, works from any app) opens a spotlight window: type a
   question, press Enter, and the answer appears with its citations —
   clicking one opens that note in myco. It runs the same Ask path as the

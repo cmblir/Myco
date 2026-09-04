@@ -5707,6 +5707,276 @@ html.tray-window body {
   white-space: nowrap;
 }
 
+/* --- Activity chip motion (ActivityChip) ---------------------------------- */
+/* 14px ring before the icon: a filling arc when the job reports a fraction,
+   a rotating dash when it does not. Circumference 37.7 = RING_C in the
+   component. */
+.activity-ring {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  transform: rotate(-90deg);
+}
+.activity-ring circle {
+  fill: none;
+  stroke-width: 2;
+}
+.activity-ring-track {
+  stroke: var(--line-strong);
+}
+.activity-ring-arc {
+  stroke: var(--ink);
+  stroke-linecap: round;
+  stroke-dasharray: 37.7;
+  transition: stroke-dashoffset 0.4s var(--ease-out), stroke 0.2s;
+}
+.activity-ring-arc.is-indeterminate {
+  stroke-dasharray: 10 27.7;
+  transform-origin: center;
+  animation: activity-ring-spin 1.1s linear infinite;
+}
+@keyframes activity-ring-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+/* Label swap: the span is keyed on its text, so a new label remounts and
+   slides up into place. */
+.activity-chip .pill-label {
+  animation: activity-label-in 0.28s var(--ease-out);
+}
+@keyframes activity-label-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* Completion beat: full green ring for 600 ms, then chip-out. */
+.activity-chip.is-done .activity-ring-arc,
+.activity-chip.is-out .activity-ring-arc {
+  stroke: var(--c-entity);
+}
+.activity-chip.is-out {
+  animation: activity-chip-out 0.22s var(--ease-out) forwards;
+}
+@keyframes activity-chip-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.96);
+  }
+}
+
+/* --- Notice stack (NoticeStack) ------------------------------------------- */
+/* Results only — progress is the chip's. Fixed under the Topbar's right
+   edge (the chip's side; the Topbar's own inset is 16px) so a toast drops
+   in beneath the chip whether or not the chip is currently showing. */
+.notice-stack {
+  position: fixed;
+  top: calc(var(--top-h) + 8px);
+  right: 16px;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  width: min(320px, calc(100vw - 32px));
+  pointer-events: none;
+}
+.notice {
+  pointer-events: auto;
+  position: relative;
+  overflow: hidden;
+  display: grid;
+  grid-template-columns: 22px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  min-width: min(240px, 100%);
+  max-width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--r-md, 8px);
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: var(--shadow-2);
+  font-size: 13px;
+  transform-origin: top right;
+  animation: notice-in 0.32s var(--ease-spring);
+}
+@keyframes notice-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.notice.is-depth-1 {
+  transform: scale(0.97);
+  opacity: 0.85;
+}
+.notice.is-depth-2 {
+  transform: scale(0.94);
+  opacity: 0.6;
+}
+.notice.is-out {
+  animation: notice-out 0.24s var(--ease-out) forwards;
+}
+@keyframes notice-out {
+  to {
+    opacity: 0;
+    transform: translateX(10px) scale(0.98);
+  }
+}
+.notice-icon {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+}
+/* Same circle-masked activity PNG as the chip, with its glow held steady. */
+.notice-icon .activity-icon {
+  filter: drop-shadow(0 0 5px rgba(120, 150, 255, 0.6));
+}
+.notice-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--ink-4);
+}
+.notice.is-ok .notice-dot {
+  background: var(--c-entity);
+}
+.notice.is-warn .notice-dot {
+  background: var(--c-source);
+}
+.notice.is-warn .notice-title {
+  color: var(--c-source);
+}
+/* ok: a check drawn over the icon's corner (stroke-dashoffset, 0.4 s). */
+.notice-check {
+  position: absolute;
+  right: -3px;
+  bottom: -3px;
+  width: 12px;
+  height: 12px;
+  padding: 2px;
+  border-radius: 50%;
+  background: var(--c-entity);
+  color: #fff;
+  box-shadow: 0 0 0 1.5px var(--bg);
+}
+.notice-check path {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  animation: notice-draw 0.4s 0.12s var(--ease-out) forwards;
+}
+@keyframes notice-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.notice-body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.notice-title {
+  font-weight: 500;
+  line-height: 1.3;
+}
+.notice-sub {
+  font-size: 12px;
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.notice-action {
+  appearance: none;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  color: var(--ink);
+  border-radius: var(--r);
+  padding: 4px 9px;
+  font: 500 12px var(--font-sans);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--dur-quick) var(--ease-out);
+}
+.notice-action:hover {
+  background: var(--bg-hover);
+}
+/* 2px life bar; hovering (or focusing the action) pauses it — the JS timer
+   pauses in step (NoticeStack). */
+.notice-life {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  width: 100%;
+  background: var(--line-strong);
+  transform-origin: left;
+  animation: notice-life linear forwards;
+}
+.notice.is-ok .notice-life {
+  background: var(--c-entity);
+}
+.notice.is-warn .notice-life {
+  background: var(--c-source);
+}
+@keyframes notice-life {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.notice:hover .notice-life,
+.notice:focus-within .notice-life {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .notice {
+    animation: notice-fade-in 0.2s ease;
+  }
+  .notice.is-out,
+  .activity-chip.is-out,
+  .link-suggestions__list li.is-leaving {
+    animation: notice-fade-out 0.2s ease forwards;
+  }
+  .notice-check path,
+  .activity-chip .pill-label,
+  .link-suggestions__list button.is-done {
+    animation: none;
+  }
+  .notice-check path {
+    stroke-dashoffset: 0;
+  }
+  .activity-ring-arc.is-indeterminate {
+    animation: none;
+    stroke-dasharray: 37.7;
+    stroke-dashoffset: 28;
+  }
+}
+@keyframes notice-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes notice-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
 /* --- Zotero import card (Ingest) ------------------------------------------ */
 .zotero-import {
   padding: 14px 16px;

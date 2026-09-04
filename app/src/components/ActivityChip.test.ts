@@ -5,7 +5,7 @@
 // IS the badge number.
 
 import { describe, expect, it } from "vitest";
-import { chipMode } from "./ActivityChip";
+import { chipMode, distillFraction } from "./ActivityChip";
 import type { RunningActivity } from "./ActivityChip";
 
 const ask: RunningActivity = { icon: "ask", label: "Ask", detail: "0:12" };
@@ -68,5 +68,20 @@ describe("chipMode", () => {
       count: 4,
       icon: "ask",
     });
+  });
+});
+
+// The chip ring fills one notch per chain phase, in run order; an unknown or
+// idle step reads as "just started" rather than throwing the ring off.
+describe("distillFraction", () => {
+  it("walks 0 → <1 across the chain in run order", () => {
+    expect(distillFraction("run")).toBe(0);
+    expect(distillFraction("digest")).toBeCloseTo(1 / 7);
+    expect(distillFraction("resurface")).toBeCloseTo(6 / 7);
+    expect(distillFraction("resurface")).toBeLessThan(1);
+  });
+
+  it("treats idle as the start", () => {
+    expect(distillFraction(null)).toBe(0);
   });
 });

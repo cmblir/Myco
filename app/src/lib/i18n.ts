@@ -88,6 +88,11 @@ export interface Strings {
   ls_accept_all?: string;
   ls_accept_all_progress?: string;
   ls_accept_all_result?: string;
+  ls_linking?: string;
+  ls_toast_linked?: string;
+  ls_toast_linked_sub?: string;
+  ls_toast_failed?: string;
+  ls_toast_retry?: string;
   zi_title?: string;
   zi_hint?: string;
   zi_none?: string;
@@ -1589,6 +1594,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ls_accept_all: "Accept all",
     ls_accept_all_progress: "{done}/{total}",
     ls_accept_all_result: "{n} linked",
+    ls_linking: "Linking…",
+    ls_toast_linked: "{n} links added",
+    ls_toast_linked_sub: "[[wikilink]] under ## Related",
+    ls_toast_failed: "Couldn't add the links",
+    ls_toast_retry: "Retry",
     zi_title: "Import from Zotero",
     zi_hint:
       "CSL-JSON or BibTeX export (highlights come along when present). Items land in _inbox/ as source docs for the ingest pipeline.",
@@ -3165,6 +3175,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ls_accept_all: "모두 수락",
     ls_accept_all_progress: "{done}/{total}",
     ls_accept_all_result: "{n}개 연결됨",
+    ls_linking: "링크 중",
+    ls_toast_linked: "링크 {n}개 추가됨",
+    ls_toast_linked_sub: "## Related 아래에 [[wikilink]]",
+    ls_toast_failed: "링크를 추가하지 못했습니다",
+    ls_toast_retry: "다시 시도",
     zi_title: "Zotero에서 가져오기",
     zi_hint:
       "CSL-JSON 또는 BibTeX 내보내기 파일(하이라이트 포함 시 함께). 항목은 _inbox/에 소스 문서로 저장됩니다.",
@@ -5926,6 +5941,11 @@ export const STRINGS: Record<Lang, Strings> = {
     ls_accept_all: "すべて承認",
     ls_accept_all_progress: "{done}/{total}",
     ls_accept_all_result: "{n}件をリンクしました",
+    ls_linking: "リンク中",
+    ls_toast_linked: "リンクを{n}件追加",
+    ls_toast_linked_sub: "## Related の下に [[wikilink]]",
+    ls_toast_failed: "リンクを追加できませんでした",
+    ls_toast_retry: "再試行",
     zi_title: "Zotero からインポート",
     zi_hint:
       "CSL-JSON または BibTeX エクスポート（ハイライトがあれば一緒に取り込まれます）。項目はソース文書として _inbox/ に入り、取り込みパイプラインで処理されます。",

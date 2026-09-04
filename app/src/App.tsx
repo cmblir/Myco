@@ -11,6 +11,7 @@ import Sidebar from "./components/Sidebar";
 import Topbar from "./components/Topbar";
 import CommandBar from "./components/CommandBar";
 import DialogHost from "./components/DialogHost";
+import NoticeStack from "./components/NoticeStack";
 import ErrorBoundary from "./components/ErrorBoundary";
 import OnboardingWizard from "./components/OnboardingWizard";
 import MascotClip from "./components/MascotClip";
@@ -693,6 +694,7 @@ export default function App(): JSX.Element {
       </main>
       <CommandBar t={t} />
       <DialogHost />
+      <NoticeStack />
       <HelpWidget t={t} />
       {firstRun ? (
         <OnboardingWizard t={t} onClose={completeOnboarding} />
