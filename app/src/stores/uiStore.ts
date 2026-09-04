@@ -59,6 +59,12 @@ export interface UIState {
   // PageStudy reads it on mount and clears it, so later Study visits start at
   // the deck list as usual.
   studyDeck: string | null;
+  // Section a navigation just asked for, e.g. the activity chip's "N suggested
+  // links" row. setRoute alone left the user at the TOP of Overview with that
+  // section far below the fold — and did nothing at all when Overview was
+  // already the route. The nonce makes a repeat click re-fire; transient, so
+  // `merge` drops whatever localStorage held.
+  focusTarget: { id: string; nonce: number } | null;
   // Split view: when set, a SECOND pane shows this route beside the primary one
   // (e.g. Overview + Graph side by side). null = single pane.
   splitRoute: RouteId | null;
@@ -108,6 +114,9 @@ export interface UIState {
   goForward: () => void;
   setFeedbackTab: (tab: FeedbackTab) => void;
   setStudyDeck: (path: string | null) => void;
+  /** Point the next paint at a section (see focusTarget). */
+  focusSection: (id: string) => void;
+  clearFocusTarget: () => void;
   setSplitRoute: (route: RouteId | null) => void;
   setSplitRatio: (ratio: number) => void;
   setSidebarCollapsed: (v: boolean) => void;
@@ -137,6 +146,7 @@ export const useUIStore = create<UIState>()(
       navHistory: { entries: ["overview"], idx: 0 },
       feedbackTab: "proposals",
       studyDeck: null,
+      focusTarget: null,
       splitRoute: null,
       splitRatio: SPLIT_DEFAULT_RATIO,
       sidebarCollapsed: false,
@@ -165,6 +175,14 @@ export const useUIStore = create<UIState>()(
       goForward: () => set((s) => stepPatch(s, 1)),
       setFeedbackTab: (feedbackTab) => set({ feedbackTab }),
       setStudyDeck: (studyDeck) => set({ studyDeck }),
+      focusSection: (id) =>
+        set((s) => ({
+          focusTarget: {
+            id,
+            nonce: (s.focusTarget?.id === id ? s.focusTarget.nonce : 0) + 1,
+          },
+        })),
+      clearFocusTarget: () => set({ focusTarget: null }),
       setSplitRoute: (route) =>
         set((s) => ({ splitRoute: route === s.route ? null : route })),
       setSplitRatio: (ratio) => set({ splitRatio: ratio }),
@@ -221,6 +239,9 @@ export const useUIStore = create<UIState>()(
             ? (p.editorMode as EditorMode)
             : "live",
           navHistory: sanitizeHistory(p.navHistory, p.route ?? current.route),
+          // Transient by design: a persisted target would scroll+flash a
+          // section on the next launch for a click made days ago.
+          focusTarget: null,
           // Favorites default open even for a store persisted before the group existed.
           expandedFolders: { __favorites: true, ...p.expandedFolders },
         };

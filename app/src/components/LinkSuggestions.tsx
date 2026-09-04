@@ -15,6 +15,7 @@ import { useVaultStore } from "../stores/vaultStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
 import { useNoticeStore } from "../stores/noticeStore";
 import { notice } from "../lib/notice";
+import { useFocusTarget } from "../lib/useFocusTarget";
 import {
   acceptAll,
   acceptSuggestion,
@@ -47,6 +48,8 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
   const bulk = useNoticeStore((s) => s.progress?.key === PROGRESS_KEY);
   const setProgress = useNoticeStore((s) => s.setProgress);
   const endProgress = useNoticeStore((s) => s.endProgress);
+  // "N suggested links" in the activity popover points HERE.
+  const focusRef = useFocusTarget<HTMLElement>("links");
 
   // Keyed on `adjacency`, not fetched once: right after app launch the
   // semantic index is still reconciling, so a mount-time one-shot fetch came
@@ -135,7 +138,13 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
   if (suggestions.length === 0) return null;
 
   return (
-    <section className="card link-suggestions">
+    // tabIndex: the activity row that names this section moves keyboard focus
+    // here after scrolling it into view (useFocusTarget).
+    <section
+      className="card link-suggestions"
+      ref={focusRef}
+      tabIndex={-1}
+    >
       <div className="row" style={{ justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <div className="section-title" style={{ fontSize: 14 }}>
           {t.ls_title ?? "Suggested links"}

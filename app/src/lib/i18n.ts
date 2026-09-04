@@ -1139,6 +1139,7 @@ export interface Strings {
   qz_confirm_delete_title?: string;
   qz_confirm_delete_msg?: string; // {name}
   tb_activity_quarantine?: string; // {n}
+  tb_activity_gone?: string;
   // Ingest page.
   ing_title_label?: string;
   ing_title_ph?: string;
@@ -2721,6 +2722,7 @@ export const STRINGS: Record<Lang, Strings> = {
     qz_confirm_delete_msg:
       "{name} goes to the system trash (recoverable from there).",
     tb_activity_quarantine: "{n} awaiting review",
+    tb_activity_gone: "That is no longer there — it was already handled.",
     ing_title_label: "Title",
     ing_title_ph: "e.g. Byte Pair Encoding",
     ing_working: "working…",
@@ -4294,6 +4296,7 @@ export const STRINGS: Record<Lang, Strings> = {
     qz_confirm_delete_msg:
       "{name}을(를) 시스템 휴지통으로 옮깁니다(복구 가능).",
     tb_activity_quarantine: "검토 대기 {n}건",
+    tb_activity_gone: "그 항목은 이미 처리되어 사라졌습니다.",
     ing_title_label: "제목",
     ing_title_ph: "예: Byte Pair Encoding",
     ing_working: "작업 중…",
@@ -5660,6 +5663,7 @@ export const STRINGS: Record<Lang, Strings> = {
     qz_confirm_delete_msg:
       "{name} をシステムのゴミ箱に移動します（復元可能）。",
     tb_activity_quarantine: "確認待ち{n}件",
+    tb_activity_gone: "その項目はすでに処理され、ありません。",
     ing_title_label: "タイトル",
     ing_title_ph: "例: Byte Pair Encoding",
     ing_working: "処理中…",

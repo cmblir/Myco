@@ -34,6 +34,7 @@ import VaultHistoryBanner from "../components/VaultHistoryBanner";
 import MorningBand from "../components/MorningBand";
 import OverviewBoard from "../components/OverviewBoard";
 import { bucketByDay } from "../lib/vaultPulse";
+import { useFocusTarget } from "../lib/useFocusTarget";
 
 export default function PageOverview({ t }: { t: Strings }): JSX.Element {
   const setRoute = useUIStore((s) => s.setRoute);
@@ -211,6 +212,8 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
     created: number;
     failed: string | null;
   } | null>(null);
+  // "N reflect suggestions" in the activity popover points HERE.
+  const focusRef = useFocusTarget<HTMLElement>("reflect");
   const missing = suggestions.filter((s) => s.kind === "unresolved");
   const doneLine = reflectDoneLine({ stage, mode, found: finished }, t);
 
@@ -240,8 +243,12 @@ function ReflectPanel({ t }: { t: Strings }): JSX.Element {
   }
 
   return (
+    // tabIndex: the activity row that names this section moves keyboard focus
+    // here after scrolling it into view (useFocusTarget).
     <section
       className="card"
+      ref={focusRef}
+      tabIndex={-1}
       style={{ marginTop: 24, padding: 16, background: "var(--bg-soft)" }}
     >
       <div

@@ -12,6 +12,7 @@ import Topbar from "./components/Topbar";
 import CommandBar from "./components/CommandBar";
 import DialogHost from "./components/DialogHost";
 import NoticeStack from "./components/NoticeStack";
+import { useFocusMiss } from "./lib/useFocusTarget";
 import ErrorBoundary from "./components/ErrorBoundary";
 import OnboardingWizard from "./components/OnboardingWizard";
 import MascotClip from "./components/MascotClip";
@@ -252,6 +253,10 @@ export default function App(): JSX.Element {
   const settings = useSettingsStore((s) => s.settings);
 
   const t = STRINGS[lang] ?? STRINGS.en;
+
+  // A chip/tray row that names a section nothing renders any more (the count
+  // went stale) gets a toast instead of a silent jump to the page top.
+  useFocusMiss(t);
 
   // First-run onboarding (UX-01). Persist a dismissible flag so the wizard
   // never reappears once completed or skipped. `bootDone` gates the overlay so

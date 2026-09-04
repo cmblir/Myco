@@ -19,6 +19,7 @@ describe("uiStore navigation history", () => {
       route: "overview",
       navHistory: { entries: ["overview"], idx: 0 },
       splitRoute: null,
+      focusTarget: null,
     });
   });
 
@@ -61,6 +62,20 @@ describe("uiStore navigation history", () => {
     });
   });
 
+  it("focusSection bumps the nonce on a repeat click and restarts per id", () => {
+    const s = useUIStore.getState();
+    s.focusSection("links");
+    expect(useUIStore.getState().focusTarget).toEqual({ id: "links", nonce: 1 });
+    // A repeat click while already on the page must re-fire the anchor's
+    // effect — same id, new nonce.
+    s.focusSection("links");
+    expect(useUIStore.getState().focusTarget).toEqual({ id: "links", nonce: 2 });
+    s.focusSection("reflect");
+    expect(useUIStore.getState().focusTarget).toEqual({ id: "reflect", nonce: 1 });
+    s.clearFocusTarget();
+    expect(useUIStore.getState().focusTarget).toBeNull();
+  });
+
   it("rehydrating a stale persisted stack falls back to the route alone and keeps Favorites open", async () => {
     storage.set(
       "myco-ui",
@@ -69,6 +84,7 @@ describe("uiStore navigation history", () => {
           route: "graph",
           navHistory: { entries: ["overview", "query"], idx: 1 },
           expandedFolders: { "/v/wiki": true },
+          focusTarget: { id: "links", nonce: 4 },
         },
         version: 3,
       }),
@@ -78,5 +94,7 @@ describe("uiStore navigation history", () => {
     expect(s.route).toBe("graph");
     expect(s.navHistory).toEqual({ entries: ["graph"], idx: 0 });
     expect(s.expandedFolders).toEqual({ __favorites: true, "/v/wiki": true });
+    // Transient: a click from a past session must not scroll+flash on launch.
+    expect(s.focusTarget).toBeNull();
   });
 });

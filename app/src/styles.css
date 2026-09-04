@@ -5906,6 +5906,37 @@ html.tray-window body {
     animation: none;
   }
 }
+/* Section a chip/tray row pointed at (useFocusTarget): after scrolling it
+   into view the flash says WHICH thing the row meant. Same 1.2s ease-out
+   shape and --accent ring as .pdf-highlight.flash above (--accent-soft is the
+   resting focus ring, too faint to read as a one-shot marker in either mode). */
+.is-focus-flash {
+  animation: focus-flash 1.2s ease-out;
+}
+@keyframes focus-flash {
+  0%,
+  30% {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@keyframes focus-flash-static {
+  0% {
+    box-shadow: 0 0 0 3px var(--accent);
+  }
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* No sweep, but the ring must still land — it is the only marker of which
+     section the row meant. Held for the same 1.2s, then gone. */
+  .is-focus-flash {
+    animation: focus-flash-static 1.2s steps(1, end);
+  }
+}
 .pdf-sel-toolbar {
   position: sticky;
   bottom: 8px;

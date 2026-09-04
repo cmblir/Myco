@@ -182,6 +182,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const lang = useUIStore((s) => s.lang);
   const setRoute = useUIStore((s) => s.setRoute);
   const setFeedbackTab = useUIStore((s) => s.setFeedbackTab);
+  const focusSection = useUIStore((s) => s.focusSection);
   // Resurface picks (Q4 item 10) — a standing decision surface like the map
   // proposals: recomputed by the distill chain, never part of the chip badge.
   const resurfacePicks = useResurfaceStore((s) => s.picks);
@@ -435,9 +436,17 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
 
   const jump = (
     route: "query" | "overview" | "settings" | "tasks" | "ingest" | "feedback",
+    // Section id (useFocusTarget) for a row that names something rendered far
+    // down its page — "N suggested links" sits below OverviewBoard and the
+    // recent/distill bands, so routing alone left it off screen, and did
+    // nothing whatsoever when the user was already on Overview.
+    section?: string,
   ): void => {
     setOpen(false);
     setRoute(route);
+    // Unconditional: setRoute to the CURRENT route is the no-op case, and it
+    // is exactly the case where the flash is the only feedback there can be.
+    if (section) focusSection(section);
   };
 
   // Popover body, expressed as the shared panel's sections (ActivityPanel is
@@ -499,7 +508,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       key: "reflect",
       icon: "distill",
       iconActive: true,
-      onClick: () => jump("overview"),
+      onClick: () => jump("overview", "reflect"),
       main: <b>{t.rf_running_label ?? "Reflect running…"}</b>,
     });
   }
@@ -508,7 +517,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       key: "linking",
       icon: "link",
       iconActive: true,
-      onClick: () => jump("overview"),
+      onClick: () => jump("overview", "links"),
       main: (
         <>
           <b>{progress.label}</b>
@@ -527,7 +536,12 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
       key: "applying",
       icon: "distill",
       iconActive: true,
-      onClick: () => jump("feedback"),
+      // The apply in flight is a PROPOSAL: without the tab the row landed on
+      // whichever tab the page last remembered (quarantine).
+      onClick: () => {
+        setFeedbackTab("proposals");
+        jump("feedback");
+      },
       main: <b>{t.tb_activity_applying ?? "Applying proposal…"}</b>,
       trailing:
         applyingCount > 1 ? (
@@ -750,7 +764,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
               {
                 key: "reflect",
                 icon: "distill" as ActivityIconName,
-                onClick: () => jump("overview"),
+                onClick: () => jump("overview", "reflect"),
                 main: (t.tb_activity_reflect ?? "{n} reflect suggestions").replace(
                   "{n}",
                   String(reflectFindings),
@@ -779,7 +793,7 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
         {
           key: "links",
           icon: "link",
-          onClick: () => jump("overview"),
+          onClick: () => jump("overview", "links"),
           main: (t.tb_activity_links ?? "{n} suggested links").replace(
             "{n}",
             String(pending),
