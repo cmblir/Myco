@@ -15,8 +15,6 @@ export interface RecorderLike {
   onLevel?: ((rms: number) => void) | null;
   start: () => void;
   stop: () => void;
-  /** WAV of everything captured so far, chunks untouched. */
-  snapshot?: () => Blob;
   /** WAV of only the LAST `seconds` of the take — what the live-caption
    *  partials feed on. Re-decoding the whole take made every pass cost more
    *  than the last (measured 1.1 s at 5 s of audio, 2.1 s at 27 s, and the
@@ -137,7 +135,6 @@ export function createWavRecorder(stream: MediaStream): RecorderLike {
       chunks.length = 0;
       recorder.onstop?.();
     },
-    snapshot: () => wavBlobFrom(chunks, ctx.sampleRate),
     snapshotTail: (seconds) =>
       wavBlobFrom(tailChunks(chunks, seconds * ctx.sampleRate), ctx.sampleRate),
   };
