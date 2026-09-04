@@ -442,10 +442,11 @@ impl LocalLlm {
     /// truncation cap, so callers can match a spec's real limit (e.g. e5's
     /// 512 tokens) instead of the chat model's 2048.
     ///
-    /// One context serves the whole call. Building a context costs ~78 ms and
-    /// this used to build one per text, which reindex pays per chunk — measured
-    /// at 1.25x over a page's worth of chunks (3114 ms -> 2491 ms for 8), and
-    /// ~23 s across a 300-chunk vault. The sequences stay independent because
+    /// One context serves the whole call, rather than one per text as this used
+    /// to build — a cost reindex pays per chunk. Measured on the bundled
+    /// e5-small-ko (`examples/bench_embed`, 2026-09): 9.3 ms for one chunk,
+    /// 159 ms for 8 and 4.26 s for 200, i.e. ~21 ms/chunk at page scale. The
+    /// sequences stay independent because
     /// the KV cache is cleared between them; verified against a fresh context
     /// per text, the vectors are bit-identical (max |Δ| = 0.0).
     pub fn embed_pooled(

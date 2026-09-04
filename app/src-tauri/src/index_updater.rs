@@ -252,10 +252,17 @@ const LONG_PAGE_BYTES: u64 = 256 * 1024;
 
 /// Debounce for such a page. An ingest agent appends to a session mirror
 /// repeatedly over a run, and each append used to start an embed pass that the
-/// next append invalidated before it finished — it never converged. 30 s means
-/// the transcript is embedded once after the writing settles. Wiki pages stay
-/// on the 500 ms debounce so ordinary edits still show up in search promptly.
-const LONG_PAGE_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(30);
+/// next append invalidated before it finished — it never converged.
+///
+/// 30 s was the guess when that pass was the whole file. It no longer is:
+/// `commands::MAX_PAGE_CHUNKS` indexes only the head of a page, so an append
+/// past that point re-embeds nothing at all, and any page big enough to reach
+/// LONG_PAGE_BYTES is already past it. What is left to coalesce is one capped
+/// first index, measured at 4.26 s (`examples/bench_embed`, 21 ms/chunk × 200)
+/// — a delay 30 s postpones without making cheaper. 5 s still swallows the
+/// burst of appends inside an ingest turn while making a new transcript
+/// searchable within seconds. Wiki pages stay on the 500 ms debounce.
+const LONG_PAGE_DEBOUNCE: std::time::Duration = std::time::Duration::from_secs(5);
 
 /// Pure decision behind the debounce choice: the largest dirty page's size
 /// picks the delay.

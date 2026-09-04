@@ -3721,11 +3721,17 @@ pub(crate) struct EmbedOutcome {
 /// belong to `sessions/*.md`, with single transcripts at 1053, 831 and 757
 /// chunks. Those are append-only agent transcripts, and an ingest run appends
 /// to them continuously — so before this cap every append re-embedded the
-/// whole file (8–40 s of local inference under the global `with_local_llm`
-/// mutex, starving Ask and spotlight) and the file had usually grown again
-/// before that finished, so it never converged. 200 chunks ≈ 64k tokens of a
-/// transcript, far more than any answer quotes, and it bounds the worst-case
-/// first index of a session log at 200 embeds instead of 1053.
+/// whole file (under the global `with_local_llm` mutex, starving Ask and
+/// spotlight) and the file had usually grown again before that finished, so it
+/// never converged. 200 chunks ≈ 64k tokens of a transcript, far more than any
+/// answer quotes, and it bounds the worst-case first index of a session log at
+/// 200 embeds instead of 1053.
+///
+/// Measured (`cargo run --release --example bench_embed`, bundled e5-small-ko,
+/// M-series): 21 ms/chunk at page scale, so the capped first index is 4.26 s
+/// median / 4.99 s p95, against ~17 s for the same log's full 831 chunks. 200
+/// keeps that worst case at the ~5 s the mutex can hold without Ask noticing;
+/// raising it buys tail recall at a second per 50 chunks.
 ///
 // ponytail: flat head-of-file ceiling — the tail of a long transcript is
 // simply not indexed. Upgrade path when that bites: window the chunks (keep
@@ -3947,8 +3953,10 @@ pub struct ReindexProgress {
 /// is unchanged (content hashes match). Returns the number of indexed pages.
 ///
 /// Emits `reindex-progress` per page. This is the slowest thing the app does —
-/// embedding one chunk measures ~467 ms, so a 300-chunk vault is over two
-/// minutes — and it used to run behind nothing but a disabled button.
+/// embedding one chunk measures ~21 ms with the bundled e5-small-ko
+/// (`examples/bench_embed`, 2026-09), so the owner's 4,451-chunk vault is about
+/// a minute and a half — and it used to run behind nothing but a disabled
+/// button.
 #[tauri::command]
 pub async fn reindex_embeddings(
     app: tauri::AppHandle,

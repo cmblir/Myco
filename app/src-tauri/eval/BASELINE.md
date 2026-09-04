@@ -880,3 +880,36 @@ Worse across the board — the CJK bigram tokenizer already credits partial
 matches ("정책은" shares the "정책" bigram with "정책"), so stripping removed
 ranking signal without adding recall. Not wired into the app; the function
 and the env hook stay in-tree so the next attempt reproduces this verdict.
+
+## 2026-09-04 — embed throughput of the bundled e5, and two constants retuned
+
+`cargo run --release --example bench_embed` (new harness, same protocol as
+`bench_local_llm`: discard the cold run, median + p95 over 5 warm runs).
+Model `multilingual-e5-small-ko-v2-q8_0.gguf` (41.6 MB on disk, spec
+`e5-small-ko`, max_ctx 512), Apple silicon / Metal, chunks taken from a real
+752 KB session log (831 chunks after `chunk_page`).
+
+| measurement       | median   | p95      | ms/chunk |
+|-------------------|----------|----------|----------|
+| cold_load         | 144.5 ms | —        | —        |
+| embed_1           | 9.3 ms   | 10.7 ms  | 9.3      |
+| embed_8           | 158.8 ms | 166.6 ms | 19.8     |
+| embed_32          | 521.0 ms | 528.0 ms | 16.3     |
+| embed_200         | 4260 ms  | 4990 ms  | 21.3     |
+
+RSS +86 MB on load, ~106 MB at exit. The old figures the code quoted
+(~467 ms/chunk, 2491 ms for 8) were Gemma's and are ~22x too slow for what
+ships; both comments now cite these numbers.
+
+**`MAX_PAGE_CHUNKS = 200` — kept.** Worst-case first index of a session log is
+4.26 s median / 4.99 s p95 under the global `with_local_llm` mutex, against
+~17 s for the same log's full 831 chunks. That sits at the ~5 s budget the
+mutex can hold without Ask noticing, so neither direction is free: raising it
+costs ~1 s per 50 chunks of tail recall.
+
+**`LONG_PAGE_DEBOUNCE` 30 s → 5 s.** The 30 s guess assumed an append
+re-embedded the whole file. With the head-of-file cap it re-embeds nothing:
+any page over LONG_PAGE_BYTES (256 KB) is already past 200 chunks — the
+measured log is 0.9 KB/chunk — so appends past the cap are hash-identical for
+the indexed set. All 30 s bought was postponing one 4.26 s first index. 5 s
+still coalesces the appends inside an ingest turn.
