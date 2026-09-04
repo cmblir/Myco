@@ -6139,6 +6139,39 @@ html.spotlight-window body {
      transparent rect, not the rounded card). */
   padding: 12px 20px 20px;
 }
+/* Single ✓ accept: the button pops to filled and the row leaves to the right
+   before it is removed — no toast for one link (noise). */
+.link-suggestions__list button.is-done {
+  background: var(--ink);
+  color: var(--bg);
+  animation: ls-tick 0.36s var(--ease-spring);
+}
+@keyframes ls-tick {
+  0% {
+    transform: scale(0.6);
+  }
+  60% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.link-suggestions__list li.is-leaving {
+  animation: ls-leave 0.32s var(--ease-out) forwards;
+  overflow: hidden;
+}
+@keyframes ls-leave {
+  to {
+    opacity: 0;
+    transform: translateX(8px);
+    height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+  }
+}
+
 .spotlight-card {
   box-sizing: border-box;
   width: 100%;

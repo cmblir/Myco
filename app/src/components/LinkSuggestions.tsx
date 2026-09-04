@@ -13,6 +13,8 @@ import { ipc } from "../lib/ipc";
 import { stem } from "../lib/graphData";
 import { useVaultStore } from "../stores/vaultStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
+import { useNoticeStore } from "../stores/noticeStore";
+import { notice } from "../lib/notice";
 import {
   acceptAll,
   acceptSuggestion,
@@ -21,6 +23,11 @@ import {
 } from "../lib/linkSuggestions";
 
 const SHOW = 6;
+/** Matches `ls-leave` in styles.css: the accepted row slides out before it
+ * is removed from the list. */
+const LEAVE_MS = 320;
+/** The chip progress slot this card owns while "accept all" runs. */
+const PROGRESS_KEY = "links";
 
 export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | null {
   const adjacency = useVaultStore((s) => s.adjacency);
@@ -31,10 +38,14 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
   const dismissed = useLinkSuggestStore((s) => s.dismissed);
   const refreshSem = useLinkSuggestStore((s) => s.refresh);
   const dismissKeys = useLinkSuggestStore((s) => s.dismiss);
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [bulk, setBulk] = useState<{ done: number; total: number } | null>(null);
-  const [bulkResult, setBulkResult] = useState<number | null>(null);
+  // Single-accept motion: the ✓ pops to filled the moment it is clicked,
+  // then the row leaves once the write has landed.
+  const [doneKey, setDoneKey] = useState<string | null>(null);
+  const [leavingKey, setLeavingKey] = useState<string | null>(null);
+  // "Accept all" reports through the activity chip, not this card: progress
+  // lives in noticeStore's chip slot, the result arrives as a toast.
+  const bulk = useNoticeStore((s) => s.progress?.key === PROGRESS_KEY);
+  const setProgress = useNoticeStore((s) => s.setProgress);
 
   // Keyed on `adjacency`, not fetched once: right after app launch the
   // semantic index is still reconciling, so a mount-time one-shot fetch came
@@ -62,44 +73,58 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
     dismissKeys([s.key]);
   }
 
+  const failed = (err: string, retry: () => void): void => {
+    notice.warn(t.ls_toast_failed ?? "Couldn't add the links", {
+      sub: err,
+      action: { label: t.ls_toast_retry ?? "Retry", run: retry },
+    });
+  };
+
+  // One link = no toast (noise): the ✓ itself is the confirmation.
   async function accept(s: LinkSuggestion): Promise<void> {
-    setBusyKey(s.key);
-    setError(null);
+    setDoneKey(s.key);
     try {
       await acceptSuggestion(s, ipc);
-      dismiss(s); // accepted pairs also leave the queue immediately
+      setLeavingKey(s.key);
+      await new Promise((r) => setTimeout(r, LEAVE_MS));
+      dismiss(s); // accepted pairs also leave the queue
       await refreshLinkGraph();
     } catch (e) {
-      setError(String(e));
+      failed(String(e), () => void accept(s));
     } finally {
-      setBusyKey(null);
+      setDoneKey(null);
+      setLeavingKey(null);
     }
   }
 
   // Same write path as a single ✓ (acceptSuggestion), just looped — no
-  // parallel or new way to land a wikilink.
-  async function acceptAllSuggestions(): Promise<void> {
-    if (bulk) return;
-    setError(null);
-    setBulkResult(null);
-    const total = allPending.length;
-    setBulk({ done: 0, total });
-    const { accepted, error: err } = await acceptAll(allPending, ipc, (done) =>
-      setBulk({ done, total }),
+  // parallel or new way to land a wikilink. Retry resumes with what is left.
+  async function acceptAllSuggestions(list: LinkSuggestion[]): Promise<void> {
+    if (useNoticeStore.getState().progress || list.length === 0) return;
+    const total = list.length;
+    const label = t.ls_linking ?? "Linking…";
+    setProgress({ key: PROGRESS_KEY, label, done: 0, total });
+    const { accepted, remaining, error: err } = await acceptAll(list, ipc, (done) =>
+      setProgress({ key: PROGRESS_KEY, label, done, total }),
     );
     if (accepted.length > 0) {
       dismissKeys(accepted.map((s) => s.key));
       await refreshLinkGraph();
     }
-    setBulk(null);
-    if (err) setError(err);
-    else setBulkResult(accepted.length);
+    setProgress(null);
+    if (err) {
+      failed(err, () => void acceptAllSuggestions(remaining));
+      return;
+    }
+    // No undo: acceptSuggestion has no inverse (the wikilink stays), so the
+    // toast states the result and offers nothing it cannot do.
+    notice.ok(
+      (t.ls_toast_linked ?? "{n} links added").replace("{n}", String(accepted.length)),
+      { sub: t.ls_toast_linked_sub ?? "[[wikilink]] under ## Related", icon: "link" },
+    );
   }
 
-  // Keep the section mounted right after an accept-all empties the queue —
-  // unmounting here also swallowed the "{n} linked" confirmation, which read
-  // as the feature silently breaking.
-  if (suggestions.length === 0 && bulkResult === null && !bulk) return null;
+  if (suggestions.length === 0) return null;
 
   return (
     <section className="card link-suggestions">
@@ -110,37 +135,27 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
         <button
           type="button"
           className="btn"
-          disabled={!!bulk}
-          onClick={() => void acceptAllSuggestions()}
+          disabled={bulk}
+          onClick={() => void acceptAllSuggestions(allPending)}
         >
-          {bulk
-            ? (t.ls_accept_all_progress ?? "{done}/{total}")
-                .replace("{done}", String(bulk.done))
-                .replace("{total}", String(bulk.total))
-            : `${t.ls_accept_all ?? "Accept all"} (${allPending.length})`}
+          {`${t.ls_accept_all ?? "Accept all"} (${allPending.length})`}
         </button>
       </div>
       <p className="muted link-suggestions__hint">
         {t.ls_hint ??
           "Semantically close notes that aren't linked yet. Accept to add a [[wikilink]] under “## Related”."}
       </p>
-      {error ? <p className="link-suggestions__error">{error}</p> : null}
-      {bulkResult !== null ? (
-        <p className="muted link-suggestions__hint">
-          {(t.ls_accept_all_result ?? "{n} linked").replace("{n}", String(bulkResult))}
-        </p>
-      ) : null}
       <ul className="link-suggestions__list">
         {suggestions.map((s) => (
-          <li key={s.key}>
+          <li key={s.key} className={leavingKey === s.key ? "is-leaving" : undefined}>
             <span className="link-suggestions__pair" title={`${s.source} ↔ ${s.target}`}>
               {stem(s.source)} ↔ {stem(s.target)}
               <span className="muted"> · {(s.score * 100).toFixed(0)}%</span>
             </span>
             <button
               type="button"
-              className="icon-btn"
-              disabled={busyKey === s.key || !!bulk}
+              className={"icon-btn" + (doneKey === s.key ? " is-done" : "")}
+              disabled={doneKey !== null || bulk}
               aria-label={t.ls_accept ?? "Link them"}
               title={t.ls_accept ?? "Link them"}
               onClick={() => void accept(s)}
@@ -150,7 +165,7 @@ export default function LinkSuggestions({ t }: { t: Strings }): JSX.Element | nu
             <button
               type="button"
               className="icon-btn"
-              disabled={!!bulk}
+              disabled={bulk}
               aria-label={t.ls_dismiss ?? "Dismiss"}
               title={t.ls_dismiss ?? "Dismiss"}
               onClick={() => dismiss(s)}
