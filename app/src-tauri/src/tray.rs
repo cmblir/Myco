@@ -26,14 +26,14 @@ pub const TRAY_STATUS_EVENT: &str = "myco://tray-status";
 /// The frameless popover window shown on tray LEFT-click (the native menu
 /// stays on right-click as the plain fallback).
 const PANEL_LABEL: &str = "tray-panel";
-// Window = the 340px panel + a transparent margin ring that gives the CSS
+// Window = the 324px panel + a transparent margin ring that gives the CSS
 // shadow room (the OS window shadow is OFF — drawn around the whole
 // transparent rect, it rendered as a ghost outline below the card whenever
 // the fixed window was taller than the content).
 const PANEL_MARGIN: f64 = 24.0; // sides + bottom (CSS shadow room)
 const PANEL_MARGIN_TOP: f64 = 8.0; // slim on top so the card hugs the menu bar
-const PANEL_WIDTH: f64 = 340.0 + PANEL_MARGIN * 2.0; // logical px
-const PANEL_HEIGHT: f64 = 440.0; // first-paint guess; resize_tray_panel fits it to content
+const PANEL_WIDTH: f64 = 324.0 + PANEL_MARGIN * 2.0; // logical px
+const PANEL_HEIGHT: f64 = 520.0; // first-paint guess; resize_tray_panel fits it to content
 const PANEL_GAP: f64 = 2.0; // logical px between the menu bar and the window edge
 
 /// One running activity. `kind` picks the row icon ("ask" | "distill" |
@@ -97,12 +97,14 @@ pub struct TrayStatus {
     /// empty otherwise.
     #[serde(default, rename = "proposalNote")]
     pub proposal_note: String,
-    /// Header line under the mascot in the panel; empty hides it.
+    /// Status subtitle under the mascot's name in the panel; empty hides it.
     #[serde(default)]
     pub greeting: String,
-    /// Popover stat cards (panel-only; the native menu has no card idiom).
+    /// The panel's tile counts + labels (tray v3). Opaque on purpose: the
+    /// native menu never reads it and the frontend owns its shape, so a
+    /// tile change is not a Rust change. Null before the first push.
     #[serde(default)]
-    pub cards: Vec<TrayCard>,
+    pub panel: serde_json::Value,
     /// Action rows.
     #[serde(default)]
     pub ask: String,
@@ -112,18 +114,6 @@ pub struct TrayStatus {
     pub open: String,
     #[serde(default)]
     pub quit: String,
-}
-
-/// One popover stat card; `id` doubles as the tray_panel_action on click.
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct TrayCard {
-    pub id: String,
-    pub label: String,
-    pub value: String,
-    #[serde(default)]
-    pub sub: String,
-    #[serde(default)]
-    pub accent: bool,
 }
 
 /// One pending map proposal for the panel: its vault-relative path (sent back
@@ -610,7 +600,11 @@ pub fn resize_tray_panel(app: AppHandle, height: f64) -> Result<(), String> {
     let Some(win) = app.get_webview_window(PANEL_LABEL) else {
         return Ok(()); // window not created yet — the builder size applies
     };
-    let clamped = height.clamp(60.0, 800.0);
+    // Ceiling = the tallest v3 layout: header 76 + now-card ~150 (two-line
+    // title) + waiting tile ~178 + today tile with the 24h chart open ~220 +
+    // footer ~96 + panel padding/gaps ~60 ≈ 780. 860 leaves a line of slack
+    // and still fits a 13" display (900 logical) under the menu bar.
+    let clamped = height.clamp(60.0, 860.0);
     win.set_size(tauri::LogicalSize::new(
         PANEL_WIDTH,
         clamped + PANEL_MARGIN_TOP + PANEL_MARGIN,

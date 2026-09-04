@@ -270,18 +270,21 @@ export interface Strings {
   tasks_roadmap_empty?: string;
   tasks_roadmap_empty_hint?: string;
   tasks_roadmap_progress?: string;
-  tray_greet_busy?: string; // {n}
-  tray_greet_overdue?: string; // {n}
-  tray_greet_due?: string; // {n}
-  tray_greet_idle?: string;
-  tray_card_tasks?: string;
+  // Tray popover v3: header subtitle states, the now-card, the glass tiles.
+  tray_sub_waiting_n?: string; // {n}
+  tray_sub_clear?: string;
+  tray_sub_distilling?: string; // {step}
+  tray_now_eyebrow?: string;
+  tray_toast_approved?: string; // {name}
+  tray_tile_waiting?: string;
+  tray_tile_today?: string;
+  tray_row_links?: string;
+  tray_row_reflect?: string;
+  tray_row_sessions?: string;
   tray_card_tasks_v?: string; // {n}
   tray_card_tasks_sub?: string; // {n}
-  tray_card_review?: string;
-  tray_card_review_sub?: string; // {q} {p}
-  tray_card_engine?: string;
-  tray_card_engine_busy?: string; // {n}
-  tray_card_engine_idle?: string;
+  tray_last24?: string;
+  tray_legend_hourly?: string;
   dp_prev?: string;
   dp_next?: string;
   dp_clear?: string;
@@ -1802,18 +1805,20 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_roadmap_empty_hint:
       "A roadmap is a wiki page (wiki/roadmaps/…) of milestones and checkboxes — create one and its items show up across Tasks.",
     tasks_roadmap_progress: "{done}/{total} done",
-    tray_greet_busy: "{n} running",
-    tray_greet_overdue: "{n} overdue",
-    tray_greet_due: "{n} due today",
-    tray_greet_idle: "All quiet",
-    tray_card_tasks: "Tasks",
+    tray_sub_waiting_n: "{n} waiting for you",
+    tray_sub_clear: "Nothing waiting",
+    tray_sub_distilling: "Distilling · {step}",
+    tray_now_eyebrow: "Awaiting approval",
+    tray_toast_approved: "{name} approved",
+    tray_tile_waiting: "Waiting",
+    tray_tile_today: "Today",
+    tray_row_links: "Suggested links",
+    tray_row_reflect: "Reflect suggestions",
+    tray_row_sessions: "Sessions · inbox",
     tray_card_tasks_v: "{n} today",
     tray_card_tasks_sub: "{n} overdue",
-    tray_card_review: "To review",
-    tray_card_review_sub: "quarantine {q} · proposals {p}",
-    tray_card_engine: "Engine",
-    tray_card_engine_busy: "{n} running",
-    tray_card_engine_idle: "Idle",
+    tray_last24: "Last 24 hours",
+    tray_legend_hourly: "by hour",
     dp_prev: "Previous month",
     dp_next: "Next month",
     dp_clear: "Clear date",
@@ -3382,18 +3387,20 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_roadmap_empty_hint:
       "로드맵은 마일스톤과 체크박스로 된 위키 페이지(wiki/roadmaps/…)입니다 — 만들면 항목이 할 일 전체에 나타납니다.",
     tasks_roadmap_progress: "{done}/{total} 완료",
-    tray_greet_busy: "{n}개 작업 실행 중",
-    tray_greet_overdue: "지연 {n}건",
-    tray_greet_due: "오늘 마감 {n}건",
-    tray_greet_idle: "모두 조용합니다",
-    tray_card_tasks: "할 일",
+    tray_sub_waiting_n: "{n}건이 기다려요",
+    tray_sub_clear: "기다리는 건 없어요",
+    tray_sub_distilling: "증류 중 · {step}",
+    tray_now_eyebrow: "승인 대기",
+    tray_toast_approved: "{name} 승인됨",
+    tray_tile_waiting: "기다리는 것",
+    tray_tile_today: "오늘",
+    tray_row_links: "제안된 링크",
+    tray_row_reflect: "Reflect 제안",
+    tray_row_sessions: "세션 · inbox",
     tray_card_tasks_v: "오늘 {n}",
     tray_card_tasks_sub: "지연 {n}",
-    tray_card_review: "검토 대기",
-    tray_card_review_sub: "격리 {q} · 제안 {p}",
-    tray_card_engine: "엔진",
-    tray_card_engine_busy: "{n}개 실행 중",
-    tray_card_engine_idle: "대기",
+    tray_last24: "최근 24시간",
+    tray_legend_hourly: "시간별",
     dp_prev: "이전 달",
     dp_next: "다음 달",
     dp_clear: "날짜 지우기",
@@ -4801,18 +4808,20 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_roadmap_empty_hint:
       "ロードマップはマイルストーンとチェックボックスの wiki ページ（wiki/roadmaps/…）です。作成すると項目がタスク全体に表示されます。",
     tasks_roadmap_progress: "{done}/{total} 完了",
-    tray_greet_busy: "{n} 件実行中",
-    tray_greet_overdue: "期限超過 {n} 件",
-    tray_greet_due: "今日締切 {n} 件",
-    tray_greet_idle: "静かです",
-    tray_card_tasks: "タスク",
+    tray_sub_waiting_n: "{n} 件が待っています",
+    tray_sub_clear: "待っているものはありません",
+    tray_sub_distilling: "蒸留中 · {step}",
+    tray_now_eyebrow: "承認待ち",
+    tray_toast_approved: "{name} を承認しました",
+    tray_tile_waiting: "待っているもの",
+    tray_tile_today: "今日",
+    tray_row_links: "リンク提案",
+    tray_row_reflect: "Reflect の提案",
+    tray_row_sessions: "セッション · inbox",
     tray_card_tasks_v: "今日 {n}",
     tray_card_tasks_sub: "超過 {n}",
-    tray_card_review: "レビュー待ち",
-    tray_card_review_sub: "隔離 {q} · 提案 {p}",
-    tray_card_engine: "エンジン",
-    tray_card_engine_busy: "{n} 件実行中",
-    tray_card_engine_idle: "待機",
+    tray_last24: "直近24時間",
+    tray_legend_hourly: "時間別",
     dp_prev: "前の月",
     dp_next: "次の月",
     dp_clear: "日付をクリア",

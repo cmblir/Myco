@@ -11,7 +11,7 @@ import { listen } from "@tauri-apps/api/event";
 import { ipc } from "./ipc";
 import type {
   InflowStats,
-  TrayCardPayload,
+  TrayPanelPayload,
   TrayRunningRow,
   TrayStatusPayload,
 } from "./ipc";
@@ -202,8 +202,8 @@ export function buildTrayStatus(
             hourlyMcp: s.inflow.hourlyMcp,
           }
         : null,
-    greeting: trayGreeting(s, t),
-    cards: trayCards(s, t),
+    greeting: traySubtitle(s, t),
+    panel: trayPanel(s, t),
     ask: t.quick_ask,
     distill: t.set_distill_run_now ?? "Distill now",
     open: t.tray_open ?? "Open myco",
@@ -211,79 +211,88 @@ export function buildTrayStatus(
   };
 }
 
-/** One line under the mascot: what deserves attention first. */
-export function trayGreeting(s: TraySnapshot, t: Strings): string {
-  const running =
-    (s.askBusy ? 1 : 0) +
-    (s.distillRunning ? 1 : 0) +
-    (s.reflectRunning ? 1 : 0) +
-    (s.reindexStage === "indexing" || s.reindexStage === "loading-model"
-      ? 1
-      : 0);
-  if (running > 0)
-    return (t.tray_greet_busy ?? "{n} running").replace("{n}", String(running));
-  if (s.overdue > 0)
-    return (t.tray_greet_overdue ?? "{n} overdue").replace(
-      "{n}",
-      String(s.overdue),
+/** The one-line status under the mascot's name (tray v3). Three states,
+ * priority order: a distill in flight, decisions waiting (pending proposals
+ * + overdue tasks — the things the now-card can surface), nothing. */
+export function traySubtitle(s: TraySnapshot, t: Strings): string {
+  if (s.distillRunning)
+    return (t.tray_sub_distilling ?? "Distilling · {step}").replace(
+      "{step}",
+      stepLabel(s.distillStep, t),
     );
-  if (s.dueToday > 0)
-    return (t.tray_greet_due ?? "{n} due today").replace(
+  const waiting = s.mapProposals.length + s.overdue;
+  if (waiting > 0)
+    return (t.tray_sub_waiting_n ?? "{n} waiting for you").replace(
       "{n}",
-      String(s.dueToday),
+      String(waiting),
     );
-  return t.tray_greet_idle ?? "All quiet";
+  return t.tray_sub_clear ?? "Nothing waiting";
 }
 
-/** The popover's stat cards — id doubles as the click action Rust routes. */
-export function trayCards(s: TraySnapshot, t: Strings): TrayCardPayload[] {
-  const review = s.quarantined + s.mapProposals.length + s.reflectFindings;
-  const runningCount =
-    (s.askBusy ? 1 : 0) +
-    (s.distillRunning ? 1 : 0) +
-    (s.reflectRunning ? 1 : 0) +
-    (s.reindexStage === "indexing" || s.reindexStage === "loading-model"
-      ? 1
-      : 0);
-  return [
-    {
-      id: "tasks",
-      label: t.tray_card_tasks ?? "Tasks",
-      value: (t.tray_card_tasks_v ?? "{n} today").replace(
+/** Numbers + labels the glass tiles render (tray v3). Kept apart from the
+ * pre-formatted rows above because the tiles put the count in its own badge
+ * and animate it when it grows, which a baked "6 suggested links" string
+ * cannot do. Rust passes this block through untouched. */
+export function trayPanel(s: TraySnapshot, t: Strings): TrayPanelPayload {
+  return {
+    mcpRunning: s.mcpRunning,
+    counts: {
+      links: s.pendingLinks,
+      reflect: s.reflectFindings,
+      overdue: s.overdue,
+      dueToday: s.dueToday,
+      files: (s.inflow?.sessionsToday ?? 0) + (s.inflow?.inboxToday ?? 0),
+      mcpCalls: s.inflow?.mcpCallsToday ?? 0,
+    },
+    labels: {
+      waiting: t.tray_tile_waiting ?? "Waiting",
+      today: t.tray_tile_today ?? "Today",
+      links: t.tray_row_links ?? "Suggested links",
+      reflect: t.tray_row_reflect ?? "Reflect suggestions",
+      tasks: t.tb_activity_tasks ?? "Tasks",
+      tasksDue: (t.tray_card_tasks_v ?? "{n} today").replace(
         "{n}",
         String(s.dueToday),
       ),
-      sub: (t.tray_card_tasks_sub ?? "{n} overdue").replace(
+      tasksOverdue: (t.tray_card_tasks_sub ?? "{n} overdue").replace(
         "{n}",
         String(s.overdue),
       ),
-      accent: s.overdue > 0,
+      sessions: t.tray_row_sessions ?? "Sessions · inbox",
+      mcpCalls: t.tb_inflow_mcp ?? "MCP tool calls",
+      last24: t.tray_last24 ?? "Last 24 hours",
+      hourly: t.tray_legend_hourly ?? "by hour",
+      nowEyebrow: t.tray_now_eyebrow ?? "Awaiting approval",
+      toastApproved: t.tray_toast_approved ?? "{name} approved",
+      view: t.tb_inflow_view ?? "View →",
     },
-    {
-      id: "quarantine",
-      label: t.tray_card_review ?? "To review",
-      value: String(review),
-      sub: (t.tray_card_review_sub ?? "quarantine {q} · proposals {p}")
-        .replace("{q}", String(s.quarantined))
-        .replace("{p}", String(s.mapProposals.length)),
-      accent: false,
-    },
-    {
-      id: "overview",
-      label: t.tray_card_engine ?? "Engine",
-      value:
-        runningCount > 0
-          ? (t.tray_card_engine_busy ?? "{n} running").replace(
-              "{n}",
-              String(runningCount),
-            )
-          : (t.tray_card_engine_idle ?? "Idle"),
-      sub: s.mcpRunning
-        ? (t.tb_activity_mcp_on ?? "MCP server running")
-        : (t.tb_activity_mcp_off ?? "MCP server off"),
-      accent: runningCount > 0,
-    },
-  ];
+  };
+}
+
+export type NowCardKind = "proposal" | "overdue" | "links";
+
+/** Which single thing the now-card shows: a pending map proposal beats an
+ * overdue task beats suggested links; null renders no card (no empty state
+ * by design). */
+export function pickNowCard(c: {
+  proposals: number;
+  overdue: number;
+  links: number;
+}): NowCardKind | null {
+  if (c.proposals > 0) return "proposal";
+  if (c.overdue > 0) return "overdue";
+  if (c.links > 0) return "links";
+  return null;
+}
+
+/** Keys whose count grew between two status pushes — those badges bump.
+ * A first push (no previous) bumps nothing: the panel just appeared. */
+export function bumpedKeys<K extends string>(
+  prev: Record<K, number> | null,
+  next: Record<K, number>,
+): K[] {
+  if (!prev) return [];
+  return (Object.keys(next) as K[]).filter((k) => next[k] > (prev[k] ?? 0));
 }
 
 /** Trailing-debounced, rate-limited sender. `push` may be called on every

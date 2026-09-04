@@ -8,59 +8,48 @@
 // Quick actions route through the tray_panel_action command, i.e. the same
 // Rust handler as the native menu rows — one entry point for open/quit/
 // query/distill from both surfaces (resident-mode semantics included).
+//
+// Layout (tray v3, owner-approved mockup): mascot header with a status
+// subtitle → at most ONE "now" card for the thing that needs a decision →
+// two glass tiles (waiting counts, today's inflow with the 24h chart folded
+// into a disclosure) → two action buttons → open/quit.
 
 import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
-import ActivityPanel, {
-  buildInflowRows,
-  buildMapProposalRows,
-} from "./ActivityPanel";
-import type { ActivityIconName, PanelRow, PanelSection } from "./ActivityPanel";
+import { ActivityIcon } from "./ActivityPanel";
+import type { ActivityIconName } from "./ActivityPanel";
+import MascotClip from "./MascotClip";
 import { ipc } from "../lib/ipc";
-import type { TrayStatusPayload } from "../lib/ipc";
+import type { TrayPanelPayload, TrayStatusPayload } from "../lib/ipc";
+import { bumpedKeys, pickNowCard } from "../lib/trayStatus";
 
 /** Pushed by Rust on every update_tray_status call. */
 export const TRAY_STATUS_EVENT = "myco://tray-status";
 
-const KIND_ICON: Record<string, ActivityIconName> = {
-  ask: "ask",
-  distill: "distill",
-  // Reflect has no icon of its own — it borrows distill's, as in the topbar
-  // popover (ActivityChip): same whole-vault pass, read-only.
-  reflect: "distill",
-  index: "indexing",
-};
+const TOAST_MS = 3000;
+const TOAST_OUT_MS = 250;
 
 /** Dev-only sample for visual QA in a plain browser (?window=tray&trayMock=1)
  * — there is no Tauri backend to serve the real payload there. */
 const MOCK_STATUS: TrayStatusPayload = {
-  running: [
-    { kind: "distill", text: "증류 중 — 코어 패스" },
-    { kind: "reflect", text: "Reflect 분석 중…" },
-    { kind: "index", text: "재색인 218/302" },
-  ],
+  running: [],
   runningHeader: "지금 하는 일",
   waitingHeader: "대기",
-  title: "3",
-  suggested: "제안된 링크 6개",
+  title: null,
+  suggested: "제안된 링크 4개",
   reflect: "Reflect 제안 8개",
-  quarantine: "검토 대기 2건",
+  quarantine: "",
   proposals: [
     {
-      path: "work/feedback/2026-08-12-map-attention.md",
-      label: "attention",
-      sub: "토픽 맵 작성 · 노트 6개",
-    },
-    {
-      path: "work/feedback/2026-08-12-map-rope.md",
-      label: "rope",
-      sub: "토픽 맵 작성 · 노트 4개",
+      path: "work/feedback/2026-08-12-map-anthropic.md",
+      label: "anthropic",
+      sub: "토픽 맵 작성 · 노트 9개",
     },
   ],
   proposalsMore: "",
   proposalApprove: "승인",
   proposalReject: "무시",
-  proposalNote: "승인은 저장되지만 초안 작성에는 질의 모델이 필요합니다.",
+  proposalNote: "",
   mcp: "MCP 서버 실행 중",
   inflow: {
     header: "오늘 들어온 것",
@@ -83,35 +72,142 @@ const MOCK_STATUS: TrayStatusPayload = {
       0, 0, 0, 0, 0, 0, 0, 0, 2, 4, 3, 0, 0, 2, 3, 1, 2, 0, 0, 0, 0, 0, 0, 0,
     ],
   },
-  greeting: "오늘 마감 2건",
-  cards: [
-    {
-      id: "tasks",
-      label: "할 일",
-      value: "오늘 2",
-      sub: "지연 1",
-      accent: true,
+  greeting: "1건이 기다려요",
+  panel: {
+    mcpRunning: true,
+    counts: {
+      links: 4,
+      reflect: 8,
+      overdue: 1,
+      dueToday: 0,
+      files: 7,
+      mcpCalls: 17,
     },
-    {
-      id: "quarantine",
-      label: "검토 대기",
-      value: "4",
-      sub: "격리 3 · 제안 1",
-      accent: false,
+    labels: {
+      waiting: "기다리는 것",
+      today: "오늘",
+      links: "제안된 링크",
+      reflect: "Reflect 제안",
+      tasks: "할 일",
+      tasksDue: "오늘 0",
+      tasksOverdue: "지연 1",
+      sessions: "세션 · inbox",
+      mcpCalls: "MCP 도구 호출",
+      last24: "최근 24시간",
+      hourly: "시간별",
+      nowEyebrow: "승인 대기",
+      toastApproved: "{name} 승인됨",
+      view: "보기 →",
     },
-    {
-      id: "overview",
-      label: "엔진",
-      value: "대기",
-      sub: "MCP 실행 중",
-      accent: false,
-    },
-  ],
-  ask: "위키에 질문하기",
+  },
+  ask: "위키에 질문",
   distill: "지금 증류",
   open: "myco 열기",
   quit: "종료",
 };
+
+type Mood = "ok" | "warn" | null;
+type Reaction = "nod" | "wiggle" | null;
+
+/** Right-aligned mono count in a glass badge. Remounting on `bumpSeq` replays
+ * the bump keyframe without a timer (the CSS runs once per mount). */
+function Badge({
+  children,
+  tone,
+  bumpSeq = 0,
+}: {
+  children: string;
+  tone?: "z" | "up" | "warn";
+  bumpSeq?: number;
+}): JSX.Element {
+  return (
+    <span
+      key={bumpSeq}
+      className={
+        "tray-n" + (tone ? ` is-${tone}` : "") + (bumpSeq > 0 ? " is-bump" : "")
+      }
+    >
+      {children}
+    </span>
+  );
+}
+
+function TileRow({
+  icon,
+  iconActive,
+  label,
+  sub,
+  badge,
+  onClick,
+}: {
+  icon: ActivityIconName;
+  iconActive?: boolean;
+  label: string;
+  sub?: string;
+  badge: JSX.Element;
+  onClick?: () => void;
+}): JSX.Element {
+  const body = (
+    <>
+      <ActivityIcon name={icon} size={28} active={iconActive ?? false} />
+      <span className="tray-row-l">
+        {label}
+        {sub ? <small>{sub}</small> : null}
+      </span>
+      {badge}
+    </>
+  );
+  return onClick ? (
+    <button type="button" className="tray-row" onClick={onClick}>
+      {body}
+    </button>
+  ) : (
+    <div className="tray-row is-static">{body}</div>
+  );
+}
+
+/** 24 hourly columns, files stacked under MCP calls, growing from the
+ * baseline on mount (the disclosure remounts it on every open). The native
+ * `title` is the value tooltip. Decorative — the totals are in the rows. */
+function HourBars({
+  files,
+  mcp,
+  legendFiles,
+  legendHours,
+}: {
+  files: number[];
+  mcp: number[];
+  legendFiles: string;
+  legendHours: string;
+}): JSX.Element {
+  const max = Math.max(1, ...files.map((f, i) => f + (mcp[i] ?? 0)));
+  return (
+    <div className="tray-flow-body">
+      <div className="tray-bars" aria-hidden="true">
+        {files.map((f, i) => {
+          const m = mcp[i] ?? 0;
+          return (
+            <div
+              className="tray-bar"
+              key={i}
+              style={{ animationDelay: `${i * 18}ms` }}
+              title={`${String(i).padStart(2, "0")}h · ${f} · MCP ${m}`}
+            >
+              <i className="is-mcp" style={{ height: `${(m / max) * 100}%` }} />
+              <i style={{ height: `${(f / max) * 100}%` }} />
+            </div>
+          );
+        })}
+      </div>
+      <div className="tray-legend">
+        <span>
+          <i /> {legendFiles} <i className="is-mcp" /> MCP
+        </span>
+        <span>{legendHours}</span>
+      </div>
+    </div>
+  );
+}
 
 export default function TrayPanel(): JSX.Element {
   const [status, setStatus] = useState<TrayStatusPayload | null>(() =>
@@ -155,8 +251,10 @@ export default function TrayPanel(): JSX.Element {
     };
   }, []);
 
-  // Fit the OS window to the card: rows come and go with activity, and a
-  // fixed-height transparent window drew a ghost outline below the card.
+  // Fit the OS window to the card: the now-card collapses, the 24h chart
+  // opens and closes — every one of those changes the height, and the
+  // observer reports each layout (a fixed-height transparent window drew a
+  // ghost outline below the card).
   const cardRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     const el = cardRef.current;
@@ -177,147 +275,295 @@ export default function TrayPanel(): JSX.Element {
     // the ref points at never changes and the observer follows every layout.
   }, []);
 
+  // Badge bumps: compare each push's counts with the previous one.
+  const prevCounts = useRef<TrayPanelPayload["counts"] | null>(null);
+  const [bumps, setBumps] = useState<Record<string, number>>({});
+  useEffect(() => {
+    const counts = status?.panel?.counts;
+    if (!counts) return;
+    const grew = bumpedKeys(prevCounts.current, counts);
+    prevCounts.current = counts;
+    if (grew.length > 0) {
+      setBumps((b) => {
+        const next = { ...b };
+        for (const k of grew) next[k] = (next[k] ?? 0) + 1;
+        return next;
+      });
+    }
+  }, [status]);
+
+  // Mascot reaction (CSS transform class, cleared when the keyframe ends),
+  // the top glow's mood, the decided now-cards (collapsed until the next
+  // push drops them), and the approve toast.
+  const [reaction, setReaction] = useState<Reaction>(null);
+  const [mood, setMood] = useState<Mood>(null);
+  const [gone, setGone] = useState<Set<string>>(() => new Set());
+  const [toast, setToast] = useState<{ text: string; out: boolean } | null>(
+    null,
+  );
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const later = (fn: () => void, ms: number): void => {
+    timers.current.push(setTimeout(fn, ms));
+  };
+  useEffect(() => () => timers.current.forEach(clearTimeout), []);
+
   const act = (action: string): void => {
     void ipc.trayPanelAction(action).catch(() => {
       /* plain-browser dev: no Tauri backend */
     });
   };
 
+  const decide = (path: string, label: string, approve: boolean): void => {
+    // Same handlers the in-app popover uses: the action string carries the
+    // proposal path back to the main window, which owns distillStore.
+    act(`proposal-${approve ? "approve" : "reject"}:${path}`);
+    setGone((g) => new Set(g).add(path));
+    setReaction(approve ? "nod" : "wiggle");
+    setMood(approve ? "ok" : "warn");
+    later(() => setMood(null), approve ? 3600 : 2600);
+    if (approve) {
+      const text = (
+        status?.panel?.labels.toastApproved ?? "{name} approved"
+      ).replace("{name}", label);
+      later(() => setToast({ text, out: false }), 250);
+      later(() => setToast({ text, out: true }), 250 + TOAST_MS - TOAST_OUT_MS);
+      later(() => setToast(null), 250 + TOAST_MS);
+    }
+  };
+
   const s = status;
   if (!s) return <div className="tray-panel" ref={cardRef} />;
 
-  const running: PanelRow[] = s.running
-    .filter((r) => r.text !== "")
-    .map((r, i) => ({
-      key: `run-${i}`,
-      icon: KIND_ICON[r.kind],
-      iconActive: true,
-      main: r.text,
-    }));
-
-  // Pending map proposals, decided right here (ROADMAP P0). The action string
-  // carries the proposal path back to the main window, which owns the store
-  // that writes the status — this window has no store of its own.
-  const waiting: PanelRow[] = buildMapProposalRows({
-    items: s.proposals ?? [],
-    approveLabel: s.proposalApprove ?? "",
-    rejectLabel: s.proposalReject ?? "",
-    onApprove: (path) => act(`proposal-approve:${path}`),
-    onReject: (path) => act(`proposal-reject:${path}`),
-    more: s.proposalsMore ?? "",
-    onMore: () => act("proposals"),
-    note: s.proposalNote ?? "",
+  const panel = s.panel ?? null;
+  const counts = panel?.counts;
+  const labels = panel?.labels;
+  const proposal = (s.proposals ?? [])[0];
+  const now = pickNowCard({
+    proposals: s.proposals?.length ?? 0,
+    overdue: counts?.overdue ?? 0,
+    links: counts?.links ?? 0,
   });
-  if (s.suggested) {
-    waiting.push({
-      key: "links",
-      icon: "link",
-      main: s.suggested,
-      onClick: () => act("overview"),
-    });
-  }
-  if (s.reflect) {
-    waiting.push({
-      key: "reflect",
-      icon: "distill",
-      main: s.reflect,
-      onClick: () => act("overview"),
-    });
-  }
-  if (s.quarantine) {
-    waiting.push({
-      key: "quarantine",
-      icon: "distill",
-      main: s.quarantine,
-      onClick: () => act("quarantine"),
-    });
-  }
-  if (s.mcp) {
-    waiting.push({
-      key: "mcp",
-      icon: "mcp",
-      main: s.mcp,
-      onClick: () => act("settings"),
-    });
-  }
 
-  // Today's inflow — Rust sends null (and no rows render) when nothing
-  // arrived today, so the section disappears exactly like the others. The
-  // rows themselves come from the shared builder so this panel and the
-  // in-app popover stay pixel-identical in structure.
-  const inflow: PanelRow[] = s.inflow
-    ? buildInflowRows({
-        sessions: {
-          label: s.inflow.sessions,
-          sub: s.inflow.sessionsSub,
-          count: s.inflow.sessionsCount,
-        },
-        mcp: {
-          label: s.inflow.mcp,
-          sub: s.inflow.mcpSub,
-          count: s.inflow.mcpCount,
-        },
-        inbox: {
-          label: s.inflow.inbox,
-          sub: s.inflow.inboxSub,
-          count: s.inflow.inboxCount,
-        },
-        inboxView: s.inflow.inboxView,
-        onInboxView: () => act("ingest"),
-        sparkCaption: s.inflow.sparkCaption,
-        hourlyFiles: s.inflow.hourlyFiles,
-        hourlyMcp: s.inflow.hourlyMcp,
-      })
-    : [];
+  const nowCard = (() => {
+    if (!now || !labels) return null;
+    if (now === "proposal" && proposal) {
+      const sub = [proposal.sub, s.proposalNote].filter(Boolean).join(" · ");
+      return (
+        <div
+          key={proposal.path}
+          className={"tray-now" + (gone.has(proposal.path) ? " is-gone" : "")}
+        >
+          <ActivityIcon name="distill" size={52} />
+          <span className="tray-now-k">{labels.nowEyebrow}</span>
+          <span className="tray-now-t">
+            {proposal.label}
+            {sub ? <small>{sub}</small> : null}
+          </span>
+          <span className="tray-now-btns">
+            <button
+              type="button"
+              className="tray-b is-pri"
+              onClick={() => decide(proposal.path, proposal.label, true)}
+            >
+              {s.proposalApprove}
+            </button>
+            <button
+              type="button"
+              className="tray-b"
+              onClick={() => decide(proposal.path, proposal.label, false)}
+            >
+              {s.proposalReject}
+            </button>
+          </span>
+        </div>
+      );
+    }
+    // Overdue task / suggested links: nothing to approve, one "view" action.
+    const isTask = now === "overdue";
+    return (
+      <div className="tray-now" key={now}>
+        <ActivityIcon name={isTask ? "indexing" : "link"} size={52} />
+        <span className="tray-now-k">
+          {isTask ? labels.tasks : labels.links}
+        </span>
+        <span className="tray-now-t">
+          {isTask ? labels.tasksOverdue : s.suggested}
+          {isTask ? <small>{labels.tasksDue}</small> : null}
+        </span>
+        <span className="tray-now-btns">
+          <button
+            type="button"
+            className="tray-b"
+            onClick={() => act(isTask ? "tasks" : "overview")}
+          >
+            {labels.view}
+          </button>
+        </span>
+      </div>
+    );
+  })();
 
-  const sections: PanelSection[] = [
-    { key: "running", header: s.runningHeader, rows: running },
-    { key: "waiting", header: s.waitingHeader, rows: waiting },
-    { key: "inflow", header: s.inflow?.header, rows: inflow },
-  ];
+  const total24 = s.inflow
+    ? s.inflow.hourlyFiles.reduce((a, b) => a + b, 0) +
+      s.inflow.hourlyMcp.reduce((a, b) => a + b, 0)
+    : 0;
 
   return (
-    <div className="tray-panel" ref={cardRef}>
-      <header className="tray-head">
-        {/* Text only — the animated character lives in the menu bar itself
-            (owner call: the in-panel mascot read as a dark blob). */}
-        <div className="tray-head-text">
+    <div
+      className={"tray-panel tray-v3" + (mood ? ` mood-${mood}` : "")}
+      ref={cardRef}
+    >
+      <header className="tray-hd">
+        <button
+          type="button"
+          className={"tray-myco" + (reaction ? ` is-${reaction}` : "")}
+          onAnimationEnd={(e) => {
+            // The ring's pulse bubbles up too; only the button's own
+            // nod/wiggle keyframe clears the reaction.
+            if (e.target === e.currentTarget) setReaction(null);
+          }}
+          onClick={() => setReaction("nod")}
+          aria-label="myco"
+        >
+          <span className="tray-ring" />
+          <MascotClip size={60} />
+        </button>
+        <div className="tray-hd-text">
           <strong>myco</strong>
+          {/* Keyed on the text so a state change remounts the line and the
+              slide-up keyframe replays — no reflow hack needed. */}
           {s.greeting ? (
-            <span className="tray-greeting">{s.greeting}</span>
+            <span className="tray-sub" key={s.greeting}>
+              {s.greeting}
+            </span>
           ) : null}
         </div>
+        {panel?.mcpRunning ? (
+          <span className="tray-pill">
+            <i />
+            MCP
+          </span>
+        ) : null}
       </header>
 
-      {(s.cards ?? []).length > 0 ? (
-        <div className="tray-cards">
-          {(s.cards ?? []).map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              className={"tray-card" + (c.accent ? " is-accent" : "")}
-              onClick={() => act(c.id)}
-              data-testid={`tray-card-${c.id}`}
-            >
-              <span className="tray-card-label">{c.label}</span>
-              <span className="tray-card-value">{c.value}</span>
-              <span className="tray-card-sub">{c.sub}</span>
-            </button>
-          ))}
-        </div>
+      {nowCard}
+
+      {counts && labels ? (
+        <section className="tray-tile">
+          <div className="tray-tile-l">{labels.waiting}</div>
+          <TileRow
+            icon="link"
+            label={labels.links}
+            onClick={() => act("overview")}
+            badge={
+              <Badge
+                tone={counts.links === 0 ? "z" : undefined}
+                bumpSeq={bumps.links}
+              >
+                {String(counts.links)}
+              </Badge>
+            }
+          />
+          <TileRow
+            icon="distill"
+            label={labels.reflect}
+            onClick={() => act("overview")}
+            badge={
+              <Badge
+                tone={counts.reflect === 0 ? "z" : undefined}
+                bumpSeq={bumps.reflect}
+              >
+                {String(counts.reflect)}
+              </Badge>
+            }
+          />
+          {/* ponytail: indexing.png stands in for tasks — a checklist object
+              in the same black-glass style still needs generating. */}
+          <TileRow
+            icon="indexing"
+            label={labels.tasks}
+            sub={labels.tasksDue}
+            onClick={() => act("tasks")}
+            badge={
+              counts.overdue > 0 ? (
+                <Badge tone="warn" bumpSeq={bumps.overdue}>
+                  {labels.tasksOverdue}
+                </Badge>
+              ) : (
+                <Badge tone={counts.dueToday === 0 ? "z" : undefined}>
+                  {String(counts.dueToday)}
+                </Badge>
+              )
+            }
+          />
+        </section>
       ) : null}
 
-      <ActivityPanel sections={sections} />
+      {counts && labels && s.inflow ? (
+        <section className="tray-tile">
+          <div className="tray-tile-l">{labels.today}</div>
+          <TileRow
+            icon="ask"
+            label={labels.sessions}
+            badge={
+              <Badge
+                tone={counts.files > 0 ? "up" : "z"}
+                bumpSeq={bumps.files}
+              >
+                {`+${counts.files}`}
+              </Badge>
+            }
+          />
+          <TileRow
+            icon="mcp"
+            iconActive={panel?.mcpRunning}
+            label={labels.mcpCalls}
+            badge={
+              <Badge
+                tone={counts.mcpCalls === 0 ? "z" : undefined}
+                bumpSeq={bumps.mcpCalls}
+              >
+                {s.inflow.mcpCount}
+              </Badge>
+            }
+          />
+          <details className="tray-flow">
+            <summary>
+              <span>{labels.last24}</span>
+              <span className="tray-flow-r">
+                <Badge tone={total24 === 0 ? "z" : undefined}>
+                  {String(total24)}
+                </Badge>
+                <span className="tray-chev">›</span>
+              </span>
+            </summary>
+            <HourBars
+              files={s.inflow.hourlyFiles}
+              mcp={s.inflow.hourlyMcp}
+              legendFiles={labels.sessions}
+              legendHours={labels.hourly}
+            />
+          </details>
+        </section>
+      ) : null}
 
-      {/* Primary actions as buttons; open/quit demoted to a quiet footer. */}
-      <div className="tray-actions">
+      <div className="tray-ft">
         {s.ask ? (
-          <button type="button" onClick={() => act("query")}>
+          <button type="button" className="tray-b" onClick={() => act("query")}>
+            <ActivityIcon name="ask" size={20} />
             {s.ask}
           </button>
         ) : null}
         {s.distill ? (
-          <button type="button" onClick={() => act("distill")}>
+          <button
+            type="button"
+            className="tray-b"
+            onClick={() => {
+              setReaction("nod");
+              act("distill");
+            }}
+          >
+            <ActivityIcon name="distill" size={20} />
             {s.distill}
           </button>
         ) : null}
@@ -334,6 +580,27 @@ export default function TrayPanel(): JSX.Element {
           </button>
         ) : null}
       </div>
+
+      {toast ? (
+        <div
+          className={"tray-toast" + (toast.out ? " is-out" : "")}
+          role="status"
+        >
+          <ActivityIcon name="distill" size={22} />
+          <span className="tray-toast-ok" aria-hidden="true">
+            <svg viewBox="0 0 12 12" width="11" height="11" fill="none">
+              <path
+                d="M2.5 6.5l2.5 2.5 4.5-5"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <span>{toast.text}</span>
+        </div>
+      ) : null}
     </div>
   );
 }

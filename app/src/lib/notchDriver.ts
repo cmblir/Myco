@@ -175,15 +175,6 @@ export function runningPercent(text: string): number {
   return 0;
 }
 
-/** First run of digits in a pre-formatted tray label ("오늘 2", "{n} overdue"
- *  already substituted). The payload carries rendered strings, not numbers, and
- *  re-deriving the counts here would mean a second vault scan for data the push
- *  already did the work for. Nothing parseable reads as 0. */
-export function digitsIn(text: string): number {
-  const m = /(\d+)/.exec(text ?? "");
-  return m ? Number(m[1]) : 0;
-}
-
 /** How long a state holds before the driver folds it away; null = holds until
  *  something replaces it (dragging, running — states with a live owner). */
 export function dwellMsFor(panel: NotchState): number | null {
@@ -734,11 +725,11 @@ export function useNotchDriver(): NotchDrive | null {
     const push = (s: TrayStatusPayload): void => {
       const live = s.running.find((r) => r.text !== "");
       raise({ type: "statusPush", running: live ? live.text : null });
-      // The tasks card already carries today's numbers; the notch reads the
-      // same push rather than running its own vault scan.
-      const card = s.cards?.find((c) => c.id === "tasks");
-      dueRef.current = card
-        ? { today: digitsIn(card.value), overdue: digitsIn(card.sub) }
+      // The push already carries today's task counts; the notch reads them
+      // rather than running its own vault scan.
+      const counts = s.panel?.counts;
+      dueRef.current = counts
+        ? { today: counts.dueToday, overdue: counts.overdue }
         : null;
     };
     void ipc

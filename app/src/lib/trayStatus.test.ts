@@ -3,7 +3,13 @@
 // (never per progress tick — at most one send per second).
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { TraySender, buildTrayStatus, trayTitle } from "./trayStatus";
+import {
+  TraySender,
+  buildTrayStatus,
+  bumpedKeys,
+  pickNowCard,
+  trayTitle,
+} from "./trayStatus";
 import type { TraySnapshot } from "./trayStatus";
 import type { TrayStatusPayload } from "./ipc";
 import { STRINGS } from "./i18n";
@@ -299,5 +305,91 @@ describe("applying proposals", () => {
   it("more than one apply shows the multiplier", () => {
     const p = buildTrayStatus({ ...idle, applyingProposals: 3 }, t);
     expect(p.running[0].text).toBe("Applying proposal… ×3");
+  });
+});
+
+describe("tray v3 panel", () => {
+  const t = STRINGS.en;
+
+  it("subtitle: distilling beats waiting beats clear", () => {
+    expect(
+      buildTrayStatus(
+        { ...idle, distillRunning: true, distillStep: "maps", overdue: 2 },
+        t,
+      ).greeting,
+    ).toBe("Distilling · the map drafts");
+    expect(
+      buildTrayStatus(
+        {
+          ...idle,
+          overdue: 1,
+          mapProposals: [
+            {
+              path: "work/feedback/map-a.md",
+              action: "draft-map",
+              status: "pending",
+              created: "2026-08-12",
+              title: "Map candidate: a",
+              raw: "",
+              files: [],
+              cluster: "a",
+              members: [],
+            },
+          ],
+        },
+        t,
+      ).greeting,
+    ).toBe("2 waiting for you");
+    expect(buildTrayStatus(idle, t).greeting).toBe("Nothing waiting");
+  });
+
+  it("carries raw tile counts + labels for the panel", () => {
+    const p = buildTrayStatus(
+      {
+        ...idle,
+        pendingLinks: 4,
+        reflectFindings: 8,
+        overdue: 1,
+        inflow: {
+          sessionsToday: 2,
+          inboxToday: 3,
+          inboxBySource: {},
+          mcpCallsToday: 7,
+          mcpTopTool: null,
+          hourlyFiles: [],
+          hourlyMcp: [],
+        },
+      },
+      t,
+    );
+    expect(p.panel?.counts).toEqual({
+      links: 4,
+      reflect: 8,
+      overdue: 1,
+      dueToday: 0,
+      files: 5,
+      mcpCalls: 7,
+    });
+    expect(p.panel?.mcpRunning).toBe(true);
+    expect(p.panel?.labels.tasksOverdue).toBe("1 overdue");
+    expect(p.panel?.labels.toastApproved).toBe("{name} approved");
+  });
+
+  it("now-card priority: proposal > overdue task > links > nothing", () => {
+    expect(pickNowCard({ proposals: 1, overdue: 3, links: 9 })).toBe(
+      "proposal",
+    );
+    expect(pickNowCard({ proposals: 0, overdue: 3, links: 9 })).toBe(
+      "overdue",
+    );
+    expect(pickNowCard({ proposals: 0, overdue: 0, links: 9 })).toBe("links");
+    expect(pickNowCard({ proposals: 0, overdue: 0, links: 0 })).toBeNull();
+  });
+
+  it("bump detection: only keys that grew, nothing on the first push", () => {
+    expect(bumpedKeys(null, { a: 1, b: 2 })).toEqual([]);
+    expect(bumpedKeys({ a: 1, b: 2, c: 5 }, { a: 2, b: 2, c: 4 })).toEqual([
+      "a",
+    ]);
   });
 });

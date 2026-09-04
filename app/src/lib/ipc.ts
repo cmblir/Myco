@@ -522,13 +522,37 @@ export interface TrayProposalPayload {
   sub: string;
 }
 
-/** One popover stat card; `id` doubles as the tray_panel_action on click. */
-export interface TrayCardPayload {
-  id: string;
-  label: string;
-  value: string;
-  sub: string;
-  accent: boolean;
+/** The tray panel's glass tiles (tray v3): raw counts (the badges animate
+ *  on growth, so they cannot arrive pre-formatted) plus their labels. Rust
+ *  stores this block as opaque JSON — it owns no tile logic. */
+export interface TrayPanelPayload {
+  mcpRunning: boolean;
+  counts: {
+    links: number;
+    reflect: number;
+    overdue: number;
+    dueToday: number;
+    /** Session sweeps + _inbox arrivals today. */
+    files: number;
+    mcpCalls: number;
+  };
+  labels: {
+    waiting: string;
+    today: string;
+    links: string;
+    reflect: string;
+    tasks: string;
+    tasksDue: string;
+    tasksOverdue: string;
+    sessions: string;
+    mcpCalls: string;
+    last24: string;
+    hourly: string;
+    nowEyebrow: string;
+    /** "{name} approved" — the toast after an inline approve. */
+    toastApproved: string;
+    view: string;
+  };
 }
 
 export interface TrayStatusPayload {
@@ -556,10 +580,10 @@ export interface TrayStatusPayload {
   proposalReject?: string;
   /** builtin-local caveat shown under the rows; "" when a provider can draft. */
   proposalNote?: string;
-  /** Header line under the mascot; absent on older payloads. */
+  /** Status subtitle under the mascot's name; absent on older payloads. */
   greeting?: string;
-  /** Stat cards; absent/empty hides the grid. */
-  cards?: TrayCardPayload[];
+  /** Tile counts + labels; null/absent on older payloads hides the tiles. */
+  panel?: TrayPanelPayload | null;
   ask: string;
   distill: string;
   open: string;

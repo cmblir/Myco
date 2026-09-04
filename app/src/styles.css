@@ -4477,11 +4477,6 @@ hr {
   padding: 3px 8px;
   font-size: 11.5px;
 }
-.tray-panel .activity-actions .btn {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.18);
-  color: #ece7df;
-}
 .activity-sub-wrap {
   white-space: normal;
   overflow: visible;
@@ -4547,16 +4542,6 @@ hr {
   font-size: 11.5px;
   color: var(--ink-3);
 }
-.tray-panel .inflow-sub,
-.tray-panel .inflow-caption {
-  color: #7a7580;
-}
-.tray-panel .inflow-count {
-  color: #b8b3ac;
-}
-.tray-panel .inflow-view {
-  color: #a78bfa;
-}
 
 /* "Today's inflow" sparkbar — 24 hourly columns, session/inbox files (purple)
    stacked under MCP calls (blue), matching the caption's color key. Pure
@@ -4584,200 +4569,647 @@ hr {
   background: var(--c-overview);
   border-radius: 1px;
 }
-/* Dark tray card: hairline + lighter bar tones for contrast. */
-.tray-panel .inflow-spark {
-  border-bottom-color: #222227;
-}
-.tray-panel .inflow-spark-file {
-  background: rgba(167, 139, 250, 0.75);
-  border-radius: 1.5px;
-}
-.tray-panel .inflow-spark-mcp {
-  background: rgba(96, 165, 250, 0.75);
-  border-radius: 1.5px;
-}
 
-/* Tray popover window (?window=tray) — the approved menubar-v2 panel:
-   rounded 12px dark card, 11px uppercase section headers, 20px circular row
-   icons, hairline separators. The OS window is transparent + shadowed; only
-   this card paints, whatever the app theme (the panel is dark by design). */
+/* Tray popover window (?window=tray). The OS window is transparent; only
+   the rounded panel paints, whatever the app theme (dark by design), so
+   every colour in this block is panel-local — app tokens resolve to light
+   values in this webview. */
 html.tray-window,
 html.tray-window body {
   background: transparent;
 }
-/* The OS window is 24px larger than the card on every side (tray.rs
-   PANEL_MARGIN) — that ring is where this CSS shadow lives, since the OS
+/* The OS window is larger than the card (tray.rs PANEL_MARGIN_TOP /
+   PANEL_MARGIN) — that ring is where the CSS shadow lives, since the OS
    window shadow is off (it hugged the transparent rect, not the card). */
 html.tray-window body {
-  /* Mirrors tray.rs PANEL_MARGIN_TOP / PANEL_MARGIN — slim on top so the
-     card hugs the menu bar, room on the other sides for the shadow. */
   padding: 8px 24px 24px;
 }
-/* Tray popover header — text only; the animated character is the menu-bar
-   glyph itself. Panel-LOCAL colors throughout this block: this webview gets
-   no app theme, and app tokens resolve to light values here (that is exactly
-   the white-cards-on-dark-panel bug this replaced). */
-.tray-head {
+
+/* Tray v3 — glass popover: mascot header, one now-card, two tiles, folded
+   24h chart. Palette: #a78bfa live · #7ee0a6 ok · #e0a458 warn · ink
+   #ece7df · dim #7a7580, plus the glass whites below.
+   ponytail: true glass needs window-vibrancy (NSVisualEffectView);
+   backdrop-filter cannot blur the desktop behind a transparent WKWebView —
+   it only blurs this webview's own layers. The background alpha is
+   therefore near-solid so the panel reads right today; the filter lines
+   stay so a later vibrancy pass only has to lower the alpha. */
+.tray-panel {
+  box-sizing: border-box;
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  width: 100%;
+  padding: 14px;
+  border-radius: 22px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: linear-gradient(
+    180deg,
+    rgba(30, 30, 36, 0.97),
+    rgba(16, 16, 20, 0.98)
+  );
+  -webkit-backdrop-filter: blur(36px) saturate(1.5);
+  backdrop-filter: blur(36px) saturate(1.5);
+  box-shadow:
+    0 24px 60px rgba(0, 0, 0, 0.55),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+  color: #ece7df;
+  font:
+    13px/1.5 -apple-system,
+    "Pretendard",
+    "Apple SD Gothic Neo",
+    sans-serif;
+  user-select: none;
+  --tray-glow: rgba(167, 139, 250, 0.18);
+}
+/* Top radial glow that follows mood, and the diagonal sheen. */
+.tray-panel::before {
+  content: "";
+  position: absolute;
+  inset: -30% -20% auto;
+  height: 260px;
+  background: radial-gradient(closest-side, var(--tray-glow), transparent 70%);
+  pointer-events: none;
+  transition: background 0.6s;
+  z-index: -1;
+}
+.tray-panel::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    115deg,
+    rgba(255, 255, 255, 0.08),
+    transparent 38%,
+    transparent 62%,
+    rgba(255, 255, 255, 0.04)
+  );
+  z-index: -1;
+}
+.tray-panel.mood-ok {
+  --tray-glow: rgba(126, 224, 166, 0.18);
+}
+.tray-panel.mood-warn {
+  --tray-glow: rgba(224, 164, 88, 0.18);
+}
+
+/* Header: mascot + pulsing ring, name + status subtitle, MCP pill. */
+.tray-hd {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 2px 4px 14px;
+}
+.tray-myco {
+  position: relative;
+  width: 60px;
+  height: 60px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  border-radius: 50%;
+}
+.tray-myco:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 2px;
+}
+.tray-ring {
+  position: absolute;
+  inset: 8px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(167, 139, 250, 0.45);
+  animation: tray-pulse 2.4s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes tray-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(167, 139, 250, 0.45);
+  }
+  100% {
+    box-shadow: 0 0 0 16px rgba(167, 139, 250, 0);
+  }
+}
+.tray-myco.is-nod {
+  animation: tray-nod 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+@keyframes tray-nod {
+  30% {
+    transform: translateY(3px) scale(1.04);
+  }
+  60% {
+    transform: translateY(-2px);
+  }
+}
+.tray-myco.is-wiggle {
+  animation: tray-wiggle 0.5s ease-in-out;
+}
+@keyframes tray-wiggle {
+  25% {
+    transform: rotate(-6deg);
+  }
+  75% {
+    transform: rotate(6deg);
+  }
+}
+.tray-hd-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tray-hd-text strong {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.tray-sub {
+  font-size: 12.5px;
+  color: #b5b0a8;
+  line-height: 1.35;
+  margin-top: 2px;
+  animation: tray-swap 0.3s cubic-bezier(0.2, 0, 0, 1);
+}
+@keyframes tray-swap {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+.tray-pill {
   display: flex;
   align-items: center;
-  padding: 4px 8px 8px;
-}
-.tray-head-text {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  min-width: 0;
-}
-.tray-head-text strong {
-  font-size: 13.5px;
-}
-.tray-greeting {
-  font-size: 11.5px;
-  color: #928d96;
-}
-/* Stat cards — label / big value / sub line, all panel-local. */
-.tray-cards {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 6px;
-  margin: 0 2px 8px;
-}
-.tray-card {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 9px 10px 8px;
-  border: 1px solid #26262b;
-  border-radius: 9px;
-  background: #141416;
-  text-align: left;
-  cursor: pointer;
-  min-width: 0;
-  transition: border-color 120ms;
-}
-.tray-card:hover {
-  border-color: #3a3a42;
-}
-.tray-card-label {
-  font-size: 10px;
-  letter-spacing: 0.07em;
-  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font:
+    500 10.5px "SF Mono",
+    ui-monospace,
+    Menlo,
+    monospace;
   color: #7a7580;
 }
-.tray-card-value {
-  font-size: 16.5px;
-  font-weight: 650;
-  font-variant-numeric: tabular-nums;
+.tray-pill i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #a78bfa;
+  box-shadow: 0 0 8px #a78bfa;
+}
+
+/* Now-card: the one pending decision. Collapses (max-height + opacity)
+   once decided; the next status push removes it. */
+.tray-now {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 3px 14px;
+  align-items: center;
+  padding: 14px 14px 14px 16px;
+  border-radius: 16px;
+  background: linear-gradient(
+    180deg,
+    rgba(167, 139, 250, 0.2),
+    rgba(167, 139, 250, 0.07)
+  );
+  border: 1px solid rgba(167, 139, 250, 0.28);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  max-height: 200px;
+  transition:
+    transform 0.35s cubic-bezier(0.2, 0, 0, 1),
+    opacity 0.35s,
+    max-height 0.4s,
+    padding 0.4s;
+}
+.tray-now.is-gone {
+  opacity: 0;
+  transform: translateY(-8px) scale(0.98);
+  max-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-width: 0;
+}
+.tray-now > .activity-icon {
+  grid-row: 1 / 4;
+  filter: drop-shadow(0 0 12px rgba(167, 139, 250, 0.45));
+  animation: tray-float 3.2s ease-in-out infinite;
+}
+@keyframes tray-float {
+  50% {
+    transform: translateY(-3px);
+  }
+}
+.tray-now-k {
+  font:
+    500 10.5px "SF Mono",
+    ui-monospace,
+    Menlo,
+    monospace;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #a78bfa;
+}
+.tray-now-t {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+.tray-now-t small {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: #b5b0a8;
+  margin-top: 3px;
+}
+.tray-now-btns {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+/* Buttons: glass by default, violet fill for the one primary action. */
+.tray-b {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
   color: #ece7df;
-  white-space: nowrap;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition:
+    transform 0.12s,
+    background 0.14s,
+    box-shadow 0.2s;
 }
-/* Amber only when something needs attention (overdue / running). */
-.tray-card.is-accent .tray-card-value {
-  color: #f0b45c;
+.tray-b:hover {
+  background: rgba(255, 255, 255, 0.13);
 }
-.tray-card-sub {
-  font-size: 10.5px;
-  color: #928d96;
+.tray-b:active {
+  transform: scale(0.95);
+}
+.tray-b:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: 1px;
+}
+.tray-b.is-pri {
+  background: #a78bfa;
+  color: #120c22;
+  box-shadow:
+    0 0 0 0 rgba(167, 139, 250, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+.tray-b.is-pri:hover {
+  background: #b8a2fb;
+  box-shadow:
+    0 0 22px rgba(167, 139, 250, 0.45),
+    inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+/* Glass tiles: one soft tile per group, air between tiles. */
+.tray-tile {
+  margin-top: 10px;
+  padding: 6px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+.tray-tile-l {
+  font:
+    500 10.5px "SF Mono",
+    ui-monospace,
+    Menlo,
+    monospace;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #7a7580;
+  padding: 8px 10px 6px;
+}
+.tray-row {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 11px;
+  background: none;
+  color: #ece7df;
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background 0.14s,
+    transform 0.12s;
+}
+.tray-row:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.tray-row:hover .activity-icon {
+  filter: drop-shadow(0 0 9px rgba(167, 139, 250, 0.45)) brightness(1.15);
+  transform: scale(1.08);
+}
+.tray-row:active {
+  transform: scale(0.99);
+}
+.tray-row:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: -2px;
+}
+.tray-row .activity-icon {
+  transition:
+    filter 0.25s,
+    transform 0.25s;
+}
+.tray-row.is-static {
+  cursor: default;
+}
+.tray-row.is-static:hover {
+  background: transparent;
+}
+.tray-row.is-static:hover .activity-icon {
+  transform: none;
+}
+/* A static row's icon keeps its own breathe (MCP live) — un-hover it only
+   when it is not the running one. */
+.tray-row.is-static:hover .activity-icon:not(.is-active) {
+  filter: none;
+}
+.tray-row-l {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 100%;
 }
-/* Primary actions as two buttons; open/quit demoted to a quiet footer. */
-.tray-actions {
+.tray-row-l small {
+  color: #7a7580;
+  font-size: 12px;
+  margin-left: 8px;
+}
+/* Count badge: mono, tabular, glass pill; bumps once when its value grows. */
+.tray-n {
+  font:
+    500 12.5px "SF Mono",
+    ui-monospace,
+    Menlo,
+    monospace;
+  font-variant-numeric: tabular-nums;
+  color: #b5b0a8;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  white-space: nowrap;
+  transition: color 0.2s;
+}
+.tray-n.is-z {
+  color: #7a7580;
+}
+.tray-n.is-up {
+  color: #7ee0a6;
+}
+.tray-n.is-warn {
+  color: #e0a458;
+}
+.tray-n.is-bump {
+  animation: tray-bump 0.4s cubic-bezier(0.2, 0.9, 0.3, 1.2);
+}
+@keyframes tray-bump {
+  40% {
+    transform: scale(1.3);
+    color: #7ee0a6;
+  }
+}
+
+/* 24h chart folded into a disclosure row. */
+.tray-flow {
+  padding: 2px 4px 0;
+}
+.tray-flow summary {
+  list-style: none;
   display: flex;
-  gap: 6px;
-  padding: 6px 2px 2px;
-}
-.tray-actions button {
-  flex: 1;
-  background: #141416;
-  color: #ece7df;
-  border: 1px solid #26262b;
-  border-radius: 8px;
-  padding: 6px 0;
-  font-size: 12.5px;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 10px;
+  border-radius: 11px;
+  font-size: 13px;
+  color: #b5b0a8;
   cursor: pointer;
 }
-.tray-actions button:hover {
-  border-color: #3a3a42;
+.tray-flow summary::-webkit-details-marker {
+  display: none;
+}
+.tray-flow summary:hover {
+  background: rgba(255, 255, 255, 0.07);
+}
+.tray-flow summary:focus-visible {
+  outline: 2px solid #a78bfa;
+  outline-offset: -2px;
+}
+.tray-flow-r {
+  display: inline-flex;
+  align-items: center;
+}
+.tray-chev {
+  color: #7a7580;
+  margin-left: 8px;
+  transition: transform 0.25s;
+}
+.tray-flow[open] .tray-chev {
+  transform: rotate(90deg);
+}
+.tray-flow-body {
+  padding: 4px 12px 10px;
+}
+.tray-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 34px;
+}
+/* Each column grows from the baseline on mount, 18 ms stagger (inline
+   animation-delay); files (violet) stacked under MCP calls (blue). */
+.tray-bar {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  transform-origin: bottom;
+  animation: tray-grow 0.5s cubic-bezier(0.2, 0, 0, 1) both;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+.tray-bar:hover {
+  opacity: 1;
+}
+.tray-bar i {
+  display: block;
+  background: #a78bfa;
+  border-radius: 3px 3px 0 0;
+  min-height: 0;
+}
+.tray-bar i.is-mcp {
+  background: #60a5fa;
+}
+@keyframes tray-grow {
+  from {
+    transform: scaleY(0);
+  }
+}
+.tray-legend {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 4px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  font:
+    500 10.5px "SF Mono",
+    ui-monospace,
+    Menlo,
+    monospace;
+  color: #7a7580;
+}
+.tray-legend i {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+  background: #a78bfa;
+  vertical-align: -1px;
+}
+.tray-legend i.is-mcp {
+  background: #60a5fa;
+  margin-left: 10px;
+}
+
+/* Footer: two glass buttons with round icons, then open/quit links. */
+.tray-ft {
+  display: flex;
+  gap: 8px;
+  padding: 14px 2px 6px;
+}
+.tray-ft .tray-b {
+  flex: 1;
+  padding: 10px 12px;
+  font-size: 13px;
+  border-radius: 12px;
 }
 .tray-foot {
   display: flex;
   justify-content: space-between;
-  padding: 7px 8px 2px;
+  padding: 6px 8px 0;
 }
 .tray-foot button {
   background: none;
   border: 0;
   padding: 0;
+  font: inherit;
   font-size: 12px;
-  color: #928d96;
+  color: #7a7580;
   cursor: pointer;
 }
 .tray-foot button:hover {
   color: #ece7df;
 }
-@media (prefers-reduced-motion: reduce) {
-  .tray-card {
-    transition: none;
-  }
-}
 
-.tray-panel {
-  box-sizing: border-box;
-  width: 100%;
-  background: rgba(8, 8, 10, 0.97);
-  border: 1px solid #26262b;
-  border-radius: 12px;
-  padding: 6px;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
-  color: #ece7df;
-  font:
-    13.5px/1.5 -apple-system,
-    "Pretendard",
-    "Apple SD Gothic Neo",
-    sans-serif;
-  user-select: none;
-}
-.tray-panel .activity-hdr {
-  font-size: 11px;
-  color: #7a7580;
-  text-transform: uppercase;
-  letter-spacing: 0.07em;
-  padding: 7px 12px 3px;
-}
-.tray-panel .activity-sep {
-  height: 1px;
-  background: #222227;
-  margin: 5px 8px;
-}
-.tray-panel .activity-row {
+/* Approve toast: slides up from the panel bottom, check drawn by stroke. */
+.tray-toast {
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 16px;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
-  text-align: left;
-  padding: 7px 12px;
-  border: 0;
-  border-radius: 8px;
-  background: none;
-  color: #ece7df;
-  font-size: 13.5px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(30, 30, 36, 0.96);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 10px 30px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+  font-size: 12.5px;
+  animation: tray-toast-in 0.32s cubic-bezier(0.2, 0.9, 0.3, 1.2);
 }
-.tray-panel button.activity-row {
-  cursor: pointer;
+.tray-toast > .activity-icon {
+  filter: drop-shadow(0 0 8px rgba(167, 139, 250, 0.45));
 }
-.tray-panel button.activity-row:hover {
-  background: rgba(167, 139, 250, 0.14);
+.tray-toast-ok {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #7ee0a6;
+  display: grid;
+  place-items: center;
+  color: #0b0b0e;
+  flex: none;
 }
-.tray-panel .activity-icon {
-  width: 20px;
-  height: 20px;
+.tray-toast-ok path {
+  stroke-dasharray: 20;
+  stroke-dashoffset: 20;
+  animation: tray-draw 0.4s 0.1s cubic-bezier(0.2, 0, 0, 1) forwards;
 }
-.tray-panel .activity-row-main {
-  flex-direction: row;
+@keyframes tray-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes tray-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.97);
+  }
+}
+.tray-toast.is-out {
+  animation: tray-toast-out 0.25s cubic-bezier(0.2, 0, 0, 1) forwards;
+}
+@keyframes tray-toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tray-ring,
+  .tray-myco.is-nod,
+  .tray-myco.is-wiggle,
+  .tray-sub,
+  .tray-now > .activity-icon,
+  .tray-n.is-bump,
+  .tray-bar,
+  .tray-toast,
+  .tray-toast-ok path {
+    animation: none;
+  }
+  .tray-toast-ok path {
+    stroke-dashoffset: 0;
+  }
+  .tray-panel::before,
+  .tray-now,
+  .tray-b,
+  .tray-row,
+  .tray-row .activity-icon,
+  .tray-chev {
+    transition: none;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -5707,6 +6139,39 @@ html.tray-window body {
   white-space: nowrap;
 }
 
+/* Single ✓ accept: the button pops to filled and the row leaves to the right
+   before it is removed — no toast for one link (noise). */
+.link-suggestions__list button.is-done {
+  background: var(--ink);
+  color: var(--bg);
+  animation: ls-tick 0.36s var(--ease-spring);
+}
+@keyframes ls-tick {
+  0% {
+    transform: scale(0.6);
+  }
+  60% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+.link-suggestions__list li.is-leaving {
+  animation: ls-leave 0.32s var(--ease-out) forwards;
+  overflow: hidden;
+}
+@keyframes ls-leave {
+  to {
+    opacity: 0;
+    transform: translateX(8px);
+    height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    border-width: 0;
+  }
+}
+
 /* --- Activity chip motion (ActivityChip) ---------------------------------- */
 /* 14px ring before the icon: a filling arc when the job reports a fraction,
    a rotating dash when it does not. Circumference 37.7 = RING_C in the
@@ -6139,39 +6604,6 @@ html.spotlight-window body {
      transparent rect, not the rounded card). */
   padding: 12px 20px 20px;
 }
-/* Single ✓ accept: the button pops to filled and the row leaves to the right
-   before it is removed — no toast for one link (noise). */
-.link-suggestions__list button.is-done {
-  background: var(--ink);
-  color: var(--bg);
-  animation: ls-tick 0.36s var(--ease-spring);
-}
-@keyframes ls-tick {
-  0% {
-    transform: scale(0.6);
-  }
-  60% {
-    transform: scale(1.12);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-.link-suggestions__list li.is-leaving {
-  animation: ls-leave 0.32s var(--ease-out) forwards;
-  overflow: hidden;
-}
-@keyframes ls-leave {
-  to {
-    opacity: 0;
-    transform: translateX(8px);
-    height: 0;
-    padding-top: 0;
-    padding-bottom: 0;
-    border-width: 0;
-  }
-}
-
 .spotlight-card {
   box-sizing: border-box;
   width: 100%;

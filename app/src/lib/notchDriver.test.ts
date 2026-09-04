@@ -10,7 +10,6 @@ import {
   NOTCH_IDLE,
   REJECTED_DWELL_MS,
   batchLabel,
-  digitsIn,
   dragLabel,
   dwellMsFor,
   extLabel,
@@ -581,19 +580,6 @@ describe("peek reports the day's work", () => {
         STRINGS.en.notch_peek ?? "Drop it here",
       );
     }
-  });
-});
-
-describe("digitsIn", () => {
-  it("reads the count out of a rendered tray label", () => {
-    expect(digitsIn("2 today")).toBe(2);
-    expect(digitsIn("오늘 12")).toBe(12);
-    expect(digitsIn("지연 0")).toBe(0);
-  });
-
-  it("reads an unparseable label as zero rather than NaN", () => {
-    expect(digitsIn("—")).toBe(0);
-    expect(digitsIn("")).toBe(0);
   });
 });
 
