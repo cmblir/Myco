@@ -24,7 +24,6 @@ const idle: TraySnapshot = {
   reindexDone: 0,
   reindexTotal: 0,
   pendingLinks: 0,
-  quarantined: 0,
   mapProposals: [],
   applyingProposals: 0,
   queryProvider: "anthropic-api",
@@ -91,11 +90,8 @@ describe("buildTrayStatus", () => {
       { kind: "distill", text: "Distilling… — the session digest" },
       { kind: "index", text: "Indexing… 218/302" },
     ]);
-    expect(p.runningHeader).toBe("Now working on");
-    expect(p.waitingHeader).toBe("Waiting");
     expect(p.title).toBe("2");
     expect(p.suggested).toBe("3 suggested links");
-    expect(p.mcp).toBe("MCP server running");
     expect(p.distill).toBe(t.set_distill_run_now);
     expect(p.open).toBe("Open myco");
     expect(p.quit).toBe("Quit myco");
@@ -111,17 +107,11 @@ describe("buildTrayStatus", () => {
     ).toBe("2");
   });
 
-  it("lists unseen reflect findings as a standing row, and nothing when seen", () => {
-    expect(buildTrayStatus({ ...idle, reflectFindings: 8 }, t).reflect).toBe(
-      "8 reflect suggestions",
-    );
-    // Seen (or no findings) → empty string, which hides the row everywhere.
-    expect(buildTrayStatus(idle, t).reflect).toBe("");
-    // Standing state: it never inflates the tray title.
+  it("keeps reflect findings out of the tray title (a standing state)", () => {
     expect(trayTitle({ ...idle, reflectFindings: 8 })).toBeNull();
   });
 
-  it("caps the map-proposal rows, overflows into +N more, and keeps the builtin-local caveat", () => {
+  it("caps the map-proposal rows and keeps the builtin-local caveat", () => {
     const maps = Array.from({ length: 7 }, (_, i) => ({
       path: `work/feedback/map-${i}.md`,
       action: "draft-map" as const,
@@ -143,7 +133,6 @@ describe("buildTrayStatus", () => {
       label: "c0",
       sub: "Draft topic map · 2 notes",
     });
-    expect(p.proposalsMore).toBe("+2 more");
     expect(p.proposalApprove).toBe("Approve");
     expect(p.proposalReject).toBe("Dismiss");
     expect(p.proposalNote).toContain("needs a query model");
@@ -157,7 +146,6 @@ describe("buildTrayStatus", () => {
     const p = buildTrayStatus({ ...idle, mcpRunning: false }, t);
     expect(p.running).toEqual([]);
     expect(p.title).toBeNull();
-    expect(p.mcp).toBe("MCP server off");
     // idle snapshot carries inflow: null (no probe yet) — block absent.
     expect(p.inflow).toBeNull();
   });
@@ -230,12 +218,8 @@ describe("TraySender", () => {
 
   const payload = (title: string | null): TrayStatusPayload => ({
     running: [],
-    runningHeader: "",
-    waitingHeader: "",
     title,
     suggested: "",
-    reflect: "",
-    mcp: "",
     ask: "a",
     distill: "d",
     open: "o",

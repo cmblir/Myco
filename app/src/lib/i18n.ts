@@ -86,8 +86,6 @@ export interface Strings {
   ls_accept?: string;
   ls_dismiss?: string;
   ls_accept_all?: string;
-  ls_accept_all_progress?: string;
-  ls_accept_all_result?: string;
   ls_linking?: string;
   ls_toast_linked?: string;
   ls_toast_linked_sub?: string;
@@ -1265,8 +1263,6 @@ export interface Strings {
   tb_inflow_spark_caption?: string;
   tb_inflow_summary?: string; // {s} {m} {i}
   // Menu bar tray + OS notifications.
-  tray_hdr_running?: string;
-  tray_hdr_waiting?: string;
   tray_open?: string;
   tray_quit?: string;
   s_tray_resident_title?: string;
@@ -1595,8 +1591,6 @@ export const STRINGS: Record<Lang, Strings> = {
     ls_accept: "Link them",
     ls_dismiss: "Dismiss",
     ls_accept_all: "Accept all",
-    ls_accept_all_progress: "{done}/{total}",
-    ls_accept_all_result: "{n} linked",
     ls_linking: "Linking…",
     ls_toast_linked: "{n} links added",
     ls_toast_linked_sub: "[[wikilink]] under ## Related",
@@ -2850,8 +2844,6 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_inflow_spark_caption:
       "Last 24h · purple = sessions/inbox · blue = MCP calls",
     tb_inflow_summary: "Today: sessions +{s} · MCP {m} · inbox +{i}",
-    tray_hdr_running: "Now working on",
-    tray_hdr_waiting: "Waiting",
     tray_open: "Open myco",
     tray_quit: "Quit myco",
     s_tray_resident_title: "Keep running in the menu bar",
@@ -3178,8 +3170,6 @@ export const STRINGS: Record<Lang, Strings> = {
     ls_accept: "연결하기",
     ls_dismiss: "무시",
     ls_accept_all: "모두 수락",
-    ls_accept_all_progress: "{done}/{total}",
-    ls_accept_all_result: "{n}개 연결됨",
     ls_linking: "링크 중",
     ls_toast_linked: "링크 {n}개 추가됨",
     ls_toast_linked_sub: "## Related 아래에 [[wikilink]]",
@@ -4427,8 +4417,6 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_inflow_spark_caption:
       "최근 24시간 · 보라 = 세션/inbox · 파랑 = MCP 호출",
     tb_inflow_summary: "오늘: 세션 +{s} · MCP {m}회 · 인박스 +{i}",
-    tray_hdr_running: "지금 하는 일",
-    tray_hdr_waiting: "대기",
     tray_open: "myco 열기",
     tray_quit: "myco 종료",
     s_tray_resident_title: "메뉴 막대에 상주",
@@ -5793,8 +5781,6 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_inflow_spark_caption:
       "直近24時間 · 紫 = セッション/inbox · 青 = MCP呼び出し",
     tb_inflow_summary: "今日: セッション +{s} · MCP {m}回 · インボックス +{i}",
-    tray_hdr_running: "作業中",
-    tray_hdr_waiting: "待機",
     tray_open: "mycoを開く",
     tray_quit: "mycoを終了",
     s_tray_resident_title: "メニューバーに常駐",
@@ -5948,8 +5934,6 @@ export const STRINGS: Record<Lang, Strings> = {
     ls_accept: "リンクする",
     ls_dismiss: "閉じる",
     ls_accept_all: "すべて承認",
-    ls_accept_all_progress: "{done}/{total}",
-    ls_accept_all_result: "{n}件をリンクしました",
     ls_linking: "リンク中",
     ls_toast_linked: "リンクを{n}件追加",
     ls_toast_linked_sub: "## Related の下に [[wikilink]]",

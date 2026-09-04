@@ -33,12 +33,8 @@ const TOAST_OUT_MS = 250;
  * — there is no Tauri backend to serve the real payload there. */
 const MOCK_STATUS: TrayStatusPayload = {
   running: [],
-  runningHeader: "지금 하는 일",
-  waitingHeader: "대기",
   title: null,
   suggested: "제안된 링크 4개",
-  reflect: "Reflect 제안 8개",
-  quarantine: "",
   proposals: [
     {
       path: "work/feedback/2026-08-12-map-anthropic.md",
@@ -46,11 +42,9 @@ const MOCK_STATUS: TrayStatusPayload = {
       sub: "토픽 맵 작성 · 노트 9개",
     },
   ],
-  proposalsMore: "",
   proposalApprove: "승인",
   proposalReject: "무시",
   proposalNote: "",
-  mcp: "MCP 서버 실행 중",
   inflow: {
     header: "오늘 들어온 것",
     sessions: "세션 수집",
@@ -420,7 +414,7 @@ export default function TrayPanel(): JSX.Element {
 
   return (
     <div
-      className={"tray-panel tray-v3" + (mood ? ` mood-${mood}` : "")}
+      className={"tray-panel" + (mood ? ` mood-${mood}` : "")}
       ref={cardRef}
     >
       <header className="tray-hd">

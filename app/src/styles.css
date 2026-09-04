@@ -6112,10 +6112,6 @@ html.tray-window body {
   font-size: 12px;
   margin: 4px 0 10px;
 }
-.link-suggestions__error {
-  color: var(--danger, #e5534b);
-  font-size: 12px;
-}
 .link-suggestions__list {
   list-style: none;
   margin: 0;

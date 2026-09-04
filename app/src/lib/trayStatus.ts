@@ -59,9 +59,6 @@ export interface TraySnapshot {
   reindexDone: number;
   reindexTotal: number;
   pendingLinks: number;
-  /** `_inbox/quarantine/` items awaiting review; 0 hides the row. A standing
-   *  count like pendingLinks — never part of the tray title. */
-  quarantined: number;
   /** Pending map proposals awaiting a decision — the tray panel's approvable
    *  rows (a standing state, never part of the tray title). */
   mapProposals: ProposalMeta[];
@@ -153,37 +150,14 @@ export function buildTrayStatus(
     : null;
   return {
     running,
-    runningHeader: t.tray_hdr_running ?? "Now working on",
-    waitingHeader: t.tray_hdr_waiting ?? "Waiting",
     title: trayTitle(s),
     suggested: (t.tb_activity_links ?? "{n} suggested links").replace(
       "{n}",
       String(s.pendingLinks),
     ),
-    reflect:
-      s.reflectFindings > 0
-        ? (t.tb_activity_reflect ?? "{n} reflect suggestions").replace(
-            "{n}",
-            String(s.reflectFindings),
-          )
-        : "",
-    quarantine:
-      s.quarantined > 0
-        ? (t.tb_activity_quarantine ?? "{n} awaiting review").replace(
-            "{n}",
-            String(s.quarantined),
-          )
-        : "",
     proposals: s.mapProposals
       .slice(0, MAP_ROW_CAP)
       .map((p) => mapRowContent(p, t)),
-    proposalsMore:
-      s.mapProposals.length > MAP_ROW_CAP
-        ? (t.tb_activity_tasks_more ?? "+{n} more").replace(
-            "{n}",
-            String(s.mapProposals.length - MAP_ROW_CAP),
-          )
-        : "",
     proposalApprove: t.pf_approve ?? "Approve",
     proposalReject: t.pf_dismiss ?? "Dismiss",
     proposalNote:
@@ -191,9 +165,6 @@ export function buildTrayStatus(
         ? (t.tb_activity_map_wait ??
           "Approving is saved, but the draft needs a query model.")
         : "",
-    mcp: s.mcpRunning
-      ? (t.tb_activity_mcp_on ?? "MCP server running")
-      : (t.tb_activity_mcp_off ?? "MCP server off"),
     inflow:
       lines && s.inflow
         ? {
@@ -400,7 +371,6 @@ export function initTrayIntegration(): () => void {
           reindexDone: reindex.done,
           reindexTotal: reindex.total,
           pendingLinks,
-          quarantined: useDistillStore.getState().status?.quarantined ?? 0,
           mapProposals: pendingMapProposals(
             useDistillStore.getState().proposals,
           ),

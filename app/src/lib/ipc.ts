@@ -558,24 +558,14 @@ export interface TrayPanelPayload {
 export interface TrayStatusPayload {
   /** Pre-formatted running rows, shown as disabled info items. */
   running: TrayRunningRow[];
-  /** Section headers (disabled rows); empty string hides the header. */
-  runningHeader: string;
-  waitingHeader: string;
   /** Text next to the tray icon ("72%", "2"); null clears it. */
   title: string | null;
   suggested: string;
-  /** Quarantined items awaiting review; "" when there are none. */
-  quarantine?: string;
-  /** Unseen reflect findings ("6 reflect suggestions"); "" hides the row. */
-  reflect: string;
-  mcp: string;
   /** Today's-inflow block; null/absent hides the section everywhere. */
   inflow?: TrayInflowPayload | null;
-  /** Pending map proposals the panel can approve/reject inline (capped; the
-   *  overflow becomes `proposalsMore`). Absent/empty hides the rows. */
+  /** Pending map proposals the panel can approve/reject inline (capped).
+   *  Absent/empty hides the rows. */
   proposals?: TrayProposalPayload[];
-  /** "+N more" row text; "" when nothing overflowed. */
-  proposalsMore?: string;
   proposalApprove?: string;
   proposalReject?: string;
   /** builtin-local caveat shown under the rows; "" when a provider can draft. */
