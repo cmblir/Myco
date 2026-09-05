@@ -574,8 +574,9 @@ def _record_inflow(proj, kind: str, n: int = 1) -> None:
 
 def _write_raw_guarded(proj, filename: str, content: str) -> dict:
     """The one raw/ write funnel: secret/PII scan → traversal check →
-    immutability check → write. Shared by `add_raw_source` and the import
-    tools so every path into raw/ carries identical guards.
+    immutability check → write. Shared by `add_raw_source`,
+    `archive_inbox_source` and the import tools so every path into raw/
+    carries identical guards.
 
     Q4 item 13 (scope decision 2): scan BEFORE the write — raw/ is immutable,
     so a secret must never touch disk. The caller still holds the content; a
@@ -1256,7 +1257,14 @@ def archive_inbox_source(filename: str, project: str = "") -> dict:
     while raw_path.exists():
         raw_path = proj.raw_dir / f"{slug}-{n}.md"
         n += 1
-    raw_path.write_text(target.read_text("utf-8", errors="replace"), encoding="utf-8")
+    # _inbox/ holds untrusted text (clipper, autoingest), so this raw/ write
+    # takes the same secrets/PII funnel as add_raw_source; a refusal leaves
+    # the inbox file in place.
+    written = _write_raw_guarded(
+        proj, raw_path.name, target.read_text("utf-8", errors="replace")
+    )
+    if not written["ok"]:
+        return written
 
     archive = target.parent / ".archived"
     archive.mkdir(exist_ok=True)
@@ -1268,7 +1276,10 @@ def archive_inbox_source(filename: str, project: str = "") -> dict:
     target.rename(dest)
 
     raw_rel = _rel_to_repo(raw_path)
-    return {"ok": True, "project": proj.slug, "raw_path": raw_rel, "archived": dest.name, "src_slug": f"src-{raw_path.stem}"}
+    out = {"ok": True, "project": proj.slug, "raw_path": raw_rel, "archived": dest.name, "src_slug": f"src-{raw_path.stem}"}
+    if "pii_warning" in written:
+        out["pii_warning"] = written["pii_warning"]
+    return out
 
 
 # ─── local lint (no LLM) ─────────────────────────────────────────────────────

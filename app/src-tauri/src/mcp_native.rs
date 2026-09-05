@@ -29,10 +29,11 @@ use rmcp::{
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::atomic::{AtomicBool, Ordering};
+use tauri::Manager as _;
 use tokio_util::sync::CancellationToken;
 
 use crate::importers::secrets_scan;
-use crate::{registry, settings, vault};
+use crate::{commands, registry, settings, vault};
 
 /// Fixed loopback port. Matches the documented `claude mcp add` URL.
 pub const MCP_PORT: u16 = 22360;
@@ -689,6 +690,9 @@ fn walk_all(dir: &Path) -> Vec<PathBuf> {
 
 #[derive(Clone)]
 pub struct McpServer {
+    /// The app, for the managed retrieval state: `search` runs the same
+    /// embedder and indexes the Ask page does.
+    app: tauri::AppHandle,
     // Read by the hand-written call_tool below and by the #[tool_handler]
     // macro's generated list_tools.
     tool_router: ToolRouter<McpServer>,
@@ -723,12 +727,16 @@ struct ReadPageArgs {
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct SearchArgs {
-    /// Search query (whitespace-separated terms, case-insensitive substring).
+    /// Question or keywords; a "quoted phrase" must appear verbatim in the hit.
     query: String,
-    /// Max results (default 20).
+    /// Max hits (1-50, default 20).
     #[serde(default)]
     top_k: Option<usize>,
-    /// Search across ALL projects instead of just one.
+    /// Indexed tree to rank: "wiki" (default), "sessions", or "all" (wiki +
+    /// sessions + daily/weekly digests). raw/ is never indexed.
+    #[serde(default)]
+    scope: Option<String>,
+    /// Search across ALL projects instead of just one (hits grouped per project).
     #[serde(default)]
     all_projects: bool,
     #[serde(default)]
@@ -883,16 +891,11 @@ struct GitCommitArgs {
     project: String,
 }
 
-impl Default for McpServer {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[tool_router]
 impl McpServer {
-    pub fn new() -> Self {
+    pub fn new(app: tauri::AppHandle) -> Self {
         Self {
+            app,
             tool_router: Self::tool_router(),
         }
     }
@@ -1041,13 +1044,21 @@ impl McpServer {
         }
     }
 
-    /// Full-text (substring) search over a project, or all projects.
-    #[tool(description = "Search wiki + raw content; one hit per file with a snippet")]
+    /// Hybrid retrieval — the same dense + BM25 fusion the app's Ask page runs.
+    #[tool(
+        description = "Rank vault pages for a question or keywords with the app's hybrid retrieval (local embeddings + BM25, fused by reciprocal rank) — paraphrases match, not only exact words. scope: wiki (default) | sessions | all (wiki + sessions + daily/weekly digests; raw/ is never indexed). Each hit carries rank, score_bm25 and score_vec (dense cosine). The order is rank-fused and NOT a confidence: judge relevance by score_vec (on the eval corpus, real answers scored >= 0.54 and off-topic hits <= 0.49). When the embedding index is absent or stale the result is BM25-only and `note` says so."
+    )]
     async fn search(
         &self,
         Parameters(a): Parameters<SearchArgs>,
     ) -> Result<CallToolResult, McpError> {
-        let limit = a.top_k.unwrap_or(20).clamp(1, 200);
+        let k = a.top_k.unwrap_or(20).clamp(1, 50);
+        let scope = a.scope.as_deref().unwrap_or("wiki");
+        if !matches!(scope, "wiki" | "sessions" | "all") {
+            return fail(format!(
+                "unknown scope: {scope} — use wiki, sessions or all"
+            ));
+        }
         let mut roots: Vec<(String, PathBuf)> = Vec::new();
         if a.all_projects {
             let active = match settings::active_vault().map(PathBuf::from) {
@@ -1069,19 +1080,26 @@ impl McpServer {
             }
         }
         let mut hits = Vec::new();
+        let mut note = None;
         for (slug, root) in roots {
-            for h in vault::search_vault(&root, &a.query, limit) {
-                hits.push(json!({
-                    "project": slug,
-                    "path": rel_to(&root, Path::new(&h.path)),
-                    "name": h.name, "line": h.line, "snippet": h.snippet,
-                }));
-                if hits.len() >= limit {
-                    break;
-                }
+            let found = match self.hybrid(&root, &a.query, k, scope).await {
+                Ok(f) => f,
+                Err(e) => return fail(e),
+            };
+            if let Some(n) = found.dense_skipped {
+                note.get_or_insert(n);
+            }
+            for (i, h) in found.hits.iter().enumerate() {
+                let mut row = search_row(&root, i + 1, h);
+                row["project"] = json!(slug);
+                hits.push(row);
             }
         }
-        json_result(json!({ "ok": true, "count": hits.len(), "hits": hits }))
+        let mut out = json!({ "ok": true, "scope": scope, "total": hits.len(), "hits": hits });
+        if let Some(n) = note {
+            out["note"] = json!(n);
+        }
+        json_result(out)
     }
 
     /// The wiki folder tree (directories + `.md` files).
@@ -1755,7 +1773,9 @@ impl McpServer {
 
     /// Archive a processed _inbox/ source: copy into a new raw/<slug>.md, then
     /// move the original into _inbox/.archived/.
-    #[tool(description = "Archive an ingested inbox source: copy to raw/ then move it out")]
+    #[tool(
+        description = "Archive an ingested inbox source: copy to raw/ (secrets/PII-scanned like add_raw_source) then move it out"
+    )]
     async fn archive_inbox_source(
         &self,
         Parameters(a): Parameters<InboxSourceArgs>,
@@ -1764,61 +1784,14 @@ impl McpServer {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let Some(src) = safe_join(&inbox_dir(&root), &a.filename) else {
-            return fail(format!("path escapes _inbox/: {}", a.filename));
-        };
-        if !src.is_file() {
-            return fail(format!("not found in inbox: {}", a.filename));
+        match archive_inbox(
+            &root,
+            &a.filename,
+            crate::settings::load().pii_quarantine_enabled,
+        ) {
+            Ok(out) => json_result(out),
+            Err(e) => fail(e),
         }
-        let raw = raw_dir(&root);
-        let _ = std::fs::create_dir_all(&raw);
-        let content = std::fs::read_to_string(&src).unwrap_or_default();
-        let stem = src
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let slug = make_slug(&stem);
-        let mut raw_path = raw.join(format!("{slug}.md"));
-        let mut n = 2;
-        while raw_path.exists() {
-            raw_path = raw.join(format!("{slug}-{n}.md"));
-            n += 1;
-        }
-        if let Err(e) = vault::write_file(&raw_path.to_string_lossy(), &content) {
-            return fail(e);
-        }
-        // Move the original out of the inbox so it is not re-ingested.
-        let archive = src
-            .parent()
-            .map(|p| p.join(".archived"))
-            .unwrap_or_default();
-        let _ = std::fs::create_dir_all(&archive);
-        let ext = src
-            .extension()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let mut dest = archive.join(src.file_name().unwrap_or_default());
-        let mut m = 2;
-        while dest.exists() {
-            dest = archive.join(if ext.is_empty() {
-                format!("{stem}-{m}")
-            } else {
-                format!("{stem}-{m}.{ext}")
-            });
-            m += 1;
-        }
-        if let Err(e) = std::fs::rename(&src, &dest) {
-            return fail(format!("archive move failed: {e}"));
-        }
-        let raw_stem = raw_path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-        json_result(json!({
-            "ok": true, "raw_path": rel_to(&root, &raw_path),
-            "archived": dest.file_name().map(|s| s.to_string_lossy().to_string()),
-            "src_slug": format!("src-{raw_stem}"),
-        }))
     }
 
     /// Append an entry under CHANGELOG.md's `## [Unreleased]` → `### <section>`.
@@ -2095,9 +2068,9 @@ impl ServerHandler for McpServer {
 /// Bind the native MCP server on 127.0.0.1:MCP_PORT and spawn its accept loop on
 /// the current tokio runtime. Returns once bound (bind errors propagate).
 /// Cancelling `ct` shuts the server down and frees the port.
-pub async fn serve(ct: CancellationToken) -> Result<(), String> {
+pub async fn serve(app: tauri::AppHandle, ct: CancellationToken) -> Result<(), String> {
     let service = StreamableHttpService::new(
-        || Ok(McpServer::new()),
+        move || Ok(McpServer::new(app.clone())),
         LocalSessionManager::default().into(),
         StreamableHttpServerConfig::default()
             .with_stateful_mode(true)
@@ -2166,11 +2139,141 @@ pub(crate) fn raw_source_guard(
     )))
 }
 
+/// Archive one `_inbox/` source: copy it into a fresh `raw/<slug>[-n].md`,
+/// then move the original into `_inbox/.archived/`. The copy is a raw/ write
+/// like any other, so it passes `raw_source_guard` first — `_inbox/` is where
+/// the clipper and autoingest drop untrusted text — and a refusal leaves the
+/// inbox file exactly where it was.
+fn archive_inbox(root: &Path, filename: &str, pii_quarantine: bool) -> Result<Value, String> {
+    let Some(src) = safe_join(&inbox_dir(root), filename) else {
+        return Err(format!("path escapes _inbox/: {filename}"));
+    };
+    if !src.is_file() {
+        return Err(format!("not found in inbox: {filename}"));
+    }
+    let content = std::fs::read_to_string(&src).unwrap_or_default();
+    let pii_warning = raw_source_guard(&content, pii_quarantine)?;
+    let raw = raw_dir(root);
+    let _ = std::fs::create_dir_all(&raw);
+    let stem = src
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let slug = make_slug(&stem);
+    let mut raw_path = raw.join(format!("{slug}.md"));
+    let mut n = 2;
+    while raw_path.exists() {
+        raw_path = raw.join(format!("{slug}-{n}.md"));
+        n += 1;
+    }
+    vault::write_file(&raw_path.to_string_lossy(), &content)?;
+    // Move the original out of the inbox so it is not re-ingested.
+    let archive = src
+        .parent()
+        .map(|p| p.join(".archived"))
+        .unwrap_or_default();
+    let _ = std::fs::create_dir_all(&archive);
+    let ext = src
+        .extension()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let mut dest = archive.join(src.file_name().unwrap_or_default());
+    let mut m = 2;
+    while dest.exists() {
+        dest = archive.join(if ext.is_empty() {
+            format!("{stem}-{m}")
+        } else {
+            format!("{stem}-{m}.{ext}")
+        });
+        m += 1;
+    }
+    std::fs::rename(&src, &dest).map_err(|e| format!("archive move failed: {e}"))?;
+    let raw_stem = raw_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let mut out = json!({
+        "ok": true, "raw_path": rel_to(root, &raw_path),
+        "archived": dest.file_name().map(|s| s.to_string_lossy().to_string()),
+        "src_slug": format!("src-{raw_stem}"),
+    });
+    if let Some(w) = pii_warning {
+        out["pii_warning"] = json!(w);
+    }
+    Ok(out)
+}
+
+impl McpServer {
+    /// The app's hybrid retrieval over `root`, restricted to one `search`
+    /// scope — the same managed indexes and embedder the Ask page uses.
+    async fn hybrid(
+        &self,
+        root: &Path,
+        query: &str,
+        k: usize,
+        scope: &str,
+    ) -> Result<commands::HybridSearch, String> {
+        let llm = self.app.state::<commands::LocalLlmState>();
+        let cache = self.app.state::<crate::vector_index::VectorCache>();
+        let bm25_cache = self.app.state::<crate::retrieval::Bm25Cache>();
+        commands::hybrid_search(
+            &self.app,
+            &llm,
+            &cache,
+            &bm25_cache,
+            root,
+            query,
+            k,
+            "builtin-local",
+            crate::local_llm::BUILTIN_EMBED_MODEL,
+            None,
+            &|page| scope_keeps(scope, page),
+        )
+        .await
+    }
+}
+
+/// Which indexed pages a `search` scope admits. The index covers wiki/,
+/// sessions/ and the daily/weekly digests (`commands::collect_wiki_pages`);
+/// "all" is exactly that — raw/ is never indexed.
+fn scope_keeps(scope: &str, page: &str) -> bool {
+    match scope {
+        "wiki" => page.starts_with("wiki/"),
+        "sessions" => page.starts_with("sessions/"),
+        _ => true,
+    }
+}
+
+/// One `search` hit: the page's identity from its frontmatter, the chunk's
+/// position and snippet, and each retrieval arm's raw score.
+fn search_row(root: &Path, rank: usize, h: &commands::HybridHit) -> Value {
+    let fm = read_parts(&root.join(&h.page))
+        .map(|(fm, _)| fm)
+        .unwrap_or(Value::Null);
+    json!({
+        "rank": rank,
+        "page": h.page,
+        "title": fm_opt(&fm, "title").unwrap_or_else(|| h.stem.clone()),
+        "type": fm_str(&fm, "type"),
+        "confidence": fm_str(&fm, "confidence"),
+        "status": fm_str(&fm, "status"),
+        "line": h.line,
+        // char-based truncation keeps the snippet valid UTF-8.
+        "snippet": h.text.trim().chars().take(240).collect::<String>(),
+        "score_bm25": h.bm25,
+        "score_vec": h.similarity,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::raw_source_guard;
     use super::record_tool_call_at;
     use super::suspect_scan;
+    use super::{archive_inbox, collect_md, scope_keeps, search_row};
+    use crate::commands::HybridHit;
+    use crate::retrieval::Bm25Index;
+    use std::path::Path;
 
     #[test]
     fn raw_source_guard_refuses_secrets_before_any_write() {
@@ -2267,5 +2370,192 @@ mod tests {
         let mut log = vec![(now - 3_600, "recent".to_string())];
         record_tool_call_at(&mut log, now, "new");
         assert_eq!(log.len(), 2);
+    }
+
+    fn write(path: &Path, text: &str) {
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, text).unwrap();
+    }
+
+    // The guard sits in front of the raw/ copy, so a refusal changes nothing
+    // on disk: the source stays in _inbox/ and raw/ stays empty.
+    #[test]
+    fn archive_inbox_refuses_a_secret_and_leaves_the_inbox_file_in_place() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("_inbox/leak.md"),
+            "token: sk-abcdefghijklmnopqrstuvwxyz012345\n",
+        );
+        let err = archive_inbox(root, "leak.md", false).unwrap_err();
+        assert!(err.starts_with("refused: possible secrets ("), "{err}");
+        assert!(
+            root.join("_inbox/leak.md").is_file(),
+            "source must not move"
+        );
+        assert!(
+            collect_md(&root.join("raw")).is_empty(),
+            "nothing lands in raw/"
+        );
+    }
+
+    #[test]
+    fn archive_inbox_pii_follows_the_quarantine_setting_like_add_raw_source() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("_inbox/contact.md"),
+            "reach me at someone@example.com\n",
+        );
+        let err = archive_inbox(root, "contact.md", true).unwrap_err();
+        assert!(err.starts_with("refused: possible PII ("), "{err}");
+        assert!(root.join("_inbox/contact.md").is_file());
+        // Warn mode: the copy proceeds and the warning rides on the result.
+        let out = archive_inbox(root, "contact.md", false).unwrap();
+        assert_eq!(out["ok"], true);
+        assert!(
+            out["pii_warning"]
+                .as_str()
+                .unwrap()
+                .contains("possible PII detected"),
+            "{out}"
+        );
+        assert!(root.join("raw/contact.md").is_file());
+    }
+
+    #[test]
+    fn archive_inbox_copies_a_clean_source_to_raw_and_moves_it_aside() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(
+            &root.join("_inbox/My Clip.md"),
+            "plain prose, nothing sensitive\n",
+        );
+        let out = archive_inbox(root, "My Clip.md", true).unwrap();
+        assert_eq!(out["raw_path"], "raw/my-clip.md");
+        assert_eq!(out["src_slug"], "src-my-clip");
+        assert_eq!(out["archived"], "My Clip.md");
+        assert_eq!(
+            std::fs::read_to_string(root.join("raw/my-clip.md")).unwrap(),
+            "plain prose, nothing sensitive\n"
+        );
+        assert!(!root.join("_inbox/My Clip.md").exists());
+        assert!(root.join("_inbox/.archived/My Clip.md").is_file());
+    }
+
+    /// A three-page vault (two wiki notes, one session log) plus its BM25
+    /// index. The dense arm needs the bundled embedder, so these tests drive
+    /// `rank_hybrid` — the exact ranking glue the `search` tool runs — with
+    /// the dense arm skipped, as the tool itself does when no index exists.
+    fn indexed_vault() -> (tempfile::TempDir, Bm25Index) {
+        let dir = tempfile::tempdir().unwrap();
+        let pages = [
+            (
+                "wiki/scaling-laws.md",
+                "---\ntitle: \"Scaling laws\"\ntype: concept\nconfidence: high\nstatus: active\n---\n\
+                 # Scaling laws\n\nScaling laws describe how model performance grows with compute, \
+                 data and parameters: loss falls as a smooth power law in compute.[^src-kaplan]\n\n\
+                 [^src-kaplan]: raw/kaplan.md\n",
+            ),
+            (
+                "wiki/compute-budget.md",
+                "---\ntitle: \"Compute budget\"\ntype: concept\n---\n# Compute budget\n\n\
+                 How many GPU hours a training run may spend.\n",
+            ),
+            (
+                "sessions/2026-08/debug-session.md",
+                "# Session 2026-08-20\n\nUser: can you look at the flaky test in the scheduler?\n\n\
+                 Assistant: the retry loop races the timer. Unrelated: I skimmed the scaling laws \
+                 page for the compute figure and it was fine.\n",
+            ),
+        ];
+        let mut bm25 = Bm25Index::new();
+        for (rel, text) in pages {
+            write(&dir.path().join(rel), text);
+            let stem = Path::new(rel).file_stem().unwrap().to_str().unwrap();
+            bm25.upsert_page(rel, stem, &crate::embeddings::chunk_page(text));
+        }
+        (dir, bm25)
+    }
+
+    fn rank(root: &Path, bm25: &Bm25Index, query: &str, scope: &str) -> Vec<HybridHit> {
+        crate::commands::rank_hybrid(
+            root,
+            &crate::vector_index::VectorStore::default(),
+            None,
+            bm25,
+            query,
+            10,
+            None,
+            &|page| scope_keeps(scope, page),
+        )
+    }
+
+    fn pages(hits: &[HybridHit]) -> Vec<&str> {
+        hits.iter().map(|h| h.page.as_str()).collect()
+    }
+
+    // The old substring scan returned nothing for this question because no
+    // line contains it verbatim; ranked retrieval finds the note that answers it.
+    #[test]
+    fn search_ranks_the_note_answering_a_question_first() {
+        let (dir, bm25) = indexed_vault();
+        let hits = rank(
+            dir.path(),
+            &bm25,
+            "how model performance grows with compute",
+            "wiki",
+        );
+        assert_eq!(
+            pages(&hits).first(),
+            Some(&"wiki/scaling-laws.md"),
+            "{:?}",
+            pages(&hits)
+        );
+    }
+
+    #[test]
+    fn search_scope_wiki_excludes_sessions_and_scope_sessions_is_only_sessions() {
+        let (dir, bm25) = indexed_vault();
+        let wiki = rank(dir.path(), &bm25, "scaling laws", "wiki");
+        assert!(!wiki.is_empty());
+        assert!(
+            wiki.iter().all(|h| h.page.starts_with("wiki/")),
+            "{:?}",
+            pages(&wiki)
+        );
+        let sessions = rank(dir.path(), &bm25, "scaling laws", "sessions");
+        assert_eq!(pages(&sessions), vec!["sessions/2026-08/debug-session.md"]);
+    }
+
+    // `sessions/` sorts before `wiki/`, which is exactly why the old
+    // alphabetical scan put a passing mention above the page about the topic.
+    #[test]
+    fn search_scope_all_ranks_the_wiki_note_above_an_alphabetically_earlier_session() {
+        let (dir, bm25) = indexed_vault();
+        let hits = rank(dir.path(), &bm25, "scaling laws", "all");
+        let got = pages(&hits);
+        assert!(
+            got.contains(&"sessions/2026-08/debug-session.md"),
+            "{got:?}"
+        );
+        assert_eq!(got[0], "wiki/scaling-laws.md", "{got:?}");
+    }
+
+    #[test]
+    fn search_row_carries_frontmatter_identity_position_and_both_arm_scores() {
+        let (dir, bm25) = indexed_vault();
+        let hits = rank(dir.path(), &bm25, "scaling laws", "wiki");
+        let row = search_row(dir.path(), 1, &hits[0]);
+        assert_eq!(row["rank"], 1);
+        assert_eq!(row["page"], "wiki/scaling-laws.md");
+        assert_eq!(row["title"], "Scaling laws");
+        assert_eq!(row["type"], "concept");
+        assert_eq!(row["confidence"], "high");
+        assert_eq!(row["status"], "active");
+        assert!(row["line"].as_u64().unwrap() >= 1);
+        assert!(row["snippet"].as_str().unwrap().contains("Scaling laws"));
+        assert!(row["score_bm25"].as_f64().unwrap() > 0.0, "{row}");
+        assert!(row["score_vec"].is_null(), "no dense arm ran: {row}");
     }
 }

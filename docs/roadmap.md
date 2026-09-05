@@ -89,7 +89,7 @@ Conversation {
 }
 ```
 
-Each `Conversation` is serialized to one `raw/` markdown file with frontmatter (`source`, vendor `id`, `created`, `turn_count`) + a clean transcript body. **`raw/` immutability is preserved identically in all four paths** because every path funnels writes through the same guard: MCP `add_raw_source` refuses to overwrite (returns error), the Tauri `write_file` ingest path writes only to `raw/conversations/<source>/<id>.md` with a pre-existence check, and the CLI uses `add_raw_source` in-process. `raw/` is never edited or deleted — corrections go to a `wiki/` page per `CLAUDE.md`. (Optional hard guard: `chflags uchg` on macOS / `chattr +i` on Linux for the `raw/` tree.)
+Each `Conversation` is serialized to one `raw/` markdown file with frontmatter (`source`, vendor `id`, `created`, `turn_count`) + a clean transcript body. **`raw/` is never overwritten by any of the four paths, but each path carries its own check — there is no single shared funnel**: MCP `add_raw_source` refuses an existing name (returns error), MCP `archive_inbox_source` always picks a fresh `raw/<slug>[-n].md` (and, like `add_raw_source`, runs the secrets/PII scan first), the Tauri `write_file` ingest path writes only to `raw/conversations/<source>/<id>.md` with a pre-existence check, and the CLI uses `add_raw_source` in-process. `raw/` is never edited or deleted — corrections go to a `wiki/` page per `CLAUDE.md`. (Optional hard guard: `chflags uchg` on macOS / `chattr +i` on Linux for the `raw/` tree.)
 
 ### Idempotency / dedup (shared)
 

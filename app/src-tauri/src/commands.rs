@@ -4303,9 +4303,245 @@ pub(crate) fn recency_tie_break(hits: &mut [crate::vector_index::Hit]) {
     }
 }
 
-/// Semantic search: embed the query, return top-`k` chunk hits from the index,
-/// with each hit's chunk TEXT reconstructed so callers (e.g. Ask) can inline the
-/// passage instead of re-reading the whole page.
+/// One hybrid-retrieval hit, keeping each arm's raw score beside the fused
+/// rank score. Shared by the Ask page (`semantic_search` projects it to
+/// `ScoredChunk`) and the MCP `search` tool.
+pub(crate) struct HybridHit {
+    pub page: String,
+    pub stem: String,
+    pub section: usize,
+    /// 1-based line in the page where the chunk starts.
+    pub line: usize,
+    pub text: String,
+    /// `rrf_fuse` score — orders hits, says nothing about relevance.
+    pub score: f32,
+    /// Dense cosine; `None` when only the lexical arm surfaced the chunk.
+    pub similarity: Option<f32>,
+    /// BM25 score; `None` when only the dense arm surfaced the chunk.
+    pub bm25: Option<f32>,
+}
+
+pub(crate) struct HybridSearch {
+    pub hits: Vec<HybridHit>,
+    /// Why the dense arm did not run — no index for this vault, or one built
+    /// with a retired model — in which case `hits` are lexical-only.
+    pub dense_skipped: Option<&'static str>,
+}
+
+/// The app's one retrieval path: dense (embedding) and lexical (BM25) arms
+/// fused by RRF, capped per page, reconstructed to chunk text. `keep` drops
+/// pages from both arms BEFORE the candidate-pool cut, so a narrow scope on a
+/// session-heavy vault is not starved by it. A missing or retired-model index
+/// degrades to the lexical arm alone (`dense_skipped`) rather than to nothing;
+/// callers decide what that means for them.
+// Distinct borrows of caller-owned state plus the query's parts; a struct
+// would only move the same list one level down (as with `embed_one_page`).
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn hybrid_search(
+    app: &tauri::AppHandle,
+    llm: &tauri::State<'_, LocalLlmState>,
+    cache: &VectorCache,
+    bm25_cache: &crate::retrieval::Bm25Cache,
+    root: &std::path::Path,
+    query: &str,
+    k: usize,
+    provider: &str,
+    model: &str,
+    range: Option<&DateRange>,
+    keep: &(dyn Fn(&str) -> bool + Sync),
+) -> Result<HybridSearch, String> {
+    let t0 = std::time::Instant::now();
+    let root_str = root.to_string_lossy();
+    let store = cache.get(&VectorStore::path_for(&root_str)?);
+    let load_ms = perf::ms(t0.elapsed());
+    // Stale-index guard: after an embedding-model change (e.g. the bundled
+    // model swap) the stored vectors live in a different space than the query
+    // embedding — skip the dense arm instead of cosining across incompatible
+    // spaces.
+    let dense_skipped = if store.records.is_empty() {
+        Some("no embedding index for this vault yet — BM25 (lexical) hits only")
+    } else if store.model != format!("{provider}:{model}") {
+        Some("embedding index was built with a retired model — BM25 (lexical) hits only until it is rebuilt")
+    } else {
+        None
+    };
+    let t_embed = std::time::Instant::now();
+    let query_vec = match dense_skipped {
+        Some(_) => None,
+        None => {
+            // The embed arm runs on the quote-stripped query (the phrase words
+            // stay in it, so unquoted ranking behavior is unchanged).
+            let (_, clean_query) = crate::retrieval::parse_phrases(query);
+            let mut q = embed_texts(
+                app.clone(),
+                (*llm).clone(),
+                provider,
+                model,
+                crate::local_llm::EmbedRole::Query,
+                vec![clean_query],
+            )
+            .await?;
+            Some(q.pop().unwrap_or_default())
+        }
+    };
+    let embed_ms = perf::ms(t_embed.elapsed());
+    let bm25 = bm25_cache.get(&crate::retrieval::Bm25Index::path_for(&root_str)?);
+    let t_rank = std::time::Instant::now();
+    let hits = rank_hybrid(
+        root,
+        &store,
+        query_vec.as_deref(),
+        &bm25,
+        query,
+        k,
+        range,
+        keep,
+    );
+    perf::log(
+        "semantic_search",
+        &[
+            ("load_store_ms", load_ms),
+            ("embed_query_ms", embed_ms),
+            ("rank_ms", perf::ms(t_rank.elapsed())),
+            ("total_ms", perf::ms(t0.elapsed())),
+            ("records", store.records.len() as f64),
+            ("returned", hits.len() as f64),
+        ],
+    );
+    Ok(HybridSearch {
+        hits,
+        dense_skipped,
+    })
+}
+
+/// Rank one query against loaded indexes: fuse the dense and lexical arms
+/// (RRF), apply the optional date window, cap chunks per page, and
+/// reconstruct each surviving chunk's text from its page under `root`.
+/// `query_vec` is `None` when the dense arm is unavailable.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn rank_hybrid(
+    root: &std::path::Path,
+    store: &VectorStore,
+    query_vec: Option<&[f32]>,
+    bm25: &crate::retrieval::Bm25Index,
+    query: &str,
+    k: usize,
+    range: Option<&DateRange>,
+    keep: &(dyn Fn(&str) -> bool + Sync),
+) -> Vec<HybridHit> {
+    // Quoted phrases become an exact-match filter on the reconstructed chunk
+    // text; the BM25 arm runs on the quote-stripped query.
+    let (phrases, clean_query) = crate::retrieval::parse_phrases(query);
+    let k = k.clamp(1, 50);
+    // Pull a candidate pool from each arm wider than `k` before fusing: RRF
+    // needs enough overlap between the dense and lexical rankings to reorder
+    // usefully, and a lexical-only top hit outside the dense top-k would
+    // never surface if both arms were pre-truncated to k. Both arms score
+    // every candidate anyway, so asking each for its whole ranking and
+    // applying `keep` before the pool cut is free — and it is what keeps a
+    // scope that excludes most of the index from being starved by the cut.
+    let pool = (k * 5).clamp(20, 50);
+    let dense_hits: Vec<VecHit> = match query_vec {
+        Some(qv) => store
+            .search(qv, store.records.len())
+            .into_iter()
+            .filter(|h| keep(&h.page))
+            .take(pool)
+            .collect(),
+        None => Vec::new(),
+    };
+    let lexical_hits: Vec<crate::retrieval::Bm25Hit> = bm25
+        .search(&clean_query, bm25.len())
+        .into_iter()
+        .filter(|h| keep(&h.page))
+        .take(pool)
+        .collect();
+    // At most this many chunks from any one page. Measured on the real vault
+    // (`examples/corpus_mix_probe.rs`, 14.5k chunks): 2 raised distinct pages
+    // across the query set from 87 to 95 with no query getting worse, while 1
+    // was worse — it evicted a page's genuinely-relevant second chunk (the BPE
+    // query dropped from 12 wiki hits to 9, backfilled with session noise).
+    const PAGE_CAP: usize = 2;
+    // If one arm is empty (fresh vault, `.mxb` not yet bootstrapped, dense arm
+    // skipped), `rrf_fuse` degrades to the other arm's order unchanged — see
+    // `rrf_fuse_empty_lexical_preserves_dense_order` in retrieval.rs.
+    // Keep each candidate's RAW arm scores before fusing: rrf_fuse replaces
+    // score with a rank-based value, which orders well but says nothing about
+    // whether a hit is relevant at all. Callers need the cosine to reject
+    // "nothing in the vault answers this" instead of presenting the least-bad
+    // chunks.
+    let dense_by_id: std::collections::HashMap<(String, usize), f32> = dense_hits
+        .iter()
+        .map(|h| ((h.page.clone(), h.section), h.score))
+        .collect();
+    let bm25_by_id: std::collections::HashMap<(String, usize), f32> = lexical_hits
+        .iter()
+        .map(|h| ((h.page.clone(), h.section), h.score))
+        .collect();
+    // Fuse WIDER than k, then cap chunks-per-page, then cut to k. Fusing
+    // straight to k and capping after would only shrink the list — the whole
+    // point of the cap is to let a DISTINCT page take the slot a near-duplicate
+    // would have held.
+    let mut fused = crate::retrieval::rrf_fuse(&dense_hits, &lexical_hits, pool);
+    // Time-anchored question (Q4 item 8): keep only dated-tier pages that
+    // overlap the asked window, then let recency break exact score ties.
+    // BEFORE cap_per_page — the pool has headroom, so a surviving page can
+    // take the slot a filtered-out one would have burned. No range ⇒ inert.
+    if let Some(r) = range {
+        fused.retain(|h| page_in_date_range(&h.page, r));
+        recency_tie_break(&mut fused);
+    }
+    let hits = crate::retrieval::cap_per_page(fused, PAGE_CAP, k);
+    // Reconstruct each hit's chunk TEXT from its page (the index stores only
+    // vectors+hashes). No cross-hit cache: k is capped at 50 (realistically
+    // <=12), pages are small markdown files, and re-reading one a second hit
+    // shares is not a measurable cost — so this just calls the pure helper.
+    let mut out: Vec<HybridHit> = Vec::with_capacity(hits.len());
+    for h in hits {
+        let Ok(content) = std::fs::read_to_string(root.join(&h.page)) else {
+            continue;
+        };
+        match chunk_text_at(&content, h.section) {
+            Some(text)
+                if !text.trim().is_empty()
+                    && crate::retrieval::text_matches_phrases(&text, &phrases) =>
+            {
+                let id = (h.page.clone(), h.section);
+                out.push(HybridHit {
+                    line: chunk_line(&content, &text),
+                    similarity: dense_by_id.get(&id).copied(),
+                    bm25: bm25_by_id.get(&id).copied(),
+                    page: h.page,
+                    stem: h.stem,
+                    section: h.section,
+                    text,
+                    score: h.score,
+                })
+            }
+            _ => {} // missing file, stale section index, or phrase miss → skip
+        }
+    }
+    out
+}
+
+/// 1-based line where `chunk` begins in `content`: its first non-blank line,
+/// located in the NFC form of the page (`chunk_page` normalizes before it
+/// splits, so the chunk's lines are NFC). 1 when it cannot be found.
+// ponytail: first occurrence wins, so a heading repeated verbatim resolves to
+// its earliest copy; a byte-offset walk through chunk_page would be exact.
+fn chunk_line(content: &str, chunk: &str) -> usize {
+    let Some(first) = chunk.lines().map(str::trim).find(|l| !l.is_empty()) else {
+        return 1;
+    };
+    crate::norm::nfc(content)
+        .lines()
+        .position(|l| l.trim() == first)
+        .map_or(1, |i| i + 1)
+}
+
+/// Semantic search: the hybrid retrieval above, projected to `ScoredChunk` —
+/// each hit with its chunk TEXT reconstructed so callers (e.g. Ask) can inline
+/// the passage instead of re-reading the whole page.
 // Four of the arguments are Tauri-injected state rather than things a caller
 // passes; the invocable surface is (query, k, provider, model, range).
 #[allow(clippy::too_many_arguments)]
@@ -4322,120 +4558,38 @@ pub async fn semantic_search(
     model: String,
     range: Option<DateRange>,
 ) -> Result<Vec<ScoredChunk>, String> {
-    let t0 = std::time::Instant::now();
-    // Quoted phrases become an exact-match filter on the reconstructed chunk
-    // text; the embed/BM25 arms run on the quote-stripped query (the phrase
-    // words stay in it, so unquoted ranking behavior is unchanged).
-    let (phrases, clean_query) = crate::retrieval::parse_phrases(&query);
     let root = require_root(&vault)?;
-    let index_path = VectorStore::path_for(&root.to_string_lossy())?;
-    let store = cache.get(&index_path);
-    let load_ms = perf::ms(t0.elapsed());
-    if store.records.is_empty() {
-        return Ok(Vec::new());
-    }
-    // Stale-index guard: after an embedding-model change (e.g. the bundled
-    // model swap) the stored vectors live in a different space than the query
-    // embedding — return empty (reads as "reindex needed") instead of cosining
-    // across incompatible spaces.
-    if store.model != format!("{provider}:{model}") {
-        return Ok(Vec::new());
-    }
-    let k = k.clamp(1, 50);
-    let t_embed = std::time::Instant::now();
-    let mut q = embed_texts(
-        app,
-        llm,
+    let found = hybrid_search(
+        &app,
+        &llm,
+        &cache,
+        &bm25_cache,
+        &root,
+        &query,
+        k,
         &provider,
         &model,
-        crate::local_llm::EmbedRole::Query,
-        vec![clean_query.clone()],
+        range.as_ref(),
+        &|_| true,
     )
     .await?;
-    let embed_ms = perf::ms(t_embed.elapsed());
-    let qv = q.pop().unwrap_or_default();
-    let t_scan = std::time::Instant::now();
-    // Pull a candidate pool from each arm wider than `k` before fusing: RRF
-    // needs enough overlap between the dense and lexical rankings to reorder
-    // usefully, and a lexical-only top hit outside the dense top-k would
-    // never surface if both arms were pre-truncated to k.
-    let pool = (k * 5).clamp(20, 50);
-    // At most this many chunks from any one page. Measured on the real vault
-    // (`examples/corpus_mix_probe.rs`, 14.5k chunks): 2 raised distinct pages
-    // across the query set from 87 to 95 with no query getting worse, while 1
-    // was worse — it evicted a page's genuinely-relevant second chunk (the BPE
-    // query dropped from 12 wiki hits to 9, backfilled with session noise).
-    const PAGE_CAP: usize = 2;
-    let dense_hits = store.search(&qv, pool);
-    let bm25_path = crate::retrieval::Bm25Index::path_for(&root.to_string_lossy())?;
-    let bm25 = bm25_cache.get(&bm25_path);
-    let lexical_hits = bm25.search(&clean_query, pool);
-    // If the lexical index is empty (fresh vault, or `.mxb` not yet
-    // bootstrapped), `rrf_fuse` degrades to the dense order unchanged — see
-    // `rrf_fuse_empty_lexical_preserves_dense_order` in retrieval.rs.
-    // Keep each candidate's DENSE COSINE before fusing: rrf_fuse replaces score
-    // with a rank-based value, which orders well but says nothing about whether
-    // a hit is relevant at all. Callers need the cosine to reject "nothing in
-    // the vault answers this" instead of presenting the least-bad chunks.
-    let dense_by_id: std::collections::HashMap<(String, usize), f32> = dense_hits
-        .iter()
-        .map(|h| ((h.page.clone(), h.section), h.score))
-        .collect();
-    // Fuse WIDER than k, then cap chunks-per-page, then cut to k. Fusing
-    // straight to k and capping after would only shrink the list — the whole
-    // point of the cap is to let a DISTINCT page take the slot a near-duplicate
-    // would have held.
-    let mut fused = crate::retrieval::rrf_fuse(&dense_hits, &lexical_hits, pool);
-    // Time-anchored question (Q4 item 8): keep only dated-tier pages that
-    // overlap the asked window, then let recency break exact score ties.
-    // BEFORE cap_per_page — the pool has headroom, so a surviving page can
-    // take the slot a filtered-out one would have burned. No range ⇒ inert.
-    if let Some(r) = &range {
-        fused.retain(|h| page_in_date_range(&h.page, r));
-        recency_tie_break(&mut fused);
+    // Ask reads an empty result as "reindex needed" (chat.ts): a missing or
+    // retired-model index yields nothing here, not a lexical-only list.
+    if found.dense_skipped.is_some() {
+        return Ok(Vec::new());
     }
-    let hits = crate::retrieval::cap_per_page(fused, PAGE_CAP, k);
-    let scan_ms = perf::ms(t_scan.elapsed());
-    // Reconstruct each hit's chunk TEXT from its page (the index stores only
-    // vectors+hashes). No cross-hit cache: k is capped at 50 (realistically
-    // <=12), pages are small markdown files, and re-reading one a second hit
-    // shares is not a measurable cost — so this just calls the pure helper.
-    let t_reconstruct = std::time::Instant::now();
-    let mut out: Vec<ScoredChunk> = Vec::with_capacity(hits.len());
-    for h in hits {
-        let Ok(content) = std::fs::read_to_string(root.join(&h.page)) else {
-            continue;
-        };
-        match chunk_text_at(&content, h.section) {
-            Some(text)
-                if !text.trim().is_empty()
-                    && crate::retrieval::text_matches_phrases(&text, &phrases) =>
-            {
-                out.push(ScoredChunk {
-                    similarity: dense_by_id.get(&(h.page.clone(), h.section)).copied(),
-                    page: h.page,
-                    stem: h.stem,
-                    section: h.section,
-                    text,
-                    score: h.score,
-                })
-            }
-            _ => {} // missing file, stale section index, or phrase miss → skip
-        }
-    }
-    perf::log(
-        "semantic_search",
-        &[
-            ("load_store_ms", load_ms),
-            ("embed_query_ms", embed_ms),
-            ("scan_ms", scan_ms),
-            ("reconstruct_ms", perf::ms(t_reconstruct.elapsed())),
-            ("total_ms", perf::ms(t0.elapsed())),
-            ("records", store.records.len() as f64),
-            ("returned", out.len() as f64),
-        ],
-    );
-    Ok(out)
+    Ok(found
+        .hits
+        .into_iter()
+        .map(|h| ScoredChunk {
+            page: h.page,
+            stem: h.stem,
+            section: h.section,
+            text: h.text,
+            score: h.score,
+            similarity: h.similarity,
+        })
+        .collect())
 }
 
 #[derive(serde::Serialize)]

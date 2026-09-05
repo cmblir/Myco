@@ -319,8 +319,9 @@ pub fn run() {
             // project switches with no restart. Best-effort: a bind failure
             // never blocks startup.
             let mcp_ct = tokio_util::sync::CancellationToken::new();
+            let mcp_app = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = mcp_native::serve(mcp_ct).await {
+                if let Err(e) = mcp_native::serve(mcp_app, mcp_ct).await {
                     eprintln!("native MCP server failed to start: {e}");
                 }
             });

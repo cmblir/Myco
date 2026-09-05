@@ -15,7 +15,7 @@ maintain the wiki directly, alongside the myco desktop app.
 | `stats` | Page count, type distribution, raw source count. |
 | `list_pages` | List pages with frontmatter, optionally filtered by type/folder. |
 | `read_page` | Read frontmatter + body + outbound links. |
-| `search` | TF-IDF search across the wiki (Korean and English tokens). |
+| `search` | TF-IDF search across the wiki (Korean and English tokens). The app's built-in native server instead runs the app's hybrid retrieval — local embeddings + BM25, rank-fused — with a `scope` of wiki / sessions / all. |
 | `folder_tree` | Folder structure under wiki/. |
 | `recent_log` | Tail of wiki/log.md. |
 | `list_raw_sources` | List immutable source files under raw/. |
