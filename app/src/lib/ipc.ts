@@ -1248,4 +1248,70 @@ export const ipc = {
     invoke<PanicEntry[]>("recent_panics", { limit }),
   clearPanicLog: () => invoke<null>("clear_panic_log"),
   osVersion: () => invoke<string>("os_version"),
+  // Harvest queue (Overview) + judgement stage (Ingest). Multi-word args go
+  // camelCase like every wrapper above (Tauri 2's default arg-key mapping).
+  /** Sessions worth promoting, ranked by nearest wiki cluster, plus the
+   *  buckets the ranker refused — the queue is honest about what it hides. */
+  harvestCandidates: (limit = 20) =>
+    invoke<HarvestCandidates>("harvest_candidates", { limit }),
+  /** COPY the chosen sessions into `_inbox/` (originals untouched); the
+   *  normal inbox pass turns the copies into pages. */
+  harvestRun: (paths: string[]) =>
+    invoke<HarvestRunResult>("harvest_run", { paths }),
+  /** Drop / log / harvest verdict for a source BEFORE any file is written. */
+  judgeSource: (text: string, size_bytes: number) =>
+    invoke<SourceVerdict>("judge_source", { text, sizeBytes: size_bytes }),
+  /** One judgement-log line for a source that produced no files. */
+  recordNoop: (rel: string, reason: string) =>
+    invoke<void>("record_noop", { rel, reason }),
 };
+
+// --- Harvest queue / judgement types (harvest_candidates & co.) -------------
+
+export interface HarvestCandidate {
+  /** Absolute path of the session file. */
+  path: string;
+  /** Vault-relative path (`sessions/<name>`). */
+  rel: string;
+  size_bytes: number;
+  /** Epoch seconds. */
+  mtime: number;
+  title: string;
+  /** Opening lines of the transcript, speaker labels kept (`[User] …`). */
+  preview: string[];
+  /** Nearest existing wiki page and its similarity; null when unindexed. */
+  cluster: { page: string; score: number } | null;
+  est_citations: number;
+  kind: "session" | "raw";
+}
+
+/** Why a scanned file is NOT in the queue, by bucket. Fixed key set — the
+ *  exclusion table renders them in `EXCLUDED_ORDER` (harvest.ts). */
+export interface HarvestExcluded {
+  duplicate: number;
+  boilerplate: number;
+  too_small: number;
+  too_large: number;
+  already_harvested: number;
+}
+
+export interface HarvestCandidates {
+  items: HarvestCandidate[];
+  excluded: HarvestExcluded;
+  total_scanned: number;
+  distinct_bodies: number;
+}
+
+export interface HarvestRunResult {
+  copied: number;
+  /** `_inbox/<name>` of every copy that landed. */
+  inbox_rels: string[];
+  skipped: { path: string; reason: string }[];
+}
+
+export interface SourceVerdict {
+  verdict: "drop" | "log" | "harvest";
+  reason: string;
+  /** The rule that decided, e.g. `junk_reason::min_bytes`. */
+  rule: string;
+}

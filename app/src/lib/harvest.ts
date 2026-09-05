@@ -1,0 +1,90 @@
+// Harvest queue (Overview → 수확대) — the pure half. The component renders;
+// these decide what the selection adds up to, how the exclusion buckets are
+// ordered, and what the one primary button says. Numbers only: no ipc here,
+// so every rule is unit-testable in node.
+
+import type { HarvestCandidate, HarvestExcluded, ProvenanceRow } from "./ipc";
+
+/** Exclusion buckets in the order the design lists them: the two junk
+ *  buckets first (they are what makes the queue trustworthy), then the size
+ *  buckets, then what a previous run already took. Fixed — the table never
+ *  re-sorts by count. */
+export const EXCLUDED_ORDER = [
+  "duplicate",
+  "boilerplate",
+  "too_small",
+  "too_large",
+  "already_harvested",
+] as const;
+export type ExcludedKey = (typeof EXCLUDED_ORDER)[number];
+
+export function excludedRows(
+  ex: HarvestExcluded,
+): { key: ExcludedKey; count: number }[] {
+  return EXCLUDED_ORDER.map((key) => ({ key, count: ex[key] }));
+}
+
+/** The one-line "N auto-excluded" count is JUNK only — duplicates and
+ *  boilerplate. Size buckets are held or below the floor, not garbage, and
+ *  folding them in would overstate what the sieve threw away. */
+export function junkExcluded(ex: HarvestExcluded): number {
+  return ex.duplicate + ex.boilerplate;
+}
+
+export interface SelectionTotals {
+  count: number;
+  bytes: number;
+  /** Sum of the ranker's per-session citation estimates. */
+  citations: number;
+}
+
+export function selectionTotals(
+  items: readonly HarvestCandidate[],
+  selected: ReadonlySet<string>,
+): SelectionTotals {
+  let count = 0;
+  let bytes = 0;
+  let citations = 0;
+  for (const c of items) {
+    if (!selected.has(c.path)) continue;
+    count++;
+    bytes += c.size_bytes;
+    citations += c.est_citations;
+  }
+  return { count, bytes, citations };
+}
+
+/** "{n}개 수확" — the primary button and the completion toast share it. */
+export function harvestLabel(template: string, n: number): string {
+  return template.replace("{n}", n.toLocaleString());
+}
+
+export function formatKb(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  return `${kb < 100 ? kb.toFixed(1) : Math.round(kb).toLocaleString()} KB`;
+}
+
+/** Distinct `[^src-…]` sources cited anywhere in the wiki — the number the
+ *  hero moves. Nine on the owner's vault the day this was measured. */
+export function distinctCitations(rows: readonly ProvenanceRow[]): number {
+  const slugs = new Set<string>();
+  for (const r of rows) for (const s of r.sources) slugs.add(s.slug);
+  return slugs.size;
+}
+
+/** Category colour token for a cluster page from its frontmatter `type`
+ *  (link-graph meta). Untyped pages read as concepts — the live violet. */
+export function clusterColorVar(type: string | undefined): string {
+  switch (type) {
+    case "source-summary":
+      return "var(--c-source)";
+    case "entity":
+    case "technique":
+    case "analysis":
+    case "overview":
+      return `var(--c-${type})`;
+    default:
+      return "var(--c-concept)";
+  }
+}

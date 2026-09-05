@@ -2862,6 +2862,80 @@ function mockInvoke(
       return Promise.resolve(null);
     case "os_version":
       return Promise.resolve("macOS 14.5 (mock)");
+    // Harvest queue (Overview) — the ranked sessions plus the buckets the
+    // ranker refused. Copies already harvested drop out of `items` so the
+    // queue shrinks after a run, the way the real ledger makes it.
+    case "harvest_candidates": {
+      const limit = Number(args.limit ?? 20);
+      const items = MOCK_HARVEST.filter((c) => !mockHarvested.has(c.path));
+      return Promise.resolve({
+        items: items.slice(0, limit),
+        excluded: {
+          ...MOCK_HARVEST_EXCLUDED,
+          already_harvested: mockHarvested.size,
+        },
+        total_scanned: 1473,
+        distinct_bodies: 719,
+      });
+    }
+    case "harvest_run": {
+      // COPY into the mock inbox (never touch the "original"), so the inbox
+      // pass that follows has something real to ingest.
+      const paths = Array.isArray(args.paths) ? (args.paths as string[]) : [];
+      const inbox_rels: string[] = [];
+      const skipped: { path: string; reason: string }[] = [];
+      for (const p of paths) {
+        const c = MOCK_HARVEST.find((x) => x.path === p);
+        if (!c || mockHarvested.has(p)) {
+          skipped.push({ path: p, reason: c ? "already harvested" : "not a candidate" });
+          continue;
+        }
+        const name = p.split("/").pop() ?? "session.md";
+        mockInbox.set(
+          `${VAULT}/_inbox/${name}`,
+          `# ${c.title}\n\n${c.preview.join("\n")}\n`,
+        );
+        mockHarvested.add(p);
+        inbox_rels.push(`_inbox/${name}`);
+      }
+      return Promise.resolve({ copied: inbox_rels.length, inbox_rels, skipped });
+    }
+    // Judgement stage (Ingest): the size rules of backfill.rs/distill.rs's
+    // junk_reason, so the drop / log / harvest paths are all reachable by
+    // pasting more or less text under ?mock=1.
+    case "judge_source": {
+      const text = String(args.text ?? "");
+      const bytes = Number(args.sizeBytes ?? text.length);
+      if (bytes < 200) {
+        return Promise.resolve({
+          verdict: "drop",
+          reason: `${bytes} B < 200 B`,
+          rule: "junk_reason::min_bytes",
+        });
+      }
+      if (/\[\[TASK_DONE\]\]/.test(text) && bytes < 1100) {
+        return Promise.resolve({
+          verdict: "drop",
+          reason: "duplicate body (fingerprint seen 269×)",
+          rule: "ledger::fingerprint",
+        });
+      }
+      if (bytes < 8 * 1024) {
+        return Promise.resolve({
+          verdict: "log",
+          reason: `${bytes} B < 8 KB — below the wikify floor`,
+          rule: "backfill::MIN_BYTES",
+        });
+      }
+      return Promise.resolve({
+        verdict: "harvest",
+        reason: `${(bytes / 1024).toFixed(1)} KB of prose`,
+        rule: "judge::pass",
+      });
+    }
+    case "record_noop":
+      mockNoops.push({ rel: String(args.rel ?? ""), reason: String(args.reason ?? "") });
+      return Promise.resolve(undefined);
     default:
       // Reject, like the real Tauri does for a command that is not registered.
       // Resolving `undefined` instead is how the mock hid a broken feature for
@@ -3047,6 +3121,8 @@ export function installTauriMock(): void {
     emit: emitMock,
     clip: emitClipSaved,
     inbox: () => [...mockInbox.keys()],
+    /// Judgement-log lines written by record_noop (drop / all-NOOP endings).
+    noops: () => [...mockNoops],
     /// Patch the mock's settings. The Settings UI cannot reach every
     /// combination — its provider picker only lists ENABLED providers, so a
     /// vault configured for the CLI cannot be switched to the builtin model
@@ -3065,3 +3141,121 @@ export function installTauriMock(): void {
     "sample nodes",
   );
 }
+
+// --- Harvest queue fixtures (harvest_candidates / harvest_run) ---------------
+// Twelve sessions shaped like the owner's vault: dated stems, 8–200 KB, the
+// nearest mock wiki page as the cluster, and an opening exchange so the queue
+// rows have something to preview. The aggregate buckets are the MEASURED
+// numbers from that vault (1,473 files → 719 distinct bodies), not invented.
+
+const MOCK_HARVEST_EXCLUDED = {
+  duplicate: 754,
+  boilerplate: 60,
+  too_small: 1231,
+  too_large: 3,
+  already_harvested: 0,
+};
+
+/** Paths harvested this browser session — they leave the queue for good. */
+const mockHarvested = new Set<string>();
+/** Judgement log lines (`record_noop`) — inspectable from a test. */
+const mockNoops: { rel: string; reason: string }[] = [];
+
+function harvestRow(
+  day: string,
+  stem: string,
+  kb: number,
+  cluster: string,
+  score: number,
+  cites: number,
+  preview: string[],
+): {
+  path: string;
+  rel: string;
+  size_bytes: number;
+  mtime: number;
+  title: string;
+  preview: string[];
+  cluster: { page: string; score: number } | null;
+  est_citations: number;
+  kind: "session" | "raw";
+} {
+  const name = `${day}-${stem}.md`;
+  return {
+    path: `${VAULT}/sessions/2026-08/${name}`,
+    rel: `sessions/2026-08/${name}`,
+    size_bytes: Math.round(kb * 1024),
+    mtime: Math.floor(new Date(`${day}T10:00:00`).getTime() / 1000),
+    title: `${day}-${stem}`,
+    preview,
+    cluster: { page: `wiki/${cluster}.md`, score },
+    est_citations: cites,
+    kind: "session",
+  };
+}
+
+const MOCK_HARVEST = [
+  harvestRow("2026-08-29", "rerank-thresholds", 42.1, "analysis-rlhf-vs-dpo", 0.81, 4, [
+    "[User] Lowering the relevance floor to 0.50 raises recall but drags wrong answers up with it.",
+    "[lead] Measured the two floors separately: intent 0.65 / relevance 0.50 gives top-5 precision 0.72.",
+    "[User] Then strip every place that used the RRF score as a confidence.",
+    "[lead] Score is a rank, not a certainty. The label copy changes too.",
+  ]),
+  harvestRow("2026-08-27", "vector-store-choice", 18.4, "vector-database", 0.74, 3, [
+    "[User] Should we add LanceDB? The chunk count keeps growing.",
+    "[lead] Brute force is 12 ms on the current corpus. An index build, a dependency and a format lock buy nothing yet.",
+    "[User] When do we switch?",
+    "[lead] Past 100 ms per query. Until then reusing SEED is enough.",
+  ]),
+  harvestRow("2026-08-25", "galaxy-clustering", 96.7, "transformer-architecture", 0.69, 5, [
+    "[User] The graph reads as one blob, especially on the demo vault.",
+    "[lead] Subfolder-first with a Louvain fallback splits it into 71 topics.",
+    "[User] Colours? One hue per galaxy, shades for the rest.",
+  ]),
+  harvestRow("2026-08-24", "citation-format", 11.2, "source-constitutional-ai-paper", 0.77, 2, [
+    "[User] Pin the citation anchor to [^src-…]; the formats are all over the place.",
+    "[lead] One regex in the parser. The existing nine citations pass through untouched.",
+    "[User] Good. Put it in the docs as well.",
+  ]),
+  harvestRow("2026-08-22", "session-backfill-design", 63.5, "analysis-scaling-vs-data", 0.66, 3, [
+    "[User] 1,400 sessions and not one reached the wiki — auto-ingest only watches _inbox.",
+    "[lead] Promotion it is: sessions/ stays a read-only archive, only copies enter the queue.",
+    "[User] Is filtering by size fine? 990 of them are under 2 KB.",
+    "[lead] 8 KB floor, 200 KB ceiling. Anything above is held, not thrown away.",
+  ]),
+  harvestRow("2026-08-20", "tokenizer-notes", 24.9, "byte-pair-encoding", 0.83, 4, [
+    "[User] Why does the BPE merge order change the result?",
+    "[lead] Merges are greedy, so an earlier merge changes the counts of later candidates. Order IS the vocabulary.",
+    "[User] Leave one example — it goes in the wiki.",
+  ]),
+  harvestRow("2026-08-19", "attention-heads", 15.8, "multi-head-attention", 0.86, 2, [
+    "[User] Do the heads actually attend to different things?",
+    "[lead] The attention maps split into positional-bias heads and syntactic heads, but it varies by layer.",
+    "[User] Record the observation, not a claim.",
+  ]),
+  harvestRow("2026-08-18", "notch-voice-capture", 38.0, "tool-use", 0.61, 3, [
+    "[User] I want to record from the notch and drop straight into the vault.",
+    "[lead] Capture → whisper → raw/voice-*.md. raw/ is immutable, so the summary is a separate file.",
+    "[User] And on failure? Don't die quietly — leave it in the tray.",
+  ]),
+  harvestRow("2026-08-16", "immutable-raw", 9.6, "source-attention-is-all-you-need", 0.58, 2, [
+    "[User] If an agent edits raw/, the original is gone.",
+    "[lead] The read-only rule goes on all three paths: app, MCP, agents.",
+    "[User] Write the rule into CLAUDE.md too.",
+  ]),
+  harvestRow("2026-08-14", "distill-empty-runs", 51.3, "distillation", 0.72, 3, [
+    "[User] Distill ran 97 times and the manifests are nearly empty.",
+    "[lead] Sessions score as Summary tier, and the Summary stage structurally excludes sessions/.",
+    "[User] So the tier isn't the problem — the stage filter is.",
+  ]),
+  harvestRow("2026-08-12", "graph-render-loop", 12.7, "inference-optimization", 0.55, 2, [
+    "[User] Can't we stop the render loop when nothing moves?",
+    "[lead] The animation is the requirement. A living galaxy is the point, so idling is a feature removal.",
+    "[User] Then pin it down in a comment.",
+  ]),
+  harvestRow("2026-08-10", "answer-grounding", 28.4, "rag", 0.79, 3, [
+    "[User] The answers sound plausible but cite nothing.",
+    "[lead] Going extractive: quote the note verbatim, and say so when there is nothing to quote.",
+    "[User] When there's no evidence, say 'no evidence' instead of staying silent.",
+  ]),
+];
