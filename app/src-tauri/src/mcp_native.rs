@@ -332,6 +332,74 @@ fn task_page_path(root: &Path, page: &str) -> Result<PathBuf, String> {
     Ok(target)
 }
 
+/// A wiki-relative page that must already exist, confined to wiki/. The
+/// not-found text names the next call to make instead of the host path the
+/// filesystem error would have carried.
+fn wiki_page_path(root: &Path, filename: &str) -> Result<PathBuf, String> {
+    let Some(abs) = safe_join(&wiki_dir(root), filename) else {
+        return Err(format!("path escapes wiki/: {filename}"));
+    };
+    if !abs.is_file() {
+        return Err(format!(
+            "page not found: {filename} — call list_pages or search to find the right filename"
+        ));
+    }
+    Ok(abs)
+}
+
+/// `list_pages` body: every wiki page (optionally under `folder`, of
+/// `type_filter`) as a frontmatter summary, cut to `limit` rows. 100 pages
+/// measured 16.9 KB of output, so `truncated` tells the caller when the cut
+/// hid something rather than letting a big vault look small.
+fn list_wiki_pages(
+    root: &Path,
+    folder: &str,
+    type_filter: &str,
+    limit: usize,
+) -> Result<Value, String> {
+    let wiki = wiki_dir(root);
+    let scope = if folder.is_empty() {
+        wiki.clone()
+    } else {
+        safe_join(&wiki, folder).ok_or_else(|| format!("folder escapes wiki/: {folder}"))?
+    };
+    let mut pages = Vec::new();
+    for abs in collect_md(&scope) {
+        let Ok(fc) = vault::read_file(&abs.to_string_lossy()) else {
+            continue;
+        };
+        let ptype = fm_str(&fc.frontmatter, "type");
+        if !type_filter.is_empty() && ptype != type_filter {
+            continue;
+        }
+        pages.push(json!({
+            "filename": rel_to(&wiki, &abs),
+            "title": fm_str(&fc.frontmatter, "title"),
+            "type": ptype,
+            "tags": fc.frontmatter.get("tags").cloned().unwrap_or(json!([])),
+        }));
+    }
+    let limit = limit.max(1);
+    let truncated = pages.len() > limit;
+    pages.truncate(limit);
+    Ok(json!({ "ok": true, "count": pages.len(), "truncated": truncated, "pages": pages }))
+}
+
+/// `read_page` body: frontmatter, body, the body's outbound `[[links]]`
+/// (`.md`-normalized, deduplicated) and word count.
+fn read_wiki_page(root: &Path, filename: &str) -> Result<Value, String> {
+    let abs = wiki_page_path(root, filename)?;
+    let fc = vault::read_file(&abs.to_string_lossy())?;
+    Ok(json!({
+        "ok": true,
+        "filename": filename,
+        "frontmatter": fc.frontmatter,
+        "content": fc.content,
+        "links": extract_links(&fc.content),
+        "word_count": fc.content.split_whitespace().count(),
+    }))
+}
+
 fn safe_join(base: &Path, rel: &str) -> Option<PathBuf> {
     let mut out = base.to_path_buf();
     for comp in Path::new(rel).components() {
@@ -713,6 +781,9 @@ struct ListPagesArgs {
     /// Optional page-type filter (frontmatter `type`); empty = all.
     #[serde(default, rename = "type")]
     type_filter: String,
+    /// Max pages returned (default 200); `truncated` says whether more exist.
+    #[serde(default)]
+    limit: Option<usize>,
     #[serde(default)]
     project: String,
 }
@@ -981,7 +1052,9 @@ impl McpServer {
     }
 
     /// List wiki pages with a frontmatter summary (title, type, tags).
-    #[tool(description = "List wiki pages with title/type/tags; optional folder or type filter")]
+    #[tool(
+        description = "List wiki pages with title/type/tags; optional folder or type filter; limit (default 200) with a truncated flag"
+    )]
     async fn list_pages(
         &self,
         Parameters(a): Parameters<ListPagesArgs>,
@@ -990,37 +1063,16 @@ impl McpServer {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let wiki = wiki_dir(&root);
-        let scope = if a.folder.is_empty() {
-            wiki.clone()
-        } else {
-            match safe_join(&wiki, &a.folder) {
-                Some(p) => p,
-                None => return fail(format!("folder escapes wiki/: {}", a.folder)),
-            }
-        };
-        let mut pages = Vec::new();
-        for abs in collect_md(&scope) {
-            let fc = match vault::read_file(&abs.to_string_lossy()) {
-                Ok(fc) => fc,
-                Err(_) => continue,
-            };
-            let ptype = fm_str(&fc.frontmatter, "type");
-            if !a.type_filter.is_empty() && ptype != a.type_filter {
-                continue;
-            }
-            pages.push(json!({
-                "filename": rel_to(&wiki, &abs),
-                "title": fm_str(&fc.frontmatter, "title"),
-                "type": ptype,
-                "tags": fc.frontmatter.get("tags").cloned().unwrap_or(json!([])),
-            }));
+        match list_wiki_pages(&root, &a.folder, &a.type_filter, a.limit.unwrap_or(200)) {
+            Ok(out) => json_result(out),
+            Err(e) => fail(e),
         }
-        json_result(json!({ "ok": true, "count": pages.len(), "pages": pages }))
     }
 
-    /// Read one wiki page: frontmatter, body, and word count.
-    #[tool(description = "Read a wiki page's frontmatter and body by wiki-relative filename")]
+    /// Read one wiki page: frontmatter, body, outbound links, and word count.
+    #[tool(
+        description = "Read a wiki page's frontmatter, body and outbound [[links]] by wiki-relative filename"
+    )]
     async fn read_page(
         &self,
         Parameters(a): Parameters<ReadPageArgs>,
@@ -1029,17 +1081,8 @@ impl McpServer {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let Some(abs) = safe_join(&wiki_dir(&root), &a.filename) else {
-            return fail(format!("path escapes wiki/: {}", a.filename));
-        };
-        match vault::read_file(&abs.to_string_lossy()) {
-            Ok(fc) => json_result(json!({
-                "ok": true,
-                "filename": a.filename,
-                "frontmatter": fc.frontmatter,
-                "content": fc.content,
-                "word_count": fc.content.split_whitespace().count(),
-            })),
+        match read_wiki_page(&root, &a.filename) {
+            Ok(out) => json_result(out),
             Err(e) => fail(e),
         }
     }
@@ -1310,12 +1353,10 @@ impl McpServer {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let Some(abs) = safe_join(&wiki_dir(&root), &a.filename) else {
-            return fail(format!("path escapes wiki/: {}", a.filename));
+        let abs = match wiki_page_path(&root, &a.filename) {
+            Ok(p) => p,
+            Err(e) => return fail(e),
         };
-        if !abs.is_file() {
-            return fail(format!("not found: {}", a.filename));
-        }
         let old = std::fs::read_to_string(&abs).unwrap_or_default();
         if old == a.content {
             return json_result(json!({ "ok": true, "changed": false, "diff": "" }));
@@ -1389,12 +1430,10 @@ impl McpServer {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let Some(abs) = safe_join(&wiki_dir(&root), &a.filename) else {
-            return fail(format!("path escapes wiki/: {}", a.filename));
+        let abs = match wiki_page_path(&root, &a.filename) {
+            Ok(p) => p,
+            Err(e) => return fail(e),
         };
-        if !abs.is_file() {
-            return fail(format!("not found: {}", a.filename));
-        }
         let Some((_, body)) = read_parts(&abs) else {
             return fail("could not read page");
         };
@@ -1558,12 +1597,10 @@ impl McpServer {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let Some(target) = safe_join(&wiki_dir(&root), &a.filename) else {
-            return fail(format!("path escapes wiki/: {}", a.filename));
+        let target = match wiki_page_path(&root, &a.filename) {
+            Ok(p) => p,
+            Err(e) => return fail(e),
         };
-        if !target.is_file() {
-            return fail(format!("page not found: {}", a.filename));
-        }
         if let Err(e) = vault::write_file(&target.to_string_lossy(), &a.content) {
             return fail(e);
         }
@@ -2048,10 +2085,43 @@ impl McpServer {
     }
 }
 
-// call_tool is written out (the macro skips a method that already exists) so
-// every dispatch passes the inflow tool-call log; list_tools stays generated.
+/// The usage brief a client receives at `initialize` — the same one the
+/// Python server ships, plus what `search` now is.
+const INSTRUCTIONS: &str = "myco is a self-maintaining LLM wiki backed by an Obsidian vault. \
+    Use `get_instructions` once per session to load the wiki schema (frontmatter rules, \
+    citation format, contradiction policy). Then use the read tools (list_pages, read_page, \
+    search) to browse and the write tools (add_raw_source, create_page, update_page) to \
+    maintain. `search` is the app's hybrid retrieval — ask it questions, not just keywords. \
+    Never modify files under any raw/ directory; raw is immutable. Commit groups of related \
+    changes with git_commit. To auto-ingest a backlog: call list_inbox, then for each pending \
+    file read_inbox_source -> create/update wiki pages with [^src-*] citations -> \
+    archive_inbox_source. Repeat until the inbox is empty.";
+
+/// What `initialize` answers: this server by name and app version (the
+/// macro's default names the rmcp crate), tools only, and the brief above.
+fn server_info() -> rmcp::model::ServerInfo {
+    rmcp::model::ServerInfo::new(
+        rmcp::model::ServerCapabilities::builder()
+            .enable_tools()
+            .build(),
+    )
+    .with_server_info(rmcp::model::Implementation::new(
+        SERVER_NAME,
+        env!("CARGO_PKG_VERSION"),
+    ))
+    .with_instructions(INSTRUCTIONS)
+}
+
+// call_tool and get_info are written out (the macro skips a method that
+// already exists): every dispatch passes the inflow tool-call log, and
+// `initialize` identifies myco instead of the SDK crate. list_tools stays
+// generated.
 #[tool_handler]
 impl ServerHandler for McpServer {
+    fn get_info(&self) -> rmcp::model::ServerInfo {
+        server_info()
+    }
+
     async fn call_tool(
         &self,
         request: rmcp::model::CallToolRequestParams,
@@ -2270,7 +2340,10 @@ mod tests {
     use super::raw_source_guard;
     use super::record_tool_call_at;
     use super::suspect_scan;
-    use super::{archive_inbox, collect_md, scope_keeps, search_row};
+    use super::{
+        archive_inbox, collect_md, list_wiki_pages, read_wiki_page, scope_keeps, search_row,
+        server_info,
+    };
     use crate::commands::HybridHit;
     use crate::retrieval::Bm25Index;
     use std::path::Path;
@@ -2557,5 +2630,73 @@ mod tests {
         assert!(row["snippet"].as_str().unwrap().contains("Scaling laws"));
         assert!(row["score_bm25"].as_f64().unwrap() > 0.0, "{row}");
         assert!(row["score_vec"].is_null(), "no dense arm ran: {row}");
+    }
+
+    #[test]
+    fn initialize_names_myco_with_the_app_version_and_the_usage_brief() {
+        let info = server_info();
+        assert_eq!(info.server_info.name, "myco");
+        assert_eq!(info.server_info.version, env!("CARGO_PKG_VERSION"));
+        assert!(
+            info.capabilities.tools.is_some(),
+            "tools capability advertised"
+        );
+        let brief = info.instructions.as_deref().unwrap();
+        assert!(
+            brief.contains("get_instructions") && brief.contains("archive_inbox_source"),
+            "{brief}"
+        );
+    }
+
+    fn three_page_wiki() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        for (name, ty) in [("a.md", "concept"), ("b.md", "entity"), ("c.md", "concept")] {
+            write(
+                &dir.path().join("wiki").join(name),
+                &format!("---\ntitle: \"{name}\"\ntype: {ty}\n---\nBody linking [[b]] and [[c.md|see c]].\n"),
+            );
+        }
+        dir
+    }
+
+    #[test]
+    fn list_pages_cuts_at_limit_and_says_so() {
+        let dir = three_page_wiki();
+        // list_files canonicalizes (`/var` -> `/private/var` on macOS); hand it
+        // the canonical root, as the app's active-vault marker does.
+        let root = dir.path().canonicalize().unwrap();
+        let cut = list_wiki_pages(&root, "", "", 2).unwrap();
+        assert_eq!(cut["count"], 2);
+        assert_eq!(cut["truncated"], true);
+        let all = list_wiki_pages(&root, "", "", 200).unwrap();
+        assert_eq!(all["count"], 3);
+        assert_eq!(all["truncated"], false);
+        let filtered = list_wiki_pages(&root, "", "entity", 200).unwrap();
+        assert_eq!(filtered["count"], 1);
+        assert_eq!(filtered["pages"][0]["filename"], "b.md");
+        assert_eq!(filtered["truncated"], false);
+        let err = list_wiki_pages(&root, "../raw", "", 200).unwrap_err();
+        assert!(err.starts_with("folder escapes wiki/"), "{err}");
+    }
+
+    #[test]
+    fn read_page_lists_outbound_links_and_points_a_miss_at_the_next_call() {
+        let dir = three_page_wiki();
+        let root = dir.path();
+        let page = read_wiki_page(root, "a.md").unwrap();
+        assert_eq!(page["links"], serde_json::json!(["b.md", "c.md"]));
+        assert_eq!(page["frontmatter"]["type"], "concept");
+        assert!(page["word_count"].as_u64().unwrap() > 0);
+        let err = read_wiki_page(root, "nope.md").unwrap_err();
+        assert_eq!(
+            err,
+            "page not found: nope.md — call list_pages or search to find the right filename"
+        );
+        assert!(
+            !err.contains(&*root.to_string_lossy()),
+            "no host path in a tool error: {err}"
+        );
+        let err = read_wiki_page(root, "../raw/x.md").unwrap_err();
+        assert_eq!(err, "path escapes wiki/: ../raw/x.md");
     }
 }
