@@ -73,8 +73,9 @@ export interface VaultState {
     paths: string[],
     make: (fm: Frontmatter | null) => FmPatch,
   ) => Promise<void>;
-  /** `ifChanged` skips the rebuild when the vault fingerprint is unmoved
-   *  (background poll only — a caller that just wrote should force). */
+  /** `ifChanged` skips the rebuild when the vault fingerprint is unmoved and
+   *  re-reads the file tree only when it moved (background poll only — a
+   *  caller that just wrote should force, and refresh the tree itself). */
   refreshLinkGraph: (opts?: { ifChanged?: boolean }) => Promise<void>;
   refreshTree: () => Promise<void>;
   createFile: (parentDir: string, name: string) => Promise<string | null>;
@@ -167,6 +168,14 @@ export const useVaultStore = create<VaultState>((set, get) => ({
         if (fresh) return;
         lastRevision = revision;
         lastRevisionVault = vault.path;
+        // The tree rides on the same stat. Re-reading it unguarded cost every
+        // tick: list_files 6.1 ms / 292 kB on the real vault, 56 ms / 2.2 MB
+        // at 12k files, then JSON.stringify of the 3.9 MB tree twice (11.5 ms
+        // each) on the main thread to learn nothing changed. The fingerprint
+        // covers folders and staging notes by path (vault.rs), so whatever the
+        // tree can show moves it; refreshTree keeps its own content compare
+        // because a content edit moves the revision without changing the tree.
+        void get().refreshTree();
       } else {
         // A forced rebuild leaves the poll's baseline stale — clear it so the
         // next poll re-reads the fingerprint rather than trusting an old one.

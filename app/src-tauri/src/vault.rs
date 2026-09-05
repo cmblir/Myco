@@ -1080,8 +1080,10 @@ pub fn list_files(root: &str) -> Result<Vec<FileNode>, String> {
     walk_dir(&root_path).map_err(|e| format!("walk failed: {e}"))
 }
 
-/// A cheap fingerprint of the vault's markdown: a hash over every .md file's
-/// path, mtime and length.
+/// A cheap fingerprint of the vault: a hash over every .md file's path, mtime
+/// and length, plus the path of every folder and of every note under the
+/// staging dirs — the shape the sidebar tree shows (see
+/// [`collect_revision_entries`]).
 ///
 /// This exists so a caller can ask "did anything change?" without paying to
 /// rebuild what it already has. The app polls for external edits (Obsidian,
@@ -1104,7 +1106,7 @@ pub fn vault_revision(root: &str) -> Result<u64, String> {
         return Err(format!("not a directory: {root}"));
     }
     let mut entries: Vec<(String, i64, u64)> = Vec::new();
-    collect_revision_entries(&root_path, &root_path, &mut entries);
+    collect_revision_entries(&root_path, &root_path, false, &mut entries);
     // Sort so the hash depends on the vault's content, not on the order the
     // filesystem happened to hand back directory entries.
     entries.sort();
@@ -1121,19 +1123,31 @@ pub fn vault_revision(root: &str) -> Result<u64, String> {
 /// unreadable directory contributes nothing rather than failing the check, for
 /// the same reason the link-graph walk skips one — a fingerprint that errors is
 /// a fingerprint the caller has to fall back from, which defeats the point.
-fn collect_revision_entries(root: &Path, dir: &Path, out: &mut Vec<(String, i64, u64)>) {
+///
+/// Two consumers poll this: the link graph, which reads non-staging `.md`
+/// content, and the sidebar tree, which shows every folder (empty ones too) and
+/// every `.md` NAME, staging dirs included. So folders and staging notes go in
+/// by path alone — no stat, and a content edit there cannot move the revision
+/// (the graph never reads it; one real vault holds 985 session logs) — while an
+/// added, removed or renamed one does, or the tree would never learn of it.
+fn collect_revision_entries(
+    root: &Path,
+    dir: &Path,
+    staging: bool,
+    out: &mut Vec<(String, i64, u64)>,
+) {
     for (entry, kind) in vault_entries(dir) {
         let path = entry.path();
+        let key = path.to_string_lossy().into_owned();
         if kind.is_dir() {
-            // Fingerprint exactly what the consumers read. Without this a write
-            // under `sessions/` (985 files in one real vault) changed the
-            // revision and triggered a refresh of a tree and graph that do not
-            // contain it — 8x the files stat'd, for a diff nobody can see.
-            if crate::index::is_staging_dir(root, &path) {
+            out.push((key, 0, 0));
+            let staging = staging || crate::index::is_staging_dir(root, &path);
+            collect_revision_entries(root, &path, staging, out);
+        } else if is_markdown(&path) {
+            if staging {
+                out.push((key, 0, 0));
                 continue;
             }
-            collect_revision_entries(root, &path, out);
-        } else if is_markdown(&path) {
             let Ok(meta) = entry.metadata() else { continue };
             let mtime = meta
                 .modified()
@@ -1141,7 +1155,7 @@ fn collect_revision_entries(root: &Path, dir: &Path, out: &mut Vec<(String, i64,
                 .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                 .map(|d| d.as_secs() as i64)
                 .unwrap_or(0);
-            out.push((path.to_string_lossy().into_owned(), mtime, meta.len()));
+            out.push((key, mtime, meta.len()));
         }
     }
 }
@@ -1622,6 +1636,44 @@ mod tests {
             before,
             vault_revision(root).unwrap(),
             "only vault markdown may move the revision"
+        );
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    /// The sidebar tree polls the revision too, and it shows every folder and
+    /// every note NAME — staging dirs included — so those must move it when
+    /// added; but staging content is not knowledge, so an edit inside one must
+    /// not (it would rebuild a graph that never reads it).
+    #[test]
+    fn vault_revision_sees_folders_and_staging_names_but_not_staging_content() {
+        let dir = temp_vault("revision-tree");
+        fs::create_dir_all(dir.join("wiki")).unwrap();
+        fs::write(dir.join("wiki/a.md"), "alpha").unwrap();
+        let root = dir.to_str().unwrap();
+        let r0 = vault_revision(root).unwrap();
+
+        fs::create_dir_all(dir.join("wiki/empty")).unwrap();
+        let r1 = vault_revision(root).unwrap();
+        assert_ne!(r0, r1, "a new (empty) folder must change the revision");
+
+        fs::create_dir_all(dir.join("sessions/2026-09")).unwrap();
+        let r2 = vault_revision(root).unwrap();
+        fs::write(dir.join("sessions/2026-09/log.md"), "# log").unwrap();
+        let r3 = vault_revision(root).unwrap();
+        assert_ne!(
+            r2, r3,
+            "a note added under a staging dir must change the revision"
+        );
+
+        fs::write(
+            dir.join("sessions/2026-09/log.md"),
+            "# log, edited and longer",
+        )
+        .unwrap();
+        assert_eq!(
+            r3,
+            vault_revision(root).unwrap(),
+            "editing a staging note must not change the revision"
         );
         fs::remove_dir_all(&dir).ok();
     }

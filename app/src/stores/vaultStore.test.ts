@@ -17,9 +17,11 @@ const VAULT = { path: "/v", name: "v" };
 function stubIpc(revision: number) {
   const buildLinkGraph = vi.fn().mockResolvedValue(ADJ);
   const vaultRevision = vi.fn().mockResolvedValue(revision);
+  const listFiles = vi.fn().mockResolvedValue([]);
   vi.spyOn(ipc, "buildLinkGraph").mockImplementation(buildLinkGraph);
   vi.spyOn(ipc, "vaultRevision").mockImplementation(vaultRevision);
-  return { buildLinkGraph, vaultRevision };
+  vi.spyOn(ipc, "listFiles").mockImplementation(listFiles);
+  return { buildLinkGraph, vaultRevision, listFiles };
 }
 
 describe("refreshLinkGraph", () => {
@@ -49,6 +51,27 @@ describe("refreshLinkGraph", () => {
     vi.spyOn(ipc, "vaultRevision").mockResolvedValue(43);
     await useVaultStore.getState().refreshLinkGraph({ ifChanged: true });
     expect(buildLinkGraph).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-reads the file tree only when the fingerprint moves", async () => {
+    const { listFiles } = stubIpc(42);
+    // The tree used to be re-read unguarded on every tick (list_files 56 ms /
+    // 2.2 MB at 12k files, then stringified twice to learn nothing changed).
+    await useVaultStore.getState().refreshLinkGraph({ ifChanged: true });
+    expect(listFiles).toHaveBeenCalledTimes(1);
+
+    await useVaultStore.getState().refreshLinkGraph({ ifChanged: true });
+    await useVaultStore.getState().refreshLinkGraph({ ifChanged: true });
+    expect(listFiles).toHaveBeenCalledTimes(1);
+
+    vi.spyOn(ipc, "vaultRevision").mockResolvedValue(43);
+    await useVaultStore.getState().refreshLinkGraph({ ifChanged: true });
+    expect(listFiles).toHaveBeenCalledTimes(2);
+
+    // A caller that just wrote refreshes the tree itself; the forced path must
+    // not read it a second time.
+    await useVaultStore.getState().refreshLinkGraph();
+    expect(listFiles).toHaveBeenCalledTimes(2);
   });
 
   it("always rebuilds for a caller that just wrote", async () => {

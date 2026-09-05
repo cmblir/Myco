@@ -347,28 +347,27 @@ export default function App(): JSX.Element {
   useEffect(() => {
     if (!currentVaultPath) return;
     // "plan-gate" belongs here too: the user is reading the plan, the run is
-    // mid-flight, and a 30 s refreshTree + revision stat over the whole vault
-    // buys nothing while nothing is being written.
+    // mid-flight, and a 30 s revision stat over the whole vault buys nothing
+    // while nothing is being written.
     const INGEST_RUNNING = ["writing-raw", "plan-gate", "claude", "indexing"];
     const refresh = (): void => {
       if (document.visibilityState !== "visible") return;
       if (INGEST_RUNNING.includes(useIngestStore.getState().stage)) return;
-      const v = useVaultStore.getState();
-      void v.refreshTree();
       // Poll for edits made outside the app (Obsidian, Finder, a finished
       // ingest). `ifChanged` makes the common "nothing happened" tick a cheap
-      // fingerprint check instead of a full re-read of every note.
-      void v.refreshLinkGraph({ ifChanged: true });
+      // fingerprint check; the tree and the graph are re-read only when it
+      // moved (the tree walk used to run unguarded here on every tick).
+      void useVaultStore.getState().refreshLinkGraph({ ifChanged: true });
     };
     const onVisible = (): void => {
       if (document.visibilityState === "visible") refresh();
     };
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", onVisible);
-    // 30s, not 4s: this walks the vault twice (tree + link graph) on every
-    // tick, forever, while the window is merely visible. In-app writes refresh
-    // directly and focus/visibility still fire, so the only cost is up to 30s
-    // before an edit made in another app shows up here.
+    // 30s, not 4s: this stats every note on every tick, forever, while the
+    // window is merely visible. In-app writes refresh directly and
+    // focus/visibility still fire, so the only cost is up to 30s before an
+    // edit made in another app shows up here.
     const id = window.setInterval(refresh, 30_000);
     return () => {
       window.removeEventListener("focus", refresh);
