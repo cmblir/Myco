@@ -186,6 +186,68 @@ mod dispatch_tests {
         assert_eq!(second.skipped, 1);
     }
 
+    /// Record a plan's docs the way `apply_import` does after writing them.
+    fn recorded(plan: &ImportPlan) -> ledger::Ledger {
+        let mut led = ledger::Ledger::default();
+        for d in &plan.docs {
+            led.record(d.key.clone(), d.fingerprint.clone());
+            led.record_body(d.body_hash.clone(), &d.key);
+        }
+        led
+    }
+
+    #[test]
+    fn plan_import_refuses_a_body_already_imported_under_another_id() {
+        let first = session("s1", "how does attention work");
+        let led = recorded(&plan_import("s1.jsonl", &first, &ledger::Ledger::default()).unwrap());
+        // The same transcript re-exported under a new session id: one entry.
+        let copy = session("s2", "how does attention work");
+        let plan = plan_import("s2.jsonl", &copy, &led).unwrap();
+        assert!(plan.docs.is_empty());
+        assert_eq!((plan.skipped, plan.duplicates), (0, 1));
+        // A different transcript under that id is new: two entries.
+        let other = session("s2", "what is a transformer");
+        let plan = plan_import("s2.jsonl", &other, &led).unwrap();
+        assert_eq!(plan.docs.len(), 1);
+        assert_eq!(plan.duplicates, 0);
+    }
+
+    #[test]
+    fn plan_import_keeps_one_copy_of_a_body_repeated_inside_one_export() {
+        // A ChatGPT export with the same conversation under two ids, plus a
+        // distinct one: the second copy is the duplicate, the rest import.
+        let text = "explain attention ".repeat(60);
+        let conv = |id: &str, body: &str| {
+            format!(
+                r#"{{"conversation_id":"{id}","title":"t","current_node":"a","mapping":{{"a":{{"message":{{"author":{{"role":"user"}},"content":{{"parts":["{body}"]}}}},"parent":null}}}}}}"#
+            )
+        };
+        let other = "what is a transformer ".repeat(60);
+        let json = format!(
+            "[{},{},{}]",
+            conv("c1", &text),
+            conv("c2", &text),
+            conv("c3", &other)
+        );
+        let plan = plan_import("conversations.json", &json, &ledger::Ledger::default()).unwrap();
+        assert_eq!(
+            plan.docs.iter().map(|d| d.key.as_str()).collect::<Vec<_>>(),
+            vec!["chatgpt:c1", "chatgpt:c3"],
+            "first copy wins"
+        );
+        assert_eq!(plan.duplicates, 1);
+    }
+
+    #[test]
+    fn the_measured_boilerplate_copy_is_a_duplicate_on_its_second_insert() {
+        // The 1,013-byte `[[TASK_DONE]]` doc, as it sits in sessions/ 269 times.
+        let mut led = ledger::Ledger::default();
+        let first = ledger::boilerplate_doc("a1", 100);
+        led.record_body(ledger::body_hash(&first), "claude-code:a1");
+        let second = ledger::boilerplate_doc("b2", 200);
+        assert!(led.seen_body(&ledger::body_hash(&second), "claude-code:b2"));
+    }
+
     #[test]
     fn plan_import_reimports_a_changed_conversation() {
         let led = {
@@ -391,13 +453,15 @@ fn sniff(content: &str) -> Option<Kind> {
 }
 
 /// A source doc ready to write to `_inbox/`: its stem (no extension) and body,
-/// plus the ledger key and fingerprint the command records once it is written.
+/// plus the ledger key, fingerprint and body hash the command records once it
+/// is written.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InboxDoc {
     pub stem: String,
     pub body: String,
     pub key: String,
     pub fingerprint: String,
+    pub body_hash: String,
 }
 
 /// A conversation held back from import because its text matched a secret shape.
@@ -418,13 +482,18 @@ pub struct ImportPlan {
     pub quarantined: Vec<Quarantined>,
     /// Conversations already imported unchanged (present in the ledger).
     pub skipped: usize,
+    /// Conversations whose body is already in the vault under another key
+    /// (`ledger::body_hash`) — or earlier in this same export. Not written;
+    /// the command adds them to the ledger's duplicate tally.
+    pub duplicates: usize,
 }
 
 /// Parse an export, then split its conversations into clean docs (ready for
-/// `_inbox/`), quarantined ones, and already-imported skips. A conversation whose
-/// rendered doc matches any secret pattern is never written — a leaked key in a
-/// committed source is permanent. One already in `ledger` with the same content
-/// is skipped so re-importing an export is idempotent.
+/// `_inbox/`), quarantined ones, already-imported skips and body duplicates. A
+/// conversation whose rendered doc matches any secret pattern is never written
+/// — a leaked key in a committed source is permanent. One already in `ledger`
+/// with the same content is skipped so re-importing an export is idempotent;
+/// one whose BODY is already there under a different id is a duplicate.
 pub fn plan_import(
     filename: &str,
     content: &str,
@@ -438,6 +507,10 @@ pub fn plan_import(
     let mut docs = Vec::new();
     let mut quarantined = Vec::new();
     let mut skipped = 0;
+    let mut duplicates = 0;
+    // Bodies claimed by docs earlier in THIS plan — the ledger only learns
+    // them once the command has written and recorded the docs.
+    let mut planned_bodies = std::collections::HashSet::new();
     for c in convs {
         if !c.is_substantial() {
             skipped += 1;
@@ -450,13 +523,20 @@ pub fn plan_import(
             skipped += 1;
             continue;
         }
+        let body_hash = ledger::body_hash(&body);
+        if ledger.seen_body(&body_hash, &key) || planned_bodies.contains(&body_hash) {
+            duplicates += 1;
+            continue;
+        }
         let hits = secrets_scan::scan(&body);
         if hits.is_empty() {
+            planned_bodies.insert(body_hash.clone());
             docs.push(InboxDoc {
                 stem: c.doc_stem(),
                 body,
                 key,
                 fingerprint: fp,
+                body_hash,
             });
         } else {
             // Not recorded: a quarantined conversation is re-checked next time,
@@ -472,6 +552,7 @@ pub fn plan_import(
         docs,
         quarantined,
         skipped,
+        duplicates,
     })
 }
 

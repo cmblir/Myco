@@ -7,6 +7,14 @@
 //! its key is present with the SAME fingerprint; a changed one (a session that
 //! grew, a chat continued) has a new fingerprint and imports again as an update.
 //!
+//! A second index keys on the BODY alone (`body_hash`: the text after the
+//! frontmatter block, NFC-normalised, whitespace-collapsed). Measured on the
+//! owner's vault, 1,473 session files held only 719 distinct bodies — the top
+//! two bodies had 269 and 267 copies each, an agent's `[[TASK_DONE]]`
+//! boilerplate re-exported under a fresh session id every run. The key index
+//! cannot see that (every copy has its own `<source>:<id>`), so a body already
+//! recorded under ANOTHER key is refused and counted in `duplicates`.
+//!
 //! It lives at `<vault>/.myco/ledger.json`. A missing or corrupt file reads as
 //! empty — the ledger is a cache, never a source of truth, so losing it costs a
 //! round of re-imports, nothing more. The fingerprint is a non-cryptographic
@@ -24,6 +32,34 @@ pub fn fingerprint(content: &str) -> String {
     let mut h = DefaultHasher::new();
     content.hash(&mut h);
     format!("{:016x}", h.finish())
+}
+
+/// The dedup key for a doc's CONTENT regardless of its provenance: the text
+/// after the frontmatter block, NFC-normalised, whitespace-collapsed. Two
+/// exports of the same conversation under different ids (or with a different
+/// `created:`) hash equal; a changed transcript does not.
+pub fn body_hash(doc: &str) -> String {
+    let body = crate::norm::nfc(strip_frontmatter(doc));
+    let mut h = DefaultHasher::new();
+    // `str::hash` terminates each token, so "a b" and "ab" stay distinct while
+    // runs of any whitespace collapse to one boundary.
+    for token in body.split_whitespace() {
+        token.hash(&mut h);
+    }
+    format!("{:016x}", h.finish())
+}
+
+/// Everything after a leading `---` YAML block (the shape `to_inbox_doc`
+/// writes); the whole doc when there is none. A byte scan, not a YAML parse:
+/// the hash must be stable on frontmatter a parser would reject.
+pub fn strip_frontmatter(doc: &str) -> &str {
+    let Some(rest) = doc.strip_prefix("---\n") else {
+        return doc;
+    };
+    match rest.find("\n---") {
+        Some(i) => rest[i + 4..].trim_start_matches(['\r', '\n']),
+        None => doc,
+    }
 }
 
 /// What a session file looked like the last time it imported cleanly. On a
@@ -47,12 +83,18 @@ struct OnDisk {
     entries: BTreeMap<String, String>,
     #[serde(default)]
     files: BTreeMap<String, FileStamp>,
+    #[serde(default)]
+    bodies: BTreeMap<String, String>,
+    #[serde(default)]
+    duplicates: u64,
 }
 
 #[derive(Serialize)]
 struct OnDiskRef<'a> {
     entries: &'a BTreeMap<String, String>,
     files: &'a BTreeMap<String, FileStamp>,
+    bodies: &'a BTreeMap<String, String>,
+    duplicates: u64,
 }
 
 #[derive(Default)]
@@ -61,6 +103,11 @@ pub struct Ledger {
     entries: BTreeMap<String, String>,
     // absolute file path → its last clean import stamp.
     files: BTreeMap<String, FileStamp>,
+    // `body_hash` → the key that first imported that body.
+    bodies: BTreeMap<String, String>,
+    // Conversations refused because their body was already here under another
+    // key — how much boilerplate the import did NOT write.
+    duplicates: u64,
 }
 
 impl Ledger {
@@ -83,13 +130,15 @@ impl Ledger {
         if let Ok(entries) = serde_json::from_str::<BTreeMap<String, String>>(&s) {
             return Ledger {
                 entries,
-                files: BTreeMap::new(),
+                ..Ledger::default()
             };
         }
         match serde_json::from_str::<OnDisk>(&s) {
             Ok(d) => Ledger {
                 entries: d.entries,
                 files: d.files,
+                bodies: d.bodies,
+                duplicates: d.duplicates,
             },
             Err(_) => Ledger::default(),
         }
@@ -117,6 +166,31 @@ impl Ledger {
 
     pub fn record(&mut self, key: String, fingerprint: String) {
         self.entries.insert(key, fingerprint);
+    }
+
+    /// True when this body is already recorded under a DIFFERENT key — the
+    /// same conversation re-exported with a new id. The same key re-importing
+    /// its own body is the `seen` case, not a duplicate.
+    pub fn seen_body(&self, body_hash: &str, key: &str) -> bool {
+        self.bodies.get(body_hash).is_some_and(|k| k != key)
+    }
+
+    /// Claim a body for `key`. First claim wins: a later key with the same
+    /// body is the duplicate, so an existing owner is never overwritten.
+    pub fn record_body(&mut self, body_hash: String, key: &str) {
+        self.bodies
+            .entry(body_hash)
+            .or_insert_with(|| key.to_string());
+    }
+
+    /// Count `n` conversations refused as body duplicates.
+    pub fn note_duplicates(&mut self, n: usize) {
+        self.duplicates += n as u64;
+    }
+
+    /// How many conversations this ledger has refused as body duplicates.
+    pub fn duplicates(&self) -> u64 {
+        self.duplicates
     }
 
     /// If this file imported cleanly before and hasn't changed since (same
@@ -153,11 +227,38 @@ impl Ledger {
         let on_disk = OnDiskRef {
             entries: &self.entries,
             files: &self.files,
+            bodies: &self.bodies,
+            duplicates: self.duplicates,
         };
         let json =
             serde_json::to_string_pretty(&on_disk).map_err(|e| format!("serialize ledger: {e}"))?;
         std::fs::write(Self::path(vault_root), json).map_err(|e| format!("write ledger: {e}"))
     }
+}
+
+/// The owner's most-copied session (269 + 267 copies of its two variants) as
+/// `to_inbox_doc` renders it: an agent's kickoff prompt plus
+/// `[User] hi [lead] done [[TASK_DONE]]`, re-exported under a fresh id and
+/// `created:` every run, 1,013 bytes each. The prompt text is synthetic; the
+/// shape, the size and the varying frontmatter match the measurement. Shared
+/// with the import and harvest tests.
+#[cfg(test)]
+pub(crate) fn boilerplate_doc(id: &str, created: i64) -> String {
+    const PROMPT: &str =
+        "You are the lead agent for this workspace. Read the task queue, pick the \
+        highest-priority item that is not claimed, claim it, and work it to completion. When it \
+        is done, append a one-line summary to the run log and reply with the exact token below so \
+        the orchestrator can advance the queue. Do not start a second item in the same turn.";
+    const TAIL: &str = "\n\ndone [[TASK_DONE]]\n";
+    let head =
+        format!("---\nsource: claude-code\nconversation_id: {id}\ncreated: {created}\n---\n\n");
+    let mut body = format!("# lead\n\n**User:**\n\nhi\n\n**Assistant:**\n\n{PROMPT}");
+    let pad = 1_013 - head.len() - body.len() - TAIL.len();
+    let filler =
+        " Never push. Never delete. Report partial progress honestly.".repeat(pad / 10 + 1);
+    body.push_str(&filler[..pad]);
+    body.push_str(TAIL);
+    format!("{head}{body}")
 }
 
 #[cfg(test)]
@@ -226,6 +327,86 @@ mod tests {
         let reloaded = Ledger::load(root);
         assert!(reloaded.seen("codex:s1", "fp1"));
         assert_eq!(reloaded.file_convs("/s/a.jsonl", 111, 2048), Some(3));
+    }
+
+    #[test]
+    fn body_hash_ignores_frontmatter_whitespace_and_normalisation_form() {
+        let a = "---\nid: 1\ncreated: 5\n---\n\n# t\n\nhello  world\n";
+        let b = "---\nid: 2\ncreated: 9\n---\r\n# t\nhello world";
+        assert_eq!(body_hash(a), body_hash(b));
+        assert_ne!(body_hash(a), body_hash("# t\n\nhello there"));
+        assert_ne!(
+            body_hash("a b"),
+            body_hash("ab"),
+            "tokens keep their boundary"
+        );
+        // NFD Hangul (as macOS file APIs emit it) hashes like the typed NFC form.
+        let nfd = "\u{1112}\u{1161}\u{11AB}\u{1100}\u{1173}\u{11AF}";
+        assert_eq!(body_hash(nfd), body_hash("한글"));
+        // No frontmatter, or an unterminated block, hashes the whole doc.
+        assert_eq!(body_hash("plain"), body_hash("  plain\n"));
+        assert_eq!(strip_frontmatter("---\nnever closed"), "---\nnever closed");
+    }
+
+    #[test]
+    fn same_body_under_another_key_is_a_duplicate_and_the_first_owner_stays() {
+        let mut l = Ledger::default();
+        let doc1 = boilerplate_doc("s1", 100);
+        let doc2 = boilerplate_doc("s2", 200);
+        assert_eq!(
+            doc1.len(),
+            1_013,
+            "the fixture is the measured 1,013-byte copy"
+        );
+        assert_eq!(doc2.len(), 1_013);
+        assert_ne!(doc1, doc2, "the copies differ in frontmatter only");
+        let (h1, h2) = (body_hash(&doc1), body_hash(&doc2));
+        assert_eq!(h1, h2);
+
+        assert!(!l.seen_body(&h1, "claude-code:s1"));
+        l.record_body(h1.clone(), "claude-code:s1");
+        assert!(
+            !l.seen_body(&h1, "claude-code:s1"),
+            "a key's own body is not a duplicate"
+        );
+        assert!(
+            l.seen_body(&h2, "claude-code:s2"),
+            "the second insert is the duplicate"
+        );
+        l.record_body(h2, "claude-code:s2");
+        assert!(
+            l.seen_body(&h1, "claude-code:s2"),
+            "the first owner is kept"
+        );
+
+        let other = body_hash("---\nconversation_id: s3\n---\n\n# real work\n\nsomething new\n");
+        assert!(
+            !l.seen_body(&other, "claude-code:s3"),
+            "a different body is new"
+        );
+    }
+
+    #[test]
+    fn bodies_and_the_duplicate_count_round_trip_and_default_on_old_ledgers() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let mut l = Ledger::default();
+        l.record_body("b1".into(), "codex:s1");
+        l.note_duplicates(3);
+        l.save(root).unwrap();
+        let reloaded = Ledger::load(root);
+        assert!(reloaded.seen_body("b1", "codex:s2"));
+        assert_eq!(reloaded.duplicates(), 3);
+        // A ledger written before the body index reads with an empty index.
+        std::fs::write(
+            root.join(".myco/ledger.json"),
+            r#"{"entries":{"codex:s1":"fp"},"files":{}}"#,
+        )
+        .unwrap();
+        let old = Ledger::load(root);
+        assert!(old.seen("codex:s1", "fp"));
+        assert!(!old.seen_body("b1", "codex:s2"));
+        assert_eq!(old.duplicates(), 0);
     }
 
     #[test]

@@ -1386,6 +1386,7 @@ fn run_import(
     // per file so one giant export can't take down a whole sweep.
     const MAX_BYTES: u64 = 512 * 1024 * 1024;
     let mut ledger = crate::importers::ledger::Ledger::load(root);
+    let duplicates_before = ledger.duplicates();
     let total = files.len();
     let (mut imported, mut skipped) = (0usize, 0usize);
     let mut quarantined = Vec::new();
@@ -1455,7 +1456,7 @@ fn run_import(
             });
         }
     }
-    if imported > 0 || dirty {
+    if imported > 0 || dirty || ledger.duplicates() != duplicates_before {
         // Best effort: a ledger that fails to save just costs a re-import.
         let _ = ledger.save(root);
     }
@@ -1566,8 +1567,12 @@ fn apply_import(
         // Record only after a successful write, so a failed write is retried
         // rather than silently skipped next time.
         ledger.record(doc.key.clone(), doc.fingerprint.clone());
+        ledger.record_body(doc.body_hash.clone(), &doc.key);
         imported += 1;
     }
+    // A body duplicate is "already imported" for the tally (under another
+    // id); the ledger keeps the separate count of how many were refused.
+    ledger.note_duplicates(plan.duplicates);
     let quarantined = plan
         .quarantined
         .into_iter()
@@ -1576,7 +1581,12 @@ fn apply_import(
             secrets: q.secrets.into_iter().map(str::to_string).collect(),
         })
         .collect();
-    Ok((imported, plan.skipped, quarantined, plan.source))
+    Ok((
+        imported,
+        plan.skipped + plan.duplicates,
+        quarantined,
+        plan.source,
+    ))
 }
 
 /// Import every session myco can find on disk for one CLI tool, in one pass.
