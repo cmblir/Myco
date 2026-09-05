@@ -13,207 +13,207 @@ export interface Strings {
   nav_ingest: string;
   nav_query: string;
   nav_graph: string;
-  nav_views?: string;
-  db_empty?: string;
-  bd_title?: string;
-  bd_range?: string;
-  bd_range_all?: string;
-  bd_edit?: string;
-  bd_done?: string;
-  bd_add?: string;
-  bd_custom?: string;
-  bd_text?: string;
-  bd_heading?: string;
-  bd_compact?: string;
-  bd_compact_v?: string;
-  bd_compact_none?: string;
-  bd_empty?: string;
-  bd_drag?: string;
-  bd_configure?: string;
-  bd_duplicate?: string;
-  bd_field_title?: string;
-  bd_field_source?: string;
-  bd_field_group?: string;
-  bd_field_filter?: string;
-  bd_field_view?: string;
-  bd_field_time?: string;
-  bd_field_rule?: string;
-  bd_filter_none?: string;
-  bd_time_auto?: string;
-  bd_rule_risk?: string;
-  bd_rule_ok?: string;
-  bd_src_inflow?: string;
-  bd_src_notes?: string;
-  bd_src_tasks?: string;
-  bd_preset_mcp_daily?: string;
-  bd_preset_channels_daily?: string;
-  bd_preset_notes_by_type?: string;
-  bd_preset_top_tags?: string;
-  bd_preset_edits_daily?: string;
-  bd_preset_tasks_by_status?: string;
-  bd_preset_unsourced_stat?: string;
-  bd_g_day?: string;
-  bd_g_channel?: string;
-  bd_g_type?: string;
-  bd_g_confidence?: string;
-  bd_g_status?: string;
-  bd_g_tag?: string;
-  bd_v_bar?: string;
-  bd_v_line?: string;
-  bd_v_hbar?: string;
-  bd_v_stat?: string;
-  bd_v_table?: string;
-  bd_hide_zero?: string;
-  bd_json_form?: string;
-  bd_json_bad?: string;
-  bd_unknown?: string; // {kind}
-  bd_field_color?: string;
-  bd_color_default?: string;
-  bd_color_blue?: string;
-  bd_color_green?: string;
-  bd_color_purple?: string;
-  bd_color_amber?: string;
-  bd_color_cyan?: string;
-  bd_color_red?: string;
-  bd_detail_total?: string; // {n}
-  bd_board_pick?: string;
-  bd_new_board?: string;
-  bd_new_board_prompt?: string;
-  bd_delete_board?: string;
-  bd_delete_confirm?: string; // {name}
-  ls_title?: string;
-  ls_hint?: string;
-  ls_accept?: string;
-  ls_dismiss?: string;
-  ls_accept_all?: string;
-  ls_linking?: string;
-  ls_toast_linked?: string;
-  ls_toast_linked_sub?: string;
-  ls_toast_failed?: string;
-  ls_toast_retry?: string;
-  zi_title?: string;
-  zi_hint?: string;
-  zi_none?: string;
-  zi_done?: string;
-  ci_title?: string;
-  ci_hint?: string;
-  ci_btn?: string;
-  ci_busy?: string;
-  ci_done?: string; // {n}
-  ci_quarantined?: string; // {n}
-  ci_none?: string;
-  ci_skipped?: string; // {n}
-  ci_sweep_cc?: string;
-  ci_sweep_cx?: string;
-  ci_sweep_hint?: string;
-  ci_sweep_progress?: string; // {done} {total}
-  ci_sweep_tally?: string; // {i} {s} {f}
-  ci_failed_summary?: string; // {n}
-  ci_retry_failed?: string; // {n}
-  q_empty?: string;
-  s_mascot?: string;
-  s_mascot_hint?: string;
-  s_backup_title?: string;
-  s_backup_hint?: string;
-  s_backup_export?: string;
-  s_backup_import?: string;
-  s_backup_busy?: string;
-  s_backup_exported?: string;
-  s_backup_imported?: string; // {sections}
-  s_backup_import_failed?: string; // {error}
-  s_backup_bad_json?: string;
-  s_backup_section_settings?: string;
-  s_backup_section_ui?: string;
-  s_backup_section_graph?: string;
-  s_backup_section_savedLooks?: string;
-  s_backup_section_queryViews?: string;
-  s_backup_section_dismissedLinkSuggestions?: string;
-  s_backup_section_reflectIgnored?: string;
-  s_backup_section_budgetThresholdUsd?: string;
-  s_backup_confirm_title?: string;
-  s_backup_confirm_body?: string; // {sections}
-  s_backup_confirm_none?: string;
-  s_backup_confirm_apply?: string;
-  s_backup_confirm_cancel?: string;
-  s_backup_undo?: string;
-  s_backup_undo_hint?: string;
-  s_backup_undone?: string; // {sections}
-  hw_title?: string;
-  hw_sub?: string;
-  hw_sc_cmd?: string;
-  hw_sc_sidebar?: string;
-  hw_sc_fly?: string;
-  hw_sc_esc?: string;
-  hw_sc_new?: string;
-  hw_sc_spotlight?: string;
-  hw_sc_voice?: string;
-  hw_sc_miss?: string;
-  hw_sc_path?: string;
-  hw_sc_live_link?: string;
-  hw_sc_back?: string;
-  hw_sc_fwd?: string;
-  hw_tip_graph1?: string;
-  hw_tip_graph2?: string;
-  hw_tip_graph3?: string;
-  hw_tip_query1?: string;
-  hw_tip_query2?: string;
-  hw_tip_ingest1?: string;
-  hw_tip_ingest2?: string;
-  hw_tip_views1?: string;
-  hw_tip_overview1?: string;
-  hw_tip_default?: string;
-  vw_title?: string;
-  vw_lede?: string;
-  vw_search?: string;
-  vw_any_type?: string;
-  vw_any_conf?: string;
-  vw_any_status?: string;
-  vw_any_tag?: string;
-  vw_orphans?: string;
-  vw_save?: string;
-  vw_save_prompt?: string;
-  vw_pages?: string;
-  vw_empty?: string;
-  vw_col_name?: string;
-  vw_col_type?: string;
-  vw_col_conf?: string;
-  vw_col_sources?: string;
-  vw_col_links?: string;
-  vw_col_tags?: string;
-  vw_col_status?: string;
-  vw_col_modified?: string;
-  vw_lens_unsourced?: string;
-  vw_lens_orphans?: string;
-  vw_lens_disputed?: string;
-  vw_lens_recent?: string;
-  vw_select_all?: string;
-  vw_select_row?: string;
-  vw_selected_n?: string;
-  vw_bulk_title?: string;
-  vw_bulk_confirm?: string;
-  vw_bulk_type?: string;
-  vw_bulk_status?: string;
-  vw_bulk_add_tag?: string;
-  vw_clear_sel?: string;
-  vw_edit_cell?: string;
-  vw_unset?: string;
-  vw_edit_done?: string;
-  vw_edit_failed?: string;
-  vw_load_error?: string;
-  vw_io_error?: string;
-  vw_overwrite_q?: string;
-  tpl_new_from?: string;
-  tpl_pick_title?: string;
-  tpl_pick_msg?: string;
-  tpl_empty?: string;
-  tpl_create_starters?: string;
-  tpl_creating?: string;
-  tpl_create_error?: string;
-  tpl_note_error?: string;
-  tpl_starter_note?: string;
-  tpl_starter_meeting?: string;
-  tpl_starter_note_body?: string;
-  tpl_starter_meeting_body?: string;
+  nav_views: string;
+  db_empty: string;
+  bd_title: string;
+  bd_range: string;
+  bd_range_all: string;
+  bd_edit: string;
+  bd_done: string;
+  bd_add: string;
+  bd_custom: string;
+  bd_text: string;
+  bd_heading: string;
+  bd_compact: string;
+  bd_compact_v: string;
+  bd_compact_none: string;
+  bd_empty: string;
+  bd_drag: string;
+  bd_configure: string;
+  bd_duplicate: string;
+  bd_field_title: string;
+  bd_field_source: string;
+  bd_field_group: string;
+  bd_field_filter: string;
+  bd_field_view: string;
+  bd_field_time: string;
+  bd_field_rule: string;
+  bd_filter_none: string;
+  bd_time_auto: string;
+  bd_rule_risk: string;
+  bd_rule_ok: string;
+  bd_src_inflow: string;
+  bd_src_notes: string;
+  bd_src_tasks: string;
+  bd_preset_mcp_daily: string;
+  bd_preset_channels_daily: string;
+  bd_preset_notes_by_type: string;
+  bd_preset_top_tags: string;
+  bd_preset_edits_daily: string;
+  bd_preset_tasks_by_status: string;
+  bd_preset_unsourced_stat: string;
+  bd_g_day: string;
+  bd_g_channel: string;
+  bd_g_type: string;
+  bd_g_confidence: string;
+  bd_g_status: string;
+  bd_g_tag: string;
+  bd_v_bar: string;
+  bd_v_line: string;
+  bd_v_hbar: string;
+  bd_v_stat: string;
+  bd_v_table: string;
+  bd_hide_zero: string;
+  bd_json_form: string;
+  bd_json_bad: string;
+  bd_unknown: string; // {kind}
+  bd_field_color: string;
+  bd_color_default: string;
+  bd_color_blue: string;
+  bd_color_green: string;
+  bd_color_purple: string;
+  bd_color_amber: string;
+  bd_color_cyan: string;
+  bd_color_red: string;
+  bd_detail_total: string; // {n}
+  bd_board_pick: string;
+  bd_new_board: string;
+  bd_new_board_prompt: string;
+  bd_delete_board: string;
+  bd_delete_confirm: string; // {name}
+  ls_title: string;
+  ls_hint: string;
+  ls_accept: string;
+  ls_dismiss: string;
+  ls_accept_all: string;
+  ls_linking: string;
+  ls_toast_linked: string;
+  ls_toast_linked_sub: string;
+  ls_toast_failed: string;
+  ls_toast_retry: string;
+  zi_title: string;
+  zi_hint: string;
+  zi_none: string;
+  zi_done: string;
+  ci_title: string;
+  ci_hint: string;
+  ci_btn: string;
+  ci_busy: string;
+  ci_done: string; // {n}
+  ci_quarantined: string; // {n}
+  ci_none: string;
+  ci_skipped: string; // {n}
+  ci_sweep_cc: string;
+  ci_sweep_cx: string;
+  ci_sweep_hint: string;
+  ci_sweep_progress: string; // {done} {total}
+  ci_sweep_tally: string; // {i} {s} {f}
+  ci_failed_summary: string; // {n}
+  ci_retry_failed: string; // {n}
+  q_empty: string;
+  s_mascot: string;
+  s_mascot_hint: string;
+  s_backup_title: string;
+  s_backup_hint: string;
+  s_backup_export: string;
+  s_backup_import: string;
+  s_backup_busy: string;
+  s_backup_exported: string;
+  s_backup_imported: string; // {sections}
+  s_backup_import_failed: string; // {error}
+  s_backup_bad_json: string;
+  s_backup_section_settings: string;
+  s_backup_section_ui: string;
+  s_backup_section_graph: string;
+  s_backup_section_savedLooks: string;
+  s_backup_section_queryViews: string;
+  s_backup_section_dismissedLinkSuggestions: string;
+  s_backup_section_reflectIgnored: string;
+  s_backup_section_budgetThresholdUsd: string;
+  s_backup_confirm_title: string;
+  s_backup_confirm_body: string; // {sections}
+  s_backup_confirm_none: string;
+  s_backup_confirm_apply: string;
+  s_backup_confirm_cancel: string;
+  s_backup_undo: string;
+  s_backup_undo_hint: string;
+  s_backup_undone: string; // {sections}
+  hw_title: string;
+  hw_sub: string;
+  hw_sc_cmd: string;
+  hw_sc_sidebar: string;
+  hw_sc_fly: string;
+  hw_sc_esc: string;
+  hw_sc_new: string;
+  hw_sc_spotlight: string;
+  hw_sc_voice: string;
+  hw_sc_miss: string;
+  hw_sc_path: string;
+  hw_sc_live_link: string;
+  hw_sc_back: string;
+  hw_sc_fwd: string;
+  hw_tip_graph1: string;
+  hw_tip_graph2: string;
+  hw_tip_graph3: string;
+  hw_tip_query1: string;
+  hw_tip_query2: string;
+  hw_tip_ingest1: string;
+  hw_tip_ingest2: string;
+  hw_tip_views1: string;
+  hw_tip_overview1: string;
+  hw_tip_default: string;
+  vw_title: string;
+  vw_lede: string;
+  vw_search: string;
+  vw_any_type: string;
+  vw_any_conf: string;
+  vw_any_status: string;
+  vw_any_tag: string;
+  vw_orphans: string;
+  vw_save: string;
+  vw_save_prompt: string;
+  vw_pages: string;
+  vw_empty: string;
+  vw_col_name: string;
+  vw_col_type: string;
+  vw_col_conf: string;
+  vw_col_sources: string;
+  vw_col_links: string;
+  vw_col_tags: string;
+  vw_col_status: string;
+  vw_col_modified: string;
+  vw_lens_unsourced: string;
+  vw_lens_orphans: string;
+  vw_lens_disputed: string;
+  vw_lens_recent: string;
+  vw_select_all: string;
+  vw_select_row: string;
+  vw_selected_n: string;
+  vw_bulk_title: string;
+  vw_bulk_confirm: string;
+  vw_bulk_type: string;
+  vw_bulk_status: string;
+  vw_bulk_add_tag: string;
+  vw_clear_sel: string;
+  vw_edit_cell: string;
+  vw_unset: string;
+  vw_edit_done: string;
+  vw_edit_failed: string;
+  vw_load_error: string;
+  vw_io_error: string;
+  vw_overwrite_q: string;
+  tpl_new_from: string;
+  tpl_pick_title: string;
+  tpl_pick_msg: string;
+  tpl_empty: string;
+  tpl_create_starters: string;
+  tpl_creating: string;
+  tpl_create_error: string;
+  tpl_note_error: string;
+  tpl_starter_note: string;
+  tpl_starter_meeting: string;
+  tpl_starter_note_body: string;
+  tpl_starter_meeting_body: string;
   nav_history: string;
   nav_provenance: string;
   nav_tasks: string;
@@ -222,70 +222,70 @@ export interface Strings {
   tasks_loading: string;
   tasks_empty: string;
   tasks_empty_hint: string;
-  tasks_ph?: string;
-  tasks_due?: string;
-  tasks_add?: string;
-  tasks_stale?: string;
-  tasks_view?: string;
-  tasks_view_list?: string;
-  tasks_view_board?: string;
-  tasks_col_todo?: string;
-  tasks_col_doing?: string;
-  tasks_col_blocked?: string;
-  tasks_col_done?: string;
-  tasks_notify?: string;
-  tasks_view_calendar?: string;
-  tasks_cal_today?: string;
-  tasks_cal_undated?: string;
-  tasks_detail?: string;
-  tasks_detail_close?: string;
-  tasks_detail_status?: string;
-  tasks_detail_start?: string;
-  tasks_detail_scheduled?: string;
-  tasks_detail_priority?: string;
-  tasks_detail_priority_none?: string;
-  tasks_detail_estimate?: string;
-  tasks_detail_estimate_hint?: string;
-  tasks_detail_recur?: string;
-  tasks_detail_recur_hint?: string;
-  tasks_detail_notes?: string;
-  tasks_detail_notes_ph?: string;
-  tasks_detail_start_after_due?: string;
-  tasks_detail_open_note?: string;
-  tasks_hub?: string;
-  tasks_hub_heading?: string;
-  tasks_hub_empty?: string;
-  tasks_hub_written?: string;
-  tasks_hub_kept?: string;
-  tasks_compose_more?: string;
-  tasks_compose_category?: string;
-  tasks_compose_project?: string;
-  tasks_compose_target?: string;
-  tasks_compose_daily?: string;
-  tasks_new_roadmap?: string;
-  tasks_new_roadmap_ph?: string;
-  tasks_view_roadmap?: string;
-  tasks_roadmap_empty?: string;
-  tasks_roadmap_empty_hint?: string;
-  tasks_roadmap_progress?: string;
+  tasks_ph: string;
+  tasks_due: string;
+  tasks_add: string;
+  tasks_stale: string;
+  tasks_view: string;
+  tasks_view_list: string;
+  tasks_view_board: string;
+  tasks_col_todo: string;
+  tasks_col_doing: string;
+  tasks_col_blocked: string;
+  tasks_col_done: string;
+  tasks_notify: string;
+  tasks_view_calendar: string;
+  tasks_cal_today: string;
+  tasks_cal_undated: string;
+  tasks_detail: string;
+  tasks_detail_close: string;
+  tasks_detail_status: string;
+  tasks_detail_start: string;
+  tasks_detail_scheduled: string;
+  tasks_detail_priority: string;
+  tasks_detail_priority_none: string;
+  tasks_detail_estimate: string;
+  tasks_detail_estimate_hint: string;
+  tasks_detail_recur: string;
+  tasks_detail_recur_hint: string;
+  tasks_detail_notes: string;
+  tasks_detail_notes_ph: string;
+  tasks_detail_start_after_due: string;
+  tasks_detail_open_note: string;
+  tasks_hub: string;
+  tasks_hub_heading: string;
+  tasks_hub_empty: string;
+  tasks_hub_written: string;
+  tasks_hub_kept: string;
+  tasks_compose_more: string;
+  tasks_compose_category: string;
+  tasks_compose_project: string;
+  tasks_compose_target: string;
+  tasks_compose_daily: string;
+  tasks_new_roadmap: string;
+  tasks_new_roadmap_ph: string;
+  tasks_view_roadmap: string;
+  tasks_roadmap_empty: string;
+  tasks_roadmap_empty_hint: string;
+  tasks_roadmap_progress: string;
   // Tray popover v3: header subtitle states, the now-card, the glass tiles.
-  tray_sub_waiting_n?: string; // {n}
-  tray_sub_clear?: string;
-  tray_sub_distilling?: string; // {step}
-  tray_now_eyebrow?: string;
-  tray_toast_approved?: string; // {name}
-  tray_tile_waiting?: string;
-  tray_tile_today?: string;
-  tray_row_links?: string;
-  tray_row_reflect?: string;
-  tray_row_sessions?: string;
-  tray_card_tasks_v?: string; // {n}
-  tray_card_tasks_sub?: string; // {n}
-  tray_last24?: string;
-  tray_legend_hourly?: string;
-  dp_prev?: string;
-  dp_next?: string;
-  dp_clear?: string;
+  tray_sub_waiting_n: string; // {n}
+  tray_sub_clear: string;
+  tray_sub_distilling: string; // {step}
+  tray_now_eyebrow: string;
+  tray_toast_approved: string; // {name}
+  tray_tile_waiting: string;
+  tray_tile_today: string;
+  tray_row_links: string;
+  tray_row_reflect: string;
+  tray_row_sessions: string;
+  tray_card_tasks_v: string; // {n}
+  tray_card_tasks_sub: string; // {n}
+  tray_last24: string;
+  tray_legend_hourly: string;
+  dp_prev: string;
+  dp_next: string;
+  dp_clear: string;
   tasks_open_n: string;
   tasks_done_n: string;
   tasks_all_done: string;
@@ -295,10 +295,10 @@ export interface Strings {
   nav_schedules: string;
   nav_settings: string;
   // Split view (two panes side by side)
-  split_open?: string;
-  split_close?: string;
-  split_pick?: string;
-  split_resize?: string;
+  split_open: string;
+  split_close: string;
+  split_pick: string;
+  split_resize: string;
   // Multiverse overview (Phase 1)
   folder__root: string;
   folder_sources: string;
@@ -316,24 +316,24 @@ export interface Strings {
   ov_stats_links: string;
   ov_stats_ratio: string;
   ov_quick: string;
-  ov_stats_moved?: string;
-  ov_moved_none?: string;
-  ov_pulse_alt?: string;
-  ov_recent_moved?: string;
-  ov_recent_never?: string;
+  ov_stats_moved: string;
+  ov_moved_none: string;
+  ov_pulse_alt: string;
+  ov_recent_moved: string;
+  ov_recent_never: string;
   ing_title: string;
   ing_lede: string;
   ing_drop: string;
   ing_drop_or: string;
   ing_browse: string;
-  ing_drop_multi?: string; // {n} = count
-  ing_inbox_pending?: string; // {n} = pending file count
-  ing_inbox_empty?: string;
-  ing_inbox_today?: string;
-  ing_inbox_unsupported_chip?: string;
-  ing_inbox_unsupported_line?: string; // {n} = unsupported file count
-  ing_yt_fetch?: string;
-  ing_yt_fetching?: string;
+  ing_drop_multi: string; // {n} = count
+  ing_inbox_pending: string; // {n} = pending file count
+  ing_inbox_empty: string;
+  ing_inbox_today: string;
+  ing_inbox_unsupported_chip: string;
+  ing_inbox_unsupported_line: string; // {n} = unsupported file count
+  ing_yt_fetch: string;
+  ing_yt_fetching: string;
   ing_paste_url_ph: string;
   ing_or_paste: string;
   ing_paste_ph: string;
@@ -351,8 +351,8 @@ export interface Strings {
   ing_success_sub: string;
   ing_open_index: string;
   ing_open_report: string;
-  hist_collapse?: string;
-  hist_expand?: string;
+  hist_collapse: string;
+  hist_expand: string;
   ing_run_again: string;
   ing_live_title: string;
   ing_live_warmup: string;
@@ -405,160 +405,160 @@ export interface Strings {
   gr_show_orphans_hint: string;
   gr_existing_only: string;
   gr_existing_only_hint: string;
-  gr_skin?: string;
-  gr_skin_auto?: string;
-  gr_skin_black?: string;
-  gr_skin_white?: string;
-  gr_skin_galaxy?: string;
-  gr_skin_web?: string;
-  gr_recency?: string;
-  gr_recency_hint?: string;
-  gr_minimap?: string;
-  gr_minimap_hint?: string;
-  gr_layout_spiral?: string;
-  gr_layout_strata?: string;
-  gr_layout_semantic?: string;
-  gr_semantic_missing?: string;
-  gr_layout_celestial?: string;
-  gr_layout_radial?: string;
-  gr_layout_walrus?: string;
-  gr_layout_mycelium?: string;
-  gr_skin_sigma?: string;
-  gr_skin_mycelium?: string;
-  gr_mycelium_dim?: string;
-  gr_mycelium_3d?: string;
-  gr_mycelium_2d?: string;
-  gr_myc_node_color?: string;
-  gr_myc_hypha_color?: string;
-  gr_myc_bg?: string;
-  gr_myc_bg_loam?: string;
-  gr_myc_bg_void?: string;
-  gr_myc_bg_soil?: string;
-  gr_myc_bg_paper?: string;
-  gr_myc_bg_grid?: string;
-  gr_myc_bg_custom?: string;
-  gr_vibes?: string;
-  gr_vibe_living?: string;
-  gr_vibe_sigma?: string;
-  gr_vibe_cosmicweb?: string;
-  gr_vibe_neural?: string;
-  gr_vibe_planetarium?: string;
-  gr_vibe_paper?: string;
-  gr_vibe_chronicle?: string;
-  gr_vibe_nebula?: string;
-  gr_vibe_living_desc?: string;
-  gr_vibe_sigma_desc?: string;
-  gr_vibe_cosmicweb_desc?: string;
-  gr_vibe_neural_desc?: string;
-  gr_vibe_planetarium_desc?: string;
-  gr_vibe_paper_desc?: string;
-  gr_vibe_chronicle_desc?: string;
-  gr_vibe_nebula_desc?: string;
-  gr_vibe_walrus?: string;
-  gr_vibe_mycelium?: string;
-  gr_vibe_walrus_desc?: string;
-  gr_vibe_mycelium_desc?: string;
-  gr_looks?: string;
-  gr_appearance?: string;
-  gr_motion_fx?: string;
-  gr_mascot_cameo?: string;
-  gr_mascot_cameo_hint?: string;
-  mc_label?: string;
-  mc_dismiss?: string;
-  mc_tip_drag?: string;
-  mc_tip_path?: string;
-  mc_tip_fly?: string;
-  mc_tip_looks?: string;
-  mc_tip_timelapse?: string;
-  mc_tip_multiverse?: string;
-  mc_tip_minimap?: string;
-  mc_tip_recency?: string;
-  mc_tip_save?: string;
-  mc_tip_chronicle?: string;
-  gr_saved?: string;
-  gr_saved_apply?: string;
-  gr_saved_delete?: string;
-  gr_saved_empty?: string;
-  gr_saved_name_ph?: string;
-  gr_saved_save?: string;
-  gr_layout_3d?: string;
-  gr_layout_2d?: string;
-  gr_layout_galaxy_s?: string;
-  gr_layout_synapse3d_s?: string;
-  gr_layout_atlas_s?: string;
-  gr_layout_synapse_s?: string;
-  gr_cinematic?: string;
-  gr_cinematic_hint?: string;
-  gr_flow?: string;
-  gr_flow_hint?: string;
-  gr_galaxies?: string;
-  gr_galaxies_hint?: string;
-  gr_multiverse?: string;
-  gr_multiverse_hint?: string;
-  gr_mv_loading?: string;
-  gr_mv_none?: string;
-  gr_layout?: string;
-  gr_layout_galaxy?: string;
-  gr_layout_atlas?: string;
-  gr_layout_synapse?: string;
-  gr_layout_synapse3d?: string;
-  gr_recommend?: string;
-  gr_recommend_hint?: string;
-  gr_sky?: string;
-  gr_sky_stars?: string;
-  gr_sky_dense?: string;
-  gr_sky_grid?: string;
-  gr_sky_void?: string;
-  gr_node_color?: string;
-  gr_node_color_community?: string;
-  gr_node_color_white?: string;
-  gr_node_color_auto?: string;
-  gr_mono_below?: string;
-  gr_tl_speed?: string;
-  gr_scale_star?: string;
-  gr_scale_system?: string;
-  gr_scale_galaxy?: string;
-  gr_scale_cluster?: string;
+  gr_skin: string;
+  gr_skin_auto: string;
+  gr_skin_black: string;
+  gr_skin_white: string;
+  gr_skin_galaxy: string;
+  gr_skin_web: string;
+  gr_recency: string;
+  gr_recency_hint: string;
+  gr_minimap: string;
+  gr_minimap_hint: string;
+  gr_layout_spiral: string;
+  gr_layout_strata: string;
+  gr_layout_semantic: string;
+  gr_semantic_missing: string;
+  gr_layout_celestial: string;
+  gr_layout_radial: string;
+  gr_layout_walrus: string;
+  gr_layout_mycelium: string;
+  gr_skin_sigma: string;
+  gr_skin_mycelium: string;
+  gr_mycelium_dim: string;
+  gr_mycelium_3d: string;
+  gr_mycelium_2d: string;
+  gr_myc_node_color: string;
+  gr_myc_hypha_color: string;
+  gr_myc_bg: string;
+  gr_myc_bg_loam: string;
+  gr_myc_bg_void: string;
+  gr_myc_bg_soil: string;
+  gr_myc_bg_paper: string;
+  gr_myc_bg_grid: string;
+  gr_myc_bg_custom: string;
+  gr_vibes: string;
+  gr_vibe_living: string;
+  gr_vibe_sigma: string;
+  gr_vibe_cosmicweb: string;
+  gr_vibe_neural: string;
+  gr_vibe_planetarium: string;
+  gr_vibe_paper: string;
+  gr_vibe_chronicle: string;
+  gr_vibe_nebula: string;
+  gr_vibe_living_desc: string;
+  gr_vibe_sigma_desc: string;
+  gr_vibe_cosmicweb_desc: string;
+  gr_vibe_neural_desc: string;
+  gr_vibe_planetarium_desc: string;
+  gr_vibe_paper_desc: string;
+  gr_vibe_chronicle_desc: string;
+  gr_vibe_nebula_desc: string;
+  gr_vibe_walrus: string;
+  gr_vibe_mycelium: string;
+  gr_vibe_walrus_desc: string;
+  gr_vibe_mycelium_desc: string;
+  gr_looks: string;
+  gr_appearance: string;
+  gr_motion_fx: string;
+  gr_mascot_cameo: string;
+  gr_mascot_cameo_hint: string;
+  mc_label: string;
+  mc_dismiss: string;
+  mc_tip_drag: string;
+  mc_tip_path: string;
+  mc_tip_fly: string;
+  mc_tip_looks: string;
+  mc_tip_timelapse: string;
+  mc_tip_multiverse: string;
+  mc_tip_minimap: string;
+  mc_tip_recency: string;
+  mc_tip_save: string;
+  mc_tip_chronicle: string;
+  gr_saved: string;
+  gr_saved_apply: string;
+  gr_saved_delete: string;
+  gr_saved_empty: string;
+  gr_saved_name_ph: string;
+  gr_saved_save: string;
+  gr_layout_3d: string;
+  gr_layout_2d: string;
+  gr_layout_galaxy_s: string;
+  gr_layout_synapse3d_s: string;
+  gr_layout_atlas_s: string;
+  gr_layout_synapse_s: string;
+  gr_cinematic: string;
+  gr_cinematic_hint: string;
+  gr_flow: string;
+  gr_flow_hint: string;
+  gr_galaxies: string;
+  gr_galaxies_hint: string;
+  gr_multiverse: string;
+  gr_multiverse_hint: string;
+  gr_mv_loading: string;
+  gr_mv_none: string;
+  gr_layout: string;
+  gr_layout_galaxy: string;
+  gr_layout_atlas: string;
+  gr_layout_synapse: string;
+  gr_layout_synapse3d: string;
+  gr_recommend: string;
+  gr_recommend_hint: string;
+  gr_sky: string;
+  gr_sky_stars: string;
+  gr_sky_dense: string;
+  gr_sky_grid: string;
+  gr_sky_void: string;
+  gr_node_color: string;
+  gr_node_color_community: string;
+  gr_node_color_white: string;
+  gr_node_color_auto: string;
+  gr_mono_below: string;
+  gr_tl_speed: string;
+  gr_scale_star: string;
+  gr_scale_system: string;
+  gr_scale_galaxy: string;
+  gr_scale_cluster: string;
   gr_arrows: string;
   gr_arrows_hint: string;
   gr_arrow_size: string;
-  gr_semantic_edges?: string;
-  gr_semantic_edges_hint?: string;
-  gr_edge_bundles?: string;
-  gr_edge_bundles_hint?: string;
-  gr_fly_btn?: string;
-  gr_timelapse_record?: string;
-  gr_node_color_black?: string;
-  gr_cosmic?: string;
-  gr_cosmic_hint?: string;
-  gr_cosmic_freq?: string;
-  gr_click_burst?: string;
-  gr_click_burst_hint?: string;
-  gr_neural_firing?: string;
-  gr_neural_firing_hint?: string;
-  gr_planets?: string;
-  gr_planets_hint?: string;
-  gr_pixel_nodes?: string;
-  gr_pixel_nodes_hint?: string;
-  gr_color_depth?: string;
-  gr_edge_tint?: string;
-  gr_edge_tint_grey?: string;
-  gr_edge_tint_community?: string;
+  gr_semantic_edges: string;
+  gr_semantic_edges_hint: string;
+  gr_edge_bundles: string;
+  gr_edge_bundles_hint: string;
+  gr_fly_btn: string;
+  gr_timelapse_record: string;
+  gr_node_color_black: string;
+  gr_cosmic: string;
+  gr_cosmic_hint: string;
+  gr_cosmic_freq: string;
+  gr_click_burst: string;
+  gr_click_burst_hint: string;
+  gr_neural_firing: string;
+  gr_neural_firing_hint: string;
+  gr_planets: string;
+  gr_planets_hint: string;
+  gr_pixel_nodes: string;
+  gr_pixel_nodes_hint: string;
+  gr_color_depth: string;
+  gr_edge_tint: string;
+  gr_edge_tint_grey: string;
+  gr_edge_tint_community: string;
   // Gesture cheat-sheet popover ("?" toolbar button).
-  gr_help_btn?: string;
-  gr_help_title?: string;
-  gr_help_click?: string;
-  gr_help_dblclick?: string;
-  gr_help_cmdclick?: string;
-  gr_help_esc?: string;
-  gr_help_fly?: string;
-  gr_help_drag?: string;
+  gr_help_btn: string;
+  gr_help_title: string;
+  gr_help_click: string;
+  gr_help_dblclick: string;
+  gr_help_cmdclick: string;
+  gr_help_esc: string;
+  gr_help_fly: string;
+  gr_help_drag: string;
   gr_trace: string;
   gr_trace_hint: string;
   gr_spaceship: string;
   gr_spaceship_hint: string;
   gr_spaceship_exit: string;
-  gr_speed?: string;
+  gr_speed: string;
   gr_close: string;
   gr_open: string;
   gr_text_fade: string;
@@ -577,64 +577,64 @@ export interface Strings {
   gr_timelapse_pause: string;
   // Mycelium-only relabels for the shared Motion/Forces controls (optional —
   // components fall back to English).
-  gr_motion_hint_myc?: string;
-  gr_myc_forces_hint?: string;
-  gr_myc_spread?: string;
-  gr_myc_branch?: string;
+  gr_motion_hint_myc: string;
+  gr_myc_forces_hint: string;
+  gr_myc_spread: string;
+  gr_myc_branch: string;
   // Graph node inspector (optional — components fall back to English).
-  gr_insp_type?: string;
-  gr_insp_confidence?: string;
-  gr_insp_status?: string;
-  gr_insp_connections?: string;
-  gr_insp_links_out?: string;
-  gr_insp_backlinks?: string;
-  gr_insp_tags?: string;
-  gr_insp_open?: string;
-  gr_insp_unresolved?: string;
-  gr_insp_none?: string;
-  gr_find_ph?: string;
-  gr_insp_path_start?: string;
-  gr_insp_path_anchor?: string;
-  gr_insp_path_clear?: string;
-  gr_insp_path?: string;
-  gr_insp_path_none?: string;
-  gr_insp_hops?: string;
-  gr_gaps_title?: string;
-  gr_gaps_btn?: string;
-  gr_gap_missing?: string;
-  gr_gap_malformed?: string;
-  gr_gap_orphans?: string;
-  gr_gap_undercited?: string;
-  gr_gap_lowconf?: string;
-  gr_gap_disputed?: string;
-  gr_gap_islands?: string;
-  gr_gap_none?: string;
-  gr_gap_bridges?: string;
-  gr_gap_ask?: string;
-  gr_bridge_question?: string;
-  gr_gap_more?: string;
-  q_thinking?: string;
-  q_answering?: string;
-  q_answering_from?: string;
-  gr_key_size?: string;
-  gr_key_dim?: string;
-  gr_key_amber?: string;
-  gr_key_neutral?: string;
-  gr_more?: string; // legend: "+{n} more" clusters beyond the shown cap
-  gr_focus_trail?: string;
-  gr_focus_esc?: string;
-  gr_preset?: string;
-  gr_preset_galaxy?: string;
-  gr_preset_loose?: string;
-  gr_preset_dense?: string;
-  gr_glow?: string;
-  gr_motion?: string;
-  gr_motion_hint?: string;
-  gr_advanced?: string;
-  gr_loading?: string;
-  gr_ctx_lost?: string;
-  gr_retry?: string;
-  gr_perf_mode?: string;
+  gr_insp_type: string;
+  gr_insp_confidence: string;
+  gr_insp_status: string;
+  gr_insp_connections: string;
+  gr_insp_links_out: string;
+  gr_insp_backlinks: string;
+  gr_insp_tags: string;
+  gr_insp_open: string;
+  gr_insp_unresolved: string;
+  gr_insp_none: string;
+  gr_find_ph: string;
+  gr_insp_path_start: string;
+  gr_insp_path_anchor: string;
+  gr_insp_path_clear: string;
+  gr_insp_path: string;
+  gr_insp_path_none: string;
+  gr_insp_hops: string;
+  gr_gaps_title: string;
+  gr_gaps_btn: string;
+  gr_gap_missing: string;
+  gr_gap_malformed: string;
+  gr_gap_orphans: string;
+  gr_gap_undercited: string;
+  gr_gap_lowconf: string;
+  gr_gap_disputed: string;
+  gr_gap_islands: string;
+  gr_gap_none: string;
+  gr_gap_bridges: string;
+  gr_gap_ask: string;
+  gr_bridge_question: string;
+  gr_gap_more: string;
+  q_thinking: string;
+  q_answering: string;
+  q_answering_from: string;
+  gr_key_size: string;
+  gr_key_dim: string;
+  gr_key_amber: string;
+  gr_key_neutral: string;
+  gr_more: string; // legend: "+{n} more" clusters beyond the shown cap
+  gr_focus_trail: string;
+  gr_focus_esc: string;
+  gr_preset: string;
+  gr_preset_galaxy: string;
+  gr_preset_loose: string;
+  gr_preset_dense: string;
+  gr_glow: string;
+  gr_motion: string;
+  gr_motion_hint: string;
+  gr_advanced: string;
+  gr_loading: string;
+  gr_ctx_lost: string;
+  gr_retry: string;
+  gr_perf_mode: string;
   h_title: string;
   h_lede: string;
   h_created: string;
@@ -652,62 +652,62 @@ export interface Strings {
   p_lint_failed: string;
   h_empty: string;
   s_title: string;
-  s_search_ph?: string;
-  s_search_empty?: string; // {q}
+  s_search_ph: string;
+  s_search_empty: string; // {q}
   s_account: string;
-  s_local_user?: string;
-  s_no_vault?: string;
-  s_vault_path?: string;
-  s_change?: string;
-  q_empty_response?: string;
-  eb_title?: string; // "{area}" is substituted with eb_area_*
-  eb_reload?: string;
-  eb_retry?: string;
-  eb_area_app?: string;
-  eb_area_graph?: string;
+  s_local_user: string;
+  s_no_vault: string;
+  s_vault_path: string;
+  s_change: string;
+  q_empty_response: string;
+  eb_title: string; // "{area}" is substituted with eb_area_*
+  eb_reload: string;
+  eb_retry: string;
+  eb_area_app: string;
+  eb_area_graph: string;
   s_workspace: string;
   s_model: string;
-  s_embeddings?: string;
-  s_embeddings_lede?: string;
-  s_embeddings_indexed?: string;
-  s_embeddings_reindex?: string;
-  s_embeddings_indexing?: string;
-  s_embeddings_empty?: string;
-  s_embeddings_loading_model?: string;
-  s_embeddings_loading_model_hint?: string;
-  s_embeddings_done?: string;
-  s_autoreindex_title?: string;
-  s_autoreindex_desc?: string;
+  s_embeddings: string;
+  s_embeddings_lede: string;
+  s_embeddings_indexed: string;
+  s_embeddings_reindex: string;
+  s_embeddings_indexing: string;
+  s_embeddings_empty: string;
+  s_embeddings_loading_model: string;
+  s_embeddings_loading_model_hint: string;
+  s_embeddings_done: string;
+  s_autoreindex_title: string;
+  s_autoreindex_desc: string;
   s_providers: string;
   s_mcp: string;
   s_appearance: string;
-  s_vault_known?: string;
-  s_ov_theme?: string;
-  s_ov_theme_lede?: string;
-  ov_theme_mycelium?: string;
+  s_vault_known: string;
+  s_ov_theme: string;
+  s_ov_theme_lede: string;
+  ov_theme_mycelium: string;
   s_lang: string;
   s_about: string;
   // In-app updater (Settings -> About + the app-wide banner). {v} = new version.
-  up_check?: string;
-  up_checking?: string;
-  up_current?: string;
-  up_downloading?: string; // {v}
-  up_ready?: string; // {v}
-  up_restart?: string;
-  up_restart_btn?: string;
-  up_unconfigured?: string;
-  up_unavailable?: string;
-  up_error?: string;
-  up_dismiss?: string;
+  up_check: string;
+  up_checking: string;
+  up_current: string;
+  up_downloading: string; // {v}
+  up_ready: string; // {v}
+  up_restart: string;
+  up_restart_btn: string;
+  up_unconfigured: string;
+  up_unavailable: string;
+  up_error: string;
+  up_dismiss: string;
   // Crash report viewer (Settings -> About, ROADMAP P2).
-  cr_last_crash?: string;
-  cr_at?: string; // "{time} at {location}" — {time} and {location}
-  cr_copy?: string;
-  cr_copied?: string;
-  cr_note_label?: string;
-  cr_note_ph?: string;
-  cr_clear?: string;
-  cr_cleared?: string;
+  cr_last_crash: string;
+  cr_at: string; // "{time} at {location}" — {time} and {location}
+  cr_copy: string;
+  cr_copied: string;
+  cr_note_label: string;
+  cr_note_ph: string;
+  cr_clear: string;
+  cr_cleared: string;
   mcp_lede: string;
   mcp_status_installed: string;
   mcp_status_not_installed: string;
@@ -721,23 +721,23 @@ export interface Strings {
   mcp_register_btn: string;
   mcp_offline_note: string;
   mcp_not_found: string;
-  mcp_serving?: string;
-  mcp_not_serving?: string;
-  mcp_start_btn?: string;
-  mcp_stop_btn?: string;
-  mcp_registering?: string;
-  mcp_starting?: string;
-  mcp_connect_btn?: string;
-  mcp_connecting?: string;
-  mcp_connect_hint?: string;
+  mcp_serving: string;
+  mcp_not_serving: string;
+  mcp_start_btn: string;
+  mcp_stop_btn: string;
+  mcp_registering: string;
+  mcp_starting: string;
+  mcp_connect_btn: string;
+  mcp_connecting: string;
+  mcp_connect_hint: string;
   s_model_lede: string;
   s_model_ingest: string;
   s_model_query: string;
-  model_custom?: string;
-  model_disconnected?: string;
-  model_custom_ph?: string;
-  model_effort?: string;
-  model_fetching?: string;
+  model_custom: string;
+  model_disconnected: string;
+  model_custom_ph: string;
+  model_effort: string;
+  model_fetching: string;
   s_model_recommended: string;
   s_model_ctx: string;
   s_providers_lede: string;
@@ -752,9 +752,9 @@ export interface Strings {
   s_mycopro_logout: string;
   s_mycopro_loggedin: string;
   s_mycopro_noaccess: string;
-  s_autoimport_title?: string;
-  s_autoimport_desc?: string;
-  s_autoimport_interval?: string;
+  s_autoimport_title: string;
+  s_autoimport_desc: string;
+  s_autoimport_interval: string;
   s_autoingest_title: string;
   s_autoingest_desc: string;
   s_autoingest_interval: string;
@@ -803,509 +803,509 @@ export interface Strings {
   ol_deleting: string;
   ol_delete_failed: string;
   // Shared UI (optional — components fall back to English).
-  ui_close?: string;
+  ui_close: string;
   // Provenance page.
-  p_lint_run?: string;
-  p_linting?: string;
-  p_lint_report?: string;
+  p_lint_run: string;
+  p_linting: string;
+  p_lint_report: string;
   // Local (no-model) lint report — our own fixed strings, never model prose.
-  lint_local_title?: string;
-  lint_local_note?: string;
-  lint_local_clean?: string;
-  lint_sec_critical?: string;
-  lint_sec_warning?: string;
-  lint_sec_info?: string;
-  lint_k_missing_frontmatter?: string;
-  lint_k_invalid_frontmatter?: string;
-  lint_k_dangling_citation?: string;
-  lint_k_source_count_mismatch?: string;
-  lint_k_missing_superseded_by?: string;
-  lint_k_missing_disputed_section?: string;
-  lint_k_weak_confidence?: string;
-  lint_k_stale_page?: string;
-  lint_k_hedged_claim?: string;
-  lint_k_orphan_page?: string;
-  lint_k_unresolved_link?: string;
-  p_dismiss?: string;
-  p_open_vault?: string;
-  p_scanning?: string;
-  p_empty?: string;
-  p_overall?: string;
-  p_claims_cited?: string;
-  p_pages_by_coverage?: string;
+  lint_local_title: string;
+  lint_local_note: string;
+  lint_local_clean: string;
+  lint_sec_critical: string;
+  lint_sec_warning: string;
+  lint_sec_info: string;
+  lint_k_missing_frontmatter: string;
+  lint_k_invalid_frontmatter: string;
+  lint_k_dangling_citation: string;
+  lint_k_source_count_mismatch: string;
+  lint_k_missing_superseded_by: string;
+  lint_k_missing_disputed_section: string;
+  lint_k_weak_confidence: string;
+  lint_k_stale_page: string;
+  lint_k_hedged_claim: string;
+  lint_k_orphan_page: string;
+  lint_k_unresolved_link: string;
+  p_dismiss: string;
+  p_open_vault: string;
+  p_scanning: string;
+  p_empty: string;
+  p_overall: string;
+  p_claims_cited: string;
+  p_pages_by_coverage: string;
   // Reader page.
-  rd_meta?: string;
-  rd_source?: string;
-  rd_split?: string;
-  rd_preview?: string;
-  rd_live?: string;
-  rd_task_toggle?: string;
-  rd_frontmatter_hidden?: string;
-  rd_backlinks_empty?: string;
-  rd_related?: string;
-  rd_related_no_index?: string;
-  rd_related_no_index_cta?: string;
-  rd_make_cards?: string;
-  rd_making?: string;
-  rd_cards_none?: string;
-  rd_cards_made?: string;
-  rd_open_study?: string;
+  rd_meta: string;
+  rd_source: string;
+  rd_split: string;
+  rd_preview: string;
+  rd_live: string;
+  rd_task_toggle: string;
+  rd_frontmatter_hidden: string;
+  rd_backlinks_empty: string;
+  rd_related: string;
+  rd_related_no_index: string;
+  rd_related_no_index_cta: string;
+  rd_make_cards: string;
+  rd_making: string;
+  rd_cards_none: string;
+  rd_cards_made: string;
+  rd_open_study: string;
   // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
-  cm_find?: string;
-  cm_replace_field?: string;
-  cm_next?: string;
-  cm_previous?: string;
-  cm_all?: string;
-  cm_match_case?: string;
-  cm_by_word?: string;
-  cm_regexp?: string;
-  cm_replace?: string;
-  cm_replace_all?: string;
-  cm_close?: string;
-  cm_current_match?: string;
-  cm_replaced_matches?: string;
-  cm_replaced_on_line?: string;
-  cm_on_line?: string;
-  cm_goto_line?: string;
-  cm_go?: string;
-  cm_completions?: string;
-  sl_h1?: string;
-  sl_h2?: string;
-  sl_h3?: string;
-  sl_bullet?: string;
-  sl_numbered?: string;
-  sl_todo?: string;
-  sl_code?: string;
-  sl_quote?: string;
-  sl_table?: string;
-  sl_divider?: string;
-  sl_date?: string;
-  img_unsupported?: string;
-  img_failed?: string;
-  ol_title?: string;
-  ol_empty?: string;
-  ol_untitled?: string;
-  ol_toggle?: string;
+  cm_find: string;
+  cm_replace_field: string;
+  cm_next: string;
+  cm_previous: string;
+  cm_all: string;
+  cm_match_case: string;
+  cm_by_word: string;
+  cm_regexp: string;
+  cm_replace: string;
+  cm_replace_all: string;
+  cm_close: string;
+  cm_current_match: string;
+  cm_replaced_matches: string;
+  cm_replaced_on_line: string;
+  cm_on_line: string;
+  cm_goto_line: string;
+  cm_go: string;
+  cm_completions: string;
+  sl_h1: string;
+  sl_h2: string;
+  sl_h3: string;
+  sl_bullet: string;
+  sl_numbered: string;
+  sl_todo: string;
+  sl_code: string;
+  sl_quote: string;
+  sl_table: string;
+  sl_divider: string;
+  sl_date: string;
+  img_unsupported: string;
+  img_failed: string;
+  ol_title: string;
+  ol_empty: string;
+  ol_untitled: string;
+  ol_toggle: string;
   // Reader properties panel.
-  props_title?: string;
-  props_add?: string;
-  props_key_ph?: string;
-  props_value_ph?: string;
-  props_add_confirm?: string;
-  props_remove?: string;
-  props_bad_key?: string;
-  props_complex?: string;
-  props_tags_ph?: string;
-  props_tag_remove?: string;
+  props_title: string;
+  props_add: string;
+  props_key_ph: string;
+  props_value_ph: string;
+  props_add_confirm: string;
+  props_remove: string;
+  props_bad_key: string;
+  props_complex: string;
+  props_tags_ph: string;
+  props_tag_remove: string;
   // Study page (Feature 3).
-  st_title?: string;
-  st_lede?: string;
-  st_no_decks?: string;
-  st_generate_hint?: string;
-  st_browse_pages?: string;
-  st_refresh?: string;
-  st_total?: string;
-  st_due?: string;
-  st_no_due?: string;
-  st_all_decks?: string;
-  st_review?: string;
-  st_quiz?: string;
-  st_loading?: string;
-  st_progress?: string;
-  st_source?: string;
-  st_flip?: string;
-  st_grade_again?: string;
-  st_grade_hard?: string;
-  st_grade_good?: string;
-  st_grade_easy?: string;
-  st_all_done?: string;
-  st_done_sub?: string;
-  st_quiz_needs_cards?: string;
-  st_quiz_intro?: string;
-  st_quiz_empty?: string;
-  st_gen_quiz?: string;
-  st_generating?: string;
-  st_quiz_done?: string;
-  st_quiz_score?: string;
-  st_correct?: string;
-  st_wrong?: string;
-  st_next?: string;
+  st_title: string;
+  st_lede: string;
+  st_no_decks: string;
+  st_generate_hint: string;
+  st_browse_pages: string;
+  st_refresh: string;
+  st_total: string;
+  st_due: string;
+  st_no_due: string;
+  st_all_decks: string;
+  st_review: string;
+  st_quiz: string;
+  st_loading: string;
+  st_progress: string;
+  st_source: string;
+  st_flip: string;
+  st_grade_again: string;
+  st_grade_hard: string;
+  st_grade_good: string;
+  st_grade_easy: string;
+  st_all_done: string;
+  st_done_sub: string;
+  st_quiz_needs_cards: string;
+  st_quiz_intro: string;
+  st_quiz_empty: string;
+  st_gen_quiz: string;
+  st_generating: string;
+  st_quiz_done: string;
+  st_quiz_score: string;
+  st_correct: string;
+  st_wrong: string;
+  st_next: string;
   // Agent mode (Feature 4).
-  q_mode?: string;
-  q_mode_ask?: string;
-  q_mode_agent?: string;
-  ag_lede?: string;
-  ag_preset?: string;
-  ag_preset_none?: string;
-  ag_new_preset?: string;
-  ag_preset_name?: string;
-  ag_preset_prompt?: string;
-  ag_preset_prompt_hint?: string;
-  ag_allow_write?: string;
-  ag_write_hint?: string;
-  ag_ph?: string;
-  ag_run?: string;
-  ag_stop?: string;
-  ag_task?: string;
-  ag_steps?: string;
-  ag_working?: string;
-  ag_declined?: string;
-  ag_stopped_limit?: string;
-  ag_unsupported?: string;
+  q_mode: string;
+  q_mode_ask: string;
+  q_mode_agent: string;
+  ag_lede: string;
+  ag_preset: string;
+  ag_preset_none: string;
+  ag_new_preset: string;
+  ag_preset_name: string;
+  ag_preset_prompt: string;
+  ag_preset_prompt_hint: string;
+  ag_allow_write: string;
+  ag_write_hint: string;
+  ag_ph: string;
+  ag_run: string;
+  ag_stop: string;
+  ag_task: string;
+  ag_steps: string;
+  ag_working: string;
+  ag_declined: string;
+  ag_stopped_limit: string;
+  ag_unsupported: string;
   // Audio overview (Feature 5).
-  rd_audio?: string;
-  au_title?: string;
-  au_close?: string;
-  au_generating?: string;
-  au_needs_provider?: string;
-  bf_title?: string;
-  bf_desc?: string;
-  bf_waiting?: string;
-  bf_done?: string;
-  bf_skipped?: string;
-  bf_held?: string;
-  bf_promote?: string;
-  bf_promoted?: string;
-  bf_held_note?: string;
-  au_play?: string;
-  au_pause?: string;
-  au_stop?: string;
-  au_turns?: string;
-  au_open_transcript?: string;
-  au_no_tts?: string;
-  au_host?: string;
-  au_guest?: string;
-  au_play_from?: string;
+  rd_audio: string;
+  au_title: string;
+  au_close: string;
+  au_generating: string;
+  au_needs_provider: string;
+  bf_title: string;
+  bf_desc: string;
+  bf_waiting: string;
+  bf_done: string;
+  bf_skipped: string;
+  bf_held: string;
+  bf_promote: string;
+  bf_promoted: string;
+  bf_held_note: string;
+  au_play: string;
+  au_pause: string;
+  au_stop: string;
+  au_turns: string;
+  au_open_transcript: string;
+  au_no_tts: string;
+  au_host: string;
+  au_guest: string;
+  au_play_from: string;
   // PDF viewer (Feature 6).
-  pdf_page?: string;
-  pdf_close?: string;
-  pdf_loading?: string;
-  pdf_error?: string;
-  pdf_highlight_cite?: string;
+  pdf_page: string;
+  pdf_close: string;
+  pdf_loading: string;
+  pdf_error: string;
+  pdf_highlight_cite: string;
   // Schedules (Feature 7).
-  sc_title?: string;
-  sc_lede?: string;
-  sc_new?: string;
-  sc_empty?: string;
-  sc_run_now?: string;
-  sc_running?: string;
-  sc_edit?: string;
-  sc_last_run?: string;
-  sc_never?: string;
-  sc_done?: string;
-  sc_open?: string;
-  sc_f_title?: string;
-  sc_f_kind?: string;
-  sc_f_cadence?: string;
-  sc_f_prompt?: string;
-  sc_f_topic?: string;
-  sc_f_enabled?: string;
-  sc_f_notify?: string;
-  sc_f_notify_hint?: string;
-  sc_f_save?: string;
-  sc_f_cancel?: string;
-  sc_bg_install?: string;
-  sc_bg_remove?: string;
-  sc_bg_hint?: string;
-  sc_kind_distill?: string;
+  sc_title: string;
+  sc_lede: string;
+  sc_new: string;
+  sc_empty: string;
+  sc_run_now: string;
+  sc_running: string;
+  sc_edit: string;
+  sc_last_run: string;
+  sc_never: string;
+  sc_done: string;
+  sc_open: string;
+  sc_f_title: string;
+  sc_f_kind: string;
+  sc_f_cadence: string;
+  sc_f_prompt: string;
+  sc_f_topic: string;
+  sc_f_enabled: string;
+  sc_f_notify: string;
+  sc_f_notify_hint: string;
+  sc_f_save: string;
+  sc_f_cancel: string;
+  sc_bg_install: string;
+  sc_bg_remove: string;
+  sc_bg_hint: string;
+  sc_kind_distill: string;
   // Ontology distillation (Task 8, Phase A) — Settings tab.
-  s_distill?: string;
-  set_distill_loading?: string;
-  set_distill_lede?: string;
-  set_distill_enabled_title?: string;
-  set_distill_enabled_desc?: string;
-  set_distill_intensity?: string;
-  set_distill_intensity_conservative?: string;
-  set_distill_intensity_standard?: string;
-  set_distill_intensity_aggressive?: string;
-  set_distill_gate?: string;
-  set_distill_gate_strict?: string;
-  set_distill_gate_normal?: string;
-  set_distill_gate_loose?: string;
-  set_distill_count_trigger?: string;
-  set_distill_ttl?: string;
-  set_distill_budget?: string;
-  set_distill_idle_minutes?: string;
-  set_distill_maturation?: string;
+  s_distill: string;
+  set_distill_loading: string;
+  set_distill_lede: string;
+  set_distill_enabled_title: string;
+  set_distill_enabled_desc: string;
+  set_distill_intensity: string;
+  set_distill_intensity_conservative: string;
+  set_distill_intensity_standard: string;
+  set_distill_intensity_aggressive: string;
+  set_distill_gate: string;
+  set_distill_gate_strict: string;
+  set_distill_gate_normal: string;
+  set_distill_gate_loose: string;
+  set_distill_count_trigger: string;
+  set_distill_ttl: string;
+  set_distill_budget: string;
+  set_distill_idle_minutes: string;
+  set_distill_maturation: string;
   // Phase B LLM-layer knobs (final-review Important 2).
-  set_distill_llm_digest_days?: string;
-  set_distill_llm_ingest_budget?: string;
-  set_distill_profile_injection_title?: string;
-  set_distill_profile_injection_desc?: string;
-  set_distill_status_title?: string;
-  set_distill_backlog?: string;
-  set_distill_pending?: string;
-  set_distill_trend_shrinking?: string;
-  set_distill_trend_growing?: string;
-  set_distill_trend_flat?: string;
-  set_distill_run_now?: string;
-  set_distill_running?: string;
-  set_distill_report?: string;
-  set_distill_busy?: string;
-  set_distill_undo?: string;
-  set_distill_undoing?: string;
-  set_distill_undo_result?: string;
-  set_runs_title?: string;
+  set_distill_llm_digest_days: string;
+  set_distill_llm_ingest_budget: string;
+  set_distill_profile_injection_title: string;
+  set_distill_profile_injection_desc: string;
+  set_distill_status_title: string;
+  set_distill_backlog: string;
+  set_distill_pending: string;
+  set_distill_trend_shrinking: string;
+  set_distill_trend_growing: string;
+  set_distill_trend_flat: string;
+  set_distill_run_now: string;
+  set_distill_running: string;
+  set_distill_report: string;
+  set_distill_busy: string;
+  set_distill_undo: string;
+  set_distill_undoing: string;
+  set_distill_undo_result: string;
+  set_runs_title: string;
   // Defects C/D/E/G (2026-08 distill visibility fixes).
-  set_distill_gate_pending?: string; // {n} {min}
-  set_distill_digest_extractive?: string;
-  set_distill_quarantined?: string; // {n} {path}
+  set_distill_gate_pending: string; // {n} {min}
+  set_distill_digest_extractive: string;
+  set_distill_quarantined: string; // {n} {path}
   // Cooperative stop for the LLM chain (Stop button, Settings distill tab).
-  set_distill_stop?: string;
-  set_distill_stopping?: string;
-  set_distill_stopped?: string; // {step}
-  set_distill_step_run?: string;
-  set_distill_step_digest?: string;
-  set_distill_step_ingest?: string;
-  set_distill_step_maps?: string;
-  set_distill_step_weekly?: string;
-  set_distill_step_monthly?: string;
-  set_distill_step_resurface?: string;
+  set_distill_stop: string;
+  set_distill_stopping: string;
+  set_distill_stopped: string; // {step}
+  set_distill_step_run: string;
+  set_distill_step_digest: string;
+  set_distill_step_ingest: string;
+  set_distill_step_maps: string;
+  set_distill_step_weekly: string;
+  set_distill_step_monthly: string;
+  set_distill_step_resurface: string;
   // ROADMAP P1 — weekly rollup count for the distill tab.
-  set_distill_weekly_rollups?: string;
-  set_distill_monthly_rollups?: string; // {n}
+  set_distill_weekly_rollups: string;
+  set_distill_monthly_rollups: string; // {n}
   // ROADMAP P2 — archive storage panel (sessions/ + daily/ archives only).
-  set_archive_title?: string;
-  set_archive_lede?: string;
-  set_archive_measure?: string;
-  set_archive_measuring?: string;
-  set_archive_empty?: string;
-  set_archive_total?: string; // {files} {size} {buckets}
-  set_archive_tree_sessions?: string;
-  set_archive_tree_daily?: string;
-  set_archive_tree_weekly?: string;
-  set_archive_packed?: string;
-  set_archive_older_than?: string; // {n}
-  set_archive_compress?: string;
-  set_archive_compressing?: string;
-  set_archive_compressed?: string; // {buckets} {files} {size}
-  set_archive_nothing_old?: string; // {n}
-  set_archive_failed?: string; // {list}
-  set_archive_restore?: string;
-  set_archive_restoring?: string;
-  set_archive_restored?: string; // {n} {bucket}
+  set_archive_title: string;
+  set_archive_lede: string;
+  set_archive_measure: string;
+  set_archive_measuring: string;
+  set_archive_empty: string;
+  set_archive_total: string; // {files} {size} {buckets}
+  set_archive_tree_sessions: string;
+  set_archive_tree_daily: string;
+  set_archive_tree_weekly: string;
+  set_archive_packed: string;
+  set_archive_older_than: string; // {n}
+  set_archive_compress: string;
+  set_archive_compressing: string;
+  set_archive_compressed: string; // {buckets} {files} {size}
+  set_archive_nothing_old: string; // {n}
+  set_archive_failed: string; // {list}
+  set_archive_restore: string;
+  set_archive_restoring: string;
+  set_archive_restored: string; // {n} {bucket}
   // profile.md editor, in the Distill tab (Phase B, Task 5).
-  set_profile_title?: string;
-  set_profile_lede?: string;
-  set_profile_role?: string;
-  set_profile_goals?: string;
-  set_profile_interests?: string;
-  set_profile_style?: string;
-  set_profile_save?: string;
-  set_profile_saving?: string;
-  set_profile_saved?: string;
+  set_profile_title: string;
+  set_profile_lede: string;
+  set_profile_role: string;
+  set_profile_goals: string;
+  set_profile_interests: string;
+  set_profile_style: string;
+  set_profile_save: string;
+  set_profile_saving: string;
+  set_profile_saved: string;
   // Feedback surface — sidebar badge, Overview card, proposal page (Task 9).
-  nav_feedback?: string;
-  ov_distill_last_run?: string; // {t}
-  ov_distill_never?: string;
-  ov_distill_llm_queued?: string;
-  ov_distill_done?: string; // {a} {d} {w} {p}
-  ov_distill_done_months?: string; // {m} — appended clause, only when > 0
-  ov_distill_done_none?: string;
-  pf_title?: string;
-  pf_lede?: string;
-  pf_empty?: string;
-  pf_kind_admit?: string;
-  pf_kind_archive?: string;
-  pf_kind_delete?: string;
-  pf_kind_draft_map?: string;
-  pf_created?: string;
-  pf_expand?: string;
-  pf_collapse?: string;
-  pf_approve?: string;
-  pf_dismiss?: string;
-  pf_confirm_title?: string;
-  pf_confirm_msg?: string; // {n}
-  pf_confirm_msg_draft_map?: string;
-  pf_retry?: string;
-  pf_apply_failed?: string;
+  nav_feedback: string;
+  ov_distill_last_run: string; // {t}
+  ov_distill_never: string;
+  ov_distill_llm_queued: string;
+  ov_distill_done: string; // {a} {d} {w} {p}
+  ov_distill_done_months: string; // {m} — appended clause, only when > 0
+  ov_distill_done_none: string;
+  pf_title: string;
+  pf_lede: string;
+  pf_empty: string;
+  pf_kind_admit: string;
+  pf_kind_archive: string;
+  pf_kind_delete: string;
+  pf_kind_draft_map: string;
+  pf_created: string;
+  pf_expand: string;
+  pf_collapse: string;
+  pf_approve: string;
+  pf_dismiss: string;
+  pf_confirm_title: string;
+  pf_confirm_msg: string; // {n}
+  pf_confirm_msg_draft_map: string;
+  pf_retry: string;
+  pf_apply_failed: string;
   // Quarantine review tab (ROADMAP P0) — _inbox/quarantine/ items the
   // admission gate held back, with their verdict sidecar rendered as prose.
-  pf_tab_proposals?: string;
-  pf_tab_quarantine?: string; // {n}
-  qz_empty?: string;
-  qz_lede?: string;
-  qz_verdict_offtopic?: string; // {numbers}
-  qz_verdict_sim?: string; // {sim}
-  qz_verdict_sim_vs?: string; // {sim} {min}
-  qz_verdict_nearest?: string; // {topic}
-  qz_verdict_unknown?: string;
-  qz_expires_in?: string; // {n}
-  qz_expires_due?: string;
-  qz_expires_unknown?: string;
-  qz_restore?: string;
-  qz_delete?: string;
-  qz_keep?: string; // {n}
-  qz_confirm_delete_title?: string;
-  qz_confirm_delete_msg?: string; // {name}
-  tb_activity_quarantine?: string; // {n}
-  tb_activity_gone?: string;
+  pf_tab_proposals: string;
+  pf_tab_quarantine: string; // {n}
+  qz_empty: string;
+  qz_lede: string;
+  qz_verdict_offtopic: string; // {numbers}
+  qz_verdict_sim: string; // {sim}
+  qz_verdict_sim_vs: string; // {sim} {min}
+  qz_verdict_nearest: string; // {topic}
+  qz_verdict_unknown: string;
+  qz_expires_in: string; // {n}
+  qz_expires_due: string;
+  qz_expires_unknown: string;
+  qz_restore: string;
+  qz_delete: string;
+  qz_keep: string; // {n}
+  qz_confirm_delete_title: string;
+  qz_confirm_delete_msg: string; // {name}
+  tb_activity_quarantine: string; // {n}
+  tb_activity_gone: string;
   // Ingest page.
-  ing_title_label?: string;
-  ing_title_ph?: string;
-  ing_working?: string;
+  ing_title_label: string;
+  ing_title_ph: string;
+  ing_working: string;
   // Deterministic ingest validator (Phase 1f) — optional; fall back to English.
-  ingest_no_changes?: string;
-  ingest_validation_failed?: string;
-  ingest_validation_warnings?: string;
+  ingest_no_changes: string;
+  ingest_validation_failed: string;
+  ingest_validation_warnings: string;
   // Query page.
-  q_via?: string;
-  q_via_retrieval?: string;
-  q_builtin_note?: string;
-  q_builtin_extractive_note?: string;
-  q_open_model_settings?: string;
-  q_stale_index?: string;
-  q_retrieval_failed?: string;
-  q_extractive_label?: string;
-  q_extractive_empty?: string;
-  q_extractive_stale?: string;
-  q_extractive_failed?: string;
+  q_via: string;
+  q_via_retrieval: string;
+  q_builtin_note: string;
+  q_builtin_extractive_note: string;
+  q_open_model_settings: string;
+  q_stale_index: string;
+  q_retrieval_failed: string;
+  q_extractive_label: string;
+  q_extractive_empty: string;
+  q_extractive_stale: string;
+  q_extractive_failed: string;
   // Time-aware Ask (Q4 item 8): parsed-period chip + range-scoped empty copy.
-  q_range_chip?: string;
-  q_range_empty?: string;
+  q_range_chip: string;
+  q_range_empty: string;
   // Per-citation confidence band + source tier chips (ROADMAP P1).
-  q_cite_conf_high?: string;
-  q_cite_conf_medium?: string;
-  q_cite_conf_low?: string;
-  q_cite_conf_lexical?: string;
-  q_cite_conf_tip?: string;
-  q_cite_conf_lexical_tip?: string;
-  q_cite_tier_note?: string;
-  q_cite_tier_map?: string;
-  q_cite_tier_digest?: string;
-  q_cite_tier_rollup?: string;
-  q_cite_tier_monthly?: string;
-  q_cite_tier_session?: string;
-  q_cite_tier_source?: string;
-  q_cite_list_label?: string;
+  q_cite_conf_high: string;
+  q_cite_conf_medium: string;
+  q_cite_conf_low: string;
+  q_cite_conf_lexical: string;
+  q_cite_conf_tip: string;
+  q_cite_conf_lexical_tip: string;
+  q_cite_tier_note: string;
+  q_cite_tier_map: string;
+  q_cite_tier_digest: string;
+  q_cite_tier_rollup: string;
+  q_cite_tier_monthly: string;
+  q_cite_tier_session: string;
+  q_cite_tier_source: string;
+  q_cite_list_label: string;
   // Deep-storage row under the citation chips (Q4 item 12).
-  q_deep_row?: string;
-  q_uncited_row?: string; // {n}
+  q_deep_row: string;
+  q_uncited_row: string; // {n}
   // "Set up your profile" hint chip, Ask mode (Phase B, Task 5).
-  ask_profile_hint?: string;
-  ask_profile_hint_cta?: string;
-  ask_profile_hint_dismiss?: string;
-  q_chip_done?: string;
-  q_chip_error?: string;
-  q_you?: string;
-  q_miss_btn?: string;
+  ask_profile_hint: string;
+  ask_profile_hint_cta: string;
+  ask_profile_hint_dismiss: string;
+  q_chip_done: string;
+  q_chip_error: string;
+  q_you: string;
+  q_miss_btn: string;
   // Sidebar.
-  sb_new_note?: string;
-  sb_new_folder?: string;
-  sb_rename?: string;
-  sb_today_note?: string;
-  sb_new_note_msg?: string;
-  sb_new_note_ph?: string;
-  sb_delete_folder_q?: string;
-  sb_delete_file_q?: string;
-  sb_favorites?: string;
-  sb_recent?: string;
-  sb_fav_add?: string;
-  sb_fav_remove?: string;
-  sb_move_to?: string;
-  sb_move_title?: string;
-  sb_move_root?: string;
-  sb_delete_n?: string;
-  sb_delete_n_q?: string;
-  sb_delete_msg?: string;
-  sb_delete_one_msg?: string;
-  sb_selected?: string;
-  sb_clear_selection?: string;
-  sb_new_folder_msg?: string;
-  sb_rename_msg?: string;
-  sb_empty_vault?: string;
-  sb_no_vault?: string;
+  sb_new_note: string;
+  sb_new_folder: string;
+  sb_rename: string;
+  sb_today_note: string;
+  sb_new_note_msg: string;
+  sb_new_note_ph: string;
+  sb_delete_folder_q: string;
+  sb_delete_file_q: string;
+  sb_favorites: string;
+  sb_recent: string;
+  sb_fav_add: string;
+  sb_fav_remove: string;
+  sb_move_to: string;
+  sb_move_title: string;
+  sb_move_root: string;
+  sb_delete_n: string;
+  sb_delete_n_q: string;
+  sb_delete_msg: string;
+  sb_delete_one_msg: string;
+  sb_selected: string;
+  sb_clear_selection: string;
+  sb_new_folder_msg: string;
+  sb_rename_msg: string;
+  sb_empty_vault: string;
+  sb_no_vault: string;
   // Command bar.
-  cb_no_results?: string;
-  cb_tag_page?: string;
-  cb_tag_file?: string;
-  cb_tag_action?: string;
-  cb_in_contents?: string;
-  cb_semantic?: string;
-  cb_exact?: string;
-  cb_operator_hint?: string;
-  cb_miss_hint?: string;
-  cb_miss_done?: string;
+  cb_no_results: string;
+  cb_tag_page: string;
+  cb_tag_file: string;
+  cb_tag_action: string;
+  cb_in_contents: string;
+  cb_semantic: string;
+  cb_exact: string;
+  cb_operator_hint: string;
+  cb_miss_hint: string;
+  cb_miss_done: string;
   // Topbar.
-  tb_lint?: string;
-  tb_toggle_sidebar?: string;
-  tb_back?: string;
-  tb_forward?: string;
-  tb_model_picker?: string;
-  tb_model_ready?: string;
-  tb_model_offline?: string;
-  tb_model_open_settings?: string;
+  tb_lint: string;
+  tb_toggle_sidebar: string;
+  tb_back: string;
+  tb_forward: string;
+  tb_model_picker: string;
+  tb_model_ready: string;
+  tb_model_offline: string;
+  tb_model_open_settings: string;
   // Topbar activity chip + popover.
-  tb_activity_label?: string;
-  tb_activity_n?: string; // {n}
-  tb_activity_running?: string;
-  tb_activity_links?: string; // {n}
-  tb_activity_reflect?: string; // {n}
-  tb_activity_applying?: string;
-  tb_activity_mcp_on?: string;
-  tb_activity_mcp_off?: string;
-  tb_activity_tasks?: string;
-  tb_activity_tasks_more?: string; // {n}
+  tb_activity_label: string;
+  tb_activity_n: string; // {n}
+  tb_activity_running: string;
+  tb_activity_links: string; // {n}
+  tb_activity_reflect: string; // {n}
+  tb_activity_applying: string;
+  tb_activity_mcp_on: string;
+  tb_activity_mcp_off: string;
+  tb_activity_tasks: string;
+  tb_activity_tasks_more: string; // {n}
   // Pending map proposals, approvable straight from the activity surfaces.
-  tb_activity_map_notes?: string; // {n}
-  tb_activity_map_wait?: string;
+  tb_activity_map_notes: string; // {n}
+  tb_activity_map_wait: string;
   // "Today's inflow" section (activity popover + tray panel + native menu).
-  tb_inflow_header?: string;
-  tb_inflow_sessions?: string;
-  tb_inflow_last_sweep?: string; // {t}
-  tb_inflow_auto?: string; // {m}
-  tb_inflow_mcp?: string;
-  tb_inflow_mcp_count?: string; // {n}
-  tb_inflow_mcp_top?: string; // {tool}
-  tb_inflow_since_launch?: string;
-  tb_inflow_inbox?: string;
+  tb_inflow_header: string;
+  tb_inflow_sessions: string;
+  tb_inflow_last_sweep: string; // {t}
+  tb_inflow_auto: string; // {m}
+  tb_inflow_mcp: string;
+  tb_inflow_mcp_count: string; // {n}
+  tb_inflow_mcp_top: string; // {tool}
+  tb_inflow_since_launch: string;
+  tb_inflow_inbox: string;
   /** Bucket label for an _inbox file whose frontmatter names no source. */
-  tb_inflow_source_unknown?: string;
-  tb_inflow_view?: string;
-  tb_inflow_spark_caption?: string;
-  tb_inflow_summary?: string; // {s} {m} {i}
+  tb_inflow_source_unknown: string;
+  tb_inflow_view: string;
+  tb_inflow_spark_caption: string;
+  tb_inflow_summary: string; // {s} {m} {i}
   // Menu bar tray + OS notifications.
-  tray_open?: string;
-  tray_quit?: string;
-  s_tray_resident_title?: string;
-  s_tray_resident_desc?: string;
+  tray_open: string;
+  tray_quit: string;
+  s_tray_resident_title: string;
+  s_tray_resident_desc: string;
   // Global-shortcut spotlight (the ask-from-anywhere window) + its Settings row.
-  spot_placeholder?: string;
-  spot_thinking?: string;
-  spot_hint_enter?: string;
-  spot_hint_open?: string;
-  spot_no_vault?: string;
-  spot_busy?: string;
+  spot_placeholder: string;
+  spot_thinking: string;
+  spot_hint_enter: string;
+  spot_hint_open: string;
+  spot_no_vault: string;
+  spot_busy: string;
   // Spotlight voice quick-capture (W3–6 item 9).
-  voice_btn_label?: string;
-  voice_hint_recording?: string;
-  voice_saved_chip?: string; // {rel}
-  voice_whisper_missing?: string;
-  voice_model_progress?: string;
-  voice_transcribe_progress?: string; // {pct}
-  voice_mic_denied?: string;
-  voice_no_input?: string;
-  voice_stage_transcribing?: string;
-  voice_stage_saving?: string;
-  s_spot_title?: string;
-  s_spot_desc?: string;
-  s_spot_record?: string;
-  s_spot_recording?: string;
-  s_spot_disable?: string;
-  s_spot_ok?: string; // {k}
-  s_spot_failed?: string; // {k}
-  s_spot_off?: string;
-  notif_distill_done_title?: string;
-  notif_distill_done_body?: string; // {p} {d} {w}
-  notif_distill_done_months?: string; // {m} — appended clause, only when > 0
-  notif_quarantine_title?: string;
-  notif_quarantine_body?: string; // {n}
+  voice_btn_label: string;
+  voice_hint_recording: string;
+  voice_saved_chip: string; // {rel}
+  voice_whisper_missing: string;
+  voice_model_progress: string;
+  voice_transcribe_progress: string; // {pct}
+  voice_mic_denied: string;
+  voice_no_input: string;
+  voice_stage_transcribing: string;
+  voice_stage_saving: string;
+  s_spot_title: string;
+  s_spot_desc: string;
+  s_spot_record: string;
+  s_spot_recording: string;
+  s_spot_disable: string;
+  s_spot_ok: string; // {k}
+  s_spot_failed: string; // {k}
+  s_spot_off: string;
+  notif_distill_done_title: string;
+  notif_distill_done_body: string; // {p} {d} {w}
+  notif_distill_done_months: string; // {m} — appended clause, only when > 0
+  notif_quarantine_title: string;
+  notif_quarantine_body: string; // {n}
   // Graph toolbar.
-  gr_zoom_out?: string;
-  gr_fit?: string;
-  gr_zoom_in?: string;
+  gr_zoom_out: string;
+  gr_fit: string;
+  gr_zoom_in: string;
   // Overview / History empty states.
-  h_open_vault?: string;
+  h_open_vault: string;
   // Tags page (FEAT-03).
   tg_title: string;
   tg_lede: string;
@@ -1317,9 +1317,9 @@ export interface Strings {
   rf_running: string;
   /** Names reflect in the activity surfaces (topbar chip, tray) — rf_running
    *  alone ("분석 중…") does not say WHAT is analysing. */
-  rf_running_label?: string;
+  rf_running_label: string;
   /** Completion line on the panel, like the distill card's outcome line. */
-  rf_done?: string; // {n}
+  rf_done: string; // {n}
   rf_empty: string;
   rf_extractive: string;
   // Extractive reflect's two mechanical findings. Written by reflectStore (not
@@ -1338,117 +1338,117 @@ export interface Strings {
   rf_open_page: string;
   rf_ignore_one: string;
   // First-run onboarding wizard (UX-01) — optional; components fall back to EN.
-  ob_title?: string;
-  ob_skip?: string;
-  ob_back?: string;
-  ob_next?: string;
-  ob_finish?: string;
-  ob_vault_linked?: string;
-  ob_vault_none?: string;
-  ob_s1_title?: string;
-  ob_s1_body?: string;
-  ob_s1_action?: string;
-  ob_sovereignty?: string;
-  ob_s2_title?: string;
-  ob_s2_body?: string;
-  ob_s2_action?: string;
-  ob_s3_title?: string;
-  ob_s3_body?: string;
-  ob_s3_action?: string;
-  ob_demo_start?: string;
-  ob_seed_offer?: string;
-  ob_seed_do?: string;
-  ob_indexing_local?: string;
-  ob_s2_progress?: string; // {done} {total}
-  ob_s2_indexed?: string; // {n}
-  ob_s2_failed?: string;
-  ob_first_question?: string;
-  ob_first_question_sessions?: string;
-  ob_ask_now?: string;
+  ob_title: string;
+  ob_skip: string;
+  ob_back: string;
+  ob_next: string;
+  ob_finish: string;
+  ob_vault_linked: string;
+  ob_vault_none: string;
+  ob_s1_title: string;
+  ob_s1_body: string;
+  ob_s1_action: string;
+  ob_sovereignty: string;
+  ob_s2_title: string;
+  ob_s2_body: string;
+  ob_s2_action: string;
+  ob_s3_title: string;
+  ob_s3_body: string;
+  ob_s3_action: string;
+  ob_demo_start: string;
+  ob_seed_offer: string;
+  ob_seed_do: string;
+  ob_indexing_local: string;
+  ob_s2_progress: string; // {done} {total}
+  ob_s2_indexed: string; // {n}
+  ob_s2_failed: string;
+  ob_first_question: string;
+  ob_first_question_sessions: string;
+  ob_ask_now: string;
   // Import-first onboarding (steps 1 and 3 of the 5-step wizard).
-  ob_imp_title?: string;
-  ob_imp_body?: string;
-  ob_imp_claude?: string;
-  ob_imp_codex?: string;
-  ob_imp_progress?: string; // {done} {total}
-  ob_imp_done?: string; // {n}
-  ob_imp_quarantined?: string; // {n}
-  ob_imp_skip_hint?: string;
-  ob_hist_title?: string;
-  ob_hist_already?: string;
-  ob_hist_skip_hint?: string;
+  ob_imp_title: string;
+  ob_imp_body: string;
+  ob_imp_claude: string;
+  ob_imp_codex: string;
+  ob_imp_progress: string; // {done} {total}
+  ob_imp_done: string; // {n}
+  ob_imp_quarantined: string; // {n}
+  ob_imp_skip_hint: string;
+  ob_hist_title: string;
+  ob_hist_already: string;
+  ob_hist_skip_hint: string;
   // Budget guard (OPS-03) — optional; components fall back to English.
-  s_budget_title?: string;
-  s_budget_desc?: string;
-  s_budget_threshold?: string;
-  s_budget_usage?: string;
-  s_budget_total?: string;
-  s_budget_empty?: string;
+  s_budget_title: string;
+  s_budget_desc: string;
+  s_budget_threshold: string;
+  s_budget_usage: string;
+  s_budget_total: string;
+  s_budget_empty: string;
   // Auto-reflect (FEAT-06) — optional; components fall back to English.
-  s_autoreflect_title?: string;
-  s_autoreflect_desc?: string;
-  s_autoreflect_interval?: string;
+  s_autoreflect_title: string;
+  s_autoreflect_desc: string;
+  s_autoreflect_interval: string;
   // Independent Obsidian vault (MP-10) — optional; fall back to English.
-  s_vault_register?: string;
-  s_vault_registered?: string;
+  s_vault_register: string;
+  s_vault_registered: string;
   // Provider blurbs (Task 2) — optional; fall back to the English `desc:`.
-  s_provider_desc_anthropic_cli?: string;
-  s_provider_desc_gemini_cli?: string;
-  s_provider_desc_codex_cli?: string;
-  s_provider_desc_anthropic_api?: string;
-  s_provider_desc_openai_api?: string;
-  s_provider_desc_google_api?: string;
-  s_provider_desc_builtin_local?: string;
-  s_provider_desc_ollama?: string;
-  s_provider_desc_openrouter?: string;
-  s_provider_desc_myco_pro?: string;
+  s_provider_desc_anthropic_cli: string;
+  s_provider_desc_gemini_cli: string;
+  s_provider_desc_codex_cli: string;
+  s_provider_desc_anthropic_api: string;
+  s_provider_desc_openai_api: string;
+  s_provider_desc_google_api: string;
+  s_provider_desc_builtin_local: string;
+  s_provider_desc_ollama: string;
+  s_provider_desc_openrouter: string;
+  s_provider_desc_myco_pro: string;
   // Vault git history (Q4 item 1) — optional; fall back to English.
-  vh_banner_title?: string;
-  vh_banner_desc?: string;
-  vh_enable?: string;
-  vh_later?: string;
-  vh_setting_title?: string;
-  vh_setting_desc?: string;
+  vh_banner_title: string;
+  vh_banner_desc: string;
+  vh_enable: string;
+  vh_later: string;
+  vh_setting_title: string;
+  vh_setting_desc: string;
   // Redaction PII mode (Q4 item 13, mockup M8-b) — optional; fall back to English.
-  set_pii_title?: string;
-  set_pii_desc?: string;
-  set_pii_warn?: string;
-  set_pii_quarantine?: string;
+  set_pii_title: string;
+  set_pii_desc: string;
+  set_pii_warn: string;
+  set_pii_quarantine: string;
   // Retro raw/ audit (Q4 item 14, mockup M8-c) — optional; fall back to English.
-  set_audit_title?: string;
-  set_audit_rescan?: string;
-  set_audit_clean?: string; // {n} {m}
-  set_audit_history_only?: string;
-  set_audit_note?: string;
+  set_audit_title: string;
+  set_audit_rescan: string;
+  set_audit_clean: string; // {n} {m}
+  set_audit_history_only: string;
+  set_audit_note: string;
   // Morning-Report band (Q4 item 2) — optional; fall back to English.
-  ov_since_eyebrow?: string;
-  ov_since_title?: string; // {runs} {pages}
-  ov_since_quiet?: string;
-  ov_suspect_title?: string;
-  ov_suspect_clean?: string;
-  ov_view_runs?: string;
+  ov_since_eyebrow: string;
+  ov_since_title: string; // {runs} {pages}
+  ov_since_quiet: string;
+  ov_suspect_title: string;
+  ov_suspect_clean: string;
+  ov_view_runs: string;
   // Contradiction queue (Q4 item 15) — optional; fall back to English.
-  contra_title?: string;
-  contra_disputed?: string;
-  contra_stale?: string; // {t}
-  contra_mark_active?: string;
-  contra_mark_superseded?: string;
-  contra_open_page?: string;
-  contra_open_target?: string;
-  contra_ignore?: string;
-  contra_clean?: string;
+  contra_title: string;
+  contra_disputed: string;
+  contra_stale: string; // {t}
+  contra_mark_active: string;
+  contra_mark_superseded: string;
+  contra_open_page: string;
+  contra_open_target: string;
+  contra_ignore: string;
+  contra_clean: string;
   // Resurface rows + daily ritual card (Q4 items 10–11) — optional; fall back
   // to English.
-  rs_header?: string;
-  rs_open?: string;
-  rs_snooze?: string;
-  rs_ignore?: string;
-  rs_similarity?: string; // {s}
-  rs_last_open?: string; // {t}
-  rs_floor_note?: string; // {f}
-  ritual_title?: string;
-  ritual_due?: string; // {n}
-  ritual_start?: string;
+  rs_header: string;
+  rs_open: string;
+  rs_snooze: string;
+  rs_ignore: string;
+  rs_similarity: string; // {s}
+  rs_last_open: string; // {t}
+  rs_floor_note: string; // {f}
+  ritual_title: string;
+  ritual_due: string; // {n}
+  ritual_start: string;
   // Run drill-in on History (W3–6 item 6).
   history_runs_title: string;
   history_run_open_why: string;
@@ -1459,9 +1459,9 @@ export interface Strings {
   history_status_renamed: string;
   history_status_deleted: string;
   // Authorship badge + human-only sidebar filter (Q4 item 16).
-  auth_badge_human?: string; // {h} {a}
-  auth_badge_last_human?: string; // {t}
-  auth_filter_pill?: string;
+  auth_badge_human: string; // {h} {a}
+  auth_badge_last_human: string; // {t}
+  auth_filter_pill: string;
   // Agent write-confirm diff (W3–6 item 7).
   agent_confirm_title: string;
   agent_confirm_create_title: string;
@@ -1469,42 +1469,42 @@ export interface Strings {
   // Menu-bar notch surface (components/NotchPanel.tsx), design sheet S1–S10.
   // Chrome only — filenames, progress detail and result summaries arrive as
   // data, already translated by whoever produced them.
-  notch_peek?: string;
-  notch_peek_body?: string;
-  notch_drop?: string;
-  notch_accepted?: string;
-  notch_accepted_next?: string;
-  notch_accepted_next_sub?: string;
-  notch_running?: string; // {t}
-  notch_running_read?: string;
-  notch_running_pages?: string;
-  notch_done?: string;
-  notch_done_open?: string;
-  notch_done_collapse?: string;
-  notch_capture?: string;
-  notch_capture_save?: string;
-  notch_capture_voice?: string;
-  notch_capture_saved?: string;
-  notch_recording?: string; // {t}
+  notch_peek: string;
+  notch_peek_body: string;
+  notch_drop: string;
+  notch_accepted: string;
+  notch_accepted_next: string;
+  notch_accepted_next_sub: string;
+  notch_running: string; // {t}
+  notch_running_read: string;
+  notch_running_pages: string;
+  notch_done: string;
+  notch_done_open: string;
+  notch_done_collapse: string;
+  notch_capture: string;
+  notch_capture_save: string;
+  notch_capture_voice: string;
+  notch_capture_saved: string;
+  notch_recording: string; // {t}
   // Peek's two one-click actions, and the recording card's own chrome: the
   // silent-mic lip, the 800 ms cancelled beat, and the two key hints, which
   // are BUTTONS now (the notch panel is non-activating — a hint the mouse
   // cannot press leaves an esc-less surface if key focus was refused).
-  notch_rec?: string;
-  notch_note?: string;
-  notch_cancelled?: string;
-  notch_no_sound?: string;
-  notch_hint_cancel?: string;
-  notch_hint_save?: string;
-  notch_rejected?: string;
-  notch_rejected_body?: string; // {ext}
-  notch_rejected_accepts?: string;
-  notch_rejected_list?: string;
-  notch_unsupported?: string; // {ext} — notchDrop's unsupported-drop reason
-  notch_write_failed?: string;
+  notch_rec: string;
+  notch_note: string;
+  notch_cancelled: string;
+  notch_no_sound: string;
+  notch_hint_cancel: string;
+  notch_hint_save: string;
+  notch_rejected: string;
+  notch_rejected_body: string; // {ext}
+  notch_rejected_accepts: string;
+  notch_rejected_list: string;
+  notch_unsupported: string; // {ext} — notchDrop's unsupported-drop reason
+  notch_write_failed: string;
   // Settings toggle for the notch surface (macOS).
-  s_notch_title?: string;
-  s_notch_desc?: string;
+  s_notch_title: string;
+  s_notch_desc: string;
 }
 
 export const STRINGS: Record<Lang, Strings> = {
