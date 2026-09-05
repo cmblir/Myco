@@ -3,7 +3,6 @@
 import "./lib/storageMigration";
 import React from "react";
 import ReactDOM from "react-dom/client";
-import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
 import {
   isNotchWindow,
@@ -127,6 +126,13 @@ async function bootstrap(): Promise<void> {
     return;
   }
 
+  // Only the main window needs App, so it is imported here, not at the top: a
+  // static import put App's whole module graph into the entry chunk, and the
+  // three satellite windows above load that same entry for their 7–9 kB of
+  // own code (entry 2,116 kB → 319 kB with this dynamic import). The ordering
+  // guarantees hold as before: storageMigration and ErrorBoundary evaluate at
+  // module load, App's graph only when this import resolves.
+  const { default: App } = await import("./App");
   ReactDOM.createRoot(root).render(
     <React.StrictMode>
       <ErrorBoundary reload>
