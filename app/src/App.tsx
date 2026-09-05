@@ -24,11 +24,14 @@ import PageQuery from "./pages/PageQuery";
 // Lazy — the 3D graph pulls in three.js (~150KB gzip); keep it out of the
 // initial bundle so the app boots under the JS budget and loads it on demand.
 const PageGraph = lazy(() => import("./pages/PageGraph"));
+// Lazy for the same reason: the reader chunk is 579 kB (CodeMirror) and pulls
+// pdf.js (437 kB) behind it, settings is another 84 kB, and the default route
+// is the overview — none of it is needed for first paint.
+const PageReader = lazy(() => import("./pages/PageReader"));
+const PageSettings = lazy(() => import("./pages/PageSettings"));
 import PageHistory from "./pages/PageHistory";
 import PageProvenance from "./pages/PageProvenance";
 import PageTasks from "./pages/PageTasks";
-import PageSettings from "./pages/PageSettings";
-import PageReader from "./pages/PageReader";
 import PageTags from "./pages/PageTags";
 import PageViews from "./pages/PageViews";
 import PageStudy from "./pages/PageStudy";
@@ -585,6 +588,20 @@ export default function App(): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // The three.js chunk is ~800KB — the parse gap used to be a BLANK pane on
+  // the marquee view. Reuse the constellation tip so the wait reads as part of
+  // the show; the lazy reader and settings chunks borrow the same fallback.
+  const chunkFallback = (
+    <div className="graph-loading">
+      <div className="graph-loading-tip">
+        {/* MYCO keeps the chunk-parse gap company. */}
+        <div style={{ display: "grid", justifyItems: "center", gap: 12 }}>
+          <MascotClip clip="idle" size={140} />
+          <span>{t.gr_loading ?? "aligning constellations…"}</span>
+        </div>
+      </div>
+    </div>
+  );
   const renderRoute = (r: RouteId): JSX.Element => {
     if (r === "overview") return <PageOverview t={t} />;
     if (r === "ingest") return <PageIngest t={t} />;
@@ -592,22 +609,7 @@ export default function App(): JSX.Element {
     if (r === "graph")
       return (
         <ErrorBoundary area="graph">
-          {/* The three.js chunk is ~800KB — the parse gap used to be a BLANK
-              pane on the marquee view. Reuse the constellation tip so the wait
-              reads as part of the show. */}
-          <Suspense
-            fallback={
-              <div className="graph-loading">
-                <div className="graph-loading-tip">
-                  {/* MYCO keeps the chunk-parse gap company. */}
-                  <div style={{ display: "grid", justifyItems: "center", gap: 12 }}>
-                    <MascotClip clip="idle" size={140} />
-                    <span>{t.gr_loading ?? "aligning constellations…"}</span>
-                  </div>
-                </div>
-              </div>
-            }
-          >
+          <Suspense fallback={chunkFallback}>
             <PageGraph t={t} />
           </Suspense>
         </ErrorBoundary>
@@ -620,8 +622,18 @@ export default function App(): JSX.Element {
     if (r === "study") return <PageStudy t={t} />;
     if (r === "feedback") return <PageFeedback t={t} />;
     if (r === "schedules") return <PageSchedules t={t} />;
-    if (r === "settings") return <PageSettings t={t} />;
-    if (r.startsWith("page:")) return <PageReader t={t} pageRoute={r.slice(5)} />;
+    if (r === "settings")
+      return (
+        <Suspense fallback={chunkFallback}>
+          <PageSettings t={t} />
+        </Suspense>
+      );
+    if (r.startsWith("page:"))
+      return (
+        <Suspense fallback={chunkFallback}>
+          <PageReader t={t} pageRoute={r.slice(5)} />
+        </Suspense>
+      );
     return <PageOverview t={t} />;
   };
 

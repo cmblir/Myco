@@ -2,7 +2,7 @@
 // preview mode renders markdown-it (with wikilinks). The `sample/<id>`
 // pseudo-route falls through to the design's mock content.
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import type { EditorView } from "@codemirror/view";
 import { Icon } from "../lib/icons";
@@ -38,7 +38,9 @@ import Editor, { scrollEditorToLine } from "../components/Editor";
 import OutlinePanel from "../components/OutlinePanel";
 import PropertiesPanel from "../components/PropertiesPanel";
 import AudioOverviewPanel from "../components/AudioOverviewPanel";
-import PdfViewer from "../components/PdfViewer";
+// Lazy — the pdf.js chunk is 437 kB and only a PDF source needs it. A markdown
+// note mounts the viewer only once a [[pdf::…]] link opens one (see VaultPage).
+const PdfViewer = lazy(() => import("../components/PdfViewer"));
 import { usePdfStore } from "../stores/pdfStore";
 import { parsePdfTarget, wikilinkBase } from "../lib/wikilinks";
 import Viewer from "../components/Viewer";
@@ -79,7 +81,13 @@ function PdfPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   }, [path, vaultPath, openPdf]);
   return (
     <div className="workspace">
-      <PdfViewer t={t} />
+      <Suspense
+        fallback={
+          <p className="muted" style={{ padding: 16 }}>{t.pdf_loading ?? "Loading PDF…"}</p>
+        }
+      >
+        <PdfViewer t={t} />
+      </Suspense>
     </div>
   );
 }
@@ -191,6 +199,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const openWikilink = useVaultStore((s) => s.openWikilink);
   const refreshTree = useVaultStore((s) => s.refreshTree);
   const error = useVaultStore((s) => s.error);
+  const pdfOpen = usePdfStore((s) => s.open !== null);
   const setRoute = useUIStore((s) => s.setRoute);
   const lang = useUIStore((s) => s.lang);
   const mode = useUIStore((s) => s.editorMode);
@@ -673,7 +682,17 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       <BacklinksPanel filePath={path} t={t} />
       <RelatedPanel filePath={path} t={t} />
       <AudioOverviewPanel t={t} />
-      <PdfViewer t={t} />
+      {/* Mount only while a PDF is open: the viewer renders null otherwise, and
+          mounting the lazy component would fetch pdf.js for every note. */}
+      {pdfOpen ? (
+        <Suspense
+          fallback={
+            <p className="muted" style={{ padding: 16 }}>{t.pdf_loading ?? "Loading PDF…"}</p>
+          }
+        >
+          <PdfViewer t={t} />
+        </Suspense>
+      ) : null}
     </div>
   );
 }
