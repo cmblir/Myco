@@ -25,24 +25,24 @@ pub const MIN_BYTES: u64 = 8 * 1024;
 /// Above this one ingest run is a bad deal even for a tool-capable provider.
 pub const MAX_BYTES: u64 = 200 * 1024;
 /// The archive this reads from, and the queue it promotes into.
-const SESSIONS_DIR: &str = "sessions";
+pub(crate) const SESSIONS_DIR: &str = "sessions";
 const INBOX_DIR: &str = "_inbox";
 
 /// Promotion bookkeeping. Its OWN file on purpose: `importers::ledger` drops
 /// unknown keys when it saves, so a field added to `ledger.json` would be
 /// erased by the next in-app import.
 #[derive(Serialize, Deserialize, Default)]
-struct BackfillState {
+pub(crate) struct BackfillState {
     /// vault-relative session path → unix seconds when it was promoted.
     #[serde(default)]
-    promoted: BTreeMap<String, i64>,
+    pub(crate) promoted: BTreeMap<String, i64>,
 }
 
 fn state_path(root: &Path) -> PathBuf {
     root.join(".myco").join("backfill.json")
 }
 
-fn load_state(root: &Path) -> BackfillState {
+pub(crate) fn load_state(root: &Path) -> BackfillState {
     // A corrupt or missing file reads as empty: this is bookkeeping, not a
     // source of truth, so losing it costs a round of re-promotions at worst.
     std::fs::read_to_string(state_path(root))
@@ -220,41 +220,64 @@ pub struct BackfillPromotion {
     pub remaining: usize,
 }
 
-/// Copy the next `limit` eligible sessions into `_inbox/` and record them.
-/// Testable core: takes the vault root, no Tauri state.
-pub fn promote_at(root: &Path, limit: usize) -> Result<BackfillPromotion, String> {
-    let limit = limit.clamp(1, 50);
-    let files = scan_sessions(root);
+/// What `promote_rels` did.
+pub(crate) struct Promoted {
+    /// `_inbox/` names now holding a copy, in promotion order.
+    pub names: Vec<String>,
+    /// (vault-relative session, error) for each copy that failed.
+    pub failed: Vec<(String, String)>,
+}
+
+/// Copy the given sessions (vault-relative paths under `sessions/`) into
+/// `_inbox/` and record them in the state file. One unreadable session must
+/// not abort the batch, and nothing is recorded for it so the next attempt
+/// retries it. Shared by the batch button (`promote_at`) and the
+/// picked-by-hand harvest (`harvest::run_at`).
+pub(crate) fn promote_rels(root: &Path, rels: &[String]) -> Result<Promoted, String> {
     let mut state = load_state(root);
-    let batch = next_batch(&files, &state.promoted, limit);
     let inbox = root.join(INBOX_DIR);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
 
-    let mut promoted = Vec::new();
-    for file in &batch {
-        let src = root.join(&file.rel);
-        let name = inbox_name(&file.rel, &|n: &str| inbox.join(n).exists());
+    let mut out = Promoted {
+        names: Vec::new(),
+        failed: Vec::new(),
+    };
+    for rel in rels {
+        let src = root.join(rel);
+        let name = inbox_name(rel, &|n: &str| inbox.join(n).exists());
         // Reuses the notch drop's copy: same confinement (safe_join), same
         // no-overwrite rule, same size cap.
         match crate::commands::copy_into_inbox_at(root, &src.to_string_lossy(), &name) {
             Ok(_) => {
-                state.promoted.insert(file.rel.clone(), now);
-                promoted.push(name);
+                state.promoted.insert(rel.clone(), now);
+                out.names.push(name);
             }
-            // One unreadable session must not abort the batch — record nothing
-            // for it so the next press retries it.
-            Err(e) => eprintln!("backfill: skipped {}: {e}", file.rel),
+            Err(e) => out.failed.push((rel.clone(), e)),
         }
     }
-    if !promoted.is_empty() {
+    if !out.names.is_empty() {
         save_state(root, &state)?;
     }
-    let remaining = summarize(&files, &state.promoted).eligible;
+    Ok(out)
+}
+
+/// Copy the next `limit` eligible sessions into `_inbox/` and record them.
+/// Testable core: takes the vault root, no Tauri state.
+pub fn promote_at(root: &Path, limit: usize) -> Result<BackfillPromotion, String> {
+    let limit = limit.clamp(1, 50);
+    let files = scan_sessions(root);
+    let batch = next_batch(&files, &load_state(root).promoted, limit);
+    let rels: Vec<String> = batch.into_iter().map(|f| f.rel).collect();
+    let done = promote_rels(root, &rels)?;
+    for (rel, e) in done.failed {
+        eprintln!("backfill: skipped {rel}: {e}");
+    }
+    let remaining = summarize(&files, &load_state(root).promoted).eligible;
     Ok(BackfillPromotion {
-        promoted,
+        promoted: done.names,
         remaining,
     })
 }

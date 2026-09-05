@@ -6907,3 +6907,88 @@ mod llm_janitor_tests {
         assert!(!llm_should_unload(true, 0, 9_999, idle));
     }
 }
+
+// ---- Harvest (sessions/ → wiki, hand-picked) --------------------------------
+// The pure scan/copy logic is `harvest.rs`; these adapters add the vault root
+// and — for the queue — the embedder, to name the wiki page each candidate
+// most likely belongs to.
+
+/// The harvest queue for the Overview (see `harvest::scan_at`). `limit`
+/// defaults to 20. `cluster` is `pipeline::rank_candidates` top-1 for the
+/// candidate's leading text, embedded with the index's own model; its `score`
+/// is the cosine similarity it measured, not a rank. Null when nothing is
+/// indexed, the index predates the bundled embed model, or the embed fails —
+/// the queue is still useful without it, so none of those fail the call.
+#[tauri::command]
+pub async fn harvest_candidates(
+    app: tauri::AppHandle,
+    vault: tauri::State<'_, VaultRoot>,
+    llm: tauri::State<'_, LocalLlmState>,
+    cache: tauri::State<'_, VectorCache>,
+    limit: Option<u32>,
+) -> Result<crate::harvest::Queue, String> {
+    let root = require_root(&vault)?;
+    let limit = limit.unwrap_or(20).clamp(1, 200) as usize;
+    let scan_root = root.clone();
+    let mut queue =
+        tauri::async_runtime::spawn_blocking(move || crate::harvest::scan_at(&scan_root, limit))
+            .await
+            .map_err(|e| format!("join failed: {e}"))?;
+    if queue.items.is_empty() {
+        return Ok(queue);
+    }
+    let store = cache.get(&VectorStore::path_for(&root.to_string_lossy())?);
+    if store.records.is_empty() {
+        return Ok(queue);
+    }
+    let (provider, model) = store
+        .model
+        .split_once(':')
+        .map(|(p, m)| (p.to_string(), m.to_string()))
+        .unwrap_or((store.model.clone(), String::new()));
+    if builtin_index_is_stale(&provider, &model) {
+        return Ok(queue);
+    }
+    let texts: Vec<String> = queue.items.iter().map(|c| c.embed_text.clone()).collect();
+    let vecs = match embed_texts(
+        app,
+        llm,
+        &provider,
+        &model,
+        crate::local_llm::EmbedRole::Query,
+        texts,
+    )
+    .await
+    {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("harvest_candidates: cluster lookup skipped: {e}");
+            return Ok(queue);
+        }
+    };
+    for (item, v) in queue.items.iter_mut().zip(vecs) {
+        let hits =
+            crate::pipeline::dense_chunk_matches(&store.search(&v, crate::pipeline::FUSE_POOL));
+        item.cluster =
+            crate::pipeline::rank_candidates(&[hits], 1)
+                .pop()
+                .map(|c| crate::harvest::Cluster {
+                    page: c.page,
+                    score: c.score,
+                });
+    }
+    Ok(queue)
+}
+
+/// Copy the chosen sessions into `_inbox/` and take them out of the queue
+/// (see `harvest::run_at`). The frontend runs the ordinary ingest afterwards.
+#[tauri::command]
+pub async fn harvest_run(
+    vault: tauri::State<'_, VaultRoot>,
+    paths: Vec<String>,
+) -> Result<crate::harvest::Run, String> {
+    let root = require_root(&vault)?;
+    tauri::async_runtime::spawn_blocking(move || crate::harvest::run_at(&root, &paths))
+        .await
+        .map_err(|e| format!("join failed: {e}"))?
+}

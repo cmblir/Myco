@@ -16,6 +16,7 @@ pub mod embeddings;
 pub mod env;
 pub mod extract;
 pub mod git_log;
+pub mod harvest;
 pub mod importers;
 pub mod index;
 mod index_updater;
@@ -295,6 +296,8 @@ pub fn run() {
             notch::notch_resize,
             notch::notch_focus_capture,
             notch::update_notch_enabled,
+            commands::harvest_candidates,
+            commands::harvest_run,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path

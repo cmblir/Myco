@@ -308,7 +308,7 @@ fn is_tool_noise_line(line: &str) -> bool {
 /// `Some(reason)` if `content` is junk by the pre-filter, checked BEFORE
 /// embedding so junk never costs a model call: too short, or mostly raw
 /// tool/agent transcript noise rather than prose.
-fn junk_reason(content: &str) -> Option<String> {
+pub(crate) fn junk_reason(content: &str) -> Option<String> {
     if content.len() < JUNK_MIN_BYTES {
         return Some(format!(
             "junk heuristic: {} bytes (< {JUNK_MIN_BYTES})",
