@@ -167,6 +167,15 @@ pub struct ScoredEntry {
     pub hash: u64,
     pub tier: String,
     pub at: i64,
+    /// On-disk stamp (mtime unix seconds, byte length) of the content `hash`
+    /// was taken from, so `scan` can skip reading a file whose stamp has not
+    /// moved — the same mtime+len short-circuit as `index.rs`'s parse cache
+    /// and `vault::vault_revision`. `serde(default)`: a ledger written before
+    /// the stamp existed loads as `(0, 0)`, misses once, and is then stamped.
+    #[serde(default)]
+    pub mtime: i64,
+    #[serde(default)]
+    pub len: u64,
 }
 
 /// Persisted scan state, `<vault>/.myco/distill-state.json`. `model` gates the
@@ -404,12 +413,14 @@ fn tier_str(t: Tier) -> &'static str {
 }
 
 /// One candidate inflow file: its vault-relative path (forward slashes), its
-/// absolute path, and its mtime (unix seconds) for the oldest-first order and
-/// the maturation gate.
+/// absolute path, its mtime (unix seconds) for the oldest-first order and the
+/// maturation gate, and its byte length (with the mtime, the ledger's
+/// unchanged stamp).
 struct Candidate {
     rel: String,
     path: PathBuf,
     mtime: i64,
+    len: u64,
 }
 
 /// Walk `<root>/<start>` for `.md` files, skipping dotfiles/symlinks
@@ -442,7 +453,12 @@ fn walk_inflow(root: &Path, start: &str, exclude_top: &[&str], out: &mut Vec<Can
                     .unwrap_or(&path)
                     .to_string_lossy()
                     .replace('\\', "/");
-                out.push(Candidate { rel, path, mtime });
+                out.push(Candidate {
+                    rel,
+                    path,
+                    mtime,
+                    len: meta.len(),
+                });
             }
         }
     }
@@ -521,6 +537,8 @@ struct QuarantineSidecar<'a> {
 struct Taken {
     rel: String,
     path: PathBuf,
+    mtime: i64,
+    len: u64,
     content: String,
     hash: u64,
     junk: Option<String>,
@@ -585,14 +603,28 @@ fn scan(
             outcome.skipped_immature += 1;
             continue;
         }
+        // Stamp unchanged since it was last scored → these are the bytes
+        // already hashed; skip the read. Without this a warm scan read every
+        // inflow file (26 MB at 1.7k files) just to rediscover the same hash.
+        if state
+            .scored
+            .get(&c.rel)
+            .is_some_and(|e| e.mtime == c.mtime && e.len == c.len)
+        {
+            continue;
+        }
         // Unreadable (binary, or gone since the walk) — never scored, and
         // retried on the next run rather than failing the whole scan.
         let Ok(content) = std::fs::read_to_string(&c.path) else {
             continue;
         };
         let hash = crate::embeddings::content_hash(&content);
-        if state.scored.get(&c.rel).is_some_and(|e| e.hash == hash) {
-            continue; // unchanged since it was last scored
+        if let Some(e) = state.scored.get_mut(&c.rel).filter(|e| e.hash == hash) {
+            // Same content under a new stamp (touched, or a ledger from before
+            // stamps existed): record it so the next scan skips the read.
+            e.mtime = c.mtime;
+            e.len = c.len;
+            continue;
         }
         if taken.len() >= budget {
             break; // candidates are already oldest-first; the rest wait
@@ -601,6 +633,8 @@ fn scan(
         taken.push(Taken {
             rel: c.rel,
             path: c.path,
+            mtime: c.mtime,
+            len: c.len,
             content,
             hash,
             junk,
@@ -693,6 +727,8 @@ fn scan(
                 hash: item.hash,
                 tier: tier_str(verdict.tier).to_string(),
                 at: now,
+                mtime: item.mtime,
+                len: item.len,
             },
         );
         outcome.scored += 1;
@@ -4192,6 +4228,104 @@ mod tests {
         assert_eq!(out2.scored, 0, "unchanged content must not be rescored");
     }
 
+    /// The ledger stamp (mtime+len) short-circuits the read: a file whose
+    /// stamp has not moved is never opened, so a warm scan no longer reads
+    /// all of the inflow just to compare hashes.
+    #[test]
+    fn scan_skips_reading_an_unchanged_stamp_and_rereads_a_touched_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("_inbox")).unwrap();
+        let path = root.join("_inbox/a.md");
+        std::fs::write(&path, PROSE).unwrap();
+        set_mtime(&path, old_mtime());
+        let stamp = std::fs::metadata(&path).unwrap().modified().unwrap();
+
+        let o = tiny_ontology();
+        let cfg = DistillConfig::default();
+        let embeds = std::cell::Cell::new(0usize);
+        let embed = |texts: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            embeds.set(embeds.get() + 1);
+            Ok(texts.iter().map(|_| vec![1.0, 0.0]).collect())
+        };
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.scored, 1);
+        let first_hash = state_load(root, &o.model).scored["_inbox/a.md"].hash;
+
+        // Different bytes, same length, mtime put back: a scan that still read
+        // the file would see a new hash and re-score it.
+        std::fs::write(&path, "x".repeat(PROSE.len())).unwrap();
+        set_mtime(&path, stamp);
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.scored, 0, "unchanged stamp: not re-scored");
+        assert_eq!(embeds.get(), 1, "unchanged stamp: not re-embedded");
+        assert_eq!(
+            state_load(root, &o.model).scored["_inbox/a.md"].hash,
+            first_hash,
+            "unchanged stamp: the file was never read"
+        );
+
+        // Move the mtime (still mature) and the file is read again.
+        set_mtime(&path, stamp - std::time::Duration::from_secs(3600));
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.scored, 1, "moved stamp: re-read and re-scored");
+        assert_ne!(
+            state_load(root, &o.model).scored["_inbox/a.md"].hash,
+            first_hash
+        );
+    }
+
+    /// A ledger written before the stamp fields existed still loads (serde
+    /// defaults the stamp to 0/0): its first scan re-reads each file once,
+    /// finds the same hash, re-scores nothing and stamps the entry; the scan
+    /// after that no longer reads the file.
+    #[test]
+    fn scan_stamps_a_pre_stamp_ledger_on_its_first_reread() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("_inbox")).unwrap();
+        let path = root.join("_inbox/a.md");
+        std::fs::write(&path, PROSE).unwrap();
+        set_mtime(&path, old_mtime());
+        let o = tiny_ontology();
+        let legacy = serde_json::json!({
+            "model": o.model,
+            "scored": { "_inbox/a.md": {
+                "hash": crate::embeddings::content_hash(PROSE), "tier": "full", "at": 1
+            } }
+        });
+        std::fs::create_dir_all(state_path(root).parent().unwrap()).unwrap();
+        std::fs::write(state_path(root), legacy.to_string()).unwrap();
+        let loaded = &state_load(root, &o.model).scored["_inbox/a.md"];
+        assert_eq!((loaded.mtime, loaded.len), (0, 0), "stamp-less entry loads");
+
+        let cfg = DistillConfig::default();
+        let embed = |_: Vec<String>| -> Result<Vec<Vec<f32>>, String> {
+            panic!("unchanged content must not be re-embedded")
+        };
+        let mut manifest = test_manifest();
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.scored, 0, "same hash: not re-scored");
+        let meta = std::fs::metadata(&path).unwrap();
+        let e = &state_load(root, &o.model).scored["_inbox/a.md"];
+        assert_eq!(e.len, meta.len(), "the re-read stamped the entry");
+        assert_eq!(
+            e.mtime,
+            meta.modified()
+                .unwrap()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as i64
+        );
+
+        // Stamped now: swapped bytes under the same stamp are never read.
+        std::fs::write(&path, "x".repeat(PROSE.len())).unwrap();
+        set_mtime(&path, meta.modified().unwrap());
+        let out = scan(root, &o, &cfg, 10, &embed, &[], &mut manifest).unwrap();
+        assert_eq!(out.scored, 0, "stamped: the swap was never read");
+    }
+
     #[test]
     fn junk_heuristics_skip_embedding() {
         let dir = tempfile::tempdir().unwrap();
@@ -4899,6 +5033,8 @@ mod tests {
                         hash: 0,
                         tier: "summary".into(),
                         at: now_secs(),
+                        mtime: 0,
+                        len: 0,
                     },
                 );
             }
@@ -4944,6 +5080,8 @@ mod tests {
                             hash: 0,
                             tier: "summary".into(),
                             at: now_secs(),
+                            mtime: 0,
+                            len: 0,
                         },
                     );
                 }
@@ -4960,6 +5098,8 @@ mod tests {
                         hash: 0,
                         tier: "summary".into(),
                         at: now_secs(),
+                        mtime: 0,
+                        len: 0,
                     },
                 );
                 state_save(root, &state).unwrap();
@@ -4993,6 +5133,8 @@ mod tests {
                 hash: 0,
                 tier: "summary".into(),
                 at: now_secs(),
+                mtime: 0,
+                len: 0,
             },
         );
         state_save(root, &state).unwrap();
