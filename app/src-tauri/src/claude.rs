@@ -100,6 +100,7 @@ pub fn run_prompt(
         .unwrap_or_else(|| "Read,Write,Edit,Glob,Grep".to_string());
     let mut cmd = Command::new(&path);
     cmd.arg("--print").arg("--allowedTools").arg(&allowed);
+    add_raw_deny_args(&mut cmd);
     // --model selects the model for this run (alias like "haiku"/"sonnet"/"opus"
     // or a full id). Omitted -> the CLI's configured default. Lets the cheap
     // Haiku model be chosen for high-volume ingest.
@@ -136,6 +137,36 @@ fn add_model_and_effort_args(cmd: &mut Command, model: Option<&str>, effort: Opt
             }
         }
     }
+}
+
+/// Permission deny rule keeping the spawned agent out of the vault's immutable
+/// `raw/` tree (repo rule: read-only through every path). The vault's CLAUDE.md
+/// only *asks* the model; this is enforced by Claude Code itself. Per the
+/// permissions docs: deny rules are evaluated before any allow rule, so it
+/// also holds when MYCO_CLAUDE_TOOLS widens the allow list; `Edit(path)` is
+/// the one file rule the CLI consults for every built-in tool that edits files
+/// (Write/NotebookEdit/MultiEdit included — a `Write(...)` path rule is
+/// "accepted but never consulted"); and a CLI-flag rule's leading `/` anchors
+/// at the primary working directory, which both spawn sites set to the vault
+/// root, so exactly `<vault>/raw/**` is covered (the `vault::is_raw_path`
+/// boundary) — an unanchored `raw/**` deny would match a `raw` directory at
+/// any depth. Verified against claude 2.1.257 in --print mode: Write of a new
+/// raw/ file and Edit of an existing one are refused ("File is in a directory
+/// that is denied by your permission settings") while Write under wiki/
+/// succeeds. Ceiling: Bash `> raw/…` redirections are covered, a script that
+/// opens the file itself is not — only reachable if MYCO_CLAUDE_TOOLS adds
+/// Bash; OS-level enforcement would need the CLI sandbox.
+/// Docs: https://code.claude.com/docs/en/permissions#read-and-edit,
+/// https://code.claude.com/docs/en/permissions#manage-permissions (deny first),
+/// https://code.claude.com/docs/en/cli-reference (`--disallowedTools`).
+const RAW_DENY_RULE: &str = "Edit(/raw/**)";
+
+/// Append the `raw/` deny to a claude CLI command. Both spawn paths call this
+/// so the guard cannot exist on one and be forgotten on the other. Keep it
+/// where no positional argument follows: `--disallowedTools` is variadic and
+/// would swallow a trailing prompt as more rules (the prompt goes on stdin).
+fn add_raw_deny_args(cmd: &mut Command) {
+    cmd.arg("--disallowedTools").arg(RAW_DENY_RULE);
 }
 
 /// One event parsed from the CLI's `stream-json` output. `kind` is one of:
@@ -277,6 +308,7 @@ where
         .arg("stream-json")
         .arg("--allowedTools")
         .arg(&allowed);
+    add_raw_deny_args(&mut cmd);
     add_model_and_effort_args(&mut cmd, model, effort);
     let mut child = cmd
         .env("PATH", augmented_path(&path))
@@ -671,6 +703,20 @@ mod tests {
             .all(|a| a != "--model"));
         assert!(args_of(None, None).is_empty());
         assert!(args_of(Some(""), Some("  ")).is_empty());
+    }
+
+    #[test]
+    fn raw_deny_is_an_anchored_edit_rule_on_disallowed_tools() {
+        let mut cmd = Command::new("claude");
+        add_raw_deny_args(&mut cmd);
+        let args: Vec<String> = cmd
+            .get_args()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        // `Edit` is the only file rule the CLI checks, and the leading `/`
+        // pins it to <cwd>/raw — an unanchored `raw/**` deny would also match
+        // `wiki/raw/…`, and a `Write(...)` rule is silently ignored.
+        assert_eq!(args, vec!["--disallowedTools", "Edit(/raw/**)"]);
     }
 
     #[test]

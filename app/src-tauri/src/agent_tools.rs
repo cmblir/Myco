@@ -326,6 +326,23 @@ mod tests {
     }
 
     #[test]
+    fn creating_a_new_file_under_raw_is_refused_even_when_confirmed() {
+        // Immutable means no new files either: the raw/ check runs before the
+        // exists check, so `create_page` cannot plant a source.
+        let v = temp_vault();
+        let root = v.to_string_lossy();
+        let res = dispatch(
+            &root,
+            "create_page",
+            &json!({ "path": "raw/planted.md", "content": "not a source" }),
+            true,
+        );
+        assert!(res.is_err(), "raw/ must refuse creation too");
+        assert!(!v.join("raw/planted.md").exists());
+        fs::remove_dir_all(&v).ok();
+    }
+
+    #[test]
     fn create_refuses_existing_update_refuses_missing() {
         let v = temp_vault();
         let root = v.to_string_lossy();
