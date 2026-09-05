@@ -63,6 +63,9 @@ plans/
 
 # Non-winner embed bake-off model (Phase 1a) — kept local for re-eval, not shipped
 app/src-tauri/models/multilingual-e5-large-q4_k_m.gguf
+# 2026-08 bake-off loser (417 MB): untracked so a clone does not pull it for one
+# ignored calibration bench (local_llm.rs near_dup_threshold); e5-small-ko ships.
+app/src-tauri/models/bge-m3-Q4_K_M.gguf
 
 # subagent-driven-development scratch (ledgers, briefs, review packages)
 .superpowers/

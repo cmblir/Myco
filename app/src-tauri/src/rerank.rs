@@ -480,9 +480,9 @@ mod tests {
 
     // The bundled embedding model must be REJECTED, not silently scored. This is
     // the regression test for the spike's measured failure mode: Rank pooling on
-    // bge-m3 returned `Ok` with no warning. Only needs the 438 MB bge-m3 the repo
-    // already tracks, but that is still an LFS payload a fresh clone may not have
-    // materialized, so it skips when absent. Not #[ignore]d: it loads no weights
+    // bge-m3 returned `Ok` with no warning. Needs the 438 MB bge-m3 GGUF, which
+    // the repo no longer tracks (see .gitignore; keep a local copy in models/),
+    // so it skips when absent. Not #[ignore]d: it loads no weights
     // (header parse only) and is the check most worth running by default.
     #[test]
     fn rejects_a_model_without_a_classification_head() {

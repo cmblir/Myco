@@ -663,13 +663,22 @@ mod tests {
     // since every turn in a session log shares vocabulary. Cross-language
     // pairs are checked too: bge-m3 is multilingual, so a Korean turn and its
     // English restatement land close, and a digest should not print both.
-    // Ignored by default (loads a 417 MB GGUF). Run with:
+    // Ignored by default (loads a 417 MB GGUF the repo no longer tracks — see
+    // .gitignore; skips with a message when it is absent). Run with:
     // cargo test --lib near_dup_threshold -- --ignored --nocapture
     #[test]
     #[ignore]
     fn near_dup_threshold_separates_restatements_from_distinct_turns() {
         const NEAR_DUP_COSINE: f32 = 0.80;
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("models/bge-m3-Q4_K_M.gguf");
+        if !path.exists() {
+            eprintln!(
+                "skipping near_dup_threshold: {} is absent (bge-m3 is not tracked in the repo; \
+                 place the Q4_K_M GGUF there to run this calibration)",
+                path.display()
+            );
+            return;
+        }
         let mut llm = LocalLlm::load_embed_host().expect("embed host");
         llm.load_embed_model(&path).expect("load bge-m3");
         let spec = embed_spec_by_id("bge-m3").expect("bge-m3 spec exists");
