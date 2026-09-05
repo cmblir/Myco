@@ -9,7 +9,16 @@
 //     providers we inline the vault content so the model has real context
 //     instead of answering blind.
 
-import { ipc, type MycoSettings, type ScoredChunk } from "./ipc";
+import {
+  ipc,
+  type AskScope,
+  type MycoSettings,
+  type NearMiss,
+  type ScoredChunk,
+  type SemanticSearchResult,
+  type TierWeights,
+} from "./ipc";
+import { hitTier, sourceTier } from "./extractive";
 import { BUILTIN_EMBED_MODEL } from "./providers";
 import { getBudgetThreshold, overBudget, recordUsage } from "./budget";
 import { log } from "./log";
@@ -76,6 +85,11 @@ export interface CompleteArgs {
   /// below. The CLI's own Read/Grep inside its tool loop stays invisible to
   /// this side regardless, and must not be invented.
   onStage?: (stage: AskStage) => void;
+  /// Ask scope and tier priors for the retrieval block — interactive Ask's
+  /// segment and sliders; the other task:"query" callers leave the backend
+  /// defaults (wiki, DEFAULT_TIER_WEIGHTS).
+  scope?: AskScope;
+  tierWeights?: TierWeights;
 }
 
 // How much vault markdown to inline (in bytes/chars) for non-tool providers.
@@ -155,7 +169,13 @@ export async function complete(args: CompleteArgs): Promise<string> {
     if (args.task === "query" && args.onStage) {
       const question = lastUserContent(args.messages);
       const { ctx, stems, stale, retrievalFailed } = question
-        ? await semanticContext(question, VAULT_CONTEXT_BUDGET, args.onStage)
+        ? await semanticContext(
+            question,
+            VAULT_CONTEXT_BUDGET,
+            args.onStage,
+            args.scope,
+            args.tierWeights,
+          )
         : { ctx: "", stems: [], stale: false, retrievalFailed: false };
       if (ctx.trim()) {
         retrievalBlock =
@@ -237,7 +257,13 @@ export async function complete(args: CompleteArgs): Promise<string> {
     // whole-vault concat when the index is empty, stale, or retrieval fails.
     const question = lastUserContent(args.messages);
     const retrieved = question
-      ? await semanticContext(question, budget, args.onStage)
+      ? await semanticContext(
+          question,
+          budget,
+          args.onStage,
+          args.scope,
+          args.tierWeights,
+        )
       : { ctx: "", stems: [], stale: false, retrievalFailed: false };
     stems = retrieved.stems;
     stale = retrieved.stale;
@@ -342,7 +368,15 @@ export function isIndexStale(
  * set for a legitimately empty index or empty hit list. `onRetrieving` fires
  * just before the search IPC, matching the old stage-event timing. */
 export interface RetrievedChunks {
+  /** Hits at or above `floor` (lexical-only hits included — see isRelevant). */
   hits: ScoredChunk[];
+  /** Hits that fell under `floor`, best first — the abstention card's
+   *  near-misses. Empty when nothing was rejected. */
+  nearMisses: NearMiss[];
+  /** The dense-cosine floor `hits` cleared. */
+  floor: number;
+  /** Pages in the index, for the retrieval trace; null when unknown. */
+  indexedPages: number | null;
   stale: boolean;
   retrievalFailed: boolean;
 }
@@ -354,8 +388,17 @@ export async function retrieveChunks(
   /** Inclusive YYYY-MM-DD window (time-aware Ask) — threaded through to
    * semantic_search's dated-tier filter. */
   range?: { start: string; end: string },
+  scope?: AskScope,
+  tierWeights?: TierWeights,
 ): Promise<RetrievedChunks> {
-  const none: RetrievedChunks = { hits: [], stale: false, retrievalFailed: false };
+  const none: RetrievedChunks = {
+    hits: [],
+    nearMisses: [],
+    floor: RELEVANCE_FLOOR,
+    indexedPages: null,
+    stale: false,
+    retrievalFailed: false,
+  };
   const status = await ipc.embeddingsStatus().catch((err) => {
     log.warn("retrieve_chunks.embeddings_status_failed", { error: String(err) });
     return null;
@@ -365,15 +408,46 @@ export async function retrieveChunks(
   if (isIndexStale(status)) return { ...none, stale: true };
   onRetrieving?.();
   let searchRejected = false;
-  const hits = await ipc
-    .semanticSearch(question, k, "builtin-local", BUILTIN_EMBED_MODEL, range)
+  const res = await ipc
+    .semanticSearch(
+      question,
+      k,
+      "builtin-local",
+      BUILTIN_EMBED_MODEL,
+      range,
+      scope,
+      tierWeights,
+    )
     .catch((err) => {
       log.warn("retrieve_chunks.semantic_search_failed", { error: String(err) });
       searchRejected = true;
-      return [] as ScoredChunk[];
+      return null;
     });
-  if (searchRejected) return { ...none, retrievalFailed: true };
-  return { hits: hits.filter(isRelevant), stale: false, retrievalFailed: false };
+  if (searchRejected || res === null) return { ...none, retrievalFailed: true };
+  // A backend from before the envelope returns the bare hit list — degrade
+  // to "nothing rejected server-side", never to a TypeError on `.hits`.
+  const found: SemanticSearchResult = Array.isArray(res)
+    ? { hits: res, floor: RELEVANCE_FLOOR, below_floor: [] }
+    : res;
+  // The stricter of the two floors: the backend's applied one and the
+  // measured constant here. Judging and displaying use the same number.
+  const floor = Math.max(found.floor, RELEVANCE_FLOOR);
+  const rejected: NearMiss[] = found.hits
+    .filter((h) => !isRelevant(h, floor))
+    .map((h) => ({
+      page: h.page,
+      tier: h.tier ?? hitTier(sourceTier(h.page)),
+      score_final: h.score_final ?? h.score,
+      similarity: h.similarity,
+    }));
+  return {
+    hits: found.hits.filter((h) => isRelevant(h, floor)),
+    nearMisses: [...found.below_floor, ...rejected],
+    floor,
+    indexedPages: status.indexed_pages,
+    stale: false,
+    retrievalFailed: false,
+  };
 }
 
 /** Dense-cosine floor a chunk must clear to count as an answer at all.
@@ -405,8 +479,8 @@ export const RELEVANCE_FLOOR = 0.42;
  * is kept rather than rejected for lacking a score. `== null` deliberately
  * covers `undefined` too: a backend that predates the field must degrade to the
  * old unfiltered behaviour, not silently reject every hit. */
-function isRelevant(hit: ScoredChunk): boolean {
-  return hit.similarity == null || hit.similarity >= RELEVANCE_FLOOR;
+function isRelevant(hit: ScoredChunk, floor: number): boolean {
+  return hit.similarity == null || hit.similarity >= floor;
 }
 
 /** Semantic retrieval: embed the question, pull the top-matching chunks from the
@@ -432,8 +506,17 @@ async function semanticContext(
   question: string,
   budget: number,
   onStage?: (stage: AskStage) => void,
+  scope?: AskScope,
+  tierWeights?: TierWeights,
 ): Promise<{ ctx: string; stems: string[]; stale: boolean; retrievalFailed: boolean }> {
-  const r = await retrieveChunks(question, 12, () => onStage?.({ kind: "retrieving" }));
+  const r = await retrieveChunks(
+    question,
+    12,
+    () => onStage?.({ kind: "retrieving" }),
+    undefined,
+    scope,
+    tierWeights,
+  );
   if (r.stale || r.retrievalFailed || r.hits.length === 0) {
     return { ctx: "", stems: [], stale: r.stale, retrievalFailed: r.retrievalFailed };
   }

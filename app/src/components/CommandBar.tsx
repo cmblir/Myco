@@ -101,8 +101,8 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
       // Semantic hits run in parallel; empty when no index is built (quiet fail).
       ipc
         .semanticSearch(lexQuery, 6, "builtin-local", BUILTIN_EMBED_MODEL)
-        .then((hits) => {
-          if (!cancelled) setSemanticHits(hits);
+        .then((found) => {
+          if (!cancelled) setSemanticHits(found.hits);
         })
         .catch(() => {
           if (!cancelled) setSemanticHits([]);

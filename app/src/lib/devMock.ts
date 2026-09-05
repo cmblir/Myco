@@ -10,7 +10,13 @@
 
 import type { BucketUsage, DistillConfig } from "./distill";
 import type { QuarantineItem } from "./quarantine";
-import type { ScoredChunk } from "./ipc";
+import type {
+  HitTier,
+  ScoredChunk,
+  SemanticSearchResult,
+  TierWeights,
+} from "./ipc";
+import { DEFAULT_TIER_WEIGHTS, hitTier, sourceTier } from "./extractive";
 import { today } from "./taskLine";
 
 interface Node {
@@ -1342,6 +1348,7 @@ const SETTINGS = {
   spotlight_shortcut: "Alt+Space",
   vault_history_enabled: false,
   pii_quarantine_enabled: false,
+  search_archived_sessions: false,
   notch_enabled: false,
 };
 
@@ -2317,37 +2324,39 @@ function mockInvoke(
     case "semantic_search": {
       const q = String(args.query ?? "").toLowerCase();
       const k = Number(args.k ?? 8);
+      const scope = String(args.scope ?? "wiki");
+      const weights = {
+        ...DEFAULT_TIER_WEIGHTS,
+        ...((args.tierWeights as Partial<TierWeights> | undefined) ?? {}),
+      };
       // Match on any meaningful TOKEN, not the whole query string: the real
       // backend matches by meaning, so a mock that needed the entire sentence
       // to appear verbatim sent every realistic question ("what is attention?")
       // down the no-match fallback below — which now means "abstain", so
       // mock-driven tests could not reach the answer path at all.
       const terms = q.split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 2);
-      const hits: ScoredChunk[] = NODES.filter((d) => {
+      const matched = NODES.filter((d) => {
         const hay = `${d.n} ${body(d)}`.toLowerCase();
         return terms.some((w) => hay.includes(w));
-      })
-        .slice(0, k)
-        .map((d, i) => ({
-          page: `wiki/${d.s}.md`,
-          stem: d.s,
-          section: 0,
-          text: `passage from ${d.s}`,
-          score: 0.9 - i * 0.05,
-          // A keyword match stands in for a confident hit here, so these sit
-          // above RELEVANCE_FLOOR (0.5) and survive filtering.
-          similarity: 0.68 - i * 0.02,
-        }));
+      });
+      const wikiHits: ScoredChunk[] = matched.slice(0, k).map((d, i) => ({
+        page: `wiki/${d.s}.md`,
+        stem: d.s,
+        section: 0,
+        text: `passage from ${d.s}`,
+        score: 0.9 - i * 0.05,
+        // A keyword match stands in for a confident hit here, so these sit
+        // above RELEVANCE_FLOOR (0.42) and survive filtering.
+        similarity: 0.68 - i * 0.02,
+      }));
       // The real index also holds machine-written pages (`daily/` digests are
       // indexed — see collect_wiki_pages) and the lexical arm returns hits with
       // NO cosine at all (similarity: null). Neither exists in the wiki-only
-      // sample graph, so a browser run could not see the citation chips'
-      // source-tier / "keyword match" states. Appended, never substituted, so
-      // the ranked wiki hits above stay first.
-      // Inserted mid-ranking (not appended): the extractive answer only renders
-      // the top 5 PAGES, so a tail entry would never be visible.
-      if (hits.length > 0) {
-        hits.splice(
+      // sample graph, so a browser run could not see the ladder's tier chips
+      // or the "keyword match" band. Inserted mid-ranking (not appended): the
+      // answer only quotes the top 5 PAGES, so a tail entry would never show.
+      if (wikiHits.length > 0) {
+        wikiHits.splice(
           2,
           0,
           {
@@ -2359,39 +2368,98 @@ function mockInvoke(
             similarity: 0.58,
           },
           {
-            page: "sessions/2026-08/codex-019fdc04.md",
-            stem: "codex-019fdc04",
+            page: "weekly/2026-W34.md",
+            stem: "2026-W34",
             section: 0,
-            text: `session transcript line mentioning ${terms[0]}`,
+            text: `weekly rollup line mentioning ${terms[0]}`,
             score: 0.78,
             similarity: null,
           },
         );
       }
+      // Session scope: the session corpus, plus `sessions/archive/` only when
+      // the opt-in flag is on (the real index keeps the cold tier out).
+      const sessionHits: ScoredChunk[] = matched.length
+        ? [
+            {
+              page: "sessions/2026-08/codex-019fdc04.md",
+              stem: "codex-019fdc04",
+              section: 0,
+              text: `[User] ${terms[0]} 정리해줘 [lead] ${terms[0]} 관련 노트를 두 갈래로 나눠 정리했습니다. 초안 생성 완료 [[TASK_DONE]]`,
+              score: 0.86,
+              similarity: 0.63,
+            },
+            {
+              page: "sessions/2026-07/codex-019fdc7b.md",
+              stem: "codex-019fdc7b",
+              section: 0,
+              text: `[User] ${terms[0]} 다시 [lead] 지난번 결론을 로그 스케일로 다시 그리면 직선이 보입니다`,
+              score: 0.74,
+              similarity: 0.57,
+            },
+            ...(SETTINGS.search_archived_sessions
+              ? [
+                  {
+                    page: "sessions/archive/2026-08/codex-019f9a12.md",
+                    stem: "codex-019f9a12",
+                    section: 0,
+                    text: `[User] ${terms[0]} 문제 3주 전에 어떻게 풀었지 [lead] 학습률을 √2배로만 올리고 워밍업을 2배로 늘려 해결했습니다.`,
+                    score: 0.82,
+                    similarity: 0.66,
+                  },
+                ]
+              : []),
+          ]
+        : [];
+      const pool =
+        scope === "sessions"
+          ? sessionHits
+          : scope === "all"
+            ? [...wikiHits, ...sessionHits]
+            : wikiHits;
       // No keyword match: return weak hits the way the real backend does for an
-      // off-vault question — below RELEVANCE_FLOOR, so the abstention path (not
-      // the answer path) is what a mock-mode nonsense query exercises.
-      const out =
-        hits.length === 0 && NODES.length
-          ? NODES.slice(0, k).map((d, i) => ({
-              page: `wiki/${d.s}.md`,
+      // off-vault question — below the floor, so they come back as near-misses
+      // and the abstention card (not the answer) is what a nonsense query shows.
+      const weak: ScoredChunk[] =
+        pool.length === 0 && NODES.length
+          ? NODES.slice(0, 4).map((d, i) => ({
+              page: scope === "sessions" ? `sessions/2026-08/codex-${d.s.slice(0, 8)}.md` : `wiki/${d.s}.md`,
               stem: d.s,
               section: 0,
               text: `passage from ${d.s}`,
               score: 0.6 - i * 0.05,
-              similarity: 0.42 - i * 0.02,
+              similarity: i === 3 ? null : 0.4 - i * 0.03,
             }))
-          : hits;
+          : [];
+      // Tier prior, applied after the per-page cap exactly like the backend:
+      // final = rrf × prior, re-sorted, rank change measured against the
+      // pure-RRF order.
+      const tierOf = (page: string): HitTier => hitTier(sourceTier(page));
+      const withPrior = (hs: ScoredChunk[]): ScoredChunk[] => {
+        const base = [...hs].sort((a, b) => b.score - a.score);
+        return hs
+          .map((h) => {
+            const tier = tierOf(h.page);
+            const prior = weights[tier];
+            return { ...h, tier, prior, score_rrf: h.score, score_final: h.score * prior };
+          })
+          .sort((a, b) => b.score_final - a.score_final)
+          .map((h, i) => ({
+            ...h,
+            rank_change: base.findIndex((b) => b.page === h.page) - i,
+          }));
+      };
+      const ranked = withPrior(pool).slice(0, k);
       // Time-anchored question: the real backend keeps only dated-tier pages
       // overlapping the range (simplified here to the tiers the fixtures have —
       // daily by day, sessions/monthly by month; undated wiki pages drop out).
       const range = args.range as { start: string; end: string } | undefined;
       const ranged = range
-        ? out.filter((h) => {
+        ? ranked.filter((h) => {
             const day = /^daily\/(\d{4}-\d{2}-\d{2})\.md$/.exec(h.page)?.[1];
             if (day) return range.start <= day && day <= range.end;
             const month =
-              /^sessions\/(\d{4}-\d{2})\//.exec(h.page)?.[1] ??
+              /^sessions\/(?:archive\/)?(\d{4}-\d{2})\//.exec(h.page)?.[1] ??
               /^monthly\/(\d{4}-\d{2})\.md$/.exec(h.page)?.[1];
             if (month)
               return (
@@ -2400,8 +2468,18 @@ function mockInvoke(
               );
             return false;
           })
-        : out;
-      return sleep(400).then(() => ranged);
+        : ranked;
+      const result: SemanticSearchResult = {
+        hits: ranged,
+        floor: 0.42,
+        below_floor: withPrior(weak).map((h) => ({
+          page: h.page,
+          tier: h.tier as HitTier,
+          score_final: h.score_final as number,
+          similarity: h.similarity,
+        })),
+      };
+      return sleep(400).then(() => result);
     }
     case "classify_intent": {
       // No embedder in mock mode, so stand in with the shape of the real

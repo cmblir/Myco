@@ -221,6 +221,46 @@ export interface ScoredChunk {
   /** True dense cosine similarity, carried through fusion. `null` when the
    *  chunk came only from the lexical arm. See RELEVANCE_FLOOR in chat.ts. */
   similarity: number | null;
+  /** Ranking-explain fields (tier priors). Optional so a backend that predates
+   *  them degrades to "prior 1, final = score, no rank change" — the same rule
+   *  `similarity` follows. `score_rrf` is the pure fusion score before the
+   *  prior; `score_final = score_rrf × prior` is the order hits arrive in;
+   *  `rank_change` is positions moved vs. the pure-RRF order, positive = up. */
+  tier?: HitTier;
+  prior?: number;
+  score_rrf?: number;
+  score_final?: number;
+  rank_change?: number;
+}
+
+/** Where Ask searches. `wiki` is the knowledge layers only; `sessions` is the
+ *  session corpus (plus `sessions/archive/` when `search_archived_sessions`
+ *  is on); `all` is both. */
+export type AskScope = "wiki" | "sessions" | "all";
+
+/** Ranking tier the backend assigns a hit — the folder layers
+ *  `extractive.ts::sourceTier` names, with `monthly` folded into `rollup`. */
+export type HitTier = "note" | "map" | "digest" | "rollup" | "session" | "source";
+
+/** Per-tier multiplier on a hit's RRF score (`final = rrf × prior`). */
+export type TierWeights = Record<HitTier, number>;
+
+/** A hit that fell under the relevance floor — the abstention card's near-miss
+ *  rows. `similarity` is the dense cosine when the backend carries it (`null`
+ *  = lexical-only, no cosine) and absent when it sends the bare triple. */
+export interface NearMiss {
+  page: string;
+  tier: HitTier;
+  score_final: number;
+  similarity?: number | null;
+}
+
+/** What `semantic_search` returns: the hits that cleared the dense-cosine
+ *  relevance `floor`, plus up to four that did not. */
+export interface SemanticSearchResult {
+  hits: ScoredChunk[];
+  floor: number;
+  below_floor: NearMiss[];
 }
 
 /** A dormant wiki page whose content echoes the day's seed text — what
@@ -353,6 +393,9 @@ export interface MycoSettings {
   /** Q4 item 13 — when on, PII-bearing content is refused/quarantined on
    *  every raw/ entry path instead of written with a warning. */
   pii_quarantine_enabled: boolean;
+  /** Ask's session scope also searches `sessions/archive/` (the cold tier
+   *  `is_cold()` keeps out of the index). Turning it on re-indexes. */
+  search_archived_sessions: boolean;
   /** Menu-bar notch drop surface (macOS). Default OFF — a panel over the menu
    *  bar is opt-in. update_notch_enabled PERSISTS the flag itself and
    *  creates/destroys the window — do not also route it through set_settings
@@ -779,13 +822,19 @@ export const ipc = {
     model: string,
     /** Inclusive YYYY-MM-DD day window — restricts hits to the dated tiers. */
     range?: { start: string; end: string },
+    /** Ask scope (Rust `scope`, default "wiki") and tier priors (Rust
+     *  `tier_weights`, default DEFAULT_TIER_WEIGHTS in extractive.ts). */
+    scope?: AskScope,
+    tierWeights?: TierWeights,
   ) =>
-    invoke<ScoredChunk[]>("semantic_search", {
+    invoke<SemanticSearchResult>("semantic_search", {
       query,
       k,
       provider,
       model,
       range,
+      scope,
+      tierWeights,
     }),
   /** 2D semantic-map coordinates (PCA over page embeddings) for every indexed page. */
   semanticMap: () => invoke<SemanticPoint[]>("semantic_map", {}),

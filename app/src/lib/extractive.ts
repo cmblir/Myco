@@ -4,7 +4,7 @@
 // synthesis on top of it only added echo loops and confabulation. Pure
 // function — all IO stays with the caller.
 
-import type { ScoredChunk } from "./ipc";
+import type { HitTier, ScoredChunk, TierWeights } from "./ipc";
 
 export interface ExtractiveOptions {
   /** Max distinct pages to render (rank order). */
@@ -29,27 +29,31 @@ function truncateWholeLines(text: string, limit: number): string {
   return lines.join("\n");
 }
 
-interface PageGroup {
+export interface PageGroup {
   page: string;
   stem: string;
   texts: string[];
   /** Best dense cosine among the page's chunks; null when every chunk that
    *  represents it came from the lexical arm only. */
   best: number | null;
+  /** Best pure-RRF score among the page's chunks (`score_rrf`, or `score` on
+   *  a backend that predates the split) — the page's rank before any prior. */
+  rrf: number;
 }
 
 /** Group hits by page, preserving the ranked order of first appearance and
- * capping at `maxPages`. Shared by the rendered answer and the citation chips
- * so the chips describe exactly the pages the answer quotes. */
-function groupByPage(hits: ScoredChunk[], maxPages: number): PageGroup[] {
+ * capping at `maxPages`. Shared by the rendered answer, the citation ladder
+ * and the coverage row so they describe exactly the pages the answer quotes. */
+export function groupByPage(hits: ScoredChunk[], maxPages: number): PageGroup[] {
   const order: PageGroup[] = [];
   const byPage = new Map<string, PageGroup>();
   for (const h of hits) {
     if (!h.text) continue;
+    const rrf = h.score_rrf ?? h.score;
     let entry = byPage.get(h.page);
     if (!entry) {
       if (order.length >= maxPages) continue;
-      entry = { page: h.page, stem: h.stem, texts: [], best: h.similarity };
+      entry = { page: h.page, stem: h.stem, texts: [], best: h.similarity, rrf };
       byPage.set(h.page, entry);
       order.push(entry);
     }
@@ -59,8 +63,19 @@ function groupByPage(hits: ScoredChunk[], maxPages: number): PageGroup[] {
     if (h.similarity !== null && (entry.best === null || h.similarity > entry.best)) {
       entry.best = h.similarity;
     }
+    if (rrf > entry.rrf) entry.rrf = rrf;
   }
   return order;
+}
+
+/** A page's quoted body: its chunks joined, cut at `perPageChars` on a line
+ * boundary with "…". Shared by the markdown answer and the ladder so both
+ * quote the same lines. */
+export function quoteBody(texts: string[], perPageChars = 700): string {
+  const body = texts.join("\n\n");
+  return body.length > perPageChars
+    ? `${truncateWholeLines(body, perPageChars).trimEnd()}…`
+    : body;
 }
 
 /** One cited page as the chips under an answer show it. */
@@ -178,18 +193,51 @@ export function sourceTier(page: string): SourceTier {
   }
 }
 
+/** Tier priors the ladder proposes (mockup "Strata"): the user's own notes
+ * rank first, drafted maps and machine digests below, session logs and raw
+ * imports last. `rollup` shares the digest value until it is measured. All
+ * 1.00 reproduces the app's pre-prior ranking exactly. */
+export const DEFAULT_TIER_WEIGHTS: TierWeights = {
+  note: 1,
+  map: 0.9,
+  digest: 0.8,
+  rollup: 0.8,
+  session: 0.6,
+  source: 0.5,
+};
+
+/** The backend's tier for a `SourceTier`: `monthly` rolls up like `weekly`. */
+export function hitTier(tier: SourceTier): HitTier {
+  return tier === "monthly" ? "rollup" : tier;
+}
+
+/** Category colour token for a tier chip — the app's fixed `--c-*` meanings:
+ * violet concept = the user's notes, blue overview = maps, teal analysis =
+ * machine digests/rollups, amber source = imports; sessions are dim (a log,
+ * not a category). Returns a CSS `var(...)` expression. */
+export function tierColor(tier: SourceTier): string {
+  switch (hitTier(tier)) {
+    case "note":
+      return "var(--c-concept)";
+    case "map":
+      return "var(--c-overview)";
+    case "digest":
+    case "rollup":
+      return "var(--c-analysis)";
+    case "session":
+      return "var(--ink-4)";
+    case "source":
+      return "var(--c-source)";
+  }
+}
+
 export function formatExtractiveAnswer(
   hits: ScoredChunk[],
   opts: ExtractiveOptions = {},
 ): string {
-  const perPageChars = opts.perPageChars ?? 700;
-
   const sections: string[] = [];
   for (const { stem, texts, best } of groupByPage(hits, opts.maxPages ?? 5)) {
-    let body = texts.join("\n\n");
-    if (body.length > perPageChars) {
-      body = `${truncateWholeLines(body, perPageChars).trimEnd()}…`;
-    }
+    const body = quoteBody(texts, opts.perPageChars);
     const quoted = body
       .split("\n")
       .map((line) => `> ${line}`)
