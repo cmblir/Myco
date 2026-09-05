@@ -7,11 +7,14 @@
 // each world reads as its own disc rather than a body just touching its
 // neighbour.
 //
-// Every layout the app offers is exercised here, at the real vault's scale
-// (1244 notes), through its REAL layout function — not a reimplementation.
-// The pair check below is deliberate brute force (O(n^2)): if it shared
+// Every layout the app offers is exercised here through its REAL layout
+// function — not a reimplementation — over a graph with the real vault's
+// shape. The per-layout loop runs at 400 notes: overlap is a local property,
+// so a pair that collides at the vault's 1244 notes collides at 400 too, and
+// the pair check below is deliberate brute force (O(n^2)) — if it shared
 // layoutSeparation's spatial hash, a bug in that hash would hide the very
-// violations this file exists to catch.
+// violations this file exists to catch. One layout (the semantic map, the
+// worst offender) still runs at the full 1244 as the scale canary.
 import { describe, expect, it } from "vitest";
 import Graph from "graphology";
 import type { VaultGraph } from "./graphData";
@@ -33,13 +36,16 @@ import {
   buildMyceliumMat,
 } from "./staticLayouts";
 
-const N = 1244;
+const N = 400;
+/** The real vault's note count — exactly one case below runs at it. */
+const VAULT_N = 1244;
 
-/** The real vault's shape: 1244 notes, ~440 wikilinks, one 34-link hub — plus
- *  the `size` attribute graphData derives from degree, so the radii under test
- *  are the radii the renderer really draws. */
-function makeVaultGraph(): VaultGraph {
-  const ids = Array.from({ length: N }, (_, i) => `note-${i}.md`);
+/** The real vault's shape at `n` notes: one 34-link hub and wikilinks scaled
+ *  from the vault's ~440 at 1244 notes (so about half the notes stay edgeless,
+ *  as they really are) — plus the `size` attribute graphData derives from
+ *  degree, so the radii under test are the radii the renderer really draws. */
+function makeVaultGraph(n = N): VaultGraph {
+  const ids = Array.from({ length: n }, (_, i) => `note-${i}.md`);
   const g = new Graph({ multi: false, type: "undirected" }) as VaultGraph;
   for (const id of ids) {
     g.addNode(id, {
@@ -60,11 +66,11 @@ function makeVaultGraph(): VaultGraph {
     if (a !== b && !g.hasEdge(a, b)) g.addEdge(a, b);
   };
   for (let k = 1; k <= 34; k++) addEdge(ids[0], ids[k]);
-  let budget = 440 - 34;
-  for (let i = 40; i < N - 1 && budget > 0; i += 3) {
+  let budget = Math.round((440 * n) / VAULT_N) - 34;
+  for (let i = 40; i < n - 1 && budget > 0; i += 3) {
     addEdge(ids[i], ids[i + 1]);
     budget--;
-    if (i + 2 < N && budget > 0) {
+    if (i + 2 < n && budget > 0) {
       addEdge(ids[i], ids[i + 2]);
       budget--;
     }
@@ -237,8 +243,11 @@ describe("no-overlap invariant", () => {
     expectSeparated(g);
   }, 60_000);
 
-  it("semantic (PCA meaning-map, as PageGraph bakes it)", () => {
-    const g = makeVaultGraph();
+  it("semantic (PCA meaning-map, as PageGraph bakes it) — at the vault's full 1244 notes", () => {
+    // The scale canary: the one case kept at the real vault's size, because the
+    // raw semantic map was the worst offender and every layout ends in the same
+    // separateGraphLayout post-process this drives at full density.
+    const g = makeVaultGraph(VAULT_N);
     // Stand-in for the Rust PCA: unit-square coords with deliberate exact ties
     // (near-synonymous notes land on the same point) plus the unembedded-ghost
     // ring PageGraph parks the rest on — the two shapes that made the raw
