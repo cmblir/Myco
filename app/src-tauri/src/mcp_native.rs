@@ -965,6 +965,25 @@ struct GitCommitArgs {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ContradictsArgs {
+    /// wiki-relative filename, e.g. "scaling-laws.md".
+    page: String,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ProposeLinksArgs {
+    /// wiki-relative filename to find link candidates for.
+    page: String,
+    /// Max candidates (1-20, default 5).
+    #[serde(default)]
+    limit: Option<usize>,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct CheckPageArgs {
     /// The full draft (frontmatter + body) you are about to write.
     text: String,
@@ -1514,45 +1533,7 @@ impl McpServer {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let wiki = wiki_dir(&root);
-        // filename → (status, normalized links)
-        let mut pages: std::collections::BTreeMap<String, (String, BTreeSet<String>)> =
-            Default::default();
-        for abs in collect_md(&wiki) {
-            let name = abs
-                .file_name()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
-            if LINT_SKIP_NAMES.contains(&name.as_str()) {
-                continue;
-            }
-            let Some((fm, body)) = read_parts(&abs) else {
-                continue;
-            };
-            let status = fm_opt(&fm, "status").unwrap_or_else(|| "active".into());
-            pages.insert(rel_to(&wiki, &abs), (status, extract_links(&body)));
-        }
-        let mut found = Vec::new();
-        for (fnm, (status, _)) in &pages {
-            if status == "disputed" {
-                found.push(json!({ "kind": "disputed", "page": fnm, "detail": "page is flagged disputed" }));
-            }
-        }
-        for (fnm, (status, links)) in &pages {
-            if status != "active" {
-                continue;
-            }
-            for tgt in links {
-                if pages
-                    .get(tgt)
-                    .map(|(s, _)| s == "superseded")
-                    .unwrap_or(false)
-                {
-                    let disp = tgt.strip_suffix(".md").unwrap_or(tgt);
-                    found.push(json!({ "kind": "stale-link", "page": fnm, "detail": format!("links to superseded [[{disp}]]") }));
-                }
-            }
-        }
+        let found = contradiction_scan(&root, None);
         json_result(json!({ "ok": true, "count": found.len(), "found": found }))
     }
 
@@ -2224,6 +2205,73 @@ impl McpServer {
         json_result(json!({ "ok": true, "hash": hash, "files": files }))
     }
 
+    // ─── judgement helpers ────────────────────────────────────────────────────
+
+    /// `contradictions`, focused on one page, with the offending line.
+    #[tool(
+        description = "The structural contradiction check for ONE page: is it flagged disputed, does it link to a superseded page, and (if it is itself superseded) which active pages still link to it. Each row carries the line and the sentence the [[link]] sits in, so you can edit the exact claim. Same scan as `contradictions`, which runs it over the whole wiki. Read-only, no LLM."
+    )]
+    async fn contradicts(
+        &self,
+        Parameters(a): Parameters<ContradictsArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        if let Err(e) = wiki_page_path(&root, &a.page) {
+            return fail(e);
+        }
+        let found = contradiction_scan(&root, Some(&a.page));
+        json_result(json!({
+            "ok": true, "page": a.page, "count": found.len(), "found": found,
+        }))
+    }
+
+    /// Link candidates for a page. Never writes.
+    #[tool(
+        description = "Suggest [[wikilinks]] for a page: the app's own embedding neighbours (the same vector index and per-page fold wikify uses) plus pages sharing its frontmatter tags. Returns {target, score, reason} — score is the best-chunk cosine for an embedding neighbour and null for a tag-only one, so the two are never presented on one scale. Pages already linked, and the page itself, are left out. NEVER writes: the client decides which links to add."
+    )]
+    async fn propose_links(
+        &self,
+        Parameters(a): Parameters<ProposeLinksArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let abs = match wiki_page_path(&root, &a.page) {
+            Ok(p) => p,
+            Err(e) => return fail(e),
+        };
+        let Some((fm, body)) = read_parts(&abs) else {
+            return fail("could not read page");
+        };
+        let limit = a.limit.unwrap_or(5).clamp(1, 20);
+        let self_rel = rel_to(&root, &abs).replace('\\', "/");
+        // Dense arm: exactly wikify_candidates' path — chunk, embed with the
+        // index's OWN model, fold per page by best cosine. Degrades to the tag
+        // arm alone when there is no usable index, as wikify does.
+        let mut dense: Vec<crate::pipeline::CandidatePage> = Vec::new();
+        let mut note = None;
+        match self.page_neighbours(&root, &body).await {
+            Ok(v) => dense = v,
+            Err(e) => note = Some(e),
+        }
+        let tags = crate::index::build_link_graph(&root.to_string_lossy())
+            .map(|adj| adj.tags)
+            .unwrap_or_default();
+        let mut out = json!({
+            "ok": true,
+            "page": self_rel.clone(),
+            "candidates": propose_from(&self_rel, &fm, &body, &dense, &tags, &root, limit),
+        });
+        if let Some(n) = note {
+            out["note"] = json!(n);
+        }
+        json_result(out)
+    }
+
     // ─── draft check, one writer, judged ingest ───────────────────────────────
 
     /// The wiki schema lint + the secret/PII scan, on a draft, writing nothing.
@@ -2746,6 +2794,208 @@ fn archive_inbox(root: &Path, filename: &str, pii_quarantine: bool) -> Result<Va
         out["pii_warning"] = json!(w);
     }
     Ok(out)
+}
+
+// ─── contradicts / propose_links bodies ──────────────────────────────────────
+
+/// One contradiction row: the kind, the page it is on, the superseded target
+/// where there is one, and the exact span the offending `[[link]]` occupies.
+fn contradiction_row(
+    kind: &str,
+    page: &str,
+    detail: String,
+    span: Option<(usize, String)>,
+) -> Value {
+    let mut row = json!({ "kind": kind, "page": page, "detail": detail });
+    if let Some((line, sentence)) = span {
+        row["line"] = json!(line);
+        row["sentence"] = json!(sentence);
+    }
+    row
+}
+
+/// The sentence a `[[target]]` sits in, and its 1-based line: the line is
+/// split on `. ` / `? ` / `! ` and the piece holding the link is returned, so
+/// an edit lands on the claim rather than the paragraph.
+fn link_span(body: &str, target: &str) -> Option<(usize, String)> {
+    let stem = target.strip_suffix(".md").unwrap_or(target);
+    let needle = format!("[[{stem}");
+    for (i, line) in body.lines().enumerate() {
+        if !line.contains(&needle) {
+            continue;
+        }
+        let sentence = line
+            .split_inclusive(['.', '?', '!'])
+            .find(|s| s.contains(&needle))
+            .unwrap_or(line)
+            .trim()
+            .chars()
+            .take(400)
+            .collect::<String>();
+        return Some((i + 1, sentence));
+    }
+    None
+}
+
+/// No focus matches every page; a focus matches only itself.
+fn focused(focus: Option<&str>, page: &str) -> bool {
+    focus.is_none() || focus == Some(page)
+}
+
+/// The structural-v1 contradiction scan: disputed pages, and active pages
+/// linking to superseded ones. `focus` narrows the OUTPUT to rows about one
+/// page (its own disputes, its stale links, and — when it is the superseded
+/// one — the active pages still pointing at it); the scan itself still reads
+/// the whole wiki, because "who links to me" cannot be answered from one file.
+fn contradiction_scan(root: &Path, focus: Option<&str>) -> Vec<Value> {
+    // list_files canonicalizes (`/var` -> `/private/var` on macOS); match it so
+    // rel_to can strip the base — the same thing `suspect_scan` does, and what
+    // keeps the page keys the filenames `pages.get(tgt)` looks targets up by.
+    let wiki = wiki_dir(root);
+    let wiki = wiki.canonicalize().unwrap_or(wiki);
+    // filename → (status, body, normalized links)
+    let mut pages: std::collections::BTreeMap<String, (String, String, BTreeSet<String>)> =
+        Default::default();
+    for abs in collect_md(&wiki) {
+        let name = abs
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        if LINT_SKIP_NAMES.contains(&name.as_str()) {
+            continue;
+        }
+        let Some((fm, body)) = read_parts(&abs) else {
+            continue;
+        };
+        let status = fm_opt(&fm, "status").unwrap_or_else(|| "active".into());
+        let links = extract_links(&body);
+        pages.insert(rel_to(&wiki, &abs), (status, body, links));
+    }
+    let mut found = Vec::new();
+    for (fnm, (status, _, _)) in &pages {
+        if status == "disputed" && focused(focus, fnm) {
+            found.push(contradiction_row(
+                "disputed",
+                fnm,
+                "page is flagged disputed".to_string(),
+                None,
+            ));
+        }
+    }
+    for (fnm, (status, body, links)) in &pages {
+        if status != "active" {
+            continue;
+        }
+        for tgt in links {
+            if !pages
+                .get(tgt)
+                .map(|(s, _, _)| s == "superseded")
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            // A focused scan wants both directions: this page's stale links,
+            // and the links other pages still hold to this superseded page.
+            if !focused(focus, fnm) && !focused(focus, tgt) {
+                continue;
+            }
+            let disp = tgt.strip_suffix(".md").unwrap_or(tgt);
+            let mut row = contradiction_row(
+                "stale-link",
+                fnm,
+                format!("links to superseded [[{disp}]]"),
+                link_span(body, tgt),
+            );
+            row["target"] = json!(tgt);
+            found.push(row);
+        }
+    }
+    found
+}
+
+/// `propose_links`' pure half: merge the embedding neighbours with the pages
+/// sharing this page's frontmatter tags, drop what is already linked, and cut
+/// to `limit`. Embedding neighbours come first, ordered by cosine; tag-only
+/// candidates follow, ordered by how many tags they share. The two are never
+/// mixed into one number — a tag-only row's `score` is null.
+fn propose_from(
+    self_rel: &str,
+    fm: &Value,
+    body: &str,
+    dense: &[crate::pipeline::CandidatePage],
+    tags_by_abs: &std::collections::BTreeMap<String, Vec<String>>,
+    root: &Path,
+    limit: usize,
+) -> Vec<Value> {
+    let linked: BTreeSet<String> = extract_links(body)
+        .into_iter()
+        .map(|t| t.trim_end_matches(".md").to_lowercase())
+        .collect();
+    let stem_of = |rel: &str| {
+        Path::new(rel)
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_lowercase())
+            .unwrap_or_default()
+    };
+    let taken = |rel: &str| rel == self_rel || linked.contains(&stem_of(rel));
+
+    // Tag overlap, keyed by the same vault-relative path the dense arm uses.
+    let own_tags: BTreeSet<String> = fm
+        .get("tags")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|t| t.as_str())
+                .map(|t| t.to_lowercase())
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut shared: std::collections::BTreeMap<String, Vec<String>> = Default::default();
+    if !own_tags.is_empty() {
+        for (abs, tags) in tags_by_abs {
+            let rel = rel_to(root, Path::new(abs)).replace('\\', "/");
+            if !rel.starts_with("wiki/") || taken(&rel) {
+                continue;
+            }
+            let common: Vec<String> = tags
+                .iter()
+                .map(|t| t.to_lowercase())
+                .filter(|t| own_tags.contains(t))
+                .collect();
+            if !common.is_empty() {
+                shared.insert(rel, common);
+            }
+        }
+    }
+
+    let mut out: Vec<Value> = Vec::new();
+    for c in dense {
+        if taken(&c.page) || out.len() >= limit {
+            continue;
+        }
+        let mut reason = format!("embedding neighbour (cosine {:.2})", c.score);
+        if let Some(common) = shared.remove(&c.page) {
+            reason.push_str(&format!("; shares tags: {}", common.join(", ")));
+        }
+        out.push(json!({ "target": c.page, "stem": c.stem, "score": c.score, "reason": reason }));
+    }
+    let mut by_tags: Vec<(usize, String, Vec<String>)> = shared
+        .into_iter()
+        .map(|(rel, common)| (common.len(), rel, common))
+        .collect();
+    by_tags.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    for (_, rel, common) in by_tags {
+        if out.len() >= limit {
+            break;
+        }
+        out.push(json!({
+            "target": rel,
+            "stem": stem_of(&rel),
+            "score": Value::Null,
+            "reason": format!("shares tags: {}", common.join(", ")),
+        }));
+    }
+    out
 }
 
 // ─── check_page / write_page / ingest bodies ─────────────────────────────────
@@ -3482,6 +3732,54 @@ fn setup_profile_at(
 }
 
 impl McpServer {
+    /// Pages whose indexed chunks are nearest this text, folded to one row per
+    /// page by best cosine — `wikify_candidates`' own path (chunk with
+    /// `embeddings::chunk_page`, embed with the index's model,
+    /// `pipeline::dense_chunk_matches` then `rank_candidates`), reused rather
+    /// than re-derived. `Err` is a REASON the dense arm did not run, not a
+    /// failure: `propose_links` falls back to the tag arm and says so.
+    async fn page_neighbours(
+        &self,
+        root: &Path,
+        text: &str,
+    ) -> Result<Vec<crate::pipeline::CandidatePage>, String> {
+        let cache = self.app.state::<crate::vector_index::VectorCache>();
+        let store = cache.get(&crate::vector_index::VectorStore::path_for(
+            &root.to_string_lossy(),
+        )?);
+        if store.records.is_empty() {
+            return Err("no embedding index for this vault yet — tag overlap only".into());
+        }
+        let (provider, model) = store
+            .model
+            .split_once(':')
+            .map(|(p, m)| (p.to_string(), m.to_string()))
+            .unwrap_or((store.model.clone(), String::new()));
+        let mut chunks = crate::embeddings::chunk_page(text);
+        chunks.truncate(crate::pipeline::MAX_CHUNKS);
+        if chunks.is_empty() {
+            return Ok(Vec::new());
+        }
+        let llm = self.app.state::<commands::LocalLlmState>();
+        let vecs = commands::embed_texts(
+            self.app.clone(),
+            llm,
+            &provider,
+            &model,
+            crate::local_llm::EmbedRole::Query,
+            chunks,
+        )
+        .await
+        .map_err(|e| format!("embedding failed, tag overlap only: {e}"))?;
+        let per_chunk: Vec<Vec<crate::vector_index::Hit>> = vecs
+            .iter()
+            .map(|v| {
+                crate::pipeline::dense_chunk_matches(&store.search(v, crate::pipeline::FUSE_POOL))
+            })
+            .collect();
+        Ok(crate::pipeline::rank_candidates(&per_chunk, 40))
+    }
+
     /// The app's hybrid retrieval over `root`, restricted to one `search`
     /// scope — the same managed indexes and embedder the Ask page uses.
     async fn hybrid(
@@ -3544,6 +3842,7 @@ mod tests {
     };
     use super::{best_quote, changed_since_at, neighbourhood_at, parse_since, recall_result};
     use super::{check_page_text, ingest_at, ingest_name, problem_line, write_page_at};
+    use super::{contradiction_scan, link_span, propose_from};
     use super::{
         distill_status_at, import_conversation_at, import_outcome_json, ledger_status_at,
         session_file, setup_profile_at, wikify_pending_at,
@@ -4031,6 +4330,205 @@ body of {rel}
         );
         let err = read_wiki_page(root, "../raw/x.md").unwrap_err();
         assert_eq!(err, "path escapes wiki/: ../raw/x.md");
+    }
+
+    // ─── contradicts / propose_links ──────────────────────────────────────────
+
+    /// active `a` links superseded `b`; `c` is disputed; `d` is clean.
+    fn contradicted_vault() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let page = |name: &str, status: &str, body: &str| {
+            write(
+                &dir.path().join("wiki").join(name),
+                &format!("---\ntitle: \"{name}\"\ntype: concept\nstatus: {status}\n---\n{body}\n"),
+            );
+        };
+        page(
+            "a.md",
+            "active",
+            "Intro line.\nThe old view is in [[b]]. A second claim follows.\n",
+        );
+        page("b.md", "superseded", "Replaced by something better.");
+        page("c.md", "disputed", "Two sources disagree.");
+        page("d.md", "active", "Nothing wrong here, links [[c]].");
+        dir
+    }
+
+    #[test]
+    fn contradiction_scan_unfocused_matches_the_whole_wiki_scan() {
+        let dir = contradicted_vault();
+        let found = contradiction_scan(dir.path(), None);
+        let kinds: Vec<(&str, &str)> = found
+            .iter()
+            .map(|r| (r["kind"].as_str().unwrap(), r["page"].as_str().unwrap()))
+            .collect();
+        assert!(kinds.contains(&("disputed", "c.md")), "{kinds:?}");
+        assert!(kinds.contains(&("stale-link", "a.md")), "{kinds:?}");
+        assert_eq!(kinds.len(), 2, "{kinds:?}");
+    }
+
+    #[test]
+    fn contradicts_reports_the_line_and_the_sentence_the_link_sits_in() {
+        let dir = contradicted_vault();
+        let found = contradiction_scan(dir.path(), Some("a.md"));
+        assert_eq!(found.len(), 1, "{found:?}");
+        let row = &found[0];
+        assert_eq!(row["kind"], "stale-link");
+        assert_eq!(row["page"], "a.md");
+        assert_eq!(row["target"], "b.md");
+        assert_eq!(row["line"], 2, "{row}");
+        assert_eq!(row["sentence"], "The old view is in [[b]].");
+    }
+
+    #[test]
+    fn contradicts_on_the_superseded_page_names_who_still_links_to_it() {
+        let dir = contradicted_vault();
+        // b is superseded: the row it cares about is a's link INTO it.
+        let found = contradiction_scan(dir.path(), Some("b.md"));
+        assert_eq!(found.len(), 1, "{found:?}");
+        assert_eq!(found[0]["page"], "a.md");
+        assert_eq!(found[0]["target"], "b.md");
+        // A clean page has nothing to say.
+        assert!(contradiction_scan(dir.path(), Some("d.md")).is_empty());
+        // A disputed page reports its own flag, with no span to point at.
+        let c = contradiction_scan(dir.path(), Some("c.md"));
+        assert_eq!(c[0]["kind"], "disputed");
+        assert!(c[0].get("line").is_none());
+    }
+
+    #[test]
+    fn link_span_finds_the_sentence_and_gives_up_cleanly() {
+        let body = "One. Two [[target]] three. Four.\n";
+        assert_eq!(
+            link_span(body, "target.md"),
+            Some((1, "Two [[target]] three.".to_string()))
+        );
+        // An aliased link is the same target.
+        assert_eq!(
+            link_span("see [[target|the old one]] here", "target"),
+            Some((1, "see [[target|the old one]] here".to_string()))
+        );
+        assert_eq!(link_span("no link at all", "target.md"), None);
+    }
+
+    fn candidate(page: &str, score: f32) -> crate::pipeline::CandidatePage {
+        crate::pipeline::CandidatePage {
+            page: page.to_string(),
+            stem: Path::new(page)
+                .file_stem()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned(),
+            score,
+        }
+    }
+
+    #[test]
+    fn propose_from_ranks_embedding_neighbours_then_tag_only_and_never_mixes_the_scales() {
+        let root = Path::new("/vault");
+        let fm = serde_json::json!({ "tags": ["LLM", "infra"] });
+        let body = "the page body, linking nothing";
+        let dense = vec![
+            candidate("wiki/near.md", 0.81),
+            candidate("wiki/far.md", 0.44),
+        ];
+        let tags = [
+            ("/vault/wiki/near.md", vec!["llm".to_string()]),
+            (
+                "/vault/wiki/tagged.md",
+                vec!["infra".to_string(), "llm".to_string()],
+            ),
+            ("/vault/wiki/onetag.md", vec!["llm".to_string()]),
+            ("/vault/wiki/unrelated.md", vec!["cooking".to_string()]),
+            ("/vault/sessions/2026-08/s.md", vec!["llm".to_string()]),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+        let out = propose_from("wiki/self.md", &fm, body, &dense, &tags, root, 10);
+        let targets: Vec<&str> = out.iter().map(|c| c["target"].as_str().unwrap()).collect();
+        assert_eq!(
+            targets,
+            vec![
+                "wiki/near.md",
+                "wiki/far.md",
+                "wiki/tagged.md",
+                "wiki/onetag.md"
+            ],
+            "embedding first by cosine, then tag-only by shared count"
+        );
+        // The cosine survives as a number; a tag-only row has no score at all.
+        assert!((out[0]["score"].as_f64().unwrap() - 0.81).abs() < 1e-6);
+        assert!(out[2]["score"].is_null());
+        // A page that is BOTH says so once, on its embedding row.
+        let reason = out[0]["reason"].as_str().unwrap();
+        assert!(
+            reason.starts_with("embedding neighbour (cosine 0.81)"),
+            "{reason}"
+        );
+        assert!(reason.contains("shares tags: llm"), "{reason}");
+        assert_eq!(out[2]["reason"], "shares tags: infra, llm");
+        // sessions/ is not a wiki page and an unshared tag is not a reason.
+        assert!(!targets.contains(&"sessions/2026-08/s.md"));
+        assert!(!targets.contains(&"wiki/unrelated.md"));
+    }
+
+    #[test]
+    fn propose_from_never_suggests_the_page_itself_or_something_already_linked() {
+        let root = Path::new("/vault");
+        let fm = serde_json::json!({ "tags": ["llm"] });
+        let body = "already links [[near]] and [[tagged.md|an alias]]";
+        let dense = vec![
+            candidate("wiki/self.md", 0.99),
+            candidate("wiki/near.md", 0.81),
+            candidate("wiki/fresh.md", 0.60),
+        ];
+        let tags = [
+            ("/vault/wiki/tagged.md", vec!["llm".to_string()]),
+            ("/vault/wiki/other.md", vec!["llm".to_string()]),
+        ]
+        .into_iter()
+        .map(|(k, v)| (k.to_string(), v))
+        .collect();
+        let out = propose_from("wiki/self.md", &fm, body, &dense, &tags, root, 10);
+        let targets: Vec<&str> = out.iter().map(|c| c["target"].as_str().unwrap()).collect();
+        assert_eq!(targets, vec!["wiki/fresh.md", "wiki/other.md"], "{out:?}");
+        // …and it honours the cut.
+        assert_eq!(
+            propose_from("wiki/self.md", &fm, body, &dense, &tags, root, 1).len(),
+            1
+        );
+    }
+
+    #[test]
+    fn propose_from_with_no_tags_is_the_embedding_arm_alone() {
+        let root = Path::new("/vault");
+        let dense = vec![candidate("wiki/near.md", 0.7)];
+        let tags = [("/vault/wiki/other.md".to_string(), vec!["llm".to_string()])]
+            .into_iter()
+            .collect();
+        let out = propose_from(
+            "wiki/self.md",
+            &serde_json::Value::Null,
+            "body",
+            &dense,
+            &tags,
+            root,
+            10,
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0]["target"], "wiki/near.md");
+        // And with neither arm, an honest empty list.
+        assert!(propose_from(
+            "wiki/self.md",
+            &serde_json::Value::Null,
+            "body",
+            &[],
+            &Default::default(),
+            root,
+            10
+        )
+        .is_empty());
     }
 
     // ─── check_page / write_page / ingest ─────────────────────────────────────

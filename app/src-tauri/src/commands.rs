@@ -3574,7 +3574,7 @@ use crate::vector_index::{is_cold, EdgeLookup, Hit as VecHit, VectorCache, Vecto
 /// Embed a batch of texts with the chosen provider. `role` picks the query/doc
 /// instruction prefix for asymmetric embedding models (bge-m3 ignores it — see
 /// `EmbedSpec.query_prefix`/`doc_prefix`).
-async fn embed_texts(
+pub(crate) async fn embed_texts(
     app: tauri::AppHandle,
     llm: tauri::State<'_, LocalLlmState>,
     provider: &str,
