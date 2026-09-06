@@ -31,7 +31,7 @@ use myco_lib::rerank::Reranker;
 use myco_lib::{
     embeddings,
     local_llm::{apply_prefix, embed_spec_by_id, EmbedRole, LocalLlm},
-    retrieval::{rrf_fuse, Bm25Index},
+    retrieval::{apply_tier_prior, rrf_fuse, Bm25Index, TierWeights},
     sample_vault,
     vector_index::VectorStore,
 };
@@ -305,6 +305,14 @@ fn main() {
     // out of the app until this harness shows it beats the recorded fused
     // baseline (eval/BASELINE.md discipline).
     let ko_strip = std::env::var("MYCO_KO_STRIP").is_ok();
+    // A/B hook for the source-tier prior the app applies after fusion
+    // (`retrieval::apply_tier_prior`, default `TierWeights`): MYCO_TIER_PRIOR=1
+    // weights the fused arm the way `rank_hybrid` does. Every page of this
+    // corpus is a wiki note (tier weight 1.0), so the prior is the identity
+    // here and the run MUST reproduce the unset baseline exactly — that is
+    // the harmlessness check; the prior's effect on a mixed vault is what
+    // `corpus_mix_probe` measures on the live index.
+    let tier_prior = std::env::var("MYCO_TIER_PRIOR").is_ok();
     for lab in &set.queries {
         let qvec = query_vec(&llm, &lab.q);
         let dense_hits = store.search(&qvec, 40);
@@ -314,7 +322,10 @@ fn main() {
             lab.q.clone()
         };
         let lexical_hits = bm25.search(&bm25_query, 40);
-        let fused_hits = rrf_fuse(&dense_hits, &lexical_hits, 40);
+        let mut fused_hits = rrf_fuse(&dense_hits, &lexical_hits, 40);
+        if tier_prior {
+            apply_tier_prior(&mut fused_hits, &TierWeights::default());
+        }
 
         dense_ranked.push(dedup_stems(&dense_hits));
         fused_ranked.push(dedup_stems(&fused_hits));

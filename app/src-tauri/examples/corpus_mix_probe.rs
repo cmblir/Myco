@@ -17,13 +17,16 @@
 //   cd app/src-tauri
 //   MYCO_VAULT=/path/to/vault MYCO_EMBED_SPEC=bge-m3 \
 //     cargo run --release --example corpus_mix_probe
+// MYCO_PAGE_CAP=2 reproduces the app's per-page cap; MYCO_TIER_PRIOR=1 adds
+// the source-tier prior `rank_hybrid` applies after fusion (default
+// `TierWeights`), so the two runs side by side ARE the before/after of it.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use myco_lib::{
     local_llm::{apply_prefix, embed_spec_by_id, EmbedRole, LocalLlm},
-    retrieval::{cap_per_page, rrf_fuse, Bm25Index},
+    retrieval::{apply_tier_prior, cap_per_page, rrf_fuse, Bm25Index, TierWeights},
     vector_index::VectorStore,
 };
 
@@ -122,7 +125,10 @@ fn main() {
         let top_cos = dense.first().map(|h| h.score).unwrap_or(0.0);
         // Fuse WIDER than k, then cap, then truncate — capping a list already
         // cut to k would only shrink it, never promote a distinct page.
-        let fused = rrf_fuse(&dense, &lexical, pool);
+        let mut fused = rrf_fuse(&dense, &lexical, pool);
+        if std::env::var("MYCO_TIER_PRIOR").is_ok() {
+            apply_tier_prior(&mut fused, &TierWeights::default());
+        }
         let cap: usize = std::env::var("MYCO_PAGE_CAP")
             .ok()
             .and_then(|v| v.parse().ok())

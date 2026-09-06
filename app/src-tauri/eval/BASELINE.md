@@ -913,3 +913,91 @@ any page over LONG_PAGE_BYTES (256 KB) is already past 200 chunks — the
 measured log is 0.9 KB/chunk — so appends past the cap are hash-identical for
 the indexed set. All 30 s bought was postponing one 4.26 s first index. 5 s
 still coalesces the appends inside an ingest turn.
+
+## 2026-09-06 — source-tier prior after RRF fusion (Strata), wiki scope by default
+
+The vector index of the owner's vault holds 4,451 chunks, 76 % from
+`sessions/` and 21 % wiki: 41 session files occupy 3.5x the search surface of
+100 wiki pages, and until now the two competed on raw cosine — `sourceTier()`
+(extractive.ts:161) classified the layers but only as a citation label, and
+rerank.rs never weighted folders. `rank_hybrid` now multiplies the fused score
+by a per-tier prior AFTER `rrf_fuse` (which stays pure) and BEFORE the page
+cap: note 1.0 · map 0.9 · digest 0.8 · rollup 0.8 · session 0.6 · source 0.5
+(`retrieval::TierWeights`, all 1.0 = off). Ask also defaults to the `wiki`
+scope (notes, maps, digests; sessions on request).
+
+### 62-query bilingual set — `MYCO_EMBED_SPEC=e5-small-ko ./target/release/examples/retrieval_eval`
+
+Before = the fused arm as recorded above (all weights 1.0); after = the same
+binary with `MYCO_TIER_PRIOR=1` (default `TierWeights` applied after fusion).
+Corpus 71 pages / 146 chunks.
+
+| fused (dense+BM25 RRF) | before (all 1.0) | after (defaults) |
+|------------------------|------------------|------------------|
+| hit@1                  | 83.9 %           | 83.9 %           |
+| hit@3 / @5 / @10       | 100 / 100 / 100  | 100 / 100 / 100  |
+| MRR                    | 0.917            | 0.917            |
+| nDCG@10                | 0.933            | 0.933            |
+
+The two outputs are byte-identical (`diff` empty) — **by construction, not by
+luck**: every page of this corpus is a wiki note (`wiki/*.md` and
+`ko-corpus/*.md` both classify as `Tier::Note`, weight 1.0), so the prior is
+the identity here. That is the harmlessness check (the prior does nothing
+where it has nothing to do) and also the limit of this harness: it has no
+session pages and no label of the form "the note should beat the transcript
+that mentions the same thing", so it cannot rank the prior's benefit. The
+before/after numbers therefore neither support nor refute the default
+weights; the live-vault probe below is what does.
+
+### Mixed vault — `corpus_mix_probe` on the live index (read-only)
+
+`MYCO_VAULT=<active vault> MYCO_EMBED_SPEC=e5-small-ko MYCO_PAGE_CAP=2
+./target/release/examples/corpus_mix_probe`, then again with
+`MYCO_TIER_PRIOR=1`. Live index: 2,196 chunks (sessions 78.6 %, wiki 18.7 %,
+daily 1.7 %), model `builtin-local:e5-small-ko`. Same 10 probe queries
+(6 wiki-shaped, 2 session-shaped, 2 ambiguous), k = 12, pool 50, cap 2 — the
+`semantic_search` path, scope `all` (the probe has no scope; Ask's default
+`wiki` scope would remove sessions outright, which is a different question).
+
+| top-12 slots over 10 queries | before (all 1.0)        | after (defaults)        |
+|------------------------------|-------------------------|-------------------------|
+| wiki                         | 72 / 120 = 60.0 %, lift 3.21x | 90 / 120 = 75.0 %, lift 4.01x |
+| sessions                     | 48 / 120 = 40.0 %, lift 0.51x | 29 / 120 = 24.2 %, lift 0.31x |
+| daily                        | 0                       | 1 (0.8 %)               |
+| distinct pages               | 94                      | 97                      |
+
+Per query, the mix moved the way the weights say it should and nowhere else:
+
+- the 6 wiki-shaped questions all end at 12/12 wiki — before, three of them
+  carried 2, 2 and 5 transcript chunks that merely mentioned the concept;
+- the 2 ambiguous questions flip from `sessions 8, wiki 4` to `wiki 8,
+  sessions 4` — the same pages, reordered so the notes lead;
+- the session-shaped question whose only good matches are transcripts (top
+  cosine 0.474) stays `sessions 12`: the prior is a tilt on the fused score,
+  not a filter, and 0.6x a clear winner still wins. The other session-shaped
+  question (top cosine 0.413, i.e. below the relevance floor — an abstention
+  in Ask) goes from `sessions 11, wiki 1` to `sessions 9, wiki 2, daily 1`.
+
+Top cosines are unchanged in every row (the prior never touches
+`similarity`), so the abstention decision is unaffected.
+
+### Decision
+
+Default weights **kept** (note 1.0 / map 0.9 / digest 0.8 / rollup 0.8 /
+session 0.6 / source 0.5). The labeled harness shows no regression (identical
+output) and the live-vault probe shows the intended movement with no
+collateral: wiki-shaped questions lose only transcript mentions, transcript-
+only questions keep their transcripts. What is NOT shown is a labeled gain —
+the bar for calling the values measured rather than reasoned.
+
+### Open
+
+- A labeled mixed-corpus eval (wiki note + a transcript mentioning the same
+  topic, the note marked relevant) is what would turn the weights into a
+  measured choice; `retrieval_eval` has the `MYCO_TIER_PRIOR` hook ready for
+  it. Until then they are the mockup's values, chosen so a transcript needs
+  ~1.7x a note's fused score to outrank it (1/0.6), and the flat-prior toggle
+  in the Ask UI is the escape hatch.
+- The live index above is 2,196 chunks against the 4,451 the design brief
+  measured: the brief counted the (retired, bge-m3) 112 MB index still on disk
+  beside the current one. The mix (≈78 % sessions) is the same either way.
