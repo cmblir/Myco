@@ -122,6 +122,10 @@ export interface ExtractiveSummary {
  * cited list item per quoted passage, and the candidates as `## Related`
  * wikilinks. `confidence: low` because nothing read this source for meaning —
  * the report says so in as many words. */
+// Paired with `validator::tests::offline_ingest_page_passes_validation` in
+// src-tauri/src/validator.rs: that test holds this function's output verbatim
+// and runs the real validate_pages over it, so the frontmatter and citation
+// contract cannot drift between the two languages unnoticed.
 export function extractiveSummary(
   t: Strings,
   args: {

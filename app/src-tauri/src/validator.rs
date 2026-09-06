@@ -336,6 +336,57 @@ fn age_secs(path: &Path, now: u64) -> Option<u64> {
 mod tests {
     use super::*;
     use std::fs;
+
+    // The page the OFFLINE (extractive) ingest writes, emitted verbatim from
+    // `app/src/lib/extractiveIngest.ts::extractiveSummary` — the one path that
+    // builds a wiki page without a model, so nothing else proves the two
+    // languages still agree on the contract. Regenerate this fixture from that
+    // function if its output changes; a drift here is a real ingest failure.
+    const OFFLINE_INGEST_PAGE: &str = r#"---
+title: "Source: Retrieval notes"
+type: source-summary
+tags:
+  - source-summary
+  - retrieval
+created: 2026-09-06
+last_updated: 2026-09-06
+source_count: 1
+confidence: low
+status: active
+---
+
+# Source: Retrieval notes
+
+_Extractive summary — every line below is quoted verbatim from `raw/retrieval-notes.md`. No model read this source, so nothing here is paraphrased and nothing is inferred._
+
+- Hybrid retrieval fuses a dense vector arm with a lexical arm, and the fusion is what recovers the queries neither arm answers alone. [^src-retrieval-notes]
+- Reciprocal rank fusion needs no score calibration between the two arms, which is exactly why it survives an embedding-model swap. [^src-retrieval-notes]
+
+## Related
+
+- [[attention-mechanism]]
+
+[^src-retrieval-notes]: [[source-retrieval-notes]]
+"#;
+
+    #[test]
+    fn offline_ingest_page_passes_validation() {
+        let (_d, root) = vault(&[
+            ("raw/retrieval-notes.md", "---\ntitle: Retrieval notes\n---\nbody\n"),
+            (
+                "wiki/attention-mechanism.md",
+                "---\ntitle: Attention\ntype: concept\ncreated: 2026-01-01\nconfidence: high\nstatus: active\n---\n",
+            ),
+            ("wiki/source-retrieval-notes.md", OFFLINE_INGEST_PAGE),
+        ]);
+        let rep = validate_pages(&root, &["wiki/source-retrieval-notes.md".to_string()]);
+        assert!(
+            rep.errors.is_empty(),
+            "offline ingest page must validate, got {:?}",
+            rep.errors
+        );
+    }
+
     // Returns the TempDir (kept alive so its Drop doesn't delete the vault out
     // from under a test) alongside its CANONICAL root. `confine_path` (used by
     // `validate_pages` since the path-traversal fix) canonicalizes and compares
