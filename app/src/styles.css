@@ -6556,6 +6556,30 @@ details.props > .btn {
   background: var(--live);
   box-shadow: 0 0 10px 2px var(--glow);
 }
+/* Uncited-claim marker: an amber dot in the right margin (editorClaims.ts). */
+.cm-claim-gutter {
+  width: 16px;
+}
+.cm-claim-gutter .cm-gutterElement {
+  cursor: pointer;
+}
+.claim-dot {
+  display: block;
+  width: 6px;
+  height: 6px;
+  margin: 0.5em 0 0 5px;
+  border-radius: 50%;
+  background: var(--warn);
+  opacity: 0.75;
+  transition:
+    opacity var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+.cm-claim-gutter .cm-gutterElement:hover .claim-dot {
+  opacity: 1;
+  box-shadow: 0 0 8px 2px var(--warn);
+}
+
 /* Who wrote it / revert, anchored at the pointer. */
 .auth-pop {
   position: fixed;
@@ -6592,6 +6616,9 @@ details.props > .btn {
 }
 .auth-dot.is-agent {
   background: var(--live);
+}
+.auth-dot.is-warn {
+  background: var(--warn);
 }
 
 /* Reader header `⋯` overflow (Make cards · Audio overview): a real menu

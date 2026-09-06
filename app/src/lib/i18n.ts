@@ -678,6 +678,14 @@ export interface Strings {
   rd_auth_reverted: string;
   rd_auth_nothing: string;
   rd_auth_failed: string;
+  // Uncited-claim markers.
+  rd_claim_dot: string;
+  rd_claim_title: string;
+  rd_claim_hint: string;
+  rd_claim_find: string;
+  rd_claim_searching: string;
+  rd_claim_none: string;
+  rd_claim_added: string; // {name}
   // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
   cm_find: string;
   cm_replace_field: string;
@@ -2225,6 +2233,13 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_auth_reverted: "Paragraph reverted",
     rd_auth_nothing: "The earlier revision already holds this paragraph.",
     rd_auth_failed: "That revision could not be read.",
+    rd_claim_dot: "This paragraph cites nothing",
+    rd_claim_title: "Claim with no source",
+    rd_claim_hint: "Nothing in this paragraph points at a source.",
+    rd_claim_find: "Find a source",
+    rd_claim_searching: "Searching the vault…",
+    rd_claim_none: "Nothing in the vault supports this — leaving it uncited.",
+    rd_claim_added: "Cited [[{name}]]",
     // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
     cm_find: "Find",
     cm_replace_field: "Replace",
@@ -3792,6 +3807,13 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_auth_reverted: "문단을 이전 판으로 되돌렸습니다",
     rd_auth_nothing: "이전 판에도 이 문단이 그대로 있습니다.",
     rd_auth_failed: "이전 판을 읽지 못했습니다.",
+    rd_claim_dot: "이 문단에는 근거가 없습니다",
+    rd_claim_title: "출처 없는 주장",
+    rd_claim_hint: "이 문단은 아무것도 가리키지 않습니다.",
+    rd_claim_find: "출처 찾기",
+    rd_claim_searching: "볼트 검색 중…",
+    rd_claim_none: "볼트에 근거가 없습니다 — 근거 없음으로 남깁니다.",
+    rd_claim_added: "[[{name}]] 로 근거를 달았습니다",
     // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
     cm_find: "찾기",
     cm_replace_field: "바꾸기",
@@ -5165,6 +5187,13 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_auth_reverted: "段落を以前の版に戻しました",
     rd_auth_nothing: "以前の版にもこの段落がそのまま残っています。",
     rd_auth_failed: "以前の版を読み取れませんでした。",
+    rd_claim_dot: "この段落には根拠がありません",
+    rd_claim_title: "出典のない主張",
+    rd_claim_hint: "この段落は何も指していません。",
+    rd_claim_find: "出典を探す",
+    rd_claim_searching: "ボールトを検索中…",
+    rd_claim_none: "ボールトに根拠が見つかりません — 未引用のままにします。",
+    rd_claim_added: "[[{name}]] を根拠として付けました",
     // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
     cm_find: "検索",
     cm_replace_field: "置換",

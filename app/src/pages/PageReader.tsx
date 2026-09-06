@@ -25,6 +25,10 @@ import {
   type GutterRun,
 } from "../lib/authorship";
 import { authorshipGutter } from "../lib/editorAuthorship";
+import { claimCandidates, claimMarkers, type ClaimSpan } from "../lib/editorClaims";
+import { retrieveChunks } from "../lib/chat";
+import type { ScoredChunk } from "../lib/ipc";
+import { stem } from "../lib/graphData";
 import { notice } from "../lib/notice";
 import {
   parseFrontmatter,
@@ -163,16 +167,26 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     () => gutterRuns(authorship?.runs ?? [], draft),
     [authorship, draft],
   );
+  const claims = useMemo(() => claimCandidates(draft), [draft]);
   const extras = useMemo(
-    () =>
+    () => [
       authorshipGutter({
         runs: paraRuns,
         label: (r) =>
           `${r.agent ? (t.rd_auth_agent ?? "Written by the agent") : (t.rd_auth_human ?? "Written by you")} · ${fmtDate(r.ts, lang)}`,
         onSelect: (run, x, y) => setPick({ run, x, y }),
       }),
-    // Labels follow the language; the runs follow the document.
-    [paraRuns, lang, t],
+      claimMarkers({
+        claims,
+        label: t.rd_claim_dot ?? "This paragraph cites nothing",
+        onSelect: (claim, x, y) => {
+          setClaimHits(null);
+          setClaimPick({ claim, x, y });
+        },
+      }),
+    ],
+    // Labels follow the language; the runs and claims follow the document.
+    [paraRuns, claims, lang, t],
   );
   // A paste error lasts until the next edit (a successful paste inserts text).
   useEffect(() => setEditorError(null), [draft]);
@@ -190,6 +204,12 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const moreRef = useRef<HTMLDivElement | null>(null);
   // Authorship gutter: the paragraph whose bar was clicked, at the pointer.
   const [pick, setPick] = useState<{ run: GutterRun; x: number; y: number } | null>(null);
+  // Uncited claim the amber dot was clicked on, and what the vault search
+  // found for it ("loading" while it runs, null before it is asked).
+  const [claimPick, setClaimPick] = useState<{ claim: ClaimSpan; x: number; y: number } | null>(
+    null,
+  );
+  const [claimHits, setClaimHits] = useState<ScoredChunk[] | "loading" | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Latest editor text, so the unmount cleanup can flush edits made inside the
   // debounce window. We compare it against the store's on-disk `raw` rather than
@@ -252,12 +272,17 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   // The overflow menu closes on Escape or a click outside it, and moves focus
   // to its first item when opened so it is reachable without a pointer.
   useEffect(() => {
-    if (!pick) return;
+    if (!pick && !claimPick) return;
+    const close = (): void => {
+      setPick(null);
+      setClaimPick(null);
+    };
     const onKey = (e: KeyboardEvent): void => {
-      if (e.key === "Escape") setPick(null);
+      if (e.key === "Escape") close();
     };
     const onDown = (e: MouseEvent): void => {
-      if (!(e.target as HTMLElement).closest(".auth-pop, .cm-auth-gutter")) setPick(null);
+      const el = e.target as HTMLElement;
+      if (!el.closest(".auth-pop, .cm-auth-gutter, .cm-claim-gutter")) close();
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("mousedown", onDown);
@@ -265,7 +290,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("mousedown", onDown);
     };
-  }, [pick]);
+  }, [pick, claimPick]);
 
   useEffect(() => {
     if (!moreOpen) return;
@@ -426,6 +451,28 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     }
     applyDocEdit(replaceLines(draftRef.current, run.from, run.to, restored));
     notice.ok(t.rd_auth_reverted ?? "Paragraph reverted");
+  }
+
+  /** "Find a source": the paragraph becomes the query for the same wiki
+   *  retrieval Ask uses. Nothing is inserted without a click on a result. */
+  async function findSources(claim: ClaimSpan): Promise<void> {
+    setClaimHits("loading");
+    const r = await retrieveChunks(claim.text, 3, undefined, undefined, "wiki").catch(
+      () => null,
+    );
+    setClaimHits(r ? r.hits.slice(0, 3) : []);
+  }
+
+  /** Point the claim at a page: `[[stem]]` on the paragraph's last line. */
+  function citeClaim(claim: ClaimSpan, page: string): void {
+    const lines = draftRef.current.split("\n");
+    const i = claim.to - 1;
+    const name = stem(page);
+    if (i < 0 || i >= lines.length || lines[i].includes(`[[${name}]]`)) return;
+    lines[i] = lines[i].replace(/\s*$/, ` [[${name}]]`);
+    applyDocEdit(lines.join("\n"));
+    setClaimPick(null);
+    notice.ok((t.rd_claim_added ?? "Cited [[{name}]]").replace("{name}", name));
   }
 
   function patchProps(patch: FmPatch): void {
@@ -793,6 +840,56 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
                 {t.rd_auth_history ?? "See it in history"} →
               </button>
             </>
+          )}
+        </div>
+      ) : null}
+      {claimPick ? (
+        <div
+          className="auth-pop"
+          role="dialog"
+          aria-label={t.rd_claim_title ?? "Claim with no source"}
+          style={{
+            left: Math.min(claimPick.x, window.innerWidth - 300),
+            top: claimPick.y + 8,
+          }}
+        >
+          <p className="auth-pop__who">
+            <span className="auth-dot is-warn" aria-hidden="true" />
+            {t.rd_claim_title ?? "Claim with no source"}
+          </p>
+          {claimHits === null ? (
+            <>
+              <p className="auth-pop__when">
+                {t.rd_claim_hint ?? "Nothing in this paragraph points at a source."}
+              </p>
+              <button className="btn" onClick={() => void findSources(claimPick.claim)}>
+                ◇ {t.rd_claim_find ?? "Find a source"}
+              </button>
+            </>
+          ) : claimHits === "loading" ? (
+            <p className="auth-pop__when">{t.rd_claim_searching ?? "Searching the vault…"}</p>
+          ) : claimHits.length === 0 ? (
+            <p className="auth-pop__when">
+              {t.rd_claim_none ?? "Nothing in the vault supports this — leaving it uncited."}
+            </p>
+          ) : (
+            <ul className="rail-list">
+              {claimHits.map((h) => (
+                <li key={`${h.page}#${h.section}`}>
+                  <button
+                    type="button"
+                    className="rail-conn__name"
+                    title={h.page}
+                    onClick={() => citeClaim(claimPick.claim, h.page)}
+                  >
+                    {h.stem}
+                  </button>
+                  <span className="rail-n">
+                    {((h.similarity ?? h.score) * 100).toFixed(0)}%
+                  </span>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       ) : null}
