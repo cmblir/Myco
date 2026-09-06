@@ -6,7 +6,7 @@ Development repo for myco, a local-first knowledge wiki.
 
 ```
 app/            # myco desktop app (Tauri 2 + React); hosts the MCP server
-                #   in-process (36 tools, src-tauri/src/mcp_native.rs)
+                #   in-process (44 tools, src-tauri/src/mcp_native.rs)
 clipper/        # web clipper (browser extension + bookmarklet)
 automation/     # automated ingest scripts
 templates/      # project vault templates

@@ -322,14 +322,21 @@ Claude Desktop은 `claude_desktop_config.json`에 추가:
 }
 ```
 
-36개 도구: 읽기(`list_pages` `read_page` `search` `folder_tree` …),
-쓰기(`add_raw_source` `create_page` `update_page` `git_commit` …), 인박스,
-임포트(`import_conversation` `import_session` `wikify_pending`
-`ledger_status`), no-LLM 품질 검사(`lint_citations` `trust_report`
-`contradictions` `distill_status` `distill_report` …),
-개인화(`setup_profile`), 멀티 프로젝트 거버넌스(`resolve_cross_links`
-`export_project` `register_vault` …). `projects/<slug>/` 아래 여러 독립 위키를
-관리하며, 각각 자체 `wiki/ raw/ CLAUDE.md`를 가집니다.
+44개 도구: 답하기(`recall` — Ask 페이지와 같은 관련성 floor로 인용 가능한
+줄을 돌려줍니다, `search` `neighbourhood` `changed_since`), 읽기(`list_pages`
+`read_page` `folder_tree` …), 쓰기(`check_page` `write_page` `ingest`
+`add_raw_source` `git_commit` …), 인박스, 임포트(`import_conversation`
+`import_session` `wikify_pending` `ledger_status`), no-LLM 품질
+검사(`lint_citations` `trust_report` `contradicts` `propose_links`
+`distill_status` `distill_report` …), 개인화(`setup_profile`), 멀티 프로젝트
+거버넌스(`resolve_cross_links` `export_project` `register_vault` …).
+`projects/<slug>/` 아래 여러 독립 위키를 관리하며, 각각 자체
+`wiki/ raw/ CLAUDE.md`를 가집니다.
+
+여기에 프롬프트 3개(`ingest_backlog`, `answer_with_citations`,
+`weekly_digest`)와 읽기 전용 리소스(`myco://instructions`, `myco://stats`,
+`myco://wiki/{path}`)가 더해집니다. `raw/`는 어떤 도구로도 쓸 수 없고
+리소스로도 읽을 수 없습니다.
 
 <details>
 <summary><b>0.4 이전 설치에서 올라오셨나요?</b> 남아 있는 <code>memex</code> 항목을 정리하세요.</summary>

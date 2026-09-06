@@ -336,14 +336,21 @@ Claude Desktop — add to `claude_desktop_config.json`:
 }
 ```
 
-36 tools: read (`list_pages` `read_page` `search` `folder_tree` …), write
-(`add_raw_source` `create_page` `update_page` `git_commit` …), inbox, import
-(`import_conversation` `import_session` `wikify_pending` `ledger_status`),
-no-LLM quality checks (`lint_citations` `trust_report` `contradictions`
+44 tools: answer (`recall` returns quotable lines with the Ask page's own
+relevance floor, `search` `neighbourhood` `changed_since`), read (`list_pages`
+`read_page` `folder_tree` …), write (`check_page` `write_page` `ingest`
+`add_raw_source` `git_commit` …), inbox, import (`import_conversation`
+`import_session` `wikify_pending` `ledger_status`), no-LLM quality checks
+(`lint_citations` `trust_report` `contradicts` `propose_links`
 `distill_status` `distill_report` …), personalisation (`setup_profile`), and
 multi-project governance (`resolve_cross_links` `export_project`
 `register_vault` …) over multiple independent wikis under `projects/<slug>/`,
 each with its own `wiki/ raw/ CLAUDE.md`.
+
+Plus 3 prompts (`ingest_backlog`, `answer_with_citations`, `weekly_digest`)
+and read-only resources: `myco://instructions`, `myco://stats` and
+`myco://wiki/{path}`. `raw/` is never writable and never readable as a
+resource.
 
 <details>
 <summary><b>Upgrading from a pre-0.4 install?</b> Fix a stale <code>memex</code> entry.</summary>

@@ -2838,13 +2838,31 @@ fn vault_stats(root: &Path) -> Value {
 /// Python server ships, plus what `search` now is.
 const INSTRUCTIONS: &str = "myco is a self-maintaining LLM wiki backed by an Obsidian vault. \
     Use `get_instructions` once per session to load the wiki schema (frontmatter rules, \
-    citation format, contradiction policy). Then use the read tools (list_pages, read_page, \
-    search) to browse and the write tools (add_raw_source, create_page, update_page) to \
-    maintain. `search` is the app's hybrid retrieval — ask it questions, not just keywords. \
-    Never modify files under any raw/ directory; raw is immutable. Commit groups of related \
-    changes with git_commit. To auto-ingest a backlog: call list_inbox, then for each pending \
-    file read_inbox_source -> create/update wiki pages with [^src-*] citations -> \
-    archive_inbox_source. Repeat until the inbox is empty.";
+    citation format, contradiction policy) — or read it as the `myco://instructions` resource. \
+    \
+    To ANSWER a question, use `recall`, not `search`: it runs the same hybrid retrieval the \
+    app's Ask page runs and returns quotable lines with the numbers that page shows. Judge a \
+    hit by `similarity` (the dense cosine); `score_final` is a rank and says nothing about \
+    relevance. When `hits` is empty, ABSTAIN — `below_floor` holds what came closest. \
+    `search` remains the wider keyword/paraphrase sweep, `neighbourhood` walks one page's \
+    links and gaps, `changed_since` says what moved lately and who wrote it. \
+    \
+    To WRITE, draft the page, `check_page` it, fix every blocking problem, then `write_page` \
+    (mode=create or update; force is for lint, never for a secret). `propose_links` suggests \
+    [[wikilinks]] and never writes; `contradicts` checks one page against the wiki's \
+    superseded/disputed state. create_page and update_page still work but are deprecated — \
+    they do no checking. \
+    \
+    To bring a source IN, use `ingest`: it runs the vault's own judgement first and writes \
+    nothing for junk or a body the vault already has. Then drain the queue: list_inbox -> \
+    read_inbox_source -> write_page with [^src-*] citations -> archive_inbox_source, until \
+    the inbox is empty. Commit groups of related changes with git_commit. \
+    \
+    Three prompts drive the loops end to end: `ingest_backlog`, `answer_with_citations` and \
+    `weekly_digest`. \
+    \
+    Never modify files under any raw/ directory; raw is immutable, it is not writable by any \
+    tool and not readable as a resource.";
 
 /// What `initialize` answers: this server by name and app version (the
 /// macro's default names the rmcp crate), tools only, and the brief above.
@@ -4552,6 +4570,21 @@ body of {rel}
             brief.contains("get_instructions") && brief.contains("archive_inbox_source"),
             "{brief}"
         );
+        // The brief must name the tools an agent should reach for FIRST, and
+        // the prompts, or they are invisible to a client that only reads this.
+        for named in [
+            "recall",
+            "check_page",
+            "write_page",
+            "ingest",
+            "ingest_backlog",
+            "answer_with_citations",
+            "weekly_digest",
+            "myco://instructions",
+        ] {
+            assert!(brief.contains(named), "the brief never mentions {named}");
+        }
+        assert!(brief.contains("raw is immutable"), "{brief}");
     }
 
     fn three_page_wiki() -> tempfile::TempDir {
