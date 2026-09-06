@@ -1,8 +1,13 @@
-// Ask the wiki — answers render as real markdown (clickable [[wikilinks]])
-// and every cited page appears in an interactive mini galaxy under the
-// answer — drag, hover, click for an in-place preview. The chat itself lives
-// in queryStore so an in-flight answer survives navigating away; the Topbar
-// shows a chip while it runs.
+// Ask the wiki — the question bar carries a search-scope segment (wiki /
+// sessions / all). An extractive answer quotes its passages in serif with
+// numbered citation pills beside a source ladder that explains every
+// retrieved page's rank (tier chip, cosine, RRF × prior = final, ▲▼), under a
+// one-line retrieval stepper; the 고급 sliders re-rank the ladders live and
+// ride along with the next question. Provider answers render as real markdown
+// (clickable [[wikilinks]]) and every cited page appears in an interactive
+// mini galaxy under the answer — drag, hover, click for an in-place preview.
+// The chat itself lives in queryStore so an in-flight answer survives
+// navigating away; the Topbar shows a chip while it runs.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
@@ -11,20 +16,14 @@ import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useSettingsStore } from "../stores/settingsStore";
-import { askCopy, useQueryStore } from "../stores/queryStore";
-import { ipc } from "../lib/ipc";
+import { askCopy, useQueryStore, type ChatTurn } from "../stores/queryStore";
+import { ipc, type AskScope, type TierWeights } from "../lib/ipc";
 import { takeQueryPrefill } from "../lib/queryPrefill";
 import MascotClip from "../components/MascotClip";
 import { flattenMarkdown, stem } from "../lib/graphData";
 import { RELEVANCE_FLOOR } from "../lib/chat";
-import {
-  confidenceBand,
-  sourceTier,
-  type Citation,
-  type ConfidenceBand,
-  type SourceTier,
-} from "../lib/extractive";
-import type { DeepStorageHit } from "../lib/deepStorage";
+import { confidenceBand, sourceTier, type Citation } from "../lib/extractive";
+import { ladderOf } from "../lib/ladder";
 import Viewer from "../components/Viewer";
 import AgentPanel from "../components/AgentPanel";
 import AudioOverviewPanel from "../components/AudioOverviewPanel";
@@ -33,6 +32,13 @@ import ThinkingGalaxy from "../components/ThinkingGalaxy";
 import MiniGalaxy from "../components/MiniGalaxy";
 import type { GalaxyLink, GalaxyNode } from "../components/MiniGalaxy";
 import NodePreview from "../components/NodePreview";
+import RetrievalStepper from "../components/RetrievalStepper";
+import SourceLadder, {
+  TierPriorPanel,
+  bandLabel,
+  scopeLabel,
+  tierLabel,
+} from "../components/SourceLadder";
 import { isComposingKey } from "../lib/ime";
 import { loadProfile } from "../lib/profile";
 import { wikilinkBase } from "../lib/wikilinks";
@@ -41,6 +47,11 @@ import { wikilinkBase } from "../lib/wikilinks";
  *  try/catch-guarded localStorage pattern as `App.tsx`'s onboarding flag
  *  (localStorage can be unavailable or full). */
 const PROFILE_HINT_DISMISSED_KEY = "myco.profileHint.dismissed";
+
+/** Pages an extractive answer quotes — formatExtractiveAnswer's `maxPages`,
+ *  so the pills and the markdown answer (provider history) agree. */
+const QUOTED_PAGES = 5;
+const SCOPES: readonly AskScope[] = ["wiki", "sessions", "all"];
 
 // All [[wikilink]] targets in an answer, alias stripped, order kept, deduped.
 function extractWikilinks(text: string): string[] {
@@ -67,9 +78,14 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const route = useUIStore((s) => s.route);
   const splitRoute = useUIStore((s) => s.splitRoute);
   const lang = useUIStore((s) => s.lang);
+  const askScope = useUIStore((s) => s.askScope);
+  const setAskScope = useUIStore((s) => s.setAskScope);
+  const weights = useUIStore((s) => s.askTierWeights);
+  const setAskTierWeights = useUIStore((s) => s.setAskTierWeights);
   const settings = useSettingsStore((s) => s.settings);
   const [mode, setMode] = useState<"ask" | "agent">("ask");
   const [q, setQ] = useState("");
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const turns = useQueryStore((s) => s.turns);
   const busy = useQueryStore((s) => s.busy);
   const stage = useQueryStore((s) => s.stage);
@@ -175,6 +191,10 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       if (p) setRoute(`page:${p}`);
     });
   };
+  // Vault-relative page (as retrieval hits carry it) → open in the reader.
+  const openPage = (page: string): void => {
+    if (currentVault) setRoute(`page:${currentVault.path}/${page}`);
+  };
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -265,14 +285,32 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
           gap: 8,
           alignItems: "center",
           marginTop: 8,
+          flexWrap: "wrap",
         }}
       >
         <Icon name="msg" size={16} />
+        {/* Scope segment: which corpus the question runs against. Persisted
+            like the other Ask prefs; the store reads it at ask time. */}
+        <div className="segmented" role="group" aria-label={t.q_scope_label}>
+          {SCOPES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={askScope === s ? "active" : ""}
+              aria-pressed={askScope === s}
+              disabled={busy}
+              onClick={() => setAskScope(s)}
+            >
+              {scopeLabel(t, s)}
+            </button>
+          ))}
+        </div>
         <input
           className="input"
-          style={{ border: "none", padding: "4px 0", boxShadow: "none" }}
+          style={{ border: "none", padding: "4px 0", boxShadow: "none", flex: 1, minWidth: 160 }}
           placeholder={t.q_ph}
           value={q}
+          aria-describedby="ask-scope-help"
           onChange={(e) => setQ(e.target.value)}
           onKeyDown={(e) => {
             if (isComposingKey(e)) return;
@@ -288,6 +326,9 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
           {busy ? "…" : t.q_send}
         </button>
       </div>
+      <p id="ask-scope-help" className="ask-sr">
+        {t.q_scope_help}
+      </p>
       {settings && mode === "ask" ? (
         <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
           {settings.query_provider === "builtin-local"
@@ -312,6 +353,32 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
           </button>
         </div>
       ) : null}
+      {mode === "ask" ? (
+        // 고급: the tier-prior sliders. One panel for the page — it re-ranks
+        // every ladder below live and is sent with the next question.
+        <div style={{ marginTop: 6 }}>
+          <button
+            type="button"
+            className="btn btn-ghost"
+            style={{ fontSize: 12, padding: "2px 8px" }}
+            aria-expanded={advancedOpen}
+            aria-controls="ask-advanced"
+            onClick={() => setAdvancedOpen((o) => !o)}
+          >
+            <Icon name={advancedOpen ? "chevD" : "chevR"} size={12} /> {t.q_prior_advanced}
+          </button>
+          {advancedOpen ? (
+            <div id="ask-advanced" style={{ marginTop: 8, maxWidth: 440 }}>
+              <TierPriorPanel
+                t={t}
+                id="ask-prior"
+                weights={weights}
+                onChange={setAskTierWeights}
+              />
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <div
         className="col"
@@ -326,8 +393,8 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
           </div>
         ) : null}
         {turns.map((turn, i) => (
-          <div key={i} className="card">
-            <div className="row" style={{ marginBottom: 10 }}>
+          <div key={i} className="card ask-turn">
+            <div className="row" style={{ marginBottom: 10, flexWrap: "wrap" }}>
               <span className="typebadge">
                 <span
                   className="tb-dot"
@@ -336,6 +403,11 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 {t.q_you ?? "you"}
               </span>
               <span style={{ fontWeight: 500 }}>{turn.q}</span>
+              {turn.scope ? (
+                <span className="chip">
+                  {t.q_scope_chip.replace("{scope}", scopeLabel(t, turn.scope))}
+                </span>
+              ) : null}
               {turn.range ? (
                 // Time-aware Ask (mockup M5-c): the parsed window, promoted to
                 // a chip so the applied filter is visible, not implicit.
@@ -347,37 +419,35 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 </span>
               ) : null}
             </div>
-            {turn.extractive && turn.a && !turn.error && !turn.extractiveEmpty ? (
-              <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
-                <Icon name="info" size={12} /> {t.q_extractive_label ?? "From your notes (top matches, verbatim)"}
+            {turn.trace ? (
+              <RetrievalStepper
+                t={t}
+                trace={turn.trace}
+                archivedOn={settings?.search_archived_sessions ?? false}
+                lang={lang}
+                id={`ask-trace-${i}`}
+              />
+            ) : null}
+            {turn.hits?.length && currentVault ? (
+              <ExtractiveAnswer
+                t={t}
+                id={`ask-turn-${i}`}
+                turn={turn}
+                weights={weights}
+                onOpenByStem={openByStem}
+                onOpenPage={openPage}
+              />
+            ) : (
+              <div className="prose" style={{ marginTop: 8 }}>
+                {turn.error ? (
+                  <p style={{ color: "#dc2626" }}>{turn.error}</p>
+                ) : turn.a ? (
+                  <Viewer content={turn.a} onLinkClick={openByStem} />
+                ) : (
+                  <ThinkingGalaxy pages={thinkingPages} label={thinkingLabel} />
+                )}
               </div>
-            ) : null}
-            <div className="prose" style={{ marginTop: 8 }}>
-              {turn.error ? (
-                <p style={{ color: "#dc2626" }}>{turn.error}</p>
-              ) : turn.a ? (
-                <Viewer content={turn.a} onLinkClick={openByStem} />
-              ) : (
-                <ThinkingGalaxy pages={thinkingPages} label={thinkingLabel} />
-              )}
-            </div>
-            {turn.citations?.length ? (
-              <CitationChips t={t} citations={turn.citations} />
-            ) : null}
-            {turn.uncited?.length && currentVault ? (
-              <UncitedRow
-                t={t}
-                uncited={turn.uncited}
-                onOpen={(page) => setRoute(`page:${currentVault.path}/${page}`)}
-              />
-            ) : null}
-            {turn.deepStorage && currentVault ? (
-              <DeepStorageRow
-                t={t}
-                hit={turn.deepStorage}
-                onOpen={(page) => setRoute(`page:${currentVault.path}/${page}`)}
-              />
-            ) : null}
+            )}
             {turn.a && !turn.error ? (
               // Ghost action: log this question to the recall-miss eval set
               // (Q4 item 5) when the answer missed what the user expected.
@@ -445,93 +515,94 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   );
 }
 
-function bandLabel(t: Strings, band: ConfidenceBand): string {
-  switch (band) {
-    case "high":
-      return t.q_cite_conf_high ?? "strong match";
-    case "medium":
-      return t.q_cite_conf_medium ?? "moderate match";
-    case "low":
-      return t.q_cite_conf_low ?? "weak match";
-    case "lexical":
-      return t.q_cite_conf_lexical ?? "keyword match";
-  }
-}
-
-function tierLabel(t: Strings, tier: SourceTier): string {
-  switch (tier) {
-    case "map":
-      return t.q_cite_tier_map ?? "drafted map";
-    case "digest":
-      return t.q_cite_tier_digest ?? "daily digest";
-    case "rollup":
-      return t.q_cite_tier_rollup ?? "weekly rollup";
-    case "monthly":
-      return t.q_cite_tier_monthly ?? "monthly rollup";
-    case "session":
-      return t.q_cite_tier_session ?? "session log";
-    case "source":
-      return t.q_cite_tier_source ?? "imported source";
-    case "note":
-      return t.q_cite_tier_note ?? "your note";
-  }
-}
-
-// Per-citation confidence + source tier, under an extractive answer. Both are
-// words, never colour alone: the band is a label, and the exact cosine (and
-// the floor it cleared) lives in the chip's tooltip so the number is
-// available without shouting it at everyone.
-function CitationChips({
+// Extractive answer + its source ladder, side by side. Both derive from the
+// same `ladderOf(turn.hits, weights)` rows, so the pills' numbers ARE the
+// ladder's ranks and moving a prior slider re-orders both at once. `hot` is
+// the page lit from either side — a pill or a ladder row, hover or focus.
+function ExtractiveAnswer({
   t,
-  citations,
+  id,
+  turn,
+  weights,
+  onOpenByStem,
+  onOpenPage,
 }: {
   t: Strings;
-  citations: Citation[];
+  id: string;
+  turn: ChatTurn;
+  weights: TierWeights;
+  onOpenByStem: (target: string) => void;
+  onOpenPage: (page: string) => void;
 }): JSX.Element {
+  const [hot, setHot] = useState<string | null>(null);
+  const rows = useMemo(() => ladderOf(turn.hits ?? [], weights), [turn.hits, weights]);
+  const quoted = rows.slice(0, QUOTED_PAGES);
+  // Coverage complement: retrieved, ranked, but past the quote cap.
+  const uncited: Citation[] = rows
+    .slice(QUOTED_PAGES)
+    .map((r) => ({ page: r.page, stem: r.stem, similarity: r.similarity }));
+  const pct = (v: number | null): string =>
+    v === null ? t.q_cite_sim_none : `${Math.round(v * 100)}%`;
+  const hotHandlers = (page: string) => ({
+    onMouseEnter: () => setHot(page),
+    onMouseLeave: () => setHot(null),
+    onFocus: () => setHot(page),
+    onBlur: () => setHot(null),
+  });
   return (
-    <ul
-      aria-label={t.q_cite_list_label ?? "Citation confidence and source"}
-      style={{
-        display: "flex",
-        flexWrap: "wrap",
-        gap: 6,
-        listStyle: "none",
-        margin: "8px 0 0",
-        padding: 0,
-      }}
-    >
-      {citations.map((c) => {
-        const tip =
-          c.similarity == null
-            ? (
-                t.q_cite_conf_lexical_tip ??
-                "{page} — keyword match only, so there is no similarity score for it"
-              ).replace("{page}", c.page)
-            : (
-                t.q_cite_conf_tip ??
-                "{page} — similarity {sim} (dense cosine; passages below {floor} are not shown)"
-              )
-                .replace("{page}", c.page)
-                .replace("{sim}", c.similarity.toFixed(3))
-                .replace("{floor}", RELEVANCE_FLOOR.toFixed(2));
-        return (
-          <li key={c.page} className="chip" title={tip}>
-            <span style={{ fontWeight: 500 }}>{c.stem}</span>
-            <span>· {bandLabel(t, confidenceBand(c.similarity))}</span>
-            <span>· {tierLabel(t, sourceTier(c.page))}</span>
-          </li>
-        );
-      })}
-    </ul>
+    <div className="ask-split">
+      <div className="ask-answer">
+        <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+          <Icon name="info" size={12} />{" "}
+          {t.q_extractive_label ?? "From your notes (top matches, verbatim)"}
+        </div>
+        <div className="ask-body">
+          {quoted.map((r, n) => (
+            <div key={r.page} className={`ask-sent${hot === r.page ? " hot" : ""}`}>
+              <Viewer content={r.quote} onLinkClick={onOpenByStem} />
+              <button
+                type="button"
+                className={`ask-cite${hot === r.page ? " hot" : ""}`}
+                aria-label={t.q_cite_aria
+                  .replace("{n}", String(n + 1))
+                  .replace("{stem}", r.stem)
+                  .replace("{sim}", pct(r.similarity))
+                  .replace("{tier}", tierLabel(t, r.tier))}
+                {...hotHandlers(r.page)}
+                onClick={() => onOpenPage(r.page)}
+              >
+                {n + 1}
+              </button>
+            </div>
+          ))}
+        </div>
+        <p className="muted" style={{ fontSize: 11.5, marginTop: 6 }}>
+          {t.q_ladder_hint}
+        </p>
+        {uncited.length ? <UncitedRow t={t} uncited={uncited} onOpen={onOpenPage} /> : null}
+      </div>
+      <aside className="ask-rail">
+        <SourceLadder
+          t={t}
+          id={`${id}-ladder`}
+          rows={rows}
+          quoted={QUOTED_PAGES}
+          floor={turn.floor ?? RELEVANCE_FLOOR}
+          hot={hot}
+          onHot={setHot}
+          onOpen={onOpenPage}
+        />
+      </aside>
+    </div>
   );
 }
 
 // Coverage row: pages retrieval surfaced that the answer does NOT quote.
-// Grounded answers' most common failure is omission — the citation chips can
-// only show what backs the said, never what was considered and left out.
+// Grounded answers' most common failure is omission — the citations can only
+// show what backs the said, never what was considered and left out.
 // Collapsed to one line by default (it is an audit surface, not a second
-// answer); expanding shows the same chip anatomy as CitationChips, dashed so
-// the eye never reads them as citations. Clicking a chip opens the page.
+// answer); expanding shows dashed chips so the eye never reads them as
+// citations. Clicking a chip opens the page.
 function UncitedRow({
   t,
   uncited,
@@ -584,44 +655,6 @@ function UncitedRow({
           ))}
         </ul>
       ) : null}
-    </div>
-  );
-}
-
-// One cold-tier hit under the citation chips (Q4 item 12) — sessions, raw
-// sources, or rollups echoing the question when the wiki-first citations
-// don't already show it. The dot is --c-concept so the row reads as a
-// deep-storage echo, not another citation; clicking opens the page.
-function DeepStorageRow({
-  t,
-  hit,
-  onOpen,
-}: {
-  t: Strings;
-  hit: DeepStorageHit;
-  onOpen: (page: string) => void;
-}): JSX.Element {
-  // Rendered as a percentage like the answer body's relevance figures. A hit
-  // without a cosine never becomes a deep-storage row (pickDeepStorage skips
-  // them), so the null arm is only type honesty.
-  const sim =
-    hit.similarity === null ? "–" : `${Math.round(hit.similarity * 100)}%`;
-  return (
-    <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-      <button
-        className="btn btn-ghost"
-        style={{ fontSize: 12, padding: "2px 8px" }}
-        title={hit.page}
-        onClick={() => onOpen(hit.page)}
-      >
-        <span
-          className="chip-dot"
-          style={{ background: "var(--c-concept)" }}
-        ></span>{" "}
-        {(t.q_deep_row ?? "From deep storage: {stem} — similarity {sim}")
-          .replace("{stem}", hit.stem)
-          .replace("{sim}", sim)}
-      </button>
     </div>
   );
 }

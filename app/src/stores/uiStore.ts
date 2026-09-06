@@ -11,6 +11,8 @@ import {
 import { persist } from "zustand/middleware";
 import { SPLIT_DEFAULT_RATIO } from "../lib/splitRatio";
 import type { Lang } from "../lib/i18n";
+import type { AskScope, TierWeights } from "../lib/ipc";
+import { DEFAULT_TIER_WEIGHTS } from "../lib/extractive";
 import type { SettingsTab } from "../lib/settingsSearch";
 import {
   pushRoute,
@@ -45,6 +47,19 @@ export type RouteId =
 export type FeedbackTab = "proposals" | "quarantine";
 export type EditorMode = "live" | "source" | "split" | "preview";
 const EDITOR_MODES: readonly EditorMode[] = ["live", "source", "split", "preview"];
+const ASK_SCOPES: readonly AskScope[] = ["wiki", "sessions", "all"];
+
+/** A persisted weight is only trusted as a finite 0..1 number; anything else
+ * (hand-edited storage, a tier added since) falls back to the default. */
+function sanitizeTierWeights(p: unknown): TierWeights {
+  const src = (p ?? {}) as Partial<Record<keyof TierWeights, unknown>>;
+  const out = { ...DEFAULT_TIER_WEIGHTS };
+  for (const tier of Object.keys(out) as (keyof TierWeights)[]) {
+    const v = src[tier];
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1) out[tier] = v;
+  }
+  return out;
+}
 
 export interface UIState {
   // Routing
@@ -114,6 +129,10 @@ export interface UIState {
   editorMode: EditorMode;
   // Reader outline pane (headings) shown beside the editor. Per device.
   outlineOpen: boolean;
+  // Ask: last search scope and tier priors (the 고급 sliders). Per device,
+  // like the other Ask prefs; sent with every question.
+  askScope: AskScope;
+  askTierWeights: TierWeights;
 
   setRoute: (route: RouteId) => void;
   /** Route sync after a rename/move: swaps the current entry, no history entry. */
@@ -146,6 +165,8 @@ export interface UIState {
   setPropsCollapsed: (v: boolean) => void;
   setEditorMode: (mode: EditorMode) => void;
   toggleOutline: () => void;
+  setAskScope: (scope: AskScope) => void;
+  setAskTierWeights: (weights: TierWeights) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -177,6 +198,8 @@ export const useUIStore = create<UIState>()(
       propsCollapsed: false,
       editorMode: "live",
       outlineOpen: true,
+      askScope: "wiki",
+      askTierWeights: DEFAULT_TIER_WEIGHTS,
 
       setRoute: (route) => set((s) => routePatch(s, route, pushRoute(s.navHistory, route))),
       replaceRoute: (route) =>
@@ -223,6 +246,8 @@ export const useUIStore = create<UIState>()(
       setPropsCollapsed: (v) => set({ propsCollapsed: v }),
       setEditorMode: (editorMode) => set({ editorMode }),
       toggleOutline: () => set({ outlineOpen: !get().outlineOpen }),
+      setAskScope: (askScope) => set({ askScope }),
+      setAskTierWeights: (askTierWeights) => set({ askTierWeights }),
     }),
     {
       name: "myco-ui",
@@ -249,6 +274,10 @@ export const useUIStore = create<UIState>()(
           editorMode: EDITOR_MODES.includes(p.editorMode as EditorMode)
             ? (p.editorMode as EditorMode)
             : "live",
+          askScope: ASK_SCOPES.includes(p.askScope as AskScope)
+            ? (p.askScope as AskScope)
+            : "wiki",
+          askTierWeights: sanitizeTierWeights(p.askTierWeights),
           navHistory: sanitizeHistory(p.navHistory, p.route ?? current.route),
           // Transient by design: a persisted target would scroll+flash a
           // section on the next launch for a click made days ago.

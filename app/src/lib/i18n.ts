@@ -1293,8 +1293,6 @@ export interface Strings {
   q_cite_tier_session: string;
   q_cite_tier_source: string;
   q_cite_list_label: string;
-  // Deep-storage row under the citation chips (Q4 item 12).
-  q_deep_row: string;
   q_uncited_row: string; // {n}
   // "Set up your profile" hint chip, Ask mode (Phase B, Task 5).
   ask_profile_hint: string;
@@ -1304,6 +1302,67 @@ export interface Strings {
   q_chip_error: string;
   q_you: string;
   q_miss_btn: string;
+  // Ask renewal (mockup "Strata"): scope segment, retrieval stepper, source
+  // ladder with tier priors, abstention card, archived-session opt-in.
+  q_scope_label: string;
+  q_scope_wiki: string;
+  q_scope_sessions: string;
+  q_scope_all: string;
+  q_scope_help: string;
+  q_scope_chip: string; // {scope}
+  q_trace_title: string;
+  q_trace_toggle: string;
+  q_trace_candidates: string;
+  q_trace_candidates_sub: string;
+  q_trace_bm25: string;
+  q_trace_bm25_sub: string;
+  q_trace_dense: string;
+  q_trace_dense_sub: string;
+  q_trace_rrf: string;
+  q_trace_rrf_sub: string;
+  q_trace_cap: string;
+  q_trace_cap_sub: string; // {k}
+  q_trace_floor: string;
+  q_trace_floor_sub: string; // {floor}
+  q_trace_cold: string;
+  q_trace_cold_on: string;
+  q_trace_cold_off: string;
+  q_trace_cold_on_sub: string;
+  q_trace_cold_off_sub: string;
+  q_trace_params: string; // {floor}
+  q_cite_aria: string; // {n} {stem} {sim} {tier}
+  q_cite_sim_none: string;
+  q_ladder_title: string;
+  q_ladder_hint: string;
+  q_ladder_count: string; // {n} {c}
+  q_ladder_lead_same: string;
+  q_ladder_lead_moved: string; // {stem} {tier} {before} {after}
+  q_ladder_up: string; // {n}
+  q_ladder_down: string; // {n}
+  q_ladder_same: string;
+  q_ladder_archived: string;
+  q_ladder_sr: string;
+  q_prior_advanced: string;
+  q_prior_title: string;
+  q_prior_formula: string;
+  q_prior_app: string;
+  q_prior_defaults: string;
+  q_prior_next: string;
+  q_prior_slider: string; // {tier}
+  q_abstain_title: string;
+  q_abstain_sub: string; // {q} {n} {floor}
+  q_abstain_near: string;
+  q_abstain_none: string;
+  q_abstain_lexical: string;
+  q_abstain_gauge_note: string; // {floor}
+  q_abstain_floor_tick: string; // {floor}
+  q_abstain_harvest: string;
+  q_abstain_harvested: string;
+  q_abstain_widen: string;
+  q_abstain_foot: string;
+  q_abstain_receipt: string;
+  s_archived_sessions_title: string;
+  s_archived_sessions_desc: string;
   // Sidebar.
   sb_new_note: string;
   sb_new_folder: string;
@@ -3010,7 +3069,6 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_tier_session: "session log",
     q_cite_tier_source: "imported source",
     q_cite_list_label: "Citation confidence and source",
-    q_deep_row: "From deep storage: {stem} — similarity {sim}",
     q_uncited_row: "Reviewed but not quoted · {n}",
     ask_profile_hint:
       "Set up your profile so Ask can tailor answers to your role and interests.",
@@ -3020,6 +3078,72 @@ export const STRINGS: Record<Lang, Strings> = {
     q_chip_error: "Answer failed",
     q_you: "you",
     q_miss_btn: "Not what you expected? Log it",
+    // Ask renewal (mockup "Strata").
+    q_scope_label: "Search scope",
+    q_scope_wiki: "Wiki",
+    q_scope_sessions: "Sessions",
+    q_scope_all: "All",
+    q_scope_help:
+      "Wiki searches your notes, maps and digests. Sessions searches the conversation logs — archived ones too, once enabled under Settings › Semantic search. All searches both.",
+    q_scope_chip: "Scope · {scope}",
+    q_trace_title: "Retrieval path",
+    q_trace_toggle: "Step by step",
+    q_trace_candidates: "candidates",
+    q_trace_candidates_sub: "pages in the index",
+    q_trace_bm25: "BM25",
+    q_trace_bm25_sub: "keyword-only hits (no cosine)",
+    q_trace_dense: "vector",
+    q_trace_dense_sub: "hits with a cosine",
+    q_trace_rrf: "RRF",
+    q_trace_rrf_sub: "k=60 rank fusion — not a confidence",
+    q_trace_cap: "cap",
+    q_trace_cap_sub: "at most {k} chunks, 2 per page",
+    q_trace_floor: "floor",
+    q_trace_floor_sub: "cosine below {floor}",
+    q_trace_cold: "archived",
+    q_trace_cold_on: "in",
+    q_trace_cold_off: "out",
+    q_trace_cold_on_sub: "sessions/archive/ is searched in the session scope",
+    q_trace_cold_off_sub: "sessions/archive/ stays out (Settings › Semantic search)",
+    q_trace_params:
+      "BM25 k1=1.2 · b=0.75 · RRF k=60 · floor {floor} — retrieval.rs as it runs. The RRF score orders hits; it is not a confidence.",
+    q_cite_aria: "Citation {n} — {stem}, relevance {sim}, {tier}",
+    q_cite_sim_none: "keywords only",
+    q_ladder_title: "Source ladder",
+    q_ladder_hint: "Hover or focus a citation number to light up the line that backs it.",
+    q_ladder_count: "{n} sources · {c} quoted",
+    q_ladder_lead_same: "Tier weights do not change the order for this question.",
+    q_ladder_lead_moved: "{stem} ({tier}) — rank {before} unweighted, {after} with weights.",
+    q_ladder_up: "up {n} with tier weights",
+    q_ladder_down: "down {n} with tier weights",
+    q_ladder_same: "no rank change",
+    q_ladder_archived: "archived",
+    q_ladder_sr:
+      "Each row shows the cosine relevance, the tier weight, RRF × weight = final score, and the rank change against the unweighted order.",
+    q_prior_advanced: "Advanced",
+    q_prior_title: "Tier prior",
+    q_prior_formula: "final = RRF × weight",
+    q_prior_app: "Current app behaviour (all 1.00)",
+    q_prior_defaults: "Suggested defaults",
+    q_prior_next: "Applies from the next question; the ladders above preview it now.",
+    q_prior_slider: "{tier} tier weight",
+    q_abstain_title: "There is no evidence in the vault to answer this.",
+    q_abstain_sub:
+      "“{q}” — no passage in {n} indexed pages clears the relevance floor {floor}. Stopping here instead of inventing a plausible sentence.",
+    q_abstain_near: "Closest misses — all below the floor",
+    q_abstain_none: "Neither the keyword arm nor the vector arm brought anything back.",
+    q_abstain_lexical: "keywords only",
+    q_abstain_gauge_note:
+      "The red tick is the floor {floor}. “Keywords only” is a lexical hit with no cosine — on its own it is not evidence.",
+    q_abstain_floor_tick: "floor {floor}",
+    q_abstain_harvest: "Make this question a harvest target",
+    q_abstain_harvested: "Queued for harvest · 1",
+    q_abstain_widen: "Widen to sessions and search again",
+    q_abstain_foot: "Abstaining is an answer — a recorded gap is one a later harvest can fill.",
+    q_abstain_receipt: "No files created. Logged once to the recall-miss log.",
+    s_archived_sessions_title: "Search archived sessions too",
+    s_archived_sessions_desc:
+      "The session scope also searches sessions/archive/ — the cold tier the index normally leaves out. Turning it on re-indexes.",
     sb_new_note: "New note",
     sb_new_folder: "New folder",
     sb_rename: "Rename…",
@@ -4710,7 +4834,6 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_tier_session: "세션 로그",
     q_cite_tier_source: "가져온 원문",
     q_cite_list_label: "인용 신뢰도와 출처 종류",
-    q_deep_row: "깊은 보관소에서: {stem} — 유사도 {sim}",
     q_uncited_row: "검토했지만 인용하지 않음 · {n}",
     ask_profile_hint:
       "프로필을 설정하면 Ask가 역할과 관심사에 맞춰 답변합니다.",
@@ -4720,6 +4843,72 @@ export const STRINGS: Record<Lang, Strings> = {
     q_chip_error: "답변 실패",
     q_you: "나",
     q_miss_btn: "기대한 답이 아니었나요? 기록하기",
+    // Ask renewal (mockup "Strata").
+    q_scope_label: "검색 범위",
+    q_scope_wiki: "위키",
+    q_scope_sessions: "세션",
+    q_scope_all: "전체",
+    q_scope_help:
+      "위키는 노트·맵·다이제스트를, 세션은 대화 기록을 검색합니다 — 설정 › 시맨틱 검색에서 켜면 아카이브된 세션까지 훑습니다. 전체는 둘 다입니다.",
+    q_scope_chip: "범위 · {scope}",
+    q_trace_title: "검색 경로",
+    q_trace_toggle: "단계별 보기",
+    q_trace_candidates: "후보",
+    q_trace_candidates_sub: "색인된 페이지",
+    q_trace_bm25: "BM25",
+    q_trace_bm25_sub: "어휘 전용 히트 (코사인 없음)",
+    q_trace_dense: "벡터",
+    q_trace_dense_sub: "코사인이 있는 히트",
+    q_trace_rrf: "RRF",
+    q_trace_rrf_sub: "k=60 순위 융합 — 신뢰도가 아님",
+    q_trace_cap: "상한",
+    q_trace_cap_sub: "최대 {k}청크 · 페이지당 2",
+    q_trace_floor: "바닥선",
+    q_trace_floor_sub: "코사인 {floor} 미만",
+    q_trace_cold: "냉동",
+    q_trace_cold_on: "포함",
+    q_trace_cold_off: "제외",
+    q_trace_cold_on_sub: "세션 범위에서 sessions/archive/까지 검색",
+    q_trace_cold_off_sub: "sessions/archive/는 제외 (설정 › 시맨틱 검색)",
+    q_trace_params:
+      "BM25 k1=1.2 · b=0.75 · RRF k=60 · 바닥선 {floor} — retrieval.rs 그대로. RRF 점수는 순위 값이라 신뢰도가 아닙니다.",
+    q_cite_aria: "인용 {n} — {stem}, 관련도 {sim}, {tier}",
+    q_cite_sim_none: "키워드만",
+    q_ladder_title: "출처 사다리",
+    q_ladder_hint: "인용 번호에 마우스를 올리거나 포커스하면 그 문장을 뒷받침한 줄이 켜집니다.",
+    q_ladder_count: "{n}개 · 인용 {c}개",
+    q_ladder_lead_same: "이 질문에서는 계층 가중치가 순위를 바꾸지 않습니다.",
+    q_ladder_lead_moved: "{stem} ({tier}) — 가중치 없이는 {before}위, 켜면 {after}위.",
+    q_ladder_up: "계층 가중치로 {n}칸 상승",
+    q_ladder_down: "계층 가중치로 {n}칸 하락",
+    q_ladder_same: "순위 변화 없음",
+    q_ladder_archived: "아카이브",
+    q_ladder_sr:
+      "각 행은 코사인 관련도, 계층 가중치, RRF × 가중치 = 최종 점수, 가중치 없는 순서 대비 순위 변화를 보여줍니다.",
+    q_prior_advanced: "고급",
+    q_prior_title: "계층 사전확률",
+    q_prior_formula: "최종 = RRF × 가중치",
+    q_prior_app: "앱 현재 동작 (전부 1.00)",
+    q_prior_defaults: "제안 기본값",
+    q_prior_next: "다음 질문부터 적용됩니다 — 위의 사다리는 지금 미리 보여줍니다.",
+    q_prior_slider: "{tier} 계층 가중치",
+    q_abstain_title: "이 질문에 답할 근거가 볼트에 없습니다.",
+    q_abstain_sub:
+      "“{q}” — 색인된 {n}쪽 중 관련도 바닥선 {floor}을 넘은 구절이 없습니다. 그럴듯한 문장을 지어내는 대신 여기서 멈춥니다.",
+    q_abstain_near: "가장 가까웠던 것들 — 전부 바닥선 아래",
+    q_abstain_none: "어휘·의미 어느 쪽도 아무것도 가져오지 못했습니다.",
+    q_abstain_lexical: "키워드만",
+    q_abstain_gauge_note:
+      "붉은 눈금이 바닥선 {floor}입니다. “키워드만”은 코사인이 없는 어휘 전용 히트로, 단독으로는 근거가 되지 못합니다.",
+    q_abstain_floor_tick: "바닥선 {floor}",
+    q_abstain_harvest: "이 질문을 수확 대상으로",
+    q_abstain_harvested: "수확 큐에 등록됨 · 1건",
+    q_abstain_widen: "세션까지 넓혀 다시 검색",
+    q_abstain_foot: "기권도 답입니다 — 기록된 공백은 다음 수확이 채울 수 있습니다.",
+    q_abstain_receipt: "파일 0개 생성. 회수 실패 로그에 1건 기록했습니다.",
+    s_archived_sessions_title: "아카이브된 세션도 검색",
+    s_archived_sessions_desc:
+      "세션 범위가 sessions/archive/까지 검색합니다 — 색인이 평소 제외하는 냉동 계층입니다. 켜면 다시 색인합니다.",
     sb_new_note: "새 노트",
     sb_new_folder: "새 폴더",
     sb_rename: "이름 바꾸기…",
@@ -6203,7 +6392,6 @@ export const STRINGS: Record<Lang, Strings> = {
     q_cite_tier_session: "セッションログ",
     q_cite_tier_source: "取り込んだ原文",
     q_cite_list_label: "引用の一致度と出典の種類",
-    q_deep_row: "深い保管庫から: {stem} — 類似度 {sim}",
     q_uncited_row: "確認したが引用せず · {n}",
     ask_profile_hint:
       "プロフィールを設定すると、Askが役割や興味・関心に合わせて回答します。",
@@ -6213,6 +6401,72 @@ export const STRINGS: Record<Lang, Strings> = {
     q_chip_error: "回答失敗",
     q_you: "あなた",
     q_miss_btn: "期待した答えと違いますか？記録する",
+    // Ask renewal (mockup "Strata").
+    q_scope_label: "検索範囲",
+    q_scope_wiki: "ウィキ",
+    q_scope_sessions: "セッション",
+    q_scope_all: "すべて",
+    q_scope_help:
+      "ウィキはノート・マップ・ダイジェストを、セッションは会話ログを検索します — 設定 › セマンティック検索で有効にするとアーカイブ済みセッションも対象です。すべては両方です。",
+    q_scope_chip: "範囲 · {scope}",
+    q_trace_title: "検索経路",
+    q_trace_toggle: "ステップ表示",
+    q_trace_candidates: "候補",
+    q_trace_candidates_sub: "インデックス内のページ",
+    q_trace_bm25: "BM25",
+    q_trace_bm25_sub: "語彙のみのヒット（コサインなし）",
+    q_trace_dense: "ベクトル",
+    q_trace_dense_sub: "コサインのあるヒット",
+    q_trace_rrf: "RRF",
+    q_trace_rrf_sub: "k=60 順位融合 — 信頼度ではない",
+    q_trace_cap: "上限",
+    q_trace_cap_sub: "最大 {k} チャンク · ページあたり 2",
+    q_trace_floor: "下限",
+    q_trace_floor_sub: "コサイン {floor} 未満",
+    q_trace_cold: "アーカイブ",
+    q_trace_cold_on: "含む",
+    q_trace_cold_off: "除外",
+    q_trace_cold_on_sub: "セッション範囲で sessions/archive/ も検索",
+    q_trace_cold_off_sub: "sessions/archive/ は除外（設定 › セマンティック検索）",
+    q_trace_params:
+      "BM25 k1=1.2 · b=0.75 · RRF k=60 · 下限 {floor} — retrieval.rs そのまま。RRF スコアは順位値であり信頼度ではありません。",
+    q_cite_aria: "引用 {n} — {stem}、関連度 {sim}、{tier}",
+    q_cite_sim_none: "キーワードのみ",
+    q_ladder_title: "出典ラダー",
+    q_ladder_hint: "引用番号にホバーまたはフォーカスすると、その文を裏付ける行が点灯します。",
+    q_ladder_count: "{n} 件 · 引用 {c} 件",
+    q_ladder_lead_same: "この質問では階層の重みが順位を変えません。",
+    q_ladder_lead_moved: "{stem}（{tier}）— 重みなしで {before} 位、重み付きで {after} 位。",
+    q_ladder_up: "階層の重みで {n} 段上昇",
+    q_ladder_down: "階層の重みで {n} 段下降",
+    q_ladder_same: "順位変化なし",
+    q_ladder_archived: "アーカイブ",
+    q_ladder_sr:
+      "各行はコサイン関連度、階層の重み、RRF × 重み = 最終スコア、重みなしの順序に対する順位変化を示します。",
+    q_prior_advanced: "詳細",
+    q_prior_title: "階層の事前確率",
+    q_prior_formula: "最終 = RRF × 重み",
+    q_prior_app: "現在のアプリ動作（すべて 1.00）",
+    q_prior_defaults: "提案の既定値",
+    q_prior_next: "次の質問から適用されます — 上のラダーは今プレビューしています。",
+    q_prior_slider: "{tier} 階層の重み",
+    q_abstain_title: "この質問に答える根拠がボールトにありません。",
+    q_abstain_sub:
+      "「{q}」— インデックス済み {n} ページのうち、関連度の下限 {floor} を超える箇所がありません。もっともらしい文を作らず、ここで止まります。",
+    q_abstain_near: "最も近かったもの — すべて下限未満",
+    q_abstain_none: "語彙・意味のどちらも何も返しませんでした。",
+    q_abstain_lexical: "キーワードのみ",
+    q_abstain_gauge_note:
+      "赤い目印が下限 {floor} です。「キーワードのみ」はコサインのない語彙ヒットで、単独では根拠になりません。",
+    q_abstain_floor_tick: "下限 {floor}",
+    q_abstain_harvest: "この質問を収穫対象に",
+    q_abstain_harvested: "収穫キューに登録済み · 1 件",
+    q_abstain_widen: "セッションまで広げて再検索",
+    q_abstain_foot: "棄権も答えです — 記録された空白は次の収穫が埋められます。",
+    q_abstain_receipt: "ファイル作成 0 件。想起ミスのログに 1 件記録しました。",
+    s_archived_sessions_title: "アーカイブ済みセッションも検索",
+    s_archived_sessions_desc:
+      "セッション範囲が sessions/archive/ も検索します — インデックスが通常除外する冷たい階層です。有効にすると再インデックスします。",
     sb_new_note: "新規ノート",
     sb_new_folder: "新規フォルダ",
     sb_rename: "名前を変更…",

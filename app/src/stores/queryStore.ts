@@ -5,14 +5,10 @@
 
 import { create } from "zustand";
 import { complete, retrieveChunks, type AskStage } from "../lib/chat";
-import {
-  citationsOf,
-  formatExtractiveAnswer,
-  uncitedOf,
-  type Citation,
-} from "../lib/extractive";
-import { pickDeepStorage, type DeepStorageHit } from "../lib/deepStorage";
-import { ipc } from "../lib/ipc";
+import { formatExtractiveAnswer } from "../lib/extractive";
+import { nearMissesOf, shouldAbstain } from "../lib/abstention";
+import { traceOf, type RetrievalTrace } from "../lib/ladder";
+import { ipc, type AskScope, type NearMiss, type ScoredChunk } from "../lib/ipc";
 import {
   formatActivityAnswer,
   formatRecentFilesAnswer,
@@ -25,7 +21,11 @@ import { parseTimeQuery, type DateRange } from "../lib/timeQuery";
 /** Mirrors `intent::VAULT_FILES` on the Rust side. */
 const VAULT_FILES_INTENT = "vault-files";
 import type { Lang, Strings } from "../lib/i18n";
+import { useUIStore } from "./uiStore";
 import { useVaultStore } from "./vaultStore";
+
+/** Top-k the extractive path retrieves — also the stepper's "cap" step. */
+const RETRIEVE_K = 12;
 
 export interface ChatTurn {
   q: string;
@@ -48,22 +48,27 @@ export interface ChatTurn {
   /// failure, or a legitimately empty hit list) — suppresses the "From your
   /// notes" label, since there is nothing to attribute to the notes.
   extractiveEmpty?: boolean;
-  /// The pages this answer quotes, with the retrieval numbers behind them, so
-  /// the UI can show per-citation confidence and source tier. Only the
-  /// extractive path has them: a provider-synthesized answer cites pages in
-  /// prose, with no per-citation similarity to report.
-  citations?: Citation[];
-  /// One cold-tier hit (session/source/rollup/monthly) the citations don't
-  /// already show (Q4 item 12) — the vault's deep storage echoing the
-  /// question, surfaced as its own labeled row under the chips.
-  deepStorage?: DeepStorageHit;
-  /// Pages retrieval surfaced that the answer does NOT quote — the coverage
-  /// complement of `citations`. Grounded answers fail by omission more than
-  /// hallucination; this makes "considered and left out" inspectable.
-  /// Extractive-only, like citations, and NEVER mixed into the answer text:
+  /// The hits retrieval kept (above the floor), in the backend's ranked
+  /// order. The page builds the answer body, the source ladder and the
+  /// coverage row from these — and re-ranks them live as the tier sliders
+  /// move, which is why the raw hits stay on the turn (top-k, small). Only
+  /// the extractive path has them: a provider-synthesized answer cites pages
+  /// in prose, with no per-citation numbers to report. NEVER mixed into `a`:
   /// prior turns are re-sent verbatim as provider history, so metadata in
-  /// `a` would leak into the next question's prompt.
-  uncited?: Citation[];
+  /// the answer text would leak into the next question's prompt.
+  hits?: ScoredChunk[];
+  /// What the retrieval stepper can say about this turn.
+  trace?: RetrievalTrace;
+  /// The dense-cosine floor the hits were judged against.
+  floor?: number;
+  /// No hit cleared the floor: the page renders the abstention card, never
+  /// a quoted passage. `nearMisses` are the closest rejects (≤4).
+  abstained?: boolean;
+  nearMisses?: NearMiss[];
+  /// "Make this question a harvest target" was pressed — logged once.
+  harvested?: boolean;
+  /// Search scope the question ran with — shown as a chip beside it.
+  scope?: AskScope;
   /// Date window parsed from the question (time-aware Ask, Q4 item 8) —
   /// retrieval was restricted to that window's dated tiers; the UI shows it
   /// as a chip beside the question.
@@ -115,6 +120,9 @@ interface QueryState {
   /** false after an answer lands until the user revisits the Query page. */
   seen: boolean;
   ask: (question: string, lang: Lang, copy: AskCopy) => Promise<void>;
+  /** Log turn `i`'s question as a recall miss (the harvest queue reads that
+   *  log) and mark the turn so the button reads as done. */
+  harvest: (i: number) => Promise<void>;
   markSeen: () => void;
   clear: () => void;
 }
@@ -160,8 +168,10 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         ),
         seen: false,
       }));
+    // The Ask page's scope segment and 고급 sliders, persisted per device.
+    const { askScope: scope, askTierWeights: tierWeights } = useUIStore.getState();
     set((s) => ({
-      turns: [...s.turns, { q: question, a: "" }],
+      turns: [...s.turns, { q: question, a: "", scope }],
       busy: true,
       startedAt: Date.now(),
       seen: true,
@@ -205,11 +215,18 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         // exists to catch.
         const r = await retrieveChunks(
           tp.range ? tp.cleaned : question,
-          12,
+          RETRIEVE_K,
           () => set({ stage: { kind: "retrieving" } }),
           tp.range ?? undefined,
+          scope,
+          tierWeights,
         );
-        const md = formatExtractiveAnswer(r.hits);
+        const ran = !r.stale && !r.retrievalFailed;
+        // Abstention is the answer when nothing clears the floor — a
+        // keyword-only hit alone does not count (see shouldAbstain). Nothing
+        // is quoted in that case: the least-bad chunk is not evidence.
+        const abstained = ran && shouldAbstain(r.hits, r.floor);
+        const md = abstained ? "" : formatExtractiveAnswer(r.hits);
         // Pick the body by state: a stale/failed index means retrieval never
         // ran, so those get their own honest copy instead of the generic
         // "found nothing" message (which implies retrieval ran and came up
@@ -219,7 +236,7 @@ export const useQueryStore = create<QueryState>((set, get) => ({
         // I add today"). Classifying costs a query embedding, which is why it
         // happens HERE and not up front: a question the vault could answer never
         // pays for it.
-        if (!md && !r.stale && !r.retrievalFailed) {
+        if (!md && ran) {
           const meta = await metaAnswer(question, vault.path, lang);
           if (meta) {
             finishTurn({ a: meta });
@@ -231,25 +248,17 @@ export const useQueryStore = create<QueryState>((set, get) => ({
           : r.retrievalFailed
             ? copy.extractiveFailed
             : md || (tp.range ? copy.rangeEmpty : copy.extractiveEmpty);
-        // Same grouping/cap as the rendered answer, so every chip has a
-        // section above it. Empty answer -> no citations to describe.
-        const citations = md ? citationsOf(r.hits) : undefined;
-        const deep = md
-          ? pickDeepStorage(r.hits, new Set(citations?.map((c) => c.page)))
-          : null;
-        // Everything retrieval surfaced that neither the chips nor the
-        // deep-storage row will show — r.hits is alive only in this scope,
-        // so the coverage split must happen here or the data is gone.
-        const shown = new Set(citations?.map((c) => c.page) ?? []);
-        if (deep) shown.add(deep.page);
-        const uncited = md ? uncitedOf(r.hits, shown) : [];
         finishTurn({
           a: body,
           extractive: true,
           extractiveEmpty: !md,
-          citations,
-          uncited: uncited.length > 0 ? uncited : undefined,
-          deepStorage: deep ?? undefined,
+          // r.hits is alive only in this scope — the page's ladder, answer
+          // body and coverage row all derive from it later.
+          hits: md ? r.hits : undefined,
+          trace: ran ? traceOf(r, r.indexedPages, RETRIEVE_K) : undefined,
+          floor: r.floor,
+          abstained: abstained || undefined,
+          nearMisses: abstained ? nearMissesOf(r.hits, r.nearMisses) : undefined,
           stale: r.stale,
           retrievalFailed: r.retrievalFailed,
           range: tp.range ?? undefined,
@@ -271,6 +280,8 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       const content = await complete({
         task: "query",
         cwd: vault.path,
+        scope,
+        tierWeights,
         onStage: (s) => {
           set({ stage: s });
           if (s.kind === "thinking" && s.stale) stale = true;
@@ -304,6 +315,16 @@ export const useQueryStore = create<QueryState>((set, get) => ({
       // next one.
       set({ busy: false, stage: null });
     }
+  },
+
+  async harvest(i) {
+    const vault = useVaultStore.getState().currentVault;
+    const turn = get().turns[i];
+    if (!vault || !turn || turn.harvested) return;
+    await ipc.recordRecallMiss(vault.path, turn.q);
+    set((s) => ({
+      turns: s.turns.map((t, j) => (j === i ? { ...t, harvested: true } : t)),
+    }));
   },
 
   markSeen: () => set({ seen: true }),
