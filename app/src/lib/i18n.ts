@@ -649,6 +649,25 @@ export interface Strings {
   rd_cards_made: string;
   rd_open_study: string;
   rd_more: string;
+  // Reader rail: sources & trust, connections (mockup "Manuscript").
+  rd_rail: string;
+  rd_rail_toggle: string;
+  rd_src_title: string;
+  rd_src_scanning: string;
+  rd_src_no_claims: string;
+  rd_src_coverage: string; // {cited} {total}
+  rd_src_bar: string; // {pct}
+  rd_src_none: string;
+  rd_src_broken: string;
+  rd_src_hand: string;
+  rd_src_weight: string;
+  rd_src_uncited: string; // {n}
+  rd_src_all: string;
+  rd_conn_title: string;
+  rd_conn_empty: string;
+  rd_conn_back: string;
+  rd_conn_sug: string;
+  rd_conn_added: string; // {name}
   // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
   cm_find: string;
   cm_replace_field: string;
@@ -2168,6 +2187,24 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_cards_made: "{n} cards added",
     rd_open_study: "Open study",
     rd_more: "More",
+    rd_rail: "Note rail",
+    rd_rail_toggle: "Show or hide the note rail",
+    rd_src_title: "Sources & trust",
+    rd_src_scanning: "Reading the vault's citations…",
+    rd_src_no_claims: "No claims to ground yet.",
+    rd_src_coverage: "{cited} of {total} claims carry a citation",
+    rd_src_bar: "Citation coverage {pct} percent",
+    rd_src_none: "Nothing backs this note. The system will not invent a source.",
+    rd_src_broken: "no raw/ file — broken citation",
+    rd_src_hand: "hand-written",
+    rd_src_weight: "Trust weight Ask applies to this layer",
+    rd_src_uncited: "{n} claims with no source",
+    rd_src_all: "Full coverage",
+    rd_conn_title: "Connections",
+    rd_conn_empty: "Nothing links here yet.",
+    rd_conn_back: "Backlink",
+    rd_conn_sug: "Suggested",
+    rd_conn_added: "[[{name}]] added under ## Related",
     // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
     cm_find: "Find",
     cm_replace_field: "Replace",
@@ -3708,6 +3745,24 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_cards_made: "카드 {n}개 추가됨",
     rd_open_study: "학습 열기",
     rd_more: "더 보기",
+    rd_rail: "노트 레일",
+    rd_rail_toggle: "노트 레일 표시/숨기기",
+    rd_src_title: "출처와 신뢰",
+    rd_src_scanning: "볼트의 인용을 읽는 중…",
+    rd_src_no_claims: "아직 근거를 붙일 주장이 없습니다.",
+    rd_src_coverage: "주장 {total}줄 중 {cited}줄에 인용",
+    rd_src_bar: "인용 커버리지 {pct} 퍼센트",
+    rd_src_none: "이 노트에는 근거가 하나도 없습니다. 없는 출처를 지어내지 않습니다.",
+    rd_src_broken: "raw/ 원본 없음 — 끊긴 인용",
+    rd_src_hand: "직접 작성",
+    rd_src_weight: "묻기가 이 계층에 적용하는 신뢰 가중치",
+    rd_src_uncited: "미인용 주장 {n}건",
+    rd_src_all: "전체 커버리지",
+    rd_conn_title: "연결",
+    rd_conn_empty: "아직 연결이 없습니다.",
+    rd_conn_back: "백링크",
+    rd_conn_sug: "제안",
+    rd_conn_added: "## Related 에 [[{name}]] 추가",
     // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
     cm_find: "찾기",
     cm_replace_field: "바꾸기",
@@ -5054,6 +5109,24 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_cards_made: "カードを{n}枚追加しました",
     rd_open_study: "学習を開く",
     rd_more: "その他",
+    rd_rail: "ノートレール",
+    rd_rail_toggle: "ノートレールの表示/非表示",
+    rd_src_title: "出典と信頼度",
+    rd_src_scanning: "ボールトの引用を読み込み中…",
+    rd_src_no_claims: "根拠を付ける主張がまだありません。",
+    rd_src_coverage: "主張 {total} 件のうち {cited} 件に引用",
+    rd_src_bar: "引用カバレッジ {pct} パーセント",
+    rd_src_none: "このノートには根拠がありません。存在しない出典は作りません。",
+    rd_src_broken: "raw/ の原本なし — 切れた引用",
+    rd_src_hand: "手書き",
+    rd_src_weight: "問い合わせがこの層に適用する信頼度の重み",
+    rd_src_uncited: "未引用の主張 {n} 件",
+    rd_src_all: "全体のカバレッジ",
+    rd_conn_title: "つながり",
+    rd_conn_empty: "まだつながりがありません。",
+    rd_conn_back: "被リンク",
+    rd_conn_sug: "提案",
+    rd_conn_added: "## Related に [[{name}]] を追加しました",
     // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
     cm_find: "検索",
     cm_replace_field: "置換",

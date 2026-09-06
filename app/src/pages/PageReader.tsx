@@ -36,8 +36,7 @@ import {
   takePendingAnchor,
 } from "../lib/pendingAnchor";
 import Editor, { scrollEditorToLine } from "../components/Editor";
-import OutlinePanel from "../components/OutlinePanel";
-import PropertiesPanel from "../components/PropertiesPanel";
+import ReaderRail from "../components/ReaderRail";
 import AudioOverviewPanel from "../components/AudioOverviewPanel";
 // Lazy — the pdf.js chunk is 437 kB and only a PDF source needs it. A markdown
 // note mounts the viewer only once a [[pdf::…]] link opens one (see VaultPage).
@@ -45,8 +44,8 @@ const PdfViewer = lazy(() => import("../components/PdfViewer"));
 import { usePdfStore } from "../stores/pdfStore";
 import { parsePdfTarget, wikilinkBase } from "../lib/wikilinks";
 import Viewer from "../components/Viewer";
-import BacklinksPanel from "../components/BacklinksPanel";
-import RelatedPanel from "../components/RelatedPanel";
+import type { LinkSuggestionIO } from "../lib/linkSuggestions";
+import { insertionRange } from "../lib/readerRail";
 
 const AUTOSAVE_MS = 2000;
 
@@ -129,8 +128,10 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const mode = useUIStore((s) => s.editorMode);
   const setMode = useUIStore((s) => s.setEditorMode);
-  const outlineOpen = useUIStore((s) => s.outlineOpen);
-  const toggleOutline = useUIStore((s) => s.toggleOutline);
+  // The rail (properties · outline · sources · connections) reuses the
+  // outline pane's per-device toggle — it is the same column.
+  const railOpen = useUIStore((s) => s.outlineOpen);
+  const toggleRail = useUIStore((s) => s.toggleOutline);
   // Authorship badge (Q4 item 16). Null = no repo / untracked / lookup failed —
   // no history means no claim, so the header simply shows nothing.
   const [authorship, setAuthorship] = useState<PageAuthorship | null>(null);
@@ -144,8 +145,8 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const previewRef = useRef<HTMLDivElement | null>(null);
   const fm = useMemo(() => parseFrontmatter(draft), [draft]);
   const headings = useMemo(
-    () => (outlineOpen ? extractHeadings(stripFrontmatter(draft)) : []),
-    [draft, outlineOpen],
+    () => (railOpen ? extractHeadings(stripFrontmatter(draft)) : []),
+    [draft, railOpen],
   );
   const lineOffset = useMemo(() => bodyLineOffset(draft), [draft]);
   // A paste error lasts until the next edit (a successful paste inserts text).
@@ -322,6 +323,32 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     pendingDrafts.delete(path);
     void saveFile(path, c);
   }
+
+  /** Apply a whole-document rewrite as its ONE changed range, so the caret,
+   *  the scroll position and undo survive an append from the rail. */
+  function applyDocEdit(next: string): void {
+    const range = insertionRange(draftRef.current, next);
+    if (!range) return;
+    const v = editorViewRef.current;
+    if (v) {
+      v.dispatch({ changes: range }); // updateListener → onChange → autosave
+    } else {
+      setDraft(next);
+      scheduleSave(next);
+    }
+  }
+
+  // Accepting a suggested link edits the OPEN draft, not the file on disk: a
+  // disk write would be overwritten by the next autosave of the stale buffer.
+  // `appendWikilink` (the same helper acceptSuggestion uses) still decides
+  // where the link goes — under `## Related`, created if absent.
+  const railIo: LinkSuggestionIO = {
+    readFile: () => Promise.resolve({ raw: draftRef.current }),
+    writeFile: (_path, content) => {
+      applyDocEdit(content);
+      return Promise.resolve(null);
+    },
+  };
 
   function patchProps(patch: FmPatch): void {
     const edit = patchFrontmatter(draftRef.current, patch);
@@ -566,10 +593,10 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
           </div>
           <button
             className="btn btn-ghost outline-toggle"
-            aria-pressed={outlineOpen}
-            aria-label={t.ol_toggle ?? "Show or hide the outline"}
-            title={t.ol_toggle ?? "Show or hide the outline"}
-            onClick={toggleOutline}
+            aria-pressed={railOpen}
+            aria-label={t.rd_rail_toggle ?? "Show or hide the note rail"}
+            title={t.rd_rail_toggle ?? "Show or hide the note rail"}
+            onClick={toggleRail}
           >
             <Icon name="columns" size={13} />
           </button>
@@ -590,9 +617,6 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
           </div>
         ) : null}
       </header>
-      {!isRaw && seedGen > 0 ? (
-        <PropertiesPanel fm={fm} allTags={allTags} onPatch={patchProps} t={t} />
-      ) : null}
       {error ? (
         <p role="alert" className="muted" style={{ fontSize: 12.5 }}>
           {error}
@@ -603,11 +627,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
           {editorError}
         </p>
       ) : null}
-      <div
-        className={
-          "reader-body" + (outlineOpen ? " reader-body--outline" : "")
-        }
-      >
+      <div className={"reader-body" + (railOpen ? " reader-body--rail" : "")}>
         <section style={{ display: "flex", flexDirection: "column", minHeight: "60vh" }}>
           {mode !== "preview" ? (
             <div style={{ flex: 1, minHeight: "60vh", display: "flex" }}>
@@ -643,18 +663,20 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
             </div>
           ) : null}
         </section>
-        {outlineOpen ? (
-          <aside className="reader-side">
-            <OutlinePanel
-              t={t}
-              headings={headings}
-              onSelect={scrollToHeading}
-            />
-          </aside>
+        {railOpen && seedGen > 0 ? (
+          <ReaderRail
+            filePath={path}
+            fm={fm}
+            allTags={allTags}
+            onPatch={patchProps}
+            headings={headings}
+            onSelectHeading={scrollToHeading}
+            io={railIo}
+            readOnly={isRaw}
+            t={t}
+          />
         ) : null}
       </div>
-      <BacklinksPanel filePath={path} t={t} />
-      <RelatedPanel filePath={path} t={t} />
       {audioActive ? <AudioOverviewPanel t={t} /> : null}
       {/* Mount only while a PDF is open: the viewer renders null otherwise, and
           mounting the lazy component would fetch pdf.js for every note. */}

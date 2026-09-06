@@ -122,6 +122,57 @@ describe("refreshLinkGraph", () => {
   });
 });
 
+describe("saveFile link-graph rebuilds", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    useVaultStore.setState({ currentVault: VAULT, activeFile: null, adjacency: null, error: null });
+    vi.spyOn(ipc, "writeFile").mockResolvedValue(null as never);
+    vi.spyOn(ipc, "listFiles").mockResolvedValue([]);
+    vi.spyOn(ipc, "vaultRevision").mockResolvedValue(1);
+  });
+
+  const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
+  it("skips the rebuild when a save leaves the same wikilinks and tags", async () => {
+    const P = "/v/wiki/guard-same.md";
+    const build = vi.spyOn(ipc, "buildLinkGraph").mockResolvedValue(ADJ);
+    // First save has no baseline: it rebuilds.
+    await useVaultStore.getState().saveFile(P, "---\ntags: [a]\n---\nsee [[b]]\n");
+    await flush();
+    expect(build).toHaveBeenCalledTimes(1);
+    // Prose typing — 2s autosave, over and over. Same links, same tags.
+    await useVaultStore.getState().saveFile(P, "---\ntags: [a]\n---\nsee [[b]] now\n");
+    await useVaultStore.getState().saveFile(P, "---\ntags: [a]\n---\nsee [[b]] now!\n");
+    await flush();
+    expect(build).toHaveBeenCalledTimes(1);
+  });
+
+  it("rebuilds when a wikilink or a tag changes", async () => {
+    const P = "/v/wiki/guard-moved.md";
+    const build = vi.spyOn(ipc, "buildLinkGraph").mockResolvedValue(ADJ);
+    await useVaultStore.getState().saveFile(P, "see [[b]]\n");
+    await flush();
+    expect(build).toHaveBeenCalledTimes(1);
+    // [[b]] -> [[c]] keeps the same length and can land inside one mtime tick,
+    // which is exactly what the poll's fingerprint cannot see.
+    await useVaultStore.getState().saveFile(P, "see [[c]]\n");
+    await flush();
+    expect(build).toHaveBeenCalledTimes(2);
+    // Frontmatter tags feed the same graph payload (adjacency.tags).
+    await useVaultStore.getState().saveFile(P, "---\ntags: [x]\n---\nsee [[c]]\n");
+    await flush();
+    expect(build).toHaveBeenCalledTimes(3);
+  });
+
+  it("still honours skipRefresh for bulk writers", async () => {
+    const P = "/v/wiki/guard-skip.md";
+    const build = vi.spyOn(ipc, "buildLinkGraph").mockResolvedValue(ADJ);
+    await useVaultStore.getState().saveFile(P, "see [[b]]\n", { skipRefresh: true });
+    await flush();
+    expect(build).not.toHaveBeenCalled();
+  });
+});
+
 describe("openWikilink (resolve or create)", () => {
   const tree = [
     { kind: "file" as const, name: "attention.md", path: "/v/wiki/attention.md" },
@@ -185,7 +236,9 @@ describe("saveFile / patchPages", () => {
   it("saveFile rebuilds the graph unless asked to skip", async () => {
     await useVaultStore.getState().saveFile(A, "x", { skipRefresh: true });
     expect(ipc.buildLinkGraph).not.toHaveBeenCalled();
-    await useVaultStore.getState().saveFile(A, "x");
+    // A save that MOVES the graph (a new wikilink) rebuilds; an identical
+    // re-save no longer does — see "saveFile link-graph rebuilds" above.
+    await useVaultStore.getState().saveFile(A, "x [[new]]");
     expect(ipc.buildLinkGraph).toHaveBeenCalledTimes(1);
   });
 

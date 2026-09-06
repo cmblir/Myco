@@ -8,9 +8,11 @@ import { createDebouncedCommitter } from "../lib/humanCommit";
 import {
   parseFrontmatter,
   patchFrontmatter,
+  tagsOf,
   type FmPatch,
   type Frontmatter,
 } from "../lib/frontmatter";
+import { matchWikilinkAt } from "../lib/wikilinks";
 import { dropNested, filterMovable, rewritePrefix } from "../lib/treeOps";
 import { useSettingsStore } from "./settingsStore";
 import { useUIStore } from "./uiStore";
@@ -42,6 +44,25 @@ let refreshSeq = 0;
 // this; see refreshLinkGraph.
 let lastRevision: number | null = null;
 let lastRevisionVault: string | null = null;
+
+// What the link graph would learn from a file: its wikilink targets and its
+// frontmatter tags, as one comparable key per path. Autosave fires every two
+// seconds and every save rebuilt the whole graph (1,747 markdown files / 52 MB
+// on the real vault) — for prose typing that rebuild can only ever produce the
+// graph it just produced. Seeded on open so even the first save of a session
+// can skip.
+const lastLinkKey = new Map<string, string>();
+
+/** Sorted `[[targets]]` + `tags:` of one document. Cheap: one scan per save. */
+export function linkKey(content: string): string {
+  const targets = new Set<string>();
+  for (let i = content.indexOf("[["); i >= 0; i = content.indexOf("[[", i + 1)) {
+    const m = matchWikilinkAt(content, i);
+    if (m) targets.add(m.target.toLowerCase());
+  }
+  const tags = tagsOf(parseFrontmatter(content));
+  return `${[...targets].sort().join("\u0000")}|${[...tags].sort().join("\u0000")}`;
+}
 
 /** Unsaved editor text by absolute path, published by the reader while its
  *  autosave debounce is pending and removed once that text is written. A
@@ -204,6 +225,7 @@ export const useVaultStore = create<VaultState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const file = await ipc.readFile(path);
+      lastLinkKey.set(path, linkKey(file.raw));
       set({ activeFile: file, isLoading: false });
       const vault = get().currentVault;
       if (vault && path.startsWith(vault.path)) {
@@ -237,7 +259,16 @@ export const useVaultStore = create<VaultState>((set, get) => ({
           ? { activeFile: { ...state.activeFile, raw: content }, error: null }
           : { error: null },
       );
-      if (!opts?.skipRefresh) void get().refreshLinkGraph();
+      // Rebuild only when this write could have MOVED the graph. A save that
+      // changes prose alone leaves the same wikilinks and the same tags, so the
+      // rebuild would reproduce the graph it just produced.
+      // ponytail: the key covers wikilinks + frontmatter tags — body `#tags`
+      // are not indexed today (index.rs::extract_tags is frontmatter-only), so
+      // add them here the day they are.
+      const key = linkKey(content);
+      const moved = lastLinkKey.get(path) !== key;
+      lastLinkKey.set(path, key);
+      if (!opts?.skipRefresh && moved) void get().refreshLinkGraph();
     } catch (err) {
       set({ error: errorMessage(err) });
     }

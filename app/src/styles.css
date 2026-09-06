@@ -6269,20 +6269,207 @@ details.props > .btn {
   accent-color: var(--ink);
 }
 
-/* Reader outline (P1c): a sticky 180px heading list right of the editor /
-   preview. Below 900px the column is too narrow to share, so the pane and its
-   toggle disappear. */
-.reader-body--outline {
+/* Reader rail: properties · outline · sources & trust · connections, in one
+   sticky column right of the reading text (mockup "Manuscript"). The reading
+   column is capped at 860px — the measured comfortable line — and the rail
+   takes a fixed 288px beside it. Below 900px the two cannot share the width,
+   so the rail and its toggle disappear. */
+.reader-body--rail {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px;
+  grid-template-columns: minmax(0, 1fr) 288px;
   gap: 24px;
   align-items: start;
 }
-.reader-side {
+.reader-body--rail > section:first-child {
+  max-width: 860px;
+  width: 100%;
+}
+.reader-rail {
   position: sticky;
   top: 16px;
   max-height: calc(100vh - 32px);
   overflow-y: auto;
+  display: grid;
+  gap: 10px;
+  align-content: start;
+}
+/* One glass tile per rail section, 11px label header. */
+.rail-sec {
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--glass-hi);
+  border-radius: var(--r-lg);
+  padding: 10px 12px;
+}
+.rail-sec .props {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+.rail-h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 20px;
+  margin-bottom: 8px;
+}
+.rail-h h3 {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+.rail-n {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.rail-empty {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+.rail-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.rail-link:hover {
+  color: var(--ink);
+}
+/* Coverage: the one number this tile exists for. */
+.rail-cov {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.rail-cov__pct {
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.rail-cov__txt {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  line-height: 1.35;
+}
+.rail-cov__bar {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--track);
+  overflow: hidden;
+  margin-bottom: 10px;
+}
+.rail-cov__bar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--ok);
+}
+.rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+.rail-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 6px;
+  border-radius: var(--r-md);
+}
+.rail-list li:hover {
+  background: var(--bg-hover);
+}
+.rail-list li.is-leaving {
+  animation: ls-leave 0.32s var(--ease-out) forwards;
+}
+.rail-badge {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 9px;
+  background: var(--ink-3);
+  color: var(--bg);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+}
+.rail-list li.is-broken .rail-badge {
+  background: var(--danger);
+}
+.rail-src__body {
+  min-width: 0;
+  display: grid;
+}
+.rail-src__title {
+  font-size: 12.5px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-src__meta {
+  font-size: 11px;
+  color: var(--ink-4);
+  font-variant-numeric: tabular-nums;
+}
+.rail-w {
+  display: inline-block;
+  vertical-align: 1px;
+  width: 28px;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--track);
+  overflow: hidden;
+}
+.rail-w i {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+}
+/* Connections: one list, three relationships, colour never the only signal. */
+.rail-tag {
+  flex: none;
+  font-size: 11px;
+  line-height: 18px;
+  padding: 0 7px;
+  border-radius: 999px;
+  border: 1px solid var(--glass-line);
+  color: var(--ink-4);
+}
+.rail-tag.t-suggested {
+  color: var(--live);
+  border-color: var(--live);
+}
+.rail-conn__name {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--ink-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rail-conn__name:hover {
+  color: var(--ink);
 }
 .outline {
   font-size: 12.5px;
@@ -6321,20 +6508,20 @@ details.props > .btn {
   color: var(--ink);
 }
 @media (max-width: 899px) {
-  .reader-body--outline {
+  .reader-body--rail {
     display: block;
   }
-  .reader-side,
+  .reader-rail,
   .outline-toggle {
     display: none;
   }
 }
 /* A split-workspace pane is ~354px at an 1100px window regardless of the
-   viewport, so the pane hides the outline the same way. */
-.workspace-pane .reader-body--outline {
+   viewport, so the pane hides the rail the same way. */
+.workspace-pane .reader-body--rail {
   display: block;
 }
-.workspace-pane .reader-side,
+.workspace-pane .reader-rail,
 .workspace-pane .outline-toggle {
   display: none;
 }
