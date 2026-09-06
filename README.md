@@ -151,14 +151,32 @@ Settings → Account → Change…
 
 ## Features
 
-**Ingest** — drop a file or paste text; it lands in `raw/` and the active model
-integrates it into `wiki/` with citations, a log entry, and a WHY report.
+**Ingest** — drop a file or paste text; it is judged first (junk, duplicate
+body, too small, too large), and only what passes lands in `raw/` for the
+active model to integrate into `wiki/` with citations, a log entry, and a WHY
+report. Junk and NOOP plans write nothing — one toast and a line in
+`.myco/ingest-noop.jsonl`. The Ingest page shows the judgement stage, what it
+excluded and why, and a backfill panel for the session queue.
 Inputs are multimodal: PDF, Office docs, spreadsheets, images (vision
 provider), audio/video (built-in speech recognition), YouTube URLs. A bundled
 offline embedding index (e5-small-ko, in-process llama.cpp) powers semantic search
 and per-page Related notes.
 
-**Ask & Agent mode** — chat over your wiki with any connected model. Agent
+**Harvest queue** — the Overview opens on the sessions that deserve to become
+wiki pages: archived transcripts sieved for duplicates and boilerplate,
+clustered against the wiki, each with an estimated citation yield. Tick the
+ones you want, read the plan gate ("nothing has been created yet"), harvest:
+they are copied into `_inbox/`, ingested, and the citation counter moves.
+
+**Ask & Agent mode** — chat over your wiki with any connected model. Retrieval
+runs over the wiki by default; a scope switch widens it to sessions or
+everything, and Settings can include archived sessions in the index. Every
+answer shows its source ladder — tier chip (note / map / digest / session /
+source), trust weight, the quoted line, and how the tier prior moved each hit
+— with an Advanced panel to retune the priors. When nothing clears the
+relevance floor, Ask says so instead of answering, shows the near-misses on
+the floor gauge, and offers to search sessions or mark the question as a
+harvest target. Agent
 mode turns a tool-capable provider into an autonomous researcher: it searches,
 reads pages, traverses links, and answers with citations; optional write tools
 are confirmed per call and never touch `raw/`. Audio overview renders an
