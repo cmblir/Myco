@@ -87,6 +87,10 @@ struct OnDisk {
     bodies: BTreeMap<String, String>,
     #[serde(default)]
     duplicates: u64,
+    #[serde(default)]
+    body_index_version: u32,
+    #[serde(default)]
+    absorbed: u64,
 }
 
 #[derive(Serialize)]
@@ -95,6 +99,8 @@ struct OnDiskRef<'a> {
     files: &'a BTreeMap<String, FileStamp>,
     bodies: &'a BTreeMap<String, String>,
     duplicates: u64,
+    body_index_version: u32,
+    absorbed: u64,
 }
 
 #[derive(Default)]
@@ -108,7 +114,20 @@ pub struct Ledger {
     // Conversations refused because their body was already here under another
     // key — how much boilerplate the import did NOT write.
     duplicates: u64,
+    // Which one-time backfills of `bodies` have run against this ledger; see
+    // BODY_INDEX_VERSION.
+    body_index_version: u32,
+    // Bodies the backfill inserted for sessions that were already on disk.
+    absorbed: u64,
 }
+
+/// Bumped when `bodies` needs a one-time backfill from what is already on
+/// disk. v1: the body index shipped EMPTY for the sessions a vault already
+/// held — `record_body` only ever ran on a fresh import, and the file-level
+/// (mtime, len) stamp makes a re-sweep skip those files without re-parsing
+/// them, so nothing would ever have filled it in. Until it is filled,
+/// `judge_source`'s duplicate oracle can only see bodies imported from now on.
+pub const BODY_INDEX_VERSION: u32 = 1;
 
 impl Ledger {
     fn dir(vault_root: &Path) -> std::path::PathBuf {
@@ -128,20 +147,50 @@ impl Ledger {
         // Legacy flat map first: the new format's object values make it fail
         // this parse, so the two never collide.
         if let Ok(entries) = serde_json::from_str::<BTreeMap<String, String>>(&s) {
-            return Ledger {
+            let mut l = Ledger {
                 entries,
                 ..Ledger::default()
             };
+            l.absorb_once(vault_root);
+            return l;
         }
         match serde_json::from_str::<OnDisk>(&s) {
-            Ok(d) => Ledger {
-                entries: d.entries,
-                files: d.files,
-                bodies: d.bodies,
-                duplicates: d.duplicates,
-            },
+            Ok(d) => {
+                let mut l = Ledger {
+                    entries: d.entries,
+                    files: d.files,
+                    bodies: d.bodies,
+                    duplicates: d.duplicates,
+                    body_index_version: d.body_index_version,
+                    absorbed: d.absorbed,
+                };
+                l.absorb_once(vault_root);
+                l
+            }
             Err(_) => Ledger::default(),
         }
+    }
+
+    /// Run the pending body backfill, at most once per vault, on the load that
+    /// first sees an out-of-date `body_index_version`. A vault with no
+    /// `sessions/` has nothing to absorb and is left alone entirely — `load`
+    /// must not create a ledger for a directory that has none.
+    ///
+    // ponytail: a full read of every session (tens of MB on the owner's 1,473
+    // files) on ONE load, ever. If that one load is ever felt, stamp per-file
+    // (mtime, len) like `files` does and absorb incrementally.
+    fn absorb_once(&mut self, vault_root: &Path) {
+        if self.body_index_version >= BODY_INDEX_VERSION
+            || !vault_root.join(crate::backfill::SESSIONS_DIR).is_dir()
+        {
+            return;
+        }
+        let report = absorb_session_bodies(vault_root, self);
+        self.body_index_version = BODY_INDEX_VERSION;
+        self.absorbed += report.new_bodies as u64;
+        // Best effort, like every other ledger write: a failed save costs one
+        // repeat of the walk, nothing more.
+        let _ = self.save(vault_root);
     }
 
     /// True when this key was already imported with the identical content.
@@ -219,6 +268,15 @@ impl Ledger {
         self.bodies.len()
     }
 
+    /// Bodies the one-time session backfill inserted.
+    pub fn absorbed(&self) -> u64 {
+        self.absorbed
+    }
+
+    pub fn body_index_version(&self) -> u32 {
+        self.body_index_version
+    }
+
     /// If this file imported cleanly before and hasn't changed since (same
     /// mtime + length), return how many conversations it yielded — the caller
     /// skips reading it and counts those as already imported.
@@ -255,11 +313,51 @@ impl Ledger {
             files: &self.files,
             bodies: &self.bodies,
             duplicates: self.duplicates,
+            body_index_version: self.body_index_version,
+            absorbed: self.absorbed,
         };
         let json =
             serde_json::to_string_pretty(&on_disk).map_err(|e| format!("serialize ledger: {e}"))?;
         std::fs::write(Self::path(vault_root), json).map_err(|e| format!("write ledger: {e}"))
     }
+}
+
+/// What one `absorb_session_bodies` pass did.
+#[derive(Debug, Default, PartialEq, Serialize)]
+pub struct Absorbed {
+    /// Session documents read.
+    pub scanned: usize,
+    /// Bodies this pass claimed for the first time.
+    pub new_bodies: usize,
+    /// Sessions whose body the index already held — the copies.
+    pub already_known: usize,
+}
+
+/// Fill the body index from the sessions already on disk, importing nothing.
+///
+/// Each session claims its own body under exactly the key `judge` computes for
+/// that same text (`judge::frontmatter_key`), so a session harvested into
+/// `_inbox/` afterwards is NOT read as a duplicate of itself, while a copy of
+/// it under another id is. First claim wins, so of the owner's 269 identical
+/// `[[TASK_DONE]]` sessions one body is inserted and 268 count as already
+/// known. Idempotent: a second pass inserts nothing.
+pub fn absorb_session_bodies(root: &Path, ledger: &mut Ledger) -> Absorbed {
+    let mut out = Absorbed::default();
+    for file in crate::backfill::scan_sessions(root) {
+        let Ok(text) = std::fs::read_to_string(root.join(&file.rel)) else {
+            continue;
+        };
+        out.scanned += 1;
+        let hash = body_hash(&text);
+        let key = crate::judge::frontmatter_key(&text);
+        if ledger.bodies.contains_key(&hash) {
+            out.already_known += 1;
+            continue;
+        }
+        ledger.record_body(hash, &key);
+        out.new_bodies += 1;
+    }
+    out
 }
 
 /// The owner's most-copied session (269 + 267 copies of its two variants) as
@@ -433,6 +531,134 @@ mod tests {
         assert!(old.seen("codex:s1", "fp"));
         assert!(!old.seen_body("b1", "codex:s2"));
         assert_eq!(old.duplicates(), 0);
+    }
+
+    /// Write `n` session files under `sessions/2026-08/`, `body(i)` each.
+    fn sessions(root: &Path, n: usize, body: impl Fn(usize) -> String) {
+        let dir = root.join("sessions/2026-08");
+        std::fs::create_dir_all(&dir).unwrap();
+        for i in 0..n {
+            std::fs::write(dir.join(format!("s{i}.md")), body(i)).unwrap();
+        }
+    }
+
+    // The measured shape: 269 copies of one body under 269 different ids. The
+    // index must end up holding exactly ONE of them.
+    #[test]
+    fn absorb_folds_the_boilerplate_fixture_to_one_body() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // Fixed-width id, 3-digit `created`: boilerplate_doc pads to a constant
+        // 1,013 bytes, so a frontmatter that grows a character eats one from
+        // the filler and the bodies genuinely differ. The measured copies
+        // carried fixed-width session ids, which is the case reproduced here.
+        sessions(root, 269, |i| {
+            boilerplate_doc(&format!("s{i:04}"), 100 + i as i64)
+        });
+        let first = std::fs::read_to_string(root.join("sessions/2026-08/s0.md")).unwrap();
+        let last = std::fs::read_to_string(root.join("sessions/2026-08/s268.md")).unwrap();
+        assert_ne!(first, last, "the copies differ — in frontmatter only");
+        assert_eq!(body_hash(&first), body_hash(&last));
+        let mut l = Ledger::default();
+        let report = absorb_session_bodies(root, &mut l);
+        assert_eq!(report.scanned, 269);
+        assert_eq!(report.new_bodies, 1, "one distinct body");
+        assert_eq!(report.already_known, 268);
+        assert_eq!(l.bodies_indexed(), 1);
+    }
+
+    #[test]
+    fn absorb_is_idempotent_and_a_second_pass_inserts_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        sessions(root, 3, |i| {
+            format!("---\nsource: claude-code\nconversation_id: c{i}\n---\n\nbody number {i}\n")
+        });
+        let mut l = Ledger::default();
+        assert_eq!(absorb_session_bodies(root, &mut l).new_bodies, 3);
+        let second = absorb_session_bodies(root, &mut l);
+        assert_eq!(second.scanned, 3);
+        assert_eq!(second.new_bodies, 0, "a second pass inserts 0");
+        assert_eq!(second.already_known, 3);
+        assert_eq!(l.bodies_indexed(), 3);
+    }
+
+    // The point of absorbing under the doc's OWN key: harvesting a session
+    // into _inbox/ and judging it there must not read as a duplicate of
+    // itself, while a re-export of it under a new id must.
+    #[test]
+    fn an_absorbed_session_is_not_its_own_duplicate_but_a_copy_is() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let doc = boilerplate_doc("abc", 100);
+        sessions(root, 1, |_| doc.clone());
+        let mut l = Ledger::default();
+        absorb_session_bodies(root, &mut l);
+        assert!(!l.seen_body(&body_hash(&doc), "claude-code:abc"));
+        let copy = boilerplate_doc("xyz", 200);
+        assert!(l.seen_body(&body_hash(&copy), "claude-code:xyz"));
+    }
+
+    // A session with no provenance claims its body under the empty key —
+    // exactly what `judge` computes for that same text — so it too is not a
+    // duplicate of itself.
+    #[test]
+    fn a_session_without_frontmatter_claims_its_body_under_the_empty_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let bare = "# a talk\n\nsome prose with no frontmatter at all\n";
+        sessions(root, 1, |_| bare.to_string());
+        let mut l = Ledger::default();
+        assert_eq!(absorb_session_bodies(root, &mut l).new_bodies, 1);
+        assert!(!l.seen_body(&body_hash(bare), ""));
+        assert!(l.seen_body(&body_hash(bare), "claude-code:elsewhere"));
+    }
+
+    #[test]
+    fn load_absorbs_once_stamps_the_version_and_never_walks_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        sessions(root, 2, |i| {
+            format!("---\nsource: codex\nconversation_id: c{i}\n---\n\nbody {i}\n")
+        });
+        // A ledger written before the body index existed.
+        std::fs::create_dir_all(root.join(".myco")).unwrap();
+        std::fs::write(
+            root.join(".myco/ledger.json"),
+            r#"{"entries":{"codex:c0":"fp"},"files":{}}"#,
+        )
+        .unwrap();
+
+        let first = Ledger::load(root);
+        assert_eq!(first.body_index_version(), BODY_INDEX_VERSION);
+        assert_eq!(first.bodies_indexed(), 2, "the pass ran on load");
+        assert_eq!(first.absorbed(), 2);
+        assert!(first.seen("codex:c0", "fp"), "the old dedup survived");
+
+        // A new session appears; the version is stamped, so load leaves it be.
+        std::fs::write(
+            root.join("sessions/2026-08/late.md"),
+            "---\nsource: codex\nconversation_id: late\n---\n\nsomething new\n",
+        )
+        .unwrap();
+        let second = Ledger::load(root);
+        assert_eq!(second.bodies_indexed(), 2, "no second walk");
+        assert_eq!(second.absorbed(), 2);
+    }
+
+    #[test]
+    fn load_on_a_vault_without_sessions_writes_nothing_at_all() {
+        let dir = tempfile::tempdir().unwrap();
+        let l = Ledger::load(dir.path());
+        assert_eq!(
+            l.body_index_version(),
+            0,
+            "nothing to absorb, nothing stamped"
+        );
+        assert!(
+            !dir.path().join(".myco").exists(),
+            "load must not create a ledger for a directory that has none"
+        );
     }
 
     #[test]

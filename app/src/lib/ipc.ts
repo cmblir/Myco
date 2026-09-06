@@ -523,6 +523,8 @@ export interface InflowDay {
   clipper: number;
   voice: number;
   import: number;
+  /** Sessions promoted out of the harvest queue. */
+  harvest: number;
 }
 
 export interface InflowStats {

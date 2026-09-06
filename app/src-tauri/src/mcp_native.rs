@@ -2531,7 +2531,7 @@ impl McpServer {
 
     /// The dedup ledger's counters.
     #[tool(
-        description = "Import dedup ledger: conversations recorded per source, session files stamped, distinct bodies indexed and duplicates refused, plus the wikify queue"
+        description = "Import dedup ledger: conversations recorded per source, session files stamped, distinct bodies indexed (`absorbed` of them backfilled once from the sessions already on disk) and duplicates refused, plus the wikify queue"
     )]
     async fn ledger_status(
         &self,
@@ -3926,6 +3926,8 @@ fn ledger_status_at(root: &Path) -> Value {
         "per_source": ledger.per_source(),
         "session_files_stamped": ledger.files_stamped(),
         "bodies_indexed": ledger.bodies_indexed(),
+        "absorbed": ledger.absorbed(),
+        "body_index_version": ledger.body_index_version(),
         "duplicates": ledger.duplicates(),
         "wikify_pending": pending.pending.len(),
         "wikified_total": pending.done_count,

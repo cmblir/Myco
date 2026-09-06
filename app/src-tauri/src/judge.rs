@@ -85,7 +85,10 @@ pub fn judge_against(text: &str, size_bytes: u64, ledger: &Ledger) -> Judgement 
 
 /// `<source>:<conversation_id>` out of a leading `---` block — the key
 /// `plan_import` records a session under. Empty when either line is missing.
-fn frontmatter_key(text: &str) -> String {
+/// `pub(crate)`: `ledger::absorb_session_bodies` must claim a session's body
+/// under exactly the key `judge` will later compute for that same text, or a
+/// harvested copy would read as a duplicate of itself.
+pub(crate) fn frontmatter_key(text: &str) -> String {
     let Some(rest) = text.strip_prefix("---\n") else {
         return String::new();
     };

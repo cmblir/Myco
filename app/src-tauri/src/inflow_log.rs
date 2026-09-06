@@ -82,6 +82,10 @@ pub struct InflowDay {
     pub clipper: u32,
     pub voice: u32,
     pub import: u32,
+    /// Sessions the owner picked out of the harvest queue (`harvest::run_at`).
+    /// The producer has been writing these lines since the harvest wave; only
+    /// the reader was missing, so they were silently dropped by the `_` arm.
+    pub harvest: u32,
 }
 
 /// The trailing `days` local days ending today, zero-filled — a quiet day is
@@ -101,6 +105,7 @@ pub fn read_daily(root: &Path, days: u32, tz_offset_min: i32, now: u64) -> Vec<I
             clipper: 0,
             voice: 0,
             import: 0,
+            harvest: 0,
         })
         .collect();
     let Ok(text) = std::fs::read_to_string(root.join(LOG_REL)) else {
@@ -120,6 +125,7 @@ pub fn read_daily(root: &Path, days: u32, tz_offset_min: i32, now: u64) -> Vec<I
             "clipper" => bucket.clipper += e.n,
             "voice" => bucket.voice += e.n,
             "import" => bucket.import += e.n,
+            "harvest" => bucket.harvest += e.n,
             _ => {} // future channels render once the frontend knows them
         }
     }
@@ -154,6 +160,7 @@ mod tests {
         record(root, "mcp", "add_raw_source");
         record(root, "clipper", "clip");
         record_n(root, "import", "session-sweep", 118);
+        record_n(root, "harvest", "session", 4);
         record_n(root, "import", "noop", 0); // 0 is never written
 
         let now = now_secs();
@@ -161,7 +168,12 @@ mod tests {
         assert_eq!(days.len(), 3);
         let today = &days[2];
         assert_eq!((today.mcp, today.clipper, today.import), (1, 1, 118));
+        assert_eq!(
+            today.harvest, 4,
+            "harvest_run's lines are no longer dropped"
+        );
         assert_eq!(days[0].mcp + days[0].clipper + days[0].import, 0);
+        assert_eq!(days[0].harvest, 0);
     }
 
     #[test]

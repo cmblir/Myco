@@ -25,7 +25,7 @@ pub const MIN_BYTES: u64 = 8 * 1024;
 /// Above this one ingest run is a bad deal even for a tool-capable provider.
 pub const MAX_BYTES: u64 = 200 * 1024;
 /// The archive this reads from, and the queue it promotes into.
-pub(crate) const SESSIONS_DIR: &str = "sessions";
+pub const SESSIONS_DIR: &str = "sessions";
 const INBOX_DIR: &str = "_inbox";
 
 /// Promotion bookkeeping. Its OWN file on purpose: `importers::ledger` drops

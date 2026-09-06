@@ -21,9 +21,9 @@ const day = (offset: number): string => {
 };
 
 const inflow: InflowDay[] = [
-  { day: day(2), mcp: 3, clipper: 1, voice: 0, import: 0 },
-  { day: day(1), mcp: 0, clipper: 0, voice: 2, import: 118 },
-  { day: day(0), mcp: 5, clipper: 0, voice: 0, import: 0 },
+  { day: day(2), mcp: 3, clipper: 1, voice: 0, import: 0, harvest: 0 },
+  { day: day(1), mcp: 0, clipper: 0, voice: 2, import: 118, harvest: 0 },
+  { day: day(0), mcp: 5, clipper: 0, voice: 0, import: 0, harvest: 0 },
 ];
 
 const adj = {
