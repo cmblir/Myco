@@ -8866,6 +8866,9 @@ details.props > .btn {
   }
   .sv-row .sv-out {
     text-align: left;
+  }
+}
+
 /* ── Ask (mockup "Strata"): scope segment, retrieval stepper, answer with
    citation pills, source ladder with filled tier chips, tier-prior sliders,
    abstention card. Glass tiles per DESIGN-ELEVATION §1 — the turn card and
