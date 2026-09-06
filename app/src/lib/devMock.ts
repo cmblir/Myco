@@ -1795,11 +1795,13 @@ function mockInvoke(
         last_human_at: Math.floor(Date.now() / 1000) - 2 * 86400,
         // Line runs for the reader's authorship gutter. The mock vault has no
         // git, so these stand in for one blame of a short page: a human
-        // opening, an agent paragraph, human again.
+        // heading, the agent's body paragraph, human again. The agent run
+        // covers line 3 on purpose — that is the line `page_at_revision`
+        // below returns differently, so reverting it actually restores text.
         runs: [
-          { from: 1, to: 4, agent: false, sha: "1".repeat(40), ts: MOCK_HUMAN_TS },
-          { from: 5, to: 6, agent: true, sha: "2".repeat(40), ts: MOCK_AGENT_TS },
-          { from: 7, to: 40, agent: false, sha: "1".repeat(40), ts: MOCK_HUMAN_TS },
+          { from: 1, to: 2, agent: false, sha: "1".repeat(40), ts: MOCK_HUMAN_TS },
+          { from: 3, to: 3, agent: true, sha: "2".repeat(40), ts: MOCK_AGENT_TS },
+          { from: 4, to: 40, agent: false, sha: "1".repeat(40), ts: MOCK_HUMAN_TS },
         ],
       });
     case "authorship_index":

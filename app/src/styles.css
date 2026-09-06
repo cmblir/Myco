@@ -6269,6 +6269,24 @@ details.props > .btn {
   accent-color: var(--ink);
 }
 
+/* The reading column is prose, not code (DESIGN-ELEVATION §2, screen 4):
+   sans 16/1.75 in Live, serif title. Source mode stays mono — it is source —
+   and code spans/blocks keep the mono face inside Live. */
+.reader-head .page-title {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.myco-editor.live .cm-content {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.75;
+}
+.myco-editor.live .live-code,
+.myco-editor.live .live-code-inline {
+  font-family: var(--font-mono);
+}
+
 /* Reader rail: properties · outline · sources & trust · connections, in one
    sticky column right of the reading text (mockup "Manuscript"). The reading
    column is capped at 860px — the measured comfortable line — and the rail
@@ -6300,6 +6318,14 @@ details.props > .btn {
   box-shadow: var(--glass-hi);
   border-radius: var(--r-lg);
   padding: 10px 12px;
+  /* Grid items default to min-width:auto, so one long unbreakable string
+     (a path, a Korean sentence) widened the tile past the rail column. */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rail-sec > *,
+.rail-list li {
+  min-width: 0;
 }
 .rail-sec .props {
   margin: 0;
@@ -6529,6 +6555,13 @@ details.props > .btn {
 /* Authorship gutter: a 3px bar left of each paragraph, violet where an agent
    wrote it (editorAuthorship.ts). With no runs the extension is not added at
    all, so this costs no width on a vault without history. */
+/* CodeMirror's base theme paints .cm-gutters light grey with a divider — two
+   pale strips down the reading column. The reader's gutters carry marks, not
+   chrome. */
+.myco-editor .cm-gutters {
+  background: transparent;
+  border: 0;
+}
 .cm-auth-gutter {
   width: 14px;
 }

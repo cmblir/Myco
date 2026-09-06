@@ -611,7 +611,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     : null;
   return (
     <div className="workspace">
-      <header className="page-head" style={{ paddingTop: 40 }}>
+      <header className="page-head reader-head" style={{ paddingTop: 40 }}>
         <div className="row" style={{ marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
           <span className="typebadge">
             <span className="tb-dot t-overview"></span>
@@ -829,12 +829,18 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
             </button>
           ) : (
             <>
-              <button className="btn" disabled>
-                ↺ {t.rd_auth_revert ?? "Revert this paragraph"}
-              </button>
+              {/* Nothing to revert on a paragraph the user wrote; a disabled
+                  button there would answer a question nobody asked. */}
+              {pick.run.agent ? (
+                <button className="btn" disabled>
+                  ↺ {t.rd_auth_revert ?? "Revert this paragraph"}
+                </button>
+              ) : null}
               <p className="auth-pop__when">
-                {t.rd_auth_locked ??
-                  "More than one commit wrote this paragraph — there is no single version to go back to."}
+                {pick.run.agent
+                  ? (t.rd_auth_locked ??
+                    "More than one commit wrote this paragraph — there is no single version to go back to.")
+                  : (t.rd_auth_human_only ?? "No agent edit here to revert.")}
               </p>
               <button className="btn btn-ghost" onClick={() => setRoute("history")}>
                 {t.rd_auth_history ?? "See it in history"} →

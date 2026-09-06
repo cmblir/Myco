@@ -674,6 +674,7 @@ export interface Strings {
   rd_auth_human: string;
   rd_auth_revert: string;
   rd_auth_locked: string;
+  rd_auth_human_only: string;
   rd_auth_history: string;
   rd_auth_reverted: string;
   rd_auth_nothing: string;
@@ -2229,6 +2230,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_auth_revert: "Revert this paragraph",
     rd_auth_locked:
       "More than one commit wrote this paragraph — there is no single version to go back to.",
+    rd_auth_human_only: "No agent edit here to revert.",
     rd_auth_history: "See it in history",
     rd_auth_reverted: "Paragraph reverted",
     rd_auth_nothing: "The earlier revision already holds this paragraph.",
@@ -3803,6 +3805,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_auth_human: "사람이 씀",
     rd_auth_revert: "이 문단 되돌리기",
     rd_auth_locked: "이 문단은 두 개 이상의 커밋이 썼습니다 — 돌아갈 판이 하나가 아닙니다.",
+    rd_auth_human_only: "되돌릴 에이전트 편집이 없습니다.",
     rd_auth_history: "기록에서 보기",
     rd_auth_reverted: "문단을 이전 판으로 되돌렸습니다",
     rd_auth_nothing: "이전 판에도 이 문단이 그대로 있습니다.",
@@ -5183,6 +5186,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_auth_human: "あなたが記述",
     rd_auth_revert: "この段落を元に戻す",
     rd_auth_locked: "この段落は複数のコミットが書いています — 戻すべき版が一つに定まりません。",
+    rd_auth_human_only: "元に戻すエージェントの編集はありません。",
     rd_auth_history: "履歴で見る",
     rd_auth_reverted: "段落を以前の版に戻しました",
     rd_auth_nothing: "以前の版にもこの段落がそのまま残っています。",

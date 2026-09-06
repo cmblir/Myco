@@ -70,12 +70,12 @@ export default function SourcesPanel({
           >
             <i style={{ width: `${view.pct}%` }} />
           </div>
-          {view.sources.length === 0 ? (
+          {view.sources.length === 0 && view.cited === 0 ? (
             <p className="rail-empty">
               {t.rd_src_none ??
                 "Nothing backs this note. The system will not invent a source."}
             </p>
-          ) : (
+          ) : view.sources.length === 0 ? null : (
             <ul className="rail-list">
               {view.sources.map((s, i) => (
                 <li key={s.ref.slug} className={s.weight === null ? "is-broken" : undefined}>
