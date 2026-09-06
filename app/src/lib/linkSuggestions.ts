@@ -103,8 +103,20 @@ export async function acceptAll(
 export function appendWikilink(content: string, targetPath: string): string {
   const name = stem(targetPath);
   if (content.includes(`[[${name}]]`)) return content;
-  const line = `- [[${name}]]`;
-  const m = /^##\s+Related\s*$/m.exec(content);
+  return appendUnderHeading(content, "Related", `- [[${name}]]`);
+}
+
+/** Append `line` under the `## <heading>` section (created at the end if the
+ * page has none). Returns the content unchanged when the line is already
+ * there. Extracted from `appendWikilink` so the offline ingest's
+ * `wiki/index.md` catalog line lands the same way (extractiveIngest.ts). */
+export function appendUnderHeading(
+  content: string,
+  heading: string,
+  line: string,
+): string {
+  if (content.includes(line)) return content;
+  const m = new RegExp(`^##\\s+${heading}\\s*$`, "m").exec(content);
   if (m) {
     // Insert right after the heading line (and any blank line following it).
     const headEnd = m.index + m[0].length;
@@ -113,7 +125,7 @@ export function appendWikilink(content: string, targetPath: string): string {
     return content.slice(0, headEnd) + nl + "\n" + line + rest.replace(/^\n/, "\n");
   }
   const sep = content.endsWith("\n") ? "" : "\n";
-  return `${content}${sep}\n## Related\n\n${line}\n`;
+  return `${content}${sep}\n## ${heading}\n\n${line}\n`;
 }
 
 // --- dismissal persistence ---------------------------------------------------

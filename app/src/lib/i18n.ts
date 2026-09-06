@@ -540,6 +540,15 @@ export interface Strings {
   model_fetching: string;
   s_model_recommended: string;
   s_model_ctx: string;
+  // Offline (extractive) ingest — the builtin-local provider's ingest path.
+  // `ing_extractive_note` / `_report_*` / `_log` are written INTO the vault
+  // (wiki/source-*.md, ingest-reports/, wiki/log.md); `_hint` is the line the
+  // Ingest page shows next to the model name. See lib/extractiveIngest.ts.
+  ing_extractive_note: string;
+  ing_extractive_report_title: string;
+  ing_extractive_report_why: string;
+  ing_extractive_log: string;
+  ing_extractive_hint: string;
   s_providers_lede: string;
   s_provider_connected: string;
   s_provider_disconnected: string;
@@ -2081,6 +2090,15 @@ export const STRINGS: Record<Lang, Strings> = {
     model_fetching: "fetching model list\u2026",
     s_model_recommended: "Recommended",
     s_model_ctx: "context",
+    ing_extractive_note:
+      "Extractive summary — every line below is quoted verbatim from `raw/{slug}.md`. No model read this source, so nothing here is paraphrased and nothing is inferred.",
+    ing_extractive_report_title: "Extractive ingest: {title}",
+    ing_extractive_report_why:
+      "This run used the built-in offline path. Passages were quoted verbatim from the source and cited, tags were reused from the vault's existing tags, and the related pages came from the local embedding index. **No model was called.** `confidence` is `low` because nothing summarised the source — re-running with a connected provider can replace the page.",
+    ing_extractive_log:
+      "{date} — extractive ingest of [[source-{slug}]] ({title}), no model call",
+    ing_extractive_hint:
+      "Extractive — quotes your source verbatim and makes no model call.",
     s_providers_lede:
       "Bring your own provider. myco never sees your keys — they're stored locally.",
     s_provider_connected: "Connected",
@@ -3657,6 +3675,15 @@ export const STRINGS: Record<Lang, Strings> = {
     model_fetching: "모델 목록 가져오는 중\u2026",
     s_model_recommended: "추천",
     s_model_ctx: "컨텍스트",
+    ing_extractive_note:
+      "발췌 요약 — 아래 문장은 모두 `raw/{slug}.md`에서 그대로 인용한 것입니다. 이 소스를 읽은 모델이 없으므로, 바꿔 쓴 문장도 추론한 내용도 없습니다.",
+    ing_extractive_report_title: "발췌 가져오기: {title}",
+    ing_extractive_report_why:
+      "이번 실행은 내장 오프라인 경로를 사용했습니다. 소스의 문장을 그대로 인용해 출처를 달았고, 태그는 보관함에 이미 있는 것만 재사용했으며, 관련 페이지는 로컬 임베딩 색인에서 가져왔습니다. **모델은 호출하지 않았습니다.** 소스를 요약한 주체가 없으므로 `confidence`는 `low`입니다. 모델을 연결하고 다시 실행하면 이 페이지를 대체할 수 있습니다.",
+    ing_extractive_log:
+      "{date} — [[source-{slug}]] ({title}) 발췌 가져오기, 모델 호출 없음",
+    ing_extractive_hint:
+      "발췌 방식 — 소스를 그대로 인용하며 모델을 호출하지 않습니다.",
     s_providers_lede:
       "원하는 제공자를 연결하세요. 키는 로컬에만 저장되며, myco 서버는 절대 보지 못합니다.",
     s_provider_connected: "연결됨",
@@ -5037,6 +5064,15 @@ export const STRINGS: Record<Lang, Strings> = {
     model_fetching: "モデル一覧を取得中\u2026",
     s_model_recommended: "推奨",
     s_model_ctx: "コンテキスト",
+    ing_extractive_note:
+      "抜粋要約 — 以下の行はすべて `raw/{slug}.md` からそのまま引用したものです。このソースを読んだモデルはないため、言い換えも推測もありません。",
+    ing_extractive_report_title: "抜粋取り込み: {title}",
+    ing_extractive_report_why:
+      "この実行は内蔵のオフライン経路を使いました。ソースの文をそのまま引用して出典を付け、タグはボールトにすでにあるものだけを再利用し、関連ページはローカルの埋め込みインデックスから取得しました。**モデルは呼び出していません。** ソースを要約した主体がないため `confidence` は `low` です。モデルを接続して再実行すればこのページを置き換えられます。",
+    ing_extractive_log:
+      "{date} — [[source-{slug}]]（{title}）を抜粋取り込み、モデル呼び出しなし",
+    ing_extractive_hint:
+      "抜粋方式 — ソースをそのまま引用し、モデルを呼び出しません。",
     s_providers_lede:
       "好きなプロバイダーを接続してください。キーはローカル保存 — myco のサーバーには届きません。",
     s_provider_connected: "接続済み",
