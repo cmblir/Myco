@@ -19,6 +19,7 @@ import {
   formatKb,
   harvestLabel,
   junkExcluded,
+  queueProgress,
   selectionTotals,
 } from "../lib/harvest";
 import { runInboxPass } from "../lib/autoIngest";
@@ -93,6 +94,7 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
   const items = data?.items ?? [];
   const totals = selectionTotals(items, selected);
   const citesNow = provRows ? distinctCitations(provRows) : null;
+  const queued = data ? queueProgress(data) : null;
   const base = citesNow ?? 0;
   const goal = base + totals.citations;
   const running = progress !== null;
@@ -174,8 +176,19 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
                 : error
                   ? t.hq_error
                   : t.hq_loading}
-              {data && data.excluded.already_harvested === 0 && items.length > 0 ? (
-                <> {t.hq_never_run}</>
+              {data && items.length > 0 ? (
+                queued ? (
+                  <>
+                    {" "}
+                    {fill(t.hq_progress, {
+                      done: queued.done,
+                      left: queued.left,
+                      shown: queued.shown,
+                    })}
+                  </>
+                ) : (
+                  <> {t.hq_never_run}</>
+                )
               ) : null}
             </p>
           </div>

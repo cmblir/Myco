@@ -3,7 +3,12 @@
 // ordered, and what the one primary button says. Numbers only: no ipc here,
 // so every rule is unit-testable in node.
 
-import type { HarvestCandidate, HarvestExcluded, ProvenanceRow } from "./ipc";
+import type {
+  HarvestCandidate,
+  HarvestCandidates,
+  HarvestExcluded,
+  ProvenanceRow,
+} from "./ipc";
 
 /** Exclusion buckets in the order the design lists them: the two junk
  *  buckets first (they are what makes the queue trustworthy), then the size
@@ -52,6 +57,18 @@ export function selectionTotals(
     citations += c.est_citations;
   }
   return { count, bytes, citations };
+}
+
+/** After a run the queue refills with the NEXT `limit` candidates, which
+ *  reads as "nothing happened" unless the page says so. `done` is what
+ *  previous runs took, `left` what is still eligible, `shown` this page.
+ *  Null before the first harvest — then the never-run line is the honest one. */
+export function queueProgress(
+  data: Pick<HarvestCandidates, "items" | "excluded" | "eligible">,
+): { done: number; left: number; shown: number } | null {
+  const done = data.excluded.already_harvested;
+  if (done <= 0) return null;
+  return { done, left: data.eligible, shown: data.items.length };
 }
 
 /** "{n}개 수확" — the primary button and the completion toast share it. */

@@ -1153,6 +1153,7 @@ export interface Strings {
   hq_title: string; // {n} — rendered bold
   hq_lede: string; // {total} {distinct}
   hq_never_run: string;
+  hq_progress: string; // {done} {left} {shown}
   hq_kpi_label: string;
   hq_harvest_btn: string; // {n}
   hq_select_all: string;
@@ -2910,6 +2911,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "{total} session files → {distinct} distinct bodies · 8 KB–200 KB · nearest wiki cluster first. sessions/ is only read; a copy goes to _inbox/.",
     hq_never_run:
       "Never harvested before — every page below would be a first.",
+    hq_progress:
+      "{done} harvested so far — {shown} of {left} still eligible, newest first.",
     hq_kpi_label: "citations",
     hq_harvest_btn: "Harvest {n}",
     hq_select_all: "Select all",
@@ -4675,6 +4678,7 @@ export const STRINGS: Record<Lang, Strings> = {
     hq_lede:
       "세션 파일 {total}개 → 서로 다른 본문 {distinct}개 · 8 KB–200 KB · 가까운 위키 클러스터 순. sessions/는 읽기만 하고 복사본이 _inbox/로 갑니다.",
     hq_never_run: "한 번도 수확된 적이 없습니다 — 아래 페이지가 전부 첫 수확입니다.",
+    hq_progress: "지금까지 {done}개 수확 — 남은 후보 {left}개 중 {shown}개, 최신순.",
     hq_kpi_label: "인용",
     hq_harvest_btn: "{n}개 수확",
     hq_select_all: "전체 선택",
@@ -6233,6 +6237,7 @@ export const STRINGS: Record<Lang, Strings> = {
     hq_lede:
       "セッションファイル{total}件 → 異なる本文{distinct}件 · 8 KB–200 KB · 近いWikiクラスター順。sessions/は読むだけで、コピーが_inbox/に入ります。",
     hq_never_run: "まだ一度も収穫されていません — 下のページはすべて初めての収穫です。",
+    hq_progress: "これまでに{done}件収穫 — 残り{left}件のうち{shown}件、新しい順。",
     hq_kpi_label: "引用",
     hq_harvest_btn: "{n}件を収穫",
     hq_select_all: "すべて選択",

@@ -310,7 +310,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   );
 
   return (
-    <div className="workspace sv" data-testid="sieve">
+    <div className={"workspace sv" + (running ? " is-running" : "")} data-testid="sieve">
       <ol className="sv-rail" aria-label={t.sv_rail_label}>
         <RailStep n={1} label={t.sv_step_intake} value={fill(t.sv_today_n, { n: todayIntake })} state={stage === "idle" ? "active" : undefined} />
         <RailStep
@@ -335,7 +335,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
           <div className="sv-hero-fig" style={{ "--i": 0 } as CSSProperties}>
             <ActivityIcon name="stop" size={112} />
           </div>
-          <div style={{ "--i": 1, minWidth: 0 } as CSSProperties}>
+          <div className="sv-hero-text" style={{ "--i": 1 } as CSSProperties}>
             <div className="sv-eyebrow">{t.sv_judge_eyebrow}</div>
             <h1 className="sv-title" id="sv-judge-title">
               {t.sv_judge_title}
@@ -726,7 +726,10 @@ function Num({
 }): JSX.Element {
   return (
     <div className={`sv-num is-${kind}`}>
-      <span className="sv-big">{value.toLocaleString()}</span>
+      {/* Keyed by the value so a landing verdict replays the bump. */}
+      <span className="sv-big" key={value}>
+        {value.toLocaleString()}
+      </span>
       <div className="sv-l">{label}</div>
       <div className="sv-s">{sub}</div>
     </div>

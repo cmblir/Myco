@@ -8,6 +8,7 @@ import {
   formatKb,
   harvestLabel,
   junkExcluded,
+  queueProgress,
   selectionTotals,
 } from "./harvest";
 
@@ -111,5 +112,32 @@ describe("clusterColorVar", () => {
     expect(clusterColorVar("source-summary")).toBe("var(--c-source)");
     expect(clusterColorVar("analysis")).toBe("var(--c-analysis)");
     expect(clusterColorVar(undefined)).toBe("var(--c-concept)");
+  });
+});
+
+describe("queueProgress", () => {
+  const base = {
+    items: [{ path: "a" }, { path: "b" }] as never[],
+    excluded: {
+      duplicate: 51,
+      boilerplate: 0,
+      too_small: 3,
+      too_large: 0,
+      already_harvested: 0,
+    },
+    eligible: 137,
+  };
+
+  it("is null before the first harvest, so the never-run line shows", () => {
+    expect(queueProgress(base)).toBeNull();
+  });
+
+  it("reports done, still-eligible and shown once a run has taken some", () => {
+    expect(
+      queueProgress({
+        ...base,
+        excluded: { ...base.excluded, already_harvested: 60 },
+      }),
+    ).toEqual({ done: 60, left: 137, shown: 2 });
   });
 });
