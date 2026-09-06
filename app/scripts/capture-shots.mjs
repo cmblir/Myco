@@ -76,8 +76,8 @@ await page.goto(BASE, { waitUntil: "domcontentloaded" });
 // out after 90s having never navigated.
 await page.waitForSelector(".side-nav .nav-item", { timeout: 30_000 });
 await nav(3).click();
-await page.waitForSelector(".graph-canvas.graph-ready", { timeout: 90_000 });
-await page.waitForTimeout(9000); // settle + a bit of auto-orbit
+await page.waitForSelector(".sv-canvas__el", { timeout: 90_000 });
+await page.waitForTimeout(9000); // let the force layout settle
 // Park the cursor outside the canvas. Whatever node sat under the pointer
 // after the nav click otherwise keeps a hover tooltip open, printed straight
 // across the cluster labels.
