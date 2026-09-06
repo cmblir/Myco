@@ -15,6 +15,8 @@ import type { Adjacency, CandidatePage, ClaudeStreamPayload } from "../lib/ipc";
 import { complete } from "../lib/chat";
 import { buildIngestPlanPrompt, parseIngestPlan } from "../lib/ingestPlan";
 import type { PlanItem } from "../lib/ingestPlan";
+import { runExtractiveIngest } from "../lib/extractiveIngest";
+import { tagCandidates } from "../lib/tagIndex";
 import { defaultSelection, selectedPlan } from "../lib/planGate";
 import { loadProfile } from "../lib/profile";
 import { log } from "../lib/log";
@@ -159,6 +161,10 @@ export interface IngestProviderArgs {
   slug: string;
   title: string;
   body: string;
+  /** Retrieval grounding (`wikify_candidates`). The model branches already
+   *  carry it inside `prompt`; the offline branch needs it as data, to link
+   *  the same pages under `## Related`. */
+  candidates?: CandidatePage[];
 }
 
 /** Runs one already-built ingest `prompt` through myco Pro or a plain
@@ -176,6 +182,24 @@ export interface IngestProviderArgs {
  * calls `ipc.claudeRun` (the blocking variant) directly for that provider
  * instead of going through here — see that module's own doc comment. */
 export async function runIngestProvider(args: IngestProviderArgs): Promise<string> {
+  if (args.provider === "builtin-local") {
+    // Offline ingest. No chat model has shipped since Ask went extractive, so
+    // there is nobody to send `prompt` to — this branch writes the same file
+    // set the prompt asks for, quoting the source verbatim instead of
+    // summarising it (lib/extractiveIngest.ts). Zero model calls, which is
+    // exactly what its report claims.
+    const { written } = await runExtractiveIngest(ipc, t(), {
+      vaultPath: args.vaultPath,
+      slug: args.slug,
+      title: args.title,
+      body: args.body,
+      candidates: args.candidates ?? [],
+      // The vault's own tag vocabulary — the offline path reuses tags, never
+      // coins them (see matchedTags).
+      vaultTags: tagCandidates(useVaultStore.getState().adjacency?.tags ?? {}),
+    });
+    return `${t().ing_extractive_hint}\n\n${written.map((f) => `- ${f}`).join("\n")}`;
+  }
   if (args.provider === "myco-pro") {
     // myco Pro: the proxy runs a cheap model server-side and returns the wiki
     // file operations, which Rust applies (confined). No tool stream.
@@ -422,26 +446,39 @@ export const useIngestStore = create<IngestState>((set, get) => ({
         .catch(() => [] as CandidatePage[]);
       set({ candidates });
 
+      // Read once, up here: the planner below is skipped entirely for the
+      // offline provider, and that decision needs the ingest role before the
+      // first model call, not after it.
+      const settings = await ipc.getSettings();
+      // "Makes no model call" is what the offline run's report prints, so it
+      // has to be true of the WHOLE run — including the planner, which takes
+      // the generate role and so would happily reach for some other connected
+      // provider. No plan means no plan gate either; grounding falls back to
+      // the candidate list, exactly as it does when a planner is unavailable.
+      const offline = settings.ingest_provider === "builtin-local";
+
       // Phase 2: one read-only planning call turns the source + candidates into
       // explicit ADD/UPDATE/MERGE/NOOP decisions, shown as telemetry and fed to
       // the writing agent. Best-effort — a failure or unparseable reply leaves
       // the plan empty and the prompt falls back to candidate grounding.
       let plan: PlanItem[] = [];
-      try {
-        set({ log: `Planning ${slug}…` });
-        const planReply = await complete({
-          task: "generate",
-          cwd: vault.path,
-          messages: [
-            {
-              role: "user",
-              content: buildIngestPlanPrompt(text, candidates),
-            },
-          ],
-        });
-        plan = parseIngestPlan(planReply);
-      } catch {
-        /* planner unavailable — proceed with candidate grounding only */
+      if (!offline) {
+        try {
+          set({ log: `Planning ${slug}…` });
+          const planReply = await complete({
+            task: "generate",
+            cwd: vault.path,
+            messages: [
+              {
+                role: "user",
+                content: buildIngestPlanPrompt(text, candidates),
+              },
+            ],
+          });
+          plan = parseIngestPlan(planReply);
+        } catch {
+          /* planner unavailable — proceed with candidate grounding only */
+        }
       }
       set({ plan });
 
@@ -492,7 +529,6 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       await writeRaw();
 
       set({ stage: "claude" });
-      const settings = await ipc.getSettings();
       // Phase B, Task 6: weight linking/tagging toward the user's stated
       // interests — a lighter grounding line than chat.ts's full profile
       // paragraph, but sent to the same configured provider, so it is
@@ -542,6 +578,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
           slug,
           title: finalTitle,
           body: body.trim(),
+          candidates,
         });
       }
       set((st) => ({ log: `${st.log}\n\n${out}` }));

@@ -472,3 +472,124 @@ describe("applyStreamEvent identity + seq", () => {
     expect(useIngestStore.getState().touched).toBe(first);
   });
 });
+
+// Built-in (offline) ingest — the provider with no chat model at all. It must
+// write a real ingest (the same file set the LLM path writes) and must do it
+// with ZERO model calls, because that is exactly what the run's own report
+// tells the user. If either ever stops holding, Settings' "Built-in (offline)"
+// ingest option is a button that can only fail, which is how it came to be
+// removed in the first place.
+describe("builtin-local offline ingest", () => {
+  let files: Record<string, string>;
+
+  const rels = (): string[] =>
+    Object.keys(files)
+      .map((p) => p.replace("/v/", ""))
+      .sort();
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    vi.mocked(complete).mockClear();
+    listenMock.mockClear();
+    files = {};
+    useIngestStore.setState({ stage: "idle", runId: null, judged: [] });
+
+    vi.spyOn(ipc, "getSettings").mockResolvedValue({
+      ingest_provider: "builtin-local",
+      ingest_model: "extractive-ingest",
+      // A query provider that CAN generate: the planner must still be skipped,
+      // or the run would make a model call its own report denies making.
+      query_provider: "anthropic-cli",
+      query_model: "haiku",
+    } as never);
+    vi.spyOn(ipc, "judgeSource").mockResolvedValue({
+      verdict: "harvest",
+      reason: "",
+      rule: "",
+    } as never);
+    vi.spyOn(ipc, "availableRawPath").mockResolvedValue("raw/my-source.md");
+    vi.spyOn(ipc, "createFolder").mockResolvedValue(undefined as never);
+    vi.spyOn(ipc, "wikifyCandidates").mockResolvedValue([
+      { page: "wiki/rrf.md", stem: "rrf", score: 0.6 },
+    ]);
+    vi.spyOn(ipc, "writeFile").mockImplementation((async (p: string, c: string) => {
+      files[p] = c;
+    }) as never);
+    vi.spyOn(ipc, "readFile").mockImplementation((async (p: string) => {
+      if (!(p in files)) throw new Error("ENOENT");
+      return { raw: files[p] };
+    }) as never);
+    vi.spyOn(ipc, "fileMtimes").mockImplementation(async () =>
+      Object.keys(files).map((p) => [p, 1] as [string, number]),
+    );
+    vi.spyOn(ipc, "validateIngest").mockResolvedValue({
+      errors: [],
+      warnings: [],
+    } as never);
+    vi.spyOn(ipc, "getDistillConfig").mockResolvedValue({
+      profile_injection: false,
+    } as never);
+    vi.spyOn(ipc, "buildLinkGraph").mockResolvedValue({ nodes: [], edges: [] } as never);
+    vi.spyOn(ipc, "recordNoop").mockResolvedValue(undefined as never);
+  });
+
+  const SOURCE =
+    "Hybrid retrieval fuses a dense vector arm with a lexical arm, and the " +
+    "fusion recovers queries neither arm answers alone.";
+
+  it("never calls the completion API — not for the plan, not for the write", async () => {
+    await useIngestStore.getState().startIngest("My source", SOURCE);
+    expect(complete).not.toHaveBeenCalled();
+    expect(useIngestStore.getState().stage).toBe("done");
+  });
+
+  it("writes exactly the file set the CLI path writes", async () => {
+    await useIngestStore.getState().startIngest("My source", SOURCE);
+    const written = rels();
+    expect(written.filter((p) => !p.startsWith("ingest-reports/"))).toEqual([
+      "raw/my-source.md",
+      "wiki/index.md",
+      "wiki/log.md",
+      "wiki/source-my-source.md",
+    ]);
+    const reports = written.filter((p) => p.startsWith("ingest-reports/"));
+    expect(reports).toHaveLength(1);
+    expect(reports[0]).toMatch(
+      /^ingest-reports\/\d{4}-\d{2}-\d{2}-\d{6}-my-source\.md$/,
+    );
+  });
+
+  it("opens the report it wrote and cites the raw source on every claim", async () => {
+    await useIngestStore.getState().startIngest("My source", SOURCE);
+    expect(useIngestStore.getState().reportPath).toMatch(
+      /^\/v\/ingest-reports\/.*-my-source\.md$/,
+    );
+
+    const page = files["/v/wiki/source-my-source.md"];
+    expect(page).toContain("type: source-summary");
+    expect(page).toContain("confidence: low");
+    const claims = page
+      .split("\n")
+      .filter((l) => l.startsWith("- ") && !l.startsWith("- [["));
+    expect(claims.length).toBeGreaterThan(0);
+    for (const line of claims) expect(line.endsWith("[^src-my-source]")).toBe(true);
+    // The embedder's candidate, linked the way accepting a link suggestion does.
+    expect(page).toContain("## Related");
+    expect(page).toContain("- [[rrf]]");
+  });
+
+  it("writes nothing at all when the judge drops the source", async () => {
+    vi.mocked(ipc.judgeSource).mockResolvedValue({
+      verdict: "drop",
+      reason: "no actionable content",
+      rule: "judge::junk",
+    } as never);
+
+    await useIngestStore.getState().startIngest("My source", SOURCE);
+
+    expect(files).toEqual({});
+    expect(complete).not.toHaveBeenCalled();
+    expect(useIngestStore.getState().stage).toBe("refused");
+    expect(useIngestStore.getState().refusal?.verdict).toBe("drop");
+  });
+});
