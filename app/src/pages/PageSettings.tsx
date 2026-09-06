@@ -543,6 +543,7 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
       ) : null}
 
       <AutoReindexToggle t={t} />
+      <ArchivedSessionsToggle t={t} />
     </div>
   );
 }
@@ -582,6 +583,74 @@ function AutoReindexToggle({ t }: { t: Strings }): JSX.Element | null {
         aria-label={t.s_autoreindex_title ?? "Keep the index up to date"}
         data-testid="auto-reindex-toggle"
         onClick={() => void update({ auto_reindex_enabled: !enabled })}
+        style={{
+          width: 44,
+          height: 24,
+          borderRadius: 12,
+          border: "1px solid var(--line)",
+          background: enabled ? "var(--ink)" : "var(--bg-soft)",
+          position: "relative",
+          cursor: "pointer",
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            top: 2,
+            left: enabled ? 22 : 2,
+            width: 18,
+            height: 18,
+            borderRadius: "50%",
+            background: enabled ? "var(--bg)" : "var(--ink)",
+            transition: "left 150ms ease",
+          }}
+        />
+      </button>
+    </div>
+  );
+}
+
+// Ask's session scope over `sessions/archive/` — the cold tier `is_cold()`
+// keeps out of the index, so turning this on rebuilds it (the run shows in
+// the card above, like any reindex). Off by default: reviving every archived
+// log on a session-heavy vault tilts the index further toward sessions, so
+// the archive opens only on request and only in the session scope.
+function ArchivedSessionsToggle({ t }: { t: Strings }): JSX.Element | null {
+  const settings = useSettingsStore((s) => s.settings);
+  const update = useSettingsStore((s) => s.update);
+  const reindex = useReindexStore((s) => s.reindex);
+  if (!settings) return null;
+  const enabled = settings.search_archived_sessions;
+  return (
+    <div
+      className="row"
+      style={{
+        marginTop: 12,
+        paddingTop: 12,
+        borderTop: "1px solid var(--line)",
+        justifyContent: "space-between",
+        alignItems: "flex-start",
+        gap: 12,
+      }}
+    >
+      <div style={{ paddingRight: 8 }}>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>{t.s_archived_sessions_title}</div>
+        <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
+          {t.s_archived_sessions_desc}
+        </div>
+      </div>
+      <button
+        role="switch"
+        aria-checked={enabled}
+        aria-label={t.s_archived_sessions_title}
+        data-testid="archived-sessions-toggle"
+        onClick={() => {
+          void update({ search_archived_sessions: !enabled }).then(() => {
+            // The flag is on disk before the rebuild reads it.
+            if (!enabled) void reindex();
+          });
+        }}
         style={{
           width: 44,
           height: 24,

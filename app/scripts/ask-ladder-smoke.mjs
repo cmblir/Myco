@@ -1,8 +1,9 @@
 // Ask renewal E2E (mockup "Strata"): the three states the page must render —
 // a grounded answer with its source ladder, an abstention with near-misses,
 // and a session-scope recall — plus the pill ↔ ladder-row highlight, the
-// stepper's expand, and the harvest action. Shoots each state (dark + light)
-// for a visual pass.
+// stepper's expand, the harvest action, and the Settings opt-in that lets the
+// session scope reach sessions/archive/. Shoots each state (dark + light) for
+// a visual pass.
 //
 // Usage (dev server on :5173, or ASK_SMOKE_PORT):
 //   node scripts/ask-ladder-smoke.mjs [--headed] [--shots <dir>]
@@ -164,6 +165,53 @@ for (const theme of ["dark", "light"]) {
   check("the turn chip names the scope", /범위 · 세션/.test(await page.locator(".ask-turn").last().innerText()));
   await shoot(page, "sessions-dark");
   check("no page errors (sessions)", errors.length === 0, errors.slice(0, 3).join(" | "));
+  await page.close();
+}
+
+// --- 4. archived sessions opt-in (Settings) → session scope ----------------
+{
+  const { page, errors } = await openAsk("dark");
+  await page.locator("button, a", { hasText: /^설정$|^Settings$|^設定$/ }).first().click();
+  const toggle = page.getByTestId("archived-sessions-toggle");
+  await toggle.waitFor({ timeout: 15_000 });
+  check("the archived-sessions row starts off", (await toggle.getAttribute("aria-checked")) === "false");
+  await toggle.click();
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('[data-testid="archived-sessions-toggle"]')
+        ?.getAttribute("aria-checked") === "true",
+    { timeout: 5_000 },
+  );
+  await page.waitForTimeout(300);
+  check(
+    "turning it on starts a reindex",
+    (await page
+      .locator(
+        '[data-testid="reindex-progress"], [data-testid="reindex-loading"], [data-testid="reindex-done"]',
+      )
+      .count()) > 0,
+  );
+  // The toggle's set_settings wrote the store's copy (CLI provider) back over
+  // the mock; re-pin the extractive provider before asking.
+  await page.evaluate(() => {
+    window.__mycoMock.settings({
+      query_provider: "builtin-local",
+      query_model: "extractive-retrieval",
+    });
+  });
+  await page.locator(".side-nav .nav-item", { hasText: /^Ask$|질문|質問/ }).first().click();
+  await page.waitForSelector("input.input", { timeout: 20_000 });
+  await page.locator('[role="group"][aria-label] button', { hasText: /^세션$/ }).click();
+  await ask(page, "what is attention?");
+  await page.waitForSelector(".ask-lrow", { timeout: 15_000 });
+  check("an archived session surfaces, flagged", (await page.locator(".ask-lrow .ask-coldflag").count()) === 1);
+  check(
+    "the stepper's archive step reads included",
+    /냉동\s*포함/.test((await page.locator(".ask-stepper").first().innerText()).replace(/\n/g, " ")),
+  );
+  await shoot(page, "sessions-archived-dark");
+  check("no page errors (archived)", errors.length === 0, errors.slice(0, 3).join(" | "));
   await page.close();
 }
 
