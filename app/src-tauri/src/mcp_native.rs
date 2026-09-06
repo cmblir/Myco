@@ -965,6 +965,46 @@ struct GitCommitArgs {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct CheckPageArgs {
+    /// The full draft (frontmatter + body) you are about to write.
+    text: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct WritePageArgs {
+    /// Vault-relative path, e.g. "wiki/scaling-laws.md". raw/ and .myco/ refuse.
+    path: String,
+    /// The full page (frontmatter + body).
+    text: String,
+    /// "create" (default; must not exist) or "update" (must exist).
+    #[serde(default)]
+    mode: String,
+    /// Write despite blocking problems. Secrets are never forceable.
+    #[serde(default)]
+    force: bool,
+    /// Also `git_commit` the page with a generated message.
+    #[serde(default)]
+    commit: bool,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct IngestArgs {
+    /// The source text. Give this OR `path`, not both.
+    #[serde(default)]
+    text: String,
+    /// A file on this machine to read instead of `text`.
+    #[serde(default)]
+    path: String,
+    /// Used for the `_inbox/` filename; omitted = the first heading or a stamp.
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct RecallArgs {
     /// The question, in the words you would ask it.
     query: String,
@@ -1603,7 +1643,9 @@ impl McpServer {
     // ─── writers ─────────────────────────────────────────────────────────────
 
     /// Create a new wiki page with proper myco frontmatter.
-    #[tool(description = "Create a wiki page with myco frontmatter (title/type/tags/sources)")]
+    #[tool(
+        description = "DEPRECATED — prefer write_page, which checks the draft first. Create a wiki page with myco frontmatter (title/type/tags/sources) derived from the arguments; no lint, no citation check."
+    )]
     async fn create_page(
         &self,
         Parameters(a): Parameters<CreatePageArgs>,
@@ -1684,7 +1726,9 @@ impl McpServer {
     }
 
     /// Overwrite a wiki page's content (caller keeps the frontmatter block).
-    #[tool(description = "Overwrite a wiki page's full content by filename")]
+    #[tool(
+        description = "DEPRECATED — prefer write_page (mode=update), which checks the draft first. Overwrite a wiki page's full content by filename, unchecked."
+    )]
     async fn update_page(
         &self,
         Parameters(a): Parameters<UpdatePageArgs>,
@@ -2180,6 +2224,97 @@ impl McpServer {
         json_result(json!({ "ok": true, "hash": hash, "files": files }))
     }
 
+    // ─── draft check, one writer, judged ingest ───────────────────────────────
+
+    /// The wiki schema lint + the secret/PII scan, on a draft, writing nothing.
+    #[tool(
+        description = "Check a DRAFT page before writing it: the wiki schema lint (frontmatter, type, status/superseded_by, status=disputed needs a ## Disputed section), the citation contract ([^src-*] refs vs definitions, source_count) and the secret/PII scan. Writes nothing. Returns {ok, problems:[{rule, line, msg, blocking}]} — `ok` is false when anything blocking is present, which is exactly what write_page refuses on."
+    )]
+    async fn check_page(
+        &self,
+        Parameters(a): Parameters<CheckPageArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        json_result(check_page_text(
+            &a.text,
+            settings::load().pii_quarantine_enabled,
+        ))
+    }
+
+    /// One writer for wiki pages: check, then create or update.
+    #[tool(
+        description = "Write one page, checked. path is vault-relative (wiki/foo.md); raw/ is immutable and .myco/ is app state, so both refuse. mode=create must not exist, mode=update must. Runs check_page first and refuses on blocking problems — force=true overrides the lint, but a secret NEVER writes. commit=true also git-commits the page. Replaces create_page (which invents the frontmatter for you) and update_page (which does no checking); both still work."
+    )]
+    async fn write_page(
+        &self,
+        Parameters(a): Parameters<WritePageArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let mode = if a.mode.trim().is_empty() {
+            "create"
+        } else {
+            a.mode.trim()
+        };
+        match write_page_at(
+            &root,
+            &a.path,
+            &a.text,
+            mode,
+            a.force,
+            settings::load().pii_quarantine_enabled,
+        ) {
+            Ok(mut out) => {
+                if let Some(rel) = out["path"].as_str().map(str::to_string) {
+                    if let Some(u) = crate::INDEX_UPDATER.get() {
+                        u.mark_dirty(rel.replace('\\', "/"));
+                    }
+                    crate::inflow_log::record(&root, "mcp", "write_page");
+                    if a.commit {
+                        let msg = format!("wiki: write {rel}");
+                        out["commit"] = match crate::vault_history::commit_paths(
+                            &root,
+                            &[rel.as_str()],
+                            &msg,
+                            crate::vault_history::CommitIdentity::Agent,
+                        ) {
+                            Ok(true) => json!(msg),
+                            Ok(false) => json!("no commit: the vault has no git history"),
+                            Err(e) => json!(format!("commit failed: {e}")),
+                        };
+                    }
+                }
+                json_result(out)
+            }
+            Err(e) => fail(e),
+        }
+    }
+
+    /// The judged door into `_inbox/`.
+    #[tool(
+        description = "Put a source into the vault's _inbox/ for the normal ingest pass — but only if it is worth it. judge_source runs first: `drop` (junk under 200 bytes, >=90% tool-noise lines, or a body the vault ALREADY has) writes nothing and leaves one line in .myco/ingest-noop.jsonl; `log` (real text outside the 8 KB-200 KB band) and `harvest` are written. Secrets always refuse; PII refuses when the vault's quarantine setting is on. Give `text` or `path`, not both."
+    )]
+    async fn ingest(
+        &self,
+        Parameters(a): Parameters<IngestArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        match ingest_at(
+            &root,
+            &a.text,
+            &a.path,
+            &a.title,
+            settings::load().pii_quarantine_enabled,
+        ) {
+            Ok(out) => json_result(out),
+            Err(e) => fail(e),
+        }
+    }
+
     // ─── retrieval for agents ─────────────────────────────────────────────────
 
     /// `search` with the Ask page's answer contract: quotable lines, the
@@ -2611,6 +2746,240 @@ fn archive_inbox(root: &Path, filename: &str, pii_quarantine: bool) -> Result<Va
         out["pii_warning"] = json!(w);
     }
     Ok(out)
+}
+
+// ─── check_page / write_page / ingest bodies ─────────────────────────────────
+
+/// Vault subtrees no page-writing tool may touch: `raw/` is immutable through
+/// every path, and `.myco/` is the app's own state (ledgers, indexes, run
+/// manifests), not a place for markdown.
+const WRITE_FORBIDDEN: [&str; 2] = ["raw", crate::vault_dir::DIR_NAME];
+
+/// (frontmatter, body) for a draft held in memory — the same gray_matter
+/// parse `read_parts` performs on a file already on disk.
+fn parse_draft(text: &str) -> (Value, String) {
+    match gray_matter::Matter::<gray_matter::engine::YAML>::new().parse::<gray_matter::Pod>(text) {
+        Ok(parsed) => (
+            parsed.data.map(vault::pod_to_json).unwrap_or(Value::Null),
+            parsed.content,
+        ),
+        Err(_) => (Value::Null, text.to_string()),
+    }
+}
+
+/// 1-based line of the first `[^src-…]` token quoted in a lint message, so a
+/// citation problem points at the citation. 0 = the problem is the page's, not
+/// a line's (missing frontmatter, a bad `type`, a wrong `source_count`).
+fn problem_line(body: &str, msg: &str) -> usize {
+    let Some(open) = msg.find("[^") else { return 0 };
+    let Some(close) = msg[open..].find(']') else {
+        return 0;
+    };
+    let token = &msg[open..open + close + 1];
+    body.lines()
+        .position(|l| l.contains(token))
+        .map_or(0, |i| i + 1)
+}
+
+/// `check_page` body. The lint is `lint_page` (the same one `lint_citations`
+/// runs over the whole wiki); the scan is `secrets_scan`, with
+/// `raw_source_guard`'s policy — a secret always blocks, PII blocks only in
+/// quarantine mode and otherwise warns.
+fn check_page_text(text: &str, pii_quarantine: bool) -> Value {
+    let (fm, body) = parse_draft(text);
+    let mut problems: Vec<Value> = lint_page(&fm, &body)
+        .into_iter()
+        .map(|msg| {
+            json!({
+                "rule": "lint", "line": problem_line(&body, &msg),
+                "msg": msg, "blocking": true,
+            })
+        })
+        .collect();
+    let secrets = secrets_scan::scan(text);
+    if !secrets.is_empty() {
+        problems.push(json!({
+            "rule": "secrets", "line": 0, "blocking": true,
+            "msg": format!("possible secrets ({}) — redact before writing", secrets.join(", ")),
+        }));
+    }
+    let pii = secrets_scan::scan_pii(text);
+    if !pii.is_empty() {
+        problems.push(json!({
+            "rule": "pii", "line": 0, "blocking": pii_quarantine,
+            "msg": format!(
+                "possible PII ({}) — pages are committed to git; redact if unintended",
+                pii.join(", ")
+            ),
+        }));
+    }
+    let blocking = problems
+        .iter()
+        .filter(|p| p["blocking"] == json!(true))
+        .count();
+    json!({
+        "ok": blocking == 0,
+        "blocking": blocking,
+        "problems": problems,
+    })
+}
+
+/// `write_page` body. Confinement, then the mode contract, then the check,
+/// then the write — nothing reaches disk until all four hold.
+fn write_page_at(
+    root: &Path,
+    path: &str,
+    text: &str,
+    mode: &str,
+    force: bool,
+    pii_quarantine: bool,
+) -> Result<Value, String> {
+    if !matches!(mode, "create" | "update") {
+        return Err(format!("unknown mode: {mode} — use create or update"));
+    }
+    let rel = path.trim().replace('\\', "/");
+    let first = rel.split('/').next().unwrap_or("");
+    if WRITE_FORBIDDEN.contains(&first) {
+        return Err(format!(
+            "refused: {first}/ is not writable ({}). Nothing was written.",
+            if first == "raw" {
+                "raw/ is immutable"
+            } else {
+                "app state, not pages"
+            }
+        ));
+    }
+    let Some(target) = safe_join(root, &rel) else {
+        return Err(format!("path escapes the vault: {path}"));
+    };
+    if !rel.ends_with(".md") {
+        return Err(format!("not a markdown page: {path}"));
+    }
+    match (mode, target.exists()) {
+        ("create", true) => return Err(format!("already exists (use mode=update): {rel}")),
+        ("update", false) => return Err(format!("page not found (use mode=create): {rel}")),
+        _ => {}
+    }
+    let check = check_page_text(text, pii_quarantine);
+    let has_secret = check["problems"]
+        .as_array()
+        .is_some_and(|ps| ps.iter().any(|p| p["rule"] == json!("secrets")));
+    // A secret is never forceable: the page is committed to git, so a leaked
+    // key there is permanent.
+    if has_secret || (check["ok"] != json!(true) && !force) {
+        let mut out = check;
+        out["error"] = json!(if has_secret {
+            "refused: possible secrets — redact and retry. force does not apply. Nothing was written."
+        } else {
+            "refused: blocking problems — fix them, or pass force=true. Nothing was written."
+        });
+        out["ok"] = json!(false);
+        return Ok(out);
+    }
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("create {}: {e}", parent.display()))?;
+    }
+    vault::write_file(&target.to_string_lossy(), text)?;
+    let mut out = json!({
+        "ok": true, "path": rel, "mode": mode, "bytes": text.len(),
+    });
+    let warnings: Vec<&Value> = check["problems"]
+        .as_array()
+        .map(|ps| ps.iter().filter(|p| p["blocking"] != json!(true)).collect())
+        .unwrap_or_default();
+    if !warnings.is_empty() || force {
+        out["problems"] = check["problems"].clone();
+        if force && check["blocking"] != json!(0) {
+            out["forced"] = json!(true);
+        }
+    }
+    Ok(out)
+}
+
+/// `ingest` body: judge, then (for `log`/`harvest`) the raw/ guard and one
+/// `_inbox/` write. A `drop` leaves the noop trace and nothing else.
+fn ingest_at(
+    root: &Path,
+    text: &str,
+    path: &str,
+    title: &str,
+    pii_quarantine: bool,
+) -> Result<Value, String> {
+    let (source, from) = match (text.trim().is_empty(), path.trim().is_empty()) {
+        (true, true) => return Err("give text or path".to_string()),
+        (false, false) => return Err("give text OR path, not both".to_string()),
+        (false, true) => (text.to_string(), None),
+        (true, false) => {
+            let p = PathBuf::from(path.trim());
+            let body = std::fs::read_to_string(&p).map_err(|e| format!("read {path}: {e}"))?;
+            (body, Some(p))
+        }
+    };
+    let size = source.len() as u64;
+    let ledger = crate::importers::ledger::Ledger::load(root);
+    let verdict = crate::judge::judge_against(&source, size, &ledger);
+    let name = ingest_name(title, &source, from.as_deref());
+    if verdict.verdict == "drop" {
+        // The whole point: no _inbox/ file, no ingest run, one JSONL line.
+        crate::judge::record_noop_at(root, &format!("_inbox/{name}"), &verdict.reason)?;
+        return Ok(json!({
+            "ok": true, "verdict": "drop", "rule": verdict.rule,
+            "reason": verdict.reason, "written": false,
+            "note": "nothing was written; the drop is logged in .myco/ingest-noop.jsonl",
+        }));
+    }
+    // `_inbox/` is where the clipper and autoingest drop untrusted text and
+    // where archive_inbox_source copies FROM into immutable raw/, so the same
+    // scan-before-write gate applies here.
+    let pii_warning = raw_source_guard(&source, pii_quarantine)?;
+    let created = now_secs();
+    let doc = format!(
+        "---\nsource: mcp\ntitle: \"{}\"\ncreated: {created}\n---\n\n{}\n",
+        name.trim_end_matches(".md").replace('"', "\\\""),
+        source.trim_end()
+    );
+    let written = commands::write_inbox_note_at(root, &name, &doc)?;
+    crate::inflow_log::record(root, "mcp", "ingest");
+    let mut out = json!({
+        "ok": true,
+        "verdict": verdict.verdict,
+        "rule": verdict.rule,
+        "reason": verdict.reason,
+        "written": true,
+        "path": rel_to(root, Path::new(&written)),
+        "next": "the next ingest pass turns it into wiki pages, then archive_inbox_source files the source under raw/",
+    });
+    if let Some(w) = pii_warning {
+        out["pii_warning"] = json!(w);
+    }
+    Ok(out)
+}
+
+/// The `_inbox/` filename for an ingest: the title, else the source's first
+/// heading, else the source file's stem, else a timestamp. Always `.md`, and
+/// always slugged — `write_inbox_note_at` confines it, this keeps it readable.
+fn ingest_name(title: &str, source: &str, from: Option<&Path>) -> String {
+    let heading = || {
+        source
+            .lines()
+            .map(str::trim)
+            .find_map(|l| l.strip_prefix("# "))
+            .map(str::to_string)
+    };
+    let stem = || {
+        from.and_then(|p| p.file_stem())
+            .map(|s| s.to_string_lossy().into_owned())
+    };
+    let raw = [
+        Some(title.trim().to_string()).filter(|t| !t.is_empty()),
+        heading(),
+        stem(),
+    ]
+    .into_iter()
+    .flatten()
+    .next()
+    .unwrap_or_else(|| format!("mcp-{}", now_secs()));
+    format!("{}.md", make_slug(&raw))
 }
 
 // ─── recall / neighbourhood / changed_since bodies ───────────────────────────
@@ -3174,6 +3543,7 @@ mod tests {
         archive_inbox, collect_md, list_wiki_pages, read_wiki_page, search_row, server_info,
     };
     use super::{best_quote, changed_since_at, neighbourhood_at, parse_since, recall_result};
+    use super::{check_page_text, ingest_at, ingest_name, problem_line, write_page_at};
     use super::{
         distill_status_at, import_conversation_at, import_outcome_json, ledger_status_at,
         session_file, setup_profile_at, wikify_pending_at,
@@ -3661,6 +4031,301 @@ body of {rel}
         );
         let err = read_wiki_page(root, "../raw/x.md").unwrap_err();
         assert_eq!(err, "path escapes wiki/: ../raw/x.md");
+    }
+
+    // ─── check_page / write_page / ingest ─────────────────────────────────────
+
+    /// A page that lints clean: valid type, one citation with its definition,
+    /// source_count agreeing.
+    const CLEAN_PAGE: &str = "---\ntitle: \"Scaling laws\"\ntype: concept\nsource_count: 1\n---\n\
+        # Scaling laws\n\nLoss falls as a power law in compute.[^src-kaplan]\n\n\
+        [^src-kaplan]: raw/kaplan.md\n";
+
+    #[test]
+    fn check_page_passes_a_clean_draft_and_writes_nothing() {
+        let out = check_page_text(CLEAN_PAGE, true);
+        assert_eq!(out["ok"], true, "{out}");
+        assert_eq!(out["blocking"], 0);
+        assert!(out["problems"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn check_page_reports_the_lint_the_citation_contract_and_the_line() {
+        let draft = "---\ntitle: \"x\"\ntype: nonsense\nsource_count: 3\n---\n\
+            # x\n\nA claim.[^src-missing]\n";
+        let out = check_page_text(draft, false);
+        assert_eq!(out["ok"], false);
+        let msgs: Vec<&str> = out["problems"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["msg"].as_str().unwrap())
+            .collect();
+        assert!(
+            msgs.iter().any(|m| m.contains("invalid `type`")),
+            "{msgs:?}"
+        );
+        assert!(
+            msgs.iter().any(|m| m.contains("has no definition")),
+            "{msgs:?}"
+        );
+        assert!(msgs.iter().any(|m| m.contains("source_count")), "{msgs:?}");
+        // The citation problem points at the citation's line; a frontmatter
+        // problem points at the page.
+        let cite = out["problems"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|p| p["msg"].as_str().unwrap().contains("has no definition"))
+            .unwrap();
+        assert_eq!(cite["line"], 3, "{cite}");
+        assert_eq!(cite["rule"], "lint");
+        assert_eq!(
+            problem_line("a\nb [^src-x] c\n", "citation [^src-x] has no definition"),
+            2
+        );
+        assert_eq!(problem_line("body", "missing `type`"), 0);
+        assert_eq!(problem_line("body", "unterminated [^src-x"), 0);
+    }
+
+    // Same policy as raw_source_guard: a secret always blocks, PII blocks only
+    // when the vault's quarantine setting is on.
+    #[test]
+    fn check_page_blocks_a_secret_always_and_pii_only_in_quarantine_mode() {
+        let leak = "---\ntype: concept\n---\nkey: sk-abcdefghijklmnopqrstuvwxyz012345\n";
+        for quarantine in [false, true] {
+            let out = check_page_text(leak, quarantine);
+            assert_eq!(out["ok"], false);
+            let p = &out["problems"][0];
+            assert_eq!(p["rule"], "secrets");
+            assert_eq!(p["blocking"], true);
+        }
+        let pii = "---\ntype: concept\n---\nreach me at someone@example.com\n";
+        let warn = check_page_text(pii, false);
+        assert_eq!(warn["ok"], true, "warn mode does not block: {warn}");
+        assert_eq!(warn["problems"][0]["rule"], "pii");
+        assert_eq!(warn["problems"][0]["blocking"], false);
+        let refuse = check_page_text(pii, true);
+        assert_eq!(refuse["ok"], false);
+        assert_eq!(refuse["problems"][0]["blocking"], true);
+    }
+
+    #[test]
+    fn write_page_creates_then_updates_and_refuses_the_wrong_mode() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let out =
+            write_page_at(root, "wiki/scaling.md", CLEAN_PAGE, "create", false, true).unwrap();
+        assert_eq!(out["ok"], true, "{out}");
+        assert_eq!(out["path"], "wiki/scaling.md");
+        assert_eq!(out["mode"], "create");
+        assert_eq!(
+            std::fs::read_to_string(root.join("wiki/scaling.md")).unwrap(),
+            CLEAN_PAGE
+        );
+        // create on an existing page refuses, and does not overwrite it.
+        let err =
+            write_page_at(root, "wiki/scaling.md", "clobbered", "create", true, true).unwrap_err();
+        assert!(err.starts_with("already exists (use mode=update)"), "{err}");
+        assert!(std::fs::read_to_string(root.join("wiki/scaling.md"))
+            .unwrap()
+            .contains("power law"));
+        // update on a missing page refuses too.
+        let err =
+            write_page_at(root, "wiki/nope.md", CLEAN_PAGE, "update", false, true).unwrap_err();
+        assert!(err.starts_with("page not found (use mode=create)"), "{err}");
+        // update on the real one writes.
+        let next = CLEAN_PAGE.replace("power law", "smooth power law");
+        let out = write_page_at(root, "wiki/scaling.md", &next, "update", false, true).unwrap();
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["mode"], "update");
+        assert!(std::fs::read_to_string(root.join("wiki/scaling.md"))
+            .unwrap()
+            .contains("smooth power law"));
+        let err =
+            write_page_at(root, "wiki/x.md", CLEAN_PAGE, "sideways", false, true).unwrap_err();
+        assert!(err.starts_with("unknown mode: sideways"), "{err}");
+    }
+
+    #[test]
+    fn write_page_refuses_raw_and_app_state_and_a_path_escape() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        for path in ["raw/note.md", "raw/papers/x.md"] {
+            let err = write_page_at(root, path, CLEAN_PAGE, "create", true, false).unwrap_err();
+            assert!(err.contains("raw/ is immutable"), "{err}");
+            assert!(err.ends_with("Nothing was written."), "{err}");
+        }
+        assert!(!root.join("raw").exists(), "raw/ was not even created");
+        let err = write_page_at(root, ".myco/x.md", CLEAN_PAGE, "create", true, false).unwrap_err();
+        assert!(err.contains("app state, not pages"), "{err}");
+        let err =
+            write_page_at(root, "../outside.md", CLEAN_PAGE, "create", true, false).unwrap_err();
+        assert!(err.starts_with("path escapes the vault"), "{err}");
+        let err = write_page_at(root, "wiki/x.txt", CLEAN_PAGE, "create", true, false).unwrap_err();
+        assert!(err.starts_with("not a markdown page"), "{err}");
+    }
+
+    #[test]
+    fn write_page_refuses_blocking_problems_unless_forced_and_never_a_secret() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let dangling = "---\ntype: concept\n---\nA claim.[^src-missing]\n";
+        let out = write_page_at(root, "wiki/d.md", dangling, "create", false, false).unwrap();
+        assert_eq!(out["ok"], false);
+        assert!(
+            out["error"].as_str().unwrap().contains("force=true"),
+            "{out}"
+        );
+        assert!(!root.join("wiki/d.md").exists(), "nothing written");
+        // force writes it, and says so.
+        let out = write_page_at(root, "wiki/d.md", dangling, "create", true, false).unwrap();
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["forced"], true);
+        assert!(root.join("wiki/d.md").is_file());
+        // A secret is never forceable: the page would be committed to git.
+        let leak = "---\ntype: concept\n---\nkey: sk-abcdefghijklmnopqrstuvwxyz012345\n";
+        let out = write_page_at(root, "wiki/leak.md", leak, "create", true, false).unwrap();
+        assert_eq!(out["ok"], false);
+        assert!(
+            out["error"]
+                .as_str()
+                .unwrap()
+                .contains("force does not apply"),
+            "{out}"
+        );
+        assert!(!root.join("wiki/leak.md").exists());
+        // PII in warn mode writes, with the warning attached.
+        let pii = "---\ntype: concept\n---\nreach me at someone@example.com\n";
+        let out = write_page_at(root, "wiki/p.md", pii, "create", false, false).unwrap();
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["problems"][0]["rule"], "pii");
+        assert!(root.join("wiki/p.md").is_file());
+        // …and refuses in quarantine mode.
+        let out = write_page_at(root, "wiki/p2.md", pii, "create", false, true).unwrap();
+        assert_eq!(out["ok"], false);
+        assert!(!root.join("wiki/p2.md").exists());
+    }
+
+    /// Prose of about `bytes` bytes — above judge's 200-byte junk floor and
+    /// below its 8 KB harvest floor unless asked for more.
+    fn prose(bytes: usize) -> String {
+        "A sentence of ordinary prose that no tool wrote.\n".repeat(bytes / 49 + 1)
+    }
+
+    #[test]
+    fn ingest_drops_junk_and_writes_absolutely_nothing_but_the_trace() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let out = ingest_at(root, "테스트", "", "", false).unwrap();
+        assert_eq!(out["verdict"], "drop");
+        assert_eq!(out["rule"], "junk_reason");
+        assert_eq!(out["written"], false);
+        assert!(out["reason"].as_str().unwrap().contains("< 200"), "{out}");
+        assert!(!root.join("_inbox").exists(), "no inbox file");
+        // The ONLY thing on disk is the noop trace.
+        let log = std::fs::read_to_string(root.join(crate::judge::NOOP_LOG_REL)).unwrap();
+        assert_eq!(log.lines().count(), 1);
+        assert!(log.contains("_inbox/"), "{log}");
+        let created: Vec<String> = std::fs::read_dir(root)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(created, vec![".myco".to_string()]);
+    }
+
+    #[test]
+    fn ingest_drops_a_body_the_vault_already_has() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let body = prose(9_000);
+        let mut ledger = crate::importers::ledger::Ledger::default();
+        ledger.record_body(crate::importers::ledger::body_hash(&body), "claude-code:a");
+        ledger.save(root).unwrap();
+        let out = ingest_at(root, &body, "", "dup", false).unwrap();
+        assert_eq!(out["verdict"], "drop");
+        assert_eq!(out["rule"], "duplicate");
+        assert_eq!(out["written"], false);
+        assert!(!root.join("_inbox/dup.md").exists());
+    }
+
+    #[test]
+    fn ingest_writes_a_harvestable_source_and_logs_a_small_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let out = ingest_at(root, &prose(9_000), "", "Attention notes", false).unwrap();
+        assert_eq!(out["verdict"], "harvest");
+        assert_eq!(out["written"], true);
+        assert_eq!(out["path"], "_inbox/attention-notes.md");
+        let doc = std::fs::read_to_string(root.join("_inbox/attention-notes.md")).unwrap();
+        assert!(doc.starts_with("---\nsource: mcp\n"), "{doc}");
+        assert!(doc.contains("title: \"attention-notes\""));
+        assert!(doc.contains("ordinary prose"));
+        // Real text under the 8 KB band: logged, still written, band named.
+        let out = ingest_at(root, &prose(1_000), "", "Short note", false).unwrap();
+        assert_eq!(out["verdict"], "log");
+        assert_eq!(out["rule"], "too_small");
+        assert_eq!(out["written"], true);
+        assert!(root.join("_inbox/short-note.md").is_file());
+    }
+
+    #[test]
+    fn ingest_refuses_a_secret_and_pii_before_anything_is_written() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let leak = format!(
+            "{}\ntoken: sk-abcdefghijklmnopqrstuvwxyz012345\n",
+            prose(9_000)
+        );
+        let err = ingest_at(root, &leak, "", "leak", false).unwrap_err();
+        assert!(err.starts_with("refused: possible secrets ("), "{err}");
+        assert!(err.contains("Nothing was written."), "{err}");
+        assert!(!root.join("_inbox/leak.md").exists());
+        let contact = format!("{}\nreach me at someone@example.com\n", prose(9_000));
+        let err = ingest_at(root, &contact, "", "contact", true).unwrap_err();
+        assert!(err.starts_with("refused: possible PII ("), "{err}");
+        assert!(!root.join("_inbox/contact.md").exists());
+        // Warn mode writes it with the warning attached.
+        let out = ingest_at(root, &contact, "", "contact", false).unwrap();
+        assert_eq!(out["written"], true);
+        assert!(out["pii_warning"]
+            .as_str()
+            .unwrap()
+            .contains("possible PII detected"));
+    }
+
+    #[test]
+    fn ingest_can_never_escape_the_inbox_and_wants_exactly_one_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        // A title trying to climb out is slugged to a plain filename.
+        let out = ingest_at(root, &prose(9_000), "", "../../raw/evil", false).unwrap();
+        assert_eq!(out["path"], "_inbox/rawevil.md");
+        assert!(!root.join("raw").exists(), "raw/ untouched");
+        assert_eq!(
+            ingest_at(root, "", "", "", false).unwrap_err(),
+            "give text or path"
+        );
+        assert_eq!(
+            ingest_at(root, "x", "/tmp/y", "", false).unwrap_err(),
+            "give text OR path, not both"
+        );
+        let err = ingest_at(root, "", "/nope/missing.md", "", false).unwrap_err();
+        assert!(err.starts_with("read /nope/missing.md:"), "{err}");
+    }
+
+    #[test]
+    fn ingest_name_falls_back_from_title_to_heading_to_stem() {
+        assert_eq!(ingest_name("My Title", "# Heading\n", None), "my-title.md");
+        assert_eq!(
+            ingest_name("", "# The Heading\nbody", None),
+            "the-heading.md"
+        );
+        assert_eq!(
+            ingest_name("", "no heading", Some(Path::new("/tmp/Some File.jsonl"))),
+            "some-file.md"
+        );
+        assert!(ingest_name("", "no heading", None).starts_with("mcp-"));
     }
 
     // ─── recall / neighbourhood / changed_since ───────────────────────────────
