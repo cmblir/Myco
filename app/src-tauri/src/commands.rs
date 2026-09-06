@@ -6992,3 +6992,32 @@ pub async fn harvest_run(
         .await
         .map_err(|e| format!("join failed: {e}"))?
 }
+
+// ---- Pre-ingest judgement (see judge.rs) ------------------------------------
+
+/// Classify a source before the ingest runs: `drop` (junk, or a body the
+/// vault already has), `log` (real text outside the 8 KB–200 KB band) or
+/// `harvest`. The duplicate oracle is the import ledger's body index.
+#[tauri::command]
+pub fn judge_source(
+    vault: tauri::State<VaultRoot>,
+    text: String,
+    size_bytes: u64,
+) -> Result<crate::judge::Judgement, String> {
+    let root = require_root(&vault)?;
+    let ledger = crate::importers::ledger::Ledger::load(&root);
+    Ok(crate::judge::judge_against(&text, size_bytes, &ledger))
+}
+
+/// Leave a one-line trace of a source that was dropped or planned as NOOP in
+/// `.myco/ingest-noop.jsonl` — instead of a `wiki/source-*.md`, an
+/// `index.md`/`log.md` rewrite and an `ingest-reports/` file.
+#[tauri::command]
+pub fn record_noop(
+    vault: tauri::State<VaultRoot>,
+    rel: String,
+    reason: String,
+) -> Result<(), String> {
+    let root = require_root(&vault)?;
+    crate::judge::record_noop_at(&root, &rel, &reason)
+}

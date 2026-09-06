@@ -22,6 +22,7 @@ pub mod index;
 mod index_updater;
 pub mod inflow_log;
 pub mod intent;
+pub mod judge;
 pub mod local_llm;
 pub mod mcp_native;
 pub mod myco_pro;
@@ -298,6 +299,8 @@ pub fn run() {
             notch::update_notch_enabled,
             commands::harvest_candidates,
             commands::harvest_run,
+            commands::judge_source,
+            commands::record_noop,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path
