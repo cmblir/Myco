@@ -37,6 +37,14 @@ const B: f32 = 0.75;
 // and use are unchanged.
 pub(crate) const RRF_K: f32 = 60.0;
 
+/// Dense-cosine floor a chunk must clear to count as an answer at all; below
+/// it Ask abstains instead of quoting the least-bad chunk. Mirror of
+/// `RELEVANCE_FLOOR` in `app/src/lib/chat.ts` (the measurement and its
+/// reasoning live there: e5-small-ko abstention probe, 0/15 off-corpus
+/// accepts, 1/62 answerable rejected) — change both together. The Ask command
+/// reports the value it used as `floor` so the UI never has to guess.
+pub const RELEVANCE_FLOOR: f32 = 0.42;
+
 /// Split text into search tokens. Script-aware and dependency-free:
 /// Latin/ASCII-alphanumeric runs become one lowercased token (`"QLoRA"` ->
 /// `"qlora"`), CJK runs (Hangul syllables/Jamo, CJK ideographs, Hiragana,

@@ -4137,17 +4137,31 @@ pub async fn reindex_embeddings(
 /// A retrieval hit carrying the matching chunk's TEXT, so callers inline the
 /// passage instead of re-reading the whole page. `text` is reconstructed at
 /// query time from the page (the index stores only vectors+hashes).
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct ScoredChunk {
     pub page: String,
     pub stem: String,
     pub section: usize,
     pub text: String,
-    /// Fusion score from `rrf_fuse` — `Σ 1/(RRF_K + rank)` over the dense and
-    /// lexical rankings. RANK-based, so it is scale-free: the top hit of a
-    /// perfect match and the top hit of a nonsense query score the same. Good
-    /// for ordering, USELESS as a confidence measure — use `similarity`.
+    /// The ordering score — same value as `score_final`, kept under the name
+    /// callers already read. RANK-based (`rrf_fuse` x tier prior), so it is
+    /// scale-free: the top hit of a perfect match and the top hit of a
+    /// nonsense query score the same. Good for ordering, USELESS as a
+    /// confidence measure — use `similarity`.
     pub score: f32,
+    /// `rrf_fuse` score before the tier prior: `Σ 1/(RRF_K + rank)` over the
+    /// dense and lexical rankings.
+    pub score_rrf: f32,
+    /// `score_rrf` x `prior` — what the list is ordered by.
+    pub score_final: f32,
+    /// Vault layer the page belongs to (`retrieval::source_tier`), the same
+    /// string `sourceTier()` produces in extractive.ts.
+    pub tier: crate::retrieval::Tier,
+    /// The tier prior that multiplied `score_rrf` (1.0 = none).
+    pub prior: f32,
+    /// Position without the prior minus position with it, both in the
+    /// page-capped ranking: positive = the prior moved this hit up.
+    pub rank_change: i32,
     /// True dense cosine similarity between the query and this chunk, carried
     /// through fusion so callers can judge whether a hit is relevant AT ALL.
     /// `None` when the chunk was surfaced only by the lexical arm (no dense
@@ -4158,6 +4172,74 @@ pub struct ScoredChunk {
     /// median 0.650); off-corpus queries topped out at 0.491 (n=15, median
     /// 0.408). That gap is what `RELEVANCE_FLOOR` on the TS side sits in.
     pub similarity: Option<f32>,
+}
+
+/// A hit the relevance floor rejected — shown by Ask's abstention state so
+/// "nothing answers this" comes with what came closest.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct NearMiss {
+    pub page: String,
+    pub stem: String,
+    pub tier: crate::retrieval::Tier,
+    /// The cosine that fell short of `AskSearch::floor`.
+    pub similarity: Option<f32>,
+    pub score_final: f32,
+}
+
+/// What `semantic_search` returns: the hits that clear the relevance floor,
+/// in final order, plus the floor itself and up to four near-misses below it.
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct AskSearch {
+    pub hits: Vec<ScoredChunk>,
+    /// `retrieval::RELEVANCE_FLOOR` — the cosine each hit had to clear.
+    pub floor: f32,
+    /// Rejected hits, best cosine first (lexical-only hits are never here:
+    /// with no cosine they pass the floor, as `chat.ts::isRelevant` does).
+    pub below_floor: Vec<NearMiss>,
+}
+
+/// How many near-misses the abstention state shows.
+const NEAR_MISSES: usize = 4;
+
+/// Split ranked hits at the relevance floor into the Ask response. Pure, so
+/// the shape is unit-testable without a Tauri runtime.
+pub(crate) fn ask_response(hits: Vec<HybridHit>) -> AskSearch {
+    let floor = crate::retrieval::RELEVANCE_FLOOR;
+    let mut out = AskSearch {
+        floor,
+        ..AskSearch::default()
+    };
+    for h in hits {
+        match h.similarity {
+            Some(sim) if sim < floor => out.below_floor.push(NearMiss {
+                page: h.page,
+                stem: h.stem,
+                tier: h.tier,
+                similarity: h.similarity,
+                score_final: h.score,
+            }),
+            _ => out.hits.push(ScoredChunk {
+                page: h.page,
+                stem: h.stem,
+                section: h.section,
+                text: h.text,
+                score: h.score,
+                score_rrf: h.score_rrf,
+                score_final: h.score,
+                tier: h.tier,
+                prior: h.prior,
+                rank_change: h.rank_change,
+                similarity: h.similarity,
+            }),
+        }
+    }
+    out.below_floor.sort_by(|a, b| {
+        b.similarity
+            .unwrap_or(0.0)
+            .total_cmp(&a.similarity.unwrap_or(0.0))
+    });
+    out.below_floor.truncate(NEAR_MISSES);
+    out
 }
 
 /// The `section`-th chunk of `content` under the same `chunk_page` split the
@@ -4323,11 +4405,18 @@ pub(crate) struct HybridHit {
     /// 1-based line in the page where the chunk starts.
     pub line: usize,
     pub text: String,
-    /// The ordering score: `rrf_fuse` score x the tier prior. Rank-based,
-    /// says nothing about relevance.
+    /// The ordering score: `score_rrf` x `prior`. Rank-based, says nothing
+    /// about relevance.
     pub score: f32,
+    /// `rrf_fuse` score before the tier prior.
+    pub score_rrf: f32,
     /// Vault layer the page belongs to (`retrieval::source_tier`).
     pub tier: crate::retrieval::Tier,
+    /// The tier prior applied (1.0 = none).
+    pub prior: f32,
+    /// Position in the page-capped ranking WITHOUT the prior minus position
+    /// WITH it: positive = the prior moved the hit up, 0 = unmoved.
+    pub rank_change: i32,
     /// Dense cosine; `None` when only the lexical arm surfaced the chunk.
     pub similarity: Option<f32>,
     /// BM25 score; `None` when only the dense arm surfaced the chunk.
@@ -4510,6 +4599,19 @@ pub(crate) fn rank_hybrid(
     // Tier prior: fused score x per-tier weight, re-sorted — BEFORE the page
     // cap and the cut to k, so a note the pool holds at fused rank 14 can take
     // the slot a transcript held instead of the top-k merely reshuffling.
+    // `rank_change` compares each hit's position in the page-capped list
+    // without the prior against its position with it; FLAT weights make the
+    // two lists identical, so every change is 0.
+    let baseline: std::collections::HashMap<(String, usize), usize> =
+        crate::retrieval::cap_per_page(fused.clone(), PAGE_CAP, fused.len())
+            .into_iter()
+            .enumerate()
+            .map(|(i, h)| ((h.page, h.section), i))
+            .collect();
+    let rrf_by_id: std::collections::HashMap<(String, usize), f32> = fused
+        .iter()
+        .map(|h| ((h.page.clone(), h.section), h.score))
+        .collect();
     crate::retrieval::apply_tier_prior(&mut fused, tier_weights);
     let hits = crate::retrieval::cap_per_page(fused, PAGE_CAP, k);
     // Reconstruct each hit's chunk TEXT from its page (the index stores only
@@ -4517,7 +4619,7 @@ pub(crate) fn rank_hybrid(
     // <=12), pages are small markdown files, and re-reading one a second hit
     // shares is not a measurable cost — so this just calls the pure helper.
     let mut out: Vec<HybridHit> = Vec::with_capacity(hits.len());
-    for h in hits {
+    for (pos, h) in hits.into_iter().enumerate() {
         let Ok(content) = std::fs::read_to_string(root.join(&h.page)) else {
             continue;
         };
@@ -4527,11 +4629,17 @@ pub(crate) fn rank_hybrid(
                     && crate::retrieval::text_matches_phrases(&text, &phrases) =>
             {
                 let id = (h.page.clone(), h.section);
+                let tier = crate::retrieval::source_tier(&h.page);
                 out.push(HybridHit {
                     line: chunk_line(&content, &text),
                     similarity: dense_by_id.get(&id).copied(),
                     bm25: bm25_by_id.get(&id).copied(),
-                    tier: crate::retrieval::source_tier(&h.page),
+                    score_rrf: rrf_by_id.get(&id).copied().unwrap_or(h.score),
+                    prior: tier_weights.prior(tier),
+                    rank_change: baseline
+                        .get(&id)
+                        .map_or(0, |before| *before as i32 - pos as i32),
+                    tier,
                     page: h.page,
                     stem: h.stem,
                     section: h.section,
@@ -4560,9 +4668,10 @@ fn chunk_line(content: &str, chunk: &str) -> usize {
         .map_or(1, |i| i + 1)
 }
 
-/// Semantic search: the hybrid retrieval above, projected to `ScoredChunk` —
-/// each hit with its chunk TEXT reconstructed so callers (e.g. Ask) can inline
-/// the passage instead of re-reading the whole page.
+/// Semantic search: the hybrid retrieval above, split at the relevance floor
+/// into `AskSearch` — each hit with its chunk TEXT reconstructed so callers
+/// (e.g. Ask) can inline the passage instead of re-reading the whole page,
+/// plus the near-misses the floor rejected so an abstention can show them.
 // Four of the arguments are Tauri-injected state rather than things a caller
 // passes; the invocable surface is (query, k, provider, model, range, scope,
 // tier_weights).
@@ -4583,7 +4692,7 @@ pub async fn semantic_search(
     scope: Option<crate::retrieval::Scope>,
     // Per-tier prior; omitted = `TierWeights::default()`, all 1.0 = off.
     tier_weights: Option<crate::retrieval::TierWeights>,
-) -> Result<Vec<ScoredChunk>, String> {
+) -> Result<AskSearch, String> {
     let root = require_root(&vault)?;
     let found = hybrid_search(
         &app,
@@ -4603,20 +4712,9 @@ pub async fn semantic_search(
     // Ask reads an empty result as "reindex needed" (chat.ts): a missing or
     // retired-model index yields nothing here, not a lexical-only list.
     if found.dense_skipped.is_some() {
-        return Ok(Vec::new());
+        return Ok(ask_response(Vec::new()));
     }
-    Ok(found
-        .hits
-        .into_iter()
-        .map(|h| ScoredChunk {
-            page: h.page,
-            stem: h.stem,
-            section: h.section,
-            text: h.text,
-            score: h.score,
-            similarity: h.similarity,
-        })
-        .collect())
+    Ok(ask_response(found.hits))
 }
 
 #[derive(serde::Serialize)]
@@ -5180,13 +5278,13 @@ pub fn os_version() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_recall_miss, builtin_index_is_stale, capture_note_at, chunk_text_at,
+        append_recall_miss, ask_response, builtin_index_is_stale, capture_note_at, chunk_text_at,
         chunks_needing_embed, copy_into_inbox_at, delete_myco_json, export_bundle_write,
         external_target_allowed, import_dest, inbox_entries, is_media_name, iso_week_monday,
         list_myco_json, move_path_at, myco_json_path, page_in_date_range, read_settings_import,
         recency_tie_break, resurface_core, run_diff_core, run_import, save_favorites_at,
         save_myco_json, stamp_related, sync_bm25_for_page, voice_inbox_rel, voice_markdown,
-        windows_opener_safe, write_inbox_note_at, DateRange, DEST_INBOX, DEST_SESSIONS,
+        windows_opener_safe, write_inbox_note_at, DateRange, HybridHit, DEST_INBOX, DEST_SESSIONS,
         INBOX_COPY_MAX_BYTES, INBOX_COPY_MAX_MEDIA_BYTES, MAX_PAGE_CHUNKS,
     };
     use crate::retrieval::{rrf_fuse, Bm25Cache, Bm25Index};
@@ -6230,6 +6328,73 @@ mod tests {
             fused_pages, dense_pages,
             "empty BM25 arm must not reorder the dense hits"
         );
+    }
+
+    fn hybrid_hit(page: &str, score: f32, similarity: Option<f32>) -> HybridHit {
+        HybridHit {
+            page: page.into(),
+            stem: page.into(),
+            section: 0,
+            line: 1,
+            text: "body".into(),
+            score,
+            score_rrf: score,
+            tier: crate::retrieval::source_tier(page),
+            prior: 1.0,
+            rank_change: 0,
+            similarity,
+            bm25: None,
+        }
+    }
+
+    // The Ask response splits at the floor: hits that clear it (or have no
+    // cosine at all) stay in final order; the rest become at most four
+    // near-misses, best cosine first, and the floor used is reported.
+    #[test]
+    fn ask_response_splits_at_the_floor_and_keeps_four_near_misses() {
+        let floor = crate::retrieval::RELEVANCE_FLOOR;
+        let hits = vec![
+            hybrid_hit("wiki/a.md", 0.0328, Some(0.61)),
+            hybrid_hit("wiki/b.md", 0.0320, Some(floor - 0.05)),
+            hybrid_hit("sessions/2026-08/c.md", 0.0190, None),
+            hybrid_hit("wiki/d.md", 0.0180, Some(floor)),
+            hybrid_hit("daily/2026-08-21.md", 0.0170, Some(floor - 0.01)),
+            hybrid_hit("wiki/e.md", 0.0160, Some(0.30)),
+            hybrid_hit("wiki/f.md", 0.0150, Some(0.20)),
+            hybrid_hit("wiki/g.md", 0.0140, Some(0.10)),
+        ];
+        let out = ask_response(hits);
+        assert_eq!(out.floor, floor);
+        assert_eq!(
+            out.hits.iter().map(|h| h.page.as_str()).collect::<Vec<_>>(),
+            vec!["wiki/a.md", "sessions/2026-08/c.md", "wiki/d.md"],
+            "lexical-only (no cosine) and exactly-at-floor hits stay"
+        );
+        assert_eq!(out.hits[1].tier, crate::retrieval::Tier::Session);
+        assert_eq!(out.hits[0].score_final, out.hits[0].score);
+        assert_eq!(
+            out.below_floor
+                .iter()
+                .map(|m| m.page.as_str())
+                .collect::<Vec<_>>(),
+            vec!["daily/2026-08-21.md", "wiki/b.md", "wiki/e.md", "wiki/f.md"],
+            "best cosine first, capped at four"
+        );
+        assert_eq!(out.below_floor[0].tier, crate::retrieval::Tier::Digest);
+        assert_eq!(out.below_floor[0].similarity, Some(floor - 0.01));
+        // Wire shape: snake_case keys, tier as its lowercase name.
+        let json = serde_json::to_value(&out).unwrap();
+        assert_eq!(json["hits"][0]["tier"], "note");
+        assert!(json["hits"][0]["score_rrf"].is_number());
+        assert!(json["hits"][0]["score_final"].is_number());
+        assert!(json["hits"][0]["rank_change"].is_number());
+        assert!(json["hits"][0]["prior"].is_number());
+        assert!(json["below_floor"][0]["score_final"].is_number());
+        assert!(json["floor"].is_number());
+
+        let empty = ask_response(Vec::new());
+        assert!(empty.hits.is_empty() && empty.below_floor.is_empty());
+        assert_eq!(empty.floor, floor);
     }
 
     // The per-page cap must not cost a distinct-page result its slot: with one

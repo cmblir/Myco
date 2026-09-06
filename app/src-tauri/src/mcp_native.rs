@@ -2702,6 +2702,18 @@ body of {rel}
         assert!((s.score - flat[1].score * 0.6).abs() < 1e-7);
         // The cosine each hit earned is untouched by the prior.
         assert_eq!(s.similarity, flat[1].similarity);
+
+        // What the prior did, per hit: the transcript fell two places (fused
+        // #2 -> final #4), the two notes behind it each rose one, the leader
+        // and the flat run report no movement at all.
+        assert!(flat.iter().all(|h| h.rank_change == 0 && h.prior == 1.0));
+        assert!(flat.iter().all(|h| h.score == h.score_rrf));
+        assert_eq!(s.prior, 0.6);
+        assert_eq!(s.score_rrf, flat[1].score_rrf);
+        assert_eq!(s.rank_change, -2);
+        assert_eq!(weighted[0].rank_change, 0);
+        assert_eq!(weighted[1].rank_change, 1);
+        assert_eq!(weighted[2].rank_change, 1);
     }
 
     #[test]
