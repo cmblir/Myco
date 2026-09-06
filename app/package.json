@@ -55,14 +55,12 @@
     "d3-force-3d": "^3.0.6",
     "graphology": "^0.26.0",
     "graphology-communities-louvain": "^2.0.2",
-    "graphology-layout-forceatlas2": "^0.10.1",
     "markdown-it": "14.2.0",
     "pdfjs-dist": "^6.1.200",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "react-grid-layout": "^2.2.4",
     "sigma": "^3.0.3",
-    "three": "^0.184.0",
     "zustand": "4.5.7"
   },
   "devDependencies": {
@@ -73,7 +71,6 @@
     "@types/node": "22.10.7",
     "@types/react": "18.3.12",
     "@types/react-dom": "18.3.1",
-    "@types/three": "^0.184.1",
     "@vitejs/plugin-react": "4.7.0",
     "eslint": "9.36.0",
     "eslint-config-prettier": "10.1.8",
