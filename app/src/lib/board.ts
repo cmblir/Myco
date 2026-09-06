@@ -254,7 +254,7 @@ export interface BoardData {
   inflow: InflowDay[];
 }
 
-export const CHANNELS = ["mcp", "clipper", "voice", "import"] as const;
+export const CHANNELS = ["mcp", "clipper", "voice", "import", "harvest"] as const;
 export type Channel = (typeof CHANNELS)[number];
 
 export interface CatRow {

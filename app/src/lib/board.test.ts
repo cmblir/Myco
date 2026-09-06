@@ -95,6 +95,7 @@ describe("runBoardQuery · inflow", () => {
       { label: "clipper", value: 1 },
       { label: "voice", value: 2 },
       { label: "import", value: 118 },
+      { label: "harvest", value: 0 },
     ]);
   });
 });

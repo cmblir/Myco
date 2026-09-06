@@ -65,6 +65,7 @@ export const CHANNEL_COLORS: Record<Channel, string> = {
   clipper: "var(--c-entity)",
   voice: "var(--c-concept)",
   import: "var(--c-source)",
+  harvest: "var(--c-analysis)",
 };
 
 const dayLabel = (lang: string, day: string): string =>
