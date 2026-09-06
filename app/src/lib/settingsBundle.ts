@@ -15,10 +15,7 @@ import { OVERVIEW_THEMES } from "./overviewThemes";
 import {
   loadGraphSettings,
   saveGraphSettings,
-  loadSavedLooks,
-  writeSavedLooks,
   type GraphSettings,
-  type SavedLook,
 } from "./graphSettings";
 import { loadViews, saveViews, type SavedView } from "./queryViews";
 import { loadDismissed, saveDismissed } from "./linkSuggestions";
@@ -53,7 +50,9 @@ function omitProvidersMycoPro(settings: Record<string, unknown>): Record<string,
 /** Graph-settings fields excluded: the live filter/mode state (search box,
  * tag/folder filter, multiverse toggle) is per-session, not part of a "look" —
  * mirrors exactly what saveLook() already strips when saving a named look. */
-const GRAPH_EXCLUDED_KEYS = ["search", "tagFilter", "folderFilter", "multiverse"] as const;
+// Graph settings are four view prefs now (question / size / two corpus
+// filters); none of them is machine-specific, so nothing is excluded.
+const GRAPH_EXCLUDED_KEYS = [] as const;
 
 /** uiStore fields included: this store is mostly navigation/session state
  * (route, splitRoute, expandedFolders, cmdOpen…), so an allow-list is safer
@@ -89,7 +88,6 @@ const SECTION_LABELS: Record<string, string> = {
   settings: "app settings",
   ui: "appearance",
   graph: "graph look",
-  savedLooks: "saved graph looks",
   queryViews: "saved views",
   dismissedLinkSuggestions: "dismissed link suggestions",
   reflectIgnored: "reflect ignored items",
@@ -103,7 +101,6 @@ export interface SettingsBundle {
   settings: Record<string, unknown>;
   ui: Record<string, unknown>;
   graph: Record<string, unknown>;
-  savedLooks: SavedLook[];
   queryViews: SavedView[];
   dismissedLinkSuggestions: string[];
   reflectIgnored: string[];
@@ -132,7 +129,6 @@ function portableState(currentSettings: MycoSettings): Omit<ValidatedSettingsBun
     ),
     ui: pick(useUIStore.getState() as unknown as Record<string, unknown>, UI_KEYS),
     graph: omit(loadGraphSettings() as unknown as Record<string, unknown>, GRAPH_EXCLUDED_KEYS),
-    savedLooks: loadSavedLooks(),
     queryViews: loadViews(),
     dismissedLinkSuggestions: [...loadDismissed()],
     reflectIgnored: [...loadIgnored()],
@@ -220,24 +216,6 @@ function stringArray(input: unknown, path: string, errors: string[]): string[] {
   return input;
 }
 
-function savedLooksArray(input: unknown, path: string, errors: string[]): SavedLook[] {
-  if (input === undefined) return [];
-  const ok =
-    Array.isArray(input) &&
-    input.every(
-      (x) =>
-        typeof x === "object" &&
-        x !== null &&
-        typeof (x as SavedLook).name === "string" &&
-        typeof (x as SavedLook).settings === "object" &&
-        (x as SavedLook).settings !== null,
-    );
-  if (!ok) {
-    errors.push(`"${path}": expected an array of saved looks ({name, settings})`);
-    return [];
-  }
-  return input as SavedLook[];
-}
 
 function savedViewsArray(input: unknown, path: string, errors: string[]): SavedView[] {
   if (input === undefined) return [];
@@ -255,7 +233,6 @@ export interface ValidatedSettingsBundle {
   settings: Record<string, unknown>;
   ui: Record<string, unknown>;
   graph: Record<string, unknown>;
-  savedLooks: SavedLook[];
   queryViews: SavedView[];
   dismissedLinkSuggestions: string[];
   reflectIgnored: string[];
@@ -306,7 +283,6 @@ export function validateSettingsBundle(raw: unknown, currentSettings: MycoSettin
   }
   const ui = applyTemplate(uiTemplate, r.ui, "ui", errors);
   const graph = applyTemplate(graphTemplate, r.graph, "graph", errors);
-  const savedLooks = savedLooksArray(r.savedLooks, "savedLooks", errors);
   const queryViews = savedViewsArray(r.queryViews, "queryViews", errors);
   const dismissedLinkSuggestions = stringArray(r.dismissedLinkSuggestions, "dismissedLinkSuggestions", errors);
   const reflectIgnored = stringArray(r.reflectIgnored, "reflectIgnored", errors);
@@ -330,7 +306,6 @@ export function validateSettingsBundle(raw: unknown, currentSettings: MycoSettin
       settings,
       ui,
       graph,
-      savedLooks,
       queryViews,
       dismissedLinkSuggestions,
       reflectIgnored,
@@ -362,7 +337,6 @@ async function writePortableState(
   await setSettings(settings);
   useUIStore.setState(data.ui as unknown as Partial<UIState>);
   saveGraphSettings({ ...loadGraphSettings(), ...data.graph } as unknown as GraphSettings);
-  writeSavedLooks(data.savedLooks);
   saveViews(data.queryViews);
   saveDismissed(new Set(data.dismissedLinkSuggestions));
   saveIgnored(new Set(data.reflectIgnored));

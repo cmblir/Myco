@@ -113,26 +113,12 @@ describe("buildSettingsBundle / exclusion", () => {
     expect((result.data.settings.providers as Record<string, unknown>).myco_pro).toBe(false);
   });
 
-  it("does not carry the live graph filter/mode state (session, not a look)", () => {
-    saveGraphSettings({
-      ...loadGraphSettings(),
-      search: "leftover query",
-      tagFilter: "project-x",
-      folderFilter: "/some/vault/path",
-      multiverse: true,
-    });
-    const bundle = buildSettingsBundle("0.4.0", fakeSettings());
-    expect(bundle.graph).not.toHaveProperty("search");
-    expect(bundle.graph).not.toHaveProperty("tagFilter");
-    expect(bundle.graph).not.toHaveProperty("folderFilter");
-    expect(bundle.graph).not.toHaveProperty("multiverse");
-  });
 });
 
 describe("settings bundle round trip", () => {
   it("export -> import onto a different machine's state reproduces the same effective state", async () => {
     // "Machine A": distinctive values across every portable section.
-    saveGraphSettings({ ...loadGraphSettings(), nodeSize: 2.5, brightness: 1.3 });
+    saveGraphSettings({ ...loadGraphSettings(), sizeBy: "cites", question: "time" });
     useUIStore.setState({ theme: "light", density: "spacious", accent: "#ff00aa" });
     const sourceSettings = fakeSettings({ tray_resident: true, auto_ingest_enabled: true });
 
@@ -141,7 +127,7 @@ describe("settings bundle round trip", () => {
 
     // "Machine B": different current state, including excluded fields that
     // must survive the import untouched.
-    saveGraphSettings({ ...loadGraphSettings(), nodeSize: 1, brightness: 1, tagFilter: "keep-me" });
+    saveGraphSettings({ ...loadGraphSettings(), sizeBy: "backlinks", question: "orphans" });
     useUIStore.setState({ theme: "dark", density: "compact", sidebarCollapsed: true, route: "graph" });
     const targetSettings = fakeSettings({
       myco_pro_url: "https://this-machines-own-pro-url",
@@ -164,10 +150,8 @@ describe("settings bundle round trip", () => {
     expect(applied.myco_pro_url).toBe("https://this-machines-own-pro-url");
     expect(applied.myco_pro_email).toBe("this-machine@example.com");
 
-    expect(loadGraphSettings().nodeSize).toBe(2.5);
-    expect(loadGraphSettings().brightness).toBe(1.3);
-    // Session-only filter state on the target machine is untouched.
-    expect(loadGraphSettings().tagFilter).toBe("keep-me");
+    expect(loadGraphSettings().sizeBy).toBe("cites");
+    expect(loadGraphSettings().question).toBe("time");
 
     const ui = useUIStore.getState();
     expect(ui.theme).toBe("light");
@@ -208,12 +192,12 @@ describe("rejection cases", () => {
   });
 
   it("never partially applies: unrelated state is untouched after a rejected import", () => {
-    saveGraphSettings({ ...loadGraphSettings(), nodeSize: 1.75 });
+    saveGraphSettings({ ...loadGraphSettings(), hideSample: true });
     const bad = { schemaVersion: 1, settings: { tray_resident: "yes" } };
     const result = validateSettingsBundle(bad, fakeSettings());
     expect(result.ok).toBe(false);
     // Nothing was ever handed to applySettingsBundle, so nothing changed.
-    expect(loadGraphSettings().nodeSize).toBe(1.75);
+    expect(loadGraphSettings().hideSample).toBe(true);
     expect(loadDismissed().size).toBe(0);
     expect(loadIgnored().size).toBe(0);
     expect(loadViews().length).toBe(0);
@@ -237,7 +221,7 @@ describe("rejection cases", () => {
 describe("import undo", () => {
   it("puts back every section the import overwrote", async () => {
     // "Before": the state the user actually wants back.
-    saveGraphSettings({ ...loadGraphSettings(), nodeSize: 3.25 });
+    saveGraphSettings({ ...loadGraphSettings(), sizeBy: "cites" });
     useUIStore.setState({ theme: "light", accent: "#ff00aa" });
     setBudgetThreshold(42);
     let live = fakeSettings({ tray_resident: true });
@@ -247,14 +231,14 @@ describe("import undo", () => {
 
     // Import something different, confirmed.
     const incoming = buildSettingsBundle("0.4.0", fakeSettings({ tray_resident: false }));
-    incoming.graph.nodeSize = 1;
+    incoming.graph.sizeBy = "backlinks";
     incoming.ui.theme = "dark";
     incoming.budgetThresholdUsd = 5;
     const result = validateSettingsBundle(JSON.parse(JSON.stringify(incoming)), live);
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     await applySettingsBundle(result.data, live, setSettings);
-    expect(loadGraphSettings().nodeSize).toBe(1);
+    expect(loadGraphSettings().sizeBy).toBe("backlinks");
     expect(useUIStore.getState().theme).toBe("dark");
     expect(getBudgetThreshold()).toBe(5);
     expect(live.tray_resident).toBe(false);
@@ -263,7 +247,7 @@ describe("import undo", () => {
     expect(pendingImportUndo()).toEqual(sectionLabels(result.data.present));
     const restored = await undoSettingsImport(live, setSettings);
     expect(restored).toEqual(sectionLabels(result.data.present));
-    expect(loadGraphSettings().nodeSize).toBe(3.25);
+    expect(loadGraphSettings().sizeBy).toBe("cites");
     expect(useUIStore.getState().theme).toBe("light");
     expect(useUIStore.getState().accent).toBe("#ff00aa");
     expect(getBudgetThreshold()).toBe(42);

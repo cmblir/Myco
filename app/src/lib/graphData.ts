@@ -986,66 +986,6 @@ export function buildGraph(
   return g;
 }
 
-export interface MultiverseUniverse {
-  slug: string;
-  adjacency: Adjacency;
-  allowed: Set<string>;
-  vaultRoot: string; // that universe's own root, for its folder-galaxy grouping
-}
-
-// Per-universe stride for remapped community/galaxy ids — far larger than any
-// realistic per-project cluster count, so a cluster id from universe A can
-// never collide with one from universe B in the merged graph (which would make
-// the scene's imposter/hull/legend grouping fuse two projects' clusters). -1
-// (field star / off) is preserved as -1.
-const UNIVERSE_ID_STRIDE = 1_000_000;
-
-// Merge N per-universe link graphs into ONE graphology graph for the multiverse
-// scene. Each universe is built independently by buildGraph against its OWN
-// root (so its galaxies/clusters/hubs/star classes are computed relative to
-// itself), then copied into the combined graph with:
-//   - `universe` = slug already stamped by buildGraph,
-//   - ghost ids namespaced `ghost:<slug>:<target>` (no cross-universe merge),
-//   - community/galaxy ids offset by universe so clusters stay globally
-//     distinct.
-// Node POSITIONS stay in each universe's local (origin-centred) space; the
-// scene translates each subcloud by its universe anchor (multiverseLayout).
-// NOTE: colours are currently per-universe-independent (each project's palette
-// restarts at the first hue) — per-universe identity hue is a scene-tier
-// follow-up, not part of this structural merge.
-export function buildMultiverseGraph(
-  universes: MultiverseUniverse[],
-  o: BuildGraphOpts,
-): VaultGraph {
-  const combined: VaultGraph = new Graph({ multi: false, type: "undirected" });
-  universes.forEach((u, ui) => {
-    const sub = buildGraph(u.adjacency, u.allowed, {
-      ...o,
-      // A universe always shows its internal galaxy(cluster) structure.
-      folderGalaxies: true,
-      vaultRoot: u.vaultRoot,
-      universe: u.slug,
-      ghostPrefix: `ghost:${u.slug}:`,
-    });
-    const remap = (v: number): number => (v < 0 ? -1 : ui * UNIVERSE_ID_STRIDE + v);
-    sub.forEachNode((id, a) => {
-      // Real file paths are unique per root and ghosts are slug-namespaced, so
-      // ids can't collide across universes; the guard is defensive only.
-      if (combined.hasNode(id)) return;
-      combined.addNode(id, {
-        ...a,
-        community: remap(a.community),
-        galaxy: remap(a.galaxy),
-      });
-    });
-    sub.forEachEdge((_e, ea, s, t) => {
-      if (combined.hasEdge(s, t)) return;
-      combined.addEdge(s, t, { ...ea });
-    });
-  });
-  return combined;
-}
-
 // Unweighted shortest path between two nodes (BFS) on the undirected graph.
 // Returns the inclusive id sequence [a, …, b], [a] when a === b, or null when
 // the nodes are missing or disconnected. Used by the graph's path-highlight.

@@ -1,24 +1,30 @@
-// Graph theme colours, read from the live CSS variables / rendered background.
-import type { GraphSkinKey } from "./graphSettings";
-import { skinTheme } from "./graphSkins";
+// Graph theme — the canvas palette, read from the live CSS variables so the
+// Survey follows the ONE app theme (the graph-only skins are gone).
+import { hexToRgb01 } from "./graphData";
 
 export interface GraphTheme {
+  /** Light background → dark, saturated node palette (see graphData). */
+  lightBg: boolean;
   bg: string;
-  // Exact scene-background override. When set, GraphScene paints this verbatim
-  // instead of its soft near-black default — the "black" skin needs a true
-  // #000000 void and "galaxy" pins the deep-space blue regardless of app theme.
-  sceneBg?: string;
-  node: string;
-  // Fallback dim star colour for nodes outside a sized community.
-  starDim: string;
-  // Galaxy radius tiers: warm glowing core → blue-white arms → dim halo.
-  gxCore: string;
-  gxArm: string;
-  gxHalo: string;
   ink: string;
-  edge: string; // rgba w/ alpha — sigma honours the alpha channel (unlike cytoscape WebGL)
-  edgeHi: string;
-  accent: string;
+  ink3: string;
+  /** --ink-4: the "recede" colour every question dims toward. */
+  dim: string;
+  live: string;
+  warn: string;
+  ok: string;
+  /** Fallback dim node colour for nodes outside a sized community. */
+  starDim: string;
+  /** Edge colour for graphData's edge attrs (rgba); the canvas uses edgeRgb. */
+  edge: string;
+  /** "r,g,b" of the edge ink — alpha is per edge. */
+  edgeRgb: string;
+  /** Canvas vignette: centre and edge colours of the radial ground. */
+  canvasCenter: string;
+  canvasEdge: string;
+  /** Glow multiplier — softer on paper. */
+  glowK: number;
+  font: string;
 }
 
 // Decide light/dark from the ACTUAL rendered --bg, not data-theme: the
@@ -26,9 +32,7 @@ export interface GraphTheme {
 // effect, which would paint invisible (dark-on-dark) nodes.
 function isDarkBackground(cs: CSSStyleDeclaration): boolean {
   const bg = cs.getPropertyValue("--bg").trim();
-  const m =
-    /^#([0-9a-f]{6})$/i.exec(bg) ??
-    /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(bg);
+  const m = /^#([0-9a-f]{6})$/i.exec(bg) ?? /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(bg);
   if (!m) return true;
   let r: number, g: number, b: number;
   if (m[0].startsWith("#")) {
@@ -44,29 +48,30 @@ function isDarkBackground(cs: CSSStyleDeclaration): boolean {
   return 0.299 * r + 0.587 * g + 0.114 * b < 128;
 }
 
+/** A CSS variable as #rrggbb, or the fallback when it is unset or not hex. */
+function hexVar(cs: CSSStyleDeclaration, name: string, fallback: string): string {
+  const v = cs.getPropertyValue(name).trim();
+  return hexToRgb01(v) ? v : fallback;
+}
+
 export function readTheme(): GraphTheme {
   const cs = getComputedStyle(document.documentElement);
   const dark = isDarkBackground(cs);
   return {
-    bg: cs.getPropertyValue("--bg").trim() || (dark ? "#0f1115" : "#fafaf9"),
-    ink: cs.getPropertyValue("--ink").trim() || (dark ? "#e6e8eb" : "#111418"),
-    node: dark ? "#c8c8c8" : "#3a3f47",
+    lightBg: !dark,
+    bg: cs.getPropertyValue("--bg").trim() || (dark ? "#191919" : "#ffffff"),
+    ink: hexVar(cs, "--ink", dark ? "#e8e6e1" : "#181715"),
+    ink3: hexVar(cs, "--ink-3", dark ? "#9b9a93" : "#6f6e69"),
+    dim: hexVar(cs, "--ink-4", dark ? "#8a8983" : "#6b6a64"),
+    live: hexVar(cs, "--live", dark ? "#a78bfa" : "#7e22ce"),
+    warn: hexVar(cs, "--warn", dark ? "#e0a458" : "#9a6a1f"),
+    ok: hexVar(cs, "--ok", dark ? "#7ee0a6" : "#16a34a"),
     starDim: dark ? "#565b64" : "#9aa0a8",
-    gxCore: dark ? "#ffe9c4" : "#7a5a1f",
-    gxArm: dark ? "#cdd7f0" : "#3a4664",
-    gxHalo: dark ? "#5d6c92" : "#8a93ac",
-    // Cosmic-web filaments: very faint, so the weave reads as a soft glow
-    // rather than tangled wires. Alpha is honoured by sigma.
-    edge: dark ? "rgba(170,185,215,0.10)" : "rgba(40,50,70,0.10)",
-    edgeHi: dark ? "rgba(190,205,240,0.9)" : "rgba(30,40,60,0.8)",
-    accent:
-      cs.getPropertyValue("--accent").trim() || (dark ? "#7aa7ff" : "#3b82f6"),
+    edge: dark ? "rgba(255,255,255,0.10)" : "rgba(24,23,21,0.10)",
+    edgeRgb: dark ? "255,255,255" : "24,23,21",
+    canvasCenter: dark ? "#1c1c22" : "#ffffff",
+    canvasEdge: dark ? "#0b0b0e" : "#e9e7e2",
+    glowK: dark ? 1 : 0.6,
+    font: getComputedStyle(document.body).fontFamily || "system-ui, sans-serif",
   };
 }
-
-// Resolve the active skin to a palette. "auto" reads the live CSS variables;
-// fixed skins return their pinned palette (see graphSkins.ts — DOM-free).
-export function makeTheme(skin: GraphSkinKey): GraphTheme {
-  return skin === "auto" ? readTheme() : skinTheme(skin);
-}
-
