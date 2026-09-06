@@ -18,6 +18,7 @@ import type { PlanItem } from "../lib/ingestPlan";
 import { defaultSelection, selectedPlan } from "../lib/planGate";
 import { loadProfile } from "../lib/profile";
 import { log } from "../lib/log";
+import { notice } from "../lib/notice";
 import { STRINGS } from "../lib/i18n";
 import { useUIStore } from "./uiStore";
 import { useVaultStore } from "./vaultStore";
@@ -29,6 +30,11 @@ function t() {
   return STRINGS[useUIStore.getState().lang] ?? STRINGS.en;
 }
 
+/** "writing-raw" is the whole pre-agent stage — judge → ground → plan → the
+ *  raw/ write itself, which now happens LAST in it (a refused source must
+ *  leave no file behind). The name predates the judgement stage; every
+ *  consumer only asks "is a run live", so it stays. "refused" is terminal:
+ *  the judge or an all-NOOP plan ended the run with nothing written. */
 export type IngestStage =
   | "idle"
   | "writing-raw"
@@ -37,7 +43,17 @@ export type IngestStage =
   | "indexing"
   | "done"
   | "cancelled"
+  | "refused"
   | "error";
+
+/** Why a run ended at "refused". `drop` — junk, nothing written; `log` — the
+ *  original was kept in raw/, no model call; `noop` — the plan had nothing
+ *  to add (or nothing was approved), nothing written. */
+export interface IngestRefusal {
+  verdict: "drop" | "log" | "noop";
+  reason: string;
+  rule: string;
+}
 
 export interface IngestEvent {
   /** Monotonic id, unique for the process lifetime. React keys the feed rows
@@ -195,6 +211,8 @@ interface IngestState {
    * shown as telemetry. Empty when the planner is unavailable or its reply did
    * not parse — ingest then falls back to phase-1 candidate grounding. */
   plan: PlanItem[];
+  /** Set when the run ended at stage "refused"; null otherwise. */
+  refusal: IngestRefusal | null;
   /** Fresh link graph rescanned (debounced) after each streamed write, so
    * live views (mini graph, galaxy growth) see edges of pages created
    * mid-run. Never written to vaultStore.adjacency — that would tear down
@@ -247,6 +265,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
   vaultPath: null,
   candidates: [],
   plan: [],
+  refusal: null,
   liveAdjacency: null,
   seen: true,
   inboxRev: 0,
@@ -276,7 +295,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
     // two triggers (clip-saved, interval) that arrive through identical IPCs.
     set({
       stage: "writing-raw",
-      log: `Writing raw/${slug}.md…`,
+      log: `Judging ${slug}…`,
       events: [],
       touched: [],
       readCount: 0,
@@ -289,32 +308,81 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       vaultPath: vault.path,
       candidates: [],
       plan: [],
+      refusal: null,
       liveAdjacency: null,
       seen: true,
     });
     await startStreamListener();
 
-    try {
+    const text = body.trim();
+
+    // The immutable original. Called as LATE as possible — after the judge
+    // and the plan gate — so a refused source leaves no file behind at all.
+    // Resolves a free raw/ path first: a second source under the same title
+    // gets its own original instead of overwriting the first (which the
+    // command layer refuses outright). Falls back to the provisional slug if
+    // the lookup fails, so ingest still proceeds.
+    const writeRaw = async (): Promise<void> => {
       try {
         await ipc.createFolder(vault.path, "raw");
       } catch {
         /* already exists */
       }
-      // Resolve a free raw/ path so a second source under the same title gets its
-      // own original instead of overwriting the first (which the command layer
-      // now refuses outright). Fall back to the provisional slug if the lookup
-      // fails, so ingest still proceeds.
       const rawRel = await ipc
         .availableRawPath(slug)
         .catch(() => `raw/${slug}.md`);
       slug = rawRel.replace(/^raw\//, "").replace(/\.md$/, "");
       set({ log: `Writing ${rawRel}…` });
       const payload =
-        body.trim().length > 0
-          ? `# ${finalTitle}\n\n${body.trim()}\n`
+        text.length > 0
+          ? `# ${finalTitle}\n\n${text}\n`
           : `# ${finalTitle}\n\n_(empty)_\n`;
       await ipc.writeFile(`${vault.path}/${rawRel}`, payload);
       await useVaultStore.getState().refreshTree();
+    };
+
+    // End the run with nothing (or, for `log`, only raw/) written: one
+    // judgement-log line, one toast, a terminal stage the Ingest page can
+    // read. `seen` stays true — the toast IS the feedback; a chip pop on top
+    // would be the same event twice (noticeStore's one rule).
+    const refuse = async (refusal: IngestRefusal): Promise<void> => {
+      await ipc
+        .recordNoop(`raw/${slug}.md`, `${refusal.verdict}: ${refusal.reason}`)
+        .catch((err) => {
+          log.warn("record_noop.failed", { feature: "ingest", error: String(err) });
+        });
+      notice.info(
+        (refusal.verdict === "log"
+          ? t().ing_logged_title
+          : t().ing_refused_title
+        ).replace("{reason}", refusal.reason),
+        { icon: "stop" },
+      );
+      set((st) => ({
+        stage: "refused",
+        refusal,
+        finishedAt: Date.now(),
+        seen: true,
+        log: `${st.log}\n\n${refusal.rule}: ${refusal.reason}`,
+      }));
+    };
+
+    try {
+      // Judgement stage — before anything touches disk or a model. A source
+      // that is junk (`drop`) or only worth keeping (`log`) never reaches
+      // the planner. Fails OPEN: a backend without the command must not
+      // stop ingest, so an error here means "harvest" and is logged.
+      const verdict = await ipc
+        .judgeSource(text, new TextEncoder().encode(text).length)
+        .catch((err) => {
+          log.warn("judge_source.failed", { feature: "ingest", error: String(err) });
+          return null;
+        });
+      if (verdict && verdict.verdict !== "harvest") {
+        if (verdict.verdict === "log") await writeRaw();
+        await refuse({ verdict: verdict.verdict, reason: verdict.reason, rule: verdict.rule });
+        return;
+      }
 
       // Snapshot wiki/ mtimes before the model runs so we can verify it
       // actually wrote something, rather than reporting success for a no-op.
@@ -328,7 +396,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       // so the prompt tells the agent to update them, not duplicate. Best-effort
       // — an absent/stale vector index yields none and ingest proceeds unchanged.
       const candidates = await ipc
-        .wikifyCandidates(body.trim(), 8)
+        .wikifyCandidates(text, 8)
         .catch(() => [] as CandidatePage[]);
       set({ candidates });
 
@@ -338,13 +406,14 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       // the plan empty and the prompt falls back to candidate grounding.
       let plan: PlanItem[] = [];
       try {
+        set({ log: `Planning ${slug}…` });
         const planReply = await complete({
           task: "generate",
           cwd: vault.path,
           messages: [
             {
               role: "user",
-              content: buildIngestPlanPrompt(body.trim(), candidates),
+              content: buildIngestPlanPrompt(text, candidates),
             },
           ],
         });
@@ -353,6 +422,18 @@ export const useIngestStore = create<IngestState>((set, get) => ({
         /* planner unavailable — proceed with candidate grounding only */
       }
       set({ plan });
+
+      // The planner already said there is nothing to add. Running the writing
+      // agent anyway is how the vault got its "no actionable content" pages,
+      // index/log lines and empty ingest reports: end here, write nothing.
+      if (plan.length > 0 && plan.every((p) => p.decision === "NOOP")) {
+        await refuse({
+          verdict: "noop",
+          reason: t().ing_noop_reason,
+          rule: "ingestPlan::all_noop",
+        });
+        return;
+      }
 
       // Plan gate (Q4 item 7): pause a manual run for a per-item checkbox
       // review before the writing agent touches the wiki. Headless callers
@@ -367,15 +448,26 @@ export const useIngestStore = create<IngestState>((set, get) => ({
         });
         planGateResolver = null;
         if (sel === null) {
-          // Cancelled at the gate — nothing has run yet; back to the form.
-          // The raw/ copy already written stays (raw/ is immutable); the
-          // finally block below drops the stream listener.
+          // Cancelled at the gate — nothing has run and nothing was written;
+          // back to the form. The finally block drops the stream listener.
           set({ stage: "idle" });
           return;
         }
         plan = selectedPlan(plan, sel);
         set({ plan });
+        if (plan.length === 0) {
+          // "Apply 0" — the same nothing-to-do as an all-NOOP plan.
+          await refuse({
+            verdict: "noop",
+            reason: t().ing_gate_none_reason,
+            rule: "planGate::none_selected",
+          });
+          return;
+        }
       }
+
+      // Only now does anything touch disk.
+      await writeRaw();
 
       set({ stage: "claude" });
       const settings = await ipc.getSettings();
@@ -576,6 +668,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
       reportPath: null,
       candidates: [],
       plan: [],
+      refusal: null,
       liveAdjacency: null,
       seen: true,
     }),

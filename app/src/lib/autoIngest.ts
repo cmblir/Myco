@@ -73,11 +73,14 @@ export function pendingInboxRows(
  *  successful ingest"); `held` counts sources left waiting in `_inbox/`
  *  because the redaction scan flagged them (Q4 item 13) or because media
  *  arrived without a whisper CLI; `unsupported` counts formats no pipeline
- *  can read — left in place, but no longer invisible (Q4 item 20a). */
+ *  can read — left in place, but no longer invisible (Q4 item 20a);
+ *  `refused` counts sources the judgement stage ended with nothing written
+ *  — archived, so junk cannot jam the queue, and walked past. */
 export interface InboxPassOutcome {
   ingested: boolean;
   held: number;
   unsupported: number;
+  refused: number;
 }
 
 /** Ingest the next pending inbox source that clears the redaction scan, then
@@ -85,9 +88,9 @@ export interface InboxPassOutcome {
  *  flight. Flagged sources are skipped (left in `_inbox/`), not consumed, so
  *  the pass walks past them instead of jamming on the first one. */
 export async function runInboxPass(vaultPath: string): Promise<InboxPassOutcome> {
-  if (isBusy()) return { ingested: false, held: 0, unsupported: 0 };
+  if (isBusy()) return { ingested: false, held: 0, unsupported: 0, refused: 0 };
   const entries = await listInboxEntries(vaultPath);
-  if (entries.length === 0) return { ingested: false, held: 0, unsupported: 0 };
+  if (entries.length === 0) return { ingested: false, held: 0, unsupported: 0, refused: 0 };
 
   // Q4 item 13 — the PII response mode; secrets always block (redaction.ts).
   // An unreadable settings file falls back to warn-only, the Rust default.
@@ -96,6 +99,7 @@ export async function runInboxPass(vaultPath: string): Promise<InboxPassOutcome>
 
   let held = 0;
   let unsupported = 0;
+  let refused = 0;
   // One whisper preflight per pass, checked lazily when the first media file
   // comes up — media without whisper is held with a reason instead of failing
   // late inside transcribe_media.
@@ -128,7 +132,7 @@ export async function runInboxPass(vaultPath: string): Promise<InboxPassOutcome>
             provider: settings?.query_provider ?? "",
             model: settings?.query_model ?? "",
           }).catch(() => null);
-    if (text == null) return { ingested: false, held, unsupported };
+    if (text == null) return { ingested: false, held, unsupported, refused };
 
     // Scan BEFORE startIngest writes raw/<slug>.md — raw/ is immutable, so a
     // flagged write could never be unwound. An unscannable source fails
@@ -145,7 +149,8 @@ export async function runInboxPass(vaultPath: string): Promise<InboxPassOutcome>
     // awaiting a user) would park the run forever, so it must never engage here.
     await useIngestStore.getState().startIngest(title, text, { headless: true });
 
-    if (useIngestStore.getState().stage === "done") {
+    const stage = useIngestStore.getState().stage;
+    if (stage === "done") {
       // Archive the consumed source (never delete) — its content is also in
       // raw/<slug>.md now, but a preserved original matches the headless daemon
       // and means a later half-failure cannot lose it.
@@ -153,12 +158,21 @@ export async function runInboxPass(vaultPath: string): Promise<InboxPassOutcome>
       // Only now is the file really gone from _inbox/ — signal the pending
       // list (a stage-keyed refetch fires before this move lands).
       useIngestStore.getState().bumpInboxRev();
-      return { ingested: true, held, unsupported };
+      return { ingested: true, held, unsupported, refused };
+    }
+    if (stage === "refused") {
+      // Judged, nothing to ingest. Archive it too (never delete): left in
+      // place it would be re-judged every pass and jam the queue behind it
+      // forever. A refusal cost no model call, so the pass walks on.
+      await ipc.archiveInboxSource(path).catch(() => undefined);
+      useIngestStore.getState().bumpInboxRev();
+      refused++;
+      continue;
     }
     // error / no-op: leave the source in _inbox to retry next pass
-    return { ingested: false, held, unsupported };
+    return { ingested: false, held, unsupported, refused };
   }
-  return { ingested: false, held, unsupported };
+  return { ingested: false, held, unsupported, refused };
 }
 
 /** React hook: drive runInboxPass on an interval while enabled. */

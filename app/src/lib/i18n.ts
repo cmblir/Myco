@@ -1203,6 +1203,11 @@ export interface Strings {
   hq_loading: string;
   hq_error: string;
   hq_retry: string;
+  // Judgement stage (Ingest): a refused source is one toast, not a file.
+  ing_refused_title: string; // {reason}
+  ing_logged_title: string; // {reason}
+  ing_noop_reason: string;
+  ing_gate_none_reason: string;
   // Query page.
   q_via: string;
   q_via_retrieval: string;
@@ -2852,6 +2857,10 @@ export const STRINGS: Record<Lang, Strings> = {
     hq_loading: "Scanning sessions/…",
     hq_error: "Could not read the session archive",
     hq_retry: "Retry",
+    ing_refused_title: "Nothing to keep — not saved · {reason}",
+    ing_logged_title: "Kept the original only · {reason}",
+    ing_noop_reason: "plan: every item NOOP — the wiki already covers this",
+    ing_gate_none_reason: "nothing approved at the plan gate",
     q_via: "via {provider} · {model}",
     q_via_retrieval:
       "via local semantic search — answers quote your notes verbatim (no model)",
@@ -4491,6 +4500,10 @@ export const STRINGS: Record<Lang, Strings> = {
     hq_loading: "sessions/ 훑는 중…",
     hq_error: "세션 아카이브를 읽지 못했습니다",
     hq_retry: "다시 시도",
+    ing_refused_title: "내용이 없어 저장하지 않았습니다 · {reason}",
+    ing_logged_title: "원본만 보관했습니다 · {reason}",
+    ing_noop_reason: "계획 전부 NOOP — 위키에 더할 것이 없습니다",
+    ing_gate_none_reason: "계획 게이트에서 승인된 항목 없음",
     q_via: "{provider} · {model} 사용",
     q_via_retrieval:
       "로컬 시맨틱 검색 기반 — 답변은 내 노트 원문 인용 (모델 미사용)",
@@ -5923,6 +5936,10 @@ export const STRINGS: Record<Lang, Strings> = {
     hq_loading: "sessions/ を走査中…",
     hq_error: "セッションのアーカイブを読めませんでした",
     hq_retry: "再試行",
+    ing_refused_title: "保存する内容がありません — 保存しませんでした · {reason}",
+    ing_logged_title: "原本だけ保管しました · {reason}",
+    ing_noop_reason: "計画がすべてNOOP — Wikiに加えるものがありません",
+    ing_gate_none_reason: "計画ゲートで承認された項目なし",
     q_via: "{provider} · {model} を使用",
     q_via_retrieval:
       "ローカルセマンティック検索 — 回答はノートの原文引用（モデル不使用）",

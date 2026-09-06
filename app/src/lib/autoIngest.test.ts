@@ -135,7 +135,7 @@ describe("runInboxPass redaction guard", () => {
       headless: true,
     });
     expect(archiveInboxSource).toHaveBeenCalledWith("/v/_inbox/clean.md");
-    expect(result).toEqual({ ingested: true, held: 1, unsupported: 0 });
+    expect(result).toEqual({ ingested: true, held: 1, unsupported: 0, refused: 0 });
   });
 
   it("holds PII sources when quarantine is on and never calls startIngest", async () => {
@@ -146,7 +146,7 @@ describe("runInboxPass redaction guard", () => {
 
     expect(startIngest).not.toHaveBeenCalled();
     expect(archiveInboxSource).not.toHaveBeenCalled();
-    expect(result).toEqual({ ingested: false, held: 2, unsupported: 0 });
+    expect(result).toEqual({ ingested: false, held: 2, unsupported: 0, refused: 0 });
   });
 
   it("promotes a PII source in warn-only mode (the default)", async () => {
@@ -155,7 +155,30 @@ describe("runInboxPass redaction guard", () => {
     const result = await runInboxPass("/v");
 
     expect(startIngest).toHaveBeenCalledTimes(1);
-    expect(result).toEqual({ ingested: true, held: 0, unsupported: 0 });
+    expect(result).toEqual({ ingested: true, held: 0, unsupported: 0, refused: 0 });
+  });
+
+  it("archives a refused source and walks on to the next one", async () => {
+    // Judged junk must not sit at the head of _inbox/ forever: the first
+    // source ends at "refused" (nothing written), the pass archives it and
+    // still ingests the second in the same pass.
+    scanTextSecrets.mockResolvedValue({ secrets: [], pii: [] });
+    startIngest
+      .mockImplementationOnce(async () => {
+        ingestState.stage = "refused";
+      })
+      .mockImplementationOnce(async () => {
+        ingestState.stage = "done";
+      });
+
+    const result = await runInboxPass("/v");
+
+    expect(startIngest).toHaveBeenCalledTimes(2);
+    expect(archiveInboxSource.mock.calls.map((c) => c[0])).toEqual([
+      "/v/_inbox/leak.md",
+      "/v/_inbox/clean.md",
+    ]);
+    expect(result).toEqual({ ingested: true, held: 0, unsupported: 0, refused: 1 });
   });
 });
 
@@ -198,7 +221,7 @@ describe("runInboxPass format routing", () => {
 
     const result = await runInboxPass("/v");
 
-    expect(result).toEqual({ ingested: true, held: 0, unsupported: 1 });
+    expect(result).toEqual({ ingested: true, held: 0, unsupported: 1, refused: 0 });
     expect(startIngest).toHaveBeenCalledWith("clean", "clean body", { headless: true });
     expect(archiveInboxSource).toHaveBeenCalledTimes(1);
     expect(archiveInboxSource).toHaveBeenCalledWith("/v/_inbox/clean.md");
@@ -220,7 +243,7 @@ describe("runInboxPass format routing", () => {
       headless: true,
     });
     expect(archiveInboxSource).toHaveBeenCalledWith("/v/_inbox/shot.png");
-    expect(result).toEqual({ ingested: true, held: 0, unsupported: 0 });
+    expect(result).toEqual({ ingested: true, held: 0, unsupported: 0, refused: 0 });
   });
 
   it("holds media when whisper is missing — one whisperCheck per pass", async () => {
@@ -236,6 +259,6 @@ describe("runInboxPass format routing", () => {
 
     expect(whisperCheck).toHaveBeenCalledTimes(1);
     expect(transcribeMedia).not.toHaveBeenCalled();
-    expect(result).toEqual({ ingested: true, held: 2, unsupported: 0 });
+    expect(result).toEqual({ ingested: true, held: 2, unsupported: 0, refused: 0 });
   });
 });

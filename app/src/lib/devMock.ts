@@ -2900,9 +2900,10 @@ function mockInvoke(
       }
       return Promise.resolve({ copied: inbox_rels.length, inbox_rels, skipped });
     }
-    // Judgement stage (Ingest): the size rules of backfill.rs/distill.rs's
-    // junk_reason, so the drop / log / harvest paths are all reachable by
-    // pasting more or less text under ?mock=1.
+    // Judgement stage (Ingest): distill.rs's junk floor (200 B) and the
+    // ledger fingerprint as real rules, then a LOW mock-only "log" floor
+    // (600 B, the real one is Rust's) so all three verdicts are reachable by
+    // pasting more or less text under ?mock=1 without needing 8 KB of it.
     case "judge_source": {
       const text = String(args.text ?? "");
       const bytes = Number(args.sizeBytes ?? text.length);
@@ -2920,10 +2921,10 @@ function mockInvoke(
           rule: "ledger::fingerprint",
         });
       }
-      if (bytes < 8 * 1024) {
+      if (bytes < 600) {
         return Promise.resolve({
           verdict: "log",
-          reason: `${bytes} B < 8 KB — below the wikify floor`,
+          reason: `${bytes} B — below the wikify floor`,
           rule: "backfill::MIN_BYTES",
         });
       }
@@ -3070,9 +3071,14 @@ function tasksFromMockNotes(): {
 /// `myco://clip-saved`, the same path the real Tauri event takes into the app.
 /// Exported for the clip E2E: a deep link cannot be delivered to a browser.
 export function emitClipSaved(title = "clipped-article"): void {
+  // Long enough to pass the mock judge's floors — a clip that gets refused
+  // exercises the judgement path, not the clip → pass handoff this seeds.
   mockInbox.set(
     `${VAULT}/_inbox/${title}.md`,
-    `---\nsource: clipper\nurl: "https://example.com/article"\ntitle: "${title}"\ncreated: 1755000000\nclipped: 1755000000\n---\n\n# ${title}\n\nClipped selection about attention and transformers.\n`,
+    `---\nsource: clipper\nurl: "https://example.com/article"\ntitle: "${title}"\ncreated: 1755000000\nclipped: 1755000000\n---\n\n# ${title}\n\nClipped selection about attention and transformers. ` +
+      "Scaled dot-product attention computes a weighted sum of value vectors, where the weights come from the softmax of query–key dot products divided by the square root of the key dimension. " +
+      "Multi-head attention runs several of these in parallel over learned projections and concatenates the results, which lets one layer attend to positional, syntactic and semantic relations at once. " +
+      "Residual connections and layer normalization around each sublayer keep the deep stack trainable; positional encodings supply the order the attention itself ignores.\n",
   );
   emitMock("myco://clip-saved", {});
 }

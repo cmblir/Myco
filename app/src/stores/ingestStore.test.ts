@@ -37,6 +37,7 @@ vi.mock("../lib/log", () => ({
 }));
 
 import { ipc } from "../lib/ipc";
+import { complete } from "../lib/chat";
 import { useIngestStore, INGEST_PROMPT, applyStreamEvent } from "./ingestStore";
 
 // Phase B, Task 6: INGEST_PROMPT's new 5th param weights linking/tagging
@@ -291,6 +292,126 @@ describe("ingest validation gate", () => {
 
     expect(validate).not.toHaveBeenCalled();
     expect(useIngestStore.getState().stage).toBe("error");
+  });
+});
+
+// Judgement stage (Sieve): junk is refused BEFORE it becomes files. A `drop`
+// verdict never reaches raw/, the planner or the agent; an all-NOOP plan ends
+// the run with nothing written (no raw/, no wiki, no report); a normal source
+// still flows through raw/ → agent → done.
+describe("startIngest judgement stage", () => {
+  const NOOP_PLAN = JSON.stringify([
+    { subject: "already covered", decision: "NOOP", target: "attention", reason: "present" },
+    { subject: "also covered", decision: "NOOP", target: "embeddings", reason: "present" },
+  ]);
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    listenMock.mockClear();
+    vi.mocked(complete).mockReset().mockResolvedValue("done");
+    useIngestStore.setState({ stage: "idle", runId: null, refusal: null });
+
+    vi.spyOn(ipc, "getSettings").mockResolvedValue({
+      ingest_provider: "anthropic-cli",
+      ingest_model: "",
+      query_provider: "builtin-local",
+      query_model: "gemma-3-1b",
+    } as never);
+    vi.spyOn(ipc, "createFolder").mockResolvedValue(undefined as never);
+    vi.spyOn(ipc, "writeFile").mockResolvedValue(undefined as never);
+    vi.spyOn(ipc, "readVaultContext").mockResolvedValue("");
+    vi.spyOn(ipc, "wikifyCandidates").mockResolvedValue([]);
+    vi.spyOn(ipc, "recordNoop").mockResolvedValue(undefined);
+    vi.spyOn(ipc, "buildLinkGraph").mockResolvedValue({
+      nodes: [],
+      edges: [],
+    } as never);
+    vi.spyOn(ipc, "fileMtimes")
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([["/v/wiki/foo.md", 1]]);
+    vi.spyOn(ipc, "validateIngest").mockResolvedValue({ errors: [], warnings: [] });
+  });
+
+  it("a 5-byte source never reaches the model and writes nothing", async () => {
+    const judge = vi.spyOn(ipc, "judgeSource").mockResolvedValue({
+      verdict: "drop",
+      reason: "5 B < 200 B",
+      rule: "junk_reason::min_bytes",
+    });
+    const write = vi.spyOn(ipc, "writeFile");
+    const run = vi.spyOn(ipc, "claudeRunStream");
+    const noop = vi.spyOn(ipc, "recordNoop");
+
+    await useIngestStore.getState().startIngest("test", "hello");
+
+    // Byte count, not char count — the judge sees the UTF-8 size Rust would.
+    expect(judge).toHaveBeenCalledWith("hello", 5);
+    expect(write).not.toHaveBeenCalled();
+    expect(vi.mocked(complete)).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(noop).toHaveBeenCalledWith("raw/test.md", "drop: 5 B < 200 B");
+    expect(useIngestStore.getState().stage).toBe("refused");
+    expect(useIngestStore.getState().refusal).toEqual({
+      verdict: "drop",
+      reason: "5 B < 200 B",
+      rule: "junk_reason::min_bytes",
+    });
+  });
+
+  it("an all-NOOP plan writes nothing — no raw/, no agent, one noop record", async () => {
+    vi.spyOn(ipc, "judgeSource").mockResolvedValue({
+      verdict: "harvest",
+      reason: "prose",
+      rule: "judge::pass",
+    });
+    vi.mocked(complete).mockResolvedValue(NOOP_PLAN);
+    const write = vi.spyOn(ipc, "writeFile");
+    const run = vi.spyOn(ipc, "claudeRunStream");
+    const noop = vi.spyOn(ipc, "recordNoop");
+
+    await useIngestStore.getState().startIngest("covered", "a".repeat(400));
+
+    expect(vi.mocked(complete)).toHaveBeenCalledTimes(1); // the planner only
+    expect(write).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+    expect(noop).toHaveBeenCalledTimes(1);
+    expect(useIngestStore.getState().stage).toBe("refused");
+    expect(useIngestStore.getState().refusal?.verdict).toBe("noop");
+    expect(useIngestStore.getState().plan).toHaveLength(2); // shown as telemetry
+  });
+
+  it("a normal source still flows: raw/ written after the judge, agent runs, done", async () => {
+    vi.spyOn(ipc, "judgeSource").mockResolvedValue({
+      verdict: "harvest",
+      reason: "prose",
+      rule: "judge::pass",
+    });
+    const write = vi.spyOn(ipc, "writeFile");
+    const run = vi
+      .spyOn(ipc, "claudeRunStream")
+      .mockResolvedValue({ stdout: "ok", stderr: "", status: 0 } as never);
+    const noop = vi.spyOn(ipc, "recordNoop");
+
+    await useIngestStore.getState().startIngest("t", "a real source body");
+
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write.mock.calls[0][0]).toBe("/v/raw/t.md");
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(noop).not.toHaveBeenCalled();
+    expect(useIngestStore.getState().stage).toBe("done");
+    expect(useIngestStore.getState().refusal).toBeNull();
+  });
+
+  it("fails open when the judge itself is unavailable", async () => {
+    vi.spyOn(ipc, "judgeSource").mockRejectedValue(new Error("no such command"));
+    const run = vi
+      .spyOn(ipc, "claudeRunStream")
+      .mockResolvedValue({ stdout: "ok", stderr: "", status: 0 } as never);
+
+    await useIngestStore.getState().startIngest("t", "a real source body");
+
+    expect(run).toHaveBeenCalledTimes(1);
+    expect(useIngestStore.getState().stage).toBe("done");
   });
 });
 
