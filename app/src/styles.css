@@ -6526,6 +6526,74 @@ details.props > .btn {
   display: none;
 }
 
+/* Authorship gutter: a 3px bar left of each paragraph, violet where an agent
+   wrote it (editorAuthorship.ts). With no runs the extension is not added at
+   all, so this costs no width on a vault without history. */
+.cm-auth-gutter {
+  width: 14px;
+}
+.cm-auth-gutter .cm-gutterElement {
+  cursor: pointer;
+}
+.auth-run {
+  display: block;
+  width: 3px;
+  min-height: 1.4em;
+  margin-left: 5px;
+  border-radius: 2px;
+  background: var(--line-strong);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    box-shadow var(--dur-quick) var(--ease-out);
+}
+.auth-run.is-agent {
+  background: var(--live);
+}
+.cm-auth-gutter .cm-gutterElement:hover .auth-run {
+  background: var(--ink-3);
+}
+.cm-auth-gutter .cm-gutterElement:hover .auth-run.is-agent {
+  background: var(--live);
+  box-shadow: 0 0 10px 2px var(--glow);
+}
+/* Who wrote it / revert, anchored at the pointer. */
+.auth-pop {
+  position: fixed;
+  z-index: 40;
+  width: 264px;
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+}
+.auth-pop__who {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.auth-pop__when {
+  margin: 0;
+  font-size: 11px;
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.auth-dot {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--line-strong);
+}
+.auth-dot.is-agent {
+  background: var(--live);
+}
+
 /* Reader header `⋯` overflow (Make cards · Audio overview): a real menu
    under the button, closed on Escape / outside click (PageReader.tsx). */
 .rd-more {

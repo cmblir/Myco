@@ -18,8 +18,10 @@ function splitLines(text: string): string[] {
   return text === "" ? [] : text.split("\n");
 }
 
-/** Classic O(n·m) LCS over token arrays. Ties prefer del so a replacement emits its del run first. */
-function lcsOps(a: string[], b: string[]): DiffSeg[] {
+/** Classic O(n·m) LCS over token arrays. Ties prefer del so a replacement emits its del run first.
+ *  Exported for authorship.ts, which walks the same ops with line counters to
+ *  align a paragraph against an older revision. */
+export function lcsOps(a: string[], b: string[]): DiffSeg[] {
   const n = a.length;
   const m = b.length;
   const w = m + 1;

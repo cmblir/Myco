@@ -302,6 +302,7 @@ pub fn run() {
             commands::harvest_run,
             commands::judge_source,
             commands::record_noop,
+            commands::page_at_revision,
         ])
         .setup(|app| {
             // Retarget the panic hook at the app log dir now that the path

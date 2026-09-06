@@ -1158,6 +1158,10 @@ export const ipc = {
   /** wiki/ rel -> ever committed by the agent author. */
   authorshipIndex: (vault: string) =>
     invoke<AuthorshipIndex>("authorship_index", { vault }),
+  /** One page's content at a revision (`<sha>` or `<sha>^`); null when the
+   *  path did not exist there. Backs the reader's per-paragraph revert. */
+  pageAtRevision: (vault: string, rel: string, rev: string) =>
+    invoke<string | null>("page_at_revision", { vault, rel, rev }),
   // Morning-Report suspect scan (Q4 item 2).
   suspectPages: (vault: string) =>
     invoke<SuspectReport>("suspect_pages", { vault }),

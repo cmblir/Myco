@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { FileNode, PageAuthorship } from "./ipc";
-import { badgeView, filterHumanTree } from "./authorship";
+import type { LineRun } from "./ipc";
+import {
+  badgeView,
+  filterHumanTree,
+  gutterRuns,
+  parentParagraph,
+  replaceLines,
+} from "./authorship";
 
 const NOW = 1_756_000_000; // unix secs
 
@@ -100,5 +107,71 @@ describe("filterHumanTree", () => {
     const sub = wiki.children[0];
     if (sub.kind !== "directory") throw new Error("expected directory");
     expect(sub.children.map((n) => n.path)).toEqual(["/v/wiki/sub/human.md"]);
+  });
+});
+
+const run = (
+  from: number,
+  to: number,
+  agent: boolean,
+  sha = "a".repeat(40),
+  ts = 1_756_000_000,
+): LineRun => ({ from, to, agent, sha, ts });
+
+describe("gutterRuns", () => {
+  // Lines:      1        2  3           4  5
+  const DOC = "intro\n\nagent line\n\ntail\n";
+
+  it("marks a paragraph one agent commit wrote as revertable", () => {
+    const rs = gutterRuns([run(1, 2, false), run(3, 3, true, "b".repeat(40)), run(4, 6, false)], DOC);
+    expect(rs.map((r) => [r.from, r.to, r.agent, r.revertable])).toEqual([
+      [1, 1, false, false], // human paragraphs are never "revert the agent"
+      [3, 3, true, true],
+      [5, 5, false, false],
+    ]);
+    expect(rs[1].sha).toBe("b".repeat(40));
+  });
+
+  it("refuses a paragraph split across two commits", () => {
+    // One paragraph (lines 1-2), two commits — no single parent to go back to.
+    const doc = "first\nsecond\n\ntail\n";
+    const rs = gutterRuns(
+      [run(1, 1, true, "a".repeat(40)), run(2, 2, true, "b".repeat(40)), run(3, 4, false)],
+      doc,
+    );
+    expect(rs[0]).toMatchObject({ from: 1, to: 2, agent: true, revertable: false });
+  });
+
+  it("refuses a paragraph edited since its commit (uncommitted blame sha)", () => {
+    // A moved or hand-edited paragraph blames to the all-zero sha until it is
+    // committed; there is no parent revision to read.
+    const rs = gutterRuns([run(1, 1, true, "0".repeat(40))], "edited\n");
+    expect(rs[0].revertable).toBe(false);
+  });
+
+  it("is empty with no history at all — the gutter takes no width", () => {
+    expect(gutterRuns([], DOC)).toEqual([]);
+  });
+});
+
+describe("parentParagraph / replaceLines", () => {
+  const parent = "# T\n\nold claim\n\ntail\n";
+  const current = "# T\n\nnew claim\nsecond line\n\ntail\n";
+
+  it("recovers what the paragraph replaced", () => {
+    expect(parentParagraph(current, parent, 3, 4)).toBe("old claim");
+    expect(replaceLines(current, 3, 4, "old claim")).toBe(parent);
+  });
+
+  it("returns an empty string for a paragraph the parent never had", () => {
+    const added = "# T\n\nold claim\n\nbrand new\n\ntail\n";
+    expect(parentParagraph(added, parent, 5, 5)).toBe("");
+    expect(replaceLines(added, 5, 5, "")).toBe("# T\n\nold claim\n\n\ntail\n");
+  });
+
+  it("returns null when the parent still holds the paragraph unchanged", () => {
+    // The moved-paragraph case: blame says this commit wrote it, but the text
+    // is already in the parent, so there is nothing to revert.
+    expect(parentParagraph(current, parent, 6, 6)).toBeNull();
   });
 });

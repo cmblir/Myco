@@ -6,7 +6,7 @@
 
 import { useEffect, useRef } from "react";
 import type { JSX, MutableRefObject } from "react";
-import { Compartment, EditorState } from "@codemirror/state";
+import { Compartment, EditorState, type Extension } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
@@ -43,6 +43,10 @@ export interface EditorProps {
   live: boolean;
   /** Live handle to the view, for callers that dispatch their own transactions. */
   viewRef?: MutableRefObject<EditorView | null>;
+  /** Extensions the page composes on top (authorship gutter, claim markers).
+   *  Reconfigured through a compartment, so changing them keeps the cursor,
+   *  scroll and undo history a remount would lose. */
+  extras?: Extension;
   onChange?: (value: string) => void;
   onSave?: (value: string) => void;
   /** Mod-click on a wikilink in Live mode. */
@@ -57,6 +61,7 @@ export default function Editor({
   t,
   live,
   viewRef,
+  extras,
   onChange,
   onSave,
   onLinkClick,
@@ -72,8 +77,9 @@ export default function Editor({
   onSaveRef.current = onSave;
   onLinkClickRef.current = onLinkClick;
   onErrorRef.current = onError;
-  // Identity token only; the same Compartment reconfigures every view we make.
+  // Identity tokens only; the same Compartments reconfigure every view we make.
   const liveComp = useRef(new Compartment()).current;
+  const extrasComp = useRef(new Compartment()).current;
   const reportUnsupported = () =>
     onErrorRef.current?.(
       t.img_unsupported ??
@@ -116,6 +122,7 @@ export default function Editor({
         // GFM base: Task/Strikethrough nodes exist only here (Live relies on them).
         markdown({ base: markdownLanguage }),
         liveComp.of([]),
+        extrasComp.of([]),
         EditorView.lineWrapping,
         // CodeMirror's default caret is black — invisible on the dark theme. A
         // theme extension wins over CM's injected base styles (a plain stylesheet
@@ -231,6 +238,14 @@ export default function Editor({
     // Labels refresh on the next file open, not on a language switch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, docKey]);
+
+  // Same one-configuration-path rule as Live, for the page's own extensions.
+  useEffect(() => {
+    const v = viewRef?.current ?? localViewRef.current;
+    if (!v) return;
+    v.dispatch({ effects: extrasComp.reconfigure(extras ?? []) });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [extras, docKey]);
 
   // Image drop from Finder → assets/. HTML5 drop never reaches WebKit under
   // Tauri on macOS (wry claims the drag), so listen to Tauri's native event and

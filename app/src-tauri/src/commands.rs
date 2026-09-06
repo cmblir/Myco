@@ -2800,6 +2800,28 @@ pub fn page_authorship(
     crate::vault_history::page_authorship(root, &rel)
 }
 
+/// File content at one revision — the reader's per-paragraph revert reads the
+/// parent of the commit that wrote the paragraph (`<sha>^`). `None` when the
+/// path did not exist in that tree. `rev` reaches a git argument, so it is
+/// restricted to a hex sha with at most one trailing `^`: no refs, no options,
+/// no `..` ranges.
+#[tauri::command]
+pub fn page_at_revision(
+    state: tauri::State<VaultRoot>,
+    vault: String,
+    rel: String,
+    rev: String,
+) -> Result<Option<String>, String> {
+    let root = confine_root(&state, &vault)?;
+    let root = std::path::Path::new(&root);
+    crate::myco_pro::safe_join(root, &rel)?; // reject path escape before git sees it
+    let sha = rev.strip_suffix('^').unwrap_or(&rev);
+    if !(7..=40).contains(&sha.len()) || !sha.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("not a revision: {rev}"));
+    }
+    crate::vault_history::file_at(root, &rev, &rel)
+}
+
 /// wiki/ rel -> ever committed by the agent author — the sidebar's
 /// "human only" filter. One log walk; `{}` when the vault has no history.
 #[tauri::command]

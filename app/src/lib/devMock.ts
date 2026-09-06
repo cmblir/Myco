@@ -1804,6 +1804,16 @@ function mockInvoke(
       });
     case "authorship_index":
       return Promise.resolve({});
+    // The parent revision the reader's revert restores. No git in a browser:
+    // return the mock page with the agent's line swapped for a plausible
+    // earlier one, so the gutter's revert has something to put back.
+    case "page_at_revision": {
+      const rel = String(args.rel ?? "");
+      const slug = rel.split("/").pop()?.replace(/\.md$/, "") ?? "";
+      const d = bySlug.get(slug);
+      if (!d) return Promise.resolve(null);
+      return Promise.resolve(`# ${d.n}\n\n${body(d)}`.replace(/^.*core topic.*$/m, "(earlier draft of this paragraph)"));
+    }
     case "record_recall_miss":
       return Promise.resolve(null);
     case "record_page_open":

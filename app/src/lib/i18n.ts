@@ -668,6 +668,16 @@ export interface Strings {
   rd_conn_back: string;
   rd_conn_sug: string;
   rd_conn_added: string; // {name}
+  // Authorship gutter + per-paragraph revert.
+  rd_auth_title: string;
+  rd_auth_agent: string;
+  rd_auth_human: string;
+  rd_auth_revert: string;
+  rd_auth_locked: string;
+  rd_auth_history: string;
+  rd_auth_reverted: string;
+  rd_auth_nothing: string;
+  rd_auth_failed: string;
   // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
   cm_find: string;
   cm_replace_field: string;
@@ -2205,6 +2215,16 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_conn_back: "Backlink",
     rd_conn_sug: "Suggested",
     rd_conn_added: "[[{name}]] added under ## Related",
+    rd_auth_title: "Who wrote this paragraph",
+    rd_auth_agent: "Written by the agent",
+    rd_auth_human: "Written by you",
+    rd_auth_revert: "Revert this paragraph",
+    rd_auth_locked:
+      "More than one commit wrote this paragraph — there is no single version to go back to.",
+    rd_auth_history: "See it in history",
+    rd_auth_reverted: "Paragraph reverted",
+    rd_auth_nothing: "The earlier revision already holds this paragraph.",
+    rd_auth_failed: "That revision could not be read.",
     // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
     cm_find: "Find",
     cm_replace_field: "Replace",
@@ -3763,6 +3783,15 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_conn_back: "백링크",
     rd_conn_sug: "제안",
     rd_conn_added: "## Related 에 [[{name}]] 추가",
+    rd_auth_title: "이 문단을 쓴 사람",
+    rd_auth_agent: "에이전트가 씀",
+    rd_auth_human: "사람이 씀",
+    rd_auth_revert: "이 문단 되돌리기",
+    rd_auth_locked: "이 문단은 두 개 이상의 커밋이 썼습니다 — 돌아갈 판이 하나가 아닙니다.",
+    rd_auth_history: "기록에서 보기",
+    rd_auth_reverted: "문단을 이전 판으로 되돌렸습니다",
+    rd_auth_nothing: "이전 판에도 이 문단이 그대로 있습니다.",
+    rd_auth_failed: "이전 판을 읽지 못했습니다.",
     // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
     cm_find: "찾기",
     cm_replace_field: "바꾸기",
@@ -5127,6 +5156,15 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_conn_back: "被リンク",
     rd_conn_sug: "提案",
     rd_conn_added: "## Related に [[{name}]] を追加しました",
+    rd_auth_title: "この段落を書いた人",
+    rd_auth_agent: "エージェントが記述",
+    rd_auth_human: "あなたが記述",
+    rd_auth_revert: "この段落を元に戻す",
+    rd_auth_locked: "この段落は複数のコミットが書いています — 戻すべき版が一つに定まりません。",
+    rd_auth_history: "履歴で見る",
+    rd_auth_reverted: "段落を以前の版に戻しました",
+    rd_auth_nothing: "以前の版にもこの段落がそのまま残っています。",
+    rd_auth_failed: "以前の版を読み取れませんでした。",
     // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
     cm_find: "検索",
     cm_replace_field: "置換",

@@ -17,7 +17,15 @@ import { generateCards } from "../lib/study";
 import { addCards, deckSlug } from "../lib/cardStore";
 import { ipc } from "../lib/ipc";
 import type { PageAuthorship } from "../lib/ipc";
-import { badgeView } from "../lib/authorship";
+import {
+  badgeView,
+  gutterRuns,
+  parentParagraph,
+  replaceLines,
+  type GutterRun,
+} from "../lib/authorship";
+import { authorshipGutter } from "../lib/editorAuthorship";
+import { notice } from "../lib/notice";
 import {
   parseFrontmatter,
   patchFrontmatter,
@@ -149,6 +157,23 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     [draft, railOpen],
   );
   const lineOffset = useMemo(() => bodyLineOffset(draft), [draft]);
+  // Line runs → paragraph runs. Empty (no repo, untracked, history off) means
+  // authorshipGutter contributes no extension: 0 width, no "turn it on" banner.
+  const paraRuns = useMemo(
+    () => gutterRuns(authorship?.runs ?? [], draft),
+    [authorship, draft],
+  );
+  const extras = useMemo(
+    () =>
+      authorshipGutter({
+        runs: paraRuns,
+        label: (r) =>
+          `${r.agent ? (t.rd_auth_agent ?? "Written by the agent") : (t.rd_auth_human ?? "Written by you")} · ${fmtDate(r.ts, lang)}`,
+        onSelect: (run, x, y) => setPick({ run, x, y }),
+      }),
+    // Labels follow the language; the runs follow the document.
+    [paraRuns, lang, t],
+  );
   // A paste error lasts until the next edit (a successful paste inserts text).
   useEffect(() => setEditorError(null), [draft]);
   const allTags = useMemo(
@@ -163,6 +188,8 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   // the mode switch as a first-class control.
   const [moreOpen, setMoreOpen] = useState(false);
   const moreRef = useRef<HTMLDivElement | null>(null);
+  // Authorship gutter: the paragraph whose bar was clicked, at the pointer.
+  const [pick, setPick] = useState<{ run: GutterRun; x: number; y: number } | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Latest editor text, so the unmount cleanup can flush edits made inside the
   // debounce window. We compare it against the store's on-disk `raw` rather than
@@ -224,6 +251,22 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
 
   // The overflow menu closes on Escape or a click outside it, and moves focus
   // to its first item when opened so it is reachable without a pointer.
+  useEffect(() => {
+    if (!pick) return;
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setPick(null);
+    };
+    const onDown = (e: MouseEvent): void => {
+      if (!(e.target as HTMLElement).closest(".auth-pop, .cm-auth-gutter")) setPick(null);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [pick]);
+
   useEffect(() => {
     if (!moreOpen) return;
     moreRef.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
@@ -349,6 +392,41 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       return Promise.resolve(null);
     },
   };
+
+  /** Put one agent paragraph back the way the parent of its commit had it.
+   *  Reads that revision through the history IPC — no local copy of history —
+   *  and replaces only this paragraph's lines; the normal autosave saves it. */
+  async function revertParagraph(run: GutterRun): Promise<void> {
+    setPick(null);
+    if (!currentVaultPath) return;
+    const rel = path.startsWith(currentVaultPath + "/")
+      ? path.slice(currentVaultPath.length + 1)
+      : path;
+    const parent = await ipc
+      .pageAtRevision(currentVaultPath, rel, `${run.sha}^`)
+      .catch(() => undefined);
+    if (parent === undefined) {
+      notice.warn(t.rd_auth_failed ?? "That revision could not be read.");
+      return;
+    }
+    // No file in the parent tree: the commit created it, so the paragraph is
+    // new and reverting means removing it.
+    const restored = parent ? parentParagraph(draftRef.current, parent, run.from, run.to) : "";
+    if (restored === null) {
+      notice.warn(
+        t.rd_auth_nothing ?? "The earlier revision already holds this paragraph.",
+        {
+          action: {
+            label: t.rd_auth_history ?? "See it in history",
+            run: () => setRoute("history"),
+          },
+        },
+      );
+      return;
+    }
+    applyDocEdit(replaceLines(draftRef.current, run.from, run.to, restored));
+    notice.ok(t.rd_auth_reverted ?? "Paragraph reverted");
+  }
 
   function patchProps(patch: FmPatch): void {
     const edit = patchFrontmatter(draftRef.current, patch);
@@ -641,6 +719,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
                   t={t}
                   live={mode === "live"}
                   viewRef={editorViewRef}
+                  extras={extras}
                   onChange={(c) => {
                     setDraft(c);
                     scheduleSave(c);
@@ -677,6 +756,46 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
           />
         ) : null}
       </div>
+      {pick ? (
+        <div
+          className="auth-pop"
+          role="dialog"
+          aria-label={t.rd_auth_title ?? "Who wrote this paragraph"}
+          style={{
+            left: Math.min(pick.x, window.innerWidth - 280),
+            top: pick.y + 8,
+          }}
+        >
+          <p className="auth-pop__who">
+            <span className={"auth-dot" + (pick.run.agent ? " is-agent" : "")} aria-hidden="true" />
+            {pick.run.agent
+              ? (t.rd_auth_agent ?? "Written by the agent")
+              : (t.rd_auth_human ?? "Written by you")}
+          </p>
+          <p className="auth-pop__when">
+            {fmtDate(pick.run.ts, lang)}
+            {pick.run.sha ? ` · ${pick.run.sha.slice(0, 7)}` : ""}
+          </p>
+          {pick.run.revertable ? (
+            <button className="btn" onClick={() => void revertParagraph(pick.run)}>
+              ↺ {t.rd_auth_revert ?? "Revert this paragraph"}
+            </button>
+          ) : (
+            <>
+              <button className="btn" disabled>
+                ↺ {t.rd_auth_revert ?? "Revert this paragraph"}
+              </button>
+              <p className="auth-pop__when">
+                {t.rd_auth_locked ??
+                  "More than one commit wrote this paragraph — there is no single version to go back to."}
+              </p>
+              <button className="btn btn-ghost" onClick={() => setRoute("history")}>
+                {t.rd_auth_history ?? "See it in history"} →
+              </button>
+            </>
+          )}
+        </div>
+      ) : null}
       {audioActive ? <AudioOverviewPanel t={t} /> : null}
       {/* Mount only while a PDF is open: the viewer renders null otherwise, and
           mounting the lazy component would fetch pdf.js for every note. */}
@@ -691,4 +810,14 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       ) : null}
     </div>
   );
+}
+
+/** Author time as a plain date; the gutter needs a stamp, not a countdown. */
+function fmtDate(ts: number, lang: string): string {
+  if (!ts) return "—";
+  try {
+    return new Intl.DateTimeFormat(lang, { dateStyle: "medium" }).format(new Date(ts * 1000));
+  } catch {
+    return new Date(ts * 1000).toISOString().slice(0, 10);
+  }
 }
