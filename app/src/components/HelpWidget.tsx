@@ -31,10 +31,6 @@ function tipsFor(route: string, t: Strings): string[] {
         t.hw_tip_ingest1 ?? "Drop any file, paste text, or import a Zotero export.",
         t.hw_tip_ingest2 ?? "The web clipper sends pages here through _inbox/ (see clipper/).",
       ];
-    case "views":
-      return [
-        t.hw_tip_views1 ?? "Filters compose — save the result as a named view chip.",
-      ];
     case "overview":
       return [
         t.hw_tip_overview1 ?? "Suggested links are semantic pairs with no wikilink yet — accept or dismiss.",

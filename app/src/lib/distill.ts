@@ -200,12 +200,11 @@ export function lastRunLabel(
   return rtf.format(-Math.round(diffSec / 86_400), "day");
 }
 
-// Task 8 fix (code review): three independent callers can decide to run
-// distill_run around the same moment — a due "distill" schedule, the
-// idle-gated backlog count trigger (scheduleTimer.ts), and the manual
-// "Distill now" button (PageSettings.tsx). A run can outlive the timer's
-// 5-min poll, so without a shared guard two runs could interleave file
-// moves. One per-vault in-flight set, consulted and set by all three.
+// Task 8 fix (code review): independent callers can decide to run
+// distill_run around the same moment (the manual "Distill now" button, the
+// auto-distill toggle's pass), and a run can outlive the poll that started
+// it — without a shared guard two runs could interleave file moves. One
+// per-vault in-flight set, consulted and set by every caller.
 const inFlight = new Set<string>();
 
 // Phase B, Task 2 — the session daily-digest's outcome, keyed by vault path.

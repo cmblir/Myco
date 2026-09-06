@@ -43,21 +43,15 @@ await nav(0).click();
 await page.waitForSelector(".page-title", { timeout: 20_000 });
 await shot("overview.png");
 
-// Provenance / Tags fold under the Tools disclosure — open it, then pick by
-// label (their position depends on the badge rows above them).
+// Provenance folds under the Tools disclosure — open it, then pick by label
+// (its position depends on the badge rows above it).
 await page.locator(".side-nav .nav-item[aria-expanded]").first().click();
 await page.locator(".side-nav .nav-item", { hasText: "Provenance" }).first().click();
 await page.waitForSelector(".page-title", { timeout: 20_000 });
 await shot("provenance.png");
 
-// Tags
-await page.locator(".side-nav .nav-item", { hasText: "Tags" }).first().click();
-await page.waitForSelector(".page-title", { timeout: 20_000 });
-await shot("tags.png");
-
-// Settings — by label, not by position. The TOOLS group grew a Schedules
-// entry above it, so `.nav-item.first()` silently captured Schedules under
-// the settings.png filename.
+// Settings — by label, not by position: the Tools group's rows shift with
+// the badges above them.
 await page.locator(".side-nav .nav-item", { hasText: "Settings" }).first().click();
 await page.waitForSelector(".page-title", { timeout: 20_000 });
 await shot("settings.png");

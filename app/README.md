@@ -79,7 +79,6 @@ Settings → Account.
 | Agent mode | An Ask/Agent toggle on the Ask page. In Agent mode a tool-capable model (Anthropic API or an OpenAI-compatible provider) plans and calls read tools over the vault — search, read pages, traverse links, provenance — streaming a collapsible step trace, then answers with citations. Optional **write tools** (create/update page) are confirmed per call and never touch `raw/`. Reusable **task-agent presets** are saved as portable `agents/<slug>.md` files |
 | Audio overview | Turn a set of pages (an answer's cited pages, or a Reader page + its neighbours) into a grounded two-host spoken "deep dive". The dialogue is generated from the pages' markdown (with citations), saved as a transcript in `audio/`, and played back offline via the OS voices (Web Speech API — no bundled engine); click any transcript turn to jump there |
 | PDF viewer + highlight backlinks | Open a `raw/` PDF in-app (pdf.js, bundled worker — no network). Select text → "Highlight & cite" mints a colour-coded highlight and inserts a `[[pdf::<stem>#p<page>:<id>]]` pinpoint link into your note; highlights persist in an external sidecar (`wiki/.annotations/<stem>.json`, so `raw/` stays immutable). Click a pinpoint link to open the PDF at that spot; click a highlight to jump to the citing note |
-| Schedules (recurring digests) | Define recurring digests (Schedules route): a free query, a "what changed" summary (folds in `git log`), a staleness/maintenance sweep, or a topic tracker. Each runs on a cadence (daily / weekly / monthly / every N hours) while the app is open and writes a plain-markdown note into `digests/`; "Run now" triggers one on demand, with a link to the latest digest |
 
 ### Model connections
 
@@ -107,11 +106,14 @@ can run e.g. Claude Sonnet for ingest and a local Llama for Q&A.
   density modes, custom accent colour.
 - Three UI languages: English / 한국어 / 日本語. The model's drafting
   language is independent of the UI.
-- `⌘K` command palette (jumps to any route or vault file).
-- Sidebar: six primary routes (Overview · Ask · Ingest · Graph · Tasks ·
-  Views); History, Provenance, Tags, Study, Feedback and Schedules fold
-  under a Tools row. Settings has a search box that narrows its tabs and
-  cards to matching labels.
+- `⌘K` command palette (jumps to any route or vault file; `path:` `tag:`
+  `type:` `status:` `confidence:` narrow the page list by frontmatter, and
+  the four built-in lenses — no sources · orphans · disputed · recently
+  changed — list the pages that answer each question).
+- Sidebar: four primary routes (Today · Ask · Ingest · Harvest box — the
+  promotion-proposal queue, badged while proposals wait); Graph, Tasks,
+  Study, History and Provenance fold under a Tools row. Settings has a
+  search box that narrows its tabs and cards to matching labels.
 - `⌘B` toggles the sidebar.
 - Menu bar tray: left- or right-click opens a glass popover — the mascot with a
   one-line status, at most one card for the thing awaiting a decision

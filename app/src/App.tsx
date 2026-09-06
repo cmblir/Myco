@@ -32,11 +32,8 @@ const PageSettings = lazy(() => import("./pages/PageSettings"));
 import PageHistory from "./pages/PageHistory";
 import PageProvenance from "./pages/PageProvenance";
 import PageTasks from "./pages/PageTasks";
-import PageTags from "./pages/PageTags";
-import PageViews from "./pages/PageViews";
 import PageStudy from "./pages/PageStudy";
 import PageFeedback from "./pages/PageFeedback";
-import PageSchedules from "./pages/PageSchedules";
 import { STRINGS } from "./lib/i18n";
 import { promptNewNote } from "./lib/newNote";
 import { initTrayIntegration } from "./lib/trayStatus";
@@ -52,8 +49,6 @@ import { useTaskNotifier } from "./lib/taskNotifier";
 import { useAutoReflectScheduler } from "./lib/autoReflect";
 import { useAutoReindexScheduler } from "./lib/autoReindex";
 import { runInboxPass } from "./lib/autoIngest";
-import { useScheduleTimer } from "./lib/scheduleTimer";
-import { markActivity } from "./lib/idle";
 import { useIngestStore } from "./stores/ingestStore";
 import { useUpdateStore } from "./stores/updateStore";
 import { ipc } from "./lib/ipc";
@@ -87,11 +82,8 @@ const SPLIT_ROUTES: RouteId[] = [
   "ingest",
   "history",
   "provenance",
-  "tags",
-  "views",
   "tasks",
   "study",
-  "schedules",
 ];
 
 function routeLabel(t: Strings, r: RouteId): string {
@@ -108,16 +100,10 @@ function routeLabel(t: Strings, r: RouteId): string {
       return t.nav_history;
     case "provenance":
       return t.nav_provenance;
-    case "tags":
-      return t.nav_tags;
-    case "views":
-      return t.nav_views ?? "Views";
     case "tasks":
       return t.nav_tasks;
     case "study":
       return t.nav_study;
-    case "schedules":
-      return t.nav_schedules;
     default:
       return r;
   }
@@ -319,22 +305,6 @@ export default function App(): JSX.Element {
     settings?.auto_reindex_enabled ?? false,
     currentVault?.path,
   );
-
-  // Recurring digest schedules while the app is open (Feature 7).
-  useScheduleTimer(currentVault?.path);
-
-  // Track user activity globally (Task 8, Phase A) so the idle-gated distill
-  // trigger in scheduleTimer stays accurate no matter which page is open —
-  // scheduleTimer is not a component, so it reads the shared lastActivity
-  // timestamp via isIdle() rather than a hook.
-  useEffect(() => {
-    window.addEventListener("pointermove", markActivity);
-    window.addEventListener("keydown", markActivity);
-    return () => {
-      window.removeEventListener("pointermove", markActivity);
-      window.removeEventListener("keydown", markActivity);
-    };
-  }, []);
 
   // Auto-refresh the file tree + link graph so EXTERNAL changes (edits in
   // Obsidian/Finder, files written outside in-app operations) appear without a
@@ -616,11 +586,8 @@ export default function App(): JSX.Element {
     if (r === "history") return <PageHistory t={t} />;
     if (r === "provenance") return <PageProvenance t={t} />;
     if (r === "tasks") return <PageTasks t={t} />;
-    if (r === "tags") return <PageTags t={t} />;
-    if (r === "views") return <PageViews t={t} />;
     if (r === "study") return <PageStudy t={t} />;
     if (r === "feedback") return <PageFeedback t={t} />;
-    if (r === "schedules") return <PageSchedules t={t} />;
     if (r === "settings")
       return (
         <Suspense fallback={chunkFallback}>

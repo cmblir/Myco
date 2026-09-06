@@ -13,12 +13,18 @@ import { BUILTIN_EMBED_MODEL } from "../lib/providers";
 import type { FileNode, SearchHit, VecHit } from "../lib/ipc";
 import { isComposingKey } from "../lib/ime";
 import { promptNewNote } from "../lib/newNote";
-import { hitPassesFilters, parseSearchQuery } from "../lib/searchQuery";
+import { flattenMarkdown } from "../lib/graphData";
+import { BUILTIN_LENSES, runView, wikiPagesOnly } from "../lib/queryViews";
+import type { BuiltinLens } from "../lib/queryViews";
+import { hasOperators, hitPassesFilters, parseSearchQuery } from "../lib/searchQuery";
 import { newNoteFromTemplate } from "./TemplatePicker";
 
 type CmdEntry =
   | { type: "nav" | "page"; label: string; to: RouteId }
-  | { type: "action"; label: string; run: () => void };
+  | { type: "action"; label: string; run: () => void }
+  // A built-in lens (no sources / orphans / disputed / recent): picking one
+  // swaps the page list for the pages that answer its question.
+  | { type: "lens"; label: string; lens: BuiltinLens };
 
 export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   const open = useUIStore((s) => s.cmdOpen);
@@ -26,6 +32,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   const setRoute = useUIStore((s) => s.setRoute);
   const fileTree = useVaultStore((s) => s.fileTree);
   const currentVault = useVaultStore((s) => s.currentVault);
+  const adjacency = useVaultStore((s) => s.adjacency);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const listRef = useRef<HTMLDivElement | null>(null);
   const [q, setQ] = useState("");
@@ -40,11 +47,35 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   const [selected, setSelected] = useState(0);
   // ⌥⏎ logged the current query as a recall miss — swaps the footer hint.
   const [missLogged, setMissLogged] = useState(false);
+  // Active lens; the box then filters its rows by name instead of the vault.
+  const [lens, setLens] = useState<BuiltinLens | null>(null);
+  // mtimes back the "recent" lens only — adjacency carries no dates.
+  const [mtimes, setMtimes] = useState<Map<string, number> | null>(null);
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 30);
-    if (!open) setQ("");
+    if (!open) {
+      setQ("");
+      setLens(null);
+    }
   }, [open]);
+
+  useEffect(() => {
+    if (lens?.sort !== "modified" || !currentVault) return;
+    let cancelled = false;
+    ipc.fileMtimes(currentVault.path).then(
+      (pairs) => {
+        if (!cancelled) setMtimes(new Map(pairs));
+      },
+      () => {
+        // Without dates the lens degrades to name order rather than erroring.
+        if (!cancelled) setMtimes(null);
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [lens, currentVault]);
 
   // Reset selection to the top whenever the query changes.
   useEffect(() => {
@@ -56,7 +87,9 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   // locally above; this adds matches found inside the markdown bodies.
   useEffect(() => {
     const needle = q.trim();
-    if (needle.length < 2) {
+    // A lens already IS the result set; scanning the vault under it would
+    // append pages the lens excluded.
+    if (needle.length < 2 || lens) {
       setExactHits([]);
       setContentHits([]);
       setSemanticHits([]);
@@ -67,7 +100,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
       const parsed = parseSearchQuery(needle);
       const { currentVault: vault, adjacency } = useVaultStore.getState();
       const passes = (path: string): boolean =>
-        hitPassesFilters(path, vault?.path ?? "", parsed, adjacency?.tags ?? {});
+        hitPassesFilters(path, vault?.path ?? "", parsed, adjacency?.tags ?? {}, adjacency?.meta);
       // Exact arm: the raw substring scan takes the whole quoted phrase as
       // its needle, so every hit contains it verbatim.
       const phrase = parsed.phrases[0];
@@ -112,7 +145,17 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
       cancelled = true;
       clearTimeout(id);
     };
-  }, [q]);
+  }, [q, lens]);
+
+  const pages = useMemo(
+    () =>
+      collectFiles(fileTree).map((n) => ({
+        type: "page" as const,
+        label: n.name.replace(/\.md$/i, ""),
+        to: `page:${n.path}` as RouteId,
+      })),
+    [fileTree],
+  );
 
   const all: CmdEntry[] = useMemo(() => {
     // Actions first: creating a note is the one thing the palette can DO
@@ -137,27 +180,55 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
       { type: "nav", label: t.nav_history, to: "history" },
       { type: "nav", label: t.nav_provenance, to: "provenance" },
       { type: "nav", label: t.nav_tasks ?? "Tasks", to: "tasks" },
-      { type: "nav", label: t.nav_views ?? "Views", to: "views" },
-      { type: "nav", label: t.nav_tags, to: "tags" },
       { type: "nav", label: t.nav_study, to: "study" },
-      { type: "nav", label: t.nav_feedback ?? "Feedback", to: "feedback" },
-      { type: "nav", label: t.nav_schedules, to: "schedules" },
+      { type: "nav", label: t.nav_feedback ?? "Harvest box", to: "feedback" },
       { type: "nav", label: t.nav_settings, to: "settings" },
     ];
-    const pages: CmdEntry[] = collectFiles(fileTree).map((n) => ({
-      type: "page",
-      label: n.name.replace(/\.md$/i, ""),
-      to: `page:${n.path}` as RouteId,
+    // The Views page's lenses live here now — the route is gone (the owner's
+    // vault held zero saved views), the questions it answered are not.
+    const lenses: CmdEntry[] = BUILTIN_LENSES.map((lens) => ({
+      type: "lens",
+      label: t[lens.labelKey as keyof Strings] ?? lens.fallback,
+      lens,
     }));
-    return [...actions, ...navs, ...pages];
-  }, [t, fileTree]);
+    return [...actions, ...navs, ...lenses, ...pages];
+  }, [t, pages]);
+
+  // Rows of the active lens: runView over the wiki pages, exactly the table
+  // the Views page used to draw.
+  const lensRows = useMemo(() => {
+    if (!lens || !adjacency) return [];
+    const files = wikiPagesOnly(flattenMarkdown(fileTree), currentVault?.path);
+    return runView(adjacency, files, lens.filter, lens.sort, lens.desc, mtimes ?? undefined).map(
+      (r) => ({ type: "page" as const, label: r.name, to: `page:${r.path}` as RouteId }),
+    );
+  }, [lens, adjacency, fileTree, currentVault, mtimes]);
 
   if (!open) return null;
-  const filtered = q.trim()
+  // Operators (path: tag: type: status: confidence:) narrow the PAGE list by
+  // frontmatter, so `type:concept` on its own lists the concept pages; any
+  // free text left over matches names as before.
+  const parsed = parseSearchQuery(q);
+  const ops = hasOperators(parsed);
+  const needle = (ops ? parsed.terms : q).trim().toLowerCase();
+  const base: CmdEntry[] = lens
+    ? lensRows
+    : ops
+      ? pages.filter((p) =>
+          hitPassesFilters(
+            p.to.slice(5),
+            currentVault?.path ?? "",
+            parsed,
+            adjacency?.tags ?? {},
+            adjacency?.meta,
+          ),
+        )
+      : all;
+  const filtered = needle
     // Capped like the no-query branch below: a two-letter query over a
     // 1121-file vault otherwise renders every match into the palette.
-    ? all.filter((x) => x.label.toLowerCase().includes(q.toLowerCase())).slice(0, 50)
-    : all.slice(0, 12);
+    ? base.filter((x) => x.label.toLowerCase().includes(needle)).slice(0, 50)
+    : base.slice(0, lens || ops ? 50 : 12);
 
   // The rendered groups form a single navigable list: nav/file entries first,
   // then exact-phrase hits, full-text content hits, semantic hits.
@@ -168,6 +239,13 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
   const active = total > 0 ? Math.min(selected, total - 1) : 0;
 
   function go(entry: CmdEntry): void {
+    if (entry.type === "lens") {
+      // Stays open: the lens replaces the list and the box filters its rows.
+      setLens(entry.lens);
+      setQ("");
+      inputRef.current?.focus();
+      return;
+    }
     setCmdOpen(false);
     if (entry.type === "action") entry.run();
     else setRoute(entry.to);
@@ -229,6 +307,9 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       move(-1);
+    } else if (e.key === "Backspace" && lens && q === "") {
+      // Backspace past an empty box drops the lens, like a chip in the input.
+      setLens(null);
     } else if (e.key === "Enter" && e.altKey) {
       // ⌥⏎ — log the query to the recall-miss eval set (Q4 item 5).
       e.preventDefault();
@@ -263,6 +344,9 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
       >
         <div className="cmd-input">
           <Icon name="search" size={16} />
+          {lens ? (
+            <span className="cr-tag">{t[lens.labelKey as keyof Strings] ?? lens.fallback}</span>
+          ) : null}
           <input
             ref={inputRef}
             placeholder={t.ph_search}
@@ -300,9 +384,11 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
               <span className="cr-tag">
                 {r.type === "action"
                   ? (t.cb_tag_action ?? "action")
-                  : r.type === "nav"
-                    ? (t.cb_tag_page ?? "page")
-                    : (t.cb_tag_file ?? "file")}
+                  : r.type === "lens"
+                    ? (t.cb_tag_lens ?? "lens")
+                    : r.type === "nav"
+                      ? (t.cb_tag_page ?? "page")
+                      : (t.cb_tag_file ?? "file")}
               </span>
             </button>
           ))}
@@ -393,6 +479,7 @@ export default function CommandBar({ t }: { t: Strings }): JSX.Element | null {
 
 function iconFor(entry: CmdEntry): IconName {
   if (entry.type === "action") return "plus";
+  if (entry.type === "lens") return "eye";
   if (entry.type === "page") return "page";
   if (entry.to === "overview") return "home";
   if (entry.to === "graph") return "graph";
@@ -400,11 +487,8 @@ function iconFor(entry: CmdEntry): IconName {
   if (entry.to === "provenance") return "quote";
   if (entry.to === "ingest") return "upload";
   if (entry.to === "query") return "msg";
-  if (entry.to === "tags") return "book";
   if (entry.to === "study") return "sparkles";
   if (entry.to === "feedback") return "inbox";
-  if (entry.to === "views") return "eye";
-  if (entry.to === "schedules") return "history";
   if (entry.to === "settings") return "settings";
   return "arrowR";
 }

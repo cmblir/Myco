@@ -11,6 +11,7 @@ import type { RouteId } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useStudyStore } from "../stores/studyStore";
 import { useDistillStore } from "../stores/distillStore";
+import { useHarvestStore } from "../stores/harvestStore";
 import { ipc } from "../lib/ipc";
 import type { AuthorshipIndex, FileNode } from "../lib/ipc";
 import { filterHumanTree } from "../lib/authorship";
@@ -30,15 +31,10 @@ import type { ContextMenuState } from "./SidebarMenu";
 import { TreeNode, allPaths, countFiles } from "./SidebarTree";
 import type { RowClick, RowKey } from "./SidebarTree";
 
-// Routes folded under the sidebar's Tools disclosure.
-const TOOL_ROUTES: RouteId[] = [
-  "history",
-  "provenance",
-  "tags",
-  "study",
-  "feedback",
-  "schedules",
-];
+// Routes folded under the sidebar's Tools disclosure. Graph and Tasks moved
+// down here from the primary rows: measured, nothing but the sidebar and ⌘K
+// ever led into them, so a primary slot bought them no traffic.
+const TOOL_ROUTES: RouteId[] = ["graph", "tasks", "study", "history", "provenance"];
 
 // Synthetic group rows above the file tree: never selectable, no context menu.
 const isGroup = (path: string): boolean => path === FAVORITES_ID || path === RECENT_ID;
@@ -58,6 +54,11 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   const refreshStudy = useStudyStore((s) => s.refresh);
   const pendingProposals = useDistillStore((s) => s.status?.pending_proposals ?? 0);
   const refreshDistill = useDistillStore((s) => s.refresh);
+  // Today's harvest candidates badge the 오늘 row. The store caches per vault,
+  // so this load is the same scan the Overview queue shows — fetched here so
+  // the badge exists before the Overview is ever visited.
+  const harvestCount = useHarvestStore((s) => s.data?.items.length ?? 0);
+  const loadHarvest = useHarvestStore((s) => s.load);
   const [menu, setMenu] = useState<ContextMenuState | null>(null);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [anchor, setAnchor] = useState<string | null>(null);
@@ -79,6 +80,10 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
   useEffect(() => {
     void refreshDistill();
   }, [refreshDistill, fileTree]);
+
+  useEffect(() => {
+    if (currentVault) void loadHarvest(currentVault.path);
+  }, [loadHarvest, currentVault]);
 
   // Refetch the index when the tree changes (a distill run or agent edit lands
   // as file changes, which refreshes the tree) — but only while the filter is on.
@@ -136,9 +141,18 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
       ? filterHumanTree(fileTree, agentTouched, currentVault.path)
       : fileTree;
   const activePath = route.startsWith("page:") ? route.slice(5) : null;
-  // Collapsed Tools row carries the badges of the rows it hides, summed.
-  const toolsBadge = dueTotal + pendingProposals;
-  const toolsBadgeLabel = `${t.nav_study} ${dueTotal} · ${t.nav_feedback ?? "Feedback"} ${pendingProposals}`;
+  // Collapsed Tools row carries the badges of the rows it hides, summed —
+  // only Study carries one now that the proposal queue is a primary row.
+  const toolsBadge = dueTotal;
+  const toolsBadgeLabel = `${t.nav_study} ${dueTotal}`;
+  const harvestLabel = (t.sb_harvest_badge ?? "{n} sessions ready to harvest").replace(
+    "{n}",
+    String(harvestCount),
+  );
+  const proposalsLabel = (t.sb_proposals_badge ?? "{n} proposals awaiting review").replace(
+    "{n}",
+    String(pendingProposals),
+  );
 
   // Favorites (starred files that still exist, star order) and Recently edited
   // (5 newest mtimes) as directory nodes, so TreeNode renders them like folders.
@@ -271,11 +285,18 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
       <nav className="side-nav">
         <div className="nav-group">
           <div className="nav-group-label">{t.nav_workspace}</div>
+          {/* Four primary rows, one per verb: see / ask / put in / promote.
+              Badges mark decisions waiting on a person — the harvest count
+              (violet outline) and the proposal queue (violet fill), the one
+              queue only a human decision shrinks. */}
           <NavItem
             label={t.nav_overview}
             icon="home"
             active={route === "overview"}
             onClick={() => setRoute("overview")}
+            badge={harvestCount > 0 ? String(harvestCount) : undefined}
+            badgeTone="alert"
+            badgeLabel={harvestLabel}
           />
           <NavItem
             label={t.nav_query}
@@ -290,22 +311,13 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
             onClick={() => setRoute("ingest")}
           />
           <NavItem
-            label={t.nav_graph}
-            icon="graph"
-            active={route === "graph"}
-            onClick={() => setRoute("graph")}
-          />
-          <NavItem
-            label={t.nav_tasks ?? "Tasks"}
-            icon="check"
-            active={route === "tasks"}
-            onClick={() => setRoute("tasks")}
-          />
-          <NavItem
-            label={t.nav_views ?? "Views"}
-            icon="eye"
-            active={route === "views"}
-            onClick={() => setRoute("views")}
+            label={t.nav_feedback ?? "Harvest box"}
+            icon="inbox"
+            active={route === "feedback"}
+            onClick={() => setRoute("feedback")}
+            badge={pendingProposals > 0 ? String(pendingProposals) : undefined}
+            badgeTone="fill"
+            badgeLabel={proposalsLabel}
           />
         </div>
 
@@ -341,24 +353,17 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
             <>
               <NavItem
                 indent
-                label={t.nav_history}
-                icon="history"
-                active={route === "history"}
-                onClick={() => setRoute("history")}
+                label={t.nav_graph}
+                icon="graph"
+                active={route === "graph"}
+                onClick={() => setRoute("graph")}
               />
               <NavItem
                 indent
-                label={t.nav_provenance}
-                icon="quote"
-                active={route === "provenance"}
-                onClick={() => setRoute("provenance")}
-              />
-              <NavItem
-                indent
-                label={t.nav_tags}
-                icon="book"
-                active={route === "tags"}
-                onClick={() => setRoute("tags")}
+                label={t.nav_tasks ?? "Tasks"}
+                icon="check"
+                active={route === "tasks"}
+                onClick={() => setRoute("tasks")}
               />
               <NavItem
                 indent
@@ -370,20 +375,17 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
               />
               <NavItem
                 indent
-                label={t.nav_feedback ?? "Feedback"}
-                icon="inbox"
-                active={route === "feedback"}
-                onClick={() => setRoute("feedback")}
-                badge={
-                  pendingProposals > 0 ? String(pendingProposals) : undefined
-                }
+                label={t.nav_history}
+                icon="history"
+                active={route === "history"}
+                onClick={() => setRoute("history")}
               />
               <NavItem
                 indent
-                label={t.nav_schedules}
-                icon="history"
-                active={route === "schedules"}
-                onClick={() => setRoute("schedules")}
+                label={t.nav_provenance}
+                icon="quote"
+                active={route === "provenance"}
+                onClick={() => setRoute("provenance")}
               />
             </>
           ) : null}
@@ -483,6 +485,8 @@ function NavItem({
   active,
   onClick,
   badge,
+  badgeTone,
+  badgeLabel,
   indent,
 }: {
   label: string;
@@ -490,6 +494,11 @@ function NavItem({
   active: boolean;
   onClick: () => void;
   badge?: string;
+  // fill = a queue only a human decision shrinks; alert = a count worth a
+  // look; unset = the neutral sum a collapsed row carries.
+  badgeTone?: "fill" | "alert";
+  // What the number means, for the tooltip and the screen reader.
+  badgeLabel?: string;
   // Depth-1 tree indent, for rows nested under the Tools disclosure.
   indent?: boolean;
 }): JSX.Element {
@@ -504,7 +513,15 @@ function NavItem({
         <Icon name={icon} size={15} />
       </span>
       <span className="ni-text">{label}</span>
-      {badge ? <span className="nav-badge">{badge}</span> : null}
+      {badge ? (
+        <span
+          className={"nav-badge" + (badgeTone ? ` ${badgeTone}` : "")}
+          title={badgeLabel}
+          aria-label={badgeLabel}
+        >
+          {badge}
+        </span>
+      ) : null}
     </button>
   );
 }

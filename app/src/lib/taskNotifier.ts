@@ -1,5 +1,5 @@
 // Fires task notifications while the app is open, on the same shape as the
-// other in-app schedulers (autoImport / scheduleTimer): a hook, an interval, and
+// other in-app schedulers (autoImport / autoReindex): a hook, an interval, and
 // pure logic it defers to (taskNotify.ts).
 //
 // State lives in localStorage rather than vault settings on purpose —

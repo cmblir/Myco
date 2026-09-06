@@ -37,13 +37,30 @@ export type RouteId =
   | "history"
   | "provenance"
   | "tasks"
-  | "tags"
-  | "views"
   | "study"
   | "feedback"
-  | "schedules"
   | "settings"
   | `page:${string}`;
+
+const FIXED_ROUTES: readonly RouteId[] = [
+  "overview",
+  "ingest",
+  "query",
+  "graph",
+  "history",
+  "provenance",
+  "tasks",
+  "study",
+  "feedback",
+  "settings",
+];
+
+/** A persisted route is trusted only while the app still has a page for it:
+ * the Views / Tags / Schedules routes were removed, and a store that closed on
+ * one of them would otherwise rehydrate onto a pane nothing renders. */
+function isRoute(r: unknown): r is RouteId {
+  return typeof r === "string" && (FIXED_ROUTES.includes(r as RouteId) || r.startsWith("page:"));
+}
 
 export type FeedbackTab = "proposals" | "quarantine";
 export type EditorMode = "live" | "source" | "split" | "preview";
@@ -97,7 +114,7 @@ export interface UIState {
   splitRatio: number;
   // Layout
   sidebarCollapsed: boolean;
-  // Sidebar Tools disclosure (History … Schedules). Per device — not in the
+  // Sidebar Tools disclosure (Graph … Provenance). Per device — not in the
   // settings bundle.
   toolsOpen: boolean;
   cmdOpen: boolean;
@@ -266,9 +283,12 @@ export const useUIStore = create<UIState>()(
       // engine key with no factory behind it.
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<UIState>;
+        const route = isRoute(p.route) ? p.route : "overview";
         return {
           ...current,
           ...p,
+          route,
+          splitRoute: isRoute(p.splitRoute) ? p.splitRoute : null,
           overviewTheme: isOverviewTheme(p.overviewTheme)
             ? p.overviewTheme
             : DEFAULT_OVERVIEW_THEME,
@@ -287,7 +307,7 @@ export const useUIStore = create<UIState>()(
             ? (p.askScope as AskScope)
             : "wiki",
           askTierWeights: sanitizeTierWeights(p.askTierWeights),
-          navHistory: sanitizeHistory(p.navHistory, p.route ?? current.route),
+          navHistory: sanitizeHistory(p.navHistory, route),
           // Transient by design: a persisted target would scroll+flash a
           // section on the next launch for a click made days ago. The Survey
           // deep link is transient for the same reason.

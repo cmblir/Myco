@@ -13,7 +13,6 @@ export interface Strings {
   nav_ingest: string;
   nav_query: string;
   nav_graph: string;
-  nav_views: string;
   db_empty: string;
   bd_title: string;
   bd_range: string;
@@ -159,49 +158,12 @@ export interface Strings {
   hw_tip_query2: string;
   hw_tip_ingest1: string;
   hw_tip_ingest2: string;
-  hw_tip_views1: string;
   hw_tip_overview1: string;
   hw_tip_default: string;
-  vw_title: string;
-  vw_lede: string;
-  vw_search: string;
-  vw_any_type: string;
-  vw_any_conf: string;
-  vw_any_status: string;
-  vw_any_tag: string;
-  vw_orphans: string;
-  vw_save: string;
-  vw_save_prompt: string;
-  vw_pages: string;
-  vw_empty: string;
-  vw_col_name: string;
-  vw_col_type: string;
-  vw_col_conf: string;
-  vw_col_sources: string;
-  vw_col_links: string;
-  vw_col_tags: string;
-  vw_col_status: string;
-  vw_col_modified: string;
   vw_lens_unsourced: string;
   vw_lens_orphans: string;
   vw_lens_disputed: string;
   vw_lens_recent: string;
-  vw_select_all: string;
-  vw_select_row: string;
-  vw_selected_n: string;
-  vw_bulk_title: string;
-  vw_bulk_confirm: string;
-  vw_bulk_type: string;
-  vw_bulk_status: string;
-  vw_bulk_add_tag: string;
-  vw_clear_sel: string;
-  vw_edit_cell: string;
-  vw_unset: string;
-  vw_edit_done: string;
-  vw_edit_failed: string;
-  vw_load_error: string;
-  vw_io_error: string;
-  vw_overwrite_q: string;
   tpl_new_from: string;
   tpl_pick_title: string;
   tpl_pick_msg: string;
@@ -290,9 +252,7 @@ export interface Strings {
   tasks_done_n: string;
   tasks_all_done: string;
   tasks_completed: string;
-  nav_tags: string;
   nav_study: string;
-  nav_schedules: string;
   nav_settings: string;
   // Split view (two panes side by side)
   split_open: string;
@@ -832,32 +792,6 @@ export interface Strings {
   pdf_loading: string;
   pdf_error: string;
   pdf_highlight_cite: string;
-  // Schedules (Feature 7).
-  sc_title: string;
-  sc_lede: string;
-  sc_new: string;
-  sc_empty: string;
-  sc_run_now: string;
-  sc_running: string;
-  sc_edit: string;
-  sc_last_run: string;
-  sc_never: string;
-  sc_done: string;
-  sc_open: string;
-  sc_f_title: string;
-  sc_f_kind: string;
-  sc_f_cadence: string;
-  sc_f_prompt: string;
-  sc_f_topic: string;
-  sc_f_enabled: string;
-  sc_f_notify: string;
-  sc_f_notify_hint: string;
-  sc_f_save: string;
-  sc_f_cancel: string;
-  sc_bg_install: string;
-  sc_bg_remove: string;
-  sc_bg_hint: string;
-  sc_kind_distill: string;
   // Ontology distillation (Task 8, Phase A) — Settings tab.
   s_distill: string;
   set_distill_loading: string;
@@ -1251,6 +1185,10 @@ export interface Strings {
   cb_operator_hint: string;
   cb_miss_hint: string;
   cb_miss_done: string;
+  // Stipe shell (W4-B): sidebar badges, ⌘K lenses, status strip, settings shell.
+  sb_harvest_badge: string;
+  sb_proposals_badge: string;
+  cb_tag_lens: string;
   // Topbar.
   tb_lint: string;
   tb_toggle_sidebar: string;
@@ -1328,10 +1266,6 @@ export interface Strings {
   // Graph toolbar.
   // Overview / History empty states.
   h_open_vault: string;
-  // Tags page (FEAT-03).
-  tg_title: string;
-  tg_lede: string;
-  tg_empty: string;
   // Reflect suggestions panel (FEAT-06).
   rf_title: string;
   rf_lede: string;
@@ -1537,11 +1471,10 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_workspace: "Workspace",
     nav_pages: "Pages",
     nav_tools: "Tools",
-    nav_overview: "Overview",
+    nav_overview: "Today",
     nav_ingest: "Ingest",
     nav_query: "Ask",
     nav_graph: "Graph",
-    nav_views: "Views",
     db_empty: "Nothing to chart yet.",
     bd_title: "My board",
     bd_range: "Range",
@@ -1703,51 +1636,13 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_tip_ingest1: "Drop any file, paste text, or import a Zotero export.",
     hw_tip_ingest2:
       "The web clipper sends pages here through _inbox/ (see clipper/).",
-    hw_tip_views1: "Filters compose — save the result as a named view chip.",
     hw_tip_overview1:
       "Suggested links are semantic pairs with no wikilink yet — accept or dismiss.",
     hw_tip_default: "⌘K jumps anywhere — pages, actions, semantic hits.",
-    vw_title: "Query views",
-    vw_lede:
-      "Filter the wiki by its frontmatter — type, confidence, status, tags, sources — and save the lenses you keep coming back to.",
-    vw_search: "Filter by name…",
-    vw_any_type: "Any type",
-    vw_any_conf: "Any confidence",
-    vw_any_status: "Any status",
-    vw_any_tag: "Any tag",
-    vw_orphans: "Orphans only",
-    vw_save: "Save view",
-    vw_save_prompt: "Name this view:",
-    vw_pages: "pages",
-    vw_empty: "No pages match this view.",
-    vw_col_name: "Page",
-    vw_col_type: "Type",
-    vw_col_conf: "Confidence",
-    vw_col_sources: "Sources",
-    vw_col_links: "Links",
-    vw_col_tags: "Tags",
-    vw_col_status: "Status",
-    vw_col_modified: "Modified",
     vw_lens_unsourced: "No sources",
     vw_lens_orphans: "Orphans",
     vw_lens_disputed: "Disputed",
     vw_lens_recent: "Recently changed",
-    vw_select_all: "Select all rows",
-    vw_select_row: "Select {name}",
-    vw_selected_n: "{n} selected",
-    vw_bulk_title: "Bulk edit",
-    vw_bulk_confirm: "Apply to {n} pages?",
-    vw_bulk_type: "Set type…",
-    vw_bulk_status: "Set status…",
-    vw_bulk_add_tag: "Add tag…",
-    vw_clear_sel: "Clear selection",
-    vw_edit_cell: "Click to edit",
-    vw_unset: "(none)",
-    vw_edit_done: "Done",
-    vw_edit_failed: "Could not save: {msg}",
-    vw_load_error: "Saved views could not be read from .myco/views/.",
-    vw_io_error: "Could not update saved views: {err}",
-    vw_overwrite_q: "Replace the saved view “{name}”?",
     tpl_new_from: "New note from template…",
     tpl_pick_title: "Choose a template",
     tpl_pick_msg:
@@ -1844,9 +1739,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_done_n: "{n} done",
     tasks_all_done: "All caught up — nothing open.",
     tasks_completed: "Completed ({n})",
-    nav_tags: "Tags",
     nav_study: "Study",
-    nav_schedules: "Schedules",
     nav_settings: "Settings",
     split_open: "Split view",
     split_close: "Close split view",
@@ -2425,31 +2318,6 @@ export const STRINGS: Record<Lang, Strings> = {
     pdf_loading: "Loading PDF…",
     pdf_error: "Could not open this PDF.",
     pdf_highlight_cite: "Highlight & cite",
-    sc_title: "Schedules",
-    sc_lede: "Recurring digests written into your vault while the app is open.",
-    sc_new: "New schedule",
-    sc_empty: "No schedules yet.",
-    sc_run_now: "Run now",
-    sc_running: "Running…",
-    sc_edit: "Edit",
-    sc_last_run: "last run {t}",
-    sc_never: "never run",
-    sc_done: "Digest written.",
-    sc_open: "Open digest",
-    sc_f_title: "Title (e.g. Weekly review)",
-    sc_f_kind: "Kind",
-    sc_f_cadence: "Cadence",
-    sc_f_prompt: "Prompt to run over the wiki",
-    sc_f_topic: "Topic to track",
-    sc_f_enabled: "Enabled",
-    sc_f_notify: "Notify",
-    sc_f_notify_hint: "Native notification when a run finishes (opt-in)",
-    sc_f_save: "Save",
-    sc_f_cancel: "Cancel",
-    sc_bg_install: "Run in background",
-    sc_bg_remove: "Remove background",
-    sc_bg_hint: "Run this schedule even when the app is closed (macOS launchd)",
-    sc_kind_distill: "Distill",
     s_distill: "Distill",
     set_distill_loading: "Loading…",
     set_distill_lede:
@@ -2538,7 +2406,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_profile_save: "Save",
     set_profile_saving: "Saving…",
     set_profile_saved: "Saved",
-    nav_feedback: "Feedback",
+    nav_feedback: "Harvest box",
     ov_distill_last_run: "Last run {t}",
     ov_distill_never: "No runs yet",
     ov_distill_llm_queued:
@@ -2547,7 +2415,7 @@ export const STRINGS: Record<Lang, Strings> = {
       "Distill finished — archived {a} · {d} days digested · {w} weeks rolled up · {p} proposals",
     ov_distill_done_months: " · {m} monthly rollups",
     ov_distill_done_none: "Distill finished — nothing to process",
-    pf_title: "Feedback",
+    pf_title: "Harvest box",
     pf_lede:
       "Proposals the distillation engine wrote while folding new pages into the wiki — review and apply, or dismiss.",
     pf_empty: "No pending proposals.",
@@ -2867,9 +2735,12 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_in_contents: "In page contents",
     cb_semantic: "Related (semantic)",
     cb_exact: "Exact match",
-    cb_operator_hint: "Quotes for exact match · path: · tag:",
+    cb_operator_hint: "Quotes for exact match · path: · tag: · type: · status: · confidence:",
     cb_miss_hint: "Didn't find it? ⌥⏎ logs this search to the eval set.",
     cb_miss_done: "Logged to the eval set.",
+    sb_harvest_badge: "{n} sessions ready to harvest",
+    sb_proposals_badge: "{n} proposals awaiting review",
+    cb_tag_lens: "lens",
     tb_lint: "Lint",
     tb_toggle_sidebar: "Toggle sidebar (⌘B)",
     tb_back: "Back (⌘[)",
@@ -2946,11 +2817,6 @@ export const STRINGS: Record<Lang, Strings> = {
     notif_quarantine_body:
       "{n} items are waiting for review in _inbox/quarantine.",
     h_open_vault: "Open a vault to see history.",
-    tg_title: "Tags",
-    tg_lede:
-      "Every tag across your vault's frontmatter. Pick a tag to see the pages carrying it, then jump straight to a page.",
-    tg_empty:
-      "No tags yet — add a `tags:` list to a page's frontmatter and they'll gather here.",
     rf_title: "Reflect suggestions",
     rf_lede:
       "Claude's read-only pass over the vault: orphans to link, stale pages, and missing cross-references.",
@@ -3150,11 +3016,10 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_workspace: "워크스페이스",
     nav_pages: "페이지",
     nav_tools: "도구",
-    nav_overview: "개요",
+    nav_overview: "오늘",
     nav_ingest: "가져오기",
     nav_query: "질문",
     nav_graph: "그래프",
-    nav_views: "뷰",
     db_empty: "아직 그릴 데이터가 없습니다.",
     bd_title: "내 보드",
     bd_range: "기간",
@@ -3316,51 +3181,13 @@ export const STRINGS: Record<Lang, Strings> = {
       "파일 드롭, 텍스트 붙여넣기, Zotero 가져오기 모두 가능합니다.",
     hw_tip_ingest2:
       "웹 클리퍼는 _inbox/를 통해 페이지를 이곳으로 보냅니다 (clipper/ 참고).",
-    hw_tip_views1: "필터는 조합됩니다 — 결과를 이름 있는 뷰로 저장하세요.",
     hw_tip_overview1:
       "제안된 연결은 아직 링크되지 않은 의미상 유사 쌍입니다 — 수락하거나 무시하세요.",
     hw_tip_default: "⌘K로 어디든 이동 — 페이지·액션·시맨틱 검색.",
-    vw_title: "쿼리 뷰",
-    vw_lede:
-      "프론트매터(종류·신뢰도·상태·태그·출처 수)로 위키를 필터링하고, 자주 쓰는 렌즈를 저장하세요.",
-    vw_search: "이름으로 필터…",
-    vw_any_type: "모든 종류",
-    vw_any_conf: "모든 신뢰도",
-    vw_any_status: "모든 상태",
-    vw_any_tag: "모든 태그",
-    vw_orphans: "고립 노드만",
-    vw_save: "뷰 저장",
-    vw_save_prompt: "뷰 이름:",
-    vw_pages: "페이지",
-    vw_empty: "조건에 맞는 페이지가 없습니다.",
-    vw_col_name: "페이지",
-    vw_col_type: "종류",
-    vw_col_conf: "신뢰도",
-    vw_col_sources: "출처",
-    vw_col_links: "링크",
-    vw_col_tags: "태그",
-    vw_col_status: "상태",
-    vw_col_modified: "수정",
     vw_lens_unsourced: "출처 없음",
     vw_lens_orphans: "고립",
     vw_lens_disputed: "분쟁 중",
     vw_lens_recent: "최근 변경",
-    vw_select_all: "모든 행 선택",
-    vw_select_row: "{name} 선택",
-    vw_selected_n: "{n}개 선택됨",
-    vw_bulk_title: "일괄 편집",
-    vw_bulk_confirm: "{n}개 페이지에 적용할까요?",
-    vw_bulk_type: "유형 설정…",
-    vw_bulk_status: "상태 설정…",
-    vw_bulk_add_tag: "태그 추가…",
-    vw_clear_sel: "선택 해제",
-    vw_edit_cell: "클릭하여 편집",
-    vw_unset: "(없음)",
-    vw_edit_done: "완료",
-    vw_edit_failed: "저장 실패: {msg}",
-    vw_load_error: "저장된 뷰를 .myco/views/에서 읽지 못했습니다.",
-    vw_io_error: "저장된 뷰를 갱신하지 못했습니다: {err}",
-    vw_overwrite_q: "저장된 뷰 “{name}”을(를) 덮어쓸까요?",
     tpl_new_from: "템플릿으로 새 노트…",
     tpl_pick_title: "템플릿 선택",
     tpl_pick_msg:
@@ -3456,9 +3283,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_done_n: "완료 {n}개",
     tasks_all_done: "모두 완료 — 남은 항목이 없습니다.",
     tasks_completed: "완료 ({n})",
-    nav_tags: "태그",
     nav_study: "학습",
-    nav_schedules: "스케줄",
     nav_settings: "설정",
     split_open: "화면 분할",
     split_close: "분할 닫기",
@@ -4035,31 +3860,6 @@ export const STRINGS: Record<Lang, Strings> = {
     pdf_loading: "PDF 불러오는 중…",
     pdf_error: "이 PDF를 열 수 없습니다.",
     pdf_highlight_cite: "하이라이트 & 인용",
-    sc_title: "스케줄",
-    sc_lede: "앱이 열려 있는 동안 볼트에 정기 다이제스트를 작성합니다.",
-    sc_new: "새 스케줄",
-    sc_empty: "아직 스케줄이 없습니다.",
-    sc_run_now: "지금 실행",
-    sc_running: "실행 중…",
-    sc_edit: "편집",
-    sc_last_run: "마지막 실행 {t}",
-    sc_never: "실행된 적 없음",
-    sc_done: "다이제스트 작성됨.",
-    sc_open: "다이제스트 열기",
-    sc_f_title: "제목 (예: 주간 리뷰)",
-    sc_f_kind: "종류",
-    sc_f_cadence: "주기",
-    sc_f_prompt: "위키에 실행할 프롬프트",
-    sc_f_topic: "추적할 주제",
-    sc_f_enabled: "사용",
-    sc_f_notify: "알림",
-    sc_f_notify_hint: "실행 완료 시 네이티브 알림(옵트인)",
-    sc_f_save: "저장",
-    sc_f_cancel: "취소",
-    sc_bg_install: "백그라운드 실행",
-    sc_bg_remove: "백그라운드 해제",
-    sc_bg_hint: "앱이 닫혀 있어도 이 스케줄을 실행 (macOS launchd)",
-    sc_kind_distill: "증류",
     s_distill: "증류",
     set_distill_loading: "불러오는 중…",
     set_distill_lede:
@@ -4147,7 +3947,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_profile_save: "저장",
     set_profile_saving: "저장 중…",
     set_profile_saved: "저장됨",
-    nav_feedback: "피드백",
+    nav_feedback: "수확함",
     ov_distill_last_run: "마지막 실행 {t}",
     ov_distill_never: "아직 실행 기록 없음",
     ov_distill_llm_queued:
@@ -4156,7 +3956,7 @@ export const STRINGS: Record<Lang, Strings> = {
       "증류 완료 — 아카이브 {a}건 · 다이제스트 {d}일 · 주간 롤업 {w}건 · 제안 {p}건",
     ov_distill_done_months: " · 월간 롤업 {m}건",
     ov_distill_done_none: "증류 완료 — 처리할 항목 없음",
-    pf_title: "피드백",
+    pf_title: "수확함",
     pf_lede:
       "증류 엔진이 새 페이지를 위키의 온톨로지에 접어넣으며 작성한 제안입니다 — 검토 후 적용하거나 무시하세요.",
     pf_empty: "대기 중인 제안이 없습니다.",
@@ -4474,10 +4274,13 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_in_contents: "페이지 본문에서",
     cb_semantic: "관련 (의미)",
     cb_exact: "정확 일치",
-    cb_operator_hint: "따옴표는 정확 일치 · path: · tag:",
+    cb_operator_hint: "따옴표는 정확 일치 · path: · tag: · type: · status: · confidence:",
     cb_miss_hint:
       "기대한 문서가 없나요? ⌥⏎ 로 이 검색을 평가 세트에 기록합니다.",
     cb_miss_done: "평가 세트에 기록했습니다.",
+    sb_harvest_badge: "수확 후보 세션 {n}건",
+    sb_proposals_badge: "승격 제안 {n}건 대기",
+    cb_tag_lens: "렌즈",
     tb_lint: "린트",
     tb_toggle_sidebar: "사이드바 토글 (⌘B)",
     tb_back: "뒤로 (⌘[)",
@@ -4555,11 +4358,6 @@ export const STRINGS: Record<Lang, Strings> = {
     notif_quarantine_body:
       "{n}개 항목이 _inbox/quarantine에서 검토를 기다립니다.",
     h_open_vault: "히스토리를 보려면 vault를 여세요.",
-    tg_title: "태그",
-    tg_lede:
-      "vault의 프론트매터에 있는 모든 태그입니다. 태그를 고르면 그 태그가 달린 페이지가 보이고, 페이지로 바로 이동할 수 있습니다.",
-    tg_empty:
-      "아직 태그가 없습니다 — 페이지 프론트매터에 `tags:` 목록을 추가하면 여기에 모입니다.",
     rf_title: "Reflect 제안",
     rf_lede:
       "Claude가 vault를 읽기 전용으로 훑어 제안합니다: 연결할 고립 노드, 오래된 페이지, 빠진 교차 참조.",
@@ -4756,11 +4554,10 @@ export const STRINGS: Record<Lang, Strings> = {
     nav_workspace: "ワークスペース",
     nav_pages: "ページ",
     nav_tools: "ツール",
-    nav_overview: "概要",
+    nav_overview: "今日",
     nav_ingest: "取り込み",
     nav_query: "質問",
     nav_graph: "グラフ",
-    nav_views: "ビュー",
     db_empty: "まだ描くデータがありません。",
     bd_title: "マイボード",
     bd_range: "期間",
@@ -4910,9 +4707,7 @@ export const STRINGS: Record<Lang, Strings> = {
     tasks_done_n: "完了 {n}件",
     tasks_all_done: "すべて完了 — 残りはありません。",
     tasks_completed: "完了 ({n})",
-    nav_tags: "タグ",
     nav_study: "学習",
-    nav_schedules: "スケジュール",
     nav_settings: "設定",
     split_open: "画面分割",
     split_close: "分割を閉じる",
@@ -5418,31 +5213,6 @@ export const STRINGS: Record<Lang, Strings> = {
     pdf_loading: "PDF を読み込み中…",
     pdf_error: "この PDF を開けませんでした。",
     pdf_highlight_cite: "ハイライトして引用",
-    sc_title: "スケジュール",
-    sc_lede: "アプリが開いている間、ボルトに定期ダイジェストを書き込みます。",
-    sc_new: "新規スケジュール",
-    sc_empty: "スケジュールはまだありません。",
-    sc_run_now: "今すぐ実行",
-    sc_running: "実行中…",
-    sc_edit: "編集",
-    sc_last_run: "最終実行 {t}",
-    sc_never: "未実行",
-    sc_done: "ダイジェストを書き込みました。",
-    sc_open: "ダイジェストを開く",
-    sc_f_title: "タイトル（例: 週次レビュー）",
-    sc_f_kind: "種類",
-    sc_f_cadence: "頻度",
-    sc_f_prompt: "ウィキに実行するプロンプト",
-    sc_f_topic: "追跡するトピック",
-    sc_f_enabled: "有効",
-    sc_f_notify: "通知",
-    sc_f_notify_hint: "実行完了時にネイティブ通知（オプトイン）",
-    sc_f_save: "保存",
-    sc_f_cancel: "キャンセル",
-    sc_bg_install: "バックグラウンド実行",
-    sc_bg_remove: "バックグラウンド解除",
-    sc_bg_hint: "アプリが閉じていてもこのスケジュールを実行 (macOS launchd)",
-    sc_kind_distill: "蒸留",
     s_distill: "蒸留",
     set_distill_loading: "読み込み中…",
     set_distill_lede:
@@ -5531,7 +5301,7 @@ export const STRINGS: Record<Lang, Strings> = {
     set_profile_save: "保存",
     set_profile_saving: "保存中…",
     set_profile_saved: "保存しました",
-    nav_feedback: "フィードバック",
+    nav_feedback: "収穫箱",
     ov_distill_last_run: "最終実行 {t}",
     ov_distill_never: "まだ実行されていません",
     ov_distill_llm_queued:
@@ -5540,7 +5310,7 @@ export const STRINGS: Record<Lang, Strings> = {
       "蒸留完了 — アーカイブ{a}件 · ダイジェスト{d}日 · 週次ロールアップ{w}件 · 提案{p}件",
     ov_distill_done_months: " · 月次ロールアップ{m}件",
     ov_distill_done_none: "蒸留完了 — 処理する項目なし",
-    pf_title: "フィードバック",
+    pf_title: "収穫箱",
     pf_lede:
       "蒸留エンジンが新しいページをウィキのオントロジーに取り込む際に書き出した提案です — レビューして適用するか、却下してください。",
     pf_empty: "保留中の提案はありません。",
@@ -5859,9 +5629,12 @@ export const STRINGS: Record<Lang, Strings> = {
     cb_in_contents: "ページ本文内",
     cb_semantic: "関連（意味）",
     cb_exact: "完全一致",
-    cb_operator_hint: "引用符で完全一致 · path: · tag:",
+    cb_operator_hint: "引用符で完全一致 · path: · tag: · type: · status: · confidence:",
     cb_miss_hint: "見つかりませんか？ ⌥⏎ でこの検索を評価セットに記録します。",
     cb_miss_done: "評価セットに記録しました。",
+    sb_harvest_badge: "収穫候補セッション {n}件",
+    sb_proposals_badge: "昇格提案 {n}件待ち",
+    cb_tag_lens: "レンズ",
     tb_lint: "リント",
     tb_toggle_sidebar: "サイドバー切替 (⌘B)",
     tb_back: "戻る (⌘[)",
@@ -5938,11 +5711,6 @@ export const STRINGS: Record<Lang, Strings> = {
     notif_quarantine_title: "新しい隔離アイテム",
     notif_quarantine_body: "{n}件が _inbox/quarantine でレビュー待ちです。",
     h_open_vault: "履歴を見るには vault を開いてください。",
-    tg_title: "タグ",
-    tg_lede:
-      "vault のフロントマターにあるすべてのタグ。タグを選ぶとそのタグが付いたページが表示され、ページへ直接移動できます。",
-    tg_empty:
-      "まだタグがありません — ページのフロントマターに `tags:` を追加すると、ここに集まります。",
     rf_title: "Reflect の提案",
     rf_lede:
       "Claude が vault を読み取り専用でざっと確認します: リンクすべき孤立ノード、古いページ、欠けた相互参照。",
@@ -6138,52 +5906,13 @@ export const STRINGS: Record<Lang, Strings> = {
       "任意のファイルをドロップ、テキストを貼り付け、または Zotero エクスポートをインポートできます。",
     hw_tip_ingest2:
       "Web クリッパーは _inbox/ 経由でページをここに送ります（clipper/ を参照）。",
-    hw_tip_views1:
-      "フィルターは組み合わせられます — 結果は名前付きビューチップとして保存できます。",
     hw_tip_overview1:
       "リンク候補はまだ wikilink のない意味的なペアです — 承認または却下してください。",
     hw_tip_default: "⌘K でどこへでも移動 — ページ・アクション・意味的ヒット。",
-    vw_title: "クエリビュー",
-    vw_lede:
-      "フロントマター（タイプ・確信度・ステータス・タグ・ソース）で wiki を絞り込み、よく使うレンズを保存できます。",
-    vw_search: "名前で絞り込み…",
-    vw_any_type: "すべてのタイプ",
-    vw_any_conf: "すべての確信度",
-    vw_any_status: "すべてのステータス",
-    vw_any_tag: "すべてのタグ",
-    vw_orphans: "孤立ページのみ",
-    vw_save: "ビューを保存",
-    vw_save_prompt: "このビューの名前:",
-    vw_pages: "ページ",
-    vw_empty: "このビューに一致するページはありません。",
-    vw_col_name: "ページ",
-    vw_col_type: "タイプ",
-    vw_col_conf: "確信度",
-    vw_col_sources: "ソース",
-    vw_col_links: "リンク",
-    vw_col_tags: "タグ",
-    vw_col_status: "状態",
-    vw_col_modified: "更新",
     vw_lens_unsourced: "出典なし",
     vw_lens_orphans: "孤立",
     vw_lens_disputed: "係争中",
     vw_lens_recent: "最近の変更",
-    vw_select_all: "すべての行を選択",
-    vw_select_row: "{name} を選択",
-    vw_selected_n: "{n} 件選択中",
-    vw_bulk_title: "一括編集",
-    vw_bulk_confirm: "{n} ページに適用しますか？",
-    vw_bulk_type: "タイプを設定…",
-    vw_bulk_status: "ステータスを設定…",
-    vw_bulk_add_tag: "タグを追加…",
-    vw_clear_sel: "選択を解除",
-    vw_edit_cell: "クリックして編集",
-    vw_unset: "(なし)",
-    vw_edit_done: "完了",
-    vw_edit_failed: "保存できませんでした: {msg}",
-    vw_load_error: "保存したビューを .myco/views/ から読み込めませんでした。",
-    vw_io_error: "保存したビューを更新できませんでした: {err}",
-    vw_overwrite_q: "保存したビュー「{name}」を置き換えますか？",
     tpl_new_from: "テンプレートから新規ノート…",
     tpl_pick_title: "テンプレートを選択",
     tpl_pick_msg:

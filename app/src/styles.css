@@ -411,9 +411,25 @@ select {
   background: var(--c-analysis);
 }
 
-/* Tools (스케줄 / 설정) live OUTSIDE the scrolling nav, so a 1121-file vault
-   cannot push them out of reach. `.sidebar` is already a flex column, so any
-   child outside `.side-nav` is pinned by construction. */
+/* Badge tones (Stipe). fill = the one queue only a human decision shrinks
+   (proposals); alert = a count worth a look (today's harvest candidates);
+   the bare badge stays the neutral sum a collapsed Tools row carries. */
+.nav-badge.fill {
+  background: var(--live);
+  color: #fff;
+}
+[data-theme="dark"] .nav-badge.fill {
+  color: #120c22;
+}
+.nav-badge.alert {
+  background: transparent;
+  color: var(--live);
+  box-shadow: inset 0 0 0 1px var(--live);
+}
+
+/* Settings lives OUTSIDE the scrolling nav, so a 1121-file vault cannot push
+   it out of reach. `.sidebar` is already a flex column, so any child outside
+   `.side-nav` is pinned by construction. */
 .side-tools {
   flex: none;
   padding: 6px 8px;

@@ -104,4 +104,22 @@ describe("uiStore navigation history", () => {
     // Transient: a click from a past session must not scroll+flash on launch.
     expect(s.focusTarget).toBeNull();
   });
+
+  it.each(["views", "tags", "schedules"])(
+    "a store that closed on the removed %s route rehydrates onto overview",
+    async (route) => {
+      storage.set(
+        "myco-ui",
+        JSON.stringify({
+          state: { route, navHistory: { entries: [route], idx: 0 }, splitRoute: route },
+          version: 3,
+        }),
+      );
+      await useUIStore.persist.rehydrate();
+      const s = useUIStore.getState();
+      expect(s.route).toBe("overview");
+      expect(s.navHistory).toEqual({ entries: ["overview"], idx: 0 });
+      expect(s.splitRoute).toBeNull();
+    },
+  );
 });
