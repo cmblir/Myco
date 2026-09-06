@@ -418,7 +418,10 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
                     onClick={() => void startIngest(title, body)}
                     disabled={!canRun}
                   >
-                    <Icon name="sparkles" size={14} /> {t.ing_run}
+                    <Icon name="sparkles" size={14} />{" "}
+                    {settings?.ingest_provider === "builtin-local"
+                      ? t.ing_run_extractive
+                      : t.ing_run}
                   </button>
                 </div>
               </div>

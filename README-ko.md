@@ -265,7 +265,8 @@ llama.cpp)가 시맨틱 검색과 페이지별 관련 노트를 제공합니다.
 하이라이트 & 인용이 핀포인트 링크를 만들고, 하이라이트는 사이드카에 저장되어
 `raw/`는 불변으로 남습니다.
 
-**프로바이더** — 내장 오프라인 임베딩(키·설치 불필요), Claude Code CLI(Pro/Max
+**프로바이더** — 내장 오프라인 임베딩(키·설치 불필요, 질문과 가져오기 모두 모델
+호출 없이 원문을 그대로 인용·출처 표기), Claude Code CLI(Pro/Max
 구독), Anthropic / OpenAI / Google AI / OpenRouter API, 로컬 Ollama.
 Query와 Ingest 모델 분리 선택, 월 비용 예산. API 키는 OS 키체인에만 저장 —
 디스크에 평문으로 남지 않습니다.

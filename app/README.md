@@ -23,10 +23,11 @@ together yourself:
 - **A built-in offline embedder** — a multilingual-e5-small-ko-v2 embedding model ships inside
   the app and runs in-process (llama.cpp, Metal on Apple silicon). Zero
   setup, no key, works offline — powers semantic search; Ask answers
-  extractively (verbatim passages from your notes, no chat model). No local
-  chat model is bundled: for synthesized answers, classification, and
-  generation pick an AI provider under Settings → Model. Use a cloud
-  provider for high-quality ingest.
+  extractively (verbatim passages from your notes, no chat model), and
+  Ingest writes a source page that quotes and cites the original the same
+  way. No local chat model is bundled: for synthesized answers,
+  classification, and generation pick an AI provider under Settings → Model.
+  Use a cloud provider for a summarised, cross-linked ingest.
 - **A vault you own** — everything is plain markdown on disk. Open the
   folder in Finder, in Obsidian, in Vim — myco never locks your data.
 
@@ -61,7 +62,7 @@ Settings → Account.
 | --- | --- |
 | Harvest queue | The Overview opens on `harvest_candidates`: archived sessions sieved for duplicate bodies (content hash, newest copy kept), boilerplate (`junk_reason`) and size bands, clustered against the wiki, with an estimated citation yield each. Select → plan gate → `harvest_run` copies into `_inbox/` → the normal inbox pass ingests them → one toast with the citation count before / after. The exclusion line expands to a table of what was hidden and why |
 | Judgement | Every source is judged (`judge_source`) before the model or the disk is touched: `drop` (junk, duplicate body) writes nothing and leaves one line in `.myco/ingest-noop.jsonl`; `log` (too small / too large) records to `raw/` without a model call; an all-NOOP plan writes nothing either. The Ingest page shows the five-step rail, the verdict counts, the excluded reasons and a backfill panel (eligible / too small / too large / already harvested, batch size, model-call estimate) |
-| Ingest | Drop a file or paste raw text → myco writes `raw/<slug>.md` → invokes the active model with the ingest workflow → Claude reads, summarises, extracts entities/concepts, cross-links existing pages, writes a `wiki/source-<slug>.md` summary, updates `index.md` + `log.md`, and files a WHY report in `ingest-reports/`. **Multimodal inputs:** PDF, plain text, Office documents (`.docx` / `.pptx`, parsed from OOXML), spreadsheets (`.xlsx` / `.xls` / `.ods`), **images** (described via a vision provider), **audio/video** (transcribed by an installed `whisper` CLI — none bundled), and **YouTube URLs** (transcript fetched from the watch page) all reduce to markdown before ingest |
+| Ingest | Drop a file or paste raw text → myco writes `raw/<slug>.md` → invokes the active model with the ingest workflow → Claude reads, summarises, extracts entities/concepts, cross-links existing pages, writes a `wiki/source-<slug>.md` summary, updates `index.md` + `log.md`, and files a WHY report in `ingest-reports/`. **Multimodal inputs:** PDF, plain text, Office documents (`.docx` / `.pptx`, parsed from OOXML), spreadsheets (`.xlsx` / `.xls` / `.ods`), **images** (described via a vision provider), **audio/video** (transcribed by an installed `whisper` CLI — none bundled), and **YouTube URLs** (transcript fetched from the watch page) all reduce to markdown before ingest. With the **Built-in (offline)** provider the same run happens with no model call at all: the source page quotes its leading passages verbatim, each cited `[^src-<slug>]`, tags are reused from tags the vault already has, `## Related` comes from the local embedding index, `confidence` is `low`, and the WHY report says the run was extractive |
 | Semantic search | A local embedding index over the wiki (bundled multilingual-e5-small-ko-v2 embedder by default, or an opt-in provider) powers meaning-based lookup: the command palette (`⌘K`) surfaces semantic hits, Ask retrieves the top-K relevant pages instead of dumping the whole vault, and the Graph can overlay similarity edges. Reindex from Settings; the index is a plain rebuildable file under the app-data dir. A live reindex (like a live ingest or lint run) surfaces as a Topbar chip, so navigating away doesn't lose track of it |
 | Related notes | Every page shows a "Related" panel — the nearest pages by embedding similarity, even when they aren't wikilinked |
 | Live ingest progress | With the Claude CLI provider, the run streams in real time (`--output-format stream-json`): a mission-control panel shows the current action, an interactive mini-galaxy of pages touched so far (live d3-force physics — new pages born at the hub, real wikilink edges, drag to tow, hover for path, click for an in-place markdown preview with an open-in-reader button), a scrolling activity feed, read/write counters and elapsed time — plus a **Cancel** button that kills the run. The run lives in a global store, so navigating away doesn't lose it; a Topbar chip keeps showing a spinner + elapsed (click to jump back), then flips to done/failed until you revisit the page. On the Graph page, nodes the run touches glow live — written pages gold, read pages ice blue, newest touch pulsing — and brand-new pages are born into the galaxy mid-run: each write triggers a debounced link rescan whose diff is injected into the live physics, so new stars bud off their neighbours and settle in real time. The tint persists after the run so you can see what changed. When the run finishes, the mission-control panel stays up as the result view — mini galaxy, feed and counters intact — until you start another ingest |
@@ -84,7 +85,7 @@ Settings → Account.
 
 Settings → Connections lets you connect any combination of:
 
-- **Built-in (offline)** — multilingual-e5-small-ko-v2 embedder (40 MB) bundled in the app, in-process llama.cpp — no install, no key, offline. Semantic search and extractive Ask only; no local chat model ships.
+- **Built-in (offline)** — multilingual-e5-small-ko-v2 embedder (40 MB) bundled in the app, in-process llama.cpp — no install, no key, offline. Semantic search, extractive Ask and extractive Ingest; no local chat model ships, so anything that writes new prose (overviews, digests, maps) still needs a connected provider.
 - **Claude Code (CLI)** — uses your Pro/Max subscription. No key needed; just have `claude` on PATH.
 - **Anthropic API** — direct `/v1/messages`. Key from console.anthropic.com.
 - **OpenAI API** — `/v1/chat/completions`. Live model list fetched from `/v1/models`.

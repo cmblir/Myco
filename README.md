@@ -277,7 +277,8 @@ for the rest; each change is one undoable edit to the YAML block only.
 in-app pdf.js viewer: select text → highlight & cite mints a pinpoint link;
 highlights live in a sidecar so `raw/` stays immutable.
 
-**Providers** — bundled offline embeddings (no key, no install), Claude Code
+**Providers** — bundled offline embeddings (no key, no install; Ask *and*
+Ingest work with no model call, quoting and citing your source), Claude Code
 CLI (your Pro/Max subscription), Anthropic / OpenAI / Google AI / OpenRouter
 APIs, and local Ollama. Separate model pick for Query vs Ingest, monthly cost
 budget. API keys go to the OS keychain — never plaintext on disk.

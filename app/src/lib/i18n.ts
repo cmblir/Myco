@@ -549,6 +549,9 @@ export interface Strings {
   ing_extractive_report_why: string;
   ing_extractive_log: string;
   ing_extractive_hint: string;
+  /** The Ingest run button for the offline path — `ing_run` names Claude, and
+   *  a run that calls no model must not. */
+  ing_run_extractive: string;
   s_providers_lede: string;
   s_provider_connected: string;
   s_provider_disconnected: string;
@@ -2099,6 +2102,7 @@ export const STRINGS: Record<Lang, Strings> = {
       "{date} — extractive ingest of [[source-{slug}]] ({title}), no model call",
     ing_extractive_hint:
       "Extractive — quotes your source verbatim and makes no model call.",
+    ing_run_extractive: "Ingest extractively",
     s_providers_lede:
       "Bring your own provider. myco never sees your keys — they're stored locally.",
     s_provider_connected: "Connected",
@@ -3684,6 +3688,7 @@ export const STRINGS: Record<Lang, Strings> = {
       "{date} — [[source-{slug}]] ({title}) 발췌 가져오기, 모델 호출 없음",
     ing_extractive_hint:
       "발췌 방식 — 소스를 그대로 인용하며 모델을 호출하지 않습니다.",
+    ing_run_extractive: "발췌로 가져오기",
     s_providers_lede:
       "원하는 제공자를 연결하세요. 키는 로컬에만 저장되며, myco 서버는 절대 보지 못합니다.",
     s_provider_connected: "연결됨",
@@ -5073,6 +5078,7 @@ export const STRINGS: Record<Lang, Strings> = {
       "{date} — [[source-{slug}]]（{title}）を抜粋取り込み、モデル呼び出しなし",
     ing_extractive_hint:
       "抜粋方式 — ソースをそのまま引用し、モデルを呼び出しません。",
+    ing_run_extractive: "抜粋で取り込む",
     s_providers_lede:
       "好きなプロバイダーを接続してください。キーはローカル保存 — myco のサーバーには届きません。",
     s_provider_connected: "接続済み",

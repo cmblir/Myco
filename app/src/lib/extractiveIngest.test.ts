@@ -132,6 +132,8 @@ describe("extractiveSummary", () => {
     expect(summary.content).toContain(
       "[^src-retrieval-notes]: [[source-retrieval-notes]]",
     );
+    // Definition last, as on every wiki/source-*.md the sample vault ships.
+    expect(summary.content.trimEnd().endsWith("[[source-retrieval-notes]]")).toBe(true);
   });
 
   it("cites exactly one distinct slug, matching source_count: 1", () => {

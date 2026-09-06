@@ -155,12 +155,13 @@ export function extractiveSummary(
     `---\n\n` +
     `# Source: ${title}\n\n` +
     `_${note}_\n\n` +
-    (claims ? `${claims}\n\n` : "") +
-    `[^src-${slug}]: [[source-${slug}]]\n`;
+    (claims ? `${claims}\n` : "");
   // The exact insertion linkSuggestions' accept-a-suggestion flow performs,
   // so a `## Related` section written here and one grown by hand are the same
-  // section.
+  // section. Done BEFORE the footnote definition so the definition stays last,
+  // as it is on every `wiki/source-*.md` the sample vault ships.
   for (const stem of related) content = appendWikilink(content, stem);
+  content += `\n[^src-${slug}]: [[source-${slug}]]\n`;
 
   return { rel: `wiki/source-${slug}.md`, content, passages, tags, related };
 }
