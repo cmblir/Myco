@@ -26,9 +26,10 @@ import {
   syntheticGroup,
 } from "../lib/treeOps";
 import { recentAuthored } from "../lib/vaultPulse";
+import StatusStrip from "./StatusStrip";
 import { ContextMenu } from "./SidebarMenu";
 import type { ContextMenuState } from "./SidebarMenu";
-import { TreeNode, allPaths, countFiles } from "./SidebarTree";
+import { TreeNode, allPaths } from "./SidebarTree";
 import type { RowClick, RowKey } from "./SidebarTree";
 
 // Routes folded under the sidebar's Tools disclosure. Graph and Tasks moved
@@ -135,7 +136,6 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
     };
   }, [recentOpen, currentVault, fileTree]);
 
-  const totalFiles = countFiles(fileTree);
   const visibleTree =
     humanOnly && currentVault
       ? filterHumanTree(fileTree, agentTouched, currentVault.path)
@@ -454,17 +454,7 @@ export default function Sidebar({ t }: { t: Strings }): JSX.Element {
         />
       </div>
 
-      <div className="side-foot">
-        <div className="status-row">
-          <span className="sdot"></span>
-          <span>
-            Vault <b>{currentVault ? "linked" : "—"}</b>
-          </span>
-          {currentVault ? (
-            <span className="sr-action">{totalFiles}f</span>
-          ) : null}
-        </div>
-      </div>
+      <StatusStrip t={t} />
 
       {menu ? (
         <ContextMenu

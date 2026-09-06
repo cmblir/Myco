@@ -1189,6 +1189,15 @@ export interface Strings {
   sb_harvest_badge: string;
   sb_proposals_badge: string;
   cb_tag_lens: string;
+  sb_status: string;
+  sb_st_vault: string;
+  sb_st_index: string;
+  sb_st_model: string;
+  sb_st_on: string;
+  sb_st_off: string;
+  sb_st_mcp_down: string;
+  sb_st_lagging: string;
+  sb_st_simulate: string;
   // Topbar.
   tb_lint: string;
   tb_toggle_sidebar: string;
@@ -2741,6 +2750,16 @@ export const STRINGS: Record<Lang, Strings> = {
     sb_harvest_badge: "{n} sessions ready to harvest",
     sb_proposals_badge: "{n} proposals awaiting review",
     cb_tag_lens: "lens",
+    sb_status: "Status",
+    sb_st_vault: "Vault",
+    sb_st_index: "Index",
+    sb_st_model: "Model",
+    sb_st_on: "running",
+    sb_st_off: "stopped",
+    sb_st_mcp_down:
+      "The MCP server is stopped — agents and Claude Code cannot reach this vault.",
+    sb_st_lagging: "{n} wiki pages are outside the index — Ask cannot find them.",
+    sb_st_simulate: "Simulate failure",
     tb_lint: "Lint",
     tb_toggle_sidebar: "Toggle sidebar (⌘B)",
     tb_back: "Back (⌘[)",
@@ -4281,6 +4300,16 @@ export const STRINGS: Record<Lang, Strings> = {
     sb_harvest_badge: "수확 후보 세션 {n}건",
     sb_proposals_badge: "승격 제안 {n}건 대기",
     cb_tag_lens: "렌즈",
+    sb_status: "상태",
+    sb_st_vault: "볼트",
+    sb_st_index: "인덱스",
+    sb_st_model: "모델",
+    sb_st_on: "실행 중",
+    sb_st_off: "중단됨",
+    sb_st_mcp_down:
+      "MCP 서버가 멈췄습니다 — 에이전트와 Claude Code가 이 볼트에 닿을 수 없습니다.",
+    sb_st_lagging: "위키 {n}개가 인덱스 밖에 있습니다 — 질문에서 검색되지 않습니다.",
+    sb_st_simulate: "고장 시뮬레이션",
     tb_lint: "린트",
     tb_toggle_sidebar: "사이드바 토글 (⌘B)",
     tb_back: "뒤로 (⌘[)",
@@ -5635,6 +5664,16 @@ export const STRINGS: Record<Lang, Strings> = {
     sb_harvest_badge: "収穫候補セッション {n}件",
     sb_proposals_badge: "昇格提案 {n}件待ち",
     cb_tag_lens: "レンズ",
+    sb_status: "ステータス",
+    sb_st_vault: "ボルト",
+    sb_st_index: "インデックス",
+    sb_st_model: "モデル",
+    sb_st_on: "実行中",
+    sb_st_off: "停止",
+    sb_st_mcp_down:
+      "MCP サーバーが停止しています — エージェントと Claude Code はこのボルトに到達できません。",
+    sb_st_lagging: "ウィキ {n} ページがインデックス外です — 質問で検索されません。",
+    sb_st_simulate: "故障シミュレーション",
     tb_lint: "リント",
     tb_toggle_sidebar: "サイドバー切替 (⌘B)",
     tb_back: "戻る (⌘[)",

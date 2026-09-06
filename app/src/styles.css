@@ -435,14 +435,150 @@ select {
   padding: 6px 8px;
   border-top: 1px solid var(--line-soft);
 }
-.side-foot {
-  padding: 8px 10px;
+/* Status strip (Stipe): four glass tiles where the `Vault linked · 59f`
+   footer used to be. A tile in trouble carries the amber dot AND border AND
+   the reason line below — never colour alone. */
+.side-status {
+  flex: none;
+  padding: 6px 8px 7px;
   border-top: 1px solid var(--line-soft);
-  font-size: 12px;
-  color: var(--ink-3);
+}
+.st-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--ink-4);
+}
+.st-head .pill {
+  margin-left: auto;
+  text-transform: none;
+  letter-spacing: 0;
+}
+.st-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+}
+.st-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--glass-line);
+  border-radius: 12px;
+  background: var(--glass);
+  box-shadow: var(--glass-hi);
+  color: var(--ink-2);
+  text-align: left;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out);
+}
+.st-cell:hover {
+  background: var(--glass-hover);
+  transform: translateY(-1px);
+}
+.st-cell.is-bad {
+  border-color: var(--warn);
+}
+.st-ico {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  overflow: hidden;
+  color: var(--live);
+  background: var(--glass-2);
+  filter: drop-shadow(0 0 8px var(--glow));
+}
+.st-ico img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.st-ico svg {
+  width: 15px;
+  height: 15px;
+}
+.st-tx {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  min-width: 0;
+  line-height: 1.25;
+}
+.st-lab {
+  font-size: 11px;
+  color: var(--ink-4);
+}
+.st-val {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.st-cell.is-bad .st-val {
+  color: var(--warn);
+}
+.st-dot {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+.st-cell.is-bad .st-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--warn) 18%, transparent);
+}
+.st-split,
+.st-note {
+  margin-top: 5px;
+  padding: 6px 9px;
+  border-radius: 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--ink-3);
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+}
+.st-split b {
+  font-family: var(--font-mono);
+  color: var(--ink);
+}
+.st-note {
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+  color: var(--ink-2);
+  border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+.st-fix {
+  margin-left: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.st-fix:disabled {
+  color: var(--ink-4);
+  cursor: default;
+  text-decoration: none;
 }
 .status-row {
   display: flex;
