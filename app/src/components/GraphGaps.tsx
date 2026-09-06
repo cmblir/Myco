@@ -1,142 +1,160 @@
-// The gaps column — promoted from a toggled overlay to the Survey's fixed left
-// column, because it was the only part of this screen that ever produced an
-// answer. Each row carries the three exits the old graph lacked entirely:
-// open the note, ask for link suggestions, or record the topic as wanted.
+// Gap analysis panel — the graph as an instrument. Lists the actionable gaps in
+// the vault (missing pages, orphans, under-cited, low-confidence, disputed,
+// disconnected islands) as clickable rows; clicking flies the camera to the node
+// and opens its inspector, so "what should I ingest/fix next?" becomes a click.
+// Fed by lib/graphGaps.analyzeGaps over the live graph — no backend call.
 
 import type { JSX } from "react";
-import { useState } from "react";
-import { stem } from "../lib/graphData";
-import type { GapReport } from "../lib/graphGaps";
+import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
+import { stem } from "../lib/graphData";
+import { gapCount, type ClusterBridge, type GapReport } from "../lib/graphGaps";
 
 const GHOST = "ghost:";
-const MAX_ROWS = 8;
+const MAX_ROWS = 15; // per category, with a "+N more" tail
 
-export type GapAction = "open" | "link" | "want";
-
-export interface GapGroup {
-  key: string;
-  label: string;
-  ids: string[];
-  /** Actions offered on every row of the group. */
-  actions: GapAction[];
-}
-
-export function displayName(id: string): string {
+function displayName(id: string): string {
   return id.startsWith(GHOST) ? id.slice(GHOST.length) : stem(id);
-}
-
-/** The buckets analyzeGaps already computes, as the column's 3–5 groups. */
-export function gapGroups(report: GapReport, noBacklink: string[], t: Strings): GapGroup[] {
-  const all: GapGroup[] = [
-    { key: "orphans", label: t.gr_gap_orphans, ids: report.orphans, actions: ["open", "link", "want"] },
-    { key: "missing", label: t.gr_gap_missing, ids: report.missing, actions: ["want"] },
-    { key: "nobacklink", label: t.gr_gap_nobacklink, ids: noBacklink, actions: ["open", "link", "want"] },
-    {
-      key: "undercited",
-      label: t.gr_gap_undercited,
-      ids: report.underCited,
-      actions: ["open", "want"],
-    },
-    { key: "lowconf", label: t.gr_gap_lowconf, ids: report.lowConfidence, actions: ["open", "link", "want"] },
-    { key: "islands", label: t.gr_gap_islands, ids: report.islands.flat(), actions: ["open", "link"] },
-  ];
-  return all.filter((g) => g.ids.length > 0);
 }
 
 export default function GraphGaps({
   t,
-  groups,
-  total,
-  selected,
+  report,
+  bridges = [],
   onSelect,
-  onAction,
+  onAskBridge,
+  onClose,
 }: {
   t: Strings;
-  groups: GapGroup[];
-  total: number;
-  selected: string | null;
-  /** Highlight the node in the canvas (row title click). */
+  report: GapReport;
+  /** Cluster pairs that are semantically close but structurally unlinked. */
+  bridges?: ClusterBridge[];
   onSelect: (id: string) => void;
-  onAction: (action: GapAction, id: string) => void;
+  /** Route the bridge to the Ask page as a drafted research question. */
+  onAskBridge?: (b: ClusterBridge) => void;
+  onClose: () => void;
 }): JSX.Element {
-  const [closed, setClosed] = useState<Record<string, boolean>>({});
-  // Short labels here, full ones in the inspector: three full-sentence
-  // buttons overflowed the 228px column and covered the note name.
-  const label: Record<GapAction, string> = {
-    open: t.gr_act_open_s,
-    link: t.gr_act_link_s,
-    want: t.gr_act_want_s,
-  };
-  const title: Record<GapAction, string> = {
-    open: t.gr_open,
-    link: t.gr_act_link,
-    want: t.gr_act_harvest,
-  };
+  const cats: { label: string; ids: string[] }[] = [
+    { label: t.gr_gap_missing ?? "Missing pages", ids: report.missing },
+    { label: t.gr_gap_orphans ?? "Orphans", ids: report.orphans },
+    { label: t.gr_gap_undercited ?? "Under-cited", ids: report.underCited },
+    { label: t.gr_gap_lowconf ?? "Low confidence", ids: report.lowConfidence },
+    { label: t.gr_gap_disputed ?? "Disputed", ids: report.disputed },
+    { label: t.gr_gap_islands ?? "Disconnected", ids: report.islands.flat() },
+  ].filter((c) => c.ids.length > 0);
+
+  const total = gapCount(report);
 
   return (
-    <aside className="sv-panel sv-panel--gaps" aria-labelledby="sv-gaps-h">
-      <div className="sv-panel__h">
-        <b id="sv-gaps-h">{t.gr_gaps_title}</b>
-        <span className="sp" />
-        <span className="mono">{total}</span>
+    <aside className="graph-gaps" role="region" aria-label={t.gr_gaps_title ?? "Gaps"}>
+      <div className="graph-gaps__head">
+        <span className="graph-gaps__title">
+          {t.gr_gaps_title ?? "Gaps"} <span className="muted">({total})</span>
+        </span>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={onClose}
+          aria-label={t.ui_close ?? "Close"}
+          title={t.ui_close ?? "Close"}
+        >
+          <Icon name="x" size={13} />
+        </button>
       </div>
-      {groups.length === 0 ? (
-        <p className="sv-empty">{t.gr_gap_none}</p>
+
+      {bridges.length > 0 ? (
+        <div className="graph-gaps__section">
+          <h4>
+            {t.gr_gap_bridges ?? "Research bridges"}{" "}
+            <span className="muted">({bridges.length})</span>
+          </h4>
+          <ul className="graph-gaps__links">
+            {bridges.map((b) => (
+              <li key={`${b.a}:${b.b}`} className="graph-gaps__bridge">
+                <button
+                  type="button"
+                  className="graph-gaps__link"
+                  title={`${b.aHub} ↔ ${b.bHub}`}
+                  onClick={() => onSelect(b.pairs[0]?.source ?? b.aHub)}
+                >
+                  {displayName(b.aHub)} ↔ {displayName(b.bHub)}
+                </button>
+                {onAskBridge ? (
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => onAskBridge(b)}
+                    aria-label={t.gr_gap_ask ?? "Ask about this gap"}
+                    title={t.gr_gap_ask ?? "Ask about this gap"}
+                  >
+                    <Icon name="msg" size={12} />
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {report.malformed.length > 0 ? (
+        <div className="graph-gaps__section">
+          <h4>
+            {t.gr_gap_malformed ?? "Malformed links"}{" "}
+            <span className="muted">({report.malformed.length})</span>
+          </h4>
+          <ul className="graph-gaps__links">
+            {report.malformed.slice(0, MAX_ROWS).map((m) => (
+              <li key={m.id}>
+                <button
+                  type="button"
+                  className="graph-gaps__link"
+                  title={m.sources.map((s) => stem(s)).join(", ")}
+                  // The fix lives on the SOURCE page, not the malformed name
+                  // itself — jump there so the user can edit the link.
+                  onClick={() => onSelect(m.sources[0] ?? m.id)}
+                >
+                  {m.name}
+                </button>
+              </li>
+            ))}
+            {report.malformed.length > MAX_ROWS ? (
+              <li className="graph-gaps__more">
+                +{report.malformed.length - MAX_ROWS} {t.gr_gap_more ?? "more"}
+              </li>
+            ) : null}
+          </ul>
+        </div>
+      ) : null}
+
+      {total === 0 && bridges.length === 0 ? (
+        <p className="graph-gaps__none">{t.gr_gap_none ?? "No gaps found"}</p>
       ) : (
-        groups.map((g) => {
-          const open = !closed[g.key];
-          return (
-            <div className="sv-gap" key={g.key}>
-              <button
-                type="button"
-                className="sv-gap__h"
-                aria-expanded={open}
-                onClick={() => setClosed((c) => ({ ...c, [g.key]: open }))}
-              >
-                <span className="sv-gap__caret" aria-hidden="true">
-                  {open ? "▾" : "▸"}
-                </span>
-                <span>{g.label}</span>
-                <span className="cnt mono">{g.ids.length}</span>
-              </button>
-              {open ? (
-                <div className="sv-gap__body">
-                  {g.ids.slice(0, MAX_ROWS).map((id) => (
-                    <div className={`sv-row${selected === id ? " is-sel" : ""}`} key={id}>
-                      <button
-                        type="button"
-                        className="sv-row__name"
-                        title={id}
-                        onClick={() => onSelect(id)}
-                      >
-                        {displayName(id)}
-                      </button>
-                      <span className="sv-row__acts">
-                        {g.actions.map((a) => (
-                          <button
-                            key={a}
-                            type="button"
-                            className="sv-act"
-                            title={title[a]}
-                            onClick={() => onAction(a, id)}
-                          >
-                            {label[a]}
-                          </button>
-                        ))}
-                      </span>
-                    </div>
-                  ))}
-                  {g.ids.length > MAX_ROWS ? (
-                    <p className="sv-empty">
-                      +{g.ids.length - MAX_ROWS} {t.gr_gap_more}
-                    </p>
-                  ) : null}
-                </div>
+        cats.map((c) => (
+          <div className="graph-gaps__section" key={c.label}>
+            <h4>
+              {c.label} <span className="muted">({c.ids.length})</span>
+            </h4>
+            <ul className="graph-gaps__links">
+              {c.ids.slice(0, MAX_ROWS).map((id) => (
+                <li key={id}>
+                  <button
+                    type="button"
+                    className="graph-gaps__link"
+                    title={id}
+                    onClick={() => onSelect(id)}
+                  >
+                    {displayName(id)}
+                  </button>
+                </li>
+              ))}
+              {c.ids.length > MAX_ROWS ? (
+                <li className="graph-gaps__more">
+                  +{c.ids.length - MAX_ROWS} {t.gr_gap_more ?? "more"}
+                </li>
               ) : null}
-            </div>
-          );
-        })
+            </ul>
+          </div>
+        ))
       )}
     </aside>
   );

@@ -2127,10 +2127,59 @@ select {
   }
 }
 
+/* The mycelium view owns its own canvas; no deep-space CSS backdrop, because
+   that layer showed through the transparent graph canvas and repainted space. */
+.myc-view {
+  position: absolute;
+  inset: 0;
+  /* Sits over the space canvas, which stays mounted because the build pipeline
+     hangs off it. Opaque, so nothing behind it shows through. */
+  z-index: 2;
+  background: #0b0a08;
+}
+.myc-view canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+/* Hover label — positioned via a JS transform (see MyceliumView's
+   pointermove handler), not top/left, so moving it never triggers layout. */
+.myc-hover-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 3;
+  display: none;
+  padding: 3px 8px;
+  border-radius: 5px;
+  background: rgba(20, 18, 14, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f2eee4;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}
 /* Always-on hub labels (top-N by link count — see HUB_LABEL_CAP). One
    positioned wrapper so every label's transform shares the canvas's origin;
    dimmer and borderless than the hover label since these are ambient, not a
    direct answer to "what is this". */
+.myc-hub-labels {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+.myc-hub-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  padding: 1px 5px;
+  font-size: 10.5px;
+  color: #cfc7b5;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  white-space: nowrap;
+}
 
 /* Quoted material — notably extractive Ask answers, which render retrieved
    passages verbatim. With no blockquote styling at all (the previous state) a
@@ -2923,22 +2972,915 @@ hr {
 }
 
 /* ============================================================
+   Graph view — Obsidian-style canvas + right-side controls drawer
+   ============================================================ */
+.graph-shell {
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  position: relative;
+  /* Fill the remaining page height below the header; the canvas body flexes. */
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 16px;
+}
+.graph-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  /* ~578px of stats plus eleven buttons, inside an overflow:hidden shell: the
+     trailing controls (spaceship, the ? cheat sheet) were unreachable below
+     ~920px. Not height-locked, so wrapping is safe. */
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg);
+}
+.graph-toolbar__spacer {
+  flex: 1;
+}
+.graph-stat {
+  font-size: 11.5px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--bg-soft);
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.graph-toolbar__btn {
+  font-size: 11.5px;
+  padding: 2px 8px;
+  min-width: 28px;
+  height: 24px;
+  border-radius: 3px;
+  background: var(--bg-soft);
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.graph-toolbar__btn:hover {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+.graph-toolbar__btn[aria-pressed="true"] {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+}
+
+.graph-body {
+  display: flex;
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+.graph-canvas-wrap {
+  flex: 1;
+  position: relative;
+  /* Deep-space backdrop: a faint nebula glow at the galactic core and a soft
+     vignette darkening the edges, so the star field reads as a galaxy. The
+     sigma canvas above is transparent, so this shows through. */
+  background:
+    radial-gradient(
+      ellipse 70% 70% at 50% 45%,
+      rgba(120, 150, 220, 0.06),
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse at center,
+      transparent 45%,
+      rgba(0, 0, 0, 0.45) 100%
+    ),
+    var(--bg);
+}
+/* Mycelium skin: a substrate, so the CSS deep-space backdrop must go too.
+   The WebGL canvas is transparent, so this layer is what actually paints the
+   background — turning off the starfield, nebula and bloom in the scene still
+   left a blue nebula glow and vignette showing through from here, which is why
+   the mat kept reading as space. */
+.graph-canvas-wrap.is-mycelium {
+  background: #0b0a08;
+}
+.graph-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* Start hidden and fade in once the graph is positioned (graph-ready added
+     in PageGraph.tsx) so the raw scatter / first relayout frame is never
+     shown — Obsidian-style clean reveal. */
+  opacity: 0;
+  transition: opacity var(--dur-enter) var(--ease-out);
+}
+.graph-canvas.graph-ready {
+  opacity: 1;
+}
+
+/* ============================================================
    Spaceship mode: the graph goes app-fullscreen (covers sidebar, header, and
    settings chrome) so the flight reads as an immersive cockpit. The ship HUD
    (exit, controls legend, node info) floats over the canvas.
    ============================================================ */
+.workspace-wide.graph-fullscreen {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  height: 100vh;
+  padding: 0;
+  background: #05060d;
+}
+.graph-fullscreen .page-head,
+.graph-fullscreen .graph-toolbar,
+.graph-fullscreen .graph-drawer,
+.graph-fullscreen .graph-drawer-toggle,
+.graph-fullscreen .graph-legend,
+.graph-fullscreen .graph-help,
+.graph-fullscreen .graph-inspector {
+  display: none; /* the ShipHud is the only panel in immersive mode */
+}
+.graph-fullscreen .graph-shell {
+  border: 0;
+  border-radius: 0;
+  margin-bottom: 0;
+}
 
+.ship-hud {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none; /* children opt back in */
+}
+.ship-hud__exit,
+.ship-hud__panel {
+  pointer-events: auto;
+}
+.ship-hud__exit {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  /* Fixed-dark chip over the 3D void — text/border must not follow the app
+     theme (light theme's dark ink was invisible on this background). */
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: rgba(10, 12, 20, 0.7);
+  color: #e9edf6;
+  font-size: 13px;
+  cursor: pointer;
+  backdrop-filter: blur(6px);
+}
+.ship-hud__exit:hover {
+  background: rgba(30, 34, 48, 0.8);
+}
+.ship-hud__legend {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: #c3cad9;
+  font-size: 12.5px;
+  background: rgba(10, 12, 20, 0.55);
+  padding: 6px 14px;
+  border-radius: 999px;
+  backdrop-filter: blur(6px);
+  white-space: nowrap;
+}
+.graph-scale-badge {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 6px 18px;
+  border-radius: 999px;
+  background: rgba(10, 12, 20, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #e9edf6;
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  backdrop-filter: blur(6px);
+  pointer-events: none;
+  animation: graph-scale-in 0.3s ease;
+}
+@keyframes graph-scale-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+.ship-hud__speed {
+  color: #e9edf6;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  margin-right: 10px;
+  padding-right: 10px;
+  border-right: 1px solid rgba(255, 255, 255, 0.18);
+}
+.ship-hud__panel {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  width: min(300px, 34vw);
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--r-md);
+  background: rgba(10, 12, 20, 0.82);
+  backdrop-filter: blur(10px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+.ship-hud__panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.ship-hud__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+.ship-hud__title {
+  font-weight: 600;
+  font-size: 15px;
+  color: #edf0f7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ship-hud__close {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+  color: #aab3c5;
+  cursor: pointer;
+  font-size: 13px;
+}
+.ship-hud__meta {
+  color: #aab3c5;
+  font-size: 12.5px;
+  margin: 6px 0 10px;
+}
+.ship-hud__neighbors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-bottom: 12px;
+}
+.ship-hud__chip {
+  font-size: 11.5px;
+  color: #ccd3e0;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  padding: 2px 8px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ship-hud__open {
+  width: 100%;
+  padding: 7px;
+  border-radius: var(--r);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: #e9edf6;
+  color: #10141f;
+  font-size: 13px;
+  cursor: pointer;
+}
+@media (prefers-reduced-motion: reduce) {
+  .graph-canvas {
+    opacity: 1;
+    transition: none;
+  }
+}
 /* Graph node inspector — overlay panel on the right of the canvas. */
+.graph-inspector {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  bottom: 12px;
+  width: 290px;
+  max-width: calc(100% - 24px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+  font-size: 13px;
+  color: var(--ink);
+}
+.graph-insp__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.graph-insp__title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-insp__ghost {
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.graph-insp__meta {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.graph-insp__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.graph-insp__row dt {
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.graph-insp__row dd {
+  margin: 0;
+  font-variant-numeric: tabular-nums;
+}
+.graph-insp__badge {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  font-size: 12px;
+}
+.graph-insp__badge--low,
+.graph-insp__badge--disputed {
+  background: #b4541f;
+  color: #fff;
+}
+.graph-insp__badge--high,
+.graph-insp__badge--active {
+  background: #2f7d52;
+  color: #fff;
+}
+.graph-insp__section h4 {
+  margin: 0 0 6px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+.graph-insp__links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.graph-insp__link {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: var(--ink-2);
+  font-size: 13px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-insp__link:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.graph-insp__empty {
+  color: var(--ink-4);
+  font-size: 12px;
+}
+.graph-insp__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.graph-insp__tag {
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.graph-insp__pathbtn {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  color: var(--ink-2);
+  font-size: 12px;
+  cursor: pointer;
+}
+.graph-insp__pathbtn:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.graph-insp__pathbtn.is-anchor {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+.graph-insp__pathresult {
+  margin-top: 8px;
+}
+.graph-insp__open {
+  margin-top: auto;
+}
+/* Toolbar search-to-focus input (jumps the camera to a node by name). */
+.graph-find {
+  height: 28px;
+  width: 160px;
+  max-width: 40vw;
+  min-width: 0;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-elev);
+  color: var(--ink);
+  font-size: 13px;
+}
+.graph-find:focus {
+  outline: none;
+  border-color: var(--ink-3);
+}
+/* Gap-analysis panel — left overlay, mirrors the inspector on the right. */
+.graph-gaps {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  bottom: 12px;
+  width: 264px;
+  max-width: calc(100% - 24px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  overflow-y: auto;
+  background: var(--bg-elev);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+  font-size: 13px;
+  color: var(--ink);
+}
+.graph-gaps__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.graph-gaps__title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+}
+.graph-gaps__none {
+  margin: 0;
+  color: var(--ink-3);
+  font-size: 12px;
+}
+.graph-gaps__section h4 {
+  margin: 0 0 5px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+}
+.graph-gaps__links {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.graph-gaps__link {
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 3px 6px;
+  border-radius: 5px;
+  color: var(--ink-2);
+  font-size: 13px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-gaps__link:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+/* Bridge rows pair the "A ↔ B" link with a trailing ask button. */
+.graph-gaps__bridge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.graph-gaps__bridge .graph-gaps__link {
+  flex: 1;
+  min-width: 0;
+}
+.graph-gaps__more {
+  padding: 2px 6px;
+  color: var(--ink-4);
+  font-size: 12px;
+}
+/* Toolbar gap-count badge */
+.graph-toolbar__btn--badged {
+  position: relative;
+}
+.graph-toolbar__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: #b4541f;
+  color: #fff;
+  font-size: 10px;
+  line-height: 15px;
+  text-align: center;
+}
+/* Gesture cheat-sheet popover — same chrome as the gaps panel, anchored
+   top-right (above the inspector: it's a transient, dismissible overlay). */
+.graph-help {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 264px;
+  max-width: calc(100% - 24px);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--bg-elev);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+  font-size: 13px;
+  color: var(--ink);
+}
+.graph-help__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.graph-help__title {
+  flex: 1;
+  font-weight: 600;
+  font-size: 14px;
+}
+.graph-help__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.graph-help__row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.graph-help__keys {
+  flex-shrink: 0;
+  display: flex;
+  gap: 3px;
+}
+.graph-help__keys kbd {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-2);
+  background: var(--bg-hover);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+.graph-help__text {
+  color: var(--ink-2);
+}
+/* In-canvas graph legend — bottom-left overlay, doubles as a community filter. */
+.graph-legend {
+  position: absolute;
+  left: 12px;
+  bottom: 12px;
+  z-index: 5;
+  max-width: 240px;
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.graph-legend__head {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.graph-legend__galaxies {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.graph-legend__galaxy {
+  list-style: none;
+}
+.graph-legend__galaxy-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 3px 4px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.graph-legend__galaxy-head:hover {
+  background: var(--bg-hover);
+}
+.graph-legend__caret {
+  flex-shrink: 0;
+  font-size: 10px;
+}
+.graph-legend__clusters {
+  list-style: none;
+  margin: 1px 0 3px;
+  padding: 0 0 0 12px;
+  border-left: 1px solid var(--line-soft);
+  margin-left: 7px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.graph-legend__more {
+  padding: 2px 4px 2px 6px;
+  font-size: 11px;
+}
+.graph-legend__swatch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--ink-2);
+  cursor: pointer;
+  text-align: left;
+}
+.graph-legend__swatch:hover {
+  background: var(--bg-hover);
+}
+.graph-legend__swatch.is-active {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.graph-legend__swatch.is-dimmed {
+  opacity: 0.45;
+}
+.graph-legend__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.graph-legend__name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-legend__key {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
 
+/* Query "thinking" visualization — dark mini-cosmos while the model runs. */
+.thinking-galaxy {
+  border-radius: 8px;
+  background:
+    radial-gradient(
+      ellipse at center,
+      rgba(120, 150, 220, 0.06),
+      transparent 70%
+    ),
+    #0a0c14;
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
 .thinking-galaxy__label {
   padding: 6px 10px;
   font-size: 12px;
   color: var(--ink-3);
   border-top: 1px solid var(--line-soft);
 }
+.graph-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  text-align: center;
+}
 
+/* three.js WebGL canvas + CSS2D label layer fill the graph-canvas container. */
+.graph-canvas-3d {
+  display: block;
+  width: 100%;
+  height: 100%;
+  outline: none;
+  touch-action: none;
+}
+.graph-labels-3d {
+  overflow: hidden;
+}
+.graph-label-3d {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  /* Vertical placement is NOT set here: CSS2DRenderer overwrites this
+     element's `transform` every frame, so a translateY() rule silently did
+     nothing. The label hangs below its star via the CSS2DObject's `center` plus
+     a padding-top sized to the sprite — see ensureLabel()/updateLabels(). */
+  text-shadow:
+    0 0 3px rgba(0, 0, 0, 0.85),
+    0 0 6px rgba(0, 0, 0, 0.6);
+  user-select: none;
+}
+/* Chronicle (strata) time-axis date labels — world-space, sit under the axis
+   gridlines. Monospace-tabular so dates line up; theme-following ink. */
+.graph-axis-label {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--ink-3);
+  transform: translateY(10px);
+  user-select: none;
+  pointer-events: none;
+}
+.graph-axis-label--dim {
+  color: var(--ink-4);
+  font-style: italic;
+}
+
+/* MYCO graph cameo — the planet mascot rendered as a world IN the 3D cosmos:
+   a 0-size anchor is positioned every frame at the projected screen point of a
+   drifting world coordinate, the video is centred on it (perspective-sized in
+   JS), and the tip bubble floats to its left. The container ignores pointer
+   events so it never blocks graph interaction; only the bubble and the mascot
+   are clickable (to dismiss). Only ever mounted on a 3D dark layout. */
+.mascot-cameo {
+  position: absolute;
+  width: 0;
+  height: 0;
+  z-index: 40;
+  pointer-events: none;
+  animation: mascot-cameo-in 460ms ease;
+}
+.mascot-cameo--leaving {
+  animation: mascot-cameo-out 500ms ease forwards;
+}
+.mascot-cameo__video {
+  pointer-events: auto;
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 152px;
+  width: auto;
+  transform: translate(-50%, -50%);
+  cursor: pointer;
+  filter: drop-shadow(0 6px 18px rgba(120, 110, 255, 0.3));
+}
+.mascot-cameo__bubble {
+  pointer-events: auto;
+  position: absolute;
+  top: 0;
+  right: 120px;
+  transform: translateY(-50%);
+  width: max-content;
+  max-width: 250px;
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 9px 26px 10px 12px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
+}
 /* Tail pointing right, toward the mascot. */
-
+.mascot-cameo__bubble::after {
+  content: "";
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  width: 10px;
+  height: 10px;
+  background: var(--bg-soft);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  transform: translateY(-50%) rotate(-45deg);
+}
+.mascot-cameo__label {
+  display: block;
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--accent);
+}
+.mascot-cameo__tip {
+  margin: 3px 0 0;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.mascot-cameo__dismiss {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-4);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.mascot-cameo__dismiss:hover {
+  color: var(--ink);
+}
 @keyframes mascot-cameo-in {
   from {
     opacity: 0;
@@ -2953,14 +3895,54 @@ hr {
   }
 }
 /* Hidden in fullscreen (like the other overlays) and on very narrow screens. */
+.graph-fullscreen .mascot-cameo {
+  display: none;
+}
+@media (max-width: 560px) {
+  .mascot-cameo {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mascot-cameo {
+    animation: none;
+  }
+}
 
 /* Community names at rest ("terrain names" of the reverse semantic zoom).
    Colour comes inline from the community hue; the fade is CSS so show/hide is
    a cheap class toggle from clusterLabels.ts. */
-
+.graph-cluster-label {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity 480ms ease;
+  text-shadow:
+    0 0 4px rgba(0, 0, 0, 0.9),
+    0 0 10px rgba(0, 0, 0, 0.65);
+  user-select: none;
+  pointer-events: none;
+}
+.graph-cluster-label.is-visible {
+  opacity: 0.85;
+}
 /* Light theme: the community hues are calibrated for the dark void — darken
    them for paper and swap the dark halo for a light one so the caps read. */
-
+:root:not([data-theme="dark"]) .graph-cluster-label {
+  filter: brightness(0.45) saturate(1.6);
+  text-shadow:
+    0 0 4px rgba(255, 255, 255, 0.9),
+    0 0 10px rgba(255, 255, 255, 0.65);
+}
+@media (prefers-reduced-motion: reduce) {
+  .graph-cluster-label {
+    transition: none;
+  }
+}
 /* Five-states overlays (calm-cosmic-web spec B5) ------------------------- */
 /* Loading: shows while the layout settles; .graph-ready on the canvas (the
    existing reveal signal) fades it away — pure CSS, no extra state. */
@@ -2975,8 +3957,34 @@ hr {
   opacity: 1;
   transition: opacity 400ms ease;
 }
-
+.graph-canvas.graph-ready ~ .graph-loading-tip {
+  opacity: 0;
+}
 /* Error: GL context lost — toast + manual rebuild. */
+.graph-toast {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg-soft);
+  font-size: 12px;
+  z-index: 5;
+}
+/* Perf: ambient layers were dropped for a very large graph. */
+.graph-perf-banner {
+  position: absolute;
+  bottom: 10px;
+  right: 12px;
+  margin: 0;
+  font-size: 11px;
+  pointer-events: none;
+}
 
 /* Suspense fallback while the 3D graph chunk loads — matches the deep-space wrap. */
 .graph-loading {
@@ -2988,13 +3996,502 @@ hr {
   color: var(--ink-3);
 }
 
+/* Right-side drawer */
+.graph-drawer {
+  width: 280px;
+  flex: 0 0 280px;
+  border-left: 1px solid var(--line);
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  font-size: 12.5px;
+}
+.graph-drawer__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-soft);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.graph-drawer__title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-2);
+}
+.graph-drawer__btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.graph-drawer__btn:hover {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+.graph-drawer__btn--icon {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.graph-drawer-toggle {
+  position: absolute;
+  top: 56px;
+  right: 12px;
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  box-shadow: var(--shadow-1);
+}
+.graph-drawer-toggle:hover {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+
+.graph-drawer__section {
+  border-bottom: 1px solid var(--line-soft);
+}
+.graph-drawer__section-head {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  padding: 10px 12px;
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--ink-3);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.graph-drawer__section-head:hover {
+  color: var(--ink);
+}
+.graph-drawer__caret {
+  display: inline-block;
+  font-size: 8px;
+  color: var(--ink-4);
+  transition: transform var(--dur-quick) var(--ease-out);
+  width: 10px;
+}
+.graph-drawer__section-body {
+  padding: 4px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Timelapse "play" button — labelled, full width, like Obsidian's
+   Animate button so it's discoverable (the toolbar ▶ alone was missed). */
+.graph-drawer__play {
+  margin-top: 4px;
+  width: 100%;
+  padding: 7px 10px;
+  border-radius: var(--r);
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--dur-quick) var(--ease-out);
+}
+.graph-drawer__play:hover {
+  opacity: 0.88;
+}
+.graph-drawer__play[aria-pressed="true"] {
+  background: transparent;
+  color: var(--ink);
+}
+
+/* Form fields inside the drawer */
+.graph-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.graph-field__label {
+  font-size: 11px;
+  color: var(--ink-3);
+}
 /* Collapsible sub-header inside a field (e.g. the Tags list) */
+.graph-subhead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  cursor: pointer;
+  text-align: left;
+}
+.graph-subhead:hover .graph-field__label {
+  color: var(--ink-2);
+}
+.graph-subhead__caret {
+  font-size: 10px;
+  color: var(--ink-4);
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+.graph-subhead__caret.is-open {
+  transform: rotate(90deg);
+}
+.graph-field__input {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--ink);
+  outline: none;
+}
+.graph-field__input:focus {
+  border-color: var(--ink-3);
+  background: var(--bg);
+}
+
+/* Node/hyphae colour pickers (mycelium) — label + native swatch on one row,
+   same rhythm as .graph-toggle. */
+.graph-field--color {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 2px 0;
+}
+.graph-field__color {
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: none;
+  cursor: pointer;
+}
+
+.graph-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.graph-recommend {
+  margin-top: 8px;
+  width: 100%;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: var(--bg-soft);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  cursor: pointer;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+.graph-recommend:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.graph-chip {
+  font-size: 11px;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--bg-soft);
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  cursor: pointer;
+}
+.graph-chip:hover {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+.graph-chip--active {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+}
 
 /* One-tap look picker — the primary control. A single column of tappable cards,
    each naming a look and what you get, so first-timers choose by outcome. */
+.graph-vibes {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.graph-vibe {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  text-align: left;
+  padding: 7px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    border-color var(--dur-quick) var(--ease-out),
+    background var(--dur-quick) var(--ease-out);
+}
+.graph-vibe:hover {
+  background: var(--bg-hover);
+  border-color: var(--ink-4);
+}
+.graph-vibe--active {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+.graph-vibe__name {
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.graph-vibe--active .graph-vibe__name {
+  color: var(--accent);
+}
+.graph-vibe__desc {
+  font-size: 11px;
+  color: var(--ink-3);
+  line-height: 1.3;
+}
 
 /* Saved looks — the user's own named configurations. Each is an apply-button
    with a trailing delete, sharing the chip visual language. */
+.graph-saved {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 3px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+}
+.graph-saved__apply {
+  font-size: 11px;
+  padding: 2px 7px;
+  background: var(--bg-soft);
+  color: var(--ink-2);
+  border: 0;
+  cursor: pointer;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-saved__apply:hover {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+.graph-saved__del {
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 5px;
+  background: var(--bg-soft);
+  color: var(--ink-4);
+  border: 0;
+  border-left: 1px solid var(--line);
+  cursor: pointer;
+}
+.graph-saved__del:hover {
+  color: var(--danger, #e5484d);
+  background: var(--bg-hover);
+}
+.graph-saved__empty {
+  font-size: 11px;
+  color: var(--ink-4);
+  line-height: 1.3;
+}
+.graph-saverow {
+  display: flex;
+  gap: 4px;
+}
+.graph-saverow .graph-field__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.graph-saverow__btn {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  padding: 0 10px;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.graph-saverow__btn:hover:not(:disabled) {
+  color: var(--ink);
+  background: var(--bg-hover);
+}
+.graph-saverow__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Timelapse footer — pinned to the bottom of the drawer, always reachable. */
+.graph-drawer__footer {
+  margin-top: auto;
+  padding: 10px 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+/* Focus-stack breadcrumb trail in the graph toolbar (spec B3): one chip per
+   focus level, "×" steps out one level (same as Esc / void-click). */
+.graph-crumbs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow: hidden;
+}
+.graph-crumbs .graph-chip {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-chip--exit {
+  padding: 2px 6px;
+  line-height: 1;
+}
+
+.graph-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  padding: 2px 0;
+  /* Button reset: this row is now a <button role="switch">. */
+  width: 100%;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  appearance: none;
+}
+.graph-toggle__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.graph-toggle__text > span:first-child {
+  font-size: 12px;
+  color: var(--ink-2);
+}
+.graph-toggle__hint {
+  font-size: 10.5px;
+  color: var(--ink-4);
+}
+.graph-toggle__switch {
+  width: 28px;
+  height: 16px;
+  background: var(--bg-active);
+  border-radius: 10px;
+  position: relative;
+  flex-shrink: 0;
+  transition: background var(--dur-quick) var(--ease-out);
+  cursor: pointer;
+}
+.graph-toggle__switch--on {
+  background: var(--ink);
+}
+.graph-toggle__knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 12px;
+  height: 12px;
+  background: var(--bg);
+  border-radius: 50%;
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+.graph-toggle__switch--on .graph-toggle__knob {
+  transform: translateX(12px);
+}
+
+.graph-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.graph-slider__row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11px;
+}
+.graph-slider__label {
+  color: var(--ink-2);
+}
+.graph-slider__value {
+  color: var(--ink-3);
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+}
+.graph-slider__input {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 4px;
+  background: var(--bg-active);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.graph-slider__input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink);
+  cursor: grab;
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
+.graph-slider__input::-webkit-slider-thumb:active {
+  cursor: grabbing;
+}
+.graph-slider__input::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--ink);
+  cursor: grab;
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 1px var(--line-strong);
+}
 
 /* ── Ingest live progress ("mission control") ───────────────────────────── */
 
@@ -4216,6 +5713,20 @@ html.tray-window body {
   gap: 12px;
 }
 
+/* Multiverse mode inside the Graph — hint line over the bubble scene. */
+.graph-mv-hint {
+  position: absolute;
+  bottom: 14px;
+  left: 0;
+  right: 0;
+  z-index: 3;
+  margin: 0;
+  padding: 0 24px;
+  text-align: center;
+  font-size: 12.5px;
+  pointer-events: none;
+}
+
 /* Ingest drop/paste layout: two columns on desktop, stacked on small screens.
    Moved off an inline style so the breakpoint below can override it. */
 .ingest-grid {
@@ -4335,7 +5846,24 @@ html.tray-window body {
     padding: 32px 0 12px;
   }
 
-  
+  /* Graph: stack the inspector drawer below the canvas instead of squeezing
+     the canvas behind a fixed 280px side column. */
+  .graph-body {
+    flex-direction: column;
+    height: auto;
+    min-height: 0;
+  }
+  .graph-canvas-wrap {
+    height: 60vh;
+    min-height: 360px;
+  }
+  .graph-drawer {
+    width: 100%;
+    flex: none;
+    border-left: 0;
+    border-top: 1px solid var(--line);
+    max-height: 52vh;
+  }
 
   /* Ingest: collapse the two-column drop/paste layout into one. */
   .ingest-grid {
@@ -5343,7 +6871,24 @@ html.tray-window body {
   color: var(--ink);
   border-color: var(--accent);
 }
-
+.graph-fullscreen ~ .help-widget__fab,
+.graph-fullscreen ~ .help-widget__panel,
+.graph-fullscreen .help-widget__fab {
+  display: none;
+}
+.help-widget__panel {
+  position: fixed;
+  right: 18px;
+  bottom: 60px;
+  z-index: 90;
+  width: min(320px, calc(100vw - 36px));
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--bg-elev);
+  backdrop-filter: blur(8px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
+  padding: 14px;
+}
 .help-widget__head {
   display: flex;
   align-items: center;
@@ -8776,678 +10321,5 @@ details.props > .btn {
 @media (prefers-reduced-motion: reduce) {
   .ask-orb {
     animation: none;
-  }
-}
-
-/* ── Survey (graph) ─────────────────────────────────────────────────────────
-   Glass tiles on the renewal tokens (--glass / --live / --ok / --warn), the
-   canvas as the one hero block, and the type scale 11 · 12.5 · 14 · 17 · 22 ·
-   42. The selected question card is the only thing that glows. */
-.sv {
-  max-width: 1180px;
-}
-/* No page header: the question bar IS the first element (brief §3 — the top of
-   a page is data, never a hero), so the canvas sits in the first viewport. */
-.sv-top {
-  padding-top: 20px;
-}
-.sv-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-.sv-q__lead {
-  margin: 0 0 8px;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-}
-.sv-qs {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.sv-q {
-  flex: 1 1 190px;
-  min-width: 170px;
-  text-align: left;
-  cursor: pointer;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: 42px auto;
-  column-gap: 12px;
-  align-items: center;
-  padding: 10px 14px 11px;
-  border-radius: 16px;
-  border: 1px solid var(--glass-line);
-  background: var(--glass);
-  box-shadow: var(--glass-hi);
-  color: var(--ink-2);
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    border-color var(--dur-quick) var(--ease-out),
-    box-shadow var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out);
-}
-.sv-q:hover {
-  background: var(--glass-2);
-  transform: translateY(-1px);
-}
-.sv-q:active {
-  transform: scale(0.99);
-}
-.sv-q__t {
-  grid-column: 1;
-  grid-row: 1;
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--ink);
-  line-height: 1.3;
-}
-.sv-q__big {
-  grid-column: 2;
-  grid-row: 1;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  justify-self: end;
-  white-space: nowrap;
-}
-.sv-q__unit {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--ink-4);
-}
-.sv-q__num {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  font-size: 22px;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  color: var(--ink-2);
-  transition:
-    font-size var(--dur-quick) var(--ease-out),
-    color var(--dur-quick) var(--ease-out);
-}
-.sv-q__n {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  margin-top: 2px;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--ink-4);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.sv-q[aria-pressed="true"] {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--live) 16%, transparent),
-    color-mix(in srgb, var(--live) 5%, transparent)
-  );
-  border-color: color-mix(in srgb, var(--live) 45%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--live) 35%, transparent),
-    0 0 28px color-mix(in srgb, var(--live) 28%, transparent),
-    var(--glass-hi);
-}
-.sv-q[aria-pressed="true"] .sv-q__num {
-  font-size: 42px;
-  color: var(--ink);
-}
-.sv-q[aria-pressed="true"] .sv-q__unit {
-  color: var(--live);
-}
-.sv-q[aria-pressed="true"] .sv-q__n {
-  color: var(--ink-3);
-}
-
-.sv-ctl {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 12px 0;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
-}
-.sv-field {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-.sv-field input {
-  width: 230px;
-  height: 32px;
-  padding: 0 12px;
-  border-radius: 10px;
-  border: 1px solid transparent;
-  background: var(--glass-2);
-  color: inherit;
-  font: inherit;
-  font-size: 12.5px;
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    border-color var(--dur-quick) var(--ease-out);
-}
-.sv-field input:hover {
-  background: var(--glass-2-hover);
-}
-.sv-field input:focus {
-  border-color: color-mix(in srgb, var(--live) 50%, transparent);
-}
-.sv-seg {
-  display: inline-flex;
-  height: 32px;
-  padding: 2px;
-  gap: 2px;
-  border-radius: 10px;
-  background: var(--glass-2);
-}
-.sv-seg button {
-  border: 0;
-  background: transparent;
-  color: var(--ink-3);
-  padding: 0 11px;
-  font-size: 12.5px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.sv-seg button[aria-pressed="true"] {
-  background: var(--bg-active);
-  color: var(--ink);
-  font-weight: 500;
-  box-shadow: var(--glass-hi);
-}
-.sv-seg button:hover {
-  color: var(--ink);
-}
-.sv-chk {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  color: var(--ink-3);
-  cursor: pointer;
-  user-select: none;
-}
-.sv-chk input {
-  accent-color: var(--live);
-  width: 14px;
-  height: 14px;
-}
-.sv-ctl__spacer {
-  flex: 1;
-}
-.sv-stat {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: 999px;
-  background: var(--glass-2);
-  font-size: 11px;
-  color: var(--ink-4);
-  white-space: nowrap;
-}
-
-.sv-honest {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin: 0 0 14px;
-  padding: 8px 14px;
-  border: 1px solid var(--glass-line);
-  border-radius: 12px;
-  background: var(--glass);
-  box-shadow: var(--glass-hi);
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--ink-3);
-}
-.sv-honest__lead {
-  white-space: nowrap;
-  color: var(--ink-2);
-  font-weight: 600;
-}
-.sv-honest__txt {
-  flex: 1 1 420px;
-  min-width: 0;
-}
-.sv-bar {
-  display: inline-flex;
-  flex: none;
-  width: 180px;
-  height: 6px;
-  border-radius: 3px;
-  overflow: hidden;
-  background: var(--track);
-}
-.sv-bar i {
-  display: block;
-  height: 100%;
-}
-
-.sv-work {
-  display: grid;
-  grid-template-columns: 246px minmax(0, 1fr) 296px;
-  gap: 14px;
-  align-items: start;
-}
-.sv-panel {
-  border: 1px solid var(--glass-line);
-  border-radius: 16px;
-  background: var(--glass);
-  box-shadow: var(--glass-hi);
-  overflow: hidden;
-}
-.sv-panel__h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--glass-line);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-}
-.sv-panel__h b {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--ink);
-}
-.sv-panel__h .sp {
-  flex: 1;
-}
-
-.sv-gap {
-  border-bottom: 1px solid var(--glass-line);
-}
-.sv-gap:last-child {
-  border-bottom: 0;
-}
-.sv-gap__h {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  border: 0;
-  background: transparent;
-  color: var(--ink-2);
-  font-size: 12.5px;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
-.sv-gap__h:hover {
-  background: var(--glass-2);
-}
-.sv-gap__h .cnt {
-  margin-left: auto;
-  color: var(--ink-4);
-}
-.sv-gap__caret {
-  width: 9px;
-  color: var(--ink-4);
-  font-size: 11px;
-}
-.sv-gap__body {
-  padding: 0 8px 8px;
-}
-.sv-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px 4px 8px;
-  border-radius: 10px;
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out);
-}
-.sv-row:hover {
-  background: var(--glass-2);
-  transform: translateY(-1px);
-}
-.sv-row.is-sel {
-  background: color-mix(in srgb, var(--live) 14%, transparent);
-}
-.sv-row__name {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  padding: 2px 0;
-  font-size: 14px;
-  color: var(--ink-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sv-row__name:hover {
-  color: var(--ink);
-}
-.sv-act {
-  flex: none;
-  border: 0;
-  border-radius: 8px;
-  height: 26px;
-  padding: 0 8px;
-  background: var(--glass-2);
-  color: var(--ink-2);
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-  box-shadow: var(--glass-hi);
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    color var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out);
-}
-.sv-act:hover {
-  background: var(--glass-2-hover);
-  color: var(--ink);
-  transform: translateY(-1px);
-}
-.sv-act:active {
-  transform: scale(0.97);
-}
-.sv-row__acts {
-  position: absolute;
-  max-width: 62%;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  gap: 4px;
-  padding-left: 18px;
-  opacity: 0;
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent, var(--bg-elev) 18%);
-  transition: opacity var(--dur-quick) var(--ease-out);
-}
-.sv-row:hover .sv-row__acts,
-.sv-row:focus-within .sv-row__acts,
-.sv-row.is-sel .sv-row__acts {
-  opacity: 1;
-  pointer-events: auto;
-}
-@media (hover: none) {
-  .sv-row__acts {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-.sv-empty {
-  margin: 0;
-  padding: 8px 14px 10px;
-  font-size: 12.5px;
-  color: var(--ink-4);
-}
-
-.sv-stage {
-  position: relative;
-  border: 1px solid var(--glass-line);
-  border-radius: 16px;
-  overflow: hidden;
-  background: var(--bg-soft);
-  box-shadow:
-    0 24px 60px rgba(0, 0, 0, 0.28),
-    var(--glass-hi);
-}
-.sv-canvas {
-  height: 540px;
-}
-.sv-canvas__el {
-  display: block;
-  width: 100%;
-  height: 100%;
-  cursor: grab;
-  touch-action: none;
-}
-.sv-canvas__el:active {
-  cursor: grabbing;
-}
-.sv-canvas__el:focus-visible {
-  outline: 2px solid var(--live);
-  outline-offset: -2px;
-}
-.sv-stage__hint {
-  position: absolute;
-  right: 12px;
-  top: 12px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid var(--glass-line);
-  background: color-mix(in srgb, var(--bg-elev) 72%, transparent);
-  box-shadow: var(--glass-hi);
-  font-size: 11px;
-  color: var(--ink-4);
-}
-.sv-stage__note {
-  position: absolute;
-  left: 14px;
-  right: 14px;
-  bottom: 12px;
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  pointer-events: none;
-  font-size: 11px;
-  color: var(--ink-4);
-}
-.sv-stage__empty {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  padding: 40px;
-  text-align: center;
-}
-.sv-tip {
-  position: absolute;
-  z-index: 5;
-  max-width: 250px;
-  padding: 6px 10px;
-  border: 1px solid var(--glass-line);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
-  box-shadow:
-    var(--shadow-2),
-    var(--glass-hi);
-  font-size: 12.5px;
-  pointer-events: none;
-}
-.sv-tip .k {
-  display: block;
-  font-size: 11px;
-  color: var(--ink-4);
-}
-
-.sv-insp__body {
-  padding: 12px 14px 14px;
-}
-.sv-insp__title {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.01em;
-}
-.sv-insp__path {
-  margin-top: 3px;
-  font-size: 11px;
-  color: var(--ink-4);
-  word-break: break-all;
-}
-.sv-insp__empty {
-  padding: 26px 16px 22px;
-  text-align: center;
-  font-size: 14px;
-  line-height: 1.5;
-  color: var(--ink-3);
-}
-.sv-insp__none {
-  padding: 2px 6px;
-  font-size: 12.5px;
-  color: var(--ink-4);
-}
-.sv-badges {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-  margin: 10px 0 12px;
-}
-.sv-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 2px 8px;
-  border: 1px solid var(--glass-line);
-  border-radius: 999px;
-  background: var(--glass-2);
-  font-size: 11px;
-  color: var(--ink-3);
-}
-.sv-badge--warn {
-  border-color: var(--warn);
-  color: var(--warn);
-}
-.sv-badge--ok {
-  border-color: var(--ok);
-  color: var(--ok);
-}
-.sv-meta {
-  margin: 0;
-}
-.sv-mrow {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 3px 0;
-  border-bottom: 1px dotted var(--line);
-  font-size: 12.5px;
-}
-.sv-mrow dt {
-  margin: 0;
-  color: var(--ink-4);
-}
-.sv-mrow dd {
-  margin: 0;
-  color: var(--ink-2);
-  font-variant-numeric: tabular-nums;
-}
-.sv-insp h4 {
-  margin: 14px 0 6px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-}
-.sv-links {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  max-height: 132px;
-  overflow: auto;
-}
-.sv-links button {
-  width: 100%;
-  padding: 3px 6px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: transparent;
-  color: var(--ink-2);
-  font-size: 12.5px;
-  text-align: left;
-  cursor: pointer;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sv-links button:hover {
-  background: var(--glass-2);
-  color: var(--ink);
-}
-.sv-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 14px;
-  padding-top: 12px;
-  border-top: 1px solid var(--glass-line);
-}
-.sv-btn {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 32px;
-  padding: 0 12px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--glass-2);
-  color: var(--ink);
-  font-size: 14px;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-  box-shadow: var(--glass-hi);
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out);
-}
-.sv-btn:hover {
-  background: var(--glass-2-hover);
-  transform: translateY(-1px);
-}
-.sv-btn:active {
-  transform: scale(0.97);
-}
-.sv-btn--primary {
-  background: var(--live);
-  color: var(--bg);
-}
-.sv-btn--primary:hover {
-  filter: brightness(1.08);
-}
-
-@media (max-width: 1400px) {
-  .sv-work {
-    grid-template-columns: 228px minmax(0, 1fr);
-  }
-  .sv-insp {
-    grid-column: 1 / -1;
-  }
-}
-@media (max-width: 1040px) {
-  .sv-work {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-@media (max-width: 760px) {
-  .sv-work {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .sv-canvas {
-    height: 60vh;
-    min-height: 360px;
   }
 }

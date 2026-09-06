@@ -44,7 +44,7 @@ for (let i = 0; i < WORKSPACE.length; i++) {
   // Each page renders a .page-title (or the graph canvas) — wait for content.
   await page
     .waitForFunction(
-      () => !!document.querySelector(".page-title, .sv-canvas__el"),
+      () => !!document.querySelector(".page-title, .graph-canvas"),
       { timeout: 20_000 },
     )
     .catch(() => {});

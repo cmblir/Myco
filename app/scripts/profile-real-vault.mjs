@@ -112,8 +112,9 @@ const top = [...selfTime.entries()]
 const longTasks = await page.evaluate(() => window.__longTasks).catch(() => "wedged");
 const state = await page
   .evaluate(() => ({
-    ready: !!document.querySelector(".sv-canvas__el"),
-    nodes: document.querySelector(".sv-stage__note")?.textContent ?? null,
+    ready: !!document.querySelector(".graph-canvas.graph-ready") || !!document.querySelector(".graph-ready"),
+    nodes: window.__graphDev?.graph?.order ?? null,
+    edges: window.__graphDev?.graph?.size ?? null,
   }))
   .catch(() => "wedged");
 console.log("elapsed:", Date.now() - t0);

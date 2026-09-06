@@ -1,15 +1,18 @@
-// Node inspector — what the selected note is, and the three ways out of this
-// screen. It used to offer exactly one exit ("open in reader") next to a
-// shortest-path toy; it now carries citations, trust and the same three
-// actions the gap rows do, so a survey finding turns into work.
+// Graph node inspector — a side panel for the 3D graph. Clicking a star opens
+// this instead of navigating away, so the graph becomes an exploration surface:
+// it shows the page's frontmatter (type / confidence / status), its degree, and
+// its outgoing links, backlinks and tags. Link rows are clickable — they select
+// (and fly the camera to) the target node, so you can walk the graph by links.
+// All data comes from the already-loaded adjacency + the graphology graph; the
+// frontmatter is fetched lazily per node via readFile (no backend change).
 
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
+import { Icon } from "../lib/icons";
 import { ipc } from "../lib/ipc";
 import type { Adjacency } from "../lib/ipc";
 import type { Strings } from "../lib/i18n";
-import { stem } from "../lib/graphData";
-import type { GapAction } from "./GraphGaps";
+import { stem, type VaultGraph } from "../lib/graphData";
 
 const GHOST = "ghost:";
 
@@ -21,29 +24,37 @@ export default function GraphInspector({
   t,
   nodeId,
   adjacency,
-  isSample,
+  graph,
+  pathAnchor,
+  path,
+  onSetAnchor,
+  onClearAnchor,
   onSelect,
   onOpen,
-  onAction,
-  onNeighbors,
+  onClose,
 }: {
   t: Strings;
-  nodeId: string | null;
+  nodeId: string;
   adjacency: Adjacency;
-  /** Seeded first-run note (graphSample) rather than the owner's writing. */
-  isSample: (id: string) => boolean;
+  graph: VaultGraph | null;
+  /** Node pinned as the shortest-path start, if any. */
+  pathAnchor: string | null;
+  /** Computed shortest path from the anchor to this node (null = none). */
+  path: string[] | null;
+  onSetAnchor: (id: string) => void;
+  onClearAnchor: () => void;
+  /** Select another node (re-inspect + fly camera to it). */
   onSelect: (id: string) => void;
+  /** Open the node in the full reader. */
   onOpen: (id: string) => void;
-  onAction: (action: GapAction, id: string) => void;
-  /** Switch the question to "이 노트의 이웃" with this note as the subject. */
-  onNeighbors: (id: string) => void;
+  onClose: () => void;
 }): JSX.Element {
+  const isGhost = nodeId.startsWith(GHOST);
   const [fm, setFm] = useState<Record<string, unknown> | null>(null);
-  const isGhost = !!nodeId && nodeId.startsWith(GHOST);
 
   // Lazily fetch the page's frontmatter (real files only; ghosts have none).
   useEffect(() => {
-    if (!nodeId || isGhost) {
+    if (isGhost) {
       setFm(null);
       return;
     }
@@ -64,47 +75,39 @@ export default function GraphInspector({
     };
   }, [nodeId, isGhost]);
 
-  if (!nodeId) {
-    return (
-      <aside className="sv-panel sv-insp" aria-labelledby="sv-insp-h">
-        <div className="sv-panel__h">
-          <b id="sv-insp-h">{t.gr_insp_h}</b>
-        </div>
-        <div className="sv-insp__empty">
-          <p>{t.gr_insp_empty}</p>
-        </div>
-      </aside>
-    );
-  }
-
   const label = isGhost ? nodeId.slice(GHOST.length) : stem(nodeId);
   const title = str(fm?.title) ?? label;
   const outlinks = adjacency.forward[nodeId] ?? [];
   const backlinks = adjacency.backward[nodeId] ?? [];
-  const meta = adjacency.meta?.[nodeId];
-  const cites = meta?.sourceCount ?? 0;
-  const conf = meta?.confidence ?? str(fm?.confidence);
-  const type = meta?.type ?? str(fm?.type);
-  const status = meta?.status ?? str(fm?.status);
+  const tags = adjacency.tags[nodeId] ?? [];
+  const deg =
+    graph && graph.hasNode(nodeId)
+      ? graph.degree(nodeId)
+      : outlinks.length + backlinks.length;
 
-  const rows: [string, string][] = [
-    [t.gr_insp_type, type ?? "—"],
-    [t.gr_insp_confidence, conf ?? "—"],
-    [t.gr_insp_cites, String(cites)],
-    [t.gr_insp_links_out, String(outlinks.length)],
-    [t.gr_insp_backlinks, String(backlinks.length)],
-  ];
-  if (status) rows.push([t.gr_insp_status, status]);
+  const meta: { label: string; value: string }[] = [];
+  const type = str(fm?.type);
+  const conf = str(fm?.confidence);
+  const status = str(fm?.status);
+  if (type) meta.push({ label: t.gr_insp_type ?? "Type", value: type });
+  if (conf) meta.push({ label: t.gr_insp_confidence ?? "Confidence", value: conf });
+  if (status) meta.push({ label: t.gr_insp_status ?? "Status", value: status });
+  meta.push({ label: t.gr_insp_connections ?? "Connections", value: String(deg) });
 
-  const list = (ids: string[]): JSX.Element =>
+  const linkList = (ids: string[]): JSX.Element =>
     ids.length === 0 ? (
-      <div className="sv-insp__none">{t.gr_insp_none}</div>
+      <div className="graph-insp__empty">{t.gr_insp_none ?? "—"}</div>
     ) : (
-      <ul className="sv-links">
+      <ul className="graph-insp__links">
         {ids.map((id) => (
           <li key={id}>
-            <button type="button" title={id} onClick={() => onSelect(id)}>
-              {id.startsWith(GHOST) ? `◌ ${id.slice(GHOST.length)}` : stem(id)}
+            <button
+              type="button"
+              className="graph-insp__link"
+              title={id}
+              onClick={() => onSelect(id)}
+            >
+              {stem(id)}
             </button>
           </li>
         ))}
@@ -112,77 +115,122 @@ export default function GraphInspector({
     );
 
   return (
-    <aside className="sv-panel sv-insp" aria-labelledby="sv-insp-h" aria-live="polite">
-      <div className="sv-panel__h">
-        <b id="sv-insp-h">{t.gr_insp_h}</b>
+    <aside className="graph-inspector" role="region" aria-label={title}>
+      <div className="graph-insp__head">
+        <span className="graph-insp__title" title={nodeId}>
+          {title}
+        </span>
+        <button
+          type="button"
+          className="icon-btn"
+          onClick={onClose}
+          aria-label={t.ui_close ?? "Close"}
+          title={t.ui_close ?? "Close"}
+        >
+          <Icon name="x" size={13} />
+        </button>
       </div>
-      <div className="sv-insp__body">
-        <h3 className="sv-insp__title">{title}</h3>
-        <div className="sv-insp__path mono">{isGhost ? t.gr_insp_unresolved : nodeId}</div>
-        <div className="sv-badges">
-          {isGhost ? (
-            <span className="sv-badge sv-badge--warn">{t.gr_insp_unresolved}</span>
-          ) : (
-            <span className={`sv-badge${isSample(nodeId) ? " sv-badge--warn" : " sv-badge--ok"}`}>
-              {isSample(nodeId) ? t.gr_insp_sample : t.gr_insp_own}
-            </span>
-          )}
-          {!isGhost && cites === 0 ? (
-            <span className="sv-badge sv-badge--warn">{t.gr_insp_nocite}</span>
-          ) : null}
-        </div>
 
-        {!isGhost ? (
-          <dl className="sv-meta">
-            {rows.map(([k, v]) => (
-              <div className="sv-mrow" key={k}>
-                <dt>{k}</dt>
-                <dd className="mono">{v}</dd>
-              </div>
+      {isGhost ? (
+        <p className="graph-insp__ghost">{t.gr_insp_unresolved ?? "Unresolved note"}</p>
+      ) : null}
+
+      <dl className="graph-insp__meta">
+        {meta.map((m) => (
+          <div className="graph-insp__row" key={m.label}>
+            <dt>{m.label}</dt>
+            <dd className={`graph-insp__badge graph-insp__badge--${m.value.toLowerCase()}`}>
+              {m.value}
+            </dd>
+          </div>
+        ))}
+      </dl>
+
+      {tags.length > 0 ? (
+        <div className="graph-insp__section">
+          <h4>{t.gr_insp_tags ?? "Tags"}</h4>
+          <div className="graph-insp__tags">
+            {tags.map((tag) => (
+              <span className="graph-insp__tag" key={tag}>
+                #{tag}
+              </span>
             ))}
-          </dl>
-        ) : null}
-
-        <h4>
-          {t.gr_insp_links_out} <span className="muted">{outlinks.length}</span>
-        </h4>
-        {list(outlinks)}
-        <h4>
-          {t.gr_insp_backlinks} <span className="muted">{backlinks.length}</span>
-        </h4>
-        {list(backlinks)}
-
-        <div className="sv-actions">
-          {isGhost ? (
-            <button
-              type="button"
-              className="sv-btn sv-btn--primary"
-              onClick={() => onAction("want", nodeId)}
-            >
-              {t.gr_act_harvest}
-            </button>
-          ) : (
-            <button
-              type="button"
-              className="sv-btn sv-btn--primary"
-              onClick={() => onOpen(nodeId)}
-            >
-              {t.gr_insp_open}
-            </button>
-          )}
-          <button type="button" className="sv-btn" onClick={() => onAction("link", nodeId)}>
-            {t.gr_act_link}
-          </button>
-          {!isGhost ? (
-            <button type="button" className="sv-btn" onClick={() => onAction("want", nodeId)}>
-              {t.gr_act_harvest}
-            </button>
-          ) : null}
-          <button type="button" className="sv-btn" onClick={() => onNeighbors(nodeId)}>
-            {t.gr_act_neighbors}
-          </button>
+          </div>
         </div>
+      ) : null}
+
+      <div className="graph-insp__section">
+        <h4>
+          {t.gr_insp_links_out ?? "Links"} <span className="muted">({outlinks.length})</span>
+        </h4>
+        {linkList(outlinks)}
       </div>
+
+      <div className="graph-insp__section">
+        <h4>
+          {t.gr_insp_backlinks ?? "Backlinks"}{" "}
+          <span className="muted">({backlinks.length})</span>
+        </h4>
+        {linkList(backlinks)}
+      </div>
+
+      <div className="graph-insp__section">
+        {pathAnchor === nodeId ? (
+          <button
+            type="button"
+            className="graph-insp__pathbtn is-anchor"
+            onClick={onClearAnchor}
+          >
+            {t.gr_insp_path_anchor ?? "Path start"} ✓ · {t.gr_insp_path_clear ?? "clear"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="graph-insp__pathbtn"
+            onClick={() => onSetAnchor(nodeId)}
+          >
+            {t.gr_insp_path_start ?? "Set as path start"}
+          </button>
+        )}
+        {pathAnchor && pathAnchor !== nodeId ? (
+          <div className="graph-insp__pathresult">
+            <h4>
+              {t.gr_insp_path ?? "Path"}{" "}
+              {path ? (
+                <span className="muted">
+                  ({path.length - 1} {t.gr_insp_hops ?? "hops"})
+                </span>
+              ) : null}
+            </h4>
+            {path ? (
+              <ul className="graph-insp__links">
+                {path.map((id) => (
+                  <li key={id}>
+                    <button
+                      type="button"
+                      className="graph-insp__link"
+                      title={id}
+                      onClick={() => onSelect(id)}
+                    >
+                      {stem(id)}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="graph-insp__empty">
+                {t.gr_insp_path_none ?? "No path to this node"}
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
+
+      {!isGhost ? (
+        <button type="button" className="btn graph-insp__open" onClick={() => onOpen(nodeId)}>
+          {t.gr_insp_open ?? "Open in reader"}
+        </button>
+      ) : null}
     </aside>
   );
 }

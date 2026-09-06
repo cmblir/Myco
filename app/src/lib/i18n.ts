@@ -345,96 +345,256 @@ export interface Strings {
   q_sources_used: string;
   q_wiki: string;
   q_raw: string;
+  gr_title: string;
+  gr_lede: string;
+  gr_legend: string;
+  gr_filter: string;
   gr_node_count: string;
   gr_edge_count: string;
+  gr_settings: string;
+  gr_filters: string;
+  gr_display: string;
+  gr_forces: string;
+  gr_search: string;
+  gr_search_ph: string;
+  gr_tags: string;
+  gr_folder: string;
   gr_all: string;
+  gr_all_folders: string;
+  gr_show_orphans: string;
+  gr_show_orphans_hint: string;
+  gr_existing_only: string;
+  gr_existing_only_hint: string;
+  gr_skin: string;
+  gr_skin_auto: string;
+  gr_skin_black: string;
+  gr_skin_white: string;
+  gr_skin_galaxy: string;
+  gr_skin_web: string;
+  gr_recency: string;
+  gr_recency_hint: string;
+  gr_minimap: string;
+  gr_minimap_hint: string;
   gr_layout_spiral: string;
   gr_layout_strata: string;
   gr_layout_semantic: string;
+  gr_semantic_missing: string;
   gr_layout_celestial: string;
   gr_layout_radial: string;
   gr_layout_walrus: string;
+  gr_layout_mycelium: string;
+  gr_skin_sigma: string;
+  gr_skin_mycelium: string;
+  gr_mycelium_dim: string;
+  gr_mycelium_3d: string;
+  gr_mycelium_2d: string;
+  gr_myc_node_color: string;
+  gr_myc_hypha_color: string;
+  gr_myc_bg: string;
+  gr_myc_bg_loam: string;
+  gr_myc_bg_void: string;
+  gr_myc_bg_soil: string;
+  gr_myc_bg_paper: string;
+  gr_myc_bg_grid: string;
+  gr_myc_bg_custom: string;
+  gr_vibes: string;
+  gr_vibe_living: string;
+  gr_vibe_sigma: string;
+  gr_vibe_cosmicweb: string;
+  gr_vibe_neural: string;
+  gr_vibe_planetarium: string;
+  gr_vibe_paper: string;
+  gr_vibe_chronicle: string;
+  gr_vibe_nebula: string;
+  gr_vibe_living_desc: string;
+  gr_vibe_sigma_desc: string;
+  gr_vibe_cosmicweb_desc: string;
+  gr_vibe_neural_desc: string;
+  gr_vibe_planetarium_desc: string;
+  gr_vibe_paper_desc: string;
+  gr_vibe_chronicle_desc: string;
+  gr_vibe_nebula_desc: string;
+  gr_vibe_walrus: string;
+  gr_vibe_mycelium: string;
+  gr_vibe_walrus_desc: string;
+  gr_vibe_mycelium_desc: string;
+  gr_looks: string;
+  gr_appearance: string;
+  gr_motion_fx: string;
+  gr_mascot_cameo: string;
+  gr_mascot_cameo_hint: string;
   mc_label: string;
   mc_dismiss: string;
+  mc_tip_drag: string;
+  mc_tip_path: string;
+  mc_tip_fly: string;
+  mc_tip_looks: string;
+  mc_tip_timelapse: string;
+  mc_tip_multiverse: string;
+  mc_tip_minimap: string;
+  mc_tip_recency: string;
+  mc_tip_save: string;
+  mc_tip_chronicle: string;
+  gr_saved: string;
+  gr_saved_apply: string;
+  gr_saved_delete: string;
+  gr_saved_empty: string;
+  gr_saved_name_ph: string;
+  gr_saved_save: string;
+  gr_layout_3d: string;
+  gr_layout_2d: string;
   gr_layout_galaxy_s: string;
   gr_layout_synapse3d_s: string;
   gr_layout_atlas_s: string;
+  gr_layout_synapse_s: string;
+  gr_cinematic: string;
+  gr_cinematic_hint: string;
+  gr_flow: string;
+  gr_flow_hint: string;
+  gr_galaxies: string;
+  gr_galaxies_hint: string;
+  gr_multiverse: string;
+  gr_multiverse_hint: string;
+  gr_mv_loading: string;
+  gr_mv_none: string;
+  gr_layout: string;
+  gr_layout_galaxy: string;
+  gr_layout_atlas: string;
+  gr_layout_synapse: string;
+  gr_layout_synapse3d: string;
+  gr_recommend: string;
+  gr_recommend_hint: string;
+  gr_sky: string;
+  gr_sky_stars: string;
+  gr_sky_dense: string;
+  gr_sky_grid: string;
+  gr_sky_void: string;
+  gr_node_color: string;
+  gr_node_color_community: string;
+  gr_node_color_white: string;
+  gr_node_color_auto: string;
+  gr_mono_below: string;
+  gr_tl_speed: string;
+  gr_scale_star: string;
+  gr_scale_system: string;
+  gr_scale_galaxy: string;
+  gr_scale_cluster: string;
+  gr_arrows: string;
+  gr_arrows_hint: string;
+  gr_arrow_size: string;
+  gr_semantic_edges: string;
+  gr_semantic_edges_hint: string;
+  gr_edge_bundles: string;
+  gr_edge_bundles_hint: string;
+  gr_fly_btn: string;
+  gr_timelapse_record: string;
+  gr_node_color_black: string;
+  gr_cosmic: string;
+  gr_cosmic_hint: string;
+  gr_cosmic_freq: string;
+  gr_click_burst: string;
+  gr_click_burst_hint: string;
+  gr_neural_firing: string;
+  gr_neural_firing_hint: string;
+  gr_planets: string;
+  gr_planets_hint: string;
+  gr_pixel_nodes: string;
+  gr_pixel_nodes_hint: string;
+  gr_color_depth: string;
+  gr_edge_tint: string;
+  gr_edge_tint_grey: string;
+  gr_edge_tint_community: string;
   // Gesture cheat-sheet popover ("?" toolbar button).
+  gr_help_btn: string;
+  gr_help_title: string;
+  gr_help_click: string;
+  gr_help_dblclick: string;
+  gr_help_cmdclick: string;
+  gr_help_esc: string;
+  gr_help_fly: string;
+  gr_help_drag: string;
+  gr_trace: string;
+  gr_trace_hint: string;
+  gr_spaceship: string;
+  gr_spaceship_hint: string;
+  gr_spaceship_exit: string;
+  gr_speed: string;
+  gr_close: string;
   gr_open: string;
+  gr_text_fade: string;
+  gr_node_size: string;
+  gr_link_thickness: string;
+  gr_brightness: string;
+  gr_center_force: string;
+  gr_repel_force: string;
+  gr_link_force: string;
+  gr_link_distance: string;
+  gr_cluster_force: string;
+  gr_reset: string;
   gr_empty_pre: string;
   gr_empty_post: string;
+  gr_timelapse_play: string;
+  gr_timelapse_pause: string;
   // Mycelium-only relabels for the shared Motion/Forces controls (optional —
   // components fall back to English).
+  gr_motion_hint_myc: string;
+  gr_myc_forces_hint: string;
+  gr_myc_spread: string;
+  gr_myc_branch: string;
   // Graph node inspector (optional — components fall back to English).
   gr_insp_type: string;
   gr_insp_confidence: string;
   gr_insp_status: string;
+  gr_insp_connections: string;
   gr_insp_links_out: string;
   gr_insp_backlinks: string;
+  gr_insp_tags: string;
   gr_insp_open: string;
   gr_insp_unresolved: string;
   gr_insp_none: string;
   gr_find_ph: string;
+  gr_insp_path_start: string;
+  gr_insp_path_anchor: string;
+  gr_insp_path_clear: string;
+  gr_insp_path: string;
+  gr_insp_path_none: string;
+  gr_insp_hops: string;
   gr_gaps_title: string;
+  gr_gaps_btn: string;
   gr_gap_missing: string;
+  gr_gap_malformed: string;
   gr_gap_orphans: string;
   gr_gap_undercited: string;
   gr_gap_lowconf: string;
+  gr_gap_disputed: string;
   gr_gap_islands: string;
   gr_gap_none: string;
+  gr_gap_bridges: string;
+  gr_gap_ask: string;
+  gr_bridge_question: string;
   gr_gap_more: string;
   q_thinking: string;
   q_answering: string;
   q_answering_from: string;
+  gr_key_size: string;
+  gr_key_dim: string;
+  gr_key_amber: string;
+  gr_key_neutral: string;
+  gr_more: string; // legend: "+{n} more" clusters beyond the shown cap
+  gr_focus_trail: string;
+  gr_focus_esc: string;
+  gr_preset: string;
+  gr_preset_galaxy: string;
+  gr_preset_loose: string;
+  gr_preset_dense: string;
+  gr_glow: string;
+  gr_motion: string;
+  gr_motion_hint: string;
+  gr_advanced: string;
   gr_loading: string;
-  gr_title: string;
-  gr_lede: string;
-  gr_canvas_aria: string;
-  gr_stage_hint: string;
-  gr_q_lead: string;
-  gr_q_orphans: string;
-  gr_q_orphans_u: string;
-  gr_q_sub_orphans: string;
-  gr_q_clusters: string;
-  gr_q_clusters_u: string;
-  gr_q_sub_clusters: string;
-  gr_q_time: string;
-  gr_q_time_u: string;
-  gr_q_sub_time: string;
-  gr_q_neighbors: string;
-  gr_q_neighbors_u: string;
-  gr_q_sub_neighbors: string;
-  gr_q_pick: string;
-  gr_size: string;
-  gr_size_backlinks: string;
-  gr_size_cites: string;
-  gr_hide_sample: string;
-  gr_show_unresolved: string;
-  gr_rebuilds: string;
-  gr_honest_lead: string;
-  gr_honest: string;
-  gr_honest_sessions: string;
-  gr_gap_nobacklink: string;
-  gr_act_link: string;
-  gr_act_harvest: string;
-  gr_act_neighbors: string;
-  gr_act_open_s: string;
-  gr_act_link_s: string;
-  gr_act_want_s: string;
-  gr_insp_h: string;
-  gr_insp_empty: string;
-  gr_insp_cites: string;
-  gr_insp_sample: string;
-  gr_insp_own: string;
-  gr_insp_nocite: string;
-  gr_cluster_nomap: string;
-  gr_cluster_map: string;
-  gr_enc_orphans: string;
-  gr_enc_clusters: string;
-  gr_enc_time: string;
-  gr_enc_neighbors: string;
-  gr_link_question: string;
-  gr_want_done: string;
+  gr_ctx_lost: string;
+  gr_retry: string;
+  gr_perf_mode: string;
   h_title: string;
   h_lede: string;
   h_created: string;
@@ -1318,6 +1478,9 @@ export interface Strings {
   notif_quarantine_title: string;
   notif_quarantine_body: string; // {n}
   // Graph toolbar.
+  gr_zoom_out: string;
+  gr_fit: string;
+  gr_zoom_in: string;
   // Overview / History empty states.
   h_open_vault: string;
   // Reflect suggestions panel (FEAT-06).
@@ -1891,92 +2054,271 @@ export const STRINGS: Record<Lang, Strings> = {
     q_sources_used: "Sources used",
     q_wiki: "wiki",
     q_raw: "raw",
+    gr_title: "Graph",
+    gr_lede:
+      "Pages and the links between them. Drag nodes to feel the simulation pull, click a node to open it, open the settings panel to tune.",
+    gr_legend: "Legend",
+    gr_filter: "Filter",
     gr_node_count: "nodes",
     gr_edge_count: "links",
+    gr_settings: "Graph settings",
+    gr_filters: "Filters",
+    gr_display: "Display",
+    gr_forces: "Forces",
+    gr_search: "Search",
+    gr_search_ph: "filename contains…",
+    gr_tags: "Tags",
+    gr_folder: "Folder",
     gr_all: "all",
+    gr_all_folders: "all folders",
+    gr_show_orphans: "Show orphans",
+    gr_show_orphans_hint: "Nodes with no links",
+    gr_existing_only: "Existing files only",
+    gr_existing_only_hint: "Hide unresolved [[wikilinks]]",
+    gr_skin: "Color mode",
+    gr_skin_auto: "App theme",
+    gr_skin_black: "Black",
+    gr_skin_white: "White",
+    gr_skin_galaxy: "Galaxy",
+    gr_skin_web: "Cosmic web",
+    gr_recency: "Recency glow",
+    gr_recency_hint: "Recently edited notes burn hotter",
+    gr_minimap: "Minimap",
+    gr_minimap_hint: "Corner chart of the whole galaxy; click to fly",
     gr_layout_spiral: "Spiral galaxy",
     gr_layout_strata: "Chronicle",
     gr_layout_semantic: "Semantic map",
     gr_layout_celestial: "Celestial sphere",
     gr_layout_radial: "Radial orbit",
     gr_layout_walrus: "Walrus tree",
+    gr_layout_mycelium: "Mycelium mat",
+    gr_skin_sigma: "Sigma",
+    gr_skin_mycelium: "Mycelium",
+    gr_mycelium_dim: "Mycelium view",
+    gr_mycelium_3d: "3D",
+    gr_mycelium_2d: "2D",
+    gr_myc_node_color: "Node colour",
+    gr_myc_hypha_color: "Hyphae colour",
+    gr_myc_bg: "Background",
+    gr_myc_bg_loam: "Loam",
+    gr_myc_bg_void: "Void",
+    gr_myc_bg_soil: "Soil",
+    gr_myc_bg_paper: "Paper",
+    gr_myc_bg_grid: "Grid",
+    gr_myc_bg_custom: "Custom background",
+    gr_vibes: "One-tap looks",
+    gr_vibe_living: "Living galaxy",
+    gr_vibe_sigma: "Sigma board",
+    gr_vibe_cosmicweb: "Cosmic web",
+    gr_vibe_neural: "Neural",
+    gr_vibe_planetarium: "Planetarium",
+    gr_vibe_paper: "Paper atlas",
+    gr_vibe_chronicle: "Chronicle",
+    gr_vibe_nebula: "Meaning nebula",
+    gr_vibe_living_desc: "The default — a glowing, breathing star map",
+    gr_vibe_sigma_desc: "Vivid Gephi hairball on a clean charcoal board",
+    gr_vibe_cosmicweb_desc: "Dark-matter filaments; the links are the picture",
+    gr_vibe_neural_desc: "A firing nervous system in the void",
+    gr_vibe_planetarium_desc: "Constellations per topic under a deep-space sky",
+    gr_vibe_paper_desc: "A print-like territory map on white paper",
+    gr_vibe_chronicle_desc: "Time strata — the vault read as history",
+    gr_vibe_nebula_desc: "Notes clustered by meaning (embeddings)",
+    gr_vibe_walrus: "Walrus tree",
+    gr_vibe_mycelium: "Mycelium",
+    gr_vibe_walrus_desc:
+      "A hyperbolic spanning tree in a sphere (CAIDA Walrus)",
+    gr_vibe_mycelium_desc: "A grown fungal mat, with the notes hung on it",
+    gr_looks: "Looks",
+    gr_appearance: "Appearance",
+    gr_motion_fx: "Motion & effects",
+    gr_mascot_cameo: "MYCO cameo",
+    gr_mascot_cameo_hint: "MYCO drifts in now and then with a feature tip",
     mc_label: "MYCO tip",
     mc_dismiss: "Dismiss",
+    mc_tip_drag:
+      "Drag any star and the simulation re-heats \u2014 its neighbours follow, then spring back.",
+    mc_tip_path:
+      "Cmd/Ctrl-click two notes to light the shortest path between them.",
+    mc_tip_fly:
+      "Press F to pilot a spaceship through your vault \u2014 WASD to fly, Esc to land.",
+    mc_tip_looks:
+      "Open the settings panel and tap a Look \u2014 Sigma, Paper, Neural, Planetarium\u2026",
+    mc_tip_timelapse:
+      "Play the Timelapse to watch your vault build itself in the order you wrote it.",
+    mc_tip_multiverse:
+      "Turn on Multiverse to see every project as its own glowing universe-bubble.",
+    mc_tip_minimap:
+      "That corner minimap? Click anywhere on it to fly the camera there.",
+    mc_tip_recency:
+      "Recently edited notes burn hotter \u2014 the graph maps where your attention is.",
+    mc_tip_save:
+      "Tuned a look you love? Name it under Saved looks and recall it with one tap.",
+    mc_tip_chronicle:
+      "Try the Chronicle layout \u2014 your notes laid out along a real time axis.",
+    gr_saved: "Saved looks",
+    gr_saved_apply: "Apply this saved look",
+    gr_saved_delete: "Delete",
+    gr_saved_empty: "Save the current settings to recall them later.",
+    gr_saved_name_ph: "Name this look\u2026",
+    gr_saved_save: "Save",
+    gr_layout_3d: "3D \u2014 orbit in space",
+    gr_layout_2d: "2D \u2014 flat map",
     gr_layout_galaxy_s: "Galaxy",
     gr_layout_synapse3d_s: "Synapse",
     gr_layout_atlas_s: "Atlas",
+    gr_layout_synapse_s: "Synapse (flat)",
+    gr_cinematic: "Cinematic finish",
+    gr_cinematic_hint: "Film grain, vignette, lens streaks, anti-aliasing",
+    gr_flow: "Edge flow",
+    gr_flow_hint: "Light pulses ride links source \u2192 target",
+    gr_semantic_missing:
+      "Semantic map needs the embedding index — run Reindex under Settings \u2192 Model, then reopen. Showing the spiral instead.",
+    gr_galaxies: "Folder galaxies",
+    gr_galaxies_hint:
+      "Split the vault into one slowly rotating galaxy per folder",
+    gr_multiverse: "Multiverse",
+    gr_multiverse_hint:
+      "Show every project as its own universe-bubble; fly into one to open it",
+    gr_mv_loading: "Charting universes…",
+    gr_mv_none: "No vault to show yet.",
+    gr_layout: "Layout",
+    gr_layout_galaxy: "Galaxy (3D)",
+    gr_layout_atlas: "Atlas (2D)",
+    gr_layout_synapse: "Synapse (2D)",
+    gr_layout_synapse3d: "Synapse (3D)",
+    gr_recommend: "Recommended settings",
+    gr_recommend_hint: "Apply the recommended settings for this layout",
+    gr_sky: "Sky",
+    gr_sky_stars: "Stars",
+    gr_sky_dense: "Dense",
+    gr_sky_grid: "Grid",
+    gr_sky_void: "Void",
+    gr_node_color: "Node colour",
+    gr_node_color_community: "By folder",
+    gr_node_color_white: "White",
+    gr_node_color_auto: "Auto",
+    gr_mono_below: "Colour above N nodes",
+    gr_tl_speed: "Timelapse speed",
+    gr_scale_star: "Star",
+    gr_scale_system: "Star system",
+    gr_scale_galaxy: "Galaxy",
+    gr_scale_cluster: "Galaxy cluster",
+    gr_arrows: "Arrows",
+    gr_arrows_hint: "Show direction on each link",
+    gr_arrow_size: "Arrow size",
+    gr_semantic_edges: "Semantic links",
+    gr_semantic_edges_hint: "Overlay dim edges between similar notes",
+    gr_edge_bundles: "Bundled strands",
+    gr_edge_bundles_hint:
+      "Merge links between two topics into one weighted arc",
+    gr_fly_btn: "Spaceship mode (F)",
+    gr_timelapse_record: "Record timelapse (WebM)",
+    gr_node_color_black: "Black",
+    gr_cosmic: "Cosmic events",
+    gr_cosmic_hint: "Black holes & wormholes (dark theme)",
+    gr_cosmic_freq: "Event frequency",
+    gr_click_burst: "Click burst",
+    gr_click_burst_hint: "Supernova + ripple when you select a node",
+    gr_neural_firing: "Neural firing",
+    gr_neural_firing_hint: "Signals that periodically ripple the mesh",
+    gr_planets: "Near-field planets",
+    gr_planets_hint: "Close-up nodes become procedural planets (dark 3D)",
+    gr_pixel_nodes: "Pixel nodes",
+    gr_pixel_nodes_hint: "16x16 pixel-art sprites instead of glowing dots",
+    gr_color_depth: "Colour depth",
+    gr_edge_tint: "Link colour",
+    gr_edge_tint_grey: "Grey",
+    gr_edge_tint_community: "Community webs",
+    gr_help_btn: "Gestures & keys",
+    gr_help_title: "Gestures & keys",
+    gr_help_click: "Focus a note (1 hop)",
+    gr_help_dblclick: "Widen focus to 2 hops",
+    gr_help_cmdclick: "Shortest path between notes",
+    gr_help_esc: "Step out of the focus",
+    gr_help_fly: "Toggle spaceship mode",
+    gr_help_drag: "Orbit the cosmos",
+    gr_trace: "Trace path",
+    gr_trace_hint: "Click a start node, then an end node",
+    gr_spaceship: "Spaceship",
+    gr_spaceship_hint:
+      "WASD fly · drag to steer · click a node for info · Esc exit",
+    gr_spaceship_exit: "Exit",
+    gr_speed: "Speed",
+    gr_close: "Close",
     gr_open: "Open page",
+    gr_text_fade: "Text fade threshold",
+    gr_node_size: "Node size",
+    gr_link_thickness: "Link thickness",
+    gr_brightness: "Brightness",
+    gr_center_force: "Center force",
+    gr_repel_force: "Repel force",
+    gr_link_force: "Link force",
+    gr_link_distance: "Link distance",
+    gr_cluster_force: "Cluster force",
+    gr_myc_spread: "Mat spread",
+    gr_myc_branch: "Branch density",
+    gr_myc_forces_hint:
+      "Mycelium is grown, not simulated: these two sliders reshape the mat.",
+    gr_reset: "Reset",
     gr_empty_pre: "No wikilinks found in the vault yet. Add some ",
     gr_empty_post: " to see the graph grow.",
+    gr_timelapse_play: "Play timelapse",
+    gr_timelapse_pause: "Pause timelapse",
     gr_insp_type: "Type",
     gr_insp_confidence: "Confidence",
     gr_insp_status: "Status",
+    gr_insp_connections: "Connections",
     gr_insp_links_out: "Links",
     gr_insp_backlinks: "Backlinks",
+    gr_insp_tags: "Tags",
     gr_insp_open: "Open in reader",
     gr_insp_unresolved: "Unresolved note (no file yet)",
     gr_insp_none: "—",
     gr_find_ph: "Find a note…",
+    gr_insp_path_start: "Set as path start",
+    gr_insp_path_anchor: "Path start",
+    gr_insp_path_clear: "clear",
+    gr_insp_path: "Path",
+    gr_insp_path_none: "No path to this node",
+    gr_insp_hops: "hops",
     gr_gaps_title: "Gaps",
+    gr_gaps_btn: "Gap analysis",
     gr_gap_missing: "Missing pages",
+    gr_gap_malformed: "Malformed links",
     gr_gap_orphans: "Orphans",
     gr_gap_undercited: "Under-cited",
     gr_gap_lowconf: "Low confidence",
+    gr_gap_disputed: "Disputed",
     gr_gap_islands: "Disconnected",
     gr_gap_none: "No gaps found",
+    gr_gap_bridges: "Research bridges",
+    gr_gap_ask: "Ask about this gap",
+    gr_bridge_question:
+      'My notes about "{a}" and "{b}" are semantically related but not yet linked. What connects these two topics? Suggest the bridging ideas or notes I should write.',
     gr_gap_more: "more",
     q_thinking: "searching the wiki…",
     q_answering: "answering…",
     q_answering_from: "answering from {n} pages…",
+    gr_key_size: "size = links",
+    gr_key_dim: "faint = low confidence",
+    gr_key_amber: "amber = disputed",
+    gr_key_neutral: "grey = unclassified",
+    gr_more: "+{n} more",
+    gr_focus_trail: "Focus trail",
+    gr_focus_esc: "Step out (Esc / click the void)",
+    gr_preset: "Layout",
+    gr_preset_galaxy: "Galaxy",
+    gr_preset_loose: "Loose web",
+    gr_preset_dense: "Dense",
+    gr_glow: "Glow",
+    gr_motion: "Ambient motion",
+    gr_motion_hint: "Auto-rotate, pulses, breathing",
+    gr_motion_hint_myc: "Slow 3D auto-orbit (3D view only)",
+    gr_advanced: "Advanced",
     gr_loading: "aligning constellations…",
-    gr_title: "Survey",
-    gr_lede: "One map, four questions. Picking a question changes the encoding — colour, size, dimming — never the layout, so the answers stay comparable.",
-    gr_canvas_aria: "Vault link map. Arrow keys move the selection, Enter opens the note.",
-    gr_stage_hint: "One layout · a question changes the encoding only",
-    gr_q_lead: "What this screen answers",
-    gr_q_orphans: "Where is it empty",
-    gr_q_orphans_u: "gaps",
-    gr_q_sub_orphans: "orphans {orphans} · unresolved {unresolved} · no backlink {nobacklink}",
-    gr_q_clusters: "What clumps together",
-    gr_q_clusters_u: "clusters",
-    gr_q_sub_clusters: "{nomap} without a map page · {map} with one",
-    gr_q_time: "What grew lately",
-    gr_q_time_u: "in 30 days",
-    gr_q_sub_time: "the {sample} sample notes are frozen at install time",
-    gr_q_neighbors: "This note's neighbours",
-    gr_q_neighbors_u: "2 hops",
-    gr_q_sub_neighbors: "2 hops from the selected note",
-    gr_q_pick: "Pick a note first",
-    gr_size: "Node size",
-    gr_size_backlinks: "size = backlinks",
-    gr_size_cites: "size = citations",
-    gr_hide_sample: "Hide the {n} sample notes",
-    gr_show_unresolved: "Show unresolved links",
-    gr_rebuilds: "scene rebuilds {n} · {ms} ms",
-    gr_honest_lead: "This graph draws {n} nodes",
-    gr_honest: "first-run sample {sample} ({pct}%) · your own notes {own} · unresolved {unresolved}. Notes carrying a citation: {cited}.",
-    gr_honest_sessions: "{n} session transcripts are NOT here — sessions/ is excluded by graphData's NON_KNOWLEDGE_FOLDERS.",
-    gr_gap_nobacklink: "Nobody links here",
-    gr_act_link: "Suggest links",
-    gr_act_harvest: "Mark as wanted",
-    gr_act_neighbors: "Show its neighbours",
-    gr_act_open_s: "open",
-    gr_act_link_s: "link",
-    gr_act_want_s: "want",
-    gr_insp_h: "Note",
-    gr_insp_empty: "Pick a note to see its links, citations, trust — and the ways out of this screen.",
-    gr_insp_cites: "Citations",
-    gr_insp_sample: "first-run sample",
-    gr_insp_own: "your note",
-    gr_insp_nocite: "no citation",
-    gr_cluster_nomap: "no map page",
-    gr_cluster_map: "has a map page",
-    gr_enc_orphans: "colour = category · size = links · dim = already connected",
-    gr_enc_clusters: "block = cluster · dashed = no map page · dotted line = unlinked but related",
-    gr_enc_time: "colour = last edited (one ramp) · dim = untouched for 6 months",
-    gr_enc_neighbors: "brightness = hop distance (0 and 1 lit, 2 dim, the rest nearly invisible)",
-    gr_link_question: "\"{a}\" sits unconnected in my vault. Which of my notes should link to it, and what would the link say?",
-    gr_want_done: "Logged \"{n}\" as a wanted topic",
+    gr_ctx_lost: "Graphics context was lost.",
+    gr_retry: "Rebuild",
+    gr_perf_mode: "Performance mode — ambient layers off for large graphs",
     h_title: "History",
     h_lede:
       "Every ingest files a WHY report. Browse what each run created and changed, newest first.",
@@ -2911,6 +3253,9 @@ export const STRINGS: Record<Lang, Strings> = {
     notif_quarantine_title: "New quarantine items",
     notif_quarantine_body:
       "{n} items are waiting for review in _inbox/quarantine.",
+    gr_zoom_out: "Zoom out",
+    gr_fit: "Fit",
+    gr_zoom_in: "Zoom in",
     h_open_vault: "Open a vault to see history.",
     rf_title: "Reflect suggestions",
     rf_lede:
@@ -3477,92 +3822,267 @@ export const STRINGS: Record<Lang, Strings> = {
     q_sources_used: "참조된 소스",
     q_wiki: "위키",
     q_raw: "원본",
+    gr_title: "그래프",
+    gr_lede:
+      "페이지와 그 사이의 연결. 노드를 드래그하면 시뮬레이션이 따라옵니다. 우측 설정 패널에서 필터/디스플레이/포스를 조정하세요.",
+    gr_legend: "범례",
+    gr_filter: "필터",
     gr_node_count: "노드",
     gr_edge_count: "연결",
+    gr_settings: "그래프 설정",
+    gr_filters: "필터",
+    gr_display: "디스플레이",
+    gr_forces: "포스",
+    gr_search: "검색",
+    gr_search_ph: "파일명 포함...",
+    gr_tags: "태그",
+    gr_folder: "폴더",
     gr_all: "전체",
+    gr_all_folders: "전체 폴더",
+    gr_show_orphans: "고립 노드 표시",
+    gr_show_orphans_hint: "연결이 없는 노드",
+    gr_existing_only: "존재하는 파일만",
+    gr_existing_only_hint: "미해결 [[위키링크]] 숨김",
+    gr_skin: "색상 모드",
+    gr_skin_auto: "앱 테마",
+    gr_skin_black: "블랙",
+    gr_skin_white: "화이트",
+    gr_skin_galaxy: "은하계",
+    gr_skin_web: "우주 그물",
+    gr_recency: "최근성 발광",
+    gr_recency_hint: "최근 수정한 노트가 더 뜨겁게 빛납니다",
+    gr_minimap: "미니맵",
+    gr_minimap_hint: "은하 전체 차트 — 클릭하면 그 지점으로 이동",
     gr_layout_spiral: "나선 은하",
     gr_layout_strata: "연대기",
     gr_layout_semantic: "의미 지도",
     gr_layout_celestial: "천구 별자리",
     gr_layout_radial: "동심 궤도",
     gr_layout_walrus: "월러스 트리",
+    gr_layout_mycelium: "균사 매트",
+    gr_skin_sigma: "시그마",
+    gr_skin_mycelium: "균사",
+    gr_mycelium_dim: "균사 보기",
+    gr_mycelium_3d: "3D",
+    gr_mycelium_2d: "2D",
+    gr_myc_node_color: "노드 색상",
+    gr_myc_hypha_color: "균사 색상",
+    gr_myc_bg: "배경",
+    gr_myc_bg_loam: "부엽토",
+    gr_myc_bg_void: "암흑",
+    gr_myc_bg_soil: "황토",
+    gr_myc_bg_paper: "종이",
+    gr_myc_bg_grid: "그리드",
+    gr_myc_bg_custom: "사용자 지정 배경",
+    gr_vibes: "원탭 룩",
+    gr_vibe_living: "살아있는 은하",
+    gr_vibe_sigma: "시그마 보드",
+    gr_vibe_cosmicweb: "우주 그물",
+    gr_vibe_neural: "신경계",
+    gr_vibe_planetarium: "플라네타륨",
+    gr_vibe_paper: "종이 지도",
+    gr_vibe_chronicle: "연대기",
+    gr_vibe_nebula: "의미 성운",
+    gr_vibe_living_desc: "기본값 — 빛나며 숨쉬는 별 지도",
+    gr_vibe_sigma_desc: "깨끗한 차콜 보드 위 선명한 Gephi 헤어볼",
+    gr_vibe_cosmicweb_desc: "암흑물질 필라멘트 — 링크가 그림을 만든다",
+    gr_vibe_neural_desc: "공허 속 발화하는 신경망",
+    gr_vibe_planetarium_desc: "주제별 별자리, 깊은 우주 하늘",
+    gr_vibe_paper_desc: "흰 종이 위 인쇄물 같은 영역 지도",
+    gr_vibe_chronicle_desc: "시간 지층 — 볼트를 역사로 읽기",
+    gr_vibe_nebula_desc: "의미(임베딩)로 군집된 노트",
+    gr_vibe_walrus: "월러스 트리",
+    gr_vibe_mycelium: "균사",
+    gr_vibe_walrus_desc: "구 안의 하이퍼볼릭 스패닝 트리 (CAIDA Walrus)",
+    gr_vibe_mycelium_desc: "자라난 균사 매트 위에 노트를 걸었습니다",
+    gr_looks: "룩",
+    gr_appearance: "외형",
+    gr_motion_fx: "모션·효과",
+    gr_mascot_cameo: "MYCO 카메오",
+    gr_mascot_cameo_hint: "가끔 MYCO가 기능 팁과 함께 등장",
     mc_label: "MYCO 팁",
     mc_dismiss: "닫기",
+    mc_tip_drag:
+      "아무 별이나 드래그하면 시뮬레이션이 다시 데워집니다 \u2014 이웃이 따라오다 튕겨 돌아와요.",
+    mc_tip_path: "두 노트를 Cmd/Ctrl-클릭하면 사이의 최단 경로가 빛납니다.",
+    mc_tip_fly:
+      "F를 누르면 볼트를 우주선으로 비행 \u2014 WASD로 날고 Esc로 착륙.",
+    mc_tip_looks:
+      "설정 패널을 열고 룩을 탭하세요 \u2014 Sigma, Paper, Neural, Planetarium\u2026",
+    mc_tip_timelapse:
+      "타임랩스를 재생하면 작성한 순서대로 볼트가 스스로 자라납니다.",
+    mc_tip_multiverse:
+      "멀티버스를 켜면 각 프로젝트가 저마다 빛나는 우주 버블로 보입니다.",
+    mc_tip_minimap:
+      "구석의 미니맵 \u2014 아무 데나 클릭하면 카메라가 그곳으로 날아갑니다.",
+    mc_tip_recency:
+      "최근 편집한 노트일수록 더 뜨겁게 타올라 \u2014 그래프가 당신의 관심을 지도로 그립니다.",
+    mc_tip_save:
+      "마음에 드는 룩을 튜닝했나요? 저장된 룩에 이름을 붙여 한 번에 불러오세요.",
+    mc_tip_chronicle:
+      "연대기 레이아웃을 써보세요 \u2014 노트가 실제 시간축을 따라 놓입니다.",
+    gr_saved: "저장된 룩",
+    gr_saved_apply: "이 저장된 룩 적용",
+    gr_saved_delete: "삭제",
+    gr_saved_empty: "현재 설정을 저장해 두면 나중에 불러올 수 있습니다.",
+    gr_saved_name_ph: "룩 이름\u2026",
+    gr_saved_save: "저장",
+    gr_layout_3d: "3D \u2014 공간 궤도",
+    gr_layout_2d: "2D \u2014 평면 지도",
     gr_layout_galaxy_s: "은하",
     gr_layout_synapse3d_s: "시냅스",
     gr_layout_atlas_s: "아틀라스",
+    gr_layout_synapse_s: "시냅스 (평면)",
+    gr_cinematic: "시네마틱 마감",
+    gr_cinematic_hint: "필름 그레인·비네트·렌즈 스트릭·안티앨리어싱",
+    gr_flow: "엣지 흐름",
+    gr_flow_hint: "링크를 따라 빛 펄스가 출발\u2192도착 방향으로 흐름",
+    gr_semantic_missing:
+      "의미 지도는 임베딩 인덱스가 필요합니다 — 설정 \u2192 모델에서 재색인 후 다시 열어주세요. 지금은 나선 배치로 표시합니다.",
+    gr_galaxies: "폴더 은하계",
+    gr_galaxies_hint: "폴더마다 하나씩, 천천히 자전하는 은하계로 분리",
+    gr_multiverse: "멀티버스",
+    gr_multiverse_hint:
+      "모든 프로젝트를 각자의 우주 버블로 표시. 하나로 날아 들어가면 그 프로젝트가 열림",
+    gr_mv_loading: "우주를 그리는 중…",
+    gr_mv_none: "아직 표시할 볼트가 없습니다.",
+    gr_layout: "레이아웃",
+    gr_layout_galaxy: "은하계 (3D)",
+    gr_layout_atlas: "아틀라스 (2D)",
+    gr_layout_synapse: "시냅스 (2D)",
+    gr_layout_synapse3d: "시냅스 (3D)",
+    gr_recommend: "추천 설정 적용",
+    gr_recommend_hint: "이 레이아웃의 추천 설정을 적용합니다",
+    gr_sky: "배경",
+    gr_sky_stars: "별",
+    gr_sky_dense: "조밀",
+    gr_sky_grid: "그리드",
+    gr_sky_void: "비움",
+    gr_node_color: "노드 색상",
+    gr_node_color_community: "폴더별",
+    gr_node_color_white: "화이트",
+    gr_node_color_auto: "자동",
+    gr_mono_below: "N개 이상일 때 색상",
+    gr_tl_speed: "타임랩스 속도",
+    gr_scale_star: "항성",
+    gr_scale_system: "항성계",
+    gr_scale_galaxy: "은하",
+    gr_scale_cluster: "은하단",
+    gr_arrows: "화살표",
+    gr_arrows_hint: "각 링크에 방향 표시",
+    gr_arrow_size: "화살표 크기",
+    gr_semantic_edges: "의미 연결",
+    gr_semantic_edges_hint: "유사한 노트 사이에 흐린 엣지 표시",
+    gr_edge_bundles: "번들 스트랜드",
+    gr_edge_bundles_hint: "두 토픽 사이 링크를 하나의 가중 아크로 묶기",
+    gr_fly_btn: "우주선 모드 (F)",
+    gr_timelapse_record: "타임랩스 녹화 (WebM)",
+    gr_node_color_black: "블랙",
+    gr_cosmic: "우주 이벤트",
+    gr_cosmic_hint: "블랙홀·웜홀 (다크 테마)",
+    gr_cosmic_freq: "이벤트 빈도",
+    gr_click_burst: "클릭 버스트",
+    gr_click_burst_hint: "노드 선택 시 슈퍼노바 + 파동",
+    gr_neural_firing: "신경 발화",
+    gr_neural_firing_hint: "주기적으로 메시를 타고 흐르는 신호",
+    gr_planets: "근접 행성",
+    gr_planets_hint: "가까운 노드가 절차적 행성이 됨 (다크 3D)",
+    gr_pixel_nodes: "픽셀 노드",
+    gr_pixel_nodes_hint: "발광 점 대신 16x16 픽셀아트 스프라이트로 표시",
+    gr_color_depth: "색 짙기",
+    gr_edge_tint: "링크 색상",
+    gr_edge_tint_grey: "회색",
+    gr_edge_tint_community: "커뮤니티 웹",
+    gr_help_btn: "제스처 안내",
+    gr_help_title: "제스처 안내",
+    gr_help_click: "노트에 포커스 (1홉)",
+    gr_help_dblclick: "포커스를 2홉으로 확장",
+    gr_help_cmdclick: "노트 사이 최단 경로",
+    gr_help_esc: "포커스에서 한 단계 나가기",
+    gr_help_fly: "우주선 모드 전환",
+    gr_help_drag: "우주 궤도 회전",
+    gr_trace: "경로 추적",
+    gr_trace_hint: "시작 노드를 누른 뒤 끝 노드를 누르세요",
+    gr_spaceship: "우주선 비행",
+    gr_spaceship_hint:
+      "WASD 이동 · 드래그로 방향 · 노드 클릭해 정보 · Esc 종료",
+    gr_spaceship_exit: "나가기",
+    gr_speed: "속도",
+    gr_close: "닫기",
     gr_open: "페이지 열기",
+    gr_text_fade: "라벨 페이드 임계",
+    gr_node_size: "노드 크기",
+    gr_link_thickness: "링크 두께",
+    gr_brightness: "밝기",
+    gr_center_force: "중심력",
+    gr_repel_force: "반발력",
+    gr_link_force: "링크 장력",
+    gr_link_distance: "링크 거리",
+    gr_cluster_force: "뭉침 강도",
+    gr_myc_spread: "균사 확산",
+    gr_myc_branch: "분기 밀도",
+    gr_myc_forces_hint:
+      "균사는 시뮬레이션이 아니라 자라나는 방식입니다: 이 두 슬라이더가 균사체의 형태를 바꿉니다.",
+    gr_reset: "초기화",
     gr_empty_pre: "아직 위키링크가 없습니다. ",
     gr_empty_post: " 를 추가하면 그래프가 자랍니다.",
+    gr_timelapse_play: "타임랩스 재생",
+    gr_timelapse_pause: "타임랩스 일시정지",
     gr_insp_type: "유형",
     gr_insp_confidence: "신뢰도",
     gr_insp_status: "상태",
+    gr_insp_connections: "연결 수",
     gr_insp_links_out: "나가는 링크",
     gr_insp_backlinks: "백링크",
+    gr_insp_tags: "태그",
     gr_insp_open: "리더에서 열기",
     gr_insp_unresolved: "미해결 노트 (파일 없음)",
     gr_insp_none: "—",
     gr_find_ph: "노트 찾기…",
+    gr_insp_path_start: "경로 시작점으로",
+    gr_insp_path_anchor: "경로 시작점",
+    gr_insp_path_clear: "지우기",
+    gr_insp_path: "경로",
+    gr_insp_path_none: "이 노드까지 경로 없음",
+    gr_insp_hops: "홉",
     gr_gaps_title: "갭",
+    gr_gaps_btn: "갭 분석",
     gr_gap_missing: "없는 페이지",
+    gr_gap_malformed: "형식 오류 링크",
     gr_gap_orphans: "고립 노드",
     gr_gap_undercited: "인용 부족",
     gr_gap_lowconf: "낮은 신뢰도",
+    gr_gap_disputed: "논쟁",
     gr_gap_islands: "끊긴 클러스터",
     gr_gap_none: "갭 없음",
+    gr_gap_bridges: "연구 다리",
+    gr_gap_ask: "이 갭에 질문하기",
+    gr_bridge_question:
+      '"{a}"와(과) "{b}"에 대한 내 노트들은 의미상 가깝지만 아직 연결되어 있지 않습니다. 두 주제를 잇는 것은 무엇인가요? 다리가 될 아이디어나 작성할 노트를 제안해 주세요.',
     gr_gap_more: "더",
     q_thinking: "위키를 탐색하는 중…",
     q_answering: "답변 작성 중…",
     q_answering_from: "{n}개 페이지를 근거로 답변 작성 중…",
+    gr_key_size: "크기 = 링크 수",
+    gr_key_dim: "흐림 = 낮은 신뢰도",
+    gr_key_amber: "호박색 = 논쟁 중",
+    gr_key_neutral: "회청 = 미분류",
+    gr_more: "+{n}개 더",
+    gr_focus_trail: "포커스 경로",
+    gr_focus_esc: "한 단계 나가기 (Esc / 빈 공간 클릭)",
+    gr_preset: "레이아웃",
+    gr_preset_galaxy: "은하",
+    gr_preset_loose: "느슨한 웹",
+    gr_preset_dense: "조밀",
+    gr_glow: "글로우",
+    gr_motion: "잔잔한 움직임",
+    gr_motion_hint: "자동 회전·펄스·깜빡임",
+    gr_motion_hint_myc: "느린 3D 자동 회전 (3D 보기에서만)",
+    gr_advanced: "고급",
     gr_loading: "별자리를 정렬하는 중…",
-    gr_title: "측량",
-    gr_lede: "지도는 하나, 질문은 넷. 질문을 고르면 바뀌는 것은 인코딩(색·크기·흐림)이지 레이아웃이 아니라서, 답끼리 비교가 된다.",
-    gr_canvas_aria: "볼트 링크 지도. 방향키로 노트를 옮겨 고르고, Enter 로 엽니다.",
-    gr_stage_hint: "한 가지 레이아웃 · 질문이 바꾸는 건 인코딩뿐",
-    gr_q_lead: "이 화면이 답하는 질문",
-    gr_q_orphans: "어디가 비었나",
-    gr_q_orphans_u: "빈 곳",
-    gr_q_sub_orphans: "고아 {orphans} · 미해결 {unresolved} · 무백링크 {nobacklink}",
-    gr_q_clusters: "무엇이 뭉쳐 있나",
-    gr_q_clusters_u: "클러스터",
-    gr_q_sub_clusters: "지도 없는 클러스터 {nomap} · 지도 있는 {map}",
-    gr_q_time: "최근 무엇이 자랐나",
-    gr_q_time_u: "30일 내",
-    gr_q_sub_time: "샘플 {sample}개는 설치일에 고정",
-    gr_q_neighbors: "이 노트의 이웃",
-    gr_q_neighbors_u: "2홉 이웃",
-    gr_q_sub_neighbors: "선택한 노트 기준 2홉",
-    gr_q_pick: "노트를 하나 고르세요",
-    gr_size: "노드 크기 기준",
-    gr_size_backlinks: "크기 = 백링크",
-    gr_size_cites: "크기 = 인용",
-    gr_hide_sample: "샘플 {n}개 숨기기",
-    gr_show_unresolved: "미해결 링크 표시",
-    gr_rebuilds: "씬 재빌드 {n}회 · {ms} ms",
-    gr_honest_lead: "이 그래프가 그리는 건 {n}개 노드",
-    gr_honest: "첫 실행 샘플 {sample}개({pct}%) · 내가 쓴 노트 {own}개 · 미해결 {unresolved}개. 인용을 가진 노트는 {cited}개.",
-    gr_honest_sessions: "세션 {n}건은 여기에 없다 — sessions/ 는 graphData 의 NON_KNOWLEDGE_FOLDERS 에서 구조적으로 빠진다.",
-    gr_gap_nobacklink: "아무도 참조 안 함",
-    gr_act_link: "링크 제안",
-    gr_act_harvest: "수확 대상으로",
-    gr_act_neighbors: "이 노트의 이웃만 보기",
-    gr_act_open_s: "열기",
-    gr_act_link_s: "링크",
-    gr_act_want_s: "수확",
-    gr_insp_h: "노트",
-    gr_insp_empty: "노트를 하나 고르면 링크·인용·신뢰도와 여기서 나가는 행동이 열립니다.",
-    gr_insp_cites: "인용",
-    gr_insp_sample: "첫 실행 샘플",
-    gr_insp_own: "내 노트",
-    gr_insp_nocite: "인용 0",
-    gr_cluster_nomap: "지도 없음",
-    gr_cluster_map: "지도 있음",
-    gr_enc_orphans: "색 = 카테고리 · 크기 = 링크 수 · 흐림 = 이미 연결됨",
-    gr_enc_clusters: "블록 = 클러스터 · 점선 테두리 = 지도 페이지 없음 · 점선 = 안 이어진 인접 주제",
-    gr_enc_time: "색 = 최근 수정(단일 램프) · 흐림 = 6개월 이상 방치",
-    gr_enc_neighbors: "밝기 = 홉 거리(0·1 밝게, 2 흐리게, 그 밖 거의 안 보임)",
-    gr_link_question: "볼트에서 \"{a}\" 가 연결되지 않은 채로 있습니다. 어떤 노트가 여기에 링크해야 하고, 그 링크는 무슨 말을 해야 할까요?",
-    gr_want_done: "\"{n}\" 을(를) 필요한 주제로 기록했습니다",
+    gr_ctx_lost: "그래픽 컨텍스트가 끊어졌습니다.",
+    gr_retry: "다시 그리기",
+    gr_perf_mode: "성능 모드 — 큰 그래프에서는 배경 효과를 끕니다",
     h_title: "히스토리",
     h_lede:
       "모든 가져오기는 WHY 보고서를 남깁니다. 각 실행이 무엇을 만들고 바꿨는지 최신순으로 봅니다.",
@@ -4493,6 +5013,9 @@ export const STRINGS: Record<Lang, Strings> = {
     notif_quarantine_title: "새 격리 항목",
     notif_quarantine_body:
       "{n}개 항목이 _inbox/quarantine에서 검토를 기다립니다.",
+    gr_zoom_out: "축소",
+    gr_fit: "맞춤",
+    gr_zoom_in: "확대",
     h_open_vault: "히스토리를 보려면 vault를 여세요.",
     rf_title: "Reflect 제안",
     rf_lede:
@@ -4945,23 +5468,213 @@ export const STRINGS: Record<Lang, Strings> = {
     q_sources_used: "参照したソース",
     q_wiki: "ウィキ",
     q_raw: "原本",
+    gr_title: "グラフ",
+    gr_lede:
+      "ページとリンク。ノードをドラッグするとシミュレーションが追従。右側パネルでフィルター/表示/力を調整。",
+    gr_legend: "凡例",
+    gr_filter: "フィルター",
     gr_node_count: "ノード",
     gr_edge_count: "リンク",
+    gr_settings: "グラフ設定",
+    gr_filters: "フィルター",
+    gr_display: "表示",
+    gr_forces: "力",
+    gr_search: "検索",
+    gr_search_ph: "ファイル名に含む…",
+    gr_tags: "タグ",
+    gr_folder: "フォルダ",
     gr_all: "すべて",
+    gr_all_folders: "すべてのフォルダ",
+    gr_show_orphans: "孤立ノード表示",
+    gr_show_orphans_hint: "リンクなしのノード",
+    gr_existing_only: "既存ファイルのみ",
+    gr_existing_only_hint: "未解決の [[wikilinks]] を非表示",
+    gr_skin: "カラーモード",
+    gr_skin_auto: "アプリテーマ",
+    gr_skin_black: "ブラック",
+    gr_skin_white: "ホワイト",
+    gr_skin_galaxy: "ギャラクシー",
+    gr_skin_web: "宇宙の網",
+    gr_recency: "最近さグロー",
+    gr_recency_hint: "最近編集したノートほど熱く光ります",
+    gr_minimap: "ミニマップ",
+    gr_minimap_hint: "銀河全体のチャート — クリックでその地点へ",
     gr_layout_spiral: "渦巻銀河",
     gr_layout_strata: "年代記",
     gr_layout_semantic: "意味マップ",
     gr_layout_celestial: "天球星座",
     gr_layout_radial: "同心軌道",
     gr_layout_walrus: "ウォルラスツリー",
+    gr_layout_mycelium: "菌糸マット",
+    gr_skin_sigma: "シグマ",
+    gr_skin_mycelium: "菌糸",
+    gr_mycelium_dim: "菌糸ビュー",
+    gr_mycelium_3d: "3D",
+    gr_mycelium_2d: "2D",
+    gr_myc_node_color: "ノードの色",
+    gr_myc_hypha_color: "菌糸の色",
+    gr_myc_bg: "背景",
+    gr_myc_bg_loam: "腐葉土",
+    gr_myc_bg_void: "漆黒",
+    gr_myc_bg_soil: "黄土",
+    gr_myc_bg_paper: "紙",
+    gr_myc_bg_grid: "グリッド",
+    gr_myc_bg_custom: "カスタム背景",
+    gr_vibes: "ワンタップルック",
+    gr_vibe_living: "生きた銀河",
+    gr_vibe_sigma: "シグマボード",
+    gr_vibe_cosmicweb: "宇宙の網",
+    gr_vibe_neural: "神経系",
+    gr_vibe_planetarium: "プラネタリウム",
+    gr_vibe_paper: "紙の地図",
+    gr_vibe_chronicle: "クロニクル",
+    gr_vibe_nebula: "意味の星雲",
+    gr_vibe_living_desc: "デフォルト — 輝き呼吸する星図",
+    gr_vibe_sigma_desc: "clean なチャコール盤の鮮やかな Gephi ヘアボール",
+    gr_vibe_cosmicweb_desc: "暗黒物質フィラメント — リンクが絵を描く",
+    gr_vibe_neural_desc: "虚空で発火する神経系",
+    gr_vibe_planetarium_desc: "トピックごとの星座、深宇宙の空",
+    gr_vibe_paper_desc: "白い紙の印刷物のような領域地図",
+    gr_vibe_chronicle_desc: "時間の地層 — ボルトを歴史として読む",
+    gr_vibe_nebula_desc: "意味(埋め込み)でクラスタ化されたノート",
+    gr_vibe_walrus: "ウォルラスツリー",
+    gr_vibe_mycelium: "菌糸",
+    gr_vibe_walrus_desc: "球体内の双曲スパニングツリー (CAIDA Walrus)",
+    gr_vibe_mycelium_desc: "育った菌糸マットにノートを掛けています",
+    gr_looks: "ルック",
+    gr_appearance: "外観",
+    gr_motion_fx: "モーション・効果",
+    gr_mascot_cameo: "MYCO カメオ",
+    gr_mascot_cameo_hint: "時々 MYCO が機能ヒントと共に登場",
     mc_label: "MYCO ヒント",
     mc_dismiss: "閉じる",
+    mc_tip_drag:
+      "どの星でもドラッグするとシミュレーションが再加熱 \u2014 隣接ノードが追従し弾んで戻ります。",
+    mc_tip_path: "2つのノートを Cmd/Ctrl-クリックすると最短経路が光ります。",
+    mc_tip_fly:
+      "F を押すとボルトを宇宙船で飛行 \u2014 WASD で飛び Esc で着陸。",
+    mc_tip_looks:
+      "設定パネルを開いてルックをタップ \u2014 Sigma, Paper, Neural, Planetarium\u2026",
+    mc_tip_timelapse:
+      "タイムラプスを再生すると書いた順にボルトが自ら育ちます。",
+    mc_tip_multiverse:
+      "マルチバースをオンにすると各プロジェクトが輝く宇宙バブルに。",
+    mc_tip_minimap:
+      "隅のミニマップ \u2014 どこでもクリックするとカメラがそこへ飛びます。",
+    mc_tip_recency:
+      "最近編集したノートほど熱く燃える \u2014 グラフがあなたの関心を地図化します。",
+    mc_tip_save:
+      "気に入ったルックを調整した？保存ルックに名前を付けてワンタップで呼び出し。",
+    mc_tip_chronicle:
+      "年代記レイアウトを試して \u2014 ノートが実際の時間軸に沿って並びます。",
+    gr_saved: "保存したルック",
+    gr_saved_apply: "この保存ルックを適用",
+    gr_saved_delete: "削除",
+    gr_saved_empty: "現在の設定を保存すると後で呼び出せます。",
+    gr_saved_name_ph: "ルック名\u2026",
+    gr_saved_save: "保存",
+    gr_layout_3d: "3D \u2014 宇宙を周回",
+    gr_layout_2d: "2D \u2014 平面地図",
     gr_layout_galaxy_s: "銀河",
     gr_layout_synapse3d_s: "シナプス",
     gr_layout_atlas_s: "アトラス",
+    gr_layout_synapse_s: "シナプス (平面)",
+    gr_cinematic: "シネマティック仕上げ",
+    gr_cinematic_hint: "フィルムグレイン・ビネット・レンズストリーク・AA",
+    gr_flow: "エッジフロー",
+    gr_flow_hint: "リンクに沿って光のパルスが始点\u2192終点へ流れる",
+    gr_semantic_missing:
+      "意味マップには埋め込みインデックスが必要です — 設定 \u2192 モデルで再イン<デックス後に開き直してください。今は渦巻で表示します。",
+    gr_galaxies: "フォルダー銀河",
+    gr_galaxies_hint: "フォルダーごとにゆっくり自転する銀河へ分割",
+    gr_multiverse: "マルチバース",
+    gr_multiverse_hint:
+      "各プロジェクトを宇宙バブルとして表示。ひとつに飛び込むとそのプロジェクトが開く",
+    gr_mv_loading: "宇宙を描いています…",
+    gr_mv_none: "まだ表示できるボルトがありません。",
+    gr_layout: "レイアウト",
+    gr_layout_galaxy: "ギャラクシー (3D)",
+    gr_layout_atlas: "アトラス (2D)",
+    gr_layout_synapse: "シナプス (2D)",
+    gr_layout_synapse3d: "シナプス (3D)",
+    gr_recommend: "推奨設定を適用",
+    gr_recommend_hint: "このレイアウトの推奨設定を適用します",
+    gr_sky: "背景",
+    gr_sky_stars: "星",
+    gr_sky_dense: "密",
+    gr_sky_grid: "グリッド",
+    gr_sky_void: "空",
+    gr_node_color: "ノード色",
+    gr_node_color_community: "フォルダー別",
+    gr_node_color_white: "ホワイト",
+    gr_node_color_auto: "自動",
+    gr_mono_below: "N個以上で色付け",
+    gr_tl_speed: "タイムラプス速度",
+    gr_scale_star: "恒星",
+    gr_scale_system: "恒星系",
+    gr_scale_galaxy: "銀河",
+    gr_scale_cluster: "銀河団",
+    gr_arrows: "矢印",
+    gr_arrows_hint: "各リンクに方向を表示",
+    gr_arrow_size: "矢印サイズ",
+    gr_semantic_edges: "セマンティックリンク",
+    gr_semantic_edges_hint: "類似ノート間に淡いエッジを表示",
+    gr_edge_bundles: "バンドルストランド",
+    gr_edge_bundles_hint:
+      "2つのトピック間のリンクを1本の重み付きアークに束ねる",
+    gr_fly_btn: "宇宙船モード (F)",
+    gr_timelapse_record: "タイムラプス録画 (WebM)",
+    gr_node_color_black: "ブラック",
+    gr_cosmic: "宇宙イベント",
+    gr_cosmic_hint: "ブラックホール・ワームホール (ダークテーマ)",
+    gr_cosmic_freq: "イベント頻度",
+    gr_click_burst: "クリックバースト",
+    gr_click_burst_hint: "ノード選択時のスーパーノヴァ + 波紋",
+    gr_neural_firing: "神経発火",
+    gr_neural_firing_hint: "定期的にメッシュを伝う信号",
+    gr_planets: "近接プラネット",
+    gr_planets_hint: "近づくとノードが手続き的な惑星になる (ダーク3D)",
+    gr_pixel_nodes: "ピクセルノード",
+    gr_pixel_nodes_hint: "光る点の代わりに16x16ピクセルアートで表示",
+    gr_color_depth: "色の濃さ",
+    gr_edge_tint: "リンク色",
+    gr_edge_tint_grey: "グレー",
+    gr_edge_tint_community: "コミュニティウェブ",
+    gr_help_btn: "ジェスチャーガイド",
+    gr_help_title: "ジェスチャーガイド",
+    gr_help_click: "ノートにフォーカス (1ホップ)",
+    gr_help_dblclick: "フォーカスを2ホップに拡大",
+    gr_help_cmdclick: "ノート間の最短経路",
+    gr_help_esc: "フォーカスから一段戻る",
+    gr_help_fly: "宇宙船モード切替",
+    gr_help_drag: "宇宙をオービット回転",
+    gr_trace: "経路トレース",
+    gr_trace_hint: "開始ノードをクリックし、次に終了ノードをクリック",
+    gr_spaceship: "宇宙船",
+    gr_spaceship_hint:
+      "WASDで飛行 · ドラッグで方向 · ノードをクリックで情報 · Escで終了",
+    gr_spaceship_exit: "終了",
+    gr_speed: "速度",
+    gr_close: "閉じる",
     gr_open: "ページを開く",
+    gr_text_fade: "ラベルフェード閾値",
+    gr_node_size: "ノードサイズ",
+    gr_link_thickness: "リンク太さ",
+    gr_brightness: "明るさ",
+    gr_center_force: "中心力",
+    gr_repel_force: "反発力",
+    gr_link_force: "リンク張力",
+    gr_link_distance: "リンク距離",
+    gr_cluster_force: "クラスター力",
+    gr_myc_spread: "菌糸の広がり",
+    gr_myc_branch: "分岐密度",
+    gr_myc_forces_hint:
+      "菌糸はシミュレーションではなく成長する仕組みです。この2つのスライダーが菌糸マットの形を変えます。",
+    gr_reset: "リセット",
     gr_empty_pre: "まだウィキリンクがありません。",
     gr_empty_post: " を追加するとグラフが育ちます。",
+    gr_timelapse_play: "タイムラプス再生",
+    gr_timelapse_pause: "タイムラプス一時停止",
     h_title: "履歴",
     h_lede:
       "すべての取り込みは WHY レポートを残します。各実行が何を作り、何を変えたかを新しい順に見られます。",
@@ -5887,6 +6600,9 @@ export const STRINGS: Record<Lang, Strings> = {
     notif_distill_done_months: " · 月次ロールアップ{m}件",
     notif_quarantine_title: "新しい隔離アイテム",
     notif_quarantine_body: "{n}件が _inbox/quarantine でレビュー待ちです。",
+    gr_zoom_out: "ズームアウト",
+    gr_fit: "全体表示",
+    gr_zoom_in: "ズームイン",
     h_open_vault: "履歴を見るには vault を開いてください。",
     rf_title: "Reflect の提案",
     rf_lede:
@@ -6107,69 +6823,56 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_insp_type: "タイプ",
     gr_insp_confidence: "確信度",
     gr_insp_status: "ステータス",
+    gr_insp_connections: "接続",
     gr_insp_links_out: "リンク",
     gr_insp_backlinks: "バックリンク",
+    gr_insp_tags: "タグ",
     gr_insp_open: "リーダーで開く",
     gr_insp_unresolved: "未解決のノート（ファイルなし）",
     gr_insp_none: "—",
     gr_find_ph: "ノートを検索…",
+    gr_insp_path_start: "パスの起点に設定",
+    gr_insp_path_anchor: "パスの起点",
+    gr_insp_path_clear: "クリア",
+    gr_insp_path: "パス",
+    gr_insp_path_none: "このノードへのパスがありません",
+    gr_insp_hops: "ホップ",
     gr_gaps_title: "ギャップ",
+    gr_gaps_btn: "ギャップ分析",
     gr_gap_missing: "欠落ページ",
+    gr_gap_malformed: "不正な形式のリンク",
     gr_gap_orphans: "孤立ページ",
     gr_gap_undercited: "引用不足",
     gr_gap_lowconf: "低確信度",
+    gr_gap_disputed: "係争中",
     gr_gap_islands: "未接続",
     gr_gap_none: "ギャップは見つかりませんでした",
+    gr_gap_bridges: "リサーチブリッジ",
+    gr_gap_ask: "このギャップについて質問",
+    gr_bridge_question:
+      "「{a}」と「{b}」に関する私のノートは意味的に関連していますが、まだリンクされていません。この 2 つのトピックを結びつけるものは何ですか？ 橋渡しとなるアイデアや、書くべきノートを提案してください。",
     gr_gap_more: "もっと見る",
+    gr_key_size: "サイズ = リンク数",
+    gr_key_dim: "淡色 = 低確信度",
+    gr_key_amber: "橙色 = 係争中",
+    gr_key_neutral: "灰色 = 未分類",
+    gr_more: "他 {n} 件",
+    gr_focus_trail: "フォーカストレイル",
+    gr_focus_esc: "抜ける（Esc / 空白をクリック）",
+    gr_preset: "レイアウト",
+    gr_preset_galaxy: "ギャラクシー",
+    gr_preset_loose: "疎なウェブ",
+    gr_preset_dense: "密",
+    gr_glow: "グロー",
+    gr_motion: "アンビエントモーション",
+    gr_motion_hint: "自動回転・パルス・呼吸",
+    gr_motion_hint_myc: "ゆっくりした3D自動回転（3Dビューのみ）",
+    gr_advanced: "詳細設定",
     gr_loading: "星座を整列中…",
-    gr_title: "測量",
-    gr_lede: "地図は一つ、問いは四つ。問いを選ぶと変わるのはエンコード（色・大きさ・かすみ）でレイアウトではないので、答え同士を比べられます。",
-    gr_canvas_aria: "ボルトのリンク地図。矢印キーでノートを選び、Enter で開きます。",
-    gr_stage_hint: "レイアウトは一つ · 問いが変えるのはエンコードだけ",
-    gr_q_lead: "この画面が答える問い",
-    gr_q_orphans: "どこが空いているか",
-    gr_q_orphans_u: "空き",
-    gr_q_sub_orphans: "孤立 {orphans} · 未解決 {unresolved} · 被リンク0 {nobacklink}",
-    gr_q_clusters: "何がまとまっているか",
-    gr_q_clusters_u: "クラスタ",
-    gr_q_sub_clusters: "地図なし {nomap} · 地図あり {map}",
-    gr_q_time: "最近何が育ったか",
-    gr_q_time_u: "30日以内",
-    gr_q_sub_time: "サンプル {sample} 件はインストール日に固定",
-    gr_q_neighbors: "このノートの隣人",
-    gr_q_neighbors_u: "2ホップ",
-    gr_q_sub_neighbors: "選択したノートから2ホップ",
-    gr_q_pick: "ノートを一つ選んでください",
-    gr_size: "ノードの大きさ",
-    gr_size_backlinks: "大きさ = 被リンク",
-    gr_size_cites: "大きさ = 引用",
-    gr_hide_sample: "サンプル {n} 件を隠す",
-    gr_show_unresolved: "未解決リンクを表示",
-    gr_rebuilds: "シーン再構築 {n} 回 · {ms} ms",
-    gr_honest_lead: "このグラフが描くのは {n} ノード",
-    gr_honest: "初回サンプル {sample} 件（{pct}%）· 自分のノート {own} 件 · 未解決 {unresolved} 件。引用を持つノートは {cited} 件。",
-    gr_honest_sessions: "セッション {n} 件はここにありません — sessions/ は graphData の NON_KNOWLEDGE_FOLDERS で構造的に除外されます。",
-    gr_gap_nobacklink: "誰も参照していない",
-    gr_act_link: "リンクを提案",
-    gr_act_harvest: "必要な話題として記録",
-    gr_act_neighbors: "隣人だけ表示",
-    gr_act_open_s: "開く",
-    gr_act_link_s: "リンク",
-    gr_act_want_s: "記録",
-    gr_insp_h: "ノート",
-    gr_insp_empty: "ノートを選ぶと、リンク・引用・信頼度と、この画面から出る操作が開きます。",
-    gr_insp_cites: "引用",
-    gr_insp_sample: "初回サンプル",
-    gr_insp_own: "自分のノート",
-    gr_insp_nocite: "引用 0",
-    gr_cluster_nomap: "地図なし",
-    gr_cluster_map: "地図あり",
-    gr_enc_orphans: "色 = カテゴリ · 大きさ = リンク数 · かすみ = すでに接続済み",
-    gr_enc_clusters: "ブロック = クラスタ · 破線 = 地図ページなし · 点線 = 未接続の近い話題",
-    gr_enc_time: "色 = 最終更新（単一ランプ）· かすみ = 半年以上放置",
-    gr_enc_neighbors: "明るさ = ホップ距離（0・1 は明るく、2 はかすみ、それ以外はほぼ不可視）",
-    gr_link_question: "ボルトの中で「{a}」が接続されないままです。どのノートがここにリンクすべきで、そのリンクは何を言うべきでしょうか？",
-    gr_want_done: "「{n}」を必要な話題として記録しました",
+    gr_ctx_lost: "グラフィックスコンテキストが失われました。",
+    gr_retry: "再構築",
+    gr_perf_mode:
+      "パフォーマンスモード — 大きなグラフではアンビエントレイヤーをオフに",
     mcp_serving: "MCP サーバー実行中",
     mcp_not_serving: "MCP サーバー停止中",
     mcp_starting: "MCP サーバー起動中…",

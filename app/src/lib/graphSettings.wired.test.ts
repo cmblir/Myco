@@ -1,6 +1,5 @@
 // Every GraphSettings key must be consumed by the graph, or it is a control
-// that does nothing. Four keys survive the Survey rewrite (question, sizeBy,
-// hideSample, showUnresolved) — the guard is cheap and still catches the trap.
+// that does nothing.
 //
 // The graph's effect dependency lists are hand-maintained (eslint-disabled),
 // so a new settings key that the author forgets to wire renders a slider or
@@ -25,10 +24,11 @@ const rd = (rel: string): string => readFileSync(ROOT + rel, "utf8");
 
 const GRAPH_SOURCES = [
   "src/pages/PageGraph.tsx",
-  "src/lib/graphCanvas.ts",
+  "src/lib/graphScene.ts",
   "src/lib/graphSim.worker.ts",
   "src/components/GraphControls.tsx",
   "src/lib/graphData.ts",
+  "src/lib/atlasLayout.ts",
 ].map(rd).join("\n");
 
 function graphSettingsKeys(): string[] {
@@ -41,7 +41,7 @@ function graphSettingsKeys(): string[] {
 describe("GraphSettings wiring", () => {
   it("every key is consumed somewhere in the graph", () => {
     const keys = graphSettingsKeys();
-    expect(keys.length).toBeGreaterThan(3); // sanity: we actually parsed them
+    expect(keys.length).toBeGreaterThan(20); // sanity: we actually parsed them
     const unwired = keys.filter((k) => !new RegExp(`\\.${k}\\b`).test(GRAPH_SOURCES));
     expect(unwired).toEqual([]);
   });

@@ -1,304 +1,1150 @@
-// Survey — the vault measured, not decorated. One 2D force layout (the worker
-// sim), one canvas renderer, and four questions that change only the ENCODING
-// of the same coordinates, so their answers are comparable. The left column
-// lists the gaps with actions; the right one inspects a note and offers the
-// three exits. What used to be here — 13 layouts, three.js + bloom + 20
-// ambient layers, spaceship flight, multiverse, timelapse, skins, ~30
-// controls — answered no question and is gone.
+// Graph page — a 3D "universe" force-directed graph of the vault. d3-force-3d
+// (lib/graphSim) runs the same Obsidian-style layout the 2D view used — now in
+// three dimensions — and lib/graphScene renders it with three.js: glowing star
+// nodes, faint filament edges, a starfield, depth fog and UnrealBloom, with
+// OrbitControls for real z-axis orbit and idle auto-rotate. This file stays a
+// thin React orchestrator: build/settle, drag, hover, timelapse, live-ingest
+// glow and WebGL context-loss recovery — all driving the imperative GraphScene
+// API instead of sigma.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
-import GraphControls, { type BuildStat, type SurveyCounts } from "../components/GraphControls";
-import GraphGaps, { displayName, gapGroups, type GapAction } from "../components/GraphGaps";
+import GraphControls from "../components/GraphControls";
 import GraphInspector from "../components/GraphInspector";
+import ShipHud from "../components/ShipHud";
+import GraphGaps from "../components/GraphGaps";
+import GraphHelp from "../components/GraphHelp";
+import GraphLegend from "../components/GraphLegend";
+import {
+  coupleMyceliumPatch,
+  normalizeMyceliumPair,
+  DEFAULT_GRAPH_SETTINGS,
+  loadGraphSettings,
+  matchMyceliumBg,
+  myceliumBranchPct,
+  myceliumMaxNodes,
+  saveGraphSettings,
+  type GraphSettings,
+} from "../lib/graphSettings";
 import {
   buildGraph,
+  buildLegend,
+  collectFolders,
+  collectTags,
   computeAllowed,
   countAllNodes,
   flattenMarkdown,
-  isNonKnowledgePath,
+  type LegendGalaxy,
+  recolorGraph,
+  seededUnit,
+  shortestPath,
+  starKindOf,
   stem,
   type VaultGraph,
 } from "../lib/graphData";
-import { GraphCanvas, type Hull } from "../lib/graphCanvas";
-import {
-  encodeNode,
-  hopsFrom,
-  type EncNode,
-  type EncState,
-  type Question,
-} from "../lib/graphEncoding";
-import { analyzeGaps, clusterBridges, gapCount } from "../lib/graphGaps";
-import { isSamplePath } from "../lib/graphSample";
-import {
-  loadGraphSettings,
-  saveGraphSettings,
-  surveyBuildKey,
-  type GraphSettings,
-} from "../lib/graphSettings";
-import { createSim, type GraphSim } from "../lib/graphSim";
-import { clusterLabels, upgradeClusterTopics, type ClusterLabel } from "../lib/clusterLabels";
-import { readTheme, type GraphTheme } from "../lib/graphTheme";
+import { analyzeGaps, clusterBridges, gapCount, type ClusterBridge } from "../lib/graphGaps";
 import { setQueryPrefill } from "../lib/queryPrefill";
-import { notice } from "../lib/notice";
-import { ipc } from "../lib/ipc";
-import type { SemEdge } from "../lib/ipc";
+import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
+import { createStaticDrag } from "../lib/staticDrag";
+import { applyAtlasLayout } from "../lib/atlasLayout";
+import { separateGraphLayout } from "../lib/layoutSeparation";
+import { bakeSeededSky } from "../lib/skyTexture";
+import {
+  applyCelestialLayout,
+  applyRadialLayout,
+  applySpiralLayout,
+  applyWalrusLayout,
+  applyStrataLayout,
+} from "../lib/staticLayouts";
+import { ATLAS_RADIUS_MUL } from "../lib/layoutConfig";
+import type { LayoutMetrics } from "../lib/layoutMetrics";
+import { makeTheme } from "../lib/graphTheme";
+import { isLightBackground } from "../lib/graphSkins";
+import { GraphScene, type SceneStyleState } from "../lib/graphScene";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
+import { useIngestStore } from "../stores/ingestStore";
+import { useMultiverseStore } from "../stores/multiverseStore";
+import MultiverseScene from "../components/MultiverseScene";
+import MascotCameo from "../components/MascotCameo";
+import MyceliumView from "../components/MyceliumView";
+import type { SceneUniverse } from "../lib/multiverseScene";
+import { ipc } from "../lib/ipc";
+import type { Adjacency, SemEdge } from "../lib/ipc";
+import { isComposingKey } from "../lib/ime";
 
-/** Frontmatter type of a map/overview page — a cluster with one has guidance. */
-const MAP_TYPE = "overview";
-const GHOST = "ghost:";
+// Live-ingest node tints — pages the in-flight run wrote glow gold, pages it
+// only read glow ice blue. Both sit inside the cosmic palette so they read as
+// "hot" stars rather than UI chrome.
+const PULSE_MS = 900;
 
-interface Derived {
-  graph: VaultGraph;
-  /** Encoding inputs per node id (backlinks/cites/age/colour/community). */
-  nodes: Map<string, EncNode>;
-  labels: ClusterLabel[];
-  mapless: Set<number>;
-  counts: SurveyCounts;
-  noBacklink: string[];
-  maxBacklinks: number;
+// The flat 2D chart layouts — a floating planet mascot has no depth to sit in
+// there, so the cameo is gated to the 3D cosmos layouts (everything else).
+const FLAT_LAYOUTS = new Set<GraphSettings["layout"]>(["atlas", "synapse", "strata"]);
+
+interface IngestGlow {
+  /** absolute node id → was it written (vs only read) */
+  tint: Map<string, boolean>;
+  pulseId: string | null;
+  pulseScale: number;
+}
+
+// Focus stack (spec B3 — "focus modes with an exit"): every isolation is a
+// frame the user can pop back out of with Esc / a void-click / a breadcrumb.
+// Node clicks push 1-hop frames (double-click upgrades to 2-hop); a legend
+// swatch pushes a community frame.
+interface FocusFrame {
+  kind: "node" | "community";
+  /** breadcrumb text — note stem or community label */
+  label: string;
+  members: Set<string>;
+  /** node frames: the focused node */
+  id?: string;
+  hops?: 1 | 2;
+  /** community frames: the Louvain community id */
+  cm?: number;
+}
+
+// Double-click window for upgrading a node frame to 2 hops.
+const DBL_MS = 350;
+
+// Members of the n-hop neighbourhood around a node (inclusive).
+function hopSet(g: VaultGraph, id: string, hops: 1 | 2): Set<string> {
+  const members = new Set<string>([id]);
+  for (const n of g.neighbors(id)) members.add(n);
+  if (hops === 2) {
+    for (const n of [...members]) {
+      for (const m of g.neighbors(n)) members.add(m);
+    }
+  }
+  return members;
 }
 
 export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const adjacency = useVaultStore((s) => s.adjacency);
   const fileTree = useVaultStore((s) => s.fileTree);
   const currentVault = useVaultStore((s) => s.currentVault);
+  const openVault = useVaultStore((s) => s.openVault);
   const setRoute = useUIStore((s) => s.setRoute);
   const uiTheme = useUIStore((s) => s.theme);
-  const graphFocus = useUIStore((s) => s.graphFocus);
-  const setGraphFocus = useUIStore((s) => s.setGraphFocus);
+  // Multiverse: the registered projects + their loaded graphs (kept in a store
+  // separate from the single vault). Only read when the multiverse toggle is on.
+  const mvOrder = useMultiverseStore((s) => s.order);
+  const mvUniverses = useMultiverseStore((s) => s.universes);
+  const mvLoadAll = useMultiverseStore((s) => s.loadAll);
+  const mvLoading = useMultiverseStore((s) => s.isLoading);
 
-  const hostRef = useRef<HTMLDivElement | null>(null);
-  const canvasRef = useRef<GraphCanvas | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const sceneRef = useRef<GraphScene | null>(null);
   const simRef = useRef<GraphSim | null>(null);
-  const derivedRef = useRef<Derived | null>(null);
+  // The mycelium view is a separate renderer (MyceliumView) the toolbar's Fit
+  // and timelapse buttons don't otherwise reach — it stashes its own fit()
+  // and startGrowth() here.
+  const myceliumFitRef = useRef<(() => void) | null>(null);
+  const myceliumGrowthRef = useRef<(() => void) | null>(null);
+  // Fly-to-a-note for the mycelium renderer — search (Enter), the inspector's
+  // link rows and gap analysis all call it alongside sceneRef.focusNode (the
+  // hidden GraphScene's flight is a no-op on screen under the mycelium skin).
+  const myceliumFocusRef = useRef<((id: string) => void) | null>(null);
+  // Mycelium "force" sliders (linkDistance/clusterForce, repurposed as mat
+  // density / branch density — see graphSettings.ts's myceliumMaxNodes/
+  // myceliumBranchPct) rebuild the grown mat, ~80ms at 1244 notes. Debounced
+  // so dragging the slider doesn't rebuild on every pixel of travel.
+  const [myceliumForceDeb, setMyceliumForceDeb] = useState({
+    linkDistance: DEFAULT_GRAPH_SETTINGS.linkDistance,
+    clusterForce: DEFAULT_GRAPH_SETTINGS.clusterForce,
+  });
+  const graphRef = useRef<VaultGraph | null>(null);
+  const settingsRef = useRef<GraphSettings>(DEFAULT_GRAPH_SETTINGS);
+  const tlRafRef = useRef<number | null>(null);
+  // Markdown paths sorted oldest→newest by mtime — the order nodes pop in
+  // during the timelapse.
+  const tlOrderRef = useRef<string[]>([]);
+  // Hover neighbourhood + live-ingest glow are composed into one SceneStyleState
+  // and pushed to the scene. Refs (not state) so handlers never rebuild the scene.
+  const hoverRef = useRef<{ node: string | null; neighbors: Set<string> | null }>(
+    { node: null, neighbors: null },
+  );
+  const ingestGlowRef = useRef<IngestGlow>({
+    tint: new Map(),
+    pulseId: null,
+    pulseScale: 1,
+  });
+  const pulseRafRef = useRef<number | null>(null);
+  // Focus stack — state drives the breadcrumbs; the ref feeds pushStyle (a
+  // stable closure) with the top frame's member set.
+  const [focusStack, setFocusStack] = useState<FocusFrame[]>([]);
+  const focusRef = useRef<Set<string> | null>(null);
+  const lastClickRef = useRef<{ id: string; at: number } | null>(null);
 
-  const [settings, setSettings] = useState<GraphSettings>(() => loadGraphSettings());
-  // Search NEVER enters the build deps — it is a style pass (see restyle).
-  const [search, setSearch] = useState("");
+  const [settings, setSettings] = useState<GraphSettings>(() =>
+    loadGraphSettings(),
+  );
+  useEffect(() => {
+    const id = window.setTimeout(() => {
+      setMyceliumForceDeb({
+        linkDistance: settings.linkDistance,
+        clusterForce: settings.clusterForce,
+      });
+    }, 250);
+    return () => window.clearTimeout(id);
+  }, [settings.linkDistance, settings.clusterForce]);
+  // Transient "drilled into one universe" view-state — NOT persisted. Entering a
+  // bubble shows that vault's single-vault graph while leaving the SAVED
+  // Multiverse preference on (it used to be silently turned off on enter, which
+  // mutated a stored setting behind the user's back). `showMultiverse` gates the
+  // scene; `settings.multiverse` remains the preference the toggle reflects.
+  const [enteredUniverse, setEnteredUniverse] = useState(false);
+  const enteredUniverseRef = useRef(false);
+  enteredUniverseRef.current = enteredUniverse;
+  // Condensation intro plays once per Graph-page visit (not per rebuild).
+  const introPlayedRef = useRef(false);
+  // Semantic layout picked but no embedding index — the view fell back to the
+  // spiral and this drives the "reindex first" hint.
+  const [semanticMissing, setSemanticMissing] = useState(false);
+  const showMultiverse = settings.multiverse && !enteredUniverse;
+  const [drawerOpen, setDrawerOpen] = useState(false);
+
+  // Multiverse mode: warm every project's graph when the toggle turns on, and
+  // expose the loaded ones to the scene. Kept minimal — the normal single-vault
+  // path is untouched when `multiverse` is off.
+  useEffect(() => {
+    if (settings.multiverse) void mvLoadAll();
+  }, [settings.multiverse, mvLoadAll]);
+  // The universes to render: every registered project whose graph has loaded,
+  // PLUS the currently-open vault itself (deduped by root). Including the open
+  // vault means the multiverse is never empty — a standalone vault with no
+  // project registry above it still shows as one bubble instead of a blank
+  // scene (the "nothing renders" bug).
+  const sceneUniverses = useMemo<SceneUniverse[]>(() => {
+    const norm = (p: string): string => p.replace(/[\\/]+$/, "");
+    const out: SceneUniverse[] = [];
+    const seen = new Set<string>();
+    for (const slug of mvOrder) {
+      const u = mvUniverses[slug];
+      if (u && u.adjacency) {
+        out.push({ slug: u.info.slug, root: u.info.root, adjacency: u.adjacency, title: u.info.title });
+        seen.add(norm(u.info.root));
+      }
+    }
+    if (currentVault && adjacency && !seen.has(norm(currentVault.path))) {
+      out.push({
+        slug: currentVault.path, // path is unique; hue/label derive from it/name
+        root: currentVault.path,
+        adjacency,
+        title: currentVault.name,
+      });
+    }
+    return out;
+  }, [mvOrder, mvUniverses, currentVault, adjacency]);
+  // Fly-into-universe: switch the active vault to that project, then drop into
+  // its normal single-vault graph. This flips the TRANSIENT view-state only —
+  // the saved Multiverse preference stays on, so re-asserting it (the toggle, or
+  // Reset) pops back to the bubble field. The current-vault bubble isn't a
+  // registered project (no store entry) — clicking it just drops into the vault
+  // you're already in.
+  async function enterUniverse(slug: string): Promise<void> {
+    const u = mvUniverses[slug];
+    // Opening the vault sets the confinement root, the active-vault marker and
+    // restarts the MCP server — everything a switch needs, for both registered
+    // projects and sibling vaults. (The registry `active` pointer isn't updated
+    // here; the marker is what the MCP server follows.)
+    if (u) await openVault(u.info.root);
+    setEnteredUniverse(true);
+  }
+  // Clicked node → open the inspector panel (instead of navigating away).
   const [selected, setSelected] = useState<string | null>(null);
-  const [derived, setDerived] = useState<Derived | null>(null);
-  const [build, setBuild] = useState<BuildStat>({ builds: 0, ms: 0 });
-  const [tip, setTip] = useState<{ id: string; x: number; y: number } | null>(null);
-  const [semEdges, setSemEdges] = useState<SemEdge[] | null>(null);
-  const [theme, setTheme] = useState<GraphTheme | null>(null);
+  // Search-to-focus query (toolbar) — jumps the camera to a node by name.
+  const [find, setFind] = useState("");
+  // Shortest-path: a pinned start node + the computed path to the selected node.
+  // Refs shadow the state so the scene's stable click closure reads current
+  // values (spec B3 Cmd-click path mode); pushStyle reads pathRef for the
+  // filament layer.
+  const [pathAnchor, setPathAnchor] = useState<string | null>(null);
+  const [path, setPath] = useState<string[] | null>(null);
+  const pathAnchorRef = useRef<string | null>(null);
+  const pathRef = useRef<string[] | null>(null);
+  const setAnchor = (v: string | null): void => {
+    pathAnchorRef.current = v;
+    setPathAnchor(v);
+  };
+  // Trace mode (spec): while on, a plain click picks the path start then end
+  // (no focus frame), and the route animates. Ref mirrors state for the
+  // once-created click handler closure.
+  const [traceMode, setTraceMode] = useState(false);
+  const traceModeRef = useRef(false);
+  const toggleTrace = (on: boolean): void => {
+    traceModeRef.current = on;
+    setTraceMode(on);
+    // Leaving trace mode clears any in-progress route + the comet.
+    if (!on) {
+      setAnchor(null);
+      pathRef.current = null;
+      setPath(null);
+      setSelected(null);
+      sceneRef.current?.setTrace(null);
+    }
+  };
+  // Spaceship free-fly mode (transient). Ref mirrors state for the window
+  // keydown closure. Toggling clears any active trace (they share the camera).
+  const [flyMode, setFlyMode] = useState(false);
+  const flyModeRef = useRef(false);
+  // Semantic-similarity overlay edges, fetched on demand. A ref (read at build
+  // time) + a glEpoch bump avoids a build-deps ordering race with the fetch.
+  const semEdgesRef = useRef<SemEdge[]>([]);
+  const toggleFly = (on: boolean): void => {
+    flyModeRef.current = on;
+    setFlyMode(on);
+    sceneRef.current?.setFlyMode(on);
+    if (on && traceModeRef.current) toggleTrace(false);
+  };
+  // HUD speed readout, polled at a low rate while flying.
+  const [shipSpeed, setShipSpeed] = useState(0);
+  // Cosmic-scale band (star/system/galaxy/cluster) shown briefly on change.
+  const [cosmicScale, setCosmicScale] = useState<string | null>(null);
+  const scaleHideRef = useRef<number | null>(null);
+  // Gap-analysis panel (orphans / missing / under-cited / disconnected …).
+  const [gapsOpen, setGapsOpen] = useState(false);
+  // Gesture cheat-sheet popover ("?" toolbar button).
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [tlPlaying, setTlPlaying] = useState(false);
+  // Bumped on webglcontextrestored to force a clean scene rebuild (WKWebView
+  // drops the GL context on backgrounding; three.js does not auto-restore the
+  // composer/render targets, so we tear down and rebuild a fresh GraphScene).
+  const [glEpoch, setGlEpoch] = useState(0);
+  // Error state (spec B5): the GL context died and the browser has not (yet)
+  // restored it — show a toast with a manual rebuild escape hatch.
+  const [ctxLost, setCtxLost] = useState(false);
+  const [counts, setCounts] = useState<{ nodes: number; edges: number }>({
+    nodes: 0,
+    edges: 0,
+  });
+  settingsRef.current = settings;
 
-  useEffect(() => saveGraphSettings(settings), [settings]);
+  // The idle galaxy swirl rotates the RENDERED layout on the main thread; the
+  // worker's node copies don't see it. Before anything reheats the sim (drag,
+  // force sliders, live growth) push the current positions across so nodes
+  // don't snap back to their pre-swirl spots.
+  const syncSwirl = useRef(() => {
+    const sc = sceneRef.current;
+    const sm = simRef.current;
+    // Galaxy swirl AND orphan-moon orbits both move rendered positions.
+    if (sc && sm) sm.syncBack(sc.snapshotPositions());
+  }).current;
 
-  const vaultRoot = currentVault?.path ?? "";
+  // Compose hover + ingest state into the scene's style and push it.
+  const pushStyle = useRef(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const state: SceneStyleState = {
+      hoveredNode: hoverRef.current.node,
+      neighbors: hoverRef.current.neighbors,
+      focus: focusRef.current,
+      pathNodes: pathRef.current,
+      tints: ingestGlowRef.current.tint,
+      pulseId: ingestGlowRef.current.pulseId,
+      pulseScale: ingestGlowRef.current.pulseScale,
+    };
+    scene.setStyleState(state);
+  }).current;
+
+  useEffect(() => {
+    saveGraphSettings(settings);
+  }, [settings]);
+
+  const tags = useMemo(() => collectTags(adjacency?.tags ?? {}), [adjacency]);
+  const folders = useMemo(
+    () => collectFolders(currentVault?.path ?? "", adjacency),
+    [adjacency, currentVault?.path],
+  );
+  // Every markdown file — including link-less ones, which render as Obsidian's
+  // free-floating "orphan" stars.
   const allFiles = useMemo(() => flattenMarkdown(fileTree), [fileTree]);
-  const sessionCount = useMemo(
-    () => allFiles.filter((p) => isNonKnowledgePath(vaultRoot, p)).length,
-    [allFiles, vaultRoot],
+
+  // Dark vs. light node palette follows the RESOLVED graph background (not the
+  // app theme), so the white skin always gets dark, saturated stars. Memoised to
+  // a boolean so the graph rebuilds only when the light/dark actually flips.
+  const lightBg = useMemo(
+    () => isLightBackground(makeTheme(settings.skin)),
+    // uiTheme IS a real dependency: the "auto" skin resolves its background from
+    // the DOM (--bg), which flips with the app theme — a read the linter can't see.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [settings.skin, uiTheme],
   );
 
-  // Mtimes drive the "최근 무엇이 자랐나" ramp (absent → everything reads old).
-  const [mtimes, setMtimes] = useState<Map<string, number> | null>(null);
+  // Gap report over the live graph. counts/glEpoch change on every rebuild /
+  // live-ingest growth / context restore, so it re-derives when the graph does.
+  const gapReport = useMemo(() => {
+    const g = graphRef.current;
+    return g && g.order > 0 ? analyzeGaps(g) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [counts, glEpoch]);
+
+  // Research bridges (cluster-level gaps) need the semantic-similarity pairs —
+  // fetched lazily the first time the gap panel opens, independent of the
+  // semantic-edges display toggle.
+  const [bridgeSem, setBridgeSem] = useState<SemEdge[] | null>(null);
   useEffect(() => {
-    if (!vaultRoot) return;
-    let cancelled = false;
+    if (!gapsOpen || bridgeSem !== null) return;
+    let killed = false;
     ipc
-      .fileMtimes(vaultRoot)
-      .then((rows) => {
-        if (!cancelled) {
-          setMtimes(new Map(rows.map(([p, m]) => [p, m < 1e12 ? m * 1000 : m])));
-        }
+      .semanticEdges(4)
+      .then((edges) => {
+        if (!killed) setBridgeSem(edges);
       })
       .catch(() => {
-        /* no mtimes — the time question just reads everything as old */
+        if (!killed) setBridgeSem([]);
+      });
+    return () => {
+      killed = true;
+    };
+  }, [gapsOpen, bridgeSem]);
+
+  const bridges = useMemo(() => {
+    const g = graphRef.current;
+    if (!gapsOpen || !g || g.order === 0 || !bridgeSem?.length) return [];
+    return clusterBridges(g, bridgeSem);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gapsOpen, bridgeSem, counts, glEpoch]);
+
+  // Dashed 3D hint lines between the bridged cluster centroids while the
+  // panel is open.
+  useEffect(() => {
+    sceneRef.current?.setBridgeHints(
+      gapsOpen ? bridges.map((b) => [b.a, b.b] as [number, number]) : [],
+    );
+  }, [bridges, gapsOpen]);
+
+  // "Ask about this gap" → draft a research question and hop to the Ask page.
+  function askBridge(b: ClusterBridge): void {
+    const tpl =
+      t.gr_bridge_question ??
+      'My notes about "{a}" and "{b}" are semantically related but not yet linked. What connects these two topics? Suggest the bridging ideas or notes I should write.';
+    setQueryPrefill(tpl.replace("{a}", stem(b.aHub)).replace("{b}", stem(b.bHub)));
+    setRoute("query");
+  }
+
+  // Legend: two-level galaxy → cluster hierarchy. Galaxy = top-level folder
+  // (header); clusters = the coloured sub-groups within it (folder or Louvain
+  // topic). Re-derives with the graph (counts proxies rebuilds).
+  const legendGalaxies = useMemo<LegendGalaxy[]>(() => {
+    const g = graphRef.current;
+    if (!g || g.order === 0) return [];
+    const rows: {
+      id: string;
+      community: number;
+      galaxy: number;
+      color: string;
+      deg: number;
+    }[] = [];
+    g.forEachNode((id, a) => {
+      rows.push({
+        id,
+        community: a.community,
+        galaxy: a.galaxy,
+        color: a.color,
+        deg: a.deg,
+      });
+    });
+    return buildLegend(rows, currentVault?.path ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [counts, glEpoch, currentVault?.path]);
+
+  // --- Focus stack operations. stackRef is the source of truth (the scene's
+  // callbacks are stable closures, so React state alone would go stale);
+  // applyStack is the single writer keeping ref, UI state and scene in sync.
+  // Refs updated via applyStack only. ---
+  const stackRef = useRef<FocusFrame[]>([]);
+  const applyStack = useRef((next: FocusFrame[]) => {
+    stackRef.current = next;
+    focusRef.current =
+      next.length > 0 ? next[next.length - 1].members : null;
+    setFocusStack(next);
+    pushStyle();
+  }).current;
+  // Pop one level; retarget the inspector at the frame that becomes top.
+  const popFrame = useRef(() => {
+    const prev = stackRef.current;
+    if (prev.length === 0) return false;
+    const next = prev.slice(0, -1);
+    applyStack(next);
+    const top = next[next.length - 1];
+    setSelected(top?.kind === "node" ? (top.id ?? null) : null);
+    return true;
+  }).current;
+  // Breadcrumb click — truncate the stack to that frame.
+  const popTo = (index: number): void => {
+    const next = stackRef.current.slice(0, index + 1);
+    applyStack(next);
+    const top = next[next.length - 1];
+    setSelected(top?.kind === "node" ? (top.id ?? null) : null);
+  };
+
+  // Node click. Cmd/Ctrl-click drives shortest-path mode (spec B3): the first
+  // marks the start anchor, the next picks the end (the path useEffect then
+  // computes it and lights the filament layer); re-Cmd-clicking the anchor
+  // releases it. A plain click pushes a focus frame + opens the inspector; a
+  // second plain click on the same node within DBL_MS upgrades 1-hop → 2-hop.
+  const handleNodeClick = useRef((id: string, additive: boolean) => {
+    const g = graphRef.current;
+    if (!g || !g.hasNode(id)) return;
+    // Spaceship mode: a click just opens the node's info in the ship HUD — no
+    // focus frame, no trace, no camera jump (the pilot keeps flying).
+    if (flyModeRef.current) {
+      setSelected(id);
+      return;
+    }
+    // Trace mode turns a plain click into path start/end picking (same flow as
+    // Cmd/Ctrl-click), suppressing the focus-frame push.
+    if (additive || traceModeRef.current) {
+      const anchor = pathAnchorRef.current;
+      if (anchor == null || anchor === id) {
+        // set the start anchor, or release it if it's the same node
+        setAnchor(anchor === id ? null : id);
+        if (anchor === id) {
+          pathRef.current = null;
+          setPath(null);
+          pushStyle();
+        }
+      } else {
+        setSelected(id); // end node → path useEffect resolves the route
+      }
+      return;
+    }
+    // A plain click abandons any in-progress path.
+    if (pathAnchorRef.current != null || pathRef.current != null) {
+      setAnchor(null);
+      pathRef.current = null;
+      setPath(null);
+    }
+    const now = performance.now();
+    const dbl =
+      lastClickRef.current?.id === id && now - lastClickRef.current.at < DBL_MS;
+    lastClickRef.current = { id, at: now };
+    setSelected(id);
+    // Selection impulse: supernova + neural activation ripple from the star.
+    sceneRef.current?.impulse(id);
+    const prev = stackRef.current;
+    const top = prev[prev.length - 1];
+    if (top?.kind === "node" && top.id === id) {
+      if (dbl && top.hops === 1) {
+        applyStack([
+          ...prev.slice(0, -1),
+          { kind: "node", id, hops: 2, label: stem(id), members: hopSet(g, id, 2) },
+        ]);
+      }
+      return; // same node again (no upgrade) — keep the frame as-is
+    }
+    applyStack([
+      ...prev,
+      { kind: "node", id, hops: 1, label: stem(id), members: hopSet(g, id, 1) },
+    ]);
+  }).current;
+
+  // Community isolation (legend swatch click) = a community focus frame.
+  // Clicking the active swatch again releases it.
+  const isolated =
+    focusStack.length > 0 && focusStack[focusStack.length - 1].kind === "community"
+      ? (focusStack[focusStack.length - 1].cm ?? null)
+      : null;
+  const isolateCommunity = (cm: number | null): void => {
+    if (cm == null) {
+      if (isolated != null) popFrame();
+      return;
+    }
+    const g = graphRef.current;
+    if (!g) return;
+    const members = new Set<string>();
+    g.forEachNode((id, a) => {
+      if (a.community === cm) members.add(id);
+    });
+    if (members.size === 0) return;
+    const label =
+      legendGalaxies
+        .flatMap((gg) => gg.clusters)
+        .find((c) => c.cm === cm)?.label ?? `#${cm}`;
+    applyStack([
+      ...stackRef.current,
+      { kind: "community", cm, label, members },
+    ]);
+  };
+
+  // Esc pops one focus level (ignored while typing in an input).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key !== "Escape") return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (popFrame()) e.stopPropagation();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [popFrame]);
+
+  // Fetch mtimes whenever the vault changes — drives the timelapse reveal order
+  // (oldest file first, so the graph grows in creation order) AND the recency
+  // glow (per-node age). Stored as state so the build picks the ages up.
+  const [mtimes, setMtimes] = useState<Map<string, number> | null>(null);
+  useEffect(() => {
+    if (!currentVault?.path) return;
+    let cancelled = false;
+    ipc
+      .fileMtimes(currentVault.path)
+      .then((rows) => {
+        if (cancelled) return;
+        tlOrderRef.current = [...rows]
+          .sort((a, b) => a[1] - b[1])
+          .map((r) => r[0]);
+        // Normalise to ms (the backend reports epoch seconds).
+        setMtimes(new Map(rows.map(([p, m]) => [p, m < 1e12 ? m * 1000 : m])));
+      })
+      .catch(() => {
+        /* mtime unavailable — timelapse just won't order by age */
       });
     return () => {
       cancelled = true;
     };
-  }, [vaultRoot]);
+  }, [currentVault?.path]);
 
-  // ── build: the ONLY thing that rebuilds the scene is a corpus change ──────
-  const buildKey = surveyBuildKey(settings, {
-    root: vaultRoot,
-    rev: adjacency?.rev,
-    files: allFiles.length,
-    mtimes: mtimes?.size ?? 0,
-  });
+  // The search box is a filter, so every keystroke used to tear the scene down
+  // and rebuild it before the typed character could paint: buildGraph alone is
+  // 3.1 ms on the real vault, 29.7 ms at 2k nodes and 181 ms at 10k nodes /
+  // 30k edges — plus a new GraphScene and a sim restart on top. Deferring the
+  // value keeps the input controlled and instant (the urgent render commits
+  // first) and folds keystrokes that land while a rebuild is running into one.
+  const deferredSearch = useDeferredValue(settings.search);
+
+  // Build + render + settle. Re-runs when the underlying graph or any FILTER
+  // changes. Each run tears the old scene/sim down and creates a fresh one.
   useEffect(() => {
-    const host = hostRef.current;
-    if (!host || !adjacency) return;
-    const t0 = performance.now();
-    const th = readTheme();
-    setTheme(th);
+    const container = containerRef.current;
+    if (!container || !adjacency) return;
+    const s = settingsRef.current;
+    // Multiverse mode renders its own scene (MultiverseScene overlay); the
+    // single-vault scene must not also build WHILE the field is shown. Once the
+    // user enters a universe (enteredUniverse) the single-vault scene builds even
+    // though the preference is still on. Re-runs when either flips (both are
+    // deps), disposing this scene on the way into the field.
+    if (s.multiverse && !enteredUniverseRef.current) return;
+    const theme = makeTheme(s.skin);
 
     const allowed = computeAllowed(adjacency, allFiles, {
-      tagFilter: null,
-      folderFilter: null,
-      vaultRoot,
-      search: "",
-      existingOnly: !settings.showUnresolved,
-      showOrphans: true,
+      tagFilter: s.tagFilter,
+      folderFilter: s.folderFilter,
+      vaultRoot: currentVault?.path ?? "",
+      search: deferredSearch,
+      existingOnly: s.existingOnly,
+      showOrphans: s.showOrphans,
     });
-    if (settings.hideSample) {
-      for (const id of [...allowed]) if (isSamplePath(vaultRoot, id)) allowed.delete(id);
-    }
-    const graph = buildGraph(adjacency, allowed, {
-      nodeSize: 1,
-      starDim: th.starDim,
-      edgeColor: th.edge,
-      showGhosts: settings.showUnresolved,
-      folderGalaxies: true,
-      vaultRoot,
-      lightBg: th.lightBg,
+    const graph: VaultGraph = buildGraph(adjacency, allowed, {
+      nodeSize: s.nodeSize,
+      starDim: theme.starDim,
+      edgeColor: theme.edge,
+      // existingOnly hides non-existent files → also hide ghost link targets.
+      showGhosts: !s.existingOnly,
+      semanticEdges: s.semanticEdges ? semEdgesRef.current : undefined,
+      folderGalaxies: s.folderGalaxies,
+      vaultRoot: currentVault?.path ?? "",
+      lightBg,
+      vivid: s.skin === "sigma", // the Gephi board wears the vivid categorical wheel
+
+      // Recency glow: age each note against its file mtime (absent → no glow).
       mtimes: mtimes ?? undefined,
       now: Date.now(),
     });
-
-    const next = derive(graph, adjacency, vaultRoot, sessionCount, t);
-    derivedRef.current = next;
-    setDerived(next);
-    setBuild((b) => ({ builds: b.builds + 1, ms: performance.now() - t0 }));
-    setSelected((cur) => (cur && graph.hasNode(cur) ? cur : null));
+    graphRef.current = graph;
+    setCounts({ nodes: graph.order, edges: graph.size });
     if (graph.order === 0) return;
 
-    const canvas = new GraphCanvas(host, graph, th, {
-      onNodeClick: (id) => setSelected(id),
-      onNodeActivate: (id) => {
-        if (!id.startsWith(GHOST)) setRoute(`page:${id}`);
-      },
-      onVoidClick: () => setSelected(null),
-      onHover: (id, x, y) => setTip(id ? { id, x, y } : null),
-      onDragStart: (id) => {
-        const sim = simRef.current;
-        if (!sim) return;
-        const n = sim.nodes.find((s) => s.id === id);
-        if (n) sim.setFixed(id, n.x, n.y);
-        sim.dragWarm(true);
-      },
-      onDrag: (id, x, y) => simRef.current?.setFixed(id, x, y),
-      onDragEnd: (id) => {
-        simRef.current?.releaseFixed(id);
-        simRef.current?.dragWarm(false);
-      },
-      onTakeover: () => {
-        tookOverRef.current = true;
-      },
-    }, t.gr_canvas_aria);
-    canvasRef.current = canvas;
-    canvas.start();
+    // Reset transient style for the fresh scene.
+    hoverRef.current = { node: null, neighbors: null };
+    setSelected(null);
+    setAnchor(null);
+    pathRef.current = null;
+    setPath(null);
+    applyStack([]);
+    lastClickRef.current = null;
 
-    const sim = createSim(graph, (pos) => canvasRef.current?.applyPositions(pos));
-    simRef.current = sim;
-    tookOverRef.current = false;
-    const fitTimer = window.setInterval(() => {
-      if (!tookOverRef.current) canvasRef.current?.fit();
-    }, 450);
-    sim.onSettle((metrics) => {
-      if (!tookOverRef.current) canvasRef.current?.fit(metrics);
-    });
-
-    // Cluster names: the top-degree member now, an LLM topic later if it comes.
-    upgradeClusterTopics(next.labels, graph, (community, topic) => {
-      const d = derivedRef.current;
-      if (!d || d.graph !== graph) return;
-      const l = d.labels.find((x) => x.community === community);
-      if (l) l.text = topic;
-      setDerived({ ...d, labels: [...d.labels] });
-    });
-
-    return () => {
-      window.clearInterval(fitTimer);
-      sim.stop();
-      canvas.dispose();
-      simRef.current = null;
-      canvasRef.current = null;
-    };
-    // `search`, `question` and `sizeBy` are deliberately absent: they restyle.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [buildKey]);
-
-  const tookOverRef = useRef(false);
-
-  // ── deep link: arrive at a question, optionally at a note ─────────────────
-  useEffect(() => {
-    if (!graphFocus) return;
-    setSettings((s) => ({ ...s, question: graphFocus.q }));
-    if (graphFocus.path) {
-      setSelected(graphFocus.path);
-      canvasRef.current?.focusNode(graphFocus.path);
-    }
-    setGraphFocus(null);
-  }, [graphFocus, setGraphFocus]);
-
-  // ── restyle: question / size / search / selection — no rebuild ────────────
-  const hops = useMemo(() => {
-    const g = derived?.graph;
-    if (settings.question !== "neighbors" || !selected || !g || !g.hasNode(selected)) return null;
-    return hopsFrom(selected, 2, (id) => (g.hasNode(id) ? g.neighbors(id) : []));
-  }, [derived, selected, settings.question]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    const d = derived;
-    if (!canvas || !d || !theme) return;
-    const state: EncState = {
-      sizeBy: settings.sizeBy,
-      maxBacklinks: d.maxBacklinks,
-      hops,
-      mapless: d.mapless,
-      search: search.trim().toLowerCase(),
-      selected,
-      dimColor: theme.dim,
-      liveColor: theme.live,
-    };
-    canvas.restyle((id) => {
-      const n = d.nodes.get(id);
-      return n
-        ? encodeNode(n, settings.question, state)
-        : { color: theme.dim, radius: 3, alpha: 0.2, ring: 0 };
-    });
-    canvas.setSelected(selected);
-    canvas.setHulls(
-      settings.question === "clusters"
-        ? d.labels.map(
-            (l): Hull => ({
-              community: l.community,
-              mapless: d.mapless.has(l.community),
-              title: `${l.text}  · ${d.mapless.has(l.community) ? t.gr_cluster_nomap : t.gr_cluster_map}`,
-            }),
-          )
-        : null,
-    );
-  }, [derived, hops, search, selected, settings.question, settings.sizeBy, theme, t]);
-
-  // Research bridges (clusters question): semantic pairs, fetched once.
-  useEffect(() => {
-    if (settings.question !== "clusters" || semEdges !== null) return;
     let killed = false;
-    ipc
-      .semanticEdges(4)
-      .then((e) => !killed && setSemEdges(e))
-      .catch(() => !killed && setSemEdges([]));
+    let userTookOver = false;
+    // The first settled frame arrives as a camera FLIGHT (eased fit); later
+    // settles just re-frame instantly.
+    let introPlayed = false;
+
+    const highlight = (node: string): void => {
+      const neighbors = new Set(graph.neighbors(node));
+      neighbors.add(node);
+      hoverRef.current = { node, neighbors };
+      pushStyle();
+    };
+    const clearHighlight = (): void => {
+      hoverRef.current = { node: null, neighbors: null };
+      pushStyle();
+    };
+
+    let draggedSim: SimNode | undefined;
+    // Elastic drag for the deterministic (static) layouts, which run no sim.
+    const staticDrag = createStaticDrag(graph, () => sceneRef.current?.syncPositions());
+
+    const scene = new GraphScene(container, graph, theme, s, {
+      onNodeClick: (id, additive) => {
+        if (!killed) handleNodeClick(id, additive);
+      },
+      onVoidClick: () => {
+        if (killed) return;
+        // In spaceship mode a void click just closes the HUD; otherwise it's the
+        // focus-stack "step out" gesture.
+        if (flyModeRef.current) setSelected(null);
+        else popFrame();
+      },
+      onNodeHover: (id) => {
+        if (id) highlight(id);
+        else clearHighlight();
+      },
+      onDragStart: (id) => {
+        syncSwirl(); // adopt swirled positions before the pin + warm-up
+        highlight(id);
+        if (simRef.current) {
+          // Force layouts: pin the node in the worker (it owns the mutable sim
+          // node now) and hold the sim warm for the WHOLE drag — a one-shot
+          // reheat cools toward 0 and re-settles within ~1s, freezing the
+          // neighbourhood mid-drag (worse the bigger the vault). dragWarm keeps
+          // it ticking so the neighbours keep trailing until the drag ends.
+          draggedSim = simRef.current.nodes.find((n) => n.id === id);
+          if (draggedSim) {
+            simRef.current.setFixed(id, draggedSim.x, draggedSim.y, draggedSim.z);
+          }
+          simRef.current.dragWarm(true);
+        } else {
+          // Static (deterministic) layouts have no sim — run a local elastic
+          // relaxation so the neighbourhood follows the pulled node.
+          staticDrag.begin(id);
+        }
+      },
+      onDrag: (id, x, y, z) => {
+        simRef.current?.setFixed(id, x, y, z);
+        // Render the dragged node at the cursor immediately — the worker tick
+        // confirming the pin arrives a frame or two later, so apply locally for
+        // zero-latency drag feedback.
+        graph.mergeNodeAttributes(id, { x, y, z });
+        sceneRef.current?.syncPositions();
+      },
+      onDragEnd: () => {
+        clearHighlight();
+        if (simRef.current) {
+          if (draggedSim) simRef.current.releaseFixed(draggedSim.id);
+          draggedSim = undefined;
+          // Release the warm hold: the sim cools from its drag alpha and eases
+          // the freed star + neighbours back to rest, then posts the settle notice.
+          simRef.current.dragWarm(false);
+        } else {
+          // Static layout: ease the pulled neighbourhood back to the baked layout.
+          staticDrag.release();
+        }
+      },
+      onContextLost: () => {
+        if (!killed) setCtxLost(true);
+      },
+      onContextRestored: () => {
+        setCtxLost(false);
+        setGlEpoch((n) => n + 1);
+      },
+    });
+    sceneRef.current = scene;
+    // Condensation intro: stars are born condensing into place — once per
+    // Graph visit, not on every filter-rebuild of the scene.
+    if (!introPlayedRef.current) {
+      introPlayedRef.current = true;
+      scene.playCondensation();
+    }
+    // Seeded deep sky: every vault gets its own faint nebula backdrop, baked
+    // once off the critical path. Deep-space skins only — web/sigma/black own
+    // their voids, and paper stays paper.
+    if (s.skin === "galaxy" || (s.skin === "auto" && !lightBg)) {
+      const bakeSky = (): void => {
+        if (killed) return;
+        const tex = bakeSeededSky(currentVault?.path ?? "memex", true);
+        if (tex && !killed && sceneRef.current === scene) {
+          scene.setSkyTexture(tex);
+        }
+      };
+      // The bake is a single ~400ms main-thread block (measured on a 1244-node
+      // first load). At the old 80ms delay it landed squarely inside the
+      // condensation intro and froze it; an idle slot pushes it past the frames
+      // the user is actually watching. The timeout still guarantees a sky on a
+      // busy main thread, and older webviews without rIC just wait it out.
+      if (typeof requestIdleCallback === "function") {
+        requestIdleCallback(bakeSky, { timeout: 2500 });
+      } else {
+        window.setTimeout(bakeSky, 2500);
+      }
+    }
+    scene.setScaleListener((sc) => {
+      const label = { cluster: "Galaxy cluster", galaxy: "Galaxy", system: "Star system", star: "Star" }[sc];
+      setCosmicScale(label);
+      if (scaleHideRef.current != null) window.clearTimeout(scaleHideRef.current);
+      scaleHideRef.current = window.setTimeout(() => setCosmicScale(null), 2200);
+    });
+    // Compile the shader programs before the first frame rather than letting
+    // three.js do it lazily mid-animation — profiling put the first-load
+    // stutter squarely on program compilation.
+    scene.warmUpShaders();
+    scene.start();
+
+    // DEV-ONLY: expose the scene/graph so a screenshot harness can drive it.
+    if (import.meta.env.DEV) {
+      (window as unknown as { __graphDev?: unknown }).__graphDev = {
+        scene,
+        graph,
+        rect: () => container.getBoundingClientRect(),
+      };
+    }
+
+    // Static 2D ForceAtlas2 layouts (no worker sim): "atlas" = compact Gephi
+    // territory map (+ hull fills); "synapse" = communities flung far apart
+    // as bright cores joined by nerve-fibre bridges. Both run the same sliced
+    // FA2 pipeline; only the force tuning + edge rendering differ. Everything
+    // downstream guards on simRef being null.
+    // Semantic map: 2D PCA coordinates come from Rust (page embeddings never
+    // cross the bridge). Notes cluster by MEANING; wikilink edges stay drawn
+    // over it as the explicit structure. No index → spiral fallback + a hint.
+    if (s.layout === "semantic") {
+      const radius = s.linkDistance * ATLAS_RADIUS_MUL;
+      const finish = (): void => {
+        if (killed) return;
+        sceneRef.current?.syncPositions();
+        sceneRef.current?.layoutSettled();
+        sceneRef.current?.fit();
+        introPlayed = true;
+        container.classList.add("graph-ready");
+      };
+      void ipc
+        .semanticMap()
+        .then((pts) => {
+          if (killed) return;
+          if (pts.length === 0) {
+            applySpiralLayout(graph, { targetRadius: radius * 1.3 });
+            setSemanticMissing(true);
+          } else {
+            setSemanticMissing(false);
+            const at = new Map(pts.map((p) => [p.page, p]));
+            graph.forEachNode((id) => {
+              const p = at.get(id);
+              if (p) {
+                // 3D meaning-nebula: PC1/PC2 span the map, PC3 gives depth —
+                // flattened to 55% so the top-down reading stays a map.
+                graph.setNodeAttribute(id, "x", p.x * radius);
+                graph.setNodeAttribute(id, "y", p.y * radius);
+                graph.setNodeAttribute(id, "z", p.z * radius * 0.55);
+              } else {
+                // No embedding (ghost / not yet indexed): park on the outer
+                // ring so it reads "outside the mapped meaning", not random.
+                const ang = seededUnit(id, 31) * Math.PI * 2;
+                graph.setNodeAttribute(id, "x", Math.cos(ang) * radius * 1.14);
+                graph.setNodeAttribute(id, "y", Math.sin(ang) * radius * 1.14);
+                graph.setNodeAttribute(id, "z", (seededUnit(id, 37) - 0.5) * radius * 0.2);
+              }
+            });
+            // PCA puts near-synonymous notes on top of each other (that IS the
+            // signal) and parks every unembedded ghost on ONE ring radius, so
+            // the raw map violates the no-overlap invariant badly. Same shared
+            // post-process every other layout uses: local push-apart, so a tied
+            // pair separates just enough to read as two notes while the PC1/PC2
+            // map keeps its shape.
+            separateGraphLayout(graph);
+          }
+          finish();
+        })
+        .catch(() => {
+          if (killed) return;
+          applySpiralLayout(graph, { targetRadius: radius * 1.3 });
+          setSemanticMissing(true);
+          finish();
+        });
+      return () => {
+        killed = true;
+        if (tlRafRef.current != null) {
+          cancelAnimationFrame(tlRafRef.current);
+          tlRafRef.current = null;
+        }
+        stopTlRecorder();
+        setTlPlaying(false);
+        staticDrag.dispose();
+        scene.dispose();
+        sceneRef.current = null;
+        graphRef.current = null;
+        container.classList.remove("graph-ready");
+      };
+    }
+
+    // Pure-math static layouts (spiral galaxy / time strata): positions are a
+    // deterministic O(n log n) function of the built graph — no FA2 slices, no
+    // worker sim. Compute, bake, reveal in one fit. "mycelium" is a no-op here
+    // on purpose: its picture comes from MyceliumView, a wholly separate
+    // renderer mounted OVER this (invisible while active) canvas — see
+    // myceliumScene.ts for why it owns its own layout and growth clock instead.
+    if (
+      s.layout === "spiral" ||
+      s.layout === "strata" ||
+      s.layout === "celestial" ||
+      s.layout === "radial" ||
+      s.layout === "walrus" ||
+      s.layout === "mycelium"
+    ) {
+      const radius = s.linkDistance * ATLAS_RADIUS_MUL;
+      if (s.layout === "spiral") {
+        applySpiralLayout(graph, { targetRadius: radius * 1.3 });
+      } else if (s.layout === "celestial") {
+        applyCelestialLayout(graph, { targetRadius: radius * 1.1 });
+      } else if (s.layout === "radial") {
+        applyRadialLayout(graph, { targetRadius: radius * 1.2 });
+      } else if (s.layout === "walrus") {
+        applyWalrusLayout(graph, { targetRadius: radius * 1.25 });
+      } else if (s.layout === "mycelium") {
+        // No-op — see the comment above.
+      } else {
+        // Chronicle: bake the time-strata positions AND draw the date axis
+        // under them (the axis shares the layout's time→x mapping).
+        const axis = applyStrataLayout(graph, { mtimes, targetRadius: radius * 1.2 });
+        scene.setTimeAxis(axis);
+      }
+      scene.syncPositions();
+      // Walrus: draw the CAIDA boundary sphere around the baked ball (after
+      // syncPositions so it reads the final node positions).
+      scene.setWalrusBoundary(s.layout === "walrus");
+      scene.layoutSettled();
+      scene.fit();
+      introPlayed = true;
+      container.classList.add("graph-ready");
+      return () => {
+        killed = true;
+        if (tlRafRef.current != null) {
+          cancelAnimationFrame(tlRafRef.current);
+          tlRafRef.current = null;
+        }
+        stopTlRecorder();
+        setTlPlaying(false);
+        staticDrag.dispose();
+        scene.dispose();
+        sceneRef.current = null;
+        graphRef.current = null;
+        container.classList.remove("graph-ready");
+      };
+    }
+
+    if (s.layout === "atlas" || s.layout === "synapse") {
+      // FA2 runs in event-loop slices (see atlasLayout.ts freeze postmortem):
+      // the map visibly unfolds as it converges, the UI stays interactive the
+      // whole time, and unmount/layout-switch aborts mid-run. NEVER run it
+      // synchronously — a 10k vault wedged the WebKit renderer for minutes
+      // and the persisted layout choice re-froze every app launch.
+      // Hold the loader through the WHOLE FA2 formation, then reveal the
+      // finished map in ONE instant fit. The old code streamed the raw FA2
+      // positions and re-framed every few slices — but synapse's raw FA2
+      // spread is far bigger than the final separated+normalised layout, so
+      // the graph appeared to explode outward and the camera drifted far
+      // ("갑자기 엄청 멀어지면서"); a mid-formation interaction could even
+      // strand the camera at the huge frame. A flat 2D map has nothing to
+      // gain from a forming preview, so we just show the finished result.
+      void applyAtlasLayout(graph, {
+        variant: s.layout === "synapse" ? "synapse" : "atlas",
+        // Synapse spreads wider, so give it more world room to frame into.
+        targetRadius: s.linkDistance * ATLAS_RADIUS_MUL * (s.layout === "synapse" ? 1.6 : 1),
+        shouldAbort: () => killed,
+      }).then((completed) => {
+        if (killed || !completed) return;
+        sceneRef.current?.syncPositions();
+        sceneRef.current?.layoutSettled(); // bundled strands over the static map
+        // Instant fit (no tween): a flat map doesn't need the cinematic
+        // fly-in, and an instant snap can't be stranded by an interaction.
+        sceneRef.current?.fit();
+        introPlayed = true;
+        container.classList.add("graph-ready");
+      });
+      return () => {
+        killed = true;
+        if (tlRafRef.current != null) {
+          cancelAnimationFrame(tlRafRef.current);
+          tlRafRef.current = null;
+        }
+        // The RAF drove the finish path that stops the recorder, so cancelling
+        // it alone would strand the recording on the canvas about to be
+        // disposed — silently, with no file.
+        stopTlRecorder();
+        setTlPlaying(false);
+        staticDrag.dispose();
+        scene.dispose();
+        sceneRef.current = null;
+        graphRef.current = null;
+        container.classList.remove("graph-ready");
+      };
+    }
+
+    // The sim runs in a worker; each tick posts a position array (node order)
+    // that the scene applies directly to its buffers (and mirrors back into the
+    // graph for hover/fit/nebula). The main thread never runs the force stack.
+    const sim = createSim(graph, s, (positions) =>
+      sceneRef.current?.applyPositions(positions),
+    );
+    simRef.current = sim;
+
+    // A user drag/zoom hands the camera over so the settle re-fit doesn't fight
+    // manual orbit.
+    const takeOver = (): void => {
+      userTookOver = true;
+    };
+    container.addEventListener("wheel", takeOver, { passive: true, once: true });
+    container.addEventListener("pointerdown", takeOver, { once: true });
+
+    // Track the layout with the camera as it settles — the seeded sphere is
+    // large, so without re-fitting the cluster shrinks to a speck while the
+    // camera stays far. Stops once the user orbits or the sim settles.
+    const fitTimer = window.setInterval(() => {
+      if (!killed && !userTookOver) sceneRef.current?.fit();
+    }, 450);
+    const revealTimer = window.setTimeout(() => {
+      if (!killed) container.classList.add("graph-ready");
+    }, 300);
+    const finalFit = (metrics?: LayoutMetrics): void => {
+      window.clearInterval(fitTimer);
+      if (killed) return;
+      // Frame from the worker's measured settled extent when available (A1);
+      // the no-metrics safety path falls back to the scene's own scan.
+      if (!userTookOver) {
+        // First settle: cinematic eased arrival onto the framed galaxy.
+        // Later settles (drag/slider) re-frame instantly as before.
+        sceneRef.current?.fit(metrics, introPlayed ? 0 : 2600);
+        introPlayed = true;
+      }
+      container.classList.add("graph-ready");
+    };
+    const revealSafety = window.setTimeout(finalFit, 12000);
+    sim.onSettle((metrics) => {
+      window.clearTimeout(revealSafety);
+      if (killed) return;
+      // Every settle (initial, post-drag, post-slider) refreshes the bundled
+      // strands so the arcs track wherever the clusters ended up.
+      sceneRef.current?.layoutSettled();
+      finalFit(metrics);
+    });
+
     return () => {
       killed = true;
+      window.clearInterval(fitTimer);
+      window.clearTimeout(revealTimer);
+      window.clearTimeout(revealSafety);
+      // Tear down any in-flight timelapse before scene/sim die.
+      if (tlRafRef.current != null) {
+        cancelAnimationFrame(tlRafRef.current);
+        tlRafRef.current = null;
+      }
+      stopTlRecorder();
+      setTlPlaying(false);
+      container.removeEventListener("wheel", takeOver);
+      container.removeEventListener("pointerdown", takeOver);
+      sim.stop();
+      staticDrag.dispose();
+      scene.dispose();
+      sceneRef.current = null;
+      simRef.current = null;
+      graphRef.current = null;
+      container.classList.remove("graph-ready");
     };
-  }, [settings.question, semEdges]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    adjacency,
+    allFiles,
+    currentVault?.path,
+    settings.tagFilter,
+    settings.folderFilter,
+    deferredSearch,
+    settings.existingOnly,
+    settings.showOrphans,
+    settings.nodeSize,
+    settings.folderGalaxies,
+    settings.layout,
+    settings.multiverse,
+    enteredUniverse,
+    mtimes,
+    glEpoch,
+    // NOTE: lightBg is intentionally NOT here — a light/dark flip recolours the
+    // existing graph in place (see the theme effect) instead of rebuilding the
+    // whole sim, which would reflow the layout and jitter on every skin switch.
+  ]);
 
+  // Force sliders — re-tune the running sim in place (no rebuild), then ease.
   useEffect(() => {
-    const canvas = canvasRef.current;
-    const g = derived?.graph;
-    if (!canvas || !g) return;
-    canvas.setBridges(
-      settings.question === "clusters" && semEdges?.length
-        ? clusterBridges(g, semEdges).map((b) => [b.a, b.b] as [number, number])
-        : [],
-    );
-  }, [derived, semEdges, settings.question]);
+    if (!simRef.current) return;
+    syncSwirl(); // the update reheats — adopt swirled positions first
+    simRef.current.update(settings);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    settings.centerForce,
+    settings.repelForce,
+    settings.linkForce,
+    settings.linkDistance,
+    settings.clusterForce,
+  ]);
 
-  // Theme flip: re-read the CSS variables and restyle (no rebuild, no reflow).
+  // Display sliders — restyle without rebuilding the graph/sim.
+  useEffect(() => {
+    sceneRef.current?.applySettings(settings);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    settings.linkThickness,
+    settings.textFadeThreshold,
+    settings.arrows,
+    settings.arrowSize,
+    settings.brightness,
+    settings.ambientMotion,
+    settings.nodeColor,
+    settings.monoBelow,
+    settings.nodeColorDepth,
+    settings.edgeBundles,
+    settings.edgeTint,
+    settings.cosmicEvents,
+    settings.cosmicFrequency,
+    settings.clickBurst,
+    settings.neuralFiring,
+    settings.nearFieldPlanets,
+    settings.skyStyle,
+    settings.recencyGlow,
+    settings.minimap,
+    settings.cinematic,
+    settings.edgeFlow,
+    // linkDistance drives the sim, but applySettings' closing
+    // writeEdgeGeometry also derives the edge length-fade thresholds from it —
+    // without this key a slider move (or a loose/dense preset) left the whole
+    // web dimming against stale thresholds until an unrelated toggle fired.
+    settings.linkDistance,
+  ]);
+
+  // Selection streak: mirror the inspector's subject into the scene so the
+  // selected star carries its anamorphic mark (cleared on deselect).
+  useEffect(() => {
+    sceneRef.current?.setSelectedNode(selected);
+  }, [selected]);
+
+  // Theme/skin toggle — recolour the scene. Re-read AFTER the app's theme
+  // effect has flipped --bg (rAF + a slow-start safety timeout). A skin change
+  // rides the same path: sync the scene's settings first (the starfield/nebula
+  // gates read settings.skin), then apply the resolved palette.
   useEffect(() => {
     const apply = (): void => {
-      const th = readTheme();
-      setTheme(th);
-      canvasRef.current?.setTheme(th);
+      const sc = sceneRef.current;
+      if (!sc) return;
+      // Recolour the graph in place for the resolved light/dark background, then
+      // applyTheme's writeNodes pushes the new colours — no sim rebuild/jitter.
+      const g = graphRef.current;
+      if (g)
+        recolorGraph(
+          g,
+          isLightBackground(makeTheme(settingsRef.current.skin)),
+          settingsRef.current.skin === "sigma",
+        );
+      sc.applySettings(settingsRef.current);
+      sc.applyTheme(makeTheme(settingsRef.current.skin));
     };
     const raf = requestAnimationFrame(apply);
     const safety = window.setTimeout(apply, 300);
@@ -306,239 +1152,992 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       cancelAnimationFrame(raf);
       window.clearTimeout(safety);
     };
-  }, [uiTheme]);
+  }, [uiTheme, settings.skin]);
 
-  // ── the three exits ───────────────────────────────────────────────────────
-  const act = useCallback(
-    (action: GapAction, id: string): void => {
-      const name = displayName(id);
-      if (action === "open") {
-        if (id.startsWith(GHOST)) notice.warn(t.gr_insp_unresolved);
-        else setRoute(`page:${id}`);
-        return;
+  // Spaceship keyboard: F toggles fly mode, Esc exits. Ignored while typing in an
+  // input so the search box still accepts "f"/Escape. Registered once; reads live
+  // state via refs.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const el = document.activeElement as HTMLElement | null;
+      const typing =
+        !!el &&
+        (el.tagName === "INPUT" ||
+          el.tagName === "TEXTAREA" ||
+          el.isContentEditable);
+      if (typing) return;
+      if (e.key === "f" || e.key === "F") {
+        e.preventDefault();
+        toggleFly(!flyModeRef.current);
+      } else if (e.key === "Escape" && flyModeRef.current) {
+        e.preventDefault();
+        toggleFly(false);
       }
-      if (action === "link") {
-        setQueryPrefill(t.gr_link_question.split("{a}").join(name));
-        setRoute("query");
-        return;
-      }
-      // A wiki gap is not a session, so it cannot join the sessions→wiki
-      // harvest queue. It is a WANTED topic: the same recall-miss log the Ask
-      // abstention card writes, so the next ingest knows what was missing.
-      const vault = currentVault?.path;
-      if (!vault) return;
-      void ipc
-        .recordRecallMiss(vault, name)
-        .then(() => notice.ok(t.gr_want_done.split("{n}").join(name)))
-        .catch((e: unknown) => notice.warn(String(e)));
-    },
-    [currentVault?.path, setRoute, t],
-  );
-
-  const selectNode = useCallback((id: string): void => {
-    setSelected(id);
-    canvasRef.current?.focusNode(id);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const counts: SurveyCounts = derived
-    ? {
-        ...derived.counts,
-        neighbors: hops ? hops.size - 1 : null,
-      }
-    : {
-        total: 0,
-        sample: 0,
-        own: 0,
-        unresolved: 0,
-        gaps: 0,
-        orphans: 0,
-        noBacklink: 0,
-        clusters: 0,
-        maplessClusters: 0,
-        fresh30d: 0,
-        neighbors: null,
-        sessions: sessionCount,
-        cited: 0,
-      };
+  // Re-apply fly mode after a scene rebuild (GL restore / data change) so the
+  // fresh scene resumes flying instead of snapping back to orbit.
+  useEffect(() => {
+    if (flyModeRef.current) sceneRef.current?.setFlyMode(true);
+  }, [glEpoch]);
 
-  const report = useMemo(
-    () => (derived && derived.graph.order > 0 ? analyzeGaps(derived.graph) : null),
-    [derived],
-  );
-  const groups = useMemo(
-    () => (report ? gapGroups(report, derived?.noBacklink ?? [], t) : []),
-    [report, derived, t],
-  );
+  // HUD speed: poll the ship a few times a second while flying (cheap read;
+  // state churn stays out of the render loop).
+  useEffect(() => {
+    if (!flyMode) return;
+    const timer = window.setInterval(() => {
+      setShipSpeed(sceneRef.current?.shipSpeed() ?? 0);
+    }, 150);
+    return () => window.clearInterval(timer);
+  }, [flyMode]);
+
+  // Semantic overlay edges: fetch (or clear) when the toggle flips, then force a
+  // graph rebuild so buildGraph picks them up from the ref.
+  useEffect(() => {
+    let killed = false;
+    if (!settings.semanticEdges) {
+      // Nothing to clear on the first run — the ref starts empty. Bumping
+      // glEpoch here would tear the scene and the sim worker down and rebuild
+      // them for no reason, on every mount, with the default settings.
+      if (semEdgesRef.current.length === 0) return;
+      semEdgesRef.current = [];
+      setGlEpoch((e) => e + 1);
+      return;
+    }
+    ipc
+      .semanticEdges(4)
+      .then((edges) => {
+        if (killed) return;
+        semEdgesRef.current = edges;
+        setGlEpoch((e) => e + 1);
+      })
+      .catch(() => {
+        if (!killed) semEdgesRef.current = [];
+      });
+    return () => {
+      killed = true;
+    };
+  }, [settings.semanticEdges]);
+
+  // Live-ingest glow — mirror ingestStore's touched files into the style ref
+  // and pulse the newest touch. Subscribes once; every change is a cheap scene
+  // restyle (no graph/sim rebuild). Tints survive the run ending so the user
+  // can see what changed; they clear when the store resets.
+  useEffect(() => {
+    const glow = ingestGlowRef.current;
+
+    const startPulse = (id: string): void => {
+      if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+      if (pulseRafRef.current != null) cancelAnimationFrame(pulseRafRef.current);
+      const start = performance.now();
+      const tick = (): void => {
+        const p = (performance.now() - start) / PULSE_MS;
+        if (p >= 1 || !sceneRef.current) {
+          glow.pulseId = null;
+          glow.pulseScale = 1;
+          pulseRafRef.current = null;
+          pushStyle();
+          return;
+        }
+        glow.pulseId = id;
+        // Swell up and ease back: 1 → ~2.6 → 1.
+        glow.pulseScale = 1 + 1.6 * Math.sin(Math.PI * p);
+        pushStyle();
+        pulseRafRef.current = requestAnimationFrame(tick);
+      };
+      pulseRafRef.current = requestAnimationFrame(tick);
+    };
+
+    const sync = (
+      touched: { path: string; write: boolean }[],
+      ingestVault: string | null,
+      pulse: boolean,
+    ): void => {
+      const vault = useVaultStore.getState().currentVault?.path;
+      if (!vault || !ingestVault || ingestVault !== vault) return;
+      let newest: string | null = null;
+      const next = new Map<string, boolean>();
+      for (const f of touched) {
+        const abs = `${vault}/${f.path}`;
+        next.set(abs, f.write);
+        if (glow.tint.get(abs) !== f.write) newest = abs;
+      }
+      glow.tint = next;
+      if (pulse && newest) startPulse(newest);
+      pushStyle();
+    };
+
+    // --- Live growth: pages the ingest writes appear in the galaxy as it runs.
+    // DIFF the rescanned link graph against the rendered one, inject only new
+    // nodes/edges (graph.addNode + sim.liveAdd), then rebuild the scene buffers
+    // so the newcomers render. The settled layout never tears down. ---
+    const liveGrow = (adj: Adjacency): void => {
+      const sim = simRef.current;
+      const g = graphRef.current;
+      const scene = sceneRef.current;
+      const vault = useVaultStore.getState().currentVault?.path;
+      const ing = useIngestStore.getState();
+      if (!sim || !g || !scene || !vault || ing.vaultPath !== vault) return;
+      const s = settingsRef.current;
+      const theme = makeTheme(s.skin);
+      const files = flattenMarkdown(useVaultStore.getState().fileTree);
+      const allowed = computeAllowed(adj, files, {
+        tagFilter: s.tagFilter,
+        folderFilter: s.folderFilter,
+        vaultRoot: vault,
+        search: s.search,
+        existingOnly: s.existingOnly,
+        showOrphans: s.showOrphans,
+      });
+
+      const newEdges: [string, string][] = [];
+      const newIdSet = new Set<string>();
+      for (const [src, targets] of Object.entries(adj.forward)) {
+        if (!allowed.has(src)) continue;
+        for (const tgt of targets) {
+          if (!allowed.has(tgt)) continue;
+          const srcKnown = g.hasNode(src);
+          const tgtKnown = g.hasNode(tgt);
+          if (srcKnown && tgtKnown && g.hasEdge(src, tgt)) continue;
+          if (!srcKnown) newIdSet.add(src);
+          if (!tgtKnown) newIdSet.add(tgt);
+          newEdges.push([src, tgt]);
+        }
+      }
+      if (newIdSet.size === 0 && newEdges.length === 0) return;
+
+      // Position each new node beside its first positioned endpoint so it buds
+      // off the cluster instead of streaking in from the far field.
+      const placed = new Map<string, { x: number; y: number; z: number }>();
+      const posOf = (id: string): { x: number; y: number; z: number } | null => {
+        if (g.hasNode(id))
+          return {
+            x: g.getNodeAttribute(id, "x"),
+            y: g.getNodeAttribute(id, "y"),
+            z: g.getNodeAttribute(id, "z"),
+          };
+        return placed.get(id) ?? null;
+      };
+      const jitter = (): number => (Math.random() - 0.5) * 40;
+      for (const id of newIdSet) {
+        let near: { x: number; y: number; z: number } | null = null;
+        for (const [a, b] of newEdges) {
+          if (a === id) near = posOf(b);
+          else if (b === id) near = posOf(a);
+          if (near) break;
+        }
+        placed.set(id, {
+          x: (near?.x ?? 0) + jitter(),
+          y: (near?.y ?? 0) + jitter(),
+          z: (near?.z ?? 0) + jitter(),
+        });
+      }
+      for (const id of newIdSet) {
+        const p = placed.get(id)!;
+        g.addNode(id, {
+          label: stem(id),
+          x: p.x,
+          y: p.y,
+          z: p.z,
+          deg: 0,
+          size: Math.max(1, s.nodeSize),
+          color: theme.starDim,
+          community: -1, // field star until the next colorByCommunity rebuild
+          galaxy: -1, // assigned on the next folderGroups rebuild
+          isHub: false,
+          intensity: 0,
+        });
+      }
+      const addedEdges: [string, string][] = [];
+      for (const [a, b] of newEdges) {
+        if (!g.hasNode(a) || !g.hasNode(b) || g.hasEdge(a, b)) continue;
+        g.addEdge(a, b, { color: theme.edge, size: 0.6 * s.linkThickness });
+        addedEdges.push([a, b]);
+      }
+      // Degree-derived size for the newcomers only — existing stars keep theirs
+      // until the end-of-run rebuild recomputes everything.
+      for (const id of newIdSet) {
+        const deg = g.degree(id);
+        g.mergeNodeAttributes(id, {
+          deg,
+          size: Math.max(1, Math.min(5, 1 + Math.sqrt(deg) * 0.7)) * s.nodeSize,
+          starKind: starKindOf(id, deg, 0),
+        });
+      }
+      syncSwirl(); // liveAdd reheats — adopt swirled positions first
+      sim.liveAdd([...newIdSet], addedEdges);
+      scene.rebuild();
+      // Birth motion: the just-added notes grow in from nothing at their spots
+      // (the ingest gold-glow tint rides on top via pushStyle) — the galaxy
+      // visibly sprouts what the run is writing.
+      if (newIdSet.size > 0) scene.playBirth(newIdSet);
+      pushStyle();
+      setCounts({ nodes: g.order, edges: g.size });
+    };
+
+    // Adopt any already-running (or just-finished) ingest on mount.
+    const st = useIngestStore.getState();
+    sync(st.touched, st.vaultPath, false);
+    if (st.liveAdjacency) liveGrow(st.liveAdjacency);
+
+    const unsub = useIngestStore.subscribe((s, prev) => {
+      if (s.stage === "idle" && prev.stage !== "idle") {
+        glow.tint = new Map();
+        glow.pulseId = null;
+        pushStyle();
+        return;
+      }
+      if (s.touched !== prev.touched) sync(s.touched, s.vaultPath, true);
+      if (s.liveAdjacency && s.liveAdjacency !== prev.liveAdjacency)
+        liveGrow(s.liveAdjacency);
+    });
+    return () => {
+      unsub();
+      if (pulseRafRef.current != null) cancelAnimationFrame(pulseRafRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Timelapse — replay the vault's growth in creation order with LIVE physics.
+  // The sim is reset to empty, then nodes are revealed oldest-first; each spawns
+  // at the galactic centre and the running d3-force-3d flings it outward,
+  // physically shoving the placed stars aside. The galaxy assembles in real time.
+  const REVEAL_MS = 18000;
+  // --- timelapse WebM recorder: captureStream on the WebGL canvas while the
+  // replay runs, download on finish. The vault-growing-into-a-galaxy clip is
+  // the single most shareable thing the app produces — one click, no tooling.
+  const tlRecorderRef = useRef<MediaRecorder | null>(null);
+  // The capture stream is retained so its track can be released. Without it the
+  // track stays live for the session even after a clean recording, holding the
+  // canvas capture open.
+  const tlStreamRef = useRef<MediaStream | null>(null);
+  const stopTlRecorder = (): void => {
+    const rec = tlRecorderRef.current;
+    const stream = tlStreamRef.current;
+    tlRecorderRef.current = null;
+    tlStreamRef.current = null;
+    // stop() flushes a last dataavailable and fires onstop, so an interrupted
+    // recording still downloads what it captured instead of vanishing.
+    if (rec && rec.state !== "inactive") rec.stop();
+    for (const track of stream?.getTracks() ?? []) track.stop();
+  };
+  const startTlRecorder = (): void => {
+    const canvas = sceneRef.current?.canvas;
+    if (!canvas || typeof MediaRecorder === "undefined") return;
+    try {
+      const stream = canvas.captureStream(30);
+      tlStreamRef.current = stream;
+      const mime = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(
+        (m) => MediaRecorder.isTypeSupported(m),
+      );
+      const rec = new MediaRecorder(stream, {
+        mimeType: mime,
+        videoBitsPerSecond: 8_000_000,
+      });
+      const chunks: Blob[] = [];
+      rec.ondataavailable = (e) => {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      rec.onstop = () => {
+        if (chunks.length === 0) return;
+        const url = URL.createObjectURL(new Blob(chunks, { type: "video/webm" }));
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = "myco-timelapse.webm";
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10_000);
+      };
+      rec.start(500);
+      tlRecorderRef.current = rec;
+    } catch {
+      tlRecorderRef.current = null; // recording is best-effort sugar
+    }
+  };
+
+  const startTimelapse = (record = false): void => {
+    const scene = sceneRef.current;
+    const sim = simRef.current;
+    const graph = graphRef.current;
+    if (!scene || !sim || !graph || graph.order === 0) return;
+    scene.setCinematicOrbit(true); // recordings read as a produced shot
+    if (record) startTlRecorder();
+
+    const present = new Set(graph.nodes());
+    const order = tlOrderRef.current.filter((p) => present.has(p));
+    const seen = new Set(order);
+    graph.forEachNode((n) => {
+      if (!seen.has(n)) order.push(n);
+    });
+
+    graph.forEachNode((n) => graph.setNodeAttribute(n, "hidden", true));
+    sim.timelapseReset();
+    scene.refreshStyle(); // `hidden` changed → full write (per-tick path is pos-only)
+    // Blank the bundled strands too — every node is hidden, so the rebuild
+    // empties all tiers; without this up to 80 stale arcs float over the empty
+    // sky for the whole replay (no settle fires until the end restores them).
+    scene.layoutSettled();
+    setTlPlaying(true);
+
+    let next = 0;
+    // Progress accumulates per-frame scaled by the LIVE speed setting, so the
+    // slider works mid-replay (an elapsed-time mapping would jump).
+    let progress = 0;
+    let last = performance.now();
+    const step = (): void => {
+      const sc = sceneRef.current;
+      const sm = simRef.current;
+      const g = graphRef.current;
+      if (!sc || !sm || !g) {
+        tlRafRef.current = null;
+        return;
+      }
+      const now = performance.now();
+      progress += ((now - last) * (settingsRef.current.tlSpeed || 1)) / REVEAL_MS;
+      last = now;
+      const want = Math.min(order.length, Math.ceil(progress * order.length));
+      if (want > next) {
+        const batch = order.slice(next, want);
+        for (const id of batch) g.setNodeAttribute(id, "hidden", false);
+        sm.timelapseReveal(batch); // spawns at centre + keeps the sim hot
+        sc.refreshStyle(); // newly-revealed nodes/edges need their alpha/colour
+        next = want;
+      }
+      if (next < order.length) {
+        tlRafRef.current = requestAnimationFrame(step);
+      } else {
+        sm.timelapseSettle();
+        // Finale: the year-of-notes replay ends on a bang — a supernova at the
+        // last (newest) star revealed. No-op under OS reduced motion.
+        if (order.length > 0) sc.supernovaAt(order[order.length - 1]);
+        tlRafRef.current = null;
+        setTlPlaying(false);
+        sc.setCinematicOrbit(false);
+        // Let the final settle breathe on camera before the clip ends.
+        window.setTimeout(stopTlRecorder, 2500);
+      }
+    };
+    tlRafRef.current = requestAnimationFrame(step);
+  };
+
+  // Pause — reveal everything that's left at once, then let the live sim settle.
+  const pauseTimelapse = (): void => {
+    if (tlRafRef.current != null) {
+      cancelAnimationFrame(tlRafRef.current);
+      tlRafRef.current = null;
+    }
+    const scene = sceneRef.current;
+    const sim = simRef.current;
+    const graph = graphRef.current;
+    if (scene && sim && graph) {
+      graph.forEachNode((n) => graph.setNodeAttribute(n, "hidden", false));
+      sim.timelapseReveal(graph.nodes());
+      sim.timelapseSettle();
+      scene.refreshStyle(); // un-hid everything → full write to restore alpha/colour
+      scene.setCinematicOrbit(false);
+    }
+    stopTlRecorder();
+    setTlPlaying(false);
+  };
+
+  // Play/pause the timelapse — shared by the toolbar's ▶ button and the
+  // settings drawer's footer button so neither can drift out of sync with
+  // the other. Mycelium is a separate renderer with its own growth clock,
+  // not the worker-sim timelapse this drives for every other layout —
+  // replay is a one-shot reveal, nothing to pause.
+  const toggleTimelapse = (): void => {
+    if (settings.skin === "mycelium") {
+      myceliumGrowthRef.current?.();
+      return;
+    }
+    if (tlPlaying) pauseTimelapse();
+    else startTimelapse();
+  };
+
+  useEffect(() => {
+    return () => {
+      if (tlRafRef.current != null) cancelAnimationFrame(tlRafRef.current);
+      stopTlRecorder();
+    };
+  }, []);
+
+  // Live search highlight: every node matching the find box pulses IN PHASE
+  // while the rest recede — pre-attentive pop-out of the matched set as you
+  // type, before committing to the Enter fly-to.
+  const updateSearchHits = (q: string): void => {
+    const g = graphRef.current;
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const needle = q.trim().toLowerCase();
+    if (!g || !needle) {
+      scene.setSearchHits(null);
+      return;
+    }
+    const hits = new Set<string>();
+    g.forEachNode((id) => {
+      if (stem(id).toLowerCase().includes(needle)) hits.add(id);
+    });
+    scene.setSearchHits(hits);
+  };
+
+  // Search-to-focus: fly the camera to the best-matching node and open its
+  // inspector. Distinct from the drawer's filter search (which subsets the
+  // graph); this leaves the graph intact and just frames + selects a star.
+  const focusFind = (q: string): void => {
+    const g = graphRef.current;
+    const scene = sceneRef.current;
+    const needle = q.trim().toLowerCase();
+    if (!g || !scene || !needle) return;
+    let best: string | null = null;
+    let bestScore = 0;
+    let bestLen = Infinity;
+    g.forEachNode((id) => {
+      const s = stem(id).toLowerCase();
+      const score =
+        s === needle ? 3 : s.startsWith(needle) ? 2 : s.includes(needle) ? 1 : 0;
+      if (score === 0) return;
+      if (score > bestScore || (score === bestScore && s.length < bestLen)) {
+        best = id;
+        bestScore = score;
+        bestLen = s.length;
+      }
+    });
+    if (best) {
+      setSelected(best);
+      scene.focusNode(best);
+      myceliumFocusRef.current?.(best);
+    }
+  };
+
+  // Shortest-path: when a start node is pinned and another is selected, BFS the
+  // route and light it on the filament layer (spec B3) via pathRef → pushStyle.
+  useEffect(() => {
+    const g = graphRef.current;
+    if (
+      !g ||
+      !pathAnchor ||
+      !selected ||
+      pathAnchor === selected ||
+      !g.hasNode(pathAnchor) ||
+      !g.hasNode(selected)
+    ) {
+      if (pathRef.current) {
+        pathRef.current = null;
+        setPath(null);
+        pushStyle();
+        sceneRef.current?.setTrace(null);
+      }
+      return;
+    }
+    const p = shortestPath(g, pathAnchor, selected);
+    pathRef.current = p;
+    setPath(p);
+    pushStyle();
+    // Animate the traversal comet along the resolved route (null path = clear).
+    sceneRef.current?.setTrace(p);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathAnchor, selected]);
 
   const totalNodes = countAllNodes(adjacency);
 
+  // Node info for the spaceship HUD (title, colour, link count, neighbours).
+  const flyNode = useMemo(() => {
+    if (!flyMode || !selected) return null;
+    const g = graphRef.current;
+    if (!g || !g.hasNode(selected)) return null;
+    const a = g.getNodeAttributes(selected);
+    return {
+      id: selected,
+      title: stem(selected),
+      color: a.color ?? "#9aa6c2",
+      degree: g.degree(selected),
+      neighbors: g.neighbors(selected).slice(0, 10).map(stem),
+    };
+  }, [flyMode, selected]);
+
   return (
-    <div className="workspace workspace-wide sv">
-      <h1 className="sv-sr">{t.gr_title}</h1>
-      <GraphControls
-        t={t}
-        settings={settings}
-        counts={counts}
-        build={build}
-        search={search}
-        onChange={(patch) => setSettings((s) => ({ ...s, ...patch }))}
-        onSearch={setSearch}
-      />
-
-      <div className="sv-work">
-        <GraphGaps
-          t={t}
-          groups={groups}
-          total={report ? gapCount(report) : 0}
-          selected={selected}
-          onSelect={selectNode}
-          onAction={act}
-        />
-
-        <section className="sv-stage" aria-label={t.gr_title}>
-          <div ref={hostRef} className="sv-canvas" />
-          {totalNodes === 0 ? (
-            <p className="muted sv-stage__empty">
-              {t.gr_empty_pre}
-              <code className="mono">[[wikilinks]]</code>
-              {t.gr_empty_post}
-            </p>
-          ) : null}
-          <span className="sv-stage__hint">{t.gr_stage_hint}</span>
-          {tip && derived ? (
-            <div
-              className="sv-tip"
-              role="status"
-              style={{ left: Math.min(tip.x + 12, 600), top: tip.y + 12 }}
+    <div
+      className={`workspace workspace-wide${flyMode ? " graph-fullscreen" : ""}`}
+    >
+      <header className="page-head">
+        <div className="page-eyebrow">{t.nav_graph}</div>
+        <h1 className="page-title">{t.gr_title}</h1>
+        <p className="page-lede">{t.gr_lede}</p>
+      </header>
+      <div className="graph-shell">
+        <div className="graph-toolbar">
+          <span className="graph-stat">
+            {counts.nodes}/{totalNodes} {t.gr_node_count}
+          </span>
+          <span className="graph-stat">
+            {counts.edges} {t.gr_edge_count}
+          </span>
+          {focusStack.length > 0 ? (
+            <nav
+              className="graph-crumbs"
+              aria-label={t.gr_focus_trail ?? "Focus trail"}
             >
-              <b>{displayName(tip.id)}</b>
-              <span className="k mono">{tipLine(tip.id, derived, t)}</span>
-            </div>
+              {focusStack.map((f, i) => (
+                <button
+                  key={`${f.kind}-${f.id ?? f.cm}-${i}`}
+                  type="button"
+                  className={`graph-chip${
+                    i === focusStack.length - 1 ? " graph-chip--active" : ""
+                  }`}
+                  title={
+                    i === focusStack.length - 1
+                      ? (t.gr_focus_esc ?? "Esc / click the void to step out")
+                      : undefined
+                  }
+                  onClick={() => popTo(i)}
+                >
+                  {f.label}
+                  {f.kind === "node" && f.hops === 2 ? " ⁺²" : ""}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="graph-chip graph-chip--exit"
+                onClick={() => popFrame()}
+                aria-label={t.gr_focus_esc ?? "Step out (Esc)"}
+                title={t.gr_focus_esc ?? "Step out (Esc)"}
+              >
+                ×
+              </button>
+            </nav>
           ) : null}
-          <div className="sv-stage__note">
-            <span>
-              {counts.total} {t.gr_node_count} · {derived?.graph.size ?? 0} {t.gr_edge_count}
-            </span>
-            <span>{encodingLine(settings.question, t)}</span>
-          </div>
-        </section>
-
-        {adjacency ? (
-          <GraphInspector
-            t={t}
-            nodeId={selected}
-            adjacency={adjacency}
-            isSample={(id) => isSamplePath(vaultRoot, id)}
-            onSelect={selectNode}
-            onOpen={(id) => setRoute(`page:${id}`)}
-            onAction={act}
-            onNeighbors={(id) => {
-              setSelected(id);
-              setSettings((s) => ({ ...s, question: "neighbors" }));
+          <input
+            className="graph-find"
+            type="search"
+            value={find}
+            placeholder={t.gr_find_ph ?? "Find a note…"}
+            aria-label={t.gr_find_ph ?? "Find a note"}
+            onChange={(e) => {
+              setFind(e.target.value);
+              updateSearchHits(e.target.value);
+            }}
+            onKeyDown={(e) => {
+              if (isComposingKey(e)) return;
+              if (e.key === "Enter") focusFind(find);
             }}
           />
-        ) : null}
+          <div className="graph-toolbar__spacer" />
+          <button
+            type="button"
+            className="graph-toolbar__btn"
+            onClick={toggleTimelapse}
+            aria-pressed={tlPlaying}
+            aria-label={
+              tlPlaying
+                ? (t.gr_timelapse_pause ?? "Pause timelapse")
+                : (t.gr_timelapse_play ?? "Play timelapse")
+            }
+            title={
+              tlPlaying
+                ? (t.gr_timelapse_pause ?? "Pause timelapse")
+                : (t.gr_timelapse_play ?? "Play timelapse")
+            }
+          >
+            {tlPlaying ? (
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                <rect x="2" y="2" width="3" height="8" />
+                <rect x="7" y="2" width="3" height="8" />
+              </svg>
+            ) : (
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                <path d="M3 2 L10 6 L3 10 Z" />
+              </svg>
+            )}
+          </button>
+          <button
+            type="button"
+            className="graph-toolbar__btn"
+            onClick={() => startTimelapse(true)}
+            disabled={tlPlaying}
+            aria-label={t.gr_timelapse_record ?? "Record timelapse (WebM)"}
+            title={t.gr_timelapse_record ?? "Record timelapse (WebM)"}
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+              <circle cx="6" cy="6" r="4" />
+            </svg>
+          </button>
+          {/* Spaceship mode was only reachable via an undocumented F keypress —
+              the most demo-able feature deserves a visible door. */}
+          <button
+            type="button"
+            className="graph-toolbar__btn"
+            onClick={() => toggleFly(!flyModeRef.current)}
+            aria-pressed={flyMode}
+            aria-label={t.gr_fly_btn ?? "Spaceship mode (F)"}
+            title={t.gr_fly_btn ?? "Spaceship mode (F)"}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
+              <path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
+              <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
+              <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
+            </svg>
+          </button>
+          <ZoomButtons sceneRef={sceneRef} t={t} onFit={() => myceliumFitRef.current?.()} />
+          <button
+            type="button"
+            className="graph-toolbar__btn graph-toolbar__btn--badged"
+            onClick={() => setGapsOpen((v) => !v)}
+            aria-pressed={gapsOpen}
+            aria-label={t.gr_gaps_btn ?? "Gap analysis"}
+            title={t.gr_gaps_btn ?? "Gap analysis"}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+              <line x1="12" y1="9" x2="12" y2="13" />
+              <line x1="12" y1="17" x2="12.01" y2="17" />
+            </svg>
+            {gapReport && gapCount(gapReport) > 0 ? (
+              <span className="graph-toolbar__badge">{gapCount(gapReport)}</span>
+            ) : null}
+          </button>
+          <button
+            type="button"
+            className="graph-toolbar__btn"
+            onClick={() => setDrawerOpen((v) => !v)}
+            aria-pressed={drawerOpen}
+            aria-label={t.gr_settings ?? "Graph settings"}
+            title={t.gr_settings ?? "Graph settings"}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+              <circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="2" />
+              <path
+                d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+                stroke="currentColor"
+                strokeWidth="1.4"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </button>
+          {/* Gesture cheat-sheet — click/double-click/Cmd-click/Esc/F/drag were
+              previously undocumented; the "?" is their one visible door. */}
+          <button
+            type="button"
+            className="graph-toolbar__btn"
+            onClick={() => setHelpOpen((v) => !v)}
+            aria-pressed={helpOpen}
+            aria-label={t.gr_help_btn ?? "Gestures & keys"}
+            title={t.gr_help_btn ?? "Gestures & keys"}
+          >
+            ?
+          </button>
+        </div>
+        <div className="graph-body">
+          <div
+            className={
+              "graph-canvas-wrap" +
+              (settings.skin === "mycelium" ? " is-mycelium" : "")
+            }
+          >
+            {/* The container ALWAYS mounts: the build effect bails on a missing
+                one, and it is what builds the graph, clears the loading state
+                and marks .graph-ready. Removing it for the mycelium skin left
+                the page stuck on "arranging constellations…" with no data.
+
+                The mycelium view is a SEPARATE renderer — GraphScene is built
+                for deep space and switching its layers off one at a time never
+                stopped the sky showing through — so it mounts its own canvas
+                OVER this one rather than replacing it. */}
+            <div ref={containerRef} className="graph-canvas" />
+            {settings.skin === "mycelium" && counts.nodes > 0 ? (
+              // `counts` is the render-visible signal that the build finished —
+              // graphRef is a ref, so reading it alone never re-renders and the
+              // view mounted with a null graph and stayed empty.
+              <MyceliumView
+                key={`${counts.nodes}-${counts.edges}-${settings.myceliumDim}-${settings.myceliumNodeColor}-${settings.myceliumHyphaColor}`}
+                graph={graphRef.current}
+                onSelect={setSelected}
+                flat={settings.myceliumDim === "2d"}
+                nodeColor={settings.myceliumNodeColor}
+                hyphaColor={settings.myceliumHyphaColor}
+                background={settings.myceliumBackground}
+                gridGround={matchMyceliumBg(settings) === "grid"}
+                nodeSizeScale={settings.nodeSize}
+                linkThicknessScale={settings.linkThickness}
+                textFadeThreshold={settings.textFadeThreshold}
+                ambientMotion={settings.ambientMotion}
+                growSpeed={settings.tlSpeed}
+                maxNodes={myceliumMaxNodes(myceliumForceDeb.linkDistance, counts.nodes)}
+                branchPct={myceliumBranchPct(myceliumForceDeb.clusterForce)}
+                fitRef={myceliumFitRef}
+                startGrowthRef={myceliumGrowthRef}
+                focusRef={myceliumFocusRef}
+              />
+            ) : null}
+            {/* Multiverse mode: an overlay scene of every project as a
+                universe-bubble, covering the (idle) single-vault canvas. Fly
+                into a bubble to drop into that vault (the saved toggle stays
+                on; re-assert it to come back). */}
+            {showMultiverse ? (
+              <>
+                {sceneUniverses.length > 0 ? (
+                  <MultiverseScene
+                    universes={sceneUniverses}
+                    onEnterUniverse={(slug) => void enterUniverse(slug)}
+                  />
+                ) : (
+                  // No universe yet: still loading the registry/graphs, or no
+                  // vault open. Never a silent black screen (5-state).
+                  <div className="graph-empty" role="status" aria-live="polite">
+                    {mvLoading
+                      ? (t.gr_mv_loading ?? "Charting universes…")
+                      : (t.gr_mv_none ?? "No vault to show yet.")}
+                  </div>
+                )}
+                <p className="muted graph-mv-hint" aria-live="polite">
+                  {t.gr_multiverse_hint ??
+                    "Show every project as its own universe-bubble; fly into one to open it"}
+                </p>
+              </>
+            ) : null}
+            {/* MYCO cameo: a rare, dismissible feature-tip visit — MYCO drifts
+                through the cosmos AS a planet. Belongs to the 3D dark cosmos
+                only (a floating planet over a flat 2D chart or light paper is
+                incongruous), and never in the multiverse field. Also never
+                under the mycelium skin: it anchors to sceneRef's (hidden,
+                no-op) GraphScene camera, which doesn't track what's actually
+                on screen once MyceliumView owns its own camera — the toggle
+                is hidden under mycelium in GraphControls for the same reason. */}
+            {!showMultiverse && counts.nodes > 0 ? (
+              <MascotCameo
+                active={
+                  settings.mascotCameo &&
+                  !lightBg &&
+                  settings.skin !== "mycelium" &&
+                  !FLAT_LAYOUTS.has(settings.layout)
+                }
+                sceneRef={sceneRef}
+                t={t}
+              />
+            ) : null}
+            {/* Loading state: visible until .graph-ready lands on the canvas
+                (adjacent-sibling CSS — no extra React state). */}
+            {!showMultiverse && counts.nodes > 0 ? (
+              <p className="muted graph-loading-tip" aria-hidden="true">
+                {t.gr_loading ?? "aligning constellations…"}
+              </p>
+            ) : null}
+            {!showMultiverse && ctxLost ? (
+              <div className="graph-toast" role="alert">
+                <span>{t.gr_ctx_lost ?? "Graphics context was lost."}</span>
+                <button
+                  type="button"
+                  className="graph-toolbar__btn"
+                  onClick={() => {
+                    setCtxLost(false);
+                    setGlEpoch((n) => n + 1);
+                  }}
+                >
+                  {t.gr_retry ?? "Rebuild"}
+                </button>
+              </div>
+            ) : null}
+            {!showMultiverse && cosmicScale ? (
+              <div className="graph-scale-badge" aria-live="polite">
+                {t[`gr_scale_${cosmicScale === "Galaxy cluster" ? "cluster" : cosmicScale === "Galaxy" ? "galaxy" : cosmicScale === "Star system" ? "system" : "star"}` as keyof Strings] ?? cosmicScale}
+              </div>
+            ) : null}
+            {!showMultiverse && counts.nodes > 5000 ? (
+              <p className="muted graph-perf-banner">
+                {t.gr_perf_mode ??
+                  "Performance mode — ambient layers off for large graphs"}
+              </p>
+            ) : null}
+            {!showMultiverse && settings.layout === "semantic" && semanticMissing ? (
+              <p className="muted graph-perf-banner" role="status">
+                {t.gr_semantic_missing ??
+                  "Semantic map needs the embedding index — run Reindex under Settings → Model, then reopen. Showing the spiral instead."}
+              </p>
+            ) : null}
+            {!showMultiverse && totalNodes === 0 ? (
+              <p className="muted graph-empty">
+                {t.gr_empty_pre ??
+                  "No wikilinks found in the vault yet. Add some "}
+                <code style={{ fontFamily: "var(--font-mono)" }}>
+                  [[wikilinks]]
+                </code>
+                {t.gr_empty_post ?? " to see the graph grow."}
+              </p>
+            ) : null}
+            {!showMultiverse && selected && adjacency ? (
+              <GraphInspector
+                t={t}
+                nodeId={selected}
+                adjacency={adjacency}
+                graph={graphRef.current}
+                pathAnchor={pathAnchor}
+                path={path}
+                onSetAnchor={(id) => setAnchor(id)}
+                onClearAnchor={() => {
+                  setAnchor(null);
+                  pathRef.current = null;
+                  setPath(null);
+                  pushStyle();
+                }}
+                onSelect={(id) => {
+                  setSelected(id);
+                  sceneRef.current?.focusNode(id);
+                  myceliumFocusRef.current?.(id);
+                }}
+                onOpen={(id) => setRoute(`page:${id}`)}
+                onClose={() => setSelected(null)}
+              />
+            ) : null}
+            {!showMultiverse ? (
+              <GraphLegend
+                t={t}
+                galaxies={legendGalaxies}
+                isolated={isolated}
+                onIsolate={isolateCommunity}
+              />
+            ) : null}
+            {!showMultiverse && gapsOpen && gapReport ? (
+              <GraphGaps
+                t={t}
+                report={gapReport}
+                bridges={bridges}
+                onSelect={(id) => {
+                  setSelected(id);
+                  sceneRef.current?.focusNode(id);
+                  myceliumFocusRef.current?.(id);
+                }}
+                onAskBridge={askBridge}
+                onClose={() => setGapsOpen(false)}
+              />
+            ) : null}
+            {helpOpen ? (
+              <GraphHelp t={t} onClose={() => setHelpOpen(false)} />
+            ) : null}
+          </div>
+          <GraphControls
+            t={t}
+            open={drawerOpen}
+            onToggle={() => setDrawerOpen((v) => !v)}
+            settings={settings}
+            onChange={(patch) => {
+              // While drilled into a universe the toggle still reads ON (the
+              // preference). Touching JUST the toggle means "back to the field":
+              // clear the transient enter instead of turning the saved
+              // preference off. Guard on a SINGLE-key {multiverse} patch — a
+              // batch patch (e.g. applying a saved look) that merely happens to
+              // carry the key must NOT be swallowed here.
+              const keys = Object.keys(patch);
+              if (
+                keys.length === 1 &&
+                keys[0] === "multiverse" &&
+                enteredUniverse
+              ) {
+                setEnteredUniverse(false);
+                return;
+              }
+              if (patch.multiverse) setEnteredUniverse(false);
+              // Keep skin/layout in lockstep across the mycelium renderer
+              // boundary — coupleMyceliumPatch handles single-key chips, the
+              // post-merge normalize repairs two-key patches (vibes, saved
+              // looks) that may carry an inconsistent stored pair.
+              setSettings((prev) =>
+                normalizeMyceliumPair({
+                  ...prev,
+                  ...coupleMyceliumPatch(prev, patch),
+                }),
+              );
+            }}
+            onReset={() => {
+              setEnteredUniverse(false);
+              setSettings({ ...DEFAULT_GRAPH_SETTINGS, search: "" });
+            }}
+            tags={tags}
+            folders={folders}
+            tlPlaying={tlPlaying}
+            onTimelapse={toggleTimelapse}
+            traceMode={traceMode}
+            onTraceMode={toggleTrace}
+            flyMode={flyMode}
+            onFlyMode={toggleFly}
+          />
+          {flyMode ? (
+            <ShipHud
+              t={t}
+              node={flyNode}
+              speed={shipSpeed}
+              onClose={() => setSelected(null)}
+              onOpen={(id) => setRoute(`page:${id}`)}
+              onExit={() => toggleFly(false)}
+            />
+          ) : null}
+        </div>
       </div>
     </div>
   );
 }
 
-/** "what the colours and sizes mean right now" — one line under the canvas. */
-function encodingLine(q: Question, t: Strings): string {
-  const map: Record<Question, string> = {
-    orphans: t.gr_enc_orphans,
-    clusters: t.gr_enc_clusters,
-    time: t.gr_enc_time,
-    neighbors: t.gr_enc_neighbors,
-  };
-  return map[q];
-}
-
-function tipLine(id: string, d: Derived, t: Strings): string {
-  const n = d.nodes.get(id);
-  if (!n) return "";
-  if (n.ghost) return t.gr_insp_unresolved;
-  return `${t.gr_insp_backlinks} ${n.backlinks} · ${t.gr_insp_cites} ${n.cites}`;
-}
-
-/** Everything the questions read, derived once per built graph. */
-function derive(
-  graph: VaultGraph,
-  adjacency: { backward: Record<string, string[]>; meta?: Record<string, { sourceCount?: number }> },
-  vaultRoot: string,
-  sessions: number,
-  t: Strings,
-): Derived {
-  void t;
-  const nodes = new Map<string, EncNode>();
-  const noBacklink: string[] = [];
-  let maxBacklinks = 1;
-  let sample = 0;
-  let own = 0;
-  let unresolved = 0;
-  let orphans = 0;
-  let fresh30d = 0;
-  let cited = 0;
-
-  graph.forEachNode((id, a) => {
-    const ghost = id.startsWith(GHOST);
-    const backlinks = ghost
-      ? 0
-      : (adjacency.backward[id] ?? []).filter((s) => graph.hasNode(s)).length;
-    const cites = adjacency.meta?.[id]?.sourceCount ?? 0;
-    const deg = graph.degree(id);
-    if (backlinks > maxBacklinks) maxBacklinks = backlinks;
-    if (ghost) unresolved++;
-    else if (isSamplePath(vaultRoot, id)) sample++;
-    else own++;
-    if (!ghost && deg === 0) orphans++;
-    if (!ghost && deg > 0 && backlinks === 0) noBacklink.push(id);
-    if (!ghost && (a.age ?? 9999) <= 30) fresh30d++;
-    if (cites > 0) cited++;
-    nodes.set(id, {
-      id,
-      label: ghost ? id.slice(GHOST.length) : stem(id),
-      ghost,
-      deg,
-      backlinks,
-      cites,
-      ageDays: a.age ?? 9999,
-      color: a.color,
-      community: a.community,
-    });
-  });
-
-  const labels = clusterLabels(graph);
-  const mapless = new Set<number>();
-  for (const l of labels) {
-    const hasMap = l.memberIds.some(
-      (id) => graph.getNodeAttribute(id, "nodeType") === MAP_TYPE,
-    );
-    if (!hasMap) mapless.add(l.community);
-  }
-
-  const report = analyzeGaps(graph);
-  return {
-    graph,
-    nodes,
-    labels,
-    mapless,
-    noBacklink,
-    maxBacklinks,
-    counts: {
-      total: graph.order,
-      sample,
-      own,
-      unresolved,
-      gaps: gapCount(report) + noBacklink.length,
-      orphans,
-      noBacklink: noBacklink.length,
-      clusters: labels.length,
-      maplessClusters: mapless.size,
-      fresh30d,
-      neighbors: null,
-      sessions,
-      cited,
-    },
-  };
+function ZoomButtons({
+  sceneRef,
+  t,
+  onFit,
+}: {
+  sceneRef: React.MutableRefObject<GraphScene | null>;
+  t: Strings;
+  /** Re-frame the mycelium view too — it's a separate renderer sceneRef can't
+   *  reach, and it's the one visibly showing while the mycelium skin is on. */
+  onFit?: () => void;
+}): JSX.Element {
+  return (
+    <div style={{ display: "flex", gap: 4 }}>
+      <button
+        type="button"
+        className="graph-toolbar__btn"
+        onClick={() => sceneRef.current?.zoomOut()}
+        aria-label={t.gr_zoom_out ?? "Zoom out"}
+      >
+        −
+      </button>
+      <button
+        type="button"
+        className="graph-toolbar__btn"
+        onClick={() => {
+          sceneRef.current?.fit();
+          onFit?.();
+        }}
+        aria-label={t.gr_fit ?? "Fit"}
+      >
+        fit
+      </button>
+      <button
+        type="button"
+        className="graph-toolbar__btn"
+        onClick={() => sceneRef.current?.zoomIn()}
+        aria-label={t.gr_zoom_in ?? "Zoom in"}
+      >
+        +
+      </button>
+    </div>
+  );
 }

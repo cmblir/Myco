@@ -1,66 +1,171 @@
-// Cluster names for the "무엇이 뭉쳐 있나" question — one per sized community,
-// drawn by the canvas on the cluster's hull. Label text v1 = the community's
-// top-degree note name: free and identical to what the legend used to show, so
-// the two never disagreed. v2 (LLM topics): resolveClusterTopic() asks the
-// bundled local model for a 1-3 word topic (cached by member set, serialized,
-// heavily sanitized) and the caller upgrades the text in place when it
-// arrives. The fallback never waits on it and survives every failure mode.
+// Cluster auto-labels at rest — the calm-cosmic-web spec's "reverse semantic
+// zoom": terrain names when zoomed out, street names when zoomed in. One CSS2D
+// label per top community, positioned at its live centroid, visible only while
+// the camera is farther than SHOW_RATIO of the framed distance; zooming in
+// cross-fades them out as the per-node labels take over (CSS transition on
+// .is-visible). Label text v1 = the community's top-degree note name — free and
+// identical to the legend, so the two never disagree. (v2, LLM topic summaries,
+// is a later phase; this name stays the fallback.)
 //
-// Pure (no DOM, no renderer) — the old three.js CSS2D wrapper is gone.
+// v2 (LLM topics): after the fallback renders, resolveClusterTopic() asks the
+// bundled local model for a 1-3 word topic (cached by member set, serialized,
+// heavily sanitized) and upgrades the text in place when it arrives. The
+// fallback never waits on it and survives every failure mode.
+//
+// Same lifecycle contract as the other scene helpers (NebulaLayer, PulseLayer):
+// construct → add `group` to the scene → update() on (throttled) ticks +
+// setZoomRatio() per frame → rebuild() after live-ingest growth → dispose().
+import * as THREE from "three";
+import { CSS2DObject } from "three/examples/jsm/renderers/CSS2DRenderer.js";
 import { stem, type VaultGraph } from "./graphData";
 import { resolveClusterTopic } from "./clusterTopics";
 
-/** Communities smaller than this are dust, not a topic worth naming. */
-export const MIN_CLUSTER_MEMBERS = 3;
-/** How many (size-ranked) clusters get an LLM topic — the model is shared
- * with chat/ingest and each call is a serialized local_query. */
-export const MAX_TOPIC_UPGRADES = 6;
+const EMPTY_LABELS: ClusterLabel[] = [];
+
+const MAX_LABELS = 6; // matches the legend's top-6 communities
+const MIN_MEMBERS = 3;
+// Camera distance / framed distance above which cluster labels show. Below it
+// the per-node semantic-zoom labels are the detail layer.
+const SHOW_RATIO = 0.6;
 
 export interface ClusterLabel {
-  community: number;
+  obj: CSS2DObject;
+  el: HTMLDivElement;
   memberIds: string[];
-  /** Top-degree member's note name until a topic upgrades it. */
-  text: string;
-  color: string;
+  /** Community still has enough visible members to be worth naming. */
+  alive: boolean;
 }
 
-/** Every sized community, biggest first, named after its highest-degree member. */
-export function clusterLabels(graph: VaultGraph): ClusterLabel[] {
-  const members = new Map<number, string[]>();
-  const top = new Map<number, { id: string; deg: number }>();
-  graph.forEachNode((id, a) => {
-    if (a.community < 0) return;
-    (members.get(a.community) ?? members.set(a.community, []).get(a.community)!).push(id);
-    const cur = top.get(a.community);
-    if (!cur || a.deg > cur.deg) top.set(a.community, { id, deg: a.deg });
-  });
-  return [...members.entries()]
-    .filter(([, ids]) => ids.length >= MIN_CLUSTER_MEMBERS)
-    .sort((a, b) => b[1].length - a[1].length || a[0] - b[0])
-    .map(([community, memberIds]) => {
-      const hub = top.get(community)!;
-      return {
-        community,
-        memberIds,
-        text: stem(hub.id),
-        color: graph.getNodeAttribute(hub.id, "color"),
-      };
-    });
-}
+export class ClusterLabels {
+  readonly group = new THREE.Group();
+  private graph: VaultGraph;
+  private labels: ClusterLabel[] = [];
+  private zoomedOut = true;
+  private enabled = true;
 
-/** Ask the local model for a topic name for the biggest clusters; `onTopic`
- * fires per cluster as (if ever) one resolves. */
-export function upgradeClusterTopics(
-  labels: ClusterLabel[],
-  graph: VaultGraph,
-  onTopic: (community: number, topic: string) => void,
-): void {
-  for (const l of labels.slice(0, MAX_TOPIC_UPGRADES)) {
-    const byDeg = [...l.memberIds].sort(
-      (a, b) => graph.getNodeAttribute(b, "deg") - graph.getNodeAttribute(a, "deg"),
-    );
-    void resolveClusterTopic(l.memberIds, byDeg).then((topic) => {
-      if (topic) onTopic(l.community, topic);
+  constructor(graph: VaultGraph) {
+    this.graph = graph;
+    this.rebuild();
+  }
+
+  /**
+   * Turn the whole layer off (the multiverse tier names universes, not the
+   * communities inside them).
+   *
+   * These are CSS2DObjects, so visibility is a DOM class as much as a scene
+   * flag — clearing `is-visible` here rather than trusting the group's
+   * `visible` to cascade through CSS2DRenderer, and `update` returns early so
+   * nothing turns them back on next frame.
+   */
+  setEnabled(on: boolean): void {
+    this.enabled = on;
+    this.group.visible = on;
+    if (!on) {
+      for (const l of this.labels) {
+        l.obj.visible = false;
+        l.el.classList.remove("is-visible");
+      }
+    }
+  }
+
+  // Re-derive the top communities (size-ranked, like the legend) and their
+  // label text/colour. Called on construction and after live-ingest growth.
+  rebuild(): void {
+    this.clear();
+    const members = new Map<number, string[]>();
+    const top = new Map<number, { id: string; deg: number }>();
+    this.graph.forEachNode((id, a) => {
+      if (a.community < 0) return;
+      (members.get(a.community) ?? members.set(a.community, []).get(a.community)!).push(id);
+      const cur = top.get(a.community);
+      if (!cur || a.deg > cur.deg) top.set(a.community, { id, deg: a.deg });
     });
+    const ranked = [...members.entries()]
+      .filter(([, ids]) => ids.length >= MIN_MEMBERS)
+      .sort((a, b) => b[1].length - a[1].length)
+      .slice(0, MAX_LABELS);
+    for (const [cm, ids] of ranked) {
+      const topNode = top.get(cm);
+      if (!topNode) continue;
+      const el = document.createElement("div");
+      el.className = "graph-cluster-label";
+      el.textContent = stem(topNode.id);
+      el.style.color = this.graph.getNodeAttribute(topNode.id, "color");
+      const obj = new CSS2DObject(el);
+      obj.visible = false;
+      this.group.add(obj);
+      this.labels.push({ obj, el, memberIds: ids, alive: false });
+      // v2: upgrade to an LLM topic when (if ever) one resolves. `el` keeps
+      // the closure alive; if this label set was rebuilt/disposed meanwhile
+      // the detached element updates harmlessly.
+      const byDeg = [...ids].sort(
+        (a, b) =>
+          this.graph.getNodeAttribute(b, "deg") -
+          this.graph.getNodeAttribute(a, "deg"),
+      );
+      void resolveClusterTopic(ids, byDeg).then((topic) => {
+        if (topic) el.textContent = topic;
+      });
+    }
+    this.update();
+  }
+
+  // Recompute each label's centroid from the live graph (galaxies drift while
+  // the sim runs). O(labelled nodes); the caller throttles. Labels whose
+  // community is mostly timelapse-hidden hide with it.
+  update(): void {
+    if (!this.enabled) return;
+    for (const l of this.labels) {
+      let cx = 0;
+      let cy = 0;
+      let cz = 0;
+      let visible = 0;
+      for (const id of l.memberIds) {
+        const a = this.graph.getNodeAttributes(id);
+        if (a.hidden) continue;
+        cx += a.x;
+        cy += a.y;
+        cz += a.z;
+        visible++;
+      }
+      const alive = visible >= Math.min(MIN_MEMBERS, l.memberIds.length);
+      if (alive) {
+        l.obj.position.set(cx / visible, cy / visible, cz / visible);
+      }
+      // obj.visible (display:none) only for dead/hidden communities. The zoom
+      // gate + the scene's screen-space declutter own the `is-visible` CLASS,
+      // so the CSS opacity transition can actually play — see `shown` below.
+      l.obj.visible = alive;
+      l.alive = alive;
+    }
+  }
+
+  /** Per-frame zoom gate: community names show while the camera is far. */
+  setZoomRatio(camDistOverFramed: number): void {
+    this.zoomedOut = camDistOverFramed > SHOW_RATIO;
+  }
+
+  /**
+   * The labels eligible to draw this frame. The SCENE decides which of these
+   * actually get `is-visible`, because it is the only place that knows where
+   * every other label (node labels included) lands on screen — decluttering
+   * these six against each other in here would still let them pile onto the
+   * per-node labels.
+   */
+  get shown(): ClusterLabel[] {
+    if (!this.enabled || !this.zoomedOut) return EMPTY_LABELS;
+    return this.labels.filter((l) => l.alive);
+  }
+
+  private clear(): void {
+    for (const l of this.labels) {
+      l.el.remove();
+      this.group.remove(l.obj);
+    }
+    this.labels = [];
+  }
+
+  dispose(): void {
+    this.clear();
   }
 }

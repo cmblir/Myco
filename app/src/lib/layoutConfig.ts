@@ -93,16 +93,3 @@ export const BIGBANG_BURST = 22; // timelapse reveal outward velocity
 // × linkDistance — world radius the FA2 atlas map is scaled to fill, so atlas
 // mode frames like the galaxy layout at the same slider values.
 export const ATLAS_RADIUS_MUL = 26;
-
-// --- the one force profile -----------------------------------------------------
-// The galaxy tuple that survived the layout cull (Survey redesign). These were
-// the tuned DEFAULT_GRAPH_SETTINGS slider values; with the sliders gone they are
-// plain constants. Same scaling as before: manyBody = -repelForce × REPEL_SCALE,
-// gravity = centerForce × CENTER_SCALE, linkStrength = linkForce / (1 + min deg).
-export const SIM_FORCES = {
-  centerForce: 0.5, // firm uniform gravity packs the lobes into one galaxy
-  repelForce: 9, // per-node charge ≈ -81, range-capped to LOCAL neighbours
-  linkForce: 0.45, // soft springs (strong springs reel nodes into clumps)
-  linkDistance: 45, // short edges → compact nuclei, not a wide spoke-ring
-  clusterForce: 0.35, // contracts Louvain communities into distinct nuclei
-} as const;

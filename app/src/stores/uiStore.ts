@@ -14,7 +14,6 @@ import type { Lang } from "../lib/i18n";
 import type { AskScope, TierWeights } from "../lib/ipc";
 import { DEFAULT_TIER_WEIGHTS } from "../lib/extractive";
 import type { SettingsTab } from "../lib/settingsSearch";
-import type { Question as GraphQuestion } from "../lib/graphEncoding";
 import {
   pushRoute,
   replaceCurrent,
@@ -154,11 +153,6 @@ export interface UIState {
   // like the other Ask prefs; sent with every question.
   askScope: AskScope;
   askTierWeights: TierWeights;
-  // Survey deep link (`graph?q=…&n=…` — see lib/graphLink): the question the
-  // arriving surface wants answered, and the note it wants selected. Consumed
-  // ONCE by PageGraph on mount/update, like studyDeck; transient, so a stale
-  // target can't reopen days later.
-  graphFocus: { q: GraphQuestion; path: string | null } | null;
 
   setRoute: (route: RouteId) => void;
   /** Route sync after a rename/move: swaps the current entry, no history entry. */
@@ -194,7 +188,6 @@ export interface UIState {
   toggleOutline: () => void;
   setAskScope: (scope: AskScope) => void;
   setAskTierWeights: (weights: TierWeights) => void;
-  setGraphFocus: (focus: { q: GraphQuestion; path: string | null } | null) => void;
 }
 
 export const useUIStore = create<UIState>()(
@@ -229,7 +222,6 @@ export const useUIStore = create<UIState>()(
       outlineOpen: true,
       askScope: "wiki",
       askTierWeights: DEFAULT_TIER_WEIGHTS,
-      graphFocus: null,
 
       setRoute: (route) => set((s) => routePatch(s, route, pushRoute(s.navHistory, route))),
       replaceRoute: (route) =>
@@ -279,7 +271,6 @@ export const useUIStore = create<UIState>()(
       toggleOutline: () => set({ outlineOpen: !get().outlineOpen }),
       setAskScope: (askScope) => set({ askScope }),
       setAskTierWeights: (askTierWeights) => set({ askTierWeights }),
-      setGraphFocus: (graphFocus) => set({ graphFocus }),
     }),
     {
       name: "myco-ui",
@@ -315,10 +306,8 @@ export const useUIStore = create<UIState>()(
           askTierWeights: sanitizeTierWeights(p.askTierWeights),
           navHistory: sanitizeHistory(p.navHistory, route),
           // Transient by design: a persisted target would scroll+flash a
-          // section on the next launch for a click made days ago. The Survey
-          // deep link is transient for the same reason.
+          // section on the next launch for a click made days ago.
           focusTarget: null,
-          graphFocus: null,
           // Favorites default open even for a store persisted before the group existed.
           expandedFolders: { __favorites: true, ...p.expandedFolders },
         };
