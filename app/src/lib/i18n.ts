@@ -356,16 +356,6 @@ export interface Strings {
   gr_layout_walrus: string;
   mc_label: string;
   mc_dismiss: string;
-  mc_tip_drag: string;
-  mc_tip_path: string;
-  mc_tip_fly: string;
-  mc_tip_looks: string;
-  mc_tip_timelapse: string;
-  mc_tip_multiverse: string;
-  mc_tip_minimap: string;
-  mc_tip_recency: string;
-  mc_tip_save: string;
-  mc_tip_chronicle: string;
   gr_layout_galaxy_s: string;
   gr_layout_synapse3d_s: string;
   gr_layout_atlas_s: string;
@@ -1640,11 +1630,11 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_live_link: "Open the wikilink under the pointer (Live editor)",
     hw_sc_back: "Back",
     hw_sc_fwd: "Forward",
-    hw_tip_graph1: "Drag a star and the simulation re-heats around it.",
+    hw_tip_graph1: "Pick a question — the encoding changes, the layout does not.",
     hw_tip_graph2:
-      "F flies the spaceship; the ⚠ badge opens gap analysis with research bridges.",
+      "The gaps column is the answer list: open, draft a link, or send it to harvest.",
     hw_tip_graph3:
-      "Near-field planets (settings drawer) turn close-up notes into worlds.",
+      "Hide the sample vault to see only the notes you wrote.",
     hw_tip_query1: "Answers cite wiki pages — click a citation to open it.",
     hw_tip_query2:
       "The graph's gap panel can draft research questions into this box.",
@@ -1863,26 +1853,6 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_walrus: "Walrus tree",
     mc_label: "MYCO tip",
     mc_dismiss: "Dismiss",
-    mc_tip_drag:
-      "Drag any star and the simulation re-heats \u2014 its neighbours follow, then spring back.",
-    mc_tip_path:
-      "Cmd/Ctrl-click two notes to light the shortest path between them.",
-    mc_tip_fly:
-      "Press F to pilot a spaceship through your vault \u2014 WASD to fly, Esc to land.",
-    mc_tip_looks:
-      "Open the settings panel and tap a Look \u2014 Sigma, Paper, Neural, Planetarium\u2026",
-    mc_tip_timelapse:
-      "Play the Timelapse to watch your vault build itself in the order you wrote it.",
-    mc_tip_multiverse:
-      "Turn on Multiverse to see every project as its own glowing universe-bubble.",
-    mc_tip_minimap:
-      "That corner minimap? Click anywhere on it to fly the camera there.",
-    mc_tip_recency:
-      "Recently edited notes burn hotter \u2014 the graph maps where your attention is.",
-    mc_tip_save:
-      "Tuned a look you love? Name it under Saved looks and recall it with one tap.",
-    mc_tip_chronicle:
-      "Try the Chronicle layout \u2014 your notes laid out along a real time axis.",
     gr_layout_galaxy_s: "Galaxy",
     gr_layout_synapse3d_s: "Synapse",
     gr_layout_atlas_s: "Atlas",
@@ -3200,10 +3170,10 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_live_link: "포인터 아래 위키링크 열기 (실시간 편집기)",
     hw_sc_back: "뒤로",
     hw_sc_fwd: "앞으로",
-    hw_tip_graph1: "별을 드래그하면 시뮬레이션이 주변에서 다시 살아납니다.",
+    hw_tip_graph1: "질문을 고르면 인코딩만 바뀝니다 — 좌표는 그대로입니다.",
     hw_tip_graph2:
-      "F는 우주선 비행, ⚠ 배지는 연구 다리가 포함된 갭 분석을 엽니다.",
-    hw_tip_graph3: "근접 행성(설정 서랍)을 켜면 가까운 노트가 행성이 됩니다.",
+      "빈 곳 목록이 곧 답입니다: 열기 · 링크 제안 · 수확 대상으로.",
+    hw_tip_graph3: "샘플 숨기기를 켜면 내가 쓴 노트만 남습니다.",
     hw_tip_query1:
       "답변은 위키 페이지를 인용합니다 — 인용을 클릭해 열어보세요.",
     hw_tip_query2:
@@ -3424,25 +3394,6 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_walrus: "월러스 트리",
     mc_label: "MYCO 팁",
     mc_dismiss: "닫기",
-    mc_tip_drag:
-      "아무 별이나 드래그하면 시뮬레이션이 다시 데워집니다 \u2014 이웃이 따라오다 튕겨 돌아와요.",
-    mc_tip_path: "두 노트를 Cmd/Ctrl-클릭하면 사이의 최단 경로가 빛납니다.",
-    mc_tip_fly:
-      "F를 누르면 볼트를 우주선으로 비행 \u2014 WASD로 날고 Esc로 착륙.",
-    mc_tip_looks:
-      "설정 패널을 열고 룩을 탭하세요 \u2014 Sigma, Paper, Neural, Planetarium\u2026",
-    mc_tip_timelapse:
-      "타임랩스를 재생하면 작성한 순서대로 볼트가 스스로 자라납니다.",
-    mc_tip_multiverse:
-      "멀티버스를 켜면 각 프로젝트가 저마다 빛나는 우주 버블로 보입니다.",
-    mc_tip_minimap:
-      "구석의 미니맵 \u2014 아무 데나 클릭하면 카메라가 그곳으로 날아갑니다.",
-    mc_tip_recency:
-      "최근 편집한 노트일수록 더 뜨겁게 타올라 \u2014 그래프가 당신의 관심을 지도로 그립니다.",
-    mc_tip_save:
-      "마음에 드는 룩을 튜닝했나요? 저장된 룩에 이름을 붙여 한 번에 불러오세요.",
-    mc_tip_chronicle:
-      "연대기 레이아웃을 써보세요 \u2014 노트가 실제 시간축을 따라 놓입니다.",
     gr_layout_galaxy_s: "은하",
     gr_layout_synapse3d_s: "시냅스",
     gr_layout_atlas_s: "아틀라스",
@@ -4867,25 +4818,6 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_layout_walrus: "ウォルラスツリー",
     mc_label: "MYCO ヒント",
     mc_dismiss: "閉じる",
-    mc_tip_drag:
-      "どの星でもドラッグするとシミュレーションが再加熱 \u2014 隣接ノードが追従し弾んで戻ります。",
-    mc_tip_path: "2つのノートを Cmd/Ctrl-クリックすると最短経路が光ります。",
-    mc_tip_fly:
-      "F を押すとボルトを宇宙船で飛行 \u2014 WASD で飛び Esc で着陸。",
-    mc_tip_looks:
-      "設定パネルを開いてルックをタップ \u2014 Sigma, Paper, Neural, Planetarium\u2026",
-    mc_tip_timelapse:
-      "タイムラプスを再生すると書いた順にボルトが自ら育ちます。",
-    mc_tip_multiverse:
-      "マルチバースをオンにすると各プロジェクトが輝く宇宙バブルに。",
-    mc_tip_minimap:
-      "隅のミニマップ \u2014 どこでもクリックするとカメラがそこへ飛びます。",
-    mc_tip_recency:
-      "最近編集したノートほど熱く燃える \u2014 グラフがあなたの関心を地図化します。",
-    mc_tip_save:
-      "気に入ったルックを調整した？保存ルックに名前を付けてワンタップで呼び出し。",
-    mc_tip_chronicle:
-      "年代記レイアウトを試して \u2014 ノートが実際の時間軸に沿って並びます。",
     gr_layout_galaxy_s: "銀河",
     gr_layout_synapse3d_s: "シナプス",
     gr_layout_atlas_s: "アトラス",
@@ -5956,11 +5888,10 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_live_link: "ポインター下のウィキリンクを開く（ライブ編集）",
     hw_sc_back: "戻る",
     hw_sc_fwd: "進む",
-    hw_tip_graph1:
-      "星をドラッグするとシミュレーションがその周りで再加熱されます。",
+    hw_tip_graph1: "質問を選ぶと符号化だけが変わります — 座標はそのままです。",
     hw_tip_graph2:
-      "F で宇宙船を飛ばせます。⚠ バッジを押すとリサーチブリッジ付きのギャップ分析が開きます。",
-    hw_tip_graph3: "近接惑星（設定ドロワー）は間近のノートを惑星に変えます。",
+      "空白の一覧が答えです: 開く · リンク提案 · 収穫対象へ。",
+    hw_tip_graph3: "サンプルを隠すと自分が書いたノートだけが残ります。",
     hw_tip_query1:
       "回答は wiki ページを引用します — 引用をクリックすると開きます。",
     hw_tip_query2:

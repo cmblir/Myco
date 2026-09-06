@@ -17,9 +17,10 @@ function tipsFor(route: string, t: Strings): string[] {
   switch (base) {
     case "graph":
       return [
-        t.hw_tip_graph1 ?? "Drag a star and the simulation re-heats around it.",
-        t.hw_tip_graph2 ?? "F flies the spaceship; the ⚠ badge opens gap analysis with research bridges.",
-        t.hw_tip_graph3 ?? "Near-field planets (settings drawer) turn close-up notes into worlds.",
+        t.hw_tip_graph1 ?? "Pick a question — the encoding changes, the layout does not.",
+        t.hw_tip_graph2 ??
+          "The gaps column is the answer list: open, draft a link, or send it to harvest.",
+        t.hw_tip_graph3 ?? "Hide the sample vault to see only the notes you wrote.",
       ];
     case "query":
       return [
