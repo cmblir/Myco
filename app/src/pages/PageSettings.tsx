@@ -55,7 +55,10 @@ import {
   type SettingsTab,
   type SettingsValues,
 } from "../lib/settingsSearch";
-import { SettingsCard, SettingsFilterContext } from "../components/SettingsCard";
+import {
+  SettingsCard,
+  SettingsFilterContext,
+} from "../components/SettingsCard";
 import type { SettingsFilter } from "../components/SettingsCard";
 import { accelFromEvent, formatAccel } from "../lib/shortcutAccel";
 import { useReindexStore } from "../stores/reindexStore";
@@ -118,6 +121,7 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   // keystroke of a Hangul syllable would flip the tab mid-character.
   const [applied, setApplied] = useState("");
   const changedOnly = useUIStore((s) => s.settingsChangedOnly);
+  const setChangedOnly = useUIStore((s) => s.setSettingsChangedOnly);
 
   // One registry drives all three: which tabs the rail shows, which cards the
   // body renders, and what each row is currently set to (lib/settingsSearch).
@@ -144,7 +148,10 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const filter = useMemo<SettingsFilter>(() => {
     const rows = matches.get(tab) ?? [];
     const byId = new Map(settingsRows(t, values).map((r) => [r.id, r]));
-    return { matched: new Set(rows.map((r) => r.id)), row: (id) => byId.get(id) };
+    return {
+      matched: new Set(rows.map((r) => r.id)),
+      row: (id) => byId.get(id),
+    };
   }, [matches, tab, t, values]);
 
   function applyQuery(v: string): void {
@@ -168,16 +175,36 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
     setApplied("");
   }, [tab]);
 
-  // Below 768px the tab rail is a horizontally scrolling row. The default tab
-  // is "model", which is not the first one, so without this the rail opens
-  // scrolled to "Account" while the Model panel is on screen — the active tab
-  // invisible. `nearest` so an already-visible tab does not move the page.
+  // The rail is one horizontally scrolling row of chips, and the default tab
+  // ("model") is not the first — without this it can open scrolled past the
+  // active chip. `nearest` so an already-visible chip does not move the page.
   const railRef = useRef<HTMLElement>(null);
   useEffect(() => {
     railRef.current
-      ?.querySelector(".qbtn.active")
+      ?.querySelector('[aria-selected="true"]')
       ?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }, [tab]);
+
+  // Search IS the primary control, so it takes focus on arrival and answers
+  // ⌘F / Ctrl+F — the key every user already presses to find something on a
+  // page, which the browser would otherwise spend on its own find bar.
+  const searchRef = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        searchRef.current?.focus();
+        searchRef.current?.select();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  function clearSearch(): void {
+    setQ("");
+    applyQuery("");
+  }
 
   const tabs: { id: typeof tab; label: string; icon: IconName }[] = [
     { id: "account", label: t.s_account, icon: "shield" },
@@ -190,60 +217,120 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
     { id: "about", label: t.s_about, icon: "info" },
   ];
 
+  const rows = settingsRows(t, values);
+  const changedCount = rows.filter((r) => r.changed).length;
+  const shown = [...matches.values()].reduce((n, list) => n + list.length, 0);
+
   return (
     <div className="workspace">
-      <header className="page-head">
-        <div className="page-eyebrow">{t.nav_settings}</div>
-        <h1 className="page-title">{t.s_title}</h1>
+      <header className="page-head s-head">
+        <div>
+          <div className="page-eyebrow">{t.nav_settings}</div>
+          <h1 className="page-title">{t.s_title}</h1>
+        </div>
+        <span className="s-total">
+          {(t.s_total_count ?? "{n} of {all} settings")
+            .replace("{n}", String(shown))
+            .replace("{all}", String(rows.length))}
+        </span>
       </header>
-      <input
-        type="search"
-        className="input"
-        style={{ maxWidth: 360 }}
-        value={q}
-        placeholder={t.s_search_ph}
-        aria-label={t.s_search_ph}
-        onChange={(e) => {
-          setQ(e.target.value);
-          // Mid-composition keystrokes only update the field; `applied`
-          // follows on compositionend.
-          if (!(e.nativeEvent as InputEvent).isComposing) {
-            applyQuery(e.target.value);
-          }
-        }}
-        onCompositionEnd={(e) => applyQuery(e.currentTarget.value)}
-        onKeyDown={(e) => {
-          if (isComposingKey(e)) return;
-          if (e.key === "Escape") {
-            setQ("");
-            applyQuery("");
-          }
-        }}
-      />
-      <div className="settings-grid">
-        <nav className="col" style={{ gap: 1 }} ref={railRef}>
-          {tabs
-            .filter((x) => matches.has(x.id))
-            .map((x) => (
-              <button
-                key={x.id}
-                className={"qbtn" + (tab === x.id ? " active" : "")}
-                onClick={() => selectTab(x.id)}
-              >
-                <span className="qicon">
-                  <Icon name={x.icon} size={14} />
-                </span>
-                <span>{x.label}</span>
-                <span className="s-tabcount">{matches.get(x.id)?.length ?? 0}</span>
-              </button>
-            ))}
-        </nav>
+
+      {/* Search first: with eight tabs, "which tab is it on?" is the normal
+          state, and the answer is a query — not a rail. */}
+      <div className="s-searchrow">
+        <div className="s-box">
+          <span className="s-box__ico" aria-hidden="true">
+            <Icon name="search" size={14} />
+          </span>
+          <input
+            ref={searchRef}
+            type="search"
+            value={q}
+            // Deliberate: this box IS the page's primary control.
+            autoFocus
+            placeholder={t.s_search_ph}
+            aria-label={t.s_search_ph}
+            onChange={(e) => {
+              setQ(e.target.value);
+              // Mid-composition keystrokes only update the field; `applied`
+              // follows on compositionend.
+              if (!(e.nativeEvent as InputEvent).isComposing) {
+                applyQuery(e.target.value);
+              }
+            }}
+            onCompositionEnd={(e) => applyQuery(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (isComposingKey(e)) return;
+              if (e.key === "Escape") clearSearch();
+            }}
+          />
+          {q ? (
+            <button
+              className="s-box__clear"
+              aria-label={t.s_search_clear ?? "Clear search"}
+              onClick={() => {
+                clearSearch();
+                searchRef.current?.focus();
+              }}
+            >
+              <Icon name="x" size={12} />
+            </button>
+          ) : null}
+        </div>
+        <button
+          className={"s-toggler" + (changedOnly ? " is-on" : "")}
+          aria-pressed={changedOnly}
+          onClick={() => setChangedOnly(!changedOnly)}
+        >
+          <span className="s-sw" aria-hidden="true" />
+          <span>{t.s_changed_only ?? "Changed only"}</span>
+          <span className="s-tabcount">{changedCount}</span>
+        </button>
+      </div>
+
+      <nav
+        className="s-rail"
+        role="tablist"
+        aria-label={t.s_title}
+        ref={railRef}
+      >
+        {tabs
+          .filter((x) => matches.has(x.id))
+          .map((x) => (
+            <button
+              key={x.id}
+              role="tab"
+              aria-selected={tab === x.id}
+              className="s-chip"
+              onClick={() => selectTab(x.id)}
+            >
+              <Icon name={x.icon} size={13} />
+              <span>{x.label}</span>
+              <span className="s-tabcount">
+                {matches.get(x.id)?.length ?? 0}
+              </span>
+            </button>
+          ))}
+      </nav>
+
+      <div className="s-body">
         {matches.size === 0 ? (
-          <div className="muted" role="status">
-            {(t.s_search_empty ?? "No settings match “{q}”").replace(
-              "{q}",
-              applied,
-            )}
+          <div className="s-empty" role="status">
+            <div>
+              {(t.s_search_empty ?? "No settings match “{q}”").replace(
+                "{q}",
+                applied,
+              )}
+            </div>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                clearSearch();
+                setChangedOnly(false);
+              }}
+            >
+              {t.s_show_all ?? "Show every setting"}
+            </button>
           </div>
         ) : (
           <SettingsFilterContext.Provider value={filter}>
@@ -322,7 +409,7 @@ function SettingsAccount({ t }: { t: Strings }): JSX.Element {
             {t.s_local_user ?? "Local user"}
           </div>
           <div className="muted" style={{ fontSize: 13 }}>
-            {currentVault?.path ?? (t.s_no_vault ?? "no vault")} · myco
+            {currentVault?.path ?? t.s_no_vault ?? "no vault"} · myco
           </div>
         </div>
       </SettingsCard>
@@ -346,7 +433,10 @@ function SettingsAccount({ t }: { t: Strings }): JSX.Element {
           </button>
         </div>
         <KnownVaults t={t} />
-        <div className="row" style={{ marginTop: 10, gap: 10, alignItems: "center" }}>
+        <div
+          className="row"
+          style={{ marginTop: 10, gap: 10, alignItems: "center" }}
+        >
           <button
             className="btn"
             onClick={() => void registerVault()}
@@ -431,9 +521,10 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
 // run start against the same index. This component renders the store's five
 // states and re-attaches to a run already in flight.
 function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
-  const [status, setStatus] = useState<{ indexed_pages: number; model: string } | null>(
-    null,
-  );
+  const [status, setStatus] = useState<{
+    indexed_pages: number;
+    model: string;
+  } | null>(null);
   const stage = useReindexStore((s) => s.stage);
   const done = useReindexStore((s) => s.done);
   const total = useReindexStore((s) => s.total);
@@ -444,7 +535,10 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
   const busy = stage === "loading-model" || stage === "indexing";
 
   const refresh = (): void => {
-    ipc.embeddingsStatus().then(setStatus).catch(() => setStatus(null));
+    ipc
+      .embeddingsStatus()
+      .then(setStatus)
+      .catch(() => setStatus(null));
   };
   useEffect(refresh, []);
   // Refresh the page count when a run finishes — including a run that finished
@@ -453,10 +547,12 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
     if (stage === "done") refresh();
   }, [stage]);
 
-  const pct = stage === "indexing" && total > 0 ? Math.round((done / total) * 100) : 0;
+  const pct =
+    stage === "indexing" && total > 0 ? Math.round((done / total) * 100) : 0;
 
   const label = (): string => {
-    if (stage === "loading-model") return t.s_embeddings_loading_model ?? "Loading model…";
+    if (stage === "loading-model")
+      return t.s_embeddings_loading_model ?? "Loading model…";
     if (stage === "indexing") {
       return `${t.s_embeddings_indexing ?? "Indexing…"} ${done}/${total}`;
     }
@@ -466,7 +562,9 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
   return (
     <SettingsCard id="model_embeddings" hideValue className="card">
       <div className="row" style={{ marginBottom: 8 }}>
-        <div style={{ fontWeight: 600 }}>{t.s_embeddings ?? "Semantic search"}</div>
+        <div style={{ fontWeight: 600 }}>
+          {t.s_embeddings ?? "Semantic search"}
+        </div>
         <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
           {status
             ? status.indexed_pages > 0
@@ -533,20 +631,33 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
       ) : null}
 
       {stage === "loading-model" ? (
-        <div className="muted" style={{ fontSize: 12, marginTop: 8 }} data-testid="reindex-loading">
+        <div
+          className="muted"
+          style={{ fontSize: 12, marginTop: 8 }}
+          data-testid="reindex-loading"
+        >
           {t.s_embeddings_loading_model_hint ??
             "First run loads the bundled model — this takes a few seconds."}
         </div>
       ) : null}
 
       {stage === "done" ? (
-        <div style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }} data-testid="reindex-done">
-          {(t.s_embeddings_done ?? "Indexed {n} pages").replace("{n}", String(indexed))}
+        <div
+          style={{ color: "#16a34a", fontSize: 12, marginTop: 8 }}
+          data-testid="reindex-done"
+        >
+          {(t.s_embeddings_done ?? "Indexed {n} pages").replace(
+            "{n}",
+            String(indexed),
+          )}
         </div>
       ) : null}
 
       {stage === "error" ? (
-        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }} data-testid="reindex-error">
+        <div
+          style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}
+          data-testid="reindex-error"
+        >
           {error}
         </div>
       ) : null}
@@ -644,7 +755,9 @@ function ArchivedSessionsToggle({ t }: { t: Strings }): JSX.Element | null {
       }}
     >
       <div style={{ paddingRight: 8 }}>
-        <div style={{ fontSize: 13, fontWeight: 600 }}>{t.s_archived_sessions_title}</div>
+        <div style={{ fontSize: 13, fontWeight: 600 }}>
+          {t.s_archived_sessions_title}
+        </div>
         <div className="muted" style={{ fontSize: 12, marginTop: 3 }}>
           {t.s_archived_sessions_desc}
         </div>
@@ -766,9 +879,7 @@ function NotchToggle({ t }: { t: Strings }): JSX.Element | null {
     // either side. The store only mirrors the result optimistically.
     const next = !enabled;
     useSettingsStore.setState((st) =>
-      st.settings
-        ? { settings: { ...st.settings, notch_enabled: next } }
-        : st,
+      st.settings ? { settings: { ...st.settings, notch_enabled: next } } : st,
     );
     void ipc.updateNotchEnabled(next).catch(() => {
       /* plain-browser dev: no Tauri backend */
@@ -898,7 +1009,10 @@ function SpotlightShortcutRow({ t }: { t: Strings }): JSX.Element {
       "{k} could NOT be registered — another app is most likely already using it. Pick a different combination."
     ).replace("{k}", shown);
     // The OS/parser message verbatim: it is the only detail we actually have.
-    return { text: status?.error ? `${base} (${status.error})` : base, bad: true };
+    return {
+      text: status?.error ? `${base} (${status.error})` : base,
+      bad: true,
+    };
   })();
 
   // The description is long enough that a title-left / control-right row always
@@ -1148,7 +1262,9 @@ function AutoImportSetting({
         style={{ justifyContent: "space-between", alignItems: "flex-start" }}
       >
         <div style={{ paddingRight: 16 }}>
-          <div style={{ fontWeight: 600 }}>{t.s_autoimport_title ?? "Auto-collect CLI sessions"}</div>
+          <div style={{ fontWeight: 600 }}>
+            {t.s_autoimport_title ?? "Auto-collect CLI sessions"}
+          </div>
           <div className="muted" style={{ fontSize: 13, marginTop: 4 }}>
             {t.s_autoimport_desc ??
               "While myco is open, periodically sweep Claude Code / Codex conversations into _inbox/. Already-imported sessions are skipped; enable auto-ingest below to turn them into wiki pages."}
@@ -1189,7 +1305,9 @@ function AutoImportSetting({
           className="row"
           style={{ marginTop: 12, gap: 8, alignItems: "center" }}
         >
-          <label style={{ fontSize: 13 }}>{t.s_autoimport_interval ?? "Every"}</label>
+          <label style={{ fontSize: 13 }}>
+            {t.s_autoimport_interval ?? "Every"}
+          </label>
           <input
             className="input"
             type="number"
@@ -1406,7 +1524,8 @@ function MycoProCard({
   }
 
   return (
-    <SettingsCard id="provider_myco-pro"
+    <SettingsCard
+      id="provider_myco-pro"
       className="card"
       style={{
         display: "grid",
@@ -1674,12 +1793,18 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
             : undefined;
           if (p.id === "myco-pro") {
             return (
-              <MycoProCard key={p.id} t={t} def={p} settings={settings ?? null} />
+              <MycoProCard
+                key={p.id}
+                t={t}
+                def={p}
+                settings={settings ?? null}
+              />
             );
           }
           if (p.id === "ollama") {
             return (
-              <SettingsCard id={`provider_${p.id}`}
+              <SettingsCard
+                id={`provider_${p.id}`}
                 key={p.id}
                 className="card"
                 style={{
@@ -1735,7 +1860,8 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
             );
           }
           return (
-            <SettingsCard id={`provider_${p.id}`}
+            <SettingsCard
+              id={`provider_${p.id}`}
               key={p.id}
               className="card"
               style={{
@@ -1858,9 +1984,7 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
                   connected ? (
                     <button
                       className="btn"
-                      onClick={() =>
-                        void setProviderConnected(p.flag, false)
-                      }
+                      onClick={() => void setProviderConnected(p.flag, false)}
                       disabled={busy === p.id}
                     >
                       {t.s_provider_disconnect}
@@ -1992,7 +2116,9 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
       </div>
 
       {/* The server runs in-process and starts with the app — no install. */}
-      <div style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}>
+      <div
+        style={{ fontSize: 13, display: "flex", alignItems: "center", gap: 8 }}
+      >
         <span
           style={{
             width: 8,
@@ -2015,7 +2141,9 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
           onClick={() => void connect()}
           style={{ alignSelf: "flex-start" }}
         >
-          {busy ? (t.mcp_connecting ?? "Connecting…") : (t.mcp_connect_btn ?? "Connect to Claude Code")}
+          {busy
+            ? (t.mcp_connecting ?? "Connecting…")
+            : (t.mcp_connect_btn ?? "Connect to Claude Code")}
         </button>
         {status ? (
           <div style={{ fontSize: 12, color: "#16a34a" }}>{status}</div>
@@ -2024,7 +2152,9 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
 
       {info ? (
         <div className="col" style={{ gap: 6 }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>{t.mcp_command_label}</div>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>
+            {t.mcp_command_label}
+          </div>
           <div className="muted" style={{ fontSize: 12 }}>
             {t.mcp_connect_hint ?? "Or run this once in a terminal:"}
           </div>
@@ -2034,8 +2164,12 @@ function SettingsMcp({ t }: { t: Strings }): JSX.Element {
 
       {info ? (
         <div className="col" style={{ gap: 6 }}>
-          <div style={{ fontWeight: 600, fontSize: 13 }}>{t.mcp_desktop_label}</div>
-          <div className="muted" style={{ fontSize: 12 }}>{t.mcp_desktop_path}</div>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>
+            {t.mcp_desktop_label}
+          </div>
+          <div className="muted" style={{ fontSize: 12 }}>
+            {t.mcp_desktop_path}
+          </div>
           {codeBox(info.desktop_json, "desktop")}
         </div>
       ) : null}
@@ -2066,7 +2200,9 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
   // of them; `stopping` is this tab's own "stop already requested" latch.
   const chainRunning = useDistillRunStore((s) => s.running);
   const [stopping, setStopping] = useState(false);
-  const [stoppedAfter, setStoppedAfter] = useState<DistillStopPoint | null>(null);
+  const [stoppedAfter, setStoppedAfter] = useState<DistillStopPoint | null>(
+    null,
+  );
   const [undoing, setUndoing] = useState(false);
   const [undoResult, setUndoResult] = useState<number | null>(null);
   // Q4 item 3 — past runs, each with its own undo button.
@@ -2108,7 +2244,9 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       })
       .catch(() => undefined);
     const digest = lastDigestOutcome.get(vaultPath);
-    setDigestExtractive(digest?.mode === "extractive" && digest.daysDigested > 0);
+    setDigestExtractive(
+      digest?.mode === "extractive" && digest.daysDigested > 0,
+    );
     setWeeksRolledUp(lastWeeklyOutcome.get(vaultPath)?.bucketsRolledUp ?? 0);
     setMonthsRolledUp(lastMonthlyOutcome.get(vaultPath)?.bucketsRolledUp ?? 0);
     return () => {
@@ -2150,17 +2288,19 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
       // first, but two runs never overlap.
       const r = await runDistillGuarded(vaultPath);
       if (r === null) {
-        setError(
-          t.set_distill_busy ?? "A distill run is already in progress.",
-        );
+        setError(t.set_distill_busy ?? "A distill run is already in progress.");
         return;
       }
       setReport(r);
       setStatus(await ipc.distillStatus(vaultPath));
       const digest = lastDigestOutcome.get(vaultPath);
-      setDigestExtractive(digest?.mode === "extractive" && digest.daysDigested > 0);
+      setDigestExtractive(
+        digest?.mode === "extractive" && digest.daysDigested > 0,
+      );
       setWeeksRolledUp(lastWeeklyOutcome.get(vaultPath)?.bucketsRolledUp ?? 0);
-      setMonthsRolledUp(lastMonthlyOutcome.get(vaultPath)?.bucketsRolledUp ?? 0);
+      setMonthsRolledUp(
+        lastMonthlyOutcome.get(vaultPath)?.bucketsRolledUp ?? 0,
+      );
     } catch (e) {
       setError(String(e));
     } finally {
@@ -2300,7 +2440,9 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
               <button
                 key={v}
                 type="button"
-                className={"btn" + (cfg.gate_preset === v ? " btn-primary" : "")}
+                className={
+                  "btn" + (cfg.gate_preset === v ? " btn-primary" : "")
+                }
                 onClick={() => void patch({ gate_preset: v })}
               >
                 {label ?? v}
@@ -2309,7 +2451,10 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
           </div>
         </div>
 
-        <div className="row" style={{ gap: 16, marginTop: 16, flexWrap: "wrap" }}>
+        <div
+          className="row"
+          style={{ gap: 16, marginTop: 16, flexWrap: "wrap" }}
+        >
           <DistillNumField
             label={t.set_distill_count_trigger ?? "Backlog count trigger"}
             value={cfg.count_trigger}
@@ -2383,15 +2528,21 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
           <button
             role="switch"
             aria-checked={cfg.profile_injection}
-            aria-label={t.set_distill_profile_injection_title ?? "Profile injection"}
+            aria-label={
+              t.set_distill_profile_injection_title ?? "Profile injection"
+            }
             data-testid="profile-injection-toggle"
-            onClick={() => void patch({ profile_injection: !cfg.profile_injection })}
+            onClick={() =>
+              void patch({ profile_injection: !cfg.profile_injection })
+            }
             style={{
               width: 44,
               height: 24,
               borderRadius: 12,
               border: "1px solid var(--line)",
-              background: cfg.profile_injection ? "var(--ink)" : "var(--bg-soft)",
+              background: cfg.profile_injection
+                ? "var(--ink)"
+                : "var(--bg-soft)",
               position: "relative",
               cursor: "pointer",
               flexShrink: 0,
@@ -2405,7 +2556,9 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
                 width: 18,
                 height: 18,
                 borderRadius: "50%",
-                background: cfg.profile_injection ? "var(--bg)" : "var(--ink-3)",
+                background: cfg.profile_injection
+                  ? "var(--bg)"
+                  : "var(--ink-3)",
                 transition: "left 150ms",
               }}
             />
@@ -2442,8 +2595,14 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
           // Defect D fix: the cold-start gate (scan()'s early return) was
           // previously an eprintln!-only no-op — this is the plain-language
           // explanation with real numbers.
-          <div style={{ fontSize: 12.5, marginTop: 6 }} data-testid="distill-gate-pending">
-            {(t.set_distill_gate_pending ?? "Distill waiting: wiki pages {n}/{min}")
+          <div
+            style={{ fontSize: 12.5, marginTop: 6 }}
+            data-testid="distill-gate-pending"
+          >
+            {(
+              t.set_distill_gate_pending ??
+              "Distill waiting: wiki pages {n}/{min}"
+            )
               .replace("{n}", String(status.wiki_pages))
               .replace("{min}", String(GATE_MIN_WIKI_PAGES))}
           </div>
@@ -2451,7 +2610,10 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
         {digestExtractive ? (
           // The digest ran, but extractively (quotes, no LLM) — say so, and
           // name the setting that upgrades it to real summaries.
-          <div style={{ fontSize: 12.5, marginTop: 6 }} data-testid="distill-digest-extractive">
+          <div
+            style={{ fontSize: 12.5, marginTop: 6 }}
+            data-testid="distill-digest-extractive"
+          >
             {t.set_distill_digest_extractive ??
               "Session digest ran extractively (quoted highlights, no LLM). Connect a query provider under Settings → Model (Query) for summarized digests."}
           </div>
@@ -2459,28 +2621,42 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
         {weeksRolledUp > 0 ? (
           // The second compression layer's own count — the report line below
           // comes from RunReport, which the TS-side weekly step is not part of.
-          <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }} data-testid="distill-weekly-rollups">
-            {(t.set_distill_weekly_rollups ?? "{n} weekly rollups written to weekly/").replace(
-              "{n}",
-              String(weeksRolledUp),
-            )}
+          <div
+            className="muted"
+            style={{ fontSize: 12.5, marginTop: 6 }}
+            data-testid="distill-weekly-rollups"
+          >
+            {(
+              t.set_distill_weekly_rollups ??
+              "{n} weekly rollups written to weekly/"
+            ).replace("{n}", String(weeksRolledUp))}
           </div>
         ) : null}
         {monthsRolledUp > 0 ? (
           // Third layer, reported on its own line: weekly and monthly count
           // different units, so summing them would say neither.
-          <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }} data-testid="distill-monthly-rollups">
-            {(t.set_distill_monthly_rollups ?? "{n} monthly rollups written to monthly/").replace(
-              "{n}",
-              String(monthsRolledUp),
-            )}
+          <div
+            className="muted"
+            style={{ fontSize: 12.5, marginTop: 6 }}
+            data-testid="distill-monthly-rollups"
+          >
+            {(
+              t.set_distill_monthly_rollups ??
+              "{n} monthly rollups written to monthly/"
+            ).replace("{n}", String(monthsRolledUp))}
           </div>
         ) : null}
         {status && status.quarantined > 0 ? (
           // Defect G fix: quarantined items were moved with no indication
           // anywhere in the UI — read-only count + the folder path.
-          <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }} data-testid="distill-quarantine-count">
-            {(t.set_distill_quarantined ?? "{n} items awaiting review in {path}")
+          <div
+            className="muted"
+            style={{ fontSize: 12.5, marginTop: 6 }}
+            data-testid="distill-quarantine-count"
+          >
+            {(
+              t.set_distill_quarantined ?? "{n} items awaiting review in {path}"
+            )
               .replace("{n}", String(status.quarantined))
               .replace("{path}", QUARANTINE_DIR)}
           </div>
@@ -2803,7 +2979,11 @@ function RawAuditCard({
     <SettingsCard id="distill_audit" className="card">
       <div
         className="row"
-        style={{ justifyContent: "space-between", alignItems: "center", gap: 12 }}
+        style={{
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+        }}
       >
         <div style={{ fontSize: 13, fontWeight: 600 }}>
           {t.set_audit_title ?? "raw/ secret audit"}
@@ -2829,7 +3009,12 @@ function RawAuditCard({
       ) : null}
       {hits.length > 0 ? (
         <div
-          style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}
+          style={{
+            marginTop: 8,
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+          }}
           data-testid="raw-audit-hits"
         >
           {hits.map((h) => (
@@ -2846,7 +3031,9 @@ function RawAuditCard({
         </div>
       ) : null}
       {error ? (
-        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{error}</div>
+        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>
+          {error}
+        </div>
       ) : null}
       <div className="muted" style={{ fontSize: 11, marginTop: 8 }}>
         {t.set_audit_note ??
@@ -2923,10 +3110,9 @@ function SettingsArchive({
       setFailed(r.failed);
       setNote(
         r.buckets === 0 && r.failed.length === 0
-          ? (t.set_archive_nothing_old ?? "Nothing is older than {n} months.").replace(
-              "{n}",
-              String(months),
-            )
+          ? (
+              t.set_archive_nothing_old ?? "Nothing is older than {n} months."
+            ).replace("{n}", String(months))
           : (
               t.set_archive_compressed ??
               "Compressed {buckets} buckets ({files} files), reclaimed {size}"
@@ -3006,7 +3192,10 @@ function SettingsArchive({
             style={{ fontSize: 12.5, marginTop: 10, fontWeight: 600 }}
             data-testid="archive-total"
           >
-            {(t.set_archive_total ?? "{files} files, {size} across {buckets} buckets")
+            {(
+              t.set_archive_total ??
+              "{files} files, {size} across {buckets} buckets"
+            )
               .replace("{files}", String(totals.files))
               .replace("{size}", formatBytes(totals.bytes, lang))
               .replace("{buckets}", String(usage.length))}
@@ -3086,7 +3275,10 @@ function SettingsArchive({
         </div>
       ) : null}
       {failed.length > 0 ? (
-        <div style={{ fontSize: 12, marginTop: 6 }} data-testid="archive-failed">
+        <div
+          style={{ fontSize: 12, marginTop: 6 }}
+          data-testid="archive-failed"
+        >
           {(t.set_archive_failed ?? "Left untouched: {list}").replace(
             "{list}",
             failed.join("; "),
@@ -3102,7 +3294,12 @@ function SettingsArchive({
   );
 }
 
-const EMPTY_PROFILE: Profile = { role: "", goals: [], interests: [], style: "" };
+const EMPTY_PROFILE: Profile = {
+  role: "",
+  goals: [],
+  interests: [],
+  style: "",
+};
 
 /** `profile.md` editor (Phase B, Task 5) — lives in the Distill tab, not its
  *  own tab: the profile weights distillation priorities (identity layer,
@@ -3159,7 +3356,10 @@ function SettingsProfile({
   }
 
   const linesOf = (s: string): string[] =>
-    s.split("\n").map((l) => l.trim()).filter(Boolean);
+    s
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean);
 
   if (!vaultPath || !loaded) return null;
 
@@ -3185,7 +3385,9 @@ function SettingsProfile({
             className="textarea"
             rows={3}
             value={profile.goals.join("\n")}
-            onChange={(e) => setProfile({ ...profile, goals: linesOf(e.target.value) })}
+            onChange={(e) =>
+              setProfile({ ...profile, goals: linesOf(e.target.value) })
+            }
           />
         </div>
         <div className="field">
@@ -3194,7 +3396,9 @@ function SettingsProfile({
             className="textarea"
             rows={3}
             value={profile.interests.join("\n")}
-            onChange={(e) => setProfile({ ...profile, interests: linesOf(e.target.value) })}
+            onChange={(e) =>
+              setProfile({ ...profile, interests: linesOf(e.target.value) })
+            }
           />
         </div>
         <div className="field">
@@ -3206,9 +3410,18 @@ function SettingsProfile({
           />
         </div>
       </div>
-      <div className="row" style={{ gap: 10, marginTop: 12, alignItems: "center" }}>
-        <button className="btn btn-primary" disabled={saving} onClick={() => void save()}>
-          {saving ? (t.set_profile_saving ?? "Saving…") : (t.set_profile_save ?? "Save")}
+      <div
+        className="row"
+        style={{ gap: 10, marginTop: 12, alignItems: "center" }}
+      >
+        <button
+          className="btn btn-primary"
+          disabled={saving}
+          onClick={() => void save()}
+        >
+          {saving
+            ? (t.set_profile_saving ?? "Saving…")
+            : (t.set_profile_save ?? "Save")}
         </button>
         {saved ? (
           <span className="muted" style={{ fontSize: 12 }}>
@@ -3217,7 +3430,9 @@ function SettingsProfile({
         ) : null}
       </div>
       {error ? (
-        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{error}</div>
+        <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>
+          {error}
+        </div>
       ) : null}
     </SettingsCard>
   );
@@ -3446,7 +3661,8 @@ function MascotToggle({ t }: { t: Strings }): JSX.Element {
           {t.s_mascot ?? "Show MYCO, the mascot"}
         </span>
         <span className="muted" style={{ fontSize: 12 }}>
-          {t.s_mascot_hint ?? "Loaders, empty states and the About page. Off = static logo."}
+          {t.s_mascot_hint ??
+            "Loaders, empty states and the About page. Off = static logo."}
         </span>
       </span>
       <input
@@ -3529,7 +3745,13 @@ function SettingsAbout({ t }: { t: Strings }): JSX.Element {
 // looks, saved views, dismissed suggestions) so moving to a new machine does
 // not mean re-clicking through every tab. API keys (keychain), the vault
 // path, the MCP token and window geometry never leave this machine.
-function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): JSX.Element {
+function SettingsBackup({
+  t,
+  appVersion,
+}: {
+  t: Strings;
+  appVersion: string;
+}): JSX.Element {
   const [busy, setBusy] = useState<"export" | "import" | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   // A validated import waiting for the user to confirm the overwrite, and
@@ -3539,7 +3761,9 @@ function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): 
     sections: string[];
   } | null>(null);
   // Mirrors the module-level snapshot (settingsBundle.ts) into render state.
-  const [undoable, setUndoable] = useState<string[] | null>(() => pendingImportUndo());
+  const [undoable, setUndoable] = useState<string[] | null>(() =>
+    pendingImportUndo(),
+  );
 
   async function doExport(): Promise<void> {
     setBusy("export");
@@ -3579,7 +3803,12 @@ function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): 
       const current = await ipc.getSettings();
       const result = validateSettingsBundle(parsed, current);
       if (!result.ok) {
-        setMessage((t.s_backup_import_failed ?? "Import failed: {error}").replace("{error}", result.error));
+        setMessage(
+          (t.s_backup_import_failed ?? "Import failed: {error}").replace(
+            "{error}",
+            result.error,
+          ),
+        );
         return;
       }
       // Section names reach the user in the app's own language: the confirm
@@ -3587,7 +3816,9 @@ function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): 
       setPending({
         data: result.data,
         sections: sectionKeys(result.data.present).map(
-          (k) => (t as unknown as Record<string, string>)[`s_backup_section_${k}`] ?? k,
+          (k) =>
+            (t as unknown as Record<string, string>)[`s_backup_section_${k}`] ??
+            k,
         ),
       });
     } catch (e) {
@@ -3604,11 +3835,18 @@ function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): 
     setBusy("import");
     try {
       const current = await ipc.getSettings();
-      const sections = await applySettingsBundle(pending.data, current, ipc.setSettings);
+      const sections = await applySettingsBundle(
+        pending.data,
+        current,
+        ipc.setSettings,
+      );
       setPending(null);
       setUndoable(pendingImportUndo());
       setMessage(
-        (t.s_backup_imported ?? "Restored: {sections}").replace("{sections}", sections.join(", ")),
+        (t.s_backup_imported ?? "Restored: {sections}").replace(
+          "{sections}",
+          sections.join(", "),
+        ),
       );
     } catch (e) {
       setMessage(String(e));
@@ -3625,7 +3863,10 @@ function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): 
       setUndoable(pendingImportUndo());
       if (restored) {
         setMessage(
-          (t.s_backup_undone ?? "Put back: {sections}").replace("{sections}", restored.join(", ")),
+          (t.s_backup_undone ?? "Put back: {sections}").replace(
+            "{sections}",
+            restored.join(", "),
+          ),
         );
       }
     } catch (e) {
@@ -3637,14 +3878,23 @@ function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): 
 
   return (
     <div className="card col" style={{ padding: 20, gap: 12 }}>
-      <div style={{ fontWeight: 600, fontSize: 14 }}>{t.s_backup_title ?? "Settings & looks"}</div>
+      <div style={{ fontWeight: 600, fontSize: 14 }}>
+        {t.s_backup_title ?? "Settings & looks"}
+      </div>
       <p className="muted" style={{ fontSize: 13, margin: 0 }}>
         {t.s_backup_hint ??
           "Providers, automation, appearance and graph looks travel with this file. API keys, the vault path and this device's identity never do."}
       </p>
       <div className="row" style={{ gap: 8 }}>
-        <button type="button" className="btn" disabled={busy !== null} onClick={() => void doExport()}>
-          {busy === "export" ? (t.s_backup_busy ?? "Working…") : (t.s_backup_export ?? "Export…")}
+        <button
+          type="button"
+          className="btn"
+          disabled={busy !== null}
+          onClick={() => void doExport()}
+        >
+          {busy === "export"
+            ? (t.s_backup_busy ?? "Working…")
+            : (t.s_backup_export ?? "Export…")}
         </button>
         <button
           type="button"
@@ -3653,7 +3903,9 @@ function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): 
           onClick={() => void doImport()}
           data-testid="settings-import-btn"
         >
-          {busy === "import" ? (t.s_backup_busy ?? "Working…") : (t.s_backup_import ?? "Import…")}
+          {busy === "import"
+            ? (t.s_backup_busy ?? "Working…")
+            : (t.s_backup_import ?? "Import…")}
         </button>
         {undoable && !pending ? (
           <button
@@ -3736,7 +3988,13 @@ function SettingsBackup({ t, appVersion }: { t: Strings; appVersion: string }): 
 // clipboard. Hidden entirely when the log has never had an entry — this is
 // not a feature most users will ever see. Never sends anything anywhere; the
 // only actions are "copy to clipboard" and "delete the local log file".
-function CrashReport({ t, appVersion }: { t: Strings; appVersion: string }): JSX.Element | null {
+function CrashReport({
+  t,
+  appVersion,
+}: {
+  t: Strings;
+  appVersion: string;
+}): JSX.Element | null {
   const [entry, setEntry] = useState<PanicEntry | null | undefined>(undefined); // undefined = loading
   const [note, setNote] = useState("");
   const [copied, setCopied] = useState(false);
@@ -3762,7 +4020,12 @@ function CrashReport({ t, appVersion }: { t: Strings; appVersion: string }): JSX
   async function copyReport(): Promise<void> {
     if (!entry) return;
     const osVersion = await ipc.osVersion().catch(() => "unknown");
-    const report = formatCrashReport({ appVersion, osVersion, panicLine: entry.raw, note });
+    const report = formatCrashReport({
+      appVersion,
+      osVersion,
+      panicLine: entry.raw,
+      note,
+    });
     await navigator.clipboard.writeText(report);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1500);
@@ -3785,7 +4048,9 @@ function CrashReport({ t, appVersion }: { t: Strings; appVersion: string }): JSX
 
   return (
     <div className="card col" style={{ padding: 20, gap: 12 }}>
-      <div style={{ fontWeight: 600, fontSize: 14 }}>{t.cr_last_crash ?? "Last crash"}</div>
+      <div style={{ fontWeight: 600, fontSize: 14 }}>
+        {t.cr_last_crash ?? "Last crash"}
+      </div>
       <div className="muted" style={{ fontSize: 13 }}>
         {at}
       </div>
@@ -3816,9 +4081,16 @@ function CrashReport({ t, appVersion }: { t: Strings; appVersion: string }): JSX
       </label>
       <div className="row" style={{ gap: 8 }}>
         <button type="button" className="btn" onClick={() => void copyReport()}>
-          {copied ? (t.cr_copied ?? "Copied") : (t.cr_copy ?? "Copy a bug report")}
+          {copied
+            ? (t.cr_copied ?? "Copied")
+            : (t.cr_copy ?? "Copy a bug report")}
         </button>
-        <button type="button" className="btn" disabled={busy} onClick={() => void clearLog()}>
+        <button
+          type="button"
+          className="btn"
+          disabled={busy}
+          onClick={() => void clearLog()}
+        >
           {t.cr_clear ?? "Clear crash log"}
         </button>
       </div>
@@ -4010,7 +4282,9 @@ function ThemeSwatch({
     if (!cv) return;
     const ctx = cv.getContext("2d");
     if (!ctx) return;
-    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reduced = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
     const engine = createOverviewEngine(themeKey, { count: 14, speed: 0.6 });
     let raf = 0;
     let last = 0;

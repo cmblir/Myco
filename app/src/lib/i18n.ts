@@ -1200,6 +1200,10 @@ export interface Strings {
   sb_st_simulate: string;
   s_val_on: string;
   s_val_off: string;
+  s_changed_only: string;
+  s_search_clear: string;
+  s_show_all: string;
+  s_total_count: string;
   // Topbar.
   tb_lint: string;
   tb_toggle_sidebar: string;
@@ -2764,6 +2768,10 @@ export const STRINGS: Record<Lang, Strings> = {
     sb_st_simulate: "Simulate failure",
     s_val_on: "On",
     s_val_off: "Off",
+    s_changed_only: "Changed only",
+    s_search_clear: "Clear search",
+    s_show_all: "Show every setting",
+    s_total_count: "{n} of {all} settings",
     tb_lint: "Lint",
     tb_toggle_sidebar: "Toggle sidebar (⌘B)",
     tb_back: "Back (⌘[)",
@@ -4316,6 +4324,10 @@ export const STRINGS: Record<Lang, Strings> = {
     sb_st_simulate: "고장 시뮬레이션",
     s_val_on: "켜짐",
     s_val_off: "꺼짐",
+    s_changed_only: "변경된 설정만",
+    s_search_clear: "검색어 지우기",
+    s_show_all: "전체 설정 보기",
+    s_total_count: "설정 {all}개 중 {n}개",
     tb_lint: "린트",
     tb_toggle_sidebar: "사이드바 토글 (⌘B)",
     tb_back: "뒤로 (⌘[)",
@@ -5682,6 +5694,10 @@ export const STRINGS: Record<Lang, Strings> = {
     sb_st_simulate: "故障シミュレーション",
     s_val_on: "オン",
     s_val_off: "オフ",
+    s_changed_only: "変更した設定のみ",
+    s_search_clear: "検索をクリア",
+    s_show_all: "すべての設定を表示",
+    s_total_count: "設定 {all} 件中 {n} 件",
     tb_lint: "リント",
     tb_toggle_sidebar: "サイドバー切替 (⌘B)",
     tb_back: "戻る (⌘[)",

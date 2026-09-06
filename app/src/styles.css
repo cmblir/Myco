@@ -1042,11 +1042,186 @@ select {
    for the same reason as .app — the panel's min-content (long model names,
    provider rows) would otherwise force the grid wider than the viewport and
    push a page-wide horizontal scrollbar. Narrow layout in the 768px block. */
-.settings-grid {
+/* Settings shell (Stipe): search is the first control, the tabs are a row of
+   chips carrying their match counts, and every row prints its current value.
+   The old two-column `.settings-grid` (200px rail + body) is gone. */
+.s-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+.s-total {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-4);
+  white-space: nowrap;
+}
+.s-searchrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 14px 0 12px;
+}
+.s-box {
+  position: relative;
+  flex: 1 1 320px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.s-box input {
+  width: 100%;
+  height: 34px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--ink);
+  padding: 0 30px 0 32px;
+  border-radius: 10px;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--glass-hi);
+}
+.s-box input::placeholder {
+  color: var(--ink-4);
+}
+/* The page draws its own clear button (it must also drop the changed-only
+   filter), so the native one would be a second X in the same corner. */
+.s-box input::-webkit-search-cancel-button {
+  display: none;
+}
+.s-box input:focus {
+  outline: none;
+  border-color: var(--live);
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--live) 22%, transparent),
+    var(--glass-hi);
+}
+.s-box__ico {
+  position: absolute;
+  left: 11px;
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr);
-  gap: 32px;
-  margin-top: 16px;
+  color: var(--ink-4);
+  pointer-events: none;
+}
+.s-box__clear {
+  position: absolute;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--ink-4);
+  cursor: pointer;
+}
+.s-box__clear:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.s-toggler {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--glass-line);
+  border-radius: 10px;
+  background: var(--glass);
+  box-shadow: var(--glass-hi);
+  color: var(--ink-2);
+  font-size: 12.5px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out);
+}
+.s-toggler:hover {
+  background: var(--glass-hover);
+  transform: translateY(-1px);
+}
+.s-toggler.is-on {
+  color: var(--ink);
+  font-weight: 600;
+}
+.s-sw {
+  position: relative;
+  width: 26px;
+  height: 15px;
+  flex: none;
+  border-radius: 999px;
+  background: var(--track);
+  box-shadow: inset 0 0 0 1px var(--glass-line);
+  transition: background var(--dur-quick) var(--ease-out);
+}
+.s-sw::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 999px;
+  background: var(--ink-4);
+  transition: transform var(--dur-quick) var(--ease-out);
+}
+.s-toggler.is-on .s-sw {
+  background: var(--live);
+}
+.s-toggler.is-on .s-sw::after {
+  transform: translateX(11px);
+  background: var(--bg);
+}
+.s-rail {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+.s-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+  border: 1px solid var(--glass-line);
+  border-radius: 999px;
+  background: var(--glass);
+  color: var(--ink-3);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out),
+    transform var(--dur-quick) var(--ease-out);
+}
+.s-chip:hover {
+  background: var(--glass-hover);
+  color: var(--ink);
+  transform: translateY(-1px);
+}
+.s-chip[aria-selected="true"] {
+  color: var(--ink);
+  font-weight: 600;
+  border-color: var(--line-strong);
+  background: var(--glass-hover);
+}
+.s-body {
+  margin-top: 18px;
+}
+.s-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 26px 4px;
+  color: var(--ink-3);
 }
 /* Match count on a settings tab, and the value a row is currently set to —
    both come from the one row registry (lib/settingsSearch). The value rides
@@ -4093,21 +4268,13 @@ html.tray-window body {
   .app.sidebar-collapsed {
     grid-template-columns: minmax(0, 1fr);
   }
-  /* Settings: drop the tab rail beside the panel — 200px + a 32px gap leaves
-     too little of a 375px screen for the panel. The rail becomes a scrolling
-     row of tabs above it rather than seven full-width buttons pushing the
-     content off the first screen. */
-  .settings-grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
-  }
-  .settings-grid > nav {
-    flex-direction: row;
+  /* Settings: the chip rail scrolls sideways instead of wrapping into three
+     rows that push the panel off a 375px screen. */
+  .s-rail {
+    flex-wrap: nowrap;
     overflow-x: auto;
-    gap: 4px;
-    padding-bottom: 4px;
   }
-  .settings-grid > nav .qbtn {
+  .s-chip {
     flex: 0 0 auto;
   }
   main {
