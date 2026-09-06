@@ -4,7 +4,7 @@
 // owns it and changed nothing about what to do next. The customizable board
 // is demoted below, not deleted yet (a later wave).
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
@@ -28,8 +28,11 @@ import {
 } from "../lib/distill";
 import type { RunReport } from "../lib/distill";
 import { ipc } from "../lib/ipc";
+import type { FileNode } from "../lib/ipc";
 import LinkSuggestions from "../components/LinkSuggestions";
 import HarvestQueue from "../components/HarvestQueue";
+import VaultPulse from "../components/VaultPulse";
+import { bucketByDay } from "../lib/vaultPulse";
 import RecentNotes from "../components/RecentNotes";
 import VaultHistoryBanner from "../components/VaultHistoryBanner";
 import MorningBand from "../components/MorningBand";
@@ -38,7 +41,28 @@ import { useFocusTarget } from "../lib/useFocusTarget";
 
 export default function PageOverview({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
+  const fileTree = useVaultStore((s) => s.fileTree);
+  const adjacency = useVaultStore((s) => s.adjacency);
   const [mtimes, setMtimes] = useState<[string, number][]>([]);
+
+  // The living background the user picks in Settings > Appearance lives inside
+  // VaultPulse, so the band has to stay mounted for the backdrop to exist —
+  // the harvest queue took the hero slot, not this.
+  const buckets = useMemo(
+    () => bucketByDay(mtimes, currentVault?.path ?? "", 7, new Date()),
+    [mtimes, currentVault],
+  );
+  const pulse = useMemo(() => {
+    const files = countTreeFiles(fileTree);
+    const links = adjacency
+      ? Object.values(adjacency.forward).reduce((s, arr) => s + arr.length, 0)
+      : 0;
+    const unresolved = adjacency
+      ? Object.values(adjacency.unresolved).reduce((s, arr) => s + arr.length, 0)
+      : 0;
+    const total = links + unresolved;
+    return { files, links, resolvedRatio: total > 0 ? links / total : 0 };
+  }, [fileTree, adjacency]);
 
   // Morning-Report baseline: mark this visit AFTER MorningBand snapshots the
   // previous stamp (its useState initializer runs during render, before this
@@ -69,6 +93,13 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
     <div className="workspace">
       <VaultHistoryBanner t={t} />
       <MorningBand t={t} />
+      <VaultPulse
+        t={t}
+        pages={pulse.files}
+        links={pulse.links}
+        buckets={buckets}
+        resolvedRatio={pulse.resolvedRatio}
+      />
       <HarvestQueue t={t} />
       <LinkSuggestions t={t} />
       <RecentNotes t={t} entries={mtimes} vaultRoot={currentVault?.path ?? ""} />
@@ -490,4 +521,19 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
       ) : null}
     </div>
   );
+}
+
+/** File leaves in the tree — the pulse band's "pages" figure (restored with
+ *  the band; same walk it used before the harvest queue took the hero slot). */
+function countTreeFiles(tree: FileNode[] | null): number {
+  if (!tree) return 0;
+  let n = 0;
+  const stack = [...tree];
+  while (stack.length) {
+    const node = stack.pop();
+    if (!node) continue;
+    if (node.kind === "file") n++;
+    else stack.push(...node.children);
+  }
+  return n;
 }

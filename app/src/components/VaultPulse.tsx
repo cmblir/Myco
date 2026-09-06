@@ -23,6 +23,10 @@ interface VaultPulseProps {
   buckets: DayBuckets;
   /** 0..1 — share of wikilinks that resolve. */
   resolvedRatio: number;
+  /** The three figures and the 7-day strip. Off leaves the living background
+   *  alone: the harvest queue took the landing hero, but the backdrop the user
+   *  picks in Settings > Appearance lives here and must survive that. */
+  figures?: boolean;
 }
 
 export default function VaultPulse({
@@ -31,6 +35,7 @@ export default function VaultPulse({
   links,
   buckets,
   resolvedRatio,
+  figures = true,
 }: VaultPulseProps): JSX.Element {
   const authoredWeek = buckets.authored.reduce((s, n) => s + n, 0);
   const ingestedWeek = buckets.ingested.reduce((s, n) => s + n, 0);
@@ -129,24 +134,33 @@ export default function VaultPulse({
     .replace("{moved}", String(authoredWeek));
 
   return (
-    <section className="vault-pulse" style={style} aria-label={alt}>
-      <div className="vp-figures">
-        <Figure value={pages} label={t.ov_stats_pages} />
-        <Figure value={links} label={t.ov_stats_links} />
-        <Figure value={authoredWeek} label={t.ov_stats_moved ?? "moved this week"} />
-      </div>
+    <section
+      className={"vault-pulse" + (figures ? "" : " is-backdrop")}
+      style={style}
+      aria-label={figures ? alt : undefined}
+      aria-hidden={figures ? undefined : true}
+    >
+      {figures ? (
+        <div className="vp-figures">
+          <Figure value={pages} label={t.ov_stats_pages} />
+          <Figure value={links} label={t.ov_stats_links} />
+          <Figure value={authoredWeek} label={t.ov_stats_moved ?? "moved this week"} />
+        </div>
+      ) : null}
 
       {/* Decorative: the numbers above and the sparkline below carry the same
           information, so a screen reader gains nothing from the background. */}
       <canvas className="vp-canvas" ref={canvasRef} aria-hidden="true" />
 
-      <ActivityStrip
-        t={t}
-        buckets={buckets}
-        heights={heights}
-        authoredWeek={authoredWeek}
-        ingestedWeek={ingestedWeek}
-      />
+      {figures ? (
+        <ActivityStrip
+          t={t}
+          buckets={buckets}
+          heights={heights}
+          authoredWeek={authoredWeek}
+          ingestedWeek={ingestedWeek}
+        />
+      ) : null}
     </section>
   );
 }
