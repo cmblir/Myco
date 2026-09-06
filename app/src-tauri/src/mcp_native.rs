@@ -19,8 +19,12 @@ use std::sync::OnceLock;
 use regex::Regex;
 use rmcp::{
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{CallToolResult, ContentBlock},
-    schemars, tool, tool_handler, tool_router,
+    model::{
+        CallToolResult, ContentBlock, ListResourceTemplatesResult, ListResourcesResult,
+        PaginatedRequestParams, PromptMessage, ReadResourceRequestParams, ReadResourceResult,
+        Resource, ResourceContents, ResourceTemplate, Role,
+    },
+    prompt, prompt_handler, prompt_router, schemars, tool, tool_handler, tool_router,
     transport::streamable_http_server::{
         session::local::LocalSessionManager, StreamableHttpServerConfig, StreamableHttpService,
     },
@@ -1188,24 +1192,7 @@ impl McpServer {
             Ok(r) => r,
             Err(e) => return fail(e),
         };
-        let pages = collect_md(&wiki_dir(&root));
-        let raw_sources = collect_md(&raw_dir(&root)).len();
-        // total_links counts raw [[...]] occurrences (with duplicates), matching
-        // the Python server — not resolved graph edges.
-        let mut total_links = 0usize;
-        let mut type_counts: std::collections::BTreeMap<String, usize> = Default::default();
-        for abs in &pages {
-            if let Some((fm, body)) = read_parts(abs) {
-                if let Some(t) = fm_opt(&fm, "type") {
-                    *type_counts.entry(t).or_default() += 1;
-                }
-                total_links += wikilink_count(&body);
-            }
-        }
-        json_result(json!({
-            "ok": true, "total_pages": pages.len(), "raw_sources": raw_sources,
-            "total_links": total_links, "type_counts": type_counts,
-        }))
+        json_result(vault_stats(&root))
     }
 
     /// List wiki pages with a frontmatter summary (title, type, tags).
@@ -2608,6 +2595,245 @@ impl McpServer {
     }
 }
 
+// ─── prompts ─────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct IngestBacklogArgs {
+    /// How many inbox files to work in one pass (default 5).
+    #[serde(default)]
+    batch: Option<String>,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct AnswerWithCitationsArgs {
+    /// The question to answer from the vault.
+    question: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct WeeklyDigestArgs {
+    /// Days back to summarise (default 7).
+    #[serde(default)]
+    days: Option<String>,
+}
+
+/// A prompt argument that arrives as a string (every MCP client sends them
+/// that way), parsed to a number with a default and a sane ceiling.
+fn arg_num(raw: &Option<String>, default: u32, max: u32) -> u32 {
+    raw.as_deref()
+        .and_then(|s| s.trim().parse::<u32>().ok())
+        .unwrap_or(default)
+        .clamp(1, max)
+}
+
+/// The `_inbox/` drain loop, as a prompt instead of a paragraph buried in the
+/// server instructions.
+fn ingest_backlog_text(batch: u32) -> String {
+    format!(
+        "Drain this vault's ingest backlog, {batch} file(s) this pass.\n\n\
+         1. `get_instructions` once — the vault's CLAUDE.md is the schema you write to.\n\
+         2. `list_inbox`. If it is empty, stop and say so.\n\
+         3. For each of the first {batch} files:\n\
+         \x20  a. `read_inbox_source` to get its text.\n\
+         \x20  b. `recall` on its main claims to find the pages it belongs to, and\n\
+         \x20     `propose_links` on any page you are about to touch.\n\
+         \x20  c. Draft the page, then `check_page` it. Fix every blocking problem —\n\
+         \x20     do NOT reach for force.\n\
+         \x20  d. `write_page` (mode=update for an existing page, create for a new one),\n\
+         \x20     citing the source as [^src-<slug>] with a matching definition line.\n\
+         \x20  e. `archive_inbox_source` — it copies the source into immutable raw/ and\n\
+         \x20     moves the original aside, which is what makes the citation resolve.\n\
+         4. `append_changelog` once for the batch, then `git_commit`.\n\
+         5. Report per file: which pages you touched and which citation each claim got.\n\n\
+         Never modify anything under raw/. If `check_page` keeps failing on a source,\n\
+         leave it in the inbox and say why."
+    )
+}
+
+/// Retrieval-grounded answering with the abstention contract spelled out.
+fn answer_with_citations_text(question: &str) -> String {
+    format!(
+        "Answer this question from the vault, or say the vault does not answer it:\n\n\
+         {question}\n\n\
+         1. `recall` with the question as written (scope=wiki; widen to all only if\n\
+         \x20  wiki comes back empty).\n\
+         2. If `hits` is empty, ABSTAIN. Say the vault has nothing on this and list\n\
+         \x20  what `below_floor` came closest with — do not answer from your own\n\
+         \x20  knowledge and do not present a below-floor chunk as an answer.\n\
+         3. Otherwise answer in your own words, and after every claim cite the page\n\
+         \x20  it came from as [[page-stem]]. Quote a hit's `quote` line verbatim when\n\
+         \x20  the wording matters. If a claim needs a source citation, use the page's\n\
+         \x20  own [^src-*] footnote, not a new one.\n\
+         4. Judge relevance by `similarity` (the dense cosine), never by\n\
+         \x20  `score_final` — that is a rank, and the top hit of a nonsense query\n\
+         \x20  scores the same as the top hit of a perfect one.\n\
+         5. If two hits disagree, `contradicts` the pages involved and say so instead\n\
+         \x20  of silently picking one."
+    )
+}
+
+/// The weekly rollup skeleton, grounded in what actually changed.
+fn weekly_digest_text(days: u32) -> String {
+    format!(
+        "Draft a digest of the last {days} days in this vault.\n\n\
+         1. `changed_since` with since=\"{days}d\" — that is the ground truth for what\n\
+         \x20  moved. Do not summarise pages it does not list.\n\
+         2. `recall` on any theme you see repeating, to pull the quotable line.\n\
+         3. Write the digest as:\n\
+         \x20  ## What changed — one bullet per page, [[linked]], newest first.\n\
+         \x20  ## Themes — 2-4 bullets naming what the week was actually about.\n\
+         \x20  ## Open threads — pages still `status: disputed`, and anything\n\
+         \x20     `contradicts` flags among the changed pages.\n\
+         \x20  ## Gaps — unresolved [[links]] from `neighbourhood` on the busiest pages.\n\
+         4. When the vault has git history on, changed_since also returns\n\
+         \x20  agent_lines / human_lines per page; call out anything the human wrote,\n\
+         \x20  it is the part worth reading twice.\n\
+         5. Do NOT write the digest anywhere. Show it; the owner decides where it goes."
+    )
+}
+
+#[prompt_router]
+impl McpServer {
+    /// Work the _inbox/ backlog into cited wiki pages, a batch at a time.
+    #[prompt(
+        name = "ingest_backlog",
+        description = "The inbox drain loop: read each pending source, ground it with recall/propose_links, check the draft, write it with citations, archive the source, commit."
+    )]
+    async fn ingest_backlog(
+        &self,
+        Parameters(a): Parameters<IngestBacklogArgs>,
+    ) -> Result<Vec<PromptMessage>, McpError> {
+        Ok(vec![PromptMessage::new_text(
+            Role::User,
+            ingest_backlog_text(arg_num(&a.batch, 5, 50)),
+        )])
+    }
+
+    /// Answer from the vault with citations — or abstain.
+    #[prompt(
+        name = "answer_with_citations",
+        description = "Answer a question from the vault: recall, quote, cite [[pages]] and [^src-*] — and abstain when nothing clears the relevance floor."
+    )]
+    async fn answer_with_citations(
+        &self,
+        Parameters(a): Parameters<AnswerWithCitationsArgs>,
+    ) -> Result<Vec<PromptMessage>, McpError> {
+        Ok(vec![PromptMessage::new_text(
+            Role::User,
+            answer_with_citations_text(&a.question),
+        )])
+    }
+
+    /// A digest of what actually changed.
+    #[prompt(
+        name = "weekly_digest",
+        description = "Draft a digest of the last N days from changed_since — what changed, the themes, the open threads and the gaps."
+    )]
+    async fn weekly_digest(
+        &self,
+        Parameters(a): Parameters<WeeklyDigestArgs>,
+    ) -> Result<Vec<PromptMessage>, McpError> {
+        Ok(vec![PromptMessage::new_text(
+            Role::User,
+            weekly_digest_text(arg_num(&a.days, 7, 365)),
+        )])
+    }
+}
+
+// ─── resources ───────────────────────────────────────────────────────────────
+
+const INSTRUCTIONS_URI: &str = "myco://instructions";
+const STATS_URI: &str = "myco://stats";
+const WIKI_URI_PREFIX: &str = "myco://wiki/";
+const WIKI_URI_TEMPLATE: &str = "myco://wiki/{path}";
+
+/// How many wiki pages `resources/list` enumerates. Clients that follow
+/// `resources/templates/list` do not need the listing at all; this is the
+/// fallback for those that do not, and a big vault must not turn one
+/// `resources/list` into a megabyte of URIs.
+const RESOURCE_PAGE_LIMIT: usize = 200;
+
+/// Everything readable as a resource: the two fixed documents plus up to
+/// `RESOURCE_PAGE_LIMIT` wiki pages. `raw/` is deliberately absent — it is
+/// immutable source text, and exposing it as a resource would put it in front
+/// of a model that is supposed to cite it, not read it wholesale.
+fn resource_list(root: &Path) -> Vec<Resource> {
+    let mut out = vec![
+        Resource::new(INSTRUCTIONS_URI, "myco instructions")
+            .with_description("The vault's CLAUDE.md — the schema every page is written to.")
+            .with_mime_type("text/markdown"),
+        Resource::new(STATS_URI, "myco stats")
+            .with_description("Page/source counts, link total and the type breakdown, as JSON.")
+            .with_mime_type("application/json"),
+    ];
+    let wiki = wiki_dir(root);
+    let wiki = wiki.canonicalize().unwrap_or(wiki);
+    let mut pages = collect_md(&wiki);
+    pages.sort();
+    for abs in pages.into_iter().take(RESOURCE_PAGE_LIMIT) {
+        let rel = rel_to(&wiki, &abs).replace('\\', "/");
+        let title = read_parts(&abs)
+            .and_then(|(fm, _)| fm_opt(&fm, "title"))
+            .unwrap_or_else(|| rel.clone());
+        let mut r =
+            Resource::new(format!("{WIKI_URI_PREFIX}{rel}"), title).with_mime_type("text/markdown");
+        if let Ok(meta) = std::fs::metadata(&abs) {
+            r = r.with_size(meta.len());
+        }
+        out.push(r);
+    }
+    out
+}
+
+/// Read one resource by URI. Only the two fixed documents and `myco://wiki/…`
+/// resolve; every other scheme, and every path that would leave `wiki/`, is a
+/// not-found — which is also what keeps `raw/` unreachable.
+fn resource_read(root: &Path, uri: &str) -> Result<ResourceContents, String> {
+    match uri {
+        INSTRUCTIONS_URI => {
+            let path = root.join("CLAUDE.md");
+            let text =
+                std::fs::read_to_string(&path).map_err(|e| format!("{INSTRUCTIONS_URI}: {e}"))?;
+            Ok(ResourceContents::text(text, uri).with_mime_type("text/markdown"))
+        }
+        STATS_URI => {
+            let text = serde_json::to_string_pretty(&vault_stats(root))
+                .map_err(|e| format!("{STATS_URI}: {e}"))?;
+            Ok(ResourceContents::text(text, uri).with_mime_type("application/json"))
+        }
+        _ => {
+            let rel = uri
+                .strip_prefix(WIKI_URI_PREFIX)
+                .ok_or_else(|| format!("unknown resource: {uri}"))?;
+            let abs = wiki_page_path(root, rel).map_err(|_| format!("no such page: {uri}"))?;
+            let text = std::fs::read_to_string(&abs).map_err(|e| format!("{uri}: {e}"))?;
+            Ok(ResourceContents::text(text, uri).with_mime_type("text/markdown"))
+        }
+    }
+}
+
+/// The `stats` tool's numbers, as one value both it and `myco://stats` use.
+fn vault_stats(root: &Path) -> Value {
+    let pages = collect_md(&wiki_dir(root));
+    let raw_sources = collect_md(&raw_dir(root)).len();
+    // total_links counts raw [[...]] occurrences (with duplicates), not
+    // resolved graph edges.
+    let mut total_links = 0usize;
+    let mut type_counts: std::collections::BTreeMap<String, usize> = Default::default();
+    for abs in &pages {
+        if let Some((fm, body)) = read_parts(abs) {
+            if let Some(t) = fm_opt(&fm, "type") {
+                *type_counts.entry(t).or_default() += 1;
+            }
+            total_links += wikilink_count(&body);
+        }
+    }
+    json!({
+        "ok": true, "total_pages": pages.len(), "raw_sources": raw_sources,
+        "total_links": total_links, "type_counts": type_counts,
+    })
+}
+
 /// The usage brief a client receives at `initialize` — the same one the
 /// Python server ships, plus what `search` now is.
 const INSTRUCTIONS: &str = "myco is a self-maintaining LLM wiki backed by an Obsidian vault. \
@@ -2626,6 +2852,8 @@ fn server_info() -> rmcp::model::ServerInfo {
     rmcp::model::ServerInfo::new(
         rmcp::model::ServerCapabilities::builder()
             .enable_tools()
+            .enable_prompts()
+            .enable_resources()
             .build(),
     )
     .with_server_info(rmcp::model::Implementation::new(
@@ -2638,11 +2866,50 @@ fn server_info() -> rmcp::model::ServerInfo {
 // call_tool and get_info are written out (the macro skips a method that
 // already exists): every dispatch passes the inflow tool-call log, and
 // `initialize` identifies myco instead of the SDK crate. list_tools stays
-// generated.
+// generated, and `#[prompt_handler]` generates list_prompts/get_prompt off
+// `Self::prompt_router()`. Resources have no macro in rmcp 2.2, so
+// list_resources / list_resource_templates / read_resource are written out
+// below against the same free bodies the tests drive.
 #[tool_handler]
+#[prompt_handler]
 impl ServerHandler for McpServer {
     fn get_info(&self) -> rmcp::model::ServerInfo {
         server_info()
+    }
+
+    async fn list_resources(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<ListResourcesResult, McpError> {
+        let root = resolve_root("").map_err(|e| McpError::invalid_params(e, None))?;
+        Ok(ListResourcesResult::with_all_items(resource_list(&root)))
+    }
+
+    async fn list_resource_templates(
+        &self,
+        _request: Option<PaginatedRequestParams>,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<ListResourceTemplatesResult, McpError> {
+        Ok(ListResourceTemplatesResult::with_all_items(vec![
+            ResourceTemplate::new(WIKI_URI_TEMPLATE, "myco wiki page")
+                .with_description(
+                    "One wiki page's raw markdown, by its wiki-relative path \
+                     (myco://wiki/scaling-laws.md). raw/ is never addressable.",
+                )
+                .with_mime_type("text/markdown"),
+        ]))
+    }
+
+    async fn read_resource(
+        &self,
+        request: ReadResourceRequestParams,
+        _context: rmcp::service::RequestContext<rmcp::RoleServer>,
+    ) -> Result<ReadResourceResult, McpError> {
+        let root = resolve_root("").map_err(|e| McpError::invalid_params(e, None))?;
+        let contents = resource_read(&root, &request.uri)
+            .map_err(|e| McpError::resource_not_found(e, None))?;
+        Ok(ReadResourceResult::new(vec![contents]))
     }
 
     async fn call_tool(
@@ -3838,6 +4105,10 @@ mod tests {
     use super::record_tool_call_at;
     use super::suspect_scan;
     use super::{
+        answer_with_citations_text, arg_num, ingest_backlog_text, resource_list, resource_read,
+        weekly_digest_text, INSTRUCTIONS_URI, STATS_URI, WIKI_URI_TEMPLATE,
+    };
+    use super::{
         archive_inbox, collect_md, list_wiki_pages, read_wiki_page, search_row, server_info,
     };
     use super::{best_quote, changed_since_at, neighbourhood_at, parse_since, recall_result};
@@ -3847,6 +4118,7 @@ mod tests {
         distill_status_at, import_conversation_at, import_outcome_json, ledger_status_at,
         session_file, setup_profile_at, wikify_pending_at,
     };
+    use super::{McpServer, ResourceContents};
     use crate::commands::HybridHit;
     use crate::retrieval::{Bm25Index, TierWeights};
     use std::path::Path;
@@ -4330,6 +4602,208 @@ body of {rel}
         );
         let err = read_wiki_page(root, "../raw/x.md").unwrap_err();
         assert_eq!(err, "path escapes wiki/: ../raw/x.md");
+    }
+
+    // ─── prompts and resources ────────────────────────────────────────────────
+
+    #[test]
+    fn initialize_advertises_prompts_and_resources_alongside_tools() {
+        let info = server_info();
+        assert!(info.capabilities.tools.is_some());
+        assert!(info.capabilities.prompts.is_some(), "prompts capability");
+        assert!(
+            info.capabilities.resources.is_some(),
+            "resources capability"
+        );
+    }
+
+    #[test]
+    fn prompts_list_names_all_three_with_their_arguments() {
+        let listed = McpServer::prompt_router().list_all();
+        let names: Vec<&str> = listed.iter().map(|p| p.name.as_str()).collect();
+        assert_eq!(
+            names,
+            vec!["answer_with_citations", "ingest_backlog", "weekly_digest"],
+            "sorted by name"
+        );
+        for prompt in &listed {
+            assert!(
+                prompt.description.as_deref().is_some_and(|d| d.len() > 20),
+                "{}: every prompt describes itself",
+                prompt.name
+            );
+        }
+        let arg_of = |name: &str| -> Vec<(String, bool)> {
+            listed
+                .iter()
+                .find(|p| p.name == name)
+                .unwrap()
+                .arguments
+                .clone()
+                .unwrap_or_default()
+                .into_iter()
+                .map(|a| (a.name, a.required.unwrap_or(false)))
+                .collect()
+        };
+        assert_eq!(
+            arg_of("answer_with_citations"),
+            vec![("question".into(), true)]
+        );
+        assert_eq!(arg_of("ingest_backlog"), vec![("batch".into(), false)]);
+        assert_eq!(arg_of("weekly_digest"), vec![("days".into(), false)]);
+    }
+
+    #[test]
+    fn every_prompt_is_routable_by_the_name_it_lists_under() {
+        let router = McpServer::prompt_router();
+        for name in ["ingest_backlog", "answer_with_citations", "weekly_digest"] {
+            assert!(router.has_route(name), "{name} has no route");
+        }
+        assert!(!router.has_route("nope"));
+    }
+
+    // Prompt arguments arrive as strings from every MCP client.
+    #[test]
+    fn arg_num_parses_a_string_and_clamps_to_a_sane_range() {
+        assert_eq!(arg_num(&Some("12".into()), 5, 50), 12);
+        assert_eq!(arg_num(&Some(" 3 ".into()), 5, 50), 3);
+        assert_eq!(arg_num(&None, 5, 50), 5);
+        assert_eq!(arg_num(&Some("banana".into()), 5, 50), 5);
+        assert_eq!(arg_num(&Some("0".into()), 5, 50), 1);
+        assert_eq!(arg_num(&Some("9999".into()), 5, 50), 50);
+    }
+
+    #[test]
+    fn prompt_bodies_carry_their_argument_and_name_the_tools_they_drive() {
+        let backlog = ingest_backlog_text(3);
+        assert!(backlog.contains("3 file(s) this pass"), "{backlog}");
+        for tool in [
+            "list_inbox",
+            "read_inbox_source",
+            "check_page",
+            "write_page",
+            "archive_inbox_source",
+            "git_commit",
+        ] {
+            assert!(backlog.contains(tool), "ingest_backlog must drive {tool}");
+        }
+        assert!(
+            backlog.contains("Never modify anything under raw/"),
+            "{backlog}"
+        );
+
+        let answer = answer_with_citations_text("what are scaling laws?");
+        assert!(answer.contains("what are scaling laws?"));
+        assert!(answer.contains("recall") && answer.contains("[^src-*]"));
+        assert!(
+            answer.contains("ABSTAIN"),
+            "the floor contract is the point"
+        );
+        assert!(answer.contains("similarity"), "{answer}");
+
+        let digest = weekly_digest_text(14);
+        assert!(digest.contains("last 14 days"), "{digest}");
+        assert!(digest.contains("since=\"14d\""), "{digest}");
+        assert!(digest.contains("changed_since"));
+        assert!(digest.contains("Do NOT write the digest anywhere"));
+    }
+
+    fn resource_vault() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("CLAUDE.md"),
+            "# Vault schema\n\nRules here.\n",
+        );
+        write(
+            &dir.path().join("wiki/scaling.md"),
+            "---\ntitle: \"Scaling laws\"\ntype: concept\n---\nBody with [[a-link]].\n",
+        );
+        write(
+            &dir.path().join("raw/secret-source.md"),
+            "immutable source\n",
+        );
+        dir
+    }
+
+    #[test]
+    fn resource_list_offers_the_two_documents_and_the_wiki_pages() {
+        let dir = resource_vault();
+        let listed = resource_list(dir.path());
+        let uris: Vec<&str> = listed.iter().map(|r| r.uri.as_str()).collect();
+        assert_eq!(
+            uris,
+            vec![INSTRUCTIONS_URI, STATS_URI, "myco://wiki/scaling.md"]
+        );
+        // The page is named by its frontmatter title, and sized.
+        let page = listed.last().unwrap();
+        assert_eq!(page.name, "Scaling laws");
+        assert_eq!(page.mime_type.as_deref(), Some("text/markdown"));
+        assert!(page.size.unwrap() > 0);
+    }
+
+    #[test]
+    fn resource_read_serves_instructions_stats_and_a_page() {
+        let dir = resource_vault();
+        let root = dir.path();
+        let text_of = |uri: &str| match resource_read(root, uri).unwrap() {
+            ResourceContents::TextResourceContents { text, .. } => text,
+            other => panic!("expected text, got {other:?}"),
+        };
+        assert!(text_of(INSTRUCTIONS_URI).contains("Vault schema"));
+        let stats: serde_json::Value = serde_json::from_str(&text_of(STATS_URI)).unwrap();
+        assert_eq!(stats["total_pages"], 1);
+        assert_eq!(stats["raw_sources"], 1);
+        assert_eq!(stats["total_links"], 1);
+        assert_eq!(stats["type_counts"]["concept"], 1);
+        let page = text_of("myco://wiki/scaling.md");
+        assert!(page.starts_with("---\ntitle: \"Scaling laws\""), "{page}");
+        assert!(page.contains("[[a-link]]"));
+    }
+
+    // raw/ is immutable AND unreadable as a resource: it is not listed, and no
+    // URI spelling reaches it.
+    #[test]
+    fn raw_is_never_exposed_as_a_resource() {
+        let dir = resource_vault();
+        let root = dir.path();
+        assert!(
+            !resource_list(root)
+                .iter()
+                .any(|r| r.uri.contains("raw") || r.name.contains("secret-source")),
+            "raw/ must not be listed"
+        );
+        for uri in [
+            "myco://raw/secret-source.md",
+            "myco://wiki/../raw/secret-source.md",
+            "myco://wiki/..%2Fraw%2Fsecret-source.md",
+            "file:///etc/passwd",
+            "myco://wiki/",
+            "myco://instructions/../../etc/passwd",
+        ] {
+            let err = resource_read(root, uri).unwrap_err();
+            assert!(
+                err.contains("unknown resource") || err.contains("no such page"),
+                "{uri} leaked: {err}"
+            );
+        }
+        // …and the template only ever addresses wiki/.
+        assert_eq!(WIKI_URI_TEMPLATE, "myco://wiki/{path}");
+    }
+
+    #[test]
+    fn resource_list_cuts_a_big_wiki_at_the_page_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        for i in 0..super::RESOURCE_PAGE_LIMIT + 5 {
+            write(
+                &dir.path().join("wiki").join(format!("p{i:04}.md")),
+                "---\ntype: concept\n---\nbody\n",
+            );
+        }
+        // Two fixed documents plus the capped page listing.
+        assert_eq!(
+            resource_list(dir.path()).len(),
+            super::RESOURCE_PAGE_LIMIT + 2
+        );
     }
 
     // ─── contradicts / propose_links ──────────────────────────────────────────
