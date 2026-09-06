@@ -9,6 +9,7 @@ import { useSettingsStore } from "../../stores/settingsStore";
 import { ipc } from "../../lib/ipc";
 import type { MycoSettings } from "../../lib/ipc";
 import {
+  BUILTIN_INGEST_MODEL,
   CLI_DEFAULT,
   providerCanIngest,
   useEnabledProviders,
@@ -58,11 +59,20 @@ export function SettingsModel({ t }: { t: Strings }): JSX.Element {
         t={t}
         rowId="model_ingest"
         label={t.s_model_ingest}
-        // Ingest writes vault files; a text-only provider (builtin, HTTP APIs,
-        // ollama) can only fail after the raw/ copy is already written — so it
-        // is not offered here. A stored incapable choice still displays,
-        // marked not-connected (ModelSelect never silently rewrites).
-        providers={enabled.filter((p) => providerCanIngest(p.id))}
+        // Ingest writes vault files; a text-only provider (HTTP APIs, ollama)
+        // can only fail after the raw/ copy is already written — so it is not
+        // offered here. A stored incapable choice still displays, marked
+        // not-connected (ModelSelect never silently rewrites).
+        //
+        // Built-in is offered, and shows `extractive-ingest` rather than the
+        // query row's `extractive-retrieval`: same provider, different work.
+        // Its catalog is swapped per-row instead of carrying both ids, so the
+        // query row is never offered a model that only ingests.
+        providers={enabled
+          .filter((p) => providerCanIngest(p.id))
+          .map((p) =>
+            p.id === "builtin-local" ? { ...p, catalog: [BUILTIN_INGEST_MODEL] } : p,
+          )}
         provider={settings.ingest_provider}
         model={settings.ingest_model}
         effort={settings.ingest_effort}

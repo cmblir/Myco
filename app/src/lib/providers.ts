@@ -16,6 +16,12 @@ import { useSettingsStore } from "../stores/settingsStore";
 // BUILTIN_EMBED_MODEL), so the "model" here names the retrieval stack.
 export const BUILTIN_MODEL = "extractive-retrieval";
 
+// The same provider's INGEST "model" — what the Settings ingest row shows,
+// mirroring the query row's `extractive-retrieval`. There is no model here
+// either: the ingest run quotes the source verbatim and cites it, with zero
+// model calls (lib/extractiveIngest.ts).
+export const BUILTIN_INGEST_MODEL = "extractive-ingest";
+
 // The bundled offline embedding model's id (e5-small-ko — multilingual-e5-small
 // fine-tuned for Korean retrieval; won the 2026-08 bake-off over the 10x-larger
 // bge-m3 on the app's own harness). Used as the embedding-model key ("builtin-local:<id>") so a
@@ -42,12 +48,14 @@ export interface ProviderDef {
 export const CLI_DEFAULT = "(default)";
 
 /** Whether a provider can run Ingest, which writes files into the vault.
- * The three CLIs have real file tools (chat.ts's isCli branch) and myco Pro
- * applies file operations server-side (runIngestProvider); every other
+ * The three CLIs have real file tools (chat.ts's isCli branch), myco Pro
+ * applies file operations server-side, and `builtin-local` writes the pages
+ * itself, extractively — all three through `runIngestProvider`. Every other
  * provider is text-in/text-out and `complete({task:"ingest"})` throws for it.
  * Used to keep the Ingest picker from offering a provider that can only fail. */
 export function providerCanIngest(id: string): boolean {
-  return PROVIDERS.find((p) => p.id === id)?.kind === "cli" || id === "myco-pro";
+  const kind = PROVIDERS.find((p) => p.id === id)?.kind;
+  return kind === "cli" || id === "myco-pro" || id === "builtin-local";
 }
 
 export const PROVIDERS: ProviderDef[] = [
@@ -167,7 +175,7 @@ export const PROVIDERS: ProviderDef[] = [
     name: "Built-in (offline)",
     kind: "local",
     needsKey: false,
-    desc: "Korean-aware e5 embedder bundled inside the app. Works offline with zero setup; Ask answers extractively from your notes via semantic search. No local chat model ships — features that write prose (ingest, overviews, digests) fall back to your ingest provider.",
+    desc: "Korean-aware e5 embedder bundled inside the app. Works offline with zero setup: Ask answers extractively from your notes, and Ingest writes a source page that quotes and cites the source verbatim — no model call either way. No local chat model ships, so features that write NEW prose (overviews, digests, maps) still need a connected provider.",
     catalog: [BUILTIN_MODEL],
   },
   {

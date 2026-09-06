@@ -401,6 +401,13 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
                   <span className="chip">
                     <Icon name="bolt" size={11} /> {settings?.ingest_model ?? "claude-cli"}
                   </span>
+                  {/* Where the model is named is where the offline run has to
+                      say what it will actually do — quote, not summarise. */}
+                  {settings?.ingest_provider === "builtin-local" ? (
+                    <span className="muted" style={{ fontSize: 12 }}>
+                      {t.ing_extractive_hint}
+                    </span>
+                  ) : null}
                   <span className="muted" style={{ fontSize: 12 }}>
                     vault: {currentVault?.path ?? "(none)"}
                   </span>
@@ -564,6 +571,9 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
       {settings ? (
         <div className="muted" style={{ fontSize: 12, marginTop: 12 }}>
           via {settings.ingest_provider} · {settings.ingest_model}
+          {settings.ingest_provider === "builtin-local"
+            ? ` · ${t.ing_extractive_hint}`
+            : ""}
         </div>
       ) : null}
 

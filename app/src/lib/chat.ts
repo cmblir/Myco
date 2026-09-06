@@ -210,12 +210,19 @@ export async function complete(args: CompleteArgs): Promise<string> {
 
   // Non-tool provider. Ingest genuinely needs to write files into the vault,
   // which these providers cannot do — fail loudly instead of pretending.
-  if (args.task === "ingest") {
+  //
+  // builtin-local is excluded: it writes the pages itself, extractively, in
+  // runIngestProvider's offline branch, so an ingest for it never reaches
+  // here at all. (If one ever did, the CHAT_MODEL_MISSING fast-fail below
+  // still catches it — no silent pass.)
+  if (args.task === "ingest" && provider !== "builtin-local") {
     throw new Error(
-      `Ingest writes new pages into your vault, which needs a provider with file ` +
-        `access — Claude Code, Gemini or Codex (CLI), or myco Pro. The selected ` +
-        `provider "${provider}" is text-only. Pick one of those for Ingest under ` +
-        `Settings → Model, or connect one under Settings → Connections.`,
+      `Ingest writes new pages into your vault, which needs a provider that can ` +
+        `write them — Claude Code, Gemini or Codex (CLI), myco Pro, or ` +
+        `Built-in (offline), which quotes and cites your source with no model ` +
+        `call. The selected provider "${provider}" is text-only. Pick one of ` +
+        `those for Ingest under Settings → Model, or connect one under ` +
+        `Settings → Connections.`,
     );
   }
 

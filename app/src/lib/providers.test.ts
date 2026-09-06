@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { CLI_DEFAULT, PROVIDERS } from "./providers";
+import {
+  BUILTIN_INGEST_MODEL,
+  BUILTIN_MODEL,
+  CLI_DEFAULT,
+  PROVIDERS,
+  providerCanIngest,
+} from "./providers";
 
 // Regression guard for the Model-tab bug where a connected CLI provider's
 // dropdown showed only the "(default)" sentinel with nothing else to pick
@@ -57,5 +63,47 @@ describe("CLI provider catalogs", () => {
   it("never offers effort for a non-CLI provider", () => {
     const nonCli = PROVIDERS.filter((p) => p.kind !== "cli");
     expect(nonCli.filter((p) => p.efforts !== undefined)).toEqual([]);
+  });
+});
+
+// Who may be offered in the Settings > Model INGEST row. Ingest writes pages
+// into the vault, so a provider that cannot write them must never appear —
+// the whole point of the filter. `builtin-local` belongs here now: it writes
+// the pages itself, extractively, with no model call
+// (lib/extractiveIngest.ts, runIngestProvider's offline branch).
+describe("providerCanIngest", () => {
+  it.each([
+    // CLIs — real file tools.
+    ["anthropic-cli", true],
+    ["gemini-cli", true],
+    ["codex-cli", true],
+    // Server-side file operations.
+    ["myco-pro", true],
+    // Offline extractive writer.
+    ["builtin-local", true],
+    // Text-in / text-out — `complete({task:"ingest"})` throws for these.
+    ["anthropic-api", false],
+    ["openai-api", false],
+    ["google-api", false],
+    ["openrouter", false],
+    ["ollama", false],
+    // Not a provider at all.
+    ["nonesuch", false],
+  ] as const)("%s -> %s", (id, expected) => {
+    expect(providerCanIngest(id)).toBe(expected);
+  });
+
+  it("keeps ollama out even though it shares builtin-local's kind", () => {
+    const kinds = Object.fromEntries(PROVIDERS.map((p) => [p.id, p.kind]));
+    expect(kinds["ollama"]).toBe("local");
+    expect(kinds["builtin-local"]).toBe("local");
+    expect(providerCanIngest("ollama")).toBe(false);
+  });
+
+  it("names the built-in ingest model apart from the query one", () => {
+    // Same provider, two roles: the Settings rows must not show one id for
+    // both, or "offline ingest" reads as "offline retrieval".
+    expect(BUILTIN_INGEST_MODEL).toBe("extractive-ingest");
+    expect(BUILTIN_INGEST_MODEL).not.toBe(BUILTIN_MODEL);
   });
 });
