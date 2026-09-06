@@ -12,6 +12,7 @@ const auth = (
   agent_lines: agent,
   human_lines: human,
   last_human_at: lastHuman,
+  runs: [],
 });
 
 describe("badgeView", () => {

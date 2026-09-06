@@ -434,11 +434,25 @@ export interface VaultHistoryStatus {
   enabled: boolean;
 }
 
+/** Mirrors Rust `vault_history::LineRun` — one maximal run of consecutive
+ *  lines from a single commit, 1-based and inclusive at both ends. Built from
+ *  the same `git blame --line-porcelain` the counts come from (no extra git
+ *  call); the reader's authorship gutter maps these onto paragraphs. */
+export interface LineRun {
+  from: number;
+  to: number;
+  agent: boolean;
+  sha: string;
+  /** Author time, unix secs. */
+  ts: number;
+}
+
 /** Mirrors Rust `vault_history::PageAuthorship` (Q4 item 16). */
 export interface PageAuthorship {
   agent_lines: number;
   human_lines: number;
   last_human_at: number | null;
+  runs: LineRun[];
 }
 
 /** wiki/ rel -> ever committed by the agent author (Q4 item 16). Aliased:

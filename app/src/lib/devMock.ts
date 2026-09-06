@@ -1251,6 +1251,10 @@ function mtimes(): [string, number][] {
   ];
 }
 
+// Fixed authorship timestamps for the mock gutter (two and five days back).
+const MOCK_HUMAN_TS = Math.floor(Date.now() / 1000) - 2 * 86400;
+const MOCK_AGENT_TS = Math.floor(Date.now() / 1000) - 5 * 86400;
+
 function provenance() {
   // Give a couple of pages resolved provenance (one imported from a ChatGPT
   // conversation, one hand-authored source) plus a dangling citation, so the
@@ -1789,6 +1793,14 @@ function mockInvoke(
         agent_lines: 38,
         human_lines: 62,
         last_human_at: Math.floor(Date.now() / 1000) - 2 * 86400,
+        // Line runs for the reader's authorship gutter. The mock vault has no
+        // git, so these stand in for one blame of a short page: a human
+        // opening, an agent paragraph, human again.
+        runs: [
+          { from: 1, to: 4, agent: false, sha: "1".repeat(40), ts: MOCK_HUMAN_TS },
+          { from: 5, to: 6, agent: true, sha: "2".repeat(40), ts: MOCK_AGENT_TS },
+          { from: 7, to: 40, agent: false, sha: "1".repeat(40), ts: MOCK_HUMAN_TS },
+        ],
       });
     case "authorship_index":
       return Promise.resolve({});

@@ -179,12 +179,88 @@ pub fn changed_files(root: &Path, sha: &str) -> Result<Vec<(char, String)>, Stri
         .collect())
 }
 
+/// A maximal run of consecutive lines from one commit and one author class.
+/// 1-based, inclusive on both ends — the reader's gutter maps these onto
+/// paragraphs and offers a revert against `sha`'s parent.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize)]
+pub struct LineRun {
+    pub from: usize,
+    pub to: usize,
+    pub agent: bool,
+    pub sha: String,
+    /// Author time, unix secs.
+    pub ts: i64,
+}
+
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct PageAuthorship {
     pub agent_lines: usize,
     pub human_lines: usize,
     /// Unix secs of the newest non-agent commit touching the file.
     pub last_human_at: Option<i64>,
+    /// The same blame, ungrouped into line runs. Costs no extra git call.
+    pub runs: Vec<LineRun>,
+}
+
+/// Pure: `git blame --line-porcelain` output -> (agent lines, human lines,
+/// runs). `--line-porcelain` repeats the full header block for every line, so
+/// each line carries its own sha, author-mail and author-time; consecutive
+/// lines sharing a commit AND an author class collapse into one run.
+/// Uncommitted local edits blame as the all-zero sha with a non-agent mail,
+/// which is exactly how they should read: human, not yet in history.
+fn parse_blame_porcelain(out: &str, agent_mail: &str) -> (usize, usize, Vec<LineRun>) {
+    let agent_tag = format!("author-mail <{agent_mail}>");
+    let (mut agent_lines, mut human_lines) = (0usize, 0usize);
+    let mut runs: Vec<LineRun> = Vec::new();
+    let (mut sha, mut lineno, mut ts, mut agent) = (String::new(), 0usize, 0i64, false);
+    for line in out.lines() {
+        if let Some(rest) = line.strip_prefix('\t') {
+            let _ = rest; // the content itself is not needed, only that the entry ended
+            if lineno == 0 {
+                continue; // content before any header: not blame output
+            }
+            if agent {
+                agent_lines += 1;
+            } else {
+                human_lines += 1;
+            }
+            match runs.last_mut() {
+                Some(r) if r.sha == sha && r.agent == agent && r.to + 1 == lineno => {
+                    r.to = lineno;
+                }
+                _ => runs.push(LineRun {
+                    from: lineno,
+                    to: lineno,
+                    agent,
+                    sha: sha.clone(),
+                    ts,
+                }),
+            }
+            lineno = 0;
+            continue;
+        }
+        if line.starts_with("author-mail ") {
+            agent = line == agent_tag;
+        } else if let Some(secs) = line.strip_prefix("author-time ") {
+            ts = secs.trim().parse().unwrap_or(0);
+        } else {
+            // Header line: "<sha> <orig-lineno> <final-lineno> [<lines in group>]".
+            let mut cols = line.split(' ');
+            let (Some(hash), Some(_orig), Some(final_no)) = (cols.next(), cols.next(), cols.next())
+            else {
+                continue;
+            };
+            if hash.len() != 40 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+                continue;
+            }
+            let Ok(n) = final_no.parse::<usize>() else {
+                continue;
+            };
+            sha = hash.to_string();
+            lineno = n;
+        }
+    }
+    (agent_lines, human_lines, runs)
 }
 
 /// Line ownership of the working-tree file per `git blame --line-porcelain`:
@@ -206,17 +282,8 @@ pub fn page_authorship(root: &Path, rel: &str) -> Result<Option<PageAuthorship>,
             String::from_utf8_lossy(&out.stderr).trim()
         ));
     }
-    let agent_tag = format!("author-mail <{AGENT_EMAIL}>");
-    let (mut agent_lines, mut human_lines) = (0usize, 0usize);
-    for line in String::from_utf8_lossy(&out.stdout).lines() {
-        if line.starts_with("author-mail ") {
-            if line == agent_tag {
-                agent_lines += 1;
-            } else {
-                human_lines += 1;
-            }
-        }
-    }
+    let (agent_lines, human_lines, runs) =
+        parse_blame_porcelain(&String::from_utf8_lossy(&out.stdout), AGENT_EMAIL);
     let log = git(root, &["log", "--format=%ae%x1f%ct", "--", rel])?;
     if !log.status.success() {
         return Err(format!(
@@ -234,6 +301,7 @@ pub fn page_authorship(root: &Path, rel: &str) -> Result<Option<PageAuthorship>,
         agent_lines,
         human_lines,
         last_human_at,
+        runs,
     }))
 }
 
@@ -467,6 +535,19 @@ mod tests {
             "every line bucketed: {a:?}"
         );
         assert!(a.agent_lines >= 2, "agent rewrote two lines: {a:?}");
+        // The runs cover every line exactly once, in order, from the same blame.
+        assert_eq!(a.runs.first().map(|r| r.from), Some(1));
+        assert_eq!(a.runs.last().map(|r| r.to), Some(4));
+        for w in a.runs.windows(2) {
+            assert_eq!(w[0].to + 1, w[1].from, "runs are contiguous: {:?}", a.runs);
+        }
+        assert!(
+            a.runs
+                .iter()
+                .any(|r| r.agent && r.sha.len() == 40 && r.ts > 0),
+            "an agent run carries its commit and time: {:?}",
+            a.runs
+        );
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -484,6 +565,74 @@ mod tests {
         assert!(page_authorship(empty.path(), "wiki/a.md")
             .unwrap()
             .is_none());
+    }
+
+    /// One `git blame --line-porcelain` entry.
+    fn entry(sha: &str, lineno: usize, mail: &str, ts: i64, text: &str) -> String {
+        format!(
+            "{sha} {lineno} {lineno} 1\nauthor Someone\nauthor-mail <{mail}>\nauthor-time {ts}\n\
+             author-tz +0000\ncommitter Someone\ncommitter-mail <{mail}>\nsummary s\n\
+             filename wiki/a.md\n\t{text}\n"
+        )
+    }
+
+    #[test]
+    fn parse_blame_porcelain_groups_consecutive_lines_per_commit() {
+        let a = "a".repeat(40);
+        let b = "b".repeat(40);
+        let zero = "0".repeat(40);
+        let out = entry(&a, 1, "you@example.com", 100, "one")
+            + &entry(&a, 2, "you@example.com", 100, "two")
+            + &entry(&b, 3, AGENT_EMAIL, 200, "three")
+            + &entry(&a, 4, "you@example.com", 100, "four")
+            // An uncommitted local edit: all-zero sha, not the agent.
+            + &entry(&zero, 5, "not.committed.yet", 0, "five");
+        let (agent, human, runs) = parse_blame_porcelain(&out, AGENT_EMAIL);
+        assert_eq!((agent, human), (1, 4));
+        assert_eq!(
+            runs,
+            vec![
+                LineRun {
+                    from: 1,
+                    to: 2,
+                    agent: false,
+                    sha: a.clone(),
+                    ts: 100
+                },
+                LineRun {
+                    from: 3,
+                    to: 3,
+                    agent: true,
+                    sha: b,
+                    ts: 200
+                },
+                // Same commit as lines 1-2 but not adjacent: its own run.
+                LineRun {
+                    from: 4,
+                    to: 4,
+                    agent: false,
+                    sha: a,
+                    ts: 100
+                },
+                LineRun {
+                    from: 5,
+                    to: 5,
+                    agent: false,
+                    sha: zero,
+                    ts: 0
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_blame_porcelain_survives_empty_and_junk_input() {
+        assert_eq!(parse_blame_porcelain("", AGENT_EMAIL), (0, 0, vec![]));
+        // A content line with no header before it must not invent a run.
+        assert_eq!(
+            parse_blame_porcelain("\tstray content\nnot a header\n", AGENT_EMAIL),
+            (0, 0, vec![])
+        );
     }
 
     #[test]
