@@ -33,6 +33,7 @@ use tauri::Manager as _;
 use tokio_util::sync::CancellationToken;
 
 use crate::importers::secrets_scan;
+use crate::retrieval::{Scope, TierWeights};
 use crate::{commands, registry, settings, vault};
 
 /// Fixed loopback port. Matches the documented `claude mcp add` URL.
@@ -803,8 +804,9 @@ struct SearchArgs {
     /// Max hits (1-50, default 20).
     #[serde(default)]
     top_k: Option<usize>,
-    /// Indexed tree to rank: "wiki" (default), "sessions", or "all" (wiki +
-    /// sessions + daily/weekly digests). raw/ is never indexed.
+    /// Indexed tier to rank: "wiki" (default: notes, maps and the
+    /// daily/weekly/monthly digests), "sessions" (transcripts only), or
+    /// "all". raw/ is never indexed.
     #[serde(default)]
     scope: Option<String>,
     /// Search across ALL projects instead of just one (hits grouped per project).
@@ -1089,19 +1091,17 @@ impl McpServer {
 
     /// Hybrid retrieval — the same dense + BM25 fusion the app's Ask page runs.
     #[tool(
-        description = "Rank vault pages for a question or keywords with the app's hybrid retrieval (local embeddings + BM25, fused by reciprocal rank) — paraphrases match, not only exact words. scope: wiki (default) | sessions | all (wiki + sessions + daily/weekly digests; raw/ is never indexed). Each hit carries rank, score_bm25 and score_vec (dense cosine). The order is rank-fused and NOT a confidence: judge relevance by score_vec (on the eval corpus, real answers scored >= 0.54 and off-topic hits <= 0.49). When the embedding index is absent or stale the result is BM25-only and `note` says so."
+        description = "Rank vault pages for a question or keywords with the app's hybrid retrieval (local embeddings + BM25, fused by reciprocal rank, then weighted by tier: note 1.0 > map 0.9 > digest/rollup 0.8 > session 0.6) — paraphrases match, not only exact words. scope: wiki (default: notes, maps, daily/weekly/monthly digests) | sessions (transcripts only) | all (raw/ is never indexed). Each hit carries rank, tier, score_bm25 and score_vec (dense cosine). The order is rank-fused and NOT a confidence: judge relevance by score_vec (on the eval corpus, real answers scored >= 0.54 and off-topic hits <= 0.49). When the embedding index is absent or stale the result is BM25-only and `note` says so."
     )]
     async fn search(
         &self,
         Parameters(a): Parameters<SearchArgs>,
     ) -> Result<CallToolResult, McpError> {
         let k = a.top_k.unwrap_or(20).clamp(1, 50);
-        let scope = a.scope.as_deref().unwrap_or("wiki");
-        if !matches!(scope, "wiki" | "sessions" | "all") {
-            return fail(format!(
-                "unknown scope: {scope} — use wiki, sessions or all"
-            ));
-        }
+        let scope: Scope = match a.scope.as_deref().unwrap_or("wiki").parse() {
+            Ok(s) => s,
+            Err(e) => return fail(e),
+        };
         let mut roots: Vec<(String, PathBuf)> = Vec::new();
         if a.all_projects {
             let active = match settings::active_vault().map(PathBuf::from) {
@@ -2281,7 +2281,7 @@ impl McpServer {
         root: &Path,
         query: &str,
         k: usize,
-        scope: &str,
+        scope: Scope,
     ) -> Result<commands::HybridSearch, String> {
         let llm = self.app.state::<commands::LocalLlmState>();
         let cache = self.app.state::<crate::vector_index::VectorCache>();
@@ -2297,20 +2297,10 @@ impl McpServer {
             "builtin-local",
             crate::local_llm::BUILTIN_EMBED_MODEL,
             None,
-            &|page| scope_keeps(scope, page),
+            scope,
+            &TierWeights::default(),
         )
         .await
-    }
-}
-
-/// Which indexed pages a `search` scope admits. The index covers wiki/,
-/// sessions/ and the daily/weekly digests (`commands::collect_wiki_pages`);
-/// "all" is exactly that — raw/ is never indexed.
-fn scope_keeps(scope: &str, page: &str) -> bool {
-    match scope {
-        "wiki" => page.starts_with("wiki/"),
-        "sessions" => page.starts_with("sessions/"),
-        _ => true,
     }
 }
 
@@ -2323,6 +2313,7 @@ fn search_row(root: &Path, rank: usize, h: &commands::HybridHit) -> Value {
     json!({
         "rank": rank,
         "page": h.page,
+        "tier": h.tier,
         "title": fm_opt(&fm, "title").unwrap_or_else(|| h.stem.clone()),
         "type": fm_str(&fm, "type"),
         "confidence": fm_str(&fm, "confidence"),
@@ -2341,11 +2332,10 @@ mod tests {
     use super::record_tool_call_at;
     use super::suspect_scan;
     use super::{
-        archive_inbox, collect_md, list_wiki_pages, read_wiki_page, scope_keeps, search_row,
-        server_info,
+        archive_inbox, collect_md, list_wiki_pages, read_wiki_page, search_row, server_info,
     };
     use crate::commands::HybridHit;
-    use crate::retrieval::Bm25Index;
+    use crate::retrieval::{Bm25Index, TierWeights};
     use std::path::Path;
 
     #[test]
@@ -2560,7 +2550,8 @@ mod tests {
             query,
             10,
             None,
-            &|page| scope_keeps(scope, page),
+            scope.parse().unwrap(),
+            &TierWeights::default(),
         )
     }
 
@@ -2630,6 +2621,122 @@ mod tests {
         assert!(row["snippet"].as_str().unwrap().contains("Scaling laws"));
         assert!(row["score_bm25"].as_f64().unwrap() > 0.0, "{row}");
         assert!(row["score_vec"].is_null(), "no dense arm ran: {row}");
+        assert_eq!(row["tier"], "note", "{row}");
+    }
+
+    /// Four one-chunk pages with hand-built unit vectors, so the dense arm's
+    /// cosine order is exact: note A > session S > note B > note C. The BM25
+    /// arm is empty, so the fused order IS that order (rrf 1/60, 1/61, ...).
+    fn tiered_vault() -> (tempfile::TempDir, crate::vector_index::VectorStore) {
+        let dir = tempfile::tempdir().unwrap();
+        let mut store = crate::vector_index::VectorStore::default();
+        let pages = [
+            ("wiki/a-note.md", [1.0, 0.0, 0.0, 0.0]),
+            ("sessions/2026-08/s-transcript.md", [0.0, 1.0, 0.0, 0.0]),
+            ("wiki/b-note.md", [0.0, 0.0, 1.0, 0.0]),
+            ("wiki/c-note.md", [0.0, 0.0, 0.0, 1.0]),
+        ];
+        for (rel, v) in pages {
+            write(
+                &dir.path().join(rel),
+                &format!(
+                    "# {rel}
+
+body of {rel}
+"
+                ),
+            );
+            let stem = Path::new(rel).file_stem().unwrap().to_str().unwrap();
+            store.upsert_page(rel, stem, vec![(1, v.to_vec())]);
+        }
+        (dir, store)
+    }
+
+    fn rank_dense(
+        root: &Path,
+        store: &crate::vector_index::VectorStore,
+        weights: &TierWeights,
+    ) -> Vec<HybridHit> {
+        crate::commands::rank_hybrid(
+            root,
+            store,
+            Some(&[0.9, 0.8, 0.7, 0.6]),
+            &Bm25Index::new(),
+            "anything",
+            10,
+            None,
+            "all".parse().unwrap(),
+            weights,
+        )
+    }
+
+    // The mockup's "2위 → 6위" claim on a four-page fixture: the transcript
+    // fuses at rank 2 and the default prior (session 0.6) drops it below the
+    // two notes behind it; a flat prior leaves the fused order alone.
+    #[test]
+    fn tier_prior_drops_a_rank_2_session_below_the_notes() {
+        let (dir, store) = tiered_vault();
+        let flat = rank_dense(dir.path(), &store, &TierWeights::FLAT);
+        assert_eq!(
+            pages(&flat),
+            vec![
+                "wiki/a-note.md",
+                "sessions/2026-08/s-transcript.md",
+                "wiki/b-note.md",
+                "wiki/c-note.md",
+            ]
+        );
+
+        let weighted = rank_dense(dir.path(), &store, &TierWeights::default());
+        assert_eq!(
+            pages(&weighted),
+            vec![
+                "wiki/a-note.md",
+                "wiki/b-note.md",
+                "wiki/c-note.md",
+                "sessions/2026-08/s-transcript.md",
+            ]
+        );
+        let s = &weighted[3];
+        assert_eq!(s.tier, crate::retrieval::Tier::Session);
+        assert!((s.score - flat[1].score * 0.6).abs() < 1e-7);
+        // The cosine each hit earned is untouched by the prior.
+        assert_eq!(s.similarity, flat[1].similarity);
+    }
+
+    #[test]
+    fn scope_is_applied_before_the_pool_cut_on_both_arms() {
+        let (dir, store) = tiered_vault();
+        let only_sessions = crate::commands::rank_hybrid(
+            dir.path(),
+            &store,
+            Some(&[0.9, 0.8, 0.7, 0.6]),
+            &Bm25Index::new(),
+            "anything",
+            10,
+            None,
+            "sessions".parse().unwrap(),
+            &TierWeights::default(),
+        );
+        assert_eq!(
+            pages(&only_sessions),
+            vec!["sessions/2026-08/s-transcript.md"]
+        );
+        let wiki = crate::commands::rank_hybrid(
+            dir.path(),
+            &store,
+            Some(&[0.9, 0.8, 0.7, 0.6]),
+            &Bm25Index::new(),
+            "anything",
+            10,
+            None,
+            "wiki".parse().unwrap(),
+            &TierWeights::default(),
+        );
+        assert_eq!(
+            pages(&wiki),
+            vec!["wiki/a-note.md", "wiki/b-note.md", "wiki/c-note.md"]
+        );
     }
 
     #[test]

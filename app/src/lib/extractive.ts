@@ -156,6 +156,7 @@ export type SourceTier =
  * quoted back at you?" — and maps.ts drafts them with the query model
  * (`status: draft` frontmatter, a human has not signed off). Same file, two
  * honest answers; the folder set above is not forked, only extended here.
+ * Mirrored in Rust as `retrieval::source_tier` (src-tauri/src/retrieval.rs), where it also drives ranking; its table test `source_tier_mirrors_the_ts_classifier` lists these same cases — change both together.
  * `page` is VAULT-RELATIVE. */
 export function sourceTier(page: string): SourceTier {
   if (page.startsWith("wiki/maps/")) return "map";

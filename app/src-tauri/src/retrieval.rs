@@ -804,6 +804,302 @@ pub fn cap_per_page(hits: Vec<Hit>, max_per_page: usize, k: usize) -> Vec<Hit> {
     out
 }
 
+/// Which layer of the vault a page belongs to, derived from its path.
+///
+/// Rust port of `sourceTier()` in `app/src/lib/extractive.ts` — same folder
+/// table, same `wiki/maps/` exception, same string names on the wire
+/// (`serde` lowercase). The TS side keeps this as a citation label; here it
+/// also drives ranking (`TierWeights`) and scoping (`Scope`). The table test
+/// `source_tier_mirrors_the_ts_classifier` below lists the same paths as the
+/// TS file's own cases: change one, change both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Tier {
+    Note,
+    Map,
+    Digest,
+    Rollup,
+    Monthly,
+    Session,
+    Source,
+}
+
+/// `page` is VAULT-RELATIVE (`wiki/x.md`, `sessions/2026-08/y.md`).
+pub fn source_tier(page: &str) -> Tier {
+    if page.starts_with("wiki/maps/") {
+        return Tier::Map;
+    }
+    match page.split('/').next().unwrap_or("") {
+        "daily" => Tier::Digest,
+        "weekly" => Tier::Rollup,
+        "monthly" => Tier::Monthly,
+        "sessions" => Tier::Session,
+        "raw" | "_inbox" | "ingest-reports" => Tier::Source,
+        _ => Tier::Note,
+    }
+}
+
+/// Multiplicative prior per tier, applied to the fused (RRF) score AFTER
+/// fusion — `rrf_fuse` stays a pure rank-fusion primitive (see
+/// `rrf_fuse_score_is_rank_based_not_a_confidence`), and the prior is the one
+/// place the app says "a hand-written note outranks a transcript that scored
+/// the same". Motivation, measured on the owner's vault: 4,451 indexed
+/// chunks, 76 % from `sessions/`, 21 % wiki — 41 session files occupy 3.5x
+/// the search surface of 100 wiki pages, and without this the two compete on
+/// raw cosine alone.
+///
+/// Field names are the wire names (the Ask IPC arg `tierWeights` and the
+/// mockup's sliders). `Monthly` has no knob of its own: it is the third
+/// compression layer, the same kind of page as a weekly rollup, and takes
+/// `rollup`. A missing field deserializes to its default.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct TierWeights {
+    pub note: f32,
+    pub map: f32,
+    pub digest: f32,
+    pub rollup: f32,
+    pub session: f32,
+    pub source: f32,
+}
+
+impl Default for TierWeights {
+    fn default() -> Self {
+        Self {
+            note: 1.0,
+            map: 0.9,
+            digest: 0.8,
+            rollup: 0.8,
+            session: 0.6,
+            source: 0.5,
+        }
+    }
+}
+
+impl TierWeights {
+    /// Every tier at 1.0 — the prior as a no-op, i.e. the pre-prior ranking.
+    pub const FLAT: TierWeights = TierWeights {
+        note: 1.0,
+        map: 1.0,
+        digest: 1.0,
+        rollup: 1.0,
+        session: 1.0,
+        source: 1.0,
+    };
+
+    pub fn prior(&self, tier: Tier) -> f32 {
+        match tier {
+            Tier::Note => self.note,
+            Tier::Map => self.map,
+            Tier::Digest => self.digest,
+            Tier::Rollup | Tier::Monthly => self.rollup,
+            Tier::Session => self.session,
+            Tier::Source => self.source,
+        }
+    }
+}
+
+/// Multiply each hit's fused score by its tier's prior and re-sort. The sort
+/// is stable and the input arrives in `rrf_fuse`'s deterministic order, so
+/// two hits that still tie keep their fused order, and `TierWeights::FLAT`
+/// leaves the list exactly as it was.
+pub fn apply_tier_prior(hits: &mut [Hit], weights: &TierWeights) {
+    for h in hits.iter_mut() {
+        h.score *= weights.prior(source_tier(&h.page));
+    }
+    hits.sort_by(|a, b| b.score.total_cmp(&a.score));
+}
+
+/// Which part of the index a query is ranked against. Applied to BOTH arms
+/// before their candidate-pool cut, so a narrow scope on a session-heavy
+/// vault is not starved by it. Defined in tiers, not folders, so it and the
+/// prior cannot disagree about what a page is:
+///   `Wiki`     — everything the user or the distiller wrote: notes, maps,
+///                daily/weekly/monthly digests. NOT sessions, NOT sources.
+///   `Sessions` — transcripts only (`sessions/**`).
+///   `All`      — the whole index (raw/ is never indexed anyway).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Scope {
+    #[default]
+    Wiki,
+    Sessions,
+    All,
+}
+
+impl Scope {
+    pub fn keeps(self, page: &str) -> bool {
+        match self {
+            Scope::All => true,
+            Scope::Sessions => source_tier(page) == Tier::Session,
+            Scope::Wiki => !matches!(source_tier(page), Tier::Session | Tier::Source),
+        }
+    }
+}
+
+/// The MCP `search` tool takes the scope as a plain string.
+impl std::str::FromStr for Scope {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, String> {
+        match s {
+            "wiki" => Ok(Scope::Wiki),
+            "sessions" => Ok(Scope::Sessions),
+            "all" => Ok(Scope::All),
+            other => Err(format!(
+                "unknown scope: {other} — use wiki, sessions or all"
+            )),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tier_tests {
+    use super::*;
+
+    fn hit(page: &str, score: f32) -> Hit {
+        Hit {
+            page: page.into(),
+            stem: page.into(),
+            section: 0,
+            score,
+        }
+    }
+
+    // Mirrors `sourceTier()`'s cases in app/src/lib/extractive.ts — the two
+    // classifiers must agree path for path.
+    #[test]
+    fn source_tier_mirrors_the_ts_classifier() {
+        let cases = [
+            ("wiki/scaling-laws.md", Tier::Note),
+            ("wiki/concepts/attention.md", Tier::Note),
+            ("wiki/maps/scaling.md", Tier::Map),
+            ("wiki/map-scaling.md", Tier::Note), // only the maps/ FOLDER is a map
+            ("daily/2026-08-21.md", Tier::Digest),
+            ("daily/archive/2026-W34/2026-08-21.md", Tier::Digest),
+            ("weekly/2026-W34.md", Tier::Rollup),
+            ("monthly/2026-08.md", Tier::Monthly),
+            ("sessions/2026-08/codex-019fdc04.md", Tier::Session),
+            ("sessions/archive/2026-08/codex-019f9a12.md", Tier::Session),
+            ("raw/kaplan-2020-scaling.md", Tier::Source),
+            ("raw/archive/2026-07/hoffmann.md", Tier::Source),
+            ("_inbox/clip.md", Tier::Source),
+            ("ingest-reports/2026-08-21.md", Tier::Source),
+            ("profile.md", Tier::Note), // no folder: the TS default arm
+            ("ko-corpus/ko-rag.md", Tier::Note),
+        ];
+        for (page, want) in cases {
+            assert_eq!(source_tier(page), want, "{page}");
+        }
+    }
+
+    #[test]
+    fn tier_names_on_the_wire_are_the_ts_source_tier_strings() {
+        for (tier, name) in [
+            (Tier::Note, "\"note\""),
+            (Tier::Map, "\"map\""),
+            (Tier::Digest, "\"digest\""),
+            (Tier::Rollup, "\"rollup\""),
+            (Tier::Monthly, "\"monthly\""),
+            (Tier::Session, "\"session\""),
+            (Tier::Source, "\"source\""),
+        ] {
+            assert_eq!(serde_json::to_string(&tier).unwrap(), name);
+        }
+        assert_eq!(serde_json::to_string(&Scope::Wiki).unwrap(), "\"wiki\"");
+        assert_eq!(
+            serde_json::from_str::<Scope>("\"sessions\"").unwrap(),
+            Scope::Sessions
+        );
+        // A partial weights object fills the rest from the defaults.
+        let w: TierWeights = serde_json::from_str("{\"session\":1.0}").unwrap();
+        assert_eq!(w.session, 1.0);
+        assert_eq!(w.note, 1.0);
+        assert_eq!(w.source, 0.5);
+    }
+
+    // The mockup's claim: a transcript that fuses at rank 2 lands below the
+    // wiki notes with the default prior, and stays put with a flat one.
+    #[test]
+    fn default_prior_drops_a_session_below_the_notes_flat_prior_does_not() {
+        let fused = || {
+            vec![
+                hit("wiki/scaling-laws.md", 0.0328),
+                hit("sessions/2026-08/codex-019fdc04.md", 0.0325),
+                hit("wiki/compute-budget.md", 0.0320),
+                hit("wiki/analysis-scaling-vs-data.md", 0.0315),
+                hit("wiki/maps/scaling.md", 0.0164),
+                hit("daily/2026-08-21.md", 0.0161),
+            ]
+        };
+        let mut hits = fused();
+        apply_tier_prior(&mut hits, &TierWeights::default());
+        let order: Vec<&str> = hits.iter().map(|h| h.page.as_str()).collect();
+        assert_eq!(
+            order,
+            vec![
+                "wiki/scaling-laws.md",
+                "wiki/compute-budget.md",
+                "wiki/analysis-scaling-vs-data.md",
+                "sessions/2026-08/codex-019fdc04.md",
+                "wiki/maps/scaling.md",
+                "daily/2026-08-21.md",
+            ]
+        );
+        assert!((hits[3].score - 0.0325 * 0.6).abs() < 1e-6);
+
+        let mut flat = fused();
+        apply_tier_prior(&mut flat, &TierWeights::FLAT);
+        assert_eq!(
+            flat.iter().map(|h| h.page.as_str()).collect::<Vec<_>>(),
+            fused().iter().map(|h| h.page.as_str()).collect::<Vec<_>>(),
+            "all-1.0 weights must not move anything"
+        );
+        assert_eq!(flat[1].page, "sessions/2026-08/codex-019fdc04.md");
+    }
+
+    #[test]
+    fn a_session_far_ahead_on_fused_score_keeps_its_place() {
+        // The prior is a tilt, not a filter: 0.6 x a clear winner still wins.
+        let mut hits = vec![
+            hit("sessions/2026-08/a.md", 0.0328),
+            hit("wiki/b.md", 0.0164),
+        ];
+        apply_tier_prior(&mut hits, &TierWeights::default());
+        assert_eq!(hits[0].page, "sessions/2026-08/a.md");
+    }
+
+    #[test]
+    fn scope_is_defined_by_tier() {
+        let wiki = [
+            "wiki/a.md",
+            "wiki/maps/m.md",
+            "daily/2026-08-21.md",
+            "weekly/2026-W34.md",
+            "monthly/2026-08.md",
+        ];
+        let sessions = ["sessions/2026-08/a.md", "sessions/archive/2026-07/b.md"];
+        let sources = ["raw/x.md", "_inbox/y.md"];
+        for p in wiki {
+            assert!(Scope::Wiki.keeps(p), "{p}");
+            assert!(!Scope::Sessions.keeps(p), "{p}");
+            assert!(Scope::All.keeps(p), "{p}");
+        }
+        for p in sessions {
+            assert!(!Scope::Wiki.keeps(p), "{p}");
+            assert!(Scope::Sessions.keeps(p), "{p}");
+            assert!(Scope::All.keeps(p), "{p}");
+        }
+        for p in sources {
+            assert!(!Scope::Wiki.keeps(p), "{p}");
+            assert!(!Scope::Sessions.keeps(p), "{p}");
+            assert!(Scope::All.keeps(p), "{p}");
+        }
+        assert_eq!(Scope::default(), Scope::Wiki);
+        assert_eq!("all".parse::<Scope>(), Ok(Scope::All));
+        assert!("everything".parse::<Scope>().is_err());
+    }
+}
+
 #[cfg(test)]
 mod cap_tests {
     use super::*;

@@ -4323,8 +4323,11 @@ pub(crate) struct HybridHit {
     /// 1-based line in the page where the chunk starts.
     pub line: usize,
     pub text: String,
-    /// `rrf_fuse` score — orders hits, says nothing about relevance.
+    /// The ordering score: `rrf_fuse` score x the tier prior. Rank-based,
+    /// says nothing about relevance.
     pub score: f32,
+    /// Vault layer the page belongs to (`retrieval::source_tier`).
+    pub tier: crate::retrieval::Tier,
     /// Dense cosine; `None` when only the lexical arm surfaced the chunk.
     pub similarity: Option<f32>,
     /// BM25 score; `None` when only the dense arm surfaced the chunk.
@@ -4339,11 +4342,11 @@ pub(crate) struct HybridSearch {
 }
 
 /// The app's one retrieval path: dense (embedding) and lexical (BM25) arms
-/// fused by RRF, capped per page, reconstructed to chunk text. `keep` drops
-/// pages from both arms BEFORE the candidate-pool cut, so a narrow scope on a
-/// session-heavy vault is not starved by it. A missing or retired-model index
-/// degrades to the lexical arm alone (`dense_skipped`) rather than to nothing;
-/// callers decide what that means for them.
+/// fused by RRF, tier-weighted, capped per page, reconstructed to chunk text.
+/// `scope` drops pages from both arms BEFORE the candidate-pool cut, so a
+/// narrow scope on a session-heavy vault is not starved by it. A missing or
+/// retired-model index degrades to the lexical arm alone (`dense_skipped`)
+/// rather than to nothing; callers decide what that means for them.
 // Distinct borrows of caller-owned state plus the query's parts; a struct
 // would only move the same list one level down (as with `embed_one_page`).
 #[allow(clippy::too_many_arguments)]
@@ -4358,7 +4361,8 @@ pub(crate) async fn hybrid_search(
     provider: &str,
     model: &str,
     range: Option<&DateRange>,
-    keep: &(dyn Fn(&str) -> bool + Sync),
+    scope: crate::retrieval::Scope,
+    tier_weights: &crate::retrieval::TierWeights,
 ) -> Result<HybridSearch, String> {
     let t0 = std::time::Instant::now();
     let root_str = root.to_string_lossy();
@@ -4405,7 +4409,8 @@ pub(crate) async fn hybrid_search(
         query,
         k,
         range,
-        keep,
+        scope,
+        tier_weights,
     );
     perf::log(
         "semantic_search",
@@ -4425,9 +4430,9 @@ pub(crate) async fn hybrid_search(
 }
 
 /// Rank one query against loaded indexes: fuse the dense and lexical arms
-/// (RRF), apply the optional date window, cap chunks per page, and
-/// reconstruct each surviving chunk's text from its page under `root`.
-/// `query_vec` is `None` when the dense arm is unavailable.
+/// (RRF), apply the optional date window, weight by tier prior, cap chunks
+/// per page, and reconstruct each surviving chunk's text from its page under
+/// `root`. `query_vec` is `None` when the dense arm is unavailable.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn rank_hybrid(
     root: &std::path::Path,
@@ -4437,7 +4442,8 @@ pub(crate) fn rank_hybrid(
     query: &str,
     k: usize,
     range: Option<&DateRange>,
-    keep: &(dyn Fn(&str) -> bool + Sync),
+    scope: crate::retrieval::Scope,
+    tier_weights: &crate::retrieval::TierWeights,
 ) -> Vec<HybridHit> {
     // Quoted phrases become an exact-match filter on the reconstructed chunk
     // text; the BM25 arm runs on the quote-stripped query.
@@ -4448,14 +4454,14 @@ pub(crate) fn rank_hybrid(
     // usefully, and a lexical-only top hit outside the dense top-k would
     // never surface if both arms were pre-truncated to k. Both arms score
     // every candidate anyway, so asking each for its whole ranking and
-    // applying `keep` before the pool cut is free — and it is what keeps a
+    // applying `scope` before the pool cut is free — and it is what keeps a
     // scope that excludes most of the index from being starved by the cut.
     let pool = (k * 5).clamp(20, 50);
     let dense_hits: Vec<VecHit> = match query_vec {
         Some(qv) => store
             .search(qv, store.records.len())
             .into_iter()
-            .filter(|h| keep(&h.page))
+            .filter(|h| scope.keeps(&h.page))
             .take(pool)
             .collect(),
         None => Vec::new(),
@@ -4463,7 +4469,7 @@ pub(crate) fn rank_hybrid(
     let lexical_hits: Vec<crate::retrieval::Bm25Hit> = bm25
         .search(&clean_query, bm25.len())
         .into_iter()
-        .filter(|h| keep(&h.page))
+        .filter(|h| scope.keeps(&h.page))
         .take(pool)
         .collect();
     // At most this many chunks from any one page. Measured on the real vault
@@ -4501,6 +4507,10 @@ pub(crate) fn rank_hybrid(
         fused.retain(|h| page_in_date_range(&h.page, r));
         recency_tie_break(&mut fused);
     }
+    // Tier prior: fused score x per-tier weight, re-sorted — BEFORE the page
+    // cap and the cut to k, so a note the pool holds at fused rank 14 can take
+    // the slot a transcript held instead of the top-k merely reshuffling.
+    crate::retrieval::apply_tier_prior(&mut fused, tier_weights);
     let hits = crate::retrieval::cap_per_page(fused, PAGE_CAP, k);
     // Reconstruct each hit's chunk TEXT from its page (the index stores only
     // vectors+hashes). No cross-hit cache: k is capped at 50 (realistically
@@ -4521,6 +4531,7 @@ pub(crate) fn rank_hybrid(
                     line: chunk_line(&content, &text),
                     similarity: dense_by_id.get(&id).copied(),
                     bm25: bm25_by_id.get(&id).copied(),
+                    tier: crate::retrieval::source_tier(&h.page),
                     page: h.page,
                     stem: h.stem,
                     section: h.section,
@@ -4553,7 +4564,8 @@ fn chunk_line(content: &str, chunk: &str) -> usize {
 /// each hit with its chunk TEXT reconstructed so callers (e.g. Ask) can inline
 /// the passage instead of re-reading the whole page.
 // Four of the arguments are Tauri-injected state rather than things a caller
-// passes; the invocable surface is (query, k, provider, model, range).
+// passes; the invocable surface is (query, k, provider, model, range, scope,
+// tier_weights).
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn semantic_search(
@@ -4567,6 +4579,10 @@ pub async fn semantic_search(
     provider: String,
     model: String,
     range: Option<DateRange>,
+    // `wiki` (default) | `sessions` | `all` — see `retrieval::Scope`.
+    scope: Option<crate::retrieval::Scope>,
+    // Per-tier prior; omitted = `TierWeights::default()`, all 1.0 = off.
+    tier_weights: Option<crate::retrieval::TierWeights>,
 ) -> Result<Vec<ScoredChunk>, String> {
     let root = require_root(&vault)?;
     let found = hybrid_search(
@@ -4580,7 +4596,8 @@ pub async fn semantic_search(
         &provider,
         &model,
         range.as_ref(),
-        &|_| true,
+        scope.unwrap_or_default(),
+        &tier_weights.unwrap_or_default(),
     )
     .await?;
     // Ask reads an empty result as "reindex needed" (chat.ts): a missing or
