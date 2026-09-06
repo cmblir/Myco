@@ -965,6 +965,43 @@ struct GitCommitArgs {
 }
 
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct RecallArgs {
+    /// The question, in the words you would ask it.
+    query: String,
+    /// wiki (default: notes, maps, digests) | sessions | all.
+    #[serde(default)]
+    scope: Option<String>,
+    /// Max quoted hits (1-20, default 8).
+    #[serde(default)]
+    limit: Option<usize>,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct NeighbourhoodArgs {
+    /// Vault-relative page, e.g. "wiki/scaling-laws.md" (a bare wiki filename
+    /// like "scaling-laws.md" is accepted too).
+    page: String,
+    /// 1 (default) = direct links only; 2 also returns the two-hop ring.
+    #[serde(default)]
+    hops: Option<usize>,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ChangedSinceArgs {
+    /// RFC3339 (`2026-09-01T00:00:00Z`) or a relative window: `24h`, `7d`.
+    since: String,
+    /// Max pages (1-500, default 100), newest first.
+    #[serde(default)]
+    limit: Option<usize>,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
 struct ImportConversationArgs {
     /// The transcript as text — paste it, do not describe it.
     raw_text: String,
@@ -2143,6 +2180,101 @@ impl McpServer {
         json_result(json!({ "ok": true, "hash": hash, "files": files }))
     }
 
+    // ─── retrieval for agents ─────────────────────────────────────────────────
+
+    /// `search` with the Ask page's answer contract: quotable lines, the
+    /// relevance floor, and the near-misses it rejected.
+    #[tool(
+        description = "Ask the vault a question and get back quotable lines with the SAME numbers the app's Ask page uses: each hit carries its tier, the tier prior applied, score_final (rank-based — for ordering, never a confidence), rank_change (places the prior moved it) and similarity (the dense cosine — THIS is the relevance signal). Hits below `floor` are not returned as answers; they come back under `below_floor` so you can say 'nothing in the vault answers this, but here is what came closest' instead of quoting the least-bad chunk. Prefer this over `search` when you intend to cite."
+    )]
+    async fn recall(
+        &self,
+        Parameters(a): Parameters<RecallArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let scope: Scope = match a.scope.as_deref().unwrap_or("wiki").parse() {
+            Ok(s) => s,
+            Err(e) => return fail(e),
+        };
+        let limit = a.limit.unwrap_or(8).clamp(1, 20);
+        // Pull wider than `limit`: the floor split happens after ranking, so a
+        // narrow k could return fewer answers than asked for.
+        let found = match self
+            .hybrid(&root, &a.query, (limit * 2).clamp(1, 50), scope)
+            .await
+        {
+            Ok(f) => f,
+            Err(e) => return fail(e),
+        };
+        // Same split as the Ask page: `semantic_search` treats a skipped dense
+        // arm as "no answer" (there is no cosine to judge relevance by), and so
+        // does this — with the reason attached, since an agent has no UI to
+        // read the empty result in.
+        let note = found.dense_skipped;
+        let ask = commands::ask_response(if note.is_some() {
+            Vec::new()
+        } else {
+            found.hits
+        });
+        let mut out = recall_result(&ask, &a.query, limit);
+        if let Some(n) = note {
+            out["note"] = json!(n);
+        }
+        json_result(out)
+    }
+
+    /// The link graph around one page.
+    #[tool(
+        description = "The link neighbourhood of one page from the vault's own link graph: outlinks (resolved [[wikilinks]]), backlinks (pages linking here), unresolved links (targets with no page yet — the gaps worth writing), and with hops=2 the two-hop ring. Read-only."
+    )]
+    async fn neighbourhood(
+        &self,
+        Parameters(a): Parameters<NeighbourhoodArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let hops = a.hops.unwrap_or(1).clamp(1, 2);
+        let page = a.page.clone();
+        match tauri::async_runtime::spawn_blocking(move || neighbourhood_at(&root, &page, hops))
+            .await
+        {
+            Ok(Ok(out)) => json_result(out),
+            Ok(Err(e)) => fail(e),
+            Err(e) => fail(format!("join failed: {e}")),
+        }
+    }
+
+    /// What moved lately, and who wrote it.
+    #[tool(
+        description = "Pages changed since a time, newest first — `since` is RFC3339 (2026-09-01T00:00:00Z) or a window (24h, 7d). Covers notes, maps and digests (not sessions, not raw/). With the vault's opt-in git history on, each page also carries agent_lines / human_lines from git blame, so you can tell what the agent wrote from what the human did."
+    )]
+    async fn changed_since(
+        &self,
+        Parameters(a): Parameters<ChangedSinceArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let history_on = settings::load().vault_history_enabled;
+        let limit = a.limit.unwrap_or(100).clamp(1, 500);
+        let since = a.since.clone();
+        match tauri::async_runtime::spawn_blocking(move || {
+            changed_since_at(&root, &since, limit, history_on)
+        })
+        .await
+        {
+            Ok(Ok(out)) => json_result(out),
+            Ok(Err(e)) => fail(e),
+            Err(e) => fail(format!("join failed: {e}")),
+        }
+    }
+
     // ─── import / wikify / ledger / distill / profile ─────────────────────────
     // Ported from the retired Python server onto the app's own modules.
 
@@ -2479,6 +2611,206 @@ fn archive_inbox(root: &Path, filename: &str, pii_quarantine: bool) -> Result<Va
         out["pii_warning"] = json!(w);
     }
     Ok(out)
+}
+
+// ─── recall / neighbourhood / changed_since bodies ───────────────────────────
+
+/// The most quotable single line of a chunk: the one sharing the most tokens
+/// with the query, ties going to the earliest. Falls back to the first
+/// non-empty line, so a chunk that shares nothing still quotes something.
+/// Heading and bullet markers are stripped, not skipped — a heading is often
+/// the answer.
+fn best_quote(text: &str, query: &str) -> String {
+    let wanted: BTreeSet<String> = crate::retrieval::tokenize(query).into_iter().collect();
+    let mut best: Option<(usize, &str)> = None;
+    for line in text.lines() {
+        let line = line
+            .trim()
+            .trim_start_matches('#')
+            .trim_start_matches(['-', '*', '>'])
+            .trim();
+        if line.is_empty() {
+            continue;
+        }
+        let score = crate::retrieval::tokenize(line)
+            .into_iter()
+            .filter(|t| wanted.contains(t))
+            .count();
+        match best {
+            Some((b, _)) if score <= b => {}
+            _ => best = Some((score, line)),
+        }
+    }
+    best.map(|(_, l)| l.chars().take(400).collect())
+        .unwrap_or_default()
+}
+
+/// `recall`'s payload from the Ask page's own floor split — the numbers are
+/// `ask_response`'s, not a second ranking.
+fn recall_result(ask: &commands::AskSearch, query: &str, limit: usize) -> Value {
+    let hits: Vec<Value> = ask
+        .hits
+        .iter()
+        .take(limit)
+        .enumerate()
+        .map(|(i, h)| {
+            json!({
+                "rank": i + 1,
+                "page": h.page,
+                "tier": h.tier,
+                "prior": h.prior,
+                "score_final": h.score_final,
+                "rank_change": h.rank_change,
+                "similarity": h.similarity,
+                "section": h.section,
+                "quote": best_quote(&h.text, query),
+            })
+        })
+        .collect();
+    let below: Vec<Value> = ask
+        .below_floor
+        .iter()
+        .map(|m| {
+            json!({
+                "page": m.page, "tier": m.tier,
+                "similarity": m.similarity, "score_final": m.score_final,
+            })
+        })
+        .collect();
+    json!({
+        "ok": true,
+        "count": hits.len(),
+        "floor": ask.floor,
+        "hits": hits,
+        "below_floor": below,
+    })
+}
+
+/// `neighbourhood` body over `index::build_link_graph`'s adjacency (absolute
+/// paths in, vault-relative out).
+fn neighbourhood_at(root: &Path, page: &str, hops: usize) -> Result<Value, String> {
+    let canon = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    // A bare filename resolves under wiki/, the way read_page takes one.
+    let abs = match safe_join(&canon, page).filter(|p| p.is_file()) {
+        Some(p) => p,
+        None => wiki_page_path(&canon, page)?,
+    };
+    let abs = abs.canonicalize().unwrap_or(abs);
+    let adj = crate::index::build_link_graph(&canon.to_string_lossy())?;
+    let self_rel = rel_to(&canon, &abs);
+    let rel = |p: &String| rel_to(&canon, Path::new(p));
+    let out_of = |k: &str| -> Vec<String> {
+        adj.forward
+            .get(k)
+            .map(|v| v.iter().map(rel).collect())
+            .unwrap_or_default()
+    };
+    let back_of = |k: &str| -> Vec<String> {
+        adj.backward
+            .get(k)
+            .map(|v| v.iter().map(rel).collect())
+            .unwrap_or_default()
+    };
+    let key = abs.to_string_lossy().to_string();
+    let outlinks = out_of(&key);
+    let backlinks = back_of(&key);
+    let unresolved: Vec<String> = adj.unresolved.get(&key).cloned().unwrap_or_default();
+    let mut result = json!({
+        "ok": true,
+        "page": self_rel,
+        "outlinks": outlinks,
+        "backlinks": backlinks,
+        "unresolved": unresolved,
+    });
+    if hops >= 2 {
+        // Everything one link further out, minus the page itself and its own
+        // direct ring — the two-hop ring is what you did NOT already have.
+        let direct: BTreeSet<&String> = outlinks.iter().chain(backlinks.iter()).collect();
+        let mut ring: BTreeSet<String> = BTreeSet::new();
+        for neighbour in outlinks.iter().chain(backlinks.iter()) {
+            let nk = canon.join(neighbour).to_string_lossy().to_string();
+            for r in out_of(&nk).into_iter().chain(back_of(&nk)) {
+                if r != self_rel && !direct.contains(&r) {
+                    ring.insert(r);
+                }
+            }
+        }
+        result["two_hop"] = json!(ring.into_iter().collect::<Vec<_>>());
+    }
+    Ok(result)
+}
+
+/// `since` as an epoch second: RFC3339 (via the importers' fixed-width
+/// parser) or a `<N>h` / `<N>d` window back from `now`.
+fn parse_since(since: &str, now: i64) -> Result<i64, String> {
+    let s = since.trim();
+    if let Some(n) = s.strip_suffix('h').and_then(|n| n.parse::<i64>().ok()) {
+        return Ok(now - n * 3_600);
+    }
+    if let Some(n) = s.strip_suffix('d').and_then(|n| n.parse::<i64>().ok()) {
+        return Ok(now - n * 86_400);
+    }
+    crate::importers::parse_iso8601(s)
+        .ok_or_else(|| format!("unparseable `since`: {since} — use RFC3339, or 24h / 7d"))
+}
+
+/// `changed_since` body. Scope is the `wiki` tier set (notes, maps, digests):
+/// `retrieval::Scope::Wiki` is the same classifier `search` and the tier
+/// prior use, so the three cannot disagree about what a page is.
+fn changed_since_at(
+    root: &Path,
+    since: &str,
+    limit: usize,
+    history_on: bool,
+) -> Result<Value, String> {
+    let cutoff = parse_since(since, now_secs() as i64)?;
+    let canon = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
+    let mut rows: Vec<(i64, String, Value)> = Vec::new();
+    for abs in collect_md(&canon) {
+        let rel = rel_to(&canon, &abs).replace('\\', "/");
+        if !Scope::Wiki.keeps(&rel) {
+            continue;
+        }
+        let Ok(meta) = std::fs::metadata(&abs) else {
+            continue;
+        };
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        if mtime < cutoff {
+            continue;
+        }
+        let mut row = json!({
+            "page": rel,
+            "tier": crate::retrieval::source_tier(&rel),
+            "mtime": mtime,
+            "bytes": meta.len(),
+        });
+        // Authorship is a git blame per page — only paid for pages that
+        // actually changed, and only when the vault has history at all.
+        if history_on {
+            if let Ok(Some(a)) = crate::vault_history::page_authorship(&canon, &rel) {
+                row["agent_lines"] = json!(a.agent_lines);
+                row["human_lines"] = json!(a.human_lines);
+                row["last_human_at"] = json!(a.last_human_at);
+            }
+        }
+        rows.push((mtime, rel, row));
+    }
+    rows.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    let total = rows.len();
+    let pages: Vec<Value> = rows.into_iter().take(limit).map(|(_, _, r)| r).collect();
+    Ok(json!({
+        "ok": true,
+        "since": cutoff,
+        "total": total,
+        "truncated": total > pages.len(),
+        "history": history_on,
+        "pages": pages,
+    }))
 }
 
 // ─── import / wikify / ledger / distill / profile bodies ─────────────────────
@@ -2841,6 +3173,7 @@ mod tests {
     use super::{
         archive_inbox, collect_md, list_wiki_pages, read_wiki_page, search_row, server_info,
     };
+    use super::{best_quote, changed_since_at, neighbourhood_at, parse_since, recall_result};
     use super::{
         distill_status_at, import_conversation_at, import_outcome_json, ledger_status_at,
         session_file, setup_profile_at, wikify_pending_at,
@@ -3328,6 +3661,237 @@ body of {rel}
         );
         let err = read_wiki_page(root, "../raw/x.md").unwrap_err();
         assert_eq!(err, "path escapes wiki/: ../raw/x.md");
+    }
+
+    // ─── recall / neighbourhood / changed_since ───────────────────────────────
+
+    #[test]
+    fn best_quote_picks_the_line_that_shares_the_query_and_strips_its_marker() {
+        let chunk = "## Scaling laws\n\nGPU prices fell again.\nLoss falls as a smooth power law in compute.\n";
+        assert_eq!(
+            best_quote(chunk, "how does loss fall with compute"),
+            "Loss falls as a smooth power law in compute."
+        );
+        // A heading can be the answer: its `#` markers are stripped, not skipped.
+        assert_eq!(best_quote(chunk, "scaling laws"), "Scaling laws");
+        // Nothing in common still quotes something rather than an empty string.
+        assert_eq!(best_quote(chunk, "zzzz"), "Scaling laws");
+        assert_eq!(best_quote("\n\n   \n", "anything"), "");
+    }
+
+    // recall reports `ask_response`'s split verbatim — the same floor, the same
+    // per-hit numbers the Ask page renders — plus one quotable line per hit.
+    #[test]
+    fn recall_reports_the_ask_pages_floor_split_with_a_quote_per_hit() {
+        let (dir, bm25) = indexed_vault();
+        let hits = rank(
+            dir.path(),
+            &bm25,
+            "how model performance grows with compute",
+            "wiki",
+        );
+        let ask = crate::commands::ask_response(hits);
+        let out = recall_result(&ask, "how model performance grows with compute", 8);
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["floor"], crate::retrieval::RELEVANCE_FLOOR);
+        let first = &out["hits"][0];
+        assert_eq!(first["rank"], 1);
+        assert_eq!(first["page"], "wiki/scaling-laws.md");
+        assert_eq!(first["tier"], "note");
+        assert_eq!(first["prior"], 1.0);
+        assert!(first["score_final"].as_f64().unwrap() > 0.0);
+        assert_eq!(first["rank_change"], 0);
+        // Lexical-only hits carry no cosine; they pass the floor, as Ask does.
+        assert!(first["similarity"].is_null());
+        assert!(out["below_floor"].as_array().unwrap().is_empty());
+        assert!(
+            first["quote"]
+                .as_str()
+                .unwrap()
+                .contains("power law in compute"),
+            "{first}"
+        );
+    }
+
+    #[test]
+    fn recall_holds_a_below_floor_hit_out_of_the_answers() {
+        let (dir, store) = tiered_vault();
+        // Hand-built unit vectors: the query matches a-note at 0.9 (above the
+        // 0.42 floor) and c-note at 0.1 (below it).
+        let hits = crate::commands::rank_hybrid(
+            dir.path(),
+            &store,
+            Some(&[0.9, 0.0, 0.0, 0.1]),
+            &Bm25Index::new(),
+            "anything",
+            10,
+            None,
+            "wiki".parse().unwrap(),
+            &TierWeights::default(),
+        );
+        let ask = crate::commands::ask_response(hits);
+        let out = recall_result(&ask, "anything", 8);
+        let answered: Vec<&str> = out["hits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["page"].as_str().unwrap())
+            .collect();
+        assert_eq!(answered, vec!["wiki/a-note.md"], "{out}");
+        let rejected: Vec<&str> = out["below_floor"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|h| h["page"].as_str().unwrap())
+            .collect();
+        assert_eq!(
+            rejected,
+            vec!["wiki/c-note.md", "wiki/b-note.md"],
+            "best cosine first: {out}"
+        );
+        assert!(out["below_floor"][0]["similarity"].as_f64().unwrap() < 0.42);
+    }
+
+    #[test]
+    fn recall_cuts_at_limit() {
+        let (dir, bm25) = indexed_vault();
+        let ask = crate::commands::ask_response(rank(dir.path(), &bm25, "scaling laws", "all"));
+        assert!(ask.hits.len() > 1);
+        assert_eq!(recall_result(&ask, "scaling laws", 1)["count"], 1);
+    }
+
+    /// a → b → c, plus d → a. `a`'s ring is b (out) and d (back); its two-hop
+    /// ring is c alone.
+    fn linked_vault() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        let page = |name: &str, body: &str| {
+            write(
+                &dir.path().join("wiki").join(name),
+                &format!("---\ntitle: \"{name}\"\ntype: concept\n---\n{body}\n"),
+            );
+        };
+        page("a.md", "links [[b]] and [[nowhere-yet]]");
+        page("b.md", "links [[c]]");
+        page("c.md", "a leaf");
+        page("d.md", "links [[a]]");
+        dir
+    }
+
+    #[test]
+    fn neighbourhood_returns_outlinks_backlinks_and_the_gaps() {
+        let dir = linked_vault();
+        let out = neighbourhood_at(dir.path(), "wiki/a.md", 1).unwrap();
+        assert_eq!(out["page"], "wiki/a.md");
+        assert_eq!(out["outlinks"], serde_json::json!(["wiki/b.md"]));
+        assert_eq!(out["backlinks"], serde_json::json!(["wiki/d.md"]));
+        assert_eq!(out["unresolved"], serde_json::json!(["nowhere-yet"]));
+        assert!(out.get("two_hop").is_none(), "hops=1 asks for no ring");
+        // A bare wiki filename resolves the same way read_page takes one.
+        assert_eq!(neighbourhood_at(dir.path(), "a.md", 1).unwrap(), out);
+    }
+
+    #[test]
+    fn neighbourhood_two_hop_is_the_ring_you_did_not_already_have() {
+        let dir = linked_vault();
+        let out = neighbourhood_at(dir.path(), "wiki/a.md", 2).unwrap();
+        // c is two hops out (a → b → c); b, d and a itself are excluded.
+        assert_eq!(out["two_hop"], serde_json::json!(["wiki/c.md"]));
+    }
+
+    #[test]
+    fn neighbourhood_refuses_a_missing_page_and_an_escape() {
+        let dir = linked_vault();
+        let err = neighbourhood_at(dir.path(), "wiki/nope.md", 1).unwrap_err();
+        assert!(err.starts_with("page not found: wiki/nope.md"), "{err}");
+        let err = neighbourhood_at(dir.path(), "../outside.md", 1).unwrap_err();
+        assert_eq!(err, "path escapes wiki/: ../outside.md");
+    }
+
+    #[test]
+    fn parse_since_takes_rfc3339_and_relative_windows() {
+        let now = 1_800_000_000i64;
+        assert_eq!(parse_since("24h", now).unwrap(), now - 86_400);
+        assert_eq!(parse_since("7d", now).unwrap(), now - 7 * 86_400);
+        assert_eq!(parse_since(" 1h ", now).unwrap(), now - 3_600);
+        assert_eq!(parse_since("1970-01-01T00:00:00Z", now).unwrap(), 0);
+        assert_eq!(
+            parse_since("2026-07-18T09:00:00.000Z", now).unwrap(),
+            1_784_365_200
+        );
+        let err = parse_since("last tuesday", now).unwrap_err();
+        assert!(err.starts_with("unparseable `since`"), "{err}");
+    }
+
+    #[test]
+    fn changed_since_lists_recent_wiki_pages_newest_first_and_skips_sources() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("wiki/fresh.md"), "just written\n");
+        write(&root.join("daily/2026-09-05.md"), "a digest\n");
+        // Never in scope: raw/ is a source tier, sessions/ its own scope.
+        write(&root.join("raw/source.md"), "immutable\n");
+        write(&root.join("sessions/2026-09/talk.md"), "a transcript\n");
+        // An old page: mtime far in the past.
+        write(&root.join("wiki/stale.md"), "written long ago\n");
+        let old = std::time::SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(1_000_000);
+        filetime_set(&root.join("wiki/stale.md"), old);
+
+        let out = changed_since_at(root, "24h", 100, false).unwrap();
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["history"], false);
+        let pages: Vec<&str> = out["pages"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| p["page"].as_str().unwrap())
+            .collect();
+        assert!(pages.contains(&"wiki/fresh.md"), "{pages:?}");
+        assert!(pages.contains(&"daily/2026-09-05.md"), "{pages:?}");
+        assert!(!pages.contains(&"raw/source.md"), "{pages:?}");
+        assert!(!pages.contains(&"sessions/2026-09/talk.md"), "{pages:?}");
+        assert!(!pages.contains(&"wiki/stale.md"), "older than the window");
+        let tier_of = |page: &str| -> String {
+            out["pages"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|p| p["page"] == page)
+                .unwrap()["tier"]
+                .as_str()
+                .unwrap()
+                .to_string()
+        };
+        assert_eq!(tier_of("wiki/fresh.md"), "note");
+        assert_eq!(tier_of("daily/2026-09-05.md"), "digest");
+        assert!(out["pages"][0]["mtime"].as_i64().unwrap() > 0);
+        // A window reaching back before the epoch stamp picks the old one up.
+        let all = changed_since_at(root, "1970-01-01T00:00:00Z", 100, false).unwrap();
+        assert_eq!(all["total"], 3);
+        assert_eq!(all["truncated"], false);
+        // The cut is honest about hiding rows.
+        let cut = changed_since_at(root, "1970-01-01T00:00:00Z", 1, false).unwrap();
+        assert_eq!(cut["truncated"], true);
+        assert_eq!(cut["total"], 3);
+        assert_eq!(cut["pages"].as_array().unwrap().len(), 1);
+    }
+
+    /// Set a file's mtime. `filetime` is not a dependency, so this uses the
+    /// platform call directly through `std::fs::File::set_modified`.
+    fn filetime_set(path: &Path, t: std::time::SystemTime) {
+        let f = std::fs::File::options().write(true).open(path).unwrap();
+        f.set_modified(t).unwrap();
+    }
+
+    #[test]
+    fn changed_since_reports_authorship_only_when_the_vault_has_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("wiki/page.md"), "a line\n");
+        // No .git: page_authorship returns None, so no claim is made either way.
+        let out = changed_since_at(root, "24h", 100, true).unwrap();
+        assert_eq!(out["history"], true);
+        assert!(out["pages"][0].get("agent_lines").is_none(), "{out}");
+        assert!(out["pages"][0].get("human_lines").is_none());
     }
 
     // ─── import_conversation / import_session / wikify_pending / ledger_status ─
