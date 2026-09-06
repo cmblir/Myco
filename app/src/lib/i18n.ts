@@ -1883,11 +1883,11 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_live_link: "Open the wikilink under the pointer (Live editor)",
     hw_sc_back: "Back",
     hw_sc_fwd: "Forward",
-    hw_tip_graph1: "Pick a question — the encoding changes, the layout does not.",
+    hw_tip_graph1: "Drag a star and the simulation re-heats around it.",
     hw_tip_graph2:
-      "The gaps column is the answer list: open, draft a link, or send it to harvest.",
+      "F flies the spaceship; the settings drawer holds the layouts, skins and near-field planets.",
     hw_tip_graph3:
-      "Hide the sample vault to see only the notes you wrote.",
+      "Pick a question above — the encoding changes, the layout does not — and work the gaps column on the left.",
     hw_tip_query1: "Answers cite wiki pages — click a citation to open it.",
     hw_tip_query2:
       "The graph's gap panel can draft research questions into this box.",
@@ -3691,10 +3691,11 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_live_link: "포인터 아래 위키링크 열기 (실시간 편집기)",
     hw_sc_back: "뒤로",
     hw_sc_fwd: "앞으로",
-    hw_tip_graph1: "질문을 고르면 인코딩만 바뀝니다 — 좌표는 그대로입니다.",
+    hw_tip_graph1: "별을 드래그하면 시뮬레이션이 주변에서 다시 살아납니다.",
     hw_tip_graph2:
-      "빈 곳 목록이 곧 답입니다: 열기 · 링크 제안 · 수확 대상으로.",
-    hw_tip_graph3: "샘플 숨기기를 켜면 내가 쓴 노트만 남습니다.",
+      "F 키로 우주선을 탑니다. 레이아웃 · 스킨 · 근접 행성은 설정 서랍에 있습니다.",
+    hw_tip_graph3:
+      "위에서 질문을 고르면 인코딩만 바뀌고, 왼쪽 빈 곳 목록이 곧 답입니다.",
     hw_tip_query1:
       "답변은 위키 페이지를 인용합니다 — 인용을 클릭해 열어보세요.",
     hw_tip_query2:
@@ -6950,10 +6951,11 @@ export const STRINGS: Record<Lang, Strings> = {
     hw_sc_live_link: "ポインター下のウィキリンクを開く（ライブ編集）",
     hw_sc_back: "戻る",
     hw_sc_fwd: "進む",
-    hw_tip_graph1: "質問を選ぶと符号化だけが変わります — 座標はそのままです。",
+    hw_tip_graph1: "星をドラッグするとシミュレーションが周囲で再び動き出します。",
     hw_tip_graph2:
-      "空白の一覧が答えです: 開く · リンク提案 · 収穫対象へ。",
-    hw_tip_graph3: "サンプルを隠すと自分が書いたノートだけが残ります。",
+      "F キーで宇宙船に乗れます。レイアウト・スキン・近接惑星は設定ドロワーにあります。",
+    hw_tip_graph3:
+      "上で問いを選ぶと符号化だけが変わり、左の空白の一覧がその答えです。",
     hw_tip_query1:
       "回答は wiki ページを引用します — 引用をクリックすると開きます。",
     hw_tip_query2:
