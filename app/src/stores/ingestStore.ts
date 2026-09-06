@@ -55,6 +55,20 @@ export interface IngestRefusal {
   rule: string;
 }
 
+/** One judged source, for the Ingest page's verdict rows and tally. In-memory
+ *  for the app session — the durable line is record_noop's, Rust-side. */
+export interface JudgedEntry {
+  at: number;
+  /** The raw/ stem the source would have (or did) become. */
+  name: string;
+  verdict: IngestRefusal["verdict"] | "harvest";
+  reason: string;
+  rule: string;
+}
+
+/** Verdict rows kept per app session; older ones fall off. */
+const JUDGED_CAP = 50;
+
 export interface IngestEvent {
   /** Monotonic id, unique for the process lifetime. React keys the feed rows
    * by this: keying by array index made every append re-render (and re-mount
@@ -213,6 +227,9 @@ interface IngestState {
   plan: PlanItem[];
   /** Set when the run ended at stage "refused"; null otherwise. */
   refusal: IngestRefusal | null;
+  /** Newest first. Survives reset(): it is the session's judgement log,
+   *  not one run's state. */
+  judged: JudgedEntry[];
   /** Fresh link graph rescanned (debounced) after each streamed write, so
    * live views (mini graph, galaxy growth) see edges of pages created
    * mid-run. Never written to vaultStore.adjacency — that would tear down
@@ -266,6 +283,7 @@ export const useIngestStore = create<IngestState>((set, get) => ({
   candidates: [],
   plan: [],
   refusal: null,
+  judged: [],
   liveAdjacency: null,
   seen: true,
   inboxRev: 0,
@@ -364,6 +382,10 @@ export const useIngestStore = create<IngestState>((set, get) => ({
         finishedAt: Date.now(),
         seen: true,
         log: `${st.log}\n\n${refusal.rule}: ${refusal.reason}`,
+        judged: [
+          { at: Date.now(), name: slug, ...refusal },
+          ...st.judged.slice(0, JUDGED_CAP - 1),
+        ],
       }));
     };
 
@@ -605,6 +627,16 @@ export const useIngestStore = create<IngestState>((set, get) => ({
         stage: "done",
         seen: false,
         log: `${st.log}${warnLines}`,
+        judged: [
+          {
+            at: Date.now(),
+            name: slug,
+            verdict: "harvest",
+            reason: `${changed.length} wiki page(s) changed`,
+            rule: "judge::pass",
+          },
+          ...st.judged.slice(0, JUDGED_CAP - 1),
+        ],
       }));
     } catch (err) {
       const cancelled = String(err).includes("cancelled");

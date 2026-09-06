@@ -1,25 +1,25 @@
-// Session backfill card (spec 2026-08-28). The vault's `sessions/` archive is
-// the biggest un-mined input it has — on the owner's vault, 1,423 imported
-// conversations had produced ten cited sources — because auto-ingest only ever
-// walks `_inbox/`. This card promotes a batch of sessions into that queue and
-// then gets out of the way: the normal ingest pass turns them into pages.
-//
-// The batch size IS the cost ceiling, chosen per press by the person paying
-// for the runs, which is the roadmap's long-open "token cost per backfill run"
-// question answered by the smallest thing that works.
+// Backfill panel (Ingest → Sieve, step 5). The vault's `sessions/` archive is
+// its biggest unopened input — 1,473 files → 719 distinct bodies, and
+// backfill.rs had never run — so the panel is first-class here: the eligible
+// count from the same ranker the Overview queue uses, the size buckets it
+// refused, a batch size that IS the cost ceiling, and the model-call count
+// that batch implies (plan 1 + write 1 per session). "Queue the next N" only
+// COPIES into `_inbox/`; the inbox pass judges and ingests from there.
 
 import { useCallback, useEffect, useState } from "react";
 import type { JSX } from "react";
-import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
-import type { BackfillStatus } from "../lib/ipc";
+import type { HarvestCandidates } from "../lib/ipc";
 import { useIngestStore } from "../stores/ingestStore";
+import { ActivityIcon } from "./ActivityPanel";
 
-const BATCH_SIZES = [5, 10, 25];
+const BATCH_SIZES = [5, 10, 25, 50];
+/** How deep the ranker looks — the largest batch, so "next 50" is real. */
+const QUEUE_LIMIT = 50;
 
 export default function SessionBackfill({ t }: { t: Strings }): JSX.Element | null {
-  const [status, setStatus] = useState<BackfillStatus | null>(null);
+  const [data, setData] = useState<HarvestCandidates | null>(null);
   const [batch, setBatch] = useState(10);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
@@ -28,31 +28,33 @@ export default function SessionBackfill({ t }: { t: Strings }): JSX.Element | nu
 
   const refresh = useCallback(() => {
     void ipc
-      .backfillStatus()
-      .then(setStatus)
-      .catch(() => setStatus(null));
+      .harvestCandidates(QUEUE_LIMIT)
+      .then(setData)
+      .catch(() => setData(null));
   }, []);
 
   useEffect(refresh, [refresh]);
 
   // Nothing to offer when the vault has no session archive at all — a fresh
-  // install should not carry a card about an empty folder.
-  if (!status || status.total === 0) return null;
+  // install should not carry a panel about an empty folder.
+  if (!data || data.total_scanned === 0) return null;
+
+  const eligible = data.items.length;
+  const n = Math.min(batch, eligible);
 
   const promote = (): void => {
     setBusy(true);
     setError(null);
     setNote(null);
     void ipc
-      .promoteSessions(batch)
+      .harvestRun(data.items.slice(0, n).map((c) => c.path))
       .then((out) => {
-        setNote(
-          (t.bf_promoted ?? "{n} sessions queued for ingest").replace(
-            "{n}",
-            String(out.promoted.length),
-          ),
-        );
-        // The pending _inbox list is a sibling card on this page.
+        const skipped =
+          out.skipped.length > 0
+            ? ` · ${t.sv_bf_skipped.replace("{n}", String(out.skipped.length))}`
+            : "";
+        setNote(t.bf_promoted.replace("{n}", String(out.copied)) + skipped);
+        // The pending _inbox list is a channel row on this page.
         bumpInbox();
         refresh();
       })
@@ -60,98 +62,98 @@ export default function SessionBackfill({ t }: { t: Strings }): JSX.Element | nu
       .finally(() => setBusy(false));
   };
 
-  const done = status.promoted;
-  const left = status.eligible;
-
   return (
-    <div className="card" style={{ marginTop: 16, padding: 14 }}>
-      <div className="section-title" style={{ fontSize: 13.5, marginBottom: 6 }}>
-        <Icon name="inbox" size={13} />{" "}
-        {t.bf_title ?? "Session backfill"}
-      </div>
-      <p className="muted" style={{ fontSize: 12.5, margin: "0 0 10px" }}>
-        {t.bf_desc ??
-          "Your coding sessions are archived but never became wiki pages. Promote a batch into the ingest queue."}
-      </p>
-
-      <div className="row" style={{ gap: 18, flexWrap: "wrap", marginBottom: 12 }}>
-        <Stat label={t.bf_waiting ?? "waiting"} value={left} strong />
-        <Stat label={t.bf_done ?? "wikified"} value={done} />
-        <Stat label={t.bf_skipped ?? "too short"} value={status.too_small} />
-        <Stat label={t.bf_held ?? "too large"} value={status.too_large} />
+    <section className="sv-bf" aria-labelledby="sv-bf-title" data-testid="backfill-panel">
+      <div className="sv-bf-head">
+        <ActivityIcon name="indexing" size={28} />
+        <div style={{ minWidth: 0 }}>
+          <div className="sv-eyebrow">{t.sv_bf_eyebrow}</div>
+          <h2 id="sv-bf-title">{t.bf_title}</h2>
+          <p>
+            {t.bf_desc}
+            {data.excluded.already_harvested === 0 ? <> {t.hq_never_run}</> : null}
+          </p>
+        </div>
       </div>
 
-      <div className="row" style={{ gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-        <div className="segmented">
-          {BATCH_SIZES.map((n) => (
+      <div className="sv-bf-stats">
+        <Stat
+          hero
+          value={eligible}
+          label={t.sv_bf_eligible}
+          sub={t.sv_bf_eligible_sub}
+        />
+        <Stat value={data.excluded.already_harvested} label={t.bf_done} />
+        <Stat value={data.excluded.too_small} label={t.bf_skipped} sub="backfill.rs::MIN_BYTES" />
+        <Stat value={data.excluded.too_large} label={t.bf_held} sub="backfill.rs::MAX_BYTES" />
+        <Stat value={data.distinct_bodies} label={t.sv_bf_distinct} />
+        <Stat value={data.total_scanned} label={t.sv_bf_total} sub="sessions/" />
+      </div>
+
+      <div className="sv-bf-actions">
+        <div className="sv-seg" role="group" aria-label={t.sv_bf_batch_label}>
+          {BATCH_SIZES.map((size) => (
             <button
-              key={n}
+              key={size}
               type="button"
-              className={batch === n ? "is-active" : ""}
-              onClick={() => setBatch(n)}
-              aria-pressed={batch === n}
+              onClick={() => setBatch(size)}
+              aria-pressed={batch === size}
             >
-              {n}
+              {size}
             </button>
           ))}
         </div>
         <button
-          className="btn btn-primary"
+          type="button"
+          className="btn hq-btn"
           onClick={promote}
-          disabled={busy || left === 0}
+          disabled={busy || n === 0}
+          aria-busy={busy}
         >
-          {busy
-            ? "…"
-            : (t.bf_promote ?? "Queue the next {n}").replace("{n}", String(batch))}
+          {t.bf_promote.replace("{n}", String(n))}
         </button>
-        {note ? (
-          <span className="muted" style={{ fontSize: 12.5 }} role="status">
-            {note}
-          </span>
-        ) : null}
-        {error ? (
-          <span style={{ fontSize: 12.5, color: "#dc2626" }} role="alert">
-            {error}
-          </span>
-        ) : null}
+        <span className="sv-bf-cost">
+          {t.sv_bf_cost
+            .replace("{calls}", String(n * 2))
+            .replaceAll("{n}", String(n))}
+        </span>
       </div>
 
-      {status.too_large > 0 ? (
-        <p className="muted" style={{ fontSize: 12, margin: "10px 0 0" }}>
-          {(
-            t.bf_held_note ??
-            "{n} sessions are too large for a single pass and are being held, not skipped."
-          ).replace("{n}", String(status.too_large))}
+      {note ? (
+        <p className="sv-bf-note" role="status">
+          {note}
         </p>
       ) : null}
-    </div>
+      {error ? (
+        <p className="sv-bf-note is-error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {data.excluded.too_large > 0 ? (
+        <p className="sv-bf-note">
+          {t.bf_held_note.replace("{n}", String(data.excluded.too_large))}
+        </p>
+      ) : null}
+    </section>
   );
 }
 
 function Stat({
-  label,
   value,
-  strong,
+  label,
+  sub,
+  hero,
 }: {
-  label: string;
   value: number;
-  strong?: boolean;
+  label: string;
+  sub?: string;
+  hero?: boolean;
 }): JSX.Element {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 1 }}>
-      <span
-        style={{
-          fontFamily: "var(--font-mono)",
-          fontSize: strong ? 20 : 16,
-          fontWeight: 600,
-          color: strong ? "var(--ink)" : "var(--ink-3)",
-        }}
-      >
-        {value.toLocaleString()}
-      </span>
-      <span className="muted" style={{ fontSize: 11 }}>
-        {label}
-      </span>
+    <div className={"sv-bf-stat" + (hero ? " is-hero" : "")}>
+      <span className="sv-big">{value.toLocaleString()}</span>
+      <div className="sv-l">{label}</div>
+      {sub ? <div className="sv-s">{sub}</div> : null}
     </div>
   );
 }

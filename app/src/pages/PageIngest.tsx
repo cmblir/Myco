@@ -1,15 +1,20 @@
-// Ingest page — drop a file or paste raw text, then call `claude` to write
-// it into `raw/<slug>.md` and ingest into the wiki per CLAUDE.md instructions.
-// The run itself lives in ingestStore (streamed events, cancel, stage), so it
-// keeps going — and stays visible via the Topbar chip — while the user
-// navigates elsewhere. This page is the form plus the live progress panel.
+// Ingest page — "Sieve": refusal is a first-class stage. Drop a file or paste
+// raw text; the judgement stage (ingestStore.startIngest → judge_source) sorts
+// it into drop / log / harvest BEFORE any file exists, harvests go through the
+// plan gate and the writing agent, and the backfill queue for the sessions/
+// archive sits on this page as the largest unopened input. The run itself
+// lives in ingestStore (streamed events, cancel, stage), so it keeps going —
+// and stays visible via the Topbar chip — while the user navigates elsewhere.
+// This page is the rail, the judgement tile (with the form inside it), the
+// verdict rows, the live progress panel and the backfill panel.
 
-import { useEffect, useRef, useState } from "react";
-import type { JSX } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, JSX, ReactNode } from "react";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
+import type { InflowStats } from "../lib/ipc";
 import { isMediaFile, sourceTextFor } from "../lib/mediaIngest";
 import { formatElapsed } from "../lib/time";
 import { useVaultStore } from "../stores/vaultStore";
@@ -19,9 +24,23 @@ import { listInboxEntries, pendingInboxRows } from "../lib/autoIngest";
 import type { PendingInboxRow } from "../lib/autoIngest";
 import ZoteroImport from "../components/ZoteroImport";
 import ConversationImport from "../components/ConversationImport";
+import SessionBackfill from "../components/SessionBackfill";
 import { useIngestStore } from "../stores/ingestStore";
+import type { IngestStage, JudgedEntry } from "../stores/ingestStore";
 import IngestProgress from "../components/IngestProgress";
+import { ActivityIcon } from "../components/ActivityPanel";
+import type { ActivityIconName } from "../components/ActivityPanel";
 import { dropNoticeFor } from "../lib/ingestDrop";
+
+/** Verdict rows shown under the tile; the store keeps more for the tally. */
+const SHOW_ROWS = 6;
+
+const fill = (s: string, vars: Record<string, string | number>): string =>
+  Object.entries(vars).reduce(
+    (acc, [k, v]) =>
+      acc.replaceAll(`{${k}}`, typeof v === "number" ? v.toLocaleString() : v),
+    s,
+  );
 
 export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
@@ -32,6 +51,8 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   const [ytBusy, setYtBusy] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
   const [dropNotice, setDropNotice] = useState<string | null>(null);
+  const [showExcluded, setShowExcluded] = useState(false);
+  const [inflow, setInflow] = useState<InflowStats | null>(null);
   // The drop listener is registered once; keep the latest copy reachable so its
   // message follows a language change (same reason the handler reads settings
   // via getState() rather than closing over them).
@@ -47,14 +68,16 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   const finishedAt = useIngestStore((s) => s.finishedAt);
   const reportPath = useIngestStore((s) => s.reportPath);
   const storedVaultPath = useIngestStore((s) => s.vaultPath);
+  const judged = useIngestStore((s) => s.judged);
+  const plan = useIngestStore((s) => s.plan);
   const startIngest = useIngestStore((s) => s.startIngest);
   const markSeen = useIngestStore((s) => s.markSeen);
   const resetIngest = useIngestStore((s) => s.reset);
 
   const setRoute = useUIStore((s) => s.setRoute);
 
-  // Pending _inbox sources — the list the inflow "View →" lands on. Refetched
-  // when a run finishes because ingest archives the consumed source.
+  // Pending _inbox sources — the `_inbox` channel row. Refetched when a run
+  // finishes because ingest archives the consumed source.
   const [inboxRows, setInboxRows] = useState<PendingInboxRow[] | null>(null);
   useEffect(() => {
     const root = currentVault?.path;
@@ -74,6 +97,25 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
     // "done" earlier, and refetching on stage alone raced the move into
     // showing an already-consumed row with a soon-dead path.
   }, [currentVault, stage, inboxRev]);
+
+  // Today's arrivals per channel. Best-effort, one read per vault/run — a
+  // missing count is a dash, never an error state.
+  useEffect(() => {
+    const root = currentVault?.path;
+    if (!root) return;
+    let cancelled = false;
+    ipc
+      .inflowStats(root)
+      .then((s) => {
+        if (!cancelled) setInflow(s);
+      })
+      .catch(() => {
+        if (!cancelled) setInflow(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentVault, stage]);
 
   // Unsupported formats stay listed (and counted) rather than vanishing — the
   // pass leaves them in place, and the count line says so.
@@ -132,10 +174,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
           // Whisper preflight: media without the CLI used to fail late inside
           // transcribe_media with a raw error — say so up front instead.
           if (isMediaFile(first) && !(await whisperInstalled())) {
-            setDropError(
-              tRef.current.voice_whisper_missing ??
-                "preparing voice recognition — the speech model downloads once (~190 MB) on first use. If this keeps failing, reinstall myco.",
-            );
+            setDropError(tRef.current.voice_whisper_missing);
             return;
           }
           setTitle((prev) => prev || base.replace(/\.[^.]+$/, ""));
@@ -199,10 +238,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
     }
     if (!path) return;
     if (isMediaFile(path) && !(await whisperInstalled())) {
-      setDropError(
-        t.voice_whisper_missing ??
-          "preparing voice recognition — the speech model downloads once (~190 MB) on first use. If this keeps failing, reinstall myco.",
-      );
+      setDropError(t.voice_whisper_missing);
       return;
     }
     const base = path.split(/[\\/]/).pop() ?? "";
@@ -218,96 +254,312 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
     }
   }
 
-  return (
-    <div className="workspace">
-      <header className="page-head">
-        <div className="page-eyebrow">{t.nav_ingest}</div>
-        <h1 className="page-title">{t.ing_title}</h1>
-        <p className="page-lede">{t.ing_lede}</p>
-      </header>
+  // Session tally: NOOP endings count as drops (zero files either way). A
+  // drop saved the planner and the writer; a NOOP ending only the writer.
+  const tally = useMemo(() => {
+    let drop = 0;
+    let logged = 0;
+    let harvest = 0;
+    let saved = 0;
+    for (const j of judged) {
+      if (j.verdict === "drop") {
+        drop++;
+        saved += 2;
+      } else if (j.verdict === "noop") {
+        drop++;
+        saved += 1;
+      } else if (j.verdict === "log") logged++;
+      else harvest++;
+    }
+    return { drop, log: logged, harvest, saved };
+  }, [judged]);
 
-      {inboxRows !== null ? (
-        <section
-          className="card"
-          style={{ marginTop: 4, marginBottom: 16, padding: 14 }}
-          data-testid="inbox-pending"
-        >
-          <div className="section-title" style={{ fontSize: 13.5, marginBottom: 8 }}>
-            {(t.ing_inbox_pending ?? "Waiting in _inbox ({n})").replace(
-              "{n}",
-              String(inboxRows.length),
-            )}
+  // Refusals grouped by the rule that decided, newest reason kept.
+  const refusedGroups = useMemo(() => {
+    const groups = new Map<string, { count: number; last: string }>();
+    for (const j of judged) {
+      if (j.verdict === "harvest") continue;
+      const g = groups.get(j.rule);
+      if (g) g.count++;
+      else groups.set(j.rule, { count: 1, last: j.reason });
+    }
+    return [...groups.entries()].sort((a, b) => b[1].count - a[1].count);
+  }, [judged]);
+  const refusedTotal = tally.drop + tally.log;
+
+  const todayIntake = (inflow?.inboxToday ?? 0) + (inflow?.sessionsToday ?? 0);
+  const railGate =
+    stage === "plan-gate"
+      ? t.sv_reviewing
+      : stage === "claude" || stage === "indexing" || stage === "done"
+        ? plan.length > 0
+          ? plan.length.toLocaleString()
+          : t.sv_done
+        : t.sv_waiting;
+  const railRun =
+    stage === "claude" || stage === "indexing"
+      ? t.sv_running
+      : stage === "done"
+        ? t.sv_done
+        : stage === "error"
+          ? t.sv_failed
+          : t.sv_idle;
+
+  const channelIcon = (name: ActivityIconName): ReactNode => (
+    <ActivityIcon name={name} size={28} />
+  );
+
+  return (
+    <div className="workspace sv" data-testid="sieve">
+      <ol className="sv-rail" aria-label={t.sv_rail_label}>
+        <RailStep n={1} label={t.sv_step_intake} value={fill(t.sv_today_n, { n: todayIntake })} state={stage === "idle" ? "active" : undefined} />
+        <RailStep
+          n={2}
+          label={t.sv_step_judge}
+          value={fill(t.sv_tally, { d: tally.drop, l: tally.log, h: tally.harvest })}
+          state={judgeState(stage)}
+        />
+        <RailStep n={3} label={t.sv_step_gate} value={railGate} state={gateState(stage)} />
+        <RailStep n={4} label={t.sv_step_run} value={railRun} state={runState(stage)} />
+        <RailStep
+          n={5}
+          label={t.sv_step_backfill}
+          value={fill(t.sv_queue_n, { n: inboxRows?.length ?? 0 })}
+        />
+      </ol>
+
+      {/* ── 2 · Judgement — the hero ─────────────────────────────────── */}
+      <section className="sv-hero-wrap" aria-labelledby="sv-judge-title">
+        <div className="sv-hero-glow" aria-hidden="true" />
+        <div className="sv-hero">
+          <div className="sv-hero-fig" style={{ "--i": 0 } as CSSProperties}>
+            <ActivityIcon name="stop" size={112} />
           </div>
-          {inboxRows.length === 0 ? (
-            <div className="muted" style={{ fontSize: 13 }}>
-              {t.ing_inbox_empty ??
-                "Nothing waiting — arrivals have already been ingested."}
+          <div style={{ "--i": 1, minWidth: 0 } as CSSProperties}>
+            <div className="sv-eyebrow">{t.sv_judge_eyebrow}</div>
+            <h1 className="sv-title" id="sv-judge-title">
+              {t.sv_judge_title}
+            </h1>
+            <p className="sv-lede">{t.sv_judge_lede}</p>
+            <div className="sv-meta">
+              <span>{fill(t.sv_meta_session, { n: judged.length })}</span>
+              <span>{fill(t.sv_meta_saved, { n: tally.saved })}</span>
             </div>
-          ) : (
-            <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
-              {inboxRows.map((r) => (
-                <li key={r.path}>
-                  <button
-                    className="btn"
-                    style={{
-                      width: "100%",
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 10,
-                      justifyContent: "flex-start",
-                      marginTop: 4,
-                    }}
-                    onClick={() => setRoute(`page:${r.path}`)}
-                  >
-                    <Icon name="inbox" size={13} />
-                    <span
-                      style={{
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
+          </div>
+          {/* role=status: the three counts move as verdicts land. */}
+          <div className="sv-nums" role="status" style={{ "--i": 2 } as CSSProperties}>
+            <Num kind="drop" value={tally.drop} label={t.sv_drop} sub={t.sv_drop_sub} />
+            <Num kind="log" value={tally.log} label={t.sv_log} sub={t.sv_log_sub} />
+            <Num kind="harvest" value={tally.harvest} label={t.sv_harvest} sub={t.sv_harvest_sub} />
+          </div>
+
+          {!showResults ? (
+            <div className={"sv-dz" + (over ? " over" : "")} style={{ "--i": 3 } as CSSProperties}>
+              <span className="sv-dz-arrow" aria-hidden="true">
+                <Icon name="upload" size={20} />
+              </span>
+              <div style={{ minWidth: 0 }}>
+                <div className="sv-dz-t">{t.ing_drop}</div>
+                <div className="sv-dz-s">{t.sv_dz_sub}</div>
+              </div>
+              <button type="button" className="btn hq-btn" onClick={() => void browseAndLoad()}>
+                {t.ing_browse}
+              </button>
+
+              <div className="sv-dz-form">
+                <div className="field">
+                  <label>{t.ing_title_label}</label>
+                  <input
+                    className="input"
+                    placeholder={t.ing_title_ph}
+                    value={title}
+                    onChange={(e) => setTitle(e.target.value)}
+                  />
+                </div>
+                <div className="field">
+                  <label>{t.ing_or_paste}</label>
+                  <textarea
+                    className="textarea"
+                    rows={6}
+                    placeholder={t.ing_paste_ph}
+                    value={body}
+                    onChange={(e) => setBody(e.target.value)}
+                  />
+                  {looksLikeYoutube(body) ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      style={{ marginTop: 8 }}
+                      disabled={ytBusy}
+                      onClick={() => void loadYoutube()}
                     >
-                      {r.name}
-                    </span>
-                    {r.kind !== "md" ? (
-                      <span className="chip">{r.ext || "file"}</span>
-                    ) : null}
-                    {r.kind === "unsupported" ? (
-                      <span className="chip muted">
-                        {t.ing_inbox_unsupported_chip ?? "unsupported"}
-                      </span>
-                    ) : null}
-                    {r.today ? (
-                      <span className="chip">{t.ing_inbox_today ?? "today"}</span>
-                    ) : null}
-                    <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
-                      {r.mtime != null
-                        ? new Date(r.mtime * 1000).toLocaleString([], {
-                            month: "short",
-                            day: "numeric",
-                            hour: "2-digit",
-                            minute: "2-digit",
-                          })
-                        : ""}
-                    </span>
+                      {ytBusy ? t.ing_yt_fetching : t.ing_yt_fetch}
+                    </button>
+                  ) : null}
+                </div>
+                <div className="row">
+                  <span className="chip">
+                    <Icon name="bolt" size={11} /> {settings?.ingest_model ?? "claude-cli"}
+                  </span>
+                  <span className="muted" style={{ fontSize: 12 }}>
+                    vault: {currentVault?.path ?? "(none)"}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-primary hq-btn"
+                    style={{ marginLeft: "auto" }}
+                    onClick={() => void startIngest(title, body)}
+                    disabled={!canRun}
+                  >
+                    <Icon name="sparkles" size={14} /> {t.ing_run}
                   </button>
-                </li>
-              ))}
-            </ul>
-          )}
-          {unsupportedCount > 0 ? (
-            <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-              {(t.ing_inbox_unsupported_line ?? "{n} unsupported — left in place.").replace(
-                "{n}",
-                String(unsupportedCount),
-              )}
+                </div>
+              </div>
+              {dropError ? (
+                <div className="sv-dz-note is-error" role="alert">
+                  {dropError}
+                </div>
+              ) : null}
+              {dropNotice ? (
+                <div className="sv-dz-note muted" data-testid="ingest-drop-notice">
+                  {dropNotice}
+                </div>
+              ) : null}
             </div>
           ) : null}
-        </section>
-      ) : null}
 
-      <ConversationImport t={t} />
-      <ZoteroImport t={t} />
+          {/* Intake channels: every entrance shares the judge. Counts are
+              today's arrivals; a row that has controls expands. */}
+          <div className="sv-chan" style={{ "--i": 4 } as CSSProperties}>
+            <div className="sv-chan-l">{t.sv_channels}</div>
+            <ul className="sv-chan-list" aria-label={t.sv_channels}>
+              <Channel icon={channelIcon("mcp")} name={t.sv_ch_sessions} src="~/.claude · ~/.codex" count={inflow?.sessionsToday}>
+                {currentVault ? <ConversationImport t={t} /> : null}
+              </Channel>
+              <Channel icon={channelIcon("link")} name={t.sv_ch_clipper} src="clip.rs" count={inflow?.inboxBySource.clipper ?? 0} />
+              <Channel icon={channelIcon("ask")} name={t.sv_ch_mcp} src="mcp_native.rs" count={inflow?.mcpCallsToday} />
+              <Channel icon={channelIcon("indexing")} name={t.sv_ch_zotero} src={t.sv_ch_manual}>
+                {currentVault ? <ZoteroImport t={t} /> : null}
+              </Channel>
+              <Channel icon={channelIcon("distill")} name={t.sv_ch_inbox} src="_inbox/" count={inboxRows?.length}>
+                {inboxRows !== null ? (
+                  <div data-testid="inbox-pending">
+                    {inboxRows.length === 0 ? (
+                      <div className="muted" style={{ fontSize: 13 }}>
+                        {t.ing_inbox_empty}
+                      </div>
+                    ) : (
+                      <ul style={{ listStyle: "none", margin: 0, padding: 0 }}>
+                        {inboxRows.map((r) => (
+                          <li key={r.path}>
+                            <button
+                              type="button"
+                              className="btn"
+                              style={{
+                                width: "100%",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 10,
+                                justifyContent: "flex-start",
+                                marginTop: 4,
+                              }}
+                              onClick={() => setRoute(`page:${r.path}`)}
+                            >
+                              <Icon name="inbox" size={13} />
+                              <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                {r.name}
+                              </span>
+                              {r.kind !== "md" ? <span className="chip">{r.ext || "file"}</span> : null}
+                              {r.kind === "unsupported" ? (
+                                <span className="chip muted">{t.ing_inbox_unsupported_chip}</span>
+                              ) : null}
+                              {r.today ? <span className="chip">{t.ing_inbox_today}</span> : null}
+                              <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
+                                {r.mtime != null
+                                  ? new Date(r.mtime * 1000).toLocaleString([], {
+                                      month: "short",
+                                      day: "numeric",
+                                      hour: "2-digit",
+                                      minute: "2-digit",
+                                    })
+                                  : ""}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {unsupportedCount > 0 ? (
+                      <div className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+                        {t.ing_inbox_unsupported_line.replace("{n}", String(unsupportedCount))}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : null}
+              </Channel>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {/* Verdict rows + the exclusion disclosure. */}
+      <div className="sv-rows" aria-live="polite" aria-label={t.sv_verdicts_title}>
+        <div className="sv-rows-l">{t.sv_verdicts_title}</div>
+        {judged.length === 0 ? (
+          <div className="sv-empty">{t.sv_verdicts_empty}</div>
+        ) : (
+          judged.slice(0, SHOW_ROWS).map((j) => <VerdictRow key={j.at} j={j} t={t} />)
+        )}
+        {refusedTotal === 0 ? (
+          <div className="sv-excl-none">{t.sv_excl_none}</div>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="sv-excl-btn"
+              aria-expanded={showExcluded}
+              aria-controls="sv-excl-body"
+              onClick={() => setShowExcluded((v) => !v)}
+            >
+              <span className="sv-caret" aria-hidden="true">
+                ▶
+              </span>
+              <span style={{ flex: 1 }}>
+                {t.sv_excl_line.split("{n}")[0]}
+                <b>{refusedTotal.toLocaleString()}</b>
+                {t.sv_excl_line.split("{n}")[1] ?? ""}
+              </span>
+              <span className="muted" style={{ fontSize: 12.5 }}>
+                {t.sv_out_drop}
+              </span>
+            </button>
+            {showExcluded ? (
+              <div className="sv-excl-body" id="sv-excl-body">
+                <table className="hq-table">
+                  <thead>
+                    <tr>
+                      <th>{t.sv_excl_col_rule}</th>
+                      <th className="hq-n">{t.sv_excl_col_count}</th>
+                      <th>{t.sv_excl_col_last}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {refusedGroups.map(([rule, g]) => (
+                      <tr key={rule}>
+                        <td>
+                          <code style={{ fontFamily: "var(--font-mono)", fontSize: 11.5 }}>{rule}</code>
+                        </td>
+                        <td className="hq-n">{g.count.toLocaleString()}</td>
+                        <td className="hq-why">{g.last}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
+          </>
+        )}
+      </div>
 
       {settings ? (
         <div className="muted" style={{ fontSize: 12, marginTop: 12 }}>
@@ -321,8 +573,8 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
           style={{
             marginTop: 16,
             padding: 18,
-            border: "1px solid var(--accent, #16a34a)",
-            background: "color-mix(in srgb, var(--accent, #16a34a) 8%, var(--bg))",
+            border: "1px solid var(--ok)",
+            background: "color-mix(in srgb, var(--ok) 8%, var(--bg))",
             display: "flex",
             alignItems: "center",
             gap: 16,
@@ -336,8 +588,8 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
               width: 36,
               height: 36,
               borderRadius: "50%",
-              background: "var(--accent, #16a34a)",
-              color: "#fff",
+              background: "var(--ok)",
+              color: "var(--bg)",
               display: "grid",
               placeItems: "center",
               flexShrink: 0,
@@ -346,14 +598,9 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
             <Icon name="check" size={18} />
           </div>
           <div style={{ flex: 1, minWidth: 220 }}>
-            <div style={{ fontWeight: 600, fontSize: 15 }}>
-              {t.ing_success_title}
-            </div>
+            <div style={{ fontWeight: 600, fontSize: 15 }}>{t.ing_success_title}</div>
             <div className="muted" style={{ fontSize: 13, marginTop: 2 }}>
-              {t.ing_success_sub.replace(
-                "{time}",
-                formatElapsed(finishedAt - startedAt),
-              )}
+              {t.ing_success_sub.replace("{time}", formatElapsed(finishedAt - startedAt))}
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -368,10 +615,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
               {t.ing_open_index}
             </button>
             {reportPath ? (
-              <button
-                className="btn"
-                onClick={() => void ipc.openExternal(reportPath)}
-              >
+              <button className="btn" onClick={() => void ipc.openExternal(reportPath)}>
                 {t.ing_open_report}
               </button>
             ) : null}
@@ -385,14 +629,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
       {stage === "cancelled" ? (
         <div
           className="card"
-          style={{
-            marginTop: 16,
-            padding: 18,
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-            flexWrap: "wrap",
-          }}
+          style={{ marginTop: 16, padding: 18, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}
           role="status"
         >
           <Icon name="info" size={18} />
@@ -416,7 +653,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
               wordBreak: "break-word",
               fontFamily: "var(--font-mono)",
               fontSize: 12,
-              color: "#dc2626",
+              color: "var(--danger)",
               margin: 0,
               maxHeight: 160,
               overflow: "auto",
@@ -428,187 +665,137 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
       ) : null}
 
       {showResults ? (
-        <IngestProgress t={t} />
-      ) : (
-        <div className="ingest-grid">
-          <div className="col">
-            <div className={"dropzone" + (over ? " over" : "")}>
-              <Icon name="upload" size={26} />
-              <div className="dropzone-title">{t.ing_drop}</div>
-              <div className="dropzone-sub">
-                Drop a text/markdown file anywhere on this window — or
-              </div>
-              <button
-                className="btn"
-                style={{ marginTop: 10 }}
-                onClick={() => void browseAndLoad()}
-              >
-                {t.ing_browse}
-              </button>
-              {dropError ? (
-                <div
-                  style={{
-                    marginTop: 10,
-                    color: "#dc2626",
-                    fontSize: 12,
-                  }}
-                >
-                  {dropError}
-                </div>
-              ) : null}
-              {dropNotice ? (
-                <div
-                  data-testid="ingest-drop-notice"
-                  style={{
-                    marginTop: 10,
-                    color: "var(--ink-3)",
-                    fontSize: 12,
-                  }}
-                >
-                  {dropNotice}
-                </div>
-              ) : null}
-            </div>
-
-            <div className="field">
-              <label>{t.ing_title_label ?? "Title"}</label>
-              <input
-                className="input"
-                placeholder={t.ing_title_ph ?? "e.g. Byte Pair Encoding"}
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-            </div>
-
-            <div className="field">
-              <label>{t.ing_or_paste}</label>
-              <textarea
-                className="textarea"
-                rows={10}
-                placeholder={t.ing_paste_ph}
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-              />
-              {looksLikeYoutube(body) ? (
-                <button
-                  className="btn"
-                  style={{ marginTop: 8 }}
-                  disabled={ytBusy}
-                  onClick={() => void loadYoutube()}
-                >
-                  {ytBusy
-                    ? (t.ing_yt_fetching ?? "Fetching transcript…")
-                    : (t.ing_yt_fetch ?? "Fetch YouTube transcript")}
-                </button>
-              ) : null}
-            </div>
-
-            <div className="row">
-              <span className="chip">
-                <Icon name="bolt" size={11} />{" "}
-                {settings?.ingest_model ?? "claude-cli"}
-              </span>
-              <span className="muted" style={{ fontSize: 12 }}>
-                vault: {currentVault?.path ?? "(none)"}
-              </span>
-              <button
-                className="btn btn-primary"
-                style={{ marginLeft: "auto" }}
-                onClick={() => void startIngest(title, body)}
-                disabled={!canRun}
-              >
-                <Icon name="sparkles" size={14} /> {t.ing_run}
-              </button>
-            </div>
-          </div>
-
-          <aside className="col">
-            <div className="card">
-              <div
-                className="section-title"
-                style={{ fontSize: 13.5, marginBottom: 12 }}
-              >
-                {t.ing_pipeline}
-              </div>
-              <div className="stepper">
-                <StepRow
-                  idx={1}
-                  title={t.ing_step_read}
-                  active={false}
-                  done={stage === "done"}
-                  t={t}
-                />
-                <StepRow
-                  idx={2}
-                  title={t.ing_step_claude}
-                  active={false}
-                  done={stage === "done"}
-                  t={t}
-                />
-                <StepRow
-                  idx={3}
-                  title={t.ing_step_refresh}
-                  active={false}
-                  done={stage === "done"}
-                  t={t}
-                />
-              </div>
-            </div>
-            {log ? (
-              <div className="card" style={{ minHeight: 80 }}>
-                <div
-                  className="section-title"
-                  style={{ fontSize: 13.5, marginBottom: 6 }}
-                >
-                  Log
-                </div>
-                <pre
-                  style={{
-                    whiteSpace: "pre-wrap",
-                    wordBreak: "break-word",
-                    fontFamily: "var(--font-mono)",
-                    fontSize: 12,
-                    color: stage === "error" ? "#dc2626" : "var(--ink-3)",
-                    margin: 0,
-                    maxHeight: 280,
-                    overflow: "auto",
-                  }}
-                >
-                  {log}
-                </pre>
-              </div>
-            ) : null}
-          </aside>
+        <div className="sv-run">
+          <IngestProgress t={t} />
         </div>
-      )}
+      ) : null}
+
+      <SessionBackfill t={t} />
     </div>
   );
 }
 
-function StepRow({
-  idx,
-  title,
-  active,
-  done,
-  t,
+function judgeState(stage: IngestStage): "active" | "done" | undefined {
+  if (stage === "writing-raw") return "active";
+  if (stage === "idle" || stage === "cancelled" || stage === "error") return undefined;
+  return "done";
+}
+function gateState(stage: IngestStage): "active" | "done" | undefined {
+  if (stage === "plan-gate") return "active";
+  if (stage === "claude" || stage === "indexing" || stage === "done") return "done";
+  return undefined;
+}
+function runState(stage: IngestStage): "active" | "done" | undefined {
+  if (stage === "claude" || stage === "indexing") return "active";
+  if (stage === "done") return "done";
+  return undefined;
+}
+
+function RailStep({
+  n,
+  label,
+  value,
+  state,
 }: {
-  idx: number;
-  title: string;
-  active: boolean;
-  done: boolean;
-  t: Strings;
+  n: number;
+  label: string;
+  value: string;
+  state?: "active" | "done";
 }): JSX.Element {
   return (
-    <div className={"step " + (done ? "done" : active ? "active" : "")}>
-      <div className="step-bullet">
-        {done ? <Icon name="check" size={11} /> : idx}
-      </div>
-      <div className="step-body">
-        <div className="step-title">{title}</div>
-        {active ? (
-          <div className="step-sub">{t.ing_working ?? "working…"}</div>
-        ) : null}
-      </div>
+    <li className="sv-step" data-state={state} aria-current={state === "active" ? "step" : undefined}>
+      <span className="sv-n" aria-hidden="true">
+        {state === "done" ? "✓" : n}
+      </span>
+      <span className="sv-k">{label}</span>
+      <span className="sv-v">{value}</span>
+    </li>
+  );
+}
+
+function Num({
+  kind,
+  value,
+  label,
+  sub,
+}: {
+  kind: "drop" | "log" | "harvest";
+  value: number;
+  label: string;
+  sub: string;
+}): JSX.Element {
+  return (
+    <div className={`sv-num is-${kind}`}>
+      <span className="sv-big">{value.toLocaleString()}</span>
+      <div className="sv-l">{label}</div>
+      <div className="sv-s">{sub}</div>
+    </div>
+  );
+}
+
+/** One intake channel: a 28px object, the name, today's count. With children
+ *  it is a native <details> — the existing import cards live inside. */
+function Channel({
+  icon,
+  name,
+  src,
+  count,
+  children,
+}: {
+  icon: ReactNode;
+  name: string;
+  src: string;
+  count?: number;
+  children?: ReactNode;
+}): JSX.Element {
+  const row = (
+    <span className="sv-ch-row">
+      {icon}
+      <span className="sv-ch-nm">
+        {name}
+        <span className="sv-ch-src">{src}</span>
+      </span>
+      <span className="sv-ch-ct">{count == null ? "—" : count.toLocaleString()}</span>
+    </span>
+  );
+  if (!children) return <li className="sv-ch">{row}</li>;
+  return (
+    <li className="sv-ch-li">
+      <details className="sv-ch">
+        <summary>{row}</summary>
+        <div className="sv-ch-body">{children}</div>
+      </details>
+    </li>
+  );
+}
+
+function VerdictRow({ j, t }: { j: JudgedEntry; t: Strings }): JSX.Element {
+  const label =
+    j.verdict === "harvest"
+      ? t.sv_harvest
+      : j.verdict === "log"
+        ? t.sv_log
+        : t.sv_drop;
+  const out =
+    j.verdict === "harvest"
+      ? t.sv_out_harvest
+      : j.verdict === "log"
+        ? t.sv_out_log
+        : j.verdict === "noop"
+          ? t.sv_out_noop
+          : t.sv_out_drop;
+  return (
+    <div className="sv-row">
+      <span>
+        <span className={`sv-chip is-${j.verdict}`}>{label}</span>
+      </span>
+      <span className="sv-fname" title={j.name}>
+        {j.name}
+      </span>
+      <span className="sv-why">
+        {j.reason} <code>{j.rule}</code>
+      </span>
+      <span className={"sv-out" + (j.verdict === "harvest" || j.verdict === "log" ? "" : " is-zero")}>{out}</span>
     </div>
   );
 }

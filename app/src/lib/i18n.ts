@@ -1208,6 +1208,61 @@ export interface Strings {
   ing_logged_title: string; // {reason}
   ing_noop_reason: string;
   ing_gate_none_reason: string;
+  // Sieve (Ingest page): the 5-step rail, the judgement tile, verdict rows,
+  // the exclusion line, intake channels, the backfill panel.
+  sv_rail_label: string;
+  sv_step_intake: string;
+  sv_step_judge: string;
+  sv_step_gate: string;
+  sv_step_run: string;
+  sv_step_backfill: string;
+  sv_today_n: string; // {n}
+  sv_tally: string; // {d} {l} {h}
+  sv_waiting: string;
+  sv_reviewing: string;
+  sv_idle: string;
+  sv_running: string;
+  sv_done: string;
+  sv_failed: string;
+  sv_queue_n: string; // {n}
+  sv_judge_eyebrow: string;
+  sv_judge_title: string;
+  sv_judge_lede: string;
+  sv_meta_session: string; // {n}
+  sv_meta_saved: string; // {n}
+  sv_drop: string;
+  sv_drop_sub: string;
+  sv_log: string;
+  sv_log_sub: string;
+  sv_harvest: string;
+  sv_harvest_sub: string;
+  sv_dz_sub: string;
+  sv_verdicts_title: string;
+  sv_verdicts_empty: string;
+  sv_out_drop: string;
+  sv_out_noop: string;
+  sv_out_log: string;
+  sv_out_harvest: string;
+  sv_excl_line: string; // {n}
+  sv_excl_none: string;
+  sv_excl_col_rule: string;
+  sv_excl_col_count: string;
+  sv_excl_col_last: string;
+  sv_channels: string;
+  sv_ch_sessions: string;
+  sv_ch_clipper: string;
+  sv_ch_mcp: string;
+  sv_ch_zotero: string;
+  sv_ch_inbox: string;
+  sv_ch_manual: string;
+  sv_bf_eyebrow: string;
+  sv_bf_eligible: string;
+  sv_bf_eligible_sub: string;
+  sv_bf_total: string;
+  sv_bf_distinct: string;
+  sv_bf_batch_label: string;
+  sv_bf_cost: string; // {calls} {n}
+  sv_bf_skipped: string; // {n}
   // Query page.
   q_via: string;
   q_via_retrieval: string;
@@ -2861,6 +2916,63 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_logged_title: "Kept the original only · {reason}",
     ing_noop_reason: "plan: every item NOOP — the wiki already covers this",
     ing_gate_none_reason: "nothing approved at the plan gate",
+    sv_rail_label: "Pipeline",
+    sv_step_intake: "Intake",
+    sv_step_judge: "Judgement",
+    sv_step_gate: "Plan gate",
+    sv_step_run: "Run",
+    sv_step_backfill: "Backfill queue",
+    sv_today_n: "{n} today",
+    sv_tally: "drop {d} · log {l} · harvest {h}",
+    sv_waiting: "waiting",
+    sv_reviewing: "reviewing",
+    sv_idle: "idle",
+    sv_running: "running",
+    sv_done: "done",
+    sv_failed: "failed",
+    sv_queue_n: "{n} waiting",
+    sv_judge_eyebrow: "2 · Judgement — the centre of this screen",
+    sv_judge_title: "Judgement",
+    sv_judge_lede:
+      "Every arrival is sorted into drop / log / harvest BEFORE a file exists. A drop is zero files, zero model calls and one judgement-log line.",
+    sv_meta_session: "this session: {n} judged",
+    sv_meta_saved: "model calls saved {n}",
+    sv_drop: "drop",
+    sv_drop_sub: "0 files created",
+    sv_log: "log",
+    sv_log_sub: "kept in raw/ · no model",
+    sv_harvest: "harvest",
+    sv_harvest_sub: "to the plan gate",
+    sv_dz_sub:
+      "Drop a text or markdown file anywhere on this window — the file exists only after the verdict.",
+    sv_verdicts_title: "Verdicts",
+    sv_verdicts_empty:
+      "Nothing judged this session yet — drop a file or paste text above.",
+    sv_out_drop: "0 files · 0 model calls",
+    sv_out_noop: "0 files · 1 model call",
+    sv_out_log: "raw/ 1 · wiki 0",
+    sv_out_harvest: "ingested",
+    sv_excl_line: "{n} refused this session — see why",
+    sv_excl_none: "Nothing refused this session",
+    sv_excl_col_rule: "Rule",
+    sv_excl_col_count: "count",
+    sv_excl_col_last: "Last reason",
+    sv_channels: "Intake channels",
+    sv_ch_sessions: "Session sweep",
+    sv_ch_clipper: "Web clipper",
+    sv_ch_mcp: "MCP tools",
+    sv_ch_zotero: "Zotero · files",
+    sv_ch_inbox: "_inbox queue",
+    sv_ch_manual: "manual",
+    sv_bf_eyebrow: "5 · Backfill queue — the largest unopened input",
+    sv_bf_eligible: "worth harvesting",
+    sv_bf_eligible_sub: "8 KB ≤ size ≤ 200 KB",
+    sv_bf_total: "archive total",
+    sv_bf_distinct: "distinct bodies",
+    sv_bf_batch_label: "batch size",
+    sv_bf_cost:
+      "model calls ≈ {calls} (plan {n} + write {n}) · judged first, so duplicates cost nothing",
+    sv_bf_skipped: "{n} skipped",
     q_via: "via {provider} · {model}",
     q_via_retrieval:
       "via local semantic search — answers quote your notes verbatim (no model)",
@@ -4504,6 +4616,63 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_logged_title: "원본만 보관했습니다 · {reason}",
     ing_noop_reason: "계획 전부 NOOP — 위키에 더할 것이 없습니다",
     ing_gate_none_reason: "계획 게이트에서 승인된 항목 없음",
+    sv_rail_label: "파이프라인 진행 상태",
+    sv_step_intake: "유입",
+    sv_step_judge: "판정",
+    sv_step_gate: "계획 게이트",
+    sv_step_run: "실행",
+    sv_step_backfill: "백필 큐",
+    sv_today_n: "오늘 {n}건",
+    sv_tally: "버림 {d} · 기록 {l} · 수확 {h}",
+    sv_waiting: "대기 중",
+    sv_reviewing: "검토 중",
+    sv_idle: "유휴",
+    sv_running: "실행 중",
+    sv_done: "완료",
+    sv_failed: "실패",
+    sv_queue_n: "{n}건 대기",
+    sv_judge_eyebrow: "2 · 판정 — 이 화면의 중심",
+    sv_judge_title: "판정",
+    sv_judge_lede:
+      "모든 유입은 파일을 만들기 전에 버림 / 기록 / 수확으로 분류됩니다. 버림은 파일 0개, 모델 호출 0회, 판정 로그 한 줄만 남습니다.",
+    sv_meta_session: "이번 세션 판정 {n}건",
+    sv_meta_saved: "아낀 모델 호출 {n}회",
+    sv_drop: "버림",
+    sv_drop_sub: "생성 파일 0개",
+    sv_log: "기록",
+    sv_log_sub: "raw/ 보관 · 모델 0회",
+    sv_harvest: "수확",
+    sv_harvest_sub: "계획 게이트로",
+    sv_dz_sub:
+      "이 창 어디에나 텍스트·마크다운 파일을 놓으세요 — 판정 뒤에야 파일이 생성됩니다.",
+    sv_verdicts_title: "판정 결과",
+    sv_verdicts_empty:
+      "이번 세션에서 판정한 항목이 없습니다 — 위에 파일을 놓거나 텍스트를 붙여넣으세요.",
+    sv_out_drop: "파일 0개 · 모델 0회",
+    sv_out_noop: "파일 0개 · 모델 1회",
+    sv_out_log: "raw/ 1개 · 위키 0개",
+    sv_out_harvest: "인제스트 완료",
+    sv_excl_line: "이번 세션 {n}건 자동 제외 — 이유 보기",
+    sv_excl_none: "이번 세션 제외 0건",
+    sv_excl_col_rule: "판정 규칙",
+    sv_excl_col_count: "건수",
+    sv_excl_col_last: "최근 사유",
+    sv_channels: "유입 채널",
+    sv_ch_sessions: "세션 스윕",
+    sv_ch_clipper: "웹 클리퍼",
+    sv_ch_mcp: "MCP 도구",
+    sv_ch_zotero: "Zotero · 파일",
+    sv_ch_inbox: "_inbox 대기열",
+    sv_ch_manual: "수동",
+    sv_bf_eyebrow: "5 · 백필 큐 — 이 화면에서 가장 큰 미개봉 입력",
+    sv_bf_eligible: "수확 가치 있음",
+    sv_bf_eligible_sub: "8 KB ≤ 크기 ≤ 200 KB",
+    sv_bf_total: "아카이브 총계",
+    sv_bf_distinct: "서로 다른 본문",
+    sv_bf_batch_label: "배치 크기",
+    sv_bf_cost:
+      "모델 호출 ≈ {calls}회 (계획 {n} + 작성 {n}) · 판정을 먼저 거치므로 중복은 비용 0",
+    sv_bf_skipped: "{n}건 건너뜀",
     q_via: "{provider} · {model} 사용",
     q_via_retrieval:
       "로컬 시맨틱 검색 기반 — 답변은 내 노트 원문 인용 (모델 미사용)",
@@ -5940,6 +6109,63 @@ export const STRINGS: Record<Lang, Strings> = {
     ing_logged_title: "原本だけ保管しました · {reason}",
     ing_noop_reason: "計画がすべてNOOP — Wikiに加えるものがありません",
     ing_gate_none_reason: "計画ゲートで承認された項目なし",
+    sv_rail_label: "パイプラインの進行状況",
+    sv_step_intake: "流入",
+    sv_step_judge: "判定",
+    sv_step_gate: "計画ゲート",
+    sv_step_run: "実行",
+    sv_step_backfill: "バックフィルキュー",
+    sv_today_n: "今日{n}件",
+    sv_tally: "破棄 {d} · 記録 {l} · 収穫 {h}",
+    sv_waiting: "待機中",
+    sv_reviewing: "確認中",
+    sv_idle: "アイドル",
+    sv_running: "実行中",
+    sv_done: "完了",
+    sv_failed: "失敗",
+    sv_queue_n: "{n}件待機",
+    sv_judge_eyebrow: "2 · 判定 — この画面の中心",
+    sv_judge_title: "判定",
+    sv_judge_lede:
+      "すべての流入は、ファイルを作る前に破棄 / 記録 / 収穫に分類されます。破棄はファイル0件、モデル呼び出し0回、判定ログ1行だけを残します。",
+    sv_meta_session: "このセッションの判定 {n}件",
+    sv_meta_saved: "節約したモデル呼び出し {n}回",
+    sv_drop: "破棄",
+    sv_drop_sub: "作成ファイル0件",
+    sv_log: "記録",
+    sv_log_sub: "raw/に保管 · モデル0回",
+    sv_harvest: "収穫",
+    sv_harvest_sub: "計画ゲートへ",
+    sv_dz_sub:
+      "このウィンドウのどこにでもテキスト・Markdownファイルをドロップ — ファイルは判定の後にだけ作られます。",
+    sv_verdicts_title: "判定結果",
+    sv_verdicts_empty:
+      "このセッションではまだ判定した項目がありません — 上にファイルをドロップするかテキストを貼り付けてください。",
+    sv_out_drop: "ファイル0件 · モデル0回",
+    sv_out_noop: "ファイル0件 · モデル1回",
+    sv_out_log: "raw/ 1件 · Wiki 0件",
+    sv_out_harvest: "インジェスト完了",
+    sv_excl_line: "このセッションで{n}件を自動除外 — 理由を見る",
+    sv_excl_none: "このセッションの除外0件",
+    sv_excl_col_rule: "判定ルール",
+    sv_excl_col_count: "件数",
+    sv_excl_col_last: "直近の理由",
+    sv_channels: "流入チャネル",
+    sv_ch_sessions: "セッションスイープ",
+    sv_ch_clipper: "Webクリッパー",
+    sv_ch_mcp: "MCPツール",
+    sv_ch_zotero: "Zotero · ファイル",
+    sv_ch_inbox: "_inboxキュー",
+    sv_ch_manual: "手動",
+    sv_bf_eyebrow: "5 · バックフィルキュー — この画面で最大の未開封の入力",
+    sv_bf_eligible: "収穫価値あり",
+    sv_bf_eligible_sub: "8 KB ≤ サイズ ≤ 200 KB",
+    sv_bf_total: "アーカイブ総計",
+    sv_bf_distinct: "異なる本文",
+    sv_bf_batch_label: "バッチサイズ",
+    sv_bf_cost:
+      "モデル呼び出し ≈ {calls}回 (計画 {n} + 執筆 {n}) · 先に判定を通るので重複はコスト0",
+    sv_bf_skipped: "{n}件スキップ",
     q_via: "{provider} · {model} を使用",
     q_via_retrieval:
       "ローカルセマンティック検索 — 回答はノートの原文引用（モデル不使用）",
