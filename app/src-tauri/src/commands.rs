@@ -3646,6 +3646,16 @@ pub async fn embed_local_texts(
 /// the `existing`/`present` set each caller later hands to `prune` — a
 /// cold-tier record can never survive the next reindex.
 pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String, String)> {
+    collect_pages(root, crate::settings::search_archived_sessions())
+}
+
+/// `collect_wiki_pages` with the archived-sessions flag explicit (see
+/// `Settings::search_archived_sessions`; pure, so the tests never touch the
+/// process-wide setting).
+fn collect_pages(
+    root: &std::path::Path,
+    search_archived_sessions: bool,
+) -> Vec<(String, String, String)> {
     fn walk(
         dir: &std::path::Path,
         root: &std::path::Path,
@@ -3707,8 +3717,36 @@ pub(crate) fn collect_wiki_pages(root: &std::path::Path) -> Vec<(String, String,
     // session actually gets dropped here. This is the single choke point
     // every (re)indexing caller routes through, so it is where the guard
     // lives rather than duplicated at each caller.
-    out.retain(|(rel, _, _)| !is_cold(rel));
+    out.retain(|(rel, _, _)| !crate::vector_index::is_cold_for(rel, search_archived_sessions));
+    // Opted-in archived sessions: a transcript re-swept before its original
+    // was archived exists twice with the same body (the stamps in its
+    // frontmatter differ). Index each body once, the live copy winning — a
+    // non-archive page is never dropped here, only an archived duplicate of
+    // one. Each page then goes through `embed_one_page`, whose
+    // `MAX_PAGE_CHUNKS` cap applies to archived transcripts like any other.
+    if search_archived_sessions {
+        let is_archived = |rel: &str| rel.starts_with("sessions/archive/");
+        let mut seen: std::collections::HashSet<u64> = out
+            .iter()
+            .filter(|(rel, _, _)| !is_archived(rel))
+            .map(|(_, _, content)| body_hash(content))
+            .collect();
+        out.retain(|(rel, _, content)| !is_archived(rel) || seen.insert(body_hash(content)));
+    }
     out
+}
+
+/// Hash of a page's body with the frontmatter stripped, so two copies of one
+/// session that differ only in their `created:`/`source:` stamps compare
+/// equal. Same `gray_matter` parse the rest of the crate uses.
+// ponytail: recomputed on every reindex walk; the import ledger is growing a
+// body-hash index (importers/ledger.rs) — read that instead once it lands.
+fn body_hash(content: &str) -> u64 {
+    let body = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+        .parse::<gray_matter::Pod>(content)
+        .map(|p| p.content)
+        .unwrap_or_else(|_| content.to_string());
+    embeddings::content_hash(body.trim())
 }
 
 /// Outcome of `embed_one_page`. Split into two flags because "was the page
@@ -6968,6 +7006,76 @@ mod session_bucket_tests {
         assert!(
             !rels.iter().any(|r| r.starts_with("daily/archive/")),
             "rolled-up (cold) daily digests must stay out too: {rels:?}"
+        );
+    }
+
+    // `search_archived_sessions`: off keeps `sessions/archive/` cold; on
+    // indexes it, but a body that already exists live (or twice in the
+    // archive) is indexed once, and only the archived copy is the one dropped.
+    #[test]
+    fn archived_sessions_are_indexed_on_opt_in_with_duplicate_bodies_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let body = "# Session\n\nUser: fix the flaky scheduler test\n";
+        for (sub, text) in [
+            ("wiki/a.md", "# content".to_string()),
+            (
+                "sessions/2026-08/live.md",
+                format!("---\ncreated: 2026-08-20\n---\n{body}"),
+            ),
+            (
+                "sessions/archive/2026-08/live-copy.md",
+                format!("---\ncreated: 2026-08-01\nsource: codex\n---\n{body}"),
+            ),
+            (
+                "sessions/archive/2026-07/old-a.md",
+                "# Session\n\nUser: batch size diverges\n".to_string(),
+            ),
+            (
+                "sessions/archive/2026-07/old-a-again.md",
+                "---\ncreated: 2026-07-02\n---\n# Session\n\nUser: batch size diverges\n"
+                    .to_string(),
+            ),
+            (
+                "sessions/archive/2026-07/old-b.md",
+                "# Session\n\nUser: warm-up schedule\n".to_string(),
+            ),
+            (
+                "daily/archive/2026-W32/2026-08-03.md",
+                "# digest".to_string(),
+            ),
+        ] {
+            let p = root.join(sub);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, text).unwrap();
+        }
+        let rels = |on: bool| -> Vec<String> {
+            let mut v: Vec<String> = super::collect_pages(root, on)
+                .into_iter()
+                .map(|(r, _, _)| r)
+                .collect();
+            v.sort();
+            v
+        };
+
+        let off = rels(false);
+        assert_eq!(
+            off,
+            vec!["sessions/2026-08/live.md", "wiki/a.md"],
+            "flag off: archive stays cold"
+        );
+
+        let on = rels(true);
+        assert_eq!(
+            on,
+            vec![
+                "sessions/2026-08/live.md",
+                "sessions/archive/2026-07/old-a.md",
+                "sessions/archive/2026-07/old-b.md",
+                "wiki/a.md",
+            ],
+            "flag on: archive indexed, live copy wins over its archived twin, \
+             the archive's own twin indexed once, other cold tiers unchanged"
         );
     }
 

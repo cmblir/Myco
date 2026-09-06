@@ -6,6 +6,7 @@
 use serde::{Deserialize, Serialize};
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Settings {
@@ -89,6 +90,23 @@ pub struct Settings {
     /// notch that takes file/link drops into `_inbox/`. Opt-in, default OFF.
     #[serde(default)]
     pub notch_enabled: bool,
+    /// Index digested sessions under `sessions/archive/**` too, so Ask's
+    /// sessions scope reaches the whole work history (1,432 files / 26 MB on
+    /// the owner's vault) instead of only the live month. Opt-in, default
+    /// OFF: it is the difference between a 3 MB and a ~30 MB index. Takes
+    /// effect on the next reindex/reconcile (`vector_index::is_cold`).
+    #[serde(default)]
+    pub search_archived_sessions: bool,
+}
+
+/// Process-wide mirror of `search_archived_sessions`, refreshed on every
+/// `load`/`save`. `vector_index::is_cold` reads it per page on the reindex
+/// walk and per watcher event, where re-reading settings.json each time or
+/// threading the flag through every caller would be the alternative.
+static SEARCH_ARCHIVED_SESSIONS: AtomicBool = AtomicBool::new(false);
+
+pub fn search_archived_sessions() -> bool {
+    SEARCH_ARCHIVED_SESSIONS.load(Ordering::Relaxed)
 }
 
 impl Default for Settings {
@@ -115,6 +133,7 @@ impl Default for Settings {
             vault_history_enabled: false,
             pii_quarantine_enabled: false,
             notch_enabled: false,
+            search_archived_sessions: false,
         }
     }
 }
@@ -441,6 +460,12 @@ pub fn settings_dir() -> Result<PathBuf, String> {
 }
 
 pub fn load() -> Settings {
+    let settings = read();
+    SEARCH_ARCHIVED_SESSIONS.store(settings.search_archived_sessions, Ordering::Relaxed);
+    settings
+}
+
+fn read() -> Settings {
     let path = match settings_dir() {
         Ok(p) => p.join("settings.json"),
         // Loud, because this is the amplifier: every failure to resolve the data
@@ -525,7 +550,9 @@ pub(crate) fn atomic_write(target: &std::path::Path, content: &[u8]) -> Result<(
 pub fn save(settings: &Settings) -> Result<(), String> {
     let path = settings_dir()?.join("settings.json");
     let raw = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
-    atomic_write(&path, raw.as_bytes()).map_err(|e| format!("write settings: {e}"))
+    atomic_write(&path, raw.as_bytes()).map_err(|e| format!("write settings: {e}"))?;
+    SEARCH_ARCHIVED_SESSIONS.store(settings.search_archived_sessions, Ordering::Relaxed);
+    Ok(())
 }
 
 /// Record the vault the app currently has open into a marker file the bundled
@@ -684,6 +711,18 @@ mod tests {
             assert!(!s.providers.gemini_cli);
             assert!(s.providers.ollama);
         });
+    }
+
+    #[test]
+    fn search_archived_sessions_defaults_off_and_round_trips() {
+        assert!(!Settings::default().search_archived_sessions);
+        let s: Settings = serde_json::from_str("{}").unwrap();
+        assert!(!s.search_archived_sessions);
+        let s: Settings = serde_json::from_str(r#"{"search_archived_sessions":true}"#).unwrap();
+        assert!(s.search_archived_sessions);
+        assert!(serde_json::to_string(&s)
+            .unwrap()
+            .contains("\"search_archived_sessions\":true"));
     }
 
     #[test]

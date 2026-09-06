@@ -84,10 +84,21 @@ pub struct Hit {
 /// (raw/sessions/_inbox) from the link-suggestions panel while leaving them
 /// fully indexed and searchable; this one says a page must not be in the
 /// active index at all. Do not merge the two.
+///
+/// One exception is opt-in: with `Settings::search_archived_sessions` on,
+/// `sessions/archive/**` is live again — the owner's own work history is
+/// worth its index space to them — and the next reindex/reconcile picks it up
+/// (`commands::collect_wiki_pages` dedups identical bodies there).
 pub fn is_cold(page: &str) -> bool {
+    is_cold_for(page, crate::settings::search_archived_sessions())
+}
+
+/// `is_cold` with the archived-sessions flag explicit (pure; the tests use
+/// this so they never touch the process-wide setting).
+pub fn is_cold_for(page: &str, search_archived_sessions: bool) -> bool {
     page.starts_with("raw/archive/")
         || page.starts_with("_inbox/quarantine/")
-        || page.starts_with("sessions/archive/")
+        || (page.starts_with("sessions/archive/") && !search_archived_sessions)
         || page.starts_with("daily/archive/")
         || page.starts_with("weekly/archive/")
         || page.starts_with(".myco/")
@@ -1417,6 +1428,14 @@ mod suggestion_scope_tests {
         assert!(!is_cold("sessions/2026-08/x.md"));
         assert!(!is_cold("daily/2026-08-10.md"));
         assert!(!is_cold("weekly/2026-W33.md"));
+
+        // Opt-in archived sessions: only that one prefix thaws.
+        assert!(is_cold_for("sessions/archive/2026-08/x.md", false));
+        assert!(!is_cold_for("sessions/archive/2026-08/x.md", true));
+        assert!(is_cold_for("raw/archive/2026-08/x.md", true));
+        assert!(is_cold_for("daily/archive/2026-W33/2026-08-10.md", true));
+        assert!(is_cold_for("_inbox/quarantine/y.md", true));
+        assert!(!is_cold_for("sessions/2026-08/x.md", true));
 
         let mut s = store_with(&["wiki/a.md", "raw/archive/2026-08/x.md"]);
         let existing: HashSet<String> = ["wiki/a.md", "raw/archive/2026-08/x.md"]
