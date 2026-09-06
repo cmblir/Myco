@@ -1803,12 +1803,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     <div
       className={`workspace workspace-wide${flyMode ? " graph-fullscreen" : ""}`}
     >
-      <header className="page-head">
-        <div className="page-eyebrow">{t.nav_graph}</div>
-        <h1 className="page-title">{t.gr_title}</h1>
-        <p className="page-lede">{t.gr_lede}</p>
-      </header>
+      {/* No hero header: at 1280x900 the eyebrow/title/lede cost 227px and left
+          the galaxy a 298px letterbox — the very thing the owner asked to get
+          back. The topbar breadcrumb names the page and the question bar leads
+          with data; the heading stays for screen readers. */}
       <div className="graph-shell">
+        <h1 className="sv-sr">{t.gr_title}</h1>
         <div className="graph-toolbar">
           <span className="graph-stat">
             {counts.nodes}/{totalNodes} {t.gr_node_count}
