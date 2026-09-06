@@ -187,7 +187,13 @@ Louvain communities get hues and auto-named cluster labels, hubs bloom, orphans
 and ghost links show like Obsidian. Drag stars (the sim re-heats), isolate
 neighbourhoods, light shortest paths, play a timelapse of the vault building
 itself. Alternative layout engines include a static 2D atlas and a grown
-mycelium mat. 60 fps to ~10k nodes.
+mycelium mat. 60 fps to ~10k nodes. Above the stage, four questions — where is
+it empty / what clumps together / what grew recently / this note's neighbours —
+change only the *encoding* (colour, size, dimming, ring), never the layout, so
+their answers stay comparable on one map; a fixed left column lists the gaps
+with three exits per row (open it, draft a link question, log it as a wanted
+topic) and a line under the chips states how much of the picture is still the
+first-run sample vault.
 
 **Study** — generate flashcards from any page; plain-markdown decks with FSRS
 scheduling that round-trip with Obsidian's spaced-repetition plugin. Review due
