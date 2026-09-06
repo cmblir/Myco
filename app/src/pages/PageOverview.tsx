@@ -1,8 +1,10 @@
-// Overview — the vault's own state: counts, 7-day activity, what moved
-// recently. The hero copy renders only for an empty vault, where it is the
-// only true thing to show.
+// Overview — the harvest queue first (what becomes wiki today), then the link
+// suggestions and what moved recently. The old landing hero, stat tiles and
+// "jump back in" cards are gone: they sold the product to someone who already
+// owns it and changed nothing about what to do next. The customizable board
+// is demoted below, not deleted yet (a later wave).
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
@@ -26,21 +28,16 @@ import {
 } from "../lib/distill";
 import type { RunReport } from "../lib/distill";
 import { ipc } from "../lib/ipc";
-import type { FileNode } from "../lib/ipc";
 import LinkSuggestions from "../components/LinkSuggestions";
-import VaultPulse from "../components/VaultPulse";
+import HarvestQueue from "../components/HarvestQueue";
 import RecentNotes from "../components/RecentNotes";
 import VaultHistoryBanner from "../components/VaultHistoryBanner";
 import MorningBand from "../components/MorningBand";
 import OverviewBoard from "../components/OverviewBoard";
-import { bucketByDay } from "../lib/vaultPulse";
 import { useFocusTarget } from "../lib/useFocusTarget";
 
 export default function PageOverview({ t }: { t: Strings }): JSX.Element {
-  const setRoute = useUIStore((s) => s.setRoute);
   const currentVault = useVaultStore((s) => s.currentVault);
-  const fileTree = useVaultStore((s) => s.fileTree);
-  const adjacency = useVaultStore((s) => s.adjacency);
   const [mtimes, setMtimes] = useState<[string, number][]>([]);
 
   // Morning-Report baseline: mark this visit AFTER MorningBand snapshots the
@@ -54,8 +51,7 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
     if (!currentVault) return;
     let cancelled = false;
     // One read per vault change — the dashboard does not poll. Failure is
-    // quiet and degrades to "no activity yet" rather than an error state: a
-    // missing sparkline must not take the page's numbers down with it.
+    // quiet and degrades to "no activity yet" rather than an error state.
     ipc
       .fileMtimes(currentVault.path)
       .then((rows) => {
@@ -69,102 +65,23 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
     };
   }, [currentVault]);
 
-  const buckets = useMemo(
-    () => bucketByDay(mtimes, currentVault?.path ?? "", 7, new Date()),
-    [mtimes, currentVault],
-  );
-
-  const stats = useMemo(() => {
-    const files = countFiles(fileTree);
-    const links = adjacency
-      ? Object.values(adjacency.forward).reduce((s, arr) => s + arr.length, 0)
-      : 0;
-    const unresolved = adjacency
-      ? Object.values(adjacency.unresolved).reduce(
-          (s, arr) => s + arr.length,
-          0,
-        )
-      : 0;
-    const total = links + unresolved;
-    const resolvedRatio = total > 0 ? links / total : 0;
-    return { files, links, resolvedRatio };
-  }, [fileTree, adjacency]);
-
-  const recentLeaves = useMemo(
-    () => collectFiles(fileTree).slice(0, 6),
-    [fileTree],
-  );
-
   return (
     <div className="workspace">
       <VaultHistoryBanner t={t} />
       <MorningBand t={t} />
-      {stats.files === 0 ? (
-        // For an empty vault this copy is the only true thing to show, and it
-        // is the one moment it is genuinely useful. With pages present it is
-        // product copy shown to someone who already uses the product.
-        <header className="page-head">
-          <div className="page-eyebrow">{t.ov_eyebrow}</div>
-          <h1 className="page-title">{t.ov_title}</h1>
-          <p className="page-lede">{t.ov_lede}</p>
-        </header>
-      ) : (
-        <VaultPulse
-          t={t}
-          pages={stats.files}
-          links={stats.links}
-          buckets={buckets}
-          resolvedRatio={stats.resolvedRatio}
-        />
-      )}
+      <HarvestQueue t={t} />
+      <LinkSuggestions t={t} />
+      <RecentNotes t={t} entries={mtimes} vaultRoot={currentVault?.path ?? ""} />
 
-      <div className="row" style={{ marginTop: 20 }}>
-        <button className="btn btn-primary" onClick={() => setRoute("ingest")}>
-          <Icon name="upload" size={14} /> {t.ov_cta_ingest}
-        </button>
-        <button className="btn" onClick={() => setRoute("query")}>
-          <Icon name="msg" size={14} /> {t.ov_cta_ask}
-        </button>
-      </div>
-
-      {/* Keyed on the vault: OverviewBoard mounts at boot before a vault is
-          open and returns null, which permanently strands useContainerWidth's
-          one-shot ResizeObserver attach on a null ref (width stuck at its
-          1280 default — the off-pane widget bug). Remounting on vault open
-          gives the hook a first commit where the measured div really exists. */}
+      {/* Demoted below the queue, not deleted yet. Keyed on the vault:
+          OverviewBoard mounts at boot before a vault is open and returns null,
+          which permanently strands useContainerWidth's one-shot ResizeObserver
+          attach on a null ref (width stuck at its 1280 default — the off-pane
+          widget bug). Remounting on vault open gives the hook a first commit
+          where the measured div really exists. */}
       <OverviewBoard key={currentVault?.path ?? "no-vault"} t={t} />
 
       <div className="ov-bands">
-        {recentLeaves.length > 0 ? (
-          <section>
-            <div className="section-head">
-              <div className="section-title">{t.ov_quick}</div>
-            </div>
-            <div className="card-grid">
-              {recentLeaves.slice(0, 2).map((node) => (
-                <button
-                  key={node.path}
-                  className="card"
-                  style={{ textAlign: "left", cursor: "pointer" }}
-                  onClick={() => setRoute(`page:${node.path}`)}
-                >
-                  <div className="row" style={{ marginBottom: 8 }}>
-                    <span className="typebadge">
-                      <span className="tb-dot t-overview"></span>
-                      file
-                    </span>
-                  </div>
-                  <div style={{ fontSize: 17, fontWeight: 600, letterSpacing: "-0.01em" }}>
-                    {node.name.replace(/\.md$/i, "")}
-                  </div>
-                </button>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        <RecentNotes t={t} entries={mtimes} vaultRoot={currentVault?.path ?? ""} />
-
         {currentVault ? (
           <section>
             <div className="section-head">
@@ -176,8 +93,6 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
           </section>
         ) : null}
       </div>
-
-      <LinkSuggestions t={t} />
 
       <ReflectPanel t={t} />
     </div>
@@ -575,28 +490,4 @@ function DistillCard({ t }: { t: Strings }): JSX.Element {
       ) : null}
     </div>
   );
-}
-
-function countFiles(tree: FileNode[]): number {
-  let n = 0;
-  const stack = [...tree];
-  while (stack.length) {
-    const node = stack.pop();
-    if (!node) continue;
-    if (node.kind === "file") n++;
-    else stack.push(...node.children);
-  }
-  return n;
-}
-
-function collectFiles(tree: FileNode[]): FileNode[] {
-  const out: FileNode[] = [];
-  const stack = [...tree];
-  while (stack.length) {
-    const node = stack.pop();
-    if (!node) continue;
-    if (node.kind === "file") out.push(node);
-    else stack.push(...node.children);
-  }
-  return out;
 }

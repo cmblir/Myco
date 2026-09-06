@@ -1148,6 +1148,61 @@ export interface Strings {
   ingest_no_changes: string;
   ingest_validation_failed: string;
   ingest_validation_warnings: string;
+  // Harvest queue (Overview → 수확대): the hero, the exclusion table, queue
+  // rows, the plan gate, the completion toast and the empty state.
+  hq_title: string; // {n} — rendered bold
+  hq_lede: string; // {total} {distinct}
+  hq_never_run: string;
+  hq_kpi_label: string;
+  hq_harvest_btn: string; // {n}
+  hq_select_all: string;
+  hq_clear_all: string;
+  hq_est_none: string; // {base}
+  hq_est: string; // {n} {base} {goal}
+  hq_excluded_line: string; // {n}
+  hq_ex_col_reason: string;
+  hq_ex_col_count: string;
+  hq_ex_col_why: string;
+  hq_ex_duplicate: string;
+  hq_ex_duplicate_why: string;
+  hq_ex_boilerplate: string;
+  hq_ex_boilerplate_why: string;
+  hq_ex_too_small: string;
+  hq_ex_too_small_why: string;
+  hq_ex_too_large: string;
+  hq_ex_too_large_why: string;
+  hq_ex_already_harvested: string;
+  hq_ex_already_harvested_why: string;
+  hq_ex_note: string;
+  hq_row_select: string; // {name} — checkbox aria-label
+  hq_near: string; // {score}
+  hq_unclustered: string;
+  hq_cites_plus: string; // {n}
+  hq_preview: string;
+  hq_collapse: string;
+  hq_will_copy: string;
+  hq_will_cluster: string;
+  hq_will_cites: string;
+  hq_wont: string; // {rel}
+  hq_plan_title: string;
+  hq_plan_sub: string; // {n} {kb}
+  hq_plan_copy: string; // {n}
+  hq_plan_pass: string;
+  hq_plan_cites: string; // {base} {goal} {n}
+  hq_plan_note: string;
+  hq_plan_cancel: string;
+  hq_plan_run: string;
+  hq_plan_running: string; // {done} {total}
+  hq_done_title: string; // {n}
+  hq_done_sub: string; // {base} {goal}
+  hq_done_partial: string; // {copied} {ingested}
+  hq_failed: string;
+  hq_empty_title: string;
+  hq_empty_body: string; // {distinct}
+  hq_empty_cta: string;
+  hq_loading: string;
+  hq_error: string;
+  hq_retry: string;
   // Query page.
   q_via: string;
   q_via_retrieval: string;
@@ -2731,6 +2786,72 @@ export const STRINGS: Record<Lang, Strings> = {
     ingest_validation_failed:
       "Ingest validation failed — the following issues must be fixed before this ingest can be accepted:",
     ingest_validation_warnings: "Validation warnings (non-blocking):",
+    hq_title: "{n} sessions are worth a wiki page",
+    hq_lede:
+      "{total} session files → {distinct} distinct bodies · 8 KB–200 KB · nearest wiki cluster first. sessions/ is only read; a copy goes to _inbox/.",
+    hq_never_run:
+      "Never harvested before — every page below would be a first.",
+    hq_kpi_label: "citations",
+    hq_harvest_btn: "Harvest {n}",
+    hq_select_all: "Select all",
+    hq_clear_all: "Clear all",
+    hq_est_none: "Nothing selected — citations stay at {base}",
+    hq_est: "{n} wiki pages · citations {base} → {goal}",
+    hq_excluded_line:
+      "{n} duplicates and boilerplate excluded automatically — the queue is already sieved",
+    hq_ex_col_reason: "Excluded because",
+    hq_ex_col_count: "count",
+    hq_ex_col_why: "Rule",
+    hq_ex_duplicate: "Identical body",
+    hq_ex_duplicate_why:
+      "Same body fingerprint as an earlier file. Measured: the two most-copied bodies were 269 + 267 copies of one 4-word transcript.",
+    hq_ex_boilerplate: "Boilerplate",
+    hq_ex_boilerplate_why: "Prompt scaffolding with no conversation left in it.",
+    hq_ex_too_small: "Under 8 KB",
+    hq_ex_too_small_why:
+      "Below the wikify floor (backfill.rs::MIN_BYTES). Overlaps with the duplicates above.",
+    hq_ex_too_large: "Held (over 200 KB)",
+    hq_ex_too_large_why:
+      "Held, not skipped — split it and it returns to the queue (backfill.rs::MAX_BYTES).",
+    hq_ex_already_harvested: "Already harvested",
+    hq_ex_already_harvested_why: "A copy already went through the inbox pass.",
+    hq_ex_note:
+      "Excluding writes no files. sessions/ stays exactly as it is; only the verdicts are recorded.",
+    hq_row_select: "Select for harvest: {name}",
+    hq_near: "proximity {score}",
+    hq_unclustered: "no nearby page yet",
+    hq_cites_plus: "citations +{n}",
+    hq_preview: "Preview",
+    hq_collapse: "Collapse",
+    hq_will_copy: "Copied to",
+    hq_will_cluster: "Nearest cluster",
+    hq_will_cites: "Citations",
+    hq_wont:
+      "Not created: any new source file. The original {rel} is copied, never modified.",
+    hq_plan_title: "Execution plan — nothing has been created yet",
+    hq_plan_sub:
+      "{n} sessions selected ({kb}). No file is created until you press Run.",
+    hq_plan_copy: "Copy {n} sessions into _inbox/ — the originals stay in sessions/",
+    hq_plan_pass:
+      "One inbox ingest pass per copy — retrieval grounding → planner → writing agent",
+    hq_plan_cites: "Citations {base} → {goal} (estimated, +{n})",
+    hq_plan_note:
+      "The pass archives each copy it consumes; sessions/ is never written to.",
+    hq_plan_cancel: "Cancel",
+    hq_plan_run: "Run",
+    hq_plan_running: "Running — {done} of {total} done",
+    hq_done_title: "{n} harvested",
+    hq_done_sub: "citations {base} → {goal}",
+    hq_done_partial:
+      "{copied} copied · {ingested} ingested — the rest wait in _inbox/",
+    hq_failed: "Harvest failed",
+    hq_empty_title: "Nothing left to promote",
+    hq_empty_body:
+      "{distinct} distinct bodies and none eligible right now. Held sessions (over 200 KB) and new conversations past 8 KB come back to this queue.",
+    hq_empty_cta: "Bring in a source",
+    hq_loading: "Scanning sessions/…",
+    hq_error: "Could not read the session archive",
+    hq_retry: "Retry",
     q_via: "via {provider} · {model}",
     q_via_retrieval:
       "via local semantic search — answers quote your notes verbatim (no model)",
@@ -4305,6 +4426,71 @@ export const STRINGS: Record<Lang, Strings> = {
     ingest_validation_failed:
       "인제스트 검증 실패 — 다음 문제를 해결해야 인제스트를 수락할 수 있습니다:",
     ingest_validation_warnings: "검증 경고(차단하지 않음):",
+    hq_title: "세션 {n}개가 위키에 들어갈 만합니다",
+    hq_lede:
+      "세션 파일 {total}개 → 서로 다른 본문 {distinct}개 · 8 KB–200 KB · 가까운 위키 클러스터 순. sessions/는 읽기만 하고 복사본이 _inbox/로 갑니다.",
+    hq_never_run: "한 번도 수확된 적이 없습니다 — 아래 페이지가 전부 첫 수확입니다.",
+    hq_kpi_label: "인용",
+    hq_harvest_btn: "{n}개 수확",
+    hq_select_all: "전체 선택",
+    hq_clear_all: "전체 해제",
+    hq_est_none: "고른 세션이 없습니다 — 인용 {base} 그대로",
+    hq_est: "위키 페이지 {n} · 인용 {base} → {goal}",
+    hq_excluded_line:
+      "중복·보일러플레이트 {n}건 자동 제외 — 큐는 이미 걸러진 상태입니다",
+    hq_ex_col_reason: "제외 사유",
+    hq_ex_col_count: "건수",
+    hq_ex_col_why: "판정 근거",
+    hq_ex_duplicate: "동일 본문",
+    hq_ex_duplicate_why:
+      "먼저 본 파일과 본문 지문이 같음. 실측: 최다 중복 두 건은 4단어 대화록의 사본 269 + 267개였습니다.",
+    hq_ex_boilerplate: "보일러플레이트",
+    hq_ex_boilerplate_why: "대화 없이 프롬프트 틀만 남은 파일.",
+    hq_ex_too_small: "분량 미달 (8 KB 미만)",
+    hq_ex_too_small_why:
+      "위키화 하한 미달 (backfill.rs::MIN_BYTES). 위 중복과 겹칩니다.",
+    hq_ex_too_large: "보류 (200 KB 초과)",
+    hq_ex_too_large_why:
+      "건너뛴 것이 아니라 보류 — 나눠 넣으면 큐로 돌아옵니다 (backfill.rs::MAX_BYTES).",
+    hq_ex_already_harvested: "이미 수확됨",
+    hq_ex_already_harvested_why: "복사본이 이미 인제스트 패스를 거쳤습니다.",
+    hq_ex_note:
+      "제외는 파일을 하나도 만들지 않습니다. 원본 sessions/는 그대로 두고 판정 결과만 기록됩니다.",
+    hq_row_select: "수확 대상 선택: {name}",
+    hq_near: "근접도 {score}",
+    hq_unclustered: "가까운 페이지 없음",
+    hq_cites_plus: "인용 +{n}",
+    hq_preview: "미리보기",
+    hq_collapse: "접기",
+    hq_will_copy: "복사 위치",
+    hq_will_cluster: "붙을 클러스터",
+    hq_will_cites: "인용",
+    hq_wont:
+      "만들지 않는 것: 새 소스 파일 0개. 원본 {rel}은 복사만 되고 수정되지 않습니다.",
+    hq_plan_title: "실행 계획 — 아직 아무것도 만들지 않았습니다",
+    hq_plan_sub:
+      "선택한 {n}개 세션 ({kb}). 실행을 누르기 전까지 파일은 하나도 생기지 않습니다.",
+    hq_plan_copy: "세션 {n}개를 _inbox/로 복사 — 원본은 sessions/에 그대로",
+    hq_plan_pass:
+      "복사본마다 인제스트 패스 1회 — 검색 그라운딩 → 플래너 → 작성 에이전트",
+    hq_plan_cites: "인용 {base} → {goal} (예상, +{n})",
+    hq_plan_note:
+      "패스는 소비한 복사본을 보관 처리합니다. sessions/에는 쓰지 않습니다.",
+    hq_plan_cancel: "취소",
+    hq_plan_run: "실행",
+    hq_plan_running: "실행 중 — {total}개 중 {done}개 완료",
+    hq_done_title: "{n}개 수확 완료",
+    hq_done_sub: "인용 {base} → {goal}",
+    hq_done_partial:
+      "{copied}개 복사 · {ingested}개 인제스트 — 나머지는 _inbox/에서 대기",
+    hq_failed: "수확 실패",
+    hq_empty_title: "승격 대상이 남지 않았습니다",
+    hq_empty_body:
+      "서로 다른 본문 {distinct}개 중 지금 승격할 것이 없습니다. 보류(200 KB 초과) 세션과 8 KB를 넘는 새 대화는 다시 이 큐로 들어옵니다.",
+    hq_empty_cta: "소스 가져오기",
+    hq_loading: "sessions/ 훑는 중…",
+    hq_error: "세션 아카이브를 읽지 못했습니다",
+    hq_retry: "다시 시도",
     q_via: "{provider} · {model} 사용",
     q_via_retrieval:
       "로컬 시맨틱 검색 기반 — 답변은 내 노트 원문 인용 (모델 미사용)",
@@ -5672,6 +5858,71 @@ export const STRINGS: Record<Lang, Strings> = {
     ingest_validation_failed:
       "取り込み検証に失敗しました — 次の問題を解決しないと取り込みは受け付けられません:",
     ingest_validation_warnings: "検証の警告(処理は続行されます):",
+    hq_title: "セッション{n}件がWikiページになる価値があります",
+    hq_lede:
+      "セッションファイル{total}件 → 異なる本文{distinct}件 · 8 KB–200 KB · 近いWikiクラスター順。sessions/は読むだけで、コピーが_inbox/に入ります。",
+    hq_never_run: "まだ一度も収穫されていません — 下のページはすべて初めての収穫です。",
+    hq_kpi_label: "引用",
+    hq_harvest_btn: "{n}件を収穫",
+    hq_select_all: "すべて選択",
+    hq_clear_all: "すべて解除",
+    hq_est_none: "選択なし — 引用は{base}のまま",
+    hq_est: "Wikiページ{n} · 引用 {base} → {goal}",
+    hq_excluded_line:
+      "重複・定型文{n}件を自動除外 — キューはすでにふるいにかけてあります",
+    hq_ex_col_reason: "除外理由",
+    hq_ex_col_count: "件数",
+    hq_ex_col_why: "判定根拠",
+    hq_ex_duplicate: "同一本文",
+    hq_ex_duplicate_why:
+      "先に見たファイルと本文の指紋が同じ。実測: 最多重複の2件は4語の対話録のコピー269 + 267件でした。",
+    hq_ex_boilerplate: "定型文",
+    hq_ex_boilerplate_why: "会話が残っておらずプロンプトの枠だけのファイル。",
+    hq_ex_too_small: "分量不足 (8 KB未満)",
+    hq_ex_too_small_why:
+      "Wiki化の下限未満 (backfill.rs::MIN_BYTES)。上の重複と重なります。",
+    hq_ex_too_large: "保留 (200 KB超)",
+    hq_ex_too_large_why:
+      "飛ばしたのではなく保留 — 分割すればキューに戻ります (backfill.rs::MAX_BYTES)。",
+    hq_ex_already_harvested: "収穫済み",
+    hq_ex_already_harvested_why: "コピーがすでにインジェストのパスを通りました。",
+    hq_ex_note:
+      "除外はファイルを一つも作りません。元のsessions/はそのままで、判定結果だけが記録されます。",
+    hq_row_select: "収穫対象を選択: {name}",
+    hq_near: "近接度 {score}",
+    hq_unclustered: "近いページなし",
+    hq_cites_plus: "引用 +{n}",
+    hq_preview: "プレビュー",
+    hq_collapse: "たたむ",
+    hq_will_copy: "コピー先",
+    hq_will_cluster: "つなぐクラスター",
+    hq_will_cites: "引用",
+    hq_wont:
+      "作らないもの: 新しいソースファイル0件。元の{rel}はコピーされるだけで変更されません。",
+    hq_plan_title: "実行計画 — まだ何も作っていません",
+    hq_plan_sub:
+      "選択したセッション{n}件 ({kb})。実行を押すまでファイルは一つも作られません。",
+    hq_plan_copy: "セッション{n}件を_inbox/にコピー — 元はsessions/にそのまま",
+    hq_plan_pass:
+      "コピーごとにインジェストのパス1回 — 検索グラウンディング → プランナー → 執筆エージェント",
+    hq_plan_cites: "引用 {base} → {goal} (見積もり、+{n})",
+    hq_plan_note:
+      "パスは消費したコピーをアーカイブします。sessions/には書き込みません。",
+    hq_plan_cancel: "キャンセル",
+    hq_plan_run: "実行",
+    hq_plan_running: "実行中 — {total}件中{done}件完了",
+    hq_done_title: "{n}件を収穫しました",
+    hq_done_sub: "引用 {base} → {goal}",
+    hq_done_partial:
+      "{copied}件コピー · {ingested}件インジェスト — 残りは_inbox/で待機",
+    hq_failed: "収穫に失敗しました",
+    hq_empty_title: "昇格できるものが残っていません",
+    hq_empty_body:
+      "異なる本文{distinct}件のうち、今昇格できるものはありません。保留(200 KB超)のセッションと8 KBを超える新しい会話はこのキューに戻ってきます。",
+    hq_empty_cta: "ソースを取り込む",
+    hq_loading: "sessions/ を走査中…",
+    hq_error: "セッションのアーカイブを読めませんでした",
+    hq_retry: "再試行",
     q_via: "{provider} · {model} を使用",
     q_via_retrieval:
       "ローカルセマンティック検索 — 回答はノートの原文引用（モデル不使用）",

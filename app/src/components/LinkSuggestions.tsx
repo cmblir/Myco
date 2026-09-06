@@ -23,7 +23,9 @@ import {
   type LinkSuggestion,
 } from "../lib/linkSuggestions";
 
-const SHOW = 6;
+// Four rows: the card sits directly under the harvest queue now, as a compact
+// second act — "accept all" still covers the whole pending list.
+const SHOW = 4;
 /** Matches `ls-leave` in styles.css: the accepted row slides out before it
  * is removed from the list. */
 const LEAVE_MS = 320;

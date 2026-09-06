@@ -19,7 +19,6 @@ import { listInboxEntries, pendingInboxRows } from "../lib/autoIngest";
 import type { PendingInboxRow } from "../lib/autoIngest";
 import ZoteroImport from "../components/ZoteroImport";
 import ConversationImport from "../components/ConversationImport";
-import SessionBackfill from "../components/SessionBackfill";
 import { useIngestStore } from "../stores/ingestStore";
 import IngestProgress from "../components/IngestProgress";
 import { dropNoticeFor } from "../lib/ingestDrop";
@@ -308,7 +307,6 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
       ) : null}
 
       <ConversationImport t={t} />
-      <SessionBackfill t={t} />
       <ZoteroImport t={t} />
 
       {settings ? (
