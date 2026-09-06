@@ -46,7 +46,7 @@ Settings → Account.
 | Find / replace | `⌘F` in the editor (`⌘G` / `⇧⌘G` next / previous, `Esc` closes); not available in Preview mode |
 | Image paste / drop | Paste a PNG / JPEG / GIF / WebP into the editor, or drop one from Finder onto it — it is saved as `assets/YYYYMMDD-HHMMSS.<ext>` in the vault and `![](assets/…)` is inserted; the preview renders vault images, including Obsidian `![[shot.png]]` embeds from `assets/` |
 | Outline | A sticky heading list to the right of the editor (windows ≥ 900px wide); click a heading to jump the editor and / or the preview to it. The column icon next to the mode switch hides or shows it |
-| Live / Source / Split / Preview | Four modes in the editor header, remembered per device. Live (default) renders headings, bullets, task checkboxes and links in place and reveals the raw marks on the caret line; preview wraps the live document so wikilinks resolve in real time |
+| Live / Source / Preview | Live is the one first-class mode (default, remembered per device): headings, bullets, task checkboxes and links render in place and the raw marks show on the caret line, so putting the cursor on a line *is* "view source" for that line. Source and Preview are the second-level toggle; `⌘E` round-trips Live ↔ Preview. Split was removed — it halved the 860 px reading column to ~430 px (25–30 Korean characters a line) to answer a question Live already answers line by line. Make cards and Audio overview live under the header's `⋯` menu |
 | Save | `⌘S` or automatic 2-second debounce; atomic write (tempfile + rename) so you never see a half-saved file |
 | Backlinks | Every page shows inbound links at the bottom |
 | Today's note | Sidebar button creates / opens `daily/YYYY-MM-DD.md` |
@@ -258,7 +258,7 @@ app/
 │   │   ├── PageHistory.tsx    # git log
 │   │   ├── PageProvenance.tsx # citation coverage + lint
 │   │   ├── PageSettings.tsx   # 6 sub-tabs
-│   │   └── PageReader.tsx     # vault page in source/split/preview
+│   │   └── PageReader.tsx     # vault page in live/source/preview
 │   ├── stores/                # Zustand
 │   │   ├── vaultStore.ts      # vault, tree, active file, adjacency
 │   │   ├── uiStore.ts         # route, sidebar, theme, lang, density

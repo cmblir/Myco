@@ -122,4 +122,13 @@ describe("uiStore navigation history", () => {
       expect(s.splitRoute).toBeNull();
     },
   );
+
+  it('rehydrates a persisted editorMode "split" (mode removed) as "live"', async () => {
+    storage.set(
+      "myco-ui",
+      JSON.stringify({ state: { editorMode: "split" }, version: 3 }),
+    );
+    await useUIStore.persist.rehydrate();
+    expect(useUIStore.getState().editorMode).toBe("live");
+  });
 });

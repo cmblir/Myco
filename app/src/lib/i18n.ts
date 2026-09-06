@@ -634,9 +634,7 @@ export interface Strings {
   p_claims_cited: string;
   p_pages_by_coverage: string;
   // Reader page.
-  rd_meta: string;
   rd_source: string;
-  rd_split: string;
   rd_preview: string;
   rd_live: string;
   rd_task_toggle: string;
@@ -650,6 +648,7 @@ export interface Strings {
   rd_cards_none: string;
   rd_cards_made: string;
   rd_open_study: string;
+  rd_more: string;
   // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
   cm_find: string;
   cm_replace_field: string;
@@ -2153,9 +2152,7 @@ export const STRINGS: Record<Lang, Strings> = {
     p_overall: "Overall",
     p_claims_cited: "claims cited",
     p_pages_by_coverage: "Pages, by claim coverage",
-    rd_meta: "updated {date} · {words} words · {links} links",
     rd_source: "Source",
-    rd_split: "Split",
     rd_preview: "Preview",
     rd_live: "Live",
     rd_task_toggle: "Toggle task",
@@ -2170,6 +2167,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_cards_none: "No cards generated.",
     rd_cards_made: "{n} cards added",
     rd_open_study: "Open study",
+    rd_more: "More",
     // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
     cm_find: "Find",
     cm_replace_field: "Replace",
@@ -3694,9 +3692,7 @@ export const STRINGS: Record<Lang, Strings> = {
     p_overall: "전체",
     p_claims_cited: "주장 인용됨",
     p_pages_by_coverage: "페이지별 인용 커버리지",
-    rd_meta: "{date} 업데이트 · 단어 {words} · 링크 {links}",
     rd_source: "소스",
-    rd_split: "분할",
     rd_preview: "미리보기",
     rd_live: "실시간",
     rd_task_toggle: "할 일 완료 전환",
@@ -3711,6 +3707,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_cards_none: "생성된 카드가 없습니다.",
     rd_cards_made: "카드 {n}개 추가됨",
     rd_open_study: "학습 열기",
+    rd_more: "더 보기",
     // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
     cm_find: "찾기",
     cm_replace_field: "바꾸기",
@@ -5041,9 +5038,7 @@ export const STRINGS: Record<Lang, Strings> = {
     p_overall: "全体",
     p_claims_cited: "件の主張が引用済み",
     p_pages_by_coverage: "ページ別の引用カバレッジ",
-    rd_meta: "{date} 更新 · {words} 語 · リンク {links}",
     rd_source: "ソース",
-    rd_split: "分割",
     rd_preview: "プレビュー",
     rd_live: "ライブ",
     rd_task_toggle: "タスクの完了を切り替え",
@@ -5058,6 +5053,7 @@ export const STRINGS: Record<Lang, Strings> = {
     rd_cards_none: "生成されたカードがありません。",
     rd_cards_made: "カードを{n}枚追加しました",
     rd_open_study: "学習を開く",
+    rd_more: "その他",
     // Editor basics (P1): CodeMirror search/completion phrases, `/` block names.
     cm_find: "検索",
     cm_replace_field: "置換",

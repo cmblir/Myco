@@ -63,8 +63,8 @@ function isRoute(r: unknown): r is RouteId {
 }
 
 export type FeedbackTab = "proposals" | "quarantine";
-export type EditorMode = "live" | "source" | "split" | "preview";
-const EDITOR_MODES: readonly EditorMode[] = ["live", "source", "split", "preview"];
+export type EditorMode = "live" | "source" | "preview";
+const EDITOR_MODES: readonly EditorMode[] = ["live", "source", "preview"];
 const ASK_SCOPES: readonly AskScope[] = ["wiki", "sessions", "all"];
 
 /** A persisted weight is only trusted as a finite 0..1 number; anything else

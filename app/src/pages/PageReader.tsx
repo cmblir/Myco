@@ -1,6 +1,7 @@
-// PageReader: opens a vault file via real IPC. Source mode uses CodeMirror,
-// preview mode renders markdown-it (with wikilinks). The `sample/<id>`
-// pseudo-route falls through to the design's mock content.
+// PageReader: opens a vault file via real IPC. Live is the one first-class
+// mode (CodeMirror with marks hidden off the caret line); Source and Preview
+// are the second-level toggle (⌘E round-trips Live ↔ Preview). The
+// `sample/<id>` pseudo-route renders the design's mock content through Viewer.
 
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
@@ -56,8 +57,23 @@ export default function PageReader({
   t: Strings;
   pageRoute: string;
 }): JSX.Element {
+  const setRoute = useUIStore((s) => s.setRoute);
   if (pageRoute.startsWith("sample/")) {
-    return <SamplePage id={pageRoute.slice(7)} t={t} />;
+    const id = pageRoute.slice(7);
+    const p = SAMPLE.pages.find((x) => x.id === id) ?? SAMPLE.pages[0];
+    const md =
+      SAMPLE.pageContents[id] ??
+      `# ${p.title}\n\n_(Sample preview — open a real .md from the sidebar to edit.)_`;
+    return (
+      <div className="workspace">
+        <div className="prose">
+          <Viewer
+            content={md}
+            onLinkClick={(target) => setRoute(`page:sample/${target}`)}
+          />
+        </div>
+      </div>
+    );
   }
   if (/\.pdf$/i.test(pageRoute)) {
     return <PdfPage key={pageRoute} path={pageRoute} t={t} />;
@@ -92,102 +108,6 @@ function PdfPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   );
 }
 
-function SamplePage({ id, t }: { id: string; t: Strings }): JSX.Element {
-  const setRoute = useUIStore((s) => s.setRoute);
-  const p = SAMPLE.pages.find((x) => x.id === id) ?? SAMPLE.pages[0];
-  const md =
-    SAMPLE.pageContents[id] ??
-    `# ${p.title}\n\n_(Sample preview — open a real .md from the sidebar to edit.)_`;
-  const lines = md.split("\n");
-
-  function renderInline(s: string): JSX.Element[] {
-    const parts = s.split(/(\[\[[^\]]+\]\]|<cite n="\d+"\/>)/g);
-    return parts.map((part, i) => {
-      const wm = /^\[\[([^\]|]+)(?:\|([^\]]+))?\]\]$/.exec(part);
-      const cm = /^<cite n="(\d+)"\/>$/.exec(part);
-      if (wm) {
-        return (
-          <button
-            key={i}
-            className="wikilink"
-            onClick={() => setRoute(`page:sample/${wm[1]}`)}
-            style={{
-              background: "transparent",
-              border: 0,
-              color: "inherit",
-              padding: 0,
-            }}
-          >
-            {wm[2] ?? wm[1]}
-          </button>
-        );
-      }
-      if (cm)
-        return (
-          <span key={i} className="cite-pill">
-            {cm[1]}
-          </span>
-        );
-      // Escape HTML before the inline-markdown substitutions so this stays safe
-      // even if it is ever pointed at non-static content (today it only renders
-      // the bundled SAMPLE constant).
-      const html = part
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
-        .replace(/`([^`]+)`/g, "<code>$1</code>")
-        .replace(/_([^_]+)_/g, "<i>$1</i>");
-      return <span key={i} dangerouslySetInnerHTML={{ __html: html }} />;
-    });
-  }
-
-  return (
-    <div className="workspace">
-      <header className="page-head" style={{ paddingTop: 40 }}>
-        <div className="row" style={{ marginBottom: 16 }}>
-          <span className="typebadge">
-            <span className={`tb-dot t-${p.type}`}></span>
-            {p.type}
-          </span>
-          <span className="muted" style={{ fontSize: 12.5 }}>
-            {(t.rd_meta ?? "updated {date} · {words} words · {links} links")
-              .replace("{date}", p.updated)
-              .replace("{words}", String(p.words))
-              .replace("{links}", String(p.links))}
-          </span>
-        </div>
-        <h1 className="page-title">{p.title}</h1>
-      </header>
-      <div className="prose">
-        {lines.map((line, i) => {
-          if (!line.trim()) return <div key={i} style={{ height: 8 }}></div>;
-          if (line.startsWith("# "))
-            return <h1 key={i}>{renderInline(line.slice(2))}</h1>;
-          if (line.startsWith("## "))
-            return <h2 key={i}>{renderInline(line.slice(3))}</h2>;
-          if (line.startsWith("### "))
-            return <h3 key={i}>{renderInline(line.slice(4))}</h3>;
-          if (/^\d+\. /.test(line))
-            return (
-              <p key={i} style={{ paddingLeft: 16 }}>
-                <b>{/^\d+/.exec(line)?.[0]}.</b>{" "}
-                {renderInline(line.replace(/^\d+\. /, ""))}
-              </p>
-            );
-          if (line.startsWith("- "))
-            return (
-              <p key={i} style={{ paddingLeft: 16 }}>
-                · {renderInline(line.slice(2))}
-              </p>
-            );
-          return <p key={i}>{renderInline(line)}</p>;
-        })}
-      </div>
-    </div>
-  );
-}
-
 function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const openFile = useVaultStore((s) => s.openFile);
   const activeFile = useVaultStore((s) => s.activeFile);
@@ -195,6 +115,11 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
   const currentVaultPath = useVaultStore((s) => s.currentVault?.path);
   const genAudio = useAudioStore((s) => s.generate);
   const audioBusy = useAudioStore((s) => s.generating);
+  // The overview panel mounts only while there is an overview (or an attempt)
+  // to show — a dozen store subscriptions otherwise ran on every note.
+  const audioActive = useAudioStore(
+    (s) => s.generating || !!s.script || !!s.error,
+  );
   const saveFile = useVaultStore((s) => s.saveFile);
   const openWikilink = useVaultStore((s) => s.openWikilink);
   const refreshTree = useVaultStore((s) => s.refreshTree);
@@ -233,6 +158,10 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     !!currentVaultPath && path.startsWith(`${currentVaultPath}/raw/`);
   const [cardBusy, setCardBusy] = useState(false);
   const [cardMsg, setCardMsg] = useState<string | null>(null);
+  // `⋯` overflow menu (Make cards · Audio overview) — the header keeps only
+  // the mode switch as a first-class control.
+  const [moreOpen, setMoreOpen] = useState(false);
+  const moreRef = useRef<HTMLDivElement | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Latest editor text, so the unmount cleanup can flush edits made inside the
   // debounce window. We compare it against the store's on-disk `raw` rather than
@@ -276,6 +205,40 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       cancelled = true;
     };
   }, [path, currentVaultPath]);
+
+  // ⌘E / Ctrl-E: Live ↔ Preview round-trip (Source also lands on Preview).
+  // Read the mode from the store inside the handler so one listener lasts the
+  // page's life instead of re-binding on every mode change.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      if (!(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      if (e.key !== "e" && e.key !== "E") return;
+      e.preventDefault();
+      const ui = useUIStore.getState();
+      ui.setEditorMode(ui.editorMode === "preview" ? "live" : "preview");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // The overflow menu closes on Escape or a click outside it, and moves focus
+  // to its first item when opened so it is reachable without a pointer.
+  useEffect(() => {
+    if (!moreOpen) return;
+    moreRef.current?.querySelector<HTMLElement>("[role=menuitem]")?.focus();
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setMoreOpen(false);
+    };
+    const onDown = (e: MouseEvent): void => {
+      if (!moreRef.current?.contains(e.target as Node)) setMoreOpen(false);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [moreOpen]);
 
   useEffect(() => {
     if (activeFile?.path !== path) return;
@@ -380,14 +343,15 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
     }
   }
 
-  // Scroll whichever panes the current mode shows: the editor by line (body
-  // line + frontmatter lines), the preview by the heading's data-line.
+  // Scroll the pane the current mode shows: the editor by line (body line +
+  // frontmatter lines), the preview by the heading's data-line.
   function scrollToHeading(h: OutlineHeading): void {
     const v = editorViewRef.current;
     if (v) scrollEditorToLine(v, h.line + 1 + lineOffset);
-    previewRef.current
-      ?.querySelector(`[data-line="${h.line}"]`)
-      ?.scrollIntoView({ block: "start" });
+    else
+      previewRef.current
+        ?.querySelector(`[data-line="${h.line}"]`)
+        ?.scrollIntoView({ block: "start" });
   }
 
   // Anchor not found → nothing happens (Obsidian does the same, no error UI).
@@ -537,26 +501,6 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
               </span>
             </span>
           ) : null}
-          <button
-            className="btn btn-ghost"
-            onClick={() => void makeCards()}
-            disabled={cardBusy}
-            title={t.rd_make_cards ?? "Make cards"}
-          >
-            <Icon name="sparkles" size={13} />{" "}
-            {cardBusy
-              ? (t.rd_making ?? "Generating…")
-              : (t.rd_make_cards ?? "Make cards")}
-          </button>
-          <button
-            className="btn btn-ghost"
-            onClick={makeAudio}
-            disabled={audioBusy}
-            title={t.rd_audio ?? "Audio overview"}
-          >
-            <Icon name="spark" size={13} />{" "}
-            {audioBusy ? (t.au_generating ?? "…") : (t.rd_audio ?? "Audio overview")}
-          </button>
           <div className="segmented">
             <button
               className={mode === "live" ? "active" : ""}
@@ -571,17 +515,54 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
               <Icon name="edit" size={12} /> {t.rd_source ?? "Source"}
             </button>
             <button
-              className={mode === "split" ? "active" : ""}
-              onClick={() => setMode("split")}
-            >
-              <Icon name="sidebar" size={12} /> {t.rd_split ?? "Split"}
-            </button>
-            <button
               className={mode === "preview" ? "active" : ""}
               onClick={() => setMode("preview")}
             >
               <Icon name="eye" size={12} /> {t.rd_preview ?? "Preview"}
             </button>
+          </div>
+          <div className="rd-more" ref={moreRef}>
+            <button
+              type="button"
+              className="btn btn-ghost"
+              aria-haspopup="menu"
+              aria-expanded={moreOpen}
+              aria-label={t.rd_more ?? "More"}
+              title={t.rd_more ?? "More"}
+              onClick={() => setMoreOpen((o) => !o)}
+            >
+              <Icon name="dotMore" size={14} />
+            </button>
+            {moreOpen ? (
+              <div className="rd-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={cardBusy}
+                  onClick={() => {
+                    setMoreOpen(false);
+                    void makeCards();
+                  }}
+                >
+                  <Icon name="sparkles" size={13} />{" "}
+                  {cardBusy
+                    ? (t.rd_making ?? "Generating…")
+                    : (t.rd_make_cards ?? "Make cards")}
+                </button>
+                <button
+                  type="button"
+                  role="menuitem"
+                  disabled={audioBusy}
+                  onClick={() => {
+                    setMoreOpen(false);
+                    makeAudio();
+                  }}
+                >
+                  <Icon name="spark" size={13} />{" "}
+                  {audioBusy ? (t.au_generating ?? "…") : (t.rd_audio ?? "Audio overview")}
+                </button>
+              </div>
+            ) : null}
           </div>
           <button
             className="btn btn-ghost outline-toggle"
@@ -627,14 +608,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
           "reader-body" + (outlineOpen ? " reader-body--outline" : "")
         }
       >
-        <section
-          style={{
-            display: "flex",
-            flexDirection: mode === "split" ? "row" : "column",
-            gap: mode === "split" ? 16 : 0,
-            minHeight: "60vh",
-          }}
-        >
+        <section style={{ display: "flex", flexDirection: "column", minHeight: "60vh" }}>
           {mode !== "preview" ? (
             <div style={{ flex: 1, minHeight: "60vh", display: "flex" }}>
               {seedGen > 0 ? (
@@ -658,7 +632,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
               ) : null}
             </div>
           ) : null}
-          {mode === "split" || mode === "preview" ? (
+          {mode === "preview" ? (
             <div className="prose" style={{ flex: 1 }} ref={previewRef}>
               <Viewer
                 content={draft}
@@ -681,7 +655,7 @@ function VaultPage({ path, t }: { path: string; t: Strings }): JSX.Element {
       </div>
       <BacklinksPanel filePath={path} t={t} />
       <RelatedPanel filePath={path} t={t} />
-      <AudioOverviewPanel t={t} />
+      {audioActive ? <AudioOverviewPanel t={t} /> : null}
       {/* Mount only while a PDF is open: the viewer renders null otherwise, and
           mounting the lazy component would fetch pdf.js for every note. */}
       {pdfOpen ? (

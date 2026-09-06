@@ -6339,6 +6339,51 @@ details.props > .btn {
   display: none;
 }
 
+/* Reader header `⋯` overflow (Make cards · Audio overview): a real menu
+   under the button, closed on Escape / outside click (PageReader.tsx). */
+.rd-more {
+  position: relative;
+}
+.rd-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  z-index: 20;
+  min-width: 180px;
+  padding: 4px;
+  display: grid;
+  gap: 2px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+}
+.rd-menu [role="menuitem"] {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-md);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 12.5px;
+  text-align: left;
+  white-space: nowrap;
+}
+.rd-menu [role="menuitem"]:hover,
+.rd-menu [role="menuitem"]:focus-visible {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.rd-menu [role="menuitem"]:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: transparent;
+}
+
 /* ── Renewal material (harvest deck, sieve) ──────────────────────────────
    Glass tiles + one radial glow per screen, the tray v3 palette on the dark
    surface (#a78bfa live · #7ee0a6 ok · #e0a458 warn), a light-mode twin in
