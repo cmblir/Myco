@@ -29,6 +29,10 @@ const LERP = 0.16;
 const ZOOM_MIN = 0.06;
 const ZOOM_MAX = 3.2;
 const LABEL_MAX_CHARS = 22;
+// Screen-space declutter cell. Two labels in the same cell would overlap, so
+// only the bigger node (the list is radius-sorted) gets to draw one.
+const LABEL_CELL_W = 96;
+const LABEL_CELL_H = 16;
 // ponytail: the per-node glow is a radial gradient per node per frame; above
 // this many nodes draw flat discs only (hover/selection keep their glow).
 const GLOW_MAX_NODES = 1500;
@@ -525,12 +529,18 @@ export class GraphCanvas {
     // Labels — capped at rest, none during gestures (LOD).
     if (!gesturing && candidates.length > 0) {
       candidates.sort((p, q) => this.r[q] - this.r[p]);
-      const cap = Math.min(LABEL_CAP, candidates.length);
       ctx.font = `500 11px ${th.font}`;
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
-      for (let j = 0; j < cap; j++) {
+      const taken = new Set<number>();
+      let drawn = 0;
+      for (let j = 0; j < candidates.length && drawn < LABEL_CAP; j++) {
         const i = candidates[j];
+        const cell =
+          Math.round(this.sx[i] / LABEL_CELL_W) * 4096 + Math.round(this.sy[i] / LABEL_CELL_H);
+        if (taken.has(cell)) continue;
+        taken.add(cell);
+        drawn++;
         const txt =
           this.labels[i].length > LABEL_MAX_CHARS
             ? `${this.labels[i].slice(0, LABEL_MAX_CHARS - 1)}…`

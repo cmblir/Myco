@@ -29,16 +29,16 @@ export function displayName(id: string): string {
 /** The buckets analyzeGaps already computes, as the column's 3–5 groups. */
 export function gapGroups(report: GapReport, noBacklink: string[], t: Strings): GapGroup[] {
   const all: GapGroup[] = [
-    { key: "orphans", label: t.gr_gap_orphans, ids: report.orphans, actions: ["open", "link"] },
+    { key: "orphans", label: t.gr_gap_orphans, ids: report.orphans, actions: ["open", "link", "want"] },
     { key: "missing", label: t.gr_gap_missing, ids: report.missing, actions: ["want"] },
-    { key: "nobacklink", label: t.gr_gap_nobacklink, ids: noBacklink, actions: ["open", "link"] },
+    { key: "nobacklink", label: t.gr_gap_nobacklink, ids: noBacklink, actions: ["open", "link", "want"] },
     {
       key: "undercited",
       label: t.gr_gap_undercited,
       ids: report.underCited,
       actions: ["open", "want"],
     },
-    { key: "lowconf", label: t.gr_gap_lowconf, ids: report.lowConfidence, actions: ["open", "link"] },
+    { key: "lowconf", label: t.gr_gap_lowconf, ids: report.lowConfidence, actions: ["open", "link", "want"] },
     { key: "islands", label: t.gr_gap_islands, ids: report.islands.flat(), actions: ["open", "link"] },
   ];
   return all.filter((g) => g.ids.length > 0);
@@ -61,7 +61,14 @@ export default function GraphGaps({
   onAction: (action: GapAction, id: string) => void;
 }): JSX.Element {
   const [closed, setClosed] = useState<Record<string, boolean>>({});
+  // Short labels here, full ones in the inspector: three full-sentence
+  // buttons overflowed the 228px column and covered the note name.
   const label: Record<GapAction, string> = {
+    open: t.gr_act_open_s,
+    link: t.gr_act_link_s,
+    want: t.gr_act_want_s,
+  };
+  const title: Record<GapAction, string> = {
     open: t.gr_open,
     link: t.gr_act_link,
     want: t.gr_act_harvest,
@@ -105,16 +112,19 @@ export default function GraphGaps({
                       >
                         {displayName(id)}
                       </button>
-                      {g.actions.map((a) => (
-                        <button
-                          key={a}
-                          type="button"
-                          className="sv-act"
-                          onClick={() => onAction(a, id)}
-                        >
-                          {label[a]}
-                        </button>
-                      ))}
+                      <span className="sv-row__acts">
+                        {g.actions.map((a) => (
+                          <button
+                            key={a}
+                            type="button"
+                            className="sv-act"
+                            title={title[a]}
+                            onClick={() => onAction(a, id)}
+                          >
+                            {label[a]}
+                          </button>
+                        ))}
+                      </span>
                     </div>
                   ))}
                   {g.ids.length > MAX_ROWS ? (

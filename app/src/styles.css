@@ -8071,7 +8071,20 @@ details.props > .btn {
    canvas as the one hero block, and the type scale 11 · 12.5 · 14 · 17 · 22 ·
    42. The selected question card is the only thing that glows. */
 .sv {
-  max-width: 1120px;
+  max-width: 1180px;
+}
+/* No page header: the question bar IS the first element (brief §3 — the top of
+   a page is data, never a hero), so the canvas sits in the first viewport. */
+.sv-top {
+  padding-top: 20px;
+}
+.sv-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .sv-q__lead {
   margin: 0 0 8px;
@@ -8380,6 +8393,7 @@ details.props > .btn {
   padding: 0 8px 8px;
 }
 .sv-row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -8416,12 +8430,12 @@ details.props > .btn {
 .sv-act {
   flex: none;
   border: 0;
-  border-radius: 10px;
-  height: 32px;
-  padding: 0 10px;
+  border-radius: 8px;
+  height: 26px;
+  padding: 0 8px;
   background: var(--glass-2);
   color: var(--ink-2);
-  font-size: 12.5px;
+  font-size: 11px;
   font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
@@ -8438,6 +8452,32 @@ details.props > .btn {
 }
 .sv-act:active {
   transform: scale(0.97);
+}
+.sv-row__acts {
+  position: absolute;
+  max-width: 62%;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  gap: 4px;
+  padding-left: 18px;
+  opacity: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--bg-elev) 18%);
+  transition: opacity var(--dur-quick) var(--ease-out);
+}
+.sv-row:hover .sv-row__acts,
+.sv-row:focus-within .sv-row__acts,
+.sv-row.is-sel .sv-row__acts {
+  opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none) {
+  .sv-row__acts {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 .sv-empty {
   margin: 0;
@@ -8676,12 +8716,17 @@ details.props > .btn {
   filter: brightness(1.08);
 }
 
+@media (max-width: 1400px) {
+  .sv-work {
+    grid-template-columns: 228px minmax(0, 1fr);
+  }
+  .sv-insp {
+    grid-column: 1 / -1;
+  }
+}
 @media (max-width: 1040px) {
   .sv-work {
-    grid-template-columns: minmax(0, 1fr) 280px;
-  }
-  .sv-panel--gaps {
-    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 760px) {

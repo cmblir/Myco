@@ -135,7 +135,7 @@ export default function GraphControls({
 
       <div className="sv-ctl">
         <label className="sv-field">
-          <span className="vh">{t.gr_find_ph}</span>
+          <span className="sv-sr">{t.gr_find_ph}</span>
           <input
             type="search"
             value={draft}

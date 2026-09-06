@@ -31,9 +31,9 @@ import {
 import { analyzeGaps, clusterBridges, gapCount } from "../lib/graphGaps";
 import { isSamplePath } from "../lib/graphSample";
 import {
-  corpusKey,
   loadGraphSettings,
   saveGraphSettings,
+  surveyBuildKey,
   type GraphSettings,
 } from "../lib/graphSettings";
 import { createSim, type GraphSim } from "../lib/graphSim";
@@ -116,7 +116,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   }, [vaultRoot]);
 
   // ── build: the ONLY thing that rebuilds the scene is a corpus change ──────
-  const corpus = corpusKey(settings);
+  const buildKey = surveyBuildKey(settings, {
+    root: vaultRoot,
+    rev: adjacency?.rev,
+    files: allFiles.length,
+    mtimes: mtimes?.size ?? 0,
+  });
   useEffect(() => {
     const host = hostRef.current;
     if (!host || !adjacency) return;
@@ -208,7 +213,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     };
     // `search`, `question` and `sizeBy` are deliberately absent: they restyle.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [adjacency, allFiles, vaultRoot, corpus, mtimes, sessionCount]);
+  }, [buildKey]);
 
   const tookOverRef = useRef(false);
 
@@ -369,12 +374,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
 
   return (
     <div className="workspace workspace-wide sv">
-      <header className="page-head">
-        <div className="page-eyebrow">{t.nav_graph}</div>
-        <h1 className="page-title">{t.gr_title}</h1>
-        <p className="page-lede">{t.gr_lede}</p>
-      </header>
-
+      <h1 className="sv-sr">{t.gr_title}</h1>
       <GraphControls
         t={t}
         settings={settings}

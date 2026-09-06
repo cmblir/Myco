@@ -468,6 +468,9 @@ export interface Strings {
   gr_act_link: string;
   gr_act_harvest: string;
   gr_act_neighbors: string;
+  gr_act_open_s: string;
+  gr_act_link_s: string;
+  gr_act_want_s: string;
   gr_insp_h: string;
   gr_insp_empty: string;
   gr_insp_cites: string;
@@ -2030,6 +2033,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_act_link: "Suggest links",
     gr_act_harvest: "Mark as wanted",
     gr_act_neighbors: "Show its neighbours",
+    gr_act_open_s: "open",
+    gr_act_link_s: "link",
+    gr_act_want_s: "want",
     gr_insp_h: "Note",
     gr_insp_empty: "Pick a note to see its links, citations, trust — and the ways out of this screen.",
     gr_insp_cites: "Citations",
@@ -3639,6 +3645,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_act_link: "링크 제안",
     gr_act_harvest: "수확 대상으로",
     gr_act_neighbors: "이 노트의 이웃만 보기",
+    gr_act_open_s: "열기",
+    gr_act_link_s: "링크",
+    gr_act_want_s: "수확",
     gr_insp_h: "노트",
     gr_insp_empty: "노트를 하나 고르면 링크·인용·신뢰도와 여기서 나가는 행동이 열립니다.",
     gr_insp_cites: "인용",
@@ -6239,6 +6248,9 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_act_link: "リンクを提案",
     gr_act_harvest: "必要な話題として記録",
     gr_act_neighbors: "隣人だけ表示",
+    gr_act_open_s: "開く",
+    gr_act_link_s: "リンク",
+    gr_act_want_s: "記録",
     gr_insp_h: "ノート",
     gr_insp_empty: "ノートを選ぶと、リンク・引用・信頼度と、この画面から出る操作が開きます。",
     gr_insp_cites: "引用",

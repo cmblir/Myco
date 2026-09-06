@@ -61,8 +61,18 @@ export function saveGraphSettings(s: GraphSettings): void {
 }
 
 /** The part of the settings that changes WHICH nodes exist. Only a change here
- * may rebuild the scene; question, size and search restyle in place. The
- * "씬 재빌드 N회" chip counts exactly the changes of this key. */
+ * may rebuild the scene; question, size and search restyle in place. */
 export function corpusKey(s: GraphSettings): string {
   return `${s.hideSample ? 1 : 0}${s.showUnresolved ? 1 : 0}`;
+}
+
+/** Everything a scene rebuild actually depends on, as one string. The build
+ * effect keys off THIS, so the vault poll handing back an equal-but-new
+ * adjacency object rebuilds nothing — and the "씬 재빌드 N회 · x ms" chip
+ * counts real rebuilds only. Typing in the search box cannot move it. */
+export function surveyBuildKey(
+  s: GraphSettings,
+  vault: { root: string; rev: number | undefined; files: number; mtimes: number },
+): string {
+  return [corpusKey(s), vault.root, vault.rev ?? -1, vault.files, vault.mtimes].join("|");
 }
