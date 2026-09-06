@@ -1,12 +1,14 @@
-// Rust mirror of mcp-server/project_registry.py — the read side, plus the two
-// writes the app owns on a project switch (`active` pointer + `last_used`).
-// Project CRUD stays in the Python registry; this module exists so the app can
-// enumerate every registered project ("universe") and build READ-ONLY link
-// graphs for projects other than the open vault (the multiverse view), without
-// widening the mutation path's single-root confinement.
+// The `projects.json` registry: the read side, plus the two writes the app
+// owns on a project switch (`active` pointer + `last_used`). Started as the
+// read half of a Python `project_registry.py` that owned project CRUD; that
+// server is retired, so creating and deleting projects is now a hand edit of
+// `projects.json` (no CRUD path in the app yet — see the retirement commit).
+// This module exists so the app can enumerate every registered project
+// ("universe") and build READ-ONLY link graphs for projects other than the
+// open vault (the multiverse view), without widening the mutation path's
+// single-root confinement.
 //
-// Location: unlike the Python module (whose PROJECT_ROOT *is* the active
-// vault), the app's open vault is normally `projects/<slug>/` itself, so the
+// Location: the app's open vault is normally `projects/<slug>/` itself, so the
 // registry is found by walking UP from the open vault until a directory
 // holding a `projects.json` file appears. A standalone vault with no registry
 // above it has no multiverse (`discover` → None).
@@ -27,8 +29,8 @@ pub struct Entry {
 }
 
 /// A discovered registry: the directory holding `projects.json` plus its
-/// validated entries. Malformed or unsafe entries are skipped (mirrors
-/// `project_registry.list_projects`), never used to build a path.
+/// validated entries. Malformed or unsafe entries are skipped, never used to
+/// build a path.
 #[derive(Debug, Clone)]
 pub struct Registry {
     /// Canonical directory containing `projects.json`.
@@ -57,9 +59,9 @@ pub struct ProjectInfo {
 }
 
 /// Reject a slug that could escape `projects/` via `..`, a path separator, an
-/// absolute path, or a hidden-dir prefix. Mirrors `project_registry._validate_slug`
-/// (defense-in-depth: a hand-edited projects.json must not relocate a project
-/// root outside `projects/`). Fails closed.
+/// absolute path, or a hidden-dir prefix. Defense-in-depth: a hand-edited
+/// projects.json must not relocate a project root outside `projects/`. Fails
+/// closed.
 pub fn validate_slug(slug: &str) -> Result<&str, String> {
     let s = slug.trim();
     if s.is_empty()
@@ -212,7 +214,7 @@ impl Registry {
 }
 
 /// Point the registry's `active` field at `slug` and stamp the entry's
-/// `last_used` (mirrors `project_registry.switch_project`). Edits the raw JSON
+/// `last_used`. Edits the raw JSON
 /// so unknown fields (model, template, …) survive the round-trip; the write is
 /// atomic. Errors if the slug is not in the file — the caller must not have
 /// switched anything yet.

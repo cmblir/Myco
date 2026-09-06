@@ -297,40 +297,63 @@ vault 경로, 이 기기의 식별 정보는 담기지 않습니다. 가져오�
 같은 vault를 Claude Desktop, Claude Code, 어떤 MCP 클라이언트에서든 쓸 수
 있습니다.
 
-**가장 쉬운 길 — 앱이 호스팅.** 데스크톱 앱이 MCP 서버를 인프로세스로
-실행합니다(Python 불필요). **설정 → MCP** → **Claude Code에 연결**. 서버는 앱이
-현재 연 vault를 따라가고, 토큰이 유지되므로 한 번만 연결하면 됩니다.
+**앱이 호스팅합니다.** 데스크톱 앱이 MCP 서버를 인프로세스로 실행합니다 —
+Python도, venv도, 따로 띄울 프로세스도 없습니다. **설정 → MCP** → **Claude
+Code에 연결**. 서버는 앱이 현재 연 vault를 따라가고, 토큰이 유지되므로 한 번만
+연결하면 됩니다.
 
-<details>
-<summary><b>독립 Python 서버 (소스 체크아웃 / 비앱 클라이언트)</b></summary>
-
-Python 3.10+ 필요 (런타임은 표준 라이브러리만).
+엔드포인트는 하나, streamable HTTP입니다:
 
 ```bash
-bash mcp-server/install.sh            # mcp-server/.venv 생성
-bash mcp-server/serve.sh              # http://127.0.0.1:22360/sse 서빙
-claude mcp add --transport sse myco http://localhost:22360/sse
+claude mcp add --transport http myco http://localhost:22360/mcp \
+  --header "Authorization: Bearer <설정 → MCP의 토큰>"
 ```
 
-Claude Desktop은 stdio — `claude_desktop_config.json`에 추가:
+Claude Desktop은 `claude_desktop_config.json`에 추가:
 
 ```json
 {
   "mcpServers": {
     "myco": {
-      "command": "<repo>/mcp-server/.venv/bin/python",
-      "args": ["<repo>/mcp-server/myco_mcp.py"]
+      "url": "http://localhost:22360/mcp",
+      "headers": { "Authorization": "Bearer <설정 → MCP의 토큰>" }
     }
   }
 }
 ```
 
-28개 도구: 읽기(`list_pages` `read_page` `search` `folder_tree` …),
+36개 도구: 읽기(`list_pages` `read_page` `search` `folder_tree` …),
 쓰기(`add_raw_source` `create_page` `update_page` `git_commit` …), 인박스,
-no-LLM 품질 검사(`lint_citations` `trust_report` `contradictions` …),
-멀티 프로젝트 거버넌스(`resolve_cross_links` `export_project` `register_vault`
-…). 독립 서버는 `projects/<slug>/` 아래 여러 독립 위키를 관리하며, 각각 자체
-`wiki/ raw/ CLAUDE.md`를 가집니다.
+임포트(`import_conversation` `import_session` `wikify_pending`
+`ledger_status`), no-LLM 품질 검사(`lint_citations` `trust_report`
+`contradictions` `distill_status` `distill_report` …),
+개인화(`setup_profile`), 멀티 프로젝트 거버넌스(`resolve_cross_links`
+`export_project` `register_vault` …). `projects/<slug>/` 아래 여러 독립 위키를
+관리하며, 각각 자체 `wiki/ raw/ CLAUDE.md`를 가집니다.
+
+<details>
+<summary><b>0.4 이전 설치에서 올라오셨나요?</b> 남아 있는 <code>memex</code> 항목을 정리하세요.</summary>
+
+예전 빌드는 서버를 `memex`라는 이름으로, 일부는 지금은 없어진 SSE 트랜스포트로
+등록했습니다. Claude Code는 이 설정을 `~/.claude.json`에 프로젝트 디렉터리별로
+보관하므로, 업그레이드 후 죽은 항목이 여러 개 남을 수 있습니다. **Claude Code에
+연결**을 다시 누르면 현재 프로젝트는 고쳐지고, 나머지는 아래처럼 바꾸면 됩니다.
+
+```json
+"memex": { "type": "sse", "url": "http://localhost:22360/sse" }
+```
+
+(그리고 모든 `"memex"` HTTP 항목)을 하나로:
+
+```json
+"myco": {
+  "type": "http",
+  "url": "http://localhost:22360/mcp",
+  "headers": { "Authorization": "Bearer <설정 → MCP의 토큰>" }
+}
+```
+
+이름은 `myco`, URL은 `/mcp`로 끝납니다 — `/sse`는 사라졌습니다.
 
 </details>
 

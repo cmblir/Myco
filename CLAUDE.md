@@ -5,8 +5,8 @@ Development repo for myco, a local-first knowledge wiki.
 ## Layout
 
 ```
-app/            # myco desktop app (Tauri 2 + React)
-mcp-server/     # MCP server (32 tools) — shares the app's vault layout
+app/            # myco desktop app (Tauri 2 + React); hosts the MCP server
+                #   in-process (36 tools, src-tauri/src/mcp_native.rs)
 clipper/        # web clipper (browser extension + bookmarklet)
 automation/     # automated ingest scripts
 templates/      # project vault templates

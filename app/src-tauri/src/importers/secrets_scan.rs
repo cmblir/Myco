@@ -59,8 +59,8 @@ pub fn scan(text: &str) -> Vec<&'static str> {
 
 // PII patterns (Q4 item 13) — a softer tier than credentials: written with a
 // warning by default, refused/quarantined when `pii_quarantine_enabled` is on.
-// Kept in sync with mcp-server/myco_mcp.py (PII_PATTERNS) and
-// automation/autoingest.py (PII_PATTERNS).
+// Kept in sync with automation/autoingest.py (PII_PATTERNS) — the last
+// remaining copy now that the Python MCP server is retired.
 fn pii_patterns() -> &'static [(&'static str, Regex)] {
     static P: OnceLock<Vec<(&'static str, Regex)>> = OnceLock::new();
     P.get_or_init(|| {

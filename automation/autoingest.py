@@ -38,10 +38,9 @@ INBOX_DIRNAME = "_inbox"
 ARCHIVE_DIRNAME = ".archived"
 QUARANTINE_DIRNAME = "quarantine"
 
-# Redaction gate (Q4 item 13). automation/ imports nothing from mcp-server/,
-# so this is a third copy — kept in sync with
-# app/src-tauri/src/importers/secrets_scan.rs and mcp-server/myco_mcp.py
-# (SECRET_PATTERNS / PII_PATTERNS).
+# Redaction gate (Q4 item 13). automation/ imports nothing from the app, so
+# this is a second copy — kept in sync with
+# app/src-tauri/src/importers/secrets_scan.rs (SECRET_PATTERNS / PII_PATTERNS).
 SECRET_PATTERNS: "list[tuple[str, re.Pattern]]" = [
     ("AWS access key", re.compile(r"\bAKIA[0-9A-Z]{16}\b")),
     ("OpenAI/Anthropic-style API key", re.compile(r"\bsk-[A-Za-z0-9_-]{20,}\b")),
@@ -191,8 +190,7 @@ def ingest_one(
     # always quarantine; PII quarantines only under --pii-quarantine. The
     # source moves to _inbox/quarantine/ (it would otherwise loop every pass)
     # and nothing is written to raw/, which is immutable and git-committed.
-    # Kept in sync with app/src-tauri/src/mcp_native.rs (raw_source_guard)
-    # and mcp-server/myco_mcp.py (add_raw_source).
+    # Kept in sync with app/src-tauri/src/mcp_native.rs (raw_source_guard).
     hits, kind = scan_secrets(text), "secrets"
     if not hits and pii_quarantine:
         hits, kind = scan_pii(text), "PII"

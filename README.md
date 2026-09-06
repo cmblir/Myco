@@ -311,41 +311,63 @@ UI, light/dark, responsive to 320px.
 
 Use the same vault from Claude Desktop, Claude Code, or any MCP client.
 
-**Easiest path — the app hosts it.** The desktop app runs the MCP server
-in-process (no Python needed). Open **Settings → MCP** → **Connect to Claude
-Code**. The server follows whichever vault the app has open; the token
-persists, so you connect once.
+**The app hosts it.** The desktop app runs the MCP server in-process — no
+Python, no venv, no separate process to start. Open **Settings → MCP** →
+**Connect to Claude Code**. The server follows whichever vault the app has
+open, and the token persists, so you connect once.
 
-<details>
-<summary><b>Standalone Python server (from-source / non-app clients)</b></summary>
-
-Requires Python 3.10+ (stdlib-only runtime).
+One endpoint, streamable HTTP:
 
 ```bash
-bash mcp-server/install.sh            # creates mcp-server/.venv
-bash mcp-server/serve.sh              # serves http://127.0.0.1:22360/sse
-claude mcp add --transport sse myco http://localhost:22360/sse
+claude mcp add --transport http myco http://localhost:22360/mcp \
+  --header "Authorization: Bearer <token from Settings → MCP>"
 ```
 
-Or stdio for Claude Desktop — add to `claude_desktop_config.json`:
+Claude Desktop — add to `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "myco": {
-      "command": "<repo>/mcp-server/.venv/bin/python",
-      "args": ["<repo>/mcp-server/myco_mcp.py"]
+      "url": "http://localhost:22360/mcp",
+      "headers": { "Authorization": "Bearer <token from Settings → MCP>" }
     }
   }
 }
 ```
 
-28 tools: read (`list_pages` `read_page` `search` `folder_tree` …), write
-(`add_raw_source` `create_page` `update_page` `git_commit` …), inbox, no-LLM
-quality checks (`lint_citations` `trust_report` `contradictions` …), and
+36 tools: read (`list_pages` `read_page` `search` `folder_tree` …), write
+(`add_raw_source` `create_page` `update_page` `git_commit` …), inbox, import
+(`import_conversation` `import_session` `wikify_pending` `ledger_status`),
+no-LLM quality checks (`lint_citations` `trust_report` `contradictions`
+`distill_status` `distill_report` …), personalisation (`setup_profile`), and
 multi-project governance (`resolve_cross_links` `export_project`
-`register_vault` …). The standalone server manages multiple independent wikis
-under `projects/<slug>/`, each with its own `wiki/ raw/ CLAUDE.md`.
+`register_vault` …) over multiple independent wikis under `projects/<slug>/`,
+each with its own `wiki/ raw/ CLAUDE.md`.
+
+<details>
+<summary><b>Upgrading from a pre-0.4 install?</b> Fix a stale <code>memex</code> entry.</summary>
+
+Older builds registered the server as `memex`, some over the retired SSE
+transport. Claude Code keeps those per project directory in `~/.claude.json`,
+so an upgrade can leave several dead entries behind. Re-running **Connect to
+Claude Code** fixes the current project; for the rest, replace every
+
+```json
+"memex": { "type": "sse", "url": "http://localhost:22360/sse" }
+```
+
+(and any `"memex"` HTTP entry) with a single
+
+```json
+"myco": {
+  "type": "http",
+  "url": "http://localhost:22360/mcp",
+  "headers": { "Authorization": "Bearer <token from Settings → MCP>" }
+}
+```
+
+The name is `myco` and the URL ends in `/mcp` — `/sse` is gone.
 
 </details>
 

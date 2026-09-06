@@ -2387,8 +2387,8 @@ pub async fn serve(app: tauri::AppHandle, ct: CancellationToken) -> Result<(), S
 /// Scan-before-write gate for the raw/ entry path (Q4 item 13):
 /// secrets always refuse; PII refuses when quarantine mode is on, otherwise
 /// `Ok(Some(warning))` — the write proceeds and the warning is attached as
-/// `pii_warning`. Refusal strings kept in sync with mcp-server/myco_mcp.py
-/// (`add_raw_source`) and automation/autoingest.py (quarantine move).
+/// `pii_warning`. Refusal strings kept in sync with automation/autoingest.py
+/// (quarantine move).
 pub(crate) fn raw_source_guard(
     content: &str,
     pii_quarantine: bool,
@@ -3331,7 +3331,7 @@ body of {rel}
     }
 
     // ─── import_conversation / import_session / wikify_pending / ledger_status ─
-    // Ported from mcp-server/test_myco_mcp.py; the ledger fingerprint is the
+    // Ported from the retired mcp-server/test_myco_mcp.py; the fingerprint is the
     // Rust one (no `py-` prefix) and raw_path is vault-relative.
 
     fn import_vault() -> tempfile::TempDir {
