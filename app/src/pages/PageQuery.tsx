@@ -33,6 +33,7 @@ import MiniGalaxy from "../components/MiniGalaxy";
 import type { GalaxyLink, GalaxyNode } from "../components/MiniGalaxy";
 import NodePreview from "../components/NodePreview";
 import RetrievalStepper from "../components/RetrievalStepper";
+import AbstainCard from "../components/AbstainCard";
 import SourceLadder, {
   TierPriorPanel,
   bandLabel,
@@ -90,6 +91,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const busy = useQueryStore((s) => s.busy);
   const stage = useQueryStore((s) => s.stage);
   const askStore = useQueryStore((s) => s.ask);
+  const harvest = useQueryStore((s) => s.harvest);
   const markSeen = useQueryStore((s) => s.markSeen);
   const endRef = useRef<HTMLDivElement | null>(null);
 
@@ -428,7 +430,28 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 id={`ask-trace-${i}`}
               />
             ) : null}
-            {turn.hits?.length && currentVault ? (
+            {turn.abstained ? (
+              // Abstention is the answer: the card, never a quoted passage.
+              // "Widen" re-asks the same question over every scope.
+              <AbstainCard
+                t={t}
+                id={`ask-turn-${i}`}
+                question={turn.q}
+                indexedPages={turn.trace?.indexedPages ?? null}
+                floor={turn.floor ?? RELEVANCE_FLOOR}
+                misses={turn.nearMisses ?? []}
+                harvested={turn.harvested ?? false}
+                onHarvest={() => void harvest(i)}
+                onWiden={
+                  turn.scope === "all" || busy
+                    ? undefined
+                    : () => {
+                        setAskScope("all");
+                        void askStore(turn.q, lang, askCopy(t));
+                      }
+                }
+              />
+            ) : turn.hits?.length && currentVault ? (
               <ExtractiveAnswer
                 t={t}
                 id={`ask-turn-${i}`}
@@ -448,9 +471,10 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
                 )}
               </div>
             )}
-            {turn.a && !turn.error ? (
+            {turn.a && !turn.error && !turn.abstained ? (
               // Ghost action: log this question to the recall-miss eval set
-              // (Q4 item 5) when the answer missed what the user expected.
+              // (Q4 item 5) when the answer missed what the user expected. An
+              // abstained turn offers the same log as its harvest button.
               <button
                 className="btn btn-ghost"
                 style={{ padding: "3px 8px", fontSize: 11.5, marginTop: 6 }}

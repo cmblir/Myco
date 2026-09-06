@@ -321,7 +321,13 @@ export const useQueryStore = create<QueryState>((set, get) => ({
     const vault = useVaultStore.getState().currentVault;
     const turn = get().turns[i];
     if (!vault || !turn || turn.harvested) return;
-    await ipc.recordRecallMiss(vault.path, turn.q);
+    try {
+      await ipc.recordRecallMiss(vault.path, turn.q);
+    } catch (err) {
+      // The button stays live for a retry; the failure is not swallowed.
+      log.warn("query.harvest_failed", { error: String(err) });
+      return;
+    }
     set((s) => ({
       turns: s.turns.map((t, j) => (j === i ? { ...t, harvested: true } : t)),
     }));

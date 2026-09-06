@@ -9078,7 +9078,8 @@ details.props > .btn {
 }
 .ask-trace {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(124px, 1fr));
+  /* Seven tiles fit one row of the 860px column; narrower wraps. */
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
   margin-top: 8px;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -9251,7 +9252,10 @@ details.props > .btn {
   font-size: 11px;
   color: var(--ink-4);
   margin-top: 3px;
-  word-break: break-all;
+  /* One line; the row's tooltip carries the full path. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .ask-lquote {
   display: -webkit-box;
@@ -9383,5 +9387,148 @@ details.props > .btn {
   .ask-lquote,
   .ask-chev svg {
     transition: none;
+  }
+}
+/* Abstention card — the hero of that state: stop asset 112px with the violet
+   glow, serif title 30, misses on a floor gauge, one row of actions. */
+.ask-abstain {
+  position: relative;
+  z-index: 0;
+  margin-top: 12px;
+  padding: 22px 24px 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--bg-elev);
+}
+.ask-abstain::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+  left: -60px;
+  right: -60px;
+  top: -100px;
+  height: 320px;
+  background: radial-gradient(closest-side, rgba(126, 34, 206, 0.09), transparent 70%);
+}
+[data-theme="dark"] .ask-abstain::before {
+  background: radial-gradient(closest-side, rgba(167, 139, 250, 0.16), transparent 70%);
+}
+.ask-abshead {
+  display: flex;
+  gap: 24px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.ask-orb {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #0d0c0b;
+  flex: 0 0 auto;
+  filter: drop-shadow(0 0 28px rgba(167, 139, 250, 0.45));
+  animation: ask-float 5s ease-in-out infinite;
+}
+@keyframes ask-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+.ask-abstain h2 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+.ask-abssub {
+  font-size: 14px;
+  color: var(--ink-3);
+  margin: 8px 0 0;
+  line-height: 1.6;
+}
+.ask-misses {
+  margin-top: 20px;
+}
+.ask-misses h3 {
+  margin: 0 0 4px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  font-weight: 600;
+}
+.ask-missrow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 132px 72px;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 0;
+  border-top: 1px solid var(--line);
+}
+@media (max-width: 640px) {
+  .ask-missrow {
+    grid-template-columns: minmax(0, 1fr) 90px 64px;
+  }
+}
+.ask-missbar {
+  height: 6px;
+  background: var(--bg-active);
+  border-radius: 3px;
+  position: relative;
+}
+.ask-missbar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  display: block;
+  background: var(--ink-4);
+  border-radius: 3px;
+}
+.ask-missbar .floor {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  background: var(--danger);
+}
+.ask-missnum {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  color: var(--ink-3);
+  text-align: right;
+}
+.ask-acts {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.ask-receipt {
+  margin-top: 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r);
+  padding: 9px 11px;
+  font-size: 12px;
+  color: var(--ink-3);
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+.ask-receipt b {
+  color: #15803d;
+  font-weight: 500;
+}
+[data-theme="dark"] .ask-receipt b {
+  color: #7ee0a6;
+}
+@media (prefers-reduced-motion: reduce) {
+  .ask-orb {
+    animation: none;
   }
 }
