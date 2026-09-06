@@ -1300,6 +1300,8 @@ export interface HarvestCandidates {
   excluded: HarvestExcluded;
   total_scanned: number;
   distinct_bodies: number;
+  /** Candidates before the `limit` cut — "20 of 137". */
+  eligible: number;
 }
 
 export interface HarvestRunResult {

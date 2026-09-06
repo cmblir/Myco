@@ -2876,6 +2876,7 @@ function mockInvoke(
         },
         total_scanned: 1473,
         distinct_bodies: 719,
+        eligible: 137,
       });
     }
     case "harvest_run": {

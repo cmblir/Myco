@@ -11,7 +11,7 @@ import type { CSSProperties } from "react";
 import type { JSX } from "react";
 import type { Strings } from "../lib/i18n";
 import { ipc } from "../lib/ipc";
-import type { HarvestCandidate, HarvestCandidates } from "../lib/ipc";
+import type { HarvestCandidate } from "../lib/ipc";
 import {
   clusterColorVar,
   distinctCitations,
@@ -27,10 +27,9 @@ import { useVaultStore } from "../stores/vaultStore";
 import { useUIStore } from "../stores/uiStore";
 import { useIngestStore } from "../stores/ingestStore";
 import { useProvenanceStore } from "../stores/provenanceStore";
+import { useHarvestStore } from "../stores/harvestStore";
 import { ActivityIcon } from "./ActivityPanel";
 import MascotClip from "./MascotClip";
-
-const QUEUE_LIMIT = 20;
 
 function fill(s: string, vars: Record<string, string | number>): string {
   return Object.entries(vars).reduce(
@@ -48,8 +47,9 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
   const scanProvenance = useProvenanceStore((s) => s.scan);
   const bumpInbox = useIngestStore((s) => s.bumpInboxRev);
 
-  const [data, setData] = useState<HarvestCandidates | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const data = useHarvestStore((s) => s.data);
+  const error = useHarvestStore((s) => s.error);
+  const loadQueue = useHarvestStore((s) => s.load);
   const [selected, setSelected] = useState<ReadonlySet<string>>(new Set());
   const [openRow, setOpenRow] = useState<string | null>(null);
   const [showExcluded, setShowExcluded] = useState(false);
@@ -60,25 +60,22 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
 
   const root = vault?.path ?? null;
 
-  const load = useCallback(async () => {
-    if (!root) return;
-    setError(null);
-    try {
-      const next = await ipc.harvestCandidates(QUEUE_LIMIT);
-      setData(next);
-      // Everything eligible starts checked: the ranker already said yes.
-      setSelected(new Set(next.items.map((c) => c.path)));
-      setOpenRow(null);
-    } catch (e) {
-      setData(null);
-      setError(String(e));
-    }
-  }, [root]);
+  const load = useCallback(
+    async (force = false) => {
+      if (root) await loadQueue(root, force);
+    },
+    [root, loadQueue],
+  );
 
   useEffect(() => {
-    setData(null);
     void load();
   }, [load]);
+
+  // Everything eligible starts checked: the ranker already said yes.
+  useEffect(() => {
+    setSelected(new Set(data?.items.map((c) => c.path) ?? []));
+    setOpenRow(null);
+  }, [data]);
 
   // The citation count the hero moves — cached per vault by the provenance
   // store, so a revisit costs nothing.
@@ -144,7 +141,7 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
     } finally {
       setProgress(null);
       setPlanning(false);
-      await load();
+      await load(true);
     }
   }
 
@@ -263,7 +260,7 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
       {error ? (
         <div className="hq-error" role="alert">
           <span>{error}</span>
-          <button type="button" className="btn" onClick={() => void load()}>
+          <button type="button" className="btn" onClick={() => void load(true)}>
             {t.hq_retry}
           </button>
         </div>
