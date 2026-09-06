@@ -7,6 +7,8 @@
 //   - github.com/ElsaTam/obsidian-extended-graph (default values)
 //   - github.com/ycnmhd/obsidian-graph-presets (slider ranges)
 
+import { QUESTIONS, SIZE_BYS, type Question, type SizeBy } from "./graphEncoding";
+
 // Kept here (not graphTheme.ts) so this module stays DOM-free and testable.
 export type GraphSkinKey =
   | "auto"
@@ -18,6 +20,18 @@ export type GraphSkinKey =
   | "mycelium";
 
 export interface GraphSettings {
+  // Question — the ENCODING over the one layout (see graphEncoding.ts). It
+  // changes colour / radius / alpha / ring per node and never the coordinates,
+  // so the four answers stay comparable on the same scene. Deliberately NOT a
+  // rebuild input: switching a question restyles.
+  question: Question;
+  // Which count the node radius reads: inbound wikilinks or frontmatter
+  // source_count. Restyles too.
+  sizeBy: SizeBy;
+  /** Hide the first-run sample notes (src-tauri/src/sample_vault.rs) so the
+   * picture is only what the owner actually wrote. Corpus filter — rebuilds. */
+  hideSample: boolean;
+
   // Filters
   search: string;
   showOrphans: boolean;
@@ -171,6 +185,9 @@ export interface GraphSettings {
 // vaults of any size; an 800-node tree with the old linear mapping
 // crushed every cluster into a single hairball.
 export const DEFAULT_GRAPH_SETTINGS: GraphSettings = {
+  question: "orphans",
+  sizeBy: "backlinks",
+  hideSample: false,
   search: "",
   showOrphans: true,
   existingOnly: false,
@@ -563,7 +580,14 @@ export function loadGraphSettings(): GraphSettings {
     const raw = localStorage.getItem(KEY);
     if (!raw) return { ...DEFAULT_GRAPH_SETTINGS };
     const parsed = JSON.parse(raw) as Partial<GraphSettings>;
-    return normalizeMyceliumPair({ ...DEFAULT_GRAPH_SETTINGS, ...parsed });
+    const merged = normalizeMyceliumPair({ ...DEFAULT_GRAPH_SETTINGS, ...parsed });
+    // localStorage is a trust boundary: a hand-edited (or older) blob must not
+    // hand encodeNode a question it has no branch for.
+    if (!QUESTIONS.includes(merged.question)) {
+      merged.question = DEFAULT_GRAPH_SETTINGS.question;
+    }
+    if (!SIZE_BYS.includes(merged.sizeBy)) merged.sizeBy = DEFAULT_GRAPH_SETTINGS.sizeBy;
+    return merged;
   } catch {
     return { ...DEFAULT_GRAPH_SETTINGS };
   }

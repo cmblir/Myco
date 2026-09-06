@@ -36,6 +36,8 @@ export const RING_SEARCH_HIT: Ring = 6;
 
 export interface EncNode {
   id: string;
+  /** Note name (stem) — what the search box matches against. */
+  label: string;
   /** Unresolved [[wikilink]] with no file behind it. */
   ghost: boolean;
   /** Degree within the drawn corpus. */
@@ -125,7 +127,7 @@ export function encodeNode(n: EncNode, q: Question, s: EncState): Encoding {
   }
 
   if (s.search) {
-    const hit = n.id.toLowerCase().includes(s.search);
+    const hit = n.label.toLowerCase().includes(s.search);
     if (hit) {
       alpha = 1;
       if (ring === RING_NONE) ring = RING_SEARCH_HIT;

@@ -13,6 +13,7 @@ import { ipc } from "../lib/ipc";
 import type { Adjacency } from "../lib/ipc";
 import type { Strings } from "../lib/i18n";
 import { stem, type VaultGraph } from "../lib/graphData";
+import type { GapAction } from "./GraphGaps";
 
 const GHOST = "ghost:";
 
@@ -32,6 +33,9 @@ export default function GraphInspector({
   onSelect,
   onOpen,
   onClose,
+  isSample,
+  onAction,
+  onNeighbors,
 }: {
   t: Strings;
   nodeId: string;
@@ -48,6 +52,12 @@ export default function GraphInspector({
   /** Open the node in the full reader. */
   onOpen: (id: string) => void;
   onClose: () => void;
+  /** Seeded first-run note (graphSample) rather than the owner's own writing. */
+  isSample: (id: string) => boolean;
+  /** The three exits a gap row offers, on the inspected note. */
+  onAction: (action: GapAction, id: string) => void;
+  /** Switch the question to "이 노트의 이웃" with this note as the subject. */
+  onNeighbors: (id: string) => void;
 }): JSX.Element {
   const isGhost = nodeId.startsWith(GHOST);
   const [fm, setFm] = useState<Record<string, unknown> | null>(null);
@@ -85,13 +95,19 @@ export default function GraphInspector({
       ? graph.degree(nodeId)
       : outlinks.length + backlinks.length;
 
+  // Trust: frontmatter is the fallback, adjacency.meta the cheap already-loaded
+  // source (it is what the gap report and the size-by-citations channel read,
+  // so the inspector must not disagree with the picture).
+  const nodeMeta = adjacency.meta?.[nodeId];
+  const cites = nodeMeta?.sourceCount ?? 0;
   const meta: { label: string; value: string }[] = [];
-  const type = str(fm?.type);
-  const conf = str(fm?.confidence);
-  const status = str(fm?.status);
+  const type = nodeMeta?.type ?? str(fm?.type);
+  const conf = nodeMeta?.confidence ?? str(fm?.confidence);
+  const status = nodeMeta?.status ?? str(fm?.status);
   if (type) meta.push({ label: t.gr_insp_type ?? "Type", value: type });
   if (conf) meta.push({ label: t.gr_insp_confidence ?? "Confidence", value: conf });
   if (status) meta.push({ label: t.gr_insp_status ?? "Status", value: status });
+  if (!isGhost) meta.push({ label: t.gr_insp_cites, value: String(cites) });
   meta.push({ label: t.gr_insp_connections ?? "Connections", value: String(deg) });
 
   const linkList = (ids: string[]): JSX.Element =>
@@ -134,6 +150,21 @@ export default function GraphInspector({
       {isGhost ? (
         <p className="graph-insp__ghost">{t.gr_insp_unresolved ?? "Unresolved note"}</p>
       ) : null}
+
+      {/* Trust badges: is this the owner's writing or a seeded sample note,
+          and does it stand on any source at all? */}
+      <div className="sv-badges">
+        {isGhost ? (
+          <span className="sv-badge sv-badge--warn">{t.gr_insp_unresolved}</span>
+        ) : (
+          <span className={`sv-badge${isSample(nodeId) ? " sv-badge--warn" : " sv-badge--ok"}`}>
+            {isSample(nodeId) ? t.gr_insp_sample : t.gr_insp_own}
+          </span>
+        )}
+        {!isGhost && cites === 0 ? (
+          <span className="sv-badge sv-badge--warn">{t.gr_insp_nocite}</span>
+        ) : null}
+      </div>
 
       <dl className="graph-insp__meta">
         {meta.map((m) => (
@@ -226,11 +257,39 @@ export default function GraphInspector({
         ) : null}
       </div>
 
-      {!isGhost ? (
-        <button type="button" className="btn graph-insp__open" onClick={() => onOpen(nodeId)}>
-          {t.gr_insp_open ?? "Open in reader"}
+      {/* Three exits, the same ones every gap row offers — a finding on this
+          screen has to be able to turn into work without leaving by the
+          browser's back button. */}
+      <div className="sv-actions">
+        {isGhost ? (
+          <button
+            type="button"
+            className="sv-btn sv-btn--primary"
+            onClick={() => onAction("want", nodeId)}
+          >
+            {t.gr_act_harvest}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="sv-btn sv-btn--primary"
+            onClick={() => onOpen(nodeId)}
+          >
+            {t.gr_insp_open ?? "Open in reader"}
+          </button>
+        )}
+        <button type="button" className="sv-btn" onClick={() => onAction("link", nodeId)}>
+          {t.gr_act_link}
         </button>
-      ) : null}
+        {!isGhost ? (
+          <button type="button" className="sv-btn" onClick={() => onAction("want", nodeId)}>
+            {t.gr_act_harvest}
+          </button>
+        ) : null}
+        <button type="button" className="sv-btn" onClick={() => onNeighbors(nodeId)}>
+          {t.gr_act_neighbors}
+        </button>
+      </div>
     </aside>
   );
 }

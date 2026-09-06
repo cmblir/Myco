@@ -21,6 +21,7 @@ const BLUE = "#5ba2ff";
 function node(p: Partial<EncNode> = {}): EncNode {
   return {
     id: "/v/wiki/a.md",
+    label: "a",
     ghost: false,
     deg: 2,
     backlinks: 1,
@@ -117,13 +118,15 @@ describe("search + selection layer", () => {
     expect(encodeNode(node({ deg: 0, backlinks: 0 }), "orphans", s).alpha).toBeLessThanOrEqual(
       0.08,
     );
-    const hit = encodeNode(node({ id: "/v/wiki/zzz.md" }), "orphans", s);
+    const hit = encodeNode(node({ label: "Zzz note" }), "orphans", s);
     expect(hit.alpha).toBe(1);
     expect(hit.ring).toBe(RING_SEARCH_HIT);
+    // the path never matches — only the note name does
+    expect(encodeNode(node({ id: "/v/zzz/a.md" }), "orphans", s).alpha).toBeLessThanOrEqual(0.08);
     // an existing ring is kept over the search ring
-    expect(
-      encodeNode(node({ id: "/v/wiki/zzz.md", deg: 0, backlinks: 0 }), "orphans", s).ring,
-    ).toBe(RING_GAP);
+    expect(encodeNode(node({ label: "zzz", deg: 0, backlinks: 0 }), "orphans", s).ring).toBe(
+      RING_GAP,
+    );
   });
   it("selection always wins the ring channel", () => {
     const s = state({ selected: "/v/wiki/a.md" });

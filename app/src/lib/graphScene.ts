@@ -30,6 +30,7 @@ import type { GraphTheme } from "./graphTheme";
 import { skinAmbience } from "./graphSkins";
 import { galaxyNormal } from "./galaxyLayout";
 import type { GraphSettings } from "./graphSettings";
+import type { Encoding } from "./graphEncoding";
 import { NebulaLayer } from "./nebulaLayer";
 import { PulseLayer } from "./pulseLayer";
 import { TracePulse } from "./tracePulse";
@@ -263,6 +264,10 @@ const EMPTY_STYLE: SceneStyleState = {
   pulseScale: 1,
 };
 
+// nodeRadius()'s mid-ramp canvas value - the divisor that turns an encoding
+// radius into a multiplier on the scene's own per-node size.
+const ENC_BASE_R = 6;
+
 // Focus-isolation context layer: non-members at 0.08 alpha (hover's soft dim is
 // 0.15 — focus is a held state, so it cuts deeper), their edges near-invisible.
 const FOCUS_NODE_DIM = 0.08;
@@ -452,6 +457,9 @@ attribute float a_age; // days since last modified (9999 = unknown/old)
 attribute float a_hit; // 1 = current search match (pulse-in-phase highlight)
 attribute float a_spawn; // condensation intro: per-node birth delay (s)
 attribute float a_sel; // 1 = the inspector-selected node (anamorphic streak)
+// Question ring class (graphEncoding.Ring, 0..6) - the SHAPE channel, so no
+// finding is carried by colour alone. Drawn as an annulus in NODE_FRAG.
+attribute float a_ring;
 // Pixel-sprite look (see NODE_FRAG / pixelPlanet.ts): archetype + seed + the
 // 5-stop community-hue-tinted ramp, packed to stay under WebGL's guaranteed
 // 16-attribute budget — this is a single Points cloud (thousands of nodes,
@@ -490,6 +498,7 @@ varying float v_kind;
 varying float v_age;
 varying float v_hit;
 varying float v_sel;
+varying float v_ring;
 // highp: these carry packed 8-bit/channel colour + integer archetype data
 // (see a_meta/a_ramp01/a_ramp2 above) through a fragment shader whose default
 // precision is mediump — mediump's mantissa can't hold the packed values
@@ -579,6 +588,10 @@ void main() {
   // (the streak lives inside the point quad). After the clamp — selection must
   // pop even when the sprite would otherwise sit at the size floor/cap.
   if (a_sel > 0.5) gl_PointSize *= 1.35;
+  // Ringed node: the annulus lives OUTSIDE the star body inside the same point
+  // quad, so it needs both room and a device-pixel floor - a 1px ring on a
+  // 4px field star is invisible, and the ring is the accessible channel.
+  if (a_ring > 0.5) gl_PointSize = max(gl_PointSize * 1.5, 11.0 * u_pixelRatio);
   // Condensation intro (see birth offset above): grow in from nothing. Applied
   // after the clamp so a being-born star really is invisible, not floored.
   gl_PointSize *= birthE;
@@ -599,6 +612,7 @@ void main() {
   v_age = a_age;
   v_hit = a_hit;
   v_sel = a_sel;
+  v_ring = a_ring;
 }
 `;
 
@@ -634,6 +648,7 @@ varying float v_kind;
 varying float v_age;
 varying float v_hit;
 varying float v_sel;
+varying float v_ring;
 varying highp float v_meta;
 varying highp vec4 v_ramp01;
 varying highp float v_ramp2;
@@ -658,6 +673,33 @@ vec3 pxs_unpackC(highp float p) {
 // monochrome ink, colour-depth gamma, recency warmth, active-search lift.
 // (Dispute/amber already rode in through the ramp's own hue — see
 // writeNodeSprites() — so it needs no separate handling here.)
+// Question ring (graphEncoding's Ring channel). An annulus near the quad rim,
+// outside every star profile below: dashed amber for a gap, dotted grey for an
+// unresolved ghost, solid live for a fresh note, solid ink/white for the
+// selection, solid accent for a search hit. Returns rgb + coverage; callers
+// composite it BEFORE their alpha discard so a ring on a heavily dimmed star
+// still reads. Colours flip with the theme - a white ring on paper is no ring.
+vec4 pxs_ring(float d) {
+  if (v_ring < 0.5) return vec4(0.0);
+  float band = smoothstep(0.78, 0.83, d) * (1.0 - smoothstep(0.93, 0.98, d));
+  if (band <= 0.0) return vec4(0.0);
+  int r = int(v_ring + 0.5);
+  if (r <= 3) {
+    // Dashes vs dots: the two gap classes must differ by shape, not just hue.
+    float ang = atan(gl_PointCoord.y - 0.5, gl_PointCoord.x - 0.5);
+    float seg = r == 2 ? 18.0 : 9.0;
+    band *= step(r == 2 ? 0.62 : 0.42, fract(ang * seg * 0.15915494 + 0.5));
+  }
+  vec3 amber = mix(vec3(0.60, 0.42, 0.12), vec3(0.95, 0.68, 0.28), v_dark);
+  vec3 c = r == 1 ? amber
+    : r == 2 ? mix(vec3(0.42, 0.42, 0.45), vec3(0.70, 0.72, 0.78), v_dark)
+    : r == 3 ? amber
+    : r == 4 ? mix(vec3(0.09, 0.55, 0.32), vec3(0.49, 0.88, 0.65), v_dark)
+    : r == 5 ? mix(vec3(0.05, 0.05, 0.06), vec3(1.0), v_dark)
+    : mix(vec3(0.16, 0.36, 0.78), vec3(0.62, 0.79, 1.0), v_dark);
+  return vec4(c, band);
+}
+
 vec3 pxs_post(vec3 base) {
   if (u_mono > 0.0) {
     float peak = max(base.r, max(base.g, base.b));
@@ -688,6 +730,8 @@ void main() {
       vec2 spr = pixel_sprite(sp_uv, int(variantF + 0.5), u_time, seed);
       float a = spr.y * v_alpha * v_fade * u_lodFade;
       if (u_searchOn > 0.5) a *= mix(0.5, 1.0, v_hit);
+      vec4 rk = pxs_ring(length(gl_PointCoord - vec2(0.5)) * 2.0);
+      a = max(a, rk.a * v_fade * u_lodFade);
       if (a < 0.004) discard;
       int rampIdx = int(spr.x + 0.5);
       highp float packedC = rampIdx == 0 ? v_ramp01.x : rampIdx == 1 ? v_ramp01.y :
@@ -702,6 +746,7 @@ void main() {
       float core = spr.x < 0.5 ? 1.0 : 0.0;
       vec3 col = base * (1.0 + core * max(v_int, v_sel) * v_dark * 1.6);
       col = pxs_post(col);
+      col = mix(col, rk.rgb, rk.a);
       col = min(col, vec3(3.0));
       gl_FragColor = vec4(max(col, vec3(0.0)), a);
       return;
@@ -714,8 +759,10 @@ void main() {
     float bodyFar = 1.0 - smoothstep(0.86 - aaFar, 0.86 + aaFar, ddFar);
     float aFar = bodyFar * v_alpha * v_fade * u_lodFade;
     if (u_searchOn > 0.5) aFar *= mix(0.5, 1.0, v_hit);
+    vec4 rkFar = pxs_ring(ddFar);
+    aFar = max(aFar, rkFar.a * v_fade * u_lodFade);
     if (aFar < 0.004) discard;
-    gl_FragColor = vec4(max(pxs_post(v_color), vec3(0.0)), aFar);
+    gl_FragColor = vec4(max(mix(pxs_post(v_color), rkFar.rgb, rkFar.a), vec3(0.0)), aFar);
     return;
   }
   vec2 pc = gl_PointCoord - vec2(0.5);
@@ -804,6 +851,8 @@ void main() {
   // Light bg: punch up node alpha so the dark stars actually tint the near-white
   // paper (NormalBlend over #fafaf9 needs real opacity or stars evaporate).
   a = mix(min(1.0, a * 1.7), a, v_dark);
+  vec4 rkStar = pxs_ring(d);
+  a = max(a, rkStar.a * v_fade * u_lodFade);
   if (a < 0.004) discard;
   vec3 base = v_color * (0.65 + 0.35 * v_fade);
   // Monochrome mode: drop the hue but KEEP brightness — each star becomes a
@@ -890,6 +939,7 @@ void main() {
   // Pre-tonemap luminance clamp: caps each sprite's additive CONTRIBUTION at
   // 3.0, so an N-sprite overlap sums to at most 3N instead of unbounded HDR —
   // the structural backstop the per-intensity caps alone can't give.
+  col = mix(col, rkStar.rgb, rkStar.a);
   col = min(col, vec3(3.0));
   // Light-theme values may have gone below zero from the darkening branch —
   // clamp so NormalBlending doesn't get negative source values.
@@ -1478,6 +1528,10 @@ export class GraphScene {
       "a_sel",
       new THREE.BufferAttribute(new Float32Array(n), 1),
     );
+    this.nodeGeom.setAttribute(
+      "a_ring",
+      new THREE.BufferAttribute(new Float32Array(n), 1),
+    );
     addPixelSpriteAttrs(this.nodeGeom, n);
     this.nodeMat = new THREE.ShaderMaterial({
       uniforms: {
@@ -1958,6 +2012,7 @@ export class GraphScene {
     const kind = this.nodeGeom.getAttribute("a_kind") as THREE.BufferAttribute;
     const age = this.nodeGeom.getAttribute("a_age") as THREE.BufferAttribute;
     const hit = this.nodeGeom.getAttribute("a_hit") as THREE.BufferAttribute;
+    const rng = this.nodeGeom.getAttribute("a_ring") as THREE.BufferAttribute;
     const { hoveredNode, neighbors, focus, tints, pulseId, pulseScale } =
       this.style;
     const c = new THREE.Color();
@@ -1973,6 +2028,19 @@ export class GraphScene {
       // baseAlpha carries the confidence encoding (low-confidence stars dimmer).
       let alpha = a.hidden ? 0 : (a.baseAlpha ?? 1);
       let inten = a.intensity;
+      // Question encoding on top of the base look: it OWNS colour, scales the
+      // scene's own radius (so nodeSize and the star-class ramp survive) and
+      // multiplies alpha (so a low-confidence star stays the dimmer of the
+      // two). ENC_BASE_R is nodeRadius()'s mid-ramp value - the ratio, not the
+      // canvas pixel count, is what carries over to a world-space sprite.
+      let ring = 0;
+      const enc = this.encoding?.get(id);
+      if (enc) {
+        c.set(enc.color);
+        size = a.size * Math.min(2.2, Math.max(0.45, enc.radius / ENC_BASE_R));
+        alpha *= enc.alpha;
+        ring = enc.ring;
+      }
 
       // live-ingest tint overrides colour
       const written = tints.get(id);
@@ -2006,6 +2074,7 @@ export class GraphScene {
       kind.setX(i, a.starKind ?? 0);
       age.setX(i, a.age ?? 9999);
       hit.setX(i, this.searchHits?.has(id) ? 1 : 0);
+      rng.setX(i, ring);
     }
     // Reapply the hover micro-pop on top of the full rewrite so a style push
     // mid-pop (or while the pop is settled at full scale) doesn't snap the
@@ -2022,6 +2091,7 @@ export class GraphScene {
     kind.needsUpdate = true;
     age.needsUpdate = true;
     hit.needsUpdate = true;
+    rng.needsUpdate = true;
   }
 
   // Pixel-sprite identity cache (archetype + ramp, see NODE_VERT/NODE_FRAG):
@@ -2123,6 +2193,17 @@ export class GraphScene {
 
   /** Highlight the current search matches: they pulse in phase and everything
    * else recedes. Pass null (or an empty set) to clear. */
+  // Question encoding (lib/graphEncoding): id -> {color, radius, alpha, ring},
+  // recomputed by React whenever the question / size channel / selection moves
+  // and pushed as a whole map, so writeNodes stays one lookup per node instead
+  // of a closure call per node per sim tick.
+  private encoding: ReadonlyMap<string, Encoding> | null = null;
+
+  setEncoding(enc: ReadonlyMap<string, Encoding> | null): void {
+    this.encoding = enc && enc.size > 0 ? enc : null;
+    this.writeNodes();
+  }
+
   setSearchHits(ids: Set<string> | null): void {
     this.searchHits = ids && ids.size > 0 ? ids : null;
     this.nodeMat.uniforms.u_searchOn.value = this.searchHits ? 1 : 0;
@@ -3756,6 +3837,7 @@ export class GraphScene {
     this.nodeGeom.setAttribute("a_hit", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.nodeGeom.setAttribute("a_spawn", new THREE.BufferAttribute(new Float32Array(n), 1));
     this.nodeGeom.setAttribute("a_sel", new THREE.BufferAttribute(new Float32Array(n), 1));
+    this.nodeGeom.setAttribute("a_ring", new THREE.BufferAttribute(new Float32Array(n), 1));
     addPixelSpriteAttrs(this.nodeGeom, n);
     this.points.geometry = this.nodeGeom;
     oldNodeGeom.dispose();

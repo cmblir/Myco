@@ -12,7 +12,11 @@ import type { JSX } from "react";
 import GraphControls from "../components/GraphControls";
 import GraphInspector from "../components/GraphInspector";
 import ShipHud from "../components/ShipHud";
-import GraphGaps from "../components/GraphGaps";
+import GraphGaps, { displayName, gapGroups, type GapAction } from "../components/GraphGaps";
+import GraphQuestions, {
+  type BuildStat,
+  type SurveyCounts,
+} from "../components/GraphQuestions";
 import GraphHelp from "../components/GraphHelp";
 import GraphLegend from "../components/GraphLegend";
 import {
@@ -34,6 +38,7 @@ import {
   computeAllowed,
   countAllNodes,
   flattenMarkdown,
+  isNonKnowledgePath,
   type LegendGalaxy,
   recolorGraph,
   seededUnit,
@@ -43,6 +48,15 @@ import {
   type VaultGraph,
 } from "../lib/graphData";
 import { analyzeGaps, clusterBridges, gapCount, type ClusterBridge } from "../lib/graphGaps";
+import {
+  encodeNode,
+  hopsFrom,
+  type EncNode,
+  type EncState,
+  type Encoding,
+} from "../lib/graphEncoding";
+import { isSamplePath } from "../lib/graphSample";
+import { notice } from "../lib/notice";
 import { setQueryPrefill } from "../lib/queryPrefill";
 import { createSim, type GraphSim, type SimNode } from "../lib/graphSim";
 import { createStaticDrag } from "../lib/staticDrag";
@@ -78,6 +92,10 @@ import { isComposingKey } from "../lib/ime";
 // only read glow ice blue. Both sit inside the cosmic palette so they read as
 // "hot" stars rather than UI chrome.
 const PULSE_MS = 900;
+
+// Frontmatter type of a map/overview page — a cluster with one has guidance,
+// so the "무엇이 뭉쳐 있나" question rings the clusters that have none.
+const MAP_TYPE = "overview";
 
 // The flat 2D chart layouts — a floating planet mascot has no depth to sit in
 // there, so the cameo is gated to the 3D cosmos layouts (everything else).
@@ -128,6 +146,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   const openVault = useVaultStore((s) => s.openVault);
   const setRoute = useUIStore((s) => s.setRoute);
   const uiTheme = useUIStore((s) => s.theme);
+  const graphFocus = useUIStore((s) => s.graphFocus);
+  const setGraphFocus = useUIStore((s) => s.setGraphFocus);
   // Multiverse: the registered projects + their loaded graphs (kept in a store
   // separate from the single vault). Only read when the multiverse toggle is on.
   const mvOrder = useMultiverseStore((s) => s.order);
@@ -304,8 +324,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   // Cosmic-scale band (star/system/galaxy/cluster) shown briefly on change.
   const [cosmicScale, setCosmicScale] = useState<string | null>(null);
   const scaleHideRef = useRef<number | null>(null);
-  // Gap-analysis panel (orphans / missing / under-cited / disconnected …).
-  const [gapsOpen, setGapsOpen] = useState(false);
+  // Scene-rebuild counter (the "씬 재빌드 N회 · x ms" chip). Only a corpus
+  // change may move it — a question, the size channel or the find box restyle.
+  const [build, setBuild] = useState<BuildStat>({ builds: 0, ms: 0 });
   // Gesture cheat-sheet popover ("?" toolbar button).
   const [helpOpen, setHelpOpen] = useState(false);
   const [tlPlaying, setTlPlaying] = useState(false);
@@ -381,12 +402,123 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [counts, glEpoch]);
 
+  // ── the question layer ────────────────────────────────────────────────────
+  // Everything the four questions read, derived once per built graph (counts is
+  // the render-visible rebuild signal, glEpoch the context-loss one). The
+  // scene's own coordinates are untouched: a question only restyles.
+  const derived = useMemo<Derived | null>(() => {
+    const g = graphRef.current;
+    if (!g || g.order === 0 || !adjacency) return null;
+    return derive(g, adjacency, currentVault?.path ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [counts, glEpoch, adjacency, currentVault?.path]);
+
+  // Session transcripts are structurally excluded from the graph (graphData's
+  // NON_KNOWLEDGE_FOLDERS) — the honesty line has to say so rather than let the
+  // node count imply the vault is that small.
+  const sessionCount = useMemo(
+    () => allFiles.filter((f) => isNonKnowledgePath(currentVault?.path ?? "", f)).length,
+    [allFiles, currentVault?.path],
+  );
+
+  const hops = useMemo(() => {
+    const g = graphRef.current;
+    if (settings.question !== "neighbors" || !selected || !g || !g.hasNode(selected)) return null;
+    return hopsFrom(selected, 2, (id) => (g.hasNode(id) ? g.neighbors(id) : []));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [derived, selected, settings.question]);
+
+  // (node, question, state) → {color, radius, alpha, ring}, pushed to the scene
+  // as one map so writeNodes stays a lookup per node. Search is deliberately
+  // NOT part of it: the scene already owns that channel (setSearchHits →
+  // u_searchOn), and dimming twice would erase the misses entirely.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene || !derived) return;
+    const cs = getComputedStyle(document.documentElement);
+    const state: EncState = {
+      sizeBy: settings.sizeBy,
+      maxBacklinks: derived.maxBacklinks,
+      hops,
+      mapless: derived.mapless,
+      search: "",
+      selected,
+      dimColor: cs.getPropertyValue("--ink-4").trim() || "#6b6a64",
+      liveColor: cs.getPropertyValue("--live").trim() || "#a78bfa",
+    };
+    const enc = new Map<string, Encoding>();
+    for (const [id, n] of derived.nodes) enc.set(id, encodeNode(n, settings.question, state));
+    scene.setEncoding(enc);
+    // uiTheme is a real dep: --ink-4 / --live are read off the DOM here, so a
+    // theme flip must re-encode even though nothing else in the list moved.
+  }, [derived, hops, selected, settings.question, settings.sizeBy, uiTheme]);
+
+  // Deep link (lib/graphLink): arrive at a question, optionally at a note.
+  useEffect(() => {
+    if (!graphFocus) return;
+    const { q, path: target } = graphFocus;
+    setSettings((prev) => ({ ...prev, question: q }));
+    if (target) {
+      setSelected(target);
+      sceneRef.current?.focusNode(target);
+    }
+    setGraphFocus(null);
+  }, [graphFocus, setGraphFocus]);
+
+  // The three exits a gap row and the inspector both offer.
+  const act = (action: GapAction, id: string): void => {
+    const name = displayName(id);
+    if (action === "open") {
+      if (id.startsWith("ghost:")) notice.warn(t.gr_insp_unresolved);
+      else setRoute(`page:${id}`);
+      return;
+    }
+    if (action === "link") {
+      setQueryPrefill(t.gr_link_question.split("{a}").join(name));
+      setRoute("query");
+      return;
+    }
+    // A wiki gap is not a session, so it cannot join the sessions→wiki harvest
+    // queue. It is a WANTED topic: the same recall-miss log the Ask abstention
+    // card writes, so the next ingest knows what was missing.
+    const vault = currentVault?.path;
+    if (!vault) return;
+    void ipc
+      .recordRecallMiss(vault, name)
+      .then(() => notice.ok(t.gr_want_done.split("{n}").join(name)))
+      .catch((e: unknown) => notice.warn(String(e)));
+  };
+
+  const selectNode = (id: string): void => {
+    setSelected(id);
+    sceneRef.current?.focusNode(id);
+    myceliumFocusRef.current?.(id);
+  };
+
+  const surveyCounts: SurveyCounts = {
+    total: 0,
+    sample: 0,
+    own: 0,
+    unresolved: 0,
+    orphans: 0,
+    noBacklink: 0,
+    clusters: 0,
+    maplessClusters: 0,
+    fresh30d: 0,
+    cited: 0,
+    ...derived?.counts,
+    gaps: (gapReport ? gapCount(gapReport) : 0) + (derived?.noBacklink.length ?? 0),
+    neighbors: hops ? hops.size - 1 : null,
+    sessions: sessionCount,
+  };
+
   // Research bridges (cluster-level gaps) need the semantic-similarity pairs —
   // fetched lazily the first time the gap panel opens, independent of the
   // semantic-edges display toggle.
   const [bridgeSem, setBridgeSem] = useState<SemEdge[] | null>(null);
+  const clustersQ = settings.question === "clusters";
   useEffect(() => {
-    if (!gapsOpen || bridgeSem !== null) return;
+    if (!clustersQ || bridgeSem !== null) return;
     let killed = false;
     ipc
       .semanticEdges(4)
@@ -399,22 +531,22 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     return () => {
       killed = true;
     };
-  }, [gapsOpen, bridgeSem]);
+  }, [clustersQ, bridgeSem]);
 
   const bridges = useMemo(() => {
     const g = graphRef.current;
-    if (!gapsOpen || !g || g.order === 0 || !bridgeSem?.length) return [];
+    if (!clustersQ || !g || g.order === 0 || !bridgeSem?.length) return [];
     return clusterBridges(g, bridgeSem);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gapsOpen, bridgeSem, counts, glEpoch]);
+  }, [clustersQ, bridgeSem, counts, glEpoch]);
 
   // Dashed 3D hint lines between the bridged cluster centroids while the
   // panel is open.
   useEffect(() => {
     sceneRef.current?.setBridgeHints(
-      gapsOpen ? bridges.map((b) => [b.a, b.b] as [number, number]) : [],
+      clustersQ ? bridges.map((b) => [b.a, b.b] as [number, number]) : [],
     );
-  }, [bridges, gapsOpen]);
+  }, [bridges, clustersQ]);
 
   // "Ask about this gap" → draft a research question and hop to the Ask page.
   function askBridge(b: ClusterBridge): void {
@@ -627,6 +759,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // though the preference is still on. Re-runs when either flips (both are
     // deps), disposing this scene on the way into the field.
     if (s.multiverse && !enteredUniverseRef.current) return;
+    const t0 = performance.now();
     const theme = makeTheme(s.skin);
 
     const allowed = computeAllowed(adjacency, allFiles, {
@@ -637,6 +770,12 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       existingOnly: s.existingOnly,
       showOrphans: s.showOrphans,
     });
+    // "샘플 숨기기": on the owner's vault the 51 seeded first-run notes are 80%
+    // of what is drawn, so the honest picture needs a switch that removes them.
+    if (s.hideSample) {
+      const root = currentVault?.path ?? "";
+      for (const id of [...allowed]) if (isSamplePath(root, id)) allowed.delete(id);
+    }
     const graph: VaultGraph = buildGraph(adjacency, allowed, {
       nodeSize: s.nodeSize,
       starDim: theme.starDim,
@@ -655,6 +794,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     });
     graphRef.current = graph;
     setCounts({ nodes: graph.order, edges: graph.size });
+    setBuild((b) => ({ builds: b.builds + 1, ms: performance.now() - t0 }));
     if (graph.order === 0) return;
 
     // Reset transient style for the fresh scene.
@@ -1060,6 +1200,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     settings.folderFilter,
     deferredSearch,
     settings.existingOnly,
+    settings.hideSample,
     settings.showOrphans,
     settings.nodeSize,
     settings.folderGalaxies,
@@ -1793,32 +1934,6 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
           <ZoomButtons sceneRef={sceneRef} t={t} onFit={() => myceliumFitRef.current?.()} />
           <button
             type="button"
-            className="graph-toolbar__btn graph-toolbar__btn--badged"
-            onClick={() => setGapsOpen((v) => !v)}
-            aria-pressed={gapsOpen}
-            aria-label={t.gr_gaps_btn ?? "Gap analysis"}
-            title={t.gr_gaps_btn ?? "Gap analysis"}
-          >
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-              <line x1="12" y1="9" x2="12" y2="13" />
-              <line x1="12" y1="17" x2="12.01" y2="17" />
-            </svg>
-            {gapReport && gapCount(gapReport) > 0 ? (
-              <span className="graph-toolbar__badge">{gapCount(gapReport)}</span>
-            ) : null}
-          </button>
-          <button
-            type="button"
             className="graph-toolbar__btn"
             onClick={() => setDrawerOpen((v) => !v)}
             aria-pressed={drawerOpen}
@@ -1849,7 +1964,29 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             ?
           </button>
         </div>
+        <GraphQuestions
+          t={t}
+          settings={settings}
+          counts={surveyCounts}
+          build={build}
+          onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
+        />
         <div className="graph-body">
+          {/* The gaps column: the one part of this screen that produces an
+              answer, so it is a fixed column, not a drawer you have to know to
+              open. Hidden while the multiverse field owns the stage. */}
+          {!showMultiverse ? (
+            <GraphGaps
+              t={t}
+              groups={gapReport ? gapGroups(gapReport, derived?.noBacklink ?? [], t) : []}
+              total={gapReport ? gapCount(gapReport) : 0}
+              bridges={bridges}
+              onAskBridge={askBridge}
+              selected={selected}
+              onSelect={selectNode}
+              onAction={act}
+            />
+          ) : null}
           <div
             className={
               "graph-canvas-wrap" +
@@ -2001,13 +2138,15 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                   setPath(null);
                   pushStyle();
                 }}
-                onSelect={(id) => {
-                  setSelected(id);
-                  sceneRef.current?.focusNode(id);
-                  myceliumFocusRef.current?.(id);
-                }}
+                onSelect={selectNode}
                 onOpen={(id) => setRoute(`page:${id}`)}
                 onClose={() => setSelected(null)}
+                isSample={(id) => isSamplePath(currentVault?.path ?? "", id)}
+                onAction={act}
+                onNeighbors={(id) => {
+                  setSelected(id);
+                  setSettings((prev) => ({ ...prev, question: "neighbors" }));
+                }}
               />
             ) : null}
             {!showMultiverse ? (
@@ -2016,20 +2155,6 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 galaxies={legendGalaxies}
                 isolated={isolated}
                 onIsolate={isolateCommunity}
-              />
-            ) : null}
-            {!showMultiverse && gapsOpen && gapReport ? (
-              <GraphGaps
-                t={t}
-                report={gapReport}
-                bridges={bridges}
-                onSelect={(id) => {
-                  setSelected(id);
-                  sceneRef.current?.focusNode(id);
-                  myceliumFocusRef.current?.(id);
-                }}
-                onAskBridge={askBridge}
-                onClose={() => setGapsOpen(false)}
               />
             ) : null}
             {helpOpen ? (
@@ -2096,6 +2221,89 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
       </div>
     </div>
   );
+}
+
+/** Everything the questions read, derived once per built graph. */
+interface Derived {
+  nodes: Map<string, EncNode>;
+  /** Communities with no map (frontmatter `type: overview`) page. */
+  mapless: Set<number>;
+  /** Linked notes nobody links back to — a gap the report itself misses. */
+  noBacklink: string[];
+  maxBacklinks: number;
+  counts: Omit<SurveyCounts, "gaps" | "neighbors" | "sessions">;
+}
+
+function derive(
+  graph: VaultGraph,
+  adjacency: Adjacency,
+  vaultRoot: string,
+): Derived {
+  const nodes = new Map<string, EncNode>();
+  const noBacklink: string[] = [];
+  const members = new Map<number, string[]>();
+  const hasMap = new Set<number>();
+  let maxBacklinks = 1;
+  let sample = 0;
+  let own = 0;
+  let unresolved = 0;
+  let orphans = 0;
+  let fresh30d = 0;
+  let cited = 0;
+
+  graph.forEachNode((id, a) => {
+    const ghost = id.startsWith("ghost:");
+    const backlinks = ghost
+      ? 0
+      : (adjacency.backward[id] ?? []).filter((src) => graph.hasNode(src)).length;
+    const cites = a.sourceCount ?? adjacency.meta?.[id]?.sourceCount ?? 0;
+    const deg = graph.degree(id);
+    if (backlinks > maxBacklinks) maxBacklinks = backlinks;
+    if (ghost) unresolved++;
+    else if (isSamplePath(vaultRoot, id)) sample++;
+    else own++;
+    if (!ghost && deg === 0) orphans++;
+    if (!ghost && deg > 0 && backlinks === 0) noBacklink.push(id);
+    if (!ghost && (a.age ?? 9999) <= 30) fresh30d++;
+    if (cites > 0) cited++;
+    if (a.community >= 0) {
+      (members.get(a.community) ?? members.set(a.community, []).get(a.community)!).push(id);
+      if (a.nodeType === MAP_TYPE) hasMap.add(a.community);
+    }
+    nodes.set(id, {
+      id,
+      label: ghost ? id.slice("ghost:".length) : stem(id),
+      ghost,
+      deg,
+      backlinks,
+      cites,
+      ageDays: a.age ?? 9999,
+      color: a.color,
+      community: a.community,
+    });
+  });
+
+  const mapless = new Set<number>();
+  for (const cm of members.keys()) if (!hasMap.has(cm)) mapless.add(cm);
+
+  return {
+    nodes,
+    mapless,
+    noBacklink,
+    maxBacklinks,
+    counts: {
+      total: graph.order,
+      sample,
+      own,
+      unresolved,
+      orphans,
+      noBacklink: noBacklink.length,
+      clusters: members.size,
+      maplessClusters: mapless.size,
+      fresh30d,
+      cited,
+    },
+  };
 }
 
 function ZoomButtons({

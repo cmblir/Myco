@@ -347,6 +347,47 @@ export interface Strings {
   q_raw: string;
   gr_title: string;
   gr_lede: string;
+  gr_canvas_aria: string;
+  gr_q_lead: string;
+  gr_q_orphans: string;
+  gr_q_orphans_u: string;
+  gr_q_sub_orphans: string;
+  gr_q_clusters: string;
+  gr_q_clusters_u: string;
+  gr_q_sub_clusters: string;
+  gr_q_time: string;
+  gr_q_time_u: string;
+  gr_q_sub_time: string;
+  gr_q_neighbors: string;
+  gr_q_neighbors_u: string;
+  gr_q_sub_neighbors: string;
+  gr_q_pick: string;
+  gr_size: string;
+  gr_size_backlinks: string;
+  gr_size_cites: string;
+  gr_hide_sample: string;
+  gr_show_unresolved: string;
+  gr_rebuilds: string;
+  gr_honest_lead: string;
+  gr_honest: string;
+  gr_honest_sessions: string;
+  gr_gap_nobacklink: string;
+  gr_act_link: string;
+  gr_act_harvest: string;
+  gr_act_neighbors: string;
+  gr_act_open_s: string;
+  gr_act_link_s: string;
+  gr_act_want_s: string;
+  gr_insp_cites: string;
+  gr_insp_sample: string;
+  gr_insp_own: string;
+  gr_insp_nocite: string;
+  gr_enc_orphans: string;
+  gr_enc_clusters: string;
+  gr_enc_time: string;
+  gr_enc_neighbors: string;
+  gr_link_question: string;
+  gr_want_done: string;
   gr_legend: string;
   gr_filter: string;
   gr_node_count: string;
@@ -2057,6 +2098,47 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_title: "Graph",
     gr_lede:
       "Pages and the links between them. Drag nodes to feel the simulation pull, click a node to open it, open the settings panel to tune.",
+    gr_canvas_aria: "Vault link map. Arrow keys move the selection, Enter opens the note.",
+    gr_q_lead: "What this screen answers",
+    gr_q_orphans: "Where is it empty",
+    gr_q_orphans_u: "gaps",
+    gr_q_sub_orphans: "orphans {orphans} · unresolved {unresolved} · no backlink {nobacklink}",
+    gr_q_clusters: "What clumps together",
+    gr_q_clusters_u: "clusters",
+    gr_q_sub_clusters: "{nomap} without a map page · {map} with one",
+    gr_q_time: "What grew lately",
+    gr_q_time_u: "in 30 days",
+    gr_q_sub_time: "the {sample} sample notes are frozen at install time",
+    gr_q_neighbors: "This note's neighbours",
+    gr_q_neighbors_u: "2 hops",
+    gr_q_sub_neighbors: "2 hops from the selected note",
+    gr_q_pick: "Pick a note first",
+    gr_size: "Node size",
+    gr_size_backlinks: "size = backlinks",
+    gr_size_cites: "size = citations",
+    gr_hide_sample: "Hide the {n} sample notes",
+    gr_show_unresolved: "Show unresolved links",
+    gr_rebuilds: "scene rebuilds {n} · {ms} ms",
+    gr_honest_lead: "This graph draws {n} nodes",
+    gr_honest: "first-run sample {sample} ({pct}%) · your own notes {own} · unresolved {unresolved}. Notes carrying a citation: {cited}.",
+    gr_honest_sessions: "{n} session transcripts are NOT here — sessions/ is excluded by graphData's NON_KNOWLEDGE_FOLDERS.",
+    gr_gap_nobacklink: "Nobody links here",
+    gr_act_link: "Suggest links",
+    gr_act_harvest: "Mark as wanted",
+    gr_act_neighbors: "Show its neighbours",
+    gr_act_open_s: "open",
+    gr_act_link_s: "link",
+    gr_act_want_s: "want",
+    gr_insp_cites: "Citations",
+    gr_insp_sample: "first-run sample",
+    gr_insp_own: "your note",
+    gr_insp_nocite: "no citation",
+    gr_enc_orphans: "colour = category · size = links · dim = already connected",
+    gr_enc_clusters: "block = cluster · dashed = no map page · dotted line = unlinked but related",
+    gr_enc_time: "colour = last edited (one ramp) · dim = untouched for 6 months",
+    gr_enc_neighbors: "brightness = hop distance (0 and 1 lit, 2 dim, the rest nearly invisible)",
+    gr_link_question: "\"{a}\" sits unconnected in my vault. Which of my notes should link to it, and what would the link say?",
+    gr_want_done: "Logged \"{n}\" as a wanted topic",
     gr_legend: "Legend",
     gr_filter: "Filter",
     gr_node_count: "nodes",
@@ -3825,6 +3907,47 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_title: "그래프",
     gr_lede:
       "페이지와 그 사이의 연결. 노드를 드래그하면 시뮬레이션이 따라옵니다. 우측 설정 패널에서 필터/디스플레이/포스를 조정하세요.",
+    gr_canvas_aria: "볼트 링크 지도. 방향키로 노트를 옮겨 고르고, Enter 로 엽니다.",
+    gr_q_lead: "이 화면이 답하는 질문",
+    gr_q_orphans: "어디가 비었나",
+    gr_q_orphans_u: "빈 곳",
+    gr_q_sub_orphans: "고아 {orphans} · 미해결 {unresolved} · 무백링크 {nobacklink}",
+    gr_q_clusters: "무엇이 뭉쳐 있나",
+    gr_q_clusters_u: "클러스터",
+    gr_q_sub_clusters: "지도 없는 클러스터 {nomap} · 지도 있는 {map}",
+    gr_q_time: "최근 무엇이 자랐나",
+    gr_q_time_u: "30일 내",
+    gr_q_sub_time: "샘플 {sample}개는 설치일에 고정",
+    gr_q_neighbors: "이 노트의 이웃",
+    gr_q_neighbors_u: "2홉 이웃",
+    gr_q_sub_neighbors: "선택한 노트 기준 2홉",
+    gr_q_pick: "노트를 하나 고르세요",
+    gr_size: "노드 크기 기준",
+    gr_size_backlinks: "크기 = 백링크",
+    gr_size_cites: "크기 = 인용",
+    gr_hide_sample: "샘플 {n}개 숨기기",
+    gr_show_unresolved: "미해결 링크 표시",
+    gr_rebuilds: "씬 재빌드 {n}회 · {ms} ms",
+    gr_honest_lead: "이 그래프가 그리는 건 {n}개 노드",
+    gr_honest: "첫 실행 샘플 {sample}개({pct}%) · 내가 쓴 노트 {own}개 · 미해결 {unresolved}개. 인용을 가진 노트는 {cited}개.",
+    gr_honest_sessions: "세션 {n}건은 여기에 없다 — sessions/ 는 graphData 의 NON_KNOWLEDGE_FOLDERS 에서 구조적으로 빠진다.",
+    gr_gap_nobacklink: "아무도 참조 안 함",
+    gr_act_link: "링크 제안",
+    gr_act_harvest: "수확 대상으로",
+    gr_act_neighbors: "이 노트의 이웃만 보기",
+    gr_act_open_s: "열기",
+    gr_act_link_s: "링크",
+    gr_act_want_s: "수확",
+    gr_insp_cites: "인용",
+    gr_insp_sample: "첫 실행 샘플",
+    gr_insp_own: "내 노트",
+    gr_insp_nocite: "인용 0",
+    gr_enc_orphans: "색 = 카테고리 · 크기 = 링크 수 · 흐림 = 이미 연결됨",
+    gr_enc_clusters: "블록 = 클러스터 · 점선 테두리 = 지도 페이지 없음 · 점선 = 안 이어진 인접 주제",
+    gr_enc_time: "색 = 최근 수정(단일 램프) · 흐림 = 6개월 이상 방치",
+    gr_enc_neighbors: "밝기 = 홉 거리(0·1 밝게, 2 흐리게, 그 밖 거의 안 보임)",
+    gr_link_question: "볼트에서 \"{a}\" 가 연결되지 않은 채로 있습니다. 어떤 노트가 여기에 링크해야 하고, 그 링크는 무슨 말을 해야 할까요?",
+    gr_want_done: "\"{n}\" 을(를) 필요한 주제로 기록했습니다",
     gr_legend: "범례",
     gr_filter: "필터",
     gr_node_count: "노드",
@@ -5471,6 +5594,47 @@ export const STRINGS: Record<Lang, Strings> = {
     gr_title: "グラフ",
     gr_lede:
       "ページとリンク。ノードをドラッグするとシミュレーションが追従。右側パネルでフィルター/表示/力を調整。",
+    gr_canvas_aria: "ボルトのリンク地図。矢印キーでノートを選び、Enter で開きます。",
+    gr_q_lead: "この画面が答える問い",
+    gr_q_orphans: "どこが空いているか",
+    gr_q_orphans_u: "空き",
+    gr_q_sub_orphans: "孤立 {orphans} · 未解決 {unresolved} · 被リンク0 {nobacklink}",
+    gr_q_clusters: "何がまとまっているか",
+    gr_q_clusters_u: "クラスタ",
+    gr_q_sub_clusters: "地図なし {nomap} · 地図あり {map}",
+    gr_q_time: "最近何が育ったか",
+    gr_q_time_u: "30日以内",
+    gr_q_sub_time: "サンプル {sample} 件はインストール日に固定",
+    gr_q_neighbors: "このノートの隣人",
+    gr_q_neighbors_u: "2ホップ",
+    gr_q_sub_neighbors: "選択したノートから2ホップ",
+    gr_q_pick: "ノートを一つ選んでください",
+    gr_size: "ノードの大きさ",
+    gr_size_backlinks: "大きさ = 被リンク",
+    gr_size_cites: "大きさ = 引用",
+    gr_hide_sample: "サンプル {n} 件を隠す",
+    gr_show_unresolved: "未解決リンクを表示",
+    gr_rebuilds: "シーン再構築 {n} 回 · {ms} ms",
+    gr_honest_lead: "このグラフが描くのは {n} ノード",
+    gr_honest: "初回サンプル {sample} 件（{pct}%）· 自分のノート {own} 件 · 未解決 {unresolved} 件。引用を持つノートは {cited} 件。",
+    gr_honest_sessions: "セッション {n} 件はここにありません — sessions/ は graphData の NON_KNOWLEDGE_FOLDERS で構造的に除外されます。",
+    gr_gap_nobacklink: "誰も参照していない",
+    gr_act_link: "リンクを提案",
+    gr_act_harvest: "必要な話題として記録",
+    gr_act_neighbors: "隣人だけ表示",
+    gr_act_open_s: "開く",
+    gr_act_link_s: "リンク",
+    gr_act_want_s: "記録",
+    gr_insp_cites: "引用",
+    gr_insp_sample: "初回サンプル",
+    gr_insp_own: "自分のノート",
+    gr_insp_nocite: "引用 0",
+    gr_enc_orphans: "色 = カテゴリ · 大きさ = リンク数 · かすみ = すでに接続済み",
+    gr_enc_clusters: "ブロック = クラスタ · 破線 = 地図ページなし · 点線 = 未接続の近い話題",
+    gr_enc_time: "色 = 最終更新（単一ランプ）· かすみ = 半年以上放置",
+    gr_enc_neighbors: "明るさ = ホップ距離（0・1 は明るく、2 はかすみ、それ以外はほぼ不可視）",
+    gr_link_question: "ボルトの中で「{a}」が接続されないままです。どのノートがここにリンクすべきで、そのリンクは何を言うべきでしょうか？",
+    gr_want_done: "「{n}」を必要な話題として記録しました",
     gr_legend: "凡例",
     gr_filter: "フィルター",
     gr_node_count: "ノード",
