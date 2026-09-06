@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -37,6 +38,18 @@ export default defineConfig({
     __UPDATER_CONFIGURED__: JSON.stringify(updaterConfigured),
   },
   plugins: [react()],
+  // `@codemirror/lang-markdown` statically imports `@codemirror/lang-html`
+  // (HTML-in-markdown: tag completion + nested parsing), which drags the
+  // @lezer html/css/javascript grammars along — 167 kB minified, measured.
+  // The reader uses none of it, so lang-html resolves to a no-op stub. Kept
+  // identical in vitest.config.ts: tests must run what ships.
+  resolve: {
+    alias: {
+      "@codemirror/lang-html": fileURLToPath(
+        new URL("./src/lib/langHtmlStub.ts", import.meta.url),
+      ),
+    },
+  },
   clearScreen: false,
   server: {
     port: 5173,

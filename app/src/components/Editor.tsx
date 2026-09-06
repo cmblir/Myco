@@ -120,7 +120,13 @@ export default function Editor({
           ...completionKeymap,
         ]),
         // GFM base: Task/Strikethrough nodes exist only here (Live relies on them).
-        markdown({ base: markdownLanguage }),
+        // No `codeLanguages`: a fence is a plain mono block, and the html/css/
+        // javascript grammars lang-markdown would otherwise carry are aliased
+        // away in vite.config.ts (see src/lib/langHtmlStub.ts, -167 kB).
+        // `completeHTMLTags` is off because that path needs the real lang-html.
+        // ponytail: to bring fence colours back, load `codeLanguages` lazily
+        // when a fence scrolls into the viewport and reconfigure — never at boot.
+        markdown({ base: markdownLanguage, completeHTMLTags: false }),
         liveComp.of([]),
         extrasComp.of([]),
         EditorView.lineWrapping,
