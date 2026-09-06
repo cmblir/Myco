@@ -193,6 +193,32 @@ impl Ledger {
         self.duplicates
     }
 
+    /// Conversations recorded (every `<source>:<id>` key).
+    pub fn conversations(&self) -> usize {
+        self.entries.len()
+    }
+
+    /// Recorded conversations per `<source>` prefix; a key with no `:` counts
+    /// under `unknown`.
+    pub fn per_source(&self) -> BTreeMap<String, usize> {
+        let mut out: BTreeMap<String, usize> = BTreeMap::new();
+        for key in self.entries.keys() {
+            let src = key.split_once(':').map_or("unknown", |(s, _)| s);
+            *out.entry(src.to_string()).or_default() += 1;
+        }
+        out
+    }
+
+    /// Session files with a clean-import stamp.
+    pub fn files_stamped(&self) -> usize {
+        self.files.len()
+    }
+
+    /// Distinct bodies in the body index.
+    pub fn bodies_indexed(&self) -> usize {
+        self.bodies.len()
+    }
+
     /// If this file imported cleanly before and hasn't changed since (same
     /// mtime + length), return how many conversations it yielded — the caller
     /// skips reading it and counts those as already imported.

@@ -3055,6 +3055,118 @@ pub fn status(root: &Path) -> DistillStatus {
     }
 }
 
+/// A quarantine item whose TTL runs out within `report`'s seven-day window.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct ExpiringQuarantine {
+    /// Vault-relative content path, e.g. `_inbox/quarantine/note.md`.
+    pub path: String,
+    /// Unix seconds the TTL sweep becomes eligible to trash it.
+    pub expires: i64,
+}
+
+/// A proposal still awaiting the user's decision (`status` missing or
+/// `pending`) — approved-but-unapplied ones are `status`'s count, not a
+/// decision this list should ask for again.
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub struct ProposalSummary {
+    /// Vault-relative, e.g. `work/feedback/2026-08-12-archive.md`.
+    pub path: String,
+    pub action: String,
+    /// The `# heading` `write_proposal` puts right after the frontmatter.
+    pub title: String,
+}
+
+/// The no-LLM detection view behind the MCP `distill_report` tool: what the
+/// gate has not scored yet per inflow tree, which quarantine items expire
+/// soon, and which proposals still want a decision. Reads the same `.myco/`
+/// state as `status`; writes nothing.
+#[derive(Clone, Debug, Default, serde::Serialize)]
+pub struct DistillReport {
+    /// `_inbox` / `raw` / `sessions` → unscored candidate count.
+    pub unscored_by_folder: std::collections::BTreeMap<String, usize>,
+    /// Soonest expiry first.
+    pub quarantine_expiring_soon: Vec<ExpiringQuarantine>,
+    /// Filename order.
+    pub proposals: Vec<ProposalSummary>,
+}
+
+const QUARANTINE_EXPIRING_WINDOW_SECS: i64 = 7 * 86_400;
+
+pub fn report(root: &Path) -> DistillReport {
+    let store = crate::vector_index::VectorStore::path_for(&root.to_string_lossy())
+        .map(|p| crate::vector_index::VectorStore::load(&p))
+        .unwrap_or_default();
+    let state = state_load(root, &store.model);
+    let trees: [(&str, &[&str]); 3] = [
+        (crate::commands::DEST_INBOX, &[QUARANTINE_DIR]),
+        ("raw", &[RAW_ARCHIVE_DIR]),
+        (crate::commands::DEST_SESSIONS, &[RAW_ARCHIVE_DIR]),
+    ];
+    let mut unscored_by_folder = std::collections::BTreeMap::new();
+    for (start, exclude) in trees {
+        let mut found = Vec::new();
+        walk_inflow(root, start, exclude, &mut found);
+        let unscored = found
+            .iter()
+            .filter(|c| !state.scored.contains_key(&c.rel))
+            .count();
+        unscored_by_folder.insert(start.to_string(), unscored);
+    }
+    let now = now_secs();
+    let mut quarantine_expiring_soon: Vec<ExpiringQuarantine> = quarantine_entries(root)
+        .into_iter()
+        .map(|(e, _)| e)
+        .filter(|e| e.expires > 0 && e.expires - now <= QUARANTINE_EXPIRING_WINDOW_SECS)
+        .map(|e| ExpiringQuarantine {
+            path: e.path,
+            expires: e.expires,
+        })
+        .collect();
+    quarantine_expiring_soon
+        .sort_by(|a, b| a.expires.cmp(&b.expires).then_with(|| a.path.cmp(&b.path)));
+    let mut proposals = Vec::new();
+    for (entry, kind) in crate::vault::vault_entries(&root.join("work/feedback")) {
+        if !kind.is_file() || entry.path().extension().and_then(|x| x.to_str()) != Some("md") {
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(entry.path()) else {
+            continue;
+        };
+        let Some(map) = proposal_frontmatter(&content) else {
+            continue;
+        };
+        if !is_pending_map(&map) {
+            continue;
+        }
+        let action = match map.get("action") {
+            Some(gray_matter::Pod::String(s)) => s.clone(),
+            _ => String::new(),
+        };
+        let body = gray_matter::Matter::<gray_matter::engine::YAML>::new()
+            .parse::<gray_matter::Pod>(&content)
+            .map(|p| p.content)
+            .unwrap_or_default();
+        let title = body
+            .lines()
+            .map(str::trim)
+            .find_map(|l| l.strip_prefix("# "))
+            .unwrap_or("")
+            .trim()
+            .to_string();
+        proposals.push(ProposalSummary {
+            path: format!("work/feedback/{}", entry.file_name().to_string_lossy()),
+            action,
+            title,
+        });
+    }
+    proposals.sort_by(|a, b| a.path.cmp(&b.path));
+    DistillReport {
+        unscored_by_folder,
+        quarantine_expiring_soon,
+        proposals,
+    }
+}
+
 /// Gate-admitted Full-tier ledger entries ready for the LLM ingest pipeline
 /// (Phase B, Task 3) — every `scored` entry whose tier is `"full"`, still
 /// sitting in `_inbox/` or `raw/`'s own top level, has no `wiki/source-

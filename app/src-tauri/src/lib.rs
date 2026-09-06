@@ -34,6 +34,7 @@ pub mod page_opens;
 pub mod parser;
 pub mod perf;
 pub mod pipeline;
+pub mod profile;
 pub mod provenance;
 pub mod providers;
 pub mod registry;

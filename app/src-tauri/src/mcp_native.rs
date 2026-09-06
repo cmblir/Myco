@@ -964,6 +964,65 @@ struct GitCommitArgs {
     project: String,
 }
 
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ImportConversationArgs {
+    /// The transcript as text — paste it, do not describe it.
+    raw_text: String,
+    /// Short source slug: chatgpt | claude | claude-code | codex, or another
+    /// lowercase slug.
+    source: String,
+    #[serde(default)]
+    title: String,
+    /// Keeps re-imports idempotent; omitted = a hash of the text.
+    #[serde(default)]
+    conversation_id: String,
+    /// `YYYY-MM-DD` the conversation happened; omitted = today.
+    #[serde(default)]
+    created: String,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct ImportSessionArgs {
+    /// A session file on this machine, e.g. ~/.claude/projects/**/*.jsonl or
+    /// ~/.codex/sessions/**/*.jsonl.
+    jsonl_path: String,
+    /// "sessions" (default: the searchable archive) or "_inbox" (queued for
+    /// the next ingest pass).
+    #[serde(default)]
+    dest: String,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct WikifyPendingArgs {
+    /// Items to return (1-10, default 3).
+    #[serde(default)]
+    limit: Option<usize>,
+    /// Keys (`<source>:<conversation_id>`) whose pages are written — checked off.
+    #[serde(default)]
+    done: Vec<String>,
+    #[serde(default)]
+    project: String,
+}
+
+#[derive(Debug, Deserialize, schemars::JsonSchema)]
+struct SetupProfileArgs {
+    #[serde(default)]
+    role: String,
+    #[serde(default)]
+    goals: Vec<String>,
+    #[serde(default)]
+    interests: Vec<String>,
+    /// How the owner likes answers — depth, format, tone.
+    #[serde(default)]
+    style: String,
+    #[serde(default)]
+    project: String,
+}
+
 #[tool_router]
 impl McpServer {
     pub fn new(app: tauri::AppHandle) -> Self {
@@ -2083,6 +2142,155 @@ impl McpServer {
             .unwrap_or_default();
         json_result(json!({ "ok": true, "hash": hash, "files": files }))
     }
+
+    // ─── import / wikify / ledger / distill / profile ─────────────────────────
+    // Ported from the retired Python server onto the app's own modules.
+
+    /// One transcript the caller already holds → `raw/conversations/`.
+    #[tool(
+        description = "Import one conversation transcript into raw/conversations/<source>/ — dedup by <source>:<conversation_id> AND by body (a re-export under a new id is refused), secrets/PII-scanned like add_raw_source, then queued for wikify_pending. Changed content under a known id lands as a new .rN revision (raw/ is immutable)."
+    )]
+    async fn import_conversation(
+        &self,
+        Parameters(a): Parameters<ImportConversationArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        match import_conversation_at(
+            &root,
+            &a.raw_text,
+            &a.source,
+            &a.title,
+            &a.conversation_id,
+            &a.created,
+            settings::load().pii_quarantine_enabled,
+        ) {
+            Ok(out) => json_result(out),
+            Err(e) => fail(e),
+        }
+    }
+
+    /// One coding-session file → the app's own importer (parsers, dedup
+    /// ledger, secret quarantine, month buckets).
+    #[tool(
+        description = "Import a coding-session .jsonl (Claude Code project session or Codex rollout) through the app's own parsers and dedup ledger. dest: sessions (default — the searchable archive; the app's harvest queue promotes a session into the wiki) | _inbox (the next ingest pass turns it into pages). A conversation holding a secret is quarantined, never written."
+    )]
+    async fn import_session(
+        &self,
+        Parameters(a): Parameters<ImportSessionArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let dest = if a.dest.trim().is_empty() {
+            commands::DEST_SESSIONS
+        } else {
+            a.dest.trim()
+        };
+        let dest = match commands::import_dest(dest) {
+            Ok(d) => d,
+            Err(e) => return fail(e),
+        };
+        let path = match session_file(&a.jsonl_path) {
+            Ok(p) => p,
+            Err(e) => return fail(e),
+        };
+        let outcome = match tauri::async_runtime::spawn_blocking(move || {
+            commands::run_import(&root, &[path], dest, |_| {})
+        })
+        .await
+        {
+            Ok(o) => o,
+            Err(e) => return fail(format!("join failed: {e}")),
+        };
+        json_result(import_outcome_json(dest, &outcome))
+    }
+
+    /// The import queue: transcripts no wiki page cites yet.
+    #[tool(
+        description = "Imported-but-not-yet-wikified transcripts (from import_conversation), oldest first, each with a 2,400-char excerpt; write pages citing its src_slug, then call again with done=[key,...] to check them off. Empty = the import queue is fully wikified."
+    )]
+    async fn wikify_pending(
+        &self,
+        Parameters(a): Parameters<WikifyPendingArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        match wikify_pending_at(&root, a.limit.unwrap_or(3), &a.done) {
+            Ok(out) => json_result(out),
+            Err(e) => fail(e),
+        }
+    }
+
+    /// The dedup ledger's counters.
+    #[tool(
+        description = "Import dedup ledger: conversations recorded per source, session files stamped, distinct bodies indexed and duplicates refused, plus the wikify queue"
+    )]
+    async fn ledger_status(
+        &self,
+        Parameters(a): Parameters<ProjectArg>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        json_result(ledger_status_at(&root))
+    }
+
+    /// The Distill tab's numbers, for an agent.
+    #[tool(
+        description = "Distillation status (no LLM): backlog, proposals awaiting resolution (pending or approved), quarantine count, gate state, last run, and whether the count trigger is exceeded — the numbers the app's Distill tab shows"
+    )]
+    async fn distill_status(
+        &self,
+        Parameters(a): Parameters<ProjectArg>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        json_result(distill_status_at(&root))
+    }
+
+    /// The no-LLM detection pass, read-only.
+    #[tool(
+        description = "No-LLM distillation detection pass: unscored inflow per folder (_inbox / raw / sessions), quarantine items expiring within 7 days, proposals still awaiting a decision. Reads .myco/ state, writes nothing."
+    )]
+    async fn distill_report(
+        &self,
+        Parameters(a): Parameters<ProjectArg>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        let mut out = serde_json::to_value(crate::distill::report(&root)).unwrap_or(Value::Null);
+        out["ok"] = json!(true);
+        json_result(out)
+    }
+
+    /// Interview-driven `profile.md`.
+    #[tool(
+        description = "Interview-driven personalisation of <vault>/profile.md. Call with no answers to get the four questions (and the existing profile); ask the user, then call again with role/goals/interests/style to write it — empty fields keep their current value. The profile weights distillation and, in the app, Ask/ingest context. Secrets are warned about, not blocked (profile.md is mutable)."
+    )]
+    async fn setup_profile(
+        &self,
+        Parameters(a): Parameters<SetupProfileArgs>,
+    ) -> Result<CallToolResult, McpError> {
+        let root = match resolve_root(&a.project) {
+            Ok(r) => r,
+            Err(e) => return fail(e),
+        };
+        match setup_profile_at(&root, &a.role, &a.goals, &a.interests, &a.style) {
+            Ok(out) => json_result(out),
+            Err(e) => fail(e),
+        }
+    }
 }
 
 /// The usage brief a client receives at `initialize` — the same one the
@@ -2273,6 +2481,305 @@ fn archive_inbox(root: &Path, filename: &str, pii_quarantine: bool) -> Result<Va
     Ok(out)
 }
 
+// ─── import / wikify / ledger / distill / profile bodies ─────────────────────
+
+/// `^[a-z0-9][a-z0-9-]{0,31}$` — the source slug an import is filed under.
+fn is_source_slug(s: &str) -> bool {
+    let mut chars = s.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_lowercase() || c.is_ascii_digit())
+        && s.len() <= 32
+        && chars.all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+}
+
+/// A conversation id as a filename: runs of anything outside `[A-Za-z0-9._-]`
+/// become one `-`, and the ends are trimmed of dashes.
+fn sanitize_id(s: &str) -> String {
+    let mut out = String::new();
+    let mut dash = false;
+    for c in s.trim().chars() {
+        if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') {
+            out.push(c);
+            dash = false;
+        } else if !dash {
+            out.push('-');
+            dash = true;
+        }
+    }
+    out.trim_matches('-').to_string()
+}
+
+/// `import_conversation` body: dedup (key+fingerprint, then body) against the
+/// import ledger → the raw/ guard → `raw/conversations/<source>/<id>[.rN].md`
+/// → ledger + wikify queue. `Err` is the structured refusal (nothing written).
+fn import_conversation_at(
+    root: &Path,
+    raw_text: &str,
+    source: &str,
+    title: &str,
+    conversation_id: &str,
+    created: &str,
+    pii_quarantine: bool,
+) -> Result<Value, String> {
+    use crate::importers::ledger::{body_hash, fingerprint, Ledger};
+    use crate::importers::wikify::{Pending, PendingItem};
+    let source = source.trim().to_lowercase();
+    if !is_source_slug(&source) {
+        return Err(format!(
+            "source must be a short slug like 'chatgpt', 'claude', 'claude-code', 'codex' (got: {source:?})"
+        ));
+    }
+    let text = raw_text.trim();
+    if text.is_empty() {
+        return Err("raw_text is empty".to_string());
+    }
+    let mut conv_id = sanitize_id(conversation_id);
+    if conv_id.is_empty() {
+        conv_id = fingerprint(text)[..12].to_string();
+    }
+    let key = format!("{source}:{conv_id}");
+    let fp = fingerprint(text);
+    let mut ledger = Ledger::load(root);
+    if ledger.seen(&key, &fp) {
+        return Ok(json!({ "ok": true, "status": "skipped_duplicate", "key": key }));
+    }
+    let hash = body_hash(text);
+    if ledger.seen_body(&hash, &key) {
+        ledger.note_duplicates(1);
+        ledger.save(root)?;
+        return Ok(json!({
+            "ok": true, "status": "skipped_duplicate", "key": key,
+            "reason": "same body already imported under another conversation id",
+        }));
+    }
+    let prior = ledger.entry(&key).is_some();
+    let raw = raw_dir(root);
+    let mut rel = format!("conversations/{source}/{conv_id}.md");
+    let mut rev = 0;
+    while raw.join(&rel).exists() {
+        rev += 1;
+        rel = format!("conversations/{source}/{conv_id}.r{rev}.md");
+    }
+    let today = registry::today_utc();
+    let safe_title = if title.trim().is_empty() {
+        conv_id.clone()
+    } else {
+        crate::profile::sanitize_line(title)
+    };
+    let day = if created.trim().is_empty() {
+        today.clone()
+    } else {
+        created.trim().to_string()
+    };
+    let content = format!(
+        "---\ntitle: \"{}\"\nsource: {source}\nconversation_id: {conv_id}\ncreated: {day}\nimported: {today}\nvia: mcp\n---\n\n{text}\n",
+        safe_title.replace('"', "\\\"")
+    );
+    let pii_warning = raw_source_guard(&content, pii_quarantine)?;
+    let Some(target) = safe_join(&raw, &rel) else {
+        return Err(format!("path escapes raw/: {rel}"));
+    };
+    if let Some(p) = target.parent() {
+        std::fs::create_dir_all(p).map_err(|e| format!("create raw/conversations: {e}"))?;
+    }
+    vault::write_file(&target.to_string_lossy(), &content)?;
+    ledger.record(key.clone(), fp);
+    ledger.record_body(hash, &key);
+    ledger.save(root)?;
+    let stem = target
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let mut pending = Pending::load(root);
+    pending.push(PendingItem {
+        key: key.clone(),
+        raw_path: rel_to(root, &target),
+        src_slug: format!("src-{stem}"),
+        title: safe_title,
+        imported: today,
+    });
+    pending.save(root)?;
+    crate::inflow_log::record(root, "mcp", "import_conversation");
+    let mut out = json!({
+        "ok": true,
+        "status": if prior || rev > 0 { "reimported_update" } else { "imported" },
+        "key": key,
+        "raw_path": rel_to(root, &target),
+        "src_slug": format!("src-{stem}"),
+        "pending_total": pending.pending.len(),
+        "next": "call wikify_pending to turn imported transcripts into wiki pages",
+    });
+    if let Some(w) = pii_warning {
+        out["pii_warning"] = json!(w);
+    }
+    Ok(out)
+}
+
+/// `import_session`'s file argument: `~` expanded, must be an existing
+/// `.jsonl` under 50 MB. Host paths are allowed on purpose — session files
+/// live under `~/.claude` / `~/.codex`, not in the vault.
+fn session_file(path: &str) -> Result<PathBuf, String> {
+    let p = path.trim();
+    let expanded = match p.strip_prefix("~/") {
+        Some(rest) => {
+            let home = std::env::var(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+                .map_err(|_| "cannot expand ~: no home directory".to_string())?;
+            PathBuf::from(home).join(rest)
+        }
+        None => PathBuf::from(p),
+    };
+    if !expanded.is_file() {
+        return Err(format!("not a file: {path}"));
+    }
+    if expanded.extension().and_then(|e| e.to_str()) != Some("jsonl") {
+        return Err("expected a .jsonl session file".to_string());
+    }
+    let len = std::fs::metadata(&expanded).map(|m| m.len()).unwrap_or(0);
+    if len > 50 * 1024 * 1024 {
+        return Err("session file over 50 MB".to_string());
+    }
+    Ok(expanded)
+}
+
+/// The app's `ImportOutcome` as a tool result: `ok` is false only when the
+/// file itself could not be read or parsed (`failed`), never for skips.
+fn import_outcome_json(dest: &str, outcome: &commands::ImportOutcome) -> Value {
+    let mut out = serde_json::to_value(outcome).unwrap_or(Value::Null);
+    out["ok"] = json!(outcome.failed.is_empty());
+    out["dest"] = json!(dest);
+    if let Some(f) = outcome.failed.first() {
+        out["error"] = json!(f.error);
+    }
+    out["next"] = json!(if dest == commands::DEST_SESSIONS {
+        "the transcript is searchable (search scope=sessions); the app's harvest queue promotes it into _inbox/ for the wiki"
+    } else {
+        "the next ingest pass turns each _inbox/ doc into wiki pages"
+    });
+    out
+}
+
+/// `wikify_pending` body: check `done` off, then the oldest `limit` items
+/// with an excerpt of each transcript.
+fn wikify_pending_at(root: &Path, limit: usize, done: &[String]) -> Result<Value, String> {
+    let mut pending = crate::importers::wikify::Pending::load(root);
+    if !done.is_empty() {
+        pending.done(done);
+        pending.save(root)?;
+    }
+    let items: Vec<Value> = pending
+        .pending
+        .iter()
+        .take(limit.clamp(1, 10))
+        .map(|p| {
+            // The queue file is ours, but a vault-relative path from disk is
+            // still confined before it is read.
+            let excerpt = safe_join(root, &p.raw_path)
+                .and_then(|abs| std::fs::read_to_string(abs).ok())
+                .map(|t| t.chars().take(2400).collect::<String>())
+                .unwrap_or_default();
+            json!({
+                "key": p.key, "raw_path": p.raw_path, "src_slug": p.src_slug,
+                "title": p.title, "excerpt": excerpt,
+            })
+        })
+        .collect();
+    let instructions = if items.is_empty() {
+        "Nothing pending — the import queue is fully wikified."
+    } else {
+        "For each item: read the full raw file if the excerpt is not enough, create or update \
+         wiki pages with inline [^src-*] citations to its src_slug, update wiki/index.md, \
+         git_commit, then call wikify_pending(done=[key])."
+    };
+    Ok(json!({
+        "ok": true,
+        "pending_total": pending.pending.len(),
+        "wikified_total": pending.done_count,
+        "items": items,
+        "instructions": instructions,
+    }))
+}
+
+/// `ledger_status` body.
+fn ledger_status_at(root: &Path) -> Value {
+    let ledger = crate::importers::ledger::Ledger::load(root);
+    let pending = crate::importers::wikify::Pending::load(root);
+    json!({
+        "ok": true,
+        "conversations_recorded": ledger.conversations(),
+        "per_source": ledger.per_source(),
+        "session_files_stamped": ledger.files_stamped(),
+        "bodies_indexed": ledger.bodies_indexed(),
+        "duplicates": ledger.duplicates(),
+        "wikify_pending": pending.pending.len(),
+        "wikified_total": pending.done_count,
+        "ledger_path": ".myco/ledger.json",
+        "pending_path": ".myco/wikify-pending.json",
+    })
+}
+
+/// `distill_status` body: the app's `DistillStatus` plus the count-trigger
+/// check the Distill tab runs on it.
+fn distill_status_at(root: &Path) -> Value {
+    let status = crate::distill::status(root);
+    let cfg = crate::distill::config_load(root);
+    let trigger_exceeded = cfg.enabled && status.backlog >= cfg.count_trigger;
+    let mut out = serde_json::to_value(&status).unwrap_or(Value::Null);
+    out["ok"] = json!(true);
+    out["trigger_exceeded"] = json!(trigger_exceeded);
+    out["hint"] = if trigger_exceeded {
+        json!("run distillation in the myco app")
+    } else {
+        Value::Null
+    };
+    out
+}
+
+/// `setup_profile` body: no answers → the interview; answers → merge into
+/// the existing profile and write it.
+fn setup_profile_at(
+    root: &Path,
+    role: &str,
+    goals: &[String],
+    interests: &[String],
+    style: &str,
+) -> Result<Value, String> {
+    use crate::profile;
+    let existing = profile::load(root);
+    if role.trim().is_empty() && goals.is_empty() && interests.is_empty() && style.trim().is_empty()
+    {
+        let questions: Vec<Value> = profile::INTERVIEW
+            .iter()
+            .map(|(field, question)| json!({ "field": field, "question": question }))
+            .collect();
+        return Ok(json!({ "ok": true, "questions": questions, "existing": existing }));
+    }
+    let mut merged = existing.unwrap_or_default();
+    if !role.trim().is_empty() {
+        merged.role = role.to_string();
+    }
+    if !goals.is_empty() {
+        merged.goals = goals.to_vec();
+    }
+    if !interests.is_empty() {
+        merged.interests = interests.to_vec();
+    }
+    if !style.trim().is_empty() {
+        merged.style = style.to_string();
+    }
+    profile::save(root, &merged)?;
+    let mut out = json!({ "ok": true, "path": profile::FILE_NAME, "profile": merged });
+    // Warn, not block: profile.md is mutable, so a redact-and-resave fixes it
+    // (unlike raw/, where the guard refuses before writing).
+    let hits = secrets_scan::scan(&profile::serialize(&merged));
+    if !hits.is_empty() {
+        out["secret_warning"] = json!(format!(
+            "possible secrets detected: {} — profile.md is sent to configured AI providers when \
+             injection is on; redact and re-save if unintended.",
+            hits.join(", ")
+        ));
+    }
+    Ok(out)
+}
+
 impl McpServer {
     /// The app's hybrid retrieval over `root`, restricted to one `search`
     /// scope — the same managed indexes and embedder the Ask page uses.
@@ -2333,6 +2840,10 @@ mod tests {
     use super::suspect_scan;
     use super::{
         archive_inbox, collect_md, list_wiki_pages, read_wiki_page, search_row, server_info,
+    };
+    use super::{
+        distill_status_at, import_conversation_at, import_outcome_json, ledger_status_at,
+        session_file, setup_profile_at, wikify_pending_at,
     };
     use crate::commands::HybridHit;
     use crate::retrieval::{Bm25Index, TierWeights};
@@ -2817,5 +3328,587 @@ body of {rel}
         );
         let err = read_wiki_page(root, "../raw/x.md").unwrap_err();
         assert_eq!(err, "path escapes wiki/: ../raw/x.md");
+    }
+
+    // ─── import_conversation / import_session / wikify_pending / ledger_status ─
+    // Ported from mcp-server/test_myco_mcp.py; the ledger fingerprint is the
+    // Rust one (no `py-` prefix) and raw_path is vault-relative.
+
+    fn import_vault() -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("raw")).unwrap();
+        std::fs::create_dir_all(dir.path().join("wiki")).unwrap();
+        dir
+    }
+
+    #[test]
+    fn import_conversation_writes_the_ledger_and_the_wikify_queue() {
+        let dir = import_vault();
+        let root = dir.path();
+        let out = import_conversation_at(
+            root,
+            "User: hi\nAssistant: hello",
+            "chatgpt",
+            "Greeting",
+            "abc123",
+            "",
+            false,
+        )
+        .unwrap();
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["status"], "imported");
+        assert_eq!(out["key"], "chatgpt:abc123");
+        assert_eq!(out["src_slug"], "src-abc123");
+        let raw = root.join("raw/conversations/chatgpt/abc123.md");
+        assert!(raw.is_file());
+        let body = std::fs::read_to_string(&raw).unwrap();
+        assert!(body.contains("source: chatgpt") && body.contains("Assistant: hello"));
+        assert!(body.contains("title: \"Greeting\""), "{body}");
+        let ledger = crate::importers::ledger::Ledger::load(root);
+        assert!(ledger.seen(
+            "chatgpt:abc123",
+            &crate::importers::ledger::fingerprint("User: hi\nAssistant: hello")
+        ));
+        let status = ledger_status_at(root);
+        assert_eq!(status["conversations_recorded"], 1);
+        assert_eq!(status["per_source"], serde_json::json!({ "chatgpt": 1 }));
+        assert_eq!(status["bodies_indexed"], 1);
+        assert_eq!(status["wikify_pending"], 1);
+    }
+
+    #[test]
+    fn import_conversation_duplicate_skips_and_a_changed_transcript_appends_a_revision() {
+        let dir = import_vault();
+        let root = dir.path();
+        import_conversation_at(root, "same text", "claude", "", "c1", "", false).unwrap();
+        let again =
+            import_conversation_at(root, "same text", "claude", "", "c1", "", false).unwrap();
+        assert_eq!(again["status"], "skipped_duplicate");
+        let changed =
+            import_conversation_at(root, "the chat continued", "claude", "", "c1", "", false)
+                .unwrap();
+        assert_eq!(changed["status"], "reimported_update");
+        // raw/ immutable: the original file is untouched, the revision is new.
+        let original =
+            std::fs::read_to_string(root.join("raw/conversations/claude/c1.md")).unwrap();
+        assert!(original.contains("same text"));
+        assert!(root.join("raw/conversations/claude/c1.r1.md").is_file());
+    }
+
+    #[test]
+    fn import_conversation_refuses_a_bad_source_and_empty_text() {
+        let dir = import_vault();
+        let err = import_conversation_at(dir.path(), "text", "Not A Slug!", "", "", "", false)
+            .unwrap_err();
+        assert!(err.starts_with("source must be a short slug"), "{err}");
+        let err =
+            import_conversation_at(dir.path(), "   ", "chatgpt", "", "", "", false).unwrap_err();
+        assert_eq!(err, "raw_text is empty");
+        assert!(collect_md(&dir.path().join("raw")).is_empty());
+    }
+
+    // The harvest wave's body oracle applies here too: the same transcript
+    // pasted under a new id is a duplicate, and a secret never reaches raw/.
+    #[test]
+    fn import_conversation_refuses_a_known_body_under_a_new_id_and_a_secret() {
+        let dir = import_vault();
+        let root = dir.path();
+        import_conversation_at(root, "alpha talk", "chatgpt", "", "a", "", false).unwrap();
+        let dup =
+            import_conversation_at(root, "alpha talk", "chatgpt", "", "b", "", false).unwrap();
+        assert_eq!(dup["status"], "skipped_duplicate");
+        assert!(dup["reason"]
+            .as_str()
+            .unwrap()
+            .contains("another conversation id"));
+        assert!(!root.join("raw/conversations/chatgpt/b.md").exists());
+        assert_eq!(ledger_status_at(root)["duplicates"], 1);
+        let err = import_conversation_at(
+            root,
+            "token: sk-abcdefghijklmnopqrstuvwxyz012345",
+            "chatgpt",
+            "",
+            "leak",
+            "",
+            false,
+        )
+        .unwrap_err();
+        assert!(err.starts_with("refused: possible secrets ("), "{err}");
+        assert!(!root.join("raw/conversations/chatgpt/leak.md").exists());
+        assert_eq!(ledger_status_at(root)["conversations_recorded"], 1);
+    }
+
+    /// A user turn long enough to clear the importer's 800-spoken-char floor.
+    fn long_turn(seed: &str) -> String {
+        format!("{seed} ").repeat(900 / (seed.len() + 1) + 2)
+    }
+
+    #[test]
+    fn import_session_parses_a_claude_code_jsonl_through_the_apps_importer() {
+        let dir = import_vault();
+        let root = dir.path();
+        let session = dir.path().join("s1.jsonl");
+        let prompt = long_turn("fix the bug in the scheduler");
+        std::fs::write(
+            &session,
+            format!(
+                "{{\"type\":\"user\",\"cwd\":\"/repo\",\"gitBranch\":\"main\",\"sessionId\":\"sess-9\",\"timestamp\":\"2026-08-01T10:00:00Z\",\"message\":{{\"role\":\"user\",\"content\":[{{\"type\":\"text\",\"text\":\"{prompt}\"}}]}}}}\n\
+                 {{\"type\":\"assistant\",\"sessionId\":\"sess-9\",\"message\":{{\"role\":\"assistant\",\"content\":[{{\"type\":\"text\",\"text\":\"done\"}}]}}}}\n\
+                 {{\"type\":\"tool_result\",\"noise\":true}}\n"
+            ),
+        )
+        .unwrap();
+        let path = session_file(&session.to_string_lossy()).unwrap();
+        let outcome = crate::commands::run_import(root, &[path], "sessions", |_| {});
+        let out = import_outcome_json("sessions", &outcome);
+        assert_eq!(out["ok"], true, "{out}");
+        assert_eq!(out["source"], "claude-code");
+        assert_eq!(out["imported"], 1);
+        assert_eq!(out["dest"], "sessions");
+        let docs = collect_md(&root.join("sessions"));
+        assert_eq!(docs.len(), 1, "{docs:?}");
+        assert!(docs[0].ends_with("claude-code-sess-9.md"), "{docs:?}");
+        let body = std::fs::read_to_string(&docs[0]).unwrap();
+        assert!(body.contains("fix the bug in the scheduler"));
+        assert!(body.contains("source: claude-code"));
+        // Idempotent: the same file again is a skip, not a second doc.
+        let again = crate::commands::run_import(
+            root,
+            &[session_file(&session.to_string_lossy()).unwrap()],
+            "sessions",
+            |_| {},
+        );
+        assert_eq!((again.imported, again.skipped), (0, 1));
+    }
+
+    #[test]
+    fn import_session_parses_a_codex_rollout_into_the_inbox_when_asked() {
+        let dir = import_vault();
+        let root = dir.path();
+        let session = dir.path().join("rollout-1.jsonl");
+        let prompt = long_turn("explain rotary embeddings");
+        std::fs::write(
+            &session,
+            format!(
+                "{{\"type\":\"session_meta\",\"timestamp\":\"2026-05-18T23:59:51.000Z\",\"payload\":{{\"id\":\"sess-cdx\",\"cwd\":\"/x\"}}}}\n\
+                 {{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"user\",\"content\":[{{\"type\":\"input_text\",\"text\":\"{prompt}\"}}]}}}}\n\
+                 {{\"type\":\"response_item\",\"payload\":{{\"type\":\"message\",\"role\":\"assistant\",\"content\":[{{\"type\":\"output_text\",\"text\":\"rotary embeddings rotate query and key vectors\"}}]}}}}\n"
+            ),
+        )
+        .unwrap();
+        let outcome = crate::commands::run_import(root, &[session], "_inbox", |_| {});
+        let out = import_outcome_json("_inbox", &outcome);
+        assert_eq!(out["ok"], true, "{out}");
+        assert_eq!(out["source"], "codex");
+        let doc = root.join("_inbox/codex-sess-cdx.md");
+        assert!(doc.is_file());
+        assert!(std::fs::read_to_string(doc)
+            .unwrap()
+            .contains("rotate query and key vectors"));
+    }
+
+    #[test]
+    fn import_session_rejects_an_unrecognized_or_missing_file() {
+        let dir = import_vault();
+        let bad = dir.path().join("notes.jsonl");
+        std::fs::write(&bad, "{\"just\": \"noise\"}\n").unwrap();
+        let outcome = crate::commands::run_import(dir.path(), &[bad], "sessions", |_| {});
+        let out = import_outcome_json("sessions", &outcome);
+        assert_eq!(out["ok"], false);
+        assert!(
+            out["error"].as_str().unwrap().contains("unrecognized"),
+            "{out}"
+        );
+        assert!(collect_md(&dir.path().join("sessions")).is_empty());
+        let err = session_file(&dir.path().join("missing.jsonl").to_string_lossy()).unwrap_err();
+        assert!(err.starts_with("not a file:"), "{err}");
+        let txt = dir.path().join("x.txt");
+        std::fs::write(&txt, "prose").unwrap();
+        assert_eq!(
+            session_file(&txt.to_string_lossy()).unwrap_err(),
+            "expected a .jsonl session file"
+        );
+    }
+
+    #[test]
+    fn wikify_pending_lists_oldest_first_then_checks_off() {
+        let dir = import_vault();
+        let root = dir.path();
+        import_conversation_at(root, "alpha talk", "chatgpt", "", "a", "", false).unwrap();
+        import_conversation_at(root, "beta talk", "chatgpt", "", "b", "", false).unwrap();
+        let out = wikify_pending_at(root, 1, &[]).unwrap();
+        assert_eq!(out["pending_total"], 2);
+        assert_eq!(out["items"].as_array().unwrap().len(), 1);
+        let first = &out["items"][0];
+        assert_eq!(first["key"], "chatgpt:a");
+        assert_eq!(first["raw_path"], "raw/conversations/chatgpt/a.md");
+        assert!(first["excerpt"].as_str().unwrap().contains("alpha talk"));
+        let after = wikify_pending_at(root, 3, &["chatgpt:a".to_string()]).unwrap();
+        assert_eq!(after["pending_total"], 1);
+        assert_eq!(after["wikified_total"], 1);
+        assert_eq!(after["items"][0]["key"], "chatgpt:b");
+        let done = wikify_pending_at(root, 3, &["chatgpt:b".to_string()]).unwrap();
+        assert_eq!(done["items"].as_array().unwrap().len(), 0);
+        assert!(done["instructions"]
+            .as_str()
+            .unwrap()
+            .starts_with("Nothing pending"));
+    }
+
+    #[test]
+    fn ledger_status_reads_a_ledger_the_app_wrote() {
+        let dir = import_vault();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join(".myco")).unwrap();
+        std::fs::write(
+            root.join(".myco/ledger.json"),
+            r#"{"entries":{"chatgpt:x":"0011223344556677","codex:y":"8899aabbccddeeff"},
+                "files":{"/home/u/.claude/projects/a.jsonl":{"mtime_ns":1,"len":2,"convs":1}}}"#,
+        )
+        .unwrap();
+        let s = ledger_status_at(root);
+        assert_eq!(s["conversations_recorded"], 2);
+        assert_eq!(
+            s["per_source"],
+            serde_json::json!({ "chatgpt": 1, "codex": 1 })
+        );
+        assert_eq!(s["session_files_stamped"], 1);
+        assert_eq!(s["bodies_indexed"], 0);
+        assert_eq!(s["wikify_pending"], 0);
+        assert_eq!(s["ledger_path"], ".myco/ledger.json");
+    }
+
+    // ─── distill_status / distill_report ──────────────────────────────────────
+    // Ported from the Python server's tests against the Rust `distill` module.
+    // Two shape differences are the app's: `last_run` is unix seconds (not
+    // ISO), and the scan ledger is embedding-model-gated — a test state file
+    // carries `"model": ""`, the model of the (absent) index under test.
+
+    fn write_proposal(path: &Path, action: &str, title: &str, status: Option<&str>) {
+        let status_line = status.map(|s| format!("status: {s}\n")).unwrap_or_default();
+        write(
+            path,
+            &format!(
+                "---\ntype: distill-proposal\naction: {action}\n{status_line}created: 2026-08-12\npayload: {{\"files\": []}}\n---\n\n# {title}\n\nBody.\n"
+            ),
+        );
+    }
+
+    #[test]
+    fn distill_status_on_an_empty_vault_is_all_zeros() {
+        let dir = tempfile::tempdir().unwrap();
+        let s = distill_status_at(dir.path());
+        assert_eq!(s["ok"], true);
+        assert_eq!(s["backlog"], 0);
+        assert_eq!(s["pending_proposals"], 0);
+        assert_eq!(s["quarantined"], 0);
+        assert!(s["last_run"].is_null());
+        assert_eq!(s["trigger_exceeded"], false);
+        assert!(s["hint"].is_null());
+        assert_eq!(s["gate_active"], false);
+    }
+
+    #[test]
+    fn distill_report_on_an_empty_vault_is_empty_not_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let r = crate::distill::report(dir.path());
+        assert_eq!(
+            r.unscored_by_folder,
+            [("_inbox", 0), ("raw", 0), ("sessions", 0)]
+                .into_iter()
+                .map(|(k, v)| (k.to_string(), v))
+                .collect()
+        );
+        assert!(r.quarantine_expiring_soon.is_empty());
+        assert!(r.proposals.is_empty());
+    }
+
+    #[test]
+    fn distill_status_counts_pending_and_approved_proposals_not_resolved_ones() {
+        let dir = tempfile::tempdir().unwrap();
+        let fb = dir.path().join("work/feedback");
+        write_proposal(
+            &fb.join("one.md"),
+            "archive-batch",
+            "Archive batch one",
+            Some("pending"),
+        );
+        write_proposal(
+            &fb.join("two.md"),
+            "admit-cluster",
+            "New topic forming",
+            None,
+        );
+        // A stuck approved-but-unapplied proposal still awaits resolution.
+        write_proposal(
+            &fb.join("three.md"),
+            "admit-cluster",
+            "Approved",
+            Some("approved"),
+        );
+        write_proposal(&fb.join("done.md"), "delete-batch", "Old", Some("done"));
+        write_proposal(
+            &fb.join("gone.md"),
+            "delete-batch",
+            "Dismissed",
+            Some("dismissed"),
+        );
+        assert_eq!(distill_status_at(dir.path())["pending_proposals"], 3);
+    }
+
+    #[test]
+    fn distill_report_lists_pending_proposals_with_title_and_action() {
+        let dir = tempfile::tempdir().unwrap();
+        let fb = dir.path().join("work/feedback");
+        write_proposal(
+            &fb.join("one.md"),
+            "archive-batch",
+            "Archive batch one",
+            Some("pending"),
+        );
+        write_proposal(
+            &fb.join("resolved.md"),
+            "delete-batch",
+            "Resolved",
+            Some("dismissed"),
+        );
+        // Approved is status's business, not a decision to ask for again.
+        write_proposal(
+            &fb.join("approved.md"),
+            "admit-cluster",
+            "Approved",
+            Some("approved"),
+        );
+        let r = crate::distill::report(dir.path());
+        assert_eq!(
+            r.proposals,
+            vec![crate::distill::ProposalSummary {
+                path: "work/feedback/one.md".into(),
+                action: "archive-batch".into(),
+                title: "Archive batch one".into(),
+            }]
+        );
+    }
+
+    #[test]
+    fn distill_status_trigger_exceeded_when_backlog_meets_count_trigger() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join(".myco/distill.json"), r#"{"count_trigger": 1}"#);
+        write(&root.join("_inbox/new.md"), "some fresh inflow content\n");
+        let s = distill_status_at(root);
+        assert_eq!(s["backlog"], 1);
+        assert_eq!(s["trigger_exceeded"], true);
+        assert_eq!(s["hint"], "run distillation in the myco app");
+        // `enabled: false` never nags, whatever the backlog.
+        write(
+            &root.join(".myco/distill.json"),
+            r#"{"count_trigger": 1, "enabled": false}"#,
+        );
+        assert_eq!(distill_status_at(root)["trigger_exceeded"], false);
+    }
+
+    #[test]
+    fn distill_status_backlog_excludes_already_scored_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        write(&root.join("_inbox/seen.md"), "already scored\n");
+        write(
+            &root.join(".myco/distill-state.json"),
+            r#"{"model":"","scored":{"_inbox/seen.md":{"hash":1,"tier":"full","at":0}}}"#,
+        );
+        assert_eq!(distill_status_at(root)["backlog"], 0);
+        assert_eq!(crate::distill::report(root).unscored_by_folder["_inbox"], 0);
+    }
+
+    #[test]
+    fn distill_status_reports_last_run_as_unix_seconds() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join(".myco/distill-state.json"),
+            r#"{"model":"","scored":{},"last_run":1755000000}"#,
+        );
+        assert_eq!(distill_status_at(dir.path())["last_run"], 1_755_000_000);
+    }
+
+    #[test]
+    fn distill_report_flags_quarantine_expiring_within_a_week() {
+        let dir = tempfile::tempdir().unwrap();
+        let q = dir.path().join("_inbox/quarantine");
+        let now = super::now_secs() as i64;
+        write(&q.join("soon.md"), "quarantined\n");
+        write(
+            &q.join("soon.verdict.json"),
+            &format!("{{\"expires\": {}}}", now + 3_600),
+        );
+        write(&q.join("later.md"), "quarantined\n");
+        write(
+            &q.join("later.verdict.json"),
+            &format!("{{\"expires\": {}}}", now + 30 * 86_400),
+        );
+        let r = crate::distill::report(dir.path());
+        let paths: Vec<&str> = r
+            .quarantine_expiring_soon
+            .iter()
+            .map(|e| e.path.as_str())
+            .collect();
+        assert_eq!(paths, vec!["_inbox/quarantine/soon.md"]);
+        assert_eq!(r.quarantine_expiring_soon[0].expires, now + 3_600);
+    }
+
+    #[test]
+    fn distill_status_counts_quarantine_toward_backlog_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let q = dir.path().join("_inbox/quarantine");
+        write(&q.join("a.md"), "quarantined\n");
+        write(&q.join("a.verdict.json"), r#"{"expires": 9999999999}"#);
+        // The quarantined .md itself is not unscored _inbox inflow — only its
+        // sidecar counts, once.
+        let s = distill_status_at(dir.path());
+        assert_eq!(s["backlog"], 1);
+        assert_eq!(s["quarantined"], 1);
+    }
+
+    #[test]
+    fn distill_status_invalid_or_non_utf8_state_degrades_to_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join(".myco/distill-state.json");
+        write(&state, "{not valid json");
+        let s = distill_status_at(dir.path());
+        assert_eq!(s["backlog"], 0);
+        assert_eq!(s["pending_proposals"], 0);
+        assert!(s["last_run"].is_null());
+        assert_eq!(s["trigger_exceeded"], false);
+        std::fs::write(&state, b"\xff\xfe not utf-8 \x80\x81").unwrap();
+        assert_eq!(distill_status_at(dir.path())["backlog"], 0);
+    }
+
+    #[test]
+    fn distill_report_skips_an_invalid_json_sidecar() {
+        let dir = tempfile::tempdir().unwrap();
+        let q = dir.path().join("_inbox/quarantine");
+        let now = super::now_secs() as i64;
+        write(&q.join("bad.md"), "x\n");
+        write(&q.join("bad.verdict.json"), "{not valid json");
+        write(&q.join("good.md"), "x\n");
+        write(
+            &q.join("good.verdict.json"),
+            &format!("{{\"expires\": {}}}", now + 3_600),
+        );
+        let r = crate::distill::report(dir.path());
+        let paths: Vec<&str> = r
+            .quarantine_expiring_soon
+            .iter()
+            .map(|e| e.path.as_str())
+            .collect();
+        assert_eq!(paths, vec!["_inbox/quarantine/good.md"]);
+    }
+
+    #[test]
+    fn distill_status_ignores_a_proposal_without_frontmatter() {
+        let dir = tempfile::tempdir().unwrap();
+        write(
+            &dir.path().join("work/feedback/no-frontmatter.md"),
+            "Just a plain note, no --- block.\n",
+        );
+        assert_eq!(distill_status_at(dir.path())["pending_proposals"], 0);
+        assert!(crate::distill::report(dir.path()).proposals.is_empty());
+    }
+
+    // ─── setup_profile ────────────────────────────────────────────────────────
+
+    #[test]
+    fn setup_profile_with_no_answers_returns_the_interview() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = setup_profile_at(dir.path(), "", &[], &[], "").unwrap();
+        let questions = out["questions"].as_array().unwrap();
+        assert_eq!(questions.len(), 4);
+        let fields: std::collections::BTreeSet<&str> = questions
+            .iter()
+            .map(|q| q["field"].as_str().unwrap())
+            .collect();
+        assert_eq!(fields, ["goals", "interests", "role", "style"].into());
+        assert!(out["existing"].is_null());
+        assert!(
+            !dir.path().join("profile.md").exists(),
+            "asking writes nothing"
+        );
+    }
+
+    #[test]
+    fn setup_profile_with_no_answers_reports_the_existing_profile() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_profile_at(dir.path(), "Backend engineer", &[], &[], "").unwrap();
+        let out = setup_profile_at(dir.path(), "", &[], &[], "").unwrap();
+        assert_eq!(out["existing"]["role"], "Backend engineer");
+    }
+
+    #[test]
+    fn setup_profile_writes_profile_md_at_the_vault_root() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = setup_profile_at(
+            dir.path(),
+            "Backend engineer",
+            &[],
+            &["rust".to_string(), "ontologies".to_string()],
+            "",
+        )
+        .unwrap();
+        assert_eq!(out["ok"], true);
+        assert_eq!(out["path"], "profile.md");
+        let written = std::fs::read_to_string(dir.path().join("profile.md")).unwrap();
+        assert!(written.contains("Backend engineer"));
+        assert!(written.contains("- rust") && written.contains("- ontologies"));
+        assert!(written.contains("Settings → 증류"), "the header comment");
+    }
+
+    #[test]
+    fn setup_profile_merges_and_empty_fields_keep_their_values() {
+        let dir = tempfile::tempdir().unwrap();
+        setup_profile_at(
+            dir.path(),
+            "Backend engineer",
+            &["ship the gate".to_string()],
+            &[],
+            "Concise",
+        )
+        .unwrap();
+        let out = setup_profile_at(
+            dir.path(),
+            "",
+            &[],
+            &["rust".to_string(), "vector search".to_string()],
+            "",
+        )
+        .unwrap();
+        assert_eq!(out["profile"]["role"], "Backend engineer");
+        assert_eq!(
+            out["profile"]["goals"],
+            serde_json::json!(["ship the gate"])
+        );
+        assert_eq!(
+            out["profile"]["interests"],
+            serde_json::json!(["rust", "vector search"])
+        );
+        assert_eq!(out["profile"]["style"], "Concise");
+    }
+
+    #[test]
+    fn setup_profile_warns_about_a_secret_but_still_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = setup_profile_at(
+            dir.path(),
+            "",
+            &[],
+            &[],
+            "my key is sk-abcdefghijklmnopqrstuvwxyz0123456789",
+        )
+        .unwrap();
+        assert_eq!(out["ok"], true);
+        assert!(out["secret_warning"]
+            .as_str()
+            .unwrap()
+            .starts_with("possible secrets detected"));
+        assert!(dir.path().join("profile.md").exists(), "warn, not block");
     }
 }

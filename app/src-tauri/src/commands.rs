@@ -1368,7 +1368,7 @@ pub(crate) fn partition_sessions(root: &std::path::Path) -> Result<(usize, usize
 /// `dest` reaches `apply_import` as a path segment joined onto the vault root,
 /// so it is never taken on trust: anything but these two literals is refused
 /// rather than sanitized, which is the only way a `../` can't be argued into.
-fn import_dest(dest: &str) -> Result<&'static str, String> {
+pub(crate) fn import_dest(dest: &str) -> Result<&'static str, String> {
     match dest {
         DEST_INBOX => Ok(DEST_INBOX),
         DEST_SESSIONS => Ok(DEST_SESSIONS),
@@ -1376,7 +1376,10 @@ fn import_dest(dest: &str) -> Result<&'static str, String> {
     }
 }
 
-fn run_import(
+/// `pub(crate)`: the MCP `import_session` tool runs the same parse → dedup →
+/// write pass over one file, so an agent-driven import lands exactly where
+/// the app's own would.
+pub(crate) fn run_import(
     root: &std::path::Path,
     files: &[PathBuf],
     dest: &str,
