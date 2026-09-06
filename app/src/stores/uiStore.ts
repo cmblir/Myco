@@ -95,6 +95,9 @@ export interface UIState {
   // the route. Single source of truth: the rail writes it too, so a second
   // deep link after a manual tab switch still moves.
   settingsTab: SettingsTab;
+  // Settings: show only rows whose value differs from the shipped default.
+  // Per device, like the other view prefs.
+  settingsChangedOnly: boolean;
   // Deck path the Study page should open directly (ritual card's 복습 시작 —
   // Q4 item 11). Same deep-link idiom as feedbackTab, but consumed ONCE:
   // PageStudy reads it on mount and clears it, so later Study visits start at
@@ -164,6 +167,7 @@ export interface UIState {
   goForward: () => void;
   setFeedbackTab: (tab: FeedbackTab) => void;
   setSettingsTab: (tab: SettingsTab) => void;
+  setSettingsChangedOnly: (v: boolean) => void;
   setStudyDeck: (path: string | null) => void;
   /** Point the next paint at a section (see focusTarget). */
   focusSection: (id: string) => void;
@@ -200,6 +204,7 @@ export const useUIStore = create<UIState>()(
       navHistory: { entries: ["overview"], idx: 0 },
       feedbackTab: "proposals",
       settingsTab: "model",
+      settingsChangedOnly: false,
       studyDeck: null,
       focusTarget: null,
       splitRoute: null,
@@ -233,6 +238,7 @@ export const useUIStore = create<UIState>()(
       goForward: () => set((s) => stepPatch(s, 1)),
       setFeedbackTab: (feedbackTab) => set({ feedbackTab }),
       setSettingsTab: (settingsTab) => set({ settingsTab }),
+      setSettingsChangedOnly: (settingsChangedOnly) => set({ settingsChangedOnly }),
       setStudyDeck: (studyDeck) => set({ studyDeck }),
       focusSection: (id) =>
         set((s) => ({

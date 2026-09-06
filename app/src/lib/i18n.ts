@@ -1198,6 +1198,8 @@ export interface Strings {
   sb_st_mcp_down: string;
   sb_st_lagging: string;
   sb_st_simulate: string;
+  s_val_on: string;
+  s_val_off: string;
   // Topbar.
   tb_lint: string;
   tb_toggle_sidebar: string;
@@ -2760,6 +2762,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "The MCP server is stopped — agents and Claude Code cannot reach this vault.",
     sb_st_lagging: "{n} wiki pages are outside the index — Ask cannot find them.",
     sb_st_simulate: "Simulate failure",
+    s_val_on: "On",
+    s_val_off: "Off",
     tb_lint: "Lint",
     tb_toggle_sidebar: "Toggle sidebar (⌘B)",
     tb_back: "Back (⌘[)",
@@ -4310,6 +4314,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "MCP 서버가 멈췄습니다 — 에이전트와 Claude Code가 이 볼트에 닿을 수 없습니다.",
     sb_st_lagging: "위키 {n}개가 인덱스 밖에 있습니다 — 질문에서 검색되지 않습니다.",
     sb_st_simulate: "고장 시뮬레이션",
+    s_val_on: "켜짐",
+    s_val_off: "꺼짐",
     tb_lint: "린트",
     tb_toggle_sidebar: "사이드바 토글 (⌘B)",
     tb_back: "뒤로 (⌘[)",
@@ -5674,6 +5680,8 @@ export const STRINGS: Record<Lang, Strings> = {
       "MCP サーバーが停止しています — エージェントと Claude Code はこのボルトに到達できません。",
     sb_st_lagging: "ウィキ {n} ページがインデックス外です — 質問で検索されません。",
     sb_st_simulate: "故障シミュレーション",
+    s_val_on: "オン",
+    s_val_off: "オフ",
     tb_lint: "リント",
     tb_toggle_sidebar: "サイドバー切替 (⌘B)",
     tb_back: "戻る (⌘[)",

@@ -51,10 +51,12 @@ import {
 import { isComposingKey } from "../lib/ime";
 import {
   matchSettings,
-  normalizeQuery,
-  SETTINGS_INDEX,
+  settingsRows,
   type SettingsTab,
+  type SettingsValues,
 } from "../lib/settingsSearch";
+import { SettingsCard, SettingsFilterContext } from "../components/SettingsCard";
+import type { SettingsFilter } from "../components/SettingsCard";
 import { accelFromEvent, formatAccel } from "../lib/shortcutAccel";
 import { useReindexStore } from "../stores/reindexStore";
 import { useUpdateStore } from "../stores/updateStore";
@@ -115,14 +117,41 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   // The last value typed outside an IME composition: matching on every
   // keystroke of a Hangul syllable would flip the tab mid-character.
   const [applied, setApplied] = useState("");
-  const matches = useMemo(() => matchSettings(t, applied), [t, applied]);
-  const bodyRef = useRef<HTMLDivElement>(null);
+  const changedOnly = useUIStore((s) => s.settingsChangedOnly);
+
+  // One registry drives all three: which tabs the rail shows, which cards the
+  // body renders, and what each row is currently set to (lib/settingsSearch).
+  const mascotEnabled = useUIStore((s) => s.mascotEnabled);
+  const overviewTheme = useUIStore((s) => s.overviewTheme);
+  const settings = useSettingsStore((s) => s.settings);
+  const indexedPages = useReindexStore((s) => s.indexedPages);
+  const values: SettingsValues = useMemo(
+    () => ({
+      settings,
+      lang,
+      theme,
+      mascotEnabled,
+      overviewTheme,
+      indexedPages,
+      budgetUsd: getBudgetThreshold(),
+    }),
+    [settings, lang, theme, mascotEnabled, overviewTheme, indexedPages],
+  );
+  const matches = useMemo(
+    () => matchSettings(t, applied, values, changedOnly),
+    [t, applied, values, changedOnly],
+  );
+  const filter = useMemo<SettingsFilter>(() => {
+    const rows = matches.get(tab) ?? [];
+    const byId = new Map(settingsRows(t, values).map((r) => [r.id, r]));
+    return { matched: new Set(rows.map((r) => r.id)), row: (id) => byId.get(id) };
+  }, [matches, tab, t, values]);
 
   function applyQuery(v: string): void {
     setApplied(v);
     // Current tab dropped out → the first tab that still matches. Done here,
     // not in an effect, so the switch sticks after the query is cleared.
-    const hit = matchSettings(t, v);
+    const hit = matchSettings(t, v, values, changedOnly);
     const first = hit.keys().next();
     if (!first.done && !hit.has(tab)) selectTab(first.value);
   }
@@ -138,29 +167,6 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
     setQ("");
     setApplied("");
   }, [tab]);
-
-  // Cards filter by their OWN text (not the index), so an un-indexed card
-  // fails open; a tab-title match shows every card of that tab.
-  useEffect(() => {
-    const root = bodyRef.current;
-    if (!root) return;
-    const nq = normalizeQuery(applied);
-    const showAll =
-      !nq || (matches.get(tab) ?? []).includes(t[SETTINGS_INDEX[tab][0]] ?? "");
-    const apply = () =>
-      root.querySelectorAll<HTMLElement>(".card").forEach((el) =>
-        el.classList.toggle(
-          "s-hide",
-          !showAll && !normalizeQuery(el.textContent ?? "").includes(nq),
-        ),
-      );
-    apply();
-    // Cards that render after an IPC load. childList only: toggling a class
-    // never retriggers.
-    const mo = new MutationObserver(apply);
-    mo.observe(root, { childList: true, subtree: true });
-    return () => mo.disconnect();
-  }, [applied, matches, tab, t]);
 
   // Below 768px the tab rail is a horizontally scrolling row. The default tab
   // is "model", which is not the first one, so without this the rail opens
@@ -228,6 +234,7 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
                   <Icon name={x.icon} size={14} />
                 </span>
                 <span>{x.label}</span>
+                <span className="s-tabcount">{matches.get(x.id)?.length ?? 0}</span>
               </button>
             ))}
         </nav>
@@ -239,7 +246,7 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
             )}
           </div>
         ) : (
-          <div ref={bodyRef}>
+          <SettingsFilterContext.Provider value={filter}>
             {tab === "account" ? <SettingsAccount t={t} /> : null}
             {tab === "model" ? <SettingsModel t={t} /> : null}
             {tab === "providers" ? <SettingsProviders t={t} /> : null}
@@ -258,7 +265,7 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
               </div>
             ) : null}
             {tab === "about" ? <SettingsAbout t={t} /> : null}
-          </div>
+          </SettingsFilterContext.Provider>
         )}
       </div>
     </div>
@@ -294,7 +301,7 @@ function SettingsAccount({ t }: { t: Strings }): JSX.Element {
       <h2 style={{ fontSize: 22, fontWeight: 600, margin: 0 }}>
         {t.s_account}
       </h2>
-      <div className="card row" style={{ gap: 14 }}>
+      <SettingsCard id="account_user" className="card row" style={{ gap: 14 }}>
         <div
           style={{
             width: 56,
@@ -318,7 +325,7 @@ function SettingsAccount({ t }: { t: Strings }): JSX.Element {
             {currentVault?.path ?? (t.s_no_vault ?? "no vault")} · myco
           </div>
         </div>
-      </div>
+      </SettingsCard>
       <div className="field">
         <label>{t.s_vault_path ?? "Vault path"}</label>
         <div className="row">
@@ -378,6 +385,7 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
       </div>
       <ModelPicker
         t={t}
+        rowId="model_query"
         label={t.s_model_query}
         providers={enabled}
         provider={settings.query_provider}
@@ -390,6 +398,7 @@ function SettingsModel({ t }: { t: Strings }): JSX.Element {
       />
       <ModelPicker
         t={t}
+        rowId="model_ingest"
         label={t.s_model_ingest}
         // Ingest writes vault files; a text-only provider (builtin, HTTP APIs,
         // ollama) can only fail after the raw/ copy is already written — so it
@@ -455,7 +464,7 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
   };
 
   return (
-    <div className="card">
+    <SettingsCard id="model_embeddings" hideValue className="card">
       <div className="row" style={{ marginBottom: 8 }}>
         <div style={{ fontWeight: 600 }}>{t.s_embeddings ?? "Semantic search"}</div>
         <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
@@ -544,7 +553,7 @@ function EmbeddingsSetting({ t }: { t: Strings }): JSX.Element {
 
       <AutoReindexToggle t={t} />
       <ArchivedSessionsToggle t={t} />
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -688,7 +697,7 @@ function TrayResidentToggle({ t }: { t: Strings }): JSX.Element | null {
   if (!settings) return null;
   const enabled = settings.tray_resident;
   return (
-    <div className="card">
+    <SettingsCard id="appearance_tray" className="card">
       <div
         className="row"
         style={{
@@ -737,7 +746,7 @@ function TrayResidentToggle({ t }: { t: Strings }): JSX.Element | null {
           />
         </button>
       </div>
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -766,7 +775,7 @@ function NotchToggle({ t }: { t: Strings }): JSX.Element | null {
     });
   };
   return (
-    <div className="card">
+    <SettingsCard id="appearance_notch" className="card">
       <div
         className="row"
         style={{
@@ -815,7 +824,7 @@ function NotchToggle({ t }: { t: Strings }): JSX.Element | null {
           />
         </button>
       </div>
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -895,7 +904,7 @@ function SpotlightShortcutRow({ t }: { t: Strings }): JSX.Element {
   // The description is long enough that a title-left / control-right row always
   // wraps, so the controls sit under it deliberately instead of by accident.
   return (
-    <div className="card">
+    <SettingsCard id="appearance_spot" className="card">
       <div style={{ fontSize: 13, fontWeight: 600 }}>
         {t.s_spot_title ?? "Ask from anywhere"}
       </div>
@@ -930,7 +939,7 @@ function SpotlightShortcutRow({ t }: { t: Strings }): JSX.Element {
       >
         {state.text}
       </div>
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -944,7 +953,7 @@ function BudgetSetting({ t }: { t: Strings }): JSX.Element {
   const fmt = (n: number): string => `$${n.toFixed(2)}`;
 
   return (
-    <div className="card">
+    <SettingsCard id="model_budget" className="card">
       <div style={{ fontWeight: 600 }}>
         {t.s_budget_title ?? "Monthly spend guard"}
       </div>
@@ -1011,7 +1020,7 @@ function BudgetSetting({ t }: { t: Strings }): JSX.Element {
           </div>
         )}
       </div>
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -1029,7 +1038,7 @@ function AutoReflectSetting({
   const enabled = settings.auto_reflect_enabled;
   const interval = settings.auto_reflect_interval_min;
   return (
-    <div className="card">
+    <SettingsCard id="model_autoreflect" className="card">
       <div
         className="row"
         style={{ justifyContent: "space-between", alignItems: "flex-start" }}
@@ -1112,7 +1121,7 @@ function AutoReflectSetting({
           <Icon name="info" size={12} /> {t.rf_extractive}
         </div>
       ) : null}
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -1133,7 +1142,7 @@ function AutoImportSetting({
   const enabled = settings.auto_import_enabled;
   const interval = settings.auto_import_interval_min;
   return (
-    <div className="card">
+    <SettingsCard id="model_autoimport" className="card">
       <div
         className="row"
         style={{ justifyContent: "space-between", alignItems: "flex-start" }}
@@ -1201,7 +1210,7 @@ function AutoImportSetting({
           </span>
         </div>
       ) : null}
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -1217,7 +1226,7 @@ function AutoIngestSetting({
   const enabled = settings.auto_ingest_enabled;
   const interval = settings.auto_ingest_interval_min;
   return (
-    <div className="card">
+    <SettingsCard id="model_autoingest" className="card">
       <div
         className="row"
         style={{ justifyContent: "space-between", alignItems: "flex-start" }}
@@ -1284,12 +1293,13 @@ function AutoIngestSetting({
           </span>
         </div>
       ) : null}
-    </div>
+    </SettingsCard>
   );
 }
 
 function ModelPicker({
   t,
+  rowId,
   label,
   providers,
   provider,
@@ -1299,6 +1309,8 @@ function ModelPicker({
   onPickEffort,
 }: {
   t: Strings;
+  /** Registry row id — "model_query" or "model_ingest". */
+  rowId: string;
   label: string;
   providers: ProviderDef[];
   provider: string;
@@ -1308,7 +1320,7 @@ function ModelPicker({
   onPickEffort: (effort: string) => void;
 }): JSX.Element {
   return (
-    <div className="card">
+    <SettingsCard id={rowId} hideValue className="card">
       <div className="row" style={{ marginBottom: 12 }}>
         <div style={{ fontWeight: 600 }}>{label}</div>
         <span className="muted" style={{ marginLeft: "auto", fontSize: 12 }}>
@@ -1325,7 +1337,7 @@ function ModelPicker({
         effort={effort}
         onPickEffort={onPickEffort}
       />
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -1394,7 +1406,7 @@ function MycoProCard({
   }
 
   return (
-    <div
+    <SettingsCard id="provider_myco-pro"
       className="card"
       style={{
         display: "grid",
@@ -1514,7 +1526,7 @@ function MycoProCard({
           </div>
         ) : null}
       </div>
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -1667,7 +1679,7 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
           }
           if (p.id === "ollama") {
             return (
-              <div
+              <SettingsCard id={`provider_${p.id}`}
                 key={p.id}
                 className="card"
                 style={{
@@ -1719,11 +1731,11 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
                     </div>
                   )}
                 </div>
-              </div>
+              </SettingsCard>
             );
           }
           return (
-            <div
+            <SettingsCard id={`provider_${p.id}`}
               key={p.id}
               className="card"
               style={{
@@ -1882,7 +1894,7 @@ function SettingsProviders({ t }: { t: Strings }): JSX.Element {
                   )
                 ) : null}
               </div>
-            </div>
+            </SettingsCard>
           );
         })}
       </div>
@@ -2204,7 +2216,7 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
         </p>
       </div>
 
-      <div className="card">
+      <SettingsCard id="distill_enabled" className="card">
         <div
           className="row"
           style={{ justifyContent: "space-between", alignItems: "flex-start" }}
@@ -2399,11 +2411,11 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
             />
           </button>
         </div>
-      </div>
+      </SettingsCard>
 
       <SettingsProfile t={t} vaultPath={vaultPath} />
 
-      <div className="card">
+      <SettingsCard id="distill_status" className="card">
         <div className="row" style={{ justifyContent: "space-between" }}>
           <div style={{ fontWeight: 600 }}>
             {t.set_distill_status_title ?? "Status"}
@@ -2618,7 +2630,7 @@ function SettingsDistill({ t }: { t: Strings }): JSX.Element {
             {error}
           </div>
         ) : null}
-      </div>
+      </SettingsCard>
 
       <SettingsArchive t={t} lang={lang} vaultPath={vaultPath} />
 
@@ -2647,7 +2659,7 @@ function VaultHistoryToggle({
   if (!settings) return null;
   const enabled = settings.vault_history_enabled;
   return (
-    <div className="card">
+    <SettingsCard id="distill_history" className="card">
       <div
         className="row"
         style={{
@@ -2702,7 +2714,7 @@ function VaultHistoryToggle({
           />
         </button>
       </div>
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -2715,7 +2727,7 @@ function PiiModeCard({ t }: { t: Strings }): JSX.Element | null {
   if (!settings) return null;
   const quarantine = settings.pii_quarantine_enabled;
   return (
-    <div className="card">
+    <SettingsCard id="distill_pii" className="card">
       <div
         className="row"
         style={{
@@ -2753,7 +2765,7 @@ function PiiModeCard({ t }: { t: Strings }): JSX.Element | null {
           </button>
         </div>
       </div>
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -2788,7 +2800,7 @@ function RawAuditCard({
       ]
     : [];
   return (
-    <div className="card">
+    <SettingsCard id="distill_audit" className="card">
       <div
         className="row"
         style={{ justifyContent: "space-between", alignItems: "center", gap: 12 }}
@@ -2840,7 +2852,7 @@ function RawAuditCard({
         {t.set_audit_note ??
           "The audit is read-only. The app never rewrites raw/; cleanup follows the documented procedure."}
       </div>
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -2958,7 +2970,7 @@ function SettingsArchive({
   );
 
   return (
-    <div className="card">
+    <SettingsCard id="distill_archive" className="card">
       <div className="row" style={{ justifyContent: "space-between" }}>
         <div style={{ fontWeight: 600 }}>
           {t.set_archive_title ?? "Archive storage"}
@@ -3086,7 +3098,7 @@ function SettingsArchive({
           {error}
         </div>
       ) : null}
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -3152,7 +3164,7 @@ function SettingsProfile({
   if (!vaultPath || !loaded) return null;
 
   return (
-    <div className="card">
+    <SettingsCard id="distill_profile" className="card">
       <div style={{ fontWeight: 600 }}>{t.set_profile_title ?? "Profile"}</div>
       <p className="muted" style={{ fontSize: 13, marginTop: 4 }}>
         {t.set_profile_lede ??
@@ -3207,7 +3219,7 @@ function SettingsProfile({
       {error ? (
         <div style={{ color: "#dc2626", fontSize: 12, marginTop: 8 }}>{error}</div>
       ) : null}
-    </div>
+    </SettingsCard>
   );
 }
 
@@ -3258,7 +3270,7 @@ function SettingsLang({
           {t.s_lang_lede}
         </p>
       </div>
-      <div className="card">
+      <SettingsCard id="lang_ui" className="card">
         <div style={{ fontWeight: 600, marginBottom: 10 }}>{t.s_lang_ui}</div>
         <div className="col" style={{ gap: 6 }}>
           {opts.map((o) => {
@@ -3310,7 +3322,7 @@ function SettingsLang({
             );
           })}
         </div>
-      </div>
+      </SettingsCard>
     </div>
   );
 }

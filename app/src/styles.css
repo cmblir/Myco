@@ -1048,10 +1048,44 @@ select {
   gap: 32px;
   margin-top: 16px;
 }
-/* Settings search: a card whose text does not match. !important beats
-   .card.row/.col and MycoProCard's inline grid. */
-.s-hide {
-  display: none !important;
+/* Match count on a settings tab, and the value a row is currently set to —
+   both come from the one row registry (lib/settingsSearch). The value rides
+   in the card's top-right corner so wrapping a card in <SettingsCard> never
+   disturbs the card's own layout. */
+.s-tabcount {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-4);
+}
+.qbtn.active .s-tabcount {
+  color: var(--ink-3);
+}
+[data-srow] {
+  position: relative;
+}
+.s-rowval {
+  position: absolute;
+  top: 10px;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-3);
+  pointer-events: none;
+}
+.s-rowval.is-changed {
+  color: var(--ink);
+}
+.s-rowval.is-changed::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--live);
+  box-shadow: 0 0 6px var(--live);
 }
 .grow {
   flex: 1;
