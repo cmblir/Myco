@@ -1453,6 +1453,14 @@ export interface Strings {
   tb_model_ready: string;
   tb_model_offline: string;
   tb_model_open_settings: string;
+  // Long runs the Topbar reports: live in the activity chip, then a
+  // done/failed pill until the page that explains the run is visited.
+  tb_harvest_running: string;
+  tb_harvest_copying: string;
+  tb_harvest_done: string;
+  tb_harvest_error: string;
+  tb_distill_done: string;
+  tb_distill_error: string;
   // Topbar activity chip + popover.
   tb_activity_label: string;
   tb_activity_n: string; // {n}
@@ -3268,6 +3276,12 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_model_ready: "ready",
     tb_model_offline: "offline",
     tb_model_open_settings: "Open model settings",
+    tb_harvest_running: "Harvesting…",
+    tb_harvest_copying: "Copying sources…",
+    tb_harvest_done: "Harvest done",
+    tb_harvest_error: "Harvest failed",
+    tb_distill_done: "Distill done",
+    tb_distill_error: "Distill failed",
     tb_activity_label: "Background activity",
     tb_activity_n: "Activity {n}",
     tb_activity_running: "Running",
@@ -5069,6 +5083,12 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_model_ready: "준비됨",
     tb_model_offline: "오프라인",
     tb_model_open_settings: "모델 설정 열기",
+    tb_harvest_running: "수확 중",
+    tb_harvest_copying: "원본 복사 중…",
+    tb_harvest_done: "수확 완료",
+    tb_harvest_error: "수확 실패",
+    tb_distill_done: "증류 완료",
+    tb_distill_error: "증류 실패",
     tb_activity_label: "백그라운드 활동",
     tb_activity_n: "활동 {n}",
     tb_activity_running: "진행 중",
@@ -6698,6 +6718,12 @@ export const STRINGS: Record<Lang, Strings> = {
     tb_model_ready: "準備完了",
     tb_model_offline: "オフライン",
     tb_model_open_settings: "モデル設定を開く",
+    tb_harvest_running: "収穫中…",
+    tb_harvest_copying: "ソースをコピー中…",
+    tb_harvest_done: "収穫完了",
+    tb_harvest_error: "収穫に失敗しました",
+    tb_distill_done: "蒸留完了",
+    tb_distill_error: "蒸留に失敗しました",
     tb_activity_label: "バックグラウンド活動",
     tb_activity_n: "活動 {n}",
     tb_activity_running: "実行中",

@@ -28,13 +28,7 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
   const lintProgress = useLintStore((s) => s.progress);
   const runLint = useLintStore((s) => s.runLint);
   const dismissLint = useLintStore((s) => s.dismiss);
-  const markLintSeen = useLintStore((s) => s.markSeen);
   const lintBusy = lintStage === "running";
-
-  // Visiting this page acknowledges a finished lint (clears the Topbar chip).
-  useEffect(() => {
-    markLintSeen();
-  }, [lintStage, markLintSeen]);
 
   useEffect(() => {
     if (!currentVault) return;

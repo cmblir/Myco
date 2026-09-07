@@ -4708,9 +4708,10 @@ hr {
   }
 }
 
-/* Background-activity chips (ingest / lint / ask): drop in like a notification
-   and breathe while the work runs, so leaving the page doesn't mean losing
-   sight of it. `chip-pop` is the finished state — one entrance, no loop. */
+/* Finished-run chips (ingest / lint / ask / distill / harvest): drop in like a
+   notification so leaving the page doesn't mean losing the result. There is no
+   `chip-live` counterpart any more — every LIVE run is drawn by the activity
+   chip's ring instead, which is what keeps the bar to one spinner. */
 @keyframes chip-in {
   from {
     opacity: 0;
@@ -4720,20 +4721,6 @@ hr {
     opacity: 1;
     transform: none;
   }
-}
-@keyframes chip-breathe {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 rgba(22, 163, 74, 0.35);
-  }
-  50% {
-    box-shadow: 0 0 0 5px rgba(22, 163, 74, 0);
-  }
-}
-.chip-live {
-  animation:
-    chip-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1),
-    chip-breathe 1.8s ease-in-out 0.24s infinite;
 }
 .chip-pop {
   animation: chip-in 0.24s cubic-bezier(0.2, 0.8, 0.2, 1);
@@ -5583,7 +5570,6 @@ html.tray-window body {
   .ingest-star,
   .ingest-feed-row,
   .ingest-chip-spinner,
-  .chip-live,
   .chip-pop,
   .activity-icon.is-active {
     animation: none;

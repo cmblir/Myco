@@ -92,7 +92,6 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   const stage = useQueryStore((s) => s.stage);
   const askStore = useQueryStore((s) => s.ask);
   const harvest = useQueryStore((s) => s.harvest);
-  const markSeen = useQueryStore((s) => s.markSeen);
   const endRef = useRef<HTMLDivElement | null>(null);
 
   // "Set up your profile" hint (Phase B, Task 5): checked per vault, plus
@@ -130,12 +129,6 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
     }
     setHintDismissed(true);
   }
-
-  // Visiting this page acknowledges a finished answer (clears the Topbar
-  // chip) — same pattern as lint on the Provenance page.
-  useEffect(() => {
-    markSeen();
-  }, [busy, markSeen]);
 
   // A surface elsewhere (e.g. the graph's gap panel) may have drafted a
   // question for us — consume it once on mount.

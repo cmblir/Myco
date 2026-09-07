@@ -42,12 +42,18 @@ import type { ResurfacePick } from "../stores/resurfaceStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useQueryStore } from "../stores/queryStore";
 import { useReindexStore } from "../stores/reindexStore";
+import type { ReindexStage } from "../stores/reindexStore";
+import { useIngestStore } from "../stores/ingestStore";
+import { useLintStore } from "../stores/lintStore";
+import { useHarvestStore } from "../stores/harvestStore";
+import type { HarvestRun } from "../stores/harvestStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
 import { useDistillStore, pendingMapProposals } from "../stores/distillStore";
 import type { ProposalMeta } from "../stores/distillStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
 import { useNoticeStore } from "../stores/noticeStore";
+import type { NoticeProgress } from "../stores/noticeStore";
 import { useReflectStore } from "../stores/reflectStore";
 import { useSettingsStore } from "../stores/settingsStore";
 
@@ -109,6 +115,121 @@ export function distillFraction(step: DistillRunStep | null): number {
   return i < 0 ? 0 : i / DISTILL_STEPS.length;
 }
 
+/** How far a harvest run has got, 0..1 — or undefined while it is still
+ * copying, when nothing has been ingested yet and no number can move (the
+ * ring spins instead of lying at zero). Pure; unit-tested. */
+export function harvestFraction(run: HarvestRun): number | undefined {
+  if (run.phase !== "ingesting" || run.total <= 0) return undefined;
+  return Math.min(1, run.done / run.total);
+}
+
+/** Live state of every job the bar reports, in one bag — so the priority
+ * ordering in buildRunning is a pure function of it, and testable. */
+export interface RunningSources {
+  ask: { busy: boolean; startedAt: number | null };
+  harvest: HarvestRun;
+  ingest: { running: boolean; startedAt: number | null };
+  lintRunning: boolean;
+  distill: { running: boolean; step: DistillRunStep | null };
+  reflectRunning: boolean;
+  progress: NoticeProgress | null;
+  applyingCount: number;
+  reindex: { stage: ReindexStage; done: number; total: number };
+  /** Clock for the elapsed tickers — passed in so this stays pure. */
+  now: number;
+}
+
+/** Every running activity, most to least urgent to surface when collapsed:
+ * Ask first (the user is actively waiting on it), then the two runs a human
+ * just kicked off by hand — harvest, and the ingest passes harvest drives —
+ * then the background chain, then the jobs nobody is watching.
+ *
+ * This is the ONE place a live run is rendered. The Topbar's pills cover the
+ * FINISHED half only, so the bar can never show two spinners at once — the
+ * rule Ask has followed since the BusyJobsChip came out, now applied to
+ * ingest, lint and harvest too. Pure; unit-tested.
+ *
+ * Harvest and reflect borrow the distill icon: the set has no art for either,
+ * and both are distill-family whole-vault passes. Ingest borrows `indexing`
+ * (it is the write-into-the-wiki pass), lint borrows `link` (it checks
+ * citations). The ask icon stays reserved for "a human is waiting". */
+export function buildRunning(s: RunningSources, t: Strings): RunningActivity[] {
+  const running: RunningActivity[] = [];
+  if (s.ask.busy) {
+    running.push({
+      icon: "ask",
+      label: t.nav_query,
+      detail: s.ask.startedAt ? formatTicker(s.now - s.ask.startedAt) : "",
+    });
+  }
+  if (s.harvest.phase !== null) {
+    running.push({
+      icon: "distill",
+      label: t.tb_harvest_running,
+      detail:
+        s.harvest.phase === "copying"
+          ? t.tb_harvest_copying
+          : `${s.harvest.done}/${s.harvest.total}`,
+      fraction: harvestFraction(s.harvest),
+    });
+  }
+  if (s.ingest.running) {
+    running.push({
+      icon: "indexing",
+      label: t.nav_ingest,
+      detail: s.ingest.startedAt ? formatTicker(s.now - s.ingest.startedAt) : "",
+    });
+  }
+  if (s.lintRunning) {
+    running.push({ icon: "link", label: t.tb_lint, detail: "" });
+  }
+  if (s.distill.running) {
+    running.push({
+      icon: "distill",
+      label: t.set_distill_running ?? "Distilling…",
+      detail: stepLabel(s.distill.step, t),
+      fraction: distillFraction(s.distill.step),
+    });
+  }
+  if (s.reflectRunning) {
+    running.push({
+      icon: "distill",
+      label: t.rf_running_label ?? "Reflect running…",
+      detail: "",
+    });
+  }
+  if (s.progress) {
+    running.push({
+      icon: "link",
+      label: s.progress.label,
+      detail: `${s.progress.done}/${s.progress.total}`,
+      fraction: s.progress.total > 0 ? s.progress.done / s.progress.total : 0,
+    });
+  }
+  if (s.applyingCount > 0) {
+    running.push({
+      icon: "distill",
+      label: t.tb_activity_applying ?? "Applying proposal…",
+      detail: s.applyingCount > 1 ? String(s.applyingCount) : "",
+    });
+  }
+  if (s.reindex.stage === "loading-model" || s.reindex.stage === "indexing") {
+    running.push({
+      icon: "indexing",
+      label: t.s_embeddings_indexing ?? "Indexing…",
+      detail:
+        s.reindex.stage === "loading-model"
+          ? (t.s_embeddings_loading_model ?? "Loading model…")
+          : `${s.reindex.done}/${s.reindex.total}`,
+      fraction:
+        s.reindex.stage === "indexing" && s.reindex.total > 0
+          ? s.reindex.done / s.reindex.total
+          : undefined,
+    });
+  }
+  return running;
+}
+
 /** Circumference of the chip ring (r=6 in a 16-unit box) — the dash maths
  * below and `.activity-ring` in styles.css share this number. */
 const RING_C = 37.7;
@@ -164,6 +285,13 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const turns = useQueryStore((s) => s.turns);
   const distillRunning = useDistillRunStore((s) => s.running);
   const distillStep = useDistillRunStore((s) => s.step);
+  // Harvest + ingest + lint: their LIVE half used to be a pill of its own in
+  // the Topbar, which is how the bar could end up with three spinners side by
+  // side. They report here now; the bar keeps only their done/failed pop.
+  const harvestRun = useHarvestStore((s) => s.run);
+  const ingestStage = useIngestStore((s) => s.stage);
+  const ingestStartedAt = useIngestStore((s) => s.startedAt);
+  const lintRunning = useLintStore((s) => s.stage === "running");
   const reflectRunning = useReflectStore((s) => s.stage === "running");
   // Findings from the last reflect run — a STANDING count, like suggested
   // links: never part of the chip badge, and NOT gated on `seen` (the panel
@@ -205,8 +333,19 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
 
   const reindexBusy =
     reindexStage === "loading-model" || reindexStage === "indexing";
+  const ingestRunning =
+    ingestStage === "writing-raw" ||
+    ingestStage === "claude" ||
+    ingestStage === "indexing";
   const anyBusy =
-    askBusy || distillRunning || reflectRunning || reindexBusy || progress !== null;
+    askBusy ||
+    harvestRun.phase !== null ||
+    ingestRunning ||
+    lintRunning ||
+    distillRunning ||
+    reflectRunning ||
+    reindexBusy ||
+    progress !== null;
 
   const [open, setOpen] = useState(false);
   const [popPos, setPopPos] = useState<ReturnType<typeof computeModelPopPos> | null>(
@@ -256,12 +395,14 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
     }
   };
 
+  // One clock for every elapsed ticker in the chip (Ask and ingest show one).
   const [now, setNow] = useState(() => Date.now());
+  const ticking = askBusy || ingestRunning;
   useEffect(() => {
-    if (!askBusy) return;
+    if (!ticking) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
-  }, [askBusy]);
+  }, [ticking]);
 
   useEffect(() => {
     if (!distillRunning) setStopping(false);
@@ -327,63 +468,21 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
     [adjacency, sem, dismissed],
   );
 
-  // Priority (most to least urgent to surface when collapsed): Ask — the
-  // user is actively waiting on it — then distill, reflect, then reindex.
-  // Reflect borrows the distill icon: the set has no reflect art, and reflect
-  // is distill's read-only sibling (a whole-vault background pass), where the
-  // ask icon means "a human is waiting on this answer".
-  const running: RunningActivity[] = [];
-  if (askBusy) {
-    running.push({
-      icon: "ask",
-      label: t.nav_query,
-      detail: askStartedAt ? formatTicker(now - askStartedAt) : "",
-    });
-  }
-  if (distillRunning) {
-    running.push({
-      icon: "distill",
-      label: t.set_distill_running ?? "Distilling…",
-      detail: stepLabel(distillStep, t),
-      fraction: distillFraction(distillStep),
-    });
-  }
-  if (reflectRunning) {
-    running.push({
-      icon: "distill",
-      label: t.rf_running_label ?? "Reflect running…",
-      detail: "",
-    });
-  }
-  if (progress) {
-    running.push({
-      icon: "link",
-      label: progress.label,
-      detail: `${progress.done}/${progress.total}`,
-      fraction: progress.total > 0 ? progress.done / progress.total : 0,
-    });
-  }
-  if (applyingCount > 0) {
-    running.push({
-      icon: "distill",
-      label: t.tb_activity_applying ?? "Applying proposal…",
-      detail: applyingCount > 1 ? String(applyingCount) : "",
-    });
-  }
-  if (reindexBusy) {
-    running.push({
-      icon: "indexing",
-      label: t.s_embeddings_indexing ?? "Indexing…",
-      detail:
-        reindexStage === "loading-model"
-          ? (t.s_embeddings_loading_model ?? "Loading model…")
-          : `${reindexDone}/${reindexTotal}`,
-      fraction:
-        reindexStage === "indexing" && reindexTotal > 0
-          ? reindexDone / reindexTotal
-          : undefined,
-    });
-  }
+  const running = buildRunning(
+    {
+      ask: { busy: askBusy, startedAt: askStartedAt },
+      harvest: harvestRun,
+      ingest: { running: ingestRunning, startedAt: ingestStartedAt },
+      lintRunning,
+      distill: { running: distillRunning, step: distillStep },
+      reflectRunning,
+      progress,
+      applyingCount,
+      reindex: { stage: reindexStage, done: reindexDone, total: reindexTotal },
+      now,
+    },
+    t,
+  );
 
   const liveMode = chipMode(running);
 
@@ -436,7 +535,14 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
   const askQuestion = turns[turns.length - 1]?.q.split("\n")[0] ?? "";
 
   const jump = (
-    route: "query" | "overview" | "settings" | "tasks" | "ingest" | "feedback",
+    route:
+      | "query"
+      | "overview"
+      | "settings"
+      | "tasks"
+      | "ingest"
+      | "feedback"
+      | "provenance",
     // Section id (useFocusTarget) for a row that names something rendered far
     // down its page — "N suggested links" sits below OverviewBoard and the
     // recent/distill bands, so routing alone left it off screen, and did
@@ -472,6 +578,53 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
           {askStartedAt ? formatTicker(now - askStartedAt) : ""}
         </span>
       ),
+    });
+  }
+  if (harvestRun.phase !== null) {
+    runningRows.push({
+      key: "harvest",
+      icon: "distill",
+      iconActive: true,
+      onClick: () => jump("overview"),
+      main: (
+        <>
+          <b>{t.tb_harvest_running}</b>
+          {harvestRun.phase === "ingesting" ? (
+            <progress value={harvestRun.done} max={harvestRun.total || 1} />
+          ) : (
+            <span className="activity-row-sub">{t.tb_harvest_copying}</span>
+          )}
+        </>
+      ),
+      trailing:
+        harvestRun.phase === "ingesting" ? (
+          <span className="activity-num">
+            {harvestRun.done}/{harvestRun.total}
+          </span>
+        ) : undefined,
+    });
+  }
+  if (ingestRunning) {
+    runningRows.push({
+      key: "ingest",
+      icon: "indexing",
+      iconActive: true,
+      onClick: () => jump("ingest"),
+      main: <b>{t.nav_ingest}</b>,
+      trailing: (
+        <span className="activity-num">
+          {ingestStartedAt ? formatTicker(now - ingestStartedAt) : ""}
+        </span>
+      ),
+    });
+  }
+  if (lintRunning) {
+    runningRows.push({
+      key: "lint",
+      icon: "link",
+      iconActive: true,
+      onClick: () => jump("provenance"),
+      main: <b>{t.p_lint_running}</b>,
     });
   }
   if (distillRunning) {

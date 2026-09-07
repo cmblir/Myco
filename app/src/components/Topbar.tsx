@@ -1,4 +1,11 @@
 // Topbar — breadcrumb + meta + model status + background-job chips.
+//
+// Division of labour with ActivityChip: every LIVE run is reported there, in
+// one collapsible chip (see buildRunning). The bar's own pills cover only the
+// FINISHED half — the done/failed pop that survives until the user visits the
+// page explaining the run. Ask has worked this way since the BusyJobsChip came
+// out; ingest, lint and harvest each used to hand-roll their own live pill on
+// top of it, so three spinners could sit in the bar at once.
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -7,16 +14,19 @@ import { Icon, ProviderGlyph } from "../lib/icons";
 import type { IconName, ProviderId } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { useUIStore } from "../stores/uiStore";
+import type { RouteId } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useIngestStore } from "../stores/ingestStore";
 import { useLintStore } from "../stores/lintStore";
 import { useQueryStore } from "../stores/queryStore";
+import { useDistillRunStore } from "../stores/distillRunStore";
+import { useHarvestStore } from "../stores/harvestStore";
+import type { RunOutcome } from "../stores/harvestStore";
 import { useSettingsStore } from "../stores/settingsStore";
 import ActivityChip from "./ActivityChip";
 import { PROVIDERS } from "../lib/providers";
 import { ipc } from "../lib/ipc";
 import type { MycoSettings } from "../lib/ipc";
-import { formatTicker } from "../lib/time";
 
 export default function Topbar({ t }: { t: Strings }): JSX.Element {
   const route = useUIStore((s) => s.route);
@@ -85,9 +95,7 @@ export default function Topbar({ t }: { t: Strings }): JSX.Element {
       >
         <Icon name="columns" size={14} />
       </button>
-      <IngestChip t={t} />
-      <LintChip t={t} />
-      <QueryChip t={t} />
+      <RunPills t={t} />
       <ActivityChip t={t} />
       <button className="pill pill-search" onClick={toggleCmd}>
         <Icon name="search" size={14} />
@@ -340,125 +348,161 @@ function ModelChip({ t }: { t: Strings }): JSX.Element | null {
   );
 }
 
-// Global ingest status: spinner + elapsed while a run is live (any page),
-// then a green/red chip after it finishes until the user visits Ingest.
-// Clicking always jumps to the Ingest page.
-function IngestChip({ t }: { t: Strings }): JSX.Element | null {
-  const stage = useIngestStore((s) => s.stage);
-  const startedAt = useIngestStore((s) => s.startedAt);
-  const seen = useIngestStore((s) => s.seen);
-  const setRoute = useUIStore((s) => s.setRoute);
-  const running =
-    stage === "writing-raw" || stage === "claude" || stage === "indexing";
+/** What a finished-run pill shows for one source: nothing while the run is
+ * still live (the live half is ActivityChip's job, so the bar can never show
+ * two spinners), nothing once the user has seen the page that explains it,
+ * and the outcome otherwise. Pure; unit-tested. */
+export function runPillOutcome(src: {
+  running: boolean;
+  outcome: RunOutcome;
+  seen: boolean;
+}): RunOutcome {
+  return src.running || src.seen ? null : src.outcome;
+}
 
-  const [now, setNow] = useState(() => Date.now());
+interface RunPillProps {
+  running: boolean;
+  outcome: RunOutcome;
+  seen: boolean;
+  /** Page that explains the run: where the pill jumps, and visiting which
+   * clears it. */
+  route: RouteId;
+  doneLabel: string;
+  errorLabel: string;
+  markSeen: () => void;
+}
+
+/** The done/failed pop a long run leaves in the bar. One component for every
+ * source — ingest, ask, lint, distill, harvest — which is what four near-
+ * identical copies of this used to be. */
+function RunPill({
+  running,
+  outcome,
+  seen,
+  route,
+  doneLabel,
+  errorLabel,
+  markSeen,
+}: RunPillProps): JSX.Element | null {
+  const current = useUIStore((s) => s.route);
+  const split = useUIStore((s) => s.splitRoute);
+  const setRoute = useUIStore((s) => s.setRoute);
+
+  // Visiting the page acknowledges the run. Done here rather than in each
+  // page, so a new source needs no page edit and cannot forget — and so a run
+  // that lands while the user is ALREADY on its page never pops at all.
+  // splitRoute counts: the page is on screen in the second pane.
   useEffect(() => {
-    if (!running) return;
-    const id = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(id);
-  }, [running]);
+    if (!seen && (current === route || split === route)) markSeen();
+  }, [seen, current, split, route, markSeen]);
 
-  if (running) {
-    return (
-      <button
-        className="pill chip-live"
-        onClick={() => setRoute("ingest")}
-        title={t.ing_live_title}
-      >
-        <span className="ingest-chip-spinner" />
-        <span>
-          {t.nav_ingest} {startedAt ? formatTicker(now - startedAt) : ""}
-        </span>
-      </button>
-    );
-  }
-  if (!seen && (stage === "done" || stage === "error")) {
-    const ok = stage === "done";
-    return (
-      <button
-        className="pill chip-pop"
-        onClick={() => setRoute("ingest")}
-        title={ok ? t.ing_chip_done : t.ing_chip_error}
-      >
-        <span
-          className="dot"
-          style={{ background: ok ? "#16a34a" : "#dc2626" }}
-        ></span>
-        <span>{ok ? t.ing_chip_done : t.ing_chip_error}</span>
-      </button>
-    );
-  }
-  return null;
+  const shown = runPillOutcome({ running, outcome, seen });
+  if (!shown) return null;
+  const ok = shown === "done";
+  const label = ok ? doneLabel : errorLabel;
+  return (
+    <button
+      className="pill chip-pop"
+      onClick={() => setRoute(route)}
+      title={label}
+    >
+      <span
+        className="dot"
+        style={{ background: ok ? "#16a34a" : "#dc2626" }}
+      ></span>
+      <span>{label}</span>
+    </button>
+  );
 }
 
-// Same pattern as IngestChip, for a finished Ask run: the chat lives in
-// queryStore, so an answer keeps computing when the user leaves the Query
-// page. The BUSY half of this (icon + elapsed while an answer is still
-// coming) lives in ActivityChip, folded in with distill/reindex so the three
-// don't each show their own live pill at once — this component only covers
-// the done/error pop once an answer lands.
-function QueryChip({ t }: { t: Strings }): JSX.Element | null {
-  const busy = useQueryStore((s) => s.busy);
-  const seen = useQueryStore((s) => s.seen);
-  const turns = useQueryStore((s) => s.turns);
-  const setRoute = useUIStore((s) => s.setRoute);
+/** Every finished-run pill in the bar, in one place: the five long jobs that
+ * outlive the page that started them. Nothing here is live — that is
+ * ActivityChip's running list. */
+function RunPills({ t }: { t: Strings }): JSX.Element {
+  const ingestStage = useIngestStore((s) => s.stage);
+  const ingestSeen = useIngestStore((s) => s.seen);
+  const ingestMarkSeen = useIngestStore((s) => s.markSeen);
+  const askBusy = useQueryStore((s) => s.busy);
+  const askSeen = useQueryStore((s) => s.seen);
+  const askMarkSeen = useQueryStore((s) => s.markSeen);
+  const lastTurn = useQueryStore((s) => s.turns[s.turns.length - 1]);
+  const lintStage = useLintStore((s) => s.stage);
+  const lintSeen = useLintStore((s) => s.seen);
+  const lintMarkSeen = useLintStore((s) => s.markSeen);
+  const distillRunning = useDistillRunStore((s) => s.running);
+  const distillOutcome = useDistillRunStore((s) => s.outcome);
+  const distillSeen = useDistillRunStore((s) => s.seen);
+  const distillMarkSeen = useDistillRunStore((s) => s.markSeen);
+  const harvestPhase = useHarvestStore((s) => s.run.phase);
+  const harvestOutcome = useHarvestStore((s) => s.outcome);
+  const harvestSeen = useHarvestStore((s) => s.seen);
+  const harvestMarkSeen = useHarvestStore((s) => s.markSeen);
 
-  if (busy) return null;
-  const last = turns[turns.length - 1];
-  if (!seen && last) {
-    const ok = !last.error;
-    return (
-      <button
-        className="pill chip-pop"
-        onClick={() => setRoute("query")}
-        title={ok ? (t.q_chip_done ?? "Answer ready") : (t.q_chip_error ?? "Answer failed")}
-      >
-        <span
-          className="dot"
-          style={{ background: ok ? "#16a34a" : "#dc2626" }}
-        ></span>
-        <span>{ok ? (t.q_chip_done ?? "Answer ready") : (t.q_chip_error ?? "Answer failed")}</span>
-      </button>
-    );
-  }
-  return null;
+  return (
+    <>
+      <RunPill
+        running={
+          ingestStage === "writing-raw" ||
+          ingestStage === "claude" ||
+          ingestStage === "indexing"
+        }
+        // "refused" is not an outcome the bar reports: the refusal itself is
+        // the result, and it is only readable on the page.
+        outcome={stageOutcome(ingestStage)}
+        seen={ingestSeen}
+        route="ingest"
+        doneLabel={t.ing_chip_done}
+        errorLabel={t.ing_chip_error}
+        markSeen={ingestMarkSeen}
+      />
+      <RunPill
+        running={askBusy}
+        outcome={lastTurn ? (lastTurn.error ? "error" : "done") : null}
+        seen={askSeen}
+        route="query"
+        doneLabel={t.q_chip_done}
+        errorLabel={t.q_chip_error}
+        markSeen={askMarkSeen}
+      />
+      <RunPill
+        running={lintStage === "running"}
+        outcome={stageOutcome(lintStage)}
+        seen={lintSeen}
+        route="provenance"
+        doneLabel={t.p_lint_done}
+        errorLabel={t.p_lint_failed}
+        markSeen={lintMarkSeen}
+      />
+      {/* Feedback is where a distill chain's output lands (proposals,
+          quarantine) — the page that explains what the run just did. */}
+      <RunPill
+        running={distillRunning}
+        outcome={distillOutcome}
+        seen={distillSeen}
+        route="feedback"
+        doneLabel={t.tb_distill_done}
+        errorLabel={t.tb_distill_error}
+        markSeen={distillMarkSeen}
+      />
+      {/* Overview hosts the harvest queue, which shows the run's result. */}
+      <RunPill
+        running={harvestPhase !== null}
+        outcome={harvestOutcome}
+        seen={harvestSeen}
+        route="overview"
+        doneLabel={t.tb_harvest_done}
+        errorLabel={t.tb_harvest_error}
+        markSeen={harvestMarkSeen}
+      />
+    </>
+  );
 }
 
-// Same pattern as IngestChip, for lint runs: spinner while running, then a
-// done/failed chip until the user revisits the Provenance page.
-function LintChip({ t }: { t: Strings }): JSX.Element | null {
-  const stage = useLintStore((s) => s.stage);
-  const seen = useLintStore((s) => s.seen);
-  const setRoute = useUIStore((s) => s.setRoute);
-
-  if (stage === "running") {
-    return (
-      <button
-        className="pill chip-live"
-        onClick={() => setRoute("provenance")}
-        title={t.p_lint_running}
-      >
-        <span className="ingest-chip-spinner" />
-        <span>{t.tb_lint ?? "Lint"}</span>
-      </button>
-    );
-  }
-  if (!seen && (stage === "done" || stage === "error")) {
-    const ok = stage === "done";
-    return (
-      <button
-        className="pill chip-pop"
-        onClick={() => setRoute("provenance")}
-        title={ok ? t.p_lint_done : t.p_lint_failed}
-      >
-        <span
-          className="dot"
-          style={{ background: ok ? "#16a34a" : "#dc2626" }}
-        ></span>
-        <span>{ok ? t.p_lint_done : t.p_lint_failed}</span>
-      </button>
-    );
-  }
+/** The two stores whose terminal state IS their stage (ingest, lint) map onto
+ * the shared outcome the same way. */
+function stageOutcome(stage: string): RunOutcome {
+  if (stage === "done") return "done";
+  if (stage === "error") return "error";
   return null;
 }
 

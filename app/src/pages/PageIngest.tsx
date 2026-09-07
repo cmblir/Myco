@@ -71,7 +71,6 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   const judged = useIngestStore((s) => s.judged);
   const plan = useIngestStore((s) => s.plan);
   const startIngest = useIngestStore((s) => s.startIngest);
-  const markSeen = useIngestStore((s) => s.markSeen);
   const resetIngest = useIngestStore((s) => s.reset);
 
   const setRoute = useUIStore((s) => s.setRoute);
@@ -131,11 +130,6 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   // feed, counters) until the user starts another ingest. Streamless runs
   // (HTTP providers) have no events and fall back to the plain form+banner.
   const showResults = running || hasEvents;
-
-  // Visiting this page acknowledges a finished run (clears the Topbar chip).
-  useEffect(() => {
-    markSeen();
-  }, [stage, markSeen]);
 
   // Tauri intercepts drag-drop at the OS level (so the browser drop event
   // never fires inside the WebView). Subscribe to its native event instead
