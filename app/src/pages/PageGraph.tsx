@@ -428,13 +428,19 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [derived, selected, settings.question]);
 
-  // (node, question, state) → {color, radius, alpha, ring}, pushed to the scene
-  // as one map so writeNodes stays a lookup per node. Search is deliberately
-  // NOT part of it: the scene already owns that channel (setSearchHits →
-  // u_searchOn), and dimming twice would erase the misses entirely.
-  useEffect(() => {
-    const scene = sceneRef.current;
-    if (!scene || !derived) return;
+  // (node, question, state) → {color, radius, alpha, ring}, as ONE map so a
+  // renderer stays a lookup per node. Search is deliberately NOT part of it:
+  // the scene already owns that channel (setSearchHits → u_searchOn), and
+  // dimming twice would erase the misses entirely.
+  //
+  // Held as a memo rather than pushed straight at the scene from an effect,
+  // because BOTH renderers need it: the starfield takes it through
+  // GraphScene.setEncoding below, and the mycelium skin — which mounts its own
+  // canvas over the (hidden) starfield and knows nothing about GraphScene —
+  // takes the very same map as a prop. Before this, picking a question under
+  // the mycelium skin visibly did nothing at all.
+  const encoding = useMemo<ReadonlyMap<string, Encoding> | null>(() => {
+    if (!derived) return null;
     const cs = getComputedStyle(document.documentElement);
     const state: EncState = {
       sizeBy: settings.sizeBy,
@@ -448,10 +454,16 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     };
     const enc = new Map<string, Encoding>();
     for (const [id, n] of derived.nodes) enc.set(id, encodeNode(n, settings.question, state));
-    scene.setEncoding(enc);
+    return enc;
     // uiTheme is a real dep: --ink-4 / --live are read off the DOM here, so a
     // theme flip must re-encode even though nothing else in the list moved.
+    // The rule can't see a getComputedStyle read, hence the disable.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [derived, hops, selected, settings.question, settings.sizeBy, uiTheme]);
+
+  useEffect(() => {
+    if (encoding) sceneRef.current?.setEncoding(encoding);
+  }, [encoding]);
 
   // Deep link (lib/graphLink): arrive at a question, optionally at a note.
   useEffect(() => {
@@ -2021,6 +2033,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 textFadeThreshold={settings.textFadeThreshold}
                 ambientMotion={settings.ambientMotion}
                 growSpeed={settings.tlSpeed}
+                encoding={encoding}
                 maxNodes={myceliumMaxNodes(myceliumForceDeb.linkDistance, counts.nodes)}
                 branchPct={myceliumBranchPct(myceliumForceDeb.clusterForce)}
                 fitRef={myceliumFitRef}

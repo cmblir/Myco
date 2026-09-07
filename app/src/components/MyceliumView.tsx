@@ -14,6 +14,7 @@
 import { useEffect, useRef } from "react";
 import type { JSX } from "react";
 import { MyceliumScene, type Septum } from "../lib/myceliumScene";
+import type { Encoding } from "../lib/graphEncoding";
 import { buildMatAdjacency, buildMyceliumMat, matPath } from "../lib/staticLayouts";
 import type { VaultGraph } from "../lib/graphData";
 import { useUIStore } from "../stores/uiStore";
@@ -55,6 +56,7 @@ export default function MyceliumView({
   textFadeThreshold,
   ambientMotion,
   growSpeed,
+  encoding,
   maxNodes,
   branchPct,
   fitRef,
@@ -92,6 +94,12 @@ export default function MyceliumView({
   ambientMotion: boolean;
   /** "Timelapse speed" slider — scales the grow-in duration. */
   growSpeed: number;
+  /** The four Survey questions, as the SAME `Map<id, Encoding>` PageGraph
+   *  hands GraphScene.setEncoding — colour / radius / alpha / ring per note
+   *  (see graphEncoding). Style only, so it must never rebuild the mat: it is
+   *  deliberately absent from the build effect's dependency list and rides in
+   *  through encodingRef instead. */
+  encoding: ReadonlyMap<string, Encoding> | null;
   /** "Link distance" slider, mapped (graphSettings.ts's myceliumMaxNodes) —
    *  mat density. Rebuilds the mat, so the caller debounces this. */
   maxNodes: number;
@@ -120,6 +128,12 @@ export default function MyceliumView({
   // the timelapse-speed slider never re-triggers the (expensive) build effect.
   const growSpeedRef = useRef(growSpeed);
   growSpeedRef.current = growSpeed;
+  // Same reason as growSpeedRef: the build effect has to SEED the current
+  // encoding on a fresh scene (a rebuild would otherwise drop back to the flat
+  // base look until the next question change), but must not re-run when the
+  // question moves — that is what "a question only restyles" means.
+  const encodingRef = useRef(encoding);
+  encodingRef.current = encoding;
   // Hover label: a plain DOM element positioned at the cursor rather than a
   // CSS2DRenderer layer — one node, updated on pointer move, is cheap and
   // avoids pulling a whole label-renderer into a scene that otherwise has
@@ -288,6 +302,7 @@ export default function MyceliumView({
     scene.setSizeScale(nodeSizeScale);
     scene.setWidthScale(linkThicknessScale);
     scene.setLabelFadeThreshold(textFadeThreshold);
+    scene.setEncoding(encodingRef.current);
     scene.fit();
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     scene.setAutoRotate(ambientMotion && !flat && !reduced);
@@ -392,6 +407,9 @@ export default function MyceliumView({
   useEffect(() => {
     sceneRef.current?.setLabelFadeThreshold(textFadeThreshold);
   }, [textFadeThreshold]);
+  useEffect(() => {
+    sceneRef.current?.setEncoding(encoding);
+  }, [encoding]);
   useEffect(() => {
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     sceneRef.current?.setAutoRotate(ambientMotion && !flat && !reduced);

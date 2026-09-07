@@ -18,6 +18,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
+import type { Encoding } from "./graphEncoding";
 
 /** One stroke-width bucket of hyphae. Colour rides per-vertex (see setMat)
  *  rather than a further per-bucket flat colour — a strand's colour varies
@@ -77,6 +78,17 @@ const GROUND = 0x0b0a08;
 // the substrate so the lit path actually reads as "the answer".
 const HYPHA_OPACITY = 0.85;
 const HYPHA_DIM_OPACITY = 0.18;
+// graphEncoding.nodeRadius()'s mid-ramp value — the same divisor graphScene
+// uses (its ENC_BASE_R) to turn an encoding radius into a MULTIPLIER on the
+// renderer's own per-node size, so both skins read the size channel the same
+// way and each keeps its own base sizing (star class there, link weight here).
+const ENC_BASE_R = 6;
+// Extra point-quad room a ringed septum gets so the annulus can sit OUTSIDE
+// the dot, plus a device-pixel floor — a sub-pixel ring is no ring, and the
+// ring is the accessible (non-colour) channel. Mirrors graphScene's
+// `max(gl_PointSize * 1.5, 11.0 * u_pixelRatio)`.
+const RING_ROOM = 1.9;
+const RING_MIN_PX = 12;
 // A label for a strand at the back of the ball must not read as if it were
 // in front — see depthT/depthOpacity. Not so dim it's illegible; just enough
 // recession to read as farther away.
@@ -159,6 +171,21 @@ export class MyceliumScene {
   private frameRadius = 0;
 
   private septa: THREE.Points | null = null;
+  /** The septa as handed to setSepta — the BASE colour/weight writeSeptaStyle
+   *  re-derives from, so a question change restyles in place instead of
+   *  needing the caller to rebuild the geometry. */
+  private septaItems: Septum[] = [];
+  /** Current question encoding (see setEncoding); null = the flat base look. */
+  private encoding: ReadonlyMap<string, Encoding> | null = null;
+  /** Hypha opacity multiplier the current encoding asks for — see
+   *  writeSeptaStyle's mean-alpha note and applyHyphaOpacity. */
+  private encDim = 1;
+  /** A hover / focus highlight is up (setHighlight) — the hard dim, which
+   *  outranks encDim. */
+  private highlightActive = false;
+  /** Substrate luminance ≥ dark (see setGround) — the septum ring palette has
+   *  to flip on a light ground, same as graphScene's rings flip with theme. */
+  private groundDark = true;
   private septaIds: string[] = [];
   /** note id -> its index in septaIds/the geometry's attribute arrays — O(1)
    *  lookup for setHighlight instead of an indexOf scan per hover change. */
@@ -414,6 +441,7 @@ export class MyceliumScene {
       (this.septa.material as THREE.Material).dispose();
       this.septa = null;
     }
+    this.septaItems = items;
     this.septaIds = items.map((s) => s.id);
     this.septaIndexOf = new Map(items.map((s, i) => [s.id, i]));
     this.highlightIdxs = []; // fresh geometry — nothing highlighted yet
@@ -423,23 +451,13 @@ export class MyceliumScene {
     const size = new Float32Array(items.length);
     const birth = new Float32Array(items.length);
     const hi = new Float32Array(items.length); // 0 = normal; see setHighlight
-    const c = new THREE.Color();
+    const alpha = new Float32Array(items.length); // question encoding; see writeSeptaStyle
+    const ring = new Float32Array(items.length);
     items.forEach((s, i) => {
       pos[i * 3] = s.x;
       pos[i * 3 + 1] = s.y;
       pos[i * 3 + 2] = s.z;
       this.finalBox.expandByPoint(new THREE.Vector3(s.x, s.y, s.z));
-      c.set(s.color);
-      col[i * 3] = c.r;
-      col[i * 3 + 1] = c.g;
-      col[i * 3 + 2] = c.b;
-      // Fixed screen-space size (device px, via pixelRatio) — like hyphae
-      // linewidth (LineMaterial worldUnits:false), NOT perspective-attenuated
-      // by distance. See the vertex shader below for why: a world-scaled size
-      // here was measured sub-pixel (0.17-0.43px) at this renderer's actual
-      // camera distance, for every TARGET_RADIUS this view has used — septa
-      // were never really visible, independent of colour.
-      size[i] = (6 + s.weight * 8) * this.renderer.getPixelRatio();
       birth[i] = s.birth;
     });
     const geo = new THREE.BufferGeometry();
@@ -448,26 +466,45 @@ export class MyceliumScene {
     geo.setAttribute("a_size", new THREE.BufferAttribute(size, 1));
     geo.setAttribute("a_birth", new THREE.BufferAttribute(birth, 1));
     geo.setAttribute("a_hi", new THREE.BufferAttribute(hi, 1));
+    geo.setAttribute("a_alpha", new THREE.BufferAttribute(alpha, 1));
+    geo.setAttribute("a_ring", new THREE.BufferAttribute(ring, 1));
     // A FLAT disc with a soft edge — deliberately not the glow shader the space
     // renderer uses. A halo is what makes a node read as a star, and a septum
     // is a thickening of a thread, not a light source.
     const mtl = new THREE.ShaderMaterial({
       transparent: true,
       depthWrite: !this.planar, // see setPlanar — real occlusion only in 3D
-      uniforms: { u_t: { value: 0 }, u_dim: { value: 0 }, u_sizeScale: { value: this.sizeScale } },
+      uniforms: {
+        u_t: { value: 0 },
+        u_dim: { value: 0 },
+        u_sizeScale: { value: this.sizeScale },
+        u_pixelRatio: { value: this.renderer.getPixelRatio() },
+        // 1 on a dark substrate, 0 on a light one (see setGround) — the ring
+        // palette has to flip with the ground it is drawn on, exactly as
+        // graphScene's pxs_ring flips with the theme.
+        u_dark: { value: this.groundDark ? 1 : 0 },
+      },
       vertexShader: `
         attribute vec3 a_color;
         attribute float a_size;
         attribute float a_birth;
         attribute float a_hi;
+        attribute float a_alpha;
+        attribute float a_ring;
         uniform float u_t;
         uniform float u_sizeScale;
+        uniform float u_pixelRatio;
         varying vec3 v_color;
         varying float v_grown;
         varying float v_hi;
+        varying float v_alpha;
+        varying float v_ring;
+        varying float v_core;
         void main() {
           v_color = a_color;
           v_hi = a_hi;
+          v_alpha = a_alpha;
+          v_ring = a_ring;
           // Hidden until growth reaches this note's spot on the mat — same
           // birth-index reveal as a hypha segment, just per-point.
           v_grown = step(a_birth, u_t);
@@ -481,20 +518,59 @@ export class MyceliumScene {
           // big mat the way a physically-scaled marker would. u_sizeScale is
           // the live "Node size" slider (setSizeScale) — a uniform, not baked
           // into a_size, so it updates without rebuilding the geometry.
-          gl_PointSize = a_size * u_sizeScale * v_grown * sizeBoost;
+          float px = a_size * u_sizeScale * sizeBoost;
+          // A ringed septum draws into a BIGGER quad so the annulus can sit
+          // outside the dot; v_core is the dot's radius as a fraction of that
+          // quad, so the dot itself renders at exactly the same size it would
+          // without a ring (a gap marker must not also enlarge the note).
+          v_core = 1.0;
+          if (a_ring > 0.5) {
+            float want = max(px * ${RING_ROOM.toFixed(1)}, ${RING_MIN_PX.toFixed(1)} * u_pixelRatio);
+            v_core = px / max(want, 0.001);
+            px = want;
+          }
+          gl_PointSize = px * v_grown;
           gl_Position = projectionMatrix * mv;
         }`,
       fragmentShader: `
         varying vec3 v_color;
         varying float v_grown;
         varying float v_hi;
+        varying float v_alpha;
+        varying float v_ring;
+        varying float v_core;
         uniform float u_dim;
+        uniform float u_dark;
+        // Question ring (graphEncoding's Ring channel), the SHAPE channel — so
+        // no finding is carried by colour alone. Same bands, dash/dot split and
+        // palette as graphScene's pxs_ring, so a gap looks like a gap under
+        // either skin.
+        vec4 septumRing(float d) {
+          if (v_ring < 0.5) return vec4(0.0);
+          float band = smoothstep(0.78, 0.83, d) * (1.0 - smoothstep(0.93, 0.98, d));
+          if (band <= 0.0) return vec4(0.0);
+          int rr = int(v_ring + 0.5);
+          if (rr <= 3) {
+            // Dashes vs dots: the two gap classes must differ by shape, not hue.
+            float ang = atan(gl_PointCoord.y - 0.5, gl_PointCoord.x - 0.5);
+            float seg = rr == 2 ? 18.0 : 9.0;
+            band *= step(rr == 2 ? 0.62 : 0.42, fract(ang * seg * 0.15915494 + 0.5));
+          }
+          vec3 amber = mix(vec3(0.60, 0.42, 0.12), vec3(0.95, 0.68, 0.28), u_dark);
+          vec3 c = rr == 1 ? amber
+            : rr == 2 ? mix(vec3(0.42, 0.42, 0.45), vec3(0.70, 0.72, 0.78), u_dark)
+            : rr == 3 ? amber
+            : rr == 4 ? mix(vec3(0.09, 0.55, 0.32), vec3(0.49, 0.88, 0.65), u_dark)
+            : rr == 5 ? mix(vec3(0.05, 0.05, 0.06), vec3(1.0), u_dark)
+            : mix(vec3(0.16, 0.36, 0.78), vec3(0.62, 0.79, 1.0), u_dark);
+          return vec4(c, band);
+        }
         void main() {
           if (v_grown < 0.5) discard;
           vec2 d = gl_PointCoord - vec2(0.5);
           float r = length(d) * 2.0;
           if (r > 1.0) discard;
-          float a = smoothstep(1.0, 0.72, r);
+          float a = smoothstep(1.0, 0.72, r / max(v_core, 0.001));
           // Brighten toward white rather than just raising alpha — reads as
           // "lit up", not "less transparent".
           vec3 col = mix(v_color, vec3(1.0), v_hi * 0.55);
@@ -502,7 +578,15 @@ export class MyceliumScene {
           // a_hi fades toward the substrate; the hovered note (v_hi=1) and
           // its neighbours (v_hi=0.7, set by setHighlight) stay lit.
           float dimMul = mix(1.0, mix(0.15, 1.0, v_hi), u_dim);
-          gl_FragColor = vec4(col, a * dimMul);
+          a *= v_alpha * dimMul;
+          // Composite the ring OVER the dot and floor the alpha with it: a
+          // ring on a heavily dimmed note still has to read, which is the
+          // whole point of a second, non-colour channel.
+          vec4 rk = septumRing(r);
+          col = mix(col, rk.rgb, rk.a);
+          a = max(a, rk.a * dimMul);
+          if (a < 0.004) discard;
+          gl_FragColor = vec4(col, a);
         }`,
     });
     this.septa = new THREE.Points(geo, mtl);
@@ -515,6 +599,77 @@ export class MyceliumScene {
     // the neighbouring strand's cluster colour, not myceliumNodeColor).
     this.septa.renderOrder = 1;
     this.scene.add(this.septa);
+    this.writeSeptaStyle();
+  }
+
+  /** The four Survey questions, as the SAME `Map<id, Encoding>` the starfield
+   *  gets (PageGraph computes it once and pushes it to whichever renderer is
+   *  drawing — see graphEncoding.encodeNode). Style only: nothing here moves a
+   *  septum or regrows the mat, so switching question or typing in the find
+   *  box can never rebuild the scene. Null clears back to the flat base look. */
+  setEncoding(enc: ReadonlyMap<string, Encoding> | null): void {
+    this.encoding = enc && enc.size > 0 ? enc : null;
+    this.writeSeptaStyle();
+  }
+
+  /** Per-septum colour / size / alpha / ring = the view's own base (the flat
+   *  myceliumNodeColor and the note's link weight — this renderer's answer to
+   *  the starfield's star-class ramp) MODULATED by the question encoding, the
+   *  same division of labour as graphScene.writeNodes: the encoding owns
+   *  colour, scales the base radius and multiplies the base alpha. */
+  private writeSeptaStyle(): void {
+    if (!this.septa) return;
+    const geo = this.septa.geometry;
+    const col = geo.getAttribute("a_color") as THREE.BufferAttribute;
+    const siz = geo.getAttribute("a_size") as THREE.BufferAttribute;
+    const alp = geo.getAttribute("a_alpha") as THREE.BufferAttribute;
+    const rng = geo.getAttribute("a_ring") as THREE.BufferAttribute;
+    const c = new THREE.Color();
+    const pr = this.renderer.getPixelRatio();
+    let alphaSum = 0;
+    for (let i = 0; i < this.septaItems.length; i++) {
+      const s = this.septaItems[i];
+      const enc = this.encoding?.get(s.id);
+      // Flat, independent of the note's own community tint (see the Septum
+      // doc) until a question says otherwise.
+      c.set(enc ? enc.color : s.color);
+      // Fixed screen-space size (device px, via pixelRatio) — like hyphae
+      // linewidth (LineMaterial worldUnits:false), NOT perspective-attenuated
+      // by distance. See the vertex shader for why: a world-scaled size here
+      // was measured sub-pixel (0.17-0.43px) at this renderer's actual camera
+      // distance, for every TARGET_RADIUS this view has used — septa were
+      // never really visible, independent of colour.
+      let px = (6 + s.weight * 8) * pr;
+      if (enc) px *= Math.min(2.2, Math.max(0.45, enc.radius / ENC_BASE_R));
+      col.setXYZ(i, c.r, c.g, c.b);
+      siz.setX(i, px);
+      alp.setX(i, enc ? enc.alpha : 1);
+      rng.setX(i, enc ? enc.ring : 0);
+      alphaSum += enc ? enc.alpha : 1;
+    }
+    col.needsUpdate = true;
+    siz.needsUpdate = true;
+    alp.needsUpdate = true;
+    rng.needsUpdate = true;
+    // The mat recedes with the field it carries. A question that dims most
+    // notes ("어디가 비었나" drops the connected ones to 0.22) has to dim the
+    // hyphae too, or a few lit septa answer the question underneath a mat at
+    // full strength. Mean encoded alpha, so a question that dims nothing
+    // ("무엇이 뭉쳐 있나") leaves the mat exactly where it was.
+    // ponytail: mean alpha, not a per-strand encoding — the mat is grown
+    // substrate, not note-to-note edges, so a strand has no single owning
+    // note to inherit from. Per-vertex would mean re-colouring buckets on
+    // every question change; upgrade only if the flat dim reads as wrong.
+    this.encDim = this.septaItems.length > 0 ? 0.3 + 0.7 * (alphaSum / this.septaItems.length) : 1;
+    this.applyHyphaOpacity();
+  }
+
+  /** One place that owns hypha opacity, because two things dim it: the hover /
+   *  focus highlight (a transient, hard dim) and the question encoding (a held,
+   *  proportional one). Whichever is stronger wins rather than the last caller. */
+  private applyHyphaOpacity(): void {
+    const o = this.highlightActive ? HYPHA_DIM_OPACITY : HYPHA_OPACITY * this.encDim;
+    for (const m of this.mat) (m.material as LineMaterial).opacity = o;
   }
 
   /** Brighten the hovered note + its wikilink neighbours, dim everything
@@ -543,8 +698,8 @@ export class MyceliumScene {
 
     const active = hoveredIdx != null;
     (this.septa.material as THREE.ShaderMaterial).uniforms.u_dim.value = active ? 1 : 0;
-    const hyphaOpacity = active ? HYPHA_DIM_OPACITY : HYPHA_OPACITY;
-    for (const m of this.mat) (m.material as LineMaterial).opacity = hyphaOpacity;
+    this.highlightActive = active;
+    this.applyHyphaOpacity();
 
     this.updateHighlightLine(pathPositions);
   }
@@ -680,7 +835,14 @@ export class MyceliumScene {
    *  main-view screenshots. Rebuilt on each call (cheap — one fullscreen
    *  quad, and this only runs on a preset/colour change) = a live swap. */
   setGround(color: string, grid = false): void {
-    this.scene.background = new THREE.Color(color);
+    const bg = new THREE.Color(color);
+    this.scene.background = bg;
+    // Relative luminance of the substrate the rings are drawn on — the "paper"
+    // preset is a light ground, where a white selection ring is no ring.
+    this.groundDark = 0.2126 * bg.r + 0.7152 * bg.g + 0.0722 * bg.b < 0.4;
+    if (this.septa) {
+      (this.septa.material as THREE.ShaderMaterial).uniforms.u_dark.value = this.groundDark ? 1 : 0;
+    }
     this.clearGrid();
     if (!grid) return;
     const geo = new THREE.PlaneGeometry(2, 2);
