@@ -121,8 +121,12 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
     const paths = items.filter((c) => selected.has(c.path)).map((c) => c.path);
     if (paths.length === 0) return;
     setProgress({ done: 0, total: paths.length });
+    // The Topbar's activity chip reads the run from the store: a harvest is
+    // minutes of work and the bar showed nothing at all for the whole stretch.
+    useHarvestStore.getState().startRun(paths.length);
     try {
       const res = await ipc.harvestRun(paths);
+      useHarvestStore.getState().setRun(0, res.copied);
       // The pending _inbox list (Ingest page) refetches on this.
       bumpInbox();
       // The existing inbox pass ingests ONE source per call and archives it;
@@ -135,6 +139,7 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
         if (!out.ingested) break;
         ingested++;
         setProgress({ done: ingested, total: res.copied });
+        useHarvestStore.getState().setRun(ingested, res.copied);
       }
       await scanProvenance(root, true);
       const after = distinctCitations(useProvenanceStore.getState().rows ?? []);
@@ -145,8 +150,10 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
             ? fill(t.hq_done_sub, { base, goal: after })
             : fill(t.hq_done_partial, { copied: res.copied, ingested }),
       });
+      useHarvestStore.getState().endRun(true);
     } catch (e) {
       notice.warn(t.hq_failed, { sub: String(e) });
+      useHarvestStore.getState().endRun(false);
     } finally {
       setProgress(null);
       setPlanning(false);
