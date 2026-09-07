@@ -8,6 +8,7 @@ import {
   normalizeMyceliumPair,
   MYCELIUM_BG_PRESETS,
   myceliumBranchPct,
+  myceliumInk,
   myceliumMaxNodes,
   saveGraphSettings,
   saveLook,
@@ -344,5 +345,34 @@ describe("normalizeMyceliumPair", () => {
     expect(normalizeMyceliumPair({ skin: "auto", layout: "celestial" })).toEqual(
       { skin: "auto", layout: "celestial" },
     );
+  });
+});
+
+// The mycelium stage is the one Survey surface whose colour is a persisted hex
+// rather than a token, so it used to sit as a black rectangle inside a white
+// page. myceliumInk is the rule that fixes that WITHOUT overriding a user who
+// picked a dark ground on purpose.
+describe("myceliumInk", () => {
+  it("swaps the default loam ground for paper in a light app", () => {
+    expect(myceliumInk(DEFAULT_GRAPH_SETTINGS, true)).toEqual(
+      MYCELIUM_BG_PRESETS.paper,
+    );
+  });
+
+  it("leaves the default loam ground alone in a dark app", () => {
+    expect(myceliumInk(DEFAULT_GRAPH_SETTINGS, false)).toEqual(
+      MYCELIUM_BG_PRESETS.loam,
+    );
+  });
+
+  it("honours a deliberately picked dark preset even in a light app", () => {
+    const s = { ...DEFAULT_GRAPH_SETTINGS, ...MYCELIUM_BG_PRESETS.void };
+    expect(myceliumInk(s, true)).toEqual(MYCELIUM_BG_PRESETS.void);
+  });
+
+  it("honours a custom colour in either theme", () => {
+    const s = { ...DEFAULT_GRAPH_SETTINGS, myceliumBackground: "#123456" };
+    expect(myceliumInk(s, true).myceliumBackground).toBe("#123456");
+    expect(myceliumInk(s, false).myceliumBackground).toBe("#123456");
   });
 });
