@@ -7,6 +7,10 @@
 // and stays visible via the Topbar chip — while the user navigates elsewhere.
 // This page is the rail, the judgement tile (with the form inside it), the
 // verdict rows, the live progress panel and the backfill panel.
+//
+// It fills AppPage like every other route: the route's own name is on the page
+// (eyebrow + title) instead of only in the topbar breadcrumb, and the five-step
+// rail is the frame's `bar` row — this page's toolbar.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, JSX, ReactNode } from "react";
@@ -22,6 +26,7 @@ import { useSettingsStore } from "../stores/settingsStore";
 import { useUIStore } from "../stores/uiStore";
 import { listInboxEntries, pendingInboxRows } from "../lib/autoIngest";
 import type { PendingInboxRow } from "../lib/autoIngest";
+import AppPage from "../components/AppPage";
 import ZoteroImport from "../components/ZoteroImport";
 import ConversationImport from "../components/ConversationImport";
 import SessionBackfill from "../components/SessionBackfill";
@@ -304,24 +309,35 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
   );
 
   return (
-    <div className={"workspace sv" + (running ? " is-running" : "")} data-testid="sieve">
-      <ol className="sv-rail" aria-label={t.sv_rail_label}>
-        <RailStep n={1} label={t.sv_step_intake} value={fill(t.sv_today_n, { n: todayIntake })} state={stage === "idle" ? "active" : undefined} />
-        <RailStep
-          n={2}
-          label={t.sv_step_judge}
-          value={fill(t.sv_tally, { d: tally.drop, l: tally.log, h: tally.harvest })}
-          state={judgeState(stage)}
-        />
-        <RailStep n={3} label={t.sv_step_gate} value={railGate} state={gateState(stage)} />
-        <RailStep n={4} label={t.sv_step_run} value={railRun} state={runState(stage)} />
-        <RailStep
-          n={5}
-          label={t.sv_step_backfill}
-          value={fill(t.sv_queue_n, { n: inboxRows?.length ?? 0 })}
-        />
-      </ol>
-
+    <AppPage
+      eyebrow={t.nav_workspace}
+      title={t.nav_ingest}
+      // The five-step rail IS this page's toolbar — where every other route
+      // puts its filters and view switches, this one says which stage the
+      // source is at. So it fills `bar` rather than leading the body.
+      bar={
+        <ol className="sv-rail" aria-label={t.sv_rail_label}>
+          <RailStep n={1} label={t.sv_step_intake} value={fill(t.sv_today_n, { n: todayIntake })} state={stage === "idle" ? "active" : undefined} />
+          <RailStep
+            n={2}
+            label={t.sv_step_judge}
+            value={fill(t.sv_tally, { d: tally.drop, l: tally.log, h: tally.harvest })}
+            state={judgeState(stage)}
+          />
+          <RailStep n={3} label={t.sv_step_gate} value={railGate} state={gateState(stage)} />
+          <RailStep n={4} label={t.sv_step_run} value={railRun} state={runState(stage)} />
+          <RailStep
+            n={5}
+            label={t.sv_step_backfill}
+            value={fill(t.sv_queue_n, { n: inboxRows?.length ?? 0 })}
+          />
+        </ol>
+      }
+    >
+      {/* `.sv` stays a real element rather than moving onto the page shell:
+          `.sv.is-running` is what sweeps the violet arc around the judgement
+          ring, and AppPage owns its own shell classes. */}
+      <div className={"sv" + (running ? " is-running" : "")} data-testid="sieve">
       {/* ── 2 · Judgement — the hero ─────────────────────────────────── */}
       <section className="sv-hero-wrap" aria-labelledby="sv-judge-title">
         <div className="sv-hero-glow" aria-hidden="true" />
@@ -678,7 +694,8 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
       ) : null}
 
       <SessionBackfill t={t} />
-    </div>
+      </div>
+    </AppPage>
   );
 }
 

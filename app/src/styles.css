@@ -9190,17 +9190,18 @@ details.props > .btn {
   }
 }
 
-/* ── Sieve (Ingest): rail · judgement tile · verdict rows · backfill ───── */
-.sv {
-  padding-top: 22px;
-}
+/* ── Sieve (Ingest): rail · judgement tile · verdict rows · backfill ─────
+   `.sv` itself carries no spacing: AppPage's frame owns the page's top gutter
+   and the gap under the toolbar row. It survives only as the state hook that
+   `.sv.is-running` hangs the judgement ring's sweep off. */
 .sv-rail {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px 0;
   list-style: none;
-  margin: 0 0 26px;
+  /* Lives in .u-page__bar, which spaces itself. */
+  margin: 0;
   padding: 0;
   font-size: 12.5px;
   color: var(--ink-3);
