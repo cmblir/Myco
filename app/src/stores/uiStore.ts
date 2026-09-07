@@ -144,6 +144,12 @@ export interface UIState {
   // Morning-Report band (Q4 item 2): when Overview was last opened, epoch ms.
   // null until the first visit ever stamps it.
   lastVisitAt: number | null;
+  // Vaults where the user opened the collapsed harvest row back into the full
+  // queue, keyed by vault path. Absent = collapsed, which is the default for a
+  // vault mid-harvest (see harvestSurface) — the hero is only for a first run.
+  // A finished run writes `false` here: the user just acted, so the queue must
+  // not re-present itself at full size.
+  harvestExpanded: Record<string, boolean>;
   // Reader properties panel (frontmatter form) folded shut. Default open.
   propsCollapsed: boolean;
   // Reader editor mode; per device, no longer reset per file.
@@ -189,6 +195,7 @@ export interface UIState {
   toggleFolder: (id: string) => void;
   setMyceliumGrown: (v: boolean) => void;
   stampVisit: () => void;
+  setHarvestExpanded: (vault: string, v: boolean) => void;
   setPropsCollapsed: (v: boolean) => void;
   setEditorMode: (mode: EditorMode) => void;
   toggleOutline: () => void;
@@ -224,6 +231,7 @@ export const useUIStore = create<UIState>()(
       expandedFolders: { __favorites: true },
       myceliumGrown: false,
       lastVisitAt: null,
+      harvestExpanded: {},
       propsCollapsed: false,
       editorMode: "live",
       outlineOpen: true,
@@ -274,6 +282,8 @@ export const useUIStore = create<UIState>()(
         }),
       setMyceliumGrown: (v) => set({ myceliumGrown: v }),
       stampVisit: () => set({ lastVisitAt: Date.now() }),
+      setHarvestExpanded: (vault, v) =>
+        set({ harvestExpanded: { ...get().harvestExpanded, [vault]: v } }),
       setPropsCollapsed: (v) => set({ propsCollapsed: v }),
       setEditorMode: (editorMode) => set({ editorMode }),
       toggleOutline: () => set({ outlineOpen: !get().outlineOpen }),

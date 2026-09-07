@@ -1228,6 +1228,10 @@ export interface Strings {
   hq_loading: string;
   hq_error: string;
   hq_retry: string;
+  // Collapsed working state: harvested before and candidates remain, so the
+  // hero stands down to one row (harvestSurface → "working").
+  hq_mini_line: string; // {left} {done}
+  hq_mini_fold: string;
   // Judgement stage (Ingest): a refused source is one toast, not a file.
   ing_refused_title: string; // {reason}
   ing_logged_title: string; // {reason}
@@ -3041,6 +3045,8 @@ export const STRINGS: Record<Lang, Strings> = {
     hq_loading: "Scanning sessions/…",
     hq_error: "Could not read the session archive",
     hq_retry: "Retry",
+    hq_mini_line: "{left} candidates left · {done} harvested so far",
+    hq_mini_fold: "Collapse the harvest queue",
     ing_refused_title: "Nothing to keep — not saved · {reason}",
     ing_logged_title: "Kept the original only · {reason}",
     ing_noop_reason: "plan: every item NOOP — the wiki already covers this",
@@ -4847,6 +4853,8 @@ export const STRINGS: Record<Lang, Strings> = {
     hq_loading: "sessions/ 훑는 중…",
     hq_error: "세션 아카이브를 읽지 못했습니다",
     hq_retry: "다시 시도",
+    hq_mini_line: "남은 후보 {left}개 · 지금까지 {done}개 수확",
+    hq_mini_fold: "수확대 접기",
     ing_refused_title: "내용이 없어 저장하지 않았습니다 · {reason}",
     ing_logged_title: "원본만 보관했습니다 · {reason}",
     ing_noop_reason: "계획 전부 NOOP — 위키에 더할 것이 없습니다",
@@ -6483,6 +6491,8 @@ export const STRINGS: Record<Lang, Strings> = {
     hq_loading: "sessions/ を走査中…",
     hq_error: "セッションのアーカイブを読めませんでした",
     hq_retry: "再試行",
+    hq_mini_line: "残り候補{left}件 · これまでに{done}件収穫",
+    hq_mini_fold: "収穫キューを折りたたむ",
     ing_refused_title: "保存する内容がありません — 保存しませんでした · {reason}",
     ing_logged_title: "原本だけ保管しました · {reason}",
     ing_noop_reason: "計画がすべてNOOP — Wikiに加えるものがありません",

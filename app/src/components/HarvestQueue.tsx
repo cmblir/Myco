@@ -18,6 +18,7 @@ import {
   excludedRows,
   formatKb,
   harvestLabel,
+  harvestSurface,
   junkExcluded,
   queueProgress,
   selectionTotals,
@@ -60,6 +61,10 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
   const runBtn = useRef<HTMLButtonElement | null>(null);
 
   const root = vault?.path ?? null;
+  // Per-vault disclosure: absent = collapsed, which is the default once this
+  // vault has been harvested at least once.
+  const expanded = useUIStore((s) => (root ? (s.harvestExpanded[root] ?? false) : false));
+  const setExpanded = useUIStore((s) => s.setHarvestExpanded);
 
   const load = useCallback(
     async (force = false) => {
@@ -99,6 +104,8 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
   const goal = base + totals.citations;
   const running = progress !== null;
   const allSelected = items.length > 0 && totals.count === items.length;
+  const surface = harvestSurface(data);
+  const collapsed = surface === "working" && !expanded;
 
   function toggle(path: string, on: boolean): void {
     setSelected((prev) => {
@@ -143,88 +150,151 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
     } finally {
       setProgress(null);
       setPlanning(false);
+      // The user just harvested — do not re-present the same hero, even to
+      // someone who had deliberately opened the queue. One chevron reopens it.
+      setExpanded(root, false);
       await load(true);
     }
   }
 
   const titleParts = t.hq_title.split("{n}");
 
+  // The number this whole surface exists to move. Same markup in both states —
+  // 42px in the hero, 14px in the collapsed row — because "did my harvest do
+  // anything" is the question a collapsed row still has to answer. role=status:
+  // the goal number is what changes with every checkbox.
+  const citesNum = (
+    <div className="hq-kpi-num" role="status" aria-labelledby="hq-kpi-label">
+      <b>{citesNow === null ? "…" : citesNow.toLocaleString()}</b>
+      {totals.count > 0 ? (
+        <span className="hq-goal">
+          <svg className="hq-arrow" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M5 12h14M13 6l6 6-6 6" />
+          </svg>
+          <span className="hq-sr">→</span>
+          <span key={goal} className="hq-bump">
+            {goal.toLocaleString()}
+          </span>
+        </span>
+      ) : null}
+    </div>
+  );
+
+  // Filled in the hero, glass in the collapsed row: the Overview's one filled
+  // primary belongs to whatever is below once the user is mid-harvest.
+  const harvestButton = (
+    <button
+      ref={harvestBtn}
+      type="button"
+      className={"btn hq-btn" + (collapsed ? "" : " btn-primary")}
+      disabled={totals.count === 0 || running || planning}
+      onClick={() => setPlanning(true)}
+    >
+      {harvestLabel(t.hq_harvest_btn, totals.count)}
+    </button>
+  );
+
   return (
     <section
-      className={"hq" + (planning ? " is-planning" : "")}
+      className={
+        "hq" + (planning ? " is-planning" : "") + (collapsed ? " is-mini" : "")
+      }
       aria-labelledby="hq-title"
       data-testid="harvest-queue"
     >
-      <div className="hq-hero-wrap">
-        <div className="hq-hero-glow" aria-hidden="true" />
-        <div className="hq-hero">
-          <div className="hq-hero-fig" style={{ "--i": 0 } as CSSProperties}>
-            <ActivityIcon name="distill" size={112} />
-          </div>
-          <div className="hq-hero-text" style={{ "--i": 1 } as CSSProperties}>
-            <h1 className="hq-title" id="hq-title">
-              {titleParts[0]}
-              <b>{items.length.toLocaleString()}</b>
-              {titleParts[1] ?? ""}
-            </h1>
-            <p className="hq-lede">
-              {data
-                ? fill(t.hq_lede, {
-                    total: data.total_scanned,
-                    distinct: data.distinct_bodies,
-                  })
-                : error
-                  ? t.hq_error
-                  : t.hq_loading}
-              {data && items.length > 0 ? (
-                queued ? (
-                  <>
-                    {" "}
-                    {fill(t.hq_progress, {
-                      done: queued.done,
-                      left: queued.left,
-                      shown: queued.shown,
-                    })}
-                  </>
-                ) : (
-                  <> {t.hq_never_run}</>
-                )
-              ) : null}
-            </p>
-          </div>
-          <div className="hq-kpi" style={{ "--i": 2 } as CSSProperties}>
+      {collapsed && queued ? (
+        <div className="hq-mini">
+          <button
+            type="button"
+            className="hq-mini-btn"
+            aria-expanded={false}
+            onClick={() => setExpanded(root, true)}
+          >
+            <ActivityIcon name="distill" size={28} />
+            <span className="hq-mini-line" id="hq-title">
+              {fill(t.hq_mini_line, { left: queued.left, done: queued.done })}
+            </span>
+            <span className="hq-chev" aria-hidden="true">
+              ›
+            </span>
+          </button>
+          <span className="hq-mini-kpi">
             <span className="hq-kpi-label" id="hq-kpi-label">
               {t.hq_kpi_label}
             </span>
-            {/* role=status: the goal number is what changes with every checkbox. */}
-            <div className="hq-kpi-num" role="status" aria-labelledby="hq-kpi-label">
-              <b>{citesNow === null ? "…" : citesNow.toLocaleString()}</b>
-              {totals.count > 0 ? (
-                <span className="hq-goal">
-                  <svg className="hq-arrow" viewBox="0 0 24 24" aria-hidden="true">
-                    <path d="M5 12h14M13 6l6 6-6 6" />
-                  </svg>
-                  <span className="hq-sr">→</span>
-                  <span key={goal} className="hq-bump">
-                    {goal.toLocaleString()}
-                  </span>
-                </span>
-              ) : null}
-            </div>
-            <button
-              ref={harvestBtn}
-              type="button"
-              className="btn btn-primary hq-btn"
-              disabled={totals.count === 0 || running || planning}
-              onClick={() => setPlanning(true)}
-            >
-              {harvestLabel(t.hq_harvest_btn, totals.count)}
-            </button>
-          </div>
+            {citesNum}
+          </span>
+          {harvestButton}
         </div>
-      </div>
+      ) : (
+        <>
+          {/* The way back to the quiet row, for a vault that has harvested
+              before — otherwise the disclosure would only ever open. */}
+          {surface === "working" ? (
+            <div className="hq-foldbar">
+              <button
+                type="button"
+                className="hq-fold"
+                aria-expanded={true}
+                onClick={() => setExpanded(root, false)}
+              >
+                <span className="hq-chev" aria-hidden="true">
+                  ›
+                </span>
+                {t.hq_mini_fold}
+              </button>
+            </div>
+          ) : null}
+          <div className="hq-hero-wrap">
+            <div className="hq-hero-glow" aria-hidden="true" />
+            <div className="hq-hero">
+              <div className="hq-hero-fig" style={{ "--i": 0 } as CSSProperties}>
+                <ActivityIcon name="distill" size={112} />
+              </div>
+              <div className="hq-hero-text" style={{ "--i": 1 } as CSSProperties}>
+                <h1 className="hq-title" id="hq-title">
+                  {titleParts[0]}
+                  <b>{items.length.toLocaleString()}</b>
+                  {titleParts[1] ?? ""}
+                </h1>
+                <p className="hq-lede">
+                  {data
+                    ? fill(t.hq_lede, {
+                        total: data.total_scanned,
+                        distinct: data.distinct_bodies,
+                      })
+                    : error
+                      ? t.hq_error
+                      : t.hq_loading}
+                  {data && items.length > 0 ? (
+                    queued ? (
+                      <>
+                        {" "}
+                        {fill(t.hq_progress, {
+                          done: queued.done,
+                          left: queued.left,
+                          shown: queued.shown,
+                        })}
+                      </>
+                    ) : (
+                      <> {t.hq_never_run}</>
+                    )
+                  ) : null}
+                </p>
+              </div>
+              <div className="hq-kpi" style={{ "--i": 2 } as CSSProperties}>
+                <span className="hq-kpi-label" id="hq-kpi-label">
+                  {t.hq_kpi_label}
+                </span>
+                {citesNum}
+                {harvestButton}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
-      {data ? (
+      {data && !collapsed ? (
         <div className="hq-drop">
           <button
             type="button"
@@ -292,7 +362,7 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
         </div>
       ) : null}
 
-      {items.length > 0 ? (
+      {items.length > 0 && !collapsed ? (
         <>
           <ul className="hq-queue">
             {items.map((c) => (
@@ -329,60 +399,62 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
                 : fill(t.hq_est, { n: totals.count, base, goal })}
             </span>
           </div>
+        </>
+      ) : null}
 
-          {planning ? (
-            <div className="hq-plan" role="group" aria-labelledby="hq-plan-title">
-              <h3 id="hq-plan-title">{t.hq_plan_title}</h3>
-              <p className="hq-plan-sub">
-                {fill(t.hq_plan_sub, { n: totals.count, kb: formatKb(totals.bytes) })}
-              </p>
-              <ol>
-                <li>{fill(t.hq_plan_copy, { n: totals.count })}</li>
-                <li>{t.hq_plan_pass}</li>
-                <li>{fill(t.hq_plan_cites, { base, goal, n: totals.citations })}</li>
-              </ol>
-              {progress ? (
-                <div
-                  className="hq-prog"
-                  role="progressbar"
-                  aria-valuemin={0}
-                  aria-valuemax={progress.total}
-                  aria-valuenow={progress.done}
-                >
-                  <i style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%` }} />
-                </div>
-              ) : null}
-              <div className="hq-plan-foot">
-                <span className="hq-plan-note" role="status">
-                  {progress
-                    ? fill(t.hq_plan_running, { done: progress.done, total: progress.total })
-                    : t.hq_plan_note}
-                </span>
-                <button
-                  type="button"
-                  className="btn"
-                  disabled={running}
-                  onClick={() => {
-                    setPlanning(false);
-                    harvestBtn.current?.focus();
-                  }}
-                >
-                  {t.hq_plan_cancel}
-                </button>
-                <button
-                  ref={runBtn}
-                  type="button"
-                  className="btn btn-primary hq-btn"
-                  disabled={running}
-                  aria-busy={running}
-                  onClick={() => void run()}
-                >
-                  {t.hq_plan_run}
-                </button>
-              </div>
+      {/* Outside the queue list: the plan gate is the "nothing has been created
+          yet" contract, and the collapsed row's button has to reach it too. */}
+      {items.length > 0 && planning ? (
+        <div className="hq-plan" role="group" aria-labelledby="hq-plan-title">
+          <h3 id="hq-plan-title">{t.hq_plan_title}</h3>
+          <p className="hq-plan-sub">
+            {fill(t.hq_plan_sub, { n: totals.count, kb: formatKb(totals.bytes) })}
+          </p>
+          <ol>
+            <li>{fill(t.hq_plan_copy, { n: totals.count })}</li>
+            <li>{t.hq_plan_pass}</li>
+            <li>{fill(t.hq_plan_cites, { base, goal, n: totals.citations })}</li>
+          </ol>
+          {progress ? (
+            <div
+              className="hq-prog"
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={progress.total}
+              aria-valuenow={progress.done}
+            >
+              <i style={{ width: `${(progress.done / Math.max(1, progress.total)) * 100}%` }} />
             </div>
           ) : null}
-        </>
+          <div className="hq-plan-foot">
+            <span className="hq-plan-note" role="status">
+              {progress
+                ? fill(t.hq_plan_running, { done: progress.done, total: progress.total })
+                : t.hq_plan_note}
+            </span>
+            <button
+              type="button"
+              className="btn"
+              disabled={running}
+              onClick={() => {
+                setPlanning(false);
+                harvestBtn.current?.focus();
+              }}
+            >
+              {t.hq_plan_cancel}
+            </button>
+            <button
+              ref={runBtn}
+              type="button"
+              className="btn btn-primary hq-btn"
+              disabled={running}
+              aria-busy={running}
+              onClick={() => void run()}
+            >
+              {t.hq_plan_run}
+            </button>
+          </div>
+        </div>
       ) : null}
     </section>
   );

@@ -2974,7 +2974,7 @@ function mockInvoke(
         items: items.slice(0, limit),
         excluded: {
           ...MOCK_HARVEST_EXCLUDED,
-          already_harvested: mockHarvested.size,
+          already_harvested: mockHarvestedBefore + mockHarvested.size,
         },
         total_scanned: 1473,
         distinct_bodies: 719,
@@ -3243,6 +3243,11 @@ export function installTauriMock(): void {
     indexedPages: (n: number) => {
       mockIndexedPages = n;
     },
+    /// Pretend `n` sessions were harvested before this session — the only way
+    /// to reach the Overview's collapsed (mid-harvest) queue in the mock.
+    harvestedBefore: (n: number) => {
+      mockHarvestedBefore = n;
+    },
   };
   console.info(
     "[devMock] Tauri IPC mock installed with",
@@ -3267,6 +3272,10 @@ const MOCK_HARVEST_EXCLUDED = {
 
 /** Paths harvested this browser session — they leave the queue for good. */
 const mockHarvested = new Set<string>();
+/** Runs from BEFORE this session (`__mycoMock.harvestedBefore`). A vault
+ *  mid-harvest is otherwise unreachable in the mock: the Overview collapses
+ *  the queue once anything has ever been harvested, and a fresh mock has not. */
+let mockHarvestedBefore = 0;
 /** Judgement log lines (`record_noop`) — inspectable from a test. */
 const mockNoops: { rel: string; reason: string }[] = [];
 

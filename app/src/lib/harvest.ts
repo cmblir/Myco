@@ -90,6 +90,23 @@ export function distinctCitations(rows: readonly ProvenanceRow[]): number {
   return slugs.size;
 }
 
+/** Which of the three harvest surfaces the Overview owes this vault.
+ *  `first-run` earns the full hero — nothing has ever been harvested, so the
+ *  proposition still has to be made. `working` does not: the user has
+ *  harvested before, and a 112px hero demanding the same action reads as
+ *  "nothing happened", so that state collapses to one quiet row. `done` wins
+ *  over `working` — an emptied queue must reach the empty state, not a row
+ *  reading "0 left". No data yet (first scan, or an error) shows the hero. */
+export type HarvestSurface = "first-run" | "working" | "done";
+
+export function harvestSurface(
+  data: Pick<HarvestCandidates, "items" | "excluded"> | null,
+): HarvestSurface {
+  if (!data) return "first-run";
+  if (data.items.length === 0) return "done";
+  return data.excluded.already_harvested > 0 ? "working" : "first-run";
+}
+
 /** Category colour token for a cluster page from its frontmatter `type`
  *  (link-graph meta). Untyped pages read as concepts — the live violet. */
 export function clusterColorVar(type: string | undefined): string {

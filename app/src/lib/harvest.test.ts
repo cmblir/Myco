@@ -7,6 +7,7 @@ import {
   excludedRows,
   formatKb,
   harvestLabel,
+  harvestSurface,
   junkExcluded,
   queueProgress,
   selectionTotals,
@@ -112,6 +113,35 @@ describe("clusterColorVar", () => {
     expect(clusterColorVar("source-summary")).toBe("var(--c-source)");
     expect(clusterColorVar("analysis")).toBe("var(--c-analysis)");
     expect(clusterColorVar(undefined)).toBe("var(--c-concept)");
+  });
+});
+
+describe("harvestSurface", () => {
+  const ex = {
+    duplicate: 51,
+    boilerplate: 0,
+    too_small: 3,
+    too_large: 0,
+    already_harvested: 0,
+  };
+
+  it("earns the hero while nothing has ever been harvested", () => {
+    expect(harvestSurface({ items: ITEMS, excluded: ex })).toBe("first-run");
+  });
+
+  it("collapses once a previous run took some and candidates remain", () => {
+    const ran = { ...ex, already_harvested: 114 };
+    expect(harvestSurface({ items: ITEMS, excluded: ran })).toBe("working");
+  });
+
+  it("is done when the queue is empty, harvested before or not", () => {
+    const ran = { ...ex, already_harvested: 114 };
+    expect(harvestSurface({ items: [], excluded: ex })).toBe("done");
+    expect(harvestSurface({ items: [], excluded: ran })).toBe("done");
+  });
+
+  it("shows the hero while the first scan is still running", () => {
+    expect(harvestSurface(null)).toBe("first-run");
   });
 });
 

@@ -8458,6 +8458,105 @@ details.props > .btn {
   animation: hq-bump 420ms var(--ease-spring);
 }
 
+/* Working state — harvested before, candidates remain. The hero stands down
+   to ONE glass row: 28px object, one line, the citation pair at 14px instead
+   of 42, and a glass (not filled) button, because the Overview's one filled
+   primary now belongs to whatever is below. The chevron opens the queue back
+   up; .hq-fold puts it away again. */
+.hq.is-mini {
+  padding: 14px 0 16px;
+}
+.hq-mini {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--glass-hi);
+}
+.hq-mini-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  text-align: left;
+  font-size: 14px;
+  color: var(--ink-2);
+  transition: color var(--dur-quick) var(--ease-out);
+}
+.hq-mini-btn:hover {
+  color: var(--ink);
+}
+.hq-mini-btn .activity-icon {
+  flex: 0 0 auto;
+  filter: drop-shadow(0 0 8px var(--glow));
+}
+.hq-mini-line {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.hq-mini-btn .hq-chev {
+  margin-left: 0;
+  transform: rotate(90deg);
+}
+.hq-mini-kpi {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-left: auto;
+  white-space: nowrap;
+}
+.hq-mini-kpi .hq-kpi-num {
+  font-size: 14px;
+  letter-spacing: 0;
+  gap: 6px;
+}
+.hq-mini-kpi .hq-arrow {
+  width: 14px;
+  height: 14px;
+  animation: none;
+}
+/* Its own row: the hero's top-right corner belongs to the citation KPI. */
+.hq-foldbar {
+  display: flex;
+  justify-content: flex-end;
+  margin: 0 0 8px;
+}
+.hq-fold {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font-size: 12.5px;
+  color: var(--ink-4);
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+.hq-fold:hover {
+  background: var(--glass-hover);
+  color: var(--ink-2);
+}
+.hq-fold .hq-chev {
+  margin-left: 0;
+  font-size: 14px;
+  transform: rotate(-90deg);
+}
+
 /* Exclusion line: glass, stop object 28px, expands to the bucket table. */
 .hq-drop {
   margin-top: 18px;
