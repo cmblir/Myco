@@ -8258,7 +8258,11 @@ html.notch-window body {
 .hq.is-mini {
   padding: 14px 0 16px;
 }
-.hq-mini {
+/* NOT .hq-mini: that name is the queue row's preview button further down,
+   whose `height: 28px` came later in the cascade and pinned this wrapping row
+   to one line — the second line then drew on top of the card below, which is
+   what the owner saw twice. */
+.hq-minirow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;

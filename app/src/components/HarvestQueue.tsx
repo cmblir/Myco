@@ -211,7 +211,7 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
       data-testid="harvest-queue"
     >
       {collapsed && queued ? (
-        <div className="hq-mini">
+        <div className="hq-minirow">
           <button
             type="button"
             className="hq-mini-btn"
