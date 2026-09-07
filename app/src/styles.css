@@ -7165,6 +7165,30 @@ html.notch-window body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Collapsed, with decisions waiting: the cap and a count, and nothing else.
+   It has to live inside the ~14px strip that peeks below the hardware cutout
+   (NOTCH_PEEK_PX), so it is shorter than .notch-lip and centred in it — any
+   taller and the number hides behind the physical notch. Drawn only when
+   something is actually waiting; an empty agenda renders no element at all. */
+.notch-mark {
+  height: 14px;
+  width: 100%;
+  flex: none;
+  margin-top: var(--notch-cutout, 0px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.notch-mark .notch-cap {
+  width: 8px;
+  height: 8px;
+}
+.notch-mark-n {
+  font: 600 11px/1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: #cdbdfb;
+}
 /* The mascot cap. Lit purple = something is alive; this is the only saturated
    thing on the surface, so colour alone never carries meaning without the lip
    text beside it. */

@@ -11,6 +11,8 @@ import { listen } from "@tauri-apps/api/event";
 import { ipc } from "./ipc";
 import type {
   InflowStats,
+  NotchAgendaPayload,
+  NotchAgendaRow,
   TrayPanelPayload,
   TrayRunningRow,
   TrayStatusPayload,
@@ -20,7 +22,15 @@ import type { Strings } from "./i18n";
 import { inflowLines } from "./inflow";
 import { getLastSweepAt } from "./autoImport";
 import { buildDigest } from "./taskNotify";
-import { pendingLinkCount } from "./linkSuggestions";
+import {
+  acceptSuggestion,
+  pendingLinkCount,
+  suggestLinks,
+} from "./linkSuggestions";
+import { runInboxPass } from "./autoIngest";
+import { stem } from "./graphData";
+import { notchAgenda } from "./notchAgenda";
+import type { AgendaItem, NotchAgenda } from "./notchAgenda";
 import { runDistillGuarded } from "./distill";
 import {
   MAP_ROW_CAP,
@@ -33,6 +43,7 @@ import { useQueryStore } from "../stores/queryStore";
 import { useReindexStore } from "../stores/reindexStore";
 import { useDistillRunStore } from "../stores/distillRunStore";
 import type { DistillRunStep } from "../stores/distillRunStore";
+import { useHarvestStore } from "../stores/harvestStore";
 import { useLinkSuggestStore } from "../stores/linkSuggestStore";
 import { useReflectStore } from "../stores/reflectStore";
 import { useDistillStore, pendingMapProposals } from "../stores/distillStore";
@@ -79,6 +90,9 @@ export interface TraySnapshot {
   /** Open tasks due today / overdue (throttled scan; 0/0 before a probe). */
   dueToday: number;
   overdue: number;
+  /** Decisions waiting, for the notch (lib/notchAgenda). A STANDING state,
+   *  like pendingLinks: never part of the tray title. */
+  agenda: NotchAgenda;
 }
 
 /** Icon-side title: nothing when idle, the reindex percent when indexing is
@@ -200,6 +214,58 @@ export function traySubtitle(s: TraySnapshot, t: Strings): string {
   return t.tray_sub_clear ?? "Nothing waiting";
 }
 
+/** One agenda item → the notch's row, translated and routed. The action
+ * strings are the ones `applyTrayAction` below already parses, so the notch
+ * never learns a second way to approve a proposal. */
+export function agendaRow(item: AgendaItem, t: Strings): NotchAgendaRow {
+  if (item.kind === "proposal") {
+    const row = mapRowContent(item.proposal, t);
+    return {
+      id: item.id,
+      label: row.label,
+      sub: row.sub,
+      primaryLabel: t.pf_approve,
+      primaryAction: `proposal-approve:${item.id}`,
+      secondaryLabel: t.pf_dismiss,
+      secondaryAction: `proposal-reject:${item.id}`,
+    };
+  }
+  if (item.kind === "link") {
+    return {
+      id: item.id,
+      // Language-neutral, like the notch's other filename rows: the row IS
+      // the pair, and "a ↔ b" needs no sentence around it.
+      label: `${stem(item.link.source)} ↔ ${stem(item.link.target)}`,
+      sub: t.ls_title,
+      primaryLabel: t.ls_accept,
+      primaryAction: `links-accept:${item.id}`,
+      secondaryLabel: t.ls_dismiss,
+      secondaryAction: `links-dismiss:${item.id}`,
+    };
+  }
+  return {
+    id: item.id,
+    label: t.notch_agenda_harvest_title,
+    sub: t.notch_agenda_harvest_sub.replace("{n}", String(item.count)),
+    primaryLabel: t.notch_agenda_harvest.replace("{n}", String(item.count)),
+    primaryAction: "harvest-run",
+    // A queue is not a yes/no: there is nothing to say no to, and "dismiss
+    // the whole queue" is a decision the notch has no business offering.
+    secondaryLabel: "",
+    secondaryAction: "",
+  };
+}
+
+export function agendaPayload(
+  agenda: NotchAgenda,
+  t: Strings,
+): NotchAgendaPayload {
+  return {
+    total: agenda.total,
+    rows: agenda.rows.map((item) => agendaRow(item, t)),
+  };
+}
+
 /** Numbers + labels the glass tiles render (tray v3). Kept apart from the
  * pre-formatted rows above because the tiles put the count in its own badge
  * and animate it when it grows, which a baked "6 suggested links" string
@@ -207,6 +273,7 @@ export function traySubtitle(s: TraySnapshot, t: Strings): string {
 export function trayPanel(s: TraySnapshot, t: Strings): TrayPanelPayload {
   return {
     mcpRunning: s.mcpRunning,
+    agenda: agendaPayload(s.agenda, t),
     counts: {
       links: s.pendingLinks,
       reflect: s.reflectFindings,
@@ -330,6 +397,60 @@ const INFLOW_PROBE_MIN_MS = 120_000;
 let dueCounts = { dueToday: 0, overdue: 0 };
 let dueProbedAt = 0;
 
+/** Accept one suggested link by its pair key. The pair is re-derived from the
+ * stores rather than carried in the action string: a key that is no longer
+ * suggested (already linked, already dismissed, a stale notch push) must be a
+ * no-op, not a write. Same three steps as Overview's ✓ — acceptSuggestion,
+ * dismiss the pair, rebuild the graph — and no second wikilink writer. */
+async function acceptLinkByKey(key: string): Promise<void> {
+  const { adjacency } = useVaultStore.getState();
+  const { sem, dismissed } = useLinkSuggestStore.getState();
+  if (!adjacency || !sem) return;
+  const pair = suggestLinks(
+    adjacency,
+    sem,
+    dismissed,
+    Number.POSITIVE_INFINITY,
+  ).find((s) => s.key === key);
+  if (!pair) return;
+  await acceptSuggestion(pair, ipc);
+  useLinkSuggestStore.getState().dismiss([pair.key]);
+  await useVaultStore.getState().refreshLinkGraph();
+}
+
+/** Harvest every listed candidate — the notch's "N개 수확". Copy the sessions
+ * into `_inbox/`, then walk them through one inbox pass each, reporting on
+ * harvestStore's run slice so the Topbar's activity chip narrates it exactly
+ * as it does for a run started from Overview's queue. The queue component
+ * owns the selectable variant; this one is deliberately all-or-nothing —
+ * there is no way to tick boxes on a 252px surface. */
+async function harvestListed(): Promise<void> {
+  const harvest = useHarvestStore.getState();
+  const root = useVaultStore.getState().currentVault?.path;
+  const paths = harvest.data?.items.map((c) => c.path) ?? [];
+  if (!root || paths.length === 0 || harvest.run.phase !== null) return;
+  harvest.startRun(paths.length);
+  try {
+    const res = await ipc.harvestRun(paths);
+    harvest.setRun(0, res.copied);
+    // One pass ingests ONE source and archives it; the loop stops early when
+    // a pass ingests nothing (another run busy, a held source) and the rest
+    // simply wait in `_inbox/` for the scheduler.
+    for (let i = 0; i < res.copied; i++) {
+      const out = await runInboxPass(root);
+      if (!out.ingested) break;
+      harvest.setRun(i + 1, res.copied);
+    }
+    harvest.endRun(true);
+  } catch {
+    harvest.endRun(false);
+  } finally {
+    // Refetch so the harvested sessions leave the queue — and the notch's
+    // agenda row with them.
+    await useHarvestStore.getState().load(root, true);
+  }
+}
+
 /** A tray menu / panel action, expanded into store calls. Exported for the
  *  tests: the listener above is a one-liner around it. */
 export function applyTrayAction(action: string): void {
@@ -364,6 +485,22 @@ export function applyTrayAction(action: string): void {
   const reject = action.match(/^proposal-reject:(.+)$/);
   if (reject) {
     void useDistillStore.getState().dismiss(reject[1]);
+    return;
+  }
+  // The notch's other two decisions, same contract as the proposal pair: the
+  // secondary surface sends an identity, the main window does the write.
+  const acceptLink = action.match(/^links-accept:(.+)$/);
+  if (acceptLink) {
+    void acceptLinkByKey(acceptLink[1]);
+    return;
+  }
+  const dismissLink = action.match(/^links-dismiss:(.+)$/);
+  if (dismissLink) {
+    useLinkSuggestStore.getState().dismiss([dismissLink[1]]);
+    return;
+  }
+  if (action === "harvest-run") {
+    void harvestListed();
     return;
   }
   if (action === "proposals") {
@@ -415,6 +552,16 @@ export function initTrayIntegration(): () => void {
       vault.adjacency && links.sem
         ? pendingLinkCount(vault.adjacency, links.sem, links.dismissed)
         : 0;
+    // The notch's agenda, from the same three stores the surfaces above read.
+    // Built HERE and pushed: the notch webview is a third JS context whose
+    // own copies of these stores are always empty (no App, no scheduler).
+    const agenda = notchAgenda({
+      proposals: useDistillStore.getState().proposals,
+      adjacency: vault.adjacency,
+      sem: links.sem,
+      dismissed: links.dismissed,
+      harvestItems: useHarvestStore.getState().data?.items.length ?? 0,
+    });
     sender.push(
       buildTrayStatus(
         {
@@ -440,6 +587,7 @@ export function initTrayIntegration(): () => void {
             : null,
           dueToday: dueCounts.dueToday,
           overdue: dueCounts.overdue,
+          agenda,
         },
         t,
       ),
@@ -518,6 +666,8 @@ export function initTrayIntegration(): () => void {
     useLinkSuggestStore.subscribe(recompute),
     useReflectStore.subscribe(recompute),
     useDistillStore.subscribe(recompute),
+    // The harvest queue's candidate count is the notch agenda's third source.
+    useHarvestStore.subscribe(recompute),
   ];
 
   // Tray menu actions: route jumps and the guarded distill entry. Rust has

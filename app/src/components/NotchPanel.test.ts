@@ -15,6 +15,7 @@ import {
   clampPercent,
   clock,
   describeNotch,
+  markCount,
   type NotchState,
 } from "./NotchPanel";
 import { STRINGS } from "../lib/i18n";
@@ -276,5 +277,25 @@ describe("clampPercent", () => {
     // a bar that never started.
     expect(clampPercent(Number.POSITIVE_INFINITY)).toBe(100);
     expect(clampPercent(Number.NEGATIVE_INFINITY)).toBe(0);
+  });
+});
+
+describe("markCount", () => {
+  const collapsed = describeNotch({ kind: "idle" }, t);
+
+  it("draws nothing when nothing is waiting", () => {
+    // The whole reason the collapsed surface may render anything at all: it
+    // has to stay invisible on an empty agenda.
+    expect(markCount(collapsed, 0)).toBeNull();
+  });
+
+  it("shows the count when a decision is waiting", () => {
+    expect(markCount(collapsed, 1)).toBe(1);
+    expect(markCount(collapsed, 12)).toBe(12);
+  });
+
+  it("stays out of an open card", () => {
+    // Open, the card lists the rows themselves; a count beside them is noise.
+    expect(markCount(describeNotch({ kind: "peek" }, t), 3)).toBeNull();
   });
 });

@@ -27,7 +27,11 @@ import type { NotchState } from "../components/NotchPanel";
 import { TRAY_STATUS_EVENT } from "../components/TrayPanel";
 import { ipc } from "./ipc";
 import { LAST_VAULT_KEY } from "../stores/vaultStore";
-import type { NotchGeometry, TrayStatusPayload } from "./ipc";
+import type {
+  NotchAgendaPayload,
+  NotchGeometry,
+  TrayStatusPayload,
+} from "./ipc";
 import { STRINGS } from "./i18n";
 import { EMPTY_CAPTION, PARTIAL_WINDOW_SECS, startPartialLoop } from "./liveCaption";
 import type { CaptionState } from "./liveCaption";
@@ -562,6 +566,8 @@ export interface NotchDrive {
    *  it is written ~12×/s: routing it through the reducer would re-render the
    *  whole panel on every audio buffer for a canvas that already redraws. */
   levels: LevelHistory;
+  /** Decisions waiting, off the tray-status push; null before the first one. */
+  agenda: NotchAgendaPayload | null;
 }
 
 /** Open the text capture and ask the native side for key focus — the lip
@@ -602,6 +608,9 @@ export function useNotchDriver(): NotchDrive | null {
     NOTCH_IDLE,
   );
   const [geom, setGeom] = useState<NotchGeometry | null>(null);
+  // Decisions waiting. State, not a ref: the collapsed surface has to appear
+  // the moment one arrives, without waiting for another event to re-render.
+  const [agenda, setAgenda] = useState<NotchAgendaPayload | null>(null);
 
   // The drag-drop subscription is mount-once; the localized template rides a
   // ref so a language change does not tear the listener down mid-drag.
@@ -731,6 +740,9 @@ export function useNotchDriver(): NotchDrive | null {
       dueRef.current = counts
         ? { today: counts.dueToday, overdue: counts.overdue }
         : null;
+      // Same ride-along: the main window owns the vault and the stores, so it
+      // builds the agenda (lib/notchAgenda) and this webview renders it.
+      setAgenda(s.panel?.agenda ?? null);
     };
     void ipc
       .getTrayStatus()
@@ -1200,5 +1212,6 @@ export function useNotchDriver(): NotchDrive | null {
     onRecordStop: () => void machine().stop(),
     onCapturePaste,
     levels: levelsRef.current,
+    agenda,
   };
 }

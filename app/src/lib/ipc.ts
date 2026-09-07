@@ -589,8 +589,35 @@ export interface TrayProposalPayload {
 /** The tray panel's glass tiles (tray v3): raw counts (the badges animate
  *  on growth, so they cannot arrive pre-formatted) plus their labels. Rust
  *  stores this block as opaque JSON — it owns no tile logic. */
+/** One waiting decision the notch can settle without opening the app. Fully
+ *  pre-translated and pre-routed like the rest of the tray payload: the notch
+ *  renders the strings and emits the action string back on TRAY_ACTION_EVENT,
+ *  where the main window (the single writer) acts on it. */
+export interface NotchAgendaRow {
+  /** Stable row identity — a proposal path, a suggestion pair key, or
+   *  "harvest". What "this row left the list" is keyed on. */
+  id: string;
+  label: string;
+  sub: string;
+  primaryLabel: string;
+  primaryAction: string;
+  /** Both empty for a queue row: harvesting is not a yes/no decision. */
+  secondaryLabel: string;
+  secondaryAction: string;
+}
+
+/** The notch's agenda. `total` counts every waiting decision; `rows` is the
+ *  capped, actionable head of it (lib/notchAgenda). */
+export interface NotchAgendaPayload {
+  total: number;
+  rows: NotchAgendaRow[];
+}
+
 export interface TrayPanelPayload {
   mcpRunning: boolean;
+  /** What the notch shows and can act on. Absent on older payloads — the
+   *  notch then draws nothing when collapsed, as it did before it had one. */
+  agenda?: NotchAgendaPayload | null;
   counts: {
     links: number;
     reflect: number;

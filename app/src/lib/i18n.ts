@@ -1728,6 +1728,15 @@ export interface Strings {
   notch_rejected_list: string;
   notch_unsupported: string; // {ext} — notchDrop's unsupported-drop reason
   notch_write_failed: string;
+  // The agenda: decisions waiting, shown collapsed as a count and offered as
+  // rows on hover (lib/notchAgenda). The proposal and link rows reuse the
+  // app's own words for those actions (pf_approve / ls_accept / …) so the
+  // notch never invents a second name for the same decision.
+  notch_waiting: string; // {n} — the collapsed mark's accessible name
+  notch_agenda_harvest_title: string;
+  notch_agenda_harvest_sub: string; // {n}
+  notch_agenda_harvest: string; // {n} — the row's one button
+  notch_agenda_dropped: string; // the 1.5s beat after a no
   // Settings toggle for the notch surface (macOS).
   s_notch_title: string;
   s_notch_desc: string;
@@ -3547,6 +3556,11 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_unsupported: "This format is not readable yet ({ext})",
     notch_write_failed:
       "Could not save the drop — try again or use 소스 가져오기",
+    notch_waiting: "{n} waiting for you",
+    notch_agenda_harvest_title: "Harvest queue",
+    notch_agenda_harvest_sub: "{n} sessions worth a page",
+    notch_agenda_harvest: "Harvest {n}",
+    notch_agenda_dropped: "Dropped",
     s_notch_title: "Notch drop surface",
     s_notch_desc:
       "Show a drop target under the menu-bar notch — files dropped there land in _inbox for ingest to read.",
@@ -5354,6 +5368,11 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_unsupported: "이 형식은 아직 읽지 못합니다 ({ext})",
     notch_write_failed:
       "저장하지 못했습니다 — 다시 시도하거나 소스 가져오기를 사용하세요",
+    notch_waiting: "{n}건 기다립니다",
+    notch_agenda_harvest_title: "수확 대기",
+    notch_agenda_harvest_sub: "위키에 들어갈 만한 세션 {n}개",
+    notch_agenda_harvest: "{n}개 수확",
+    notch_agenda_dropped: "버렸습니다",
     s_notch_title: "노치 드롭 표면",
     s_notch_desc:
       "메뉴 막대 노치 아래에 드롭 표면을 표시합니다 — 떨어뜨린 파일은 _inbox로 들어가 인제스트가 읽습니다.",
@@ -7174,6 +7193,11 @@ export const STRINGS: Record<Lang, Strings> = {
     notch_unsupported: "この形式はまだ読めません ({ext})",
     notch_write_failed:
       "保存できませんでした — もう一度試すか、ソース取り込みを使用してください",
+    notch_waiting: "{n}件 待っています",
+    notch_agenda_harvest_title: "収穫待ち",
+    notch_agenda_harvest_sub: "ページになる価値のあるセッション{n}件",
+    notch_agenda_harvest: "{n}件を収穫",
+    notch_agenda_dropped: "破棄しました",
     s_notch_title: "ノッチのドロップ面",
     s_notch_desc:
       "メニューバーのノッチ下にドロップ面を表示します — ドロップしたファイルは _inbox に入り、取り込みが読みます。",

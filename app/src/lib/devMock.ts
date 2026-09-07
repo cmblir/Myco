@@ -1977,6 +1977,47 @@ function mockInvoke(
         distill: "",
         open: "Open myco",
         quit: "Quit myco",
+        // Only the notch agenda half of `panel` is fixtured: it is the one
+        // block the notch surface reads and acts on, and without it
+        // `?window=notch&mock=1` can only ever show an empty notch. Rows are
+        // pre-translated in the real payload too — the main window builds
+        // them (lib/notchAgenda + lib/trayStatus).
+        panel: {
+          agenda: {
+            total: 4,
+            rows: [
+              {
+                id: "work/feedback/2026-09-01-attention.md",
+                label: "attention · transformers",
+                sub: "토픽 맵 작성 · 노트 6개",
+                primaryLabel: "승인",
+                primaryAction:
+                  "proposal-approve:work/feedback/2026-09-01-attention.md",
+                secondaryLabel: "무시",
+                secondaryAction:
+                  "proposal-reject:work/feedback/2026-09-01-attention.md",
+              },
+              {
+                id: "wiki/otp.md|wiki/magic-links.md",
+                label: "otp ↔ magic-links",
+                sub: "제안된 연결",
+                primaryLabel: "연결하기",
+                primaryAction: "links-accept:wiki/otp.md|wiki/magic-links.md",
+                secondaryLabel: "무시",
+                secondaryAction: "links-dismiss:wiki/otp.md|wiki/magic-links.md",
+              },
+              {
+                id: "harvest",
+                label: "수확 대기",
+                sub: "위키에 들어갈 만한 세션 12개",
+                primaryLabel: "12개 수확",
+                primaryAction: "harvest-run",
+                secondaryLabel: "",
+                secondaryAction: "",
+              },
+            ],
+          },
+        },
       });
     case "tray_panel_action":
       return Promise.resolve(null);

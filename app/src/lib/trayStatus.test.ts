@@ -12,6 +12,7 @@ import {
   trayTitle,
 } from "./trayStatus";
 import type { TraySnapshot } from "./trayStatus";
+import { EMPTY_AGENDA } from "./notchAgenda";
 import type { TrayStatusPayload } from "./ipc";
 import { useUIStore } from "../stores/uiStore";
 import { STRINGS } from "./i18n";
@@ -35,6 +36,7 @@ const idle: TraySnapshot = {
   autoImportMin: null,
   dueToday: 0,
   overdue: 0,
+  agenda: EMPTY_AGENDA,
 };
 
 describe("trayTitle", () => {

@@ -1,0 +1,147 @@
+// The notch's agenda. What this guards is the one rule the surface exists
+// for: a decision outranks an offer outranks a queue, nothing waiting draws
+// nothing at all, and acting on a row removes exactly that row — because the
+// agenda is derived from the stores, so the store write IS the removal.
+
+import { describe, expect, it } from "vitest";
+import { AGENDA_CAP, notchAgenda } from "./notchAgenda";
+import type { AgendaSources } from "./notchAgenda";
+import type { Adjacency, SemEdge } from "./ipc";
+import type { ProposalMeta, ProposalStatus } from "../stores/distillStore";
+import { pairKey } from "./linkSuggestions";
+
+const EMPTY_ADJ: Adjacency = {
+  forward: {},
+  backward: {},
+  unresolved: {},
+  tags: {},
+};
+
+function proposal(
+  path: string,
+  status: ProposalStatus = "pending",
+): ProposalMeta {
+  return {
+    path,
+    action: "draft-map",
+    status,
+    created: "2026-09-01",
+    title: path,
+    raw: "",
+    files: [],
+    cluster: `cluster ${path}`,
+    members: ["a.md", "b.md"],
+  };
+}
+
+function edge(source: string, target: string, score: number): SemEdge {
+  return { source, target, score };
+}
+
+function sources(over: Partial<AgendaSources> = {}): AgendaSources {
+  return {
+    proposals: [],
+    adjacency: EMPTY_ADJ,
+    sem: [],
+    dismissed: new Set<string>(),
+    harvestItems: 0,
+    ...over,
+  };
+}
+
+describe("notchAgenda", () => {
+  it("draws nothing when nothing is waiting", () => {
+    expect(notchAgenda(sources())).toEqual({ total: 0, rows: [] });
+  });
+
+  it("ranks a decision over an offer over a queue", () => {
+    const agenda = notchAgenda(
+      sources({
+        // Deliberately the smallest count of the three: the order is by what
+        // the thing IS, never by how many there are.
+        proposals: [proposal("work/feedback/p1.md")],
+        sem: [edge("a.md", "b.md", 0.9), edge("c.md", "d.md", 0.8)],
+        harvestItems: 40,
+      }),
+    );
+    expect(agenda.rows.map((r) => r.kind)).toEqual([
+      "proposal",
+      "link",
+      "link",
+    ]);
+    // The queue did not fit, but it is still waiting and still counted.
+    expect(agenda.total).toBe(4);
+  });
+
+  it("counts the harvest queue as one decision, not N", () => {
+    const agenda = notchAgenda(sources({ harvestItems: 40 }));
+    expect(agenda.total).toBe(1);
+    expect(agenda.rows).toEqual([{ kind: "harvest", id: "harvest", count: 40 }]);
+  });
+
+  it("caps the rows at three and keeps counting past them", () => {
+    const agenda = notchAgenda(
+      sources({
+        proposals: ["p1", "p2", "p3", "p4", "p5"].map((p) => proposal(p)),
+      }),
+    );
+    expect(agenda.rows).toHaveLength(AGENDA_CAP);
+    expect(agenda.total).toBe(5);
+  });
+
+  it("only offers pending draft-map proposals", () => {
+    // An approved one is an in-flight decision already made; dismissed/done
+    // are resolved. Offering "approve" on any of them would be a lie.
+    const agenda = notchAgenda(
+      sources({
+        proposals: [
+          proposal("p1", "approved"),
+          proposal("p2", "dismissed"),
+          proposal("p3", "done"),
+          proposal("p4"),
+        ],
+      }),
+    );
+    expect(agenda.rows.map((r) => r.id)).toEqual(["p4"]);
+  });
+
+  it("offers no link rows without a link graph", () => {
+    // suggestLinks needs adjacency to know which pairs are ALREADY linked;
+    // without it every pair would read as a fresh suggestion.
+    const agenda = notchAgenda(
+      sources({ adjacency: null, sem: [edge("a.md", "b.md", 0.9)] }),
+    );
+    expect(agenda).toEqual({ total: 0, rows: [] });
+  });
+
+  it("dismissing one link removes exactly that row", () => {
+    const sem = [edge("a.md", "b.md", 0.9), edge("c.md", "d.md", 0.8)];
+    const before = notchAgenda(sources({ sem }));
+    expect(before.rows.map((r) => r.id)).toEqual([
+      pairKey("a.md", "b.md"),
+      pairKey("c.md", "d.md"),
+    ]);
+    // Exactly what linkSuggestStore.dismiss writes.
+    const after = notchAgenda(
+      sources({ sem, dismissed: new Set([pairKey("a.md", "b.md")]) }),
+    );
+    expect(after.rows.map((r) => r.id)).toEqual([pairKey("c.md", "d.md")]);
+    expect(after.total).toBe(1);
+  });
+
+  it("deciding one proposal removes exactly that row", () => {
+    const proposals = [proposal("p1"), proposal("p2")];
+    expect(notchAgenda(sources({ proposals })).total).toBe(2);
+    // What distillStore.dismiss/apply leave behind on disk (status rewritten).
+    const decided = [proposal("p1", "dismissed"), proposal("p2")];
+    const after = notchAgenda(sources({ proposals: decided }));
+    expect(after.rows.map((r) => r.id)).toEqual(["p2"]);
+  });
+
+  it("emptying the harvest queue removes its row and nothing else", () => {
+    const proposals = [proposal("p1")];
+    expect(notchAgenda(sources({ proposals, harvestItems: 3 })).total).toBe(2);
+    const after = notchAgenda(sources({ proposals, harvestItems: 0 }));
+    expect(after.rows.map((r) => r.kind)).toEqual(["proposal"]);
+  });
+});

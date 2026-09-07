@@ -31,6 +31,7 @@ import VoiceWave from "./VoiceWave";
 import { STRINGS } from "../lib/i18n";
 import type { Strings } from "../lib/i18n";
 import { isComposingKey } from "../lib/ime";
+import type { NotchAgendaPayload } from "../lib/ipc";
 import type { CaptionState } from "../lib/liveCaption";
 import { formatTicker } from "../lib/time";
 import { voiceHotkeyGate } from "../lib/voiceCapture";
@@ -98,6 +99,14 @@ export interface NotchView {
   /** How long the state holds before the surface folds itself away; null =
    *  holds until something replaces it. Only S6 self-collapses. */
   dwellMs: number | null;
+}
+
+/** The collapsed strip's number: how many decisions are waiting, or null when
+ *  the answer is none. Null is the load-bearing case — an idle notch with
+ *  nothing waiting draws NOTHING, which is the owner's original call about
+ *  always-visible attachments and still stands. */
+export function markCount(view: NotchView, waiting: number): number | null {
+  return !view.open && waiting > 0 ? waiting : null;
 }
 
 /** S6 folds away on its own — the sheet's rule is that a finished surface
@@ -368,6 +377,10 @@ export interface NotchPanelProps {
   /** Mic RMS history for the recording waveform; the driver owns and fills
    *  it. Omitted (mock walk, plain browser) → a flat line. */
   levels?: LevelHistory;
+  /** Decisions waiting, built and translated in the main window and pushed
+   *  here (lib/notchAgenda, lib/trayStatus). Absent/empty = nothing waiting,
+   *  and the collapsed surface stays invisible. */
+  agenda?: NotchAgendaPayload | null;
 }
 
 export default function NotchPanel({
@@ -381,6 +394,7 @@ export default function NotchPanel({
   onRecordStop,
   onCapturePaste,
   levels,
+  agenda,
 }: NotchPanelProps): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const t = STRINGS[lang];
@@ -396,6 +410,7 @@ export default function NotchPanel({
         ? MOCK_FRAMES[mock.pinned ?? step % MOCK_FRAMES.length]
         : { state: IDLE_STATE, pill };
   const view = describeNotch(frame.state, t, frame.pill);
+  const mark = markCount(view, agenda?.total ?? 0);
 
   useEffect(() => {
     // The window itself is transparent; only the black panel paints.
@@ -433,11 +448,25 @@ export default function NotchPanel({
             <span className="notch-lip-label">{view.lip}</span>
           ) : null}
         </div>
-      ) : // Collapsed v2: NOTHING is drawn (owner call from the second headed
-      // run — any always-visible attachment reads as a foreign widget). The
-      // window is a transparent hit area; the hardware notch itself is the
-      // surface, and it GROWS on hover.
-      null}
+      ) : mark !== null ? (
+        // Collapsed WITH work waiting: the smallest mark that can carry a
+        // number — the lit cap and the count, inside the 14px strip that
+        // peeks below the hardware cutout. With nothing waiting this branch
+        // is null and the surface draws NOTHING, which is the owner's
+        // original call (an always-visible attachment reads as a foreign
+        // widget); a decision nobody has made is the one thing worth breaking
+        // it for.
+        <div
+          className="notch-mark"
+          role="status"
+          aria-label={t.notch_waiting.replace("{n}", String(mark))}
+        >
+          <i aria-hidden className="notch-cap notch-cap-live" />
+          <span aria-hidden className="notch-mark-n">
+            {mark}
+          </span>
+        </div>
+      ) : null}
       {/* OUTSIDE the keyed body on purpose: `.notch-body` remounts on every
           state change, so a live region declared inside it is created in the
           same commit as its first text and the opening "Transcribing…" is
