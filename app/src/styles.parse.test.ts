@@ -13,8 +13,20 @@ import { resolve } from "node:path";
 import postcss from "postcss";
 import { describe, expect, it } from "vitest";
 
-const SHEET = readFileSync(resolve(__dirname, "styles.css"), "utf8");
-const sheet = () => postcss.parse(SHEET, { from: "styles.css" });
+// Every stylesheet the app ships, not just the big one: the shared UI layer
+// (styles/ui.css) is exactly where a second vocabulary would take root, so it
+// is held to the same scale. A new sheet must be added here or it escapes the
+// gate — which is how the sheet under it drifted in the first place.
+const SHEETS = ["styles.css", "styles/ui.css"] as const;
+const sources = SHEETS.map((rel) => ({
+  rel,
+  css: readFileSync(resolve(__dirname, rel), "utf8"),
+}));
+const roots = () =>
+  sources.map(({ rel, css }) => ({
+    rel,
+    root: postcss.parse(css, { from: rel }),
+  }));
 
 /** The radius scale: --r-sm 6 · --r-md 10 · --r-lg 16 · --r-pill 999. */
 const RADIUS_SCALE = /^var\(--r-(?:sm|md|lg|pill)\)$/;
@@ -41,44 +53,46 @@ const location = (decl: postcss.Declaration) => {
   return `${decl.source?.start?.line}: ${selector.replace(/\s+/g, " ")} { ${decl.prop}: ${decl.value} }`;
 };
 
-describe("styles.css", () => {
-  it("parses as CSS", () => {
-    expect(() => sheet()).not.toThrow();
+describe("the app's stylesheets", () => {
+  it("parse as CSS", () => {
+    expect(() => roots()).not.toThrow();
   });
 
-  it("takes every border-radius from the scale", () => {
+  it("take every border-radius from the scale", () => {
     const offScale: string[] = [];
-    sheet().walkDecls(/^border-(?:.+-)?radius$/, (decl) => {
+    for (const { rel, root } of roots())
+      root.walkDecls(/^border-(?:.+-)?radius$/, (decl) => {
       // var() never contains a space, so the corner list splits on whitespace;
       // a `var(--r-md, 8px)` fallback splits into halves and fails, which is
       // the point — a literal in a fallback is still a literal.
-      const corners = decl.value.trim().split(/\s+/);
-      const onScale = corners.every(
-        (corner) =>
-          RADIUS_KEYWORDS.has(corner) ||
-          RADIUS_SCALE.test(corner) ||
-          RADIUS_GEOMETRY.test(corner),
-      );
-      if (!onScale) offScale.push(location(decl));
-    });
+        const corners = decl.value.trim().split(/\s+/);
+        const onScale = corners.every(
+          (corner) =>
+            RADIUS_KEYWORDS.has(corner) ||
+            RADIUS_SCALE.test(corner) ||
+            RADIUS_GEOMETRY.test(corner),
+        );
+        if (!onScale) offScale.push(`${rel} ${location(decl)}`);
+      });
     expect(offScale, `${offScale.length} off-scale radii`).toEqual([]);
   });
 
-  it("takes every font-size from the type scale", () => {
+  it("take every font-size from the type scale", () => {
     const offScale: string[] = [];
     // The `font` shorthand sets a size too, so it cannot be a way around the
     // scale. Its grammar puts the size first of the two possible lengths
     // (`<size>[/<line-height>]`), so the first px number is the size and a px
     // line-height after it is none of this test's business.
-    sheet().walkDecls(/^font(-size)?$/, (decl) => {
-      const px = [...decl.value.matchAll(/(-?[\d.]+)px/g)].map((m) =>
-        Number(m[1]),
-      );
-      // No px at all: a token, `inherit`, or a relative unit (rem/em/%).
-      const sizes = decl.prop === "font" ? px.slice(0, 1) : px;
-      if (!sizes.every((size) => TYPE_SCALE.has(size)))
-        offScale.push(location(decl));
-    });
+    for (const { rel, root } of roots())
+      root.walkDecls(/^font(-size)?$/, (decl) => {
+        const px = [...decl.value.matchAll(/(-?[\d.]+)px/g)].map((m) =>
+          Number(m[1]),
+        );
+        // No px at all: a token, `inherit`, or a relative unit (rem/em/%).
+        const sizes = decl.prop === "font" ? px.slice(0, 1) : px;
+        if (!sizes.every((size) => TYPE_SCALE.has(size)))
+          offScale.push(`${rel} ${location(decl)}`);
+      });
     expect(offScale, `${offScale.length} off-scale font sizes`).toEqual([]);
   });
 });
