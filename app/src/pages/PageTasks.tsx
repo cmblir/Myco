@@ -345,7 +345,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
         t.tasks_lede ??
         "Every checkbox item across your notes, gathered in one place."
       }
-      bar={
+      tools={
         <Segment
           label={t.tasks_view ?? "View"}
           value={view}

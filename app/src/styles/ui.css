@@ -321,7 +321,9 @@
   color: var(--ink-3);
   font-size: var(--fs-13, 12.5px);
   line-height: 1.5;
-  max-width: 68ch;
+  /* ~600px, the measure the old .page-lede used (620px) — narrower than that
+     and the existing Korean ledes broke to two lines. */
+  max-width: 86ch;
   margin: 10px 0 0;
 }
 
