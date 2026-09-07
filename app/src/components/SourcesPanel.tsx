@@ -7,6 +7,7 @@
 import { useEffect } from "react";
 import type { JSX } from "react";
 import type { Strings } from "../lib/i18n";
+import Rail from "./Rail";
 import { sourcesView } from "../lib/readerRail";
 import { useProvenanceStore } from "../stores/provenanceStore";
 import { useUIStore } from "../stores/uiStore";
@@ -35,15 +36,10 @@ export default function SourcesPanel({
 
   const view = sourcesView(rows, filePath, weights);
   return (
-    <section className="rail-sec" aria-labelledby="rail-src">
-      <div className="rail-h">
-        <h3 id="rail-src">{t.rd_src_title ?? "Sources & trust"}</h3>
-        {view ? (
-          <span className="rail-n">
-            {view.cited}/{view.total}
-          </span>
-        ) : null}
-      </div>
+    <Rail
+      title={t.rd_src_title ?? "Sources & trust"}
+      count={view ? `${view.cited}/${view.total}` : undefined}
+    >
       {!view ? (
         <p className="rail-empty">
           {loading
@@ -122,6 +118,6 @@ export default function SourcesPanel({
           </button>
         </>
       )}
-    </section>
+    </Rail>
   );
 }

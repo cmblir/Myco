@@ -353,6 +353,18 @@
   flex-direction: column;
   min-height: 0;
 }
+/* A viewport-height page's rails stand as tall as its body and scroll
+   themselves — the graph's gaps and legend are columns beside the stage, not
+   cards stacked at the top of one. */
+.u-page--wide .u-page__rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.u-page--wide .u-page__rail > .u-rail {
+  flex: 1 1 auto;
+  min-height: 0;
+}
 
 /* Rails stack under the body below the two-pane breakpoint — the same width
    at which styles.css folds the graph drawer and the ingest columns. Beats the
@@ -385,8 +397,26 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
   padding: 10px 12px;
+  border: 0;
   border-bottom: 1px solid var(--line-soft);
+  background: transparent;
+  text-align: left;
+}
+/* Collapsible rail: the head is a real toggle button, so it needs a cursor
+   and a hover — the caret alone is not an affordance. */
+button.u-rail__head {
+  cursor: pointer;
+}
+button.u-rail__head:hover {
+  background: var(--bg-hover);
+}
+.u-rail__caret {
+  flex-shrink: 0;
+  width: 9px;
+  color: var(--ink-4);
+  font-size: var(--fs-11);
 }
 .u-rail__title {
   color: var(--ink-3);
@@ -409,8 +439,39 @@
   flex-direction: column;
   gap: 2px;
   padding: 6px;
+  /* One long unbreakable string (a path, a Korean sentence) used to widen the
+     reader's rail tiles past their column; flex items default to
+     min-width:auto, which is what let it. */
+  overflow-wrap: anywhere;
+}
+.u-rail__list > * {
+  min-width: 0;
+}
+/* A rail's own aside — "+12 more", "no gaps found". Never a row. */
+.u-rail__list > p {
+  margin: 2px 8px 4px;
+  font-size: var(--fs-11);
+  color: var(--ink-4);
+}
+/* The properties form drops its card chrome inside a rail: the rail is the card. */
+.u-rail__list .props {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+/* A key the list must not scroll away — the graph legend's encodings. */
+.u-rail__foot {
+  flex: none;
+  padding: 8px 12px 10px;
+  border-top: 1px solid var(--line-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: var(--fs-11);
+  color: var(--ink-3);
 }
 .u-rail__row {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -582,5 +643,129 @@ button.u-rail__row:hover {
     align-items: center;
     justify-content: space-between;
     margin-left: 0;
+  }
+}
+
+/* One of several peers is picked, and this is not it (the legend's isolation). */
+.u-rail__row.is-dimmed {
+  opacity: 0.45;
+}
+
+/* An ellipsizing label: a note name, a cluster name. Never wraps — a rail is
+   248px wide and a wrapped name doubles every row's height. */
+.u-rail__name,
+.u-rail__label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+button.u-rail__label {
+  border: 0;
+  padding: 2px 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.u-rail__label:hover {
+  color: var(--ink);
+}
+/* A colour swatch — the legend's galaxy and cluster inks. */
+.u-rail__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--r-pill);
+  flex-shrink: 0;
+}
+
+/* ── Rail group ──────────────────────────────────────────────────────────
+ * A collapsible section inside a rail: the gaps buckets, the legend's
+ * galaxies. Its body indents under a hairline so nesting is visible without
+ * a second border.
+ */
+.u-rail__group {
+  display: flex;
+  flex-direction: column;
+}
+.u-rail__grouphead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--fs-12-5);
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+}
+.u-rail__grouphead:hover {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.u-rail__groupbody {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 1px 0 4px 12px;
+  padding-left: 4px;
+  border-left: 1px solid var(--line-soft);
+}
+
+/* ── Row actions ─────────────────────────────────────────────────────────
+ * A strip of controls over the row's right edge, revealed on hover / focus /
+ * selection. It is positioned rather than flowed because three buttons plus a
+ * readable note name do not both fit in a rail: at rest the name gets the
+ * whole row, and only a revealed strip takes width from it.
+ */
+.u-rail__acts {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  max-width: 78%;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 18px;
+  opacity: 0;
+  /* The strip covers the name underneath, so if it took clicks itself it
+     would swallow them — only its buttons do, and only once revealed. */
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--bg-elev) 18%);
+  transition: opacity var(--dur-quick) var(--ease-out);
+}
+.u-rail__row:hover .u-rail__acts,
+.u-rail__row:focus-within .u-rail__acts,
+.u-rail__row.is-active .u-rail__acts {
+  opacity: 1;
+}
+.u-rail__row:hover .u-rail__acts > *,
+.u-rail__row:focus-within .u-rail__acts > *,
+.u-rail__row.is-active .u-rail__acts > * {
+  pointer-events: auto;
+}
+/* …and the label yields exactly the width the strip takes, so no part of a
+   visible name ever sits under a button. Without this the middle of the name
+   is unclickable precisely while it looks clickable. */
+.u-rail__row:hover .u-rail__label,
+.u-rail__row:focus-within .u-rail__label,
+.u-rail__row.is-active .u-rail__label {
+  max-width: 32%;
+}
+/* Touch: there is no hover to reveal the strip with. */
+@media (hover: none) {
+  .u-rail__acts {
+    opacity: 1;
+  }
+  .u-rail__acts > * {
+    pointer-events: auto;
   }
 }

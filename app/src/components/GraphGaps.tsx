@@ -1,10 +1,15 @@
-// The gaps column — promoted from a toggled overlay to the Survey's fixed left
-// column, because it was the only part of this screen that ever produced an
+// The gaps column — promoted from a toggled overlay to the Survey's left
+// rail, because it was the only part of this screen that ever produced an
 // answer. Each row carries the three exits the old graph lacked entirely:
 // open the note, ask for link suggestions, or record the topic as wanted.
+//
+// It is a shared <Rail> — the same part the reader's rail and the graph's
+// legend are built from — so its buckets are RailGroups and its rows RailRows.
 
 import type { JSX } from "react";
 import { useState } from "react";
+import { Button } from "./ui";
+import Rail, { RailGroup, RailRow } from "./Rail";
 import { stem } from "../lib/graphData";
 import type { ClusterBridge, GapReport } from "../lib/graphGaps";
 import type { Strings } from "../lib/i18n";
@@ -44,6 +49,8 @@ export function gapGroups(report: GapReport, noBacklink: string[], t: Strings): 
   return all.filter((g) => g.ids.length > 0);
 }
 
+const BRIDGES = "bridges";
+
 export default function GraphGaps({
   t,
   groups,
@@ -68,8 +75,10 @@ export default function GraphGaps({
   onAction: (action: GapAction, id: string) => void;
 }): JSX.Element {
   const [closed, setClosed] = useState<Record<string, boolean>>({});
-  // Short labels here, full ones in the inspector: three full-sentence
-  // buttons overflowed the 228px column and covered the note name.
+  const toggle = (key: string): void =>
+    setClosed((c) => ({ ...c, [key]: !c[key] }));
+  // Short labels here, full ones in the button title: three full-sentence
+  // buttons overflowed the rail and covered the note name.
   const label: Record<GapAction, string> = {
     open: t.gr_act_open_s,
     link: t.gr_act_link_s,
@@ -82,106 +91,75 @@ export default function GraphGaps({
   };
 
   return (
-    <aside className="sv-panel sv-panel--gaps" aria-labelledby="sv-gaps-h">
-      <div className="sv-panel__h">
-        <b id="sv-gaps-h">{t.gr_gaps_title}</b>
-        <span className="sp" />
-        <span className="mono">{total}</span>
-      </div>
+    <Rail title={t.gr_gaps_title} count={total}>
       {bridges.length > 0 ? (
-        <div className="sv-gap">
-          <div className="sv-gap__h" role="heading" aria-level={3}>
-            <span className="sv-gap__caret" aria-hidden="true">
-              ·
-            </span>
-            <span>{t.gr_gap_bridges}</span>
-            <span className="cnt mono">{bridges.length}</span>
-          </div>
-          <div className="sv-gap__body">
-            {bridges.map((b) => (
-              <div className="sv-row" key={`${b.a}:${b.b}`}>
-                <button
-                  type="button"
-                  className="sv-row__name"
-                  title={`${b.aHub} ↔ ${b.bHub}`}
-                  onClick={() => onSelect(b.pairs[0]?.source ?? b.aHub)}
-                >
-                  {displayName(b.aHub)} ↔ {displayName(b.bHub)}
-                </button>
-                {onAskBridge ? (
-                  <span className="sv-row__acts">
-                    <button
-                      type="button"
-                      className="sv-act"
-                      title={t.gr_gap_ask}
-                      onClick={() => onAskBridge(b)}
-                    >
-                      {t.gr_act_link_s}
-                    </button>
-                  </span>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </div>
+        <RailGroup
+          label={t.gr_gap_bridges}
+          count={bridges.length}
+          open={!closed[BRIDGES]}
+          onToggle={() => toggle(BRIDGES)}
+        >
+          {bridges.map((b) => (
+            <RailRow
+              key={`${b.a}:${b.b}`}
+              title={`${b.aHub} ↔ ${b.bHub}`}
+              onClick={() => onSelect(b.pairs[0]?.source ?? b.aHub)}
+              actions={
+                onAskBridge ? (
+                  <Button
+                    variant="quiet"
+                    title={t.gr_gap_ask}
+                    onClick={() => onAskBridge(b)}
+                  >
+                    {t.gr_act_link_s}
+                  </Button>
+                ) : undefined
+              }
+            >
+              {displayName(b.aHub)} ↔ {displayName(b.bHub)}
+            </RailRow>
+          ))}
+        </RailGroup>
       ) : null}
       {groups.length === 0 && bridges.length === 0 ? (
-        <p className="sv-empty">{t.gr_gap_none}</p>
+        <p>{t.gr_gap_none}</p>
       ) : (
-        groups.map((g) => {
-          const open = !closed[g.key];
-          return (
-            <div className="sv-gap" key={g.key}>
-              <button
-                type="button"
-                className="sv-gap__h"
-                aria-expanded={open}
-                onClick={() => setClosed((c) => ({ ...c, [g.key]: open }))}
+        groups.map((g) => (
+          <RailGroup
+            key={g.key}
+            label={g.label}
+            count={g.ids.length}
+            open={!closed[g.key]}
+            onToggle={() => toggle(g.key)}
+          >
+            {g.ids.slice(0, MAX_ROWS).map((id) => (
+              <RailRow
+                key={id}
+                title={id}
+                active={selected === id}
+                onClick={() => onSelect(id)}
+                actions={g.actions.map((a) => (
+                  <Button
+                    key={a}
+                    variant="quiet"
+                    title={title[a]}
+                    onClick={() => onAction(a, id)}
+                  >
+                    {label[a]}
+                  </Button>
+                ))}
               >
-                <span className="sv-gap__caret" aria-hidden="true">
-                  {open ? "▾" : "▸"}
-                </span>
-                <span>{g.label}</span>
-                <span className="cnt mono">{g.ids.length}</span>
-              </button>
-              {open ? (
-                <div className="sv-gap__body">
-                  {g.ids.slice(0, MAX_ROWS).map((id) => (
-                    <div className={`sv-row${selected === id ? " is-sel" : ""}`} key={id}>
-                      <button
-                        type="button"
-                        className="sv-row__name"
-                        title={id}
-                        onClick={() => onSelect(id)}
-                      >
-                        {displayName(id)}
-                      </button>
-                      <span className="sv-row__acts">
-                        {g.actions.map((a) => (
-                          <button
-                            key={a}
-                            type="button"
-                            className="sv-act"
-                            title={title[a]}
-                            onClick={() => onAction(a, id)}
-                          >
-                            {label[a]}
-                          </button>
-                        ))}
-                      </span>
-                    </div>
-                  ))}
-                  {g.ids.length > MAX_ROWS ? (
-                    <p className="sv-empty">
-                      +{g.ids.length - MAX_ROWS} {t.gr_gap_more}
-                    </p>
-                  ) : null}
-                </div>
-              ) : null}
-            </div>
-          );
-        })
+                {displayName(id)}
+              </RailRow>
+            ))}
+            {g.ids.length > MAX_ROWS ? (
+              <p>
+                +{g.ids.length - MAX_ROWS} {t.gr_gap_more}
+              </p>
+            ) : null}
+          </RailGroup>
+        ))
       )}
-    </aside>
+    </Rail>
   );
 }

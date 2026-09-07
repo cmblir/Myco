@@ -11,6 +11,7 @@ import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import { ipc, type VecHit } from "../lib/ipc";
 import { notice } from "../lib/notice";
+import Rail from "./Rail";
 import { connectionRows, type ConnRow } from "../lib/readerRail";
 import {
   acceptSuggestion,
@@ -125,11 +126,10 @@ export default function ConnectionsPanel({
   }
 
   return (
-    <section className="rail-sec" aria-labelledby="rail-conn">
-      <div className="rail-h">
-        <h3 id="rail-conn">{t.rd_conn_title ?? "Connections"}</h3>
-        {rows.length > 0 ? <span className="rail-n">{rows.length}</span> : null}
-      </div>
+    <Rail
+      title={t.rd_conn_title ?? "Connections"}
+      count={rows.length > 0 ? rows.length : undefined}
+    >
       {rows.length === 0 ? (
         <>
           <p className="rail-empty">{t.rd_conn_empty ?? "Nothing links here yet."}</p>
@@ -186,7 +186,7 @@ export default function ConnectionsPanel({
           ))}
         </ul>
       )}
-    </section>
+    </Rail>
   );
 }
 

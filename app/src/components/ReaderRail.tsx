@@ -1,12 +1,16 @@
 // The reader's one rail (mockup "Manuscript"): properties → outline →
 // sources & trust → connections, in that order. Stateless — every section owns
 // its own data; this only decides the stack.
+//
+// Each section is a shared <Rail>, the same part the graph's gaps column and
+// legend are built from, so the three rails in the app are one implementation.
 
 import type { JSX } from "react";
 import type { Strings } from "../lib/i18n";
 import type { FmPatch, Frontmatter } from "../lib/frontmatter";
 import type { OutlineHeading } from "../lib/outline";
 import type { LinkSuggestionIO } from "../lib/linkSuggestions";
+import Rail from "./Rail";
 import PropertiesPanel from "./PropertiesPanel";
 import OutlinePanel from "./OutlinePanel";
 import SourcesPanel from "./SourcesPanel";
@@ -37,17 +41,14 @@ export default function ReaderRail({
   return (
     <aside className="reader-rail" aria-label={t.rd_rail ?? "Note rail"}>
       {readOnly ? null : (
-        <section className="rail-sec">
-          <PropertiesPanel fm={fm} allTags={allTags} onPatch={onPatch} t={t} />
-        </section>
+        <PropertiesPanel fm={fm} allTags={allTags} onPatch={onPatch} t={t} />
       )}
-      <section className="rail-sec" aria-labelledby="rail-outline">
-        <div className="rail-h">
-          <h3 id="rail-outline">{t.ol_title ?? "Outline"}</h3>
-          {headings.length > 0 ? <span className="rail-n">{headings.length}</span> : null}
-        </div>
+      <Rail
+        title={t.ol_title ?? "Outline"}
+        count={headings.length > 0 ? headings.length : undefined}
+      >
         <OutlinePanel t={t} headings={headings} onSelect={onSelectHeading} />
-      </section>
+      </Rail>
       <SourcesPanel filePath={filePath} t={t} />
       <ConnectionsPanel filePath={filePath} io={io} t={t} />
     </aside>

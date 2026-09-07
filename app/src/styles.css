@@ -7806,12 +7806,6 @@ html.notch-window body {
   margin-bottom: 16px;
   padding: 10px 16px;
 }
-.props summary {
-  cursor: pointer;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--ink-2);
-}
 .props__row {
   display: grid;
   grid-template-columns: 140px 1fr auto;
@@ -7836,7 +7830,9 @@ html.notch-window body {
   font-size: 12.5px;
   color: var(--danger);
 }
-details.props > .btn {
+/* The properties collapse is the shared Rail's now, so the panel is a plain
+   form; the Add-property button just needs its own air. */
+.props > .btn {
   margin-top: 8px;
 }
 /* Native select/number/checkbox chrome rendered light on the dark theme. */
@@ -7891,41 +7887,12 @@ details.props > .btn {
   gap: 10px;
   align-content: start;
 }
-/* One glass tile per rail section, 11px label header. */
-.rail-sec {
-  background: var(--glass);
-  border: 1px solid var(--glass-line);
-  box-shadow: var(--glass-hi);
-  border-radius: var(--r-lg);
-  padding: 10px 12px;
-  /* Grid items default to min-width:auto, so one long unbreakable string
-     (a path, a Korean sentence) widened the tile past the rail column. */
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-.rail-sec > *,
+/* Each section is a shared <Rail> (components/Rail.tsx, styles/ui.css) — the
+   glass tile with its own radius and its own 11px header treatment is gone;
+   the reader's rail, the graph's gaps column and the graph's legend are now
+   one part. The panels' own internals below still belong to the reader. */
 .rail-list li {
   min-width: 0;
-}
-.rail-sec .props {
-  margin: 0;
-  padding: 0;
-  background: transparent;
-}
-.rail-h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-height: 20px;
-  margin-bottom: 8px;
-}
-.rail-h h3 {
-  margin: 0;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-4);
 }
 .rail-n {
   margin-left: auto;

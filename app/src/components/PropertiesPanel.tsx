@@ -7,6 +7,7 @@
 import { useEffect, useState } from "react";
 import type { JSX } from "react";
 import ChipInput from "./ChipInput";
+import Rail from "./Rail";
 import type { Strings } from "../lib/i18n";
 import { isComposingKey } from "../lib/ime";
 import {
@@ -115,35 +116,40 @@ export default function PropertiesPanel({
   }
 
   // No frontmatter → no empty form, just the way to start one.
-  if (!entries.length) return <div className="card-flat props">{addRow}</div>;
+  if (!entries.length)
+    return (
+      <Rail title={t.props_title ?? "Properties"}>
+        <div className="props">{addRow}</div>
+      </Rail>
+    );
   return (
-    <details
-      className="card-flat props"
+    <Rail
+      title={t.props_title ?? "Properties"}
+      count={entries.length}
       open={!collapsed}
-      onToggle={(e) => setCollapsed(!e.currentTarget.open)}
+      onToggle={() => setCollapsed(!collapsed)}
     >
-      <summary>
-        {t.props_title ?? "Properties"} · {entries.length}
-      </summary>
-      {entries.map((e, i) => (
-        // A duplicated YAML key is legal input; the index keeps rows unique.
-        <div key={`${i}:${e.key}`} className="props__row">
-          <span className="props__key" title={e.key}>
-            {e.key}
-          </span>
-          {control(e)}
-          <button
-            type="button"
-            className="btn btn-ghost"
-            aria-label={(t.props_remove ?? "Remove {key}").replace("{key}", e.key)}
-            onClick={() => onPatch({ [e.key]: undefined })}
-          >
-            ×
-          </button>
-        </div>
-      ))}
-      {addRow}
-    </details>
+      <div className="props">
+        {entries.map((e, i) => (
+          // A duplicated YAML key is legal input; the index keeps rows unique.
+          <div key={`${i}:${e.key}`} className="props__row">
+            <span className="props__key" title={e.key}>
+              {e.key}
+            </span>
+            {control(e)}
+            <button
+              type="button"
+              className="btn btn-ghost"
+              aria-label={(t.props_remove ?? "Remove {key}").replace("{key}", e.key)}
+              onClick={() => onPatch({ [e.key]: undefined })}
+            >
+              ×
+            </button>
+          </div>
+        ))}
+        {addRow}
+      </div>
+    </Rail>
   );
 }
 
