@@ -632,10 +632,11 @@ export function useNotchDriver(): NotchDrive | null {
   // Decisions waiting. State, not a ref: the collapsed surface has to appear
   // the moment one arrives, without waiting for another event to re-render.
   const [agenda, setAgenda] = useState<NotchAgendaPayload | null>(null);
-  // Rows already decided: the outcome word for AGENDA_BEAT_MS, then `gone`
-  // for as long as the push still lists them (the main window's write only
-  // reaches the payload a store refresh later, and until then the row would
-  // otherwise sit there offering the decision again).
+  // Rows already decided: `acted` holds the outcome word for AGENDA_BEAT_MS,
+  // then the id moves to `settled` and stays there for as long as the push
+  // still lists it (the main window's write only reaches the payload a store
+  // refresh later, and until then the row would sit there offering the
+  // decision again).
   const [acted, setActed] = useState<Record<string, AgendaOutcome>>({});
   const [settled, setSettled] = useState<ReadonlySet<string>>(() => new Set());
 
