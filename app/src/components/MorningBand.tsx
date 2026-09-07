@@ -1,9 +1,14 @@
-// Morning-Report band (Q4 item 2, mockup M1-a/b/c/d): a since-you-were-here
-// headline, the suspect-pages and contradiction cards, and the daily ritual
+// Morning-Report rail (Q4 item 2, mockup M1-a/b/c/d): a since-you-were-here
+// headline, the suspect-pages and contradiction lists, and the daily ritual
 // section (Q4 item 11) below them — top resurface pick + FSRS due line.
+//
+// It is PageOverview's `rightRail`, not a band above the page: as a full-width
+// band its three cards pushed the vault's actual work (the pulse figures and
+// the harvest queue) off the first screen. Same data, same actions, in the
+// shared Rail/RailRow parts every other route's rail uses.
 
 import { useEffect, useMemo, useState } from "react";
-import type { JSX } from "react";
+import type { CSSProperties, JSX } from "react";
 import type { Strings } from "../lib/i18n";
 import { ipc, type RunSummary, type SuspectReport } from "../lib/ipc";
 import { useVaultStore } from "../stores/vaultStore";
@@ -21,6 +26,27 @@ import {
 import { stem } from "../lib/graphData";
 import { useResurfaceStore } from "../stores/resurfaceStore";
 import { useStudyStore } from "../stores/studyStore";
+import { Rail, RailRow } from "./Rail";
+import { Button } from "./ui";
+
+/** A rail row's two stacked lines — a rail is 248px, so name and reason cannot
+ *  share one line the way the old card's grid row did. */
+const STACK: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "flex-start",
+  gap: 3,
+  minWidth: 0,
+  width: "100%",
+};
+/** The row's own buttons wrap inside the rail instead of overflowing it. */
+const ACTS: CSSProperties = {
+  display: "flex",
+  flexWrap: "wrap",
+  gap: 4,
+  marginTop: 2,
+};
+const NAME: CSSProperties = { fontWeight: 500 };
 
 export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
   const vault = useVaultStore((s) => s.currentVault);
@@ -142,185 +168,150 @@ export default function MorningBand({ t }: { t: Strings }): JSX.Element | null {
   };
 
   return (
-    <section style={{ marginTop: 20 }} data-testid="morning-band">
-      <div className="page-eyebrow">{t.ov_since_eyebrow ?? "Since you were last here"}</div>
-      <div style={{ fontSize: 20, fontWeight: 650, letterSpacing: "-0.01em" }}>{headline}</div>
-      {/* Run drill-in lives on History (W3–6 item 6). */}
-      <button
-        type="button"
-        className="btn"
-        style={{ marginTop: 8 }}
-        onClick={() => setRoute("history")}
+    // Several rails share one rail slot, and the aside is a plain grid cell —
+    // the gap between them lives here.
+    <div
+      style={{ display: "flex", flexDirection: "column", gap: 12, minWidth: 0 }}
+      data-testid="morning-band"
+    >
+      <Rail title={t.ov_since_eyebrow ?? "Since you were last here"}>
+        <RailRow>
+          <span style={NAME}>{headline}</span>
+        </RailRow>
+      </Rail>
+
+      <Rail
+        title={t.ov_suspect_title ?? "Suspect pages"}
+        count={suspects ? suspects.suspects.length : undefined}
       >
-        {t.ov_view_runs ?? "View runs"}
-      </button>
-      <div className="card-grid" style={{ marginTop: 14 }}>
-        <div className="card" style={{ padding: 16 }}>
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <b style={{ fontSize: 13.5 }}>{t.ov_suspect_title ?? "Suspect pages"}</b>
-            <span
-              className="nav-badge"
-              style={
-                suspects && suspects.suspects.length > 0
-                  ? { background: "rgba(217,119,6,.15)", color: "#d97706" }
-                  : undefined
-              }
-            >
-              {suspects ? suspects.suspects.length : "…"}
-            </span>
-          </div>
-          {top.length === 0 ? (
-            <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+        {top.length === 0 ? (
+          <RailRow>
+            <span className="meta">
               {t.ov_suspect_clean ?? "Every checked page looks sound."}
-            </div>
-          ) : (
-            <div style={{ marginTop: 6 }}>
-              {top.map((s) => (
-                <button
-                  key={s.page}
-                  type="button"
-                  className="list-row recent-row"
-                  // `.list-row` is a 4-column grid (24px icon / 1fr / auto / auto);
-                  // without an icon cell the page name lands in the 24px column and
-                  // collides with the reason. These rows stack their own two lines.
-                  style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}
-                  // Same navigation as RecentNotes rows: the route reads an
-                  // ABSOLUTE path (it hands it to ipc.readFile).
-                  onClick={() => setRoute(`page:${vault.path}/wiki/${s.page}` as RouteId)}
-                >
-                  <span style={{ fontWeight: 500, fontSize: 12.5 }}>{s.page}</span>
-                  <span className="meta">{s.reasons[0]}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div className="card" style={{ padding: 16 }}>
-          <div className="row" style={{ justifyContent: "space-between" }}>
-            <b style={{ fontSize: 13.5 }}>{t.contra_title ?? "Contradictions"}</b>
-            <span
-              className="nav-badge"
-              style={
-                contradictions.length > 0
-                  ? { background: "var(--accent-soft)" }
-                  : undefined
+            </span>
+          </RailRow>
+        ) : (
+          top.map((s) => (
+            // Same navigation as RecentNotes rows: the route reads an
+            // ABSOLUTE path (it hands it to ipc.readFile).
+            <RailRow
+              key={s.page}
+              onClick={() =>
+                setRoute(`page:${vault.path}/wiki/${s.page}` as RouteId)
               }
             >
-              {adjacency ? contradictions.length : "…"}
-            </span>
-          </div>
-          {contradictions.length === 0 ? (
-            <div className="muted" style={{ fontSize: 12.5, marginTop: 6 }}>
+              <span style={STACK}>
+                <span style={NAME}>{s.page}</span>
+                <span className="meta">{s.reasons[0]}</span>
+              </span>
+            </RailRow>
+          ))
+        )}
+      </Rail>
+
+      <Rail
+        title={t.contra_title ?? "Contradictions"}
+        count={adjacency ? contradictions.length : undefined}
+      >
+        {contradictions.length === 0 ? (
+          <RailRow>
+            <span className="meta">
               {t.contra_clean ?? "No contradictions."}
-            </div>
-          ) : (
-            <div style={{ marginTop: 6 }}>
-              {contradictions.slice(0, 3).map((c) => (
-                <div
-                  key={contradictionKey(c)}
-                  className="list-row"
-                  // `.list-row` is a grid — the column stack needs an explicit
-                  // `display: flex` or the children fall into its icon column.
-                  style={{
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "flex-start",
-                    gap: 4,
-                  }}
-                >
-                  <span style={{ fontWeight: 500, fontSize: 12.5 }}>{stem(c.page)}</span>
-                  <span className="meta">
-                    {c.kind === "disputed"
-                      ? (t.contra_disputed ?? "Page is flagged disputed")
-                      : (t.contra_stale ?? "Cites {t} (superseded)").replace(
-                          "{t}",
-                          stem(c.target ?? ""),
-                        )}
-                  </span>
-                  <div className="row" style={{ gap: 6 }}>
-                    {c.kind === "disputed" ? (
-                      <>
-                        <button type="button" className="btn" onClick={() => void flip(c, "active")}>
-                          {t.contra_mark_active ?? "Resolve: active"}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn"
-                          onClick={() => void flip(c, "superseded")}
-                        >
-                          {t.contra_mark_superseded ?? "Mark superseded"}
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                        <button
-                          type="button"
-                          className="btn"
-                          onClick={() => setRoute(`page:${c.page}` as RouteId)}
-                        >
-                          {t.contra_open_page ?? "Open linking page"}
-                        </button>
-                        <button
-                          type="button"
-                          className="btn"
-                          onClick={() => setRoute(`page:${vault.path}/${c.target}` as RouteId)}
-                        >
-                          {t.contra_open_target ?? "Open target"}
-                        </button>
-                      </>
-                    )}
-                    <button type="button" className="btn" onClick={() => ignore(c)}>
-                      {t.contra_ignore ?? "Ignore"}
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-          {contraError && (
-            <div className="muted" style={{ fontSize: 12, marginTop: 6 }}>
-              {contraError}
-            </div>
-          )}
-        </div>
-      </div>
-      {ritualPick || dueTotal > 0 ? (
-        <div className="card" style={{ padding: 16, marginTop: 14 }}>
-          <b style={{ fontSize: 13.5 }}>{t.ritual_title ?? "Today's reunions"}</b>
-          {ritualPick ? (
-            <div style={{ marginTop: 6 }}>
-              <button
-                type="button"
-                className="list-row recent-row"
-                // Two stacked lines, not `.list-row`'s icon-first grid.
-                style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", gap: 2 }}
-                onClick={openRitualPick}
-              >
-                <span style={{ fontWeight: 500, fontSize: 12.5 }}>
-                  {ritualPick.stem}
+            </span>
+          </RailRow>
+        ) : (
+          // Deliberately not a clickable RailRow: the row carries its own
+          // buttons, and a button inside a button is invalid markup.
+          contradictions.slice(0, 3).map((c) => (
+            <RailRow key={contradictionKey(c)}>
+              <span style={STACK}>
+                <span style={NAME}>{stem(c.page)}</span>
+                <span className="meta">
+                  {c.kind === "disputed"
+                    ? (t.contra_disputed ?? "Page is flagged disputed")
+                    : (t.contra_stale ?? "Cites {t} (superseded)").replace(
+                        "{t}",
+                        stem(c.target ?? ""),
+                      )}
                 </span>
+                <span style={ACTS}>
+                  {c.kind === "disputed" ? (
+                    <>
+                      <Button
+                        variant="quiet"
+                        onClick={() => void flip(c, "active")}
+                      >
+                        {t.contra_mark_active ?? "Resolve: active"}
+                      </Button>
+                      <Button
+                        variant="quiet"
+                        onClick={() => void flip(c, "superseded")}
+                      >
+                        {t.contra_mark_superseded ?? "Mark superseded"}
+                      </Button>
+                    </>
+                  ) : (
+                    <>
+                      <Button
+                        variant="quiet"
+                        onClick={() => setRoute(`page:${c.page}` as RouteId)}
+                      >
+                        {t.contra_open_page ?? "Open linking page"}
+                      </Button>
+                      <Button
+                        variant="quiet"
+                        onClick={() =>
+                          setRoute(`page:${vault.path}/${c.target}` as RouteId)
+                        }
+                      >
+                        {t.contra_open_target ?? "Open target"}
+                      </Button>
+                    </>
+                  )}
+                  <Button variant="quiet" onClick={() => ignore(c)}>
+                    {t.contra_ignore ?? "Ignore"}
+                  </Button>
+                </span>
+              </span>
+            </RailRow>
+          ))
+        )}
+        {contraError ? (
+          <RailRow>
+            <span className="meta">{contraError}</span>
+          </RailRow>
+        ) : null}
+      </Rail>
+
+      {ritualPick || dueTotal > 0 ? (
+        <Rail title={t.ritual_title ?? "Today's reunions"}>
+          {ritualPick ? (
+            <RailRow onClick={openRitualPick}>
+              <span style={STACK}>
+                <span style={NAME}>{ritualPick.stem}</span>
                 <span className="meta">{ritualPick.snippet}</span>
-              </button>
-            </div>
+              </span>
+            </RailRow>
           ) : null}
           {dueTotal > 0 ? (
-            <div
-              className="row"
-              style={{ justifyContent: "space-between", marginTop: 8 }}
-            >
-              <span className="muted" style={{ fontSize: 12.5 }}>
-                {(t.ritual_due ?? "{n} review cards are due").replace(
-                  "{n}",
-                  String(dueTotal),
-                )}
+            <RailRow>
+              <span style={STACK}>
+                <span className="meta">
+                  {(t.ritual_due ?? "{n} review cards are due").replace(
+                    "{n}",
+                    String(dueTotal),
+                  )}
+                </span>
+                <span style={ACTS}>
+                  <Button variant="quiet" onClick={startReview}>
+                    {t.ritual_start ?? "Start review"}
+                  </Button>
+                </span>
               </span>
-              <button type="button" className="btn" onClick={startReview}>
-                {t.ritual_start ?? "Start review"}
-              </button>
-            </div>
+            </RailRow>
           ) : null}
-        </div>
+        </Rail>
       ) : null}
-    </section>
+    </div>
   );
 }

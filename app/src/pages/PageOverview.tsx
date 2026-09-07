@@ -3,6 +3,12 @@
 // "jump back in" cards are gone: they sold the product to someone who already
 // owns it and changed nothing about what to do next. The customizable board
 // is demoted below, not deleted yet (a later wave).
+//
+// The page fills AppPage like every other route: the route's own name is on the
+// page (eyebrow + title) rather than only in the topbar breadcrumb, the one
+// page-level action sits on the header row, and the "since you were last here"
+// report is the right rail instead of a band pushing the vault's real work
+// below the fold.
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
@@ -29,6 +35,8 @@ import {
 import type { RunReport } from "../lib/distill";
 import { ipc } from "../lib/ipc";
 import type { FileNode } from "../lib/ipc";
+import AppPage from "../components/AppPage";
+import { Button } from "../components/ui";
 import LinkSuggestions from "../components/LinkSuggestions";
 import HarvestQueue from "../components/HarvestQueue";
 import VaultPulse from "../components/VaultPulse";
@@ -43,6 +51,7 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
   const fileTree = useVaultStore((s) => s.fileTree);
   const adjacency = useVaultStore((s) => s.adjacency);
+  const setRoute = useUIStore((s) => s.setRoute);
   const [mtimes, setMtimes] = useState<[string, number][]>([]);
 
   // The living background the user picks in Settings > Appearance lives inside
@@ -90,9 +99,26 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
   }, [currentVault]);
 
   return (
-    <div className="workspace">
-      <VaultHistoryBanner t={t} />
-      <MorningBand t={t} />
+    <AppPage
+      eyebrow={t.nav_workspace}
+      title={t.nav_overview}
+      tools={
+        // The page's one header action: the run log this report summarises. It
+        // sat under the Morning band's headline, which is now the right rail.
+        currentVault ? (
+          <Button onClick={() => setRoute("history")}>
+            {t.ov_view_runs ?? "View runs"}
+          </Button>
+        ) : null
+      }
+      bar={<VaultHistoryBanner t={t} />}
+      // Mounted unconditionally, exactly as the band was: MorningBand
+      // snapshots the PREVIOUS visit stamp in a useState initializer, and the
+      // stampVisit() effect below fires as soon as this page mounts. Gating
+      // the rail on `currentVault` (which arrives one render later) let the
+      // stamp land first, and every headline then read "quiet".
+      rightRail={<MorningBand t={t} />}
+    >
       <VaultPulse
         t={t}
         pages={pulse.files}
@@ -126,7 +152,7 @@ export default function PageOverview({ t }: { t: Strings }): JSX.Element {
       </div>
 
       <ReflectPanel t={t} />
-    </div>
+    </AppPage>
   );
 }
 
