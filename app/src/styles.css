@@ -51,10 +51,36 @@
   --c-technique: #dc2626;
   --c-analysis: #0891b2;
 
-  --r-sm: 4px;
-  --r: 6px;
-  --r-md: 8px;
-  --r-lg: 12px;
+  /* Radius. Four steps and a pill, because the sheet used to carry ten raw
+     literals (999, 10, 3, 4, 16, 2, 12, 8, 6, 5px and a tail) and only 23
+     tokenised declarations — so a card, a popover and a chip each picked
+     their own roundness and the screens stopped looking related.
+     styles.parse.test.ts fails the build on an eleventh.
+       --r-sm   chips, inputs, small buttons, bars
+       --r-md   cards, popovers, toolbars
+       --r-lg   panels, sheets, hero surfaces
+       --r-pill fully rounded — pills, switches, badges */
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 16px;
+  --r-pill: 999px;
+
+  /* Type scale, same story: 13px, 11.5px, 10.5px, 13.5px, 15px, 15.5px and
+     19px were all in use for the same jobs. Seven steps, 1.2–1.25 apart.
+       --fs-11   micro labels, uppercase eyebrows, badges
+       --fs-12-5 secondary text, table cells, chips
+       --fs-14   body, controls, nav
+       --fs-17   lead text, reading column, section heads
+       --fs-22   page-level headings
+       --fs-30   display numbers, h1
+       --fs-42   page titles, hero figures */
+  --fs-11: 11px;
+  --fs-12-5: 12.5px;
+  --fs-14: 14px;
+  --fs-17: 17px;
+  --fs-22: 22px;
+  --fs-30: 30px;
+  --fs-42: 42px;
 
   --shadow-1: 0 1px 0 rgba(15, 15, 15, 0.05);
   --shadow-2: 0 8px 24px rgba(15, 15, 15, 0.08), 0 1px 0 rgba(15, 15, 15, 0.06);
@@ -175,7 +201,7 @@ select {
   position: sticky;
   top: 0;
   overflow: hidden;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .side-head {
   padding: 10px 8px 6px;
@@ -186,7 +212,7 @@ select {
   align-items: center;
   gap: 8px;
   padding: 4px 6px;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   cursor: pointer;
   user-select: none;
   border: 0;
@@ -224,7 +250,7 @@ select {
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   border: none;
   background: transparent;
   color: var(--ink-2);
@@ -251,7 +277,7 @@ select {
   color: var(--ink-4);
   padding: 1px 5px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   background: var(--bg);
 }
 
@@ -282,8 +308,8 @@ select {
   background: var(--bg-soft);
   color: var(--ink-2);
   padding: 2px 8px;
-  border-radius: 999px;
-  font-size: 11.5px;
+  border-radius: var(--r-pill);
+  font-size: 12.5px;
   line-height: 1.4;
   cursor: pointer;
 }
@@ -304,7 +330,7 @@ select {
   align-items: center;
   gap: 4px;
   padding: 4px 6px;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   border: none;
   background: transparent;
   color: var(--ink-2);
@@ -348,7 +374,7 @@ select {
   font-size: 11px;
   color: var(--ink-4);
   padding: 0 4px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
 }
 .nav-item:hover .ni-count,
 .nav-item.active .ni-count {
@@ -364,13 +390,13 @@ select {
   align-items: center;
   gap: 8px;
   padding: 4px 6px;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   border: none;
   background: transparent;
   color: var(--ink-3);
   width: 100%;
   text-align: left;
-  font-size: 13px;
+  font-size: 14px;
 }
 .nav-leaf:hover {
   background: var(--bg-hover);
@@ -472,7 +498,7 @@ select {
   min-width: 0;
   padding: 7px 8px;
   border: 1px solid var(--glass-line);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--glass);
   box-shadow: var(--glass-hi);
   color: var(--ink-2);
@@ -522,7 +548,7 @@ select {
 }
 .st-val {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink);
   white-space: nowrap;
   overflow: hidden;
@@ -544,8 +570,8 @@ select {
 .st-note {
   margin-top: 5px;
   padding: 6px 9px;
-  border-radius: 10px;
-  font-size: 11.5px;
+  border-radius: var(--r-md);
+  font-size: 12.5px;
   line-height: 1.45;
   color: var(--ink-3);
   background: var(--glass);
@@ -628,7 +654,7 @@ select {
   background: transparent;
   color: var(--ink-3);
   padding: 6px;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   display: flex;
 }
 .icon-btn:hover {
@@ -640,7 +666,7 @@ select {
   align-items: center;
   gap: 6px;
   color: var(--ink-3);
-  font-size: 13px;
+  font-size: 14px;
 }
 .breadcrumb b {
   color: var(--ink);
@@ -679,7 +705,7 @@ select {
   border: 0;
   background: none;
   color: var(--ink-2);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1;
   cursor: pointer;
 }
@@ -692,7 +718,7 @@ select {
   height: 28px;
   gap: 6px;
   padding: 0 12px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--line);
   background: var(--bg);
   color: var(--ink-2);
@@ -740,7 +766,7 @@ select {
   font-size: 11px;
   color: var(--ink-4);
   border: 1px solid var(--line);
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   padding: 1px 4px;
 }
 
@@ -770,7 +796,7 @@ select {
   z-index: 30;
   padding: 12px;
   border: 1px solid var(--line);
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   background: var(--bg);
   box-shadow: var(--shadow-pop);
   display: flex;
@@ -894,7 +920,7 @@ select {
   min-width: 0;
   font-size: 12.5px;
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--line);
   background: var(--bg);
   color: var(--ink);
@@ -907,7 +933,7 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--line);
   background: var(--bg);
   color: var(--ink-2);
@@ -946,14 +972,14 @@ select {
 }
 .page-eyebrow {
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   margin-bottom: 12px;
 }
 .page-title {
-  font-size: 40px;
+  font-size: 42px;
   line-height: 1.1;
   letter-spacing: -0.02em;
   font-weight: 700;
@@ -962,7 +988,7 @@ select {
 }
 .page-lede {
   color: var(--ink-3);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.5;
   max-width: 620px;
 }
@@ -981,7 +1007,7 @@ select {
   border: 1px solid var(--line);
   background: var(--bg);
   color: var(--ink);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   transition:
     background var(--dur-quick),
@@ -1053,7 +1079,7 @@ select {
 .s-total {
   margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-4);
   white-space: nowrap;
 }
@@ -1078,7 +1104,7 @@ select {
   font-size: 14px;
   color: var(--ink);
   padding: 0 30px 0 32px;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: var(--glass);
   border: 1px solid var(--glass-line);
   box-shadow: var(--glass-hi);
@@ -1130,7 +1156,7 @@ select {
   height: 34px;
   padding: 0 12px;
   border: 1px solid var(--glass-line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: var(--glass);
   box-shadow: var(--glass-hi);
   color: var(--ink-2);
@@ -1154,7 +1180,7 @@ select {
   width: 26px;
   height: 15px;
   flex: none;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--track);
   box-shadow: inset 0 0 0 1px var(--glass-line);
   transition: background var(--dur-quick) var(--ease-out);
@@ -1166,7 +1192,7 @@ select {
   left: 2px;
   width: 11px;
   height: 11px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--ink-4);
   transition: transform var(--dur-quick) var(--ease-out);
 }
@@ -1191,7 +1217,7 @@ select {
   height: 28px;
   padding: 0 11px;
   border: 1px solid var(--glass-line);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--glass);
   color: var(--ink-3);
   font-size: 12.5px;
@@ -1247,7 +1273,7 @@ select {
   align-items: center;
   gap: 6px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
   pointer-events: none;
 }
@@ -1282,13 +1308,13 @@ select {
 }
 .stat-label {
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: 12.5px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   font-weight: 500;
 }
 .stat-value {
-  font-size: 28px;
+  font-size: 30px;
   font-weight: 600;
   line-height: 1.1;
   margin-top: 4px;
@@ -1296,7 +1322,7 @@ select {
 }
 .stat-sub {
   color: var(--ink-4);
-  font-size: 12px;
+  font-size: 12.5px;
   margin-top: 4px;
 }
 
@@ -1311,12 +1337,12 @@ select {
   align-items: center;
   padding: 10px 6px;
   border-bottom: 1px solid var(--line-soft);
-  font-size: 13.5px;
+  font-size: 14px;
   cursor: pointer;
 }
 .list-row:hover {
   background: var(--bg-soft);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
 }
 .list-row .ic {
   color: var(--ink-4);
@@ -1324,12 +1350,12 @@ select {
 }
 .list-row .meta {
   color: var(--ink-4);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .list-row .pill-mini {
   font-size: 11px;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
   color: var(--ink-3);
   border: 1px solid var(--line-soft);
@@ -1339,9 +1365,9 @@ select {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: 12.5px;
   padding: 2px 7px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
   color: var(--ink-3);
 }
@@ -1358,12 +1384,12 @@ select {
   margin: 32px 0 12px;
 }
 .section-title {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
 .section-action {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink-3);
   cursor: pointer;
 }
@@ -1372,7 +1398,7 @@ select {
 }
 
 .prose {
-  font-size: 15.5px;
+  font-size: 17px;
   line-height: 1.7;
   color: var(--ink-2);
   max-width: 720px;
@@ -1390,7 +1416,7 @@ select {
   overflow-x: auto;
 }
 .prose h1 {
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 700;
   margin: 24px 0 8px;
   color: var(--ink);
@@ -1428,7 +1454,7 @@ select {
 .task-col {
   background: var(--bg-soft);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   padding: 10px;
   min-height: 120px;
   max-height: 62vh;
@@ -1459,7 +1485,7 @@ select {
   text-align: left;
   background: var(--bg);
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--r-md);
   padding: 8px 10px;
   margin-bottom: 8px;
   cursor: grab;
@@ -1481,7 +1507,7 @@ select {
 }
 .task-card-title {
   display: block;
-  font-size: 13.5px;
+  font-size: 14px;
   line-height: 1.4;
   color: var(--ink);
 }
@@ -1527,7 +1553,7 @@ select {
   overflow-y: auto;
   padding: 4px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
   cursor: pointer;
   transition:
@@ -1555,12 +1581,12 @@ select {
   display: block;
   width: 100%;
   text-align: left;
-  font-size: 11.5px;
+  font-size: 12.5px;
   line-height: 1.35;
   padding: 3px 5px;
   margin-bottom: 3px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--ink);
   cursor: grab;
@@ -1613,7 +1639,7 @@ select {
   margin: 0 3px;
   padding: 1px 6px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   /* --bg-active, not --accent-soft: in dark the accent-soft (#2c2c2c) sits on
      the #252525 day cell at barely 1.1:1 — the bars all but vanished. */
   background: var(--bg-active);
@@ -1621,7 +1647,7 @@ select {
      separates two tasks from one long one. */
   box-shadow: inset 0 0 0 1px var(--line-strong);
   color: var(--ink);
-  font-size: 11.5px;
+  font-size: 12.5px;
   line-height: 16px;
   text-align: left;
   cursor: grab;
@@ -1676,10 +1702,10 @@ select {
   padding: 0 4px;
   margin-right: 3px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   background: var(--bg-hover);
   color: var(--ink-3);
-  font-size: 10.5px;
+  font-size: 11px;
   line-height: 15px;
   cursor: pointer;
 }
@@ -1694,14 +1720,14 @@ select {
   display: inline-block;
   width: 120px;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--bg-active);
   overflow: hidden;
 }
 .task-roadmap-bar i {
   display: block;
   height: 100%;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--c-entity);
 }
 
@@ -1725,9 +1751,9 @@ select {
   overflow-y: auto;
   background: var(--bg-elev);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
-  font-size: 13px;
+  font-size: 14px;
 }
 .task-detail:focus-visible {
   outline: 2px solid var(--ink-3);
@@ -1775,7 +1801,7 @@ select {
 }
 .task-detail-warn {
   margin: -4px 0 0;
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.4;
   /* The palette's amber — a caution line, not an error. */
   color: var(--c-source);
@@ -1880,13 +1906,13 @@ select {
   z-index: 1;
 }
 .vp-value {
-  font-size: clamp(28px, 5vw, 44px);
+  font-size: clamp(30px, 5vw, 42px);
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.1;
 }
 .vp-label {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-4);
   margin-top: 2px;
 }
@@ -1970,7 +1996,7 @@ select {
   flex-direction: column;
   align-items: center;
   gap: 3px;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   transition: background var(--dur-quick, 140ms) var(--ease-out, ease);
 }
 .vp-day.is-on,
@@ -1988,7 +2014,7 @@ select {
   align-items: flex-end;
   justify-content: center;
   gap: 2px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   /* The slot itself has to be visible, not just its border: on a dark card a
      1px --line edge disappears, and a zero day falls back to looking like two
      stray specks. currentColor tracks the theme, so this works on paper too. */
@@ -1999,7 +2025,7 @@ select {
   flex: 0 0 auto;
   width: 6px;
   min-height: 2px;
-  border-radius: 2px 2px 0 0;
+  border-radius: 0;
   transform-origin: bottom;
   animation: vp-rise var(--dur-enter, 320ms) var(--ease-out, ease) backwards;
 }
@@ -2010,7 +2036,7 @@ select {
   background: var(--line-strong);
 }
 .vp-dayname {
-  font-size: 9.5px;
+  font-size: 11px;
   line-height: 1;
   color: var(--ink-4);
 }
@@ -2027,7 +2053,7 @@ select {
 .vp-caption {
   position: relative;
   z-index: 1;
-  font-size: 12px;
+  font-size: 12.5px;
   margin: 6px 0 0;
 }
 
@@ -2094,7 +2120,7 @@ select {
 .ov-theme-sw {
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   background: #0f0f0e;
   overflow: hidden;
   cursor: pointer;
@@ -2110,7 +2136,7 @@ select {
 .ov-theme-sw span {
   display: block;
   padding: 6px 8px 7px;
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: #a5a099;
   background: #141412;
   border-top: 1px solid #232220;
@@ -2201,13 +2227,13 @@ select {
   z-index: 3;
   display: none;
   padding: 3px 8px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: var(--bg-elev);
   border: 1px solid var(--line);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
   color: var(--ink);
   font-family: var(--font-sans);
-  font-size: 12px;
+  font-size: 12.5px;
   white-space: nowrap;
   pointer-events: none;
 }
@@ -2256,7 +2282,7 @@ select {
   padding: 8px 14px;
   border-left: 3px solid var(--line-strong);
   background: var(--bg-soft);
-  border-radius: 0 6px 6px 0;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
   color: var(--ink-3);
 }
 .prose blockquote > :first-child {
@@ -2271,20 +2297,20 @@ select {
 .prose blockquote h2,
 .prose blockquote h3,
 .prose blockquote h4 {
-  font-size: 15.5px;
+  font-size: 17px;
   font-weight: 600;
   margin: 10px 0 4px;
   color: var(--ink-2);
 }
 .prose blockquote table {
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .prose code {
   background: var(--bg-soft);
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--c-source);
   border: 1px solid var(--line-soft);
 }
@@ -2307,12 +2333,12 @@ select {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   min-width: 16px;
   height: 16px;
   padding: 0 5px;
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: var(--ink);
   color: var(--bg);
   vertical-align: 1px;
@@ -2326,7 +2352,7 @@ select {
   gap: 6px;
 }
 .field label {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--ink-3);
   text-transform: uppercase;
@@ -2367,7 +2393,7 @@ select {
   width: 32px;
   height: 18px;
   background: var(--bg-active);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   position: relative;
   cursor: pointer;
   flex: none;
@@ -2407,7 +2433,7 @@ select {
   background: transparent;
   color: var(--ink-3);
   padding: 5px 12px;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   font-size: 12.5px;
   display: inline-flex;
   align-items: center;
@@ -2422,7 +2448,7 @@ select {
 .cov-bar {
   height: 6px;
   background: var(--bg-active);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   overflow: hidden;
 }
 .cov-bar-fill {
@@ -2481,7 +2507,7 @@ hr {
   border: none;
   outline: none;
   background: transparent;
-  font-size: 16px;
+  font-size: 17px;
   color: var(--ink);
 }
 .cmd-list {
@@ -2494,9 +2520,9 @@ hr {
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   cursor: pointer;
-  font-size: 13.5px;
+  font-size: 14px;
   color: var(--ink-2);
   /* Rows are <button>s; reset the UA chrome here rather than inline, or the
      inline background wins over .active below and the selection never shows. */
@@ -2520,7 +2546,7 @@ hr {
 /* Full-text content search results in the command palette. */
 .cmd-group-label {
   padding: 8px 12px 4px;
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -2534,7 +2560,7 @@ hr {
   overflow: hidden;
 }
 .cmd-content-snippet {
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--ink-4);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -2558,14 +2584,14 @@ hr {
   background: var(--bg-hover);
 }
 .dropzone-title {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 600;
   margin-top: 8px;
 }
 .dropzone-sub {
   color: var(--ink-3);
   margin-top: 4px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .stepper {
@@ -2642,7 +2668,7 @@ hr {
   gap: 5px;
   font-size: 11px;
   padding: 2px 7px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
   border: 1px solid var(--line-soft);
   color: var(--ink-3);
@@ -2663,7 +2689,7 @@ hr {
   gap: 6px;
   font-size: 11px;
   padding: 2px 7px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
   border: 1px solid var(--line-soft);
   color: var(--ink-3);
@@ -2673,7 +2699,7 @@ hr {
   display: inline-block;
   width: 64px;
   height: 5px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   overflow: hidden;
   background: var(--line-strong);
 }
@@ -2720,7 +2746,7 @@ hr {
 }
 .sb-error {
   margin: 4px 8px;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--danger);
   overflow-wrap: anywhere;
 }
@@ -2745,10 +2771,10 @@ hr {
   width: 100%;
   padding: 6px 10px;
   border: none;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   background: transparent;
   color: var(--ink);
-  font-size: 13px;
+  font-size: 14px;
   text-align: left;
 }
 .myco-menu button:hover,
@@ -2784,21 +2810,21 @@ hr {
   box-shadow: var(--shadow-pop);
 }
 .myco-modal__title {
-  font-size: 1.05rem;
+  font-size: 17px;
   margin: 0 0 0.5rem;
   color: var(--ink);
 }
 .myco-modal__message {
   margin: 0 0 0.75rem;
   color: var(--ink-3);
-  font-size: 0.9rem;
+  font-size: 14px;
 }
 .myco-modal__input {
   width: 100%;
   background: var(--bg);
   color: var(--ink);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   padding: 0.4rem 0.6rem;
   font: inherit;
 }
@@ -2815,9 +2841,9 @@ hr {
 }
 .myco-modal__btn {
   padding: 0.4rem 0.85rem;
-  font-size: 0.85rem;
+  font-size: 14px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   color: var(--ink);
   background: transparent;
 }
@@ -2855,7 +2881,7 @@ hr {
   gap: 12px;
 }
 .ob-eyebrow {
-  font-size: 0.72rem;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -2865,9 +2891,9 @@ hr {
   border: none;
   background: transparent;
   color: var(--ink-4);
-  font-size: 0.8rem;
+  font-size: 12.5px;
   padding: 6px 8px;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
 }
 .ob-skip:hover {
   background: var(--bg-hover);
@@ -2881,7 +2907,7 @@ hr {
 .ob-dot {
   width: 26px;
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--line-strong);
   transition: background var(--dur-quick);
 }
@@ -2904,19 +2930,19 @@ hr {
   color: var(--ink);
 }
 .ob-step-title {
-  font-size: 1.1rem;
+  font-size: 17px;
   margin: 0 0 8px;
   color: var(--ink);
 }
 .ob-step-body {
   color: var(--ink-3);
-  font-size: 0.9rem;
+  font-size: 14px;
   line-height: 1.5;
   margin: 0 auto 16px;
   max-width: 340px;
 }
 .ob-vault-note {
-  font-size: 0.78rem;
+  font-size: 12.5px;
   color: var(--ink-4);
   margin: 10px 0 0;
 }
@@ -2964,7 +2990,7 @@ hr {
 
 /* Live preview */
 .myco-editor.live .live-h1 {
-  font-size: 32px;
+  font-size: 30px;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -2993,12 +3019,12 @@ hr {
 .myco-editor.live .live-code,
 .myco-editor.live .live-code-inline {
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: 14px;
   background: var(--bg-soft);
 }
 .myco-editor.live .live-code-inline {
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   color: var(--c-source);
 }
 .myco-editor.live .live-quote {
@@ -3069,20 +3095,20 @@ hr {
   flex: 1;
 }
 .graph-stat {
-  font-size: 11.5px;
+  font-size: 12.5px;
   padding: 2px 7px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
   color: var(--ink-3);
   border: 1px solid var(--line);
   font-variant-numeric: tabular-nums;
 }
 .graph-toolbar__btn {
-  font-size: 11.5px;
+  font-size: 12.5px;
   padding: 2px 8px;
   min-width: 28px;
   height: 24px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
   color: var(--ink-3);
   border: 1px solid var(--line);
@@ -3192,13 +3218,13 @@ hr {
   top: 16px;
   right: 16px;
   padding: 6px 12px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   /* Fixed-dark chip over the 3D void — text/border must not follow the app
      theme (light theme's dark ink was invisible on this background). */
   border: 1px solid rgba(255, 255, 255, 0.22);
   background: rgba(10, 12, 20, 0.7);
   color: #e9edf6;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   backdrop-filter: blur(6px);
 }
@@ -3214,7 +3240,7 @@ hr {
   font-size: 12.5px;
   background: rgba(10, 12, 20, 0.55);
   padding: 6px 14px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   backdrop-filter: blur(6px);
   white-space: nowrap;
 }
@@ -3224,11 +3250,11 @@ hr {
   left: 50%;
   transform: translateX(-50%);
   padding: 6px 18px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: rgba(10, 12, 20, 0.5);
   border: 1px solid rgba(255, 255, 255, 0.14);
   color: #e9edf6;
-  font-size: 12px;
+  font-size: 12.5px;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   backdrop-filter: blur(6px);
@@ -3278,7 +3304,7 @@ hr {
 }
 .ship-hud__title {
   font-weight: 600;
-  font-size: 15px;
+  font-size: 17px;
   color: #edf0f7;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3290,7 +3316,7 @@ hr {
   background: transparent;
   color: #aab3c5;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
 }
 .ship-hud__meta {
   color: #aab3c5;
@@ -3304,10 +3330,10 @@ hr {
   margin-bottom: 12px;
 }
 .ship-hud__chip {
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: #ccd3e0;
   border: 1px solid rgba(255, 255, 255, 0.2);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   padding: 2px 8px;
   max-width: 100%;
   overflow: hidden;
@@ -3317,11 +3343,11 @@ hr {
 .ship-hud__open {
   width: 100%;
   padding: 7px;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   border: 1px solid rgba(255, 255, 255, 0.2);
   background: #e9edf6;
   color: #10141f;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -3348,9 +3374,9 @@ hr {
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink);
 }
 .graph-insp__head {
@@ -3368,7 +3394,7 @@ hr {
 }
 .graph-insp__ghost {
   margin: 0;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
 }
 .graph-insp__meta {
@@ -3385,7 +3411,7 @@ hr {
 }
 .graph-insp__row dt {
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .graph-insp__row dd {
   margin: 0;
@@ -3393,9 +3419,9 @@ hr {
 }
 .graph-insp__badge {
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--accent-soft);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .graph-insp__badge--low,
 .graph-insp__badge--disputed {
@@ -3409,7 +3435,7 @@ hr {
 }
 .graph-insp__section h4 {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: 12.5px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--ink-3);
@@ -3430,9 +3456,9 @@ hr {
   background: none;
   border: none;
   padding: 3px 6px;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3444,7 +3470,7 @@ hr {
 }
 .graph-insp__empty {
   color: var(--ink-4);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .graph-insp__tags {
   display: flex;
@@ -3453,20 +3479,20 @@ hr {
 }
 .graph-insp__tag {
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--bg-soft);
   border: 1px solid var(--line);
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-2);
 }
 .graph-insp__pathbtn {
   width: 100%;
   padding: 5px 8px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
   color: var(--ink-2);
-  font-size: 12px;
+  font-size: 12.5px;
   cursor: pointer;
 }
 .graph-insp__pathbtn:hover {
@@ -3491,10 +3517,10 @@ hr {
   min-width: 0;
   padding: 0 10px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-elev);
   color: var(--ink);
-  font-size: 13px;
+  font-size: 14px;
 }
 .graph-find:focus {
   outline: none;
@@ -3518,9 +3544,9 @@ hr {
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink);
 }
 .graph-gaps__head {
@@ -3536,11 +3562,11 @@ hr {
 .graph-gaps__none {
   margin: 0;
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .graph-gaps__section h4 {
   margin: 0 0 5px;
-  font-size: 12px;
+  font-size: 12.5px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--ink-3);
@@ -3559,9 +3585,9 @@ hr {
   background: none;
   border: none;
   padding: 3px 6px;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   color: var(--ink-2);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3584,7 +3610,7 @@ hr {
 .graph-gaps__more {
   padding: 2px 6px;
   color: var(--ink-4);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 /* Toolbar gap-count badge */
 .graph-toolbar__btn--badged {
@@ -3597,10 +3623,10 @@ hr {
   min-width: 15px;
   height: 15px;
   padding: 0 3px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: #b4541f;
   color: #fff;
-  font-size: 10px;
+  font-size: 11px;
   line-height: 15px;
   text-align: center;
 }
@@ -3621,9 +3647,9 @@ hr {
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink);
 }
 .graph-help__head {
@@ -3660,7 +3686,7 @@ hr {
   color: var(--ink-2);
   background: var(--bg-hover);
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   padding: 1px 5px;
   white-space: nowrap;
 }
@@ -3681,16 +3707,16 @@ hr {
   padding: 8px 10px;
   background: var(--bg-elev);
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-2);
 }
 .graph-legend__head {
   background: none;
   border: none;
   padding: 0;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--ink-2);
   cursor: pointer;
@@ -3716,8 +3742,8 @@ hr {
   background: none;
   border: none;
   padding: 3px 4px;
-  border-radius: 5px;
-  font-size: 12px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
   font-weight: 600;
   color: var(--ink);
   cursor: pointer;
@@ -3728,7 +3754,7 @@ hr {
 }
 .graph-legend__caret {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: 11px;
 }
 .graph-legend__clusters {
   list-style: none;
@@ -3752,8 +3778,8 @@ hr {
   background: none;
   border: none;
   padding: 2px 4px;
-  border-radius: 5px;
-  font-size: 12px;
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
   color: var(--ink-2);
   cursor: pointer;
   text-align: left;
@@ -3771,7 +3797,7 @@ hr {
 .graph-legend__dot {
   width: 8px;
   height: 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   flex-shrink: 0;
 }
 .graph-legend__name {
@@ -3793,7 +3819,7 @@ hr {
 
 /* Query "thinking" visualization — dark mini-cosmos while the model runs. */
 .thinking-galaxy {
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background:
     radial-gradient(
       ellipse at center,
@@ -3806,7 +3832,7 @@ hr {
 }
 .thinking-galaxy__label {
   padding: 6px 10px;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
   border-top: 1px solid var(--line-soft);
 }
@@ -3850,7 +3876,7 @@ hr {
    gridlines. Monospace-tabular so dates line up; theme-following ink. */
 .graph-axis-label {
   font-family: var(--font-sans);
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.02em;
   line-height: 1;
@@ -3903,7 +3929,7 @@ hr {
   max-width: 250px;
   background: var(--bg-soft);
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   padding: 9px 26px 10px 12px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.32);
 }
@@ -3922,7 +3948,7 @@ hr {
 }
 .mascot-cameo__label {
   display: block;
-  font-size: 9.5px;
+  font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -3944,7 +3970,7 @@ hr {
   border: 0;
   background: transparent;
   color: var(--ink-4);
-  font-size: 15px;
+  font-size: 17px;
   line-height: 1;
   cursor: pointer;
 }
@@ -3984,7 +4010,7 @@ hr {
    a cheap class toggle from clusterLabels.ts. */
 .graph-cluster-label {
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -4021,7 +4047,7 @@ hr {
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 13px;
+  font-size: 14px;
   letter-spacing: 0.08em;
   pointer-events: none;
   opacity: 1;
@@ -4041,9 +4067,9 @@ hr {
   gap: 10px;
   padding: 8px 12px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
-  font-size: 12px;
+  font-size: 12.5px;
   z-index: 5;
 }
 /* Perf: ambient layers were dropped for a very large graph. */
@@ -4089,7 +4115,7 @@ hr {
   z-index: 1;
 }
 .graph-drawer__title {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -4098,7 +4124,7 @@ hr {
 .graph-drawer__btn {
   font-size: 11px;
   padding: 2px 8px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--bg);
   color: var(--ink-3);
   border: 1px solid var(--line);
@@ -4112,7 +4138,7 @@ hr {
   width: 22px;
   height: 22px;
   padding: 0;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1;
 }
 
@@ -4122,7 +4148,7 @@ hr {
   right: 12px;
   width: 28px;
   height: 28px;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   background: var(--bg);
   border: 1px solid var(--line);
   color: var(--ink-3);
@@ -4147,7 +4173,7 @@ hr {
   background: transparent;
   border: 0;
   padding: 10px 12px;
-  font-size: 11.5px;
+  font-size: 12.5px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -4162,7 +4188,7 @@ hr {
 }
 .graph-drawer__caret {
   display: inline-block;
-  font-size: 8px;
+  font-size: 11px;
   color: var(--ink-4);
   transition: transform var(--dur-quick) var(--ease-out);
   width: 10px;
@@ -4180,7 +4206,7 @@ hr {
   margin-top: 4px;
   width: 100%;
   padding: 7px 10px;
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   border: 1px solid var(--accent);
   background: var(--accent);
   color: var(--accent-ink);
@@ -4223,7 +4249,7 @@ hr {
   color: var(--ink-2);
 }
 .graph-subhead__caret {
-  font-size: 10px;
+  font-size: 11px;
   color: var(--ink-4);
   transition: transform var(--dur-quick) var(--ease-out);
 }
@@ -4232,9 +4258,9 @@ hr {
 }
 .graph-field__input {
   font-family: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   padding: 5px 8px;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--line);
   background: var(--bg-soft);
   color: var(--ink);
@@ -4260,7 +4286,7 @@ hr {
   height: 24px;
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   background: none;
   cursor: pointer;
 }
@@ -4274,12 +4300,12 @@ hr {
   margin-top: 8px;
   width: 100%;
   padding: 7px 10px;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 500;
   color: var(--ink-2);
   background: var(--bg-soft);
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   cursor: pointer;
   transition:
     background var(--dur-quick) var(--ease-out),
@@ -4292,7 +4318,7 @@ hr {
 .graph-chip {
   font-size: 11px;
   padding: 2px 7px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--bg-soft);
   color: var(--ink-3);
   border: 1px solid var(--line);
@@ -4321,7 +4347,7 @@ hr {
   gap: 2px;
   text-align: left;
   padding: 7px 9px;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--line);
   background: var(--bg-soft);
   color: var(--ink);
@@ -4356,7 +4382,7 @@ hr {
 .graph-saved {
   display: inline-flex;
   align-items: stretch;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   overflow: hidden;
   border: 1px solid var(--line);
 }
@@ -4377,7 +4403,7 @@ hr {
   background: var(--bg-hover);
 }
 .graph-saved__del {
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1;
   padding: 0 5px;
   background: var(--bg-soft);
@@ -4405,9 +4431,9 @@ hr {
 }
 .graph-saverow__btn {
   flex: 0 0 auto;
-  font-size: 11.5px;
+  font-size: 12.5px;
   padding: 0 10px;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   border: 1px solid var(--line);
   background: var(--bg-soft);
   color: var(--ink-2);
@@ -4475,18 +4501,18 @@ hr {
   min-width: 0;
 }
 .graph-toggle__text > span:first-child {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-2);
 }
 .graph-toggle__hint {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ink-4);
 }
 .graph-toggle__switch {
   width: 28px;
   height: 16px;
   background: var(--bg-active);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   position: relative;
   flex-shrink: 0;
   transition: background var(--dur-quick) var(--ease-out);
@@ -4527,7 +4553,7 @@ hr {
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
 }
 .graph-slider__input {
   -webkit-appearance: none;
@@ -4535,7 +4561,7 @@ hr {
   width: 100%;
   height: 4px;
   background: var(--bg-active);
-  border-radius: 2px;
+  border-radius: var(--r-sm);
   outline: none;
   cursor: pointer;
 }
@@ -4633,12 +4659,12 @@ hr {
 }
 .ingest-live-title {
   font-weight: 650;
-  font-size: 16px;
+  font-size: 17px;
 }
 .ingest-live-action {
   margin-top: 3px;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -4646,7 +4672,7 @@ hr {
 }
 .ingest-live-meta {
   margin-top: 3px;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .ingest-cancel {
   flex-shrink: 0;
@@ -4698,7 +4724,7 @@ hr {
   }
 }
 .ingest-star-label {
-  font-size: 9px;
+  font-size: 11px;
   fill: var(--ink-3);
   text-anchor: middle;
   pointer-events: none;
@@ -4715,7 +4741,7 @@ hr {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .ingest-feed-row {
   display: flex;
@@ -4732,7 +4758,7 @@ hr {
 }
 .ingest-feed-time {
   font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ink-4);
   flex-shrink: 0;
 }
@@ -4803,10 +4829,10 @@ hr {
 }
 .pill-badge {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--ink-4);
   background: var(--bg-hover);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   padding: 0 5px;
   line-height: 1.4;
 }
@@ -4835,7 +4861,7 @@ hr {
 .activity-chip .activity-num,
 .activity-pop .activity-num {
   font-variant-numeric: tabular-nums;
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--ink-3);
   white-space: nowrap;
 }
@@ -4845,11 +4871,11 @@ hr {
   gap: 10px;
   width: 100%;
   text-align: left;
-  font-size: 13px;
+  font-size: 14px;
   color: inherit;
   background: none;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   padding: 6px 4px;
 }
 .activity-pop button.activity-row {
@@ -4871,7 +4897,7 @@ hr {
   accent-color: var(--accent);
 }
 .activity-row-sub {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -4893,7 +4919,7 @@ hr {
 }
 .activity-actions .btn {
   padding: 3px 8px;
-  font-size: 11.5px;
+  font-size: 12.5px;
 }
 .activity-sub-wrap {
   white-space: normal;
@@ -4908,7 +4934,7 @@ hr {
 /* The builtin-local caveat under those rows — wraps (unlike .activity-row-sub,
    which is a single ellipsised line). */
 .activity-note {
-  font-size: 11.5px;
+  font-size: 12.5px;
   line-height: 1.35;
   white-space: normal;
 }
@@ -4922,7 +4948,7 @@ hr {
   gap: 6px;
 }
 .activity-hdr {
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 /* "Today's inflow" rows — label + inline muted sub, right mono count column,
@@ -4931,13 +4957,13 @@ hr {
   min-width: 0;
 }
 .inflow-sub {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
   margin-left: 6px;
 }
 .inflow-count {
   font-family: "SF Mono", ui-monospace, Menlo, monospace;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-2);
   white-space: nowrap;
   flex: none;
@@ -4957,7 +4983,7 @@ hr {
   min-width: 0;
 }
 .inflow-caption {
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--ink-3);
 }
 
@@ -4981,11 +5007,11 @@ hr {
 }
 .inflow-spark-file {
   background: var(--c-concept);
-  border-radius: 1px;
+  border-radius: 0;
 }
 .inflow-spark-mcp {
   background: var(--c-overview);
-  border-radius: 1px;
+  border-radius: 0;
 }
 
 /* Tray popover window (?window=tray). The OS window is transparent; only
@@ -5009,13 +5035,18 @@ html.tray-window body {
    reach the desktop behind a WKWebView; it stays only as a no-op fallback
    for non-mac builds, where the panel simply reads darker. */
 .tray-panel {
+  /* Not a scale step: window-vibrancy rounds the native NSVisualEffectView
+     to 22 (tray.rs), and the frosted view is drawn by the OS *behind* this
+     webview — a smaller radius here leaves four frosted corners sticking
+     out past the card. It follows tray.rs, not the design scale. */
+  --r-tray: 22px;
   box-sizing: border-box;
   position: relative;
   isolation: isolate;
   overflow: hidden;
   width: 100%;
   padding: 14px;
-  border-radius: 22px;
+  border-radius: var(--r-tray);
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: linear-gradient(
     180deg,
@@ -5029,7 +5060,7 @@ html.tray-window body {
     inset 0 -1px 0 rgba(255, 255, 255, 0.04);
   color: #ece7df;
   font:
-    13px/1.5 -apple-system,
+    14px/1.5 -apple-system,
     "Pretendard",
     "Apple SD Gothic Neo",
     sans-serif;
@@ -5135,7 +5166,7 @@ html.tray-window body {
   min-width: 0;
 }
 .tray-hd-text strong {
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 600;
   letter-spacing: -0.01em;
 }
@@ -5157,11 +5188,11 @@ html.tray-window body {
   align-items: center;
   gap: 6px;
   padding: 4px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: rgba(255, 255, 255, 0.05);
   border: 1px solid rgba(255, 255, 255, 0.06);
   font:
-    500 10.5px "SF Mono",
+    500 11px "SF Mono",
     ui-monospace,
     Menlo,
     monospace;
@@ -5187,7 +5218,7 @@ html.tray-window body {
   gap: 3px 14px;
   align-items: center;
   padding: 14px 14px 14px 16px;
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   background: linear-gradient(
     180deg,
     rgba(167, 139, 250, 0.2),
@@ -5223,7 +5254,7 @@ html.tray-window body {
 }
 .tray-now-k {
   font:
-    500 10.5px "SF Mono",
+    500 11px "SF Mono",
     ui-monospace,
     Menlo,
     monospace;
@@ -5238,7 +5269,7 @@ html.tray-window body {
 }
 .tray-now-t small {
   display: block;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 400;
   color: #b5b0a8;
   margin-top: 3px;
@@ -5257,7 +5288,7 @@ html.tray-window body {
   justify-content: center;
   gap: 8px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   padding: 8px 14px;
   font: inherit;
   font-size: 12.5px;
@@ -5299,14 +5330,14 @@ html.tray-window body {
 .tray-tile {
   margin-top: 10px;
   padding: 6px;
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   background: rgba(255, 255, 255, 0.045);
   border: 1px solid rgba(255, 255, 255, 0.07);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 .tray-tile-l {
   font:
-    500 10.5px "SF Mono",
+    500 11px "SF Mono",
     ui-monospace,
     Menlo,
     monospace;
@@ -5323,11 +5354,11 @@ html.tray-window body {
   width: 100%;
   padding: 9px 10px;
   border: 0;
-  border-radius: 11px;
+  border-radius: var(--r-md);
   background: none;
   color: #ece7df;
   font: inherit;
-  font-size: 13.5px;
+  font-size: 14px;
   text-align: left;
   cursor: pointer;
   transition:
@@ -5375,7 +5406,7 @@ html.tray-window body {
 }
 .tray-row-l small {
   color: #7a7580;
-  font-size: 12px;
+  font-size: 12.5px;
   margin-left: 8px;
 }
 /* Count badge: mono, tabular, glass pill; bumps once when its value grows. */
@@ -5388,7 +5419,7 @@ html.tray-window body {
   font-variant-numeric: tabular-nums;
   color: #b5b0a8;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: rgba(255, 255, 255, 0.05);
   white-space: nowrap;
   transition: color 0.2s;
@@ -5422,8 +5453,8 @@ html.tray-window body {
   justify-content: space-between;
   align-items: center;
   padding: 9px 10px;
-  border-radius: 11px;
-  font-size: 13px;
+  border-radius: var(--r-md);
+  font-size: 14px;
   color: #b5b0a8;
   cursor: pointer;
 }
@@ -5477,7 +5508,7 @@ html.tray-window body {
 .tray-bar i {
   display: block;
   background: #a78bfa;
-  border-radius: 3px 3px 0 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
   min-height: 0;
 }
 .tray-bar i.is-mcp {
@@ -5495,7 +5526,7 @@ html.tray-window body {
   padding-top: 6px;
   border-top: 1px solid rgba(255, 255, 255, 0.08);
   font:
-    500 10.5px "SF Mono",
+    500 11px "SF Mono",
     ui-monospace,
     Menlo,
     monospace;
@@ -5505,7 +5536,7 @@ html.tray-window body {
   display: inline-block;
   width: 7px;
   height: 7px;
-  border-radius: 2px;
+  border-radius: 0;
   background: #a78bfa;
   vertical-align: -1px;
 }
@@ -5523,8 +5554,8 @@ html.tray-window body {
 .tray-ft .tray-b {
   flex: 1;
   padding: 10px 12px;
-  font-size: 13px;
-  border-radius: 12px;
+  font-size: 14px;
+  border-radius: var(--r-lg);
 }
 .tray-foot {
   display: flex;
@@ -5536,7 +5567,7 @@ html.tray-window body {
   border: 0;
   padding: 0;
   font: inherit;
-  font-size: 12px;
+  font-size: 12.5px;
   color: #7a7580;
   cursor: pointer;
 }
@@ -5555,7 +5586,7 @@ html.tray-window body {
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: rgba(30, 30, 36, 0.96);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
@@ -5664,7 +5695,7 @@ html.tray-window body {
 }
 .ingest-minigraph .ingest-star-label.hovered {
   fill: var(--ink);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 /* In-place node content preview under the ingest mini-graph. */
@@ -5690,7 +5721,7 @@ html.tray-window body {
   flex: 1;
   min-width: 0;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--ink-3);
   white-space: nowrap;
   overflow: hidden;
@@ -5700,10 +5731,10 @@ html.tray-window body {
   padding: 10px 14px;
   max-height: 260px;
   overflow-y: auto;
-  font-size: 13px;
+  font-size: 14px;
 }
 .ingest-preview-body .myco-viewer {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* Finished run — the hero stays as the result header, orb at rest. */
@@ -5717,7 +5748,7 @@ html.tray-window body {
 
 /* Question label at the galaxy hub. */
 .ingest-hub-label {
-  font-size: 10.5px;
+  font-size: 11px;
   font-weight: 600;
   fill: var(--ink-2);
   text-anchor: middle;
@@ -5747,14 +5778,14 @@ html.tray-window body {
   user-select: none;
 }
 .error-boundary__title {
-  font-size: 18px;
+  font-size: 22px;
   font-weight: 600;
   color: var(--ink);
   margin: 0;
 }
 .error-boundary__msg {
   max-width: 560px;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--ink-3);
   word-break: break-word;
@@ -5984,10 +6015,10 @@ html.tray-window body {
   border-color: var(--line-strong);
 }
 .study-due-pill {
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   padding: 2px 10px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--accent-soft);
   color: var(--accent);
 }
@@ -5997,12 +6028,12 @@ html.tray-window body {
   justify-content: center;
 }
 .study-front {
-  font-size: 19px;
+  font-size: 22px;
   font-weight: 600;
   line-height: 1.4;
 }
 .study-back {
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.5;
 }
 .study-sep {
@@ -6061,7 +6092,7 @@ html.tray-window body {
   font-size: 11px;
   font-weight: 600;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--accent-soft);
   color: var(--accent);
 }
@@ -6140,11 +6171,11 @@ html.tray-window body {
 .agent-step-tool {
   font-family: var(--mono, monospace);
   color: var(--accent);
-  font-size: 12px;
+  font-size: 12.5px;
   flex: 0 0 auto;
 }
 .agent-step-args {
-  font-size: 12px;
+  font-size: 12.5px;
   flex: 0 1 auto;
   min-width: 0;
 }
@@ -6165,7 +6196,7 @@ html.tray-window body {
 }
 .agent-step-declined {
   color: #d97706;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .agent-limit {
   display: flex;
@@ -6211,7 +6242,7 @@ html.tray-window body {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   padding: 1px 7px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
 }
 .au-speaker-A {
   background: var(--accent-soft);
@@ -6232,7 +6263,7 @@ html.tray-window body {
   border: 0;
   padding: 0 0 0 6px;
   color: var(--accent);
-  font-size: 12px;
+  font-size: 12.5px;
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
@@ -6250,7 +6281,7 @@ html.tray-window body {
   gap: 10px;
 }
 .pdf-title {
-  font-size: 13px;
+  font-size: 14px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6294,7 +6325,7 @@ html.tray-window body {
   cursor: pointer;
   mix-blend-mode: multiply;
   opacity: 0.55;
-  border-radius: 2px;
+  border-radius: var(--r-sm);
 }
 .pdf-highlight.flash {
   animation: pdf-flash 1.2s ease-out;
@@ -6356,7 +6387,7 @@ html.tray-window body {
   padding: 8px 12px;
   background: var(--bg);
   border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.15);
 }
 .pdf-swatch {
@@ -6382,7 +6413,7 @@ html.tray-window body {
   font-size: 11px;
   font-weight: 600;
   padding: 1px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--bg-hover);
   color: var(--ink-2);
 }
@@ -6413,9 +6444,9 @@ html.tray-window body {
   align-items: center;
   gap: 2px;
   border: 1px solid var(--line);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   padding: 2px 4px 2px 10px;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .views-chip.active {
   border-color: var(--accent);
@@ -6426,7 +6457,7 @@ html.tray-window body {
   border: none;
   color: inherit;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 12.5px;
   padding: 2px;
 }
 .views-chip__x {
@@ -6452,23 +6483,23 @@ html.tray-window body {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 14px;
   color: var(--ink-2);
 }
 .views-count {
-  font-size: 12px;
+  font-size: 12.5px;
   margin: 4px 0 10px;
 }
 /* Wide table scrolls inside its own container — the page never scrolls sideways. */
 .views-table-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
 }
 .views-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
 }
 .views-table th,
 .views-table td {
@@ -6495,7 +6526,7 @@ html.tray-window body {
   background: none;
   border: none;
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
   cursor: pointer;
   padding: 0;
@@ -6508,7 +6539,7 @@ html.tray-window body {
   border: none;
   color: var(--ink);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
   padding: 0;
 }
 .views-page:hover {
@@ -6516,7 +6547,7 @@ html.tray-window body {
 }
 .views-tags {
   color: var(--ink-4);
-  font-size: 12px;
+  font-size: 12.5px;
   max-width: 260px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6545,7 +6576,7 @@ html.tray-window body {
   margin-bottom: 18px;
 }
 .link-suggestions__hint {
-  font-size: 12px;
+  font-size: 12.5px;
   margin: 4px 0 10px;
 }
 .link-suggestions__list {
@@ -6568,7 +6599,7 @@ html.tray-window body {
 .link-suggestions__pair {
   flex: 1;
   min-width: 0;
-  font-size: 13px;
+  font-size: 14px;
   line-height: 1.5;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6698,12 +6729,12 @@ html.tray-window body {
   min-width: min(240px, 100%);
   max-width: 100%;
   padding: 10px 12px;
-  border-radius: var(--r-md, 8px);
+  border-radius: var(--r-md);
   border: 1px solid var(--line);
   background: var(--bg);
   color: var(--ink);
   box-shadow: var(--shadow-2);
-  font-size: 13px;
+  font-size: 14px;
   transform-origin: top right;
   animation: notice-in 0.32s var(--ease-spring);
 }
@@ -6793,7 +6824,7 @@ html.tray-window body {
   line-height: 1.3;
 }
 .notice-sub {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -6804,9 +6835,9 @@ html.tray-window body {
   border: 1px solid var(--line);
   background: var(--bg-elev);
   color: var(--ink);
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   padding: 4px 9px;
-  font: 500 12px var(--font-sans);
+  font: 500 12.5px var(--font-sans);
   cursor: pointer;
   white-space: nowrap;
   transition: background var(--dur-quick) var(--ease-out);
@@ -6893,15 +6924,15 @@ html.tray-window body {
   gap: 6px;
 }
 .zotero-import__hint {
-  font-size: 12px;
+  font-size: 12.5px;
   margin: 4px 0 10px;
 }
 .zotero-import input[type="file"] {
-  font-size: 12px;
+  font-size: 12.5px;
   max-width: 100%;
 }
 .zotero-import__result {
-  font-size: 12px;
+  font-size: 12.5px;
   margin: 8px 0 0;
   color: var(--ink-2);
 }
@@ -6918,7 +6949,7 @@ html.tray-window body {
   border: 1px solid var(--line);
   background: var(--bg-elev);
   color: var(--ink-3);
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 600;
   cursor: pointer;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
@@ -6939,7 +6970,7 @@ html.tray-window body {
   z-index: 90;
   width: min(320px, calc(100vw - 36px));
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--bg-elev);
   backdrop-filter: blur(8px);
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.35);
@@ -6960,7 +6991,7 @@ html.tray-window body {
   font-size: 14px;
 }
 .help-widget__sub {
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .help-widget__tips {
   margin: 0 0 10px;
@@ -6982,14 +7013,14 @@ html.tray-window body {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
 }
 .help-widget__sc-row kbd {
   font-family: inherit;
   font-size: 11px;
   border: 1px solid var(--line);
-  border-radius: 4px;
+  border-radius: var(--r-sm);
   padding: 0 5px;
   color: var(--ink-2);
 }
@@ -7003,7 +7034,7 @@ html.tray-window body {
   text-align: center;
 }
 .query-empty .muted {
-  font-size: 13px;
+  font-size: 14px;
 }
 
 /* One layer of motion on navigation, deliberately short. Motion that replays
@@ -7051,7 +7082,7 @@ html.spotlight-window body {
   flex-direction: column;
   background: rgba(8, 8, 10, 0.97);
   border: 1px solid #26262b;
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
   color: #ece7df;
   font:
@@ -7070,7 +7101,7 @@ html.spotlight-window body {
 }
 .spotlight-glyph {
   color: #928d96;
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1;
 }
 .spotlight-input {
@@ -7079,7 +7110,7 @@ html.spotlight-window body {
   background: none;
   border: 0;
   color: #ece7df;
-  font-size: 19px;
+  font-size: 22px;
   font-family: inherit;
   padding: 2px 0;
 }
@@ -7091,7 +7122,7 @@ html.spotlight-window body {
 }
 .spotlight-status {
   flex: 0 0 auto;
-  font-size: 12px;
+  font-size: 12.5px;
   color: #928d96;
 }
 /* The answer scrolls INSIDE the card. A viewport-relative cap on the card
@@ -7102,7 +7133,7 @@ html.spotlight-window body {
   padding: 12px 16px 14px;
   max-height: 520px;
   overflow-y: auto;
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .spotlight-label {
   font-size: 11px;
@@ -7116,13 +7147,13 @@ html.spotlight-window body {
 }
 .spotlight-hint {
   color: #7a7580;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .spotlight-body .spotlight-hint {
   margin-top: 10px;
 }
 .spotlight-body .myco-viewer {
-  font-size: 13.5px;
+  font-size: 14px;
 }
 .spotlight-body .myco-viewer blockquote {
   margin: 6px 0 10px;
@@ -7165,7 +7196,7 @@ html.spotlight-window body {
 }
 .voice-elapsed {
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: 12.5px;
   color: #c3c9d3;
 }
 .voice-saved {
@@ -7178,7 +7209,7 @@ html.spotlight-window body {
   color: #c8e6c9;
   border: 1px solid rgba(22, 163, 74, 0.45);
   background: rgba(22, 163, 74, 0.12);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   padding: 3px 10px;
 }
 /* Word-level diff (W3–6 item 6, mockup M3-c). Line tints + word marks per the
@@ -7208,11 +7239,11 @@ html.spotlight-window body {
 }
 .diff .wadd {
   background: rgba(22, 163, 74, 0.28);
-  border-radius: 2px;
+  border-radius: var(--r-sm);
 }
 .diff .wdel {
   background: rgba(220, 38, 38, 0.25);
-  border-radius: 2px;
+  border-radius: var(--r-sm);
   text-decoration: line-through;
 }
 
@@ -7238,6 +7269,13 @@ html.notch-window body {
      it. Height grows DOWNWARD only — widening sideways shoves the menu-bar
      icons out of the way. */
   --notch-collapsed: 172px;
+  /* Not scale steps: the panel hangs off the Mac's own cutout and its radius
+     grows WITH its width (see the v2 note below) so the card reads as one
+     body with the hardware. Collapsing all three onto --r-lg would kill that
+     growth and mismatch the cutout, so these follow the hardware. */
+  --r-notch: 13px;
+  --r-notch-open: 22px;
+  --r-notch-wide: 24px;
   box-sizing: border-box;
   width: var(--notch-collapsed);
   min-height: 26px;
@@ -7251,7 +7289,7 @@ html.notch-window body {
      with the open state. */
   background: transparent;
   color: #ece7df;
-  border-radius: 0 0 13px 13px;
+  border-radius: 0 0 var(--r-notch) var(--r-notch);
   font:
     14px/1.55 -apple-system,
     "Pretendard",
@@ -7271,7 +7309,7 @@ html.notch-window body {
      the hardware it extends. */
   width: calc(var(--notch-collapsed) + 16px);
   background: #000;
-  border-radius: 0 0 22px 22px;
+  border-radius: 0 0 var(--r-notch-open) var(--r-notch-open);
   /* The card's height is content-driven and lands in one frame; the unfurl
      is what makes opening read as growth instead of a snap. */
   transform-origin: 50% 0;
@@ -7298,12 +7336,12 @@ html.notch-window body {
 .notch.notch-open[data-state="saving"],
 .notch.notch-open[data-state="cancelled"] {
   width: calc(var(--notch-collapsed) + 20px);
-  border-radius: 0 0 24px 24px;
+  border-radius: 0 0 var(--r-notch-wide) var(--r-notch-wide);
 }
 /* S10 — no notch on this Mac (safeAreaInsets.top == 0): the same panel as a
    rounded pill floating just below the menu bar. Only the top corners differ. */
 .notch.notch-pill {
-  border-radius: 13px;
+  border-radius: var(--r-notch);
   margin-top: 4px;
   background: #000;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
@@ -7323,7 +7361,7 @@ html.notch-window body {
   padding: 0 12px;
 }
 .notch-lip-label {
-  font: 600 9.5px/1 var(--font-mono);
+  font: 600 11px/1 var(--font-mono);
   letter-spacing: 0.1em;
   color: #8f8a83;
   white-space: nowrap;
@@ -7381,11 +7419,11 @@ html.notch-window body {
 }
 .notch-dz {
   border: 1.5px dashed #4b4640;
-  border-radius: 9px;
+  border-radius: var(--r-md);
   padding: 12px 10px;
   text-align: center;
   color: #cfc8bf;
-  font-size: 12px;
+  font-size: 12.5px;
   line-height: 1.5;
 }
 /* S3 — armed. Solid purple edge and a 9% tint: this WILL be taken. */
@@ -7406,7 +7444,7 @@ html.notch-window body {
   align-items: center;
   gap: 8px;
   color: #cfc8bf;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .notch-row + .notch-row {
   margin-top: 7px;
@@ -7421,7 +7459,7 @@ html.notch-window body {
 /* Numbers, paths and clocks are mono + tabular without exception — a progress
    readout that jitters is worse than one that is plain. */
 .notch-mono {
-  font: 10.5px/1.4 var(--font-mono);
+  font: 11px/1.4 var(--font-mono);
   font-variant-numeric: tabular-nums;
   color: #8f8a83;
   flex: none;
@@ -7429,7 +7467,7 @@ html.notch-window body {
 .notch-meter {
   flex: 1;
   height: 5px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: #2a2622;
   overflow: hidden;
 }
@@ -7444,7 +7482,7 @@ html.notch-window body {
    the fake field used to draw). */
 .notch-field {
   border: 1px solid #3a352f;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   padding: 8px 10px;
   color: #ece7df;
   font-size: 12.5px;
@@ -7466,7 +7504,7 @@ html.notch-window body {
 .notch-path {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 11.5px;
+  font-size: 12.5px;
 }
 /* Peek's one-click rows. The complaint they answer: starting a recording took
    hover → click → ⌥M, three steps to reach a mic. Full-width buttons, because
@@ -7478,10 +7516,10 @@ html.notch-window body {
   width: 100%;
   padding: 7px 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   background: transparent;
   color: #ece7df;
-  font: 12px/1.4 inherit;
+  font: 12.5px/1.4 inherit;
   text-align: left;
   cursor: pointer;
 }
@@ -7512,7 +7550,7 @@ html.notch-window body {
 .notch-peek-sub {
   margin-top: 4px;
   text-align: center;
-  font-size: 10.5px;
+  font-size: 11px;
   color: #8f8a83;
 }
 /* The take's own waveform: a canvas, drawn from the real mic RMS. */
@@ -7526,7 +7564,7 @@ html.notch-window body {
   height: 18px;
   overflow: hidden;
   white-space: nowrap;
-  font: 12px/18px inherit;
+  font: 12.5px/18px inherit;
   color: #ece7df;
 }
 /* The fade is only earned once the line is actually clipped — on a short
@@ -7555,9 +7593,9 @@ html.notch-window body {
      cancel a take, so they cannot stay a 15px-tall strip of text. */
   padding: 6px 8px;
   min-height: 24px;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   background: transparent;
-  font: 9.5px/1.4 var(--font-mono);
+  font: 11px/1.4 var(--font-mono);
   color: #8f8a83;
   cursor: pointer;
 }
@@ -7636,7 +7674,7 @@ html.notch-window body {
 .dash-hbar__fill {
   display: block;
   height: 100%;
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 var(--r-sm) var(--r-sm) 0;
   min-width: 2px;
 }
 .dash-hbar__num {
@@ -7663,7 +7701,7 @@ html.notch-window body {
   min-width: 0;
 }
 .dash-week__num {
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
 }
@@ -7673,7 +7711,7 @@ html.notch-window body {
      The old accent-soft fill was invisible on the dark card surface. */
   background: var(--accent);
   opacity: 0.72;
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--r-sm) var(--r-sm) 0 0;
 }
 .dash-week__fill.is-current {
   opacity: 1;
@@ -7681,7 +7719,7 @@ html.notch-window body {
 .dash-weeks__axis {
   display: flex;
   justify-content: space-between;
-  font-size: 10.5px;
+  font-size: 11px;
   color: var(--ink-3);
   margin-top: 4px;
 }
@@ -7691,7 +7729,7 @@ html.notch-window body {
    dress the widgets. Values stay in ink; series color lives on marks only. */
 .board { margin-top: 24px; }
 .board-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
-.board-title { font-size: 16px; margin: 0; }
+.board-title { font-size: 17px; margin: 0; }
 .board-spacer { flex: 1; }
 /* One control height across the toolbar — selects, buttons and the range
    segment were each bringing their own padding and read as a jumble. */
@@ -7704,22 +7742,22 @@ html.notch-window body {
 .board-head .btn { padding: 0 12px; font-size: 12.5px; }
 .board-head .input { padding: 0 8px; font-size: 12.5px; }
 .board-head .segmented { padding: 2px; }
-.board-head .segmented button { padding: 0 10px; font-size: 12px; }
+.board-head .segmented button { padding: 0 10px; font-size: 12.5px; }
 .board-add { width: auto; }
 .board-empty {
   width: 100%;
   border: 1.5px dashed var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: transparent;
   color: var(--ink-3);
   padding: 28px 16px;
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
 }
 .board-empty:hover { color: var(--ink-2); border-color: var(--ink-3); }
 .bw {
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: var(--bg-elev);
   padding: 10px 12px;
   display: flex;
@@ -7727,7 +7765,7 @@ html.notch-window body {
   overflow: hidden;
 }
 .bw-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; min-height: 18px; }
-.bw-grip { cursor: grab; color: var(--ink-3); font-size: 12px; user-select: none; }
+.bw-grip { cursor: grab; color: var(--ink-3); font-size: 12.5px; user-select: none; }
 .bw-title {
   font-size: 12.5px;
   overflow: hidden;
@@ -7741,23 +7779,23 @@ html.notch-window body {
   border: none;
   background: none;
   color: var(--ink-3);
-  font-size: 12px;
+  font-size: 12.5px;
   padding: 1px 4px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--r-sm);
 }
 .bw-btn:hover { color: var(--ink); background: var(--bg-hover); }
 .bw-stat { flex: 1; display: grid; place-items: center; }
 .bw-stat__num { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; }
 .bw-stat[data-tone="risk"] .bw-stat__num { color: #dc2626; }
 .bw-stat[data-tone="ok"] .bw-stat__num { color: #16a34a; }
-.bw-heading { font-size: 15px; font-weight: 700; align-self: center; margin: auto 0; }
+.bw-heading { font-size: 17px; font-weight: 700; align-self: center; margin: auto 0; }
 .bw-text { font-size: 12.5px; overflow-y: auto; }
-.bw-empty { font-size: 12px; margin: auto 0; }
-.bw-editor { display: grid; gap: 6px; overflow-y: auto; font-size: 12px; }
+.bw-empty { font-size: 12.5px; margin: auto 0; }
+.bw-editor { display: grid; gap: 6px; overflow-y: auto; font-size: 12.5px; }
 .bw-field { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.bw-field > span:first-child { color: var(--ink-3); flex: none; font-size: 11.5px; }
-.bw-field .input { width: 150px; flex: none; font-size: 12px; padding: 2px 6px; }
+.bw-field > span:first-child { color: var(--ink-3); flex: none; font-size: 12.5px; }
+.bw-field .input { width: 150px; flex: none; font-size: 12.5px; padding: 2px 6px; }
 .bw-field--stack { flex-direction: column; align-items: stretch; }
 .bw-field--stack .input { width: 100%; resize: vertical; }
 .bw-filter { display: flex; gap: 4px; }
@@ -7765,16 +7803,16 @@ html.notch-window body {
 .bw-rule-num { max-width: 64px; }
 .dash-fill { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .dash-fill .dash-weeks { flex: 1; height: auto; min-height: 48px; }
-.dash-week__stack { width: 100%; display: flex; flex-direction: column-reverse; gap: 2px; border-radius: 4px 4px 0 0; overflow: hidden; }
+.dash-week__stack { width: 100%; display: flex; flex-direction: column-reverse; gap: 2px; border-radius: var(--r-sm) var(--r-sm) 0 0; overflow: hidden; }
 .dash-week__stack i { display: block; min-height: 1px; }
-.dash-legend { display: flex; gap: 10px; font-size: 10.5px; color: var(--ink-2); margin-top: 5px; flex-wrap: wrap; }
-.dash-legend i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; margin-right: 4px; vertical-align: -1px; }
+.dash-legend { display: flex; gap: 10px; font-size: 11px; color: var(--ink-2); margin-top: 5px; flex-wrap: wrap; }
+.dash-legend i { width: 8px; height: 8px; border-radius: 0; display: inline-block; margin-right: 4px; vertical-align: -1px; }
 .dash-line { width: 100%; flex: 1; min-height: 44px; }
-.dash-cattable { border-collapse: collapse; width: 100%; font-size: 12px; overflow-y: auto; }
+.dash-cattable { border-collapse: collapse; width: 100%; font-size: 12.5px; overflow-y: auto; }
 .dash-cattable td { padding: 3px 4px; border-bottom: 1px solid var(--line); }
 .dash-cattable td.num { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); }
 /* rgl placeholder tint on our palette */
-.react-grid-placeholder { background: var(--accent-soft) !important; border-radius: 10px; opacity: 0.5; }
+.react-grid-placeholder { background: var(--accent-soft) !important; border-radius: var(--r-md); opacity: 0.5; }
 
 /* Resize handle: react-resizable's default is a faint gray glyph that
    disappears on the dark surface — replace it with the app's own corner
@@ -7795,7 +7833,7 @@ html.notch-window body {
   height: 9px;
   border-right: 2px solid var(--ink-3);
   border-bottom: 2px solid var(--ink-3);
-  border-radius: 0 0 3px 0;
+  border-radius: 0 0 var(--r-sm) 0;
 }
 .bw:hover > .react-resizable-handle::after {
   border-color: var(--ink);
@@ -7817,7 +7855,7 @@ html.notch-window body {
   flex-direction: column;
   gap: 10px;
 }
-.board-detail__meta { font-size: 12px; margin: 0; }
+.board-detail__meta { font-size: 12.5px; margin: 0; }
 .board-detail__chart { min-height: 180px; display: flex; flex-direction: column; }
 .board-detail__chart .dash-weeks { height: 160px; }
 .board-detail__table { overflow-y: auto; min-height: 0; }
@@ -7845,7 +7883,7 @@ html.notch-window body {
 }
 .props__key {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -7854,7 +7892,7 @@ html.notch-window body {
 .props__alert {
   grid-column: 1 / -1;
   margin: 0;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--danger);
 }
 details.props > .btn {
@@ -7880,7 +7918,7 @@ details.props > .btn {
 }
 .myco-editor.live .cm-content {
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.75;
 }
 .myco-editor.live .live-code,
@@ -7991,7 +8029,7 @@ details.props > .btn {
 }
 .rail-cov__bar {
   height: 6px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--track);
   overflow: hidden;
   margin-bottom: 10px;
@@ -7999,7 +8037,7 @@ details.props > .btn {
 .rail-cov__bar i {
   display: block;
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--ok);
 }
 .rail-list {
@@ -8027,7 +8065,7 @@ details.props > .btn {
   flex: none;
   width: 16px;
   height: 16px;
-  border-radius: 9px;
+  border-radius: var(--r-md);
   background: var(--ink-3);
   color: var(--bg);
   font-size: 11px;
@@ -8059,7 +8097,7 @@ details.props > .btn {
   vertical-align: 1px;
   width: 28px;
   height: 4px;
-  border-radius: 2px;
+  border-radius: var(--r-sm);
   background: var(--track);
   overflow: hidden;
 }
@@ -8074,7 +8112,7 @@ details.props > .btn {
   font-size: 11px;
   line-height: 18px;
   padding: 0 7px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   border: 1px solid var(--glass-line);
   color: var(--ink-4);
 }
@@ -8174,7 +8212,7 @@ details.props > .btn {
   width: 3px;
   min-height: 1.4em;
   margin-left: 5px;
-  border-radius: 2px;
+  border-radius: var(--r-sm);
   background: var(--line-strong);
   transition:
     background var(--dur-quick) var(--ease-out),
@@ -8338,14 +8376,14 @@ details.props > .btn {
   background: var(--glass);
   border: 1px solid var(--glass-line);
   box-shadow: var(--glass-hi);
-  border-radius: 16px;
+  border-radius: var(--r-lg);
 }
 /* The one filled button per screen. Light keeps the app's ink fill; dark
    takes the violet from the tray. 32px tall, radius 10, lift on hover. */
 .hq-btn.btn {
   height: 32px;
   padding: 0 18px;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   font-size: 14px;
   font-weight: 600;
   transition:
@@ -8425,7 +8463,7 @@ details.props > .btn {
   gap: 8px 28px;
   align-items: center;
   padding: 26px 28px 26px 24px;
-  border-radius: 20px;
+  border-radius: var(--r-lg);
   background: var(--glass);
   border: 1px solid var(--glass-line);
   box-shadow: var(--glass-hi);
@@ -8538,7 +8576,7 @@ details.props > .btn {
   align-items: center;
   gap: 8px 16px;
   padding: 10px 12px;
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   background: var(--glass);
   border: 1px solid var(--glass-line);
   box-shadow: var(--glass-hi);
@@ -8551,7 +8589,7 @@ details.props > .btn {
   min-width: 0;
   padding: 0;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: none;
   text-align: left;
   font-size: 14px;
@@ -8605,7 +8643,7 @@ details.props > .btn {
   min-height: 28px;
   padding: 4px 10px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: none;
   font-size: 12.5px;
   color: var(--ink-4);
@@ -8636,7 +8674,7 @@ details.props > .btn {
   background: var(--glass);
   border: 1px solid var(--glass-line);
   box-shadow: var(--glass-hi);
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   padding: 10px 16px 10px 12px;
   font-size: 14px;
   color: var(--ink-2);
@@ -8649,7 +8687,7 @@ details.props > .btn {
   transform: translateY(-1px);
 }
 .hq-drop-btn[aria-expanded="true"] {
-  border-radius: 16px 16px 0 0;
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
   transform: none;
 }
 .hq-drop-btn .activity-icon {
@@ -8670,7 +8708,7 @@ details.props > .btn {
   background: var(--glass);
   border: 1px solid var(--glass-line);
   border-top: 0;
-  border-radius: 0 0 16px 16px;
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
   animation: hq-fade var(--dur-enter) var(--ease-out);
 }
 .hq-tw {
@@ -8735,7 +8773,7 @@ details.props > .btn {
 }
 .hq-row {
   position: relative;
-  border-radius: 14px;
+  border-radius: var(--r-lg);
   transition:
     background var(--dur-quick) var(--ease-out),
     transform var(--dur-quick) var(--ease-out);
@@ -8770,7 +8808,7 @@ details.props > .btn {
   width: 28px;
   height: 28px;
   cursor: pointer;
-  border-radius: 8px;
+  border-radius: var(--r-md);
 }
 .hq-cb:hover {
   background: var(--bg-active);
@@ -8782,7 +8820,7 @@ details.props > .btn {
   height: 18px;
   margin: 0;
   cursor: pointer;
-  border-radius: 5px;
+  border-radius: var(--r-sm);
   border: 1.5px solid var(--line-strong);
   background-color: transparent;
   transition:
@@ -8859,14 +8897,14 @@ details.props > .btn {
 .hq-bar {
   width: 64px;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--track);
   overflow: hidden;
 }
 .hq-bar i {
   display: block;
   height: 100%;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   background: var(--c, var(--live));
 }
 .hq-prev {
@@ -8904,7 +8942,7 @@ details.props > .btn {
 .hq-mini {
   height: 28px;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   background: none;
   border: 0;
   font-size: 12.5px;
@@ -8977,7 +9015,7 @@ details.props > .btn {
 /* Plan gate: a glass tile that says what will exist before anything does. */
 .hq-plan {
   margin-top: 16px;
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   background: var(--glass);
   border: 1px solid var(--glass-line);
   box-shadow: var(--glass-hi), var(--shadow-2);
@@ -9009,7 +9047,7 @@ details.props > .btn {
 .hq-prog {
   height: 4px;
   background: var(--track);
-  border-radius: 2px;
+  border-radius: var(--r-sm);
   overflow: hidden;
   margin: 12px 18px 0;
 }
@@ -9042,7 +9080,7 @@ details.props > .btn {
   align-items: flex-start;
   margin-top: 14px;
   padding: 24px;
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   background: var(--glass);
   border: 1px solid var(--glass-line);
   box-shadow: var(--glass-hi);
@@ -9173,7 +9211,7 @@ details.props > .btn {
   gap: 8px;
   height: 32px;
   padding: 0 8px 0 5px;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   white-space: nowrap;
 }
 .sv-step .sv-n {
@@ -9261,7 +9299,7 @@ details.props > .btn {
   gap: 22px 26px;
   align-items: flex-start;
   padding: 26px 28px 24px;
-  border-radius: 20px;
+  border-radius: var(--r-lg);
   background: var(--glass);
   border: 1px solid var(--glass-line);
   box-shadow: var(--glass-hi);
@@ -9393,7 +9431,7 @@ details.props > .btn {
   align-items: center;
   padding: 16px 20px;
   border: 1.5px dashed color-mix(in srgb, var(--live) 32%, var(--line-strong));
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--glass-foot);
   transition:
     border-color var(--dur-quick) var(--ease-out),
@@ -9435,7 +9473,7 @@ details.props > .btn {
 }
 .sv-dz-note {
   grid-column: 1 / -1;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .sv-dz-note.is-error {
   color: var(--danger);
@@ -9446,7 +9484,7 @@ details.props > .btn {
   padding: 12px 28px 14px;
   border-top: 1px solid var(--glass-line);
   background: var(--glass-foot);
-  border-radius: 0 0 19px 19px;
+  border-radius: 0 0 var(--r-lg) var(--r-lg);
 }
 .sv-chan-l {
   font-size: 11px;
@@ -9476,7 +9514,7 @@ details.props > .btn {
   align-items: center;
   gap: 10px;
   padding: 6px 8px;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   font-size: 14px;
   transition: background var(--dur-quick) var(--ease-out);
 }
@@ -9578,7 +9616,7 @@ details.props > .btn {
   align-items: center;
   gap: 5px;
   padding: 2px 8px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   font-size: 11px;
   font-weight: 600;
   border: 1px solid currentColor;
@@ -9655,7 +9693,7 @@ details.props > .btn {
 .sv-bf {
   margin-top: 28px;
   padding: 20px 22px;
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   background: var(--glass);
   border: 1px solid var(--glass-line);
   box-shadow: var(--glass-hi);
@@ -9719,7 +9757,7 @@ details.props > .btn {
   display: inline-flex;
   height: 32px;
   border: 1px solid var(--glass-line);
-  border-radius: 10px;
+  border-radius: var(--r-md);
   overflow: hidden;
   background: var(--glass-2);
 }
@@ -9830,7 +9868,7 @@ details.props > .btn {
   background: linear-gradient(180deg, rgba(24, 23, 21, 0.04), rgba(24, 23, 21, 0.015));
   border-color: rgba(24, 23, 21, 0.09);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
-  border-radius: 16px;
+  border-radius: var(--r-lg);
 }
 [data-theme="dark"] .ask-turn {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.045), rgba(255, 255, 255, 0.02));
@@ -9873,7 +9911,7 @@ details.props > .btn {
 }
 .ask-body {
   font-family: var(--font-serif);
-  font-size: 19px;
+  font-size: 22px;
   line-height: 1.7;
   margin-top: 8px;
 }
@@ -9891,7 +9929,7 @@ details.props > .btn {
   padding: 4px 8px 4px 14px;
   margin: 0 -8px 10px -14px;
   border-left: 2px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   transition:
     background var(--dur-quick) var(--ease-out),
     border-color var(--dur-quick) var(--ease-out);
@@ -9906,7 +9944,7 @@ details.props > .btn {
   font-weight: 600;
   line-height: 1;
   border: 0;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   padding: 5px 8px;
   min-width: 24px;
   margin-top: 5px;
@@ -9959,7 +9997,7 @@ details.props > .btn {
   background: none;
   border: 0;
   padding: 6px 10px;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   cursor: pointer;
   text-align: left;
   color: inherit;
@@ -10028,7 +10066,7 @@ details.props > .btn {
   grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
   margin-top: 8px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   padding: 4px 6px 10px;
 }
 .ask-trace[hidden] {
@@ -10036,7 +10074,7 @@ details.props > .btn {
 }
 .ask-st {
   padding: 10px 12px 11px;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   min-width: 0;
 }
 .ask-st + .ask-st {
@@ -10066,7 +10104,7 @@ details.props > .btn {
 .ask-tracefoot {
   grid-column: 1 / -1;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 12.5px;
   color: var(--ink-4);
   margin: 8px 6px 0;
   padding-top: 10px;
@@ -10083,7 +10121,7 @@ details.props > .btn {
 }
 .ask-panel {
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   background: var(--bg-elev);
 }
 .ask-panel > header {
@@ -10116,7 +10154,7 @@ details.props > .btn {
   line-height: 1.5;
   padding: 9px 12px;
   margin: 0 0 8px;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   color: var(--ink-3);
 }
 .ask-lead.warn {
@@ -10130,7 +10168,7 @@ details.props > .btn {
   gap: 10px;
   align-items: start;
   padding: 13px 12px;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   border: 1px solid transparent;
   cursor: pointer;
   text-align: left;
@@ -10177,7 +10215,7 @@ details.props > .btn {
   font-size: 11px;
   line-height: 1.4;
   padding: 2px 7px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   white-space: nowrap;
   font-weight: 500;
   background: color-mix(in srgb, var(--tc, var(--ink-4)) 80%, var(--ink));
@@ -10343,7 +10381,7 @@ details.props > .btn {
   margin-top: 12px;
   padding: 22px 24px 18px;
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   background: var(--bg-elev);
 }
 .ask-abstain::before {
@@ -10424,7 +10462,7 @@ details.props > .btn {
 .ask-missbar {
   height: 6px;
   background: var(--bg-active);
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   position: relative;
 }
 .ask-missbar i {
@@ -10432,7 +10470,7 @@ details.props > .btn {
   inset: 0 auto 0 0;
   display: block;
   background: var(--ink-4);
-  border-radius: 3px;
+  border-radius: var(--r-sm);
 }
 .ask-missbar .floor {
   position: absolute;
@@ -10444,7 +10482,7 @@ details.props > .btn {
 .ask-missnum {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
   text-align: right;
 }
@@ -10458,9 +10496,9 @@ details.props > .btn {
 .ask-receipt {
   margin-top: 12px;
   border: 1px dashed var(--line-strong);
-  border-radius: var(--r);
+  border-radius: var(--r-sm);
   padding: 9px 11px;
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--ink-3);
   display: flex;
   gap: 9px;
@@ -10520,7 +10558,7 @@ details.props > .btn {
   column-gap: 12px;
   align-items: center;
   padding: 10px 14px 11px;
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   border: 1px solid var(--glass-line);
   background: var(--glass);
   box-shadow: var(--glass-hi);
@@ -10619,7 +10657,7 @@ details.props > .btn {
   height: 32px;
   padding: 2px;
   gap: 2px;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: var(--glass-2);
 }
 .graph-shell .sv-seg button {
@@ -10628,7 +10666,7 @@ details.props > .btn {
   color: var(--ink-3);
   padding: 0 11px;
   font-size: 12.5px;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   cursor: pointer;
 }
 .graph-shell .sv-seg button[aria-pressed="true"] {
@@ -10662,7 +10700,7 @@ details.props > .btn {
   align-items: center;
   height: 24px;
   padding: 0 10px;
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--glass-2);
   font-size: 11px;
   color: var(--ink-4);
@@ -10676,7 +10714,7 @@ details.props > .btn {
   margin: 0 0 14px;
   padding: 8px 14px;
   border: 1px solid var(--glass-line);
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--glass);
   box-shadow: var(--glass-hi);
   font-size: 12.5px;
@@ -10697,7 +10735,7 @@ details.props > .btn {
   flex: none;
   width: 180px;
   height: 6px;
-  border-radius: 3px;
+  border-radius: var(--r-sm);
   overflow: hidden;
   background: var(--track);
 }
@@ -10707,7 +10745,7 @@ details.props > .btn {
 }
 .graph-shell .sv-panel {
   border: 1px solid var(--glass-line);
-  border-radius: 16px;
+  border-radius: var(--r-lg);
   background: var(--glass);
   box-shadow: var(--glass-hi);
   overflow: hidden;
@@ -10774,7 +10812,7 @@ details.props > .btn {
   align-items: center;
   gap: 6px;
   padding: 4px 6px 4px 8px;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   transition:
     background var(--dur-quick) var(--ease-out),
     transform var(--dur-quick) var(--ease-out);
@@ -10806,7 +10844,7 @@ details.props > .btn {
 .graph-shell .sv-act {
   flex: none;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--r-md);
   height: 26px;
   padding: 0 8px;
   background: var(--glass-2);
@@ -10882,7 +10920,7 @@ details.props > .btn {
   gap: 5px;
   padding: 2px 8px;
   border: 1px solid var(--glass-line);
-  border-radius: 999px;
+  border-radius: var(--r-pill);
   background: var(--glass-2);
   font-size: 11px;
   color: var(--ink-3);
@@ -10910,7 +10948,7 @@ details.props > .btn {
   min-height: 32px;
   padding: 0 12px;
   border: 0;
-  border-radius: 10px;
+  border-radius: var(--r-md);
   background: var(--glass-2);
   color: var(--ink);
   font-size: 14px;
