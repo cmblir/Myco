@@ -47,7 +47,7 @@ for (const vp of VIEWPORTS) {
     await page.waitForTimeout(300);
   }
   await page.locator(".side-nav").getByRole("button", { name: /Settings|설정|設定/ }).first().click();
-  await page.waitForSelector(".page-title", { timeout: 20_000 });
+  await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
 
   // The Connections tab holds the provider cards, incl. Ollama.
   await page.locator(".qbtn", { hasText: /Connections|연결|接続/ }).first().click();

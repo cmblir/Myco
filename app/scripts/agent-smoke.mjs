@@ -35,7 +35,7 @@ await page.waitForSelector(".side-nav .nav-item", { timeout: 30_000 });
 
 // Open Ask page (Workspace nav in the sidebar).
 await page.locator(".side-nav .nav-item", { hasText: /^Ask$|질문|質問/ }).first().click();
-await page.waitForSelector(".page-title", { timeout: 20_000 });
+await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
 
 // Switch to Agent mode.
 await page.locator(".segmented button", { hasText: "Agent" }).click();

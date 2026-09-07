@@ -40,20 +40,20 @@ async function shot(name, { settle = 800 } = {}) {
 
 // Overview
 await nav(0).click();
-await page.waitForSelector(".page-title", { timeout: 20_000 });
+await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
 await shot("overview.png");
 
 // Provenance folds under the Tools disclosure — open it, then pick by label
 // (its position depends on the badge rows above it).
 await page.locator(".side-nav .nav-item[aria-expanded]").first().click();
 await page.locator(".side-nav .nav-item", { hasText: "Provenance" }).first().click();
-await page.waitForSelector(".page-title", { timeout: 20_000 });
+await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
 await shot("provenance.png");
 
 // Settings — by label, not by position: the Tools group's rows shift with
 // the badges above them.
 await page.locator(".side-nav .nav-item", { hasText: "Settings" }).first().click();
-await page.waitForSelector(".page-title", { timeout: 20_000 });
+await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
 await shot("settings.png");
 
 // Reader — open a wiki page from the sidebar page list

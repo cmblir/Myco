@@ -40,7 +40,7 @@ await page
   .locator(".nav-leaf", { hasText: "attention-mechanism" })
   .first()
   .click();
-await page.waitForSelector(".page-title", { timeout: 20_000 });
+await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
 
 // Trigger the audio overview.
 await page.locator(".btn", { hasText: "Audio overview" }).first().click();

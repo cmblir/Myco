@@ -60,8 +60,8 @@ async function readerWith(indexed) {
   await page.waitForTimeout(600);
   check(
     "the nudge routes to Settings",
-    /Settings/i.test(await page.locator(".page-title").innerText()),
-    await page.locator(".page-title").innerText(),
+    /Settings/i.test(await page.locator(".page-title, .u-page__title").innerText()),
+    await page.locator(".page-title, .u-page__title").innerText(),
   );
   check("no page errors", errors.length === 0, errors.slice(0, 2).join(" | "));
   await page.close();

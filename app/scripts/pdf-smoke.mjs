@@ -67,8 +67,8 @@ check("seeded highlight renders", (await page.locator(".pdf-highlight").count())
 
 // Clicking the highlight routes to its citing note (attention-mechanism).
 await page.locator(".pdf-highlight").first().click();
-await page.waitForSelector(".page-title", { timeout: 10_000 }).catch(() => {});
-const title = await page.locator(".page-title").innerText().catch(() => "");
+await page.waitForSelector(".page-title, .u-page__title", { timeout: 10_000 }).catch(() => {});
+const title = await page.locator(".page-title, .u-page__title").innerText().catch(() => "");
 check("highlight click opens citing note", /attention-mechanism/i.test(title), title);
 
 // --- Click a [[pdf::…]] link inside a note → viewer opens at page/anchor ---

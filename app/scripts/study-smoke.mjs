@@ -41,8 +41,8 @@ check("sidebar due badge", badge === "3", `badge=${badge}`);
 
 // Open the Study route.
 await page.locator(".side-nav .nav-item", { hasText: "Study" }).first().click();
-await page.waitForSelector(".page-title", { timeout: 20_000 });
-check("study route title", (await page.locator(".page-title").textContent()) === "Study");
+await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
+check("study route title", (await page.locator(".page-title, .u-page__title").textContent()) === "Study");
 
 // Deck list shows the seeded deck with a due pill.
 await page.waitForSelector(".deck-row", { timeout: 10_000 });
@@ -105,7 +105,7 @@ check(
 // "Make cards" from a wiki page: open one via the sidebar tree.
 await page.locator(".nav-item", { hasText: "wiki" }).first().click();
 await page.locator(".nav-leaf", { hasText: "attention-mechanism" }).first().click();
-await page.waitForSelector(".page-title", { timeout: 20_000 });
+await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
 const beforeErr = errors.length;
 try {
   const makeBtn = page.locator(".btn", { hasText: "Make cards" }).first();

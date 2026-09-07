@@ -65,7 +65,7 @@ for (let i = 0; i < WORKSPACE.length; i++) {
     .locator(".nav-item")
     .first()
     .click();
-  await page.waitForSelector(".page-title", { timeout: 20_000 }).catch(() => {});
+  await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 }).catch(() => {});
   await page.waitForTimeout(800);
   check("settings", errors.length === before, errors.slice(before).join(" | "));
 }

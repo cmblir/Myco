@@ -60,7 +60,7 @@ for (const vp of VIEWPORTS) {
     .locator(".nav-item", { hasText: "Settings" })
     .first()
     .click();
-  await page.waitForSelector(".page-title", { timeout: 20_000 });
+  await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
   // Navigating auto-closes the mobile overlay; let it finish sliding out so the
   // screenshots capture the settled layout rather than a mid-transition frame.
   await page.waitForTimeout(500);
@@ -179,7 +179,7 @@ for (const vp of VIEWPORTS) {
       .locator(".nav-item", { hasText: "Settings" })
       .first()
       .click();
-    await page.waitForSelector(".page-title", { timeout: 20_000 });
+    await page.waitForSelector(".page-title, .u-page__title", { timeout: 20_000 });
     await page.waitForTimeout(400);
     await page.locator(".qbtn", { hasText: "Model" }).first().click();
     const back = page.locator('[data-testid="reindex-btn"]');
