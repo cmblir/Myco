@@ -14,6 +14,7 @@ import { formatRunLine } from "../lib/runList";
 import { buildRunRows, type RunRows } from "../lib/runDetailView";
 import DiffView from "../components/DiffView";
 import Viewer from "../components/Viewer";
+import AppPage from "../components/AppPage";
 
 interface ReportRow {
   path: string; // absolute
@@ -157,12 +158,7 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
   );
 
   return (
-    <div className="workspace">
-      <header className="page-head">
-        <div className="page-eyebrow">{t.nav_history}</div>
-        <h1 className="page-title">{t.h_title}</h1>
-        <p className="page-lede">{t.h_lede}</p>
-      </header>
+    <AppPage eyebrow={t.nav_history} title={t.h_title} note={t.h_lede}>
 
       {/* Distill runs (W3–6 item 6): expand → file rows + word diff; WHY →
           the run's ingest report; undo → existing undo_distill_run. */}
@@ -451,6 +447,6 @@ export default function PageHistory({ t }: { t: Strings }): JSX.Element {
           })}
         </div>
       )}
-    </div>
+    </AppPage>
   );
 }

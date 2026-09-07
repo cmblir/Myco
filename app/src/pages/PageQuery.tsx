@@ -42,6 +42,8 @@ import SourceLadder, {
 } from "../components/SourceLadder";
 import { isComposingKey } from "../lib/ime";
 import { loadProfile } from "../lib/profile";
+import AppPage from "../components/AppPage";
+import { Segment } from "../components/ui";
 import { wikilinkBase } from "../lib/wikilinks";
 
 /** Dismissible flag for the "set up your profile" hint below — same
@@ -206,30 +208,30 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
   }
 
   return (
-    <div className="workspace">
-      <header className="page-head">
-        <div className="row" style={{ justifyContent: "space-between", alignItems: "flex-start" }}>
-          <div>
-            <div className="page-eyebrow">{t.nav_query}</div>
-            <h1 className="page-title">{t.q_title}</h1>
-          </div>
-          <div className="segmented" role="tablist" aria-label={t.q_mode ?? "Mode"}>
-            <button
-              className={mode === "ask" ? "active" : ""}
-              onClick={() => setMode("ask")}
-            >
-              <Icon name="msg" size={12} /> {t.q_mode_ask ?? "Ask"}
-            </button>
-            <button
-              className={mode === "agent" ? "active" : ""}
-              onClick={() => setMode("agent")}
-            >
-              <Icon name="terminal" size={12} /> {t.q_mode_agent ?? "Agent"}
-            </button>
-          </div>
-        </div>
-        <p className="page-lede">{mode === "agent" ? (t.ag_lede ?? t.q_lede) : t.q_lede}</p>
-      </header>
+    <AppPage
+      eyebrow={t.nav_query}
+      title={t.q_title}
+      note={mode === "agent" ? (t.ag_lede ?? t.q_lede) : t.q_lede}
+      tools={
+        <Segment
+          label={t.q_mode ?? "Mode"}
+          value={mode}
+          onChange={setMode}
+          options={[
+            {
+              value: "ask",
+              label: t.q_mode_ask ?? "Ask",
+              icon: <Icon name="msg" size={12} />,
+            },
+            {
+              value: "agent",
+              label: t.q_mode_agent ?? "Agent",
+              icon: <Icon name="terminal" size={12} />,
+            },
+          ]}
+        />
+      }
+    >
 
       {mode === "agent" ? <AgentPanel t={t} /> : null}
 
@@ -528,7 +530,7 @@ export default function PageQuery({ t }: { t: Strings }): JSX.Element {
       </div>
 
       <AudioOverviewPanel t={t} />
-    </div>
+    </AppPage>
   );
 }
 

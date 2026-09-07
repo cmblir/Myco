@@ -14,6 +14,8 @@ import { dueCards, gradeCard, type Card } from "../lib/cards";
 import type { Grade } from "../lib/fsrs";
 import { loadDeck, saveDeck, deckNameFromPath } from "../lib/cardStore";
 import { generateQuiz, type QuizQuestion } from "../lib/study";
+import AppPage from "../components/AppPage";
+import { Button, Segment } from "../components/ui";
 
 type Mode = "review" | "quiz";
 
@@ -70,13 +72,20 @@ function DeckList({
 }): JSX.Element {
   const setRoute = useUIStore((s) => s.setRoute);
   return (
-    <div className="workspace">
-      <header className="page-head">
-        <div className="page-eyebrow">{t.nav_study}</div>
-        <h1 className="page-title">{t.st_title}</h1>
-        <p className="page-lede">{t.st_lede}</p>
-      </header>
-
+    <AppPage
+      eyebrow={t.nav_study}
+      title={t.st_title}
+      note={t.st_lede}
+      // Refresh was a right-aligned row above the deck list; it is the page's
+      // one action, so it belongs on the header row with every other page's.
+      tools={
+        decks.length === 0 ? undefined : (
+          <Button variant="quiet" onClick={() => void onRefresh()}>
+            <Icon name="revert" size={13} /> {t.st_refresh}
+          </Button>
+        )
+      }
+    >
       {decks.length === 0 ? (
         <div className="card" style={{ padding: 24, marginTop: 8 }}>
           <div className="row" style={{ gap: 8, marginBottom: 6 }}>
@@ -96,11 +105,6 @@ function DeckList({
         </div>
       ) : (
         <div className="col" style={{ gap: 10, marginTop: 8 }}>
-          <div className="row" style={{ justifyContent: "flex-end" }}>
-            <button className="btn btn-ghost" onClick={() => void onRefresh()}>
-              <Icon name="revert" size={13} /> {t.st_refresh}
-            </button>
-          </div>
           {decks.map((d) => (
             <button
               key={d.path}
@@ -133,7 +137,7 @@ function DeckList({
           ))}
         </div>
       )}
-    </div>
+    </AppPage>
   );
 }
 
@@ -163,30 +167,38 @@ function DeckStudy({
   }, [deckPath]);
 
   return (
-    <div className="workspace">
-      <header className="page-head">
-        <div className="row" style={{ gap: 10, marginBottom: 10 }}>
-          <button className="btn btn-ghost" onClick={onBack}>
+    <AppPage
+      eyebrow={t.nav_study}
+      title={name}
+      // Back and the mode switch were their own row above the title; both are
+      // page actions, so they join the header row every other page uses.
+      tools={
+        <>
+          <Button variant="quiet" onClick={onBack}>
             <Icon name="arrowL" size={13} /> {t.st_all_decks}
-          </button>
-          <div className="segmented" style={{ marginLeft: "auto" }}>
-            <button
-              className={mode === "review" ? "active" : ""}
-              onClick={() => setMode("review")}
-            >
-              <Icon name="book" size={12} /> {t.st_review}
-            </button>
-            <button
-              className={mode === "quiz" ? "active" : ""}
-              onClick={() => setMode("quiz")}
-            >
-              <Icon name="spark" size={12} /> {t.st_quiz}
-            </button>
-          </div>
-        </div>
-        <h1 className="page-title">{name}</h1>
-      </header>
-
+          </Button>
+          <Segment
+            // The old .segmented had no accessible name at all. `q_mode` is
+            // the existing generic "Mode" string — no new i18n key needed.
+            label={t.q_mode}
+            value={mode}
+            onChange={setMode}
+            options={[
+              {
+                value: "review",
+                label: t.st_review,
+                icon: <Icon name="book" size={12} />,
+              },
+              {
+                value: "quiz",
+                label: t.st_quiz,
+                icon: <Icon name="spark" size={12} />,
+              },
+            ]}
+          />
+        </>
+      }
+    >
       {cards === null ? (
         <p className="muted" style={{ paddingTop: 24 }}>
           {t.st_loading}
@@ -202,7 +214,7 @@ function DeckStudy({
       ) : (
         <QuizSession t={t} vaultPath={vaultPath} cards={cards} />
       )}
-    </div>
+    </AppPage>
   );
 }
 

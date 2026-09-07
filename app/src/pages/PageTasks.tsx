@@ -38,6 +38,8 @@ import {
   type TaskMeta,
   type TaskStatus,
 } from "../lib/taskLine";
+import AppPage from "../components/AppPage";
+import { Segment } from "../components/ui";
 
 export default function PageTasks({ t }: { t: Strings }): JSX.Element {
   const currentVault = useVaultStore((s) => s.currentVault);
@@ -336,47 +338,27 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
   }
 
   return (
-    <div className="workspace">
-      <header className="page-head">
-        <div className="page-eyebrow">{t.nav_tasks ?? "Tasks"}</div>
-        <h1 className="page-title">{t.tasks_title ?? "Tasks"}</h1>
-        <p className="muted" style={{ marginTop: 4 }}>
-          {t.tasks_lede ??
-            "Every checkbox item across your notes, gathered in one place."}
-        </p>
-      </header>
-
-      <div
-        className="segmented"
-        role="tablist"
-        aria-label={t.tasks_view ?? "View"}
-        style={{ marginTop: 8 }}
-      >
-        <button
-          className={view === "list" ? "active" : ""}
-          onClick={() => setView("list")}
-        >
-          {t.tasks_view_list ?? "List"}
-        </button>
-        <button
-          className={view === "board" ? "active" : ""}
-          onClick={() => setView("board")}
-        >
-          {t.tasks_view_board ?? "Board"}
-        </button>
-        <button
-          className={view === "calendar" ? "active" : ""}
-          onClick={() => setView("calendar")}
-        >
-          {t.tasks_view_calendar ?? "Calendar"}
-        </button>
-        <button
-          className={view === "roadmap" ? "active" : ""}
-          onClick={() => setView("roadmap")}
-        >
-          {t.tasks_view_roadmap ?? "Roadmap"}
-        </button>
-      </div>
+    <AppPage
+      eyebrow={t.nav_tasks ?? "Tasks"}
+      title={t.tasks_title ?? "Tasks"}
+      note={
+        t.tasks_lede ??
+        "Every checkbox item across your notes, gathered in one place."
+      }
+      bar={
+        <Segment
+          label={t.tasks_view ?? "View"}
+          value={view}
+          onChange={setView}
+          options={[
+            { value: "list", label: t.tasks_view_list ?? "List" },
+            { value: "board", label: t.tasks_view_board ?? "Board" },
+            { value: "calendar", label: t.tasks_view_calendar ?? "Calendar" },
+            { value: "roadmap", label: t.tasks_view_roadmap ?? "Roadmap" },
+          ]}
+        />
+      }
+    >
 
       <div
         className="row"
@@ -588,7 +570,7 @@ export default function PageTasks({ t }: { t: Strings }): JSX.Element {
           onClose={() => setSelected(null)}
         />
       ) : null}
-    </div>
+    </AppPage>
   );
 }
 

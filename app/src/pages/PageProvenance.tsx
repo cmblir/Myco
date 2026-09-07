@@ -6,6 +6,8 @@ import type { JSX } from "react";
 import { Icon } from "../lib/icons";
 import type { Strings } from "../lib/i18n";
 import type { SourceRef } from "../lib/ipc";
+import AppPage from "../components/AppPage";
+import { Button } from "../components/ui";
 import { useUIStore } from "../stores/uiStore";
 import { useVaultStore } from "../stores/vaultStore";
 import { useLintStore } from "../stores/lintStore";
@@ -44,22 +46,21 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
   }, [rows]);
 
   return (
-    <div className="workspace">
-      <header className="page-head">
-        <div className="page-eyebrow">{t.nav_provenance}</div>
-        <h1 className="page-title">{t.p_title}</h1>
-        <p className="page-lede">{t.p_lede}</p>
-        <div className="row" style={{ marginTop: 16 }}>
-          <button
-            className="btn btn-primary"
-            onClick={() => void runLint()}
-            disabled={!currentVault || lintBusy}
-          >
-            <Icon name="check" size={14} />{" "}
-            {lintBusy ? (t.p_linting ?? "Linting…") : (t.p_lint_run ?? "Run lint")}
-          </button>
-        </div>
-      </header>
+    <AppPage
+      eyebrow={t.nav_provenance}
+      title={t.p_title}
+      note={t.p_lede}
+      tools={
+        <Button
+          variant="primary"
+          onClick={() => void runLint()}
+          disabled={!currentVault || lintBusy}
+        >
+          <Icon name="check" size={14} />
+          {lintBusy ? (t.p_linting ?? "Linting…") : (t.p_lint_run ?? "Run lint")}
+        </Button>
+      }
+    >
 
       {lintBusy || lintReport ? (
         <section
@@ -323,7 +324,7 @@ export default function PageProvenance({ t }: { t: Strings }): JSX.Element {
           </div>
         </>
       )}
-    </div>
+    </AppPage>
   );
 }
 
