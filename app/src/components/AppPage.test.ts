@@ -7,7 +7,7 @@ import { createElement as h } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 import { AppPage, pageGridTemplate } from "./AppPage";
-import { Rail, RailRow } from "./Rail";
+import { Rail, RailGroup, RailRow } from "./Rail";
 
 describe("pageGridTemplate", () => {
   it("is a single body column with no rails", () => {
@@ -166,5 +166,113 @@ describe("RailRow", () => {
     );
     expect(html).toContain("is-active");
     expect(html).toContain('aria-current="true"');
+  });
+});
+
+// The three rails in the app — the reader's, the graph's gaps, the graph's
+// legend — are this one part now, so the branches they each rely on are
+// covered here rather than in three places.
+describe("Rail collapse, footer and groups", () => {
+  const noop = (): void => undefined;
+
+  it("is a plain header until it is given a toggle", () => {
+    const html = renderToStaticMarkup(h(Rail, { title: "Legend" }, "rows"));
+    expect(html).toContain("<header");
+    expect(html).not.toContain("aria-expanded");
+    expect(html).toContain("rows");
+  });
+
+  it("becomes a real toggle button, and open=false hides the list", () => {
+    const open = renderToStaticMarkup(
+      h(Rail, { title: "Legend", open: true, onToggle: noop }, "rows"),
+    );
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).toContain("rows");
+
+    const shut = renderToStaticMarkup(
+      h(Rail, { title: "Legend", open: false, onToggle: noop }, "rows"),
+    );
+    expect(shut).toContain('aria-expanded="false"');
+    // Collapsed means gone, not merely hidden: a screen reader must not read
+    // 71 cluster rows out of a rail the user closed.
+    expect(shut).not.toContain("rows");
+  });
+
+  it("takes a ratio as a count, because 3/9 is a count too", () => {
+    expect(
+      renderToStaticMarkup(h(Rail, { title: "Sources", count: "3/9" })),
+    ).toContain("3/9");
+  });
+
+  it("pins the footer under the list, and drops it when collapsed", () => {
+    const html = renderToStaticMarkup(
+      h(Rail, { title: "Legend", footer: "KEY" }, "rows"),
+    );
+    expect(html).toContain("u-rail__foot");
+    expect(html.indexOf("rows")).toBeLessThan(html.indexOf("KEY"));
+    expect(
+      renderToStaticMarkup(
+        h(Rail, { title: "L", open: false, onToggle: noop, footer: "KEY" }),
+      ),
+    ).not.toContain("KEY");
+  });
+
+  it("renders a group as a labelled toggle whose body is its children", () => {
+    const open = renderToStaticMarkup(
+      h(
+        RailGroup,
+        { label: "Orphans", count: 8, open: true, onToggle: noop },
+        "row",
+      ),
+    );
+    expect(open).toContain('aria-expanded="true"');
+    expect(open).toContain("Orphans");
+    expect(open).toContain("8");
+    expect(open).toContain("row");
+    expect(
+      renderToStaticMarkup(
+        h(RailGroup, { label: "Orphans", open: false, onToggle: noop }, "row"),
+      ),
+    ).not.toContain("row");
+  });
+});
+
+describe("RailRow actions", () => {
+  const noop = (): void => undefined;
+
+  it("never nests a button inside a button", () => {
+    // The row cannot be the button once it carries actions — invalid markup,
+    // and the actions would be unclickable. onClick moves to the label.
+    const html = renderToStaticMarkup(
+      h(
+        RailRow,
+        {
+          onClick: noop,
+          title: "notes/a.md",
+          actions: h("button", { type: "button" }, "open"),
+        },
+        "a",
+      ),
+    );
+    expect(html.startsWith("<div")).toBe(true);
+    expect(html).toContain("u-rail__label");
+    expect(html).toContain("u-rail__acts");
+    expect(html).toContain('title="notes/a.md"');
+    expect(html.match(/<button/g)).toHaveLength(2);
+    // Siblings, not nested: nothing between the first <button> and its
+    // </button> may open another one.
+    const inside = html.slice(
+      html.indexOf("<button") + "<button".length,
+      html.indexOf("</button>"),
+    );
+    expect(inside).not.toContain("<button");
+  });
+
+  it("still labels a row with actions when it is not clickable", () => {
+    const html = renderToStaticMarkup(
+      h(RailRow, { actions: h("button", { type: "button" }, "ask") }, "a"),
+    );
+    expect(html).toContain('<span class="u-rail__label"');
+    expect(html.match(/<button/g)).toHaveLength(1);
   });
 });
