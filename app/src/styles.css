@@ -1846,6 +1846,26 @@ select {
   position: relative;
   z-index: 1;
 }
+/* The owner's vault reads 1,960 / 1,020 / 66: three 42px numbers plus 32px
+   gaps wrapped to two lines in a 368px column and made the tile 167px of
+   digits stacked over the living backdrop. One row always, each cell shrinking
+   — the figures are a glance, not the subject. */
+@media (max-width: 1240px) {
+  .vp-figures {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .vp-value {
+    font-size: 22px;
+  }
+  .vp-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
 .vp-value {
   font-size: clamp(30px, 5vw, 42px);
   font-weight: 600;
@@ -4233,10 +4253,22 @@ hr {
   overflow: hidden;
 }
 .graph-crumbs .graph-chip {
+  /* Shrinks before the icon row wraps: at a 1000px viewport a full note name
+     plus the find field pushed the help button onto a second line, which put
+     a 40px hole under the title. */
   max-width: 140px;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+@media (max-width: 1240px) {
+  .graph-crumbs .graph-chip {
+    max-width: 92px;
+  }
+  .graph-find {
+    width: 120px;
+  }
 }
 .graph-chip--exit {
   padding: 2px 6px;

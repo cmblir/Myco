@@ -1865,7 +1865,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 aria-label={t.gr_focus_esc ?? "Step out (Esc)"}
                 title={t.gr_focus_esc ?? "Step out (Esc)"}
               >
-                \u00D7
+                {"\u00D7"}
               </button>
             </nav>
           ) : null}

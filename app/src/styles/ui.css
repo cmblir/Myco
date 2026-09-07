@@ -370,13 +370,46 @@
    at which styles.css folds the graph drawer and the ingest columns. Beats the
    inline --page-cols because the custom property is what is set inline, not
    the grid-template-columns declaration. */
+/* Two rails plus a body do not fit in a narrow window: measured at a 1000px
+   viewport the graph's stage came out 184px wide beside two 216px rails — a
+   vertical strip, which is exactly what the owner reported. The right rail
+   goes under the body first, because the picture is the page and the legend
+   reads fine as a strip. The viewport is the wrong unit for this (the sidebar
+   takes ~215px of it), so the thresholds are deliberately generous. */
+@media (max-width: 1240px) {
+  .u-page--rails2 .u-page__body {
+    grid-template-columns: minmax(0, var(--rail-w)) minmax(320px, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+  .u-page--rails2 .u-page__rail--right {
+    grid-column: 1 / -1;
+  }
+  .u-page--rails2 .u-page__rail--right > .u-rail {
+    /* The strip under the body is a reference, not the subject: at 30vh it
+       took a third of the window and left the graph's stage 293px tall. */
+    max-height: 22vh;
+  }
+}
 @media (max-width: 820px) {
-  .u-page__body {
+  .u-page__body,
+  .u-page--rails2 .u-page__body {
     grid-template-columns: minmax(0, 1fr);
     grid-template-rows: auto;
   }
+  .u-page--rails2 .u-page__rail--right {
+    grid-column: auto;
+  }
   .u-page__head {
     padding-top: 20px;
+  }
+  /* A viewport-height page whose rails have stacked: the row is `auto` now, so
+     without a floor the stage measured 451x1 — the canvas has no content of
+     its own to give it height. */
+  .u-page--wide .u-page__main {
+    min-height: 62vh;
+  }
+  .u-page--wide .u-page__rail > .u-rail {
+    max-height: 40vh;
   }
 }
 
@@ -415,7 +448,7 @@ button.u-rail__head:hover {
 .u-rail__caret {
   flex-shrink: 0;
   width: 9px;
-  color: var(--ink-4);
+  color: var(--ink-2);
   font-size: var(--fs-11);
 }
 .u-rail__title {
@@ -647,9 +680,20 @@ button.u-rail__row:hover {
   }
 }
 
-/* One of several peers is picked, and this is not it (the legend's isolation). */
+/* One of several peers is picked, and this is not it (the legend's isolation).
+   0.45 put a --ink-2 name at ~2.5:1 on --bg-elev — the owner reported the
+   gaps rail as "not even visible" once a note was selected. A rail row is
+   TEXT, so the pick is marked on the pick (see .is-picked below) and the rest
+   only recede. */
 .u-rail__row.is-dimmed {
-  opacity: 0.45;
+  opacity: 0.72;
+}
+/* The pick itself already carries a background and a full-strength name
+   (.is-active above), so the contrast comes from the pick being brighter
+   rather than from every other row being faint. */
+.u-rail__row.is-active .u-rail__name,
+.u-rail__row.is-active .u-rail__label {
+  color: var(--ink);
 }
 
 /* An ellipsizing label: a note name, a cluster name. Never wraps — a rail is

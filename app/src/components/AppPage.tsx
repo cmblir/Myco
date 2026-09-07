@@ -67,6 +67,11 @@ export function AppPage({
   // migrated page keeps exactly the column it had.
   const shell = [
     wide ? "workspace-wide u-page u-page--wide" : "workspace u-page",
+    // Both rails present is the layout that cannot survive a narrow window
+    // (a 1000px viewport left the graph's stage 184px wide). The class lets
+    // the sheet drop the right rail under the body before the stage becomes
+    // a strip; a media query alone cannot ask how many rails there are.
+    leftRail && rightRail ? "u-page--rails2" : "",
     className ?? "",
   ]
     .filter(Boolean)
@@ -95,7 +100,11 @@ export function AppPage({
       >
         {leftRail ? <aside className="u-page__rail">{leftRail}</aside> : null}
         <div className="u-page__main">{children}</div>
-        {rightRail ? <aside className="u-page__rail">{rightRail}</aside> : null}
+        {rightRail ? (
+          <aside className="u-page__rail u-page__rail--right">
+            {rightRail}
+          </aside>
+        ) : null}
       </div>
     </div>
   );
