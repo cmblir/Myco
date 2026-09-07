@@ -9,6 +9,8 @@
 // popover shows it live) — same order runDistillGuarded runs them.
 
 import { create } from "zustand";
+// Type-only, so no runtime dependency: RunOutcome is declared beside the other
+// store the Topbar's shared run pill reads (see harvestStore).
 import type { RunOutcome } from "./harvestStore";
 
 export type DistillRunStep =
