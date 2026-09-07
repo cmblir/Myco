@@ -1071,24 +1071,13 @@ select {
 /* Settings shell (Stipe): search is the first control, the tabs are a row of
    chips carrying their match counts, and every row prints its current value.
    The old two-column `.settings-grid` (200px rail + body) is gone. */
-.s-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 16px;
-}
+/* The header and the search row are AppPage's `head` and `bar` now; what is
+   left here is what goes IN them. */
 .s-total {
-  margin-left: auto;
   font-family: var(--font-mono);
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--ink-4);
   white-space: nowrap;
-}
-.s-searchrow {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 14px 0 12px;
 }
 .s-box {
   position: relative;
@@ -1149,64 +1138,15 @@ select {
   background: var(--bg-hover);
   color: var(--ink);
 }
-.s-toggler {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  padding: 0 12px;
-  border: 1px solid var(--glass-line);
-  border-radius: var(--r-md);
-  background: var(--glass);
-  box-shadow: var(--glass-hi);
-  color: var(--ink-2);
-  font-size: 12.5px;
-  white-space: nowrap;
-  cursor: pointer;
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out);
-}
-.s-toggler:hover {
-  background: var(--glass-hover);
-  transform: translateY(-1px);
-}
-.s-toggler.is-on {
-  color: var(--ink);
-  font-weight: 600;
-}
-.s-sw {
-  position: relative;
-  width: 26px;
-  height: 15px;
-  flex: none;
-  border-radius: var(--r-pill);
-  background: var(--track);
-  box-shadow: inset 0 0 0 1px var(--glass-line);
-  transition: background var(--dur-quick) var(--ease-out);
-}
-.s-sw::after {
-  content: "";
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 11px;
-  height: 11px;
-  border-radius: var(--r-pill);
-  background: var(--ink-4);
-  transition: transform var(--dur-quick) var(--ease-out);
-}
-.s-toggler.is-on .s-sw {
-  background: var(--live);
-}
-.s-toggler.is-on .s-sw::after {
-  transform: translateX(11px);
-  background: var(--bg);
-}
+/* .s-toggler / .s-sw are gone: "changed only" is the kit's Check, a real
+   checkbox, instead of a hand-rolled switch. */
 .s-rail {
   display: flex;
   gap: 6px;
   flex-wrap: wrap;
+  /* Takes the whole toolbar row, so the chips wrap under the search box
+     rather than trailing off its right edge. */
+  flex: 1 1 100%;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
@@ -1239,7 +1179,8 @@ select {
   background: var(--glass-hover);
 }
 .s-body {
-  margin-top: 18px;
+  /* AppPage's body already pads itself away from the toolbar row. */
+  margin-top: 0;
 }
 .s-empty {
   display: flex;

@@ -17,6 +17,8 @@ import type { ProposalAction, ProposalMeta } from "../stores/distillStore";
 import { confirmAction } from "../stores/dialogStore";
 import { daysLeft, verdictSentence, KEEP_DAYS } from "../lib/quarantine";
 import type { QuarantineItem } from "../lib/quarantine";
+import AppPage from "../components/AppPage";
+import { Segment } from "../components/ui";
 import Viewer from "../components/Viewer";
 
 function kindLabel(t: Strings, action: ProposalAction): string {
@@ -186,42 +188,33 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
   }
 
   return (
-    <div className="workspace">
-      <header className="page-head">
-        <div className="page-eyebrow">{t.nav_feedback ?? "Feedback"}</div>
-        <h1 className="page-title">{t.pf_title ?? "Feedback"}</h1>
-        <p className="page-lede">
-          {t.pf_lede ??
-            "Proposals the distillation engine wrote while folding new pages into the wiki — review and apply, or dismiss."}
-        </p>
-      </header>
-
-      <div
-        className="segmented"
-        role="tablist"
-        aria-label={t.nav_feedback ?? "Feedback"}
-        style={{ marginTop: 8 }}
-      >
-        <button
-          role="tab"
-          aria-selected={tab === "proposals"}
-          className={tab === "proposals" ? "active" : ""}
-          onClick={() => setTab("proposals")}
-        >
-          {t.pf_tab_proposals ?? "Proposals"}
-        </button>
-        <button
-          role="tab"
-          aria-selected={tab === "quarantine"}
-          className={tab === "quarantine" ? "active" : ""}
-          onClick={() => setTab("quarantine")}
-        >
-          {(t.pf_tab_quarantine ?? "Quarantine {n}")
-            .replace("{n}", quarantineCount > 0 ? String(quarantineCount) : "")
-            .trim()}
-        </button>
-      </div>
-
+    <AppPage
+      eyebrow={t.nav_feedback ?? "Feedback"}
+      title={t.pf_title ?? "Feedback"}
+      note={
+        t.pf_lede ??
+        "Proposals the distillation engine wrote while folding new pages into the wiki — review and apply, or dismiss."
+      }
+      bar={
+        <Segment
+          label={t.nav_feedback ?? "Feedback"}
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: "proposals", label: t.pf_tab_proposals ?? "Proposals" },
+            {
+              value: "quarantine",
+              // The string carries the count inline ("Quarantine {n}"); the
+              // kit has a slot for it, so it goes there instead.
+              label: (t.pf_tab_quarantine ?? "Quarantine {n}")
+                .replace("{n}", "")
+                .trim(),
+              count: quarantineCount > 0 ? quarantineCount : undefined,
+            },
+          ]}
+        />
+      }
+    >
       {error ? (
         <div style={{ color: "#dc2626", fontSize: 12.5, marginTop: 12 }}>{error}</div>
       ) : null}
@@ -307,6 +300,6 @@ export default function PageFeedback({ t }: { t: Strings }): JSX.Element {
           })}
         </div>
       )}
-    </div>
+    </AppPage>
   );
 }

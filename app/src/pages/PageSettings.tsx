@@ -17,6 +17,8 @@ import {
   type SettingsTab,
   type SettingsValues,
 } from "../lib/settingsSearch";
+import AppPage from "../components/AppPage";
+import { Check } from "../components/ui";
 import { SettingsFilterContext } from "../components/SettingsCard";
 import type { SettingsFilter } from "../components/SettingsCard";
 import { useReindexStore } from "../stores/reindexStore";
@@ -158,97 +160,97 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
   const shown = [...matches.values()].reduce((n, list) => n + list.length, 0);
 
   return (
-    <div className="workspace">
-      <header className="page-head s-head">
-        <div>
-          <div className="page-eyebrow">{t.nav_settings}</div>
-          <h1 className="page-title">{t.s_title}</h1>
-        </div>
+    <AppPage
+      eyebrow={t.nav_settings}
+      title={t.s_title}
+      tools={
         <span className="s-total">
           {(t.s_total_count ?? "{n} of {all} settings")
             .replace("{n}", String(shown))
             .replace("{all}", String(rows.length))}
         </span>
-      </header>
-
-      {/* Search first: with eight tabs, "which tab is it on?" is the normal
-          state, and the answer is a query — not a rail. */}
-      <div className="s-searchrow">
-        <div className="s-box">
-          <span className="s-box__ico" aria-hidden="true">
-            <Icon name="search" size={14} />
-          </span>
-          <input
-            ref={searchRef}
-            type="search"
-            value={q}
-            // Deliberate: this box IS the page's primary control.
-            autoFocus
-            placeholder={t.s_search_ph}
-            aria-label={t.s_search_ph}
-            onChange={(e) => {
-              setQ(e.target.value);
-              // Mid-composition keystrokes only update the field; `applied`
-              // follows on compositionend.
-              if (!(e.nativeEvent as InputEvent).isComposing) {
-                applyQuery(e.target.value);
-              }
-            }}
-            onCompositionEnd={(e) => applyQuery(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (isComposingKey(e)) return;
-              if (e.key === "Escape") clearSearch();
-            }}
-          />
-          {q ? (
-            <button
-              className="s-box__clear"
-              aria-label={t.s_search_clear ?? "Clear search"}
-              onClick={() => {
-                clearSearch();
-                searchRef.current?.focus();
+      }
+      // Search first: with eight tabs, "which tab is it on?" is the normal
+      // state, and the answer is a query — not a rail. The chip row wraps to
+      // its own line under it (.s-rail takes the whole bar width).
+      bar={
+        <>
+          <div className="s-box">
+            <span className="s-box__ico" aria-hidden="true">
+              <Icon name="search" size={14} />
+            </span>
+            <input
+              ref={searchRef}
+              type="search"
+              value={q}
+              // Deliberate: this box IS the page's primary control.
+              autoFocus
+              placeholder={t.s_search_ph}
+              aria-label={t.s_search_ph}
+              onChange={(e) => {
+                setQ(e.target.value);
+                // Mid-composition keystrokes only update the field; `applied`
+                // follows on compositionend.
+                if (!(e.nativeEvent as InputEvent).isComposing) {
+                  applyQuery(e.target.value);
+                }
               }}
-            >
-              <Icon name="x" size={12} />
-            </button>
-          ) : null}
-        </div>
-        <button
-          className={"s-toggler" + (changedOnly ? " is-on" : "")}
-          aria-pressed={changedOnly}
-          onClick={() => setChangedOnly(!changedOnly)}
-        >
-          <span className="s-sw" aria-hidden="true" />
-          <span>{t.s_changed_only ?? "Changed only"}</span>
-          <span className="s-tabcount">{changedCount}</span>
-        </button>
-      </div>
-
-      <nav
-        className="s-rail"
-        role="tablist"
-        aria-label={t.s_title}
-        ref={railRef}
-      >
-        {tabs
-          .filter((x) => matches.has(x.id))
-          .map((x) => (
-            <button
-              key={x.id}
-              role="tab"
-              aria-selected={tab === x.id}
-              className="s-chip"
-              onClick={() => selectTab(x.id)}
-            >
-              <Icon name={x.icon} size={13} />
-              <span>{x.label}</span>
-              <span className="s-tabcount">
-                {matches.get(x.id)?.length ?? 0}
-              </span>
-            </button>
-          ))}
-      </nav>
-
+              onCompositionEnd={(e) => applyQuery(e.currentTarget.value)}
+              onKeyDown={(e) => {
+                if (isComposingKey(e)) return;
+                if (e.key === "Escape") clearSearch();
+              }}
+            />
+            {q ? (
+              <button
+                className="s-box__clear"
+                aria-label={t.s_search_clear ?? "Clear search"}
+                onClick={() => {
+                  clearSearch();
+                  searchRef.current?.focus();
+                }}
+              >
+                <Icon name="x" size={12} />
+              </button>
+            ) : null}
+          </div>
+          {/* Was a hand-rolled aria-pressed button with a CSS switch; the kit's
+              Check is a real checkbox, so Space toggles it and a screen reader
+              announces its state without us re-implementing either. The count
+              rides in the label — the badge was the only thing it needed CSS
+              for. */}
+          <Check
+            checked={changedOnly}
+            onChange={setChangedOnly}
+            label={`${t.s_changed_only ?? "Changed only"} ${changedCount}`}
+          />
+          <nav
+            className="s-rail"
+            role="tablist"
+            aria-label={t.s_title}
+            ref={railRef}
+          >
+            {tabs
+              .filter((x) => matches.has(x.id))
+              .map((x) => (
+                <button
+                  key={x.id}
+                  role="tab"
+                  aria-selected={tab === x.id}
+                  className="s-chip"
+                  onClick={() => selectTab(x.id)}
+                >
+                  <Icon name={x.icon} size={13} />
+                  <span>{x.label}</span>
+                  <span className="s-tabcount">
+                    {matches.get(x.id)?.length ?? 0}
+                  </span>
+                </button>
+              ))}
+          </nav>
+        </>
+      }
+    >
       <div className="s-body">
         {matches.size === 0 ? (
           <div className="s-empty" role="status">
@@ -291,6 +293,6 @@ export default function PageSettings({ t }: { t: Strings }): JSX.Element {
           </SettingsFilterContext.Provider>
         )}
       </div>
-    </div>
+    </AppPage>
   );
 }
