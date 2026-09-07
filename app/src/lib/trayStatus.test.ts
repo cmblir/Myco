@@ -13,8 +13,18 @@ import {
 } from "./trayStatus";
 import type { TraySnapshot } from "./trayStatus";
 import { EMPTY_AGENDA } from "./notchAgenda";
-import type { TrayStatusPayload } from "./ipc";
+import { pairKey } from "./linkSuggestions";
+import { ipc } from "./ipc";
+import type {
+  FileContent,
+  HarvestCandidates,
+  TrayStatusPayload,
+  VaultMeta,
+} from "./ipc";
 import { useUIStore } from "../stores/uiStore";
+import { useVaultStore } from "../stores/vaultStore";
+import { useLinkSuggestStore } from "../stores/linkSuggestStore";
+import { useHarvestStore } from "../stores/harvestStore";
 import { STRINGS } from "./i18n";
 
 const idle: TraySnapshot = {
@@ -414,5 +424,114 @@ describe("applyTrayAction", () => {
     applyTrayAction("nope");
     expect(useUIStore.getState().route).toBe("query");
     expect(useUIStore.getState().focusTarget).toBeNull();
+  });
+});
+
+// The three decisions the notch offers. It cannot write — no vault in that
+// webview — so it sends these strings and the writes happen HERE, through the
+// same functions Overview's own cards call.
+describe("the notch's agenda decisions", () => {
+  const A = "/v/wiki/otp.md";
+  const B = "/v/wiki/magic-links.md";
+  const KEY = pairKey(A, B);
+
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    useVaultStore.setState({
+      currentVault: { path: "/v", name: "v" } as VaultMeta,
+      adjacency: {
+        forward: {},
+        backward: {},
+        unresolved: {},
+        tags: {},
+      },
+    });
+    useLinkSuggestStore.setState({
+      sem: [{ source: A, target: B, score: 0.9 }],
+      dismissed: new Set<string>(),
+    });
+    useHarvestStore.setState({
+      data: null,
+      loading: false,
+      scannedPath: null,
+      run: { total: 0, done: 0, phase: null },
+    });
+  });
+
+  it("dismissing a link marks exactly that pair", () => {
+    applyTrayAction(`links-dismiss:${KEY}`);
+    expect([...useLinkSuggestStore.getState().dismissed]).toEqual([KEY]);
+  });
+
+  it("accepting a link appends the wikilink through acceptSuggestion", async () => {
+    const read = vi
+      .spyOn(ipc, "readFile")
+      .mockResolvedValue({ path: A, raw: "# otp\n" } as FileContent);
+    const write = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    vi.spyOn(ipc, "buildLinkGraph").mockRejectedValue(new Error("no backend"));
+    applyTrayAction(`links-accept:${KEY}`);
+    await vi.waitFor(() => expect(write).toHaveBeenCalled());
+    // The source page is what gets the link, under ## Related — the one write
+    // path, not a second one bolted onto the notch.
+    expect(read).toHaveBeenCalledWith(A);
+    expect(write.mock.calls[0][0]).toBe(A);
+    expect(String(write.mock.calls[0][1])).toContain("[[magic-links]]");
+    // Accepted pairs leave the queue, exactly as they do from the card.
+    expect(useLinkSuggestStore.getState().dismissed.has(KEY)).toBe(true);
+  });
+
+  it("a stale link key writes nothing", async () => {
+    const write = vi.spyOn(ipc, "writeFile").mockResolvedValue(null);
+    applyTrayAction("links-accept:/v/gone.md|/v/nope.md");
+    await Promise.resolve();
+    expect(write).not.toHaveBeenCalled();
+  });
+
+  it("harvesting runs every listed candidate and reports on the run slice", async () => {
+    useHarvestStore.setState({
+      data: {
+        items: [
+          { path: "/v/sessions/a.md", rel: "sessions/a.md" },
+          { path: "/v/sessions/b.md", rel: "sessions/b.md" },
+        ],
+      } as HarvestCandidates,
+    });
+    const run = vi
+      .spyOn(ipc, "harvestRun")
+      .mockResolvedValue({ copied: 2, inbox_rels: [], skipped: [] });
+    // An empty inbox ends the ingest loop on its first pass; the run still has
+    // to finish reporting.
+    vi.spyOn(ipc, "listInboxEntries").mockResolvedValue([]);
+    const reload = vi
+      .spyOn(ipc, "harvestCandidates")
+      .mockResolvedValue({ items: [] } as unknown as HarvestCandidates);
+    applyTrayAction("harvest-run");
+    // startRun is synchronous: the Topbar has to show the run immediately, not
+    // after harvest_run answers.
+    expect(useHarvestStore.getState().run.phase).toBe("copying");
+    await vi.waitFor(() =>
+      expect(useHarvestStore.getState().outcome).toBe("done"),
+    );
+    expect(run).toHaveBeenCalledWith(["/v/sessions/a.md", "/v/sessions/b.md"]);
+    expect(useHarvestStore.getState().run.phase).toBeNull();
+    // The queue is refetched, so the row leaves the notch too.
+    await vi.waitFor(() => expect(reload).toHaveBeenCalled());
+  });
+
+  it("harvesting with an empty queue does nothing", () => {
+    const run = vi.spyOn(ipc, "harvestRun");
+    applyTrayAction("harvest-run");
+    expect(run).not.toHaveBeenCalled();
+    expect(useHarvestStore.getState().run.phase).toBeNull();
+  });
+
+  it("a second harvest cannot start over a live one", async () => {
+    useHarvestStore.setState({
+      data: { items: [{ path: "/v/sessions/a.md" }] } as HarvestCandidates,
+      run: { total: 1, done: 0, phase: "ingesting" },
+    });
+    const run = vi.spyOn(ipc, "harvestRun");
+    applyTrayAction("harvest-run");
+    expect(run).not.toHaveBeenCalled();
   });
 });
