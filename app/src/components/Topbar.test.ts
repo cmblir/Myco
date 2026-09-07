@@ -6,7 +6,7 @@
 // max-height for a very short window.
 
 import { describe, expect, it } from "vitest";
-import { computeModelPopPos } from "./Topbar";
+import { computeModelPopPos, runPillOutcome } from "./Topbar";
 
 describe("computeModelPopPos", () => {
   it("right-aligns to the pill on an ordinary desktop width", () => {
@@ -52,5 +52,44 @@ describe("computeModelPopPos", () => {
       expect(pos.left).toBeGreaterThanOrEqual(4);
       expect(pos.left + pos.width).toBeLessThanOrEqual(width - 4);
     }
+  });
+});
+
+// runPillOutcome decides whether a finished-run pill is on screen. Its first
+// clause is the invariant that keeps the bar to ONE spinner: while a run is
+// live, its pill is not rendered at all — the live half belongs to
+// ActivityChip's running list, and nothing else in the bar draws a spinner.
+describe("runPillOutcome", () => {
+  it("shows no pill while the run is live, whatever the last outcome was", () => {
+    for (const outcome of ["done", "error", null] as const) {
+      expect(runPillOutcome({ running: true, outcome, seen: false })).toBeNull();
+    }
+  });
+
+  it("pops the outcome once the run ends", () => {
+    expect(runPillOutcome({ running: false, outcome: "done", seen: false })).toBe(
+      "done",
+    );
+    expect(runPillOutcome({ running: false, outcome: "error", seen: false })).toBe(
+      "error",
+    );
+  });
+
+  it("clears once the page that explains the run has been seen", () => {
+    expect(
+      runPillOutcome({ running: false, outcome: "done", seen: true }),
+    ).toBeNull();
+    expect(
+      runPillOutcome({ running: false, outcome: "error", seen: true }),
+    ).toBeNull();
+  });
+
+  it("stays silent for a source that has never run — the store default", () => {
+    expect(
+      runPillOutcome({ running: false, outcome: null, seen: true }),
+    ).toBeNull();
+    expect(
+      runPillOutcome({ running: false, outcome: null, seen: false }),
+    ).toBeNull();
   });
 });
