@@ -2102,7 +2102,7 @@ select {
    starfield's light stage falls to 202-219 at the corners against 255 in the
    middle, while this canvas came back a uniform #0b0a08 corner to corner), the
    hub labels get .graph-label-3d's type and halo, and the hover tooltip gets
-   .graph-legend's glass tokens instead of its own hard-coded browns.
+   the same glass tokens the app's other floating panels use.
 
    [data-ground] is set by MyceliumView from the SUBSTRATE, not the app theme:
    the substrate is a user setting (MYCELIUM_BG_PRESETS), so a label drawn on
@@ -2160,7 +2160,7 @@ select {
 }
 /* Hover label — positioned via a JS transform (see MyceliumView's
    pointermove handler), not top/left, so moving it never triggers layout.
-   Same glass as .graph-legend, the other panel floating on this stage. */
+   Glass, like the app's other floating panels. */
 .myc-hover-label {
   position: absolute;
   top: 0;
@@ -3074,6 +3074,11 @@ hr {
   flex: 1;
   min-height: 0;
 }
+/* The gaps and legend rails ride the body row as fixed columns until the page
+   moves onto AppPage, which owns rail width. */
+.graph-body > .u-rail {
+  flex: 0 0 246px;
+}
 .graph-canvas-wrap {
   flex: 1;
   position: relative;
@@ -3133,7 +3138,7 @@ hr {
 .graph-fullscreen .graph-toolbar,
 .graph-fullscreen .graph-drawer,
 .graph-fullscreen .graph-drawer-toggle,
-.graph-fullscreen .graph-legend,
+.graph-fullscreen .u-rail,
 .graph-fullscreen .graph-help,
 .graph-fullscreen .graph-inspector {
   display: none; /* the ShipHud is the only panel in immersive mode */
@@ -3634,129 +3639,11 @@ hr {
 .graph-help__text {
   color: var(--ink-2);
 }
-/* In-canvas graph legend — bottom-left overlay, doubles as a community filter. */
-.graph-legend {
-  position: absolute;
-  left: 12px;
-  bottom: 12px;
-  z-index: 5;
-  max-width: 240px;
-  /* It is an overlay ON the stage, so it must never grow taller than one — a
-     long galaxy list used to spill up over the controls above the canvas. */
-  max-height: calc(100% - 24px);
-  overflow-y: auto;
-  padding: 8px 10px;
-  background: var(--bg-elev);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
-  font-size: 12.5px;
-  color: var(--ink-2);
-}
-.graph-legend__head {
-  background: none;
-  border: none;
-  padding: 0;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--ink-2);
-  cursor: pointer;
-}
-.graph-legend__galaxies {
-  list-style: none;
-  margin: 6px 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  max-height: 46vh;
-  overflow-y: auto;
-}
-.graph-legend__galaxy {
-  list-style: none;
-}
-.graph-legend__galaxy-head {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  background: none;
-  border: none;
-  padding: 3px 4px;
-  border-radius: var(--r-sm);
-  font-size: 12.5px;
-  font-weight: 600;
-  color: var(--ink);
-  cursor: pointer;
-  text-align: left;
-}
-.graph-legend__galaxy-head:hover {
-  background: var(--bg-hover);
-}
-.graph-legend__caret {
-  flex-shrink: 0;
-  font-size: 11px;
-}
-.graph-legend__clusters {
-  list-style: none;
-  margin: 1px 0 3px;
-  padding: 0 0 0 12px;
-  border-left: 1px solid var(--line-soft);
-  margin-left: 7px;
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.graph-legend__more {
-  padding: 2px 4px 2px 6px;
-  font-size: 11px;
-}
-.graph-legend__swatch {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  background: none;
-  border: none;
-  padding: 2px 4px;
-  border-radius: var(--r-sm);
-  font-size: 12.5px;
-  color: var(--ink-2);
-  cursor: pointer;
-  text-align: left;
-}
-.graph-legend__swatch:hover {
-  background: var(--bg-hover);
-}
-.graph-legend__swatch.is-active {
-  background: var(--accent-soft);
-  color: var(--ink);
-}
-.graph-legend__swatch.is-dimmed {
-  opacity: 0.45;
-}
-.graph-legend__dot {
-  width: 8px;
-  height: 8px;
-  border-radius: var(--r-pill);
-  flex-shrink: 0;
-}
-.graph-legend__name {
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.graph-legend__key {
-  margin-top: 8px;
-  padding-top: 6px;
-  border-top: 1px solid var(--line-soft);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 11px;
-  color: var(--ink-3);
-}
+/* The legend is a shared <Rail> now (components/Rail.tsx, styles/ui.css): it
+   stopped floating over the picture it explains, and its swatches, names,
+   counts and collapse are the rail's, not its own. Only the encoding key's
+   glyph rows are still its business, and the rail's footer already styles
+   them — so nothing is left here. */
 
 /* Query "thinking" visualization — dark mini-cosmos while the model runs. */
 .thinking-galaxy {

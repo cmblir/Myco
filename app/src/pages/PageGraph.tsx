@@ -2175,18 +2175,21 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 }}
               />
             ) : null}
-            {!showMultiverse ? (
-              <GraphLegend
-                t={t}
-                galaxies={legendGalaxies}
-                isolated={isolated}
-                onIsolate={isolateCommunity}
-              />
-            ) : null}
             {helpOpen ? (
               <GraphHelp t={t} onClose={() => setHelpOpen(false)} />
             ) : null}
           </div>
+          {/* The legend used to float INSIDE the canvas, covering the picture
+              it explains. It is a rail beside the stage now — same part as
+              the gaps column on the other side. */}
+          {!showMultiverse ? (
+            <GraphLegend
+              t={t}
+              galaxies={legendGalaxies}
+              isolated={isolated}
+              onIsolate={isolateCommunity}
+            />
+          ) : null}
           <GraphControls
             t={t}
             open={drawerOpen}

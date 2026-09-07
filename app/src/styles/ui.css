@@ -448,7 +448,8 @@ button.u-rail__head:hover {
   min-width: 0;
 }
 /* A rail's own aside — "+12 more", "no gaps found". Never a row. */
-.u-rail__list > p {
+.u-rail__list > p,
+.u-rail__groupbody > p {
   margin: 2px 8px 4px;
   font-size: var(--fs-11);
   color: var(--ink-4);
