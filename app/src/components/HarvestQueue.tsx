@@ -118,7 +118,11 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
   }
 
   async function run(): Promise<void> {
+    // `running` is this component's own progress. A run started from the notch
+    // reports on the shared store, so without this a second run could copy the
+    // same sessions into _inbox/ while the first is still walking them.
     if (!root || !data || running) return;
+    if (useHarvestStore.getState().run.phase !== null) return;
     const paths = items.filter((c) => selected.has(c.path)).map((c) => c.path);
     if (paths.length === 0) return;
     setProgress({ done: 0, total: paths.length });
