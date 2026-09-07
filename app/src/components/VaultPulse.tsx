@@ -168,7 +168,9 @@ export default function VaultPulse({
 function Figure({ value, label }: { value: number; label: string }): JSX.Element {
   return (
     <div className="vp-figure">
-      <div className="vp-value">{value}</div>
+      {/* Grouped: unformatted four-digit figures side by side read as one
+          number — the owner's vault showed "2028 133 91" as 202813391. */}
+      <div className="vp-value">{value.toLocaleString()}</div>
       <div className="vp-label">{label}</div>
     </div>
   );

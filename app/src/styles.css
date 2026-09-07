@@ -1871,6 +1871,9 @@ select {
   font-weight: 600;
   letter-spacing: -0.02em;
   line-height: 1.1;
+  /* Digits of one width, so three figures side by side keep their own columns
+     instead of drifting into each other as the counts change. */
+  font-variant-numeric: tabular-nums;
 }
 .vp-label {
   font-size: 12.5px;
