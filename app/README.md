@@ -121,13 +121,19 @@ can run e.g. Claude Sonnet for ingest and a local Llama for Q&A.
   (approve/dismiss a map proposal inline), the waiting counts and today's
   inflow as tiles with the 24-hour chart folded behind a disclosure, and
   Ask / Distill buttons.
-- Notices: work in progress lives in the top-right activity chip (a ring
-  fills as reindex, distill or a link "accept all" advances; the label swaps
-  per step; the ring turns green for a beat when done), and results arrive as
-  toasts that drop in directly under that chip — at most three, each with one
-  action, paused while hovered, `Esc` dismisses the newest. The same event
-  never appears in both. Accepting a single suggested link animates the ✓ in
-  place instead of raising a toast.
+- Notices: work in progress lives in the top-right activity chip — **every**
+  long run reports there and only there (Ask, harvest, ingest, lint, distill,
+  reflect, reindex, a link "accept all"), so the bar shows one spinner however
+  many are going: a ring fills as the run advances, the label swaps per step,
+  two or more collapse into one "Activity N" chip listing them all, and the
+  ring turns green for a beat when the last one ends. A finished run then
+  leaves a single done/failed pill in the bar until you visit the page that
+  explains it — harvest → Today, distill → Feedback, ingest → Ingest, lint →
+  Provenance, Ask → Ask — which is how a run you walked away from still finds
+  you. Results arrive as toasts that drop in directly under the chip — at most
+  three, each with one action, paused while hovered, `Esc` dismisses the
+  newest. The same event never appears in both. Accepting a single suggested
+  link animates the ✓ in place instead of raising a toast.
 - `⌥Space` (global, works from any app) opens a spotlight window: type a
   question, press Enter, and the answer appears with its citations —
   clicking one opens that note in myco. It runs the same Ask path as the
