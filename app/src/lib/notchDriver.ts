@@ -23,12 +23,15 @@ import {
   clampPercent,
   describeNotch,
 } from "../components/NotchPanel";
-import type { NotchState } from "../components/NotchPanel";
+import type { AgendaOutcome, NotchState } from "../components/NotchPanel";
 import { TRAY_STATUS_EVENT } from "../components/TrayPanel";
+import { withoutActed } from "./notchAgenda";
+import { TRAY_ACTION_EVENT } from "./trayStatus";
 import { ipc } from "./ipc";
 import { LAST_VAULT_KEY } from "../stores/vaultStore";
 import type {
   NotchAgendaPayload,
+  NotchAgendaRow,
   NotchGeometry,
   TrayStatusPayload,
 } from "./ipc";
@@ -73,6 +76,14 @@ export const NOTCH_OPEN_MAX_H = 170;
  *  Accepted holds longer: "ingest reads it shortly" is worth reading. */
 export const ACCEPTED_DWELL_MS = 8000;
 export const REJECTED_DWELL_MS = 6000;
+
+/** How long a decided agenda row says what happened before it leaves. Long
+ *  enough to read one word, short enough that the next decision is already
+ *  under the pointer. */
+export const AGENDA_BEAT_MS = 1500;
+/** One agenda row's height in the open card (`.notch-agenda` in styles.css),
+ *  for the OS window the card has to fit inside. */
+export const NOTCH_AGENDA_ROW_H = 32;
 
 /** What the driver reacts to. `writeOk`/`writeFail` report the async
  *  `_inbox/` write that follows a drop; `statusPush` is the first running row
@@ -566,8 +577,14 @@ export interface NotchDrive {
    *  it is written ~12×/s: routing it through the reducer would re-render the
    *  whole panel on every audio buffer for a canvas that already redraws. */
   levels: LevelHistory;
-  /** Decisions waiting, off the tray-status push; null before the first one. */
+  /** Decisions waiting, off the tray-status push; null before the first one.
+   *  Rows already decided are gone from it, count included. */
   agenda: NotchAgendaPayload | null;
+  /** A row's yes / no. Emits the row's pre-routed action string to the main
+   *  window, which owns every writer behind it. */
+  onAgendaAct: (row: NotchAgendaRow, primary: boolean) => void;
+  /** Rows mid-outcome, by id — the beat before they leave. */
+  agendaActed: Readonly<Record<string, AgendaOutcome>>;
 }
 
 /** Open the text capture and ask the native side for key focus — the lip
@@ -611,6 +628,12 @@ export function useNotchDriver(): NotchDrive | null {
   // Decisions waiting. State, not a ref: the collapsed surface has to appear
   // the moment one arrives, without waiting for another event to re-render.
   const [agenda, setAgenda] = useState<NotchAgendaPayload | null>(null);
+  // Rows already decided: the outcome word for AGENDA_BEAT_MS, then `gone`
+  // for as long as the push still lists them (the main window's write only
+  // reaches the payload a store refresh later, and until then the row would
+  // otherwise sit there offering the decision again).
+  const [acted, setActed] = useState<Record<string, AgendaOutcome>>({});
+  const [settled, setSettled] = useState<ReadonlySet<string>>(() => new Set());
 
   // The drag-drop subscription is mount-once; the localized template rides a
   // ref so a language change does not tear the listener down mid-drag.
@@ -742,7 +765,17 @@ export function useNotchDriver(): NotchDrive | null {
         : null;
       // Same ride-along: the main window owns the vault and the stores, so it
       // builds the agenda (lib/notchAgenda) and this webview renders it.
-      setAgenda(s.panel?.agenda ?? null);
+      const incoming = s.panel?.agenda ?? null;
+      setAgenda(incoming);
+      // A decided row the push no longer lists has really left — stop
+      // remembering it, so the set cannot grow with stale ids for the life of
+      // the window.
+      setSettled((prev) => {
+        if (prev.size === 0) return prev;
+        const live = new Set((incoming?.rows ?? []).map((r) => r.id));
+        const next = new Set([...prev].filter((id) => live.has(id)));
+        return next.size === prev.size ? prev : next;
+      });
     };
     void ipc
       .getTrayStatus()
@@ -768,6 +801,34 @@ export function useNotchDriver(): NotchDrive | null {
       if (unlisten) unlisten();
     };
   }, [mocking]);
+
+  // What the surface actually offers: the push, minus the rows already
+  // decided here.
+  const visibleAgenda = withoutActed(agenda, settled);
+
+  /** A row's yes or no. The action string was routed by whoever built the row
+   *  (lib/trayStatus), so this only has to deliver it: the notch emits the
+   *  same event Rust emits for a tray-menu click, and applyTrayAction in the
+   *  main window — the single writer for all three decisions — acts on it.
+   *  Nothing is written from this webview, which has no vault to write to. */
+  const onAgendaAct = (row: NotchAgendaRow, primary: boolean): void => {
+    const action = primary ? row.primaryAction : row.secondaryAction;
+    if (!action) return;
+    void import("@tauri-apps/api/event")
+      .then(({ emit }) => emit(TRAY_ACTION_EVENT, action))
+      .catch((err: unknown) =>
+        console.error("notch: agenda action failed:", err),
+      );
+    setActed((prev) => ({ ...prev, [row.id]: primary ? "done" : "dropped" }));
+    window.setTimeout(() => {
+      setSettled((prev) => new Set(prev).add(row.id));
+      setActed((prev) => {
+        const next = { ...prev };
+        delete next[row.id];
+        return next;
+      });
+    }, AGENDA_BEAT_MS);
+  };
 
   // S5's lip clock ticks once a second while something runs.
   const kind = drv.panel.kind;
@@ -925,6 +986,28 @@ export function useNotchDriver(): NotchDrive | null {
       document.documentElement.removeEventListener("mouseleave", onLeave);
     };
   }, [mocking]);
+
+  // ⏎ takes the first waiting decision. Tab between the rows needs no code —
+  // they are buttons, in document order. Like the recording hints, both keys
+  // only arrive while this non-activating panel holds key focus, which it does
+  // not from inside another app: the buttons are the load-bearing path and
+  // this is the shortcut for when the notch is already the front window.
+  const firstRow = visibleAgenda?.rows[0];
+  useEffect(() => {
+    if (kind !== "peek" || !firstRow) return;
+    const onKey = (e: KeyboardEvent): void => {
+      // A focused button already answers Enter itself; handling it here too
+      // would fire the first row's yes from the third row's no.
+      if (e.key !== "Enter" || e.target instanceof HTMLButtonElement) return;
+      e.preventDefault();
+      onAgendaAct(firstRow, true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // onAgendaAct is left out of the deps deliberately: it is re-made every
+    // render and closes over nothing a stale copy would get wrong (two
+    // setStates and the row it is handed).
+  }, [kind, firstRow]);
 
   // Recording mode has no input to hang keys on: ⏎/⌥M stop-and-save, esc
   // cancels (mic release is the machine's job, never re-done here).
@@ -1144,6 +1227,13 @@ export function useNotchDriver(): NotchDrive | null {
   const pill = geom !== null && !geom.has_notch;
   const open = describeNotch(drv.panel, t, pill).open;
   const [grown, setGrown] = useState(false);
+  // The peek card grows by a row per waiting decision — a fixed height would
+  // clip the third one, and the card is the only thing that can be resized
+  // here (the window is sized before the card renders).
+  const openH =
+    NOTCH_OPEN_MAX_H +
+    (drv.panel.kind === "peek" ? (visibleAgenda?.rows.length ?? 0) : 0) *
+      NOTCH_AGENDA_ROW_H;
   useEffect(() => {
     if (mocking || geom === null) return;
     if (open) {
@@ -1154,7 +1244,7 @@ export function useNotchDriver(): NotchDrive | null {
       // Fixed open size: the card's exact height is unknowable before it
       // renders, and rendering is what must wait. The spare rows stay
       // transparent (and inside the hover watcher's leave slop).
-      void ipc.notchResize(NOTCH_OPEN_WIDTH, NOTCH_OPEN_MAX_H).then(
+      void ipc.notchResize(NOTCH_OPEN_WIDTH, openH).then(
         unfurl,
         unfurl, // plain-browser dev: no Tauri backend
       );
@@ -1184,7 +1274,7 @@ export function useNotchDriver(): NotchDrive | null {
       });
     }, 420);
     return () => window.clearTimeout(id);
-  }, [mocking, open, geom]);
+  }, [mocking, open, geom, openH]);
 
   // Content below the hardware cutout: the panel's lip offsets by the real
   // notch height (0 on a notchless Mac, where the whole pill is visible).
@@ -1212,6 +1302,8 @@ export function useNotchDriver(): NotchDrive | null {
     onRecordStop: () => void machine().stop(),
     onCapturePaste,
     levels: levelsRef.current,
-    agenda,
+    agenda: visibleAgenda,
+    onAgendaAct,
+    agendaActed: acted,
   };
 }

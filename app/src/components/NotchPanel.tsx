@@ -31,7 +31,7 @@ import VoiceWave from "./VoiceWave";
 import { STRINGS } from "../lib/i18n";
 import type { Strings } from "../lib/i18n";
 import { isComposingKey } from "../lib/ime";
-import type { NotchAgendaPayload } from "../lib/ipc";
+import type { NotchAgendaPayload, NotchAgendaRow } from "../lib/ipc";
 import type { CaptionState } from "../lib/liveCaption";
 import { formatTicker } from "../lib/time";
 import { voiceHotkeyGate } from "../lib/voiceCapture";
@@ -100,6 +100,10 @@ export interface NotchView {
    *  holds until something replaces it. Only S6 self-collapses. */
   dwellMs: number | null;
 }
+
+/** How a decided row reports back, for the beat before it leaves. Both words
+ *  the surface already owns: green "done", amber "dropped". */
+export type AgendaOutcome = "done" | "dropped";
 
 /** The collapsed strip's number: how many decisions are waiting, or null when
  *  the answer is none. Null is the load-bearing case — an idle notch with
@@ -381,6 +385,12 @@ export interface NotchPanelProps {
    *  here (lib/notchAgenda, lib/trayStatus). Absent/empty = nothing waiting,
    *  and the collapsed surface stays invisible. */
   agenda?: NotchAgendaPayload | null;
+  /** A row's yes (`primary`) or no. The driver emits the row's action string
+   *  to the main window, which owns every one of these writers. */
+  onAgendaAct?: (row: NotchAgendaRow, primary: boolean) => void;
+  /** Rows mid-outcome, by row id: the ~1.5 s beat between the decision and
+   *  the row leaving. */
+  agendaActed?: Readonly<Record<string, AgendaOutcome>>;
 }
 
 export default function NotchPanel({
@@ -395,6 +405,8 @@ export default function NotchPanel({
   onCapturePaste,
   levels,
   agenda,
+  onAgendaAct,
+  agendaActed,
 }: NotchPanelProps): JSX.Element {
   const lang = useUIStore((s) => s.lang);
   const t = STRINGS[lang];
@@ -411,6 +423,10 @@ export default function NotchPanel({
         : { state: IDLE_STATE, pill };
   const view = describeNotch(frame.state, t, frame.pill);
   const mark = markCount(view, agenda?.total ?? 0);
+  // Only the hover peek carries the agenda: every other open state is
+  // reporting on something the user just did, and decisions do not belong on
+  // top of a report.
+  const rows = frame.state.kind === "peek" ? (agenda?.rows ?? []) : [];
 
   useEffect(() => {
     // The window itself is transparent; only the black panel paints.
@@ -430,7 +446,7 @@ export default function NotchPanel({
 
   return (
     <div
-      className={`notch${view.open ? " notch-open" : ""}${frame.pill ? " notch-pill" : ""}`}
+      className={`notch${view.open ? " notch-open" : ""}${frame.pill ? " notch-pill" : ""}${rows.length > 0 ? " notch-has-agenda" : ""}`}
       data-state={frame.state.kind}
       style={
         collapsedWidth
@@ -480,6 +496,9 @@ export default function NotchPanel({
           <NotchBody
             state={frame.state}
             t={t}
+            rows={rows}
+            agendaActed={agendaActed}
+            onAgendaAct={onAgendaAct}
             onCaptureSubmit={onCaptureSubmit}
             onCaptureCancel={onCaptureCancel}
             onCaptureVoice={onCaptureVoice}
@@ -509,9 +528,74 @@ function stageLabel(
     : (t.voice_stage_transcribing ?? "Transcribing…");
 }
 
+/** One waiting decision, on one line: what it is, then yes, then no. Every
+ *  string it shows arrived translated on the push and every action arrived
+ *  pre-routed, so this surface never learns what "approve" means — it hands
+ *  the row back and the main window writes. Once decided it says so for the
+ *  beat the driver holds it, and then the row is gone. */
+function AgendaRow({
+  row,
+  t,
+  outcome,
+  onAct,
+}: {
+  row: NotchAgendaRow;
+  t: Strings;
+  outcome?: AgendaOutcome;
+  onAct?: (row: NotchAgendaRow, primary: boolean) => void;
+}): JSX.Element {
+  return (
+    <div className="notch-agenda" title={row.sub}>
+      <span className="notch-grow notch-path">{row.label}</span>
+      {outcome ? (
+        // role=status, not alert: the user asked for this and is looking at
+        // it. The row leaves on its own; there is nothing to acknowledge.
+        <span
+          role="status"
+          className={outcome === "done" ? "notch-ok" : "notch-warn"}
+        >
+          {outcome === "done" ? t.notch_done : t.notch_agenda_dropped}
+        </span>
+      ) : (
+        <>
+          <button
+            type="button"
+            className="notch-key notch-key-bright"
+            // The visible label is one word ("Approve"); which of three rows
+            // it belongs to is only obvious to someone who can see it.
+            aria-label={`${row.primaryLabel} — ${row.label}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAct?.(row, true);
+            }}
+          >
+            {row.primaryLabel}
+          </button>
+          {row.secondaryLabel ? (
+            <button
+              type="button"
+              className="notch-key"
+              aria-label={`${row.secondaryLabel} — ${row.label}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                onAct?.(row, false);
+              }}
+            >
+              {row.secondaryLabel}
+            </button>
+          ) : null}
+        </>
+      )}
+    </div>
+  );
+}
+
 function NotchBody({
   state,
   t,
+  rows,
+  agendaActed,
+  onAgendaAct,
   onCaptureSubmit,
   onCaptureCancel,
   onCaptureVoice,
@@ -522,6 +606,9 @@ function NotchBody({
 }: {
   state: NotchState;
   t: Strings;
+  rows: readonly NotchAgendaRow[];
+  agendaActed?: Readonly<Record<string, AgendaOutcome>>;
+  onAgendaAct?: (row: NotchAgendaRow, primary: boolean) => void;
   onCaptureSubmit?: (text: string) => void;
   onCaptureCancel?: () => void;
   onCaptureVoice?: () => void;
@@ -534,12 +621,21 @@ function NotchBody({
     case "idle":
       return null;
     case "peek":
-      // Two one-click actions (record starts the mic directly — no detour
-      // through the text capture), then what a drop accepts. stopPropagation:
-      // the driver's window-level click is the lip's "open capture", and a
-      // button press must not fire it as well.
+      // Decisions first, then the two one-click actions (record starts the mic
+      // directly — no detour through the text capture), then what a drop
+      // accepts. stopPropagation everywhere: the driver's window-level click
+      // is the lip's "open capture", and a button press must not fire it too.
       return (
         <>
+          {rows.map((row) => (
+            <AgendaRow
+              key={row.id}
+              row={row}
+              t={t}
+              outcome={agendaActed?.[row.id]}
+              onAct={onAgendaAct}
+            />
+          ))}
           <button
             type="button"
             className="notch-act"

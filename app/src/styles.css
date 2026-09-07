@@ -7135,6 +7135,14 @@ html.notch-window body {
   width: calc(var(--notch-collapsed) + 20px);
   border-radius: 0 0 var(--r-notch-wide) var(--r-notch-wide);
 }
+/* With decisions listed the card takes the whole OS window it already lives
+   in (NOTCH_OPEN_WIDTH = collapsed + 80): a label plus yes plus no does not
+   fit in +16px, and widening the window instead would leave the other states
+   with dead transparent space to the sides. */
+.notch.notch-open.notch-has-agenda {
+  width: calc(var(--notch-collapsed) + 80px);
+  border-radius: 0 0 var(--r-notch-wide) var(--r-notch-wide);
+}
 /* S10 — no notch on this Mac (safeAreaInsets.top == 0): the same panel as a
    rounded pill floating just below the menu bar. Only the top corners differ. */
 .notch.notch-pill {
@@ -7373,6 +7381,38 @@ html.notch-window body {
   text-align: center;
   font-size: 11px;
   color: #8f8a83;
+}
+/* One waiting decision: what it is, then yes, then no — on ONE line, because
+   the notch is a strip and a two-line row would fit one decision where three
+   belong. The label takes what the buttons leave and ellipsises; the full
+   sentence is the row's title. */
+.notch-agenda {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 26px;
+  padding: 1px 0 1px 2px;
+  font-size: 12.5px;
+  color: #ece7df;
+}
+.notch-agenda .notch-grow {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* The decision buttons are the tightest thing on the surface — a full
+   .notch-key would push the label out of a 226px row. Still 24px tall
+   (.notch-key's min-height), which is what a pointer needs. */
+.notch-agenda .notch-key {
+  padding: 5px 6px;
+  flex: none;
+}
+/* A decided row, for the beat before it leaves. Same width discipline as the
+   buttons it replaces, so the row does not jump as it reports. */
+.notch-agenda [role="status"] {
+  flex: none;
+  font: 11px/1.4 var(--font-mono);
+  padding: 0 6px;
 }
 /* The take's own waveform: a canvas, drawn from the real mic RMS. */
 .voice-wave-canvas {

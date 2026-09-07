@@ -117,6 +117,8 @@ async function bootstrap(): Promise<void> {
           onCapturePaste={drive.onCapturePaste}
           levels={drive.levels}
           agenda={drive.agenda}
+          onAgendaAct={drive.onAgendaAct}
+          agendaActed={drive.agendaActed}
         />
       );
     }

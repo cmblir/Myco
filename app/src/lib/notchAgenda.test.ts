@@ -4,9 +4,9 @@
 // agenda is derived from the stores, so the store write IS the removal.
 
 import { describe, expect, it } from "vitest";
-import { AGENDA_CAP, notchAgenda } from "./notchAgenda";
+import { AGENDA_CAP, notchAgenda, withoutActed } from "./notchAgenda";
 import type { AgendaSources } from "./notchAgenda";
-import type { Adjacency, SemEdge } from "./ipc";
+import type { Adjacency, NotchAgendaPayload, SemEdge } from "./ipc";
 import type { ProposalMeta, ProposalStatus } from "../stores/distillStore";
 import { pairKey } from "./linkSuggestions";
 
@@ -143,5 +143,50 @@ describe("notchAgenda", () => {
     expect(notchAgenda(sources({ proposals, harvestItems: 3 })).total).toBe(2);
     const after = notchAgenda(sources({ proposals, harvestItems: 0 }));
     expect(after.rows.map((r) => r.kind)).toEqual(["proposal"]);
+  });
+});
+
+function row(id: string): NotchAgendaPayload["rows"][number] {
+  return {
+    id,
+    label: id,
+    sub: "",
+    primaryLabel: "Approve",
+    primaryAction: `proposal-approve:${id}`,
+    secondaryLabel: "Dismiss",
+    secondaryAction: `proposal-reject:${id}`,
+  };
+}
+
+describe("withoutActed", () => {
+  const pushed: NotchAgendaPayload = {
+    total: 5,
+    rows: [row("a"), row("b"), row("c")],
+  };
+
+  it("removes exactly the acted row, and takes it off the count", () => {
+    // The write happens in the main window; the row only disappears from the
+    // push a store refresh later, and until then it would still offer the
+    // decision that was already made.
+    const after = withoutActed(pushed, new Set(["b"]));
+    expect(after?.rows.map((r) => r.id)).toEqual(["a", "c"]);
+    expect(after?.total).toBe(4);
+  });
+
+  it("returns the push untouched when nothing was acted on", () => {
+    expect(withoutActed(pushed, new Set())).toBe(pushed);
+    expect(withoutActed(pushed, new Set(["nope"]))).toBe(pushed);
+  });
+
+  it("never lets the count go negative", () => {
+    const one: NotchAgendaPayload = { total: 1, rows: [row("a"), row("b")] };
+    expect(withoutActed(one, new Set(["a", "b"]))).toEqual({
+      total: 0,
+      rows: [],
+    });
+  });
+
+  it("passes a missing agenda through", () => {
+    expect(withoutActed(null, new Set(["a"]))).toBeNull();
   });
 });

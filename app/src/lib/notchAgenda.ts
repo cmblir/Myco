@@ -14,7 +14,7 @@
 // pre-translated on the tray-status push, the channel that already feeds its
 // lip and its task counts.
 
-import type { Adjacency, SemEdge } from "./ipc";
+import type { Adjacency, NotchAgendaPayload, SemEdge } from "./ipc";
 import { suggestLinks } from "./linkSuggestions";
 import type { LinkSuggestion } from "./linkSuggestions";
 import { pendingMapProposals } from "../stores/distillStore";
@@ -80,4 +80,22 @@ export function notchAgenda(s: AgendaSources): NotchAgenda {
     items.push({ kind: "harvest", id: "harvest", count: s.harvestItems });
   }
   return { total: items.length, rows: items.slice(0, AGENDA_CAP) };
+}
+
+/** Drop the rows already decided, and take them off the count with them. The
+ *  decision is a write in the main window and only comes back as an absence
+ *  on the NEXT push (a second or more later, and only once the store has
+ *  refreshed) — without this the row a user just approved sits there still
+ *  offering to approve it. `total` shrinks too, so the collapsed count never
+ *  reads higher than the rows behind it. */
+export function withoutActed(
+  agenda: NotchAgendaPayload | null,
+  acted: ReadonlySet<string>,
+): NotchAgendaPayload | null {
+  if (!agenda) return null;
+  const rows = agenda.rows.filter((r) => !acted.has(r.id));
+  const dropped = agenda.rows.length - rows.length;
+  return dropped === 0
+    ? agenda
+    : { total: Math.max(0, agenda.total - dropped), rows };
 }
