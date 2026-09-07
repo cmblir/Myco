@@ -1,18 +1,24 @@
-// The question bar — the Survey's one genuinely new control surface, kept when
-// the 3D galaxy came back. It sits ABOVE the scene; the settings drawer
-// (GraphControls) still owns layouts, forces and skins. A question changes only
-// the ENCODING (graphEncoding.ts) of the coordinates the sim already produced,
-// so the four answers are comparable on one map and nothing here rebuilds it.
+// The graph's toolbar row — the Survey's one genuinely new control surface,
+// kept when the 3D galaxy came back, but no longer four hero cards, a chips
+// row and a bordered honesty box stacked above the picture. It is now the page
+// frame's `bar`: one Segment for the question, one for the size, two Checks,
+// and the rebuild stat as a Chip pushed right.
 //
-// The search box the Survey put here is deliberately absent: the toolbar's
+// A question changes only the ENCODING (graphEncoding.ts) of the coordinates
+// the sim already produced, so the four answers are comparable on one map and
+// nothing here rebuilds it — which is why the rebuild count belongs beside the
+// controls that must not move it.
+//
+// The search box the Survey put here is deliberately absent: the header row's
 // find field already restyles-without-rebuilding and flies the camera on Enter.
 
 import type { JSX } from "react";
+import { Check, Chip, Segment } from "./ui";
 import type { Question, SizeBy } from "../lib/graphEncoding";
 import type { GraphSettings } from "../lib/graphSettings";
 import type { Strings } from "../lib/i18n";
 
-/** Live counts behind the question chips and the honesty line. */
+/** Live counts behind the question segment and the honesty line. */
 export interface SurveyCounts {
   /** Nodes actually drawn. */
   total: number;
@@ -43,6 +49,29 @@ function fill(tpl: string, vals: Record<string, string | number>): string {
   return Object.entries(vals).reduce((s, [k, v]) => s.split(`{${k}}`).join(String(v)), tpl);
 }
 
+/**
+ * The honesty disclosure as ONE line for the frame's `note`: what the picture
+ * draws, how much of it is first-run sample, and what is structurally absent.
+ * It used to be a bordered box with a stacked bar; the numbers are the point,
+ * not the frame around them.
+ */
+export function honestyNote(t: Strings, counts: SurveyCounts, edges: number): string {
+  const pct = counts.total > 0 ? Math.round((counts.sample / counts.total) * 100) : 0;
+  const drawn = `${counts.total} ${t.gr_node_count} · ${edges} ${t.gr_edge_count}`;
+  return [
+    drawn,
+    fill(t.gr_honest_lead, { n: counts.total }),
+    fill(t.gr_honest, {
+      sample: counts.sample,
+      pct,
+      own: counts.own,
+      unresolved: counts.unresolved,
+      cited: counts.cited,
+    }),
+    fill(t.gr_honest_sessions, { n: counts.sessions.toLocaleString() }),
+  ].join(" · ");
+}
+
 export default function GraphQuestions({
   t,
   settings,
@@ -56,131 +85,53 @@ export default function GraphQuestions({
   build: BuildStat;
   onChange: (patch: Partial<GraphSettings>) => void;
 }): JSX.Element {
-  const questions: { q: Question; title: string; unit: string; sub: string; n: string }[] = [
+  const questions: { value: Question; label: string; count?: number }[] = [
+    { value: "orphans", label: t.gr_q_orphans, count: counts.gaps },
+    { value: "clusters", label: t.gr_q_clusters, count: counts.clusters },
+    { value: "time", label: t.gr_q_time, count: counts.fresh30d },
     {
-      q: "orphans",
-      title: t.gr_q_orphans,
-      unit: t.gr_q_orphans_u,
-      n: String(counts.gaps),
-      sub: fill(t.gr_q_sub_orphans, {
-        orphans: counts.orphans,
-        unresolved: counts.unresolved,
-        nobacklink: counts.noBacklink,
-      }),
-    },
-    {
-      q: "clusters",
-      title: t.gr_q_clusters,
-      unit: t.gr_q_clusters_u,
-      n: String(counts.clusters),
-      sub: fill(t.gr_q_sub_clusters, {
-        nomap: counts.maplessClusters,
-        map: Math.max(0, counts.clusters - counts.maplessClusters),
-      }),
-    },
-    {
-      q: "time",
-      title: t.gr_q_time,
-      unit: t.gr_q_time_u,
-      n: String(counts.fresh30d),
-      sub: fill(t.gr_q_sub_time, { sample: counts.sample }),
-    },
-    {
-      q: "neighbors",
-      title: t.gr_q_neighbors,
-      unit: t.gr_q_neighbors_u,
-      n: counts.neighbors == null ? "—" : String(counts.neighbors),
-      sub: counts.neighbors == null ? t.gr_q_pick : t.gr_q_sub_neighbors,
+      value: "neighbors",
+      label: t.gr_q_neighbors,
+      // Nothing selected yet — a bare 0 would read as "no neighbours".
+      count: counts.neighbors ?? undefined,
     },
   ];
-
-  const pct = counts.total > 0 ? Math.round((counts.sample / counts.total) * 100) : 0;
-  const honest = fill(t.gr_honest, {
-    sample: counts.sample,
-    pct,
-    own: counts.own,
-    unresolved: counts.unresolved,
-    cited: counts.cited,
-  });
+  const sizes: { value: SizeBy; label: string }[] = [
+    { value: "backlinks", label: t.gr_size_backlinks },
+    { value: "cites", label: t.gr_size_cites },
+  ];
 
   return (
-    <div className="sv-top">
-      <p className="sv-q__lead" id="sv-qlabel">
-        {t.gr_q_lead}
-      </p>
-      <div className="sv-qs" role="group" aria-labelledby="sv-qlabel">
-        {questions.map((q) => (
-          <button
-            key={q.q}
-            type="button"
-            className="sv-q"
-            aria-pressed={settings.question === q.q}
-            onClick={() => onChange({ question: q.q })}
-          >
-            <span className="sv-q__t">{q.title}</span>
-            <span className="sv-q__big">
-              <span className="sv-q__unit">{q.unit}</span>
-              <b className="sv-q__num">{q.n}</b>
-            </span>
-            <span className="sv-q__n">{q.sub}</span>
-          </button>
-        ))}
-      </div>
-
-      <div className="sv-ctl">
-        <div className="sv-seg" role="group" aria-label={t.gr_size}>
-          {(["backlinks", "cites"] as SizeBy[]).map((s) => (
-            <button
-              key={s}
-              type="button"
-              aria-pressed={settings.sizeBy === s}
-              onClick={() => onChange({ sizeBy: s })}
-            >
-              {s === "backlinks" ? t.gr_size_backlinks : t.gr_size_cites}
-            </button>
-          ))}
-        </div>
-
-        <label className="sv-chk">
-          <input
-            type="checkbox"
-            checked={settings.hideSample}
-            onChange={(e) => onChange({ hideSample: e.target.checked })}
-          />
-          {fill(t.gr_hide_sample, { n: counts.sample })}
-        </label>
-        {/* One state, two doors: the drawer's "existing files only" filter is
-            the same switch read the other way round. */}
-        <label className="sv-chk">
-          <input
-            type="checkbox"
-            checked={!settings.existingOnly}
-            onChange={(e) => onChange({ existingOnly: !e.target.checked })}
-          />
-          {t.gr_show_unresolved}
-        </label>
-
-        <span className="sv-ctl__spacer" />
-        <span className="sv-stat mono" aria-live="polite">
-          {fill(t.gr_rebuilds, { n: build.builds, ms: build.ms.toFixed(1) })}
-        </span>
-      </div>
-
-      <p className="sv-honest">
-        <span className="sv-honest__lead">{fill(t.gr_honest_lead, { n: counts.total })}</span>
-        <span className="sv-bar" role="img" aria-label={honest}>
-          <i style={{ width: `${pct}%`, background: "var(--warn)" }} />
-          <i
-            style={{
-              width: `${counts.total > 0 ? Math.round((counts.own / counts.total) * 100) : 0}%`,
-              background: "var(--ok)",
-            }}
-          />
-        </span>
-        <span className="sv-honest__txt">
-          {honest} {fill(t.gr_honest_sessions, { n: counts.sessions.toLocaleString() })}
-        </span>
-      </p>
-    </div>
+    <>
+      <Segment
+        options={questions}
+        value={settings.question}
+        onChange={(question) => onChange({ question })}
+        label={t.gr_q_lead}
+      />
+      <Segment
+        options={sizes}
+        value={settings.sizeBy}
+        onChange={(sizeBy) => onChange({ sizeBy })}
+        label={t.gr_size}
+      />
+      <Check
+        checked={settings.hideSample}
+        onChange={(hideSample) => onChange({ hideSample })}
+        label={fill(t.gr_hide_sample, { n: counts.sample })}
+      />
+      {/* One state, two doors: the drawer's "existing files only" filter is
+          the same switch read the other way round. */}
+      <Check
+        checked={!settings.existingOnly}
+        onChange={(show) => onChange({ existingOnly: !show })}
+        label={t.gr_show_unresolved}
+      />
+      {/* Pushed right, and live: the number the user watches to confirm that
+          typing in the find field does NOT rebuild the scene. */}
+      <span className="graph-rebuilds" aria-live="polite">
+        <Chip label={fill(t.gr_rebuilds, { n: build.builds, ms: build.ms.toFixed(1) })} />
+      </span>
+    </>
   );
 }

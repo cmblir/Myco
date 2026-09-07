@@ -3007,77 +3007,26 @@ hr {
 /* ============================================================
    Graph view — Obsidian-style canvas + right-side controls drawer
    ============================================================ */
-.graph-shell {
-  background: var(--bg-soft);
-  border: 1px solid var(--line);
-  border-radius: var(--r-md);
-  overflow: hidden;
-  position: relative;
-  /* Fill the remaining page height below the header; the canvas body flexes. */
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  margin-bottom: 16px;
+/* Measured at 1280x900: the frame's default 248px rails left the galaxy a
+   400px-wide portrait slot. The picture is the page, so the graph's rails run
+   narrower — 216px still fits a gap row's name plus its three actions. */
+.u-page.graph-page {
+  --rail-w: 216px;
 }
-.graph-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  /* ~578px of stats plus eleven buttons, inside an overflow:hidden shell: the
-     trailing controls (spaceship, the ? cheat sheet) were unreachable below
-     ~920px. Not height-locked, so wrapping is safe. */
-  flex-wrap: wrap;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--line);
-  background: var(--bg);
-}
-.graph-toolbar__spacer {
-  flex: 1;
-}
-.graph-stat {
-  font-size: 12.5px;
-  padding: 2px 7px;
-  border-radius: var(--r-sm);
-  background: var(--bg-soft);
-  color: var(--ink-3);
-  border: 1px solid var(--line);
-  font-variant-numeric: tabular-nums;
-}
-.graph-toolbar__btn {
-  font-size: 12.5px;
-  padding: 2px 8px;
-  min-width: 28px;
-  height: 24px;
-  border-radius: var(--r-sm);
-  background: var(--bg-soft);
-  color: var(--ink-3);
-  border: 1px solid var(--line);
-  cursor: pointer;
+/* No shell: the page frame (components/AppPage.tsx) is the container. The
+   bordered box with its own background and radius, and the eleven-button
+   toolbar with an icon language used nowhere else in the app, are gone — the
+   icons are kit IconButtons on the header row and the questions are one
+   Segment on the toolbar row. */
+.graph-rebuilds {
   display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  margin-left: auto;
 }
-.graph-toolbar__btn:hover {
-  color: var(--ink);
-  background: var(--bg-hover);
-}
-.graph-toolbar__btn[aria-pressed="true"] {
-  background: var(--ink);
-  color: var(--bg);
-  border-color: var(--ink);
-}
-
 .graph-body {
   display: flex;
   position: relative;
   flex: 1;
   min-height: 0;
-}
-/* The gaps and legend rails ride the body row as fixed columns until the page
-   moves onto AppPage, which owns rail width. */
-.graph-body > .u-rail {
-  flex: 0 0 246px;
 }
 .graph-canvas-wrap {
   flex: 1;
@@ -3134,19 +3083,25 @@ hr {
   padding: 0;
   background: #05060d;
 }
-.graph-fullscreen .page-head,
-.graph-fullscreen .graph-toolbar,
+/* Three classes, not two: styles/ui.css loads after this sheet, so the
+   frame's own .u-page--wide .u-page__rail / .u-page__body rules tie on
+   specificity and win on order. Measured: at a tie the rails stayed visible
+   and the stage collapsed to 0 height. */
+.u-page.graph-fullscreen .u-page__head,
+.u-page.graph-fullscreen .u-page__bar,
+.u-page.graph-fullscreen .u-page__note,
+.u-page.graph-fullscreen .u-page__rail,
 .graph-fullscreen .graph-drawer,
 .graph-fullscreen .graph-drawer-toggle,
-.graph-fullscreen .u-rail,
 .graph-fullscreen .graph-help,
 .graph-fullscreen .graph-inspector {
   display: none; /* the ShipHud is the only panel in immersive mode */
 }
-.graph-fullscreen .graph-shell {
-  border: 0;
-  border-radius: 0;
-  margin-bottom: 0;
+/* The rails are gone, so the stage is the only column and takes the whole
+   frame — --page-cols is set inline and still describes three. */
+.u-page.graph-fullscreen .u-page__body {
+  grid-template-columns: minmax(0, 1fr);
+  padding: 0;
 }
 
 .ship-hud {
@@ -3557,24 +3512,6 @@ hr {
   padding: 2px 6px;
   color: var(--ink-4);
   font-size: 12.5px;
-}
-/* Toolbar gap-count badge */
-.graph-toolbar__btn--badged {
-  position: relative;
-}
-.graph-toolbar__badge {
-  position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 3px;
-  border-radius: var(--r-pill);
-  background: #b4541f;
-  color: #fff;
-  font-size: 11px;
-  line-height: 15px;
-  text-align: center;
 }
 /* Gesture cheat-sheet popover — same chrome as the gaps panel, anchored
    top-right (above the inspector: it's a transient, dismissible overlay). */
@@ -10149,404 +10086,22 @@ html.notch-window body {
   }
 }
 
-/* ── Graph questions & gaps column ──────────────────────────────────────────
-   The Survey's two surviving surfaces, layered over the restored 3D scene: the
-   question bar above the stage and the gaps column beside it. Everything is
-   scoped to .graph-shell because the sv- prefix is already taken on this
-   page (PageIngest and SessionBackfill own .sv-row, .sv-seg and .sv-empty), and
-   an unscoped copy silently restyled both of those screens. */
-/* The question bar sits between the toolbar and the stage. */
-.graph-shell .sv-top {
-  padding-top: 20px;
-}
-.graph-shell .sv-sr {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip: rect(0 0 0 0);
-  white-space: nowrap;
-}
-.graph-shell .sv-q__lead {
-  margin: 0 0 8px;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-}
-.graph-shell .sv-qs {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.graph-shell .sv-q {
-  flex: 1 1 190px;
-  min-width: 170px;
-  text-align: left;
-  cursor: pointer;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: 42px auto;
-  column-gap: 12px;
-  align-items: center;
-  padding: 10px 14px 11px;
-  border-radius: var(--r-lg);
-  border: 1px solid var(--glass-line);
-  background: var(--glass);
-  box-shadow: var(--glass-hi);
-  color: var(--ink-2);
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    border-color var(--dur-quick) var(--ease-out),
-    box-shadow var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out);
-}
-.graph-shell .sv-q:hover {
-  background: var(--glass-2);
-  transform: translateY(-1px);
-}
-.graph-shell .sv-q:active {
-  transform: scale(0.99);
-}
-.graph-shell .sv-q__t {
-  grid-column: 1;
-  grid-row: 1;
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--ink);
-  line-height: 1.3;
-}
-.graph-shell .sv-q__big {
-  grid-column: 2;
-  grid-row: 1;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
-  justify-self: end;
-  white-space: nowrap;
-}
-.graph-shell .sv-q__unit {
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  color: var(--ink-4);
-}
-.graph-shell .sv-q__num {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums;
-  font-weight: 500;
-  font-size: 22px;
-  line-height: 1;
-  letter-spacing: -0.02em;
-  color: var(--ink-2);
-  transition:
-    font-size var(--dur-quick) var(--ease-out),
-    color var(--dur-quick) var(--ease-out);
-}
-.graph-shell .sv-q__n {
-  grid-column: 1 / -1;
-  grid-row: 2;
-  margin-top: 2px;
-  font-size: 12.5px;
-  line-height: 1.45;
-  color: var(--ink-4);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.graph-shell .sv-q[aria-pressed="true"] {
-  background: linear-gradient(
-    180deg,
-    color-mix(in srgb, var(--live) 16%, transparent),
-    color-mix(in srgb, var(--live) 5%, transparent)
-  );
-  border-color: color-mix(in srgb, var(--live) 45%, transparent);
-  box-shadow:
-    0 0 0 1px color-mix(in srgb, var(--live) 35%, transparent),
-    0 0 28px color-mix(in srgb, var(--live) 28%, transparent),
-    var(--glass-hi);
-}
-.graph-shell .sv-q[aria-pressed="true"] .sv-q__num {
-  font-size: 42px;
-  color: var(--ink);
-}
-.graph-shell .sv-q[aria-pressed="true"] .sv-q__unit {
-  color: var(--live);
-}
-.graph-shell .sv-q[aria-pressed="true"] .sv-q__n {
-  color: var(--ink-3);
-}
-.graph-shell .sv-ctl {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 12px 0;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
-}
-.graph-shell .sv-seg {
-  display: inline-flex;
-  height: 32px;
-  padding: 2px;
-  gap: 2px;
-  border-radius: var(--r-md);
-  background: var(--glass-2);
-}
-.graph-shell .sv-seg button {
-  border: 0;
-  background: transparent;
-  color: var(--ink-3);
-  padding: 0 11px;
-  font-size: 12.5px;
-  border-radius: var(--r-md);
-  cursor: pointer;
-}
-.graph-shell .sv-seg button[aria-pressed="true"] {
-  background: var(--bg-active);
-  color: var(--ink);
-  font-weight: 500;
-  box-shadow: var(--glass-hi);
-}
-.graph-shell .sv-seg button:hover {
-  color: var(--ink);
-}
-.graph-shell .sv-chk {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12.5px;
-  color: var(--ink-3);
-  cursor: pointer;
-  user-select: none;
-}
-.graph-shell .sv-chk input {
-  accent-color: var(--live);
-  width: 14px;
-  height: 14px;
-}
-.graph-shell .sv-ctl__spacer {
-  flex: 1;
-}
-.graph-shell .sv-stat {
-  display: inline-flex;
-  align-items: center;
-  height: 24px;
-  padding: 0 10px;
-  border-radius: var(--r-pill);
-  background: var(--glass-2);
-  font-size: 11px;
-  color: var(--ink-4);
-  white-space: nowrap;
-}
-.graph-shell .sv-honest {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin: 0 0 14px;
-  padding: 8px 14px;
-  border: 1px solid var(--glass-line);
-  border-radius: var(--r-lg);
-  background: var(--glass);
-  box-shadow: var(--glass-hi);
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--ink-3);
-}
-.graph-shell .sv-honest__lead {
-  white-space: nowrap;
-  color: var(--ink-2);
-  font-weight: 600;
-}
-.graph-shell .sv-honest__txt {
-  flex: 1 1 420px;
-  min-width: 0;
-}
-.graph-shell .sv-bar {
-  display: inline-flex;
-  flex: none;
-  width: 180px;
-  height: 6px;
-  border-radius: var(--r-sm);
-  overflow: hidden;
-  background: var(--track);
-}
-.graph-shell .sv-bar i {
-  display: block;
-  height: 100%;
-}
-.graph-shell .sv-panel {
-  border: 1px solid var(--glass-line);
-  border-radius: var(--r-lg);
-  background: var(--glass);
-  box-shadow: var(--glass-hi);
-  overflow: hidden;
-}
-.graph-shell .sv-panel__h {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 11px 14px;
-  border-bottom: 1px solid var(--glass-line);
-  font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-4);
-}
-.graph-shell .sv-panel__h b {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0;
-  text-transform: none;
-  color: var(--ink);
-}
-.graph-shell .sv-panel__h .sp {
-  flex: 1;
-}
-.graph-shell .sv-gap {
-  border-bottom: 1px solid var(--glass-line);
-}
-.graph-shell .sv-gap:last-child {
-  border-bottom: 0;
-}
-.graph-shell .sv-gap__h {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 14px;
-  border: 0;
-  background: transparent;
-  color: var(--ink-2);
-  font-size: 12.5px;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-}
-.graph-shell .sv-gap__h:hover {
-  background: var(--glass-2);
-}
-.graph-shell .sv-gap__h .cnt {
-  margin-left: auto;
-  color: var(--ink-4);
-}
-.graph-shell .sv-gap__caret {
-  width: 9px;
-  color: var(--ink-4);
-  font-size: 11px;
-}
-.graph-shell .sv-gap__body {
-  padding: 0 8px 8px;
-}
-.graph-shell .sv-row {
-  position: relative;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px 4px 8px;
-  border-radius: var(--r-md);
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out);
-}
-.graph-shell .sv-row:hover {
-  background: var(--glass-2);
-  transform: translateY(-1px);
-}
-.graph-shell .sv-row.is-sel {
-  background: color-mix(in srgb, var(--live) 14%, transparent);
-}
-.graph-shell .sv-row__name {
-  flex: 1;
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-  padding: 2px 0;
-  font-size: 14px;
-  color: var(--ink-2);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.graph-shell .sv-row__name:hover {
-  color: var(--ink);
-}
-.graph-shell .sv-act {
-  flex: none;
-  border: 0;
-  border-radius: var(--r-md);
-  height: 26px;
-  padding: 0 8px;
-  background: var(--glass-2);
-  color: var(--ink-2);
-  font-size: 11px;
-  font-weight: 500;
-  white-space: nowrap;
-  cursor: pointer;
-  box-shadow: var(--glass-hi);
-  transition:
-    background var(--dur-quick) var(--ease-out),
-    color var(--dur-quick) var(--ease-out),
-    transform var(--dur-quick) var(--ease-out);
-}
-.graph-shell .sv-act:hover {
-  background: var(--glass-2-hover);
-  color: var(--ink);
-  transform: translateY(-1px);
-}
-.graph-shell .sv-act:active {
-  transform: scale(0.97);
-}
-.graph-shell .sv-row__acts {
-  position: absolute;
-  max-width: 62%;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  display: flex;
-  gap: 4px;
-  padding-left: 18px;
-  opacity: 0;
-  /* The strip is absolutely positioned over the right 62% of the row, so if it
-     took clicks itself it would swallow the note name underneath — only the
-     buttons are clickable, and only once the row is revealed. */
-  pointer-events: none;
-  background: linear-gradient(90deg, transparent, var(--bg-elev) 18%);
-  transition: opacity var(--dur-quick) var(--ease-out);
-}
-.graph-shell .sv-row:hover .sv-row__acts,
-.graph-shell .sv-row:focus-within .sv-row__acts,
-.graph-shell .sv-row.is-sel .sv-row__acts {
-  opacity: 1;
-}
-.graph-shell .sv-row:hover .sv-row__acts > *,
-.graph-shell .sv-row:focus-within .sv-row__acts > *,
-.graph-shell .sv-row.is-sel .sv-row__acts > * {
-  pointer-events: auto;
-}
-/* …and the name yields the width the strip takes (62% + 38% = the row), so no
-   part of a visible note name ever sits under a button. Without this the middle
-   of the name is unclickable exactly while it looks clickable. */
-.graph-shell .sv-row:hover .sv-row__name,
-.graph-shell .sv-row:focus-within .sv-row__name,
-.graph-shell .sv-row.is-sel .sv-row__name {
-  max-width: 38%;
-}
-.graph-shell .sv-empty {
-  margin: 0;
-  padding: 8px 14px 10px;
-  font-size: 12.5px;
-  color: var(--ink-4);
-}
-.graph-shell .sv-badges {
+/* ── Graph inspector badges & actions ──────────────────────────────────────
+   All that survives of the Survey's sv- layer: the node inspector's trust
+   badges and its action stack. The question cards, the chips row, the honesty
+   box and the gaps panel are gone — the page frame's toolbar row, its note
+   line and the shared Rail replaced them, and the .graph-shell these were
+   scoped to went with the shell. Scoped to .graph-inspector now, because the
+   sv- prefix is taken on this page (PageIngest and SessionBackfill own
+   .sv-row, .sv-seg and .sv-empty) and an unscoped copy silently restyled
+   both of those screens. */
+.graph-inspector .sv-badges {
   display: flex;
   gap: 5px;
   flex-wrap: wrap;
   margin: 10px 0 12px;
 }
-.graph-shell .sv-badge {
+.graph-inspector .sv-badge {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -10554,18 +10109,18 @@ html.notch-window body {
   border: 1px solid var(--glass-line);
   border-radius: var(--r-pill);
   background: var(--glass-2);
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--ink-3);
 }
-.graph-shell .sv-badge--warn {
+.graph-inspector .sv-badge--warn {
   border-color: var(--warn);
   color: var(--warn);
 }
-.graph-shell .sv-badge--ok {
+.graph-inspector .sv-badge--ok {
   border-color: var(--ok);
   color: var(--ok);
 }
-.graph-shell .sv-actions {
+.graph-inspector .sv-actions {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -10573,7 +10128,7 @@ html.notch-window body {
   padding-top: 12px;
   border-top: 1px solid var(--glass-line);
 }
-.graph-shell .sv-btn {
+.graph-inspector .sv-btn {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -10583,7 +10138,7 @@ html.notch-window body {
   border-radius: var(--r-md);
   background: var(--glass-2);
   color: var(--ink);
-  font-size: 14px;
+  font-size: var(--fs-14);
   font-weight: 500;
   text-align: left;
   cursor: pointer;
@@ -10592,58 +10147,17 @@ html.notch-window body {
     background var(--dur-quick) var(--ease-out),
     transform var(--dur-quick) var(--ease-out);
 }
-.graph-shell .sv-btn:hover {
+.graph-inspector .sv-btn:hover {
   background: var(--glass-2-hover);
   transform: translateY(-1px);
 }
-.graph-shell .sv-btn:active {
+.graph-inspector .sv-btn:active {
   transform: scale(0.97);
 }
-.graph-shell .sv-btn--primary {
+.graph-inspector .sv-btn--primary {
   background: var(--live);
   color: var(--bg);
 }
-.graph-shell .sv-btn--primary:hover {
+.graph-inspector .sv-btn--primary:hover {
   filter: brightness(1.08);
 }
-/* Touch: there is no hover to reveal the row actions with. */
-@media (hover: none) {
-  .graph-shell .sv-row__acts {
-    opacity: 1;
-  }
-  .graph-shell .sv-row__acts > * {
-    pointer-events: auto;
-  }
-}
-
-/* The gaps column. It rides the restored 3D stage as a fixed left column of
-   .graph-body's flex row (the old toggled overlay is gone) and scrolls on its
-   own, so a long gap list never pushes the canvas off screen. */
-.graph-shell .sv-panel--gaps {
-  flex: 0 0 246px;
-  width: 246px;
-  align-self: stretch;
-  overflow-y: auto;
-  border-radius: 0;
-  border-top: 0;
-  border-bottom: 0;
-  border-left: 0;
-}
-@media (max-width: 1100px) {
-  .graph-shell .sv-panel--gaps {
-    flex: 0 0 200px;
-    width: 200px;
-  }
-}
-@media (max-width: 768px) {
-  /* .graph-body stacks at this width (see the graph section above), so the
-     column becomes a full-width band above the canvas with a capped height. */
-  .graph-shell .sv-panel--gaps {
-    flex: none;
-    width: 100%;
-    max-height: 34vh;
-    border-right: 0;
-    border-bottom: 1px solid var(--line);
-  }
-}
-

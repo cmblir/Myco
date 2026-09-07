@@ -14,6 +14,12 @@ export interface AppPageProps {
   rightRail?: ReactNode;
   /** Full-width, viewport-height variant. The graph needs it; ordinary pages do not. */
   wide?: boolean;
+  /**
+   * An extra class on the page root, for a state the whole page enters rather
+   * than a slot it fills — the graph's ship mode, which goes app-fullscreen.
+   * Not a styling hook: a page that needs one is telling you it wants a slot.
+   */
+  className?: string;
   children?: ReactNode;
 }
 
@@ -53,14 +59,18 @@ export function AppPage({
   leftRail,
   rightRail,
   wide,
+  className,
   children,
 }: AppPageProps): JSX.Element {
   // `.workspace` / `.workspace-wide` carry the app's existing page gutters,
   // measure and responsive padding — reused rather than restated here so a
   // migrated page keeps exactly the column it had.
-  const shell = wide
-    ? "workspace-wide u-page u-page--wide"
-    : "workspace u-page";
+  const shell = [
+    wide ? "workspace-wide u-page u-page--wide" : "workspace u-page",
+    className ?? "",
+  ]
+    .filter(Boolean)
+    .join(" ");
   return (
     <div className={shell}>
       <header className="u-page__head">

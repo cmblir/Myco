@@ -9,11 +9,14 @@
 
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import type { JSX } from "react";
+import AppPage from "../components/AppPage";
+import { Button, IconButton } from "../components/ui";
 import GraphControls from "../components/GraphControls";
 import GraphInspector from "../components/GraphInspector";
 import ShipHud from "../components/ShipHud";
 import GraphGaps, { displayName, gapGroups, type GapAction } from "../components/GraphGaps";
 import GraphQuestions, {
+  honestyNote,
   type BuildStat,
   type SurveyCounts,
 } from "../components/GraphQuestions";
@@ -1825,22 +1828,13 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
   }, [flyMode, selected]);
 
   return (
-    <div
-      className={`workspace workspace-wide${flyMode ? " graph-fullscreen" : ""}`}
-    >
-      {/* No hero header: at 1280x900 the eyebrow/title/lede cost 227px and left
-          the galaxy a 298px letterbox — the very thing the owner asked to get
-          back. The topbar breadcrumb names the page and the question bar leads
-          with data; the heading stays for screen readers. */}
-      <div className="graph-shell">
-        <h1 className="sv-sr">{t.gr_title}</h1>
-        <div className="graph-toolbar">
-          <span className="graph-stat">
-            {counts.nodes}/{totalNodes} {t.gr_node_count}
-          </span>
-          <span className="graph-stat">
-            {counts.edges} {t.gr_edge_count}
-          </span>
+    <AppPage
+      wide
+      className={`graph-page${flyMode ? " graph-fullscreen" : ""}`}
+      eyebrow={t.nav_tools}
+      title={t.gr_title}
+      tools={
+        <>
           {focusStack.length > 0 ? (
             <nav
               className="graph-crumbs"
@@ -1861,7 +1855,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                   onClick={() => popTo(i)}
                 >
                   {f.label}
-                  {f.kind === "node" && f.hops === 2 ? " ⁺²" : ""}
+                  {f.kind === "node" && f.hops === 2 ? " \u207A\u00B2" : ""}
                 </button>
               ))}
               <button
@@ -1871,7 +1865,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 aria-label={t.gr_focus_esc ?? "Step out (Esc)"}
                 title={t.gr_focus_esc ?? "Step out (Esc)"}
               >
-                ×
+                \u00D7
               </button>
             </nav>
           ) : null}
@@ -1879,7 +1873,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             className="graph-find"
             type="search"
             value={find}
-            placeholder={t.gr_find_ph ?? "Find a note…"}
+            placeholder={t.gr_find_ph ?? "Find a note\u2026"}
             aria-label={t.gr_find_ph ?? "Find a note"}
             onChange={(e) => {
               setFind(e.target.value);
@@ -1890,10 +1884,7 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               if (e.key === "Enter") focusFind(find);
             }}
           />
-          <div className="graph-toolbar__spacer" />
-          <button
-            type="button"
-            className="graph-toolbar__btn"
+          <IconButton
             onClick={toggleTimelapse}
             aria-pressed={tlPlaying}
             aria-label={
@@ -1917,10 +1908,8 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 <path d="M3 2 L10 6 L3 10 Z" />
               </svg>
             )}
-          </button>
-          <button
-            type="button"
-            className="graph-toolbar__btn"
+          </IconButton>
+          <IconButton
             onClick={() => startTimelapse(true)}
             disabled={tlPlaying}
             aria-label={t.gr_timelapse_record ?? "Record timelapse (WebM)"}
@@ -1929,12 +1918,10 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
               <circle cx="6" cy="6" r="4" />
             </svg>
-          </button>
-          {/* Spaceship mode was only reachable via an undocumented F keypress —
+          </IconButton>
+          {/* Spaceship mode was only reachable via an undocumented F keypress \u2014
               the most demo-able feature deserves a visible door. */}
-          <button
-            type="button"
-            className="graph-toolbar__btn"
+          <IconButton
             onClick={() => toggleFly(!flyModeRef.current)}
             aria-pressed={flyMode}
             aria-label={t.gr_fly_btn ?? "Spaceship mode (F)"}
@@ -1955,11 +1942,9 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               <path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
               <path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
             </svg>
-          </button>
+          </IconButton>
           <ZoomButtons sceneRef={sceneRef} t={t} onFit={() => myceliumFitRef.current?.()} />
-          <button
-            type="button"
-            className="graph-toolbar__btn"
+          <IconButton
             onClick={() => setDrawerOpen((v) => !v)}
             aria-pressed={drawerOpen}
             aria-label={t.gr_settings ?? "Graph settings"}
@@ -1975,20 +1960,20 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
                 strokeLinejoin="round"
               />
             </svg>
-          </button>
-          {/* Gesture cheat-sheet — click/double-click/Cmd-click/Esc/F/drag were
+          </IconButton>
+          {/* Gesture cheat-sheet \u2014 click/double-click/Cmd-click/Esc/F/drag were
               previously undocumented; the "?" is their one visible door. */}
-          <button
-            type="button"
-            className="graph-toolbar__btn"
+          <IconButton
             onClick={() => setHelpOpen((v) => !v)}
             aria-pressed={helpOpen}
             aria-label={t.gr_help_btn ?? "Gestures & keys"}
             title={t.gr_help_btn ?? "Gestures & keys"}
           >
             ?
-          </button>
-        </div>
+          </IconButton>
+        </>
+      }
+      bar={
         <GraphQuestions
           t={t}
           settings={settings}
@@ -1996,22 +1981,39 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
           build={build}
           onChange={(patch) => setSettings((prev) => ({ ...prev, ...patch }))}
         />
-        <div className="graph-body">
-          {/* The gaps column: the one part of this screen that produces an
-              answer, so it is a fixed column, not a drawer you have to know to
-              open. Hidden while the multiverse field owns the stage. */}
-          {!showMultiverse ? (
-            <GraphGaps
-              t={t}
-              groups={gapReport ? gapGroups(gapReport, derived?.noBacklink ?? [], t) : []}
-              total={gapReport ? gapCount(gapReport) : 0}
-              bridges={bridges}
-              onAskBridge={askBridge}
-              selected={selected}
-              onSelect={selectNode}
-              onAction={act}
-            />
-          ) : null}
+      }
+      note={honestyNote(t, surveyCounts, counts.edges)}
+      leftRail={
+        // The gaps rail: the one part of this screen that produces an answer,
+        // so it is a standing column, not a drawer you have to know to open.
+        // Hidden while the multiverse field owns the stage.
+        showMultiverse ? undefined : (
+          <GraphGaps
+            t={t}
+            groups={gapReport ? gapGroups(gapReport, derived?.noBacklink ?? [], t) : []}
+            total={gapReport ? gapCount(gapReport) : 0}
+            bridges={bridges}
+            onAskBridge={askBridge}
+            selected={selected}
+            onSelect={selectNode}
+            onAction={act}
+          />
+        )
+      }
+      rightRail={
+        // GraphLegend renders null with no galaxies; an empty rail would still
+        // cost the frame a column, so the guard lives here.
+        showMultiverse || legendGalaxies.length === 0 ? undefined : (
+          <GraphLegend
+            t={t}
+            galaxies={legendGalaxies}
+            isolated={isolated}
+            onIsolate={isolateCommunity}
+          />
+        )
+      }
+    >
+      <div className="graph-body">
           <div
             className={
               "graph-canvas-wrap" +
@@ -2110,16 +2112,14 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             {!showMultiverse && ctxLost ? (
               <div className="graph-toast" role="alert">
                 <span>{t.gr_ctx_lost ?? "Graphics context was lost."}</span>
-                <button
-                  type="button"
-                  className="graph-toolbar__btn"
+                <Button
                   onClick={() => {
                     setCtxLost(false);
                     setGlEpoch((n) => n + 1);
                   }}
                 >
                   {t.gr_retry ?? "Rebuild"}
-                </button>
+                </Button>
               </div>
             ) : null}
             {!showMultiverse && cosmicScale ? (
@@ -2179,17 +2179,6 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               <GraphHelp t={t} onClose={() => setHelpOpen(false)} />
             ) : null}
           </div>
-          {/* The legend used to float INSIDE the canvas, covering the picture
-              it explains. It is a rail beside the stage now — same part as
-              the gaps column on the other side. */}
-          {!showMultiverse ? (
-            <GraphLegend
-              t={t}
-              galaxies={legendGalaxies}
-              isolated={isolated}
-              onIsolate={isolateCommunity}
-            />
-          ) : null}
           <GraphControls
             t={t}
             open={drawerOpen}
@@ -2236,19 +2225,18 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
             flyMode={flyMode}
             onFlyMode={toggleFly}
           />
-          {flyMode ? (
-            <ShipHud
-              t={t}
-              node={flyNode}
-              speed={shipSpeed}
-              onClose={() => setSelected(null)}
-              onOpen={(id) => setRoute(`page:${id}`)}
-              onExit={() => toggleFly(false)}
-            />
-          ) : null}
-        </div>
+        {flyMode ? (
+          <ShipHud
+            t={t}
+            node={flyNode}
+            speed={shipSpeed}
+            onClose={() => setSelected(null)}
+            onOpen={(id) => setRoute(`page:${id}`)}
+            onExit={() => toggleFly(false)}
+          />
+        ) : null}
       </div>
-    </div>
+    </AppPage>
   );
 }
 
@@ -2347,34 +2335,30 @@ function ZoomButtons({
   onFit?: () => void;
 }): JSX.Element {
   return (
-    <div style={{ display: "flex", gap: 4 }}>
-      <button
-        type="button"
-        className="graph-toolbar__btn"
+    <>
+      <IconButton
         onClick={() => sceneRef.current?.zoomOut()}
         aria-label={t.gr_zoom_out ?? "Zoom out"}
       >
         −
-      </button>
-      <button
-        type="button"
-        className="graph-toolbar__btn"
+      </IconButton>
+      <IconButton
         onClick={() => {
           sceneRef.current?.fit();
           onFit?.();
         }}
         aria-label={t.gr_fit ?? "Fit"}
       >
-        fit
-      </button>
-      <button
-        type="button"
-        className="graph-toolbar__btn"
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+          <path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4" strokeLinecap="round" />
+        </svg>
+      </IconButton>
+      <IconButton
         onClick={() => sceneRef.current?.zoomIn()}
         aria-label={t.gr_zoom_in ?? "Zoom in"}
       >
         +
-      </button>
-    </div>
+      </IconButton>
+    </>
   );
 }
