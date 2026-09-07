@@ -302,7 +302,11 @@ with it.
 the MacBook notch. Drag a file at the top of the screen: the surface unfolds,
 the drop lands in `_inbox/`, ingest picks it up, and the panel folds back on
 its own. Hovering it also offers Record and Note, so a voice memo starts right
-there instead of in the app. Sits above the menu bar without ever stealing focus; Macs without a
+there instead of in the app. When decisions are waiting it says how many — a
+lit dot and a count, nothing at all when nothing is waiting — and hovering
+lists up to three of them: approve a topic map, link a suggested pair, harvest
+the sessions worth a page, or dismiss any of it, all without opening the
+window. Sits above the menu bar without ever stealing focus; Macs without a
 notch get the same surface as a small menu-bar pill. Settings → Model →
 "Notch drop surface".
 
