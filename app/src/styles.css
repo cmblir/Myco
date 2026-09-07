@@ -7180,13 +7180,17 @@ html.notch-window body {
    something is actually waiting; an empty agenda renders no element at all. */
 .notch-mark {
   height: 14px;
-  width: 100%;
   flex: none;
   margin-top: var(--notch-cutout, 0px);
   display: flex;
   align-items: center;
-  justify-content: center;
   gap: 5px;
+  /* Its own dark ground, and only as wide as its content: collapsed, the
+     panel itself is transparent, so this sits straight on the wallpaper and a
+     light one would swallow both the cap and the number. */
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: rgba(0, 0, 0, 0.82);
 }
 .notch-mark .notch-cap {
   width: 8px;

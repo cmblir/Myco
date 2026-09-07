@@ -84,6 +84,10 @@ export const AGENDA_BEAT_MS = 1500;
 /** One agenda row's height in the open card (`.notch-agenda` in styles.css),
  *  for the OS window the card has to fit inside. */
 export const NOTCH_AGENDA_ROW_H = 32;
+/** How much wider than the cutout the agenda card is — must match
+ *  `.notch.notch-open.notch-has-agenda` in styles.css. A label plus yes plus
+ *  no does not fit in the +20px the capture card takes. */
+export const NOTCH_AGENDA_EXTRA_W = 80;
 
 /** What the driver reacts to. `writeOk`/`writeFail` report the async
  *  `_inbox/` write that follows a drop; `statusPush` is the first running row
@@ -1230,10 +1234,19 @@ export function useNotchDriver(): NotchDrive | null {
   // The peek card grows by a row per waiting decision — a fixed height would
   // clip the third one, and the card is the only thing that can be resized
   // here (the window is sized before the card renders).
-  const openH =
-    NOTCH_OPEN_MAX_H +
-    (drv.panel.kind === "peek" ? (visibleAgenda?.rows.length ?? 0) : 0) *
-      NOTCH_AGENDA_ROW_H;
+  const rowCount =
+    drv.panel.kind === "peek" ? (visibleAgenda?.rows.length ?? 0) : 0;
+  const openH = NOTCH_OPEN_MAX_H + rowCount * NOTCH_AGENDA_ROW_H;
+  // …and wider, which the fixed NOTCH_OPEN_WIDTH cannot cover: that width was
+  // sized for a card 20px wider than a 172px cutout, and the agenda card is
+  // 80px wider than a REAL one. Measured headlessly against the mock's 14"
+  // shape — a 284px card was being clipped inside a 252px window, losing the
+  // right-hand button. +24 keeps the 12px-per-side transparent hover slop the
+  // other open states have.
+  const openW =
+    rowCount > 0
+      ? (geom?.has_notch ? geom.notch_w : 172) + NOTCH_AGENDA_EXTRA_W + 24
+      : NOTCH_OPEN_WIDTH;
   useEffect(() => {
     if (mocking || geom === null) return;
     if (open) {
@@ -1244,7 +1257,7 @@ export function useNotchDriver(): NotchDrive | null {
       // Fixed open size: the card's exact height is unknowable before it
       // renders, and rendering is what must wait. The spare rows stay
       // transparent (and inside the hover watcher's leave slop).
-      void ipc.notchResize(NOTCH_OPEN_WIDTH, openH).then(
+      void ipc.notchResize(openW, openH).then(
         unfurl,
         unfurl, // plain-browser dev: no Tauri backend
       );
@@ -1274,7 +1287,7 @@ export function useNotchDriver(): NotchDrive | null {
       });
     }, 420);
     return () => window.clearTimeout(id);
-  }, [mocking, open, geom, openH]);
+  }, [mocking, open, geom, openW, openH]);
 
   // Content below the hardware cutout: the panel's lip offsets by the real
   // notch height (0 on a notchless Mac, where the whole pill is visible).
