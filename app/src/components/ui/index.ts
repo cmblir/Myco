@@ -11,3 +11,5 @@ export { Chip } from "./Chip";
 export type { ChipProps, ChipTone } from "./Chip";
 export { Check } from "./Check";
 export type { CheckProps } from "./Check";
+export { Hero } from "./Hero";
+export type { HeroProps } from "./Hero";

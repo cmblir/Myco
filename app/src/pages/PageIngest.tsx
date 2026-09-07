@@ -27,6 +27,7 @@ import { useUIStore } from "../stores/uiStore";
 import { listInboxEntries, pendingInboxRows } from "../lib/autoIngest";
 import type { PendingInboxRow } from "../lib/autoIngest";
 import AppPage from "../components/AppPage";
+import { Hero } from "../components/ui";
 import ZoteroImport from "../components/ZoteroImport";
 import ConversationImport from "../components/ConversationImport";
 import SessionBackfill from "../components/SessionBackfill";
@@ -339,30 +340,30 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
           ring, and AppPage owns its own shell classes. */}
       <div className={"sv" + (running ? " is-running" : "")} data-testid="sieve">
       {/* ── 2 · Judgement — the hero ─────────────────────────────────── */}
-      <section className="sv-hero-wrap" aria-labelledby="sv-judge-title">
-        <div className="sv-hero-glow" aria-hidden="true" />
-        <div className="sv-hero">
-          <div className="sv-hero-fig" style={{ "--i": 0 } as CSSProperties}>
-            <ActivityIcon name="stop" size={112} />
-          </div>
-          <div className="sv-hero-text" style={{ "--i": 1 } as CSSProperties}>
-            <div className="sv-eyebrow">{t.sv_judge_eyebrow}</div>
-            <h1 className="sv-title" id="sv-judge-title">
-              {t.sv_judge_title}
-            </h1>
-            <p className="sv-lede">{t.sv_judge_lede}</p>
-            <div className="sv-meta">
+      <Hero
+        titleId="sv-judge-title"
+        asset={<ActivityIcon name="stop" size={112} />}
+        eyebrow={t.sv_judge_eyebrow}
+        title={t.sv_judge_title}
+        lede={
+          <>
+            {t.sv_judge_lede}
+            {/* A <span> so it stays valid inside the lede's <p>. */}
+            <span className="sv-meta">
               <span>{fill(t.sv_meta_session, { n: judged.length })}</span>
               <span>{fill(t.sv_meta_saved, { n: tally.saved })}</span>
-            </div>
-          </div>
-          {/* role=status: the three counts move as verdicts land. */}
-          <div className="sv-nums" role="status" style={{ "--i": 2 } as CSSProperties}>
+            </span>
+          </>
+        }
+        // role=status: the three counts move as verdicts land.
+        figure={
+          <div className="sv-nums" role="status">
             <Num kind="drop" value={tally.drop} label={t.sv_drop} sub={t.sv_drop_sub} />
             <Num kind="log" value={tally.log} label={t.sv_log} sub={t.sv_log_sub} />
             <Num kind="harvest" value={tally.harvest} label={t.sv_harvest} sub={t.sv_harvest_sub} />
           </div>
-
+        }
+      >
           {!showResults ? (
             <div className={"sv-dz" + (over ? " over" : "")} style={{ "--i": 3 } as CSSProperties}>
               <span className="sv-dz-arrow" aria-hidden="true">
@@ -519,8 +520,7 @@ export default function PageIngest({ t }: { t: Strings }): JSX.Element {
               </Channel>
             </ul>
           </div>
-        </div>
-      </section>
+      </Hero>
 
       {/* Verdict rows + the exclusion disclosure. */}
       <div className="sv-rows" aria-live="polite" aria-label={t.sv_verdicts_title}>

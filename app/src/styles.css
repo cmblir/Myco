@@ -8411,7 +8411,7 @@ details.props > .btn {
     0 6px 20px rgba(167, 139, 250, 0.28);
 }
 /* While the plan gate is open its "Run" is the primary — the hero steps down. */
-.hq.is-planning .hq-hero .hq-btn.btn-primary {
+.hq.is-planning .u-hero__tile .hq-btn.btn-primary {
   background: var(--glass-2);
   color: var(--ink);
   border-color: var(--glass-line);
@@ -8434,89 +8434,13 @@ details.props > .btn {
   border: 0;
 }
 
-/* Hero: distill object 112px · title 30 · citations 42 · one primary. */
+/* Hero: distill object 112px · title 30 · citations 42 · one primary. The
+   tile itself is the shared `.u-hero` part (styles/ui.css) — Ingest opens with
+   the same object. What stays here is the citation figure, which is this
+   screen's own: its number, its tone, its arrow. */
 .hq {
   padding: 24px 0 28px;
   border-bottom: 1px solid var(--line);
-}
-.hq-hero-wrap {
-  position: relative;
-}
-.hq-hero-glow {
-  position: absolute;
-  left: -100px;
-  top: -150px;
-  width: 640px;
-  height: 460px;
-  background: var(--radial);
-  pointer-events: none;
-  z-index: 0;
-}
-.hq-hero {
-  position: relative;
-  z-index: 1;
-  /* Flex-wrap, not a grid with a viewport breakpoint: the reading column's
-     width depends on the sidebar too, so the row has to reflow on its OWN
-     width. Below ~430px of text the KPI block wraps to its own line. */
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 28px;
-  align-items: center;
-  padding: 26px 28px 26px 24px;
-  border-radius: var(--r-lg);
-  background: var(--glass);
-  border: 1px solid var(--glass-line);
-  box-shadow: var(--glass-hi);
-}
-.hq-hero > * {
-  animation: hq-rise var(--dur-enter) var(--ease-spring) both;
-  animation-delay: calc(var(--i, 0) * 40ms);
-}
-.hq-hero-fig {
-  display: grid;
-  place-items: center;
-  width: 112px;
-  height: 112px;
-}
-.hq-hero-fig .activity-icon {
-  filter: drop-shadow(0 0 28px var(--glow));
-  animation: hq-float 7s ease-in-out 600ms infinite;
-}
-.hq-hero-text {
-  min-width: 0;
-}
-.hq-title {
-  font-size: 30px;
-  line-height: 1.2;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  margin: 0;
-}
-.hq-title b {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-.hq-lede {
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--ink-3);
-  margin: 8px 0 0;
-  max-width: 54ch;
-}
-.hq-kpi {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 10px;
-  flex: 0 0 auto;
-  margin-left: auto;
-}
-.hq-hero-fig {
-  flex: 0 0 112px;
-}
-.hq-hero-text {
-  flex: 1 1 300px;
-  min-width: 0;
 }
 .hq-kpi-label {
   font-size: 11px;
@@ -9119,25 +9043,8 @@ details.props > .btn {
     transform: none;
   }
 }
-@keyframes hq-rise {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-@keyframes hq-float {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-4px);
-  }
-}
+/* hq-rise / hq-float moved to styles/ui.css as u-hero-rise / u-hero-float
+   with the tile they animate. */
 @keyframes hq-nudge {
   0%,
   100% {
@@ -9154,9 +9061,9 @@ details.props > .btn {
     transform: scale(1.18);
   }
 }
+/* The tile's own rows and its floating asset are covered by .u-hero's
+   reduced-motion rule in styles/ui.css. */
 @media (prefers-reduced-motion: reduce) {
-  .hq-hero > *,
-  .hq-hero-fig .activity-icon,
   .hq-arrow,
   .hq-bump,
   .hq-drop-body,
@@ -9166,22 +9073,6 @@ details.props > .btn {
   }
 }
 @media (max-width: 860px) {
-  .hq-hero {
-    padding: 20px;
-  }
-  .hq-hero-fig,
-  .hq-hero-fig .activity-icon {
-    flex-basis: 72px;
-    width: 72px;
-    height: 72px;
-  }
-  .hq-kpi {
-    flex: 1 1 100%;
-    flex-direction: row;
-    align-items: center;
-    justify-content: space-between;
-    margin-left: 0;
-  }
   .hq-kpi-num {
     font-size: 30px;
   }
@@ -9275,55 +9166,23 @@ details.props > .btn {
   color: var(--ink-2);
 }
 
-/* The hero: one glass tile, stop object 112px, three 42px verdict counts,
-   the dropzone INSIDE it — "drop here and it gets judged" reads as one thing. */
-.sv-hero-wrap {
-  position: relative;
-}
-.sv-hero-glow {
-  position: absolute;
-  left: -80px;
-  top: -120px;
-  width: 640px;
-  height: 420px;
-  background: var(--radial);
-  pointer-events: none;
-  z-index: 0;
-}
-.sv-hero {
-  position: relative;
-  z-index: 1;
-  /* Same reason as .hq-hero: reflow on the tile's own width. Without this a
-     narrow window crushed the text column to one character per line. */
-  display: flex;
-  flex-wrap: wrap;
-  gap: 22px 26px;
+/* The hero is the shared `.u-hero` tile (styles/ui.css) — the stop object
+   112px, a 30px title, three 42px verdict counts, the dropzone INSIDE it so
+   "drop here and it gets judged" reads as one thing. Two deviations from the
+   tile's defaults, both because this one is TALL (it holds the whole form):
+   its rows top-align instead of centring, with more room between them. */
+.sv .u-hero__tile {
   align-items: flex-start;
+  gap: 22px 26px;
   padding: 26px 28px 24px;
-  border-radius: var(--r-lg);
-  background: var(--glass);
-  border: 1px solid var(--glass-line);
-  box-shadow: var(--glass-hi);
 }
-.sv-hero > * {
-  animation: hq-rise var(--dur-enter) var(--ease-spring) both;
-  animation-delay: calc(var(--i, 0) * 40ms);
-}
-.sv-hero-fig {
-  position: relative;
-  flex: 0 0 112px;
-}
-.sv-hero-text {
-  flex: 1 1 320px;
-  min-width: 0;
-}
-.sv-hero-fig .activity-icon {
-  filter: drop-shadow(0 0 28px var(--glow));
-  animation: hq-float 7s ease-in-out 600ms infinite;
+.sv .u-hero__text {
+  flex-basis: 320px;
 }
 /* A run in flight sweeps a violet arc around the ring. The asset itself keeps
-   floating: the sweep is a pseudo-element, so the two transforms never fight. */
-.sv-hero-fig::after {
+   floating: the sweep is a pseudo-element, so the two transforms never fight.
+   Only this page has a run to show, so the arc stays out of the kit. */
+.sv .u-hero__fig::after {
   content: "";
   position: absolute;
   inset: -7px;
@@ -9340,7 +9199,7 @@ details.props > .btn {
   pointer-events: none;
   transition: opacity var(--dur-quick) var(--ease-out);
 }
-.sv.is-running .sv-hero-fig::after {
+.sv.is-running .u-hero__fig::after {
   opacity: 1;
   animation: sv-spin 2.4s linear infinite;
 }
@@ -9349,27 +9208,12 @@ details.props > .btn {
     transform: rotate(360deg);
   }
 }
-.sv-eyebrow {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  color: var(--live);
-  font-weight: 600;
-}
-.sv-title {
-  font-size: 30px;
-  letter-spacing: -0.02em;
-  line-height: 1.1;
-  font-weight: 600;
-  margin: 6px 0 0;
-}
-.sv-lede {
-  font-size: 14px;
+.sv .u-hero__lede {
   color: var(--ink-2);
-  margin: 10px 0 0;
   max-width: 52ch;
 }
 .sv-meta {
-  font-size: 12.5px;
+  font-size: var(--fs-12-5);
   color: var(--ink-4);
   margin-top: 12px;
   display: flex;
@@ -9381,12 +9225,13 @@ details.props > .btn {
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+/* Three figures where the shared tile expects one: they keep their own row
+   inside `.u-hero__aside`, which already right-aligns the block. */
 .sv-nums {
   display: flex;
   flex-wrap: wrap;
   gap: 18px 30px;
   padding-top: 4px;
-  margin-left: auto;
 }
 /* Each verdict number is keyed by its value, so a landing verdict replays
    this instead of swapping silently. */
@@ -9805,10 +9650,10 @@ details.props > .btn {
   outline-offset: 2px;
   border-radius: var(--r-sm);
 }
+/* The tile's rows and its floating asset are covered by .u-hero's own
+   reduced-motion rule; the run sweep is this page's, so it stays here. */
 @media (prefers-reduced-motion: reduce) {
-  .sv-hero > *,
-  .sv-hero-fig .activity-icon,
-  .sv-hero-fig::after,
+  .sv .u-hero__fig::after,
   .sv-step[data-state="active"] .sv-n,
   .sv-num .sv-big,
   .sv-row:first-of-type {
@@ -9820,20 +9665,11 @@ details.props > .btn {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+/* The tile's own narrow-window behaviour (padding, 72px asset, the aside
+   dropping to a full-width row) lives with .u-hero in styles/ui.css. */
 @media (max-width: 860px) {
-  .sv-hero {
-    padding: 20px;
-  }
-  .sv-hero-fig {
-    flex-basis: 72px;
-  }
-  .sv-hero-fig .activity-icon {
-    width: 72px;
-    height: 72px;
-  }
   .sv-nums {
     flex: 1 1 100%;
-    margin-left: 0;
     gap: 20px;
   }
   .sv-num .sv-big {

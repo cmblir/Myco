@@ -436,3 +436,151 @@ button.u-rail__row:hover {
   color: var(--ink);
   font-weight: 500;
 }
+
+/* ── Hero ────────────────────────────────────────────────────────────────
+ * The landing tile Overview and Ingest both open with: a glowing 112px
+ * asset, a 30px title, a 42px figure and one filled primary on one glass
+ * panel. It was two near-identical blocks (.hq-hero* and .sv-hero*) whose
+ * radii, type sizes and paddings had already started to drift apart, which
+ * is a large part of why the two screens read as two apps.
+ *
+ * The 42px figure itself stays with the page: the number means something
+ * different on each screen (citations moved / verdicts landed) and each
+ * brings its own tone and its own animation for a value landing.
+ */
+.u-hero {
+  position: relative;
+}
+.u-hero__glow {
+  position: absolute;
+  left: -90px;
+  top: -135px;
+  width: 640px;
+  height: 440px;
+  background: var(--radial);
+  pointer-events: none;
+  z-index: 0;
+}
+.u-hero__tile {
+  position: relative;
+  z-index: 1;
+  /* Flex-wrap, not a grid with a viewport breakpoint: the reading column's
+     width depends on the sidebar and on whether the page has a rail, so the
+     row has to reflow on its OWN width. Below ~430px of text the aside wraps
+     to its own line. */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 28px;
+  align-items: center;
+  padding: 26px 28px 26px 24px;
+  border-radius: var(--r-lg);
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  box-shadow: var(--glass-hi);
+}
+/* Each tile row rises 40ms after the one before it (--i, set in Hero.tsx). */
+.u-hero__tile > * {
+  animation: u-hero-rise var(--dur-enter) var(--ease-spring) both;
+  animation-delay: calc(var(--i, 0) * 40ms);
+}
+.u-hero__fig {
+  display: grid;
+  place-items: center;
+  width: 112px;
+  height: 112px;
+  flex: 0 0 112px;
+  /* The running-state ring both pages hang off this box. */
+  position: relative;
+}
+.u-hero__fig .activity-icon {
+  filter: drop-shadow(0 0 28px var(--glow));
+  animation: u-hero-float 7s ease-in-out 600ms infinite;
+}
+.u-hero__text {
+  flex: 1 1 300px;
+  min-width: 0;
+}
+.u-hero__eyebrow {
+  font-size: var(--fs-11);
+  letter-spacing: 0.08em;
+  color: var(--live);
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.u-hero__title {
+  font-size: var(--fs-30);
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  margin: 0;
+  /* Korean breaks anywhere by default, so a narrowed column split words
+     mid-syllable-block once the pages grew rails. Break between words only. */
+  word-break: keep-all;
+}
+/* A counted number inside the title (Overview's "sessions 12 are worth …"). */
+.u-hero__title b {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.u-hero__lede {
+  font-size: var(--fs-14);
+  line-height: 1.55;
+  color: var(--ink-3);
+  margin: 8px 0 0;
+  max-width: 54ch;
+}
+.u-hero__aside {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+@keyframes u-hero-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes u-hero-float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .u-hero__tile > *,
+  .u-hero__fig .activity-icon {
+    animation: none;
+  }
+}
+
+/* One tile, one narrow-window behaviour — the aside drops to a full-width row
+   under the text instead of squeezing the reading column. */
+@media (max-width: 860px) {
+  .u-hero__tile {
+    padding: 20px;
+  }
+  .u-hero__fig,
+  .u-hero__fig .activity-icon {
+    flex-basis: 72px;
+    width: 72px;
+    height: 72px;
+  }
+  .u-hero__aside {
+    flex: 1 1 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-left: 0;
+  }
+}

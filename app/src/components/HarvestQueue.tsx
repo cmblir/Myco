@@ -31,6 +31,7 @@ import { useIngestStore } from "../stores/ingestStore";
 import { useProvenanceStore } from "../stores/provenanceStore";
 import { useHarvestStore } from "../stores/harvestStore";
 import { ActivityIcon } from "./ActivityPanel";
+import { Hero } from "./ui";
 import MascotClip from "./MascotClip";
 
 function fill(s: string, vars: Record<string, string | number>): string {
@@ -252,52 +253,52 @@ export default function HarvestQueue({ t }: { t: Strings }): JSX.Element | null 
               </button>
             </div>
           ) : null}
-          <div className="hq-hero-wrap">
-            <div className="hq-hero-glow" aria-hidden="true" />
-            <div className="hq-hero">
-              <div className="hq-hero-fig" style={{ "--i": 0 } as CSSProperties}>
-                <ActivityIcon name="distill" size={112} />
-              </div>
-              <div className="hq-hero-text" style={{ "--i": 1 } as CSSProperties}>
-                <h1 className="hq-title" id="hq-title">
-                  {titleParts[0]}
-                  <b>{items.length.toLocaleString()}</b>
-                  {titleParts[1] ?? ""}
-                </h1>
-                <p className="hq-lede">
-                  {data
-                    ? fill(t.hq_lede, {
-                        total: data.total_scanned,
-                        distinct: data.distinct_bodies,
-                      })
-                    : error
-                      ? t.hq_error
-                      : t.hq_loading}
-                  {data && items.length > 0 ? (
-                    queued ? (
-                      <>
-                        {" "}
-                        {fill(t.hq_progress, {
-                          done: queued.done,
-                          left: queued.left,
-                          shown: queued.shown,
-                        })}
-                      </>
-                    ) : (
-                      <> {t.hq_never_run}</>
-                    )
-                  ) : null}
-                </p>
-              </div>
-              <div className="hq-kpi" style={{ "--i": 2 } as CSSProperties}>
+          <Hero
+            titleId="hq-title"
+            asset={<ActivityIcon name="distill" size={112} />}
+            title={
+              <>
+                {titleParts[0]}
+                <b>{items.length.toLocaleString()}</b>
+                {titleParts[1] ?? ""}
+              </>
+            }
+            lede={
+              <>
+                {data
+                  ? fill(t.hq_lede, {
+                      total: data.total_scanned,
+                      distinct: data.distinct_bodies,
+                    })
+                  : error
+                    ? t.hq_error
+                    : t.hq_loading}
+                {data && items.length > 0 ? (
+                  queued ? (
+                    <>
+                      {" "}
+                      {fill(t.hq_progress, {
+                        done: queued.done,
+                        left: queued.left,
+                        shown: queued.shown,
+                      })}
+                    </>
+                  ) : (
+                    <> {t.hq_never_run}</>
+                  )
+                ) : null}
+              </>
+            }
+            figure={
+              <>
                 <span className="hq-kpi-label" id="hq-kpi-label">
                   {t.hq_kpi_label}
                 </span>
                 {citesNum}
-                {harvestButton}
-              </div>
-            </div>
-          </div>
+              </>
+            }
+            action={harvestButton}
+          />
         </>
       )}
 
