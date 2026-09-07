@@ -408,9 +408,16 @@ export default function ActivityChip({ t }: { t: Strings }): JSX.Element | null 
     if (!distillRunning) setStopping(false);
   }, [distillRunning]);
 
+  // `semanticEdges` is a query over the whole vector index, and `adjacency` is
+  // a NEW object on every link-graph rebuild — so a harvest run (one rebuild
+  // per ingest pass, twenty passes is normal) fired twenty of them from the
+  // TOP BAR while the run was the thing the user was watching. Wait for the
+  // work to stop, then coalesce: one query per settled graph, not per write.
   useEffect(() => {
-    if (adjacency) void refreshSem(adjacency);
-  }, [adjacency, refreshSem]);
+    if (!adjacency || anyBusy) return;
+    const id = setTimeout(() => void refreshSem(adjacency), 1500);
+    return () => clearTimeout(id);
+  }, [adjacency, anyBusy, refreshSem]);
 
   useEffect(() => {
     if (!open) return;

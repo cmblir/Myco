@@ -30,8 +30,11 @@ export const useLinkSuggestStore = create<LinkSuggestState>((set, get) => ({
   async refresh(adjacency) {
     if (adjacency === lastAdjacency) return;
     lastAdjacency = adjacency;
-    const edges = await ipc.semanticEdges(4).catch(() => [] as SemEdge[]);
-    set({ sem: edges });
+    // A cold index or a busy embedder makes this throw. Keep what we already
+    // showed rather than emptying the panel: the suggestions were true a
+    // moment ago, and an empty list reads as "nothing to link".
+    const edges = await ipc.semanticEdges(4).catch(() => null);
+    if (edges) set({ sem: edges });
   },
 
   dismiss(keys) {
