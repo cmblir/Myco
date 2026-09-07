@@ -26,6 +26,7 @@ import {
   loadGraphSettings,
   matchMyceliumBg,
   myceliumBranchPct,
+  myceliumInk,
   myceliumMaxNodes,
   saveGraphSettings,
   type GraphSettings,
@@ -72,7 +73,7 @@ import {
 } from "../lib/staticLayouts";
 import { ATLAS_RADIUS_MUL } from "../lib/layoutConfig";
 import type { LayoutMetrics } from "../lib/layoutMetrics";
-import { makeTheme } from "../lib/graphTheme";
+import { makeTheme, readTheme } from "../lib/graphTheme";
 import { isLightBackground } from "../lib/graphSkins";
 import { GraphScene, type SceneStyleState } from "../lib/graphScene";
 import type { Strings } from "../lib/i18n";
@@ -393,6 +394,18 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [settings.skin, uiTheme],
   );
+
+  // The APP theme, which is a different question from lightBg above: that one
+  // resolves the SKIN's background, and the mycelium skin pins a dark loam
+  // whatever the app is doing. The mycelium substrate needs the app's answer —
+  // see myceliumInk.
+  const lightApp = useMemo(
+    () => isLightBackground(readTheme()),
+    // readTheme() reads --bg off the DOM, a dependency the rule cannot see.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [uiTheme],
+  );
+  const mycInk = myceliumInk(settings, lightApp);
 
   // Gap report over the live graph. counts/glEpoch change on every rebuild /
   // live-ingest growth / context restore, so it re-derives when the graph does.
@@ -2020,13 +2033,13 @@ export default function PageGraph({ t }: { t: Strings }): JSX.Element {
               // graphRef is a ref, so reading it alone never re-renders and the
               // view mounted with a null graph and stayed empty.
               <MyceliumView
-                key={`${counts.nodes}-${counts.edges}-${settings.myceliumDim}-${settings.myceliumNodeColor}-${settings.myceliumHyphaColor}`}
+                key={`${counts.nodes}-${counts.edges}-${settings.myceliumDim}-${mycInk.myceliumNodeColor}-${mycInk.myceliumHyphaColor}`}
                 graph={graphRef.current}
                 onSelect={setSelected}
                 flat={settings.myceliumDim === "2d"}
-                nodeColor={settings.myceliumNodeColor}
-                hyphaColor={settings.myceliumHyphaColor}
-                background={settings.myceliumBackground}
+                nodeColor={mycInk.myceliumNodeColor}
+                hyphaColor={mycInk.myceliumHyphaColor}
+                background={mycInk.myceliumBackground}
                 gridGround={matchMyceliumBg(settings) === "grid"}
                 nodeSizeScale={settings.nodeSize}
                 linkThicknessScale={settings.linkThickness}

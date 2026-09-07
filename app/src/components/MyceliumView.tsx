@@ -15,6 +15,7 @@ import { useEffect, useRef } from "react";
 import type { JSX } from "react";
 import { MyceliumScene, type Septum } from "../lib/myceliumScene";
 import type { Encoding } from "../lib/graphEncoding";
+import { isLightBackground } from "../lib/graphSkins";
 import { buildMatAdjacency, buildMyceliumMat, matPath } from "../lib/staticLayouts";
 import type { VaultGraph } from "../lib/graphData";
 import { useUIStore } from "../stores/uiStore";
@@ -160,14 +161,26 @@ export default function MyceliumView({
       .sort((a, b) => (graph.getNodeAttribute(b, "deg") ?? 0) - (graph.getNodeAttribute(a, "deg") ?? 0))
       .slice(0, HUB_LABEL_CAP);
     const hubEls = new Map<string, HTMLSpanElement>();
+    // Measured widths, for the scene's declutter (setLabelIds): built in two
+    // passes so the browser lays out ALL the spans once instead of once per
+    // read. `visibility: hidden` rather than `display: none`, or offsetWidth
+    // comes back 0 and every label claims a zero-width box.
+    const hubLabels: { id: string; w: number }[] = [];
     if (hubHost) {
       hubHost.replaceChildren();
       for (const id of hubIds) {
         const span = document.createElement("span");
         span.className = "myc-hub-label";
         span.textContent = graph.getNodeAttribute(id, "label") ?? id;
+        span.style.display = "block";
+        span.style.visibility = "hidden";
         hubHost.appendChild(span);
         hubEls.set(id, span);
+      }
+      for (const [id, span] of hubEls) {
+        hubLabels.push({ id, w: span.offsetWidth });
+        span.style.display = "none";
+        span.style.visibility = "";
       }
     }
 
@@ -247,7 +260,8 @@ export default function MyceliumView({
           if (!span) continue;
           span.style.display = "block";
           // Offset off the dot itself, or the text sits directly on top of
-          // the point it's naming instead of beside it.
+          // the point it's naming instead of beside it. Same constants the
+          // scene's declutter rejects against (myceliumScene's LABEL_DX/DY).
           span.style.transform = `translate(${l.x + 6}px, ${l.y - 6}px)`;
           // Depth cue (see MyceliumScene.depthT): a hub at the back of the
           // volume fades instead of reading as if it were up front.
@@ -255,7 +269,7 @@ export default function MyceliumView({
         }
       },
     });
-    scene.setLabelIds(hubIds);
+    scene.setLabelIds(hubLabels);
     // The label follows the raw cursor, not the septum's projected position —
     // the pick radius is only 14px, so the cursor is already right on the dot,
     // and this avoids re-projecting a point every pointer move just to place
@@ -415,8 +429,15 @@ export default function MyceliumView({
     sceneRef.current?.setAutoRotate(ambientMotion && !flat && !reduced);
   }, [ambientMotion, flat]);
 
+  // The substrate is a user setting, not the app theme, so the label halo and
+  // the hover tooltip key off the ground they are ACTUALLY drawn on — same
+  // threshold the scene uses for its ring palette (myceliumScene.setGround).
   return (
-    <div className="myc-view" ref={host}>
+    <div
+      className="myc-view"
+      ref={host}
+      data-ground={isLightBackground({ bg: background }) ? "light" : "dark"}
+    >
       <div ref={labelRef} className="myc-hover-label" />
       <div ref={hubHostRef} className="myc-hub-labels" />
     </div>

@@ -746,6 +746,34 @@ export function matchMyceliumBg(s: GraphSettings): MyceliumBgKey | null {
   return null;
 }
 
+/** The substrate + ink triple the mycelium view should actually draw with.
+ *
+ *  Every other surface on the Survey screen follows the app theme; this one
+ *  did not, because the substrate is a persisted hex rather than a token — so
+ *  in light mode the graph stage rendered as a black rectangle inside a white
+ *  page (measured: every canvas pixel #0b0a08 against a #fafaf9 shell, where
+ *  the starfield's stage came back 251-255). The DEFAULT loam ground therefore
+ *  follows the theme, landing on the existing paper preset — which already
+ *  swaps the inks, because legibility is a background-and-ink pair.
+ *
+ *  Any OTHER preset, and any custom colour, is a deliberate choice and is
+ *  returned untouched: picking "void" and then switching to light mode is a
+ *  user asking for a dark stage, not a bug. */
+export function myceliumInk(
+  s: GraphSettings,
+  lightTheme: boolean,
+): Pick<
+  GraphSettings,
+  "myceliumBackground" | "myceliumHyphaColor" | "myceliumNodeColor"
+> {
+  if (lightTheme && matchMyceliumBg(s) === "loam") return MYCELIUM_BG_PRESETS.paper;
+  return {
+    myceliumBackground: s.myceliumBackground,
+    myceliumHyphaColor: s.myceliumHyphaColor,
+    myceliumNodeColor: s.myceliumNodeColor,
+  };
+}
+
 // ── Mycelium skin/layout coupling ────────────────────────────────────────
 // The mycelium view is a SEPARATE renderer mounted when skin === "mycelium"
 // (see PageGraph), while the layout chips only set `layout` — so picking

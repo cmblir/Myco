@@ -2128,7 +2128,18 @@ select {
 }
 
 /* The mycelium view owns its own canvas; no deep-space CSS backdrop, because
-   that layer showed through the transparent graph canvas and repainted space. */
+   that layer showed through the transparent graph canvas and repainted space.
+
+   Everything below is the mycelium skin wearing the SAME clothes as the
+   starfield: the stage gets .graph-canvas-wrap's vignette (measured: the
+   starfield's light stage falls to 202-219 at the corners against 255 in the
+   middle, while this canvas came back a uniform #0b0a08 corner to corner), the
+   hub labels get .graph-label-3d's type and halo, and the hover tooltip gets
+   .graph-legend's glass tokens instead of its own hard-coded browns.
+
+   [data-ground] is set by MyceliumView from the SUBSTRATE, not the app theme:
+   the substrate is a user setting (MYCELIUM_BG_PRESETS), so a label drawn on
+   the paper preset needs paper's ink even in dark mode. */
 .myc-view {
   position: absolute;
   inset: 0;
@@ -2137,13 +2148,52 @@ select {
   z-index: 2;
   background: #0b0a08;
 }
+.myc-view[data-ground="light"] {
+  background: #efe8db; /* MYCELIUM_BG_PRESETS.paper — no black flash pre-paint */
+}
 .myc-view canvas {
   display: block;
   width: 100%;
   height: 100%;
 }
+/* Stage vignette. The wrap's own backdrop can't do this job here — .myc-view is
+   opaque and covers it — so the same edge darkening is painted OVER the canvas,
+   under the label layers. Lighter on paper, matching what the starfield's
+   light stage actually renders. */
+.myc-view::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 70% 70% at 50% 45%,
+      rgba(226, 200, 150, 0.05),
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse at center,
+      transparent 45%,
+      rgba(0, 0, 0, 0.45) 100%
+    );
+}
+.myc-view[data-ground="light"]::after {
+  background:
+    radial-gradient(
+      ellipse 70% 70% at 50% 45%,
+      rgba(120, 90, 40, 0.04),
+      transparent 65%
+    ),
+    radial-gradient(
+      ellipse at center,
+      transparent 45%,
+      rgba(0, 0, 0, 0.2) 100%
+    );
+}
 /* Hover label — positioned via a JS transform (see MyceliumView's
-   pointermove handler), not top/left, so moving it never triggers layout. */
+   pointermove handler), not top/left, so moving it never triggers layout.
+   Same glass as .graph-legend, the other panel floating on this stage. */
 .myc-hover-label {
   position: absolute;
   top: 0;
@@ -2151,10 +2201,12 @@ select {
   z-index: 3;
   display: none;
   padding: 3px 8px;
-  border-radius: 5px;
-  background: rgba(20, 18, 14, 0.85);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #f2eee4;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.28);
+  color: var(--ink);
+  font-family: var(--font-sans);
   font-size: 12px;
   white-space: nowrap;
   pointer-events: none;
@@ -2169,16 +2221,30 @@ select {
   z-index: 2;
   pointer-events: none;
 }
+/* .graph-label-3d's treatment, so a note is named the same way under either
+   skin: sans token, 11px / 500, line-height 1, and a double halo rather than
+   a drop shadow — over a bright cream strand a 1px shadow is no separation. */
 .myc-hub-label {
   position: absolute;
   top: 0;
   left: 0;
   display: none;
   padding: 1px 5px;
-  font-size: 10.5px;
-  color: #cfc7b5;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  color: #f6f2e9;
+  text-shadow:
+    0 0 3px rgba(0, 0, 0, 0.85),
+    0 0 6px rgba(0, 0, 0, 0.6);
   white-space: nowrap;
+}
+.myc-view[data-ground="light"] .myc-hub-label {
+  color: #14120e;
+  text-shadow:
+    0 0 3px rgba(255, 255, 255, 0.9),
+    0 0 6px rgba(255, 255, 255, 0.65);
 }
 
 /* Quoted material — notably extractive Ask answers, which render retrieved

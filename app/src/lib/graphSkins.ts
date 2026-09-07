@@ -109,7 +109,12 @@ export function skinTheme(skin: Exclude<GraphSkinKey, "auto">): GraphTheme {
 // palette (dark void vs. dark-on-paper) from THIS, not from the app theme, so a
 // white skin always gets the dark, saturated stars that read on paper. Non-hex
 // backgrounds fall back to "dark" (the default void).
-export function isLightBackground(theme: GraphTheme): boolean {
+//
+// Takes anything with a `bg`, not a whole GraphTheme: the mycelium view's
+// substrate is a bare user-chosen hex (myceliumBackground), and its labels,
+// rings and tooltip have to key off the ground they are ACTUALLY drawn on, by
+// the same threshold the rest of the graph uses.
+export function isLightBackground(theme: { bg: string }): boolean {
   const m = /^#?([0-9a-f]{6})$/i.exec(theme.bg.trim());
   if (!m) return false;
   const n = parseInt(m[1], 16);

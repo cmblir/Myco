@@ -19,6 +19,7 @@ import { LineSegments2 } from "three/examples/jsm/lines/LineSegments2.js";
 import { LineSegmentsGeometry } from "three/examples/jsm/lines/LineSegmentsGeometry.js";
 import { LineMaterial } from "three/examples/jsm/lines/LineMaterial.js";
 import type { Encoding } from "./graphEncoding";
+import { isLightBackground } from "./graphSkins";
 
 /** One stroke-width bucket of hyphae. Colour rides per-vertex (see setMat)
  *  rather than a further per-bucket flat colour — a strand's colour varies
@@ -89,6 +90,14 @@ const ENC_BASE_R = 6;
 // `max(gl_PointSize * 1.5, 11.0 * u_pixelRatio)`.
 const RING_ROOM = 1.9;
 const RING_MIN_PX = 12;
+// Where a hub label sits relative to its septum, and its line box. Shared by
+// the declutter (reportLabelFrame) and MyceliumView's transform, so the
+// rectangle this rejects against is the one the browser paints. LABEL_LINE_PX
+// matches graphScene's NODE_LABEL_LINE_PX — same 11px/500 label class, so the
+// same row height.
+const LABEL_DX = 6;
+const LABEL_DY = 6;
+const LABEL_LINE_PX = 15;
 // A label for a strand at the back of the ball must not read as if it were
 // in front — see depthT/depthOpacity. Not so dim it's illegible; just enough
 // recession to read as farther away.
@@ -198,8 +207,8 @@ export class MyceliumScene {
    *  drawn bright over the (dimmed) base mat — see setHighlight. Lazily
    *  created on first use. */
   private highlightLine: LineSegments2 | null = null;
-  /** Always-on hub label ids (see setLabelIds) — capped small by the caller. */
-  private labelIds: string[] = [];
+  /** Always-on hub labels (see setLabelIds) — capped small by the caller. */
+  private labelIds: { id: string; w: number }[] = [];
   /** Current growth progress (setProgress's `t`) — a label must not float
    *  over a septum that hasn't grown in yet. */
   private growT = 0;
@@ -653,14 +662,19 @@ export class MyceliumScene {
     rng.needsUpdate = true;
     // The mat recedes with the field it carries. A question that dims most
     // notes ("어디가 비었나" drops the connected ones to 0.22) has to dim the
-    // hyphae too, or a few lit septa answer the question underneath a mat at
-    // full strength. Mean encoded alpha, so a question that dims nothing
-    // ("무엇이 뭉쳐 있나") leaves the mat exactly where it was.
+    // hyphae too, or a handful of lit septa answer the question underneath a
+    // mat at full strength — measured on the mock vault, the amber gap rings
+    // were legible only once the mat came down with them. Mean encoded alpha,
+    // so a question that dims nothing ("무엇이 뭉쳐 있나", and "이 노트의 이웃"
+    // before a note is picked) leaves the mat exactly where it was. Floored,
+    // because the mat is the picture: even the hardest isolation keeps enough
+    // of it to see WHERE in the organism the answer sits.
     // ponytail: mean alpha, not a per-strand encoding — the mat is grown
     // substrate, not note-to-note edges, so a strand has no single owning
     // note to inherit from. Per-vertex would mean re-colouring buckets on
     // every question change; upgrade only if the flat dim reads as wrong.
-    this.encDim = this.septaItems.length > 0 ? 0.3 + 0.7 * (alphaSum / this.septaItems.length) : 1;
+    this.encDim =
+      this.septaItems.length > 0 ? Math.max(0.18, alphaSum / this.septaItems.length) : 1;
     this.applyHyphaOpacity();
   }
 
@@ -802,11 +816,20 @@ export class MyceliumScene {
     this.travelFade = -1; // fade starts on arrival — see the render loop
   }
 
-  /** Note ids that should carry an always-on label (the caller caps this
-   *  small — see MyceliumView's HUB_LABEL_CAP). Their screen positions are
-   *  reported to opts.onFrame every rendered frame. */
-  setLabelIds(ids: string[]): void {
-    this.labelIds = ids;
+  /** Notes that should carry an always-on label (the caller caps this small —
+   *  see MyceliumView's HUB_LABEL_CAP), each with the MEASURED on-screen width
+   *  of its rendered span. Their screen positions are reported to opts.onFrame
+   *  every rendered frame.
+   *
+   *  The width is what makes the declutter work: the old test rejected a label
+   *  only when BOTH axes were within 22px of an already-placed one, so two
+   *  80px-wide names 30px apart passed it and printed straight through each
+   *  other (observed: "transformer" / "scaling-laws" / "ws-data" overlapping
+   *  into one unreadable smear). graphScene solves the same problem with an
+   *  estimated box; here the spans are real DOM, so the caller measures them
+   *  once and this compares actual rectangles. */
+  setLabelIds(items: { id: string; w: number }[]): void {
+    this.labelIds = items;
   }
 
   /** "Node size" slider — live uniform update, no rebuild. */
@@ -835,11 +858,11 @@ export class MyceliumScene {
    *  main-view screenshots. Rebuilt on each call (cheap — one fullscreen
    *  quad, and this only runs on a preset/colour change) = a live swap. */
   setGround(color: string, grid = false): void {
-    const bg = new THREE.Color(color);
-    this.scene.background = bg;
-    // Relative luminance of the substrate the rings are drawn on — the "paper"
-    // preset is a light ground, where a white selection ring is no ring.
-    this.groundDark = 0.2126 * bg.r + 0.7152 * bg.g + 0.0722 * bg.b < 0.4;
+    this.scene.background = new THREE.Color(color);
+    // The substrate the rings are drawn on — the "paper" preset is a light
+    // ground, where a white selection ring is no ring. Same threshold the rest
+    // of the graph uses to pick a palette, so both skins agree on "light".
+    this.groundDark = !isLightBackground({ bg: color });
     if (this.septa) {
       (this.septa.material as THREE.ShaderMaterial).uniforms.u_dark.value = this.groundDark ? 1 : 0;
     }
@@ -1137,14 +1160,26 @@ export class MyceliumScene {
     }
     const birthAttr = this.septa.geometry.getAttribute("a_birth") as THREE.BufferAttribute;
     const posAttr = this.septa.geometry.getAttribute("position") as THREE.BufferAttribute;
-    const MIN_GAP = 22; // px — roughly one label's line height
+    // The span is drawn at translate(x + LABEL_DX, y - LABEL_DY) — see
+    // MyceliumView's onFrame — so the box this rejects against has to be the
+    // box the browser will actually paint, offsets included.
     const out: FrameLabel[] = [];
-    for (const id of this.labelIds) {
+    const boxes: { x0: number; x1: number; y0: number; y1: number }[] = [];
+    for (const { id, w } of this.labelIds) {
       const idx = this.septaIndexOf.get(id);
       if (idx == null || birthAttr.getX(idx) > this.growT) continue;
       const s = this.projectToScreen(id);
       if (!s) continue;
-      if (out.some((o) => Math.abs(o.x - s.x) < MIN_GAP && Math.abs(o.y - s.y) < MIN_GAP)) continue;
+      const box = {
+        x0: s.x + LABEL_DX,
+        x1: s.x + LABEL_DX + w,
+        y0: s.y - LABEL_DY - LABEL_LINE_PX,
+        y1: s.y - LABEL_DY,
+      };
+      if (boxes.some((b) => b.x0 < box.x1 && box.x0 < b.x1 && b.y0 < box.y1 && box.y0 < b.y1)) {
+        continue;
+      }
+      boxes.push(box);
       const v = new THREE.Vector3(posAttr.getX(idx), posAttr.getY(idx), posAttr.getZ(idx));
       const opacity = 1 - this.depthT(v) * (1 - MIN_LABEL_OPACITY);
       out.push({ id, x: s.x, y: s.y, opacity });
