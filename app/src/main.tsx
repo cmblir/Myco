@@ -10,6 +10,9 @@ import {
   isTrayPanelWindow,
 } from "./lib/windowRoute";
 import "./styles.css";
+// Must stay AFTER styles.css: the control kit and page frame win on source
+// order, never on !important. See src/styles/ui.css.
+import "./styles/ui.css";
 
 const ERROR_LOG_KEY = "myco.errorlog";
 const ERROR_LOG_MAX = 20;

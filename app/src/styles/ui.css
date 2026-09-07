@@ -1,0 +1,255 @@
+/* myco — the one control kit.
+ *
+ * Loaded from main.tsx immediately AFTER styles.css, so every rule here wins
+ * on source order alone. Nothing in this file uses `!important`.
+ *
+ * Why it exists: buttons shipped in six flavours (.btn, .btn-primary,
+ * .btn-ghost, .chip, .pill, .graph-toolbar__btn) with four heights and three
+ * radii between them, which is what made each screen read as a separate app.
+ * Everything below is one height (32px), one radius scale, one focus ring.
+ *
+ * Tokens come from styles.css. The `var(--x, fallback)` defaults are there so
+ * this file renders correctly before the radius/type scale settles there; once
+ * it lands, the real token wins and the fallback never applies.
+ */
+
+/* Shared focus ring. Never removed, only made visible on keyboard focus. */
+.u-btn:focus-visible,
+.u-iconbtn:focus-visible,
+.u-segment__btn:focus-visible,
+.u-check input:focus-visible,
+.u-rail__row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── Button ───────────────────────────────────────────────────────────────
+ * Three emphases, descending: `primary` (filled — the one action on a page),
+ * `ghost` (outlined — the default), `quiet` (bare — repeated/secondary).
+ */
+.u-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 10px);
+  background: var(--bg);
+  color: var(--ink);
+  font-size: var(--fs-13, 12.5px);
+  font-weight: 500;
+  line-height: 1;
+  /* A button's label never wraps mid-word — Korean labels broke to two lines
+     in tight rows. The row flexes; the label does not. */
+  white-space: nowrap;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    border-color var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+.u-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: var(--line-strong);
+}
+.u-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.u-btn--primary {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg);
+}
+.u-btn--primary:hover:not(:disabled) {
+  background: var(--ink-2);
+  border-color: var(--ink-2);
+}
+
+.u-btn--quiet {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-3);
+}
+.u-btn--quiet:hover:not(:disabled) {
+  background: var(--bg-hover);
+  border-color: transparent;
+  color: var(--ink);
+}
+
+/* ── Icon button ─────────────────────────────────────────────────────────
+ * A 32×32 square. The component requires an aria-label at the type level, so
+ * there is no such thing as an unlabelled glyph button in the kit.
+ */
+.u-iconbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--r-md, 10px);
+  background: transparent;
+  color: var(--ink-3);
+  flex-shrink: 0;
+  cursor: pointer;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+.u-iconbtn:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--ink);
+}
+.u-iconbtn[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--ink);
+}
+.u-iconbtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* ── Segment ─────────────────────────────────────────────────────────────
+ * One toggle row for "which view am I in". 32px tall like every other
+ * control, so a segment beside a button lines up on both edges.
+ */
+.u-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 32px;
+  padding: 2px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-md, 10px);
+  background: var(--bg-soft);
+  flex-shrink: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.u-segment__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 100%;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--r-sm, 6px);
+  background: transparent;
+  color: var(--ink-3);
+  font-size: var(--fs-13, 12.5px);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--dur-quick) var(--ease-out),
+    color var(--dur-quick) var(--ease-out);
+}
+.u-segment__btn:hover[aria-pressed="false"] {
+  color: var(--ink);
+}
+.u-segment__btn[aria-pressed="true"] {
+  background: var(--bg);
+  color: var(--ink);
+  box-shadow: var(--shadow-1);
+}
+.u-segment__count {
+  font-family: var(--font-mono);
+  font-size: var(--fs-11, 11px);
+  color: var(--ink-4);
+}
+.u-segment__btn[aria-pressed="true"] .u-segment__count {
+  color: var(--ink-3);
+}
+
+/* ── Chip ────────────────────────────────────────────────────────────────
+ * A read-only fact: a label, optionally a mono value, optionally a tone. The
+ * tone always brings a dot with it — colour is never the only signal.
+ */
+.u-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 24px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill, 999px);
+  background: var(--bg-soft);
+  color: var(--ink-3);
+  font-size: var(--fs-11, 11px);
+  line-height: 1;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.u-chip__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--ink-4);
+}
+.u-chip__value {
+  font-family: var(--font-mono);
+  color: var(--ink-2);
+}
+/* --live / --ok / --warn are the theme-aware tone tokens styles.css already
+   defines for the renewal surfaces; the chip borrows them rather than minting
+   a fourth status palette. */
+.u-chip--live,
+.u-chip--ok,
+.u-chip--warn {
+  color: var(--ink-2);
+}
+.u-chip--live {
+  border-color: color-mix(in srgb, var(--live) 40%, var(--line));
+}
+.u-chip--live .u-chip__dot {
+  background: var(--live);
+}
+.u-chip--ok {
+  border-color: color-mix(in srgb, var(--ok) 40%, var(--line));
+}
+.u-chip--ok .u-chip__dot {
+  background: var(--ok);
+}
+.u-chip--warn {
+  border-color: color-mix(in srgb, var(--warn) 40%, var(--line));
+}
+.u-chip--warn .u-chip__dot {
+  background: var(--warn);
+}
+
+/* ── Check ───────────────────────────────────────────────────────────────
+ * A real <input type="checkbox"> inside its <label>. Space toggles it and a
+ * screen reader announces it because the platform does the work, not us.
+ */
+.u-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  color: var(--ink-3);
+  font-size: var(--fs-13, 12.5px);
+  cursor: pointer;
+  user-select: none;
+}
+.u-check input {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--ink);
+  cursor: pointer;
+}
+.u-check.is-on {
+  color: var(--ink);
+}
+.u-check.is-disabled {
+  opacity: 0.45;
+  cursor: default;
+}
